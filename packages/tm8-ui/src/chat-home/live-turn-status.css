@@ -1,7 +1,7 @@
 /* ── THE LIVE STATUS ROW + THE WAY BACK TO IT ────────────────────────────────
    `LiveTurnStatus.tsx`. Anatomy and tokens are the advisor's rulings D1–D5 as
-   amended by D16 (task 01a0dc86-911e): one card, sticky at the bottom of the
-   transcript's scroll box, 4px above the composer; spinner · now sentence ·
+   amended by D16 and D20 (task 01a0dc86-911e): one card, sticky at the bottom
+   of the transcript's scroll box, 4px above the composer; mark · now sentence ·
    muted aside · mono meta; the jump pill in the card's right slot while a turn
    runs, a pill of its own otherwise.
 
@@ -62,17 +62,22 @@
   font: var(--pn-fs-sm) / 1.4 var(--pn-ui);
 }
 
-.tch-live__spinner {
+/* tm8's wait glyph — the ribbon `WaitMark` turns — at 14px tall (D20). The
+   mark's design box is 560×700, so its width follows at 0.8 of the height.
+   `.cv2-root` for the same reason `.tch-wait__ribbon` carries it: the kit's
+   own ribbon rule is scoped there, and this must outrank it. */
+.tch-live__mark {
   flex: none;
-  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 14px;
   height: 14px;
-  border: 2px solid var(--pn-run-soft);
-  border-top-color: var(--pn-run);
-  border-radius: 50%;
-  animation: tch-live-spin 0.9s linear infinite;
 }
-@keyframes tch-live-spin { to { transform: rotate(360deg); } }
+.cv2-root .tch-live__ribbon {
+  width: 11.2px;
+  height: 14px;
+}
 
 .tch-live__glyph {
   flex: none;
@@ -148,9 +153,11 @@
   .tch-live__meta { flex-basis: 100%; padding-left: 24px; }
 }
 
-/* Reduced motion: a static ring with its solid arc (no rotation), and the
-   card simply appears. */
+/* Reduced motion: the ribbon already holds its rest pose (RibbonMark never
+   subscribes to the frame clock), and D20 asks for it STATIC — so it gets no
+   fade either, unlike the transcript's other wait marks. The card simply
+   appears. */
 @media (prefers-reduced-motion: reduce) {
-  .tch-live__spinner { animation: none; }
+  .cv2-root .tch-live__ribbon { animation: none; }
   .tch-dock[data-live] { animation: none; }
 }

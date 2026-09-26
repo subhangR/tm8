@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { RibbonMark } from '../kit';
 import {
   announcementKey,
   isTicking,
@@ -37,6 +38,14 @@ import './live-turn-status.css';
 /** A new step may be announced at most this often; a phase change, at once. */
 export const ANNOUNCE_MIN_MS = 10_000;
 
+/**
+ * THE MARK IS tm8's OWN WAIT GLYPH — `WaitMark`'s ribbon, at `WAIT_SEGMENTS`
+ * (`ChatHomeScreen.tsx`, measured in `gate-evidence/`), not a generic spinner:
+ * a second wait glyph would be a second language (advisor D20, amending D1).
+ * Not imported from there because `ChatHomeScreen` imports this file.
+ */
+const LIVE_MARK_SEGMENTS = 60;
+
 export interface LiveTurnStatusProps {
   turn: TurnInProgress;
   /** The in-flight agent message's stored parts, or null before it exists. */
@@ -66,7 +75,9 @@ export function LiveTurnStatus({ turn, parts, labels }: LiveTurnStatusProps) {
       data-quiet={view.quiet === 'long' ? 'long' : undefined}
     >
       {view.glyph === 'spinner' ? (
-        <span className="tch-live__spinner" aria-hidden="true" />
+        <span className="tch-live__mark" aria-hidden="true">
+          <RibbonMark className="tch-live__ribbon" segments={LIVE_MARK_SEGMENTS} />
+        </span>
       ) : (
         <span className={`tch-live__glyph tch-live__glyph--${view.glyph}`} aria-hidden="true">
           {view.glyph === 'stopped' ? '■' : '✕'}
