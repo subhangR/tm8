@@ -63,3 +63,28 @@ export async function writeNodePolicy(databaseUrl: string, posture: GatePosture)
     await client.end();
   }
 }
+
+/** The index a 'one_space' node should carry (234's DDL; built by #874's migration). */
+export const ONE_SPACE_INDEX = 'space_projects_one_space_per_folder';
+
+/**
+ * True when `public.space_projects` lacks the one-space-per-folder unique
+ * index. Boot asks only on a 'one_space' node and WARNS, never refuses: the
+ * migration that builds it skips (NOTICE) on a node that had no policy row
+ * yet, and refuses while a folder is still granted to two spaces — both leave
+ * the index missing with the migration recorded as applied. The guard trigger
+ * still enforces new grants; this makes the missing index visible.
+ */
+export async function oneSpaceIndexMissing(databaseUrl: string): Promise<boolean> {
+  const client = new pg.Client({ connectionString: databaseUrl });
+  await client.connect();
+  try {
+    const { rows } = await client.query<{ missing: boolean }>(
+      `select not exists (select 1 from pg_indexes where schemaname = 'public' and indexname = $1) as missing`,
+      [ONE_SPACE_INDEX],
+    );
+    return rows[0]?.missing === true;
+  } finally {
+    await client.end();
+  }
+}
