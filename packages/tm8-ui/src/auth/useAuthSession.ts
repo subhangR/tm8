@@ -12,6 +12,7 @@
  * facts, and conflating them would eject people every time the node hiccups.
  */
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import type { NodeModeSetResult, NodeModeView } from '@tm8/contract';
 import { AuthSessionContext } from './gate-context';
 import {
   claimNodeOnServer,
@@ -23,6 +24,7 @@ import {
   readCachedAutoOwner,
   readKnownAccountsHere,
   readStoredSession,
+  setNodeMode,
   signInToServer,
   signOutOfServer,
   subscribeToSession,
@@ -45,6 +47,12 @@ export interface AuthSessionState {
   accounts: KnownAccount[];
   /** The signed-in handle, or null. */
   handle: string | null;
+  /**
+   * HOW the viewer is signed in: a stored pass (a bearer session the owner's
+   * password minted), or the loopback auto-owner the node vouched for. They
+   * differ in what `node.mode.set` admits — only the pass may LOOSEN the mode.
+   */
+  signedInWith: 'pass' | 'auto-owner' | null;
   /**
    * What the server said about this viewer, once signed in — from
    * `auth.session.get`, or from the host's `resolveIdentity` when supplied.
@@ -79,6 +87,12 @@ export interface AuthSessionState {
    */
   claimNode(token: string, name: string, password: string): Promise<boolean>;
   signIn(handle: string, password: string): Promise<boolean>;
+  /**
+   * `node.mode.set` (doc 20 §5.2). Null on a refusal, with `failure` set. The
+   * server decides who may: the owner's browser session for any switch, the
+   * cookie-holding auto-owner for a tightening only, nobody while unclaimed.
+   */
+  chooseMode(mode: NodeModeView): Promise<NodeModeSetResult | null>;
   signOut(): void;
   clearFailure(): void;
 }
@@ -325,6 +339,27 @@ function useOwnAuthSession(options: UseAuthSessionOptions, inert: boolean): Auth
     [refresh],
   );
 
+  const chooseMode = useCallback(
+    async (mode: NodeModeView) => {
+      setBusy(true);
+      setFailure(null);
+      try {
+        const result = await setNodeMode(mode);
+        if (!result.ok) {
+          setFailure(result.failure);
+          return null;
+        }
+        // Choosing Personal lifts a sign-out suppression; re-read so the
+        // auto-owner cache is honoured again on this tab.
+        refresh();
+        return result.value;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [refresh],
+  );
+
   const signOut = useCallback(() => {
     setServerIdentity(null);
     setIdentityError(null);
@@ -349,6 +384,7 @@ function useOwnAuthSession(options: UseAuthSessionOptions, inert: boolean): Auth
       account: snapshot.account ?? snapshot.autoOwner,
       accounts: snapshot.accounts,
       handle: snapshot.session?.handle ?? snapshot.autoOwner?.handle ?? null,
+      signedInWith: snapshot.session ? ('pass' as const) : snapshot.autoOwner ? ('auto-owner' as const) : null,
       serverIdentity,
       identityError,
       failure,
@@ -357,6 +393,7 @@ function useOwnAuthSession(options: UseAuthSessionOptions, inert: boolean): Auth
       createAccount,
       claimNode,
       signIn,
+      chooseMode,
       signOut,
       clearFailure,
     }),
@@ -371,6 +408,7 @@ function useOwnAuthSession(options: UseAuthSessionOptions, inert: boolean): Auth
       createAccount,
       claimNode,
       signIn,
+      chooseMode,
       signOut,
       clearFailure,
     ],

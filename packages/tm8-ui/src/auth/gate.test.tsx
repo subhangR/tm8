@@ -32,6 +32,7 @@ import {
   useAuthSession,
 } from './index';
 import { defaultSignedOutFrame } from './AuthGate';
+import { InvitesPanel } from '../settings-space/InviteFrames';
 import {
   AUTO_OWNER_CACHE_KEY,
   NODE_CLAIM_CACHE_KEY,
@@ -66,6 +67,8 @@ interface FakeAccount {
   displayName: string | null;
   accountId: string;
   identityId: string;
+  /** The node owner — the account the claim credentialed. */
+  isOwner?: boolean;
 }
 
 interface FakeAuthServer {
@@ -89,6 +92,16 @@ interface FakeAuthServer {
    * `unauthenticated`. Off by default so every existing suite is unaffected.
    */
   autoOwner: FakeAccount | null;
+  /**
+   * The node mode as `auth.claim.status` reports it (doc 20 §3.4). Defaults to
+   * a RECORDED personal node so every suite that predates node modes goes
+   * straight to the app after a claim; the chooser tests clear `modeSet`.
+   */
+  mode: 'personal' | 'peer' | 'server';
+  modeSet: boolean;
+  modeSource: 'env' | 'file' | 'default';
+  /** The mode this process booted with — what `restartRequired` compares against. */
+  runningMode: 'personal' | 'peer' | 'server';
 }
 
 /** What the boot log would have printed. */
@@ -101,7 +114,7 @@ function accountView(a: FakeAccount) {
     username: a.username,
     displayName: a.displayName,
     isNodeAdmin: false,
-    isOwner: false,
+    isOwner: a.isOwner === true,
   };
 }
 
@@ -130,6 +143,10 @@ function installFakeAuthServer(): FakeAuthServer {
     requests: [],
     claimToken: FAKE_CLAIM_TOKEN,
     autoOwner: null,
+    mode: 'personal',
+    modeSet: true,
+    modeSource: 'file',
+    runningMode: 'personal',
   };
   let minted = 0;
 
@@ -147,7 +164,13 @@ function installFakeAuthServer(): FakeAuthServer {
     if (method === 'GET' && path === '/v2/auth/claim') {
       const claimed = server.accounts.size > 0;
       return json(200, {
-        data: { claimed, mode: 'single', signupPath: claimed ? 'admin' : 'claim' },
+        data: {
+          claimed,
+          mode: server.mode,
+          modeSet: server.modeSet,
+          modeSource: server.modeSource,
+          signupPath: claimed ? 'admin' : 'claim',
+        },
       });
     }
 
@@ -169,6 +192,7 @@ function installFakeAuthServer(): FakeAuthServer {
         displayName: typeof body.displayName === 'string' ? body.displayName : null,
         accountId: `acct_${username}`,
         identityId: `id_${username}`,
+        isOwner: true,
       };
       server.accounts.set(username, account);
       // MUST follow the login route's token shape: the logout route resolves a
@@ -288,6 +312,29 @@ function installFakeAuthServer(): FakeAuthServer {
       });
     }
 
+    // `node.mode.set`, in the real handler's order (doc 20 §2 as amended by
+    // decision 34): anonymous, pinned, UNCLAIMED FOR EVERY MODE, then owner.
+    if (method === 'PUT' && path === '/v2/node/mode') {
+      const username = server.sessions.get(bearer);
+      const caller = username ? server.accounts.get(username) : server.autoOwner;
+      if (!caller) return refusal(401, 'unauthenticated', 'authentication is required');
+      if (server.modeSource === 'env') return refusal(409, 'conflict', 'the node mode is pinned by TM8_NODE_MODE');
+      if (server.accounts.size === 0) {
+        return refusal(409, 'conflict', 'choosing a node mode needs an owner password: claim the node first');
+      }
+      if (username && !caller.isOwner) return refusal(403, 'forbidden', 'only the node owner may change the node mode');
+      const mode = String(body.mode) as FakeAuthServer['mode'];
+      // The auto-owner may tighten, never loosen (doc 20 §2).
+      const rank = (m: string) => ['personal', 'peer', 'server'].indexOf(m);
+      if (!username && rank(mode) < rank(server.mode)) {
+        return refusal(403, 'forbidden', 'loosening the node mode needs the owner\u2019s password session');
+      }
+      const previous = server.mode;
+      Object.assign(server, { mode, modeSet: true, modeSource: 'file' });
+      const restartRequired = (server.runningMode === 'server') !== (mode === 'server');
+      return json(200, { data: { previous, mode, source: 'file', restartRequired } });
+    }
+
     return refusal(500, 'internal_error', `fake auth server: unhandled ${method} ${path}`);
   };
 
@@ -351,7 +398,7 @@ beforeEach(() => {
   // behaviour belongs.
   localStorage.setItem(
     NODE_CLAIM_CACHE_KEY,
-    JSON.stringify({ local: { claimed: false, mode: 'single', signupPath: 'claim' } }),
+    JSON.stringify({ local: { claimed: false, mode: 'personal', modeSet: true, modeSource: 'file', signupPath: 'claim' } }),
   );
 });
 afterEach(() => {
@@ -384,10 +431,14 @@ describe('leg 1 — unauthenticated, the app is NOT on screen', () => {
    * the act without loopback.
    */
   it('follows the node, not the hostname — an unclaimed node offers the claim card anywhere', () => {
-    expect(defaultSignedOutFrame({ claimed: false, mode: 'single', signupPath: 'claim' })).toBe('1a');
-    expect(defaultSignedOutFrame({ claimed: false, mode: 'multi', signupPath: 'claim' })).toBe('1a');
-    expect(defaultSignedOutFrame({ claimed: true, mode: 'single', signupPath: 'admin' })).toBe('1d');
-    expect(defaultSignedOutFrame({ claimed: true, mode: 'multi', signupPath: 'invite' })).toBe('1d');
+    // Every mode, and a mode not yet chosen: unclaimed is ALWAYS the claim card
+    // (decision 34 — the chooser comes after the claim, never instead of it).
+    for (const mode of ['personal', 'peer', 'server'] as const) {
+      for (const modeSet of [true, false]) {
+        expect(defaultSignedOutFrame({ claimed: false, mode, modeSet, signupPath: 'claim' })).toBe('1a');
+        expect(defaultSignedOutFrame({ claimed: true, mode, modeSet, signupPath: 'admin' })).toBe('1d');
+      }
+    }
   });
 
   /**
@@ -511,7 +562,7 @@ describe('the loopback auto-owner — no gate on the box, the whole point of D3'
     expect(screen.queryByTestId('auth-frame')).toBeNull();
   });
 
-  it('does NOT sign in on an UNCLAIMED node — the claim ceremony must win', async () => {
+  it('refuses until claimed — a PERSONAL node included (decision 34), and never sets a mode', async () => {
     // THE REGRESSION. On first run the server resolves the credential-free
     // loopback caller as the auto-owner (that is HOW the owner row is minted),
     // and `auth.claim.status` still answers `claimed: false`. Signing the viewer
@@ -519,7 +570,13 @@ describe('the loopback auto-owner — no gate on the box, the whole point of D3'
     // a password, and the first off-box login over the tailnet meets a sign-in
     // card with no credential behind it — §1's dead end, restored by a different
     // route. The claim card must win while `claimed` is false.
+    //
+    // DECISION 34 (the lead's default C, 2026-09-26) keeps this for PERSONAL
+    // too. Doc 20 had planned "signs in on an unclaimed personal node"; that is
+    // exactly the arm the advisor removed — under the launch cookie (#847) a local
+    // agent is never the owner, so the owner claims once with a password first.
     localStorage.removeItem(NODE_CLAIM_CACHE_KEY); // cold: no cached claim to paint from
+    Object.assign(server, { mode: 'personal', modeSet: false, modeSource: 'default' }); // first run
     server.autoOwner = { ...OWNER_ACCOUNT }; // the server WOULD resolve auto-owner…
     // …but no account exists yet, so the fake answers `auth.claim.status` with
     // `claimed: false` — a genuinely unclaimed node.
@@ -536,9 +593,14 @@ describe('the loopback auto-owner — no gate on the box, the whole point of D3'
     // The setup token is reachable on that card — the escape the whole lane exists
     // to keep open — so the owner can complete the claim from here.
     expect(screen.getByLabelText('SETUP TOKEN')).toBeTruthy();
+    // No chooser before the claim, and nothing asked the node to record a mode.
+    expect(server.requests.some((r) => r.path === '/v2/node/mode')).toBe(false);
   });
 
-  it('resumes auto-owner the instant the node IS claimed — the win is only deferred, not lost', async () => {
+  it('the paired positive: claimed PERSONAL + launch cookie → the owner is auto-signed in', async () => {
+    // The fake's `autoOwner` stands for the server's answer to a caller holding
+    // the `__Host-tm8-launch` cookie (#847): the cookie is a server-side fact the
+    // browser cannot read, so the gate's whole contribution is to ask.
     // The mirror of the regression above: once the node is claimed, the very
     // same loopback caller signs straight in with no gate. Auto-owner is gated
     // ON the claim, not weakened by it.
@@ -572,7 +634,7 @@ describe('the loopback auto-owner — no gate on the box, the whole point of D3'
     // the honest card sign-in.
     localStorage.setItem(
       NODE_CLAIM_CACHE_KEY,
-      JSON.stringify({ local: { claimed: true, mode: 'multi', signupPath: 'invite' } }),
+      JSON.stringify({ local: { claimed: true, mode: 'server', modeSet: true, modeSource: 'env', signupPath: 'invite' } }),
     );
     server.accounts.set('amber', {
       username: 'amber',
@@ -633,6 +695,214 @@ describe('the loopback auto-owner — no gate on the box, the whole point of D3'
     signInThroughTheUI('owner', PASSWORD);
     await waitFor(() => expect(screen.getByTestId('the-app')).toBeTruthy());
     expect(isAutoOwnerSuppressed()).toBe(false);
+  });
+});
+
+/**
+ * THE FIRST-RUN CHOOSER, AFTER THE CLAIM (doc 20 §5, as amended by decision 34).
+ * The node answers `modeSet: false`; the claim runs first; then the owner —
+ * signed in by the claim — is asked Personal, Peer or Server.
+ */
+describe('the node-mode chooser — after the claim, owner only', () => {
+  beforeEach(() => {
+    localStorage.removeItem(NODE_CLAIM_CACHE_KEY);
+    Object.assign(server, { mode: 'personal', modeSet: false, modeSource: 'default' });
+  });
+
+  async function claimToChooser() {
+    render(<AuthGate>{APP}</AuthGate>);
+    await waitFor(() => expect(screen.getByTestId('auth-frame').getAttribute('data-frame')).toBe('1a'));
+    fireEvent.change(screen.getByLabelText('SETUP TOKEN'), { target: { value: FAKE_CLAIM_TOKEN } });
+    fireEvent.change(screen.getByLabelText('YOUR NAME'), { target: { value: NAME } });
+    fireEvent.change(screen.getByLabelText('PASSWORD'), { target: { value: PASSWORD } });
+    fireEvent.click(screen.getByRole('button', { name: /create (owner )?account/i }));
+    await waitFor(() => expect(screen.getByTestId('auth-frame').getAttribute('data-frame')).toBe('1s'));
+    expect(screen.queryByTestId('the-app')).toBeNull();
+  }
+
+  it('claim first, then the chooser; "Just me" records personal with the claim\u2019s pass and opens the app', async () => {
+    await claimToChooser();
+    fireEvent.click(screen.getByRole('button', { name: 'Just me' }));
+    await waitFor(() => expect(screen.getByTestId('the-app')).toBeTruthy());
+    expect(server).toMatchObject({ mode: 'personal', modeSet: true, modeSource: 'file' });
+    // The order is the decision: the claim reached the node before any mode did.
+    const paths = server.requests.map((r) => `${r.method} ${r.path}`);
+    expect(paths.indexOf('POST /v2/auth/claim')).toBeLessThan(paths.indexOf('PUT /v2/node/mode'));
+  });
+
+  it('"A shared server" needs a restart: 1r says so, and Continue lands in the app', async () => {
+    await claimToChooser();
+    fireEvent.click(screen.getByRole('button', { name: 'A shared server' }));
+    await waitFor(() => expect(screen.getByTestId('auth-frame').getAttribute('data-frame')).toBe('1r'));
+    expect(server.mode).toBe('server');
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() => expect(screen.getByTestId('the-app')).toBeTruthy());
+  });
+
+  it('"Me and a few others" records peer with no restart (the arm does not move)', async () => {
+    await claimToChooser();
+    fireEvent.click(screen.getByRole('button', { name: 'Me and a few others' }));
+    await waitFor(() => expect(screen.getByTestId('the-app')).toBeTruthy());
+    expect(server.mode).toBe('peer');
+  });
+
+  it('a PINNED node never asks — no operation can move it', async () => {
+    server.modeSource = 'env';
+    render(<AuthGate>{APP}</AuthGate>);
+    await waitFor(() => expect(screen.getByTestId('auth-frame').getAttribute('data-frame')).toBe('1a'));
+    await createAccountThroughTheUI();
+    expect(screen.getByTestId('the-app')).toBeTruthy();
+    expect(server.requests.some((r) => r.path === '/v2/node/mode')).toBe(false);
+  });
+
+  it('a signed-in NON-owner on a mode-less node gets the app, not the chooser', async () => {
+    server.accounts.set('amber', { username: 'amber', password: PASSWORD, displayName: 'amber', accountId: 'acct_amber', identityId: 'id_amber' });
+    render(<AuthGate>{APP}</AuthGate>);
+    await waitFor(() => expect(screen.getByTestId('auth-frame').getAttribute('data-frame')).toBe('1d'));
+    signInThroughTheUI('amber', PASSWORD);
+    await waitFor(() => expect(screen.getByTestId('the-app')).toBeTruthy());
+  });
+
+  it('choosing Personal lifts a sign-out suppression — "just me" means the cookie may sign me in', async () => {
+    localStorage.setItem('tm8ui.auth.autoowner-suppressed.v1', JSON.stringify({ local: true }));
+    server.accounts.set('owner', { ...OWNER_ACCOUNT, password: PASSWORD, isOwner: true });
+    render(<AuthGate>{APP}</AuthGate>);
+    await waitFor(() => expect(screen.getByTestId('auth-frame').getAttribute('data-frame')).toBe('1d'));
+    // A deliberate sign-in lifts it too (`storePass`); re-suppress to isolate the chooser's own act.
+    signInThroughTheUI('owner', PASSWORD);
+    await waitFor(() => expect(screen.getByTestId('auth-frame').getAttribute('data-frame')).toBe('1s'));
+    localStorage.setItem('tm8ui.auth.autoowner-suppressed.v1', JSON.stringify({ local: true }));
+    fireEvent.click(screen.getByRole('button', { name: 'Just me' }));
+    await waitFor(() => expect(screen.getByTestId('the-app')).toBeTruthy());
+    expect(isAutoOwnerSuppressed()).toBe(false);
+  });
+
+  it('the node refusing is shown on the chooser, which stays up', async () => {
+    await claimToChooser();
+    server.modeSource = 'env'; // pinned between the status read and the click
+    fireEvent.click(screen.getByRole('button', { name: 'Just me' }));
+    await waitFor(() => expect(screen.getByText(/pinned by TM8_NODE_MODE/)).toBeTruthy());
+    expect(screen.getByTestId('auth-frame').getAttribute('data-frame')).toBe('1s');
+  });
+});
+
+describe('the account menu\u2019s node-mode row (doc 20 §5.4)', () => {
+  function AppWithMenu() {
+    return (
+      <div data-testid="the-app">
+        <AccountMenu actor={DISPLAY_ACTOR} />
+      </div>
+    );
+  }
+  const row = () => {
+    fireEvent.click(screen.getByTestId('account-menu-trigger'));
+    return screen.getByTestId('account-menu-node-mode');
+  };
+  const opt = (r: HTMLElement, mode: string) => within(r).getByRole('button', { name: mode }) as HTMLButtonElement;
+
+  beforeEach(() => {
+    localStorage.removeItem(NODE_CLAIM_CACHE_KEY);
+  });
+
+  it('the owner tightens personal → server with their pass, and is told to restart', async () => {
+    render(<AuthGate><AppWithMenu /></AuthGate>);
+    await waitFor(() => expect(screen.getByTestId('auth-frame').getAttribute('data-frame')).toBe('1a'));
+    await createAccountThroughTheUI();
+    const r = row();
+    expect(opt(r, 'personal').getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(opt(r, 'server'));
+    await waitFor(() => expect(server.mode).toBe('server'));
+    await waitFor(() => expect(screen.getByTestId('account-menu-node-mode').textContent).toMatch(/Restart the tm8 server/));
+    // Inline, not the first-run frame: the app stays up.
+    expect(screen.getByTestId('the-app')).toBeTruthy();
+  });
+
+  it('loosening asks first, with the warning, then records it', async () => {
+    Object.assign(server, { mode: 'server', modeSet: true, modeSource: 'file', runningMode: 'server' });
+    render(<AuthGate><AppWithMenu /></AuthGate>);
+    await waitFor(() => expect(screen.getByTestId('auth-frame').getAttribute('data-frame')).toBe('1a'));
+    await createAccountThroughTheUI();
+    const r = row();
+    fireEvent.click(opt(r, 'personal'));
+    expect(server.mode).toBe('server'); // nothing sent yet
+    const warning = screen.getByTestId('node-mode-loosen-warning');
+    expect(warning.textContent).toMatch(/trusted as the owner again/);
+    fireEvent.click(within(warning).getByRole('button', { name: /switch to personal/i }));
+    await waitFor(() => expect(server.mode).toBe('personal'));
+  });
+
+  it('a pinned node shows the pin and offers no button', async () => {
+    server.modeSource = 'env';
+    render(<AuthGate><AppWithMenu /></AuthGate>);
+    await waitFor(() => expect(screen.getByTestId('auth-frame').getAttribute('data-frame')).toBe('1a'));
+    await createAccountThroughTheUI();
+    const r = row();
+    expect(r.textContent).toMatch(/set by TM8_NODE_MODE/);
+    for (const mode of ['personal', 'peer', 'server']) expect(opt(r, mode).disabled).toBe(true);
+  });
+
+  it('the auto-owner may tighten but is never offered a loosening', async () => {
+    Object.assign(server, { mode: 'peer', modeSet: true, modeSource: 'file' });
+    server.autoOwner = { ...OWNER_ACCOUNT };
+    server.accounts.set('owner', { ...OWNER_ACCOUNT, password: PASSWORD, isOwner: true });
+    render(<AuthGate><AppWithMenu /></AuthGate>);
+    await waitFor(() => expect(screen.getByTestId('the-app')).toBeTruthy());
+    const r = await waitFor(() => row());
+    expect(opt(r, 'personal').disabled).toBe(true);
+    expect(opt(r, 'server').disabled).toBe(false);
+  });
+
+  it('a non-owner sees no row', async () => {
+    server.accounts.set('amber', { username: 'amber', password: PASSWORD, displayName: 'amber', accountId: 'acct_amber', identityId: 'id_amber' });
+    render(<AuthGate><AppWithMenu /></AuthGate>);
+    await waitFor(() => expect(screen.getByTestId('auth-frame').getAttribute('data-frame')).toBe('1d'));
+    signInThroughTheUI('amber', PASSWORD);
+    await waitFor(() => expect(screen.getByTestId('the-app')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('account-menu-trigger'));
+    expect(screen.queryByTestId('account-menu-node-mode')).toBeNull();
+  });
+});
+
+describe('the inline Peer gate on invite creation (doc 20 §5.5)', () => {
+  function AppWithInvites() {
+    return (
+      <div data-testid="the-app">
+        <InvitesPanel invites={[]} onCreate={async () => undefined} />
+      </div>
+    );
+  }
+
+  beforeEach(() => {
+    localStorage.removeItem(NODE_CLAIM_CACHE_KEY);
+  });
+
+  it('a Personal node puts the switch where the invite button was; switching to Peer brings it back', async () => {
+    render(<AuthGate><AppWithInvites /></AuthGate>);
+    await waitFor(() => expect(screen.getByTestId('auth-frame').getAttribute('data-frame')).toBe('1a'));
+    await createAccountThroughTheUI();
+    expect(screen.getByTestId('require-peer')).toBeTruthy();
+    expect(screen.queryByTestId('invite-create')).toBeNull();
+    fireEvent.click(screen.getByTestId('require-peer-switch'));
+    await waitFor(() => expect(screen.getByTestId('invite-create')).toBeTruthy());
+    expect(server.mode).toBe('peer');
+  });
+
+  it('a Peer node shows the invite button untouched', async () => {
+    Object.assign(server, { mode: 'peer', modeSet: true, modeSource: 'file' });
+    render(<AuthGate><AppWithInvites /></AuthGate>);
+    await waitFor(() => expect(screen.getByTestId('auth-frame').getAttribute('data-frame')).toBe('1a'));
+    await createAccountThroughTheUI();
+    expect(screen.getByTestId('invite-create')).toBeTruthy();
+    expect(screen.queryByTestId('require-peer')).toBeNull();
+  });
+
+  it('a pinned Personal node names the pin and offers no switch', async () => {
+    server.modeSource = 'env';
+    render(<AuthGate><AppWithInvites /></AuthGate>);
+    await waitFor(() => expect(screen.getByTestId('auth-frame').getAttribute('data-frame')).toBe('1a'));
+    await createAccountThroughTheUI();
+    expect(screen.getByTestId('require-peer').textContent).toMatch(/set by TM8_NODE_MODE/);
+    expect(screen.queryByTestId('require-peer-switch')).toBeNull();
   });
 });
 

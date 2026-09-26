@@ -34,6 +34,9 @@ import type {
   AuthLoginResult,
   AuthSessionGetResult,
   AuthSignupResult,
+  NodeModeSetResult,
+  NodeModeSourceView,
+  NodeModeView,
 } from '@tm8/contract';
 import { createHttpClient, type HttpClient } from '../data/real/http';
 import { LOCAL_SERVER_ID, readActiveServerId, routeBaseUrlFor } from '../servers/server-key';
@@ -152,7 +155,7 @@ function toGateAccount(account: {
  * explain is still one the viewer can act on, and paraphrasing it would
  * manufacture precision.
  */
-function failureFrom(err: unknown, act: 'signup' | 'login' | 'logout'): AuthFailure {
+function failureFrom(err: unknown, act: 'signup' | 'login' | 'logout' | 'mode'): AuthFailure {
   if (err instanceof CollabError) {
     if (err.code === 'unauthenticated' && act === 'login') return { kind: 'bad-credentials' };
     if (err.code === 'upstream_unavailable') {
@@ -479,8 +482,26 @@ export function resetLocalAuth(): void {
  */
 export interface NodeClaim {
   claimed: boolean;
-  mode: 'single' | 'multi';
+  /** The RECORDED mode (doc 20 §3.4 as built): what the next boot runs. */
+  mode: NodeModeView;
+  /**
+   * False until someone chooses (or the env pins) a mode. On a CLAIMED node
+   * that is the first-run chooser's cue: it runs after the claim (decision 34).
+   * Optional because a cache written by an older build lacks it — absent is
+   * read as "chosen", never as a reason to show the chooser.
+   */
+  modeSet?: boolean;
+  modeSource?: NodeModeSourceView;
   signupPath: 'claim' | 'invite' | 'admin';
+}
+
+/**
+ * Should the owner be asked to choose a mode? Only on a CLAIMED node that has
+ * not recorded one, and never on a pinned one (no op can move it). Decision 34:
+ * the chooser runs AFTER the claim, so it is never a signed-out card.
+ */
+export function needsModeChoice(claim: NodeClaim | null): boolean {
+  return !!claim && claim.claimed && claim.modeSet === false && claim.modeSource !== 'env';
 }
 
 /** Per-server, so switching servers cannot show one node's state for another. */
@@ -579,13 +600,40 @@ export async function claimNodeOnServer(
       const prior = readCachedNodeClaim();
       writeCachedNodeClaim(serverId, {
         claimed: true,
-        mode: prior?.mode ?? 'single',
+        mode: prior?.mode ?? 'personal',
+        ...(prior?.modeSet !== undefined ? { modeSet: prior.modeSet } : {}),
+        ...(prior?.modeSource !== undefined ? { modeSource: prior.modeSource } : {}),
         signupPath: prior?.signupPath ?? 'admin',
       });
     }
     return storePass(serverId, claimed);
   } catch (err) {
     return { ok: false, failure: failureFrom(err, 'login') };
+  }
+}
+
+/**
+ * `node.mode.set` — record Personal, Peer or Server (doc 20 §5.1).
+ *
+ * Carries the stored pass when there is one (the owner's browser session, which
+ * may loosen) and otherwise rides on the loopback launch cookie (#847) as the
+ * auto-owner (which may only tighten) — the server decides which, and refuses
+ * the rest. The claim is re-read afterwards so the gate and Settings see the
+ * recorded mode at once.
+ *
+ * Choosing PERSONAL clears this browser's auto-owner suppression for the
+ * server: a viewer who once signed out, and has now said "just me", must not be
+ * held on a card the mode they chose exists to skip.
+ */
+export async function setNodeMode(mode: NodeModeView): Promise<AuthResult<NodeModeSetResult>> {
+  const { client, serverId } = clientForActiveServer();
+  try {
+    const result = await client.call<NodeModeSetResult>('node.mode.set', { body: { mode } });
+    if (mode === 'personal') clearAutoOwnerSuppression(serverId);
+    await fetchNodeClaim().catch(() => null);
+    return { ok: true, value: result };
+  } catch (err) {
+    return { ok: false, failure: failureFrom(err, 'mode') };
   }
 }
 

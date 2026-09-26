@@ -469,6 +469,12 @@ export const OPERATIONS = [
   // so triggering it confers nothing on a caller who cannot read the box. It is
   // inert on a claimed node, exactly like the token it mints.
   { name: 'auth.claim.reissue',                          method: 'POST',   path: '/v2/auth/claim/reissue',                                             kind: 'command', status: 'v1' },
+  // `node.mode.set` — record Personal / Peer / Server in `<dataDir>/mode` (doc
+  // 14 §5.2, doc 15 §2). Config, never a graph row: refused outright when
+  // `TM8_NODE_MODE` pins the mode, takes effect at restart, and never takes a
+  // password — every mode needs the node claimed first (decision 34). The read
+  // is `auth.claim.status`, which already carries the mode.
+  { name: 'node.mode.set',                               method: 'PUT',    path: '/v2/node/mode',                                                      kind: 'command', status: 'v1' },
   // `auth.launch` — the one-time no-login URL `tm8 open` prints (plan W2, K4).
   // The loopback auto-owner arm needs the launch cookie that URL sets, so a
   // local process with no token is anonymous. Only the node owner's HUMAN

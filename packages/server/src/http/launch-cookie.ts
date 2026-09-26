@@ -168,6 +168,18 @@ export function createLaunchCookieIssuer(
   };
 }
 
+/**
+ * Whether a node gets a launch cookie issuer at all: only where the loopback
+ * owner arm is live and the cookie is `required`. `server` implies the kill
+ * switch (node modes S2), so a Server node never mints a `/launch/` URL, while
+ * Personal and Peer keep the desktop window's one-time URL over IPC.
+ */
+export function wantsLaunchCookie(
+  config: { readonly disableAutoOwner?: boolean; readonly autoOwnerCookie?: 'required' | 'off' },
+): boolean {
+  return config.disableAutoOwner !== true && config.autoOwnerCookie !== 'off';
+}
+
 /** Load (creating on first boot) the node's launch cookie key and build the issuer. */
 export async function loadLaunchCookieIssuer(dataDir: string): Promise<LaunchCookieIssuer> {
   return createLaunchCookieIssuer(await loadOrCreateNodeKeyFile(dataDir, LAUNCH_COOKIE_KEY_FILE));

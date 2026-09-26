@@ -225,6 +225,18 @@ export const SERVER_GROUPED_RAIL: UnavailableReason = {
   remedy: 'the rail is shell/MenuRail.tsx and its Phase-2 server grouping is that seat’s work — this frame builds only its own toast',
 };
 
+/** 1s — choose a node mode (review board only; the gate's buttons are live). */
+export const CHOOSE_NODE_MODE: UnavailableReason = {
+  cause: 'Choosing a node mode isn’t connected here',
+  remedy: 'this surface renders outside the auth gate and has no executor — inside the gate, after the claim, this verb performs node.mode.set for real',
+};
+
+/** 1r — dismiss the restart notice (review board only). */
+export const DISMISS_RESTART_NOTICE: UnavailableReason = {
+  cause: 'There is no node to continue into here',
+  remedy: 'this surface renders outside the auth gate and has no executor — inside the gate this returns to the app, which keeps running in the old mode until the restart',
+};
+
 /** Every reason above, for the sweep tests and the handover's GAPS table. */
 export const ALL_AUTH_REASONS: readonly UnavailableReason[] = [
   CLAIM_TOKEN_REQUIRED,
@@ -251,4 +263,6 @@ export const ALL_AUTH_REASONS: readonly UnavailableReason[] = [
   REVOKE_TOKEN,
   COPY_TOKEN,
   SERVER_GROUPED_RAIL,
+  CHOOSE_NODE_MODE,
+  DISMISS_RESTART_NOTICE,
 ];

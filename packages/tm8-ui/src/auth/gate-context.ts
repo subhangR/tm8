@@ -21,6 +21,7 @@
  * only the gate supplies. The law is structural rather than remembered.
  */
 import { createContext, useContext } from 'react';
+import type { NodeModeSetResult, NodeModeView } from '@tm8/contract';
 import type { NodeClaim } from './session';
 import type { AuthSessionState } from './useAuthSession';
 
@@ -36,6 +37,7 @@ export type AuthActions = Pick<
   | 'clearFailure'
   | 'account'
   | 'accounts'
+  | 'signedInWith'
 > & {
   /**
    * What the NODE says about itself, or null if it has not answered.
@@ -48,6 +50,13 @@ export type AuthActions = Pick<
    * defect this lane removed from the gate.
    */
   nodeClaim: NodeClaim | null;
+  /**
+   * `node.mode.set`, then the gate re-reads the claim. Resolves to the result,
+   * or null with `failure` set. A result with `restartRequired` puts the gate on
+   * frame 1r until `dismissModeNotice`.
+   */
+  chooseMode(mode: NodeModeView): Promise<NodeModeSetResult | null>;
+  dismissModeNotice(): void;
 };
 
 export const AuthActionsContext = createContext<AuthActions | null>(null);

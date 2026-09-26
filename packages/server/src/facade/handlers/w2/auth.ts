@@ -62,6 +62,7 @@ import { json, type OperationHandler, type RequestContext } from '../../../http/
 import type { FacadeDeps } from '../../deps.js';
 import type { HandlerRegistry } from '../../registry.js';
 import { claimsFor } from '../../context.js';
+import { reportedNodeMode } from './node-mode.js';
 import {
   changePassword,
   claimNode,
@@ -440,10 +441,12 @@ function authClaim(deps: FacadeDeps): OperationHandler {
 function authClaimStatus(deps: FacadeDeps): OperationHandler {
   return async () => {
     const claimed = await nodeIsClaimed(deps.db);
-    const mode = deps.config.nodeMode ?? 'single';
     const result: AuthClaimStatusResult = {
       claimed,
-      mode,
+      // The RECORDED mode (see `reportedNodeMode`). `modeSet: false` on an
+      // unclaimed node is the first-run chooser; the env file's path is never
+      // reported here.
+      ...reportedNodeMode(deps.config),
       // Unclaimed: the claim token is the only way in. Claimed: an invite now
       // authorizes its bearer to self-signup (`auth.invite.signup`, 141), so
       // `invite` is the honest answer — the exact change §10.0 required in the

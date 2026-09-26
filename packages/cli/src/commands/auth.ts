@@ -347,7 +347,7 @@ async function authClaimStatus(cmd: CommandContext): Promise<ExitCode> {
   );
   cmd.out.data(data, (result) => {
     const lines = [
-      `node: ${result.claimed ? 'claimed' : 'UNCLAIMED'} · mode ${result.mode}`,
+      `node: ${result.claimed ? 'claimed' : 'UNCLAIMED'} · mode ${result.mode}${result.modeSet ? '' : ' (default)'}`,
     ];
     if (!result.claimed) {
       lines.push(
