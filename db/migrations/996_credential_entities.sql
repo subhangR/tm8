@@ -1,9 +1,9 @@
 -- =============================================================================
--- 999 (PLACEHOLDER NUMBER) — credential entities, W10a (task 01a0d9fd, doc 13
+-- 996 (PLACEHOLDER NUMBER) — credential entities, W10a (task 01a0d9fd, doc 13
 -- 01a0da24 §4/§7, threat review 01a0db1c Part 2).
 --
--- The merge coordinator assigns the real number at handover (W10 starts at
--- 238); this file is renamed then and the sweep.test.ts pin bumped.
+-- The merge coordinator assigns the real number at handover (239 for this
+-- file; W10 order a, c, b); it is renamed then and the sweep.test.ts pin bumped.
 --
 -- A 206 space credential becomes a graph entity of the RESTRICTED kind
 -- `credential`, same id as its side-table row. The card (entity) is visible to
