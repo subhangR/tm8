@@ -267,12 +267,11 @@ export function groupDone(steps: readonly ToolStepWords[]): string {
 
 /* ── graph operations ─────────────────────────────────────────────────── */
 
-const STATUS_OPS = new Set([
-  'entities.commands.work',
-  'entities.commands.complete',
-  'entities.commands.tick',
-  'entities.commands.pull',
-]);
+/** The only two operations that change a status — the same two the ledger
+ *  folds as transitions, so a `Moved` step always has its outcome above it.
+ *  `tick` checks off acceptance criteria and `pull` pins a version; neither
+ *  moves anything. */
+const STATUS_OPS = new Set(['entities.commands.work', 'entities.commands.complete']);
 const EDIT_OPS = new Set(['entities.patch', 'entities.header.set', 'entities.header.clear']);
 const MOVE_OPS = new Set(['entities.move', 'placements.apply']);
 
@@ -313,6 +312,13 @@ function graphWords(
     const tail = to ? ` to ${to}` : '';
     return {
       ...phrase('status', `Moving ${subject}${tail}`, `Moved ${subject}${tail}`, (n) => `Moved ${n} entities`),
+      detail: null,
+    };
+  }
+  if (operation === 'entities.commands.tick') {
+    const subject = targetTitle ? quote(targetTitle) : article(kindWord(target?.kind ?? 'entity', 1));
+    return {
+      ...phrase('tick', `Ticking criteria on ${subject}`, `Ticked criteria on ${subject}`, (n) => `Ticked criteria ${n} times`),
       detail: null,
     };
   }

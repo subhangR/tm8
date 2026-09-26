@@ -141,6 +141,22 @@ describe('describeToolStep — human words, classified by operation first', () =
     ).toBe('Edited “Ship it”');
   });
 
+  it('never words tick or pull as a status move — neither changes a status', () => {
+    const labels = new Map([[TASK_A, { kind: 'task', title: 'Ship it' }]]);
+    const tick = describeToolStep(
+      'mcp__tm8__tm8_act',
+      { operation: 'entities.commands.tick', params: { id: TASK_A }, body: { criterionIds: ['c1'], done: true } },
+      undefined,
+      labels,
+    );
+    expect(tick).toMatchObject({ active: 'Ticking criteria on “Ship it”', done: 'Ticked criteria on “Ship it”', merges: false });
+    const pull = describeToolStep('mcp__tm8__tm8_act', { operation: 'entities.commands.pull', params: { id: TASK_A } }, undefined, labels);
+    expect(pull.done).toBe('Updated the graph');
+    for (const words of [tick, pull]) {
+      expect(`${words.active} ${words.done}`).not.toMatch(/Mov(ing|ed)/);
+    }
+  });
+
   it('words doc and artifact tools as creates and edits, not as durable-output cards (D17)', () => {
     expect(describeToolStep('mcp__tm8__doc_create', { title: 'Design — steps', body: '#' }).active)
       .toBe('Creating doc “Design — steps”');
