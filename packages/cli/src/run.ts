@@ -290,7 +290,13 @@ async function dispatch(
     // prompt for the one command that mints the session this needs.
     if (err instanceof ApiError && err.code === 'forbidden' && err.message.includes('auth.space.enter')) {
       const space = ctx.space?.value;
-      err.hint = space
+      // Through a space link the gate is HOME's: the linked Space is reached
+      // only by the link, so entering it would be the wrong fix (W7).
+      err.hint = ctx.link
+        ? `the refusal came through the space link on this session's Space ${ctx.link.homeSpaceId}; ` +
+          `do not enter the linked Space ${ctx.link.targetSpaceId} — this session must be pinned to its own Space ` +
+          `(\`tm8 auth space enter ${ctx.link.homeSpaceId}\`), or ask your human`
+        : space
         ? `this Server needs a session pinned to the space: run \`tm8 auth space enter ${space}\`, then retry`
         : 'this Server needs a session pinned to a space: run `tm8 auth space enter <space-id>`, then retry with --space <space-id>';
       throw err;

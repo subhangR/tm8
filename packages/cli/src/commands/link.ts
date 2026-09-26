@@ -37,8 +37,20 @@ const TOKEN_SHAPES: readonly RegExp[] = [
   /[0-9a-fA-F]{32,}/g,
 ];
 
+/**
+ * A long alias or name: lowercase words joined by `-` or `_`, none longer than
+ * 20. A random base64url run of 40+ is never all-lowercase with short words,
+ * so this keeps `my-research-space-for-the-quarterly-review` and still
+ * redacts a secret (the hex and tm8-prefix shapes apply regardless).
+ */
+const NAME_SHAPE = /^[a-z0-9]{1,20}(?:[-_][a-z0-9]{1,20})+$/;
+
 export function scrubText(text: string): string {
-  return TOKEN_SHAPES.reduce((acc, shape) => acc.replace(shape, REDACTED), text);
+  const [prefixed, longRun, hex] = TOKEN_SHAPES as [RegExp, RegExp, RegExp];
+  return text
+    .replace(prefixed, REDACTED)
+    .replace(longRun, (run) => (NAME_SHAPE.test(run) ? run : REDACTED))
+    .replace(hex, REDACTED);
 }
 
 export function scrubSecrets<T>(value: T): T {
