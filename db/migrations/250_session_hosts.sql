@@ -1,5 +1,5 @@
 -- =============================================================================
--- 249 — session_hosts: where this node's detached session hosts live, and the
+-- 250 — session_hosts: where this node's detached session hosts live, and the
 -- token that proves a server may drive one (task 01a0db31, design doc
 -- 01a0db5e §D4/R5).
 --
@@ -118,13 +118,13 @@ reset role;
 do $verify$
 begin
   if to_regclass('internal.session_hosts') is null then
-    raise exception 'VERIFY 249: internal.session_hosts was not created';
+    raise exception 'VERIFY 250: internal.session_hosts was not created';
   end if;
   if has_table_privilege('tm8_app', 'internal.session_hosts', 'select') then
-    raise exception 'VERIFY 249: tm8_app must not read session host tokens directly';
+    raise exception 'VERIFY 250: tm8_app must not read session host tokens directly';
   end if;
   if not has_function_privilege('tm8_app', 'public.session_host_list(text)', 'execute') then
-    raise exception 'VERIFY 249: tm8_app cannot execute session_host_list';
+    raise exception 'VERIFY 250: tm8_app cannot execute session_host_list';
   end if;
 end
 $verify$;

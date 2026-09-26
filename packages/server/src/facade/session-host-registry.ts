@@ -1,5 +1,5 @@
 /**
- * The session host registry over migration 249's node-admin RPCs (task
+ * The session host registry over migration 250's node-admin RPCs (task
  * 01a0db31, design doc 01a0db5e R5). Rows are this node's: every call carries
  * `nodeId`, and the table itself is unreadable to tm8_app — the controller
  * token in it drives every agent its host holds.
