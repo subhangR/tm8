@@ -541,10 +541,10 @@ footer.site { border-top: 1px solid var(--line-strong); color: var(--muted); fon
 
         <div class="term command-plate" aria-label="Command and truthful output">
           <div class="term__bar" aria-hidden="true"><span class="term__name">northlake — lane transcript</span><span class="term__tag">pty</span></div>
-          <pre><span class="p" id="lane-command">tm8 project add 01a09d90-7777-7777-8777-123456789abc --space 01a09e00-0000-7000-8000-1c2d3e4f5a6b</span>
+          <pre><span class="p" id="lane-command">tm8 project link 01a09d90-7777-7777-8777-123456789abc --space 01a09e00-0000-7000-8000-1c2d3e4f5a6b</span>
 <span class="out" id="lane-output">projectId (ProjectResource): 01a09d90-7777-7777-8777-123456789abc
 spaceId: 01a09e00-0000-7000-8000-1c2d3e4f5a6b
-projectEntityId (per-Space projection entity): returned by spaces.projects.create as projectId</span></pre>
+projectEntityId (per-Space projection entity): not part of the frozen projects.link result</span></pre>
         </div>
 
         <div class="visually-hidden" id="lane-text-alternative">
@@ -592,8 +592,8 @@ projectEntityId (per-Space projection entity): returned by spaces.projects.creat
 
   <section aria-labelledby="project-title">
     <h2 id="project-title"><span class="no">04</span>Link the project; track the delivery later</h2>
-    <p><code>project add</code> names a Space's project on a folder (ProjectResource) granted to that Space; a folder belongs to one Space. Pass that ProjectResource id to <code>session spawn --launch-project</code>. The resulting Space-local <code>project</code> entity is a different identifier domain.</p>
-    <div class="gap-card"><b>Two ids.</b>The <code>spaces.projects.create</code> result carries the folder (ProjectResource) id and the Space's own project entity id. The CLI prints both; it does not substitute one id for the other.</div>
+    <p><code>project link</code> links a ProjectResource into a Space. Pass that ProjectResource id to <code>session spawn --launch-project</code>. The resulting Space-local <code>project</code> entity is a different identifier domain.</p>
+    <div class="gap-card"><b>Current output limitation.</b>The frozen <code>projects.link</code> result carries the ProjectResource id and Space id, but not the per-Space <code>projectEntityId</code>. The CLI names that absence; it does not substitute one id for the other.</div>
     <div class="edge-touch" aria-label="A light preview of the tracks edge">
       <div class="edge-node"><svg class="ki" aria-hidden="true"><use href="#ki-task"/></svg> Ship invite flow<span class="edge-node__kind">task · source</span></div>
       <div class="edge-line"><code>tracks</code></div>
@@ -798,7 +798,7 @@ projectEntityId (per-Space projection entity): returned by spaces.projects.creat
   ];
 
   var commands = [
-    ['tm8 project add 01a09d90-7777-7777-8777-123456789abc --space 01a09e00-0000-7000-8000-1c2d3e4f5a6b', 'projectId (ProjectResource): 01a09d90-7777-7777-8777-123456789abc\nspaceId: 01a09e00-0000-7000-8000-1c2d3e4f5a6b\nprojectEntityId (per-Space projection entity): returned by spaces.projects.create as projectId'],
+    ['tm8 project link 01a09d90-7777-7777-8777-123456789abc --space 01a09e00-0000-7000-8000-1c2d3e4f5a6b', 'projectId (ProjectResource): 01a09d90-7777-7777-8777-123456789abc\nspaceId: 01a09e00-0000-7000-8000-1c2d3e4f5a6b\nprojectEntityId (per-Space projection entity): not part of the frozen projects.link result'],
     ['tm8 session spawn --teammate 01a09e11-4444-7444-8444-ddddddddddd4 --task 01a09f21-4c00-7a11-8b2e-0d3f5a7c9e11 --launch-project 01a09d90-7777-7777-8777-123456789abc --workdir worktree --base-ref main', '01a09f40-8a40-7e55-8f62-4b7d9e1a3c55 spawning'],
     ['tm8 entity context 01a09f40-8a40-7e55-8f62-4b7d9e1a3c55 --format json', '{\n  "root": { "state": { "workdirMode": "worktree", "checkoutBranch": "tm8/01a09f40" } },\n  "edges": [{ "type": "in_project" }, { "type": "in_worktree" }]\n}'],
     ['tm8 session checkpoint 01a09f40-8a40-7e55-8f62-4b7d9e1a3c55 --message "before redirect rewrite"', 'checkpoint 7bd2c31 on tm8/01a09f40 (3 file(s)):\n  M  packages/app/auth.ts\n  M  packages/app/redirect.ts\n  A  packages/app/redirect.test.ts\nrollback with: tm8 session rollback 01a09f40-8a40-7e55-8f62-4b7d9e1a3c55 --to 7bd2c31'],

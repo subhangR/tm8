@@ -115,7 +115,7 @@ beforeAll(async () => {
   });
   const projectId = (project as { project?: { id: string } }).project?.id ?? (project as { id?: string }).id;
   if (!projectId) throw new Error(`projects.create returned no id: ${JSON.stringify(project)}`);
-  await post(`/v2/spaces/${spaceId}/projects`, { clientMutationId: cmid(), folderId: projectId })
+  await post(`/v2/spaces/${spaceId}/projects`, { clientMutationId: cmid(), projectId })
     .catch(() => undefined);
 
   const db = await scratchUrl('wtgit2');

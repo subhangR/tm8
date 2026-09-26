@@ -116,7 +116,7 @@ import type {
   ProjectFolderUploadAbortInput, ProjectFolderUploadCompleteInput,
   ProjectFolderUploadEntry, ProjectFolderUploadFileGrant, ProjectFolderUploadGrant,
   ProjectFolderUploadInitInput, ProjectFolderUploadResult,
-  ProjectResource,
+  ProjectLinkInput, ProjectResource,
   SpaceProject, SpaceProjectCreateInput, GateFolder, GateFolderGrant, GateFolderCreateInput, GateFolderCreateResult,
   ProjectTrustLevel, ProjectUpdateInput, ProposeInteractionProfileInput,
   PullInput, PullState, ReactionInput, RemoveMessageAttachmentsInput,
@@ -3111,7 +3111,12 @@ export const ProjectUpdateInputSchema: z.ZodType<ProjectUpdateInput> = z.object(
   defaults: ProjectDefaultsSchema.optional(),
 }).strict();
 
-// W11 (migration 231): space-owned projects over gate-owned folders.
+export const ProjectLinkInputSchema: z.ZodType<ProjectLinkInput> = z.object({
+  ...commandContextShape,
+  projectId: ProjectIdSchema,
+}).strict();
+
+// W11 (migration 234): space-owned projects over gate-owned folders.
 export const SpaceProjectSchema: z.ZodType<SpaceProject> = z.object({
   id: EntityIdSchema,
   spaceId: SpaceIdSchema,

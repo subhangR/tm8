@@ -764,7 +764,7 @@ export function FilesExplorerScreen({ port, onNotice }: FilesExplorerScreenProps
               ? 'Use “Import folder” to bring a local folder in as a linked project, '
               : ''}
             {port.importFolder ? 'or link ' : 'Link '}an existing one from the CLI:{' '}
-            <code className="fx-code">tm8 project add &lt;folder-id&gt; --space &lt;space&gt;</code>.
+            <code className="fx-code">tm8 project link &lt;project-id&gt; --space &lt;space&gt;</code>.
           </p>
         ) : null}
       </aside>

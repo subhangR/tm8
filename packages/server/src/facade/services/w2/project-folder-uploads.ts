@@ -307,7 +307,7 @@ export class W2ProjectFolderUploadService {
       throw new CollabError('invalid_input', (error as Error).message);
     }
 
-    // W11 (231): the folder is the gate's, granted to ONE space. The caller is
+    // W11 (234): the folder is the gate's, granted to ONE space. The caller is
     // a node admin by ACCOUNT (requireNodeAdmin above); the gate RPCs re-check
     // that fact (`internal.require_node_admin`) and also read the claim, so the
     // grant runs with the claim set to the fact — never wider than the account.

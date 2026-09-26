@@ -18,7 +18,8 @@ Manual scans force refresh. Spawn scans the project's roots and homes before
 loading context; no-project spawns scan only home/provider conventions. Successful
 scans debounce for 30 seconds and concurrent callers share work. Project creation
 scans existing associations; because creation is node-wide, the initial reference
-scan normally happens when `spaces.projects.create` (W11) names the space's project on the folder.
+scan normally happens when `projects.link` or `spaces.projects.create` (W11)
+establishes the space association.
 
 `frontmatter` preserves parsed SKILL.md keys unchanged. `loader_metadata` carries
 `openai` (the whole sidecar), `enabled`, `codexDisabled`, `legacyCommand`, and

@@ -1396,6 +1396,17 @@ const ROWS: Record<OperationName, Row> = {
     authz: 'project',
     input: 'bound',
   },
+  'projects.link': {
+    cmd: ['project', 'link'],
+    syn: 'tm8 project link <project-resource-id> [--space <space-id>] [--mutation-id <id>]',
+    sum: 'Link a ProjectResource into a Space and materialize its restricted projection',
+    authz: 'space',
+    input: 'bound',
+    notes: [
+      'the result carries BOTH identities: the ProjectResource id and the per-Space projection entity id — they are never interchangeable',
+      'decision 29: one folder may be linked into several Spaces only on a loopback-only single node; everywhere else a folder that belongs to another Space is refused: this folder belongs to another space',
+    ],
+  },
   'spaces.projects.list': {
     cmd: ['project', 'space-list'],
     syn: 'tm8 project space-list [--space <space-id>]',
@@ -1411,7 +1422,6 @@ const ROWS: Record<OperationName, Row> = {
     input: 'bound',
     notes: [
       'requires the Space owner/admin capability; a folder granted to another Space is refused: this folder belongs to another space',
-      'replaces `project link` (W11): a folder reaches a Space only by a gate grant',
     ],
   },
   'gate.folders.list': {
@@ -3035,8 +3045,8 @@ function exposureFor(operation: OperationName): Exposure {
 // 2026-08-13 (first-run claim): auth.claim + auth.claim.status take the catalog
 // to 161 rows. RECOMPUTED from `JSON.stringify(OPERATIONS)`, not adjusted.
 export const CATALOG_DIGEST =
-  // Re-measured for W11 (-projects.link, +spaces.projects.list/create,
-  // +gate.folders.list/create) — read from the regenerated conformance manifest.
+  // Re-measured for W11 (+spaces.projects.list, +spaces.projects.create at
+  // /projects/create, +gate.folders.list/create; projects.link stays, decision 29) — read from the regenerated conformance manifest.
   // Re-measured 141 (+ auth.password.change, auth.invite.signup,
   // auth.claim.reissue) — read from the regenerated conformance manifest, never
   // hand-derived.
@@ -3065,7 +3075,8 @@ export const CATALOG_DIGEST =
   // Re-measured (Forms W3 merged with headers I4): + forms.responses.redeliver, forms.pendingForSessions. Read from the failing digest test.
   // Re-measured (I9b): + launch.defaults. Read from the failing digest test.
   // Re-measured (entity chat G): + spaces.chatDefaults.get/set. RECOMPUTED from JSON.stringify(OPERATIONS).
-  'sha256:3e308e7c93717cd9d972dc35a5b3753d237ee27e05c7fb6b50ff1554971b8074';
+  // Re-measured (W11, decision 29): + spaces.projects.list/create, gate.folders.list/create; projects.link stays. Read from the failing digest test.
+  'sha256:90b14327553c62db4cd25f0088af80a3ff54d05df89a008ba551792fb5321125';
 
 export const GRAMMAR_VERSION = '2';
 

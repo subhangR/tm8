@@ -19,6 +19,7 @@ import {
   type GateFolderCreateResult,
   type ProjectResource,
   type SpaceProject,
+  type ProjectLinkInput,
   type SpaceProjectCreateInput,
   type ProjectUpdateInput,
 } from '@tm8/contract';
@@ -80,7 +81,7 @@ interface LinkMutationResult {
 }
 
 /**
- * One row of `public.resolve_project_ref` (231): entity -> grant -> path.
+ * One row of `public.resolve_project_ref` (234): entity -> grant -> path.
  * `working_dir` is for the SERVER (git, spawn, files) and reaches a client
  * only when the caller is a gate admin.
  */
@@ -267,7 +268,7 @@ function normalizeFrozenProjectReason(error: unknown): never {
   if (isCollabError(error)) {
     const details = error.details as Record<string, unknown> | undefined;
     const reason = typeof details?.detail === 'string' ? details.detail : undefined;
-    if (reason && ['project_not_linked', 'project_over_cap', 'project_association_cap'].includes(reason)) {
+    if (reason && ['project_not_linked', 'project_over_cap', 'project_association_cap', 'folder_granted_elsewhere'].includes(reason)) {
       const { detail: _detail, ...rest } = details ?? {};
       throw new CollabError(error.code, error.message, {
         details: { ...rest, reason },
@@ -477,7 +478,7 @@ export class W2ProjectsAssociationsService {
   };
 
   /**
-   * `projects.list`. W11 (231): the node-wide folder list is the gate's
+   * `projects.list`. W11 (234): the node-wide folder list is the gate's
    * (`gate.folders.list` is its successor); with `?spaceId=` it is the
    * member's view of that space's projects, kept in the legacy
    * `ProjectResource` shape (id = the folder id every client still keys on,
@@ -515,7 +516,7 @@ export class W2ProjectsAssociationsService {
     }));
   };
 
-  /** Folder paths for a gate admin (RLS: `projects_select` is gate-only since 231); empty for anyone else. */
+  /** Folder paths for a gate admin (RLS: `projects_select` is gate-only since 234); empty for anyone else. */
   private async gatePaths(claims: DbClaims, folderIds: readonly string[]): Promise<Map<string, string>> {
     if (!isGateAdmin(claims) || folderIds.length === 0) return new Map();
     const rows = await this.deps.db.query<{ id: string; working_dir: string }>(
@@ -929,6 +930,31 @@ export class W2ProjectsAssociationsService {
     const row = rows[0];
     if (!row) throw new CollabError('not_found', `no such folder: ${raw.folderId}`);
     return { folder: toGateFolder(row), created: raw.created };
+  };
+
+  /**
+   * `projects.link` — link a folder into a space. It stays (decision 29): the
+   * database decides whether a folder already granted to another space may be
+   * linked again, from the node policy the server wrote at boot. Only a
+   * loopback-only `single` node allows it; everywhere else it is refused with
+   * "this folder belongs to another space" (T30).
+   */
+  readonly linkProject = async (ctx: RequestContext): Promise<LinkMutationResult & { patches: [] }> => {
+    const owner = await this.deps.owner();
+    const spaceId = requireUuidParam(ctx, 'spaceId');
+    const input = ctx.body as ProjectLinkInput;
+    const envelope = commandEnvelope(ctx);
+    try {
+      const raw = await this.deps.db.rpc<LinkMutationResult>(
+        claimsFor(owner, ctx, envelope),
+        'link_project_w2',
+        [spaceId, input.projectId, envelope.actorId ?? null, envelope.clientMutationId ?? null],
+      );
+      await scanSpaceSkills(this.deps.db, claimsFor(owner, ctx, envelope), raw.spaceId, { root: raw.projectId });
+      return { spaceId: raw.spaceId, projectId: raw.projectId, patches: [] };
+    } catch (error) {
+      normalizeFrozenProjectReason(error);
+    }
   };
 
   readonly unlinkProject = async (ctx: RequestContext): Promise<LinkMutationResult & { patches: [] }> => {

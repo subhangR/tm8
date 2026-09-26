@@ -13,7 +13,7 @@
  *   projectEntityId — the per-Space projection entity. Space-level. What graph
  *                     commands (`entity get`, edges, `--attach-to`) address.
  *
- * `project add` (W11, the successor of `project link`) and `project unlink` are
+ * `project link`, `project add` (W11) and `project unlink` are
  * where both exist at once, so they render both, name both, and NEVER print one
  * where the other belongs — including when the node answers without the
  * projection id, where they say exactly that instead of quietly reusing the
@@ -371,6 +371,39 @@ async function projectUpdate(cmd: CommandContext): Promise<ExitCode> {
 }
 
 /**
+ * `project link <folder-id>` — link a folder into a Space (`projects.link`).
+ * Decision 29: it stays. On a loopback-only `single` node one folder may be
+ * linked into several of your Spaces; on every other node a folder that
+ * belongs to another Space is refused ("this folder belongs to another space").
+ */
+async function projectLink(cmd: CommandContext): Promise<ExitCode> {
+  const projectId = requireArg(cmd.args[0], 'project link', '<project-resource-id>');
+  const spaceId = requireSpace(cmd.ctx);
+  const body: Record<string, unknown> = {
+    projectId,
+    clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
+  };
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'projects.link', {
+    params: { spaceId },
+    body: withActor(cmd, body),
+  });
+
+  if (projectionIdOf(data) === undefined) {
+    // A FACT ABOUT THE CONTRACT, not a complaint about the node: `projects.link`
+    // carries no `projectEntityId` in the frozen schemas, so this result is
+    // complete as specified. Said out loud because the two ids are distinct
+    // domains and a caller looking for the projection entity must not conclude
+    // that `projectId` is it.
+    cmd.out.note(
+      'note: the frozen projects.link result carries the ProjectResource id and the Space id only. ' +
+        'The per-Space projection entity id is a separate identifier domain and is not part of this response.',
+    );
+  }
+  cmd.out.data(data, renderLink);
+  return EXIT_OK;
+}
+
+/**
  * `project space-list` — the Space's projects (W11): each is the Space's own
  * project entity over a folder granted to that Space. No path: the folder is
  * the gate's.
@@ -387,8 +420,8 @@ async function projectSpaceList(cmd: CommandContext): Promise<ExitCode> {
 
 /**
  * `project add <folder-id>` — a Space admin names the Space's project on a
- * folder granted to that Space. Replaces `project link` (W11): a folder that
- * belongs to another Space is refused.
+ * folder granted to that Space (W11). A folder that belongs to another Space
+ * is refused.
  */
 async function projectAdd(cmd: CommandContext): Promise<ExitCode> {
   const folderId = requireArg(cmd.args[0], 'project add', '<folder-id>');
@@ -755,6 +788,7 @@ export const PROJECT_COMMANDS: CommandModule[] = [
   { path: ['project', 'file-history'], run: projectFileHistory },
   { path: ['project', 'blame'], run: projectBlame },
   { path: ['project', 'update'], run: projectUpdate },
+  { path: ['project', 'link'], run: projectLink },
   { path: ['project', 'space-list'], run: projectSpaceList },
   { path: ['project', 'add'], run: projectAdd },
   { path: ['project', 'folders'], run: projectFolders },

@@ -159,11 +159,11 @@ describe('ops: launch resources', () => {
       body: expect.objectContaining({ ensureWorkingDir: true }),
     });
 
-    await ops.linkProject('space-1', { folderId: 'project-1', clientMutationId: 'link-1' });
+    await ops.linkProject('space-1', { projectId: 'project-1', clientMutationId: 'link-1' });
     expect(f.last()).toMatchObject({
       method: 'POST',
       url: '/v2/spaces/space-1/projects',
-      body: { folderId: 'project-1', clientMutationId: 'link-1' },
+      body: { projectId: 'project-1', clientMutationId: 'link-1' },
     });
   });
 

@@ -3,7 +3,7 @@ import { basename, isAbsolute } from 'node:path';
 import type { Db, DbClaims } from '../db/types.js';
 import type { LoopbackOwner } from '../identity/loopback.js';
 import { ensureDefaultTeammates } from './default-teammates.js';
-import { pickOwningSpace } from '../projects/owning-space.js';
+import { launchFolderSpace } from '../projects/owning-space.js';
 
 interface SpaceRow { id: string; created_by_owner: boolean; created_at: Date | string }
 interface ProjectRow { id: string; trust: 'trusted' | 'untrusted' }
@@ -80,7 +80,7 @@ export async function ensureLaunchResources(args: {
     );
   }
 
-  // W11 (231): a folder is granted to ONE space. On a fresh node that is the
+  // W11 (234): a folder is granted to ONE space. On a fresh node that is the
   // owner's personal/first space (the K13 tie-break: no activity yet); when the
   // folder is already granted — by an earlier boot or a gate admin — the grant
   // is left exactly where it is.
@@ -90,9 +90,8 @@ export async function ensureLaunchResources(args: {
     [project.id],
   );
   if (granted.length === 0) {
-    const target = pickOwningSpace(spaces.map((space) => ({
+    const target = launchFolderSpace(spaces.map((space) => ({
       spaceId: space.id,
-      activity30d: 0,
       createdByOwner: space.created_by_owner === true,
       createdAt: space.created_at instanceof Date ? space.created_at.toISOString() : String(space.created_at),
     })));

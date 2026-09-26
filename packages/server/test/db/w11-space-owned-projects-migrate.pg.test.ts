@@ -1,11 +1,11 @@
 /**
- * W11 (plan 01a0d9eb §3, migrations 232 + 233) — a node that ALREADY has a
+ * W11 (plan 01a0d9eb §3, migrations 234 + 235) — a node that ALREADY has a
  * folder linked into two spaces still migrates, and every chat, work session
  * and worktree that existed before keeps opening the right folder.
  *
  * The chain is applied up to 231, an old-shaped node is seeded at that level
  * (folder F linked into A AND B, the shape 7 folders have on the perf copy),
- * then 232 and 233 are applied on top. Nothing here runs against anything but
+ * then 234 and 235 are applied on top. Nothing here runs against anything but
  * this scratch database.
  */
 import { randomUUID } from 'node:crypto';
@@ -20,10 +20,10 @@ import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 240_000 });
 
 const ordinal = (file: string): number => Number(file.slice(0, 3));
-const BEFORE = migrationFiles().filter((f) => ordinal(f) < 232);
-const W11_MODEL = migrationFiles().filter((f) => f === '232_space_owned_projects.sql');
-const W11_BACKFILL = migrationFiles().filter((f) => f === '233_space_owned_projects_backfill.sql');
-const AFTER = migrationFiles().filter((f) => ordinal(f) > 233);
+const BEFORE = migrationFiles().filter((f) => ordinal(f) < 234);
+const W11_MODEL = migrationFiles().filter((f) => f === '234_space_owned_projects.sql');
+const W11_BACKFILL = migrationFiles().filter((f) => f === '235_space_owned_projects_backfill.sql');
+const AFTER = migrationFiles().filter((f) => ordinal(f) > 235);
 
 let database: W1ScratchDatabase;
 let db: Db;
@@ -39,7 +39,7 @@ const ids = {
   memberHC: randomUUID(),
   personaA: randomUUID(),
   personaB: randomUUID(),
-  /** Linked into A AND B before 232 — the double-linked shape. */
+  /** Linked into A AND B before 234 — the double-linked shape. */
   folderF: randomUUID(),
   /** Linked into A only. */
   folderG: randomUUID(),
@@ -110,7 +110,7 @@ async function seedOldShape(): Promise<void> {
        values ($1, 'W11 F', '/tmp/w11-folder-f', 'trusted'), ($2, 'W11 G', '/tmp/w11-folder-g', 'trusted')`,
       [ids.folderF, ids.folderG],
     );
-    // The double link: legal before 232 (the cap was 16 spaces per folder).
+    // The double link: legal before 234 (the cap was 16 spaces per folder).
     await q.query(
       `insert into public.space_projects(space_id, project_id, linked_by)
        values ($1, $3, $5), ($2, $3, $6), ($1, $4, $5)`,
@@ -179,8 +179,8 @@ afterAll(async () => {
   await database?.destroy();
 }, 180_000);
 
-describe('232 on a node with a double-linked folder', () => {
-  it('the chain has exactly one 232 and one 233', () => {
+describe('234 on a node with a double-linked folder', () => {
+  it('the chain has exactly one 234 and one 235', () => {
     expect(W11_MODEL).toHaveLength(1);
     expect(W11_BACKFILL).toHaveLength(1);
   });
@@ -227,7 +227,7 @@ describe('232 on a node with a double-linked folder', () => {
     )).toBe('ok');
   });
 
-  it('before 233, the old rows carry no project entity ref (only new rows are filled)', async () => {
+  it('before 235, the old rows carry no project entity ref (only new rows are filled)', async () => {
     const rows = await database.query<{ n: number }>(
       `select count(*)::int n from public.chats where entity_id = any($1::uuid[]) and project_entity_id is not null`,
       [[ids.chatA, ids.chatB]],
@@ -235,7 +235,7 @@ describe('232 on a node with a double-linked folder', () => {
     expect(rows[0]!.n).toBe(0);
   });
 
-  it('a chat created after 232 is filled with its space\'s project entity by the trigger', async () => {
+  it('a chat created after 234 is filled with its space\'s project entity by the trigger', async () => {
     const chat = randomUUID();
     await asOwner(async (q) => {
       await q.query(
@@ -258,7 +258,7 @@ describe('232 on a node with a double-linked folder', () => {
   });
 });
 
-describe('233 backfill on the old-shaped rows (a5)', () => {
+describe('235 backfill on the old-shaped rows (a5)', () => {
   beforeAll(() => {
     database.apply(W11_BACKFILL);
   });
@@ -303,7 +303,7 @@ describe('233 backfill on the old-shaped rows (a5)', () => {
     expect(await stamps()).toEqual(stampsBefore);
   });
 
-  it('the touch triggers are back on after 233', async () => {
+  it('the touch triggers are back on after 235', async () => {
     const rows = await database.query<{ tgname: string; tgenabled: string }>(
       `select tgname, tgenabled from pg_trigger
         where tgname in ('chats_touch_updated_at', 'work_sessions_touch_updated_at',
@@ -336,7 +336,7 @@ describe('233 backfill on the old-shaped rows (a5)', () => {
     expect(rows).toEqual([{ id: ids.folderF, space_id: ids.spaceB }]);
   });
 
-  it('233 is idempotent: a second application changes nothing', async () => {
+  it('235 is idempotent: a second application changes nothing', async () => {
     const before = await database.query(
       'select entity_id, project_entity_id from public.chats order by entity_id');
     database.apply(W11_BACKFILL);

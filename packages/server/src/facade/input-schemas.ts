@@ -125,6 +125,7 @@ import {
   ProjectFolderUploadAbortInputSchema,
   ProjectFolderUploadCompleteInputSchema,
   ProjectFolderUploadInitInputSchema,
+  ProjectLinkInputSchema,
   SpaceProjectCreateInputSchema,
   GateFolderCreateInputSchema,
   ProjectUpdateInputSchema,
@@ -316,6 +317,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   // Per-kind chat defaults (entity-chat §3.4): a PATCH over kinds.
   'spaces.chatDefaults.set': SetChatDefaultsInputSchema,
   'projects.update': ProjectUpdateInputSchema,
+  'projects.link': ProjectLinkInputSchema,
   'spaces.projects.create': SpaceProjectCreateInputSchema,
   'gate.folders.create': GateFolderCreateInputSchema,
   'projects.unlink': RequiredCommandContextSchema,

@@ -92,7 +92,8 @@ function stagingDb(): FakeDb {
     if (fn === 'create_project') {
       return { project: { ...PROJECT_ROW, name: args[0], working_dir: args[1], trust: args[3] } } as T;
     }
-    if (fn === 'link_project_w2') {
+    if (fn === 'grant_folder') {
+      // W11 (234): the upload grants the gate's folder to its one space.
       return { spaceId: args[0], projectId: args[1] } as T;
     }
     throw new Error(`unexpected rpc: ${fn}`);
@@ -308,7 +309,7 @@ describe('projects.folderUploads lifecycle', () => {
 
     const rpcNames = db.calls.filter((call) => call.kind === 'rpc').map((call) => call.name);
     expect(rpcNames).toContain('create_project');
-    expect(rpcNames).toContain('link_project_w2');
+    expect(rpcNames).toContain('grant_folder');
     expect(rpcNames).toContain('w2_abort_file_upload');
     // Session state and staged blobs are gone.
     await expect(readFile(join(stateDir, `${grant.folderUploadId}.json`))).rejects.toThrow();
@@ -351,9 +352,9 @@ describe('projects.folderUploads lifecycle', () => {
     expect(result.replacedCount).toBe(1);
     expect(result.project.id).toBe(PROJECT);
     expect(await readFile(join(target, 'src/data.bin'))).toEqual(BODY);
-    // An existing project is linked, never re-created.
+    // An existing project is granted, never re-created.
     expect(db.calls.filter((call) => call.name === 'create_project')).toHaveLength(0);
-    expect(db.calls.filter((call) => call.name === 'link_project_w2')).toHaveLength(1);
+    expect(db.calls.filter((call) => call.name === 'grant_folder')).toHaveLength(1);
   });
 
   it('complete refuses another identity, an unknown session, and unstaged bytes', async () => {

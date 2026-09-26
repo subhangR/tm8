@@ -15,7 +15,7 @@
  *    so a literal that happened to be correct today would still be caught the
  *    moment the catalog moved.
  *  - A ProjectResource id and a per-Space project PROJECTION entity id are two
- *    different identifier domains. `project add` renders both, names both, and
+ *    different identifier domains. `project link` renders both, names both, and
  *    NEVER substitutes one for the other — including when the node answers
  *    without the projection id at all.
  *  - §7.5: `project unlink` requires `--yes`; `project update` requires it
@@ -31,6 +31,7 @@ import {
   FileUploadInitInputSchema,
   MessageDeliveryQuerySchema,
   ProjectCreateInputSchema,
+  ProjectLinkInputSchema,
   SpaceProjectCreateInputSchema,
   ProjectUpdateInputSchema,
 } from '@tm8/contract';
@@ -158,7 +159,7 @@ const RESOURCE = {
 };
 
 describe('the project module registers exactly its projected paths', () => {
-  it('claims the fourteen project rows and nothing else', () => {
+  it('claims the fifteen project rows and nothing else', () => {
     expect(PROJECT_COMMANDS.map((c) => c.path.join(' ')).sort()).toEqual([
       'project add',
       'project association correct',
@@ -170,6 +171,7 @@ describe('the project module registers exactly its projected paths', () => {
       'project folder-add',
       'project folders',
       'project get',
+      'project link',
       'project list',
       'project space-list',
       'project unlink',
@@ -215,13 +217,14 @@ describe('G06 owns no paging surface — asserted at the SCHEMA, not by grepping
     const rows: [string, unknown][] = [
       ['projects.create', ProjectCreateInputSchema],
       ['projects.update', ProjectUpdateInputSchema],
+      ['projects.link', ProjectLinkInputSchema],
       ['spaces.projects.create', SpaceProjectCreateInputSchema],
       ['projects.associations.correct', CorrectProjectAssociationInputSchema],
       ['files.uploadInit', FileUploadInitInputSchema],
       ['files.uploadComplete', FileUploadCompleteInputSchema],
     ];
     // A loop that silently iterates zero rows is the classic vacuous pass.
-    expect(rows).toHaveLength(6);
+    expect(rows).toHaveLength(7);
     for (const [name, schema] of rows) {
       const members = membersOf(schema);
       expect(members.length, `${name} introspected to an EMPTY shape`).toBeGreaterThan(0);
@@ -473,6 +476,47 @@ describe('tm8 project get / update', () => {
   });
 });
 
+describe('tm8 project link — two identifier domains, never interchangeable', () => {
+  it('binds the Space-scoped path and carries the ProjectResource id in the body', async () => {
+    respond = () => ({ body: { spaceId: SPACE, projectId: PROJECT, projectEntityId: PROJECTION, patches: [] } });
+    const r = await invoke(['project', 'link', PROJECT, '--space', SPACE]);
+    expect(r.code).toBe(0);
+    expect(requests[0]?.method).toBe('POST');
+    expect(requests[0]?.path).toBe(bindPath('projects.link', { spaceId: SPACE }));
+    expect((requests[0]?.body as Record<string, unknown>).projectId).toBe(PROJECT);
+  });
+
+  it('renders BOTH identities, each named for its own domain', async () => {
+    respond = () => ({ body: { spaceId: SPACE, projectId: PROJECT, projectEntityId: PROJECTION, patches: [] } });
+    const r = await invoke(['project', 'link', PROJECT, '--space', SPACE]);
+    expect(r.stdout).toContain(PROJECT);
+    expect(r.stdout).toContain(PROJECTION);
+    expect(r.stdout).toMatch(/projectEntityId[^\n]*00000000-0000-7000-8000-0000000000dd/);
+    expect(r.stdout).toMatch(/projectId[^\n]*00000000-0000-7000-8000-0000000000bb/);
+  });
+
+  it('when the node returns no projection id, it says so and NEVER substitutes the resource id', async () => {
+    respond = () => ({ body: { spaceId: SPACE, projectId: PROJECT, patches: [] } });
+    const r = await invoke(['project', 'link', PROJECT, '--space', SPACE]);
+    expect(r.code).toBe(0);
+    const projectionLine = r.stdout.split('\n').find((l) => l.includes('projectEntityId')) ?? '';
+    expect(projectionLine).not.toContain(PROJECT);
+    expect(projectionLine.length).toBeGreaterThan(0);
+    // stderr names the separate domain as a CONTRACT fact — `projectEntityId`
+    // has zero occurrences in packages/contract/src, so the result is complete
+    // as specified and this is not a claim that the node misbehaved.
+    expect(r.stderr).toMatch(/projection entity/i);
+    // and it never prints the ProjectResource id where the projection id would go
+    expect(r.stderr).not.toContain(PROJECT);
+  });
+
+  it('requires a Space in context', async () => {
+    const r = await invoke(['project', 'link', PROJECT]);
+    expect(r.code).toBe(2);
+    expect(requests).toEqual([]);
+  });
+});
+
 describe('tm8 project add — the Space project on a granted folder (W11)', () => {
   const ADDED = {
     id: PROJECTION, spaceId: SPACE, folderId: PROJECT, name: 'tm8', trust: 'untrusted', defaults: {},
@@ -500,10 +544,6 @@ describe('tm8 project add — the Space project on a granted folder (W11)', () =
     const r = await invoke(['project', 'add', PROJECT]);
     expect(r.code).toBe(2);
     expect(requests).toEqual([]);
-  });
-
-  it('`project link` is gone: the path is not a command', () => {
-    expect(isCommandPath(['project', 'link'])).toBe(false);
   });
 });
 

@@ -18,6 +18,7 @@ export function registerW2ProjectsAssociationsHandlers(
     'projects.file.history': service.fileHistory,
     'projects.file.blame': service.fileBlame,
     'projects.update': service.updateProject,
+    'projects.link': service.linkProject,
     'spaces.projects.list': service.listSpaceProjects,
     'spaces.projects.create': async (ctx) => json(await service.createSpaceProject(ctx), { status: 201 }),
     'gate.folders.list': service.listGateFolders,

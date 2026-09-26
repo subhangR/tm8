@@ -4275,7 +4275,7 @@ export interface ProjectResource {
   repoUrl?: string | null;
   /**
    * Absolute path on the owning node; path-traversal/symlink-guarded
-   * (10-SECURITY-MODEL). W11 (migration 231): the folder is the gate's, so the
+   * (10-SECURITY-MODEL). W11 (migration 234): the folder is the gate's, so the
    * path is present ONLY for a gate (node) admin and absent for every member.
    */
   workingDir?: string;
@@ -4649,12 +4649,21 @@ export interface ProjectUpdateInput extends CommandContext {
   defaults?: ProjectDefaults;
 }
 
-// --- W11 (migration 231): space-owned projects over gate-owned folders -------
+/**
+ * POST /v2/spaces/:spaceId/projects — link (M2M); unlink is the DELETE binding.
+ * Decision 29: a folder already granted to another space is refused ("this
+ * folder belongs to another space") except on a loopback-only `single` node.
+ */
+export interface ProjectLinkInput extends CommandContext {
+  projectId: ProjectId;
+}
+
+// --- W11 (migration 234): space-owned projects over gate-owned folders -------
 //
 // A FOLDER (the `projects` row: path, trust, repo_url) is the gate's; a gate
 // admin grants it to exactly ONE space. The space's PROJECT is an entity of
 // that space (kind `project`) that references the grant and never carries the
-// path. `projects.link` is gone: a folder reaches a space by a gate grant.
+// path.
 
 /** One project of a space, as any member of it reads it. Never a path. */
 export interface SpaceProject {
@@ -4672,7 +4681,7 @@ export interface SpaceProject {
   updatedAt: string;
 }
 
-/** POST /v2/spaces/:spaceId/projects — a space admin names the space's project on a folder granted to it. */
+/** POST /v2/spaces/:spaceId/projects/create — a space admin names the space's project on a folder granted to it. */
 export interface SpaceProjectCreateInput extends CommandContext {
   folderId: ProjectId;
   /** Defaults to the folder's name. */
@@ -4696,7 +4705,7 @@ export interface GateFolder {
   repoUrl?: string | null;
   trust: ProjectTrustLevel;
   defaults: ProjectDefaults;
-  /** One entry normally; two or more only on folders linked twice before 231. */
+  /** One entry normally; two or more only on folders linked twice before 234. */
   grants: GateFolderGrant[];
   createdAt: string;
   updatedAt: string;

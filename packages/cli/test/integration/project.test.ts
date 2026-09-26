@@ -54,7 +54,7 @@ const ROWS: OperationName[] = [
   'projects.create',
   'projects.get',
   'projects.update',
-  'spaces.projects.create', // W11: the successor of projects.link
+  'projects.link',
   'projects.unlink',
   'projects.associations.correct',
   'files.uploadInit',
@@ -160,7 +160,7 @@ describe('what this node is, measured rather than assumed', () => {
     // MEASURED off /health on main (routes, not catalog rows) — the same
     // number event/message pin, so the three files cannot silently diverge.
         // 156 -> 157 (2026-08-13, forge write): the tracking.pr.merge route.
-    expect(h.operations).toBe(246) /* W11: -1 projects.link, +4 spaces.projects.list|create and gate.folders.list|create. MEASURED. */ /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b), on the merged tree. MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* 236→238 headers I4: entities.header.set (PUT) + entities.header.clear (DELETE). MEASURED off /health. */ /* 223→236 Forms W1: the thirteen forms.* routes. MEASURED off /health. */ /* 222→223 task 01a0d350: spaces.configs, one GET route. MEASURED off /health. */ /* 221→222 bug 01a0d2f1: entities.commands.tick, one POST route. MEASURED off /health. */ /* 220→221 change feed step 3: events.changes, one GET route. MEASURED off /health. */ /* 210→220 2026-09-23 SC-3: credentials.space.* (8) + node.credentials.* (2). MEASURED off /health. */ /* 207→210 2026-09-23 Jev lane K: credentials.serviceKeys.{status,put,delete}. MEASURED off /health. */ /* 206→207 2026-09-23 Jev lane F: launch.suggest (placeholder mount). MEASURED off /health. */ /* 197→206 2026-09-23: the nine skills.* routes (#647 + #649). MEASURED off /health. */ /* 196→197 2026-09-19 Changes screen Phase 1 INTEGRATED WITH main: execution.gitStage mounts one more HTTP route on top of 187’s. Both land, so this moves twice from 195. MEASURED on the MERGED tree, never hand-derived. */ /* 195→196 187: execution.sessions.share — POST /v2/entities/:id/commands/sharing, a mounted HTTP route */ /* 171→195 177: the 24 container HTTP routes — ROUTES, not catalog rows */ /* 168→171 148: spaces.workflows.* — ROUTES, not catalog rows */ /* 162→165 2026-08-16 W4/132: spaces.taskWorkflows.* */ /* 157→158 2026-08-13: #188 chat route */;
+    expect(h.operations).toBe(247) /* W11: +4 (projects.link stays, decision 29) spaces.projects.list|create and gate.folders.list|create. MEASURED. */ /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b), on the merged tree. MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* 236→238 headers I4: entities.header.set (PUT) + entities.header.clear (DELETE). MEASURED off /health. */ /* 223→236 Forms W1: the thirteen forms.* routes. MEASURED off /health. */ /* 222→223 task 01a0d350: spaces.configs, one GET route. MEASURED off /health. */ /* 221→222 bug 01a0d2f1: entities.commands.tick, one POST route. MEASURED off /health. */ /* 220→221 change feed step 3: events.changes, one GET route. MEASURED off /health. */ /* 210→220 2026-09-23 SC-3: credentials.space.* (8) + node.credentials.* (2). MEASURED off /health. */ /* 207→210 2026-09-23 Jev lane K: credentials.serviceKeys.{status,put,delete}. MEASURED off /health. */ /* 206→207 2026-09-23 Jev lane F: launch.suggest (placeholder mount). MEASURED off /health. */ /* 197→206 2026-09-23: the nine skills.* routes (#647 + #649). MEASURED off /health. */ /* 196→197 2026-09-19 Changes screen Phase 1 INTEGRATED WITH main: execution.gitStage mounts one more HTTP route on top of 187’s. Both land, so this moves twice from 195. MEASURED on the MERGED tree, never hand-derived. */ /* 195→196 187: execution.sessions.share — POST /v2/entities/:id/commands/sharing, a mounted HTTP route */ /* 171→195 177: the 24 container HTTP routes — ROUTES, not catalog rows */ /* 168→171 148: spaces.workflows.* — ROUTES, not catalog rows */ /* 162→165 2026-08-16 W4/132: spaces.taskWorkflows.* */ /* 157→158 2026-08-13: #188 chat route */;
     // `implemented` is registry.size — MOUNTED handlers, not behaviourally
     // implemented. Asserted as a floor only, never quoted as an implemented count.
     expect(h.implemented).toBeGreaterThan(0);
@@ -189,7 +189,7 @@ describe('what this node is, measured rather than assumed', () => {
     // never be exit 2 (unknown command) or exit 8 (documented, not built here).
     const paths = [
       ['project', 'list'], ['project', 'create'], ['project', 'get'], ['project', 'update'],
-      ['project', 'add'], ['project', 'unlink'], ['project', 'association', 'correct'],
+      ['project', 'link'], ['project', 'unlink'], ['project', 'association', 'correct'],
       ['file', 'upload'], ['file', 'upload', 'abort'], ['file', 'download'],
     ];
     for (const path of paths) {
@@ -249,25 +249,32 @@ describe('projects — the ProjectResource lifecycle, really executed', () => {
     expect(allowed.workingDir).toBe(moved);
   }, SLOW);
 
-  it('adds it to a Space (W11), and reports the two identifier domains without conflating them', async (ctx) => {
+  it('links into a Space, and reports the two identifier domains without conflating them', async (ctx) => {
     needs(ctx, { projectId });
-    const linked = await tm8(['project', 'add', projectId, '--format', 'json']);
+    const linked = await tm8(['project', 'link', projectId, '--format', 'json']);
     expect(linked.code, linked.stderr).toBe(0);
     const dto = JSON.parse(linked.stdout) as Record<string, unknown>;
-    expect(dto.folderId).toBe(projectId);
+    expect(dto.projectId).toBe(projectId);
     expect(dto.spaceId).toBe(spaceId);
-    expect(typeof dto.id).toBe('string');
-    expect(dto.id).not.toBe(projectId);
-    const human = await tm8(['project', 'add', projectId]);
-    expect(human.code, human.stderr).toBe(0);
-    expect(human.stdout).toMatch(new RegExp(`projectEntityId[^\\n]*${String(dto.id)}`));
-    expect(human.stdout).toMatch(new RegExp(`folderId[^\\n]*${projectId}`));
-  }, SLOW);
 
-  it('`project link` is gone (W11)', async (ctx) => {
-    needs(ctx, { projectId });
-    const gone = await tm8(['project', 'link', projectId]);
-    expect(gone.code).toBe(2);
+    // MEASURED, not assumed, and adjudicated against the CONTRACT rather than
+    // the design doc: `projectEntityId` appears in grammar §4.9 and in ZERO
+    // places under packages/contract/src, so a result without it is complete as
+    // SPECIFIED — not a server defect. What the CLI must never do, either way,
+    // is collapse the two identifier domains into one value.
+    console.log(
+      `[g06] projects.link result keys: ${JSON.stringify(Object.keys(dto))} ` +
+        `projectEntityId=${String(dto.projectEntityId ?? '<absent>')}`,
+    );
+    if (dto.projectEntityId === undefined) {
+      expect(linked.stderr).toMatch(/projection entity/i);
+      expect(linked.stderr).not.toContain(projectId);
+      const human = await tm8(['project', 'link', projectId]);
+      const projectionLine = human.stdout.split('\n').find((l) => l.includes('projectEntityId')) ?? '';
+      expect(projectionLine).not.toContain(projectId);
+    } else {
+      expect(dto.projectEntityId).not.toBe(projectId);
+    }
   }, SLOW);
 
   it('unlinks under --yes, and refuses without it', async (ctx) => {
@@ -277,8 +284,8 @@ describe('projects — the ProjectResource lifecycle, really executed', () => {
     const unlinked = await tm8(['project', 'unlink', projectId, '--yes', '--format', 'json']);
     expect(unlinked.code, unlinked.stderr).toBe(0);
     expect((JSON.parse(unlinked.stdout) as Record<string, unknown>).projectId).toBe(projectId);
-    // Re-add so the file tests below have a linked Project available.
-    expect((await tm8(['project', 'add', projectId])).code).toBe(0);
+    // Re-link so the file tests below have a linked Project available.
+    expect((await tm8(['project', 'link', projectId])).code).toBe(0);
   }, SLOW);
 
   it('project association correct: the handler RUNS against a schema-valid body', async (ctx) => {
@@ -430,7 +437,7 @@ describe('projects.associations.correct — the --expect-version guard, proved o
       await tm8(['project', 'create', 'guard proof', '--working-dir', join(scratch, 'guard'), '--format', 'json']),
     );
     projectId = created.id as string;
-    expect((await tm8(['project', 'add', projectId])).code).toBe(0);
+    expect((await tm8(['project', 'link', projectId])).code).toBe(0);
 
     const task = await raw<{ entity?: { id: string } }>('entities.create', {}, {
       method: 'POST',

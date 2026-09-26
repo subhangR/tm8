@@ -1,5 +1,5 @@
 -- =============================================================================
--- 232 — space-owned projects, the model half (plan 01a0d9eb W11, decision 28).
+-- 234 — space-owned projects, the model half (plan 01a0d9eb W11, decision 28).
 --
 -- THE MODEL. The disk is the gate's; everything else about a project belongs
 -- to one space.
@@ -8,7 +8,8 @@
 --                            trust, repo_url. Readable by gate (node) admins
 --                            only: `projects_select` loses its member arm.
 --                            unique(working_dir) stays.
---   public.space_projects    the grant: at most ONE space per folder, with
+--   public.space_projects    the grant: at most ONE space per folder (unless
+--                            the node policy is 'shared', decision 29), with
 --                            `granted_by` (the gate admin's identity).
 --   `project` entity         (015/021's projection) the space-owned project:
 --                            its own name from now on (a folder rename no
@@ -22,25 +23,34 @@
 --                            branch). unique(project_id, branch) stays: one
 --                            folder is one git branch namespace on disk.
 --
--- Existing rows get the new columns from 233, a separate row-rewriting file.
+-- Existing rows get the new columns from 235, a separate row-rewriting file.
 --
 -- ONE SPACE PER FOLDER, WITHOUT BREAKING A NODE THAT HAS TWO (the checkpoint
 -- in the phases doc). Postgres has no NOT VALID unique index, so the rule is
 -- enforced in two halves:
 --   * here: the space_projects insert guard refuses a grant of a folder that
 --     is already granted to another space ('this folder belongs to another
---     space', 23505, detail folder_granted_elsewhere). It replaces 015's
---     16-space cap. Existing double grants are untouched and keep working, so
+--     space', 23505, detail folder_granted_elsewhere). Off a 'shared' node
+--     it replaces 015's 16-space cap. Existing double grants are untouched and keep working, so
 --     a node with the 7 double-linked projects migrates.
 --   * W11-migrate, after it splits those: `create unique index
 --     space_projects_one_space_per_folder on public.space_projects(project_id)`
 --     (see internal.space_project_unique_index_sql() below).
 --
--- projects.link IS GONE. `link_project_w2` (021/166/228) and `link_project`
--- (007/228) are dropped, and 228's `project_visible_to_caller` with them (its
--- only callers). A folder reaches a space by a gate admin's grant
--- (`grant_folder`, `register_folder`), and a space admin names the space's
--- project on a folder granted to that space (`create_space_project`).
+-- DECISION 29 (owner-approved, fail-closed). internal.node_policy holds
+-- key 'project_folders'; only the owner connection writes it (the server at
+-- boot, from gatePosture(config)), tm8_app has no grant, and
+-- internal.project_folders_shared() is the one reader, used by the guard and
+-- by create_space_project. 'shared' (a loopback-only single node) keeps 228's
+-- many-spaces-per-folder with its 16-space cap; any other value, or no row,
+-- means one space per folder.
+--
+-- projects.link STAYS (decision 29). `link_project_w2` (228) is untouched and
+-- its insert passes through the guard, so off a 'shared' node it refuses a
+-- folder another space holds. Only 007's legacy `link_project` is dropped. A
+-- folder also reaches a space by a gate admin's grant (`grant_folder`,
+-- `register_folder`), and a space admin names the space's project on a folder
+-- granted to that space (`create_space_project`).
 --
 -- MEMBERS NEVER READ A PATH. Everything a member does with a project now goes
 -- through three SECURITY DEFINER functions:
@@ -53,9 +63,10 @@
 -- carry 227's inline pin, so a session pinned to A resolves nothing of B's.
 --
 -- REPLACES WHOLE FUNCTIONS: guard_space_project_link is 228's body with the
--- cap swapped for the one-space rule; materialize_project_projection is 021's
--- body minus the name overwrite on re-materialization; sync_project_projections
--- is 021's body minus the name column. A later file replacing any of them must
+-- cap kept for 'shared' nodes and the one-space rule everywhere else;
+-- materialize_project_projection is 021's body minus the name overwrite on
+-- re-materialization; sync_project_projections is 021's body minus the name
+-- column. A later file replacing any of them must
 -- carry these changes.
 -- =============================================================================
 
@@ -68,19 +79,19 @@ set role tm8_graph_owner;
 -- -----------------------------------------------------------------------------
 alter table public.space_projects add column granted_by text;
 comment on column public.space_projects.granted_by is
-  'Identity of the gate admin who granted this folder to the space (232). Null on grants made before 232.';
+  'Identity of the gate admin who granted this folder to the space (234). Null on grants made before 234.';
 
 alter table public.chats
   add column project_entity_id uuid references public.entities(id) on delete set null;
 comment on column public.chats.project_entity_id is
-  'The space''s project entity this chat is bound to (232). project_id keeps the folder.';
+  'The space''s project entity this chat is bound to (234). project_id keeps the folder.';
 create index chats_project_entity_idx on public.chats(project_entity_id)
   where project_entity_id is not null;
 
 alter table public.work_sessions
   add column project_entity_id uuid references public.entities(id) on delete set null;
 comment on column public.work_sessions.project_entity_id is
-  'The space''s project entity this session launched from (232). project_id keeps the folder.';
+  'The space''s project entity this session launched from (234). project_id keeps the folder.';
 create index work_sessions_project_entity_idx on public.work_sessions(project_entity_id)
   where project_entity_id is not null;
 
@@ -88,10 +99,10 @@ alter table public.worktrees
   add column space_id uuid references public.spaces(id) on delete cascade,
   add column project_entity_id uuid references public.entities(id) on delete set null;
 comment on column public.worktrees.space_id is
-  'The worktree entity''s space, denormalized for the per-space branch key (232).';
+  'The worktree entity''s space, denormalized for the per-space branch key (234).';
 comment on column public.worktrees.project_entity_id is
-  'The space''s project entity the worktree was cut from (232).';
--- Rows from before 232 carry nulls until 233 fills them; nulls never conflict.
+  'The space''s project entity the worktree was cut from (234).';
+-- Rows from before 234 carry nulls until 235 fills them; nulls never conflict.
 create unique index worktrees_space_project_entity_branch_key
   on public.worktrees(space_id, project_entity_id, branch);
 
@@ -160,20 +171,55 @@ for each row execute function internal.fill_worktree_space();
 -- -----------------------------------------------------------------------------
 -- 2. One space per folder, for every NEW grant (the not-valid half).
 -- -----------------------------------------------------------------------------
--- 228's body; one change: the INSERT branch refuses a folder granted to
--- another space instead of counting toward the 16-space cap.
+-- DECISION 29: the node policy. One row per key, written only by the owner
+-- connection (the server at boot, from gatePosture(config)) or by a migration.
+-- tm8_app gets NO grant on this table: it can neither read nor write it, and
+-- no GUC stands in for it. The reader below is the only way in.
+--   key 'project_folders' = 'shared'  a loopback-only single node: one folder
+--                                     may be linked into several spaces (228's
+--                                     16-space cap and link_frozen apply).
+--   anything else, or no row          one space per folder. FAIL-CLOSED: this
+--                                     file inserts no row.
+create table internal.node_policy (
+  key text primary key,
+  value text not null,
+  updated_at timestamptz not null default now()
+);
+revoke all on table internal.node_policy from public;
+
+create or replace function internal.project_folders_shared()
+returns boolean language sql stable security definer
+set search_path = internal, pg_temp as $$
+  select coalesce(
+    (select value = 'shared' from internal.node_policy where key = 'project_folders'),
+    false)
+$$;
+revoke all on function internal.project_folders_shared() from public;
+grant execute on function internal.project_folders_shared() to tm8_app;
+
+-- 228's body; one change: on a node whose policy is not 'shared' (decision
+-- 29), the INSERT branch refuses a folder granted to another space instead of
+-- counting toward the 16-space cap. A 'shared' node keeps 228's cap exactly.
 create or replace function internal.guard_space_project_link() returns trigger
 language plpgsql set search_path = public, internal, pg_temp as $$
-declare projection_id uuid; bound_chats integer;
+declare projection_id uuid; bound_chats integer; active_count integer; frozen boolean;
 begin
   if tg_op = 'INSERT' then
-    perform 1 from public.projects p where p.id = new.project_id for update;
-    if not found then
+    select p.active_link_count, p.link_frozen into active_count, frozen
+      from public.projects p where p.id = new.project_id for update;
+    if active_count is null then
       raise exception 'Project not found' using errcode = 'P0002';
     end if;
     perform 1 from public.spaces where id = new.space_id for update;
-    -- W11 (232): a folder is granted to at most one space. Rows that already
-    -- break this (double links from before 232) stay until W11-migrate splits
+    if internal.project_folders_shared() then
+      if frozen or active_count >= 16 then
+        raise exception 'Project active-link cap reached'
+          using errcode = '53400', detail = 'project_over_cap';
+      end if;
+      return new;
+    end if;
+    -- W11 (234): a folder is granted to at most one space. Rows that already
+    -- break this (double links from before 234) stay until W11-migrate splits
     -- them; no new one can be made.
     if exists (select 1 from public.space_projects other
                 where other.project_id = new.project_id
@@ -339,11 +385,11 @@ end
 $$;
 
 -- -----------------------------------------------------------------------------
--- 4. projects.link is removed.
+-- 4. projects.link stays (decision 29); only 007's legacy link_project goes.
 -- -----------------------------------------------------------------------------
-drop function public.link_project_w2(uuid, uuid, uuid, text);
+-- link_project_w2 (228) is unchanged: its insert passes through the guard
+-- above, so off a 'shared' node it refuses a folder another space holds.
 drop function public.link_project(uuid, uuid, uuid, text);
-drop function internal.project_visible_to_caller(uuid);
 
 -- -----------------------------------------------------------------------------
 -- 5. Folders are the gate's: only a gate admin reads public.projects.
@@ -459,7 +505,7 @@ revoke all on function public.register_folder(text, text, text, text, jsonb, uui
 grant execute on function public.register_folder(text, text, text, text, jsonb, uuid, text) to tm8_app;
 
 -- Every folder on the node with the space(s) it is granted to. A folder from
--- before 232 may still list two spaces until W11-migrate runs.
+-- before 234 may still list two spaces until W11-migrate runs.
 create or replace function public.gate_folders_list()
 returns table (
   folder_id uuid, name text, working_dir text, repo_url text, trust text, defaults jsonb,
@@ -513,7 +559,8 @@ begin
   if not found then
     raise exception 'Folder not found' using errcode = 'P0002';
   end if;
-  if exists (select 1 from public.space_projects other
+  if not internal.project_folders_shared()
+     and exists (select 1 from public.space_projects other
               where other.project_id = p_folder_id and other.space_id <> p_space_id) then
     -- T30: the refusal a space admin of B gets for a folder granted to A.
     raise exception 'this folder belongs to another space'

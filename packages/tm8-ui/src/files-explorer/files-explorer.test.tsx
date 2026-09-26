@@ -346,7 +346,7 @@ describe('first run — no project linked', () => {
     render(<FilesExplorerScreen port={port} />);
     // The rail says a project CAN live here and names the real way to add one.
     const hint = await screen.findByTestId('fx-no-projects');
-    expect(hint.textContent).toContain('tm8 project add');
+    expect(hint.textContent).toContain('tm8 project link');
     // The empty Library says what the Library IS, not a bare "empty".
     const empty = await screen.findByTestId('fx-measured-empty');
     expect(empty.textContent).toContain('It holds files shared across this space');

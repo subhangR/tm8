@@ -37,9 +37,7 @@ const W1_FACADE_HANDLERS = [
   'projects.create',
   'projects.get',
   'projects.update',
-  // W11 (migration 231) retired projects.link; its successor on the same
-  // POST /v2/spaces/:spaceId/projects path is spaces.projects.create.
-  'spaces.projects.create',
+  'projects.link',
   'entities.get',
   'entities.create',
   'entities.patch',
@@ -90,8 +88,7 @@ const W1_INPUT_SCHEMA_BINDINGS = [
   { operation: 'placements.apply', schema: 'PlacementInputSchema' },
   { operation: 'projects.create', schema: 'ProjectCreateInputSchema' },
   { operation: 'projects.update', schema: 'ProjectUpdateInputSchema' },
-  // W11: projects.link / ProjectLinkInputSchema -> its successor.
-  { operation: 'spaces.projects.create', schema: 'SpaceProjectCreateInputSchema' },
+  { operation: 'projects.link', schema: 'ProjectLinkInputSchema' },
   { operation: 'files.uploadInit', schema: 'FileUploadInitInputSchema' },
   { operation: 'files.uploadComplete', schema: 'FileUploadCompleteInputSchema' },
   { operation: 'files.uploadAbort', schema: 'FileUploadAbortInputSchema' },

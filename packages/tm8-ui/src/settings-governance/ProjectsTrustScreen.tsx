@@ -150,7 +150,7 @@ function LinkedProjectsCard({
             <EmptyRegion>
               No projects are linked to this space — a linked project is what gives a session a
               working directory to run in. Link one from the CLI with{' '}
-              <code className="gov-mono">tm8 project add</code>, or add a project when you create a
+              <code className="gov-mono">tm8 project link</code>, or add a project when you create a
               space.
             </EmptyRegion>
           ) : (

@@ -11,7 +11,7 @@ import {
   ExecutionSpawnInputSchema,
   FileUploadGrantSchema, FileUploadInitInputSchema,
   getOperation, isCollabError, isKeysetCursor, MessageViewSchema, OPERATIONS,
-  ProjectCreateInputSchema, ProjectDirectoryListingSchema, SpaceProjectCreateInputSchema, ProjectResourceSchema,
+  ProjectCreateInputSchema, ProjectDirectoryListingSchema, ProjectLinkInputSchema, SpaceProjectCreateInputSchema, ProjectResourceSchema,
   RESERVED_OPERATIONS, V1_OPERATIONS, WireErrorBodySchema, WorkInputSchema,
   WorkspaceEventSchema, bindPath,
   MOUNTED_OPERATIONS,
@@ -148,14 +148,15 @@ describe('operation catalog', () => {
 
   it('carries the projects.* and files.* families (AM-2 §1/§2) as v1', () => {
     for (const name of ['projects.list', 'projects.create', 'projects.directories.list', 'projects.get', 'projects.update',
-                        'spaces.projects.list', 'spaces.projects.create', 'projects.unlink',
+                        'projects.link', 'spaces.projects.list', 'spaces.projects.create', 'projects.unlink',
                         'gate.folders.list', 'gate.folders.create',
                         'files.uploadInit', 'files.uploadComplete', 'files.uploadAbort', 'files.download'] as const) {
       expect(getOperation(name).status).toBe('v1');
     }
-    // W11: projects.link is gone; spaces.projects.create binds the same space path.
-    expect(OPERATIONS.some((o) => (o.name as string) === 'projects.link')).toBe(false);
-    expect(bindPath('spaces.projects.create', { spaceId: 's1' })).toBe('/v2/spaces/s1/projects');
+    // link/unlink bind under the space (M2M semantics, T-D17). Decision 29:
+    // projects.link stays; spaces.projects.create (W11) binds beside it.
+    expect(bindPath('projects.link', { spaceId: 's1' })).toBe('/v2/spaces/s1/projects');
+    expect(bindPath('spaces.projects.create', { spaceId: 's1' })).toBe('/v2/spaces/s1/projects/create');
     expect(bindPath('gate.folders.list', {})).toBe('/v2/gate/folders');
     expect(bindPath('projects.unlink', { spaceId: 's1', projectId: 'p1' })).toBe('/v2/spaces/s1/projects/p1');
   });
@@ -506,6 +507,7 @@ describe('command input schemas (DEF-1/2/3 conventions)', () => {
       name: 'tm8', workingDir: '/Users/x/tm8', ensureWorkingDir: true,
     }).success).toBe(true);
     expect(ProjectCreateInputSchema.safeParse({ name: 'tm8' }).success).toBe(false);
+    expect(ProjectLinkInputSchema.safeParse({ projectId: 'proj_1' }).success).toBe(true);
     expect(SpaceProjectCreateInputSchema.safeParse({ folderId: 'proj_1' }).success).toBe(true);
     expect(SpaceProjectCreateInputSchema.safeParse({ projectId: 'proj_1' }).success).toBe(false);
     expect(ProjectDirectoryListingSchema.safeParse({

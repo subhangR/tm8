@@ -14,6 +14,7 @@ import { resolve as pathResolve } from 'node:path';
 import { CollabError, FILE_MAX_SIZE_BYTES_DEFAULT } from '@tm8/contract';
 import { CredentialSessionLauncher } from '@tm8/execution';
 import { ensureLaunchResources } from './bootstrap/launch-resources.js';
+import { gatePosture, writeNodePolicy } from './projects/node-policy.js';
 
 import { createDb } from './db/index.js';
 import type { Db, DbClaims } from './db/types.js';
@@ -228,6 +229,12 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
           : {}),
       })
     : undefined;
+  // Decision 29: pin this node's project-folders policy (owner role, before
+  // anything serves). A failed write refuses boot; see projects/node-policy.ts.
+  if (config.databaseUrl) {
+    const folders = await writeNodePolicy(config.databaseUrl, gatePosture(config));
+    console.log(`  project folders: ${folders === 'shared' ? 'shared across spaces (loopback-only node)' : 'one space per folder'}`);
+  }
   const dataDir = config.dataDir ?? resolveServerDataDir();
   const fileMaxSizeBytes = config.fileMaxSizeBytes ?? FILE_MAX_SIZE_BYTES_DEFAULT;
   const owner = db ? createLoopbackOwnerResolver(db) : undefined;
