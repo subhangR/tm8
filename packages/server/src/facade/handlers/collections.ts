@@ -28,6 +28,7 @@ import {
   type CollectionAddItemInput,
   type CollectionQuery,
   type CollectionResult,
+  type EntityKind,
   type EntitySummary,
   type Page,
 } from '@tm8/contract';
@@ -305,6 +306,30 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
 
   if (query.kinds && query.kinds.length > 0) {
     where.push(`e.kind = any(${p.add(query.kinds)}::text[])`);
+  }
+
+  // G6 (232): a member who left or was removed is not a list row — the
+  // members screen and `member_count` already say so — and neither is a
+  // persona whose OWNER's membership ended, or it would stay pickable in the
+  // mention and assignee lists. Both rows stay reachable by id, so old content
+  // still renders its author as "(left)". Only a query that can return those
+  // kinds pays for it: one pkey probe per member / team_member row.
+  // `to_jsonb(...) ->> 'status'`, as in `loadActors`, so a position-pinned
+  // suite on a pre-232 chain reads every member as active.
+  const canReturn = (kind: EntityKind): boolean =>
+    !query.kinds || query.kinds.length === 0 || query.kinds.includes(kind);
+  if (canReturn('member')) {
+    where.push(
+      `(e.kind <> 'member' or not exists (select 1 from public.members ended
+         where ended.entity_id = e.id and to_jsonb(ended) ->> 'status' in ('left', 'removed')))`,
+    );
+  }
+  if (canReturn('team_member')) {
+    where.push(
+      `(e.kind <> 'team_member' or not exists (select 1 from public.team_members ended_tm
+         join public.members ended_owner on ended_owner.entity_id = ended_tm.owner_member_id
+         where ended_tm.entity_id = e.id and to_jsonb(ended_owner) ->> 'status' in ('left', 'removed')))`,
+    );
   }
 
   if (query.subtreeOf) {

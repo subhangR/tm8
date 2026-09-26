@@ -1,16 +1,16 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:17e587ad69818332abe3b80edc99b687f2efb861b7ac44ae203728561e7d7d35",
+  "catalogDigest": "sha256:ac682c491fd5abae761557c8b4e155f9e4925ca45cd3ca9112f70f9d9f4f229d",
   "catalog": {
-    "total": 245,
-    "v1": 243,
+    "total": 248,
+    "v1": 246,
     "reserved": 2,
-    "http": 243,
+    "http": 246,
     "ws": 1,
-    "registerableV1Http": 241,
+    "registerableV1Http": 244,
     "methods": {
       "GET": 81,
-      "POST": 114,
+      "POST": 117,
       "PATCH": 16,
       "DELETE": 17,
       "PUT": 15,
@@ -18,11 +18,11 @@
     },
     "kinds": {
       "read": 85,
-      "command": 158,
+      "command": 161,
       "stream": 2
     },
-    "uniqueNames": 245,
-    "uniqueBindings": 244
+    "uniqueNames": 248,
+    "uniqueBindings": 247
   },
   "reservedOperations": [
     "search.query",
@@ -400,6 +400,27 @@
         "operation": "spaces.members.updateRole",
         "method": "PATCH",
         "path": "/v2/spaces/:spaceId/members/:memberId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.members.remove",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/members/:memberId/remove",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.leave",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/leave",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "accounts.disable",
+        "method": "POST",
+        "path": "/v2/accounts/:accountId/disable",
         "status": "registered",
         "source": "server-router"
       },
@@ -2119,7 +2140,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 213
+    "unimplementedV1Http": 216
   },
   "schemas": {
     "additive": {
@@ -2752,6 +2773,55 @@
           "members",
           "update",
           "role"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.members.remove",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.members.remove",
+        "intentTags": [
+          "spaces",
+          "members",
+          "remove"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.leave",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.leave",
+        "intentTags": [
+          "spaces",
+          "leave"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "accounts.disable",
+        "noun": "account",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/accounts.disable",
+        "intentTags": [
+          "accounts",
+          "disable"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
