@@ -107,7 +107,7 @@ export interface FacadeServerOptions {
   /**
    * Did this node ever issue the session id in this token, in any state? The
    * relay drops such an `Authorization` instead of forwarding it as a remote's
-   * pass (`resolveRelayCaller`, NNN).
+   * pass (`resolveRelayCaller`, 236).
    */
   readonly sessionIssuedHere?: (token: string) => Promise<boolean>;
   /**

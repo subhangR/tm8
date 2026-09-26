@@ -69,7 +69,7 @@ function isUnauthenticated(error: unknown): boolean {
  * "Unknown here" is not "does not resolve here". A LOCAL token that is revoked
  * or expired does not resolve either, and it has the same `tm8s_<uuid>.<secret>`
  * shape as a remote's pass. So before anything is forwarded, `issuedHere` asks
- * whether this node ever issued that session id, in any state (NNN); if it did,
+ * whether this node ever issued that session id, in any state (236); if it did,
  * the token is ours and is dropped, never forwarded. The probe sees the token
  * only to parse out the id; the secret never reaches the database. Without a
  * probe (no database: nothing can resolve a token anyway) the old rule stands.

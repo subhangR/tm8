@@ -1,5 +1,5 @@
 -- =============================================================================
--- NNN (placeholder; number assigned by the coordinator at merge) — "was this session id ever issued HERE?" for the named-Server relay
+-- 236 — "was this session id ever issued HERE?" for the named-Server relay
 -- (task 01a0da1f, follow-up to W0b / PR #817).
 --
 -- THE GAP. The relay (http/remote-proxy.ts `resolveRelayCaller`) forwards an
@@ -34,7 +34,7 @@ set search_path = public, internal, pg_temp as $$
 $$;
 
 comment on function public.auth_session_issued_here(uuid) is
-  'Claim-free (NNN): true when this node issued the session id, in ANY state '
+  'Claim-free (236): true when this node issued the session id, in ANY state '
   '(live, revoked, expired). The relay uses it to keep a local token from being '
   'forwarded as a remote pass. Takes the id only, never a secret.';
 

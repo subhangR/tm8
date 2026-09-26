@@ -260,7 +260,7 @@ const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 
 /**
  * Did THIS node ever issue the session id in `token` — live, revoked or
- * expired? (NNN `auth_session_issued_here`.) The named-Server relay asks this
+ * expired? (236 `auth_session_issued_here`.) The named-Server relay asks this
  * of an `Authorization` that did not resolve, so a dead local token is never
  * forwarded as a remote's pass. Only the session id reaches the database, never
  * the secret. A token that does not parse, or whose id is not a uuid, cannot be

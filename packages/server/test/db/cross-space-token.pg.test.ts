@@ -992,7 +992,7 @@ describe('T26 relay — dispatch after resolveIdentity, human session required',
   }
 
   /**
-   * WAS A KNOWN GAP (review round 1, item 2), CLOSED BY migration NNN_auth_session_issued_here. A LOCAL token that
+   * WAS A KNOWN GAP (review round 1, item 2), CLOSED BY 236. A LOCAL token that
    * no longer resolves (revoked, expired) has the same `tm8s_<uuid>.<secret>`
    * shape as a remote's pass. The relay now asks `auth_session_issued_here`
    * whether this node ever issued its session id, in any state; if it did, the
