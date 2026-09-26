@@ -30,7 +30,7 @@ import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from 
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
 
-const W8 = '991_remote_servers.sql';
+const W8 = '261_remote_servers.sql';
 const NAME = 'legacy-pre';
 const URL_ = 'https://legacy-pre.example';
 
