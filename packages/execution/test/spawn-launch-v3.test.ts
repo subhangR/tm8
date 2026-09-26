@@ -73,7 +73,7 @@ describe('launch v3: newTask and dispatcher routing', () => {
     });
 
     expect(result.routedTaskIds).toEqual([TASK_ID]);
-    // The RPC still receives the task: it is 264's SQL that declines to write
+    // The RPC still receives the task: it is 267's SQL that declines to write
     // the dispatcher as working on or assigned to it.
     expect(graph.created.at(-1)?.taskIds).toEqual([TASK_ID]);
     expect(result.manifest.tasks).toEqual([]);

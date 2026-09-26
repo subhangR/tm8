@@ -216,7 +216,7 @@ describe('server spawn integration with a stub PTY', () => {
     expect(rendered.command).toContain("features.network_proxy.enabled=true");
     expect(db.rpcCalls.find(({ fn }) => fn === 'public.execution_spawn')?.args)
       .toEqual(expect.arrayContaining([PROJECT, 'project', 'gpt-5.6-sol', 'codex']));
-    // p_parent_session_id is the 17th positional parameter; 264 appended an
+    // p_parent_session_id is the 17th positional parameter; 267 appended an
     // 18th, p_new_task_title, which a spawn without `newTask` sends as null.
     const spawnArgs = db.rpcCalls.find(({ fn }) => fn === 'public.execution_spawn')?.args;
     expect(spawnArgs?.[16]).toBe(PARENT_SESSION);

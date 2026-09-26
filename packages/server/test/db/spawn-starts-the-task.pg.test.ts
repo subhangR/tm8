@@ -196,11 +196,11 @@ beforeAll(async () => {
   database = await createW1ScratchDatabase('spawn-starts-the-task');
   const files = migrationFiles();
   const migration = spawnStartsTheTaskMigration(files);
-  // Launch v3 (264) DROPS the 17-argument execution_spawn for an 18-argument
+  // Launch v3 (267) DROPS the 17-argument execution_spawn for an 18-argument
   // one. Applied before 131 here, 131's create-or-replace would bring the old
   // signature back beside it and every positional call would be ambiguous — an
-  // artifact of this out-of-order fixture, not of the real chain, where 264
-  // runs last. 264 has its own suite (launch-v3-new-task.pg.test.ts).
+  // artifact of this out-of-order fixture, not of the real chain, where 267
+  // runs last. 267 has its own suite (launch-v3-new-task.pg.test.ts).
   database.apply(files.filter((f) => f !== migration && !f.endsWith(LAUNCH_V3_SUFFIX)));
   fixture = await seedPre131(database);
   database.apply([migration]);

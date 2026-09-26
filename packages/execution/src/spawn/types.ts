@@ -782,7 +782,7 @@ export interface CreateWorkSessionInput {
   clientMutationId: string | null;
   /**
    * `SpawnRequest.newTask`'s title: the RPC creates that task in the spawn's
-   * own transaction (264). Absent/null creates none.
+   * own transaction (267). Absent/null creates none.
    */
   newTaskTitle?: string | null;
 }

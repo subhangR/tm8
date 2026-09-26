@@ -1,9 +1,10 @@
 -- =============================================================================
--- 264 — launch v3 (lane C): create the task in the spawn/dispatch request, and
+-- 267 — launch v3 (lane C): create the task in the spawn/dispatch request, and
 -- a dispatcher launched on a task routes it rather than being assigned it.
 --
--- NUMBERED 264: main's highest is 263 (#919), and 262 is claimed by several
--- open PRs (#866, #915). Renumber at composition if it collides.
+-- NUMBERED 267: main's highest is 266 (#915, Attention v2 took 264..266).
+-- Renumber at composition if it collides. Any later migration that re-issues
+-- `public.execution_spawn` must start from THIS body (18 parameters).
 --
 -- 1. `public.execution_spawn` gains `p_new_task_title` (contract decision 4):
 --    the task is created inside the spawn's own transaction, after every
@@ -125,7 +126,7 @@ begin
           coalesce(p_workdir_mode, 'project'), p_workdir_path, p_base_ref,
           'spawning', p_agent_tool, p_model, p_mode);
 
-  -- ADDED IN 264 (launch v3 gap 4). The task `newTask` names is created HERE,
+  -- ADDED IN 267 (launch v3 gap 4). The task `newTask` names is created HERE,
   -- inside the spawn's own transaction and after every refusal above, so a
   -- refused spawn leaves no task and the ledger entry below replays this task
   -- together with this session.
@@ -160,7 +161,7 @@ begin
   patches := array[session_id];
   foreach task_id in array task_ids loop
     perform internal.live_entity(task_id, 'task');
-    -- ADDED IN 264. A dispatcher launched on a task ROUTES it; it does not work
+    -- ADDED IN 267. A dispatcher launched on a task ROUTES it; it does not work
     -- it. So it is written neither as working on the task nor as its assignee —
     -- the worker it routes to becomes that — and an existing task is not
     -- started on its behalf. A task this spawn created is still started, since
@@ -222,7 +223,7 @@ begin
         'parentSessionId', p_parent_session_id
       )),
     patches);
-  -- ADDED IN 264: recorded IN the ledger row, so a replay answers the same task.
+  -- ADDED IN 267: recorded IN the ledger row, so a replay answers the same task.
   if created_task_id is not null then
     result := result || jsonb_build_object('createdTaskId', created_task_id);
   end if;

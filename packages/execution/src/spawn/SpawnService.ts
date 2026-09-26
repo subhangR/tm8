@@ -1502,7 +1502,7 @@ export class SpawnService {
     await this.refreshStartedTasks(auth, context);
     // A dispatcher launched on tasks ROUTES them rather than working them:
     // its first turn is a dispatch request per task, not an assignment (and
-    // 264 wrote it neither `working_on` nor `assigned_to`).
+    // 267 wrote it neither `working_on` nor `assigned_to`).
     const routedTaskIds = launch.mode === 'dispatcher' && context.tasks.length > 0
       ? context.tasks.map((task) => task.id)
       : undefined;

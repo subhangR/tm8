@@ -172,7 +172,7 @@ export class FakeGraph implements GraphPort {
       this.taskState.set(id, task.status === 'open' ? { version: task.version + 1, status: 'working' } : task);
     }
     const sessionId = this.options.sessionId ?? randomUUID();
-    // 264: `newTaskTitle` creates the task inside the spawn, started.
+    // 267: `newTaskTitle` creates the task inside the spawn, started.
     const createdTaskId = input.newTaskTitle ? randomUUID() : undefined;
     if (createdTaskId) this.taskState.set(createdTaskId, { version: 2, status: 'working' });
     return {

@@ -3479,7 +3479,7 @@ export const CATALOG_DIGEST =
   // +3 attentionRequests.markSeen|unresolve|withdraw (Attention v2 S4, stacked on tm8/attention-v2-integration): read from the regenerated conformance manifest.
   // Re-measured (W8, 261, rebuilt on main f01b1566): +6 servers.* and the serverConnections create/delete rows. Read from the regenerated conformance manifest.
   // Re-measured (#915 merge of main 0be3b796): main's servers.* + spaceLinks.invoke/audit and the five attention rows together. Read from the regenerated conformance manifest.
-  'sha256:0cc615d74d968f00e2c8f424368ba0c9cb36bfe69d73b5754c2830e9b6b57b1f';
+  'sha256:799fb9059ee25bd812c7f14c9549c0813b00be6c4fee1bb7921e038a41bdb7d0';
 
 export const GRAMMAR_VERSION = '2';
 

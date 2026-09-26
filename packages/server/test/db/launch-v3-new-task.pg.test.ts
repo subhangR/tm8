@@ -1,5 +1,5 @@
 /**
- * Migration 264 (launch v3, lane C) — the task is created IN the spawn /
+ * Migration 267 (launch v3, lane C) — the task is created IN the spawn /
  * dispatch request, and a dispatcher launched on a task routes it.
  *
  * What a "the task exists" test would miss, and this file asserts:
@@ -148,7 +148,7 @@ afterAll(async () => {
   await database?.destroy();
 });
 
-describe('264: execution_spawn creates newTask in the spawn transaction', () => {
+describe('267: execution_spawn creates newTask in the spawn transaction', () => {
   it('creates the task assigned, worked on and working, and names it createdTaskId', async () => {
     const result = await spawn({ cmid: `spawn-new-${Math.random()}`, title: '  Fix the thing  ' });
 
@@ -201,7 +201,7 @@ describe('264: execution_spawn creates newTask in the spawn transaction', () => 
   });
 });
 
-describe('264: a dispatcher launched on a task routes it', () => {
+describe('267: a dispatcher launched on a task routes it', () => {
   it('writes no working_on / assigned_to and does not start an existing task', async () => {
     const taskId = await openTask('Route me');
     const result = await spawn({ cmid: `spawn-dispatcher-${Math.random()}`, taskIds: [taskId], mode: 'dispatcher' });
@@ -222,7 +222,7 @@ describe('264: a dispatcher launched on a task routes it', () => {
   });
 });
 
-describe('264: execution_dispatch_new_task', () => {
+describe('267: execution_dispatch_new_task', () => {
   async function dispatchNewTask(title: string, cmid: string): Promise<{ taskId: string }> {
     const rows = await asApp((q) =>
       q(`select public.execution_dispatch_new_task($1,$2,null,null,$3) result`, [fixture.spaceId, title, cmid]),
