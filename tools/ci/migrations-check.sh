@@ -7,7 +7,8 @@
 #                Runs everywhere, always.
 #   B. apply   — apply the whole sequence to a throwaway database and roll it back.
 #                Runs only when a Postgres is reachable; otherwise SKIPS LOUDLY.
-#   C. identity — on B's migrated database, fail on any function reading identity_id()
+#   C. identity — on B's migrated database, fail on any reader of the caller's identity
+#                (function, policy, column default; identity_id() and its two wrappers)
 #                that is not on tools/ci/identity-id-allowlist.txt (identity-id-gate.sh).
 #                Runs only when B ran and passed.
 #
@@ -175,8 +176,8 @@ done
 [ "$FAILED" -eq 0 ] && note "the full sequence applies clean to a fresh database"
 
 # --- layer C: the identity_id() gate (plan 01a0d9eb W3, F7) -----------------
-# Against the same freshly migrated catalog: every function that reads the
-# caller's identity must be on tools/ci/identity-id-allowlist.txt.
+# Against the same freshly migrated catalog: every reader of the caller's
+# identity must be on tools/ci/identity-id-allowlist.txt.
 if [ "$FAILED" -eq 0 ]; then
   note "identity_id() gate over the migrated catalog"
   if ! bash "$REPO_ROOT/tools/ci/identity-id-gate.sh" "$SCRATCH_URL"; then

@@ -2472,15 +2472,19 @@ describe('W3-audit wallet rows (083 / 093 / 203) — account-scoped, not space-s
 });
 
 describe('W3-audit WS admission (control.ts canSubscribe) under enforce', () => {
+  // Built as main.ts builds it: the boot-time mode reaches the authorizer.
   const authorizer = () => new DbSubscriptionAuthorizer(db, async (identity) =>
-    claimsFor(NOT_THE_OWNER, { identity, requestId: `w3-audit-${randomUUID()}` } as unknown as RequestContext));
+    claimsFor(NOT_THE_OWNER, { identity, requestId: `w3-audit-${randomUUID()}` } as unknown as RequestContext),
+  { spaceSessions: 'enforce' });
 
-  it('KNOWN GAP (W3-audit F2): a GATE session is admitted to a space\'s event stream under enforce (T8c not applied to the socket)', async () => {
-    // space-gate.ts is applied to catalog ops and the upload routes only; the
-    // WS subscribe path never consults it. Expected after the fix: false.
+  it('closed (W3-audit F2, #848 S1): a GATE session is refused its own member space\'s event stream under enforce', async () => {
+    // Was OPEN at #848 3b0a25eb (canSubscribe never consulted the gate). #848
+    // 13880032 refuses it in canSubscribe; its own cells are T3's "a gate
+    // session subscribes to nothing when the authorizer runs under enforce"
+    // and the subscribe-AND-resume cell. This row asserts the audit path.
     const gate = await mintBrowser(fixture.accountH, fixture.identityH);
     const identity = await identityForToken(gate, 'enforce');
-    expect(await authorizer().canSubscribe(identity, fixture.spaceA)).toBe(true);
+    expect(await authorizer().canSubscribe(identity, fixture.spaceA)).toBe(false);
   });
   it('a pinned session is refused a space other than its pin', async () => {
     const identity = await identityForToken(
