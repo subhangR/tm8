@@ -44,7 +44,8 @@ const memberMA = randomUUID();
 const adminN = `legacy-n-${randomUUID()}`; // node admin, owner of A
 const adminN2 = `legacy-n2-${randomUUID()}`; // node admin, in no space
 const plainM = `legacy-m-${randomUUID()}`; // member of A, not a node admin
-const node: Record<string, boolean> = { [adminN]: true, [adminN2]: true, [plainM]: false };
+const plainX = `legacy-x-${randomUUID()}`; // in no space, not a node admin
+const node: Record<string, boolean> = { [adminN]: true, [adminN2]: true, [plainM]: false, [plainX]: false };
 
 const OWNER = { identityId: 'legacy-not-the-owner', isNodeAdmin: false } as unknown as LoopbackOwner;
 
@@ -96,14 +97,14 @@ beforeAll(async () => {
   await database.transaction(async (client) => {
     await client.query('set local role tm8_graph_owner');
     await client.query(
-      `insert into public.user_profiles(identity_id, display_name) values ($1, 'N'), ($2, 'N2'), ($3, 'M')`,
-      [adminN, adminN2, plainM]);
+      `insert into public.user_profiles(identity_id, display_name) values ($1, 'N'), ($2, 'N2'), ($3, 'M'), ($4, 'X')`,
+      [adminN, adminN2, plainM, plainX]);
     // 002 require_node_admin reads the ACCOUNT; 044's RLS reads the claim. Both agree here.
     await client.query(
       `insert into public.accounts(id, identity_id, username, is_node_admin)
        values (gen_random_uuid(), $1, 'legacy-n', true), (gen_random_uuid(), $2, 'legacy-n2', true),
-              (gen_random_uuid(), $3, 'legacy-m', false)`,
-      [adminN, adminN2, plainM]);
+              (gen_random_uuid(), $3, 'legacy-m', false), (gen_random_uuid(), $4, 'legacy-x', false)`,
+      [adminN, adminN2, plainM, plainX]);
     await client.query(`insert into public.spaces(id, name, created_by_identity) values ($1, 'Legacy A', $2)`, [spaceA, adminN]);
     for (const [id, identity, role] of [[memberNA, adminN, 'owner'], [memberMA, plainM, 'member']] as const) {
       await client.query(`insert into public.entities(id, space_id, kind, created_by, visibility) values ($1, $2, 'member', $1, 'space')`, [id, spaceA]);
@@ -160,6 +161,16 @@ describe('lead 09:52Z (a) — a pre-991 044 row after the repoint', () => {
     expect(await readAll(adminN2)).toEqual(HIDDEN);
     expect(await directory(adminN)).toEqual([{ legacy: false }]);
     expect(await directory(adminN2)).toEqual([]);
+    // Control: in no space and not a node admin — nothing, before or after.
+    expect(await readAll(plainX)).toEqual(HIDDEN);
+  });
+
+  it('relay as the auto-owner (single-node loopback) resolves as the OWNER identity: an owner in A reaches the adopted server, an owner outside A does not', async () => {
+    const autoOwner = { kind: 'auto-owner', authKind: 'browser' } as unknown as RequestIdentity;
+    const ownerAs = (identityId: string) => async () =>
+      ({ identityId, isNodeAdmin: true } as unknown as LoopbackOwner);
+    expect(await directoryTargetResolver(db, ownerAs(adminN))(NAME, autoOwner)).toBe(URL_);
+    expect(await directoryTargetResolver(db, ownerAs(adminN2))(NAME, autoOwner)).toBeNull();
   });
 
   it('the helper answers only callers who can already see every 044 row: a plain member gets false, node admins get true', async () => {
