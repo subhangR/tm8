@@ -957,7 +957,13 @@ begin
     end if;
     -- W11 (234): a folder is granted to at most one space. Rows that already
     -- break this (double links from before 234) stay until W11-migrate splits
-    -- them; no new one can be made.
+    -- them; no new one can be made. A re-grant of a pair that already exists
+    -- (grant_folder re-run, ON CONFLICT DO NOTHING) is not a new grant: it
+    -- passes here, so the conflict clause, not this check, decides it (R845-F2).
+    if exists (select 1 from public.space_projects same
+                where same.space_id = new.space_id and same.project_id = new.project_id) then
+      return new;
+    end if;
     if exists (select 1 from public.space_projects other
                 where other.project_id = new.project_id
                   and other.space_id <> new.space_id) then
