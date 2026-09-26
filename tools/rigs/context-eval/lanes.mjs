@@ -41,7 +41,9 @@ const arg = (name, dflt) => {
   return i > 0 ? process.argv[i + 1] : dflt;
 };
 export const SLICES = { c1: 'lean', c2: 'index-derived', c3: 'index-authored', c4: 'inherit' };
-export const MODELS = { sonnet5: 'Sonnet 5 Teammate', haiku45: 'Haiku 4.5 Teammate', opus55: 'Opus 5.5 1M Teammate' };
+// dev-node.sh seeds the eval teammates (pre-#843 seed fields under names the
+// retire pass leaves alone). opus55 is not seeded: create it the same way first.
+export const MODELS = { sonnet5: 'Sonnet 5 Eval', haiku45: 'Haiku 4.5 Eval', opus55: 'Opus 5.5 1M Eval' };
 const IDLE_SECONDS = 45;
 const NO_TRANSCRIPT_MS = 120_000;
 const LOAD_TIERS = { two: 40, one: 80 };
@@ -319,7 +321,7 @@ async function main() {
   const models = (arg('models') ?? 'sonnet5,haiku45').split(',').filter(Boolean);
   for (const m of models) {
     if (!MODELS[m]) throw new Error(`unknown model key ${m}; known: ${Object.keys(MODELS).join(', ')}`);
-    if (!node.teammates[MODELS[m]]) throw new Error(`node ${port} has no teammate "${MODELS[m]}" (catalog seeding needs TM8_LAUNCH_BOOTSTRAP=1 and a space)`);
+    if (!node.teammates[MODELS[m]]) throw new Error(`node ${port} has no teammate "${MODELS[m]}" (dev-node.sh up seeds the eval teammates)`);
   }
   let keys = Object.keys(nodeFx.tasks);
   if (arg('only')) keys = arg('only').split(',').filter((k) => keys.includes(k));

@@ -177,6 +177,23 @@ if [ -z "$PROJECT" ]; then
   "$T8" project link "$PROJECT" --space "$SPACE" --format json >/dev/null
   warn "project $PROJECT linked to $SPACE"
 fi
+# 6. eval teammates. #843 replaced the per-model catalog teammates the 2026-09-25
+# baseline spawned ("Sonnet 5 Teammate", ...) with a role roster, and the boot pass
+# soft-deletes those names (role "Launch persona") on every restart. The eval spawns
+# its own copies under names the retire pass does not know, with the pre-#843 seed
+# fields (role, persona "<label> via claude-code", model, tool, mode worker) so the
+# teammate stays constant against the baseline. No header: the seed wrote none, and
+# a header would add bytes to the index arms' teammates group. Idempotent by name.
+team_names() { "$T8" entity query --kind team_member --limit 100 --format json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{s=s.slice(0,s.lastIndexOf("}")+1);const j=JSON.parse(s);for(const it of (j.page?.items||j.items||[]))console.log(it.title)})'; }
+HAVE=$(team_names)
+while IFS='|' read -r NAME LABEL MODEL; do
+  printf '%s\n' "$HAVE" | grep -qxF "$NAME" && continue
+  "$T8" entity create team_member "$NAME" --content "{\"role\":\"Launch persona\",\"identity\":\"$LABEL via claude-code\",\"model\":\"$MODEL\",\"agentTool\":\"claude-code\",\"mode\":\"worker\"}" --format json >/dev/null
+  warn "teammate $NAME ($MODEL)"
+done <<'EVAL_TEAMMATES'
+Sonnet 5 Eval|Claude Sonnet 5|claude-sonnet-5
+Haiku 4.5 Eval|Claude Haiku 4.5|claude-haiku-4-5-20251001
+EVAL_TEAMMATES
 TEAMMATES=$("$T8" entity query --kind team_member --limit 100 --format json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{s=s.slice(0,s.lastIndexOf("}")+1);const j=JSON.parse(s);const out={};for(const it of (j.page?.items||j.items||[]))out[it.title]=it.id;process.stdout.write(JSON.stringify(out))})')
 node -e '
 const [reg, port, pgPort, db, dataDir, build, arm, sha, cli, spaceId, projectId, repo, teammates] = process.argv.slice(1);
