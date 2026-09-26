@@ -533,6 +533,18 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       },
     },
 
+    // -- space links (W6) ----------------------------------------------------
+
+    spaceLinks: {
+      list: (spaceId) => ops.spaceLinksList(spaceId),
+      add: (spaceId, targetSpaceId) => ops.spaceLinksAdd(spaceId, targetSpaceId),
+      login: (linkId) => ops.spaceLinksMutate('spaceLinks.login', linkId),
+      relogin: (linkId) => ops.spaceLinksMutate('spaceLinks.relogin', linkId),
+      logout: (linkId) => ops.spaceLinksMutate('spaceLinks.logout', linkId),
+      remove: (linkId) => ops.spaceLinksMutate('spaceLinks.remove', linkId),
+      setSpawn: (linkId, allowSpawn, spawnBudget) => ops.spaceLinksSetSpawn(linkId, allowSpawn, spawnBudget),
+    },
+
     // -- liveness ------------------------------------------------------------
 
     liveness: {
