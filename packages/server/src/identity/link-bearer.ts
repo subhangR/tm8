@@ -14,10 +14,18 @@
  *     no allow-list at this layer. The refusal sits in that closure, NOT in
  *     the shared `resolveBearerIdentity`, so `use()` still resolves.
  * (ii) Registry. `HandlerRegistry.get` refuses an identity of authKind `link`
- *     on every operation not in `LINK_BEARER_ALLOWED_OPS`, before the
- *     handler (and so before `claimsFor`, any write, mint or rpc) runs. The
- *     list is EMPTY; #884 adds `spaceLinks.invoke` with its marker, and
- *     nothing else.
+ *     on every operation, before the handler (and so before `claimsFor`,
+ *     any write, mint or rpc) runs — UNLESS the request context carries the
+ *     in-process invoke marker (#884, lead ruling (a)). There is no
+ *     allow-list: the one admission is `admitLinkInvoke`, called only by the
+ *     `spaceLinks.invoke` in-process executor, after its home-side refused
+ *     set (credentials.*, space-credential ops, link token ops, the spawn
+ *     rule) has run. The marker is a module-private WeakMap entry keyed on
+ *     the context OBJECT and bound to one op name; it is consumed by the
+ *     first registry check that sees it. It is never a header, a claim, a
+ *     GUC or a body field, so nothing from a wire, a ledger replay or a
+ *     child spawn can carry it, and a nested dispatch from inside the inner
+ *     handler (same context object or a copy) finds no marker.
  * (iii) Defence in depth. `execution.spawn`, `execution.resume`,
  *     `execution.dispatch` and the spawn reader
  *     (`SpaceCredentialStore.readForSpawn`) refuse it again with
@@ -37,8 +45,21 @@ export const LINK_BEARER_SPAWN_REFUSED = 'a space link session cannot spawn, res
 export const LINK_BEARER_TRANSPORT_REFUSED = 'a space link session token is not accepted on any transport';
 export const LINK_BEARER_OP_REFUSED = 'a space link session cannot call this operation';
 
-/** Layer (ii)'s allow-list. Empty in #898: #884 adds its invoke route only. */
-export const LINK_BEARER_ALLOWED_OPS: ReadonlySet<OperationName> = new Set<OperationName>();
+/**
+ * Layer (ii)'s one admission: context object -> the op it may run. Module
+ * private and weakly held, so it cannot be serialised, forged by value or
+ * outlive the request.
+ */
+const LINK_INVOKE_ADMITTED = new WeakMap<object, OperationName>();
+
+/**
+ * Mark ONE in-process dispatch of `name` on `ctx` as the `spaceLinks.invoke`
+ * executor's. Only space-link-invoke.ts may call this (pinned by
+ * link-bearer-refused.test.ts); it runs after the home-side refused set.
+ */
+export function admitLinkInvoke(ctx: object, name: OperationName): void {
+  LINK_INVOKE_ADMITTED.set(ctx, name);
+}
 
 function refused(message: string): CollabError {
   return new CollabError('forbidden', message, { details: { sqlstate: '42501' } });
@@ -49,9 +70,16 @@ export function refuseLinkSessionOnTransport(sessionKind: string): void {
   if (sessionKind === 'link') throw refused(LINK_BEARER_TRANSPORT_REFUSED);
 }
 
-/** Layer (ii): the registry's default-deny. */
-export function refuseLinkBearerOp(name: OperationName, authKind: string | undefined): void {
-  if (authKind === 'link' && !LINK_BEARER_ALLOWED_OPS.has(name)) throw refused(LINK_BEARER_OP_REFUSED);
+/**
+ * Layer (ii): the registry's default-deny. A link identity passes only on a
+ * context the invoke executor marked for exactly this op; the marker is
+ * consumed here, so it admits one dispatch and no nested one.
+ */
+export function refuseLinkBearerOp(name: OperationName, ctx: { identity?: { authKind?: string } }): void {
+  if (ctx.identity?.authKind !== 'link') return;
+  const admitted = LINK_INVOKE_ADMITTED.get(ctx);
+  LINK_INVOKE_ADMITTED.delete(ctx);
+  if (admitted !== name) throw refused(LINK_BEARER_OP_REFUSED);
 }
 
 /** Layer (iii): the per-operation refusal. */

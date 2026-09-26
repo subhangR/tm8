@@ -50,6 +50,9 @@ describe('via_link claim forwarding (256, W7p)', () => {
     // A new builder lands here first, so it is looked at rather than passed.
     expect(builders).toEqual([
       'facade/context.ts',
+      // #884: the invoke executor pins the inner link identity to the link's
+      // target in every mode, beside the viaLinkId it already sets.
+      'facade/handlers/w2/space-link-invoke.ts',
       'http/artifact-preview.ts',
       'http/identity-resolver.ts',
       'http/support-claims.ts',

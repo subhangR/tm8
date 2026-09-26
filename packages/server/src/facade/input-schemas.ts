@@ -101,6 +101,7 @@ import {
   SpaceLinksAddInputSchema,
   SpaceLinksMutationInputSchema,
   SpaceLinksSetSpawnInputSchema,
+  SpaceLinksInvokeInputSchema,
   ExecutionGitCheckpointInputSchema,
   ExecutionGitRollbackInputSchema,
   ExecutionGitCommitInputSchema,
@@ -275,6 +276,8 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'spaceLinks.logout': SpaceLinksMutationInputSchema,
   'spaceLinks.remove': SpaceLinksMutationInputSchema,
   'spaceLinks.setSpawn': SpaceLinksSetSpawnInputSchema,
+  // W7: the envelope only; the inner op's own schema runs inside invoke.
+  'spaceLinks.invoke': SpaceLinksInvokeInputSchema,
   'spaces.invites.create': InviteCreateInputSchema,
   'spaces.invites.revoke': RequiredCommandContextSchema,
   'spaces.invites.redeem': InviteRedeemInputSchema,
