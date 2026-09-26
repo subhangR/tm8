@@ -1202,16 +1202,6 @@ export function ChatHomeScreen({
     turnInProgress?.messageId && detail
       ? (detail.turns.find((turn) => turn.messageId === turnInProgress.messageId)?.parts ?? null)
       : null;
-  /* THE TRANSCRIPT OPENS AT ITS NEWEST TURN, STAYS THERE WHILE IT GROWS, and
-     never moves a reader who scrolled up — `live-turn-status-follow.ts`, which
-     also offers that reader the way back. `tail` is the live row's phase: the
-     row sits under the last turn, so it appearing or changing moves the end. */
-  const follow = useTranscriptFollow({
-    threadKey: selectedRootId,
-    content: detail,
-    tail: turnInProgress?.phase ?? null,
-    itemCount: detail?.turns.length ?? 0,
-  });
 
   const selectionUnavailable =
     teammateId === ''
@@ -1455,6 +1445,19 @@ export function ChatHomeScreen({
             )
           : null;
   const centre: ReactNode = centerOverride ?? stagePane;
+  /* THE TRANSCRIPT OPENS AT ITS NEWEST TURN, STAYS THERE WHILE IT GROWS, and
+     never moves a reader who scrolled up — `live-turn-status-follow.ts`, which
+     also offers that reader the way back. `tail` is the live row's phase: the
+     row sits under the last turn, so it appearing or changing moves the end.
+     `visible`: a stage or host panel hides the transcript, and a hidden box
+     measures zero — coming back must re-anchor, not trust that reading. */
+  const follow = useTranscriptFollow({
+    threadKey: selectedRootId,
+    content: detail,
+    tail: turnInProgress?.phase ?? null,
+    itemCount: detail?.turns.length ?? 0,
+    visible: centre == null,
+  });
 
   /* THE DOCK-DOWN (Cockpit ruling 2026-08-18): the centred composer of a new
      thread travels to its bottom berth when the first send lands, instead of

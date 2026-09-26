@@ -64,6 +64,16 @@ export interface TranscriptFollowInput {
   tail: unknown;
   /** Messages on screen — `detail.turns.length`. What `unseen` counts. */
   itemCount: number;
+  /**
+   * Whether the transcript is on screen. A stage or a host panel takes its
+   * place with `hidden` (display:none), and a hidden box MEASURES ZERO: the
+   * follow effect used to read `scrollHeight` 0 there, record it as followed,
+   * and then never re-anchor when the chat came back (L5, measured on :7777:
+   * back from the Graph stage at scrollTop 344 of 757). display:none also
+   * DROPS the scroll position, so a reader who had scrolled up came back at the
+   * top. Keyed here so both are put right the moment it is shown again.
+   */
+  visible: boolean;
 }
 
 export interface TranscriptFollow {
@@ -84,6 +94,7 @@ export function useTranscriptFollow({
   content,
   tail,
   itemCount,
+  visible,
 }: TranscriptFollowInput): TranscriptFollow {
   const elementRef = useRef<HTMLDivElement | null>(null);
   /** THE READER'S INTENT, not a position — read synchronously by the layout
@@ -101,6 +112,9 @@ export function useTranscriptFollow({
    * to before.
    */
   const followedHeightRef = useRef(-1);
+  /** Where the reader last WAS — what display:none throws away. */
+  const lastTopRef = useRef(0);
+  const wasVisibleRef = useRef(visible);
   /** The message count when the reader left the end; `null` while following. */
   const [leftAt, setLeftAt] = useState<number | null>(null);
   /** A Jump's smooth scroll in flight: until when, the distance to the end it
@@ -142,18 +156,29 @@ export function useTranscriptFollow({
   useLayoutEffect(() => {
     const element = elementRef.current;
     if (!element) return;
+    const shownAgain = visible && !wasVisibleRef.current;
+    wasVisibleRef.current = visible;
+    /* Hidden: a display:none box measures 0 — there is nothing to follow and
+       nothing true to learn, so it must not be recorded as followed. */
+    if (!visible) {
+      followedHeightRef.current = -1;
+      return;
+    }
     if (!stickRef.current) {
       followedHeightRef.current = -1;
+      // display:none dropped the reader's place; give it back, once.
+      if (shownAgain) element.scrollTop = lastTopRef.current;
       return;
     }
     const height = element.scrollHeight;
     if (height === followedHeightRef.current) return;
     followedHeightRef.current = height;
     element.scrollTop = height;
-  }, [content, tail]);
+  }, [content, tail, visible]);
 
   const onScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
     const element = event.currentTarget;
+    lastTopRef.current = element.scrollTop;
     const distance = element.scrollHeight - element.scrollTop - element.clientHeight;
     const atEnd = distance <= NEAR_BOTTOM_PX;
     const jump = jumpRef.current;

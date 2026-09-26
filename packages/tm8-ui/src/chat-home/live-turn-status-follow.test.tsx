@@ -43,14 +43,16 @@ beforeEach(() => {
   const positions = new WeakMap<HTMLElement, number>();
   Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
     configurable: true,
+    /* A `hidden` (display:none) box has no layout and measures 0 — which is
+       exactly the reading the stage bug was built on. */
     get(this: HTMLElement) {
-      return this.classList.contains('tch-transcript') ? contentHeight : 0;
+      return this.classList.contains('tch-transcript') && !this.hidden ? contentHeight : 0;
     },
   });
   Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
     configurable: true,
     get(this: HTMLElement) {
-      return this.classList.contains('tch-transcript') ? VIEWPORT : 0;
+      return this.classList.contains('tch-transcript') && !this.hidden ? VIEWPORT : 0;
     },
   });
   Object.defineProperty(HTMLElement.prototype, 'scrollTop', {
@@ -199,6 +201,53 @@ describe('the way back to the end', () => {
     transcript.scrollTop = contentHeight - VIEWPORT - 40;
     fireEvent.scroll(transcript);
     expect(pill(view)).toBeNull();
+  });
+});
+
+/**
+ * L5's finding, measured on :7777: back from the Graph stage the transcript sat
+ * at scrollTop 344 of 757 — mid-thread, not at the newest turn. A stage hides
+ * the transcript (display:none), a hidden box measures 0, and the follow
+ * effect recorded that 0 as "followed" and never re-ran on the way back.
+ */
+describe('coming back from a stage (or any host panel)', () => {
+  async function withStage() {
+    const { port, controls } = createChatHomeFixturePort();
+    const props = { port, spaceId: SPACE_ID, models: MODELS };
+    const view = render(<ChatHomeScreen {...props} />);
+    await waitFor(() => expect(view.getByText('Plan the launch sequence')).toBeTruthy());
+    await waitFor(() => expect(writes.length).toBeGreaterThan(0));
+    const transcript = view.container.querySelector('.tch-transcript') as HTMLElement;
+    const openStage = () => view.rerender(<ChatHomeScreen {...props} centerOverride={<div data-testid="stage" />} />);
+    const closeStage = () => view.rerender(<ChatHomeScreen {...props} />);
+    return { view, controls, transcript, openStage, closeStage };
+  }
+
+  /** HINGES ON: `visible` in the follow effect's keys (the re-anchor on the
+   *  way back) and the `!visible` guard (no write into a hidden box). */
+  it('a reader who was at the end lands on the newest turn, even if it grew meanwhile', async () => {
+    const { controls, transcript, openStage, closeStage } = await withStage();
+    writes.length = 0;
+    openStage();
+    expect(transcript.hidden).toBe(true);
+    await act(async () => stepOnExistingTurn(controls)); // the turn grows behind the stage
+    // Nothing is written into a hidden box — its 0 is not a height to follow.
+    expect(writes).toEqual([]);
+    closeStage();
+    expect(writes.at(-1)).toBe(contentHeight);
+  });
+
+  it('a reader who had scrolled up gets their place back, and the way back is still offered', async () => {
+    const { view, transcript, openStage, closeStage } = await withStage();
+    transcript.scrollTop = 1000;
+    fireEvent.scroll(transcript);
+    expect(pill(view)).not.toBeNull();
+    openStage();
+    transcript.scrollTop = 0; // what display:none does to a real box's position
+    writes.length = 0;
+    closeStage();
+    expect(writes.at(-1)).toBe(1000);
+    expect(pill(view)).not.toBeNull();
   });
 });
 
