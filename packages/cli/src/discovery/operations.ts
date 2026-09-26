@@ -2981,18 +2981,6 @@ const ROWS: Record<OperationName, Row> = {
     tags: ['container', 'fork', 'clone', 'copy', 'branch', 'snapshot'],
     notes: ['no version guard: a fork READS the source machine and never changes its record'],
   },
-  'containers.attention': {
-    cmd: ['container', 'attention'],
-    syn: 'tm8 container attention <container-id> --reason login|captcha|2fa|payment|approval|other [--detail <text>] [--points <n>] [--mutation-id <id>]',
-    sum: 'Ask a human to take over a machine, with a bounded score',
-    authz: 'entity',
-    input: 'bound',
-    tags: ['container', 'attention', 'takeover', 'human', 'login', 'captcha', '2fa'],
-    notes: [
-      'the takeover path for the moments an agent must not automate: a login, a captcha, a payment (§12.5)',
-      'points are 1-100 and rank the request against every other call on human attention',
-    ],
-  },
   'containers.providers.list': {
     cmd: ['container', 'providers'],
     syn: 'tm8 container providers [--node <name>]',
@@ -3178,7 +3166,8 @@ export const CATALOG_DIGEST =
   // Rebased onto main d11e0be5 (#848): W11's +4 on top of auth.space.enter; digest re-measured on the rebased tree.
   // Re-measured for node.metrics.get (status strip) — read from the regenerated conformance manifest.
   // +2 auth.sessions.list/revoke (W4, on main 96f6b61e): read from the regenerated conformance manifest.
-  'sha256:fd012d2be0ae2898d1d4844cd8bec0ec56366cf2f87845177eb0b43c897b6ebd';
+  // -1 containers.attention (Attention v2 S7a): read from the regenerated conformance manifest.
+  'sha256:bd84cb59cd01e936cf2ab306ad8f2ae8bd13986ca02aac46ba9b606186b7d84c';
 
 export const GRAMMAR_VERSION = '2';
 
