@@ -3642,12 +3642,16 @@ async function linkLoginAs(accountId: string, identityId: string): Promise<{ lin
   return { link, token: (await linkStore.use(claims, link.id)).token };
 }
 
+/** Idempotent: every W6 block calls it, so a `-t` filter on one block still sets up. */
+async function ensureHLink(): Promise<void> {
+  if (hLinkToken) return;
+  linkDataDir = await mkdtemp(join(tmpdir(), 'tm8-cross-space-links-'));
+  linkStore = new DbSpaceLinkStore({ db, dataDir: linkDataDir });
+  ({ link: hLink, token: hLinkToken } = await linkLoginAs(fixture.accountH, fixture.identityH));
+}
+
 describe.sequential('W6 space links — H\'s link session A → B', () => {
-  beforeAll(async () => {
-    linkDataDir = await mkdtemp(join(tmpdir(), 'tm8-cross-space-links-'));
-    linkStore = new DbSpaceLinkStore({ db, dataDir: linkDataDir });
-    ({ link: hLink, token: hLinkToken } = await linkLoginAs(fixture.accountH, fixture.identityH));
-  });
+  beforeAll(ensureHLink);
 
   it('the stored session is kind link, pinned to B', async () => {
     const claims = await claimsForToken(hLinkToken);
@@ -3660,6 +3664,7 @@ describe.sequential('T16 link spawn budget on the W4 Sessions page — after W4'
 });
 
 describe.sequential('T19 link token copied to another row does not open (a1, AAD home|link|member|target)', () => {
+  beforeAll(ensureHLink);
   const sealedOf = async (memberId: string) => {
     const rows = await database.transaction(async (client) => {
       await client.query('set local role tm8_graph_owner');
@@ -3693,6 +3698,7 @@ describe.sequential('T19 link token copied to another row does not open (a1, AAD
 });
 
 describe.sequential('T20 link session for B reads or writes A — refused', () => {
+  beforeAll(ensureHLink);
   it('refused — A\'s doc is invisible to H\'s link session', async () => {
     const ids = await asToken(hLinkToken, (q) => idsIn(q, fixture.spaceA));
     expect(ids).not.toContain(fixture.docA);
@@ -3710,6 +3716,7 @@ describe.sequential('T20 link session for B reads or writes A — refused', () =
 });
 
 describe.sequential('T20b link session in B — credential management refused, the rest as the member', () => {
+  beforeAll(ensureHLink);
   // E2: credential MANAGEMENT refuses `link` through the strict gate
   // (internal.require_human_auth_kind, unchanged). Decision 31 / T22: invites,
   // roles and delete are forwarded as the member.
@@ -3775,6 +3782,7 @@ describe.sequential('T20b link session in B — credential management refused, t
 });
 
 describe.sequential('T28 link visibility — every home member sees the link, only the holder sees a token row', () => {
+  beforeAll(ensureHLink);
   it('H2 (A only) sees the link in A, with no target name (P8) and no row of their own', async () => {
     const h2 = await claimsForToken(await mintBrowser(fixture.accountH2, fixture.identityH2));
     const listed = await linkStore.list(h2, fixture.spaceA);
@@ -3802,6 +3810,7 @@ describe.sequential('T28 link visibility — every home member sees the link, on
 });
 
 describe.sequential('T17 leave / remove ends a member\'s link sessions', () => {
+  beforeAll(ensureHLink);
   it('X removed from A (home): X\'s link session no longer resolves, X\'s rows are gone', async () => {
     const x = await seedMemberOfAB('t17-x');
     const { token } = await linkLoginAs(x.account, x.identity);
