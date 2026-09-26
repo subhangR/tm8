@@ -1,0 +1,65 @@
+/* THE STATUS STRIP — one quiet row beneath the desktop top bar.
+   Stacks ABOVE `.shell-body` and never clips, because the lead slot's
+   attention popover drops down over the content from inside it. */
+.cv2-root .status-strip {
+  position: relative;
+  z-index: 20;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  height: 24px;
+  padding: 0 var(--pn-space-2);
+  overflow: visible;
+  border-bottom: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+  color: var(--pn-ink-3);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.cv2-root .status-strip__segment {
+  display: inline-flex;
+  gap: var(--pn-space-1);
+  height: 100%;
+  align-self: stretch;
+  align-items: center;
+  padding: 0 10px;
+  border: 0;
+  border-right: 1px solid var(--pn-line);
+  background: none;
+  color: inherit;
+  font: inherit;
+}
+.cv2-root .status-strip__segment:last-child {
+  border-right: 0;
+}
+.cv2-root button.status-strip__segment {
+  cursor: pointer;
+}
+.cv2-root button.status-strip__segment:hover {
+  background: var(--pn-hover);
+}
+.cv2-root button.status-strip__segment:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+
+.cv2-root .status-strip__label {
+  color: var(--pn-ink-4);
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+  font-size: var(--pn-fs-fine);
+}
+.cv2-root .status-strip__value {
+  color: var(--pn-ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.cv2-root .status-strip__segment--warn .status-strip__value {
+  color: var(--pn-wait);
+}
+.cv2-root .status-strip__segment--alert .status-strip__value {
+  color: var(--pn-block);
+}
