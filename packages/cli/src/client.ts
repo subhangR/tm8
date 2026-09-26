@@ -36,6 +36,7 @@ import {
   TransportError,
 } from './errors.js';
 import type { SpaceLinkRoute } from './context.js';
+import { activeLink } from './space-link-active.js';
 import { CliError, EXIT_USAGE } from './exit.js';
 import { journal } from './journal.js';
 import { readCache, type CacheEntry, type ReadCache } from './read-cache.js';
@@ -266,6 +267,18 @@ export class Tm8Client {
     this.cache = opts.cache ?? readCache;
     this.gapRetryMs = Math.max(0, opts.gapRetryMs ?? 0);
     this.sleep = opts.sleepImpl ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+    // While a link is active, a client without it would send a call straight
+    // to home with the home pass, skipping the invoke, the refused set and the
+    // audit. Checked here, so it holds however the client is built (an alias,
+    // options from a variable, a subclass); a source scan cannot promise that.
+    const activeSpaceLink = activeLink();
+    if (activeSpaceLink && opts.link?.linkId !== activeSpaceLink.linkId) {
+      throw new CliError(
+        `internal: a request client was built without the active space link ${activeSpaceLink.linkId}; ` +
+          'every call in a linked invocation must go through spaceLinks.invoke on home',
+        EXIT_USAGE,
+      );
+    }
     this.link = opts.link;
   }
 
