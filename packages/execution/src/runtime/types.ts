@@ -5,6 +5,8 @@
 // Making either pretend to be the other would fill the interface with methods
 // that cannot be implemented honestly.
 
+import type { SessionTranscriptContext } from '@tm8/contract';
+
 /** The lifecycle states carried by every tool-call update (TM8 Chat C1). */
 export type ToolCallState = 'running' | 'completed' | 'error';
 
@@ -40,6 +42,12 @@ export interface ToolResultTurnItem {
 /**
  * Per-turn token and cost facts from the provider.
  *
+ * PER TURN, which Claude's `result` does not hand over directly: its
+ * `modelUsage` and `total_cost_usd` are running totals for the whole process.
+ * Tokens are therefore the top-level `result.usage` (this turn's main-thread
+ * requests, summed) and cost is the difference between consecutive
+ * `total_cost_usd` values in one process — see ClaudeHeadlessAdapter.
+ *
  * Every field is optional because an omitted provider fact is unknown. In
  * particular `total_cost_usd` MUST remain absent when Claude omits it; filling
  * it with zero would turn "not reported" into a false billing record.
@@ -51,6 +59,19 @@ export interface UsageTurnItem {
   cache_creation_input_tokens?: number;
   cache_read_input_tokens?: number;
   total_cost_usd?: number;
+}
+
+/**
+ * The thread's context reading after one main-thread request — the same shape
+ * the session strip reads from a transcript (`SessionTranscriptContext`), taken
+ * here from the stream instead. Emitted once per new request (so it moves
+ * mid-turn), once more when the turn's result supplies the capacity, and as a
+ * cleared reading after a compaction. It is ABOUT THE THREAD, not the turn: a
+ * consumer keeps the latest and must not store one per request.
+ */
+export interface ContextTurnItem {
+  kind: 'context';
+  context: SessionTranscriptContext;
 }
 
 export interface ErrorTurnItem {
@@ -66,13 +87,14 @@ export interface DoneTurnItem {
   reason: TurnDoneReason;
 }
 
-/** The exact seven-kind union pinned by TM8 Chat contract C1. */
+/** The exact eight-kind union pinned by TM8 Chat contract C1 (`context` joined for Chat Context). */
 export type TurnItem =
   | ThinkingTurnItem
   | TextTurnItem
   | ToolCallTurnItem
   | ToolResultTurnItem
   | UsageTurnItem
+  | ContextTurnItem
   | ErrorTurnItem
   | DoneTurnItem;
 

@@ -1,4 +1,4 @@
-import type { ChatTurnUsage } from '@tm8/contract';
+import type { ChatTurnUsage, SessionTranscriptContext } from '@tm8/contract';
 import type { ChatMode } from '@tm8/contract';
 
 /**
@@ -23,6 +23,8 @@ export type TurnItem =
       readonly is_error: boolean;
     }
   | ({ readonly kind: 'usage' } & ChatTurnUsage)
+  /** The thread's latest context reading: stored on the chat, never a part. */
+  | { readonly kind: 'context'; readonly context: SessionTranscriptContext }
   | { readonly kind: 'error'; readonly code: string; readonly message: string }
   | { readonly kind: 'done'; readonly reason: 'success' | 'error' | 'interrupted' | 'closed' };
 

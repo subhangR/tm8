@@ -26,6 +26,9 @@
 }
 
 .tch-conversation__head {
+  /* Positioned: the context chip's details card anchors here, as it does to
+     `.pn-panelbar` on the session strip. */
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--pn-space-3);
@@ -33,6 +36,11 @@
   min-height: 56px;
   padding: var(--pn-space-2) var(--pn-space-3);
   border-bottom: 1px solid var(--pn-line);
+}
+
+.tch-context {
+  margin-left: auto;
+  flex: none;
 }
 
 .tch-title {

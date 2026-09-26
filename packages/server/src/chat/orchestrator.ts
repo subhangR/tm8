@@ -3,6 +3,7 @@ import {
   type ChatMode,
   type ChatTurnUsage,
   type MessageView,
+  type SessionTranscriptContext,
 } from '@tm8/contract';
 import type { Db, DbClaims, Querier } from '../db/types.js';
 import { ENTITY_COLUMNS, ENTITY_FROM, titleOf, type EntityRow } from '../facade/entity-read.js';
@@ -425,6 +426,29 @@ export class ChatOrchestrator {
     }
   }
 
+  /**
+   * Like the subject line, a reading is context: a failed write reports
+   * through onError and the turn goes on without it. The frame goes out only
+   * after the write, so a reload never shows an older reading than the live
+   * view did.
+   */
+  private async recordContext(turn: ClaimedTurn, context: SessionTranscriptContext): Promise<void> {
+    try {
+      await this.options.db.rpc(claims(turn.requesterIdentityId), 'set_chat_context', [
+        turn.chatId,
+        context,
+      ]);
+    } catch (error) {
+      this.options.onError?.(error);
+      return;
+    }
+    this.options.publisher.publish(turn.spaceId, {
+      type: 'chat.context',
+      chatId: turn.chatId,
+      context,
+    });
+  }
+
   private async runTurn(turn: ClaimedTurn): Promise<void> {
     const agentMessageId = turn.agentMessageId ?? await this.createAgentMessage(turn);
     let seq = turn.agentMessageId ? Number(turn.nextSeq) : 0;
@@ -467,6 +491,12 @@ export class ChatOrchestrator {
         // turns; persisting it draws an empty "Thinking" disclosure. Skip it —
         // absence of thought is not a part.
         if (item.kind === 'thinking' && item.text.trim() === '') continue;
+        // A reading describes the thread, not this turn's transcript: it
+        // replaces the chat's one stored reading and is never a message part.
+        if (item.kind === 'context') {
+          await this.recordContext(turn, item.context);
+          continue;
+        }
         await append(item);
       }
       if (terminal.reason === null) {

@@ -1,5 +1,5 @@
 /**
- * G6 — THE MEMBER TOMBSTONE (plan 01a0d9eb §3 W1, migration 231).
+ * G6 — THE MEMBER TOMBSTONE (plan 01a0d9eb §3 W1, migration 232).
  *
  * `spaces.leave` / `spaces.members.remove` end a membership WITHOUT deleting
  * the row: `members.status` goes to `left` / `removed`, `left_at` is stamped,

@@ -242,7 +242,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'spaces.workflows.upsert': WorkflowInputSchema,
   'spaces.workflows.delete': RequiredCommandContextSchema,
   'spaces.members.updateRole': UpdateMemberRoleInputSchema,
-  // G6 (231): human-only, no actor — the body is the mutation id alone.
+  // G6 (232): human-only, no actor — the body is the mutation id alone.
   'spaces.members.remove': SpacesMembersRemoveInputSchema,
   'spaces.leave': SpacesLeaveInputSchema,
   'accounts.disable': AccountsDisableInputSchema,

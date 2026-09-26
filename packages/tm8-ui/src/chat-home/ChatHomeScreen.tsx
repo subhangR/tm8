@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { ChatMode, EntityId, LaunchModelEffort, SpaceId } from '@tm8/contract';
+import type { ChatMode, EntityId, LaunchModelEffort, SessionTranscriptContext, SpaceId } from '@tm8/contract';
 import { CHATS_ROOT, KindIcon, actorName, type HomeRoot } from '../domain';
 import { rememberChatStart } from '../chat-defaults/lastUsed';
 import { Avatar, Markdown, RibbonMark, Timestamp } from '../kit';
@@ -25,6 +25,7 @@ import type { FleetEntityReader } from './fleet/use-fleet-entities';
 import type { FleetRowInput } from './fleet/fleet-rows';
 import { EntityChip, type ChatEntityResolver } from './EntityChip';
 import { ComposerSelect, type ComposerSelectOption } from './ComposerSelect';
+import { ChatContextNumber, staleReason } from './ChatContextNumber';
 import {
   AddToTurnMenu,
   CrewPanel,
@@ -1002,6 +1003,19 @@ export function ChatHomeScreen({
     [port, refreshDetail, refreshThreads],
   );
 
+  // Live context readings, per chat: a frame for one chat must never draw on
+  // another's header, and a chat switched away from and back keeps the newest
+  // reading this screen saw rather than the older one its list row carried.
+  const [liveContext, setLiveContext] = useState<ReadonlyMap<EntityId, SessionTranscriptContext>>(
+    () => new Map(),
+  );
+  useEffect(
+    () =>
+      port.subscribeContext?.((frame) =>
+        setLiveContext((prev) => new Map(prev).set(frame.chatId, frame.context))),
+    [port],
+  );
+
   /** This thread's own message ids: never chip them — they are already the
    *  transcript. Messages from OTHER sessions/threads keep their chips. Keyed
    *  by the joined ids, not the detail object, so streamed part updates do not
@@ -1879,6 +1893,22 @@ export function ChatHomeScreen({
                 />
               </div>
             ) : null}
+            {/* THE CONTEXT NUMBER (Chat Context). A live frame is the runtime
+                measuring right now; otherwise the stored reading, which is
+                "last known" unless the runtime is still running. */}
+            {detail
+              ? (() => {
+                  const live = liveContext.get(detail.summary.rootId);
+                  const context = live ?? detail.summary.context ?? null;
+                  if (!context) return null;
+                  return (
+                    <ChatContextNumber
+                      context={context}
+                      stale={live ? null : staleReason(detail.summary.runtimeState)}
+                    />
+                  );
+                })()
+              : null}
           </header>
         )}
 

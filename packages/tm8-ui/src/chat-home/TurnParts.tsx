@@ -373,12 +373,21 @@ function createDepth(id: string, ledger: ChatLedger): number {
   return depth;
 }
 
+/**
+ * One turn's usage, each count under its own name. These are the TURN's
+ * figures — the step in the runtime's running totals, not the totals — and
+ * they are the provider's categories: Claude bills a cached prefix as cache
+ * read, not as input, so "input + output" alone would read a 40k-token turn
+ * as 15 tokens. An absent count is left out, never shown as 0.
+ */
 function UsageCard({ usage }: { usage: ChatUsage }) {
-  const tokens = tokenTotal(usage);
+  const counts = usageCounts(usage);
   return (
     <aside className="tch-usage" aria-label="Turn usage" data-testid="chat-usage-card">
       <span className="tch-usage__label">usage</span>
-      {tokens !== null ? <span>{tokens.toLocaleString()} tokens</span> : null}
+      {counts.map(([label, value]) => (
+        <span key={label}>{`${value.toLocaleString()} ${label}`}</span>
+      ))}
       {usage.total_cost_usd !== undefined ? (
         <span>{formatCost(usage.total_cost_usd)}</span>
       ) : null}
@@ -388,9 +397,14 @@ function UsageCard({ usage }: { usage: ChatUsage }) {
   );
 }
 
-function tokenTotal(usage: ChatUsage): number | null {
-  if (usage.input_tokens === undefined && usage.output_tokens === undefined) return null;
-  return (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0);
+function usageCounts(usage: ChatUsage): Array<[string, number]> {
+  const counts: Array<[string, number | undefined]> = [
+    ['in', usage.input_tokens],
+    ['cache read', usage.cache_read_tokens],
+    ['cache write', usage.cache_creation_tokens],
+    ['out', usage.output_tokens],
+  ];
+  return counts.filter((entry): entry is [string, number] => entry[1] !== undefined);
 }
 
 function formatCost(cost: number): string {
