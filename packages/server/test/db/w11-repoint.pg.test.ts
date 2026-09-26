@@ -525,3 +525,105 @@ describe.sequential('260 applied once sharing has ended', () => {
     });
   });
 });
+
+/**
+ * STALE-BODY PIN. 260 was first written (as 245) against ~07:00 main and
+ * re-based onto main 55b5d3e5 + #865. For every function 260 replaces, every
+ * statement line of that function's LATEST definition before 260 must still be
+ * in the live body, except the lines 260 replaces on purpose (listed below,
+ * each with the line that stands in for it). A migration ordered before 260
+ * that hardens one of these functions, and a 260 that then silently re-creates
+ * the older body, fails here with the missing line named.
+ */
+const INTENDED: Record<string, readonly string[]> = {
+  'internal.project_entity_for': [
+    'select link.project_entity_id', 'from public.project_links link',
+    'where link.space_id = p_space_id and link.project_id = p_folder_id',
+  ],
+  'public.execution_spawn': [
+    'insert into public.work_sessions(entity_id, title, node_id, project_id, workdir_mode,',
+    "values (session_id, coalesce(p_title, ''), p_node_id, p_project_id,",
+  ],
+  'public.start_shell_session': [
+    'insert into public.work_sessions(entity_id, title, node_id, project_id, workdir_mode,', 'p_project_id,',
+  ],
+  'public.start_container_exec_session': [
+    'insert into public.work_sessions(entity_id, title, node_id, project_id, workdir_mode,',
+    "container_row.node_id, null, 'container',",
+  ],
+  'public.start_chat': [
+    'chat_mode, workdir_mode, project_id, cwd, native_session_id,',
+    'p_chat_mode, p_workdir_mode, p_project_id, resolved_cwd, p_native_session_id,',
+  ],
+  'public.create_worktree': [
+    'insert into public.worktrees(entity_id, project_id, path, branch, base_ref, base_commit_oid)',
+    'values (worktree_id, p_project_id, p_path, btrim(p_branch), p_base_ref, lower(p_base_commit_oid));',
+  ],
+  'public.begin_form_delivery_spawn': ["'projectid', ws.project_id,"],
+  'public.unlink_project': ['where ws.project_id = p_project_id and e.space_id = p_space_id'],
+  'internal.pr_owning_session': ['join public.projects wp on wp.id = w.project_id'],
+  'internal.guard_space_project_link': ['and (ws.project_id = old.project_id', 'and chat.project_id = old.project_id'],
+  'internal.fill_worktree_space': [
+    'if new.project_entity_id is null then',
+    'new.project_entity_id := internal.project_entity_for(new.space_id, new.project_id);', 'end if;',
+  ],
+  'internal.guard_launch_project': ['if new.project_id is distinct from old.project_id then'],
+  'internal.after_work_session_insert_w1': [
+    'if new.project_id is not null then', 'where l.space_id = session_space and l.project_id = new.project_id',
+  ],
+  'internal.capture_git_worktree_status': ["'projectid', new.project_id,"],
+};
+
+const norm = (line: string): string => line.replace(/--.*$/, '').trim().replace(/\s+/g, ' ').toLowerCase();
+
+/** Statement lines of the LAST `create or replace function <name>(` body in migrations before 260. */
+function latestBodyBefore260(name: string): { file: string; lines: string[] } {
+  const [schema, fn] = name.split('.') as [string, string];
+  const head = new RegExp(`create\\s+or\\s+replace\\s+function\\s+(?:${schema}\\.)${fn}\\s*\\(`, 'gi');
+  let found: { file: string; lines: string[] } | null = null;
+  for (const file of migrationFiles().filter((f) => ordinal(f) < 260)) {
+    const sql = readFileSync(join(REPO_ROOT, 'db/migrations', file), 'utf8');
+    for (const m of sql.matchAll(head)) {
+      const lineStart = sql.lastIndexOf('\n', m.index) + 1;
+      if (sql.slice(lineStart, m.index).includes('--')) continue;
+      const tag = /\bas\s+(\$\w*\$)/i.exec(sql.slice(m.index));
+      if (!tag) continue;
+      const open = m.index + tag.index + tag[0].length;
+      const close = sql.indexOf(tag[1]!, open);
+      found = { file, lines: sql.slice(open, close).split('\n').map(norm).filter(Boolean) };
+    }
+  }
+  if (!found) throw new Error(`no definition of ${name} before 260`);
+  return found;
+}
+
+describe.sequential('stale-body pin: 260 keeps every later hardening of what it replaces', () => {
+  it('names exactly the functions 260 replaces', () => {
+    const replaced = [...repointSql.matchAll(/^create or replace function ([\w.]+)\(/gim)].map((m) => m[1]!.toLowerCase());
+    const created = ['internal.project_link_resolve', 'internal.project_folder_for'];
+    expect(replaced.filter((n) => !created.includes(n)).sort()).toEqual(Object.keys(INTENDED).sort());
+  });
+
+  for (const [name, intended] of Object.entries(INTENDED)) {
+    it(`${name}: every line of its latest pre-260 body survives, bar the ${intended.length} replaced`, async () => {
+      const latest = latestBodyBefore260(name);
+      const [schema, fn] = name.split('.') as [string, string];
+      const live = (await database.query<{ src: string }>(
+        `select p.prosrc src from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+          where n.nspname = $1 and p.proname = $2`, [schema, fn]))[0]!.src;
+      const liveLines = new Set(live.split('\n').map(norm).filter(Boolean));
+      const allowed = new Set(intended.map(norm));
+      const missing = latest.lines.filter((l) => !liveLines.has(l) && !allowed.has(l));
+      expect({ source: latest.file, missing }).toEqual({ source: latest.file, missing: [] });
+      // Each intended replacement really was replaced (the allow-list is not a blanket).
+      expect(intended.map(norm).filter((l) => liveLines.has(l) && l !== 'end if;')).toEqual([]);
+    });
+  }
+
+  it('spot-check: main 234 R845-F2 re-grant pass survives in guard_space_project_link', async () => {
+    const [{ src }] = await database.query<{ src: string }>(
+      `select prosrc src from pg_proc where proname = 'guard_space_project_link'`);
+    expect(src).toMatch(/from public\.space_projects same\s+where same\.space_id = new\.space_id and same\.project_id = new\.project_id\) then\s+return new;/);
+    expect(src).toContain('ws.project_entity_id = projection_id');
+  });
+});
