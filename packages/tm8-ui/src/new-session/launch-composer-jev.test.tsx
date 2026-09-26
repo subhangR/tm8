@@ -193,6 +193,19 @@ describe('Apply is a click, and an ordinary edit', () => {
     expect(input).toMatchObject({ teamMemberId: 'tm-scout', model: 'gpt-5.6-sol', agentTool: 'codex', reasoningEffort: 'xhigh' });
   });
 
+  it('Apply all onto a teammate with remembered picks still launches Jev’s model', async () => {
+    localStorage.setItem('tm8.launch.picks.v1', JSON.stringify({
+      'tm-scout': { model: 'claude-haiku-4-5-20251001', effort: 'low', accessMode: 'plan' },
+    }));
+    const view = renderPopup({}, { model: okGroup({ ...MODEL, model: 'gpt-5.6-sol', agentTool: 'codex', effort: 'xhigh' }) });
+    await view.ask();
+    fireEvent.click(view.getByTestId('jev-apply-all'));
+    await waitFor(() => expect(view.getByTestId('jev-undo-all')).toBeTruthy());
+    const input = await view.spawn();
+    expect(input).toMatchObject({ teamMemberId: 'tm-scout', model: 'gpt-5.6-sol', agentTool: 'codex', reasoningEffort: 'xhigh' });
+    expect(input.jevRunId).toBeTruthy();
+  });
+
   it('Apply all, then Undo all, returns the launch to what it was', async () => {
     const bare = renderPopup({ jev: undefined });
     const before = await bare.spawn();
@@ -232,6 +245,18 @@ describe('applied model and teammate stay honest', () => {
     await waitFor(() => expect(view.getByTestId('jev-applied-teammate')).toBeTruthy());
     expect(view.getByTestId('jev-applied-model')).toBeTruthy();
     expect(view.queryByTestId('jev-replaced-model')).toBeNull();
+    const input = await view.spawn();
+    expect(input).toMatchObject({ teamMemberId: 'tm-scout', model: 'gpt-5.6-sol', agentTool: 'codex', reasoningEffort: 'xhigh' });
+  });
+
+  it('Apply model, then Apply teammate onto remembered picks: the applied model still goes out', async () => {
+    localStorage.setItem('tm8.launch.picks.v1', JSON.stringify({
+      'tm-scout': { model: 'claude-haiku-4-5-20251001', effort: 'low', accessMode: 'plan' },
+    }));
+    const view = await answered();
+    fireEvent.click(view.getByTestId('jev-apply-model'));
+    fireEvent.click(view.getByTestId('jev-apply-teammate'));
+    await waitFor(() => expect(view.getByTestId('jev-applied-teammate')).toBeTruthy());
     const input = await view.spawn();
     expect(input).toMatchObject({ teamMemberId: 'tm-scout', model: 'gpt-5.6-sol', agentTool: 'codex', reasoningEffort: 'xhigh' });
   });

@@ -119,6 +119,32 @@ describe('the attach row: context, never a second subject', () => {
     expect('selection' in input).toBe(false);
   });
 
+  it('"+N more" counts chips past the edge, and says nothing once scrolled to the end', async () => {
+    const view = renderPopup();
+    await view.ready();
+    fireEvent.click(view.getByTestId('lcd-attach'));
+    fireEvent.click(view.getByTestId('lcd-attach-ent-doc-other'));
+    /* jsdom has no layout: stub a 500px scroller over 1000px of chips, with
+       the one chip sitting flush with the right edge, as on a real node. */
+    const list = view.getByTestId('lcd-attached');
+    const chip = view.getByTestId('lcd-attached-ent-doc-other');
+    const box = (right: number) => ({ right, left: right - 200, top: 0, bottom: 30, width: 200, height: 30, x: right - 200, y: 0, toJSON: () => ({}) });
+    Object.defineProperty(list, 'scrollWidth', { configurable: true, value: 1000 });
+    Object.defineProperty(list, 'clientWidth', { configurable: true, value: 500 });
+    list.getBoundingClientRect = () => box(500);
+    chip.getBoundingClientRect = () => box(500);
+
+    list.scrollLeft = 0;
+    fireEvent.scroll(list);
+    expect(view.getByTestId('lcd-more').textContent).toBe('+1 more');
+    expect(list.hasAttribute('data-more')).toBe(true);
+
+    list.scrollLeft = 500;
+    fireEvent.scroll(list);
+    expect(view.queryByTestId('lcd-more')).toBeNull();
+    expect(list.hasAttribute('data-more')).toBe(false);
+  });
+
   it('the menu says sessions cannot be attached, and names the subject it keeps', async () => {
     const view = renderPopup();
     fireEvent.click(view.getByTestId('lcd-attach'));
@@ -216,6 +242,25 @@ describe('Dispatch', () => {
   });
 });
 
+describe('what a launch writes back onto its subject', () => {
+  it('a task subject: an edited title is saved onto the task before the spawn', async () => {
+    const onSaveSubject = vi.fn((_edits: { title?: string; description?: string }) => Promise.resolve());
+    const view = renderPopup({ subject: { id: 'task-9', title: 'Wire the launch flow', kind: 'task' }, onSaveSubject });
+    fireEvent.change(view.getByTestId('nsx-title'), { target: { value: 'Wire the launch flow, again' } });
+    await view.spawn();
+    expect(onSaveSubject.mock.calls).toEqual([[{ title: 'Wire the launch flow, again' }]]);
+  });
+
+  it('a teammate subject (Coordinate from its profile): the title names the session and the teammate is NOT renamed', async () => {
+    const onSaveSubject = vi.fn((_edits: { title?: string; description?: string }) => Promise.resolve());
+    const view = renderPopup({ subject: { id: 'tm-scout', title: 'scout', kind: 'team_member' }, onSaveSubject, verbLabel: 'Coordinate' });
+    fireEvent.change(view.getByTestId('nsx-title'), { target: { value: 'Audit the hooks' } });
+    const input = await view.spawn();
+    expect(onSaveSubject).not.toHaveBeenCalled();
+    expect(input.title).toBe('Audit the hooks');
+  });
+});
+
 describe('the keyboard', () => {
   it('Escape closes a menu first, then the drawer, then the popup', () => {
     const view = renderPopup();
@@ -231,6 +276,22 @@ describe('the keyboard', () => {
     expect(view.getByTestId('lcd-drawer').hasAttribute('data-open')).toBe(false);
     expect(view.onDismiss).not.toHaveBeenCalled();
     fireEvent.keyDown(document, { key: 'Escape' });
+    expect(view.onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('Escape with focus OUTSIDE an open context popover closes the popover, not the popup', async () => {
+    const view = renderPopup();
+    await view.ready();
+    fireEvent.click(view.getByTestId('lsel-chip-references'));
+    expect(view.getByTestId('lsel-popover')).toBeTruthy();
+    const instructions = view.getByTestId('lcd-instructions');
+    fireEvent.change(instructions, { target: { value: 'keep me' } });
+
+    fireEvent.keyDown(instructions, { key: 'Escape' });
+    expect(view.queryByTestId('lsel-popover')).toBeNull();
+    expect(view.onDismiss).not.toHaveBeenCalled();
+    expect((view.getByTestId('lcd-instructions') as HTMLTextAreaElement).value).toBe('keep me');
+    fireEvent.keyDown(instructions, { key: 'Escape' });
     expect(view.onDismiss).toHaveBeenCalledTimes(1);
   });
 
@@ -317,6 +378,13 @@ describe('the bottom band', () => {
     const view = renderPopup({ capacity: { slotsFree: 28, slotsTotal: 40 } });
     expect(view.getByTestId('lcd-slots').textContent).toContain('12/40');
   });
+
+  it('an uncapped node reads as used/∞, not the int4 ceiling the RPC carries', () => {
+    const view = renderPopup({ capacity: { slotsFree: 2147483633, slotsTotal: 2147483647 } });
+    expect(view.getByTestId('lcd-slots').textContent).toContain('14/∞');
+    expect(view.getByTestId('lcd-slots').textContent).not.toContain('2147483647');
+    expect(view.getByTestId('lcd-slots').getAttribute('title')).toBe('14 live · no session limit');
+  });
 });
 
 describe('remembered picks, per teammate', () => {
@@ -331,6 +399,21 @@ describe('remembered picks, per teammate', () => {
     await waitFor(() => expect(second.getByTestId('nsx-effort').getAttribute('aria-label')).toBe('Reasoning effort: Low'));
     fireEvent.click(second.getByTestId('nsx-team'));
     expect(second.getByTestId('lcd-restored').textContent).toMatch(/^restored: Claude Sonnet 5 · low · Auto · worktree/);
+    expect((await second.spawn()).reasoningEffort).toBe('low');
+  });
+
+  it('re-picking the teammate already shown keeps its restored picks', async () => {
+    const first = renderPopup();
+    fireEvent.click(first.getByTestId('nsx-effort'));
+    fireEvent.click(within(first.getByTestId('lcd-effort-menu')).getByRole('menuitemradio', { name: 'Low' }));
+    await first.spawn();
+    first.unmount();
+
+    const second = renderPopup();
+    await waitFor(() => expect(second.getByTestId('nsx-effort').getAttribute('aria-label')).toBe('Reasoning effort: Low'));
+    fireEvent.click(second.getByTestId('nsx-team'));
+    fireEvent.click(within(second.getByTestId('nsx-team-menu')).getByRole('menuitemradio', { name: /^forge/ }));
+    await waitFor(() => expect(second.getByTestId('nsx-effort').getAttribute('aria-label')).toBe('Reasoning effort: Low'));
     expect((await second.spawn()).reasoningEffort).toBe('low');
   });
 
