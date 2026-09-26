@@ -32,6 +32,7 @@ export type CapabilityProfile =
   | 'container-lifecycle'
   | 'form-lifecycle'
   | 'space-link-lifecycle'
+  | 'server-lifecycle'
   | 'custom-scalar'
   | 'static-no-authority';
 
@@ -323,6 +324,31 @@ function capabilities(profile: CapabilityProfile): CapabilityDisposition {
           'spaceLinks.setSpawn',
         ],
       };
+    case 'server-lifecycle':
+      // NOTHING generic (W8, 991). A server is born only from `servers.add`
+      // or `servers.adopt` (a 044 row, first use), and add/adopt/remove are
+      // human-only in SQL; a generic patch would be a second way to change a
+      // base URL that the gate token and the SSRF guard are bound to.
+      return {
+        profile,
+        genericCreate: false,
+        genericPatch: false,
+        genericMove: false,
+        genericHierarchy: false,
+        genericDeleteRestore: false,
+        genericPoints: false,
+        messages: false,
+        reactions: false,
+        connections: false,
+        lifecycleOperations: [
+          'servers.list',
+          'servers.get',
+          'servers.add',
+          'servers.adopt',
+          'servers.remove',
+          'servers.probe',
+        ],
+      };
     case 'static-no-authority':
       return {
         profile,
@@ -519,12 +545,11 @@ export const CORE_KIND_DISPOSITIONS = {
     capabilities: { profile: 'space-link-lifecycle' },
     menu: { strategy: 'not-addressable' }, migration: { strategy: 'space-link-kinds' },
   }),
-  // A linked space's server (W6, migration 250). Registered with the kind so a
-  // link can name a remote target; W6 ships no operation on it (null = this
-  // server), so it has no authority of its own.
+  // A remote tm8 server (W6 kind, W8 migration 991). Born only from
+  // `servers.add` / `servers.adopt`, managed by a human; never menu-addressable.
   server: core('server', 'servers', {
     collection: typedCollection, projection: universal,
-    capabilities: { profile: 'static-no-authority' },
+    capabilities: { profile: 'server-lifecycle' },
     menu: { strategy: 'not-addressable' }, migration: { strategy: 'space-link-kinds' },
   }),
 } as const satisfies Readonly<Record<CoreEntityKind, KindDisposition>>;

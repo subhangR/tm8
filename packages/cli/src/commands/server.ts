@@ -2,6 +2,7 @@ import {
   CONTRACT_VERSION,
   ServerConnectionBaseUrlSchema,
   type ServerConnection,
+  type ServerView,
 } from '@tm8/contract';
 import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
 import { ProtocolError, TransportError } from '../errors.js';
@@ -17,7 +18,7 @@ function oneName(cmd: CommandContext, command: string): string {
   return name;
 }
 
-function render(connection: ServerConnection): string {
+function render(connection: Pick<ServerConnection, 'name' | 'baseUrl' | 'username'>): string {
   return [
     `${connection.name}: ${connection.baseUrl}`,
     ...(connection.username ? [`username: ${connection.username}`] : []),
@@ -95,34 +96,41 @@ async function serverAdd(cmd: CommandContext): Promise<ExitCode> {
   const baseUrl = new URL(parsed.data).origin;
   await requireHealthyTm8Server(baseUrl, cmd.ctx.timeoutMs);
 
+  // W8 (991): a server is an entity in a Space; 044's table is read-only.
+  // `servers.add` takes no actor: it is human-only.
   const body: Record<string, unknown> = {
     name,
     baseUrl,
     clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
   };
+  // --space is a global option; only an explicit flag picks the home Space
+  // (a configured default does not), else the server takes the caller's first.
+  if (cmd.ctx.space?.source === 'flag') body.spaceId = cmd.ctx.space.value;
   const username = cmd.options.value('username');
   if (username !== undefined) body.username = username;
-  if (cmd.ctx.actor) body.actorId = cmd.ctx.actor.value;
 
-  const data = await observedInvoke<ServerConnection>(clientFor(cmd.ctx), 'serverConnections.create', { body });
+  const data = await observedInvoke<ServerView>(clientFor(cmd.ctx), 'servers.add', { body });
   cmd.out.data(data, render);
   return EXIT_OK;
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 async function serverRemove(cmd: CommandContext): Promise<ExitCode> {
-  const name = oneName(cmd, 'server remove');
+  const target = oneName(cmd, 'server remove');
   if (!cmd.options.bool('yes')) {
-    throw new CliError('tm8 server remove deletes local routing configuration; pass --yes to confirm', EXIT_USAGE);
+    throw new CliError('tm8 server remove removes the server for every Member of its Space; pass --yes to confirm', EXIT_USAGE);
   }
-  const body: Record<string, unknown> = {
-    clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
-  };
-  if (cmd.ctx.actor) body.actorId = cmd.ctx.actor.value;
-  const data = await observedInvoke<ServerConnection>(clientFor(cmd.ctx), 'serverConnections.delete', {
-    params: { name },
-    body,
+  const client = clientFor(cmd.ctx);
+  // A name resolves through the directory (ambiguous names refuse there).
+  const serverId = UUID.test(target)
+    ? target
+    : (await observedInvoke<ServerConnection>(client, 'serverConnections.get', { params: { name: target } })).id;
+  const data = await observedInvoke<ServerView>(client, 'servers.remove', {
+    params: { serverId },
+    body: { clientMutationId: resolveMutationId(cmd.options.value('mutation-id')) },
   });
-  cmd.out.data(data, (connection) => `Removed ${connection.name} (${connection.baseUrl})`);
+  cmd.out.data(data, (server) => `Removed ${server.name} (${server.baseUrl})`);
   return EXIT_OK;
 }
 

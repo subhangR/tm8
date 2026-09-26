@@ -21,9 +21,15 @@ interface ServerConnectionMutationResult {
   connection: ServerConnection;
 }
 
+/**
+ * W8 (991): reads go through `public.server_directory` — server entities the
+ * caller can read, plus 044 rows no entity has adopted. 044 itself is
+ * read-only: `create` / `delete` below reach the 991 redefinitions, which
+ * refuse with 42501 and point at `servers.add` / `servers.remove`.
+ */
 const SELECT = `
   select id, name, base_url, username, created_at, updated_at
-    from public.server_connections`;
+    from public.server_directory`;
 
 function iso(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
@@ -55,7 +61,7 @@ export class W2ServerConnectionsService {
     const owner = await this.deps.owner();
     const rows = await this.deps.db.query<ServerConnectionRow>(
       claimsFor(owner, ctx),
-      `${SELECT} order by name asc`,
+      `${SELECT} order by name asc, legacy asc, id asc`,
     );
     return rows.map(toServerConnection);
   };
@@ -65,11 +71,15 @@ export class W2ServerConnectionsService {
     const name = requireParam(ctx, 'name').toLowerCase();
     const rows = await this.deps.db.query<ServerConnectionRow>(
       claimsFor(owner, ctx),
-      `${SELECT} where name = $1`,
+      `${SELECT} where lower(name) = $1`,
       [name],
     );
     const row = rows[0];
     if (!row) throw new CollabError('not_found', `no such server connection: ${name}`);
+    // Server names are unique per space, not per node: never guess between two.
+    if (rows.length > 1) {
+      throw new CollabError('conflict', `server name is ambiguous across your spaces: ${name}; use its id`);
+    }
     return toServerConnection(row);
   };
 

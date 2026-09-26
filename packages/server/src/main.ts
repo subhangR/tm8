@@ -658,7 +658,9 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     ? createRemoteServerProxy(async (name, caller) => {
         // THE CALLER'S claims, never the owner's (G1). A bearer carries its
         // own identity and admin bit; the auto-owner IS the owner. 044's RLS
-        // then admits node admins only — the rule until per-member links exist.
+        // then admits node admins only; W8 (991) reads `server_directory`,
+        // so a home member also reaches a server entity their space holds.
+        // Names are unique per space, not per node: two matches refuse.
         const nodeOwner = await owner();
         const bearer = caller.kind === 'bearer' ? caller : undefined;
         if (bearer && !bearer.identityId) return null;
@@ -668,10 +670,10 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
             nodeAdmin: bearer ? bearer.nodeAdmin === true : nodeOwner.isNodeAdmin,
             ...(caller.authKind ? { authKind: caller.authKind } : {}),
           },
-          `select base_url from public.server_connections where lower(name) = lower($1)`,
+          `select base_url from public.server_directory where lower(name) = lower($1) limit 2`,
           [name],
         );
-        return rows[0]?.base_url ?? null;
+        return rows.length === 1 ? rows[0]!.base_url : null;
       })
     : undefined;
 

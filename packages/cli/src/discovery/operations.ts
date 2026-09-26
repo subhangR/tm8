@@ -665,34 +665,93 @@ const ROWS: Record<OperationName, Row> = {
   'serverConnections.list': {
     cmd: ['server', 'list'],
     syn: 'tm8 server list',
-    sum: 'List named routes to other tm8 Servers stored on this local node',
+    sum: 'List the tm8 Servers you can reach: servers in your Spaces, plus node-local 044 routes not yet adopted',
     authz: 'server',
     input: 'none',
     tags: ['remote', 'connection', 'target'],
   },
   'serverConnections.create': {
-    cmd: ['server', 'add'],
-    syn: 'tm8 server add <name> --url <base-url> [--username <username>] [--mutation-id <id>]',
-    sum: 'Register a named route to another tm8 Server after checking its health endpoint',
+    cmd: null,
+    sum: 'Refused: 044 server connections are read-only (W8, 991) — add a server with `tm8 server add`',
     authz: 'server',
     input: 'bound',
-    tags: ['remote', 'connection', 'target'],
+    tags: ['remote', 'connection', 'target', 'legacy'],
+    reason: 'use_servers_add',
   },
   'serverConnections.get': {
     cmd: ['server', 'get'],
     syn: 'tm8 server get <name>',
-    sum: 'Read one named Server route',
+    sum: 'Read one tm8 Server by name; a name held by two of your Spaces is refused as ambiguous',
     authz: 'server',
     input: 'none',
     tags: ['remote', 'connection', 'target'],
   },
   'serverConnections.delete': {
-    cmd: ['server', 'remove'],
-    syn: 'tm8 server remove <name> --yes [--mutation-id <id>]',
-    sum: 'Remove a named Server route from this local node',
+    cmd: null,
+    sum: 'Refused: 044 server connections are read-only (W8, 991) — remove a server with `tm8 server remove`',
     authz: 'server',
     input: 'bound',
-    tags: ['remote', 'connection', 'target'],
+    tags: ['remote', 'connection', 'target', 'legacy'],
+    reason: 'use_servers_remove',
+  },
+  // ── remote servers (W8, migration 991) ────────────────────────────────────
+  //
+  // add / adopt / remove are refused to agent and link sessions twice (the
+  // handler guard and the strict SQL gate). No response carries a gate token.
+  'servers.list': {
+    cmd: null,
+    sum: 'List the tm8 Servers one Space holds, with reachability and your own sign-in status — no secret',
+    authz: 'space',
+    input: 'none',
+    tags: ['remote', 'server', 'space'],
+    reason: 'use_server_list',
+  },
+  'servers.get': {
+    cmd: null,
+    sum: 'Read one tm8 Server by id, for a Member of its home Space',
+    authz: 'server',
+    input: 'none',
+    tags: ['remote', 'server'],
+    reason: 'use_server_list',
+  },
+  'servers.add': {
+    cmd: ['server', 'add'],
+    syn: 'tm8 server add <name> --url <base-url> [--space <space-id>] [--username <username>] [--mutation-id <id>]',
+    sum: 'Add a tm8 Server to a Space after checking its health endpoint — human sessions only',
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['remote', 'server', 'space'],
+    notes: ['without --space, the server joins your first Space'],
+  },
+  'servers.adopt': {
+    cmd: null,
+    sum: 'Give a node-local 044 route its server entity in a Space — node admin, human sessions only',
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['remote', 'server', 'legacy'],
+    reason: 'human_settings_only',
+    notes: ['the 044 row is not rewritten; adopting twice returns the same server'],
+  },
+  'servers.remove': {
+    cmd: ['server', 'remove'],
+    syn: 'tm8 server remove <name|id> --yes [--mutation-id <id>]',
+    sum: 'Remove a tm8 Server from its Space — its creator or a Space admin, human sessions only',
+    authz: 'server',
+    input: 'bound',
+    side: 'durable',
+    tags: ['remote', 'server'],
+    notes: ['refused while a space link still targets it; a node-local 044 route cannot be removed'],
+  },
+  'servers.probe': {
+    cmd: null,
+    sum: 'Check a tm8 Server is reachable through the SSRF-guarded client and record the answer',
+    authz: 'server',
+    input: 'bound',
+    tags: ['remote', 'server', 'health'],
+    reason: 'human_settings_only',
+    notes: ['a loopback-only or private address is unreachable; a refused, reset or silent one is offline'],
   },
   'spaces.list': {
     cmd: ['space', 'list'],
@@ -3165,6 +3224,9 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   // `spaceLinks.*` (W6, 250/251, all `cmd: null`): the noun a later CLI lane
   // would spell `tm8 space-link`. generator.ts nounForOperation says the same.
   spaceLinks: 'space-link',
+  // `servers.*` (W8, 991): the same `tm8 server` noun 044's rows used.
+  // generator.ts nounForOperation says the same.
+  servers: 'server',
 };
 
 function nounFor(operation: OperationName): string {
@@ -3254,7 +3316,8 @@ export const CATALOG_DIGEST =
   // Re-measured for node.metrics.get (status strip) — read from the regenerated conformance manifest.
   // +2 auth.sessions.list/revoke (W4, on main 96f6b61e): read from the regenerated conformance manifest.
   // +7 spaceLinks.* (W6, 250/251, re-stacked on f54f9ffd): RECOMPUTED from JSON.stringify(OPERATIONS); equals the regenerated manifest's catalogDigest.
-  'sha256:3bebae0a98d86cfac8f66704f1c4c1dddbd4df87cbd179bf856c14d983f66925';
+  // Re-measured (W8, 991): +6 servers.* and the serverConnections create/delete rows — read from the regenerated conformance manifest.
+  'sha256:0d12454f62478235d5b2a1d13035130345e102e8bb9897fdd5d3f8d97e89e220';
 
 export const GRAMMAR_VERSION = '2';
 

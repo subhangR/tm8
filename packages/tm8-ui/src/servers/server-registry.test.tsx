@@ -167,3 +167,42 @@ describe('useServerRegistry revalidation', () => {
     );
   });
 });
+
+describe('useServerRegistry addServer (W8, 991)', () => {
+  it('adds through servers.add (POST /v2/servers) with the Space, never the read-only 044 route', async () => {
+    const state: { connections: Connection[] } = { connections: [] };
+    const list = mockFetch(state);
+    const posts: Array<{ url: string; body: unknown }> = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      if (init?.method === 'POST') {
+        posts.push({ url: String(input), body: JSON.parse(String(init.body)) });
+        // The directory view (server_directory) lists the new entity from now on.
+        state.connections = [STAGING];
+        return {
+          ok: true,
+          json: async () => ({
+            data: {
+              ...STAGING, homeSpaceId: 'space-1', reachStatus: 'unknown', reachCheckedAt: null,
+              legacyConnectionId: null, mine: null,
+            },
+          }),
+        } as unknown as Response;
+      }
+      return list(input);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { result } = renderHook(() => useServerRegistry());
+    await waitFor(() => expect(result.current.loading).toBe(false), WAIT);
+    let added: { id: string } | undefined;
+    await act(async () => {
+      added = await result.current.addServer({ name: 'Staging', baseUrl: 'http://127.0.0.1:8887/x', spaceId: 'space-1' });
+    });
+
+    expect(posts).toHaveLength(1);
+    expect(posts[0]!.url).toBe('/v2/servers');
+    expect(posts[0]!.body).toMatchObject({ spaceId: 'space-1', name: 'staging', baseUrl: 'http://127.0.0.1:8887' });
+    expect(added?.id).toBe('staging');
+    expect(result.current.servers.map((server) => server.id)).toEqual(['local', 'staging']);
+  });
+});
