@@ -2647,6 +2647,10 @@ export type CreatableEntityKind = Exclude<
   // `form` is born ONLY from `forms.create`, which writes its questions,
   // sections and the requesting-session edge in one call (FORMS-DESIGN §6).
   | 'form'
+  // `space_link` is born ONLY from `spaceLinks.add` (W6), which checks the
+  // caller belongs to both spaces; `server` has no door in W6.
+  | 'space_link'
+  | 'server'
 >;
 
 export interface CreateEntityInput extends CommandContext {

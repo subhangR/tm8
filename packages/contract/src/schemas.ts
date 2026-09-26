@@ -182,6 +182,10 @@ export const CoreEntityKindSchema = z.enum([
   'drawing',
   // Forms (209). Not in `CreatableEntityKind`: `forms.create` is its door.
   'form',
+  // Space links (243/244, W6). Not in `CreatableEntityKind`: `spaceLinks.add`
+  // is its door. `server` is registered with it and has no door in W6.
+  'space_link',
+  'server',
 ]);
 
 export const CustomEntityKindSchema = z.custom<CustomEntityKind>(
@@ -2334,7 +2338,7 @@ export const CreatableEntityKindSchema = z.union([
   // could not. A generic create would make a record with nothing behind it.
   // `form` likewise: `forms.create` writes its questions and requesting
   // session in the same call (FORMS-DESIGN §6).
-  CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile', 'worktree', 'artifact', 'chat', 'container', 'form']),
+  CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile', 'worktree', 'artifact', 'chat', 'container', 'form', 'space_link', 'server']),
   CustomEntityKindSchema,
 ]);
 

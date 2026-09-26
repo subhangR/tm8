@@ -7488,6 +7488,80 @@
         "migration": {
           "strategy": "form-detail"
         }
+      },
+      "space_link": {
+        "kind": "space_link",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "space-links"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "space-link-lifecycle",
+          "genericCreate": false,
+          "genericPatch": false,
+          "genericMove": false,
+          "genericHierarchy": false,
+          "genericDeleteRestore": false,
+          "genericPoints": false,
+          "messages": false,
+          "reactions": false,
+          "connections": false,
+          "lifecycleOperations": [
+            "spaceLinks.list",
+            "spaceLinks.add",
+            "spaceLinks.login",
+            "spaceLinks.relogin",
+            "spaceLinks.logout",
+            "spaceLinks.remove",
+            "spaceLinks.setSpawn"
+          ]
+        },
+        "menu": {
+          "strategy": "not-addressable"
+        },
+        "migration": {
+          "strategy": "space-link-kinds"
+        }
+      },
+      "server": {
+        "kind": "server",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "servers"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "static-no-authority",
+          "genericCreate": false,
+          "genericPatch": false,
+          "genericMove": false,
+          "genericHierarchy": false,
+          "genericDeleteRestore": false,
+          "genericPoints": false,
+          "messages": false,
+          "reactions": false,
+          "connections": false,
+          "lifecycleOperations": []
+        },
+        "menu": {
+          "strategy": "not-addressable"
+        },
+        "migration": {
+          "strategy": "space-link-kinds"
+        }
       }
     },
     "custom": {
