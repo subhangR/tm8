@@ -675,7 +675,7 @@ export class SpawnService {
   ): Promise<ResolvedSessionCredentials> {
     // After the mint, so a resume of a link-provenance session is link-bound
     // off the child's own stamp (992), whoever resumes it.
-    const linkBound = (await this.graph.isLinkBound?.(auth, agentToken)) === true;
+    const linkBound = (await this.graph.isLinkBound(auth, agentToken)) === true;
     return resolveSessionCredentials(
       { auth, spaceId, launch, resume, linkBound },
       {

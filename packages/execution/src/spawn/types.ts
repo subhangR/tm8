@@ -950,10 +950,11 @@ export interface GraphPort {
    * gets a stamped child in SQL, and the TS policy must follow that stamp,
    * never the resumer's own claims. `GraphAuth` is opaque here, so the graph
    * answers. Such a launch has no member credential rung
-   * (`resolveLinkBoundCredentials`). Optional: a graph without it has no
-   * links, so nothing is link-bound.
+   * (`resolveLinkBoundCredentials`). REQUIRED: an optional member would let
+   * a graph that forgot it answer "not link-bound" silently, and that answer
+   * is the one that opens the member rung.
    */
-  isLinkBound?(auth: GraphAuth, agentToken: string): Promise<boolean>;
+  isLinkBound(auth: GraphAuth, agentToken: string): Promise<boolean>;
   /**
    * Selection headers for `<context_index>` (design 01a0d348 §2.1), read
    * under the caller's RLS: an id the caller cannot read is simply absent.

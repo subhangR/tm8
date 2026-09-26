@@ -516,8 +516,12 @@ async function resolveLinkBoundCredentials(
       ids[provider] = grant.credentialId;
       effective[provider] = 'space';
     } else if (source !== 'space' && nodeOk) {
+      // Recorded, never left blank: a later resume of this session may not be
+      // link-bound (a non-link member resuming it, or a stamp that did not
+      // follow), and a blank source there is auto — whose first rung is the
+      // resumer's own account key. 'node' is what this session ran on.
+      sources[provider] = 'node';
       effective[provider] = 'node';
-      if (source === null) delete sources[provider];
     } else {
       const why = [
         source === 'node'

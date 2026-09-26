@@ -664,6 +664,55 @@ describe('W7p — a link-bound launch never reaches the linking human\'s own cre
     expect(r.launch.effectiveCredentialSources).toEqual({ anthropic: 'node', github: 'space' });
   });
 
+  // D1(a): the link path RECORDS 'node', so the session's own posture keeps
+  // it off the member rung on every later resume — including one that is not
+  // link-bound. H links A->B, H's agent spawns W through the link on the node;
+  // then H (a direct B session, no link) or another member R resumes W. If
+  // the source were left blank, the resume would replay auto, and auto's first
+  // rung is the resumer's account key. This holds with the resume's own stamp
+  // check (D1(b)) switched off: the resumes below pass no linkBound at all.
+  describe("D1(a) — a node-effective link spawn records 'node', so a non-link resume never asks a member", () => {
+    const AUTH_R = { accountId: 'account-R', kind: 'human' };
+    const recordedFrom = (l: ResolvedLaunchConfig) =>
+      ({
+        accessMode: null,
+        permissionMode: null,
+        // What manifest.ts writes: the RESOLVED launch's sources and ids.
+        credentialSources: l.credentialSources,
+        spaceCredentialIds: l.spaceCredentialIds,
+      }) as SessionLaunchPosture;
+
+    async function spawnW() {
+      const port = fakePort({
+        defaults: { github: GH_DEFAULT },
+        byId: { [GH_DEFAULT]: { ok: true, grant: apiKeyGrant('github', GH_DEFAULT) } },
+      });
+      const r = await linked(launch(), deps(port, { home: MEMBER_HOME, github: MEMBER_GH }));
+      return { port, r };
+    }
+
+    it("the link spawn records anthropic 'node' explicitly", async () => {
+      const { r } = await spawnW();
+      expect(r.launch.effectiveCredentialSources?.anthropic).toBe('node');
+      expect(r.launch.credentialSources.anthropic).toBe('node');
+    });
+
+    for (const [who, auth] of [['H (a direct, non-link session)', AUTH_A], ['R (another member)', AUTH_R]] as const) {
+      it(`${who} resumes W without linkBound: no member home, no account key, still on the node`, async () => {
+        const { port, r } = await spawnW();
+        const d = deps(port, { home: MEMBER_HOME, github: MEMBER_GH });
+        const resumed = await resolveSessionCredentials(
+          { auth, spaceId: SPACE, launch: launch({}, recordedFrom(r.launch)), resume: true },
+          d,
+        );
+        expect(d.memberAsks).toEqual([]);
+        expect(d.materialized).toEqual([]);
+        expect(resumed.credentialHome).toBeNull();
+        expect(resumed.launch.effectiveCredentialSources?.anthropic).toBe('node');
+      });
+    }
+  });
+
   it('no space model default and no node: a named "no model credential" refusal, never the member key', async () => {
     const d = deps(
       fakePort({ defaults: { github: GH_DEFAULT }, policies: { space: {}, node: { anthropic: false } } }),
