@@ -3154,8 +3154,9 @@ export const CATALOG_DIGEST =
   // Re-measured (W11, decision 29): + spaces.projects.list/create, gate.folders.list/create; projects.link stays. Read from the failing digest test. Merged onto G6 (232): digest re-measured on the merged tree.
   // Re-measured (G6, 232): + spaces.members.remove, spaces.leave, accounts.disable. Read from the failing digest test.
   // Re-measured (W3-server, on main bd1841bf): + auth.space.enter. Read from the conformance generator.
+  // Re-measured (plan W2 launch cookie on W11, main f94c6adc): + auth.launch. Read from the failing digest test.
   // Rebased onto main d11e0be5 (#848): W11's +4 on top of auth.space.enter; digest re-measured on the rebased tree.
-  'sha256:b7a5a5ff6ae8f7320bad8055cdf9485c166d5f5f4e60cf2501c030f5612ea437';
+  'sha256:259ff014fbb373f2bf6e5e6bfa8738f894612634846b79f2f8945d136c5e26cf';
 
 export const GRAMMAR_VERSION = '2';
 
