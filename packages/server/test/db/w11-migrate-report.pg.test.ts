@@ -1,16 +1,17 @@
 /**
- * W11-migrate dry-run report (plan 01a0d9eb §3 W11 steps 1, 2, 4; K13) against
- * a real schema. Two spaces share folders the way the 7 on the prod copy do:
- * the chain is applied up to 230, the double grants are seeded there (231
- * refuses a new one), then 231 and later are applied on top.
+ * W11-migrate dry-run report (plan 01a0d9eb §3 W11 steps 1, 2, 4; K13 as the
+ * owner's explicit mapping) against a real schema. Two spaces share folders the
+ * way the 7 on the prod copy do: the chain is applied up to 233, the double
+ * grants are seeded there (234 refuses a new one), then 234 and later are
+ * applied on top. The owning space always comes from the mapping; activity is
+ * a report column.
  *
  *   folder F  granted to A and B. A: one session 40 days old. B: two sessions
  *             in the window (one running) and a chat whose cwd is under F with
- *             a message in the window  -> owner B (3), A idle -> unlink.
+ *             a message in the window  -> activity B 3, A 0.
  *   folder G  granted to A and B. A: one exited session in the window. B: a
  *             project chat on G, created in the window, and a worktree
- *             -> tie at 1, A (created by the personal identity) owns, B active
- *             -> clone, carrying its branch.
+ *             -> activity 1 each.
  *   folder K  granted to A only -> not in the report.
  *
  * A chat whose cwd only LOOKS like it is under G (`_` is a LIKE wildcard) is
@@ -28,8 +29,10 @@ import {
   buildW11Report,
   loadW11Evidence,
   realRunRefusals,
+  type W11Evidence,
   type W11Report,
 } from '../../src/projects/w11-migrate.js';
+import type { OwningSpaceMapping } from '../../src/projects/owning-space.js';
 import { main } from '../../src/projects/w11-migrate-cli.js';
 
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from './w1-pg.js';
@@ -37,8 +40,8 @@ import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 240_000 });
 
 const ordinal = (file: string): number => Number(file.slice(0, 3));
-const BEFORE = migrationFiles().filter((f) => ordinal(f) < 231);
-const FROM_W11 = migrationFiles().filter((f) => ordinal(f) >= 231);
+const BEFORE = migrationFiles().filter((f) => ordinal(f) < 234);
+const FROM_W11 = migrationFiles().filter((f) => ordinal(f) >= 234);
 
 const AS_OF = '2026-09-24T18:40:00.000Z';
 const daysBefore = (n: number) => new Date(Date.parse(AS_OF) - n * 86_400_000).toISOString();
@@ -52,6 +55,8 @@ const ids = {
   accountH: randomUUID(),
   spaceA: randomUUID(),
   spaceB: randomUUID(),
+  /** Never created: a mapping target that is not one of the folder's grants. */
+  spaceX: randomUUID(),
   memberA: randomUUID(),
   memberB: randomUUID(),
   personaA: randomUUID(),
@@ -88,8 +93,7 @@ async function seed(): Promise<void> {
     await q.query(`insert into public.accounts(id, identity_id, username) values ($1, $2, $3), ($4, $5, $6)`,
       [ids.accountO, ids.identityO, `w11r-o-${ids.accountO.slice(0, 8)}`,
        ids.accountH, ids.identityH, `w11r-h-${ids.accountH.slice(0, 8)}`]);
-    // A is created by O (the personal identity for ties) and is the newer one,
-    // so the tie on G is decided by the creator, not by age.
+    // A is created by O (the node owner in the report's createdByOwner column).
     await q.query(
       `insert into public.spaces(id, name, created_by_identity, created_at)
        values ($1, 'W11R A', $3, now() - interval '10 days'), ($2, 'W11R B', $4, now() - interval '90 days')`,
@@ -180,17 +184,13 @@ async function seed(): Promise<void> {
   });
 }
 
-async function readReport(personalIdentity: string): Promise<W11Report> {
-  const evidence = await database.transaction(async (client) => {
-    await client.query('set transaction read only');
-    return loadW11Evidence(client, AS_OF);
-  });
-  return buildW11Report({
-    evidence: evidence.filter((e) => ([ids.folderF, ids.folderG, ids.folderK] as string[]).includes(e.folderId)),
-    personalIdentity,
-    asOf: AS_OF,
-  });
-}
+/** The owner's mapping used throughout: F -> B, G -> A. */
+const mapOf = (entries: Record<string, string>): OwningSpaceMapping => new Map(Object.entries(entries));
+
+let evidence: W11Evidence[];
+
+const reportFor = (mapping: OwningSpaceMapping): W11Report =>
+  buildW11Report({ evidence, mapping, nodeOwnerIdentity: ids.identityO, asOf: AS_OF });
 
 let report: W11Report;
 
@@ -199,49 +199,64 @@ beforeAll(async () => {
   database.apply(BEFORE);
   await seed();
   database.apply(FROM_W11);
-  report = await readReport(ids.identityO);
+  const all = await database.transaction(async (client) => {
+    await client.query('set transaction read only');
+    return loadW11Evidence(client, AS_OF);
+  });
+  evidence = all.filter((e) => ([ids.folderF, ids.folderG, ids.folderK] as string[]).includes(e.folderId));
+  report = reportFor(mapOf({ [ids.folderF]: ids.spaceB, [ids.folderG]: ids.spaceA }));
 }, 240_000);
 
 afterAll(async () => {
   await database?.destroy();
 }, 180_000);
 
-const project = (folderId: string) => report.projects.find((p) => p.folderId === folderId)!;
-const space = (folderId: string, spaceId: string) => project(folderId).spaces.find((s) => s.spaceId === spaceId)!;
+const projectIn = (r: W11Report, folderId: string) => r.projects.find((p) => p.folderId === folderId)!;
+const spaceIn = (r: W11Report, folderId: string, spaceId: string) =>
+  projectIn(r, folderId).spaces.find((s) => s.spaceId === spaceId)!;
 
 describe('W11-migrate dry-run report on a two-space node', () => {
   it('reports only the folders granted twice', () => {
     expect(report.projects.map((p) => p.folderId).sort()).toEqual([ids.folderF, ids.folderG].sort());
   });
 
-  it('F: the space with the most 30-day activity owns it; the idle space is unlinked', () => {
-    expect(project(ids.folderF)).toMatchObject({ owningSpaceId: ids.spaceB, tie: false, liveSessions: 1 });
-    expect(space(ids.folderF, ids.spaceB)).toMatchObject({
-      sessions: 2, sessionsInWindow: 2, liveSessions: 1, chats: 1, chatsInWindow: 1, activity: 3, action: 'keep',
+  it('F -> B from the mapping; the idle space is unlinked; activity and creator are report columns', () => {
+    expect(projectIn(report, ids.folderF)).toMatchObject({ decision: { ok: true, spaceId: ids.spaceB }, liveSessions: 1 });
+    expect(spaceIn(report, ids.folderF, ids.spaceB)).toMatchObject({
+      sessions: 2, sessionsInWindow: 2, liveSessions: 1, chats: 1, chatsInWindow: 1,
+      activity30d: 3, createdByOwner: false, action: 'keep',
     });
-    expect(space(ids.folderF, ids.spaceA)).toMatchObject({
-      sessions: 1, sessionsInWindow: 0, activity: 0, action: 'unlink',
+    expect(spaceIn(report, ids.folderF, ids.spaceA)).toMatchObject({
+      sessions: 1, sessionsInWindow: 0, activity30d: 0, createdByOwner: true, action: 'unlink',
     });
   });
 
-  it('G: a tie goes to the personal identity\'s space; the active other space gets a clone with its branch', () => {
-    expect(project(ids.folderG)).toMatchObject({ owningSpaceId: ids.spaceA, tie: true, liveSessions: 0 });
-    expect(space(ids.folderG, ids.spaceB)).toMatchObject({
-      chats: 1, chatsInWindow: 1, activity: 1, action: 'clone',
+  it('G -> A from the mapping; the active other space is the owner\'s call, with its branch as evidence', () => {
+    expect(projectIn(report, ids.folderG)).toMatchObject({ decision: { ok: true, spaceId: ids.spaceA }, liveSessions: 0 });
+    expect(spaceIn(report, ids.folderG, ids.spaceB)).toMatchObject({
+      chats: 1, chatsInWindow: 1, activity30d: 1, action: 'owner_decides',
       worktrees: 1, activeWorktrees: 1, worktreeBranches: ['w11r/b-feature'],
     });
   });
 
-  it('the tie follows the personal identity it is given', async () => {
-    const other = await readReport(ids.identityH);
-    expect(other.projects.find((p) => p.folderId === ids.folderG)!.owningSpaceId).toBe(ids.spaceB);
-    expect(other.projects.find((p) => p.folderId === ids.folderF)!.owningSpaceId).toBe(ids.spaceB);
+  it('activity decides nothing: F mapped to its idle space is owned by that space', () => {
+    const r = reportFor(mapOf({ [ids.folderF]: ids.spaceA, [ids.folderG]: ids.spaceA }));
+    expect(projectIn(r, ids.folderF).decision).toEqual({ ok: true, spaceId: ids.spaceA });
+    expect(spaceIn(r, ids.folderF, ids.spaceB)).toMatchObject({ activity30d: 3, action: 'owner_decides' });
   });
 
-  it('a real run refuses without the confirmed table, and refuses F for its live session while G passes', () => {
-    expect(realRunRefusals(report, null)).toEqual([{ code: 'no_confirmed_table' }]);
-    expect(realRunRefusals(report, { [ids.folderF]: ids.spaceB, [ids.folderG]: ids.spaceA }))
-      .toEqual([{ code: 'live_sessions', folderId: ids.folderF, liveSessions: 1 }]);
+  it('a folder the mapping leaves out is refused, and so is one mapped outside its grants', () => {
+    const r = reportFor(mapOf({ [ids.folderF]: ids.spaceB, [ids.folderG]: ids.spaceX }));
+    expect(projectIn(r, ids.folderG).decision).toEqual({ ok: false, reason: 'mapped_space_not_granted', spaceId: ids.spaceX });
+    const unmapped = reportFor(mapOf({ [ids.folderF]: ids.spaceB }));
+    expect(projectIn(unmapped, ids.folderG).decision).toEqual({ ok: false, reason: 'unmapped' });
+    expect(projectIn(unmapped, ids.folderG).spaces.map((s) => s.action)).toEqual([null, null]);
+    expect(realRunRefusals(unmapped)).toContainEqual({ code: 'unmapped', folderId: ids.folderG });
+    expect(realRunRefusals(r)).toContainEqual({ code: 'mapped_space_not_granted', folderId: ids.folderG, spaceId: ids.spaceX });
+  });
+
+  it('with the full mapping a real run refuses F for its live session while G passes', () => {
+    expect(realRunRefusals(report)).toEqual([{ code: 'live_sessions', folderId: ids.folderF, liveSessions: 1 }]);
   });
 
   it('reading the report writes nothing: the double grants are still there', async () => {
@@ -259,48 +274,57 @@ describe('W11-migrate dry-run report on a two-space node', () => {
       const o = vi.spyOn(process.stdout, 'write').mockImplementation((c) => { out.push(String(c)); return true; });
       const e = vi.spyOn(process.stderr, 'write').mockImplementation((c) => { err.push(String(c)); return true; });
       try {
-        const code = await main(['--as-of', AS_OF, '--personal-identity', ids.identityO, ...args],
-          { TM8_DATABASE_URL: database.url });
+        const code = await main(['--as-of', AS_OF, ...args], { TM8_DATABASE_URL: database.url });
         return { code, out: out.join(''), err: err.join('') };
       } finally {
         o.mockRestore();
         e.mockRestore();
       }
     };
-    const table = (t: Record<string, string>) => {
-      const file = join(mkdtempSync(join(tmpdir(), 'w11r-')), 'confirmed.json');
+    const mappingFile = (t: Record<string, string>) => {
+      const file = join(mkdtempSync(join(tmpdir(), 'w11r-')), 'mapping.json');
       writeFileSync(file, JSON.stringify(t));
       return file;
     };
+    const full = () => mappingFile({ [ids.folderF]: ids.spaceB, [ids.folderG]: ids.spaceA });
 
-    it('--dry-run prints one row per folder and exits 0', async () => {
-      const { code, out } = await run(['--dry-run']);
+    it('without --mapping the job does not run at all (exit 64), dry run or not', async () => {
+      for (const args of [['--dry-run'], []]) {
+        const { code, err, out } = await run(args);
+        expect(code).toBe(64);
+        expect(err).toContain('--mapping');
+        expect(out).toBe('');
+      }
+    });
+
+    it('--dry-run prints one row per folder from the mapping and exits 0', async () => {
+      const { code, out } = await run(['--mapping', full(), '--dry-run']);
       expect(code).toBe(0);
-      expect(out).toContain('| W11R F `' + DIR_F + '` | W11R B | activity 3 | W11R A → unlink | 1 → REFUSE until stopped |');
-      expect(out).toContain('| W11R G `' + DIR_G + '` | W11R A | tie at 1 → tie-break | W11R B → clone (1 branch(es)) | 0 |');
+      expect(out).toContain('| W11R F `' + DIR_F + '` | W11R B | W11R A → unlink | 1 → REFUSE until stopped |');
+      expect(out).toContain('| W11R G `' + DIR_G + '` | W11R A | W11R B → owner_decides | 0 |');
       expect(out).not.toContain('W11R K');
     });
 
-    it('a real run with no confirmed table is REFUSED (exit 2)', async () => {
-      const { code, err } = await run([]);
+    it('a real run with G missing from the mapping is REFUSED for G (exit 2)', async () => {
+      const { code, err } = await run(['--mapping', mappingFile({ [ids.folderF]: ids.spaceB })]);
       expect(code).toBe(2);
-      expect(err).toContain('no_confirmed_table');
+      expect(err).toContain(`"unmapped","folderId":"${ids.folderG}"`);
     });
 
-    it('a real run with the full table is REFUSED for F\'s live session only', async () => {
-      const { code, err } = await run(['--confirmed', table({ [ids.folderF]: ids.spaceB, [ids.folderG]: ids.spaceA })]);
+    it('a real run with the full mapping is REFUSED for F\'s live session only', async () => {
+      const { code, err } = await run(['--mapping', full()]);
       expect(code).toBe(2);
       expect(err).toContain(`"live_sessions","folderId":"${ids.folderF}"`);
       expect(err).not.toContain(ids.folderG);
     });
 
-    it('with no live session and a full table nothing refuses, and the job still stops: the real run is an owner step', async () => {
+    it('with no live session and a full mapping nothing refuses, and the job still stops: the real run is an owner step', async () => {
       // The fixture stops B's session directly; R29's guard admits only the transition claim.
       await asOwner(async (q) => {
         await q.query(`select set_config('tm8.work_session_transition', 'on', true)`);
         await q.query(`update public.work_sessions set status = 'exited' where entity_id = $1`, [ids.wsB1]);
       });
-      const { code, err } = await run(['--confirmed', table({ [ids.folderF]: ids.spaceB, [ids.folderG]: ids.spaceA })]);
+      const { code, err } = await run(['--mapping', full()]);
       expect(code).toBe(3);
       expect(err).toContain('owner step');
       expect(err).not.toContain('REFUSED');
