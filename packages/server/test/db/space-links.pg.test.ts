@@ -40,8 +40,9 @@ vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
 
 // ---------------------------------------------------------------------------
 // THE STRICT GATE'S FULL CALLER SET (lead ruling 2026-09-26 02:08Z/02:19Z).
-// Measured on this branch: 21 credential management + 6 non-credential + 6
-// spaceLinks writes = 33. A caller not on this list fails; a listed caller
+// Measured on this branch: 21 credential management + 6 non-credential + 2
+// W4 session management (249) + 6 spaceLinks writes = 35. A caller not on
+// this list fails; a listed caller
 // that stops calling the gate fails. Changing this list is a review event.
 // ---------------------------------------------------------------------------
 const CREDENTIAL_MANAGEMENT = 'credential management: refuses link (E2)';
@@ -49,6 +50,7 @@ const CREDENTIAL_READ = 'credential read, on the gate (refuses link)';
 const IDENTITY_WIDE = 'refused for link (identity-wide act)';
 const AUTH_MINTING = 'refused for link (decision 31, auth minting)';
 const PENDING = 'non-credential, refused pending follow-up 01a0db78-f1ab';
+const SESSION_MANAGEMENT = 'session listing/revoke, human-only (W4, 249): refuses link';
 const SPACE_LINKS = 'spaceLinks write, human-only by design (W6)';
 
 const STRICT_GATE_CALLERS: Readonly<Record<string, string>> = {
@@ -80,6 +82,11 @@ const STRICT_GATE_CALLERS: Readonly<Record<string, string>> = {
   'leave_space(uuid,text)': PENDING,
   'remove_space_member(uuid,uuid,text)': PENDING,
   'start_chat(uuid,uuid,uuid,text,text,text,text,text,uuid,uuid,text,text,text,uuid[],uuid,text)': PENDING,
+
+  // W4 (#857, 249:213/249:262), joined at the re-stack onto main: a link session
+  // neither lists nor ends sessions, the same answer an agent gets.
+  'list_auth_sessions(uuid)': SESSION_MANAGEMENT,
+  'revoke_listed_auth_session(uuid)': SESSION_MANAGEMENT,
 
   'add_space_link(uuid,uuid,text,text)': SPACE_LINKS,
   'logout_space_link(uuid,text)': SPACE_LINKS,
@@ -296,11 +303,13 @@ describe('W6 pin — the STRICT gate\'s full caller set (lead ruling 02:08Z; fol
     expect(found).toEqual(Object.keys(STRICT_GATE_CALLERS).sort());
   });
 
-  it('the list is 21 credential management + 6 non-credential + 6 spaceLinks writes', () => {
+  it('the list is 21 credential management + 6 non-credential + 2 session management + 6 spaceLinks writes', () => {
     const labels = Object.values(STRICT_GATE_CALLERS);
     expect(labels.filter((l) => l === CREDENTIAL_MANAGEMENT || l === CREDENTIAL_READ)).toHaveLength(21);
     expect(labels.filter((l) => l === IDENTITY_WIDE || l === AUTH_MINTING || l === PENDING)).toHaveLength(6);
+    expect(labels.filter((l) => l === SESSION_MANAGEMENT)).toHaveLength(2);
     expect(labels.filter((l) => l === SPACE_LINKS)).toHaveLength(6);
+    expect(labels).toHaveLength(35);
   });
 
   it('the matcher sees a quoted, mixed-case call and an execute format(...) that names the gate', async () => {
@@ -755,6 +764,42 @@ describe('W6 no cascade — a link session outlives the browser session that min
     const use = await store.use(claims, link.id);
     await db.rpc(claims, 'revoke_auth_session', [link.mine!.sessionId]);
     await expect(resolveToken(use.token)).rejects.toBeTruthy();
+    await expect(store.use(claims, link.id)).rejects.toMatchObject({ status: 'signed_out' });
+    await store.login(claims, link.id, { relogin: true });
+  });
+});
+
+// W4 (#857, 249) joined at the re-stack onto main. auth.sessions.list/revoke are
+// human-only (249:221, 249:274): a link session neither lists nor ends
+// sessions. The member's browser sees the link row (kind and origin `link`,
+// no token) and can end it; that is the "direct revoke" the no-cascade choice
+// above relies on.
+describe('W6 × W4 — session listing and revoke meet a link session', () => {
+  it('a link session is REFUSED list_auth_sessions and revoke_listed_auth_session (42501)', async () => {
+    const link = await linkAB();
+    const use = await store.use(await hClaims(), link.id);
+    expect(await outcome(() => asToken(use.token, (q) => q.rpc('list_auth_sessions', [null])))).toBe('42501');
+    expect(await outcome(() => asToken(use.token, (q) => q.rpc('list_auth_sessions', [fixture.spaceB])))).toBe('42501');
+    expect(await outcome(() => asToken(use.token, (q) =>
+      q.rpc('revoke_listed_auth_session', [link.mine!.sessionId])))).toBe('42501');
+    // The refused revoke ended nothing: the link still resolves.
+    expect((await resolveToken(use.token)).authKind).toBe('link');
+  });
+
+  it('positive — the member\'s browser lists the link session (kind/origin `link`, no secret) and revoking it ends the link', async () => {
+    const link = await linkAB();
+    const linkSessionId = link.mine!.sessionId;
+    const browserToken = await mintBrowser(fixture.accountH, fixture.identityH);
+    const listed = await asToken(browserToken, (q) => q.rpc<unknown>('list_auth_sessions', [null]));
+    const rows = listed as Array<{ sessionId: string; kind: string; origin: string; spaceId: string | null }>;
+    expect(rows.find((r) => r.sessionId === linkSessionId)).toMatchObject({ kind: 'link', origin: 'link', spaceId: fixture.spaceB });
+    expect(leaksSecret(JSON.stringify(listed))).toBe(false);
+    expect(JSON.stringify(listed)).not.toContain('token_hash');
+
+    const ended = await asToken(browserToken, (q) =>
+      q.rpc<{ revoked: boolean; revokedSessionIds: string[] }>('revoke_listed_auth_session', [linkSessionId]));
+    expect(ended).toMatchObject({ revoked: true, revokedSessionIds: [linkSessionId] });
+    const claims = await hClaims();
     await expect(store.use(claims, link.id)).rejects.toMatchObject({ status: 'signed_out' });
     await store.login(claims, link.id, { relogin: true });
   });
