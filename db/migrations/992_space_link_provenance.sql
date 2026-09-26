@@ -23,7 +23,9 @@
 --      at that session's. 249's cascade trigger then ends every descendant
 --      when the link session is revoked: logout, remove, the link row deleted,
 --      target membership ended, relogin, stale `signed_out`. Expiry is the cap.
---      A link that is not signed in mints nothing (42501).
+--      A link that is not signed in mints nothing (42501), and neither does
+--      one with spawning switched off — a child's spawn and a resume alike
+--      (lead ruling Q-a (A)); what is already running keeps running.
 --   4. A new trigger ends the descendants when the row LEAVES `signed_in`
 --      without revoking the link session (stale `unreachable`).
 --      (250's header says every credential RPC calls 083's
@@ -92,8 +94,11 @@ $$;
 -- as whichever role the transaction runs under.
 
 -- The live link session of `p_identity`'s own row on `p_link_id`: the row is
--- signed in, the link entity is not deleted, the member is active and the
--- session is neither revoked nor expired. Anything else is 42501. FOR SHARE
+-- signed in with spawning allowed, the link entity is not deleted, the member
+-- is active and the session is neither revoked nor expired. Anything else is
+-- 42501. Every caller is a MINT (link_provenance_for), so allow_spawn = false
+-- stops a running via_link child minting a grandchild — and stops a resume
+-- under the link — without ending anything already running. FOR SHARE
 -- on the row and the session: a concurrent revoke or status change waits for
 -- this transaction, so its cascade sees the child this call is about to mint.
 create or replace function internal.live_link_session(p_link_id uuid, p_identity text)
@@ -112,6 +117,7 @@ begin
      and m.status = 'active'
      and e.deleted_at is null
      and t.status = 'signed_in'
+     and t.allow_spawn
      and s0.revoked_at is null
      and s0.expires_at > now()
    for share of t, s0;

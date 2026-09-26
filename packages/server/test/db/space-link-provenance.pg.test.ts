@@ -460,6 +460,71 @@ describe('W7p 206 — each predicate of the link admission refuses on its own', 
   });
 });
 
+// Lead ruling Q-a (A): allow_spawn = false gates EVERY new mint under the
+// link — a child's spawn and a resume alike — through 992's live_link_session.
+// Nothing already running is ended by it; revoke is what ends sessions. Every
+// `linked()` is the same A -> B link entity, so each cell switches it back on.
+describe('W7p setSpawn(false) — no new mint under the link; running sessions unaffected', () => {
+  const underLink = async (link: string) => Number((await database.query<{ n: string }>(
+    `select count(*) as n from public.auth_sessions where via_link_id = $1`, [link]))[0]!.n);
+
+  async function withSpawnOff<T>(L: Linked, run: () => Promise<T>): Promise<T> {
+    await store.setSpawn(L.human, { linkId: L.link.id, allowSpawn: false });
+    try {
+      return await run();
+    } finally {
+      await store.setSpawn(L.human, { linkId: L.link.id, allowSpawn: true });
+    }
+  }
+
+  it("(1) a running via_link child's spawn is refused on the mint alone — no 206 read (node model, no git)", async () => {
+    const L = await linked();
+    const child = await claimsForToken((await mintChild(L.linkClaims)).token);
+    // Paired positive: the same child mints a grandchild while spawning is on.
+    expect(await outcome(() => mintChild(child))).toBe('ok');
+    await withSpawnOff(L, async () => {
+      const before = await underLink(L.link.id);
+      expect(await outcome(() => mintChild(child))).toBe('42501');
+      expect(await underLink(L.link.id)).toBe(before);
+    });
+  });
+
+  it('(2) a resume of a stopped via_link session is refused while spawning is off', async () => {
+    const L = await linked();
+    const child = await mintChild(L.linkClaims);
+    await database.query(`update public.auth_sessions set revoked_at = now() where id = $1`, [child.id]);
+    await withSpawnOff(L, async () => {
+      const before = await underLink(L.link.id);
+      expect(await outcome(() => mintChild(L.human, { workSessionId: child.workSessionId }))).toBe('42501');
+      expect(await underLink(L.link.id)).toBe(before);
+    });
+  });
+
+  it('(3) a running via_link session is unaffected: its token still resolves and its calls still work', async () => {
+    const L = await linked();
+    const minted = await mintChild(L.linkClaims);
+    await withSpawnOff(L, async () => {
+      expect((await sessionRow(minted.id)).revoked).toBe(false);
+      expect((await sessionRow(L.linkSessionId)).revoked).toBe(false);
+      const child = await claimsForToken(minted.token);
+      expect(child.viaLinkId).toBe(L.link.id);
+      const rows = await db.query<{ id: string }>(child, `select id::text from public.entities where id = $1`, [minted.workSessionId]);
+      expect(rows.map((r) => r.id)).toEqual([minted.workSessionId]);
+    });
+  });
+
+  it('(4) after setSpawn(true), the same resume succeeds and keeps the link', async () => {
+    const L = await linked();
+    const child = await mintChild(L.linkClaims);
+    await database.query(`update public.auth_sessions set revoked_at = now() where id = $1`, [child.id]);
+    await withSpawnOff(L, async () => {
+      expect(await outcome(() => mintChild(L.human, { workSessionId: child.workSessionId }))).toBe('42501');
+    });
+    const resumed = await mintChild(L.human, { workSessionId: child.workSessionId });
+    expect((await sessionRow(resumed.id)).via_link_id).toBe(L.link.id);
+  });
+});
+
 describe('W7p open_space_link_token and mark_space_link_stale — no chaining', () => {
   it('a link child cannot open a link (42501); an ordinary agent child of H opens H\'s row', async () => {
     const L = await linked();
