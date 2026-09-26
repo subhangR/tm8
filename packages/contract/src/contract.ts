@@ -2947,7 +2947,7 @@ export interface MarkAttentionSeenInput extends CommandContext {
 /**
  * Attention v2 S6: a SYSTEM signal tm8 raises on a caller's behalf. A CLOSED
  * vocabulary: the caller names the situation, never a signal key, level or
- * type; the server builds the key (`conflict:<worktreeId>`) and fixes level /
+ * type; the server builds the key (`conflict:<worktreeId>:<flow>`) and fixes level /
  * type from the kind (conflict = high / review). Only `conflict` exists today;
  * the permission prompt is deferred (F2).
  */
@@ -2955,7 +2955,14 @@ export interface AttentionSignal {
   kind: 'conflict';
   /** The worktree the merge, cherry-pick or stash pop conflicted in. */
   worktreeId: EntityId;
+  /**
+   * Which CLI flow conflicted. The key is `conflict:<worktreeId>:<flow>`, so
+   * only a clean run of the SAME flow clears it (ch2).
+   */
+  flow: AttentionSignalFlow;
 }
+
+export type AttentionSignalFlow = 'merge' | 'cherry_pick' | 'stash_pop';
 
 /**
  * POST /v2/entities/:entityId/attention-signals (Attention v2 S6). The CLI's

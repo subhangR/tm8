@@ -2581,6 +2581,7 @@ export const ResolveEntityAttentionInputSchema: z.ZodType<ResolveEntityAttention
 const AttentionSignalSchema: z.ZodType<AttentionSignal> = z.object({
   kind: z.literal('conflict'),
   worktreeId: EntityIdSchema,
+  flow: z.enum(['merge', 'cherry_pick', 'stash_pop']),
 }).strict();
 
 // Attention v2 S6. .strict(): no signal key, level, type or points from input.

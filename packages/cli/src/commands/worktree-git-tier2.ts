@@ -47,6 +47,7 @@ import {
   receiptAnchor,
   renderFiles,
   resolveWorktree,
+  type ConflictFlow,
   type ResolvedWorktree,
 } from './worktree-git.js';
 
@@ -59,6 +60,7 @@ async function surfaceConflict(
   cmd: CommandContext,
   resolved: ResolvedWorktree,
   what: string,
+  flow: ConflictFlow,
   conflictedPaths: readonly string[],
   rerun: string,
 ): Promise<never> {
@@ -71,14 +73,16 @@ async function surfaceConflict(
     conflictedPaths.map((p) => `- ${p}`).join('\n') +
     `\nResolve manually in the worktree, then re-run: ${rerun}`;
   await postReceipt(cmd, anchorId, body);
-  await raiseConflictSignal(cmd, resolved, anchorId,
-    `${what} conflict on ${resolved.branch}, ${conflictedPaths.length} path(s)`);
-  cmd.out.data({ worktreeId: resolved.worktreeId, status: 'conflict', conflictedPaths, surfacedOn: anchorId }, () =>
+  const surfacedOn = await raiseConflictSignal(cmd, resolved, anchorId,
+    `${what} conflict on ${resolved.branch}, ${conflictedPaths.length} path(s)`, flow);
+  cmd.out.data({ worktreeId: resolved.worktreeId, status: 'conflict', conflictedPaths, surfacedOn }, () =>
     `CONFLICT: ${what} on ${resolved.branch} — aborted cleanly, worktree unchanged.\n` +
     `conflicted:\n${conflictedPaths.map((p) => `  ${p}`).join('\n')}\n` +
-    `surfaced: durable message + attention on ${anchorId}`);
+    (surfacedOn === anchorId
+      ? `surfaced: durable message + attention on ${anchorId}`
+      : `surfaced: durable message on ${anchorId}, attention on ${surfacedOn}`));
   throw new CliError(
-    `${what} conflict: ${conflictedPaths.length} path(s); surfaced on ${anchorId}`,
+    `${what} conflict: ${conflictedPaths.length} path(s); surfaced on ${surfacedOn}`,
     EXIT_CONFLICT,
   );
 }
@@ -105,7 +109,7 @@ async function worktreeCherryPick(cmd: CommandContext): Promise<ExitCode> {
   }
   if (result.status === 'conflict') {
     // surfaceConflict always throws (exit 6) after its two durable writes.
-    return surfaceConflict(cmd, resolved, 'cherry-pick', result.conflictedPaths,
+    return surfaceConflict(cmd, resolved, 'cherry-pick', 'cherry_pick', result.conflictedPaths,
       `tm8 worktree cherry-pick ${id} ${commits.join(' ')}`);
   }
   cmd.out.data({ worktreeId: resolved.worktreeId, ...result }, () =>
@@ -114,7 +118,7 @@ async function worktreeCherryPick(cmd: CommandContext): Promise<ExitCode> {
   await postReceipt(cmd, receiptAnchor(resolved),
     `git cherry-pick onto ${resolved.branch} (worktree ${resolved.worktreeId}): ` +
     `${result.fromOids.join(', ')} applied as ${result.newOids.join(', ')}.`);
-  await clearConflictSignal(cmd, resolved);
+  await clearConflictSignal(cmd, resolved, 'cherry_pick');
   return EXIT_OK;
 }
 
@@ -217,13 +221,13 @@ async function worktreeStash(cmd: CommandContext): Promise<ExitCode> {
       });
       if (r.status === 'conflict') {
         // surfaceConflict always throws (exit 6) after its two durable writes.
-        return surfaceConflict(cmd, resolved, 'stash pop', r.conflictedPaths,
+        return surfaceConflict(cmd, resolved, 'stash pop', 'stash_pop', r.conflictedPaths,
           `tm8 worktree stash pop ${id}${index === undefined ? '' : ` --index ${index}`}` +
           ' (the entry was RETAINED)');
       }
       cmd.out.data({ worktreeId: resolved.worktreeId, ...r }, () =>
         `popped ${r.oid.slice(0, 12)} onto ${r.branch}:\n${renderFiles(r.files)}`);
-      await clearConflictSignal(cmd, resolved);
+      await clearConflictSignal(cmd, resolved, 'stash_pop');
       return EXIT_OK;
     }
     if (action === 'drop') {

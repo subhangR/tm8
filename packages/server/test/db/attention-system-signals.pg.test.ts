@@ -106,6 +106,12 @@ describe.sequential('attention v2 system signals (migration 256)', () => {
                      values($1,$2,$3,'owner','Owner')`, [x.memberId, x.spaceId, x.identityId]);
       await c.query(`insert into public.tasks(entity_id,title,work_status) values($1,'Linked','open'),($2,'Unrelated','open')`,
         [x.linkedTaskId, x.unrelatedTaskId]);
+      const project = (await c.query<{ id: string }>(
+        `insert into public.projects(id,name,working_dir) values(internal.new_id(),'signals','/tmp/signals-repo') returning id::text`,
+      )).rows[0]!.id;
+      await c.query(
+        `insert into public.worktrees(entity_id,project_id,path,branch,base_ref,base_commit_oid,status)
+         values($1,$2,'/tmp/signals-wt','tm8/signals','main',repeat('a',40),'active')`, [x.worktreeId, project]);
       return x;
     });
     // The session lives in the worktree and works on the linked task.
@@ -209,9 +215,64 @@ describe.sequential('attention v2 system signals (migration 256)', () => {
     });
   });
 
+  describe('race: blocker completion vs a concurrent assignment', () => {
+    it('an assignment racing a completing blocker waits for it and raises nothing', async () => {
+      const blocked = await newTask('Racing waiter');
+      const blocker = await newTask('Racing blocker');
+      await edge(blocked, blocker, 'depends_on');
+      let updated!: () => void;
+      const t1Updated = new Promise<void>((r) => { updated = r; });
+      let release!: () => void;
+      const gate = new Promise<void>((r) => { release = r; });
+      // T1 completes the blocker and holds its row until the gate opens.
+      const t1 = asOwner(async (c) => {
+        await c.query(`update public.tasks set work_status = 'done' where entity_id = $1`, [blocker]);
+        updated();
+        await gate;
+      });
+      await t1Updated;
+      // T2 assigns the waiter while T1 is uncommitted: its raise must wait.
+      let t2Done = false;
+      const t2 = edge(blocked, f.memberId, 'assigned_to').then(() => { t2Done = true; });
+      await new Promise((r) => setTimeout(r, 300));
+      expect(t2Done).toBe(false);
+      release();
+      await Promise.all([t1, t2]);
+      expect(await requests(blocked)).toEqual([]);
+    });
+  });
+
+  describe('situations that end unresolved', () => {
+    it('a cancelled or soft-deleted blocked task clears its own signals', async () => {
+      for (const end of ['cancel', 'delete'] as const) {
+        const blocked = await newTask(`Ends by ${end}`);
+        await edge(blocked, f.memberId, 'assigned_to');
+        await edge(blocked, await newTask(`Blocker for ${end}`), 'depends_on');
+        expect((await requests(blocked))[0]!.status).toBe('open');
+        await asOwner((c) => c.query(end === 'cancel'
+          ? `update public.tasks set work_status = 'cancelled' where entity_id = $1`
+          : 'update public.entities set deleted_at = now() where id = $1', [blocked]));
+        expect((await requests(blocked))[0]!.status).toBe('cleared');
+      }
+    });
+
+    it('a soft-deleted worktree clears its conflict signals', async () => {
+      const wt = await asOwner(async (c) => {
+        const id = (await c.query<{ id: string }>('select internal.new_id()::text id')).rows[0]!.id;
+        await c.query(`insert into public.entities(id,space_id,kind,parent_id,position,created_by)
+                       values($1,$2,'worktree',null,0,$3)`, [id, f.spaceId, f.memberId]);
+        return id;
+      });
+      await asMember(f.identityId, (c) => c.query('select public.raise_system_attention($1, $2::jsonb, $3)',
+        [wt, JSON.stringify({ kind: 'conflict', worktreeId: wt, flow: 'merge' }), 'merge conflict']));
+      expect((await requests(wt))[0]!.status).toBe('open');
+      await asOwner((c) => c.query('update public.entities set deleted_at = now() where id = $1', [wt]));
+      expect((await requests(wt))[0]!.status).toBe('cleared');
+    });
+  });
+
   describe('merge conflict door (CLI; spec-owner ruling on S6)', () => {
-    const conflict = { kind: 'conflict', worktreeId: '' };
-    const signal = () => JSON.stringify({ ...conflict, worktreeId: f.worktreeId });
+    const signal = (flow = 'merge') => JSON.stringify({ kind: 'conflict', worktreeId: f.worktreeId, flow });
 
     const raise = (identity: string, entityId: string, sig = signal(), reason = 'merge conflict on tm8/x, 2 path(s)') =>
       asMember(identity, async (c) => (await c.query<{ r: Record<string, unknown> }>(
@@ -226,7 +287,7 @@ describe.sequential('attention v2 system signals (migration 256)', () => {
       const again = await raise(f.identityId, f.linkedTaskId, signal(), 'a different reason');
       expect(again).toMatchObject({ attentionRequestId: first['attentionRequestId'], affectedCount: 0 });
       expect(await requests(f.linkedTaskId)).toEqual([expect.objectContaining({
-        status: 'open', origin: 'system', signal_key: `conflict:${f.worktreeId}`, level: 'high',
+        status: 'open', origin: 'system', signal_key: `conflict:${f.worktreeId}:merge`, level: 'high',
         action_type: 'review', points: 70, reason: 'merge conflict on tm8/x, 2 path(s)', requested_by: f.memberId,
       })]);
     });
@@ -251,11 +312,57 @@ describe.sequential('attention v2 system signals (migration 256)', () => {
         .rejects.toThrow(/unknown system attention signal kind/);
       await expect(raise(f.identityId, f.worktreeId, JSON.stringify({ signalKey: 'form:x' })))
         .rejects.toThrow(/unknown system attention signal kind/);
-      await expect(raise(f.identityId, f.linkedTaskId, JSON.stringify({ kind: 'conflict', worktreeId: f.unrelatedTaskId })))
+      await expect(raise(f.identityId, f.linkedTaskId, JSON.stringify({ kind: 'conflict', worktreeId: f.unrelatedTaskId, flow: 'merge' })))
         .rejects.toThrow(/needs a worktree in this space/);
-      await expect(raise(f.identityId, f.worktreeId, JSON.stringify({ kind: 'conflict', worktreeId: 'nope' })))
+      await expect(raise(f.identityId, f.worktreeId, JSON.stringify({ kind: 'conflict', worktreeId: 'nope', flow: 'merge' })))
         .rejects.toThrow(/needs a worktree in this space/);
       await expect(raise(f.identityId, f.worktreeId, signal(), '   ')).rejects.toThrow(/between 1 and 500/);
+      // Closed at the SQL level, not only by the HTTP schema.
+      await expect(raise(f.identityId, f.worktreeId,
+        JSON.stringify({ kind: 'conflict', worktreeId: f.worktreeId, flow: 'merge', level: 'urgent' })))
+        .rejects.toThrow(/names only kind, worktreeId and flow/);
+      for (const flow of [undefined, 'rebase', 'MERGE']) {
+        await expect(raise(f.identityId, f.worktreeId, JSON.stringify({ kind: 'conflict', worktreeId: f.worktreeId, flow })))
+          .rejects.toThrow(/flow must be merge, cherry_pick or stash_pop/);
+      }
+    });
+
+    it('a linked anchor means in_worktree (or working_on via a session in it), not any edge', async () => {
+      const related = await newTask('Only related');
+      await edge(related, f.worktreeId, 'relates_to');
+      await expect(raise(f.identityId, related)).rejects.toThrow(/not linked to that worktree/);
+      const inWorktree = await newTask('In the worktree');
+      await edge(inWorktree, f.worktreeId, 'in_worktree');
+      expect(await raise(f.identityId, inWorktree)).toMatchObject({ affectedCount: 1 });
+      expect(await clear(f.identityId, f.worktreeId)).toMatchObject({ affectedCount: 1 });
+    });
+
+    it('is per flow: a clean stash_pop leaves an open merge conflict open (ch2: the same flow clears)', async () => {
+      await raise(f.identityId, f.linkedTaskId, signal('merge'));
+      expect(await clear(f.identityId, f.worktreeId, signal('stash_pop'))).toMatchObject({ affectedCount: 0 });
+      expect(await clear(f.identityId, f.worktreeId, signal('cherry_pick'))).toMatchObject({ affectedCount: 0 });
+      expect((await requests(f.linkedTaskId)).filter((r) => r.status === 'open').map((r) => r.signal_key))
+        .toEqual([`conflict:${f.worktreeId}:merge`]);
+      expect(await clear(f.identityId, f.worktreeId, signal('merge'))).toMatchObject({ affectedCount: 1 });
+    });
+
+    it('a retired worktree clears all three of its conflict keys', async () => {
+      await raise(f.identityId, f.linkedTaskId, signal('merge'));
+      await raise(f.identityId, f.sessionId, signal('cherry_pick'));
+      await raise(f.identityId, f.worktreeId, signal('stash_pop'));
+      const open = async () => (await q<{ signal_key: string }>(
+        `select signal_key from public.attention_requests
+          where space_id = $1 and signal_key like 'conflict:%' and status = 'open' order by signal_key`, [f.spaceId]))
+        .map((r) => r.signal_key);
+      expect(await open()).toEqual(['cherry_pick', 'merge', 'stash_pop'].map((fl) => `conflict:${f.worktreeId}:${fl}`));
+      // The transition door's claim (057's single-writer guard), set the way update_worktree sets it.
+      const transition = (to: string) => asOwner(async (c) => {
+        await c.query(`select set_config('tm8.worktree_transition', 'on', true)`);
+        await c.query('update public.worktrees set status = $2 where entity_id = $1', [f.worktreeId, to]);
+      });
+      await transition('merged');
+      expect(await open()).toEqual([]);
+      await transition('active');
     });
 
     it('refuses a caller who is not a member of the space', async () => {
@@ -275,10 +382,12 @@ describe.sequential('attention v2 system signals (migration 256)', () => {
           where (ns.nspname, p.proname) in (('internal','raise_attention_signal'), ('internal','clear_attention_signal'),
                   ('internal','system_signal_key'), ('internal','raise_blocked_dependencies'),
                   ('internal','edges_blocked_dependency_signal'), ('internal','on_status_category_done'),
+                  ('internal','clear_ended_attention_signals'), ('internal','on_entity_ended'),
+                  ('internal','on_worktree_retired'),
                   ('public','raise_system_attention'), ('public','clear_system_attention'))
           order by 1`,
       );
-      expect(rows).toHaveLength(8);
+      expect(rows).toHaveLength(11);
       expect(rows.filter((r) => r.pub)).toEqual([]);
       expect(rows.filter((r) => r.app).map((r) => r.fn.replace(/\(.*$/, '')).sort())
         .toEqual(['clear_system_attention', 'raise_system_attention']);

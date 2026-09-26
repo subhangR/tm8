@@ -44,6 +44,7 @@ import {
 } from '@tm8/execution/worktree';
 
 import { CliError, EXIT_CONFLICT, EXIT_NOT_FOUND, EXIT_OK, EXIT_PROTOCOL, EXIT_USAGE, type ExitCode } from '../exit.js';
+import { ApiError } from '../errors.js';
 import { refuseMutationId, resolveMutationId } from '../mutation.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
 import type { CommandContext, CommandModule } from '../run.js';
@@ -177,45 +178,75 @@ export async function postReceipt(cmd: CommandContext, anchorId: string, body: s
   await observedInvoke<unknown>(clientFor(cmd.ctx), 'messages.post', { body: request });
 }
 
+/** Which rail conflicted: the key is per flow, so only the same flow clears it. */
+export type ConflictFlow = 'merge' | 'cherry_pick' | 'stash_pop';
+
 /**
  * Attention v2 S6: tm8's own conflict signal. The body names the situation
- * only ({kind:'conflict', worktreeId}); the server builds the key
- * `conflict:<worktreeId>`, fixes high / review, and refuses an anchor that is
- * not the worktree, its session or a task linked to either. Raising again while
- * it is open returns the open request.
+ * only ({kind:'conflict', worktreeId, flow}); the server builds the key
+ * `conflict:<worktreeId>:<flow>`, fixes high / review, and refuses an anchor
+ * that is not the worktree, a session or task in it, or a task a session in it
+ * works on. An explicit --task the server refuses as unlinked falls back to the
+ * default anchor chain rather than turning the conflict's exit 6 into a
+ * forbidden error. Raising again while it is open returns the open request.
+ * Returns the anchor the signal landed on.
  */
 export async function raiseConflictSignal(
   cmd: CommandContext,
   resolved: ResolvedWorktree,
   anchorId: string,
   reason: string,
-): Promise<void> {
-  const body: Record<string, unknown> = {
-    clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
-    signal: { kind: 'conflict', worktreeId: resolved.worktreeId },
-    reason,
+  flow: ConflictFlow,
+): Promise<string> {
+  const raise = async (entityId: string, clientMutationId: string): Promise<void> => {
+    const body: Record<string, unknown> = {
+      clientMutationId,
+      signal: { kind: 'conflict', worktreeId: resolved.worktreeId, flow },
+      reason,
+    };
+    if (cmd.ctx.actor) body.actorId = cmd.ctx.actor.value;
+    await observedInvoke<unknown>(clientFor(cmd.ctx), 'attentionSignals.raise', {
+      params: { entityId },
+      body,
+    });
   };
-  if (cmd.ctx.actor) body.actorId = cmd.ctx.actor.value;
-  await observedInvoke<unknown>(clientFor(cmd.ctx), 'attentionSignals.raise', {
-    params: { entityId: anchorId },
-    body,
-  });
+  const fallback = resolved.taskIds[0] ?? resolved.sessionId ?? resolved.worktreeId;
+  try {
+    await raise(anchorId, resolveMutationId(cmd.options.value('mutation-id')));
+    return anchorId;
+  } catch (error) {
+    if (!(error instanceof ApiError) || error.code !== 'forbidden' || anchorId === fallback) throw error;
+    cmd.out.warn(`${anchorId} is not linked to worktree ${resolved.worktreeId}; the conflict signal is raised on ${fallback}`);
+    await raise(fallback, resolveMutationId(undefined));
+    return fallback;
+  }
 }
 
 /**
- * The clean-completion half: clears the worktree's open conflict signal, on
- * whichever anchor it was raised. Idempotent, so every clean flow calls it.
+ * The clean-completion half: clears this flow's open conflict signal in the
+ * worktree, on whichever anchor it was raised. Idempotent, so every clean run
+ * calls it. BEST-EFFORT: the git operation has already succeeded, and a
+ * non-zero exit would invite a retry that is not idempotent (a second stash
+ * pop pops the NEXT entry), so a failure here is a warning, never an exit.
  */
-export async function clearConflictSignal(cmd: CommandContext, resolved: ResolvedWorktree): Promise<void> {
+export async function clearConflictSignal(
+  cmd: CommandContext,
+  resolved: ResolvedWorktree,
+  flow: ConflictFlow,
+): Promise<void> {
   const body: Record<string, unknown> = {
     clientMutationId: resolveMutationId(undefined),
-    signal: { kind: 'conflict', worktreeId: resolved.worktreeId },
+    signal: { kind: 'conflict', worktreeId: resolved.worktreeId, flow },
   };
   if (cmd.ctx.actor) body.actorId = cmd.ctx.actor.value;
-  await observedInvoke<unknown>(clientFor(cmd.ctx), 'attentionSignals.clear', {
-    params: { entityId: resolved.worktreeId },
-    body,
-  });
+  try {
+    await observedInvoke<unknown>(clientFor(cmd.ctx), 'attentionSignals.clear', {
+      params: { entityId: resolved.worktreeId },
+      body,
+    });
+  } catch (error) {
+    cmd.out.warn(`conflict signal not cleared: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 /** The receipt anchor: the session that owns the worktree, else the worktree. */
@@ -313,7 +344,7 @@ async function worktreeMerge(cmd: CommandContext): Promise<ExitCode> {
         `git merge: ${fromRef} (${result.fromOid}) merged into ${resolved.branch} ` +
         `(worktree ${resolved.worktreeId}), HEAD now ${result.oid}.`);
     }
-    await clearConflictSignal(cmd, resolved);
+    await clearConflictSignal(cmd, resolved, 'merge');
     return EXIT_OK;
   }
 
@@ -328,15 +359,17 @@ async function worktreeMerge(cmd: CommandContext): Promise<ExitCode> {
     result.conflictedPaths.map((p: string) => `- ${p}`).join('\n') +
     `\nResolve by merging manually in the worktree, or rebase the branch. Re-run: tm8 worktree merge ${id} --from ${fromRef}`;
   await postReceipt(cmd, anchorId, body);
-  await raiseConflictSignal(cmd, resolved, anchorId,
-    `merge conflict: ${fromRef} into ${resolved.branch}, ${result.conflictedPaths.length} path(s)`);
+  const surfacedOn = await raiseConflictSignal(cmd, resolved, anchorId,
+    `merge conflict: ${fromRef} into ${resolved.branch}, ${result.conflictedPaths.length} path(s)`, 'merge');
 
-  cmd.out.data({ worktreeId: resolved.worktreeId, ...result, surfacedOn: anchorId }, () =>
+  cmd.out.data({ worktreeId: resolved.worktreeId, ...result, surfacedOn: surfacedOn }, () =>
     `CONFLICT merging ${fromRef} into ${resolved.branch} — aborted cleanly, worktree unchanged.\n` +
     `conflicted:\n${result.conflictedPaths.map((p: string) => `  ${p}`).join('\n')}\n` +
-    `surfaced: durable message + attention on ${anchorId}`);
+    (surfacedOn === anchorId
+      ? `surfaced: durable message + attention on ${anchorId}`
+      : `surfaced: durable message on ${anchorId}, attention on ${surfacedOn}`));
   throw new CliError(
-    `merge conflict: ${result.conflictedPaths.length} path(s); surfaced on ${anchorId}`,
+    `merge conflict: ${result.conflictedPaths.length} path(s); surfaced on ${surfacedOn}`,
     EXIT_CONFLICT,
   );
 }

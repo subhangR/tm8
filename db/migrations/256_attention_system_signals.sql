@@ -15,9 +15,11 @@
 --   3. Merge conflicts: public.raise_system_attention /
 --      public.clear_system_attention, the CLI's door (ops attentionSignals.raise
 --      / attentionSignals.clear). A CLOSED vocabulary (spec-owner ruling on S6):
---      the caller names {kind:'conflict', worktreeId}, never a key; level and
---      type are fixed by the kind (high / review); the target must be the
---      worktree, a session in it, or a task linked to either.
+--      the caller names {kind:'conflict', worktreeId, flow}, never a key; the
+--      key is conflict:<worktree>:<flow>, so only a clean run of the SAME flow
+--      clears it; level and type are fixed by the kind (high / review); the
+--      target must be the worktree, a session or task in_worktree it, or a task
+--      a session in it is working on.
 --   4. Blocked dependency (R6): a task with an unresolved hard depends_on AND
 --      work waiting (an assignee or a live working_on session) raises
 --      depends_on:<edge-id> (normal / unblock). Raised from an edge trigger on
@@ -28,7 +30,14 @@
 --      003 trigger on tasks.work_status fires BEFORE tasks_category_bridge
 --      (alphabetical AFTER-trigger order, 147/150), so is_resolved(target) --
 --      which reads status_category since 152 -- was still false there and a
---      completed task announced nothing. See section 5.
+--      completed task announced nothing. See section 5. 147:214 and 150:419
+--      still cite tasks_announce_unblocked in their trigger-order notes; it is
+--      gone from here on. The new trigger also fires when a work_session's
+--      category goes to done (its exit): a few indexed lookups that find no
+--      depends_on edge, harmless.
+--   6. Situations that end unresolved: a cancelled or soft-deleted blocked task
+--      clears its own depends_on signals; a retired or deleted worktree clears
+--      its conflict signals.
 -- =============================================================================
 
 -- The whole file runs as the graph owner, like 211: the 211 form RPCs are its
@@ -172,6 +181,16 @@ begin
   if jsonb_typeof(p_signal) is distinct from 'object' or p_signal->>'kind' is distinct from 'conflict' then
     raise exception 'unknown system attention signal kind' using errcode = '22023';
   end if;
+  -- Closed at the SQL level too, not only by the HTTP schema: no key, level,
+  -- type or anything else can ride along.
+  if p_signal - 'kind' - 'worktreeId' - 'flow' <> '{}'::jsonb then
+    raise exception 'a conflict signal names only kind, worktreeId and flow' using errcode = '22023';
+  end if;
+  -- Per FLOW (ch2: "the same CLI flow later succeeds"): a clean stash pop must
+  -- not clear a merge conflict that was never redone.
+  if p_signal->>'flow' is null or p_signal->>'flow' not in ('merge', 'cherry_pick', 'stash_pop') then
+    raise exception 'conflict signal flow must be merge, cherry_pick or stash_pop' using errcode = '22023';
+  end if;
   begin
     worktree := (p_signal->>'worktreeId')::uuid;
   exception when invalid_text_representation then
@@ -185,16 +204,18 @@ begin
   end if;
   if not (
     p_entity.id = worktree
-    or exists (select 1 from public.edges e where e.src_id = p_entity.id and e.dst_id = worktree)
+    or (p_entity.kind in ('task', 'work_session') and exists (
+          select 1 from public.edges e
+           where e.src_id = p_entity.id and e.dst_id = worktree and e.type = 'in_worktree'))
     or (p_entity.kind = 'task' and exists (
           select 1 from public.edges into_wt
             join public.entities s on s.id = into_wt.src_id and s.kind = 'work_session'
             join public.edges w on w.src_id = s.id and w.type = 'working_on' and w.dst_id = p_entity.id
-           where into_wt.dst_id = worktree))
+           where into_wt.dst_id = worktree and into_wt.type = 'in_worktree'))
   ) then
     raise exception 'the conflict signal target is not linked to that worktree' using errcode = '42501';
   end if;
-  return 'conflict:' || worktree;
+  return 'conflict:' || worktree || ':' || (p_signal->>'flow');
 end
 $$;
 
@@ -318,6 +339,13 @@ begin
        and coalesce((e.props ->> 'hard')::boolean, true)
        and not internal.is_resolved(e.dst_id)
   loop
+    -- A blocker completing concurrently (T1) holds its entities row until it
+    -- commits. Wait on that row, then re-read in a NEW statement -- a fresh READ
+    -- COMMITTED snapshot -- so this raise cannot land after T1's clear ran for
+    -- a blocker that is by then resolved. (If this raise commits first, T1's
+    -- clear runs later and sees it.)
+    perform 1 from public.entities where id = dep.dst_id for share;
+    continue when internal.is_resolved(dep.dst_id);
     perform internal.raise_attention_signal(
       dep.space_id, p_task_id, 'depends_on:' || dep.id, 'Blocked by: ' || dep.blocker,
       'normal', 'unblock', coalesce(internal.actor_id(), dep.created_by));
@@ -447,6 +475,61 @@ for each row when (new.status_category = 'done' and old.status_category is disti
 execute function internal.on_status_category_done();
 
 -- -----------------------------------------------------------------------------
+-- 6. Situations that end without a resolution.
+--   * A blocked task CANCELLED or soft-deleted has no work waiting: its own
+--     depends_on:* signals clear. (Done already clears through
+--     announce_unblocked; this is only the own-signal half, no announce.)
+--   * A worktree soft-deleted, or retired (merged / abandoned / deleted), can
+--     never run the flow again: its conflict:<worktree>:* signals clear.
+-- -----------------------------------------------------------------------------
+create or replace function internal.clear_ended_attention_signals(p_entity_id uuid)
+returns integer language plpgsql set search_path = public, internal, pg_temp as $$
+declare
+  space uuid := (select space_id from public.entities where id = p_entity_id);
+  cleared integer := 0;
+  key text;
+begin
+  for key in
+    select distinct ar.signal_key from public.attention_requests ar
+     where ar.space_id = space and ar.status in ('open', 'acknowledged')
+       and ((ar.entity_id = p_entity_id and ar.signal_key like 'depends_on:%')
+         or ar.signal_key like 'conflict:' || p_entity_id || ':%')
+  loop
+    cleared := cleared + internal.clear_attention_signal(space, key);
+  end loop;
+  return cleared;
+end
+$$;
+
+create or replace function internal.on_entity_ended() returns trigger
+language plpgsql security definer set search_path = public, internal, pg_temp as $$
+begin
+  perform internal.clear_ended_attention_signals(new.id);
+  return null;
+end
+$$;
+
+create trigger entities_clear_ended_attention_signals
+after update on public.entities
+for each row when (
+  (new.status_category = 'cancelled' and old.status_category is distinct from 'cancelled')
+  or (new.deleted_at is not null and old.deleted_at is null))
+execute function internal.on_entity_ended();
+
+create or replace function internal.on_worktree_retired() returns trigger
+language plpgsql security definer set search_path = public, internal, pg_temp as $$
+begin
+  perform internal.clear_ended_attention_signals(new.entity_id);
+  return null;
+end
+$$;
+
+create trigger worktrees_clear_conflict_signals
+after update of status on public.worktrees
+for each row when (new.status <> 'active' and old.status = 'active')
+execute function internal.on_worktree_retired();
+
+-- -----------------------------------------------------------------------------
 -- Grants. Nothing new is callable by PUBLIC; only the two CLI doors go to
 -- tm8_app. Every internal function is reached from a definer (an RPC or one of
 -- the two definer triggers), so none is granted.
@@ -457,6 +540,9 @@ revoke all on function internal.system_signal_key(public.entities, jsonb) from p
 revoke all on function internal.raise_blocked_dependencies(uuid) from public;
 revoke all on function internal.edges_blocked_dependency_signal() from public;
 revoke all on function internal.on_status_category_done() from public;
+revoke all on function internal.clear_ended_attention_signals(uuid) from public;
+revoke all on function internal.on_entity_ended() from public;
+revoke all on function internal.on_worktree_retired() from public;
 revoke all on function public.raise_system_attention(uuid, jsonb, text, uuid, text, uuid) from public;
 revoke all on function public.clear_system_attention(uuid, jsonb, uuid, text) from public;
 grant execute on function public.raise_system_attention(uuid, jsonb, text, uuid, text, uuid) to tm8_app;
@@ -471,8 +557,9 @@ do $verify$
 begin
   if (select count(*) from pg_trigger
        where tgname in ('edges_blocked_dependency_signal', 'edges_blocked_dependency_signal_delete',
-                        'entities_announce_unblocked')) <> 3 then
-    raise exception '256: the three signal triggers must exist';
+                        'entities_announce_unblocked', 'entities_clear_ended_attention_signals',
+                        'worktrees_clear_conflict_signals')) <> 5 then
+    raise exception '256: the five signal triggers must exist';
   end if;
   if exists (select 1 from pg_trigger where tgname = 'tasks_announce_unblocked') then
     raise exception '256: tasks_announce_unblocked must be gone (entities_announce_unblocked replaces it)';
