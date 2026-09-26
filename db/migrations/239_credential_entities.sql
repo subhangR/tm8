@@ -30,8 +30,8 @@
 --      space/kind changes.
 --   6. key_hint and display_login leave tm8_app's column grant (R3). They are
 --      read only through list_space_credentials / read_space_credential, which
---      mask them for anyone but the owner (and, for public/space-owned cards,
---      the managers).
+--      mask them by visibility: private, owner only; public, every member
+--      (206 picker contract).
 --   7. The gate (§3f, R1, R6): the recorder's and repoint's locked predicates
 --      gain `visibility = 'public' OR owner_account_id IS NULL OR
 --      owner_account_id = <launcher>`; the recorder checks it BEFORE its
@@ -397,7 +397,8 @@ $$;
 --    from public.<relation> alias`) and entity-content-all-kinds resolves it
 --    like any other. The view's column list IS the card: no secret, hint or
 --    login column exists in it to leak. Granted to nobody; entity_content
---    reads it as its owner.
+--    reads it as its owner only because its callers are security definer
+--    (internal.command_entity, 007:33) — an invoker caller would be refused.
 -- -----------------------------------------------------------------------------
 create view public.credential_cards as
   select sc.id as entity_id,
@@ -1184,6 +1185,11 @@ $$;
 -- account owns, once, in that same statement. This wrapper runs it FIRST,
 -- then lists the other launchers' live sessions on those credentials and the
 -- login homes, so nothing is read before the caller is authorised.
+-- Both lists are appended AFTER the core's ledger_record, so a replay
+-- recomputes them rather than reading them from the ledger, and v_homes names
+-- every revoked login the account has ever owned, not only this disable's.
+-- Both are idempotent for the caller: a killed session stays stopped, and
+-- removing an absent home is a no-op.
 alter function public.disable_account(uuid, text) rename to disable_account_core;
 alter function public.disable_account_core(uuid, text) set schema internal;
 
