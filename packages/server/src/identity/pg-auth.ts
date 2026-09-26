@@ -832,7 +832,7 @@ export async function setSpaceRequirePassword(
   db: Db,
   claims: DbClaims,
   input: { spaceId: string; required: boolean; ownPassword?: string },
-): Promise<{ spaceId: string; requireSpacePassword: boolean }> {
+): Promise<{ spaceId: string; requireSpacePassword: boolean; revokedSessionIds: string[] }> {
   const ownVerifier = input.required && input.ownPassword ? await hasher.hash(input.ownPassword) : null;
   return db.rpc(claims, 'set_space_require_credential', [input.spaceId, input.required, ownVerifier]);
 }

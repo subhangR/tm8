@@ -288,6 +288,10 @@ comment on function public.space_login_for_enter(uuid) is
 
 -- -----------------------------------------------------------------------------
 -- 5. Does this invite need a space password? Claim-free, like preview_invite.
+--    A dead code (unknown, revoked, expired, exhausted — exactly the codes
+--    redeem_invite and signup_via_invite refuse) answers false, the same as an
+--    unknown one, so the setting of a space is never readable through a code
+--    that can no longer join it.
 -- -----------------------------------------------------------------------------
 create or replace function public.invite_requires_space_password(p_code text)
 returns boolean language sql stable security definer
@@ -299,6 +303,7 @@ set search_path = public, internal, pg_temp as $$
      where i.code = p_code
        and i.revoked_at is null
        and (i.expires_at is null or i.expires_at >= now())
+       and i.use_count < i.max_uses
   ), false)
 $$;
 
@@ -307,7 +312,8 @@ grant execute on function public.invite_requires_space_password(text) to tm8_app
 
 comment on function public.invite_requires_space_password(text) is
   'W5 (995): true when a live invite code joins a space that requires a space '
-  'password. Claim-free, like preview_invite: the code is the authorization.';
+  'password. Claim-free, like preview_invite: the code is the authorization. A '
+  'dead code (unknown, revoked, expired, exhausted) answers false.';
 
 -- -----------------------------------------------------------------------------
 -- 6a. signup_via_invite — 143's body, plus the space password.
@@ -585,12 +591,19 @@ set search_path = public, internal, pg_temp as $$
 declare
   acct uuid;
   mine public.space_logins;
+  caller_role text;
+  unlogged int;
+  revoked uuid[] := '{}';
 begin
-  perform internal.require_space_password_admin(p_space_id);
+  caller_role := internal.require_space_password_admin(p_space_id);
   if p_required is null then
     raise exception 'required must be true or false' using errcode = '22023';
   end if;
   if p_required then
+    -- Turning it on is an owner's act: it changes how every owner gets in.
+    if caller_role is distinct from 'owner' then
+      raise exception 'only an owner can require a space password' using errcode = '42501';
+    end if;
     -- Turning it on must not lock out the admin turning it on.
     acct := internal.space_login_account(internal.identity_id());
     if acct is null then
@@ -609,11 +622,40 @@ begin
     elsif mine.account_id is null then
       raise exception 'set your own space password to turn this on' using errcode = '22023';
     end if;
+    -- ...nor any other owner: every active owner with an active account must
+    -- already hold an active login row, or the flip would shut that owner out
+    -- of their own space. (An owner identity with no active account cannot
+    -- enter any space, password or not, so it has nothing to be shut out of.)
+    select count(*) into unlogged
+      from (select internal.space_login_account(m.identity_id) as account_id
+              from public.members m
+             where m.space_id = p_space_id and m.role = 'owner' and m.status = 'active') o
+     where o.account_id is not null
+       and not exists (
+         select 1 from public.space_logins l
+          where l.space_id = p_space_id and l.account_id = o.account_id
+            and l.status = 'active');
+    if unlogged > 0 then
+      raise exception 'every owner of this space needs an active space password first'
+        using errcode = '42501';
+    end if;
+    -- Sessions already pinned to this space were entered without a password.
+    -- End them (browser and cli only — agent sessions are never pinned by
+    -- enter_space), exactly as reset and lock do; the caller's own included,
+    -- so every live session in the space has passed the password it now needs.
+    with ended as (
+      update public.auth_sessions s set revoked_at = now()
+       where s.space_id = p_space_id and s.kind in ('browser', 'cli')
+         and s.revoked_at is null
+      returning s.id
+    )
+    select coalesce(array_agg(id), '{}') into revoked from ended;
   end if;
   perform set_config('tm8.space_password_writer', 'on', true);
   update public.spaces set require_space_credential = p_required where id = p_space_id;
   perform set_config('tm8.space_password_writer', '', true);
-  return jsonb_build_object('spaceId', p_space_id, 'requireSpacePassword', p_required);
+  return jsonb_build_object('spaceId', p_space_id, 'requireSpacePassword', p_required,
+    'revokedSessionIds', to_jsonb(revoked));
 end
 $$;
 

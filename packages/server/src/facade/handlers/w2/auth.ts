@@ -684,18 +684,35 @@ function authSessionsRevoke(deps: FacadeDeps, sockets: SessionSocketPort | undef
 
 /**
  * W5 (K2, decision 30) — the space-password setting and the P5 admin ops.
- * Human space admins only; every guard is in SQL (995). Reset and lock end the
- * member's sessions pinned to the space, and their sockets are closed here.
+ * Human space admins only; every guard but the node-mode one is in SQL (995).
+ * Reset and lock end the member's sessions pinned to the space, turning the
+ * setting on ends every human session pinned to it, and their sockets are
+ * closed here.
  */
-function spacesSpacePasswordSetRequired(deps: FacadeDeps): OperationHandler {
+function spacesSpacePasswordSetRequired(deps: FacadeDeps, sockets: SessionSocketPort | undefined): OperationHandler {
   return async (ctx) => {
     const spaceId = requireUuidParam(ctx, 'spaceId');
     const body = ctx.body as SpacePasswordSetRequiredInput;
+    // A space password guards the pinned session enter_space mints. Below
+    // `enforce`, an unpinned gate session still reaches the space, so turning
+    // it on would promise a boundary the node does not keep. Turning it off
+    // is always allowed.
+    const spaceSessions = deps.config.spaceSessions ?? 'agents';
+    if (body.required === true && spaceSessions !== 'enforce') {
+      throw new CollabError(
+        'conflict',
+        `a space password needs TM8_SPACE_SESSIONS=enforce; this node runs '${spaceSessions}'`,
+        { details: { reason: 'space_password_requires_enforce', spaceSessions } },
+      );
+    }
     const owner = await deps.owner();
     const result: SpacePasswordSetRequiredResult = await setSpaceRequirePassword(
       deps.db, claimsFor(owner, ctx),
       { spaceId, required: body.required, ...(body.password ? { ownPassword: body.password } : {}) },
     );
+    // Turning it on ends the space's pinned human sessions (995); close them.
+    closeSessionSockets(sockets, new Set(result.revokedSessionIds), (message, fields) =>
+      console.warn(`[spaces.spacePassword.setRequired] ${message}`, fields));
     return json(result, { headers: { 'cache-control': 'no-store' } });
   };
 }
@@ -753,7 +770,7 @@ export function registerW2AuthHandlers(
     'auth.password.change': authPasswordChange(deps),
     'auth.invite.resolve': authInviteResolve(deps),
     'auth.invite.signup': authInviteSignup(deps),
-    'spaces.spacePassword.setRequired': spacesSpacePasswordSetRequired(deps),
+    'spaces.spacePassword.setRequired': spacesSpacePasswordSetRequired(deps, auth.sockets),
     'spaces.members.spacePassword.reset': spacesMembersSpacePasswordReset(deps, auth.sockets),
     'spaces.members.spacePassword.lock': spacesMembersSpacePasswordLock(deps, auth.sockets),
   });

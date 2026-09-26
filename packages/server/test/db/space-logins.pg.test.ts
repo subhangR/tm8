@@ -249,13 +249,13 @@ describe.sequential('W5 space_logins — the setting (require_space_credential)'
       await client.query('update public.spaces set require_space_credential = true where id = $1', [f.spaceD]);
     }))).toBe('42501');
     const pw = password();
-    expect(await setRequired(f.O, f.spaceD, true, pw)).toEqual({ spaceId: f.spaceD, requireSpacePassword: true });
-    expect(await setRequired(f.O, f.spaceD, false)).toEqual({ spaceId: f.spaceD, requireSpacePassword: false });
+    expect(await setRequired(f.O, f.spaceD, true, pw)).toEqual({ spaceId: f.spaceD, requireSpacePassword: true, revokedSessionIds: [] });
+    expect(await setRequired(f.O, f.spaceD, false)).toEqual({ spaceId: f.spaceD, requireSpacePassword: false, revokedSessionIds: [] });
   });
 
-  it('only a space admin sets it: member M is refused (42501); positive: admin A sets it', async () => {
+  it('only a space admin sets it: member M is refused (42501); positive: admin A turns it off', async () => {
     expect(await outcome(() => setRequired(f.M, f.spaceC, true, password()))).toBe('42501');
-    expect(await outcome(() => setRequired(f.A, f.spaceC, true, password()))).toBe('ok');
+    expect(await outcome(() => setRequired(f.M, f.spaceC, false))).toBe('42501');
     expect(await outcome(() => setRequired(f.A, f.spaceC, false))).toBe('ok');
   });
 
@@ -272,6 +272,13 @@ describe.sequential('W5 space_logins — the setting (require_space_credential)'
     expect(await outcome(() => setRequired(f.O, f.spaceC, true))).toBe('22023');
     expect(await outcome(() => setRequired(f.O, f.spaceC, true, 'x'.repeat(8)))).toBe('ok');
     // Leave C ON for the next describe, with O's password known.
+  });
+
+  it('turning it ON is owner-only: admin A is refused (42501), even with its own password; positive: owner O', async () => {
+    expect(await outcome(() => setRequired(f.A, f.spaceC, false))).toBe('ok');
+    expect(await outcome(() => setRequired(f.A, f.spaceC, true, password()))).toBe('42501');
+    expect(await loginRow(f.spaceC, f.A.account)).toBeUndefined();
+    expect(await outcome(() => setRequired(f.O, f.spaceC, true))).toBe('ok');
   });
 
   it('a verifier that is not a scrypt string is refused (22023) — plaintext cannot be stored', async () => {
@@ -497,5 +504,128 @@ describe.sequential('W5 space_logins — invites (a4)', () => {
     expect(joined.joined).toBe(true);
     expect(await loginRow(f.spaceD, f.P.account)).toBeUndefined();
     expect(await outcome(() => enterSql(f.P, f.spaceD))).toBe('ok');
+  });
+});
+
+/**
+ * The review fixes (5327376587): turning it on is refused while any owner
+ * lacks an active login row (#2), ends the space's pinned human sessions (#4);
+ * enter_space matches the verifier to the caller's own row (#5); a dead code
+ * never reveals the setting (#6). Spaces E (owners O and A, member M) and F
+ * (owner O, member M) start off.
+ */
+describe.sequential('W5 space_logins — turning it on, the verifier owner, dead codes', () => {
+  const spaceE = randomUUID();
+  const spaceF = randomUUID();
+  const memberAE = randomUUID();
+  const memberMF = randomUUID();
+  const pwO = { E: password(), F: password() };
+  const pwMF = password();
+  let R: Person;
+
+  beforeAll(async () => {
+    R = { identity: `space-logins-r-${randomUUID()}`, account: randomUUID() };
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query('insert into public.user_profiles(identity_id, display_name) values ($1, $2)', [R.identity, 'SLR']);
+      await client.query('insert into public.accounts(id, identity_id, username) values ($1, $2, $3)',
+        [R.account, R.identity, `space-logins-r-${randomUUID().slice(0, 8)}`]);
+      await client.query(
+        `insert into public.spaces(id, name, created_by_identity)
+         values ($1, 'Space logins E', $3), ($2, 'Space logins F', $3)`,
+        [spaceE, spaceF, f.O.identity]);
+      const members: Array<[string, string, Person, string]> = [
+        [randomUUID(), spaceE, f.O, 'owner'],
+        [memberAE, spaceE, f.A, 'owner'],
+        [randomUUID(), spaceE, f.M, 'member'],
+        [randomUUID(), spaceF, f.O, 'owner'],
+        [memberMF, spaceF, f.M, 'member'],
+      ];
+      for (const [entityId, spaceId, p, role] of members) {
+        await client.query(
+          `insert into public.entities(id, space_id, kind, created_by, visibility)
+           values ($1, $2, 'member', $1, 'space')`, [entityId, spaceId]);
+        await client.query(
+          `insert into public.members(entity_id, space_id, identity_id, role, display_name)
+           values ($1, $2, $3, $4, $5)`, [entityId, spaceId, p.identity, role, role]);
+      }
+    });
+  });
+
+  const required = async (spaceId: string): Promise<boolean> => (await database.query<{ r: boolean }>(
+    'select require_space_credential r from public.spaces where id = $1', [spaceId]))[0]!.r;
+
+  it('#4: turning it on ends the space\'s pinned browser/cli sessions — not other spaces\', not agent sessions; positive: re-entry with the password', async () => {
+    const pinMF = await enterSql(f.M, spaceF);
+    const pinOF = await enterSql(f.O, spaceF);
+    const pinME = await enterSql(f.M, spaceE);
+    const agentF = (await database.query<{ id: string }>(
+      `insert into public.auth_sessions(account_id, kind, token_hash, label, expires_at, space_id)
+       values ($1, 'agent', $2, 'space-logins agent', now() + interval '1 hour', $3) returning id::text`,
+      [f.M.account, hashToken(generateSecret()), spaceF]))[0]!.id;
+    const on = await setRequired(f.O, spaceF, true, pwO.F) as { revokedSessionIds: string[] };
+    expect([...on.revokedSessionIds].sort()).toEqual([pinMF, pinOF].sort());
+    expect(await revokedAt(pinMF)).not.toBeNull();
+    expect(await revokedAt(pinOF)).not.toBeNull();
+    expect(await revokedAt(pinME)).toBeNull();
+    expect(await revokedAt(agentF)).toBeNull();
+    expect(await reason(() => enterWithPassword(f.O, spaceF, pwO.F))).toBe('ok');
+    // Turning it off revokes nothing.
+    const pinOF2 = await enterWithPassword(f.O, spaceF, pwO.F);
+    expect(await setRequired(f.O, spaceF, false)).toMatchObject({ revokedSessionIds: [] });
+    expect(await revokedAt(pinOF2)).toBeNull();
+    expect(await outcome(() => setRequired(f.O, spaceF, true))).toBe('ok');
+  });
+
+  it('#2: refused (42501) while another owner (A) has no active login row, or a locked one; positive: once A\'s is active, O turns it on and still enters', async () => {
+    expect(await outcome(() => setRequired(f.O, spaceE, true, pwO.E))).toBe('42501');
+    expect(await required(spaceE)).toBe(false);
+    expect(await loginRow(spaceE, f.O.account)).toBeUndefined();
+    await reset(f.O, spaceE, memberAE, password());
+    await lock(f.O, spaceE, memberAE, true);
+    expect(await outcome(() => setRequired(f.O, spaceE, true, pwO.E))).toBe('42501');
+    await lock(f.O, spaceE, memberAE, false);
+    expect(await outcome(() => setRequired(f.O, spaceE, true, pwO.E))).toBe('ok');
+    expect(await required(spaceE)).toBe(true);
+    expect(await reason(() => enterWithPassword(f.O, spaceE, pwO.E))).toBe('ok');
+  });
+
+  it('#2: an owner without their own row is refused (22023) and the setting stays off; positive: the same owner with one', async () => {
+    expect(await setRequired(f.O, spaceE, false)).toMatchObject({ requireSpacePassword: false });
+    await database.query('delete from public.space_logins where space_id = $1 and account_id = $2', [spaceE, f.O.account]);
+    expect(await outcome(() => setRequired(f.O, spaceE, true))).toBe('22023');
+    expect(await required(spaceE)).toBe(false);
+    expect(await outcome(() => setRequired(f.O, spaceE, true, pwO.E))).toBe('ok');
+  });
+
+  it('#5: enter_space matches the caller\'s own row — M presenting O\'s active verifier for F is refused (42501); positive: M\'s own', async () => {
+    await reset(f.O, spaceF, memberMF, pwMF);
+    const verifierO = (await loginRow(spaceF, f.O.account))!.verifier;
+    expect(await outcome(() => enterSql(f.M, spaceF, verifierO))).toBe('42501');
+    expect(await outcome(async () => enterSql(f.M, spaceF, (await loginRow(spaceF, f.M.account))!.verifier))).toBe('ok');
+    expect(await outcome(() => enterSql(f.O, spaceF, verifierO))).toBe('ok');
+  });
+
+  it('#6: a dead code (exhausted, expired, revoked, unknown) answers false like an unknown one, and redeem refuses it; positive: a live code answers true', async () => {
+    const live = await invite(f.spaceC);
+    const exhausted = await invite(f.spaceC);
+    const expired = await invite(f.spaceC);
+    const revoked = await invite(f.spaceC);
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query('update public.space_invites set use_count = max_uses where code = $1', [exhausted]);
+      await client.query(`update public.space_invites set expires_at = now() - interval '1 hour' where code = $1`, [expired]);
+      await client.query('update public.space_invites set revoked_at = now() where code = $1', [revoked]);
+    });
+    expect(await inviteRequiresSpacePassword(db, live)).toBe(true);
+    const verifier = await hashSpacePassword(password());
+    const dead: Array<[string, string]> = [
+      [exhausted, '53400'], [expired, '42501'], [revoked, '42501'], [`inv_${randomUUID()}`, 'P0002'],
+    ];
+    for (const [code, refusal] of dead) {
+      expect(await inviteRequiresSpacePassword(db, code)).toBe(false);
+      expect(await outcome(() => as(R, (q) => q.rpc('redeem_invite', [code, cmid(), verifier])))).toBe(refusal);
+    }
+    expect(await outcome(() => as(R, (q) => q.rpc('redeem_invite', [live, cmid(), verifier])))).toBe('ok');
   });
 });

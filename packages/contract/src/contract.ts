@@ -3495,19 +3495,27 @@ export type InvitePreview =
 
 /**
  * PUT /v2/spaces/:spaceId/space-password — turn the space's password
- * requirement on or off. Human space admins only. Turning it on needs the
- * caller's own space password (`password`) unless they already have one, so
- * the admin is never locked out; members without one are refused entry until
- * an admin resets theirs.
+ * requirement on or off. Human space admins only; turning it ON is an owner's
+ * act, refused (409 `space_password_requires_enforce`) unless the node runs
+ * TM8_SPACE_SESSIONS=enforce, and refused while any owner of the space lacks
+ * an active space password. It needs the caller's own space password
+ * (`password`) unless they already have one, so the owner is never locked
+ * out; members without one are refused entry until an admin resets theirs.
+ * Turning it off always works.
  */
 export interface SpacePasswordSetRequiredInput {
   required: boolean;
   password?: string;
 }
 
+/**
+ * `revokedSessionIds`: turning it on ends every browser/cli session pinned to
+ * the space (they were entered without a password); empty when turning it off.
+ */
 export interface SpacePasswordSetRequiredResult {
   spaceId: SpaceId;
   requireSpacePassword: boolean;
+  revokedSessionIds: string[];
 }
 
 /** POST /v2/spaces/:spaceId/members/:memberId/space-password/reset — admin sets a new one. */

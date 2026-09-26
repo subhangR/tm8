@@ -4237,10 +4237,17 @@ describe.sequential('T17 leave / remove ends a member\'s link sessions', () => {
  *   a3  setting off → enter needs no password (W3 behaviour).
  *   a4  auth.invite.resolve says so; signup and redeem set the password.
  *   a5  reset and lock over HTTP, human-only (an agent token is refused).
+ *   #1  turning it on needs TM8_SPACE_SESSIONS=enforce (review 5327376587).
+ *   #3  wrong passwords are rate-limited per (identity, space) — on a third
+ *       node with a small budget and window, so the cell can outwait it.
+ *   #4  turning it on ends the sessions pinned to E before the flip.
  */
 describe.sequential('W5 over HTTP — space passwords (auth.space.enter, invites, admin reset/lock)', () => {
   let enforceServer: BootstrappedServer;
   let agentsServer: BootstrappedServer;
+  let limitedServer: BootstrappedServer;
+  const LIMITED_FAILURES = 3;
+  const LIMITED_WINDOW_MS = 2_500;
   const spaceE = randomUUID();
   const memberHE = randomUUID();
   const memberH2E = randomUUID();
@@ -4280,7 +4287,7 @@ describe.sequential('W5 over HTTP — space passwords (auth.space.enter, invites
         [memberHE, memberH2E, spaceE, fixture.identityH, fixture.identityH2],
       );
     });
-    const start = async (mode: SpaceSessionsMode): Promise<BootstrappedServer> => {
+    const start = async (mode: SpaceSessionsMode, extra: Record<string, string> = {}): Promise<BootstrappedServer> => {
       const configured = loadConfig({
         ...process.env,
         TM8_BIND: '127.0.0.1',
@@ -4290,15 +4297,20 @@ describe.sequential('W5 over HTTP — space passwords (auth.space.enter, invites
         TM8_DATA_DIR: await mkdtemp(join(tmpdir(), 'tm8-w5-')),
         TM8_DISABLE_AUTO_OWNER: '1',
         TM8_SPACE_SESSIONS: mode,
+        ...extra,
       });
       return bootstrap({ config: { ...configured, port: 0 } });
     };
     enforceServer = await start('enforce');
     agentsServer = await start('agents');
+    limitedServer = await start('enforce', {
+      TM8_AUTH_MAX_FAILURES: String(LIMITED_FAILURES),
+      TM8_AUTH_FAILURE_WINDOW_MS: String(LIMITED_WINDOW_MS),
+    });
   }, 180_000);
 
   afterAll(async () => {
-    for (const server of [enforceServer, agentsServer]) {
+    for (const server of [enforceServer, agentsServer, limitedServer]) {
       await server?.server.close();
       await server?.db?.end();
     }
@@ -4358,12 +4370,34 @@ describe.sequential('W5 over HTTP — space passwords (auth.space.enter, invites
 
   it('turning it on without the admin\'s own password is refused (400); positive: with one (200)', async () => {
     const pinned = (await enter(enforceServer, 'H', spaceE)).json.token as string;
+    const pinnedH2 = (await enter(enforceServer, 'H2', spaceE)).json.token as string;
     const refused = await call(enforceServer, pinned, 'PUT', `/v2/spaces/${spaceE}/space-password`, { required: true });
     expect(refused.status).toBe(400);
+    expect((await call(enforceServer, pinnedH2, 'GET', '/v2/auth/session')).status).toBe(200);
     const on = await call(enforceServer, pinned, 'PUT', `/v2/spaces/${spaceE}/space-password`,
       { required: true, password: passwordOf.H });
     expect(on.status).toBe(200);
-    expect(on.json).toEqual({ spaceId: spaceE, requireSpacePassword: true });
+    expect(on.json).toMatchObject({ spaceId: spaceE, requireSpacePassword: true });
+    // #4: every session pinned to E before the flip was entered without a
+    // password, and ends with it — H2's and the flipping session itself.
+    expect(on.json.revokedSessionIds).toEqual(expect.arrayContaining(
+      [parseToken(pinned)!.sessionId, parseToken(pinnedH2)!.sessionId]));
+    expect((await call(enforceServer, pinnedH2, 'GET', '/v2/auth/session')).status).toBe(401);
+    expect((await call(enforceServer, pinned, 'GET', '/v2/auth/session')).status).toBe(401);
+    expect((await call(enforceServer, await pinnedH(), 'GET', '/v2/auth/session')).status).toBe(200);
+  });
+
+  it('#1: under TM8_SPACE_SESSIONS=agents turning it on is refused (409 space_password_requires_enforce); positive: off works there, and enforce turns it on', async () => {
+    const pinnedAgents = (await enter(agentsServer, 'H', spaceE, passwordOf.H)).json.token as string;
+    const refused = await call(agentsServer, pinnedAgents, 'PUT', `/v2/spaces/${spaceE}/space-password`,
+      { required: true, password: passwordOf.H });
+    expect(refused.status).toBe(409);
+    expect(reasonOf(refused.json)).toBe('space_password_requires_enforce');
+    expect(refused.json.error?.details?.spaceSessions ?? refused.json.details?.spaceSessions).toBe('agents');
+    expect((await call(agentsServer, pinnedAgents, 'PUT', `/v2/spaces/${spaceE}/space-password`,
+      { required: false })).status).toBe(200);
+    expect((await call(enforceServer, await pinnedH(), 'PUT', `/v2/spaces/${spaceE}/space-password`,
+      { required: true })).status).toBe(200);
   });
 
   it('a5: a member (H2) cannot set it (403); positive: owner H can', async () => {
@@ -4402,6 +4436,19 @@ describe.sequential('W5 over HTTP — space passwords (auth.space.enter, invites
   it('a2/a3: a space with the setting off (A) ignores E\'s password and admits without one', async () => {
     expect((await enter(enforceServer, 'H2', fixture.spaceA)).status).toBe(200);
     expect((await enter(enforceServer, 'H2', fixture.spaceA, passwordOf.H2)).status).toBe(200);
+  });
+
+  it('#3: after N wrong passwords for (H2, E) the next try, even the right one, is 429; H in E and H2 in A are not; positive: after the window the right one is admitted', async () => {
+    for (let i = 0; i < LIMITED_FAILURES; i++) {
+      expect(reasonOf((await enter(limitedServer, 'H2', spaceE, `wrong-${randomUUID()}`)).json)).toBe('space_password_rejected');
+    }
+    const limited = await enter(limitedServer, 'H2', spaceE, passwordOf.H2);
+    expect(limited.status).toBe(429);
+    expect(limited.json.error?.code).toBe('rate_limited');
+    expect((await enter(limitedServer, 'H', spaceE, passwordOf.H)).status).toBe(200);
+    expect((await enter(limitedServer, 'H2', fixture.spaceA)).status).toBe(200);
+    await new Promise((resolve) => setTimeout(resolve, LIMITED_WINDOW_MS + 300));
+    expect((await enter(limitedServer, 'H2', spaceE, passwordOf.H2)).status).toBe(200);
   });
 
   it('a5: lock ends H2\'s pinned E session and refuses the right password; positive: unlock admits', async () => {
