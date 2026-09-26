@@ -21,7 +21,8 @@
 -- credential RPC (review Q1). Its callers are exactly the list
 -- `space-links.pg.test.ts` pins (STRICT_GATE_CALLERS, a caller added or lost
 -- fails): the credential MANAGEMENT writes and session RPCs of 083/093/203/206,
--- read_account_service_key, disable_account, the agent-runtime mint/revoke,
+-- read_account_service_key, disable_account (through 239's
+-- internal.disable_account_core), the agent-runtime mint/revoke,
 -- leave_space/remove_space_member/start_chat, W4's list/revoke of auth sessions
 -- (249), and the six spaceLinks.* writes (251): a link session never manages
 -- link tokens (decision 31's refused set). The credential READERS and sweeps

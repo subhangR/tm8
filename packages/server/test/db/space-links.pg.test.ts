@@ -80,7 +80,10 @@ const STRICT_GATE_CALLERS: Readonly<Record<string, string>> = {
   'start_credential_session(uuid,text,integer,integer)': CREDENTIAL_MANAGEMENT,
   'start_space_credential_login(uuid,text,text,uuid,integer,integer)': CREDENTIAL_MANAGEMENT,
 
-  'disable_account(uuid,text)': IDENTITY_WIDE,
+  // 239 (W10a, #863) renamed the gated body to internal.disable_account_core;
+  // public.disable_account wraps it and calls it first, so the gate still runs
+  // before anything the wrapper does. The caller is the core.
+  'internal.disable_account_core(uuid,text)': IDENTITY_WIDE,
   'issue_agent_runtime_session(uuid,uuid,text,timestamp with time zone,text)': AUTH_MINTING,
   'revoke_agent_runtime_session(uuid)': AUTH_MINTING,
   'leave_space(uuid,text)': PENDING,
