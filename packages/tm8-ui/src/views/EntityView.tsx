@@ -32,7 +32,6 @@
  *
  * ESC WALKS DOWN ONE RUNG PER PRESS: aux → detail → list.
  */
-import { useAttentionOptional } from '../attention';
 import { needsMeListSource } from '../attention/needs-me';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { EntityId, EntityKind, ExecutionSpawnInput } from '@tm8/contract';
@@ -226,7 +225,6 @@ const clampWidth = (want: number, min: number, max: number): number =>
   Math.min(Math.max(min, want), Math.max(min, max));
 
 export function EntityView(props: EntityViewProps) {
-  const attentionApi = useAttentionOptional();
   const { data, kind, reasons } = props;
   /** Attention v2: the shell's attention store, when one is mounted above. */
   const attentionApi = useAttentionOptional();

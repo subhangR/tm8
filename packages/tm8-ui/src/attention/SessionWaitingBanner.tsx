@@ -16,8 +16,7 @@
  */
 import { useState, type ReactNode } from 'react';
 import type { AttentionRequest, EntityId } from '@tm8/contract';
-import { useAttentionOptional, type AttentionQueueRow } from './index';
-import { AttentionChipView } from './AttentionChipView';
+import { AttentionChipView, useAttentionOptional, type AttentionQueueRow } from './index';
 import { attentionAge } from './attention-subtitles';
 import './attention-surfaces.css';
 
@@ -83,7 +82,7 @@ export function SessionWaitingBanner({ sessionId, legacy = null, tone = 'light' 
       data-testid="session-waiting-banner"
     >
       <div className="att-banner__line">
-        <AttentionChipView chip={chip} size="sm" />
+        <AttentionChipView chip={chip} compact />
         <span className="att-banner__label">
           Waiting on you · {latest.request.actionType ?? 'decide'}
         </span>

@@ -108,7 +108,6 @@ import { LaunchComposerPopup } from '../new-session';
 import type { FileUploadTask } from '../files/upload';
 import type { LaunchSelectionSources } from '../launch-selection';
 import { newLaunchMutationId, type LoadInstalledPlugins } from '../domain/launch';
-import { useAttentionOptional } from '../attention';
 import { attentionTileLine } from '../attention/AttentionTileSubtitle';
 import { isNeedsMeFilter } from '../attention/needs-me';
 

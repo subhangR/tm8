@@ -18,8 +18,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { AttentionRequest, EntityAttentionSummary, EntityId } from '@tm8/contract';
 import { useMobileSurface } from '../mobile';
-import { useAttentionOptional } from './index';
-import { AttentionChipView } from './AttentionChipView';
+import { AttentionChipView, useAttentionOptional } from './index';
 import {
   attentionAge,
   isRolledUp,
@@ -129,7 +128,7 @@ export function AttentionBlock(props: AttentionBlockProps) {
         onClick={toggle}
         data-testid="attention-block-toggle"
       >
-        <AttentionChipView chip={chip} size="md" />
+        <AttentionChipView chip={chip} />
         <span className="att-block__title">
           {count} {count === 1 ? 'request needs' : 'requests need'} you
         </span>

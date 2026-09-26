@@ -14,8 +14,7 @@
  *  - **No kind literal** (§15.2): rows arrive as `SessionRow`, already
  *    projected structurally by `toSessionRow`.
  */
-import { useAttentionOptional } from '../attention';
-import { AttentionList } from '../attention/AttentionList';
+import { AttentionList, useAttentionOptional } from '../attention';
 import '../attention/attention-surfaces.css';
 import type { SessionLiveness } from '../data/seam';
 import type { SessionRow } from '../terminal';
@@ -173,17 +172,12 @@ export function EmptyCenter(props: EmptyCenterProps) {
         {attention && queueCount > 0 ? (
           <section
             className="shell-empty__group att-queue-section"
-            aria-labelledby="empty-attention-queue"
+            aria-label={`Needs attention, ${queueCount}`}
             data-testid="empty-attention-queue"
           >
-            <h2 className="shell-empty__group-title" id="empty-attention-queue" aria-label={`Needs attention, ${queueCount}`}>
-              <span>Needs attention</span>
-              <span className="shell-empty__group-count">{queueCount}</span>
-            </h2>
             <AttentionList
-              filter={attention.counts().mine > 0 ? 'mine' : 'all'}
+              title="Needs attention"
               onOpen={(id) => (props.onOpenEntity ?? props.onFocusSession)?.(id)}
-              compact
             />
           </section>
         ) : null}

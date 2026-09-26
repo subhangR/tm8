@@ -8,11 +8,12 @@
  */
 import type { AttentionRequest, EntityId } from '@tm8/contract';
 import { formatAge } from './attention-selectors';
+import { shortHandle } from './AttentionList';
 
 /** `#a41f`: the last four hex digits. A v7 uuid's head is its timestamp, so
  *  sibling sessions started the same minute share it; the tail does not. */
 export function shortSessionId(id: string): string {
-  return `#${id.replace(/-/g, '').slice(-4)}`;
+  return shortHandle(id);
 }
 
 /** The module's one age format (`formatAge`), so every chip, block and banner

@@ -14,8 +14,7 @@
  */
 import type { EntityId } from '@tm8/contract';
 import { MobileSheet } from '../mobile/MobileSheet';
-import { useAttentionOptional } from './index';
-import { AttentionList } from './AttentionList';
+import { AttentionList, useAttentionOptional } from './index';
 import './attention-surfaces.css';
 
 /**
@@ -65,9 +64,8 @@ export function AttentionSheet(props: { onDismiss(): void; onOpenEntity(id: Enti
     >
       <div className="att-phone-sheet">
         <AttentionList
-          filter={mine > 0 ? 'mine' : 'all'}
+          title={`${all} waiting`}
           onOpen={(id) => props.onOpenEntity(id, api.queue('all').find((row) => row.rootId === id)?.kind ?? null)}
-          compact
         />
       </div>
     </MobileSheet>

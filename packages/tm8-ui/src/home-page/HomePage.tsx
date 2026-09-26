@@ -30,8 +30,7 @@
  *     with all its honesty rules (viewer-unknown ≠ empty, refused inbox ≠
  *     quiet inbox). This module renders the section; it re-derives nothing.
  */
-import { useAttentionOptional } from '../attention';
-import { AttentionList } from '../attention/AttentionList';
+import { AttentionList, useAttentionOptional } from '../attention';
 import '../attention/attention-surfaces.css';
 import { useMemo, type ReactNode } from 'react';
 import { KindIcon } from '../domain';
@@ -131,16 +130,10 @@ function NeedsYouStrip({ section, onOpen }: { section: HomeSection; onOpen(id: s
 function AttentionNeedsYou({ onOpen }: { onOpen(id: string): void }) {
   const api = useAttentionOptional();
   if (!api) return null;
-  const { mine, all } = api.counts();
-  if (all === 0) return null;
+  if (api.counts().all === 0) return null;
   return (
     <section className="hp-needs att-queue-section" aria-label="NEEDS YOU" data-testid="hp-needs-you">
-      <div className="hp-rail__head">
-        <span className="hp-rail__label kit-eyebrow">
-          NEEDS YOU · {mine > 0 ? mine : all}
-        </span>
-      </div>
-      <AttentionList filter={mine > 0 ? 'mine' : 'all'} onOpen={onOpen} compact />
+      <AttentionList title="NEEDS YOU" onOpen={onOpen} />
     </section>
   );
 }
