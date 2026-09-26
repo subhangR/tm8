@@ -1841,9 +1841,10 @@ export function commandAcceptsClientMutationId(opName: string): boolean {
 
 /**
  * How a session authenticates thereafter. `agent` and `agent_runtime` are
- * internal mints, never accepted by `auth.login`.
+ * internal mints, never accepted by `auth.login`. `link` (W6, 243) is a
+ * member's stored session for a linked space, minted by `spaceLinks.login`.
  */
-export type AuthSessionKindView = 'browser' | 'cli' | 'agent' | 'agent_runtime';
+export type AuthSessionKindView = 'browser' | 'cli' | 'agent' | 'agent_runtime' | 'link';
 
 /** The session half of every auth response. The token itself appears exactly once, at issuance. */
 export interface AuthSessionView {

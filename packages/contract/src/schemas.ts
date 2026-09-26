@@ -1830,7 +1830,7 @@ export const AuthAccountViewSchema: z.ZodType<AuthAccountView> = z.object({
 
 export const AuthSessionViewSchema: z.ZodType<AuthSessionView> = z.object({
   sessionId: z.string().uuid(),
-  kind: z.enum(['browser', 'cli', 'agent', 'agent_runtime']),
+  kind: z.enum(['browser', 'cli', 'agent', 'agent_runtime', 'link']),
   actingAsTeamMemberId: z.string().uuid().nullable(),
   runtimeMemberId: z.string().uuid().nullable().optional(),
   runtimeThreadRootId: z.string().uuid().nullable().optional(),
