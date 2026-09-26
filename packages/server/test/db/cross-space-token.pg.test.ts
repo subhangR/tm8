@@ -3294,3 +3294,100 @@ describe('T8c client walk — switch A → B without logout, cookie rules (W3-cl
       .toBe(403);
   });
 });
+
+// ---------------------------------------------------------------------------
+// W4 — auth.sessions.list / auth.sessions.revoke across the boundary (249).
+//
+// The full a1–a3 matrix lives in auth-sessions-list-revoke.pg.test.ts; these
+// rows are the cross-space cells: which credential sees and revokes sessions
+// pinned to which space. Refusal + positive per cell, as everywhere above.
+// ---------------------------------------------------------------------------
+
+describe('W4 — session listing and revoke across spaces', () => {
+  const listAs = (token: string, spaceId: string | null) =>
+    asToken(token, (q) => q.rpc<unknown[]>('list_auth_sessions', [spaceId]), 'enforce');
+  const revokeAs = (token: string, sessionId: string) =>
+    asToken(token, (q) => q.rpc<{ revoked: boolean }>('revoke_listed_auth_session', [sessionId]), 'enforce');
+  const sessionIdOf = (token: string): string => parseToken(token)!.sessionId;
+  const listed = async (token: string, spaceId: string | null): Promise<string[]> =>
+    ((await listAs(token, spaceId)) as Array<{ sessionId: string }>).map((r) => r.sessionId);
+
+  it('W4-1: H pinned to A cannot list B\'s sessions (42501)', async () => {
+    const pinnedA = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect(await outcome(() => listAs(pinnedA, fixture.spaceB))).toBe('42501');
+  });
+  it('W4-1: positive — H pinned to B lists B', async () => {
+    const pinnedB = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceB);
+    expect(await outcome(() => listAs(pinnedB, fixture.spaceB))).toBe('ok');
+  });
+
+  it('W4-2: H2 (member, not admin, of A) cannot list A\'s sessions (42501)', async () => {
+    const h2 = await mintPinned(fixture.accountH2, fixture.identityH2, fixture.spaceA);
+    expect(await outcome(() => listAs(h2, fixture.spaceA))).toBe('42501');
+  });
+  it('W4-2: positive — H (owner of A) lists A and sees H2\'s A-pinned session', async () => {
+    const h2 = await mintPinned(fixture.accountH2, fixture.identityH2, fixture.spaceA);
+    const h = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect(await listed(h, fixture.spaceA)).toContain(sessionIdOf(h2));
+  });
+
+  it('W4-3: H2 cannot revoke H\'s A-pinned session (P0002)', async () => {
+    const h = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    const h2 = await mintBrowser(fixture.accountH2, fixture.identityH2);
+    expect(await outcome(() => revokeAs(h2, sessionIdOf(h)))).toBe('P0002');
+  });
+  it('W4-3: positive — H pinned to A revokes H2\'s A-pinned session', async () => {
+    const h2 = await mintPinned(fixture.accountH2, fixture.identityH2, fixture.spaceA);
+    const h = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect((await revokeAs(h, sessionIdOf(h2))).revoked).toBe(true);
+  });
+
+  it('W4-4: an agent token (pinned to A by construction) cannot list A or revoke (42501)', async () => {
+    const agent = await mintAgent();
+    const target = await mintPinned(fixture.accountH2, fixture.identityH2, fixture.spaceA);
+    expect(await outcome(() => listAs(agent, fixture.spaceA))).toBe('42501');
+    expect(await outcome(() => revokeAs(agent, sessionIdOf(target)))).toBe('42501');
+  });
+  it('W4-4: positive — the launching human revokes that agent session from A', async () => {
+    const agent = await mintAgent();
+    const h = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect((await revokeAs(h, sessionIdOf(agent))).revoked).toBe(true);
+  });
+
+  it('W4-5: a node admin PINNED to A cannot revoke H2\'s gate session (K6: no node admin under a pin)', async () => {
+    await withNodeAdmin(fixture.accountH, true, async () => {
+      const h2Gate = await mintBrowser(fixture.accountH2, fixture.identityH2);
+      const pinned = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+      expect(await outcome(() => revokeAs(pinned, sessionIdOf(h2Gate)))).toBe('P0002');
+    });
+  });
+  it('W4-5: positive — the same node admin\'s GATE session revokes it', async () => {
+    await withNodeAdmin(fixture.accountH, true, async () => {
+      const h2Gate = await mintBrowser(fixture.accountH2, fixture.identityH2);
+      const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+      expect((await revokeAs(gate, sessionIdOf(h2Gate))).revoked).toBe(true);
+    });
+  });
+
+  // W4-P1 (train-1 security audit) reversed the earlier person-scoped decision:
+  // under a pin the OWN list and revoke stay inside the pinned space. H pinned
+  // to A neither sees nor revokes H's own B-pinned session; H's unpinned gate
+  // session still can (the Sessions page from the gate kills a stolen session).
+  it('W4-6: refusal — H pinned to A neither lists nor revokes its OWN B-pinned session', async () => {
+    const inB = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceB);
+    const inA = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect(await listed(inA, null)).not.toContain(sessionIdOf(inB));
+    expect(await outcome(() => revokeAs(inA, sessionIdOf(inB)))).toBe('P0002');
+  });
+  it('W4-6: positive — H\'s unpinned gate session lists and revokes the B-pinned one', async () => {
+    const inB = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceB);
+    const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+    expect(await listed(gate, null)).toContain(sessionIdOf(inB));
+    expect((await revokeAs(gate, sessionIdOf(inB))).revoked).toBe(true);
+  });
+  it('W4-6: refusal — H2 pinned to A never sees H\'s B-pinned session in its own list', async () => {
+    const inB = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceB);
+    const h2 = await mintPinned(fixture.accountH2, fixture.identityH2, fixture.spaceA);
+    expect(await listed(h2, null)).not.toContain(sessionIdOf(inB));
+  });
+});

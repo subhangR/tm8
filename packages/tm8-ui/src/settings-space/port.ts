@@ -46,6 +46,8 @@ import type {
   IdentityProfileView,
   MenuConfig,
   SpaceConfigsView,
+  AuthSessionsListResult,
+  AuthSessionsRevokeResult,
   SpaceId,
   SpaceInviteView,
   SpaceMemberRole,
@@ -288,6 +290,16 @@ export interface SettingsPort {
   loadConfigs?(): Promise<SpaceConfigsView>;
 
   /**
+   * Settings → Your sessions / Sessions (`auth.sessions.list`, W4). Two
+   * methods rather than one scoped one so each is a stable reference the
+   * section can key its read on. Optional like `loadConfigs`.
+   */
+  loadOwnSessions?(): Promise<AuthSessionsListResult>;
+  loadSpaceSessions?(): Promise<AuthSessionsListResult>;
+  /** `auth.sessions.revoke` — the server decides who may; its refusal is drawn. */
+  revokeSession?(sessionId: string): Promise<AuthSessionsRevokeResult>;
+
+  /**
    * Settings → Chat defaults (`spaces.chatDefaults.get/set`, entity-chat
    * §3.4). The SEAM itself rides here, not a pair of verbs, so the section and
    * the chat panel share one cached read (`useChatDefaults`) and a save here is
@@ -441,6 +453,18 @@ export function settingsPortFromSeam(seam: Seam, spaceId: SpaceId): SettingsPort
 
     loadConfigs() {
       return seam.spaceConfigs(spaceId);
+    },
+
+    loadOwnSessions() {
+      return seam.authSessions(null);
+    },
+
+    loadSpaceSessions() {
+      return seam.authSessions(spaceId);
+    },
+
+    revokeSession(sessionId) {
+      return seam.commands.revokeAuthSession(sessionId);
     },
 
     chatDefaults: {

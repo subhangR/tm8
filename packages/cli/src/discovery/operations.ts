@@ -251,6 +251,30 @@ const ROWS: Record<OperationName, Row> = {
       'with --print-token (or in an agent session, or with no stored credential) nothing is stored: export the printed token as TM8_AGENT_TOKEN',
     ],
   },
+  'auth.sessions.list': {
+    cmd: ['auth', 'sessions'],
+    syn: 'tm8 auth sessions [--pinned-to <space-id>]',
+    sum: 'List your own live sessions, or (space admin) every session pinned to a space',
+    authz: 'server',
+    input: 'none',
+    tags: ['sessions', 'session', 'token', 'devices', 'list', 'revoke'],
+    notes: [
+      'humans only; the admin view needs owner/admin of the space and a session that is not pinned elsewhere',
+      'never shows a token; origin is login, space_enter, spawn or chat',
+    ],
+  },
+  'auth.sessions.revoke': {
+    cmd: ['auth', 'sessions', 'revoke'],
+    syn: 'tm8 auth sessions revoke <session-id>',
+    sum: 'Revoke a session you can list; its event sockets close and a gate session takes its pinned sessions with it',
+    authz: 'server',
+    input: 'none',
+    side: 'durable',
+    tags: ['sessions', 'session', 'revoke', 'logout', 'token', 'sign out'],
+    notes: [
+      'a session you cannot list answers not_found',
+    ],
+  },
   'auth.password.change': {
     cmd: ['auth', 'password'],
     syn: 'tm8 auth password --current <current-password> --new <new-password>',
@@ -3153,7 +3177,8 @@ export const CATALOG_DIGEST =
   // Re-measured (W3-server, on main bd1841bf): + auth.space.enter. Read from the conformance generator.
   // Rebased onto main d11e0be5 (#848): W11's +4 on top of auth.space.enter; digest re-measured on the rebased tree.
   // Re-measured for node.metrics.get (status strip) — read from the regenerated conformance manifest.
-  'sha256:1ddb2404b270bfb9cc105f8d885f0f3c9c3636fa4cd3f95a293844cff575be06';
+  // +2 auth.sessions.list/revoke (W4, on main 96f6b61e): read from the regenerated conformance manifest.
+  'sha256:fd012d2be0ae2898d1d4844cd8bec0ec56366cf2f87845177eb0b43c897b6ebd';
 
 export const GRAMMAR_VERSION = '2';
 

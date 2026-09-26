@@ -17,8 +17,10 @@ import type { SettingsPort } from './port';
 export type SettingsSectionId =
   | 'profile'
   | 'account'
+  | 'my-sessions'
   | 'members'
   | 'invites'
+  | 'sessions'
   | 'sharing'
   | 'axes'
   | 'workflows'
@@ -55,8 +57,15 @@ export interface SettingsSectionDef {
 export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
   { id: 'profile', label: 'Profile', heading: 'Profile' },
   { id: 'account', label: 'Your profile', heading: 'Your profile' },
+  /* W4 — the account half of settings: every place YOU are signed in, beside
+     "Your profile" because both are about the person, not the space. */
+  { id: 'my-sessions', label: 'Your sessions', heading: 'Your sessions' },
   { id: 'members', label: 'Members & roles', heading: 'Members & roles' },
   { id: 'invites', label: 'Invites', heading: 'Invites' },
+  /* W4 — the admin's view: sessions pinned to THIS space, anyone's. After
+     members and invites because it answers the same question — who is in
+     here — for credentials rather than memberships. */
+  { id: 'sessions', label: 'Sessions', heading: 'Sessions' },
   /* 187's two space defaults. Beside members and invites because it answers
      the same question — who in this space gets at what — for terminals. */
   { id: 'sharing', label: 'Session sharing', heading: 'Session sharing' },

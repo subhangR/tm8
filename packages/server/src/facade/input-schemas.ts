@@ -461,6 +461,10 @@ export const UNBOUND_COMMAND_OPERATIONS: readonly OperationName[] = [
   // actorId/clientMutationId, so there is no CommandContext to bind either. A
   // strict empty schema would only break the no-body POST the CLI sends.
   'auth.claim.reissue',
+  // W4 (232): GENUINELY body-less for the same reason — the session is the
+  // path, the caller's claims are the authorization, and auth.* has no
+  // CommandContext to bind.
+  'auth.sessions.revoke',
   // containers (177): the ONE container command with no zod body, and it is
   // the first clause above rather than a gap. `containers.files.put` carries a
   // TAR STREAM, not JSON — its request body is bytes, and a strict object

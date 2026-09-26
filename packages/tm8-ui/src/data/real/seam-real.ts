@@ -72,6 +72,7 @@ import {
   type SpaceKindCounts,
   type SpaceSettingsView,
   type SpaceConfigsView,
+  type AuthSessionsListResult,
   type ChatDefault,
   type ChatDefaultsView,
   type Workflow,
@@ -330,6 +331,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     spaces: (): Promise<SpaceSummary[]> => ops.spaces(),
     spaceSettings: (spaceId: SpaceId): Promise<SpaceSettingsView> => ops.spaceSettings(spaceId),
     spaceConfigs: (spaceId: SpaceId): Promise<SpaceConfigsView> => ops.spaceConfigs(spaceId),
+    authSessions: (spaceId: SpaceId | null): Promise<AuthSessionsListResult> => ops.authSessions(spaceId),
     chatDefaults: (spaceId: SpaceId): Promise<ChatDefaultsView> => ops.chatDefaults(spaceId),
     setChatDefaults: (spaceId: SpaceId, defaults: Record<string, ChatDefault | null>): Promise<ChatDefaultsView> =>
       ops.setChatDefaults(spaceId, defaults),
@@ -458,6 +460,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       // revoke body binds `RequiredCommandContextSchema`, so a missing body is
       // a 400 and an absent object is not the same as an empty one on the wire.
       revokeInvite: (spaceId, inviteId, ctx) => ops.revokeInvite(spaceId, inviteId, ctx ?? {}),
+      revokeAuthSession: (sessionId) => ops.revokeAuthSession(sessionId),
       createTaskAxis: (spaceId, input) => ops.createTaskAxis(spaceId, input),
       updateTaskAxis: (spaceId, axisId, input) => ops.updateTaskAxis(spaceId, axisId, input),
       deleteTaskAxis: (spaceId, axisId, ctx) => ops.deleteTaskAxis(spaceId, axisId, ctx),

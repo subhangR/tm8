@@ -427,6 +427,8 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         sockets: subscriptions,
         ...(execution ? { sessions: execution.spawnService } : {}),
       },
+      // W4: auth.sessions.revoke closes the revoked sessions' event sockets.
+      sessionSockets: subscriptions,
       ...(delivery ? { messageDelivery: delivery.messageDelivery } : {}),
       ...(formDelivery
         ? {

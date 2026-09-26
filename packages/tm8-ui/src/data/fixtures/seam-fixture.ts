@@ -140,6 +140,9 @@ import {
   type SpaceKindCounts,
   type SpaceSettingsView,
   type SpaceConfigsView,
+  type AuthSessionListing,
+  type AuthSessionsListResult,
+  type AuthSessionsRevokeResult,
   type ChatDefault,
   type ChatDefaultsView,
   type SpaceSummary,
@@ -1629,6 +1632,33 @@ export function createFixtureSeam(): FixtureSeam {
   let inviteSeq = 0;
 
   /**
+   * The viewer's auth sessions — W4. A gate login, the tab pinned to the
+   * fixture space from it (current), and a CLI login. Ids only — a session
+   * listing never carries a token, and neither does this fixture.
+   */
+  const fixtureSessionAt = (minutesAgo: number): string => new Date(Date.UTC(2026, 8, 1, 12, 0) - minutesAgo * 60_000).toISOString();
+  const authSessions: AuthSessionListing[] = [
+    {
+      sessionId: 'ses-ada-tab', kind: 'browser', createdAt: fixtureSessionAt(60), lastUsedAt: fixtureSessionAt(0),
+      expiresAt: fixtureSessionAt(-60 * 24 * 7), label: null, spaceId: FIXTURE_SPACE_ID, spaceName: 'Atelier',
+      parentSessionId: 'ses-ada-gate', origin: 'space_enter', originEntityId: null,
+      owner: { identityId: 'idn-ada', displayName: 'Ada' }, current: true,
+    },
+    {
+      sessionId: 'ses-ada-gate', kind: 'browser', createdAt: fixtureSessionAt(61), lastUsedAt: fixtureSessionAt(60),
+      expiresAt: fixtureSessionAt(-60 * 24 * 7), label: null, spaceId: null, spaceName: null,
+      parentSessionId: null, origin: 'login', originEntityId: null,
+      owner: { identityId: 'idn-ada', displayName: 'Ada' }, current: false,
+    },
+    {
+      sessionId: 'ses-ada-cli', kind: 'cli', createdAt: fixtureSessionAt(60 * 26), lastUsedAt: fixtureSessionAt(60 * 3),
+      expiresAt: fixtureSessionAt(-60 * 24 * 30), label: 'laptop', spaceId: null, spaceName: null,
+      parentSessionId: null, origin: 'login', originEntityId: null,
+      owner: { identityId: 'idn-ada', displayName: 'Ada' }, current: false,
+    },
+  ];
+
+  /**
    * The task-axis registry, MUTABLE — W2. Seeded with exactly what the node
    * seeds every space (001's `type` axis, kind 'default', position 0), so
    * the fixture-backed product draws the axis picker and the Settings > Axes
@@ -2420,6 +2450,14 @@ export function createFixtureSeam(): FixtureSeam {
         chatDefaults = { ...chatDefaults, defaults: next, revision: chatDefaults.revision + 1 };
       }
       return clone(chatDefaults);
+    },
+    /** Own list, or the sessions pinned to the fixture space (Ada owns it). */
+    async authSessions(spaceId): Promise<AuthSessionsListResult> {
+      if (spaceId !== null && spaceId !== FIXTURE_SPACE_ID) {
+        throw new CollabError('forbidden', 'only a space admin can list its sessions');
+      }
+      const rows = spaceId === null ? authSessions : authSessions.filter((r) => r.spaceId === spaceId);
+      return { spaceId, sessions: clone(rows) };
     },
     /** A small, honest sample: the fixture has no server environment to report. */
     async spaceConfigs(spaceId): Promise<SpaceConfigsView> {
@@ -3920,6 +3958,15 @@ export function createFixtureSeam(): FixtureSeam {
         };
         invites.unshift(invite);
         return clone(invite);
+      },
+
+      /** Gate revoke cascades to the sessions entered from it, as 249 does. */
+      async revokeAuthSession(sessionId: string): Promise<AuthSessionsRevokeResult> {
+        const target = authSessions.find((r) => r.sessionId === sessionId);
+        if (!target) throw new CollabError('not_found', 'session not found');
+        const gone = authSessions.filter((r) => r.sessionId === sessionId || r.parentSessionId === sessionId);
+        for (const row of gone) authSessions.splice(authSessions.indexOf(row), 1);
+        return { sessionId, revoked: true, revokedSessionIds: gone.map((r) => r.sessionId) };
       },
 
       /** Revoking KEEPS the row. A list that forgot it could not stay truthful. */
