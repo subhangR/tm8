@@ -516,6 +516,13 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
         policy: (spaceId) => ops.spaceCredentialsPolicy(spaceId),
         setPolicy: (spaceId, provider, allowedSources) =>
           ops.spaceCredentialsSetPolicy(spaceId, provider, allowedSources),
+        setVisibility: (credentialId, visibility) => ops.spaceCredentialsSetVisibility(credentialId, visibility),
+        spaceDefaultConsent: (credentialId, allowed) => ops.spaceCredentialsDefaultConsent(credentialId, allowed),
+        claim: (credentialId) => ops.spaceCredentialsClaim(credentialId),
+        setMyDefault: (credentialId) => ops.spaceCredentialsSetMyDefault(credentialId),
+        clearMyDefault: (spaceId, provider) => ops.spaceCredentialsClearMyDefault(spaceId, provider),
+        usage: (credentialId) => ops.spaceCredentialsUsage(credentialId),
+        addMine: (spaceId, provider, label) => ops.spaceCredentialsAddMine(spaceId, provider, label),
       },
       node: {
         status: () => ops.nodeCredentialsStatus(),

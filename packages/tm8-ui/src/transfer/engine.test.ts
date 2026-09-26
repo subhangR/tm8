@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { EntityDetail } from '@tm8/contract';
 import type { HttpClient, RequestOptions } from '../data/real/http';
 import { fixtureDetails, taskUuidTitle, docLayoutSpec } from '../fixtures/entities';
-import { collectPlan, executeTransfer, provenanceBody, type TransferPlan } from './engine';
+import { TRANSFERABLE_KINDS, collectPlan, executeTransfer, provenanceBody, type TransferPlan } from './engine';
 import { connectedPeersOf } from './TransferDialog';
 
 /**
@@ -114,6 +114,24 @@ describe('collectPlan', () => {
     expect(criteria.some((c) => 'doneBy' in c || 'doneAt' in c)).toBe(false);
     expect(content).not.toHaveProperty('axes');
     expect(content.pointsEstimate).toBe(8);
+  });
+
+  it('W10d a4: a credential is never copied to another space — not as a root, not as a connected peer', async () => {
+    // A pin: widening the set is a deliberate edit here. A credential's secret
+    // is sealed to its own space and node; a copy would move a card with no
+    // key behind it, or tempt a later change to carry the key.
+    expect([...TRANSFERABLE_KINDS].sort()).toEqual(['channel', 'doc', 'task']);
+    expect(TRANSFERABLE_KINDS.has('credential')).toBe(false);
+    const cred = { ...rootDetail, id: 'cred-1', kind: 'credential', title: 'Team Claude' } as EntityDetail;
+    await expect(collectPlan(source, cred, { includeChildren: false, connectedIds: [], includeMessages: false }))
+      .rejects.toThrow(/cannot be transferred/);
+    const client = fakeClient((op, opts) => {
+      if (op === 'entities.get' && opts.params?.id === 'cred-1') return cred;
+      return sourceAnswer(op, opts);
+    });
+    const plan = await collectPlan({ ...source, client }, rootDetail, { includeChildren: false, connectedIds: ['cred-1'], includeMessages: false });
+    expect(plan.entities.map((e) => e.sourceId)).not.toContain('cred-1');
+    expect(plan.skipped).toEqual([{ id: 'cred-1', title: 'Team Claude', reason: "kind 'credential' cannot be transferred yet" }]);
   });
 
   it('refuses a root kind outside the transferable set', async () => {

@@ -80,6 +80,10 @@ import {
   type CredentialsSpaceListView,
   type CredentialsSpacePolicySetResult,
   type CredentialsSpacePolicyView,
+  type CredentialsSpaceSetVisibilityResult,
+  type CredentialsSpaceMyDefaultResult,
+  type CredentialsSpaceUsageView,
+  type SpaceCredentialVisibilityName,
   type NodeCredentialPolicyEntry,
   type NodeCredentialsStatusView,
   type SpaceCredentialProviderName,
@@ -581,6 +585,54 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<CredentialsSpacePolicySetResult>('credentials.space.policy.set', {
         params: { spaceId, provider },
         body: { allowedSources, clientMutationId: newId('spcredpol') },
+      });
+    },
+
+    // W10b ops and W10d's addMine: each a thin call, the refusal is the server's.
+
+    spaceCredentialsSetVisibility(credentialId: string, visibility: SpaceCredentialVisibilityName): Promise<CredentialsSpaceSetVisibilityResult> {
+      return http.call<CredentialsSpaceSetVisibilityResult>('credentials.space.setVisibility', {
+        params: { credentialId },
+        body: { visibility, clientMutationId: newId('spcredvis') },
+      });
+    },
+
+    spaceCredentialsDefaultConsent(credentialId: string, allowed: boolean): Promise<SpaceCredentialView> {
+      return http.call<SpaceCredentialView>('credentials.space.spaceDefaultConsent', {
+        params: { credentialId },
+        body: { allowed, clientMutationId: newId('spcredconsent') },
+      });
+    },
+
+    spaceCredentialsClaim(credentialId: string): Promise<SpaceCredentialView> {
+      return http.call<SpaceCredentialView>('credentials.space.claim', {
+        params: { credentialId },
+        body: { clientMutationId: newId('spcredclaim') },
+      });
+    },
+
+    spaceCredentialsSetMyDefault(credentialId: string): Promise<CredentialsSpaceMyDefaultResult> {
+      return http.call<CredentialsSpaceMyDefaultResult>('credentials.space.myDefault.set', {
+        params: { credentialId },
+        body: { clientMutationId: newId('spcredmine') },
+      });
+    },
+
+    spaceCredentialsClearMyDefault(spaceId: SpaceId, provider: SpaceCredentialProviderName): Promise<CredentialsSpaceMyDefaultResult> {
+      return http.call<CredentialsSpaceMyDefaultResult>('credentials.space.myDefault.clear', {
+        params: { spaceId, provider },
+        body: { clientMutationId: newId('spcredunmine') },
+      });
+    },
+
+    spaceCredentialsUsage(credentialId: string): Promise<CredentialsSpaceUsageView> {
+      return http.call<CredentialsSpaceUsageView>('credentials.space.usage', { params: { credentialId } });
+    },
+
+    spaceCredentialsAddMine(spaceId: SpaceId, provider: 'github', label: string): Promise<SpaceCredentialView> {
+      return http.call<SpaceCredentialView>('credentials.space.addMine', {
+        params: { spaceId },
+        body: { provider, label, clientMutationId: newId('spcredaddmine') },
       });
     },
 

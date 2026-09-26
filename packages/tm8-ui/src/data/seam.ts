@@ -149,6 +149,10 @@ import type {
   CredentialsSpaceListView,
   CredentialsSpacePolicySetResult,
   CredentialsSpacePolicyView,
+  CredentialsSpaceSetVisibilityResult,
+  CredentialsSpaceMyDefaultResult,
+  CredentialsSpaceUsageView,
+  SpaceCredentialVisibilityName,
   NodeCredentialPolicyEntry,
   NodeCredentialsStatusView,
   SpaceCredentialProviderName,
@@ -1317,6 +1321,20 @@ export interface Seam {
         provider: SpaceCredentialProviderName,
         allowedSources: CredentialPolicySource[] | null,
       ): Promise<CredentialsSpacePolicySetResult>;
+      /**
+       * W10b/W10d (doc 13 §7): ownership, visibility and the caller's own
+       * default. The OWNER switches visibility and consent; the creator claims
+       * a migrated row; every member sets their own default. All human-only;
+       * a refusal is rendered with the server's reason text.
+       */
+      setVisibility(credentialId: string, visibility: SpaceCredentialVisibilityName): Promise<CredentialsSpaceSetVisibilityResult>;
+      spaceDefaultConsent(credentialId: string, allowed: boolean): Promise<SpaceCredentialView>;
+      claim(credentialId: string): Promise<SpaceCredentialView>;
+      setMyDefault(credentialId: string): Promise<CredentialsSpaceMyDefaultResult>;
+      clearMyDefault(spaceId: SpaceId, provider: SpaceCredentialProviderName): Promise<CredentialsSpaceMyDefaultResult>;
+      usage(credentialId: string): Promise<CredentialsSpaceUsageView>;
+      /** "Add to this space as private" for the caller's own GitHub token (093). The body names no token. */
+      addMine(spaceId: SpaceId, provider: 'github', label: string): Promise<SpaceCredentialView>;
     };
     /** The node's own fallback credentials (D9) — node admin only. */
     node: {

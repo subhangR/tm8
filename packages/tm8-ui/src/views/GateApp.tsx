@@ -40,6 +40,7 @@ import { chatAboutTarget } from './useChatAbout';
 import { EntityChatDock, EntityChatSlot, openEntityChat, type EntityChatSlotProps } from '../entity-chat';
 import { UNADDRESSED_HASH, createBrowserTarget, type RouterTarget } from '../routes';
 import { forgetSpaceScopedPanels } from '../auth/session-reset';
+import { fetchNodeClaim, readCachedNodeClaim } from '../auth/session';
 import { CommandPalette, type PaletteView } from '../shell/CommandPalette';
 import { CopyLinkControl } from '../share';
 import { useShellKind } from '../mobile';
@@ -1575,7 +1576,9 @@ export function GateApp(props: GateAppProps = {}) {
   // SC-5: the space's own credentials and the node's fallback policy. One
   // port for both sections, bound to the same (seam, space) pair.
   const spaceCredentialsPort = useMemo(
-    () => (data.spaceId ? spaceCredentialsPortFromSeam(data.seam, data.spaceId, ownerRoleRef()) : null),
+    () => (data.spaceId
+      ? spaceCredentialsPortFromSeam(data.seam, data.spaceId, ownerRoleRef(), async () => (await fetchNodeClaim())?.mode ?? readCachedNodeClaim()?.mode ?? null)
+      : null),
     [data.seam, data.spaceId],
   );
 

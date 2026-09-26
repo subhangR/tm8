@@ -17,6 +17,9 @@
  * - add by login (SC-4): a label first, the terminal, the result read from the
  *   probed row (I6); "Log in again" is the only close (N1); Delete stays
  * - Node: env-key presence and the fallback toggle for a node admin only
+ * - W10d (doc 13 §7): owner, visibility, claim, my default, usage and "add to
+ *   this space as private" each have a path, refusals carry the server's
+ *   reason, and the §6b warning is verbatim on a shared server only
  */
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -30,10 +33,16 @@ import type {
 import { SpaceCredentialsSection } from './SpaceCredentialsSection';
 import { NodeCredentialsSection, NODE_POLICY_ADMIN_ONLY } from './NodeCredentialsSection';
 import type { SpaceCredentialsPort, SpaceCredentialsViewer, SpaceLoginTarget } from './space-port';
-import { isSpaceAdminRole, spaceCredentialsPortFromSeam } from './space-port';
+import { isSharedServer, isSpaceAdminRole, spaceCredentialsPortFromSeam } from './space-port';
 import {
+  SHARED_SERVER_WARNING,
   afterDeleteNotice,
+  canClaim,
   canManage,
+  canMyDefault,
+  canRevoke,
+  canSeeUsage,
+  canSetVisibility,
   failureOf,
   labelTakenReason,
   loginOpenNoticeOf,
@@ -99,12 +108,19 @@ function fakePort(opts: {
 } = {}) {
   let rows = [...(opts.rows ?? [MINE_DEFAULT, THEIRS, ORPHAN_OPENAI, GITHUB])];
   let policy = structuredClone(opts.policy ?? POLICY);
-  const viewer = opts.viewer ?? { accountId: ME, isSpaceAdmin: false, isNodeAdmin: false };
+  const viewer = opts.viewer ?? { accountId: ME, isSpaceAdmin: false, isNodeAdmin: false, sharedServer: false };
+  const patch = (id: string, over: Partial<SpaceCredentialView>) => {
+    rows = rows.map((r) => (r.id === id ? { ...r, ...over } : r));
+    return rows.find((r) => r.id === id)!;
+  };
   const port = {
     viewer: vi.fn(async () => viewer),
     list: vi.fn(async () => rows.map((r) => ({ ...r }))),
-    create: vi.fn(async (input: { provider: SpaceCredentialView['provider']; shape: 'api_key' | 'token'; label: string; secret: string }) => {
-      const created = row({ id: `c-${rows.length + 1}`, provider: input.provider, shape: input.shape, label: input.label, keyHint: input.secret.slice(-4) });
+    create: vi.fn(async (input: { provider: SpaceCredentialView['provider']; shape: 'api_key' | 'token'; label: string; secret: string; visibility?: 'private' | 'public' }) => {
+      const created = row({
+        id: `c-${rows.length + 1}`, provider: input.provider, shape: input.shape, label: input.label, keyHint: input.secret.slice(-4),
+        ...(input.visibility ? { ownerAccountId: ME, visibility: input.visibility } : {}),
+      });
       rows = [...rows, created];
       return created;
     }),
@@ -142,6 +158,27 @@ function fakePort(opts: {
       }
       openLogin = cred.id;
       return { workSessionId: 'ws-1', spaceId: 'space-1', provider, expiresAt: '2026-09-24T12:15:00.000Z', command: 'claude auth login', spaceCredential: cred };
+    }),
+    setVisibility: vi.fn(async (id: string, visibility: 'private' | 'public') => ({
+      credential: patch(id, { visibility, ...(visibility === 'private' ? { isDefault: false, mayBeSpaceDefault: false } : {}) }),
+      terminatedAgentSessionIds: visibility === 'private' ? ['s-9'] : [],
+      failures: [],
+    })),
+    spaceDefaultConsent: vi.fn(async (id: string, allowed: boolean) => patch(id, { mayBeSpaceDefault: allowed })),
+    claim: vi.fn(async (id: string) => patch(id, { ownerAccountId: ME })),
+    setMyDefault: vi.fn(async (id: string) => ({ spaceId: 'space-1', provider: rows.find((r) => r.id === id)!.provider, credentialId: id as string | null })),
+    clearMyDefault: vi.fn(async (provider: SpaceCredentialView['provider']) => ({ spaceId: 'space-1', provider, credentialId: null as string | null })),
+    usage: vi.fn(async (id: string) => ({
+      credentialId: id,
+      sessions: [{
+        workSessionId: 'ws-u', provider: 'anthropic' as const, source: 'space_default' as const, credentialId: id, ownerAccountId: ME,
+        launcherAccountId: OTHER, agentSessionId: 'ag-1', status: 'running', recordedAt: '2026-09-25T08:00:00.000Z', updatedAt: '2026-09-25T08:00:00.000Z',
+      }],
+    })),
+    addMine: vi.fn(async (provider: 'github', label: string) => {
+      const created = row({ id: `m-${rows.length + 1}`, provider, shape: 'token', label, keyHint: 'mIn3', ownerAccountId: ME, visibility: 'private' });
+      rows = [...rows, created];
+      return created;
     }),
     finishLogin: vi.fn(async (workSessionId: string) => {
       rows = rows.map((r) => (r.id === openLogin ? { ...r, status: 'active' as const, displayLogin: 'team@example.com' } : r));
@@ -760,6 +797,8 @@ describe('the seam adapter', () => {
           list: vi.fn(async () => ({ spaceId: 'space-1', credentials: [MINE_DEFAULT] })),
           create: record('create'), rekey: record('rekey'), rename: record('rename'), setDefault: record('setDefault'),
           remove: record('remove'), policy: record('policy'), setPolicy: record('setPolicy'),
+          setVisibility: record('setVisibility'), spaceDefaultConsent: record('spaceDefaultConsent'), claim: record('claim'),
+          setMyDefault: record('setMyDefault'), clearMyDefault: record('clearMyDefault'), usage: record('usage'), addMine: record('addMine'),
         },
         node: { status: record('status'), setPolicy: record('nodeSetPolicy') },
         startLogin: record('startLogin'),
@@ -767,7 +806,10 @@ describe('the seam adapter', () => {
       },
     } as unknown as Parameters<typeof spaceCredentialsPortFromSeam>[0];
     const port = spaceCredentialsPortFromSeam(seam, 'space-1' as never, 'owner');
-    expect(await port.viewer()).toEqual({ accountId: ME, isSpaceAdmin: false, isNodeAdmin: true });
+    // No node mode known: shared, so the §6b warning is never hidden on a guess.
+    expect(await port.viewer()).toEqual({ accountId: ME, isSpaceAdmin: false, isNodeAdmin: true, sharedServer: true });
+    expect((await spaceCredentialsPortFromSeam(seam, 'space-1' as never, 'owner', async () => 'single').viewer()).sharedServer).toBe(false);
+    expect((await spaceCredentialsPortFromSeam(seam, 'space-1' as never, 'owner', async () => 'multi').viewer()).sharedServer).toBe(true);
     expect(await port.list()).toEqual([MINE_DEFAULT]);
     await port.create({ provider: 'anthropic', shape: 'api_key', label: 'L', secret: KEY });
     await port.setPolicy('openai', ['space']);
@@ -781,5 +823,219 @@ describe('the seam adapter', () => {
       ['startLogin', 'space-1', 'anthropic', { credentialId: 'c-mine' }],
       ['finishLogin', 'ws-9'],
     ]);
+    calls.length = 0;
+    await port.setVisibility('c-1', 'private');
+    await port.spaceDefaultConsent('c-1', true);
+    await port.claim('c-1');
+    await port.setMyDefault('c-1');
+    await port.clearMyDefault('github');
+    await port.usage('c-1');
+    await port.addMine('github', 'Mine');
+    // Only the space, the credential and the choice travel — never an account id or a secret.
+    expect(calls).toEqual([
+      ['setVisibility', 'c-1', 'private'],
+      ['spaceDefaultConsent', 'c-1', true],
+      ['claim', 'c-1'],
+      ['setMyDefault', 'c-1'],
+      ['clearMyDefault', 'space-1', 'github'],
+      ['usage', 'c-1'],
+      ['addMine', 'space-1', 'github', 'Mine'],
+    ]);
+  });
+});
+
+describe('W10d — owner, visibility, claim, my default, usage (doc 13 §7)', () => {
+  const MY_PUBLIC = row({ id: 'c-own', label: 'My public', ownerAccountId: ME, visibility: 'public', mayBeSpaceDefault: false });
+  const MY_PRIVATE = row({ id: 'c-priv', label: 'My private', ownerAccountId: ME, visibility: 'private' });
+  const THEIR_PUBLIC = row({ id: 'c-their', label: 'Their public', createdByAccountId: OTHER, ownerAccountId: OTHER, visibility: 'public' });
+  const MIGRATED = row({ id: 'c-mig', label: 'Migrated', ownerAccountId: null, visibility: 'public' });
+  const ROWS = [MY_PUBLIC, MY_PRIVATE, THEIR_PUBLIC, MIGRATED];
+  const shared = { accountId: ME, isSpaceAdmin: false, isNodeAdmin: false, sharedServer: true };
+  const single = { ...shared, sharedServer: false };
+
+  it('the §6b warning is VERBATIM on a shared server, before making private', async () => {
+    expect(SHARED_SERVER_WARNING).toBe(
+      'Private stops other members from launching with this or opening its terminals. Agents on this server still run as one OS user, and anyone can message your agent.',
+    );
+    const port = fakePort({ rows: ROWS, viewer: shared });
+    await mount(port);
+    fireEvent.click(screen.getByRole('button', { name: 'Make private My public' }));
+    expect(screen.getByTestId('space-cred-shared-warning').textContent).toBe(SHARED_SERVER_WARNING);
+    expect(port.setVisibility).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm make private My public' }));
+    await screen.findByText('“My public” is private. 1 session another member launched with it ended.');
+    expect(port.setVisibility).toHaveBeenCalledWith('c-own', 'private');
+  });
+
+  it('…and is absent on a single-user node, on every private path', async () => {
+    const port = fakePort({ rows: ROWS, viewer: single });
+    await mount(port);
+    fireEvent.click(screen.getByRole('button', { name: 'Make private My public' }));
+    expect(screen.getByTestId('space-cred-private-confirm-c-own')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Add Claude (Anthropic) API key' }));
+    fireEvent.change(screen.getByLabelText('Who can use the new Claude (Anthropic) API key'), { target: { value: 'private' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add GitHub to this space as private' }));
+    expect(screen.queryByTestId('space-cred-shared-warning')).toBeNull();
+    expect(document.body.textContent).not.toContain('one OS user');
+  });
+
+  it('a pasted key can be added as private (re-sealed by the server); the warning shows on a shared server', async () => {
+    const port = fakePort({ rows: ROWS, viewer: shared });
+    await mount(port);
+    fireEvent.click(screen.getByRole('button', { name: 'Add Claude (Anthropic) API key' }));
+    fireEvent.change(screen.getByLabelText('Label for the new Claude (Anthropic) API key'), { target: { value: 'Mine too' } });
+    fireEvent.change(screen.getByLabelText('Who can use the new Claude (Anthropic) API key'), { target: { value: 'private' } });
+    expect(screen.getByTestId('space-cred-shared-warning').textContent).toBe(SHARED_SERVER_WARNING);
+    fireEvent.change(screen.getByLabelText('Claude (Anthropic) API key'), { target: { value: KEY } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save new Claude (Anthropic) API key' }));
+    await screen.findByText('Added “Mine too”.');
+    expect(port.create).toHaveBeenCalledWith({ provider: 'anthropic', shape: 'api_key', label: 'Mine too', secret: KEY, visibility: 'private' });
+    expect(document.body.innerHTML).not.toContain('SECRETVALUE');
+  });
+
+  it('GitHub "add to this space as private" re-seals MY token on the server: a label goes out, no secret', async () => {
+    const port = fakePort({ rows: ROWS, viewer: shared });
+    await mount(port);
+    fireEvent.click(screen.getByRole('button', { name: 'Add GitHub to this space as private' }));
+    const form = screen.getByTestId('space-cred-private-form-github');
+    expect(form.querySelector('input[type="password"]')).toBeNull();
+    expect(within(form).getByTestId('space-cred-shared-warning').textContent).toBe(SHARED_SERVER_WARNING);
+    fireEvent.change(screen.getByLabelText('Label for your private GitHub credential'), { target: { value: 'My GH' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add private GitHub' }));
+    await screen.findByText('Added your GitHub token to this space as “My GH”, private to you.');
+    expect(port.addMine).toHaveBeenCalledWith('github', 'My GH');
+    expect(port.create).not.toHaveBeenCalled();
+  });
+
+  it('a refused addMine shows the server reason', async () => {
+    const port = fakePort({ rows: ROWS, viewer: shared });
+    port.addMine.mockRejectedValueOnce(new CollabError('forbidden', 'credentials are human-only'));
+    await mount(port);
+    fireEvent.click(screen.getByRole('button', { name: 'Add GitHub to this space as private' }));
+    fireEvent.change(screen.getByLabelText('Label for your private GitHub credential'), { target: { value: 'My GH' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add private GitHub' }));
+    expect((await screen.findByTestId('space-cred-failure-refused')).textContent).toBe('Refused: credentials are human-only');
+  });
+
+  it('a login added as private is a FRESH sign-in: start {label} → claim → private, and only then the terminal', async () => {
+    const port = fakePort({ rows: ROWS, viewer: shared });
+    const order: string[] = [];
+    port.startLogin.mockImplementationOnce(async (provider, target) => {
+      order.push('start');
+      return { workSessionId: 'ws-p', spaceId: 'space-1', provider, expiresAt: '2026-09-24T12:15:00.000Z', command: 'claude auth login',
+        spaceCredential: row({ id: 'l-p', shape: 'login', label: target.label!, status: 'pending', keyHint: null, ownerAccountId: null, visibility: 'public' }) };
+    });
+    port.claim.mockImplementationOnce(async (id) => { order.push('claim'); return row({ id }); });
+    port.setVisibility.mockImplementationOnce(async (id, v) => { order.push(`visibility:${v}`); return { credential: row({ id }), terminatedAgentSessionIds: [], failures: [] }; });
+    await mount(port);
+    fireEvent.click(screen.getByRole('button', { name: 'Add Claude (Anthropic) to this space as private' }));
+    fireEvent.change(screen.getByLabelText('Label for your private Claude (Anthropic) credential'), { target: { value: 'Mine' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add private Claude (Anthropic)' }));
+    await screen.findByText(/Logging in for your new private credential “Mine”/);
+    expect(order).toEqual(['start', 'claim', 'visibility:private']);
+    expect(port.startLogin).toHaveBeenCalledWith('anthropic', { label: 'Mine' });
+    expect(port.setVisibility).toHaveBeenCalledWith('l-p', 'private');
+  });
+
+  it('if the pending login cannot be made private, no terminal opens and the server reason is shown', async () => {
+    const port = fakePort({ rows: ROWS, viewer: shared });
+    port.claim.mockRejectedValueOnce(new CollabError('forbidden', 'only its creator can claim this credential'));
+    await mount(port);
+    fireEvent.click(screen.getByRole('button', { name: 'Add Claude (Anthropic) to this space as private' }));
+    fireEvent.change(screen.getByLabelText('Label for your private Claude (Anthropic) credential'), { target: { value: 'Mine' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add private Claude (Anthropic)' }));
+    const refusal = await screen.findByTestId('space-cred-failure-refused');
+    expect(refusal.textContent).toContain('Refused: only its creator can claim this credential');
+    expect(screen.queryByText(/Logging in for your new private credential/)).toBeNull();
+    expect(port.setVisibility).not.toHaveBeenCalled();
+  });
+
+  it('claim as mine is offered on a migrated row its viewer created, and a refusal reads the server reason', async () => {
+    const port = fakePort({ rows: ROWS, viewer: shared });
+    port.claim.mockRejectedValueOnce(new CollabError('forbidden', 'this credential was created as space-owned and cannot be claimed'));
+    await mount(port);
+    expect(screen.getByTestId('space-cred-owner-c-mig').textContent).toBe('owned by the space');
+    expect(screen.queryByRole('button', { name: 'Claim as mine Their public' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Claim as mine Migrated' }));
+    expect((await screen.findByTestId('space-cred-failure-refused')).textContent)
+      .toBe('Refused: this credential was created as space-owned and cannot be claimed');
+    fireEvent.click(screen.getByRole('button', { name: 'Claim as mine Migrated' }));
+    await screen.findByText('“Migrated” is now yours. It stays public until you make it private.');
+    expect(port.claim).toHaveBeenLastCalledWith('c-mig');
+  });
+
+  it('make public, space-default consent, and my default set/clear each call their op', async () => {
+    const port = fakePort({ rows: ROWS, viewer: shared });
+    await mount(port);
+    fireEvent.click(screen.getByRole('button', { name: 'Make public My private' }));
+    await screen.findByText('“My private” is public: every member can launch with it.');
+    expect(port.setVisibility).toHaveBeenCalledWith('c-priv', 'public');
+    fireEvent.click(screen.getByRole('button', { name: 'Allow as space default My public' }));
+    await screen.findByText('“My public” may now be made the space default.');
+    expect(port.spaceDefaultConsent).toHaveBeenCalledWith('c-own', true);
+    fireEvent.click(screen.getByRole('button', { name: 'Make my default My public' }));
+    await screen.findByTestId('space-cred-my-default-c-own');
+    expect(port.setMyDefault).toHaveBeenCalledWith('c-own');
+    fireEvent.click(screen.getByRole('button', { name: 'Clear my default My public' }));
+    await waitFor(() => expect(screen.queryByTestId('space-cred-my-default-c-own')).toBeNull());
+    expect(port.clearMyDefault).toHaveBeenCalledWith('anthropic');
+  });
+
+  it('a refused visibility change shows the server reason', async () => {
+    const port = fakePort({ rows: ROWS, viewer: shared });
+    port.setVisibility.mockRejectedValueOnce(new CollabError('forbidden', 'only the owner can change who may use this credential'));
+    await mount(port);
+    fireEvent.click(screen.getByRole('button', { name: 'Make public My private' }));
+    expect((await screen.findByTestId('space-cred-failure-refused')).textContent).toBe('Refused: only the owner can change who may use this credential');
+  });
+
+  it('usage lists launches on the credential', async () => {
+    const port = fakePort({ rows: ROWS, viewer: shared });
+    await mount(port);
+    fireEvent.click(screen.getByRole('button', { name: 'Usage My public' }));
+    const list = await screen.findByTestId('space-cred-usage-c-own');
+    expect(list.textContent).toContain('another member · space default · running');
+    expect(port.usage).toHaveBeenCalledWith('c-own');
+  });
+
+  it("another member's owned row: no change controls for a member; a space admin may only delete it", async () => {
+    const member = fakePort({ rows: ROWS, viewer: shared });
+    await mount(member);
+    expect(screen.getByTestId('space-cred-readonly-c-their').textContent).toBe('You can launch with it. Only its owner can change it.');
+    expect(screen.queryByRole('button', { name: 'Delete Their public' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Usage Their public' })).toBeNull();
+  });
+
+  it('…as a space admin', async () => {
+    const admin = fakePort({ rows: ROWS, viewer: { ...shared, isSpaceAdmin: true } });
+    await mount(admin);
+    expect(screen.getByRole('button', { name: 'Delete Their public' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Rename Their public' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Make private Their public' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Usage Their public' })).toBeTruthy();
+    expect(screen.getByTestId('space-cred-admin-only-c-their')).toBeTruthy();
+  });
+
+  it('the rights mirror 998: owner-only on an owned row, the old D11 rule before §7', () => {
+    const me = shared;
+    const admin = { ...shared, isSpaceAdmin: true };
+    expect(canManage(THEIR_PUBLIC, admin)).toBe(false);
+    expect(canRevoke(THEIR_PUBLIC, admin)).toBe(true);
+    expect(canManage(MY_PRIVATE, me)).toBe(true);
+    expect(canManage(MIGRATED, admin)).toBe(true);
+    expect(canSetVisibility(MY_PUBLIC, me)).toBe(true);
+    expect(canSetVisibility(MY_PUBLIC, admin.accountId === ME ? { ...admin, accountId: 'acct-admin' } : admin)).toBe(false);
+    expect(canClaim(MIGRATED, me)).toBe(true);
+    expect(canClaim(row({ ownerAccountId: null, createdByAccountId: OTHER }), me)).toBe(false);
+    // An old server (no owner field) offers none of the §7 controls.
+    expect(canClaim(row({}), me)).toBe(false);
+    expect(canSetVisibility(row({}), me)).toBe(false);
+    expect(canSeeUsage(row({}), admin)).toBe(false);
+    expect(canMyDefault(row({ ownerAccountId: ME, status: 'pending' }), me)).toBe(false);
+    expect(canSeeUsage(row({ ownerAccountId: OTHER, visibility: 'private' }), admin)).toBe(false);
+    expect(canSeeUsage(row({ ownerAccountId: OTHER, visibility: 'public' }), admin)).toBe(true);
+    expect(isSharedServer('single')).toBe(false);
+    expect(isSharedServer('multi')).toBe(true);
+    expect(isSharedServer(null)).toBe(true);
   });
 });
