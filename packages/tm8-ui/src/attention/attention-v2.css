@@ -304,3 +304,19 @@
   background: var(--pn-card);
   box-shadow: 0 16px 36px rgb(0 0 0 / 0.18);
 }
+
+/* The empty detail column (chapter 4, G2): the same list as the top-bar
+   popover, centred in the column that used to hold the old inbox. */
+.cv2-root .att-centre {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--pn-space-6) var(--pn-space-4);
+}
+
+.cv2-root .att-centre__inner {
+  width: 100%;
+  max-width: 520px;
+}

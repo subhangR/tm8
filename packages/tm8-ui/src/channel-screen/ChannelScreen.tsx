@@ -156,20 +156,6 @@ export interface ChannelScreenProps {
   onCloseThread?: () => void;
   /** Pages the branch FORWARD on its `nextCursor` (oldest-first read). */
   onLoadMoreReplies?: (cursor: Cursor) => Promise<void> | void;
-  /**
-   * The session has gone quiet and may be waiting for a human.
-   *
-   * WHY CHAT NEEDS ITS OWN. The terminal surface has shown this since R8
-   * (`NeedsYouBanner`), but the two surfaces are both mounted and only one is
-   * visible, so a signal drawn in the terminal alone is invisible to exactly the
-   * person this feature exists for: the non-developer reading chat. That is the
-   * disagreement between the two views, in its smallest form.
-   *
-   * Ignored on a channel anchor, which has no session to be blocked.
-   */
-  needsAttention?: boolean;
-  /** What the host measured, in words. See `QUIET_SESSION_DETAIL`. */
-  attentionDetail?: string;
 }
 
 export function ChannelScreen({
@@ -204,8 +190,6 @@ export function ChannelScreen({
   onOpenThread,
   onCloseThread,
   onLoadMoreReplies,
-  needsAttention = false,
-  attentionDetail,
 }: ChannelScreenProps) {
   const feedElement = useRef<HTMLDivElement>(null);
   const scrollSnapshot = useRef<{
@@ -393,32 +377,8 @@ export function ChannelScreen({
       data-thread-open={threads && thread ? 'true' : undefined}
     >
       {/* ATTENTION v2 (chapter 4 "Session"): the real reason this session or
-          chat raised, with Resolve and Reply. The legacy quiet-PTY strip below
-          stands only where no attention module is mounted. */}
-      <SessionWaitingBanner
-        sessionId={anchorId}
-        legacy={needsAttention ? (
-        <div className="chs-needs-you" role="status" aria-live="polite" data-testid="chs-needs-you">
-          <span className="chs-needs-you__label">⚠ needs you</span>
-          {/*
-            STATES THE MEASUREMENT, NOT A GUESS. The detector behind this knows
-            only that the PTY fell silent; it cannot see which tool is waiting or
-            what was asked. So the copy says the agent went quiet and points at
-            the terminal, where the real question — if there is one — is drawn.
-            Inventing a question here would be indistinguishable, to the reader,
-            from having actually received one.
-          */}
-          {attentionDetail ? (
-            <span className="chs-needs-you__detail">{attentionDetail}</span>
-          ) : null}
-          {onSwitchToTerminal ? (
-            <button type="button" className="chs-chip-btn" onClick={onSwitchToTerminal}>
-              Open the terminal
-            </button>
-          ) : null}
-        </div>
-        ) : null}
-      />
+          chat raised, with Resolve and Reply. */}
+      <SessionWaitingBanner sessionId={anchorId} />
       {/* The three-column split's inner half: feed+composer is one column,
           the thread pane the next — the same aside-beside-a-feed shape as
           `chv-split`/`chv-aside`, solved here so both hosts inherit it. */}

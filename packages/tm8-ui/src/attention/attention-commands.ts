@@ -73,10 +73,12 @@ export interface AttentionCommandContext {
 
 export interface AttentionCommands {
   markSeen(entityId: EntityId): Promise<void>;
-  resolve(root: EntityId, note?: string): Promise<void>;
+  /** True when the server recorded the resolve. Never throws. */
+  resolve(root: EntityId, note?: string): Promise<boolean>;
   unresolve(batchId: string): Promise<void>;
   withdraw(requestId: string): Promise<void>;
-  reply(sessionId: EntityId, body: string): Promise<void>;
+  /** True when the message was posted. Never throws. */
+  reply(sessionId: EntityId, body: string): Promise<boolean>;
 }
 
 function messageOf(error: unknown): string {
@@ -160,10 +162,11 @@ export function createAttentionCommands(ctx: AttentionCommandContext): Attention
         }
       })();
       inflight.set(batchId, run);
-      await run;
+      const landed = await run;
       inflight.delete(batchId);
       ctx.settleRows(ids);
       ctx.refresh();
+      return landed;
     },
 
     async unresolve(batchId) {
@@ -244,15 +247,20 @@ export function createAttentionCommands(ctx: AttentionCommandContext): Attention
 
     async reply(sessionId, body) {
       const text = body.trim();
-      if (!text) return;
+      if (!text) return false;
+      // Clear first, like resolve: a retry must not keep showing the last
+      // attempt's failure while it runs.
+      ctx.setError(null);
       try {
         await ctx.seam.commands.postMessage({
           clientMutationId: `attention-reply:${ctx.newId()}`,
           anchorIds: [sessionId],
           body: text,
         });
+        return true;
       } catch (error) {
         ctx.setError(`Couldn't send the reply: ${messageOf(error)}`);
+        return false;
       }
     },
   };

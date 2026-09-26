@@ -1,8 +1,8 @@
 // The block detector: what makes a session's `needs-you` state reachable.
 //
 // tm8 has had the whole "an agent is waiting for you" presentation since R8 --
-// the verdict in session-presentation.ts, the pill, the NeedsYouBanner, the
-// home-screen group -- gated behind one predicate: `live && status === 'idle'`.
+// the verdict in session-presentation.ts, the pill, the home-screen group --
+// gated behind one predicate: `live && status === 'idle'`.
 // Nothing in the product ever wrote 'idle', so on real data the entire chain was
 // dead. `onActivityChange` is the writer that was missing.
 //

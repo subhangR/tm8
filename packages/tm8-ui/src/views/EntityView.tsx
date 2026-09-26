@@ -50,14 +50,13 @@ import {
   type ListPicker,
   type PanelTab,
 } from '../panels';
-import { AttentionInbox } from '../attention/AttentionInbox';
 import { AttentionList, useAttentionOptional } from '../attention';
 import { PanelResizer, useElementWidth, usePanelWidth } from '../kit';
 import { ConnectionsTab } from '../panels/detail/tabs';
 import type { ActionContext, ActionRef, CollectionMode, GroupByKey } from '../domain/types';
 import { getKind } from '../domain/registry';
 import { placeholderNameFor } from '../domain/title-grammar';
-import { QUIET_SESSION_DETAIL, needsAttentionOf } from '../domain/needs-attention';
+import { needsAttentionOf } from '../domain/needs-attention';
 import {
   creatableKind,
   EditEntityDialog,
@@ -89,7 +88,6 @@ import type { ContentSurface } from '../routes';
 import { conversationSurfaceFor } from './conversationSurface';
 import { channelFeedPortFromGateData } from './channel-feed-port';
 import './entity-view.css';
-import { attentionSectionFor } from './attentionSurface';
 import { debugSurfaceFor } from './debugSurface';
 import { sessionStatsSurfaceFor } from './sessionStatsSurface';
 import { sessionContextSurfaceFor } from './sessionContextSurface';
@@ -800,7 +798,6 @@ export function EntityView(props: EntityViewProps) {
          happens to be selected. Evaluated through the shared predicate so this
          view and the entity list can never disagree about the same session. */
       needsAttention={detail ? needsAttentionOf(detail, data.livenessOf) : false}
-      attentionDetail={QUIET_SESSION_DETAIL}
       attachments={attachments}
       onAttachmentUploaded={() => props.data.refetchDetail(selectedId)}
       viewerMemberId={props.viewerMemberId}
@@ -840,7 +837,6 @@ export function EntityView(props: EntityViewProps) {
           setContentSurfaces((current) => ({ ...current, [selectedId]: 'terminal' }));
         },
       }, 'discussion')}
-      attentionSection={detail ? attentionSectionFor(data.seam, data.spaceId, selectedId, data.reconcileCommand) : undefined}
       debugSurface={detail ? debugSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
       sessionStatsSurface={detail ? sessionStatsSurfaceFor(data.seam, selectedId) : undefined}
       sessionContextSurface={detail ? sessionContextSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
@@ -1362,7 +1358,7 @@ export function EntityView(props: EntityViewProps) {
         ON ONE SURFACE THIS RENDERS ONLY WHILE SOMETHING IS OPEN.
 
         The empty-state arm below is the defect stated in one expression. With
-        nothing selected it mounts `AttentionInbox`, whose copy is written for a
+        nothing selected it mounts the attention list, whose copy is written for a
         column sitting BESIDE a list — "…your attention.", "…the list to open it
         here." On the phone there was no list beside it, so that text was drawn
         under the 200px list card and bled out of the right edge: a sentence
@@ -1370,7 +1366,7 @@ export function EntityView(props: EntityViewProps) {
         not there.
 
         Withheld rather than hidden, for the same reason the list is: an
-        invisible `AttentionInbox` still runs its space-wide attention query on
+        invisible list still reads the space-wide attention store on
         every phone screen, and the phone is where that costs the most.
       */}
       {boardMode || (oneSurface && !selectedId) ? null : (
@@ -1382,21 +1378,13 @@ export function EntityView(props: EntityViewProps) {
               while the Tasks list is open. */}
           {detailPanel ?? (attentionApi ? (
             /* Attention v2 (chapter 4): the SAME list as the top-bar popover.
-               Without the shell's store (a host rendered alone) the old inbox
-               still answers; S7 removes it. */
-            <div className="att-inbox" data-testid="attention-inbox">
-              <div className="att-inbox__inner">
+               A host rendered without the shell's store shows an empty column. */
+            <div className="att-centre" data-testid="attention-inbox">
+              <div className="att-centre__inner">
                 <AttentionList nameOf={nameOf} onOpen={selectFromList} />
               </div>
             </div>
-          ) : (
-            <AttentionInbox
-              seam={data.seam}
-              spaceId={data.spaceId}
-              nameOf={nameOf}
-              onOpenEntity={selectFromList}
-            />
-          ))}
+          ) : null)}
         </main>
       )}
 

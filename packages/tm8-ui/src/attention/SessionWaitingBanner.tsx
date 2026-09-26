@@ -2,30 +2,25 @@
  * "WAITING ON YOU" — the terminal / chat banner (chapter 4 "Session", mock
  * tab 4).
  *
- * It shows the REAL reason a session or chat raised, not the hard-coded
- * `QUIET_SESSION_DETAIL`: PTY silence alone no longer produces a banner (G1),
- * only an open request this session raised does — wherever that request is
- * pinned (F1). Two verbs:
+ * It shows the REAL reason a session or chat raised: PTY silence alone no
+ * longer produces a banner (G1), only an open request this session raised
+ * does — wherever that request is pinned (F1). Two verbs:
  *   · Resolve, with an optional note, settles the root the request counts on
  *     (the task, for a session working on one) for everyone.
  *   · Reply messages the session and leaves the request open.
  * Jump to prompt is deferred with permission prompts (F2).
  *
- * `useAttentionOptional` returning null means no module is mounted: the banner
- * renders `legacy` instead, so a host that has not adopted v2 keeps today's.
+ * Outside an `AttentionProvider` it renders nothing.
  */
-import { useRef, useState, type ReactNode } from 'react';
+import { useRef, useState } from 'react';
 import type { AttentionRequest, EntityId } from '@tm8/contract';
 import { AttentionChipView, useAttentionOptional, type AttentionQueueRow } from './index';
 import { attentionAge } from './attention-subtitles';
-import { useKeepTypedOnFailure } from './use-keep-typed-on-failure';
 import './attention-surfaces.css';
 
 export interface SessionWaitingBannerProps {
   /** The work session or chat the banner sits on. */
   sessionId: EntityId | string;
-  /** Rendered when no attention module is mounted (pre-v2 hosts, old tests). */
-  legacy?: ReactNode;
   /** `dark` inside the always-dark terminal chrome. */
   tone?: 'dark' | 'light';
 }
@@ -44,19 +39,15 @@ export function raisedBy(
   return out.sort((a, b) => b.request.createdAt.localeCompare(a.request.createdAt));
 }
 
-export function SessionWaitingBanner({ sessionId, legacy = null, tone = 'light' }: SessionWaitingBannerProps) {
+export function SessionWaitingBanner({ sessionId, tone = 'light' }: SessionWaitingBannerProps) {
   const api = useAttentionOptional();
   const [mode, setMode] = useState<'idle' | 'resolve' | 'reply'>('idle');
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
-  // The MODE rides with the text: a failed Reply must come back as a Reply,
-  // never as a Resolve note one Enter away from settling the task.
-  const submittedMode = useRef<'resolve' | 'reply'>('resolve');
-  const stash = useKeepTypedOnFailure(api, (typed) => {
-    setText(typed);
-    setMode(submittedMode.current);
-  });
-  if (!api) return <>{legacy}</>;
+  // What is open NOW, read after the command settles (the closure's is stale).
+  const modeNow = useRef(mode);
+  modeNow.current = mode;
+  if (!api) return null;
 
   const raised = raisedBy(api.queue('all'), String(sessionId));
   const chip = api.raisedChipFor(sessionId as EntityId);
@@ -75,16 +66,20 @@ export function SessionWaitingBanner({ sessionId, legacy = null, tone = 'light' 
 
   const submit = async () => {
     const typed = text;
-    submittedMode.current = mode === 'reply' ? 'reply' : 'resolve';
-    stash(typed);
+    const submitted = mode === 'reply' ? 'reply' : 'resolve';
     setText('');
     setMode('idle');
     setBusy(true);
     try {
-      if (mode === 'reply') {
-        if (typed.trim()) await api.reply(sessionId as EntityId, typed.trim());
-      } else {
-        await api.resolve(root, typed.trim() || undefined);
+      const landed = submitted === 'reply'
+        ? await api.reply(sessionId as EntityId, typed.trim())
+        : await api.resolve(root, typed.trim() || undefined);
+      // A command that did not land gives the text back IN ITS MODE: a failed
+      // Reply must come back as a Reply, never as a Resolve note one Enter away
+      // from settling the task. Not over anything opened meanwhile.
+      if (!landed && modeNow.current === 'idle') {
+        setText(typed);
+        setMode(submitted);
       }
     } finally {
       setBusy(false);

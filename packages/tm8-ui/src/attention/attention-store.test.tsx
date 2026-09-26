@@ -112,7 +112,7 @@ describe('AttentionProvider', () => {
     const ref = await ready(mount(fake));
     expect(ref.api!.counts()).toEqual({ mine: 1, all: 1 });
 
-    let done!: Promise<void>;
+    let done!: Promise<boolean>;
     act(() => { done = ref.api!.resolve('task-1' as EntityId, '  ship it '); });
     // In place, before the server answers.
     expect(ref.api!.counts()).toEqual({ mine: 0, all: 0 });
@@ -214,6 +214,21 @@ describe('AttentionProvider', () => {
     expect(ref.api!.counts().all).toBe(1);
   });
 
+  it('reply clears the last error before trying, and reports whether it landed', async () => {
+    const fake = fakeSeam([req({ entityId: 'task-1', sourceWorkSessionId: 'sess-1' as EntityId })]);
+    const ref = await ready(mount(fake));
+    fake.postMessage.mockRejectedValueOnce(new Error('offline'));
+    let landed: boolean | undefined;
+    await act(async () => { landed = await ref.api!.reply('sess-1' as EntityId, 'which one?'); });
+    expect(landed).toBe(false);
+    expect(ref.api!.error).toBe("Couldn't send the reply: offline");
+
+    // A retry that lands clears the old failure rather than leaving it up.
+    await act(async () => { landed = await ref.api!.reply('sess-1' as EntityId, 'which one?'); });
+    expect(landed).toBe(true);
+    expect(ref.api!.error).toBeNull();
+  });
+
   it('queue rows carry hydrated titles', async () => {
     const fake = fakeSeam([req({ entityId: 'task-1' })]);
     const ref = await ready(mount(fake));
@@ -232,7 +247,7 @@ describe('review fixes (S5a review, findings 1, 2, 4)', () => {
     const { gate, release } = gated();
     const fake = fakeSeam([req({ id: 'r1', entityId: 'task-1', version: 3 })], { gate });
     const ref = await ready(mount(fake));
-    let resolving!: Promise<void>;
+    let resolving!: Promise<boolean>;
     act(() => { resolving = ref.api!.resolve('task-1' as EntityId); });
     const batch = ref.api!.undo!.batchId;
     let undoing!: Promise<void>;
@@ -247,7 +262,7 @@ describe('review fixes (S5a review, findings 1, 2, 4)', () => {
     const { gate, release } = gated();
     const fake = fakeSeam([req({ id: 'r1', entityId: 'task-1' })], { gate, v2: true });
     const ref = await ready(mount(fake));
-    let resolving!: Promise<void>;
+    let resolving!: Promise<boolean>;
     act(() => { resolving = ref.api!.resolve('task-1' as EntityId); });
     const batch = ref.api!.undo!.batchId;
     let undoing!: Promise<void>;
