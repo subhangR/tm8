@@ -7,6 +7,7 @@
 #   ./install.sh --env prod --service   always-on install: systemd on Linux,
 #                                        launchd on macOS — supervised + survives reboot
 #   ./install.sh --env prod --systemd   the Linux spelling of --service (still works)
+#   ./install.sh --mode personal|peer|server   pin TM8_NODE_MODE (a service defaults to server)
 #   ./install.sh --status               what is installed and what is running
 #   ./install.sh --reset                DROP the database and re-migrate (asks first)
 #   ./install.sh --uninstall            stop + remove the service, keep the data
@@ -107,6 +108,11 @@ DRY_RUN=0
 ASSUME_YES=0
 CONFIGURE_HBA=""     # "" = only when we created the cluster; 1 = always; 0 = never
 MODE=install
+# The node mode the env file PINS (doc 20 §3.6, owner call O6: yes). Empty = no
+# pin, and the node asks its owner after the claim. A service defaults to
+# `server` below: a system-layout node is a server, and pinning it keeps the
+# first-run chooser away from whoever port-forwards to it first.
+NODE_MODE_PIN=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -126,12 +132,20 @@ while [[ $# -gt 0 ]]; do
     --uninstall)    MODE=uninstall ;;
     --print-env)    MODE=print-env ;;
     --dry-run)      DRY_RUN=1 ;;
+    --mode)         shift; [[ $# -gt 0 ]] || die "--mode needs a value"; NODE_MODE_PIN="$1" ;;
+    --mode=*)       NODE_MODE_PIN="${1#*=}" ;;
     --yes|-y)       ASSUME_YES=1 ;;
-    -h|--help)      sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)      sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *)              die "unknown flag $1 (try --help)" ;;
   esac
   shift
 done
+
+case "$NODE_MODE_PIN" in
+  personal|peer|server) ;;
+  "") if (( USE_SERVICE )); then NODE_MODE_PIN=server; fi ;;
+  *) die "--mode must be personal, peer or server (got $NODE_MODE_PIN)" ;;
+esac
 
 tm8_env_load "$SLOT" || exit 2
 
@@ -414,6 +428,13 @@ TM8_SESSION_CAP=unlimited
 TM8_IDEMPOTENCY_ENABLED=0
 TM8_PREVIEW_ENABLED=0
 ENVFILE
+  # Pinned, the mode cannot be changed from the app or \`tm8 node mode set\`;
+  # change this line and restart. Unpinned, the owner chooses after the claim.
+  if [[ -n "$NODE_MODE_PIN" ]]; then
+    printf '\n# Who a loopback caller is: personal | peer | server. Set by install.sh --mode\n'
+    printf '# (a service install defaults to server). Change it here and restart.\n'
+    printf 'TM8_NODE_MODE=%s\n' "$NODE_MODE_PIN"
+  fi
 }
 
 # The systemd unit. Matches the units actually running on the box

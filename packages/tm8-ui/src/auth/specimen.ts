@@ -412,3 +412,43 @@ export const TOKENS = {
     },
   ],
 } as const;
+
+/**
+ * 1s / 1r — the node-mode chooser and its restart notice (doc 20 §5.3).
+ *
+ * GATE COPY — not oracle. The canvas predates node modes. Under decision 34
+ * the chooser runs AFTER the claim, so every line here is said to the owner,
+ * already signed in, and none of it may promise that Personal skips a password
+ * on first run: it does not, the claim set one.
+ */
+export const MODE = {
+  eyebrow: 'FIRST RUN · WHO USES THIS NODE',
+  title: 'Who will use this node?',
+  body: 'You can change this later in Settings.',
+  personal: {
+    action: 'Just me',
+    line: 'Personal: you, on this machine. Nobody else signs in.',
+  },
+  peer: {
+    action: 'Me and a few others',
+    line: 'Peer: you on this machine, and other people who sign in with a password.',
+  },
+  server: {
+    action: 'A shared server',
+    line: 'Server: everyone signs in with a password, you included, everywhere.',
+  },
+  pinned: 'This node’s mode is set by TM8_NODE_MODE in its environment. Change it there and restart.',
+  restartEyebrow: 'RESTART NEEDED',
+  restartTitle: 'Restart the tm8 server to apply this',
+  restartBody:
+    'The mode is saved. The running server keeps its old mode until it restarts, so it still treats a local caller the old way until then.',
+  restartAction: 'Continue',
+  loosenWarning: 'Local callers on this machine will be trusted as the owner again.',
+} as const;
+
+/** The inline Peer gate (doc 20 §5.5): an act that only makes sense if others can sign in. */
+export const REQUIRE_PEER = {
+  line: 'This node is Personal: nobody else can sign in here, so an invite would lead nowhere.',
+  action: 'Switch to Peer',
+  notOwner: 'Only the node owner can switch it to Peer.',
+} as const;

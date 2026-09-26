@@ -46,7 +46,14 @@ describe('first-run node claim, over the public surface', () => {
     const status = successData<{ claimed: boolean; mode: string; signupPath: string }>(
       await server.request('GET', '/v2/auth/claim'),
     );
-    expect(status).toEqual({ claimed: false, mode: 'single', signupPath: 'claim' });
+    // No env pin and no `<dataDir>/mode`: the default, which runs as Personal.
+    expect(status).toEqual({
+      claimed: false,
+      mode: 'personal',
+      modeSet: false,
+      modeSource: 'default',
+      signupPath: 'claim',
+    });
   });
 
   it('minted a token, and stored ONLY its hash', async () => {

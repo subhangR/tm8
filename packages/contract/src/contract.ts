@@ -1951,18 +1951,31 @@ export interface AuthSessionGetResult {
 }
 
 /**
- * How this node is configured to admit people (`TM8_NODE_MODE`, design D4).
+ * How this node admits people (design D4 as revised by doc 14).
  *
- * `single` — a loopback caller with no credential is resolved as the owner, so
- * the operator sees no gate on the server's own machine. `multi` — the
- * auto-owner arm is off and everyone signs in, everywhere.
+ * `personal` — the owner, on one machine, and nobody else. The loopback
+ * auto-owner arm is on. Under decision 34 the node is claimed once with a
+ * password first, and a local agent is never the owner (with #847, the
+ * launch cookie gates the arm).
+ * `peer` — Personal plus other people (invited, or reaching this node through
+ * a proxy or tailnet), who sign in with a password. The loopback arm stays on:
+ * it is still the owner's machine.
+ * `server` — the auto-owner arm is off and everyone signs in, everywhere.
  *
- * It is CONFIG, never a graph row: the mode gates a security arm, and before a
- * node is claimed "node admin" means anyone who reaches loopback — precisely
- * the population the mode exists to constrain. Converting is an env edit and a
- * restart, which is why no operation writes this.
+ * It is CONFIG, never a graph row: `TM8_NODE_MODE` in the server's environment
+ * pins it, otherwise `<dataDir>/mode` records it. Read at boot; a switch
+ * (`node.mode.set`) is a file write and a restart.
  */
-export type NodeModeView = 'single' | 'multi';
+export type NodeModeView = 'personal' | 'peer' | 'server';
+
+/**
+ * Where the running mode came from. `env` — pinned by `TM8_NODE_MODE`, and no
+ * operation can move it. `file` — `<dataDir>/mode`, which `node.mode.set`
+ * writes. `default` — neither; runs as `personal`, and on an UNCLAIMED node it
+ * is the first-run chooser's state. The env FILE's path is never reported: this
+ * rides on the claim-free `auth.claim.status`, and a path is a fact about the box.
+ */
+export type NodeModeSourceView = 'env' | 'file' | 'default';
 
 /**
  * How account #1 may be created on THIS node, right now. `claim` while
@@ -1986,9 +1999,55 @@ export type NodeSignupPath = 'claim' | 'invite' | 'admin';
 export interface AuthClaimStatusResult {
   /** True once any active account has a credential. See `public.node_is_claimed()`. */
   claimed: boolean;
+  /**
+   * The RECORDED mode, read on every call — the answer the next boot gives, so a
+   * switch that needs no restart shows at once. A pin reads the env. `personal`
+   * when none was chosen.
+   */
   mode: NodeModeView;
+  /** False when neither `TM8_NODE_MODE` nor `<dataDir>/mode` set it. With `claimed: true`, the first-run chooser (it runs after the claim). */
+  modeSet: boolean;
+  modeSource: NodeModeSourceView;
   signupPath: NodeSignupPath;
 }
+
+/**
+ * `node.mode.set` — record a mode in `<dataDir>/mode` (doc 14 §5.2, doc 15 §2).
+ * Checked in this order:
+ *
+ * - `invalid_input` — not one of the three;
+ * - `unauthenticated` — an anonymous caller;
+ * - `conflict` / `mode_pinned` — `TM8_NODE_MODE` is set in the environment;
+ * - `conflict` / `node_unclaimed` — ANY target while `node_is_claimed()` is
+ *   false (decision 34: the owner claims once with a password, then the launch
+ *   cookie replaces typing it; the chooser runs after the claim). The op NEVER
+ *   takes a password: the UI runs `auth.claim` first and then this, deciding
+ *   from `auth.claim.status`;
+ * - `forbidden` / `owner_session_required` — the caller is neither the
+ *   loopback auto-owner nor the owner's `browser`/`cli` session, or the switch
+ *   LOOSENS (`server → *`, `peer → personal`) and the caller is not the owner's
+ *   bearer session. Tightening is open to the auto-owner.
+ *
+ * The same mode as the current one succeeds with no write. The running process
+ * is not changed: the mode is read at boot, and `restartRequired` says whether
+ * the new mode moves the loopback auto-owner arm.
+ */
+export interface NodeModeSetInput {
+  mode: NodeModeView;
+  /** Admitted because every non-`auth.*` command admits it; the CLI does not send one. */
+  clientMutationId?: string;
+}
+
+export interface NodeModeSetResult {
+  /** The mode this switch was judged from: the recorded file, else the running mode. */
+  previous: NodeModeView;
+  mode: NodeModeView;
+  source: 'file';
+  restartRequired: boolean;
+}
+
+/** `error.details.reason` on a `node.mode.set` refusal. */
+export type NodeModeRefusalReason = 'mode_pinned' | 'node_unclaimed' | 'owner_session_required';
 
 /**
  * `auth.claim` — the first-run ceremony. The TOKEN is the authorization, which

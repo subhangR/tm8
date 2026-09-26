@@ -16,6 +16,15 @@ import {
   CLIPBOARD_RETENTION_DAYS_DEFAULT,
 } from '../files/clipboard-store.js';
 import { DEFAULT_AUTH_RATE_LIMITS, type AuthRateLimits } from './auth-rate-limit.js';
+import type { NodeModeView } from '@tm8/contract';
+import {
+  NODE_MODE_ENV,
+  NodeModeFileError,
+  normalizeNodeMode,
+  readModeFile as readModeFileFromDisk,
+  runtimeOf,
+  type NormalizedNodeMode,
+} from '../identity/node-mode.js';
 import type { SpaceSessionsMode } from './types.js';
 
 export interface ServerConfig {
@@ -105,25 +114,38 @@ export interface ServerConfig {
    */
   readonly authRateLimits?: Partial<AuthRateLimits>;
   /**
-   * How this node admits people (`TM8_NODE_MODE`, design D4). Default `single`.
+   * How this node admits people: Personal, Peer or Server (`identity/node-mode.ts`,
+   * design D4 as revised by docs 14 and 15). Absent means `personal`.
    *
-   * `single` — a loopback caller with no credential resolves as the owner, so
-   * the operator never sees a gate on the server's own machine. `multi` — the
-   * auto-owner arm is off and everyone signs in, everywhere.
+   * `personal` — a loopback browser holding the launch cookie resolves as the
+   * owner (`tm8 open` mints it; with `TM8_AUTO_OWNER_COOKIE=off`, the loopback
+   * peer alone), so the operator never types a password on their own machine
+   * after the one-time claim. `peer` — the same arm
+   * (it is still the owner's machine), plus an owner password so others can be
+   * told apart from them. `server` — the auto-owner arm is off and everyone
+   * signs in, everywhere.
    *
-   * IT IS CONFIG, AND DELIBERATELY NOT A GRAPH ROW. The mode gates a security
-   * arm, and before a node is claimed "node admin" means anyone who can reach
-   * loopback — precisely the population the mode exists to constrain. A row
-   * would make the switch writable over the network by exactly the party it is
-   * meant to bound. Converting a node is an env edit and a restart; no
-   * operation writes this, and `tm8 node mode` only reads it.
+   * CONFIG, NEVER A GRAPH ROW. The mode gates a security arm, so it is resolved
+   * here, at boot, from `TM8_NODE_MODE` (which pins it) or `<dataDir>/mode`
+   * (which `node.mode.set` writes, owner-only). A write takes effect at the
+   * next restart and never before.
    *
-   * `multi` IMPLIES `disableAutoOwner`. The combination "multi + auto-owner
-   * live" is refused in `loadConfig` rather than left to convention, because a
-   * multiplayer node that still auto-authenticates its loopback caller is the
-   * silent version of the bug this whole design closes.
+   * `server` IMPLIES `disableAutoOwner`: `loadConfig` computes the arm with
+   * `||`, so no combination of mode and env produces "server + auto-owner
+   * live". Left to convention, a multiplayer node that still
+   * auto-authenticates its loopback caller would be the silent version of the
+   * bug this whole design closes.
    */
-  readonly nodeMode?: 'single' | 'multi';
+  readonly nodeMode?: NodeModeView;
+  /**
+   * Where `nodeMode` came from: `env` (pinned by `TM8_NODE_MODE`; no operation
+   * may move it), `file` (`<dataDir>/mode`), or `default` (neither).
+   */
+  readonly nodeModeSource?: NodeModeSource;
+  /** False only for `default`: nobody has chosen a mode yet (the first-run chooser's state). */
+  readonly nodeModeSet?: boolean;
+  /** The mode was given as `single` or `multi`; the boot banner says to rename it. */
+  readonly nodeModeDeprecatedAlias?: boolean;
   /**
    * `TM8_SPACE_SESSIONS=off|agents|enforce`, default `agents` (plan W0a).
    * Whether a session's `auth_sessions.space_id` is bound as the
@@ -453,7 +475,74 @@ function parseBareOrigin(
   return parsed;
 }
 
-export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
+export type NodeModeSource = 'env' | 'file' | 'default';
+
+export interface ResolvedNodeMode {
+  readonly nodeMode: NodeModeView;
+  readonly nodeModeSource: NodeModeSource;
+  readonly nodeModeSet: boolean;
+  readonly nodeModeDeprecatedAlias: boolean;
+}
+
+/**
+ * Resolve the node mode (`../identity/node-mode.ts`): `TM8_NODE_MODE` pins
+ * it, else `<dataDir>/mode`, else the default, Personal — exactly what an
+ * unset `TM8_NODE_MODE` meant before modes, so an upgrade changes nobody's
+ * access.
+ *
+ * An unrecognised value REFUSES, in either place, rather than falling back to
+ * Personal. A typo (`TM8_NODE_MODE=multiplayer`) or a mangled file silently
+ * defaulting to the permissive mode is exactly how a node ends up
+ * auto-authenticating everyone who reaches loopback while its operator
+ * believes it is locked down.
+ */
+export function resolveNodeMode(
+  env: NodeJS.ProcessEnv,
+  dataDir: string,
+  readModeFile: (dataDir: string) => NormalizedNodeMode | null = readModeFileFromDisk,
+): ResolvedNodeMode {
+  const envRaw = env[NODE_MODE_ENV];
+  if (envRaw !== undefined && envRaw.trim() !== '') {
+    const normalized = normalizeNodeMode(envRaw);
+    if (!normalized) {
+      throw new ConfigError(
+        `${NODE_MODE_ENV} must be "personal", "peer" or "server" (or the deprecated "single"/"multi"), got ${JSON.stringify(envRaw)}`,
+      );
+    }
+    return {
+      nodeMode: normalized.mode,
+      nodeModeSource: 'env',
+      nodeModeSet: true,
+      nodeModeDeprecatedAlias: normalized.deprecatedAlias,
+    };
+  }
+
+  let recorded: NormalizedNodeMode | null;
+  try {
+    recorded = readModeFile(dataDir);
+  } catch (err) {
+    if (err instanceof NodeModeFileError) throw new ConfigError(err.message);
+    throw err;
+  }
+  if (!recorded) {
+    return { nodeMode: 'personal', nodeModeSource: 'default', nodeModeSet: false, nodeModeDeprecatedAlias: false };
+  }
+  return {
+    nodeMode: recorded.mode,
+    nodeModeSource: 'file',
+    nodeModeSet: true,
+    nodeModeDeprecatedAlias: recorded.deprecatedAlias,
+  };
+}
+
+/**
+ * `readModeFile` is injectable so a test can resolve a mode file without a
+ * data directory; every production caller reads `<dataDir>/mode` from disk.
+ */
+export function loadConfig(
+  env: NodeJS.ProcessEnv = process.env,
+  readModeFile: (dataDir: string) => NormalizedNodeMode | null = readModeFileFromDisk,
+): ServerConfig {
   const host = env.TM8_BIND?.trim() || '127.0.0.1';
   const port = Number.parseInt(env.TM8_PORT?.trim() || '4610', 10);
 
@@ -499,19 +588,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     );
   }
 
-  // An unrecognised value REFUSES rather than falling back to `single`. A typo
-  // (`TM8_NODE_MODE=multiplayer`) silently defaulting to the permissive mode is
-  // exactly how a node ends up auto-authenticating everyone who reaches
-  // loopback while its operator believes it is locked down.
-  const nodeModeRaw = env.TM8_NODE_MODE?.trim().toLowerCase();
-  if (nodeModeRaw !== undefined && nodeModeRaw !== '' && nodeModeRaw !== 'single' && nodeModeRaw !== 'multi') {
-    throw new ConfigError(
-      `TM8_NODE_MODE must be "single" or "multi", got ${JSON.stringify(env.TM8_NODE_MODE)}`,
-    );
-  }
-  const nodeMode: 'single' | 'multi' = nodeModeRaw === 'multi' ? 'multi' : 'single';
+  const dataDir = resolveServerDataDir(env);
+  const nodeMode = resolveNodeMode(env, dataDir, readModeFile);
 
-  // Refused rather than defaulted, for the reason TM8_NODE_MODE is: a typo
+  // Refused rather than defaulted, for the reason the node mode is: a typo
   // must not silently choose a mode the operator did not ask for.
   const spaceSessionsRaw = env.TM8_SPACE_SESSIONS?.trim().toLowerCase();
   if (
@@ -571,7 +651,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
 
   const preview = resolvePreview(env, host, port, extraAllowedHostnames, publicOrigin, allowedOrigins);
 
-  const dataDir = resolveServerDataDir(env);
   const clipboardDir = resolveClipboardDir(env, dataDir);
   const containers = resolveContainersConfig(env, dataDir);
   const clipboardMaxBytes = envPositiveInt(
@@ -603,16 +682,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     launchProjectDir: resolve(expandHome(env.TM8_PROJECT_DIR?.trim() || process.cwd())),
     idempotencyEnabled: envBoolean(env.TM8_IDEMPOTENCY_ENABLED, 'TM8_IDEMPOTENCY_ENABLED', true),
     containers,
-    nodeMode,
+    ...nodeMode,
     spaceSessions,
     autoOwnerCookie,
     ...(publicOrigin ? { publicOrigin } : {}),
-    // `multi` implies the kill switch. The explicit env var still wins when it
-    // asks for MORE restriction (a hardened single-player node), and can never
-    // ask for less: `||` here means no combination of the two can produce a
-    // multiplayer node with a live auto-owner arm.
+    // `server` implies the kill switch. The explicit env var still wins when it
+    // asks for MORE restriction (a hardened Personal node), and can never ask
+    // for less: `||` here means no combination of the two can produce a Server
+    // node with a live auto-owner arm.
     disableAutoOwner:
-      nodeMode === 'multi'
+      !runtimeOf(nodeMode.nodeMode).autoOwner
       || envBoolean(env.TM8_DISABLE_AUTO_OWNER, 'TM8_DISABLE_AUTO_OWNER', false),
     authRateLimits: {
       // Non-negative, not positive: 0 is the documented "disable this

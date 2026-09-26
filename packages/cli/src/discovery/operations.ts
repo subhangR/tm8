@@ -299,7 +299,7 @@ const ROWS: Record<OperationName, Row> = {
     sum: 'Report whether this Server has been claimed, its node mode, and how an account can be created on it',
     authz: 'server',
     input: 'none',
-    tags: ['claim', 'first-run', 'setup', 'status', 'mode', 'single-player', 'multiplayer'],
+    tags: ['claim', 'first-run', 'setup', 'status', 'mode', 'personal', 'peer', 'server', 'single-player', 'multiplayer'],
     notes: [
       'answers without any credential, on purpose: it is the one question a caller can ask before it knows who anybody is',
       'it never reports whether a live claim token exists — that is a fact about the operator\'s filesystem, not about the node',
@@ -317,6 +317,21 @@ const ROWS: Record<OperationName, Row> = {
       'ON-BOX BY CONSTRUCTION: only the loopback auto-owner (which now also needs the `tm8 open` launch cookie) may run it, and the fresh token is written to <dataDir>/setup-token (0600) — the file, not the network, is the boundary',
       'an ordinary restart REPRINTS the live token rather than rotating it, so this is the deliberate act that rotates: reissuing invalidates any previously printed token',
       'refused once any account on the node has a password: a claim token is inert on a claimed node, so there is nothing to reissue',
+    ],
+  },
+  'node.mode.set': {
+    cmd: ['node', 'mode', 'set'],
+    syn: 'tm8 node mode set <personal|peer|server>',
+    sum: 'Switch this Server between Personal, Peer and Server — recorded in <dataDir>/mode, applied at restart',
+    authz: 'server',
+    input: 'bound',
+    side: 'durable',
+    tags: ['node', 'mode', 'personal', 'peer', 'server', 'single-player', 'multiplayer', 'setup', 'first-run'],
+    notes: [
+      'refused (conflict, mode_pinned) when TM8_NODE_MODE is set in the Server\'s environment: the env pins the mode',
+      'every mode needs the node claimed first (conflict, node_unclaimed) — this never takes a password; claim with tm8 auth claim',
+      'tightening is open to the owner on the Server\'s own machine; loosening (server → peer|personal, peer → personal) needs the owner signed in with their password',
+      'the running Server keeps its boot-time mode: the answer says whether a restart is needed',
     ],
   },
   'auth.launch': {
@@ -3156,7 +3171,8 @@ export const CATALOG_DIGEST =
   // Re-measured (W3-server, on main bd1841bf): + auth.space.enter. Read from the conformance generator.
   // Re-measured (plan W2 launch cookie on W11, main f94c6adc): + auth.launch. Read from the failing digest test.
   // Rebased onto main d11e0be5 (#848): W11's +4 on top of auth.space.enter; digest re-measured on the rebased tree.
-  'sha256:259ff014fbb373f2bf6e5e6bfa8738f894612634846b79f2f8945d136c5e26cf';
+  // Re-measured (node modes S2 stacked on plan W2, on main f94c6adc): + node.mode.set. Read from the failing digest test.
+  'sha256:3efd6399aa167686bfdca80f3ca463795dbeda6c3fb1e071d433aecafe5963a2';
 
 export const GRAMMAR_VERSION = '2';
 
@@ -3592,10 +3608,10 @@ const COMMAND_ALIASES = new Map<string, {
   ['node mode', {
     path: ['node', 'mode'],
     syntax: 'tm8 node mode',
-    summary: 'Report this Server\'s node mode (single | multi), read-only',
+    summary: 'Report this Server\'s node mode (personal | peer | server) and where it came from',
     notes: [
       'sugar over auth.claim.status — it adds no catalog operation',
-      'READ-ONLY by design: the mode is server config (TM8_NODE_MODE), not a graph row; converting is an env edit and a restart (D4)',
+      'the mode is server config, never a graph row: TM8_NODE_MODE pins it, else <dataDir>/mode, else personal; switch with tm8 node mode set',
     ],
     // No example: `tm8 node mode` takes no arguments, and every example must
     // carry a `<placeholder>` (help.test.ts) — a zero-arg command has none.

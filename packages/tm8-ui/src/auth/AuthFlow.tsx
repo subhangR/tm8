@@ -19,6 +19,7 @@
 import { useCallback, useState, type ComponentType } from 'react';
 import { useTheme } from '../theme/useTheme';
 import { FrameClaim, FrameFirstSpace, FrameNameServer } from './FirstRunFrames';
+import { FrameChooseMode, FrameRestartRequired } from './ModeFrames';
 import { FrameExpired, FrameLogin, FrameLoginFailed, FrameSignedOut } from './SignInFrames';
 import { FrameInviteDead, FrameInviteRedeem, FrameOrientation } from './InviteFrames';
 import {
@@ -55,6 +56,9 @@ export const AUTH_FRAMES: readonly AuthFrameDef[] = [
   { id: '1n', label: '1n connect failures', flow: 'server', overlay: false },
   { id: '1p', label: '1p account menu', flow: 'account', overlay: false },
   { id: '1q', label: '1q access tokens', flow: 'account', overlay: false },
+  // Not oracle: node modes (doc 20 §5.3) postdate the canvas. `1m` was taken.
+  { id: '1s', label: '1s choose node mode', flow: 'first-run', overlay: false },
+  { id: '1r', label: '1r restart to apply mode', flow: 'first-run', overlay: false },
 ];
 
 const FRAME_COMPONENTS: Record<AuthFrameId, ComponentType<FrameProps>> = {
@@ -75,6 +79,8 @@ const FRAME_COMPONENTS: Record<AuthFrameId, ComponentType<FrameProps>> = {
   '1n': FrameConnectFailures,
   '1p': FrameAccountMenu,
   '1q': FrameAccessTokens,
+  '1s': FrameChooseMode,
+  '1r': FrameRestartRequired,
 };
 
 /**

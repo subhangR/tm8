@@ -47,7 +47,7 @@ import type {
   AuthLoginInput, AuthLoginResult, AuthLogoutInput,
   AuthLogoutResult, AuthPasswordChangeInput, AuthPasswordChangeResult,
   AuthSessionGetResult, AuthSessionView, AuthSignupInput, AuthSpaceEnterInput, AuthSpaceEnterResult,
-  AuthSignupResult, ChannelTab, ChatContextFrame, ChatTurnFrame, ChatTurnUsage,
+  AuthSignupResult, NodeModeSetInput, NodeModeSetResult, ChannelTab, ChatContextFrame, ChatTurnFrame, ChatTurnUsage,
   ClosedPromptPolicy, CollectionAddItemInput, CollectionGroup, CollectionQuery, CollectionResult,
   CommandContext, CommandErrorCode, CommandResult, CompleteTaskInput,
   ContainerLifecycle, ContainerLifecycleInput, ContainerMount, ContainerMountInput,
@@ -1892,10 +1892,28 @@ export const AuthClaimResultSchema: z.ZodType<AuthClaimResult> = z.object({
   session: AuthSessionViewSchema,
 }).strict();
 
+const NodeModeViewSchema = z.enum(['personal', 'peer', 'server']);
+const NodeModeSourceViewSchema = z.enum(['env', 'file', 'default']);
+
 export const AuthClaimStatusResultSchema: z.ZodType<AuthClaimStatusResult> = z.object({
   claimed: z.boolean(),
-  mode: z.enum(['single', 'multi']),
+  mode: NodeModeViewSchema,
+  modeSet: z.boolean(),
+  modeSource: NodeModeSourceViewSchema,
   signupPath: z.enum(['claim', 'invite', 'admin']),
+}).strict();
+
+/** `node.mode.set`. Strict: a mode and nothing else — never a password. */
+export const NodeModeSetInputSchema: z.ZodType<NodeModeSetInput> = z.object({
+  mode: NodeModeViewSchema,
+  clientMutationId: z.string().min(1).optional(),
+}).strict();
+
+export const NodeModeSetResultSchema: z.ZodType<NodeModeSetResult> = z.object({
+  previous: NodeModeViewSchema,
+  mode: NodeModeViewSchema,
+  source: z.literal('file'),
+  restartRequired: z.boolean(),
 }).strict();
 
 export const AuthClaimReissueResultSchema: z.ZodType<AuthClaimReissueResult> = z.object({

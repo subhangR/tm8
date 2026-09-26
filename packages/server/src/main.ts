@@ -59,7 +59,7 @@ import { createLoopbackOwnerResolver } from './identity/loopback.js';
 import { createTrackingObserverJob } from './tracking/observer.js';
 import { createCommitRecorderJob } from './tracking/commit-recorder.js';
 import { createSessionIdentityResolver } from './http/identity-resolver.js';
-import { loadLaunchCookieIssuer, type LaunchCookieIssuer } from './http/launch-cookie.js';
+import { loadLaunchCookieIssuer, wantsLaunchCookie, type LaunchCookieIssuer } from './http/launch-cookie.js';
 import { createForgeWatcherJob } from './tracking/loops.js';
 import { createTaskNudgeJob } from './tracking/task-nudges.js';
 import { createFormDeliveryJob, FormDeliveryDrain } from './facade/services/w2/form-delivery.js';
@@ -274,7 +274,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    * auto-owner arm is live and whose cookie is `required`. Everywhere else the
    * arm is closed (kill switch, multi) or open on the peer alone (`off`).
    */
-  const launchCookie = db && config.disableAutoOwner !== true && config.autoOwnerCookie !== 'off'
+  const launchCookie = db && wantsLaunchCookie(config)
     ? await loadLaunchCookieIssuer(dataDir)
     : undefined;
 
@@ -1074,7 +1074,13 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       // server's own url is one the claimant cannot open. TM8_PUBLIC_ORIGIN is
       // how an operator says where the node actually answers.
       url: config.publicOrigin ?? url,
-      nodeMode: config.nodeMode ?? 'single',
+      // The first-run chooser (after the claim) opens the node on the box.
+      localUrl: url,
+      nodeMode: config.nodeMode ?? 'personal',
+      nodeModeSource: config.nodeModeSource ?? 'default',
+      nodeModeSet: config.nodeModeSet ?? false,
+      deprecatedAlias: config.nodeModeDeprecatedAlias ?? false,
+      launchCookie: launchCookie !== undefined,
       // The claim ceremony credentials the EXISTING owner row, so the row has
       // to exist before the token is advertised. `owner` is the same memoised
       // loopback bootstrap every other path uses.

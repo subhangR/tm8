@@ -6,9 +6,15 @@
  * claims, no second code path and no bypass flag.
  */
 
-import { describe, expect, it } from 'vitest';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { makeHarness, expectCode, SPACE_A } from './harness.js';
 import { toClaimBindings, CLAIM_NAMES } from '../../src/identity/index.js';
+import { loadConfig } from '../../src/http/config.js';
+import { runtimeOf, writeModeFile } from '../../src/identity/node-mode.js';
 
 describe('auto-owner (T-L7)', () => {
   it('first run creates exactly one owner account', async () => {
@@ -99,5 +105,62 @@ describe('auto-owner (T-L7)', () => {
     expect(identity?.value).toBe(ctx.account.identityId);
     // No bypass claim exists to find.
     expect(bindings.some((b) => /bypass|service_role|superuser/.test(b.name))).toBe(false);
+  });
+});
+
+/**
+ * Which node modes keep the arm (doc 14 §5.1, doc 15 §6). The arm is resolved
+ * into `disableAutoOwner` once, at boot, from the mode.
+ */
+describe('auto-owner arm per node mode', () => {
+  let dataDir: string;
+
+  beforeEach(async () => {
+    dataDir = await mkdtemp(join(tmpdir(), 'tm8-auto-owner-mode-'));
+  });
+
+  afterEach(async () => {
+    await rm(dataDir, { recursive: true, force: true });
+  });
+
+  const env = (extra: Record<string, string> = {}) => ({
+    TM8_DATABASE_URL: '',
+    TM8_LAUNCH_BOOTSTRAP: '0',
+    TM8_DATA_DIR: dataDir,
+    ...extra,
+  });
+
+  it('personal keeps the arm', () => {
+    expect(loadConfig(env({ TM8_NODE_MODE: 'personal' })).disableAutoOwner).toBe(false);
+  });
+
+  it('peer keeps the arm — it is still the owner\'s machine', () => {
+    expect(loadConfig(env({ TM8_NODE_MODE: 'peer' })).disableAutoOwner).toBe(false);
+  });
+
+  it('server disables it, from env or from the file', async () => {
+    expect(loadConfig(env({ TM8_NODE_MODE: 'server' })).disableAutoOwner).toBe(true);
+    await writeModeFile(dataDir, 'server');
+    expect(loadConfig(env()).disableAutoOwner).toBe(true);
+  });
+
+  it('the aliases keep today\'s behaviour: single = personal, multi = server', () => {
+    const single = loadConfig(env({ TM8_NODE_MODE: 'single' }));
+    expect(single).toMatchObject({ nodeMode: 'personal', disableAutoOwner: false, nodeModeDeprecatedAlias: true });
+    const multi = loadConfig(env({ TM8_NODE_MODE: 'multi' }));
+    expect(multi).toMatchObject({ nodeMode: 'server', disableAutoOwner: true, nodeModeDeprecatedAlias: true });
+  });
+
+  it('an UPGRADED node — no env, no file — keeps exactly the access unset gave it before modes', () => {
+    // Before modes, unset meant `single`: loopback is the owner. Unset now
+    // reads `personal`, which is the same runtime — claimed or not.
+    const config = loadConfig(env());
+    expect(config).toMatchObject({ nodeMode: 'personal', nodeModeSet: false, disableAutoOwner: false });
+    expect(runtimeOf('personal')).toEqual({ autoOwner: true });
+  });
+
+  it('TM8_DISABLE_AUTO_OWNER can only add restriction, never remove it', () => {
+    expect(loadConfig(env({ TM8_NODE_MODE: 'personal', TM8_DISABLE_AUTO_OWNER: '1' })).disableAutoOwner).toBe(true);
+    expect(loadConfig(env({ TM8_NODE_MODE: 'server', TM8_DISABLE_AUTO_OWNER: '0' })).disableAutoOwner).toBe(true);
   });
 });
