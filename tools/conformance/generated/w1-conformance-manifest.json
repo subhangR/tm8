@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:799fb9059ee25bd812c7f14c9549c0813b00be6c4fee1bb7921e038a41bdb7d0",
+  "catalogDigest": "sha256:89a7173aa0badf0233ebd13818273f789f5ef1142682b1e46ecdf4af7241f395",
   "catalog": {
-    "total": 283,
-    "v1": 281,
+    "total": 286,
+    "v1": 284,
     "reserved": 2,
-    "http": 281,
+    "http": 284,
     "ws": 1,
-    "registerableV1Http": 279,
+    "registerableV1Http": 282,
     "methods": {
       "GET": 91,
-      "POST": 138,
+      "POST": 140,
       "PATCH": 17,
       "DELETE": 18,
-      "PUT": 17,
+      "PUT": 18,
       "WS": 2
     },
     "kinds": {
       "read": 95,
-      "command": 186,
+      "command": 189,
       "stream": 2
     },
-    "uniqueNames": 283,
-    "uniqueBindings": 282
+    "uniqueNames": 286,
+    "uniqueBindings": 285
   },
   "reservedOperations": [
     "search.query",
@@ -414,6 +414,27 @@
         "operation": "spaces.leave",
         "method": "POST",
         "path": "/v2/spaces/:spaceId/leave",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.spacePassword.setRequired",
+        "method": "PUT",
+        "path": "/v2/spaces/:spaceId/space-password",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.members.spacePassword.reset",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/members/:memberId/space-password/reset",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.members.spacePassword.lock",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/members/:memberId/space-password/lock",
         "status": "registered",
         "source": "server-router"
       },
@@ -2385,7 +2406,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 251
+    "unimplementedV1Http": 254
   },
   "schemas": {
     "additive": {
@@ -3051,6 +3072,63 @@
         "intentTags": [
           "spaces",
           "leave"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.spacePassword.setRequired",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.spacePassword.setRequired",
+        "intentTags": [
+          "spaces",
+          "space",
+          "password",
+          "set",
+          "required"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.members.spacePassword.reset",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.members.spacePassword.reset",
+        "intentTags": [
+          "spaces",
+          "members",
+          "space",
+          "password",
+          "reset"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.members.spacePassword.lock",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.members.spacePassword.lock",
+        "intentTags": [
+          "spaces",
+          "members",
+          "space",
+          "password",
+          "lock"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

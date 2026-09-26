@@ -2008,6 +2008,14 @@ export interface AuthSpaceEnterInput {
   spaceId: string;
   /** Free-form label shown in session listings. */
   label?: string;
+  /**
+   * W5 (K2): the member's space password, required when the space has
+   * `requireSpacePassword` on (or the member's login there is locked). A
+   * missing one is refused `forbidden` with `details.reason =
+   * 'space_password_required'`; a wrong or locked one with
+   * `'space_password_rejected'`. Never stored or logged.
+   */
+  spacePassword?: string;
 }
 
 export interface AuthSpaceEnterResult {
@@ -2235,6 +2243,11 @@ export interface AuthInviteSignupInput {
   email?: string;
   /** Defaults to `browser`. `agent` is refused — agent tokens are minted at spawn. */
   kind?: 'browser' | 'cli';
+  /**
+   * W5 (K2): the space password for the space the invite joins. Required when
+   * `auth.invite.resolve` answered `requiresSpacePassword: true`.
+   */
+  spacePassword?: string;
 }
 
 export interface AuthInviteSignupResult {
@@ -3470,6 +3483,11 @@ export interface ResolveInviteInput {
 /** POST /v2/invites/redeem — join as the CURRENT caller. */
 export interface RedeemInviteInput extends CommandContext {
   code: string;
+  /**
+   * W5 (K2): the space password to set when the space requires one and this
+   * account has none there yet. Ignored otherwise; never overwrites a login.
+   */
+  spacePassword?: string;
 }
 
 /** One row of the invite list, as `spaces.settings` and the invite ops project it. */
@@ -3513,7 +3531,56 @@ export type InvitePreview =
       /** The inviter's display name, or `null` when they have never set one. */
       invitedBy: string | null;
       expiresAt: string | null;
+      /** W5 (K2): joining sets a space password; ask for one. */
+      requiresSpacePassword?: boolean;
     };
+
+// ---------------------------------------------------------------------------
+// W5 (K2, decision 30): space passwords — the setting and the admin ops (P5).
+// ---------------------------------------------------------------------------
+
+/**
+ * PUT /v2/spaces/:spaceId/space-password — turn the space's password
+ * requirement on or off. Human space admins only; turning it ON is an owner's
+ * act, refused (409 `space_password_requires_enforce`) unless the node runs
+ * TM8_SPACE_SESSIONS=enforce, and refused while any owner of the space lacks
+ * an active space password. It needs the caller's own space password
+ * (`password`) unless they already have one, so the owner is never locked
+ * out; members without one are refused entry until an admin resets theirs.
+ * Turning it off always works.
+ */
+export interface SpacePasswordSetRequiredInput {
+  required: boolean;
+  password?: string;
+}
+
+/**
+ * `revokedSessionIds`: turning it on ends every browser/cli session pinned to
+ * the space (they were entered without a password); empty when turning it off.
+ */
+export interface SpacePasswordSetRequiredResult {
+  spaceId: SpaceId;
+  requireSpacePassword: boolean;
+  revokedSessionIds: string[];
+}
+
+/** POST /v2/spaces/:spaceId/members/:memberId/space-password/reset — admin sets a new one. */
+export interface SpacePasswordResetInput {
+  password: string;
+}
+
+/** POST /v2/spaces/:spaceId/members/:memberId/space-password/lock — lock or unlock. */
+export interface SpacePasswordLockInput {
+  locked: boolean;
+}
+
+/** What reset and lock answer. `revokedSessionIds`: the member's sessions pinned to the space, ended. */
+export interface SpacePasswordAdminResult {
+  spaceId: SpaceId;
+  memberId: EntityId;
+  status: 'active' | 'locked';
+  revokedSessionIds: string[];
+}
 
 // ---------------------------------------------------------------------------
 // W0 dossier: Space menu and shared settings revision

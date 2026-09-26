@@ -1938,10 +1938,11 @@ export function GateApp(props: GateAppProps = {}) {
           // and the screen names the missing step instead.
           {...(authAccount
             ? {
-                onRedeem: (code: string) =>
+                onRedeem: (code: string, spacePassword?: string) =>
                   data.seam.commands.redeemInvite({
                     code,
                     clientMutationId: newJoinMutationId(),
+                    ...(spacePassword ? { spacePassword } : {}),
                   }),
               }
             : {})}
