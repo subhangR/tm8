@@ -55,7 +55,7 @@ class SpawnDb implements Db {
       } as T;
     }
     if (fn === 'resolve_auth_session') {
-      // 992 (W7p): the spawn port re-resolves the minted token to read its
+      // 256 (W7p): the spawn port re-resolves the minted token to read its
       // via_link stamp. The real mint always resolves; no link here.
       return { sessionId: AUTH_SESSION, viaLinkId: null } as T;
     }

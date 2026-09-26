@@ -43,9 +43,9 @@ vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
 
 // ---------------------------------------------------------------------------
 // THE STRICT GATE'S FULL CALLER SET (lead ruling 2026-09-26 02:08Z/02:19Z).
-// Measured on this branch: 22 credential management (21 + W10a's
-// set_space_credential_visibility, 239) + 6 non-credential + 2
-// W4 session management (249) + 6 spaceLinks writes = 36. A caller not on
+// Measured on this branch: 28 credential management (21 + W10a's
+// set_space_credential_visibility, 239 + W10b's six, 255) + 6 non-credential
+// + 2 W4 session management (249) + 6 spaceLinks writes = 42. A caller not on
 // this list fails; a listed caller
 // that stops calling the gate fails. Changing this list is a review event.
 // ---------------------------------------------------------------------------
@@ -58,7 +58,10 @@ const SESSION_MANAGEMENT = 'session listing/revoke, human-only (W4, 249): refuse
 const SPACE_LINKS = 'spaceLinks write, human-only by design (W6)';
 
 const STRICT_GATE_CALLERS: Readonly<Record<string, string>> = {
-  'create_space_credential(uuid,uuid,text,text,text,text,bytea,bytea,text)': CREDENTIAL_MANAGEMENT,
+  'claim_space_credential(uuid)': CREDENTIAL_MANAGEMENT, // W10b (255, #869)
+  'clear_my_space_credential_default(uuid,text)': CREDENTIAL_MANAGEMENT, // W10b (255, #869)
+  // W10b (255, #869) drops the 9-arg overload for this 12-arg one.
+  'create_space_credential(uuid,uuid,text,text,text,text,bytea,bytea,text,text,boolean,boolean)': CREDENTIAL_MANAGEMENT,
   'delete_account_agent_credential(text)': CREDENTIAL_MANAGEMENT,
   'delete_account_git_credential(text)': CREDENTIAL_MANAGEMENT,
   'delete_account_service_key(text)': CREDENTIAL_MANAGEMENT,
@@ -74,10 +77,14 @@ const STRICT_GATE_CALLERS: Readonly<Record<string, string>> = {
   'set_account_git_credential(text,text,bytea,bytea)': CREDENTIAL_MANAGEMENT,
   'set_account_service_key(text,text,bytea,bytea)': CREDENTIAL_MANAGEMENT,
   'set_node_credential_policy(text,boolean)': CREDENTIAL_MANAGEMENT,
+  'set_my_space_credential_default(uuid)': CREDENTIAL_MANAGEMENT, // W10b (255, #869)
   'set_space_credential_default(uuid)': CREDENTIAL_MANAGEMENT,
+  'set_space_credential_default_consent(uuid,boolean)': CREDENTIAL_MANAGEMENT, // W10b (255, #869)
   'set_space_credential_policy(uuid,text,text[])': CREDENTIAL_MANAGEMENT,
   'set_space_credential_visibility(uuid,text)': CREDENTIAL_MANAGEMENT, // W10a (239, #863)
+  'space_credential_foreign_launches(uuid,integer)': CREDENTIAL_READ, // W10b (255, #869)
   'space_credential_live_sessions(uuid)': CREDENTIAL_MANAGEMENT,
+  'space_credential_usage(uuid,integer)': CREDENTIAL_READ, // W10b (255, #869)
   'start_credential_session(uuid,text,integer,integer)': CREDENTIAL_MANAGEMENT,
   'start_space_credential_login(uuid,text,text,uuid,integer,integer)': CREDENTIAL_MANAGEMENT,
 
@@ -178,7 +185,7 @@ async function mintAgent(): Promise<string> {
 }
 
 async function claimsForToken(token: string, mode: SpaceSessionsMode = 'agents'): Promise<DbClaims> {
-  // 992 (W7p, layer (i)) refuses a `link` session's token on every wire, so
+  // 256 (W7p, layer (i)) refuses a `link` session's token on every wire, so
   // a link token is bound in-process — resolved by hash and mapped by the
   // wire's own `identityFromSession`, as `DbSpaceLinkStore.use` and #884's
   // invoke do. Every other token still goes through the wire resolver. These
@@ -317,13 +324,13 @@ describe('W6 pin — the STRICT gate\'s full caller set (lead ruling 02:08Z; fol
     expect(found).toEqual(Object.keys(STRICT_GATE_CALLERS).sort());
   });
 
-  it('the list is 22 credential management + 6 non-credential + 2 session management + 6 spaceLinks writes', () => {
+  it('the list is 28 credential management + 6 non-credential + 2 session management + 6 spaceLinks writes', () => {
     const labels = Object.values(STRICT_GATE_CALLERS);
-    expect(labels.filter((l) => l === CREDENTIAL_MANAGEMENT || l === CREDENTIAL_READ)).toHaveLength(22);
+    expect(labels.filter((l) => l === CREDENTIAL_MANAGEMENT || l === CREDENTIAL_READ)).toHaveLength(28);
     expect(labels.filter((l) => l === IDENTITY_WIDE || l === AUTH_MINTING || l === PENDING)).toHaveLength(6);
     expect(labels.filter((l) => l === SESSION_MANAGEMENT)).toHaveLength(2);
     expect(labels.filter((l) => l === SPACE_LINKS)).toHaveLength(6);
-    expect(labels).toHaveLength(36);
+    expect(labels).toHaveLength(42);
   });
 
   it('the matcher sees a quoted, mixed-case call and an execute format(...) that names the gate', async () => {
@@ -724,7 +731,7 @@ describe('W6 T17 — leaving or being removed ends the member\'s rows', () => {
 // Keeps sealSecret referenced for readers checking what a1 exercises.
 void sealSecret;
 
-/** A token's identity: a link token in-process (992 refuses it on the wire), any other over the wire resolver. */
+/** A token's identity: a link token in-process (256 refuses it on the wire), any other over the wire resolver. */
 async function resolveToken(token: string): Promise<{ authKind?: string; sessionSpaceId?: string; sessionId?: string }> {
   const session = await resolveBearerIdentity(db, token);
   if (String(session.kind) === 'link') return identityFromSession(session, token, 'agents');
@@ -739,7 +746,7 @@ async function resolveOnWire(token: string): Promise<unknown> {
 }
 
 describe('W6 kind `link` — the resolver, the session view, revoke', () => {
-  it('a stored link token resolves in-process as authKind `link`, pinned to the target space; the wire refuses it (992)', async () => {
+  it('a stored link token resolves in-process as authKind `link`, pinned to the target space; the wire refuses it (256)', async () => {
     const link = await linkAB();
     const use = await store.use(await hClaims(), link.id);
     const identity = await resolveToken(use.token);

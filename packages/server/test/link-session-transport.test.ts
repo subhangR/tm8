@@ -1,5 +1,5 @@
 /**
- * 992 (W7p, deny-by-default, layer (i)): a `link` session's token is refused
+ * 256 (W7p, deny-by-default, layer (i)): a `link` session's token is refused
  * on every wire. Every inbound entry resolves a bearer through ONE closure,
  * `createSessionIdentityResolver` — the HTTP facade, the PUT file upload, the
  * POST clipboard upload, the relay and both WebSocket upgrades

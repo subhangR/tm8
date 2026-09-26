@@ -63,7 +63,7 @@ export class HandlerRegistry {
 
   /**
    * The handler the frame dispatches — the single point every transport's
-   * operation passes through. 992 (W7p, deny-by-default): an identity of
+   * operation passes through. 256 (W7p, deny-by-default): an identity of
    * authKind `link` is refused here on every operation not in
    * `LINK_BEARER_ALLOWED_OPS` (empty), before the handler runs — so before
    * `claimsFor`, any write, mint or rpc. See identity/link-bearer.ts.

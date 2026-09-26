@@ -145,9 +145,17 @@ export class DbSpaceCredentialPort implements SpaceCredentialPort {
     return new Set(ids ?? []);
   }
 
-  async repointSession(auth: GraphAuth, sessionId: string): Promise<SpaceCredentialRepoint> {
+  async myDefaultId(auth: GraphAuth, spaceId: string, provider: SpaceCredentialProvider): Promise<string | null> {
+    return this.store.myDefaultId(auth as DbClaims, spaceId, provider);
+  }
+
+  async repointSession(
+    auth: GraphAuth,
+    sessionId: string,
+    providers?: readonly SpaceCredentialProvider[],
+  ): Promise<SpaceCredentialRepoint> {
     try {
-      const result = await this.store.repointSession(auth as DbClaims, sessionId);
+      const result = await this.store.repointSession(auth as DbClaims, sessionId, providers);
       return { ok: true, credentials: result.credentials };
     } catch (error) {
       if (error instanceof CollabError && error.details?.sqlstate === '23514') {

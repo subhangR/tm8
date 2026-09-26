@@ -66,6 +66,8 @@ class FakeSpacePort implements SpaceCredentialPort {
   active = new Set<string>([ANT, OAI]);
   /** Recorded launcher per session, as session_space_credentials holds it. */
   readonly launcher = new Map<string, string>();
+  /** The providers each repoint named (R13); null = the one-argument form. */
+  readonly repointProviders: Array<SpaceCredentialProvider[] | null> = [];
   readonly recorded = new Map<string, Array<{ provider: SpaceCredentialProvider; spaceCredentialId: string }>>();
   /** Flip a credential to inactive when this call count of activeIds is reached. */
   revokeOnActiveIds: string | null = null;
@@ -127,8 +129,17 @@ class FakeSpacePort implements SpaceCredentialPort {
     return new Set(ids.filter((id) => this.active.has(id)));
   }
 
-  async repointSession(auth: GraphAuth, sessionId: string): Promise<SpaceCredentialRepoint> {
+  async repointSession(
+    auth: GraphAuth,
+    sessionId: string,
+    providers?: readonly SpaceCredentialProvider[],
+  ): Promise<SpaceCredentialRepoint> {
     this.events.push(`repoint:${this.who(auth)}`);
+    this.repointProviders.push(providers ? [...providers] : null);
+    // R13 (255): rows for a provider this resume no longer runs on are dropped first.
+    if (providers) {
+      this.recorded.set(sessionId, (this.recorded.get(sessionId) ?? []).filter((r) => providers.includes(r.provider)));
+    }
     const rows = this.recorded.get(sessionId) ?? [];
     if (rows.some((r) => !this.active.has(r.spaceCredentialId))) return { ok: false, reason: 'inactive' };
     this.launcher.set(sessionId, this.who(auth));
@@ -297,6 +308,29 @@ describe('SC-2 spawn/resume ordering around a space credential', () => {
     expect(graph.transitions.at(-1)?.status).toBe('failed');
   });
 
+  it('R14: a spawn that fails after its agent token was issued revokes that token; a clean spawn does not', async () => {
+    const revoked: string[] = [];
+    (graph as { revokeWorkSessionAgentToken?: (auth: unknown, id: string) => Promise<void> })
+      .revokeWorkSessionAgentToken = async (_auth, id) => {
+        revoked.push(id);
+        // A failing revoke is logged; it never replaces the spawn's own error.
+        throw new Error('revoke failed');
+      };
+    const port = new FakeSpacePort(events, new Set(['identity-A']));
+    port.revokeOnActiveIds = OAI;
+    spyPty();
+    const error = await service(port)
+      .spawn(A, { spaceId: SPACE_ID, teamMemberId: TEAMMATE_OF_B, model: 'gpt-5.5', agentTool: 'codex', credentialSources: { openai: 'space' } })
+      .then(() => null, (e: unknown) => e);
+    expect((error as SpawnError).message).toContain('was deleted, disabled or made private');
+    expect(revoked).toEqual([graph.manifests[0]!.sessionId]);
+    // Positive: the same service, a usable credential — nothing revoked.
+    revoked.length = 0;
+    const ok = new FakeSpacePort(events, new Set(['identity-A']));
+    await service(ok).spawn(A, { spaceId: SPACE_ID, teamMemberId: TEAMMATE_OF_B, model: 'gpt-5.5', agentTool: 'codex', credentialSources: { openai: 'space' } });
+    expect(revoked).toEqual([]);
+  });
+
   it('t2-8 / M7 (unit): a delete between record and PTY start kills the session and scrubs its key', async () => {
     const port = new FakeSpacePort(events, new Set(['identity-A']));
     port.revokeOnActiveIds = OAI;
@@ -440,7 +474,7 @@ describe('SC-2 spawn/resume ordering around a space credential', () => {
       expect(spawnIfAbsent).not.toHaveBeenCalled();
     });
 
-    it('A8: a manifest re-recorded without a space source resumes off the manifest; a leftover ssc row is never read, re-pointed or injected', async () => {
+    it('A8: a manifest re-recorded without a space source resumes off the manifest; a leftover ssc row is never read or injected, and is dropped (R13)', async () => {
       const port = new FakeSpacePort(events, new Set(['identity-A', 'identity-B']));
       launchedByB(port);
       // 206 leaves the session_space_credentials row behind when the manifest
@@ -450,11 +484,15 @@ describe('SC-2 spawn/resume ordering around a space credential', () => {
       port.active.delete(ANT);
       const { spawnIfAbsent } = spyPty();
       await service(port).resume(A, { sessionId: SESSION_ID });
-      expect(events.some((e) => e.startsWith('repoint:'))).toBe(false);
+      // R13: the leftover row is dropped (repoint with no providers), never
+      // re-pointed to A: left behind, it would name B and a dead credential,
+      // and the R8 sweep would kill this resumed session over it.
+      expect(events.filter((e) => e.startsWith('repoint:'))).toEqual(['repoint:identity-A']);
+      expect(port.repointProviders).toEqual([[]]);
+      expect(port.recorded.get(SESSION_ID)).toEqual([]);
       expect(events.some((e) => e.startsWith('read:anthropic'))).toBe(false);
       const env = spawnIfAbsent.mock.calls[0]![0].env as Record<string, string>;
       expect(env.ANTHROPIC_API_KEY).not.toBe(ANT_KEY);
-      expect(port.launcher.get(SESSION_ID)).toBe('identity-B');
     });
 
     it('B (launcher) resuming keeps B; the recorded launcher is always the resumer', async () => {
@@ -465,7 +503,7 @@ describe('SC-2 spawn/resume ordering around a space credential', () => {
       expect(port.launcher.get(SESSION_ID)).toBe('identity-B');
     });
 
-    it('M4: a session recorded on auto resumes on auto WITHOUT newly picking the space default, even with one available', async () => {
+    it('M4: a session recorded on auto resumes on auto WITHOUT newly picking the space default, even with one available (R13 drops nothing-left rows)', async () => {
       const port = new FakeSpacePort(events, new Set(['identity-A', 'identity-B']));
       graph.resumeInfo = { ...INFO };
       // Launched on auto, landed on the node: nothing space in the manifest.
@@ -475,7 +513,9 @@ describe('SC-2 spawn/resume ordering around a space credential', () => {
       // The space default (ANT) is readable by A, yet resume never asks for it:
       // a credential picked now would have no ssc row for containment (D7).
       expect(events.some((e) => e.startsWith('read:'))).toBe(false);
-      expect(events.some((e) => e.startsWith('repoint:'))).toBe(false);
+      // R13: the only repoint is the one that drops rows for no provider.
+      expect(events.filter((e) => e.startsWith('repoint:'))).toEqual(['repoint:identity-A']);
+      expect(port.repointProviders).toEqual([[]]);
       const env = spawnIfAbsent.mock.calls[0]![0].env as Record<string, string>;
       expect(env.ANTHROPIC_API_KEY).not.toBe(ANT_KEY);
       expect(env.CLAUDE_CONFIG_DIR ?? '').not.toContain(join('credentials', 'sessions'));

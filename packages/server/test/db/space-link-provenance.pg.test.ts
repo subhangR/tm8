@@ -1,5 +1,5 @@
 /**
- * W7p — link provenance (migration 992). The DB half of: a session minted under
+ * W7p — link provenance (migration 256). The DB half of: a session minted under
  * a space link carries `via_link_id`, never reads the linking human's own
  * credentials, and ends when the link does.
  *
@@ -82,7 +82,7 @@ async function claimsForToken(token: string, spaceSessions: 'agents' | 'off' = '
 
 /**
  * A link session's claims, built in-process from `DbSpaceLinkStore.use`'s own
- * resolution — the shape #884's invoke binds. 992 (W7p, layer (i)) refuses a
+ * resolution — the shape #884's invoke binds. 256 (W7p, layer (i)) refuses a
  * link token on every wire, so `claimsForToken` cannot produce these.
  */
 function inProcessClaims(session: ResolvedAuthSession, token: string): DbClaims {
@@ -261,7 +261,7 @@ async function linked(who: 'H' | 'H3' | 'H4' = 'H'): Promise<Linked> {
 }
 
 /**
- * The claims a first via_link child is minted under. 992 (W7p, Q4) refuses a
+ * The claims a first via_link child is minted under. 256 (W7p, Q4) refuses a
  * `link` session in BOTH agent mints, and every other path to a via_link
  * stamp needs a child that already exists (a grandchild, a resume), so the
  * fixture mints through the link-bound NON-link branch of
@@ -558,7 +558,7 @@ describe('W7p 206 — each predicate of the link admission refuses on its own', 
 });
 
 // Lead ruling Q-a (A): allow_spawn = false gates EVERY new mint under the
-// link — a child's spawn and a resume alike — through 992's live_link_session.
+// link — a child's spawn and a resume alike — through 256's live_link_session.
 // Nothing already running is ended by it; revoke is what ends sessions. Every
 // `linked()` is the same A -> B link entity, so each cell switches it back on.
 describe("W7p 206 on 239's body — the private-owner gate survives the link admission", () => {
@@ -779,7 +779,7 @@ describe('W7p end paths — every way a link ends, ends its descendants', () => 
     await expectEnded(ids);
   });
 
-  it('stale unreachable — the link session stays live, its descendants end (992\'s trigger)', async () => {
+  it('stale unreachable — the link session stays live, its descendants end (256\'s trigger)', async () => {
     const L = await linked();
     const ids = await family(L);
     await db.rpc(L.human, 'mark_space_link_stale', [L.link.id, 'unreachable']);

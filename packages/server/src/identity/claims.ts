@@ -49,7 +49,7 @@ export interface ClaimBinding {
  * membership claim — it only ever NARROWS what the membership rows grant (every
  * helper intersects with it), so a stale value can refuse, never admit.
  *
- * `viaLinkId` is the seventh (992, W7p), on the same test: `auth_sessions.
+ * `viaLinkId` is the seventh (256, W7p), on the same test: `auth_sessions.
  * via_link_id` is written once by the issuing RPC and no verb updates it. It
  * only NARROWS — a link-bound caller is refused credential reads — so a stale
  * value can refuse, never admit.

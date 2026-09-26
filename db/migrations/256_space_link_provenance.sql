@@ -1,6 +1,6 @@
 -- =============================================================================
--- 992 (PLACEHOLDER ordinal — set at the merge position as main + own delta;
--- no placeholder survives into the READY head) — W7p, link provenance
+-- 256 (set at the merge position after #869's 255; was placeholder 992)
+-- — W7p, link provenance
 -- (plan 01a0d9eb W7; lead plan (a); coordinator brief 01a0ddc6-ae07).
 --
 -- THE PROBLEM. A `link` session (250/251) acts in the target space as the
@@ -74,7 +74,7 @@ create index auth_sessions_via_link_idx
   where via_link_id is not null;
 
 comment on column public.auth_sessions.via_link_id is
-  'W7p (992): the space link this session descends from — the link session '
+  'W7p (256): the space link this session descends from — the link session '
   'itself and every agent session minted under it. Bound as tm8.via_link.';
 
 -- -----------------------------------------------------------------------------

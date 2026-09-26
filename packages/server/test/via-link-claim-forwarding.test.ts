@@ -1,5 +1,5 @@
 /**
- * 992 (W7p): every claims builder that forwards the space pin forwards the
+ * 256 (W7p): every claims builder that forwards the space pin forwards the
  * link too.
  *
  * `tm8.via_link` is what 093, 206, 083's credential index and
@@ -45,7 +45,7 @@ const builders = sourceFiles(SRC)
   .map((path) => relative(SRC, path))
   .sort();
 
-describe('via_link claim forwarding (992, W7p)', () => {
+describe('via_link claim forwarding (256, W7p)', () => {
   it('names the exact set of files that set the space pin', () => {
     // A new builder lands here first, so it is looked at rather than passed.
     expect(builders).toEqual([

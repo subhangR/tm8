@@ -132,7 +132,7 @@ describe('one identity path (R2 / claims contract)', () => {
     // 227 (plan W0a): the space an agent session is pinned to. Caller
     // identity, not a side channel — it narrows what identity_id may reach.
     'session_space_id',
-    // 992 (W7p): the space link the auth session descends from. Caller
+    // 256 (W7p): the space link the auth session descends from. Caller
     // identity, not a side channel — it only narrows (credential reads refuse
     // it), and like session_space_id only db/client.ts may bind it.
     'via_link',

@@ -504,7 +504,7 @@ describe('W1 honest W2-only skeletons', () => {
     expect(registry.get('messages.post')).toBeTypeOf('function');
     // And bound to something that is NOT the old skeleton. Registering a
     // handler that still refused with not_implemented would satisfy the line
-    // above and mean nothing. 992 (W7p): `get` returns a fresh link-bearer
+    // above and mean nothing. 256 (W7p): `get` returns a fresh link-bearer
     // wrapper on every call, so the identity check reads the registered
     // handlers — two wrappers would never compare equal.
     const registered = (registry as unknown as { handlers: Map<string, unknown> }).handlers;

@@ -75,7 +75,7 @@ export function createSessionIdentityResolver(
     const raw = authorization || cookie;
     if (raw.startsWith(TOKEN_PREFIX)) {
       const session = await resolveBearerIdentity(db, raw);
-      // 992 (W7p, layer (i)): a `link` session's token is never accepted on
+      // 256 (W7p, layer (i)): a `link` session's token is never accepted on
       // a wire — every transport resolves through this closure. It is refused
       // HERE, not in the shared `resolveBearerIdentity`, which
       // `DbSpaceLinkStore.use` calls in-process. No allow-list, ever. See
@@ -134,7 +134,7 @@ export function identityFromSession(
     // 226/227. The space the session was minted for, off the same
     // verified row. Every membership helper intersects with it.
     ...(sessionSpaceId ? { sessionSpaceId } : {}),
-    // 992 (W7p). Off the same verified row; NOT gated by the spaces mode —
+    // 256 (W7p). Off the same verified row; NOT gated by the spaces mode —
     // it only narrows, and `off` must not un-bind a link.
     ...(session.viaLinkId ? { viaLinkId: session.viaLinkId } : {}),
   };

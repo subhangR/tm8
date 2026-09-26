@@ -1,5 +1,5 @@
 /**
- * 992 (W7p, lead ruling A' and its deny-by-default ruling): a `link` session
+ * 256 (W7p, lead ruling A' and its deny-by-default ruling): a `link` session
  * does nothing on its own bearer.
  *
  * A space link's stored session is the linking human's full membership of the

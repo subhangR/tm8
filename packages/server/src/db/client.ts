@@ -118,7 +118,7 @@ function claimValue(value: string | undefined): string {
  * membership helper intersects with it, so the owner's full identity is
  * narrowed to that space. Immutable for the session's life, like `kind`.
  *
- * `tm8.via_link` — the SEVENTH claim (992, W7p). The space link a `link`
+ * `tm8.via_link` — the SEVENTH claim (256, W7p). The space link a `link`
  * session, or an agent session minted under one, descends from
  * (`auth_sessions.via_link_id`). Written once by the issuing RPC, like the
  * two above; `internal.link_bound()` reads it.
@@ -430,7 +430,7 @@ export class PgDb implements Db {
         claimValue(claims.authKind),
         // Absent binds as `''`: unpinned, every helper answers as before 227.
         claimValue(claims.sessionSpaceId),
-        // 992 (W7p). Absent binds as `''`: not link-bound.
+        // 256 (W7p). Absent binds as `''`: not link-bound.
         claimValue(claims.viaLinkId),
         this.role,
       ]);

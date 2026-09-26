@@ -1,5 +1,5 @@
 /**
- * 992 (W7p, lead ruling A' and deny-by-default): a `link` session does nothing
+ * 256 (W7p, lead ruling A' and deny-by-default): a `link` session does nothing
  * on its own bearer. Two layers are celled here, each on its own:
  *
  * - Layer (ii), the registry: `HandlerRegistry.get` — the handler the frame

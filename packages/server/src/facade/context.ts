@@ -98,7 +98,7 @@ export function claimsFor(
     ...(ctx.identity?.authKind ? { authKind: ctx.identity.authKind } : {}),
     // 227. Forwarded exactly like authKind: only the resolver sets it.
     ...(sessionSpaceId ? { sessionSpaceId } : {}),
-    // 992 (W7p). Forwarded exactly like sessionSpaceId; dropping it fails open.
+    // 256 (W7p). Forwarded exactly like sessionSpaceId; dropping it fails open.
     ...(ctx.identity?.viaLinkId ? { viaLinkId: ctx.identity.viaLinkId } : {}),
   };
 }

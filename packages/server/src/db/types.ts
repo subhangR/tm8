@@ -69,7 +69,7 @@ export interface DbClaims {
    */
   readonly sessionSpaceId?: string | undefined;
   /**
-   * → `SET LOCAL tm8.via_link`. The seventh claim (992, W7p): the space link
+   * → `SET LOCAL tm8.via_link`. The seventh claim (256, W7p): the space link
    * the auth session descends from, from `auth_sessions.via_link_id` — set on
    * a `link` session and on every agent session minted under one. When set,
    * the git and model credential reads refuse and a spawn takes only the

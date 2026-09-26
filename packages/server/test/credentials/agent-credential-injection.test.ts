@@ -353,7 +353,7 @@ describe('DbAgentCredentialHome', () => {
   });
 
   /**
-   * 992 (W7p): a link-bound caller never runs on the linking human's model
+   * 256 (W7p): a link-bound caller never runs on the linking human's model
    * login. In Postgres the restrictive policy already hides the row, which
    * masks this guard; the stub answers WITH the row, as a database missing
    * that policy would, so this cell is the guard's own red.

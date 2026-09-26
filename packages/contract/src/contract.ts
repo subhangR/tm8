@@ -2552,7 +2552,19 @@ export interface SpaceCredentialView {
   updatedAt: string;
   lastUsedAt: string | null;
   lastProbeAt: string | null;
+  /**
+   * Doc 13 §7 (W10a/W10b). Null = space-owned. The server always sets these
+   * three; they are optional only so a view built before them still types.
+   */
+  ownerAccountId?: string | null;
+  /** `private`: only the owner may launch on it. Space-owned is always `public`. */
+  visibility?: SpaceCredentialVisibilityName;
+  /** An owned public credential's consent to be the space default. */
+  mayBeSpaceDefault?: boolean;
 }
+
+/** Who may launch on a space credential (doc 13 §3a). */
+export type SpaceCredentialVisibilityName = 'private' | 'public';
 
 /** `credentials.space.list`. Revoked tombstones are not listed. */
 export interface CredentialsSpaceListView {
@@ -2570,7 +2582,73 @@ export interface CredentialsSpaceCreateInput {
   shape: 'api_key' | 'token';
   label: string;
   secret: string;
+  /**
+   * E1: an owned credential's visibility, OR `spaceOwned: true` — never both.
+   * Neither keeps the pre-W10b contract: space-owned, public, and claimable
+   * by its creator. The contract never takes an account id (I1): the owner
+   * is always the caller.
+   */
+  visibility?: SpaceCredentialVisibilityName;
+  spaceOwned?: boolean;
+  /** An owned public credential may also be the space default (§3e). */
+  mayBeSpaceDefault?: boolean;
   clientMutationId?: string;
+}
+
+/**
+ * `credentials.space.setVisibility` — the owner only; a space-owned credential
+ * has no visibility to change. Going private clears both default flags in the
+ * same statement and kills every live session another member launched on it.
+ */
+export interface CredentialsSpaceSetVisibilityInput {
+  visibility: SpaceCredentialVisibilityName;
+  clientMutationId?: string;
+}
+
+export interface CredentialsSpaceSetVisibilityResult {
+  credential: SpaceCredentialView;
+  terminatedAgentSessionIds: string[];
+  failures: Array<{ sessionId: string; reason: string }>;
+}
+
+/**
+ * `credentials.space.spaceDefaultConsent` — the owner allows (or withdraws)
+ * their public credential as the space default. Withdrawing clears the
+ * space default in the same statement.
+ */
+export interface CredentialsSpaceDefaultConsentInput {
+  allowed: boolean;
+  clientMutationId?: string;
+}
+
+/** `credentials.space.myDefault.set|clear` — the caller's own default, per space and provider. */
+export interface CredentialsSpaceMyDefaultResult {
+  spaceId: string;
+  provider: SpaceCredentialProviderName;
+  credentialId: string | null;
+}
+
+/** How a launch picked its space credential (§6c); null on rows recorded before it. */
+export type SpaceCredentialPickName = 'pinned' | 'my_default' | 'space_default';
+
+/**
+ * `credentials.space.usage` — launches on a credential: the owner; admins too
+ * for a public or space-owned one.
+ */
+export interface CredentialsSpaceUsageView {
+  credentialId: string;
+  sessions: Array<{
+    workSessionId: string;
+    provider: SpaceCredentialProviderName;
+    source: SpaceCredentialPickName | null;
+    credentialId: string;
+    ownerAccountId: string | null;
+    launcherAccountId: string | null;
+    agentSessionId: string | null;
+    status: string;
+    recordedAt: string;
+    updatedAt: string;
+  }>;
 }
 
 /** `credentials.space.rekey` — creator or space admin; the next spawn uses it (D7). */

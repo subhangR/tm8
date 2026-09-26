@@ -132,7 +132,7 @@ async function mintAgentRuntime(): Promise<string> {
 
 /** The production identity resolver's answer for a bearer string. */
 async function identityForToken(token: string, mode: SpaceSessionsMode = 'agents'): Promise<RequestIdentity> {
-  // 992 (W7p, layer (i)) refuses a `link` session's token on every wire, so
+  // 256 (W7p, layer (i)) refuses a `link` session's token on every wire, so
   // a link token is bound in-process — resolved by hash and mapped by the
   // wire's own `identityFromSession`, as `DbSpaceLinkStore.use` and #884's
   // invoke do. Every other token still goes through the wire resolver. These
@@ -852,6 +852,53 @@ describe('W10a (T35/T36/T44) agent G and private credentials in A — refused by
       .then((row) => (row.entity?.id ?? row.id)!);
     const token = await mintBrowser(fixture.accountH, fixture.identityH);
     expect(await outcome(() => asToken(token, (q) => q.rpc('delete_entity', [doc])))).toBe('ok');
+  });
+});
+
+describe('W10b (a1/T37) agent G cannot create, make public, rekey or revoke a credential in A — refused by kind', () => {
+  // Every writer is require_human_auth_kind first, so G is refused even on
+  // H's own credential; the paired positive is H's browser token on the same
+  // row. Ciphertext and hint are fakes of the right shape.
+  const fakeCreate = (id: string, visibility: string | null) => [
+    id, fixture.spaceA, 'anthropic', 'api_key', `w10b ${id.slice(0, 8)}`, 'Fk0y',
+    Buffer.alloc(17, 7), Buffer.alloc(12, 3), null, visibility, null, false,
+  ];
+  let ownedByH: string;
+  beforeAll(async () => {
+    ownedByH = randomUUID();
+    await asIdentity(fixture.identityH, (q) => q.rpc('create_space_credential', fakeCreate(ownedByH, 'private')));
+  });
+
+  for (const [kind, mint] of AGENT_KINDS) {
+    it(`${kind}: create (public, private) is refused`, async () => {
+      const token = await mint();
+      for (const visibility of ['public', 'private']) {
+        expect(await outcome(() => asToken(token, (q) =>
+          q.rpc('create_space_credential', fakeCreate(randomUUID(), visibility))))).toBe('42501');
+      }
+    });
+    it(`${kind}: setVisibility(public), rekey, consent and revoke of H's own credential are refused`, async () => {
+      const token = await mint();
+      expect(await outcome(() => asToken(token, (q) =>
+        q.rpc('set_space_credential_visibility', [ownedByH, 'public'])))).toBe('42501');
+      expect(await outcome(() => asToken(token, (q) =>
+        q.rpc('rekey_space_credential', [ownedByH, 'Fk0z', Buffer.alloc(17, 9), Buffer.alloc(12, 4), null])))).toBe('42501');
+      expect(await outcome(() => asToken(token, (q) =>
+        q.rpc('set_space_credential_default_consent', [ownedByH, true])))).toBe('42501');
+      expect(await outcome(() => asToken(token, (q) => q.rpc('delete_space_credential', [ownedByH])))).toBe('42501');
+    });
+  }
+  it('positive — H (browser) creates, makes public, re-keys, consents and revokes the same row', async () => {
+    const token = await mintBrowser(fixture.accountH, fixture.identityH);
+    expect(await outcome(() => asToken(token, (q) =>
+      q.rpc('create_space_credential', fakeCreate(randomUUID(), 'public'))))).toBe('ok');
+    expect(await outcome(() => asToken(token, (q) =>
+      q.rpc('set_space_credential_visibility', [ownedByH, 'public'])))).toBe('ok');
+    expect(await outcome(() => asToken(token, (q) =>
+      q.rpc('rekey_space_credential', [ownedByH, 'Fk0z', Buffer.alloc(17, 9), Buffer.alloc(12, 4), null])))).toBe('ok');
+    expect(await outcome(() => asToken(token, (q) =>
+      q.rpc('set_space_credential_default_consent', [ownedByH, true])))).toBe('ok');
+    expect(await outcome(() => asToken(token, (q) => q.rpc('delete_space_credential', [ownedByH])))).toBe('ok');
   });
 });
 
@@ -2256,7 +2303,7 @@ const RESOLVE_AUTH_SESSION_KEYS = [
   'accountId', 'actingAsTeamMemberId', 'displayName', 'expiresAt', 'identityId', 'isNodeAdmin',
   'isOwner', 'kind', 'label', 'runtimeChatId', 'runtimeMemberId', 'runtimeThreadRootId',
   'sessionId', 'spaceId', 'username', 'viaLinkId', 'workSessionId',
-]; // + viaLinkId (992, W7p): the link a session descends from; null on both rows here.
+]; // + viaLinkId (256, W7p): the link a session descends from; null on both rows here.
 const RESOLVE_ACCOUNT_CREDENTIAL_KEYS = [
   'accountId', 'disabledAt', 'identityId', 'isNodeAdmin', 'isOwner', 'passwordAlgorithm',
   'passwordHash', 'status', 'username',
@@ -3739,7 +3786,7 @@ describe.sequential('W6 space links — H\'s link session A → B', () => {
   beforeAll(ensureHLink);
 
   it('the stored session is kind link, pinned to B', async () => {
-    // Resolved in-process, as `DbSpaceLinkStore.use` does: 992 (W7p) refuses a
+    // Resolved in-process, as `DbSpaceLinkStore.use` does: 256 (W7p) refuses a
     // link session's token on every wire (identity-resolver.ts), so the bare
     // wire resolver answers 42501 for the same token.
     expect(await resolveBearerIdentity(db, hLinkToken))

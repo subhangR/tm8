@@ -73,7 +73,8 @@ import type {
   CredentialPolicySource, CredentialsSpaceCommandInput, CredentialsSpaceCreateInput,
   CredentialsSpaceDeleteResult, CredentialsSpaceListView, CredentialsSpacePolicySetInput,
   CredentialsSpacePolicySetResult, CredentialsSpacePolicyView, CredentialsSpaceRekeyInput,
-  CredentialsSpaceRenameInput, NodeCredentialPolicyEntry, NodeCredentialStatusEntry,
+  CredentialsSpaceRenameInput, CredentialsSpaceSetVisibilityInput, CredentialsSpaceDefaultConsentInput,
+  NodeCredentialPolicyEntry, NodeCredentialStatusEntry,
   NodeCredentialsPolicySetInput, NodeCredentialsStatusView, NodeMetricsView, SpaceCredentialPolicyEntry,
   SpaceCredentialProviderName, SpaceCredentialShape, SpaceCredentialStatus, SpaceCredentialView,
   CustomEntityKind, CustomFieldDef, CustomFieldValue, DeleteMessageInput,
@@ -2177,6 +2178,9 @@ export const SpaceCredentialViewSchema: z.ZodType<SpaceCredentialView> = z.objec
   updatedAt: z.string(),
   lastUsedAt: z.string().nullable(),
   lastProbeAt: z.string().nullable(),
+  ownerAccountId: z.string().nullable().optional(),
+  visibility: z.enum(['private', 'public']).optional(),
+  mayBeSpaceDefault: z.boolean().optional(),
 }).strict();
 
 export const CredentialsSpaceListViewSchema: z.ZodType<CredentialsSpaceListView> = z.object({
@@ -2189,13 +2193,33 @@ export const CredentialsSpaceCreateInputSchema: z.ZodType<CredentialsSpaceCreate
   shape: z.enum(['api_key', 'token']),
   label: SpaceCredentialLabelSchema,
   secret: SpaceCredentialSecretSchema,
+  visibility: z.enum(['private', 'public']).optional(),
+  spaceOwned: z.boolean().optional(),
+  mayBeSpaceDefault: z.boolean().optional(),
   clientMutationId: z.string().min(1).optional(),
 }).strict().refine(
   // 206's provider/shape CHECK, stated here so the refusal names the rule
   // instead of arriving as a constraint violation after the vendor probe.
   (input) => (input.provider === 'github') === (input.shape === 'token'),
   { message: 'github takes a token; anthropic and openai take an api_key', path: ['shape'] },
+).refine(
+  // E1, stated before the probe: an owner's visibility or space-owned, not both.
+  (input) => !(input.spaceOwned === true && input.visibility !== undefined),
+  { message: 'a credential is either space-owned or has a visibility, not both', path: ['spaceOwned'] },
+).refine(
+  (input) => input.mayBeSpaceDefault !== true || input.visibility === 'public',
+  { message: 'only an owned public credential takes mayBeSpaceDefault', path: ['mayBeSpaceDefault'] },
 );
+
+export const CredentialsSpaceSetVisibilityInputSchema: z.ZodType<CredentialsSpaceSetVisibilityInput> = z.object({
+  visibility: z.enum(['private', 'public']),
+  clientMutationId: z.string().min(1).optional(),
+}).strict();
+
+export const CredentialsSpaceDefaultConsentInputSchema: z.ZodType<CredentialsSpaceDefaultConsentInput> = z.object({
+  allowed: z.boolean(),
+  clientMutationId: z.string().min(1).optional(),
+}).strict();
 
 export const CredentialsSpaceRekeyInputSchema: z.ZodType<CredentialsSpaceRekeyInput> = z.object({
   secret: SpaceCredentialSecretSchema,

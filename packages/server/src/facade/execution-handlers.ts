@@ -363,7 +363,7 @@ export class DbGraphPort implements GraphPort {
   }
 
   /**
-   * 992 (W7p): a `link` session, or an agent minted under one — read off the
+   * 256 (W7p): a `link` session, or an agent minted under one — read off the
    * verified auth-session row (`createSessionIdentityResolver`), never from
    * the client — OR a launch whose freshly minted session carries the
    * via_link stamp: a non-link member resuming a work session that ran under
@@ -1110,6 +1110,10 @@ export class DbGraphPort implements GraphPort {
       throw fail('upstream_unavailable', 'work-session token mint returned no auth session id');
     }
     return formatToken(row.id, secret);
+  }
+
+  async revokeWorkSessionAgentToken(auth: GraphAuth, sessionId: string): Promise<void> {
+    await this.db.rpc(this.claims(auth), 'public.revoke_agent_auth_session', [sessionId]);
   }
 
   async recordManifest(
@@ -3051,7 +3055,7 @@ function registerHandlers(
     const owner = await resolveOwner();
     const envelope = commandEnvelope(ctx);
     const claims = claimsFor(owner, ctx, envelope);
-    // 992 (W7p, ruling A'): a link session launches nothing, before anything
+    // 256 (W7p, ruling A'): a link session launches nothing, before anything
     // is read or written. See identity/link-bearer.ts.
     refuseLinkBearer(claims);
 
@@ -3258,7 +3262,7 @@ function registerHandlers(
     const owner = await resolveOwner();
     const envelope = commandEnvelope(ctx);
     const claims = claimsFor(owner, ctx, envelope);
-    // 992 (W7p, ruling A', layer (iii)): nor dispatches — a dispatch derives a
+    // 256 (W7p, ruling A', layer (iii)): nor dispatches — a dispatch derives a
     // task and may spawn the dispatcher, both before any credential read would
     // refuse it. Defence in depth behind the wire and registry refusals; see
     // identity/link-bearer.ts.
@@ -3348,7 +3352,7 @@ function registerHandlers(
     const owner = await resolveOwner();
     const envelope = commandEnvelope(ctx);
     const claims = claimsFor(owner, ctx, envelope);
-    // 992 (W7p, ruling A'): nor resumes anything. See identity/link-bearer.ts.
+    // 256 (W7p, ruling A'): nor resumes anything. See identity/link-bearer.ts.
     refuseLinkBearer(claims);
     const resumeInput = ctx.body as ExecutionResumeInput;
     const result = await rethrowing(() =>

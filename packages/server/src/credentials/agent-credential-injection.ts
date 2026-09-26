@@ -185,8 +185,8 @@ export class DbAgentCredentialHome implements AgentCredentialHomePort {
     // No identity means no RLS-visible row anyway; asking would be a pointless
     // round trip whose only possible answer is "none".
     if (!claims?.identityId) return null;
-    // 992 (W7p): a link-bound caller never runs on the linking human's own
-    // model login. `resolveLinkBoundCredentials` never asks, and 992's
+    // 256 (W7p): a link-bound caller never runs on the linking human's own
+    // model login. `resolveLinkBoundCredentials` never asks, and 256's
     // restrictive policy hides the row; this is the third layer, with the same
     // answer the policy gives. The `authKind === 'link'` half is not live in
     // #898 — a link session is refused on every wire, by the registry on every

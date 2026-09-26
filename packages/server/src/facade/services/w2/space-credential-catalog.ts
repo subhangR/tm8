@@ -17,6 +17,9 @@ import { CollabError } from '@tm8/contract';
 import type {
   CredentialPolicySource,
   CredentialsSpaceDeleteResult,
+  CredentialsSpaceMyDefaultResult,
+  CredentialsSpaceSetVisibilityResult,
+  CredentialsSpaceUsageView,
   CredentialsSpaceListView,
   CredentialsSpacePolicySetResult,
   CredentialsSpacePolicyView,
@@ -57,6 +60,12 @@ type SpaceCredentialStorePort = Pick<
   | 'setDefault'
   | 'revoke'
   | 'setVisibility'
+  | 'setSpaceDefaultConsent'
+  | 'claim'
+  | 'setMyDefault'
+  | 'clearMyDefault'
+  | 'usage'
+  | 'foreignLaunches'
   | 'liveSessions'
   | 'finishLogin'
   | 'readSpacePolicy'
@@ -80,6 +89,15 @@ export interface SpaceCredentialCatalogOptions {
    */
   removeLoginHome?: (home: SpaceCredentialHomeKey) => Promise<void>;
   /**
+   * The narrow login-home scrub (R1/R17 ruling): remove the transcripts of
+   * these non-owner launches from a PRIVATE login credential's shared home,
+   * and nothing else. Returns how many files went. Absent, nothing is removed.
+   */
+  scrubForeignLaunches?: (
+    home: SpaceCredentialHomeKey,
+    launches: ReadonlyArray<{ workSessionId: string; nativeSessionId: string | null }>,
+  ) => Promise<number>;
+  /**
    * Close one login terminal onto the (now revoked) credential: kill it, and
    * only then `finish_space_credential_login(ws, false)`. SC-4's login
    * registry provides it, so a terminal this node started is closed through
@@ -88,6 +106,18 @@ export interface SpaceCredentialCatalogOptions {
   closeLogin?: (claims: DbClaims, workSessionId: string) => Promise<'closed' | 'kill_failed'>;
   /** The server environment, read for one boolean per provider. Never forwarded. */
   env?: Readonly<Record<string, string | undefined>>;
+  /**
+   * R9 (W10c's port): close every open attach/watch stream the credential no
+   * longer permits, for these sessions. Called after the kill loop of a
+   * switch to private and of a revoke, with every session recorded live on
+   * the credential. Absent, open streams are left to W10c's periodic re-check.
+   */
+  streams?: CredentialStreamClosePort;
+}
+
+/** Structural: W10c's `CredentialStreamPort`, so this module imports nothing of the PTY server. */
+export interface CredentialStreamClosePort {
+  closeUnpermittedStreams(sessionIds: readonly string[]): Promise<number>;
 }
 
 export class SpaceCredentialCatalogService {
@@ -97,8 +127,10 @@ export class SpaceCredentialCatalogService {
   private readonly terminals: CredentialTerminalPort;
   private readonly agentSessions: AgentSessionContainmentPort;
   private readonly removeLoginHome: (home: SpaceCredentialHomeKey) => Promise<void>;
+  private readonly scrubForeignLaunches: SpaceCredentialCatalogOptions['scrubForeignLaunches'] | null;
   private readonly closeLogin: SpaceCredentialCatalogOptions['closeLogin'] | null;
   private readonly env: Readonly<Record<string, string | undefined>>;
+  private readonly streams: CredentialStreamClosePort | null;
 
   constructor(options: SpaceCredentialCatalogOptions) {
     this.db = options.db;
@@ -107,8 +139,10 @@ export class SpaceCredentialCatalogService {
     this.terminals = options.terminals;
     this.agentSessions = options.agentSessions;
     this.removeLoginHome = options.removeLoginHome ?? (async () => undefined);
+    this.scrubForeignLaunches = options.scrubForeignLaunches ?? null;
     this.closeLogin = options.closeLogin ?? null;
     this.env = options.env ?? process.env;
+    this.streams = options.streams ?? null;
   }
 
   async list(claims: DbClaims, spaceId: string): Promise<CredentialsSpaceListView> {
@@ -116,11 +150,23 @@ export class SpaceCredentialCatalogService {
     return { spaceId, credentials: rows.map(spaceCredentialViewOf) };
   }
 
-  /** D1: any member. The vendor is asked first; a refused key is never stored (I6). */
+  /**
+   * D1: any member. The vendor is asked first; a refused key is never stored
+   * (I6). E1: `visibility` makes the caller its owner; `spaceOwned` makes
+   * nobody its owner; neither keeps the pre-W10b space-owned contract.
+   */
   async create(
     claims: DbClaims,
     spaceId: string,
-    input: { provider: SpaceCredentialProviderName; shape: 'api_key' | 'token'; label: string; secret: string },
+    input: {
+      provider: SpaceCredentialProviderName;
+      shape: 'api_key' | 'token';
+      label: string;
+      secret: string;
+      visibility?: SpaceCredentialVisibility;
+      spaceOwned?: boolean;
+      mayBeSpaceDefault?: boolean;
+    },
   ): Promise<SpaceCredentialView> {
     // Refuse before the probe, not after it: the probe sends the key to the
     // vendor from this node, so a caller the RPC would refuse must not reach
@@ -144,6 +190,9 @@ export class SpaceCredentialCatalogService {
         label: input.label,
         secret: input.secret,
         displayLogin,
+        visibility: input.visibility ?? null,
+        spaceOwned: input.spaceOwned ?? null,
+        mayBeSpaceDefault: input.mayBeSpaceDefault ?? false,
       }));
     } catch (error) {
       throw storeError(error);
@@ -151,7 +200,8 @@ export class SpaceCredentialCatalogService {
   }
 
   /**
-   * D11: creator or space admin — the RPC decides. The new key is probed
+   * R12: an owned credential's owner; a space-owned one's creator or a space
+   * admin (D11) — the RPC decides. The new key is probed
    * before it replaces the old one; the old one stays if the vendor refuses.
    * D7: the next spawn reads the new sealed bytes; live sessions keep theirs.
    */
@@ -159,8 +209,8 @@ export class SpaceCredentialCatalogService {
     // Every refusal the RPC would make is made HERE first, before the probe:
     // otherwise any member could use this node to test arbitrary keys against
     // a vendor. `can_manage` is internal.can_manage_space_credential's body
-    // (206, D11) — that function is granted to nobody, its three predicates
-    // are granted to tm8_app. provider and shape never change, so reading them
+    // (255, R12: owned → the owner alone; space-owned → creator or admin) —
+    // that function is granted to nobody, its predicates are granted to tm8_app. provider and shape never change, so reading them
     // before the locked RPC cannot probe against a stale value; the RPC
     // re-checks rights and status under its lock. RLS answers a non-member nothing.
     requireHumanClaims(claims);
@@ -169,19 +219,30 @@ export class SpaceCredentialCatalogService {
       shape: string;
       status: string;
       can_manage: boolean;
+      owned: boolean;
     }>(
       claims,
       `select provider, shape, status,
               internal.is_space_member(space_id)
-                and (internal.is_space_admin(space_id)
-                     or (created_by_account_id is not null
-                         and created_by_account_id = internal.current_account_id())) as can_manage
+                and case
+                      when owner_account_id is not null
+                        then owner_account_id = internal.current_account_id()
+                      else internal.is_space_admin(space_id)
+                           or (created_by_account_id is not null
+                               and created_by_account_id = internal.current_account_id())
+                    end as can_manage,
+              owner_account_id is not null as owned
          from public.space_credentials where id = $1`,
       [credentialId],
     );
     if (!current) throw notFound();
     if (current.can_manage !== true) {
-      throw new CollabError('forbidden', 'only the credential\'s creator or a space admin can change it');
+      throw new CollabError(
+        'forbidden',
+        current.owned
+          ? 'only the credential\'s owner can change it; a space admin can revoke it'
+          : 'only the credential\'s creator or a space admin can change it',
+      );
     }
     if (current.shape === 'login') {
       throw new CollabError('invalid_input', 'a login credential is renewed by logging in again, not by pasting a key');
@@ -201,8 +262,54 @@ export class SpaceCredentialCatalogService {
     return spaceCredentialViewOf(await this.store.rename(claims, credentialId, label));
   }
 
+  /** §8 setSpaceDefault: space-owned by its managers; owned once its owner opted in, by the owner or an admin. */
   async setDefault(claims: DbClaims, credentialId: string): Promise<SpaceCredentialView> {
     return spaceCredentialViewOf(await this.store.setDefault(claims, credentialId));
+  }
+
+  /** The owner's consent to be the space default; withdrawing clears it in the same statement. */
+  async setSpaceDefaultConsent(claims: DbClaims, credentialId: string, allowed: boolean): Promise<SpaceCredentialView> {
+    return spaceCredentialViewOf(await this.store.setSpaceDefaultConsent(claims, credentialId, allowed));
+  }
+
+  /** §8: the creator of an unclaimed space-owned credential (a migrated one) becomes its owner. */
+  async claim(claims: DbClaims, credentialId: string): Promise<SpaceCredentialView> {
+    return spaceCredentialViewOf(await this.store.claim(claims, credentialId));
+  }
+
+  /** The caller's own default for the credential's provider in its space; must be theirs. */
+  async setMyDefault(claims: DbClaims, credentialId: string): Promise<CredentialsSpaceMyDefaultResult> {
+    const { spaceId, provider, credentialId: id } = await this.store.setMyDefault(claims, credentialId);
+    return { spaceId, provider, credentialId: id };
+  }
+
+  async clearMyDefault(
+    claims: DbClaims,
+    spaceId: string,
+    provider: SpaceCredentialProviderName,
+  ): Promise<CredentialsSpaceMyDefaultResult> {
+    await this.store.clearMyDefault(claims, spaceId, provider);
+    return { spaceId, provider, credentialId: null };
+  }
+
+  /** §6c: the owner; admins too for a public or space-owned credential. */
+  async usage(claims: DbClaims, credentialId: string): Promise<CredentialsSpaceUsageView> {
+    const usage = await this.store.usage(claims, credentialId);
+    return {
+      credentialId: usage.credentialId,
+      sessions: usage.sessions.map((s) => ({
+        workSessionId: s.workSessionId,
+        provider: s.provider,
+        source: s.source,
+        credentialId: s.credentialId,
+        ownerAccountId: s.ownerAccountId,
+        launcherAccountId: s.launcherAccountId,
+        agentSessionId: s.agentSessionId,
+        status: s.status,
+        recordedAt: s.recordedAt,
+        updatedAt: s.updatedAt,
+      })),
+    };
   }
 
   /**
@@ -218,11 +325,7 @@ export class SpaceCredentialCatalogService {
     claims: DbClaims,
     credentialId: string,
     visibility: SpaceCredentialVisibility,
-  ): Promise<{
-    credential: SpaceCredentialView;
-    terminatedAgentSessionIds: string[];
-    failures: Array<{ sessionId: string; reason: string }>;
-  }> {
+  ): Promise<CredentialsSpaceSetVisibilityResult> {
     const { killSessions, ...stored } = await this.store.setVisibility(claims, credentialId, visibility);
     const terminatedAgentSessionIds: string[] = [];
     const failures: Array<{ sessionId: string; reason: string }> = [];
@@ -235,6 +338,28 @@ export class SpaceCredentialCatalogService {
       if (failure !== null) failures.push({ sessionId: session.workSessionId, reason: failure });
       if (contained.outcome === 'error') continue;
       terminatedAgentSessionIds.push(session.workSessionId);
+    }
+    // R9, after the kills: a watcher who is not the owner loses the stream.
+    if (visibility === 'private') {
+      const failure = await this.closeStreams(claims, credentialId);
+      if (failure !== null) failures.push({ sessionId: credentialId, reason: failure });
+    }
+    // Last, after the kills ended those sessions: a login's shared home loses
+    // only what a non-owner launch alone wrote. The home itself is the owner's
+    // login and stays (206: a login's secret is a file, never a column).
+    if (visibility === 'private' && stored.shape === 'login' && this.scrubForeignLaunches) {
+      try {
+        const launches = (await this.store.foreignLaunches(claims, credentialId))
+          .filter((launch) => launch.provider === stored.provider);
+        if (launches.length > 0) {
+          await this.scrubForeignLaunches(
+            { spaceId: stored.spaceId, credentialId: stored.id, provider: stored.provider },
+            launches,
+          );
+        }
+      } catch (error) {
+        failures.push({ sessionId: credentialId, reason: reasonOf(error) });
+      }
     }
     return { credential: spaceCredentialViewOf(stored), terminatedAgentSessionIds, failures };
   }
@@ -312,6 +437,16 @@ export class SpaceCredentialCatalogService {
       terminatedAgentSessionIds.push(session.workSessionId);
     }
 
+    // R9, after the kills: open attach/watch streams on it close.
+    if (this.streams) {
+      const ids = (live?.sessions ?? []).map((s) => s.workSessionId);
+      try {
+        if (ids.length > 0) await this.streams.closeUnpermittedStreams(ids);
+      } catch (error) {
+        failures.push({ step: 'agentSession', reason: `stream_close_failed: ${reasonOf(error)}` });
+      }
+    }
+
     // 4. Then stamp each killed terminal finished. Stamping one whose PTY is
     // still streaming would record a live terminal as closed, so a terminal
     // the host could not kill stays open and is reported instead.
@@ -345,6 +480,24 @@ export class SpaceCredentialCatalogService {
       terminatedAgentSessionIds,
       failures,
     };
+  }
+
+  /**
+   * R9 for a switch to private: every session recorded live on the credential
+   * — the owner's own included, whose streams W10c keeps open for a watcher
+   * still permitted — goes to W10c's closer. Best effort; the reason comes
+   * back rather than being thrown.
+   */
+  private async closeStreams(claims: DbClaims, credentialId: string): Promise<string | null> {
+    if (!this.streams) return null;
+    try {
+      const live = await this.store.liveSessions(claims, credentialId);
+      const ids = live.sessions.map((s) => s.workSessionId);
+      if (ids.length > 0) await this.streams.closeUnpermittedStreams(ids);
+      return null;
+    } catch (error) {
+      return `stream_close_failed: ${reasonOf(error)}`;
+    }
   }
 
   async policy(claims: DbClaims, spaceId: string): Promise<CredentialsSpacePolicyView> {
@@ -429,6 +582,9 @@ export function spaceCredentialViewOf(row: SpaceCredential): SpaceCredentialView
     updatedAt: row.updatedAt,
     lastUsedAt: row.lastUsedAt,
     lastProbeAt: row.lastProbeAt,
+    ownerAccountId: row.ownerAccountId,
+    visibility: row.visibility,
+    mayBeSpaceDefault: row.mayBeSpaceDefault,
   };
 }
 

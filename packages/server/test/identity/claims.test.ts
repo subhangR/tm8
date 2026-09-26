@@ -22,7 +22,7 @@ function byName(bindings: ClaimBinding[]): Record<string, string> {
 
 describe('claim set (R2/T-L11)', () => {
   /**
-   * SEVEN since 992 (W7p). `tm8.via_link` passes the same test:
+   * SEVEN since 256 (W7p). `tm8.via_link` passes the same test:
    * `auth_sessions.via_link_id` is written once by the issuing RPC and no verb
    * updates it, and it only NARROWS (a link-bound caller is refused credential
    * reads), so a stale value could refuse but never admit.
@@ -45,7 +45,7 @@ describe('claim set (R2/T-L11)', () => {
    * job of this pin is to make widening the trusted surface cost a decision. A
    * sixth name must move this line again, and must answer "is it immutable?".
    */
-  it('emits exactly the seven settings the RLS helpers, 082, 227 and 992 read', async () => {
+  it('emits exactly the seven settings the RLS helpers, 082, 227 and 256 read', async () => {
     const h = makeHarness();
     const owner = await h.service.bootstrapOwner();
     h.join(owner.identityId, SPACE_A);
@@ -134,7 +134,7 @@ describe('claim set (R2/T-L11)', () => {
     // must never appear here is a value that can GO STALE, and `auth_kind`
     // cannot.
     // Six since 227: `session_space_id` is fixed at issue, like `auth_kind`.
-    // Seven since 992: `via_link`, the same.
+    // Seven since 256: `via_link`, the same.
     expect(names).toHaveLength(7);
 
     // The server-side facts survive — the facade gates capabilities with them.
@@ -225,7 +225,7 @@ describe('claim set (R2/T-L11)', () => {
     expect(values[CLAIM_NAMES.authKind]).toBe('');
     // Unpinned, bound explicitly for the same reason.
     expect(values[CLAIM_NAMES.sessionSpaceId]).toBe('');
-    // No link, bound explicitly for the same reason (992).
+    // No link, bound explicitly for the same reason (256).
     expect(values[CLAIM_NAMES.viaLinkId]).toBe('');
     expect(Object.keys(values)).toHaveLength(7);
     // No bypass claim exists to find.

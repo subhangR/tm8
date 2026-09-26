@@ -1,5 +1,5 @@
 /**
- * 992 (W7p): a resume is link-bound off the session it MINTS, not the
+ * 256 (W7p): a resume is link-bound off the session it MINTS, not the
  * resumer's claims.
  *
  * A work session that ran under a space link keeps the link in SQL: whoever

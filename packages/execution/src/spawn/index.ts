@@ -130,6 +130,7 @@ export type {
   SpaceCredentialPort,
   SpaceCredentialProvider,
   SpaceCredentialRead,
+  SpaceCredentialPick,
   SpaceCredentialRefusalReason,
   SpaceCredentialRepoint,
   LoadSpawnContextInput,

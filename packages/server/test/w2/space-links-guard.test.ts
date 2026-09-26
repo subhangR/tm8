@@ -10,7 +10,7 @@
  * link cells on it are positives.
  *
  * These cells call the RAW handler: the guard is layer 1 of its own rule. The
- * frame's registry (992, W7p deny-by-default) refuses kind `link` on every
+ * frame's registry (256, W7p deny-by-default) refuses kind `link` on every
  * operation before any handler runs — `spaceLinks.list` included — which the
  * last block pins.
  */
@@ -168,7 +168,7 @@ describe('W6 layer-1 guard — spaceLinks.list is open (no secret, read-only)', 
   });
 });
 
-describe('992 (W7p) deny-by-default — through the frame, kind link reaches no spaceLinks op', () => {
+describe('256 (W7p) deny-by-default — through the frame, kind link reaches no spaceLinks op', () => {
   for (const op of ['spaceLinks.list', ...WRITES.map((w) => w.op)] as OperationName[]) {
     it(`${op}: kind link gets 42501 from the registry and the store is never reached; kind agent is not refused there`, async () => {
       const { store, calls } = recordingStore();

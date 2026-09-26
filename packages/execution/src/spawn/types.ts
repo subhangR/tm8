@@ -202,6 +202,9 @@ export type SpaceCredentialGrant =
       homeDir: string;
     };
 
+/** How a launch picked its space credential (doc 13 §6c). */
+export type SpaceCredentialPick = 'pinned' | 'my_default' | 'space_default';
+
 /**
  * Why a space credential is not usable. Every one refuses the launch: none of
  * them is a reason to fall back to another source (I3).
@@ -253,8 +256,20 @@ export interface SpaceCredentialPort {
    * credential the session holds, and the recorded rows come back. `inactive`
    * means one of them is no longer active, `not_usable` that one is now
    * another member's private credential (206 refuses the re-point whole).
+   * With `providers` (R13), rows for every provider this resume did not
+   * resolve to a space credential are dropped first, in the same transaction.
    */
-  repointSession(auth: GraphAuth, sessionId: string): Promise<SpaceCredentialRepoint>;
+  repointSession(
+    auth: GraphAuth,
+    sessionId: string,
+    providers?: readonly SpaceCredentialProvider[],
+  ): Promise<SpaceCredentialRepoint>;
+  /**
+   * The launcher's own default for this provider in this space (W10b, §3e),
+   * if it is active; null otherwise. Optional: a port without it has no
+   * my-default rung.
+   */
+  myDefaultId?(auth: GraphAuth, spaceId: string, provider: SpaceCredentialProvider): Promise<string | null>;
 }
 
 /**
@@ -943,7 +958,7 @@ export interface GraphPort {
   /** Reads. Runs before the session exists. */
   loadSpawnContext(auth: GraphAuth, input: LoadSpawnContextInput): Promise<SpawnContext>;
   /**
-   * Whether this launch is link-bound (992, W7p): `auth` is a `link` session
+   * Whether this launch is link-bound (256, W7p): `auth` is a `link` session
    * or an agent minted under one, OR `agentToken` — the session just minted
    * for the launch — carries a via_link stamp. The second arm is the resume
    * case: a non-link member resuming a work session that ran under a link
@@ -1036,6 +1051,12 @@ export interface GraphPort {
     auth: GraphAuth,
     input: { taskIds: string[] },
   ): Promise<Array<{ id: string; version: number; status: string }>>;
+  /**
+   * R14: retire the agent token of a session whose spawn or resume failed, so
+   * `auth_sessions` carries no live token for a session that never ran.
+   * Optional: a graph without it leaves the token to its TTL.
+   */
+  revokeWorkSessionAgentToken?(auth: GraphAuth, sessionId: string): Promise<void>;
   /** Mint a credential bound to this exact work-session/persona pair. */
   issueWorkSessionAgentToken(
     auth: GraphAuth,
@@ -1310,6 +1331,8 @@ export interface Tm8Manifest {
      * auto choice resolved, so a node-key launch is visible as one.
      */
     effectiveCredentialSources?: Partial<Record<SpaceCredentialProvider, CredentialSource>>;
+    /** §6c: how each space credential was picked (W10b); absent when none. */
+    spaceCredentialPicks?: Partial<Record<SpaceCredentialProvider, SpaceCredentialPick>>;
     /** Effective shell-command networking, independent of filesystem posture. */
     commandNetwork: CommandNetworkPolicy;
     /**

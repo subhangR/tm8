@@ -629,7 +629,7 @@ describe('A3 / C1 — an agent may choose a space credential; its claims are the
   });
 });
 
-// 992 (W7p): a link-bound launch — a `link` session, or an agent minted under
+// 256 (W7p): a link-bound launch — a `link` session, or an agent minted under
 // one — has no member rung (ruling (i)) and runs git only on this space's
 // default GitHub credential (ruling 4). The SQL half (093/206/083 refusing the
 // same caller) is `packages/server/test/db/space-link-provenance.pg.test.ts`.
@@ -790,5 +790,80 @@ describe('W7p — a link-bound launch never reaches the linking human\'s own cre
     const d = deps(fakePort({ defaults: both }), { home: MEMBER_HOME, github: MEMBER_GH });
     const r = await resolve(launch(), d);
     expect(r.credentialHome).toBe(MEMBER_HOME);
+  });
+});
+
+describe('a3 / T43 — auto order: my default → legacy member → space default → node, one test per rung', () => {
+  const MINE = 'dddddddd-0000-4000-8000-000000000001';
+  /** The fake port plus the launcher's own default (255's my_space_credential_default_id). */
+  const withMine = (port: FakePort, mine: string | null, asks: unknown[] = []): FakePort => ({
+    ...port,
+    async myDefaultId(auth, _spaceId, provider) {
+      asks.push({ auth, provider });
+      return provider === 'anthropic' ? mine : null;
+    },
+  });
+
+  it('rung 1: my default wins over a connected member credential and the space default, read as a pin under the launcher', async () => {
+    const asks: unknown[] = [];
+    const port = withMine(fakePort({
+      defaults: { anthropic: ANT_DEFAULT },
+      byId: { [MINE]: { ok: true, grant: apiKeyGrant('anthropic', MINE) } },
+    }), MINE, asks);
+    const d = deps(port, { home: MEMBER_HOME });
+    const r = await resolve(launch(), d);
+    expect(r.launch.spaceCredentialIds).toEqual({ anthropic: MINE });
+    expect(r.launch.spaceCredentialPicks).toEqual({ anthropic: 'my_default' });
+    expect(port.reads).toContainEqual({ auth: AUTH_A, provider: 'anthropic', credentialId: MINE });
+    expect(asks).toContainEqual({ auth: AUTH_A, provider: 'anthropic' });
+    expect(d.memberAsks).toEqual([]);
+  });
+
+  it('rung 1 refuses when my default exists but is not usable — it never falls to another rung', async () => {
+    const port = withMine(fakePort({
+      defaults: { anthropic: ANT_DEFAULT },
+      byId: { [MINE]: { ok: false, reason: 'revoked' } },
+    }), MINE);
+    const d = deps(port, { home: MEMBER_HOME });
+    const error = await refusal(resolve(launch(), d));
+    expect(error.message).toContain(MINE);
+    expect(port.reads.map((r) => r.credentialId)).toEqual([MINE]);
+    expect(d.memberAsks).toEqual([]);
+  });
+
+  it('rung 2: with no default of mine, the legacy member credential', async () => {
+    const d = deps(withMine(fakePort({ defaults: { anthropic: ANT_DEFAULT } }), null), { home: MEMBER_HOME });
+    const r = await resolve(launch(), d);
+    expect(r.credentialHome).toBe(MEMBER_HOME);
+    expect(r.launch.effectiveCredentialSources?.anthropic).toBe('member');
+    expect(r.launch.spaceCredentialPicks).toBeUndefined();
+  });
+
+  it('rung 3: with neither, the space default, recorded as space_default', async () => {
+    const d = deps(withMine(fakePort({ defaults: { anthropic: ANT_DEFAULT } }), null));
+    const r = await resolve(launch(), d);
+    expect(r.launch.spaceCredentialIds).toEqual({ anthropic: ANT_DEFAULT });
+    expect(r.launch.spaceCredentialPicks).toEqual({ anthropic: 'space_default' });
+  });
+
+  it('rung 4: with none of the three, the node key', async () => {
+    const d = deps(withMine(fakePort({}), null));
+    const r = await resolve(launch(), d);
+    expect(r.launch.effectiveCredentialSources?.anthropic).toBe('node');
+    expect(r.spaceCredentialIds).toEqual([]);
+  });
+
+  it('an explicit pin is recorded as pinned, and a resume never consults my default', async () => {
+    const asks: unknown[] = [];
+    const port = withMine(fakePort({
+      byId: { [ANT_PINNED]: { ok: true, grant: apiKeyGrant('anthropic', ANT_PINNED) } },
+    }), MINE, asks);
+    const r = await resolve(launch({ credentialSources: { anthropic: 'space' }, spaceCredentialIds: { anthropic: ANT_PINNED } }), deps(port));
+    expect(r.launch.spaceCredentialPicks).toEqual({ anthropic: 'pinned' });
+    // The pinned provider is not asked (github, still on auto, is).
+    expect(asks).not.toContainEqual(expect.objectContaining({ provider: 'anthropic' }));
+    asks.length = 0;
+    await resolve(launch(), deps(port), true);
+    expect(asks).toEqual([]);
   });
 });

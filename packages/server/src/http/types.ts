@@ -73,7 +73,7 @@ export interface RequestIdentity {
    */
   sessionSpaceId?: string;
   /**
-   * The space link the session descends from (992 `auth_sessions.via_link_id`),
+   * The space link the session descends from (256 `auth_sessions.via_link_id`),
    * bound as `tm8.via_link`. Off the verified session row, like `authKind`.
    * Every claims builder that forwards `sessionSpaceId` forwards this too.
    */

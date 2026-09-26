@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:d076746a6064b8555ea0805111c8ccecd7d723c59ca3ad4672744ea01ed0df46",
+  "catalogDigest": "sha256:e82356d2c70dd8b3d6dea41085510153d3489f7c11effbe9a230706e11e66b7e",
   "catalog": {
-    "total": 262,
-    "v1": 260,
+    "total": 268,
+    "v1": 266,
     "reserved": 2,
-    "http": 260,
+    "http": 266,
     "ws": 1,
-    "registerableV1Http": 258,
+    "registerableV1Http": 264,
     "methods": {
-      "GET": 86,
-      "POST": 125,
+      "GET": 87,
+      "POST": 127,
       "PATCH": 17,
-      "DELETE": 17,
-      "PUT": 15,
+      "DELETE": 18,
+      "PUT": 17,
       "WS": 2
     },
     "kinds": {
-      "read": 90,
-      "command": 170,
+      "read": 91,
+      "command": 175,
       "stream": 2
     },
-    "uniqueNames": 262,
-    "uniqueBindings": 261
+    "uniqueNames": 268,
+    "uniqueBindings": 267
   },
   "reservedOperations": [
     "search.query",
@@ -1811,6 +1811,48 @@
         "source": "server-router"
       },
       {
+        "operation": "credentials.space.setVisibility",
+        "method": "PUT",
+        "path": "/v2/space-credentials/:credentialId/visibility",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "credentials.space.spaceDefaultConsent",
+        "method": "PUT",
+        "path": "/v2/space-credentials/:credentialId/space-default-consent",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "credentials.space.claim",
+        "method": "POST",
+        "path": "/v2/space-credentials/:credentialId/claim",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "credentials.space.myDefault.set",
+        "method": "POST",
+        "path": "/v2/space-credentials/:credentialId/my-default",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "credentials.space.myDefault.clear",
+        "method": "DELETE",
+        "path": "/v2/spaces/:spaceId/credentials/my-default/:provider",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "credentials.space.usage",
+        "method": "GET",
+        "path": "/v2/space-credentials/:credentialId/usage",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "credentials.space.policy.get",
         "method": "GET",
         "path": "/v2/spaces/:spaceId/credential-policy",
@@ -2238,7 +2280,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 230
+    "unimplementedV1Http": 236
   },
   "schemas": {
     "additive": {
@@ -6273,6 +6315,114 @@
         "publicComposite": null
       },
       {
+        "operation": "credentials.space.setVisibility",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/credentials.space.setVisibility",
+        "intentTags": [
+          "credentials",
+          "space",
+          "set",
+          "visibility"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "credentials.space.spaceDefaultConsent",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/credentials.space.spaceDefaultConsent",
+        "intentTags": [
+          "credentials",
+          "space",
+          "default",
+          "consent"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "credentials.space.claim",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/credentials.space.claim",
+        "intentTags": [
+          "credentials",
+          "space",
+          "claim"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "credentials.space.myDefault.set",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/credentials.space.myDefault.set",
+        "intentTags": [
+          "credentials",
+          "space",
+          "my",
+          "default",
+          "set"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "credentials.space.myDefault.clear",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/credentials.space.myDefault.clear",
+        "intentTags": [
+          "credentials",
+          "space",
+          "my",
+          "default",
+          "clear"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "credentials.space.usage",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/credentials.space.usage",
+        "intentTags": [
+          "credentials",
+          "space",
+          "usage"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
         "operation": "credentials.space.policy.get",
         "noun": "credential",
         "exposure": "public",
@@ -7688,7 +7838,10 @@
             "credentials.space.rename",
             "credentials.space.rekey",
             "credentials.space.setDefault",
-            "credentials.space.delete"
+            "credentials.space.delete",
+            "credentials.space.setVisibility",
+            "credentials.space.spaceDefaultConsent",
+            "credentials.space.claim"
           ]
         },
         "menu": {
