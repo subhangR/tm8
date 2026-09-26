@@ -1,5 +1,7 @@
 import {
+  createContext,
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -17,7 +19,6 @@ import {
   capacitySlots,
   describeCapacity,
   effortLabel,
-  LAUNCH_MODES,
   type LaunchAccessMode,
   type LaunchCapacity,
   type LaunchCredentialSource,
@@ -27,7 +28,6 @@ import {
 } from '../domain/launch';
 import { Avatar } from '../kit';
 import type { ComposerWorkdir } from './NewSessionComposer';
-import { TITLE_MAX } from './prompt-title';
 import './launch-card.css';
 
 /**
@@ -65,28 +65,6 @@ import './launch-card.css';
  * without a node. It owns only which menu is open and whether the drawer is.
  */
 
-/** One row of the attach row's scroller: an entity or an upload. */
-export interface LaunchCardAttachment {
-  /** The entity id, or an upload's local key until it has one. */
-  key: string;
-  kind: string;
-  title: string;
-  /** The quiet fact after the title — a size, the kind. */
-  meta?: string;
-  status?: 'uploading' | 'failed';
-  /** A failed upload's reason, as its tooltip. */
-  error?: string;
-}
-
-/** One row of the attach menu's list. */
-export interface LaunchCardCandidate {
-  id: string;
-  kind: string;
-  title: string;
-  /** `default`: the launch already carries it, so there is nothing to attach. */
-  state: 'attachable' | 'attached' | 'default';
-}
-
 export interface LaunchCardModel {
   id: string;
   label: string;
@@ -97,7 +75,23 @@ export interface LaunchCardModel {
   agentTool?: string;
 }
 
-export interface LaunchCardProps {
+
+/**
+ * A Jev suggestion waiting at the top of the teammate or model menu (owner,
+ * form 01a0df34-2cd4): shown with its reason, applied ONLY when clicked.
+ */
+export interface JevMenuSuggestion {
+  label: string;
+  reason: string;
+  /** The launch already runs with it: the row shows ✓ and the picker's ✦ goes. */
+  current: boolean;
+  /** Why it can't be applied here; null when it can. */
+  refusal: string | null;
+  onApply(): void;
+}
+
+/** What the shared shell draws: both bands, the drawer, the drop target and the keyboard. */
+export interface LaunchCardShellProps {
   /** The opening verb's word: Run, Coordinate. */
   verbLabel: string;
 
@@ -126,36 +120,8 @@ export interface LaunchCardProps {
   capacity?: LaunchCapacity;
   onClose(): void;
 
-  /* ---- center ---- */
-  /** The "Starts with" row's controls: context chips, Ask Jev, the meter. */
-  startsWith: ReactNode;
-  title: string;
-  onTitleChange(next: string): void;
-  titlePlaceholder: string;
-  instructions: string;
-  onInstructionsChange(next: string): void;
-  instructionsPlaceholder: string;
-
-  subject: { title: string; kind?: string };
-  /** True for a session subject: continued, never edited (migration 200). */
-  continuing: boolean;
-  /** The subject's description; `null` while it is being read. */
-  description: string | null;
-  onDescriptionChange(next: string): void;
-  /** Why the description cannot be edited here, when it cannot. */
-  descriptionReadOnly: string | null;
-
-  attachments: readonly LaunchCardAttachment[];
-  onDetach(key: string): void;
-  /** Undefined: the space's attachables were never read into this client. */
-  candidates: readonly LaunchCardCandidate[] | undefined;
-  onToggleCandidate(id: string): void;
-  /** Why nothing can be attached right now (defaults unread, locked group). */
-  attachRefusal: string | null;
-  /** Absent: this host has no upload path, and the Files row says so. */
+  /** Absent: this host has no upload path, and dropping files does nothing. */
   onFiles?(files: readonly File[]): void;
-  /** The attach menu opened: a host may read its pool in now. */
-  onAttachOpen?(): void;
 
   /* ---- bottom band ---- */
   models: readonly LaunchCardModel[];
@@ -166,11 +132,7 @@ export interface LaunchCardProps {
   onEffortChange(next: LaunchModelEffort | null): void;
   accessMode: LaunchAccessMode | null;
   onAccessModeChange(next: LaunchAccessMode): void;
-  /** One line: what Launch will start, where. */
-  summary: ReactNode;
-  summaryText: string;
-  /** Present ⇒ a Dispatch button; absent ⇒ none (pending the owner's call). */
-  onDispatch?(): void;
+  /** ⌘↵ — the card's go action. */
   onSubmit(): void;
   busy: boolean;
   /** Launch is withheld WITH this reason. */
@@ -202,12 +164,38 @@ export interface LaunchCardProps {
   budget: ReactNode;
   /** A dot on ⋯: something in the drawer is not its default. */
   advancedEdited: boolean;
+  /** Jev's teammate and model suggestions, once it has answered. */
+  jevTeammate?: JevMenuSuggestion | null;
+  jevModel?: JevMenuSuggestion | null;
 }
 
-type MenuName = 'team' | 'project' | 'checkout' | 'model' | 'effort' | 'access' | 'attach' | 'subject';
-
-/** The session modes a fresh launch can take — see `NewSessionComposer`'s note. */
-const MODE_OPTIONS = LAUNCH_MODES.filter((m) => m.id === 'worker' || m.id === 'coordinator');
+function JevSuggestRow({ s, testId, onDone }: { s: JevMenuSuggestion; testId: string; onDone(): void }) {
+  return (
+    <>
+      <button
+        type="button"
+        role="menuitem"
+        className="lcd-mi lcd3-suggest"
+        data-testid={testId}
+        aria-disabled={Boolean(s.refusal) || s.current || undefined}
+        title={s.refusal ?? s.reason}
+        onClick={(event) => {
+          event.stopPropagation();
+          if (s.refusal || s.current) return;
+          s.onApply();
+          onDone();
+        }}
+      >
+        <span className="lcd-ck lcd3-jevmark" aria-hidden="true">{s.current ? '✓' : '✦'}</span>
+        <span className="lcd-mi__body">
+          Jev suggests {s.label}
+          <span className={s.refusal ? 'lcd-mi__why' : 'lcd-mi__sub lcd3-wrap'}>{s.refusal ?? s.reason}</span>
+        </span>
+      </button>
+      <hr />
+    </>
+  );
+}
 
 /** The five postures, most permissive first — the mock's order. */
 const ACCESS_OPTIONS = ACCESS_MODE_CYCLE.filter((m): m is LaunchAccessMode => m !== null).slice().reverse();
@@ -232,15 +220,6 @@ const PROVIDER_WORD: Readonly<Record<string, string>> = {
   custom: 'Added in this browser',
 };
 
-const KIND_GLYPH: Readonly<Record<string, string>> = {
-  task: '▣',
-  doc: '☰',
-  artifact: '◇',
-  drawing: '✎',
-  file: '📄',
-  work_session: '◉',
-};
-
 /** The first word of a model label that only repeats its vendor. */
 const VENDOR_PREFIX = /^(Claude|OpenAI) /;
 
@@ -253,7 +232,6 @@ function accessWords(mode: LaunchAccessMode | null): { name: string; hint: strin
 export const EFFORT_NOT_TUNABLE_REASON =
   'This model takes no reasoning-effort setting, so there is no stop to pick.';
 
-const NO_UPLOAD_REASON = 'This surface has no upload path, so files cannot be attached here.';
 
 /**
  * KEEP AN OPEN MENU INSIDE THE CARD — the mock's `fit()`: flip it onto the
@@ -291,46 +269,94 @@ function useFitInside(menu: RefObject<HTMLElement | null>, card: RefObject<HTMLE
   }, [menu, card, key]);
 }
 
-function Caret({ up }: { up?: boolean }) {
+export function Caret({ up }: { up?: boolean }) {
   return <span className="lcd-caret" aria-hidden="true">{up ? '▲' : '▼'}</span>;
 }
 
-export function LaunchCard(props: LaunchCardProps) {
+/**
+ * ONE OPEN MENU PER CARD, whoever draws it. The shell owns which menu is open
+ * (Escape closes it before anything else) and the one ref `useFitInside`
+ * keeps inside the card; a center drawn by a variant reads both from here.
+ */
+export interface LaunchCardMenu {
+  open: string | null;
+  toggle(name: string): void;
+  close(): void;
+  menuProps(name: string, extra?: string): {
+    ref: RefObject<HTMLDivElement | null>;
+    className: string;
+    onClick(event: { stopPropagation(): void }): void;
+    'data-menu': string;
+  };
+  /** Wrap a handler so the card's click-away does not also close its menu. */
+  stop(act: () => void): (event: { stopPropagation(): void }) => void;
+  /** The card element: menus fit inside it, and a variant measures against it. */
+  card: RefObject<HTMLDivElement | null>;
+}
+
+const LaunchCardMenuContext = createContext<LaunchCardMenu | null>(null);
+
+export function useLaunchCardMenu(): LaunchCardMenu {
+  const menu = useContext(LaunchCardMenuContext);
+  if (!menu) throw new Error('useLaunchCardMenu is only available inside a LaunchCardShell');
+  return menu;
+}
+
+
+/**
+ * THE SHELL both card versions share: the top band's pickers, the bottom
+ * band's model / effort / access, the advanced drawer, the file drop target,
+ * the keyboard, and the one-open-menu rule. A version supplies the verb, the
+ * center and the go buttons.
+ */
+export function LaunchCardShell(props: LaunchCardShellProps & {
+  /** The top band's first control: the v2 verb badge, the v3 verb switch. */
+  verb: ReactNode;
+  center: ReactNode;
+  /** The bottom band's right end: summary and go buttons. */
+  actions: ReactNode;
+  /** Extra class on the card: `lcd--v3`. */
+  className?: string;
+  /** Escape closes this first (an open preview), before menus and the drawer. */
+  onEscapeFirst?: (() => boolean) | undefined;
+  /** The access mode is fixed by the node, and why — the control shows Full access, locked. */
+  accessLock?: string | null;
+  /** Tab cycles inside the card, and focus returns to the opener when it closes. */
+  trapFocus?: boolean;
+  /** Drawn over the whole card, bands included (v3's previews). */
+  overlay?: ReactNode;
+}) {
   const {
     verbLabel, teammates, teammateId, onPickTeammate, remember, onRememberChange, restoredLine,
     workdirs, workdirId, onPickWorkdir, workdirMode, onWorkdirModeChange, workdirChoosable,
-    worktreeBaseRef, onWorktreeBaseRefChange, projectFacts, capacity, onClose,
-    startsWith, title, onTitleChange, titlePlaceholder, instructions, onInstructionsChange, instructionsPlaceholder,
-    subject, continuing, description, onDescriptionChange, descriptionReadOnly,
-    attachments, onDetach, candidates, onToggleCandidate, attachRefusal, onFiles, onAttachOpen,
+    worktreeBaseRef, onWorktreeBaseRefChange, projectFacts, capacity, onClose, onFiles,
     models, model, onPickModel, effortStops, effort, onEffortChange, accessMode, onAccessModeChange,
-    summary, summaryText, onDispatch, onSubmit, busy, refusal, notice, shaking, onShakeEnd,
+    onSubmit, busy, refusal, notice, shaking, onShakeEnd,
     mode, onModeChange, profileLine, credentialProviderLabel, credential, onCredentialChange,
     githubCredential, onGithubCredentialChange, harnessApplies, harnessSurface, onHarnessChange,
     installedPlugins, installedPluginsNote, pluginSkillCounts, plugins, onPluginsChange, budget, advancedEdited,
+    jevTeammate = null, jevModel = null,
+    verb, center, actions, className, onEscapeFirst, accessLock = null, trapFocus = false, overlay,
   } = props;
 
   const card = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
-  const fileInput = useRef<HTMLInputElement | null>(null);
-  const list = useRef<HTMLDivElement | null>(null);
-  const [open, setOpen] = useState<MenuName | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
   const [drawer, setDrawer] = useState(false);
   const [teamQuery, setTeamQuery] = useState('');
-  const [attachQuery, setAttachQuery] = useState('');
   const [dropping, setDropping] = useState(false);
   const dragDepth = useRef(0);
-  const [hidden, setHidden] = useState(0);
 
   const close = useCallback(() => setOpen(null), []);
-  const toggle = (name: MenuName) => setOpen((current) => (current === name ? null : name));
+  const toggle = useCallback((name: string) => setOpen((current) => (current === name ? null : name)), []);
   useFitInside(menuRef, card, open);
 
   const blocked = busy || Boolean(refusal);
   const submit = () => { if (!blocked) onSubmit(); };
 
-  /* THE KEYBOARD, layered as the mock rules it: Escape closes a menu first,
-     then an open context popover or Jev panel, then the drawer, then the popup; ⌘. toggles the drawer; ⌘↵ launches.
+  /* THE KEYBOARD, layered as the mock rules it: Escape closes a preview
+     first, then a menu, then an open context popover or Jev panel, then the
+     drawer, then the popup; ⌘. toggles the drawer; ⌘↵ launches.
 
      CAPTURE PHASE, AND CONSUMED: the popup sits over panels that close on
      Escape themselves (the detail panel does), and a bubble-phase listener
@@ -338,12 +364,38 @@ export function LaunchCard(props: LaunchCardProps) {
      a real node. The one exception is Escape from inside the context
      popover or the Jev panel, which close themselves first. The ref keeps
      one listener for the card's life. */
-  const keys = useRef({ open, drawer, submit, onClose });
-  keys.current = { open, drawer, submit, onClose };
+  const keys = useRef({ open, drawer, submit, onClose, onEscapeFirst, trapFocus });
+  keys.current = { open, drawer, submit, onClose, onEscapeFirst, trapFocus };
+  /* FOCUS GOES BACK TO THE OPENER when the card closes (v3): the Run button
+     that opened it, so a keyboard user lands where they were. */
+  useEffect(() => {
+    if (!trapFocus) return;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    return () => { if (opener?.isConnected) opener.focus(); };
+  }, [trapFocus]);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const k = keys.current;
       const mod = event.metaKey || event.ctrlKey;
+      if (event.key === 'Tab' && k.trapFocus && card.current) {
+        /* TAB STAYS INSIDE: the open preview if there is one, else the card. */
+        const scope = card.current.querySelector<HTMLElement>('[data-focus-scope]') ?? card.current;
+        const focusable = [...scope.querySelectorAll<HTMLElement>(
+          'button, input, textarea, select, [tabindex]:not([tabindex="-1"])',
+        )].filter((el) => !el.hasAttribute('disabled') && !el.closest('[aria-hidden="true"], [hidden]'));
+        if (focusable.length === 0) return;
+        const first = focusable[0]!;
+        const last = focusable[focusable.length - 1]!;
+        const inside = document.activeElement instanceof Node && scope.contains(document.activeElement);
+        if (event.shiftKey && (!inside || document.activeElement === first)) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && (!inside || document.activeElement === last)) {
+          event.preventDefault();
+          first.focus();
+        }
+        return;
+      }
       if (mod && event.key === '.') {
         setOpen(null);
         setDrawer((d) => !d);
@@ -352,6 +404,11 @@ export function LaunchCard(props: LaunchCardProps) {
       } else if (event.key === 'Escape') {
         const target = event.target instanceof Element ? event.target : null;
         if (target?.closest('.lsel-popover, .jev-entry__pop')) return;
+        if (k.onEscapeFirst?.()) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
         /* Those two only hear an Escape with focus inside them. Typing in the
            instructions with the Jev panel open, then Escape, closed the whole
            card and dropped the instructions — found live on a real node. */
@@ -370,29 +427,10 @@ export function LaunchCard(props: LaunchCardProps) {
     return () => window.removeEventListener('keydown', onKey, true);
   }, []);
 
-  /* "+N MORE": how many attachment chips sit past the scroller's right edge. */
-  const countHidden = useCallback(() => {
-    const l = list.current;
-    if (!l) return;
-    /* Scrolled to the end, nothing is past the edge: the last chip sits flush
-       with it, so the edge test alone said "+1 more" on a real node. */
-    if (l.scrollLeft + l.clientWidth >= l.scrollWidth - 1) { setHidden(0); return; }
-    const edge = l.getBoundingClientRect().right - 12;
-    setHidden([...l.querySelectorAll('.lcd-ent')].filter((c) => c.getBoundingClientRect().right > edge).length);
-  }, []);
-  useLayoutEffect(countHidden, [attachments, countHidden]);
-  useEffect(() => {
-    const l = list.current;
-    if (!l || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(countHidden);
-    observer.observe(l);
-    return () => observer.disconnect();
-  }, [countHidden]);
-
-  const stop = (act: () => void) => (event: { stopPropagation(): void }) => {
+  const stop = useCallback((act: () => void) => (event: { stopPropagation(): void }) => {
     event.stopPropagation();
     act();
-  };
+  }, []);
 
   const teammate = (teammateId ? teammates.find((t) => t.id === teammateId) : null) ?? teammates[0] ?? null;
   const workdir = workdirs.find((w) => w.id === workdirId) ?? null;
@@ -401,7 +439,8 @@ export function LaunchCard(props: LaunchCardProps) {
   const modelName = current?.label ?? model ?? 'Model';
   const vendor = VENDOR_PREFIX.exec(modelName)?.[0] ?? '';
   const toolWord = current?.agentTool ? agentTool(current.agentTool)?.label ?? current.agentTool : '';
-  const access = accessWords(accessMode);
+  const shownAccess = accessLock ? 'fullAccess' : accessMode;
+  const access = accessWords(shownAccess);
   const uncommitted = projectFacts?.uncommitted ?? null;
   const baseWord = worktreeBaseRef ? worktreeBaseRef : 'node’s base';
 
@@ -416,15 +455,14 @@ export function LaunchCard(props: LaunchCardProps) {
 
   const needle = teamQuery.trim().toLowerCase();
   const roster = needle ? teammates.filter((t) => t.name.toLowerCase().includes(needle)) : teammates;
-  const attachNeedle = attachQuery.trim().toLowerCase();
-  const pool = (candidates ?? []).filter((c) => !attachNeedle || `${c.title} ${c.kind}`.toLowerCase().includes(attachNeedle));
 
-  const menuProps = (name: MenuName, extra = '') => ({
+  const menuProps = useCallback((name: string, extra = '') => ({
     ref: menuRef,
     className: `lcd-menu ${extra}`,
     onClick: (event: { stopPropagation(): void }) => event.stopPropagation(),
     'data-menu': name,
-  });
+  }), []);
+  const menu: LaunchCardMenu = { open, toggle, close, menuProps, stop, card };
 
   const files = (list_: FileList | null) => {
     if (!list_ || list_.length === 0 || !onFiles) return;
@@ -439,9 +477,10 @@ export function LaunchCard(props: LaunchCardProps) {
   const pluginsEnabled = harnessEnabled && harnessSurface !== 'inherit' && Boolean(onPluginsChange);
 
   return (
+    <LaunchCardMenuContext.Provider value={menu}>
     <div
       ref={card}
-      className="lcd"
+      className={className ? `lcd ${className}` : 'lcd'}
       data-testid="launch-card"
       data-shake={shaking || undefined}
       data-drop={dropping || undefined}
@@ -474,7 +513,7 @@ export function LaunchCard(props: LaunchCardProps) {
     >
       {/* ============ TOP BAND: who · where · more ============ */}
       <header className="lcd-band lcd-band--top">
-        <span className="lcd-verb" data-testid="lcd-verb">{verbLabel}</span>
+        {verb}
 
         <div className="lcd-anchor lcd-a-tm">
           <button
@@ -491,6 +530,7 @@ export function LaunchCard(props: LaunchCardProps) {
               <Avatar actorId={teammate.id} provenance="agent" label={teammate.name} initials={teammate.initial} size={22} />
             ) : null}
             <b>{teammate?.name ?? 'Teammate'}</b>
+            {jevTeammate && !jevTeammate.current ? <span className="lcd3-jevmark" title="Jev suggests a teammate — in this menu">✦</span> : null}
             <Caret />
           </button>
           {open === 'team' ? (
@@ -505,6 +545,7 @@ export function LaunchCard(props: LaunchCardProps) {
                   onChange={(event) => setTeamQuery(event.target.value)}
                 />
               ) : null}
+              {jevTeammate ? <JevSuggestRow s={jevTeammate} testId="lcd3-jev-teammate" onDone={close} /> : null}
               <div className="lcd-grp">Teammate</div>
               <button
                 type="button"
@@ -724,232 +765,9 @@ export function LaunchCard(props: LaunchCardProps) {
         </button>
       </header>
 
-      {/* ============ CENTER: starts with · writing · attach ============ */}
+      {/* ============ CENTER: the version's own ============ */}
       <div className="lcd-stage">
-        <div className="lcd-center">
-          <div className="lcd-ctx" aria-label="What the session starts with" onClick={(event) => event.stopPropagation()}>
-            <span className="lcd-lead">Starts with</span>
-            {startsWith}
-          </div>
-
-          <input
-            className="lcd-title"
-            data-testid="nsx-title"
-            value={title}
-            maxLength={TITLE_MAX}
-            disabled={busy}
-            /* Safari's contacts AutoFill matches a "title" field; see the
-               composer's note. The CSS removes its button. */
-            autoComplete="off"
-            autoCorrect="off"
-            spellCheck={false}
-            name="tm8-hdr-input"
-            aria-label="Session title"
-            placeholder={titlePlaceholder || 'Session title'}
-            onChange={(event) => onTitleChange(event.target.value)}
-          />
-          <textarea
-            className="lcd-instr"
-            data-testid="lcd-instructions"
-            value={instructions}
-            aria-label="Instructions for this session"
-            aria-describedby={refusal || notice ? 'lcd-refusal' : undefined}
-            disabled={busy}
-            autoFocus
-            placeholder={instructionsPlaceholder}
-            onChange={(event) => onInstructionsChange(event.target.value)}
-          />
-
-          <div className="lcd-attrow" aria-label="Attached">
-            <div className="lcd-anchor">
-              <button
-                type="button"
-                className="lcd-attbtn"
-                data-testid="lcd-attach"
-                aria-haspopup="menu"
-                aria-expanded={open === 'attach'}
-                aria-label="Attach"
-                title="Attach files or anything in this space, as context"
-                onClick={stop(() => {
-                  setAttachQuery('');
-                  if (open !== 'attach') onAttachOpen?.();
-                  toggle('attach');
-                })}
-              >
-                📎<span className="lcd-attbtn__label"> Attach</span><Caret up />
-              </button>
-              {open === 'attach' ? (
-                <div {...menuProps('attach', 'lcd-menu--up lcd-menu--wide')} role="menu" data-testid="lcd-attach-menu">
-                  <input
-                    className="lcd-search"
-                    placeholder="Find a task, doc, artifact, file…"
-                    aria-label="Find something to attach"
-                    value={attachQuery}
-                    autoFocus
-                    onChange={(event) => setAttachQuery(event.target.value)}
-                  />
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="lcd-mi"
-                    data-testid="lcd-attach-files"
-                    aria-disabled={!onFiles || Boolean(attachRefusal) || undefined}
-                    title={!onFiles ? NO_UPLOAD_REASON : attachRefusal ?? undefined}
-                    onClick={stop(() => {
-                      if (!onFiles || attachRefusal) return;
-                      fileInput.current?.click();
-                    })}
-                  >
-                    <span className="lcd-ck" aria-hidden="true">⤒</span>
-                    <span className="lcd-mi__body">
-                      Files from this computer…
-                      <span className={onFiles ? 'lcd-mi__sub' : 'lcd-mi__why'}>
-                        {onFiles ? 'or drop them anywhere on the card' : NO_UPLOAD_REASON}
-                      </span>
-                    </span>
-                  </button>
-                  <div className="lcd-grp">In this space</div>
-                  {attachRefusal ? <div className="lcd-note" role="status">{attachRefusal}</div> : null}
-                  {candidates === undefined ? (
-                    <div className="lcd-note" role="status">
-                      Nothing attachable has been read into this client, so none can be offered. This is unknown, not empty.
-                    </div>
-                  ) : pool.length === 0 ? (
-                    <div className="lcd-note">{attachNeedle ? `Nothing matches “${attachQuery.trim()}”.` : 'Nothing in this space to attach.'}</div>
-                  ) : pool.slice(0, 60).map((c) => (
-                    <button
-                      key={c.id}
-                      type="button"
-                      role="menuitemcheckbox"
-                      aria-checked={c.state !== 'attachable'}
-                      aria-disabled={c.state === 'default' || Boolean(attachRefusal) || undefined}
-                      className="lcd-mi"
-                      data-testid={`lcd-attach-${c.id}`}
-                      title={c.state === 'default' ? 'The launch already carries this by default.' : undefined}
-                      onClick={stop(() => {
-                        if (c.state === 'default' || attachRefusal) return;
-                        onToggleCandidate(c.id);
-                      })}
-                    >
-                      <span className="lcd-ck" aria-hidden="true">{c.state !== 'attachable' ? '✓' : ''}</span>
-                      <span className="lcd-kind" aria-hidden="true">{KIND_GLYPH[c.kind] ?? '•'}</span>
-                      <span className="lcd-mi__body">
-                        {c.title}
-                        <span className="lcd-mi__sub">{c.kind}{c.state === 'default' ? ' · already carried by default' : ''}</span>
-                      </span>
-                    </button>
-                  ))}
-                  <div className="lcd-foot">
-                    Attached items go in as context. The subject stays “{subject.title}”. Sessions can’t be attached as context.
-                  </div>
-                </div>
-              ) : null}
-              <input
-                ref={fileInput}
-                type="file"
-                multiple
-                hidden
-                data-testid="lcd-file-input"
-                onChange={(event) => { files(event.target.files); event.target.value = ''; close(); }}
-              />
-            </div>
-
-            <div className="lcd-anchor lcd-a-subj">
-              <button
-                type="button"
-                className="lcd-ent lcd-ent--subject"
-                data-testid="lcd-subject"
-                aria-haspopup="dialog"
-                aria-expanded={open === 'subject'}
-                title={continuing
-                  ? 'The session this launch continues'
-                  : 'The task this session works on. Click to read or edit its description.'}
-                onClick={stop(() => toggle('subject'))}
-              >
-                <span className="lcd-ent__kind" aria-hidden="true">{KIND_GLYPH[subject.kind ?? 'task'] ?? '▣'}</span>
-                <span className="lcd-ent__title">{subject.title}</span>
-                <Caret up />
-              </button>
-              {open === 'subject' ? (
-                <div
-                  {...menuProps('subject', 'lcd-menu--up lcd-subjmenu')}
-                  role="dialog"
-                  aria-label={continuing ? 'The session being continued' : 'Task description'}
-                  data-testid="lcd-subject-menu"
-                >
-                  {continuing ? (
-                    <div className="lcd-foot">
-                      This launch continues “{subject.title}”: the new session reads its transcript first. Nothing here is loaded
-                      from it or saved onto it — your instructions above are for the new session.
-                    </div>
-                  ) : (
-                    <>
-                      <div className="lcd-grp">
-                        Task description
-                        <span>{descriptionReadOnly ? 'read-only here' : 'saves onto the task before launch'}</span>
-                      </div>
-                      <textarea
-                        className="lcd-subjdesc"
-                        aria-label="Task description"
-                        data-testid="lcd-description"
-                        value={description ?? ''}
-                        readOnly={Boolean(descriptionReadOnly) || description === null}
-                        placeholder={description === null ? 'Reading the task…' : 'No description yet.'}
-                        autoFocus
-                        onChange={(event) => onDescriptionChange(event.target.value)}
-                      />
-                      <div className="lcd-foot">
-                        {descriptionReadOnly
-                          ?? 'The agent reads this as its briefing. Your instructions above are for this launch only.'}
-                      </div>
-                    </>
-                  )}
-                </div>
-              ) : null}
-            </div>
-
-            <div className="lcd-attlist" ref={list} onScroll={countHidden} data-more={hidden > 0 || undefined} data-testid="lcd-attached">
-              {attachments.length === 0 ? <span className="lcd-empty">Nothing else attached</span> : null}
-              {attachments.map((a) => (
-                <span
-                  key={a.key}
-                  className="lcd-ent"
-                  data-status={a.status}
-                  title={a.error ?? `${a.title} · ${a.kind}`}
-                  data-testid={`lcd-attached-${a.key}`}
-                >
-                  <span className="lcd-ent__kind" aria-hidden="true">{KIND_GLYPH[a.kind] ?? '•'}</span>
-                  <span className="lcd-ent__title">{a.title}</span>
-                  {a.status === 'uploading'
-                    ? <span className="lcd-ent__meta">uploading…</span>
-                    : a.status === 'failed'
-                      ? <span className="lcd-ent__meta lcd-ent__meta--bad">failed</span>
-                      : a.meta ? <span className="lcd-ent__meta lcd-ent__bytes">{a.meta}</span> : null}
-                  <button
-                    type="button"
-                    className="lcd-ent__rm"
-                    aria-label={`Detach ${a.title}`}
-                    onClick={stop(() => onDetach(a.key))}
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
-            </div>
-            {hidden > 0 ? (
-              <button
-                type="button"
-                className="lcd-more"
-                data-testid="lcd-more"
-                title="Show the rest"
-                onClick={stop(() => list.current?.scrollTo({ left: list.current.scrollWidth, behavior: 'smooth' }))}
-              >
-                +{hidden} more
-              </button>
-            ) : null}
-          </div>
-        </div>
-
+        {center}
         {/* REFUSAL floats over the bottom of the center: no permanent row. */}
         {(refusal ?? notice) ? (
           <p className="lcd-refusal" id="lcd-refusal" role="alert">{refusal ?? notice}</p>
@@ -971,20 +789,6 @@ export function LaunchCard(props: LaunchCardProps) {
                 <button type="button" className="lcd-icon" aria-label="Close advanced" onClick={() => setDrawer(false)}>✕</button>
               </div>
               <div className="lcd-drawer__body">
-                <div className="lcd-field">
-                  <h4>Session mode</h4>
-                  <select
-                    data-testid="lcd-mode"
-                    value={mode}
-                    aria-label="Session mode"
-                    onChange={(event) => onModeChange(event.target.value as LaunchMode)}
-                  >
-                    {MODE_OPTIONS.map((m) => (
-                      <option key={m.id} value={m.id}>{`${m.label} — ${m.description.replace(/\.$/, '').toLowerCase()}`}</option>
-                    ))}
-                  </select>
-                  <div className="lcd-s">from the {verbLabel} button</div>
-                </div>
                 <div className="lcd-field">
                   <h4>Interaction profile</h4>
                   <div className="lcd-s lcd-s--first" data-testid="lcd-profile">
@@ -1074,7 +878,6 @@ export function LaunchCard(props: LaunchCardProps) {
           ) : null}
         </aside>
       </div>
-
       {/* ============ BOTTOM BAND: how it runs · go ============ */}
       <footer className="lcd-band lcd-band--bot">
         <div className="lcd-anchor lcd-a-first">
@@ -1091,10 +894,12 @@ export function LaunchCard(props: LaunchCardProps) {
             <span className="lcd-glyph" aria-hidden="true">✳</span>
             <b>{vendor ? <span className="lcd-vendor">{vendor}</span> : null}{modelName.slice(vendor.length)}</b>
             {toolWord ? <span className="lcd-meta">{toolWord}</span> : null}
+            {jevModel && !jevModel.current ? <span className="lcd3-jevmark" title="Jev suggests a model — in this menu">✦</span> : null}
             <Caret up />
           </button>
           {open === 'model' ? (
             <div {...menuProps('model', 'lcd-menu--up')} role="menu" data-testid="nsx-model-menu">
+              {jevModel ? <JevSuggestRow s={jevModel} testId="lcd3-jev-model" onDone={close} /> : null}
               {models.length === 0 ? <div className="lcd-note">no known models on this node</div> : null}
               {groups.map((g) => {
                 const tools = [...new Set(g.rows.map((r) => r.agentTool).filter(Boolean))]
@@ -1176,17 +981,18 @@ export function LaunchCard(props: LaunchCardProps) {
         <div className="lcd-anchor">
           <button
             type="button"
-            className={`lcd-tool ${accessMode === 'fullAccess' ? 'lcd-tool--full' : ''}`}
+            className={`lcd-tool ${shownAccess === 'fullAccess' ? 'lcd-tool--full' : ''}`}
             data-testid="nsx-perm"
             aria-haspopup="menu"
             aria-expanded={open === 'access'}
-            aria-label={`Permission mode: ${describeAccessMode(accessMode)}`}
-            title={describeAccessMode(accessMode)}
-            onClick={stop(() => toggle('access'))}
+            aria-disabled={accessLock ? true : undefined}
+            aria-label={`Permission mode: ${describeAccessMode(shownAccess)}`}
+            title={accessLock ?? describeAccessMode(shownAccess)}
+            onClick={stop(() => { if (!accessLock) toggle('access'); })}
           >
             <span className="lcd-dot" aria-hidden="true" />
             <span>{access.name}</span>
-            <Caret up />
+            {accessLock ? <span aria-hidden="true">🔒</span> : <Caret up />}
           </button>
           {open === 'access' ? (
             <div {...menuProps('access', 'lcd-menu--up')} role="menu" data-testid="nsx-perm-menu">
@@ -1213,32 +1019,10 @@ export function LaunchCard(props: LaunchCardProps) {
         </div>
 
         <span className="lcd-spacer" />
-        <span className="lcd-summary" data-testid="lcd-summary" title={summaryText}>{summary}</span>
-        {onDispatch ? (
-          <button
-            type="button"
-            className="lcd-btn lcd-btn--dispatch"
-            data-testid="launch-dispatch"
-            aria-label="Dispatch"
-            title="Dispatch hands the task to the space’s dispatcher, which picks its own teammate, model and place — only your instructions go with it, as a note"
-            onClick={stop(onDispatch)}
-          >
-            <span className="lcd-btn__label">Dispatch</span>⇥
-          </button>
-        ) : null}
-        <button
-          type="button"
-          className="lcd-btn lcd-btn--go"
-          data-testid="nsx-send"
-          /* aria-disabled, not disabled: a refused Launch stays focusable so
-             its reason is reachable; the handler re-guards. */
-          aria-disabled={blocked}
-          title={refusal ?? summaryText}
-          onClick={stop(submit)}
-        >
-          {busy ? 'Launching…' : 'Launch'} <span className="lcd-kbd" aria-hidden="true">⌘↵</span>
-        </button>
+        {actions}
       </footer>
+      {overlay}
     </div>
+    </LaunchCardMenuContext.Provider>
   );
 }

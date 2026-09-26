@@ -426,8 +426,17 @@ export function useJevSuggestions(args: {
   contextBudgets?: ContextBudgets | null;
   /** The ledger's clock. Default `Date.now`. */
   now?: () => number;
+  /**
+   * Re-ask the teammate-dependent groups when what they are ranked for
+   * changes (default true — the launch sheet). The v3 card passes false: a
+   * manual teammate change clears Jev's picks and ✦ turns stale, and the
+   * person asks again (owner's teammate_change answer) — no uninvited
+   * charged call.
+   */
+  reaskOnChange?: boolean;
 }): JevSuggestions {
   const { port, spaceId, subjectId, teammateId, draft, agentTool, host, contextBudgets } = args;
+  const reaskOnChange = args.reaskOnChange ?? true;
   const interactionProfileId = args.interactionProfileId || null;
 
   // One run per mount. `useState`'s initializer runs once, so this is stable.
@@ -561,8 +570,8 @@ export function useJevSuggestions(args: {
   useEffect(() => {
     if (lastRankedFor.current === rankedFor) return;
     lastRankedFor.current = rankedFor;
-    if (dependentAsked) ask(TEAMMATE_DEPENDENT);
-  }, [rankedFor, dependentAsked, ask]);
+    if (dependentAsked && reaskOnChange) ask(TEAMMATE_DEPENDENT);
+  }, [rankedFor, dependentAsked, ask, reaskOnChange]);
 
   const toggle = useCallback((group: JevEntityGroup, id: string): string | null => {
     const current = ticks[group];

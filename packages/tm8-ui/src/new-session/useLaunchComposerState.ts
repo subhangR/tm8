@@ -87,6 +87,12 @@ export function useLaunchComposerState(args: {
   loadInstalledPlugins?: LoadInstalledPlugins;
   /** The launch's tasks, so a plugin tick keeps their equipped skills (F3). */
   taskIds?: readonly string[];
+  /**
+   * Where the posture starts. Default `'auto'` (the create screen). The v3
+   * card passes null: the teammate's or node's default, shown as such, and
+   * no `accessMode` sent until the person changes it (owner, 01a0df30).
+   */
+  initialAccessMode?: LaunchAccessMode | null;
 }): LaunchComposerState {
   const { teammates, projects, launchMode, loadInstalledPlugins } = args;
   const taskKey = (args.taskIds ?? []).join(',');
@@ -94,7 +100,9 @@ export function useLaunchComposerState(args: {
   const [teammateId, setTeammateId] = useState<string | null>(null);
   const [modelOverride, setModelOverride] = useState<string | null>(null);
   const [effort, setEffort] = useState<LaunchModelEffort | null>('high');
-  const [accessMode, setAccessMode] = useState<LaunchAccessMode | null>('auto');
+  const [accessMode, setAccessMode] = useState<LaunchAccessMode | null>(
+    args.initialAccessMode === undefined ? 'auto' : args.initialAccessMode,
+  );
   const [credential, setCredential] = useState<LaunchCredentialSource | null>(null);
   const [modeOverride, setModeOverride] = useState<LaunchMode | null>(null);
   const [workdirPick, setWorkdirPick] = useState<string | null>(null);
