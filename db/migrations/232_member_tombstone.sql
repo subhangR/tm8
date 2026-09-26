@@ -65,8 +65,8 @@ set local lock_timeout = '5s';
 set role tm8_graph_owner;
 
 alter table public.members
-  add column status text not null default 'active',
-  add column left_at timestamptz;
+  add column if not exists status text not null default 'active',
+  add column if not exists left_at timestamptz;
 
 alter table public.members
   add constraint members_status_check
@@ -82,7 +82,7 @@ comment on column public.members.left_at is
   'When the membership ended; null exactly while status = active (232).';
 
 alter table public.team_members
-  add column deactivated_at timestamptz;
+  add column if not exists deactivated_at timestamptz;
 
 comment on column public.team_members.deactivated_at is
   'Set when the owning member leaves or is removed (232). The persona and its '
@@ -721,7 +721,8 @@ begin
   -- count, and the invariant this defends is a floor.
   if target.role = 'owner' and p_role <> 'owner' then
     perform 1 from public.members
-     where space_id = p_space_id and role = 'owner' and status = 'active' for update;
+     where space_id = p_space_id and role = 'owner' and status = 'active'
+     order by entity_id for update;
     select count(*) into owner_count from public.members
      where space_id = p_space_id and role = 'owner' and status = 'active';
     if owner_count <= 1 then
@@ -941,7 +942,8 @@ begin
   -- The owner floor, as set_member_role keeps it: lock, then count.
   if target.role = 'owner' then
     perform 1 from public.members
-     where space_id = p_space_id and role = 'owner' and status = 'active' for update;
+     where space_id = p_space_id and role = 'owner' and status = 'active'
+     order by entity_id for update;
     select count(*) into owner_count from public.members
      where space_id = p_space_id and role = 'owner' and status = 'active';
     if owner_count <= 1 then
@@ -978,20 +980,47 @@ begin
 
   perform internal.require_human_auth_kind();
   perform internal.require_space_admin(p_space_id);
-  select m.entity_id, m.role into actor, caller_role from public.members m
-   where m.space_id = p_space_id and m.identity_id = internal.identity_id() and m.status = 'active';
 
+  -- THE OWNER RACE (review of #841). Two owners removing each other must not
+  -- both commit and leave the space ownerless. Removing an owner takes the
+  -- owner-row lock leave_space and set_member_role take — every active owner
+  -- row of the space, in entity_id order — BEFORE the target row, so the two
+  -- calls serialize (a fixed order, so they queue rather than deadlock). The
+  -- second one then re-reads under the lock, finds its caller tombstoned, and
+  -- is refused below.
+  select * into target from public.members
+   where entity_id = p_member_id and space_id = p_space_id and status = 'active';
+  if target.role = 'owner' then
+    perform 1 from public.members
+     where space_id = p_space_id and role = 'owner' and status = 'active'
+     order by entity_id for update;
+  end if;
   select * into target from public.members
    where entity_id = p_member_id and space_id = p_space_id and status = 'active'
    for update;
   if target.entity_id is null then
     raise exception 'member not found in this space' using errcode = 'P0002';
   end if;
+
+  -- Re-read the caller under the lock: require_space_admin answered before it.
+  select m.entity_id, m.role into actor, caller_role from public.members m
+   where m.space_id = p_space_id and m.identity_id = internal.identity_id() and m.status = 'active';
+  if actor is null or caller_role not in ('owner', 'admin') then
+    raise exception 'admin role required' using errcode = '42501';
+  end if;
   if target.entity_id = actor then
     raise exception 'to leave a space yourself, use spaces.leave' using errcode = '22023';
   end if;
-  if target.role = 'owner' and caller_role is distinct from 'owner' then
-    raise exception 'only an owner may remove an owner' using errcode = '42501';
+  if target.role = 'owner' then
+    if caller_role is distinct from 'owner' then
+      raise exception 'only an owner may remove an owner' using errcode = '42501';
+    end if;
+    -- The floor, stated rather than implied by "the caller is an owner".
+    if not exists (select 1 from public.members
+                    where space_id = p_space_id and role = 'owner' and status = 'active'
+                      and entity_id <> target.entity_id) then
+      raise exception 'a space must keep at least one owner' using errcode = '42501';
+    end if;
   end if;
 
   perform internal.bind_actor(actor);

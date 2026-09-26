@@ -23,7 +23,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { createDb } from '../../src/db/client.js';
 import type { Db, Querier } from '../../src/db/types.js';
-import { loadActors } from '../../src/facade/entity-read.js';
+import { loadActors, loadEntitySummariesByIds } from '../../src/facade/entity-read.js';
+import { queryCollection } from '../../src/facade/handlers/collections.js';
 import { generateSecret, hashToken } from '../../src/identity/crypto.js';
 
 import {
@@ -435,6 +436,56 @@ describe.sequential('spaces.members.remove', () => {
       'select count(*)::int as n from public.members where space_id = $1', [f.spaceA]);
     expect(all!.n).toBe(count!.n + 1);
   });
+
+  it('the entity list drops a removed member on re-query; positive: an active member is listed, and the removed row still resolves by id', async () => {
+    // R was removed by the test above. A reload is a fresh query.
+    const listed = async (kinds?: string[]) => {
+      const result = await as(f.identityO, (q) => queryCollection(
+        q, { spaceId: f.spaceA, ...(kinds ? { kinds } : {}), limit: 200 } as never, f.identityO));
+      return result.page.items.map((item) => item.id);
+    };
+    for (const kinds of [['member'], ['member', 'channel'], undefined]) {
+      const ids = await listed(kinds);
+      expect(ids).not.toContain(f.memberRA);
+      expect(ids).toContain(f.memberOA);
+    }
+    // Old content renders: the row is reachable by id and says why it is not listed.
+    const [removed, active] = await as(f.identityO, (q) =>
+      loadEntitySummariesByIds(q, [f.memberRA, f.memberOA], f.identityO)).then((rows) =>
+      [rows.find((r) => r.id === f.memberRA), rows.find((r) => r.id === f.memberOA)]);
+    expect(removed?.state).toMatchObject({ kind: 'member', memberStatus: 'removed' });
+    expect(active?.state).toMatchObject({ kind: 'member' });
+    expect((active!.state as { memberStatus?: string }).memberStatus).toBeUndefined();
+  });
+
+  it('the entity list drops a removed member\'s persona; positive: an active member\'s persona is listed, and the removed one still resolves by id', async () => {
+    const personaR = randomUUID();
+    const personaO = randomUUID();
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(
+        `insert into public.entities(id, space_id, kind, created_by, visibility) values
+         ($1, $3, 'team_member', $4, 'space'), ($2, $3, 'team_member', $5, 'space')`,
+        [personaR, personaO, f.spaceA, f.memberRA, f.memberOA]);
+      await client.query(
+        `insert into public.team_members(entity_id, owner_member_id, name, role, identity) values
+         ($1, $3, 'R''s persona', 'worker', 'persona'), ($2, $4, 'O''s persona', 'worker', 'persona')`,
+        [personaR, personaO, f.memberRA, f.memberOA]);
+    });
+    for (const kinds of [['team_member'], ['member', 'team_member'], undefined]) {
+      const result = await as(f.identityO, (q) => queryCollection(
+        q, { spaceId: f.spaceA, ...(kinds ? { kinds } : {}), limit: 200 } as never, f.identityO));
+      const ids = result.page.items.map((item) => item.id);
+      expect(ids).not.toContain(personaR);
+      expect(ids).toContain(personaO);
+    }
+    const rows = await as(f.identityO, (q) => loadEntitySummariesByIds(q, [personaR, personaO], f.identityO));
+    const removed = rows.find((r) => r.id === personaR)!;
+    const active = rows.find((r) => r.id === personaO)!;
+    expect(removed.state).toMatchObject({ kind: 'team_member', owner: { id: f.memberRA, memberStatus: 'removed' } });
+    expect(active.state).toMatchObject({ kind: 'team_member', owner: { id: f.memberOA } });
+    expect((active.state as { owner: { memberStatus?: string } }).owner.memberStatus).toBeUndefined();
+  });
 });
 
 describe.sequential('accounts.disable', () => {
@@ -464,5 +515,84 @@ describe.sequential('accounts.disable', () => {
     expect(live).toHaveLength(0);
     expect((await memberRow(f.memberXA))[0]!.status).toBe('active');
     expect(await disable(f.identityN, f.accountX, mutationId)).toEqual(result);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE OWNER RACE (review of #841). Two owners removing each other must leave
+// exactly one owner: remove_space_member takes the owner-row lock, in a fixed
+// order, before the target row, and re-reads its caller under it.
+// ---------------------------------------------------------------------------
+describe.sequential('spaces.members.remove — the owner race', () => {
+  /** A fresh space whose owners are O and D. */
+  async function twoOwnerSpace(): Promise<{ spaceId: string; ownerO: string; ownerD: string }> {
+    const spaceId = randomUUID();
+    const ownerO = randomUUID();
+    const ownerD = randomUUID();
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(
+        `insert into public.spaces(id, name, created_by_identity, visibility) values ($1, 'Two owners', $2, 'private')`,
+        [spaceId, f.identityO]);
+      await client.query(
+        `insert into public.entities(id, space_id, kind, created_by, visibility) values
+         ($1, $3, 'member', $1, 'space'), ($2, $3, 'member', $2, 'space')`,
+        [ownerO, ownerD, spaceId]);
+      await client.query(
+        `insert into public.members(entity_id, space_id, identity_id, role, display_name) values
+         ($1, $3, $4, 'owner', 'O'), ($2, $3, $5, 'owner', 'D')`,
+        [ownerO, ownerD, spaceId, f.identityO, f.identityD]);
+    });
+    return { spaceId, ownerO, ownerD };
+  }
+
+  const activeOwners = async (spaceId: string): Promise<number> => (await ownerQuery<{ n: number }>(
+    `select count(*)::int as n from public.members where space_id = $1 and role = 'owner' and status = 'active'`,
+    [spaceId]))[0]!.n;
+
+  /** Resolves once some backend is waiting on a lock inside remove_space_member. */
+  async function untilBlockedOnLock(): Promise<void> {
+    const deadline = Date.now() + 20_000;
+    while (Date.now() < deadline) {
+      const rows = await database.transaction(async (client) => (await client.query<{ n: number }>(
+        `select count(*)::int as n from pg_stat_activity
+          where wait_event_type = 'Lock' and query like '%remove_space_member%'`)).rows);
+      if (rows[0]!.n > 0) return;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    throw new Error('the second removal never waited on the owner lock');
+  }
+
+  it('positive: an owner removes a co-owner; the space keeps exactly one owner', async () => {
+    const s = await twoOwnerSpace();
+    const result = await removeMember(f.identityO, s.spaceId, s.ownerD);
+    expect(result).toMatchObject({ memberId: s.ownerD, status: 'removed' });
+    expect(await activeOwners(s.spaceId)).toBe(1);
+    expect((await memberRow(s.ownerO))[0]!.status).toBe('active');
+  });
+
+  it('refused: mutual removal, interleaved — the second owner waits on the lock, then is refused (42501); one owner remains', async () => {
+    const s = await twoOwnerSpace();
+    let second: Promise<string> | undefined;
+    await as(f.identityO, async (q) => {
+      await q.rpc('remove_space_member', [s.spaceId, s.ownerD, cmid()]);
+      // O's removal holds the owner rows, uncommitted. D's removal of O starts now.
+      second = outcome(() => removeMember(f.identityD, s.spaceId, s.ownerO));
+      await untilBlockedOnLock();
+    });
+    expect(await second).toBe('42501');
+    expect(await activeOwners(s.spaceId)).toBe(1);
+    expect((await memberRow(s.ownerO))[0]!.status).toBe('active');
+    expect((await memberRow(s.ownerD))[0]!.status).toBe('removed');
+  });
+
+  it('refused: mutual removal, concurrent — exactly one call commits and exactly one owner remains', async () => {
+    const s = await twoOwnerSpace();
+    const results = await Promise.all([
+      outcome(() => removeMember(f.identityO, s.spaceId, s.ownerD)),
+      outcome(() => removeMember(f.identityD, s.spaceId, s.ownerO)),
+    ]);
+    expect(results.sort()).toEqual(['42501', 'ok']);
+    expect(await activeOwners(s.spaceId)).toBe(1);
   });
 });

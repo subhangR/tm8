@@ -48,10 +48,6 @@ import {
   migrationFiles,
   type W1ScratchDatabase,
 } from './w1-pg.js';
-import { claimsFor } from '../../src/facade/context.js';
-import { createSessionIdentityResolver } from '../../src/http/identity-resolver.js';
-import type { RequestContext } from '../../src/http/types.js';
-import type { LoopbackOwner } from '../../src/identity/loopback.js';
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
 

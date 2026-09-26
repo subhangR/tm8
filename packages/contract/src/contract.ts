@@ -268,7 +268,9 @@ export type CoreEntityState =
   | { kind: 'doc'; format: 'markdown'|'mermaid'|'excalidraw'; childCount: number }
   | { kind: 'message'; anchorId: EntityId; rootMessageId: EntityId | null; author: ActorSummary;
       messageBatchId: string | null; editedAt?: string | null; redactedAt?: string | null }
-  | { kind: 'member'; role: 'owner'|'admin'|'member'; score: number; taskDoneCount: number }
+  | { kind: 'member'; role: 'owner'|'admin'|'member'; score: number; taskDoneCount: number;
+      /** 232: present only when this membership has ended. Absent means active. Additive. */
+      memberStatus?: 'left' | 'removed' }
   /* `defaultProfileId` is the teammate's own `defaults_to_profile` target, and
      it is ADDITIVE and OPTIONAL like `model`/`agentTool` above.
 

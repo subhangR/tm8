@@ -335,7 +335,7 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
     },
 
     /**
-     * G6 (230): end a membership. The row is kept (`left` / `removed`), so the
+     * G6 (232): end a membership. The row is kept (`left` / `removed`), so the
      * member's authorship still renders; the server revokes, stops and clears
      * in one transaction and closes their sockets on the Space.
      */
