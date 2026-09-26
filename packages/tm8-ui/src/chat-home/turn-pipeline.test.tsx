@@ -541,6 +541,27 @@ describe('the done part names how a turn ended', () => {
     });
     await waitFor(() => expect(transcript(view).getAttribute('data-turn-phase')).toBe('failed'));
   });
+
+  /**
+   * HINGES ON: the previous-done SLICE in `turnFailureOf` (#882 review, item
+   * 10). An older node's done parts carry no `reason`, so the verdict falls
+   * back to an error part — and without the slice, attempt 1's error is still
+   * in scope and a clean re-run reads as failed.
+   */
+  it('an older node re-run that is clean after an errored first attempt is not held as failed', async () => {
+    const script = scriptedPort();
+    script.store(part(0, { kind: 'error', message: 'runtime died' }));
+    script.store(part(1, { kind: 'done' }));
+    const view = await openThread(script.port);
+
+    act(() => {
+      script.emit(delta(2, 'Second attempt got there.'));
+      script.emit(part(3, { kind: 'done' }));
+      script.emit(done());
+    });
+    await waitFor(() => expect(view.queryByTestId('tch-send-working')).toBeNull());
+    expect(transcript(view).getAttribute('data-turn-phase')).toBeNull();
+  });
 });
 
 describe('reload mid-turn resumes the live turn', () => {

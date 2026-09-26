@@ -60,6 +60,16 @@ const WRITE_VERB =
  * ONE COPY. The ledger fold (`ledger.ts`) imports this set rather than owning
  * a twin — two write-op lists that agree today drift tomorrow, which is this
  * file's founding lesson.
+ *
+ * AND IT DRIFTED ANYWAY: the forms and containers groups joined `tm8_act`
+ * after it was written, and THIRTEEN of their operations carry no verb the
+ * regex knows (re-measured 2026-09-26 over `ACT_GUIDES` + `CONTAINER_GUIDES`
+ * in `@tm8/mcp` `tools.ts`) — `forms.transition`, `forms.responses.submit`,
+ * `containers.fork`, `containers.destroy`, … So a turn that submitted a form or
+ * destroyed a machine folded as a read on every surface but the ledger, which
+ * had special-cased two of them locally. `write-classifier.test.ts` now reads
+ * those group lists from source, so the next operation added there without a
+ * verb reds here instead of drifting silently.
  */
 export const WRITE_OPS: ReadonlySet<string> = new Set([
   'entities.create',
@@ -91,6 +101,21 @@ export const WRITE_OPS: ReadonlySet<string> = new Set([
   'execution.terminate',
   'execution.resume',
   'messages.post',
+  // Forms — every mutation is ledgered; none of these verbs is in the regex.
+  'forms.questions.add',
+  'forms.transition',
+  'forms.responses.save',
+  'forms.responses.submit',
+  'forms.responses.discard',
+  'forms.responses.redeliver',
+  // Containers — ledgered commands on a machine; same gap.
+  'containers.destroy',
+  'containers.run',
+  'containers.policy.set',
+  'containers.expose',
+  'containers.snapshot',
+  'containers.fork',
+  'containers.attention',
 ]);
 
 /** Strip any MCP server prefix: `mcp__tm8__tm8_delegate` → `tm8_delegate`. */
