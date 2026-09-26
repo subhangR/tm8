@@ -87,6 +87,19 @@ export interface CliContext {
   fresh: boolean;
   /** Restart-gap retry window for the request client; 0 fails on the first refusal. */
   gapRetryMs?: number | undefined;
+  /**
+   * Set when `--space` named a Space other than the session's own and a space
+   * link resolved it (space-link-route.ts). Every catalog call then leaves as
+   * `spaceLinks.invoke` on the HOME Space; `space` above holds the target.
+   */
+  link?: SpaceLinkRoute | undefined;
+}
+
+/** Where a linked invocation goes: the home Space and the link, never a token. */
+export interface SpaceLinkRoute {
+  homeSpaceId: string;
+  linkId: string;
+  targetSpaceId: string;
 }
 
 /**
