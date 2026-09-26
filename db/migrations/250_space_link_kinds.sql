@@ -99,8 +99,10 @@ comment on table public.space_links is
 
 
 -- -----------------------------------------------------------------------------
--- 4. Content hydration. SHARED OBJECT: body copied from 209 verbatim; the
---    `space_link` arm is the only addition. `server` gets no arm: it has no
+-- 4. Content hydration. SHARED OBJECT: body copied from 239 (W10a, #863)
+--    verbatim, which is 209's plus the `credential` arm; the `space_link` arm
+--    is the only addition. Both arms must survive (pg cell entity_content
+--    carries both arms). `server` gets no arm: it has no
 --    detail table in W6 and resolves to '{}' through `else` (W8 adds its row),
 --    recorded in entity-content-all-kinds' NO_CONTENT_ARM.
 -- -----------------------------------------------------------------------------
@@ -147,6 +149,9 @@ begin
                               || jsonb_build_object('sections', internal.form_sections_json(target),
                                                     'questions', internal.form_questions_json(target))
                          into content from public.forms fm where fm.entity_id = target;
+      -- An allow-list, never to_jsonb(sc): the row holds the sealed secret,
+      -- the hint and the vendor login (§3a).
+      when 'credential' then select to_jsonb(cc) - 'entity_id' into content from public.credential_cards cc where cc.entity_id = target;
       -- 250 (W6): the shared link's metadata. `space_links` holds no secret; the
       -- sealed per-member token is `space_link_tokens` (251) and has no arm.
       when 'space_link' then select to_jsonb(sl) - 'entity_id' into content from public.space_links sl where sl.entity_id = target;

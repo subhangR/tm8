@@ -40,8 +40,9 @@ vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
 
 // ---------------------------------------------------------------------------
 // THE STRICT GATE'S FULL CALLER SET (lead ruling 2026-09-26 02:08Z/02:19Z).
-// Measured on this branch: 21 credential management + 6 non-credential + 2
-// W4 session management (249) + 6 spaceLinks writes = 35. A caller not on
+// Measured on this branch: 22 credential management (21 + W10a's
+// set_space_credential_visibility, 239) + 6 non-credential + 2
+// W4 session management (249) + 6 spaceLinks writes = 36. A caller not on
 // this list fails; a listed caller
 // that stops calling the gate fails. Changing this list is a review event.
 // ---------------------------------------------------------------------------
@@ -72,6 +73,7 @@ const STRICT_GATE_CALLERS: Readonly<Record<string, string>> = {
   'set_node_credential_policy(text,boolean)': CREDENTIAL_MANAGEMENT,
   'set_space_credential_default(uuid)': CREDENTIAL_MANAGEMENT,
   'set_space_credential_policy(uuid,text,text[])': CREDENTIAL_MANAGEMENT,
+  'set_space_credential_visibility(uuid,text)': CREDENTIAL_MANAGEMENT, // W10a (239, #863)
   'space_credential_live_sessions(uuid)': CREDENTIAL_MANAGEMENT,
   'start_credential_session(uuid,text,integer,integer)': CREDENTIAL_MANAGEMENT,
   'start_space_credential_login(uuid,text,text,uuid,integer,integer)': CREDENTIAL_MANAGEMENT,
@@ -303,13 +305,13 @@ describe('W6 pin — the STRICT gate\'s full caller set (lead ruling 02:08Z; fol
     expect(found).toEqual(Object.keys(STRICT_GATE_CALLERS).sort());
   });
 
-  it('the list is 21 credential management + 6 non-credential + 2 session management + 6 spaceLinks writes', () => {
+  it('the list is 22 credential management + 6 non-credential + 2 session management + 6 spaceLinks writes', () => {
     const labels = Object.values(STRICT_GATE_CALLERS);
-    expect(labels.filter((l) => l === CREDENTIAL_MANAGEMENT || l === CREDENTIAL_READ)).toHaveLength(21);
+    expect(labels.filter((l) => l === CREDENTIAL_MANAGEMENT || l === CREDENTIAL_READ)).toHaveLength(22);
     expect(labels.filter((l) => l === IDENTITY_WIDE || l === AUTH_MINTING || l === PENDING)).toHaveLength(6);
     expect(labels.filter((l) => l === SESSION_MANAGEMENT)).toHaveLength(2);
     expect(labels.filter((l) => l === SPACE_LINKS)).toHaveLength(6);
-    expect(labels).toHaveLength(35);
+    expect(labels).toHaveLength(36);
   });
 
   it('the matcher sees a quoted, mixed-case call and an execute format(...) that names the gate', async () => {
@@ -854,5 +856,31 @@ describe('W6 pin — link creation needs an unpinned human session; a pinned one
     // Paired positive: the link is untouched and the unpinned session still reads it.
     const after = (await store.list(await hClaims(), fixture.spaceA)).find((l) => l.id === link.id);
     expect(after).toBeDefined();
+  });
+});
+
+describe('W6 × W10a — entity_content carries BOTH shared-object arms (250 is built on 239)', () => {
+  it('a credential resolves through the credential arm and a space link through the space_link arm', async () => {
+    const claims = await hClaims();
+    const credentialId = randomUUID();
+    const label = `both-arms ${credentialId.slice(0, 8)}`;
+    await db.rpc(claims, 'create_space_credential', [
+      credentialId, fixture.spaceA, 'anthropic', 'api_key', label, 'Fk9x',
+      Buffer.alloc(17, 1), Buffer.alloc(12, 2),
+    ]);
+    let [existing] = await database.query<{ entity_id: string }>(
+      'select entity_id from public.space_links where home_space_id = $1 and target_space_id = $2',
+      [fixture.spaceA, fixture.spaceB]);
+    if (!existing) {
+      const link = await store.add(claims, { spaceId: fixture.spaceA, targetSpaceId: fixture.spaceB });
+      existing = { entity_id: link.id };
+    }
+    const content = async (id: string) =>
+      (await database.query<{ c: Record<string, unknown> }>('select internal.entity_content($1) c', [id]))[0]!.c;
+    // Each arm names its own row; the `else` arm would answer '{}' for either.
+    expect(await content(credentialId)).toMatchObject({ title: label, provider: 'anthropic', shape: 'api_key' });
+    expect(await content(existing.entity_id)).toMatchObject({
+      home_space_id: fixture.spaceA, target_space_id: fixture.spaceB,
+    });
   });
 });
