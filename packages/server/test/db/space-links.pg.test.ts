@@ -34,7 +34,7 @@ import { loadOrCreateCredentialKey } from '../../src/credentials/credential-key.
 import { openSecret, sealSecret } from '../../src/credentials/secret-box.js';
 
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from './w1-pg.js';
-import { leaksSecret } from './secret-probe.js';
+import { EXEMPT_KEYS, leaksSecret } from './secret-probe.js';
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
 
@@ -412,15 +412,39 @@ describe('W6 a5 — defaults, the link session, no target-consent setting', () =
     expect(leaksSecret(listed)).toBe(false);
   });
 
-  it('the secret probe catches a planted sealed key and a planted token, and ignores an "aad…" UUID', () => {
-    expect(leaksSecret(JSON.stringify({ id: 'x', ciphertext: 'AAAA' }))).toBe(true);
+  it('the secret probe catches every sealed key name, affixed or bare, and planted tokens (positives)', () => {
+    const key = (k: string) => leaksSecret(JSON.stringify({ id: 'x', [k]: 'AAAA' }));
+    // bare names and the affixed names the old substring check caught
+    for (const k of ['ciphertext', 'nonce', 'aad', 'AAD', 'sealed',
+      'secret_ciphertext', 'ciphertext_b64', 'sealed_nonce', 'value_aad',
+      // real affixed names on this tree (secret-probe.ts lists file:line)
+      'key_ciphertext', 'key_nonce', 'token_ciphertext', 'token_nonce', 'secret_nonce',
+      'secretCiphertext', 'secretNonce', 'keyCiphertext', 'keyNonce', 'tokenCiphertext', 'tokenNonce']) {
+      expect(key(k), k).toBe(true);
+    }
     expect(leaksSecret('{"nonce" : "b"}')).toBe(true);
-    expect(leaksSecret(JSON.stringify({ AAD: 'h|l|m|t' }))).toBe(true);
+    expect(leaksSecret(JSON.stringify({ outer: { inner_ciphertext: 'x' } }))).toBe(true);
     expect(leaksSecret(JSON.stringify({ note: 'tm8s_abc.secret' }))).toBe(true);
     expect(leaksSecret(JSON.stringify({ note: 'tm8c_abc.secret' }))).toBe(true);
-    // negative controls — the #885 flake: a UUID with the hex run "aad", and keys that merely contain the words
+    expect(leaksSecret(JSON.stringify({ note: 'tm8g_abc' }))).toBe(true);
+  });
+
+  it('the secret probe ignores UUID values and non-secret keys (negatives); exemptions are exact-name only', () => {
+    // the #885 flake: the hex run "aad" in a VALUE
     expect(leaksSecret(JSON.stringify({ memberId: 'aad52e5a-0c1d-4e6f-9aad-1234567890ab', status: 'signed_in' }))).toBe(false);
-    expect(leaksSecret(JSON.stringify({ hasCiphertext: false, nonceless: true }))).toBe(false);
+    // a word in a value is not a key
+    expect(leaksSecret(JSON.stringify({ note: 'rotate the ciphertext and nonce' }))).toBe(false);
+    // "announce" does not contain "nonce" — no exemption needed
+    expect(leaksSecret(JSON.stringify({ announceUrl: 'u', announced: true }))).toBe(false);
+    // the shipped exemption set is empty: no real list key needs one
+    expect(EXEMPT_KEYS.size).toBe(0);
+    // the mechanism: an exempted EXACT name passes; any near-miss of it still trips
+    const exempt = new Set(['hasCiphertext']);
+    expect(leaksSecret(JSON.stringify({ hasCiphertext: false }), exempt)).toBe(false);
+    expect(leaksSecret(JSON.stringify({ hasCiphertext: false }))).toBe(true);
+    for (const near of ['hasciphertext', 'HasCiphertext', 'hasCiphertexts', 'has_ciphertext', 'hasCiphertext_b64']) {
+      expect(leaksSecret(JSON.stringify({ [near]: false }), exempt), near).toBe(true);
+    }
   });
 
   it('no allow_stored_sessions exists anywhere (decision 33)', async () => {
