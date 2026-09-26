@@ -119,6 +119,32 @@ describe('the attach row: context, never a second subject', () => {
     expect('selection' in input).toBe(false);
   });
 
+  it('"+N more" counts chips past the edge, and says nothing once scrolled to the end', async () => {
+    const view = renderPopup();
+    await view.ready();
+    fireEvent.click(view.getByTestId('lcd-attach'));
+    fireEvent.click(view.getByTestId('lcd-attach-ent-doc-other'));
+    /* jsdom has no layout: stub a 500px scroller over 1000px of chips, with
+       the one chip sitting flush with the right edge, as on a real node. */
+    const list = view.getByTestId('lcd-attached');
+    const chip = view.getByTestId('lcd-attached-ent-doc-other');
+    const box = (right: number) => ({ right, left: right - 200, top: 0, bottom: 30, width: 200, height: 30, x: right - 200, y: 0, toJSON: () => ({}) });
+    Object.defineProperty(list, 'scrollWidth', { configurable: true, value: 1000 });
+    Object.defineProperty(list, 'clientWidth', { configurable: true, value: 500 });
+    list.getBoundingClientRect = () => box(500);
+    chip.getBoundingClientRect = () => box(500);
+
+    list.scrollLeft = 0;
+    fireEvent.scroll(list);
+    expect(view.getByTestId('lcd-more').textContent).toBe('+1 more');
+    expect(list.hasAttribute('data-more')).toBe(true);
+
+    list.scrollLeft = 500;
+    fireEvent.scroll(list);
+    expect(view.queryByTestId('lcd-more')).toBeNull();
+    expect(list.hasAttribute('data-more')).toBe(false);
+  });
+
   it('the menu says sessions cannot be attached, and names the subject it keeps', async () => {
     const view = renderPopup();
     fireEvent.click(view.getByTestId('lcd-attach'));
@@ -234,6 +260,22 @@ describe('the keyboard', () => {
     expect(view.onDismiss).toHaveBeenCalledTimes(1);
   });
 
+  it('Escape with focus OUTSIDE an open context popover closes the popover, not the popup', async () => {
+    const view = renderPopup();
+    await view.ready();
+    fireEvent.click(view.getByTestId('lsel-chip-references'));
+    expect(view.getByTestId('lsel-popover')).toBeTruthy();
+    const instructions = view.getByTestId('lcd-instructions');
+    fireEvent.change(instructions, { target: { value: 'keep me' } });
+
+    fireEvent.keyDown(instructions, { key: 'Escape' });
+    expect(view.queryByTestId('lsel-popover')).toBeNull();
+    expect(view.onDismiss).not.toHaveBeenCalled();
+    expect((view.getByTestId('lcd-instructions') as HTMLTextAreaElement).value).toBe('keep me');
+    fireEvent.keyDown(instructions, { key: 'Escape' });
+    expect(view.onDismiss).toHaveBeenCalledTimes(1);
+  });
+
   it('⌘↵ launches — the same commit as the button', async () => {
     const view = renderPopup();
     fireEvent.keyDown(document, { key: 'Enter', metaKey: true });
@@ -316,6 +358,13 @@ describe('the bottom band', () => {
   it('the node’s slots show beside ⋯ when the host knows them', () => {
     const view = renderPopup({ capacity: { slotsFree: 28, slotsTotal: 40 } });
     expect(view.getByTestId('lcd-slots').textContent).toContain('12/40');
+  });
+
+  it('an uncapped node reads as used/∞, not the int4 ceiling the RPC carries', () => {
+    const view = renderPopup({ capacity: { slotsFree: 2147483633, slotsTotal: 2147483647 } });
+    expect(view.getByTestId('lcd-slots').textContent).toContain('14/∞');
+    expect(view.getByTestId('lcd-slots').textContent).not.toContain('2147483647');
+    expect(view.getByTestId('lcd-slots').getAttribute('title')).toBe('14 live · no session limit');
   });
 });
 
