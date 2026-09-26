@@ -45,7 +45,7 @@ import { placeholderTitleFor, useNewTask } from '../authoring';
 import { homeRootKinds } from '../domain/home-rail';
 import { allKinds, getKind } from '../domain/registry';
 import { placeholderNameFor } from '../domain/title-grammar';
-import { QUIET_SESSION_DETAIL, needsAttentionOf } from '../domain/needs-attention';
+import { needsAttentionOf } from '../domain/needs-attention';
 import { newLaunchMutationId } from '../domain/launch';
 import { useLaunchPort } from './useLaunchPort';
 import { mergePrPortFor } from './mergePrPort';
@@ -60,7 +60,6 @@ import type { GateData } from './useGateData';
 import { openEntityAndMarkRead } from './open-entity';
 import { conversationSurfaceFor } from './conversationSurface';
 import { channelFeedPortFromGateData } from './channel-feed-port';
-import { attentionSectionFor } from './attentionSurface';
 import { debugSurfaceFor } from './debugSurface';
 import { sessionStatsSurfaceFor } from './sessionStatsSurface';
 import { sessionContextSurfaceFor } from './sessionContextSurface';
@@ -505,7 +504,6 @@ export function WorkspaceView(props: WorkspaceViewProps) {
                         : `${admission.cause} — ${admission.remedy}`
                     }
                     liveness={data.livenessOf(id)}
-                    attentionSection={attentionSectionFor(data.seam, data.spaceId, id, data.reconcileCommand)}
                     debugSurface={debugSurfaceFor(data.seam, id, data.livenessOf)}
                     sessionStatsSurface={sessionStatsSurfaceFor(data.seam, id)}
                     sessionContextSurface={sessionContextSurfaceFor(data.seam, id, data.livenessOf)}
@@ -521,7 +519,6 @@ export function WorkspaceView(props: WorkspaceViewProps) {
                        the block signal must reach the terminal AND the chat surface, not
                        whichever one is on top. */
                     needsAttention={detail ? needsAttentionOf(detail, data.livenessOf) : false}
-                    attentionDetail={QUIET_SESSION_DETAIL}
                     viewerMemberId={props.viewerMemberId}
                     contentSurface={nav.surfaceOf?.(id) ?? null}
                     onContentSurfaceChange={(surface) => nav.setContentSurface?.(id, surface)}

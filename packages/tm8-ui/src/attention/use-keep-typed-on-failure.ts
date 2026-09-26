@@ -6,6 +6,9 @@
  * on submit would therefore lose the note on exactly the path where it has to
  * be typed again. So: stash on submit, clear optimistically, and restore the
  * stash if one of the command's own failure messages appears shortly after.
+ *
+ * `keep('')` drops the stash. Call it when the command reports it landed, or a
+ * LATER command's failure inside the window would restore text already sent.
  */
 import { useEffect, useRef } from 'react';
 import type { AttentionApi } from './index';

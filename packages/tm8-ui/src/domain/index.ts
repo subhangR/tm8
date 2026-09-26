@@ -104,7 +104,7 @@ export {
 
 export { actorName, actorPresentation, LEFT_SUFFIX, type ActorPresentation } from './actors';
 
-export { QUIET_SESSION_DETAIL, needsAttentionOf, toRowFacts } from './needs-attention';
+export { needsAttentionOf, toRowFacts } from './needs-attention';
 
 export {
   AGENT_TOOLS,

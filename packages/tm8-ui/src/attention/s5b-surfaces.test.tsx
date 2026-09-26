@@ -12,7 +12,6 @@ import { AttentionApiProvider, type AttentionApi, type AttentionChip, type Atten
 import { AttentionBlock } from './AttentionBlock';
 import { SessionWaitingBanner } from './SessionWaitingBanner';
 import { AttentionHeaderButton } from './AttentionSheet';
-import { LegacyAttentionDock } from './LegacyAttentionDock';
 import { needsMeListSource, needsMeLoading, needsMeRecheckAt, needsMeRows, PULL_PATIENCE_MS, resetNeedsMePulls } from './needs-me';
 import { EntityListPanel } from '../panels';
 import { getKind, type ActionContext, type QueryFilter } from '../domain';
@@ -85,10 +84,10 @@ function fakeApi(requests: AttentionRequest[], over: Partial<AttentionApi> = {})
     queue: () => rows,
     requestsFor: (root) => requests.filter((r) => (r.rootId ?? r.entityId) === root),
     markSeen: vi.fn(async () => {}),
-    resolve: vi.fn(async () => {}),
+    resolve: vi.fn(async () => true),
     unresolve: vi.fn(async () => {}),
     withdraw: vi.fn(async () => {}),
-    reply: vi.fn(async () => {}),
+    reply: vi.fn(async () => true),
     refresh: vi.fn(),
     ...over,
   };
@@ -251,6 +250,7 @@ describe('AttentionBlock (tab 3, variant A)', () => {
         <AttentionBlock entityId={TASK} />
       </AttentionApiProvider>,
     );
+    vi.mocked(api.resolve).mockResolvedValueOnce(false);
     fireEvent.change(screen.getByTestId('attention-block-note'), { target: { value: 'cap at 1h' } });
     await act(async () => {
       fireEvent.click(screen.getByTestId('attention-block-resolve'));
@@ -265,15 +265,25 @@ describe('AttentionBlock (tab 3, variant A)', () => {
     expect((screen.getByTestId('attention-block-note') as HTMLInputElement).value).toBe('cap at 1h');
   });
 
-  it('the legacy dock yields to the block when a module is mounted', () => {
-    const { container, rerender } = render(<LegacyAttentionDock><p>old dock</p></LegacyAttentionDock>);
-    expect(container.textContent).toBe('old dock');
-    rerender(
-      <AttentionApiProvider api={fakeApi([])}>
-        <LegacyAttentionDock><p>old dock</p></LegacyAttentionDock>
+  it('a Resolve that LANDED drops the note: a later failure does not bring it back', async () => {
+    let api = fakeApi([request({ id: 'r1' })]);
+    const view = render(
+      <AttentionApiProvider api={api}>
+        <AttentionBlock entityId={TASK} />
       </AttentionApiProvider>,
     );
-    expect(container.textContent).toBe('');
+    fireEvent.change(screen.getByTestId('attention-block-note'), { target: { value: 'cap at 1h' } });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('attention-block-resolve'));
+    });
+    // Some other surface's resolve fails inside the stash window.
+    api = { ...api, error: "Couldn't resolve: 500" };
+    view.rerender(
+      <AttentionApiProvider api={api}>
+        <AttentionBlock entityId={TASK} />
+      </AttentionApiProvider>,
+    );
+    expect((screen.getByTestId('attention-block-note') as HTMLInputElement).value).toBe('');
   });
 });
 
@@ -282,14 +292,13 @@ describe('SessionWaitingBanner (tab 4)', () => {
     const api = fakeApi([request({ id: 'r1' })]);
     render(
       <AttentionApiProvider api={api}>
-        <SessionWaitingBanner sessionId={SESSION} legacy={<p>quiet pty</p>} />
+        <SessionWaitingBanner sessionId={SESSION} />
       </AttentionApiProvider>,
     );
     expect(screen.getByTestId('session-waiting-reason').textContent).toBe(
       'Pick retry policy: 3× fixed or exponential up to 1h?',
     );
     expect(screen.getByTestId('session-waiting-banner').textContent).toContain('on task Wire refund webhook');
-    expect(screen.queryByText('quiet pty')).toBeNull();
 
     fireEvent.click(screen.getByTestId('session-waiting-reply'));
     fireEvent.change(screen.getByTestId('session-waiting-input'), { target: { value: 'use exponential' } });
@@ -363,6 +372,7 @@ describe('SessionWaitingBanner (tab 4)', () => {
         <SessionWaitingBanner sessionId={SESSION} />
       </AttentionApiProvider>,
     );
+    vi.mocked(api.reply).mockResolvedValueOnce(false);
     fireEvent.click(screen.getByTestId('session-waiting-reply'));
     fireEvent.change(screen.getByTestId('session-waiting-input'), { target: { value: 'use exponential' } });
     await act(async () => {
@@ -379,15 +389,36 @@ describe('SessionWaitingBanner (tab 4)', () => {
     expect(screen.queryByTestId('session-waiting-scope')).toBeNull();
   });
 
-  it('PTY silence alone draws nothing once a module is mounted (G1); legacy stands without one', () => {
+  it('PTY silence alone draws nothing (G1), with or without a module', () => {
     const { container, rerender } = render(
       <AttentionApiProvider api={fakeApi([])}>
-        <SessionWaitingBanner sessionId={SESSION} legacy={<p>quiet pty</p>} />
+        <SessionWaitingBanner sessionId={SESSION} />
       </AttentionApiProvider>,
     );
     expect(container.textContent).toBe('');
-    rerender(<SessionWaitingBanner sessionId={SESSION} legacy={<p>quiet pty</p>} />);
-    expect(container.textContent).toBe('quiet pty');
+    rerender(<SessionWaitingBanner sessionId={SESSION} />);
+    expect(container.textContent).toBe('');
+  });
+
+  it('a Reply that LANDED drops the text: a later failure does not bring it back', async () => {
+    let api = fakeApi([request({ id: 'r1' })]);
+    const view = render(
+      <AttentionApiProvider api={api}>
+        <SessionWaitingBanner sessionId={SESSION} />
+      </AttentionApiProvider>,
+    );
+    fireEvent.click(screen.getByTestId('session-waiting-reply'));
+    fireEvent.change(screen.getByTestId('session-waiting-input'), { target: { value: 'use exponential' } });
+    await act(async () => {
+      fireEvent.submit(screen.getByTestId('session-waiting-input').closest('form')!);
+    });
+    api = { ...api, error: "Couldn't resolve: 500" };
+    view.rerender(
+      <AttentionApiProvider api={api}>
+        <SessionWaitingBanner sessionId={SESSION} />
+      </AttentionApiProvider>,
+    );
+    expect(screen.queryByTestId('session-waiting-input')).toBeNull();
   });
 });
 

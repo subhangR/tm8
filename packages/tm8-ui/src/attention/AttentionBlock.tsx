@@ -8,8 +8,7 @@
  * pending; history lives in the Activity tab (R9).
  *
  * Reads only the module's selectors and commands. Outside an
- * `AttentionProvider` it renders nothing, so a host that has not mounted the
- * module keeps the legacy dock (see `LegacyAttentionDock`).
+ * `AttentionProvider` it renders nothing.
  *
  * OPENING MARKS SEEN, NOTHING MORE (G4). The mount effect calls `markSeen` for
  * the requests this viewer has not seen yet; a request arriving later is
@@ -129,7 +128,7 @@ export function AttentionBlock(props: AttentionBlockProps) {
       const typed = note;
       stashNote(typed);
       setNote('');
-      await api.resolve(root, typed.trim() || undefined);
+      if (await api.resolve(root, typed.trim() || undefined)) stashNote('');
     } finally {
       setBusy(false);
     }
