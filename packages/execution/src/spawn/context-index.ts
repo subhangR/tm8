@@ -7,8 +7,7 @@
 // live in `@tm8/prompt` so the prompt and the manifest measure with one
 // serializer.
 //
-// Shipped DARK (§10 Q2): nothing here runs unless `contextIndexSwitch` says
-// the node env or the pinned profile turned it on.
+// Always on (launch card v3, `index_always`): every launch renders it.
 //
 // A DISPATCHER's `teammates` group is its roster (§8 I8, headers T6): the
 // space's teammates, read under RLS with their headers, budgeted by
@@ -18,6 +17,7 @@
 import {
   BYTE_BUDGETS,
   clipIndexText,
+  fitContextIndex,
   INDEX_DERIVED_HEADER_CHARS,
   loadPointerFor,
   serializeMemoryEntry,
@@ -25,48 +25,53 @@ import {
   type ContextBudgetSettings,
   type ContextIndexGroupName,
   type ContextIndexVia,
+  type FitContextIndexResult,
   type PromptContextEntry,
   type PromptContextGroup,
 } from '@tm8/prompt';
-import { SPAWN_SELECTION_REFERENCE_KINDS, type ContextFloors, type SelectionHeader } from '@tm8/contract';
+import {
+  CONTEXT_INDEX_GIVE_WAY_ORDER,
+  contextIndexMinEntries,
+  SPAWN_SELECTION_REFERENCE_KINDS,
+  type ContextFloors,
+  type SelectionHeader,
+} from '@tm8/contract';
 import { redactSecretTokens } from './secret-redaction.js';
 import type { ContextVia, DispatcherRoster, ManifestSkillContext, SpawnContext } from './types.js';
 
-/** `TM8_CONTEXT_INDEX` values that turn the index on, and off, for every launch on the node. */
-const ON = new Set(['1', 'true', 'on']);
-const OFF = new Set(['0', 'false', 'off']);
+/**
+ * Where a launch's `<context_index>` came from, as its manifest records it.
+ * `default` is every launch since the index went always-on (launch card v3,
+ * owner answer `index_always`); `env` and `profile` are what launches before
+ * that recorded, and a resume of one replays it.
+ */
+export type ContextIndexSource = 'env' | 'profile' | 'default';
 
 /**
- * Whether a launch renders `<context_index>`, and which switch decided. The
- * node env outranks the profile both ways (an operator can force it on for an
- * A/B arm, or off everywhere); unset, the pinned profile's draft
- * `contextIndex: true` turns it on. Default OFF (§10 Q2).
+ * Whether a launch renders `<context_index>`: always (launch card v3, owner
+ * answer `index_always`). `TM8_CONTEXT_INDEX` and a profile's
+ * `contextIndex: false` no longer turn it off; the profile field is accepted
+ * and ignored. The parameters stay so every caller keeps its shape.
  */
+/** The retired node switch, named so the config registry can point at it: it no longer does anything. */
+export const RETIRED_CONTEXT_INDEX_ENV = 'TM8_CONTEXT_INDEX';
+
 export function contextIndexSwitch(
-  env: Readonly<Record<string, string | undefined>>,
-  profileSnapshot: unknown,
-): { on: true; source: 'env' | 'profile' } | { on: false } {
-  const raw = env.TM8_CONTEXT_INDEX?.trim().toLowerCase();
-  if (raw && ON.has(raw)) return { on: true, source: 'env' };
-  if (raw && OFF.has(raw)) return { on: false };
-  const draft = profileSnapshot && typeof profileSnapshot === 'object'
-    ? (profileSnapshot as Record<string, unknown>).draft
-    : undefined;
-  const flag = draft && typeof draft === 'object' ? (draft as Record<string, unknown>).contextIndex : undefined;
-  return flag === true ? { on: true, source: 'profile' } : { on: false };
+  _env: Readonly<Record<string, string | undefined>>,
+  _profileSnapshot: unknown,
+): { on: true; source: ContextIndexSource } {
+  return { on: true, source: 'default' };
 }
 
 /**
- * A resume renders `<context_index>` when its launch did — the same launch,
- * replayed — unless the node env now turns it off, which wins everywhere.
+ * A resume renders `<context_index>` too: the source its launch recorded, or
+ * `default` for a launch recorded before the index was always on.
  */
 export function contextIndexForResume(
-  env: Readonly<Record<string, string | undefined>>,
-  recorded: 'env' | 'profile' | null,
-): { source: 'env' | 'profile' } | null {
-  if (!recorded) return null;
-  const raw = env.TM8_CONTEXT_INDEX?.trim().toLowerCase();
-  return raw && OFF.has(raw) ? null : { source: recorded };
+  _env: Readonly<Record<string, string | undefined>>,
+  recorded: ContextIndexSource | null,
+): { source: ContextIndexSource } {
+  return { source: recorded ?? 'default' };
 }
 
 /**
@@ -133,13 +138,10 @@ export function contextFloorsFrom(profileSnapshot: unknown): ContextFloors {
   return out;
 }
 
-/** No sub-cap: the group is trimmed only against what the prompt has left. */
-const UNCAPPED = Number.MAX_SAFE_INTEGER;
-
 /**
  * The sub-caps (§2.3, §10 Q3), with a profile's `contextBudgets` replacing
- * each node default (Q5). Collapsed memories come first: each is already the
- * fallback for a memory that did not fit whole. In a worker prompt teammates
+ * each node default (Q5). Memories are index entries (launch card v3) under
+ * their own cap, `memoryInjection` by default. In a worker prompt teammates
  * share the reference cap unless the profile gives them their own; a
  * dispatcher's teammates are its roster. Skills take what remains unless the
  * profile caps them.
@@ -151,7 +153,7 @@ export function contextIndexCaps(
   const references = budgets.references ?? BYTE_BUDGETS.referenceIndex;
   const teammates = budgets.teammates ?? (mode === 'dispatcher' ? BYTE_BUDGETS.rosterIndex : undefined);
   return [
-    { groups: ['memories'], cap: UNCAPPED },
+    { groups: ['memories'], cap: budgets.memories ?? BYTE_BUDGETS.memoryInjection },
     ...(teammates === undefined
       ? [{ groups: ['references', 'teammates'] as ContextIndexGroupName[], cap: references }]
       : [
@@ -244,7 +246,11 @@ export function collapseMemories(input: MemoryCollapseInput): MemoryCollapseResu
   };
 }
 
-/** A collapsed memory's index entry: `subject_scope` routes, an excerpt summarizes, the tag stays a control attribute. */
+/**
+ * A memory's index entry (launch card v3: every memory, never a whole
+ * `<memory>`): `subject_scope` routes, an excerpt summarizes, the tag stays a
+ * control attribute, and the load pointer opens it.
+ */
 export function collapsedMemoryEntry(
   id: string,
   text: string,
@@ -386,7 +392,7 @@ export function rosterEntry(
 
 export interface ContextIndexCandidatesInput {
   context: SpawnContext;
-  /** Memories collapsed out of `agent.memory`, in collapse order (§10 Q1). */
+  /** The launch's memories as index entries (`collapsedMemoryEntry`), in rank order. */
   memories?: PromptContextEntry[];
   /** The skills the index may carry (after the native-shadow pass), in index order. */
   skills: readonly ManifestSkillContext[];
@@ -394,9 +400,9 @@ export interface ContextIndexCandidatesInput {
 
 /**
  * The candidate groups, each in rank order. References and teammates are the
- * tasks' linked rows and attached files (first task first, linked before
- * attached, de-duplicated) — the same rows the assignment snapshot lists by
- * name; the index adds their headers and load pointers. When the launch
+ * tasks' linked rows (first task first, de-duplicated); the index adds their
+ * headers and load pointers. Files are never entries: picked and task-own
+ * files ride in `<attachments>` (`launchTaskSnapshots`). When the launch
  * SELECTED references (I6, `context.references`), that exact set replaces the
  * selectable-kind defaults and leads the group in the selected order; a linked
  * row of a kind selection cannot name still comes from the tasks.
@@ -410,7 +416,8 @@ export function contextIndexCandidates(input: ContextIndexCandidatesInput): Prom
   const seen = new Set<string>();
   const selected = context.references !== undefined;
   for (const ref of context.references ?? []) {
-    if (seen.has(ref.entityId)) continue;
+    // Files are never index entries: they ride in `<attachments>`.
+    if (ref.kind === 'file' || seen.has(ref.entityId)) continue;
     seen.add(ref.entityId);
     references.push(referenceIndexEntry(ref, headers.get(ref.entityId)));
   }
@@ -418,19 +425,12 @@ export function contextIndexCandidates(input: ContextIndexCandidatesInput): Prom
     for (const item of task.linked ?? []) {
       const teammate = item.kind === 'team_member';
       if (teammate && item.entityId === self) continue;
+      if (item.kind === 'file') continue;
       if (selected && REFERENCE_KINDS.has(item.kind)) continue;
       if (seen.has(item.entityId)) continue;
       seen.add(item.entityId);
       const entry = referenceIndexEntry({ ...item, via: 'linked' }, headers.get(item.entityId));
       (teammate ? teammates : references).push(entry);
-    }
-    for (const file of selected ? [] : task.attachments ?? []) {
-      if (seen.has(file.fileEntityId)) continue;
-      seen.add(file.fileEntityId);
-      references.push(referenceIndexEntry(
-        { entityId: file.fileEntityId, kind: 'file', via: 'attached', link: 'attached_to', title: file.name },
-        headers.get(file.fileEntityId),
-      ));
     }
   }
 
@@ -478,4 +478,97 @@ export function contextIndexCandidates(input: ContextIndexCandidatesInput): Prom
     { name: 'skills', entries: skills, omitted: 0, fetch: connections(self) },
   ];
   return groups;
+}
+
+/** The `<attachments>` line's mime for a picked file whose row carried none. */
+const UNKNOWN_MIME = 'application/octet-stream';
+
+/**
+ * The tasks as the assignment snapshot renders them (launch card v3, owner
+ * answers `task_files_untick` and `linked_dupes`), so each id is listed in
+ * exactly one section:
+ *
+ * - `<attachments>`: the picked files (`selection.referenceIds` of kind file)
+ *   and, without a reference selection, the task's own files. An unticked
+ *   task file is left out; a picked file no task carries goes on the first
+ *   task; a file two tasks carry is listed once, on the first.
+ * - `<linked>`: the picks decide it. A link the index carries (rendered or
+ *   dropped for the budget, which its group's `omitted` declares), a file, or
+ *   an unticked reference leaves it. Links past the spawn read are the index
+ *   group's `omitted` too, so `linkedTotal` is the list's own length.
+ *
+ * Pure: `tasks` are the manifest's (already redacted) tasks, `references`
+ * the launch's selected set, `indexIds` the candidate ids
+ * (`contextIndexCandidates`). The caller redacts the file names it adds.
+ */
+export function launchTaskSnapshots(
+  tasks: SpawnContext['tasks'],
+  references: SpawnContext['references'],
+  indexIds: ReadonlySet<string>,
+): SpawnContext['tasks'] {
+  const selected = references !== undefined;
+  const picks = new Set((references ?? []).map((ref) => ref.entityId));
+  const listed = new Set<string>();
+  const out = tasks.map((task) => {
+    const attachments = (task.attachments ?? []).filter((file) => {
+      if (selected && !picks.has(file.fileEntityId)) return false;
+      if (listed.has(file.fileEntityId)) return false;
+      listed.add(file.fileEntityId);
+      return true;
+    });
+    const linked = (task.linked ?? []).filter((item) =>
+      item.kind !== 'file'
+      && !indexIds.has(item.entityId)
+      && !(selected && REFERENCE_KINDS.has(item.kind) && !picks.has(item.entityId)));
+    return { ...task, attachments, linked, linkedTotal: linked.length };
+  });
+  const first = out[0];
+  if (first) {
+    for (const ref of references ?? []) {
+      if (ref.kind !== 'file' || listed.has(ref.entityId)) continue;
+      listed.add(ref.entityId);
+      first.attachments.push({ fileEntityId: ref.entityId, name: ref.title ?? ref.entityId, mime: ref.mime ?? UNKNOWN_MIME });
+    }
+  }
+  return out;
+}
+
+export interface LaunchIndexFitInput {
+  /** `contextIndexCandidates`, redacted: the bytes counted are the bytes that ship. */
+  candidates: readonly PromptContextGroup[];
+  /** The launch mode (`worker`, `dispatcher`, …): it decides the teammates cap. */
+  mode: string;
+  /** The profile's `contextBudgets` with the launch's override applied. */
+  budgets: ContextBudgetSettings;
+  /**
+   * Bytes the index may take: the 32 KB cap less everything else the launch
+   * sends (task, in-full extras, notes, frame). The index is spent LAST.
+   */
+  available: number;
+}
+
+/**
+ * THE launch's index budget step (launch card v3, D1 amendment + D7 point 4),
+ * pure so `launch.preview` measures what spawn renders. Each group trims to
+ * its own sub-budget first, lowest-ranked entry first; if the index is still
+ * over what is left, groups above their `minEntries` shrink from the
+ * lowest-ranked entry across groups; only then do the minimums give way,
+ * teammates first and memories last. It never refuses: every whole-entry drop
+ * is in `drops` with `level: 'entry'` (`indexDroppedOf`).
+ */
+export function fitLaunchContextIndex(input: LaunchIndexFitInput): FitContextIndexResult {
+  return fitContextIndex({
+    groups: [...input.candidates],
+    available: input.available,
+    caps: contextIndexCaps(input.mode, input.budgets),
+    minEntries: Object.fromEntries(
+      CONTEXT_INDEX_GIVE_WAY_ORDER.map((group) => [group, contextIndexMinEntries(group)]),
+    ),
+    giveWay: CONTEXT_INDEX_GIVE_WAY_ORDER,
+  });
+}
+
+/** The entries a fit left out for the byte budget: what `launch.preview` reports as `indexDropped`. */
+export function indexDroppedOf(fit: FitContextIndexResult): FitContextIndexResult['drops'] {
+  return fit.drops.filter((drop) => drop.level === 'entry' && drop.group !== 'harness');
 }

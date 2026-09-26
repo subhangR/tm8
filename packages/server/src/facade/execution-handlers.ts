@@ -712,10 +712,9 @@ export class DbGraphPort implements GraphPort {
       // `selection.referenceIds`: exactly the selected references, in the
       // selected order (design 01a0d348 §5.1). Read here, in this transaction
       // and under the caller's RLS, so the set describes the same instant as
-      // everything else; rendering them is the context index's job, not this
-      // loader's. Every default the set leaves out is recorded `not-selected`.
-      // The assignment snapshot's `linked` / `attachments` are untouched: they
-      // stay the task's own identity list (§2.2). Nothing is written.
+      // everything else; rendering them is the prompt's job (the context index,
+      // and `<attachments>` for files), not this loader's. Every default the
+      // set leaves out is recorded `not-selected`. Nothing is written.
       let references: SpawnContext['references'];
       const referenceDrops: ContextDrop[] = [];
       const selectedReferenceIds = selection?.referenceIds;
@@ -723,9 +722,10 @@ export class DbGraphPort implements GraphPort {
         const defaults = await loadReferenceDefaults(q, input.spaceId, spawnTaskIds);
         const byDefault = new Map(defaults.map((row) => [row.entityId, row]));
         const wanted = [...new Set(selectedReferenceIds)];
-        const found = new Map((await q.query<{ id: string; kind: string; title: string | null }>(
+        const found = new Map((await q.query<{ id: string; kind: string; title: string | null; mime: string | null }>(
           `select e.id, e.kind,
-                  coalesce(d.title, dr.title, ar.name, t.title, f.name) as title
+                  coalesce(d.title, dr.title, ar.name, t.title, f.name) as title,
+                  f.mime_type as mime
              from public.entities e
              left join public.documents d on d.entity_id = e.id
              left join public.drawings dr on dr.entity_id = e.id
@@ -749,6 +749,7 @@ export class DbGraphPort implements GraphPort {
             title: row.title,
             via: dflt ? (dflt.link === 'attached_to' && row.kind === 'file' ? 'attached' : 'linked') : 'selection',
             ...(dflt ? { link: dflt.link } : {}),
+            ...(row.kind === 'file' ? { mime: row.mime } : {}),
           };
         });
         const kept = new Set(wanted);
@@ -3551,6 +3552,8 @@ export function sessionLaunchPostureFromRecord(row: {
       ? { skillOverrides: row.skill_overrides as Record<string, unknown> }
       : {}),
     // The launch rendered `<context_index>`; its resume renders it too.
-    ...(row.context_index === 'env' || row.context_index === 'profile' ? { contextIndex: row.context_index } : {}),
+    ...(row.context_index === 'env' || row.context_index === 'profile' || row.context_index === 'default'
+      ? { contextIndex: row.context_index }
+      : {}),
   };
 }

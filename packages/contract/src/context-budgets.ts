@@ -52,10 +52,11 @@ export const CONTEXT_INDEX_GIVE_WAY_ORDER: readonly ContextIndexBudgetGroup[] = 
 
 /**
  * The COUNT of entries the cross-group shrink never takes a group below
- * (`LaunchDefaultsGroup.minEntries`): 1, except a worker's teammates group,
- * which is 0 (a dispatcher's teammates are its roster, so 1 there). Not
- * `contextFloors`, which is Jev's relevance-score floor.
+ * (`LaunchDefaultsGroup.minEntries`): 1 for every group, teammates included
+ * (coordinator ruling, task 01a0df3a). Not `contextFloors`, which is Jev's
+ * relevance-score floor. Only when even the minimums do not fit do groups
+ * give way, in `CONTEXT_INDEX_GIVE_WAY_ORDER`.
  */
-export function contextIndexMinEntries(group: ContextIndexBudgetGroup, mode: string): number {
-  return group === 'teammates' && mode !== 'dispatcher' ? 0 : 1;
+export function contextIndexMinEntries(_group: ContextIndexBudgetGroup): number {
+  return 1;
 }

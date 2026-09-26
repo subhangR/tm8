@@ -365,7 +365,9 @@ export async function loadMemories(
         'space',
       ],
       default: defaults.has(row.id),
-      promptBytes: memoryPromptBytes(text),
+      // Jev's ticks are sent as `selection.memoryIds`, and spawn marks every
+      // selected memory `via="selection"`.
+      promptBytes: memoryPromptBytes(row.id, text, 'selection', header),
       header: rankedHeader(header),
     }];
   });

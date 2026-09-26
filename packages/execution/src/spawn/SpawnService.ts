@@ -1432,8 +1432,8 @@ export class SpawnService {
       teamMemberId: request.teamMemberId,
       interactionProfileId: request.interactionProfileId ?? null,
     });
-    // `<context_index>` (design 01a0d348 §2), shipped dark: the node env or
-    // the pinned profile turns it on, and only then are its headers read.
+    // `<context_index>` (design 01a0d348 §2): always on (launch card v3), so
+    // its headers are always read.
     const indexSwitch = contextIndexSwitch(this.env, resolvedProfile.snapshot);
     const contextIndex = indexSwitch.on ? { source: indexSwitch.source } : null;
     if (contextIndex) await this.loadIndexHeaders(auth, context, launch.mode, request.jevRunId);

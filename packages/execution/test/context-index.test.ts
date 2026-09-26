@@ -12,7 +12,7 @@ import {
   utf8Bytes,
 } from '@tm8/prompt';
 import type { SelectionHeader } from '@tm8/contract';
-import { collapseMemories, contextBudgetsFrom, contextFloorsFrom, contextIndexCaps, contextIndexForResume, contextIndexSwitch, DISPATCHER_ROSTER_READ_MAX } from '../src/spawn/context-index.js';
+import { fitLaunchContextIndex, indexDroppedOf, collapseMemories, contextBudgetsFrom, contextFloorsFrom, contextIndexCaps, contextIndexForResume, contextIndexSwitch, DISPATCHER_ROSTER_READ_MAX } from '../src/spawn/context-index.js';
 import { replayedSelection } from '../src/spawn/SpawnService.js';
 import { composeManifest, resolveLaunchConfig } from '../src/spawn/manifest.js';
 import type { ResolvedSkillRow } from '../src/spawn/skills.js';
@@ -54,20 +54,20 @@ function compose(context: SpawnContext, opts: { on?: boolean; replay?: string[];
   return { manifest, prompt };
 }
 
-describe('the switch (§10 Q2: default off)', () => {
-  it('is off unless the env or the pinned profile turns it on; the env outranks the profile', () => {
-    expect(contextIndexSwitch({}, null)).toEqual({ on: false });
-    expect(contextIndexSwitch({}, { draft: { contextIndex: false } })).toEqual({ on: false });
-    expect(contextIndexSwitch({}, { draft: { contextIndex: true } })).toEqual({ on: true, source: 'profile' });
-    expect(contextIndexSwitch({ TM8_CONTEXT_INDEX: 'on' }, null)).toEqual({ on: true, source: 'env' });
-    expect(contextIndexSwitch({ TM8_CONTEXT_INDEX: '0' }, { draft: { contextIndex: true } })).toEqual({ on: false });
+describe('the switch (launch card v3: always on)', () => {
+  it('is on for every launch; TM8_CONTEXT_INDEX and a profile\'s contextIndex:false have no effect', () => {
+    const on = { on: true, source: 'default' };
+    expect(contextIndexSwitch({}, null)).toEqual(on);
+    expect(contextIndexSwitch({}, { draft: { contextIndex: false } })).toEqual(on);
+    expect(contextIndexSwitch({}, { draft: { contextIndex: true } })).toEqual(on);
+    expect(contextIndexSwitch({ TM8_CONTEXT_INDEX: 'off' }, null)).toEqual(on);
+    expect(contextIndexSwitch({ TM8_CONTEXT_INDEX: '0' }, { draft: { contextIndex: false } })).toEqual(on);
   });
 
-  it('a resume replays the launch\'s index, unless the node env now turns it off', () => {
+  it('a resume renders it too: the recorded source, else default; the env never turns it off', () => {
     expect(contextIndexForResume({}, 'profile')).toEqual({ source: 'profile' });
-    expect(contextIndexForResume({}, null)).toBeNull();
-    expect(contextIndexForResume({ TM8_CONTEXT_INDEX: 'off' }, 'env')).toBeNull();
-    expect(contextIndexForResume({ TM8_CONTEXT_INDEX: 'on' }, null)).toBeNull();
+    expect(contextIndexForResume({}, null)).toEqual({ source: 'default' });
+    expect(contextIndexForResume({ TM8_CONTEXT_INDEX: 'off' }, 'env')).toEqual({ source: 'env' });
   });
 
   it('off: the manifest carries no index and the prompt keeps <skills>', () => {
@@ -98,7 +98,7 @@ describe('on: one index for skills, references and teammates', () => {
     expect(prompt.system).not.toContain('<skills>');
     const names = manifest.contextIndex!.groups.filter((g) => g.entries.length > 0).map((g) => [g.name, g.entries.map((e) => e.id)]);
     expect(names).toEqual([
-      ['references', ['doc-1', 'ws-1', 'file-1']],
+      ['references', ['doc-1', 'ws-1']],
       ['teammates', ['mate-1']],
       ['skills', ['s1']],
     ]);
@@ -108,12 +108,15 @@ describe('on: one index for skills, references and teammates', () => {
     expect(prompt.system).not.toContain('load="tm8 entity context doc-1"');
     expect(manifest.context?.index).toMatchObject({ source: 'env' });
     expect(manifest.context?.index?.caps).toContainEqual({ groups: ['references', 'teammates'], cap: BYTE_BUDGETS.referenceIndex });
+    // Files are never index entries: the task's own file is in <attachments>.
+    expect(prompt.system).not.toContain('<entry id="file-1"');
+    expect(prompt.task).toContain('<file entity_id="file-1" mime="application/pdf" />');
   });
 
   it('records each entry at the bytes the prompt renders, and the index bytes exactly', () => {
     const { manifest } = compose(context, { on: true });
     const rendered = new Map(manifest.contextIndex!.groups.flatMap((g) => g.entries.map((e) => [e.id, contextEntryBytes(e)])));
-    for (const entry of manifest.context!.entries!.filter((e) => e.group !== 'memories')) {
+    for (const entry of manifest.context!.entries!.filter((e) => e.group !== 'memories' && e.kind !== 'file')) {
       expect(entry.bytes).toBe(rendered.get(entry.entityId));
     }
     expect(manifest.context!.index!.bytes).toBe(utf8Bytes(serializeContextIndex(manifest.contextIndex!)) + 1);
@@ -350,11 +353,12 @@ describe('I5a follow-ups (a) (b) (d): no repeated titles, unread declared, deriv
     expect(manifest.contextIndex!.groups.find((g) => g.name === 'references')!.omitted).toBe(0);
   });
 
-  it('(a) the v1 snapshot drops only the titles the index names; <linked> keeps every id', () => {
+  it('(a) nothing is in two sections: a link the index carries leaves <linked>, and the unread are the index\'s omitted', () => {
     const { prompt } = compose(context, { on: true });
-    expect(prompt.task).toContain('<entity id="doc-1" kind="doc" link="relates_to" />');
-    expect(prompt.task).toContain('<entity id="doc-2" kind="doc" link="relates_to" />');
-    expect(prompt.task).toContain('omitted="44"');
+    expect(prompt.task).not.toContain('<entity id="doc-1"');
+    expect(prompt.task).not.toContain('<entity id="doc-2"');
+    expect(prompt.task).toContain('<linked count="0" />');
+    expect(prompt.system).toContain('omitted="44"');
     expect(prompt.task).not.toContain('type="linked-names"');
   });
 
@@ -405,37 +409,37 @@ describe('I5b: memory collapse (§10 Q1)', () => {
     expect(collapse.borrowed).toBeGreaterThan(0);
   });
 
-  it('records every collapse: body-level drop, collapsed index entry, rank:none + collapseOrder, the budget', () => {
-    const texts = Array.from({ length: 12 }, (_, i) => statement('t', i, i === 3 ? ' [disputed]' : ''));
-    const via = texts.map(() => 'teammate' as const);
-    const { manifest, prompt } = compose(withMemories(texts, via), { on: true });
-    const collapsed = manifest.context!.dropped!.filter((d) => d.group === 'memories' && d.level === 'body');
-    expect(collapsed.length).toBeGreaterThan(0);
+  it('every memory is an index entry (launch card v3), never a whole <memory>; the legacy text-only remainder stays', () => {
+    const texts = Array.from({ length: 3 }, (_, i) => statement('t', i, i === 1 ? ' [disputed]' : ''));
+    const context = ctx({
+      teamMember: { ...member, memories: [...texts, 'a legacy note with no id'], memoryIds: texts.map((_, i) => `mem-${i}`) },
+      contextAudit: { selected: false, memoryVia: texts.map(() => 'teammate' as const), dropped: [] },
+    });
+    const { manifest, prompt } = compose(context, { on: true });
     const group = manifest.contextIndex!.groups.find((g) => g.name === 'memories')!;
-    expect(group.entries.map((e) => e.id).sort()).toEqual(collapsed.map((d) => d.entityId).sort());
-    expect(manifest.context!.groups!.memories).toMatchObject({ rank: 'none', collapseOrder: 'teammate>task>requested' });
-    const budget = manifest.context!.budgets!.memoryInjection;
-    expect(budget).toMatchObject({ cap: 12288, borrowed: 0 });
-    expect(budget.used).toBeLessThanOrEqual(12288);
-    // The prefix rule survives: agent.memory starts with exactly the kept memoryIds.
-    expect(manifest.context!.memoryIds).toHaveLength(texts.length - collapsed.length);
-    expect(manifest.agent.memory).toHaveLength(texts.length - collapsed.length);
-    // Declared in the prompt, never clipped: the collapsed statement is an excerpt, tagged.
-    expect(prompt.system).toContain('<group name="memories"');
-    expect(prompt.system).toContain('excerpt="true"');
-    const states = manifest.context!.entries!.filter((e) => e.group === 'memories').map((e) => e.state);
-    expect(states.filter((s) => s === 'collapsed')).toHaveLength(collapsed.length);
-    const disputed = group.entries.find((e) => e.id === 'mem-3');
-    if (disputed) expect(disputed.tag).toBe('disputed');
+    expect(group.entries.map((e) => e.id)).toEqual(['mem-0', 'mem-1', 'mem-2']);
+    expect(group.entries.every((e) => e.load === `tm8 entity context ${e.id}` && e.excerpt === true)).toBe(true);
+    expect(group.entries[1]!.tag).toBe('disputed');
+    // The prefix rule holds: no id'd memory is text any more.
+    expect(manifest.context!.memoryIds).toEqual([]);
+    expect(manifest.agent.memory).toEqual(['a legacy note with no id']);
+    // Only the excerpt ships; the whole statement is behind the load pointer.
+    expect(prompt.system).not.toContain('m'.repeat(300));
+    expect(prompt.system).toContain('a legacy note with no id');
+    expect(prompt.system).toContain('<group name="memories" count="3"');
+    expect(manifest.context!.dropped!.filter((d) => d.group === 'memories')).toEqual([]);
+    expect(manifest.context!.entries!.filter((e) => e.group === 'memories').map((e) => e.state)).toEqual(['collapsed', 'collapsed', 'collapsed']);
   });
 
-  it('refuses with BudgetExceededError naming memoryInjection when critical memories overflow the prompt', () => {
+  it('never refuses over memories: critical ones that overflow are index entries trimmed like any other', () => {
     const texts = Array.from({ length: 12 }, (_, i) => `c${i} ${'z'.repeat(3000)}`);
     const ids = texts.map((_, i) => `mem-${i}`);
     const context = withMemories(texts, ids.map(() => 'selection' as const), {
       memoryScores: ids.map((entityId) => ({ entityId, score: 3, critical: true })),
     });
-    expect(() => compose(context, { on: true })).toThrow(expect.objectContaining({ name: 'BudgetExceededError', material: 'memoryInjection' }));
+    const { manifest, prompt } = compose(context, { on: true });
+    expect(manifest.contextIndex!.groups.find((g) => g.name === 'memories')!.entries.length).toBeGreaterThan(0);
+    expect(utf8Bytes(`${prompt.system}\n\n${prompt.task}`)).toBeLessThanOrEqual(BYTE_BUDGETS.combinedInitialInjection);
   });
 
   it('off: memories are never collapsed and nothing about them is recorded', () => {
@@ -449,7 +453,7 @@ describe('I5b: memory collapse (§10 Q1)', () => {
   it('a profile\'s contextBudgets replace the node defaults', () => {
     expect(contextBudgetsFrom({ draft: { contextBudgets: { memories: 4096, references: -1, skills: 2.5 } } })).toEqual({ memories: 4096 });
     expect(contextIndexCaps('worker', { references: 2048, teammates: 1024, skills: 4096 })).toEqual([
-      { groups: ['memories'], cap: Number.MAX_SAFE_INTEGER },
+      { groups: ['memories'], cap: BYTE_BUDGETS.memoryInjection },
       { groups: ['references'], cap: 2048 },
       { groups: ['teammates'], cap: 1024 },
       { groups: ['skills'], cap: 4096 },
@@ -471,12 +475,12 @@ describe('I7: the launch sheet\'s per-launch budget override (§10 Q5.4)', () =>
   });
 
   it('replaces the profile\'s budget for this launch, and is recorded where resume and the audit read it', () => {
-    // ~9 KB of memories fit the 12 KiB default whole…
-    expect(compose(context(), { on: true }).manifest.context!.dropped!.filter((d) => d.level === 'body')).toEqual([]);
-    // …and collapse under a 4 KiB override.
+    // The memories group's cap is the default…
+    expect(compose(context(), { on: true }).manifest.context!.index!.caps).toContainEqual({ groups: ['memories'], cap: BYTE_BUDGETS.memoryInjection });
+    // …and the override under a 4 KiB one.
     const { manifest } = compose(context(), { on: true, request: { ...request, contextBudgets: { memories: 4096 } } });
-    expect(manifest.context!.dropped!.filter((d) => d.level === 'body').length).toBeGreaterThan(0);
-    expect(manifest.context!.budgets).toMatchObject({ memoryInjection: { cap: 4096 }, launch: { memories: 4096 } });
+    expect(manifest.context!.index!.caps).toContainEqual({ groups: ['memories'], cap: 4096 });
+    expect(manifest.context!.budgets).toMatchObject({ launch: { memories: 4096 } });
     expect(manifest.context!.budgets!.warning).toBeUndefined();
     expect(manifest.launch.contextBudgets).toEqual({ memories: 4096 });
   });
@@ -500,7 +504,7 @@ describe('I7: the launch sheet\'s per-launch budget override (§10 Q5.4)', () =>
 });
 
 describe('entries × dropped (index on): an id is shown with a summary or body drop, never with any other', () => {
-  it('holds for a collapsed memory, a summary-dropped reference and an entry-dropped skill in one launch', () => {
+  it('holds for a summary-dropped reference and an entry-dropped skill in one launch, memories as entries', () => {
     const texts = Array.from({ length: 12 }, (_, i) => `claim ${i} ${'m'.repeat(1500)}`);
     const linked = Array.from({ length: 40 }, (_, i) => ({ entityId: `doc-${i}`, kind: 'doc', link: 'relates_to', title: `Doc ${i}` }));
     const { manifest } = compose(ctx({
@@ -516,8 +520,7 @@ describe('entries × dropped (index on): an id is shown with a summary or body d
     const key = (d: { group: string; entityId: string }): string => `${d.group}:${d.entityId}`;
 
     // Each case is present in this launch.
-    const collapsedMemory = dropped.find((d) => d.group === 'memories' && d.level === 'body');
-    expect(collapsedMemory && shown.has(key(collapsedMemory))).toBe(true);
+    expect(entries.some((e) => e.group === 'memories')).toBe(true);
     const summaryRef = dropped.find((d) => d.group === 'references' && d.level === 'summary');
     expect(summaryRef && shown.has(key(summaryRef))).toBe(true);
     const entrySkill = dropped.find((d) => d.group === 'skills' && d.level === 'entry');
@@ -648,5 +651,94 @@ describe('I8: a dispatcher\'s roster is its teammates group (design 01a0d348 §8
     expect(group.entries.map((e) => [e.id, e.via])).toEqual([['tm-9', 'linked']]);
     expect(group.fetch).toBe('tm8 entity context task-1 --sections connections');
     expect(manifest.context!.groups!.teammates).toEqual({ mode: 'default', reason: 'not-selectable' });
+  });
+});
+
+describe('launch card v3: files ride in <attachments>, and <linked> follows the picks', () => {
+  const linked = [
+    { entityId: 'doc-1', kind: 'doc', link: 'relates_to', title: 'Doc one' },
+    { entityId: 'doc-2', kind: 'doc', link: 'relates_to', title: 'Doc two' },
+    { entityId: 'persona', kind: 'team_member', link: 'relates_to', title: 'Self' },
+  ];
+  const attachments = [
+    { fileEntityId: 'file-own-1', name: 'kept.pdf', mime: 'application/pdf' },
+    { fileEntityId: 'file-own-2', name: 'unticked.log', mime: 'text/plain' },
+  ];
+  const picked = ctx({
+    tasks: [task({ linked, linkedTotal: linked.length, attachments })],
+    headers: [docHeader('doc-1'), docHeader('doc-2')],
+    references: [
+      { entityId: 'doc-1', kind: 'doc', title: 'Doc one', via: 'linked', link: 'relates_to' },
+      { entityId: 'file-own-1', kind: 'file', title: 'kept.pdf', via: 'attached', link: 'attached_to', mime: 'application/pdf' },
+      { entityId: 'file-picked', kind: 'file', title: 'picked.png', via: 'selection', mime: 'image/png' },
+    ],
+  });
+
+  it('picked files and ticked task files are in <attachments> with the download command; an unticked task file is left out', () => {
+    const { manifest, prompt } = compose(picked, { on: true });
+    expect(prompt.task).toContain('<attachments count="2" fetch_with="tm8 file download &lt;file-entity-id&gt; --output &lt;path&gt;">');
+    expect(prompt.task).toContain('<file entity_id="file-own-1" mime="application/pdf" />');
+    expect(prompt.task).toContain('<file entity_id="file-picked" mime="image/png" />');
+    expect(prompt.task).not.toContain('file-own-2');
+    // Files are never index entries.
+    const indexed = manifest.contextIndex!.groups.flatMap((g) => g.entries.map((e) => e.id));
+    expect(indexed.filter((id) => id.startsWith('file-'))).toEqual([]);
+    expect(manifest.context!.entries!.filter((e) => e.kind === 'file').map((e) => [e.entityId, e.via])).toEqual([
+      ['file-own-1', 'attached'],
+      ['file-picked', 'selection'],
+    ]);
+  });
+
+  it('<linked> follows the picks: an unticked link leaves it, a ticked one is in the index only', () => {
+    const { manifest, prompt } = compose(picked, { on: true });
+    expect(manifest.contextIndex!.groups.find((g) => g.name === 'references')!.entries.map((e) => e.id)).toEqual(['doc-1']);
+    expect(prompt.task).not.toContain('<entity id="doc-1"');
+    expect(prompt.task).not.toContain('doc-2');
+    // What no other section carries stays: the teammate's own link.
+    expect(prompt.task).toContain('<entity id="persona" kind="team_member" link="relates_to" />');
+  });
+
+  it('nothing appears in two sections', () => {
+    const { prompt } = compose(picked, { on: true });
+    const all = `${prompt.system}\n${prompt.task}`;
+    for (const id of ['doc-1', 'file-own-1', 'file-picked']) {
+      const sections = [
+        /<entry id="([^"]+)"/g, /<entity id="([^"]+)"/g, /<file entity_id="([^"]+)"/g,
+      ].filter((re) => [...all.matchAll(re)].some((m) => m[1] === id));
+      expect(sections).toHaveLength(1);
+    }
+  });
+
+  it('without a reference selection every task file is attached, once, and no link is repeated in <linked>', () => {
+    const { prompt } = compose(ctx({ tasks: [task({ linked, attachments }), task({ id: 'task-2', attachments: [attachments[0]!] })], headers: [docHeader('doc-1')] }), { on: true });
+    expect(prompt.task.match(/<file entity_id="file-own-1"/g)).toHaveLength(1);
+    expect(prompt.task).toContain('<file entity_id="file-own-2"');
+    expect(prompt.task).not.toContain('<entity id="doc-1"');
+  });
+});
+
+describe('fitLaunchContextIndex: the pure budget step launch.preview calls', () => {
+  it('every group keeps its first entry (minEntries 1); teammates give way first; drops are indexDropped', () => {
+    const entry = (group: string, i: number) => ({
+      id: `${group}-${i}`, kind: group === 'teammates' ? 'team_member' : 'doc', via: 'linked' as const,
+      load: `tm8 entity context ${group}-${i}`, header: { name: `${group} ${i}`, whenToUse: 'w'.repeat(200) },
+    });
+    const candidates = (['memories', 'references', 'teammates', 'skills'] as const).map((name) => ({
+      name, entries: [0, 1].map((i) => entry(name, i)), omitted: 0,
+    }));
+    const all = fitLaunchContextIndex({ candidates, mode: 'worker', budgets: {}, available: 1_000_000 });
+    expect(indexDroppedOf(all)).toEqual([]);
+    const room = (keep: Record<string, number>): number => utf8Bytes(serializeContextIndex({
+      groups: candidates.map((g) => ({ ...g, entries: g.entries.slice(0, keep[g.name]), omitted: 2 - keep[g.name]! })),
+    })) + 1;
+    const kept = (available: number) => Object.fromEntries(
+      fitLaunchContextIndex({ candidates, mode: 'worker', budgets: {}, available }).index.groups.map((g) => [g.name, g.entries.length]),
+    );
+    // Room for one of each: every group keeps its first.
+    expect(kept(room({ memories: 1, references: 1, teammates: 1, skills: 1 }))).toEqual({ memories: 1, references: 1, teammates: 1, skills: 1 });
+    // One short of the minimums: teammates give way first.
+    expect(kept(room({ memories: 1, references: 1, teammates: 0, skills: 1 }))).toEqual({ memories: 1, references: 1, teammates: 0, skills: 1 });
+    const tight = fitLaunchContextIndex({ candidates, mode: 'worker', budgets: {}, available: room({ memories: 1, references: 1, teammates: 0, skills: 1 }) });
+    expect(indexDroppedOf(tight).map((d) => d.group)).toContain('teammates');
   });
 });

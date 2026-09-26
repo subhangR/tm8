@@ -75,8 +75,8 @@ export interface LaunchDefaultsGroup {
   floor: number;
   /**
    * The COUNT of entries the launch's index budget never shrinks this group
-   * below when groups compete for room (`contextIndexMinEntries`): 1, and 0
-   * for a worker's teammates group. Only when even the minimums do not fit do
+   * below when groups compete for room (`contextIndexMinEntries`): 1 for
+   * every group. Only when even the minimums do not fit do
    * groups give way, lowest tier first (`CONTEXT_INDEX_GIVE_WAY_ORDER`). Not
    * `floor`, which is Jev's relevance-score floor.
    */

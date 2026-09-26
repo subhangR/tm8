@@ -118,7 +118,7 @@ export function registerLaunchDefaultsHandler(registry: HandlerRegistry, deps: F
       }
       const taskIds = taskId ? [taskId] : [];
 
-      // The WHOLE statement with its marks, as spawn injects it (as `loadMemories` measures it).
+      // The statement with its marks, as spawn renders its index entry.
       const memoryRows = await loadMemoryDefaults(q, spaceId, teamMemberId, taskIds);
       const rendered = new Map((await loadMemoriesById(q, spaceId, memoryRows.map((row) => row.entityId)))
         .map((row) => [row.entity_id, renderMemoryText(row)]));
@@ -127,9 +127,12 @@ export function registerLaunchDefaultsHandler(registry: HandlerRegistry, deps: F
         kind: 'memory',
         via: row.fromTeammate ? 'teammate' : 'task',
         fallbackTitle: 'Memory',
-        measure: () => {
+        measure: (header) => {
           const text = rendered.get(row.entityId);
-          return text === undefined ? 0 : memoryPromptBytes(text);
+          // Measured as the sheet sends it, a `selection.memoryIds` tick
+          // (`via="selection"`), as `launch.suggest` measures it: an untouched
+          // group renders `teammate`/`task`, at most 5 bytes apart.
+          return text === undefined ? 0 : memoryPromptBytes(row.entityId, text, 'selection', header);
         },
       }));
       const skills: Draft[] = (await loadSkillDefaults(q, spaceId, teamMemberId, taskIds)).map((row) => {
@@ -205,8 +208,7 @@ export function registerLaunchDefaultsHandler(registry: HandlerRegistry, deps: F
         };
       });
       return { items: items.slice(0, SPAWN_SELECTION_GROUP_LIMIT), total: items.length, budget: rule.budget, floor: rule.floor,
-        // A launch from the sheet is a worker (Run or Coordinate) until it dispatches.
-        minEntries: contextIndexMinEntries(group, 'worker') };
+        minEntries: contextIndexMinEntries(group) };
     };
 
     return {

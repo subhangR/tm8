@@ -395,7 +395,7 @@ export interface SessionLaunchPosture {
    */
   skillOverrides?: Record<string, unknown> | null;
   /** `context.index.source`: the launch rendered `<context_index>`; resume renders it too. */
-  contextIndex?: 'env' | 'profile' | null;
+  contextIndex?: 'env' | 'profile' | 'default' | null;
 }
 
 /** A project as the server computed it — `workingDir` is graph truth (S11). */
@@ -539,6 +539,8 @@ export interface SpawnContext {
     title: string | null;
     via: 'selection' | 'linked' | 'attached';
     link?: string;
+    /** A file's declared mime, for its `<attachments>` line (files are never index entries). */
+    mime?: string | null;
   }>;
   /**
    * Selection headers (`GraphPort.loadContextHeaders`, under RLS) for the
@@ -725,8 +727,8 @@ export interface ContextBudgetsRecord {
 
 /** `manifest.context.index`. */
 export interface ContextIndexRecord {
-  /** `env`: `TM8_CONTEXT_INDEX`; `profile`: the pinned profile's `contextIndex`. */
-  source: 'env' | 'profile';
+  /** `default`: always on (launch card v3); `env` / `profile`: the switch a launch before that recorded. */
+  source: 'env' | 'profile' | 'default';
   /** Rendered bytes of the whole element plus its joining newline. */
   bytes: number;
   /**
