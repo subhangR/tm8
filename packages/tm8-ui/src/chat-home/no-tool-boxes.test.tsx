@@ -17,10 +17,13 @@
  * disclosures (`<details>`), no payload dumps (`<pre>`). A reinstated box
  * breaks nothing and passes every other suite — only an explicit ban can see
  * it. WHAT IS DELIBERATELY REVERSED: "a plain call draws nothing of its own" —
- * plain calls now draw ledger lines, and the chip row is gone.
+ * plain calls now draw ledger lines, and the chip row is gone. And, since the
+ * step list (advisor D15), "a call that touched nothing leaves NO trace" is
+ * reversed too: every call is a counted STEP in its run's quiet step block,
+ * in human words (`turn-steps.ts`). The three bans above are what survive.
  *
- * `explain_*` / `doc_*` / `artifact_create` remain exempt: their payload IS
- * the content, so their card stays (minus tool chrome), exactly as before.
+ * `explain_*` remains exempt: its payload IS the content, so its card stays
+ * (minus tool chrome). The doc / artifact create card is retired (D17).
  */
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, within } from '@testing-library/react';
@@ -136,18 +139,28 @@ describe('a plain tool call draws its ledger line and nothing else', () => {
     expect(view.getByTestId('chat-ledger-transition').textContent).toContain('working → done');
   });
 
-  it('draws no line at all when the calls touched nothing', () => {
-    /* An entity-less call (a build, a search that matched nothing) must leave
-       NO trace. An empty ledger row would be the box coming back under
-       another name. */
+  it('draws no LEDGER line when the calls touched nothing — only a counted step', () => {
+    /* An entity-less call (a build, a search that matched nothing) draws no
+       ledger row: an empty one would be the box coming back under another
+       name. Its one trace is its step (D15 — "count visible"), in human
+       words, with the three bans intact. */
     const parts: ChatTurnPart[] = [
-      { seq: 0, kind: 'tool_call', toolCallId: 'tb', name: 'repo_bash', args: {}, state: 'completed' },
+      { seq: 0, kind: 'tool_call', toolCallId: 'tb', name: 'repo_bash', args: { command: 'bun run build' }, state: 'completed' },
       { seq: 1, kind: 'tool_result', toolCallId: 'tb', content: { ok: true } },
+      { seq: 2, kind: 'done' },
     ];
     const view = render(<TurnParts parts={parts} />);
     expect(view.queryByTestId('chat-ledger-reads')).toBeNull();
     expect(view.queryByTestId('chat-ledger-create')).toBeNull();
     expect(view.queryByTestId('chat-ledger-transition')).toBeNull();
+    // The settled call contributes to the run header's count…
+    expect(view.getByTestId('chat-steps-head').textContent).toContain('1 step · ran a shell command');
+    // …and the bans hold: no card, no tool name, no payload.
+    expect(view.queryByTestId('chat-tool-card')).toBeNull();
+    expect(view.container.textContent).not.toContain('repo_bash');
+    expect(view.container.textContent).not.toContain('bun run build');
+    expect(view.container.querySelectorAll('details')).toHaveLength(0);
+    expect(view.container.querySelectorAll('pre')).toHaveLength(0);
   });
 
   it('still shows the answer and the usage the turn produced', () => {
@@ -181,7 +194,8 @@ describe('a ledger line is a button only where the press can land', () => {
 
   it('is inert when the host cannot — no button, no dead press', () => {
     const view = render(<TurnParts parts={create(TASK_ID)} />);
-    expect(view.getByTestId('chat-ledger-create')).toBeTruthy();
-    expect(view.queryByRole('button')).toBeNull();
+    const line = view.getByTestId('chat-ledger-create');
+    // Scoped to the line: the run's step-block header is a real control.
+    expect(within(line).queryByRole('button')).toBeNull();
   });
 });

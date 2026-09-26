@@ -130,6 +130,23 @@ describe('an in-flight turn with no parts yet says so', () => {
     expect(screen.getByTestId('chs-turn-pending')).toBeTruthy();
   });
 
+  it('draws a call its dead turn never closed as stopped, a claimed one as running', () => {
+    /* The feed is a second host of TurnParts. A turn whose server died before
+       writing `done` keeps its call stored as `running` forever; only the
+       in-flight marker says it can still be running. */
+    const call: MessagePart = {
+      seq: 0,
+      createdAt: '2026-08-18T11:00:00.000Z',
+      kind: 'tool_call',
+      payload: { id: 'c1', name: 'Bash', args: { command: 'make' }, state: 'running' },
+    } as MessagePart;
+    mount(message({ parts: [call] }));
+    expect(screen.getByTestId('chat-step-line').dataset.state).toBe('stopped');
+    cleanup();
+    mount(message({ turnInFlight: true, parts: [call] }));
+    expect(screen.getByTestId('chat-step-line').dataset.state).toBe('running');
+  });
+
   it('once parts arrive they win over the pending line, even mid-flight', () => {
     const parts: MessagePart[] = [textPart(0, 'streaming so far')];
     mount(message({ turnInFlight: true, parts }));
