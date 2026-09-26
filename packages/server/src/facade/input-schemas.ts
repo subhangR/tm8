@@ -142,6 +142,9 @@ import {
   SendHandoffInputSchema,
   StartChatInputSchema,
   ResolveEntityAttentionInputSchema,
+  MarkAttentionSeenInputSchema,
+  UnresolveAttentionBatchInputSchema,
+  WithdrawAttentionRequestInputSchema,
   ServerConnectionCreateInputSchema,
   ServerConnectionDeleteInputSchema,
   TaskAxisInputSchema,
@@ -275,6 +278,9 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'attentionRequests.create': CreateAttentionRequestInputSchema,
   'attentionRequests.update': UpdateAttentionRequestInputSchema,
   'attentionRequests.resolveEntity': ResolveEntityAttentionInputSchema,
+  'attentionRequests.markSeen': MarkAttentionSeenInputSchema,
+  'attentionRequests.unresolve': UnresolveAttentionBatchInputSchema,
+  'attentionRequests.withdraw': WithdrawAttentionRequestInputSchema,
   'entities.move': MoveEntityInputSchema,
   // The catalog names no 1:1 DTO for delete/restore (matrices §3 rows 24–25):
   // they are path-addressed commands carrying only a command context, bound the

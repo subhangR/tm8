@@ -139,6 +139,10 @@ export const OPERATIONS = [
   { name: 'attentionRequests.create',method: 'POST',   path: '/v2/entities/:entityId/attention-requests',   kind: 'command', status: 'v1' },
   { name: 'attentionRequests.update',method: 'PATCH',  path: '/v2/attention-requests/:requestId',           kind: 'command', status: 'v1' },
   { name: 'attentionRequests.resolveEntity', method: 'POST', path: '/v2/entities/:entityId/attention-requests/resolve', kind: 'command', status: 'v1' },
+  // Attention v2 (S4, spec chapter 3 + 5): per-person Seen over the roll-up root, Undo of one resolve batch, and the raising agent's withdraw.
+  { name: 'attentionRequests.markSeen', method: 'POST', path: '/v2/entities/:entityId/attention-requests/seen', kind: 'command', status: 'v1' },
+  { name: 'attentionRequests.unresolve', method: 'POST', path: '/v2/attention-requests/batches/:batchId/unresolve', kind: 'command', status: 'v1' },
+  { name: 'attentionRequests.withdraw', method: 'POST', path: '/v2/attention-requests/:requestId/withdraw', kind: 'command', status: 'v1' },
   { name: 'entities.move',           method: 'POST',   path: '/v2/entities/:id/move',                       kind: 'command', status: 'v1' },
   { name: 'entities.delete',         method: 'DELETE', path: '/v2/entities/:id',                            kind: 'command', status: 'v1' },
   { name: 'entities.restore',        method: 'POST',   path: '/v2/entities/:id/restore',                    kind: 'command', status: 'v1' },

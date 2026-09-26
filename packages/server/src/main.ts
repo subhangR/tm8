@@ -55,6 +55,7 @@ import { createTrackingObserverJob } from './tracking/observer.js';
 import { createCommitRecorderJob } from './tracking/commit-recorder.js';
 import { createSessionIdentityResolver } from './http/identity-resolver.js';
 import { createForgeWatcherJob } from './tracking/loops.js';
+import { createAttentionDeliveryJob } from './facade/services/attention/index.js';
 import { createTaskNudgeJob } from './tracking/task-nudges.js';
 import { createFormDeliveryJob, FormDeliveryDrain } from './facade/services/w2/form-delivery.js';
 import { createSpawnModeHandlers } from './facade/services/w2/form-delivery-spawn.js';
@@ -965,6 +966,19 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         ...nudgeDispatch('task-nudges'),
       }),
     );
+    // Attention v2 (256): a resolve's note reaches the raising session (or
+    // the task, once it has ended) ~8s later, unless the resolver undid it.
+    scheduler.register(
+      createAttentionDeliveryJob({
+        db,
+        ownerClaims: async () => {
+          const o = await owner();
+          return { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'attention-delivery' };
+        },
+        ...nudgeDispatch('attention-note'),
+        ...(chat ? { wakeChat: (chatId: string, identityId: string) => { void chat.wake(chatId, identityId); } } : {}),
+      }),
+    );
     // Forms W2 (214): the backstop for the hooks above — a restart, a lost
     // hook, or a session that went live through a path that fired none.
     if (formDelivery) scheduler.register(createFormDeliveryJob({ drain: formDelivery }));
@@ -998,6 +1012,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     console.log('  tracking: observer draining the refresh queue every 60s');
     console.log('  tracking: commit recorder walking active worktrees every 60s');
     console.log('  tracking: forge watcher closing CI/conflict/review loops every 90s');
+    console.log('  attention: delivering resolve notes to raising sessions every 2s (after the 8s undo window)');
     console.log('  events: subject_ids backfill indexing older events every 60s until done');
     if (blobStore) {
       console.log('  files: upload-slot sweep expiring slots and purging staged bytes every 10m');
