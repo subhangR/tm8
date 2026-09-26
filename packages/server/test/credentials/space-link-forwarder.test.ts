@@ -45,11 +45,20 @@ function harness(targetServerId: string | null, forward?: (req: RemoteInvokeRequ
     targetServerId, status: 'signed_in', allowSpawn: true, spawnBudget: 3,
   };
   const use = vi.fn(async () => { throw new SpaceLinkUnusable(LINK, 'signed_out'); });
-  const store = {
+  /** Every store method the handler touches, in order; an unknown one throws. */
+  const touched: string[] = [];
+  const methods: Record<string, unknown> = {
     resolveInvoke: async () => row,
     recordAudit: async (_claims: DbClaims, entry: SpaceLinkAuditInput) => { audits.push(entry); return `audit-${audits.length}`; },
     use,
-  } as unknown as DbSpaceLinkStore;
+  };
+  const store = new Proxy({}, {
+    get: (_target, name) => {
+      touched.push(String(name));
+      if (!(String(name) in methods)) throw new Error(`the handler touched store.${String(name)}`);
+      return methods[String(name)];
+    },
+  }) as unknown as DbSpaceLinkStore;
   const forwarder: RemoteInvokeForwarder | undefined = forward ? { forward: vi.fn(forward) } : undefined;
   const registry = new HandlerRegistry();
   const local = vi.fn(async () => ({ id: DOC }));
@@ -62,7 +71,7 @@ function harness(targetServerId: string | null, forward?: (req: RemoteInvokeRequ
     params: { spaceId: HOME, link: 'b' }, body, headers, query: new URLSearchParams(),
     identity: { kind: 'bearer', workSessionId: 'ws-g' },
   } as unknown as RequestContext) as Promise<{ result: unknown; auditId: string }>;
-  return { run, audits, use, forwarder, local };
+  return { run, audits, use, forwarder, local, touched };
 }
 
 async function failure(promise: Promise<unknown>): Promise<CollabError> {
@@ -80,7 +89,8 @@ describe('W7 forward seam — a remote link is forwarded, never resolved here', 
     expect(res.result).toEqual({ id: DOC, title: 'B doc' });
     expect(h.use).not.toHaveBeenCalled();
     expect(h.forwarder!.forward).toHaveBeenCalledWith(expect.objectContaining({
-      linkId: LINK, serverId: SERVER, op: 'entities.patch', input: { title: 'x' }, via: [HOME], workSessionId: 'ws-g',
+      linkId: LINK, serverId: SERVER, op: 'entities.patch', params: { id: DOC }, query: {},
+      input: { title: 'x' }, via: [HOME], workSessionId: 'ws-g',
     }));
     expect(h.audits.at(-1)).toMatchObject({ result: 'ok', reason: null, remoteId: DOC, targetSpaceId: TARGET });
   });
@@ -99,6 +109,16 @@ describe('W7 forward seam — a remote link is forwarded, never resolved here', 
     expect(error).toMatchObject({ code: 'unauthenticated', status: 401, details: { reason: SPACE_LINK_SIGNED_OUT } });
     expect(h.use).not.toHaveBeenCalled();
     expect(h.audits.at(-1)).toMatchObject({ result: 'error', reason: 'link_signed_out' });
+    // One owner: the forwarder marks the home row; this side touches nothing but resolve + audit.
+    expect(new Set(h.touched)).toEqual(new Set(['resolveInvoke', 'recordAudit']));
+  });
+
+  it('a read forwards its query string and path params', async () => {
+    const h = harness(SERVER, async () => ({ kind: 'ok', status: 200, body: [] }));
+    await h.run({ op: 'entities.children', params: { id: DOC }, query: { limit: '5' } });
+    expect(h.forwarder!.forward).toHaveBeenCalledWith(expect.objectContaining({
+      op: 'entities.children', params: { id: DOC }, query: { limit: '5' },
+    }));
   });
 
   it.each([

@@ -10,9 +10,10 @@
  *
  *   1. the op name must be a catalog op, spelled exactly (canonical); an
  *      unknown name or a case variant is refused, never guessed at;
- *   2. the refused set, by prefix on the canonical name (credentials.*,
- *      node.credentials.*, spaceLinks.* writes, auth.*) and the spawn rule for
- *      explicit credential sources (F9, K11);
+ *   2. the refused set on the canonical name, prefix-matched plus exact
+ *      entries (credentials.*, node.credentials.*, spaceLinks.* writes,
+ *      auth.*, serverConnections.*, exactly voice.token.create) and the spawn
+ *      rule for explicit credential sources (F9, K11);
  *   3. the via chain from `x-tm8-via` (it can only ADD spaces): at most
  *      SPACE_LINK_MAX_HOPS hops, never back into a space already in it;
  *   4. the caller's OWN token row (990 resolve, no sealed bytes): an agent
@@ -86,6 +87,10 @@ export interface RemoteInvokeRequest {
   linkId: string;
   serverId: string;
   op: string;
+  /** Path params of the op (`:id` → `params.id`); coordinator 09:2xZ, W8 to add. */
+  params?: Record<string, string>;
+  /** Query string of a read; coordinator 09:2xZ, W8 to add. */
+  query?: Record<string, string>;
   input: unknown;
   via: readonly string[];
   workSessionId?: string;
@@ -272,7 +277,8 @@ export function createSpaceLinkInvokeHandlers(
    * B on another server (W8). The home guards have all run; nothing is
    * unsealed or resolved here (`store.use` would resolve B's session against
    * THIS node and wrongly mark the row signed_out). Every result kind maps to
-   * a typed error and a closed audit reason.
+   * a typed error and a closed audit reason. On `signed_out` the FORWARDER
+   * owns marking the home row (one owner); this side only types and audits.
    */
   const remote: SpaceLinkExecutor = async (request) => {
     const serverId = request.row.targetServerId;
@@ -286,6 +292,8 @@ export function createSpaceLinkInvokeHandlers(
       linkId: request.row.linkId,
       serverId,
       op: request.op,
+      params: { ...request.params },
+      query: { ...request.query },
       input: request.input,
       via: [...request.via, request.homeSpaceId],
       ...(request.workSessionId ? { workSessionId: request.workSessionId } : {}),

@@ -598,7 +598,7 @@ const ROWS: Record<OperationName, Row> = {
     tags: ['link', 'cross-space', 'invoke', 'agent'],
     reason: 'cli_lane_pending',
     notes: [
-      'the refused set is SPACE_LINK_REFUSED in @tm8/contract, matched by prefix on the exact catalog name, on the home server before anything is forwarded',
+      'the refused set is SPACE_LINK_REFUSED in @tm8/contract, prefix-matched plus exact entries (voice.token.create) on the exact catalog name, on the home server before anything is forwarded',
       'every call writes one audit row in the home Space; read it with spaceLinks.audit',
     ],
   },

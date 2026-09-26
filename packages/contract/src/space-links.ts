@@ -89,8 +89,9 @@ export const SpaceLinksSetSpawnInputSchema: z.ZodType<SpaceLinksSetSpawnInput> =
 // ---------------------------------------------------------------------------
 // spaceLinks.invoke (W7, decisions 31 + E2). Through a link an agent acts as
 // its launching member IN FULL, except for the refused set below. The set is
-// ONE constant, matched by PREFIX on the canonical catalog op name, so a
-// future `credentials.*` op is refused without an edit here. It is checked on
+// ONE constant, matched by PREFIX on the canonical catalog op name (plus
+// entries flagged `exact`, which match one op), so a future `credentials.*`
+// op is refused without an edit here. It is checked on
 // the HOME server before anything is unsealed or forwarded (T22).
 // ---------------------------------------------------------------------------
 
