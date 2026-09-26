@@ -28,7 +28,7 @@ import { getKind } from '../domain/registry';
 import { groupAttentionByEntity, type AttentionEntityGroup } from '../attention/attention-model';
 import { useDismissable } from '../panels/useDismissable';
 import { openEntityAndMarkRead } from '../views/open-entity';
-import { useAttentionPending, type AttentionPendingSeam } from './useAttentionPending';
+import { useAttentionPending, type AttentionPendingSeam } from '../attention/useAttentionPending';
 import './attention-segment.css';
 
 /** Rows drawn in the popover; the rest are summarised, never silently dropped. */
