@@ -1524,7 +1524,7 @@ function membershipHarness() {
     const resolve = createSessionIdentityResolver({ db, owner: async () => NOT_THE_OWNER, spaceSessions: 'agents' });
     const identity = await resolve(
       { authorization: `Bearer ${token}` },
-      { remoteAddress: '203.0.113.9', disableAutoOwner: true },
+      { remoteAddress: '203.0.113.9', disableAutoOwner: true, autoOwnerCookie: 'off' },
     );
     const ctx = {
       op: { name: opName, method: 'POST', path: '/test', kind: 'command', status: 'v1' },
