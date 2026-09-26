@@ -1461,7 +1461,41 @@ const ROWS: Record<OperationName, Row> = {
     input: 'bound',
     notes: [
       'the result carries BOTH identities: the ProjectResource id and the per-Space projection entity id — they are never interchangeable',
+      'decision 29: one folder may be linked into several Spaces only on a loopback-only single node; everywhere else a folder that belongs to another Space is refused: this folder belongs to another space',
     ],
+  },
+  'spaces.projects.list': {
+    cmd: ['project', 'space-list'],
+    syn: 'tm8 project space-list [--space <space-id>]',
+    sum: "List the Space's projects: each is the Space's own project entity over a folder granted to it; never a path",
+    authz: 'space',
+    input: 'none',
+  },
+  'spaces.projects.create': {
+    cmd: ['project', 'add'],
+    syn: 'tm8 project add <folder-id> [--name <name>] [--space <space-id>] [--mutation-id <id>]',
+    sum: "Name the Space's project on a folder granted to that Space",
+    authz: 'space',
+    input: 'bound',
+    notes: [
+      'requires the Space owner/admin capability; a folder granted to another Space is refused: this folder belongs to another space',
+    ],
+  },
+  'gate.folders.list': {
+    cmd: ['project', 'folders'],
+    syn: 'tm8 project folders',
+    sum: 'List every folder on this server with the Space it is granted to',
+    authz: 'server',
+    input: 'none',
+    notes: ['gate (node) admins only: members never receive a disk path'],
+  },
+  'gate.folders.create': {
+    cmd: ['project', 'folder-add'],
+    syn: 'tm8 project folder-add <name> --working-dir <absolute-path> [--grant-space <space-id>] [--ensure-working-dir] [--repo-url <url>] [--trust trusted|untrusted] [--mutation-id <id>]',
+    sum: 'Register a folder inside TM8_PROJECT_ROOTS, optionally granting it to one Space',
+    authz: 'server',
+    input: 'bound',
+    notes: ['gate (node) admins only; a folder is granted to at most one Space'],
   },
   'projects.unlink': {
     cmd: ['project', 'unlink'],
@@ -3004,6 +3038,7 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   // the same map and moves with it.
   chat: 'chat',
   containers: 'container',
+  gate: 'project',
   // Required even though all four `credentials.*` rows are `cmd: null`: the
   // noun groups them in `tm8 help`, so they are DISCOVERABLE rather than
   // hidden. Someone asking "can tm8 manage my vendor logins?" gets an answer.
@@ -3071,6 +3106,8 @@ function exposureFor(operation: OperationName): Exposure {
 // 2026-08-13 (first-run claim): auth.claim + auth.claim.status take the catalog
 // to 161 rows. RECOMPUTED from `JSON.stringify(OPERATIONS)`, not adjusted.
 export const CATALOG_DIGEST =
+  // Re-measured for W11 (+spaces.projects.list, +spaces.projects.create at
+  // /projects/create, +gate.folders.list/create; projects.link stays, decision 29) — read from the regenerated conformance manifest.
   // Re-measured 141 (+ auth.password.change, auth.invite.signup,
   // auth.claim.reissue) — read from the regenerated conformance manifest, never
   // hand-derived.
@@ -3099,9 +3136,11 @@ export const CATALOG_DIGEST =
   // Re-measured (Forms W3 merged with headers I4): + forms.responses.redeliver, forms.pendingForSessions. Read from the failing digest test.
   // Re-measured (I9b): + launch.defaults. Read from the failing digest test.
   // Re-measured (entity chat G): + spaces.chatDefaults.get/set. RECOMPUTED from JSON.stringify(OPERATIONS).
+  // Re-measured (W11, decision 29): + spaces.projects.list/create, gate.folders.list/create; projects.link stays. Read from the failing digest test. Merged onto G6 (232): digest re-measured on the merged tree.
   // Re-measured (G6, 232): + spaces.members.remove, spaces.leave, accounts.disable. Read from the failing digest test.
   // Re-measured (W3-server, on main bd1841bf): + auth.space.enter. Read from the conformance generator.
-  'sha256:33d3b716fdba0a7b9f4a0dfca4abd8824038589b0556608c35682b40d9c933b5';
+  // Rebased onto main d11e0be5 (#848): W11's +4 on top of auth.space.enter; digest re-measured on the rebased tree.
+  'sha256:b7a5a5ff6ae8f7320bad8055cdf9485c166d5f5f4e60cf2501c030f5612ea437';
 
 export const GRAMMAR_VERSION = '2';
 
