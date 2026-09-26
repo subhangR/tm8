@@ -2,9 +2,10 @@
  * W11-migrate dry-run report (plan 01a0d9eb §3 W11 steps 1, 2, 4; K13 as the
  * owner's explicit mapping) against a real schema. Two spaces share folders the
  * way the 7 on the prod copy do: the chain is applied up to 233, the double
- * grants are seeded there (234 refuses a new one), then 234 and 235 are
- * applied on top and nothing later: this test's ceiling is 235, because a later
- * migration (W11-repoint) refuses shared-folder seeds by design. The owning
+ * grants are seeded there (234 refuses a new one), then 234 is applied on top
+ * and nothing later: this test's ceiling is 234. The report reads no column 235
+ * fills (235 is its own PR), and a later migration (W11-repoint) refuses
+ * shared-folder seeds by design. The owning
  * space always comes from the mapping; activity is a report column.
  *
  *   folder F  granted to A and B. A: one session 40 days old. B: two sessions
@@ -42,7 +43,7 @@ vi.setConfig({ testTimeout: 120_000, hookTimeout: 240_000 });
 
 const ordinal = (file: string): number => Number(file.slice(0, 3));
 const BEFORE = migrationFiles().filter((f) => ordinal(f) < 234);
-const FROM_W11 = migrationFiles().filter((f) => ordinal(f) >= 234 && ordinal(f) <= 235);
+const FROM_W11 = migrationFiles().filter((f) => ordinal(f) >= 234 && ordinal(f) <= 234);
 
 const AS_OF = '2026-09-24T18:40:00.000Z';
 const daysBefore = (n: number) => new Date(Date.parse(AS_OF) - n * 86_400_000).toISOString();
