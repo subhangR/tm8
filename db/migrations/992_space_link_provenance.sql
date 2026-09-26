@@ -28,11 +28,10 @@
 --      (lead ruling Q-a (A)); what is already running keeps running.
 --   4. A new trigger ends the descendants when the row LEAVES `signed_in`
 --      without revoking the link session (stale `unreachable`).
---      (250's header says every credential RPC calls 083's
---      `require_human_auth_kind()`. Only the MANAGEMENT RPCs do. The two
---      spawn-time reads below admit agent kinds by design and never called the
---      gate, which is why kind `link` needs the explicit refusals in 5. 250's
---      text is left as is: editing an applied file is a checksum DRIFT.)
+--      (As 250's header says, 083's `require_human_auth_kind()` is on the
+--      credential MANAGEMENT RPCs only. The two spawn-time reads below admit
+--      agent kinds by design and never called it, which is why kind `link`
+--      needs the explicit refusals in 5.)
 --   5. 093 `read_account_git_credential` refuses a link-bound caller (42501,
 --      never null). 206 `read_space_credential_for_spawn` admits a link-bound
 --      caller only for the target's DEFAULT credential (no pinned id), and only
@@ -316,7 +315,8 @@ end
 $$;
 
 -- -----------------------------------------------------------------------------
--- 6. read_space_credential_for_spawn — 206's body plus the link admission.
+-- 6. read_space_credential_for_spawn — 239's body (the latest definer; 206's
+--    plus the private-owner gate) plus the link admission, as additions only.
 -- -----------------------------------------------------------------------------
 create or replace function public.read_space_credential_for_spawn(
   p_launch_space_id uuid,
@@ -324,9 +324,10 @@ create or replace function public.read_space_credential_for_spawn(
   p_credential_id uuid default null
 ) returns jsonb
 language plpgsql security definer set search_path = public, internal, pg_temp as $$
-declare stored public.space_credentials;
+declare stored public.space_credentials; v_launcher uuid;
 begin
   perform internal.require_space_member(p_launch_space_id);
+  v_launcher := internal.current_account_id();
 
   -- W7p: a link-bound caller gets the target's DEFAULT credential only, and
   -- only while its own row for this link and target is signed in with
@@ -369,6 +370,14 @@ begin
       raise exception 'space credential "%" is %', stored.label, stored.status using errcode = '23514',
         detail = jsonb_build_object('reason', stored.status, 'provider', p_provider)::text;
     end if;
+  end if;
+
+  -- The space default is public by constraint, so this only ever refuses a
+  -- pinned id; it is checked for both anyway.
+  if not (stored.visibility = 'public' or stored.owner_account_id is null
+          or stored.owner_account_id = v_launcher) then
+    raise exception 'space credential "%" is private to its owner', stored.label using errcode = '42501',
+      detail = jsonb_build_object('reason', 'not_usable', 'provider', p_provider)::text;
   end if;
 
   update public.space_credentials set last_used_at = now()

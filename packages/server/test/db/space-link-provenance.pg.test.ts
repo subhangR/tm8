@@ -133,6 +133,22 @@ async function sessionRow(id: string): Promise<{ via_link_id: string | null; par
   return row;
 }
 
+// 239: a space_credentials row shares its id with a credential card in its own
+// space (deferred FK), written only through 239's flag-setting helper.
+async function credentialCard(client: { query: (sql: string, params?: unknown[]) => Promise<unknown> }, id: string, space: string, actor: string): Promise<void> {
+  await client.query('select internal.insert_credential_entity($1, $2, $3)', [id, space, actor]);
+}
+
+// The side row goes; its card becomes a tombstone (entities are never hard-deleted).
+async function dropCredentials(ids: string[]): Promise<void> {
+  await database.transaction(async (client) => {
+    await client.query(`delete from public.space_credentials where id = any($1::uuid[])`, [ids]);
+    await client.query(`select set_config('tm8.credential_write', 'on', true)`);
+    await client.query(`update public.entities set deleted_at = now(), updated_at = now() where id = any($1::uuid[]) and kind = 'credential'`, [ids]);
+    await client.query(`select set_config('tm8.credential_write', '', true)`);
+  });
+}
+
 async function seed(): Promise<Fixture> {
   const f: Fixture = {
     spaceA: randomUUID(), spaceB: randomUUID(),
@@ -179,6 +195,8 @@ async function seed(): Promise<Fixture> {
       `insert into public.team_members(entity_id, owner_member_id, name, role, identity)
        values ($1, $2, 'W7p PB', 'worker', 'persona'), ($3, $4, 'W7p PA', 'worker', 'persona')`,
       [f.personaB, f.memberHB, f.personaA, f.memberHA]);
+    // 239: every side row shares its id with a credential card in its space.
+    for (const id of [f.antDefaultB, f.ghDefaultB]) await credentialCard(client, id, f.spaceB, f.memberHB);
     await client.query(
       `insert into public.space_credentials(id, space_id, provider, shape, label, is_default, key_hint, secret_ciphertext, secret_nonce)
        values ($1, $3, 'anthropic', 'api_key', 'B anthropic', true, 'abcd', decode(repeat('00', 17), 'hex'), decode(repeat('00', 12), 'hex')),
@@ -411,6 +429,7 @@ describe('W7p 206 — each predicate of the link admission refuses on its own', 
     const antDefaultA = randomUUID();
     await database.transaction(async (client) => {
       await client.query('set local role tm8_graph_owner');
+      await credentialCard(client, antDefaultA, fixture.spaceA, fixture.memberHA);
       await client.query(
         `insert into public.space_credentials(id, space_id, provider, shape, label, is_default, key_hint, secret_ciphertext, secret_nonce)
          values ($1, $2, 'anthropic', 'api_key', 'A anthropic', true, 'abcd', decode(repeat('00', 17), 'hex'), decode(repeat('00', 12), 'hex'))`,
@@ -425,7 +444,7 @@ describe('W7p 206 — each predicate of the link admission refuses on its own', 
       expect(await outcome(() => db.rpc(unpinned, 'read_space_credential_for_spawn', [fixture.spaceA, 'anthropic', null])))
         .toBe('42501');
     } finally {
-      await database.query(`delete from public.space_credentials where id = $1`, [antDefaultA]);
+      await dropCredentials([antDefaultA]);
     }
   });
 
@@ -450,11 +469,28 @@ describe('W7p 206 — each predicate of the link admission refuses on its own', 
   it('the link entity soft-deleted (e.deleted_at not null): refused; restored: admitted', async () => {
     const L = await linked();
     expect(await outcome(() => read206(L.linkClaims))).toBe('ok');
-    await database.query(`update public.entities set deleted_at = now() where id = $1`, [L.link.id]);
+    // The generic door refuses the soft-delete itself (251 §10b), even here.
+    expect(await outcome(() => database.query(`update public.entities set deleted_at = now() where id = $1`, [L.link.id])))
+      .toBe('42501');
+    expect(await outcome(() => read206(L.linkClaims))).toBe('ok');
+    // 206's own predicate, isolated: reach the state past 251's trigger (a
+    // fixture-only bypass; the tokens stay live, so only e.deleted_at refuses).
+    // `replica` needs a superuser: `database` is the harness's admin role, not
+    // tm8_app. SET LOCAL scopes it to this one fixture transaction; it is back
+    // to `origin` at commit, before any assertion below.
+    const setDeleted = (value: 'now()' | 'null') => database.transaction(async (client) => {
+      await client.query(`set local session_replication_role = replica`);
+      await client.query(`update public.entities set deleted_at = ${value} where id = $1`, [L.link.id]);
+    });
+    await setDeleted('now()');
     try {
+      // Triggers are live again: the admin pool and the tm8_app pool 206 runs on.
+      expect((await database.query<{ r: string }>(`select current_setting('session_replication_role') r`))[0]!.r).toBe('origin');
+      expect((await db.query<{ r: string; u: string }>(L.linkClaims, `select current_setting('session_replication_role') r, current_user u`))[0])
+        .toEqual({ r: 'origin', u: 'tm8_app' });
       expect(await outcome(() => read206(L.linkClaims))).toBe('42501');
     } finally {
-      await database.query(`update public.entities set deleted_at = null where id = $1`, [L.link.id]);
+      await setDeleted('null');
     }
     expect(await outcome(() => read206(L.linkClaims))).toBe('ok');
   });
@@ -464,6 +500,64 @@ describe('W7p 206 — each predicate of the link admission refuses on its own', 
 // link — a child's spawn and a resume alike — through 992's live_link_session.
 // Nothing already running is ended by it; revoke is what ends sessions. Every
 // `linked()` is the same A -> B link entity, so each cell switches it back on.
+describe("W7p 206 on 239's body — the private-owner gate survives the link admission", () => {
+  // Two private, non-default anthropic credentials in B: one owned by H (the
+  // linking human), one by H3. Seeded per cell and deleted in finally.
+  async function withPrivate<T>(run: (ids: { ofH: string; ofH3: string }) => Promise<T>): Promise<T> {
+    const ids = { ofH: randomUUID(), ofH3: randomUUID() };
+    await database.transaction(async (client) => {
+      for (const id of [ids.ofH, ids.ofH3]) await credentialCard(client, id, fixture.spaceB, fixture.memberHB);
+      await client.query(
+      `insert into public.space_credentials(id, space_id, provider, shape, label, is_default, key_hint, secret_ciphertext, secret_nonce, owner_account_id, visibility)
+       values ($1, $3, 'anthropic', 'api_key', 'H private', false, 'abcd', decode(repeat('00', 17), 'hex'), decode(repeat('00', 12), 'hex'), $4, 'private'),
+              ($2, $3, 'anthropic', 'api_key', 'H3 private', false, 'abcd', decode(repeat('00', 17), 'hex'), decode(repeat('00', 12), 'hex'), $5, 'private')`,
+      [ids.ofH, ids.ofH3, fixture.spaceB, fixture.accountH, fixture.accountH3]);
+    });
+    try {
+      return await run(ids);
+    } finally {
+      await dropCredentials([ids.ofH, ids.ofH3]);
+    }
+  }
+
+  async function refusedBy(run: () => Promise<unknown>): Promise<string> {
+    try {
+      await run();
+      return 'ok';
+    } catch (err) {
+      const text = `${(err as Error).message} ${JSON.stringify((err as { details?: unknown }).details ?? null)}`;
+      if (text.includes('private to its owner')) return '239 not_usable';
+      if (text.includes('a space link spawn uses only')) return 'link guard';
+      return `other: ${await outcome(() => Promise.reject(err))}`;
+    }
+  }
+
+  it("(a) a normal spawn naming another account's private credential is refused by 239's gate", async () => {
+    const h3 = await humanClaims('H3');
+    await withPrivate(async ({ ofH }) => {
+      expect(await outcome(() => read206(h3, ofH))).toBe('42501');
+      expect(await refusedBy(() => read206(h3, ofH))).toBe('239 not_usable');
+    });
+  });
+
+  it("(b) a via_link spawn naming another account's private credential is refused — by the link guard first", async () => {
+    const L = await linked();
+    await withPrivate(async ({ ofH3 }) => {
+      expect(await outcome(() => read206(L.linkClaims, ofH3))).toBe('42501');
+      // Two layers: the link guard refuses any pinned id; with it removed, 239's
+      // gate refuses the same call ('239 not_usable'); with both removed, 'ok'.
+      expect(await refusedBy(() => read206(L.linkClaims, ofH3))).toBe('link guard');
+    });
+  });
+
+  it("(c) the owner's own private credential is admitted", async () => {
+    await withPrivate(async ({ ofH, ofH3 }) => {
+      expect(await read206(await humanClaims('H'), ofH)).toMatchObject({ credentialId: ofH });
+      expect(await read206(await humanClaims('H3'), ofH3)).toMatchObject({ credentialId: ofH3 });
+    });
+  });
+});
+
 describe('W7p setSpawn(false) — no new mint under the link; running sessions unaffected', () => {
   const underLink = async (link: string) => Number((await database.query<{ n: string }>(
     `select count(*) as n from public.auth_sessions where via_link_id = $1`, [link]))[0]!.n);
