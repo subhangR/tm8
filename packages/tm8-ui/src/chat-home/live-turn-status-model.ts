@@ -182,7 +182,6 @@ export function liveTurnView(
   labels?: StepLabels,
 ): LiveTurnView {
   const projected = parts ? projectTurnParts(parts) : [];
-  const ended = turn.phase === 'stopped' || turn.phase === 'failed';
   /* A continued turn appends to the SAME message after its first `done`, so a
      call that began before the last terminal record can no longer be running
      even when its own terminal record never arrived (lane 3's stuck-call
@@ -191,8 +190,10 @@ export function liveTurnView(
   const tools = projected.filter((part): part is ToolPart => part.kind === 'tool');
   const running: ToolPart[] = [];
   const settled: ToolPart[] = [];
+  /* No `ended ||` here: a stopped / failed row reads only the step COUNT, never
+     this split, so marking its calls stopped would change nothing (review N4). */
   for (const tool of tools) {
-    (toolStepState(tool, ended || tool.seq < endSeq) === 'running' ? running : settled).push(tool);
+    (toolStepState(tool, tool.seq < endSeq) === 'running' ? running : settled).push(tool);
   }
   const newest = [...projected].reverse().find((part) => part.kind !== 'usage') ?? null;
   const steps = tools.length;

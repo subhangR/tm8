@@ -66,6 +66,32 @@ describe('live-turn-status.css', () => {
     expect(rule('.tch-live__now,\n.tch-live__aside')).toMatch(/text-overflow:\s*ellipsis/);
   });
 
+  /**
+   * D27 — the headline never gives way. Measured before: a 561px card with the
+   * pill and a grown meta drew `.tch-live__now` at 0px. Order of surrender:
+   * the aside (a zero basis: only leftover space), then the meta (shrink 1),
+   * the headline last (shrink 0.001) and only by ellipsis.
+   */
+  it('out of width, the aside goes first, then the meta, the headline last (D27)', () => {
+    // Its OWN rule, not the shared `.tch-live__now, .tch-live__aside` ellipsis group.
+    expect(CSS).toMatch(/\n\.tch-live__aside\s*\{\s*flex:\s*1 1 0%/);
+    expect(rule('.tch-live__meta')).toMatch(/flex:\s*0 1 auto/);
+    const now = rule('.tch-live__now');
+    expect(now).toMatch(/flex:\s*0 0\.001 auto/);
+    expect(now).toMatch(/max-width:\s*100%/);
+    // The headline's ellipsis: shared with the aside.
+    expect(rule('.tch-live__now,\n.tch-live__aside')).toMatch(/min-width:\s*0/);
+  });
+
+  /** D27 §4: a narrow CARD puts the meta on its own line for the whole turn —
+   *  keyed on the card's width (a container query), never on the meta's. */
+  it('a card of 700px or less gives the meta its own line', () => {
+    expect(rule('.tch-dock')).toMatch(/container-type:\s*inline-size/);
+    expect(CSS).toMatch(/@container \(max-width: 700px\)\s*\{\s*\.tch-dock \.tch-live\s*\{\s*flex-wrap:\s*wrap/);
+    expect(CSS).toMatch(/@container \(max-width: 700px\)[\s\S]*?\.tch-live__meta\s*\{\s*flex-basis:\s*100%/);
+    expect(CSS).not.toMatch(/max-width: 560px/);
+  });
+
   /** Advisor ruling 3: 74s of silence is normal, so silence is never red. */
   it('long silence turns the meta to the wait tone, never to the error one', () => {
     const quiet = rule(".tch-live[data-quiet='long'] .tch-live__meta");

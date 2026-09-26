@@ -78,12 +78,13 @@ export function LiveTurnStatus({ turn, parts, labels }: LiveTurnStatusProps) {
           {view.glyph === 'stopped' ? '■' : '✕'}
         </span>
       )}
-      <span className="tch-live__text" aria-hidden="true">
-        <span className="tch-live__now" data-testid="chat-live-now">{view.now}</span>
-        {view.aside ? (
-          <span className="tch-live__aside" data-testid="chat-live-aside">{view.aside}</span>
-        ) : null}
-      </span>
+      {/* Siblings, not a wrapper: the row surrenders width in a fixed order
+          (D27) — aside, then meta, then the headline only by ellipsis — and
+          that order is only expressible between flex items of one line. */}
+      <span className="tch-live__now" aria-hidden="true" data-testid="chat-live-now">{view.now}</span>
+      {view.aside ? (
+        <span className="tch-live__aside" aria-hidden="true" data-testid="chat-live-aside">{view.aside}</span>
+      ) : null}
       {view.meta ? (
         <span className="tch-live__meta" aria-hidden="true" data-testid="chat-live-meta">
           {view.meta}
