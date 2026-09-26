@@ -236,20 +236,38 @@ describe('AttentionSegment — reaching the requests', () => {
     expect(fake.seam.entity).not.toHaveBeenCalled();
   });
 
-  it('opening a row navigates, resolves that entity, closes, and drops the count', async () => {
+  /**
+   * THE INVERSION (Attention v2, G4/G5). This test asserted the opposite until
+   * S0: opening a row bulk-resolved that entity and the count dropped to 1. That
+   * made the popover destroy the queue by being used, and it is the behaviour
+   * `open-entity.ts` no longer has. The count holding at 2 IS the fix, so this
+   * stays a test rather than being deleted with the assertion it guarded.
+   */
+  it('opening a row navigates and closes, and does NOT resolve or drop the count', async () => {
     const fake = fakeSeam([req({ entityId: 'a', points: 5 }), req({ entityId: 'b', points: 3 })]);
-    const reconcile = vi.fn();
-    const { onOpenEntity } = mount(fake, { reconcile });
+    const { onOpenEntity } = mount(fake);
     await waitFor(() => expect(count()).toBe('2'));
 
     fireEvent.click(screen.getByTestId('attention-segment'));
     fireEvent.click(screen.getByTestId('attention-segment-row-a'));
 
     expect(onOpenEntity).toHaveBeenCalledWith('a');
-    expect(fake.resolveAttention).toHaveBeenCalledWith('a', expect.objectContaining({ clientMutationId: expect.any(String) }));
     expect(screen.queryByTestId('attention-segment-popover')).toBeNull();
+    // NAVIGATION IS A READ. Nothing was written, so nothing moved.
+    expect(fake.resolveAttention).not.toHaveBeenCalled();
+    expect(fake.table.rows).toHaveLength(2);
+    expect(count()).toBe('2');
+  });
+
+  it('records a read mark on open — the per-viewer write that DID survive', async () => {
+    const fake = fakeSeam([req({ entityId: 'a', points: 5 })]);
+    mount(fake);
     await waitFor(() => expect(count()).toBe('1'));
-    expect(reconcile).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByTestId('attention-segment'));
+    fireEvent.click(screen.getByTestId('attention-segment-row-a'));
+
+    expect(fake.seam.commands.upsertReadMark).toHaveBeenCalledWith('a', expect.any(String));
   });
 
   it('closes on Escape and on an outside pointer-down', async () => {
