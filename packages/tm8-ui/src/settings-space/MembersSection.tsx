@@ -27,8 +27,12 @@
  * row shows T1-4's hollow marker carrying the reason. Inventing `@` + a slugged
  * title would be a lie of precision on the one field a user would trust.
  *
- * REMOVAL IS STILL REFUSED, and for a better-understood reason than before —
- * see `MEMBER_REMOVE_UNAVAILABLE`.
+ * REMOVAL IS REAL since G6 (migration 231). The ✕ opens a confirmation, and
+ * the confirmed write is `spaces.members.remove`, which tombstones the row —
+ * the member's authorship keeps rendering, with "(left)". The same UX-not-
+ * authorization rule applies: the ✕ is locked, with a reason, for a non-admin,
+ * for an owner row when you are not an owner, and for your own row (leaving
+ * is in Danger zone).
  *
  * ---------------------------------------------------------------------------
  * THE LAYOUT PASS (2026-08-16, off "settings page is fully fucked, not properly
@@ -57,11 +61,13 @@ import type { EntitySummary, SpaceMemberRole } from '@tm8/contract';
 import type { IdentityView } from '../data/seam';
 import { Avatar, absTime, parseInstant, relTime } from '../kit';
 import { DisabledIconControl, HollowInline } from '../panels';
+import { MembershipConfirm } from './MembershipConfirm';
 import { SectionAbsent, SectionFrame } from './SectionFrame';
 import { memberRoles, ownerRoleRef, roleOf } from './port';
 import {
+  MEMBER_REMOVE_NOT_ADMIN,
+  MEMBER_REMOVE_OWNER_LOCKED,
   MEMBER_REMOVE_SELF,
-  MEMBER_REMOVE_UNAVAILABLE,
   OWNER_ROLE_LOCKED,
   ROLE_CHANGE_NOT_ADMIN,
   ROLE_CHANGE_NEEDS_OWNER,
@@ -86,6 +92,11 @@ export interface MembersSectionProps {
    * like it worked.
    */
   onRoleChange?: (memberId: string, role: SpaceMemberRole) => Promise<unknown>;
+  /**
+   * End a member's membership (G6). Called only after the confirmation, and
+   * a rejection is printed in the dialog. Absent ⇒ every ✕ renders locked.
+   */
+  onRemove?: (memberId: string) => Promise<unknown>;
 }
 
 /** Oracle L88, verbatim — the ROLES legend prose. */
@@ -222,6 +233,7 @@ export function MembersSection({
   heading = 'Members & roles',
   onInvite,
   onRoleChange,
+  onRemove,
 }: MembersSectionProps) {
   const selfMemberIds = new Set((identity?.memberships ?? []).map((m) => m.memberId));
   const ownerWord = ownerRoleRef();
@@ -236,6 +248,8 @@ export function MembersSection({
   /** Which row is mid-write, and what the last failure said. One at a time. */
   const [pending, setPending] = useState<string | null>(null);
   const [failure, setFailure] = useState<{ memberId: string; message: string } | null>(null);
+  /** The row whose ✕ was pressed, awaiting the confirmation. */
+  const [removing, setRemoving] = useState<EntitySummary | null>(null);
 
   async function change(memberId: string, role: string) {
     if (!onRoleChange) return;
@@ -307,6 +321,14 @@ export function MembersSection({
                 : isOwner && !viewerIsOwner
                   ? OWNER_ROLE_LOCKED
                   : null;
+              // The same order `remove_space_member` refuses in (231).
+              const removeLock = isSelf
+                ? MEMBER_REMOVE_SELF
+                : !onRemove || !viewerIsAdmin
+                  ? MEMBER_REMOVE_NOT_ADMIN
+                  : isOwner && !viewerIsOwner
+                    ? MEMBER_REMOVE_OWNER_LOCKED
+                    : null;
               return (
                 <div className="set-members__row" key={m.id} data-testid="member-row">
                   <Avatar
@@ -380,11 +402,24 @@ export function MembersSection({
                   </span>
 
                   <span className="set-members__cell set-members__cell--x">
-                    <DisabledIconControl
-                      label={isSelf ? 'remove yourself' : `remove ${m.title}`}
-                      reason={isSelf ? MEMBER_REMOVE_SELF : MEMBER_REMOVE_UNAVAILABLE}
-                      glyph="✕"
-                    />
+                    {removeLock !== null ? (
+                      <DisabledIconControl
+                        label={isSelf ? 'remove yourself' : `remove ${m.title}`}
+                        reason={removeLock}
+                        glyph="✕"
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        className="set-members__x"
+                        data-testid="member-remove"
+                        aria-label={`remove ${m.title}`}
+                        title={`Remove ${m.title} from this space`}
+                        onClick={() => setRemoving(m)}
+                      >
+                        ✕
+                      </button>
+                    )}
                   </span>
 
                   {failure?.memberId === m.id ? (
@@ -401,6 +436,31 @@ export function MembersSection({
             })}
           </div>
         )}
+
+        {removing && onRemove ? (
+          <MembershipConfirm
+            testId="member-remove-confirm"
+            title={`Remove ${removing.title}?`}
+            body={
+              <>
+                <p>
+                  They lose access to this space now: their sessions here stop, their tokens for it
+                  are revoked, and their tasks are unassigned.
+                </p>
+                <p>
+                  Everything they wrote stays, marked “(left)”. They can come back only if someone
+                  invites them.
+                </p>
+              </>
+            }
+            confirmLabel="Remove"
+            onCancel={() => setRemoving(null)}
+            onConfirm={async () => {
+              await onRemove(removing.id);
+              setRemoving(null);
+            }}
+          />
+        ) : null}
 
         {/* THE MEASURED HALF. Everything below is prose, and prose is read. */}
         <div className="set-members__measure" data-testid="members-legend">

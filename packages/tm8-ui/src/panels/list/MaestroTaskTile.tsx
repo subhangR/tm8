@@ -2,6 +2,7 @@ import type { ReactNode, RefObject } from 'react';
 import type { ActorSummary } from '@tm8/contract';
 import type { PillTone } from '../../kit';
 import { Avatar } from '../../kit';
+import { actorName } from '../../domain/actors';
 import { useMobileSurface } from '../../mobile/surface';
 import './maestro-task-tile.css';
 
@@ -187,8 +188,8 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
             <span
               className="pn-av-group"
               role="img"
-              aria-label={`Assigned to ${assignees.map((actor) => actor.displayName).join(', ')}`}
-              title={`Assigned to ${assignees.map((actor) => actor.displayName).join(', ')}`}
+              aria-label={`Assigned to ${assignees.map((actor) => actorName(actor)).join(', ')}`}
+              title={`Assigned to ${assignees.map((actor) => actorName(actor)).join(', ')}`}
             >
               {assignees.slice(0, 3).map((actor) => (
                 <Avatar

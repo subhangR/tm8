@@ -81,6 +81,7 @@ import {
   workflowTypeOf,
   workflowVocabularyOf,
 } from '../../domain';
+import { actorName } from '../../domain/actors';
 import { Avatar, useMenuAnchor, type PillTone } from '../../kit';
 import {
   CheckingPermission,
@@ -1519,7 +1520,7 @@ function RowAssignControl({
                   size={15}
                   src={actor.avatar ?? null}
                 />
-                <span className="lp__assignopt-name">{actor.displayName}</span>
+                <span className="lp__assignopt-name">{actorName(actor)}</span>
                 <span className="lp__assignopt-mark" aria-hidden>
                   {on ? '✓' : ''}
                 </span>
