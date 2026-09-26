@@ -65,6 +65,7 @@ type SpaceCredentialStorePort = Pick<
   | 'setMyDefault'
   | 'clearMyDefault'
   | 'usage'
+  | 'foreignLaunches'
   | 'liveSessions'
   | 'finishLogin'
   | 'readSpacePolicy'
@@ -87,6 +88,15 @@ export interface SpaceCredentialCatalogOptions {
    * sealed bytes are dropped by the revoke itself.
    */
   removeLoginHome?: (home: SpaceCredentialHomeKey) => Promise<void>;
+  /**
+   * The narrow login-home scrub (R1/R17 ruling): remove the transcripts of
+   * these non-owner launches from a PRIVATE login credential's shared home,
+   * and nothing else. Returns how many files went. Absent, nothing is removed.
+   */
+  scrubForeignLaunches?: (
+    home: SpaceCredentialHomeKey,
+    launches: ReadonlyArray<{ workSessionId: string; nativeSessionId: string | null }>,
+  ) => Promise<number>;
   /**
    * Close one login terminal onto the (now revoked) credential: kill it, and
    * only then `finish_space_credential_login(ws, false)`. SC-4's login
@@ -117,6 +127,7 @@ export class SpaceCredentialCatalogService {
   private readonly terminals: CredentialTerminalPort;
   private readonly agentSessions: AgentSessionContainmentPort;
   private readonly removeLoginHome: (home: SpaceCredentialHomeKey) => Promise<void>;
+  private readonly scrubForeignLaunches: SpaceCredentialCatalogOptions['scrubForeignLaunches'] | null;
   private readonly closeLogin: SpaceCredentialCatalogOptions['closeLogin'] | null;
   private readonly env: Readonly<Record<string, string | undefined>>;
   private readonly streams: CredentialStreamClosePort | null;
@@ -128,6 +139,7 @@ export class SpaceCredentialCatalogService {
     this.terminals = options.terminals;
     this.agentSessions = options.agentSessions;
     this.removeLoginHome = options.removeLoginHome ?? (async () => undefined);
+    this.scrubForeignLaunches = options.scrubForeignLaunches ?? null;
     this.closeLogin = options.closeLogin ?? null;
     this.env = options.env ?? process.env;
     this.streams = options.streams ?? null;
@@ -331,6 +343,23 @@ export class SpaceCredentialCatalogService {
     if (visibility === 'private') {
       const failure = await this.closeStreams(claims, credentialId);
       if (failure !== null) failures.push({ sessionId: credentialId, reason: failure });
+    }
+    // Last, after the kills ended those sessions: a login's shared home loses
+    // only what a non-owner launch alone wrote. The home itself is the owner's
+    // login and stays (206: a login's secret is a file, never a column).
+    if (visibility === 'private' && stored.shape === 'login' && this.scrubForeignLaunches) {
+      try {
+        const launches = (await this.store.foreignLaunches(claims, credentialId))
+          .filter((launch) => launch.provider === stored.provider);
+        if (launches.length > 0) {
+          await this.scrubForeignLaunches(
+            { spaceId: stored.spaceId, credentialId: stored.id, provider: stored.provider },
+            launches,
+          );
+        }
+      } catch (error) {
+        failures.push({ sessionId: credentialId, reason: reasonOf(error) });
+      }
     }
     return { credential: spaceCredentialViewOf(stored), terminatedAgentSessionIds, failures };
   }

@@ -108,7 +108,7 @@ import {
   type CredentialStreamClosePort,
   spaceCredentialViewOf,
 } from '../../services/w2/space-credential-catalog.js';
-import { SpaceLoginHomes } from '../../../credentials/space-credential-home.js';
+import { assertSpaceLoginProvider, SpaceLoginHomes } from '../../../credentials/space-credential-home.js';
 
 /**
  * The session kinds that may reach `credentials.*`.
@@ -430,6 +430,10 @@ export function registerCredentialHandlers(
     // stamped — and its home removed under the promote lock (SC-4).
     closeLogin: (claims, workSessionId) => sessions.closeSpaceLogin(claims, workSessionId),
     removeLoginHome: (home) => spaceHomes.remove(home),
+    scrubForeignLaunches: (home, launches) => {
+      assertSpaceLoginProvider(home.provider);
+      return spaceHomes.scrubForeignLaunches({ ...home, provider: home.provider }, launches);
+    },
     agentSessions: credentials.agentSessions,
     env,
     ...(credentials.streams ? { streams: credentials.streams } : {}),

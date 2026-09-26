@@ -33,10 +33,11 @@
  * `agent-credential-home.ts` explains, and a symlink at any level is refused.
  */
 import { randomUUID } from 'node:crypto';
-import { chmod, lstat, mkdir, open, readFile, rename, rm, unlink } from 'node:fs/promises';
-import { join } from 'node:path';
+import { chmod, lstat, mkdir, open, readdir, readFile, realpath, rename, rm, unlink } from 'node:fs/promises';
+import { basename, join, sep } from 'node:path';
 
 import { CollabError } from '@tm8/contract';
+import { extractCodexRolloutIdentity } from '@tm8/execution';
 
 import { CREDENTIAL_DIRECTORY_MODE, credentialsRoot } from './agent-credential-home.js';
 
@@ -65,6 +66,25 @@ const LOGIN_FILES: Record<SpaceLoginProvider, { required: string; merged?: { fil
   },
   openai: { required: 'auth.json' },
 };
+
+/**
+ * Every file a CLI needs to stay logged in, per provider: the login itself and
+ * the state file it merges into. The narrow scrub never deletes one of these;
+ * its targets are `*.jsonl` transcripts, so this is an assertion, not a filter.
+ */
+const LOGIN_AUTH_FILES: ReadonlySet<string> = new Set(
+  Object.values(LOGIN_FILES).flatMap((files) => [files.required, ...(files.merged ? [files.merged.file] : [])]),
+);
+
+/** How much of a codex rollout head proves ownership (as native-session.ts reads). */
+const ROLLOUT_HEAD_BYTES = 256 * 1024;
+
+/** One non-owner launch the scrub may remove the transcript of. */
+export interface SpaceLoginForeignLaunch {
+  workSessionId: string;
+  /** Claude's `--session-id` (tm8's own id); unused for codex. */
+  nativeSessionId: string | null;
+}
 
 export interface SpaceLoginHomeKey {
   spaceId: string;
@@ -255,6 +275,73 @@ export class SpaceLoginHomes {
     });
   }
 
+  /**
+   * The narrow scrub (lead ruling on R1/R17): after a switch to private,
+   * remove the transcripts of NON-OWNER launches from the shared live config
+   * dir and nothing else. The home stays — it is the only store of the login.
+   *
+   * Only files the repo's own resume code identifies with one session:
+   *   - claude: `<config>/projects/<dir>/<nativeSessionId>.jsonl`, the file
+   *     `--session-id` writes and `ClaudeHeadlessAdapter` resumes from;
+   *   - codex: a rollout under `<config>/sessions/` whose USER message carries
+   *     the session's `<tm8_session_id>` marker (`extractCodexRolloutIdentity`,
+   *     the proof resume uses; a mention elsewhere in the file does not count).
+   * Anything not attributable stays: history, caches, the owner's transcripts
+   * in the same directories. Symlinks are never followed, every target must
+   * resolve under the config dir, and an auth file is never a target.
+   * Serialised with `promote` and `remove`. Returns how many files went.
+   */
+  async scrubForeignLaunches(
+    key: SpaceLoginHomeKey,
+    launches: readonly SpaceLoginForeignLaunch[],
+  ): Promise<number> {
+    assertSpaceLoginProvider(key.provider);
+    const configDir = spaceLoginConfigDir(this.dataDir, key);
+    return this.withLock(key.credentialId, async () => {
+      const root = await realDirectory(configDir);
+      if (root === null || launches.length === 0) return 0;
+      let removed = 0;
+      const drop = async (path: string): Promise<void> => {
+        if (!(await isContainedFile(root, path))) return;
+        if (LOGIN_AUTH_FILES.has(basename(path))) {
+          throw new CollabError('invariant_violation', 'the login-home scrub reached an auth file');
+        }
+        await unlink(path);
+        removed += 1;
+      };
+
+      if (key.provider === 'anthropic') {
+        const ids = launches
+          .map((launch) => launch.nativeSessionId)
+          .filter((id): id is string => id !== null && UUID_RE.test(id));
+        const projects = join(root, 'projects');
+        for (const dir of await directoriesIn(projects)) {
+          for (const id of ids) await drop(join(projects, dir, `${id}.jsonl`));
+        }
+        return removed;
+      }
+
+      const ids = launches.map((launch) => launch.workSessionId).filter((id) => UUID_RE.test(id));
+      const sessions = join(root, 'sessions');
+      let entries: string[];
+      try {
+        entries = await readdir(sessions, { recursive: true });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return removed;
+        throw error;
+      }
+      for (const entry of entries) {
+        if (!entry.endsWith('.jsonl')) continue;
+        const path = join(sessions, entry);
+        if (!(await isContainedFile(root, path))) continue;
+        const head = await readHead(path, ROLLOUT_HEAD_BYTES);
+        if (head === null) continue;
+        if (ids.some((id) => extractCodexRolloutIdentity(head, id) !== null)) await drop(path);
+      }
+      return removed;
+    });
+  }
+
   private async withLock<T>(credentialId: string, run: () => Promise<T>): Promise<T> {
     const previous = this.locks.get(credentialId) ?? Promise.resolve();
     let release!: () => void;
@@ -270,6 +357,54 @@ export class SpaceLoginHomes {
       release();
       if (this.locks.get(credentialId) === tail) this.locks.delete(credentialId);
     }
+  }
+}
+
+/** The real path of a directory that is not itself a symlink, or null. */
+async function realDirectory(path: string): Promise<string | null> {
+  try {
+    const info = await lstat(path);
+    return info.isDirectory() ? await realpath(path) : null;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+/** Plain subdirectories of `path` (no symlinks); none when it is absent. */
+async function directoriesIn(path: string): Promise<string[]> {
+  try {
+    const entries = await readdir(path, { withFileTypes: true });
+    return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw error;
+  }
+}
+
+/** A regular file (never a symlink) whose real path lies under `root`. */
+async function isContainedFile(root: string, path: string): Promise<boolean> {
+  try {
+    if (!(await lstat(path)).isFile()) return false;
+    return (await realpath(path)).startsWith(`${root}${sep}`);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw error;
+  }
+}
+
+async function readHead(path: string, bytes: number): Promise<string | null> {
+  try {
+    const handle = await open(path, 'r');
+    try {
+      const buffer = Buffer.alloc(bytes);
+      const { bytesRead } = await handle.read(buffer, 0, bytes, 0);
+      return buffer.subarray(0, bytesRead).toString('utf8');
+    } finally {
+      await handle.close();
+    }
+  } catch {
+    return null;
   }
 }
 

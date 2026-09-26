@@ -158,6 +158,14 @@ export interface SpaceCredentialUsage {
   }>;
 }
 
+/** One non-owner launch whose files in a shared login home are its own. */
+export interface SpaceCredentialForeignLaunch {
+  workSessionId: string;
+  provider: string;
+  /** Claude's `--session-id`; null for codex, whose rollout is found by marker. */
+  nativeSessionId: string | null;
+}
+
 export interface SpaceCredentialUnusableSession {
   workSessionId: string;
   provider: SpaceCredentialProvider;
@@ -430,6 +438,15 @@ export class DbSpaceCredentialStore {
       'sweep_unusable_space_credential_sessions',
       [limit ?? 200],
     );
+  }
+
+  /**
+   * The narrow login-home scrub's reader: exited non-owner launches on the
+   * caller's own PRIVATE login credential, each attributable to that launch
+   * alone (never re-pointed). The owner only; empty for any other shape.
+   */
+  async foreignLaunches(claims: DbClaims, credentialId: string): Promise<SpaceCredentialForeignLaunch[]> {
+    return this.db.rpc<SpaceCredentialForeignLaunch[]>(claims, 'space_credential_foreign_launches', [credentialId, 500]);
   }
 
   /** A probe's verdict on an existing credential: active or stale (I6). */

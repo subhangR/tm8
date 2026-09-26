@@ -31,6 +31,9 @@
 --      server's post-boot re-check and periodic job kill what it lists.
 --   7. R13: repoint takes the providers the resume resolved and drops the
 --      rows of every other one, in the same transaction as the re-point.
+--   8. The narrow login-home scrub's reader: the non-owner launches on a
+--      PRIVATE login credential whose data can be attributed to that launch
+--      alone. The server deletes those files; SQL only names the sessions.
 --
 -- ADDITIVE ONLY: no statement here rewrites or deletes an existing row. The
 -- two new columns arrive through their defaults (false / null).
@@ -607,6 +610,57 @@ end
 $$;
 
 -- -----------------------------------------------------------------------------
+-- 11b. The narrow login-home scrub (lead ruling on R1/R17, 2026-09-26). A
+--     login credential's home is shared and is the only store of the login,
+--     so it is never removed; what goes on switch-to-private is only a
+--     NON-OWNER launch's own transcript. The owner reads this list for their
+--     own private login credential and nothing else.
+--
+--     ATTRIBUTION IS CONSERVATIVE: a row counts only when it was never
+--     re-pointed (updated_at = recorded_at). 996's recorder inserts once at
+--     spawn and every resume re-points with updated_at = now(), so an
+--     untouched row names the ONE human who ever ran the session. A session
+--     the owner launched and someone else resumed (or the reverse) was
+--     re-pointed and is left alone: its transcript is not attributable to a
+--     non-owner launch. Live sessions are left too; the file is still open.
+-- -----------------------------------------------------------------------------
+create or replace function public.space_credential_foreign_launches(p_credential_id uuid, p_limit integer default 500)
+returns jsonb
+language plpgsql stable security definer set search_path = public, internal, pg_temp as $$
+declare stored public.space_credentials; rows jsonb;
+begin
+  perform internal.require_human_auth_kind();
+  select * into stored from public.space_credentials where id = p_credential_id;
+  if stored.id is null or not internal.is_space_member(stored.space_id) then
+    raise exception 'space credential not found' using errcode = 'P0002';
+  end if;
+  if stored.owner_account_id is distinct from internal.current_account_id() then
+    raise exception 'only the credential''s owner can scrub its login home' using errcode = '42501';
+  end if;
+  if stored.shape <> 'login' or stored.visibility <> 'private' or stored.status <> 'active' then
+    return '[]'::jsonb;
+  end if;
+  select coalesce(jsonb_agg(u.row order by u.work_session_id), '[]'::jsonb) into rows
+    from (
+      select ssc.work_session_id,
+             jsonb_build_object(
+               'workSessionId', ssc.work_session_id, 'provider', ssc.provider,
+               'nativeSessionId', ws.native_session_id) as row
+        from public.session_space_credentials ssc
+        join public.work_sessions ws on ws.entity_id = ssc.work_session_id
+       where ssc.space_credential_id = stored.id
+         and ssc.launcher_account_id is not null
+         and ssc.launcher_account_id <> stored.owner_account_id
+         and ssc.updated_at = ssc.recorded_at
+         and ws.status in ('exited', 'failed')
+       order by ssc.work_session_id
+       limit least(greatest(coalesce(p_limit, 500), 1), 500)
+    ) u;
+  return rows;
+end
+$$;
+
+-- -----------------------------------------------------------------------------
 -- 12. Grants.
 -- -----------------------------------------------------------------------------
 revoke all on function internal.can_revoke_space_credential(public.space_credentials) from public;
@@ -621,6 +675,7 @@ revoke all on function public.my_space_credential_default_id(uuid, text) from pu
 revoke all on function public.space_credential_usage(uuid, integer) from public;
 revoke all on function public.sweep_unusable_space_credential_sessions(integer) from public;
 revoke all on function public.repoint_session_space_credentials(uuid, text[]) from public;
+revoke all on function public.space_credential_foreign_launches(uuid, integer) from public;
 
 grant execute on function public.create_space_credential(uuid, uuid, text, text, text, text, bytea, bytea, text, text, boolean, boolean) to tm8_app;
 grant execute on function public.set_space_credential_default_consent(uuid, boolean) to tm8_app;
@@ -631,5 +686,6 @@ grant execute on function public.my_space_credential_default_id(uuid, text) to t
 grant execute on function public.space_credential_usage(uuid, integer) to tm8_app;
 grant execute on function public.sweep_unusable_space_credential_sessions(integer) to tm8_app;
 grant execute on function public.repoint_session_space_credentials(uuid, text[]) to tm8_app;
+grant execute on function public.space_credential_foreign_launches(uuid, integer) to tm8_app;
 
 reset role;

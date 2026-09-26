@@ -13,7 +13,7 @@
  * A and B are members of S, OUT is a member of T only. TB is a teammate owned
  * by B. Every secret is an obviously fake canary.
  */
-import { mkdtemp, rm } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -21,6 +21,7 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { resetCredentialKeyCache } from '../../src/credentials/credential-key.js';
+import { SpaceLoginHomes } from '../../src/credentials/space-credential-home.js';
 import { DbSpaceCredentialStore } from '../../src/credentials/space-credential-store.js';
 import { createDb } from '../../src/db/index.js';
 import type { Db, DbClaims } from '../../src/db/types.js';
@@ -49,6 +50,8 @@ const accounts: Record<string, string> = {};
 const contained: Array<{ id: string; cause: string; seen: { visibility: string; status: string } | null }> = [];
 /** The credential whose row the fake PTY host reads at kill time. */
 let watching: string | null = null;
+/** The login-home scrub test ends a contained session, as the real containment records it. */
+let endOnContain = false;
 
 const claims = (identityId: string, authKind = 'browser', nodeAdmin = false): DbClaims =>
   ({ identityId, nodeAdmin, requestId: randomUUID(), authKind }) as DbClaims;
@@ -155,6 +158,7 @@ beforeAll(async () => {
         // D7: the kill must see the row already switched (row first, then kill).
         const seen = watching ? await row(watching) : null;
         contained.push({ id, cause, seen: seen && { visibility: seen.visibility, status: seen.status } });
+        if (endOnContain) await setStatus(id, 'exited');
         return { outcome: 'killed', recorded: true };
       },
     },
@@ -550,5 +554,108 @@ describe('runSpaceCredentialSweepTick — isolation and dedupe', () => {
       claims: async () => claims(OWN, 'browser', true),
     });
     expect(empty).toMatchObject({ skipped: true });
+  });
+});
+
+describe('R1/R17 narrow scrub — a private login credential loses only its non-owner launches\' transcripts', () => {
+  const FAKE_LOGIN = '{"claudeAiOauth":{"accessToken":"fake-W10bFakeCanary7d41-access"}}\n';
+  const exists = async (path: string): Promise<boolean> => lstat(path).then(() => true, () => false);
+
+  async function nativeId(sessionId: string, native: string): Promise<void> {
+    await asOwner(async (c) => {
+      await c.query('update public.work_sessions set native_session_id = $2 where entity_id = $1', [sessionId, native]);
+    });
+  }
+
+  it('only never-re-pointed, ended, non-owner launches are listed; the owner alone may read it, human only', async () => {
+    const login = await store.startLogin(claims(A), { spaceId: ids.S!, provider: 'anthropic', label: label('scrub-rpc'), sessionCap: 100 });
+    await store.finishLogin(claims(A), login.workSessionId, true);
+    const cred = login.credential.id;
+    await store.claim(claims(A), cred);
+    const byB = await session(ids[`member:S:${B}`]!);
+    await record(claims(B), byB, cred);
+    await setStatus(byB, 'exited');
+    // Public: nothing is scrubbed, whoever asks.
+    await expect(store.foreignLaunches(claims(A), cred)).resolves.toEqual([]);
+    await store.setVisibility(claims(A), cred, 'private');
+    await expect(store.foreignLaunches(claims(A), cred)).resolves.toEqual([
+      { workSessionId: byB, provider: 'anthropic', nativeSessionId: null },
+    ]);
+    expect(await outcome(() => store.foreignLaunches(claims(B), cred))).toBe('42501');
+    expect(await outcome(() => store.foreignLaunches(claims(ADM), cred))).toBe('42501');
+    expect(await outcome(() => store.foreignLaunches(agent(A), cred))).toBe('42501');
+    // An api_key credential is never a login home: empty even for its owner.
+    const key = await create(A, { visibility: 'private' });
+    await expect(store.foreignLaunches(claims(A), key)).resolves.toEqual([]);
+  });
+
+  it('end to end: switch to private kills B, then removes B\'s transcript; the owner\'s, a resumed one, and the login stay', async () => {
+    const homes = new SpaceLoginHomes({ dataDir });
+    const scrubbing = new SpaceCredentialCatalogService({
+      db,
+      store,
+      probe: async () => ({ ok: true, displayLogin: null }),
+      terminals: { terminate: () => 'killed', hasLiveTerminal: () => false },
+      agentSessions: {
+        containCredentialSession: async (id, cause) => {
+          contained.push({ id, cause, seen: null });
+          if (endOnContain) await setStatus(id, 'exited');
+          return { outcome: 'killed', recorded: true };
+        },
+      },
+      removeLoginHome: async () => undefined,
+      scrubForeignLaunches: (home, launches) =>
+        homes.scrubForeignLaunches({ ...home, provider: home.provider as 'anthropic' | 'openai' }, launches),
+      env: {},
+    });
+    const login = await store.startLogin(claims(A), { spaceId: ids.S!, provider: 'anthropic', label: label('scrub-e2e'), sessionCap: 100 });
+    await store.finishLogin(claims(A), login.workSessionId, true);
+    const cred = login.credential.id;
+    await store.claim(claims(A), cred);
+    const { configDir } = await homes.ensureLive({ spaceId: ids.S!, credentialId: cred, provider: 'anthropic' });
+    await writeFile(join(configDir, '.credentials.json'), FAKE_LOGIN);
+
+    // B's ended launch, B's running launch (killed by the switch), A's own,
+    // and one A launched that B resumed (re-pointed: not attributable).
+    const endedB = await session(ids[`member:S:${B}`]!);
+    await record(claims(B), endedB, cred);
+    await setStatus(endedB, 'exited');
+    const runningB = await session(ids[`member:S:${B}`]!);
+    await record(claims(B), runningB, cred);
+    await setStatus(runningB, 'running');
+    const ownA = await session(ids[`member:S:${A}`]!);
+    await record(claims(A), ownA, cred);
+    await setStatus(ownA, 'exited');
+    const resumed = await session(ids[`member:S:${A}`]!);
+    await record(claims(A), resumed, cred);
+    await setStatus(resumed, 'idle');
+    await store.repointSession(claims(B), resumed, ['anthropic']);
+    await setStatus(resumed, 'exited');
+    const project = join(configDir, 'projects', '-work');
+    await mkdir(project, { recursive: true });
+    for (const id of [endedB, runningB, ownA, resumed]) {
+      await nativeId(id, id); // claude: --session-id is tm8's own id
+      await writeFile(join(project, `${id}.jsonl`), `turn of ${id}\n`);
+    }
+
+    contained.length = 0;
+    endOnContain = true;
+    try {
+      const result = await scrubbing.setVisibility(claims(A), cred, 'private');
+      expect(result.failures).toEqual([]);
+      expect(result.terminatedAgentSessionIds).toEqual([runningB]);
+    } finally {
+      endOnContain = false;
+    }
+    expect(await exists(join(project, `${endedB}.jsonl`))).toBe(false);
+    expect(await exists(join(project, `${runningB}.jsonl`))).toBe(false);
+    expect(await readFile(join(project, `${ownA}.jsonl`), 'utf8')).toBe(`turn of ${ownA}\n`);
+    expect(await readFile(join(project, `${resumed}.jsonl`), 'utf8')).toBe(`turn of ${resumed}\n`);
+    // The owner's login is untouched and the owner's next launch resolves to this same home.
+    expect(await readFile(join(configDir, '.credentials.json'), 'utf8')).toBe(FAKE_LOGIN);
+    const next = await store.readForSpawn(agent(A), ids.S!, 'anthropic', cred);
+    expect(next).toEqual(expect.objectContaining({
+      kind: 'login', home: { spaceId: ids.S, credentialId: cred, provider: 'anthropic' },
+    }));
   });
 });
