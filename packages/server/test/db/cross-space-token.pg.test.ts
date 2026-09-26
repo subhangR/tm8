@@ -1699,19 +1699,35 @@ describe('T6 H pinned to A — projects without a spaceId are only A\'s (W3)', (
     });
   });
 
-  // projects.list's no-spaceId query is `PROJECT_SELECT` with no filter: RLS
-  // (projects_select: is_node_admin() OR linked into member_space_ids()) is
-  // the whole answer, so H is a NODE ADMIN here — the arm that used to make it
-  // node-wide.
+  // A raw read of public.projects: RLS is the whole answer. Since 234 (W11)
+  // projects_select admits only a gate admin — a node admin on an UNPINNED
+  // session — so H is a NODE ADMIN here, the arm that used to make it node-wide.
   const projectsVisible = (token: string): Promise<string[]> =>
     asToken(token, (q) => q.query<{ id: string }>(
       'select id::text from public.projects where id = any($1::uuid[])', [[projectA, projectB]]), 'enforce')
       .then((rows) => rows.map((r) => r.id));
 
+  // W11 (234 §5): public.projects is the gate's folder table, and a pinned
+  // session is never a gate admin, so H pinned to A reads it as a member of A
+  // does: no folder rows. A's project reaches it through the member-scoped
+  // resolver (resolve_project_ref, membership carrying 227's inline pin).
+  const projectsResolved = (token: string): Promise<string[]> =>
+    asToken(token, async (q) => {
+      const ids: string[] = [];
+      for (const ref of [projectA, projectB]) {
+        const rows = await q.query<{ folder_id: string }>(
+          'select folder_id::text from public.resolve_project_ref($1::uuid)', [ref]);
+        ids.push(...rows.map((r) => r.folder_id));
+      }
+      return ids;
+    }, 'enforce');
+
   it('pinned node-admin H sees only A\'s project', async () => {
     await withNodeAdmin(fixture.accountH, true, async () => {
       const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
-      expect(await projectsVisible(token)).toEqual([projectA]);
+      expect(await projectsResolved(token)).toEqual([projectA]);
+      // never the unpinned node-admin view: no gate folder rows at all
+      expect(await projectsVisible(token)).toEqual([]);
     });
   });
   it('positive — H\'s gate session (node admin) sees both: the pin, not the account, narrowed it', async () => {
