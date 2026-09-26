@@ -32,7 +32,7 @@ identity_id internal.is_authenticated()  # PIN-HELPER: identity primitive; not s
 identity_id internal.is_space_admin(target_space uuid)  # PIN-HELPER: pinned (227_session_space_pin.sql)
 identity_id internal.is_space_member(target_space uuid)  # PIN-HELPER: pinned; require_space_member calls it (227_session_space_pin.sql)
 identity_id internal.ledger_record(p_cmid text, p_operation text, p_result jsonb)  # ACCOUNT: writes the caller's own command_ledger row; every caller runs ledger_replay first (046_idempotency_test_mode.sql)
-identity_id internal.ledger_replay(p_cmid text, p_operation text)  # KNOWN-GAP (F4, EXECUTED): replays a result keyed on identity+cmid+operation, never the pin, before the space guard in grant_stream_attach, start_chat, set_member_role, w2_withdraw_handoff, queue_tracking_refresh; S3 task 01a0db50 (046_idempotency_test_mode.sql)
+identity_id internal.ledger_replay(p_cmid text, p_operation text)  # closed by 247: the ledger records the recording session's pin (command_ledger.session_space_id) and a pinned caller replays only rows under its own pin, 23514 otherwise, here and in require_replay_principal; was KNOWN-GAP F4 (grant_stream_attach, start_chat, set_member_role, w2_withdraw_handoff, queue_tracking_refresh; cells flipped in #861) (247_command_ledger_session_space_pin.sql)
 identity_id internal.member_space_ids()  # PIN-HELPER: pinned; drives every member_space_ids RLS policy (227_session_space_pin.sql)
 identity_id internal.require_identity()  # PIN-HELPER: identity primitive (001_core_graph.sql)
 identity_id internal.require_node_admin()  # NODE-ADMIN: the gate itself; space_enter_and_pin refuses when session_space_id is set (space_enter_and_pin, #848)
@@ -97,7 +97,7 @@ identity_id policy node_credential_policies_identity_select on table public.node
 identity_id policy notifications_select on table public.notifications  # GUARDED: members subqueries, pinned by members_select; T9 "B's inbox row is invisible by id"
 identity_id policy read_marks_select on table public.read_marks  # GUARDED: members subquery, pinned by members_select
 identity_id policy saved_views_select on table public.saved_views  # GUARDED: member_space_ids (pinned) AND own or space-shared
-identity_id policy stream_grants_select on table public.stream_grants  # KNOWN-GAP: the subject_identity = caller arm is unpinned; a pinned session lists its OWN-subject grants in another space (all 12 columns incl. token_hash), other identities' rows are not returned (verified by review 5324246747); fix P6 rides with S3 #861 (247)
+identity_id policy stream_grants_select on table public.stream_grants  # closed by 247: the subject_identity = caller arm also requires internal.stream_grant_in_pin (the grant's session or container is in the pinned space); the readable-entity arm reads entities under RLS; was KNOWN-GAP P6 (verified by review 5324246747) (247_command_ledger_session_space_pin.sql)
 identity_id policy user_profiles_select on table public.user_profiles  # GUARDED: own row, or co-members through two members subqueries pinned by members_select
 identity_id policy work_session_view_preferences_select on table public.work_session_view_preferences  # GUARDED: readable entity (RLS) AND own member row (pinned)
 identity_id policy workspace_events_select on table public.workspace_events  # GUARDED: member_space_ids (pinned) AND own recipient member (pinned)
