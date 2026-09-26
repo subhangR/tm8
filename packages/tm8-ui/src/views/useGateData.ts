@@ -101,6 +101,7 @@ import {
 } from '../domain/launch';
 import { memoryEpistemics, memoryScopeOf } from '../domain/memory';
 import { representedThreadMessageCount } from './message-thread';
+import type { SpaceSessionHandle } from '../auth/space-sessions';
 import {
   indexLinkedPullRequests,
   type LinkedPullRequestFacts,
@@ -781,6 +782,12 @@ export interface GateOptions {
    * loopback node answers as the auto-owner (T-L7).
    */
   getAuthToken?: () => string | null;
+  /**
+   * W3 pinned space sessions for the active server. Every space the hook
+   * opens is entered first (`auth.space.enter` on an enforcing server, a
+   * no-op elsewhere), and the transport asks it for the credential.
+   */
+  spaceSession?: SpaceSessionHandle;
   /** Stable node/viewer scope for cursor persistence; contains no credential. */
   cursorScope?: string;
   /**
@@ -843,6 +850,7 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
           // The local Server stays default-relative. A named Server uses the
           // same-origin relay above, so browser CORS never becomes transport.
           ...(options.getAuthToken ? { getAuthToken: options.getAuthToken } : {}),
+          ...(options.spaceSession ? { spaceSession: options.spaceSession } : {}),
           ...(options.cursorScope ? { cursorScope: options.cursorScope } : {}),
           fetch: (...args: Parameters<typeof fetch>) => fetch(...args),
           webSocketFactory: browserWebSocketFactory(WebSocket),
@@ -1799,6 +1807,10 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
   }, [seam]);
 
   const openedSpace = useRef<SpaceId | null>(null);
+  // Read through a ref: the handle is per server, and App remounts this tree
+  // on a server switch, so it never changes under a live effect.
+  const spaceSessionRef = useRef(options.spaceSession);
+  spaceSessionRef.current = options.spaceSession;
   useEffect(() => {
     if (!spaceId) return;
     const generation = ++spaceGeneration.current;
@@ -1903,6 +1915,10 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
     void (async () => {
       for (let attempt = 0; !cancelled; attempt++) {
         try {
+          // W3: the pinned session for this space exists before any read of
+          // it. A refused mint lands in the catch below like any gating read.
+          await spaceSessionRef.current?.enterSpace(spaceId);
+          if (cancelled || generation !== spaceGeneration.current) return;
           await seam.openSpace(spaceId);
           if (cancelled || generation !== spaceGeneration.current) {
             if (openedSpace.current !== spaceId) seam.closeSpace(spaceId);

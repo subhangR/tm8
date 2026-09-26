@@ -231,14 +231,27 @@ async function dispatch(
   // the login request itself would 401 before the handler and lock the user
   // out of the one command that fixes it.
   const isLogin = match.path[0] === 'auth' && match.path[1] === 'login';
+  // W3 pinned space sessions. A command that acts in a space (`--space`, or
+  // the config's space) presents the session pinned to it when `tm8 auth space
+  // enter` stored one; otherwise the gate, exactly as before W3. The gate's
+  // own commands keep the gate: `auth` (entering a space needs it), and node
+  // administration, which a pinned session never holds (K6).
+  const gateCommand = match.path[0] === 'auth' || match.path[0] === 'server' || match.path[0] === 'node';
   let usedStoredCredential = false;
+  let usedSpaceCredential: string | undefined;
   const applyStoredCredential = async (): Promise<void> => {
+    usedSpaceCredential = undefined;
     if (isLogin || ctx.token !== undefined) return;
-    const { credentialOrigin, credentialStoreFor } = await import('./credentials.js');
-    const stored = credentialStoreFor()?.get(credentialOrigin(ctx.baseUrl.value));
+    const { credentialOrigin, credentialStoreFor, spaceCredential } = await import('./credentials.js');
+    const store = credentialStoreFor();
+    const origin = credentialOrigin(ctx.baseUrl.value);
+    const stored = store?.get(origin);
     if (stored) {
-      ctx = { ...ctx, token: stored };
+      const space = ctx.space?.value;
+      const pinned = store && space && !gateCommand ? spaceCredential(store, origin, space) : undefined;
+      ctx = { ...ctx, token: pinned ?? stored };
       usedStoredCredential = true;
+      usedSpaceCredential = pinned ? space : undefined;
     }
   };
   await applyStoredCredential();
@@ -266,6 +279,21 @@ async function dispatch(
   } catch (err) {
     // An expired pass must surface as a re-login prompt, never as a silent
     // failure that looks like a bug (doc 13 §4.1).
+    // Under TM8_SPACE_SESSIONS=enforce the gate refuses to act in a space:
+    // prompt for the one command that mints the session this needs.
+    if (err instanceof ApiError && err.code === 'forbidden' && err.message.includes('auth.space.enter')) {
+      const space = ctx.space?.value;
+      err.hint = space
+        ? `this Server needs a session pinned to the space: run \`tm8 auth space enter ${space}\`, then retry`
+        : 'this Server needs a session pinned to a space: run `tm8 auth space enter <space-id>`, then retry with --space <space-id>';
+      throw err;
+    }
+    if (usedSpaceCredential && err instanceof ApiError && err.code === 'unauthenticated') {
+      err.hint =
+        `the stored session for space ${usedSpaceCredential} was refused — it may have expired or been revoked; ` +
+        `run \`tm8 auth space enter ${usedSpaceCredential}\` to store a fresh one`;
+      throw err;
+    }
     if (usedStoredCredential && err instanceof ApiError && err.code === 'unauthenticated') {
       err.hint =
         `the stored credential for ${ctx.baseUrl.value} was refused — it may have expired or been revoked; ` +

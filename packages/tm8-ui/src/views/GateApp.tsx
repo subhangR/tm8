@@ -76,6 +76,7 @@ import { REFERENCE_KINDS } from '../domain/launch-selection';
 import { useLaunchPort } from './useLaunchPort';
 import { useTheme } from '../theme/useTheme';
 import { AccountMenu, AuthFlow, authTokenFor, noteServerOrigin, useAuthActions } from '../auth';
+import { spaceSessionFor } from '../auth/space-sessions';
 import { WorkspaceView } from './WorkspaceView';
 import { EntityView } from './EntityView';
 import { ChatHomeSurface } from '../chat-home';
@@ -335,6 +336,9 @@ export function GateApp(props: GateAppProps = {}) {
     // component on the server id, so a server switch remounts with the right
     // store entry anyway.
     getAuthToken: () => authTokenFor(activeServer.id),
+    // W3: on an enforcing server, a space switch mints a pinned session and
+    // the transport presents it; elsewhere the pass above is all there is.
+    spaceSession: spaceSessionFor(activeServer.id),
     cursorScope: `${activeServer.id}:${authAccount?.accountId ?? 'anonymous'}`,
     ...(props.seam ? { seam: props.seam } : {}),
   });
