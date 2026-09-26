@@ -19,6 +19,7 @@ export function MaestroSessionTile({
   status,
   attention,
   attentionChip,
+  attentionTone,
   selected,
   archived,
   completed,
@@ -64,6 +65,8 @@ export function MaestroSessionTile({
   attention: boolean;
   /** Attention v2: the chip (or the F1 raised-by marker) that replaces the words. */
   attentionChip?: ReactNode;
+  /** The chip's tone, so the tint follows the level (urgent red, FYI grey edge). */
+  attentionTone?: 'fyi' | 'wait' | 'block';
   selected: boolean;
   archived: boolean;
   completed: boolean;
@@ -111,6 +114,7 @@ export function MaestroSessionTile({
   return (
     <div
       className={`pn-st${selected ? ' pn-st--selected' : ''}${attention ? ' pn-st--attention' : ''}${archived ? ' pn-st--archived' : ''}`}
+      data-attention-tone={attention ? attentionTone : undefined}
       data-testid="list-tile"
       data-session-node={id}
       data-children={childCount > 0 ? childCount : undefined}

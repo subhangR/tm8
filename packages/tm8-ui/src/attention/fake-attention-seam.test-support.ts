@@ -26,7 +26,6 @@ export function req(over: Partial<AttentionRequest> & { entityId: string }): Att
   return {
     id: over.id ?? `req-${seq}`,
     spaceId: SPACE,
-    entityId: over.entityId as EntityId,
     reason: over.reason ?? 'because',
     points: over.points ?? 40,
     status: over.status ?? 'open',
