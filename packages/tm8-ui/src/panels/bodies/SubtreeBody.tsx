@@ -492,9 +492,9 @@ function MetaGrid({ detail, onOpenEntity }: { detail: EntityDetail; onOpenEntity
    * entirely — which is the 41.8px.
    *
    * THIS IS AN OPEN ARGUMENT IN THIS CODEBASE, not a settled rule, and the
-   * decision was taken knowing it: `attention/AttentionInbox` and
-   * `chat-home/EntityChip` both treat a visible raw id as the honest thing to
-   * show before a title resolves and have tests pinning it, while
+   * decision was taken knowing it: `chat-home/EntityChip` treats a visible
+   * raw id as the honest thing to show before a title resolves and has tests
+   * pinning it, while
    * `views/HomeTrail.tsx` argues the exact opposite. Neither doctrine is being
    * overturned here — this is one surface, chosen by its owner.
    */

@@ -9,6 +9,8 @@
  * admission or demotion: it measures the centre, calls the engine, and hands
  * the settled result to the store (the direction A1a's DAG correction fixed).
  */
+import { useAttentionOptional } from '../attention';
+import { needsMeListSource } from '../attention/needs-me';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type {
   EntityId,
@@ -43,7 +45,7 @@ import { placeholderTitleFor, useNewTask } from '../authoring';
 import { homeQuickBirthKinds, homeRootKinds } from '../domain/home-rail';
 import { allKinds, getKind } from '../domain/registry';
 import { placeholderNameFor } from '../domain/title-grammar';
-import { QUIET_SESSION_DETAIL, needsAttentionOf } from '../domain/needs-attention';
+import { needsAttentionOf } from '../domain/needs-attention';
 import { newLaunchMutationId } from '../domain/launch';
 import { useLaunchPort } from './useLaunchPort';
 import { mergePrPortFor } from './mergePrPort';
@@ -58,7 +60,6 @@ import type { GateData } from './useGateData';
 import { openEntityAndMarkRead } from './open-entity';
 import { conversationSurfaceFor } from './conversationSurface';
 import { channelFeedPortFromGateData } from './channel-feed-port';
-import { attentionSectionFor } from './attentionSurface';
 import { debugSurfaceFor } from './debugSurface';
 import { sessionStatsSurfaceFor } from './sessionStatsSurface';
 import { sessionContextSurfaceFor } from './sessionContextSurface';
@@ -127,6 +128,7 @@ export interface WorkspaceViewProps {
 }
 
 export function WorkspaceView(props: WorkspaceViewProps) {
+  const attentionApi = useAttentionOptional();
   const { data, nav, leftKind, rightKind, menuCollapsed, reasons } = props;
   /** In-flight read marks, so a double click on a row is one write. */
   const markingRead = useRef(new Set<EntityId>());
@@ -502,7 +504,6 @@ export function WorkspaceView(props: WorkspaceViewProps) {
                         : `${admission.cause} — ${admission.remedy}`
                     }
                     liveness={data.livenessOf(id)}
-                    attentionSection={attentionSectionFor(data.seam, data.spaceId, id, data.reconcileCommand)}
                     debugSurface={debugSurfaceFor(data.seam, id, data.livenessOf)}
                     sessionStatsSurface={sessionStatsSurfaceFor(data.seam, id)}
                     sessionContextSurface={sessionContextSurfaceFor(data.seam, id, data.livenessOf)}
@@ -518,7 +519,6 @@ export function WorkspaceView(props: WorkspaceViewProps) {
                        the block signal must reach the terminal AND the chat surface, not
                        whichever one is on top. */
                     needsAttention={detail ? needsAttentionOf(detail, data.livenessOf) : false}
-                    attentionDetail={QUIET_SESSION_DETAIL}
                     viewerMemberId={props.viewerMemberId}
                     contentSurface={nav.surfaceOf?.(id) ?? null}
                     onContentSurfaceChange={(surface) => nav.setContentSurface?.(id, surface)}
@@ -823,9 +823,12 @@ export function WorkspaceView(props: WorkspaceViewProps) {
                mismatched shape, which is the same blindness that let `rowsFor`
                ignore its filter for so long. The signatures line up on their
                own now. */
-            rowsFor={data.rowsFor(leftKind)}
-            pageStateOf={data.pageStateOf(leftKind)}
-            loadMore={data.loadMore(leftKind)}
+            /* ATTENTION v2: "Needs me" reads the attention queue (needs-me.ts). */
+            {...needsMeListSource(attentionApi, leftKind, data, {
+              rowsFor: data.rowsFor(leftKind),
+              pageStateOf: data.pageStateOf(leftKind),
+              loadMore: data.loadMore(leftKind),
+            })}
             boardFor={data.boardFor(leftKind) as never}
             mode={leftLayout}
             members={data.members}
@@ -988,6 +991,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
               rows={rosterRows}
               livenessOf={data.livenessOf}
               onFocusSession={openEntity}
+              onOpenEntity={openEntity}
               newTask={{
                 unavailable: centreCreateFlow.unavailable,
                 create: centreCreateFlow.create,
@@ -1012,9 +1016,12 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           <EntityListPanel
             kind={rightKind}
             selectorSlot="host"
-            rowsFor={data.rowsFor(rightKind)}
-            pageStateOf={data.pageStateOf(rightKind)}
-            loadMore={data.loadMore(rightKind)}
+            /* ATTENTION v2: "Needs me" reads the attention queue (needs-me.ts). */
+            {...needsMeListSource(attentionApi, rightKind, data, {
+              rowsFor: data.rowsFor(rightKind),
+              pageStateOf: data.pageStateOf(rightKind),
+              loadMore: data.loadMore(rightKind),
+            })}
             boardFor={data.boardFor(rightKind) as never}
             mode={rightLayout}
             members={data.members}

@@ -41,7 +41,6 @@ export {
 export { TERMINAL_FONT_SIZE } from './terminalTheme';
 export { isLiveTerminalEnabled } from './liveTerminalFlag';
 export { ExitedFallback, StaleFallback, UnverifiedFallback } from './SessionFallback';
-export { NeedsYouBanner } from './NeedsYouBanner';
 export { ReservedToolbarSeam } from './ReservedToolbarSeam';
 export {
   presentSession,

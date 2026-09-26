@@ -163,6 +163,9 @@
 .cv2-root .pn-tt--attention {
   background: var(--pn-wait-soft);
 }
+/* Attention v2 (chapter 4): the tint follows the chip's level. */
+.cv2-root .pn-tt--attention[data-attention-tone='block'] { background: var(--pn-block-soft); }
+.cv2-root .pn-tt--attention[data-attention-tone='fyi'] { background: none; box-shadow: inset 3px 0 0 var(--pn-idle); }
 /* NO `--completed` RULE, AND NO `--completed` CLASS. It used to strike the
    title through from `category === 'done'` — but `done` is the server's
    RESOLUTION predicate, and `152_universal_status.sql` deliberately seeds the
