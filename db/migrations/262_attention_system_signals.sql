@@ -1,6 +1,6 @@
 -- =============================================================================
--- 260 · ATTENTION v2 SYSTEM SIGNALS (slice S6; spec chapter 2 "Writers &
--- auto-signals", chapter 6 "S6"). Needs 258's columns (the S3 schema; renumbered on tm8/attention-v2-integration, S6 itself was 256).
+-- 262 · ATTENTION v2 SYSTEM SIGNALS (slice S6; spec chapter 2 "Writers &
+-- auto-signals", chapter 6 "S6"). Needs 260's columns (the S3 schema; renumbered on tm8/attention-v2-integration, S6 itself was 256).
 --
 -- tm8 raises its own requests (origin = 'system') and CLEARS them itself when
 -- the condition ends (Q2): status 'cleared', resolved_by null, no delivery
@@ -559,15 +559,15 @@ begin
        where tgname in ('edges_blocked_dependency_signal', 'edges_blocked_dependency_signal_delete',
                         'entities_announce_unblocked', 'entities_clear_ended_attention_signals',
                         'worktrees_clear_conflict_signals')) <> 5 then
-    raise exception '260: the five signal triggers must exist';
+    raise exception '262: the five signal triggers must exist';
   end if;
   if exists (select 1 from pg_trigger where tgname = 'tasks_announce_unblocked') then
-    raise exception '260: tasks_announce_unblocked must be gone (entities_announce_unblocked replaces it)';
+    raise exception '262: tasks_announce_unblocked must be gone (entities_announce_unblocked replaces it)';
   end if;
   if (select count(*) from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
        where ns.nspname = 'internal' and p.proname in ('form_raise_attention', 'form_resolve_attention')
          and p.prosrc like '%_attention_signal(%') <> 2 then
-    raise exception '260: forms must raise and clear through the signal pair';
+    raise exception '262: forms must raise and clear through the signal pair';
   end if;
 end
 $verify$;

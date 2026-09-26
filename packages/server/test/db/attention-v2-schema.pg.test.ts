@@ -1,8 +1,8 @@
 /**
- * Migration 258 — the Attention v2 schema (slice S3, spec chapter 1).
+ * Migration 260 — the Attention v2 schema (slice S3, spec chapter 1).
  *
  * The chain is applied up to 254, legacy OPEN rows are seeded, and only then is
- * 258 applied: its clean-slate cutover (R8) is a data step, and a suite that
+ * 260 applied: its clean-slate cutover (R8) is a data step, and a suite that
  * applies the full chain to an empty database would run it over zero rows.
  *
  * Then, against the full chain: the new columns and their defaults for writers
@@ -14,7 +14,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from './w1-pg.js';
 
-const MIGRATION = '258_attention_v2_schema.sql';
+const MIGRATION = '260_attention_v2_schema.sql';
 
 interface Fixture {
   identityId: string;
@@ -78,7 +78,7 @@ async function seed(database: W1ScratchDatabase): Promise<Fixture> {
   });
 }
 
-describe.sequential('attention v2 schema (migration 258)', () => {
+describe.sequential('attention v2 schema (migration 260)', () => {
   let database: W1ScratchDatabase;
   let f: Fixture;
   let messagesBefore: number;
