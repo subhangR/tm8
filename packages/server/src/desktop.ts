@@ -28,6 +28,7 @@
 import { createHash } from 'node:crypto';
 
 import { loadConfig, type ServerConfig } from './http/config.js';
+import { LAUNCH_REDEEM_PATH_PREFIX, type LaunchCookieIssuer } from './http/launch-cookie.js';
 import { socketConnectionUrl } from './sidecar/migrate.js';
 import { ensureSidecar, type SidecarManager } from './sidecar/manager.js';
 
@@ -63,6 +64,28 @@ export interface DesktopMessage {
  */
 export function report(msg: Omit<DesktopMessage, 'type'>): void {
   process.send?.({ type: 'tm8:desktop', ...msg } satisfies DesktopMessage);
+}
+
+/**
+ * The URL the desktop window opens once the server is `ready` (W2 / K4).
+ *
+ * An UNCLAIMED node opens its `#claim=` URL, as before. Otherwise, with
+ * `TM8_AUTO_OWNER_COOKIE=required`, the bare origin would open ANONYMOUS: the
+ * loopback owner now needs the launch cookie, and a double-clicked app has no
+ * terminal to run `tm8 open` in. So the app is handed the same one-time
+ * `/launch/<code>` URL `tm8 open` prints, and its window redeems it for the
+ * cookie. That URL is a credential until it is burned: it travels over the IPC
+ * channel only (`report`) and is never printed or logged.
+ */
+export function desktopReadyUrl(
+  url: string,
+  claimUrl: string | undefined,
+  launchCookie: Pick<LaunchCookieIssuer, 'mintCode'> | undefined,
+): string {
+  if (claimUrl) return claimUrl;
+  if (!launchCookie) return url;
+  const { code } = launchCookie.mintCode();
+  return `${url.replace(/\/$/, '')}${LAUNCH_REDEEM_PATH_PREFIX}${encodeURIComponent(code)}`;
 }
 
 /**
