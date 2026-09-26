@@ -119,6 +119,10 @@ describe('AttentionSegment — the count', () => {
     const fake = fakeSeam([req({ entityId: 'a', points: 5 })], { truncated: true });
     mount(fake);
     await waitFor(() => expect(count()).toBe('1+'));
+    // The entity count is grouped from the same truncated page, so it is a
+    // floor too.
+    expect(screen.getByTestId('attention-segment').getAttribute('aria-label'))
+      .toBe('1+ attention request pending on 1+ entities');
   });
 
   it('shows a dash, not a zero, when the read fails', async () => {
@@ -262,5 +266,109 @@ describe('AttentionSegment — reaching the requests', () => {
     fireEvent.click(button);
     fireEvent.pointerDown(document.body);
     expect(screen.queryByTestId('attention-segment-popover')).toBeNull();
+  });
+});
+
+/**
+ * A seam whose reads resolve only when the test says so. Each call to
+ * `attentionRequests` parks a deferred; `settle(i, rows)` answers call `i`
+ * with the rows of the requested status. This is what makes a read genuinely
+ * IN FLIGHT while further triggers arrive — the plain fake answers on the next
+ * microtask, so the throttle's timer swallowed every burst before the
+ * in-flight guard was ever consulted.
+ */
+function deferredSeam() {
+  type Call = { input: AttentionRequestListQuery; resolve(rows: AttentionRequest[]): void };
+  const calls: Call[] = [];
+  let eventCb: ((e: DurableWorkspaceEvent) => void) | null = null;
+  const seam = {
+    attentionRequests: vi.fn((input: AttentionRequestListQuery) => new Promise((resolve) => {
+      calls.push({
+        input,
+        resolve: (rows) => resolve({
+          items: rows.filter((r) => r.status === input.status && r.spaceId === input.spaceId),
+          nextCursor: null,
+        }),
+      });
+    })),
+    onEvent: vi.fn((cb: (e: DurableWorkspaceEvent) => void) => {
+      eventCb = cb;
+      return () => { eventCb = null; };
+    }),
+    onResync: vi.fn(() => () => undefined),
+    entity: vi.fn(async () => ({ title: 't', state: { kind: 'task' } })),
+    commands: { resolveAttention: vi.fn(), upsertReadMark: vi.fn(async () => undefined) },
+  };
+  return {
+    calls,
+    seam: seam as unknown as AttentionSegmentProps['seam'],
+    /** Answer every call made for one refresh (one per pending status). */
+    settle: async (from: number, rows: AttentionRequest[]) => {
+      await act(async () => {
+        for (const call of calls.slice(from, from + 2)) call.resolve(rows);
+      });
+    },
+    touch: (spaceId: SpaceId = SPACE) => act(() => {
+      eventCb?.({
+        type: 'entity.activity_touched', spaceId, seq: 1, occurredAt: '', schemaVersion: 1,
+        id: 'x' as EntityId, kind: 'task', activityAt: '',
+      } as DurableWorkspaceEvent);
+    }),
+  };
+}
+
+const tick = (ms = 5) => act(() => new Promise((r) => setTimeout(r, ms)));
+
+describe('AttentionSegment — reads that overlap', () => {
+  it('never runs two reads at once: triggers during a read collapse into ONE trailing read, and its answer wins', async () => {
+    const d = deferredSeam();
+    render(<AttentionSegment seam={d.seam} spaceId={SPACE} onOpenEntity={vi.fn()} refreshDelayMs={0} />);
+    await waitFor(() => expect(d.calls).toHaveLength(2));
+
+    // Three event-triggered refreshes land while the first read is still out.
+    // Each timer fires (delay 0) and reaches `load()` — the IN-FLIGHT guard is
+    // the only thing between them and three more concurrent reads.
+    for (let i = 0; i < 3; i++) {
+      d.touch();
+      await tick();
+    }
+    expect(d.calls).toHaveLength(2);
+
+    // The first read answers with the OLD queue; the trailing read starts only
+    // now, and exactly once.
+    await d.settle(0, [req({ entityId: 'a', points: 5 })]);
+    await waitFor(() => expect(d.calls).toHaveLength(4));
+    expect(count()).toBe('1');
+
+    await d.settle(2, [req({ entityId: 'a', points: 5 }), req({ entityId: 'b', points: 7 })]);
+    await waitFor(() => expect(count()).toBe('2'));
+    await tick(20);
+    expect(d.calls).toHaveLength(4);
+  });
+
+  it('drops a slow answer for the space it has left', async () => {
+    const d = deferredSeam();
+    const OTHER_ROWS = [
+      req({ entityId: 'a1', points: 5 }),
+      req({ entityId: 'a2', points: 5 }),
+      req({ entityId: 'a3', points: 5 }),
+    ];
+    const view = render(
+      <AttentionSegment seam={d.seam} spaceId={SPACE} onOpenEntity={vi.fn()} refreshDelayMs={0} />,
+    );
+    await waitFor(() => expect(d.calls).toHaveLength(2));
+
+    view.rerender(
+      <AttentionSegment seam={d.seam} spaceId={OTHER} onOpenEntity={vi.fn()} refreshDelayMs={0} />,
+    );
+    await waitFor(() => expect(d.calls).toHaveLength(4));
+    expect(d.calls.slice(2).every((c) => c.input.spaceId === OTHER)).toBe(true);
+
+    // The NEW space answers first, then the old space's slow read lands.
+    await d.settle(2, [{ ...req({ entityId: 'b1', points: 9 }), spaceId: OTHER }]);
+    await waitFor(() => expect(count()).toBe('1'));
+    await d.settle(0, OTHER_ROWS);
+    await tick();
+    expect(count()).toBe('1');
   });
 });

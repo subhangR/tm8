@@ -32,8 +32,14 @@ import type { Seam } from '../data/seam';
 
 /** Per status. A strip is a count and a short list, not the archive. */
 export const PENDING_PAGE_LIMIT = 100;
-/** Quiet period before an event-triggered read. */
-export const REFRESH_DELAY_MS = 750;
+/**
+ * Quiet period before an event-triggered read. Under a steady stream of
+ * `activity_touched` (every message in the space fires one) this IS the poll
+ * rate — two list reads per window — so it is set for load, not snappiness.
+ * The case where a user is actually waiting (they just opened a row) does not
+ * go through it: that path calls `refresh()` directly.
+ */
+export const REFRESH_DELAY_MS = 2000;
 
 const PENDING_STATUSES: readonly AttentionRequestStatus[] = ['open', 'acknowledged'];
 

@@ -77,13 +77,16 @@ export function AttentionSegment(props: AttentionSegmentProps) {
       ? '—'
       : truncated ? `${count}+` : String(count);
   const hot = state.phase === 'ready' && count > 0;
+  // A full page makes BOTH numbers floors: the entities are grouped from the
+  // same truncated rows, so an unmarked entity count would read as a total.
+  const entities = `${groups.length}${truncated ? '+' : ''} ${groups.length === 1 && !truncated ? 'entity' : 'entities'}`;
   const summary = state.phase === 'error'
     ? `Attention could not be loaded: ${state.message}`
     : state.phase === 'loading'
       ? 'Loading attention requests'
       : count === 0
         ? 'Nothing needs your attention'
-        : `${value} attention ${count === 1 ? 'request' : 'requests'} pending on ${groups.length} ${groups.length === 1 ? 'entity' : 'entities'}`;
+        : `${value} attention ${count === 1 ? 'request' : 'requests'} pending on ${entities}`;
 
   const openRow = (id: EntityId) => {
     setOpen(false);
@@ -136,7 +139,7 @@ export function AttentionSegment(props: AttentionSegmentProps) {
           ) : (
             <>
               <div className="att-seg__eyebrow">
-                {`Needs attention · ${groups.length} ${groups.length === 1 ? 'entity' : 'entities'}`}
+                {`Needs attention · ${entities}`}
               </div>
               <ul className="att-seg__list">
                 {shown.map((group) => (
