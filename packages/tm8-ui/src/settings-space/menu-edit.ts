@@ -26,7 +26,7 @@
  */
 import type { MenuConfig, MenuConfigPayload, MenuGroup, MenuItem, MenuLeaf, MenuViewRef } from '@tm8/contract';
 import { collectionKinds, isMenuEligibleKind } from '../domain';
-import { VIEW_PRESENTATION, resolveMenu } from '../shell/menu-resolve';
+import { VIEW_PRESENTATION, isSavedMenu, resolveMenu } from '../shell/menu-resolve';
 
 /**
  * The rail's structural limits, mirrored so a DISABLED CONTROL CAN STATE ITS
@@ -115,7 +115,7 @@ export function draftIssue(draft: MenuDraft): string | null {
   }
 
   const resolved = resolveMenu(config);
-  if (resolved.origin.source === 'server') return null;
+  if (isSavedMenu(resolved.origin)) return null;
   if (resolved.origin.because === 'unrenderable-refs') {
     return resolved.origin.detail ?? 'this menu names rows the rail cannot render';
   }

@@ -367,7 +367,7 @@ describe('the help route', () => {
       // 'CodeBrain' joined 2026-09-01 (migration 173) and left 2026-09-15
       // (migration 186) when #610 deleted the only build that had its screen.
       // Help is still the FINAL tab, which is what this case is actually about.
-      'Home', 'Work', 'Board', 'Craft', 'Graph', 'Settings', 'Help',
+      'Home', 'Work', 'Board', 'Graph', 'Craft', 'Settings', 'Help',
     ]);
     expect(view.queryByTestId('open-help')).toBeNull();
 

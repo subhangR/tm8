@@ -71,6 +71,12 @@ export const PASSES_STORAGE_KEY = 'tm8ui.auth.passes.v1';
 export const KNOWN_ACCOUNTS_KEY = 'tm8ui.auth.known.v1';
 /** One record: `Record<serverId, origin>` — the registry's origin cache. */
 export const SERVER_ORIGINS_KEY = 'tm8ui.auth.server-origins.v1';
+/**
+ * One record: `Record<originKey, true>` — servers seen enforcing space
+ * sessions (W3). A fact about the server, never a credential: the pinned
+ * tokens themselves live in memory only (`space-sessions.ts`).
+ */
+export const SPACE_SESSIONS_ENFORCED_KEY = 'tm8ui.auth.space-sessions-enforced.v1';
 
 function readRecord<T>(key: string): Record<string, T> {
   try {
@@ -114,7 +120,7 @@ export function noteServerOrigin(serverId: string, baseUrl: string): void {
 }
 
 /** serverId → the credential key (the lead's ruling: the target ORIGIN). */
-function passKeyFor(serverId: string): string {
+export function passKeyFor(serverId: string): string {
   if (serverId === LOCAL_SERVER_ID) {
     try {
       return window.location.origin;
@@ -182,9 +188,22 @@ export function noteKnownAccount(serverId: string, account: KnownAccount): void 
   writeRecord(KNOWN_ACCOUNTS_KEY, { ...all, [passKeyFor(serverId)]: [...list, account] });
 }
 
+/** Whether this server has been seen refusing a gate session (enforce). */
+export function readSpaceSessionsEnforced(serverId: string): boolean {
+  return readRecord<boolean>(SPACE_SESSIONS_ENFORCED_KEY)[passKeyFor(serverId)] === true;
+}
+
+export function noteSpaceSessionsEnforced(serverId: string): void {
+  const all = readRecord<boolean>(SPACE_SESSIONS_ENFORCED_KEY);
+  const key = passKeyFor(serverId);
+  if (all[key] === true) return;
+  writeRecord(SPACE_SESSIONS_ENFORCED_KEY, { ...all, [key]: true });
+}
+
 /** Test/dev affordance: forget every pass and every known account. */
 export function resetPassStore(): void {
   try {
+    window.localStorage.removeItem(SPACE_SESSIONS_ENFORCED_KEY);
     window.localStorage.removeItem(PASSES_STORAGE_KEY);
     window.localStorage.removeItem(KNOWN_ACCOUNTS_KEY);
     window.localStorage.removeItem(SERVER_ORIGINS_KEY);

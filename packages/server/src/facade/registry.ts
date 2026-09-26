@@ -19,11 +19,12 @@
  */
 import { RESERVED_OPERATIONS, isOperationName, type OperationName } from '@tm8/contract';
 import type { OperationHandler } from '../http/types.js';
+import { refuseLinkBearerOp } from '../identity/link-bearer.js';
 
 const RESERVED = new Set<string>(RESERVED_OPERATIONS.map((op) => op.name));
 
 export class HandlerRegistry {
-  private readonly handlers = new Map<OperationName, OperationHandler>();
+  protected readonly handlers = new Map<OperationName, OperationHandler>();
 
   /**
    * Bind an implementation to a catalog operation.
@@ -60,8 +61,22 @@ export class HandlerRegistry {
     return this;
   }
 
+  /**
+   * The handler the frame dispatches — the single point every transport's
+   * operation passes through. 256 (W7p, deny-by-default): an identity of
+   * authKind `link` is refused here on every operation not in
+   * `LINK_BEARER_ALLOWED_OPS` (empty), before the handler runs — so before
+   * `claimsFor`, any write, mint or rpc. See identity/link-bearer.ts.
+   */
   get(name: OperationName): OperationHandler | undefined {
-    return this.handlers.get(name);
+    const handler = this.handlers.get(name);
+    if (!handler) return undefined;
+    return (ctx) => {
+      // A context with no identity (in-process callers and tests that build
+      // one by hand) is not a link bearer: it passes through, as before.
+      refuseLinkBearerOp(name, ctx.identity?.authKind);
+      return handler(ctx);
+    };
   }
 
   has(name: OperationName): boolean {

@@ -108,7 +108,66 @@ export interface ClientOptions {
   fresh?: boolean | undefined;
   /** Injectable for tests; defaults to the session singleton (read-cache.ts). */
   cache?: ReadCache;
+  /**
+   * How long to keep re-sending while the node is DOWN (a restart gap), in ms.
+   * 0, the default, fails on the first failure, which is what a human at a
+   * terminal wants. See `mayResend` for what is re-sent.
+   */
+  gapRetryMs?: number | undefined;
+  /** Injectable for tests. */
+  sleepImpl?: (ms: number) => Promise<void>;
 }
+
+/**
+ * How a failed `fetch` failed, for the restart-gap retry.
+ *
+ * `refused` — the TCP connect was refused, so no byte of the request reached
+ * any node. This is what a restart looks like from loopback: the port is
+ * closed from the moment the old process exits until `server.listen()`, which
+ * runs last in boot.
+ *
+ * `ambiguous` — any other transport failure (reset, socket closed, EPIPE…):
+ * the node may have read and committed the request before the socket dropped.
+ *
+ * undici reports both as `TypeError('fetch failed')` with the errno on
+ * `cause.code`; a dual-stack connect nests them in an AggregateError that
+ * carries the same code.
+ */
+export function gapFailureKind(err: unknown): 'refused' | 'ambiguous' {
+  const cause = (err as { cause?: unknown } | null)?.cause;
+  return (cause as { code?: unknown } | null)?.code === 'ECONNREFUSED' ? 'refused' : 'ambiguous';
+}
+
+/**
+ * Whether this request may be sent again after `kind` of failure.
+ *
+ * A refused connect never reached a node: always. Otherwise the first attempt
+ * may have committed, so only a GET, or a command carrying a
+ * `clientMutationId`: the Server's command ledger (TM8_IDEMPOTENCY_ENABLED,
+ * default on and set on prod) replays the stored result for a repeated id
+ * instead of applying it twice. The body is re-sent verbatim, so the id is the
+ * one this invocation minted, never a fresh one. A command WITHOUT an id (the
+ * few auth bootstraps) is never re-sent after an ambiguous failure.
+ *
+ * A request TIMEOUT is never re-sent at all: a restart gap is a refusal or a
+ * reset, never a slow answer. A timeout is a node that is up and busy, and
+ * re-sending for two minutes adds load to exactly the node that cannot keep up.
+ *
+ * Nor is any HTTP answer, 5xx included. An agent calls its node directly with
+ * no proxy in between, so a 502/504 never reaches it, and every 503 was
+ * written by a LIVE node: read admission refusing under pool pressure, a
+ * handler that threw (the ledger stores only committed results, so a re-send
+ * re-runs it), or /health on a sick database. A node that answered is not in
+ * a restart gap.
+ */
+function mayResend(method: string, body: unknown, kind: 'refused' | 'ambiguous'): boolean {
+  if (kind === 'refused' || method === 'GET') return true;
+  const cmid = (body as { clientMutationId?: unknown } | null | undefined)?.clientMutationId;
+  return typeof cmid === 'string' && cmid !== '';
+}
+
+const GAP_RETRY_FIRST_DELAY_MS = 250;
+const GAP_RETRY_MAX_DELAY_MS = 5_000;
 
 export interface InvokeOptions {
   params?: Record<string, string>;
@@ -163,6 +222,8 @@ export class Tm8Client {
   private readonly fetchImpl: typeof fetch;
   private readonly fresh: boolean;
   private readonly cache: ReadCache;
+  private readonly gapRetryMs: number;
+  private readonly sleep: (ms: number) => Promise<void>;
 
   constructor(opts: ClientOptions) {
     this.baseUrl = opts.baseUrl;
@@ -174,6 +235,8 @@ export class Tm8Client {
     this.fetchImpl = opts.fetchImpl ?? fetch;
     this.fresh = opts.fresh ?? false;
     this.cache = opts.cache ?? readCache;
+    this.gapRetryMs = Math.max(0, opts.gapRetryMs ?? 0);
+    this.sleep = opts.sleepImpl ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   }
 
   /**
@@ -393,46 +456,75 @@ export class Tm8Client {
     if (opts.body !== undefined) headers['content-type'] = 'application/json';
     if (this.token) headers.authorization = `Bearer ${this.token}`;
 
-    const controller = new AbortController();
     const timeoutMs = opts.timeoutMs ?? this.deadlineFor(name);
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
     // Only the SIZE of the request body is journalled, never its content and
     // never the headers — `authorization` is set two lines above.
     const requestChars = opts.body === undefined ? 0 : JSON.stringify(opts.body).length;
-    const startedMs = Date.now();
+    // The per-request deadline is per ATTEMPT; the gap window bounds how long
+    // attempts continue. A restart gap is the node being down, so an attempt
+    // fails fast on the refusal and the time goes to the backoff, not to it.
+    const gapDeadlineMs = Date.now() + this.gapRetryMs;
+    let delayMs = GAP_RETRY_FIRST_DELAY_MS;
+    let retries = 0;
+    /** Sleeps and returns true when another attempt fits in the window. */
+    const backoff = async (why: string): Promise<boolean> => {
+      if (Date.now() + delayMs > gapDeadlineMs) return false;
+      retries += 1;
+      process.stderr.write(
+        `tm8: ${name} ${why}; retry ${retries} in ${delayMs}ms (server restart window ${Math.round(this.gapRetryMs / 1000)}s)\n`,
+      );
+      await this.sleep(delayMs);
+      delayMs = Math.min(delayMs * 2, GAP_RETRY_MAX_DELAY_MS);
+      return true;
+    };
+    let controller: AbortController;
+    let timer: ReturnType<typeof setTimeout>;
+    let startedMs: number;
     let res: Response;
-    try {
-      res = await this.fetchImpl(url, {
-        method: op.method,
-        headers,
-        signal: controller.signal,
-        ...(opts.body === undefined ? {} : { body: JSON.stringify(opts.body) }),
-      });
-    } catch (err) {
-      // A transport failure is still a call the agent made and paid for, so it
-      // is journalled with a null status: the node never answered.
-      journal.noteCall({
-        operation: name,
-        method: op.method,
-        path: url.pathname,
-        baseUrl: this.baseUrl,
-        status: null,
-        requestChars,
-        responseChars: 0,
-        durationMs: Date.now() - startedMs,
-      });
-      clearTimeout(timer);
-      if (controller.signal.aborted) {
+    for (;;) {
+      controller = new AbortController();
+      const attempt = controller;
+      timer = setTimeout(() => attempt.abort(), timeoutMs);
+      startedMs = Date.now();
+      try {
+        res = await this.fetchImpl(url, {
+          method: op.method,
+          headers,
+          signal: controller.signal,
+          ...(opts.body === undefined ? {} : { body: JSON.stringify(opts.body) }),
+        });
+      } catch (err) {
+        // A transport failure is still a call the agent made and paid for, so it
+        // is journalled with a null status: the node never answered.
+        journal.noteCall({
+          operation: name,
+          method: op.method,
+          path: url.pathname,
+          baseUrl: this.baseUrl,
+          status: null,
+          requestChars,
+          responseChars: 0,
+          durationMs: Date.now() - startedMs,
+        });
+        clearTimeout(timer);
+        if (controller.signal.aborted) {
+          throw new TransportError(
+            `${op.method} ${url.pathname} timed out after ${timeoutMs}ms (per-request deadline)`,
+            err,
+          );
+        }
+        const kind = gapFailureKind(err);
+        if (mayResend(op.method, opts.body, kind) && await backoff(`could not reach ${this.baseUrl} (${kind})`)) {
+          continue;
+        }
+        const reason = err instanceof Error ? err.message : String(err);
+        const retried = retries > 0 ? ` after ${retries} retries` : '';
         throw new TransportError(
-          `${op.method} ${url.pathname} timed out after ${timeoutMs}ms (per-request deadline)`,
+          `${op.method} ${url.pathname} failed: ${reason}${retried} (is tm8-server running at ${this.baseUrl}?)`,
           err,
         );
       }
-      const reason = err instanceof Error ? err.message : String(err);
-      throw new TransportError(
-        `${op.method} ${url.pathname} failed: ${reason} (is tm8-server running at ${this.baseUrl}?)`,
-        err,
-      );
+      break;
     }
 
     // A byte response is only drained as text when it FAILED; a success is

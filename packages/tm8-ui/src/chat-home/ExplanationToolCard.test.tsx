@@ -102,7 +102,7 @@ describe('Explain-mode presentation tools', () => {
     expect(view.getByRole('button', { name: 'Expand' }).getAttribute('aria-expanded')).toBe('false');
   });
 
-  it('previews safe same-Space file assets and presents durable docs as output cards', () => {
+  it('previews safe same-Space file assets; a created doc is a step, not an output card (D17)', () => {
     const asset = {
       schemaVersion: 'tm8.mcp.result.v1', tool: 'explain_asset', presentation: 'asset',
       fileEntityId: FILE_ID, name: 'architecture.png', mimeType: 'image/png', sizeBytes: 4096,
@@ -118,8 +118,29 @@ describe('Explain-mode presentation tools', () => {
     const docView = render(<TurnParts parts={toolParts('doc_create', {
       title: 'Mode guide', body: '# Guide', spaceId: 'space-a',
     }, { id: '019f0000-0000-7000-8000-000000000105', kind: 'doc', title: 'Mode guide' })} />);
-    expect(docView.getByTestId('durable-explanation-output')).toBeTruthy();
-    expect(docView.getByText('Durable document')).toBeTruthy();
-    expect(docView.getAllByText('Mode guide').length).toBe(2);
+    /* The durable-output card is retired: a created doc reads as the same
+       thing as a created task — the ledger's create card (L4's fold) — and
+       its progress is an ordinary step line. */
+    expect(docView.queryByTestId('durable-explanation-output')).toBeNull();
+    expect(docView.queryByText('Durable document')).toBeNull();
+    expect(docView.getByTestId('chat-step-line').textContent).toContain('Created doc “Mode guide”');
+    expect(docView.container.textContent).not.toContain('doc_create');
+  });
+
+  it('never leaves a presentation "Preparing…" after its turn ended without it', () => {
+    /* A turn interrupted mid-call writes no terminal record for the call, so
+       its stored state stays `running` forever. Before the fix the card said
+       "Resolving the file preview…" for good; the turn's own `done` ends it. */
+    const parts: ChatTurnPart[] = [
+      ...toolParts('mcp__tm8__explain_asset', { fileEntityId: FILE_ID }),
+      { seq: 5, kind: 'done' },
+    ];
+    const view = render(<TurnParts parts={parts} />);
+    expect(view.queryByText('Resolving the file preview…')).toBeNull();
+    expect(view.getByText('This presentation could not be prepared.')).toBeTruthy();
+
+    // Still live (no done yet): it IS pending, and says so.
+    const live = render(<TurnParts parts={toolParts('mcp__tm8__explain_asset', { fileEntityId: FILE_ID })} />);
+    expect(live.getByText('Resolving the file preview…')).toBeTruthy();
   });
 });

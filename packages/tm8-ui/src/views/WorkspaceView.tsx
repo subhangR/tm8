@@ -55,7 +55,7 @@ import { useNewContainerSheet } from './useNewContainerSheet';
 import { EmptyCenter } from './EmptyCenter';
 import { LaunchSheet, type DispatchSelection, type LaunchSelection } from './LaunchSheet';
 import type { GateData } from './useGateData';
-import { openEntityAndResolve } from './open-entity';
+import { openEntityAndMarkRead } from './open-entity';
 import { conversationSurfaceFor } from './conversationSurface';
 import { channelFeedPortFromGateData } from './channel-feed-port';
 import { attentionSectionFor } from './attentionSurface';
@@ -128,10 +128,7 @@ export interface WorkspaceViewProps {
 
 export function WorkspaceView(props: WorkspaceViewProps) {
   const { data, nav, leftKind, rightKind, menuCollapsed, reasons } = props;
-  const resolvingAttention = useRef(new Set<EntityId>());
-  // Separate from `resolvingAttention`: a read mark is written on every open,
-  // an attention resolve only sometimes, so one shared set would let either
-  // suppress the other.
+  /** In-flight read marks, so a double click on a row is one write. */
   const markingRead = useRef(new Set<EntityId>());
 
   // The measurement the whole engine hangs on. `null` until a real
@@ -305,32 +302,18 @@ export function WorkspaceView(props: WorkspaceViewProps) {
   const handleSessionResume = primaries.resume;
   const resumingId = primaries.resumingId;
 
-  /** Opening is never blocked on the mutation. Resolve only when the rendered
-      summary says attention is pending, and coalesce rapid repeated clicks. */
+  /** Opening is a read: it navigates and records a read mark, and never
+      settles an attention request (Attention v2 — see `open-entity.ts`). */
   const openEntity = useCallback((entityId: string) => {
     const id = entityId as EntityId;
-    const summary = data.detailOf(id)
-      ?? data.rowsFor(leftKind)(undefined).find((row) => row.id === id)
-      ?? data.rowsFor(rightKind)(undefined).find((row) => row.id === id)
-      ?? data.graph.nodes.find((row) => row.id === id);
-    openEntityAndResolve({
+    openEntityAndMarkRead({
       entityId: id,
-      needsAttention: summary?.badges.attention != null,
       open: (id) => nav.push(id),
       commands: data.seam.commands,
-      reconcile: data.reconcileCommand,
-      resolving: resolvingAttention.current,
       marking: markingRead.current,
       onRead: data.refreshCounts,
-      onError: (error) => props.onNotice({
-          id: `attention-resolve-failed:${entityId}`,
-          tone: 'error',
-          title: 'Attention could not be resolved',
-          body: String((error as { message?: string })?.message ?? error),
-          ttlMs: 6_000,
-        }),
     });
-  }, [data, leftKind, nav, props.onNotice, rightKind]);
+  }, [data, nav]);
 
   /** Panels at the side-panel floors drop metas and abbreviate badges. */
   const leftCompact = layout.left <= 220;
@@ -519,7 +502,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
                         : `${admission.cause} — ${admission.remedy}`
                     }
                     liveness={data.livenessOf(id)}
-                    attentionSection={attentionSectionFor(data.seam, data.spaceId, id, () => data.pull?.(id))}
+                    attentionSection={attentionSectionFor(data.seam, data.spaceId, id, data.reconcileCommand)}
                     debugSurface={debugSurfaceFor(data.seam, id, data.livenessOf)}
                     sessionStatsSurface={sessionStatsSurfaceFor(data.seam, id)}
                     sessionContextSurface={sessionContextSurfaceFor(data.seam, id, data.livenessOf)}

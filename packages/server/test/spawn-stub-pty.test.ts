@@ -54,6 +54,11 @@ class SpawnDb implements Db {
         snapshot: { profile: { source: 'core_default' } },
       } as T;
     }
+    if (fn === 'resolve_auth_session') {
+      // 256 (W7p): the spawn port re-resolves the minted token to read its
+      // via_link stamp. The real mint always resolves; no link here.
+      return { sessionId: AUTH_SESSION, viaLinkId: null } as T;
+    }
     if (fn === 'public.issue_work_session_agent_session') {
       // The real function returns the inserted auth_sessions row as jsonb minus
       // token_hash (072_session_io_routes.sql); the mint only reads `.id`, and

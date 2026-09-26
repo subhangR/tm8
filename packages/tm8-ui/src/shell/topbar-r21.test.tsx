@@ -124,3 +124,26 @@ describe('R21 — where the three utilities render (finding #8)', () => {
     expect(bare.container.querySelectorAll('[data-testid="open-inbox"]')).toHaveLength(1);
   });
 });
+
+describe('ONE ROW — the status strip in the bar (owner, 2026-09-26)', () => {
+  const strip = <div data-testid="strip-slot" />;
+
+  it('leads the trail zone, ahead of the palette hint and the account', () => {
+    const { container } = renderBar({ statusSlot: strip, accountSlot: <span data-testid="acct" /> });
+    const trail = container.querySelector('.shell-tabbar__zone--trail')!;
+    const kids = [...trail.children];
+    expect(kids[0]!.getAttribute('data-testid')).toBe('strip-slot');
+    expect(kids.findIndex((k) => k.classList.contains('shell-tabbar__palette'))).toBeGreaterThan(0);
+    expect(kids.at(-1)!.getAttribute('data-testid')).toBe('acct');
+  });
+
+  /* The class is what swaps the grid to tabs-left and arms the shed ladder in
+     `shell.css`; without a slot the bar is the centred three-zone row. */
+  it('marks the bar --with-status only when a slot is given', () => {
+    const withSlot = renderBar({ statusSlot: strip });
+    expect(withSlot.getByTestId('space-tab-bar').className).toContain('shell-tabbar--with-status');
+    withSlot.unmount();
+    const bare = renderBar();
+    expect(bare.getByTestId('space-tab-bar').className).not.toContain('shell-tabbar--with-status');
+  });
+});

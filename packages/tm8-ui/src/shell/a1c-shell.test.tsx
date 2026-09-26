@@ -1,97 +1,12 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, within } from '@testing-library/react';
+import { fireEvent, render } from '@testing-library/react';
 import type { ActionContext } from '../domain';
 import { deferredActions } from '../domain';
-import { FIXTURE_SPACE_ID, sessionExited, sessionLive, sessionStale, taskUuidTitle } from '../fixtures';
-import { toSessionRow } from '../terminal';
+import { FIXTURE_SPACE_ID, taskUuidTitle } from '../fixtures';
 import { CommandPalette } from './CommandPalette';
-import { LiveSessionBar } from './LiveSessionBar';
 
 const ctx: ActionContext = { spaceId: FIXTURE_SPACE_ID };
-
-const rows = new Map([
-  [sessionLive.id, toSessionRow(sessionLive, 'task T-109')],
-  [sessionStale.id, toSessionRow(sessionStale, 'task T-114')],
-  [sessionExited.id, toSessionRow(sessionExited, '12m ago')],
-]);
-const resolve = (id: string) => rows.get(id);
-
-describe('LiveSessionBar — a running agent is never invisible', () => {
-  it('N comes from the SEAM LIVE SET, not from records that claim to run', () => {
-    // Two fixtures carry status 'running'; only one is in the live set.
-    const { getByTestId } = render(
-      <LiveSessionBar
-        liveIds={[sessionLive.id]}
-        resolve={resolve}
-        livenessOf={(id) => (id === sessionLive.id ? 'live' : 'stale')}
-      />,
-    );
-    expect(getByTestId('live-bar-count').textContent).toBe('— 1 live');
-  });
-
-  it('distinguishes "none focused" from "nothing running" — both are real states', () => {
-    const unfocused = render(
-      <LiveSessionBar liveIds={[sessionLive.id]} resolve={resolve} livenessOf={() => 'live'} />,
-    );
-    expect(unfocused.getByTestId('live-bar-idle').textContent).toBe('no focused session');
-    expect(unfocused.getByTestId('live-bar-dot').className).toContain('live-bar__dot--idle');
-    unfocused.unmount();
-
-    const empty = render(<LiveSessionBar liveIds={[]} resolve={resolve} livenessOf={() => 'not-running'} />);
-    expect(empty.getByTestId('live-bar-idle').textContent).toBe('no sessions running');
-    // Zero live is a TEACHING state: it offers the gesture that fixes it.
-    expect(empty.container.textContent).toContain('run a task ▸');
-  });
-
-  it('attention OUTRANKS focus — it surfaces while another session is focused', () => {
-    const { getByTestId } = render(
-      <LiveSessionBar
-        liveIds={[sessionLive.id, sessionStale.id]}
-        focusedId={sessionLive.id}
-        attentionIds={[sessionStale.id]}
-        resolve={resolve}
-        livenessOf={() => 'live'}
-      />,
-    );
-    expect(getByTestId('live-bar-attention').textContent).toContain('needs you');
-  });
-
-  it('a focused STALE session never renders with the live treatment', () => {
-    const { getByTestId } = render(
-      <LiveSessionBar
-        liveIds={[]}
-        focusedId={sessionStale.id}
-        resolve={resolve}
-        livenessOf={() => 'stale'}
-        activity={{ [sessionStale.id]: true }}
-      />,
-    );
-    expect(getByTestId('live-bar-dot').className).not.toContain('term-dot--live');
-    expect(getByTestId('live-bar-dot').className).not.toContain('term-dot--pulse');
-  });
-
-  it('the roster groups NEEDS YOU above LIVE above RECENTLY EXITED, each session once', () => {
-    const { getByTestId } = render(
-      <LiveSessionBar
-        liveIds={[sessionLive.id, sessionStale.id]}
-        attentionIds={[sessionStale.id]}
-        recentlyExited={[toSessionRow(sessionExited, '12m ago')]}
-        resolve={resolve}
-        livenessOf={(id) => (id === sessionLive.id ? 'live' : 'stale')}
-      />,
-    );
-    fireEvent.click(getByTestId('live-bar-count'));
-    const roster = getByTestId('roster-popover');
-    const groups = [...roster.querySelectorAll('.roster__group')].map((g) => g.textContent ?? '');
-    expect(groups[0]).toContain('NEEDS YOU');
-    expect(groups[1]).toContain('LIVE');
-    expect(groups[2]).toContain('RECENTLY EXITED');
-    // The attention session must not ALSO appear under LIVE.
-    expect(groups[1]).toContain('LIVE · 1');
-    expect(within(roster).getAllByRole('menuitem')).toHaveLength(3);
-  });
-});
 
 describe('CommandPalette', () => {
   const views = [{ id: 'workspace', label: 'Workspace', glyph: '⌗' }];

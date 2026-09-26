@@ -1,10 +1,8 @@
 import { useId, useMemo, useState } from 'react';
 import type { EntityId } from '@tm8/contract';
 import { Mermaid, ZoomableFigure } from '../kit';
-import { EntityChip, type ChatEntityResolver } from './EntityChip';
-import { extractEntityRefs } from './entity-refs';
+import type { ChatEntityResolver } from './EntityChip';
 import {
-  durableOutputToolName,
   explanationPresentation,
   explanationToolName,
   type CodePresentation,
@@ -22,14 +20,18 @@ export interface ExplanationToolCardProps {
   assetHref?: ((fileEntityId: EntityId) => string | null) | undefined;
 }
 
-/** Returns null for ordinary tools so TurnParts can use its generic fallback. */
+/**
+ * The `explain_*` presentations — content, not tool calls. Returns null for
+ * any other tool. The doc / artifact create card that used to live here is
+ * retired (advisor D17): a created doc reads as the same thing as a created
+ * task, so its outcome is the ledger's create card and its progress is an
+ * ordinary step line.
+ */
 export function ExplanationToolCard(props: ExplanationToolCardProps) {
   const { part } = props;
   const explainName = explanationToolName(part.name);
-  const durableName = durableOutputToolName(part.name);
-  if (!explainName && !durableName) return null;
+  if (!explainName) return null;
 
-  if (durableName) return <DurableOutputCard {...props} name={durableName} />;
   const presentation = explanationPresentation(part.name, part.args, part.result);
   return (
     <ExplanationFrame part={part}>
@@ -72,8 +74,8 @@ export function ExplanationToolCard(props: ExplanationToolCardProps) {
 }
 
 /**
- * These cards are CONTENT, not tool calls — a diagram, a code excerpt, a file,
- * a durable document — so they survive the removal of the tool boxes. What does
+ * These cards are CONTENT, not tool calls — a diagram, a code excerpt, a file
+ * — so they survive the removal of the tool boxes. What does
  * NOT survive is the tool chrome they wore: an `explain_diagram completed`
  * header and a "Tool details" payload dump. That is exactly what the transcript
  * is now rid of everywhere else, and keeping it here would leave the rule true
@@ -316,48 +318,6 @@ function AssetCard({
   );
 }
 
-function DurableOutputCard({
-  part,
-  name,
-  onOpenEntity,
-  resolveEntity,
-  suppressEntityIds,
-}: ExplanationToolCardProps & { name: 'doc_create' | 'doc_update' | 'artifact_create' }) {
-  const args = recordOf(part.args);
-  const title = stringOf(args?.title) ?? stringOf(args?.name)
-    ?? (name === 'artifact_create' ? 'Interactive artifact' : 'Explanation document');
-  const description = stringOf(args?.description);
-  const refs = extractEntityRefs(part.result, part.args).filter((ref) => !suppressEntityIds?.has(ref.id));
-  return (
-    <ExplanationFrame part={part}>
-      <section className="tch-explain__body tch-durable" data-testid="durable-explanation-output">
-        <PresentationHeading
-          title={title}
-          eyebrow={name === 'artifact_create'
-            ? 'Durable interactive artifact'
-            : name === 'doc_update' ? 'Durable document update' : 'Durable document'}
-        />
-        {description ? <p className="tch-explain__caption">{description}</p> : null}
-        <span className="tch-durable__state" data-state={part.state}>
-          {part.state === 'running'
-            ? 'Creating durable output…'
-            : part.state === 'error'
-              ? name === 'doc_update' ? 'Document was not updated.' : 'Output was not created.'
-              : name === 'doc_update' ? 'Document updated.' : 'Durable output created.'}
-        </span>
-        {refs.length > 0 ? (
-          <div className="tch-durable__entities">
-            {refs.map((ref) => (
-              <EntityChip key={ref.id} refInfo={ref} resolve={resolveEntity} onOpen={onOpenEntity} />
-            ))}
-          </div>
-        ) : null}
-      </section>
-    </ExplanationFrame>
-  );
-}
-
-
 type PlacedGraphNode = GraphPresentation['nodes'][number] & { x: number; y: number };
 type PlacedGraphEdge = GraphPresentation['edges'][number] & {
   path: string;
@@ -451,14 +411,3 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
-
-function recordOf(raw: unknown): Record<string, unknown> | null {
-  return typeof raw === 'object' && raw !== null && !Array.isArray(raw)
-    ? raw as Record<string, unknown>
-    : null;
-}
-
-function stringOf(raw: unknown): string | null {
-  return typeof raw === 'string' && raw.trim() !== '' ? raw : null;
-}
-

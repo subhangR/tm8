@@ -39,6 +39,7 @@ import { WorkflowsSection } from './WorkflowsSection';
 import { ProfileSection } from './ProfileSection';
 import { DangerSection } from './DangerSection';
 import { ConfigsSection } from './ConfigsSection';
+import { SessionsSection } from './SessionsSection';
 import { SectionAbsent, SectionFrame } from './SectionFrame';
 import { SECTION_NOT_MOUNTED } from './reasons';
 import { SETTINGS_SECTIONS, type SettingsData, type SettingsSectionId, type SettingsShellProps } from './types';
@@ -421,6 +422,24 @@ function SectionBody({
          opens, not on the shell's boot round trip, so a closed Configs tab
          costs nothing. */
       return <ConfigsSection heading={def.heading} load={port.loadConfigs} />;
+    case 'my-sessions':
+      return (
+        <SessionsSection
+          heading={def.heading}
+          scope="own"
+          {...(port.loadOwnSessions ? { load: port.loadOwnSessions } : {})}
+          {...(port.revokeSession ? { revoke: port.revokeSession } : {})}
+        />
+      );
+    case 'sessions':
+      return (
+        <SessionsSection
+          heading={def.heading}
+          scope="space"
+          {...(port.loadSpaceSessions ? { load: port.loadSpaceSessions } : {})}
+          {...(port.revokeSession ? { revoke: port.revokeSession } : {})}
+        />
+      );
     case 'danger':
       return (
         <DangerSection

@@ -316,6 +316,24 @@ describe.sequential('147 — entities.status_category', () => {
     // `set_chat_context`;
     // no assertion here reads it.
     database.apply(['231_chat_context.sql']);
+    // 206 (space credentials) plus a SHIM of the two read-path columns the W10a
+    // credential migration (239_credential_entities.sql) adds:
+    // `entity-read.ts` and the projector left-join `public.space_credentials scr`
+    // and select `scr.visibility` / `scr.owner_account_id`. 239 itself cannot
+    // apply on this partial chain (it needs 232's `members.status`), so only
+    // the column shapes and their tm8_app read grant are mirrored here, without
+    // 239's FK or checks. No assertion here reads them. DELETE this shim if this suite ever applies
+    // the chain through 232: then apply the credential migration instead.
+    database.apply(['206_space_credentials.sql']);
+    await database.query(`alter table public.space_credentials
+      add column visibility text not null default 'public',
+      add column owner_account_id uuid`);
+    await database.query('grant select (owner_account_id, visibility) on public.space_credentials to tm8_app');
+    // 252 (Attention v2 S1): `entity-read.ts` and the projector read the
+    // badge aggregate through `public.attention_badges`, so a tranche that
+    // stops before 252 has no such function. Additive: one security-invoker
+    // function over 050's `attention_requests`. No assertion here reads it.
+    database.apply(['252_attention_badges.sql']);
   }, 180_000);
 
   afterAll(async () => {

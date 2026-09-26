@@ -19,6 +19,14 @@
  *     Subscription admission is checked only at subscribe time, so a socket
  *     left open would keep receiving the space's events.
  *
+ * THE CREDENTIALS (W10a, T41b): a member who leaves or is removed takes the
+ * credentials they own in the space with them. SQL revokes them in the same
+ * transaction, before the tombstone; an account disable's trigger revokes
+ * every credential the account owns. The result then lists the live sessions
+ * OTHER members launched on them (`credentialSessionIds`), contained here like
+ * a credential delete, and each revoked login credential's file home
+ * (`credentialHomes`), removed last. Neither list reaches the response.
+ *
  * Best effort after commit, like SC-6: the revocation already happened, so a
  * failed kill or close is logged, never thrown — the command did succeed. A
  * replay re-runs the step, which is idempotent (`not_found`, no sockets).
@@ -41,13 +49,14 @@ import type { FacadeDeps } from '../facade/deps.js';
 import type { HandlerRegistry } from '../facade/registry.js';
 import { fail } from '../http/errors.js';
 import type { RequestContext } from '../http/types.js';
+import type { SpaceCredentialHomeKey } from '../credentials/space-credential-store.js';
 import type { EventSink } from '../events/ws-connection.js';
 import { CLOSE_CODE } from '../events/ws-frame.js';
 
 /** The PTY-side of containment. `SpawnService` implements both. */
 export interface MembershipSessionPort {
   killRecordedEnding(sessionId: string): Promise<string>;
-  containCredentialSession(sessionId: string, cause: 'member_removed'): Promise<unknown>;
+  containCredentialSession(sessionId: string, cause: 'member_removed' | 'space_credential_deleted'): Promise<unknown>;
 }
 
 /** The live event sockets (`SubscriptionRegistry`). */
@@ -60,11 +69,17 @@ export interface MembershipHandlerDeps {
   /** Absent on a node with no execution runtime: there are no PTYs to kill. */
   readonly sessions?: MembershipSessionPort;
   readonly sockets?: MembershipSocketPort;
+  /** Remove a revoked login credential's file home. Absent: no homes on this node. */
+  readonly removeCredentialHome?: (home: SpaceCredentialHomeKey) => Promise<void>;
   readonly log?: (message: string, fields: Record<string, unknown>) => void;
 }
 
-/** What the SQL returns: the public shape plus the identity the TS step needs. */
-type WithIdentity<T> = T & { identityId?: string };
+/** What the SQL returns: the public shape plus what the TS step needs. */
+type WithIdentity<T> = T & {
+  identityId?: string;
+  credentialSessionIds?: string[];
+  credentialHomes?: SpaceCredentialHomeKey[];
+};
 
 export const MEMBERSHIP_ENDED_CLOSE_REASON = 'membership ended';
 export const ACCOUNT_DISABLED_CLOSE_REASON = 'account disabled';
@@ -119,6 +134,7 @@ export function registerMembershipHandlers(
         log('containment of a disabled account\'s session failed', { sessionId, reason: reasonOf(error) });
       }
     }
+    await afterCredentialsRevoked(result, deps, log);
     if (result.identityId) {
       closeSockets(deps.sockets, result.identityId, null, ACCOUNT_DISABLED_CLOSE_REASON, log);
     }
@@ -139,8 +155,36 @@ async function afterMembershipEnded(
       log('killing a session after its membership ended failed', { sessionId, reason: reasonOf(error) });
     }
   }
+  await afterCredentialsRevoked(result, deps, log);
   if (result.identityId) {
     closeSockets(deps.sockets, result.identityId, result.spaceId, MEMBERSHIP_ENDED_CLOSE_REASON, log);
+  }
+}
+
+/**
+ * The credentials a membership end or an account disable revoked: contain
+ * every other launcher's live session on them (still a member, so its captured
+ * claims record the ending, as a credential delete does), then remove each
+ * login home. Exported for the tests.
+ */
+export async function afterCredentialsRevoked(
+  result: Pick<WithIdentity<object>, 'credentialSessionIds' | 'credentialHomes'>,
+  deps: MembershipHandlerDeps,
+  log: NonNullable<MembershipHandlerDeps['log']>,
+): Promise<void> {
+  for (const sessionId of result.credentialSessionIds ?? []) {
+    try {
+      await deps.sessions?.containCredentialSession(sessionId, 'space_credential_deleted');
+    } catch (error) {
+      log('containment of a session on a revoked member credential failed', { sessionId, reason: reasonOf(error) });
+    }
+  }
+  for (const home of result.credentialHomes ?? []) {
+    try {
+      await deps.removeCredentialHome?.(home);
+    } catch (error) {
+      log('removing a revoked member credential\'s home failed', { credentialId: home.credentialId, reason: reasonOf(error) });
+    }
   }
 }
 
@@ -181,8 +225,10 @@ function parseBody<S extends ZodTypeAny>(schema: S, ctx: RequestContext): Return
   return parsed.data as ReturnType<S['parse']>;
 }
 
-function publicShape<T extends { identityId?: string }>(result: T): Omit<T, 'identityId'> {
-  const { identityId: _identityId, ...rest } = result;
+function publicShape<T extends WithIdentity<object>>(
+  result: T,
+): Omit<T, 'identityId' | 'credentialSessionIds' | 'credentialHomes'> {
+  const { identityId: _identityId, credentialSessionIds: _sessions, credentialHomes: _homes, ...rest } = result;
   return rest;
 }
 

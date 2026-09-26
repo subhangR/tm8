@@ -66,7 +66,10 @@ export type PanelTab = 'content' | 'connections' | 'discussion';
 export const PANEL_TABS: readonly { id: PanelTab; label: string }[] = [
   { id: 'content', label: 'Content' },
   { id: 'connections', label: 'Connections' },
-  { id: 'discussion', label: 'Discussion' },
+  /* USER RULING 2026-09-26: the tab is named for what it lists. The id stays
+     `discussion` — it is the route codec's vocabulary (`routes/types.ts`) and
+     every host's aux target; only the word on the tab changes. */
+  { id: 'discussion', label: 'Messages' },
 ];
 
 // ---------------------------------------------------------------------------

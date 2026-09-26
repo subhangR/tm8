@@ -17,23 +17,23 @@ describe('EntityTray', () => {
     expect(view.queryByTestId('chat-entity-tray')).toBeNull();
   });
 
-  it('the Chat tab is the way back: active with the stage empty, pulsing when the thread works off-stage', () => {
+  it('the Chat tab is the way back: active with the stage empty, inactive (and clickable) when something holds it', () => {
     const onShowChat = vi.fn();
-    // Stage empty: chat tab active, no pulse.
     const idle = render(<EntityTray onShowChat={onShowChat} />);
     const chatTab = idle.getByText('Chat').closest('button')!;
     expect(chatTab.hasAttribute('data-active')).toBe(true);
-    expect(idle.container.querySelector('.tch-tray__pulse')).toBeNull();
     idle.unmount();
-    // Stage occupied + thread busy: chat tab inactive, pulses, click returns.
-    const busy = render(
-      <EntityTray onShowChat={onShowChat} activeEntityId="01900000-00dd-7000-8000-000000000007" chatBusy />,
+    const held = render(
+      <EntityTray onShowChat={onShowChat} activeEntityId="01900000-00dd-7000-8000-000000000007" />,
     );
-    const busyChat = busy.getByText('Chat').closest('button')!;
-    expect(busyChat.hasAttribute('data-active')).toBe(false);
-    expect(busy.container.querySelector('.tch-tray__pulse')).not.toBeNull();
-    fireEvent.click(busyChat);
+    const heldChat = held.getByText('Chat').closest('button')!;
+    expect(heldChat.hasAttribute('data-active')).toBe(false);
+    fireEvent.click(heldChat);
     expect(onShowChat).toHaveBeenCalledTimes(1);
+    // The busy pulse is gone from the tray (D18): the tray only mounts when
+    // nothing holds the stage, so it could never render. The stage header's
+    // `StageExit` carries the signal — see stage-exit.test.tsx.
+    expect(held.container.querySelector('[role="status"]')).toBeNull();
   });
 
   it('the Graph tab renders only with a handler and swaps its stage', () => {

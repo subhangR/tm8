@@ -8,7 +8,8 @@ import { join } from 'node:path';
 
 export const sh = (cmd, args, opts = {}) => execFileSync(cmd, args, { encoding: 'utf8', maxBuffer: 64 << 20, ...opts }).trim();
 export const uptime = () => sh('uptime', []).replace(/.*load averages?:\s*/, '');
-export const load1 = () => Number(uptime().split(/\s+/)[0]);
+// macOS prints `load averages: 1.2 3.4 5.6`, Linux `load average: 1.2, 3.4, 5.6`.
+export const load1 = () => Number(uptime().split(/[\s,]+/)[0]);
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** The pid of the claude process carrying TM8_SESSION_ID=<sessionId>, or null. */

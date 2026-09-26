@@ -1,0 +1,114 @@
+/*
+ * Settings → Space links (W6). Section-prefixed `set-spl__`; tokens only
+ * (hex-ban.test.ts). Buttons and notices borrow `cred-action` / `cred-notice`
+ * from settings-credentials/credentials.css.
+ */
+
+.set-spl {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.set-spl__lede {
+  margin: 0;
+  color: var(--pn-ink-2);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.set-spl__warning {
+  margin: 0;
+  padding: 8px 10px;
+  border-left: 3px solid rgba(var(--pn-brand-rgb), 0.7);
+  background: rgba(var(--pn-brand-rgb), 0.06);
+  color: var(--pn-ink);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.set-spl__warning p {
+  margin: 0;
+}
+
+.set-spl__warning p + p {
+  margin-top: 6px;
+}
+
+.set-spl__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.set-spl__row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-surface);
+}
+
+.set-spl__row-head,
+.set-spl__actions,
+.set-spl__add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.set-spl__name {
+  color: var(--pn-ink);
+  font-size: 12.5px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.set-spl__status {
+  color: var(--pn-ink-2);
+  font-size: 11px;
+}
+
+.set-spl__muted {
+  margin: 0;
+  color: var(--pn-ink-4);
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+.set-spl__spawn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--pn-ink-2);
+  font-size: 11px;
+}
+
+.set-spl__input {
+  min-width: 0;
+  flex: 1 1 220px;
+  padding: 4px 7px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-surface);
+  color: var(--pn-ink);
+  font-size: 11.5px;
+}
+
+.set-spl__fail {
+  margin: 0;
+  padding-left: 8px;
+  border-left: 2px solid var(--pn-line-2);
+  color: var(--pn-ink-2);
+  font-size: 11px;
+  line-height: 1.45;
+}

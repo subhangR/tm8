@@ -1059,6 +1059,18 @@ export const profileHouseStyle = summary({
   },
 });
 
+/**
+ * Credential (W10a) — a space credential's card. Facts only: the secret, its
+ * hint and the vendor login never reach an entity, so there is nothing else
+ * a fixture could honestly carry.
+ */
+export const credentialTeamKey = summary({
+  id: 'cred-team-anthropic',
+  kind: 'credential',
+  title: 'Team Anthropic key',
+  state: { kind: 'credential', provider: 'anthropic', shape: 'api_key', visibility: 'public', status: 'active', ownerAccountId: null },
+});
+
 /** Custom kind — lands on the generic archetype with zero special-casing. */
 export const customRitual = summary({
   id: 'c-ritual-standup',
@@ -1328,7 +1340,7 @@ export const fixtureSummaries: EntitySummary[] = [
   chatLaunchPlan, chatStoppedWithWork,
   prTransplant, commitFoundation, fileScreenshot,
   spellDeploy, skillReview, collectionInbox, collectionEmpty, projectTm8Ui,
-  profileHouseStyle, customRitual, artifactPulseBoard, drawingLoginFlow,
+  profileHouseStyle, credentialTeamKey, customRitual, artifactPulseBoard, drawingLoginFlow,
   ...formSummaries,
   ...containerFixtures,
 ];
@@ -1835,6 +1847,10 @@ export const fixtureDetails: Record<string, EntityDetail> = {
       resolvedHash: 'sha256:2f7c1a9e',
       generatedByTeamMemberId: teamMemberForge.id,
     },
+  }),
+
+  [credentialTeamKey.id]: detail(credentialTeamKey, {
+    content: { kind: 'credential', provider: 'anthropic', shape: 'api_key', visibility: 'public', status: 'active', ownerAccountId: null },
   }),
 
   [customRitual.id]: detail(customRitual, {

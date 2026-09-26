@@ -66,7 +66,7 @@ describe('every containers.* row is REGISTERED, built or not', () => {
     const family = OPERATIONS
       .filter((op) => op.name.startsWith('containers.'))
       .map((op) => op.name);
-    expect(family).toHaveLength(25);
+    expect(family).toHaveLength(24); /* -1 containers.attention (Attention v2 S7a). MEASURED. */
     const unregistered = family.filter((name) => !registry.has(name as OperationName));
     // `containers.stream` is the ONLY row without a handler here, and that is
     // correct: it re-declares `events.subscribe`'s socket and is served by the

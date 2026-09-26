@@ -75,10 +75,40 @@ const PENDING: AttentionRequest[] = [
   ...SETTLED.slice(1),
 ];
 
-const portFor = (rows: AttentionRequest[]): AttentionPort => ({
-  history: async () => ({ rows, truncated: false }),
-  settle: async () => ({ request: null, entity: null as never, affectedCount: 1 }),
-});
+/**
+ * A STATEFUL fake port — it answers a settle the way the NODE does.
+ *
+ * It used to return `{ request: null }`, which was fine while settling only
+ * triggered a refetch. It is not fine now: the Undo toast is offered only when
+ * the server hands back the written row (that copy carries the bumped `version`
+ * an undo has to send), so a null there made the whole affordance invisible in
+ * the browser — the one place it can actually be looked at.
+ *
+ * Still no node and still no network. The point is the SHAPE of the reply.
+ */
+const portFor = (initial: AttentionRequest[]): AttentionPort => {
+  const rows = initial.map((r) => ({ ...r }));
+  return {
+    history: async () => ({ rows: rows.map((r) => ({ ...r })), truncated: false }),
+    settle: async ({ requestId, expectedVersion, status, resolutionNote }) => {
+      const i = rows.findIndex((r) => r.id === requestId);
+      if (i < 0) throw new Error(`no such request: ${requestId}`);
+      const reopened = status === 'open' || status === 'acknowledged';
+      const next = {
+        ...rows[i]!,
+        status,
+        version: expectedVersion + 1,
+        // Mirrors migration 050: reopening CLEARS the resolution stamp, and the
+        // note is coalesced rather than overwritten.
+        resolvedBy: reopened ? null : actor('Subhang'),
+        resolvedAt: reopened ? null : '2026-09-07T14:00:00.000Z',
+        ...(resolutionNote ? { resolutionNote } : {}),
+      } as AttentionRequest;
+      rows[i] = next;
+      return { request: { ...next }, entity: { id: ENTITY } as never, affectedCount: 1 };
+    },
+  };
+};
 
 const FILLER =
   'The panel is a fixed anatomy: header, tab row, controls band, body, footer. ' +

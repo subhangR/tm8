@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import {
+  ATTENTION_LEVEL_POINTS,
   CollabError,
   GraphContentInputSchema,
   applyGraphLinks,
@@ -74,7 +75,7 @@ import { projectForgeFacts } from '../../../tracking/pr-projection.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const REACTION_TYPES = new Set(['likes', 'dislikes', 'stars']);
-const RESTRICTED_LIFECYCLE_KINDS = new Set([
+export const RESTRICTED_LIFECYCLE_KINDS = new Set([
   'member',
   'message',
   'work_session',
@@ -94,6 +95,18 @@ const RESTRICTED_LIFECYCLE_KINDS = new Set([
   // title is patched through `containers.update`, which is ledgered and
   // asserts a version like the rest of the family.
   'container',
+  // `credential` (W10a) is the same-id envelope of a space_credentials row.
+  // It is born, re-labelled and revoked only through credentials.space.*,
+  // which are human-only; a generic create, patch, move, delete or restore
+  // would split the envelope from its row. The SQL guards refuse all of
+  // these too (T39/T44) — this is the door's early, named refusal.
+  'credential',
+  // `space_link` (W6, 250/251) is born from `spaceLinks.add` and ends only
+  // through `spaceLinks.*` (P7). A generic delete would soft-delete the
+  // envelope without the cascade or the revoke-on-delete trigger, hiding the
+  // link while its tokens and target sessions stayed live (review D1). SQL
+  // refuses the same doors (251 §10b). `server` joins in W8.
+  'space_link',
 ]);
 // `memory` is here to HIDE hierarchy on the read surfaces; the actual refusal
 // of a memory parent lives at the data layer (056's entities trigger), because
@@ -1080,6 +1093,9 @@ const PATCH_CONTENT_MEMBERS: Readonly<Record<string, readonly string[]>> = {
   commit: ['url', 'author', 'committedAt'],
   memory: ['statement', 'mechanism', 'subjectScope', 'doesNotEstablish', 'measuredAt'],
   loop: ['schedule', 'teamMemberId', 'subjectId', 'prompt', 'config', 'enabled', 'nextRunAt'],
+  // W10a: no member is patchable. The lifecycle refusal fires first; this is
+  // the second lock, so a door that skipped it still forwards nothing.
+  credential: [],
 };
 
 function assertPatchContentMembers(
@@ -1856,7 +1872,8 @@ export class W2EntitiesCommandsTrackingService {
       const raw = await q.rpc<AttentionMutationRpcResult>('create_attention_request', [
         entityId,
         input.reason,
-        input.points,
+        // Attention v2: points is an optional override; omitted, it derives from the level.
+        input.points ?? ATTENTION_LEVEL_POINTS[input.level ?? 'normal'],
         envelope.actorId ?? null,
         envelope.clientMutationId ?? null,
       ]);

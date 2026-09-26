@@ -151,6 +151,11 @@ const LIVE_VERBS = [
   /^Profile$/,
   /^Members & roles$/,
   /^Invites$/,
+  // W4: both Sessions nav rows are live — `auth.sessions.list/revoke` are real
+  // executors; the fake port here passes no reader, so the bodies draw the
+  // not-wired state and add no control to this sweep.
+  /^Your sessions$/,
+  /^Sessions$/,
   // 187's two space defaults — real `spaces.update` writes, one key each.
   /^Session sharing$/,
   /^(Everyone in the space|Only its owner|Everyone who can watch)$/,
@@ -271,6 +276,10 @@ const LIVE_VERBS = [
   // chat-defaults-section.test.tsx.
   /^Chat defaults$/,
   /^default (teammate|model) for /,
+  // Space links (W6): the NAV ROW only — `spaceLinks.*` are real catalog ops
+  // on the seam. The body is owned by `settings-space-links/` and is not
+  // injected here; its controls are held in space-links.test.tsx.
+  /^Space links$/,
 ];
 
 function sweepEnabledControls(root: HTMLElement) {

@@ -1,7 +1,7 @@
 /**
  * auth.* — local accounts (Identity v2 Stage 1, doc 4 §6).
  *
- * Eleven operations, and the seam is deliberately thin: every authorization
+ * Thirteen operations, and the seam is deliberately thin: every authorization
  * decision except the scrypt comparison lives inside the SECURITY DEFINER
  * RPCs (`ensure_account`'s F1 node-admin gate, `revoke_auth_session`'s
  * self-or-admin gate, `resolve_auth_session`'s revocation/expiry/status
@@ -43,6 +43,7 @@ import type {
   AuthPasswordChangeInput,
   AuthPasswordChangeResult,
   AuthSessionGetResult,
+  AuthSessionsListResult,
   AuthSignupInput,
   AuthSignupResult,
   AuthSpaceEnterInput,
@@ -50,6 +51,7 @@ import type {
   InvitePreview,
   ResolveInviteInput,
 } from '@tm8/contract';
+import { AuthSessionsListInputSchema } from '@tm8/contract';
 import { chmod, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -58,19 +60,22 @@ import { clearSessionCookie, sessionCookie } from '../../../http/session-cookie.
 import { json, type OperationHandler, type RequestContext } from '../../../http/types.js';
 import type { FacadeDeps } from '../../deps.js';
 import type { HandlerRegistry } from '../../registry.js';
-import { claimsFor } from '../../context.js';
+import { claimsFor, requireUuidParam } from '../../context.js';
 import {
   changePassword,
   claimNode,
   enterSpace,
   issueNodeClaimToken,
+  listAuthSessions,
   loginWithPassword,
   nodeIsClaimed,
   resolveBearerIdentity,
+  revokeListedAuthSession,
   signupAccount,
   signupViaInvite,
   type AccountRowJson,
 } from '../../../identity/pg-auth.js';
+import { closeSessionSockets, type SessionSocketPort } from '../../../identity/session-sockets.js';
 
 function accountView(row: AccountRowJson): AuthAccountView {
   return {
@@ -620,14 +625,61 @@ function authInviteSignup(deps: FacadeDeps): OperationHandler {
   };
 }
 
+/**
+ * `auth.sessions.list` (plan W4, 232) — the caller's own sessions, or with
+ * `?spaceId=` every session pinned to that space. Who may see what is
+ * `list_auth_sessions`' decision under the caller's claims (humans only; space
+ * admin for a space, pin-aware). No token or hash ever leaves SQL.
+ */
+function authSessionsList(deps: FacadeDeps): OperationHandler {
+  return async (ctx) => {
+    const raw = ctx.query.get('spaceId');
+    const parsed = AuthSessionsListInputSchema.safeParse(raw === null ? {} : { spaceId: raw });
+    if (!parsed.success) throw new CollabError('invalid_input', 'spaceId must be a uuid');
+    const spaceId = parsed.data.spaceId ?? null;
+    const owner = await deps.owner();
+    const sessions = await listAuthSessions(deps.db, claimsFor(owner, ctx), spaceId, ctx.identity.sessionId);
+    const result: AuthSessionsListResult = { spaceId, sessions };
+    return json(result, { headers: { 'cache-control': 'no-store' } });
+  };
+}
+
+/**
+ * `auth.sessions.revoke` (plan W4, 232) — end one session the caller could
+ * list. SQL revokes it and, through 232's trigger, the pinned sessions entered
+ * from it, and returns every id it ended. After commit, the open event sockets
+ * of exactly those sessions are closed; a failed close is logged, not thrown.
+ */
+function authSessionsRevoke(deps: FacadeDeps, sockets: SessionSocketPort | undefined): OperationHandler {
+  return async (ctx) => {
+    const sessionId = requireUuidParam(ctx, 'sessionId');
+    const owner = await deps.owner();
+    const result = await revokeListedAuthSession(deps.db, claimsFor(owner, ctx), sessionId);
+    closeSessionSockets(sockets, new Set(result.revokedSessionIds), (message, fields) =>
+      console.warn(`[auth.sessions.revoke] ${message}`, fields));
+    return result;
+  };
+}
+
+export interface AuthHandlerDeps {
+  /** The live event sockets; absent (tests, no event server) skips the close. */
+  readonly sockets?: SessionSocketPort;
+}
+
 /** The complete auth seam — one registration, one honest group. */
-export function registerW2AuthHandlers(registry: HandlerRegistry, deps: FacadeDeps): void {
+export function registerW2AuthHandlers(
+  registry: HandlerRegistry,
+  deps: FacadeDeps,
+  auth: AuthHandlerDeps = {},
+): void {
   registry.registerAll({
     'auth.signup': authSignup(deps),
     'auth.login': authLogin(deps),
     'auth.logout': authLogout(deps),
     'auth.session.get': authSessionGet(deps),
     'auth.space.enter': authSpaceEnter(deps),
+    'auth.sessions.list': authSessionsList(deps),
+    'auth.sessions.revoke': authSessionsRevoke(deps, auth.sockets),
     'auth.claim': authClaim(deps),
     'auth.claim.status': authClaimStatus(deps),
     'auth.claim.reissue': authClaimReissue(deps),
