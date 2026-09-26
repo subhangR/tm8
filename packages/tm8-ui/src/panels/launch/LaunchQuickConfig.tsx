@@ -62,6 +62,8 @@ export interface LaunchTeammateOption {
   label: string;
   agentTool?: string | null;
   model?: string | null;
+  /** `team_members.mode`; absent on a node that doesn't project it. */
+  mode?: string | null;
 }
 
 export interface LaunchQuickConfigProps {

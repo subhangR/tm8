@@ -2413,6 +2413,7 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
         ...(row.state.defaultProfileId
           ? { defaultProfileId: row.state.defaultProfileId }
           : {}),
+        ...(row.state.mode !== undefined ? { mode: row.state.mode } : {}),
       }];
     });
     const profiles: LaunchProfile[] = summaries.flatMap((row) => {
