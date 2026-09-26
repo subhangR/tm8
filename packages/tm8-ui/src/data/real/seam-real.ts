@@ -447,6 +447,8 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       updateAttentionRequest: (requestId, input) => ops.updateAttentionRequest(requestId, input),
       updateProfile: (input) => ops.updateProfile(input),
       setMemberRole: (spaceId, memberId, input) => ops.setMemberRole(spaceId, memberId, input),
+      leaveSpace: (spaceId) => ops.leaveSpace(spaceId),
+      removeMember: (spaceId, memberId) => ops.removeMember(spaceId, memberId),
       updateSpace: (spaceId, input) => ops.updateSpace(spaceId, input),
       createInvite: (spaceId, input) => ops.createInvite(spaceId, input),
       // `ctx` defaults to `{}` rather than being forwarded as `undefined`: the
@@ -495,6 +497,8 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       startContainerTerminal: (id, input) => ops.startContainerTerminal(id, input),
       containerProviders: () => ops.containerProviders(),
     },
+
+    nodeMetrics: () => ops.nodeMetrics(),
 
     // -- credentials ---------------------------------------------------------
 

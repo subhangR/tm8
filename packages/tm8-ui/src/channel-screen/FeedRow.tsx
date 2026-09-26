@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { ActorSummary, EntityId, FeedItem, Mention, MessageView } from '@tm8/contract';
 import { Avatar, Markdown, Pill, Timestamp, type MarkdownComponents } from '../kit';
+import { actorName } from '../domain/actors';
 import { DisabledAction, DisabledIconControl, NOT_WIRED_REASON } from '../panels/honesty/DisabledWithReason';
 /*
  * FROM `chat-home/` FOR NOW, AND DELIBERATELY NOT MOVED IN THIS COMMIT.
@@ -296,7 +297,7 @@ function MessageContent({
     <>
       {!clustered ? (
         <div className="chs-byline">
-          <span className="chs-byline__who">{author?.displayName ?? 'unknown'}</span>
+          <span className="chs-byline__who">{author ? actorName(author) : 'unknown'}</span>
           {author?.isAgent ? <span className="chs-byline__kind">agent</span> : null}
           <time
             className="chs-byline__time"
@@ -1090,7 +1091,7 @@ function InlineActor({
         size={15}
         src={actor.avatar ?? null}
       />
-      <span>{actor.displayName}</span>
+      <span>{actorName(actor)}</span>
     </span>
   );
 }

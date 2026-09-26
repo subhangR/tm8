@@ -105,7 +105,8 @@ async function requestClaims(
     claims: {
       ...base,
       identityId: viewerIdentityId,
-      nodeAdmin: viewerIdentityId === owner.identityId ? owner.isNodeAdmin : false,
+      // K6 (W3): a space-pinned session never holds node admin.
+      nodeAdmin: ctx.identity?.sessionSpaceId ? false : viewerIdentityId === owner.identityId ? owner.isNodeAdmin : false,
     },
   };
 }

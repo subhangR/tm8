@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:ac682c491fd5abae761557c8b4e155f9e4925ca45cd3ca9112f70f9d9f4f229d",
+  "catalogDigest": "sha256:1ddb2404b270bfb9cc105f8d885f0f3c9c3636fa4cd3f95a293844cff575be06",
   "catalog": {
-    "total": 248,
-    "v1": 246,
+    "total": 254,
+    "v1": 252,
     "reserved": 2,
-    "http": 246,
+    "http": 252,
     "ws": 1,
-    "registerableV1Http": 244,
+    "registerableV1Http": 250,
     "methods": {
-      "GET": 81,
-      "POST": 117,
+      "GET": 84,
+      "POST": 120,
       "PATCH": 16,
       "DELETE": 17,
       "PUT": 15,
       "WS": 2
     },
     "kinds": {
-      "read": 85,
-      "command": 161,
+      "read": 88,
+      "command": 164,
       "stream": 2
     },
-    "uniqueNames": 248,
-    "uniqueBindings": 247
+    "uniqueNames": 254,
+    "uniqueBindings": 253
   },
   "reservedOperations": [
     "search.query",
@@ -922,6 +922,34 @@
         "source": "server-router"
       },
       {
+        "operation": "spaces.projects.list",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/projects",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.projects.create",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/projects/create",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "gate.folders.list",
+        "method": "GET",
+        "path": "/v2/gate/folders",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "gate.folders.create",
+        "method": "POST",
+        "path": "/v2/gate/folders",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "projects.unlink",
         "method": "DELETE",
         "path": "/v2/spaces/:spaceId/projects/:projectId",
@@ -1580,6 +1608,13 @@
         "source": "server-router"
       },
       {
+        "operation": "auth.space.enter",
+        "method": "POST",
+        "path": "/v2/auth/space/enter",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "auth.password.change",
         "method": "POST",
         "path": "/v2/auth/password",
@@ -1737,6 +1772,13 @@
         "operation": "node.credentials.policy.set",
         "method": "PUT",
         "path": "/v2/node/credential-policy/:provider",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "node.metrics.get",
+        "method": "GET",
+        "path": "/v2/node/metrics",
         "status": "registered",
         "source": "server-router"
       },
@@ -2140,7 +2182,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 216
+    "unimplementedV1Http": 222
   },
   "schemas": {
     "additive": {
@@ -4013,6 +4055,74 @@
         "publicComposite": null
       },
       {
+        "operation": "spaces.projects.list",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.projects.list",
+        "intentTags": [
+          "spaces",
+          "projects",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.projects.create",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.projects.create",
+        "intentTags": [
+          "spaces",
+          "projects",
+          "create"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "gate.folders.list",
+        "noun": "project",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/gate.folders.list",
+        "intentTags": [
+          "gate",
+          "folders",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "gate.folders.create",
+        "noun": "project",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/gate.folders.create",
+        "intentTags": [
+          "gate",
+          "folders",
+          "create"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
         "operation": "projects.unlink",
         "noun": "project",
         "exposure": "public",
@@ -5610,6 +5720,23 @@
         "publicComposite": null
       },
       {
+        "operation": "auth.space.enter",
+        "noun": "auth",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/auth.space.enter",
+        "intentTags": [
+          "auth",
+          "space",
+          "enter"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
         "operation": "auth.password.change",
         "noun": "auth",
         "exposure": "public",
@@ -5998,6 +6125,23 @@
           "credentials",
           "policy",
           "set"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "node.metrics.get",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/node.metrics.get",
+        "intentTags": [
+          "node",
+          "metrics",
+          "get"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
@@ -6919,6 +7063,7 @@
           "connections": true,
           "lifecycleOperations": [
             "projects.link",
+            "spaces.projects.create",
             "projects.unlink",
             "projects.associations.correct"
           ]

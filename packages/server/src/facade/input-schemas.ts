@@ -56,6 +56,7 @@ import {
   AuthClaimInputSchema,
   AuthInviteSignupInputSchema,
   AuthLoginInputSchema,
+  AuthSpaceEnterInputSchema,
   AuthLogoutInputSchema,
   AuthPasswordChangeInputSchema,
   AuthSignupInputSchema,
@@ -129,6 +130,8 @@ import {
   ProjectFolderUploadCompleteInputSchema,
   ProjectFolderUploadInitInputSchema,
   ProjectLinkInputSchema,
+  SpaceProjectCreateInputSchema,
+  GateFolderCreateInputSchema,
   ProjectUpdateInputSchema,
   PullInputSchema,
   ReactionInputSchema,
@@ -193,6 +196,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   // authentication has no authoring persona and no idempotency ledger entry.
   'auth.signup': AuthSignupInputSchema,
   'auth.login': AuthLoginInputSchema,
+  'auth.space.enter': AuthSpaceEnterInputSchema,
   'auth.logout': AuthLogoutInputSchema,
   // auth.claim.status takes no input; the catalog marks it a read.
   'auth.claim': AuthClaimInputSchema,
@@ -323,6 +327,8 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'spaces.chatDefaults.set': SetChatDefaultsInputSchema,
   'projects.update': ProjectUpdateInputSchema,
   'projects.link': ProjectLinkInputSchema,
+  'spaces.projects.create': SpaceProjectCreateInputSchema,
+  'gate.folders.create': GateFolderCreateInputSchema,
   'projects.unlink': RequiredCommandContextSchema,
   'projects.associations.correct': CorrectProjectAssociationInputSchema,
   'projects.files.attach': ProjectFileAttachInputSchema,

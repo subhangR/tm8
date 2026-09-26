@@ -253,3 +253,24 @@
   text-wrap: pretty;
   margin: 0;
 }
+
+/* G6: the live ✕. Same box as the locked one above, so a row does not shift
+   when the viewer's role unlocks it. */
+.cv2-root .set-members__x {
+  height: var(--set-members-ctl-h);
+  width: var(--set-members-ctl-h);
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  color: var(--pn-ink-3);
+  font-size: 11px;
+  cursor: pointer;
+}
+.cv2-root .set-members__x:hover {
+  border-color: var(--pn-block);
+  color: var(--pn-block);
+}

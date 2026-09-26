@@ -235,6 +235,21 @@ const ROWS: Record<OperationName, Row> = {
     input: 'none',
     tags: ['whoami', 'session', 'token', 'me'],
   },
+  'auth.space.enter': {
+    cmd: ['auth', 'space', 'enter'],
+    syn: 'tm8 auth space enter <space-id> [--label <label>]',
+    sum: 'Mint a session pinned to one space from your unpinned (gate) session',
+    authz: 'server',
+    input: 'bound',
+    side: 'durable',
+    tags: ['space', 'enter', 'switch', 'session', 'token', 'pin'],
+    notes: [
+      'requires membership of the space and an unpinned browser/cli session; a pinned session cannot enter another space',
+      'the new session has the same kind, never carries node-admin power, and expires no later than the session that minted it',
+      'under TM8_SPACE_SESSIONS=enforce an unpinned human session can call only spaces.list, auth.* and node administration until it enters a space',
+      'the pinned token is printed once and not stored, so the stored gate credential stays usable for entering other spaces',
+    ],
+  },
   'auth.password.change': {
     cmd: ['auth', 'password'],
     syn: 'tm8 auth password --current <current-password> --new <new-password>',
@@ -537,6 +552,17 @@ const ROWS: Record<OperationName, Row> = {
     reason: 'human_settings_only',
     notes: [
       'null removes the policy: node fallback is allowed',
+    ],
+  },
+  'node.metrics.get': {
+    cmd: null,
+    sum: 'Read host metrics (CPU, memory, load, disk, server RSS) for this node — node admin, human sessions only',
+    authz: 'server',
+    input: 'none',
+    tags: ['node', 'metrics', 'status'],
+    reason: 'human_settings_only',
+    notes: [
+      'the desktop status strip polls it; a figure the host cannot supply is null',
     ],
   },
   'serverConnections.list': {
@@ -1446,7 +1472,41 @@ const ROWS: Record<OperationName, Row> = {
     input: 'bound',
     notes: [
       'the result carries BOTH identities: the ProjectResource id and the per-Space projection entity id — they are never interchangeable',
+      'decision 29: one folder may be linked into several Spaces only on a loopback-only single node; everywhere else a folder that belongs to another Space is refused: this folder belongs to another space',
     ],
+  },
+  'spaces.projects.list': {
+    cmd: ['project', 'space-list'],
+    syn: 'tm8 project space-list [--space <space-id>]',
+    sum: "List the Space's projects: each is the Space's own project entity over a folder granted to it; never a path",
+    authz: 'space',
+    input: 'none',
+  },
+  'spaces.projects.create': {
+    cmd: ['project', 'add'],
+    syn: 'tm8 project add <folder-id> [--name <name>] [--space <space-id>] [--mutation-id <id>]',
+    sum: "Name the Space's project on a folder granted to that Space",
+    authz: 'space',
+    input: 'bound',
+    notes: [
+      'requires the Space owner/admin capability; a folder granted to another Space is refused: this folder belongs to another space',
+    ],
+  },
+  'gate.folders.list': {
+    cmd: ['project', 'folders'],
+    syn: 'tm8 project folders',
+    sum: 'List every folder on this server with the Space it is granted to',
+    authz: 'server',
+    input: 'none',
+    notes: ['gate (node) admins only: members never receive a disk path'],
+  },
+  'gate.folders.create': {
+    cmd: ['project', 'folder-add'],
+    syn: 'tm8 project folder-add <name> --working-dir <absolute-path> [--grant-space <space-id>] [--ensure-working-dir] [--repo-url <url>] [--trust trusted|untrusted] [--mutation-id <id>]',
+    sum: 'Register a folder inside TM8_PROJECT_ROOTS, optionally granting it to one Space',
+    authz: 'server',
+    input: 'bound',
+    notes: ['gate (node) admins only; a folder is granted to at most one Space'],
   },
   'projects.unlink': {
     cmd: ['project', 'unlink'],
@@ -2989,6 +3049,7 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   // the same map and moves with it.
   chat: 'chat',
   containers: 'container',
+  gate: 'project',
   // Required even though all four `credentials.*` rows are `cmd: null`: the
   // noun groups them in `tm8 help`, so they are DISCOVERABLE rather than
   // hidden. Someone asking "can tm8 manage my vendor logins?" gets an answer.
@@ -3056,6 +3117,8 @@ function exposureFor(operation: OperationName): Exposure {
 // 2026-08-13 (first-run claim): auth.claim + auth.claim.status take the catalog
 // to 161 rows. RECOMPUTED from `JSON.stringify(OPERATIONS)`, not adjusted.
 export const CATALOG_DIGEST =
+  // Re-measured for W11 (+spaces.projects.list, +spaces.projects.create at
+  // /projects/create, +gate.folders.list/create; projects.link stays, decision 29) — read from the regenerated conformance manifest.
   // Re-measured 141 (+ auth.password.change, auth.invite.signup,
   // auth.claim.reissue) — read from the regenerated conformance manifest, never
   // hand-derived.
@@ -3084,8 +3147,12 @@ export const CATALOG_DIGEST =
   // Re-measured (Forms W3 merged with headers I4): + forms.responses.redeliver, forms.pendingForSessions. Read from the failing digest test.
   // Re-measured (I9b): + launch.defaults. Read from the failing digest test.
   // Re-measured (entity chat G): + spaces.chatDefaults.get/set. RECOMPUTED from JSON.stringify(OPERATIONS).
+  // Re-measured (W11, decision 29): + spaces.projects.list/create, gate.folders.list/create; projects.link stays. Read from the failing digest test. Merged onto G6 (232): digest re-measured on the merged tree.
   // Re-measured (G6, 232): + spaces.members.remove, spaces.leave, accounts.disable. Read from the failing digest test.
-  'sha256:ac682c491fd5abae761557c8b4e155f9e4925ca45cd3ca9112f70f9d9f4f229d';
+  // Re-measured (W3-server, on main bd1841bf): + auth.space.enter. Read from the conformance generator.
+  // Rebased onto main d11e0be5 (#848): W11's +4 on top of auth.space.enter; digest re-measured on the rebased tree.
+  // Re-measured for node.metrics.get (status strip) — read from the regenerated conformance manifest.
+  'sha256:1ddb2404b270bfb9cc105f8d885f0f3c9c3636fa4cd3f95a293844cff575be06';
 
 export const GRAMMAR_VERSION = '2';
 

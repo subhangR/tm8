@@ -423,14 +423,18 @@ export class W2ProjectFilesService {
     const claims: DbClaims = {
       ...base,
       identityId: viewerIdentityId,
-      nodeAdmin: viewerIdentityId === owner.identityId ? owner.isNodeAdmin : false,
+      // K6 (W3): a space-pinned session never holds node admin.
+      nodeAdmin: ctx.identity?.sessionSpaceId ? false : viewerIdentityId === owner.identityId ? owner.isNodeAdmin : false,
     };
     if (requireNodeAdmin && claims.nodeAdmin !== true) {
       throw new CollabError('forbidden', 'node-admin access is required to attach project files');
     }
+    // W11 (234): members no longer read public.projects; the resolver maps
+    // the project (entity id or folder id) to its grant inside the caller's
+    // spaces, so another space's project is not_found.
     const rows = await this.deps.db.query<WorkingDirRow>(
       claims,
-      `select working_dir from public.projects where id = $1`,
+      `select working_dir from public.resolve_project_ref($1::uuid)`,
       [projectId],
     );
     const row = rows[0];

@@ -105,6 +105,7 @@ import type { ServerConfig } from '../http/config.js';
 import { fail } from '../http/errors.js';
 import { json } from '../http/types.js';
 import { claimsFor, commandEnvelope, requireUuidParam } from './context.js';
+import { LIVE_CHAT_COUNTS_SQL, type LiveChatCountRow } from './live-counts.js';
 import { projectLaunchContext } from './launch-context.js';
 import { loadContextV2 } from './services/w2/feed-context-v2.js';
 import { toCommandResult, type RpcCommandResult } from './handlers/entities.js';
@@ -507,12 +508,12 @@ export class DbGraphPort implements GraphPort {
 
       let project: SpawnContext['project'] = null;
       if (input.projectId) {
+        // W11 (234): entity -> grant -> path through `resolve_project_ref`,
+        // which accepts the space's project entity id or the folder id and
+        // answers only inside this space (a member never reads projects).
         const rows = await q.query<ProjectRow>(
-          `select p.id, p.name, p.working_dir, p.trust
-             from public.projects p
-             join public.space_projects sp
-               on sp.project_id = p.id and sp.space_id = $2
-            where p.id = $1`,
+          `select folder_id id, name, working_dir, trust
+             from public.resolve_project_ref($1::uuid, $2::uuid)`,
           [input.projectId, input.spaceId],
         );
         const row = rows[0];
@@ -928,13 +929,11 @@ export class DbGraphPort implements GraphPort {
     input: { spaceId: string; projectId: string | null },
   ): Promise<ShellSessionContext> {
     if (!input.projectId) return { project: null };
+    // W11 (234): same resolver as loadSpawnContext.
     const rows = await this.db.query<ProjectRow>(
       this.claims(auth),
-      `select p.id, p.name, p.working_dir, p.trust
-         from public.projects p
-         join public.space_projects sp
-           on sp.project_id = p.id and sp.space_id = $2
-        where p.id = $1`,
+      `select folder_id id, name, working_dir, trust
+         from public.resolve_project_ref($1::uuid, $2::uuid)`,
       [input.projectId, input.spaceId],
     );
     const row = rows[0];
@@ -1526,7 +1525,8 @@ export class DbGraphPort implements GraphPort {
   async loadProjectWorkingDir(auth: GraphAuth, projectId: string): Promise<string | null> {
     const rows = await this.db.query<{ working_dir: string }>(
       this.claims(auth),
-      'select working_dir from public.projects where id = $1',
+      // W11 (234): members do not read public.projects; the resolver does.
+      'select working_dir from public.resolve_project_ref($1::uuid)',
       [projectId],
     );
     return rows[0]?.working_dir ?? null;
@@ -2735,11 +2735,18 @@ function registerHandlers(
     // under the caller's claims — a live id the caller cannot read stays
     // invisible rather than leaking another space's session id.
     const live = pty.liveSessionIds();
+    // `recorded_live` rides the same read for `liveSessionCount`: a PTY-map
+    // entry whose record says the session ended is NOT a live session (the
+    // map can outlive the process it names), so the count needs both truths.
+    // `liveEntityIds` stays the PTY map verbatim — the UI's `statusOf` already
+    // intersects it with the recorded status per session.
     const rows = live.length === 0
       ? []
-      : await db.query<{ id: string }>(
+      : await db.query<{ id: string; recorded_live: boolean | null }>(
           claims,
-          `select e.id from public.entities e
+          `select e.id, ws.status in ('spawning', 'running', 'idle') as recorded_live
+             from public.entities e
+             left join public.work_sessions ws on ws.entity_id = e.id
             where e.space_id = $1 and e.kind = 'work_session'
               and e.deleted_at is null and e.id = any($2::uuid[])`,
           [spaceId, live],
@@ -2749,6 +2756,10 @@ function registerHandlers(
       'select internal.live_work_session_count(null) as used',
     );
     const capacity = capacityRows?.[0];
+    // Live chats ride the same read as live sessions (status strip) — see
+    // `live-counts.ts` for what "live" and "working" mean for a chat.
+    const chatRows = await db.query<LiveChatCountRow>(claims, LIVE_CHAT_COUNTS_SQL, [spaceId]);
+    const chats = chatRows?.[0];
     // The durable event high-water mark, read AS THE CALLER — the same bound
     // read the WS `subscribe` path already does (main.ts's `highWaterMark`),
     // through the same class, so there is exactly one implementation of "no
@@ -2759,6 +2770,10 @@ function registerHandlers(
     const eventHwm = await db.tx(claims, (q) => new PgDurableSeqSource(q).latest(spaceId));
     const result: ExecutionLiveness = {
       liveEntityIds: rows.map((r) => r.id),
+      liveSessionCount: rows.filter((r) => r.recorded_live === true).length,
+      ...(chats
+        ? { liveChatCount: Number(chats.live), workingChatCount: Number(chats.working) }
+        : {}),
       nodeBootId: NODE_BOOT_ID,
       checkedAt: new Date().toISOString(),
       capacity: { used: Number(capacity?.used ?? 0), total: sessionCap },

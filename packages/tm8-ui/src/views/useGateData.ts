@@ -728,6 +728,12 @@ export interface GateData {
   /** Add and immediately open a Space returned by the onboarding saga. */
   acceptSpace: (space: SpaceSummary) => void;
   /**
+   * Drop a Space the viewer is no longer a member of (G6: they left it) and,
+   * if it was open, open the next one. With none left, say so the way boot
+   * does — zero spaces is a state, not a wait.
+   */
+  forgetSpace: (spaceId: SpaceId) => void;
+  /**
    * D44: launch runs through the active seam's command path. Command patches
    * reconcile immediately and the durable event stream remains authoritative.
    */
@@ -2014,6 +2020,19 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
     setSpaceId(space.id);
   }, []);
 
+  const forgetSpace = useCallback((gone: SpaceId) => {
+    const remaining = spaces.filter((space) => space.id !== gone);
+    setSpaces(remaining);
+    if (spaceId !== gone) return;
+    const next = remaining[0];
+    if (next) {
+      setSpaceId(next.id);
+    } else {
+      setBootError('you are not a member of any space on this node — ask for an invite, or create a space.');
+      setBootErrorCode(null);
+    }
+  }, [spaces, spaceId]);
+
   // Connection honesty, rendered once in the shell and selected everywhere
   // (§10.2.4). `polling` is a degraded-but-advancing state, not an outage.
   useEffect(() => seam.onConnection(setConnection), [seam]);
@@ -3243,6 +3262,7 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
       ensureKind,
       selectSpace,
       acceptSpace,
+      forgetSpace,
       spawn,
       postMessage: postAndRefresh,
       messagesOf: (id: string) => messagesByAnchor[id as EntityId],
@@ -3252,7 +3272,7 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
       domain,
       pull: (id: string) => void pull(id),
     }),
-    [ready, spaceId, spaces, members, taskAxes, taskWorkflows, refreshTaskAxes, mentionOptions, skillOptions, viewerActor, menu, connection, bootError, bootErrorCode, authRequired, liveIds, livenessOf, rowsFor, boardFor, pageStateOf, loadMore, countsFor, refreshCounts, detailOf, refetchDetail, connectionsOf, activity, messagePulses, graph, linkedPullRequestsOf, launch, ensureKind, selectSpace, acceptSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, options.serverBaseUrl, domain, pull],
+    [ready, spaceId, spaces, members, taskAxes, taskWorkflows, refreshTaskAxes, mentionOptions, skillOptions, viewerActor, menu, connection, bootError, bootErrorCode, authRequired, liveIds, livenessOf, rowsFor, boardFor, pageStateOf, loadMore, countsFor, refreshCounts, detailOf, refetchDetail, connectionsOf, activity, messagePulses, graph, linkedPullRequestsOf, launch, ensureKind, selectSpace, acceptSpace, forgetSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, options.serverBaseUrl, domain, pull],
   );
 
   return data;

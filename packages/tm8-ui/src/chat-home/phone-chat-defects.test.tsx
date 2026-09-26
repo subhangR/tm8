@@ -248,12 +248,16 @@ describe('the waits are drawn when there is something to wait for', () => {
   });
 
   /**
-   * HINGES ON: the same arm, via `startingThread`.
+   * HINGES ON: the optimistic echo in `send` (lane 1, D12).
    *
-   * `thinking` is gated on `detail !== null` — it has to be, `showThinking`
-   * reads the turns — and a thread being BORN has no detail. So the two round
-   * trips a first message costs (`posting-root`, `configuring`) drew the
-   * greeting, on the one screen state where pressing Send is the whole point.
+   * A thread being BORN used to have no detail, so the round trip a first
+   * message costs drew either the greeting or a bare "Starting this
+   * conversation…" line — the reader's own words were nowhere. Now the words
+   * move into the transcript on Send and the agent's turn shell stands under
+   * them, before `chat.start` has answered. The greeting must still be gone.
+   *
+   * (This used to override `createRoot`, a port method that no longer exists,
+   * so `create` was never actually held and the wait it asserted was a race.)
    */
   it('waits while a brand-new thread is being created', async () => {
     const { port: base } = createChatHomeFixturePort([]);
@@ -262,10 +266,10 @@ describe('the waits are drawn when there is something to wait for', () => {
       ...base,
       startThread: {
         ...base.startThread,
-        createRoot: (input) =>
+        create: (input) =>
           new Promise((resolve) => {
-            release = () => resolve(base.startThread.createRoot(input) as never);
-          }) as ReturnType<ChatHomePort['startThread']['createRoot']>,
+            release = () => resolve(base.startThread.create(input));
+          }),
       },
     };
     const view = render(
@@ -278,9 +282,9 @@ describe('the waits are drawn when there is something to wait for', () => {
     });
     fireEvent.click(view.getByRole('button', { name: /send/i }));
 
-    await waitFor(() =>
-      expect(view.getByTestId('chat-home-loading').textContent).toContain('Starting this conversation'),
-    );
+    expect(view.getByTestId('chat-user-body').textContent).toContain('Start something.');
+    expect(view.getByTestId('chat-turn-shell')).toBeTruthy();
+    expect(view.getByTestId('chat-thinking')).toBeTruthy();
     expect(view.queryByText(/New conversation — pick a mode/)).toBeNull();
     await act(async () => { release(); });
   });

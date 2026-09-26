@@ -119,6 +119,7 @@ import type {
   SpaceInviteView,
   UpdateMemberRoleInput,
   UpdateSpaceInput,
+  MembershipEndResult,
   ActivityItem,
   ArtifactPreviewSession,
   ArtifactsPreviewStartInput,
@@ -151,6 +152,7 @@ import type {
   CredentialsSpacePolicyView,
   NodeCredentialPolicyEntry,
   NodeCredentialsStatusView,
+  NodeMetricsView,
   SpaceCredentialProviderName,
   SpaceCredentialView,
   CredentialsServiceKeysStatusView,
@@ -311,6 +313,15 @@ export interface LivenessSnapshot {
    * avoid going.
    */
   eventHwm?: number | null;
+  /**
+   * Status strip. Live work sessions by BOTH truths (PTY map AND recorded
+   * status), live chats (`runtimeState === 'live'`), and the live chats with a
+   * turn running or queued. Exact server-side counts. `null` when the node
+   * predates the field — "unknown", never zero.
+   */
+  liveSessionCount?: number | null;
+  liveChatCount?: number | null;
+  workingChatCount?: number | null;
 }
 
 /**
@@ -988,6 +999,16 @@ export interface Seam {
       input: UpdateMemberRoleInput,
     ): Promise<CommandResult>;
     /**
+     * G6 (migration 231): END a membership. The row is tombstoned, not
+     * deleted — `left` or `removed` — so everything the member authored still
+     * renders under their name, with "(left)". Both are human-only, and every
+     * rule lives in SQL: `leaveSpace` refuses the last owner; `removeMember`
+     * needs an admin, needs an owner to remove an owner, and refuses yourself
+     * (leave instead). The mutation id is minted inside, like `ops`.
+     */
+    leaveSpace(spaceId: SpaceId): Promise<MembershipEndResult>;
+    removeMember(spaceId: SpaceId, memberId: EntityId): Promise<MembershipEndResult>;
+    /**
      * `spaces.update` (PATCH /v2/spaces/:spaceId). Absent keys are left alone
      * — the server forwards only the keys the body names — so a caller that
      * changes one sharing default cannot reset the other. The admin rule and
@@ -1264,6 +1285,14 @@ export interface Seam {
    * no space except when opening a terminal, so filing the read under
    * `commands` would have been the only alternative and a worse lie.
    */
+  /**
+   * `node.metrics.get` — host CPU / memory / load / disk / server RSS for the
+   * desktop status strip. NODE ADMIN ONLY: a non-admin (or space-pinned)
+   * session gets `forbidden`, which the strip reads as "hide host metrics".
+   * Optional so a seam that predates the strip still type-checks.
+   */
+  nodeMetrics?(): Promise<NodeMetricsView>;
+
   credentials: {
     /** The merged view + `gitCredentialStore`, its own completeness report. */
     status(): Promise<CredentialsStatusView>;

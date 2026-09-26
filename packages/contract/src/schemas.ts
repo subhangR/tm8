@@ -46,7 +46,7 @@ import type {
   AuthInviteSignupInput, AuthInviteSignupResult,
   AuthLoginInput, AuthLoginResult, AuthLogoutInput,
   AuthLogoutResult, AuthPasswordChangeInput, AuthPasswordChangeResult,
-  AuthSessionGetResult, AuthSessionView, AuthSignupInput,
+  AuthSessionGetResult, AuthSessionView, AuthSignupInput, AuthSpaceEnterInput, AuthSpaceEnterResult,
   AuthSignupResult, ChannelTab, ChatContextFrame, ChatTurnFrame, ChatTurnUsage,
   ClosedPromptPolicy, CollectionAddItemInput, CollectionGroup, CollectionQuery, CollectionResult,
   CommandContext, CommandErrorCode, CommandResult, CompleteTaskInput,
@@ -73,7 +73,7 @@ import type {
   CredentialsSpaceDeleteResult, CredentialsSpaceListView, CredentialsSpacePolicySetInput,
   CredentialsSpacePolicySetResult, CredentialsSpacePolicyView, CredentialsSpaceRekeyInput,
   CredentialsSpaceRenameInput, NodeCredentialPolicyEntry, NodeCredentialStatusEntry,
-  NodeCredentialsPolicySetInput, NodeCredentialsStatusView, SpaceCredentialPolicyEntry,
+  NodeCredentialsPolicySetInput, NodeCredentialsStatusView, NodeMetricsView, SpaceCredentialPolicyEntry,
   SpaceCredentialProviderName, SpaceCredentialShape, SpaceCredentialStatus, SpaceCredentialView,
   CustomEntityKind, CustomFieldDef, CustomFieldValue, DeleteMessageInput,
   DeliverySummary, EdgeCorrectionResult, EdgeGroup, EdgeView,
@@ -117,6 +117,7 @@ import type {
   ProjectFolderUploadEntry, ProjectFolderUploadFileGrant, ProjectFolderUploadGrant,
   ProjectFolderUploadInitInput, ProjectFolderUploadResult,
   ProjectLinkInput, ProjectResource,
+  SpaceProject, SpaceProjectCreateInput, GateFolder, GateFolderGrant, GateFolderCreateInput, GateFolderCreateResult,
   ProjectTrustLevel, ProjectUpdateInput, ProposeInteractionProfileInput,
   PullInput, PullState, ReactionInput, RemoveMessageAttachmentsInput,
   RetireInteractionProfileInput, SavedView, SavedViewInput, SendHandoffInput,
@@ -1839,6 +1840,7 @@ export const AuthSessionViewSchema: z.ZodType<AuthSessionView> = z.object({
   runtimeThreadRootId: z.string().uuid().nullable().optional(),
   runtimeChatId: z.string().uuid().nullable().optional(),
   label: z.string().nullable(),
+  spaceId: z.string().uuid().nullable().optional(),
   createdAt: IsoTimestamp.optional(),
   expiresAt: IsoTimestamp,
 }).strict();
@@ -1850,6 +1852,22 @@ export const AuthSignupResultSchema: z.ZodType<AuthSignupResult> = z.object({
 export const AuthLoginResultSchema: z.ZodType<AuthLoginResult> = z.object({
   token: z.string().min(1),
   account: AuthAccountViewSchema,
+  session: AuthSessionViewSchema,
+}).strict();
+
+/**
+ * `auth.space.enter`. Strict: the kind is inherited from the presenting session
+ * and the space is the only choice the caller makes, so a `kind` or `actorId`
+ * on the wire is a 400.
+ */
+export const AuthSpaceEnterInputSchema: z.ZodType<AuthSpaceEnterInput> = z.object({
+  spaceId: z.string().uuid(),
+  label: z.string().min(1).max(200).optional(),
+}).strict();
+
+export const AuthSpaceEnterResultSchema: z.ZodType<AuthSpaceEnterResult> = z.object({
+  token: z.string().min(1),
+  spaceId: z.string().uuid(),
   session: AuthSessionViewSchema,
 }).strict();
 
@@ -2196,6 +2214,25 @@ export const NodeCredentialStatusEntrySchema: z.ZodType<NodeCredentialStatusEntr
 
 export const NodeCredentialsStatusViewSchema: z.ZodType<NodeCredentialsStatusView> = z.object({
   providers: z.array(NodeCredentialStatusEntrySchema),
+}).strict();
+
+const ByteCount = z.number().int().nonnegative();
+
+export const NodeMetricsViewSchema: z.ZodType<NodeMetricsView> = z.object({
+  sampledAt: IsoTimestamp,
+  cpu: z.object({
+    percent: z.number().min(0).max(100).nullable(),
+    cores: z.number().int().nonnegative(),
+  }).strict(),
+  memory: z.object({ totalBytes: ByteCount, usedBytes: ByteCount }).strict(),
+  loadAverage: z.tuple([z.number(), z.number(), z.number()]).nullable(),
+  disk: z.object({ path: z.string().min(1), totalBytes: ByteCount, usedBytes: ByteCount }).strict().nullable(),
+  process: z.object({
+    rssBytes: ByteCount,
+    heapUsedBytes: ByteCount,
+    uptimeSeconds: z.number().nonnegative(),
+  }).strict(),
+  hostUptimeSeconds: z.number().nonnegative(),
 }).strict();
 
 export const NodeCredentialsPolicySetInputSchema: z.ZodType<NodeCredentialsPolicySetInput> = z.object({
@@ -2874,7 +2911,9 @@ export const ProjectResourceSchema: z.ZodType<ProjectResource> = z.object({
   id: ProjectIdSchema,
   name: z.string(),
   repoUrl: z.string().nullable().optional(),
-  workingDir: z.string(),
+  workingDir: z.string().optional(),
+  projectEntityId: EntityIdSchema.nullable().optional(),
+  spaceId: SpaceIdSchema.nullable().optional(),
   trust: ProjectTrustLevelSchema,
   defaults: ProjectDefaultsSchema,
   linkFrozen: z.boolean().optional(),
@@ -2997,7 +3036,7 @@ export const ProjectBranchSchema: z.ZodType<ProjectBranch> = z.object({
 
 export const ProjectBranchTopologySchema: z.ZodType<ProjectBranchTopology> = z.object({
   projectId: ProjectIdSchema,
-  workingDir: z.string().min(1),
+  workingDir: z.string().min(1).optional(),
   defaultBranch: z.string().min(1),
   defaultBranchSource: z.enum(['origin_head', 'local_conventional', 'current_branch']),
   branches: z.array(ProjectBranchSchema),
@@ -3034,7 +3073,7 @@ export const ProjectRevisionDiffSchema: z.ZodType<ProjectRevisionDiff> = z.objec
 
 export const ProjectFileHistorySchema: z.ZodType<ProjectFileHistory> = z.object({
   projectId: ProjectIdSchema,
-  workingDir: z.string().min(1),
+  workingDir: z.string().min(1).optional(),
   path: z.string().min(1),
   revisions: z.array(ProjectFileRevisionSchema),
   truncated: z.boolean(),
@@ -3054,7 +3093,7 @@ export const ProjectBlameHunkSchema: z.ZodType<ProjectBlameHunk> = z.object({
 
 export const ProjectFileBlameSchema: z.ZodType<ProjectFileBlame> = z.object({
   projectId: ProjectIdSchema,
-  workingDir: z.string().min(1),
+  workingDir: z.string().min(1).optional(),
   path: z.string().min(1),
   hunks: z.array(ProjectBlameHunkSchema),
   blamedLines: z.number().int().nonnegative(),
@@ -3130,6 +3169,62 @@ export const ProjectUpdateInputSchema: z.ZodType<ProjectUpdateInput> = z.object(
 export const ProjectLinkInputSchema: z.ZodType<ProjectLinkInput> = z.object({
   ...commandContextShape,
   projectId: ProjectIdSchema,
+}).strict();
+
+// W11 (migration 234): space-owned projects over gate-owned folders.
+export const SpaceProjectSchema: z.ZodType<SpaceProject> = z.object({
+  id: EntityIdSchema,
+  spaceId: SpaceIdSchema,
+  folderId: ProjectIdSchema,
+  name: z.string(),
+  repoUrl: z.string().nullable().optional(),
+  trust: ProjectTrustLevelSchema,
+  defaults: ProjectDefaultsSchema,
+  materializedVersion: z.number().int().nonnegative(),
+  createdAt: IsoTimestamp,
+  updatedAt: IsoTimestamp,
+}).strict();
+
+export const SpaceProjectCreateInputSchema: z.ZodType<SpaceProjectCreateInput> = z.object({
+  ...commandContextShape,
+  folderId: ProjectIdSchema,
+  name: z.string().trim().min(1).max(200).optional(),
+}).strict();
+
+export const GateFolderGrantSchema: z.ZodType<GateFolderGrant> = z.object({
+  spaceId: SpaceIdSchema,
+  spaceName: z.string(),
+  projectId: EntityIdSchema.nullable(),
+  grantedBy: z.string().nullable(),
+  grantedAt: IsoTimestamp,
+}).strict();
+
+export const GateFolderSchema: z.ZodType<GateFolder> = z.object({
+  id: ProjectIdSchema,
+  name: z.string(),
+  workingDir: z.string(),
+  repoUrl: z.string().nullable().optional(),
+  trust: ProjectTrustLevelSchema,
+  defaults: ProjectDefaultsSchema,
+  grants: z.array(GateFolderGrantSchema),
+  createdAt: IsoTimestamp,
+  updatedAt: IsoTimestamp,
+}).strict();
+
+export const GateFolderCreateInputSchema: z.ZodType<GateFolderCreateInput> = z.object({
+  ...commandContextShape,
+  name: z.string().min(1),
+  workingDir: z.string().min(1),
+  repoUrl: z.string().nullable().optional(),
+  trust: ProjectTrustLevelSchema.optional(),
+  defaults: ProjectDefaultsSchema.optional(),
+  spaceId: SpaceIdSchema.optional(),
+  ensureWorkingDir: z.boolean().optional(),
+}).strict();
+
+export const GateFolderCreateResultSchema: z.ZodType<GateFolderCreateResult> = z.object({
+  folder: GateFolderSchema,
+  created: z.boolean(),
 }).strict();
 
 export const CorrectProjectAssociationInputSchema: z.ZodType<CorrectProjectAssociationInput> = z.object({
@@ -3537,6 +3632,10 @@ export const ExecutionLivenessSchema: z.ZodType<ExecutionLiveness> = z.object({
   // this read has to be able to give, and an absent field is the shape a
   // consumer reads as zero — which means "replay the entire retained log".
   eventHwm: z.number().int().nonnegative().nullable(),
+  // Optional: an older node omits it, which a consumer reads as "unknown".
+  liveSessionCount: z.number().int().nonnegative().optional(),
+  liveChatCount: z.number().int().nonnegative().optional(),
+  workingChatCount: z.number().int().nonnegative().optional(),
 }).strict();
 
 /**

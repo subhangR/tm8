@@ -352,7 +352,7 @@ async function loadEnrichments(q: Querier, ids: readonly string[]): Promise<Map<
               when e.kind = 'interaction_profile' then to_jsonb(profile) - 'entity_id'
               else '{}'::jsonb
             end content,
-            project_resource.name project_name, project_resource.repo_url project_repo_url,
+            project_detail.name project_name, project_detail.repo_url project_repo_url,
             profile_version.draft_json profile_draft
        from public.entities e
        left join public.custom_entities custom_detail on custom_detail.entity_id = e.id
@@ -360,7 +360,6 @@ async function loadEnrichments(q: Querier, ids: readonly string[]): Promise<Map<
        left join public.pull_requests pr_detail on pr_detail.entity_id = e.id
        left join public.commits commit_detail on commit_detail.entity_id = e.id
        left join public.project_projection_details project_detail on project_detail.entity_id = e.id
-       left join public.projects project_resource on project_resource.id = project_detail.project_id
        left join public.interaction_profiles profile on profile.entity_id = e.id
        left join public.interaction_profile_versions profile_version
          on profile_version.profile_id = profile.entity_id

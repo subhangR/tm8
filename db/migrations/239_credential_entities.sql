@@ -1,9 +1,9 @@
 -- =============================================================================
--- 996 (PLACEHOLDER NUMBER) — credential entities, W10a (task 01a0d9fd, doc 13
+-- 239 — credential entities, W10a (task 01a0d9fd, doc 13
 -- 01a0da24 §4/§7, threat review 01a0db1c Part 2).
 --
--- The merge coordinator assigns the real number at handover (239 for this
--- file; W10 order a, c, b); it is renamed then and the sweep.test.ts pin bumped.
+-- Placeholder 996 until handover, when it took its assigned number 239 (W10
+-- order a, c, b); the sweep.test.ts pin was re-measured at that merge.
 --
 -- A 206 space credential becomes a graph entity of the RESTRICTED kind
 -- `credential`, same id as its side-table row. The card (entity) is visible to
