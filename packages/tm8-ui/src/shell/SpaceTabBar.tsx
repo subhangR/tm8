@@ -7,9 +7,10 @@
  * row for one segmented pill (`viewTabs`) that leads the centre zone; Craft,
  * Settings and Help follow as plain tabs. The partition is the HOST's, by
  * group id, client-side — no MenuConfig change. Below a container width the
- * pill folds into a `<select>` (see rungs 5–6 in `shell.css`). The pill's
- * segments stay `role="tab"` inside the one "Screens" tablist, so every tab
- * query still finds all seven destinations in one row.
+ * pill folds into a `<select>` (see rungs 5–6 in `shell.css`). While the pill
+ * shows, its segments are `role="tab"` inside the one "Screens" tablist, so
+ * all seven destinations read as one row. Folded, the tablist holds only the
+ * plain tabs and the four views are the separate "View" combobox beside it.
  *
  * REVISION 21 (task 01a07a56, owner-ordered 2026-09-07). THE ROW IS A GRID.
  *

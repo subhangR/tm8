@@ -346,34 +346,6 @@ describe('THE GATE — composed T0-1 master screen', () => {
     }
   });
 
-  // The Graph door is the screens TAB now that no rail is drawn; the screen
-  // and its data path are unchanged.
-  /**
-   * THE CANVAS OPENS ON A 24-HOUR WINDOW, AND THE FIXTURES ARE OLDER THAN THAT.
-   *
-   * This is why the test was red, and it is a latent time bomb rather than a
-   * graph defect — it could only ever have passed on the day it was written:
-   *
-   *   · `DEFAULT_WINDOW` is `'24h'` (graph/model.ts:81);
-   *   · `loadGraph` turns that into `activeSince = Date.now() - 24h` using WALL
-   *     TIME (useGateData.ts:963) — the browser's clock, not the fixture's;
-   *   · every fixture entity is stamped `FIXTURE_NOW`, a FROZEN
-   *     '2026-07-28T12:00:00.000Z' (fixtures/entities.ts:33);
-   *   · and the fixture query drops anything older than the filter —
-   *     `if (f?.activeSince && s.activityAt < f.activeSince) return false;`
-   *     (seam-fixture.ts:1906).
-   *
-   * So from the second day of this fixture's life onward, every node is
-   * filtered out before the canvas ever sees it, and the screen honestly
-   * renders nothing. Note this is NOT the lens: 'Everything' seeds relevance,
-   * and clicking it changes nothing here — the WINDOW is a separate control
-   * ('Graph time window', GraphView.tsx:712), which is the one that was
-   * excluding the data.
-   *
-   * The test now stands in 'All time' — "every entity this session has loaded,
-   * however old", which is exactly the affordance for data this age. That also
-   * makes it time-independent: it will not rot again as the fixture recedes.
-   */
   /**
    * THE VIEW SWITCHER'S FOLDED FORM (task 01a0dc6d). Below a container width
    * `shell.css` hides the pill and shows this `<select>`; jsdom loads no
@@ -408,6 +380,34 @@ describe('THE GATE — composed T0-1 master screen', () => {
     }
   });
 
+  // The Graph door is the screens TAB now that no rail is drawn; the screen
+  // and its data path are unchanged.
+  /**
+   * THE CANVAS OPENS ON A 24-HOUR WINDOW, AND THE FIXTURES ARE OLDER THAN THAT.
+   *
+   * This is why the test was red, and it is a latent time bomb rather than a
+   * graph defect — it could only ever have passed on the day it was written:
+   *
+   *   · `DEFAULT_WINDOW` is `'24h'` (graph/model.ts:81);
+   *   · `loadGraph` turns that into `activeSince = Date.now() - 24h` using WALL
+   *     TIME (useGateData.ts:963) — the browser's clock, not the fixture's;
+   *   · every fixture entity is stamped `FIXTURE_NOW`, a FROZEN
+   *     '2026-07-28T12:00:00.000Z' (fixtures/entities.ts:33);
+   *   · and the fixture query drops anything older than the filter —
+   *     `if (f?.activeSince && s.activityAt < f.activeSince) return false;`
+   *     (seam-fixture.ts:1906).
+   *
+   * So from the second day of this fixture's life onward, every node is
+   * filtered out before the canvas ever sees it, and the screen honestly
+   * renders nothing. Note this is NOT the lens: 'Everything' seeds relevance,
+   * and clicking it changes nothing here — the WINDOW is a separate control
+   * ('Graph time window', GraphView.tsx:712), which is the one that was
+   * excluding the data.
+   *
+   * The test now stands in 'All time' — "every entity this session has loaded,
+   * however old", which is exactly the affordance for data this age. That also
+   * makes it time-independent: it will not rot again as the fixture recedes.
+   */
   it('opens Graph from the tab row with workspace data from the active seam', async () => {
     const resizeObserver = globalThis.ResizeObserver;
     globalThis.ResizeObserver = class {

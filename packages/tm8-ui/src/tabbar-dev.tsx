@@ -31,6 +31,22 @@ const TABS: ShellTab[] = [
   { id: 'settings', label: 'Settings' },
   { id: 'help', label: 'Help' },
 ];
+/* A static stand-in for `SpaceSwitcher`'s trigger, carrying its REAL class
+   names so rung 4 (monogram-only at 820) fires here as it does in the app. A
+   bare span would leave the lead zone wider than production at narrow widths
+   and understate the fold margin. */
+const SWITCHER = (
+  <div className="shell-switcher">
+    <button type="button" className="shell-switcher__trigger">
+      <span className="shell-switcher__monogram" aria-hidden="true">M</span>
+      <span className="shell-switcher__names">
+        <span className="shell-switcher__space">My space</span>
+        <span className="shell-switcher__server-line">tm8</span>
+      </span>
+      <span className="shell-switcher__caret" aria-hidden="true">▸</span>
+    </button>
+  </div>
+);
 const WIDTHS = [1400, 1100, 900, 800, 760, 720, 680, 640, 600, 560];
 
 function Row({ width }: { width: number }) {
@@ -61,7 +77,7 @@ function Row({ width }: { width: number }) {
       </div>
       <div ref={ref} style={{ width, border: '1px dashed #bbb' }}>
         <SpaceTabBar
-          switcherSlot={<span style={{ font: '12px system-ui', padding: '0 8px' }}>tm8 · My space ▾</span>}
+          switcherSlot={SWITCHER}
           viewTabs={VIEWS}
           tabs={TABS}
           activeTabId={active}
