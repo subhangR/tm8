@@ -39,6 +39,16 @@ export interface RemoteServerProxy {
 
 const HUMAN_AUTH_KINDS: ReadonlySet<string> = new Set(['browser', 'cli']);
 
+/**
+ * A revoked or expired LOCAL token with no cookie beside it. It is never
+ * forwarded either way. 'drop': the caller is whatever the request is without
+ * it (the loopback auto-owner, or anonymous -> 401), as if no header had been
+ * sent. 'refuse': 401, as every other route answers a dead credential.
+ * PENDING a trust ruling (task 01a0da1f); flipping it is this one line plus the
+ * T26 cell named 'DEAD-LOCAL-NO-COOKIE'.
+ */
+const DEAD_LOCAL_TOKEN_WITHOUT_COOKIE: 'drop' | 'refuse' = 'drop';
+
 function isUnauthenticated(error: unknown): boolean {
   return error instanceof CollabError && error.code === 'unauthenticated';
 }
@@ -101,9 +111,11 @@ export async function resolveRelayCaller(
       caller = { identity, forwardAuthorization: identity.kind !== 'bearer' };
     } catch (error) {
       if (!isUnauthenticated(error)) throw error;
+      const ours = (await issuedHere?.(presented)) === true;
+      if (ours && DEAD_LOCAL_TOKEN_WITHOUT_COOKIE === 'refuse') throw error;
       caller = {
         identity: await resolveIdentity(withoutAuthorization, context),
-        forwardAuthorization: !(await issuedHere?.(presented)),
+        forwardAuthorization: !ours,
       };
     }
   } else {

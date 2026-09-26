@@ -1030,7 +1030,13 @@ describe('T26 relay — dispatch after resolveIdentity, human session required',
     expect(JSON.stringify(seen).includes(other)).toBe(false);
   });
 
-  it('auto-owner on, no cookie: a revoked LOCAL token is NOT forwarded', async () => {
+  /**
+   * DEAD-LOCAL-NO-COOKIE — pins remote-proxy.ts `DEAD_LOCAL_TOKEN_WITHOUT_COOKIE`
+   * = 'drop': the token is dropped and the request continues as the auto-owner.
+   * If the ruling is 'refuse', flip this cell to `status` 401 and `seen`
+   * undefined.
+   */
+  it('DEAD-LOCAL-NO-COOKIE: auto-owner on, no cookie, a revoked LOCAL token is dropped (not forwarded), request continues as owner', async () => {
     const dead = await mintCli(fixture.accountH, fixture.identityH);
     await revoke(dead);
     const { status, seen } = await relay(bearer(dead), ownerRelayServer);
