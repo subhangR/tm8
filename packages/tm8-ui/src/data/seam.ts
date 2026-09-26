@@ -119,6 +119,7 @@ import type {
   SpaceInviteView,
   UpdateMemberRoleInput,
   UpdateSpaceInput,
+  MembershipEndResult,
   ActivityItem,
   ArtifactPreviewSession,
   ArtifactsPreviewStartInput,
@@ -987,6 +988,16 @@ export interface Seam {
       memberId: EntityId,
       input: UpdateMemberRoleInput,
     ): Promise<CommandResult>;
+    /**
+     * G6 (migration 231): END a membership. The row is tombstoned, not
+     * deleted — `left` or `removed` — so everything the member authored still
+     * renders under their name, with "(left)". Both are human-only, and every
+     * rule lives in SQL: `leaveSpace` refuses the last owner; `removeMember`
+     * needs an admin, needs an owner to remove an owner, and refuses yourself
+     * (leave instead). The mutation id is minted inside, like `ops`.
+     */
+    leaveSpace(spaceId: SpaceId): Promise<MembershipEndResult>;
+    removeMember(spaceId: SpaceId, memberId: EntityId): Promise<MembershipEndResult>;
     /**
      * `spaces.update` (PATCH /v2/spaces/:spaceId). Absent keys are left alone
      * — the server forwards only the keys the body names — so a caller that

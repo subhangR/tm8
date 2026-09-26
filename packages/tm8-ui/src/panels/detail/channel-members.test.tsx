@@ -147,6 +147,44 @@ describe('a channel has members, and they are an edge', () => {
     expect(h.onAssign).toHaveBeenCalledWith(CHANNEL.id, ADA.id, 'has_member', false);
   });
 
+  it('a member who LEFT stays on the roster as "(left)", and can still be taken off', () => {
+    // G6 decision: `has_member` edges survive the membership ending (display-
+    // only). The space roster (`assignableActors`) is active members only, so
+    // Ada is not in it — she must still show, suffixed, and still be removable.
+    const leftAda = { ...ADA, memberStatus: 'left' as const };
+    const detail: EntityDetail = {
+      ...CHANNEL,
+      state: { ...CHANNEL.state, members: [leftAda, FORGE] },
+    } as EntityDetail;
+    const h = host({ assignableActors: [NOOR, FORGE] });
+    const { getByTestId, getByRole } = render(
+      <EntityDetailPanel detail={detail} reasons={REASONS} ctx={ctx} controls={h} />,
+    );
+
+    expect(getByTestId('row-assign-trigger').textContent).toContain(`${ADA.displayName} (left) +1`);
+    fireEvent.click(getByTestId('row-assign-trigger'));
+    const option = getByRole('button', { name: new RegExp(`${ADA.displayName} \\(left\\)`) });
+    expect(option.getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(option);
+    expect(h.onAssign).toHaveBeenCalledWith(CHANNEL.id, ADA.id, 'has_member', false);
+  });
+
+  it('an ended member is offered for REMOVAL only — never as an add', () => {
+    // Noor has left and is not on the channel. Even if a roster still carries
+    // her (a stale load), the picker must not offer the add: `has_member` for
+    // an ended member is display-only, and the node may not refuse the write.
+    const leftNoor = { ...NOOR, memberStatus: 'removed' as const };
+    const h = host({ assignableActors: [ADA, leftNoor, FORGE] });
+    const { getByTestId, queryByRole, getAllByTestId } = panel(h);
+
+    fireEvent.click(getByTestId('row-assign-trigger'));
+    expect(queryByRole('button', { name: new RegExp(NOOR.displayName) })).toBeNull();
+    expect(getAllByTestId('row-assign-option').map((b) => b.getAttribute('data-actor'))).toEqual([
+      ADA.id, FORGE.id,
+    ]);
+    expect(h.onAssign).not.toHaveBeenCalled();
+  });
+
   it('and STILL no state and no priority — items 1 and 5 stay fixed', () => {
     const { queryByTestId } = panel(host());
     expect(queryByTestId('row-state-select')).toBeNull();

@@ -96,33 +96,25 @@ export const ROLE_CHANGE_NEEDS_OWNER = reason(
 );
 
 /**
- * STILL REFUSED, and 109's investigation upgraded the reason from a ruling to
- * a measured fact.
- *
- * The old text said `deleteEntity` exists and would accept a member id, and
- * that wiring it would invent a semantic on a destructive path. Both still
- * true, and now there is a harder reason underneath: `entities.created_by`
- * references `entities(id)` with NO on-delete clause
- * (`001_core_graph.sql:338`), so **Postgres already refuses** to delete the
- * member row of anyone who has authored a single entity — it refuses with a
- * bare 23503, which is not an answer a person can act on.
- *
- * The correct shape is a SOFT removal (`members.removed_at`) that keeps
- * attribution and revokes access. That is its own change: 57 `from
- * public.members` predicates across 23 migrations currently mean "is a member"
- * by the row's mere existence, and six of them are RLS policies. Doing half of
- * it leaves a removed member still reading the space, which is worse than not
- * having the button.
+ * Removal is REAL since G6 (migration 231): `remove_space_member` tombstones
+ * the row, so attribution survives. These are the two cases SQL refuses that
+ * the table can know before the click — the viewer is not an admin, or the
+ * row is an owner and the viewer is not one.
  */
-export const MEMBER_REMOVE_UNAVAILABLE = reason(
-  'Removing a member has no executor in this build',
-  'a member row is the attribution target of everything they authored, so it cannot be deleted — removal needs a soft-removal column and an audit of every membership predicate in the schema (migration 118 header). Demote them to member in the meantime.',
+export const MEMBER_REMOVE_NOT_ADMIN = reason(
+  'you can’t remove members in this space',
+  'removing a member needs admin or owner here; ask someone who has it.',
+);
+
+export const MEMBER_REMOVE_OWNER_LOCKED = reason(
+  'only an owner can remove an owner',
+  'ask an owner, or have them step down to admin first.',
 );
 
 /** The oracle's own locked control (T2-1 L54): "you can't remove yourself". */
 export const MEMBER_REMOVE_SELF = reason(
   'you can’t remove yourself',
-  'transfer ownership first, from Danger zone',
+  'to go, leave the space from Danger zone',
 );
 
 /**
@@ -255,7 +247,8 @@ export const ALL_SETTINGS_REASONS: readonly UnavailableReason[] = [
   MENU_NO_FREE_KIND_REF,
   ROLE_CHANGE_NOT_ADMIN,
   ROLE_CHANGE_NEEDS_OWNER,
-  MEMBER_REMOVE_UNAVAILABLE,
+  MEMBER_REMOVE_NOT_ADMIN,
+  MEMBER_REMOVE_OWNER_LOCKED,
   MEMBER_REMOVE_SELF,
   OWNER_ROLE_LOCKED,
   INVITE_CREATE_NOT_ADMIN,
