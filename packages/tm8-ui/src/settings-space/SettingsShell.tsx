@@ -53,13 +53,6 @@ export function SettingsShell({
   onLeftSpace,
 }: SettingsShellProps) {
   const [active, setActive] = useState<SettingsSectionId>(initialSection);
-  /**
-   * Members whose membership this shell ENDED (G6). The server tombstones the
-   * row rather than deleting it, and the member entity is still readable — so
-   * the re-read alone could bring the row back. The remove's own answer
-   * (`status: removed` for that `memberId`) is the authority for dropping it.
-   */
-  const [ended, setEnded] = useState<ReadonlySet<string>>(() => new Set());
   const [data, setData] = useState<SettingsData>({
     space: null,
     members: [],
@@ -238,11 +231,6 @@ export function SettingsShell({
             port={port}
             onProfileSaved={refreshIdentity}
             onMembersChanged={refreshMembers}
-            ended={ended}
-            onMemberEnded={(memberId) => {
-              setEnded((prev) => new Set(prev).add(memberId));
-              refreshMembers();
-            }}
             {...(onLeftSpace ? { onLeftSpace } : {})}
             onInvitesChanged={refreshInvites}
             onSpaceWritten={spaceWritten}
@@ -264,8 +252,6 @@ function SectionBody({
   port,
   onProfileSaved,
   onMembersChanged,
-  ended,
-  onMemberEnded,
   onLeftSpace,
   onInvitesChanged,
   onSpaceWritten,
@@ -280,8 +266,6 @@ function SectionBody({
   port: SettingsShellProps['port'];
   onProfileSaved: () => void;
   onMembersChanged: () => void;
-  ended: ReadonlySet<string>;
-  onMemberEnded: (memberId: string) => void;
   onLeftSpace?: SettingsShellProps['onLeftSpace'];
   onInvitesChanged: () => void;
   onSpaceWritten: (space: SpaceSummary) => void;
@@ -298,7 +282,7 @@ function SectionBody({
     case 'members':
       return (
         <MembersSection
-          members={data.members.filter((m) => !ended.has(m.id))}
+          members={data.members}
           identity={data.identity}
           onInvite={() => onGo('invites')}
           onRoleChange={async (memberId, role) => {
@@ -313,8 +297,10 @@ function SectionBody({
             ? {
                 onRemove: async (memberId: string) => {
                   // Not caught, as above: the confirmation prints the refusal.
-                  const result = await port.removeMember!(memberId);
-                  onMemberEnded(result.memberId);
+                  // No local hide set: the entities query stops listing an
+                  // ended member (G6, #841), so the re-read is the authority.
+                  await port.removeMember!(memberId);
+                  onMembersChanged();
                 },
               }
             : {})}

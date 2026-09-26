@@ -1728,9 +1728,12 @@ export function createFixtureSeam(): FixtureSeam {
   }
 
   /**
-   * G6 (231): member rows whose membership ENDED. The summary stays exactly
-   * where it was — a node keeps the row so authorship still resolves, and its
-   * entity query still returns it — but it is no longer a member for any rule.
+   * G6 (232): member rows whose membership ENDED. The summary stays exactly
+   * where it was — a node keeps the row so authorship still resolves — and it
+   * still resolves BY ID with `state.memberStatus` set, but the entities query
+   * no longer lists it (#841, 00c0db5e) and it is no longer a member for any
+   * rule. (The node also drops personas of ended owners from the listing; the
+   * fixture's personas are not owned by a member row, so there is none to drop.)
    */
   const endedMembers = new Map<EntityId, MembershipEndStatus>();
 
@@ -1753,6 +1756,7 @@ export function createFixtureSeam(): FixtureSeam {
     status: MembershipEndStatus,
   ): MembershipEndResult {
     endedMembers.set(target.id, status);
+    if (target.state.kind === 'member') target.state = { ...target.state, memberStatus: status };
     spaceSummary.memberCount = Math.max(0, spaceSummary.memberCount - 1);
     touch(target);
     emit(spaceId, { type: 'entity.upsert', entity: clone(target) });
@@ -2626,6 +2630,8 @@ export function createFixtureSeam(): FixtureSeam {
            production defect in miniature: the live node's session list read
            "To Do 1" over an empty tab. */
         if ((s.state as { sessionKind?: unknown }).sessionKind === 'credential') return false;
+        /* G6 (#841): an ended member is not LISTED — by id it still resolves. */
+        if (endedMembers.has(s.id)) return false;
         const f = input.filters;
         /* Empty lists are NO constraint — the server guards every arm with
            `length > 0` (collections.ts), so `priority: []` must not read as

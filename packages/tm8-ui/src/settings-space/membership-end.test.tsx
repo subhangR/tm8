@@ -54,6 +54,21 @@ describe('Remove — members screen', () => {
     await expect(seam.commands.removeMember(spaceId, 'ent-member-noor')).rejects.toThrow(/not found/);
   });
 
+  it('a RELOAD does not bring the removed member back — the listing is the authority, not a local hide set', async () => {
+    // #841 (00c0db5e): the entities query drops an ended member, and by id the
+    // row still resolves with `state.memberStatus`. A fresh shell over the
+    // same seam is the reload: nothing in it remembers the remove.
+    const { seam, port } = await setup();
+    await port.removeMember!('ent-member-noor');
+
+    render(<SettingsShell port={port} initialSection="members" />);
+    await waitFor(() => expect(rowFor('Ada')).toBeTruthy());
+    expect(rowFor('Noor')).toBeUndefined();
+
+    const detail = await seam.entity('ent-member-noor');
+    expect(detail.state).toMatchObject({ kind: 'member', memberStatus: 'removed' });
+  });
+
   it('Cancel writes nothing and keeps the row', async () => {
     const { port } = await setup();
     const removeMember = vi.spyOn(port, 'removeMember');
