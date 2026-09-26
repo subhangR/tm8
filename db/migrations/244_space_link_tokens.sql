@@ -637,3 +637,6 @@ revoke all on function public.mark_space_link_stale(uuid, text) from public;
 grant execute on function public.mark_space_link_stale(uuid, text) to tm8_app;
 
 reset role;
+
+-- Never-analyzed tables are estimated at 10 pages (225); 229's precedent.
+analyze public.space_link_tokens;

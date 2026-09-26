@@ -85,8 +85,11 @@ create index space_links_target_idx on public.space_links(target_space_id);
 
 alter table public.space_links enable row level security;
 
+-- 218's shape, not `internal.entity_readable(entity_id)`: an exists over
+-- `entities_select`, so membership resolves once per statement; `offset 0`
+-- keeps it a per-row pkey probe (218 §4).
 create policy space_links_select on public.space_links for select to tm8_app
-  using (internal.entity_readable(entity_id));
+  using ((exists (select 1 from public.entities readable_entity where readable_entity.id = space_links.entity_id and readable_entity.deleted_at is null offset 0)));
 
 grant select on public.space_links to tm8_app;
 
@@ -94,4 +97,67 @@ comment on table public.space_links is
   'W6 (243): the shared space_link entity''s detail row. Holds no secret: the '
   'per-member sealed token is public.space_link_tokens (244).';
 
+
+-- -----------------------------------------------------------------------------
+-- 4. Content hydration. SHARED OBJECT: body copied from 209 verbatim; the
+--    `space_link` arm is the only addition. `server` gets no arm: it has no
+--    detail table in W6 and resolves to '{}' through `else` (W8 adds its row),
+--    recorded in entity-content-all-kinds' NO_CONTENT_ARM.
+-- -----------------------------------------------------------------------------
+create or replace function internal.entity_content(target uuid)
+returns jsonb language plpgsql stable set search_path = public, internal, pg_temp as $$
+declare e public.entities; content jsonb;
+begin
+  select * into e from public.entities where id = target;
+  if e.id is null then return null; end if;
+  if e.kind like 'c:%' then
+    select jsonb_build_object('title', c.title, 'fields', c.fields) into content
+      from public.custom_entities c where c.entity_id = target;
+  else
+    case e.kind
+      when 'task' then select to_jsonb(t) - 'entity_id' into content from public.tasks t where t.entity_id = target;
+      when 'doc' then select to_jsonb(d) - 'entity_id' into content from public.documents d where d.entity_id = target;
+      when 'spell' then select to_jsonb(s) - 'entity_id' into content from public.spells s where s.entity_id = target;
+      when 'skill' then select to_jsonb(s) - 'entity_id' into content from public.skills s where s.entity_id = target;
+      when 'team_member' then select to_jsonb(t) - 'entity_id' into content from public.team_members t where t.entity_id = target;
+      when 'collection' then select to_jsonb(c) - 'entity_id' into content from public.collections c where c.entity_id = target;
+      when 'channel' then select to_jsonb(c) - 'entity_id' into content from public.channels c where c.entity_id = target;
+      when 'voice_channel' then select to_jsonb(v) - 'entity_id' into content from public.voice_channels v where v.entity_id = target;
+      when 'artifact' then select to_jsonb(a) - 'entity_id' into content from public.artifacts a where a.entity_id = target;
+      when 'memory' then select to_jsonb(m) - 'entity_id' into content from public.memories m where m.entity_id = target;
+      when 'worktree' then select to_jsonb(w) - 'entity_id' into content from public.worktrees w where w.entity_id = target;
+      when 'loop' then select to_jsonb(l) - 'entity_id' into content from public.loops l where l.entity_id = target;
+      when 'graph' then select to_jsonb(g) - 'entity_id' into content from public.graphs g where g.entity_id = target;
+      when 'chat' then select to_jsonb(c) - 'entity_id' - 'cwd' - 'native_session_id' - 'client_mutation_id'
+                       into content from public.chats c where c.entity_id = target;
+      when 'file' then select to_jsonb(f) - 'entity_id' into content from public.files f where f.entity_id = target;
+      when 'message' then select to_jsonb(m) - 'entity_id' into content from public.messages m where m.entity_id = target;
+      when 'work_session' then select to_jsonb(ws) - 'entity_id' into content from public.work_sessions ws where ws.entity_id = target;
+      when 'member' then select to_jsonb(mem) - 'entity_id' into content from public.members mem where mem.entity_id = target;
+      when 'pull_request' then select to_jsonb(pr) - 'entity_id' into content from public.pull_requests pr where pr.entity_id = target;
+      when 'commit' then select to_jsonb(cm) - 'entity_id' into content from public.commits cm where cm.entity_id = target;
+      when 'project' then select to_jsonb(p) - 'entity_id' into content from public.project_projection_details p where p.entity_id = target;
+      when 'interaction_profile' then select to_jsonb(p) - 'entity_id' into content from public.interaction_profiles p where p.entity_id = target;
+      when 'container' then select to_jsonb(c) - 'entity_id' - 'runtime_ref' - 'host_spec'
+                              into content from public.containers c where c.entity_id = target;
+      when 'drawing' then select to_jsonb(d) - 'entity_id' into content from public.drawings d where d.entity_id = target;
+      -- `-` binds tighter than `||`: the entity_id is dropped, THEN the
+      -- ordered sections and questions are merged in.
+      when 'form' then select to_jsonb(fm) - 'entity_id'
+                              || jsonb_build_object('sections', internal.form_sections_json(target),
+                                                    'questions', internal.form_questions_json(target))
+                         into content from public.forms fm where fm.entity_id = target;
+      -- 243 (W6): the shared link's metadata. `space_links` holds no secret; the
+      -- sealed per-member token is `space_link_tokens` (244) and has no arm.
+      when 'space_link' then select to_jsonb(sl) - 'entity_id' into content from public.space_links sl where sl.entity_id = target;
+      else content := '{}'::jsonb;
+    end case;
+  end if;
+  return coalesce(content, '{}'::jsonb);
+end
+$$;
+
 reset role;
+
+-- Never-analyzed tables are estimated at 10 pages (225); 229's precedent.
+analyze public.space_links;
