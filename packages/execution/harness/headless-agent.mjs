@@ -3,7 +3,7 @@
 // harness (not a mock): adapter tests exercise real pipes, signals, exits and
 // argv construction without spending subscription tokens.
 
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 
 const args = process.argv.slice(2);
@@ -44,12 +44,47 @@ const input = createInterface({ input: process.stdin, crlfDelay: Infinity });
 let turn = 0;
 let hanging = false;
 
+// Recorded stream shapes, keyed by turn text: `{ "<text>": [event, ...] }`.
+// A matching turn replays its events verbatim after `init` (see test/fixtures).
+const fixture = process.env.TM8_FAKE_STREAM_FIXTURE
+  ? JSON.parse(readFileSync(process.env.TM8_FAKE_STREAM_FIXTURE, 'utf8'))
+  : {};
+
+// Real Claude's `modelUsage` and `total_cost_usd` are RUNNING TOTALS for the
+// process (measured, 2.1.280), and a `--resume`d process starts from the
+// session's earlier totals. TM8_FAKE_RESUMED_TOTALS seeds that restore.
+const running = {
+  inputTokens: 0,
+  outputTokens: 0,
+  cacheCreationInputTokens: 0,
+  cacheReadInputTokens: 0,
+  cost: 0,
+  ...(process.env.TM8_FAKE_RESUMED_TOTALS ? JSON.parse(process.env.TM8_FAKE_RESUMED_TOTALS) : {}),
+};
+const spend = (turnUsage, cost) => {
+  running.inputTokens += turnUsage.inputTokens ?? 0;
+  running.outputTokens += turnUsage.outputTokens ?? 0;
+  running.cacheCreationInputTokens += turnUsage.cacheCreationInputTokens ?? 0;
+  running.cacheReadInputTokens += turnUsage.cacheReadInputTokens ?? 0;
+  running.cost = Math.round((running.cost + cost) * 1e9) / 1e9;
+};
+const modelUsage = () => ({
+  'fake-model': {
+    inputTokens: running.inputTokens,
+    outputTokens: running.outputTokens,
+    cacheCreationInputTokens: running.cacheCreationInputTokens,
+    cacheReadInputTokens: running.cacheReadInputTokens,
+    costUSD: 999,
+  },
+});
+
 process.on('SIGINT', () => {
   if (!hanging) {
     process.exit(0);
     return;
   }
   hanging = false;
+  spend({ inputTokens: 532, outputTokens: 17 }, 0.000617);
   send({
     type: 'user',
     message: {
@@ -69,17 +104,10 @@ process.on('SIGINT', () => {
     is_error: true,
     result: 'Request interrupted by user',
     terminal_reason: 'aborted_streaming',
+    // The misleading abort shape: top-level usage zeroed, running totals real.
     usage: { input_tokens: 0, output_tokens: 0 },
-    modelUsage: {
-      'fake-model': {
-        inputTokens: 532,
-        outputTokens: 17,
-        cacheCreationInputTokens: 0,
-        cacheReadInputTokens: 0,
-        costUSD: 999,
-      },
-    },
-    total_cost_usd: 0.000617,
+    modelUsage: modelUsage(),
+    total_cost_usd: running.cost,
   });
   // Real Claude drains for a short period after its terminal result, during
   // which stdin can misleadingly accept a write, then exits cleanly.
@@ -95,6 +123,11 @@ input.on('line', (line) => {
     subtype: 'init',
     session_id: text === 'session-mismatch' ? '00000000-0000-4000-8000-000000000000' : nativeSessionId,
   });
+
+  if (Object.hasOwn(fixture, text)) {
+    for (const event of fixture[text]) send(event);
+    return;
+  }
 
   if (text === 'crash') {
     setTimeout(() => process.exit(7), 5);
@@ -162,6 +195,7 @@ input.on('line', (line) => {
   }
 
   if (text === 'failed') {
+    spend({ inputTokens: 3, outputTokens: 1 }, 0);
     send({
       type: 'result',
       subtype: 'error_during_execution',
@@ -170,35 +204,31 @@ input.on('line', (line) => {
       usage: { input_tokens: 0, output_tokens: 0 },
       modelUsage: {
         'fake-model': {
-          inputTokens: 3,
-          outputTokens: 1,
+          inputTokens: running.inputTokens,
+          outputTokens: running.outputTokens,
         },
       },
     });
     return;
   }
 
+  // Every other turn spends the same, so a test can tell a per-turn figure
+  // (always these) from a running total (these times the turn count).
+  const turnUsage = { inputTokens: 11, outputTokens: 5, cacheCreationInputTokens: 2, cacheReadInputTokens: 7 };
+  spend(turnUsage, text === 'cost-only' ? 0.25 : 0.01);
   const result = {
     type: 'result',
     subtype: 'success',
     is_error: false,
-    // These zeroes reproduce the misleading top-level abort shape. The
-    // adapter must take tokens from modelUsage and cost from total_cost_usd.
-    usage: { input_tokens: 0, output_tokens: 0 },
-    modelUsage: {
-      'fake-model': {
-        inputTokens: 11,
-        outputTokens: 5,
-        cacheCreationInputTokens: 2,
-        cacheReadInputTokens: 7,
-        costUSD: 999,
-      },
+    usage: {
+      input_tokens: turnUsage.inputTokens,
+      output_tokens: turnUsage.outputTokens,
+      cache_creation_input_tokens: turnUsage.cacheCreationInputTokens,
+      cache_read_input_tokens: turnUsage.cacheReadInputTokens,
     },
+    modelUsage: modelUsage(),
   };
-  if (text !== 'no-cost') result.total_cost_usd = 0;
-  if (text === 'cost-only') {
-    delete result.modelUsage;
-    result.total_cost_usd = 0.25;
-  }
+  if (text !== 'no-cost') result.total_cost_usd = running.cost;
+  if (text === 'cost-only') delete result.modelUsage;
   send(result);
 });

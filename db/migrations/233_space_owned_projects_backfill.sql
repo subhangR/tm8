@@ -1,8 +1,8 @@
 -- =============================================================================
--- 232 — space-owned projects, the backfill (plan 01a0d9eb W11).
+-- 233 — space-owned projects, the backfill (plan 01a0d9eb W11).
 --
--- ROW-REWRITING. 231 added the columns and fills them for every new row; this
--- file fills them for the rows that existed before 231. It writes ONLY the
+-- ROW-REWRITING. 232 added the columns and fills them for every new row; this
+-- file fills them for the rows that existed before 232. It writes ONLY the
 -- three new nullable columns and changes nothing else:
 --
 --   chats.project_entity_id          <- project_links(chat.space_id, chat.project_id)

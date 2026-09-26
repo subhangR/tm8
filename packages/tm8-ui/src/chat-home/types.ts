@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { ActorSummary, ChatMode, ChatWorkdirMode, EntityId, EntityKind, FileAttachment, LaunchModelEffort, SpaceId, TeamMemberMode } from '@tm8/contract';
+import type { ActorSummary, ChatMode, ChatWorkdirMode, EntityId, EntityKind, FileAttachment, LaunchModelEffort, SessionTranscriptContext, SpaceId, TeamMemberMode } from '@tm8/contract';
 
 /** C1, normalized for rendering. The durable row sequence lives beside each item. */
 export type ChatTurnItem =
@@ -45,6 +45,30 @@ export type ChatTurnFrame =
       messageId: EntityId;
       usage: ChatUsage;
     };
+
+/**
+ * The chat's latest context reading, published after the server stored it
+ * (231). Its own frame, not a turn frame: it describes the conversation, not
+ * a part of any one turn, so it never enters the turn merge.
+ */
+export interface ChatContextFrame {
+  type: 'chat.context';
+  chatId: EntityId;
+  context: SessionTranscriptContext;
+}
+
+export function isChatContextFrame(value: unknown): value is ChatContextFrame {
+  if (typeof value !== 'object' || value === null) return false;
+  const frame = value as Record<string, unknown>;
+  if (frame.type !== 'chat.context' || typeof frame.chatId !== 'string') return false;
+  const context = frame.context as Record<string, unknown> | null | undefined;
+  return (
+    typeof context === 'object' &&
+    context !== null &&
+    (context.usedTokens === null || typeof context.usedTokens === 'number') &&
+    (context.capacityTokens === null || typeof context.capacityTokens === 'number')
+  );
+}
 
 export interface ChatModelOption {
   model: string;
@@ -145,6 +169,10 @@ export interface ChatThreadSummary {
   replyCount: number;
   config: ChatThreadConfig;
   state: 'idle' | 'streaming' | 'stopped-continuable' | 'error';
+  /** The runtime's own axis — only a live one is still updating `context`. */
+  runtimeState?: 'cold' | 'live' | 'stopped';
+  /** The latest stored context reading (231); null until measured. */
+  context?: SessionTranscriptContext | null;
 }
 
 /**
@@ -361,6 +389,8 @@ export interface ChatHomePort {
   postTurn(input: ChatPostInput): Promise<ChatPostResult>;
   interrupt?(chatId: EntityId): Promise<void>;
   subscribe(listener: (frame: ChatTurnFrame) => void): () => void;
+  /** Live context readings. Absent on a port with no live runtime (fixtures). */
+  subscribeContext?(listener: (frame: ChatContextFrame) => void): () => void;
 }
 
 export function isChatTurnFrame(value: unknown): value is ChatTurnFrame {

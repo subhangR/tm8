@@ -1,4 +1,9 @@
-import { ChatTurnFrameSchema, type ChatTurnFrame } from '@tm8/contract';
+import {
+  ChatContextFrameSchema,
+  ChatTurnFrameSchema,
+  type ChatContextFrame,
+  type ChatTurnFrame,
+} from '@tm8/contract';
 import type { SubscriptionRegistry } from '../events/subscriptions.js';
 
 /**
@@ -36,8 +41,11 @@ import type { SubscriptionRegistry } from '../events/subscriptions.js';
 export class ChatTurnPublisher {
   constructor(private readonly subscriptions: SubscriptionRegistry) {}
 
-  publish(spaceId: string, candidate: ChatTurnFrame): number {
-    const frame = ChatTurnFrameSchema.parse(candidate);
+  publish(spaceId: string, candidate: ChatTurnFrame | ChatContextFrame): number {
+    const frame =
+      candidate.type === 'chat.context'
+        ? ChatContextFrameSchema.parse(candidate)
+        : ChatTurnFrameSchema.parse(candidate);
     const text = JSON.stringify(frame);
     let sent = 0;
     for (const sink of this.subscriptions.connectionsFor(spaceId)) {

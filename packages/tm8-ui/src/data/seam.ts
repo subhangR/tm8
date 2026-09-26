@@ -266,7 +266,7 @@ import type {
   EntityHeaderResult,
   EntityHeaderView,
 } from '@tm8/contract';
-import type { ChatTurnFrame } from '../chat-home/types';
+import type { ChatContextFrame, ChatTurnFrame } from '../chat-home/types';
 
 export type Unsubscribe = () => void;
 
@@ -505,6 +505,8 @@ export interface Seam {
   onEvent(cb: (e: DurableWorkspaceEvent) => void): Unsubscribe;
   /** C3 transient turn frames. Durable parts are re-read after a reconnect. */
   onChatTurn(cb: (frame: ChatTurnFrame) => void): Unsubscribe;
+  /** A chat's latest context reading (`chat.context`). Optional: fixtures have none. */
+  onChatContext?(cb: (frame: ChatContextFrame) => void): Unsubscribe;
   onConnection(cb: (s: ConnectionState) => void): Unsubscribe;
   getConnection(): ConnectionState;
   /**
