@@ -25,7 +25,12 @@
  * and re-resolve it through `resolveBearerIdentity` (F6): a revoked session
  * fails there, marks the row signed_out, and the caller gets a typed
  * `space_link_signed_out` refusal. The op then runs in-process on B's
- * registered handler with B's identity, validated by its own schema.
+ * registered handler with B's identity, validated by its own schema. That
+ * identity is authKind `link`, which the registry (W7p layer (ii)) refuses
+ * on every op; the executor marks its one inner context with
+ * `admitLinkInvoke` (identity/link-bearer.ts), the only admission there is.
+ * Layer (iii) (spawn, resume, dispatch, the spawn credential read and SQL's
+ * link refusals) still applies to the inner call unchanged.
  *
  * Every outcome writes one `cross_space_audit` row in A under the caller's
  * own claims. No token is put in a header, an error, a log line, the audit or
@@ -54,6 +59,7 @@ import type { DbClaims } from '../../../db/types.js';
 import { FixedWindowLimiter } from '../../../http/fixed-window.js';
 import { normalizeCommandInputForIdempotencyMode } from '../../../http/idempotency.js';
 import { identityFromSession } from '../../../http/identity-resolver.js';
+import { admitLinkInvoke } from '../../../identity/link-bearer.js';
 import { nextRequestId } from '../../../http/request-id.js';
 import type { OperationHandler, RequestContext, RequestIdentity } from '../../../http/types.js';
 import { isHandlerResult } from '../../../http/types.js';
@@ -265,6 +271,10 @@ export function createSpaceLinkInvokeHandlers(
       path: binding.path,
     };
 
+    // Layer (ii)'s one admission of a link identity (lead ruling (a)): this
+    // context object, this op, one dispatch. Every home-side refusal above has
+    // already run; a nested dispatch from inside the handler finds no marker.
+    admitLinkInvoke(inner, op);
     const result = await handler(inner);
     if (isHandlerResult(result)) {
       if (result.kind !== 'json') {

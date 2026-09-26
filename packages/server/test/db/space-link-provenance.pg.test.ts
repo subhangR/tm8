@@ -360,6 +360,26 @@ describe('W7p the link session and its children carry via_link', () => {
     expect(await sessionRow(child.id)).toMatchObject({ via_link_id: null, parent_session_id: null });
   });
 
+  // #884 checklist (lead ruling (a), cell 3): 258's resolve_space_link_invoke
+  // refuses a via_link child before any row is looked up, so the child cannot
+  // chain through a link. Red-checked by removing that guard: the child then
+  // answers P0002 like the control.
+  it('#884 — a via_link child calling spaceLinks.invoke\'s resolve is 42501, before any row lookup', async () => {
+    const child = await mintChild(L.mintClaims);
+    const claims = await claimsForToken(child.token);
+    expect(claims).toMatchObject({ authKind: 'agent', viaLinkId: L.link.id });
+    expect(await outcome(() => store.resolveInvoke(claims, fixture.spaceB, L.link.id))).toBe('42501');
+    expect(await outcome(() => store.resolveInvoke(claims, fixture.spaceB, 'no-such-link'))).toBe('42501');
+  });
+
+  it('#884 positive — the same human\'s ordinary child gets past the guard (P0002: no link of its own in B); H resolves the link in A', async () => {
+    const child = await mintChild(L.human);
+    const claims = await claimsForToken(child.token);
+    expect(claims.viaLinkId ?? null).toBeNull();
+    expect(await outcome(() => store.resolveInvoke(claims, fixture.spaceB, 'no-such-link'))).toBe('P0002');
+    expect(await store.resolveInvoke(L.human, fixture.spaceA, L.link.id)).toMatchObject({ linkId: L.link.id });
+  });
+
   it('via_link_id is only ever on a link or agent session (CHECK)', async () => {
     const [row] = await database.query<{ def: string }>(
       `select pg_get_constraintdef(oid) as def from pg_constraint where conname = 'auth_sessions_via_link_kind'`);

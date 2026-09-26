@@ -10,7 +10,8 @@
 --     found through 244's internal.space_link_own_row path (current_member_id
 --     on the caller's identity inside the session pin), so an agent resolves
 --     its LAUNCHING member's row and nobody else's (T18). Same session-kind
---     allow-list as open_space_link_token: browser, cli, agent.
+--     allow-list as open_space_link_token: browser, cli, agent; and, as
+--     there, a session minted under a link (tm8.via_link set) is 42501.
 --   * cross_space_audit: one row per invoke, written in the HOME space for
 --     every outcome (ok, refused, error). No token, no input body, no error
 --     text from the target: op name, via chain, result, a closed reason and
@@ -70,6 +71,11 @@ begin
   if coalesce(internal.claim_text('tm8.auth_kind'), '') not in ('browser', 'cli', 'agent') then
     raise exception 'this session kind cannot use a space link' using errcode = '42501',
       detail = jsonb_build_object('authKind', coalesce(internal.claim_text('tm8.auth_kind'), 'none'))::text;
+  end if;
+  -- W7p (256): an agent minted under a link never invokes through a link (no
+  -- chaining), refused here before any row is looked up.
+  if internal.claim_text('tm8.via_link') is not null then
+    raise exception 'a session minted under a space link cannot use a space link' using errcode = '42501';
   end if;
   me := internal.current_member_id(p_home_space_id);
   if me is null or p_ref is null or btrim(p_ref) = '' then

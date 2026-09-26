@@ -30,6 +30,7 @@ import {
   SPACE_LINK_VIA_HEADER,
   TM8_CLIENT_HEADER,
   TM8_CLIENT_HEADER_VALUE,
+  getOperation,
   spaceLinkRefusal,
 } from '@tm8/contract';
 
@@ -45,6 +46,7 @@ import { createSessionIdentityResolver, identityFromSession } from '../../src/ht
 import { TM8_SESSION_COOKIE } from '../../src/http/session-cookie.js';
 import type { RequestContext, RequestIdentity, SpaceSessionsMode } from '../../src/http/types.js';
 import { formatToken, generateSecret, hashToken, parseToken } from '../../src/identity/crypto.js';
+import { admitLinkInvoke, LINK_BEARER_OP_REFUSED } from '../../src/identity/link-bearer.js';
 import type { LoopbackOwner } from '../../src/identity/loopback.js';
 import { resolveBearerIdentity } from '../../src/identity/pg-auth.js';
 import { bootstrap, type BootstrappedServer } from '../../src/main.js';
@@ -4371,6 +4373,60 @@ describe.sequential('W7 spaceLinks.invoke — G runs one op in B as H, audited i
     const res = await invoke(gToken, { op: 'entities.get', params: { id: fixture.docB } });
     expect(res.status).toBe(200);
     expect(JSON.stringify(res.body.data!.result)).toContain(fixture.docB);
+  });
+
+  // ---- #884 lead ruling (a): layer (ii) admits a link identity ONLY on the
+  // invoke executor's in-process marker. Each refusal has its paired
+  // positive; red-checks are listed in the PR body.
+
+  /** B's registered entities.get context under H's link identity, built the way the wire would (no marker). */
+  async function linkContext(): Promise<RequestContext> {
+    const op = getOperation('entities.get');
+    const { token: _token, ...identity } = await identityForToken(hLinkToken);
+    return {
+      op, opName: 'entities.get', params: { id: fixture.docB }, query: new URLSearchParams(), body: undefined,
+      requestId: `w7-marker-${randomUUID()}`, identity, headers: {}, method: op.method, path: op.path,
+    };
+  }
+
+  it('(a)1 — H\'s raw link bearer over HTTP is refused on entities.get (42501), and B\'s doc is not returned', async () => {
+    const res = await call('GET', getOperation('entities.get').path.replace(':id', fixture.docB), hLinkToken);
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatchObject({ code: 'forbidden', details: { sqlstate: '42501' } });
+    expect(JSON.stringify(res.body)).not.toContain('W7 T21');
+  });
+
+  it('(a)1 layer (ii) alone — the node\'s own registry refuses the same link identity on entities.get with no marker (a replayed or rebuilt context), before the handler', async () => {
+    const context = await linkContext();
+    const error = await (async () => node.server.registry.get('entities.get')!(context))().then(() => 'resolved', (e: unknown) => e);
+    expect(error).toMatchObject({ code: 'forbidden', message: LINK_BEARER_OP_REFUSED, details: { sqlstate: '42501' } });
+  });
+
+  it('(a)1 positive — the same op via invoke runs in-process as the member; and the same context, once marked, reaches B\'s handler exactly once', async () => {
+    const res = await invoke(gToken, { op: 'entities.get', params: { id: fixture.docB } });
+    expect(res.status).toBe(200);
+    expect(JSON.stringify(res.body.data!.result)).toContain(fixture.docB);
+    const ctx = await linkContext();
+    admitLinkInvoke(ctx, 'entities.get');
+    expect(JSON.stringify(await node.server.registry.get('entities.get')!(ctx))).toContain(fixture.docB);
+    const again = await (async () => node.server.registry.get('entities.get')!(ctx))().then(() => 'resolved', (e: unknown) => e);
+    expect(again).toMatchObject({ message: LINK_BEARER_OP_REFUSED, details: { sqlstate: '42501' } });
+  });
+
+  it('(a)2 — credentials.status via invoke is refused at home (E2): B\'s credentials handler is never looked up; positive — entities.get via invoke reaches B\'s handler', async () => {
+    const lookups = vi.spyOn(node.server.registry, 'get');
+    try {
+      const refused = await invoke(gToken, { op: 'credentials.status' });
+      expect(refused.status).toBe(403);
+      expect(refused.body.error).toMatchObject({ details: { reason: 'space_link_refused', refusal: 'credential_management' } });
+      expect(lookups.mock.calls.map(([name]) => name).filter((name) => name !== 'spaceLinks.invoke')).toEqual([]);
+      lookups.mockClear();
+      const passed = await invoke(gToken, { op: 'entities.get', params: { id: fixture.docB } });
+      expect(passed.status).toBe(200);
+      expect(lookups.mock.calls.map(([name]) => name)).toContain('entities.get');
+    } finally {
+      lookups.mockRestore();
+    }
   });
 
   // ---- a2 / T22: refused on the home server before forwarding -------------
