@@ -162,6 +162,9 @@ export const DEFAULT_SESSION_TTL_MS: Record<AuthSessionKind, number> = {
   cli: 90 * DAY,
   agent: 7 * DAY,
   agent_runtime: DAY,
+  // A member's stored session for a space link's target (244, K10): pinned to
+  // the target, revocable on its Sessions page, relogin in place.
+  link: 90 * DAY,
 };
 
 export const DEFAULT_OWNER_USERNAME = 'owner';

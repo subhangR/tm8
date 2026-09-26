@@ -1,0 +1,663 @@
+/**
+ * W6 — space links (migrations 243/244, plan 01a0d9eb §3 W6). The DB half:
+ * the strict-gate caller pin, the sealed token rows (T19 AAD, a5 defaults,
+ * a6 no ciphertext anywhere), the use path's kind allow-list, stale handling
+ * with no retry, and W1's removal deleting the member's rows (T17). The
+ * cross-space matrix cells (T16/T17/T19/T20/T20b/T28) live in
+ * cross-space-token.pg.test.ts; this file pins the mechanism under them.
+ *
+ * Fixture, in cross-space-token's two-space style plus a third space:
+ * spaces A (home), B and C (targets). H is an owner of A and B. H3 is a
+ * member of A, B and C. H2 is a member of A only. G is H's agent in A.
+ *
+ * Every refusal is paired with a positive: the same credential on its own
+ * row or space succeeds. No token or ciphertext is printed or logged.
+ */
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
+
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+
+import { createDb } from '../../src/db/client.js';
+import type { Db, DbClaims, Querier } from '../../src/db/types.js';
+import { claimsFor } from '../../src/facade/context.js';
+import { createSessionIdentityResolver } from '../../src/http/identity-resolver.js';
+import type { RequestContext, SpaceSessionsMode } from '../../src/http/types.js';
+import { formatToken, generateSecret, hashToken } from '../../src/identity/crypto.js';
+import type { LoopbackOwner } from '../../src/identity/loopback.js';
+import { DbSpaceLinkStore, SpaceLinkUnusable, type SpaceLink, type SpaceLinkStaleNotice } from '../../src/credentials/space-link-store.js';
+import { loadOrCreateCredentialKey } from '../../src/credentials/credential-key.js';
+import { openSecret, sealSecret } from '../../src/credentials/secret-box.js';
+
+import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from './w1-pg.js';
+
+vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
+
+// ---------------------------------------------------------------------------
+// THE STRICT GATE'S FULL CALLER SET (lead ruling 2026-09-26 02:08Z/02:19Z).
+// Measured on this branch: 21 credential management + 6 non-credential + 6
+// spaceLinks writes = 33. A caller not on this list fails; a listed caller
+// that stops calling the gate fails. Changing this list is a review event.
+// ---------------------------------------------------------------------------
+const CREDENTIAL_MANAGEMENT = 'credential management: refuses link (E2)';
+const CREDENTIAL_READ = 'credential read, on the gate (refuses link)';
+const IDENTITY_WIDE = 'refused for link (identity-wide act)';
+const AUTH_MINTING = 'refused for link (decision 31, auth minting)';
+const PENDING = 'non-credential, refused pending follow-up 01a0db78-f1ab';
+const SPACE_LINKS = 'spaceLinks write, human-only by design (W6)';
+
+const STRICT_GATE_CALLERS: Readonly<Record<string, string>> = {
+  'create_space_credential(uuid,uuid,text,text,text,text,bytea,bytea,text)': CREDENTIAL_MANAGEMENT,
+  'delete_account_agent_credential(text)': CREDENTIAL_MANAGEMENT,
+  'delete_account_git_credential(text)': CREDENTIAL_MANAGEMENT,
+  'delete_account_service_key(text)': CREDENTIAL_MANAGEMENT,
+  'delete_space_credential(uuid)': CREDENTIAL_MANAGEMENT,
+  'finish_credential_session(uuid)': CREDENTIAL_MANAGEMENT,
+  'finish_space_credential_login(uuid,boolean,text)': CREDENTIAL_MANAGEMENT,
+  'member_space_credential_sessions(uuid,uuid)': CREDENTIAL_MANAGEMENT,
+  'read_account_service_key(text)': CREDENTIAL_READ,
+  'record_space_credential_probe(uuid,boolean)': CREDENTIAL_MANAGEMENT,
+  'rekey_space_credential(uuid,text,bytea,bytea,text)': CREDENTIAL_MANAGEMENT,
+  'rename_space_credential(uuid,text)': CREDENTIAL_MANAGEMENT,
+  'set_account_agent_credential(text,text,text,text)': CREDENTIAL_MANAGEMENT,
+  'set_account_git_credential(text,text,bytea,bytea)': CREDENTIAL_MANAGEMENT,
+  'set_account_service_key(text,text,bytea,bytea)': CREDENTIAL_MANAGEMENT,
+  'set_node_credential_policy(text,boolean)': CREDENTIAL_MANAGEMENT,
+  'set_space_credential_default(uuid)': CREDENTIAL_MANAGEMENT,
+  'set_space_credential_policy(uuid,text,text[])': CREDENTIAL_MANAGEMENT,
+  'space_credential_live_sessions(uuid)': CREDENTIAL_MANAGEMENT,
+  'start_credential_session(uuid,text,integer,integer)': CREDENTIAL_MANAGEMENT,
+  'start_space_credential_login(uuid,text,text,uuid,integer,integer)': CREDENTIAL_MANAGEMENT,
+
+  'disable_account(uuid,text)': IDENTITY_WIDE,
+  'issue_agent_runtime_session(uuid,uuid,text,timestamp with time zone,text)': AUTH_MINTING,
+  'revoke_agent_runtime_session(uuid)': AUTH_MINTING,
+  'leave_space(uuid,text)': PENDING,
+  'remove_space_member(uuid,uuid,text)': PENDING,
+  'start_chat(uuid,uuid,uuid,text,text,text,text,text,uuid,uuid,text,text,text,uuid[],uuid,text)': PENDING,
+
+  'add_space_link(uuid,uuid,text,text)': SPACE_LINKS,
+  'logout_space_link(uuid,text)': SPACE_LINKS,
+  'remove_space_link(uuid,text)': SPACE_LINKS,
+  'set_space_link_spawn(uuid,boolean,integer,text)': SPACE_LINKS,
+  'space_link_seal_context(uuid)': SPACE_LINKS,
+  'store_space_link_session(uuid,uuid,text,timestamp with time zone,bytea,bytea,text,text)': SPACE_LINKS,
+};
+
+/** Not gate callers: each admits an explicit kind allow-list and 42501s the rest. */
+const EXPLICIT_KIND_ALLOW_LIST: Readonly<Record<string, string>> = {
+  'open_space_link_token(uuid)': 'explicit kind allow-list, not a gate caller',
+  'mark_space_link_stale(uuid,text)': 'explicit kind allow-list, not a gate caller',
+};
+
+/**
+ * Every function that names the strict gate. Source match is case-insensitive
+ * and quote-tolerant (`"internal"."REQUIRE_human_auth_kind"`), and it sees the
+ * name inside an `execute format(...)` string too, because it matches the
+ * name anywhere in the body. BEGIN ATOMIC bodies have no prosrc to match; they
+ * are found through pg_depend on the gate's oid.
+ */
+const GATE_CALLERS_SQL = `
+  with gate as (select 'internal.require_human_auth_kind()'::regprocedure::oid as oid)
+  select p.oid::regprocedure::text as signature
+    from pg_proc p, gate
+   where p.oid <> gate.oid
+     and (p.prosrc ~* '"?require_human_auth_kind"?'
+          or exists (select 1 from pg_depend d
+                      where d.classid = 'pg_proc'::regclass and d.objid = p.oid
+                        and d.refclassid = 'pg_proc'::regclass and d.refobjid = gate.oid))
+   order by 1`;
+
+// ---------------------------------------------------------------------------
+// Fixture and credentials.
+// ---------------------------------------------------------------------------
+interface Fixture {
+  spaceA: string; spaceB: string; spaceC: string;
+  identityH: string; identityH2: string; identityH3: string;
+  accountH: string; accountH2: string; accountH3: string;
+  memberHA: string; memberHB: string; memberH2A: string;
+  memberH3A: string; memberH3B: string; memberH3C: string;
+  personaA: string; workSessionA: string;
+}
+
+let database: W1ScratchDatabase;
+let db: Db;
+let fixture: Fixture;
+let dataDir: string;
+let store: DbSpaceLinkStore;
+const staleNotices: SpaceLinkStaleNotice[] = [];
+
+const NOT_THE_OWNER: LoopbackOwner = {
+  identityId: 'space-links-not-the-owner',
+  accountId: randomUUID(),
+  username: 'nobody',
+} as unknown as LoopbackOwner;
+
+function asIdentity<T>(identityId: string, fn: (q: Querier) => Promise<T>, authKind: string | null = 'browser'): Promise<T> {
+  return db.tx({ identityId, ...(authKind === null ? {} : { authKind }), requestId: `space-links-${randomUUID()}` } as DbClaims, fn);
+}
+
+async function mintBrowser(accountId: string, identityId: string): Promise<string> {
+  const secret = generateSecret();
+  const row = await asIdentity(identityId, (q) =>
+    q.rpc<{ id: string }>('issue_auth_session', [
+      accountId, hashToken(secret), 'browser',
+      new Date(Date.now() + 3_600_000).toISOString(), null, 'space-links browser',
+    ]));
+  return formatToken(row.id, secret);
+}
+
+async function mintAgent(): Promise<string> {
+  const secret = generateSecret();
+  const row = await asIdentity(fixture.identityH, (q) =>
+    q.rpc<{ id: string }>('issue_agent_auth_session', [
+      fixture.workSessionA, fixture.personaA, hashToken(secret),
+      new Date(Date.now() + 3_600_000).toISOString(), 'space-links agent G',
+    ]));
+  return formatToken(row.id, secret);
+}
+
+async function claimsForToken(token: string, mode: SpaceSessionsMode = 'agents'): Promise<DbClaims> {
+  const resolve = createSessionIdentityResolver({ db, owner: async () => NOT_THE_OWNER, spaceSessions: mode });
+  const identity = await resolve(
+    { authorization: `Bearer ${token}` },
+    { remoteAddress: '203.0.113.9', disableAutoOwner: true },
+  );
+  const ctx = { identity, requestId: `space-links-${randomUUID()}` } as unknown as RequestContext;
+  return claimsFor(NOT_THE_OWNER, ctx);
+}
+
+async function asToken<T>(token: string, fn: (q: Querier) => Promise<T>): Promise<T> {
+  return db.tx(await claimsForToken(token), fn);
+}
+
+async function outcome(run: () => Promise<unknown>): Promise<string> {
+  try {
+    await run();
+    return 'ok';
+  } catch (err) {
+    const code = (err as { details?: { sqlstate?: string } }).details?.sqlstate
+      ?? (err as { cause?: { code?: string } }).cause?.code
+      ?? (err as { code?: string }).code;
+    return String(code);
+  }
+}
+
+/** Read the sealed columns as the table owner — tm8_app cannot. */
+async function sealedRow(linkId: string, memberId: string): Promise<{ id: string; ciphertext: Buffer | null; nonce: Buffer | null; status: string; auth_session_id: string | null }> {
+  const [row] = await database.query<{ id: string; ciphertext: Buffer | null; nonce: Buffer | null; status: string; auth_session_id: string | null }>(
+    `select id::text, ciphertext, nonce, status, auth_session_id::text
+       from public.space_link_tokens where link_id = $1 and member_id = $2`,
+    [linkId, memberId]);
+  if (!row) throw new Error('no token row');
+  return row;
+}
+
+async function seed(): Promise<Fixture> {
+  const f: Fixture = {
+    spaceA: randomUUID(), spaceB: randomUUID(), spaceC: randomUUID(),
+    identityH: `space-links-h-${randomUUID()}`,
+    identityH2: `space-links-h2-${randomUUID()}`,
+    identityH3: `space-links-h3-${randomUUID()}`,
+    accountH: randomUUID(), accountH2: randomUUID(), accountH3: randomUUID(),
+    memberHA: randomUUID(), memberHB: randomUUID(), memberH2A: randomUUID(),
+    memberH3A: randomUUID(), memberH3B: randomUUID(), memberH3C: randomUUID(),
+    personaA: randomUUID(), workSessionA: randomUUID(),
+  };
+  await database.transaction(async (client) => {
+    await client.query('set local role tm8_graph_owner');
+    await client.query(
+      `insert into public.user_profiles(identity_id, display_name) values ($1, 'H'), ($2, 'H2'), ($3, 'H3')`,
+      [f.identityH, f.identityH2, f.identityH3]);
+    await client.query(
+      `insert into public.accounts(id, identity_id, username)
+       values ($1, $2, 'space-links-h'), ($3, $4, 'space-links-h2'), ($5, $6, 'space-links-h3')`,
+      [f.accountH, f.identityH, f.accountH2, f.identityH2, f.accountH3, f.identityH3]);
+    await client.query(
+      `insert into public.spaces(id, name, created_by_identity)
+       values ($1, 'Links A', $4), ($2, 'Links B', $4), ($3, 'Links C', $4)`,
+      [f.spaceA, f.spaceB, f.spaceC, f.identityH]);
+    const members: Array<[string, string, string, string, string]> = [
+      [f.memberHA, f.spaceA, f.identityH, 'owner', 'H'],
+      [f.memberHB, f.spaceB, f.identityH, 'owner', 'H'],
+      [f.memberH2A, f.spaceA, f.identityH2, 'member', 'H2'],
+      [f.memberH3A, f.spaceA, f.identityH3, 'member', 'H3'],
+      [f.memberH3B, f.spaceB, f.identityH3, 'member', 'H3'],
+      [f.memberH3C, f.spaceC, f.identityH3, 'owner', 'H3'],
+    ];
+    for (const [id, space, identity, role, name] of members) {
+      await client.query(
+        `insert into public.entities(id, space_id, kind, created_by, visibility) values ($1, $2, 'member', $1, 'space')`,
+        [id, space]);
+      await client.query(
+        `insert into public.members(entity_id, space_id, identity_id, role, display_name) values ($1, $2, $3, $4, $5)`,
+        [id, space, identity, role, name]);
+    }
+    await client.query(
+      `insert into public.entities(id, space_id, kind, created_by, visibility)
+       values ($1, $3, 'team_member', $4, 'space'), ($2, $3, 'work_session', $1, 'space')`,
+      [f.personaA, f.workSessionA, f.spaceA, f.memberHA]);
+    await client.query(
+      `insert into public.team_members(entity_id, owner_member_id, name, role, identity)
+       values ($1, $2, 'Links G', 'worker', 'persona')`,
+      [f.personaA, f.memberHA]);
+    await client.query(
+      `insert into public.work_sessions(entity_id, title, status, share_mode, started_at)
+       values ($1, 'Links G run', 'running', 'none', now())`,
+      [f.workSessionA]);
+    await client.query(
+      `insert into public.edges(space_id, src_id, dst_id, type, created_by)
+       values ($1, $2, $3, 'participates_in', $2)`,
+      [f.spaceA, f.personaA, f.workSessionA]);
+  });
+  return f;
+}
+
+beforeAll(async () => {
+  database = await createW1ScratchDatabase('space_links');
+  database.apply(migrationFiles());
+  db = createDb(database.url, { max: 4 });
+  fixture = await seed();
+  dataDir = await mkdtemp(join(tmpdir(), 'tm8-space-links-'));
+  store = new DbSpaceLinkStore({ db, dataDir, onStale: (n) => { staleNotices.push(n); } });
+}, 180_000);
+
+afterAll(async () => {
+  await db?.end();
+  await database?.destroy();
+}, 180_000);
+
+const hClaims = async (): Promise<DbClaims> => claimsForToken(await mintBrowser(fixture.accountH, fixture.identityH));
+const h3Claims = async (): Promise<DbClaims> => claimsForToken(await mintBrowser(fixture.accountH3, fixture.identityH3));
+
+/** H's link A → B, logged in; returns the link and H's link token's claims. */
+async function linkAB(): Promise<SpaceLink> {
+  const claims = await hClaims();
+  const link = await store.add(claims, { spaceId: fixture.spaceA, targetSpaceId: fixture.spaceB });
+  return store.login(claims, link.id);
+}
+
+// ---------------------------------------------------------------------------
+
+describe('W6 pin — the STRICT gate\'s full caller set (lead ruling 02:08Z; follow-up 01a0db78-f1ab)', () => {
+  it('internal.require_human_auth_kind() is unchanged: browser and cli only, fail-closed', async () => {
+    const [row] = await database.query<{ src: string }>(
+      `select prosrc as src from pg_proc where oid = 'internal.require_human_auth_kind()'::regprocedure`);
+    expect(row!.src).toMatch(/kind is null or kind not in \('browser', 'cli'\)/);
+  });
+
+  it('every caller is on the labelled list, and every listed function still calls it', async () => {
+    const found = (await database.query<{ signature: string }>(GATE_CALLERS_SQL)).map((r) => r.signature);
+    expect(found).toEqual(Object.keys(STRICT_GATE_CALLERS).sort());
+  });
+
+  it('the list is 21 credential management + 6 non-credential + 6 spaceLinks writes', () => {
+    const labels = Object.values(STRICT_GATE_CALLERS);
+    expect(labels.filter((l) => l === CREDENTIAL_MANAGEMENT || l === CREDENTIAL_READ)).toHaveLength(21);
+    expect(labels.filter((l) => l === IDENTITY_WIDE || l === AUTH_MINTING || l === PENDING)).toHaveLength(6);
+    expect(labels.filter((l) => l === SPACE_LINKS)).toHaveLength(6);
+  });
+
+  it('the matcher sees a quoted, mixed-case call and an execute format(...) that names the gate', async () => {
+    await database.transaction(async (client) => {
+      await client.query(`create function pg_temp.w6_quoted() returns void language plpgsql as
+        $$ begin perform "internal"."REQUIRE_HUMAN_AUTH_KIND"(); end $$`);
+      await client.query(`create function pg_temp.w6_dynamic() returns void language plpgsql as
+        $$ begin execute format('select %s()', 'internal.require_human_auth_kind'); end $$`);
+      const rows = await client.query<{ signature: string }>(GATE_CALLERS_SQL);
+      const names = rows.rows.map((r) => r.signature);
+      expect(names.some((n) => n.includes('w6_quoted'))).toBe(true);
+      expect(names.some((n) => n.includes('w6_dynamic'))).toBe(true);
+      await client.query('rollback');
+      await client.query('begin');
+    });
+  });
+
+  it('the matcher sees a BEGIN ATOMIC caller through pg_depend', async () => {
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(`create function internal.w6_atomic() returns void language sql
+        begin atomic select internal.require_human_auth_kind(); end`);
+      const rows = await client.query<{ signature: string }>(GATE_CALLERS_SQL);
+      expect(rows.rows.map((r) => r.signature)).toContain('internal.w6_atomic()');
+      await client.query('rollback');
+      await client.query('begin');
+    });
+  });
+
+  it('open_space_link_token and mark_space_link_stale: explicit kind allow-list, not gate callers', async () => {
+    const found = new Set((await database.query<{ signature: string }>(GATE_CALLERS_SQL)).map((r) => r.signature));
+    for (const signature of Object.keys(EXPLICIT_KIND_ALLOW_LIST)) {
+      expect(found.has(signature)).toBe(false);
+      const [row] = await database.query<{ src: string }>(
+        `select prosrc as src from pg_proc where oid = $1::regprocedure`, [`public.${signature}`]);
+      expect(row!.src).toContain(`not in ('browser', 'cli', 'agent')`);
+    }
+  });
+});
+
+describe('W6 the kind allow-list on the use path (coordinator 02:11Z)', () => {
+  let link: SpaceLink;
+  beforeAll(async () => { link = await linkAB(); });
+
+  it('positive — H (browser) opens H\'s own row', async () => {
+    const claims = await hClaims();
+    expect(await outcome(() => db.rpc(claims, 'open_space_link_token', [link.id]))).toBe('ok');
+  });
+
+  it('positive — G (H\'s agent) opens H\'s own row', async () => {
+    const token = await mintAgent();
+    expect(await outcome(() => asToken(token, (q) => q.rpc('open_space_link_token', [link.id])))).toBe('ok');
+  });
+
+  it('G on a link where only ANOTHER member (H3) has a row is refused', async () => {
+    const h3 = await h3Claims();
+    const other = await store.add(h3, { spaceId: fixture.spaceA, targetSpaceId: fixture.spaceC });
+    await store.login(h3, other.id);
+    const token = await mintAgent();
+    expect(await outcome(() => asToken(token, (q) => q.rpc('open_space_link_token', [other.id])))).toBe('P0002');
+    expect(await outcome(() => asToken(token, (q) => q.rpc('mark_space_link_stale', [other.id, 'unreachable'])))).toBe('P0002');
+    // Paired positive: H3 opens that row.
+    expect(await outcome(() => db.rpc(h3, 'open_space_link_token', [other.id]))).toBe('ok');
+  });
+
+  for (const kind of ['link', 'agent_runtime', 'w6_unlisted', '', null] as const) {
+    it(`kind ${JSON.stringify(kind)} is refused 42501 on open and on mark-stale`, async () => {
+      expect(await outcome(() => asIdentity(fixture.identityH, (q) =>
+        q.rpc('open_space_link_token', [link.id]), kind))).toBe('42501');
+      expect(await outcome(() => asIdentity(fixture.identityH, (q) =>
+        q.rpc('mark_space_link_stale', [link.id, 'unreachable']), kind))).toBe('42501');
+    });
+  }
+
+  it('a real link session is refused 42501 on open', async () => {
+    const use = await store.use(await hClaims(), link.id);
+    expect(await outcome(() => asToken(use.token, (q) => q.rpc('open_space_link_token', [link.id])))).toBe('42501');
+  });
+});
+
+describe('W6 a5 — defaults, the link session, no target-consent setting', () => {
+  it('a new row has allow_spawn = true and spawn_budget = 3, signed_out until login', async () => {
+    const claims = await hClaims();
+    const link = await store.add(claims, { spaceId: fixture.spaceA, targetSpaceId: fixture.spaceC.replace(/.$/, '0') }).catch(() => null);
+    expect(link).toBeNull(); // not a member of a made-up target: refused without probing
+    const [row] = await database.query<{ allow_spawn: boolean; spawn_budget: number }>(
+      `select column_default is not null as d, (select column_default from information_schema.columns
+         where table_schema = 'public' and table_name = 'space_link_tokens' and column_name = 'spawn_budget') as spawn_budget,
+         (select column_default from information_schema.columns
+         where table_schema = 'public' and table_name = 'space_link_tokens' and column_name = 'allow_spawn') as allow_spawn
+         from information_schema.columns where table_schema = 'public' and table_name = 'space_link_tokens' limit 1`);
+    expect(String(row!.spawn_budget)).toBe('3');
+    expect(String(row!.allow_spawn)).toBe('true');
+    const h3 = await h3Claims();
+    const added = await store.add(h3, { spaceId: fixture.spaceA, targetSpaceId: fixture.spaceB });
+    expect(added.mine).toMatchObject({ status: 'signed_out', allowSpawn: true, spawnBudget: 3 });
+  });
+
+  it('login stores a `link` session pinned to the target, 90 days, and list shows no secret', async () => {
+    const link = await linkAB();
+    expect(link.mine?.status).toBe('signed_in');
+    const [session] = await database.query<{ kind: string; space_id: string; days: number }>(
+      `select kind, space_id::text, extract(epoch from expires_at - created_at) / 86400 as days
+         from public.auth_sessions where id = $1`, [link.mine!.sessionId]);
+    expect(session).toMatchObject({ kind: 'link', space_id: fixture.spaceB });
+    expect(Number(session!.days)).toBeGreaterThan(89.9);
+    expect(Number(session!.days)).toBeLessThanOrEqual(90.01);
+    const listed = JSON.stringify(await store.list(await hClaims(), fixture.spaceA));
+    expect(listed).not.toMatch(/ciphertext|nonce|aad|tm8s_/i);
+  });
+
+  it('no allow_stored_sessions exists anywhere (decision 33)', async () => {
+    const [row] = await database.query<{ n: number }>(
+      `select (select count(*) from information_schema.columns where column_name ilike '%allow_stored_session%')
+            + (select count(*) from pg_proc where prosrc ilike '%allow_stored_session%' or proname ilike '%allow_stored_session%') as n`);
+    expect(Number(row!.n)).toBe(0);
+  });
+
+  it('spaceLinks.setSpawn changes the caller\'s own switch and budget', async () => {
+    const link = await linkAB();
+    const claims = await hClaims();
+    const set = await store.setSpawn(claims, { linkId: link.id, allowSpawn: false, spawnBudget: 1 });
+    expect(set.mine).toMatchObject({ allowSpawn: false, spawnBudget: 1 });
+    const back = await store.setSpawn(claims, { linkId: link.id, allowSpawn: true, spawnBudget: 3 });
+    expect(back.mine).toMatchObject({ allowSpawn: true, spawnBudget: 3 });
+  });
+});
+
+describe('W6 RLS and grants — the row\'s member only, no ciphertext column for tm8_app', () => {
+  it('tm8_app cannot select ciphertext or nonce (42501)', async () => {
+    expect(await outcome(() => asIdentity(fixture.identityH, (q) =>
+      q.query('select ciphertext from public.space_link_tokens')))).toBe('42501');
+    expect(await outcome(() => asIdentity(fixture.identityH, (q) =>
+      q.query('select nonce from public.space_link_tokens')))).toBe('42501');
+  });
+
+  it('positive — the metadata columns are readable, and only the caller\'s own rows', async () => {
+    await linkAB();
+    const h3 = await h3Claims();
+    await store.add(h3, { spaceId: fixture.spaceA, targetSpaceId: fixture.spaceB });
+    const mine = await asIdentity(fixture.identityH, (q) =>
+      q.query<{ member_id: string }>('select member_id::text from public.space_link_tokens'));
+    expect(mine.length).toBeGreaterThan(0);
+    expect(new Set(mine.map((r) => r.member_id))).toEqual(new Set([fixture.memberHA]));
+  });
+
+  it('a node admin sees no other member\'s row (no node-admin bypass)', async () => {
+    const rows = await db.tx({ identityId: fixture.identityH2, authKind: 'browser', nodeAdmin: true, requestId: `space-links-${randomUUID()}` } as DbClaims,
+      (q) => q.query('select id from public.space_link_tokens'));
+    expect(rows).toHaveLength(0);
+  });
+
+  it('tm8_app has no insert, update or delete on the table', async () => {
+    const [row] = await database.query<{ n: number }>(
+      `select count(*) as n from information_schema.role_table_grants
+        where table_name = 'space_link_tokens' and grantee = 'tm8_app' and privilege_type <> 'SELECT'`);
+    expect(Number(row!.n)).toBe(0);
+  });
+});
+
+describe('W6 a1 / T19 — AAD home|link|member|target', () => {
+  it('the stored ciphertext opens under its own row\'s binding (positive)', async () => {
+    const link = await linkAB();
+    const row = await sealedRow(link.id, fixture.memberHA);
+    const key = await loadOrCreateCredentialKey(dataDir);
+    const token = openSecret(key, { ciphertext: row.ciphertext!, nonce: row.nonce! },
+      { homeSpaceId: fixture.spaceA, linkId: link.id, memberId: fixture.memberHA, targetSpaceId: fixture.spaceB });
+    expect(token.startsWith('tm8s_')).toBe(true);
+  });
+
+  it('copied to another member\'s row, another link or another target, it does not open', async () => {
+    const link = await linkAB();
+    const row = await sealedRow(link.id, fixture.memberHA);
+    const key = await loadOrCreateCredentialKey(dataDir);
+    const sealed = { ciphertext: row.ciphertext!, nonce: row.nonce! };
+    const base = { homeSpaceId: fixture.spaceA, linkId: link.id, memberId: fixture.memberHA, targetSpaceId: fixture.spaceB };
+    expect(() => openSecret(key, sealed, { ...base, memberId: fixture.memberH3A })).toThrow();
+    expect(() => openSecret(key, sealed, { ...base, linkId: randomUUID() })).toThrow();
+    expect(() => openSecret(key, sealed, { ...base, targetSpaceId: fixture.spaceC })).toThrow();
+    expect(() => openSecret(key, sealed, { ...base, homeSpaceId: fixture.spaceC })).toThrow();
+    // The space-credential form cannot open it either.
+    expect(() => openSecret(key, sealed, { spaceId: fixture.spaceA, credentialId: link.id, provider: 'anthropic' })).toThrow();
+  });
+
+  it('the use path refuses a ciphertext pasted into another member\'s row (unreadable), and H3\'s own still opens', async () => {
+    const link = await linkAB();
+    const h3 = await h3Claims();
+    await store.add(h3, { spaceId: fixture.spaceA, targetSpaceId: fixture.spaceB });
+    await store.login(h3, link.id);
+    const h3Row = await sealedRow(link.id, fixture.memberH3A);
+    const hRow = await sealedRow(link.id, fixture.memberHA);
+    expect((await store.use(h3, link.id)).session.identityId).toBe(fixture.identityH3);
+    await database.query(
+      `update public.space_link_tokens set ciphertext = $1, nonce = $2 where id = $3`,
+      [hRow.ciphertext, hRow.nonce, h3Row.id]);
+    await expect(store.use(h3, link.id)).rejects.toMatchObject({ status: 'unreadable' });
+    // Restore H3 with a fresh login (relogin in place).
+    await store.login(h3, link.id, { relogin: true });
+    expect((await store.use(h3, link.id)).session.identityId).toBe(fixture.identityH3);
+  });
+
+  it('the aad column is held to the row by a CHECK', async () => {
+    const link = await linkAB();
+    expect(await outcome(() => database.query(
+      `update public.space_link_tokens set aad = 'x' where link_id = $1 and member_id = $2`,
+      [link.id, fixture.memberHA]))).toBe('23514');
+  });
+});
+
+describe('W6 a6 — no ciphertext or token in entity_versions, the command ledger or any list', () => {
+  it('after add + login + relogin with client mutation ids, nothing carries the sealed bytes or the token', async () => {
+    const claims = await hClaims();
+    const link = await store.add(claims, { spaceId: fixture.spaceA, targetSpaceId: fixture.spaceB, clientMutationId: `w6-a6-add-${randomUUID()}` });
+    await store.login(claims, link.id, { clientMutationId: `w6-a6-login-${randomUUID()}` });
+    await store.login(claims, link.id, { relogin: true, clientMutationId: `w6-a6-relogin-${randomUUID()}` });
+    const row = await sealedRow(link.id, fixture.memberHA);
+    const use = await store.use(claims, link.id);
+    const needles = [
+      row.ciphertext!.toString('base64'),
+      row.ciphertext!.toString('hex'),
+      use.token,
+      use.token.split('.')[1]!,
+    ];
+    const [hits] = await database.query<{ n: number }>(
+      `select (select count(*) from public.entity_versions v, unnest($1::text[]) k where position(k in v.snapshot::text) > 0)
+            + (select count(*) from public.command_ledger c, unnest($1::text[]) k where position(k in coalesce(c.result::text, '')) > 0)
+            + (select count(*) from public.activity_log a, unnest($1::text[]) k where position(k in a::text) > 0) as n`,
+      [needles]).catch(async () => database.query<{ n: number }>(
+      `select (select count(*) from public.entity_versions v, unnest($1::text[]) k where position(k in v.snapshot::text) > 0)
+            + (select count(*) from public.command_ledger c, unnest($1::text[]) k where position(k in coalesce(c.result::text, '')) > 0) as n`,
+      [needles]));
+    expect(Number(hits!.n)).toBe(0);
+    const listed = JSON.stringify(await store.list(claims, fixture.spaceA));
+    for (const needle of needles) expect(listed.includes(needle)).toBe(false);
+    // The ledger DID record the three commands (so the search above had rows to search).
+    const [ledger] = await database.query<{ n: number }>(
+      `select count(*) as n from public.command_ledger where operation in ('spaceLinks.add', 'spaceLinks.login', 'spaceLinks.relogin') and client_mutation_id like 'w6-a6-%'`);
+    expect(Number(ledger!.n)).toBe(3);
+  });
+});
+
+describe('W6 stale — a 401 turns the link signed_out, no retry, attention for the member', () => {
+  it('a revoked link session: use marks signed_out, forgets the bytes, raises attention, tells the caller once', async () => {
+    const link = await linkAB();
+    const claims = await hClaims();
+    // B revokes the stored session (the W4 Sessions page path on this base: revoke_auth_session as its owner).
+    await db.rpc(claims, 'revoke_auth_session', [link.mine!.sessionId]);
+    staleNotices.length = 0;
+    await expect(store.use(claims, link.id, { workSessionId: fixture.workSessionA }))
+      .rejects.toMatchObject({ status: 'signed_out' });
+    const row = await sealedRow(link.id, fixture.memberHA);
+    expect(row).toMatchObject({ status: 'signed_out', ciphertext: null, nonce: null, auth_session_id: null });
+    const [attention] = await database.query<{ n: number; by: string }>(
+      `select count(*) as n, max(requested_by::text) as by from public.attention_requests where entity_id = $1 and status = 'open'`, [link.id]);
+    expect(Number(attention!.n)).toBe(1);
+    expect(attention!.by).toBe(fixture.memberHA);
+    expect(staleNotices).toEqual([{ linkId: link.id, status: 'signed_out', callerWorkSessionId: fixture.workSessionA }]);
+    // No retry: the next use is refused in SQL and does not resolve or notify again.
+    await expect(store.use(claims, link.id)).rejects.toBeInstanceOf(SpaceLinkUnusable);
+    expect(staleNotices).toHaveLength(1);
+    // Paired positive: relogin brings it back.
+    await store.login(claims, link.id, { relogin: true });
+    expect((await store.use(claims, link.id)).targetSpaceId).toBe(fixture.spaceB);
+  });
+
+  it('relogin revokes the previous session in place', async () => {
+    const link = await linkAB();
+    const claims = await hClaims();
+    const before = link.mine!.sessionId!;
+    const after = (await store.login(claims, link.id, { relogin: true })).mine!.sessionId!;
+    expect(after).not.toBe(before);
+    const rows = await database.query<{ id: string; revoked: boolean }>(
+      `select id::text, revoked_at is not null as revoked from public.auth_sessions where id = any($1::uuid[])`, [[before, after]]);
+    expect(Object.fromEntries(rows.map((r) => [r.id, r.revoked]))).toEqual({ [before]: true, [after]: false });
+  });
+
+  it('logout revokes the session and forgets the bytes', async () => {
+    const link = await linkAB();
+    const claims = await hClaims();
+    const session = link.mine!.sessionId!;
+    const out = await store.logout(claims, link.id);
+    expect(out.mine).toMatchObject({ status: 'signed_out', sessionId: null });
+    const [row] = await database.query<{ revoked: boolean }>(
+      `select revoked_at is not null as revoked from public.auth_sessions where id = $1`, [session]);
+    expect(row!.revoked).toBe(true);
+    expect((await sealedRow(link.id, fixture.memberHA)).ciphertext).toBeNull();
+    await store.login(claims, link.id);
+  });
+});
+
+describe('W6 human-only management (strict gate)', () => {
+  it('G (agent) is refused 42501 on add / login / logout / remove / setSpawn; list is admitted', async () => {
+    const link = await linkAB();
+    const token = await mintAgent();
+    const g = await claimsForToken(token);
+    expect(await outcome(() => store.add(g, { spaceId: fixture.spaceA, targetSpaceId: fixture.spaceB }))).toBe('42501');
+    expect(await outcome(() => store.login(g, link.id))).toBe('42501');
+    expect(await outcome(() => store.logout(g, link.id))).toBe('42501');
+    expect(await outcome(() => store.remove(g, link.id))).toBe('42501');
+    expect(await outcome(() => store.setSpawn(g, { linkId: link.id, allowSpawn: false }))).toBe('42501');
+    expect(await outcome(() => store.list(g, fixture.spaceA))).toBe('ok');
+  });
+
+  it('positive — H (browser) does each of them', async () => {
+    const claims = await hClaims();
+    const link = await store.add(claims, { spaceId: fixture.spaceA, targetSpaceId: fixture.spaceB });
+    expect(await outcome(() => store.login(claims, link.id, { relogin: true }))).toBe('ok');
+    expect(await outcome(() => store.setSpawn(claims, { linkId: link.id, allowSpawn: true }))).toBe('ok');
+    expect(await outcome(() => store.logout(claims, link.id))).toBe('ok');
+    expect(await outcome(() => store.login(claims, link.id))).toBe('ok');
+  });
+});
+
+describe('W6 T17 — leaving or being removed ends the member\'s rows', () => {
+  it('H3 removed from the HOME space: H3\'s rows are deleted and their sessions revoked; H\'s stay', async () => {
+    const link = await linkAB();
+    const h3 = await h3Claims();
+    await store.add(h3, { spaceId: fixture.spaceA, targetSpaceId: fixture.spaceB });
+    const h3Link = await store.login(h3, link.id);
+    const h3Session = h3Link.mine!.sessionId!;
+    const claims = await hClaims();
+    await db.rpc(claims, 'remove_space_member', [fixture.spaceA, fixture.memberH3A, null]);
+    const [rows] = await database.query<{ n: number }>(
+      `select count(*) as n from public.space_link_tokens where member_id = $1`, [fixture.memberH3A]);
+    expect(Number(rows!.n)).toBe(0);
+    const [session] = await database.query<{ revoked: boolean }>(
+      `select revoked_at is not null as revoked from public.auth_sessions where id = $1`, [h3Session]);
+    expect(session!.revoked).toBe(true);
+    // Paired positive: H's own row on the same link is untouched and usable.
+    expect((await store.use(claims, link.id)).session.identityId).toBe(fixture.identityH);
+  });
+
+  it('H leaves the TARGET: H\'s row turns left, bytes forgotten, session revoked, attention raised', async () => {
+    // A fresh target D where H is a member, so leaving it does not disturb B.
+    const spaceD = randomUUID();
+    const memberHD = randomUUID();
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(`insert into public.spaces(id, name, created_by_identity) values ($1, 'Links D', $2)`, [spaceD, fixture.identityH]);
+      await client.query(`insert into public.entities(id, space_id, kind, created_by, visibility) values ($1, $2, 'member', $1, 'space')`, [memberHD, spaceD]);
+      await client.query(`insert into public.members(entity_id, space_id, identity_id, role, display_name) values ($1, $2, $3, 'member', 'H')`, [memberHD, spaceD, fixture.identityH]);
+    });
+    const claims = await hClaims();
+    const added = await store.add(claims, { spaceId: fixture.spaceA, targetSpaceId: spaceD });
+    const link = await store.login(claims, added.id);
+    await db.rpc(claims, 'leave_space', [spaceD, null]);
+    const row = await sealedRow(link.id, fixture.memberHA);
+    expect(row).toMatchObject({ status: 'left', ciphertext: null });
+    const [session] = await database.query<{ revoked: boolean }>(
+      `select revoked_at is not null as revoked from public.auth_sessions where id = $1`, [link.mine!.sessionId]);
+    expect(session!.revoked).toBe(true);
+    const [attention] = await database.query<{ n: number }>(
+      `select count(*) as n from public.attention_requests where entity_id = $1 and status = 'open'`, [link.id]);
+    expect(Number(attention!.n)).toBe(1);
+    await expect(store.use(claims, link.id)).rejects.toMatchObject({ status: 'left' });
+    // Paired positive: H's link to B is still usable.
+    const ab = await linkAB();
+    expect((await store.use(claims, ab.id)).targetSpaceId).toBe(fixture.spaceB);
+  });
+});
+
+// Keeps sealSecret referenced for readers checking what a1 exercises.
+void sealSecret;
