@@ -5,10 +5,10 @@
 -- WHAT THIS FILE DOES
 --
 --   1. `public.servers`: the detail row of the `server` entity (kind registered
---      by 243). A server lives in a home space; every member of that space can
+--      by 250). A server lives in a home space; every member of that space can
 --      see it. It holds no secret.
 --   2. `public.server_gate_tokens`: one member's SEALED gate session on that
---      server. 244's posture exactly: RLS shows a row to its member only (no
+--      server. 251's posture exactly: RLS shows a row to its member only (no
 --      node-admin or space-admin arm), tm8_app's column grant leaves out
 --      ciphertext and nonce, and every write is a SECURITY DEFINER RPC behind
 --      the strict internal.require_human_auth_kind(). AES-256-GCM under the
@@ -17,7 +17,7 @@
 --      The gate token only mints and refreshes a link session on the remote
 --      (its auth.space.enter). A forwarded call presents that link session
 --      alone: ingress takes ONE credential (http/identity-resolver.ts:54-69).
---   3. NOT HERE: remote link sessions on 244's table. Lead ruling 09:12Z: they
+--   3. NOT HERE: remote link sessions on 251's table. Lead ruling 09:12Z: they
 --      land with kind `link` minting on auth.space.enter, after the re-stack
 --      onto main. Until then forwarding refuses (remote/forwarder.ts).
 --   4. 044 STAYS AS IT IS AND BECOMES READ-ONLY (O12, owner-confirmed). No row
@@ -67,7 +67,7 @@ for each row execute function internal.touch_updated_at();
 
 alter table public.servers enable row level security;
 
--- 243's space_links shape (218 §4): readable when the entity is.
+-- 250's space_links shape (218 §4): readable when the entity is.
 create policy servers_select on public.servers for select to tm8_app
   using ((exists (select 1 from public.entities readable_entity where readable_entity.id = servers.entity_id and readable_entity.deleted_at is null offset 0)));
 
@@ -113,7 +113,7 @@ for each row execute function internal.touch_updated_at();
 
 alter table public.server_gate_tokens enable row level security;
 
--- The row's member only: no node-admin arm, no space-admin arm (244's policy).
+-- The row's member only: no node-admin arm, no space-admin arm (251's policy).
 create policy server_gate_tokens_select on public.server_gate_tokens for select to tm8_app
   using (exists (
     select 1 from public.members m
@@ -586,7 +586,8 @@ create view public.server_directory with (security_invoker = true) as
 grant select on public.server_directory to tm8_app;
 
 -- -----------------------------------------------------------------------------
--- 8. Content hydration. SHARED OBJECT: 243's body verbatim; the `server` arm
+-- 8. Content hydration. SHARED OBJECT: 250's body verbatim (the composed
+--     definer: 239's credential arm + 250's space_link arm); the `server` arm
 --     is the only addition.
 -- -----------------------------------------------------------------------------
 create or replace function internal.entity_content(target uuid)
@@ -632,8 +633,11 @@ begin
                               || jsonb_build_object('sections', internal.form_sections_json(target),
                                                     'questions', internal.form_questions_json(target))
                          into content from public.forms fm where fm.entity_id = target;
-      -- 243 (W6): the shared link's metadata. `space_links` holds no secret; the
-      -- sealed per-member token is `space_link_tokens` (244) and has no arm.
+      -- An allow-list, never to_jsonb(sc): the row holds the sealed secret,
+      -- the hint and the vendor login (§3a).
+      when 'credential' then select to_jsonb(cc) - 'entity_id' into content from public.credential_cards cc where cc.entity_id = target;
+      -- 250 (W6): the shared link's metadata. `space_links` holds no secret; the
+      -- sealed per-member token is `space_link_tokens` (251) and has no arm.
       when 'space_link' then select to_jsonb(sl) - 'entity_id' into content from public.space_links sl where sl.entity_id = target;
       -- W8: the server's metadata. `servers` holds no secret; the sealed
       -- per-member gate session is `server_gate_tokens` and has no arm.
