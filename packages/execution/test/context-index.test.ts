@@ -764,6 +764,9 @@ describe('fitLaunchContextIndex: the pure budget step launch.preview calls', () 
     expect(kept(room({ memories: 1, references: 1, teammates: 0, skills: 1 }))).toEqual({ memories: 1, references: 1, teammates: 0, skills: 1 });
     const tight = fitLaunchContextIndex({ candidates, mode: 'worker', budgets: {}, available: room({ memories: 1, references: 1, teammates: 0, skills: 1 }) });
     expect(indexDroppedOf(tight).map((d) => d.group)).toContain('teammates');
+  });
+});
+
 describe('Decision 7: selection.teammateIds is the worker\'s teammates group (launch card v3)', () => {
   const picked = (id: string) => ({ entityId: id, name: `Mate ${id}`, mode: 'worker', model: 'claude-sonnet-5' });
   const linked = [{ entityId: 'tm-9', kind: 'team_member', link: 'relates_to', title: 'Mate 9' }];

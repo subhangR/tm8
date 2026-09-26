@@ -141,7 +141,7 @@ export const LAUNCH_DEFAULTS: LaunchDefaultsResult = {
     floor: 1.5,
     minEntries: 1,
   },
-  teammates: { items: [], total: 0, budget: null, floor: 1 },
+  teammates: { items: [], total: 0, budget: null, floor: 1, minEntries: 1 },
   taskId: 'task-1',
   contextIndex: 'on',
   warnings: [],
