@@ -18,7 +18,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EntityId } from '@tm8/contract';
 import { ChatHomeScreen } from './ChatHomeScreen';
 import { CHAT_HOME_FIXTURE_THREAD, createChatHomeFixturePort } from './fixtures';
-import { JUMP_SETTLE_MS, NEAR_BOTTOM_PX } from './live-turn-status-follow';
+import { JUMP_SETTLE_MS, NEAR_BOTTOM_PX, useTranscriptFollow } from './live-turn-status-follow';
 import type { ChatModelOption } from './types';
 
 const SPACE_ID = '019f0000-0000-7000-8000-000000000090';
@@ -248,6 +248,29 @@ describe('coming back from a stage (or any host panel)', () => {
     closeStage();
     expect(writes.at(-1)).toBe(1000);
     expect(pill(view)).not.toBeNull();
+  });
+});
+
+/**
+ * Review N1: `tail` was in the follow effect's keys and no test knew. It is
+ * the live row's PHASE, and a phase change can move the end with no new
+ * `detail` at all — at ≤700px `sending → waiting` adds the meta's own line.
+ * The harness holds `content` still, so only `tail` can re-run the follow.
+ */
+describe('the live row changing shape moves the end too', () => {
+  const content = { same: true };
+  function Harness({ tail }: { tail: string }) {
+    const follow = useTranscriptFollow({ threadKey: 'chat-1', content, tail, itemCount: 1, visible: true });
+    return <div ref={follow.ref} className="tch-transcript" onScroll={follow.onScroll} />;
+  }
+
+  it('follows a row that grew a line, though the conversation did not change', () => {
+    const view = render(<Harness tail="sending" />);
+    expect(writes.at(-1)).toBe(BASE);
+    writes.length = 0;
+    contentHeight = BASE + 18; // the meta's own line appeared under the headline
+    view.rerender(<Harness tail="waiting" />);
+    expect(writes).toEqual([BASE + 18]);
   });
 });
 

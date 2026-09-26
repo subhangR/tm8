@@ -94,6 +94,26 @@ describe('the transcript always says what the agent is doing', () => {
     expect(view.queryByTestId('chat-dock')).toBeNull();
   });
 
+  /**
+   * Review N2: the row names a write's TARGET from the thread ledger's labels
+   * (`foldChatLedger(detail.turns).labels`, handed to the dock by the screen).
+   * A status move carries only an id; without the labels it reads
+   * `… an entity …`, with them it reads the title the thread already read.
+   */
+  it('a status move names its target by the title the turn already read', async () => {
+    const { view, emit } = await sendAndStream();
+    const TASK = '019f0000-0000-7000-8006-000000000001';
+    await emit({
+      kind: 'tool_call', toolCallId: 'r1', name: 'mcp__tm8__tm8_read',
+      args: { operation: 'entities.get', params: { id: TASK } }, state: 'running',
+    });
+    await emit({ kind: 'tool_result', toolCallId: 'r1', content: { entity: { id: TASK, kind: 'task', title: 'Ship the dock' } } });
+    const WORK = { operation: 'entities.commands.work', params: { id: TASK }, body: { status: 'in_progress' } };
+    await emit({ kind: 'tool_call', toolCallId: 'w1', name: 'mcp__tm8__tm8_act', args: WORK, state: 'running' });
+    await waitFor(() => expect(now(view)).toContain('Ship the dock'));
+    expect(now(view)).not.toContain('an entity');
+  });
+
   /** Lane 1's real `TurnInProgress` (#875) carries the stop through: Stop
    *  turns the row to `Stopping…`, then a FROZEN `Stopped · after …` summary
    *  that stays until the next send — not a row that vanishes mid-sentence. */

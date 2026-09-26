@@ -8,8 +8,14 @@
    HEIGHT DOES NOT TICK. The meta line changes every second, and the transcript
    only re-follows its end when the SCREEN re-renders — not when this row's own
    clock does. So nothing that ticks is allowed to wrap: the text and the meta
-   are `nowrap` + ellipsis, and on a phone the meta takes its own line for the
-   whole turn rather than wrapping onto one when it grows.
+   are `nowrap` + ellipsis, and in a narrow card the meta takes its own line for
+   the whole turn rather than wrapping onto one when it grows.
+
+   THE HEADLINE NEVER GIVES WAY (D27). Out of width, the row surrenders in one
+   order: the muted aside first, then the meta, and the headline last and only
+   by ellipsis. Measured before: a 561px card with the pill and a grown meta
+   drew `.tch-live__now` at 0px — a clock with no subject, which is the
+   "nothing is happening" screen this row exists to replace.
 
    4px ABOVE THE COMPOSER MEANS A NEGATIVE OFFSET. A sticky box sticks inside
    its scroller's CONTENT box, so `bottom: 4px` left the card 4px above the
@@ -28,6 +34,10 @@
   gap: 10px;
   min-width: 0;
   margin-top: var(--pn-space-2);
+  /* The narrow layout keys on the CARD's width, not the viewport's: beside the
+     sidebar a 1000px window holds a ~600px card. The card's width is set by
+     the transcript, never by its content, so the wrap can't tick either. */
+  container-type: inline-size;
   /* The dock spans the measure but only its children take clicks: the strip
      beside a standalone pill must not swallow a click on the turn beneath it. */
   pointer-events: none;
@@ -102,14 +112,6 @@
 .tch-live__glyph--stopped { color: var(--pn-ink-3); }
 .tch-live__glyph--failed { color: var(--pn-block); }
 
-.tch-live__text {
-  display: flex;
-  flex: 1;
-  align-items: baseline;
-  gap: var(--pn-space-2);
-  min-width: 0;
-  overflow: hidden;
-}
 .tch-live__now,
 .tch-live__aside {
   min-width: 0;
@@ -117,14 +119,20 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.tch-live__now { flex: none; max-width: 100%; font-weight: 600; }
-.tch-live__aside { flex: 1; color: var(--pn-ink-3); }
+/* Last to give way, and only by ellipsis: a shrink factor a thousand times
+   smaller than the meta's, so the meta is spent before the headline moves. */
+.tch-live__now { flex: 0 0.001 auto; max-width: 100%; font-weight: 600; }
+/* FIRST to give way: a zero basis means it only ever holds the space left
+   over — it can never push the headline or the meta, and never force a wrap. */
+.tch-live__aside { flex: 1 1 0%; color: var(--pn-ink-3); }
 
 /* `nowrap` so the clock never changes the row's height, and ELLIPSIS so it
    never sets the row's WIDTH either: measured at 390px, the escalated line
-   (`… still working · 1m 43s since last step`) held every card at 501px. */
+   (`… still working · 1m 43s since last step`) held every card at 501px.
+   Second to give way (D27): it shrinks only once the aside is spent. */
 .tch-live__meta {
   flex: 0 1 auto;
+  margin-left: auto;
   min-width: 0;
   overflow: hidden;
   color: var(--pn-ink-3);
@@ -164,12 +172,13 @@
 .tch-jump:hover { background: var(--pn-ink-2); }
 .tch-jump:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
 
-/* A phone: the meta takes its own line for the WHOLE turn (see the note at the
-   top — a line that appears only once the clock grows would move the end of
-   the transcript without the screen knowing). */
-@media (max-width: 560px) {
+/* A narrow CARD (≤700px, D27): the meta takes its own line for the WHOLE turn
+   (see the note at the top — a line that appears only once the clock grows
+   would move the end of the transcript without the screen knowing). The
+   headline and its aside keep the first line to themselves. */
+@container (max-width: 700px) {
   .tch-dock .tch-live { flex-wrap: wrap; row-gap: 2px; }
-  .tch-live__meta { flex-basis: 100%; padding-left: 24px; }
+  .tch-live__meta { flex-basis: 100%; margin-left: 0; padding-left: 24px; }
 }
 
 /* Reduced motion: the ribbon already holds its rest pose (RibbonMark never

@@ -188,7 +188,8 @@ describe('a11y — one status region, and it is not chatty (D4 / D16.5)', () => 
       vi.advanceTimersByTime(40 * S);
     });
     expect(container.querySelector('.tch-live__mark')?.getAttribute('aria-hidden')).toBe('true');
-    expect(container.querySelector('.tch-live__text')?.getAttribute('aria-hidden')).toBe('true');
+    expect(container.querySelector('.tch-live__now')?.getAttribute('aria-hidden')).toBe('true');
+    expect(container.querySelector('.tch-live__aside')?.getAttribute('aria-hidden')).toBe('true');
     expect(container.querySelector('.tch-live__meta')?.getAttribute('aria-hidden')).toBe('true');
     const spoken = container.querySelector('[data-testid="chat-live-announcement"]')!;
     expect(spoken.closest('[aria-hidden="true"]')).toBeNull();
