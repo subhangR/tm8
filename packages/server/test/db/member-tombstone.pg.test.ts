@@ -586,7 +586,10 @@ describe.sequential('spaces.members.remove — the owner race', () => {
     expect((await memberRow(s.ownerD))[0]!.status).toBe('removed');
   });
 
-  it('refused: mutual removal, concurrent — exactly one call commits and exactly one owner remains', async () => {
+  // An end-state invariant, not a race proof: Promise.all can serialize the two
+  // calls, and then the second is refused whether or not the lock exists. The
+  // race is proven by the interleaved cell above, which forces the overlap.
+  it('invariant: concurrent mutual removal ends with exactly one owner (end state only; the race is proven by the interleaved cell)', async () => {
     const s = await twoOwnerSpace();
     const results = await Promise.all([
       outcome(() => removeMember(f.identityO, s.spaceId, s.ownerD)),
