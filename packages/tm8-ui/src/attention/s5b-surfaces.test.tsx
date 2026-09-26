@@ -280,6 +280,24 @@ describe('AttentionBlock (tab 3, variant A)', () => {
     expect((screen.getByTestId('attention-block-note') as HTMLInputElement).value).toBe('');
   });
 
+  it('a failed Resolve does not restore its note over one typed while it was in flight', async () => {
+    let release!: (landed: boolean) => void;
+    const gate = new Promise<boolean>((resolve) => { release = resolve; });
+    const api = fakeApi([request({ id: 'r1' })], { resolve: vi.fn(() => gate) });
+    render(
+      <AttentionApiProvider api={api}>
+        <AttentionBlock entityId={TASK} />
+      </AttentionApiProvider>,
+    );
+    fireEvent.change(screen.getByTestId('attention-block-note'), { target: { value: 'cap at 1h' } });
+    act(() => { fireEvent.click(screen.getByTestId('attention-block-resolve')); });
+    expect((screen.getByTestId('attention-block-note') as HTMLInputElement).value).toBe('');
+    // Something newer is typed while the first resolve is still out.
+    fireEvent.change(screen.getByTestId('attention-block-note'), { target: { value: 'actually, 3x fixed' } });
+    await act(async () => { release(false); await gate; });
+    expect((screen.getByTestId('attention-block-note') as HTMLInputElement).value).toBe('actually, 3x fixed');
+  });
+
   it('a Resolve that LANDED drops the note: a later failure does not bring it back', async () => {
     let api = fakeApi([request({ id: 'r1' })]);
     const view = render(
@@ -396,6 +414,28 @@ describe('SessionWaitingBanner (tab 4)', () => {
     expect((screen.getByTestId('session-waiting-input') as HTMLInputElement).value).toBe('use exponential');
     expect(screen.getByTestId('session-waiting-reply').getAttribute('aria-pressed')).toBe('true');
     expect(screen.queryByTestId('session-waiting-scope')).toBeNull();
+  });
+
+  it('a failed Reply does not come back over a Resolve opened while it was in flight', async () => {
+    let release!: (landed: boolean) => void;
+    const gate = new Promise<boolean>((resolve) => { release = resolve; });
+    const api = fakeApi([request({ id: 'r1' })], { reply: vi.fn(() => gate) });
+    render(
+      <AttentionApiProvider api={api}>
+        <SessionWaitingBanner sessionId={SESSION} />
+      </AttentionApiProvider>,
+    );
+    fireEvent.click(screen.getByTestId('session-waiting-reply'));
+    fireEvent.change(screen.getByTestId('session-waiting-input'), { target: { value: 'use exponential' } });
+    act(() => { fireEvent.submit(screen.getByTestId('session-waiting-input').closest('form')!); });
+    expect(screen.queryByTestId('session-waiting-input')).toBeNull();
+    // While the Reply is out, the user opens Resolve and starts a note.
+    fireEvent.click(screen.getByTestId('session-waiting-resolve'));
+    fireEvent.change(screen.getByTestId('session-waiting-input'), { target: { value: 'settled on 3x fixed' } });
+    await act(async () => { release(false); await gate; });
+    expect(screen.getByTestId('session-waiting-resolve').getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByTestId('session-waiting-reply').getAttribute('aria-pressed')).toBe('false');
+    expect((screen.getByTestId('session-waiting-input') as HTMLInputElement).value).toBe('settled on 3x fixed');
   });
 
   it('PTY silence alone draws nothing (G1), with or without a module', () => {
