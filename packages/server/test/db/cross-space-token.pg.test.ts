@@ -2835,11 +2835,11 @@ describe('W3-audit identity_id() readers that skip the pin — KNOWN GAPs found 
     expect(await asToken(token, (q) => q.query(
       'select id from public.notifications where id = $1', [nB]), 'enforce')).toEqual([]);
   });
-  it('KNOWN GAP (W3-audit F1): …but mark_notification_read (023, 4-arg) marks it read — raw members join, no pin', async () => {
+  it('F1 CLOSED (246): …and mark_notification_read (4-arg) refuses it pinned to A — not found, read_at stays null', async () => {
     const nB = await notificationIn(fixture.spaceB, fixture.memberHB);
     const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
-    expect(await outcome(() => markRead(token, nB))).toBe('ok');
-    expect(await readAt(nB)).not.toBeNull();
+    expect(await outcome(() => markRead(token, nB))).toBe('P0002');
+    expect(await readAt(nB)).toBeNull();
   });
   it('positive — the same pinned credential marks A\'s notification read', async () => {
     const nA = await notificationIn(fixture.spaceA, fixture.memberHA);
@@ -2996,12 +2996,11 @@ describe('W3-audit over HTTP under enforce — T31 project routes, T4 files.down
   const readAt = async (id: string) => (await database.query<{ read_at: Date | null }>(
     'select read_at from public.notifications where id = $1', [id]))[0]!.read_at;
 
-  it('KNOWN GAP (W3-audit F1) over HTTP: PUT /v2/inbox/:B/read from H pinned to A answers 200 and marks B\'s row', async () => {
-    // Expected after the fix: 404 and read_at still null.
+  it('F1 CLOSED (246) over HTTP: PUT /v2/inbox/:B/read from H pinned to A answers 404 and leaves B\'s row unread', async () => {
     const nB = await notificationIn(fixture.spaceB, fixture.memberHB);
     const status = await send(await pinnedH(), 'PUT', `/v2/inbox/${nB}/read`, {},
       { clientMutationId: `w3-audit-${randomUUID()}` });
-    expect({ status, marked: (await readAt(nB)) !== null }).toEqual({ status: 200, marked: true });
+    expect({ status, marked: (await readAt(nB)) !== null }).toEqual({ status: 404, marked: false });
   });
   it('inbox.markRead positive — PUT /v2/inbox/:A/read from the same pin marks it', async () => {
     const nA = await notificationIn(fixture.spaceA, fixture.memberHA);
