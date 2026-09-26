@@ -706,13 +706,8 @@ export class PgEntityProjector implements EntityProjector {
       latest_reason: string;
       oldest_requested_at: Date | string;
     }>(
-      `select entity_id, count(*)::int as pending_count,
-              sum(points)::int as total_points, max(points)::int as max_points,
-              (array_agg(reason order by created_at desc, id desc))[1] as latest_reason,
-              min(created_at) as oldest_requested_at
-         from public.attention_requests
-        where entity_id = any($1::uuid[]) and status in ('open', 'acknowledged')
-        group by entity_id`,
+      // The one badge aggregate (252), shared with entity-read.
+      `select * from public.attention_badges($1::uuid[])`,
       [unique],
     );
     const attention = new Map<string, EntityAttentionSummary>();
