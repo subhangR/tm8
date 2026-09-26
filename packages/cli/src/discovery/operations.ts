@@ -1104,12 +1104,17 @@ const ROWS: Record<OperationName, Row> = {
   },
   'attentionRequests.create': {
     cmd: ['entity', 'attention'],
-    syn: 'tm8 entity attention <entity-id> --reason <text> --points <1-100> [--mutation-id <id>]',
-    sum: 'Request scored attention for any entity',
+    syn: 'tm8 entity attention <entity-id> --reason <text> [--level fyi|normal|high|urgent] [--type decide|approve|unblock|review|fyi] [--assignee <member-id>] [--points <1-100>] [--mutation-id <id>]',
+    sum: 'Ask a human for attention on any entity',
     authz: 'entity',
     input: 'bound',
     tags: ['attention', 'needs-attention', 'triage'],
-    examples: ['tm8 entity attention <entity-id> --reason "Need a decision" --points 80'],
+    notes: [
+      '--level defaults to normal and --type to decide; --points is an override, otherwise it derives from the level (fyi 10, normal 40, high 70, urgent 95)',
+      'from inside a session the request is stamped with that session (never a flag); the same session asking the same reason again returns the open request (affected: 0)',
+      'the resolver\'s note arrives as a message in the raising session about 8s after the resolve; end your turn and wait',
+    ],
+    examples: ['tm8 entity attention <task-id> --reason "Pick the retry policy" --level high'],
   },
   'attentionRequests.list': {
     cmd: ['attention', 'list'],
@@ -1125,9 +1130,55 @@ const ROWS: Record<OperationName, Row> = {
   },
   'attentionRequests.resolveEntity': {
     cmd: ['attention', 'resolve-entity'],
-    syn: 'tm8 attention resolve-entity <entity-id> [--note <text>] [--mutation-id <id>]',
-    sum: 'Resolve every pending attention request for one entity',
+    syn: 'tm8 attention resolve-entity <entity-id> [--note <text>] [--batch-id <uuid>] [--mutation-id <id>]',
+    sum: 'Resolve every pending attention request on an entity\'s roll-up root',
     authz: 'entity', input: 'bound', tags: ['attention', 'resolve', 'clear'],
+    notes: [
+      'resolving is for humans: an agent should not resolve (a convention, not enforced); an agent takes back its own request with `tm8 attention withdraw`',
+      'settles the root\'s own requests and those rolled up from its sessions and forms, as one batch; `tm8 attention unresolve <batch-id>` undoes it within 8s, after which the note is delivered to each raising session',
+    ],
+  },
+  'attentionRequests.markSeen': {
+    cmd: ['attention', 'seen'],
+    syn: 'tm8 attention seen <entity-id> [--mutation-id <id>]',
+    sum: 'Mark every pending attention request on an entity\'s roll-up root seen by you',
+    authz: 'entity', input: 'bound', tags: ['attention', 'seen', 'read'],
+    notes: ['seen is per person: it never changes a request\'s status, the counts, or anyone else\'s view'],
+  },
+  'attentionRequests.unresolve': {
+    cmd: ['attention', 'unresolve'],
+    syn: 'tm8 attention unresolve <batch-id> [--mutation-id <id>]',
+    sum: 'Undo one resolve within 8s, reopening its requests and cancelling its note',
+    authz: 'entity', input: 'bound', tags: ['attention', 'undo', 'reopen'],
+    notes: ['only the resolver, and only within 8s of the resolve (conflict undo_window_closed after)'],
+  },
+  'attentionRequests.withdraw': {
+    cmd: ['attention', 'withdraw'],
+    syn: 'tm8 attention withdraw <request-id> [--expect-version <n>] [--mutation-id <id>]',
+    sum: 'Withdraw an open attention request you raised',
+    authz: 'entity', input: 'bound', ver: 'expectedVersion', tags: ['attention', 'withdraw', 'dismiss'],
+    notes: ['only the agent that raised it, and only an open agent request; nothing is delivered'],
+  },
+  // Attention v2 S6. Deliberately `cmd: null`: tm8's OWN conflict signal is
+  // raised and cleared by the worktree rail (`worktree merge|cherry-pick|stash`),
+  // never by hand. Agents and humans ask through `tm8 entity attention`.
+  'attentionSignals.raise': {
+    cmd: null,
+    sum: "Raise tm8's own merge-conflict attention signal (high / review) on a worktree, its session or a linked task",
+    authz: 'entity',
+    input: 'bound',
+    tags: ['attention', 'conflict', 'signal', 'worktree', 'system'],
+    reason: 'cli_worktree_rail',
+    notes: ['a closed vocabulary: {kind:"conflict", worktreeId}; the server builds the key and fixes level and type'],
+  },
+  'attentionSignals.clear': {
+    cmd: null,
+    sum: "Clear tm8's own merge-conflict attention signal once the worktree flow completes clean",
+    authz: 'entity',
+    input: 'bound',
+    tags: ['attention', 'conflict', 'signal', 'worktree', 'system', 'clear'],
+    reason: 'cli_worktree_rail',
+    notes: ['idempotent: nothing open is affectedCount 0'],
   },
   'entities.move': {
     cmd: ['entity', 'move'],
@@ -3176,6 +3227,7 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   spaces: 'space',
   entities: 'entity',
   attentionRequests: 'attention',
+  attentionSignals: 'attention',
   tracking: 'tracking',
   edges: 'edge',
   edgeTypes: 'edge-type',
@@ -3282,6 +3334,7 @@ function exposureFor(operation: OperationName): Exposure {
 // 2026-08-13 (first-run claim): auth.claim + auth.claim.status take the catalog
 // to 161 rows. RECOMPUTED from `JSON.stringify(OPERATIONS)`, not adjusted.
 export const CATALOG_DIGEST =
+  // Re-measured for Attention v2 S4 (+attentionRequests.markSeen/unresolve/withdraw).
   // Re-measured for W11 (+spaces.projects.list, +spaces.projects.create at
   // /projects/create, +gate.folders.list/create; projects.link stays, decision 29) — read from the regenerated conformance manifest.
   // Re-measured 141 (+ auth.password.change, auth.invite.signup,
@@ -3322,7 +3375,9 @@ export const CATALOG_DIGEST =
   // +7 spaceLinks.* (W6, 250/251, re-stacked on f54f9ffd): RECOMPUTED from JSON.stringify(OPERATIONS); equals the regenerated manifest's catalogDigest.
   // +6 credentials.space.* (W10b, merged onto main d8343503 after #864): read from the regenerated conformance manifest.
   // Re-measured (W10d #883, composed onto 257 after #869/#898/#904): + credentials.space.addMine. Read from the regenerated conformance manifest.
-  'sha256:6b238c551fc1ad46d0ed85add3a62625988ebac82d67e035161663b33a0a9e7b';
+  // +2 attentionSignals.raise|clear (Attention v2 S6, stacked on tm8/attention-v2-integration): read from the regenerated conformance manifest.
+  // +3 attentionRequests.markSeen|unresolve|withdraw (Attention v2 S4, stacked on tm8/attention-v2-integration): read from the regenerated conformance manifest.
+  'sha256:978a53c8bfef50f054c8a3a27195998bc80a2956a6f130c1be4e50588501d5a2';
 
 export const GRAMMAR_VERSION = '2';
 
@@ -3572,7 +3627,7 @@ const COMMAND_ALIASES = new Map<string, {
   // The Tier 2 mutating git verbs are ALIASES for the same reason `worktree
   // list|status` are: every graph touch is an operation that already exists
   // (entities.get + edges.list resolve, messages.post writes the receipt,
-  // attentionRequests.create raises a conflict), and the git mutation itself
+  // attentionSignals.raise|clear raise and clear a conflict), and the git mutation itself
   // is local argv-only execution, which the catalog does not model. A
   // `worktrees.checkpoint` row would have opened the catalog for a command
   // whose graph writes are all existing doors.
@@ -3649,7 +3704,7 @@ const COMMAND_ALIASES = new Map<string, {
     syntax: 'tm8 worktree merge <session-id|worktree-id> --from <ref> [--task <task-id>] [--mutation-id <id>]',
     summary: 'Merge a ref into the session branch; a conflict aborts cleanly and is surfaced durably',
     notes: [
-      'on conflict: abort + verify clean, then a message listing conflicted paths on the owning task anchor (fallback session, then worktree) AND attentionRequests.create — never silent, never mid-merge',
+      'on conflict: abort + verify clean, then a message listing conflicted paths on the owning task anchor (fallback session, then worktree) AND attentionSignals.raise — never silent, never mid-merge; a later clean completion clears it (attentionSignals.clear)',
       'merging the session branch INTO base is refused by design: base is checked out in the user’s tree or nowhere',
     ],
     examples: ['tm8 worktree merge <session-id> --from main'],
@@ -3846,10 +3901,10 @@ COMMAND_OPS.set('session checkpoint', ['entities.get', 'edges.list', 'messages.p
 COMMAND_OPS.set('session rollback', ['entities.get', 'edges.list', 'messages.post']);
 COMMAND_OPS.set('worktree stage', ['entities.get', 'edges.list']);
 COMMAND_OPS.set('worktree commit', ['entities.get', 'edges.list', 'messages.post']);
-COMMAND_OPS.set('worktree merge', ['entities.get', 'edges.list', 'messages.post', 'attentionRequests.create']);
-COMMAND_OPS.set('worktree cherry-pick', ['entities.get', 'edges.list', 'messages.post', 'attentionRequests.create']);
+COMMAND_OPS.set('worktree merge', ['entities.get', 'edges.list', 'messages.post', 'attentionSignals.raise', 'attentionSignals.clear']);
+COMMAND_OPS.set('worktree cherry-pick', ['entities.get', 'edges.list', 'messages.post', 'attentionSignals.raise', 'attentionSignals.clear']);
 COMMAND_OPS.set('worktree branch', ['entities.get', 'edges.list', 'messages.post']);
-COMMAND_OPS.set('worktree stash', ['entities.get', 'edges.list', 'messages.post', 'attentionRequests.create']);
+COMMAND_OPS.set('worktree stash', ['entities.get', 'edges.list', 'messages.post', 'attentionSignals.raise', 'attentionSignals.clear']);
 COMMAND_ORDER.push('session checkpoint', 'session rollback', 'worktree stage', 'worktree commit', 'worktree merge', 'worktree cherry-pick', 'worktree branch', 'worktree stash');
 
 /**

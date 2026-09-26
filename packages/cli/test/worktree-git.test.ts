@@ -51,6 +51,8 @@ let seen: Seen[] = [];
 let worktreeContent: Record<string, unknown> = {};
 /** in_worktree edges the stub serves, filtered by source/destination. */
 let edges: Array<{ source: { id: string; kind: string }; target: { id: string; kind: string } }> = [];
+/** Attention v2 S6: a per-test failure for one request (status + error code), else 200. */
+let failWhen: ((pathname: string) => { status: number; code: string } | undefined) | undefined;
 
 function respond(pathname: string, query: URLSearchParams): unknown {
   if (pathname.includes('attention')) return { request: { id: 'att_1', status: 'open' }, affectedCount: 1 };
@@ -83,6 +85,12 @@ beforeAll(async () => {
         body: raw ? (JSON.parse(raw) as unknown) : undefined,
       });
       res.setHeader('content-type', 'application/json');
+      const failure = failWhen?.(url.pathname);
+      if (failure) {
+        res.statusCode = failure.status;
+        res.end(JSON.stringify({ error: { code: failure.code, message: `stub ${failure.code}`, requestId: 'req_t', retryable: false } }));
+        return;
+      }
       res.statusCode = 200;
       res.end(JSON.stringify({ data: respond(url.pathname, url.searchParams), requestId: 'req_t' }));
     });
@@ -127,6 +135,7 @@ afterAll(async () => {
 beforeEach(async () => {
   counter += 1;
   seen = [];
+  failWhen = undefined;
   repoRoot = join(base, `repo-${counter}`);
   wt = join(base, `wt-${counter}`);
   await mkdir(repoRoot, { recursive: true });
@@ -359,6 +368,54 @@ describe('worktree merge', () => {
     expect(await git(['rev-parse', 'HEAD'], wt)).toBe(headBefore);
     expect((await runGit(['rev-parse', '-q', '--verify', 'MERGE_HEAD'], { cwd: wt })).code).not.toBe(0);
     expect(await readFile(join(wt, 'shared.txt'), 'utf8')).not.toContain('<<<<<<<');
+  });
+
+  // Attention v2 S6: tm8's own conflict signal, per flow.
+  const conflictOnMain = async () => {
+    await writeFile(join(repoRoot, 'shared.txt'), 'line-1 MAIN\nline-2\n');
+    await git(['add', '.'], repoRoot);
+    await git(['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-m', 'main moves'], repoRoot);
+    await writeFile(join(wt, 'shared.txt'), 'line-1 SESSION\nline-2\n');
+    await drive(['session', 'checkpoint', SESSION, '--message', 'cp']);
+    seen = [];
+  };
+
+  it('raises the merge-flow signal on conflict and clears the merge flow on a clean merge', async () => {
+    await conflictOnMain();
+    expect((await drive(['worktree', 'merge', SESSION, '--from', 'main'])).code).toBe(6);
+    expect(posts('attention-signals')).toHaveLength(1);
+    expect(posts('attention-signals')[0]?.body).toMatchObject({
+      signal: { kind: 'conflict', worktreeId: WORKTREE, flow: 'merge' },
+    });
+    await git(['-c', 'user.email=t@t', '-c', 'user.name=t', 'merge', 'main', '-s', 'ours', '-m', 'resolve'], wt);
+    seen = [];
+    expect((await drive(['worktree', 'merge', SESSION, '--from', 'main'])).code).toBe(0);
+    const clears = posts('attention-signals/clear');
+    expect(clears).toHaveLength(1);
+    expect(clears[0]?.pathname).toContain(WORKTREE);
+    expect(clears[0]?.body).toMatchObject({ signal: { kind: 'conflict', worktreeId: WORKTREE, flow: 'merge' } });
+  });
+
+  it('a failing clear WARNS and keeps exit 0: the git op already succeeded and a retry is not idempotent', async () => {
+    failWhen = (pathname) => (pathname.endsWith('/attention-signals/clear') ? { status: 500, code: 'internal' } : undefined);
+    const res = await drive(['worktree', 'merge', SESSION, '--from', 'main']);
+    expect(res.code, res.stderr).toBe(0);
+    expect(res.stderr).toContain('conflict signal not cleared');
+    expect(posts('attention-signals/clear')).toHaveLength(1);
+  });
+
+  it('an explicit --task the server refuses as unlinked falls back to the default anchor, still exit 6', async () => {
+    const OTHER = '66666666-6666-7666-8666-666666666666';
+    failWhen = (pathname) => (pathname.includes(`/entities/${OTHER}/attention-signals`) ? { status: 403, code: 'forbidden' } : undefined);
+    await conflictOnMain();
+    const res = await drive(['worktree', 'merge', SESSION, '--from', 'main', '--task', OTHER]);
+    expect(res.code, res.stderr).toBe(6);
+    const raises = posts('attention-signals');
+    expect(raises.map((r) => r.pathname.includes(OTHER) ? 'other' : r.pathname.includes(TASK) ? 'task' : '?'))
+      .toEqual(['other', 'task']);
+    expect(res.stderr).toContain(`the conflict signal is raised on ${TASK}`);
+    // The durable message still lands on the explicit --task.
+    expect((posts('message')[0]?.body as { anchorIds?: string[] }).anchorIds).toEqual([OTHER]);
   });
 
   it('with no task edge the conflict is surfaced on the SESSION — never nowhere', async () => {
