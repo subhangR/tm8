@@ -35,6 +35,7 @@ const API_CALLS: readonly { name: string; pattern: RegExp }[] = [
   { name: 'seam.attentionRequests(…) (list)', pattern: /\.attentionRequests\s*\(/ },
   { name: 'commands.resolveAttention(…) (bulk resolve)', pattern: /\.resolveAttention\s*\(/ },
   { name: 'commands.updateAttentionRequest(…) (settle one)', pattern: /\.updateAttentionRequest\s*\(/ },
+  { name: 'commands.attentionV2.* (markSeen / unresolve / withdraw)', pattern: /\.attentionV2\b/ },
   { name: "call('attentionRequests.*') (raw op)", pattern: /call\s*(?:<[^>]*>)?\s*\(\s*['"`]attentionRequests\./ },
 ];
 
@@ -78,6 +79,9 @@ describe('attention API ban', () => {
     expect(inOwner).toContain('useAttentionPending.ts');
     expect(inOwner).toContain('AttentionInbox.tsx');
     expect(inOwner).toMatch(/port\.ts:\d+ — commands\.updateAttentionRequest/);
+    // Attention v2 (S5a): the store's commands own resolve and the v2 verbs.
+    expect(inOwner).toMatch(/attention-commands\.ts:\d+ — commands\.resolveAttention/);
+    expect(inOwner).toMatch(/attention-commands\.ts:\d+ — commands\.attentionV2/);
   });
 
   it('no file outside src/attention/ calls the attention API', () => {

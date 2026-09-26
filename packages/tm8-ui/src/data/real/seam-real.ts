@@ -454,6 +454,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       react: (id, input) => ops.react(id, input),
       resolveAttention: (id, input) => ops.resolveAttention(id, input),
       updateAttentionRequest: (requestId, input) => ops.updateAttentionRequest(requestId, input),
+      attentionV2: ops.attentionV2,
       updateProfile: (input) => ops.updateProfile(input),
       setMemberRole: (spaceId, memberId, input) => ops.setMemberRole(spaceId, memberId, input),
       leaveSpace: (spaceId) => ops.leaveSpace(spaceId),
