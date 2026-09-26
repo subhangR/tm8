@@ -110,9 +110,10 @@ export function ChatHomeSurface({ seam, nodeKey, bridge, onOpenEntity, ...screen
     () => async (id) => chatEntityRefFrom(await readFleetEntity(id, readEntity)),
     [readEntity],
   );
-  /** The seam's verdict, the ONLY authority on live (R-UI-5) — re-minted on
-   *  every liveness snapshot, so the ledger's `N live` follows it. */
-  const livenessOf = useLivenessOf(seam.liveness);
+  /** The seam's verdict, the ONLY authority on live (R-UI-5) — re-minted when
+   *  a liveness snapshot can change it for this space, so the ledger's
+   *  `N live` follows it without re-running on every scheduled read. */
+  const livenessOf = useLivenessOf(seam.liveness, screen.spaceId);
   /** The entity graph's induced-relations read — `entities.connections`, the
    *  same seam op the Connections tab and the session graph use. */
   const connections = useMemo<ConnectionsReader>(
