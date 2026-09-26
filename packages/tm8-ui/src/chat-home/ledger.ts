@@ -40,10 +40,11 @@
  * classification only; nothing in the emitted model names a tool.
  */
 import type { EntityId } from '@tm8/contract';
-import { walkPayload } from './payload-walk';
+import { durableOutputToolName } from './explanation-tools';
+import { isEntityIdLike, walkPayload } from './payload-walk';
 import { projectTurnParts, type ProjectedTurnPart } from './turn-model';
 import type { ChatTurn } from './types';
-import { isWriteCall, operationOf } from './write-classifier';
+import { bareToolName, isWriteCall, operationOf } from './write-classifier';
 
 /**
  * The walk budget for TALLYING.
@@ -64,17 +65,27 @@ const TALLY_MAX_DEPTH = 8;
 /** An entity this conversation CREATED. */
 export interface LedgerCreate {
   id: string;
-  /** From the create call's own args — exact, and present from first paint. */
+  /** From the create call's own args — exact, and present from first paint —
+   *  falling back to the result's summary when the args carried none. */
   kind: string | null;
   title: string | null;
-  /** Null when created at the root, or when `parentId` was never set. */
+  /** Null when created at the root, or when `parentId` was never set. The
+   *  RESULT's `parentId` wins over the args: it is where the entity landed. */
   parentId: string | null;
+  /**
+   * The entity this creation is ABOUT, when it is not a hierarchy parent: the
+   * task a spawned session was handed (`taskIds[0]`, a dispatch's `subjectId`),
+   * or what a doc/form was attached to. Null when the call named none.
+   */
+  subjectId: string | null;
   /** The turn it happened in — how the transcript groups it. */
   messageId: EntityId;
   seq: number;
   /** A spawned work session, rather than an `entities.create`. Both are
    *  creations this conversation caused; only the verb differed. */
   spawned: boolean;
+  /** A spawned session's model id, from the spawn's own result. */
+  model?: string;
 }
 
 /** One status transition this conversation caused. */
@@ -84,6 +95,20 @@ export interface LedgerTransition {
    *  status is genuinely unknown. Render a one-sided arrow, never a guess. */
   from: string | null;
   to: string;
+  messageId: EntityId;
+  seq: number;
+}
+
+/**
+ * One NON-status edit this conversation made (advisor D11): a patch, a tick of
+ * acceptance criteria, a header, a PR/commit link. Status writes are
+ * transitions, not edits, and are never counted twice.
+ */
+export interface LedgerEdit {
+  entityId: string;
+  /** What moved, in words (`title`, `acceptance criteria`), deduped and in
+   *  first-seen order. Empty when the call did not say. */
+  what: readonly string[];
   messageId: EntityId;
   seq: number;
 }
@@ -105,6 +130,9 @@ export interface TurnLedger {
   reads: LedgerReads;
   creates: readonly LedgerCreate[];
   transitions: readonly LedgerTransition[];
+  /** Non-status edits, in call order. The transcript draws ONE quiet line for
+   *  them all, at the first one's position. */
+  edits: readonly LedgerEdit[];
   /** True when this turn did nothing to the graph — the views draw no ledger
    *  at all rather than an empty row. */
   empty: boolean;
@@ -133,13 +161,63 @@ export interface ChatLedger {
    path is two group tools whose names carry no verb (`write-classifier.ts`
    documents why that distinction is load-bearing). */
 
-const CREATE_OPS = new Set(['entities.create']);
+/**
+ * EVERY BIRTH VERB THE CHAT CAN CALL — not just `entities.create`.
+ *
+ * Measured over this node's real chat transcripts (2026-09-26): of ~45 calls
+ * that brought an entity into being, `entities.create` was 8. The rest came
+ * through verbs the fold did not know, so they were never highlighted and
+ * never reached the sticky panel's tree: `doc_create` (17), `memory_write`
+ * (2), a dispatch that spawned its dispatcher, and the kinds whose birth verb
+ * is not `entities.create` at all (`forms.create`, and `containers.create`
+ * — `entities.create` refuses the container kind). The direct tools carry no
+ * `operation`, so they are matched by their bare tool name.
+ */
+const CREATE_OPS = new Set([
+  'entities.create',
+  'forms.create',
+  'containers.create',
+  'containers.fork',
+  'artifacts.create',
+]);
+/** Direct tools that create, beside the two `durableOutputToolName` owns
+ *  (`doc_create`, `artifact_create` — reused, not copied). */
+const CREATE_TOOLS = new Set(['memory_write', 'form_create']);
+const TOOL_KIND: Readonly<Record<string, string>> = {
+  doc_create: 'doc',
+  artifact_create: 'artifact',
+  memory_write: 'memory',
+  form_create: 'form',
+};
+
+function isCreateTool(name: string): boolean {
+  const durable = durableOutputToolName(name);
+  return durable === 'doc_create' || durable === 'artifact_create' || CREATE_TOOLS.has(bareToolName(name));
+}
 const SPAWN_OPS = new Set(['execution.spawn']);
+/** A dispatch creates a session only when it had to spawn the dispatcher —
+ *  `dispatcherSpawned` in its result says which. */
+const DISPATCH_OPS = new Set(['execution.dispatch']);
 const MOVE_OPS = new Set(['entities.move']);
 const PLACEMENT_OPS = new Set(['placements.apply']);
 /** `complete` names no status in its body — the operation IS the status. */
 const COMPLETE_OPS = new Set(['entities.commands.complete']);
 const WORK_OPS = new Set(['entities.commands.work']);
+/** Writes that change an entity without moving its status, and the words for
+ *  what they change when the call does not itemise it. */
+const EDIT_OPS: Readonly<Record<string, string | null>> = {
+  'entities.patch': null,
+  'entities.commands.tick': 'acceptance criteria',
+  'entities.header.set': 'header',
+  'entities.header.clear': 'header',
+  'entities.commands.linkPr': 'pull request',
+  'entities.commands.linkCommit': 'commit',
+};
+/** A form's open/closed/cancelled lifecycle, under its own verb and id key. */
+const FORM_TRANSITION_OPS = new Set(['forms.transition']);
+
+const MCP_ERROR_SCHEMA = 'tm8.mcp.error.v1';
+const RECEIPT_SCHEMA = 'tm8.receipt.v1';
 
 /* The closed write-op set lives in `write-classifier.ts` now (one copy — two
    lists that agree today drift tomorrow). `isWriteCall` answers operations
@@ -163,15 +241,31 @@ export function buildChatLedger(turns: readonly ChatTurn[]): ChatLedger {
   const labels = new Map<string, { kind?: string; title?: string }>();
   const turnLedgers: TurnLedger[] = [];
 
-  const learn = (id: string, kind?: string, title?: string): void => {
+  const learn = (id: string, kind?: string, title?: string, exact = false): void => {
     const existing = labels.get(id);
     if (!existing) {
       labels.set(id, { ...(kind ? { kind } : {}), ...(title ? { title } : {}) });
       return;
     }
-    // Richer fields win when they finally arrive; nothing already known is lost.
-    if (kind && !existing.kind) existing.kind = kind;
-    if (title && !existing.title) existing.title = title;
+    // Richer fields win when they finally arrive; nothing already known is
+    // lost — except to an EXACT source (a create's own args), which outranks
+    // whatever a clamped echo taught us first.
+    if (kind && (exact || !existing.kind)) existing.kind = kind;
+    if (title && (exact || !existing.title)) existing.title = title;
+  };
+
+  /* One create per entity across the WHOLE thread. An idempotent replay (a
+     retried call with the same clientMutationId) answers with the entity it
+     already made, and a second "Created" card for it would claim two births. */
+  const createdIds = new Set<string>();
+  const recordCreate = (created: LedgerCreate, into: LedgerCreate[]): void => {
+    if (createdIds.has(created.id)) return;
+    createdIds.add(created.id);
+    into.push(created);
+    parentOf.set(created.id, created.parentId);
+    // The ARGS title is exact; a receipt clamps its echo at 80 characters,
+    // and every surface reading `labels` should name it the way the card does.
+    learn(created.id, created.kind ?? undefined, created.title ?? undefined, true);
   };
 
   for (const turn of turns) {
@@ -179,37 +273,55 @@ export function buildChatLedger(turns: readonly ChatTurn[]): ChatLedger {
     const readSeen = new Set<string>();
     const creates: LedgerCreate[] = [];
     const transitions: LedgerTransition[] = [];
+    const edits: LedgerEdit[] = [];
 
     for (const part of projectTurnParts(turn.parts)) {
       if (part.kind !== 'tool') continue;
       const operation = operationOf(part.args);
+      const tool = bareToolName(part.name);
+      const births = (operation !== null && CREATE_OPS.has(operation)) || isCreateTool(part.name);
+      const statusOp = operation !== null && isStatusOp(operation) ? operation : null;
+
+      /* THE FROM SIDE IS READ BEFORE THIS CALL'S OWN PAYLOAD IS ABSORBED. A
+         full command result carries the entity's NEW state, so absorbing it
+         first made every transition read `working → working`. */
+      const subject = statusOp ? statusSubjectOf(part, statusOp) : null;
+      const prior = subject ? (statusNow.get(subject) ?? null) : null;
 
       /* Every payload, read or write, is a chance to learn a label and a
          status — that is how a transition later gets its `from` side. */
       absorbSummaries(part, learn, statusNow);
 
-      if (!isWriteCall(part.name, part.args)) {
+      /* A verb this fold acts on is a write whatever the shared classifier's
+         verb regex makes of it — `containers.fork`, `forms.transition`. */
+      if (!births && statusOp === null && !isWriteCall(part.name, part.args)) {
         tallyReads(part, readSeen, readIds);
         continue;
       }
 
-      if (operation && CREATE_OPS.has(operation)) {
-        const created = createdFrom(part, turn.messageId);
-        if (created) {
-          creates.push(created);
-          parentOf.set(created.id, created.parentId);
-          learn(created.id, created.kind ?? undefined, created.title ?? undefined);
-        }
+      /* THE OUTCOME GUARD (coordinator ruling on the L3/L4 seam). A write the
+         server has not answered, or refused, changed nothing: it draws no
+         card and no transition, and it moves no `statusNow` / `parentOf`.
+         The step list says it is running, or shows it failed. Before this, a
+         refused `complete` (unticked criteria, a version conflict) still
+         rendered `→ done` and left the sticky panel calling the task done. */
+      if (!settledOk(part)) continue;
+
+      if (births) {
+        const created = createdFrom(part, turn.messageId, operation, tool);
+        if (created) recordCreate(created, creates);
         continue;
       }
 
       if (operation && SPAWN_OPS.has(operation)) {
         const spawned = spawnedFrom(part, turn.messageId);
-        if (spawned) {
-          creates.push(spawned);
-          parentOf.set(spawned.id, null);
-          learn(spawned.id, 'work_session');
-        }
+        if (spawned) recordCreate(spawned, creates);
+        continue;
+      }
+
+      if (operation && DISPATCH_OPS.has(operation)) {
+        const spawned = dispatcherSpawnedFrom(part, turn.messageId);
+        if (spawned) recordCreate(spawned, creates);
         continue;
       }
 
@@ -225,11 +337,27 @@ export function buildChatLedger(turns: readonly ChatTurn[]): ChatLedger {
         continue;
       }
 
-      if (operation && (WORK_OPS.has(operation) || COMPLETE_OPS.has(operation))) {
-        const transition = transitionFrom(part, turn.messageId, operation, statusNow);
-        if (transition) {
-          transitions.push(transition);
-          statusNow.set(transition.entityId, transition.to);
+      if (operation && operation in EDIT_OPS) {
+        const edit = editFrom(part, turn.messageId, operation);
+        if (edit) edits.push(edit);
+        continue;
+      }
+
+      if (statusOp && subject) {
+        const outcome = statusOutcome(part, statusOp, prior);
+        if (outcome) {
+          statusNow.set(subject, outcome.to);
+          // A write that left the status where it was caused no transition —
+          // `working → working` is a no-op wearing an arrow.
+          if (outcome.moved) {
+            transitions.push({
+              entityId: subject,
+              from: outcome.from,
+              to: outcome.to,
+              messageId: turn.messageId,
+              seq: part.seq,
+            });
+          }
         }
       }
     }
@@ -248,7 +376,9 @@ export function buildChatLedger(turns: readonly ChatTurn[]): ChatLedger {
       reads: { byKind, total: readIds.length, ids: readIds },
       creates,
       transitions,
-      empty: readIds.length === 0 && creates.length === 0 && transitions.length === 0,
+      edits,
+      empty:
+        readIds.length === 0 && creates.length === 0 && transitions.length === 0 && edits.length === 0,
     });
   }
 
@@ -285,18 +415,99 @@ function str(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
+function record(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
 /**
- * The id a create PRODUCED. Prefer the result — that is the real entity — and
- * fall back to nothing: a create whose result has not landed yet has no id to
- * key a tree on, and inventing one would produce a node that never reconciles.
+ * The top-level record a tool RESULT carries, whatever it arrived wrapped in.
+ *
+ * Claude records an MCP result as its text block — a JSON STRING; another
+ * runtime can hand over the MCP envelope itself (`structuredContent`, or a
+ * `content` array of text blocks). The walk in `payload-walk.ts` looks through
+ * all of these for entity objects; the questions asked here are about the
+ * envelope's OWN fields (`schemaVersion`, `formId`, `dispatcherSpawned`), so
+ * they need the envelope, not a walk. Null when there is none to read.
  */
-function createdId(part: ToolPart): string | null {
-  let found: string | null = null;
+function envelopeOf(result: unknown, depth = 0): Record<string, unknown> | null {
+  if (depth > 3) return null;
+  if (typeof result === 'string') {
+    const trimmed = result.trim();
+    if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return null;
+    try {
+      return envelopeOf(JSON.parse(trimmed), depth + 1);
+    } catch {
+      return null;
+    }
+  }
+  if (Array.isArray(result)) {
+    const text = result.find((block) => record(block)?.type === 'text');
+    return text ? envelopeOf(record(text)?.text, depth + 1) : null;
+  }
+  const value = record(result);
+  if (!value) return null;
+  const structured = record(value.structuredContent);
+  if (structured) return structured;
+  if (Array.isArray(value.content) && value.schemaVersion === undefined) {
+    return envelopeOf(value.content, depth + 1) ?? value;
+  }
+  return value;
+}
+
+/**
+ * Did the server ACCEPT this write? Only a call that settled `completed` with
+ * a result that is neither flagged an error nor an MCP error envelope. A
+ * running call has not been answered; an errored one changed nothing. Every
+ * real transcript on this node (341 settled calls, 2026-09-26) ends in exactly
+ * one of `completed` + result or `error` + error result, so this admits every
+ * accepted write and nothing else.
+ */
+function settledOk(part: ToolPart): boolean {
+  if (part.state !== 'completed' || part.resultIsError === true) return false;
+  if (part.result === undefined) return false;
+  return envelopeOf(part.result)?.schemaVersion !== MCP_ERROR_SCHEMA;
+}
+
+/** A server-built `tm8.receipt.v1` (the MCP default for entity writes), bare
+ *  or under the MCP result's `data`. */
+function receiptOf(envelope: Record<string, unknown> | null): Record<string, unknown> | null {
+  if (!envelope) return null;
+  if (envelope.schemaVersion === RECEIPT_SCHEMA) return envelope;
+  const data = record(envelope.data);
+  return data?.schemaVersion === RECEIPT_SCHEMA ? data : null;
+}
+
+/**
+ * The entity a create PRODUCED — the first entity object in the result, which
+ * is the entity itself in every shape the server returns (a full command
+ * result's `entity`, a receipt's own top level, a spawn's session). Prefer
+ * the result; fall back to nothing: a create with no id in its result has no
+ * id to key a tree on, and inventing one would produce a node that never
+ * reconciles.
+ */
+function producedEntity(part: ToolPart): {
+  id: string;
+  kind: string | null;
+  title: string | null;
+  parentId: string | null | undefined;
+  state: Record<string, unknown> | null;
+} | null {
+  let found: ReturnType<typeof producedEntity> = null;
   walkPayload(
     part.result,
     {
-      onEntityObject: (id) => {
-        if (!found) found = id;
+      onEntityObject: (id, fields, rec) => {
+        if (found) return;
+        found = {
+          id,
+          kind: fields.kind ?? null,
+          title: fields.title ?? null,
+          // `undefined` = the result did not say; `null` = it said "root".
+          parentId: 'parentId' in rec ? str(rec.parentId) : undefined,
+          state: record(rec.state),
+        };
       },
     },
     { maxNodes: TALLY_MAX_NODES, maxDepth: TALLY_MAX_DEPTH },
@@ -304,15 +515,32 @@ function createdId(part: ToolPart): string | null {
   return found;
 }
 
-function createdFrom(part: ToolPart, messageId: EntityId): LedgerCreate | null {
-  const id = createdId(part);
+function firstId(value: unknown): string | null {
+  if (typeof value === 'string') return isEntityIdLike(value) ? value : null;
+  if (Array.isArray(value)) return value.map(firstId).find((id) => id !== null) ?? null;
+  const rec = record(value);
+  return rec ? (firstId(rec.entityId) ?? firstId(rec.id)) : null;
+}
+
+function createdFrom(
+  part: ToolPart,
+  messageId: EntityId,
+  operation: string | null,
+  tool: string,
+): LedgerCreate | null {
+  const input = operation ? body(part.args) : record(part.args);
+  const produced = producedEntity(part);
+  /* `form_create` answers `{formId, …}` with no entity object to walk. */
+  const id = produced?.id ?? (tool === 'form_create' ? firstId(envelopeOf(part.result)?.formId) : null);
   if (!id) return null;
-  const b = body(part.args);
   return {
     id,
-    kind: b ? str(b.kind) : null,
-    title: b ? str(b.title) : null,
-    parentId: b ? str(b.parentId) : null,
+    kind: str(input?.kind) ?? produced?.kind ?? TOOL_KIND[tool] ?? null,
+    /* The ARGS title first: it is what the agent wrote, whole. A receipt's
+       echo is clamped at 80 characters, and real task titles run past it. */
+    title: str(input?.title) ?? str(input?.name) ?? produced?.title ?? null,
+    parentId: produced?.parentId !== undefined ? produced.parentId : str(input?.parentId),
+    subjectId: firstId(input?.attachTo),
     messageId,
     seq: part.seq,
     spawned: false,
@@ -320,13 +548,39 @@ function createdFrom(part: ToolPart, messageId: EntityId): LedgerCreate | null {
 }
 
 function spawnedFrom(part: ToolPart, messageId: EntityId): LedgerCreate | null {
-  const id = createdId(part);
+  const produced = producedEntity(part);
+  if (!produced) return null;
+  const model = str(produced.state?.model);
+  return {
+    id: produced.id,
+    kind: 'work_session',
+    title: produced.title,
+    parentId: null,
+    subjectId: firstId(body(part.args)?.taskIds),
+    messageId,
+    seq: part.seq,
+    spawned: true,
+    ...(model ? { model } : {}),
+  };
+}
+
+/**
+ * A dispatch routes work to the resident dispatcher, and SPAWNS that
+ * dispatcher only when none was running — its result says which
+ * (`dispatcherSpawned`). Only the spawning dispatch created anything.
+ */
+function dispatcherSpawnedFrom(part: ToolPart, messageId: EntityId): LedgerCreate | null {
+  const envelope = envelopeOf(part.result);
+  const data = record(envelope?.data) ?? envelope;
+  if (data?.dispatcherSpawned !== true) return null;
+  const id = firstId(data.dispatcherSessionId);
   if (!id) return null;
   return {
     id,
     kind: 'work_session',
     title: null,
     parentId: null,
+    subjectId: firstId(body(part.args)?.subjectId),
     messageId,
     seq: part.seq,
     spawned: true,
@@ -351,20 +605,82 @@ function subtaskPlacementFrom(part: ToolPart): { id: string; parentId: string } 
   return id && parentId ? { id, parentId } : null;
 }
 
-function transitionFrom(
-  part: ToolPart,
-  messageId: EntityId,
-  operation: string,
-  statusNow: ReadonlyMap<string, string>,
-): LedgerTransition | null {
-  const p = params(part.args);
-  const id = p ? str(p.id) : null;
+/** `acceptanceCriteria` → `acceptance criteria`. */
+function words(field: string): string {
+  return field.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/_/g, ' ').toLowerCase();
+}
+
+/**
+ * An accepted edit, or null when it provably changed nothing. A receipt's
+ * `changed` list is the server's own diff: `[]` is a verified no-op (an
+ * "Edited" line for it would be a lie), and its field names are the words.
+ * Without one, a patch says what it SENT — its title and content keys.
+ */
+function editFrom(part: ToolPart, messageId: EntityId, operation: string): LedgerEdit | null {
+  const id = str(params(part.args)?.id);
   if (!id) return null;
+  const receipt = receiptOf(envelopeOf(part.result));
+  const changed = Array.isArray(receipt?.changed)
+    ? (receipt.changed as unknown[]).filter((f): f is string => typeof f === 'string')
+    : null;
+  if (changed && changed.length === 0) return null;
+  let fields: string[];
+  if (changed) {
+    fields = changed
+      .filter((f) => !f.startsWith('state.') && !f.startsWith('edge:'))
+      .map((f) => words(f.startsWith('content.') ? f.slice('content.'.length) : f));
+  } else if (EDIT_OPS[operation]) {
+    fields = [EDIT_OPS[operation]!];
+  } else {
+    const b = body(part.args);
+    const content = record(b?.content);
+    fields = [
+      ...(str(b?.title) ? ['title'] : []),
+      ...(content ? Object.keys(content).filter((k) => k !== 'kind').map(words) : []),
+    ];
+  }
+  return { entityId: id, what: [...new Set(fields)], messageId, seq: part.seq };
+}
+
+function isStatusOp(operation: string): boolean {
+  return WORK_OPS.has(operation) || COMPLETE_OPS.has(operation) || FORM_TRANSITION_OPS.has(operation);
+}
+
+/** The entity a status write names. Forms key it `formId`. */
+function statusSubjectOf(part: ToolPart, operation: string): string | null {
+  const p = params(part.args);
+  if (!p) return null;
+  return FORM_TRANSITION_OPS.has(operation) ? str(p.formId) : str(p.id);
+}
+
+/**
+ * What an ACCEPTED status write did.
+ *
+ * The receipt, when there is one, is the server's own before/after read inside
+ * the write's transaction — `status.from` is printed only when the status
+ * MOVED, and a known write whose `changed` list omits `state.status` left it
+ * where it was. Without a receipt the from-side is the status this thread last
+ * READ (`prior`), or null — a one-sided arrow, never a guess.
+ */
+function statusOutcome(
+  part: ToolPart,
+  operation: string,
+  prior: string | null,
+): { from: string | null; to: string; moved: boolean } | null {
+  const receipt = receiptOf(envelopeOf(part.result));
+  const status = record(receipt?.status);
   // `complete` names no status in its body — the operation IS the status, and
   // it is the only operation permitted to write `done`.
-  const to = COMPLETE_OPS.has(operation) ? 'done' : str(body(part.args)?.status);
+  const asked = COMPLETE_OPS.has(operation)
+    ? 'done'
+    : str(body(part.args)?.[FORM_TRANSITION_OPS.has(operation) ? 'to' : 'status']);
+  const to = str(status?.to) ?? asked;
   if (!to) return null;
-  return { entityId: id, from: statusNow.get(id) ?? null, to, messageId, seq: part.seq };
+  const receiptFrom = str(status?.from);
+  if (receiptFrom) return { from: receiptFrom, to, moved: receiptFrom !== to };
+  const changed = Array.isArray(receipt?.changed) ? (receipt.changed as unknown[]) : null;
+  if (changed && !changed.includes('state.status')) return { from: to, to, moved: false };
+  return { from: prior, to, moved: prior !== to };
 }
 
 /**
@@ -389,6 +705,26 @@ function tallyReads(part: ToolPart, seen: Set<string>, out: string[]): void {
 }
 
 /**
+ * The status an entity-shaped record CARRIES, in every shape the server has
+ * shipped one — which is four, and the fold used to read one:
+ *
+ *   - `state.status` — today's summary (tasks, sessions, forms);
+ *   - `state.workStatus` — the task summary before the contract renamed it,
+ *     still inside every durable transcript written then (all of this node's
+ *     August chats); a transcript outlives the server that produced it;
+ *   - a flat `status` string beside `kind` — `entities.context` v2's root;
+ *   - a receipt's `status: {from?, to}` — the state AFTER the write.
+ */
+function statusOfSummary(rec: Record<string, unknown>): string | null {
+  const state = record(rec.state);
+  const fromState = str(state?.status) ?? str(state?.workStatus);
+  if (fromState) return fromState;
+  if (typeof rec.kind === 'string' && typeof rec.status === 'string') return str(rec.status);
+  if (rec.schemaVersion === RECEIPT_SCHEMA) return str(record(rec.status)?.to);
+  return null;
+}
+
+/**
  * Harvest labels and statuses from any payload, read or write.
  *
  * This is what gives a transition its `from` side: an entity read earlier in the
@@ -405,13 +741,10 @@ function absorbSummaries(
     walkPayload(
       payload,
       {
-        onEntityObject: (id, fields, record) => {
+        onEntityObject: (id, fields, rec) => {
           learn(id, fields.kind, fields.title);
-          const state = record.state;
-          if (typeof state === 'object' && state !== null) {
-            const status = (state as { status?: unknown }).status;
-            if (typeof status === 'string' && status.length > 0) statusNow.set(id, status);
-          }
+          const status = statusOfSummary(rec);
+          if (status) statusNow.set(id, status);
         },
       },
       { maxNodes: TALLY_MAX_NODES, maxDepth: TALLY_MAX_DEPTH },
