@@ -244,6 +244,9 @@ function nounForOperation(operation: OperationName): string {
     // `launch.suggest` (Jev, UI-only, `cmd: null`) groups under the session
     // noun it advises; NOUN_BY_FAMILY in the CLI projection says the same.
     case 'launch': return 'session';
+    // `accounts.disable` (G6, 232): its own noun, `account` — the CLI spells
+    // the command `tm8 node account disable`. NOUN_BY_FAMILY says the same.
+    case 'accounts': return 'account';
 
     // 177: the CLI noun is `container` (`NOUN_BY_FAMILY.containers`), singular
     // like every other row here.
@@ -394,7 +397,7 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // 238 -> 240 (headers I4): entities.header.set (PUT) and entities.header.clear (DELETE). MEASURED.
   // 238 -> 240 (Forms W3): forms.responses.redeliver and forms.pendingForSessions. MEASURED.
   // 240 -> 242: headers I4 and Forms W3 each added two, on the merged tree. MEASURED.
-  assertEqual(names.length, 245, 'catalog total'); // +2 spaces.chatDefaults.get/set (entity chat G). // +1 launch.defaults (I9b). MEASURED.
+  assertEqual(names.length, 248, 'catalog total'); // +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. // +2 spaces.chatDefaults.get/set (entity chat G). // +1 launch.defaults (I9b). MEASURED.
   // 157 -> 159 (114): spaces.members.updateRole (PATCH command) and
   // auth.invite.resolve (POST read — the code rides in the body, never a URL).
   // 161 -> 164 (W4/132): the three taskWorkflows rows are v1.
@@ -414,7 +417,7 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // 236 -> 238 (headers I4): entities.header.set (PUT) and entities.header.clear (DELETE). MEASURED.
   // 236 -> 238 (Forms W3): both new forms.* rows ship v1. MEASURED.
   // 238 -> 240: headers I4 and Forms W3 each added two v1 rows, on the merged tree. MEASURED.
-  assertEqual(V1_OPERATIONS.length, 243, 'v1 total'); // +2 spaces.chatDefaults.get/set (entity chat G). // +1 launch.defaults (I9b). MEASURED.
+  assertEqual(V1_OPERATIONS.length, 246, 'v1 total'); // +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. // +2 spaces.chatDefaults.get/set (entity chat G). // +1 launch.defaults (I9b). MEASURED.
   assertEqual(RESERVED_OPERATIONS.map(({ name }) => name), ['search.query', 'bridge.fetchBlob'], 'reserved operations');
   assertEqual(additive.map(({ name }) => name), [...ADDITIVE_OPERATION_NAMES], 'A01-A21 order');
   assertEqual(new Set(names).size, names.length, 'unique operation names');
@@ -453,7 +456,7 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // GET 74 -> 75 (task 01a0d350): spaces.configs. MEASURED.
   // GET 75 -> 78, POST 108 -> 113, PATCH 14 -> 16, DELETE 14 -> 16, PUT 12 -> 13 (Forms W1). MEASURED.
   // PUT 13 -> 14, DELETE 16 -> 17 (headers I4): entities.header.set (PUT) and entities.header.clear (DELETE). MEASURED.
-  assertEqual(methods, { GET: 81, POST: 114, PATCH: 16, DELETE: 17, PUT: 15, WS: 2 }, 'method accounting'); // GET +1, PUT +1 spaces.chatDefaults.get/set.
+  assertEqual(methods, { GET: 81, POST: 117, PATCH: 16, DELETE: 17, PUT: 15, WS: 2 }, 'method accounting'); // POST +3 G6 leave/remove/disable. // GET +1, PUT +1 spaces.chatDefaults.get/set.
   // GET 78 -> 79, POST 113 -> 114 (Forms W3): pendingForSessions, responses.redeliver. MEASURED.
   // 141: command 101->104 — the three account-lifecycle ops are all commands.
   // 148: read 64->65, command 104->106.
@@ -468,7 +471,7 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // read 78 -> 79 (task 01a0d350): spaces.configs. MEASURED.
   // read 79 -> 82, command 144 -> 154 (Forms W1): three reads, ten commands. MEASURED.
   // command 154 -> 156 (headers I4): entities.header.set (PUT) and entities.header.clear (DELETE). MEASURED.
-  assertEqual(kinds, { read: 85, command: 158, stream: 2 }, 'kind accounting'); // read +1, command +1 spaces.chatDefaults.get/set.
+  assertEqual(kinds, { read: 85, command: 161, stream: 2 }, 'kind accounting'); // command +3 G6 leave/remove/disable. // read +1, command +1 spaces.chatDefaults.get/set.
   // read 82 -> 83, command 154 -> 155 (Forms W3): pendingForSessions is a read, redeliver a command. MEASURED.
   // W4/132: 162 -> 165, the three taskWorkflows routes.
   // 141: 165 -> 168, the three account-lifecycle routes.
@@ -488,7 +491,7 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // 236 -> 238 (headers I4): entities.header.set (PUT) and entities.header.clear (DELETE). MEASURED.
   // 236 -> 238 (Forms W3): the two new forms.* routes. MEASURED.
   // 238 -> 240: headers I4 + Forms W3 routes, on the merged tree. MEASURED.
-  assertEqual(router.http.length, 243, 'server router HTTP total'); // +2 spaces.chatDefaults.get/set (entity chat G). // +1 launch.defaults (I9b). MEASURED.
+  assertEqual(router.http.length, 246, 'server router HTTP total'); // +3 G6 leave/remove/disable. MEASURED. // +2 spaces.chatDefaults.get/set (entity chat G). // +1 launch.defaults (I9b). MEASURED.
   // STILL 1, and that is the whole point of `aliasOf`: `containers.stream`
   // adds a discoverable NAME for the existing socket, not a second socket.
   assertEqual(router.ws.length, 1, 'server router WS total');
