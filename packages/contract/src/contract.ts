@@ -2674,6 +2674,22 @@ export interface CredentialsSpaceDefaultConsentInput {
   clientMutationId?: string;
 }
 
+/**
+ * `credentials.space.addMine` (W10d, doc 13 §7 step 2) — "Add to this space as
+ * private": the server reads the CALLER'S own server-level credential for
+ * `provider`, probes it, and re-seals it in TypeScript as a new private space
+ * credential the caller owns. Only a string-shaped personal credential can be
+ * re-sealed (today the GitHub token, 093); a Claude or Codex login is a file
+ * whose refresh token breaks if copied (SC-8 §5), so it takes a fresh sign-in
+ * instead. One space per call: there is no bulk add (R4). The body never
+ * carries a secret and the answer is metadata only (I5).
+ */
+export interface CredentialsSpaceAddMineInput {
+  provider: 'github';
+  label: string;
+  clientMutationId?: string;
+}
+
 /** `credentials.space.myDefault.set|clear` — the caller's own default, per space and provider. */
 export interface CredentialsSpaceMyDefaultResult {
   spaceId: string;
