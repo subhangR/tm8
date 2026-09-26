@@ -211,8 +211,8 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
             <span
               className="pn-av-group pn-av-group--creator"
               role="img"
-              aria-label={`Created by ${creator.displayName}, unassigned`}
-              title={`Created by ${creator.displayName} · unassigned`}
+              aria-label={`Created by ${actorName(creator)}, unassigned`}
+              title={`Created by ${actorName(creator)} · unassigned`}
             >
               <Avatar
                 actorId={creator.id}

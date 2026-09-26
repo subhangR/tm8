@@ -494,6 +494,10 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // in hand-maintained alphabetical order, because four insertions at four
       // different points is how a list like this acquires a silent duplicate.
       'createInvite', 'redeemInvite', 'revokeInvite', 'setMemberRole',
+      // G6 W1 (2026-09-26): ending a membership — `spaces.leave` and
+      // `spaces.members.remove`. The member row is tombstoned, not deleted, so
+      // authorship keeps its target and renders "(left)".
+      'leaveSpace', 'removeMember',
       // W2 (2026-08-16): the task-axis registry's writes, over the catalog
       // ops that existed all along (`spaces.taskAxes.*`) — the settings shell
       // stops refusing with the measured-false AXES_UNREADABLE. The READ has
