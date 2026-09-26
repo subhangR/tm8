@@ -82,6 +82,7 @@ import {
   type CredentialsSpacePolicyView,
   type NodeCredentialPolicyEntry,
   type NodeCredentialsStatusView,
+  type NodeMetricsView,
   type SpaceCredentialProviderName,
   type SpaceCredentialView,
   type CredentialsServiceKeysStatusView,
@@ -584,6 +585,10 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       });
     },
 
+    nodeMetrics(): Promise<NodeMetricsView> {
+      return http.call<NodeMetricsView>('node.metrics.get');
+    },
+
     nodeCredentialsStatus(): Promise<NodeCredentialsStatusView> {
       return http.call<NodeCredentialsStatusView>('node.credentials.status');
     },
@@ -975,7 +980,19 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       // not a non-negative safe integer becomes null — "cannot establish".
       const hwm = raw.eventHwm;
       const eventHwm = typeof hwm === 'number' && Number.isSafeInteger(hwm) && hwm >= 0 ? hwm : null;
-      return { ...raw, spaceId, eventHwm };
+      // The status-strip counts get the same treatment: anything that is not
+      // a non-negative safe integer (including an older node's absence) is
+      // null — "unknown" — so a strip can never render a made-up zero.
+      const count = (v: unknown): number | null =>
+        typeof v === 'number' && Number.isSafeInteger(v) && v >= 0 ? v : null;
+      return {
+        ...raw,
+        spaceId,
+        eventHwm,
+        liveSessionCount: count(raw.liveSessionCount),
+        liveChatCount: count(raw.liveChatCount),
+        workingChatCount: count(raw.workingChatCount),
+      };
     },
 
     // -- commands ------------------------------------------------------------

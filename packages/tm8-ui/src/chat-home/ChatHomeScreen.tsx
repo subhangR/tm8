@@ -17,7 +17,18 @@ import {
 } from '../rich-input';
 import type { ConnectionsReader } from '../session-graph/load';
 import type { CockpitStage } from '../routes/types';
-import { mergeChatTurnFrame, projectTurnParts, reconcileDetails } from './turn-model';
+import {
+  CLAIMED_TURN_BODY,
+  appendOptimisticTurn,
+  dropTurn,
+  maxPartSeq,
+  mergeChatTurnFrame,
+  optimisticTurnId,
+  projectTurnParts,
+  reconcileDetails,
+  settleOptimisticTurn,
+} from './turn-model';
+import { clockFromRead, startTurnClock, useTurnInProgress, type TurnClock } from './turn-in-progress';
 import { defaultChatTeammateId } from './default-teammate';
 import { CockpitGraphStage } from './fleet/CockpitGraphStage';
 import { FleetPane } from './fleet/FleetPane';
@@ -48,6 +59,7 @@ import {
   type PermissionRung,
 } from './composer';
 import { EntityTray } from './EntityTray';
+import { LedgerHostProvider } from './LedgerCards';
 import { LedgerPanel } from './LedgerPanel';
 import { foldChatLedger, type ChatLedger } from './ledger';
 import { TurnParts, type TurnPartsProps } from './TurnParts';
@@ -457,6 +469,11 @@ export function ChatHomeScreen({
     [draftKey],
   );
   const [phase, setPhase] = useState<ComposerPhase>('idle');
+  /** The turn pipeline's clock — when the turn in progress began, when its
+   *  last frame merged, which agent message it is. Nothing on the wire carries
+   *  these; `useTurnInProgress` folds them with `phase` and `detail` into the
+   *  one value the live status row reads. */
+  const [turnClock, setTurnClock] = useState<TurnClock | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [teammateId, setTeammateId] = useState<EntityId | ''>('');
   const [modelId, setModelId] = useState(() =>
@@ -510,8 +527,15 @@ export function ChatHomeScreen({
    *  nothing to identify a placeholder by. */
   const preTurnIdsRef = useRef<Set<string> | null>(null);
   /** Per-root single-flight for participant-message refreshes — one thread's
-   *  pending refresh must not swallow another thread's. */
-  const refreshingRootsRef = useRef<Set<string>>(new Set());
+   *  pending refresh must not swallow another thread's. The value records that
+   *  another refresh was asked for while one was in flight: that one runs
+   *  AFTER, because its caller may know something the running read predates
+   *  (a done whose final body the running read cannot contain). */
+  const refreshingRootsRef = useRef<Map<string, boolean>>(new Map());
+  /** Highest delta seq this tab has SEEN per agent message, beside what the
+   *  snapshot holds — a delta further ahead than one step means frames were
+   *  lost on the way and the thread is re-read. Reset on thread switch. */
+  const seenSeqRef = useRef<Map<string, number>>(new Map());
   /** Roots currently known to the sidebar — a frame for an unknown root means
    *  another member started a thread and the list must re-read. */
   const knownRootsRef = useRef<Set<string>>(new Set());
@@ -569,6 +593,11 @@ export function ChatHomeScreen({
   useEffect(() => {
     detailRef.current = detail;
   }, [detail]);
+  /** The clock as of the last commit — what a failed send restores. */
+  const turnClockRef = useRef<TurnClock | null>(null);
+  useEffect(() => {
+    turnClockRef.current = turnClock;
+  }, [turnClock]);
 
   /** ANSWER the question "which conversation?" — `null` is a real answer here
    *  (the new-conversation composer), not the absence of one. Every deliberate
@@ -762,9 +791,13 @@ export function ChatHomeScreen({
   /** Single-flight re-read of the active thread — used when a frame references
    *  a message we do not have yet (another participant posted). */
   const refreshDetail = useCallback(
-    (rootId: EntityId) => {
-      if (refreshingRootsRef.current.has(rootId)) return;
-      refreshingRootsRef.current.add(rootId);
+    function refresh(rootId: EntityId) {
+      const running = refreshingRootsRef.current;
+      if (running.has(rootId)) {
+        running.set(rootId, true);
+        return;
+      }
+      running.set(rootId, false);
       void loadDetail(rootId)
         .then((next) => {
           if (activeRootRef.current === rootId) {
@@ -776,7 +809,9 @@ export function ChatHomeScreen({
           // delays another participant's message, it never corrupts state.
         })
         .finally(() => {
-          refreshingRootsRef.current.delete(rootId);
+          const again = running.get(rootId) === true;
+          running.delete(rootId);
+          if (again && activeRootRef.current === rootId) refresh(rootId);
         });
     },
     [loadDetail],
@@ -842,6 +877,9 @@ export function ChatHomeScreen({
     recentFramesRef.current = [];
     liveTurnsRef.current.clear();
     firstSeenRef.current.clear();
+    seenSeqRef.current.clear();
+    // The clock describes one conversation; a chat just born keeps its own.
+    setTurnClock((current) => (current && current.chatId !== selectedRootId ? null : current));
     if (expectingRootRef.current && expectingRootRef.current !== selectedRootId) {
       expectingRootRef.current = null;
       preTurnIdsRef.current = null;
@@ -858,11 +896,20 @@ export function ChatHomeScreen({
         setDetail((current) => reconcileDetails(current, next));
         stoppedRootRef.current =
           next.summary.state === 'stopped-continuable' ? selectedRootId : null;
-        setPhase(
+        const opened =
           liveTurnsRef.current.size > 0 || expectingRootRef.current === selectedRootId
             ? 'streaming'
-            : phaseForThreadState(next.summary.state),
-        );
+            : phaseForThreadState(next.summary.state);
+        setPhase(opened);
+        /* A TURN ALREADY RUNNING WHEN THE THREAD OPENED — a reload or a switch
+           mid-turn. It started before this tab saw it, so its clock starts at
+           the claim (the agent message's own createdAt), not at the read. */
+        if (opened === 'streaming') {
+          setTurnClock((current) =>
+            current && current.chatId === selectedRootId
+              ? current
+              : clockFromRead(selectedRootId, next, Date.now()));
+        }
       })
       .catch((error: unknown) => {
         if (alive) setLoadError(describeError(error));
@@ -875,6 +922,13 @@ export function ChatHomeScreen({
   useEffect(
     () =>
       port.subscribe((frame) => {
+        /* Read BEFORE the done prunes this message's deltas from the cache:
+           the error part may not have reached `detail` yet if both frames
+           landed in one tick. */
+        const failure =
+          frame.type === 'chat.turn.done' && frame.chatId === activeRootRef.current
+            ? turnFailureOf(frame.messageId, recentFramesRef.current, detailRef.current)
+            : null;
         if (frame.chatId === activeRootRef.current) {
           if (frame.type === 'chat.turn.done') {
             // The turn's parts are all durable in the snapshot by now — its
@@ -956,13 +1010,33 @@ export function ChatHomeScreen({
           return next;
         });
         if (frame.chatId !== activeRootRef.current) return;
-        // A delta for a message we have never seen means another participant
-        // started this turn — pull their message in alongside the stream.
-        if (
-          frame.type === 'chat.turn.delta' &&
-          detailRef.current &&
-          !detailRef.current.turns.some((turn) => turn.messageId === frame.messageId)
-        ) {
+        if (frame.type === 'chat.turn.delta') {
+          const inSnapshot =
+            detailRef.current?.turns.some((turn) => turn.messageId === frame.messageId) ?? false;
+          const seenBefore = seenSeqRef.current.get(frame.messageId);
+          const highest = Math.max(seenBefore ?? -1, maxPartSeq(detailRef.current, frame.messageId));
+          seenSeqRef.current.set(frame.messageId, Math.max(highest, frame.seq));
+          // A delta for a message we have never seen means another participant
+          // started this turn — pull their message in alongside the stream.
+          const unknown = !inSnapshot && seenBefore === undefined;
+          /* A SEQ GAP IS A LOST FRAME. Parts are durable before their frame
+             publishes, so a delta more than one step past everything seen
+             means the ones between were dropped on the way (a socket blip, a
+             frame that raced the snapshot) — and nothing else would ever
+             bring them back before a reload. Re-read; the merge is
+             idempotent by seq. */
+          const gap = !unknown && frame.seq > highest + 1;
+          if (detailRef.current && (unknown || gap)) refreshDetail(frame.chatId);
+          const at = Date.now();
+          setTurnClock((current) =>
+            current && current.chatId === frame.chatId && current.error === null
+              ? { ...current, lastFrameAt: at, messageId: frame.messageId }
+              : { ...startTurnClock(frame.chatId, at, frame.messageId), lastFrameAt: at },
+          );
+        } else {
+          /* The turn's durable end state — its final body, anything a lost
+             frame kept from the stream — is one read away, and nothing else
+             would fetch it until the thread is reopened. */
           refreshDetail(frame.chatId);
         }
         const stopped = frame.chatId === stoppedRootRef.current;
@@ -981,11 +1055,33 @@ export function ChatHomeScreen({
           // hide the pulse for our still-queued one.
           const startedAt = firstSeenRef.current.get(frame.messageId) ?? 0;
           if (expectingRootRef.current === frame.chatId && startedAt < expectingMarkRef.current) {
+            // An earlier turn finished; ours is still queued behind it.
+            setTurnClock((current) =>
+              current && current.chatId === frame.chatId
+                ? { ...current, messageId: null, lastFrameAt: null }
+                : current,
+            );
             return;
           }
           expectingRootRef.current = null;
           preTurnIdsRef.current = null;
           setPhase('idle');
+          /* A clean done clears the turn; a failed one is HELD (with the time
+             it ended, so the row's clock freezes) until the next send. */
+          const ended = Date.now();
+          setTurnClock((current) =>
+            failure === null
+              ? null
+              : {
+                  ...(current && current.chatId === frame.chatId
+                    ? current
+                    : startTurnClock(frame.chatId, ended, frame.messageId)),
+                  messageId: frame.messageId,
+                  stopping: false,
+                  error: failure,
+                  endedAt: ended,
+                },
+          );
         } else setPhase('streaming');
       }),
     /* `refreshThreads` IS A DEPENDENCY, and omitting it was the switch bug
@@ -1001,6 +1097,52 @@ export function ChatHomeScreen({
        needed — the first stops a stale read being STARTED, the second stops a
        started one LANDING. */
     [port, refreshDetail, refreshThreads],
+  );
+
+  /**
+   * ── A SOCKET THAT DROPPED MID-TURN LOST ITS DELTAS ─────────────────────────
+   *
+   * Chat frames are not durable events: nothing replays the ones published
+   * while the socket was down. Before this, a blip mid-turn left the
+   * transcript missing every part from the gap, and a turn that FINISHED
+   * during it never settled — its done had gone by, so the composer stayed
+   * "working" until a reload. On reconnect the list and the open thread are
+   * re-read (parts are durable before they publish, so the snapshot has
+   * everything) and the phase is re-derived from what the server says now.
+   * Our own post in flight keeps its phase — that is ours to settle.
+   */
+  useEffect(
+    () =>
+      port.subscribeReconnect?.(() => {
+        const rootId = activeRootRef.current;
+        void refreshThreads()
+          .then(() => (rootId && activeRootRef.current === rootId ? loadDetail(rootId) : null))
+          .then((next) => {
+            if (!next || !rootId || activeRootRef.current !== rootId) return;
+            setDetail((current) => reconcileDetails(current, next));
+            if (stoppedRootRef.current === rootId) return;
+            if (next.summary.state === 'streaming') {
+              setPhase((current) => (isBusyPhase(current) ? current : 'streaming'));
+              /* A turn that STARTED during the drop has no clock yet — without
+                 one the turn in progress reads null (no shell, no live row)
+                 until its next frame, which can be a minute away. */
+              setTurnClock((current) =>
+                current && current.chatId === rootId ? current : clockFromRead(rootId, next, Date.now()));
+              return;
+            }
+            liveTurnsRef.current.clear();
+            if (expectingRootRef.current === rootId) {
+              expectingRootRef.current = null;
+              preTurnIdsRef.current = null;
+            }
+            setPhase((current) => (isBusyPhase(current) ? current : phaseForThreadState(next.summary.state)));
+            setTurnClock((current) => (current && current.chatId === rootId && current.error === null ? null : current));
+          })
+          .catch(() => {
+            // The next frame, reconnect or thread switch tries again.
+          });
+      }),
+    [loadDetail, port, refreshThreads],
   );
 
   // Live context readings, per chat: a frame for one chat must never draw on
@@ -1081,6 +1223,17 @@ export function ChatHomeScreen({
    *  why `thinking` below cannot speak for them. */
   const startingThread = phase === 'posting-root' || phase === 'configuring';
   const thinking = detail !== null && showThinking(phase, detail);
+  /** THE TURN IN PROGRESS — the contract lane 2's live status row reads. */
+  const turnInProgress = useTurnInProgress({ phase, detail, clock: turnClock });
+  /** The agent's turn stands on screen from Send (D12): a shell — byline, empty
+   *  body — until the real agent message is in the transcript to take over. */
+  const shellTurn = detail && turnInProgress && SHELL_PHASES.has(turnInProgress.phase)
+    && !detail.turns.some((turn) => turn.messageId === turnInProgress.messageId)
+    ? agentShellTurn(detail, turnInProgress.startedAt)
+    : null;
+  const liveMessageId = turnInProgress && SHELL_PHASES.has(turnInProgress.phase)
+    ? turnInProgress.messageId
+    : null;
   const pendingTurnId =
     detail !== null && thinking
       ? claimedSilentTurnId(phase, detail, preTurnIdsRef.current)
@@ -1407,13 +1560,16 @@ export function ChatHomeScreen({
      make. */
   const composerWrapRef = useRef<HTMLDivElement | null>(null);
   const emptyComposerTopRef = useRef<number | null>(null);
-  const composerCentred = newThread && centre == null;
+  /** A new chat whose first send is in flight: the echo is on screen, so the
+   *  composer has already left the centre (the dock-down plays on Send). */
+  const birthing = newThread && detail !== null && detail.summary.rootId.startsWith(OPTIMISTIC_CHAT_PREFIX);
+  const composerCentred = newThread && centre == null && !birthing;
   const wasCentredRef = useRef(composerCentred);
   useLayoutEffect(() => {
     const wrap = composerWrapRef.current;
     if (composerCentred) {
       emptyComposerTopRef.current = wrap?.getBoundingClientRect().top ?? null;
-    } else if (wasCentredRef.current && !newThread && wrap && emptyComposerTopRef.current !== null) {
+    } else if (wasCentredRef.current && (!newThread || birthing) && wrap && emptyComposerTopRef.current !== null) {
       const reduced = typeof window === 'undefined'
         || typeof window.matchMedia !== 'function'
         || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -1431,7 +1587,7 @@ export function ChatHomeScreen({
       emptyComposerTopRef.current = null;
     }
     wasCentredRef.current = composerCentred;
-  }, [newThread, composerCentred]);
+  }, [newThread, composerCentred, birthing]);
   const chatOccupiesCenter = centre === undefined || centre === null;
   /** The host's whole-root takeover: the workspace list panel, with its own
    *  search — so this screen's find box stands down for that root. */
@@ -1455,32 +1611,75 @@ export function ChatHomeScreen({
       selectedRootId && phase === 'stopped-continuable' ? selectedRootId : null;
     setSubmitError(null);
     const originRoot = selectedRootId;
+    /*
+     * ── SEND PAINTS IN THE SAME FRAME ────────────────────────────────────────
+     *
+     * Reported by Subhang: "sending a message should immediately show the
+     * agent's turn". The user's own words used to appear only after TWO round
+     * trips — the post, then a whole thread re-read — with the composer still
+     * holding them and nothing in the transcript but a "Sending…" row. Now the
+     * words move from the composer into the transcript in the commit the press
+     * causes (D12: at full weight, no "sending" watermark), and the turn's
+     * clock starts, which is what mounts the agent's turn shell under them.
+     * A failed submit takes the echo back out and returns the words to the
+     * composer, exactly as they were typed (the raw draft, not the trim).
+     */
+    const clientMutationId = newMutationId(selectedRootId ? 'chat-turn' : 'chat-start');
+    const echoId = optimisticTurnId(clientMutationId);
+    const echo: ChatThreadDetail['turns'][number] = {
+      messageId: echoId,
+      role: 'user',
+      author: null,
+      createdAt: new Date().toISOString(),
+      body,
+      parts: [],
+      optimistic: true,
+    };
+    const typed = draft;
+    setDraft((current) => (current.trim() === draftBody ? '' : current));
+    /* Keyed to the ORIGIN thread's slot (the setter closes over its
+       `draftKey`), and it only fills an empty box — so it is safe to run
+       whichever thread is on screen when the failure lands. */
+    const restoreDraft = () => setDraft((current) => (current.trim() === '' ? typed : current));
+    let acked = false;
+    const priorClock = turnClockRef.current;
     try {
       if (selectedRootId) {
         stoppedRootRef.current = null;
         setPhase('posting-turn');
+        setTurnClock(startTurnClock(selectedRootId, Date.now()));
         expectingRootRef.current = selectedRootId;
         expectingMarkRef.current = frameSeqRef.current;
         preTurnIdsRef.current = new Set(
           (detailRef.current?.turns ?? []).map((turn) => turn.messageId),
         );
-        await port.postTurn({
+        setDetail((current) => appendOptimisticTurn(current, selectedRootId, echo));
+        const posted = await port.postTurn({
           chatId: selectedRootId,
           body,
-          clientMutationId: newMutationId('chat-turn'),
+          clientMutationId,
           ...(attachmentIds.length ? { attachmentIds } : {}),
         });
-        // Clear only the draft we actually sent — if the user switched threads
-        // and typed something new while the post was in flight, keep it.
-        setDraft((current) => (current.trim() === body ? '' : current));
+        acked = true;
         // Forget the chips WITHOUT cancelling their uploads: the ids are on
         // the message that was just stored.
         staged.clear();
-        const posted = await loadDetail(selectedRootId);
+        /* ACKED IS ENOUGH TO BE WAITING. The server has the turn; the re-read
+           below only swaps the echo for the stored message, so the composer
+           must not sit in "posting" for its round trip. */
+        if (activeRootRef.current === selectedRootId) {
+          setDetail((current) => settleOptimisticTurn(current, echoId, posted.messageId));
+          setPhase(
+            liveTurnsRef.current.size > 0 || expectingRootRef.current === selectedRootId
+              ? 'streaming'
+              : 'idle',
+          );
+        }
+        const snapshot = await loadDetail(selectedRootId);
         // The user may have switched threads while the post was in flight —
         // this thread's snapshot must never overwrite another thread's screen.
         if (activeRootRef.current === selectedRootId) {
-          setDetail((current) => reconcileDetails(current, posted));
+          setDetail((current) => reconcileDetails(current, snapshot));
           setPhase(
             liveTurnsRef.current.size > 0 || expectingRootRef.current === selectedRootId
               ? 'streaming'
@@ -1499,6 +1698,35 @@ export function ChatHomeScreen({
       // phase — and the window it named, in which a message existed that was
       // not yet a chat — has nothing left to describe.
       setPhase('posting-root');
+      /* A CHAT BEING BORN HAS NO ID YET, so the echo rides a stand-in thread
+         keyed `optimistic-chat:…`. `selectedRootId` stays null until the ack,
+         so nothing else — the select effect, the tray, the ledger stage —
+         treats it as a conversation; only the transcript draws it. */
+      const bornId = `${OPTIMISTIC_CHAT_PREFIX}${clientMutationId}` as EntityId;
+      setTurnClock(startTurnClock(null, Date.now()));
+      setDetail({
+        summary: {
+          rootId: bornId,
+          aboutId: aboutId ?? null,
+          /* D22: no title until the server names the chat — an empty header,
+             never a guessed one that renames itself a beat later. */
+          title: '',
+          preview: '',
+          updatedAt: echo.createdAt,
+          replyCount: 1,
+          config: {
+            teammateId,
+            teammateLabel: teammates.find((teammate) => teammate.id === teammateId)?.label ?? 'Agent teammate',
+            model: selectedModel.model,
+            modelLabel: selectedModel.label,
+            mode: chatMode,
+            workdirMode: projectBinding.workdirMode,
+            projectId: projectBinding.projectId ?? null,
+          },
+          state: 'streaming',
+        },
+        turns: [echo],
+      });
       const created = await port.startThread.create({
         spaceId,
         // `aboutId` replaces the anchor. Bare Home passes none; a contextual
@@ -1517,7 +1745,7 @@ export function ChatHomeScreen({
         /* Write-once (167): offered in the empty state, locked after this. */
         workdirMode: projectBinding.workdirMode,
         ...(projectBinding.projectId ? { projectId: projectBinding.projectId } : {}),
-        clientMutationId: newMutationId('chat-start'),
+        clientMutationId,
         ...(attachmentIds.length ? { attachmentIds } : {}),
       });
       if (
@@ -1527,10 +1755,10 @@ export function ChatHomeScreen({
       ) {
         throw new Error('The node returned a different chat configuration than the one selected.');
       }
+      acked = true;
       /* The next new chat's last-used mode, teammate and model (§3.4, §5).
          A host that pins its mode (Craft) is not the viewer choosing. */
       if (!pinnedMode) rememberChatStart({ mode: chatMode, teammateId, model: selectedModel.model });
-      setDraft((current) => (current.trim() === draftBody ? '' : current));
       staged.clear();
       // The select effect owns loading the new chat — a second concurrent read
       // here would race it for setDetail/setPhase. `expecting` keeps the pulse
@@ -1538,19 +1766,49 @@ export function ChatHomeScreen({
       expectingRootRef.current = created.chatId;
       expectingMarkRef.current = frameSeqRef.current;
       preTurnIdsRef.current = new Set();
+      /* The stand-in becomes the chat, in the same commit as the selection —
+         so the transcript never drops to the "reading" skeleton in between,
+         and the select effect's first snapshot reconciles INTO it. */
+      setDetail((current) =>
+        current && current.summary.rootId === bornId
+          ? settleOptimisticTurn(
+              { ...current, summary: { ...current.summary, rootId: created.chatId } },
+              echoId,
+              created.messageId,
+            )
+          : current,
+      );
+      setTurnClock((current) => (current && current.chatId === null ? { ...current, chatId: created.chatId } : current));
       chooseRoot(created.chatId);
       onThreadSelected?.(created.chatId);
       setPhase('streaming');
       await refreshThreads(created.chatId);
     } catch (error) {
+      /* THE WORDS COME BACK EVEN IF THE VIEWER LEFT. The box was cleared on
+         Send, so a failure that lands after a thread switch must still return
+         them — to the origin thread's draft, where they were typed. */
+      if (!acked) restoreDraft();
       // Never let a failed send in one thread rewrite another's phase or show
       // its error under an unrelated conversation.
       if (activeRootRef.current === originRoot) {
+        if (acked) return;
+        // D12: the echo goes and the error says why.
+        setDetail((current) =>
+          current && current.summary.rootId.startsWith(OPTIMISTIC_CHAT_PREFIX)
+            ? null
+            : dropTurn(current, echoId),
+        );
+        /* OUR post failed; a turn already streaming in this thread did not.
+           It keeps its phase and its clock. */
+        const stillLive = liveTurnsRef.current.size > 0;
+        setTurnClock(stillLive ? priorClock : null);
+        expectingRootRef.current = null;
+        preTurnIdsRef.current = null;
         if (continuingStoppedRoot) {
           stoppedRootRef.current = continuingStoppedRoot;
           setPhase('stopped-continuable');
         } else {
-          setPhase('idle');
+          setPhase(stillLive ? 'streaming' : 'idle');
         }
         setSubmitError(describeError(error));
       }
@@ -1578,6 +1836,8 @@ export function ChatHomeScreen({
     if (!selectedRootId || !port.interrupt) return;
     const rootId = selectedRootId;
     stoppedRootRef.current = rootId;
+    // A Stop that takes seconds is itself a wait — the row says so.
+    setTurnClock((current) => (current && current.chatId === rootId ? { ...current, stopping: true } : current));
     try {
       await port.interrupt(rootId);
       const stoppedDetail = await port.readThread(rootId);
@@ -1592,6 +1852,10 @@ export function ChatHomeScreen({
           return { ...merged, summary: { ...merged.summary, state: 'stopped-continuable' } };
         });
         setPhase('stopped-continuable');
+        const ended = Date.now();
+        setTurnClock((current) =>
+          current && current.chatId === rootId ? { ...current, stopping: false, endedAt: ended } : current,
+        );
       }
       setThreads((current) =>
         current.map((thread) =>
@@ -1604,6 +1868,7 @@ export function ChatHomeScreen({
       if (activeRootRef.current === rootId) {
         stoppedRootRef.current = null;
         setPhase('streaming');
+        setTurnClock((current) => (current && current.chatId === rootId ? { ...current, stopping: false } : current));
         setSubmitError(describeError(error));
       }
     }
@@ -1920,6 +2185,7 @@ export function ChatHomeScreen({
         <div
           ref={transcriptRef}
           className="tch-transcript"
+          data-turn-phase={turnInProgress?.phase}
           aria-live="polite"
           data-hidden={centre != null ? 'true' : undefined}
           hidden={centre != null || undefined}
@@ -1954,12 +2220,14 @@ export function ChatHomeScreen({
                   the conversation for vertical space and needing a second,
                   fullscreen way to be big. It is a STAGE now — one drawing in
                   region B, reached from the tray, addressed by `?stage=graph`. */}
+              <LedgerHostProvider key={detail.summary.rootId} resolveEntity={resolveEntity} readEntity={readEntity} livenessOf={livenessOf} models={models}>
               {detail.turns.map((turn) => (
                 <Turn
                   key={turn.messageId}
                   turn={turn}
                   mode={detail.summary.config.mode}
                   pending={turn.messageId === pendingTurnId}
+                  live={turn.messageId === liveMessageId}
                   viewerId={viewerId}
                   onOpenEntity={onOpenEntity}
                   resolveEntity={resolveEntity}
@@ -1973,6 +2241,18 @@ export function ChatHomeScreen({
                   ledger={foldChatLedger(detail.turns)}
                 />
               ))}
+              {shellTurn ? (
+                <Turn
+                  key="agent-turn-shell"
+                  turn={shellTurn}
+                  mode={detail.summary.config.mode}
+                  pending
+                  live
+                  testId="chat-turn-shell"
+                  viewerId={viewerId}
+                />
+              ) : null}
+              </LedgerHostProvider>
               {thinking ? (
                 <div className="tch-wait" role="status" data-testid="chat-thinking">
                   <WaitMark />
@@ -2451,6 +2731,8 @@ function Turn({
   turn,
   mode,
   pending,
+  live,
+  testId,
   viewerId,
   onOpenEntity,
   resolveEntity,
@@ -2463,6 +2745,10 @@ function Turn({
   mode: ChatMode;
   /** This turn is the one the pulse is already announcing. */
   pending?: boolean;
+  /** This is the agent turn in progress — the shell, or the real message
+   *  while it streams. */
+  live?: boolean;
+  testId?: string;
   viewerId?: string | undefined;
   onOpenEntity?: ((id: EntityId) => void) | undefined;
   resolveEntity?: ChatEntityResolver | undefined;
@@ -2541,6 +2827,9 @@ function Turn({
       data-mode={mode}
       data-self={isSelf ? 'true' : 'false'}
       data-third-party={thirdParty ? 'true' : undefined}
+      data-live={live ? 'true' : undefined}
+      aria-busy={live || undefined}
+      data-testid={testId}
     >
       <header className="tch-turn__byline">
         <Avatar
@@ -2606,6 +2895,11 @@ function Turn({
         ledger={ledger}
         turnMessageId={turn.messageId}
         toolNote={toolNote}
+        /* One source of truth for which turn is live (L1's turn-in-progress,
+           which also drives `aria-busy`): every other turn is over, and a call
+           it left `running` reads as stopped — a runtime that died never
+           closes the calls it abandoned. */
+        settled={!live}
       />
     </article>
   );
@@ -2622,6 +2916,46 @@ function phaseLabel(phase: ComposerPhase): string {
     case 'stopped-continuable': return 'Stopped · continuable';
     default: return '';
   }
+}
+
+/**
+ * The error a turn ended with, from its not-yet-pruned deltas and its merged
+ * parts; `null` for a turn that ended cleanly.
+ *
+ * JUDGED BY ITS LAST ATTEMPT. One agent message can hold TWO terminal `done`
+ * parts: a turn whose `complete_chat_turn` did not land after its first done
+ * is re-claimed when its lease expires and re-run into the SAME message, seq
+ * continuing (live: turn 01a0d439, done at seq 18, then seq 19–34 fifty
+ * minutes later). Only the parts after the previous done belong to the
+ * attempt that just ended — the first done describes an attempt that is over.
+ */
+function turnFailureOf(
+  messageId: EntityId,
+  frames: readonly ChatTurnFrame[],
+  detail: ChatThreadDetail | null,
+): string | null {
+  const bySeq = new Map<number, ChatThreadDetail['turns'][number]['parts'][number]>();
+  for (const part of detail?.turns.find((candidate) => candidate.messageId === messageId)?.parts ?? []) {
+    bySeq.set(part.seq, part);
+  }
+  for (const frame of frames) {
+    if (frame.type === 'chat.turn.delta' && frame.messageId === messageId) {
+      bySeq.set(frame.seq, { ...frame.part, seq: frame.seq });
+    }
+  }
+  const ordered = [...bySeq.values()].sort((a, b) => a.seq - b.seq);
+  const dones = ordered.flatMap((part, index) => (part.kind === 'done' ? [index] : []));
+  const last = dones.length > 0 ? dones[dones.length - 1]! : -1;
+  const previous = dones.length > 1 ? dones[dones.length - 2]! : -1;
+  const attempt = ordered.slice(previous + 1, last < 0 ? undefined : last + 1);
+  const error = [...attempt].reverse().find((part) => part.kind === 'error');
+  const message = error?.kind === 'error' ? error.message : 'The turn failed.';
+  /* The terminal `done` part names HOW the attempt ended; when it carries a
+     reason it is the authority. Without one (an older node), an error part in
+     the same attempt is the tell. */
+  const done = last < 0 ? undefined : ordered[last];
+  if (done?.kind === 'done' && done.reason !== undefined) return done.reason === 'error' ? message : null;
+  return error ? message : null;
 }
 
 /** The transcript shows a pulse whenever work is pending but nothing visible is
@@ -2702,10 +3036,24 @@ function claimedSilentTurnId(
   return silent.length === 1 ? silent[0]!.messageId : null;
 }
 
-/** The body the server writes onto the agent message when it claims a turn —
- *  `orchestrator.ts:369`, asserted by `server/test/db/chat-storage.pg.test.ts`.
- *  Not a UI string: the transcript never authors it, it only recognises it. */
-const CLAIMED_TURN_BODY = 'Agent turn in progress.';
+/** The stand-in id a new chat's transcript carries until `chat.start` acks. */
+const OPTIMISTIC_CHAT_PREFIX = 'optimistic-chat:';
+
+/** The phases in which the agent's turn is still coming — the shell stands. */
+const SHELL_PHASES = new Set(['sending', 'waiting', 'streaming', 'stopping']);
+
+/** The agent turn shell: the chat's own teammate, no body, no parts. */
+function agentShellTurn(detail: ChatThreadDetail, startedAt: number): ChatThreadDetail['turns'][number] {
+  const { teammateId, teammateLabel } = detail.summary.config;
+  return {
+    messageId: 'agent-turn-shell' as EntityId,
+    role: 'assistant',
+    author: { id: teammateId, kind: 'team_member', displayName: teammateLabel, isAgent: true },
+    createdAt: new Date(startedAt).toISOString(),
+    body: '',
+    parts: [],
+  };
+}
 
 function phaseForThreadState(state: ChatThreadSummary['state']): ComposerPhase {
   if (state === 'streaming') return 'streaming';

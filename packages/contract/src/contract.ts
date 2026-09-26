@@ -2563,6 +2563,43 @@ export interface NodeCredentialsStatusView {
   providers: NodeCredentialStatusEntry[];
 }
 
+/**
+ * `node.metrics.get` — node admin. Host metrics for the machine this tm8
+ * server runs on, measured at request time. Every figure is a measurement;
+ * a figure the host cannot supply is `null`, never a guess or a zero.
+ */
+export interface NodeMetricsView {
+  /** When the figures were taken. */
+  sampledAt: string;
+  cpu: {
+    /**
+     * Busy share of all cores, 0–100, over the window since the previous read
+     * (or a short in-request window on the first read).
+     */
+    percent: number | null;
+    /** Logical cores. */
+    cores: number;
+  };
+  memory: {
+    totalBytes: number;
+    /**
+     * In use by the host, excluding reclaimable cache. On macOS this is read
+     * from `vm_stat`, because the kernel's "free" figure there leaves out
+     * inactive and purgeable pages and would read near 100% on a healthy
+     * machine.
+     */
+    usedBytes: number;
+  };
+  /** 1, 5 and 15 minute load averages. `null` on hosts without them (Windows). */
+  loadAverage: [number, number, number] | null;
+  /** The volume holding the server's data directory. `null` when it cannot be read. */
+  disk: { path: string; totalBytes: number; usedBytes: number } | null;
+  /** The tm8 server process itself. */
+  process: { rssBytes: number; heapUsedBytes: number; uptimeSeconds: number };
+  /** Host uptime. */
+  hostUptimeSeconds: number;
+}
+
 /** `node.credentials.policy.set` — node admin. `null` removes the policy. */
 export interface NodeCredentialsPolicySetInput {
   allowNode: boolean | null;
@@ -5693,6 +5730,24 @@ export interface ExecutionLiveness {
    * entire retained log. See `DurableSeqSource.latest` for the full argument.
    */
   eventHwm: number | null;
+  /**
+   * How many of THIS space's work sessions are live by BOTH truths: the id is
+   * in this process's PTY map (`liveEntityIds`) AND the recorded
+   * `work_sessions.status` is `spawning`, `running` or `idle`. Either truth
+   * alone overcounts: the PTY map can still hold a session whose record says
+   * it exited, and a record can say `running` about a PTY this boot never
+   * started. Optional because an older node omits it; absence is "unknown",
+   * never zero.
+   */
+  liveSessionCount?: number;
+  /**
+   * This space's chats whose durable `runtimeState` is `live` (the headless
+   * child is up) — the chat parallel of `liveSessionCount`. Exact, counted in
+   * SQL, never a capped page. Optional for the same older-node reason.
+   */
+  liveChatCount?: number;
+  /** Of `liveChatCount`, those with a turn `running` or `queued` right now. */
+  workingChatCount?: number;
 }
 
 // --- execution.journal — the session CLI command journal --------------------

@@ -89,6 +89,8 @@ import { channelFeedPortFromGateData } from './channel-feed-port';
 import { SettingsShell, ownerRoleRef, settingsPortFromSeam } from '../settings-space';
 import { FilesExplorerScreen, filesExplorerPortFromSeam } from '../files-explorer';
 import { InboxView } from './InboxView';
+import { StatusStrip } from '../status-strip';
+import { AttentionSegment } from '../attention-segment';
 import { MessagesView } from './MessagesView';
 import { nodeKeyOf } from '../data/launch-cache';
 import {
@@ -165,6 +167,19 @@ const HOME_TARGET: MenuTarget = { type: 'view', ref: 'dashboard' };
 
 /** Board v2's client-appended tab seat — not a menu group id (see shellTabs). */
 const BOARD_V2_TAB_ID = 'board-v2';
+
+/**
+ * The groups the top bar draws as its VIEW switcher, in pill order, and the
+ * art each segment carries. Keyed by GROUP id, not view ref: Home's group has
+ * been `chats` since revision 14 and kept that id through two renames.
+ */
+const VIEW_GROUP_ORDER: readonly string[] = ['chats', 'work', BOARD_V2_TAB_ID, 'graph'];
+const VIEW_GROUP_ART: Record<string, readonly string[]> = {
+  chats: VIEW_ART.dashboard,
+  work: VIEW_ART.workspace,
+  [BOARD_V2_TAB_ID]: VIEW_ART.board,
+  graph: VIEW_ART.graph,
+};
 
 /*
  * THE VIEW-REF CLASSIFICATION NOW LIVES IN `view-ref-screens.ts`.
@@ -1703,10 +1718,15 @@ export function GateApp(props: GateAppProps = {}) {
   }, [channelEntities, navigateTo]);
 
   /* The resolved menu's groups are the tabs, with one route-only seat for the
-     new Board. The shipped result is exactly:
-       Home | Work | Board | Craft | Graph | Settings | Help
-     Customized menus remain data-driven and are never rewritten client-side. */
-  const shellTabs = useMemo<ShellTab[]>(
+     new Board — then split in two (task 01a0dc6d, owner-ruled 2026-09-26):
+     the VIEWS of the space ride one segmented pill, every other group is an
+     ordinary tab after it. The shipped result is exactly:
+       [ Home | Work | Board | Graph ]  Craft  Settings  Help
+     The partition is CLIENT-SIDE by group id and deliberately so: no
+     MenuConfig change, no migration. A customized menu is never rewritten —
+     a group id outside `VIEW_GROUP_ORDER` (renamed, custom, or the legacy
+     `board`) simply stays a tab, and a view group a space removed is absent. */
+  const { viewTabs, shellTabs } = useMemo<{ viewTabs: ShellTab[]; shellTabs: ShellTab[] }>(
     () => {
       const tabs: ShellTab[] = data.menu.config.groups.map((group) => ({ id: group.id, label: group.label }));
       /* BOARD V2 owns the single visible Board seat. It remains route-only so
@@ -1715,7 +1735,11 @@ export function GateApp(props: GateAppProps = {}) {
       const workIndex = tabs.findIndex((tab) => tab.id === 'work');
       const v2: ShellTab = { id: BOARD_V2_TAB_ID, label: 'Board' };
       tabs.splice(workIndex >= 0 ? workIndex + 1 : Math.min(1, tabs.length), 0, v2);
-      return tabs;
+      const views = VIEW_GROUP_ORDER.flatMap((id) => {
+        const tab = tabs.find((t) => t.id === id);
+        return tab ? [{ ...tab, glyph: <VectorIcon paths={VIEW_GROUP_ART[id]} size={13} /> }] : [];
+      });
+      return { viewTabs: views, shellTabs: tabs.filter((tab) => !VIEW_GROUP_ORDER.includes(tab.id)) };
     },
     [data.menu.config],
   );
@@ -1962,6 +1986,7 @@ export function GateApp(props: GateAppProps = {}) {
             />
           }
           /* R2: the menu's groups, as tabs. */
+          viewTabs={viewTabs}
           tabs={shellTabs}
           activeTabId={activeGroupId}
           onSelectTab={openTab}
@@ -2061,6 +2086,27 @@ export function GateApp(props: GateAppProps = {}) {
             ) : undefined
           }
         />
+
+        {/* THE STATUS STRIP (task 01a0dc78): host metrics + live sessions and
+            chats, directly beneath the top bar on the desktop shell. The lead
+            slot is the attention segment's seat (task 01a0dc79-0015). */}
+        {data.spaceId ? (
+          <StatusStrip
+            seam={data.seam}
+            spaceId={data.spaceId as SpaceId}
+            leadSlot={
+              <AttentionSegment
+                seam={data.seam}
+                spaceId={data.spaceId as SpaceId}
+                reconcile={data.reconcileCommand}
+                onOpenEntity={(id) => {
+                  navigateTo(WORKSPACE_TARGET);
+                  nav.push(id as EntityId);
+                }}
+              />
+            }
+          />
+        ) : null}
 
         <div className="shell-body">
           {/* THE CHAT SLOT's interim host (entity chat §3.1): a sheet from the

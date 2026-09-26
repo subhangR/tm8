@@ -554,6 +554,17 @@ const ROWS: Record<OperationName, Row> = {
       'null removes the policy: node fallback is allowed',
     ],
   },
+  'node.metrics.get': {
+    cmd: null,
+    sum: 'Read host metrics (CPU, memory, load, disk, server RSS) for this node — node admin, human sessions only',
+    authz: 'server',
+    input: 'none',
+    tags: ['node', 'metrics', 'status'],
+    reason: 'human_settings_only',
+    notes: [
+      'the desktop status strip polls it; a figure the host cannot supply is null',
+    ],
+  },
   'serverConnections.list': {
     cmd: ['server', 'list'],
     syn: 'tm8 server list',
@@ -3140,7 +3151,8 @@ export const CATALOG_DIGEST =
   // Re-measured (G6, 232): + spaces.members.remove, spaces.leave, accounts.disable. Read from the failing digest test.
   // Re-measured (W3-server, on main bd1841bf): + auth.space.enter. Read from the conformance generator.
   // Rebased onto main d11e0be5 (#848): W11's +4 on top of auth.space.enter; digest re-measured on the rebased tree.
-  'sha256:b7a5a5ff6ae8f7320bad8055cdf9485c166d5f5f4e60cf2501c030f5612ea437';
+  // Re-measured for node.metrics.get (status strip) — read from the regenerated conformance manifest.
+  'sha256:1ddb2404b270bfb9cc105f8d885f0f3c9c3636fa4cd3f95a293844cff575be06';
 
 export const GRAMMAR_VERSION = '2';
 

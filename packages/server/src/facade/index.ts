@@ -4,6 +4,7 @@ import { registerJevHandlers } from '../jev/handlers.js';
 import { registerLaunchDefaultsHandler } from '../launch/defaults.js';
 import { registerChatDefaultsHandlers } from '../chat/defaults.js';
 import { registerMembershipHandlers, type MembershipHandlerDeps } from '../membership/handlers.js';
+import { registerNodeMetricsHandlers } from '../node-metrics/handlers.js';
 import type { JevAdvisorResolver } from '../jev/port.js';
 /**
  * The facade block: the handler registry, the operation→input-schema table,
@@ -220,6 +221,8 @@ export function registerFacadeHandlers(
   registerChatDefaultsHandlers(registry, facade);
   // spaces.leave / spaces.members.remove / accounts.disable (G6, migration 232).
   registerMembershipHandlers(registry, facade, deps.membership ?? {});
+  // node.metrics.get: host CPU/memory/load/disk for the desktop status strip (node admin).
+  registerNodeMetricsHandlers(registry, facade);
   // Tier 4 git×graph: the read-only file-contention map over active worktrees.
   registerContentionHandlers(registry, facade);
   // Git UI wave: the session git rail — status/diff reads and the #76 verbs

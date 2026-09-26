@@ -521,6 +521,8 @@ export const OPERATIONS = [
   // The node's own fallback credentials (D5/D9): node admin, and human-only.
   { name: 'node.credentials.status',                     method: 'GET',    path: '/v2/node/credentials',                                               kind: 'read',    status: 'v1' },
   { name: 'node.credentials.policy.set',                 method: 'PUT',    path: '/v2/node/credential-policy/:provider',                               kind: 'command', status: 'v1' },
+  // Host metrics for the desktop status strip: node admin, human sessions only.
+  { name: 'node.metrics.get',                            method: 'GET',    path: '/v2/node/metrics',                                                   kind: 'read',    status: 'v1' },
 
   // What the agent SAID — the third face of a session, after `execution.launch`
   // (told) and `execution.journal` (did). The bytes are the agent's OWN native
