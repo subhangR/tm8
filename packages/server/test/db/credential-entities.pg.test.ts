@@ -599,7 +599,173 @@ describe('T41a — revoke and switch-to-private contain; RESTRICT and the backst
     }
   });
 
-  it.todo('T41b: member removal revokes the removed member\'s owned credentials — G6, lands with #841');
+});
+
+// ---------------------------------------------------------------------------
+// T41b — G6 (232, #841). Each case takes a FRESH member D, so ending a
+// membership never disturbs the shared cast. The kill lists are asserted in
+// the SQL result the handlers act on (membership/handlers.ts); the handler
+// step itself is test/membership/membership-credentials.test.ts.
+// ---------------------------------------------------------------------------
+describe('T41b — a membership that ends takes the credentials its member owns (G6, #841)', () => {
+  type Joiner = { identity: string; account: string; member: string };
+  type EndResult = {
+    stoppedSessionIds: string[];
+    credentialSessionIds: string[];
+    credentialHomes: Array<{ spaceId: string; credentialId: string; provider: string }>;
+  };
+
+  async function joiner(stem: string): Promise<Joiner> {
+    const identity = `w10a-${stem}-${randomUUID()}`;
+    return asOwner(async (c) => {
+      await c.query(`insert into public.user_profiles(identity_id, display_name) values ($1, $1)`, [identity]);
+      const { rows } = await c.query<{ id: string }>(
+        `insert into public.accounts(identity_id, username, display_name) values ($1, $1, $1) returning id::text`, [identity]);
+      const member = await newId(c);
+      await c.query(`insert into public.entities(id, space_id, kind, position, created_by) values ($1, $2, 'member', 0, $1)`, [member, ids.S]);
+      await c.query(`insert into public.members(entity_id, space_id, identity_id, role, display_name) values ($1, $2, $3, 'member', $3)`, [member, ids.S, identity]);
+      return { identity, account: rows[0]!.id, member };
+    });
+  }
+
+  /** A credential D owns in S; `login` re-shapes it as a login row (no sealed bytes). */
+  async function ownedBy(d: Joiner, opts: { login?: boolean; default?: boolean } = {}): Promise<string> {
+    const view = await service.create(claims(d.identity), ids.S!, {
+      provider: 'anthropic', shape: 'api_key', label: label('d owned'), secret: secretFor('d'),
+    });
+    await asOwner(async (c) => {
+      await c.query('update public.space_credentials set owner_account_id = $2, is_default = false where id = $1', [view.id, d.account]);
+      if (opts.login) {
+        await c.query(`update public.space_credentials
+                          set shape = 'login', secret_ciphertext = null, secret_nonce = null, key_hint = null
+                        where id = $1`, [view.id]);
+      }
+      if (opts.default) {
+        await c.query(`insert into public.member_defaults(space_id, account_id, provider, credential_id) values ($1, $2, 'anthropic', $3)`,
+          [ids.S, d.account, view.id]);
+      }
+    });
+    return view.id;
+  }
+
+  async function running(createdBy: string, who: DbClaims, credentialId: string): Promise<string> {
+    const id = await session(createdBy);
+    await record(who, id, credentialId);
+    await setStatus(id, 'running');
+    return id;
+  }
+
+  const rows = (credentialIds: string[]) => asOwner(async (c) => (await c.query<{ id: string; status: string; sealed: boolean; version: number }>(
+    `select sc.id::text, sc.status, sc.secret_ciphertext is not null sealed, e.version
+       from public.space_credentials sc join public.entities e on e.id = sc.id
+      where sc.id = any($1::uuid[]) order by sc.id`, [credentialIds])).rows);
+  const byId = <T extends { id: string }>(list: T[], id: string): T => list.find((r) => r.id === id)!;
+  const defaultsOf = (account: string) => asOwner(async (c) => (await c.query<{ n: number }>(
+    'select count(*)::int n from public.member_defaults where account_id = $1', [account])).rows[0]!.n);
+
+  it('remove: D\'s owned credentials are revoked with the tombstone; B\'s session on them is listed for containment; D\'s own is 232\'s', async () => {
+    const d = await joiner('removed');
+    const pub = await ownedBy(d, { default: true });
+    const priv = await ownedBy(d);
+    await store.setVisibility(claims(d.identity), priv, 'private');
+    const home = await ownedBy(d, { login: true });
+    const spaceOwned = await create(B);
+    const bOwned = await owned(B, 'public');
+
+    const bOnD = await running(ids[`member:S:${B}`]!, claims(B), pub);
+    const dOnD = await running(d.member, claims(d.identity), priv);
+    const bOnSpace = await running(ids[`member:S:${B}`]!, claims(B), spaceOwned.id);
+    const before = await rows([pub, priv, home, spaceOwned.id, bOwned.id]);
+    expect(await defaultsOf(d.account)).toBe(1);
+
+    const result = await db.rpc<EndResult>(claims(OWN), 'remove_space_member', [ids.S, d.member, randomUUID()]);
+
+    expect(result.credentialSessionIds).toEqual([bOnD]);
+    expect(result.stoppedSessionIds).toEqual([dOnD]);
+    expect(result.credentialHomes).toEqual([{ spaceId: ids.S, credentialId: home, provider: 'anthropic' }]);
+    const after = await rows([pub, priv, home, spaceOwned.id, bOwned.id]);
+    for (const id of [pub, priv, home]) {
+      expect(byId(after, id)).toMatchObject({ status: 'revoked', sealed: false });
+      // One revoke, one card bump: nothing fires twice.
+      expect(byId(after, id).version).toBe(byId(before, id).version + 1);
+    }
+    expect(await defaultsOf(d.account)).toBe(0);
+    // Paired positives: the space-owned and B's own credential are untouched,
+    // and B's session on the space-owned one is in neither list.
+    for (const id of [spaceOwned.id, bOwned.id]) expect(byId(after, id)).toEqual(byId(before, id));
+    expect([...result.credentialSessionIds, ...result.stoppedSessionIds]).not.toContain(bOnSpace);
+    const { content } = await readAs(claims(B), pub);
+    expect(content).toMatchObject({ kind: 'credential', status: 'revoked' });
+  });
+
+  it('leave: the same revoke, and a replay of the same mutation returns the same lists', async () => {
+    const d = await joiner('leaver');
+    const pub = await ownedBy(d);
+    const bOnD = await running(ids[`member:S:${B}`]!, claims(B), pub);
+    const mutation = randomUUID();
+    const first = await db.rpc<EndResult>(claims(d.identity), 'leave_space', [ids.S, mutation]);
+    expect(first.credentialSessionIds).toEqual([bOnD]);
+    expect(byId(await rows([pub]), pub)).toMatchObject({ status: 'revoked', sealed: false });
+    const replay = await db.rpc<EndResult>(claims(d.identity), 'leave_space', [ids.S, mutation]);
+    expect(replay.credentialSessionIds).toEqual([bOnD]);
+  });
+
+  it('a member who owns nothing leaves with empty lists and every credential untouched', async () => {
+    const d = await joiner('owns-nothing');
+    const spaceOwned = await create(B);
+    const before = await rows([spaceOwned.id]);
+    const result = await db.rpc<EndResult>(claims(d.identity), 'leave_space', [ids.S, randomUUID()]);
+    expect(result).toMatchObject({ credentialSessionIds: [], credentialHomes: [] });
+    expect(await rows([spaceOwned.id])).toEqual(before);
+  });
+
+  it('a refused end revokes nothing: an agent cannot take its launcher out, and D\'s credential stays live', async () => {
+    const d = await joiner('agent-refused');
+    const pub = await ownedBy(d);
+    expect(await outcome(() => db.rpc(agent(d.identity), 'leave_space', [ids.S, randomUUID()]))).not.toBe('ok');
+    expect(await outcome(() => db.rpc(claims(B), 'remove_space_member', [ids.S, d.member, randomUUID()]))).not.toBe('ok');
+    expect(byId(await rows([pub]), pub)).toMatchObject({ status: 'active', sealed: true });
+  });
+
+  it('backstop: a raw tombstone of a member who owns a live credential is refused, even as the graph owner; once revoked it passes', async () => {
+    const d = await joiner('raw-tombstone');
+    const pub = await ownedBy(d);
+    const tombstone = () => asOwner(async (c) => {
+      await c.query('savepoint s');
+      const r = await c.query(`update public.members set status = 'left', left_at = now() where entity_id = $1`, [d.member])
+        .then(() => 'ok', (e: { code?: string }) => String(e.code));
+      await c.query('rollback to savepoint s');
+      return r;
+    });
+    expect(await tombstone()).toBe('23503');
+    await service.delete(claims(d.identity), pub);
+    expect(await tombstone()).toBe('ok');
+  });
+
+  it('account disable: the trigger revokes once, the wrapper lists B\'s session and the login home; the core is not callable by tm8_app', async () => {
+    const d = await joiner('disabled');
+    const pub = await ownedBy(d);
+    const home = await ownedBy(d, { login: true });
+    const bOnD = await running(ids[`member:S:${B}`]!, claims(B), pub);
+    const before = await rows([pub, home]);
+    const admin = claims(OWN, 'browser', true);
+    const mutation = randomUUID();
+    const result = await db.rpc<EndResult & { status: string }>(admin, 'disable_account', [d.account, mutation]);
+    expect(result.status).toBe('disabled');
+    expect(result.credentialSessionIds).toEqual([bOnD]);
+    expect(result.credentialHomes).toEqual([{ spaceId: ids.S, credentialId: home, provider: 'anthropic' }]);
+    const after = await rows([pub, home]);
+    for (const id of [pub, home]) {
+      expect(byId(after, id)).toMatchObject({ status: 'revoked', sealed: false });
+      expect(byId(after, id).version).toBe(byId(before, id).version + 1);
+    }
+    // A replay re-reads the lists and bumps nothing again.
+    const replay = await db.rpc<EndResult>(admin, 'disable_account', [d.account, mutation]);
+    expect(replay.credentialSessionIds).toEqual([bOnD]);
+    expect(await rows([pub, home])).toEqual(after);
+    expect(await outcome(() => db.tx(admin, (q) => q.query('select internal.disable_account_core($1, null)', [d.account]))))
+      .toBe('42501');
+  });
 });
 
 describe('T42 / N11 — the backfill: a same-id entity per 206 row, idempotent', () => {

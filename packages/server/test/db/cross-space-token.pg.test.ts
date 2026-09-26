@@ -37,16 +37,17 @@ import type { RequestContext, SpaceSessionsMode } from '../../src/http/types.js'
 import { formatToken, generateSecret, hashToken, parseToken } from '../../src/identity/crypto.js';
 import type { LoopbackOwner } from '../../src/identity/loopback.js';
 import { bootstrap, type BootstrappedServer } from '../../src/main.js';
+import type { EventSink } from '../../src/events/ws-connection.js';
+import { SubscriptionRegistry } from '../../src/events/subscriptions.js';
+import type { FacadeDeps } from '../../src/facade/deps.js';
+import { HandlerRegistry } from '../../src/facade/registry.js';
+import { registerMembershipHandlers } from '../../src/membership/handlers.js';
 
 import {
   createW1ScratchDatabase,
   migrationFiles,
   type W1ScratchDatabase,
 } from './w1-pg.js';
-import { claimsFor } from '../../src/facade/context.js';
-import { createSessionIdentityResolver } from '../../src/http/identity-resolver.js';
-import type { RequestContext } from '../../src/http/types.js';
-import type { LoopbackOwner } from '../../src/identity/loopback.js';
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
 
@@ -1220,5 +1221,276 @@ describe('B4 link_project — caller must see the project', () => {
     expect(await outcome(() => asToken(tokenH2, (q) =>
       q.rpc('link_project_w2', [spaceC, projectA, null, `b4-visible-${randomUUID()}`])))).toBe('ok');
     expect(await linked(spaceC, projectA)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T14 / T15 — G6, the member tombstone (migration 232, W1-server).
+//
+// Each block seeds its OWN principal, so no earlier row's H or H2 loses a
+// membership or a session. The command runs through the PRODUCTION handler
+// (`registerMembershipHandlers`), with the caller's context built from its
+// real bearer by the production resolver, a real `SubscriptionRegistry`
+// holding in-memory sockets, and a recording PTY port — so a row fails if the
+// SQL, the after-commit step, or the wiring between them drops an effect.
+// ---------------------------------------------------------------------------
+
+interface RecordingSink extends EventSink {
+  closedWith: { code: number | undefined; reason: string | undefined } | null;
+}
+
+function recordingSink(identityId: string): RecordingSink {
+  const sink: RecordingSink = {
+    id: `t14-conn-${randomUUID()}`,
+    identity: { kind: 'bearer', identityId, authKind: 'browser' } as EventSink['identity'],
+    closedWith: null,
+    get isOpen() { return sink.closedWith === null; },
+    send: () => undefined,
+    close: (code?: number, reason?: string) => { sink.closedWith = { code, reason }; },
+    onMessage: () => undefined,
+    onClose: () => undefined,
+  };
+  return sink;
+}
+
+/** The membership handlers, wired to a real registry, sockets and a recording PTY port. */
+function membershipHarness() {
+  const sockets = new SubscriptionRegistry();
+  const killed: string[] = [];
+  const contained: string[] = [];
+  const registry = new HandlerRegistry();
+  const facade = { db, config: {}, owner: async () => NOT_THE_OWNER } as unknown as FacadeDeps;
+  registerMembershipHandlers(registry, facade, {
+    sockets,
+    sessions: {
+      killRecordedEnding: async (id) => { killed.push(id); return 'killed'; },
+      containCredentialSession: async (id) => { contained.push(id); return { outcome: 'killed' }; },
+    },
+    log: () => undefined,
+  });
+  const run = async (
+    token: string,
+    opName: 'spaces.leave' | 'spaces.members.remove' | 'accounts.disable',
+    params: Record<string, string>,
+    body: unknown,
+  ): Promise<Record<string, unknown>> => {
+    const resolve = createSessionIdentityResolver({ db, owner: async () => NOT_THE_OWNER, spaceSessions: 'agents' });
+    const identity = await resolve(
+      { authorization: `Bearer ${token}` },
+      { remoteAddress: '203.0.113.9', disableAutoOwner: true },
+    );
+    const ctx = {
+      op: { name: opName, method: 'POST', path: '/test', kind: 'command', status: 'v1' },
+      opName, params, query: new URLSearchParams(), body,
+      requestId: `t14-${randomUUID()}`, identity, headers: {}, method: 'POST', path: '/test',
+    } as unknown as RequestContext;
+    return (await registry.get(opName)!(ctx)) as Record<string, unknown>;
+  };
+  return { sockets, killed, contained, run };
+}
+
+describe.sequential('T14 spaces.leave — L leaves B; B refuses L, A still admits L', () => {
+  const identityL = `t14-l-${randomUUID()}`;
+  const accountL = randomUUID();
+  const memberLA = randomUUID();
+  const memberLB = randomUUID();
+  const personaLB = randomUUID();
+  const workSessionLB = randomUUID();
+  let browserL: string;
+  let agentLB: string;
+  let harness: ReturnType<typeof membershipHarness>;
+  let sinkB: RecordingSink;
+  let sinkA: RecordingSink;
+  let sinkH: RecordingSink;
+
+  beforeAll(async () => {
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(`insert into public.user_profiles(identity_id, display_name) values ($1, 'L')`, [identityL]);
+      await client.query(`insert into public.accounts(id, identity_id, username) values ($1, $2, 't14-l')`,
+        [accountL, identityL]);
+      await client.query(
+        `insert into public.entities(id, space_id, kind, created_by, visibility) values
+         ($1, $3, 'member', $1, 'space'),
+         ($2, $4, 'member', $2, 'space'),
+         ($5, $4, 'team_member', $2, 'space'),
+         ($6, $4, 'work_session', $5, 'space')`,
+        [memberLA, memberLB, fixture.spaceA, fixture.spaceB, personaLB, workSessionLB],
+      );
+      await client.query(
+        `insert into public.members(entity_id, space_id, identity_id, role, display_name)
+         values ($1, $3, $5, 'member', 'L'), ($2, $4, $5, 'member', 'L')`,
+        [memberLA, memberLB, fixture.spaceA, fixture.spaceB, identityL],
+      );
+      await client.query(
+        `insert into public.team_members(entity_id, owner_member_id, name, role, identity)
+         values ($1, $2, 'T14 persona', 'worker', 'persona')`,
+        [personaLB, memberLB],
+      );
+      await client.query(
+        `insert into public.work_sessions(entity_id, title, status, share_mode, started_at)
+         values ($1, 'T14 run in B', 'running', 'none', now())`,
+        [workSessionLB],
+      );
+      await client.query(
+        `insert into public.edges(space_id, src_id, dst_id, type, created_by)
+         values ($1, $2, $3, 'participates_in', $2)`,
+        [fixture.spaceB, personaLB, workSessionLB],
+      );
+    });
+    browserL = await mintBrowser(accountL, identityL);
+    const secret = generateSecret();
+    const row = await asIdentity(identityL, (q) => q.rpc<{ id: string }>('issue_agent_auth_session', [
+      workSessionLB, personaLB, hashToken(secret),
+      new Date(Date.now() + 3_600_000).toISOString(), 'T14 agent in B',
+    ]));
+    agentLB = formatToken(row.id, secret);
+
+    harness = membershipHarness();
+    sinkB = recordingSink(identityL);
+    sinkA = recordingSink(identityL);
+    sinkH = recordingSink(fixture.identityH);
+    for (const sink of [sinkB, sinkA, sinkH]) harness.sockets.add(sink);
+    harness.sockets.subscribe(sinkB.id, fixture.spaceB);
+    harness.sockets.subscribe(sinkA.id, fixture.spaceA);
+    harness.sockets.subscribe(sinkH.id, fixture.spaceB);
+  });
+
+  it('before: L\'s browser reads and writes B, and L\'s agent token reads B', async () => {
+    expect(await asToken(browserL, (q) => idsIn(q, fixture.spaceB))).toContain(fixture.docB);
+    expect(await outcome(() => recordEtag(browserL, fixture.spaceB))).toBe('ok');
+    expect(await asToken(agentLB, (q) => idsIn(q, fixture.spaceB))).toContain(fixture.docB);
+  });
+
+  it('L leaves B through spaces.leave; the member row is kept with status left', async () => {
+    const result = await harness.run(browserL, 'spaces.leave', { spaceId: fixture.spaceB },
+      { clientMutationId: `t14-${randomUUID()}` });
+    expect(result).toMatchObject({ spaceId: fixture.spaceB, memberId: memberLB, status: 'left' });
+    expect(result).not.toHaveProperty('identityId');
+    const rows = await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      return (await client.query<{ status: string }>(
+        'select status from public.members where entity_id = $1', [memberLB])).rows;
+    });
+    expect(rows).toEqual([{ status: 'left' }]);
+  });
+
+  for (const mode of ['agents', 'enforce'] as const) {
+    it(`[${mode}] refused: L's browser reads nothing in B`, async () => {
+      expect(await asToken(browserL, (q) => idsIn(q, fixture.spaceB), mode)).toEqual([]);
+    });
+
+    it(`[${mode}] positive: the same browser credential still reads A`, async () => {
+      expect(await asToken(browserL, (q) => idsIn(q, fixture.spaceA), mode)).toContain(fixture.docA);
+    });
+
+    it(`[${mode}] refused: L's browser writes nothing in B (42501)`, async () => {
+      expect(await outcome(() => recordEtag(browserL, fixture.spaceB, mode))).toBe('42501');
+      expect(await outcome(() => editDoc(browserL, fixture.docB, mode))).not.toBe('ok');
+    });
+
+    it(`[${mode}] positive: the same browser credential still writes A`, async () => {
+      expect(await outcome(() => recordEtag(browserL, fixture.spaceA, mode))).toBe('ok');
+    });
+
+    it(`[${mode}] refused: L's agent token pinned to B no longer resolves`, async () => {
+      expect(await outcome(() => asToken(agentLB, (q) => idsIn(q, fixture.spaceB), mode))).toBe('unauthenticated');
+    });
+  }
+
+  it('the open socket on B closed with 1008 before the command returned; A\'s socket and H\'s stay open', () => {
+    expect(sinkB.closedWith).toEqual({ code: 1008, reason: 'membership ended' });
+    expect(sinkA.isOpen).toBe(true);
+    expect(sinkH.isOpen).toBe(true);
+  });
+
+  it('L\'s agent session in B is recorded exited and its PTY was killed', async () => {
+    expect(harness.killed).toEqual([workSessionLB]);
+    const [ws] = await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      return (await client.query<{ status: string; ended_kind: string }>(
+        'select status, ended_kind from public.work_sessions where entity_id = $1', [workSessionLB])).rows;
+    });
+    expect(ws).toEqual({ status: 'exited', ended_kind: 'stopped_by_operator' });
+  });
+});
+
+describe.sequential('T15 accounts.disable — every session of the account is refused', () => {
+  const identityN = `t15-admin-${randomUUID()}`;
+  const accountN = randomUUID();
+  const identityX = `t15-x-${randomUUID()}`;
+  const accountX = randomUUID();
+  const memberXA = randomUUID();
+  let adminToken: string;
+  let browserX: string;
+  let secondBrowserX: string;
+  let harness: ReturnType<typeof membershipHarness>;
+  let sinkX: RecordingSink;
+
+  beforeAll(async () => {
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(
+        `insert into public.user_profiles(identity_id, display_name) values ($1, 'N'), ($2, 'X')`,
+        [identityN, identityX]);
+      await client.query(
+        `insert into public.accounts(id, identity_id, username, is_node_admin)
+         values ($1, $2, 't15-admin', true), ($3, $4, 't15-x', false)`,
+        [accountN, identityN, accountX, identityX]);
+      await client.query(
+        `insert into public.entities(id, space_id, kind, created_by, visibility)
+         values ($1, $2, 'member', $1, 'space')`, [memberXA, fixture.spaceA]);
+      await client.query(
+        `insert into public.members(entity_id, space_id, identity_id, role, display_name)
+         values ($1, $2, $3, 'member', 'X')`, [memberXA, fixture.spaceA, identityX]);
+    });
+    adminToken = await mintBrowser(accountN, identityN);
+    browserX = await mintBrowser(accountX, identityX);
+    secondBrowserX = await mintBrowser(accountX, identityX);
+    harness = membershipHarness();
+    sinkX = recordingSink(identityX);
+    harness.sockets.add(sinkX);
+    harness.sockets.subscribe(sinkX.id, fixture.spaceA);
+  });
+
+  it('before: both of X\'s sessions read A', async () => {
+    for (const token of [browserX, secondBrowserX]) {
+      expect(await asToken(token, (q) => idsIn(q, fixture.spaceA))).toContain(fixture.docA);
+    }
+  });
+
+  it('refused: X cannot disable the admin (42501) — the command is node-admin-only', async () => {
+    expect(await outcome(() => harness.run(browserX, 'accounts.disable', { accountId: accountN },
+      { clientMutationId: `t15-${randomUUID()}` }))).toBe('42501');
+  });
+
+  it('the admin disables X', async () => {
+    const result = await harness.run(adminToken, 'accounts.disable', { accountId: accountX },
+      { clientMutationId: `t15-${randomUUID()}` });
+    expect(result).toMatchObject({ accountId: accountX, status: 'disabled', revokedSessionCount: 2 });
+    expect(result).not.toHaveProperty('identityId');
+  });
+
+  it('refused: every one of X\'s sessions is refused by the resolver', async () => {
+    for (const token of [browserX, secondBrowserX]) {
+      expect(await outcome(() => asToken(token, (q) => idsIn(q, fixture.spaceA)))).toBe('unauthenticated');
+    }
+  });
+
+  it('positive: the admin\'s own session still resolves after the disable', async () => {
+    expect(await outcome(() => asToken(adminToken, (q) => idsIn(q, fixture.spaceA)))).toBe('ok');
+  });
+
+  it('X\'s open socket closed with 1008', () => {
+    expect(sinkX.closedWith).toEqual({ code: 1008, reason: 'account disabled' });
+  });
+
+  it('the membership row is untouched: the graph keeps who acted', async () => {
+    const rows = await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      return (await client.query<{ status: string }>(
+        'select status from public.members where entity_id = $1', [memberXA])).rows;
+    });
+    expect(rows).toEqual([{ status: 'active' }]);
   });
 });

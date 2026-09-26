@@ -3027,6 +3027,28 @@ export class SpawnService {
   }
 
   /**
+   * MEMBERSHIP CONTAINMENT (migration 232) — kill a session whose ending the
+   * database has ALREADY recorded.
+   *
+   * `spaces.leave` / `spaces.members.remove` write the ending in the same
+   * transaction that tombstones the member (`internal.end_membership`), because
+   * the transition RPC re-checks the launcher's membership — the very thing
+   * that just ended — so the captured claims could no longer write it. This is
+   * `killThenRecordEnding` without the record: kill, drop the captured claims,
+   * scrub a space key's per-session copy. `kill(notify=true)` finalizes the
+   * entry, so the late `onExit` writes nothing either.
+   *
+   * Never throws; the outcome is the PTY host's own answer.
+   */
+  async killRecordedEnding(sessionId: string): Promise<PtyKillOutcome> {
+    const outcome = this.pty.kill(sessionId, true);
+    this.sessionAuth.delete(sessionId);
+    if (outcome === 'killed') await this.scrubSpaceSecrets(sessionId);
+    this.logger?.info('SpawnService: session killed after its membership ended', { sessionId, outcome });
+    return outcome;
+  }
+
+  /**
    * THE STOP PATH's kill and ending, shared by `terminate` and
    * `containCredentialSession` so a stop has one writer.
    *

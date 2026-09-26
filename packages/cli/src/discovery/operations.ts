@@ -304,6 +304,21 @@ const ROWS: Record<OperationName, Row> = {
       'refused once any account on the node has a password: a claim token is inert on a claimed node, so there is nothing to reissue',
     ],
   },
+  // ── node accounts (G6, migration 232) ──────────────────────────────────
+  'accounts.disable': {
+    cmd: ['node', 'account', 'disable'],
+    syn: 'tm8 node account disable <account-id> --yes [--mutation-id <id>]',
+    sum: 'Disable an account on this Server: every session it holds is revoked and its agent sessions stop',
+    authz: 'server',
+    input: 'bound',
+    side: 'durable',
+    tags: ['disable', 'account', 'revoke', 'ban', 'suspend', 'admin'],
+    notes: [
+      'the caller must be an authenticated human node admin; refused for yourself and for the node owner',
+      'the account row and its memberships are kept, so what it wrote still renders',
+      'links to this Server stored elsewhere go stale on their next 401',
+    ],
+  },
   // ── credentials (Tier B per-member vendor credentials) ───────────────────
   //
   // ALL FOUR HAVE NO CLI COMMAND, AND THE REASON IS NOT THAT THEY ARE FORBIDDEN
@@ -707,6 +722,33 @@ const ROWS: Record<OperationName, Row> = {
     authz: 'space',
     input: 'bound',
     tags: ['permission', 'promote', 'demote', 'admin'],
+  },
+  'spaces.members.remove': {
+    cmd: ['space', 'member', 'remove'],
+    syn: 'tm8 space member remove <member-id> [--space <space-id>] --yes [--mutation-id <id>]',
+    sum: "End another Member's membership of a Space — the row is kept as `removed`",
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['remove', 'kick', 'revoke', 'member', 'admin'],
+    notes: [
+      'requires an authenticated human Member with the Space owner/admin capability; only an owner may remove an owner',
+      'in one transaction: their tokens pinned to the Space are revoked, their agent sessions there stop, their personas are deactivated and their assignments cleared',
+      'nothing is deleted: what they wrote still renders under their name, marked as no longer a member',
+    ],
+  },
+  'spaces.leave': {
+    cmd: ['space', 'leave'],
+    syn: 'tm8 space leave [--space <space-id>] --yes [--mutation-id <id>]',
+    sum: 'Leave a Space — your membership is kept as `left`, and a later invite brings the same row back',
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['leave', 'quit', 'exit', 'member'],
+    notes: [
+      'the last owner of a Space cannot leave it: promote another owner first',
+      'in one transaction: your tokens pinned to the Space are revoked, your agent sessions there stop, your personas are deactivated and your assignments cleared',
+    ],
   },
   'spaces.invites.list': {
     cmd: ['space', 'invite', 'list'],
@@ -3024,6 +3066,10 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   // it is `cmd: null` (Jev is UI-only, design 01a0cb80), so a separate noun
   // would name no command. `tools/conformance`'s generator holds the same map.
   launch: 'session',
+  // `accounts.disable` (G6, 232): the command is `tm8 node account disable`,
+  // but `node` already groups the credential rows, so the noun is `account`.
+  // `tools/conformance`'s generator holds the same map.
+  accounts: 'account',
 };
 
 function nounFor(operation: OperationName): string {
@@ -3104,8 +3150,9 @@ export const CATALOG_DIGEST =
   // Re-measured (Forms W3 merged with headers I4): + forms.responses.redeliver, forms.pendingForSessions. Read from the failing digest test.
   // Re-measured (I9b): + launch.defaults. Read from the failing digest test.
   // Re-measured (entity chat G): + spaces.chatDefaults.get/set. RECOMPUTED from JSON.stringify(OPERATIONS).
-  // Re-measured (W10b): + six credentials.space.* ops and narrowed summaries. Read from the failing digest test.
-  'sha256:056c74dca661f23db8016c3a9f8759bf7171a86c8723ac1175b7435753d01260';
+  // Re-measured (G6, 232): + spaces.members.remove, spaces.leave, accounts.disable. Read from the failing digest test.
+  // Re-measured (W10b, on #863's merged tree): + the six credentials.space.* ops. Read from the failing digest test; matches the regenerated manifest.
+  'sha256:b68099507d6d102d53f9f177168bb19ab96e980749503fa279480937cb84682f';
 
 export const GRAMMAR_VERSION = '2';
 

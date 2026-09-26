@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Reset the test database, apply the whole sequence, then run every suite.
 //
-//   node db/test/run.mjs
-//   TM8_DATABASE_URL=postgres://tm8@127.0.0.1:5442/tm8_cygnus node db/test/run.mjs
+//   TM8_PG_PORT=5443 node db/test/run.mjs
+//   TM8_DATABASE_URL=postgres://tm8@127.0.0.1:5443/tm8_cygnus node db/test/run.mjs
 //
 // Uses a database SEPARATE from tm8_dev so a test run can never touch the
 // database the facade is developed against. TM8_DATABASE_URL wins when set, and
@@ -19,16 +19,15 @@ import { readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { testDatabaseUrl } from './pg-port-guard.mjs';
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DB_DIR = join(HERE, '..');
 
+// Refuses 5442 (the PROD cluster on the tm8 host) and an unset port BEFORE the
+// reset below — see ./pg-port-guard.mjs.
 function resolveUrl() {
-  if (process.env.TM8_DATABASE_URL) return process.env.TM8_DATABASE_URL;
-  const user = process.env.TM8_PG_USER || process.env.USER || 'postgres';
-  const host = process.env.TM8_PG_HOST || '127.0.0.1';
-  const port = process.env.TM8_PG_PORT || '5442';
-  const db = process.env.TM8_TEST_DB || 'tm8_test';
-  return `postgres://${user}@${host}:${port}/${db}`;
+  return testDatabaseUrl(process.env, process.env.TM8_TEST_DB || 'tm8_test');
 }
 
 const url = resolveUrl();

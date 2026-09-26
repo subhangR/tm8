@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url';
 
 import { Pool, type PoolClient, type QueryResultRow } from 'pg';
 
+import { testAdminUrl } from './pg-port-guard.js';
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = resolve(HERE, '../../../..');
 export const MIGRATIONS_DIR = join(REPO_ROOT, 'db', 'migrations');
@@ -24,11 +26,8 @@ function psqlPath(): string {
 }
 
 function configuredAdminUrl(): string {
-  const configured =
-    process.env['TM8_W1_ADMIN_DATABASE_URL'] ??
-    process.env['TM8_MIGRATION_DATABASE_URL'] ??
-    process.env['TM8_DATABASE_URL'] ??
-    'postgres://tm8@127.0.0.1:5442/postgres';
+  // Refuses 5442 (PROD on the tm8 host) and an unset port — see ./pg-port-guard.ts.
+  const configured = testAdminUrl();
   const url = new URL(configured);
   url.pathname = `/${process.env['TM8_ADMIN_DB'] ?? 'postgres'}`;
   return url.toString();

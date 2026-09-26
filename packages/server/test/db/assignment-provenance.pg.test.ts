@@ -357,6 +357,13 @@ describe.sequential('task assignment provenance (129)', () => {
     // re-created at its 194 body plus a form arm. No assertion here reads any
     // of it.
     database.apply(['209_forms_foundation.sql']);
+    // An a-la-carte suite must apply every migration that adds a column the
+    // entity read SQL selects; the full chain is never applied here.
+    // 231 (chat context): `entity-read.ts` and the projector select
+    // `cht.context`. It adds that nullable jsonb column to `public.chats` and
+    // `set_chat_context`;
+    // no assertion here reads it.
+    database.apply(['231_chat_context.sql']);
   }, 180_000);
 
   afterAll(async () => {
