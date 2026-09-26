@@ -680,7 +680,14 @@ const DTO_BY_OPERATION: Partial<Record<OperationName, string>> = {
  * the map" stays a FAILURE for every other guard-bearing DTO instead of being
  * quietly tolerated.
  */
-const GUARD_DTOS_BOUND_TO_NO_OPERATION = ['PatchTaskInputSchema'];
+/*
+ * `WithdrawAttentionRequestInput` (Attention v2 S3-contract) carries an
+ * optional `expectedVersion`, but its catalog row
+ * `attentionRequests.withdraw` lands with its handler in S4: a v1 row with no
+ * handler reds the empty-residual pins. S4 binds it in DTO_BY_OPERATION and
+ * DELETES it from this list.
+ */
+const GUARD_DTOS_BOUND_TO_NO_OPERATION = ['PatchTaskInputSchema', 'WithdrawAttentionRequestInputSchema'];
 
 /**
  * Guard-bearing rows whose DTO lives on the SERVER, not in the contract, so
