@@ -435,6 +435,24 @@ describe('tm8 link login|add never print a secret', () => {
     expect(scrubText('tm8 link login bee')).toBe('tm8 link login bee');
   });
 
+  it('a name-shaped run made of a UUID pair or dashed hex is redacted; paired names with years and hex-letter words are kept', () => {
+    const uuidPair = `${LINK}-${TARGET}`;
+    expect(scrubText(`pair ${uuidPair} end`)).toBe(`pair ${REDACTED} end`);
+    const lowerPair = 'c0ffee00-1234-4abc-9def-0123456789ab_' + '0a1b2c3d-4e5f-4a6b-8c7d-8e9f0a1b2c3d';
+    expect(scrubText(lowerPair)).toBe(REDACTED);
+    const dashedHex = 'a1b2-c3d4-e5f6-a7b8-c9d0-e1f2-a3b4-c5d6-e7f8';
+    expect(dashedHex.length).toBeGreaterThanOrEqual(40);
+    expect(scrubText(dashedHex)).toBe(REDACTED);
+    // Pair: words that are hex-lettered or all digits, but not hex ids.
+    const names = ['quarterly-review-2026-09-research-space-notes', 'dead-code-audit-for-the-face-and-cafe-teams'];
+    for (const name of names) {
+      expect(name.length).toBeGreaterThanOrEqual(40);
+      expect(scrubText(name)).toBe(name);
+    }
+    // One UUID alone is under 40 and stays readable.
+    expect(scrubText(`link ${LINK}`)).toBe(`link ${LINK}`);
+  });
+
   it('long aliases and names are kept; a token of the same length is still redacted', () => {
     const alias = 'my-research-space-for-the-quarterly-review';
     const name = 'project_documentation_and_research_notes_2026';

@@ -46,9 +46,21 @@ const LONG_HEX = /[0-9a-fA-F]{32,}/;
  */
 const NAME_SHAPE = /^[a-z0-9]{1,20}(?:[-_][a-z0-9]{1,20})+$/;
 
+/**
+ * A word no name has: 8+ hex (a UUID's first group, any hex id) or 4+ hex
+ * mixing digits and a-f (`a1b2`). `2026`, `dead` and `release` stay words.
+ * One such word and the run is ids or a secret, not a name: two UUIDs joined
+ * are 73 long and every group is short.
+ */
+const HEX_WORD = /^[0-9a-f]{8,}$|^(?=[0-9a-f]*[0-9])(?=[0-9a-f]*[a-f])[0-9a-f]{4,}$/;
+
+function nameShaped(run: string): boolean {
+  return NAME_SHAPE.test(run) && !run.split(/[-_]/).some((word) => HEX_WORD.test(word));
+}
+
 function tokenShaped(run: string): boolean {
   if (TM8_PREFIX.test(run) || LONG_HEX.test(run)) return true;
-  return run.length >= 40 && !NAME_SHAPE.test(run);
+  return run.length >= 40 && !nameShaped(run);
 }
 
 export function scrubText(text: string): string {
