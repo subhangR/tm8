@@ -152,6 +152,13 @@ export interface SettingsShellProps {
    * re-reads its own list either way.
    */
   onAxesChanged?: () => void;
+  /**
+   * Fired after the viewer LEAVES the space (G6, `spaces.leave` landed). The
+   * viewer is no longer a member, so every read of this space now refuses —
+   * the host must move them out of it. Absent ⇒ the shell stays put and the
+   * next read says why.
+   */
+  onLeftSpace?: (spaceId: string) => void;
 }
 
 /**

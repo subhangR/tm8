@@ -116,3 +116,30 @@
 .cv2-root .set-danger__act .hon-caption {
   line-height: 1.5;
 }
+
+/* G6: Leave — the one LIVE act in the bulkhead, above the refused pair and
+   ruled off from them, so the refused pair's prose never reads as covering it. */
+.cv2-root .set-danger__leave {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 0 0 12px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--pn-block) 20%, transparent);
+}
+.cv2-root .set-danger__leave-go {
+  padding: 4px 11px;
+  border: 1px solid var(--pn-block);
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  color: var(--pn-block);
+  font-family: var(--pn-ui);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.cv2-root .set-danger__leave-go:hover {
+  background: var(--pn-block);
+  color: var(--pn-paper);
+}
