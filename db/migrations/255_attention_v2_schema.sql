@@ -168,6 +168,10 @@ create index attention_requests_open_source_idx
 
 reset role;
 
+-- A never-analyzed table is estimated at 10 pages however empty it is (225;
+-- never-analyzed-tables.pg.test.ts), and the badge and list reads join it.
+analyze public.attention_seen;
+
 -- -----------------------------------------------------------------------------
 -- 5. Roll-up (G6, Q5, R3). ONE rule, used by the view, the badge and the flag
 -- trigger. One hop: a work session's working_on task, a form's attached_to
