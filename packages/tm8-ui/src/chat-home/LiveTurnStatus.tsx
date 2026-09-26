@@ -6,6 +6,7 @@ import {
   type TurnInProgress,
 } from './live-turn-status-model';
 import { projectTurnParts } from './turn-model';
+import type { StepLabels } from './turn-steps';
 import type { ChatThreadDetail, ChatTurnPart } from './types';
 import './live-turn-status.css';
 
@@ -40,12 +41,14 @@ export interface LiveTurnStatusProps {
   turn: TurnInProgress;
   /** The in-flight agent message's stored parts, or null before it exists. */
   parts: readonly ChatTurnPart[] | null;
+  /** The thread ledger's labels, so a write names its target. */
+  labels?: StepLabels | undefined;
 }
 
-export function LiveTurnStatus({ turn, parts }: LiveTurnStatusProps) {
+export function LiveTurnStatus({ turn, parts, labels }: LiveTurnStatusProps) {
   const ticking = isTicking(turn.phase);
   const now = useSecondTicker(ticking);
-  const view = liveTurnView(turn, parts, now);
+  const view = liveTurnView(turn, parts, now, labels);
   const spoken = useCalmAnnouncement(view.announcement, announcementKey(view));
   /* `sending` and `waiting` are the states the old transcript wait row stood
      for, and every test (and lane 1's) that asks for that row asks by this id,
@@ -104,12 +107,13 @@ export interface TranscriptDockProps {
   /** Lane 1's value; `null` when nothing is in flight. */
   turn: TurnInProgress | null;
   parts: readonly ChatTurnPart[] | null;
+  labels?: StepLabels | undefined;
   away: boolean;
   unseen: number;
   onJump: () => void;
 }
 
-export function TranscriptDock({ turn, parts, away, unseen, onJump }: TranscriptDockProps) {
+export function TranscriptDock({ turn, parts, labels, away, unseen, onJump }: TranscriptDockProps) {
   if (!turn && !away) return null;
   const label = unseen > 0 ? `Jump to latest · ${unseen} new` : 'Jump to latest';
   return (
@@ -120,7 +124,7 @@ export function TranscriptDock({ turn, parts, away, unseen, onJump }: Transcript
       data-live={turn ? 'true' : undefined}
       data-phase={turn?.phase}
     >
-      {turn ? <LiveTurnStatus turn={turn} parts={parts} /> : null}
+      {turn ? <LiveTurnStatus turn={turn} parts={parts} labels={labels} /> : null}
       {away ? (
         <button type="button" className="tch-jump" data-testid="chat-jump-latest" onClick={onJump}>
           <span aria-hidden="true">↓ </span>

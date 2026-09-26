@@ -92,12 +92,17 @@ describe('chat waiting marks', () => {
     });
     fireEvent.click(view.getByRole('button', { name: /send/i }));
 
+    /* The transcript's mark is the LIVE STATUS ROW's spinner now (advisor
+       ruling D1, lane 2): a CSS ring, not a RibbonMark — so the pending row
+       costs no per-frame JS, which is the budget this file exists to guard. */
     const thinking = await view.findByTestId('chat-thinking');
-    expect(thinking.querySelector('[data-testid="ribbon-mark"]')).not.toBeNull();
+    const spinner = thinking.querySelector('.tch-live__spinner');
+    expect(spinner).not.toBeNull();
+    expect(thinking.querySelector('[data-testid="ribbon-mark"]')).toBeNull();
     // The words are still the accessible content; the mark is decorative and
     // must not be reachable, or every wait row gains a nameless graphic.
     expect(thinking.getAttribute('role')).toBe('status');
-    expect(thinking.querySelector('.tch-wait__mark')?.getAttribute('aria-hidden')).toBe('true');
+    expect(spinner?.getAttribute('aria-hidden')).toBe('true');
   });
 
   /**

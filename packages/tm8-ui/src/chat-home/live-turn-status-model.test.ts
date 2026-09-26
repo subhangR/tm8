@@ -35,6 +35,9 @@ vi.mock('./turn-steps', () => ({
   },
   groupDone: (steps: { done: string; counted: (n: number) => string }[]) =>
     steps.length === 1 ? steps[0]!.done : steps[0]!.counted(steps.length),
+  // The real rule: the last `done`/`error` record ends everything before it.
+  turnEndSeq: (parts: { kind: string; seq: number }[]) =>
+    parts.reduce((end, part) => (part.kind === 'done' || part.kind === 'error') && part.seq > end ? part.seq : end, -1),
   // The real rule: a result or a terminal record settles it; an ended turn
   // stops what never settled.
   toolStepState: (part: { state: string; result?: unknown; resultIsError?: boolean }, settled: boolean) => {
@@ -128,6 +131,19 @@ describe('the phase copy (D2 as amended by D16)', () => {
     const view = liveTurnView(turn(), parts, T0);
     expect(view.now).toBe('Doing read.context…');
     expect(view.aside).toBe('+2 more');
+  });
+
+  /** Lane 3's stuck-call guard: a continued turn appends after its first
+   *  `done`, and a call abandoned before it never gets a terminal record. */
+  it('a call left running before the last done is not "now" in a continued turn', () => {
+    const parts: ChatTurnPart[] = [
+      { seq: 1, kind: 'tool_call', toolCallId: 'stuck', name: 'x', args: { operation: 'write.spawn' }, state: 'running' },
+      { seq: 2, kind: 'done' },
+      { seq: 3, kind: 'text', text: 'Continuing.' },
+    ];
+    const view = liveTurnView(turn(), parts, T0);
+    expect(view.now).toBe('Writing…');
+    expect(view.aside).toBe('Did write.spawn');
   });
 
   it('a step whose result has landed is not running, whatever its record says', () => {

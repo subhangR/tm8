@@ -2177,6 +2177,7 @@ export function ChatHomeScreen({
               <TranscriptDock
                 turn={turnInProgress}
                 parts={liveParts}
+                labels={foldChatLedger(detail.turns).labels}
                 away={follow.away}
                 unseen={follow.unseen}
                 onJump={follow.jumpToLatest}

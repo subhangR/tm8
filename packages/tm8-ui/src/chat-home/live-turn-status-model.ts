@@ -28,7 +28,14 @@
  */
 import type { EntityId } from '@tm8/contract';
 import { projectTurnParts, type ProjectedTurnPart } from './turn-model';
-import { describeToolStep, groupDone, toolStepState, type ToolStepWords } from './turn-steps';
+import {
+  describeToolStep,
+  groupDone,
+  toolStepState,
+  turnEndSeq,
+  type StepLabels,
+  type ToolStepWords,
+} from './turn-steps';
 import type { ChatTurnPart } from './types';
 
 /**
@@ -113,7 +120,8 @@ function inProgress(words: string): string {
   return words.endsWith('…') ? words : `${words}…`;
 }
 
-const wordsOf = (part: ToolPart): ToolStepWords => describeToolStep(part.name, part.args, part.result);
+const wordsOf = (part: ToolPart, labels: StepLabels | undefined): ToolStepWords =>
+  describeToolStep(part.name, part.args, part.result, labels);
 
 /** A step's one human fact (a created title, a file's basename, the agent's
  *  own description of a command), joined to its words. A quoted title or a
@@ -136,10 +144,11 @@ function withDetail(words: string, detail: string | null): string {
 function streamingNow(
   running: readonly ToolPart[],
   newest: ProjectedTurnPart | null,
+  labels: StepLabels | undefined,
 ): { now: string; detail: string | null } {
   const last = running[running.length - 1];
   if (last) {
-    const words = wordsOf(last);
+    const words = wordsOf(last, labels);
     return {
       now: inProgress(words.active),
       detail: running.length > 1 ? `+${running.length - 1} more` : words.detail,
@@ -154,14 +163,14 @@ function streamingNow(
  * one counted line, `Read 3 tasks, 1 doc`, exactly as the transcript's step
  * list counts it.
  */
-function settledStep(settled: readonly ToolPart[]): string | null {
+function settledStep(settled: readonly ToolPart[], labels: StepLabels | undefined): string | null {
   const last = settled[settled.length - 1];
   if (!last) return null;
-  const lastWords = wordsOf(last);
+  const lastWords = wordsOf(last, labels);
   if (!lastWords.merges) return withDetail(lastWords.done, lastWords.detail);
   const run: ToolStepWords[] = [lastWords];
   for (let index = settled.length - 2; index >= 0; index -= 1) {
-    const words = wordsOf(settled[index]!);
+    const words = wordsOf(settled[index]!, labels);
     if (words.category !== lastWords.category) break;
     run.unshift(words);
   }
@@ -173,20 +182,28 @@ function settledStep(settled: readonly ToolPart[]): string | null {
  *
  * `parts` are the in-flight agent message's stored parts (looked up by
  * `turn.messageId`); `null` before that message exists. `now` is the view's
- * ticker — only the clock segments read it.
+ * ticker — only the clock segments read it. `labels` (the thread ledger's)
+ * lets a write name its target — `Moving “Ship it” to done` — instead of
+ * `an entity`.
  */
 export function liveTurnView(
   turn: TurnInProgress,
   parts: readonly ChatTurnPart[] | null | undefined,
   now: number,
+  labels?: StepLabels,
 ): LiveTurnView {
   const projected = parts ? projectTurnParts(parts) : [];
   const ended = turn.phase === 'stopped' || turn.phase === 'failed';
+  /* A continued turn appends to the SAME message after its first `done`, so a
+     call that began before the last terminal record can no longer be running
+     even when its own terminal record never arrived (lane 3's stuck-call
+     guard) — otherwise the row would name it as "now" forever. */
+  const endSeq = parts ? turnEndSeq(parts) : -1;
   const tools = projected.filter((part): part is ToolPart => part.kind === 'tool');
   const running: ToolPart[] = [];
   const settled: ToolPart[] = [];
   for (const tool of tools) {
-    (toolStepState(tool, ended) === 'running' ? running : settled).push(tool);
+    (toolStepState(tool, ended || tool.seq < endSeq) === 'running' ? running : settled).push(tool);
   }
   const newest = [...projected].reverse().find((part) => part.kind !== 'usage') ?? null;
   const steps = tools.length;
@@ -209,14 +226,14 @@ export function liveTurnView(
       nowText = 'Thinking…';
       break;
     case 'streaming': {
-      const live = streamingNow(running, newest);
+      const live = streamingNow(running, newest, labels);
       nowText = live.now;
-      aside = running.length > 0 ? live.detail : settledStep(settled);
+      aside = running.length > 0 ? live.detail : settledStep(settled, labels);
       break;
     }
     case 'stopping':
       nowText = 'Stopping…';
-      aside = settledStep(settled);
+      aside = settledStep(settled, labels);
       break;
     case 'stopped':
     case 'failed':
