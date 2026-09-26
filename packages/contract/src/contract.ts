@@ -506,6 +506,14 @@ export type CoreEntityState =
   /** A form's row facts (209): where it is in its lifecycle, and how long. */
   | { kind: 'form'; status: FormStatus; questionCount: number }
   /**
+   * Space links (243, W6): no row facts on the entity. A link's target and
+   * every member's status are `spaceLinks.list`'s answer, never a list row's —
+   * a join here would widen the shared entity read for a settings screen.
+   * `server` has no detail row until W8.
+   */
+  | { kind: 'space_link' }
+  | { kind: 'server' }
+  /**
    * A chat's row facts (176). Everything here answers a question a list row
    * asks — who is it with, what is it running, is it busy — without a second
    * read, which is the same rule `capabilities` and `category` ride on.
@@ -886,6 +894,9 @@ export type CoreEntityContent =
   | { kind: 'form'; status: FormStatus; description: string | null; settings: FormSettings;
       structureVersion: number; sections: FormSectionRow[]; questions: FormQuestionRow[];
       openedAt: string | null; closedAt: string | null }
+  /** Space links (243, W6): content is `spaceLinks.list`'s; see EntityState. */
+  | { kind: 'space_link' }
+  | { kind: 'server' }
   /**
    * Containers (§4.2), hydrated in the panel.
    *
