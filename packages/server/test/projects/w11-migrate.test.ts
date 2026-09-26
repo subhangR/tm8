@@ -1,14 +1,15 @@
 /**
- * W11-migrate report logic (plan 01a0d9eb §3 W11 steps 1, 2, 4; K13). Pure: no
- * database. The pg test (test/db/w11-migrate-report.pg.test.ts) covers the
+ * W11-migrate report logic (plan 01a0d9eb §3 W11 steps 1, 2, 4; K13 as the
+ * owner's explicit mapping). Pure: no database. #845's
+ * test/projects/owning-space.test.ts covers pickOwningSpace itself. The pg test (test/db/w11-migrate-report.pg.test.ts) covers the
  * evidence read.
  */
 import { describe, expect, it } from 'vitest';
 
-import { pickOwningSpace } from '../../src/projects/owning-space.js';
 import {
   buildW11Report,
   formatW11Report,
+  parseOwningSpaceMapping,
   realRunRefusals,
   type W11Evidence,
 } from '../../src/projects/w11-migrate.js';
@@ -37,63 +38,38 @@ function row(over: Partial<W11Evidence> & Pick<W11Evidence, 'folderId' | 'spaceI
   };
 }
 
-const report = (evidence: W11Evidence[], personalIdentity: string | null = OWNER) =>
-  buildW11Report({ evidence, personalIdentity, asOf: '2026-09-24T18:40:00.000Z' });
-
-describe('pickOwningSpace (K13)', () => {
-  const at = (d: string) => `2026-08-${d}T00:00:00.000Z`;
-  it('most activity wins over the tie-break', () => {
-    expect(pickOwningSpace([
-      { spaceId: 'a', activity30d: 1, createdByOwner: true, createdAt: at('01') },
-      { spaceId: 'b', activity30d: 2, createdByOwner: false, createdAt: at('02') },
-    ])).toBe('b');
-  });
-  it('a tie goes to the owner-created space, then the oldest, then the lowest id', () => {
-    expect(pickOwningSpace([
-      { spaceId: 'a', activity30d: 0, createdByOwner: false, createdAt: at('01') },
-      { spaceId: 'b', activity30d: 0, createdByOwner: true, createdAt: at('02') },
-    ])).toBe('b');
-    expect(pickOwningSpace([
-      { spaceId: 'b', activity30d: 0, createdByOwner: false, createdAt: at('01') },
-      { spaceId: 'a', activity30d: 0, createdByOwner: false, createdAt: at('02') },
-    ])).toBe('b');
-    expect(pickOwningSpace([
-      { spaceId: 'b', activity30d: 0, createdByOwner: false, createdAt: at('01') },
-      { spaceId: 'a', activity30d: 0, createdByOwner: false, createdAt: at('01') },
-    ])).toBe('a');
-  });
-});
+const map = (entries: Record<string, string>) => new Map(Object.entries(entries));
+const report = (evidence: W11Evidence[], mapping: Record<string, string>) =>
+  buildW11Report({ evidence, mapping: map(mapping), nodeOwnerIdentity: OWNER, asOf: '2026-09-24T18:40:00.000Z' });
 
 describe('buildW11Report', () => {
-  it('owner = most sessions + chats in the window; an idle other space is unlinked', () => {
-    const r = report([
-      row({ folderId: 'f', spaceId: 'a', sessions: 5, sessionsInWindow: 0 }),
-      row({ folderId: 'f', spaceId: 'b', spaceCreatedBy: OTHER, sessionsInWindow: 1, chatsInWindow: 1 }),
-    ]);
-    expect(r.projects).toHaveLength(1);
-    const [p] = r.projects;
-    expect(p!.owningSpaceId).toBe('b');
-    expect(p!.tie).toBe(false);
-    expect(p!.spaces.map((s) => [s.spaceId, s.activity, s.action])).toEqual([['a', 0, 'unlink'], ['b', 2, 'keep']]);
+  const f = [
+    row({ folderId: 'f', spaceId: 'a', sessionsInWindow: 3 }),
+    row({ folderId: 'f', spaceId: 'b', spaceCreatedBy: OTHER, chatsInWindow: 1, worktreeBranches: ['b/x'] }),
+  ];
+
+  it('the owner is the mapped space even when it has less activity; activity is a report column', () => {
+    const [p] = report(f, { f: 'b' }).projects;
+    expect(p!.decision).toEqual({ ok: true, spaceId: 'b' });
+    expect(p!.spaces.map((s) => [s.spaceId, s.activity30d, s.createdByOwner, s.action]))
+      .toEqual([['a', 3, true, 'owner_decides'], ['b', 1, false, 'keep']]);
   });
 
-  it('an active other space gets a clone, carrying its branches', () => {
-    const r = report([
-      row({ folderId: 'f', spaceId: 'a', sessionsInWindow: 3 }),
-      row({ folderId: 'f', spaceId: 'b', spaceCreatedBy: OTHER, chatsInWindow: 1, worktreeBranches: ['b/x'] }),
-    ]);
-    const b = r.projects[0]!.spaces.find((s) => s.spaceId === 'b')!;
-    expect(b.action).toBe('clone');
-    expect(formatW11Report(r)).toContain('B → clone (1 branch(es))');
+  it('an idle other space is unlinked; an active one is left to the owner', () => {
+    const idle = [row({ folderId: 'f', spaceId: 'a' }), row({ folderId: 'f', spaceId: 'b', sessions: 5 })];
+    expect(report(idle, { f: 'a' }).projects[0]!.spaces.map((s) => s.action)).toEqual(['keep', 'unlink']);
+    expect(report(f, { f: 'a' }).projects[0]!.spaces.map((s) => s.action)).toEqual(['keep', 'owner_decides']);
   });
 
-  it('a tie is flagged and follows the personal identity it is given', () => {
-    const evidence = [
-      row({ folderId: 'f', spaceId: 'a', spaceCreatedAt: '2026-08-01T00:00:00.000Z' }),
-      row({ folderId: 'f', spaceId: 'b', spaceCreatedBy: OTHER, spaceCreatedAt: '2026-08-21T00:00:00.000Z' }),
-    ];
-    expect(report(evidence, OWNER).projects[0]).toMatchObject({ owningSpaceId: 'a', tie: true });
-    expect(report(evidence, OTHER).projects[0]).toMatchObject({ owningSpaceId: 'b', tie: true });
+  it('an unmapped folder has no owner and no actions; a mapping outside its grants is refused too', () => {
+    expect(report(f, {}).projects[0]).toMatchObject({ decision: { ok: false, reason: 'unmapped' } });
+    expect(report(f, {}).projects[0]!.spaces.map((s) => s.action)).toEqual([null, null]);
+    expect(report(f, { f: 'c' }).projects[0]!.decision).toEqual({ ok: false, reason: 'mapped_space_not_granted', spaceId: 'c' });
+  });
+
+  it('the node owner only sets a column: swapping who created the spaces changes no decision', () => {
+    const swapped = f.map((r) => ({ ...r, spaceCreatedBy: r.spaceCreatedBy === OWNER ? OTHER : OWNER }));
+    expect(report(swapped, { f: 'b' }).projects[0]!.decision).toEqual(report(f, { f: 'b' }).projects[0]!.decision);
   });
 
   it('one row per folder, sorted by name, with live sessions summed across spaces', () => {
@@ -102,28 +78,44 @@ describe('buildW11Report', () => {
       row({ folderId: 'z', spaceId: 'b', liveSessions: 2 }),
       row({ folderId: 'm', spaceId: 'a' }),
       row({ folderId: 'm', spaceId: 'b' }),
-    ]);
+    ], { z: 'a', m: 'b' });
     expect(r.projects.map((p) => [p.folderId, p.liveSessions])).toEqual([['m', 0], ['z', 3]]);
+  });
+
+  it('the markdown names the mapped owner and marks a refused folder', () => {
+    const out = formatW11Report(report([...f, row({ folderId: 'g', spaceId: 'a' }), row({ folderId: 'g', spaceId: 'b' })], { f: 'b' }));
+    expect(out).toContain('| F `/tmp/f` | B | A → owner_decides | 0 |');
+    expect(out).toContain('| G `/tmp/g` | REFUSED: not in the mapping | — | 0 |');
   });
 });
 
-describe('realRunRefusals (plan step 4; K13 confirmation)', () => {
-  const quiet = report([row({ folderId: 'f', spaceId: 'a' }), row({ folderId: 'f', spaceId: 'b' })]);
-  const live = report([row({ folderId: 'f', spaceId: 'a' }), row({ folderId: 'f', spaceId: 'b', liveSessions: 1 })]);
+describe('realRunRefusals (plan step 4; K13 mapping)', () => {
+  const quiet = [row({ folderId: 'f', spaceId: 'a' }), row({ folderId: 'f', spaceId: 'b' })];
+  const live = [row({ folderId: 'f', spaceId: 'a' }), row({ folderId: 'f', spaceId: 'b', liveSessions: 1 })];
 
-  it('refuses without a confirmed table; proceeds with one', () => {
-    expect(realRunRefusals(quiet, null)).toEqual([{ code: 'no_confirmed_table' }]);
-    expect(realRunRefusals(quiet, { f: 'a' })).toEqual([]);
+  it('refuses a folder the mapping leaves out; the same folder mapped passes', () => {
+    expect(realRunRefusals(report(quiet, {}))).toEqual([{ code: 'unmapped', folderId: 'f' }]);
+    expect(realRunRefusals(report(quiet, { f: 'a' }))).toEqual([]);
   });
 
-  it('refuses a folder the table leaves out, or confirms to a space it is not granted to', () => {
-    expect(realRunRefusals(quiet, {})).toEqual([{ code: 'folder_not_confirmed', folderId: 'f' }]);
-    expect(realRunRefusals(quiet, { f: 'c' })).toEqual([{ code: 'confirmed_space_not_granted', folderId: 'f', spaceId: 'c' }]);
-    expect(realRunRefusals(quiet, { f: 'b' })).toEqual([]);
+  it('refuses a mapping to a space the folder is not granted to', () => {
+    expect(realRunRefusals(report(quiet, { f: 'c' }))).toEqual([{ code: 'mapped_space_not_granted', folderId: 'f', spaceId: 'c' }]);
+    expect(realRunRefusals(report(quiet, { f: 'b' }))).toEqual([]);
   });
 
   it('refuses a folder with a live session in either space; the same folder idle passes', () => {
-    expect(realRunRefusals(live, { f: 'a' })).toEqual([{ code: 'live_sessions', folderId: 'f', liveSessions: 1 }]);
-    expect(realRunRefusals(quiet, { f: 'a' })).toEqual([]);
+    expect(realRunRefusals(report(live, { f: 'a' }))).toEqual([{ code: 'live_sessions', folderId: 'f', liveSessions: 1 }]);
+    expect(realRunRefusals(report(quiet, { f: 'a' }))).toEqual([]);
+  });
+});
+
+describe('parseOwningSpaceMapping', () => {
+  it('reads folder id -> space id', () => {
+    expect([...parseOwningSpaceMapping('{"f":"a","g":"b"}')]).toEqual([['f', 'a'], ['g', 'b']]);
+  });
+  it('rejects anything that is not an object of non-empty strings', () => {
+    for (const bad of ['[]', 'null', '"x"', '{"f":1}', '{"f":""}']) {
+      expect(() => parseOwningSpaceMapping(bad)).toThrow(/mapping/);
+    }
   });
 });

@@ -2,15 +2,17 @@
  * W11-migrate job entry (see w11-migrate.ts). Run once per node, by the node's
  * operator, against the node database:
  *
- *   TM8_DATABASE_URL=postgres://… node packages/server/dist/projects/w11-migrate-cli.js --dry-run
- *     [--as-of <iso>] [--window-days 30] [--personal-identity <identity_id>] [--format md|json]
- *   TM8_DATABASE_URL=postgres://… node packages/server/dist/projects/w11-migrate-cli.js --confirmed <file.json>
+ *   TM8_DATABASE_URL=postgres://… node packages/server/dist/projects/w11-migrate-cli.js --mapping <file.json> --dry-run
+ *     [--as-of <iso>] [--window-days 30] [--format md|json]
+ *   TM8_DATABASE_URL=postgres://… node packages/server/dist/projects/w11-migrate-cli.js --mapping <file.json>
  *
- * --dry-run prints the report and exits 0. Without it the job is a real run:
- * it REFUSES (exit 2) without an owner-confirmed table (`{ "<folder id>":
- * "<owning space id>" }` for every folder in the report) or while any folder
- * has a live session, and it stops there (exit 3) even when nothing refuses —
- * the clone-and-repoint half is an owner step not built into this job yet.
+ * --mapping is REQUIRED on every run: the owner's `{ "<folder id>": "<owning
+ * space id>" }` (K13, form 01a0db32-d438). Nothing picks an owner without it.
+ * --dry-run prints the report (an unmapped folder shows as refused) and exits
+ * 0. Without it the job is a real run: it REFUSES (exit 2) any folder the
+ * mapping does not name, maps outside its grants, or that has a live session,
+ * and it stops there (exit 3) even when nothing refuses — the real run is an
+ * owner step not built into this job.
  *
  * Every read runs in one READ ONLY transaction. The database URL is read from
  * the environment and never printed.
@@ -27,8 +29,8 @@ import {
   formatW11Report,
   loadNodeOwnerIdentity,
   loadW11Evidence,
+  parseOwningSpaceMapping,
   realRunRefusals,
-  type W11ConfirmedTable,
 } from './w11-migrate.js';
 
 export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env): Promise<number> {
@@ -36,10 +38,9 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env)
     args: argv,
     options: {
       'dry-run': { type: 'boolean', default: false },
-      confirmed: { type: 'string' },
+      mapping: { type: 'string' },
       'as-of': { type: 'string' },
       'window-days': { type: 'string' },
-      'personal-identity': { type: 'string' },
       format: { type: 'string', default: 'md' },
     },
     strict: true,
@@ -49,6 +50,11 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env)
     process.stderr.write('w11-migrate: TM8_DATABASE_URL is not set\n');
     return 64;
   }
+  if (!values.mapping) {
+    process.stderr.write('w11-migrate: --mapping <file.json> is required (folder id -> owning space id)\n');
+    return 64;
+  }
+  const mapping = parseOwningSpaceMapping(readFileSync(values.mapping, 'utf8'));
   const asOf = new Date(values['as-of'] ?? Date.now()).toISOString();
   const windowDays = values['window-days'] ? Number(values['window-days']) : DEFAULT_WINDOW_DAYS;
   if (!Number.isInteger(windowDays) || windowDays <= 0) {
@@ -62,9 +68,9 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env)
   try {
     await client.query('begin transaction isolation level repeatable read, read only');
     const evidence = await loadW11Evidence(client, asOf, windowDays);
-    const personalIdentity = values['personal-identity'] ?? await loadNodeOwnerIdentity(client);
+    const nodeOwnerIdentity = await loadNodeOwnerIdentity(client);
     await client.query('commit');
-    report = buildW11Report({ evidence, personalIdentity, asOf, windowDays });
+    report = buildW11Report({ evidence, mapping, nodeOwnerIdentity, asOf, windowDays });
   } finally {
     await client.end();
   }
@@ -73,10 +79,7 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env)
   process.stdout.write(`${out}\n`);
   if (values['dry-run']) return 0;
 
-  const confirmed: W11ConfirmedTable | null = values.confirmed
-    ? JSON.parse(readFileSync(values.confirmed, 'utf8')) as W11ConfirmedTable
-    : null;
-  const refusals = realRunRefusals(report, confirmed);
+  const refusals = realRunRefusals(report);
   if (refusals.length > 0) {
     process.stderr.write(`w11-migrate: REFUSED\n${refusals.map((r) => `  ${JSON.stringify(r)}`).join('\n')}\n`);
     return 2;

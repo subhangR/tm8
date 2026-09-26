@@ -1,34 +1,36 @@
 /**
- * W11-migrate, THE DRY-RUN REPORT (plan 01a0d9eb §3 W11 steps 1, 2 and 4; K13,
- * accepted as decision 38).
+ * W11-migrate, THE DRY-RUN REPORT (plan 01a0d9eb §3 W11 steps 1, 2 and 4; K13
+ * as the owner answered it on form 01a0db32-d438).
  *
- * Before 231 a folder could be granted to several spaces; 7 folders on the prod
- * node are granted to two. The split gives each folder ONE owning space and the
- * other space either its own clone or nothing. This file is the part that
- * decides and reports; it never writes:
+ * Before 234 a folder could be granted to several spaces; 7 folders on the prod
+ * node are granted to two. The split gives each folder ONE owning space. The
+ * owning space is NOT chosen here: it comes from the owner's explicit mapping
+ * (folder -> owning space), read through #845's `pickOwningSpace`, and a folder
+ * the mapping does not name is refused. This file reports; it never writes:
  *
  *   loadW11Evidence   one read of the node: every (folder, space) grant of a
  *                     folder granted more than once, with its sessions, chats
  *                     and worktrees, counted over a window ending at `asOf`;
- *   buildW11Report    per folder: the owning space by `pickOwningSpace` (the
- *                     K13 seam), and clone-or-unlink for every other space;
- *   realRunRefusals   the two refusals a real run must honour: no owner-
- *                     confirmed table for the folder, or a live session in
- *                     either space.
+ *   buildW11Report    per folder: the mapped owning space (or the refusal), and
+ *                     for every other space unlink (idle in the window) or
+ *                     `owner_decides` (active: move, keep as history or clone
+ *                     is the owner's call, not this job's);
+ *   realRunRefusals   what a real run must refuse: an unmapped folder, a
+ *                     mapping to a space the folder is not granted to, or a
+ *                     live session in any of its spaces.
  *
- * THE REAL RUN IS NOT HERE. It clones folders and re-points rows, and it runs
- * only after the owner confirms each folder from this report. Nothing in this
- * file changes a row.
+ * THE REAL RUN IS NOT HERE, and nothing in this file changes a row.
  *
- * Activity (K13 "most activity in the last 30 days"; the plan's unlink rule
- * says "no sessions or chats on the project in 30 days", so the same two
- * sources count): work sessions CREATED in the window, plus chats whose last
+ * Activity and "created by the node owner" are REPORT COLUMNS (#845's
+ * `OwningSpaceReportRow`), never inputs to the decision. Activity = the plan's
+ * unlink test ("no sessions or chats on the project in 30 days"): work
+ * sessions CREATED in the window, plus chats whose last
  * message (or, with none, whose creation) falls in the window. A session is on
  * the folder by `work_sessions.project_id`, in the space of its entity. A chat
  * is on the folder by `chats.project_id`, or by a `cwd` at or under the
  * folder's path (chats on the prod node carry cwd and no project_id).
  */
-import { pickOwningSpace } from './owning-space.js';
+import { pickOwningSpace, type OwningSpaceMapping } from './owning-space.js';
 
 export const DEFAULT_WINDOW_DAYS = 30;
 
@@ -55,18 +57,28 @@ export interface W11Evidence {
 }
 
 export interface W11SpaceRow extends W11Evidence {
-  activity: number;
-  /** Owner: 'keep'. Other: 'clone' when it was active in the window, else 'unlink'. */
-  action: 'keep' | 'clone' | 'unlink';
+  /** Report column (`OwningSpaceReportRow.activity30d`): sessions + chats in the window. */
+  activity30d: number;
+  /** Report column (`OwningSpaceReportRow.createdByOwner`): the node owner created this space. */
+  createdByOwner: boolean;
+  /**
+   * Owner: 'keep'. Other: 'unlink' when idle in the window; 'owner_decides' when
+   * active (move, keep as history, or clone is the owner's call). Null while
+   * the folder has no owning space (unmapped, or mapped outside its grants).
+   */
+  action: 'keep' | 'unlink' | 'owner_decides' | null;
 }
+
+export type W11Decision =
+  | { ok: true; spaceId: string }
+  | { ok: false; reason: 'unmapped' }
+  | { ok: false; reason: 'mapped_space_not_granted'; spaceId: string };
 
 export interface W11ProjectRow {
   folderId: string;
   folderName: string;
   workingDir: string;
-  owningSpaceId: string;
-  /** True when the top activity is shared, so the tie-break decided. */
-  tie: boolean;
+  decision: W11Decision;
   spaces: W11SpaceRow[];
   liveSessions: number;
 }
@@ -74,8 +86,6 @@ export interface W11ProjectRow {
 export interface W11Report {
   asOf: string;
   windowDays: number;
-  /** The identity whose spaces win a tie (K13 "your personal/first space"). */
-  personalIdentity: string | null;
   projects: W11ProjectRow[];
 }
 
@@ -150,7 +160,7 @@ select g.project_id::text folder_id, g.folder_name, g.working_dir,
   left join wt on wt.project_id = g.project_id and wt.space_id = g.space_id
  order by g.folder_name, g.project_id, s.created_at, s.id`;
 
-/** The node owner (002's single `is_owner` row): K13's default tie-break identity. */
+/** The node owner (002's single `is_owner` row): the `createdByOwner` report column. */
 export const NODE_OWNER_SQL = 'select identity_id from public.accounts where is_owner limit 1';
 
 interface Queryable {
@@ -190,13 +200,14 @@ export async function loadNodeOwnerIdentity(client: Queryable): Promise<string |
 }
 
 /**
- * Pure. Groups the evidence by folder, picks each folder's owning space with
- * `pickOwningSpace`, and marks every other space clone (active in the window)
- * or unlink (idle in the window).
+ * Pure. Groups the evidence by folder and takes each folder's owning space from
+ * the owner's mapping via `pickOwningSpace`. Activity and `createdByOwner` are
+ * computed for the report and are never consulted by the decision.
  */
 export function buildW11Report(args: {
   evidence: readonly W11Evidence[];
-  personalIdentity: string | null;
+  mapping: OwningSpaceMapping;
+  nodeOwnerIdentity: string | null;
   asOf: string;
   windowDays?: number;
 }): W11Report {
@@ -207,62 +218,68 @@ export function buildW11Report(args: {
     byFolder.set(row.folderId, rows);
   }
   const projects: W11ProjectRow[] = [];
-  for (const rows of byFolder.values()) {
-    const activityOf = (r: W11Evidence) => r.sessionsInWindow + r.chatsInWindow;
-    const owningSpaceId = pickOwningSpace(rows.map((r) => ({
-      spaceId: r.spaceId,
-      activity30d: activityOf(r),
-      createdByOwner: args.personalIdentity !== null && r.spaceCreatedBy === args.personalIdentity,
-      createdAt: r.spaceCreatedAt,
-    })))!;
-    const top = Math.max(...rows.map(activityOf));
-    const spaces = rows.map((r): W11SpaceRow => ({
-      ...r,
-      activity: activityOf(r),
-      action: r.spaceId === owningSpaceId ? 'keep' : activityOf(r) > 0 ? 'clone' : 'unlink',
-    }));
+  for (const [folderId, rows] of byFolder) {
+    const picked = pickOwningSpace(folderId, args.mapping);
+    const decision: W11Decision = !picked.ok ? { ok: false, reason: 'unmapped' }
+      : rows.some((r) => r.spaceId === picked.spaceId) ? { ok: true, spaceId: picked.spaceId }
+        : { ok: false, reason: 'mapped_space_not_granted', spaceId: picked.spaceId };
+    const spaces = rows.map((r): W11SpaceRow => {
+      const activity30d = r.sessionsInWindow + r.chatsInWindow;
+      return {
+        ...r,
+        activity30d,
+        createdByOwner: args.nodeOwnerIdentity !== null && r.spaceCreatedBy === args.nodeOwnerIdentity,
+        action: !decision.ok ? null
+          : r.spaceId === decision.spaceId ? 'keep' : activity30d > 0 ? 'owner_decides' : 'unlink',
+      };
+    });
     projects.push({
-      folderId: rows[0]!.folderId,
+      folderId,
       folderName: rows[0]!.folderName,
       workingDir: rows[0]!.workingDir,
-      owningSpaceId,
-      tie: rows.filter((r) => activityOf(r) === top).length > 1,
+      decision,
       spaces,
       liveSessions: rows.reduce((n, r) => n + r.liveSessions, 0),
     });
   }
   projects.sort((a, b) => a.folderName.localeCompare(b.folderName) || a.folderId.localeCompare(b.folderId));
-  return {
-    asOf: args.asOf,
-    windowDays: args.windowDays ?? DEFAULT_WINDOW_DAYS,
-    personalIdentity: args.personalIdentity,
-    projects,
-  };
+  return { asOf: args.asOf, windowDays: args.windowDays ?? DEFAULT_WINDOW_DAYS, projects };
 }
 
-/** The owner-confirmed table: folder id -> owning space id. */
-export type W11ConfirmedTable = Readonly<Record<string, string>>;
+/** Reads the owner's mapping file: `{ "<folder id>": "<owning space id>" }`. */
+export function parseOwningSpaceMapping(json: string): OwningSpaceMapping {
+  const value: unknown = JSON.parse(json);
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error('mapping must be a JSON object of folder id -> owning space id');
+  }
+  const mapping = new Map<string, string>();
+  for (const [folderId, spaceId] of Object.entries(value)) {
+    if (typeof spaceId !== 'string' || spaceId === '') {
+      throw new Error(`mapping: folder ${folderId} must map to a space id string`);
+    }
+    mapping.set(folderId, spaceId);
+  }
+  return mapping;
+}
 
 export type W11Refusal =
-  | { code: 'no_confirmed_table' }
-  | { code: 'folder_not_confirmed'; folderId: string }
-  | { code: 'confirmed_space_not_granted'; folderId: string; spaceId: string }
+  | { code: 'unmapped'; folderId: string }
+  | { code: 'mapped_space_not_granted'; folderId: string; spaceId: string }
   | { code: 'live_sessions'; folderId: string; liveSessions: number };
 
 /**
- * What a real run must refuse, per plan step 4 and K13's confirmation: with no
- * table it refuses outright; otherwise every folder it would split needs a
- * confirmed owning space that is one of its grants, and no live session in
- * any of its spaces. Empty means a real run may proceed for every folder.
+ * What a real run must refuse (plan step 4; K13): every folder it would split
+ * needs a mapped owning space that is one of its grants, and no live session
+ * in any of its spaces. Empty means a real run may proceed for every folder.
  */
-export function realRunRefusals(report: W11Report, confirmed: W11ConfirmedTable | null): W11Refusal[] {
-  if (confirmed === null) return [{ code: 'no_confirmed_table' }];
+export function realRunRefusals(report: W11Report): W11Refusal[] {
   const refusals: W11Refusal[] = [];
   for (const project of report.projects) {
-    const spaceId = confirmed[project.folderId];
-    if (spaceId === undefined) refusals.push({ code: 'folder_not_confirmed', folderId: project.folderId });
-    else if (!project.spaces.some((s) => s.spaceId === spaceId)) {
-      refusals.push({ code: 'confirmed_space_not_granted', folderId: project.folderId, spaceId });
+    const { decision } = project;
+    if (!decision.ok) {
+      refusals.push(decision.reason === 'unmapped'
+        ? { code: 'unmapped', folderId: project.folderId }
+        : { code: 'mapped_space_not_granted', folderId: project.folderId, spaceId: decision.spaceId });
     }
     if (project.liveSessions > 0) {
       refusals.push({ code: 'live_sessions', folderId: project.folderId, liveSessions: project.liveSessions });
@@ -275,29 +292,31 @@ const day = (value: string | null): string => (value ? value.slice(0, 10) : '—
 
 /** Markdown: one table row per folder, then the per-space evidence. */
 export function formatW11Report(report: W11Report): string {
-  const nameOf = (project: W11ProjectRow, spaceId: string) =>
-    project.spaces.find((s) => s.spaceId === spaceId)?.spaceName ?? spaceId;
+  const ownerCell = (p: W11ProjectRow) => {
+    const { decision } = p;
+    if (decision.ok) return p.spaces.find((s) => s.spaceId === decision.spaceId)!.spaceName;
+    return decision.reason === 'unmapped' ? 'REFUSED: not in the mapping'
+      : `REFUSED: mapped to \`${decision.spaceId}\`, not one of its grants`;
+  };
   const lines = [
     `W11-migrate dry run — ${report.projects.length} folder(s) granted to more than one space`,
-    `as of ${report.asOf}; window ${report.windowDays} days; ties go to spaces created by ${report.personalIdentity ?? '(none)'}`,
+    `as of ${report.asOf}; window ${report.windowDays} days; owners from the owner's mapping (activity is a report column)`,
     '',
-    '| Folder | Proposed owner | Decided by | Other space(s) | Live sessions (real run) |',
-    '|---|---|---|---|---|',
+    '| Folder | Owner (mapping) | Other space(s) | Live sessions (real run) |',
+    '|---|---|---|---|',
   ];
   for (const p of report.projects) {
-    const owner = p.spaces.find((s) => s.spaceId === p.owningSpaceId)!;
-    const others = p.spaces.filter((s) => s.spaceId !== p.owningSpaceId)
-      .map((s) => `${s.spaceName} → ${s.action}${s.action === 'clone' ? ` (${s.worktreeBranches.length} branch(es))` : ''}`)
-      .join('; ');
-    lines.push(`| ${p.folderName} \`${p.workingDir}\` | ${nameOf(p, p.owningSpaceId)} | `
-      + `${p.tie ? `tie at ${owner.activity} → tie-break` : `activity ${owner.activity}`} | ${others} | `
+    const others = p.decision.ok
+      ? p.spaces.filter((s) => s.action !== 'keep').map((s) => `${s.spaceName} → ${s.action}`).join('; ')
+      : '—';
+    lines.push(`| ${p.folderName} \`${p.workingDir}\` | ${ownerCell(p)} | ${others} | `
       + `${p.liveSessions > 0 ? `${p.liveSessions} → REFUSE until stopped` : '0'} |`);
   }
-  lines.push('', '| Folder | Space | Space id | Activity | Sessions (window/total/live, last) | Chats (window/total, last) | Worktrees (active/total) |',
-    '|---|---|---|---|---|---|---|');
+  lines.push('', '| Folder | Space | Space id | Created by node owner | Activity (30d) | Sessions (window/total/live, last) | Chats (window/total, last) | Worktrees (active/total) |',
+    '|---|---|---|---|---|---|---|---|');
   for (const p of report.projects) {
     for (const s of p.spaces) {
-      lines.push(`| ${p.folderName} | ${s.spaceName}${s.spaceId === p.owningSpaceId ? ' (owner)' : ''} | \`${s.spaceId}\` | ${s.activity} | `
+      lines.push(`| ${p.folderName} | ${s.spaceName}${s.action === 'keep' ? ' (owner)' : ''} | \`${s.spaceId}\` | ${s.createdByOwner ? 'yes' : 'no'} | ${s.activity30d} | `
         + `${s.sessionsInWindow}/${s.sessions}/${s.liveSessions}, ${day(s.lastSessionAt)} | `
         + `${s.chatsInWindow}/${s.chats}, ${day(s.lastChatAt)} | ${s.activeWorktrees}/${s.worktrees} |`);
     }
