@@ -77,7 +77,7 @@ afterEach(() => {
 async function mounted() {
   const { port, controls } = createChatHomeFixturePort();
   const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
-  await waitFor(() => expect(view.getByText('Plan the launch sequence')).toBeTruthy());
+  await waitFor(() => expect(view.getByText('Plan the launch sequence and check what is already blocked.')).toBeTruthy());
   await waitFor(() => expect(writes.length).toBeGreaterThan(0));
   const transcript = view.container.querySelector('.tch-transcript') as HTMLElement;
   return { view, controls, transcript };
@@ -215,7 +215,7 @@ describe('coming back from a stage (or any host panel)', () => {
     const { port, controls } = createChatHomeFixturePort();
     const props = { port, spaceId: SPACE_ID, models: MODELS };
     const view = render(<ChatHomeScreen {...props} />);
-    await waitFor(() => expect(view.getByText('Plan the launch sequence')).toBeTruthy());
+    await waitFor(() => expect(view.getByText('Plan the launch sequence and check what is already blocked.')).toBeTruthy());
     await waitFor(() => expect(writes.length).toBeGreaterThan(0));
     const transcript = view.container.querySelector('.tch-transcript') as HTMLElement;
     const openStage = () => view.rerender(<ChatHomeScreen {...props} centerOverride={<div data-testid="stage" />} />);
