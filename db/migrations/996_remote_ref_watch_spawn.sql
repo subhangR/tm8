@@ -81,8 +81,10 @@ create index remote_refs_token_row_idx on public.remote_refs(token_row_id, watch
 create index remote_refs_link_idx on public.remote_refs(link_id);
 
 alter table public.remote_refs enable row level security;
+-- 218's shape: the entities RLS decides readability once per statement; no
+-- per-row membership helper (rls-membership-once-per-statement pins this).
 create policy remote_refs_select on public.remote_refs for select to tm8_app
-  using (internal.entity_readable(entity_id));
+  using ((exists (select 1 from public.entities readable_entity where readable_entity.id = remote_refs.entity_id and readable_entity.deleted_at is null offset 0)));
 grant select on public.remote_refs to tm8_app;
 
 comment on table public.remote_refs is

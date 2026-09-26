@@ -220,12 +220,12 @@ async function completeInB(taskId: string): Promise<void> {
 }
 
 /** The ok audit row invoke writes after a create in B (258's shape). */
-async function auditOk(linkId: string, memberId: string, op: string, remoteId: string): Promise<void> {
+async function auditOk(linkId: string, memberId: string, op: string, remoteId: string, result = 'ok'): Promise<void> {
   await asOwner(async (c) => {
     await c.query(
       `insert into public.cross_space_audit(link_id, link_ref, home_space_id, target_space_id, member_id, op, result, remote_id)
-       values ($1, $7, $2, $3, $4, $5, 'ok', $6)`,
-      [linkId, fixture.spaceA, fixture.spaceB, memberId, op, remoteId, linkId]);
+       values ($1, $7, $2, $3, $4, $5, $8, $6)`,
+      [linkId, fixture.spaceA, fixture.spaceB, memberId, op, remoteId, linkId, result]);
   });
 }
 
@@ -266,6 +266,9 @@ describe('W7b record_remote_ref — only for work done through the link', () => 
     const taskB = await taskInB('audited');
     expect(await outcome(() => db.rpc(claims, 'record_remote_ref', [fixture.spaceA, link.id, taskB]))).toBe('42501');
     await auditOk(link.id, fixture.memberHA, 'tasks.get', taskB);
+    expect(await outcome(() => db.rpc(claims, 'record_remote_ref', [fixture.spaceA, link.id, taskB]))).toBe('42501');
+    // A create that failed in B produced nothing to watch.
+    await auditOk(link.id, fixture.memberHA, 'tasks.create', taskB, 'error');
     expect(await outcome(() => db.rpc(claims, 'record_remote_ref', [fixture.spaceA, link.id, taskB]))).toBe('42501');
     await auditOk(link.id, fixture.memberHA, 'tasks.create', taskB);
     const made = await db.rpc<{ id: string; created: boolean }>(claims, 'record_remote_ref', [fixture.spaceA, link.id, taskB]);
@@ -416,6 +419,28 @@ describe('W7b watcher — a1 opens the gate, a4 stops when the link leaves signe
     await db.rpc(adminClaims(), 'poll_remote_refs', [1000]);
     expect((await refRow(refId)).last_seen_seq).toBe(before.last_seen_seq);
   });
+
+  it('only the target space: an event in A naming the remote id moves no cursor (paired: B\'s own event does)', async () => {
+    const { taskB, refId } = await refTo('other space');
+    await db.rpc(adminClaims(), 'poll_remote_refs', [1000]);
+    const before = await refRow(refId);
+    const foreign = randomUUID();
+    await asOwner(async (c) => {
+      await c.query(
+        `insert into public.workspace_events(id, space_id, seq, event_type, payload)
+         values ($1, $2, $3, 'activity.created', jsonb_build_object('entity_id', $4::text))`,
+        [foreign, fixture.spaceA, Number(before.last_seen_seq) + 1_000_000, taskB]);
+    });
+    try {
+      await db.rpc(adminClaims(), 'poll_remote_refs', [1000]);
+      expect((await refRow(refId)).last_seen_seq).toBe(before.last_seen_seq);
+    } finally {
+      await asOwner(async (c) => { await c.query('delete from public.workspace_events where id = $1', [foreign]); });
+    }
+    await completeInB(taskB);
+    await db.rpc(adminClaims(), 'poll_remote_refs', [1000]);
+    expect(Number((await refRow(refId)).last_seen_seq)).toBeGreaterThan(Number(before.last_seen_seq));
+  });
 });
 
 describe('W7b spawn budget — a5 per token row, atomic; a6 the switch; T33 scope', () => {
@@ -487,6 +512,8 @@ describe('W7b spawn budget — a5 per token row, atomic; a6 the switch; T33 scop
   it('T33: A\'s project and a shared one are refused, B\'s is admitted; a parent session in A is refused, one in B is admitted', async () => {
     const h = await hClaims();
     expect(await outcome(() => reserve(h, fixture.projectA))).toBe('42501');
+    // A folder granted to neither space.
+    expect(await outcome(() => reserve(h, randomUUID()))).toBe('42501');
     const okProject = await reserve(h, fixture.projectB);
     // DEFAULT: a legacy folder granted to both A and B is refused (fail-closed).
     expect(await outcome(() => reserve(h, fixture.projectShared))).toBe('42501');
@@ -613,6 +640,30 @@ describe('W7b link-kind admission — the mint and the credential read, only aga
     expect(await outcome(async () => db.rpc(await linkClaims(), 'issue_agent_auth_session', [
       fixture.workSessionA, fixture.personaA, hashToken(secret), new Date(Date.now() + 3_600_000).toISOString(), 'no',
     ]))).toBe('42501');
+  });
+
+  it('admit_space_link_spawn: only a link session, only against a live reservation, only B\'s folders (paired positives)', async () => {
+    await asOwner(async (c) => { await c.query(`update public.space_link_spawns set released_at = now() where released_at is null`); });
+    const admit = async (claims: DbClaims, projectId: string | null = null) =>
+      outcome(() => db.rpc(claims, 'admit_space_link_spawn', [fixture.spaceB, projectId, null]));
+    expect(await admit(await linkClaims())).toBe('42501');
+    const r = await db.rpc<{ reservationId: string }>(await hClaims(), 'reserve_space_link_spawn', [fixture.spaceA, link.id, null, null]);
+    expect(await admit(await linkClaims())).toBe('ok');
+    expect(await admit(await linkClaims(), fixture.projectB)).toBe('ok');
+    expect(await admit(await linkClaims(), fixture.projectShared)).toBe('42501');
+    expect(await admit(await linkClaims(), fixture.projectA)).toBe('42501');
+    // Not a link session: H's own claims, and the link-bound child (it carries
+    // the via_link claim), are refused though the reservation is live.
+    expect(await admit(await hClaims())).toBe('42501');
+    const ws = await newSessionInB();
+    const child = await mint(await linkClaims(), ws);
+    const r2 = await db.rpc<{ reservationId: string }>(await hClaims(), 'reserve_space_link_spawn', [fixture.spaceA, link.id, null, null]);
+    expect(await admit(await claimsForToken(child.token))).toBe('42501');
+    expect(await admit(await linkClaims())).toBe('ok');
+    await db.rpc(await hClaims(), 'release_space_link_spawn', [fixture.spaceA, link.id, r2.reservationId]);
+    void r;
+    await endSession(ws);
+    await asOwner(async (c) => { await c.query(`update public.space_link_spawns set released_at = now() where released_at is null`); });
   });
 
   describe('W9 R-2 — a reserved-spawn session starts nothing; the budget holds across descendants', () => {
