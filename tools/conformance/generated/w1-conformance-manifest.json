@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:33d3b716fdba0a7b9f4a0dfca4abd8824038589b0556608c35682b40d9c933b5",
+  "catalogDigest": "sha256:b7a5a5ff6ae8f7320bad8055cdf9485c166d5f5f4e60cf2501c030f5612ea437",
   "catalog": {
-    "total": 249,
-    "v1": 247,
+    "total": 253,
+    "v1": 251,
     "reserved": 2,
-    "http": 247,
+    "http": 251,
     "ws": 1,
-    "registerableV1Http": 245,
+    "registerableV1Http": 249,
     "methods": {
-      "GET": 81,
-      "POST": 118,
+      "GET": 83,
+      "POST": 120,
       "PATCH": 16,
       "DELETE": 17,
       "PUT": 15,
       "WS": 2
     },
     "kinds": {
-      "read": 85,
-      "command": 162,
+      "read": 87,
+      "command": 164,
       "stream": 2
     },
-    "uniqueNames": 249,
-    "uniqueBindings": 248
+    "uniqueNames": 253,
+    "uniqueBindings": 252
   },
   "reservedOperations": [
     "search.query",
@@ -918,6 +918,34 @@
         "operation": "projects.link",
         "method": "POST",
         "path": "/v2/spaces/:spaceId/projects",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.projects.list",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/projects",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.projects.create",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/projects/create",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "gate.folders.list",
+        "method": "GET",
+        "path": "/v2/gate/folders",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "gate.folders.create",
+        "method": "POST",
+        "path": "/v2/gate/folders",
         "status": "registered",
         "source": "server-router"
       },
@@ -2147,7 +2175,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 217
+    "unimplementedV1Http": 221
   },
   "schemas": {
     "additive": {
@@ -4013,6 +4041,74 @@
           "link"
         ],
         "inputSchemaRef": "ProjectLinkInputSchema",
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.projects.list",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.projects.list",
+        "intentTags": [
+          "spaces",
+          "projects",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.projects.create",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.projects.create",
+        "intentTags": [
+          "spaces",
+          "projects",
+          "create"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "gate.folders.list",
+        "noun": "project",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/gate.folders.list",
+        "intentTags": [
+          "gate",
+          "folders",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "gate.folders.create",
+        "noun": "project",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/gate.folders.create",
+        "intentTags": [
+          "gate",
+          "folders",
+          "create"
+        ],
+        "inputSchemaRef": null,
         "resultSchemaRef": null,
         "invocationSyntax": null,
         "actionDiscoverable": true,
@@ -6943,6 +7039,7 @@
           "connections": true,
           "lifecycleOperations": [
             "projects.link",
+            "spaces.projects.create",
             "projects.unlink",
             "projects.associations.correct"
           ]

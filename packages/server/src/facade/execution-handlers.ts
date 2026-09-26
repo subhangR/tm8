@@ -507,12 +507,12 @@ export class DbGraphPort implements GraphPort {
 
       let project: SpawnContext['project'] = null;
       if (input.projectId) {
+        // W11 (234): entity -> grant -> path through `resolve_project_ref`,
+        // which accepts the space's project entity id or the folder id and
+        // answers only inside this space (a member never reads projects).
         const rows = await q.query<ProjectRow>(
-          `select p.id, p.name, p.working_dir, p.trust
-             from public.projects p
-             join public.space_projects sp
-               on sp.project_id = p.id and sp.space_id = $2
-            where p.id = $1`,
+          `select folder_id id, name, working_dir, trust
+             from public.resolve_project_ref($1::uuid, $2::uuid)`,
           [input.projectId, input.spaceId],
         );
         const row = rows[0];
@@ -928,13 +928,11 @@ export class DbGraphPort implements GraphPort {
     input: { spaceId: string; projectId: string | null },
   ): Promise<ShellSessionContext> {
     if (!input.projectId) return { project: null };
+    // W11 (234): same resolver as loadSpawnContext.
     const rows = await this.db.query<ProjectRow>(
       this.claims(auth),
-      `select p.id, p.name, p.working_dir, p.trust
-         from public.projects p
-         join public.space_projects sp
-           on sp.project_id = p.id and sp.space_id = $2
-        where p.id = $1`,
+      `select folder_id id, name, working_dir, trust
+         from public.resolve_project_ref($1::uuid, $2::uuid)`,
       [input.projectId, input.spaceId],
     );
     const row = rows[0];
@@ -1526,7 +1524,8 @@ export class DbGraphPort implements GraphPort {
   async loadProjectWorkingDir(auth: GraphAuth, projectId: string): Promise<string | null> {
     const rows = await this.db.query<{ working_dir: string }>(
       this.claims(auth),
-      'select working_dir from public.projects where id = $1',
+      // W11 (234): members do not read public.projects; the resolver does.
+      'select working_dir from public.resolve_project_ref($1::uuid)',
       [projectId],
     );
     return rows[0]?.working_dir ?? null;
