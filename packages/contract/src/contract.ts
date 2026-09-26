@@ -1941,6 +1941,60 @@ export interface AuthLogoutResult {
   revoked: boolean;
 }
 
+/**
+ * `auth.sessions.list` (plan 01a0d9eb W4, migration 232). Without `spaceId`:
+ * the caller's own live sessions, every kind and space. With `spaceId`: every
+ * live session PINNED to that space, whoever owns it — space admins only (a
+ * session pinned elsewhere is refused). Humans only; never carries a token.
+ */
+export interface AuthSessionsListInput {
+  spaceId?: string;
+}
+
+/** Where a session came from — derived from the row, never stored. */
+export type AuthSessionOrigin = 'login' | 'space_enter' | 'spawn' | 'chat' | 'link';
+
+export interface AuthSessionListing {
+  sessionId: string;
+  kind: AuthSessionKindView;
+  createdAt: string;
+  lastUsedAt: string | null;
+  expiresAt: string;
+  label: string | null;
+  /** Null for a gate session. */
+  spaceId: string | null;
+  spaceName: string | null;
+  /** The gate session `auth.space.enter` minted this one from; revoking it ends this too. */
+  parentSessionId: string | null;
+  origin: AuthSessionOrigin;
+  /** The work session (`spawn`) or chat (`chat`) the session was minted for. */
+  originEntityId: string | null;
+  owner: { identityId: string; displayName: string | null };
+  /** True for the session that made this request. */
+  current: boolean;
+}
+
+export interface AuthSessionsListResult {
+  /** Echoes the input: null for the caller's own list. */
+  spaceId: string | null;
+  sessions: AuthSessionListing[];
+}
+
+/**
+ * `auth.sessions.revoke` — end one session the caller could list: their own,
+ * or one pinned to a space they administer. Revoking a gate session also
+ * revokes the sessions `auth.space.enter` minted from it, and every open event
+ * socket opened with any of them is closed (1008). A session the caller cannot
+ * list answers `not_found`, like a missing one.
+ */
+export interface AuthSessionsRevokeResult {
+  sessionId: string;
+  /** False when the session was already revoked. */
+  revoked: boolean;
+  /** This session plus the children revoked with it, by this call. */
+  revokedSessionIds: string[];
+}
+
 /** `auth.session.get` — who am I, on this server, and how am I authenticated. */
 export interface AuthSessionGetResult {
   /** `bearer` for token callers; `auto-owner` for the loopback degenerate case. */

@@ -249,6 +249,8 @@ import type {
   SpaceKindCounts,
   SpaceSettingsView,
   SpaceConfigsView,
+  AuthSessionsListResult,
+  AuthSessionsRevokeResult,
   ChatDefault,
   ChatDefaultsView,
   SpaceSummary,
@@ -540,6 +542,12 @@ export interface Seam {
   spaceSettings(spaceId: SpaceId): Promise<SpaceSettingsView>;
   /** Settings → Configs (`spaces.configs`): every config knob, read-only. Node env for node admins only. */
   spaceConfigs(spaceId: SpaceId): Promise<SpaceConfigsView>;
+  /**
+   * Settings → Sessions (`auth.sessions.list`, W4). `null` = the caller's own
+   * sessions; a space id = the sessions pinned to that space (space admins
+   * only — anyone else is refused by the server, and the section says so).
+   */
+  authSessions(spaceId: SpaceId | null): Promise<AuthSessionsListResult>;
   /** Per-kind chat defaults (`spaces.chatDefaults.get`, entity-chat §3.4): space-wide, any member reads. */
   chatDefaults(spaceId: SpaceId): Promise<ChatDefaultsView>;
   /**
@@ -1024,6 +1032,11 @@ export interface Seam {
     createInvite(spaceId: SpaceId, input: CreateInviteInput): Promise<SpaceInviteView>;
     /** Kill a live code. The row survives, revoked, so the list stays truthful. */
     revokeInvite(spaceId: SpaceId, inviteId: string, ctx?: CommandContext): Promise<SpaceInviteView>;
+    /**
+     * `auth.sessions.revoke` (W4): kill one listed session — and, for a gate
+     * session, the pinned sessions entered from it. Their sockets close.
+     */
+    revokeAuthSession(sessionId: string): Promise<AuthSessionsRevokeResult>;
     /**
      * The task-axis registry's writes (W2, 2026-08-16) — over catalog ops
      * that existed all along (`spaces.taskAxes.create|update|delete`): new

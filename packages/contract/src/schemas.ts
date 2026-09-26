@@ -46,7 +46,8 @@ import type {
   AuthInviteSignupInput, AuthInviteSignupResult,
   AuthLoginInput, AuthLoginResult, AuthLogoutInput,
   AuthLogoutResult, AuthPasswordChangeInput, AuthPasswordChangeResult,
-  AuthSessionGetResult, AuthSessionView, AuthSignupInput, AuthSpaceEnterInput, AuthSpaceEnterResult,
+  AuthSessionGetResult, AuthSessionListing, AuthSessionsListInput, AuthSessionsListResult,
+  AuthSessionsRevokeResult, AuthSessionView, AuthSignupInput, AuthSpaceEnterInput, AuthSpaceEnterResult,
   AuthSignupResult, ChannelTab, ChatContextFrame, ChatTurnFrame, ChatTurnUsage,
   ClosedPromptPolicy, CollectionAddItemInput, CollectionGroup, CollectionQuery, CollectionResult,
   CommandContext, CommandErrorCode, CommandResult, CompleteTaskInput,
@@ -1858,6 +1859,41 @@ export const AuthSpaceEnterResultSchema: z.ZodType<AuthSpaceEnterResult> = z.obj
 export const AuthLogoutResultSchema: z.ZodType<AuthLogoutResult> = z.object({
   sessionId: z.string().uuid(),
   revoked: z.boolean(),
+}).strict();
+
+/** `auth.sessions.list` (W4). A query parameter; anything else is a 400. */
+export const AuthSessionsListInputSchema: z.ZodType<AuthSessionsListInput> = z.object({
+  spaceId: z.string().uuid().optional(),
+}).strict();
+
+export const AuthSessionListingSchema: z.ZodType<AuthSessionListing> = z.object({
+  sessionId: z.string().uuid(),
+  kind: z.enum(['browser', 'cli', 'agent', 'agent_runtime']),
+  createdAt: IsoTimestamp,
+  lastUsedAt: IsoTimestamp.nullable(),
+  expiresAt: IsoTimestamp,
+  label: z.string().nullable(),
+  spaceId: z.string().uuid().nullable(),
+  spaceName: z.string().nullable(),
+  parentSessionId: z.string().uuid().nullable(),
+  origin: z.enum(['login', 'space_enter', 'spawn', 'chat', 'link']),
+  originEntityId: z.string().uuid().nullable(),
+  owner: z.object({
+    identityId: z.string().min(1).max(200),
+    displayName: z.string().nullable(),
+  }).strict(),
+  current: z.boolean(),
+}).strict();
+
+export const AuthSessionsListResultSchema: z.ZodType<AuthSessionsListResult> = z.object({
+  spaceId: z.string().uuid().nullable(),
+  sessions: z.array(AuthSessionListingSchema),
+}).strict();
+
+export const AuthSessionsRevokeResultSchema: z.ZodType<AuthSessionsRevokeResult> = z.object({
+  sessionId: z.string().uuid(),
+  revoked: z.boolean(),
+  revokedSessionIds: z.array(z.string().uuid()),
 }).strict();
 
 export const AuthSessionGetResultSchema: z.ZodType<AuthSessionGetResult> = z.object({

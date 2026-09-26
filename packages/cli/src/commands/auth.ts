@@ -29,6 +29,8 @@ import type {
   AuthLogoutResult,
   AuthPasswordChangeResult,
   AuthSessionGetResult,
+  AuthSessionsListResult,
+  AuthSessionsRevokeResult,
   AuthSpaceEnterResult,
   AuthSignupResult,
 } from '@tm8/contract';
@@ -309,6 +311,58 @@ async function authSpaceEnter(cmd: CommandContext): Promise<ExitCode> {
     }
     return lines.join('\n');
   });
+  return EXIT_OK;
+}
+
+/**
+ * `tm8 auth sessions [--pinned-to <space-id>]` — your own live sessions, or
+ * (space admin) every live session pinned to a space (plan W4). A named flag
+ * rather than the global space, so a shell with a default space still lists
+ * its own sessions unless it asks for the admin view.
+ */
+async function authSessions(cmd: CommandContext): Promise<ExitCode> {
+  if (cmd.args.length > 0) throw new CliError('usage: tm8 auth sessions [--pinned-to <space-id>]', EXIT_USAGE);
+  const spaceId = cmd.options.value('pinned-to');
+  const data = await observedInvoke<AuthSessionsListResult>(clientFor(cmd.ctx), 'auth.sessions.list', {
+    query: { spaceId },
+  });
+  cmd.out.data(data, (result) => {
+    if (result.sessions.length === 0) return 'no live sessions';
+    return result.sessions
+      .map((s) =>
+        [
+          s.current ? '*' : ' ',
+          s.sessionId,
+          s.kind,
+          s.origin,
+          s.spaceName ?? (s.spaceId ? s.spaceId : 'gate'),
+          `created ${s.createdAt}`,
+          `last used ${s.lastUsedAt ?? 'never'}`,
+          ...(result.spaceId ? [`owner ${s.owner.displayName ?? s.owner.identityId}`] : []),
+          ...(s.label ? [JSON.stringify(s.label)] : []),
+        ].join('  '),
+      )
+      .join('\n');
+  });
+  return EXIT_OK;
+}
+
+/**
+ * `tm8 auth sessions revoke <session-id>` — end a session you could list
+ * (plan W4). A gate session takes the sessions entered from it with it, and
+ * every event socket opened with any of them is closed.
+ */
+async function authSessionsRevoke(cmd: CommandContext): Promise<ExitCode> {
+  refuseMutationId('auth sessions revoke', cmd.options.value('mutation-id'));
+  const sessionId = requireOnePositional(cmd, 'usage: tm8 auth sessions revoke <session-id>');
+  const data = await observedInvoke<AuthSessionsRevokeResult>(clientFor(cmd.ctx), 'auth.sessions.revoke', {
+    params: { sessionId },
+  });
+  cmd.out.data(data, (result) =>
+    result.revoked
+      ? `revoked ${result.revokedSessionIds.length} session(s): ${result.revokedSessionIds.join(', ')}`
+      : `session ${result.sessionId} was already revoked`,
+  );
   return EXIT_OK;
 }
 
@@ -596,6 +650,8 @@ export const AUTH_COMMANDS: CommandModule[] = [
   { path: ['auth', 'logout'], run: authLogout },
   { path: ['auth', 'session'], run: authSession },
   { path: ['auth', 'space', 'enter'], run: authSpaceEnter },
+  { path: ['auth', 'sessions'], run: authSessions },
+  { path: ['auth', 'sessions', 'revoke'], run: authSessionsRevoke },
   { path: ['auth', 'password'], run: authPasswordChange },
   { path: ['auth', 'invite', 'signup'], run: authInviteSignup },
   // Order here is irrelevant — `findCommand` is an exact Map lookup on the

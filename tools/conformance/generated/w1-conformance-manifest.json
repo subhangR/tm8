@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:1ddb2404b270bfb9cc105f8d885f0f3c9c3636fa4cd3f95a293844cff575be06",
+  "catalogDigest": "sha256:fd012d2be0ae2898d1d4844cd8bec0ec56366cf2f87845177eb0b43c897b6ebd",
   "catalog": {
-    "total": 254,
-    "v1": 252,
+    "total": 256,
+    "v1": 254,
     "reserved": 2,
-    "http": 252,
+    "http": 254,
     "ws": 1,
-    "registerableV1Http": 250,
+    "registerableV1Http": 252,
     "methods": {
-      "GET": 84,
-      "POST": 120,
+      "GET": 85,
+      "POST": 121,
       "PATCH": 16,
       "DELETE": 17,
       "PUT": 15,
       "WS": 2
     },
     "kinds": {
-      "read": 88,
-      "command": 164,
+      "read": 89,
+      "command": 165,
       "stream": 2
     },
-    "uniqueNames": 254,
-    "uniqueBindings": 253
+    "uniqueNames": 256,
+    "uniqueBindings": 255
   },
   "reservedOperations": [
     "search.query",
@@ -1615,6 +1615,20 @@
         "source": "server-router"
       },
       {
+        "operation": "auth.sessions.list",
+        "method": "GET",
+        "path": "/v2/auth/sessions",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "auth.sessions.revoke",
+        "method": "POST",
+        "path": "/v2/auth/sessions/:sessionId/revoke",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "auth.password.change",
         "method": "POST",
         "path": "/v2/auth/password",
@@ -2182,7 +2196,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 222
+    "unimplementedV1Http": 224
   },
   "schemas": {
     "additive": {
@@ -5728,6 +5742,40 @@
           "auth",
           "space",
           "enter"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "auth.sessions.list",
+        "noun": "auth",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/auth.sessions.list",
+        "intentTags": [
+          "auth",
+          "sessions",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "auth.sessions.revoke",
+        "noun": "auth",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/auth.sessions.revoke",
+        "intentTags": [
+          "auth",
+          "sessions",
+          "revoke"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

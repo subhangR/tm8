@@ -498,6 +498,9 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // `spaces.members.remove`. The member row is tombstoned, not deleted, so
       // authorship keeps its target and renders "(left)".
       'leaveSpace', 'removeMember',
+      // W4 (auth sessions, 2026-09-26): `auth.sessions.revoke`. The list READ
+      // is `seam.authSessions`, not a command.
+      'revokeAuthSession',
       // W2 (2026-08-16): the task-axis registry's writes, over the catalog
       // ops that existed all along (`spaces.taskAxes.*`) — the settings shell
       // stops refusing with the measured-false AXES_UNREADABLE. The READ has
