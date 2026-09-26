@@ -466,6 +466,12 @@ export function describeCapacity(c: LaunchCapacity): string {
   return `${c.slotsFree} of ${c.slotsTotal} session slots free`;
 }
 
+/** The launch card's compact count: "12/40", or "14/∞" when the node has no cap. */
+export function capacitySlots(c: LaunchCapacity): string {
+  const used = c.slotsTotal - c.slotsFree;
+  return `${String(used)}/${c.slotsTotal >= EFFECTIVELY_UNLIMITED_SLOTS ? '∞' : String(c.slotsTotal)}`;
+}
+
 // ---------------------------------------------------------------------------
 // Per-teammate launch state (D46 — corrected)
 // ---------------------------------------------------------------------------
