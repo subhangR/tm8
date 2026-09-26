@@ -206,8 +206,12 @@ export function createAttentionCommands(ctx: AttentionCommandContext): Attention
         }
       } catch (error) {
         // Re-hide only what was NOT reopened, and only until the next read.
+        // Never the ROOT: a root hide has no read to end it, so a request
+        // raised on it later would stay invisible. The rows are enough (they
+        // drop out of counts and the queue), and the resolve's own response
+        // already left the root's badge clear.
         const failed = ids.filter((id) => !reopened.has(id));
-        ctx.hideRows(failed, reopened.size === 0 ? undo.rootId : undefined);
+        ctx.hideRows(failed);
         ctx.settleRows(failed);
         ctx.setError(`Couldn't undo: ${messageOf(error)}`);
       }

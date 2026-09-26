@@ -409,4 +409,21 @@ describe('review fixes (S5a review, findings 1, 2, 4)', () => {
     fake.upsert('task-1', { ...badge(2), maxLevel: 'urgent' } as EntityAttentionSummary);
     expect(ref.api!.chipFor(summary('task-1', badge(1)))).toMatchObject({ level: 'urgent', tone: 'block' });
   });
+
+  it('a failed Undo does not hide the root from a request raised later', async () => {
+    const fake = fakeSeam([req({ id: 'r1', entityId: 'task-1' })], { v2: true });
+    fake.v2.unresolve.mockRejectedValue(Object.assign(new Error('undo window closed'), { code: 'conflict' }));
+    const ref = await ready(mount(fake));
+    await act(() => ref.api!.resolve('task-1' as EntityId));
+    await act(() => ref.api!.unresolve(ref.api!.undo!.batchId));
+    expect(ref.api!.error).toMatch(/Couldn't undo/);
+    await waitFor(() => expect(ref.api!.counts().all).toBe(0));
+    // A new request lands on the same root.
+    fake.table.rows.push(req({ id: 'r9', entityId: 'task-1', reason: 'one more thing' }));
+    act(() => ref.api!.refresh());
+    await waitFor(() => expect(ref.api!.requestsFor('task-1').map((r) => r.id)).toEqual(['r9']));
+    expect(ref.api!.counts().all).toBe(1);
+    fake.upsert('task-1', badge(1));
+    expect(ref.api!.chipFor(summary('task-1', badge(1)))).not.toBeNull();
+  });
 });
