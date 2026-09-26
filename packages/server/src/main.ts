@@ -14,7 +14,7 @@ import { resolve as pathResolve } from 'node:path';
 import { CollabError, FILE_MAX_SIZE_BYTES_DEFAULT } from '@tm8/contract';
 import { CredentialSessionLauncher } from '@tm8/execution';
 import { ensureLaunchResources } from './bootstrap/launch-resources.js';
-import { gatePosture, writeNodePolicy } from './projects/node-policy.js';
+import { gatePosture, ONE_SPACE_INDEX, oneSpaceIndexMissing, writeNodePolicy } from './projects/node-policy.js';
 
 import { createDb } from './db/index.js';
 import type { Db, DbClaims } from './db/types.js';
@@ -234,6 +234,18 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   if (config.databaseUrl) {
     const folders = await writeNodePolicy(config.databaseUrl, gatePosture(config));
     console.log(`  project folders: ${folders === 'shared' ? 'shared across spaces (loopback-only node)' : 'one space per folder'}`);
+    // A one-space node should carry the unique index; its migration can be
+    // recorded as applied without building it (see projects/node-policy.ts).
+    // Warn, never refuse: the guard trigger still enforces new grants.
+    if (folders === 'one_space') {
+      try {
+        if (await oneSpaceIndexMissing(config.databaseUrl)) {
+          console.warn(`  WARNING: project folders are one space per folder, but index ${ONE_SPACE_INDEX} is missing — check for folders granted to two spaces, then re-apply its migration (doc 01a0db2d, K13).`);
+        }
+      } catch (error) {
+        console.warn(`  WARNING: could not check index ${ONE_SPACE_INDEX}: ${(error as Error).message}`);
+      }
+    }
   }
   const dataDir = config.dataDir ?? resolveServerDataDir();
   const fileMaxSizeBytes = config.fileMaxSizeBytes ?? FILE_MAX_SIZE_BYTES_DEFAULT;

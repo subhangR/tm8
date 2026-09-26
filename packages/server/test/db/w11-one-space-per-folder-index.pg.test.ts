@@ -1,8 +1,9 @@
 /**
- * 249 — the one-space-per-folder unique index W11 deferred (K13).
+ * The one-space-per-folder unique index W11 deferred (K13). Its file carries
+ * the placeholder ordinal 999 until #874 leaves draft; it is found by name.
  *
  * A node is seeded before 234 with folder F granted to spaces A and B (the
- * shape 7 folders had on prod), then migrated through 248. 249 is applied
+ * shape 7 folders had on prod), then migrated through the rest of the chain. The index file is applied
  * repeatedly as the node policy and the grants change: it builds the index
  * only on a 'one_space' node, refuses there while F is granted twice, and
  * builds it once the second grant is unlinked.
@@ -11,15 +12,18 @@ import { randomUUID } from 'node:crypto';
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { ONE_SPACE_INDEX, oneSpaceIndexMissing } from '../../src/projects/node-policy.js';
+
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from './w1-pg.js';
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 240_000 });
 
 const ordinal = (file: string): number => Number(file.slice(0, 3));
+const INDEX_FILE = /^\d{3}_space_projects_one_space_per_folder\.sql$/;
 const BEFORE_234 = migrationFiles().filter((f) => ordinal(f) < 234);
-const TO_249 = migrationFiles().filter((f) => ordinal(f) >= 234 && ordinal(f) < 249);
-const INDEX_249 = migrationFiles().filter((f) => f === '249_space_projects_one_space_per_folder.sql');
-const INDEX = 'space_projects_one_space_per_folder';
+const REST = migrationFiles().filter((f) => ordinal(f) >= 234 && !INDEX_FILE.test(f));
+const INDEX_MIGRATION = migrationFiles().filter((f) => INDEX_FILE.test(f));
+const INDEX = ONE_SPACE_INDEX;
 
 let database: W1ScratchDatabase;
 
@@ -92,7 +96,7 @@ const indexDef = async (): Promise<string | null> => {
 
 function applyOutcome(): string {
   try {
-    database.apply(INDEX_249);
+    database.apply(INDEX_MIGRATION);
     return 'ok';
   } catch (error) {
     return String((error as Error).message);
@@ -103,22 +107,23 @@ beforeAll(async () => {
   database = await createW1ScratchDatabase('w11_index');
   database.apply(BEFORE_234);
   await seedDoubleGrant();
-  database.apply(TO_249);
+  database.apply(REST);
 }, 240_000);
 
 afterAll(async () => {
   await database?.destroy();
 }, 180_000);
 
-describe('249 one space per folder', () => {
-  it('the chain has exactly one 249', () => {
-    expect(INDEX_249).toHaveLength(1);
+describe('one space per folder index', () => {
+  it('the chain has exactly one index migration', () => {
+    expect(INDEX_MIGRATION).toHaveLength(1);
   });
 
   it('no policy row (a node that has not booted 234): changes nothing', async () => {
     await setPolicy(null);
     expect(applyOutcome()).toBe('ok');
     expect(await indexDef()).toBeNull();
+    expect(await oneSpaceIndexMissing(database.url)).toBe(true);
   });
 
   it("a 'shared' (loopback) node: changes nothing, the double grant stays legal", async () => {
@@ -130,9 +135,11 @@ describe('249 one space per folder', () => {
   it("a 'one_space' node with a folder still granted twice: refuses, names the folder, builds nothing", async () => {
     await setPolicy('one_space');
     const outcome = applyOutcome();
-    expect(outcome).toContain('249 refused: folders still granted to more than one space');
+    expect(outcome).toContain('one-space-per-folder index refused: folders still granted to more than one space');
     expect(outcome).toContain(ids.folderF);
     expect(await indexDef()).toBeNull();
+    // What the boot WARNING reads: a one_space node without the index.
+    expect(await oneSpaceIndexMissing(database.url)).toBe(true);
   });
 
   it("after the second grant is unlinked: builds the index 234 recorded", async () => {
@@ -145,6 +152,8 @@ describe('249 one space per folder', () => {
     expect(def).toMatch(/CREATE UNIQUE INDEX space_projects_one_space_per_folder ON public\.space_projects USING btree \(project_id\)/);
     const [ddl] = await database.query<{ ddl: string }>('select internal.space_project_unique_index_sql() ddl');
     expect(ddl!.ddl).toContain(INDEX);
+    // The paired negative: once built, the boot check is quiet.
+    expect(await oneSpaceIndexMissing(database.url)).toBe(false);
   });
 
   it('re-running is a no-op', async () => {
