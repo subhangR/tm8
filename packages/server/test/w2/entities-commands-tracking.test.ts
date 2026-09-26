@@ -83,15 +83,12 @@ function handler(registry: HandlerRegistry, name: OperationName): OperationHandl
 }
 
 describe('W2.G02 universal entities, commands, and tracking', () => {
-  it('registers the universal entity and attention operations through one seam', () => {
+  // Attention v2 S4: attentionRequests.* moved to services/attention.
+  it('registers the universal entity operations through one seam', () => {
     const registry = new HandlerRegistry();
     registerW2EntitiesCommandsTrackingHandlers(registry, deps());
 
     expect(registry.implemented()).toEqual([
-      'attentionRequests.create',
-      'attentionRequests.list',
-      'attentionRequests.resolveEntity',
-      'attentionRequests.update',
       'entities.activity',
       'entities.children',
       'entities.commands.complete',
