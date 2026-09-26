@@ -61,6 +61,7 @@ import type { W2FileUploadRoute } from './w2-file-upload.js';
 import { CLIPBOARD_UPLOAD_PATH, type ClipboardUploadRoute } from './clipboard-upload.js';
 import { VOICE_WEBHOOK_PATH, type VoiceWebhookRoute } from './voice-webhook.js';
 import type { ReadAdmission } from './read-admission.js';
+import { assertSpaceGate } from './space-gate.js';
 import {
   isHandlerResult,
   type HandlerResult,
@@ -103,6 +104,12 @@ export interface FacadeServerOptions {
   readonly voiceWebhookRoute?: VoiceWebhookRoute;
   /** Same-origin relay for node-local named Server connections. */
   readonly remoteServerProxy?: RemoteServerProxy;
+  /**
+   * Did this node ever issue the session id in this token, in any state? The
+   * relay drops such an `Authorization` instead of forwarding it as a remote's
+   * pass (`resolveRelayCaller`, 236).
+   */
+  readonly sessionIssuedHere?: (token: string) => Promise<boolean>;
   /**
    * The artifact-preview renderer mounted same-origin (the default preview
    * deployment): every `/p/...` request is handed to it wholesale. It
@@ -213,7 +220,7 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
         void resolveRelayCaller(req.headers, resolveIdentity, {
           remoteAddress: req.socket.remoteAddress,
           disableAutoOwner: config.disableAutoOwner === true,
-        }).then(
+        }, opts.sessionIssuedHere).then(
           (caller) => relay.handleUpgrade(req, socket, head, caller),
           (error: unknown) => refuseUpgrade(socket, upgradeRefusalStatus(error),
             error instanceof Error ? error.message : String(error)),
@@ -343,6 +350,8 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
           remoteAddress: req.socket.remoteAddress,
           disableAutoOwner: config.disableAutoOwner === true,
         });
+        // W3: a gate session under enforce has no space to upload into.
+        assertSpaceGate(config.spaceSessions, identity, undefined);
         if (await opts.fileUploadRoute(req, res, { requestId, identity })) return;
       }
 
@@ -351,6 +360,8 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
           remoteAddress: req.socket.remoteAddress,
           disableAutoOwner: config.disableAutoOwner === true,
         });
+        // W3: a gate session under enforce has no space to upload into.
+        assertSpaceGate(config.spaceSessions, identity, undefined);
         if (await opts.clipboardUploadRoute(req, res, { requestId, identity })) return;
       }
 
@@ -363,7 +374,7 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
         const caller = await resolveRelayCaller(req.headers, resolveIdentity, {
           remoteAddress: req.socket.remoteAddress,
           disableAutoOwner: config.disableAutoOwner === true,
-        });
+        }, opts.sessionIssuedHere);
         await opts.remoteServerProxy.handleHttp(req, res, caller);
         return;
       }
@@ -438,15 +449,34 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
          * to a session-bearing call is still a refusal, not a downgrade.
          */
         const exchange = match.opName === 'auth.login' || match.opName === 'auth.signup';
-        if (!exchange || !(err instanceof Error && (err as { code?: string }).code === 'unauthenticated')) {
+        const unauthenticated = err instanceof Error && (err as { code?: string }).code === 'unauthenticated';
+        /*
+         * `auth.space.enter` (W3) is the one call where an explicit
+         * `Authorization` beats a conflicting cookie: the header is the gate
+         * session, the cookie is the pinned session of the space the browser
+         * is leaving. Only the cookie is dropped; the header must still verify.
+         */
+        const enter = match.opName === 'auth.space.enter' && typeof req.headers.authorization === 'string';
+        if (!(exchange || enter) || !unauthenticated) {
           throw err;
         }
-        const { authorization: _authorization, cookie: _cookie, ...bare } = req.headers;
-        identity = await resolveIdentity(bare, {
-          remoteAddress: req.socket.remoteAddress,
-          disableAutoOwner: config.disableAutoOwner === true,
-        });
+        if (enter) {
+          const { cookie: _cookie, ...headerOnly } = req.headers;
+          identity = await resolveIdentity(headerOnly, {
+            remoteAddress: req.socket.remoteAddress,
+            disableAutoOwner: config.disableAutoOwner === true,
+          });
+        } else {
+          const { authorization: _authorization, cookie: _cookie, ...bare } = req.headers;
+          identity = await resolveIdentity(bare, {
+            remoteAddress: req.socket.remoteAddress,
+            disableAutoOwner: config.disableAutoOwner === true,
+          });
+        }
       }
+
+      // W3 (T8c). Under enforce, a gate session reaches only the gate's ops.
+      assertSpaceGate(config.spaceSessions, identity, match.opName);
 
       const handler = registry.get(match.opName);
       if (!handler) throw notImplemented(match.opName);

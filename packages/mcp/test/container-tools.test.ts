@@ -164,7 +164,7 @@ describe('the three direct container tools', () => {
 describe('CONTAINER_GUIDES ride the closed catalog, adding no row', () => {
   it('every mapped container operation is a real catalog row', () => {
     const mapped = MCP_MAPPED_OPERATIONS.filter((o) => o.startsWith('containers.'));
-    expect(mapped.length).toBeGreaterThanOrEqual(10);
+    expect(mapped.length).toBeGreaterThanOrEqual(9); /* -1 containers.attention (Attention v2 S7a). MEASURED. */
     for (const operation of mapped) {
       expect(getOperation(operation).name).toBe(operation);
     }
@@ -180,7 +180,7 @@ describe('CONTAINER_GUIDES ride the closed catalog, adding no row', () => {
     for (const expected of [
       'containers.create', 'containers.start', 'containers.stop', 'containers.destroy',
       'containers.run', 'containers.policy.set', 'containers.expose', 'containers.snapshot',
-      'containers.fork', 'containers.attention',
+      'containers.fork',
     ]) {
       expect(names, expected).toContain(expected);
     }

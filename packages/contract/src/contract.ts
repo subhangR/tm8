@@ -1857,6 +1857,12 @@ export interface AuthSessionView {
   /** Present only for a chat runtime: the chat entity whose process owns it. */
   runtimeChatId?: string | null;
   label: string | null;
+  /**
+   * The one space this session may act in (226 `auth_sessions.space_id`). Null
+   * for a human gate session; set for agent kinds and for a session minted by
+   * `auth.space.enter`.
+   */
+  spaceId?: string | null;
   /** Present at issuance; `auth.session.get` verifies live rather than re-reading the row. */
   createdAt?: string;
   expiresAt: string;
@@ -1910,6 +1916,34 @@ export interface AuthLoginResult {
 }
 
 /**
+ * `auth.space.enter` — mint a session PINNED to one space (plan 01a0d9eb W3).
+ *
+ * The caller presents a gate session (a human `browser`/`cli` session with no
+ * space) or is the loopback auto-owner, and must be a member of `spaceId`. The
+ * new session has the caller's kind, is bound to `spaceId` for its whole life
+ * (`tm8.session_space_id`), never carries node-admin power (K6), and expires no
+ * later than the gate session it came from. A pinned session cannot enter
+ * another space: go back to the gate token for that.
+ *
+ * A `browser` result also replaces the `tm8_session` cookie, so the browser's
+ * WebSocket follows the space the UI switched to. On this one operation an
+ * explicit `Authorization` wins over a conflicting cookie (the cookie is the
+ * previous space's pinned session; the header is the gate).
+ */
+export interface AuthSpaceEnterInput {
+  spaceId: string;
+  /** Free-form label shown in session listings. */
+  label?: string;
+}
+
+export interface AuthSpaceEnterResult {
+  /** `tm8s_<sessionId>.<secret>` — returned exactly once, never recoverable. */
+  token: string;
+  spaceId: string;
+  session: AuthSessionView;
+}
+
+/**
  * `auth.logout` — revoke the presented bearer session, or (node admin / same
  * account) an explicitly named one. A loopback auto-owner request carries no
  * session; naming none is then an `invalid_input`.
@@ -1922,6 +1956,60 @@ export interface AuthLogoutInput {
 export interface AuthLogoutResult {
   sessionId: string;
   revoked: boolean;
+}
+
+/**
+ * `auth.sessions.list` (plan 01a0d9eb W4, migration 232). Without `spaceId`:
+ * the caller's own live sessions, every kind and space. With `spaceId`: every
+ * live session PINNED to that space, whoever owns it — space admins only (a
+ * session pinned elsewhere is refused). Humans only; never carries a token.
+ */
+export interface AuthSessionsListInput {
+  spaceId?: string;
+}
+
+/** Where a session came from — derived from the row, never stored. */
+export type AuthSessionOrigin = 'login' | 'space_enter' | 'spawn' | 'chat' | 'link';
+
+export interface AuthSessionListing {
+  sessionId: string;
+  kind: AuthSessionKindView;
+  createdAt: string;
+  lastUsedAt: string | null;
+  expiresAt: string;
+  label: string | null;
+  /** Null for a gate session. */
+  spaceId: string | null;
+  spaceName: string | null;
+  /** The gate session `auth.space.enter` minted this one from; revoking it ends this too. */
+  parentSessionId: string | null;
+  origin: AuthSessionOrigin;
+  /** The work session (`spawn`) or chat (`chat`) the session was minted for. */
+  originEntityId: string | null;
+  owner: { identityId: string; displayName: string | null };
+  /** True for the session that made this request. */
+  current: boolean;
+}
+
+export interface AuthSessionsListResult {
+  /** Echoes the input: null for the caller's own list. */
+  spaceId: string | null;
+  sessions: AuthSessionListing[];
+}
+
+/**
+ * `auth.sessions.revoke` — end one session the caller could list: their own,
+ * or one pinned to a space they administer. Revoking a gate session also
+ * revokes the sessions `auth.space.enter` minted from it, and every open event
+ * socket opened with any of them is closed (1008). A session the caller cannot
+ * list answers `not_found`, like a missing one.
+ */
+export interface AuthSessionsRevokeResult {
+  sessionId: string;
+  /** False when the session was already revoked. */
+  revoked: boolean;
+  /** This session plus the children revoked with it, by this call. */
+  revokedSessionIds: string[];
 }
 
 /** `auth.session.get` — who am I, on this server, and how am I authenticated. */
@@ -2638,6 +2726,43 @@ export interface NodeCredentialStatusEntry extends NodeCredentialPolicyEntry {
 /** `node.credentials.status` — node admin. */
 export interface NodeCredentialsStatusView {
   providers: NodeCredentialStatusEntry[];
+}
+
+/**
+ * `node.metrics.get` — node admin. Host metrics for the machine this tm8
+ * server runs on, measured at request time. Every figure is a measurement;
+ * a figure the host cannot supply is `null`, never a guess or a zero.
+ */
+export interface NodeMetricsView {
+  /** When the figures were taken. */
+  sampledAt: string;
+  cpu: {
+    /**
+     * Busy share of all cores, 0–100, over the window since the previous read
+     * (or a short in-request window on the first read).
+     */
+    percent: number | null;
+    /** Logical cores. */
+    cores: number;
+  };
+  memory: {
+    totalBytes: number;
+    /**
+     * In use by the host, excluding reclaimable cache. On macOS this is read
+     * from `vm_stat`, because the kernel's "free" figure there leaves out
+     * inactive and purgeable pages and would read near 100% on a healthy
+     * machine.
+     */
+    usedBytes: number;
+  };
+  /** 1, 5 and 15 minute load averages. `null` on hosts without them (Windows). */
+  loadAverage: [number, number, number] | null;
+  /** The volume holding the server's data directory. `null` when it cannot be read. */
+  disk: { path: string; totalBytes: number; usedBytes: number } | null;
+  /** The tm8 server process itself. */
+  process: { rssBytes: number; heapUsedBytes: number; uptimeSeconds: number };
+  /** Host uptime. */
+  hostUptimeSeconds: number;
 }
 
 /** `node.credentials.policy.set` — node admin. `null` removes the policy. */
@@ -4340,13 +4465,6 @@ export interface ContainersForkInput extends CommandContext {
   spec?: ContainerSpecInput;
 }
 
-export interface ContainersAttentionInput extends CommandContext {
-  clientMutationId: string;
-  reason: 'login' | 'captcha' | '2fa' | 'payment' | 'approval' | 'other';
-  detail?: string;
-  points?: number;
-}
-
 export interface ContainersPoolsSetInput extends CommandContext {
   clientMutationId: string;
   expectedVersion: number;
@@ -4396,8 +4514,18 @@ export interface ProjectResource {
   id: ProjectId;
   name: string;
   repoUrl?: string | null;
-  /** Absolute path on the owning node; path-traversal/symlink-guarded (10-SECURITY-MODEL). */
-  workingDir: string;
+  /**
+   * Absolute path on the owning node; path-traversal/symlink-guarded
+   * (10-SECURITY-MODEL). W11 (migration 234): the folder is the gate's, so the
+   * path is present ONLY for a gate (node) admin and absent for every member.
+   */
+  workingDir?: string;
+  /**
+   * W11: the space's own project entity for this folder, when the read was
+   * made in a space (`projects.list?spaceId=`, `projects.get` by a member).
+   */
+  projectEntityId?: EntityId | null;
+  spaceId?: SpaceId | null;
   trust: ProjectTrustLevel;
   defaults: ProjectDefaults;
   /** Migration/remediation state for the 16-active-link cap. */
@@ -4540,7 +4668,8 @@ export interface ProjectBranch {
  */
 export interface ProjectBranchTopology {
   projectId: ProjectId;
-  workingDir: string;
+  /** Gate (node) admins only (W11); absent for members. */
+  workingDir?: string;
   defaultBranch: string;
   defaultBranchSource: 'origin_head' | 'local_conventional' | 'current_branch';
   branches: ProjectBranch[];
@@ -4600,7 +4729,8 @@ export interface ProjectRevisionDiff {
 
 export interface ProjectFileHistory {
   projectId: ProjectId;
-  workingDir: string;
+  /** Gate (node) admins only (W11); absent for members. */
+  workingDir?: string;
   path: string;
   revisions: ProjectFileRevision[];
   /** True when the revision cap cut the walk short — the read is bounded. */
@@ -4635,7 +4765,8 @@ export interface ProjectBlameHunk {
  */
 export interface ProjectFileBlame {
   projectId: ProjectId;
-  workingDir: string;
+  /** Gate (node) admins only (W11); absent for members. */
+  workingDir?: string;
   path: string;
   hunks: ProjectBlameHunk[];
   blamedLines: number;
@@ -4759,9 +4890,84 @@ export interface ProjectUpdateInput extends CommandContext {
   defaults?: ProjectDefaults;
 }
 
-/** POST /v2/spaces/:spaceId/projects — link (M2M); unlink is the DELETE binding. */
+/**
+ * POST /v2/spaces/:spaceId/projects — link (M2M); unlink is the DELETE binding.
+ * Decision 29: a folder already granted to another space is refused ("this
+ * folder belongs to another space") except on a loopback-only `single` node.
+ */
 export interface ProjectLinkInput extends CommandContext {
   projectId: ProjectId;
+}
+
+// --- W11 (migration 234): space-owned projects over gate-owned folders -------
+//
+// A FOLDER (the `projects` row: path, trust, repo_url) is the gate's; a gate
+// admin grants it to exactly ONE space. The space's PROJECT is an entity of
+// that space (kind `project`) that references the grant and never carries the
+// path.
+
+/** One project of a space, as any member of it reads it. Never a path. */
+export interface SpaceProject {
+  /** The space's project entity id. */
+  id: EntityId;
+  spaceId: SpaceId;
+  /** The granted folder (`projects.id`), the id spawn and chats still key on. */
+  folderId: ProjectId;
+  name: string;
+  repoUrl?: string | null;
+  trust: ProjectTrustLevel;
+  defaults: ProjectDefaults;
+  materializedVersion: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** POST /v2/spaces/:spaceId/projects/create — a space admin names the space's project on a folder granted to it. */
+export interface SpaceProjectCreateInput extends CommandContext {
+  folderId: ProjectId;
+  /** Defaults to the folder's name. */
+  name?: string;
+}
+
+export interface GateFolderGrant {
+  spaceId: SpaceId;
+  spaceName: string;
+  /** The space's project entity for this folder (null if not materialized). */
+  projectId: EntityId | null;
+  grantedBy: string | null;
+  grantedAt: string;
+}
+
+/** A folder on this server, as a gate (node) admin reads it. */
+export interface GateFolder {
+  id: ProjectId;
+  name: string;
+  workingDir: string;
+  repoUrl?: string | null;
+  trust: ProjectTrustLevel;
+  defaults: ProjectDefaults;
+  /** One entry normally; two or more only on folders linked twice before 234. */
+  grants: GateFolderGrant[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** POST /v2/gate/folders — register a folder (inside TM8_PROJECT_ROOTS), optionally granting it to one space. */
+export interface GateFolderCreateInput extends CommandContext {
+  name: string;
+  workingDir: string;
+  repoUrl?: string | null;
+  trust?: ProjectTrustLevel;
+  defaults?: ProjectDefaults;
+  /** Grant the folder to this space in the same step. */
+  spaceId?: SpaceId;
+  /** Create `workingDir` when it is one missing child beneath an allowed directory. */
+  ensureWorkingDir?: boolean;
+}
+
+export interface GateFolderCreateResult {
+  folder: GateFolder;
+  created: boolean;
 }
 
 export interface CorrectProjectAssociationInput {
@@ -5685,6 +5891,24 @@ export interface ExecutionLiveness {
    * entire retained log. See `DurableSeqSource.latest` for the full argument.
    */
   eventHwm: number | null;
+  /**
+   * How many of THIS space's work sessions are live by BOTH truths: the id is
+   * in this process's PTY map (`liveEntityIds`) AND the recorded
+   * `work_sessions.status` is `spawning`, `running` or `idle`. Either truth
+   * alone overcounts: the PTY map can still hold a session whose record says
+   * it exited, and a record can say `running` about a PTY this boot never
+   * started. Optional because an older node omits it; absence is "unknown",
+   * never zero.
+   */
+  liveSessionCount?: number;
+  /**
+   * This space's chats whose durable `runtimeState` is `live` (the headless
+   * child is up) — the chat parallel of `liveSessionCount`. Exact, counted in
+   * SQL, never a capped page. Optional for the same older-node reason.
+   */
+  liveChatCount?: number;
+  /** Of `liveChatCount`, those with a turn `running` or `queued` right now. */
+  workingChatCount?: number;
 }
 
 // --- execution.journal — the session CLI command journal --------------------

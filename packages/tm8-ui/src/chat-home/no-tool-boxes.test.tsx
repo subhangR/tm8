@@ -9,7 +9,7 @@
  * the graph, as sentences —
  *
  *   Read 3 tasks, 4 docs        ← ONE counted line per turn
- *   Task 1 Created              ← one line per create, tree-indented
+ *   ┃ Task 1 · New task …  CREATED  ← one highlighted card per create (D9)
  *   Task 1  in_progress → done  ← one line per transition
  *
  * WHAT IS DELIBERATELY KEPT from the original ruling, as assertions: no
@@ -17,10 +17,13 @@
  * disclosures (`<details>`), no payload dumps (`<pre>`). A reinstated box
  * breaks nothing and passes every other suite — only an explicit ban can see
  * it. WHAT IS DELIBERATELY REVERSED: "a plain call draws nothing of its own" —
- * plain calls now draw ledger lines, and the chip row is gone.
+ * plain calls now draw ledger lines, and the chip row is gone. And, since the
+ * step list (advisor D15), "a call that touched nothing leaves NO trace" is
+ * reversed too: every call is a counted STEP in its run's quiet step block,
+ * in human words (`turn-steps.ts`). The three bans above are what survive.
  *
- * `explain_*` / `doc_*` / `artifact_create` remain exempt: their payload IS
- * the content, so their card stays (minus tool chrome), exactly as before.
+ * `explain_*` remains exempt: its payload IS the content, so its card stays
+ * (minus tool chrome). The doc / artifact create card is retired (D17).
  */
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, within } from '@testing-library/react';
@@ -93,16 +96,20 @@ describe('a plain tool call draws its ledger line and nothing else', () => {
     expect(view.queryByTestId('chat-touched-entities')).toBeNull();
   });
 
-  it('draws one create line per created entity, indented under an in-thread parent', () => {
+  it('draws one highlighted card per created entity, naming where it landed', () => {
+    /* Was: a line per create, indented 16px under an in-thread parent. The
+       card (advisor D9) SAYS the parent instead — `under ◆ Task 21` — which
+       also works for a parent created in another thread, where the indent
+       had nothing to indent under. */
     const parts = [...create(TASK_ID), ...create(CHILD_ID, TASK_ID)];
     const view = render(<TurnParts parts={parts} />);
 
-    const lines = view.getAllByTestId('chat-ledger-create');
-    expect(lines).toHaveLength(2);
-    expect(lines[0]!.textContent).toContain('Created');
-    // The child indents under the parent created earlier in the same thread.
-    expect(lines[0]!.style.paddingLeft).toBe('0px');
-    expect(lines[1]!.style.paddingLeft).toBe('16px');
+    const cards = view.getAllByTestId('chat-ledger-create');
+    expect(cards).toHaveLength(2);
+    expect(cards[0]!.textContent).toContain('Task 21');
+    expect(cards[0]!.textContent).toContain('New task · at the root');
+    expect(cards[0]!.textContent).toContain('Created');
+    expect(cards[1]!.textContent).toContain('New task · under Task 21');
   });
 
   it('draws a transition line, one-sided when the prior status was never read here', () => {
@@ -118,7 +125,7 @@ describe('a plain tool call draws its ledger line and nothing else', () => {
     const line = view.getByTestId('chat-ledger-transition');
     // An invented left side would be a lie about history; absence is honest.
     expect(line.textContent).toContain('→ working');
-    expect(line.textContent).not.toMatch(/\w+ → working/);
+    expect(line.querySelector('[data-side="from"]')).toBeNull();
   });
 
   it('fills the from-side when the entity was read earlier in the same fold', () => {
@@ -136,18 +143,28 @@ describe('a plain tool call draws its ledger line and nothing else', () => {
     expect(view.getByTestId('chat-ledger-transition').textContent).toContain('working → done');
   });
 
-  it('draws no line at all when the calls touched nothing', () => {
-    /* An entity-less call (a build, a search that matched nothing) must leave
-       NO trace. An empty ledger row would be the box coming back under
-       another name. */
+  it('draws no LEDGER line when the calls touched nothing — only a counted step', () => {
+    /* An entity-less call (a build, a search that matched nothing) draws no
+       ledger row: an empty one would be the box coming back under another
+       name. Its one trace is its step (D15 — "count visible"), in human
+       words, with the three bans intact. */
     const parts: ChatTurnPart[] = [
-      { seq: 0, kind: 'tool_call', toolCallId: 'tb', name: 'repo_bash', args: {}, state: 'completed' },
+      { seq: 0, kind: 'tool_call', toolCallId: 'tb', name: 'repo_bash', args: { command: 'bun run build' }, state: 'completed' },
       { seq: 1, kind: 'tool_result', toolCallId: 'tb', content: { ok: true } },
+      { seq: 2, kind: 'done' },
     ];
     const view = render(<TurnParts parts={parts} />);
     expect(view.queryByTestId('chat-ledger-reads')).toBeNull();
     expect(view.queryByTestId('chat-ledger-create')).toBeNull();
     expect(view.queryByTestId('chat-ledger-transition')).toBeNull();
+    // The settled call contributes to the run header's count…
+    expect(view.getByTestId('chat-steps-head').textContent).toContain('1 step · ran a shell command');
+    // …and the bans hold: no card, no tool name, no payload.
+    expect(view.queryByTestId('chat-tool-card')).toBeNull();
+    expect(view.container.textContent).not.toContain('repo_bash');
+    expect(view.container.textContent).not.toContain('bun run build');
+    expect(view.container.querySelectorAll('details')).toHaveLength(0);
+    expect(view.container.querySelectorAll('pre')).toHaveLength(0);
   });
 
   it('still shows the answer and the usage the turn produced', () => {
@@ -181,7 +198,8 @@ describe('a ledger line is a button only where the press can land', () => {
 
   it('is inert when the host cannot — no button, no dead press', () => {
     const view = render(<TurnParts parts={create(TASK_ID)} />);
-    expect(view.getByTestId('chat-ledger-create')).toBeTruthy();
-    expect(view.queryByRole('button')).toBeNull();
+    const line = view.getByTestId('chat-ledger-create');
+    // Scoped to the line: the run's step-block header is a real control.
+    expect(within(line).queryByRole('button')).toBeNull();
   });
 });

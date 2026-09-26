@@ -250,6 +250,13 @@ const IDENTITY_V2_NET_NEW_OPERATIONS = [
   'auth.claim.reissue',
   'auth.password.change',
   'auth.invite.signup',
+  // W3-server (migration 233): `auth.space.enter` mints a space-pinned session
+  // on the same seam. Net-new, no replacement.
+  'auth.space.enter',
+  // W4 (migration 249): list and revoke the caller's (or, for a space admin,
+  // the space's pinned) sessions. Net-new, no replacement.
+  'auth.sessions.list',
+  'auth.sessions.revoke',
 ] as const;
 
 /**
@@ -294,7 +301,6 @@ const WORKFLOW_NET_NEW_OPERATIONS = [
  */
 const CONTAINER_NET_NEW_OPERATIONS = [
   'containers.attach',
-  'containers.attention',
   'containers.browser.endpoint',
   'containers.computer',
   'containers.create',
@@ -352,6 +358,8 @@ const GIT_NET_NEW_OPERATIONS = [
   'entities.commands.tick',
   // I9b: the launch sheet's defaults read.
   'launch.defaults',
+  // Status strip: host metrics for the desktop strip (node admin).
+  'node.metrics.get',
   // Entity chat G: the per-kind chat defaults, read + write (migration 229).
   'spaces.chatDefaults.get',
   'spaces.chatDefaults.set',
@@ -452,6 +460,17 @@ const FORMS_NET_NEW_OPERATIONS = [
   'forms.update',
 ] as const;
 
+/**
+ * W11 (234, decision 29): space-scoped projects and gate folders. Net-new;
+ * projects.link stays, so nothing is replaced. MEASURED.
+ */
+const W11_NET_NEW_OPERATIONS = [
+  'gate.folders.create',
+  'gate.folders.list',
+  'spaces.projects.create',
+  'spaces.projects.list',
+] as const;
+
 const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
   ...EXPECTED_TRANCHE_V2_FACADE_OPERATIONS,
   ...TRANCHE_V3_NET_NEW_OPERATIONS,
@@ -468,6 +487,7 @@ const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
   ...SKILLS_NET_NEW_OPERATIONS,
   ...JEV_NET_NEW_OPERATIONS,
   ...FORMS_NET_NEW_OPERATIONS,
+  ...W11_NET_NEW_OPERATIONS,
 ].sort();
 
 /** Substituted for every `:param` so one probe covers any catalog path shape. */
@@ -609,7 +629,7 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // same number from the component lists, so this literal cannot drift alone.
     // MEASURED from this assertion's own failing run.
     // 177 -> 186 (2026-09-23): the nine skills.* facade handlers. MEASURED.
-    expect(registry.size).toBe(212); /* +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. */ /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ // +1 launch.suggest (Jev lane F #655). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect(registry.size).toBe(219); /* +1 node.metrics.get (status strip). MEASURED. */ /* W11: +4 (projects.link stays, decision 29) spaces.projects.list|create and gate.folders.list|create. MEASURED. */ /* +1 auth.space.enter (W3-server). MEASURED. */ /* +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. */ /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ // +1 launch.suggest (Jev lane F #655). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +2 auth.sessions.list/revoke (W4). MEASURED. */ /* -1 containers.attention (Attention v2 S7a). MEASURED. */
     expect(registry.size).toBe(
       TRANCHE_V1_FACADE_OPERATIONS.length
         + G02_NET_NEW_OPERATIONS.length
@@ -626,7 +646,8 @@ describe('W2.I02 tranche-v2 public composition', () => {
         + CONTAINER_NET_NEW_OPERATIONS.length
         + SKILLS_NET_NEW_OPERATIONS.length
         + JEV_NET_NEW_OPERATIONS.length
-        + FORMS_NET_NEW_OPERATIONS.length,
+        + FORMS_NET_NEW_OPERATIONS.length
+        + W11_NET_NEW_OPERATIONS.length,
     );
     expect(registry.has('search.query')).toBe(false);
     expect(registry.has('bridge.fetchBlob')).toBe(false);
@@ -795,7 +816,7 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 119 -> 120 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): one bound input schema each. MEASURED on the merged tree from this assertion's own failing run.
     // 120 -> 125 (2026-09-23): skills.scan + F4's create/edit/equip/unequip bind input schemas. MEASURED.
     // 125 -> 126 (Jev lane F #655): launch.suggest binds LaunchSuggestInputSchema. MEASURED from CI's failing run.
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(159); /* +1 credentials.space.addMine (W10d). MEASURED. */ /* +5 W10b credential commands bind. MEASURED. */ /* +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. */ /* +1 spaces.chatDefaults.set binds SetChatDefaultsInputSchema (entity chat G). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +10 forms.* command schemas (Forms W1). MEASURED. */ // +7 SC-3 space/node credential command schemas. MEASURED. // +2 service-key put/delete (Jev lane K). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(161); /* +1 credentials.space.addMine (W10d). MEASURED. */ /* W11: +2 input schemas, spaces.projects.create and gate.folders.create. MEASURED. */ /* +1 auth.space.enter (W3-server). MEASURED. */ /* +5 W10b credential commands bind. MEASURED. */ /* +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. */ /* +1 spaces.chatDefaults.set binds SetChatDefaultsInputSchema (entity chat G). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +10 forms.* command schemas (Forms W1). MEASURED. */ // +7 SC-3 space/node credential command schemas. MEASURED. // +2 service-key put/delete (Jev lane K). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* -1 containers.attention (Attention v2 S7a). MEASURED. */
 
     // DERIVED, and the load-bearing half of this test. The count above cannot
     // catch a new command operation that forgets a schema — it passes as long
@@ -817,7 +838,8 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // is genuinely body-less in the zod sense and enumerated as such. Every
     // other container command IS bound, including the ones whose runtime does
     // not exist yet.
-    expect(UNBOUND_COMMAND_OPERATIONS).toHaveLength(11);
+    // W4: +1 — auth.sessions.revoke takes its session id from the path; no body.
+    expect(UNBOUND_COMMAND_OPERATIONS).toHaveLength(12);
     expect(UNBOUND_COMMAND_OPERATIONS).not.toContain('execution.resume');
     for (const operation of [
       'messages.delete',
@@ -972,8 +994,8 @@ describe.sequential('W2.I02 real production public surface', () => {
     // branch's execution.gitStage BOTH land, so this moves twice. Git merged
     // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
     // 2026-09-23 (filesystem skills, #647 + #649): nine skills.* rows, all mounted v1 HTTP. MEASURED.
-    expect(health).toMatchObject({ ok: true, /* +13 forms.* (Forms W1). MEASURED. */ operations: 253 /* +1 credentials.space.addMine (W10d). MEASURED. */ /* +6 credentials.space.* (W10b). MEASURED. */ /* +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. */, implemented: 251 /* +1 credentials.space.addMine (W10d). MEASURED. */ /* +6 W10b. MEASURED. */ } /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b). MEASURED. */); /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10/+10 SC-3 space/node credential ops. MEASURED. // +3/+3 service keys (Jev lane K). MEASURED. // +1/+1 launch.suggest (Jev lane F #655). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
-    expect(harness.production.server.registry.size).toBe(251); /* +1 credentials.space.addMine (W10d). MEASURED. */ /* +6 credentials.space.* (W10b). MEASURED. */ /* +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. */ /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10 SC-3. MEASURED. // +3 service keys (Jev lane K). MEASURED. // +1 launch.suggest (Jev lane F #655). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect(health).toMatchObject({ ok: true, /* +2 auth.sessions.list/revoke (W4). MEASURED. */ /* W11: +4 (projects.link stays, decision 29) spaces.projects.list|create and gate.folders.list|create. MEASURED. */ /* +1 auth.space.enter (W3-server). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ operations: 260 /* +1 credentials.space.addMine (W10d). MEASURED. */ /* +6 credentials.space.* (W10b). MEASURED. */ /* +1 node.metrics.get (status strip). MEASURED. */ /* +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. */, implemented: 258 /* +1 credentials.space.addMine (W10d). MEASURED. */ /* +6 W10b. MEASURED. */ /* +1 node.metrics.get (status strip). MEASURED. */ } /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b). MEASURED. */); /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10/+10 SC-3 space/node credential ops. MEASURED. // +3/+3 service keys (Jev lane K). MEASURED. // +1/+1 launch.suggest (Jev lane F #655). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* -1 containers.attention (Attention v2 S7a). MEASURED. */
+    expect(harness.production.server.registry.size).toBe(258 /* +1 credentials.space.addMine (W10d). MEASURED. */ /* +6 credentials.space.* (W10b). MEASURED. */); /* +1 node.metrics.get (status strip). MEASURED. */ /* W11: +4 (projects.link stays, decision 29) spaces.projects.list|create and gate.folders.list|create. MEASURED. */ /* +1 auth.space.enter (W3-server). MEASURED. */ /* +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. */ /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10 SC-3. MEASURED. // +3 service keys (Jev lane K). MEASURED. // +1 launch.suggest (Jev lane F #655). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +2 auth.sessions.list/revoke (W4). MEASURED. */ /* -1 containers.attention (Attention v2 S7a). MEASURED. */
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -1000,7 +1022,7 @@ describe.sequential('W2.I02 real production public surface', () => {
     // residual asserted above stays empty. MEASURED.
     // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): registered + residual moves with the mounted count. MEASURED on the merged tree from this assertion's own failing run.
     // 195 -> 204 (2026-09-23): nine skills.* rows. MEASURED.
-    expect(registered.size + residual.length).toBe(251); /* +1 credentials.space.addMine (W10d). MEASURED. */ /* +6 credentials.space.* (W10b). MEASURED. */ /* +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. */ /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10 SC-3. MEASURED. // +3 service keys (Jev lane K). MEASURED. // +1 launch.suggest (Jev lane F #655): registerable v1 HTTP. MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect(registered.size + residual.length).toBe(258); /* +1 credentials.space.addMine (W10d). MEASURED. */ /* +1 node.metrics.get (status strip). MEASURED. */ /* W11: +4 (projects.link stays, decision 29) spaces.projects.list|create and gate.folders.list|create. MEASURED. */ /* +1 auth.space.enter (W3-server). MEASURED. */ /* +6 credentials.space.* (W10b). MEASURED. */ /* +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. */ /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10 SC-3. MEASURED. // +3 service keys (Jev lane K). MEASURED. // +1 launch.suggest (Jev lane F #655): registerable v1 HTTP. MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +2 auth.sessions.list/revoke (W4). MEASURED. */ /* -1 containers.attention (Attention v2 S7a). MEASURED. */
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

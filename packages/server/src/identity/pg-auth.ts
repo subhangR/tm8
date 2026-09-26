@@ -22,7 +22,12 @@
  * - signup/logout run under the CALLER's claims; `ensure_account` and
  *   `revoke_auth_session` carry their own `require_*` guards in SQL.
  */
-import { CollabError } from '@tm8/contract';
+import {
+  CollabError,
+  type AuthSessionListing,
+  type AuthSessionsRevokeResult,
+  type AuthSessionView,
+} from '@tm8/contract';
 import { randomUUID } from 'node:crypto';
 import type { Db, DbClaims } from '../db/types.js';
 import {
@@ -94,6 +99,8 @@ interface SessionRowJson {
   runtime_member_id?: string | null;
   runtime_thread_root_id?: string | null;
   runtime_chat_id?: string | null;
+  /** 226; set on agent kinds and on a session `enter_space` (233) minted. */
+  space_id?: string | null;
   label: string | null;
   created_at: string;
   expires_at: string;
@@ -254,11 +261,116 @@ export async function resolveBearerIdentity(db: Db, token: string): Promise<Reso
   return session;
 }
 
+const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Did THIS node ever issue the session id in `token` — live, revoked or
+ * expired? (236 `auth_session_issued_here`.) The named-Server relay asks this
+ * of an `Authorization` that did not resolve, so a dead local token is never
+ * forwarded as a remote's pass. Only the session id reaches the database, never
+ * the secret. A token that does not parse, or whose id is not a uuid, cannot be
+ * one of ours: `false`.
+ */
+export async function sessionIssuedHere(db: Db, token: string): Promise<boolean> {
+  const sessionId = parseToken(token)?.sessionId;
+  if (!sessionId || !SESSION_ID.test(sessionId)) return false;
+  return (await db.rpc<boolean | null>({}, 'auth_session_issued_here', [sessionId])) === true;
+}
+
 export interface LoginInput {
   username: string;
   password: string;
   kind?: 'browser' | 'cli';
   label?: string | null;
+}
+
+/** A session pinned to one space, minted by `enter_space` (233). */
+export interface IssuedSpaceSession {
+  /** Plaintext `tm8s_<id>.<secret>` — returned exactly once, never stored. */
+  token: string;
+  spaceId: string;
+  session: AuthSessionView;
+}
+
+/**
+ * `auth.space.enter` (plan W3): mint a session pinned to `spaceId`.
+ *
+ * `parentSessionId` is the VERIFIED gate session the caller presented (never
+ * request input), or null for the loopback auto-owner. The SQL refuses a
+ * pinned caller, an agent kind, a non-member and a dead or foreign parent; the
+ * new row inherits the parent's kind and never outlives it. `kind` here only
+ * picks the TTL ceiling to ask for.
+ */
+export async function enterSpace(
+  db: Db,
+  claims: DbClaims,
+  input: { spaceId: string; parentSessionId: string | null; kind: 'browser' | 'cli'; label?: string | null },
+): Promise<IssuedSpaceSession> {
+  const secret = generateSecret();
+  const expiresAt = new Date(Date.now() + SESSION_TTL_MS[input.kind]).toISOString();
+  const session = await db.rpc<SessionRowJson>(claims, 'enter_space', [
+    input.spaceId,
+    input.parentSessionId,
+    hashToken(secret),
+    expiresAt,
+    input.label ?? null,
+  ]);
+  if (session.space_id !== input.spaceId) {
+    throw new CollabError('upstream_unavailable', 'space session returned no space');
+  }
+  return {
+    token: formatToken(session.id, secret),
+    spaceId: session.space_id,
+    session: {
+      sessionId: session.id,
+      kind: session.kind,
+      actingAsTeamMemberId: session.acting_as_team_member_id,
+      label: session.label,
+      spaceId: session.space_id,
+      createdAt: session.created_at,
+      expiresAt: session.expires_at,
+    },
+  };
+}
+
+/** One row of `list_auth_sessions` (232), before `current` is known. */
+type SessionListingRow = Omit<AuthSessionListing, 'current'>;
+
+const iso = (value: string | null): string | null => (value === null ? null : new Date(value).toISOString());
+
+/**
+ * `auth.sessions.list` (plan W4): the caller's own live sessions (`spaceId`
+ * null), or every live session pinned to `spaceId` (space admin, pin-aware).
+ * The SQL decides who may see what and never returns a token hash.
+ * `currentSessionId` is the verified session of this request, if any.
+ */
+export async function listAuthSessions(
+  db: Db,
+  claims: DbClaims,
+  spaceId: string | null,
+  currentSessionId: string | undefined,
+): Promise<AuthSessionListing[]> {
+  const rows = await db.rpc<SessionListingRow[]>(claims, 'list_auth_sessions', [spaceId]);
+  return rows.map((row) => ({
+    ...row,
+    createdAt: iso(row.createdAt)!,
+    lastUsedAt: iso(row.lastUsedAt),
+    expiresAt: iso(row.expiresAt)!,
+    current: row.sessionId === currentSessionId,
+  }));
+}
+
+/**
+ * `auth.sessions.revoke` (plan W4): revoke one session the caller could list.
+ * Returns every id this call revoked (the session plus the pinned sessions
+ * entered from it), which is the set whose sockets the caller must close.
+ */
+export async function revokeListedAuthSession(
+  db: Db,
+  claims: DbClaims,
+  sessionId: string,
+): Promise<AuthSessionsRevokeResult> {
+  return db.rpc<AuthSessionsRevokeResult>(claims, 'revoke_listed_auth_session', [sessionId]);
 }
 
 /**

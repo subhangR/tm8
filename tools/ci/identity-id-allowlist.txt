@@ -1,0 +1,208 @@
+# The identity_id() allow-list (plan 01a0d9eb §3 W3, F7), read by tools/ci/identity-id-gate.sh.
+#
+# One line per live reader of the caller's identity, as
+#   <root|setting> <object>
+# where <root> is `identity_id` (internal.identity_id()), `require_identity` or
+# `current_account_id` (the two wrappers that hand the identity on), `setting`
+# means the raw tm8.identity_id setting, and <object> is a function
+# schema.name(identity args) or a policy / column default / view as
+# pg_describe_object prints it. A `setting` reader is found in function bodies,
+# policy USING/WITH CHECK, column defaults and view definitions. The gate fails on a live reader missing from this list AND on a line
+# here that matches no live reader. `identity-id-gate.sh --list <url>` prints the
+# live set.
+#
+# Adding a line is a security review. Such an object decides for itself whether
+# the caller may act, so check that it cannot reach a space other than the pinned
+# one (internal.session_space_id(), 227): it goes through a pinned membership
+# helper, RLS as tm8_app (a subquery on public.members is itself pinned by
+# members_select), node admin (pinned out by space_enter_and_pin), or touches only
+# the caller's own account rows. Put the verdict in the trailing comment.
+#
+# Tags: PIN-HELPER, ACCOUNT, GUARDED, NODE-ADMIN, GLOBAL-CATALOG, STAMP, NEEDS-REVIEW, KNOWN-GAP (see the W3-audit
+# matrix in packages/server/test/db/cross-space-token.pg.test.ts).
+
+identity_id internal.can_act_as(target_actor uuid, target_space uuid)  # PIN-HELPER: inline session_space_id conjunct before both arms (227_session_space_pin.sql)
+identity_id internal.current_account_id()  # PIN-HELPER: identity primitive; accounts row for identity_id(), nothing space-scoped (083_credential_sessions.sql)
+identity_id internal.current_member_id(target_space uuid)  # PIN-HELPER: pinned; returns null for any space other than the pin (227_session_space_pin.sql)
+identity_id internal.entity_readable(target uuid)  # PIN-HELPER: inline pin on entity_row.space_id plus membership (227_session_space_pin.sql)
+identity_id internal.entity_row_visible(p_id uuid, p_space_id uuid, p_kind text, p_visibility text)  # PIN-HELPER: inline pin on p_space_id plus membership (227_session_space_pin.sql)
+identity_id internal.form_is_caller(p_respondent_id uuid)  # GUARDED: only used in form_responses/form_deliveries RLS, ANDed with a pinned entities_select subquery (209_forms_foundation.sql)
+identity_id internal.grant_folder_row(p_space_id uuid, p_folder_id uuid)  # STAMP: identity_id() only stamps space_projects.linked_by/granted_by; EXECUTE revoked from public, no tm8_app grant; callers guard first: grant_folder and register_folder run require_gate_admin (refuses any pinned session), create_space_project runs require_space_admin(p_space_id) -> is_space_admin and require_gate_admin unless already granted (234_space_owned_projects.sql)
+identity_id internal.is_authenticated()  # PIN-HELPER: identity primitive; not security definer, reads accounts only (002_identity.sql)
+identity_id internal.is_space_admin(target_space uuid)  # PIN-HELPER: pinned (227_session_space_pin.sql)
+identity_id internal.is_space_member(target_space uuid)  # PIN-HELPER: pinned; require_space_member calls it (227_session_space_pin.sql)
+identity_id internal.ledger_record(p_cmid text, p_operation text, p_result jsonb)  # ACCOUNT: writes the caller's own command_ledger row; every caller runs ledger_replay first (046_idempotency_test_mode.sql)
+identity_id internal.ledger_replay(p_cmid text, p_operation text)  # closed by 247: the ledger records the recording session's pin (command_ledger.session_space_id) and a pinned caller replays only rows under its own pin, 23514 otherwise, here and in require_replay_principal; was KNOWN-GAP F4 (grant_stream_attach, start_chat, set_member_role, w2_withdraw_handoff, queue_tracking_refresh; cells flipped in #861) (247_command_ledger_session_space_pin.sql)
+identity_id internal.member_space_ids()  # PIN-HELPER: pinned; drives every member_space_ids RLS policy (227_session_space_pin.sql)
+identity_id internal.require_identity()  # PIN-HELPER: identity primitive (001_core_graph.sql)
+identity_id internal.require_node_admin()  # NODE-ADMIN: the gate itself; space_enter_and_pin refuses when session_space_id is set (space_enter_and_pin, #848)
+identity_id internal.require_replay_principal(p_cmid text)  # ACCOUNT: compares the ledger row's identity with the caller; returns nothing (046_idempotency_test_mode.sql)
+identity_id internal.w2_space_settings_view(p_space_id uuid)  # GUARDED: no tm8_app EXECUTE; only caller set_space_default_channel checks w2_require_human_space_admin -> current_member_id (118_member_roles_and_invite_roles.sql)
+identity_id internal.w2g12_profile_validation_evidence(p_profile_id uuid, p_profile_version integer, p_draft jsonb, p_generated_by uuid, p_active_version integer)  # GUARDED: no tm8_app EXECUTE; only caller validate_interaction_profile checks resolve_actor -> can_act_as (027_w2_entity_kinds_profiles.sql)
+identity_id public.append_chat_message_part(p_message_id uuid, p_seq integer, p_kind text, p_payload jsonb)  # KNOWN-GAP: authorized only by chats.configured_by_identity_id = identity_id() (LATENT) (176_chat_entity.sql)
+identity_id public.bind_chat_agent_message(p_turn_id uuid, p_agent_message_id uuid)  # KNOWN-GAP: authorized only by configured_by_identity_id = identity_id() (LATENT) (176_chat_entity.sql)
+identity_id public.claim_form_deliveries(p_response_id uuid, p_work_session_id uuid, p_limit integer, p_lease_seconds integer, p_route_modes text[])  # GUARDED: every reconcile/cancel/claim loop filters on member_space_ids() (221_forms_redeliver_and_pending.sql)
+identity_id public.claim_next_chat_turn(p_chat_id uuid)  # KNOWN-GAP: configured_by_identity_id only; returns the user message body (LATENT) (176_chat_entity.sql)
+identity_id public.complete_chat_turn(p_turn_id uuid, p_state text, p_body text, p_usage jsonb, p_total_cost_usd numeric, p_failure jsonb)  # KNOWN-GAP: configured_by_identity_id only; overwrites the agent message body (LATENT) (176_chat_entity.sql)
+identity_id public.create_space_credential(p_credential_id uuid, p_space_id uuid, p_provider text, p_shape text, p_label text, p_key_hint text, p_secret_ciphertext bytea, p_secret_nonce bytea, p_display_login text)  # GUARDED: require_space_member(p_space_id) before the insert (206_space_credentials.sql)
+identity_id public.current_space_identity(p_space_id uuid)  # GUARDED: require_space_member(p_space_id) first; the raw members read comes after it (007_rpc_catalog.sql)
+identity_id internal.disable_account_core(p_account_id uuid, p_client_mutation_id text)  # NODE-ADMIN: 232's public.disable_account body, renamed and moved to internal by 239 (EXECUTE revoked from public and tm8_app, 239:1317); require_human_auth_kind, require_node_admin (pinned out by space_enter_and_pin); identity_id() only refuses disabling your own account; the public wrapper (239) calls it first and reads no identity itself; replay path per ledger_replay (F4 KNOWN-GAP until 247, #861) (232_member_tombstone.sql, 239_credential_entities.sql)
+identity_id public.ensure_account(p_identity_id text, p_username text, p_display_name text, p_email text, p_is_owner boolean, p_is_node_admin boolean, p_password_algorithm text, p_password_hash text)  # NODE-ADMIN: require_node_admin once any account exists; no space rows (007_rpc_catalog.sql)
+identity_id public.grant_stream_attach(p_session_id uuid, p_mode text, p_token_hash text, p_ttl interval, p_client_mutation_id text)  # GUARDED: require_space_member(e.space_id), current_member_id, can_act_as; replay path per ledger_replay (202_work_session_sharing_provenance.sql)
+identity_id public.grant_surface_attach(p_container_id uuid, p_surface text, p_mode text, p_token_hash text, p_ttl interval, p_multi_use boolean)  # GUARDED: require_space_member(e.space_id), current_member_id, can_act_as (177_container_kind.sql)
+identity_id public.inspect_owned_teammate_inbox(p_team_member_id uuid, p_limit integer)  # GUARDED: explicit session_space_id check on n.space_id (227_session_space_pin.sql)
+identity_id public.inspect_owned_teammate_inbox(p_team_member_id uuid, p_space_id uuid, p_unread boolean, p_before_created_at timestamp with time zone, p_before_id uuid, p_limit integer)  # GUARDED: explicit session_space_id check on notification_row.space_id (227_session_space_pin.sql)
+identity_id public.issue_auth_session(p_account_id uuid, p_token_hash text, p_kind text, p_expires_at timestamp with time zone, p_acting_as_team_member_id uuid, p_label text)  # ACCOUNT: refuses any pinned caller; own account, otherwise require_node_admin (space_enter_and_pin, #848)
+identity_id public.issue_work_session_agent_session(p_work_session_id uuid, p_team_member_id uuid, p_token_hash text, p_expires_at timestamp with time zone, p_label text)  # GUARDED: can_act_as(p_team_member_id, session_space) before the revoke/insert; owned by superuser tm8 (226_auth_session_space.sql)
+identity_id public.leave_space(p_space_id uuid, p_client_mutation_id text)  # GUARDED: require_human_auth_kind, require_space_member(p_space_id) -> is_space_member; the caller's members read comes after it; replay path per ledger_replay (F4 KNOWN-GAP until 247, #861) (232_member_tombstone.sql)
+identity_id public.mark_chat_runtime_state(p_chat_id uuid, p_state text)  # KNOWN-GAP: configured_by_identity_id only (LATENT) (176_chat_entity.sql)
+identity_id public.mark_notification_read(p_notification_id uuid)  # KNOWN-GAP: member arm uses a raw members/identity_id join; tm8_app EXECUTE revoked in 023 (LATENT) (007_rpc_catalog.sql)
+identity_id public.mark_notification_read(p_notification_id uuid, p_recipient_type text, p_recipient_id uuid, p_client_mutation_id text)  # GUARDED: member arm (check and update) requires members.space_id = session_space_id() when pinned; F1 closed by S2 task 01a0db30 (246_mark_notification_read_space_pin.sql)
+identity_id public.mark_read(p_anchor_id uuid, p_client_mutation_id text)  # GUARDED: entity_readable + current_member_id before the replay and the write (023_w2_inbox.sql)
+identity_id public.preview_invite(p_code text)  # KNOWN-GAP: 'member' branch uses a raw members lookup; server also drops the pin claim (LOW) (195_preview_invite_knows_a_member.sql)
+identity_id public.queue_tracking_refresh(p_entity_ids uuid[], p_actor_id uuid, p_client_mutation_id text)  # GUARDED: is_space_member check; the raw members loop fails closed through resolve_actor/can_act_as (034_w2_g02fix_tracking_refresh_actor_binding.sql)
+identity_id public.remove_space_member(p_space_id uuid, p_member_id uuid, p_client_mutation_id text)  # GUARDED: require_human_auth_kind, require_space_admin -> is_space_admin; re-reads the caller's role under the lock after it; replay path per ledger_replay (F4 KNOWN-GAP until 247, #861) (232_member_tombstone.sql)
+identity_id public.revoke_account_sessions(p_account_id uuid)  # ACCOUNT: own account's auth_sessions, otherwise require_node_admin (007_rpc_catalog.sql)
+identity_id public.revoke_account_sessions_except(p_account_id uuid, p_keep_session_id uuid)  # ACCOUNT: own account's auth_sessions, otherwise require_node_admin (141_account_lifecycle_ops.sql)
+identity_id public.revoke_auth_session(p_session_id uuid)  # ACCOUNT: own session, otherwise require_node_admin (007_rpc_catalog.sql)
+identity_id public.set_account_credential(p_account_id uuid, p_hash text, p_algo text)  # ACCOUNT: own account password, otherwise require_node_admin (007_rpc_catalog.sql)
+identity_id public.set_chat_context(p_chat_id uuid, p_context jsonb)  # ACCOUNT: writes only chats with configured_by_identity_id = caller (own rows, any space; low); the gate's first catch, run 36204831009 (231_chat_context.sql)
+identity_id public.set_member_role(p_space_id uuid, p_member_id uuid, p_role text, p_actor_id uuid, p_client_mutation_id text)  # GUARDED: require_space_admin -> is_space_admin, resolve_actor; replay path per ledger_replay (118_member_roles_and_invite_roles.sql)
+identity_id public.space_kind_counts(p_space_id uuid)  # GUARDED: WHERE clause requires is_space_member(p_space_id); raw 'me' CTE only runs on admitted rows (158_counts_read_visibility_off_the_row.sql)
+identity_id public.start_chat(p_chat_id uuid, p_space_id uuid, p_teammate_id uuid, p_model text, p_provider text, p_agent_tool text, p_chat_mode text, p_workdir_mode text, p_project_id uuid, p_native_session_id uuid, p_cwd text, p_title text, p_body text, p_attachment_ids uuid[], p_about_id uuid, p_client_mutation_id text)  # GUARDED: require_space_member + current_member_id; replay needs a hash match (176_chat_entity.sql)
+identity_id public.start_space_credential_login(p_space_id uuid, p_provider text, p_label text, p_credential_id uuid, p_ttl_seconds integer, p_session_cap integer)  # GUARDED: require_space_member; lock_managed_space_credential rechecks is_space_member (206_space_credentials.sql)
+identity_id public.w2_claim_handoff_dispatch(p_handoff_id text, p_envelope_hash text, p_session_epoch text)  # KNOWN-GAP: authorized only by session_handoffs.identity_id plus hash/epoch; no pin (LOW) (019_w2_messages_handoffs.sql)
+identity_id public.w2_post_message_batch(p_anchor_ids uuid[], p_body text, p_parent_message_id uuid, p_mention_ids uuid[], p_attachment_ids uuid[], p_source_work_session_id uuid, p_actor_id uuid, p_client_mutation_id text, p_chat_turn_mode text, p_source_chat_id uuid)  # GUARDED: entity_readable on every anchor, require_space_member, resolve_actor; replay needs a stable-hash match (176_chat_entity.sql)
+identity_id public.w2_prepare_handoff(p_handoff_id text, p_source_entity_id uuid, p_target_work_session_id uuid, p_expected_content_version integer, p_actor_id uuid, p_session_epoch text)  # KNOWN-GAP: existing-handoff branch returns the snapshot on an identity_id match alone (LOW) (019_w2_messages_handoffs.sql)
+identity_id public.w2_settle_handoff(p_handoff_id text, p_outcome text, p_failure_reason text, p_envelope_hash text, p_session_epoch text)  # KNOWN-GAP: identity_id plus hash/epoch only; writes workspace_events in the source space (LOW) (019_w2_messages_handoffs.sql)
+identity_id public.w2_withdraw_handoff(p_handoff_id text, p_expected_record_version integer, p_reason text, p_actor_id uuid, p_client_mutation_id text)  # GUARDED: require_space_member(source_space_id), resolve_actor, is_space_admin; replay path per ledger_replay (019_w2_messages_handoffs.sql)
+setting internal.identity_id()  # PIN-HELPER: identity primitive (001_core_graph.sql)
+setting internal.require_identity()  # PIN-HELPER: identity primitive (001_core_graph.sql)
+setting public.consume_stream_attach(p_session_id uuid, p_mode text, p_token_hash text)  # GUARDED: explicit session_space_id check on the work session's entity (233); SECURITY DEFINER owned by tm8 (the migrator), one of the 24 definers it owns (space_enter_and_pin, #848)
+setting public.consume_surface_attach(p_container_id uuid, p_surface text, p_mode text, p_token_hash text)  # KNOWN-GAP: token plus identity only, no pin, unlike consume_stream_attach (LATENT) (177_container_kind.sql)
+
+current_account_id internal.may_see_space_credential_detail(p public.space_credentials)  # GUARDED: masks only (hint/login shown on public rows, or to the owner); EXECUTE revoked from public, no tm8_app grant; reached only through space_credential_json, whose public callers gate the row first: list_space_credentials require_space_member, read_space_credential and set_space_credential_visibility is_space_member (pinned, 227) (239_credential_entities.sql)
+current_account_id public.read_space_credential_for_spawn(p_launch_space_id uuid, p_provider text, p_credential_id uuid)  # PIN-HELPER: require_space_member(p_launch_space_id) (pinned, 227) first; both selects filter space_id = p_launch_space_id; current_account_id() only narrows (private rows refused unless the launcher owns them) (239_credential_entities.sql)
+current_account_id public.set_space_credential_visibility(p_credential_id uuid, p_visibility text)  # GUARDED: require_human_auth_kind; is_space_member(stored.space_id) (pinned, 227) before any write, else P0002 as for an absent id; then owner-only (239_credential_entities.sql)
+current_account_id public.usable_space_credential_ids(p_credential_ids uuid[])  # PIN-HELPER: sc.space_id = any(member_space_ids()) (pinned, 227); current_account_id() only narrows (private rows only for their owner) (239_credential_entities.sql)
+# ---- Policies and column defaults (pg_depend; review 5324130793 B2) ----------
+identity_id default value for column requested_by of table public.jev_runs  # STAMP: writes the inserter's own identity; decides nothing (jev_runs_insert checks it)
+identity_id policy edge_types_select on table public.edge_types  # GLOBAL-CATALOG: node-wide edge type catalog, any authenticated caller; no space rows
+identity_id policy entity_kinds_select on table public.entity_kinds  # GLOBAL-CATALOG: space_id null rows to any authenticated caller; space rows via member_space_ids (pinned, 227)
+identity_id policy file_upload_slots_select on table public.file_upload_slots  # GUARDED: members subquery, pinned by members_select; T9 "B's upload slot is invisible by id"
+identity_id policy jev_calls_insert on table public.jev_calls  # GUARDED: run in member_space_ids (pinned) AND requested_by = caller
+identity_id policy jev_runs_insert on table public.jev_runs  # GUARDED: member_space_ids (pinned) AND requested_by = caller
+identity_id policy jev_runs_update on table public.jev_runs  # GUARDED: member_space_ids (pinned) AND requested_by = caller
+identity_id policy node_credential_policies_identity_select on table public.node_credential_policies  # NODE-ADMIN: node-level credential policy rows, no space content
+identity_id policy notifications_select on table public.notifications  # GUARDED: members subqueries, pinned by members_select; T9 "B's inbox row is invisible by id"
+identity_id policy read_marks_select on table public.read_marks  # GUARDED: members subquery, pinned by members_select
+identity_id policy saved_views_select on table public.saved_views  # GUARDED: member_space_ids (pinned) AND own or space-shared
+identity_id policy stream_grants_select on table public.stream_grants  # closed by 247: the subject_identity = caller arm also requires internal.stream_grant_in_pin (the grant's session or container is in the pinned space); the readable-entity arm reads entities under RLS; was KNOWN-GAP P6 (verified by review 5324246747) (247_command_ledger_session_space_pin.sql)
+identity_id policy user_profiles_select on table public.user_profiles  # GUARDED: own row, or co-members through two members subqueries pinned by members_select
+identity_id policy work_session_view_preferences_select on table public.work_session_view_preferences  # GUARDED: readable entity (RLS) AND own member row (pinned)
+identity_id policy workspace_events_select on table public.workspace_events  # GUARDED: member_space_ids (pinned) AND own recipient member (pinned)
+current_account_id policy account_agent_credentials_self_select on table public.account_agent_credentials  # ACCOUNT: account_id = caller's account (W3-audit wallet cells)
+current_account_id policy account_git_credentials_self_select on table public.account_git_credentials  # ACCOUNT: account_id = caller's account (W3-audit wallet cells)
+current_account_id policy account_service_keys_self_select on table public.account_service_keys  # ACCOUNT: account_id = caller's account (W3-audit wallet cells)
+current_account_id policy credential_sessions_self_select on table public.credential_sessions  # ACCOUNT: account_id = caller's account
+current_account_id policy member_defaults_own_select on table public.member_defaults  # ACCOUNT + PIN: account_id = caller's account AND the inline 227 pin conjunct on space_id (239_credential_entities.sql)
+
+# ---- GRANDFATHERED: callers of the identity wrappers (review 5324130793 B3) ---
+# GENERATED, not reviewed line by line: every function that called
+# internal.require_identity() or internal.current_account_id() when the gate
+# gained the wrappers as roots (#852, 2026-09-26). A NEW caller is not in this
+# block and fails the gate. Audit task 01a0db76-8571-7034-aaed-5278d861cdc7 owns
+# classifying each line (space-scoped / cross-space by design / needs review) and
+# making the gate transitive; until then these lines carry no verdict.
+# Regenerate:  bash tools/ci/identity-id-gate.sh --list <url> | grep -E '^(require_identity|current_account_id) [a-z_]+\.'
+current_account_id internal.can_manage_space_credential(p_credential public.space_credentials)
+current_account_id internal.record_session_space_credential(p_work_session_id uuid, p_provider text, p_credential_id uuid)
+current_account_id public.create_space_credential(p_credential_id uuid, p_space_id uuid, p_provider text, p_shape text, p_label text, p_key_hint text, p_secret_ciphertext bytea, p_secret_nonce bytea, p_display_login text)
+current_account_id public.delete_account_agent_credential(p_provider text)
+current_account_id public.delete_account_git_credential(p_provider text)
+current_account_id public.delete_account_service_key(p_provider text)
+current_account_id public.finish_credential_session(p_work_session_id uuid)
+current_account_id public.finish_space_credential_login(p_work_session_id uuid, p_ok boolean, p_display_login text)
+current_account_id public.member_space_credential_sessions(p_space_id uuid, p_account_id uuid)
+current_account_id public.read_account_git_credential(p_provider text)
+current_account_id public.read_account_service_key(p_provider text)
+current_account_id public.repoint_session_space_credentials(p_work_session_id uuid)
+current_account_id public.set_account_agent_credential(p_provider text, p_login text, p_auth_method text, p_status text)
+current_account_id public.set_account_git_credential(p_provider text, p_login text, p_token_ciphertext bytea, p_token_nonce bytea)
+current_account_id public.set_account_service_key(p_provider text, p_key_hint text, p_key_ciphertext bytea, p_key_nonce bytea)
+current_account_id public.set_node_credential_policy(p_provider text, p_allow_node boolean)
+current_account_id public.set_space_credential_policy(p_space_id uuid, p_provider text, p_allowed_sources text[])
+current_account_id public.start_credential_session(p_space_id uuid, p_provider text, p_ttl_seconds integer, p_session_cap integer)
+current_account_id public.start_space_credential_login(p_space_id uuid, p_provider text, p_label text, p_credential_id uuid, p_ttl_seconds integer, p_session_cap integer)
+require_identity internal.require_human_space_admin(target_space uuid)
+require_identity internal.require_node_admin()
+require_identity internal.require_space_admin(target_space uuid)
+require_identity internal.require_space_member(target_space uuid)
+require_identity internal.resolve_actor(requested uuid, target_space uuid)
+require_identity internal.w2_require_human_space_admin(p_space_id uuid)
+require_identity public.acquire_worktree_lease(p_worktree_entity_id uuid, p_session_id uuid)
+require_identity public.append_chat_message_part(p_message_id uuid, p_seq integer, p_kind text, p_payload jsonb)
+require_identity public.apply_commit_facts(p_entity_id uuid, p_message text, p_author text, p_committed_at timestamp with time zone, p_url text)
+require_identity public.apply_pr_check_facts(p_pr_entity_id uuid, p_head_sha text, p_checks jsonb)
+require_identity public.apply_pr_review_thread_facts(p_pr_entity_id uuid, p_threads jsonb)
+require_identity public.apply_pull_request_facts(p_entity_id uuid, p_title text, p_state text, p_head_sha text, p_ci_status text, p_head_ref text, p_base_ref text, p_mergeable_state text)
+require_identity public.backfill_event_subject_ids(p_batch integer)
+require_identity public.begin_form_delivery_spawn(p_response_id uuid, p_work_session_id uuid, p_attempt integer, p_hold_seconds integer)
+require_identity public.bind_chat_agent_message(p_turn_id uuid, p_agent_message_id uuid)
+require_identity public.claim_form_deliveries(p_response_id uuid, p_work_session_id uuid, p_limit integer, p_lease_seconds integer, p_route_modes text[])
+require_identity public.claim_next_chat_turn(p_chat_id uuid)
+require_identity public.claim_pending_nudges(p_limit integer, p_max_age_hours integer)
+require_identity public.claim_pending_task_nudges(p_limit integer, p_max_age_hours integer)
+require_identity public.claim_tracking_refresh(p_limit integer, p_stale_after_seconds integer, p_max_attempts integer)
+require_identity public.complete_chat_turn(p_turn_id uuid, p_state text, p_body text, p_usage jsonb, p_total_cost_usd numeric, p_failure jsonb)
+require_identity public.complete_tracking_refresh(p_request_id uuid, p_error text, p_status text)
+require_identity public.create_space(p_name text, p_description text, p_visibility text, p_github_repo text, p_client_mutation_id text)
+require_identity public.current_actor_scope()
+require_identity public.current_identity()
+require_identity public.defer_form_delivery(p_response_id uuid, p_work_session_id uuid, p_error text, p_delay_seconds integer, p_forget_spawn boolean)
+require_identity public.enter_space(p_space_id uuid, p_parent_session_id uuid, p_token_hash text, p_expires_at timestamp with time zone, p_label text)
+require_identity public.get_space_chat_defaults(p_space_id uuid)
+require_identity public.issue_agent_auth_session(p_work_session_id uuid, p_team_member_id uuid, p_token_hash text, p_expires_at timestamp with time zone, p_label text)
+require_identity public.issue_agent_runtime_session(p_chat_id uuid, p_team_member_id uuid, p_token_hash text, p_expires_at timestamp with time zone, p_label text)
+require_identity public.issue_work_session_agent_session(p_work_session_id uuid, p_team_member_id uuid, p_token_hash text, p_expires_at timestamp with time zone, p_label text)
+require_identity public.join_public_space(p_space_id uuid, p_client_mutation_id text)
+require_identity public.list_auth_sessions(p_space_id uuid)  # ACCOUNT: null = own account's live auth_sessions, restricted to s.space_id = session_space_id() when pinned (W4-P1); a space id requires is_space_admin (pinned); humans only (249_w4_auth_sessions_list_revoke.sql)
+require_identity public.mark_chat_runtime_state(p_chat_id uuid, p_state text)
+require_identity public.mark_file_upload_slots_purged(p_upload_ids uuid[])
+require_identity public.mark_notification_read(p_notification_id uuid)
+require_identity public.mark_notification_read(p_notification_id uuid, p_recipient_type text, p_recipient_id uuid, p_client_mutation_id text)
+require_identity public.mark_read(p_anchor_id uuid, p_client_mutation_id text)
+require_identity public.member_space_credential_sessions(p_space_id uuid, p_account_id uuid)
+require_identity public.observer_watch_targets(p_limit integer, p_min_age_seconds integer)
+require_identity public.post_session_nudge(p_pending_id uuid, p_signature text, p_body text, p_scope_cap integer, p_client_mutation_id text)
+require_identity public.post_task_nudge(p_pending_id uuid, p_body text, p_client_mutation_id text)
+require_identity public.pr_is_stacked_on_open_parent(p_pr_entity_id uuid)
+require_identity public.provider_etag_lookup(p_space_id uuid, p_resource_keys text[])
+require_identity public.provider_etag_record(p_space_id uuid, p_resource_key text, p_etag text, p_not_modified boolean)
+require_identity public.purge_deleted_file_blobs(p_grace_seconds integer, p_retry_seconds integer, p_limit integer)
+require_identity public.read_account_git_credential(p_provider text)
+require_identity public.read_node_credential_policy()
+require_identity public.record_form_delivery_attempt(p_kind text, p_key uuid, p_work_session_id uuid, p_delivery_id uuid)
+require_identity public.record_pending_nudge_failure(p_pending_id uuid, p_error text)
+require_identity public.record_session_commit(p_work_session_id uuid, p_repo text, p_sha text, p_message text, p_author text, p_committed_at timestamp with time zone, p_provider text, p_actor_id uuid)
+require_identity public.record_worktree_preflight(p_worktree_entity_id uuid, p_token text)
+require_identity public.redeem_invite(p_code text, p_client_mutation_id text)
+require_identity public.release_form_delivery(p_kind text, p_key uuid, p_work_session_id uuid, p_error text, p_final boolean)
+require_identity public.release_worktree_lease(p_worktree_entity_id uuid)
+require_identity public.retire_stale_pending_nudges(p_max_age_hours integer)
+require_identity public.revoke_account_sessions(p_account_id uuid)
+require_identity public.revoke_account_sessions_except(p_account_id uuid, p_keep_session_id uuid)
+require_identity public.revoke_agent_auth_session(p_work_session_id uuid)
+require_identity public.revoke_agent_runtime_session(p_chat_id uuid)
+require_identity public.revoke_auth_session(p_session_id uuid)
+require_identity public.revoke_listed_auth_session(p_session_id uuid)  # ACCOUNT: own account's session, or pinned to a space the caller administers (is_space_admin, pinned), or node admin (pinned out); a pinned caller reaches only target.space_id = session_space_id() (W4-P1), else P0002; humans only (249_w4_auth_sessions_list_revoke.sql)
+require_identity public.set_account_credential(p_account_id uuid, p_hash text, p_algo text)
+require_identity public.set_chat_context(p_chat_id uuid, p_context jsonb)
+require_identity public.set_worktree_allocation_state(p_worktree_entity_id uuid, p_state text, p_failure_code text, p_failure_detail jsonb, p_count_attempt boolean)
+require_identity public.settle_form_delivery_spawned(p_response_id uuid, p_work_session_id uuid, p_spawned_session_id uuid)
+require_identity public.settle_pending_task_nudge(p_pending_id uuid, p_retire_reason text, p_error text)
+require_identity public.start_chat(p_chat_id uuid, p_space_id uuid, p_teammate_id uuid, p_model text, p_provider text, p_agent_tool text, p_chat_mode text, p_workdir_mode text, p_project_id uuid, p_native_session_id uuid, p_cwd text, p_title text, p_body text, p_attachment_ids uuid[], p_about_id uuid, p_client_mutation_id text)
+require_identity public.sweep_file_upload_slots(p_limit integer)
+require_identity public.update_identity_profile(p_display_name text, p_avatar text, p_email text, p_global_id text, p_client_mutation_id text)
+require_identity public.upsert_user_profile(p_display_name text, p_avatar text, p_email text)
+# ---- end GRANDFATHERED ----

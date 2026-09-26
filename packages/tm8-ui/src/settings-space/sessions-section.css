@@ -1,0 +1,94 @@
+/* ===========================================================================
+   SESSIONS — your sessions / this space's sessions (SessionsSection.tsx, W4).
+
+   Owned by this section and imported from its component only. Every class is
+   prefixed `set-sessions`. Tokens only; `src/hex-ban.test.ts` walks this file.
+   Full-bleed table (SECTION-CONTRACT.md §2: measure off, pad off), so the
+   rows carry their own gutter.
+   =========================================================================== */
+
+.set-sessions {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  padding: 18px 0;
+}
+
+.set-sessions__lede,
+.set-sessions__note,
+.set-sessions__error {
+  margin: 0;
+  padding: 0 24px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--pn-ink-2);
+}
+
+.set-sessions__error {
+  color: var(--pn-block);
+}
+
+.set-sessions__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  color: var(--pn-ink);
+}
+
+.set-sessions__table th {
+  padding: 6px 12px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--pn-ink-4);
+}
+
+.set-sessions__table td {
+  padding: 8px 12px;
+  border-top: 1px solid var(--pn-line);
+  vertical-align: baseline;
+}
+
+.set-sessions__table th:first-child,
+.set-sessions__table td:first-child {
+  padding-left: 24px;
+}
+
+.set-sessions__table th:last-child,
+.set-sessions__table td:last-child {
+  padding-right: 24px;
+}
+
+.set-sessions__current {
+  color: var(--pn-ink-4);
+}
+
+.set-sessions__act-cell {
+  text-align: right;
+}
+
+.set-sessions__act {
+  padding: 2px 8px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  font: inherit;
+  color: var(--pn-ink-2);
+  cursor: pointer;
+}
+
+.set-sessions__act:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.set-sessions__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}

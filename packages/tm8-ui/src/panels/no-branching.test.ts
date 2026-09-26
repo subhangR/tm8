@@ -64,7 +64,7 @@ const SRC = join(HERE, '..');
  * owns, they come back into this list with them.
  */
 const OWNED_DIRS = ['panels'];
-const OWNED_SHELL_FILES = ['CommandPalette.tsx', 'LiveSessionBar.tsx', 'RosterPopover.tsx', 'palette.css'];
+const OWNED_SHELL_FILES = ['CommandPalette.tsx', 'palette.css'];
 
 /** Files that legitimately carry the vocabulary. */
 const ALLOWED_HEX_FILES = ['styles/tokens.css', 'styles/canvas-extra.css'];

@@ -595,12 +595,35 @@ $$;
 create or replace function public.repoint_session_space_credentials(p_work_session_id uuid, p_providers text[])
 returns jsonb
 language plpgsql security definer set search_path = public, internal, pg_temp as $$
-declare e public.entities;
+declare
+  e public.entities;
+  v_status text;
+  v_persona uuid;
 begin
   e := internal.live_entity(p_work_session_id, 'work_session');
   perform internal.require_space_member(e.space_id);
   if internal.current_account_id() is null then
     raise exception 'no active account for this identity' using errcode = 'P0002';
+  end if;
+  -- F-R13a: the resume window only, under the row lock execution_resume (062)
+  -- takes. 'spawning' is entered by the spawn insert and by execution_resume
+  -- alone (work_session_transition refuses it), and a fresh spawn never
+  -- re-points, so 'spawning' with a resume on record IS the resume window.
+  select status into v_status from public.work_sessions
+   where entity_id = p_work_session_id for update;
+  if v_status is distinct from 'spawning'
+     or not exists (select 1 from public.activity a
+                     where a.entity_id = p_work_session_id and a.verb = 'restored'
+                       and a.summary ->> 'action' = 'resumed') then
+    raise exception 'only a session being resumed can be re-pointed' using errcode = '55000';
+  end if;
+  -- Resume's authorization, not bare membership: the caller may act as the
+  -- session's persona, exactly as execution_resume requires.
+  select dst_id into v_persona from public.edges
+   where src_id = p_work_session_id and type = 'relates_to'
+   limit 1;
+  if v_persona is not null and not internal.can_act_as(v_persona, e.space_id) then
+    raise exception 'not permitted to resume this persona' using errcode = '42501';
   end if;
   delete from public.session_space_credentials
    where work_session_id = p_work_session_id

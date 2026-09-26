@@ -159,7 +159,10 @@ describe('a new conversation the viewer opened survives the space being busy', (
   it('keeps the composer opened from the screens own New chat', async () => {
     const { port, speak } = portWithLateArrival();
     const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
-    await waitFor(() => expect(view.getByText(/Plan the launch sequence/)).toBeTruthy());
+    // Opened = its first turn is in the transcript (the title is on screen
+    // twice from the first frame: the row and the header — D26).
+    await waitFor(() =>
+      expect(view.getByText('Plan the launch sequence and check what is already blocked.')).toBeTruthy());
 
     fireEvent.click(view.getByRole('button', { name: 'New chat' }));
     await waitFor(() => expect(view.getByText(GREETING)).toBeTruthy());

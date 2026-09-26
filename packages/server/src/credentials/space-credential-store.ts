@@ -55,11 +55,11 @@ export interface SpaceCredential {
   isDefault: boolean;
   status: SpaceCredentialStatus;
   createdByAccountId: string | null;
-  /** Null = space-owned (always public). Doc 13 §7, migration 999. */
+  /** Null = space-owned (always public). Doc 13 §7, migration 239. */
   ownerAccountId: string | null;
   visibility: SpaceCredentialVisibility;
   mayBeSpaceDefault: boolean;
-  /** Masked to null for anyone but the owner (or, public/space-owned, a manager): R3. */
+  /** Masked to null by visibility (R3): private, owner only; public, every member (206 picker contract). */
   displayLogin: string | null;
   keyHint: string | null;
   pendingExpiresAt: string | null;

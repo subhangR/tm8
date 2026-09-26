@@ -356,7 +356,12 @@ export function createChatHomePortFromSeam(
             workdirMode: item.workdirMode,
             projectId: item.projectId,
           },
-          state: item.state,
+          /* THIS READ'S OWN EVIDENCE BEATS THE CACHE. A claimed turn's marker is
+             the server saying, as of this read, that a turn is running — the
+             cached list row can predate the claim. */
+          state: messages.some((message) => message.turnInFlight) && item.state !== 'stopped-continuable'
+            ? 'streaming'
+            : item.state,
           runtimeState: item.runtimeState,
           context: item.context,
         },
@@ -397,6 +402,9 @@ export function createChatHomePortFromSeam(
           teammateId: input.teammateId,
           model: input.model,
           mode: input.mode,
+          // The opening message: the screen re-keys its optimistic first turn
+          // to it, so the snapshot's copy replaces it instead of doubling it.
+          ...(result.messageId ? { messageId: result.messageId } : {}),
         };
       },
     },
@@ -416,7 +424,40 @@ export function createChatHomePortFromSeam(
       return { messageId: messageIdFrom(result) };
     },
     subscribe(listener) {
-      return seam.onChatTurn(listener);
+      return seam.onChatTurn((frame) => {
+        /* THE CACHE FOLLOWS THE STREAM. `readThread` takes a chat's state from
+           `listCache`, and nothing refreshed it between list reads — so after a
+           turn finished, opening that chat again (a switch away and back)
+           re-read it as `streaming`: the Stop button came back for an agent
+           that was idle, and nothing would ever settle it, because the done had
+           already gone by. A delta says the chat is running; a done says it
+           is not. The server's own state wins again on the next list read. */
+        const cached = listCache.get(frame.chatId);
+        if (cached) {
+          const state = frame.type === 'chat.turn.delta'
+            ? 'streaming'
+            : cached.state === 'stopped-continuable' ? 'stopped-continuable' : 'idle';
+          if (cached.state !== state) listCache.set(frame.chatId, { ...cached, state });
+        }
+        listener(frame);
+      });
+    },
+    subscribeReconnect(listener) {
+      /* A RECONNECT, NOT A FIRST CONNECT: only a socket that was live, dropped
+         and came back has lost frames. The first `live` after boot has lost
+         nothing — the opening read happens after it anyway. */
+      let wasLive = seam.getConnection?.().phase === 'live';
+      let dropped = false;
+      return seam.onConnection?.((state) => {
+        if (state.phase !== 'live') {
+          if (wasLive) dropped = true;
+          return;
+        }
+        wasLive = true;
+        if (!dropped) return;
+        dropped = false;
+        listener();
+      }) ?? (() => undefined);
     },
     subscribeContext(listener) {
       return seam.onChatContext?.(listener) ?? (() => undefined);

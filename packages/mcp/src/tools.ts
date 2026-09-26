@@ -289,9 +289,6 @@ const CONTAINER_GUIDES = [
   guide('containers.fork', 'Create a new machine from this one\'s snapshot. No version guard — a fork reads the source.', {
     params: { containerId: '<container-id>' }, body: { title: '<title>' },
   }),
-  guide('containers.attention', 'Ask a human to take over the machine — a login, a captcha, a payment. Use this instead of automating past the moment.', {
-    params: { containerId: '<container-id>' }, body: { reason: 'login', detail: '<what is needed>', points: 50 },
-  }),
 ] as const satisfies readonly OperationGuide[];
 
 /* `mode: 'coordinated-worker'` is the TEMPLATE value, and that is the whole
@@ -721,7 +718,6 @@ const REQUIRES_MUTATION_ID = new Set<OperationName>([
   'containers.expose',
   'containers.snapshot',
   'containers.fork',
-  'containers.attention',
 ]);
 
 /**

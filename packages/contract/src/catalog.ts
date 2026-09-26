@@ -200,6 +200,15 @@ export const OPERATIONS = [
   { name: 'projects.file.blame',     method: 'GET',    path: '/v2/projects/:projectId/blame',               kind: 'read',    status: 'v1' },
   { name: 'projects.update',         method: 'PATCH',  path: '/v2/projects/:projectId',                     kind: 'command', status: 'v1' },
   { name: 'projects.link',           method: 'POST',   path: '/v2/spaces/:spaceId/projects',                kind: 'command', status: 'v1' },
+  // W11 (migration 234): a folder is the gate's and is granted to ONE space
+  // (`gate.folders.*`); the space's project is its own entity, listed to
+  // members without a path and named by a space admin on a folder granted to
+  // that space. `projects.link` stays (decision 29): only a loopback-only
+  // `single` node may link one folder into several spaces.
+  { name: 'spaces.projects.list',    method: 'GET',    path: '/v2/spaces/:spaceId/projects',                kind: 'read',    status: 'v1' },
+  { name: 'spaces.projects.create',  method: 'POST',   path: '/v2/spaces/:spaceId/projects/create',         kind: 'command', status: 'v1' },
+  { name: 'gate.folders.list',       method: 'GET',    path: '/v2/gate/folders',                            kind: 'read',    status: 'v1' },
+  { name: 'gate.folders.create',     method: 'POST',   path: '/v2/gate/folders',                            kind: 'command', status: 'v1' },
   { name: 'projects.unlink',         method: 'DELETE', path: '/v2/spaces/:spaceId/projects/:projectId',     kind: 'command', status: 'v1' },
   { name: 'projects.files.list',     method: 'GET',    path: '/v2/projects/:projectId/files',               kind: 'read',    status: 'v1' },
   { name: 'projects.files.attach',   method: 'POST',   path: '/v2/projects/:projectId/files/attach',        kind: 'command', status: 'v1' },
@@ -398,6 +407,14 @@ export const OPERATIONS = [
   { name: 'auth.login',                                  method: 'POST',   path: '/v2/auth/login',                                                     kind: 'command', status: 'v1' },
   { name: 'auth.logout',                                 method: 'POST',   path: '/v2/auth/logout',                                                    kind: 'command', status: 'v1' },
   { name: 'auth.session.get',                            method: 'GET',    path: '/v2/auth/session',                                                   kind: 'read',    status: 'v1' },
+  // W3 (plan 01a0d9eb): a gate session + membership mints a session pinned to
+  // one space. Under TM8_SPACE_SESSIONS=enforce this is how a human gets past
+  // the gate at all.
+  { name: 'auth.space.enter',                            method: 'POST',   path: '/v2/auth/space/enter',                                               kind: 'command', status: 'v1' },
+  // W4 (plan 01a0d9eb): your own sessions, or (space admin) the sessions
+  // pinned to a space, and revoking one — the control K5's rejection left.
+  { name: 'auth.sessions.list',                          method: 'GET',    path: '/v2/auth/sessions',                                                  kind: 'read',    status: 'v1' },
+  { name: 'auth.sessions.revoke',                        method: 'POST',   path: '/v2/auth/sessions/:sessionId/revoke',                                kind: 'command', status: 'v1' },
   // `auth.password.change` — the day a human forgets their password, the only
   // recovery was `psql` (FIRST-RUN-CLAIM-DESIGN.md §10.3). This is CHANGE, not
   // reset: it demands the CURRENT password in the body and proves it with the
@@ -518,6 +535,8 @@ export const OPERATIONS = [
   // The node's own fallback credentials (D5/D9): node admin, and human-only.
   { name: 'node.credentials.status',                     method: 'GET',    path: '/v2/node/credentials',                                               kind: 'read',    status: 'v1' },
   { name: 'node.credentials.policy.set',                 method: 'PUT',    path: '/v2/node/credential-policy/:provider',                               kind: 'command', status: 'v1' },
+  // Host metrics for the desktop status strip: node admin, human sessions only.
+  { name: 'node.metrics.get',                            method: 'GET',    path: '/v2/node/metrics',                                                   kind: 'read',    status: 'v1' },
 
   // What the agent SAID — the third face of a session, after `execution.launch`
   // (told) and `execution.journal` (did). The bytes are the agent's OWN native
@@ -582,7 +601,6 @@ export const OPERATIONS = [
   { name: 'containers.proxy',            method: 'GET',    path: '/v2/containers/:containerId/ports/:port/*',             kind: 'read',    status: 'v1' },
   { name: 'containers.snapshot',         method: 'POST',   path: '/v2/containers/:containerId/commands/snapshot',         kind: 'command', status: 'v1' },
   { name: 'containers.fork',             method: 'POST',   path: '/v2/containers/:containerId/commands/fork',             kind: 'command', status: 'v1' },
-  { name: 'containers.attention',        method: 'POST',   path: '/v2/containers/:containerId/commands/attention',        kind: 'command', status: 'v1' },
   { name: 'containers.providers.list',   method: 'GET',    path: '/v2/containers/providers',                              kind: 'read',    status: 'v1' },
   { name: 'containers.pools.set',        method: 'POST',   path: '/v2/containers/:containerId/commands/pool',             kind: 'command', status: 'v1' },
 ] as const satisfies readonly OperationBinding[];

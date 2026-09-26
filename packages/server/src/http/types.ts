@@ -66,18 +66,21 @@ export interface RequestIdentity {
   runtimeChatId?: string;
   /**
    * The one space this session may act in (226 `auth_sessions.space_id`),
-   * bound as `tm8.session_space_id`. Set only for agent kinds, and only while
-   * `TM8_SPACE_SESSIONS` is not `off`. Off the verified session row, like
+   * bound as `tm8.session_space_id`. Set for agent kinds and for a human
+   * session `auth.space.enter` minted, and only while `TM8_SPACE_SESSIONS` is
+   * not `off`. Off the verified session row, like
    * `authKind`.
    */
   sessionSpaceId?: string;
 }
 
 /**
- * `TM8_SPACE_SESSIONS` (plan W0a). `agents` (default) pins `agent` and
- * `agent_runtime` sessions to their space; `off` pins nothing, so every
- * membership helper answers exactly as before 227. `enforce` is reserved for
- * W3 (human sessions) and behaves as `agents` until then.
+ * `TM8_SPACE_SESSIONS` (plan W0a, W3). `agents` (default) binds every session
+ * row that carries a space: agent kinds always, and a human session that
+ * `auth.space.enter` minted. `off` pins nothing, so every membership helper
+ * answers exactly as before 227. `enforce` is `agents` plus the gate
+ * (http/space-gate.ts): a human session with no space may call only
+ * `spaces.list`, `auth.*` and node administration.
  */
 export type SpaceSessionsMode = 'off' | 'agents' | 'enforce';
 

@@ -4,9 +4,9 @@
  *
  * Three claims, none provable by the component test next door.
  *
- * 1. A HUMAN CAN GET TO IT. This repository already contains FOUR built,
- *    tested, never-imported surfaces — settings-governance's three screens and
- *    shell/LiveSessionBar — each of them real work no user has ever seen. Every
+ * 1. A HUMAN CAN GET TO IT. This repository already contains THREE built,
+ *    tested, never-imported surfaces — settings-governance's three screens —
+ *    each of them real work no user has ever seen. Every
  *    one of them has a green component test. So a green component test is
  *    precisely the evidence that does NOT distinguish a shipped screen from a
  *    dead one, and this file supplies the evidence that does: the nav row

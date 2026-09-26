@@ -1,9 +1,9 @@
 -- =============================================================================
--- 996 (PLACEHOLDER NUMBER) — credential entities, W10a (task 01a0d9fd, doc 13
+-- 239 — credential entities, W10a (task 01a0d9fd, doc 13
 -- 01a0da24 §4/§7, threat review 01a0db1c Part 2).
 --
--- The merge coordinator assigns the real number at handover (239 for this
--- file; W10 order a, c, b); it is renamed then and the sweep.test.ts pin bumped.
+-- Placeholder 996 until handover, when it took its assigned number 239 (W10
+-- order a, c, b); the sweep.test.ts pin was re-measured at that merge.
 --
 -- A 206 space credential becomes a graph entity of the RESTRICTED kind
 -- `credential`, same id as its side-table row. The card (entity) is visible to
@@ -30,8 +30,8 @@
 --      space/kind changes.
 --   6. key_hint and display_login leave tm8_app's column grant (R3). They are
 --      read only through list_space_credentials / read_space_credential, which
---      mask them for anyone but the owner (and, for public/space-owned cards,
---      the managers).
+--      mask them by visibility: private, owner only; public, every member
+--      (206 picker contract).
 --   7. The gate (§3f, R1, R6): the recorder's and repoint's locked predicates
 --      gain `visibility = 'public' OR owner_account_id IS NULL OR
 --      owner_account_id = <launcher>`; the recorder checks it BEFORE its
@@ -127,8 +127,14 @@ before insert or update on public.member_defaults
 for each row execute function internal.guard_member_default();
 
 alter table public.member_defaults enable row level security;
+-- Own rows only, and under a pinned session (227) only the pinned space's:
+-- the literal pin conjunct, as 227 inlines it, so an agent token minted in
+-- space A cannot list its human's defaults in space B.
 create policy member_defaults_own_select on public.member_defaults
-  for select using (account_id = (select internal.current_account_id()));
+  for select using (
+    account_id = (select internal.current_account_id())
+    and (nullif(current_setting('tm8.session_space_id', true), '')::uuid is null
+         or space_id = nullif(current_setting('tm8.session_space_id', true), '')::uuid));
 grant select (space_id, account_id, provider, credential_id, updated_at)
   on public.member_defaults to tm8_app;
 
@@ -397,7 +403,8 @@ $$;
 --    from public.<relation> alias`) and entity-content-all-kinds resolves it
 --    like any other. The view's column list IS the card: no secret, hint or
 --    login column exists in it to leak. Granted to nobody; entity_content
---    reads it as its owner.
+--    reads it as its owner only because its callers are security definer
+--    (internal.command_entity, 007:33) — an invoker caller would be refused.
 -- -----------------------------------------------------------------------------
 create view public.credential_cards as
   select sc.id as entity_id,
@@ -1184,6 +1191,11 @@ $$;
 -- account owns, once, in that same statement. This wrapper runs it FIRST,
 -- then lists the other launchers' live sessions on those credentials and the
 -- login homes, so nothing is read before the caller is authorised.
+-- Both lists are appended AFTER the core's ledger_record, so a replay
+-- recomputes them rather than reading them from the ledger, and v_homes names
+-- every revoked login the account has ever owned, not only this disable's.
+-- Both are idempotent for the caller: a killed session stays stopped, and
+-- removing an absent home is a no-op.
 alter function public.disable_account(uuid, text) rename to disable_account_core;
 alter function public.disable_account_core(uuid, text) set schema internal;
 
