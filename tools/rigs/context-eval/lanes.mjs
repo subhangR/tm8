@@ -107,6 +107,13 @@ export function allowedConcurrency(load, max = 2, tiers = LOAD_TIERS) {
   return max;
 }
 
+/**
+ * A start is blocked by LOAD only when a slot is free (fewer than maxConc running) and
+ * the load tier allows no more than are already running. A lane still holding the
+ * only slot is not a load wait, whatever the load (c1 pass 1 counted it: inflated).
+ */
+export const isLoadWait = (running, allowed, maxConc) => running < maxConc && allowed <= running;
+
 /** Deterministic per-family rubric from the judged pieces. */
 export function rubricFor(family, { success, turn, checkResults }) {
   const items = RUBRIC_ITEMS[family];
@@ -383,7 +390,7 @@ async function main() {
       continue;
     }
     // Only a LOAD wait counts: waiting for a free slot at full concurrency is the plan.
-    if (i < plan.length && allowed <= running.size && allowed < maxConc) {
+    if (i < plan.length && isLoadWait(running.size, allowed, maxConc)) {
       plan[i].waitedSeconds = (plan[i].waitedSeconds ?? 0) + 20;
       if (allowed === 0) console.error(`load ${load} > ${tiers.one}: waiting (${plan[i].model}/${plan[i].taskKey}#${plan[i].rep} waited ${plan[i].waitedSeconds}s)`);
     }
