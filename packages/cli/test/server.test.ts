@@ -124,7 +124,7 @@ describe('named Server connections', () => {
     expect(stderr).toBe('');
   });
 
-  it('health-checks B before storing the named route on A', async () => {
+  it('health-checks B before adding it to a Space on A (servers.add, W8)', async () => {
     expect(await run([
       'server', 'add', 'work', '--url', remoteUrl, '--username', 'operator',
       '--mutation-id', 'mutation-add-work', '--format', 'json',
@@ -133,7 +133,7 @@ describe('named Server connections', () => {
     expect(registrySeen).toHaveLength(1);
     expect(registrySeen[0]).toMatchObject({
       method: 'POST',
-      path: '/v2/server-connections',
+      path: '/v2/servers',
       authorization: 'Bearer server-a-token',
       body: {
         name: 'work',
@@ -144,5 +144,33 @@ describe('named Server connections', () => {
     });
     expect(JSON.parse(stdout)).toMatchObject({ name: 'work', baseUrl: remoteUrl });
     expect(stderr).toBe('');
+  });
+
+  it('passes --space through to servers.add', async () => {
+    const spaceId = '00000000-0000-4000-8000-00000000000a';
+    expect(await run([
+      'server', 'add', 'work', '--url', remoteUrl, '--space', spaceId,
+      '--mutation-id', 'mutation-add-space', '--format', 'json',
+    ])).toBe(0);
+    expect(registrySeen[0]).toMatchObject({ method: 'POST', path: '/v2/servers', body: { spaceId, name: 'work' } });
+  });
+
+  it('removes by name: resolves the id through the directory, then servers.remove (W8)', async () => {
+    expect(await run([
+      'server', 'remove', 'work', '--yes', '--mutation-id', 'mutation-remove-work', '--format', 'json',
+    ])).toBe(0);
+    expect(registrySeen.map(({ method, path }) => [method, path])).toEqual([
+      ['GET', '/v2/server-connections/work'],
+      ['POST', '/v2/servers/00000000-0000-4000-8000-000000000001/remove'],
+    ]);
+    expect(registrySeen[1]!.body).toEqual({ clientMutationId: 'mutation-remove-work' });
+  });
+
+  it('removes by id without a lookup; refuses without --yes', async () => {
+    const id = '00000000-0000-4000-8000-000000000001';
+    expect(await run(['server', 'remove', id, '--format', 'json'])).not.toBe(0);
+    expect(registrySeen).toHaveLength(0);
+    expect(await run(['server', 'remove', id, '--yes', '--format', 'json'])).toBe(0);
+    expect(registrySeen.map(({ path }) => path)).toEqual([`/v2/servers/${id}/remove`]);
   });
 });
