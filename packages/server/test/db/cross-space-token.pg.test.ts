@@ -4484,6 +4484,53 @@ describe.sequential('W7 spaceLinks.invoke — G runs one op in B as H, audited i
     expect(spaceLinkRefusal('voice.channels.list', 'read', {}, true)).toBeNull();
   });
 
+  // ---- S1 (W9 review): side-channel grants are refused at home ------------
+
+  it('S1 refused — execution.streams.attach via invoke (a PTY attach grant for B\'s session): 403 token_minting at home, B\'s handler never looked up', async () => {
+    const lookups = vi.spyOn(node.server.registry, 'get');
+    try {
+      const res = await invoke(gToken, {
+        op: 'execution.streams.attach', params: { id: fixture.workSessionA }, input: { mode: 'drive' },
+      });
+      expect(res.status).toBe(403);
+      expect(res.body.error).toMatchObject({ code: 'forbidden', details: { reason: 'space_link_refused', refusal: 'token_minting' } });
+      expect(JSON.stringify(res.body)).not.toMatch(/"token"/);
+      expect(lookups.mock.calls.map(([name]) => name).filter((name) => name !== 'spaceLinks.invoke')).toEqual([]);
+    } finally {
+      lookups.mockRestore();
+    }
+    expect(await lastAudit('execution.streams.attach')).toMatchObject({ result: 'refused', reason: 'token_minting', link_id: null });
+  });
+
+  it('S1 positive — entities.get via invoke passes on the same link', async () => {
+    const res = await invoke(gToken, { op: 'entities.get', params: { id: fixture.docB } });
+    expect(res.status).toBe(200);
+  });
+
+  it.each([
+    ['execution.streams.attach', 'command'],
+    ['execution.streams.future', 'read'],
+    ['files.uploadInit', 'command'],
+    ['projects.folderUploads.init', 'command'],
+    ['artifacts.preview.start', 'command'],
+    ['containers.attach', 'command'],
+    ['containers.browser.endpoint', 'command'],
+    ['containers.expose', 'command'],
+  ] as const)('S1 refused — %s mints a side-channel grant (%s)', (op, kind) => {
+    expect(spaceLinkRefusal(op, kind, {}, true)).toBe('token_minting');
+  });
+
+  it.each([
+    ['execution.sessions.share', 'command'],
+    ['files.uploadComplete', 'command'],
+    ['files.download', 'read'],
+    ['projects.folderUploads.complete', 'command'],
+    ['artifacts.previewAnother', 'command'],
+    ['containers.unexpose', 'command'],
+  ] as const)('S1 positive (scope) — %s mints no grant and is not caught by these entries', (op, kind) => {
+    expect(spaceLinkRefusal(op, kind, {}, true)).toBeNull();
+  });
+
   it('stricter than D31 positive — the same voice.token.create reaches the voice service for H\'s own session', async () => {
     // This node has no LiveKit: the SERVICE answers 501, which proves the op
     // ran as H; through the link it never got past the home guard (403 above).

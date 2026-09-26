@@ -129,6 +129,14 @@ export type SpaceLinkRefusalReason =
  * Stricter than D31 (lead 09:08Z, fail-closed; reversible): `serverConnections.*`
  * manages the credential-bearing remote-server surface, and `voice.token.create`
  * mints a token. Both are the class of credential management D31 refuses.
+ *
+ * Side-channel grants (#884, security finding S1 from the W9 review): an op
+ * that mints a bearer capability for ANOTHER channel (a PTY/stream attach
+ * grant, an upload slot grant, a preview capability URL, a container surface
+ * or CDP endpoint, a shared port URL) is refused, reads too. The grant is
+ * authorised by itself on its socket or route, so returning it to A would let
+ * A drive B outside every per-op check here. `execution.streams.*` is a
+ * prefix so any future stream grant is covered; the rest are exact.
  */
 export const SPACE_LINK_REFUSED: readonly SpaceLinkRefusedPrefix[] = [
   { prefix: 'credentials.', kinds: 'all', reason: 'credential_management' },
@@ -137,6 +145,13 @@ export const SPACE_LINK_REFUSED: readonly SpaceLinkRefusedPrefix[] = [
   { prefix: 'auth.', kinds: 'all', reason: 'session_minting' },
   { prefix: 'serverConnections.', kinds: 'all', reason: 'credential_management' },
   { prefix: 'voice.token.create', kinds: 'all', reason: 'token_minting', exact: true },
+  { prefix: 'execution.streams.', kinds: 'all', reason: 'token_minting' },
+  { prefix: 'files.uploadInit', kinds: 'all', reason: 'token_minting', exact: true },
+  { prefix: 'projects.folderUploads.init', kinds: 'all', reason: 'token_minting', exact: true },
+  { prefix: 'artifacts.preview.start', kinds: 'all', reason: 'token_minting', exact: true },
+  { prefix: 'containers.attach', kinds: 'all', reason: 'token_minting', exact: true },
+  { prefix: 'containers.browser.endpoint', kinds: 'all', reason: 'token_minting', exact: true },
+  { prefix: 'containers.expose', kinds: 'all', reason: 'token_minting', exact: true },
 ];
 
 /** The spawn op, refused through a link with the switch off or explicit credentials (F9). */
