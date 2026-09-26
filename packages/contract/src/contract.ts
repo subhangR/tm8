@@ -75,7 +75,14 @@ export type CoreEntityKind =
   // space_credentials row. Born only from credentials.space.create or a
   // login start, under a SQL guard; never moved, deleted or restored through
   // the generic doors. The secret, hint and vendor login are never on it.
-  | 'credential';
+  | 'credential'
+  // Space links (migrations 250/251, Phase 1b W6): a home space's link to a
+  // target space. Every home member sees the link; each member's stored
+  // session for the target is their own sealed row. Born only from
+  // `spaceLinks.add`.
+  | 'space_link'
+  // A remote tm8 server a space link points at (W8). Registered with W6's kinds.
+  | 'server';
 
 /** A credential entity's visibility (W10a): who may launch on it. */
 export type CredentialVisibility = 'private' | 'public';
@@ -510,6 +517,14 @@ export type CoreEntityState =
   | { kind: 'credential'; provider: string; shape: string; visibility: CredentialVisibility;
       status: string; ownerAccountId: string | null }
   /**
+   * Space links (250, W6): no row facts on the entity. A link's target and
+   * every member's status are `spaceLinks.list`'s answer, never a list row's —
+   * a join here would widen the shared entity read for a settings screen.
+   * `server` has no detail row until W8.
+   */
+  | { kind: 'space_link' }
+  | { kind: 'server' }
+  /**
    * A chat's row facts (176). Everything here answers a question a list row
    * asks — who is it with, what is it running, is it busy — without a second
    * read, which is the same rule `capabilities` and `category` ride on.
@@ -890,6 +905,9 @@ export type CoreEntityContent =
   | { kind: 'form'; status: FormStatus; description: string | null; settings: FormSettings;
       structureVersion: number; sections: FormSectionRow[]; questions: FormQuestionRow[];
       openedAt: string | null; closedAt: string | null }
+  /** Space links (250, W6): content is `spaceLinks.list`'s; see EntityState. */
+  | { kind: 'space_link' }
+  | { kind: 'server' }
   /**
    * A space credential (W10a): the same allow-list as its state. The sealed
    * secret, key hint and vendor login never reach an entity read.
@@ -1840,9 +1858,10 @@ export function commandAcceptsClientMutationId(opName: string): boolean {
 
 /**
  * How a session authenticates thereafter. `agent` and `agent_runtime` are
- * internal mints, never accepted by `auth.login`.
+ * internal mints, never accepted by `auth.login`. `link` (W6, 250) is a
+ * member's stored session for a linked space, minted by `spaceLinks.login`.
  */
-export type AuthSessionKindView = 'browser' | 'cli' | 'agent' | 'agent_runtime';
+export type AuthSessionKindView = 'browser' | 'cli' | 'agent' | 'agent_runtime' | 'link';
 
 /** The session half of every auth response. The token itself appears exactly once, at issuance. */
 export interface AuthSessionView {
@@ -2533,7 +2552,19 @@ export interface SpaceCredentialView {
   updatedAt: string;
   lastUsedAt: string | null;
   lastProbeAt: string | null;
+  /**
+   * Doc 13 §7 (W10a/W10b). Null = space-owned. The server always sets these
+   * three; they are optional only so a view built before them still types.
+   */
+  ownerAccountId?: string | null;
+  /** `private`: only the owner may launch on it. Space-owned is always `public`. */
+  visibility?: SpaceCredentialVisibilityName;
+  /** An owned public credential's consent to be the space default. */
+  mayBeSpaceDefault?: boolean;
 }
+
+/** Who may launch on a space credential (doc 13 §3a). */
+export type SpaceCredentialVisibilityName = 'private' | 'public';
 
 /** `credentials.space.list`. Revoked tombstones are not listed. */
 export interface CredentialsSpaceListView {
@@ -2551,7 +2582,73 @@ export interface CredentialsSpaceCreateInput {
   shape: 'api_key' | 'token';
   label: string;
   secret: string;
+  /**
+   * E1: an owned credential's visibility, OR `spaceOwned: true` — never both.
+   * Neither keeps the pre-W10b contract: space-owned, public, and claimable
+   * by its creator. The contract never takes an account id (I1): the owner
+   * is always the caller.
+   */
+  visibility?: SpaceCredentialVisibilityName;
+  spaceOwned?: boolean;
+  /** An owned public credential may also be the space default (§3e). */
+  mayBeSpaceDefault?: boolean;
   clientMutationId?: string;
+}
+
+/**
+ * `credentials.space.setVisibility` — the owner only; a space-owned credential
+ * has no visibility to change. Going private clears both default flags in the
+ * same statement and kills every live session another member launched on it.
+ */
+export interface CredentialsSpaceSetVisibilityInput {
+  visibility: SpaceCredentialVisibilityName;
+  clientMutationId?: string;
+}
+
+export interface CredentialsSpaceSetVisibilityResult {
+  credential: SpaceCredentialView;
+  terminatedAgentSessionIds: string[];
+  failures: Array<{ sessionId: string; reason: string }>;
+}
+
+/**
+ * `credentials.space.spaceDefaultConsent` — the owner allows (or withdraws)
+ * their public credential as the space default. Withdrawing clears the
+ * space default in the same statement.
+ */
+export interface CredentialsSpaceDefaultConsentInput {
+  allowed: boolean;
+  clientMutationId?: string;
+}
+
+/** `credentials.space.myDefault.set|clear` — the caller's own default, per space and provider. */
+export interface CredentialsSpaceMyDefaultResult {
+  spaceId: string;
+  provider: SpaceCredentialProviderName;
+  credentialId: string | null;
+}
+
+/** How a launch picked its space credential (§6c); null on rows recorded before it. */
+export type SpaceCredentialPickName = 'pinned' | 'my_default' | 'space_default';
+
+/**
+ * `credentials.space.usage` — launches on a credential: the owner; admins too
+ * for a public or space-owned one.
+ */
+export interface CredentialsSpaceUsageView {
+  credentialId: string;
+  sessions: Array<{
+    workSessionId: string;
+    provider: SpaceCredentialProviderName;
+    source: SpaceCredentialPickName | null;
+    credentialId: string;
+    ownerAccountId: string | null;
+    launcherAccountId: string | null;
+    agentSessionId: string | null;
+    status: string;
+    recordedAt: string;
+    updatedAt: string;
+  }>;
 }
 
 /** `credentials.space.rekey` — creator or space admin; the next spawn uses it (D7). */
@@ -2785,6 +2882,10 @@ export type CreatableEntityKind = Exclude<
   // `credential` is human-only and born under a SQL guard from
   // credentials.space.* (W10a); no generic door writes one.
   | 'credential'
+  // `space_link` is born ONLY from `spaceLinks.add` (W6), which checks the
+  // caller belongs to both spaces; `server` has no door in W6.
+  | 'space_link'
+  | 'server'
 >;
 
 export interface CreateEntityInput extends CommandContext {

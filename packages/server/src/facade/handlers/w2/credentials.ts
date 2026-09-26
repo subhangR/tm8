@@ -61,9 +61,11 @@ import {
   CredentialProviderNameSchema,
   CredentialsServiceKeyPutInputSchema,
   CredentialsSpaceCreateInputSchema,
+  CredentialsSpaceDefaultConsentInputSchema,
   CredentialsSpacePolicySetInputSchema,
   CredentialsSpaceRekeyInputSchema,
   CredentialsSpaceRenameInputSchema,
+  CredentialsSpaceSetVisibilityInputSchema,
   NodeCredentialsPolicySetInputSchema,
   ServiceKeyProviderNameSchema,
   SpaceCredentialProviderNameSchema,
@@ -103,9 +105,10 @@ import {
 } from '../../../credentials/space-credential-probe.js';
 import {
   SpaceCredentialCatalogService,
+  type CredentialStreamClosePort,
   spaceCredentialViewOf,
 } from '../../services/w2/space-credential-catalog.js';
-import { SpaceLoginHomes } from '../../../credentials/space-credential-home.js';
+import { assertSpaceLoginProvider, SpaceLoginHomes } from '../../../credentials/space-credential-home.js';
 
 /**
  * The session kinds that may reach `credentials.*`.
@@ -252,6 +255,11 @@ export interface CredentialHandlerDeps {
   env?: Readonly<Record<string, string | undefined>>;
   /** The vendor probe for pasted space keys (I6). Defaults to the real vendors. */
   probeSpaceCredential?: SpaceCredentialProbe;
+  /**
+   * R9: W10c's closer for attach/watch streams a credential no longer
+   * permits, called after a switch to private and a revoke. Optional.
+   */
+  streams?: CredentialStreamClosePort;
 }
 
 /** Structural alias so this module does not import `@tm8/execution` for a type. */
@@ -422,8 +430,13 @@ export function registerCredentialHandlers(
     // stamped — and its home removed under the promote lock (SC-4).
     closeLogin: (claims, workSessionId) => sessions.closeSpaceLogin(claims, workSessionId),
     removeLoginHome: (home) => spaceHomes.remove(home),
+    scrubForeignLaunches: (home, launches) => {
+      assertSpaceLoginProvider(home.provider);
+      return spaceHomes.scrubForeignLaunches({ ...home, provider: home.provider }, launches);
+    },
     agentSessions: credentials.agentSessions,
     env,
+    ...(credentials.streams ? { streams: credentials.streams } : {}),
   });
   const claimsOf = async (ctx: RequestContext) => (await principalFor(deps, ctx)).claims;
 
@@ -432,8 +445,17 @@ export function registerCredentialHandlers(
 
   const spaceCreate: OperationHandler = async (ctx) => {
     // Re-parsed for the TRIMMED secret and label; the facade already refused a bad body.
-    const { provider, shape, label, secret } = CredentialsSpaceCreateInputSchema.parse(ctx.body);
-    return spaceCatalog.create(await claimsOf(ctx), pathParam(ctx, 'spaceId'), { provider, shape, label, secret });
+    const { provider, shape, label, secret, visibility, spaceOwned, mayBeSpaceDefault } =
+      CredentialsSpaceCreateInputSchema.parse(ctx.body);
+    return spaceCatalog.create(await claimsOf(ctx), pathParam(ctx, 'spaceId'), {
+      provider,
+      shape,
+      label,
+      secret,
+      ...(visibility !== undefined ? { visibility } : {}),
+      ...(spaceOwned !== undefined ? { spaceOwned } : {}),
+      ...(mayBeSpaceDefault !== undefined ? { mayBeSpaceDefault } : {}),
+    });
   };
 
   const spaceRekey: OperationHandler = async (ctx) => {
@@ -451,6 +473,29 @@ export function registerCredentialHandlers(
 
   const spaceDelete: OperationHandler = async (ctx) =>
     spaceCatalog.delete(await claimsOf(ctx), pathParam(ctx, 'credentialId'));
+
+  // -- W10b: ownership and visibility (doc 13 §8). Every rule is in SQL.
+  const spaceSetVisibility: OperationHandler = async (ctx) => {
+    const { visibility } = CredentialsSpaceSetVisibilityInputSchema.parse(ctx.body);
+    return spaceCatalog.setVisibility(await claimsOf(ctx), pathParam(ctx, 'credentialId'), visibility);
+  };
+
+  const spaceDefaultConsent: OperationHandler = async (ctx) => {
+    const { allowed } = CredentialsSpaceDefaultConsentInputSchema.parse(ctx.body);
+    return spaceCatalog.setSpaceDefaultConsent(await claimsOf(ctx), pathParam(ctx, 'credentialId'), allowed);
+  };
+
+  const spaceClaim: OperationHandler = async (ctx) =>
+    spaceCatalog.claim(await claimsOf(ctx), pathParam(ctx, 'credentialId'));
+
+  const spaceMyDefaultSet: OperationHandler = async (ctx) =>
+    spaceCatalog.setMyDefault(await claimsOf(ctx), pathParam(ctx, 'credentialId'));
+
+  const spaceMyDefaultClear: OperationHandler = async (ctx) =>
+    spaceCatalog.clearMyDefault(await claimsOf(ctx), pathParam(ctx, 'spaceId'), spaceProviderParam(ctx));
+
+  const spaceUsage: OperationHandler = async (ctx) =>
+    spaceCatalog.usage(await claimsOf(ctx), pathParam(ctx, 'credentialId'));
 
   const spacePolicyGet: OperationHandler = async (ctx) =>
     spaceCatalog.policy(await claimsOf(ctx), pathParam(ctx, 'spaceId'));
@@ -497,6 +542,12 @@ export function registerCredentialHandlers(
     'credentials.space.setDefault': requireHumanSession(spaceSetDefault),
     'credentials.space.rename': requireHumanSession(spaceRename),
     'credentials.space.delete': requireHumanSession(spaceDelete),
+    'credentials.space.setVisibility': requireHumanSession(spaceSetVisibility),
+    'credentials.space.spaceDefaultConsent': requireHumanSession(spaceDefaultConsent),
+    'credentials.space.claim': requireHumanSession(spaceClaim),
+    'credentials.space.myDefault.set': requireHumanSession(spaceMyDefaultSet),
+    'credentials.space.myDefault.clear': requireHumanSession(spaceMyDefaultClear),
+    'credentials.space.usage': requireHumanSession(spaceUsage),
     'credentials.space.policy.get': requireHumanSession(spacePolicyGet),
     'credentials.space.policy.set': requireHumanSession(spacePolicySet),
     'node.credentials.status': requireHumanSession(nodeStatus),

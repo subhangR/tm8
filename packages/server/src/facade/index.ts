@@ -89,6 +89,7 @@ import {
   registerCredentialHandlers,
   type CredentialHandlerDeps,
 } from './handlers/w2/credentials.js';
+import { registerSpaceLinkHandlers, type SpaceLinkHandlerDeps } from './handlers/w2/space-links.js';
 import { registerVoiceHandlers } from './handlers/voice.js';
 import { registerChatHandlers, type ChatHandlerDeps } from '../chat/handlers.js';
 
@@ -151,6 +152,12 @@ export interface RegisterFacadeHandlersDeps {
    * the same conditional shape `deps.files` already uses.
    */
   readonly credentials?: CredentialHandlerDeps;
+  /**
+   * W6 space links. Absent: the node key's root comes from `credentials`, so a
+   * composition with credentials still mounts them; with neither, `spaceLinks.*`
+   * is not mounted (no key to seal a stored session with).
+   */
+  readonly spaceLinks?: SpaceLinkHandlerDeps;
   /** TM8 Chat runtime composition; absent mounts a narrowed 503 degraded mode. */
   readonly chat?: ChatHandlerDeps;
   /**
@@ -329,4 +336,8 @@ export function registerFacadeHandlers(
    * forgets.
    */
   if (deps.credentials) registerCredentialHandlers(registry, facade, deps.credentials);
+
+  // W6 space links: the writes are human-only inside the registration (and in SQL).
+  const spaceLinks = deps.spaceLinks ?? (deps.credentials ? { dataDir: deps.credentials.dataDir } : undefined);
+  if (spaceLinks) registerSpaceLinkHandlers(registry, facade, spaceLinks);
 }

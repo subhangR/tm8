@@ -1,6 +1,6 @@
 /**
  * Closing PTY sockets that a private credential no longer admits (doc 13 §3h,
- * threat review R9, migration 997).
+ * threat review R9, migration 257).
  *
  * A PTY attach is decided ONCE, when the socket opens: `grant_stream_attach`
  * mints the grant and `consume_stream_attach` spends it. A member who attached

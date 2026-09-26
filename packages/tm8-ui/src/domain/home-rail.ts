@@ -186,6 +186,10 @@ const HOME_RAIL_GROUP_SPINE: readonly HomeRailGroupSpec[] = [
  * the list header's kind switcher entry, the Workspace column menu and the
  * mobile drawer row, all four of which read this one table.
  *
+ * `space_link` and `server` (250, W6): not populations either. A link is
+ * signed in, out and removed from Settings → Space links, which carries the
+ * P8 warning a bare list would drop; `server` has no detail row until W8.
+ *
  * `isHomeRootKind` honours this too, on purpose. A withheld kind that a
  * stored root or a hand-typed `k/` route could still select would open a list
  * whose own switcher cannot name it — so a stale selection falls back to the
@@ -196,7 +200,7 @@ const HOME_RAIL_GROUP_SPINE: readonly HomeRailGroupSpec[] = [
 // `credential` (W10a) is withheld for the same reason: it has a home already —
 // Space settings → Credentials, where its human-only doors live — and a rail
 // list would be a second, door-less surface for it.
-export const HOME_RAIL_WITHHELD_KINDS: readonly string[] = ['interaction_profile', 'credential'];
+export const HOME_RAIL_WITHHELD_KINDS: readonly string[] = ['interaction_profile', 'credential', 'space_link', 'server'];
 
 export interface HomeRailGroup {
   id: string;

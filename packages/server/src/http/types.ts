@@ -52,7 +52,7 @@ export interface RequestIdentity {
    * `SET LOCAL tm8.auth_kind` (083, R11), which `credentials.*` reads to refuse
    * an agent holding its owner's credential. Absent ⇒ refused.
    */
-  authKind?: 'browser' | 'cli' | 'agent' | 'agent_runtime';
+  authKind?: 'browser' | 'cli' | 'agent' | 'agent_runtime' | 'link';
   /** Requesting member recorded on an `agent_runtime` bearer row. */
   runtimeMemberId?: string;
   /** Thread root recorded on a PRE-176 `agent_runtime` bearer row. */
@@ -72,6 +72,12 @@ export interface RequestIdentity {
    * `authKind`.
    */
   sessionSpaceId?: string;
+  /**
+   * The space link the session descends from (256 `auth_sessions.via_link_id`),
+   * bound as `tm8.via_link`. Off the verified session row, like `authKind`.
+   * Every claims builder that forwards `sessionSpaceId` forwards this too.
+   */
+  viaLinkId?: string;
 }
 
 /**

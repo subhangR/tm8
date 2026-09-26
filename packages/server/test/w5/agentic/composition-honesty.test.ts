@@ -82,8 +82,24 @@ const CREDENTIAL_SEAM = new Set<OperationName>([
   'credentials.space.delete',
   'credentials.space.policy.get',
   'credentials.space.policy.set',
+  // W10b: the ownership, visibility, my-default and usage ops, same registration.
+  'credentials.space.setVisibility',
+  'credentials.space.spaceDefaultConsent',
+  'credentials.space.claim',
+  'credentials.space.myDefault.set',
+  'credentials.space.myDefault.clear',
+  'credentials.space.usage',
   'node.credentials.status',
   'node.credentials.policy.set',
+  // W6 (250/251): spaceLinks.* mount on the same seam — the node key's root
+  // comes from `deps.spaceLinks` or `deps.credentials` (facade/index.ts).
+  'spaceLinks.list',
+  'spaceLinks.add',
+  'spaceLinks.login',
+  'spaceLinks.relogin',
+  'spaceLinks.logout',
+  'spaceLinks.remove',
+  'spaceLinks.setSpawn',
 ]);
 
 class StubDb implements Db {

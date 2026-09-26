@@ -39,7 +39,9 @@ import {
   EntityListPanel,
   EmptyBody,
   NewContainerSheet,
+  PANEL_TABS,
   countConnections,
+  countMessages,
   panelActionContext,
   panelMenuItems,
   type ControlHost,
@@ -1207,7 +1209,7 @@ export function EntityView(props: EntityViewProps) {
               data.livenessOf(selectedId),
             ),
             counts: {
-              discussion: messages?.length,
+              discussion: countMessages(detail, messages),
               connections: countConnections(detail, data.connectionsOf(selectedId)),
             },
             /* THE EXISTING ROUTE, NOT A SECOND ONE. `onTabChange` already sends
@@ -1522,7 +1524,9 @@ export function EntityView(props: EntityViewProps) {
 }
 
 function auxCrumb(aux: AuxTarget, title: string | undefined): string {
-  if (aux.sort === 'tab') return aux.tab;
+  /* The tab's own word, not its route id — the column header must say
+     "Messages" where the tab strip does, not the codec's `discussion`. */
+  if (aux.sort === 'tab') return PANEL_TABS.find((t) => t.id === aux.tab)?.label ?? aux.tab;
   return title ?? 'loading…';
 }
 

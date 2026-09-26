@@ -77,7 +77,7 @@ import { createOutput } from '../src/output.js';
 // MEASURED from this file's own failing run on the MERGED tree.
 // F2 adds skills.scan/list/show.
 // 203 -> 208: skills.roots/create/edit/equip/unequip (F4, #648). MEASURED on the merged tree.
-const EXPECTED_ROWS = 255; /* +1 node.metrics.get (status strip). MEASURED. */ /* W11: +4 (projects.link stays, decision 29) spaces.projects.list|create and gate.folders.list|create. MEASURED. */ /* +1 auth.space.enter (W3-server). MEASURED. */ /* +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. */ /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b), on the merged tree. MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ // +1 events.changes (change feed step 3). MEASURED. // +10 credentials.space.* + node.credentials.* (SC-3). MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED. /* +2 auth.sessions.list/revoke (W4). MEASURED. */ /* -1 containers.attention (Attention v2 S7a). MEASURED. */
+const EXPECTED_ROWS = 268; /* +7 spaceLinks.* (W6, 250/251). MEASURED. */ /* +1 node.metrics.get (status strip). MEASURED. */ /* W11: +4 (projects.link stays, decision 29) spaces.projects.list|create and gate.folders.list|create. MEASURED. */ /* +1 auth.space.enter (W3-server). MEASURED. */ /* +6 credentials.space.* (W10b). MEASURED. */ /* +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. */ /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b), on the merged tree. MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ // +1 events.changes (change feed step 3). MEASURED. // +10 credentials.space.* + node.credentials.* (SC-3). MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED. /* +2 auth.sessions.list/revoke (W4). MEASURED. */ /* -1 containers.attention (Attention v2 S7a). MEASURED. */
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -199,7 +199,7 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
     // every other row in the session git rail. MEASURED from the failing run.
     // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): execution.gitStage is public, like every other row in the
     // session git rail. 187's row moved this to 194; gitStage takes it to 195. MEASURED.
-    expect(histogram).toEqual({ public: 251 /* +1 node.metrics.get (status strip). MEASURED. */ /* W11: +4 (projects.link stays, decision 29) spaces.projects.list|create and gate.folders.list|create. MEASURED. */ /* +1 auth.space.enter (W3-server). MEASURED. */ /* +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. */, /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b), on the merged tree. MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ composite: 1, internal: 1, reserved: 2 }); /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED. /* +2 auth.sessions.list/revoke (W4). MEASURED. */ /* -1 containers.attention (Attention v2 S7a). MEASURED. */
+    expect(histogram).toEqual({ public: 264 /* +6 credentials.space.* (W10b). MEASURED. */ /* +7 spaceLinks.* (W6, 250/251). MEASURED. */ /* +1 node.metrics.get (status strip). MEASURED. */ /* W11: +4 (projects.link stays, decision 29) spaces.projects.list|create and gate.folders.list|create. MEASURED. */ /* +1 auth.space.enter (W3-server). MEASURED. */ /* +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. */, /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b), on the merged tree. MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ composite: 1, internal: 1, reserved: 2 }); /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED. /* +2 auth.sessions.list/revoke (W4). MEASURED. */ /* -1 containers.attention (Attention v2 S7a). MEASURED. */
   });
 });
 
@@ -236,14 +236,20 @@ const COMMANDLESS_OPERATIONS = [
       'credentials.serviceKeys.put',
       'credentials.serviceKeys.status',
       // SC-3: the space credential rows are settings-screen operations too.
+      'credentials.space.claim',
       'credentials.space.create',
       'credentials.space.delete',
       'credentials.space.list',
+      'credentials.space.myDefault.clear',
+      'credentials.space.myDefault.set',
       'credentials.space.policy.get',
       'credentials.space.policy.set',
       'credentials.space.rekey',
       'credentials.space.rename',
       'credentials.space.setDefault',
+      'credentials.space.setVisibility',
+      'credentials.space.spaceDefaultConsent',
+      'credentials.space.usage',
       'credentials.status',
       // The TEN execution.git* rows are deliberately commandless (see the
       // EXPECTED_ROWS note): the CLI runs the same verbs locally as
@@ -285,6 +291,15 @@ const COMMANDLESS_OPERATIONS = [
       'skills.preview',
       // F4: authoring roots are a composer read with no CLI verb.
       'skills.roots',
+      // W6 (250/251): space links are managed from space settings by a
+      // human only; `list` is the settings read. Commandless by decision.
+      'spaceLinks.add',
+      'spaceLinks.list',
+      'spaceLinks.login',
+      'spaceLinks.logout',
+      'spaceLinks.relogin',
+      'spaceLinks.remove',
+      'spaceLinks.setSpawn',
 ];
 
 describe('the CLI command projection', () => {

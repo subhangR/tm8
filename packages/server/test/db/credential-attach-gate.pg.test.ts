@@ -1,6 +1,6 @@
 /**
  * W10c — the owner-only view/drive gate for sessions that record a PRIVATE
- * space credential (doc 13 §3h, T38; migration 997), against a REAL PostgreSQL
+ * space credential (doc 13 §3h, T38; migration 257), against a REAL PostgreSQL
  * with every migration applied, running as `tm8_app` under each caller's claims.
  *
  * Names carry the matrix cell and the brief's N-test they evidence. Every
@@ -11,7 +11,7 @@
  * Cast: space S. OWN owns S (node admin too), ADM is an admin of S, A and B are
  * members. TA is a real teammate (team_members row) whose persona A owns, so
  * B may act as TA under 075 — the strongest non-owner in the matrix: before
- * 997, B held TA's session's owner right. A OWNS every credential here.
+ * 257, B held TA's session's owner right. A OWNS every credential here.
  * Every secret and label is an obviously fake canary.
  */
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -385,7 +385,7 @@ describe('N9 / R9 — switching to private closes what was already granted or op
   });
 });
 
-describe('997 — consume_stream_attach keeps 233\'s session-space pin AND adds the private-credential rule', () => {
+describe('257 — consume_stream_attach keeps 233\'s session-space pin AND adds the private-credential rule', () => {
   const pinned = (sessionSpaceId: string, identityId?: string): DbClaims => ({ identityId, sessionSpaceId });
 
   it('a PUBLIC credential with the pin set to another space is refused; the right pin consumes', async () => {

@@ -50,7 +50,7 @@ function buildHandler(opts: {
   dataDir?: string;
   rows: () => Array<{ id: string; credential_allowed?: boolean }>;
 }): OperationHandler {
-  // 997's column defaults to the answer for a session on no private credential.
+  // 257's column defaults to the answer for a session on no private credential.
   const db: Db = {
     query: async () => opts.rows().map((r) => ({ credential_allowed: true, ...r })) as never,
   } as unknown as Db;

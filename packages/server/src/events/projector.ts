@@ -706,13 +706,8 @@ export class PgEntityProjector implements EntityProjector {
       latest_reason: string;
       oldest_requested_at: Date | string;
     }>(
-      `select entity_id, count(*)::int as pending_count,
-              sum(points)::int as total_points, max(points)::int as max_points,
-              (array_agg(reason order by created_at desc, id desc))[1] as latest_reason,
-              min(created_at) as oldest_requested_at
-         from public.attention_requests
-        where entity_id = any($1::uuid[]) and status in ('open', 'acknowledged')
-        group by entity_id`,
+      // The one badge aggregate (252), shared with entity-read.
+      `select * from public.attention_badges($1::uuid[])`,
       [unique],
     );
     const attention = new Map<string, EntityAttentionSummary>();
@@ -1497,6 +1492,12 @@ export class PgEntityProjector implements EntityProjector {
         // hypothetical stray envelope projectable instead of poisoning the feed
         // on a strict-schema refusal.
         return { kind: 'artifact', revisionNumber: r.artifact_revision_number ?? 1 };
+      case 'space_link':
+      case 'server':
+        // 250 (W6): no row facts on the entity; `spaceLinks.list` answers for a
+        // link. MIRRORS entity-read.ts stateOf. Without this arm the default
+        // below raises EntityKindDriftError for every space_link event.
+        return { kind: r.kind };
       default: {
         // T-L4: custom c:* kinds carry their schema-validated scalars.
         //

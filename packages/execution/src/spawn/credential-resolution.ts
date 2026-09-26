@@ -1,6 +1,6 @@
 /**
- * Which credential each provider of a launch runs on: member → space → node
- * (D4) under the space and node policies (D5), design 01a0cfa8 §4.
+ * Which credential each provider of a launch runs on: my default → member →
+ * space default → node (D4, doc 13 §3e) under the space and node policies (D5), design 01a0cfa8 §4.
  *
  * THIS IS THE ONLY PLACE D5 IS ENFORCED. 206's spawn reader and its manifest
  * writer check membership and credential status but never read a policy
@@ -19,6 +19,12 @@
  * The caller's claims are the only identity used: for an agent they are its
  * root human launcher's (`agent-claims-are-the-launcher`), so membership and
  * the member rung both follow the launcher, never the persona's owner.
+ *
+ * A LINK-BOUND launch (256, W7p: a `link` session, or an agent minted under
+ * one) has NO member rung. The launcher's identity is the linking human's, and
+ * their own model key and git login stay home (rulings (i) and 4). See
+ * `resolveLinkBoundCredentials`; 093, 206 and 083's credential index refuse
+ * the same caller in SQL, so this is the second layer, not the only one.
  */
 import { join } from 'node:path';
 
@@ -36,6 +42,7 @@ import type {
   GitHubCredential,
   GraphAuth,
   SpaceCredentialGrant,
+  SpaceCredentialPick,
   SpaceCredentialPolicies,
   SpaceCredentialPort,
   SpaceCredentialProvider,
@@ -71,6 +78,11 @@ export interface CredentialResolutionInput {
    * credential picked now would be one containment cannot see (D7).
    */
   resume?: boolean;
+  /**
+   * The caller is link-bound (256, W7p). Supplied by the graph port from the
+   * server's claims, since `GraphAuth` is opaque here. Absent means false.
+   */
+  linkBound?: boolean;
 }
 
 export interface ResolvedSessionCredentials {
@@ -164,10 +176,12 @@ export async function resolveSessionCredentials(
 ): Promise<ResolvedSessionCredentials> {
   const { auth, spaceId, launch } = input;
   const policies = await readPolicies(deps, auth, spaceId);
+  if (input.linkBound === true) return resolveLinkBoundCredentials(input, deps, policies);
   const toolProvider = agentCredentialProviderFor(launch.agentTool);
 
   const sources = { ...launch.credentialSources };
   const ids: Partial<Record<SpaceCredentialProvider, string>> = {};
+  const picks: Partial<Record<SpaceCredentialProvider, SpaceCredentialPick>> = {};
   const effective: Partial<Record<SpaceCredentialProvider, Effective>> = {};
 
   const readSpace = async (
@@ -205,9 +219,35 @@ export async function resolveSessionCredentials(
     });
   };
 
-  const useSpace = (provider: SpaceCredentialProvider, grant: SpaceCredentialGrant): void => {
+  /**
+   * Auto's first rung (doc 13 §3e): the launcher's own default, read as a pin
+   * so every reader check runs on it. Not on resume, for the reason the space
+   * default is not (D7). A default that exists but cannot be used refuses; a
+   * missing one falls through.
+   */
+  const readMine = async (provider: SpaceCredentialProvider): Promise<SpaceCredentialGrant | null> => {
+    if (input.resume || !deps.spaceCredentials?.myDefaultId) return null;
+    let id: string | null;
+    try {
+      id = await deps.spaceCredentials.myDefaultId(auth, spaceId, provider);
+    } catch (error) {
+      throw new SpawnError(
+        `could not read your default ${provider} credential in this space — the launch is ` +
+          'refused rather than run on another source; retry',
+        'internal',
+        { provider, cause: error instanceof Error ? error.message : String(error) },
+      );
+    }
+    return id ? readSpace(provider, id) : null;
+  };
+
+  const pickOf = (provider: SpaceCredentialProvider): SpaceCredentialPick =>
+    launch.spaceCredentialIds?.[provider] ? 'pinned' : 'space_default';
+
+  const useSpace = (provider: SpaceCredentialProvider, grant: SpaceCredentialGrant, pick: SpaceCredentialPick): void => {
     sources[provider] = 'space';
     ids[provider] = grant.credentialId;
+    picks[provider] = pick;
     effective[provider] = 'space';
   };
 
@@ -308,18 +348,24 @@ export async function resolveSessionCredentials(
       const grant = await readSpace(provider, launch.spaceCredentialIds?.[provider] ?? null);
       if (!grant) throw new Error('unreachable: an explicit space read returns or throws');
       credentialHome = await spaceHome(deps, provider, grant);
-      useSpace(provider, grant);
+      useSpace(provider, grant, pickOf(provider));
     } else {
-      // Auto, along D4 and only through what the policy allows.
-      const member = allowed.member ? await deps.resolveMemberHome(null) : null;
-      if (member) {
+      // Auto (doc 13 §3e): my default, then the legacy member credential,
+      // then the space default, then the node — only through what the
+      // policy allows.
+      const mine = allowed.space ? await readMine(provider) : null;
+      const member = !mine && allowed.member ? await deps.resolveMemberHome(null) : null;
+      if (mine) {
+        credentialHome = await spaceHome(deps, provider, mine);
+        useSpace(provider, mine, 'my_default');
+      } else if (member) {
         credentialHome = member;
         effective[provider] = 'member';
       } else {
         const grant = allowed.space && !input.resume ? await readSpace(provider, null) : null;
         if (grant) {
           credentialHome = await spaceHome(deps, provider, grant);
-          useSpace(provider, grant);
+          useSpace(provider, grant, 'space_default');
         } else if (allowed.nodeBySpace && allowed.nodeByNode) {
           effective[provider] = 'node';
         } else {
@@ -355,17 +401,21 @@ export async function resolveSessionCredentials(
       const grant = await readSpace(provider, launch.spaceCredentialIds?.github ?? null);
       if (!grant) throw new Error('unreachable: an explicit space read returns or throws');
       gitHubCredential = spaceGitHub(grant);
-      useSpace(provider, grant);
+      useSpace(provider, grant, pickOf(provider));
     } else {
-      const member = allowed.member ? await deps.resolveMemberGitHub() : null;
-      if (member) {
+      const mine = allowed.space ? await readMine(provider) : null;
+      const member = !mine && allowed.member ? await deps.resolveMemberGitHub() : null;
+      if (mine) {
+        gitHubCredential = spaceGitHub(mine);
+        useSpace(provider, mine, 'my_default');
+      } else if (member) {
         gitHubCredential = member;
         effective.github = 'member';
       } else {
         const grant = allowed.space && !input.resume ? await readSpace(provider, null) : null;
         if (grant) {
           gitHubCredential = spaceGitHub(grant);
-          useSpace(provider, grant);
+          useSpace(provider, grant, 'space_default');
         } else if (allowed.nodeBySpace && allowed.nodeByNode) {
           effective.github = 'node';
         } else {
@@ -383,6 +433,187 @@ export async function resolveSessionCredentials(
     if (launch.credentialSources[provider] !== 'space') continue;
     gateExplicit(provider, 'space');
     const grant = await readSpace(provider, launch.spaceCredentialIds?.[provider] ?? null);
+    if (grant) {
+      sources[provider] = 'space';
+      ids[provider] = grant.credentialId;
+      picks[provider] = pickOf(provider);
+    }
+  }
+
+  const resolvedLaunch: ResolvedLaunchConfig = {
+    ...launch,
+    credentialSources: sources,
+    credentialSource: commonCredentialSource(sources),
+    spaceCredentialIds: ids,
+    effectiveCredentialSources: effective,
+    ...(Object.keys(picks).length > 0 ? { spaceCredentialPicks: picks } : {}),
+  };
+  return {
+    launch: resolvedLaunch,
+    credentialHome,
+    gitHubCredential,
+    spaceCredentialIds: [...new Set(Object.values(ids))],
+  };
+}
+
+/** The named refusal for a link-bound launch. `reason` is machine-readable. */
+function linkRefusal(
+  message: string,
+  detail: { provider: string; reason: string } & Record<string, unknown>,
+): SpawnError {
+  return new SpawnError(`a spawn through a space link ${message}`, 'forbidden', { ...detail, spaceLink: true });
+}
+
+/**
+ * W7p (256): the credentials of a launch whose caller is link-bound.
+ *
+ *   * NO MEMBER RUNG, for any provider. `resolveMemberHome` and
+ *     `resolveMemberGitHub` are never called, so the linking human's model key
+ *     and git login are never read (ruling (i)). An explicit or recorded
+ *     `member` refuses, and so does a model only a member API key serves.
+ *   * The model provider runs on this space's DEFAULT credential or on the
+ *     node, as the policies allow; neither usable refuses by name.
+ *   * GitHub runs ONLY on this space's default credential (ruling 4): no
+ *     member, no node. None refuses by name — never a silent launch without git.
+ *   * Only the default is ever read (206 refuses a pinned id for this caller).
+ *     A recorded id — a resume, an inherited child — must still BE the
+ *     default, or the launch refuses rather than switch credentials.
+ */
+async function resolveLinkBoundCredentials(
+  input: CredentialResolutionInput,
+  deps: CredentialResolutionDeps,
+  policies: SpaceCredentialPolicies,
+): Promise<ResolvedSessionCredentials> {
+  const { auth, spaceId, launch } = input;
+  const toolProvider = agentCredentialProviderFor(launch.agentTool);
+  const sources = { ...launch.credentialSources };
+  const ids: Partial<Record<SpaceCredentialProvider, string>> = {};
+  const effective: Partial<Record<SpaceCredentialProvider, Effective>> = {};
+
+  const readDefault = async (provider: SpaceCredentialProvider): Promise<SpaceCredentialGrant | null> => {
+    if (!deps.spaceCredentials) return null;
+    let read;
+    try {
+      read = await deps.spaceCredentials.read(auth, spaceId, provider, null);
+    } catch (error) {
+      if (error instanceof SpawnError) throw error;
+      // 206 answers 42501 when the caller's own link row for this space is
+      // not signed in or does not allow spawning.
+      throw linkRefusal(
+        `could not read this space's default ${provider} credential — the link may be signed out, ` +
+          'or its member has switched spawning off',
+        { provider, reason: 'space_read_refused', cause: error instanceof Error ? error.message : String(error) },
+      );
+    }
+    if (!read.ok) {
+      if (read.reason === 'no_default') return null;
+      throw new SpawnError(refusalSentence(provider, null, read.reason), 'conflict', {
+        provider,
+        reason: read.reason,
+        spaceLink: true,
+      });
+    }
+    const recorded = launch.spaceCredentialIds?.[provider];
+    if (recorded && recorded !== read.grant.credentialId) {
+      throw linkRefusal(
+        `runs only on this space's default ${provider} credential, and space credential ${recorded} ` +
+          'it ran on is no longer the default — launch it again',
+        { provider, reason: 'not_default', spaceCredentialId: recorded },
+      );
+    }
+    return read.grant;
+  };
+
+  const refuseMember = (provider: string, source: CredentialSource | null): void => {
+    if (source === 'member') {
+      throw linkRefusal(
+        `never runs on a member's own ${provider} credential — choose 'space' or 'node'`,
+        { provider, reason: 'member_refused' },
+      );
+    }
+  };
+
+  // ---- the tool's own provider ------------------------------------------
+  let credentialHome: AgentCredentialHome | null = null;
+  const backend = apiKeyBackendForModel(launch.agentTool, launch.model);
+  if (backend) {
+    throw linkRefusal(
+      `cannot run ${launch.model}: it runs only on a member's own ` +
+        `${API_KEY_PROVIDER_DISPLAY_NAME[backend]} key — pick a model ${launch.agentTool} runs natively`,
+      { provider: toolProvider ?? backend, reason: 'member_key_model', model: launch.model },
+    );
+  }
+  if (toolProvider === 'anthropic' || toolProvider === 'openai') {
+    const provider = toolProvider;
+    const source = launch.credentialSources[provider] ?? null;
+    refuseMember(provider, source);
+    const allowed = allowedBy(policies, provider);
+    const nodeOk = allowed.nodeBySpace && allowed.nodeByNode;
+    const grant = source !== 'node' && allowed.space ? await readDefault(provider) : null;
+    if (grant) {
+      credentialHome = await spaceHome(deps, provider, grant);
+      sources[provider] = 'space';
+      ids[provider] = grant.credentialId;
+      effective[provider] = 'space';
+    } else if (source !== 'space' && nodeOk) {
+      // Recorded, never left blank: a later resume of this session may not be
+      // link-bound (a non-link member resuming it, or a stamp that did not
+      // follow), and a blank source there is auto — whose first rung is the
+      // resumer's own account key. 'node' is what this session ran on.
+      sources[provider] = 'node';
+      effective[provider] = 'node';
+    } else {
+      const why = [
+        source === 'node'
+          ? null
+          : allowed.space
+            ? `this space has no default ${provider} credential`
+            : spacePolicySentence(policies, provider),
+        source === 'space' ? null : nodeOk ? null : `node ${provider} credentials are not allowed here`,
+      ].filter((part): part is string => part !== null);
+      throw linkRefusal(
+        `has no ${provider} credential to run on: it may use only this space's default ${provider} ` +
+          `credential or the node's, and ${why.join(', and ')}`,
+        { provider, reason: 'no_model_credential' },
+      );
+    }
+  } else if (toolProvider) {
+    // A provider the space cannot hold (gemini): node only.
+    refuseMember(toolProvider, (launch.credentialSources as Partial<Record<string, CredentialSource>>)[toolProvider] ?? null);
+    // Recorded for the same reason as above: left blank, a non-link resume
+    // takes the pre-space branch, whose resolveMemberHome(null) is the
+    // resumer's own account home.
+    (sources as Partial<Record<string, CredentialSource>>)[toolProvider] = 'node';
+  }
+
+  // ---- GitHub: this space's default, nothing else ------------------------
+  const ghSource = launch.credentialSources.github ?? null;
+  refuseMember('github', ghSource);
+  if (ghSource === 'node') {
+    throw linkRefusal(
+      "runs git only on this space's default GitHub credential, never the node's — choose 'space'",
+      { provider: 'github', reason: 'node_git_refused' },
+    );
+  }
+  const ghGrant = allowedBy(policies, 'github').space ? await readDefault('github') : null;
+  if (!ghGrant) {
+    throw linkRefusal(
+      "runs git only on this space's default GitHub credential, and there is none it may use — " +
+        'a space admin can add one, so the session is not started without git',
+      { provider: 'github', reason: 'no_git_credential' },
+    );
+  }
+  const gitHubCredential = spaceGitHub(ghGrant);
+  sources.github = 'space';
+  ids.github = ghGrant.credentialId;
+  effective.github = 'space';
+
+  // ---- an explicit space source for a provider this tool does not use ------
+  for (const provider of SPACE_CREDENTIAL_PROVIDERS) {
+    if (provider === 'github' || provider === (toolProvider as string | null)) continue;
+    refuseMember(provider, launch.credentialSources[provider] ?? null);
+    if (launch.credentialSources[provider] !== 'space') continue;
+    const grant = allowedBy(policies, provider).space ? await readDefault(provider) : null;
     if (grant) {
       sources[provider] = 'space';
       ids[provider] = grant.credentialId;

@@ -14,6 +14,7 @@ import {
   ADDITIONAL_PROJECTS_UNAVAILABLE_REASON,
   agentTool,
   describeAccessMode,
+  capacitySlots,
   describeCapacity,
   effortLabel,
   LAUNCH_MODES,
@@ -329,7 +330,7 @@ export function LaunchCard(props: LaunchCardProps) {
   const submit = () => { if (!blocked) onSubmit(); };
 
   /* THE KEYBOARD, layered as the mock rules it: Escape closes a menu first,
-     then the drawer, then the popup; ⌘. toggles the drawer; ⌘↵ launches.
+     then an open context popover or Jev panel, then the drawer, then the popup; ⌘. toggles the drawer; ⌘↵ launches.
 
      CAPTURE PHASE, AND CONSUMED: the popup sits over panels that close on
      Escape themselves (the detail panel does), and a bubble-phase listener
@@ -351,7 +352,12 @@ export function LaunchCard(props: LaunchCardProps) {
       } else if (event.key === 'Escape') {
         const target = event.target instanceof Element ? event.target : null;
         if (target?.closest('.lsel-popover, .jev-entry__pop')) return;
+        /* Those two only hear an Escape with focus inside them. Typing in the
+           instructions with the Jev panel open, then Escape, closed the whole
+           card and dropped the instructions — found live on a real node. */
+        const popoverClose = card.current?.querySelector<HTMLElement>('.lsel-popover__close, [data-testid="jev-panel-close"]');
         if (k.open !== null) setOpen(null);
+        else if (popoverClose) popoverClose.click();
         else if (k.drawer) setDrawer(false);
         else k.onClose();
       } else {
@@ -368,6 +374,9 @@ export function LaunchCard(props: LaunchCardProps) {
   const countHidden = useCallback(() => {
     const l = list.current;
     if (!l) return;
+    /* Scrolled to the end, nothing is past the edge: the last chip sits flush
+       with it, so the edge test alone said "+1 more" on a real node. */
+    if (l.scrollLeft + l.clientWidth >= l.scrollWidth - 1) { setHidden(0); return; }
     const edge = l.getBoundingClientRect().right - 12;
     setHidden([...l.querySelectorAll('.lcd-ent')].filter((c) => c.getBoundingClientRect().right > edge).length);
   }, []);
@@ -689,7 +698,7 @@ export function LaunchCard(props: LaunchCardProps) {
           <span className="lcd-node" data-testid="lcd-slots" title={describeCapacity(capacity)}>
             <span className="lcd-dot" data-full={capacity.slotsFree <= 0 || undefined} />
             <span className="lcd-nodename">slots · </span>
-            {capacity.slotsTotal - capacity.slotsFree}/{capacity.slotsTotal}
+            {capacitySlots(capacity)}
           </span>
         ) : null}
         <button
@@ -899,7 +908,7 @@ export function LaunchCard(props: LaunchCardProps) {
               ) : null}
             </div>
 
-            <div className="lcd-attlist" ref={list} onScroll={countHidden} data-testid="lcd-attached">
+            <div className="lcd-attlist" ref={list} onScroll={countHidden} data-more={hidden > 0 || undefined} data-testid="lcd-attached">
               {attachments.length === 0 ? <span className="lcd-empty">Nothing else attached</span> : null}
               {attachments.map((a) => (
                 <span

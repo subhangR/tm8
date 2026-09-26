@@ -377,6 +377,8 @@ describe.sequential('task assignment provenance (129)', () => {
       add column visibility text not null default 'public',
       add column owner_account_id uuid`);
     await database.query('grant select (owner_account_id, visibility) on public.space_credentials to tm8_app');
+    // 252: `entity-read.ts` and the projector call `public.attention_badges`.
+    database.apply(['252_attention_badges.sql']);
   }, 180_000);
 
   afterAll(async () => {

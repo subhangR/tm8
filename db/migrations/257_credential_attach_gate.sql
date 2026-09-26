@@ -1,5 +1,5 @@
 -- =============================================================================
--- 997 (placeholder, numbered at composition) — the private-credential attach
+-- 257 (set at the merge position after #898's 256; was placeholder 997) — the private-credential attach
 -- gate, W10c (task 01a0da8c, doc 13 01a0da24 §3h / §6a T4, threat review
 -- 01a0db1c R2, R9, R16).
 --
@@ -113,7 +113,7 @@ begin
   holds_owner_right := is_creator
                        or (may_act_as_creator and session.sharing_set_at is null);
 
-  -- THE PRIVATE-CREDENTIAL GATE (997, doc 13 §3h). A session that records a
+  -- THE PRIVATE-CREDENTIAL GATE (257, doc 13 §3h). A session that records a
   -- PRIVATE credential is watched and driven by that credential's owner and by
   -- nobody else: "may act as the creator", the share and drive dials and the
   -- admin bit are all ignored for it. Read live from space_credentials, so a
@@ -227,7 +227,7 @@ begin
   actor := internal.resolve_actor(p_actor_id, e.space_id);
   perform internal.bind_actor(actor);
 
-  -- 997 (doc 13 §3h). On a session recording a PRIVATE credential the
+  -- 257 (doc 13 §3h). On a session recording a PRIVATE credential the
   -- credential's owner may change either dial, and holds that right even
   -- without 202's creator / act-as / admin arms. Everyone else keeps exactly
   -- the authority 202 gave them, but may only NARROW: a widening by the
@@ -352,7 +352,7 @@ $$;
 comment on function public.set_work_session_sharing(uuid, integer, text, text, uuid, text) is
   'Sets one work session''s share_mode/drive_mode and stamps sharing_set_at, its sole '
   'writer. Owner, an actor who can_act_as the owner, or a space admin; on a session '
-  'recording a private credential only that credential''s owner may widen (997). '
+  'recording a private credential only that credential''s owner may widen (257). '
   'Narrowing revokes other identities'' live grants.';
 
 -- -----------------------------------------------------------------------------
@@ -395,7 +395,7 @@ begin
           or exists (select 1 from public.entities e
                       where e.id = p_session_id
                         and e.space_id = nullif(current_setting('tm8.session_space_id', true), '')::uuid))
-     -- 997: a PRIVATE credential admits only its active owner. The grant's
+     -- 257: a PRIVATE credential admits only its active owner. The grant's
      -- SUBJECT is checked, not the claim (the CLI consumes with no claim), and
      -- the refusal converges on the same 'stream attach refused' as above.
      and not exists (
@@ -462,6 +462,6 @@ grant execute on function public.session_stream_credential_allowed(uuid) to tm8_
 comment on function public.session_stream_credential_allowed(uuid) is
   'False if the caller is not an active member of the session''s space, or if the '
   'session records a private space credential whose owner is not the caller''s '
-  'account (997, doc 13 §3h). Read paths outside grant_stream_attach use it.';
+  'account (257, doc 13 §3h). Read paths outside grant_stream_attach use it.';
 
 reset role;

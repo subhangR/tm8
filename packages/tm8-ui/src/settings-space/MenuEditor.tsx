@@ -54,7 +54,7 @@ import type { MenuGroup, MenuItem, MenuLeaf, MenuViewRef } from '@tm8/contract';
 import './menu-editor.css';
 import { CUSTOM_KIND_FALLBACK, KindIcon, getKind } from '../domain';
 import { VectorIcon } from '../kit';
-import { VIEW_PRESENTATION, type ResolvedMenu } from '../shell/menu-resolve';
+import { VIEW_PRESENTATION, isSavedMenu, type ResolvedMenu } from '../shell/menu-resolve';
 import { DisabledAction, DisabledIconControl } from '../panels';
 import {
   MENU_CAPS,
@@ -819,7 +819,7 @@ function rowClass(
 
 /** Why the preview shows what it shows, when there is nothing unsaved to say. */
 function menuOriginLine(menu: ResolvedMenu): string {
-  if (menu.origin.source === 'server') return `saved — space menu v${menu.origin.revision}`;
+  if (isSavedMenu(menu.origin)) return `saved — space menu v${menu.origin.revision}`;
   if (menu.origin.because === 'absent') return 'this space has no saved menu — showing the shipped default';
   return `showing the shipped default — ${menu.origin.detail ?? menu.origin.because}`;
 }

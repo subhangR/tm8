@@ -142,7 +142,12 @@ describe('W5.C generator proof', () => {
       'credentials.serviceKeys.delete',
       // SC-3: space-credential delete and setDefault carry only
       // clientMutationId; the credential id rides the path.
+      // W10b: claim and both my-default commands carry only clientMutationId
+      // too; the credential id (or space and provider) rides the path.
+      'credentials.space.claim',
       'credentials.space.delete',
+      'credentials.space.myDefault.clear',
+      'credentials.space.myDefault.set',
       'credentials.space.setDefault',
       // headers I4 / lenient headers (223): the entity rides the path and every
       // field is optional. A bare {} set is a server no-op with warning
@@ -228,6 +233,6 @@ describe('W5.C generator proof', () => {
     // branch's execution.gitStage BOTH land, so this moves twice. Git merged
     // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
     // 120 -> 125 (2026-09-23): skills.scan + F4's create/edit/equip/unequip. MEASURED.
-    expect(ENTRIES).toHaveLength(155); /* W11: +2 input schemas, spaces.projects.create and gate.folders.create. MEASURED. */ /* +1 auth.space.enter (W3-server). MEASURED. */ /* +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. */ /* +1 spaces.chatDefaults.set (entity chat G). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +10 forms.* command schemas (Forms W1). MEASURED. */ // +7 SC-3 space/node credential command schemas. MEASURED. // +2 service-key put/delete (Jev lane K); +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* -1 containers.attention (Attention v2 S7a). MEASURED. */
+    expect(ENTRIES).toHaveLength(166); /* +6 spaceLinks.* input schemas (W6, 250/251; list takes none). MEASURED. */ /* W11: +2 input schemas, spaces.projects.create and gate.folders.create. MEASURED. */ /* +1 auth.space.enter (W3-server). MEASURED. */ /* +5 W10b credential commands bind. MEASURED. */ /* +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. */ /* +1 spaces.chatDefaults.set (entity chat G). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +10 forms.* command schemas (Forms W1). MEASURED. */ // +7 SC-3 space/node credential command schemas. MEASURED. // +2 service-key put/delete (Jev lane K); +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* -1 containers.attention (Attention v2 S7a). MEASURED. */
   });
 });

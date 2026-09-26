@@ -493,7 +493,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'credentials.space.rekey': {
     cmd: null,
-    sum: 'Replace a space credential\'s key — its creator or a space admin, human sessions only',
+    sum: 'Replace a space credential\'s key — its owner (a space admin for a space-owned one), human sessions only',
     authz: 'server',
     input: 'bound',
     tags: ['credential', 'space', 'rotate', 'settings'],
@@ -504,7 +504,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'credentials.space.setDefault': {
     cmd: null,
-    sum: 'Make a space credential its provider\'s default — its creator or a space admin, human sessions only',
+    sum: 'Make a space credential its provider\'s space default — an opted-in owner or a space admin, human sessions only',
     authz: 'server',
     input: 'bound',
     tags: ['credential', 'space', 'default', 'settings'],
@@ -515,7 +515,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'credentials.space.rename': {
     cmd: null,
-    sum: 'Rename a space credential — its creator or a space admin, human sessions only',
+    sum: 'Rename a space credential — its owner (a space admin for a space-owned one), human sessions only',
     authz: 'server',
     input: 'bound',
     tags: ['credential', 'space', 'settings'],
@@ -526,13 +526,79 @@ const ROWS: Record<OperationName, Row> = {
   },
   'credentials.space.delete': {
     cmd: null,
-    sum: 'Delete a space credential and kill every live session using it — its creator or a space admin, human sessions only',
+    sum: 'Delete a space credential and kill every live session using it — its owner or a space admin, human sessions only',
     authz: 'server',
     input: 'bound',
     tags: ['credential', 'space', 'disconnect', 'settings'],
     reason: 'human_settings_only',
     notes: [
       'the row is revoked first; every live session and login terminal on it is then killed, whoever launched it',
+    ],
+  },
+  'credentials.space.setVisibility': {
+    cmd: null,
+    sum: 'Make a space credential private or public — its owner (a space admin for a space-owned one), human sessions only',
+    authz: 'server',
+    input: 'bound',
+    tags: ['credential', 'space', 'visibility', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'private clears both default flags and kills every live session its owner did not launch',
+    ],
+  },
+  'credentials.space.spaceDefaultConsent': {
+    cmd: null,
+    sum: 'Let (or stop) a public credential you own serving as the space default — its owner, human sessions only',
+    authz: 'server',
+    input: 'bound',
+    tags: ['credential', 'space', 'default', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'withdrawing consent clears the space default flag in the same statement',
+    ],
+  },
+  'credentials.space.claim': {
+    cmd: null,
+    sum: 'Take ownership of a migrated space credential you created — human sessions only',
+    authz: 'server',
+    input: 'bound',
+    tags: ['credential', 'space', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'only a pre-ownership row its creator never chose to leave space-owned can be claimed',
+    ],
+  },
+  'credentials.space.myDefault.set': {
+    cmd: null,
+    sum: 'Make a credential you own your own default for its provider in this space — human sessions only',
+    authz: 'server',
+    input: 'bound',
+    tags: ['credential', 'space', 'default', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'auto order: my default, then legacy member key, then space default, then node',
+    ],
+  },
+  'credentials.space.myDefault.clear': {
+    cmd: null,
+    sum: 'Clear your own default credential for a provider in this space — human sessions only',
+    authz: 'server',
+    input: 'bound',
+    tags: ['credential', 'space', 'default', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'idempotent',
+    ],
+  },
+  'credentials.space.usage': {
+    cmd: null,
+    sum: 'List the sessions launched on a space credential — its owner, or an admin for a public or space-owned one',
+    authz: 'server',
+    input: 'none',
+    tags: ['credential', 'space', 'audit', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'each row names the pick source, owner, root launcher and agent session',
     ],
   },
   'credentials.space.policy.get': {
@@ -556,6 +622,78 @@ const ROWS: Record<OperationName, Row> = {
     notes: [
       'null removes the policy',
     ],
+  },
+  // ── space links (W6, migrations 250/251) ─────────────────────────────────
+  //
+  // No CLI command yet, for scope, as with the credential rows above: the Server
+  // admits a `cli` human to every write, so a later lane adds commands with no
+  // security change. The writes are refused to agent and link sessions twice
+  // (the handler guard and the strict SQL gate); `list` is open and secret-free.
+  'spaceLinks.list': {
+    cmd: null,
+    sum: 'List the Spaces this Space links to, with your own sign-in status on each — no secret is ever returned',
+    authz: 'space',
+    input: 'none',
+    tags: ['link', 'space', 'cross-space', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'open to every Member of the home Space, agents included; a target Space name shows only when you are a Member of it',
+    ],
+  },
+  'spaceLinks.add': {
+    cmd: null,
+    sum: 'Link another Space you are a Member of to this one — human sessions only',
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['link', 'space', 'cross-space', 'settings'],
+    reason: 'human_settings_only',
+  },
+  'spaceLinks.login': {
+    cmd: null,
+    sum: 'Sign in to a linked Space: store your own 90-day session for it, sealed — human sessions only',
+    authz: 'server',
+    input: 'bound',
+    side: 'durable',
+    tags: ['link', 'login', 'session', 'cross-space'],
+    reason: 'human_settings_only',
+    notes: ['agents you launch may use it; nobody else can, and no response carries it'],
+  },
+  'spaceLinks.relogin': {
+    cmd: null,
+    sum: 'Replace your stored session for a linked Space; the old one is revoked — human sessions only',
+    authz: 'server',
+    input: 'bound',
+    side: 'durable',
+    tags: ['link', 'login', 'session', 'cross-space'],
+    reason: 'human_settings_only',
+  },
+  'spaceLinks.logout': {
+    cmd: null,
+    sum: 'Sign out of a linked Space: your stored session is revoked and forgotten — human sessions only',
+    authz: 'server',
+    input: 'bound',
+    side: 'durable',
+    tags: ['link', 'logout', 'revoke', 'cross-space'],
+    reason: 'human_settings_only',
+  },
+  'spaceLinks.remove': {
+    cmd: null,
+    sum: 'Remove your own row on a linked Space; the link stays for other Members — human sessions only',
+    authz: 'server',
+    input: 'bound',
+    side: 'durable',
+    tags: ['link', 'remove', 'cross-space'],
+    reason: 'human_settings_only',
+  },
+  'spaceLinks.setSpawn': {
+    cmd: null,
+    sum: 'Set your own spawn switch and budget on a linked Space — human sessions only. Allow spawn is stored per link; it is enforced when cross-space spawn ships.',
+    authz: 'server',
+    input: 'bound',
+    side: 'durable',
+    tags: ['link', 'spawn', 'budget', 'cross-space'],
+    reason: 'human_settings_only',
   },
   'node.credentials.status': {
     cmd: null,
@@ -3078,6 +3216,9 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   // but `node` already groups the credential rows, so the noun is `account`.
   // `tools/conformance`'s generator holds the same map.
   accounts: 'account',
+  // `spaceLinks.*` (W6, 250/251, all `cmd: null`): the noun a later CLI lane
+  // would spell `tm8 space-link`. generator.ts nounForOperation says the same.
+  spaceLinks: 'space-link',
 };
 
 function nounFor(operation: OperationName): string {
@@ -3167,7 +3308,9 @@ export const CATALOG_DIGEST =
   // Re-measured for node.metrics.get (status strip) — read from the regenerated conformance manifest.
   // +2 auth.sessions.list/revoke (W4, on main 96f6b61e): read from the regenerated conformance manifest.
   // -1 containers.attention (Attention v2 S7a): read from the regenerated conformance manifest.
-  'sha256:bd84cb59cd01e936cf2ab306ad8f2ae8bd13986ca02aac46ba9b606186b7d84c';
+  // +7 spaceLinks.* (W6, 250/251, re-stacked on f54f9ffd): RECOMPUTED from JSON.stringify(OPERATIONS); equals the regenerated manifest's catalogDigest.
+  // +6 credentials.space.* (W10b, merged onto main d8343503 after #864): read from the regenerated conformance manifest.
+  'sha256:e82356d2c70dd8b3d6dea41085510153d3489f7c11effbe9a230706e11e66b7e';
 
 export const GRAMMAR_VERSION = '2';
 

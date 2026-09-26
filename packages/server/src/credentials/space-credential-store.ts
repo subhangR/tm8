@@ -17,6 +17,7 @@
 import { randomUUID } from 'node:crypto';
 
 import type { Db, DbClaims } from '../db/types.js';
+import { refuseLinkBearer } from '../identity/link-bearer.js';
 import { loadOrCreateCredentialKey } from './credential-key.js';
 import { openSecret, sealSecret } from './secret-box.js';
 
@@ -133,6 +134,47 @@ export interface MemberSpaceCredentialSessions {
   }>;
 }
 
+export interface SpaceCredentialMyDefault {
+  spaceId: string;
+  provider: SpaceCredentialProvider;
+  credentialId: string | null;
+}
+
+/** How a launch picked its space credential (§6c); null on rows recorded before W10b. */
+export type SpaceCredentialPick = 'pinned' | 'my_default' | 'space_default';
+
+export interface SpaceCredentialUsage {
+  credentialId: string;
+  sessions: Array<{
+    workSessionId: string;
+    provider: SpaceCredentialProvider;
+    source: SpaceCredentialPick | null;
+    credentialId: string;
+    ownerAccountId: string | null;
+    launcherAccountId: string | null;
+    agentSessionId: string | null;
+    status: string;
+    recordedAt: string;
+    updatedAt: string;
+  }>;
+}
+
+/** One non-owner launch whose files in a shared login home are its own. */
+export interface SpaceCredentialForeignLaunch {
+  workSessionId: string;
+  provider: string;
+  /** Claude's `--session-id`; null for codex, whose rollout is found by marker. */
+  nativeSessionId: string | null;
+}
+
+export interface SpaceCredentialUnusableSession {
+  workSessionId: string;
+  provider: SpaceCredentialProvider;
+  credentialId: string;
+  status: 'spawning' | 'running' | 'idle';
+  reason: 'revoked' | 'private';
+}
+
 export interface RepointedSessionSpaceCredentials {
   workSessionId: string;
   launcherAccountId: string;
@@ -224,6 +266,12 @@ export class DbSpaceCredentialStore {
       label: string;
       secret: string;
       displayLogin?: string | null;
+      /** E1: an owned credential's visibility. Exclusive with `spaceOwned`. */
+      visibility?: SpaceCredentialVisibility | null;
+      /** E1: nobody owns it; always public, never claimable. */
+      spaceOwned?: boolean | null;
+      /** An owned public credential's consent to be the space default (§3e). */
+      mayBeSpaceDefault?: boolean;
     },
   ): Promise<SpaceCredential> {
     const secret = normaliseSecret(input.secret);
@@ -253,6 +301,9 @@ export class DbSpaceCredentialStore {
       sealed.ciphertext,
       sealed.nonce,
       input.displayLogin ?? null,
+      input.visibility ?? null,
+      input.spaceOwned ?? null,
+      input.mayBeSpaceDefault ?? false,
     ]);
   }
 
@@ -299,7 +350,7 @@ export class DbSpaceCredentialStore {
     ]);
   }
 
-  /** Rotate an api_key/token (creator or space admin; D7: next spawn or resume). */
+  /** Rotate an api_key/token (owned: the owner; space-owned: creator or space admin; D7: next spawn or resume). */
   async rekey(
     claims: DbClaims,
     credentialId: string,
@@ -336,6 +387,67 @@ export class DbSpaceCredentialStore {
 
   async setDefault(claims: DbClaims, credentialId: string): Promise<SpaceCredential> {
     return this.db.rpc<SpaceCredential>(claims, 'set_space_credential_default', [credentialId]);
+  }
+
+  /**
+   * W10b: the owner allows (or withdraws) their public credential as the
+   * space default. Withdrawing clears `isDefault` in the same statement.
+   */
+  async setSpaceDefaultConsent(claims: DbClaims, credentialId: string, allowed: boolean): Promise<SpaceCredential> {
+    return this.db.rpc<SpaceCredential>(claims, 'set_space_credential_default_consent', [credentialId, allowed]);
+  }
+
+  /** W10b: the creator of an unclaimed space-owned row (a migrated one) becomes its owner. */
+  async claim(claims: DbClaims, credentialId: string): Promise<SpaceCredential> {
+    return this.db.rpc<SpaceCredential>(claims, 'claim_space_credential', [credentialId]);
+  }
+
+  /** W10b: the caller's own default for this provider in this space; must be a credential they own. */
+  async setMyDefault(claims: DbClaims, credentialId: string): Promise<SpaceCredentialMyDefault> {
+    return this.db.rpc<SpaceCredentialMyDefault>(claims, 'set_my_space_credential_default', [credentialId]);
+  }
+
+  async clearMyDefault(
+    claims: DbClaims,
+    spaceId: string,
+    provider: SpaceCredentialProvider,
+  ): Promise<SpaceCredentialMyDefault & { cleared: boolean }> {
+    return this.db.rpc<SpaceCredentialMyDefault & { cleared: boolean }>(
+      claims,
+      'clear_my_space_credential_default',
+      [spaceId, provider],
+    );
+  }
+
+  /** The auto rung's lookup: the launcher's own active default, or null. Works under agent claims. */
+  async myDefaultId(claims: DbClaims, spaceId: string, provider: SpaceCredentialProvider): Promise<string | null> {
+    return this.db.rpc<string | null>(claims, 'my_space_credential_default_id', [spaceId, provider]);
+  }
+
+  /** §6c: launches on a credential. The owner; admins too for public or space-owned. */
+  async usage(claims: DbClaims, credentialId: string, limit?: number): Promise<SpaceCredentialUsage> {
+    return this.db.rpc<SpaceCredentialUsage>(claims, 'space_credential_usage', [credentialId, limit ?? 100]);
+  }
+
+  /**
+   * R8: every live session whose recorded credential is revoked, or private
+   * and launched by someone else. Node admin (the server's sweep claims).
+   */
+  async unusableSessions(claims: DbClaims, limit?: number): Promise<SpaceCredentialUnusableSession[]> {
+    return this.db.rpc<SpaceCredentialUnusableSession[]>(
+      claims,
+      'sweep_unusable_space_credential_sessions',
+      [limit ?? 200],
+    );
+  }
+
+  /**
+   * The narrow login-home scrub's reader: exited non-owner launches on the
+   * caller's own PRIVATE login credential, each attributable to that launch
+   * alone (never re-pointed). The owner only; empty for any other shape.
+   */
+  async foreignLaunches(claims: DbClaims, credentialId: string): Promise<SpaceCredentialForeignLaunch[]> {
+    return this.db.rpc<SpaceCredentialForeignLaunch[]>(claims, 'space_credential_foreign_launches', [credentialId, 500]);
   }
 
   /** A probe's verdict on an existing credential: active or stale (I6). */
@@ -389,7 +501,8 @@ export class DbSpaceCredentialStore {
    * The spawn reader (A1). The pinned credential, or the launch space's
    * default when `credentialId` is null; refused unless the caller is a member
    * of the LAUNCH space and the credential is active and in it. Works under
-   * agent claims: children inherit.
+   * agent claims: children inherit. Never under a link session's own claims
+   * (ruling A'; SQL refuses it too).
    */
   async readForSpawn(
     claims: DbClaims,
@@ -397,6 +510,7 @@ export class DbSpaceCredentialStore {
     provider: SpaceCredentialProvider,
     credentialId?: string | null,
   ): Promise<SpaceCredentialForSpawn> {
+    refuseLinkBearer(claims);
     const row = await this.db.rpc<SpawnRow>(claims, 'read_space_credential_for_spawn', [
       launchSpaceId,
       provider,
@@ -436,8 +550,17 @@ export class DbSpaceCredentialStore {
   }
 
   /** Resume (C3): the resumer becomes the launcher, if every recorded credential is still active. */
-  async repointSession(claims: DbClaims, workSessionId: string): Promise<RepointedSessionSpaceCredentials> {
-    return this.db.rpc<RepointedSessionSpaceCredentials>(claims, 'repoint_session_space_credentials', [workSessionId]);
+  /**
+   * With `providers` (R13), rows for every provider the resume did not resolve
+   * to a space credential are dropped first, in the same transaction.
+   */
+  async repointSession(
+    claims: DbClaims,
+    workSessionId: string,
+    providers?: readonly SpaceCredentialProvider[],
+  ): Promise<RepointedSessionSpaceCredentials> {
+    const args: unknown[] = providers ? [workSessionId, [...providers]] : [workSessionId];
+    return this.db.rpc<RepointedSessionSpaceCredentials>(claims, 'repoint_session_space_credentials', args);
   }
 
   async readSpacePolicy(claims: DbClaims, spaceId: string): Promise<SpaceCredentialPolicy> {
