@@ -193,7 +193,10 @@ const HOME_RAIL_GROUP_SPINE: readonly HomeRailGroupSpec[] = [
  * about the product, not a display filter, and it is deliberately harder to
  * reach for than adding a spine group.
  */
-export const HOME_RAIL_WITHHELD_KINDS: readonly string[] = ['interaction_profile'];
+// `credential` (W10a) is withheld for the same reason: it has a home already —
+// Space settings → Credentials, where its human-only doors live — and a rail
+// list would be a second, door-less surface for it.
+export const HOME_RAIL_WITHHELD_KINDS: readonly string[] = ['interaction_profile', 'credential'];
 
 export interface HomeRailGroup {
   id: string;

@@ -129,11 +129,14 @@ import { ContextBudgetsSchema, SpawnSelectionReasonsSchema, SpawnSelectionSchema
 /**
  * Why a credential containment killed a session (`containCredentialSession`).
  *   - `space_credential_deleted`: SC-3 — a space credential was deleted.
+ *   - `space_credential_made_private`: W10a — its owner made it private, and
+ *     this session's launcher is not the owner.
  *   - `member_credential_disconnected`: the member Disconnect of their own credential.
  *   - `member_removed`: SC-6 — the launching member was removed or disabled.
  */
 export type CredentialContainmentCause =
   | 'space_credential_deleted'
+  | 'space_credential_made_private'
   | 'member_credential_disconnected'
   | 'member_removed';
 
@@ -162,6 +165,12 @@ const CREDENTIAL_CONTAINMENT_ENDINGS: Record<
     endedReason: 'Stopped because the space credential it was running on was deleted.',
     error:
       'credential containment: the space credential this session launched on was deleted — ' +
+      'PTY killed, exit code not observed',
+  },
+  space_credential_made_private: {
+    endedReason: 'Stopped because the space credential it was running on was made private by its owner.',
+    error:
+      'credential containment: the space credential this session launched on was made private — ' +
       'PTY killed, exit code not observed',
   },
   member_credential_disconnected: {
@@ -703,8 +712,8 @@ export class SpawnService {
     const gone = credentialIds.filter((id) => !active.has(id));
     if (gone.length > 0) {
       throw new SpawnError(
-        `space credential ${gone.join(', ')} was deleted or disabled while this session was ` +
-          'starting, so it was stopped — launch again to use another credential',
+        `space credential ${gone.join(', ')} was deleted, disabled or made private while this ` +
+          'session was starting, so it was stopped — launch again to use another credential',
         'conflict',
         { sessionId, spaceCredentialIds: gone },
       );
@@ -1681,6 +1690,12 @@ export class SpawnService {
       }
       if (launch.agentTool === 'codex') await trustCodexWorkspace(cwd, env);
 
+      // R1 (W10a): the manifest was recorded under the recorder's lock, but a
+      // credential can be revoked or switched to private between that commit
+      // and here. Ask again before a child exists to hold the key; the
+      // post-spawn check below still closes the window after it.
+      await this.assertSpaceCredentialsStillActive(auth, sessionId, spaceCredentialIds);
+
       // Prompts accepted between here and the PTY being live must not be
       // dropped on the floor; the handoff parks them in the bounded FIFO and
       // spawnIfAbsent drains it.
@@ -2400,6 +2415,12 @@ export class SpawnService {
         await this.seedClaudeTrust(sessionId, cwd, info.workdirMode, manifest.project, env);
       }
       if (launch.agentTool === 'codex') await trustCodexWorkspace(cwd, env);
+
+      // R1 (W10a): the manifest was recorded under the recorder's lock, but a
+      // credential can be revoked or switched to private between that commit
+      // and here. Ask again before a child exists to hold the key; the
+      // post-spawn check below still closes the window after it.
+      await this.assertSpaceCredentialsStillActive(auth, sessionId, spaceCredentialIds);
 
       this.pty.beginPromptHandoff(sessionId);
       const { reused } = this.pty.spawnIfAbsent({

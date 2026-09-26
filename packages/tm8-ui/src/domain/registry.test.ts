@@ -58,7 +58,8 @@ describe('totality over the frozen core-kind set (WLT §2.1)', () => {
     // The literal stays a LITERAL on purpose: writing `CoreEntityKindSchema
     // .options.length` here would make the assertion tautological and the row
     // below could silently drift from the contract again.
-    expect(CORE_KINDS.length).toBe(25);
+    // 25 -> 26 (W10a): `credential`. MEASURED: CoreEntityKindSchema.options.length.
+    expect(CORE_KINDS.length).toBe(26);
     expect(allKinds()).toHaveLength(CORE_KINDS.length + 1);
     expect(allKinds().filter((r) => r.kind === CUSTOM_KIND_FALLBACK)).toHaveLength(1);
   });

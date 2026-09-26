@@ -70,7 +70,15 @@ export type CoreEntityKind =
   // Forms (migration 209, FORMS-DESIGN v3): a question set an agent asks a
   // human, with validated, revisioned responses delivered back to the
   // requesting session. Born only from `forms.create` (W1).
-  | 'form';
+  | 'form'
+  // Space credentials (W10a, doc 13): the same-id entity of a
+  // space_credentials row. Born only from credentials.space.create or a
+  // login start, under a SQL guard; never moved, deleted or restored through
+  // the generic doors. The secret, hint and vendor login are never on it.
+  | 'credential';
+
+/** A credential entity's visibility (W10a): who may launch on it. */
+export type CredentialVisibility = 'private' | 'public';
 
 /** tm8: runtime-registered custom kinds are namespaced (T-L4). */
 export type CustomEntityKind = `c:${string}`;
@@ -489,6 +497,9 @@ export type CoreEntityState =
   | { kind: 'drawing'; format: string; elementCount: number }
   /** A form's row facts (209): where it is in its lifecycle, and how long. */
   | { kind: 'form'; status: FormStatus; questionCount: number }
+  /** A space credential's row facts (W10a). Never the secret, hint or login. */
+  | { kind: 'credential'; provider: string; shape: string; visibility: CredentialVisibility;
+      status: string; ownerAccountId: string | null }
   /**
    * A chat's row facts (176). Everything here answers a question a list row
    * asks — who is it with, what is it running, is it busy — without a second
@@ -870,6 +881,12 @@ export type CoreEntityContent =
   | { kind: 'form'; status: FormStatus; description: string | null; settings: FormSettings;
       structureVersion: number; sections: FormSectionRow[]; questions: FormQuestionRow[];
       openedAt: string | null; closedAt: string | null }
+  /**
+   * A space credential (W10a): the same allow-list as its state. The sealed
+   * secret, key hint and vendor login never reach an entity read.
+   */
+  | { kind: 'credential'; provider: string; shape: string; visibility: CredentialVisibility;
+      status: string; ownerAccountId: string | null }
   /**
    * Containers (§4.2), hydrated in the panel.
    *
@@ -2631,6 +2648,9 @@ export type CreatableEntityKind = Exclude<
   // `form` is born ONLY from `forms.create`, which writes its questions,
   // sections and the requesting-session edge in one call (FORMS-DESIGN §6).
   | 'form'
+  // `credential` is human-only and born under a SQL guard from
+  // credentials.space.* (W10a); no generic door writes one.
+  | 'credential'
 >;
 
 export interface CreateEntityInput extends CommandContext {

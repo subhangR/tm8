@@ -131,6 +131,9 @@ function refusalSentence(
     case 'unreadable':
       return `the stored secret of ${which} could not be decrypted on this node — its creator ` +
         'or a space admin must re-enter it under Space settings → Credentials';
+    case 'not_usable':
+      return `${which} is another member's private credential — only its owner can launch on ` +
+        'it; pick a public or space-owned credential, or omit the id to use the space default';
   }
 }
 

@@ -1905,6 +1905,34 @@ const ROWS: readonly KindConfig[] = [
   },
 
   /*
+   * -- credential (W10a: a space credential's same-id envelope) --
+   *
+   * The honest minimum, as chat's Wave 1 was: `registry.test.ts` asserts
+   * totality over `CoreEntityKindSchema`. Credentials are managed in Space
+   * settings → Credentials (human-only doors); this row only lets an entity
+   * read of one render as a named thing. `quickCreate` is off — no generic
+   * door can create one, and the SQL guard refuses it anyway.
+   */
+  {
+    kind: 'credential',
+    label: 'Credential',
+    labelPlural: 'Credentials',
+    icon: '⚿',
+    iconArt: KIND_ART.credential,
+    slug: 'credentials',
+    strategy: 'collection',
+    defaultMode: 'list',
+    hiddenModes: ['board', 'tree', 'gallery'],
+    chip: { glyph: '⚿', tintBy: 'none' },
+    card: { fields: ['excerpt', 'activityAt'] },
+    list: baseList({ quickCreate: false, tile: { badges: [] } }),
+    panel: {
+      archetype: 'generic',
+      blocks: [COLLECTIONS_BLOCK],
+    },
+  },
+
+  /*
    * -- chat (migration 176: a conversation with a teammate, as an entity) --
    *
    * WAVE 2 MAKES THIS THE REAL ROW. Wave 1 shipped the honest minimum — a

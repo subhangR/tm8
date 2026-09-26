@@ -813,6 +813,9 @@ function synthesizeContent(s: EntitySummary): EntityContent {
         openedAt: null,
         closedAt: null,
       };
+    case 'credential':
+      // W10a: content is the same allow-list as state — no secret, hint or login.
+      return { ...state };
     default:
       // pull_request | commit | file | spell | skill — the open content variant
       return { kind: state.kind };

@@ -182,6 +182,12 @@ export const ENTITY_COLUMNS = `
     and (e.created_by = coalesce(internal.actor_id(), internal.current_member_id(e.space_id))
          or internal.is_space_admin(e.space_id))
   end as form_can_edit,
+  -- Space credentials (W10a). An allow-list of the side row's non-secret
+  -- columns: tm8_app has no grant on the sealed secret, the key hint or the
+  -- vendor login, so naming one here would fail the read, not leak it.
+  scr.label as cred_label, scr.provider as cred_provider, scr.shape as cred_shape,
+  scr.visibility as cred_visibility, scr.status as cred_status,
+  scr.owner_account_id as cred_owner_account_id,
   wt.project_id as wt_project_id, wt.path as wt_path, wt.branch as wt_branch,
   wt.base_ref as wt_base_ref, wt.base_commit_oid as wt_base_commit_oid,
   wt.status as wt_status, wt.status_changed_at as wt_status_changed_at,
@@ -373,6 +379,7 @@ export const ENTITY_FROM = `
   left join public.graphs gr             on gr.entity_id = e.id
   left join public.drawings drw           on drw.entity_id = e.id
   left join public.forms frm              on frm.entity_id = e.id
+  left join public.space_credentials scr  on e.kind = 'credential' and scr.id = e.id
   left join public.pull_requests pr      on pr.entity_id = e.id
   left join public.commits cm            on cm.entity_id = e.id
   left join public.artifacts art         on art.entity_id = e.id
@@ -561,6 +568,12 @@ export interface EntityRow {
   form_closed_at?: Date | string | null;
   form_question_count?: number | null;
   form_can_edit?: boolean | null;
+  cred_label?: string | null;
+  cred_provider?: string | null;
+  cred_shape?: string | null;
+  cred_visibility?: string | null;
+  cred_status?: string | null;
+  cred_owner_account_id?: string | null;
   memory_statement: string | null;
   memory_mechanism: string | null;
   memory_subject_scope: string | null;
@@ -1464,6 +1477,9 @@ export function titleOf(row: EntityRow): string {
     case 'form':
       // MIRRORS the projector twin.
       return row.form_title ?? 'Form';
+    case 'credential':
+      // The side row's label. MIRRORS the projector twin.
+      return row.cred_label ?? 'Credential';
     case 'chat':
       // The chat's own title, which `start_chat` seeds from the opening message.
       // An empty one is legal (the column defaults to '') and must still render
@@ -1548,6 +1564,9 @@ function excerptOf(row: EntityRow): string | undefined {
     case 'form':
       // The description says what is being asked. MIRRORS the projector twin.
       return excerpt(row.form_description ?? null);
+    case 'credential':
+      // Which vendor — never the login or the hint (W10a). MIRRORS the projector twin.
+      return excerpt(row.cred_provider ?? null);
     default:
       return undefined;
   }
@@ -1848,6 +1867,9 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         status: (row.form_status ?? 'draft') as FormStatus,
         questionCount: Number(row.form_question_count ?? 0),
       };
+    case 'credential':
+      // W10a: the non-secret row facts. MIRRORS the projector twin.
+      return credentialFactsOf(row);
     case 'chat':
       // Who it is with, what it is running, and whether it is busy. The two
       // state axes are independent and both are projected: `runtimeState` is the
@@ -2231,6 +2253,12 @@ export function entityCapabilities(row: EntityRow): EntityCapabilities {
   if (row.kind === 'message') {
     return { ...base, canEdit: false, canDelete: false, canAddChild: false };
   }
+  // A credential entity is written only by credentials.space.* (W10a): the
+  // generic edit, delete and child doors refuse it in SQL, so no surface
+  // offers them.
+  if (row.kind === 'credential') {
+    return { ...base, canEdit: false, canDelete: false, canAddChild: false, canPull: false, canComplete: false };
+  }
   // A form's edit doors (211) admit its author or a space admin. The row
   // carries that answer for THIS viewer (form_can_edit, computed under the
   // viewer's claims), so the Build control and the door cannot disagree —
@@ -2546,6 +2574,9 @@ export function contentOf(row: EntityRow): EntityContent {
         openedAt: isoOrNull(row.form_opened_at ?? null),
         closedAt: isoOrNull(row.form_closed_at ?? null),
       };
+    case 'credential':
+      // The same allow-list as its state (W10a); the secret never gets here.
+      return credentialFactsOf(row);
     case 'container': {
       const status = ctrStatusOf(row.ctr_status);
       const surfaces = ctrSurfacesOf(row.ctr_surfaces);
@@ -2852,6 +2883,18 @@ export async function readAncestorRows(
     if (hit) rows.push({ ...hit, hierarchy_depth: ancestor.hierarchy_depth });
   }
   return rows;
+}
+
+/** W10a: a credential entity's state and content — one allow-list. */
+function credentialFactsOf(row: EntityRow): Extract<EntityState, { kind: 'credential' }> {
+  return {
+    kind: 'credential',
+    provider: row.cred_provider ?? 'unknown',
+    shape: row.cred_shape ?? 'unknown',
+    visibility: row.cred_visibility === 'private' ? 'private' : 'public',
+    status: row.cred_status ?? 'unknown',
+    ownerAccountId: row.cred_owner_account_id ?? null,
+  };
 }
 
 /** Detail-only IO, shared by the original and universal entity doors. */
