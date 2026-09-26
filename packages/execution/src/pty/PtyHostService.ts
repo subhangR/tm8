@@ -430,6 +430,7 @@ export class PtyHostService {
   private readonly outputCapBytes: number;
   private readonly defaultShell?: string;
   private readonly sessionHost?: () => SessionHostConnection | null;
+  private readonly onInProcessFallback?: (sessionId: string) => void;
   private readonly statusRetryDelaysMs: readonly number[];
 
   /**
@@ -468,6 +469,7 @@ export class PtyHostService {
     this.outputCapBytes = options.outputCapBytes ?? 1024 * 1024;
     this.defaultShell = options.defaultShell;
     this.sessionHost = options.sessionHost;
+    this.onInProcessFallback = options.onInProcessFallback;
     this.statusRetryDelaysMs = options.statusRetryDelaysMs ?? DEFAULT_STATUS_RETRY_DELAYS_MS;
   }
 
@@ -482,7 +484,7 @@ export class PtyHostService {
    * Spawn a PTY for a session. If one already exists it is killed first.
    */
   spawn(params: PtySpawnParams): void {
-    const { sessionId, command, cwd, env, cols, rows } = params;
+    const { sessionId, command, cwd, env, cols, rows, hostMeta } = params;
 
     if (this.sessions.has(sessionId)) {
       this.logger.warn('PtyHostService: replacing existing PTY for session', { sessionId });
@@ -500,6 +502,20 @@ export class PtyHostService {
     const initialCols = clampDim(cols, DEFAULT_COLS);
     const initialRows = clampDim(rows, DEFAULT_ROWS);
     const host = this.sessionHost?.() ?? null;
+    if (!host && this.sessionHost) {
+      // H7 fallback: host mode is on but no host can take this session. It
+      // runs in-process — today's behaviour — and will NOT survive a restart.
+      this.logger.error(
+        'PtyHostService: no session host available; this session runs in-process and will not survive a restart',
+        undefined,
+        { sessionId },
+      );
+      try {
+        this.onInProcessFallback?.(sessionId);
+      } catch {
+        /* marking is best effort; the log above is the record */
+      }
+    }
     const epoch = this.newEpoch();
     const proc: PtyProcess = host
       ? RemotePty.spawn(host, {
@@ -511,6 +527,7 @@ export class PtyHostService {
           env,
           cols: initialCols,
           rows: initialRows,
+          ...(hostMeta !== undefined ? { meta: hostMeta } : {}),
         })
       : pty.spawn(shell, ['-c', command], {
           name: 'xterm-256color',
@@ -845,6 +862,16 @@ export class PtyHostService {
    * a reconnecting client can tell "same stream, resume" from "new stream, reset"
    * by equality alone — no offset/byte-count inference.
    */
+  /** True when this server runs agents through a session host (TM8_SESSION_HOST on). */
+  hostMode(): boolean {
+    return this.sessionHost !== undefined;
+  }
+
+  /** True when the session's process lives in a session host (it outlives this server). */
+  isHostBacked(sessionId: string): boolean {
+    return this.sessions.get(sessionId)?.proc.remote === true;
+  }
+
   getEpoch(sessionId: string): string | null {
     const entry = this.sessions.get(sessionId);
     if (!entry) return null;

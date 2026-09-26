@@ -159,6 +159,17 @@ export interface ServerConfig {
    */
   readonly dbStatementTimeoutMs?: number;
   /**
+   * Whether agents run inside a detached session host that outlives this
+   * process (`TM8_SESSION_HOST`, task 01a0db31, design doc 01a0db5e). With it,
+   * a restart reattaches every agent; without it, agents die with the server.
+   *
+   * Default ON for a server install and OFF for the desktop profile, where the
+   * app quitting is meant to end its agents. `1` / `0` override either way;
+   * anything else refuses, like every other switch here. Absent (a config
+   * built by hand, as test harnesses do) means off.
+   */
+  readonly sessionHost?: boolean;
+  /**
    * Self-hosted LiveKit SFU, for voice channels. All three or none — a node
    * with a URL and no secret cannot mint a token, so a half-set environment is
    * a configuration error, not a degraded mode.
@@ -490,6 +501,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     );
   }
 
+  const sessionHostRaw = env.TM8_SESSION_HOST?.trim();
+  if (sessionHostRaw !== undefined && sessionHostRaw !== '' && sessionHostRaw !== '0' && sessionHostRaw !== '1') {
+    throw new ConfigError(`TM8_SESSION_HOST must be "0" or "1", got ${JSON.stringify(env.TM8_SESSION_HOST)}`);
+  }
+  // Same test as desktop.ts isDesktopProfile, inlined: desktop.ts imports this file.
+  const sessionHost = sessionHostRaw ? sessionHostRaw === '1' : env.TM8_DESKTOP?.trim() !== '1';
+
   // An unrecognised value REFUSES rather than falling back to `single`. A typo
   // (`TM8_NODE_MODE=multiplayer`) silently defaulting to the permissive mode is
   // exactly how a node ends up auto-authenticating everyone who reaches
@@ -617,6 +635,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     },
     dbPoolMax,
     dbStatementTimeoutMs,
+    sessionHost,
     ...(livekit ? { livekit } : {}),
   };
 }

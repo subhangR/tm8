@@ -12,7 +12,7 @@
 import type { IncomingMessage } from 'node:http';
 import { resolve as pathResolve } from 'node:path';
 import { CollabError, FILE_MAX_SIZE_BYTES_DEFAULT } from '@tm8/contract';
-import { CredentialSessionLauncher } from '@tm8/execution';
+import { CredentialSessionLauncher, type SessionHostPool } from '@tm8/execution';
 import { ensureLaunchResources } from './bootstrap/launch-resources.js';
 
 import { createDb } from './db/index.js';
@@ -34,6 +34,7 @@ import {
   WorkspaceEventPublisher,
 } from './events/index.js';
 import { createExecutionRuntime, createLoopExecutorPort } from './facade/execution-handlers.js';
+import { openSessionHosts } from './facade/session-host-registry.js';
 import type { ExecutionRuntime } from './facade/execution-handlers.js';
 import { createDefaultScheduler, type Scheduler } from './scheduler/index.js';
 import { commandEnvelope } from './facade/context.js';
@@ -163,6 +164,12 @@ export interface BootstrappedServer {
    */
   readonly execution?: ExecutionRuntime | undefined;
   /**
+   * The session hosts this node's agents run in (task 01a0db31), when enabled
+   * and reachable. Whoever owns the process lifetime calls `detachAll` at
+   * shutdown; the agents keep running for the next process to adopt.
+   */
+  readonly sessionHosts?: SessionHostPool | undefined;
+  /**
    * The graph connection, when one was configured. Undefined on a
    * database-less node — see the guard in `bootstrap`. Callers that own the
    * process lifetime must `await db.end()` at shutdown.
@@ -270,18 +277,36 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    * compounds. Hence `createExecutionRuntime` rather than a symmetrical
    * `registerExecutionHandlers` here.
    */
+  // The default is `<host>:<port>`, which the desktop app's ephemeral port
+  // would change on every launch — orphaning its own worktree allocations and
+  // its own ghost sessions. See `desktopNodeId`.
+  const nodeId = isDesktopProfile() && dataDir ? desktopNodeId(dataDir) : `${config.host}:${config.port}`;
+  // Session hosts (TM8_SESSION_HOST, task 01a0db31): agents run in a detached
+  // host that outlives this process, so a restart reattaches them. Opened
+  // BEFORE the execution runtime, which spawns into it. A pool that cannot
+  // open leaves the node in-process — loudly, never as a refusal to boot.
+  const sessionHosts = db && config.sessionHost ? await openSessionHosts(db, owner!, nodeId, dataDir) : undefined;
   const execution = db
     ? createExecutionRuntime({
         db,
         config,
         dataDir,
         owner,
-        // The default is `<host>:<port>`, which the desktop app's ephemeral
-        // port would change on every launch — orphaning its own worktree
-        // allocations and its own ghost sessions. See `desktopNodeId`.
-        ...(isDesktopProfile() && dataDir ? { nodeId: desktopNodeId(dataDir) } : {}),
+        nodeId,
+        ...(sessionHosts ? { sessionHosts } : {}),
       })
     : undefined;
+  // Reattach every agent the hosts kept, before anything can spawn, before the
+  // chat sweep and before the ghost sweep, which must see them as live.
+  if (execution && sessionHosts) {
+    const adoption = await execution.adoptHostSessions();
+    console.log(
+      `  session host: ${sessionHosts.hosts.length} host(s), reattached ${adoption.adopted.length} agent(s)` +
+        (adoption.killed.length > 0 ? `, stopped ${adoption.killed.length} with no live session row` : ''),
+    );
+    for (const dead of sessionHosts.dead) console.log(`  session host retired: ${dead.row.generation} — ${dead.reason}`);
+    for (const problem of adoption.errors) console.log(`  session host adoption could not finish: ${problem.message}`);
+  }
 
   if (db && config.launchBootstrap) {
     const seeded = await ensureLaunchResources({
@@ -1030,7 +1055,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     });
   }
 
-  return { server, subscriptions, events, url, db, delivery, preview, scheduler, execution, claimUrl };
+  return { server, subscriptions, events, url, db, delivery, preview, scheduler, execution, sessionHosts, claimUrl };
 }
 
 export async function main(): Promise<void> {
@@ -1042,7 +1067,7 @@ export async function main(): Promise<void> {
 
     // TRUE only here: this is the one caller that owns the process lifetime and
     // can therefore stop what it starts (see BootstrapOptions.startBackgroundJobs).
-    const { server, url, db, delivery, preview, scheduler, execution, claimUrl } = await bootstrap({
+    const { server, url, db, delivery, preview, scheduler, execution, sessionHosts, claimUrl } = await bootstrap({
       startBackgroundJobs: true,
       ...(sidecar ? { config: await desktopServerConfig() } : {}),
       // TM8 Chat production composition: ClaudeHeadlessAdapter + the C5-minting
@@ -1126,6 +1151,9 @@ export async function main(): Promise<void> {
         .then(() => preview?.close())
         .then(() => delivery?.close())
         .then(() => db?.end())
+        // Host-backed agents are left running for the next process to adopt
+        // (task 01a0db31): end the host connections cleanly rather than by exit.
+        .then(() => sessionHosts?.detachAll())
         // Postgres goes last and only in the desktop profile: every client of
         // it above has to be closed before `pg_ctl -m fast` runs, or the
         // shutdown races its own connections. A server install does not own

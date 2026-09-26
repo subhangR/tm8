@@ -16,6 +16,7 @@ export {
   type SessionLiveCause,
   type SessionLiveListener,
   type SpawnServiceOptions,
+  type HostAdoptionReport,
 } from './SpawnService.js';
 export {
   DEFAULT_AGENT_TOOL,

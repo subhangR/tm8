@@ -35,6 +35,8 @@ import {
   PtyHostService,
   PromptSettlementWaiter,
   readSessionTranscript,
+  type HostAdoptionReport,
+  type SessionHostPool,
   knownAgentConfigDirs,
   type CreateWorkSessionInput,
   type ShellSessionContext,
@@ -1674,6 +1676,13 @@ export interface ExecutionRuntimeDeps {
    * this whole file just stopped having.
    */
   owner?: () => Promise<LoopbackOwner>;
+  /**
+   * The node's session hosts (TM8_SESSION_HOST, task 01a0db31). Present, agent
+   * PTYs spawn inside a host that outlives this process, and
+   * `adoptHostSessions` reattaches what a previous process left running.
+   * Absent, agents live and die with this process, exactly as before.
+   */
+  sessionHosts?: SessionHostPool;
 }
 
 export interface ExecutionRuntime {
@@ -1722,6 +1731,13 @@ export interface ExecutionRuntime {
    * shutdown must not hang or fail because bookkeeping did.
    */
   recordShutdown(signal: string): Promise<number>;
+  /**
+   * Reattach every agent the node's session hosts kept across the restart
+   * (task 01a0db31). Call ONCE at startup, BEFORE `reconcileGhosts`: an
+   * adopted session is live, and the ghost sweep must see it in the PTY map.
+   * A no-op without session hosts. Never rejects.
+   */
+  adoptHostSessions(): Promise<HostAdoptionReport>;
 }
 
 /**
@@ -1753,8 +1769,33 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
   // the closure that lets construction stay host-first without either side
   // reaching into the other's internals.
   const promptSettlement = new PromptSettlementWaiter();
+  const hosts = deps.sessionHosts;
   const pty = new PtyHostService({
     ...(deps.logger ? { logger: deps.logger } : {}),
+    // Host mode: omit the option entirely when off (in-process, as before);
+    // when on, a null answer means the host is unavailable right now and this
+    // one spawn runs in-process (H7) — flagged below, never silent.
+    ...(hosts
+      ? {
+          sessionHost: () => hosts.hostForSpawn(),
+          onInProcessFallback: (sessionId: string) => {
+            const auth = spawnService.authFor(sessionId);
+            if (!auth) return;
+            void deps.db
+              .rpc(auth as DbClaims, 'create_attention_request', [
+                sessionId,
+                'No session host was available: this agent runs inside the server process and will NOT survive a server restart.',
+                60,
+              ])
+              .catch((error: unknown) =>
+                deps.logger?.warn?.('execution: in-process fallback attention not recorded', {
+                  sessionId,
+                  error: error instanceof Error ? error.message : String(error),
+                }),
+              );
+          },
+        }
+      : {}),
     onSessionStatus: (sessionId: string, status: PtySessionStatus, exitInfo: PtyExitInfo) =>
       spawnService.handlePtyExit(sessionId, status, exitInfo),
     onPromptSettled: promptSettlement.resolve,
@@ -1865,6 +1906,20 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
           error: error instanceof Error ? error.message : String(error),
         });
         return 0;
+      }
+    },
+    adoptHostSessions: async () => {
+      if (!hosts) return { adopted: [], killed: [], forgotten: [], errors: [] };
+      try {
+        const o = await owner();
+        return await spawnService.adoptHostSessions(
+          { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'startup-adopt' },
+          hosts.sessions(),
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        deps.logger?.warn?.('execution: session host adoption skipped', { error: message });
+        return { adopted: [], killed: [], forgotten: [], errors: [{ message }] };
       }
     },
     reconcileWorktrees: async () => {
@@ -2039,6 +2094,8 @@ export function registerExecutionHandlers(
         return { examined: 0, repaired: [], quarantined: [], errors: [] };
       }
     },
+    // No session hosts on this path: nothing to adopt.
+    adoptHostSessions: async () => ({ adopted: [], killed: [], forgotten: [], errors: [] }),
   };
 }
 

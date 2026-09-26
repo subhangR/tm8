@@ -53,6 +53,8 @@ export interface HostSessionRecord {
   err?: StreamState;
   /** Opaque controller cursor stored by the last `ack` (pipe sessions). */
   cursor: unknown;
+  /** Opaque spawn-time metadata from `spawn_*` (null when none was sent). */
+  meta: unknown;
   /** Tag of the last tagged `write` (a chat turn id). */
   lastInputTag: string | null;
   /** Retained until `forget`: an exit that happened while nobody was connected is reported here. */
@@ -77,8 +79,21 @@ export type ServerFrame =
       env: Record<string, string>;
       cols: number;
       rows: number;
+      /** Opaque, ≤ 8 KiB: stored and reported back in the record (the spawner's claims). */
+      meta?: unknown;
     }
-  | { t: 'spawn_pipe'; rid: number; sid: string; file: string; args: string[]; cwd: string; env: Record<string, string> }
+  | {
+      t: 'spawn_pipe';
+      rid: number;
+      sid: string;
+      /** Server-minted, as for spawn_pty (D4′): the host never mints an epoch. */
+      epoch: string;
+      file: string;
+      args: string[];
+      cwd: string;
+      env: Record<string, string>;
+      meta?: unknown;
+    }
   | { t: 'write'; sid: string; tag?: string }
   | { t: 'resize'; sid: string; cols: number; rows: number }
   | { t: 'signal'; rid: number; sid: string; signal: NodeJS.Signals }
@@ -86,6 +101,8 @@ export type ServerFrame =
   | { t: 'subscribe'; rid: number; sid: string; stream: StreamName; fromOffset: number }
   | { t: 'ack'; sid: string; stream: 'out'; offset: number; cursor?: unknown }
   | { t: 'forget'; rid: number; sid: string }
+  /** Hang up every live session, SIGKILL any still alive after 5s, then exit (H1: never a signal). */
+  | { t: 'hangup'; rid: number }
   | { t: 'ping'; rid: number };
 
 // ---------------------------------------------------------------------------
@@ -106,7 +123,11 @@ export type HostFrame =
   | ({ t: 'exit'; sid: string } & ExitRecord)
   | { t: 'ok'; rid: number; base?: number; gap?: number; next?: number }
   | { t: 'err'; rid: number; code: string; message: string }
-  | { t: 'superseded'; by: string };
+  | { t: 'superseded'; by: string }
+  /** Live data for this stream stopped while the socket was over its high water; resubscribe from your `next` (H4). */
+  | { t: 'resync'; sid: string; stream: StreamName }
+  /** A write was refused: the session already had more pending input than the host will queue (H4). */
+  | { t: 'input_dropped'; sid: string; bytes: number; tag: string | null };
 
 export type AnyFrame = ServerFrame | HostFrame;
 
@@ -153,12 +174,14 @@ export class FrameDecoder<F extends { t: string } = AnyFrame> {
     const out: Array<DecodedFrame<F>> = [];
     for (;;) {
       if (this.pendingBytes < 4) return out;
-      const buf = this.coalesce();
-      const total = buf.readUInt32BE(0);
+      const total = this.peekTotal();
       if (total < 4 || total > MAX_FRAME_BYTES) {
         throw new FrameError(`invalid frame length ${total}`);
       }
-      if (buf.length < 4 + total) return out;
+      // Concatenate only once the whole frame is here: joining on every read
+      // is quadratic for a large frame arriving in small chunks (A11).
+      if (this.pendingBytes < 4 + total) return out;
+      const buf = this.coalesce();
       const headLen = buf.readUInt32BE(4);
       if (headLen > total - 4) throw new FrameError(`invalid header length ${headLen}`);
       let header: unknown;
@@ -182,6 +205,12 @@ export class FrameDecoder<F extends { t: string } = AnyFrame> {
       this.pending = rest.length > 0 ? [rest] : [];
       this.pendingBytes = rest.length;
     }
+  }
+
+  private peekTotal(): number {
+    const first = this.pending[0]!;
+    if (first.length >= 4) return first.readUInt32BE(0);
+    return Buffer.concat(this.pending, this.pendingBytes).readUInt32BE(0);
   }
 
   private coalesce(): Buffer {

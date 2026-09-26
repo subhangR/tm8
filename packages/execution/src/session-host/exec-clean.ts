@@ -13,10 +13,11 @@
 // the same process they saw before this existed.
 //
 // argv: node --no-warnings exec-clean.js <file> [args...]
-// The environment is passed through untouched, with one exception: node reads
-// NODE_OPTIONS before this script runs, so the host never lets the SHIM see it.
-// `wrapEnvForExecClean` moves it to RESTORE_KEY; the shim puts it back for the
-// real program.
+// The environment is passed through untouched, with one exception: node and
+// libuv read NODE_* and UV_* before this script runs (NODE_OPTIONS,
+// NODE_V8_COVERAGE, NODE_COMPILE_CACHE ...), so the host never lets the SHIM
+// see them. `wrapEnvForExecClean` parks them as JSON under RESTORE_KEY; the
+// shim puts every one back for the real program.
 import { accessSync, closeSync, constants, readdirSync, readFileSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 
@@ -60,7 +61,7 @@ function resolveExecutable(file: string, env: NodeJS.ProcessEnv): string {
   return file;
 }
 
-const RESTORE_KEY = 'TM8_EXEC_CLEAN_NODE_OPTIONS';
+const RESTORE_KEY = 'TM8_EXEC_CLEAN_ENV';
 
 const [file, ...args] = process.argv.slice(2);
 if (!file) {
@@ -73,11 +74,19 @@ if (typeof execve !== 'function') {
   process.stderr.write('exec-clean: this node has no process.execve; refusing to run with inherited fds\n');
   process.exit(127);
 }
-const env: NodeJS.ProcessEnv = { ...process.env };
-delete env['NODE_OPTIONS'];
-if (env[RESTORE_KEY] !== undefined) {
-  env['NODE_OPTIONS'] = env[RESTORE_KEY];
-  delete env[RESTORE_KEY];
+const env: NodeJS.ProcessEnv = {};
+for (const [key, value] of Object.entries(process.env)) {
+  // Anything node or libuv set for THIS shim is not the agent's.
+  if (key === RESTORE_KEY || key.startsWith('NODE_') || key.startsWith('UV_')) continue;
+  env[key] = value;
+}
+if (process.env[RESTORE_KEY] !== undefined) {
+  try {
+    Object.assign(env, JSON.parse(process.env[RESTORE_KEY]) as Record<string, string>);
+  } catch {
+    process.stderr.write('exec-clean: unreadable parked environment; refusing to run\n');
+    process.exit(127);
+  }
 }
 const resolved = resolveExecutable(file, env);
 try {

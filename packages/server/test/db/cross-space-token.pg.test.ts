@@ -831,6 +831,8 @@ describe('T26 relay — dispatch after resolveIdentity, human session required',
         TM8_BIND: '127.0.0.1',
         TM8_PORT: '4610',
         TM8_NODE_MODE: 'single',
+        // A detached session host would outlive the test process (task 01a0db31).
+        TM8_SESSION_HOST: '0',
         TM8_DATABASE_URL: database.url,
         TM8_DATA_DIR: await mkdtemp(join(tmpdir(), 'tm8-t26-')),
         TM8_DISABLE_AUTO_OWNER: disableAutoOwner,

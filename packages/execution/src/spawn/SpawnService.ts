@@ -11,6 +11,8 @@ import { access, chmod, lstat, mkdir, readdir, rename, rm, stat, writeFile } fro
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { PtyHostService } from '../pty/PtyHostService.js';
+import type { HostSessionRecord } from '../session-host/frames.js';
+import type { SessionHostConnection } from '../session-host/client.js';
 import type {
   PromptSettlementResult,
   PromptSettlementWaiter,
@@ -1716,6 +1718,9 @@ export class SpawnService {
         env,
         ...(request.cols ? { cols: request.cols } : {}),
         ...(request.rows ? { rows: request.rows } : {}),
+        // Kept by the session host: the next server restores these claims when
+        // it adopts the session, so its exit can still be written.
+        hostMeta: hostMetaFor(auth),
       });
 
       // Arm the watcher before the first post-spawn await. A very short-lived
@@ -2409,6 +2414,9 @@ export class SpawnService {
         env,
         ...(request.cols ? { cols: request.cols } : {}),
         ...(request.rows ? { rows: request.rows } : {}),
+        // Kept by the session host: the next server restores these claims when
+        // it adopts the session, so its exit can still be written.
+        hostMeta: hostMetaFor(auth),
       });
       launchedPty = !reused;
 
@@ -3103,6 +3111,75 @@ export class SpawnService {
     }
   }
 
+  /** The claims a live session was spawned (or adopted) under, if this process holds it. */
+  authFor(sessionId: string): GraphAuth | undefined {
+    return this.sessionAuth.get(sessionId);
+  }
+
+  /**
+   * STARTUP ADOPTION — take back the PTY sessions a session host kept alive
+   * while this node restarted (task 01a0db31, doc 01a0db5e). Call ONCE at boot,
+   * BEFORE {@link reconcileNodeGhosts}: that sweep skips any session with a PTY
+   * entry, so an adopted agent is not retired as a ghost.
+   *
+   * A record is adopted only when all three hold:
+   *   - it is a PTY (chat pipes belong to the chat orchestrator);
+   *   - it carries the spawner's claims (`hostMeta`) — terminals and login
+   *     shells do not, and are killed at a restart exactly as before;
+   *   - this node's graph still lists its work session as live. A row that
+   *     went terminal while nobody was connected (retired, stopped) wins.
+   * Anything else still running is adopted only so the ordinary kill path owns
+   * it (its late exit releases the record); an already-exited one is forgotten.
+   *
+   * NEVER THROWS: a node that cannot list its sessions adopts nothing, and the
+   * host keeps its records until the next attempt.
+   */
+  async adoptHostSessions(
+    auth: GraphAuth,
+    held: ReadonlyArray<{ conn: SessionHostConnection; record: HostSessionRecord }>,
+  ): Promise<HostAdoptionReport> {
+    const report: HostAdoptionReport = { adopted: [], killed: [], forgotten: [], errors: [] };
+    const ptys = held.filter(({ record }) => record.kind === 'pty');
+    if (ptys.length === 0) return report;
+    let live: Set<string>;
+    try {
+      live = new Set(
+        this.nodeId ? (await this.graph.listNodeActiveSessions(auth, this.nodeId)).map((s) => s.sessionId) : [],
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger?.error('SpawnService: session host adoption could not list sessions', undefined, {
+        nodeId: this.nodeId,
+        held: ptys.length,
+        error: message,
+      });
+      report.errors.push({ message: `could not list this node's sessions: ${message}` });
+      return report;
+    }
+    for (const { conn, record } of ptys) {
+      const claims = claimsFromHostMeta(record.meta);
+      if (claims !== undefined && live.has(record.sid)) {
+        this.sessionAuth.set(record.sid, claims);
+        this.oomKillAtSpawn.set(record.sid, record.oomKillAtSpawn);
+        if (this.pty.adopt(conn, record)) report.adopted.push(record.sid);
+        continue;
+      }
+      if (record.exit === null) {
+        if (this.pty.adopt(conn, record)) this.pty.kill(record.sid, false);
+        report.killed.push(record.sid);
+      } else {
+        conn.request({ t: 'forget', sid: record.sid }).catch(() => undefined);
+        report.forgotten.push(record.sid);
+      }
+    }
+    this.logger?.info('SpawnService: session host adoption complete', {
+      adopted: report.adopted.length,
+      killed: report.killed,
+      forgotten: report.forgotten,
+    });
+    return report;
+  }
+
   /**
    * STARTUP GHOST RECONCILIATION — retire sessions this node can no longer own.
    *
@@ -3276,7 +3353,9 @@ export class SpawnService {
    * @returns how many sessions were annotated.
    */
   async recordShutdown(auth: GraphAuth, signal: string): Promise<number> {
-    const live = this.pty.liveSessionIds();
+    // A session held by the session host does NOT die with this process — the
+    // next server adopts it — so it is not annotated (task 01a0db31).
+    const live = this.pty.liveSessionIds().filter((sessionId) => !this.pty.isHostBacked(sessionId));
     if (live.length === 0) return 0;
 
     // Deliberately NOT the OOM path. Reaching this handler means the process
@@ -3290,11 +3369,16 @@ export class SpawnService {
         await this.graph.transition(sessionAuth, {
           sessionId,
           status: 'failed',
-          error: `node received ${signal} and is shutting down; this session's PTY dies with it`,
+          error:
+            `node received ${signal} and is shutting down; this session's PTY dies with it` +
+            (this.pty.hostMode() ? ' (it ran in-process: no session host was available when it spawned)' : ''),
           endedKind: 'server_restart',
           endedReason:
             'Stopped because the server was restarted. Nothing was wrong with this session — ' +
-            'it can be resumed to pick up where it left off.',
+            'it can be resumed to pick up where it left off.' +
+            (this.pty.hostMode()
+              ? ' It did not survive the restart because no session host was available when it started.'
+              : ''),
         });
         annotated += 1;
         // The usage read, BOUNDED. This handler's contract is "bounded and
@@ -3605,4 +3689,23 @@ export function replayedSelection(posture: SessionLaunchPosture | null | undefin
     ...(hasSelection && selection.success ? { selection: selection.data } : {}),
     ...(hasReasons && reasons.success ? { selectionReasons: reasons.data } : {}),
   };
+}
+
+export interface HostAdoptionReport {
+  adopted: string[];
+  killed: string[];
+  forgotten: string[];
+  errors: Array<{ message: string }>;
+}
+
+/** Versioned so a later server can refuse a shape it does not understand. */
+function hostMetaFor(auth: GraphAuth): { v: 1; auth: GraphAuth } {
+  return { v: 1, auth };
+}
+
+function claimsFromHostMeta(meta: unknown): GraphAuth | undefined {
+  if (meta === null || typeof meta !== 'object') return undefined;
+  const m = meta as { v?: unknown; auth?: unknown };
+  if (m.v !== 1 || m.auth === null || typeof m.auth !== 'object') return undefined;
+  return m.auth as GraphAuth;
 }

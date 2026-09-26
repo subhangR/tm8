@@ -103,6 +103,8 @@ export interface SessionBinding {
   onReconnected(record: HostSessionRecord | null): void;
   /** The host is gone for good (reconnect failed): every session it held is dead. */
   onHostLost(): void;
+  /** H4: the host stopped streaming this stream at its send high water; resubscribe from your own offset. */
+  onResync?(stream: StreamName): void;
 }
 
 type HelloOk = Extract<HostFrame, { t: 'hello_ok' }>;
@@ -114,6 +116,8 @@ interface Handshake {
   extra: Array<DecodedFrame<HostFrame>>;
 }
 type Reply = Extract<HostFrame, { t: 'ok' | 'spawned' }>;
+/** H10: a request with no answer by then means the controller link is broken. */
+export const REQUEST_TIMEOUT_MS = 10_000;
 /** Every rid-bearing server frame, minus the rid `request` assigns. */
 type RequestFrame = ServerFrame extends infer F ? (F extends { rid: number } ? Omit<F, 'rid'> : never) : never;
 
@@ -123,6 +127,8 @@ interface ConnectOptions {
   serverBootId: string;
   role: 'active' | 'retired';
   helloTimeoutMs?: number;
+  /** Test seam; defaults to {@link REQUEST_TIMEOUT_MS}. */
+  requestTimeoutMs?: number;
   logger?: Logger;
 }
 
@@ -181,6 +187,11 @@ export class SessionHostConnection extends EventEmitter {
   get connected(): boolean {
     return !this.socket.destroyed;
   }
+  /** Reconnect gave up: the host is gone and every session it held has been reported dead. */
+  get lost(): boolean {
+    return this.lostForGood;
+  }
+  private lostForGood = false;
 
   /** Connect and authenticate. Rejects with the raw socket error (see isDeadSocketError) or a hello timeout. */
   static async connect(options: ConnectOptions): Promise<SessionHostConnection> {
@@ -304,6 +315,16 @@ export class SessionHostConnection extends EventEmitter {
         });
         this.emit('superseded', frame.by);
         return;
+      case 'resync':
+        this.bindings.get(frame.sid)?.onResync?.(frame.stream);
+        return;
+      case 'input_dropped':
+        this.logger.error('session host dropped input: the agent is not reading its terminal', undefined, {
+          sessionId: frame.sid,
+          bytes: frame.bytes,
+          tag: frame.tag,
+        });
+        return;
       case 'hello_ok':
         return;
     }
@@ -343,18 +364,19 @@ export class SessionHostConnection extends EventEmitter {
       }
     }
     this.logger.error('session host is gone; its sessions are dead', undefined, { generation: this.generation });
+    this.lostForGood = true;
     for (const binding of [...this.bindings.values()]) binding.onHostLost();
     this.bindings.clear();
     this.emit('lost');
   }
 
+  /**
+   * Route a sid's frames to `binding`. Replays nothing (H5/H8): an exit that
+   * arrived before the bind stays in {@link takeUnboundExit} for the caller to
+   * claim — adopt fires it after the retained tail; a fresh spawn discards it.
+   */
   bind(sid: string, binding: SessionBinding): void {
     this.bindings.set(sid, binding);
-    const exit = this.unboundExits.get(sid);
-    if (exit) {
-      this.unboundExits.delete(sid);
-      binding.onExit(exit);
-    }
   }
 
   unbind(sid: string): void {
@@ -379,9 +401,28 @@ export class SessionHostConnection extends EventEmitter {
       return Promise.reject(new SessionHostError('session host connection closed', 'disconnected'));
     }
     const rid = this.nextRid++;
+    const socket = this.socket;
+    const timeoutMs = this.options.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
     return new Promise((resolve, reject) => {
-      this.pending.set(rid, { resolve, reject });
-      this.socket.write(encodeFrame({ ...frame, rid } as unknown as ServerFrame));
+      // H10: a stalled host must not park a subscribe (and the exits it
+      // defers) forever. No answer in time is a broken link: drop the socket
+      // and let the reconnect path decide whether the host is still there.
+      const timer = setTimeout(() => {
+        if (!this.pending.delete(rid)) return;
+        reject(new SessionHostError(`session host did not answer ${frame.t} in ${timeoutMs}ms`, 'request_timeout'));
+        this.logger.error('session host request timed out; dropping the connection', undefined, {
+          generation: this.generation,
+          frame: frame.t,
+        });
+        socket.destroy();
+      }, timeoutMs);
+      timer.unref?.();
+      const settle = <T>(fn: (v: T) => void) => (v: T): void => {
+        clearTimeout(timer);
+        fn(v);
+      };
+      this.pending.set(rid, { resolve: settle(resolve), reject: settle(reject) });
+      socket.write(encodeFrame({ ...frame, rid } as unknown as ServerFrame));
     });
   }
 
@@ -410,6 +451,18 @@ export interface SessionHostPoolOptions {
   spawnTimeoutMs?: number;
   /** Idle-exit override passed to a spawned host (tests). */
   hostIdleExitMs?: number;
+  /**
+   * NC2 ONLY: behave like the server before session hosts existed — send
+   * every host a previous server left a `hangup` instead of reattaching.
+   * A test-fixture option, never an env read (H9).
+   */
+  noAdoptForTest?: boolean;
+  /**
+   * H12 negative twin ONLY: the spawned host starts children WITHOUT the
+   * exec-clean shim, so the fd assertions are proven able to see a leak.
+   * A test-fixture option, never an env read.
+   */
+  bypassExecCleanForTest?: boolean;
 }
 
 export interface DeadHost {
@@ -455,18 +508,10 @@ export class SessionHostPool {
   private async discover(): Promise<void> {
     const rows = await this.options.registry.list();
     const known = new Set<string>();
-    // NC2 only: behave like the server before session hosts existed — hang up
-    // every host a previous server left instead of reattaching to it.
-    const noAdopt = process.env['TM8_SESSION_HOST_NO_ADOPT'] === '1';
     for (const row of rows) {
       known.add(row.generation);
-      if (noAdopt) {
-        this.logger.error('TM8_SESSION_HOST_NO_ADOPT=1: hanging up a session host instead of reattaching', undefined, {
-          generation: row.generation,
-        });
-        this.killVerified(row.generation, 'SIGHUP');
-        this.dead.push({ row, reason: 'TM8_SESSION_HOST_NO_ADOPT' });
-        await this.options.registry.remove(row.generation).catch(() => undefined);
+      if (this.options.noAdoptForTest === true) {
+        await this.hangUpForTest(row);
         continue;
       }
       const role = row.generation === this.generation ? 'active' : 'retired';
@@ -480,6 +525,7 @@ export class SessionHostPool {
           logger: this.logger,
         });
         this.hosts.push(conn);
+        this.watch(conn);
         if (role === 'active') this.active = conn;
         this.logger.info('session host reattached', {
           generation: row.generation,
@@ -487,13 +533,13 @@ export class SessionHostPool {
           sessions: conn.hello.sessions.length,
         });
       } catch (error) {
-        const code = (error as SessionHostError).code;
         let reason = isDeadSocketError(error) ? 'socket refused' : String((error as Error).message);
-        if (code === 'hello_timeout') {
-          // A3: a host that holds the socket but will not talk is killed, so
-          // boot stays bounded and its sessions take the dead path.
-          reason = 'hello timeout; host SIGKILLed';
-          this.killVerified(row.generation, 'SIGKILL');
+        if (!isDeadSocketError(error)) {
+          // A3/H6: a host that is alive but will not complete a handshake —
+          // timeout, refusal, wrong protocol — is killed BEFORE its row and
+          // files go, or it would keep its agents with nothing able to find it.
+          const killed = this.killVerified(row.generation, 'SIGKILL');
+          reason = `${reason}; ${killed ? `host pid ${killed} SIGKILLed` : 'host process already gone'}`;
         }
         this.logger.warn('session host is dead; retiring its registration', { generation: row.generation, reason });
         this.dead.push({ row, reason });
@@ -509,6 +555,7 @@ export class SessionHostPool {
       try {
         this.active = await this.spawnOwn();
         this.hosts.unshift(this.active);
+        this.watch(this.active);
       } catch (error) {
         this.logger.error('could not start the session host; agents started now will not survive a restart', error as Error, {
           generation: this.generation,
@@ -550,10 +597,21 @@ export class SessionHostPool {
         });
         continue;
       }
-      // No row: no server can ever authenticate to it again. SIGHUP tells the
-      // host it is orphaned (it hangs up its sessions and exits).
-      this.logger.warn('orphaned session host (no registry row); sending SIGHUP', { generation, pid: info!.pid });
-      this.killVerified(generation, 'SIGHUP');
+      // No row: no server can ever authenticate to it again, so no frame can
+      // reach it (H1: the host ignores signals it cannot authenticate). Kill
+      // it; closing its masters HUPs every PTY session and its pipe children
+      // read EOF. The rows those agents held are retired by ghost
+      // reconciliation, which names this host from `dead`.
+      const killed = this.killVerified(generation, 'SIGKILL');
+      this.logger.warn('orphaned session host (no registry row); SIGKILLed', { generation, pid: info!.pid });
+      if (killed) {
+        this.dead.push({
+          row: { generation, socketPath: this.socketPathFor(generation), token: '', pid: killed },
+          reason: `orphaned (no registry row); host pid ${killed} SIGKILLed`,
+        });
+      }
+      this.unlinkQuiet(join(this.dir, name));
+      this.unlinkQuiet(this.socketPathFor(generation));
     }
   }
 
@@ -570,15 +628,42 @@ export class SessionHostPool {
     }
   }
 
-  /** Signal the host named by an info file, only if /proc still shows the same process (R4). */
-  private killVerified(generation: string, signal: NodeJS.Signals): void {
+  /**
+   * Signal the host named by an info file, only if /proc still shows the same
+   * process (R4). Returns the pid signalled, or null.
+   */
+  private killVerified(generation: string, signal: NodeJS.Signals): number | null {
     const info = this.readInfo(generation);
-    if (!info || info.starttime === null || readStartTime(info.pid) !== info.starttime) return;
+    if (!info || info.starttime === null || readStartTime(info.pid) !== info.starttime) return null;
     try {
       process.kill(info.pid, signal);
+      return info.pid;
     } catch {
-      /* gone */
+      return null;
     }
+  }
+
+  /** NC2: authenticate, send `hangup`, and retire the row — the pre-session-host behaviour. */
+  private async hangUpForTest(row: SessionHostRow): Promise<void> {
+    this.logger.error('noAdoptForTest: hanging up a session host instead of reattaching', undefined, {
+      generation: row.generation,
+    });
+    try {
+      const conn = await SessionHostConnection.connect({
+        socketPath: row.socketPath,
+        token: row.token,
+        serverBootId: this.options.serverBootId,
+        role: 'retired',
+        helloTimeoutMs: this.options.helloTimeoutMs,
+        logger: this.logger,
+      });
+      await conn.request({ t: 'hangup' }).catch(() => undefined);
+      conn.detach();
+    } catch {
+      /* already gone */
+    }
+    this.dead.push({ row, reason: 'noAdoptForTest' });
+    await this.options.registry.remove(row.generation).catch(() => undefined);
   }
 
   private unlinkQuiet(path: string): void {
@@ -616,6 +701,7 @@ export class SessionHostPool {
               '--generation',
               generation,
               ...(this.options.hostIdleExitMs !== undefined ? ['--idle-exit-ms', String(this.options.hostIdleExitMs)] : []),
+              ...(this.options.bypassExecCleanForTest === true ? ['--bypass-exec-clean-for-test'] : []),
             ],
             {
               detached: true, // setsid(): own session, no controlling terminal
@@ -681,6 +767,12 @@ export class SessionHostPool {
     throw new Error(`session host did not start listening: ${(lastError as Error | null)?.message ?? 'timeout'}`);
   }
 
+  /**
+   * One server starts a generation's host at a time. The loser throws, and its
+   * spawns fall back in-process (A9, out of scope by agreement): two servers
+   * on one data dir already share a node id and every lease, and joining the
+   * winner's host would mean reading a token row the loser could race.
+   */
   private acquireLock(lockPath: string): number {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
@@ -706,6 +798,75 @@ export class SessionHostPool {
       }
     }
     throw new Error('could not take the session host lock');
+  }
+
+  /**
+   * The host a new session spawns into, or null: the caller then spawns it
+   * in-process, where it will NOT survive a restart (H7, accepted fallback).
+   *   - active and connected: that host.
+   *   - active and reconnecting: null for now; the host may come back.
+   *   - lost, or never started: null, and a replacement host is started in
+   *     the background. Every later call retries until one starts, so the
+   *     degradation lasts only as long as the failure does.
+   */
+  hostForSpawn(): SessionHostConnection | null {
+    const active = this.active;
+    if (active && active.connected) return active;
+    if (active && !active.lost) return null;
+    this.startReplacement();
+    return null;
+  }
+
+  private replacing: Promise<void> | null = null;
+
+  private startReplacement(): void {
+    if (this.replacing) return;
+    this.replacing = this.spawnOwn()
+      .then((conn) => {
+        this.active = conn;
+        this.hosts.unshift(conn);
+        this.watch(conn);
+        this.logger.info('session host replaced; new sessions survive restarts again', { generation: conn.generation });
+      })
+      .catch((error: unknown) => {
+        this.logger.error('could not start a replacement session host; spawning in-process', error as Error, {
+          generation: this.generation,
+        });
+      })
+      .finally(() => {
+        this.replacing = null;
+      });
+  }
+
+  /** Waits for an in-flight replacement (tests). */
+  async settled(): Promise<void> {
+    await this.replacing;
+  }
+
+  /**
+   * H7: a host whose reconnect gave up is finished. Its sessions have already
+   * exited through their bindings (D8); here it is killed if it somehow still
+   * runs (an unresponsive host would otherwise keep agents nobody can reach),
+   * its row retired, and — if it was the active host — replaced lazily.
+   */
+  private watch(conn: SessionHostConnection): void {
+    conn.once('lost', () => {
+      const generation = conn.generation;
+      const killed = this.killVerified(generation, 'SIGKILL');
+      const at = this.hosts.indexOf(conn);
+      if (at >= 0) this.hosts.splice(at, 1);
+      const row = { generation, socketPath: conn.socketPath, token: '', pid: conn.hello.hostPid };
+      this.dead.push({ row, reason: `connection lost${killed ? `; host pid ${killed} SIGKILLed` : ''}` });
+      void this.options.registry.remove(generation).catch((e: unknown) =>
+        this.logger.error('failed to remove lost session host row', e as Error, { generation }),
+      );
+      if (this.active === conn) {
+        this.logger.error('the active session host is lost; new sessions spawn in-process until it is replaced', undefined, {
+          generation,
+        });
+        this.startReplacement();
+      }
+    });
   }
 
   /** Every session any connected host holds, with the connection that holds it. */

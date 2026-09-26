@@ -23,11 +23,12 @@ if (mode === 'host') {
   });
   if (!pool.active) throw new Error('no active session host');
 }
-const pty = new PtyHostService({ logger: quiet, sessionHost: () => pool?.active ?? null });
+// Legacy mode is host mode OFF (no sessionHost at all), not host mode with no host.
+const pty = new PtyHostService({ logger: quiet, ...(pool ? { sessionHost: () => pool.hostForSpawn() } : {}) });
 const sessionId = 'crash-1';
 pty.spawn({
   sessionId,
-  command: 'echo "READY-$$"; while IFS= read -r l; do echo "got:$l"; done',
+  command: 'echo "READY-$$"; while IFS= read -r l; do echo "got:$l pid=$$"; done',
   cwd: dataDir,
   env: { PATH: process.env.PATH ?? '/usr/bin:/bin', HOME: dataDir, SHELL: '/bin/bash', TERM: 'xterm-256color' },
 });

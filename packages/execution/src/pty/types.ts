@@ -81,6 +81,12 @@ export interface PtySpawnParams {
   env: Record<string, string>;
   cols?: number;
   rows?: number;
+  /**
+   * Kept by the session host with the process and handed back on adopt after
+   * a restart (≤ 8 KiB JSON). SpawnService stores the spawner's claims here so
+   * an adopted session's exit can still be written (`sessionAuth`).
+   */
+  hostMeta?: unknown;
 }
 
 /**
@@ -176,11 +182,19 @@ export interface PtyHostOptions {
   /** Default shell when neither the spawn env nor process env sets SHELL. */
   defaultShell?: string;
   /**
-   * The session host new PTYs are spawned in, or null to spawn in-process
-   * (TM8_SESSION_HOST=off, desktop, tests, or a host that failed to start). A
-   * getter, because the active host can change while the server runs.
+   * The session host new PTYs are spawned in. OMIT it when host mode is off
+   * (TM8_SESSION_HOST=0, the desktop default, most tests): every PTY is
+   * in-process, as before. When set, null means host mode is on but no host
+   * is available right now — the spawn falls back in-process, loudly
+   * ({@link onInProcessFallback}). A getter, because the active host changes.
    */
   sessionHost?: () => SessionHostConnection | null;
+  /**
+   * Host mode is on but `sessionHost` returned null: the session spawns
+   * in-process and will not survive a restart (H7). The server marks the
+   * session for attention.
+   */
+  onInProcessFallback?: (sessionId: string) => void;
   /**
    * Backoff (ms) for re-trying a failed exit status write of a host-backed PTY
    * before its host exit record is released. Default 1s doubling to 5 min.

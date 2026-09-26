@@ -86,6 +86,8 @@ export async function startW3PublicServer(label: string): Promise<W3PublicServer
       ...process.env,
       TM8_BIND: '127.0.0.1',
       TM8_PORT: '4610',
+      // A detached session host would outlive the test process (task 01a0db31).
+      TM8_SESSION_HOST: '0',
       TM8_DATABASE_URL: database.url,
       TM8_DATA_DIR: dataDir,
     });

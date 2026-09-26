@@ -43,6 +43,15 @@ function toBuffer(data: string | Buffer): Buffer {
   return Buffer.isBuffer(data) ? data : Buffer.from(data, 'utf8');
 }
 
+/**
+ * H8: an exit retained for a sid that is now being spawned afresh belongs to
+ * the previous process. It must never reach the new one.
+ */
+function discardStaleExit(conn: SessionHostConnection, sid: string): void {
+  const stale = conn.takeUnboundExit(sid);
+  if (stale) conn.logger.warn('discarding a previous process exit for a respawned session', { sessionId: sid, ...stale });
+}
+
 export interface RemotePtySpawn {
   sid: string;
   epoch: string;
@@ -52,6 +61,8 @@ export interface RemotePtySpawn {
   env: Record<string, string>;
   cols: number;
   rows: number;
+  /** Stored by the host and returned in the record on adopt (spawner claims). */
+  meta?: unknown;
 }
 
 export class RemotePty implements PtyProcess {
@@ -74,11 +85,15 @@ export class RemotePty implements PtyProcess {
       onExit: (exit) => this.exitOrDefer(exit),
       onReconnected: (record) => this.onReconnected(record),
       onHostLost: () => this.fireExit({ exitCode: null, signal: null }),
+      onResync: (stream) => {
+        if (stream === 'out' && !this.exited) this.subscribeFrom(this.next, null);
+      },
     });
   }
 
   /** Spawn a new PTY in the host. Synchronous like node-pty; pid arrives with `spawned`. */
   static spawn(conn: SessionHostConnection, params: RemotePtySpawn): RemotePty {
+    discardStaleExit(conn, params.sid);
     const proc = new RemotePty(conn, params.sid, 0, null);
     conn
       .request({
@@ -91,6 +106,7 @@ export class RemotePty implements PtyProcess {
         env: params.env,
         cols: params.cols,
         rows: params.rows,
+        ...(params.meta !== undefined ? { meta: params.meta } : {}),
       })
       .then((reply) => {
         if (reply.t === 'spawned') proc.pid = reply.pid;
@@ -109,11 +125,13 @@ export class RemotePty implements PtyProcess {
    * mirror before live bytes follow.
    */
   static adopt(conn: SessionHostConnection, record: HostSessionRecord): RemotePty {
+    // An exit the host reported before hello (in the record) or between hello
+    // and now (unbound) is fired once the retained tail has replayed. Claimed
+    // before the bind, which replays nothing (H5).
+    const exit = record.exit ?? conn.takeUnboundExit(record.sid);
     const proc = new RemotePty(conn, record.sid, record.out.start, record.out.start);
     proc.pid = record.pid;
-    // An exit the host reported before hello (in the record) or between hello
-    // and this bind (unbound) is fired once the retained tail has replayed.
-    proc.adoptExit = record.exit ?? conn.takeUnboundExit(record.sid);
+    proc.adoptExit = exit;
     return proc;
   }
 
@@ -231,10 +249,13 @@ export class RemotePty implements PtyProcess {
 
 export interface RemoteChildSpawn {
   sid: string;
+  /** Server-minted stream identity (D4′, H11). */
+  epoch: string;
   file: string;
   args: string[];
   cwd: string;
   env: Record<string, string>;
+  meta?: unknown;
 }
 
 /**
@@ -301,14 +322,27 @@ export class RemoteChild extends EventEmitter {
         this.subscribe('err', this.errNext, record.exit);
       },
       onHostLost: () => this.finish({ exitCode: null, signal: null, at: Date.now() }),
+      onResync: (stream) => {
+        if (!this.exited) this.subscribe(stream, stream === 'out' ? this.outNext : this.errNext);
+      },
     };
     conn.bind(sid, this.binding);
   }
 
   static spawn(conn: SessionHostConnection, params: RemoteChildSpawn): RemoteChild {
+    discardStaleExit(conn, params.sid);
     const child = new RemoteChild(conn, params.sid, 0, 0);
     conn
-      .request({ t: 'spawn_pipe', sid: params.sid, file: params.file, args: params.args, cwd: params.cwd, env: params.env })
+      .request({
+        t: 'spawn_pipe',
+        sid: params.sid,
+        epoch: params.epoch,
+        file: params.file,
+        args: params.args,
+        cwd: params.cwd,
+        env: params.env,
+        ...(params.meta !== undefined ? { meta: params.meta } : {}),
+      })
       .then((reply) => {
         if (reply.t === 'spawned') child.pid = reply.pid;
         child.emit('spawn');
@@ -329,9 +363,10 @@ export class RemoteChild extends EventEmitter {
    */
   static adopt(conn: SessionHostConnection, record: HostSessionRecord, fromOffset: number): RemoteChild {
     const outFrom = Math.max(fromOffset, record.out.start);
+    const exit = record.exit ?? conn.takeUnboundExit(record.sid);
     const child = new RemoteChild(conn, record.sid, outFrom, record.err?.next ?? 0);
     child.pid = record.pid;
-    child.adoptExit = record.exit ?? conn.takeUnboundExit(record.sid);
+    child.adoptExit = exit;
     return child;
   }
 

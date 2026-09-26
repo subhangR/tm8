@@ -12,14 +12,15 @@
 //         child alive the agent outlives the server by 4-8s on the chat child's
 //         leaked copy of the master (measured, doc §5), so the bound would
 //         measure the leak instead.
-//   NC2 — TM8_SESSION_HOST_NO_ADOPT=1 makes the next server hang up the host
-//         instead of reattaching. Run this file with it set: every survival
-//         assertion below goes red (the closeout carries that output).
+//   NC2 — TM8_NC2=1 (read HERE, by the test, never by library code) opens every
+//         server with the pool's `noAdoptForTest`, so the next server sends the
+//         host `hangup` instead of reattaching. Every survival assertion below
+//         goes red (the closeout carries that output).
 //
 // Needs `tsc -b` first: the host runs from dist/session-host.
 
 import { spawn as spawnProcess, type ChildProcess } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -28,6 +29,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { PtyHostService } from '../src/pty/PtyHostService.js';
 import type { PtyExitInfo, PtySessionStatus } from '../src/pty/types.js';
 import { SessionHostPool } from '../src/session-host/client.js';
+import { RemoteChild } from '../src/session-host/remote.js';
+import { pipeChildLeaks, running, strictLeaks, wait, waitFor } from './fixtures/session-host/helpers.js';
 // Plain .mjs so the fixture server (run by node, not vitest) can share it.
 import { fileRegistry } from './fixtures/session-host/registry.mjs';
 
@@ -36,35 +39,7 @@ const HOST_DIR = join(HERE, '../dist/session-host');
 const FIXTURE_SERVER = join(HERE, 'fixtures/session-host/server.mjs');
 
 const quiet = { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} };
-const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-async function waitFor(pred: () => boolean, ms = 20_000, what = 'condition'): Promise<void> {
-  const start = Date.now();
-  while (!pred()) {
-    if (Date.now() - start > ms) throw new Error(`timeout waiting for ${what}`);
-    await wait(25);
-  }
-}
-
-function alive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** Zombies count as dead: /proc/<pid>/stat state Z. */
-function running(pid: number): boolean {
-  if (!alive(pid)) return false;
-  try {
-    const stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
-    return stat.slice(stat.lastIndexOf(')') + 2)[0] !== 'Z';
-  } catch {
-    return false;
-  }
-}
+const NC2 = process.env['TM8_NC2'] === '1';
 
 function agentEnv(home: string): Record<string, string> {
   return { PATH: process.env.PATH ?? '/usr/bin:/bin', HOME: home, SHELL: '/bin/bash', TERM: 'xterm-256color' };
@@ -125,7 +100,7 @@ async function openServer(
   bootId: string,
   onStatus: (sid: string, status: PtySessionStatus, info: PtyExitInfo) => void | Promise<void>,
   statusRetryDelaysMs?: number[],
-): Promise<{ pool: SessionHostPool; pty: PtyHostService }> {
+): Promise<{ pool: SessionHostPool; pty: PtyHostService; fallbacks: string[] }> {
   const pool = await SessionHostPool.open({
     dataDir,
     registry: fileRegistry(registryFile),
@@ -133,20 +108,25 @@ async function openServer(
     hostDir: HOST_DIR,
     logger: quiet,
     hostIdleExitMs: 1_000,
+    ...(NC2 ? { noAdoptForTest: true } : {}),
   });
   if (pool.active) cleanupPids.add(pool.active.hello.hostPid);
+  // H7 condition 3: survival must never "pass" through the in-process fallback.
+  const fallbacks: string[] = [];
   const pty = new PtyHostService({
     logger: quiet,
-    sessionHost: () => pool.active,
+    sessionHost: () => pool.hostForSpawn(),
+    onInProcessFallback: (sid) => fallbacks.push(sid),
     onSessionStatus: onStatus,
     ...(statusRetryDelaysMs ? { statusRetryDelaysMs } : {}),
   });
-  return { pool, pty };
+  return { pool, pty, fallbacks };
 }
 
-function adoptAll(pool: SessionHostPool, pty: PtyHostService): string[] {
+function adoptAll(pool: SessionHostPool, pty: PtyHostService, except: string[] = []): string[] {
   const adopted: string[] = [];
   for (const { conn, record } of pool.sessions()) {
+    if (except.includes(record.sid)) continue;
     if (pty.adopt(conn, record)) adopted.push(record.sid);
   }
   return adopted.sort();
@@ -179,7 +159,7 @@ describe('sessions survive a server restart through the session host', () => {
     // the host when it forked: the fd hygiene check below sees the worst case.
     a.pty.spawn({
       sessionId: 'survivor',
-      command: 'echo "READY-$$"; while IFS= read -r l; do echo "got:$l"; done',
+      command: 'echo "READY-$$"; while IFS= read -r l; do echo "got:$l pid=$$"; done',
       cwd: dataDir,
       env: agentEnv(dataDir),
     });
@@ -189,22 +169,37 @@ describe('sessions survive a server restart through the session host', () => {
     for (const pid of [exitPid, signalPid, survivorPid]) cleanupPids.add(pid);
     const epoch = a.pty.getEpoch('survivor');
     expect(epoch).toBeTruthy();
+    for (const sid of ['gap-exit', 'gap-signal', 'survivor']) {
+      expect(a.pty.isHostBacked(sid), `${sid} runs in the session host`).toBe(true);
+    }
 
-    // R8 fd hygiene: above stdio, the agent holds no PTY master and no socket
-    // (chat stdio is AF_UNIX socketpairs, so fds 0-2 are excluded; pipe: alone
-    // would miss it — doc §5).
-    const leaked = readdirSync(`/proc/${survivorPid}/fd`)
-      .map(Number)
-      .filter((fd) => fd > 2)
-      .map((fd) => {
-        try {
-          return `${fd} -> ${readlinkSync(`/proc/${survivorPid}/fd/${fd}`)}`;
-        } catch {
-          return null;
-        }
-      })
-      .filter((l): l is string => l !== null && (l.includes('/dev/ptmx') || l.includes('socket:')));
-    expect(leaked, 'agent inherited a PTY master or socket').toEqual([]);
+    // R8 fd hygiene: above stdio, the PTY agent holds no PTY master and no
+    // socket (doc §5: pipe: alone would miss the chat child's socketpairs).
+    expect(strictLeaks(survivorPid), 'PTY agent inherited a PTY master or socket').toEqual([]);
+
+    // H12: a PIPE child (a chat runtime's shape), spawned after every master
+    // above was open in the host. Its stdio is socketpairs, so the doc §5 v6
+    // form: its own fd 0/1/2 inodes are dropped first. The negative twin (no
+    // exec-clean) is in session-host-review.test.ts.
+    const pipe = RemoteChild.spawn(a.pool.active!, {
+      sid: 'pipe-1',
+      epoch: 'pipe-epoch-1',
+      file: 'sh',
+      args: ['-c', 'echo "UP-$$"; cat'],
+      cwd: dataDir,
+      env: agentEnv(dataDir),
+    });
+    let pipeOut = '';
+    pipe.stdout.on('data', (d: Buffer) => (pipeOut += d.toString()));
+    await waitFor(() => /UP-\d+/.test(pipeOut), 20_000, 'pipe child to start');
+    const pipePid = Number(/UP-(\d+)/.exec(pipeOut)![1]);
+    cleanupPids.add(pipePid);
+    expect(pipePid, 'pipe child runs through the host (its pid came from spawned)').toBe(pipe.pid);
+    expect(pipeChildLeaks(pipePid), 'pipe child inherited a PTY master or a foreign socket').toEqual([]);
+    const pipeClosed = new Promise((r) => pipe.once('close', r));
+    pipe.kill('SIGKILL');
+    await pipeClosed;
+    pipe.release();
 
     // ---- graceful stop of A
     a.pty.shutdownAll();
@@ -250,8 +245,13 @@ describe('sessions survive a server restart through the session host', () => {
     // scrollback reattached into the new server's ring
     await waitFor(() => replayText(b.pty, 'survivor').includes(`READY-${survivorPid}`), 10_000, 'scrollback replay');
     // input reaches the same process, and its output reaches the new server
+    // A12: the agent prints its own pid AFTER the restart — identity, not inference.
     b.pty.write('survivor', 'after-restart\r');
-    await waitFor(() => replayText(b.pty, 'survivor').includes('got:after-restart'), 10_000, 'post-restart echo');
+    await waitFor(
+      () => replayText(b.pty, 'survivor').includes(`got:after-restart pid=${survivorPid}`),
+      10_000,
+      'post-restart echo from the same pid',
+    );
 
     // gap exits land on the row with their evidence (doc §5: non-null code/signal)
     await waitFor(() => seenB.has('gap-signal'), 10_000, 'gap-signal status');
@@ -263,8 +263,13 @@ describe('sessions survive a server restart through the session host', () => {
     b.pty.spawn({ sessionId: 'fresh', command: 'echo "FRESH-$$"; sleep 30', cwd: dataDir, env: agentEnv(dataDir) });
     const freshPid = await pidFrom(b.pty, 'fresh', 'FRESH');
     cleanupPids.add(freshPid);
+    expect(b.pty.isHostBacked('fresh'), 'fresh runs in the session host').toBe(true);
     expect(b.pty.getEpoch('fresh')).toBeTruthy();
     expect(b.pty.getEpoch('fresh')).not.toBe(epoch);
+    // For H8 below: a sid server C will NOT adopt, and will spawn afresh.
+    b.pty.spawn({ sessionId: 'reuse', command: 'echo "OLD-$$"; while :; do sleep 0.05; done', cwd: dataDir, env: agentEnv(dataDir) });
+    const oldReusePid = await pidFrom(b.pty, 'reuse', 'OLD');
+    cleanupPids.add(oldReusePid);
 
     // ---- server C: the released record is gone, the unreleased one is back
     b.pty.shutdownAll();
@@ -273,15 +278,34 @@ describe('sessions survive a server restart through the session host', () => {
     const seenC = new Map<string, Recorded>();
     const c = await openServer(dataDir, registryFile, 'boot-C', (sid, status, info) => void seenC.set(sid, { status, info }));
     expect(c.pool.active?.hello.hostPid).toBe(hostPid);
-    expect(adoptAll(c.pool, c.pty)).toEqual(['fresh', 'gap-exit', 'survivor']);
+    // H5: `fresh` and `reuse` exit AFTER C's hello_ok and BEFORE adoption, so
+    // their exits arrive for sids nothing is bound to yet.
+    process.kill(freshPid, 'SIGTERM');
+    process.kill(oldReusePid, 'SIGTERM');
+    await waitFor(() => !running(freshPid) && !running(oldReusePid), 10_000, 'exits between hello and adopt');
+    await wait(300); // the exit frames reach C unbound
+    expect(adoptAll(c.pool, c.pty, ['reuse'])).toEqual(['fresh', 'gap-exit', 'survivor']);
     await waitFor(() => seenC.has('gap-exit'), 10_000, 'gap-exit status re-reported');
     expect(seenC.get('gap-exit')).toEqual({ status: 'failed', info: { exitCode: 7, signal: null } });
+    await waitFor(() => seenC.has('fresh'), 10_000, 'H5: an exit between hello and adopt lands its status');
+    expect(seenC.get('fresh')).toEqual({ status: 'failed', info: { exitCode: expect.any(Number), signal: 15 } });
     expect(c.pty.getEpoch('survivor')).toBe(epoch);
+
+    // H8: `reuse` is spawned afresh while C holds its predecessor's unbound
+    // exit. That exit belongs to the old process and must not end the new one.
+    c.pty.spawn({ sessionId: 'reuse', command: 'echo "NEW-$$"; while :; do sleep 0.05; done', cwd: dataDir, env: agentEnv(dataDir) });
+    const newReusePid = await pidFrom(c.pty, 'reuse', 'NEW');
+    cleanupPids.add(newReusePid);
+    await wait(500);
+    expect(c.pty.hasSession('reuse'), 'H8: the fresh spawn is still live').toBe(true);
+    expect(seenC.has('reuse'), 'H8: no exit was recorded for the fresh spawn').toBe(false);
+    expect(running(newReusePid)).toBe(true);
+    expect([...a.fallbacks, ...b.fallbacks, ...c.fallbacks], 'no spawn fell back in-process').toEqual([]);
 
     // ---- teardown: stop the agents through the server, the host idles out
     c.pty.kill('survivor');
-    c.pty.kill('fresh');
-    await waitFor(() => !running(survivorPid) && !running(freshPid), 10_000, 'agents to stop');
+    c.pty.kill('reuse');
+    await waitFor(() => !running(survivorPid) && !running(newReusePid), 10_000, 'agents to stop');
     // Each exit frame comes back and is answered with a forget; let those land
     // before the controller goes, or the host rightly keeps the records.
     await wait(1_500);
@@ -331,7 +355,7 @@ describe('sessions survive a server restart through the session host', () => {
     expect(b.pty.getEpoch('crash-1')).toBe(epoch);
     await waitFor(() => replayText(b.pty, 'crash-1').includes(`READY-${pid}`), 10_000, 'scrollback replay');
     b.pty.write('crash-1', 'still-here\r');
-    await waitFor(() => replayText(b.pty, 'crash-1').includes('got:still-here'), 10_000, 'post-crash echo');
+    await waitFor(() => replayText(b.pty, 'crash-1').includes(`got:still-here pid=${pid}`), 10_000, 'post-crash echo from the same pid');
     expect(seen.size).toBe(0);
 
     b.pty.kill('crash-1');
