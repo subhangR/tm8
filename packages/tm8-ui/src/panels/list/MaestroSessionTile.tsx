@@ -18,6 +18,7 @@ export function MaestroSessionTile({
   model,
   status,
   attention,
+  attentionChip,
   selected,
   archived,
   completed,
@@ -61,6 +62,8 @@ export function MaestroSessionTile({
   model: string | null;
   status: string;
   attention: boolean;
+  /** Attention v2: the chip (or the F1 raised-by marker) that replaces the words. */
+  attentionChip?: ReactNode;
   selected: boolean;
   archived: boolean;
   completed: boolean;
@@ -152,7 +155,9 @@ export function MaestroSessionTile({
         {model ? <span className="pn-st__model" title={model}>{model}</span> : null}
 
         {archived ? <span className="pn-st__tag">archived</span> : null}
-        {attention && !archived ? <span className="pn-st__tag pn-st__tag--attention">needs attention</span> : null}
+        {attention && !archived
+          ? attentionChip ?? <span className="pn-st__tag pn-st__tag--attention">needs attention</span>
+          : null}
         {!archived && completed ? <span className="pn-st__tag pn-st__tag--done">done</span> : null}
 
         <span className={`pn-st__statusglyph lp__statusmark--${statusTone}`} title={statusTitle ?? status}>

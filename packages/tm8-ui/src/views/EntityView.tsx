@@ -50,6 +50,7 @@ import {
   type PanelTab,
 } from '../panels';
 import { AttentionInbox } from '../attention/AttentionInbox';
+import { AttentionList, useAttentionOptional } from '../attention';
 import { PanelResizer, useElementWidth, usePanelWidth } from '../kit';
 import { ConnectionsTab } from '../panels/detail/tabs';
 import type { ActionContext, ActionRef, CollectionMode, GroupByKey } from '../domain/types';
@@ -224,6 +225,8 @@ const clampWidth = (want: number, min: number, max: number): number =>
 
 export function EntityView(props: EntityViewProps) {
   const { data, kind, reasons } = props;
+  /** Attention v2: the shell's attention store, when one is mounted above. */
+  const attentionApi = useAttentionOptional();
 
   /*
    * THE OPEN ENTITY LIVES OUTSIDE THIS COMPONENT (user report, 2026-07-31).
@@ -1373,14 +1376,23 @@ export function EntityView(props: EntityViewProps) {
               combined into one row. Deliberately NOT filtered to `kind` —
               attention lives on entities, so a doc waiting on you must show
               while the Tasks list is open. */}
-          {detailPanel ?? (
+          {detailPanel ?? (attentionApi ? (
+            /* Attention v2 (chapter 4): the SAME list as the top-bar popover.
+               Without the shell's store (a host rendered alone) the old inbox
+               still answers; S7 removes it. */
+            <div className="att-inbox" data-testid="attention-inbox">
+              <div className="att-inbox__inner">
+                <AttentionList nameOf={nameOf} onOpen={selectFromList} />
+              </div>
+            </div>
+          ) : (
             <AttentionInbox
               seam={data.seam}
               spaceId={data.spaceId}
               nameOf={nameOf}
               onOpenEntity={selectFromList}
             />
-          )}
+          ))}
         </main>
       )}
 

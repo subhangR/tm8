@@ -18,6 +18,8 @@ export interface MaestroTaskTileProps {
   selected: boolean;
   attention: boolean;
   attentionReason?: string;
+  /** Attention v2: the chip that replaces the words, when the store has one. */
+  attentionChip?: ReactNode;
   /* NO `completed` PROP. The tile took one, turned it into `pn-tt--completed`
      and struck the title through — and `category === 'done'` is the server's
      RESOLUTION predicate, which `152_universal_status.sql` seeds the fact kinds
@@ -84,6 +86,7 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
     selected,
     attention,
     attentionReason,
+    attentionChip,
     archived,
     childCount,
     childrenExpanded,
@@ -225,7 +228,7 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
           </div>
         ) : null}
 
-        {attention ? <span className="pn-tt__attention" title={attentionReason}>Needs attention</span> : null}
+        {attentionChip ?? (attention ? <span className="pn-tt__attention" title={attentionReason}>Needs attention</span> : null)}
 
         <div className="pn-tt__actions lp__cluster">
           {!oneSurface || detailsExpanded ? actions : null}

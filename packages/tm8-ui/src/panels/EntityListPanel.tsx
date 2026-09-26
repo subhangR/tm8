@@ -1,3 +1,4 @@
+import { AttentionChipView, useAttentionOptional, useEntityChip } from '../attention';
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import type { JevPort } from '../jev/port';
@@ -3169,6 +3170,14 @@ export function Tile({
   path?: ReadonlySet<string>;
 }) {
   const { oneSurface } = useMobileSurface();
+  /* Attention v2 (chapter 4): a CHIP replaces the words "Needs attention".
+     `attention` also carries a kind's derived predicate (session liveness),
+     which has no request behind it and keeps the old label. With the store
+     above, a badge it has since seen settled no longer tints the tile. */
+  const attentionApi = useAttentionOptional();
+  const chip = useEntityChip(row);
+  const flagged = attentionApi ? chip != null || (attention && !row.badges.attention) : attention;
+  const chipView = chip ? <AttentionChipView chip={chip} /> : null;
   const list = config.list;
   const controlCard = list.tile.anatomy === 'control-card';
   const sessionTree = list.tile.anatomy === 'session-tree';
@@ -3459,7 +3468,8 @@ export function Tile({
         teammate={teammate}
         model={model}
         status={recordedStatus}
-        attention={attention}
+        attention={flagged}
+        attentionChip={chipView}
         selected={selected}
         archived={archived}
         completed={completed}
@@ -3521,8 +3531,9 @@ export function Tile({
         title={row.title}
         depth={depth}
         selected={selected}
-        attention={attention}
+        attention={flagged}
         attentionReason={row.badges.attention?.latestReason}
+        attentionChip={chipView}
         archived={archived}
         childCount={childCount}
         childrenExpanded={expanded}
@@ -3653,10 +3664,11 @@ export function Tile({
       className={[
         'lp__tile',
         selected ? 'lp__tile--selected' : '',
-        attention ? 'lp__tile--attention' : '',
+        flagged ? 'lp__tile--attention' : '',
       ]
         .filter(Boolean)
         .join(' ')}
+      data-attention-tone={chip?.tone}
       data-testid="list-tile"
       /* The session anatomy publishes `data-session-node`; this is the same
          identity on the default one, so `TileFlightLayer` can find either
@@ -3767,7 +3779,7 @@ export function Tile({
           {/* The badge slot YIELDS to the action cluster on hover — the card
               never grows, so hovering cannot reflow the list under the cursor. */}
           <span className="lp__badges">
-            {attention ? (
+            {chipView ?? (flagged ? (
               /* WHY it needs attention was `title`-only, and `title` renders on
                  hover and nowhere else — so on a phone this row said "Needs
                  attention" and refused to say why, with the reason present in
@@ -3787,7 +3799,7 @@ export function Tile({
               ) : (
                 <span className="lp__attention-label">Needs attention</span>
               )
-            ) : null}
+            ) : null)}
             {statusWord ? (
               <span className={`lp__word kit-pill--${statusTone}`} title={statusTitle}>
                 {statusWord}

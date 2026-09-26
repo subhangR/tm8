@@ -91,8 +91,7 @@ import { SettingsShell, ownerRoleRef, settingsPortFromSeam } from '../settings-s
 import { FilesExplorerScreen, filesExplorerPortFromSeam } from '../files-explorer';
 import { InboxView } from './InboxView';
 import { StatusStrip } from '../status-strip';
-import { AttentionSegment } from '../attention-segment';
-import { AttentionProvider, AttentionUndoToast } from '../attention';
+import { AttentionProvider, AttentionTopSegment, AttentionUndoToast } from '../attention';
 import { MessagesView } from './MessagesView';
 import { nodeKeyOf } from '../data/launch-cache';
 import {
@@ -1974,9 +1973,10 @@ export function GateApp(props: GateAppProps = {}) {
         spaceId={data.spaceId as SpaceId}
         placement={placement}
         leadSlot={
-          <AttentionSegment
-            seam={data.seam}
-            spaceId={data.spaceId as SpaceId}
+          /* Attention v2 (chapter 4): `! mine · all` and the one list, read
+             from the shell's attention store. The old `AttentionSegment`
+             stays in the tree until S7 deletes it. */
+          <AttentionTopSegment
             onOpenEntity={(id) => {
               navigateTo(WORKSPACE_TARGET);
               nav.push(id as EntityId);
