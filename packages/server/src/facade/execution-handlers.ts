@@ -371,9 +371,12 @@ export class DbGraphPort implements GraphPort {
    * policy follows it rather than the resumer's claims. A token that does not
    * resolve throws, and the launch is refused.
    *
-   * The `authKind === 'link'` half is not live: execution.spawn and
-   * execution.resume refuse a link bearer before any launch (ruling A'). It
-   * is reachable once #884 wires `spaceLinks.invoke`, and fails closed.
+   * The `authKind === 'link'` half is not live in #898: a link session's
+   * token is refused on every wire (identity-resolver.ts), the registry
+   * refuses a link identity on every operation (its allow-list is empty), and
+   * execution.spawn, execution.resume and execution.dispatch refuse it again
+   * before any launch — see identity/link-bearer.ts. It becomes reachable only
+   * when #884 allow-lists `spaceLinks.invoke`, and fails closed.
    */
   async isLinkBound(auth: GraphAuth, agentToken: string): Promise<boolean> {
     const claims = this.claims(auth);
@@ -3255,6 +3258,11 @@ function registerHandlers(
     const owner = await resolveOwner();
     const envelope = commandEnvelope(ctx);
     const claims = claimsFor(owner, ctx, envelope);
+    // 992 (W7p, ruling A', layer (iii)): nor dispatches — a dispatch derives a
+    // task and may spawn the dispatcher, both before any credential read would
+    // refuse it. Defence in depth behind the wire and registry refusals; see
+    // identity/link-bearer.ts.
+    refuseLinkBearer(claims);
 
     // Any launchable entity, exactly as execution.spawn treats taskIds — a task
     // passes through untouched.

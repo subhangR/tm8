@@ -625,6 +625,14 @@ declare
   session_space uuid;
   prov record;
 begin
+  -- W7p mint backstop (deny-by-default ruling): the spawn path's mint
+  -- (`DbGraphPort.issueWorkSessionAgentToken`) refuses a `link` session as its
+  -- first statement. The facade refuses it at the transport, the registry and
+  -- the spawn handlers first; this is the database's own refusal. #884 admits
+  -- its invoke here, by its marker, and nothing else.
+  if coalesce(internal.claim_text('tm8.auth_kind'), '') = 'link' then
+    raise exception 'a space link session cannot mint an agent session' using errcode = '42501';
+  end if;
   perform internal.require_identity();
   if p_token_hash is null or p_token_hash !~ '^[a-f0-9]{64}$'
      or p_expires_at <= now() then

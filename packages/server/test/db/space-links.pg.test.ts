@@ -25,7 +25,8 @@ import { AuthSessionViewSchema } from '@tm8/contract';
 import { createDb } from '../../src/db/client.js';
 import type { Db, DbClaims, Querier } from '../../src/db/types.js';
 import { claimsFor } from '../../src/facade/context.js';
-import { createSessionIdentityResolver } from '../../src/http/identity-resolver.js';
+import { createSessionIdentityResolver, identityFromSession } from '../../src/http/identity-resolver.js';
+import { resolveBearerIdentity } from '../../src/identity/pg-auth.js';
 import type { RequestContext, SpaceSessionsMode } from '../../src/http/types.js';
 import { formatToken, generateSecret, hashToken } from '../../src/identity/crypto.js';
 import type { LoopbackOwner } from '../../src/identity/loopback.js';
@@ -177,11 +178,17 @@ async function mintAgent(): Promise<string> {
 }
 
 async function claimsForToken(token: string, mode: SpaceSessionsMode = 'agents'): Promise<DbClaims> {
+  // 992 (W7p, layer (i)) refuses a `link` session's token on every wire, so
+  // a link token is bound in-process — resolved by hash and mapped by the
+  // wire's own `identityFromSession`, as `DbSpaceLinkStore.use` and #884's
+  // invoke do. Every other token still goes through the wire resolver. These
+  // are SQL-policy cells; the wire refusal has its own
+  // (link-session-transport.test.ts).
+  const session = await resolveBearerIdentity(db, token);
   const resolve = createSessionIdentityResolver({ db, owner: async () => NOT_THE_OWNER, spaceSessions: mode });
-  const identity = await resolve(
-    { authorization: `Bearer ${token}` },
-    { remoteAddress: '203.0.113.9', disableAutoOwner: true },
-  );
+  const identity = String(session.kind) === 'link'
+    ? identityFromSession(session, token, mode)
+    : await resolve({ authorization: `Bearer ${token}` }, { remoteAddress: '203.0.113.9', disableAutoOwner: true });
   const ctx = { identity, requestId: `space-links-${randomUUID()}` } as unknown as RequestContext;
   return claimsFor(NOT_THE_OWNER, ctx);
 }
@@ -717,17 +724,27 @@ describe('W6 T17 — leaving or being removed ends the member\'s rows', () => {
 // Keeps sealSecret referenced for readers checking what a1 exercises.
 void sealSecret;
 
+/** A token's identity: a link token in-process (992 refuses it on the wire), any other over the wire resolver. */
 async function resolveToken(token: string): Promise<{ authKind?: string; sessionSpaceId?: string; sessionId?: string }> {
+  const session = await resolveBearerIdentity(db, token);
+  if (String(session.kind) === 'link') return identityFromSession(session, token, 'agents');
   const resolve = createSessionIdentityResolver({ db, owner: async () => NOT_THE_OWNER, spaceSessions: 'agents' });
   return resolve({ authorization: `Bearer ${token}` }, { remoteAddress: '203.0.113.9', disableAutoOwner: true }) as never;
 }
 
+/** The wire resolver alone — what every transport runs. */
+async function resolveOnWire(token: string): Promise<unknown> {
+  const resolve = createSessionIdentityResolver({ db, owner: async () => NOT_THE_OWNER, spaceSessions: 'agents' });
+  return resolve({ authorization: `Bearer ${token}` }, { remoteAddress: '203.0.113.9', disableAutoOwner: true });
+}
+
 describe('W6 kind `link` — the resolver, the session view, revoke', () => {
-  it('a stored link token resolves as authKind `link`, pinned to the target space', async () => {
+  it('a stored link token resolves in-process as authKind `link`, pinned to the target space; the wire refuses it (992)', async () => {
     const link = await linkAB();
     const use = await store.use(await hClaims(), link.id);
     const identity = await resolveToken(use.token);
     expect(identity).toMatchObject({ authKind: 'link', sessionSpaceId: fixture.spaceB, sessionId: link.mine!.sessionId });
+    await expect(resolveOnWire(use.token)).rejects.toMatchObject({ code: 'forbidden', details: { sqlstate: '42501' } });
   });
 
   it('positive — the session view accepts kind `link`; an unknown kind is refused', () => {
@@ -770,7 +787,7 @@ describe('W6 no cascade — a link session outlives the browser session that min
     const claims = await hClaims();
     const use = await store.use(claims, link.id);
     await db.rpc(claims, 'revoke_auth_session', [link.mine!.sessionId]);
-    await expect(resolveToken(use.token)).rejects.toBeTruthy();
+    await expect(resolveToken(use.token)).rejects.toMatchObject({ code: 'unauthenticated' });
     await expect(store.use(claims, link.id)).rejects.toMatchObject({ status: 'signed_out' });
     await store.login(claims, link.id, { relogin: true });
   });

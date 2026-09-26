@@ -8,6 +8,11 @@
  * admitted one must. `spaceLinks.list` is the one open door — an agent needs it
  * to know which linked spaces its human has signed in to — so the agent and
  * link cells on it are positives.
+ *
+ * These cells call the RAW handler: the guard is layer 1 of its own rule. The
+ * frame's registry (992, W7p deny-by-default) refuses kind `link` on every
+ * operation before any handler runs — `spaceLinks.list` included — which the
+ * last block pins.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -17,6 +22,7 @@ import type { OperationName } from '@tm8/contract';
 import type { Db } from '../../src/db/types.js';
 import type { FacadeDeps } from '../../src/facade/deps.js';
 import { HandlerRegistry } from '../../src/facade/registry.js';
+import { LINK_BEARER_OP_REFUSED } from '../../src/identity/link-bearer.js';
 import {
   SPACE_LINKS_HUMAN_ONLY,
   registerSpaceLinkHandlers,
@@ -57,7 +63,14 @@ function recordingStore(): { store: DbSpaceLinkStore; calls: string[] } {
   return { store, calls };
 }
 
-function registryWith(store: DbSpaceLinkStore): HandlerRegistry {
+/** The frame's registry, plus the raw handler past its link default-deny. */
+class RawRegistry extends HandlerRegistry {
+  raw(name: OperationName) {
+    return this.handlers.get(name);
+  }
+}
+
+function registryWith(store: DbSpaceLinkStore): RawRegistry {
   const deps = {
     db: {} as Db,
     config: { host: '127.0.0.1', port: 0, uiDir: undefined, maxBodyBytes: 1024, databaseUrl: undefined },
@@ -69,7 +82,7 @@ function registryWith(store: DbSpaceLinkStore): HandlerRegistry {
       isOwner: true,
     }),
   } as unknown as FacadeDeps;
-  const registry = new HandlerRegistry();
+  const registry = new RawRegistry();
   registerSpaceLinkHandlers(registry, deps, { dataDir: '/tmp/tm8-space-links-guard', store });
   return registry;
 }
@@ -89,8 +102,8 @@ function context(op: OperationName, authKind: AuthKind | undefined, body?: unkno
   } as RequestContext;
 }
 
-async function invoke(registry: HandlerRegistry, ctx: RequestContext): Promise<unknown> {
-  const handler = registry.get(ctx.opName as OperationName);
+async function invoke(registry: RawRegistry, ctx: RequestContext): Promise<unknown> {
+  const handler = registry.raw(ctx.opName as OperationName);
   if (!handler) throw new Error(`${ctx.opName} is not registered`);
   return handler(ctx);
 }
@@ -153,4 +166,18 @@ describe('W6 layer-1 guard — spaceLinks.list is open (no secret, read-only)', 
     expect((error as CollabError).code).toBe('unauthenticated');
     expect(calls).toEqual([]);
   });
+});
+
+describe('992 (W7p) deny-by-default — through the frame, kind link reaches no spaceLinks op', () => {
+  for (const op of ['spaceLinks.list', ...WRITES.map((w) => w.op)] as OperationName[]) {
+    it(`${op}: kind link gets 42501 from the registry and the store is never reached; kind agent is not refused there`, async () => {
+      const { store, calls } = recordingStore();
+      const registry = registryWith(store);
+      const error = await Promise.resolve().then(() => registry.get(op)!(context(op, 'link', {}))).catch((e: unknown) => e);
+      expect(error).toMatchObject({ code: 'forbidden', message: LINK_BEARER_OP_REFUSED, details: { sqlstate: '42501' } });
+      expect(calls).toEqual([]);
+      const agent = await Promise.resolve().then(() => registry.get(op)!(context(op, 'agent', {}))).catch((e: unknown) => e);
+      expect((agent as { message?: string } | undefined)?.message).not.toBe(LINK_BEARER_OP_REFUSED);
+    });
+  }
 });

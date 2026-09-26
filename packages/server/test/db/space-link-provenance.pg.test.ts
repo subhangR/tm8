@@ -20,8 +20,10 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createDb } from '../../src/db/client.js';
 import type { Db, DbClaims, Querier } from '../../src/db/types.js';
 import { claimsFor } from '../../src/facade/context.js';
-import { createSessionIdentityResolver } from '../../src/http/identity-resolver.js';
+import { createSessionIdentityResolver, identityFromSession } from '../../src/http/identity-resolver.js';
 import type { RequestContext } from '../../src/http/types.js';
+import { LINK_BEARER_TRANSPORT_REFUSED } from '../../src/identity/link-bearer.js';
+import type { ResolvedAuthSession } from '../../src/identity/pg-auth.js';
 import { formatToken, generateSecret, hashToken } from '../../src/identity/crypto.js';
 import type { LoopbackOwner } from '../../src/identity/loopback.js';
 import { DbSpaceLinkStore, type SpaceLink } from '../../src/credentials/space-link-store.js';
@@ -74,6 +76,17 @@ async function claimsForToken(token: string, spaceSessions: 'agents' | 'off' = '
     { authorization: `Bearer ${token}` },
     { remoteAddress: '203.0.113.9', disableAutoOwner: true },
   );
+  const ctx = { identity, requestId: `w7p-${randomUUID()}` } as unknown as RequestContext;
+  return claimsFor(NOT_THE_OWNER, ctx);
+}
+
+/**
+ * A link session's claims, built in-process from `DbSpaceLinkStore.use`'s own
+ * resolution — the shape #884's invoke binds. 992 (W7p, layer (i)) refuses a
+ * link token on every wire, so `claimsForToken` cannot produce these.
+ */
+function inProcessClaims(session: ResolvedAuthSession, token: string): DbClaims {
+  const identity = identityFromSession(session, token, 'agents');
   const ctx = { identity, requestId: `w7p-${randomUUID()}` } as unknown as RequestContext;
   return claimsFor(NOT_THE_OWNER, ctx);
 }
@@ -243,7 +256,7 @@ async function linked(who: 'H' | 'H3' | 'H4' = 'H'): Promise<Linked> {
   const added = await store.add(human, { spaceId: fixture.spaceA, targetSpaceId: fixture.spaceB });
   const link = await store.login(human, added.id);
   const use = await store.use(human, link.id);
-  return { link, human, linkToken: use.token, linkClaims: await claimsForToken(use.token), linkSessionId: use.session.sessionId };
+  return { link, human, linkToken: use.token, linkClaims: inProcessClaims(use.session, use.token), linkSessionId: use.session.sessionId };
 }
 
 const readGit = (claims: DbClaims) => db.rpc(claims, 'read_account_git_credential', ['github']);
@@ -271,9 +284,24 @@ describe('W7p the link session and its children carry via_link', () => {
     expect(await claimsForToken(child.token)).toMatchObject({ authKind: 'agent', viaLinkId: L.link.id });
   });
 
-  it('the work-session issuer stamps the same', async () => {
-    const child = await mintChild(L.linkClaims, { issuer: 'issue_work_session_agent_session' });
-    expect(await sessionRow(child.id)).toMatchObject({ via_link_id: L.link.id, parent_session_id: L.linkSessionId });
+  it('the wire refuses the link token (layer (i)); use() still resolves it in-process, as #884 needs', async () => {
+    const error = await claimsForToken(L.linkToken).then(() => 'resolved', (err: unknown) => err);
+    expect(error).toMatchObject({ code: 'forbidden', message: LINK_BEARER_TRANSPORT_REFUSED, details: { sqlstate: '42501' } });
+    const again = await store.use(L.human, L.link.id);
+    expect(again.session).toMatchObject({ kind: 'link', sessionId: L.linkSessionId, viaLinkId: L.link.id });
+    expect(inProcessClaims(again.session, again.token)).toMatchObject({ authKind: 'link', viaLinkId: L.link.id });
+  });
+
+  it('the spawn-path mint refuses a link session first (SQL backstop); a via_link child mints and stamps the same', async () => {
+    const before = await database.query<{ n: number }>(`select count(*)::int as n from public.auth_sessions where parent_session_id = $1`, [L.linkSessionId]);
+    const error = await mintChild(L.linkClaims, { issuer: 'issue_work_session_agent_session' }).then(() => 'resolved', (err: unknown) => err);
+    expect(await outcome(async () => { if (error !== 'resolved') throw error; })).toBe('42501');
+    expect(String((error as Error).message)).toContain('a space link session cannot mint an agent session');
+    const after = await database.query<{ n: number }>(`select count(*)::int as n from public.auth_sessions where parent_session_id = $1`, [L.linkSessionId]);
+    expect(after[0]?.n).toBe(before[0]?.n);
+    const child = await childOf(L);
+    const grand = await mintChild(child, { issuer: 'issue_work_session_agent_session' });
+    expect(await sessionRow(grand.id)).toMatchObject({ kind: 'agent', via_link_id: L.link.id, parent_session_id: L.linkSessionId });
   });
 
   it('a grandchild inherits via_link, parented flat on the link session', async () => {
