@@ -81,6 +81,7 @@ import {
   workflowTypeOf,
   workflowVocabularyOf,
 } from '../../domain';
+import { actorName } from '../../domain/actors';
 import { Avatar, useMenuAnchor, type PillTone } from '../../kit';
 import {
   CheckingPermission,
@@ -1421,8 +1422,8 @@ function RowAssignControl({
       {assigned.length === 0
         ? control.emptyLabel
         : assigned.length === 1
-          ? assigned[0].displayName
-          : `${assigned[0].displayName} +${assigned.length - 1}`}
+          ? actorName(assigned[0])
+          : `${actorName(assigned[0])} +${assigned.length - 1}`}
     </span>
   );
 
@@ -1473,6 +1474,19 @@ function RowAssignControl({
     );
   }
 
+  // G6: a member who left keeps their edges (display-only), but the space
+  // roster lists ACTIVE members only — so an assignee or channel member who
+  // left would be ON in the face and absent from the menu, with no way to
+  // take the edge off. They are offered after the roster, as "(left)" — and
+  // for REMOVAL ONLY: an ended actor who is not already on the edge is never
+  // offered (the edge is display-only, and the node may not refuse the add),
+  // and the click below never sends an add for one.
+  const rosterIds = new Set(roster.map((actor) => actor.id));
+  const offered = [
+    ...roster.filter((actor) => !actor.memberStatus || assignedIds.has(actor.id)),
+    ...assigned.filter((actor) => actor.memberStatus && !rosterIds.has(actor.id)),
+  ];
+
   return (
     <span className="lp__assignwrap" ref={boxRef}>
       <button
@@ -1497,7 +1511,7 @@ function RowAssignControl({
           role="group"
           aria-label={`Assign ${row.title}`}
         >
-          {roster.map((actor) => {
+          {offered.map((actor) => {
             const on = assignedIds.has(actor.id);
             return (
               <button
@@ -1509,6 +1523,7 @@ function RowAssignControl({
                 aria-pressed={on}
                 onClick={(e) => {
                   e.stopPropagation();
+                  if (!on && actor.memberStatus) return;
                   props.onAssign?.(row.id, actor.id, control.edgeType, !on);
                 }}
               >
@@ -1519,7 +1534,7 @@ function RowAssignControl({
                   size={15}
                   src={actor.avatar ?? null}
                 />
-                <span className="lp__assignopt-name">{actor.displayName}</span>
+                <span className="lp__assignopt-name">{actorName(actor)}</span>
                 <span className="lp__assignopt-mark" aria-hidden>
                   {on ? '✓' : ''}
                 </span>
