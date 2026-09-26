@@ -21,6 +21,7 @@ import {
   PROJECT_FOLDER_UPLOAD_MAX_TOTAL_BYTES,
   SHA256_HEX_RE,
   SPAWN_SELECTION_GROUP_LIMIT,
+  EXECUTION_NEW_TASK_TITLE_MAX,
 } from './contract.js';
 import { ArtifactManifestSchema } from './artifact-manifest.js';
 import { FormQuestionRowSchema, FormSectionRowSchema, FormSettingsSchema, FormStatusSchema } from './forms.js';
@@ -48,6 +49,7 @@ import type {
   AuthLogoutResult, AuthPasswordChangeInput, AuthPasswordChangeResult,
   AuthSessionGetResult, AuthSessionListing, AuthSessionsListInput, AuthSessionsListResult,
   AuthSessionsRevokeResult, AuthSessionView, AuthSignupInput, AuthSpaceEnterInput, AuthSpaceEnterResult,
+  SpacePasswordLockInput, SpacePasswordResetInput, SpacePasswordSetRequiredInput,
   AuthSignupResult, ChannelTab, ChatContextFrame, ChatTurnFrame, ChatTurnUsage,
   ClosedPromptPolicy, CollectionAddItemInput, CollectionGroup, CollectionQuery, CollectionResult,
   CommandContext, CommandErrorCode, CommandResult, CompleteTaskInput,
@@ -85,6 +87,8 @@ import type {
   EntityFeedPage, EntityFeedQuery, EntityKind, EntityKindCreateInput,
   EntityKindDef, EntityKindUpdateInput, EntityStaleness, EntityState, EntitySummary, ErrorCode,
   ErrorDetails, ExecutionDispatchInput, ExecutionDispatchResult,
+  ExecutionDispatchNewTask, ExecutionNewTask, ExecutionDispatcherRow, ExecutionDispatchers,
+  ExecutionSpawnResult,
   ExecutionPromptInput, ExecutionResumeInput, ExecutionSpawnInput, SpawnSelection,
   ExecutionSessionsShareInput,
   ExecutionStreamsAttachInput, ExecutionTerminateInput,
@@ -128,6 +132,7 @@ import type {
   AttentionRequest, AttentionRequestListQuery, AttentionRequestMutationResult,
   CreateAttentionRequestInput, UpdateAttentionRequestInput, ResolveEntityAttentionInput,
   MarkAttentionSeenInput, UnresolveAttentionBatchInput, WithdrawAttentionRequestInput,
+  RaiseAttentionSignalInput, ClearAttentionSignalInput, AttentionSignal,
   KindCounts, SpaceKindCounts,
   SetTeammateProfileDefaultInput, ShareProjectionEnvelope, SpaceNavigation,
   SpaceProfileDefaultView, SpaceSettings, SpaceSettingsView, SpaceSummary,
@@ -1877,6 +1882,21 @@ export const AuthLoginResultSchema: z.ZodType<AuthLoginResult> = z.object({
 export const AuthSpaceEnterInputSchema: z.ZodType<AuthSpaceEnterInput> = z.object({
   spaceId: z.string().uuid(),
   label: z.string().min(1).max(200).optional(),
+  spacePassword: z.string().min(1).max(1024).optional(),
+}).strict();
+
+/** W5 (K2): the space-password setting and the P5 admin ops. Strict bodies. */
+export const SpacePasswordSetRequiredInputSchema: z.ZodType<SpacePasswordSetRequiredInput> = z.object({
+  required: z.boolean(),
+  password: AuthPasswordSchema.optional(),
+}).strict();
+
+export const SpacePasswordResetInputSchema: z.ZodType<SpacePasswordResetInput> = z.object({
+  password: AuthPasswordSchema,
+}).strict();
+
+export const SpacePasswordLockInputSchema: z.ZodType<SpacePasswordLockInput> = z.object({
+  locked: z.boolean(),
 }).strict();
 
 export const AuthSpaceEnterResultSchema: z.ZodType<AuthSpaceEnterResult> = z.object({
@@ -2005,6 +2025,7 @@ export const AuthInviteSignupInputSchema: z.ZodType<AuthInviteSignupInput> = z.o
   displayName: z.string().min(1).max(200).optional(),
   email: z.string().min(3).max(320).optional(),
   kind: z.enum(['browser', 'cli']).optional(),
+  spacePassword: AuthPasswordSchema.optional(),
 }).strict();
 
 export const AuthInviteSignupResultSchema: z.ZodType<AuthInviteSignupResult> = z.object({
@@ -2412,6 +2433,17 @@ export const CommandResultSchema: z.ZodType<CommandResult> = z.lazy(() => z.obje
   warnings: z.array(ResultWarningSchema).optional(),
 }).strict());
 
+/** `execution.spawn`'s answer: the command result plus `createdTaskId` (launch v3). */
+export const ExecutionSpawnResultSchema: z.ZodType<ExecutionSpawnResult> = z.lazy(() => z.object({
+  entity: EntityDetailSchema.optional(),
+  edge: EdgeViewSchema.optional(),
+  activity: ActivityItemSchema.optional(),
+  patches: z.array(EntitySummarySchema),
+  undo: UndoTokenSchema.optional(),
+  warnings: z.array(ResultWarningSchema).optional(),
+  createdTaskId: EntityIdSchema.optional(),
+}).strict());
+
 // ---------------------------------------------------------------------------
 // Command inputs (all strict; unknown field ⇒ invalid_input)
 // ---------------------------------------------------------------------------
@@ -2611,6 +2643,26 @@ export const ResolveEntityAttentionInputSchema: z.ZodType<ResolveEntityAttention
   clientMutationId: z.string().min(1),
   resolutionNote: z.string().trim().max(1000).optional(),
   resolutionBatchId: z.string().uuid().optional(),
+}).strict();
+
+const AttentionSignalSchema: z.ZodType<AttentionSignal> = z.object({
+  kind: z.literal('conflict'),
+  worktreeId: EntityIdSchema,
+  flow: z.enum(['merge', 'cherry_pick', 'stash_pop']),
+}).strict();
+
+// Attention v2 S6. .strict(): no signal key, level, type or points from input.
+export const RaiseAttentionSignalInputSchema: z.ZodType<RaiseAttentionSignalInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  signal: AttentionSignalSchema,
+  reason: z.string().trim().min(1).max(500),
+}).strict();
+
+export const ClearAttentionSignalInputSchema: z.ZodType<ClearAttentionSignalInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  signal: AttentionSignalSchema,
 }).strict();
 
 export const MarkAttentionSeenInputSchema: z.ZodType<MarkAttentionSeenInput> = z.object({
@@ -3429,7 +3481,7 @@ const SpaceCredentialIdsSchema = z.object({
 const SelectionGroupIdsSchema = z.array(SpawnUuidSchema).max(SPAWN_SELECTION_GROUP_LIMIT);
 
 export const SPAWN_SELECTION_EMPTY_MESSAGE =
-  'selection names no group: send at least one of memoryIds, skillIds, referenceIds, or omit selection for the defaults';
+  'selection names no group: send at least one of memoryIds, skillIds, referenceIds, teammateIds, or omit selection for the defaults';
 
 /**
  * `selection` (design 01a0d348 §5.1): every group optional — absent means
@@ -3440,8 +3492,10 @@ export const SpawnSelectionSchema = z.object({
   memoryIds: SelectionGroupIdsSchema.optional(),
   skillIds: SelectionGroupIdsSchema.optional(),
   referenceIds: SelectionGroupIdsSchema.optional(),
+  teammateIds: SelectionGroupIdsSchema.optional(),
 }).strict().refine(
-  (selection) => selection.memoryIds !== undefined || selection.skillIds !== undefined || selection.referenceIds !== undefined,
+  (selection) => selection.memoryIds !== undefined || selection.skillIds !== undefined || selection.referenceIds !== undefined
+    || selection.teammateIds !== undefined,
   { message: SPAWN_SELECTION_EMPTY_MESSAGE },
 );
 
@@ -3466,6 +3520,23 @@ export const ContextBudgetsSchema = z.object({
   teammates: z.number().int().min(0).max(32_768).optional(),
 }).strict();
 
+/** `newTask.title` on spawn and dispatch: trimmed, then 1..200 chars. */
+const NewTaskTitleSchema = z.string().trim().min(1).max(EXECUTION_NEW_TASK_TITLE_MAX);
+
+/**
+ * `execution.spawn.newTask`. Its exclusivity with `taskIds`/`forceNewTask` is
+ * the HANDLER's refusal, not this schema's: the contract names the reason
+ * (`details.reason = 'new_task_conflict'`) and a zod issue carries none.
+ */
+export const ExecutionNewTaskSchema: z.ZodType<ExecutionNewTask> = z.object({
+  title: NewTaskTitleSchema,
+}).strict();
+
+export const ExecutionDispatchNewTaskSchema: z.ZodType<ExecutionDispatchNewTask> = z.object({
+  title: NewTaskTitleSchema,
+  projectId: SpawnUuidSchema.optional(),
+}).strict();
+
 const executionSpawnInputObject = z.object({
   ...commandContextShape,
   clientMutationId: z.string().min(1),
@@ -3474,6 +3545,7 @@ const executionSpawnInputObject = z.object({
   parentSessionId: SpawnUuidSchema.optional(),
   taskIds: z.array(SpawnUuidSchema).optional(),
   forceNewTask: z.boolean().optional(),
+  newTask: ExecutionNewTaskSchema.optional(),
   projectId: SpawnUuidSchema.nullable().optional(),
   workdir: SpawnWorkdirSchema.optional(),
   confirmUntrusted: z.literal(true).optional(),
@@ -3586,9 +3658,14 @@ export const ExecutionDispatchInputSchema: z.ZodType<ExecutionDispatchInput> = z
   ...commandContextShape,
   clientMutationId: z.string().min(1),
   spaceId: SpawnUuidSchema,
-  subjectId: SpawnUuidSchema,
+  // Exactly one of subjectId / newTask — refused in the handler with
+  // `details.reason = 'new_task_conflict'`, which a zod issue cannot carry.
+  subjectId: SpawnUuidSchema.optional(),
+  newTask: ExecutionDispatchNewTaskSchema.optional(),
   forceNewTask: z.boolean().optional(),
   note: z.string().max(4000).optional(),
+  dispatcherSessionId: SpawnUuidSchema.optional(),
+  kind: z.enum(['worker', 'coordinator', 'dispatcher']).optional(),
 }).strict();
 
 /**
@@ -3598,10 +3675,26 @@ export const ExecutionDispatchInputSchema: z.ZodType<ExecutionDispatchInput> = z
  */
 export const ExecutionDispatchResultSchema: z.ZodType<ExecutionDispatchResult> = z.object({
   taskId: EntityIdSchema,
+  taskCreated: z.boolean(),
   dispatcherSessionId: EntityIdSchema,
   dispatcherSpawned: z.boolean(),
   requestMessageId: EntityIdSchema.optional(),
   delivery: z.enum(['delivered', 'undelivered']),
+}).strict();
+
+/** execution.dispatchers — the space's dispatcher sessions, newest first. */
+export const ExecutionDispatcherRowSchema: z.ZodType<ExecutionDispatcherRow> = z.object({
+  sessionId: EntityIdSchema,
+  teamMemberId: EntityIdSchema,
+  teammateName: z.string(),
+  title: z.string(),
+  purpose: z.string().nullable(),
+  live: z.boolean(),
+  queuedCount: z.number().int().nonnegative().nullable(),
+}).strict();
+
+export const ExecutionDispatchersSchema: z.ZodType<ExecutionDispatchers> = z.object({
+  dispatchers: z.array(ExecutionDispatcherRowSchema),
 }).strict();
 
 export const ExecutionPromptInputSchema: z.ZodType<ExecutionPromptInput> = z.object({
@@ -4482,8 +4575,8 @@ export const InteractionProfileDraftSchema: z.ZodType<InteractionProfileDraft> =
      means "defer to the pinned static template" — exactly the behaviour those
      drafts already had. Authors who set it are choosing, not overriding. */
   initialContentSurface: z.enum(['terminal', 'chat']).optional(),
-  /* `<context_index>` on (design 01a0d348 §2). OPTIONAL: absent is off, and
-     every earlier draft stays valid. Shipped dark (§10 Q2). */
+  /* DEPRECATED, accepted and ignored: the index is always on (launch card
+     v3, `index_always`). OPTIONAL so every earlier draft stays valid. */
   contextIndex: z.boolean().optional(),
   /* Per-kind prompt budgets and Jev score floors (design 01a0d348 §10 Q5).
      OPTIONAL, every key too: an absent key takes the node default. A budget

@@ -893,6 +893,8 @@ async function spaceInviteRedeem(cmd: CommandContext): Promise<ExitCode> {
 
   const body = mutationBody(cmd);
   body.code = code;
+  const spacePassword = cmd.options.value('space-password');
+  if (spacePassword !== undefined) body.spacePassword = spacePassword;
 
   const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'spaces.invites.redeem', { body });
   cmd.out.data(data, fallback);

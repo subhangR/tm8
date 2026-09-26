@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:61cdc78ba1aa992c3d436ca20307bdaba760bfbe4acc86daa059eae2814cde21",
+  "catalogDigest": "sha256:d43033dcc7c75810b26fe8b6e3f39db8a98e479a377c39bace66ff9e931c3b9f",
   "catalog": {
-    "total": 278,
-    "v1": 276,
+    "total": 287,
+    "v1": 285,
     "reserved": 2,
-    "http": 276,
+    "http": 285,
     "ws": 1,
-    "registerableV1Http": 274,
+    "registerableV1Http": 283,
     "methods": {
-      "GET": 90,
-      "POST": 134,
+      "GET": 91,
+      "POST": 141,
       "PATCH": 17,
       "DELETE": 18,
-      "PUT": 17,
+      "PUT": 18,
       "WS": 2
     },
     "kinds": {
-      "read": 94,
-      "command": 182,
+      "read": 95,
+      "command": 190,
       "stream": 2
     },
-    "uniqueNames": 278,
-    "uniqueBindings": 277
+    "uniqueNames": 287,
+    "uniqueBindings": 286
   },
   "reservedOperations": [
     "search.query",
@@ -418,6 +418,27 @@
         "source": "server-router"
       },
       {
+        "operation": "spaces.spacePassword.setRequired",
+        "method": "PUT",
+        "path": "/v2/spaces/:spaceId/space-password",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.members.spacePassword.reset",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/members/:memberId/space-password/reset",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.members.spacePassword.lock",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/members/:memberId/space-password/lock",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "accounts.disable",
         "method": "POST",
         "path": "/v2/accounts/:accountId/disable",
@@ -701,6 +722,41 @@
         "operation": "attentionRequests.resolveEntity",
         "method": "POST",
         "path": "/v2/entities/:entityId/attention-requests/resolve",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "attentionSignals.raise",
+        "method": "POST",
+        "path": "/v2/entities/:entityId/attention-signals",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "attentionSignals.clear",
+        "method": "POST",
+        "path": "/v2/entities/:entityId/attention-signals/clear",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "attentionRequests.markSeen",
+        "method": "POST",
+        "path": "/v2/entities/:entityId/attention-requests/seen",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "attentionRequests.unresolve",
+        "method": "POST",
+        "path": "/v2/attention-requests/batches/:batchId/unresolve",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "attentionRequests.withdraw",
+        "method": "POST",
+        "path": "/v2/attention-requests/:requestId/withdraw",
         "status": "registered",
         "source": "server-router"
       },
@@ -1972,6 +2028,13 @@
         "source": "server-router"
       },
       {
+        "operation": "execution.dispatchers",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/execution/dispatchers",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "containers.create",
         "method": "POST",
         "path": "/v2/containers",
@@ -2350,7 +2413,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 246
+    "unimplementedV1Http": 255
   },
   "schemas": {
     "additive": {
@@ -3016,6 +3079,63 @@
         "intentTags": [
           "spaces",
           "leave"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.spacePassword.setRequired",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.spacePassword.setRequired",
+        "intentTags": [
+          "spaces",
+          "space",
+          "password",
+          "set",
+          "required"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.members.spacePassword.reset",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.members.spacePassword.reset",
+        "intentTags": [
+          "spaces",
+          "members",
+          "space",
+          "password",
+          "reset"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.members.spacePassword.lock",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.members.spacePassword.lock",
+        "intentTags": [
+          "spaces",
+          "members",
+          "space",
+          "password",
+          "lock"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
@@ -3713,6 +3833,92 @@
         ],
         "inputSchemaRef": "ResolveEntityAttentionInputSchema",
         "resultSchemaRef": "AttentionRequestMutationResultSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "attentionSignals.raise",
+        "noun": "attention",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/attentionSignals.raise",
+        "intentTags": [
+          "attention",
+          "signals",
+          "raise"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "attentionSignals.clear",
+        "noun": "attention",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/attentionSignals.clear",
+        "intentTags": [
+          "attention",
+          "signals",
+          "clear"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "attentionRequests.markSeen",
+        "noun": "attention",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/attentionRequests.markSeen",
+        "intentTags": [
+          "attention",
+          "requests",
+          "mark",
+          "seen"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "attentionRequests.unresolve",
+        "noun": "attention",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/attentionRequests.unresolve",
+        "intentTags": [
+          "attention",
+          "requests",
+          "unresolve"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "attentionRequests.withdraw",
+        "noun": "attention",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/attentionRequests.withdraw",
+        "intentTags": [
+          "attention",
+          "requests",
+          "withdraw"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
         "invocationSyntax": null,
         "actionDiscoverable": true,
         "reason": null,
@@ -6771,6 +6977,22 @@
         ],
         "inputSchemaRef": "ExecutionDispatchInputSchema",
         "resultSchemaRef": "ExecutionDispatchResultSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "execution.dispatchers",
+        "noun": "session",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/execution.dispatchers",
+        "intentTags": [
+          "execution",
+          "dispatchers"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
         "invocationSyntax": null,
         "actionDiscoverable": true,
         "reason": null,

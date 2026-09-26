@@ -78,6 +78,9 @@ export const RATE_LIMITED_AUTH_OPS: ReadonlySet<string> = new Set([
   'auth.claim.reissue',
   'auth.invite.resolve',
   'auth.invite.signup',
+  // W5 (K2): the space password. Its principal is the authenticated caller in
+  // one space — see IDENTITY_SCOPE_FIELD.
+  'auth.space.enter',
 ]);
 
 /**
@@ -89,6 +92,29 @@ const PRINCIPAL_FIELD: Readonly<Record<string, string>> = {
   'auth.signup': 'username',
   'auth.invite.signup': 'username',
 };
+
+/**
+ * Ops whose secret is guessed by an AUTHENTICATED caller against one scope:
+ * the failures are counted per (identity, scope), and the value is the body
+ * field naming the scope. `auth.space.enter` (W5): a stolen gate session
+ * grinding one space's password — same limit and window as the username
+ * dimension above, the same "only wrong answers count, a right one clears"
+ * rule, and a key that is the verified identity id (never the password).
+ * Only the caller's own identity is in the key, so nobody can spend another
+ * person's budget.
+ */
+const IDENTITY_SCOPE_FIELD: Readonly<Record<string, string>> = {
+  'auth.space.enter': 'spaceId',
+};
+
+function identityPrincipalOf(opName: string, body: unknown, identityId: string | undefined): string | null {
+  const field = IDENTITY_SCOPE_FIELD[opName];
+  if (!field || !identityId) return null;
+  if (typeof body !== 'object' || body === null) return null;
+  const raw = (body as Record<string, unknown>)[field];
+  if (typeof raw !== 'string' || raw.length === 0) return null;
+  return `${opName}:${identityId.slice(0, 120)}:${raw.trim().toLowerCase().slice(0, 120)}`;
+}
 
 function principalOf(opName: string, body: unknown): string | null {
   const field = PRINCIPAL_FIELD[opName];
@@ -172,12 +198,25 @@ export class AuthRateLimiter {
   }
 
   /**
+   * Called after identity resolution, for the ops whose principal is the
+   * authenticated caller (IDENTITY_SCOPE_FIELD). `check` cannot do it: it runs
+   * before resolution, deliberately. Same refusal, same words.
+   */
+  checkIdentity(opName: string, identityId: string | undefined, body: unknown): void {
+    if (this.failures === null || !RATE_LIMITED_AUTH_OPS.has(opName)) return;
+    const principal = identityPrincipalOf(opName, body, identityId);
+    if (principal === null) return;
+    const spent = this.failures.peek(principal);
+    if (spent.spent) throw rateLimited(spent.retryAfterMs);
+  }
+
+  /**
    * Called after the handler settles. `failed` is the ONLY thing that moves
    * the principal counter, and a success clears it outright.
    */
-  recordOutcome(opName: string, body: unknown, failed: boolean): void {
+  recordOutcome(opName: string, body: unknown, failed: boolean, identityId?: string): void {
     if (this.failures === null || !RATE_LIMITED_AUTH_OPS.has(opName)) return;
-    const principal = principalOf(opName, body);
+    const principal = principalOf(opName, body) ?? identityPrincipalOf(opName, body, identityId);
     if (principal === null) return;
     if (failed) this.failures.hit(principal);
     else this.failures.clear(principal);

@@ -90,6 +90,11 @@ export const OPERATIONS = [
   // member row and everything it authored stay. POST verbs, like invites.revoke.
   { name: 'spaces.members.remove', method: 'POST',  path: '/v2/spaces/:spaceId/members/:memberId/remove', kind: 'command', status: 'v1' },
   { name: 'spaces.leave',          method: 'POST',  path: '/v2/spaces/:spaceId/leave',                   kind: 'command', status: 'v1' },
+  // W5 (migration 268 placeholder, K2 / decision 30): the space password. The
+  // setting and the P5 admin ops; human space admins only.
+  { name: 'spaces.spacePassword.setRequired',   method: 'PUT',  path: '/v2/spaces/:spaceId/space-password',                              kind: 'command', status: 'v1' },
+  { name: 'spaces.members.spacePassword.reset', method: 'POST', path: '/v2/spaces/:spaceId/members/:memberId/space-password/reset', kind: 'command', status: 'v1' },
+  { name: 'spaces.members.spacePassword.lock',  method: 'POST', path: '/v2/spaces/:spaceId/members/:memberId/space-password/lock',  kind: 'command', status: 'v1' },
   // Node admin turns an account off: every session refused, launched work contained (232).
   { name: 'accounts.disable',      method: 'POST',  path: '/v2/accounts/:accountId/disable',             kind: 'command', status: 'v1' },
   // Space links (W6, migrations 250/251). Every write is human-only in SQL;
@@ -152,6 +157,13 @@ export const OPERATIONS = [
   { name: 'attentionRequests.create',method: 'POST',   path: '/v2/entities/:entityId/attention-requests',   kind: 'command', status: 'v1' },
   { name: 'attentionRequests.update',method: 'PATCH',  path: '/v2/attention-requests/:requestId',           kind: 'command', status: 'v1' },
   { name: 'attentionRequests.resolveEntity', method: 'POST', path: '/v2/entities/:entityId/attention-requests/resolve', kind: 'command', status: 'v1' },
+  // Attention v2 S6: tm8's own conflict signal, raised and cleared by the CLI's worktree rail.
+  { name: 'attentionSignals.raise',  method: 'POST',   path: '/v2/entities/:entityId/attention-signals',    kind: 'command', status: 'v1' },
+  { name: 'attentionSignals.clear',  method: 'POST',   path: '/v2/entities/:entityId/attention-signals/clear', kind: 'command', status: 'v1' },
+  // Attention v2 (S4, spec chapter 3 + 5): per-person Seen over the roll-up root, Undo of one resolve batch, and the raising agent's withdraw.
+  { name: 'attentionRequests.markSeen', method: 'POST', path: '/v2/entities/:entityId/attention-requests/seen', kind: 'command', status: 'v1' },
+  { name: 'attentionRequests.unresolve', method: 'POST', path: '/v2/attention-requests/batches/:batchId/unresolve', kind: 'command', status: 'v1' },
+  { name: 'attentionRequests.withdraw', method: 'POST', path: '/v2/attention-requests/:requestId/withdraw', kind: 'command', status: 'v1' },
   { name: 'entities.move',           method: 'POST',   path: '/v2/entities/:id/move',                       kind: 'command', status: 'v1' },
   { name: 'entities.delete',         method: 'DELETE', path: '/v2/entities/:id',                            kind: 'command', status: 'v1' },
   { name: 'entities.restore',        method: 'POST',   path: '/v2/entities/:id/restore',                    kind: 'command', status: 'v1' },
@@ -589,6 +601,10 @@ export const OPERATIONS = [
   // own actions are existing ops (`entities.patch`, `edges.create`,
   // `execution.spawn`, `messages.post`).
   { name: 'execution.dispatch',                          method: 'POST',   path: '/v2/execution/dispatch',                                             kind: 'command', status: 'v1' },
+  // Launch v3 gap 5: the space's dispatcher sessions for the launch card's
+  // dispatch-target drop-up — newest first, stopped ones included with
+  // `live: false`. Liveness is probed exactly as `execution.dispatch` probes it.
+  { name: 'execution.dispatchers',                       method: 'GET',    path: '/v2/spaces/:spaceId/execution/dispatchers',                          kind: 'read',    status: 'v1' },
 
   // containers — machines agents run in or drive (TM8-CONTAINERS-DESIGN §4.1).
   //

@@ -395,7 +395,7 @@ export interface SessionLaunchPosture {
    */
   skillOverrides?: Record<string, unknown> | null;
   /** `context.index.source`: the launch rendered `<context_index>`; resume renders it too. */
-  contextIndex?: 'env' | 'profile' | null;
+  contextIndex?: 'env' | 'profile' | 'default' | null;
 }
 
 /** A project as the server computed it — `workingDir` is graph truth (S11). */
@@ -539,6 +539,8 @@ export interface SpawnContext {
     title: string | null;
     via: 'selection' | 'linked' | 'attached';
     link?: string;
+    /** A file's declared mime, for its `<attachments>` line (files are never index entries). */
+    mime?: string | null;
   }>;
   /**
    * Selection headers (`GraphPort.loadContextHeaders`, under RLS) for the
@@ -563,6 +565,16 @@ export interface SpawnContext {
    * read are declared, never dropped silently.
    */
   roster?: DispatcherRoster;
+  /**
+   * The EXACT teammates group when the launch selected teammates
+   * (`selection.teammateIds`, launch card v3 Decision 7), in the selected
+   * order, the launch teammate removed; each a live, same-space teammate the
+   * caller can read, with the roster's columns. Rendered as the `teammates`
+   * group of `<context_index>`, replacing the tasks' linked teammates.
+   * Absent when teammates were not selected, and for a dispatcher, which
+   * keeps its roster (`applyDispatcherTeammates` removes the set).
+   */
+  teammates?: DispatcherRoster['members'];
 }
 
 /** The teammates a dispatcher routes to, as `loadDispatcherRoster` read them. */
@@ -579,6 +591,8 @@ export interface SpawnContextAudit {
    * group's edge-driven defaults. A group not listed kept its defaults.
    */
   selectedGroups: ReadonlyArray<SpawnSelectionGroup>;
+  /** `selection.teammateIds` a dispatcher ignored (`applyDispatcherTeammates`). */
+  teammatesIgnored?: number;
   /** One per `teamMember.memoryIds` entry, same order. */
   memoryVia: ContextVia[];
   /** Skills that are in the session only because the selection named them. */
@@ -618,7 +632,13 @@ export interface ContextGroupAudit {
    * validated at the wire, audit-only). `replay-invalid`: a resume found the
    * launch's recorded selection malformed, so it loaded the defaults instead.
    */
-  reason?: 'no-selection' | 'not-selectable' | 'replay-invalid' | SpawnSelectionDefaultReason;
+  reason?: 'no-selection' | 'not-selectable' | 'replay-invalid' | 'dispatcher-roster' | SpawnSelectionDefaultReason;
+  /**
+   * Teammates only, with reason `dispatcher-roster`: how many
+   * `selection.teammateIds` a dispatcher launch ignored (it keeps its full
+   * roster).
+   */
+  ignored?: number;
   /** Linked rows (a dispatcher's teammates: roster rows) beyond the spawn read; declared as `omitted` in the prompt. */
   unread?: number;
   /** See `SpawnContextAudit.legacyMemoriesDropped`. */
@@ -725,8 +745,8 @@ export interface ContextBudgetsRecord {
 
 /** `manifest.context.index`. */
 export interface ContextIndexRecord {
-  /** `env`: `TM8_CONTEXT_INDEX`; `profile`: the pinned profile's `contextIndex`. */
-  source: 'env' | 'profile';
+  /** `default`: always on (launch card v3); `env` / `profile`: the switch a launch before that recorded. */
+  source: 'env' | 'profile' | 'default';
   /** Rendered bytes of the whole element plus its joining newline. */
   bytes: number;
   /**
@@ -780,6 +800,11 @@ export interface CreateWorkSessionInput {
   nodeId: string | null;
   confirmUntrusted: boolean;
   clientMutationId: string | null;
+  /**
+   * `SpawnRequest.newTask`'s title: the RPC creates that task in the spawn's
+   * own transaction (267). Absent/null creates none.
+   */
+  newTaskTitle?: string | null;
 }
 
 export interface CreateWorkSessionResult {
@@ -788,6 +813,8 @@ export interface CreateWorkSessionResult {
   commandResult: unknown;
   /** True when the command ledger returned an earlier spawn result. */
   replayed: boolean;
+  /** The task `newTaskTitle` created (a replay answers the same one). */
+  createdTaskId?: string;
 }
 
 // --- vanilla terminals (101) -------------------------------------------------
@@ -1449,6 +1476,12 @@ export interface SpawnRequest {
   /** Session that invoked this spawn; null/absent means a human-launched root. */
   parentSessionId?: string | null;
   taskIds?: string[];
+  /**
+   * Create the session's task in the same transaction as the session (launch
+   * v3 gap 4). The caller refuses it beside `taskIds`; see
+   * `ExecutionSpawnInput.newTask`.
+   */
+  newTask?: { title: string };
   projectId?: string | null;
   workdir?: { mode?: WorkdirMode; baseRef?: string | null };
   interactionProfileId?: string | null;
@@ -1530,6 +1563,14 @@ export interface SpawnResult {
   envVarNames: string[];
   reused: boolean;
   commandResult: unknown;
+  /** The task `SpawnRequest.newTask` created. */
+  createdTaskId?: string;
+  /**
+   * A dispatcher launched on tasks ROUTES them (launch v3): these are the tasks
+   * its first turn asked it to route, in order. The caller stores the durable
+   * request on each. Absent for every other mode.
+   */
+  routedTaskIds?: string[];
 }
 
 /** Raised for every spawn-flow failure that has a contract error code. */

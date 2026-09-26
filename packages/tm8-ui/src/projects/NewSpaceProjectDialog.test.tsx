@@ -168,7 +168,7 @@ describe('Create Space — a project from a node-local folder', () => {
       workingDir: '/srv/projects/website',
       ensureWorkingDir: true,
       trust: 'untrusted',
-      // Born linked (980): the create names the new space, so the path-pinned
+      // Born linked (269): the create names the new space, so the path-pinned
       // link that follows can see the project.
       spaceId: space.id,
       clientMutationId: ids.project,

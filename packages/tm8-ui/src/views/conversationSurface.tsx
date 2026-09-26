@@ -29,7 +29,6 @@
 import { lazy, Suspense, type ReactNode } from 'react';
 import type { ComposerInteractionPolicy, EntityDetail, EntityId } from '@tm8/contract';
 import { getKind } from '../domain';
-import { QUIET_SESSION_DETAIL, needsAttentionOf } from '../domain/needs-attention';
 import { LazyChannelChatSurface } from '../channel-screen/LazyChannelChatSurface';
 import { LazySessionChatSurface } from '../channel-screen/LazySessionChatSurface';
 import { DiscussionSurface } from '../channel-screen/DiscussionSurface';
@@ -190,8 +189,6 @@ export function sessionChatSurfaceFor(
       sessionExited={recordedStatus === 'exited' || recordedStatus === 'failed'}
       defaultLimit={content.interactionProfile?.feedPolicy?.pageSize}
       composerPolicy={content.interactionProfile?.composerPolicy}
-      needsAttention={needsAttentionOf(detail, host.livenessOf)}
-      attentionDetail={QUIET_SESSION_DETAIL}
       onOpenEntity={host.onOpenEntity}
       onSwitchToTerminal={host.onSwitchToTerminal}
     />

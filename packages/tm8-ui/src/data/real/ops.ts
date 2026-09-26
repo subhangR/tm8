@@ -146,6 +146,9 @@ import {
   type ProjectResource,
   type ReactionInput,
   type ResolveEntityAttentionInput,
+  type MarkAttentionSeenInput,
+  type UnresolveAttentionBatchInput,
+  type WithdrawAttentionRequestInput,
   type ContentionReport,
   type ExecutionGitCheckpointInput,
   type ExecutionGitCommitInput,
@@ -199,6 +202,7 @@ import {
 import { measureSpawnTerminalSize } from '../../terminal/pty/terminalSize.js';
 
 import type { HttpClient, QueryParams } from './http';
+import type { AttentionV2Ops } from '../seam';
 import type { ArtifactRevisionsList, BranchTopologyOpts, ConnectionOpts, FeedOpts, FileBlameOpts, FileHistoryOpts, GitDiffOpts, IdentityView, JournalOpts, LivenessSnapshot, MessageListOpts, PageOpts, TranscriptOpts } from '../seam';
 
 /**
@@ -304,6 +308,10 @@ export type Ops = ReturnType<typeof createOps>;
 
 /** Not in every build's catalog yet (agent-guidance PR); feature-detected by name. */
 const REDELIVER_OP = 'forms.responses.redeliver';
+/** Attention v2 verbs (chapter 5), feature-detected until S4 adds their rows. */
+const ATTENTION_SEEN_OP = 'attentionRequests.markSeen';
+const ATTENTION_UNRESOLVE_OP = 'attentionRequests.unresolve';
+const ATTENTION_WITHDRAW_OP = 'attentionRequests.withdraw';
 
 export function createOps(http: HttpClient, options: OpsOptions = {}) {
   const newId = options.newClientMutationId ?? defaultMutationId;
@@ -1162,6 +1170,35 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
         params: { requestId }, body: input,
       });
     },
+
+    /**
+     * Attention v2 (chapter 3). Each verb is spread in only when this build's
+     * catalog declares it, exactly like `forms.redeliver`: before S4 the
+     * namespace is empty and `src/attention/` falls back to the v1 verbs.
+     */
+    attentionV2: {
+      ...(isOperationName(ATTENTION_SEEN_OP) ? {
+        markSeen(entityId: EntityId, input: MarkAttentionSeenInput) {
+          return http.call<AttentionRequestMutationResult>(ATTENTION_SEEN_OP as OperationName, {
+            params: { entityId }, body: input,
+          });
+        },
+      } : {}),
+      ...(isOperationName(ATTENTION_UNRESOLVE_OP) ? {
+        unresolve(batchId: string, input: UnresolveAttentionBatchInput) {
+          return http.call<AttentionRequestMutationResult>(ATTENTION_UNRESOLVE_OP as OperationName, {
+            params: { batchId }, body: input,
+          });
+        },
+      } : {}),
+      ...(isOperationName(ATTENTION_WITHDRAW_OP) ? {
+        withdraw(requestId: string, input: WithdrawAttentionRequestInput) {
+          return http.call<AttentionRequestMutationResult>(ATTENTION_WITHDRAW_OP as OperationName, {
+            params: { requestId }, body: input,
+          });
+        },
+      } : {}),
+    } satisfies AttentionV2Ops,
 
     /** Note 1 again: `update_task_content` reads every task field off `content`. */
     patchTask(id: EntityId, input: PatchTaskInput): Promise<CommandResult> {

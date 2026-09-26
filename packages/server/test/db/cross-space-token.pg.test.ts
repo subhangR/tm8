@@ -49,7 +49,7 @@ import type { RequestContext, RequestIdentity, SpaceSessionsMode } from '../../s
 import { formatToken, generateSecret, hashToken, parseToken } from '../../src/identity/crypto.js';
 import { admitLinkInvoke, LINK_BEARER_OP_REFUSED } from '../../src/identity/link-bearer.js';
 import type { LoopbackOwner } from '../../src/identity/loopback.js';
-import { resolveBearerIdentity } from '../../src/identity/pg-auth.js';
+import { hashSpacePassword, resolveBearerIdentity } from '../../src/identity/pg-auth.js';
 import { bootstrap, type BootstrappedServer } from '../../src/main.js';
 import type { EventSink } from '../../src/events/ws-connection.js';
 import type { FacadeDeps } from '../../src/facade/deps.js';
@@ -4617,6 +4617,328 @@ describe.sequential('T17 leave / remove ends a member\'s link sessions', () => {
   });
 });
 
+/**
+ * W5 (K2, decision 30) over HTTP — per-space passwords. A fresh space E owned
+ * by H with H2 a member, so A and B keep their W3 behaviour for every other
+ * block. Every refusal has its positive with the same credential.
+ *
+ *   a1  setting on → a gate session alone cannot enter E; with its password it can.
+ *   a2  E's password does not enter B (off there, but H2 is no member) and
+ *       B's lookup is untouched; a wrong one is refused.
+ *   a3  setting off → enter needs no password (W3 behaviour).
+ *   a4  auth.invite.resolve says so; signup and redeem set the password.
+ *   a5  reset and lock over HTTP, human-only (an agent token is refused).
+ *   #1  turning it on needs TM8_SPACE_SESSIONS=enforce (review 5327376587).
+ *   #3  wrong passwords are rate-limited per (identity, space) — on a third
+ *       node with a small budget and window, so the cell can outwait it.
+ *   #4  turning it on ends the sessions pinned to E before the flip.
+ */
+describe.sequential('W5 over HTTP — space passwords (auth.space.enter, invites, admin reset/lock)', () => {
+  let enforceServer: BootstrappedServer;
+  let agentsServer: BootstrappedServer;
+  let limitedServer: BootstrappedServer;
+  const LIMITED_FAILURES = 3;
+  const LIMITED_WINDOW_MS = 2_500;
+  const spaceE = randomUUID();
+  const memberHE = randomUUID();
+  const memberH2E = randomUUID();
+  const passwordOf = { H: `sp-h-${randomUUID()}`, H2: `sp-h2-${randomUUID()}` };
+  let adminBefore: Array<{ id: string; is_node_admin: boolean; is_owner: boolean; password_hash: string | null; password_algorithm: string | null }> = [];
+
+  beforeAll(async () => {
+    const claimHash = await hashSpacePassword(`claim-${randomUUID()}`);
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      adminBefore = (await client.query(
+        `select id::text, is_node_admin, is_owner, password_hash, password_algorithm
+           from public.accounts where id = any($1::uuid[])`,
+        [[fixture.accountH, fixture.accountH2]],
+      )).rows;
+      // H owns and administers the node (bootstrap needs an owner) and holds a
+      // password, so the node counts as claimed for auth.invite.signup (143).
+      await client.query(
+        `update public.accounts set is_node_admin = (id = $1::uuid), is_owner = (id = $1::uuid),
+                password_algorithm = case when id = $1::uuid then 'scrypt' else password_algorithm end,
+                password_hash = case when id = $1::uuid then $3 else password_hash end
+          where id = any($2::uuid[])`,
+        [fixture.accountH, [fixture.accountH, fixture.accountH2], claimHash],
+      );
+      await client.query(
+        `insert into public.spaces(id, name, created_by_identity) values ($1, 'W5 space E', $2)`,
+        [spaceE, fixture.identityH],
+      );
+      await client.query(
+        `insert into public.entities(id, space_id, kind, created_by, visibility)
+         values ($1, $3, 'member', $1, 'space'), ($2, $3, 'member', $2, 'space')`,
+        [memberHE, memberH2E, spaceE],
+      );
+      await client.query(
+        `insert into public.members(entity_id, space_id, identity_id, role, display_name)
+         values ($1, $3, $4, 'owner', 'H'), ($2, $3, $5, 'member', 'H2')`,
+        [memberHE, memberH2E, spaceE, fixture.identityH, fixture.identityH2],
+      );
+    });
+    const start = async (mode: SpaceSessionsMode, extra: Record<string, string> = {}): Promise<BootstrappedServer> => {
+      const configured = loadConfig({
+        ...process.env,
+        TM8_BIND: '127.0.0.1',
+        TM8_PORT: '4610',
+        TM8_NODE_MODE: 'single',
+        TM8_DATABASE_URL: database.url,
+        TM8_DATA_DIR: await mkdtemp(join(tmpdir(), 'tm8-w5-')),
+        TM8_DISABLE_AUTO_OWNER: '1',
+        TM8_SPACE_SESSIONS: mode,
+        ...extra,
+      });
+      return bootstrap({ config: { ...configured, port: 0 } });
+    };
+    enforceServer = await start('enforce');
+    agentsServer = await start('agents');
+    limitedServer = await start('enforce', {
+      TM8_AUTH_MAX_FAILURES: String(LIMITED_FAILURES),
+      TM8_AUTH_FAILURE_WINDOW_MS: String(LIMITED_WINDOW_MS),
+    });
+  }, 180_000);
+
+  afterAll(async () => {
+    for (const server of [enforceServer, agentsServer, limitedServer]) {
+      await server?.server.close();
+      await server?.db?.end();
+    }
+    for (const row of adminBefore) {
+      await database.query(
+        `update public.accounts set is_node_admin = $2, is_owner = $3, password_hash = $4, password_algorithm = $5
+          where id = $1::uuid`,
+        [row.id, row.is_node_admin, row.is_owner, row.password_hash, row.password_algorithm],
+      );
+    }
+  }, 180_000);
+
+  async function call(
+    server: BootstrappedServer,
+    token: string | null,
+    method: 'GET' | 'POST' | 'PUT',
+    path: string,
+    body?: unknown,
+  ): Promise<{ status: number; json: any }> {
+    const response = await fetch(new URL(path, server.url), {
+      method,
+      headers: {
+        [TM8_CLIENT_HEADER]: TM8_CLIENT_HEADER_VALUE,
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    const text = await response.text();
+    const parsed = text ? JSON.parse(text) : null;
+    return { status: response.status, json: parsed && 'data' in parsed ? parsed.data : parsed };
+  }
+
+  /** The refusal reason a 403 carries, wherever the error envelope puts it. */
+  const reasonOf = (json: any): string | undefined =>
+    json?.error?.details?.reason ?? json?.details?.reason;
+
+  const enter = async (server: BootstrappedServer, who: 'H' | 'H2', spaceId: string, spacePassword?: string) => {
+    const gate = who === 'H'
+      ? await mintBrowser(fixture.accountH, fixture.identityH)
+      : await mintBrowser(fixture.accountH2, fixture.identityH2);
+    return call(server, gate, 'POST', '/v2/auth/space/enter',
+      { spaceId, ...(spacePassword === undefined ? {} : { spacePassword }) });
+  };
+
+  const pinnedH = async (): Promise<string> => {
+    const entered = await enter(enforceServer, 'H', spaceE, passwordOf.H);
+    expect(entered.status).toBe(200);
+    return entered.json.token as string;
+  };
+
+  it('a3: setting off — E is entered with no space password, in both modes', async () => {
+    for (const server of [enforceServer, agentsServer]) {
+      expect((await enter(server, 'H2', spaceE)).status).toBe(200);
+    }
+  });
+
+  it('turning it on without the admin\'s own password is refused (400); positive: with one (200)', async () => {
+    const pinned = (await enter(enforceServer, 'H', spaceE)).json.token as string;
+    const pinnedH2 = (await enter(enforceServer, 'H2', spaceE)).json.token as string;
+    const refused = await call(enforceServer, pinned, 'PUT', `/v2/spaces/${spaceE}/space-password`, { required: true });
+    expect(refused.status).toBe(400);
+    expect((await call(enforceServer, pinnedH2, 'GET', '/v2/auth/session')).status).toBe(200);
+    const on = await call(enforceServer, pinned, 'PUT', `/v2/spaces/${spaceE}/space-password`,
+      { required: true, password: passwordOf.H });
+    expect(on.status).toBe(200);
+    expect(on.json).toMatchObject({ spaceId: spaceE, requireSpacePassword: true });
+    // #4: every session pinned to E before the flip was entered without a
+    // password, and ends with it — H2's and the flipping session itself.
+    expect(on.json.revokedSessionIds).toEqual(expect.arrayContaining(
+      [parseToken(pinned)!.sessionId, parseToken(pinnedH2)!.sessionId]));
+    expect((await call(enforceServer, pinnedH2, 'GET', '/v2/auth/session')).status).toBe(401);
+    expect((await call(enforceServer, pinned, 'GET', '/v2/auth/session')).status).toBe(401);
+    expect((await call(enforceServer, await pinnedH(), 'GET', '/v2/auth/session')).status).toBe(200);
+  });
+
+  it('#1: under TM8_SPACE_SESSIONS=agents turning it on is refused (409 space_password_requires_enforce); positive: off works there, and enforce turns it on', async () => {
+    const pinnedAgents = (await enter(agentsServer, 'H', spaceE, passwordOf.H)).json.token as string;
+    const refused = await call(agentsServer, pinnedAgents, 'PUT', `/v2/spaces/${spaceE}/space-password`,
+      { required: true, password: passwordOf.H });
+    expect(refused.status).toBe(409);
+    expect(reasonOf(refused.json)).toBe('space_password_requires_enforce');
+    expect(refused.json.error?.details?.spaceSessions ?? refused.json.details?.spaceSessions).toBe('agents');
+    expect((await call(agentsServer, pinnedAgents, 'PUT', `/v2/spaces/${spaceE}/space-password`,
+      { required: false })).status).toBe(200);
+    expect((await call(enforceServer, await pinnedH(), 'PUT', `/v2/spaces/${spaceE}/space-password`,
+      { required: true })).status).toBe(200);
+  });
+
+  it('a5: a member (H2) cannot set it (403); positive: owner H can', async () => {
+    const reset = await call(enforceServer, await pinnedH(), 'POST',
+      `/v2/spaces/${spaceE}/members/${memberH2E}/space-password/reset`, { password: passwordOf.H2 });
+    expect(reset.status).toBe(200);
+    const pinnedH2 = (await enter(enforceServer, 'H2', spaceE, passwordOf.H2)).json.token as string;
+    expect((await call(enforceServer, pinnedH2, 'PUT', `/v2/spaces/${spaceE}/space-password`,
+      { required: false })).status).toBe(403);
+    expect((await call(enforceServer, await pinnedH(), 'PUT', `/v2/spaces/${spaceE}/space-password`,
+      { required: true })).status).toBe(200);
+  });
+
+  it('a1: no space password → 403 space_password_required; wrong → 403 space_password_rejected; right → 200', async () => {
+    const missing = await enter(enforceServer, 'H2', spaceE);
+    expect(missing.status).toBe(403);
+    expect(reasonOf(missing.json)).toBe('space_password_required');
+    const wrong = await enter(enforceServer, 'H2', spaceE, `wrong-${randomUUID()}`);
+    expect(wrong.status).toBe(403);
+    expect(reasonOf(wrong.json)).toBe('space_password_rejected');
+    const right = await enter(enforceServer, 'H2', spaceE, passwordOf.H2);
+    expect(right.status).toBe(200);
+    expect(right.json.spaceId).toBe(spaceE);
+  });
+
+  it('a1: the agents mode checks it too (the check is on enter, not on the gate mode)', async () => {
+    expect((await enter(agentsServer, 'H2', spaceE)).status).toBe(403);
+    expect((await enter(agentsServer, 'H2', spaceE, passwordOf.H2)).status).toBe(200);
+  });
+
+  it('a2: H\'s password for E is H\'s alone — H2 presenting it is refused; positive: H presenting it', async () => {
+    expect(reasonOf((await enter(enforceServer, 'H2', spaceE, passwordOf.H)).json)).toBe('space_password_rejected');
+    expect((await enter(enforceServer, 'H', spaceE, passwordOf.H)).status).toBe(200);
+  });
+
+  it('a2/a3: a space with the setting off (A) ignores E\'s password and admits without one', async () => {
+    expect((await enter(enforceServer, 'H2', fixture.spaceA)).status).toBe(200);
+    expect((await enter(enforceServer, 'H2', fixture.spaceA, passwordOf.H2)).status).toBe(200);
+  });
+
+  it('#3: after N wrong passwords for (H2, E) the next try, even the right one, is 429; H in E and H2 in A are not; positive: after the window the right one is admitted', async () => {
+    for (let i = 0; i < LIMITED_FAILURES; i++) {
+      expect(reasonOf((await enter(limitedServer, 'H2', spaceE, `wrong-${randomUUID()}`)).json)).toBe('space_password_rejected');
+    }
+    const limited = await enter(limitedServer, 'H2', spaceE, passwordOf.H2);
+    expect(limited.status).toBe(429);
+    expect(limited.json.error?.code).toBe('rate_limited');
+    expect((await enter(limitedServer, 'H', spaceE, passwordOf.H)).status).toBe(200);
+    expect((await enter(limitedServer, 'H2', fixture.spaceA)).status).toBe(200);
+    await new Promise((resolve) => setTimeout(resolve, LIMITED_WINDOW_MS + 300));
+    expect((await enter(limitedServer, 'H2', spaceE, passwordOf.H2)).status).toBe(200);
+  });
+
+  it('a5: lock ends H2\'s pinned E session and refuses the right password; positive: unlock admits', async () => {
+    const pinnedH2 = (await enter(enforceServer, 'H2', spaceE, passwordOf.H2)).json.token as string;
+    expect((await call(enforceServer, pinnedH2, 'GET', '/v2/auth/session')).status).toBe(200);
+    const locked = await call(enforceServer, await pinnedH(), 'POST',
+      `/v2/spaces/${spaceE}/members/${memberH2E}/space-password/lock`, { locked: true });
+    expect(locked.status).toBe(200);
+    expect(locked.json.status).toBe('locked');
+    expect(locked.json.revokedSessionIds).toContain(parseToken(pinnedH2)!.sessionId);
+    expect((await call(enforceServer, pinnedH2, 'GET', '/v2/auth/session')).status).toBe(401);
+    expect(reasonOf((await enter(enforceServer, 'H2', spaceE, passwordOf.H2)).json)).toBe('space_password_rejected');
+    const unlocked = await call(enforceServer, await pinnedH(), 'POST',
+      `/v2/spaces/${spaceE}/members/${memberH2E}/space-password/lock`, { locked: false });
+    expect(unlocked.json.status).toBe('active');
+    expect((await enter(enforceServer, 'H2', spaceE, passwordOf.H2)).status).toBe(200);
+  });
+
+  it('a5: reset replaces the password — the old one is refused, the new one admitted', async () => {
+    const old = passwordOf.H2;
+    passwordOf.H2 = `sp-h2-${randomUUID()}`;
+    expect((await call(enforceServer, await pinnedH(), 'POST',
+      `/v2/spaces/${spaceE}/members/${memberH2E}/space-password/reset`, { password: passwordOf.H2 })).status).toBe(200);
+    expect(reasonOf((await enter(enforceServer, 'H2', spaceE, old)).json)).toBe('space_password_rejected');
+    expect((await enter(enforceServer, 'H2', spaceE, passwordOf.H2)).status).toBe(200);
+  });
+
+  it('a5: a member cannot reset or lock (403); positive: the owner can (above)', async () => {
+    const pinnedH2 = (await enter(enforceServer, 'H2', spaceE, passwordOf.H2)).json.token as string;
+    expect((await call(enforceServer, pinnedH2, 'POST',
+      `/v2/spaces/${spaceE}/members/${memberHE}/space-password/reset`, { password: `x-${randomUUID()}` })).status).toBe(403);
+    expect((await call(enforceServer, pinnedH2, 'POST',
+      `/v2/spaces/${spaceE}/members/${memberHE}/space-password/lock`, { locked: true })).status).toBe(403);
+  });
+
+  it('a5 human-only: H\'s agent token in A is refused the admin ops; positive: H\'s pinned browser token in A', async () => {
+    const agent = await mintAgent();
+    const pinnedA = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    for (const server of [enforceServer, agentsServer]) {
+      expect((await call(server, agent, 'PUT', `/v2/spaces/${fixture.spaceA}/space-password`,
+        { required: false })).status).toBe(403);
+      expect((await call(server, agent, 'POST',
+        `/v2/spaces/${fixture.spaceA}/members/${fixture.memberH2A}/space-password/lock`, { locked: false })).status).toBe(403);
+      expect((await call(server, pinnedA, 'PUT', `/v2/spaces/${fixture.spaceA}/space-password`,
+        { required: false })).status).toBe(200);
+    }
+  });
+
+  it('a4: auth.invite.resolve reports requiresSpacePassword — true for E, false for A', async () => {
+    const codeE = await asIdentity(fixture.identityH, (q) => q.rpc<{ invite: { code: string } }>(
+      'create_invite', [spaceE, 3, null, null, `w5-${randomUUID()}`, 'member']));
+    const codeA = await asIdentity(fixture.identityH, (q) => q.rpc<{ invite: { code: string } }>(
+      'create_invite', [fixture.spaceA, 3, null, null, `w5-${randomUUID()}`, 'member']));
+    const e = await call(enforceServer, null, 'POST', '/v2/auth/invite/resolve', { code: codeE.invite.code });
+    expect(e.status).toBe(200);
+    expect(e.json.requiresSpacePassword).toBe(true);
+    const a = await call(enforceServer, null, 'POST', '/v2/auth/invite/resolve', { code: codeA.invite.code });
+    expect(a.json.requiresSpacePassword).toBe(false);
+  });
+
+  it('a4: auth.invite.signup into E without a space password → 403; positive: with one, then enter with it', async () => {
+    const { invite } = await asIdentity(fixture.identityH, (q) => q.rpc<{ invite: { code: string } }>(
+      'create_invite', [spaceE, 3, null, null, `w5-${randomUUID()}`, 'member']));
+    const username = `w5-signup-${randomUUID().slice(0, 8)}`;
+    const accountPassword = `acct-${randomUUID()}`;
+    const spacePassword = `sp-new-${randomUUID()}`;
+    const refused = await call(enforceServer, null, 'POST', '/v2/auth/invite/signup',
+      { code: invite.code, username, password: accountPassword });
+    expect(refused.status).toBe(403);
+    expect(reasonOf(refused.json)).toBe('space_password_required');
+    const signed = await call(enforceServer, null, 'POST', '/v2/auth/invite/signup',
+      { code: invite.code, username, password: accountPassword, spacePassword });
+    expect(signed.status).toBe(200);
+    const gate = signed.json.token as string;
+    const noPw = await call(enforceServer, gate, 'POST', '/v2/auth/space/enter', { spaceId: spaceE });
+    expect(reasonOf(noPw.json)).toBe('space_password_required');
+    expect((await call(enforceServer, gate, 'POST', '/v2/auth/space/enter', { spaceId: spaceE, spacePassword })).status).toBe(200);
+  });
+
+  it('a4: redeem into E by an existing account without a space password → 403; positive: with one, then enter', async () => {
+    const r = await seedMemberOfAB('w5-redeem', 'A');
+    const { invite } = await asIdentity(fixture.identityH, (q) => q.rpc<{ invite: { code: string } }>(
+      'create_invite', [spaceE, 3, null, null, `w5-${randomUUID()}`, 'member']));
+    const gate = await mintBrowser(r.account, r.identity);
+    const spacePassword = `sp-r-${randomUUID()}`;
+    expect((await call(enforceServer, gate, 'POST', '/v2/invites/redeem', { code: invite.code, clientMutationId: `w5-${randomUUID()}` })).status).toBe(403);
+    const redeemed = await call(enforceServer, gate, 'POST', '/v2/invites/redeem', { code: invite.code, spacePassword, clientMutationId: `w5-${randomUUID()}` });
+    expect(redeemed.status).toBe(200);
+    expect(redeemed.json.joined).toBe(true);
+    expect((await call(enforceServer, gate, 'POST', '/v2/auth/space/enter', { spaceId: spaceE, spacePassword })).status).toBe(200);
+  });
+
+  it('a3: turning it off again — H2 enters E with no password (W3 behaviour restored)', async () => {
+    expect((await call(enforceServer, await pinnedH(), 'PUT', `/v2/spaces/${spaceE}/space-password`,
+      { required: false })).status).toBe(200);
+    expect((await enter(enforceServer, 'H2', spaceE)).status).toBe(200);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // W7 spaceLinks.invoke (260). Over HTTP on a bootstrapped node whose data dir
 // is the link store's, so the node key that sealed H's row opens it. The
@@ -5386,7 +5708,7 @@ async function seedOutsider(): Promise<string> {
 
 // A3 (ii) and L1 run LAST: they create spaces as H, and every describe above
 // asserts H's exact space set.
-describe('A3 (ii) the browser owner, by launch cookie, connects a folder into a new space (980)', () => {
+describe('A3 (ii) the browser owner, by launch cookie, connects a folder into a new space (269)', () => {
   // The NewSpaceProjectDialog path, over HTTP, as the launch-cookie owner:
   // spaces.create, projects.create with spaceId, the (now idempotent)
   // projects.link, then the pinned list. Under the plan W2 path pin the link

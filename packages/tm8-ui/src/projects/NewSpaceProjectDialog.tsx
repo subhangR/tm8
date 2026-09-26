@@ -308,7 +308,7 @@ export async function onboardSpaceProject(
         return existing;
       }
     });
-    // A created project is born linked (`spaceId`, 980), so this link is an
+    // A created project is born linked (`spaceId`, 269), so this link is an
     // idempotent no-op the path-pinned caller can see. A REUSED project is
     // linked elsewhere, and the pin keeps it invisible here: say what works.
     await stage('link', onStage, async () => {

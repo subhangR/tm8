@@ -41,7 +41,7 @@ class RosterGraph extends FakeGraph {
   }
 }
 
-describe('SpawnService reads a dispatcher roster only when the index is on', () => {
+describe('SpawnService reads a dispatcher roster (the index is always on)', () => {
   let dataDir: string;
   let projectDir: string;
   let pty: PtyHostService;
@@ -78,11 +78,11 @@ describe('SpawnService reads a dispatcher roster only when the index is on', () 
     expect(graph.rosterReads).toEqual([]);
   });
 
-  it('off, dispatcher: no roster read, no header read, no index', async () => {
+  it('TM8_CONTEXT_INDEX=off no longer turns it off (launch card v3): a dispatcher still reads its roster', async () => {
     const result = await service('off').spawn(AUTH, { spaceId: SPACE_ID, teamMemberId: MEMBER_ID, mode: 'dispatcher' });
-    expect(graph.rosterReads).toEqual([]);
-    expect(graph.headerReads).toEqual([]);
-    expect(result.manifest.contextIndex).toBeUndefined();
+    expect(graph.rosterReads).toEqual([{ spaceId: SPACE_ID, excludeTeamMemberId: MEMBER_ID, limit: DISPATCHER_ROSTER_READ_MAX }]);
+    expect(result.manifest.contextIndex).toBeDefined();
+    expect(result.manifest.context?.index?.source).toBe('default');
   });
 
   it('a resumed dispatcher that launched with the index reads its roster again', async () => {

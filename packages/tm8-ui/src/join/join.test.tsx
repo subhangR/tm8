@@ -204,6 +204,32 @@ describe('the join screen', () => {
     expect(screen.queryByTestId('join-refused')).toBeNull();
   });
 
+  it('W5: a space that needs a password asks for one, holds the join until it is 8+ chars, and sends it', async () => {
+    const sent: Array<[string, string | undefined]> = [];
+    mount({
+      onPreview: async () => ({ ...VALID, requiresSpacePassword: true }),
+      onRedeem: async (c, spacePassword) => { sent.push([c, spacePassword]); return REDEEMED; },
+    });
+    const field = await screen.findByTestId('join-space-password');
+    expect((field as HTMLInputElement).type).toBe('password');
+    const accept = screen.getByTestId('join-accept') as HTMLButtonElement;
+    expect(accept.disabled).toBe(true);
+    fireEvent.change(field, { target: { value: 'short' } });
+    expect(accept.disabled).toBe(true);
+    fireEvent.change(field, { target: { value: 'long-enough-pw' } });
+    expect(accept.disabled).toBe(false);
+    fireEvent.click(accept);
+    await waitFor(() => expect(sent).toEqual([[CODE, 'long-enough-pw']]));
+  });
+
+  it('W5: a space without one shows no field and sends no password', async () => {
+    const sent: Array<[string, string | undefined]> = [];
+    mount({ onRedeem: async (c, spacePassword) => { sent.push([c, spacePassword]); return REDEEMED; } });
+    fireEvent.click(await screen.findByTestId('join-accept'));
+    await waitFor(() => expect(sent).toEqual([[CODE, undefined]]));
+    expect(screen.queryByTestId('join-space-password')).toBeNull();
+  });
+
   it('signed out: no join button, and it names the missing step', async () => {
     mount({ onRedeem: undefined });
     await screen.findByTestId('join-valid');

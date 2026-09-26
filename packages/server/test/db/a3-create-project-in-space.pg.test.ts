@@ -10,7 +10,7 @@ import {
 } from './w1-pg.js';
 
 /**
- * Plan W2 x A3 (migration 980) — `projects.create` with `spaceId`.
+ * Plan W2 x A3 (migration 269) — `projects.create` with `spaceId`.
  *
  * Plan W2 pins the credential-free loopback owner to the space its path names.
  * The browser's "connect a folder" dialog created a project (space-less,
@@ -172,7 +172,7 @@ afterAll(async () => {
 
 const unpinned: Claims = { nodeAdmin: true };
 
-describe('980 create_project_in_space', () => {
+describe('269 create_project_in_space', () => {
   it('(a) the unpinned owner creates into S: linked in S, and a call pinned to S sees it', async () => {
     const created = await createInSpace(fixture.identityN, unpinned, fixture.spaceS, '/tmp/a3-born-linked');
 
@@ -273,7 +273,7 @@ describe('980 create_project_in_space', () => {
     // the audit event; the cmid cannot be passed through, because
     // command_ledger.client_mutation_id is the global key and belongs to
     // projects.create. Follow-up: split link_project_w2 into a core function
-    // that 980 calls with its own cmid bound (option 1) — then expect the cmid.
+    // that 269 calls with its own cmid bound (option 1) — then expect the cmid.
     const cmid = `a3-cmid-${randomUUID()}`;
     const created = await createInSpace(fixture.identityN, unpinned, fixture.spaceS, '/tmp/a3-cmid', cmid);
     const { ledger, events } = await database.transaction(async (client) => {

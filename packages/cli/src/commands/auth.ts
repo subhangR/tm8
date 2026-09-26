@@ -269,11 +269,13 @@ async function authSession(cmd: CommandContext): Promise<ExitCode> {
  */
 async function authSpaceEnter(cmd: CommandContext): Promise<ExitCode> {
   refuseMutationId('auth space enter', cmd.options.value('mutation-id'));
-  const usage = 'usage: tm8 auth space enter <space-id> [--label <label>] [--print-token]';
+  const usage = 'usage: tm8 auth space enter <space-id> [--label <label>] [--space-password <password>] [--print-token]';
   const spaceId = requireOnePositional(cmd, usage);
   const body: Record<string, unknown> = { spaceId };
   const label = cmd.options.value('label');
   if (label !== undefined) body.label = label;
+  const spacePassword = cmd.options.value('space-password');
+  if (spacePassword !== undefined) body.spacePassword = spacePassword;
 
   const data = await observedInvoke<AuthSpaceEnterResult>(clientFor(cmd.ctx), 'auth.space.enter', { body });
 
@@ -608,7 +610,7 @@ async function authPasswordChange(cmd: CommandContext): Promise<ExitCode> {
 async function authInviteSignup(cmd: CommandContext): Promise<ExitCode> {
   refuseMutationId('auth invite signup', cmd.options.value('mutation-id'));
   const usage =
-    'usage: tm8 auth invite signup --code <inv_…> --username <username> --password <password> [--display-name <name>] [--email <email>]';
+    'usage: tm8 auth invite signup --code <inv_…> --username <username> --password <password> [--space-password <password>] [--display-name <name>] [--email <email>]';
   if (cmd.args.length > 0) throw new CliError(usage, EXIT_USAGE);
   const code = cmd.options.value('code');
   const username = cmd.options.value('username');
@@ -624,6 +626,8 @@ async function authInviteSignup(cmd: CommandContext): Promise<ExitCode> {
   if (displayName !== undefined) body.displayName = displayName;
   const email = cmd.options.value('email');
   if (email !== undefined) body.email = email;
+  const spacePassword = cmd.options.value('space-password');
+  if (spacePassword !== undefined) body.spacePassword = spacePassword;
 
   const data = await observedInvoke<AuthInviteSignupResult>(
     clientFor(cmd.ctx),

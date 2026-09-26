@@ -13,9 +13,8 @@ import { describe, expect, it } from 'vitest';
  * disagreed on the same entity. Consolidating them is only durable if a fourth
  * reader cannot appear quietly somewhere else, so the rule is stated here over
  * the whole package: a surface that needs attention imports from
- * `src/attention/` (`useAttentionPending`, `attentionPortFromSeam`,
- * `AttentionInbox`, `groupAttentionByEntity`) and never calls the seam's
- * attention verbs itself.
+ * `src/attention/` (the provider, its hooks and components) and never calls the
+ * seam's attention verbs itself.
  *
  * `src/data/` is exempt because it IS the API: the seam contract, the real
  * transport and the fixture define these verbs rather than call them. Tests are
@@ -35,6 +34,7 @@ const API_CALLS: readonly { name: string; pattern: RegExp }[] = [
   { name: 'seam.attentionRequests(…) (list)', pattern: /\.attentionRequests\s*\(/ },
   { name: 'commands.resolveAttention(…) (bulk resolve)', pattern: /\.resolveAttention\s*\(/ },
   { name: 'commands.updateAttentionRequest(…) (settle one)', pattern: /\.updateAttentionRequest\s*\(/ },
+  { name: 'commands.attentionV2.* (markSeen / unresolve / withdraw)', pattern: /\.attentionV2\b/ },
   { name: "call('attentionRequests.*') (raw op)", pattern: /call\s*(?:<[^>]*>)?\s*\(\s*['"`]attentionRequests\./ },
 ];
 
@@ -76,8 +76,11 @@ describe('attention API ban', () => {
     // `resolveAttention` has no UI caller since S0 (opening no longer settles).
     const inOwner = hits(owner).join('\n');
     expect(inOwner).toContain('useAttentionPending.ts');
-    expect(inOwner).toContain('AttentionInbox.tsx');
-    expect(inOwner).toMatch(/port\.ts:\d+ — commands\.updateAttentionRequest/);
+    // Undo/withdraw's v1 fallbacks; the old dock's per-row resolve went with S7.
+    expect(inOwner).toMatch(/attention-commands\.ts:\d+ — commands\.updateAttentionRequest/);
+    // Attention v2 (S5a): the store's commands own resolve and the v2 verbs.
+    expect(inOwner).toMatch(/attention-commands\.ts:\d+ — commands\.resolveAttention/);
+    expect(inOwner).toMatch(/attention-commands\.ts:\d+ — commands\.attentionV2/);
   });
 
   it('no file outside src/attention/ calls the attention API', () => {

@@ -52,6 +52,12 @@ export type AttentionPendingState =
       rows: readonly AttentionRequest[];
       /** A page came back full: the count is a floor, not a total. */
       truncated: boolean;
+      /**
+       * Which read this is (1, 2, …, in the order reads STARTED). A caller that
+       * notes `readsStarted()` when its write settles knows that any answer
+       * with a higher number was read after the write.
+       */
+      readNo: number;
     }
   | { phase: 'error'; message: string };
 
@@ -59,6 +65,8 @@ export interface AttentionPending {
   state: AttentionPendingState;
   /** Re-read now — after a local resolve, without waiting for the echo. */
   refresh(): void;
+  /** How many reads have started so far (see `readNo`). */
+  readsStarted(): number;
 }
 
 export function useAttentionPending(
@@ -75,6 +83,7 @@ export function useAttentionPending(
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Bumped per space so a late answer for the previous space is dropped. */
   const generation = useRef(0);
+  const started = useRef(0);
 
   const load = useCallback(() => {
     if (!spaceId) return;
@@ -85,6 +94,8 @@ export function useAttentionPending(
     inFlight.current = true;
     dirty.current = false;
     const mine = generation.current;
+    started.current += 1;
+    const readNo = started.current;
     void Promise.all(
       PENDING_STATUSES.map((status) =>
         seam.attentionRequests({ spaceId, status, limit: PENDING_PAGE_LIMIT })),
@@ -92,13 +103,20 @@ export function useAttentionPending(
       (pages) => {
         if (mine !== generation.current) return;
         const rows = pages.flatMap((page) => page.items);
+        // Per id, the way the badge counts (migration 255): a request counts on
+        // its own entity AND on its roll-up root. Keyed by entity alone, every
+        // upsert of a root with a rolled-up request looked like a change.
         const next = new Map<string, number>();
-        for (const row of rows) next.set(row.entityId, (next.get(row.entityId) ?? 0) + 1);
+        for (const row of rows) {
+          next.set(row.entityId, (next.get(row.entityId) ?? 0) + 1);
+          if (row.rootId && row.rootId !== row.entityId) next.set(row.rootId, (next.get(row.rootId) ?? 0) + 1);
+        }
         counts.current = next;
         setState({
           phase: 'ready',
           rows,
           truncated: pages.some((page) => page.nextCursor != null),
+          readNo,
         });
       },
       (error: unknown) => {
@@ -160,5 +178,6 @@ export function useAttentionPending(
     };
   }, [seam, spaceId, load, schedule]);
 
-  return { state, refresh: load };
+  const readsStarted = useCallback(() => started.current, []);
+  return { state, refresh: load, readsStarted };
 }

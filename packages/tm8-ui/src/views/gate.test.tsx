@@ -219,7 +219,10 @@ describe('THE GATE — composed T0-1 master screen', () => {
     expect(words).toContain('running');
     // …and the stale one honestly labelled, never as live (D6).
     expect(words).toContain('stale — node restarted');
-    within(empty).getByRole('heading', { name: 'Needs attention, 2' });
+    // Attention v2 (G1, tab 8): session health is status, not "needs you" —
+    // with the attention module mounted the group is relabelled, and "Needs
+    // attention" is the attention queue (empty in this fixture).
+    within(empty).getByRole('heading', { name: 'Stale or failed, 2' });
     within(empty).getByRole('heading', { name: 'Running, 1' });
     within(empty).getByRole('heading', { name: 'Recently completed, 1' });
 

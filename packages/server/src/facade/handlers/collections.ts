@@ -542,18 +542,18 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
   }
 
   if (f.needsActorId) {
-    // The union of the two "wants my attention" senses, as one predicate:
-    // awaiting my review, or mentioning me.
+    // Attention v2 (G1, Q17): "needs me" means ONE thing — an open request
+    // ASSIGNED to me counts on its roll-up root (a session's or form's request
+    // counts on its task, R3) and on the entity it is pinned to, the same set
+    // the entity's badge and `attentionRequests.list?entityId=` show. Driven
+    // from the small side (my assigned open requests), then matched by id.
+    // Review and mentions are no longer part of it (inReviewForActorId /
+    // mentionedActorId). Exact actor id: the assignee is always a member.
     const actor = p.add(assertUuid(f.needsActorId, 'filters.needsActorId'));
-    where.push(`(
-      (t.work_status = 'in_review' and exists (
-         select 1 from public.edges r
-          where r.src_id = e.id and r.type in ('assigned_to','approval_requested_from')
-            and r.dst_id = ${actor}))
-      or exists (
-         select 1 from public.messages mm
-          where mm.anchor_id = e.id
-            and mm.mentions @> jsonb_build_array(jsonb_build_object('entityId', ${actor}))))`);
+    where.push(`e.id in (
+      select v.id from public.attention_requests nar
+       cross join lateral (values (internal.attention_root_id(nar.entity_id)), (nar.entity_id)) v(id)
+       where nar.assignee_id = ${actor} and nar.status in ('open', 'acknowledged'))`);
   }
 
   return where;
@@ -770,7 +770,7 @@ export async function queryCollection(
  * and it would pay the whole predicate a second time to do it.
  *
  * That second payment is not small. Under RLS a predicate that reaches
- * `public.messages` (`mentionedActorId`, `needsActorId`) is a full scan with
+ * `public.messages` (`mentionedActorId`; `needsActorId` did before Attention v2) is a full scan with
  * two `entity_readable()` calls per row whichever statement runs it, so on
  * `spaces.home` the three preset counts were a third of the request's
  * Postgres time — measured on a prod copy 2026-09-24, as `tm8_app`: 1.83 s of

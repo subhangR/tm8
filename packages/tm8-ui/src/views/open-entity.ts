@@ -21,8 +21,8 @@ import type { Seam } from '../data/seam';
  *   · IT WAS UNADDRESSABLE. `resolveAttention` is bulk: there was no way to
  *     resolve one request and leave its siblings pending.
  *
- * Settling is now only ever explicit, per-row, and undoable — `AttentionRequests`
- * owns it through `attentionRequests.update`.
+ * Settling is now only ever explicit and undoable — the attention module's
+ * `resolve` (`src/attention/attention-commands.ts`), batch plus note.
  *
  * WHAT REMAINS IS THE READ MARK — per viewer, and unconditional. This is what
  * clears the rail's unseen mark: an entity you looked at is one you have seen,

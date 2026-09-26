@@ -798,7 +798,7 @@ export class W2ProjectsAssociationsService {
     const workingDir = input.ensureWorkingDir
       ? await ensureProjectWorkingDirectory(input.workingDir)
       : input.workingDir;
-    // `spaceId` (980): born linked, so a later call pinned to that space sees
+    // `spaceId` (269): born linked, so a later call pinned to that space sees
     // it. Without it, the original space-less create, byte-for-byte.
     const raw = await this.deps.db.rpc<ProjectMutationResult>(
       claims,
