@@ -33,7 +33,7 @@ const CREATE_ARGS = { operation: 'entities.create', body: { kind: 'task', title:
 async function sendAndStream() {
   const { port, controls } = createChatHomeFixturePort();
   const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
-  await waitFor(() => expect(view.getByText('Plan the launch sequence')).toBeTruthy());
+  await waitFor(() => expect(view.getByText('Plan the launch sequence and check what is already blocked.')).toBeTruthy());
   await waitFor(() => expect(view.queryByTestId('chat-detail-loading')).toBeNull());
   fireEvent.change(view.getByLabelText('Message the chat agent'), { target: { value: 'Build it.' } });
   fireEvent.click(view.getByRole('button', { name: /send/i }));
