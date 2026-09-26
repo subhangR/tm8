@@ -289,6 +289,23 @@ describe('W7b record_remote_ref — only for work done through the link', () => 
     expect(await outcome(() => db.rpc(h3, 'record_remote_ref', [fixture.spaceA, link.id, taskB]))).toBe('ok');
   });
 
+  it('lifecycle is command-owned: the generic delete of a remote_ref is 42501 and leaves it live; positive — the same door deletes a task in A', async () => {
+    const claims = await hClaims();
+    const taskB = await taskInB('undeletable ref');
+    await auditOk(link.id, fixture.memberHA, 'tasks.create', taskB);
+    const ref = await db.rpc<{ id: string }>(claims, 'record_remote_ref', [fixture.spaceA, link.id, taskB]);
+    expect(await outcome(() => db.rpc(claims, 'delete_entity', [ref.id, null, null]))).toBe('42501');
+    const [live] = await database.query<{ deleted: boolean }>('select deleted_at is not null as deleted from public.entities where id = $1', [ref.id]);
+    expect(live).toEqual({ deleted: false });
+    const taskA = randomUUID();
+    await asOwner(async (c) => {
+      await c.query(`insert into public.entities(id, space_id, kind, created_by, visibility) values ($1, $2, 'task', $3, 'space')`,
+        [taskA, fixture.spaceA, fixture.memberHA]);
+      await c.query(`insert into public.tasks(entity_id, title, work_status, priority) values ($1, 'deletable', 'open', 'medium')`, [taskA]);
+    });
+    expect(await outcome(() => db.rpc(claims, 'delete_entity', [taskA, null, null]))).toBe('ok');
+  });
+
   it('loop guard: the link session itself is refused; H\'s agent G in A is admitted', async () => {
     const taskB = await taskInB('guarded');
     await auditOk(link.id, fixture.memberHA, 'tasks.create', taskB);

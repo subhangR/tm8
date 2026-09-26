@@ -34,6 +34,7 @@ export type CapabilityProfile =
   | 'credential-lifecycle'
   | 'space-link-lifecycle'
   | 'server-lifecycle'
+  | 'remote-ref-lifecycle'
   | 'custom-scalar'
   | 'static-no-authority';
 
@@ -63,6 +64,7 @@ export type MigrationStrategy =
   | 'form-detail'
   | 'credential-detail'
   | 'space-link-kinds'
+  | 'remote-ref-detail'
   | 'custom-registry'
   | 'none';
 
@@ -382,6 +384,26 @@ function capabilities(profile: CapabilityProfile): CapabilityDisposition {
           'servers.probe',
         ],
       };
+    case 'remote-ref-lifecycle':
+      // NOTHING generic (W7b, 996). A ref is recorded only by
+      // `spaceLinks.invoke` (record_remote_ref) and its status is kept only by
+      // the watcher (poll_remote_refs); a generic create would make a ref with
+      // no `remote_refs` row, a patch or move would detach it from its link.
+      // `connections` is true: a task's `depends_on` edge targets it, and the
+      // gate reads its cached remote category (996's is_resolved arm).
+      return {
+        profile,
+        genericCreate: false,
+        genericPatch: false,
+        genericMove: false,
+        genericHierarchy: false,
+        genericDeleteRestore: false,
+        genericPoints: false,
+        messages: false,
+        reactions: false,
+        connections: true,
+        lifecycleOperations: ['spaceLinks.invoke'],
+      };
     case 'static-no-authority':
       return {
         profile,
@@ -593,6 +615,14 @@ export const CORE_KIND_DISPOSITIONS = {
     collection: typedCollection, projection: universal,
     capabilities: { profile: 'server-lifecycle' },
     menu: { strategy: 'not-addressable' }, migration: { strategy: 'space-link-kinds' },
+  }),
+  // Remote refs (W7b, migration 996). An entity in the home space holding a
+  // linked space's entity id as text with the watcher's cached status. Born
+  // only from `spaceLinks.invoke`; never menu-addressable.
+  remote_ref: core('remote_ref', 'remote-refs', {
+    collection: typedCollection, projection: universal,
+    capabilities: { profile: 'remote-ref-lifecycle' },
+    menu: { strategy: 'not-addressable' }, migration: { strategy: 'remote-ref-detail' },
   }),
 } as const satisfies Readonly<Record<CoreEntityKind, KindDisposition>>;
 

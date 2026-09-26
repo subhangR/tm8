@@ -1986,6 +1986,9 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
       } as EntityState;
     case 'space_link':
     case 'server':
+    // 996 (W7b): a remote_ref likewise — its cached remote category is the
+    // entity's workflow status, so no `remote_refs` join is taken here.
+    case 'remote_ref':
       // 250 (W6): no row facts on the entity — `spaceLinks.list` answers for a
       // link, so the shared entity read takes no join for it. MIRRORS the
       // projector twin.
@@ -2667,6 +2670,8 @@ export function contentOf(row: EntityRow): EntityContent {
     }
     case 'space_link':
     case 'server':
+    // 996 (W7b): a remote_ref has no content on the entity read (see stateOf).
+    case 'remote_ref':
       // 250 (W6): a link's content is `spaceLinks.list`'s answer (see stateOf).
       return { kind: row.kind };
     default:

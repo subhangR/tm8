@@ -23,7 +23,7 @@ describe('W7b remote_ref watcher job', () => {
   });
 
   it('nothing to poll is a skip with a reason, never a silent no-op', async () => {
-    const rpc = vi.fn(async () => ({ polled: 0, changed: 0 }));
+    const rpc = vi.fn(async (..._args: unknown[]) => ({ polled: 0, changed: 0 }));
     expect(await runRemoteRefWatcherTick({ db: { rpc } as never, claims: async () => ownerClaims }))
       .toEqual({ skipped: true, reason: 'no remote_ref on a signed-in link' });
     expect(rpc.mock.calls[0]?.[2]).toEqual([200]);

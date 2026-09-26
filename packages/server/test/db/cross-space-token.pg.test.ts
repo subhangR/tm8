@@ -54,6 +54,7 @@ import type { EventSink } from '../../src/events/ws-connection.js';
 import type { FacadeDeps } from '../../src/facade/deps.js';
 import { HandlerRegistry } from '../../src/facade/registry.js';
 import { createSpaceLinkInvokeHandlers } from '../../src/facade/handlers/w2/space-link-invoke.js';
+import { runRemoteRefWatcherTick } from '../../src/scheduler/jobs/remote-ref-watcher.js';
 import { registerMembershipHandlers } from '../../src/membership/handlers.js';
 import { DbSpaceLinkStore, SpaceLinkUnusable, type SpaceLink, type SpaceLinkStaleNotice } from '../../src/credentials/space-link-store.js';
 import { loadOrCreateCredentialKey } from '../../src/credentials/credential-key.js';
@@ -4902,6 +4903,274 @@ describe.sequential('W7 spaceLinks.invoke — G runs one op in B as H, audited i
     await expect(handler(ctx())).rejects.toMatchObject({ code: 'rate_limited' });
   });
 
+  // ---- W7b: remote_ref, the gate, spawn reservations (996) -----------------
+
+  const asGraphOwner = <T>(fn: (c: { query: W1ScratchDatabase['query'] }) => Promise<T>): Promise<T> =>
+    database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      return fn({ query: async (sql: string, args?: unknown[]) => (await client.query(sql, args)).rows } as never);
+    });
+  const hBrowserClaims = async (): Promise<DbClaims> => claimsForToken(await mintBrowser(fixture.accountH, fixture.identityH));
+  const liveReservations = async (): Promise<number> => Number((await asGraphOwner((c) => c.query(
+    `select count(*)::text as n from public.space_link_spawns s join public.space_link_tokens t on t.id = s.token_row_id
+      where t.link_id = $1 and t.member_id = $2 and s.released_at is null and s.bound_at is null`,
+    [hLink.id, fixture.memberHA])) as Array<{ n: string }>)[0]!.n);
+  const res403 = (res: InvokeResponse): boolean => res.status === 403;
+
+  const refsOn = async (remoteId: string): Promise<Array<Record<string, unknown>>> =>
+    asGraphOwner((c) => c.query('select * from public.remote_refs where remote_id = $1', [remoteId]) as never);
+
+  it('W7b remote_ref — an entities.create through the link records a remote_ref in A for B\'s new id', async () => {
+    const res = await invoke(gToken, {
+      op: 'entities.create',
+      input: { spaceId: fixture.spaceB, kind: 'task', title: 'W7b ref me', clientMutationId: cmid('ref') },
+    });
+    expect(res.status).toBe(200);
+    const data = res.body.data as unknown as { remoteRefId: string | null; result: { id?: string; entity?: { id: string } } };
+    const remoteId = (data.result.entity?.id ?? data.result.id)!;
+    expect(data.remoteRefId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(await refsOn(remoteId)).toEqual([expect.objectContaining({
+      entity_id: data.remoteRefId, home_space_id: fixture.spaceA, link_id: hLink.id,
+      target_space_id: fixture.spaceB, remote_kind: 'task',
+    })]);
+    const [entity] = await asGraphOwner((c) => c.query('select space_id::text, kind from public.entities where id = $1', [data.remoteRefId]) as never) as Array<Record<string, unknown>>;
+    expect(entity).toEqual({ space_id: fixture.spaceA, kind: 'remote_ref' });
+  });
+
+  it('W7b remote_ref positive pairing — a read through the link records none', async () => {
+    const res = await invoke(gToken, { op: 'entities.get', params: { id: fixture.docB } });
+    expect(res.status).toBe(200);
+    expect((res.body.data as unknown as { remoteRefId: unknown }).remoteRefId).toBeNull();
+    expect(await refsOn(fixture.docB)).toEqual([]);
+  });
+
+  it('a1 — a task in A gated on a task G created in B opens when B completes it and the watcher ticks', async () => {
+    const res = await invoke(gToken, {
+      op: 'entities.create',
+      input: { spaceId: fixture.spaceB, kind: 'task', title: 'W7b a1 in B', clientMutationId: cmid('a1') },
+    });
+    const data = res.body.data as unknown as { remoteRefId: string; result: { id?: string; entity?: { id: string } } };
+    const taskB = (data.result.entity?.id ?? data.result.id)!;
+    const waiter = randomUUID();
+    await asGraphOwner(async (c) => {
+      await c.query(`insert into public.entities(id, space_id, kind, created_by, visibility) values ($1, $2, 'task', $3, 'space')`,
+        [waiter, fixture.spaceA, fixture.memberHA]);
+      await c.query(`insert into public.tasks(entity_id, title, work_status, priority) values ($1, 'W7b a1 waits on B', 'open', 'medium')`, [waiter]);
+      await c.query(`insert into public.edges(space_id, src_id, dst_id, type, created_by) values ($1, $2, $3, 'depends_on', $4)`,
+        [fixture.spaceA, waiter, data.remoteRefId, fixture.memberHA]);
+    });
+    const h = await hBrowserClaims();
+    const ready = async (): Promise<string[]> => (await db.tx(h, (q) => q.query<{ entity_id: string }>(
+      'select entity_id::text from public.ready_to_work($1)', [fixture.spaceA]))).map((r) => r.entity_id);
+    const admin = async (): Promise<DbClaims> => ({ ...(await hBrowserClaims()), nodeAdmin: true });
+    // Gated while B's task is open, a tick included.
+    await runRemoteRefWatcherTick({ db, claims: admin });
+    expect(await ready()).not.toContain(waiter);
+    await asGraphOwner((c) => c.query(`update public.tasks set work_status = 'done' where entity_id = $1`, [taskB]));
+    // Still gated until the watcher refreshes the cached status.
+    expect(await ready()).not.toContain(waiter);
+    await runRemoteRefWatcherTick({ db, claims: admin });
+    expect(await ready()).toContain(waiter);
+    const [ref] = await refsOn(taskB);
+    expect(ref).toMatchObject({ remote_status_category: 'done' });
+  });
+
+  it('T33 — a spawn naming A as its space is refused (spawn_scope), no reservation; positive — B passes the guard', async () => {
+    const before = await liveReservations();
+    expect(refusalOf(await invoke(gToken, spawnInput({ spaceId: fixture.spaceA })))).toBe('spawn_scope');
+    expect(await lastAudit('execution.spawn')).toMatchObject({ result: 'refused', reason: 'spawn_scope' });
+    expect(await liveReservations()).toBe(before);
+    const res = await invoke(gToken, spawnInput());
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatchObject({ code: 'invalid_input' });
+    // Past the guard the spawn's own schema answered; the reservation came back.
+    expect(await liveReservations()).toBe(before);
+  });
+
+  it('T33 — a spawn naming A\'s project is refused (spawn_scope); positive — B\'s own project passes the guard', async () => {
+    const projectA = randomUUID();
+    const projectB = randomUUID();
+    await asGraphOwner(async (c) => {
+      await c.query(`insert into public.projects(id, name, working_dir, trust) values ($1, 'w7b-a', $3, 'trusted'), ($2, 'w7b-b', $4, 'trusted')`,
+        [projectA, projectB, `/tmp/w7b-a-${projectA}`, `/tmp/w7b-b-${projectB}`]);
+      await c.query(`insert into public.space_projects(space_id, project_id) values ($1, $2), ($3, $4)`,
+        [fixture.spaceA, projectA, fixture.spaceB, projectB]);
+    });
+    const before = await liveReservations();
+    expect(refusalOf(await invoke(gToken, spawnInput({ projectId: projectA })))).toBe('spawn_scope');
+    expect(await liveReservations()).toBe(before);
+    const res = await invoke(gToken, spawnInput({ projectId: projectB }));
+    expect(res.status).toBe(400);
+    expect(refusalOf(res)).toBeUndefined();
+    expect(await liveReservations()).toBe(before);
+  });
+
+  it('a5 — the 4th live spawn on the budget-3 row is refused (spawn_budget); positive — one released, the next passes the guard', async () => {
+    const h = await hBrowserClaims();
+    const held: string[] = [];
+    try {
+      for (let i = 0; i < 3; i += 1) {
+        held.push((await db.rpc<{ reservationId: string }>(h, 'reserve_space_link_spawn', [fixture.spaceA, hLink.id, null, null])).reservationId);
+      }
+      const refused = await invoke(gToken, spawnInput());
+      expect(res403(refused)).toBe(true);
+      expect(refusalOf(refused)).toBe('spawn_budget');
+      expect(await lastAudit('execution.spawn')).toMatchObject({ result: 'refused', reason: 'spawn_budget' });
+      await db.rpc(h, 'release_space_link_spawn', [fixture.spaceA, hLink.id, held.shift()]);
+      const passes = await invoke(gToken, spawnInput());
+      expect(passes.status).toBe(400);
+      expect(refusalOf(passes)).toBeUndefined();
+    } finally {
+      for (const id of held) await db.rpc(h, 'release_space_link_spawn', [fixture.spaceA, hLink.id, id]);
+    }
+  });
+
+  /**
+   * a6 end to end, in-process: the real invoke handler and SQL, with an
+   * `execution.spawn` stand-in that makes the SQL calls the real one does
+   * (admit, the session in B, the agent mint under the link identity) but
+   * starts no process on this box.
+   */
+  describe.sequential('a6 / ruling B / R-2 — a reserved spawn through the link', () => {
+    let personaB: string;
+    const children: Array<{ ws: string; token: string }> = [];
+    const spawnB = () => spawnInput({ teamMemberId: personaB });
+    const newSessionInB = async (): Promise<string> => {
+      const id = randomUUID();
+      await asGraphOwner(async (c) => {
+        await c.query(`insert into public.entities(id, space_id, kind, created_by, visibility) values ($1, $2, 'work_session', $3, 'space')`,
+          [id, fixture.spaceB, fixture.memberHB]);
+        await c.query(`insert into public.work_sessions(entity_id, title, status, share_mode, started_at) values ($1, 'w7b spawned in B', 'spawning', 'none', now())`, [id]);
+        await c.query(`insert into public.edges(space_id, src_id, dst_id, type, created_by) values ($1, $2, $3, 'relates_to', $4)`,
+          [fixture.spaceB, id, personaB, fixture.memberHB]);
+      });
+      return id;
+    };
+    const harness = async () => {
+      const registry = new HandlerRegistry();
+      registry.register('execution.spawn', async (ctx) => {
+        const claims = claimsFor(NOT_THE_OWNER, ctx);
+        await db.rpc(claims, 'admit_space_link_spawn', [fixture.spaceB, null, null]);
+        const ws = await newSessionInB();
+        const secret = generateSecret();
+        const row = await db.rpc<{ id: string }>(claims, 'issue_work_session_agent_session', [
+          ws, personaB, hashToken(secret), new Date(Date.now() + 3_600_000).toISOString(), 'w7b a6 child',
+        ]);
+        children.push({ ws, token: formatToken(row.id, secret) });
+        return { id: ws };
+      });
+      const facade = { db, config: {}, owner: async () => NOT_THE_OWNER } as unknown as FacadeDeps;
+      const { invoke: handler } = createSpaceLinkInvokeHandlers(registry, facade, linkStore,
+        async (ctx) => claimsFor(NOT_THE_OWNER, ctx));
+      const resolve = createSessionIdentityResolver({ db, owner: async () => NOT_THE_OWNER, spaceSessions: 'agents' });
+      const identity = await resolve({ authorization: `Bearer ${gToken}` }, { remoteAddress: '203.0.113.9', disableAutoOwner: true });
+      return (body: unknown) => handler({
+        params: { spaceId: fixture.spaceA, link: hLink.id }, query: new URLSearchParams(), headers: {},
+        body, identity, requestId: `w7b-a6-${randomUUID()}`,
+      } as unknown as RequestContext) as Promise<{ remoteRefId: string | null; result: { id: string } }>;
+    };
+
+    beforeAll(async () => {
+      personaB = randomUUID();
+      await asGraphOwner(async (c) => {
+        await c.query(`insert into public.entities(id, space_id, kind, created_by, visibility) values ($1, $2, 'team_member', $3, 'space')`,
+          [personaB, fixture.spaceB, fixture.memberHB]);
+        await c.query(`insert into public.team_members(entity_id, owner_member_id, name, role, identity) values ($1, $2, 'W7b PB', 'worker', 'persona')`,
+          [personaB, fixture.memberHB]);
+      });
+    });
+
+    afterAll(async () => {
+      await asGraphOwner(async (c) => {
+        await c.query(`select set_config('tm8.work_session_transition', 'on', true)`);
+        await c.query(`update public.work_sessions set status = 'exited' where entity_id = any($1::uuid[])`, [children.map((c2) => c2.ws)]);
+      });
+    });
+
+    it('a6 — a default link spawns in B with B\'s teammate: the child is bound to the link and the slot, and a remote_ref is recorded in A', async () => {
+      const before = await liveReservations();
+      const out = await (await harness())(spawnB());
+      const child = children.at(-1)!;
+      expect(out.result.id).toBe(child.ws);
+      expect(out.remoteRefId).toMatch(/^[0-9a-f-]{36}$/);
+      const [session] = await asGraphOwner((c) => c.query(
+        'select via_link_id::text, kind from public.auth_sessions where id = $1', [parseToken(child.token)!.sessionId]) as never) as Array<Record<string, unknown>>;
+      expect(session).toEqual({ via_link_id: hLink.id, kind: 'agent' });
+      const [slot] = await asGraphOwner((c) => c.query(
+        'select work_session_id::text, bound_at is not null as bound from public.space_link_spawns where work_session_id = $1', [child.ws]) as never) as Array<Record<string, unknown>>;
+      expect(slot).toEqual({ work_session_id: child.ws, bound: true });
+      expect(await liveReservations()).toBe(before);
+      expect(await lastAudit('execution.spawn')).toMatchObject({ result: 'ok', remote_id: child.ws, link_id: hLink.id });
+    });
+
+    it('a6 — after setSpawn off the same spawn is refused (spawn_switch_off), nothing reserved or minted; positive — on again, it spawns', async () => {
+      const h = await hBrowserClaims();
+      const run = await harness();
+      const count = children.length;
+      await linkStore.setSpawn(h, { linkId: hLink.id, allowSpawn: false });
+      try {
+        await expect(run(spawnB())).rejects.toMatchObject({ details: expect.objectContaining({ refusal: 'spawn_switch_off' }) });
+        expect(children.length).toBe(count);
+      } finally {
+        await linkStore.setSpawn(h, { linkId: hLink.id, allowSpawn: true });
+      }
+      await run(spawnB());
+      expect(children.length).toBe(count + 1);
+    });
+
+    it('a5 — with two children live, the third spawn fills the budget and a 4th is refused (spawn_budget) before any mint', async () => {
+      const run = await harness();
+      const live = children.length;
+      expect(live).toBe(2);
+      await run(spawnB());
+      const count = children.length;
+      await expect(run(spawnB())).rejects.toMatchObject({ details: expect.objectContaining({ refusal: 'spawn_budget' }) });
+      expect(children.length).toBe(count);
+    });
+
+    it('ruling B — the child\'s own bearer cannot invoke through a link (42501); positive — G on the same link can', async () => {
+      const res = await invoke(children[0]!.token, { op: 'entities.get', params: { id: fixture.docB } });
+      expect(res.status).toBe(403);
+      expect((await invoke(gToken, { op: 'entities.get', params: { id: fixture.docB } })).status).toBe(200);
+    });
+
+    it('R-2 — the child cannot spawn (execution.spawn) or open a terminal in B, over the wire (403); no session or shell row appears', async () => {
+      const token = children[0]!.token;
+      const sessionsInB = async (): Promise<number> => Number((await asGraphOwner((c) => c.query(
+        `select count(*)::text as n from public.entities where space_id = $1 and kind = 'work_session'`, [fixture.spaceB])) as Array<{ n: string }>)[0]!.n);
+      const before = await sessionsInB();
+      const spawn = await call('POST', '/v2/execution/spawn', token, { spaceId: fixture.spaceB, teamMemberId: personaB, clientMutationId: cmid('r2-spawn') });
+      expect(spawn.status).toBe(403);
+      const terminal = await call('POST', '/v2/execution/terminal', token, { spaceId: fixture.spaceB, clientMutationId: cmid('r2-term'), cols: 80, rows: 24 });
+      expect(terminal.status).toBe(403);
+      expect(await sessionsInB()).toBe(before);
+    });
+
+    it('R-2 positive — ending a child frees its slot: the next spawn through the link passes', async () => {
+      const run = await harness();
+      await asGraphOwner(async (c) => {
+        await c.query(`select set_config('tm8.work_session_transition', 'on', true)`);
+        await c.query(`update public.work_sessions set status = 'exited' where entity_id = $1`, [children[0]!.ws]);
+      });
+      const count = children.length;
+      await run(spawnB());
+      expect(children.length).toBe(count + 1);
+    });
+  });
+
+  it('terminal.start through the link is refused (403), no shell in B; positive — a read on the same link passes', async () => {
+    const shells = async (): Promise<number> => Number((await asGraphOwner((c) => c.query(
+      `select count(*)::text as n from public.entities where space_id = $1 and kind = 'work_session'`, [fixture.spaceB])) as Array<{ n: string }>)[0]!.n);
+    const before = await shells();
+    const res = await invoke(gToken, {
+      op: 'execution.terminal.start',
+      input: { spaceId: fixture.spaceB, clientMutationId: cmid('term'), cols: 80, rows: 24 },
+    });
+    expect(res.status).toBe(403);
+    expect(await shells()).toBe(before);
+    expect((await invoke(gToken, { op: 'entities.get', params: { id: fixture.docB } })).status).toBe(200);
+  });
+
   // ---- a6: a revoked link session fails at resolveBearerIdentity (F6) ------
 
   it('a6 — B revokes the link session: invoke answers 401 space_link_signed_out, audited, nothing forwarded', async () => {
@@ -4929,7 +5198,7 @@ describe.sequential('W7 spaceLinks.invoke — G runs one op in B as H, audited i
     const hits = await database.transaction(async (client) => {
       await client.query('set local role tm8_graph_owner');
       const counts: Record<string, number> = {};
-      for (const table of ['entity_versions', 'command_ledger', 'cross_space_audit']) {
+      for (const table of ['entity_versions', 'command_ledger', 'cross_space_audit', 'remote_refs', 'space_link_spawns']) {
         const { rows } = await client.query<{ n: string }>(
           `select count(*)::text as n from public.${table} t where strpos(t::text, $1) > 0 or strpos(t::text, $2) > 0`,
           secrets);
@@ -4937,7 +5206,7 @@ describe.sequential('W7 spaceLinks.invoke — G runs one op in B as H, audited i
       }
       return counts;
     });
-    expect(hits).toEqual({ entity_versions: 0, command_ledger: 0, cross_space_audit: 0 });
+    expect(hits).toEqual({ entity_versions: 0, command_ledger: 0, cross_space_audit: 0, remote_refs: 0, space_link_spawns: 0 });
     expect(logged.length).toBeGreaterThan(0);
     expect(logged.filter((line) => secrets.some((s) => line.includes(s)))).toEqual([]);
   });

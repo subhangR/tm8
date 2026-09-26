@@ -82,7 +82,12 @@ export type CoreEntityKind =
   // `spaceLinks.add`.
   | 'space_link'
   // A remote tm8 server a space link points at (W8). Registered with W6's kinds.
-  | 'server';
+  | 'server'
+  // Remote refs (migration 996, W7b): an entity in the HOME space holding
+  // another linked space's entity id as text, with the watcher's cached status
+  // category. Born only from `spaceLinks.invoke` (record_remote_ref); a valid
+  // `depends_on` target — the gate reads the cached category.
+  | 'remote_ref';
 
 /** A credential entity's visibility (W10a): who may launch on it. */
 export type CredentialVisibility = 'private' | 'public';
@@ -525,6 +530,12 @@ export type CoreEntityState =
   | { kind: 'space_link' }
   | { kind: 'server' }
   /**
+   * Remote refs (996, W7b): no row facts on the entity read either — the
+   * shared read takes no join for them, like `space_link`. The watcher's
+   * cached category surfaces as the entity's workflow status.
+   */
+  | { kind: 'remote_ref' }
+  /**
    * A chat's row facts (176). Everything here answers a question a list row
    * asks — who is it with, what is it running, is it busy — without a second
    * read, which is the same rule `capabilities` and `category` ride on.
@@ -961,6 +972,8 @@ export type CoreEntityContent =
   /** Space links (250, W6): content is `spaceLinks.list`'s; see EntityState. */
   | { kind: 'space_link' }
   | { kind: 'server' }
+  /** Remote refs (996, W7b): no content on the entity read; see EntityState. */
+  | { kind: 'remote_ref' }
   /**
    * A space credential (W10a): the same allow-list as its state. The sealed
    * secret, key hint and vendor login never reach an entity read.
@@ -2955,6 +2968,9 @@ export type CreatableEntityKind = Exclude<
   // caller belongs to both spaces; `server` has no door in W6.
   | 'space_link'
   | 'server'
+  // `remote_ref` (W7b, 996) is born ONLY from `spaceLinks.invoke`, which
+  // records it under home claims after a create or spawn in the target space.
+  | 'remote_ref'
 >;
 
 export interface CreateEntityInput extends CommandContext {

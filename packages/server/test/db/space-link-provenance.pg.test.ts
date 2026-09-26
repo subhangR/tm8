@@ -330,7 +330,7 @@ describe('W7p the link session and its children carry via_link', () => {
   for (const issuer of ['issue_work_session_agent_session', 'issue_agent_auth_session'] as const) {
     it(`${issuer} refuses an unreserved link session first (SQL backstop); a via_link child mints nothing (W9 R-2)`, async () => {
       const count = async () => (await database.query<{ n: number }>(
-        `select count(*)::int as n from public.auth_sessions where parent_session_id = $1`, [L.linkSessionId]))[0]?.n;
+        `select count(*)::int as n from public.auth_sessions where parent_session_id = $1`, [L.linkSessionId]))[0]?.n ?? 0;
       const before = await count();
       const error = await mintChild(L.linkClaims, { issuer }).then(() => 'resolved', (err: unknown) => err);
       expect(await outcome(async () => { if (error !== 'resolved') throw error; })).toBe('42501');

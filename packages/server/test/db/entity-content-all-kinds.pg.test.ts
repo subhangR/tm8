@@ -150,9 +150,26 @@ describe('internal.entity_content resolves every core kind', () => {
     return [...source.matchAll(/when '([a-z_]+)' then/g)].map((m) => m[1]!);
   }
 
-  /** The arms this suite can actually resolve: kind, alias, table. */
-  function resolvableArms(source: string): { kind: string; alias: string; table: string }[] {
-    return [...source.matchAll(
+  /**
+   * The arms this suite can actually resolve: kind, alias, table — and, for an
+   * allow-list arm built with `jsonb_build_object`, the `alias.column`s it
+   * names, which are resolution-checked one by one.
+   */
+  function resolvableArms(
+    source: string,
+  ): { kind: string; alias: string; table: string; columns?: string[] }[] {
+    // W7b (996): `remote_ref` is the first arm that is an allow-list rather
+    // than `to_jsonb(row) - ...`, so it needs its own shape. Its argument list
+    // holds no parentheses; the lazy `[\s\S]*?` stops at the first `)` that
+    // is followed by `into content from public.<table> <alias>`.
+    const built = [...source.matchAll(
+      /when '([a-z_]+)' then\s+select jsonb_build_object\(([\s\S]*?)\)\s+into content\s+from public\.(\w+) (\w+)\b/g,
+    )].map((m) => {
+      const alias = m[4]!;
+      const columns = [...m[2]!.matchAll(new RegExp(`\\b${alias}\\.(\\w+)`, 'g'))].map((c) => c[1]!);
+      return { kind: m[1]!, alias, table: m[3]!, columns };
+    });
+    return [...built, ...[...source.matchAll(
       // `\2` anchors the table to the SAME alias the arm selected. Reviewer
       // hardening: without it, an arm containing an inner subquery whose
       // `from public.X` comes first would resolution-check the WRONG table
@@ -161,7 +178,7 @@ describe('internal.entity_content resolves every core kind', () => {
       // guard exists to refuse. No arm has that shape today; this keeps it
       // failing CLOSED if one ever does.
       /when '([a-z_]+)' then\s+select to_jsonb\((\w+)\)[\s\S]*?from public\.(\w+) \2\b/g,
-    )].map((m) => ({ kind: m[1]!, alias: m[2]!, table: m[3]! }));
+    )].map((m) => ({ kind: m[1]!, alias: m[2]!, table: m[3]! }))];
   }
 
   it('resolves every arm to a table and column that actually exist', async () => {
@@ -196,8 +213,12 @@ describe('internal.entity_content resolves every core kind', () => {
     const broken: string[] = [];
     for (const arm of arms) {
       try {
+        // An allow-list arm must name at least one column, and each must resolve.
+        const projection = arm.columns
+          ? (arm.columns.length > 0 ? arm.columns.map((c) => `${arm.alias}.${c}`).join(', ') : 'no_columns_named')
+          : `to_jsonb(${arm.alias}) - 'entity_id'`;
         await database.query(
-          `select to_jsonb(${arm.alias}) - 'entity_id' from public.${arm.table} ${arm.alias}
+          `select ${projection} from public.${arm.table} ${arm.alias}
             where ${arm.alias}.entity_id = '00000000-0000-0000-0000-000000000000'::uuid`,
         );
       } catch {

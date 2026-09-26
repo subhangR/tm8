@@ -249,6 +249,9 @@ describe('W1 frozen-row schema amendments', () => {
       // `server` has none in W6.
       'space_link',
       'server',
+      // 2026-09-26: `remote_ref` — a linked space's entity held by id (996,
+      // W7b). Not creatable: `spaceLinks.invoke` records it.
+      'remote_ref',
     ]);
     expect(CoreEntityKindSchema.safeParse('ui_template').success).toBe(false);
   });

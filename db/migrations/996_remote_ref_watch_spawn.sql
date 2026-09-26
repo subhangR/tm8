@@ -1037,6 +1037,25 @@ grant execute on function public.start_shell_session(
   uuid, uuid, text, text, text, boolean, integer, uuid, text
 ) to tm8_app;
 
+-- -----------------------------------------------------------------------------
+-- 12. A remote_ref's lifecycle is command-owned, like space_link's (251 §10b).
+--     A generic delete/restore/move would detach the ref from the link it was
+--     recorded under, or (a delete) make the gate read 'cancelled' by hand. The
+--     TS gate (RESTRICTED_LIFECYCLE_KINDS) refuses first; this is the SQL lock.
+--     A NEW trigger reusing 251's function: 251's WHEN list stays W8's to edit.
+--     Adds-only; creating it touches no row. The FK cascade from the link is a
+--     DELETE, which this BEFORE UPDATE trigger does not see.
+-- -----------------------------------------------------------------------------
+create trigger entities_remote_ref_lifecycle_command_owned
+before update of deleted_at, parent_id, position, space_id on public.entities
+for each row
+when (old.kind = 'remote_ref'
+      and (new.deleted_at is distinct from old.deleted_at
+           or new.parent_id is distinct from old.parent_id
+           or new.position is distinct from old.position
+           or new.space_id is distinct from old.space_id))
+execute function internal.refuse_generic_link_lifecycle();
+
 -- Never-analyzed tables are estimated at 10 pages (225); 229's precedent.
 analyze public.remote_refs;
 analyze public.space_link_spawns;

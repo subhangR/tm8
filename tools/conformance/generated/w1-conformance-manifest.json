@@ -8143,6 +8143,41 @@
         "migration": {
           "strategy": "space-link-kinds"
         }
+      },
+      "remote_ref": {
+        "kind": "remote_ref",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "remote-refs"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "remote-ref-lifecycle",
+          "genericCreate": false,
+          "genericPatch": false,
+          "genericMove": false,
+          "genericHierarchy": false,
+          "genericDeleteRestore": false,
+          "genericPoints": false,
+          "messages": false,
+          "reactions": false,
+          "connections": true,
+          "lifecycleOperations": [
+            "spaceLinks.invoke"
+          ]
+        },
+        "menu": {
+          "strategy": "not-addressable"
+        },
+        "migration": {
+          "strategy": "remote-ref-detail"
+        }
       }
     },
     "custom": {

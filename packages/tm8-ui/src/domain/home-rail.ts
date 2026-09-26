@@ -216,8 +216,10 @@ const HOME_RAIL_GROUP_SPINE: readonly HomeRailGroupSpec[] = [
  */
 // `credential` (W10a) is withheld for the same reason: it has a home already —
 // Space settings → Credentials, where its human-only doors live — and a rail
-// list would be a second, door-less surface for it.
-export const HOME_RAIL_WITHHELD_KINDS: readonly string[] = ['interaction_profile', 'credential', 'space_link', 'server'];
+// list would be a second, door-less surface for it. `remote_ref` (W7b, 996) is
+// recorded by `spaceLinks.invoke` and reached through the task that depends on
+// it; it is not a population to browse.
+export const HOME_RAIL_WITHHELD_KINDS: readonly string[] = ['interaction_profile', 'credential', 'space_link', 'server', 'remote_ref'];
 
 export interface HomeRailGroup {
   id: string;

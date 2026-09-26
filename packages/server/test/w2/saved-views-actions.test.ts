@@ -398,6 +398,11 @@ describe('W2.G09 saved views and action discovery', () => {
     const link = await listFor('space_link');
     expect(link).toContain('entities.get');
     for (const op of ['entities.delete', 'entities.move', 'entities.patch']) expect(link).not.toContain(op);
+    // W7b (996): a remote_ref is recorded by `spaceLinks.invoke`; the generic
+    // doors refuse it, so none is advertised.
+    const ref = await listFor('remote_ref');
+    expect(ref).toContain('entities.get');
+    for (const op of ['entities.delete', 'entities.move', 'entities.patch']) expect(ref).not.toContain(op);
     expect(await listFor('doc')).toEqual(expect.arrayContaining(['entities.get', 'entities.delete', 'entities.move', 'entities.patch']));
   });
 

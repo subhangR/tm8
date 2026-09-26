@@ -252,10 +252,11 @@ function structurallyAvailable(operation: OperationName, row: ActionContextRow):
       // `containers.destroy` stops the runtime before soft-deleting the
       // envelope. Advertising a delete the door refuses would offer a control
       // whose only outcome is a 403. `space_link` likewise (W6 review D1):
-      // `spaceLinks.remove` is its only delete.
+      // `spaceLinks.remove` is its only delete. `remote_ref` (W7b, 996) is
+      // refused by the generic doors too (entities-commands-tracking).
       return live && row.kind !== 'member' && row.kind !== 'project'
         && row.kind !== 'interaction_profile' && row.kind !== 'container'
-        && row.kind !== 'space_link';
+        && row.kind !== 'space_link' && row.kind !== 'remote_ref';
     case 'entities.restore':
       return false;
     case 'entities.children':

@@ -276,6 +276,17 @@ export const KIND_ART = {
   ],
 
   /**
+   * An open box with an arrow leaving it — a `remote_ref` points at an entity
+   * in another, linked space (996, W7b). The SQL registry names its icon
+   * `external-link`; this is that mark. Not chain links: those are `space_link`'s.
+   */
+  remote_ref: [
+    'M7 3.4H4a1.4 1.4 0 0 0-1.4 1.4V12a1.4 1.4 0 0 0 1.4 1.4h7.2a1.4 1.4 0 0 0 1.4-1.4V9',
+    'M9.6 2.6h3.8v3.8',
+    'M13.4 2.6 7.6 8.4',
+  ],
+
+  /**
    * The custom-kind fallback. A plain diamond ON PURPOSE: it is the one mark
    * that must say "this kind has no artwork of its own", so it stays the
    * neutral shape the old set used for exactly that job.

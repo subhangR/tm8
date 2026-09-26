@@ -192,6 +192,9 @@ export const CoreEntityKindSchema = z.enum([
   // is its door. `server` is registered with it and has no door in W6.
   'space_link',
   'server',
+  // Remote refs (996, W7b). Not in `CreatableEntityKind`: `spaceLinks.invoke`
+  // is its only door (record_remote_ref).
+  'remote_ref',
 ]);
 
 export const CustomEntityKindSchema = z.custom<CustomEntityKind>(
@@ -646,6 +649,9 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
   // answers for them. `server` has no detail row until W8.
   z.object({ kind: z.literal('space_link') }).strict(),
   z.object({ kind: z.literal('server') }).strict(),
+  // 996 (W7b) — a remote ref carries no row facts on the entity; its cached
+  // remote category is the entity's workflow status.
+  z.object({ kind: z.literal('remote_ref') }).strict(),
   // 176 — the chat row's facts. `runtimeState` is the durable claim about the
   // headless child; `turnState` is the queue. They are independent: a chat can
   // be 'stopped' with a turn 'queued', which is what "the node restarted, your
@@ -1054,6 +1060,8 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
   // 250 (W6) — a space link's content is `spaceLinks.list`'s answer.
   z.object({ kind: z.literal('space_link') }).strict(),
   z.object({ kind: z.literal('server') }).strict(),
+  // 996 (W7b) — a remote ref has no content on the entity read (see state).
+  z.object({ kind: z.literal('remote_ref') }).strict(),
   // A chat has no content beyond its summary (R5): the working directory and
   // the native session id are the two facts that stay server-side.
   z.object({ kind: z.literal('chat') }).strict(),
@@ -2466,8 +2474,9 @@ export const CreatableEntityKindSchema = z.union([
   // could not. A generic create would make a record with nothing behind it.
   // `form` likewise: `forms.create` writes its questions and requesting
   // session in the same call (FORMS-DESIGN §6). `credential` is human-only
-  // and born under a SQL guard from credentials.space.* (W10a).
-  CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile', 'worktree', 'artifact', 'chat', 'container', 'form', 'credential', 'space_link', 'server']),
+  // and born under a SQL guard from credentials.space.* (W10a). `remote_ref`
+  // is born only from `spaceLinks.invoke` (W7b, 996).
+  CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile', 'worktree', 'artifact', 'chat', 'container', 'form', 'credential', 'space_link', 'server', 'remote_ref']),
   CustomEntityKindSchema,
 ]);
 

@@ -2416,6 +2416,31 @@ const ROWS: readonly KindConfig[] = [
     },
   },
 
+  // -- remote_ref (996, W7b: recorded by spaceLinks.invoke, not browsed) ------
+  {
+    kind: 'remote_ref',
+    label: 'Remote ref',
+    labelPlural: 'Remote refs',
+    icon: '↗',
+    iconArt: KIND_ART.remote_ref,
+    slug: 'remote-refs',
+    strategy: 'collection',
+    defaultMode: 'list',
+    hiddenModes: ['board', 'tree', 'gallery'],
+    chip: { glyph: '↗', tintBy: 'none' },
+    card: { fields: ['activityAt', 'createdBy'] },
+    // Born only from `spaceLinks.invoke` (generic create is refused
+    // server-side); a task reaches one through its `depends_on` edge.
+    list: baseList({
+      quickCreate: false,
+      tile: { badges: [] },
+    }),
+    panel: {
+      archetype: 'generic',
+      blocks: [{ block: 'fields', label: 'REMOTE' }],
+    },
+  },
+
   // -- the single custom-kind fallback row ----------------------------------
   {
     kind: CUSTOM_KIND_FALLBACK,
