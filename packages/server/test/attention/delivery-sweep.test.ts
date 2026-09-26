@@ -125,4 +125,15 @@ describe('Seen is per person (review #2)', () => {
       .rejects.toMatchObject({ code: 'forbidden' });
     expect(touched).toEqual([]);
   });
+
+  it('a CHAT agent (agent_runtime bearer, runtimeChatId only) is refused the same way', async () => {
+    const chatCtx = {
+      identity: { kind: 'bearer', identityId: 'owner-identity', authKind: 'agent_runtime', runtimeChatId: 'chat-1' },
+      params: { entityId: '00000000-0000-4000-8000-000000000001' },
+      query: new URLSearchParams(),
+      body: { clientMutationId: 'c' },
+    } as unknown as RequestContext;
+    await expect(service.markSeen(chatCtx)).rejects.toMatchObject({ code: 'forbidden' });
+    expect(touched).toEqual([]);
+  });
 });

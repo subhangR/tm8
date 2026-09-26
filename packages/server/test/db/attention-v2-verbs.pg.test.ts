@@ -380,6 +380,26 @@ describe.sequential('attention v2 verbs (migration 256)', () => {
     });
   });
 
+  describe('withdraw from chats (spec owner ask)', () => {
+    it('chat A cannot withdraw chat B\'s request (42501); chat B can', async () => {
+      const [{ chatA, chatB }] = await q<{ chatA: string; chatB: string }>('select internal.new_id()::text "chatA", internal.new_id()::text "chatB"');
+      await database.transaction(async (client) => {
+        await client.query('set local role tm8_graph_owner');
+        await client.query(
+          `insert into public.entities(id,space_id,kind,parent_id,position,created_by) values ($1,$3,'chat',null,30,$4), ($2,$3,'chat',null,31,$4)`,
+          [chatA, chatB, f.spaceId, f.ownerId],
+        );
+      });
+      const b = await ask(f.docId, 'asked from chat B', chatB);
+      expect((await q<Row>('select source_session_id from public.attention_requests where id = $1', [b.attentionRequestId]))[0]!.source_session_id).toBe(chatB);
+      await expect(rpc(f.ownerIdentity, 'public.withdraw_attention_request($1, null, $2, $3, $4)', [b.attentionRequestId, f.agentId, cmid(), chatA]))
+        .rejects.toMatchObject({ code: '42501' });
+      expect(await statusOf(b.attentionRequestId as string)).toBe('open');
+      await rpc(f.ownerIdentity, 'public.withdraw_attention_request($1, null, $2, $3, $4)', [b.attentionRequestId, f.agentId, cmid(), chatB]);
+      expect(await statusOf(b.attentionRequestId as string)).toBe('dismissed');
+    });
+  });
+
   describe('update reopen (review #4)', () => {
     it('reopening a row the same session re-asked is a named conflict, not a raw 23505', async () => {
       await resetOpen();
