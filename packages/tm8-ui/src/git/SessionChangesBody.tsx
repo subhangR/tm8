@@ -109,6 +109,18 @@ type DiffState =
   | { phase: 'error'; path: string; scope: DiffScope; message: string }
   | { phase: 'ready'; path: string; scope: DiffScope; diff: SessionGitDiff };
 
+/**
+ * A clean worktree is not necessarily a session with no code to review: an
+ * agent can commit as it works. Git status deliberately only reports the
+ * index and working tree, so retain a separate, read-only session comparison
+ * for that state rather than presenting an empty staging UI as lost work.
+ */
+type HistoryState =
+  | { phase: 'idle' }
+  | { phase: 'loading' }
+  | { phase: 'ready'; diff: SessionGitDiff }
+  | { phase: 'error'; message: string };
+
 type Verb = 'stage' | 'unstage' | 'commit';
 
 /**
@@ -196,7 +208,11 @@ export function SessionChangesBody({ seam, sessionId, live }: SessionChangesBody
   const [commitMessage, setCommitMessage] = useState('');
   const [receipt, setReceipt] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [history, setHistory] = useState<HistoryState>({ phase: 'idle' });
   const hasLoaded = useRef(false);
+  /** The comparison's two endpoints; unchanged endpoints need no second read. */
+  const historyKey = useRef<string | null>(null);
+  const historyTicket = useRef(0);
   /** The row whose diff is open, so a refresh can re-read the same file. */
   const openPath = useRef<string | null>(null);
   /**
@@ -306,6 +322,33 @@ export function SessionChangesBody({ seam, sessionId, live }: SessionChangesBody
     const timer = setInterval(() => void loadStatus(), POLL_MS);
     return () => clearInterval(timer);
   }, [live, loadStatus]);
+
+  useEffect(() => {
+    if (status.phase !== 'ready' || !status.status.available || status.status.dirty.total !== 0) {
+      historyTicket.current += 1;
+      historyKey.current = null;
+      setHistory((previous) => (previous.phase === 'idle' ? previous : { phase: 'idle' }));
+      return;
+    }
+
+    const key = `${status.status.baseOid ?? ''}:${status.status.headOid ?? ''}`;
+    if (historyKey.current === key) return;
+    historyKey.current = key;
+    const ticket = ++historyTicket.current;
+    setHistory({ phase: 'loading' });
+    void seam.gitDiff(sessionId, { scope: 'session' }).then(
+      (next) => {
+        if (ticket === historyTicket.current) setHistory({ phase: 'ready', diff: next });
+      },
+      (err: unknown) => {
+        if (ticket !== historyTicket.current) return;
+        // Retry on the next status read. A transient history read must not make
+        // the current staging state look broken.
+        historyKey.current = null;
+        setHistory({ phase: 'error', message: messageOf(err, 'Session history read failed') });
+      },
+    );
+  }, [seam, sessionId, status]);
 
   const runVerb = useCallback(
     async (verb: Verb, run: () => Promise<string>) => {
@@ -503,6 +546,9 @@ export function SessionChangesBody({ seam, sessionId, live }: SessionChangesBody
               ? 'Binary — git has no lines here to divide into hunks.'
               : 'This comparison has no hunks to choose from.';
 
+  const committedHistory = clean && history.phase === 'ready' ? history.diff : null;
+  const historyBase = committedHistory?.baseRef ?? shortOid(committedHistory?.mergeBaseOid ?? null);
+
   return (
     <div
       className="pn-chg"
@@ -532,6 +578,39 @@ export function SessionChangesBody({ seam, sessionId, live }: SessionChangesBody
         </button>
       </div>
 
+      {clean ? (
+        <section className="pn-chg__history" data-testid="session-changes-history">
+          {history.phase === 'loading' || history.phase === 'idle' ? (
+            <p className="pn-chg__note">Checking changes committed by this session…</p>
+          ) : history.phase === 'error' ? (
+            <p className="pn-chg__error" role="alert" data-testid="session-changes-history-error">
+              Committed session changes could not be read: {history.message}
+            </p>
+          ) : !committedHistory.available ? (
+            <p className="pn-chg__note">Committed session changes are unavailable for this worktree.</p>
+          ) : committedHistory.diff === '' ? (
+            <p className="pn-chg__note" data-testid="session-changes-history-empty">
+              No changes since {historyBase}. This worktree has no uncommitted files.
+            </p>
+          ) : (
+            <>
+              <div className="pn-chg__history-head">
+                <span className="pn-chg__history-title">Committed session changes</span>
+                <span className="pn-chg__scope">
+                  {committedHistory.stat.filesChanged} file(s) · +{committedHistory.stat.additions} −{committedHistory.stat.deletions} since {historyBase}
+                </span>
+              </div>
+              {committedHistory.diffTruncated ? (
+                <p className="pn-chg__note" data-testid="session-changes-history-truncated">
+                  The server cut this diff at its byte cap; the file and line counts above are complete.
+                </p>
+              ) : null}
+              <DiffView diff={committedHistory.diff} />
+            </>
+          )}
+        </section>
+      ) : (
+        <>
       {/*
         -- the merge banner -------------------------------------------------
 
@@ -1025,6 +1104,8 @@ export function SessionChangesBody({ seam, sessionId, live }: SessionChangesBody
           </button>
         )}
       </div>
+        </>
+      )}
 
       {partlyStagedSelection.length > 0 ? (
         <p className="pn-chg__note" data-testid="session-changes-partial-note">
