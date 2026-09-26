@@ -322,6 +322,10 @@ function capabilities(profile: CapabilityProfile): CapabilityDisposition {
           'credentials.space.rekey',
           'credentials.space.setDefault',
           'credentials.space.delete',
+          // W10b: the owner-facing writes on the same row.
+          'credentials.space.setVisibility',
+          'credentials.space.spaceDefaultConsent',
+          'credentials.space.claim',
         ],
       };
     case 'space-link-lifecycle':

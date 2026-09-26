@@ -263,7 +263,7 @@ describe('t3-4/t3-8: delete contains every launcher, and only on the deleted cre
     const s = await session(ids[`member:${A}`]!);
     await launchedOn(claims(A), s, 'openai', view.id);
     killed.length = 0;
-    await expect(service.delete(claims(B), view.id)).rejects.toThrow(/creator or a space admin/);
+    await expect(service.delete(claims(B), view.id)).rejects.toThrow(/owner or a space admin can revoke it/ /* W10b: revoke names the owner (N12) */);
     expect(killed).toEqual([]);
     // Control: an admin can.
     await expect(service.delete(claims(ADM), view.id)).resolves.toMatchObject({ revoked: true, terminatedAgentSessionIds: [s] });
