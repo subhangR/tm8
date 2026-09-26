@@ -89,6 +89,8 @@ import { channelFeedPortFromGateData } from './channel-feed-port';
 import { SettingsShell, ownerRoleRef, settingsPortFromSeam } from '../settings-space';
 import { FilesExplorerScreen, filesExplorerPortFromSeam } from '../files-explorer';
 import { InboxView } from './InboxView';
+import { StatusStrip } from '../status-strip';
+import { AttentionSegment } from '../attention-segment';
 import { MessagesView } from './MessagesView';
 import { nodeKeyOf } from '../data/launch-cache';
 import {
@@ -2084,6 +2086,27 @@ export function GateApp(props: GateAppProps = {}) {
             ) : undefined
           }
         />
+
+        {/* THE STATUS STRIP (task 01a0dc78): host metrics + live sessions and
+            chats, directly beneath the top bar on the desktop shell. The lead
+            slot is the attention segment's seat (task 01a0dc79-0015). */}
+        {data.spaceId ? (
+          <StatusStrip
+            seam={data.seam}
+            spaceId={data.spaceId as SpaceId}
+            leadSlot={
+              <AttentionSegment
+                seam={data.seam}
+                spaceId={data.spaceId as SpaceId}
+                reconcile={data.reconcileCommand}
+                onOpenEntity={(id) => {
+                  navigateTo(WORKSPACE_TARGET);
+                  nav.push(id as EntityId);
+                }}
+              />
+            }
+          />
+        ) : null}
 
         <div className="shell-body">
           {/* THE CHAT SLOT's interim host (entity chat §3.1): a sheet from the
