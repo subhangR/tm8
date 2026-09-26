@@ -581,10 +581,10 @@
 .tch-asset__file a { color: var(--pn-brand); font-size: var(--pn-fs-tick); }
 .tch-asset__file em { color: var(--pn-ink-4); font-size: var(--pn-fs-tick); }
 
-/* The ledger lines — what a turn DID to the graph, as sentences (design
-   ruling 1): one counted read line, one line per create (tree-indented via
-   inline padding), one line per transition. They stand free in the transcript
-   like the chip row they replace: no border, no card, no tool chrome. */
+/* The ledger lines — what a turn DID to the graph (design ruling 1): one
+   counted read line and one line per transition, standing free in the
+   transcript with no border and no tool chrome. What the chat CREATED is the
+   one exception, a highlighted card — see ledger-cards.css (advisor D9). */
 .tch-ledger {
   display: flex;
   flex-direction: column;
@@ -592,7 +592,6 @@
 }
 
 .tch-ledger__reads,
-.tch-ledger__create,
 .tch-ledger__transition {
   display: flex;
   gap: var(--pn-space-2);
@@ -648,9 +647,6 @@ button.tch-ledger__open:hover {
   text-decoration: underline;
 }
 
-.tch-ledger__verb { color: var(--pn-ink-4); }
-
-.tch-ledger__arrow { color: var(--pn-ink-3); }
 
 .tch-entity-chip {
   display: inline-flex;

@@ -59,6 +59,7 @@ import {
   type PermissionRung,
 } from './composer';
 import { EntityTray } from './EntityTray';
+import { LedgerHostProvider } from './LedgerCards';
 import { LedgerPanel } from './LedgerPanel';
 import { foldChatLedger, type ChatLedger } from './ledger';
 import { TurnParts, type TurnPartsProps } from './TurnParts';
@@ -2219,6 +2220,7 @@ export function ChatHomeScreen({
                   the conversation for vertical space and needing a second,
                   fullscreen way to be big. It is a STAGE now — one drawing in
                   region B, reached from the tray, addressed by `?stage=graph`. */}
+              <LedgerHostProvider key={detail.summary.rootId} resolveEntity={resolveEntity} readEntity={readEntity} livenessOf={livenessOf} models={models}>
               {detail.turns.map((turn) => (
                 <Turn
                   key={turn.messageId}
@@ -2250,6 +2252,7 @@ export function ChatHomeScreen({
                   viewerId={viewerId}
                 />
               ) : null}
+              </LedgerHostProvider>
               {thinking ? (
                 <div className="tch-wait" role="status" data-testid="chat-thinking">
                   <WaitMark />

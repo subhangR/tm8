@@ -2,8 +2,8 @@ import { Fragment, memo, useId, useMemo, useState, type ReactNode } from 'react'
 import type { EntityId } from '@tm8/contract';
 import { Markdown } from '../kit';
 import { type ChatEntityResolver } from './EntityChip';
-import { truncateEntityId } from './entity-refs';
 import { ExplanationToolCard } from './ExplanationToolCard';
+import { CreatedCard, EditLine, TransitionRow } from './LedgerCards';
 import { LedgerTree } from './ledger-tree';
 import { explanationToolName } from './explanation-tools';
 import {
@@ -143,6 +143,19 @@ export function TurnParts({
     for (const transition of turnLedger?.transitions ?? []) map.set(transition.seq, transition);
     return map;
   }, [turnLedger]);
+  /* The turn's edits draw ONE line, anchored at the first of them (D11). A
+     host's note is its own sentence for its call — Craft's names the
+     blueprint nodes a patch changed — so the generic line steps aside for
+     any edit a host already narrated, rather than saying it twice. */
+  const lineEdits = useMemo(() => {
+    const edits = turnLedger?.edits ?? [];
+    if (!toolNote) return edits;
+    return edits.filter((edit) => {
+      const call = plainTools.find((tool) => tool.seq === edit.seq);
+      return !call || toolNote({ name: call.name, args: call.args, result: call.result, state: call.state }) == null;
+    });
+  }, [turnLedger, toolNote, plainTools]);
+  const editAnchorSeq = lineEdits[0]?.seq ?? null;
 
   /**
    * THE STEP LIST (advisor D7/D8/D15). Every plain call is a STEP with a
@@ -175,13 +188,14 @@ export function TurnParts({
     const create = createsBySeq.get(part.seq);
     const transition = transitionsBySeq.get(part.seq);
     const readsHere = part.seq === readAnchorSeq && readPairs.length > 0;
+    const editsHere = part.seq === editAnchorSeq;
     const note = toolNote?.({
       name: part.name,
       args: part.args,
       result: part.result,
       state: view?.state ?? part.state,
     }) ?? null;
-    if (!create && !transition && !readsHere && note == null) return null;
+    if (!create && !transition && !readsHere && !editsHere && note == null) return null;
     return (
       <div className="tch-ledger" key={part.seq}>
         {readsHere && turnLedger ? (
@@ -206,6 +220,9 @@ export function TurnParts({
             ledger={threadLedger}
             onOpenEntity={onOpenEntity}
           />
+        ) : null}
+        {editsHere ? (
+          <EditLine edits={lineEdits} ledger={threadLedger} onOpenEntity={onOpenEntity} />
         ) : null}
         {note}
       </div>
@@ -368,10 +385,11 @@ function ReadLine({
 }
 
 /**
- * One line per created entity, indented under its parent when the parent was
- * created earlier in this thread (design §4.2). The line IS the entity:
- * clicking it opens the detail panel — every kind identically, sessions
- * included (the host routes a session to its terminal).
+ * What the chat MADE: a highlighted card per created entity or spawned
+ * session, and a pill line per status transition it caused — both drawn by
+ * `LedgerCards.tsx` (advisor D9–D11, D17). These two names stay as the seam
+ * the per-call ledger block calls, so the block's shape (lane 3's) and the
+ * cards' design (lane 4's) can move independently.
  */
 function CreateLine({
   create,
@@ -382,24 +400,9 @@ function CreateLine({
   ledger: ChatLedger;
   onOpenEntity?: ((id: EntityId) => void) | undefined;
 }) {
-  return (
-    <span
-      className="tch-ledger__create"
-      data-testid="chat-ledger-create"
-      style={{ paddingLeft: `${createDepth(create.id, ledger) * 16}px` }}
-    >
-      <LedgerEntity id={create.id} ledger={ledger} onOpenEntity={onOpenEntity} />
-      <span className="tch-ledger__verb">Created</span>
-    </span>
-  );
+  return <CreatedCard create={create} ledger={ledger} onOpenEntity={onOpenEntity} />;
 }
 
-/**
- * `Task 1  in_progress → done`, degrading honestly to `Task 1  → done` when
- * this thread never read the entity before writing it (design ruling 13):
- * a one-sided arrow is less than we wish we knew; an invented left side would
- * be a lie about history.
- */
 function TransitionLine({
   transition,
   ledger,
@@ -409,59 +412,7 @@ function TransitionLine({
   ledger: ChatLedger;
   onOpenEntity?: ((id: EntityId) => void) | undefined;
 }) {
-  return (
-    <span className="tch-ledger__transition" data-testid="chat-ledger-transition">
-      <LedgerEntity id={transition.entityId} ledger={ledger} onOpenEntity={onOpenEntity} />
-      <span className="tch-ledger__arrow">
-        {transition.from ? `${transition.from} → ${transition.to}` : `→ ${transition.to}`}
-      </span>
-    </span>
-  );
-}
-
-/**
- * The entity's name in a ledger line — a real button when the host can open
- * entities, an inert span when it cannot. Same split `EntityChip` holds and
- * for the same reason: a press must never land on a control that goes
- * nowhere. Kind is never consulted for clickability.
- */
-function LedgerEntity({
-  id,
-  ledger,
-  onOpenEntity,
-}: {
-  id: string;
-  ledger: ChatLedger;
-  onOpenEntity?: ((id: EntityId) => void) | undefined;
-}) {
-  const label = ledger.labels.get(id);
-  const text = label?.title ?? (label?.kind ? kindWord(label.kind, 1) : truncateEntityId(id));
-  if (!onOpenEntity) {
-    return <span className="tch-ledger__entity">{text}</span>;
-  }
-  return (
-    <button
-      type="button"
-      className="tch-ledger__entity tch-ledger__open"
-      onClick={() => onOpenEntity(id as EntityId)}
-    >
-      {text}
-    </button>
-  );
-}
-
-/** How deep a created entity sits under parents created in this thread. */
-function createDepth(id: string, ledger: ChatLedger): number {
-  const createdHere = new Set(ledger.creates.map((c) => c.id));
-  let depth = 0;
-  let cursor = ledger.parentOf.get(id) ?? null;
-  // The hierarchy is homogeneous and acyclic, but the fold is defensive: a
-  // malformed payload must terminate the walk, not hang the render.
-  while (cursor && createdHere.has(cursor) && depth < 32) {
-    depth += 1;
-    cursor = ledger.parentOf.get(cursor) ?? null;
-  }
-  return depth;
+  return <TransitionRow transition={transition} ledger={ledger} onOpenEntity={onOpenEntity} />;
 }
 
 /**
