@@ -1,134 +1,110 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { AttentionRequestMutationResult, EntityId } from '@tm8/contract';
-import { openEntityAndResolve } from './open-entity';
+import type { EntityId } from '@tm8/contract';
+import { openEntityAndMarkRead } from './open-entity';
 
-describe('openEntityAndResolve', () => {
-  it('opens synchronously, resolves all pending attention, and reconciles the summary', async () => {
-    const id = 'entity-1' as EntityId;
-    const result = { entity: { id }, request: null, affectedCount: 3 } as AttentionRequestMutationResult;
+/**
+ * THE POINT OF THIS FILE IS A NEGATIVE (Attention v2, G4/G5/Q18): opening an
+ * entity must not write to the space-wide attention queue. It used to, and the
+ * `resolveAttention` assertions that used to live here were the guard that made
+ * the behaviour deliberate — so removing them without replacing them with the
+ * opposite assertion would leave nothing stopping the call coming back.
+ *
+ * `commands` is deliberately typed loosely in these tests so that a
+ * `resolveAttention` spy can be handed in at all: the production type no longer
+ * admits the key, which is the compile-time half of the same guarantee.
+ */
+describe('openEntityAndMarkRead — opening never settles attention', () => {
+  const id = 'entity-1' as EntityId;
+
+  it('opens synchronously and issues NO attention write, even when requests are pending', () => {
     const open = vi.fn();
-    const reconcile = vi.fn();
-    const resolveAttention = vi.fn().mockResolvedValue(result);
+    const resolveAttention = vi.fn();
+    const upsertReadMark = vi.fn().mockResolvedValue(undefined);
 
-    openEntityAndResolve({
+    openEntityAndMarkRead({
       entityId: id,
-      needsAttention: true,
       open,
-      commands: { resolveAttention },
-      reconcile,
-      onError: vi.fn(),
+      commands: { upsertReadMark, resolveAttention } as never,
       now: () => 42,
     });
 
     expect(open).toHaveBeenCalledWith(id);
-    expect(resolveAttention).toHaveBeenCalledWith(id, { clientMutationId: 'attention-open:entity-1:42' });
-    await Promise.resolve();
-    expect(reconcile).toHaveBeenCalledWith(result);
-  });
-
-  it('only opens when the rendered entity has no pending attention', async () => {
-    const id = 'entity-1' as EntityId;
-    const open = vi.fn();
-    const resolveAttention = vi.fn();
-
-    openEntityAndResolve({
-      entityId: id,
-      needsAttention: false,
-      open,
-      commands: { resolveAttention },
-      reconcile: vi.fn(),
-      onError: vi.fn(),
-    });
-
-    expect(open).toHaveBeenCalledWith(id);
+    // THE REGRESSION GUARD. An entity with a pending request is exactly the case
+    // that used to fire a bulk resolve on the way past.
     expect(resolveAttention).not.toHaveBeenCalled();
   });
 
-  it('coalesces repeated clicks while resolution is in flight', async () => {
-    const id = 'entity-1' as EntityId;
-    const resolving = new Set<EntityId>();
-    let finish!: (result: AttentionRequestMutationResult) => void;
-    const result = { entity: { id }, request: null, affectedCount: 1 } as AttentionRequestMutationResult;
-    const resolveAttention = vi.fn().mockReturnValue(new Promise((resolve) => { finish = resolve; }));
-    const input = {
-      entityId: id,
-      needsAttention: true,
-      open: vi.fn(),
-      commands: { resolveAttention },
-      reconcile: vi.fn(),
-      onError: vi.fn(),
-      resolving,
-    };
-
-    openEntityAndResolve(input);
-    openEntityAndResolve(input);
-    expect(resolveAttention).toHaveBeenCalledTimes(1);
-
-    finish(result);
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(resolving).not.toContain(id);
+  it('opens even with no read-mark command wired, and never throws', () => {
+    const open = vi.fn();
+    openEntityAndMarkRead({ entityId: id, open, commands: {} as never });
+    expect(open).toHaveBeenCalledWith(id);
   });
 });
 
-describe('read marks — the per-viewer half, independent of attention', () => {
+describe('read marks — the per-viewer half that survived', () => {
   const id = 'entity-1' as EntityId;
 
-  it('marks read on EVERY open, including entities with no pending attention', async () => {
+  it('marks read on EVERY open and reports it so the rail can catch up', async () => {
     const upsertReadMark = vi.fn().mockResolvedValue(undefined);
-    const resolveAttention = vi.fn();
     const onRead = vi.fn();
 
-    openEntityAndResolve({
+    openEntityAndMarkRead({
       entityId: id,
-      needsAttention: false,
       open: vi.fn(),
-      commands: { resolveAttention, upsertReadMark },
-      reconcile: vi.fn(),
-      onError: vi.fn(),
+      commands: { upsertReadMark },
       onRead,
       now: () => 0,
     });
 
-    // Attention is space-wide and stays conditional; the read mark is this
-    // viewer's own and is what clears the rail's unseen number.
-    expect(resolveAttention).not.toHaveBeenCalled();
     expect(upsertReadMark).toHaveBeenCalledWith(id, new Date(0).toISOString());
     await Promise.resolve();
     await Promise.resolve();
     expect(onRead).toHaveBeenCalled();
   });
 
-  it('coalesces repeated clicks through its OWN in-flight set', () => {
+  it('coalesces repeated clicks through the in-flight set, and clears it after', async () => {
     const marking = new Set<EntityId>();
-    const upsertReadMark = vi.fn().mockReturnValue(new Promise(() => {}));
+    let finish!: () => void;
+    const upsertReadMark = vi.fn().mockReturnValue(new Promise<void>((resolve) => { finish = resolve; }));
     const input = {
       entityId: id,
-      needsAttention: false,
       open: vi.fn(),
-      commands: { resolveAttention: vi.fn(), upsertReadMark },
-      reconcile: vi.fn(),
-      onError: vi.fn(),
+      commands: { upsertReadMark },
       marking,
     };
 
-    openEntityAndResolve(input);
-    openEntityAndResolve(input);
+    openEntityAndMarkRead(input);
+    openEntityAndMarkRead(input);
     expect(upsertReadMark).toHaveBeenCalledTimes(1);
+
+    finish();
+    await Promise.resolve();
+    await Promise.resolve();
+    // Cleared, so a LATER open of the same entity marks it read again rather
+    // than being suppressed forever by the first one.
+    expect(marking.has(id)).toBe(false);
   });
 
-  it('a failed read mark is SILENT — it never raises the error surface', async () => {
-    const onError = vi.fn();
+  it('opens the entity even when the read mark is already in flight', () => {
+    const marking = new Set<EntityId>([id]);
+    const open = vi.fn();
+    const upsertReadMark = vi.fn();
+
+    openEntityAndMarkRead({ entityId: id, open, commands: { upsertReadMark }, marking });
+
+    // NAVIGATION IS NEVER THE THING THAT GETS COALESCED — only the write is.
+    expect(open).toHaveBeenCalledWith(id);
+    expect(upsertReadMark).not.toHaveBeenCalled();
+  });
+
+  it('a failed read mark is SILENT — no throw, no onRead', async () => {
     const onRead = vi.fn();
     const upsertReadMark = vi.fn().mockRejectedValue(new Error('offline'));
 
-    openEntityAndResolve({
+    openEntityAndMarkRead({
       entityId: id,
-      needsAttention: false,
       open: vi.fn(),
-      commands: { resolveAttention: vi.fn(), upsertReadMark },
-      reconcile: vi.fn(),
-      onError,
+      commands: { upsertReadMark },
       onRead,
     });
 
@@ -136,27 +112,6 @@ describe('read marks — the per-viewer half, independent of attention', () => {
     await Promise.resolve();
     // The row simply keeps its unseen mark, which self-corrects on the next
     // open. A toast over a completed navigation would be worse than the state.
-    expect(onError).not.toHaveBeenCalled();
     expect(onRead).not.toHaveBeenCalled();
-  });
-
-  it('still resolves attention alongside the read mark when one is pending', async () => {
-    const upsertReadMark = vi.fn().mockResolvedValue(undefined);
-    const resolveAttention = vi.fn().mockResolvedValue(
-      { entity: { id }, request: null, affectedCount: 2 } as AttentionRequestMutationResult,
-    );
-
-    openEntityAndResolve({
-      entityId: id,
-      needsAttention: true,
-      open: vi.fn(),
-      commands: { resolveAttention, upsertReadMark },
-      reconcile: vi.fn(),
-      onError: vi.fn(),
-      now: () => 7,
-    });
-
-    expect(upsertReadMark).toHaveBeenCalledTimes(1);
-    expect(resolveAttention).toHaveBeenCalledTimes(1);
   });
 });

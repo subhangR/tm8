@@ -19,7 +19,7 @@
  * that own their own height (terminal, chat). See `EntityDetailPanel`.
  */
 import type { ReactNode } from 'react';
-import type { EntityId, SpaceId } from '@tm8/contract';
+import type { AttentionRequestMutationResult, EntityId, SpaceId } from '@tm8/contract';
 import { AttentionRequests } from '../attention/AttentionRequests';
 import { attentionPortFromSeam } from '../attention/port';
 import type { Seam } from '../data/seam';
@@ -28,8 +28,19 @@ export function attentionSectionFor(
   seam: Seam | undefined,
   spaceId: SpaceId | string | null | undefined,
   entityId: string | null | undefined,
-  /** The host's refetch, so the BADGE catches up after a settlement. */
-  onSettled?: () => void,
+  /**
+   * Fold a landed settlement into the host's store, so the tile's amber and the
+   * top-bar count catch up — `data.reconcileCommand`, which already accepts an
+   * `AttentionRequestMutationResult` and ingests its entity summary.
+   *
+   * THIS USED TO BE `() => data.pull?.(id)` AT ALL FIVE CALL SITES, and it was a
+   * no-op every single time. `pull` FILLS a panel's cache and returns early when
+   * the detail is already present — and on the panel showing this dock it always
+   * is, because that cache is why the panel renders (see `useGateData.pull`). So
+   * the write landed, the dock redrew, and the badge kept the stale number.
+   * Reconciling from the summary the mutation already returned costs no request.
+   */
+  onSettled?: (result: AttentionRequestMutationResult) => void,
 ): ReactNode | undefined {
   if (!seam || !spaceId || !entityId) return undefined;
   return (
