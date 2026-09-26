@@ -1720,6 +1720,13 @@
         "source": "server-router"
       },
       {
+        "operation": "auth.launch",
+        "method": "POST",
+        "path": "/v2/auth/launch",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "credentials.status",
         "method": "GET",
         "path": "/v2/identity/credentials",
@@ -6088,6 +6095,22 @@
           "auth",
           "claim",
           "reissue"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "auth.launch",
+        "noun": "auth",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/auth.launch",
+        "intentTags": [
+          "auth",
+          "launch"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
