@@ -144,6 +144,150 @@ describe('send paints in the same frame', () => {
   });
 });
 
+describe('a failed send leaves a turn already running alone', () => {
+  /**
+   * HINGES ON: `stillLive` in `send`'s catch (raised by L5). Our post failing
+   * says nothing about the turn already streaming in this thread; dropping to
+   * idle hid it (no Stop, no live turn) until its next frame.
+   */
+  it('keeps streaming, and the running turn stays the live one', async () => {
+    const script = scriptedPort();
+    const port: ChatHomePort = {
+      ...script.port,
+      postTurn: async () => { throw new Error('node refused the post'); },
+    };
+    const view = await openThread(port);
+    act(() => { script.emit(delta(0, 'Still working on the last one.')); });
+    await waitFor(() => expect(transcript(view).getAttribute('data-turn-phase')).toBe('streaming'));
+
+    // The button is Stop while a turn streams; Enter still sends.
+    fireEvent.change(view.getByLabelText('Message the chat agent'), { target: { value: 'And another thing.' } });
+    fireEvent.keyDown(view.getByLabelText('Message the chat agent'), { key: 'Enter' });
+    await waitFor(() => expect(view.getByText('node refused the post')).toBeTruthy());
+    expect(transcript(view).getAttribute('data-turn-phase')).toBe('streaming');
+    expect(view.getByTestId('tch-send-working')).toBeTruthy();
+    expect(view.getByText('Still working on the last one.').closest('article')?.getAttribute('data-live')).toBe('true');
+  });
+});
+
+describe('review of #875', () => {
+  /**
+   * B1 — HINGES ON: `if (!acked) restoreDraft()` running OUTSIDE the
+   * active-thread gate. The box is cleared on Send, so a failure that lands
+   * after the viewer switched away lost the words entirely (main cleared the
+   * draft only on success, so this was a regression the echo introduced).
+   */
+  it('a post that fails after the viewer switched away keeps the words', async () => {
+    const second = structuredClone(CHAT_HOME_FIXTURE_THREAD);
+    second.summary.rootId = '019f0000-0000-7000-8000-0000000000aa' as EntityId;
+    second.summary.title = 'Retire the flaky migration';
+    second.summary.updatedAt = '2026-08-11T08:20:00.000Z';
+    const { port: base } = createChatHomeFixturePort([CHAT_HOME_FIXTURE_THREAD, second]);
+    let fail = () => {};
+    const port: ChatHomePort = {
+      ...base,
+      postTurn: () => new Promise((_, reject) => { fail = () => reject(new Error('node refused')); }),
+    };
+    const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
+    const title = () => view.container.querySelector('.tch-title strong')?.textContent;
+    await waitFor(() => expect(title()).toBe('Plan the launch sequence'));
+    await waitFor(() => expect(view.queryByTestId('chat-detail-loading')).toBeNull());
+    type(view, 'Words I typed.');
+    fireEvent.click(view.getByRole('button', { name: /Retire the flaky migration/ }));
+    await waitFor(() => expect(title()).toBe('Retire the flaky migration'));
+    await act(async () => { fail(); });
+    fireEvent.click(view.getByRole('button', { name: /Plan the launch sequence/ }));
+    await waitFor(() => expect(title()).toBe('Plan the launch sequence'));
+    expect((view.getByLabelText('Message the chat agent') as HTMLTextAreaElement).value).toBe('Words I typed.');
+  });
+
+  /**
+   * S1 — HINGES ON: the reconnect effect's `clockFromRead` in its streaming
+   * arm. A turn that started while the socket was down had no clock, so the
+   * turn in progress read null — no shell, no live row — until its next frame.
+   */
+  it('a reconnect that finds a turn running starts its clock', async () => {
+    const script = scriptedPort();
+    const view = await openThread(script.port);
+    expect(transcript(view).getAttribute('data-turn-phase')).toBeNull();
+
+    script.setState('streaming');
+    act(() => { script.reconnect(); });
+    await waitFor(() => expect(view.getByTestId('tch-send-working')).toBeTruthy());
+    expect(transcript(view).getAttribute('data-turn-phase')).toBe('waiting');
+    expect(view.getByTestId('chat-turn-shell')).toBeTruthy();
+  });
+
+  /**
+   * N1a — HINGES ON: `refreshDetail` COALESCING (`running.set(rootId, true)`).
+   * A done that lands while an earlier re-read is in flight must get a read of
+   * its own: the in-flight one predates the final body, and dropping the done's
+   * request left the finished turn without it.
+   */
+  it('a done during an in-flight re-read still gets the final body', async () => {
+    const claimed = structuredClone(CHAT_HOME_FIXTURE_THREAD);
+    claimed.summary.state = 'streaming';
+    claimed.turns = [claimed.turns[0]!, {
+      messageId: AGENT_MSG, role: 'assistant', author: AGENT, createdAt: '2026-08-13T08:20:00.000Z',
+      body: 'Agent turn in progress.', parts: [], turnInFlight: true,
+    }];
+    const finished: ChatThreadDetail = {
+      ...claimed,
+      summary: { ...claimed.summary, state: 'idle' },
+      turns: [claimed.turns[0]!, { ...claimed.turns[1]!, body: 'Agent turn completed.', turnInFlight: false }],
+    };
+    const { port: base, controls } = createChatHomeFixturePort([claimed]);
+    let final = false;
+    let gate: Promise<void> | null = null;
+    let reads = 0;
+    const port: ChatHomePort = {
+      ...base,
+      async readThread() {
+        reads += 1;
+        // The snapshot is taken when the read STARTS; the hold only delays it.
+        const snapshot = structuredClone(final ? finished : claimed);
+        if (gate) await gate;
+        return snapshot;
+      },
+    };
+    const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
+    await waitFor(() => expect(view.getByTestId('tch-send-working')).toBeTruthy());
+    const before = reads;
+
+    let release = () => {};
+    gate = new Promise<void>((resolve) => { release = resolve; });
+    // A seq gap starts a re-read, held in flight with the pre-done snapshot.
+    act(() => {
+      controls.emit({ type: 'chat.turn.delta', chatId: CHAT, messageId: AGENT_MSG, seq: 1, part: { kind: 'done' } });
+    });
+    await waitFor(() => expect(reads).toBe(before + 1));
+    final = true;
+    act(() => { controls.emit(done()); });
+    gate = null;
+    await act(async () => { release(); });
+
+    await waitFor(() => expect(view.getByText('Agent turn completed.')).toBeTruthy());
+    expect(reads).toBe(before + 2);
+  });
+
+  /**
+   * N1b — HINGES ON: the ack RE-KEY (`settleOptimisticTurn`). When the stored
+   * copy's words differ from the echo (the server normalised them), only the
+   * id can tie the two together — the body match cannot.
+   */
+  it('the ack re-key replaces the echo even when the stored words differ', async () => {
+    const script = scriptedPort();
+    const port: ChatHomePort = {
+      ...script.port,
+      postTurn: (input) => script.port.postTurn({ ...input, body: `${input.body} [stored]` }),
+    };
+    const view = await openThread(port);
+    type(view, 'Keep going.');
+    await waitFor(() => expect(within(transcript(view)).getByText('Keep going. [stored]')).toBeTruthy());
+    expect(within(transcript(view)).queryByText('Keep going.')).toBeNull();
+  });
+});
+
 describe('the agent turn exists before any delta', () => {
   /**
    * HINGES ON: `shellTurn` (the turn clock started in `send`). Before this the
@@ -198,6 +342,11 @@ describe('the agent turn exists before any delta', () => {
     type(view, 'Audit the release.');
     expect(view.getByTestId('chat-user-body').textContent).toContain('Audit the release.');
     expect(view.getByTestId('chat-turn-shell')).toBeTruthy();
+    // D22: nothing the user typed waits behind a loading state, and the header
+    // shows no title until the server names the chat — not a placeholder.
+    expect(view.queryByTestId('chat-home-loading')).toBeNull();
+    expect(view.queryByTestId('chat-detail-loading')).toBeNull();
+    expect(view.container.querySelector('.tch-title strong')?.textContent).toBe('');
 
     await act(async () => { release(); });
     await waitFor(() => expect(view.queryByTestId('chat-detail-loading')).toBeNull());
@@ -312,6 +461,25 @@ describe('a done settles the turn it ends', () => {
       script.emit(done());
     });
     await waitFor(() => expect(transcript(view).getAttribute('data-turn-phase')).toBe('failed'));
+  });
+});
+
+describe('the done part names how a turn ended', () => {
+  /**
+   * N3 — HINGES ON: `turnFailureOf` deferring to the terminal done part's
+   * `reason`. An error ITEM inside a turn that the runtime still closed with
+   * `success` is not a failed turn; only `reason: 'error'` is.
+   */
+  it('an error item in a turn that ended in success is not held as failed', async () => {
+    const script = scriptedPort();
+    const view = await openThread(script.port);
+    act(() => {
+      script.emit({ type: 'chat.turn.delta', chatId: CHAT, messageId: AGENT_MSG, seq: 0, part: { kind: 'error', message: 'a tool hiccup' } });
+      script.emit({ type: 'chat.turn.delta', chatId: CHAT, messageId: AGENT_MSG, seq: 1, part: { kind: 'done', reason: 'success' } });
+      script.emit(done());
+    });
+    await waitFor(() => expect(view.queryByTestId('tch-send-working')).toBeNull());
+    expect(transcript(view).getAttribute('data-turn-phase')).toBeNull();
   });
 });
 

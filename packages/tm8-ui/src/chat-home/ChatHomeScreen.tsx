@@ -28,7 +28,7 @@ import {
   reconcileDetails,
   settleOptimisticTurn,
 } from './turn-model';
-import { inFlightAgentTurn, startTurnClock, useTurnInProgress, type TurnClock } from './turn-in-progress';
+import { clockFromRead, startTurnClock, useTurnInProgress, type TurnClock } from './turn-in-progress';
 import { defaultChatTeammateId } from './default-teammate';
 import { CockpitGraphStage } from './fleet/CockpitGraphStage';
 import { FleetPane } from './fleet/FleetPane';
@@ -592,6 +592,11 @@ export function ChatHomeScreen({
   useEffect(() => {
     detailRef.current = detail;
   }, [detail]);
+  /** The clock as of the last commit — what a failed send restores. */
+  const turnClockRef = useRef<TurnClock | null>(null);
+  useEffect(() => {
+    turnClockRef.current = turnClock;
+  }, [turnClock]);
 
   /** ANSWER the question "which conversation?" — `null` is a real answer here
    *  (the new-conversation composer), not the absence of one. Every deliberate
@@ -899,16 +904,10 @@ export function ChatHomeScreen({
            mid-turn. It started before this tab saw it, so its clock starts at
            the claim (the agent message's own createdAt), not at the read. */
         if (opened === 'streaming') {
-          setTurnClock((current) => {
-            if (current && current.chatId === selectedRootId) return current;
-            const claimed = inFlightAgentTurn(next);
-            const at = claimed ? Date.parse(claimed.createdAt) : Number.NaN;
-            return startTurnClock(
-              selectedRootId,
-              Number.isFinite(at) ? at : Date.now(),
-              claimed?.messageId ?? null,
-            );
-          });
+          setTurnClock((current) =>
+            current && current.chatId === selectedRootId
+              ? current
+              : clockFromRead(selectedRootId, next, Date.now()));
         }
       })
       .catch((error: unknown) => {
@@ -1123,6 +1122,11 @@ export function ChatHomeScreen({
             if (stoppedRootRef.current === rootId) return;
             if (next.summary.state === 'streaming') {
               setPhase((current) => (isBusyPhase(current) ? current : 'streaming'));
+              /* A turn that STARTED during the drop has no clock yet — without
+                 one the turn in progress reads null (no shell, no live row)
+                 until its next frame, which can be a minute away. */
+              setTurnClock((current) =>
+                current && current.chatId === rootId ? current : clockFromRead(rootId, next, Date.now()));
               return;
             }
             liveTurnsRef.current.clear();
@@ -1617,7 +1621,7 @@ export function ChatHomeScreen({
      * causes (D12: at full weight, no "sending" watermark), and the turn's
      * clock starts, which is what mounts the agent's turn shell under them.
      * A failed submit takes the echo back out and returns the words to the
-     * composer, exactly as they were typed.
+     * composer, exactly as they were typed (the raw draft, not the trim).
      */
     const clientMutationId = newMutationId(selectedRootId ? 'chat-turn' : 'chat-start');
     const echoId = optimisticTurnId(clientMutationId);
@@ -1630,9 +1634,14 @@ export function ChatHomeScreen({
       parts: [],
       optimistic: true,
     };
+    const typed = draft;
     setDraft((current) => (current.trim() === draftBody ? '' : current));
-    const restoreDraft = () => setDraft((current) => (current.trim() === '' ? draftBody : current));
+    /* Keyed to the ORIGIN thread's slot (the setter closes over its
+       `draftKey`), and it only fills an empty box — so it is safe to run
+       whichever thread is on screen when the failure lands. */
+    const restoreDraft = () => setDraft((current) => (current.trim() === '' ? typed : current));
     let acked = false;
+    const priorClock = turnClockRef.current;
     try {
       if (selectedRootId) {
         stoppedRootRef.current = null;
@@ -1698,8 +1707,10 @@ export function ChatHomeScreen({
         summary: {
           rootId: bornId,
           aboutId: aboutId ?? null,
-          title: draftBody,
-          preview: draftBody,
+          /* D22: no title until the server names the chat — an empty header,
+             never a guessed one that renames itself a beat later. */
+          title: '',
+          preview: '',
           updatedAt: echo.createdAt,
           replyCount: 1,
           config: {
@@ -1772,25 +1783,31 @@ export function ChatHomeScreen({
       setPhase('streaming');
       await refreshThreads(created.chatId);
     } catch (error) {
+      /* THE WORDS COME BACK EVEN IF THE VIEWER LEFT. The box was cleared on
+         Send, so a failure that lands after a thread switch must still return
+         them — to the origin thread's draft, where they were typed. */
+      if (!acked) restoreDraft();
       // Never let a failed send in one thread rewrite another's phase or show
       // its error under an unrelated conversation.
       if (activeRootRef.current === originRoot) {
         if (acked) return;
-        // D12: the echo goes, the words come back, the error says why.
+        // D12: the echo goes and the error says why.
         setDetail((current) =>
           current && current.summary.rootId.startsWith(OPTIMISTIC_CHAT_PREFIX)
             ? null
             : dropTurn(current, echoId),
         );
-        restoreDraft();
-        setTurnClock(null);
+        /* OUR post failed; a turn already streaming in this thread did not.
+           It keeps its phase and its clock. */
+        const stillLive = liveTurnsRef.current.size > 0;
+        setTurnClock(stillLive ? priorClock : null);
         expectingRootRef.current = null;
         preTurnIdsRef.current = null;
         if (continuingStoppedRoot) {
           stoppedRootRef.current = continuingStoppedRoot;
           setPhase('stopped-continuable');
         } else {
-          setPhase('idle');
+          setPhase(stillLive ? 'streaming' : 'idle');
         }
         setSubmitError(describeError(error));
       }
@@ -2900,15 +2917,18 @@ function turnFailureOf(
   frames: readonly ChatTurnFrame[],
   detail: ChatThreadDetail | null,
 ): string | null {
-  for (let index = frames.length - 1; index >= 0; index -= 1) {
-    const frame = frames[index]!;
-    if (frame.type === 'chat.turn.delta' && frame.messageId === messageId && frame.part.kind === 'error') {
-      return frame.part.message;
-    }
-  }
-  const turn = detail?.turns.find((candidate) => candidate.messageId === messageId);
-  const part = turn ? [...turn.parts].reverse().find((candidate) => candidate.kind === 'error') : undefined;
-  return part?.kind === 'error' ? part.message : null;
+  const parts = [
+    ...(detail?.turns.find((candidate) => candidate.messageId === messageId)?.parts ?? []),
+    ...frames.flatMap((frame) =>
+      frame.type === 'chat.turn.delta' && frame.messageId === messageId ? [frame.part] : []),
+  ];
+  const error = [...parts].reverse().find((part) => part.kind === 'error');
+  const message = error?.kind === 'error' ? error.message : 'The turn failed.';
+  /* The terminal `done` part names HOW the turn ended; when it is here it is
+     the authority. Without it (an older node), an error part is the tell. */
+  const done = parts.find((part) => part.kind === 'done' && part.reason !== undefined);
+  if (done?.kind === 'done') return done.reason === 'error' ? message : null;
+  return error ? message : null;
 }
 
 /** The transcript shows a pulse whenever work is pending but nothing visible is

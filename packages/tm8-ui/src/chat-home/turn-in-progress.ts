@@ -114,6 +114,17 @@ export function inFlightAgentTurn(detail: ChatThreadDetail | null): ChatTurn | n
   return null;
 }
 
+/**
+ * The clock for a turn that was ALREADY RUNNING when this tab read the thread —
+ * a reload, a thread switch, a reconnect. It started before we saw it, so it
+ * starts at the claim (the agent message's own `createdAt`), not at the read.
+ */
+export function clockFromRead(chatId: EntityId, detail: ChatThreadDetail, now: number): TurnClock {
+  const claimed = inFlightAgentTurn(detail);
+  const at = claimed ? Date.parse(claimed.createdAt) : Number.NaN;
+  return startTurnClock(chatId, Number.isFinite(at) ? at : now, claimed?.messageId ?? null);
+}
+
 /** Pure: the turn in progress, or `null` when nothing is in flight. */
 export function deriveTurnInProgress({ phase, detail, clock }: TurnInProgressInput): TurnInProgress | null {
   if (!clock) return null;

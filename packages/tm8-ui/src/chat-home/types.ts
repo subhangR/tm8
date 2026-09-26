@@ -15,7 +15,7 @@ export type ChatTurnItem =
   | { kind: 'tool_result'; toolCallId: string; content: unknown; isError?: boolean }
   | { kind: 'usage'; usage: ChatUsage }
   | { kind: 'error'; message: string }
-  | { kind: 'done' };
+  | { kind: 'done'; reason?: 'success' | 'error' | 'interrupted' | 'closed' };
 
 export interface ChatUsage {
   input_tokens?: number;
