@@ -268,6 +268,33 @@ describe.sequential('attention v2 verbs (migration 256)', () => {
       expect(await deliver(r.resolutionBatchId as string, f.otherIdentity)).toEqual({ posted: [] });
     });
 
+    it('INV 5 (review #1): a deleted root never poisons the batch — the live session still gets its note, the orphan row is abandoned', async () => {
+      // A throwaway task with a live session on it and a request pinned to the task itself.
+      const [{ tmp }] = await q<{ tmp: string }>('select internal.new_id()::text tmp');
+      await database.transaction(async (client) => {
+        await client.query('set local role tm8_graph_owner');
+        await client.query(`insert into public.entities(id,space_id,kind,parent_id,position,created_by) values($1,$2,'task',null,20,$3)`, [tmp, f.spaceId, f.ownerId]);
+        await client.query(`insert into public.tasks(entity_id,title,work_status) values($1,'doomed','open')`, [tmp]);
+        await client.query(`insert into public.edges(space_id,src_id,dst_id,type,created_by) values($1,$2,$3,'working_on',$4)`, [f.spaceId, f.lone, tmp, f.ownerId]);
+      });
+      const orphan = await ask(tmp, 'unknown source on a task that will be deleted', null);
+      const live = await ask(tmp, 'live session asks', f.lone);
+      const r = await resolve(tmp, 'answer');
+      await q('update public.entities set deleted_at = now() where id = $1', [tmp]);
+      await makeDue(r.resolutionBatchId as string);
+      const out = await deliver(r.resolutionBatchId as string);
+      expect((out.posted as Row[]).map((p) => p.anchorId)).toEqual([f.lone]);
+      expect(out.abandoned).toBe(1);
+      const rows = await q<Row>('select id, note_message_id is not null delivered, note_deliver_after is null abandoned from public.attention_requests where id = any($1::uuid[])', [[orphan.attentionRequestId, live.attentionRequestId]]);
+      expect(Object.fromEntries(rows.map((x) => [x.id, [x.delivered, x.abandoned]]))).toEqual({
+        [orphan.attentionRequestId as string]: [false, true],
+        [live.attentionRequestId as string]: [true, false],
+      });
+      // Nothing of this batch is listed again.
+      expect((await rpc(f.ownerIdentity, 'public.list_due_attention_notes(50)') as Row[]).filter((b) => b.batchId === r.resolutionBatchId)).toEqual([]);
+      await q('delete from public.edges where src_id = $1 and dst_id = $2', [f.lone, tmp]);
+    });
+
     it('R11: a resolve without a note still sends the one-line message', async () => {
       await ask(f.taskId, 'silent resolve', f.liveA);
       const r = await resolve(f.taskId, null);
@@ -342,6 +369,28 @@ describe.sequential('attention v2 verbs (migration 256)', () => {
       await expect(rpc(f.ownerIdentity, 'public.withdraw_attention_request($1, null, null, $2)', [human.attentionRequestId, cmid()]))
         .rejects.toMatchObject({ code: 'TAC01' });
       expect(await messages()).toBe(before);
+    });
+
+    it('review #3: a sibling session of the same persona cannot withdraw another session\'s request', async () => {
+      const a = await ask(f.taskId, 'mine, not yours', f.liveA);
+      await expect(rpc(f.ownerIdentity, 'public.withdraw_attention_request($1, null, $2, $3, $4)', [a.attentionRequestId, f.agentId, cmid(), f.liveB]))
+        .rejects.toThrow(/session that raised/);
+      const w = await rpc(f.ownerIdentity, 'public.withdraw_attention_request($1, null, $2, $3, $4)', [a.attentionRequestId, f.agentId, cmid(), f.liveA]);
+      expect(w).toMatchObject({ affectedCount: 1 });
+    });
+  });
+
+  describe('update reopen (review #4)', () => {
+    it('reopening a row the same session re-asked is a named conflict, not a raw 23505', async () => {
+      await resetOpen();
+      const a = await ask(f.docId, 'asked twice', f.liveA);
+      const r = await resolve(f.docId, null);
+      await q(`update public.attention_requests set note_deliver_after = null where resolution_batch_id = $1`, [r.resolutionBatchId]);
+      await ask(f.docId, 'asked twice', f.liveA);
+      const [{ version }] = await q<{ version: number }>('select version from public.attention_requests where id = $1', [a.attentionRequestId]);
+      await expect(rpc(f.ownerIdentity, `public.update_attention_request($1, $2, null, null, 'open', null, null, $3)`, [a.attentionRequestId, version, cmid()]))
+        .rejects.toMatchObject({ code: 'TAC01' });
+      await resetOpen();
     });
   });
 

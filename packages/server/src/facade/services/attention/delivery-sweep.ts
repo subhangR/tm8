@@ -56,6 +56,8 @@ interface PostedNote {
 export interface AttentionDeliveryOutcome {
   batches: number;
   messages: number;
+  /** Rows with nowhere live to deliver to; 256 stops listing them. */
+  abandoned: number;
   failed: string[];
 }
 
@@ -101,14 +103,22 @@ export async function runAttentionDeliveryTick(options: AttentionDeliveryJobOpti
   ));
   if (due.length === 0) return { skipped: true, reason: 'no attention notes due' };
 
-  const outcome: AttentionDeliveryOutcome = { batches: 0, messages: 0, failed: [] };
+  const outcome: AttentionDeliveryOutcome = { batches: 0, messages: 0, abandoned: 0, failed: [] };
   for (const batch of due) {
     const claims: DbClaims = batch.resolverIdentityId
       ? { identityId: batch.resolverIdentityId, requestId: `attention-note:${batch.batchId}` }
       : { ...owner, requestId: `attention-note:${batch.batchId}` };
     let posted: PostedNote[];
     try {
-      posted = normalizePosted(await options.db.rpc<unknown>(claims, 'public.deliver_attention_batch', [batch.batchId]));
+      const raw = await options.db.rpc<unknown>(claims, 'public.deliver_attention_batch', [batch.batchId]);
+      posted = normalizePosted(raw);
+      const r = (raw ?? {}) as { abandoned?: unknown; failed?: unknown };
+      if (typeof r.abandoned === 'number') outcome.abandoned += r.abandoned;
+      // Per-anchor refusals the door absorbed (it retried on the root, or
+      // abandoned the rows): reported, never fatal to the batch.
+      if (Array.isArray(r.failed)) {
+        for (const f of r.failed) outcome.failed.push(`${batch.batchId}: ${JSON.stringify(f)}`);
+      }
     } catch (error) {
       outcome.failed.push(`${batch.batchId}: ${describe(error)}`);
       continue;

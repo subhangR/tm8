@@ -7,7 +7,9 @@ import { describe, expect, it } from 'vitest';
 
 import type { Db, DbClaims } from '../../src/db/types.js';
 import type { RequestContext } from '../../src/http/types.js';
+import type { FacadeDeps } from '../../src/facade/deps.js';
 import {
+  AttentionService,
   createAttentionDeliveryJob,
   runAttentionDeliveryTick,
   sourceSessionOf,
@@ -100,5 +102,27 @@ describe('sourceSessionOf (F1a)', () => {
     expect(sourceSessionOf(ctx({ kind: 'bearer' }))).toBeNull();
     expect(sourceSessionOf(ctx({ kind: 'auto-owner', workSessionId: 'ws' } as RequestContext['identity']))).toBeNull();
     expect(sourceSessionOf({ identity: { kind: 'anonymous' }, body: { workSessionId: 'forged' } } as unknown as RequestContext)).toBeNull();
+  });
+});
+
+describe('Seen is per person (review #2)', () => {
+  const touched: string[] = [];
+  const deps = {
+    owner: async () => ({ identityId: 'owner-identity', isNodeAdmin: true }),
+    db: { tx: async () => { touched.push('tx'); return {}; } },
+  } as unknown as FacadeDeps;
+  const service = new AttentionService(deps);
+  const agentCtx = (body: unknown) => ({
+    identity: { kind: 'bearer', identityId: 'owner-identity', workSessionId: 'session-1' },
+    params: { entityId: '00000000-0000-4000-8000-000000000001', requestId: '00000000-0000-4000-8000-000000000002' },
+    query: new URLSearchParams(),
+    body,
+  }) as unknown as RequestContext;
+
+  it('an agent session cannot mark Seen, directly or through the legacy acknowledge', async () => {
+    await expect(service.markSeen(agentCtx({ clientMutationId: 'c' }))).rejects.toMatchObject({ code: 'forbidden' });
+    await expect(service.update(agentCtx({ clientMutationId: 'c', expectedVersion: 1, status: 'acknowledged' })))
+      .rejects.toMatchObject({ code: 'forbidden' });
+    expect(touched).toEqual([]);
   });
 });

@@ -93,6 +93,17 @@ export function sourceSessionOf(ctx: RequestContext): string | null {
   return ctx.identity.workSessionId ?? ctx.identity.runtimeChatId ?? null;
 }
 
+/**
+ * Seen is PER PERSON (G4). An agent's bearer carries its owner's identity, so
+ * a Seen written from an agent session would land on the HUMAN and clear their
+ * "new" state. Agents cannot mark Seen; the refusal is explicit, not silent.
+ */
+function refuseSeenFromAgent(ctx: RequestContext): void {
+  if (sourceSessionOf(ctx) !== null) {
+    throw new CollabError('forbidden', 'seen is per person: an agent session cannot mark attention seen');
+  }
+}
+
 function fingerprint(scope: string, value: unknown): string {
   return createHash('sha256').update(JSON.stringify({ scope, value })).digest('base64url').slice(0, 22);
 }
@@ -260,6 +271,8 @@ export class AttentionService {
     const owner = await this.deps.owner();
     const requestId = requireUuidParam(ctx, 'requestId');
     const input = ctx.body as UpdateAttentionRequestInput;
+    // `acknowledged` is legacy Seen (256 writes attention_seen for it).
+    if (input.status === 'acknowledged') refuseSeenFromAgent(ctx);
     const envelope = commandEnvelope(ctx);
     return this.deps.db.tx(claimsFor(owner, ctx, envelope), async (q) => {
       const raw = await q.rpc<AttentionMutationRpcResult>('update_attention_request', [
@@ -297,6 +310,7 @@ export class AttentionService {
   readonly markSeen = async (ctx: RequestContext): Promise<AttentionRequestMutationResult> => {
     const owner = await this.deps.owner();
     const entityId = requireUuidParam(ctx, 'entityId');
+    refuseSeenFromAgent(ctx);
     const envelope = commandEnvelope(ctx);
     return this.deps.db.tx(claimsFor(owner, ctx, envelope), async (q) => {
       const raw = await q.rpc<AttentionMutationRpcResult>('mark_attention_seen', [
@@ -332,6 +346,9 @@ export class AttentionService {
         input.expectedVersion ?? null,
         envelope.actorId ?? null,
         envelope.clientMutationId ?? null,
+        // Only the session that raised it may withdraw it (sibling sessions
+        // share one persona).
+        sourceSessionOf(ctx),
       ]);
       return attentionMutationResult(q, raw, owner.identityId);
     });

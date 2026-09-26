@@ -542,20 +542,18 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
   }
 
   if (f.needsActorId) {
-    // Attention v2 (G1, Q17): "needs me" means ONE thing — the entity has an
-    // open request ASSIGNED to me, its own or rolled up to it (a session's or
-    // form's request counts on its task, R3). The roll-up rule is 255's
-    // `attention_root_id`, the rule `attention_rollup` is built on; the
-    // candidates bound the scan to the entity and its one-hop sources. Review
-    // and mentions are no longer part of it (use inReviewForActorId /
-    // mentionedActorId for those).
+    // Attention v2 (G1, Q17): "needs me" means ONE thing — an open request
+    // ASSIGNED to me counts on its roll-up root (a session's or form's request
+    // counts on its task, R3) and on the entity it is pinned to, the same set
+    // the entity's badge and `attentionRequests.list?entityId=` show. Driven
+    // from the small side (my assigned open requests), then matched by id.
+    // Review and mentions are no longer part of it (inReviewForActorId /
+    // mentionedActorId). Exact actor id: the assignee is always a member.
     const actor = p.add(assertUuid(f.needsActorId, 'filters.needsActorId'));
-    where.push(`exists (
-      select 1 from public.attention_requests nar
-       where nar.entity_id = any(internal.attention_root_candidates(e.id))
-         and nar.status in ('open', 'acknowledged')
-         and nar.assignee_id = ${actor}
-         and internal.attention_root_id(nar.entity_id) = e.id)`);
+    where.push(`e.id in (
+      select v.id from public.attention_requests nar
+       cross join lateral (values (internal.attention_root_id(nar.entity_id)), (nar.entity_id)) v(id)
+       where nar.assignee_id = ${actor} and nar.status in ('open', 'acknowledged'))`);
   }
 
   return where;

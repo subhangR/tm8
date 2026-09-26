@@ -33,6 +33,11 @@
 -- =============================================================================
 set role tm8_graph_owner;
 
+-- "Needs me" (collections needsActorId) reads open requests by assignee.
+create index attention_requests_open_assignee_idx
+  on public.attention_requests(assignee_id)
+  where assignee_id is not null and status in ('open', 'acknowledged');
+
 -- -----------------------------------------------------------------------------
 -- Shared helpers.
 -- -----------------------------------------------------------------------------
@@ -102,6 +107,7 @@ declare
   reason_text text := btrim(coalesce(p_reason, ''));
   request_id uuid;
   deduped boolean := false;
+  attempt integer;
   result jsonb;
 begin
   perform internal.require_replay_principal(p_client_mutation_id);
@@ -150,23 +156,35 @@ begin
 
   -- origin is left to 255's BEFORE trigger: agent for a teammate persona,
   -- human otherwise. The public create never writes `system`.
-  insert into public.attention_requests(
-    space_id, entity_id, reason, points, requested_by,
-    source_session_id, level, action_type, assignee_id)
-  values (e.space_id, p_entity_id, reason_text, pts, actor,
-          p_source_session_id, lvl, typ, p_assignee_id)
-  on conflict (entity_id, source_session_id, md5(reason))
-    where status = 'open' and source_session_id is not null
-  do nothing
-  returning id into request_id;
-
-  if request_id is null then
+  -- Two passes: if the conflicting open row is settled between the insert and
+  -- the read, the second pass inserts instead of returning nothing.
+  for attempt in 1..2 loop
+    insert into public.attention_requests(
+      space_id, entity_id, reason, points, requested_by,
+      source_session_id, level, action_type, assignee_id)
+    values (e.space_id, p_entity_id, reason_text, pts, actor,
+            p_source_session_id, lvl, typ, p_assignee_id)
+    on conflict (entity_id, source_session_id, md5(reason))
+      where status = 'open' and source_session_id is not null
+    do nothing
+    returning id into request_id;
+    exit when request_id is not null;
     -- Q10: the same session asking the same thing again is a no-op that
     -- returns the open row, so its wait clock keeps running.
     select id into request_id from public.attention_requests
      where entity_id = p_entity_id and source_session_id = p_source_session_id
        and md5(reason) = md5(reason_text) and status = 'open';
-    deduped := true;
+    if request_id is not null then
+      deduped := true;
+      exit;
+    end if;
+  end loop;
+  if request_id is null then
+    raise exception 'attention request could not be created' using errcode = '40001';
+  end if;
+
+  if deduped then
+    null;
   else
     update public.entities set activity_at = now(), updated_at = now() where id = p_entity_id;
     perform internal.record_activity(e.space_id, p_entity_id, actor, 'updated', request_id,
@@ -227,6 +245,9 @@ begin
   end if;
   -- A client batch id names ONE resolve; reusing it would let Undo reopen
   -- somebody else's rows.
+  -- Serializes two resolves that name the same client batch id, so the check
+  -- below cannot pass twice and one batch never spans two roots.
+  perform pg_advisory_xact_lock(hashtext('attention-batch:' || batch::text));
   if p_resolution_batch_id is not null
      and exists (select 1 from public.attention_requests where resolution_batch_id = p_resolution_batch_id) then
     perform internal.attention_conflict('batch_id_in_use', 'resolution batch id is already in use');
@@ -308,20 +329,25 @@ begin
     return replay;
   end if;
 
-  -- Lock the batch FIRST: the delivery sweep takes the same locks, so undo and
-  -- delivery serialize on these rows.
+  -- Authorize BEFORE locking, so a non-member holding a batch id can neither
+  -- lock rows nor learn more than "not found". Then lock the batch: the
+  -- delivery sweep takes the same locks, so undo and delivery serialize.
+  select ar.space_id into space from public.attention_requests ar
+   where ar.resolution_batch_id = p_batch_id limit 1;
+  if space is null or not internal.is_space_member(space) then
+    raise exception 'resolution batch not found' using errcode = 'P0002';
+  end if;
+  actor := internal.resolve_actor(p_actor_id, space);
+  perform internal.bind_actor(actor);
   perform 1 from public.attention_requests where resolution_batch_id = p_batch_id for update;
-  select ar.space_id, ar.entity_id, ar.resolved_at into space, first_entity, resolved_first
+  select ar.entity_id, ar.resolved_at into first_entity, resolved_first
     from public.attention_requests ar
    where ar.resolution_batch_id = p_batch_id
    order by ar.resolved_at nulls last, ar.id
    limit 1;
-  if space is null then
+  if first_entity is null then
     raise exception 'resolution batch not found' using errcode = 'P0002';
   end if;
-  perform internal.require_space_member(space);
-  actor := internal.resolve_actor(p_actor_id, space);
-  perform internal.bind_actor(actor);
 
   if exists (select 1 from public.attention_requests
               where resolution_batch_id = p_batch_id and resolved_by is distinct from actor) then
@@ -378,7 +404,11 @@ create or replace function public.withdraw_attention_request(
   p_request_id uuid,
   p_expected_version integer default null,
   p_actor_id uuid default null,
-  p_client_mutation_id text default null
+  p_client_mutation_id text default null,
+  -- The caller's bearer session (server-stamped, like create's). Worker
+  -- sessions share one teammate persona, so the persona alone would let a
+  -- sibling session withdraw another's question.
+  p_source_session_id uuid default null
 ) returns jsonb
 language plpgsql security definer set search_path = public, internal, pg_temp as $$
 declare
@@ -395,14 +425,21 @@ begin
     return replay;
   end if;
 
-  select * into current from public.attention_requests where id = p_request_id for update;
-  if not found then raise exception 'attention request not found' using errcode = 'P0002'; end if;
-  perform internal.require_space_member(current.space_id);
+  -- Authorize before locking (see unresolve).
+  select * into current from public.attention_requests where id = p_request_id;
+  if not found or not internal.is_space_member(current.space_id) then
+    raise exception 'attention request not found' using errcode = 'P0002';
+  end if;
   actor := internal.resolve_actor(p_actor_id, current.space_id);
   perform internal.bind_actor(actor);
+  select * into current from public.attention_requests where id = p_request_id for update;
 
   if current.requested_by is distinct from actor then
     raise exception 'only the agent that raised an attention request can withdraw it' using errcode = '42501';
+  end if;
+  if p_source_session_id is not null and current.source_session_id is not null
+     and current.source_session_id <> p_source_session_id then
+    raise exception 'only the session that raised an attention request can withdraw it' using errcode = '42501';
   end if;
   if p_expected_version is not null and current.version <> p_expected_version then
     raise exception 'version conflict on attention request %', p_request_id
@@ -546,6 +583,19 @@ begin
   end if;
   seen_only := p_status = 'acknowledged' and p_reason is null and p_points is null and p_resolution_note is null;
 
+  -- Reopening a row whose (session, reason) or signal was re-raised meanwhile
+  -- would duplicate the open one (Q10): a named conflict, not a raw 23505.
+  if p_status = 'open' and current.status <> 'open' and exists (
+    select 1 from public.attention_requests o
+     where o.status = 'open' and o.entity_id = current.entity_id and o.id <> current.id
+       and ((current.source_session_id is not null and o.source_session_id = current.source_session_id
+             and md5(o.reason) = md5(coalesce(btrim(p_reason), current.reason)))
+         or (current.signal_key is not null and o.signal_key = current.signal_key))
+  ) then
+    perform internal.attention_conflict('duplicate_open',
+      'the same session already has this request open; that one is the live one');
+  end if;
+
   if not seen_only then
     update public.attention_requests
        set reason = coalesce(btrim(p_reason), reason),
@@ -636,46 +686,71 @@ declare
   body text;
   posted jsonb;
   message_id uuid;
+  posted_to uuid;
   out_rows jsonb := '[]'::jsonb;
+  failed jsonb := '[]'::jsonb;
+  abandoned integer := 0;
 begin
   perform internal.require_identity();
   -- The same locks Undo takes, then the wall clock: whichever commits first
   -- wins, and a reopened row is simply no longer due here.
-  perform 1 from public.attention_requests where resolution_batch_id = p_batch_id for update;
-  select ar.space_id, ar.resolved_by into space, resolver
-    from public.attention_requests ar
-   where ar.resolution_batch_id = p_batch_id and ar.status = 'resolved'
-     and ar.note_message_id is null and ar.note_deliver_after <= clock_timestamp()
-   limit 1;
+  select ar.space_id into space from public.attention_requests ar
+   where ar.resolution_batch_id = p_batch_id limit 1;
   if space is null then
     return jsonb_build_object('posted', out_rows);
   end if;
   perform internal.require_space_member(space);
+  perform 1 from public.attention_requests where resolution_batch_id = p_batch_id for update;
+  select ar.resolved_by into resolver
+    from public.attention_requests ar
+   where ar.resolution_batch_id = p_batch_id and ar.status = 'resolved'
+     and ar.note_message_id is null and ar.note_deliver_after <= clock_timestamp()
+   limit 1;
+  if resolver is null then
+    return jsonb_build_object('posted', out_rows);
+  end if;
 
   resolver_name := coalesce(
     (select nullif(btrim(m.display_name), '') from public.members m where m.entity_id = resolver),
     (select nullif(btrim(t.name), '') from public.team_members t where t.entity_id = resolver),
     'a teammate');
 
+  -- Where each row's note goes: the raising session or chat while it is
+  -- live; otherwise its roll-up root; otherwise (root deleted meanwhile) the
+  -- request's own entity. `fallback_id` is where a failed post is retried.
+  -- A row with nowhere live to go is ABANDONED (note_deliver_after cleared),
+  -- so the sweep stops listing it instead of retrying it for an hour.
   for target in
     with due as (
-      select ar.id, ar.reason, ar.resolution_note, ar.created_at, ar.source_session_id,
-             case when internal.attention_source_live(ar.source_session_id) then ar.source_session_id
-                  else internal.attention_root_id(ar.entity_id) end as anchor_id
+      select ar.id, ar.reason, ar.resolution_note, ar.created_at,
+             (select x.id from public.entities x
+               where x.id = internal.attention_root_id(ar.entity_id) and x.deleted_at is null) as root_live,
+             (select x.id from public.entities x
+               where x.id = ar.entity_id and x.deleted_at is null) as own_live,
+             case when internal.attention_source_live(ar.source_session_id) then ar.source_session_id end as source_live
         from public.attention_requests ar
        where ar.resolution_batch_id = p_batch_id and ar.status = 'resolved'
          and ar.note_message_id is null and ar.note_deliver_after <= clock_timestamp()
+    ),
+    routed as (
+      select d.*, coalesce(d.source_live, d.root_live, d.own_live) as anchor_id,
+             coalesce(d.root_live, d.own_live) as fallback_id
+        from due d
     )
-    select d.anchor_id,
-           ak.kind as anchor_kind,
-           array_agg(d.id order by d.created_at, d.id) as ids,
-           array_agg(d.reason order by d.created_at, d.id) as reasons,
-           max(d.resolution_note) as note
-      from due d
-      join public.entities ak on ak.id = d.anchor_id
-     group by d.anchor_id, ak.kind
-     order by d.anchor_id
+    select r.anchor_id,
+           (array_agg(r.fallback_id order by r.created_at, r.id))[1] as fallback_id,
+           array_agg(r.id order by r.created_at, r.id) as ids,
+           array_agg(r.reason order by r.created_at, r.id) as reasons,
+           max(r.resolution_note) as note
+      from routed r
+     group by r.anchor_id
+     order by r.anchor_id nulls last
   loop
+    if target.anchor_id is null then
+      update public.attention_requests set note_deliver_after = null where id = any(target.ids);
+      abandoned := abandoned + cardinality(target.ids);
+      continue;
+    end if;
     if cardinality(target.reasons) = 1 then
       body := format('Attention resolved by %s: "%s"', resolver_name, target.reasons[1]);
     else
@@ -686,25 +761,51 @@ begin
       body := body || E'\n\n' || target.note;
     end if;
 
-    posted := public.w2_post_message_batch(
-      array[target.anchor_id], body, null, '{}'::uuid[], '{}'::uuid[], null, resolver,
-      format('attention-note:%s:%s', p_batch_id, target.anchor_id));
-    message_id := (posted -> 'messageIds' ->> 0)::uuid;
+    -- Each anchor is its own subtransaction: one refused post (an anchor the
+    -- resolver may no longer write to, a resolver who left) never rolls back
+    -- the notes already posted to the other anchors of this batch.
+    message_id := null;
+    posted_to := target.anchor_id;
+    begin
+      posted := public.w2_post_message_batch(
+        array[target.anchor_id], body, null, '{}'::uuid[], '{}'::uuid[], null, resolver,
+        format('attention-note:%s:%s', p_batch_id, target.anchor_id));
+      message_id := (posted -> 'messageIds' ->> 0)::uuid;
+    exception when others then
+      failed := failed || jsonb_build_object('anchorId', target.anchor_id, 'error', sqlerrm);
+      if target.fallback_id is not null and target.fallback_id <> target.anchor_id then
+        begin
+          posted := public.w2_post_message_batch(
+            array[target.fallback_id], body, null, '{}'::uuid[], '{}'::uuid[], null, resolver,
+            format('attention-note:%s:%s', p_batch_id, target.fallback_id));
+          message_id := (posted -> 'messageIds' ->> 0)::uuid;
+          posted_to := target.fallback_id;
+        exception when others then
+          failed := failed || jsonb_build_object('anchorId', target.fallback_id, 'error', sqlerrm);
+        end;
+      end if;
+    end;
+
+    if message_id is null then
+      update public.attention_requests set note_deliver_after = null where id = any(target.ids);
+      abandoned := abandoned + cardinality(target.ids);
+      continue;
+    end if;
 
     update public.attention_requests set note_message_id = message_id where id = any(target.ids);
 
     out_rows := out_rows || jsonb_build_object(
       'messageId', message_id,
-      'anchorId', target.anchor_id,
-      'anchorKind', target.anchor_kind,
+      'anchorId', posted_to,
+      'anchorKind', (select k.kind from public.entities k where k.id = posted_to),
       -- A chat's turn runs as the member who configured it (176), so the
       -- server's post-commit wake needs that identity.
       'chatIdentityId', (select c.configured_by_identity_id from public.chats c
-                          where c.entity_id = target.anchor_id),
+                          where c.entity_id = posted_to),
       'requestIds', to_jsonb(target.ids));
   end loop;
 
-  return jsonb_build_object('posted', out_rows, 'spaceId', space);
+  return jsonb_build_object('posted', out_rows, 'spaceId', space, 'abandoned', abandoned, 'failed', failed);
 end
 $$;
 
@@ -721,7 +822,7 @@ grant execute on function internal.attention_source_live(uuid) to tm8_app, tm8_g
 revoke all on function public.create_attention_request(uuid, text, integer, uuid, text, uuid, text, text, uuid) from public;
 revoke all on function public.resolve_attention_root(uuid, text, uuid, text, uuid) from public;
 revoke all on function public.unresolve_attention_batch(uuid, uuid, text) from public;
-revoke all on function public.withdraw_attention_request(uuid, integer, uuid, text) from public;
+revoke all on function public.withdraw_attention_request(uuid, integer, uuid, text, uuid) from public;
 revoke all on function public.mark_attention_seen(uuid, text) from public;
 revoke all on function public.list_due_attention_notes(integer) from public;
 revoke all on function public.deliver_attention_batch(uuid) from public;
@@ -730,7 +831,7 @@ revoke all on function public.update_attention_request(uuid, integer, text, inte
 grant execute on function public.create_attention_request(uuid, text, integer, uuid, text, uuid, text, text, uuid) to tm8_app;
 grant execute on function public.resolve_attention_root(uuid, text, uuid, text, uuid) to tm8_app;
 grant execute on function public.unresolve_attention_batch(uuid, uuid, text) to tm8_app;
-grant execute on function public.withdraw_attention_request(uuid, integer, uuid, text) to tm8_app;
+grant execute on function public.withdraw_attention_request(uuid, integer, uuid, text, uuid) to tm8_app;
 grant execute on function public.mark_attention_seen(uuid, text) to tm8_app;
 grant execute on function public.list_due_attention_notes(integer) to tm8_app;
 grant execute on function public.deliver_attention_batch(uuid) to tm8_app;
