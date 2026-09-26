@@ -278,6 +278,13 @@ export interface ChatTurn {
   /** Server wire marker: this is a chat turn's agent message and the turn has
    *  not completed, so `body` is the claim placeholder, not content. */
   turnInFlight?: boolean;
+  /**
+   * CLIENT-ONLY: this turn was painted on Send, before the server acked it. Its
+   * `messageId` is `optimistic:<clientMutationId>` until the ack names the real
+   * message, and the next snapshot that carries that message replaces it. Never
+   * on the wire.
+   */
+  optimistic?: true;
 }
 
 export interface ChatThreadDetail {
@@ -341,6 +348,10 @@ export interface ChatStartResult {
   teammateId: EntityId;
   model: string;
   mode: ChatMode;
+  /** The opening message `chat.start` stored — what the optimistic first turn
+   *  is re-keyed to. Optional: a port that does not know it leaves the
+   *  optimistic turn to the next snapshot. */
+  messageId?: EntityId;
 }
 
 export interface ChatPostResult {
@@ -389,6 +400,13 @@ export interface ChatHomePort {
   postTurn(input: ChatPostInput): Promise<ChatPostResult>;
   interrupt?(chatId: EntityId): Promise<void>;
   subscribe(listener: (frame: ChatTurnFrame) => void): () => void;
+  /**
+   * The live socket came back after dropping. Chat frames are NOT durable
+   * events — nothing replays the deltas published while it was down — so the
+   * screen re-reads the open thread on this. Absent on a port with no socket
+   * (fixtures).
+   */
+  subscribeReconnect?(listener: () => void): () => void;
   /** Live context readings. Absent on a port with no live runtime (fixtures). */
   subscribeContext?(listener: (frame: ChatContextFrame) => void): () => void;
 }
