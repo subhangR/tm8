@@ -780,6 +780,53 @@ describe('W10a (T35/T36/T44) agent G and private credentials in A — refused by
   });
 });
 
+describe('W10b (a1/T37) agent G cannot create, make public, rekey or revoke a credential in A — refused by kind', () => {
+  // Every writer is require_human_auth_kind first, so G is refused even on
+  // H's own credential; the paired positive is H's browser token on the same
+  // row. Ciphertext and hint are fakes of the right shape.
+  const fakeCreate = (id: string, visibility: string | null) => [
+    id, fixture.spaceA, 'anthropic', 'api_key', `w10b ${id.slice(0, 8)}`, 'Fk0y',
+    Buffer.alloc(17, 7), Buffer.alloc(12, 3), null, visibility, null, false,
+  ];
+  let ownedByH: string;
+  beforeAll(async () => {
+    ownedByH = randomUUID();
+    await asIdentity(fixture.identityH, (q) => q.rpc('create_space_credential', fakeCreate(ownedByH, 'private')));
+  });
+
+  for (const [kind, mint] of AGENT_KINDS) {
+    it(`${kind}: create (public, private) is refused`, async () => {
+      const token = await mint();
+      for (const visibility of ['public', 'private']) {
+        expect(await outcome(() => asToken(token, (q) =>
+          q.rpc('create_space_credential', fakeCreate(randomUUID(), visibility))))).toBe('42501');
+      }
+    });
+    it(`${kind}: setVisibility(public), rekey, consent and revoke of H's own credential are refused`, async () => {
+      const token = await mint();
+      expect(await outcome(() => asToken(token, (q) =>
+        q.rpc('set_space_credential_visibility', [ownedByH, 'public'])))).toBe('42501');
+      expect(await outcome(() => asToken(token, (q) =>
+        q.rpc('rekey_space_credential', [ownedByH, 'Fk0z', Buffer.alloc(17, 9), Buffer.alloc(12, 4), null])))).toBe('42501');
+      expect(await outcome(() => asToken(token, (q) =>
+        q.rpc('set_space_credential_default_consent', [ownedByH, true])))).toBe('42501');
+      expect(await outcome(() => asToken(token, (q) => q.rpc('delete_space_credential', [ownedByH])))).toBe('42501');
+    });
+  }
+  it('positive — H (browser) creates, makes public, re-keys, consents and revokes the same row', async () => {
+    const token = await mintBrowser(fixture.accountH, fixture.identityH);
+    expect(await outcome(() => asToken(token, (q) =>
+      q.rpc('create_space_credential', fakeCreate(randomUUID(), 'public'))))).toBe('ok');
+    expect(await outcome(() => asToken(token, (q) =>
+      q.rpc('set_space_credential_visibility', [ownedByH, 'public'])))).toBe('ok');
+    expect(await outcome(() => asToken(token, (q) =>
+      q.rpc('rekey_space_credential', [ownedByH, 'Fk0z', Buffer.alloc(17, 9), Buffer.alloc(12, 4), null])))).toBe('ok');
+    expect(await outcome(() => asToken(token, (q) =>
+      q.rpc('set_space_credential_default_consent', [ownedByH, true])))).toBe('ok');
+    expect(await outcome(() => asToken(token, (q) => q.rpc('delete_space_credential', [ownedByH])))).toBe('ok');
+  });
+});
+
 describe('T29 member_space_ids() policies stay once per statement under a pinned token (W0a)', () => {
   // 218's reason for existing, re-asked with the pin bound: the pin is inlined
   // into member_space_ids() (A10), so the policy must still resolve membership
