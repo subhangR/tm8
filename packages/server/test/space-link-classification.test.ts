@@ -34,6 +34,7 @@ const PASSES: Record<string, string> = {
   'containers.stream': 'a stream op: refused by the executor (stream_op) before this list',
   'launch.suggest': 'credential USE of the advisor key as the member; starts no session',
   'launch.defaults': 'reads launch defaults',
+  'launch.preview': 'dry-runs a launch: composes spawn\'s prompt in memory and returns section sizes and titles; starts, writes and grants nothing',
   'files.uploadComplete': 'finishes an upload whose grant was refused at init',
   'files.uploadAbort': 'aborts an upload',
   'files.download': 'returns bytes in the response; no capability',

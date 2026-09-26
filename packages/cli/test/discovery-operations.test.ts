@@ -277,6 +277,8 @@ const COMMANDLESS_OPERATIONS = [
       'execution.terminal.start',
       // I9b: the launch sheet's defaults read; `tm8 session spawn` sends no selection.
       'launch.defaults',
+      // Launch v3 B: the launch card's dry run; UI-only like the defaults read.
+      'launch.preview',
       // Jev lane F: the launch-sheet API. Jev is UI-only (design 01a0cb80).
       'launch.suggest',
       // SC-3: node admin settings, commandless for the same reason.
