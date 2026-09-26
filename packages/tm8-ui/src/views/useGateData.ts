@@ -101,6 +101,7 @@ import {
 } from '../domain/launch';
 import { memoryEpistemics, memoryScopeOf } from '../domain/memory';
 import { representedThreadMessageCount } from './message-thread';
+import type { SpaceSessionHandle } from '../auth/space-sessions';
 import {
   indexLinkedPullRequests,
   type LinkedPullRequestFacts,
@@ -728,6 +729,12 @@ export interface GateData {
   /** Add and immediately open a Space returned by the onboarding saga. */
   acceptSpace: (space: SpaceSummary) => void;
   /**
+   * Drop a Space the viewer is no longer a member of (G6: they left it) and,
+   * if it was open, open the next one. With none left, say so the way boot
+   * does — zero spaces is a state, not a wait.
+   */
+  forgetSpace: (spaceId: SpaceId) => void;
+  /**
    * D44: launch runs through the active seam's command path. Command patches
    * reconcile immediately and the durable event stream remains authoritative.
    */
@@ -775,6 +782,12 @@ export interface GateOptions {
    * loopback node answers as the auto-owner (T-L7).
    */
   getAuthToken?: () => string | null;
+  /**
+   * W3 pinned space sessions for the active server. Every space the hook
+   * opens is entered first (`auth.space.enter` on an enforcing server, a
+   * no-op elsewhere), and the transport asks it for the credential.
+   */
+  spaceSession?: SpaceSessionHandle;
   /** Stable node/viewer scope for cursor persistence; contains no credential. */
   cursorScope?: string;
   /**
@@ -837,6 +850,7 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
           // The local Server stays default-relative. A named Server uses the
           // same-origin relay above, so browser CORS never becomes transport.
           ...(options.getAuthToken ? { getAuthToken: options.getAuthToken } : {}),
+          ...(options.spaceSession ? { spaceSession: options.spaceSession } : {}),
           ...(options.cursorScope ? { cursorScope: options.cursorScope } : {}),
           fetch: (...args: Parameters<typeof fetch>) => fetch(...args),
           webSocketFactory: browserWebSocketFactory(WebSocket),
@@ -1793,6 +1807,10 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
   }, [seam]);
 
   const openedSpace = useRef<SpaceId | null>(null);
+  // Read through a ref: the handle is per server, and App remounts this tree
+  // on a server switch, so it never changes under a live effect.
+  const spaceSessionRef = useRef(options.spaceSession);
+  spaceSessionRef.current = options.spaceSession;
   useEffect(() => {
     if (!spaceId) return;
     const generation = ++spaceGeneration.current;
@@ -1897,6 +1915,10 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
     void (async () => {
       for (let attempt = 0; !cancelled; attempt++) {
         try {
+          // W3: the pinned session for this space exists before any read of
+          // it. A refused mint lands in the catch below like any gating read.
+          await spaceSessionRef.current?.enterSpace(spaceId);
+          if (cancelled || generation !== spaceGeneration.current) return;
           await seam.openSpace(spaceId);
           if (cancelled || generation !== spaceGeneration.current) {
             if (openedSpace.current !== spaceId) seam.closeSpace(spaceId);
@@ -2013,6 +2035,19 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
     setBootErrorCode(null);
     setSpaceId(space.id);
   }, []);
+
+  const forgetSpace = useCallback((gone: SpaceId) => {
+    const remaining = spaces.filter((space) => space.id !== gone);
+    setSpaces(remaining);
+    if (spaceId !== gone) return;
+    const next = remaining[0];
+    if (next) {
+      setSpaceId(next.id);
+    } else {
+      setBootError('you are not a member of any space on this node — ask for an invite, or create a space.');
+      setBootErrorCode(null);
+    }
+  }, [spaces, spaceId]);
 
   // Connection honesty, rendered once in the shell and selected everywhere
   // (§10.2.4). `polling` is a degraded-but-advancing state, not an outage.
@@ -2420,11 +2455,11 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
      * memories, or nobody has asked for the kind — and they are different
      * facts. Returning `[]` would let the picker say "this space has no
      * memories" on the strength of a read that never happened. The `rows`
-     * cache settles it: `memory::*` exists only once `ensureKind` has actually
+     * cache settles it: `memory::*::*` exists only once `ensureKind` has actually
      * run the query, which is the same key every list panel hydrates through.
      */
     const memoryRows = summaries.filter((row) => row.state.kind === 'memory');
-    const memories: LaunchMemory[] | undefined = rows['memory::*']
+    const memories: LaunchMemory[] | undefined = rows[rowsKey('memory', undefined, undefined)]
       ? memoryRows.map((row) => {
           const mark = memoryEpistemics(row.badges);
           const scope = memoryScopeOf(row);
@@ -2447,7 +2482,10 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
        memories: a kind nobody has hydrated is UNKNOWN, not empty, so the
        reference pool exists only once at least one reference kind was read,
        and holds only the kinds that were. */
-    const referenceKinds = REFERENCE_KINDS.filter((kind) => rows[`${kind}::*`]);
+    /* `rowsKey`, not a hand-spelled key: the row keys grew a sort segment
+       (`kind::*::*`) and the literal `${kind}::*` never matched again, so on a
+       real node both pools read as never-hydrated forever. */
+    const referenceKinds = REFERENCE_KINDS.filter((kind) => rows[rowsKey(kind, undefined, undefined)]);
     const referenceCandidates = referenceKinds.length > 0
       ? summaries.filter((row) => referenceKinds.includes(row.state.kind)).map(referenceCandidateRow)
       : undefined;
@@ -3243,6 +3281,7 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
       ensureKind,
       selectSpace,
       acceptSpace,
+      forgetSpace,
       spawn,
       postMessage: postAndRefresh,
       messagesOf: (id: string) => messagesByAnchor[id as EntityId],
@@ -3252,7 +3291,7 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
       domain,
       pull: (id: string) => void pull(id),
     }),
-    [ready, spaceId, spaces, members, taskAxes, taskWorkflows, refreshTaskAxes, mentionOptions, skillOptions, viewerActor, menu, connection, bootError, bootErrorCode, authRequired, liveIds, livenessOf, rowsFor, boardFor, pageStateOf, loadMore, countsFor, refreshCounts, detailOf, refetchDetail, connectionsOf, activity, messagePulses, graph, linkedPullRequestsOf, launch, ensureKind, selectSpace, acceptSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, options.serverBaseUrl, domain, pull],
+    [ready, spaceId, spaces, members, taskAxes, taskWorkflows, refreshTaskAxes, mentionOptions, skillOptions, viewerActor, menu, connection, bootError, bootErrorCode, authRequired, liveIds, livenessOf, rowsFor, boardFor, pageStateOf, loadMore, countsFor, refreshCounts, detailOf, refetchDetail, connectionsOf, activity, messagePulses, graph, linkedPullRequestsOf, launch, ensureKind, selectSpace, acceptSpace, forgetSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, options.serverBaseUrl, domain, pull],
   );
 
   return data;

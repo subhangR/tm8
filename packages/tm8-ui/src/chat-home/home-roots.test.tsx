@@ -17,6 +17,11 @@ import type { ListRootOption } from '../panels/ListRootHeader';
 import { CHAT_HOME_FIXTURE_THREAD, createChatHomeFixturePort } from './fixtures';
 import type { ChatModelOption } from './types';
 
+/* "The fixture thread has opened" = its first turn is in the transcript. Not
+   its title: the title is on screen twice from the first frame (the row, and
+   the header, which names the thread being opened — D26). */
+const OPENED_FIXTURE_TURN = 'Plan the launch sequence and check what is already blocked.';
+
 const SPACE_ID = '019f0000-0000-7000-8000-000000000090';
 const MODELS: ChatModelOption[] = [
   { model: 'claude-sonnet-4-5', label: 'Sonnet 4.5', provider: 'Anthropic', agentTool: 'claude-code' },
@@ -57,7 +62,7 @@ describe('Home root column', () => {
     const view = renderHome();
     expect(view.getByRole('tab', { name: 'Chats' }).getAttribute('aria-selected')).toBe('true');
     expect(view.getByRole('tab', { name: /Tasks/ }).getAttribute('aria-selected')).toBe('false');
-    await waitFor(() => expect(view.getByText('Plan the launch sequence')).toBeTruthy());
+    await waitFor(() => expect(view.getByText(OPENED_FIXTURE_TURN)).toBeTruthy());
   });
 
   it('D6: the kind cell LABEL switches the root — it re-lists the column and never touches B', () => {
@@ -216,7 +221,7 @@ describe('Home root column', () => {
     const input = view.getByRole('searchbox');
     expect(input.getAttribute('aria-label')).toContain('filters what is already loaded');
     expect(input.getAttribute('title')).toContain('not a server search');
-    await waitFor(() => expect(view.getByText('Plan the launch sequence')).toBeTruthy());
+    await waitFor(() => expect(view.getByText(OPENED_FIXTURE_TURN)).toBeTruthy());
     fireEvent.change(input, { target: { value: 'zzz-no-match' } });
     /* The ROW is filtered out of the column; the open conversation's own
        header keeps its title — the filter touches the list, not region B. */
@@ -254,7 +259,7 @@ describe('Home root column', () => {
       selectedEntityId: 'ws-1',
       centerOverride: <div>terminal</div>,
     });
-    await waitFor(() => expect(view.getByText('Plan the launch sequence')).toBeTruthy());
+    await waitFor(() => expect(view.getByText(OPENED_FIXTURE_TURN)).toBeTruthy());
     expect(view.container.querySelector('.tch-thread[data-active]')).toBeNull();
   });
 

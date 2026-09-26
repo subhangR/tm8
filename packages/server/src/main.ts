@@ -14,6 +14,7 @@ import { resolve as pathResolve } from 'node:path';
 import { CollabError, FILE_MAX_SIZE_BYTES_DEFAULT } from '@tm8/contract';
 import { CredentialSessionLauncher } from '@tm8/execution';
 import { ensureLaunchResources } from './bootstrap/launch-resources.js';
+import { gatePosture, writeNodePolicy } from './projects/node-policy.js';
 
 import { createDb } from './db/index.js';
 import type { Db, DbClaims } from './db/types.js';
@@ -51,6 +52,7 @@ import { DbSpaceCredentialStore } from './credentials/space-credential-store.js'
 import { createEventSubjectBackfillJob } from './scheduler/jobs/event-subject-backfill.js';
 import { createClipboardStore } from './files/clipboard-store.js';
 import { createLoopbackOwnerResolver } from './identity/loopback.js';
+import { sessionIssuedHere } from './identity/pg-auth.js';
 import { createTrackingObserverJob } from './tracking/observer.js';
 import { createCommitRecorderJob } from './tracking/commit-recorder.js';
 import { createSessionIdentityResolver } from './http/identity-resolver.js';
@@ -231,6 +233,12 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
           : {}),
       })
     : undefined;
+  // Decision 29: pin this node's project-folders policy (owner role, before
+  // anything serves). A failed write refuses boot; see projects/node-policy.ts.
+  if (config.databaseUrl) {
+    const folders = await writeNodePolicy(config.databaseUrl, gatePosture(config));
+    console.log(`  project folders: ${folders === 'shared' ? 'shared across spaces (loopback-only node)' : 'one space per folder'}`);
+  }
   const dataDir = config.dataDir ?? resolveServerDataDir();
   const fileMaxSizeBytes = config.fileMaxSizeBytes ?? FILE_MAX_SIZE_BYTES_DEFAULT;
   const owner = db ? createLoopbackOwnerResolver(db) : undefined;
@@ -426,6 +434,8 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
           ? { removeCredentialHome: (home: { spaceId: string; credentialId: string }) => new SpaceLoginHomes({ dataDir }).remove(home) }
           : {}),
       },
+      // W4: auth.sessions.revoke closes the revoked sessions' event sockets.
+      sessionSockets: subscriptions,
       ...(delivery ? { messageDelivery: delivery.messageDelivery } : {}),
       ...(formDelivery
         ? {
@@ -493,7 +503,8 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     }
     return {
       identityId: identity.identityId,
-      nodeAdmin: identity.nodeAdmin === true,
+      // K6 (W3): the resolver already clears nodeAdmin for a pinned session.
+      nodeAdmin: identity.sessionSpaceId ? false : identity.nodeAdmin === true,
       ...(identity.sessionSpaceId ? { sessionSpaceId: identity.sessionSpaceId } : {}),
     };
   };
@@ -529,7 +540,9 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         registry: subscriptions,
         // The REAL authorizer, invoked on every subscribe and every resume.
         // There is no allow-all implementation left in the tree to fall back to.
-        authorizer: new DbSubscriptionAuthorizer(db, wsClaimsFor),
+        authorizer: new DbSubscriptionAuthorizer(db, wsClaimsFor, {
+          ...(config.spaceSessions ? { spaceSessions: config.spaceSessions } : {}),
+        }),
         log: eventLog,
         claimsFor: wsClaimsFor,
         presence,
@@ -557,9 +570,17 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    * a browser cookie. When a cookie is present, resolve it so the database can
    * additionally require the grant's exact subject identity.
    */
-  const resolveOptionalSocketIdentityId = async (req: IncomingMessage): Promise<string | undefined> => {
+  const resolveOptionalSocketIdentityId = async (
+    req: IncomingMessage,
+  ): Promise<{ identityId: string; sessionSpaceId?: string } | undefined> => {
     if (!readTm8SessionCookie(req.headers) && req.headers.authorization === undefined) return undefined;
-    return (await resolveSocketIdentity(req)).identityId;
+    const identity = await resolveSocketIdentity(req);
+    if (!identity.identityId) return undefined;
+    // W3: a pinned session may attach only to a work session in its space.
+    return {
+      identityId: identity.identityId,
+      ...(identity.sessionSpaceId ? { sessionSpaceId: identity.sessionSpaceId } : {}),
+    };
   };
 
   const wsAdmission = new WsAdmissionController();
@@ -740,6 +761,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     ...(clipboardUpload ? { clipboardUploadRoute: clipboardUpload } : {}),
     ...(voiceWebhook ? { voiceWebhookRoute: voiceWebhook } : {}),
     ...(remoteServerProxy ? { remoteServerProxy } : {}),
+    ...(db ? { sessionIssuedHere: (token: string) => sessionIssuedHere(db, token) } : {}),
     ...(config.uiDir ? { staticHandler: createStaticHandler(config.uiDir) } : {}),
   });
 

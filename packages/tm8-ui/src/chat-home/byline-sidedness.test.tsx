@@ -111,10 +111,17 @@ describe('chat byline sidedness', () => {
 
   it('renders identical tch-parts markup in both variants', async () => {
     const parts = CHAT_HOME_FIXTURE_THREAD.turns[1]!.parts;
+    /* Each turn spawns its OWN session. The same spawn answered in a second
+       turn is a replay — one creation, one card for the whole thread (advisor
+       D9) — so identical parts in two turns rightly render differently. This
+       test is about sidedness, not replays; the ids never reach the markup. */
+    const ownSession = JSON.parse(
+      JSON.stringify(parts).replaceAll('019f0000-0000-7000-8000-000000000031', '019f0000-0000-7000-8000-000000000032'),
+    ) as typeof parts;
     const thread = structuredClone(CHAT_HOME_FIXTURE_THREAD);
     thread.turns = [
       { ...turnBy(VIEWER, 'user', 'c1'), body: 'same body', parts: structuredClone(parts) },
-      { ...turnBy(OTHER_HUMAN, 'user', 'c2'), body: 'same body', parts: structuredClone(parts) },
+      { ...turnBy(OTHER_HUMAN, 'user', 'c2'), body: 'same body', parts: ownSession },
     ];
     const { port } = createChatHomeFixturePort([thread]);
     const view = render(

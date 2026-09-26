@@ -92,7 +92,8 @@ function stagingDb(): FakeDb {
     if (fn === 'create_project') {
       return { project: { ...PROJECT_ROW, name: args[0], working_dir: args[1], trust: args[3] } } as T;
     }
-    if (fn === 'link_project_w2') {
+    if (fn === 'grant_folder') {
+      // W11 (234): the upload grants the gate's folder to its one space.
       return { spaceId: args[0], projectId: args[1] } as T;
     }
     throw new Error(`unexpected rpc: ${fn}`);
@@ -308,7 +309,7 @@ describe('projects.folderUploads lifecycle', () => {
 
     const rpcNames = db.calls.filter((call) => call.kind === 'rpc').map((call) => call.name);
     expect(rpcNames).toContain('create_project');
-    expect(rpcNames).toContain('link_project_w2');
+    expect(rpcNames).toContain('grant_folder');
     expect(rpcNames).toContain('w2_abort_file_upload');
     // Session state and staged blobs are gone.
     await expect(readFile(join(stateDir, `${grant.folderUploadId}.json`))).rejects.toThrow();
@@ -351,9 +352,9 @@ describe('projects.folderUploads lifecycle', () => {
     expect(result.replacedCount).toBe(1);
     expect(result.project.id).toBe(PROJECT);
     expect(await readFile(join(target, 'src/data.bin'))).toEqual(BODY);
-    // An existing project is linked, never re-created.
+    // An existing project is granted, never re-created.
     expect(db.calls.filter((call) => call.name === 'create_project')).toHaveLength(0);
-    expect(db.calls.filter((call) => call.name === 'link_project_w2')).toHaveLength(1);
+    expect(db.calls.filter((call) => call.name === 'grant_folder')).toHaveLength(1);
   });
 
   it('complete refuses another identity, an unknown session, and unstaged bytes', async () => {
@@ -493,6 +494,35 @@ describe('projects.folderUploads security corrections', () => {
         identity: { kind: 'bearer', identityId: 'a-signed-in-human', nodeAdmin: false },
       }),
     )).rejects.toMatchObject({ code: 'forbidden', message: expect.stringMatching(/node-admin/i) });
+  });
+
+  it('R845-F5: a node-admin session PINNED to a space is forbidden on init AND complete, before any write', async () => {
+    // A folder import grants a gate folder (234's grant_folder), which
+    // require_gate_admin refuses to a space-pinned session. The handler refuses
+    // it first, so no slot is opened and nothing lands on disk. The refusal is
+    // #848's (K6): a space-pinned session never holds node admin, so it is the
+    // node-admin refusal that fires, ahead of requireUnpinned.
+    const db = stagingDb();
+    const registry = configuredWithOwner(db, true);
+    const pinned = { kind: 'bearer', identityId: 'a-signed-in-human', nodeAdmin: true, sessionSpaceId: SPACE } as RequestContext['identity'];
+    await expect(handler(registry, 'projects.folderUploads.init')(
+      request('projects.folderUploads.init', { params: { spaceId: SPACE }, body: initBody(), identity: pinned }),
+    )).rejects.toMatchObject({ code: 'forbidden', message: expect.stringMatching(/node-admin access is required/i) });
+    expect(db.calls.filter((call) => call.name === 'w2_init_file_upload')).toHaveLength(0);
+
+    const unpinned = { kind: 'bearer', identityId: 'a-signed-in-human', nodeAdmin: true } as RequestContext['identity'];
+    const grant = await handler(registry, 'projects.folderUploads.init')(
+      request('projects.folderUploads.init', { params: { spaceId: SPACE }, body: initBody(), identity: unpinned }),
+    ) as ProjectFolderUploadGrant;
+    const callsBefore = db.calls.length;
+    await expect(handler(registry, 'projects.folderUploads.complete')(
+      request('projects.folderUploads.complete', {
+        params: { folderUploadId: grant.folderUploadId },
+        body: { clientMutationId: 'cmid-f5-pinned' },
+        identity: pinned,
+      }),
+    )).rejects.toMatchObject({ code: 'forbidden', message: expect.stringMatching(/node-admin access is required/i) });
+    expect(db.calls.length).toBe(callsBefore);
   });
 
   it('C2: traversal/absolute rootName and secret entry names refuse BEFORE any filesystem probe', async () => {

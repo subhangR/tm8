@@ -10,10 +10,12 @@ import { dispatchClipboardData } from './clipboardPaste.js';
 import { uploadClipboardFile } from './clipboardUpload.js';
 import { copyToClipboardOrWarn } from './domUtils.js';
 import { notifyUser } from './notifications.js';
+import { attachOsc52Clipboard } from './osc52.js';
 import { ptyTransport } from './pty/ptyTransport.js';
 import { mintPtyAttachGrant } from './pty/ptyGrant.js';
 import { describePtyAttachRefusal } from './pty/ptyAttachRefusal.js';
-import { readActivePass } from '../auth/pass-store';
+import { spaceSessionFor } from '../auth/space-sessions';
+import { readActiveServerId } from '../servers/server-key';
 import { registerTerminal } from './pty/runtime.js';
 import { attachTouchScroll } from './touchScroll.js';
 import { scrollTerminalLines } from './scrollTerminal';
@@ -355,6 +357,10 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       fontWeightBold: TERMINAL_FONT_WEIGHT_BOLD,
       lineHeight: TERMINAL_LINE_HEIGHT,
       letterSpacing: TERMINAL_LETTER_SPACING,
+      // A full-screen agent turns on mouse tracking, which hands every drag to
+      // the agent. Shift+drag forces xterm's own selection on Linux/Windows;
+      // this makes Option+drag do the same on macOS.
+      macOptionClickForcesSelection: true,
       theme: buildTerminalTheme(container),
       scrollback: TERMINAL_SCROLLBACK,
     });
@@ -393,15 +399,26 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
         scheduleResize();
       });
     };
+    let replayWritesInFlight = 0;
+    const osc52 = attachOsc52Clipboard(term, {
+      element: container,
+      isReadOnly: () => readOnlyRef.current,
+      isReplaying: () => replayWritesInFlight > 0,
+    });
     const hydrateReplay = (data: string) => {
       if (!term.element) return;
       // Hide imperative xterm DOM until its async parser reaches the final
       // replay byte; otherwise a retained full-screen TUI visibly redraws
       // top-to-bottom.
       term.element.style.visibility = 'hidden';
+      replayWritesInFlight += 1;
       try {
-        term.write(data, finishReplayHydration);
+        term.write(data, () => {
+          replayWritesInFlight -= 1;
+          finishReplayHydration();
+        });
       } catch {
+        replayWritesInFlight -= 1;
         term.element.style.removeProperty('visibility');
       }
     };
@@ -732,7 +749,7 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
     ptyTransport.openSession(
       sessionId,
       serverBaseUrl,
-      () => readActivePass()?.token ?? null,
+      () => spaceSessionFor(readActiveServerId()).requestToken(),
       (id) => mintPtyAttachGrant(id, serverBaseUrl, readOnlyRef.current ? 'view' : 'drive'),
       readOnlyRef.current ? 'view' : 'drive',
     );
@@ -753,6 +770,7 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       offRefusalCleared();
       onData.dispose();
       onBinary.dispose();
+      osc52.dispose();
       unregister();
       // Eviction teardown is intentionally exhaustive: ptyTransport clears
       // its sockets/decoders/offsets/epochs/suspend/replay maps; unregister

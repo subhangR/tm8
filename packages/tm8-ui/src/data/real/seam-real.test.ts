@@ -456,6 +456,11 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // Jev lane U (design 01a0cb80 §5.1): `jev` — the `launch.suggest` port,
       // one namespaced member like `skills`. Inserted at its sorted position.
       'jev',
+      // Launch card v2: `launchDefaults` — the `launch.defaults` port (I9),
+      // namespaced like `jev`. It existed in ops since #804 but was never
+      // copied onto the real seam, so every real launch read defaults as
+      // unknown. Inserted at its sorted position.
+      'launchDefaults',
       'markRead',
       // Amendment 11 (2026-08-13): `tracking.pr.merge` — the FORGE WRITE, and
       // the counterpart to `gitMerge`'s deliberate exclusion from the tracking
@@ -494,6 +499,13 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // in hand-maintained alphabetical order, because four insertions at four
       // different points is how a list like this acquires a silent duplicate.
       'createInvite', 'redeemInvite', 'revokeInvite', 'setMemberRole',
+      // G6 W1 (2026-09-26): ending a membership — `spaces.leave` and
+      // `spaces.members.remove`. The member row is tombstoned, not deleted, so
+      // authorship keeps its target and renders "(left)".
+      'leaveSpace', 'removeMember',
+      // W4 (auth sessions, 2026-09-26): `auth.sessions.revoke`. The list READ
+      // is `seam.authSessions`, not a command.
+      'revokeAuthSession',
       // W2 (2026-08-16): the task-axis registry's writes, over the catalog
       // ops that existed all along (`spaces.taskAxes.*`) — the settings shell
       // stops refusing with the measured-false AXES_UNREADABLE. The READ has
@@ -619,5 +631,14 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
     expect(pool.last().closeCalls).toBe(1);
     clock.advance(300_000);
     expect(clock.pending()).toBe(0);
+  });
+});
+
+describe('seam-real: launch.defaults', () => {
+  it('is exposed on commands and reads the space’s route', async () => {
+    const h = mk((url) => (url.includes('/launch/defaults') ? ok({ memories: { items: [], total: 0 } }) : ok({})));
+    expect(h.seam.commands.launchDefaults).toBeDefined();
+    await h.seam.commands.launchDefaults!.defaults('sp-1', { teamMemberId: 'tm-1' as never });
+    expect(h.f.calls.some((call) => call.url.includes('/v2/spaces/sp-1/launch/defaults') && call.url.includes('teamMemberId=tm-1'))).toBe(true);
   });
 });

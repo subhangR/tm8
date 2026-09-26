@@ -72,13 +72,14 @@ import {
   type SpaceKindCounts,
   type SpaceSettingsView,
   type SpaceConfigsView,
+  type AuthSessionsListResult,
   type ChatDefault,
   type ChatDefaultsView,
   type Workflow,
   type SpaceSummary,
 } from '@tm8/contract';
 import type { BranchTopologyOpts, ConnectionOpts, FeedOpts, FileBlameOpts, FileHistoryOpts, GitDiffOpts, IdentityView, JournalOpts, PageOpts, Seam, TranscriptOpts, Unsubscribe } from '../seam';
-import { createHttpClient, type FetchLike } from './http';
+import { createHttpClient, type FetchLike, type SpaceSessionPort } from './http';
 import { chatTurnFrameFromWire, type WireChatTurnFrame } from '../../chat-home/wire';
 import { createOps } from './ops';
 import {
@@ -115,6 +116,8 @@ export interface RealSeamOptions {
    * host from the per-server pass store for authenticated HTTP requests.
    */
   getAuthToken?: () => string | null;
+  /** W3 pinned space sessions; see `HttpOptions.spaceSession`. */
+  spaceSession?: SpaceSessionPort;
   timers?: Timers;
   now?: () => number;
   random?: () => number;
@@ -192,6 +195,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     fetch: options.fetch,
     onTransport: (reachable) => conn?.noteTransport(reachable),
     ...(options.getAuthToken ? { getAuthToken: options.getAuthToken } : {}),
+    ...(options.spaceSession ? { spaceSession: options.spaceSession } : {}),
   });
 
   const ops = createOps(http, { newClientMutationId: options.newClientMutationId });
@@ -327,6 +331,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     spaces: (): Promise<SpaceSummary[]> => ops.spaces(),
     spaceSettings: (spaceId: SpaceId): Promise<SpaceSettingsView> => ops.spaceSettings(spaceId),
     spaceConfigs: (spaceId: SpaceId): Promise<SpaceConfigsView> => ops.spaceConfigs(spaceId),
+    authSessions: (spaceId: SpaceId | null): Promise<AuthSessionsListResult> => ops.authSessions(spaceId),
     chatDefaults: (spaceId: SpaceId): Promise<ChatDefaultsView> => ops.chatDefaults(spaceId),
     setChatDefaults: (spaceId: SpaceId, defaults: Record<string, ChatDefault | null>): Promise<ChatDefaultsView> =>
       ops.setChatDefaults(spaceId, defaults),
@@ -433,6 +438,10 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       work: (id, input) => ops.work(id, input),
       skills: ops.skills,
       jev: ops.jev,
+      /* `launch.defaults` (I9) — what a launch loads per group. Without this
+         line every launch surface on a real node read its defaults as
+         unknown: the chips said "?" and nothing could be edited or attached. */
+      launchDefaults: ops.launchDefaults,
       forms: ops.forms,
       createEdge: (input) => ops.createEdge(input),
       deleteEdge: (edgeId, ctx) => ops.deleteEdge(edgeId, ctx),
@@ -447,12 +456,15 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       updateAttentionRequest: (requestId, input) => ops.updateAttentionRequest(requestId, input),
       updateProfile: (input) => ops.updateProfile(input),
       setMemberRole: (spaceId, memberId, input) => ops.setMemberRole(spaceId, memberId, input),
+      leaveSpace: (spaceId) => ops.leaveSpace(spaceId),
+      removeMember: (spaceId, memberId) => ops.removeMember(spaceId, memberId),
       updateSpace: (spaceId, input) => ops.updateSpace(spaceId, input),
       createInvite: (spaceId, input) => ops.createInvite(spaceId, input),
       // `ctx` defaults to `{}` rather than being forwarded as `undefined`: the
       // revoke body binds `RequiredCommandContextSchema`, so a missing body is
       // a 400 and an absent object is not the same as an empty one on the wire.
       revokeInvite: (spaceId, inviteId, ctx) => ops.revokeInvite(spaceId, inviteId, ctx ?? {}),
+      revokeAuthSession: (sessionId) => ops.revokeAuthSession(sessionId),
       createTaskAxis: (spaceId, input) => ops.createTaskAxis(spaceId, input),
       updateTaskAxis: (spaceId, axisId, input) => ops.updateTaskAxis(spaceId, axisId, input),
       deleteTaskAxis: (spaceId, axisId, ctx) => ops.deleteTaskAxis(spaceId, axisId, ctx),
@@ -495,6 +507,8 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       startContainerTerminal: (id, input) => ops.startContainerTerminal(id, input),
       containerProviders: () => ops.containerProviders(),
     },
+
+    nodeMetrics: () => ops.nodeMetrics(),
 
     // -- credentials ---------------------------------------------------------
 

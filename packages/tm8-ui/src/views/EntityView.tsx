@@ -71,7 +71,7 @@ import { EntityFab, MobileSheet, useMobileSurface } from '../mobile';
 import type { Notice } from '../shell/notices';
 import type { GateData } from './useGateData';
 import { attachmentsFor } from '../files/port';
-import { openEntityAndResolve } from './open-entity';
+import { openEntityAndMarkRead } from './open-entity';
 import { useLaunchPort } from './useLaunchPort';
 import { mergePrPortFor } from './mergePrPort';
 import { LaunchSheet, type DispatchSelection, type LaunchSelection } from './LaunchSheet';
@@ -275,10 +275,7 @@ export function EntityView(props: EntityViewProps) {
   const [dialOpen, setDialOpen] = useState(false);
   const [detailTab, setDetailTab] = useState<PanelTab>('content');
   const [contentSurfaces, setContentSurfaces] = useState<Record<string, ContentSurface>>({});
-  const resolvingAttention = useRef(new Set<EntityId>());
-  // Separate from `resolvingAttention`: a read mark is written on every open,
-  // an attention resolve only sometimes, so one shared set would let either
-  // suppress the other.
+  /** In-flight read marks, so a double click on a row is one write. */
   const markingRead = useRef(new Set<EntityId>());
 
   /*
@@ -515,28 +512,17 @@ export function EntityView(props: EntityViewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId, aux, kind]);
 
+  /** Opening is a read: it navigates and records a read mark, and never
+      settles an attention request (Attention v2 — see `open-entity.ts`). */
   const openEntity = useCallback((id: EntityId, open: (id: EntityId) => void) => {
-    const summary = data.detailOf(id)
-      ?? data.rowsFor(kind)(undefined).find((row) => row.id === id)
-      ?? data.graph.nodes.find((row) => row.id === id);
-    openEntityAndResolve({
+    openEntityAndMarkRead({
       entityId: id,
-      needsAttention: summary?.badges.attention != null,
       open,
       commands: data.seam.commands,
-      reconcile: data.reconcileCommand,
-      resolving: resolvingAttention.current,
       marking: markingRead.current,
       onRead: data.refreshCounts,
-      onError: (error) => props.onNotice({
-          id: `attention-resolve-failed:${id}`,
-          tone: 'error',
-          title: 'Attention could not be resolved',
-          body: String((error as { message?: string })?.message ?? error),
-          ttlMs: 6_000,
-        }),
     });
-  }, [data, kind, props.onNotice]);
+  }, [data]);
 
   /**
    * A row in the LEFT list replaces the subject of the whole screen, so the
@@ -848,7 +834,7 @@ export function EntityView(props: EntityViewProps) {
           setContentSurfaces((current) => ({ ...current, [selectedId]: 'terminal' }));
         },
       }, 'discussion')}
-      attentionSection={detail ? attentionSectionFor(data.seam, data.spaceId, selectedId, () => data.pull?.(selectedId)) : undefined}
+      attentionSection={detail ? attentionSectionFor(data.seam, data.spaceId, selectedId, data.reconcileCommand) : undefined}
       debugSurface={detail ? debugSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
       sessionStatsSurface={detail ? sessionStatsSurfaceFor(data.seam, selectedId) : undefined}
       sessionContextSurface={detail ? sessionContextSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}

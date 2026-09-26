@@ -663,6 +663,16 @@ describe('T41b — a membership that ends takes the credentials its member owns 
   const defaultsOf = (account: string) => asOwner(async (c) => (await c.query<{ n: number }>(
     'select count(*)::int n from public.member_defaults where account_id = $1', [account])).rows[0]!.n);
 
+  it('member_defaults: own rows only, and under a pinned session only the pinned space\'s (227 conjunct)', async () => {
+    const d = await joiner('pinned');
+    await ownedBy(d, { default: true });
+    const seen = (who: DbClaims) => db.tx(who, async (q) =>
+      (await q.query<{ n: number }>('select count(*)::int n from public.member_defaults'))[0]!.n);
+    expect(await seen(claims(d.identity))).toBe(1);
+    expect(await seen({ ...claims(d.identity), sessionSpaceId: ids.S })).toBe(1);
+    expect(await seen({ ...claims(d.identity), sessionSpaceId: randomUUID() })).toBe(0);
+  });
+
   it('remove: D\'s owned credentials are revoked with the tombstone; B\'s session on them is listed for containment; D\'s own is 232\'s', async () => {
     const d = await joiner('removed');
     const pub = await ownedBy(d, { default: true });

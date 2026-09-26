@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:b68099507d6d102d53f9f177168bb19ab96e980749503fa279480937cb84682f",
+  "catalogDigest": "sha256:660c22b867abaaf0482a92085af25a715375be637eba68cdeda867504d40b7ae",
   "catalog": {
-    "total": 254,
-    "v1": 252,
+    "total": 261,
+    "v1": 259,
     "reserved": 2,
-    "http": 252,
+    "http": 259,
     "ws": 1,
-    "registerableV1Http": 250,
+    "registerableV1Http": 257,
     "methods": {
-      "GET": 82,
-      "POST": 119,
+      "GET": 86,
+      "POST": 122,
       "PATCH": 16,
       "DELETE": 18,
       "PUT": 17,
       "WS": 2
     },
     "kinds": {
-      "read": 86,
-      "command": 166,
+      "read": 90,
+      "command": 169,
       "stream": 2
     },
-    "uniqueNames": 254,
-    "uniqueBindings": 253
+    "uniqueNames": 261,
+    "uniqueBindings": 260
   },
   "reservedOperations": [
     "search.query",
@@ -922,6 +922,34 @@
         "source": "server-router"
       },
       {
+        "operation": "spaces.projects.list",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/projects",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.projects.create",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/projects/create",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "gate.folders.list",
+        "method": "GET",
+        "path": "/v2/gate/folders",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "gate.folders.create",
+        "method": "POST",
+        "path": "/v2/gate/folders",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "projects.unlink",
         "method": "DELETE",
         "path": "/v2/spaces/:spaceId/projects/:projectId",
@@ -1580,6 +1608,27 @@
         "source": "server-router"
       },
       {
+        "operation": "auth.space.enter",
+        "method": "POST",
+        "path": "/v2/auth/space/enter",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "auth.sessions.list",
+        "method": "GET",
+        "path": "/v2/auth/sessions",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "auth.sessions.revoke",
+        "method": "POST",
+        "path": "/v2/auth/sessions/:sessionId/revoke",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "auth.password.change",
         "method": "POST",
         "path": "/v2/auth/password",
@@ -1783,6 +1832,13 @@
         "source": "server-router"
       },
       {
+        "operation": "node.metrics.get",
+        "method": "GET",
+        "path": "/v2/node/metrics",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "execution.transcript",
         "method": "GET",
         "path": "/v2/work-sessions/:workSessionId/transcript",
@@ -1940,13 +1996,6 @@
         "operation": "containers.fork",
         "method": "POST",
         "path": "/v2/containers/:containerId/commands/fork",
-        "status": "registered",
-        "source": "server-router"
-      },
-      {
-        "operation": "containers.attention",
-        "method": "POST",
-        "path": "/v2/containers/:containerId/commands/attention",
         "status": "registered",
         "source": "server-router"
       },
@@ -2182,7 +2231,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 222
+    "unimplementedV1Http": 229
   },
   "schemas": {
     "additive": {
@@ -4055,6 +4104,74 @@
         "publicComposite": null
       },
       {
+        "operation": "spaces.projects.list",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.projects.list",
+        "intentTags": [
+          "spaces",
+          "projects",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.projects.create",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.projects.create",
+        "intentTags": [
+          "spaces",
+          "projects",
+          "create"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "gate.folders.list",
+        "noun": "project",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/gate.folders.list",
+        "intentTags": [
+          "gate",
+          "folders",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "gate.folders.create",
+        "noun": "project",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/gate.folders.create",
+        "intentTags": [
+          "gate",
+          "folders",
+          "create"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
         "operation": "projects.unlink",
         "noun": "project",
         "exposure": "public",
@@ -5652,6 +5769,57 @@
         "publicComposite": null
       },
       {
+        "operation": "auth.space.enter",
+        "noun": "auth",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/auth.space.enter",
+        "intentTags": [
+          "auth",
+          "space",
+          "enter"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "auth.sessions.list",
+        "noun": "auth",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/auth.sessions.list",
+        "intentTags": [
+          "auth",
+          "sessions",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "auth.sessions.revoke",
+        "noun": "auth",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/auth.sessions.revoke",
+        "intentTags": [
+          "auth",
+          "sessions",
+          "revoke"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
         "operation": "auth.password.change",
         "noun": "auth",
         "exposure": "public",
@@ -6157,6 +6325,23 @@
         "publicComposite": null
       },
       {
+        "operation": "node.metrics.get",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/node.metrics.get",
+        "intentTags": [
+          "node",
+          "metrics",
+          "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
         "operation": "execution.transcript",
         "noun": "session",
         "exposure": "public",
@@ -6537,22 +6722,6 @@
         "intentTags": [
           "containers",
           "fork"
-        ],
-        "inputSchemaRef": null,
-        "resultSchemaRef": null,
-        "invocationSyntax": null,
-        "actionDiscoverable": true,
-        "reason": null,
-        "publicComposite": null
-      },
-      {
-        "operation": "containers.attention",
-        "noun": "container",
-        "exposure": "public",
-        "helpRef": "tm8://help/operation/containers.attention",
-        "intentTags": [
-          "containers",
-          "attention"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
@@ -7069,6 +7238,7 @@
           "connections": true,
           "lifecycleOperations": [
             "projects.link",
+            "spaces.projects.create",
             "projects.unlink",
             "projects.associations.correct"
           ]

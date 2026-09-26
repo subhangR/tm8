@@ -16,6 +16,11 @@ const xterm = vi.hoisted(() => {
     attachCustomKeyEventHandler = vi.fn();
     onData = vi.fn(() => ({ dispose: vi.fn() }));
     onBinary = vi.fn(() => ({ dispose: vi.fn() }));
+    parser = {
+      registerOscHandler: vi.fn((_ident: number, _handler: (data: string) => boolean) => ({
+        dispose: vi.fn(),
+      })),
+    };
     hasSelection = vi.fn(() => false);
     getSelection = vi.fn(() => '');
     rows = 24;
@@ -42,6 +47,9 @@ const xterm = vi.hoisted(() => {
   }
   return { FakeTerminal, instances: [] as FakeTerminal[] };
 });
+
+const runtime = vi.hoisted(() => ({ hydrateReplay: null as ((data: string) => void) | null }));
+const clipboard = vi.hoisted(() => ({ copy: vi.fn() }));
 
 vi.mock('@xterm/xterm', () => ({ Terminal: xterm.FakeTerminal }));
 vi.mock('@xterm/addon-fit', () => ({ FitAddon: class { fit = vi.fn(); } }));
@@ -75,7 +83,16 @@ vi.mock('./pty/ptyTransport.js', () => ({
   },
 }));
 vi.mock('./pty/ptyGrant.js', () => ({ mintPtyAttachGrant: vi.fn() }));
-vi.mock('./pty/runtime.js', () => ({ registerTerminal: () => () => {} }));
+vi.mock('./pty/runtime.js', () => ({
+  registerTerminal: (_id: string, _term: unknown, hydrateReplay: (data: string) => void) => {
+    runtime.hydrateReplay = hydrateReplay;
+    return () => {};
+  },
+}));
+vi.mock('./domUtils.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./domUtils.js')>()),
+  copyToClipboardOrWarn: clipboard.copy,
+}));
 vi.mock('./pty/terminalSize.js', () => ({
   clientFittedSessions: new Set<string>(),
   measureSpawnTerminalSize: () => ({ cols: 80, rows: 24 }),
@@ -92,6 +109,8 @@ class FakeResizeObserver {
 
 beforeEach(() => {
   xterm.instances.length = 0;
+  runtime.hydrateReplay = null;
+  clipboard.copy.mockReset();
   vi.stubGlobal('ResizeObserver', FakeResizeObserver);
 });
 
@@ -110,5 +129,29 @@ describe('LiveTerminal focus capture', () => {
   it('does not focus a read-only terminal', () => {
     render(<LiveTerminal sessionId="read-only-session" live={false} autoFocus />);
     expect(xterm.instances[0]!.focus).not.toHaveBeenCalled();
+  });
+});
+
+describe('LiveTerminal OSC 52', () => {
+  it('refuses a copy parsed while replayed scrollback is in flight, then honours live output', () => {
+    const { getByTestId } = render(<LiveTerminal sessionId="osc52-session" live />);
+    const terminal = xterm.instances[0]!;
+    const [ident, osc52] = terminal.parser.registerOscHandler.mock.calls[0]!;
+    expect(ident).toBe(52);
+
+    // Hold the replay write open: xterm parses it asynchronously, and every
+    // OSC 52 it contains is parsed before the write's completion callback.
+    let finishReplayWrite: (() => void) | undefined;
+    terminal.write.mockImplementationOnce((_data: string, done?: () => void) => {
+      finishReplayWrite = done;
+    });
+    fireEvent.pointerDown(getByTestId('terminal-host'));
+    runtime.hydrateReplay!('replayed ring');
+    osc52(`c;${btoa('an old copy from the ring')}`);
+    expect(clipboard.copy).not.toHaveBeenCalled();
+
+    finishReplayWrite!();
+    osc52(`c;${btoa('live copy')}`);
+    expect(clipboard.copy).toHaveBeenCalledExactlyOnceWith('live copy', 'Selection');
   });
 });

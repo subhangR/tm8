@@ -4,7 +4,9 @@ import { registerJevHandlers } from '../jev/handlers.js';
 import { registerLaunchDefaultsHandler } from '../launch/defaults.js';
 import { registerChatDefaultsHandlers } from '../chat/defaults.js';
 import { registerMembershipHandlers, type MembershipHandlerDeps } from '../membership/handlers.js';
+import { registerNodeMetricsHandlers } from '../node-metrics/handlers.js';
 import type { JevAdvisorResolver } from '../jev/port.js';
+import type { SessionSocketPort } from '../identity/session-sockets.js';
 /**
  * The facade block: the handler registry, the operation→input-schema table,
  * and the one function the composition root calls to mount everything.
@@ -166,6 +168,11 @@ export interface RegisterFacadeHandlersDeps {
    * socket close are skipped (a node with no execution runtime has no PTYs).
    */
   readonly membership?: MembershipHandlerDeps;
+  /**
+   * W4: the live event sockets `auth.sessions.revoke` closes for the sessions
+   * it ended. Absent: the revoke still happens; only the close is skipped.
+   */
+  readonly sessionSockets?: SessionSocketPort;
 }
 
 /**
@@ -200,7 +207,7 @@ export function registerFacadeHandlers(
   registerW2EntitiesCommandsTrackingHandlers(registry, facade);
   registerW2IdentitySpacesHandlers(registry, facade);
   // auth.* (Identity v2 Stage 1): local accounts over the 007 RPC surface.
-  registerW2AuthHandlers(registry, facade);
+  registerW2AuthHandlers(registry, facade, deps.sessionSockets ? { sockets: deps.sessionSockets } : {});
   registerW2ServerConnectionHandlers(registry, facade);
   registerW2EdgesPlacementsHandlers(registry, facade);
   registerW2CollectionsGraphUndoHandlers(registry, facade);
@@ -220,6 +227,8 @@ export function registerFacadeHandlers(
   registerChatDefaultsHandlers(registry, facade);
   // spaces.leave / spaces.members.remove / accounts.disable (G6, migration 232).
   registerMembershipHandlers(registry, facade, deps.membership ?? {});
+  // node.metrics.get: host CPU/memory/load/disk for the desktop status strip (node admin).
+  registerNodeMetricsHandlers(registry, facade);
   // Tier 4 git×graph: the read-only file-contention map over active worktrees.
   registerContentionHandlers(registry, facade);
   // Git UI wave: the session git rail — status/diff reads and the #76 verbs
