@@ -54,18 +54,18 @@ export interface SessionContext {
   actorId?: string | undefined;
   baseUrl?: string | undefined;
   token?: string | undefined;
-  /** `TM8_CLI_GAP_RETRY_MS`, when set: overrides the gap-retry default. */
+  /** `TM8_RETRY_WINDOW_MS`, when set: overrides the restart-gap retry default. */
   gapRetryMs?: number | undefined;
 }
 
 /**
  * How long an AGENT's call keeps re-sending while its node is down. A deploy
- * restarts the server under running agents (TimeoutStopSec=20 plus boot to
- * `listen()`); failing the agent's turn on the first refusal turns a restart
- * the agents should survive into a failed tool call. A human at a terminal
- * (no session id) keeps the immediate failure.
+ * restarts the server under running agents: deploy.sh stops it, migrates, then
+ * starts it, and boot reaches `listen()` last. Failing the agent's turn on the
+ * first refusal turns a restart the agents should survive into a failed tool
+ * call. A human at a terminal (no session id) keeps the immediate failure.
  */
-export const AGENT_GAP_RETRY_MS = 60_000;
+export const AGENT_GAP_RETRY_MS = 120_000;
 
 /** Step 3. Absent, unreadable, or malformed config is NOT an error — it is absent. */
 export interface LocalConfig {
@@ -101,7 +101,7 @@ export function sessionContextFromEnv(env: NodeJS.ProcessEnv = process.env): Ses
     actorId: env.TM8_ACTOR_ID?.trim() || undefined,
     baseUrl: env.TM8_BASE_URL?.trim() || undefined,
     token: env.TM8_AGENT_TOKEN?.trim() || undefined,
-    gapRetryMs: parseGapRetryMs(env.TM8_CLI_GAP_RETRY_MS),
+    gapRetryMs: parseGapRetryMs(env.TM8_RETRY_WINDOW_MS),
   };
 }
 
@@ -110,7 +110,7 @@ function parseGapRetryMs(raw: string | undefined): number | undefined {
   if (!text) return undefined;
   const ms = Number(text);
   if (!Number.isFinite(ms) || ms < 0) {
-    throw new CliError(`TM8_CLI_GAP_RETRY_MS must be a non-negative number of ms, got ${JSON.stringify(text)}`, EXIT_USAGE);
+    throw new CliError(`TM8_RETRY_WINDOW_MS must be a non-negative number of ms, got ${JSON.stringify(text)}`, EXIT_USAGE);
   }
   return ms;
 }

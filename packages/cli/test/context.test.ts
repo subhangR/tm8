@@ -97,8 +97,8 @@ describe('restart-gap retry window', () => {
     expect(resolveContext({ globals: globals([]), session: {}, config: {} }).gapRetryMs).toBe(0);
   });
 
-  it('TM8_CLI_GAP_RETRY_MS overrides both, and 0 turns it off for an agent', () => {
-    const env = (v: string) => ({ TM8_SESSION_ID: 'ws_1', TM8_CLI_GAP_RETRY_MS: v }) as NodeJS.ProcessEnv;
+  it('TM8_RETRY_WINDOW_MS overrides both, and 0 turns it off for an agent', () => {
+    const env = (v: string) => ({ TM8_SESSION_ID: 'ws_1', TM8_RETRY_WINDOW_MS: v }) as NodeJS.ProcessEnv;
     expect(resolveContext({ globals: globals([]), session: sessionContextFromEnv(env('0')), config: {} }).gapRetryMs)
       .toBe(0);
     expect(resolveContext({ globals: globals([]), session: sessionContextFromEnv(env('5000')), config: {} }).gapRetryMs)
@@ -106,8 +106,8 @@ describe('restart-gap retry window', () => {
   });
 
   it('a malformed override is a usage error, not a silent default', () => {
-    expect(() => sessionContextFromEnv({ TM8_CLI_GAP_RETRY_MS: 'soon' } as NodeJS.ProcessEnv)).toThrow(CliError);
-    expect(() => sessionContextFromEnv({ TM8_CLI_GAP_RETRY_MS: '-1' } as NodeJS.ProcessEnv)).toThrow(CliError);
+    expect(() => sessionContextFromEnv({ TM8_RETRY_WINDOW_MS: 'soon' } as NodeJS.ProcessEnv)).toThrow(CliError);
+    expect(() => sessionContextFromEnv({ TM8_RETRY_WINDOW_MS: '-1' } as NodeJS.ProcessEnv)).toThrow(CliError);
   });
 });
 

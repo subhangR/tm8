@@ -110,8 +110,8 @@ export interface ClientOptions {
   cache?: ReadCache;
   /**
    * How long to keep re-sending while the node is DOWN (a restart gap), in ms.
-   * 0 — the default — fails on the first refusal, as a human at a terminal
-   * wants. See `gapRetryKind` for what may be re-sent.
+   * 0, the default, fails on the first failure, which is what a human at a
+   * terminal wants. See `mayResend` for what is re-sent.
    */
   gapRetryMs?: number | undefined;
   /** Injectable for tests. */
@@ -119,31 +119,51 @@ export interface ClientOptions {
 }
 
 /**
- * Why a failed `fetch` may be sent again during a server gap, or null.
+ * How a failed `fetch` failed, for the restart-gap retry.
  *
  * `refused` — the TCP connect was refused, so no byte of the request reached
- * any node: re-sending is safe for EVERY operation, commands included. This is
- * what a restart looks like from loopback: the port is closed from the moment
- * the old process exits until `server.listen()`, which runs last in boot.
+ * any node. This is what a restart looks like from loopback: the port is
+ * closed from the moment the old process exits until `server.listen()`, which
+ * runs last in boot.
  *
- * `reset` — the socket dropped after the request may have been read. A node
- * shutting down mid-request does this. Safe to re-send only for a read; a
- * command may already have committed, and idempotency is off by default
- * (TM8_IDEMPOTENCY_ENABLED), so a clientMutationId does not dedupe it.
+ * `ambiguous` — any other transport failure (reset, socket closed, EPIPE…):
+ * the node may have read and committed the request before the socket dropped.
  *
  * undici reports both as `TypeError('fetch failed')` with the errno on
- * `cause.code`; a dual-stack connect nests them in an AggregateError.
+ * `cause.code`; a dual-stack connect nests them in an AggregateError that
+ * carries the same code.
  */
-export function gapRetryKind(err: unknown): 'refused' | 'reset' | null {
+export function gapFailureKind(err: unknown): 'refused' | 'ambiguous' {
   const cause = (err as { cause?: unknown } | null)?.cause;
-  const code = (cause as { code?: unknown } | null)?.code;
-  if (code === 'ECONNREFUSED') return 'refused';
-  if (code === 'ECONNRESET' || code === 'EPIPE' || code === 'UND_ERR_SOCKET') return 'reset';
-  return null;
+  return (cause as { code?: unknown } | null)?.code === 'ECONNREFUSED' ? 'refused' : 'ambiguous';
+}
+
+/** The answers a proxy or a booting/draining node gives while it cannot serve. */
+const GAP_STATUSES = new Set([502, 503, 504]);
+
+/**
+ * Whether this request may be sent again after `kind` of failure.
+ *
+ * A refused connect never reached a node: always. Otherwise the first attempt
+ * may have committed, so only a GET, or a command carrying a
+ * `clientMutationId`: the Server's command ledger (TM8_IDEMPOTENCY_ENABLED,
+ * default on and set on prod) replays the stored result for a repeated id
+ * instead of applying it twice. The body is re-sent verbatim, so the id is the
+ * one this invocation minted, never a fresh one. A command WITHOUT an id (the
+ * few auth bootstraps) is never re-sent after an ambiguous failure.
+ *
+ * A request TIMEOUT is never re-sent at all: a restart gap is a refusal or a
+ * reset, never a slow answer. A timeout is a node that is up and busy, and
+ * re-sending for two minutes adds load to exactly the node that cannot keep up.
+ */
+function mayResend(method: string, body: unknown, kind: 'refused' | 'ambiguous'): boolean {
+  if (kind === 'refused' || method === 'GET') return true;
+  const cmid = (body as { clientMutationId?: unknown } | null | undefined)?.clientMutationId;
+  return typeof cmid === 'string' && cmid !== '';
 }
 
 const GAP_RETRY_FIRST_DELAY_MS = 250;
-const GAP_RETRY_MAX_DELAY_MS = 2_000;
+const GAP_RETRY_MAX_DELAY_MS = 5_000;
 
 export interface InvokeOptions {
   params?: Record<string, string>;
@@ -441,7 +461,18 @@ export class Tm8Client {
     // fails fast on the refusal and the time goes to the backoff, not to it.
     const gapDeadlineMs = Date.now() + this.gapRetryMs;
     let delayMs = GAP_RETRY_FIRST_DELAY_MS;
-    let retriedMs = 0;
+    let retries = 0;
+    /** Sleeps and returns true when another attempt fits in the window. */
+    const backoff = async (why: string): Promise<boolean> => {
+      if (Date.now() + delayMs > gapDeadlineMs) return false;
+      retries += 1;
+      process.stderr.write(
+        `tm8: ${name} ${why}; retry ${retries} in ${delayMs}ms (server restart window ${Math.round(this.gapRetryMs / 1000)}s)\n`,
+      );
+      await this.sleep(delayMs);
+      delayMs = Math.min(delayMs * 2, GAP_RETRY_MAX_DELAY_MS);
+      return true;
+    };
     let controller: AbortController;
     let timer: ReturnType<typeof setTimeout>;
     let startedMs: number;
@@ -458,7 +489,6 @@ export class Tm8Client {
           signal: controller.signal,
           ...(opts.body === undefined ? {} : { body: JSON.stringify(opts.body) }),
         });
-        break;
       } catch (err) {
         // A transport failure is still a call the agent made and paid for, so it
         // is journalled with a null status: the node never answered.
@@ -479,26 +509,38 @@ export class Tm8Client {
             err,
           );
         }
-        const kind = gapRetryKind(err);
-        const resendable = kind === 'refused' || (kind === 'reset' && op.method === 'GET');
-        if (resendable && Date.now() + delayMs <= gapDeadlineMs) {
-          if (retriedMs === 0) {
-            process.stderr.write(
-              `tm8: ${this.baseUrl} unreachable (${kind}); retrying ${name} for up to ${Math.round(this.gapRetryMs / 1000)}s\n`,
-            );
-          }
-          await this.sleep(delayMs);
-          retriedMs += delayMs;
-          delayMs = Math.min(delayMs * 2, GAP_RETRY_MAX_DELAY_MS);
+        const kind = gapFailureKind(err);
+        if (mayResend(op.method, opts.body, kind) && await backoff(`could not reach ${this.baseUrl} (${kind})`)) {
           continue;
         }
         const reason = err instanceof Error ? err.message : String(err);
-        const retried = retriedMs > 0 ? ` after retrying for ${Math.round(retriedMs / 1000)}s` : '';
+        const retried = retries > 0 ? ` after ${retries} retries` : '';
         throw new TransportError(
           `${op.method} ${url.pathname} failed: ${reason}${retried} (is tm8-server running at ${this.baseUrl}?)`,
           err,
         );
       }
+      if (
+        GAP_STATUSES.has(res.status)
+        && mayResend(op.method, opts.body, 'ambiguous')
+        && Date.now() + delayMs <= gapDeadlineMs
+      ) {
+        journal.noteCall({
+          operation: name,
+          method: op.method,
+          path: url.pathname,
+          baseUrl: this.baseUrl,
+          status: res.status,
+          requestChars,
+          responseChars: 0,
+          durationMs: Date.now() - startedMs,
+        });
+        clearTimeout(timer);
+        await res.body?.cancel().catch(() => undefined);
+        await backoff(`answered ${res.status}`);
+        continue;
+      }
+      break;
     }
 
     // A byte response is only drained as text when it FAILED; a success is

@@ -11,7 +11,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createServer } from 'node:http';
 import type { AddressInfo, Socket } from 'node:net';
 import { getOperation } from '@tm8/contract';
-import { Tm8Client, gapRetryKind, pathParamNames, responseMode } from '../src/client.js';
+import { Tm8Client, gapFailureKind, pathParamNames, responseMode } from '../src/client.js';
 import { ApiError, ProtocolError, StreamOperationError, TransportError, exitCodeFor } from '../src/errors.js';
 import { CliError } from '../src/exit.js';
 
@@ -264,7 +264,7 @@ describe('restart-gap retry (agent calls survive a server restart)', () => {
     const { port } = server.address() as AddressInfo;
     await new Promise<void>((resolve) => server.close(() => resolve()));
     const err = await fetch(`http://127.0.0.1:${port}/health`).catch((e: unknown) => e);
-    expect(gapRetryKind(err)).toBe('refused');
+    expect(gapFailureKind(err)).toBe('refused');
   });
 
   it('re-sends a COMMAND while the connect is refused, then succeeds, with backoff', async () => {
@@ -272,20 +272,54 @@ describe('restart-gap retry (agent calls survive a server restart)', () => {
     const slept: number[] = [];
     const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     try {
-      const data = await gapClient(fetchImpl, 60_000, slept).invoke('messages.post', { body: { body: 'hi' } });
+      const data = await gapClient(fetchImpl, 120_000, slept).invoke('messages.post', { body: { body: 'hi' } });
       expect(data).toEqual({ id: 'ent_1' });
       expect(calls()).toBe(4);
       expect(slept).toEqual([250, 500, 1_000]);
-      // Announced once, not once per attempt.
-      expect(stderr.mock.calls.filter(([c]) => String(c).includes('unreachable'))).toHaveLength(1);
+      // One line per retry, so an agent's transcript shows the gap it waited out.
+      expect(stderr.mock.calls.filter(([c]) => String(c).includes('retry'))).toHaveLength(3);
     } finally {
       stderr.mockRestore();
     }
   });
 
-  it('never re-sends a command after a RESET: it may already have committed', async () => {
+  it('backs off doubling to a 5s cap', async () => {
+    const { fetchImpl } = flaky(7, 'ECONNREFUSED');
+    const slept: number[] = [];
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      await gapClient(fetchImpl, 120_000, slept).invoke('identity.get');
+      expect(slept).toEqual([250, 500, 1_000, 2_000, 4_000, 5_000, 5_000]);
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
+  it('after a RESET, re-sends a command only with its SAME clientMutationId', async () => {
+    const bodies: string[] = [];
+    let n = 0;
+    const fetchImpl = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      bodies.push(String(init?.body));
+      n += 1;
+      if (n === 1) throw fetchFailed('ECONNRESET');
+      return ok({ id: 'ent_1' });
+    }) as unknown as typeof fetch;
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const body = { body: 'hi', clientMutationId: '01a0db38-0000-7000-8000-000000000001' };
+      await gapClient(fetchImpl, 120_000).invoke('messages.post', { body });
+      expect(bodies).toHaveLength(2);
+      // The ledger dedupes on this id; a fresh one would apply the command twice.
+      expect(bodies[1]).toBe(bodies[0]);
+      expect(JSON.parse(bodies[1] as string).clientMutationId).toBe(body.clientMutationId);
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
+  it('never re-sends a command WITHOUT a mutation id after a reset: it may have committed', async () => {
     const { fetchImpl, calls } = flaky(1, 'ECONNRESET');
-    const err = await gapClient(fetchImpl, 60_000).invoke('messages.post', { body: { body: 'hi' } }).catch((e: unknown) => e);
+    const err = await gapClient(fetchImpl, 120_000).invoke('messages.post', { body: { body: 'hi' } }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(TransportError);
     expect(calls()).toBe(1);
   });
@@ -294,11 +328,54 @@ describe('restart-gap retry (agent calls survive a server restart)', () => {
     const { fetchImpl, calls } = flaky(2, 'UND_ERR_SOCKET');
     const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     try {
-      await expect(gapClient(fetchImpl, 60_000).invoke('identity.get')).resolves.toEqual({ id: 'ent_1' });
+      await expect(gapClient(fetchImpl, 120_000).invoke('identity.get')).resolves.toEqual({ id: 'ent_1' });
       expect(calls()).toBe(3);
     } finally {
       stderr.mockRestore();
     }
+  });
+
+  it('re-sends on 502/503/504 until the node answers', async () => {
+    const statuses = [502, 503, 504];
+    const { fetchImpl, calls } = stub(() => {
+      const next = statuses.shift();
+      return next === undefined ? ok({ id: 'ent_1' }) : new Response('<html>down</html>', { status: next });
+    });
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      await expect(gapClient(fetchImpl, 120_000).invoke('identity.get')).resolves.toEqual({ id: 'ent_1' });
+      expect(calls).toHaveLength(4);
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
+  it('never re-sends a 4xx', async () => {
+    for (const status of [400, 403, 404, 409, 429]) {
+      const { fetchImpl, calls } = stub(() => wireError(status, 'forbidden'));
+      const err = await gapClient(fetchImpl, 120_000).invoke('identity.get').catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ApiError);
+      expect((err as ApiError).status).toBe(status);
+      expect(calls).toHaveLength(1);
+    }
+  });
+
+  it('never re-sends after a request TIMEOUT: a slow node is up, and more load is the wrong answer', async () => {
+    let n = 0;
+    const fetchImpl = ((_input: RequestInfo | URL, init?: RequestInit) => {
+      n += 1;
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+      });
+    }) as typeof fetch;
+    const timed = new Tm8Client({
+      baseUrl: 'http://127.0.0.1:4610', fetchImpl, timeoutMs: 5, gapRetryMs: 120_000,
+      sleepImpl: async () => undefined,
+    });
+    const err = await timed.invoke('identity.get').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(TransportError);
+    expect((err as TransportError).message).toContain('timed out after 5ms');
+    expect(n).toBe(1);
   });
 
   it('a window of 0 (a human at a terminal) fails on the first refusal', async () => {
@@ -318,7 +395,7 @@ describe('restart-gap retry (agent calls survive a server restart)', () => {
       const t0 = Date.now();
       const err = await client.invoke('identity.get').catch((e: unknown) => e);
       expect(err).toBeInstanceOf(TransportError);
-      expect((err as TransportError).message).toContain('after retrying for');
+      expect((err as TransportError).message).toMatch(/after \d+ retries/);
       expect(calls()).toBeGreaterThan(1);
       expect(Date.now() - t0).toBeLessThan(2_500);
     } finally {
