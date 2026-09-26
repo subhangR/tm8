@@ -94,7 +94,16 @@ export interface DbSpaceLinkStoreOptions {
   db: Db;
   dataDir: string;
   logger?: { warn?: (message: string, fields?: Record<string, unknown>) => void };
-  /** Called once when a use marks a link stale (messages the calling agent session). */
+  /**
+   * Called once when a use marks a link stale (messages the calling agent session).
+   *
+   * W7-BOUND. Nothing in W6 calls `use()` outside tests: the only path that
+   * presents a stored link session to the target is W7's cross-space invoke,
+   * which owns the caller's claims and work session. So the composition root
+   * wires no `onStale` yet. The member's half needs no hook: 244's
+   * `mark_space_link_stale` and the leave/remove trigger raise attention in
+   * SQL. The agent-message half lands with W7's caller.
+   */
   onStale?: (notice: SpaceLinkStaleNotice) => Promise<void> | void;
   now?: () => number;
 }
