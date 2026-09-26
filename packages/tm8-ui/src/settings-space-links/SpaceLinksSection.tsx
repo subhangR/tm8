@@ -9,8 +9,10 @@
  * act in the target space as you. Allow spawn decides whether they may also
  * start sessions there. Its help text is the lead's Q-a wording, verbatim:
  * "Turning spawning off stops new sessions and resumes under this link.
- * Sessions already running keep running; revoke the link to end them."
- * (Enforcement is W7's, #898; this surface only states it.)
+ * Sessions already running keep running, but cannot fetch space credentials
+ * again until spawning is back on; revoke the link to end them." (The lead's
+ * final default A-6b appended the credential clause.) (Enforcement is W7's,
+ * #898; this surface only states it.)
  *
  * Every write is human-only on the server. A refusal it answers (an agent
  * session, a target you are not a member of, anything else) is rendered as a
@@ -108,7 +110,7 @@ export function SpaceLinksSection({ port, heading = 'Space links' }: SpaceLinksS
           </p>
           <p>
             While you are signed in, agents working for you in this space can act in the target space as you.
-            Allow spawn controls whether they may also start sessions there. Turning spawning off stops new sessions and resumes under this link. Sessions already running keep running; revoke the link to end them.
+            Allow spawn controls whether they may also start sessions there. Turning spawning off stops new sessions and resumes under this link. Sessions already running keep running, but cannot fetch space credentials again until spawning is back on; revoke the link to end them.
           </p>
         </div>
         {notice ? (
@@ -206,13 +208,13 @@ function LinkRow({
                     () => port.setSpawn(link.id, next),
                     next
                       ? `Agents may start sessions in ${name}.`
-                      : `Agents may no longer start or resume sessions in ${name}. Sessions already running keep running; revoke the link to end them.`,
+                      : `Agents may no longer start or resume sessions in ${name}. Sessions already running keep running, but cannot fetch space credentials again until spawning is back on; revoke the link to end them.`,
                   );
                 }}
               />
               Allow spawn
               <span className="set-spl__spawn-help" id={`set-spl-spawn-help-${link.id}`} data-testid="space-links-spawn-help">
-                Turning spawning off stops new sessions and resumes under this link. Sessions already running keep running; revoke the link to end them.
+                Turning spawning off stops new sessions and resumes under this link. Sessions already running keep running, but cannot fetch space credentials again until spawning is back on; revoke the link to end them.
               </span>
             </label>
             <button type="button" className="cred-action" aria-label={`Remove ${name}`} disabled={busy}

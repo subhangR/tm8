@@ -19,7 +19,7 @@ import { spaceLinksPortFromSeam, type SpaceLinksPort } from './port';
 
 // Lead ruling Q-a, verbatim.
 const SPAWN_OFF_TEXT =
-  'Turning spawning off stops new sessions and resumes under this link. Sessions already running keep running; revoke the link to end them.';
+  'Turning spawning off stops new sessions and resumes under this link. Sessions already running keep running, but cannot fetch space credentials again until spawning is back on; revoke the link to end them.';
 
 afterEach(() => cleanup());
 
