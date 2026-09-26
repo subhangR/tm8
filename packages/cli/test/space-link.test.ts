@@ -85,8 +85,8 @@ function defaultRoutes(): typeof routes {
       // The home refused set, as the Server applies it (stubbed by op name).
       const op = String(body.op);
       if (op.startsWith('credentials.') || op === 'voice.token.create') {
-        return fail(403, 'forbidden', `refused through a space link: token_minting`, {
-          reason: 'space_link_refused', refusal: 'token_minting',
+        return fail(403, 'forbidden', `refused through a space link: grant`, {
+          reason: 'space_link_refused', refusal: 'grant',
         });
       }
       return ok({ op, linkId: LINK, targetSpaceId: TARGET, auditId: 'audit-1', result: { id: DOC, kind: 'doc', spaceId: TARGET, title: 'B doc' } });
