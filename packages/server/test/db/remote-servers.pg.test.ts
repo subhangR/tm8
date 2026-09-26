@@ -419,6 +419,50 @@ describe('W8 (c)1 — the generic entity doors refuse a server; servers.remove s
   });
 });
 
+// R864 1d/M2: the §8b exemption is scoped to kind 'server'. Even with
+// tm8.server_lifecycle bound 'on' in the caller's own transaction, a space
+// link's generic doors still refuse; a server's refuse with it 'off'.
+describe('W8 (c)1 — the tm8.server_lifecycle exemption is server-only', () => {
+  const spaceC = randomUUID();
+  const memberH3C = randomUUID();
+  let linkId: string;
+
+  beforeAll(async () => {
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(`insert into public.spaces(id, name, created_by_identity) values ($1, 'Servers C', $2)`, [spaceC, f.identityH3]);
+      await client.query(`insert into public.entities(id, space_id, kind, created_by, visibility) values ($1, $2, 'member', $1, 'space')`, [memberH3C, spaceC]);
+      await client.query(
+        `insert into public.members(entity_id, space_id, identity_id, role, display_name) values ($1, $2, $3, 'owner', 'H3')`,
+        [memberH3C, spaceC, f.identityH3]);
+    });
+    linkId = (await as(f.identityH3, (q) => q.rpc<{ id: string }>('add_space_link', [f.spaceB, spaceC, 'c-link', cmid()]))).id;
+  });
+
+  const withLifecycle = <T>(identityId: string, value: 'on' | 'off', fn: (q: Querier) => Promise<T>): Promise<T> =>
+    as(identityId, async (q) => {
+      await q.query(`select set_config('tm8.server_lifecycle', $1, true)`, [value]);
+      return fn(q);
+    });
+
+  it("a SPACE LINK's delete and move refuse (42501) with the setting 'on' in the same transaction", async () => {
+    expect({
+      delete: await outcome(() => withLifecycle(f.identityH3, 'on', (q) => q.rpc('delete_entity', [linkId, null, null]))),
+      move: await outcome(async () => {
+        const version = await versionOf(linkId);
+        return withLifecycle(f.identityH3, 'on', (q) => q.rpc('move_entity', [linkId, null, 424242.5, version, null, null]));
+      }),
+    }).toEqual({ delete: '42501', move: '42501' });
+    expect(await deletedAt(linkId)).toBeNull();
+  });
+
+  it("a server's delete refuses (42501) with the setting 'off'", async () => {
+    const id = (await add(f.identityH, f.spaceA, 'lifecycle-off')).id;
+    expect(await outcome(() => withLifecycle(f.identityH, 'off', (q) => q.rpc('delete_entity', [id, null, null])))).toBe('42501');
+    expect(await deletedAt(id)).toBeNull();
+  });
+});
+
 // ---------------------------------------------------------------------------
 // The two 044 write ops are still mounted (serverConnections.create/delete,
 // contract-removal follow-up) but refuse over HTTP: 403, rows unchanged.
