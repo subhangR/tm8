@@ -183,9 +183,7 @@ begin
     raise exception 'attention request could not be created' using errcode = '40001';
   end if;
 
-  if deduped then
-    null;
-  else
+  if not deduped then
     update public.entities set activity_at = now(), updated_at = now() where id = p_entity_id;
     perform internal.record_activity(e.space_id, p_entity_id, actor, 'updated', request_id,
       jsonb_build_object('change', 'attention_requested', 'attentionRequestId', request_id,
@@ -771,16 +769,25 @@ begin
         array[target.anchor_id], body, null, '{}'::uuid[], '{}'::uuid[], null, resolver,
         format('attention-note:%s:%s', p_batch_id, target.anchor_id));
       message_id := (posted -> 'messageIds' ->> 0)::uuid;
-    exception when others then
+    exception
+      -- Transient: fail the whole batch so the next tick retries it, rather
+      -- than abandoning rows over a deadlock or a lock timeout.
+      when sqlstate '40P01' or sqlstate '55P03' or sqlstate '40001' then raise;
+      when others then
       failed := failed || jsonb_build_object('anchorId', target.anchor_id, 'error', sqlerrm);
       if target.fallback_id is not null and target.fallback_id <> target.anchor_id then
         begin
           posted := public.w2_post_message_batch(
             array[target.fallback_id], body, null, '{}'::uuid[], '{}'::uuid[], null, resolver,
-            format('attention-note:%s:%s', p_batch_id, target.fallback_id));
+            -- Its OWN key: the root is also the primary anchor of any group
+            -- folded onto it, and sharing that group's key would replay with
+            -- a different body (176: identity mismatch) and lose one note.
+            format('attention-note:%s:%s:via:%s', p_batch_id, target.fallback_id, target.anchor_id));
           message_id := (posted -> 'messageIds' ->> 0)::uuid;
           posted_to := target.fallback_id;
-        exception when others then
+        exception
+          when sqlstate '40P01' or sqlstate '55P03' or sqlstate '40001' then raise;
+          when others then
           failed := failed || jsonb_build_object('anchorId', target.fallback_id, 'error', sqlerrm);
         end;
       end if;
