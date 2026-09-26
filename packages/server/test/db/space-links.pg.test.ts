@@ -645,7 +645,8 @@ describe('W6 T17 — leaving or being removed ends the member\'s rows', () => {
     const link = await store.login(claims, added.id);
     await db.rpc(claims, 'leave_space', [spaceD, null]);
     const row = await sealedRow(link.id, fixture.memberHA);
-    expect(row).toMatchObject({ status: 'left', ciphertext: null });
+    // auth_session_id cleared too: the first cut of the trigger left it set (caught by T17 in cross-space-token).
+    expect(row).toMatchObject({ status: 'left', ciphertext: null, nonce: null, auth_session_id: null });
     const [session] = await database.query<{ revoked: boolean }>(
       `select revoked_at is not null as revoked from public.auth_sessions where id = $1`, [link.mine!.sessionId]);
     expect(session!.revoked).toBe(true);
