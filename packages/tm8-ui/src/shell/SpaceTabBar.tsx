@@ -2,6 +2,15 @@
  * SpaceTabBar — the top row: product mark, the server⋄space switcher slot,
  * the top-level TABS, the UI-2.0 door, palette hint, and the account menu.
  *
+ * REVISION 22 (task 01a0dc6d, owner-ruled 2026-09-26). THE VIEW SWITCHER.
+ * Home, Work, Board and Graph are VIEWS of one space, so they leave the tab
+ * row for one segmented pill (`viewTabs`) that leads the centre zone; Craft,
+ * Settings and Help follow as plain tabs. The partition is the HOST's, by
+ * group id, client-side — no MenuConfig change. Below a container width the
+ * pill folds into a `<select>` (see rungs 5–6 in `shell.css`). The pill's
+ * segments stay `role="tab"` inside the one "Screens" tablist, so every tab
+ * query still finds all seven destinations in one row.
+ *
  * REVISION 21 (task 01a07a56, owner-ordered 2026-09-07). THE ROW IS A GRID.
  *
  * WHAT WAS WRONG, MEASURED RATHER THAN ASSERTED. `shell.css` carried ZERO
@@ -97,6 +106,8 @@ import { BrandMark } from '../kit';
 export interface ShellTab {
   id: string;
   label: string;
+  /** Decorative mark drawn before the label — the View switcher's segments carry one. */
+  glyph?: ReactNode;
 }
 
 export interface SpaceTabBarProps {
@@ -112,6 +123,15 @@ export interface SpaceTabBarProps {
    * Data, not chrome: the bar never invents a tab. Absent → no tablist.
    */
   tabs?: readonly ShellTab[];
+  /**
+   * THE VIEW SWITCHER (task 01a0dc6d, owner-ruled 2026-09-26). Home, Work,
+   * Board and Graph are four VIEWS of one space rather than four places, so
+   * they render as one segmented pill leading the tab row; `tabs` (Craft,
+   * Settings, Help and any custom group) follow it as ordinary tabs. The host
+   * decides the partition — this bar still never invents a destination.
+   * Absent or empty → no pill, exactly the pre-switcher row.
+   */
+  viewTabs?: readonly ShellTab[];
   /** Which tab reads as current — the group owning the active target. */
   activeTabId?: string | null;
   onSelectTab?(id: string): void;
@@ -170,6 +190,29 @@ export function SpaceTabBar(props: SpaceTabBarProps) {
      control, one home, always reachable — and no state where a verb is drawn
      twice. */
   const hostsUtilities = !props.accountSlot;
+  const views = props.viewTabs ?? [];
+  const tabs = props.tabs ?? [];
+  const activeView = views.find((tab) => tab.id === props.activeTabId) ?? null;
+  const renderTab = (tab: ShellTab) => {
+    const active = tab.id === props.activeTabId;
+    return (
+      <button
+        key={tab.id}
+        type="button"
+        role="tab"
+        aria-selected={active}
+        className={`shell-tabbar__tab ${active ? 'shell-tabbar__tab--active' : ''}`}
+        onClick={() => props.onSelectTab?.(tab.id)}
+      >
+        {tab.glyph ? (
+          <span className="shell-tabbar__tab-glyph" aria-hidden="true">
+            {tab.glyph}
+          </span>
+        ) : null}
+        {tab.label}
+      </button>
+    );
+  };
 
   return (
     <header className="shell-tabbar shell-tabbar--r21" data-testid="space-tab-bar">
@@ -201,23 +244,42 @@ export function SpaceTabBar(props: SpaceTabBarProps) {
           left side happens to measure. A flex spacer cannot do this; that is
           the whole reason the row became a grid. */}
       <div className="shell-tabbar__zone shell-tabbar__zone--centre">
-        {props.tabs && props.tabs.length > 0 ? (
+        {/* THE NARROW FORM OF THE SWITCHER. Hidden by `shell.css` until the
+            bar's container query folds the pill; then this is the one visible
+            View control. `display: none` removes whichever form is folded
+            from the accessibility tree, so a viewer only ever meets one. */}
+        {views.length > 0 ? (
+          <select
+            className="shell-tabbar__views-select"
+            data-testid="top-view-switcher-select"
+            aria-label="View"
+            value={activeView ? activeView.id : ''}
+            onChange={(event) => {
+              if (event.target.value) props.onSelectTab?.(event.target.value);
+            }}
+          >
+            {/* Craft, Settings or Help is current: no view is, and the select
+                says so rather than claiming the first one. */}
+            {activeView ? null : (
+              <option value="" disabled>
+                View
+              </option>
+            )}
+            {views.map((tab) => (
+              <option key={tab.id} value={tab.id}>
+                {tab.label}
+              </option>
+            ))}
+          </select>
+        ) : null}
+        {views.length > 0 || tabs.length > 0 ? (
           <nav className="shell-tabbar__tabs" role="tablist" aria-label="Screens">
-            {props.tabs.map((tab) => {
-              const active = tab.id === props.activeTabId;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  className={`shell-tabbar__tab ${active ? 'shell-tabbar__tab--active' : ''}`}
-                  onClick={() => props.onSelectTab?.(tab.id)}
-                >
-                  {tab.label}
-                </button>
-              );
-            })}
+            {views.length > 0 ? (
+              <div className="shell-tabbar__views" role="none" data-testid="top-view-switcher">
+                {views.map(renderTab)}
+              </div>
+            ) : null}
+            {tabs.map(renderTab)}
           </nav>
         ) : null}
       </div>
