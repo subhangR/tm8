@@ -3611,7 +3611,7 @@ describe('S3 a replay honours the session space pin (247 command_ledger.session_
 // ---------------------------------------------------------------------------
 
 /** A second-identity member of A and B (T17 needs someone other than H). */
-async function seedMemberOfAB(label: string): Promise<{ identity: string; account: string; memberA: string; memberB: string }> {
+async function seedMemberOfAB(label: string, spaces: 'AB' | 'A' = 'AB'): Promise<{ identity: string; account: string; memberA: string; memberB: string }> {
   const ids = {
     identity: `cross-space-${label}-${randomUUID()}`,
     account: randomUUID(), memberA: randomUUID(), memberB: randomUUID(),
@@ -3621,7 +3621,10 @@ async function seedMemberOfAB(label: string): Promise<{ identity: string; accoun
     await client.query(`insert into public.user_profiles(identity_id, display_name) values ($1, $2)`, [ids.identity, label]);
     await client.query(`insert into public.accounts(id, identity_id, username) values ($1, $2, $3)`,
       [ids.account, ids.identity, `cross-space-${label}-${ids.account.slice(0, 8)}`]);
-    for (const [member, space] of [[ids.memberA, fixture.spaceA], [ids.memberB, fixture.spaceB]] as const) {
+    const memberships = spaces === 'AB'
+      ? [[ids.memberA, fixture.spaceA], [ids.memberB, fixture.spaceB]] as const
+      : [[ids.memberA, fixture.spaceA]] as const;
+    for (const [member, space] of memberships) {
       await client.query(`insert into public.entities(id, space_id, kind, created_by, visibility) values ($1, $2, 'member', $1, 'space')`, [member, space]);
       await client.query(`insert into public.members(entity_id, space_id, identity_id, role, display_name) values ($1, $2, $3, 'member', $4)`,
         [member, space, ids.identity, label]);
@@ -3821,17 +3824,23 @@ describe.sequential('T20b link session in B — credential management refused, t
 });
 
 describe.sequential('T28 link visibility — every home member sees the link, only the holder sees a token row', () => {
-  beforeAll(ensureHLink);
-  it('H2 (A only) sees the link in A, with no target name (P8) and no row of their own', async () => {
-    const h2 = await claimsForToken(await mintBrowser(fixture.accountH2, fixture.identityH2));
-    const listed = await linkStore.list(h2, fixture.spaceA);
+  // A fresh member of A only. Not H2: S3 (#861, 247) makes H2 a member of B
+  // earlier in this file, so "H2 is A only" stopped holding on the composed tree.
+  let z: Awaited<ReturnType<typeof seedMemberOfAB>>;
+  beforeAll(async () => {
+    await ensureHLink();
+    z = await seedMemberOfAB('t28-z', 'A');
+  });
+  it('Z (A only) sees the link in A, with no target name (P8) and no row of their own', async () => {
+    const zClaims = await claimsForToken(await mintBrowser(z.account, z.identity));
+    const listed = await linkStore.list(zClaims, fixture.spaceA);
     const seen = listed.find((l) => l.id === hLink.id);
     expect(seen).toMatchObject({ targetSpaceId: fixture.spaceB, targetSpaceName: null, mine: null });
     expect(leaksSecret(JSON.stringify(listed))).toBe(false);
   });
 
-  it('H2 cannot read H\'s token row', async () => {
-    const rows = await asIdentity(fixture.identityH2, (q) =>
+  it('Z cannot read H\'s token row', async () => {
+    const rows = await asIdentity(z.identity, (q) =>
       q.query('select id from public.space_link_tokens where link_id = $1', [hLink.id]));
     expect(rows).toHaveLength(0);
   });
