@@ -235,9 +235,26 @@ export function toolStepError(result: unknown): string | null {
   const line = raw
     .replace(/<\/?tool_use_error>/g, '')
     .split('\n')
-    .map((l) => l.trim())
+    .map((l) => withoutIds(l).trim())
     .find((l) => l.length > 0);
   return line ? clip(line, 120) : null;
+}
+
+const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
+
+/**
+ * R8 / D14: no ids on the surface. `team member 01a0…-… not found` reads
+ * `team member not found`; a preposition or colon the id leaves dangling at
+ * the end goes with it (`no such entity: 01a0…` → `no such entity`).
+ */
+function withoutIds(line: string): string {
+  if (!UUID.test(line)) return line;
+  UUID.lastIndex = 0;
+  return line
+    .replace(UUID, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/(?:[\s:;,]+(?:on|for|of|in|to|at|by|with|id))*[\s:;,]*$/i, '')
+    .trim();
 }
 
 /**
