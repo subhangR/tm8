@@ -29,7 +29,7 @@ import { createW1ScratchDatabase, migrationFiles, REPO_ROOT, type W1ScratchDatab
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 300_000 });
 
-const REPOINT = '263_w11_repoint_project_entity.sql';
+const REPOINT = '264_w11_repoint_project_entity.sql';
 const ordinal = (file: string): number => Number(file.slice(0, 3));
 const BEFORE = migrationFiles().filter((f) => ordinal(f) < 234);
 const W11_MODEL = migrationFiles().filter((f) => ordinal(f) === 234);
