@@ -85,9 +85,16 @@ export function attachOsc52Clipboard(term: Terminal, options: Osc52Options): IDi
     pointerHeld = false;
     markGesture();
   };
+  // A cancelled press (touch scroll, pointer lost) never gets its pointerup;
+  // without this, the next pointerup ANYWHERE on the page — a click in another
+  // panel — would count as a gesture for this terminal.
+  const onPointerCancel = () => {
+    pointerHeld = false;
+  };
   element.addEventListener('pointerdown', onPointerDown, true);
   element.addEventListener('keydown', markGesture, true);
   window.addEventListener('pointerup', onPointerUp, true);
+  window.addEventListener('pointercancel', onPointerCancel, true);
 
   const handler = term.parser.registerOscHandler(52, (data) => {
     // Always claim the sequence: xterm has nothing else to do with it.
@@ -104,6 +111,7 @@ export function attachOsc52Clipboard(term: Terminal, options: Osc52Options): IDi
       element.removeEventListener('pointerdown', onPointerDown, true);
       element.removeEventListener('keydown', markGesture, true);
       window.removeEventListener('pointerup', onPointerUp, true);
+      window.removeEventListener('pointercancel', onPointerCancel, true);
     },
   };
 }

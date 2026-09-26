@@ -73,6 +73,16 @@ describe('attachOsc52Clipboard (real xterm parser)', () => {
     expect(copy).not.toHaveBeenCalled();
   });
 
+  it('a cancelled press does not lend the next page-wide pointerup to this terminal', async () => {
+    const { copy, write, press, advance } = setup();
+    press();
+    window.dispatchEvent(new Event('pointercancel'));
+    advance(OSC52_GESTURE_WINDOW_MS + 1);
+    window.dispatchEvent(new Event('pointerup')); // a click somewhere else on the page
+    await write(osc52('not asked for'));
+    expect(copy).not.toHaveBeenCalled();
+  });
+
   it('never copies for a read-only viewer or from replayed scrollback', async () => {
     for (const opts of [{ readOnly: true }, { replaying: true }]) {
       const { copy, write, press } = setup(opts);
