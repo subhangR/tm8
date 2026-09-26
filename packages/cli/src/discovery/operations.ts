@@ -3515,7 +3515,8 @@ export const CATALOG_DIGEST =
   // Re-measured (W8, 261, rebuilt on main f01b1566): +6 servers.* and the serverConnections create/delete rows. Read from the regenerated conformance manifest.
   // Re-measured (W5 #917, merges of main dd1c8215 and 2fa4999f): +3 spaces.spacePassword.* on top of main's servers.*, spaceLinks, attention and launch v3 rows. Read from the regenerated conformance manifest.
   // Re-measured (#915 merge of main 0be3b796): main's servers.* + spaceLinks.invoke/audit and the five attention rows together. Read from the regenerated conformance manifest.
-  'sha256:89a7173aa0badf0233ebd13818273f789f5ef1142682b1e46ecdf4af7241f395';
+  // +1 launch.preview (launch v3 B, on main a61f0350a): equals the regenerated manifest's catalogDigest. MEASURED.
+  'sha256:45dcfb351109374e929b098b85b7b8638ed7d3a141928f17a687a4bba3ad1100';
 
 export const GRAMMAR_VERSION = '2';
 
