@@ -21,10 +21,10 @@
  * (iii) Defence in depth. `execution.spawn`, `execution.resume`,
  *     `execution.dispatch` and the spawn reader
  *     (`SpaceCredentialStore.readForSpawn`) refuse it again with
- *     `refuseLinkBearer`; SQL `read_space_credential_for_spawn` and the
- *     spawn-path agent-session mint (`issue_work_session_agent_session`,
- *     called by `DbGraphPort.issueWorkSessionAgentToken`) refuse
- *     `tm8.auth_kind = 'link'` as their first statement.
+ *     `refuseLinkBearer`; SQL `read_space_credential_for_spawn` and both
+ *     agent-session mints (`issue_work_session_agent_session`, called by
+ *     `DbGraphPort.issueWorkSessionAgentToken`, and `issue_agent_auth_session`)
+ *     refuse `tm8.auth_kind = 'link'` as their first statement.
  *
  * An agent minted under a link (authKind `agent`, `viaLinkId` set) is NOT a
  * link bearer and is not refused by any of these; its link-bound rules apply

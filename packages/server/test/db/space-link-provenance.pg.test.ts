@@ -248,7 +248,7 @@ const humanClaims = async (who: 'H' | 'H3' | 'H4' = 'H', kind: 'browser' | 'cli'
   return claimsForToken(await mintHuman(account, identity, kind));
 };
 
-interface Linked { link: SpaceLink; human: DbClaims; linkToken: string; linkClaims: DbClaims; linkSessionId: string }
+interface Linked { link: SpaceLink; human: DbClaims; linkToken: string; linkClaims: DbClaims; mintClaims: DbClaims; linkSessionId: string }
 
 /** `who`'s link A → B, logged in, and its stored link session's claims. */
 async function linked(who: 'H' | 'H3' | 'H4' = 'H'): Promise<Linked> {
@@ -256,7 +256,22 @@ async function linked(who: 'H' | 'H3' | 'H4' = 'H'): Promise<Linked> {
   const added = await store.add(human, { spaceId: fixture.spaceA, targetSpaceId: fixture.spaceB });
   const link = await store.login(human, added.id);
   const use = await store.use(human, link.id);
-  return { link, human, linkToken: use.token, linkClaims: inProcessClaims(use.session, use.token), linkSessionId: use.session.sessionId };
+  const linkClaims = inProcessClaims(use.session, use.token);
+  return { link, human, linkToken: use.token, linkClaims, mintClaims: mintClaimsOf(linkClaims), linkSessionId: use.session.sessionId };
+}
+
+/**
+ * The claims a first via_link child is minted under. 992 (W7p, Q4) refuses a
+ * `link` session in BOTH agent mints, and every other path to a via_link
+ * stamp needs a child that already exists (a grandchild, a resume), so the
+ * fixture mints through the link-bound NON-link branch of
+ * `internal.link_provenance_for`: the same identity, pin and `tm8.via_link`
+ * claim, authKind `agent`. The mint still derives via_link and the parent from
+ * `internal.live_link_session`, so every stamp, cap and liveness assertion
+ * exercises the mint's own logic; only the caller's auth kind changes.
+ */
+function mintClaimsOf(linkClaims: DbClaims): DbClaims {
+  return { ...linkClaims, authKind: 'agent' };
 }
 
 const readGit = (claims: DbClaims) => db.rpc(claims, 'read_account_git_credential', ['github']);
@@ -276,8 +291,9 @@ describe('W7p the link session and its children carry via_link', () => {
     expect(L.linkClaims).toMatchObject({ authKind: 'link', viaLinkId: L.link.id, sessionSpaceId: fixture.spaceB });
   });
 
-  it('a child minted under the link (226 agent issuer) has via_link_id and the link session as parent', async () => {
-    const child = await mintChild(L.linkClaims);
+  it('a child minted under the link (226 agent issuer, link-bound agent claims) has via_link_id and the link session as parent', async () => {
+    expect(L.mintClaims).toMatchObject({ authKind: 'agent', viaLinkId: L.link.id, sessionSpaceId: fixture.spaceB });
+    const child = await mintChild(L.mintClaims);
     expect(await sessionRow(child.id)).toMatchObject({
       kind: 'agent', via_link_id: L.link.id, parent_session_id: L.linkSessionId, revoked: false,
     });
@@ -292,26 +308,29 @@ describe('W7p the link session and its children carry via_link', () => {
     expect(inProcessClaims(again.session, again.token)).toMatchObject({ authKind: 'link', viaLinkId: L.link.id });
   });
 
-  it('the spawn-path mint refuses a link session first (SQL backstop); a via_link child mints and stamps the same', async () => {
-    const before = await database.query<{ n: number }>(`select count(*)::int as n from public.auth_sessions where parent_session_id = $1`, [L.linkSessionId]);
-    const error = await mintChild(L.linkClaims, { issuer: 'issue_work_session_agent_session' }).then(() => 'resolved', (err: unknown) => err);
-    expect(await outcome(async () => { if (error !== 'resolved') throw error; })).toBe('42501');
-    expect(String((error as Error).message)).toContain('a space link session cannot mint an agent session');
-    const after = await database.query<{ n: number }>(`select count(*)::int as n from public.auth_sessions where parent_session_id = $1`, [L.linkSessionId]);
-    expect(after[0]?.n).toBe(before[0]?.n);
-    const child = await childOf(L);
-    const grand = await mintChild(child, { issuer: 'issue_work_session_agent_session' });
-    expect(await sessionRow(grand.id)).toMatchObject({ kind: 'agent', via_link_id: L.link.id, parent_session_id: L.linkSessionId });
-  });
+  for (const issuer of ['issue_work_session_agent_session', 'issue_agent_auth_session'] as const) {
+    it(`${issuer} refuses a link session first (SQL backstop); a via_link child mints and stamps the same`, async () => {
+      const count = async () => (await database.query<{ n: number }>(
+        `select count(*)::int as n from public.auth_sessions where parent_session_id = $1`, [L.linkSessionId]))[0]?.n;
+      const before = await count();
+      const error = await mintChild(L.linkClaims, { issuer }).then(() => 'resolved', (err: unknown) => err);
+      expect(await outcome(async () => { if (error !== 'resolved') throw error; })).toBe('42501');
+      expect(String((error as Error).message)).toContain('a space link session cannot mint an agent session');
+      expect(await count()).toBe(before);
+      const child = await childOf(L);
+      const grand = await mintChild(child, { issuer });
+      expect(await sessionRow(grand.id)).toMatchObject({ kind: 'agent', via_link_id: L.link.id, parent_session_id: L.linkSessionId });
+    });
+  }
 
   it('a grandchild inherits via_link, parented flat on the link session', async () => {
-    const child = await mintChild(L.linkClaims);
+    const child = await mintChild(L.mintClaims);
     const grand = await mintChild(await claimsForToken(child.token));
     expect(await sessionRow(grand.id)).toMatchObject({ via_link_id: L.link.id, parent_session_id: L.linkSessionId });
   });
 
   it('a resume re-mint by the non-link human keeps the link (the work session ran under it)', async () => {
-    const child = await mintChild(L.linkClaims);
+    const child = await mintChild(L.mintClaims);
     const resumed = await mintChild(L.human, { workSessionId: child.workSessionId });
     expect(await sessionRow(resumed.id)).toMatchObject({ via_link_id: L.link.id, parent_session_id: L.linkSessionId });
     expect((await sessionRow(child.id)).revoked).toBe(true);
@@ -321,7 +340,7 @@ describe('W7p the link session and its children carry via_link', () => {
     // SpawnService asks this AFTER the mint, so its TS credential policy
     // follows the SQL stamp rather than the resumer's own claims.
     const graph = new DbGraphPort(db);
-    const child = await mintChild(L.linkClaims);
+    const child = await mintChild(L.mintClaims);
     const resumed = await mintChild(L.human, { workSessionId: child.workSessionId });
     expect(L.human.viaLinkId ?? null).toBeNull();
     expect(await graph.isLinkBound(L.human, resumed.token)).toBe(true);
@@ -331,7 +350,7 @@ describe('W7p the link session and its children carry via_link', () => {
   });
 
   it('a child never outlives its link session (expiry capped)', async () => {
-    const child = await mintChild(L.linkClaims, { days: 400 });
+    const child = await mintChild(L.mintClaims, { days: 400 });
     const [c, p] = [await sessionRow(child.id), await sessionRow(L.linkSessionId)];
     expect(c.expires_at.getTime()).toBe(p.expires_at.getTime());
   });
@@ -357,12 +376,12 @@ describe('W7p 093 — the linking human\'s git login is refused, never null', ()
   });
 
   it('a link child: 42501', async () => {
-    const child = await mintChild(L.linkClaims);
+    const child = await mintChild(L.mintClaims);
     expect(await outcome(async () => readGit(await claimsForToken(child.token)))).toBe('42501');
   });
 
   it('a grandchild: 42501', async () => {
-    const child = await mintChild(L.linkClaims);
+    const child = await mintChild(L.mintClaims);
     const grand = await mintChild(await claimsForToken(child.token));
     expect(await outcome(async () => readGit(await claimsForToken(grand.token)))).toBe('42501');
   });
@@ -375,7 +394,7 @@ describe('W7p 093 — the linking human\'s git login is refused, never null', ()
 
   it('DbGitHubCredentialStore.resolve surfaces the 42501 — it does not answer "no login"', async () => {
     const git = new DbGitHubCredentialStore({ db, dataDir });
-    const child = await mintChild(L.linkClaims);
+    const child = await mintChild(L.mintClaims);
     expect(await outcome(async () => git.resolve(await claimsForToken(child.token)))).toBe('42501');
     // Paired positive.
     expect(await git.resolve(L.human)).toMatchObject({ login: 'w7p-h' });
@@ -387,7 +406,7 @@ describe('W7p 083 — the linking human\'s model login is not offered', () => {
   beforeAll(async () => { L = await linked(); });
 
   it('a link child sees no model credential row; H does', async () => {
-    const child = await claimsForToken((await mintChild(L.linkClaims)).token);
+    const child = await claimsForToken((await mintChild(L.mintClaims)).token);
     expect(await modelRows(child)).toEqual([]);
     expect(await modelRows(L.linkClaims)).toEqual([]);
     expect(await modelRows(L.human)).toEqual([{ provider: 'anthropic' }]);
@@ -395,7 +414,7 @@ describe('W7p 083 — the linking human\'s model login is not offered', () => {
 
   it('DbAgentCredentialHome answers null for a link child, and resolves H', async () => {
     const home = new DbAgentCredentialHome({ db, dataDir });
-    const child = await claimsForToken((await mintChild(L.linkClaims)).token);
+    const child = await claimsForToken((await mintChild(L.mintClaims)).token);
     expect(await home.resolve(child, { agentTool: 'claude-code', model: 'opus' })).toBeNull();
     expect(await home.resolve(L.human, { agentTool: 'claude-code', model: 'opus' })).not.toBeNull();
   });
@@ -403,7 +422,7 @@ describe('W7p 083 — the linking human\'s model login is not offered', () => {
 
 /** A via_link agent under `L` (authKind 'agent', viaLinkId set): a real child of the link session. */
 async function childOf(L: Linked, spaceSessions?: 'off'): Promise<DbClaims> {
-  return claimsForToken((await mintChild(L.linkClaims)).token, spaceSessions);
+  return claimsForToken((await mintChild(L.mintClaims)).token, spaceSessions);
 }
 
 describe('W7p 206 — a link-bound caller gets the target default only, while its own row allows it', () => {
@@ -619,7 +638,7 @@ describe('W7p setSpawn(false) — no new mint under the link; running sessions u
 
   it("(1) a running via_link child's spawn is refused on the mint alone — no 206 read (node model, no git)", async () => {
     const L = await linked();
-    const child = await claimsForToken((await mintChild(L.linkClaims)).token);
+    const child = await claimsForToken((await mintChild(L.mintClaims)).token);
     // Paired positive: the same child mints a grandchild while spawning is on.
     expect(await outcome(() => mintChild(child))).toBe('ok');
     await withSpawnOff(L, async () => {
@@ -631,7 +650,7 @@ describe('W7p setSpawn(false) — no new mint under the link; running sessions u
 
   it('(2) a resume of a stopped via_link session is refused while spawning is off', async () => {
     const L = await linked();
-    const child = await mintChild(L.linkClaims);
+    const child = await mintChild(L.mintClaims);
     await database.query(`update public.auth_sessions set revoked_at = now() where id = $1`, [child.id]);
     await withSpawnOff(L, async () => {
       const before = await underLink(L.link.id);
@@ -642,7 +661,7 @@ describe('W7p setSpawn(false) — no new mint under the link; running sessions u
 
   it('(3) a running via_link session is unaffected: its token still resolves and its calls still work', async () => {
     const L = await linked();
-    const minted = await mintChild(L.linkClaims);
+    const minted = await mintChild(L.mintClaims);
     await withSpawnOff(L, async () => {
       expect((await sessionRow(minted.id)).revoked).toBe(false);
       expect((await sessionRow(L.linkSessionId)).revoked).toBe(false);
@@ -655,7 +674,7 @@ describe('W7p setSpawn(false) — no new mint under the link; running sessions u
 
   it('(4) after setSpawn(true), the same resume succeeds and keeps the link', async () => {
     const L = await linked();
-    const child = await mintChild(L.linkClaims);
+    const child = await mintChild(L.mintClaims);
     await database.query(`update public.auth_sessions set revoked_at = now() where id = $1`, [child.id]);
     await withSpawnOff(L, async () => {
       expect(await outcome(() => mintChild(L.human, { workSessionId: child.workSessionId }))).toBe('42501');
@@ -668,7 +687,7 @@ describe('W7p setSpawn(false) — no new mint under the link; running sessions u
   // RUNNING child keeps its token (3) but cannot re-read the space default.
   it("(5) a running via_link child's 206 re-read is refused while spawning is off, and admitted after setSpawn(true)", async () => {
     const L = await linked();
-    const child = await claimsForToken((await mintChild(L.linkClaims)).token);
+    const child = await claimsForToken((await mintChild(L.mintClaims)).token);
     expect(await read206(child)).toMatchObject({ credentialId: fixture.antDefaultB });
     await withSpawnOff(L, async () => {
       expect(await outcome(() => read206(child))).toBe('42501');
@@ -682,7 +701,7 @@ describe('W7p setSpawn(false) — no new mint under the link; running sessions u
 describe('W7p open_space_link_token and mark_space_link_stale — no chaining', () => {
   it('a link child cannot open a link (42501); an ordinary agent child of H opens H\'s row', async () => {
     const L = await linked();
-    const child = await claimsForToken((await mintChild(L.linkClaims)).token);
+    const child = await claimsForToken((await mintChild(L.mintClaims)).token);
     expect(await outcome(() => db.rpc(child, 'open_space_link_token', [L.link.id]))).toBe('42501');
     // Paired positive: G, H's agent in the HOME space, on the same link.
     const ws = await workSession(fixture.spaceA, fixture.personaA, fixture.memberHA);
@@ -696,7 +715,7 @@ describe('W7p open_space_link_token and mark_space_link_stale — no chaining', 
 
   it('a link child cannot mark a link stale (42501, row untouched); H\'s ordinary agent child can', async () => {
     const L = await linked();
-    const child = await claimsForToken((await mintChild(L.linkClaims)).token);
+    const child = await claimsForToken((await mintChild(L.mintClaims)).token);
     for (const status of ['signed_out', 'unreachable']) {
       expect(await outcome(() => db.rpc(child, 'mark_space_link_stale', [L.link.id, status]))).toBe('42501');
     }
@@ -718,7 +737,7 @@ describe('W7p open_space_link_token and mark_space_link_stale — no chaining', 
 // ---------------------------------------------------------------------------
 
 async function family(L: Linked): Promise<string[]> {
-  const child = await mintChild(L.linkClaims);
+  const child = await mintChild(L.mintClaims);
   const grand = await mintChild(await claimsForToken(child.token));
   for (const id of [child.id, grand.id]) expect((await sessionRow(id)).revoked).toBe(false);
   return [child.id, grand.id];
@@ -750,7 +769,7 @@ describe('W7p end paths — every way a link ends, ends its descendants', () => 
     await expectEnded(ids);
     // Paired positive: the new link session mints again.
     const again = await linked();
-    expect(await outcome(() => mintChild(again.linkClaims))).toBe('ok');
+    expect(await outcome(() => mintChild(again.mintClaims))).toBe('ok');
   });
 
   it('stale signed_out', async () => {
@@ -767,7 +786,7 @@ describe('W7p end paths — every way a link ends, ends its descendants', () => 
     expect((await sessionRow(L.linkSessionId)).revoked).toBe(false);
     await expectEnded(ids);
     // And nothing new mints under a row that is not signed in.
-    expect(await outcome(() => mintChild(L.linkClaims))).toBe('42501');
+    expect(await outcome(() => mintChild(L.mintClaims))).toBe('42501');
   });
 
   it('membership end — H4 removed from the HOME space', async () => {
@@ -784,7 +803,7 @@ describe('W7p end paths — every way a link ends, ends its descendants', () => 
     await database.query(`update public.auth_sessions set expires_at = now() - interval '1 second' where id = $1`, [L.linkSessionId]);
     const ws = await sessionWs(child!);
     expect(await outcome(() => mintChild(L.human, { workSessionId: ws }))).toBe('42501');
-    expect(await outcome(() => mintChild(L.linkClaims))).not.toBe('ok');
+    expect(await outcome(() => mintChild(L.mintClaims))).not.toBe('ok');
   });
 
   it('hard delete of the link entity removes the link session and every descendant', async () => {
@@ -812,7 +831,7 @@ describe('W7p end paths — every way a link ends, ends its descendants', () => 
 
   it('a resume after the link ended is refused, not silently unlinked', async () => {
     const L = await linked();
-    const child = await mintChild(L.linkClaims);
+    const child = await mintChild(L.mintClaims);
     await store.logout(L.human, L.link.id);
     expect(await outcome(() => mintChild(L.human, { workSessionId: child.workSessionId }))).toBe('42501');
   });

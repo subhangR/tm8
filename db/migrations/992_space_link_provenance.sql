@@ -199,7 +199,8 @@ returns jsonb language sql stable security definer set search_path = public, int
 $$;
 
 -- -----------------------------------------------------------------------------
--- 4. issue_agent_auth_session — 226's body plus the provenance stamp.
+-- 4. issue_agent_auth_session — 226's body plus the mint backstop and the
+--    provenance stamp.
 -- -----------------------------------------------------------------------------
 create or replace function public.issue_agent_auth_session(
   p_work_session_id uuid,
@@ -209,12 +210,21 @@ create or replace function public.issue_agent_auth_session(
   p_label text default null
 ) returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
 declare
-  identity text := internal.require_identity();
+  identity text;
   target_space uuid;
   account public.accounts;
   issued public.auth_sessions;
   prov record;
 begin
+  -- W7p mint backstop (deny-by-default ruling, Q4): this mint refuses a `link`
+  -- session as its first statement, like issue_work_session_agent_session.
+  -- 226 resolved the identity in the declare block, which runs before any
+  -- statement; it moves below the refusal. #884 admits its invoke by its
+  -- marker, and nothing else.
+  if coalesce(internal.claim_text('tm8.auth_kind'), '') = 'link' then
+    raise exception 'a space link session cannot mint an agent session' using errcode = '42501';
+  end if;
+  identity := internal.require_identity();
   if p_expires_at <= now() then
     raise exception 'agent auth session expiry must be in the future' using errcode = '22023';
   end if;
