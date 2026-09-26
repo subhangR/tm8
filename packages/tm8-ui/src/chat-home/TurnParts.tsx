@@ -95,11 +95,12 @@ export function TurnParts({
   /**
    * THE LEDGER, NOT THE CALLS. A turn that read nine entities used to draw
    * nine boxes; then it drew a chip row; now it says what happened to the
-   * graph, in three sentence shapes and nothing else (design ruling 1):
+   * graph (design ruling 1; advisor D9–D11):
    *
-   *   Read 3 tasks, 4 docs, 5 memories     ← ONE counted line per turn
-   *   Task 1 Created                       ← one line per create, tree-indented
-   *   Task 1  in_progress → done           ← one line per transition
+   *   Read 3 tasks, 4 docs, 5 memories        ← ONE quiet counted line per turn
+   *   ┃ ◆ Task 1 · New task · under ◆ P  CREATED ← a highlighted card per create
+   *   ◆ Task 1  [working] → [done]             ← a pill line per transition
+   *   ✎ Edited ◆ Task 1 (acceptance criteria)   ← ONE quiet line for the edits
    *
    * Everything comes from the ledger fold (`ledger.ts`) — the same model the
    * sticky panel and the graph stage project — so the transcript can never

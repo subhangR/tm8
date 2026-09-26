@@ -337,7 +337,8 @@ export function buildChatLedger(turns: readonly ChatTurn[]): ChatLedger {
         continue;
       }
 
-      if (operation && operation in EDIT_OPS) {
+      // An own key only — `in` would also match `constructor`, `toString`.
+      if (operation && Object.prototype.hasOwnProperty.call(EDIT_OPS, operation)) {
         const edit = editFrom(part, turn.messageId, operation);
         if (edit) edits.push(edit);
         continue;
