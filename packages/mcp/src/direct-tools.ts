@@ -189,7 +189,7 @@ export const DIRECT_TOOLS: readonly DirectToolDefinition[] = [
     name: 'form_create',
     description: 'Ask a human a question with a form instead of asking in prose. The form opens at once; '
       + 'each answer is delivered back to THIS session as a form_response turn. '
-      + 'Question config per type: single_choice/multi_choice {options:[{value,label,recommended?}], allowOther?}, '
+      + 'Question config per type: single_choice/multi_choice {options:[{value,label,recommended?}], allowOther? (default true: the respondent may write in their own choice; false turns it off)}, '
       + 'short_text/long_text {maxLength?, placeholder?}, scale {min, max, minLabel?, maxLabel?}.',
     inputSchema: objectSchema({
       spaceId: stringProp('Space id.'),
