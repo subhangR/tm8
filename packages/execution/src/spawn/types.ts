@@ -565,6 +565,16 @@ export interface SpawnContext {
    * read are declared, never dropped silently.
    */
   roster?: DispatcherRoster;
+  /**
+   * The EXACT teammates group when the launch selected teammates
+   * (`selection.teammateIds`, launch card v3 Decision 7), in the selected
+   * order, the launch teammate removed; each a live, same-space teammate the
+   * caller can read, with the roster's columns. Rendered as the `teammates`
+   * group of `<context_index>`, replacing the tasks' linked teammates.
+   * Absent when teammates were not selected, and for a dispatcher, which
+   * keeps its roster (`applyDispatcherTeammates` removes the set).
+   */
+  teammates?: DispatcherRoster['members'];
 }
 
 /** The teammates a dispatcher routes to, as `loadDispatcherRoster` read them. */
@@ -581,6 +591,8 @@ export interface SpawnContextAudit {
    * group's edge-driven defaults. A group not listed kept its defaults.
    */
   selectedGroups: ReadonlyArray<SpawnSelectionGroup>;
+  /** `selection.teammateIds` a dispatcher ignored (`applyDispatcherTeammates`). */
+  teammatesIgnored?: number;
   /** One per `teamMember.memoryIds` entry, same order. */
   memoryVia: ContextVia[];
   /** Skills that are in the session only because the selection named them. */
@@ -620,7 +632,13 @@ export interface ContextGroupAudit {
    * validated at the wire, audit-only). `replay-invalid`: a resume found the
    * launch's recorded selection malformed, so it loaded the defaults instead.
    */
-  reason?: 'no-selection' | 'not-selectable' | 'replay-invalid' | SpawnSelectionDefaultReason;
+  reason?: 'no-selection' | 'not-selectable' | 'replay-invalid' | 'dispatcher-roster' | SpawnSelectionDefaultReason;
+  /**
+   * Teammates only, with reason `dispatcher-roster`: how many
+   * `selection.teammateIds` a dispatcher launch ignored (it keeps its full
+   * roster).
+   */
+  ignored?: number;
   /** Linked rows (a dispatcher's teammates: roster rows) beyond the spawn read; declared as `omitted` in the prompt. */
   unread?: number;
   /** See `SpawnContextAudit.legacyMemoriesDropped`. */

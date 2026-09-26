@@ -100,6 +100,7 @@ export function contextHeaderIds(context: SpawnContext): string[] {
     ...(context.skillEquips ?? context.skills ?? []).map((row) => row.entityId),
     ...(context.teamMember.memoryIds ?? []),
     ...(context.roster?.members ?? []).map((row) => row.entityId),
+    ...(context.teammates ?? []).map((row) => row.entityId),
   ])];
 }
 
@@ -379,15 +380,35 @@ export function skillIndexEntry(skill: ManifestSkillContext, via: ContextVia, he
 export function rosterEntry(
   row: DispatcherRoster['members'][number],
   header: SelectionHeader | undefined,
+  via: 'roster' | 'selection' = 'roster',
 ): PromptContextEntry {
   return {
     id: row.entityId,
     kind: 'team_member',
-    via: 'roster',
+    via,
     teammate: { mode: row.mode, model: row.model },
     load: loadPointerFor('team_member', row.entityId),
     ...withHeader(header, row.name),
   };
+}
+
+/**
+ * A DISPATCHER ignores `selection.teammateIds` (coordinator ruling, launch
+ * card v3 Decision 7): its teammates group stays the full space roster. The
+ * ignored set leaves the context, with its `not-selected` teammate drops, and
+ * the launch record says so (`groups.teammates.reason: 'dispatcher-roster'`,
+ * `ignored`). Every other mode keeps the exact set. Run once the launch's
+ * mode is known, before the roster read.
+ */
+export function applyDispatcherTeammates(context: SpawnContext, mode: string | null | undefined): void {
+  if (mode !== 'dispatcher' || !context.teammates) return;
+  const ignored = context.teammates.length;
+  delete context.teammates;
+  const audit = context.contextAudit;
+  if (audit) {
+    audit.dropped = audit.dropped.filter((drop) => !(drop.group === 'teammates' && drop.reason === 'not-selected'));
+    audit.teammatesIgnored = ignored;
+  }
 }
 
 export interface ContextIndexCandidatesInput {
@@ -396,6 +417,8 @@ export interface ContextIndexCandidatesInput {
   memories?: PromptContextEntry[];
   /** The skills the index may carry (after the native-shadow pass), in index order. */
   skills: readonly ManifestSkillContext[];
+  /** The launch's mode: a dispatcher never renders `context.teammates` (it keeps its roster). */
+  mode?: string | null;
 }
 
 /**
@@ -415,6 +438,16 @@ export function contextIndexCandidates(input: ContextIndexCandidatesInput): Prom
   const teammates: PromptContextEntry[] = [];
   const seen = new Set<string>();
   const selected = context.references !== undefined;
+  // Selected teammates (Decision 7) are the whole group, rendered with the
+  // roster's columns; a task's linked teammate then enters only by selection.
+  // Never for a dispatcher: its teammates group is its roster
+  // (`applyDispatcherTeammates` has already dropped the set and recorded it).
+  const selectedTeammates = input.mode === 'dispatcher' ? undefined : context.teammates;
+  for (const row of selectedTeammates ?? []) {
+    if (row.entityId === self || seen.has(row.entityId)) continue;
+    seen.add(row.entityId);
+    teammates.push(rosterEntry(row, headers.get(row.entityId), 'selection'));
+  }
   for (const ref of context.references ?? []) {
     // Files are never index entries: they ride in `<attachments>`.
     if (ref.kind === 'file' || seen.has(ref.entityId)) continue;
@@ -424,7 +457,7 @@ export function contextIndexCandidates(input: ContextIndexCandidatesInput): Prom
   for (const task of context.tasks) {
     for (const item of task.linked ?? []) {
       const teammate = item.kind === 'team_member';
-      if (teammate && item.entityId === self) continue;
+      if (teammate && (item.entityId === self || selectedTeammates)) continue;
       if (item.kind === 'file') continue;
       if (selected && REFERENCE_KINDS.has(item.kind)) continue;
       if (seen.has(item.entityId)) continue;
@@ -437,7 +470,7 @@ export function contextIndexCandidates(input: ContextIndexCandidatesInput): Prom
   // A dispatcher's roster, after any teammate a task links (those were named
   // for this work). Mode and model are the teammate's own columns, rendered as
   // control attributes; its name and header stay untrusted text.
-  const roster = context.roster;
+  const roster = selectedTeammates ? undefined : context.roster;
   let rosterUnread = 0;
   if (roster) {
     for (const row of roster.members) {

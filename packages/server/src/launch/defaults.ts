@@ -39,7 +39,7 @@ import type { DbClaims } from '../db/types.js';
 import { claimsFor, requireUuidParam } from '../facade/context.js';
 import type { FacadeDeps } from '../facade/deps.js';
 import type { HandlerRegistry } from '../facade/registry.js';
-import { loadMemoryDefaults, loadReferenceDefaults, loadSkillDefaults } from '../facade/spawn-defaults.js';
+import { loadMemoryDefaults, loadReferenceDefaults, loadSkillDefaults, loadTeammateDefaults } from '../facade/spawn-defaults.js';
 import { loadMemoriesById, renderMemoryText } from '../facade/spawn-memories.js';
 import { resolveHeaders } from '../headers/resolve.js';
 import { fail } from '../http/errors.js';
@@ -159,8 +159,20 @@ export function registerLaunchDefaultsHandler(registry: HandlerRegistry, deps: F
         };
       });
 
-      const headers = await resolveHeaders(q, spaceId, [...memories, ...skills, ...references].map((row) => row.entityId));
-      return { memories, skills, references, headers, taskId, warnings, teamMemberId, teammateTool };
+      // Rendered as spawn renders a task's linked teammate (`referenceIndexEntry`, via `linked`).
+      const teammates: Draft[] = (await loadTeammateDefaults(q, spaceId, taskIds, teamMemberId)).map((row) => ({
+        entityId: row.entityId,
+        kind: row.kind,
+        via: 'linked',
+        fallbackTitle: row.entityId,
+        measure: (header, measure) =>
+          referencePromptBytes({ entityId: row.entityId, kind: row.kind, via: 'linked', link: row.link, title: header?.name ?? null }, header, measure),
+      }));
+
+      const headers = await resolveHeaders(
+        q, spaceId, [...memories, ...skills, ...references, ...teammates].map((row) => row.entityId),
+      );
+      return { memories, skills, references, teammates, headers, taskId, warnings, teamMemberId, teammateTool };
     });
 
     const warnings = [...read.warnings];
@@ -215,6 +227,7 @@ export function registerLaunchDefaultsHandler(registry: HandlerRegistry, deps: F
       memories: finish(read.memories, rules.memories, 'memories'),
       skills: finish(read.skills, rules.skills, 'skills'),
       references: finish(read.references, rules.references, 'references'),
+      teammates: finish(read.teammates, rules.teammates, 'teammates'),
       taskId: read.taskId,
       contextIndex: contextIndex ? 'on' : 'off',
       warnings,

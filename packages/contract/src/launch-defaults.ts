@@ -98,6 +98,15 @@ export interface LaunchDefaultsResult {
   memories: LaunchDefaultsGroup;
   skills: LaunchDefaultsGroup;
   references: LaunchDefaultsGroup;
+  /**
+   * `selection.teammateIds`' defaults: the teammates the launch's task links
+   * (`relates_to` / `attached_to`), the launch teammate excluded — empty for
+   * most worker launches. Budget: `contextBudgets.teammates` when the
+   * profile sets one; null when it does not (a worker's teammates then share
+   * the references cap) and while the index is off (teammates are then not
+   * in the prompt). Floor: `contextFloors.teammates`.
+   */
+  teammates: LaunchDefaultsGroup;
   /** The task the subject resolved to; null when it has none yet (spawn would mint one). */
   taskId: EntityId | null;
   /**

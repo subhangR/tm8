@@ -141,7 +141,7 @@ export function answer(
   };
   const groups: LaunchSuggestResult['groups'] = {};
   for (const g of input.groups) (groups as Record<string, unknown>)[g] = all[g];
-  return { runId: input.runId, groups, contextIndex, run };
+  return { runId: input.runId, groups, contextIndex, rankedForTeamMemberId: input.teamMemberId ?? null, run };
 }
 
 export interface PendingCall {

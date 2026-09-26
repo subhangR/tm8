@@ -24,7 +24,7 @@
 import { randomUUID } from 'node:crypto';
 
 import type { LaunchSuggestResult, RankedEntity } from '@tm8/contract';
-import { composeManifest, contextHeaderIds, DISPATCHER_ROSTER_READ_MAX, resolveLaunchConfig, type SpawnContext } from '@tm8/execution';
+import { composeManifest, contextHeaderIds, resolveLaunchConfig, type SpawnContext } from '@tm8/execution';
 import { contextEntryBytes, serializeContextGroup, utf8Bytes } from '@tm8/prompt';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -263,15 +263,16 @@ describe('suggest-ticked == spawn-kept, byte for byte (design 01a0d348 §10 Q5.8
     expect(groupRules({ TM8_CONTEXT_INDEX: 'off' }, OFF).contextIndex).toBe(true);
   });
 
-  it('a teammate Jev ranks measures as a dispatcher\'s roster renders it (I8 rosterEntry: mode and model included)', async () => {
+  it('a teammate Jev ranks measures as a SELECTED teammate renders it (Decision 7: rosterEntry via selection, mode and model included)', async () => {
     const result = await suggest(PROFILE, randomUUID(), ['teammates']);
     const teammates = result.groups.teammates;
     if (teammates?.status !== 'ok') throw new Error(`teammates is ${teammates?.status}`);
-    // Spawn a DISPATCHER exactly as SpawnService.loadIndexHeaders does: roster first, then its headers.
-    const context: SpawnContext = await port.loadSpawnContext(claims(), { spaceId: ids.space!, teamMemberId: ids.teammate!, taskIds: [ids.task!] });
-    context.roster = await port.loadDispatcherRoster(claims(), { spaceId: ids.space!, excludeTeamMemberId: ids.teammate!, limit: DISPATCHER_ROSTER_READ_MAX });
+    // Spawn a WORKER that ticks Jev's teammates (selection.teammateIds), then its headers, as SpawnService does.
+    const context: SpawnContext = await port.loadSpawnContext(claims(), {
+      spaceId: ids.space!, teamMemberId: ids.teammate!, taskIds: [ids.task!], selection: { teammateIds: [ids.lead!, ids.scout!] },
+    });
     context.headers = await port.loadContextHeaders(claims(), { spaceId: ids.space!, ids: contextHeaderIds(context) });
-    const request = { spaceId: ids.space!, teamMemberId: ids.teammate!, taskIds: [ids.task!], mode: 'dispatcher' as const };
+    const request = { spaceId: ids.space!, teamMemberId: ids.teammate!, taskIds: [ids.task!] };
     const manifest = composeManifest({
       sessionId: 'session', request, context, launch: resolveLaunchConfig(request, context, {}),
       workdir: { mode: 'project', path: '/repo' }, command: 'test', baseUrl: 'http://localhost',

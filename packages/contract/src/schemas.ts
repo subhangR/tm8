@@ -3458,7 +3458,7 @@ const SpaceCredentialIdsSchema = z.object({
 const SelectionGroupIdsSchema = z.array(SpawnUuidSchema).max(SPAWN_SELECTION_GROUP_LIMIT);
 
 export const SPAWN_SELECTION_EMPTY_MESSAGE =
-  'selection names no group: send at least one of memoryIds, skillIds, referenceIds, or omit selection for the defaults';
+  'selection names no group: send at least one of memoryIds, skillIds, referenceIds, teammateIds, or omit selection for the defaults';
 
 /**
  * `selection` (design 01a0d348 §5.1): every group optional — absent means
@@ -3469,8 +3469,10 @@ export const SpawnSelectionSchema = z.object({
   memoryIds: SelectionGroupIdsSchema.optional(),
   skillIds: SelectionGroupIdsSchema.optional(),
   referenceIds: SelectionGroupIdsSchema.optional(),
+  teammateIds: SelectionGroupIdsSchema.optional(),
 }).strict().refine(
-  (selection) => selection.memoryIds !== undefined || selection.skillIds !== undefined || selection.referenceIds !== undefined,
+  (selection) => selection.memoryIds !== undefined || selection.skillIds !== undefined || selection.referenceIds !== undefined
+    || selection.teammateIds !== undefined,
   { message: SPAWN_SELECTION_EMPTY_MESSAGE },
 );
 

@@ -322,11 +322,15 @@ export function buildManifestContext(input: ManifestContextInput): Required<Omit
       ...selectable('references'),
       ...(unreadReferences > 0 ? { unread: unreadReferences } : {}),
     },
-    // Selection cannot name teammates: the teammate pick is its own click.
-    // A dispatcher's roster rows past its read are counted, as unread links are.
-    teammates: {
+    // `selection.teammateIds` (Decision 7) is an exact set; without it the
+    // defaults are the tasks' linked teammates (and a dispatcher's roster),
+    // audited as not selectable, as before. A dispatcher's roster rows past
+    // its read are counted, as unread links are.
+    teammates: context.teammates ? { mode: 'selected' } : {
       mode: 'default',
-      reason: 'not-selectable',
+      ...(audit?.teammatesIgnored !== undefined
+        ? { reason: 'dispatcher-roster' as const, ignored: audit.teammatesIgnored }
+        : { reason: 'not-selectable' as const }),
       ...(input.index && context.roster && context.roster.total > context.roster.members.length
         ? { unread: context.roster.total - context.roster.members.length }
         : {}),

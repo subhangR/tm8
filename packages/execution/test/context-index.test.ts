@@ -12,7 +12,7 @@ import {
   utf8Bytes,
 } from '@tm8/prompt';
 import type { SelectionHeader } from '@tm8/contract';
-import { fitLaunchContextIndex, indexDroppedOf, collapseMemories, contextBudgetsFrom, contextFloorsFrom, contextIndexCaps, contextIndexForResume, contextIndexSwitch, DISPATCHER_ROSTER_READ_MAX } from '../src/spawn/context-index.js';
+import { applyDispatcherTeammates, fitLaunchContextIndex, indexDroppedOf, collapseMemories, contextIndexCandidates, contextBudgetsFrom, contextFloorsFrom, contextIndexCaps, contextIndexForResume, contextIndexSwitch, DISPATCHER_ROSTER_READ_MAX } from '../src/spawn/context-index.js';
 import { replayedSelection } from '../src/spawn/SpawnService.js';
 import { composeManifest, resolveLaunchConfig } from '../src/spawn/manifest.js';
 import type { ResolvedSkillRow } from '../src/spawn/skills.js';
@@ -764,5 +764,68 @@ describe('fitLaunchContextIndex: the pure budget step launch.preview calls', () 
     expect(kept(room({ memories: 1, references: 1, teammates: 0, skills: 1 }))).toEqual({ memories: 1, references: 1, teammates: 0, skills: 1 });
     const tight = fitLaunchContextIndex({ candidates, mode: 'worker', budgets: {}, available: room({ memories: 1, references: 1, teammates: 0, skills: 1 }) });
     expect(indexDroppedOf(tight).map((d) => d.group)).toContain('teammates');
+  });
+});
+
+describe('Decision 7: selection.teammateIds is the worker\'s teammates group (launch card v3)', () => {
+  const picked = (id: string) => ({ entityId: id, name: `Mate ${id}`, mode: 'worker', model: 'claude-sonnet-5' });
+  const linked = [{ entityId: 'tm-9', kind: 'team_member', link: 'relates_to', title: 'Mate 9' }];
+
+  it('on: the selected teammates are the whole group, in order, via selection with the roster\'s columns; linked teammates give way', () => {
+    const { manifest, prompt } = compose(ctx({
+      tasks: [task({ linked, linkedTotal: 1 })],
+      teammates: [picked('tm-2'), picked('tm-1')],
+    }), { on: true });
+    const group = manifest.contextIndex!.groups.find((g) => g.name === 'teammates')!;
+    expect(group.entries.map((e) => [e.id, e.via])).toEqual([['tm-2', 'selection'], ['tm-1', 'selection']]);
+    expect(prompt.system.split('\n').find((l) => l.includes('id="tm-1"'))).toContain('mode="worker" model="claude-sonnet-5"');
+    expect(manifest.context!.groups!.teammates).toEqual({ mode: 'selected' });
+    expect(manifest.context!.entries!.filter((e) => e.group === 'teammates').map((e) => [e.entityId, e.via, e.rank])).toEqual([
+      ['tm-2', 'selection', 1], ['tm-1', 'selection', 2],
+    ]);
+  });
+
+  it('on: the launch teammate is never an entry of its own group', () => {
+    const { manifest } = compose(ctx({ teammates: [picked('persona'), picked('tm-1')] }), { on: true });
+    const group = manifest.contextIndex!.groups.find((g) => g.name === 'teammates')!;
+    expect(group.entries.map((e) => e.id)).toEqual(['tm-1']);
+  });
+
+  it('an empty selection empties the group: exact set, nothing linked', () => {
+    const { manifest } = compose(ctx({ tasks: [task({ linked, linkedTotal: 1 })], teammates: [] }), { on: true });
+    expect(manifest.contextIndex!.groups.find((g) => g.name === 'teammates')!.entries).toEqual([]);
+    expect(manifest.context!.groups!.teammates).toEqual({ mode: 'selected' });
+  });
+
+  it('contextIndexCandidates: in dispatcher mode the selection never replaces the roster or the linked teammates', () => {
+    const context = ctx({
+      tasks: [task({ linked, linkedTotal: 1 })],
+      teammates: [picked('tm-1')],
+      roster: { members: [picked('tm-5')], total: 1 },
+    });
+    const teammatesOf = (mode: string) =>
+      contextIndexCandidates({ context, skills: [], mode }).find((g) => g.name === 'teammates')!.entries.map((e) => [e.id, e.via]);
+    expect(teammatesOf('dispatcher')).toEqual([['tm-9', 'linked'], ['tm-5', 'roster']]);
+    expect(teammatesOf('worker')).toEqual([['tm-1', 'selection']]);
+  });
+
+  it('a dispatcher ignores the selection: its roster stays, and the launch record says how many were ignored', () => {
+    const context = ctx({
+      teammates: [picked('tm-1'), picked('tm-2')],
+      contextAudit: {
+        selectedGroups: [], memoryVia: [],
+        dropped: [
+          { entityId: 'tm-9', kind: 'team_member', group: 'teammates', reason: 'not-selected' },
+          { entityId: 'd-1', kind: 'doc', group: 'references', reason: 'not-selected' },
+        ],
+      },
+    });
+    applyDispatcherTeammates(context, 'worker');
+    expect(context.teammates).toHaveLength(2);
+    applyDispatcherTeammates(context, 'dispatcher');
+    expect(context.teammates).toBeUndefined();
+    expect(context.contextAudit!.dropped.map((d) => d.entityId)).toEqual(['d-1']);
+    const { manifest } = compose({ ...context, roster: { members: [picked('tm-5')], total: 1 } }, { on: true });
+    expect(manifest.context!.groups!.teammates).toEqual({ mode: 'default', reason: 'dispatcher-roster', ignored: 2 });
   });
 });
