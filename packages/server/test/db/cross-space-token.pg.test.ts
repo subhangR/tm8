@@ -903,6 +903,8 @@ describe('W10d addMine — my own 093 GitHub token into a space as private; huma
   const tailH = 'hH1x';
   const tailH2 = 'h2Q9';
   const fakeToken = (tail: string): string => `test-${randomUUID()}-${tail}`;
+  // Every card a positive cell creates, with its owner, so afterAll can revoke it.
+  const created: Array<{ id: string; identityId: string }> = [];
 
   const addMine = async (token: string, spaceId: string): Promise<{ ok: true; card: Record<string, unknown> } | { ok: false; code: string; reason: unknown }> => {
     const identity = await createSessionIdentityResolver({ db, owner: async () => NOT_THE_OWNER })(
@@ -956,6 +958,19 @@ describe('W10d addMine — my own 093 GitHub token into a space as private; huma
     });
     await storeGitHub(fixture.accountH, fixture.identityH, tailH);
   });
+  // Revoke every created card through the real writer and drop both seeded 093
+  // rows, so the rest of the file sees neither: 239's members backstop refuses
+  // to end a membership whose account still owns a live credential (the
+  // enter_space cells flip H2's status by hand), and W3-audit seeds its own
+  // github row for H under account_git_credentials_one_per_provider.
+  afterAll(async () => {
+    for (const { id, identityId } of created) {
+      await asIdentity(identityId, (q) => q.rpc('delete_space_credential', [id]));
+    }
+    await database.query(
+      `delete from public.account_git_credentials where account_id = any($1::uuid[]) and provider = 'github' and login like 'w10d-%'`,
+      [[fixture.accountH, fixture.accountH2]]);
+  });
 
   for (const [kind, mint] of AGENT_KINDS) {
     it(`${kind} (pinned to A, launcher H who HAS a token): refused credentials_human_only, no row written`, async () => {
@@ -969,6 +984,7 @@ describe('W10d addMine — my own 093 GitHub token into a space as private; huma
     const result = await addMine(await mintBrowser(fixture.accountH, fixture.identityH), fixture.spaceA);
     expect(result.ok).toBe(true);
     const card = (result as { card: Record<string, unknown> }).card;
+    created.push({ id: String(card['id']), identityId: fixture.identityH });
     expect(card).toMatchObject({ provider: 'github', shape: 'token', visibility: 'private', ownerAccountId: fixture.accountH, keyHint: tailH });
     expect(JSON.stringify(card)).not.toMatch(/test-[0-9a-f-]{36}-/);
     expect(Object.keys(card)).not.toEqual(expect.arrayContaining(['secret']));
@@ -984,6 +1000,7 @@ describe('W10d addMine — my own 093 GitHub token into a space as private; huma
     await storeGitHub(fixture.accountH2, fixture.identityH2, tailH2);
     const result = await addMine(await mintBrowser(fixture.accountH2, fixture.identityH2), fixture.spaceA);
     expect(result.ok).toBe(true);
+    created.push({ id: String((result as { card: Record<string, unknown> }).card['id']), identityId: fixture.identityH2 });
     expect((result as { card: Record<string, unknown> }).card)
       .toMatchObject({ visibility: 'private', ownerAccountId: fixture.accountH2, keyHint: tailH2 });
   });
@@ -998,6 +1015,7 @@ describe('W10d addMine — my own 093 GitHub token into a space as private; huma
   it('positive — H (browser, member of B) adds the same kind of row to B', async () => {
     const result = await addMine(await mintBrowser(fixture.accountH, fixture.identityH), fixture.spaceB);
     expect(result.ok).toBe(true);
+    created.push({ id: String((result as { card: Record<string, unknown> }).card['id']), identityId: fixture.identityH });
     expect((result as { card: Record<string, unknown> }).card).toMatchObject({ visibility: 'private', ownerAccountId: fixture.accountH });
   });
 });
