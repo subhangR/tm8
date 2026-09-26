@@ -108,7 +108,42 @@ export interface ClientOptions {
   fresh?: boolean | undefined;
   /** Injectable for tests; defaults to the session singleton (read-cache.ts). */
   cache?: ReadCache;
+  /**
+   * How long to keep re-sending while the node is DOWN (a restart gap), in ms.
+   * 0 — the default — fails on the first refusal, as a human at a terminal
+   * wants. See `gapRetryKind` for what may be re-sent.
+   */
+  gapRetryMs?: number | undefined;
+  /** Injectable for tests. */
+  sleepImpl?: (ms: number) => Promise<void>;
 }
+
+/**
+ * Why a failed `fetch` may be sent again during a server gap, or null.
+ *
+ * `refused` — the TCP connect was refused, so no byte of the request reached
+ * any node: re-sending is safe for EVERY operation, commands included. This is
+ * what a restart looks like from loopback: the port is closed from the moment
+ * the old process exits until `server.listen()`, which runs last in boot.
+ *
+ * `reset` — the socket dropped after the request may have been read. A node
+ * shutting down mid-request does this. Safe to re-send only for a read; a
+ * command may already have committed, and idempotency is off by default
+ * (TM8_IDEMPOTENCY_ENABLED), so a clientMutationId does not dedupe it.
+ *
+ * undici reports both as `TypeError('fetch failed')` with the errno on
+ * `cause.code`; a dual-stack connect nests them in an AggregateError.
+ */
+export function gapRetryKind(err: unknown): 'refused' | 'reset' | null {
+  const cause = (err as { cause?: unknown } | null)?.cause;
+  const code = (cause as { code?: unknown } | null)?.code;
+  if (code === 'ECONNREFUSED') return 'refused';
+  if (code === 'ECONNRESET' || code === 'EPIPE' || code === 'UND_ERR_SOCKET') return 'reset';
+  return null;
+}
+
+const GAP_RETRY_FIRST_DELAY_MS = 250;
+const GAP_RETRY_MAX_DELAY_MS = 2_000;
 
 export interface InvokeOptions {
   params?: Record<string, string>;
@@ -163,6 +198,8 @@ export class Tm8Client {
   private readonly fetchImpl: typeof fetch;
   private readonly fresh: boolean;
   private readonly cache: ReadCache;
+  private readonly gapRetryMs: number;
+  private readonly sleep: (ms: number) => Promise<void>;
 
   constructor(opts: ClientOptions) {
     this.baseUrl = opts.baseUrl;
@@ -174,6 +211,8 @@ export class Tm8Client {
     this.fetchImpl = opts.fetchImpl ?? fetch;
     this.fresh = opts.fresh ?? false;
     this.cache = opts.cache ?? readCache;
+    this.gapRetryMs = Math.max(0, opts.gapRetryMs ?? 0);
+    this.sleep = opts.sleepImpl ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   }
 
   /**
@@ -393,46 +432,73 @@ export class Tm8Client {
     if (opts.body !== undefined) headers['content-type'] = 'application/json';
     if (this.token) headers.authorization = `Bearer ${this.token}`;
 
-    const controller = new AbortController();
     const timeoutMs = opts.timeoutMs ?? this.deadlineFor(name);
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
     // Only the SIZE of the request body is journalled, never its content and
     // never the headers — `authorization` is set two lines above.
     const requestChars = opts.body === undefined ? 0 : JSON.stringify(opts.body).length;
-    const startedMs = Date.now();
+    // The per-request deadline is per ATTEMPT; the gap window bounds how long
+    // attempts continue. A restart gap is the node being down, so an attempt
+    // fails fast on the refusal and the time goes to the backoff, not to it.
+    const gapDeadlineMs = Date.now() + this.gapRetryMs;
+    let delayMs = GAP_RETRY_FIRST_DELAY_MS;
+    let retriedMs = 0;
+    let controller: AbortController;
+    let timer: ReturnType<typeof setTimeout>;
+    let startedMs: number;
     let res: Response;
-    try {
-      res = await this.fetchImpl(url, {
-        method: op.method,
-        headers,
-        signal: controller.signal,
-        ...(opts.body === undefined ? {} : { body: JSON.stringify(opts.body) }),
-      });
-    } catch (err) {
-      // A transport failure is still a call the agent made and paid for, so it
-      // is journalled with a null status: the node never answered.
-      journal.noteCall({
-        operation: name,
-        method: op.method,
-        path: url.pathname,
-        baseUrl: this.baseUrl,
-        status: null,
-        requestChars,
-        responseChars: 0,
-        durationMs: Date.now() - startedMs,
-      });
-      clearTimeout(timer);
-      if (controller.signal.aborted) {
+    for (;;) {
+      controller = new AbortController();
+      const attempt = controller;
+      timer = setTimeout(() => attempt.abort(), timeoutMs);
+      startedMs = Date.now();
+      try {
+        res = await this.fetchImpl(url, {
+          method: op.method,
+          headers,
+          signal: controller.signal,
+          ...(opts.body === undefined ? {} : { body: JSON.stringify(opts.body) }),
+        });
+        break;
+      } catch (err) {
+        // A transport failure is still a call the agent made and paid for, so it
+        // is journalled with a null status: the node never answered.
+        journal.noteCall({
+          operation: name,
+          method: op.method,
+          path: url.pathname,
+          baseUrl: this.baseUrl,
+          status: null,
+          requestChars,
+          responseChars: 0,
+          durationMs: Date.now() - startedMs,
+        });
+        clearTimeout(timer);
+        if (controller.signal.aborted) {
+          throw new TransportError(
+            `${op.method} ${url.pathname} timed out after ${timeoutMs}ms (per-request deadline)`,
+            err,
+          );
+        }
+        const kind = gapRetryKind(err);
+        const resendable = kind === 'refused' || (kind === 'reset' && op.method === 'GET');
+        if (resendable && Date.now() + delayMs <= gapDeadlineMs) {
+          if (retriedMs === 0) {
+            process.stderr.write(
+              `tm8: ${this.baseUrl} unreachable (${kind}); retrying ${name} for up to ${Math.round(this.gapRetryMs / 1000)}s\n`,
+            );
+          }
+          await this.sleep(delayMs);
+          retriedMs += delayMs;
+          delayMs = Math.min(delayMs * 2, GAP_RETRY_MAX_DELAY_MS);
+          continue;
+        }
+        const reason = err instanceof Error ? err.message : String(err);
+        const retried = retriedMs > 0 ? ` after retrying for ${Math.round(retriedMs / 1000)}s` : '';
         throw new TransportError(
-          `${op.method} ${url.pathname} timed out after ${timeoutMs}ms (per-request deadline)`,
+          `${op.method} ${url.pathname} failed: ${reason}${retried} (is tm8-server running at ${this.baseUrl}?)`,
           err,
         );
       }
-      const reason = err instanceof Error ? err.message : String(err);
-      throw new TransportError(
-        `${op.method} ${url.pathname} failed: ${reason} (is tm8-server running at ${this.baseUrl}?)`,
-        err,
-      );
     }
 
     // A byte response is only drained as text when it FAILED; a success is
