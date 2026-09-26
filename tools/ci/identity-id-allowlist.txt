@@ -18,8 +18,9 @@
 # members_select), node admin (pinned out by space_enter_and_pin), or touches only
 # the caller's own account rows. Put the verdict in the trailing comment.
 #
-# Tags: PIN-HELPER, ACCOUNT, GUARDED, NODE-ADMIN, GLOBAL-CATALOG, STAMP, NEEDS-REVIEW, KNOWN-GAP (see the W3-audit
-# matrix in packages/server/test/db/cross-space-token.pg.test.ts).
+# Tags: PIN-HELPER, ACCOUNT, GUARDED, NARROWING-ONLY, NODE-ADMIN, GLOBAL-CATALOG, STAMP, NEEDS-REVIEW, KNOWN-GAP (see the W3-audit
+# matrix in packages/server/test/db/cross-space-token.pg.test.ts). NARROWING-ONLY: the caller's account can only narrow what a
+# pinned member check already admits.
 
 identity_id internal.can_act_as(target_actor uuid, target_space uuid)  # PIN-HELPER: inline session_space_id conjunct before both arms (227_session_space_pin.sql)
 identity_id internal.current_account_id()  # PIN-HELPER: identity primitive; accounts row for identity_id(), nothing space-scoped (083_credential_sessions.sql)
