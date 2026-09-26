@@ -13,12 +13,24 @@
  * Every refusal is paired with a positive through the same RPC. No secret is
  * printed or logged: the "ciphertext" here is random bytes.
  */
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { randomBytes, randomUUID } from 'node:crypto';
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { TM8_CLIENT_HEADER, TM8_CLIENT_HEADER_VALUE } from '@tm8/contract';
+
 import { createDb } from '../../src/db/client.js';
 import type { Db, DbClaims, Querier } from '../../src/db/types.js';
+import { RESTRICTED_LIFECYCLE_KINDS, W2EntitiesCommandsTrackingService } from '../../src/facade/services/w2/entities-commands-tracking.js';
+import { loadConfig, type ServerConfig } from '../../src/http/config.js';
+import { createSessionIdentityResolver } from '../../src/http/identity-resolver.js';
+import type { RequestContext } from '../../src/http/types.js';
+import { formatToken, generateSecret, hashToken } from '../../src/identity/crypto.js';
+import type { LoopbackOwner } from '../../src/identity/loopback.js';
+import { bootstrap, type BootstrappedServer } from '../../src/main.js';
 
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from './w1-pg.js';
 
@@ -281,5 +293,195 @@ describe('reach status (probe) — any home member on a human or agent session',
     expect(byAgent.reachStatus).toBe('unreachable');
     const byBrowser = await as(f.identityH2, (q) => q.rpc<{ reachStatus: string }>('mark_server_reach', [server.id, 'offline']));
     expect(byBrowser.reachStatus).toBe('offline');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A server's lifecycle is command-owned (991 §8b, like 251 §10b for a space
+// link). The generic doors refuse it in BOTH layers — the facade
+// (RESTRICTED_LIFECYCLE_KINDS, `forbidden`, before SQL) and SQL (the re-created
+// guard trigger, 42501, whatever the caller). Paired positive: servers.remove
+// still ends it, through the one sanctioned write.
+// ---------------------------------------------------------------------------
+
+const NOT_THE_OWNER: LoopbackOwner = {
+  identityId: 'remote-servers-not-the-owner',
+  accountId: randomUUID(),
+  username: 'nobody',
+  isNodeAdmin: false,
+  isOwner: false,
+};
+
+async function accountOf(identityId: string): Promise<string> {
+  return (await database.query<{ id: string }>('select id::text from public.accounts where identity_id = $1', [identityId]))[0]!.id;
+}
+
+async function mintBrowser(identityId: string): Promise<string> {
+  const secret = generateSecret();
+  const accountId = await accountOf(identityId);
+  const row = await as(identityId, (q) =>
+    q.rpc<{ id: string }>('issue_auth_session', [
+      accountId, hashToken(secret), 'browser',
+      new Date(Date.now() + 3_600_000).toISOString(), null, 'remote-servers browser',
+    ]));
+  return formatToken(row.id, secret);
+}
+
+const versionOf = async (id: string): Promise<number> =>
+  (await database.query<{ version: number }>('select version from public.entities where id = $1', [id]))[0]!.version;
+const deletedAt = async (id: string): Promise<string | null> =>
+  (await database.query<{ deleted_at: string | null }>('select deleted_at::text from public.entities where id = $1', [id]))[0]!.deleted_at;
+
+/** Soft-delete or undelete as the superuser, past every trigger: the state the doors must never reach. */
+async function forceDeletedAt(id: string, deleted: boolean): Promise<void> {
+  await database.query(`set session_replication_role = replica;
+    update public.entities set deleted_at = ${deleted ? 'now()' : 'null'} where id = '${id}';
+    set session_replication_role = origin;`);
+}
+
+describe('W8 (c)1 — the generic entity doors refuse a server; servers.remove still ends it', () => {
+  const facade = () => new W2EntitiesCommandsTrackingService({
+    db, config: {} as ServerConfig, owner: async () => NOT_THE_OWNER,
+  });
+  async function facadeCtx(params: Record<string, string>, body: unknown): Promise<RequestContext> {
+    const resolve = createSessionIdentityResolver({ db, owner: async () => NOT_THE_OWNER, spaceSessions: 'agents' });
+    const token = await mintBrowser(f.identityH);
+    const identity = await resolve({ authorization: `Bearer ${token}` }, { remoteAddress: '203.0.113.9', disableAutoOwner: true });
+    return {
+      identity, requestId: `remote-servers-${randomUUID()}`, params, query: new URLSearchParams(), body,
+      headers: {}, method: 'POST', path: '/test',
+    } as unknown as RequestContext;
+  }
+  const hRpc = <T>(fn: string, args: unknown[]): Promise<T> => as(f.identityH, (q) => q.rpc<T>(fn, args));
+
+  let serverId: string;
+  beforeAll(async () => {
+    // H owns A and created this server, so every refusal below is the kind gate, not authority.
+    serverId = (await add(f.identityH, f.spaceA, 'lifecycle-srv')).id;
+  });
+
+  it('the TS gate names server beside the other shared-object kinds', () => {
+    expect(['credential', 'space_link', 'server'].map((k) => RESTRICTED_LIFECYCLE_KINDS.has(k))).toEqual([true, true, true]);
+  });
+
+  it('facade: entities.delete / move / restore / patch / create of a server are forbidden before SQL', async () => {
+    const s = facade();
+    expect({
+      delete: await outcome(async () => s.deleteEntity(await facadeCtx({ id: serverId }, {}))),
+      move: await outcome(async () => s.moveEntity(await facadeCtx({ id: serverId },
+        { parentId: null, position: 424242.5, expectedVersion: await versionOf(serverId) }))),
+      restore: await outcome(async () => s.restoreEntity(await facadeCtx({ id: serverId }, {}))),
+      patch: await outcome(async () => s.patchEntity(await facadeCtx({ id: serverId },
+        { title: 'renamed', expectedVersion: await versionOf(serverId) }))),
+      create: await outcome(async () => s.createEntity(await facadeCtx({},
+        { spaceId: f.spaceA, kind: 'server', title: 'forged', clientMutationId: randomUUID() }))),
+    }).toEqual({ delete: 'forbidden', move: 'forbidden', restore: 'forbidden', patch: 'forbidden', create: 'forbidden' });
+    expect(await deletedAt(serverId)).toBeNull();
+  });
+
+  it('RPC: delete_entity / move_entity = 42501 from the guard trigger; the patch and create doors refuse the kind', async () => {
+    expect({
+      delete: await outcome(() => hRpc('delete_entity', [serverId, null, null])),
+      // A real move (a new position); a no-op move changes no lifecycle column.
+      move: await outcome(async () => hRpc('move_entity', [serverId, null, 424242.5, await versionOf(serverId), null, null])),
+      patch: await outcome(async () => hRpc('update_custom_entity', [serverId, await versionOf(serverId), 'renamed', null, null, null])),
+      create: await outcome(() => hRpc('create_custom_entity', [f.spaceA, 'server', 'forged', null, '{}', null, null, null])),
+    }).toEqual({ delete: '42501', move: '42501', patch: '22023', create: '22023' });
+    // The refusal is the re-created trigger's, not an authority check.
+    const raw = await as(f.identityH, (q) => q.rpc('delete_entity', [serverId, null, null]))
+      .then(() => 'ok', (err: unknown) => (err as Error).message);
+    expect(raw).toContain('command-owned for kind server');
+    expect(await deletedAt(serverId)).toBeNull();
+  });
+
+  it('RPC: restore_entity of a (forced) deleted server = 42501 — delete means gone', async () => {
+    await forceDeletedAt(serverId, true);
+    try {
+      expect(await outcome(() => hRpc('restore_entity', [serverId, null, null]))).toBe('42501');
+      expect(await deletedAt(serverId)).not.toBeNull();
+    } finally {
+      await forceDeletedAt(serverId, false);
+    }
+  });
+
+  it('positive — servers.remove still ends it (the sanctioned write), and the setting does not outlive the call', async () => {
+    const removed = await as(f.identityH, (q) => q.rpc<ServerJson>('remove_server', [serverId, cmid()]));
+    expect(removed.id).toBe(serverId);
+    expect(await deletedAt(serverId)).not.toBeNull();
+    // A fresh server in the same transaction as a remove still refuses the generic door afterwards.
+    const other = (await add(f.identityH, f.spaceA, 'lifecycle-srv-2')).id;
+    const after = await as(f.identityH, async (q) => {
+      await q.rpc('remove_server', [other, cmid()]);
+      const again = (await q.rpc<ServerJson>('add_server', [f.spaceA, 'lifecycle-srv-3', 'https://lifecycle-srv-3.example', null, cmid()])).id;
+      return outcome(() => q.rpc('delete_entity', [again, null, null]));
+    });
+    expect(after).toBe('42501');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The two 044 write ops are still mounted (serverConnections.create/delete,
+// contract-removal follow-up) but refuse over HTTP: 403, rows unchanged.
+// ---------------------------------------------------------------------------
+
+describe('W8 — serverConnections.create/delete over HTTP: 403, and the 044 rows are unchanged', () => {
+  let server: BootstrappedServer;
+  let ownerBefore: boolean;
+
+  beforeAll(async () => {
+    // `bootstrap` needs an owner: H is made one for this block and restored after.
+    const accountH = await accountOf(f.identityH);
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      const before = await client.query<{ is_owner: boolean }>('select is_owner from public.accounts where id = $1::uuid', [accountH]);
+      ownerBefore = before.rows[0]!.is_owner;
+      await client.query('update public.accounts set is_owner = true where id = $1::uuid', [accountH]);
+    });
+    const configured = loadConfig({
+      ...process.env,
+      TM8_BIND: '127.0.0.1',
+      TM8_PORT: '4610',
+      TM8_NODE_MODE: 'single',
+      TM8_DATABASE_URL: database.url,
+      TM8_DATA_DIR: await mkdtemp(join(tmpdir(), 'tm8-w8-')),
+      TM8_DISABLE_AUTO_OWNER: '1',
+    });
+    server = await bootstrap({ config: { ...configured, port: 0 } });
+  }, 180_000);
+
+  afterAll(async () => {
+    await server?.server.close();
+    await server?.db?.end();
+    const accountH = await accountOf(f.identityH);
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query('update public.accounts set is_owner = $2 where id = $1::uuid', [accountH, ownerBefore]);
+    });
+  }, 180_000);
+
+  async function call(method: string, path: string, token: string, body?: unknown): Promise<number> {
+    const response = await fetch(new URL(path, server.url), {
+      method,
+      headers: {
+        [TM8_CLIENT_HEADER]: TM8_CLIENT_HEADER_VALUE,
+        authorization: `Bearer ${token}`,
+        ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
+      },
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    });
+    await response.text();
+    return response.status;
+  }
+
+  it('a node admin gets 403 from both writes; POSITIVE: the same session lists (200)', async () => {
+    const before = await legacyRows();
+    const token = await mintBrowser(f.identityH); // H's account is a node admin
+    expect({
+      create: await call('POST', '/v2/server-connections', token,
+        { name: 'http-forged', baseUrl: 'https://http-forged.example', clientMutationId: cmid() }),
+      delete: await call('DELETE', '/v2/server-connections/legacy-one', token, { clientMutationId: cmid() }),
+      list: await call('GET', '/v2/server-connections', token),
+    }).toEqual({ create: 403, delete: 403, list: 200 });
+    expect(await legacyRows()).toEqual(before);
   });
 });

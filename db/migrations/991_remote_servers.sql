@@ -372,7 +372,10 @@ begin
 
   result := internal.server_json(p_server_id, me);
   delete from public.server_gate_tokens where server_id = p_server_id;
+  -- The server's lifecycle is command-owned (§8b): this is its one writer.
+  perform set_config('tm8.server_lifecycle', 'on', true);
   update public.entities set deleted_at = now(), updated_at = now() where id = p_server_id;
+  perform set_config('tm8.server_lifecycle', 'off', true);
   perform internal.record_activity(srv.home_space_id, p_server_id, me, 'deleted', null,
             jsonb_build_object('kind', 'server'));
   return internal.ledger_record(p_client_mutation_id, 'servers.remove', result);
@@ -648,6 +651,44 @@ begin
   return coalesce(content, '{}'::jsonb);
 end
 $$;
+
+-- -----------------------------------------------------------------------------
+-- 8b. A server's lifecycle is command-owned, like a space link's (251 §10b).
+--     A generic delete/restore/move of the `server` entity would end, revive
+--     or re-home it without its gate rows, its link check or its ledger entry.
+--     So 251's guard trigger is re-created here on 251's own definition with
+--     'server' added to its kind list; the TS gate RESTRICTED_LIFECYCLE_KINDS
+--     refuses it (and patch) before SQL. The trigger covers delete/restore/
+--     move only; a generic patch or create of a `server` is already refused in
+--     SQL by update_custom_entity/create_entity's kind check (22023), not by
+--     this trigger. The trigger's list is {space_link, server}. The
+--     third shared-object kind, credential, is refused in SQL by 239 instead
+--     (its envelope guard trigger and the kind lists in 239's move/delete/
+--     restore bodies), so it is not in this list; all three are in the TS set.
+--
+--     ONE ADDITION BEYOND THE KIND: servers.remove soft-deletes the entity
+--     itself (space links never do; their envelope ends by cascade), so the
+--     trigger lets a `server` row through while `tm8.server_lifecycle` is 'on'
+--     — set only inside remove_server around its one UPDATE, the pattern of
+--     239's tm8.credential_write and 057's worktree_transition. The
+--     conjunct is scoped to kind 'server': the space_link path is unchanged.
+--     No client can bind the setting (the claim bindings are a fixed set).
+--
+--     251's function internal.refuse_generic_link_lifecycle() is not redefined.
+--     Adds-only: re-creating a trigger touches no row.
+-- -----------------------------------------------------------------------------
+drop trigger if exists entities_link_lifecycle_command_owned on public.entities;
+create trigger entities_link_lifecycle_command_owned
+before update of deleted_at, parent_id, position, space_id on public.entities
+for each row
+when (old.kind in ('space_link', 'server')
+      and (new.deleted_at is distinct from old.deleted_at
+           or new.parent_id is distinct from old.parent_id
+           or new.position is distinct from old.position
+           or new.space_id is distinct from old.space_id)
+      and not (old.kind = 'server'
+               and coalesce(internal.claim_text('tm8.server_lifecycle'), '') = 'on'))
+execute function internal.refuse_generic_link_lifecycle();
 
 -- -----------------------------------------------------------------------------
 -- 9. Grants — full signatures.
