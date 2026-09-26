@@ -57,7 +57,7 @@ export function laneBody(r, observation) {
     `| model | ${r.model} (${r.modelId ?? '—'}) |`,
     `| task | ${r.family} / ${r.taskKey} rep ${r.rep} · copy ${r.taskId ?? '—'} of template ${r.templateTaskId ?? '—'} |`,
     `| session | ${r.sessionId ?? '—'} · build ${String(r.buildSha ?? '').slice(0, 8)} · fixture ${r.fixtureVersion?.contentHash ?? '—'} |`,
-    `| ended | ${r.ended ?? '—'} · wall ${n(r.wallSeconds)} s · load at start ${n(r.loadAtStart, 1)} (waited ${n(r.waitedSeconds)} s) |`,
+    `| ended | ${r.ended ?? '—'} · wall ${n(r.wallSeconds)} s · load at gate ${n(r.gateLoad, 1)} · at start ${n(r.loadAtStart, 1)} (waited ${n(r.waitedSeconds)} s) |`,
     `| first-request tokens | ${n(r.firstRequestTokens)} |`,
     `| total input-side tokens | ${n(inputTokens(r))} (in ${n(r.usage?.input)} · cache write ${n(r.usage?.cacheCreation)} · cache read ${n(r.usage?.cacheRead)}) · output ${n(r.usage?.output)} |`,
     `| requests / tool calls | ${n(r.requests)} / ${n(r.toolCalls)} |`,
