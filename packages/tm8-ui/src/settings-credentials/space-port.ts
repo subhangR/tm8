@@ -26,6 +26,10 @@ import type {
   CredentialsLoginSessionStartResult,
   CredentialsSpaceCreateInput,
   CredentialsSpaceDeleteResult,
+  CredentialsSpaceMyDefaultResult,
+  CredentialsSpaceSetVisibilityResult,
+  CredentialsSpaceUsageView,
+  SpaceCredentialVisibilityName,
   CredentialsSpacePolicySetResult,
   CredentialsSpacePolicyView,
   NodeCredentialPolicyEntry,
@@ -49,6 +53,12 @@ export interface SpaceCredentialsViewer {
   /** Owner or admin of THIS space (D11, D5). */
   isSpaceAdmin: boolean;
   isNodeAdmin: boolean;
+  /**
+   * Doc 13 §6b: more than one person uses this server (node mode `multi`),
+   * so the private-switch carries the shared-server warning. Unknown counts
+   * as shared: the warning is safe to show and dangerous to hide.
+   */
+  sharedServer: boolean;
 }
 
 export interface SpaceCredentialsPort {
@@ -68,6 +78,15 @@ export interface SpaceCredentialsPort {
   setNodePolicy(provider: SpaceCredentialProviderName, allowNode: boolean | null): Promise<NodeCredentialPolicyEntry>;
   startLogin(provider: SpaceLoginProvider, target: SpaceLoginTarget): Promise<CredentialsLoginSessionStartResult>;
   finishLogin(workSessionId: string): Promise<CredentialsLoginSessionFinishResult>;
+  // W10b/W10d (doc 13 §7). Human-only at the server; refusals render its reason.
+  setVisibility(credentialId: string, visibility: SpaceCredentialVisibilityName): Promise<CredentialsSpaceSetVisibilityResult>;
+  spaceDefaultConsent(credentialId: string, allowed: boolean): Promise<SpaceCredentialView>;
+  claim(credentialId: string): Promise<SpaceCredentialView>;
+  setMyDefault(credentialId: string): Promise<CredentialsSpaceMyDefaultResult>;
+  clearMyDefault(provider: SpaceCredentialProviderName): Promise<CredentialsSpaceMyDefaultResult>;
+  usage(credentialId: string): Promise<CredentialsSpaceUsageView>;
+  /** "Add to this space as private" for my own server-level GitHub token — no secret leaves the client. */
+  addMine(provider: 'github', label: string): Promise<SpaceCredentialView>;
 }
 
 /**
@@ -81,19 +100,30 @@ export function isSpaceAdminRole(role: string | null | undefined, ownerWord: str
   return role === 'admin' || role === 'owner' || (ownerWord !== null && role === ownerWord);
 }
 
+/**
+ * Is this a shared server? `mode` is `auth.claim.status`'s node mode; only a
+ * measured `single` is single-user. Null (not yet known, or unreadable) is
+ * shared, so the §6b warning is never hidden on a guess.
+ */
+export function isSharedServer(mode: 'single' | 'multi' | null | undefined): boolean {
+  return mode !== 'single';
+}
+
 export function spaceCredentialsPortFromSeam(
   seam: Pick<Seam, 'credentials' | 'identity'>,
   spaceId: SpaceId,
   ownerWord: string | null,
+  nodeMode: () => Promise<'single' | 'multi' | null> = async () => null,
 ): SpaceCredentialsPort {
   return {
     viewer: async () => {
-      const identity = await seam.identity();
+      const [identity, mode] = await Promise.all([seam.identity(), nodeMode().catch(() => null)]);
       const membership = identity.memberships.find((m) => m.spaceId === spaceId);
       return {
         accountId: identity.accountId ?? null,
         isSpaceAdmin: isSpaceAdminRole(membership?.role, ownerWord),
         isNodeAdmin: identity.isNodeAdmin === true,
+        sharedServer: isSharedServer(mode),
       };
     },
     list: async () => (await seam.credentials.space.list(spaceId)).credentials,
@@ -108,5 +138,12 @@ export function spaceCredentialsPortFromSeam(
     setNodePolicy: (provider, allowNode) => seam.credentials.node.setPolicy(provider, allowNode),
     startLogin: (provider, target) => seam.credentials.startLogin(spaceId, provider, target),
     finishLogin: (workSessionId) => seam.credentials.finishLogin(workSessionId as EntityId),
+    setVisibility: (credentialId, visibility) => seam.credentials.space.setVisibility(credentialId, visibility),
+    spaceDefaultConsent: (credentialId, allowed) => seam.credentials.space.spaceDefaultConsent(credentialId, allowed),
+    claim: (credentialId) => seam.credentials.space.claim(credentialId),
+    setMyDefault: (credentialId) => seam.credentials.space.setMyDefault(credentialId),
+    clearMyDefault: (provider) => seam.credentials.space.clearMyDefault(spaceId, provider),
+    usage: (credentialId) => seam.credentials.space.usage(credentialId),
+    addMine: (provider, label) => seam.credentials.space.addMine(spaceId, provider, label),
   };
 }

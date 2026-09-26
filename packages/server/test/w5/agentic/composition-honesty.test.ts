@@ -86,6 +86,8 @@ const CREDENTIAL_SEAM = new Set<OperationName>([
   'credentials.space.setVisibility',
   'credentials.space.spaceDefaultConsent',
   'credentials.space.claim',
+  // W10d: add your own token as private, same registration.
+  'credentials.space.addMine',
   'credentials.space.myDefault.set',
   'credentials.space.myDefault.clear',
   'credentials.space.usage',

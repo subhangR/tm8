@@ -1254,24 +1254,29 @@ export function createFixtureSeam(): FixtureSeam {
       shape: 'api_key', label: 'Team Claude', isDefault: true, status: 'active',
       createdByAccountId: 'acct-ada', displayLogin: null, keyHint: 'x9Qa',
       createdAt: FIXTURE_NOW, updatedAt: FIXTURE_NOW, lastUsedAt: FIXTURE_NOW, lastProbeAt: FIXTURE_NOW,
+      // W10d: a migrated row — nobody owns it yet, and the viewer created it, so "Claim as mine" is offered.
+      ownerAccountId: null, visibility: 'public', mayBeSpaceDefault: false,
     },
     {
       id: '0f1e2d3c-0000-4000-8000-000000000a02', spaceId: FIXTURE_SPACE_ID, provider: 'anthropic',
       shape: 'api_key', label: 'Research budget', isDefault: false, status: 'stale',
       createdByAccountId: 'acct-other', displayLogin: null, keyHint: '7fPk',
       createdAt: FIXTURE_NOW, updatedAt: FIXTURE_NOW, lastUsedAt: null, lastProbeAt: FIXTURE_NOW,
+      ownerAccountId: 'acct-other', visibility: 'public', mayBeSpaceDefault: false,
     },
     {
       id: '0f1e2d3c-0000-4000-8000-000000000b01', spaceId: FIXTURE_SPACE_ID, provider: 'openai',
       shape: 'api_key', label: 'Codex shared', isDefault: false, status: 'active',
       createdByAccountId: null, displayLogin: null, keyHint: 'Zt2m',
       createdAt: FIXTURE_NOW, updatedAt: FIXTURE_NOW, lastUsedAt: null, lastProbeAt: FIXTURE_NOW,
+      ownerAccountId: null, visibility: 'public', mayBeSpaceDefault: false,
     },
     {
       id: '0f1e2d3c-0000-4000-8000-000000000c01', spaceId: FIXTURE_SPACE_ID, provider: 'github',
       shape: 'token', label: 'tm8-bot', isDefault: true, status: 'active',
       createdByAccountId: 'acct-ada', displayLogin: 'tm8-bot', keyHint: 'k3Jd',
       createdAt: FIXTURE_NOW, updatedAt: FIXTURE_NOW, lastUsedAt: FIXTURE_NOW, lastProbeAt: FIXTURE_NOW,
+      ownerAccountId: 'acct-ada', visibility: 'public', mayBeSpaceDefault: true,
     },
   ];
   const spacePolicyState: CredentialsSpacePolicyView = {
@@ -5521,6 +5526,9 @@ export function createFixtureSeam(): FixtureSeam {
             displayLogin: input.provider === 'github' ? 'ada' : null,
             keyHint: input.secret.trim().slice(-4),
             createdAt: tick(), updatedAt: tick(), lastUsedAt: null, lastProbeAt: tick(),
+            ownerAccountId: input.spaceOwned === true ? null : 'acct-ada',
+            visibility: input.spaceOwned === true ? 'public' : (input.visibility ?? 'public'),
+            mayBeSpaceDefault: input.mayBeSpaceDefault === true,
           };
           spaceCredentialsState.push(row);
           return clone(row);
@@ -5558,6 +5566,63 @@ export function createFixtureSeam(): FixtureSeam {
           const entry = spacePolicyState.providers.find((p) => p.provider === provider);
           if (entry) entry.allowedSources = allowedSources ? [...allowedSources] : null;
           return { spaceId, provider, allowedSources };
+        },
+        // W10b/W10d — the fixture viewer (acct-ada) mirrors the server's owner rules.
+        async setVisibility(credentialId, visibility) {
+          const row = spaceCredentialById(credentialId);
+          if (row.ownerAccountId !== 'acct-ada') {
+            throw new CollabError('forbidden', 'only the owner can change who may use this credential');
+          }
+          row.visibility = visibility;
+          if (visibility === 'private') { row.isDefault = false; row.mayBeSpaceDefault = false; }
+          row.updatedAt = tick();
+          return { credential: clone(row), terminatedAgentSessionIds: [], failures: [] };
+        },
+        async spaceDefaultConsent(credentialId, allowed) {
+          const row = spaceCredentialById(credentialId);
+          if (row.ownerAccountId !== 'acct-ada' || row.visibility !== 'public') {
+            throw new CollabError('forbidden', 'only the owner of a public credential can allow it as the space default');
+          }
+          row.mayBeSpaceDefault = allowed;
+          if (!allowed) row.isDefault = false;
+          return clone(row);
+        },
+        async claim(credentialId) {
+          const row = spaceCredentialById(credentialId);
+          if (row.ownerAccountId !== null || row.createdByAccountId !== 'acct-ada') {
+            throw new CollabError('forbidden', 'only the member who added this credential can claim it');
+          }
+          row.ownerAccountId = 'acct-ada';
+          return clone(row);
+        },
+        async setMyDefault(credentialId) {
+          const row = spaceCredentialById(credentialId);
+          return { spaceId: row.spaceId, provider: row.provider, credentialId: row.id };
+        },
+        async clearMyDefault(spaceId, provider) {
+          return { spaceId, provider, credentialId: null };
+        },
+        async usage(credentialId) {
+          const row = spaceCredentialById(credentialId);
+          return {
+            credentialId,
+            sessions: row.lastUsedAt === null ? [] : [{
+              workSessionId: 'ws-fixture-usage', provider: row.provider, source: 'space_default',
+              credentialId, ownerAccountId: row.ownerAccountId ?? null, launcherAccountId: 'acct-ada',
+              agentSessionId: null, status: 'ended', recordedAt: FIXTURE_NOW, updatedAt: FIXTURE_NOW,
+            }],
+          };
+        },
+        async addMine(spaceId, provider, label) {
+          const row: SpaceCredentialView = {
+            id: `0f1e2d3c-0000-4000-8000-${String(Date.now() + 1).padStart(12, '0').slice(-12)}`,
+            spaceId, provider, shape: 'token', label: label.trim(), isDefault: false, status: 'active',
+            createdByAccountId: 'acct-ada', displayLogin: 'ada', keyHint: 'mIn3',
+            createdAt: tick(), updatedAt: tick(), lastUsedAt: null, lastProbeAt: tick(),
+            ownerAccountId: 'acct-ada', visibility: 'private', mayBeSpaceDefault: false,
+          };
+          spaceCredentialsState.push(row);
+          return clone(row);
         },
       },
 
