@@ -56,11 +56,80 @@ export function groupByProvider(
   return groups;
 }
 
-/** D11: the creator and space admins edit, rotate and delete. Everyone else uses. */
+/**
+ * Doc 13 §6b, VERBATIM. Drawn beside "Make private" on a shared server only:
+ * a single-user node has nobody else to stop.
+ */
+export const SHARED_SERVER_WARNING =
+  'Private stops other members from launching with this or opening its terminals. Agents on this server still run as one OS user, and anyone can message your agent.';
+
+/** Is the viewer this row's owner? False for a space-owned row and on an old server. */
+export function isOwner(row: SpaceCredentialView, viewer: SpaceCredentialsViewer | null): boolean {
+  return !!viewer?.accountId && !!row.ownerAccountId && row.ownerAccountId === viewer.accountId;
+}
+
+/** A server from before doc 13 §7 sends no owner: the old D11 rule answers. */
+function ownerKnown(row: SpaceCredentialView): boolean {
+  return row.ownerAccountId !== undefined;
+}
+
+/**
+ * Who edits, rotates and deletes — mirrors `can_manage` (998): an owned row
+ * is its owner's alone; an ownerless one is a space admin's or its creator's.
+ * Before §7 (no owner field): the creator and space admins (D11).
+ */
 export function canManage(row: SpaceCredentialView, viewer: SpaceCredentialsViewer | null): boolean {
   if (!viewer) return false;
+  if (ownerKnown(row) && row.ownerAccountId) return isOwner(row, viewer);
   if (viewer.isSpaceAdmin) return true;
   return row.createdByAccountId !== null && viewer.accountId !== null && row.createdByAccountId === viewer.accountId;
+}
+
+/** `can_revoke`: a space admin deletes any credential, even one owned by someone else. */
+export function canRevoke(row: SpaceCredentialView, viewer: SpaceCredentialsViewer | null): boolean {
+  if (!viewer) return false;
+  return viewer.isSpaceAdmin || canManage(row, viewer);
+}
+
+/** Visibility and space-default consent are the owner's alone. */
+export function canSetVisibility(row: SpaceCredentialView, viewer: SpaceCredentialsViewer | null): boolean {
+  return isOwner(row, viewer) && row.status !== 'revoked';
+}
+
+/**
+ * "Claim as mine": an ownerless row its viewer created (a migrated or
+ * pre-§7 row). A row created as space-owned is refused by the server with
+ * its reason — the view does not say which of the two an ownerless row is.
+ */
+export function canClaim(row: SpaceCredentialView, viewer: SpaceCredentialsViewer | null): boolean {
+  if (!viewer?.accountId || !ownerKnown(row) || row.ownerAccountId !== null) return false;
+  return row.status !== 'revoked' && row.createdByAccountId === viewer.accountId;
+}
+
+/** "My default" is an owner's pick among their own active credentials. */
+export function canMyDefault(row: SpaceCredentialView, viewer: SpaceCredentialsViewer | null): boolean {
+  return isOwner(row, viewer) && row.status === 'active';
+}
+
+/** Usage: the owner; a space admin too for a public or space-owned row. */
+export function canSeeUsage(row: SpaceCredentialView, viewer: SpaceCredentialsViewer | null): boolean {
+  if (!viewer || !ownerKnown(row)) return false;
+  if (isOwner(row, viewer)) return true;
+  return viewer.isSpaceAdmin && (row.ownerAccountId === null || row.visibility !== 'private');
+}
+
+/** The owner line: you, another member, or the space. Empty on an old server. */
+export function ownerLabel(row: SpaceCredentialView, viewer: SpaceCredentialsViewer | null): string | null {
+  if (!ownerKnown(row)) return null;
+  if (row.ownerAccountId === null) return 'the space';
+  return isOwner(row, viewer) ? 'you' : 'another member';
+}
+
+/** The visibility badge word: private, public, or space-owned. */
+export function visibilityWord(row: SpaceCredentialView): string | null {
+  if (!ownerKnown(row)) return null;
+  if (row.ownerAccountId === null) return 'space-owned';
+  return row.visibility === 'private' ? 'private' : 'public';
 }
 
 /**

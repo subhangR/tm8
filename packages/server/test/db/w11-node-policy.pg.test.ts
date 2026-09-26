@@ -61,17 +61,20 @@ async function asApp<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
   });
 }
 
-/** N — a gate admin (node admin, unpinned) with no member row anywhere. */
-async function asGateAdmin<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
+/**
+ * N — a gate admin (node admin account, unpinned). `nodeAdmin` is the
+ * tm8.node_admin claim: false makes the same identity an ordinary caller.
+ */
+async function asGateAdmin<T>(fn: (client: PoolClient) => Promise<T>, nodeAdmin = true): Promise<T> {
   return database.transaction(async (client) => {
     await client.query('set local role tm8_app');
     await client.query(
       `select set_config('tm8.identity_id', $1, true),
               set_config('tm8.actor_id', '', true),
-              set_config('tm8.node_admin', 'true', true),
+              set_config('tm8.node_admin', $3, true),
               set_config('tm8.auth_kind', 'browser', true),
               set_config('tm8.request_id', $2, true)`,
-      [ids.identityN, `d29-${randomUUID()}`],
+      [ids.identityN, `d29-${randomUUID()}`, String(nodeAdmin)],
     );
     return fn(client);
   });
@@ -319,19 +322,40 @@ describe.sequential('R845-F2 — a folder double-linked before 234, on a one-spa
   });
 });
 
-describe('R845-F6 — a missing folder id is not an oracle for a space admin', () => {
-  it('a space admin gets folder_not_granted (42501), the same as for a folder not granted here', async () => {
-    const missing = await asApp((c) => c.query(
-      `select public.create_space_project($1, $2, 'nope', null)`, [ids.spaceA, randomUUID()],
-    )).then(() => null, (error: { code?: string; detail?: string }) => error);
-    expect(missing?.code).toBe('42501');
-    expect(missing?.detail).toBe('folder_not_granted');
+describe.sequential('R845-F6 — a missing folder id is not an oracle for a space admin', () => {
+  // create_space_project checks space admin first (require_space_admin), so
+  // every caller here is an owner of A. The pair then differs only in the
+  // tm8.node_admin claim: N with it set is a gate admin; N without it, and H,
+  // are space admins only. Same space, same missing folder id.
+  const missingFolder = randomUUID();
+  const memberNA = randomUUID();
+  const createMissing = (as: typeof asApp) => as((c) => c.query(
+    `select public.create_space_project($1, $2, 'nope', null)`, [ids.spaceA, missingFolder],
+  )).then(() => null, (error: { code?: string; detail?: string }) => ({ code: error.code, detail: error.detail }));
+
+  it('fixture: N is an owner of A', async () => {
+    await asOwner(async (c) => {
+      await c.query(
+        `insert into public.entities(id, space_id, kind, created_by, visibility) values ($1, $2, 'member', $1, 'space')`,
+        [memberNA, ids.spaceA],
+      );
+      await c.query(
+        `insert into public.members(entity_id, space_id, identity_id, role, display_name) values ($1, $2, $3, 'owner', 'N')`,
+        [memberNA, ids.spaceA, ids.identityN],
+      );
+    });
+    const admin = await asGateAdmin((c) => c.query<{ a: boolean }>('select internal.is_space_admin($1) a', [ids.spaceA]));
+    expect(admin.rows[0]!.a).toBe(true);
   });
 
-  it('positive — a gate admin still learns Folder not found (P0002)', async () => {
-    expect(await outcome(() => asGateAdmin((c) => c.query(
-      `select public.create_space_project($1, $2, 'nope', null)`, [ids.spaceA, randomUUID()],
-    )))).toBe('P0002');
+  it('a space admin who is not a gate admin gets folder_not_granted (42501), the same as for a folder not granted here', async () => {
+    const notGranted = { code: '42501', detail: 'folder_not_granted' };
+    expect(await createMissing(asApp)).toEqual(notGranted);
+    expect(await createMissing((fn) => asGateAdmin(fn, false))).toEqual(notGranted);
+  });
+
+  it('positive — the same space admin WITH the gate-admin claim learns Folder not found (P0002)', async () => {
+    expect(await createMissing((fn) => asGateAdmin(fn))).toEqual(expect.objectContaining({ code: 'P0002' }));
   });
 });
 

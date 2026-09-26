@@ -46,14 +46,15 @@ import type {
   AuthInviteSignupInput, AuthInviteSignupResult,
   AuthLoginInput, AuthLoginResult, AuthLogoutInput,
   AuthLogoutResult, AuthPasswordChangeInput, AuthPasswordChangeResult,
-  AuthSessionGetResult, AuthSessionView, AuthSignupInput,
+  AuthSessionGetResult, AuthSessionListing, AuthSessionsListInput, AuthSessionsListResult,
+  AuthSessionsRevokeResult, AuthSessionView, AuthSignupInput, AuthSpaceEnterInput, AuthSpaceEnterResult,
   AuthSignupResult, ChannelTab, ChatContextFrame, ChatTurnFrame, ChatTurnUsage,
   ClosedPromptPolicy, CollectionAddItemInput, CollectionGroup, CollectionQuery, CollectionResult,
   CommandContext, CommandErrorCode, CommandResult, CompleteTaskInput,
   ContainerLifecycle, ContainerLifecycleInput, ContainerMount, ContainerMountInput,
   ContainerNetworkPolicy, ContainerProviderDescriptor, ContainerSpec, ContainerSpecInput,
   ContainerSurfaceSpec,
-  ContainersAttachInput, ContainersAttentionInput, ContainersBrowserEndpointInput,
+  ContainersAttachInput, ContainersBrowserEndpointInput,
   ContainersCreateInput, ContainersComputerInput, ContainersDestroyInput,
   ContainersExposeInput, ContainersForkInput, ContainersLifecycleInput,
   ContainersLogsResult, ContainersPolicySetInput, ContainersPoolsSetInput,
@@ -72,8 +73,9 @@ import type {
   CredentialPolicySource, CredentialsSpaceCommandInput, CredentialsSpaceCreateInput,
   CredentialsSpaceDeleteResult, CredentialsSpaceListView, CredentialsSpacePolicySetInput,
   CredentialsSpacePolicySetResult, CredentialsSpacePolicyView, CredentialsSpaceRekeyInput,
-  CredentialsSpaceRenameInput, NodeCredentialPolicyEntry, NodeCredentialStatusEntry,
-  NodeCredentialsPolicySetInput, NodeCredentialsStatusView, SpaceCredentialPolicyEntry,
+  CredentialsSpaceRenameInput, CredentialsSpaceSetVisibilityInput, CredentialsSpaceAddMineInput, CredentialsSpaceDefaultConsentInput,
+  NodeCredentialPolicyEntry, NodeCredentialStatusEntry,
+  NodeCredentialsPolicySetInput, NodeCredentialsStatusView, NodeMetricsView, SpaceCredentialPolicyEntry,
   SpaceCredentialProviderName, SpaceCredentialShape, SpaceCredentialStatus, SpaceCredentialView,
   CustomEntityKind, CustomFieldDef, CustomFieldValue, DeleteMessageInput,
   DeliverySummary, EdgeCorrectionResult, EdgeGroup, EdgeView,
@@ -125,6 +127,7 @@ import type {
   SetDefaultChannelInput, SetSpaceProfileDefaultInput,
   AttentionRequest, AttentionRequestListQuery, AttentionRequestMutationResult,
   CreateAttentionRequestInput, UpdateAttentionRequestInput, ResolveEntityAttentionInput,
+  MarkAttentionSeenInput, UnresolveAttentionBatchInput, WithdrawAttentionRequestInput,
   KindCounts, SpaceKindCounts,
   SetTeammateProfileDefaultInput, ShareProjectionEnvelope, SpaceNavigation,
   SpaceProfileDefaultView, SpaceSettings, SpaceSettingsView, SpaceSummary,
@@ -183,6 +186,12 @@ export const CoreEntityKindSchema = z.enum([
   'drawing',
   // Forms (209). Not in `CreatableEntityKind`: `forms.create` is its door.
   'form',
+  // Space credentials (W10a). Not creatable: credentials.space.* is its door.
+  'credential',
+  // Space links (250/251, W6). Not in `CreatableEntityKind`: `spaceLinks.add`
+  // is its door. `server` is registered with it and has no door in W6.
+  'space_link',
+  'server',
 ]);
 
 export const CustomEntityKindSchema = z.custom<CustomEntityKind>(
@@ -329,6 +338,7 @@ export const ActorSummarySchema: z.ZodType<ActorSummary> = z.object({
   ownerMemberId: EntityIdSchema.optional(),
   isAgent: z.boolean(),
   via: z.object({ sessionId: EntityIdSchema }).strict().optional(),
+  memberStatus: z.enum(['left', 'removed']).optional(),
 }).strict();
 
 export const EntityCountersSchema: z.ZodType<EntityCounters> = z.object({
@@ -375,6 +385,16 @@ export const EffectiveSkillsSchema = z.object({
   scannedAt: z.string().nullable(),
 }).strict();
 
+/** W10a: a credential entity's state and content share one allow-list. */
+const CredentialEntityFactsSchema = z.object({
+  kind: z.literal('credential'),
+  provider: z.string().min(1),
+  shape: z.string().min(1),
+  visibility: z.enum(['private', 'public']),
+  status: z.string().min(1),
+  ownerAccountId: z.string().nullable(),
+}).strict();
+
 export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
   z.object({
     kind: z.literal('task'),
@@ -419,6 +439,7 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     role: z.enum(['owner', 'admin', 'member']),
     score: z.number(),
     taskDoneCount: z.number().int().nonnegative(),
+    memberStatus: z.enum(['left', 'removed']).optional(),
   }).strict(),
   z.object({
     kind: z.literal('team_member'),
@@ -619,6 +640,12 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     status: FormStatusSchema,
     questionCount: z.number().int().nonnegative(),
   }).strict(),
+  // W10a — a space credential's row facts; never its secret, hint or login.
+  CredentialEntityFactsSchema,
+  // 250 (W6) — space links carry no row facts on the entity; `spaceLinks.list`
+  // answers for them. `server` has no detail row until W8.
+  z.object({ kind: z.literal('space_link') }).strict(),
+  z.object({ kind: z.literal('server') }).strict(),
   // 176 — the chat row's facts. `runtimeState` is the durable claim about the
   // headless child; `turnState` is the queue. They are independent: a chat can
   // be 'stopped' with a turn 'queued', which is what "the node restarted, your
@@ -1022,6 +1049,11 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
     openedAt: z.string().nullable(),
     closedAt: z.string().nullable(),
   }).strict(),
+  // W10a — the same allow-list as its state, strict so a leaked field fails.
+  CredentialEntityFactsSchema,
+  // 250 (W6) — a space link's content is `spaceLinks.list`'s answer.
+  z.object({ kind: z.literal('space_link') }).strict(),
+  z.object({ kind: z.literal('server') }).strict(),
   // A chat has no content beyond its summary (R5): the working directory and
   // the native session id are the two facts that stay server-side.
   z.object({ kind: z.literal('chat') }).strict(),
@@ -1816,12 +1848,13 @@ export const AuthAccountViewSchema: z.ZodType<AuthAccountView> = z.object({
 
 export const AuthSessionViewSchema: z.ZodType<AuthSessionView> = z.object({
   sessionId: z.string().uuid(),
-  kind: z.enum(['browser', 'cli', 'agent', 'agent_runtime']),
+  kind: z.enum(['browser', 'cli', 'agent', 'agent_runtime', 'link']),
   actingAsTeamMemberId: z.string().uuid().nullable(),
   runtimeMemberId: z.string().uuid().nullable().optional(),
   runtimeThreadRootId: z.string().uuid().nullable().optional(),
   runtimeChatId: z.string().uuid().nullable().optional(),
   label: z.string().nullable(),
+  spaceId: z.string().uuid().nullable().optional(),
   createdAt: IsoTimestamp.optional(),
   expiresAt: IsoTimestamp,
 }).strict();
@@ -1836,9 +1869,60 @@ export const AuthLoginResultSchema: z.ZodType<AuthLoginResult> = z.object({
   session: AuthSessionViewSchema,
 }).strict();
 
+/**
+ * `auth.space.enter`. Strict: the kind is inherited from the presenting session
+ * and the space is the only choice the caller makes, so a `kind` or `actorId`
+ * on the wire is a 400.
+ */
+export const AuthSpaceEnterInputSchema: z.ZodType<AuthSpaceEnterInput> = z.object({
+  spaceId: z.string().uuid(),
+  label: z.string().min(1).max(200).optional(),
+}).strict();
+
+export const AuthSpaceEnterResultSchema: z.ZodType<AuthSpaceEnterResult> = z.object({
+  token: z.string().min(1),
+  spaceId: z.string().uuid(),
+  session: AuthSessionViewSchema,
+}).strict();
+
 export const AuthLogoutResultSchema: z.ZodType<AuthLogoutResult> = z.object({
   sessionId: z.string().uuid(),
   revoked: z.boolean(),
+}).strict();
+
+/** `auth.sessions.list` (W4). A query parameter; anything else is a 400. */
+export const AuthSessionsListInputSchema: z.ZodType<AuthSessionsListInput> = z.object({
+  spaceId: z.string().uuid().optional(),
+}).strict();
+
+export const AuthSessionListingSchema: z.ZodType<AuthSessionListing> = z.object({
+  sessionId: z.string().uuid(),
+  kind: z.enum(['browser', 'cli', 'agent', 'agent_runtime']),
+  createdAt: IsoTimestamp,
+  lastUsedAt: IsoTimestamp.nullable(),
+  expiresAt: IsoTimestamp,
+  label: z.string().nullable(),
+  spaceId: z.string().uuid().nullable(),
+  spaceName: z.string().nullable(),
+  parentSessionId: z.string().uuid().nullable(),
+  origin: z.enum(['login', 'space_enter', 'spawn', 'chat', 'link']),
+  originEntityId: z.string().uuid().nullable(),
+  owner: z.object({
+    identityId: z.string().min(1).max(200),
+    displayName: z.string().nullable(),
+  }).strict(),
+  current: z.boolean(),
+}).strict();
+
+export const AuthSessionsListResultSchema: z.ZodType<AuthSessionsListResult> = z.object({
+  spaceId: z.string().uuid().nullable(),
+  sessions: z.array(AuthSessionListingSchema),
+}).strict();
+
+export const AuthSessionsRevokeResultSchema: z.ZodType<AuthSessionsRevokeResult> = z.object({
+  sessionId: z.string().uuid(),
+  revoked: z.boolean(),
+  revokedSessionIds: z.array(z.string().uuid()),
 }).strict();
 
 export const AuthSessionGetResultSchema: z.ZodType<AuthSessionGetResult> = z.object({
@@ -2095,6 +2179,9 @@ export const SpaceCredentialViewSchema: z.ZodType<SpaceCredentialView> = z.objec
   updatedAt: z.string(),
   lastUsedAt: z.string().nullable(),
   lastProbeAt: z.string().nullable(),
+  ownerAccountId: z.string().nullable().optional(),
+  visibility: z.enum(['private', 'public']).optional(),
+  mayBeSpaceDefault: z.boolean().optional(),
 }).strict();
 
 export const CredentialsSpaceListViewSchema: z.ZodType<CredentialsSpaceListView> = z.object({
@@ -2107,13 +2194,40 @@ export const CredentialsSpaceCreateInputSchema: z.ZodType<CredentialsSpaceCreate
   shape: z.enum(['api_key', 'token']),
   label: SpaceCredentialLabelSchema,
   secret: SpaceCredentialSecretSchema,
+  visibility: z.enum(['private', 'public']).optional(),
+  spaceOwned: z.boolean().optional(),
+  mayBeSpaceDefault: z.boolean().optional(),
   clientMutationId: z.string().min(1).optional(),
 }).strict().refine(
   // 206's provider/shape CHECK, stated here so the refusal names the rule
   // instead of arriving as a constraint violation after the vendor probe.
   (input) => (input.provider === 'github') === (input.shape === 'token'),
   { message: 'github takes a token; anthropic and openai take an api_key', path: ['shape'] },
+).refine(
+  // E1, stated before the probe: an owner's visibility or space-owned, not both.
+  (input) => !(input.spaceOwned === true && input.visibility !== undefined),
+  { message: 'a credential is either space-owned or has a visibility, not both', path: ['spaceOwned'] },
+).refine(
+  (input) => input.mayBeSpaceDefault !== true || input.visibility === 'public',
+  { message: 'only an owned public credential takes mayBeSpaceDefault', path: ['mayBeSpaceDefault'] },
 );
+
+export const CredentialsSpaceSetVisibilityInputSchema: z.ZodType<CredentialsSpaceSetVisibilityInput> = z.object({
+  visibility: z.enum(['private', 'public']),
+  clientMutationId: z.string().min(1).optional(),
+}).strict();
+
+/** W10d: the provider and label only — the secret is the caller's own, read server-side. */
+export const CredentialsSpaceAddMineInputSchema: z.ZodType<CredentialsSpaceAddMineInput> = z.object({
+  provider: z.literal('github'),
+  label: SpaceCredentialLabelSchema,
+  clientMutationId: z.string().min(1).optional(),
+}).strict();
+
+export const CredentialsSpaceDefaultConsentInputSchema: z.ZodType<CredentialsSpaceDefaultConsentInput> = z.object({
+  allowed: z.boolean(),
+  clientMutationId: z.string().min(1).optional(),
+}).strict();
 
 export const CredentialsSpaceRekeyInputSchema: z.ZodType<CredentialsSpaceRekeyInput> = z.object({
   secret: SpaceCredentialSecretSchema,
@@ -2179,6 +2293,25 @@ export const NodeCredentialStatusEntrySchema: z.ZodType<NodeCredentialStatusEntr
 
 export const NodeCredentialsStatusViewSchema: z.ZodType<NodeCredentialsStatusView> = z.object({
   providers: z.array(NodeCredentialStatusEntrySchema),
+}).strict();
+
+const ByteCount = z.number().int().nonnegative();
+
+export const NodeMetricsViewSchema: z.ZodType<NodeMetricsView> = z.object({
+  sampledAt: IsoTimestamp,
+  cpu: z.object({
+    percent: z.number().min(0).max(100).nullable(),
+    cores: z.number().int().nonnegative(),
+  }).strict(),
+  memory: z.object({ totalBytes: ByteCount, usedBytes: ByteCount }).strict(),
+  loadAverage: z.tuple([z.number(), z.number(), z.number()]).nullable(),
+  disk: z.object({ path: z.string().min(1), totalBytes: ByteCount, usedBytes: ByteCount }).strict().nullable(),
+  process: z.object({
+    rssBytes: ByteCount,
+    heapUsedBytes: ByteCount,
+    uptimeSeconds: z.number().nonnegative(),
+  }).strict(),
+  hostUptimeSeconds: z.number().nonnegative(),
 }).strict();
 
 export const NodeCredentialsPolicySetInputSchema: z.ZodType<NodeCredentialsPolicySetInput> = z.object({
@@ -2332,8 +2465,9 @@ export const CreatableEntityKindSchema = z.union([
   // `containers.create` — which supply a runtime binding a generic create
   // could not. A generic create would make a record with nothing behind it.
   // `form` likewise: `forms.create` writes its questions and requesting
-  // session in the same call (FORMS-DESIGN §6).
-  CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile', 'worktree', 'artifact', 'chat', 'container', 'form']),
+  // session in the same call (FORMS-DESIGN §6). `credential` is human-only
+  // and born under a SQL guard from credentials.space.* (W10a).
+  CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile', 'worktree', 'artifact', 'chat', 'container', 'form', 'credential', 'space_link', 'server']),
   CustomEntityKindSchema,
 ]);
 
@@ -2400,7 +2534,10 @@ export const ArtifactsRestoreInputSchema: z.ZodType<ArtifactsRestoreInput> = z.o
   revisionNumber: z.number().int().positive(),
 }).strict();
 
-export const AttentionRequestStatusSchema = z.enum(['open', 'acknowledged', 'resolved', 'dismissed']);
+export const AttentionRequestStatusSchema = z.enum(['open', 'acknowledged', 'resolved', 'dismissed', 'cleared']);
+export const AttentionLevelSchema = z.enum(['fyi', 'normal', 'high', 'urgent']);
+export const AttentionActionTypeSchema = z.enum(['decide', 'approve', 'unblock', 'review', 'fyi']);
+export const AttentionOriginSchema = z.enum(['agent', 'human', 'system']);
 
 export const AttentionRequestSchema: z.ZodType<AttentionRequest> = z.object({
   id: z.string().uuid(),
@@ -2418,6 +2555,16 @@ export const AttentionRequestSchema: z.ZodType<AttentionRequest> = z.object({
   updatedAt: IsoTimestamp,
   acknowledgedAt: IsoTimestamp.nullable(),
   resolvedAt: IsoTimestamp.nullable(),
+  // Attention v2: optional until the migration and S4 land (see the type).
+  seenByMe: z.boolean().optional(),
+  rootId: EntityIdSchema.optional(),
+  level: AttentionLevelSchema.optional(),
+  actionType: AttentionActionTypeSchema.optional(),
+  assigneeId: EntityIdSchema.nullable().optional(),
+  sourceWorkSessionId: EntityIdSchema.nullable().optional(),
+  sourceSessionLive: z.boolean().optional(),
+  origin: AttentionOriginSchema.optional(),
+  resolutionBatchId: z.string().uuid().nullable().optional(),
 }).strict();
 
 export const AttentionRequestListQuerySchema: z.ZodType<AttentionRequestListQuery> = z.object({
@@ -2433,7 +2580,12 @@ export const CreateAttentionRequestInputSchema: z.ZodType<CreateAttentionRequest
   ...commandContextShape,
   clientMutationId: z.string().min(1),
   reason: z.string().trim().min(1).max(500),
-  points: z.number().int().min(1).max(100),
+  points: z.number().int().min(1).max(100).optional(),
+  level: AttentionLevelSchema.optional(),
+  actionType: AttentionActionTypeSchema.optional(),
+  assigneeId: EntityIdSchema.optional(),
+  // .strict() is what keeps the raising session, origin and signal key OUT:
+  // the server stamps those from the caller (F1a), never from the body.
 }).strict();
 
 export const UpdateAttentionRequestInputSchema: z.ZodType<UpdateAttentionRequestInput> = z.object({
@@ -2453,12 +2605,30 @@ export const ResolveEntityAttentionInputSchema: z.ZodType<ResolveEntityAttention
   ...commandContextShape,
   clientMutationId: z.string().min(1),
   resolutionNote: z.string().trim().max(1000).optional(),
+  resolutionBatchId: z.string().uuid().optional(),
+}).strict();
+
+export const MarkAttentionSeenInputSchema: z.ZodType<MarkAttentionSeenInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+}).strict();
+
+export const UnresolveAttentionBatchInputSchema: z.ZodType<UnresolveAttentionBatchInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+}).strict();
+
+export const WithdrawAttentionRequestInputSchema: z.ZodType<WithdrawAttentionRequestInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  expectedVersion: z.number().int().positive().optional(),
 }).strict();
 
 export const AttentionRequestMutationResultSchema: z.ZodType<AttentionRequestMutationResult> = z.lazy(() => z.object({
   request: AttentionRequestSchema.nullable(),
   entity: EntitySummarySchema,
   affectedCount: z.number().int().nonnegative(),
+  resolutionBatchId: z.string().uuid().nullable().optional(),
 }).strict());
 
 export const MoveEntityInputSchema: z.ZodType<MoveEntityInput> = z.object({
@@ -3577,6 +3747,10 @@ export const ExecutionLivenessSchema: z.ZodType<ExecutionLiveness> = z.object({
   // this read has to be able to give, and an absent field is the shape a
   // consumer reads as zero — which means "replay the entire retained log".
   eventHwm: z.number().int().nonnegative().nullable(),
+  // Optional: an older node omits it, which a consumer reads as "unknown".
+  liveSessionCount: z.number().int().nonnegative().optional(),
+  liveChatCount: z.number().int().nonnegative().optional(),
+  workingChatCount: z.number().int().nonnegative().optional(),
 }).strict();
 
 /**
@@ -5108,14 +5282,6 @@ export const ContainersForkInputSchema: z.ZodType<ContainersForkInput> = z.objec
   lifecycle: ContainerLifecycleInputSchema.optional(),
   spec: ContainerSpecInputSchema.optional(),
 }).strict() as z.ZodType<ContainersForkInput>;
-
-export const ContainersAttentionInputSchema: z.ZodType<ContainersAttentionInput> = z.object({
-  ...commandContextShape,
-  clientMutationId: z.string().min(1),
-  reason: z.enum(['login', 'captcha', '2fa', 'payment', 'approval', 'other']),
-  detail: z.string().max(4096).optional(),
-  points: z.number().int().min(1).max(100).optional(),
-}).strict() as z.ZodType<ContainersAttentionInput>;
 
 export const ContainersPoolsSetInputSchema: z.ZodType<ContainersPoolsSetInput> = z.object({
   ...commandContextShape,

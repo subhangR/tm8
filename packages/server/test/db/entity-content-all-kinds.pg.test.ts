@@ -66,6 +66,9 @@ let seed: Seed;
 const NO_CONTENT_ARM: Record<string, string> = {
   // A space-scoped custom kind is `c:%`-prefixed and handled by the
   // `custom_entities` branch above the case statement, never by an arm.
+  // W6 (250) registers `server` with `space_link`, but W6 gives it no detail
+  // table and no door: its content is '{}' through `else` until W8 adds both.
+  server: 'no detail table in W6 (250); W8 adds the row and the arm',
 };
 
 beforeAll(async () => {

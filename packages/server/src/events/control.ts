@@ -39,7 +39,8 @@ import {
 } from '@tm8/contract';
 
 import type { Db, DbClaims } from '../db/types.js';
-import type { RequestIdentity } from '../http/types.js';
+import { isGateSession } from '../http/space-gate.js';
+import type { RequestIdentity, SpaceSessionsMode } from '../http/types.js';
 import { MAX_POLL_LIMIT, type DurableEventLog } from './poll.js';
 import type { PresenceStore } from './presence.js';
 import type { SubscriptionRegistry } from './subscriptions.js';
@@ -76,18 +77,28 @@ export class DbSubscriptionAuthorizer implements SubscriptionAuthorizer {
   private readonly db: Pick<Db, 'tx'>;
   private readonly claimsFor: (identity: RequestIdentity) => Promise<DbClaims>;
   private readonly onError: ((message: string) => void) | undefined;
+  private readonly spaceSessions: SpaceSessionsMode | undefined;
 
   constructor(
     db: Pick<Db, 'tx'>,
     claimsFor: (identity: RequestIdentity) => Promise<DbClaims>,
-    opts: { onError?: (message: string) => void } = {},
+    opts: { onError?: (message: string) => void; spaceSessions?: SpaceSessionsMode } = {},
   ) {
     this.db = db;
     this.claimsFor = claimsFor;
     this.onError = opts.onError;
+    this.spaceSessions = opts.spaceSessions;
   }
 
   async canSubscribe(identity: RequestIdentity, spaceId: string): Promise<boolean> {
+    // W3. A space-pinned session subscribes to its own space and nothing else.
+    // The RLS probe below says so too since 233 closed spaces_select's public
+    // arm (K7 rejected); this check keeps the socket's answer independent of it.
+    if (identity.sessionSpaceId && identity.sessionSpaceId !== spaceId) return false;
+    // Under enforce a gate session subscribes to nothing. This is the only
+    // socket-level refusal (the upgrade itself is not gated, so identity-scoped
+    // streams stay open); the HTTP gate (http/space-gate.ts) covers HTTP routes.
+    if (this.spaceSessions === 'enforce' && isGateSession(identity)) return false;
     try {
       const rows = await this.db.tx(await this.claimsFor(identity), async (q) => {
         // Drop to tm8_app so the RLS derivation above is REAL on the

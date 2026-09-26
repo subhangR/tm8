@@ -218,6 +218,7 @@ export function safeDeliveryReason(reason: string | null): string | null {
 
 export type ActivityPresentation =
   | { kind: 'entity-change'; entity: EntitySummary; verb: 'created' | 'updated' }
+  | { kind: 'self-change'; entity: EntitySummary; verb: 'created' | 'updated' }
   | { kind: 'state'; label: string; from: string | null; to: string }
   | { kind: 'event'; label: string }
   | { kind: 'unknown' };
@@ -234,12 +235,22 @@ function summaryString(summary: Record<string, unknown>, key: string): string | 
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
+/**
+ * `anchorId` is the entity whose feed this is. A created/updated row about
+ * THAT entity is a one-line event ("created this task"), never an artifact
+ * card: the card repeats the anchor's own title and excerpt, which the panel
+ * is already showing, and on a task feed those rows were most of what was on
+ * screen. A card is kept for a DIFFERENT entity, where title and excerpt are
+ * the news.
+ */
 export function activityPresentation(
   item: Extract<FeedItem, { itemKind: 'activity' }>,
+  anchorId?: string,
 ): ActivityPresentation {
   const { activity } = item;
   if ((activity.verb === 'created' || activity.verb === 'updated') && item.anchor) {
-    return { kind: 'entity-change', entity: item.anchor, verb: activity.verb };
+    const kind = anchorId !== undefined && item.anchor.id === anchorId ? 'self-change' : 'entity-change';
+    return { kind, entity: item.anchor, verb: activity.verb };
   }
   if (activity.verb === 'work.changed') {
     const status = summaryString(activity.summary, 'status');
@@ -255,6 +266,13 @@ export function activityPresentation(
     const state = summaryString(activity.summary, 'state') ?? 'unknown state';
     const mode = summaryString(activity.summary, 'mode');
     return { kind: 'event', label: `${tool}: ${state}${mode ? ` (${mode})` : ''}` };
+  }
+  if (activity.verb === 'pr.linked') {
+    /* Which PR is the whole fact; "Pull request linked" alone answered nothing.
+       Read from the recorded URL's own path, never guessed. */
+    const url = summaryString(activity.summary, 'url');
+    const number = url ? /\/pull\/(\d+)(?:[/?#]|$)/.exec(url)?.[1] : undefined;
+    if (number) return { kind: 'state', label: 'Linked pull request', from: null, to: `#${number}` };
   }
   const terminalState: Readonly<Record<string, string>> = {
     completed: 'Completed',

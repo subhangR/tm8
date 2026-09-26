@@ -21,6 +21,11 @@ import { ChatHomeScreen } from './ChatHomeScreen';
 import { createChatHomeFixturePort } from './fixtures';
 import type { ChatModelOption } from './types';
 
+/* "The fixture thread has opened" = its first turn is in the transcript. Not
+   its title: the title is on screen twice from the first frame (the row, and
+   the header, which names the thread being opened — D26). */
+const OPENED_FIXTURE_TURN = 'Plan the launch sequence and check what is already blocked.';
+
 const SPACE_ID = '019f0000-0000-7000-8000-000000000090';
 const MODELS: ChatModelOption[] = [
   { model: 'claude-sonnet-4-5', label: 'Sonnet 4.5', provider: 'Anthropic', agentTool: 'claude-code' },
@@ -111,7 +116,7 @@ describe('a pasted file rides the chat prompt', () => {
       />,
     );
     // The fixture opens on an existing thread, so this is `postTurn`.
-    await waitFor(() => expect(view.getByText('Plan the launch sequence')).toBeTruthy());
+    await waitFor(() => expect(view.getByText(OPENED_FIXTURE_TURN)).toBeTruthy());
 
     const field = view.getByLabelText('Message the chat agent');
     fireEvent.paste(field, clipboard([pdf()]));
@@ -149,7 +154,7 @@ describe('/ references a skill in the prompt (R1)', () => {
     const view = render(
       <ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} skillOptions={SKILLS} />,
     );
-    await waitFor(() => expect(view.getByText('Plan the launch sequence')).toBeTruthy());
+    await waitFor(() => expect(view.getByText(OPENED_FIXTURE_TURN)).toBeTruthy());
 
     const field = view.getByLabelText('Message the chat agent') as HTMLTextAreaElement;
     fireEvent.change(field, { target: { value: '/tri', selectionStart: 4, selectionEnd: 4 } });
@@ -180,7 +185,7 @@ describe('what the chat composer already did survives', () => {
   it('Enter sends and Shift+Enter does not', async () => {
     const { port, controls } = createChatHomeFixturePort();
     const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
-    await waitFor(() => expect(view.getByText('Plan the launch sequence')).toBeTruthy());
+    await waitFor(() => expect(view.getByText(OPENED_FIXTURE_TURN)).toBeTruthy());
 
     const field = view.getByLabelText('Message the chat agent');
     fireEvent.change(field, { target: { value: 'first line' } });

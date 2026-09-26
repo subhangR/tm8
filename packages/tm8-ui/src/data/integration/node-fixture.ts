@@ -66,16 +66,20 @@ import { loadConfig } from '@tm8/server-src-config';
 import { createRealSeam, type RealSeam, type RealSeamOptions } from '../real/seam-real';
 import { browserWebSocketFactory, type WebSocketLike } from '../real/socket';
 
+import { testPgPort } from './pg-port-guard';
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 /** integration → data → src → tm8-ui → packages → <repo root> */
 export const REPO_ROOT = resolve(HERE, '../../../../..');
 
 /**
- * The sidecar, pinned. TWO Postgres clusters live on this machine and a bare
- * `psql` reaches the wrong one, so both the binary and the port are absolute
- * here rather than inherited from PATH or from the environment.
+ * The test cluster, pinned. TWO Postgres clusters live on this machine and a
+ * bare `psql` reaches the wrong one, so the binary is absolute here rather than
+ * inherited from PATH. The port has NO default: `testPgPort` (./pg-port-guard.ts)
+ * refuses an unset TM8_PG_PORT and 5442 (the PROD cluster on the tm8 host) —
+ * export TM8_PG_PORT=5443.
  */
-const PG_PORT = process.env['TM8_PG_PORT'] ?? '5442';
+const PG_PORT = testPgPort(process.env);
 const PG_HOST = process.env['TM8_PG_HOST'] ?? '127.0.0.1';
 const PG_USER = process.env['TM8_PG_USER'] ?? 'tm8';
 

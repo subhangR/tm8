@@ -31,6 +31,8 @@ export type CapabilityProfile =
   | 'artifact-lifecycle'
   | 'container-lifecycle'
   | 'form-lifecycle'
+  | 'credential-lifecycle'
+  | 'space-link-lifecycle'
   | 'custom-scalar'
   | 'static-no-authority';
 
@@ -58,6 +60,8 @@ export type MigrationStrategy =
   | 'container-detail'
   | 'drawing-detail'
   | 'form-detail'
+  | 'credential-detail'
+  | 'space-link-kinds'
   | 'custom-registry'
   | 'none';
 
@@ -295,6 +299,63 @@ function capabilities(profile: CapabilityProfile): CapabilityDisposition {
           'containers.attach',
         ],
       };
+    case 'credential-lifecycle':
+      // NOTHING generic (W10a), mirroring `container-lifecycle`: the entity
+      // is the same-id envelope of a space_credentials row, and every write
+      // to it — birth, label, visibility, revoke — is a human-only
+      // `credentials.space.*` door. SQL refuses the generic create, move,
+      // delete and restore as well (the insert and envelope guards, 017).
+      return {
+        profile,
+        genericCreate: false,
+        genericPatch: false,
+        genericMove: false,
+        genericHierarchy: false,
+        genericDeleteRestore: false,
+        genericPoints: false,
+        messages: true,
+        reactions: true,
+        connections: true,
+        lifecycleOperations: [
+          'credentials.space.create',
+          'credentials.space.rename',
+          'credentials.space.rekey',
+          'credentials.space.setDefault',
+          'credentials.space.delete',
+          // W10b: the owner-facing writes on the same row.
+          'credentials.space.setVisibility',
+          'credentials.space.spaceDefaultConsent',
+          'credentials.space.claim',
+          // W10d: add your own token as a private credential (a create).
+          'credentials.space.addMine',
+        ],
+      };
+    case 'space-link-lifecycle':
+      // NOTHING generic (W6, 250/251). A link is born only from
+      // `spaceLinks.add`, and every write is a named, human-only door over the
+      // caller's own row; a generic patch, move or delete would be a second way
+      // to reach a record whose writes SQL restricts to browser/cli sessions.
+      return {
+        profile,
+        genericCreate: false,
+        genericPatch: false,
+        genericMove: false,
+        genericHierarchy: false,
+        genericDeleteRestore: false,
+        genericPoints: false,
+        messages: false,
+        reactions: false,
+        connections: false,
+        lifecycleOperations: [
+          'spaceLinks.list',
+          'spaceLinks.add',
+          'spaceLinks.login',
+          'spaceLinks.relogin',
+          'spaceLinks.logout',
+          'spaceLinks.remove',
+          'spaceLinks.setSpawn',
+        ],
+      };
     case 'static-no-authority':
       return {
         profile,
@@ -483,6 +544,30 @@ export const CORE_KIND_DISPOSITIONS = {
     collection: typedCollection, projection: universal,
     capabilities: { profile: 'form-lifecycle' },
     menu: { strategy: 'registered-not-default' }, migration: { strategy: 'form-detail' },
+  }),
+  // Space credentials (W10a). The entity is an envelope for hierarchy,
+  // messages and attention; the secret stays in its side row and never
+  // reaches a projection. Human-only doors, so nothing is addressable from
+  // the generic menu.
+  credential: core('credential', 'credentials', {
+    collection: typedCollection, projection: universal,
+    capabilities: { profile: 'credential-lifecycle' },
+    menu: { strategy: 'not-addressable' }, migration: { strategy: 'credential-detail' },
+  }),
+  // Space links (W6, migration 250). Born only from `spaceLinks.add`, managed
+  // from space settings by a human; never menu-addressable.
+  space_link: core('space_link', 'space-links', {
+    collection: typedCollection, projection: universal,
+    capabilities: { profile: 'space-link-lifecycle' },
+    menu: { strategy: 'not-addressable' }, migration: { strategy: 'space-link-kinds' },
+  }),
+  // A linked space's server (W6, migration 250). Registered with the kind so a
+  // link can name a remote target; W6 ships no operation on it (null = this
+  // server), so it has no authority of its own.
+  server: core('server', 'servers', {
+    collection: typedCollection, projection: universal,
+    capabilities: { profile: 'static-no-authority' },
+    menu: { strategy: 'not-addressable' }, migration: { strategy: 'space-link-kinds' },
   }),
 } as const satisfies Readonly<Record<CoreEntityKind, KindDisposition>>;
 

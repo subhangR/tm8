@@ -360,6 +360,8 @@ const TOKEN = 'a'.repeat(64);
 const TOKEN_HASH = createHash('sha256').update(TOKEN, 'utf8').digest('hex');
 const OWNER_ID = 'identity-owner';
 const VIEWER_ID = 'identity-viewer';
+/** The preview session's space: the viewer's reads are pinned to it (W3). */
+const PREVIEW_SPACE_ID = '019fb6a7-0000-7000-8000-00000000000c';
 
 interface ScriptedRows {
   session?: Record<string, unknown>[];
@@ -387,7 +389,7 @@ function liveSession(): Record<string, unknown> {
   return {
     artifact_entity_id: '019fb6a7-0000-7000-8000-00000000000a',
     revision_id: '019fb6a7-0000-7000-8000-00000000000b',
-    space_id: '019fb6a7-0000-7000-8000-00000000000c',
+    space_id: PREVIEW_SPACE_ID,
     viewer_identity_id: VIEWER_ID,
     entrypoint_path: 'index.html',
     revoked_at: null,
@@ -494,8 +496,8 @@ describe('the preview listener', () => {
     // The capability row was resolved as the owner; every CONTENT read ran as
     // the recorded viewer under ordinary RLS.
     expect(db.calls[0]?.claims.identityId).toBe(OWNER_ID);
-    expect(db.calls[1]?.claims).toEqual({ identityId: VIEWER_ID, nodeAdmin: false });
-    expect(db.calls[2]?.claims).toEqual({ identityId: VIEWER_ID, nodeAdmin: false });
+    expect(db.calls[1]?.claims).toEqual({ identityId: VIEWER_ID, nodeAdmin: false, sessionSpaceId: PREVIEW_SPACE_ID });
+    expect(db.calls[2]?.claims).toEqual({ identityId: VIEWER_ID, nodeAdmin: false, sessionSpaceId: PREVIEW_SPACE_ID });
   });
 
   it('answers ONLY to the preview hostname — the inverse of the app partition', async () => {
@@ -666,7 +668,7 @@ describe('the same-origin /p/ route on the app socket', () => {
     // The RLS claims discipline survives the mount: capability row as the
     // node owner, every content read as the recorded viewer.
     expect(db.calls[0]?.claims.identityId).toBe(OWNER_ID);
-    expect(db.calls[1]?.claims).toEqual({ identityId: VIEWER_ID, nodeAdmin: false });
+    expect(db.calls[1]?.claims).toEqual({ identityId: VIEWER_ID, nodeAdmin: false, sessionSpaceId: PREVIEW_SPACE_ID });
   });
 
   it('a5 — the route answers when the browser reaches the app as localhost', async () => {

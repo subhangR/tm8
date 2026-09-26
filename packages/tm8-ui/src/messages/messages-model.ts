@@ -40,7 +40,8 @@
  * note the detection below is STRUCTURAL (does this state carry a count?), not
  * a test for the channel kind, so the widening needs no edit at all.
  */
-import type { EntityId, EntityKind, EntitySummary, MessageView } from '@tm8/contract';
+import type { ActorSummary, EntityId, EntityKind, EntitySummary, MessageView } from '@tm8/contract';
+import { actorName } from '../domain/actors';
 
 /** The two readings the screen offers. */
 export type MessagesMode = 'conversations' | 'all';
@@ -105,11 +106,13 @@ export function anchorIdOf(summary: EntitySummary): EntityId | null {
 
 /** A message summary's author display name, falling back to the entity's creator. */
 export function authorNameOf(summary: EntitySummary): string {
-  const state = summary.state as { author?: { displayName?: unknown } };
+  const state = summary.state as { author?: { displayName?: unknown; memberStatus?: ActorSummary['memberStatus'] } };
   const authored = state?.author?.displayName;
-  if (typeof authored === 'string' && authored.length > 0) return authored;
-  const created = summary.createdBy?.displayName;
-  return typeof created === 'string' && created.length > 0 ? created : 'Unknown';
+  if (typeof authored === 'string' && authored.length > 0) {
+    return actorName({ displayName: authored, memberStatus: state.author?.memberStatus });
+  }
+  const created = summary.createdBy;
+  return typeof created?.displayName === 'string' && created.displayName.length > 0 ? actorName(created) : 'Unknown';
 }
 
 /**

@@ -537,14 +537,14 @@ export function buildReport(rows, baselineRows, { title = 'context-eval report' 
   md.push('', `Cross-lane (D9 (h)): ${hopped.length} row(s) OPENED another lane's copy of their task${hopped.length ? ` (${hopped.map((r) => `${r.slice}/${r.model}/${r.taskKey}#${r.rep} -> ${r.openedSiblingCopy.map((o) => o.sessionId).join(',')}`).join('; ')})` : ''}. A shared needle doc makes sibling copies visible; this counts the hop.`);
   md.push('', `Sibling worktree (D12): ${copied.length} row(s) READ another lane's worktree and are set aside above${copied.length ? ` (${copied.map((r) => `${r.slice}/${r.model}/${r.taskKey}#${r.rep} ${r.sessionId} <- ${r.readSiblingWorktree.map((o) => o.sessionId).join(',')}`).join('; ')})` : ''}. Every lane worktree on a node is readable by every other lane; a copied answer passes the rubric, so it cannot count as the lane's own success.`);
   md.push('', `Sibling commit (D12 twin): ${copiedCommit.length} row(s) READ a commit that is not in their own branch's history and are set aside above${copiedCommit.length ? ` (${copiedCommit.map((r) => `${r.slice}/${r.model}/${r.taskKey}#${r.rep} ${r.sessionId} <- ${r.readSiblingCommit.map((o) => `${o.sha} of ${o.sessionId}`).join(', ')}`).join('; ')})` : ''}; ${listedAll.length} row(s) listed every ref (git log --all / branch -a)${unverified.length ? `; ${unverified.length} row(s) named a sha but the node's fixture repo is not on this host (UNVERIFIED: ${unverified.map((r) => r.sessionId).join(', ')})` : ''}. Every worktree shares the node's object store, so moving or locking worktrees does not stop a git read.`);
-  md.push('', '| slice / node | lanes | load at lane start (1-min) | lanes that waited for load | waited seconds (of those) | fixture main sha(s) |', '|---|---|---|---|---|---|');
+  md.push('', '| slice / node | lanes | load at gate (1-min) | load at lane start (1-min) | lanes that waited for load | waited seconds (of those) | fixture main sha(s) |', '|---|---|---|---|---|---|---|');
   for (const key of [...new Set(rows.map((r) => `${r.slice} / ${r.node?.port}`))]) {
     const rs = rows.filter((r) => `${r.slice} / ${r.node?.port}` === key);
     const waited = rs.filter((r) => (r.waitedSeconds ?? 0) > 0);
     // `base` is the fixture repo's main the lane branched from: more than one here means main MOVED mid-slice.
     const bases = [...new Set(rs.map((r) => r.base).filter(Boolean))];
-    md.push(`| ${key} | ${rs.length} | ${fmt(stats(rs.map((r) => r.loadAtStart)))} | ${pct(waited.length, rs.length)} | ${fmt(stats(waited.map((r) => r.waitedSeconds)))} | ${bases.map((b) => b.slice(0, 8)).join(', ')}${bases.length > 1 ? ' ⚑ MOVED' : ''} |`);
-    json.load[key] = { lanes: rs.length, loadAtStart: stats(rs.map((r) => r.loadAtStart)), waited: waited.length, fixtureMainShas: bases };
+    md.push(`| ${key} | ${rs.length} | ${fmt(stats(rs.map((r) => r.gateLoad)), 1)} | ${fmt(stats(rs.map((r) => r.loadAtStart)), 1)} | ${pct(waited.length, rs.length)} | ${fmt(stats(waited.map((r) => r.waitedSeconds)))} | ${bases.map((b) => b.slice(0, 8)).join(', ')}${bases.length > 1 ? ' ⚑ MOVED' : ''} |`);
+    json.load[key] = { lanes: rs.length, gateLoad: stats(rs.map((r) => r.gateLoad)), loadAtStart: stats(rs.map((r) => r.loadAtStart)), waited: waited.length, fixtureMainShas: bases };
   }
   md.push('');
 

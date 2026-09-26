@@ -102,7 +102,7 @@ export {
   type MergeRefusal,
 } from './pr-merge';
 
-export { actorPresentation, type ActorPresentation } from './actors';
+export { actorName, actorPresentation, LEFT_SUFFIX, type ActorPresentation } from './actors';
 
 export { QUIET_SESSION_DETAIL, needsAttentionOf, toRowFacts } from './needs-attention';
 

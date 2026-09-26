@@ -12,6 +12,7 @@ export async function resolveServerTarget(
     baseUrl: registryContext.baseUrl.value,
     token: registryContext.token,
     timeoutMs: registryContext.timeoutMs,
+    gapRetryMs: registryContext.gapRetryMs,
   });
   const raw = await registryClient.invoke<ServerConnection>('serverConnections.get', {
     params: { name },

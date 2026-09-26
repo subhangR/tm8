@@ -3,7 +3,7 @@
 //
 //   node lanes.mjs --slice c1 --node 4621 --out results/<run>.jsonl
 //     [--reps 2] [--models sonnet5,haiku45] [--only fee,stress30] [--families needle,memory]
-//     [--concurrency auto|1|2] [--timeout-min 25] [--dry-run]
+//     [--concurrency auto|1|2] [--load-max 80] [--timeout-min 25] [--dry-run]
 //
 // A slice is one ARM (c1 lean, c2 index-derived, c3 index-authored, c4
 // inherit); the node must be registered under that arm (dev-node.sh up ...
@@ -11,7 +11,10 @@
 // an INTERLEAVED order (model alternates first, then task, then rep) so no
 // cell owns a time window. Concurrency follows the host load, read before
 // every start: 2 lanes when the 1-min load is under 40, 1 at 40-80, none above
-// 80 (the lane waits, and the row records how long).
+// 80 (the lane waits, and the row records how long). `--load-max N` (or
+// CTX_EVAL_LOAD_MAX=N) lowers the ceiling for a shared box: above N nothing
+// starts, and at most one lane runs from min(40, N) up (utho: --load-max 12
+// --concurrency 1).
 //
 // Every lane runs on a FRESH COPY of its template task (title, content with
 // every criterion unticked, edges re-created in the recorded order): a
@@ -38,7 +41,9 @@ const arg = (name, dflt) => {
   return i > 0 ? process.argv[i + 1] : dflt;
 };
 export const SLICES = { c1: 'lean', c2: 'index-derived', c3: 'index-authored', c4: 'inherit' };
-export const MODELS = { sonnet5: 'Sonnet 5 Teammate', haiku45: 'Haiku 4.5 Teammate', opus55: 'Opus 5.5 1M Teammate' };
+// dev-node.sh seeds the eval teammates (pre-#843 seed fields under names the
+// retire pass leaves alone). opus55 is not seeded: create it the same way first.
+export const MODELS = { sonnet5: 'Sonnet 5 Eval', haiku45: 'Haiku 4.5 Eval', opus55: 'Opus 5.5 1M Eval' };
 const IDLE_SECONDS = 45;
 const NO_TRANSCRIPT_MS = 120_000;
 const LOAD_TIERS = { two: 40, one: 80 };
@@ -86,12 +91,28 @@ export function planSlice({ keys, models, reps }) {
   return plan;
 }
 
-/** How many lanes may run at this load: 2 under 40, 1 at 40..80, 0 above 80. */
-export function allowedConcurrency(load, max = 2) {
-  if (load > LOAD_TIERS.one) return 0;
-  if (load >= LOAD_TIERS.two) return Math.min(1, max);
+/** The load tiers, with the ceiling lowered to `loadMax` when one is given. */
+export function loadTiers(loadMax) {
+  if (loadMax == null || loadMax === '') return LOAD_TIERS;
+  const n = Number(loadMax);
+  if (!(n > 0)) throw new Error(`--load-max ${loadMax} is not a positive number`);
+  return { two: Math.min(LOAD_TIERS.two, n), one: Math.min(LOAD_TIERS.one, n) };
+}
+
+/** How many lanes may run at this load: 2 under 40, 1 at 40..80, 0 above 80 (or the given tiers). */
+export function allowedConcurrency(load, max = 2, tiers = LOAD_TIERS) {
+  if (!Number.isFinite(load)) throw new Error(`unreadable load ${load}`);
+  if (load > tiers.one) return 0;
+  if (load >= tiers.two) return Math.min(1, max);
   return max;
 }
+
+/**
+ * A start is blocked by LOAD only when a slot is free (fewer than maxConc running) and
+ * the load tier allows no more than are already running. A lane still holding the
+ * only slot is not a load wait, whatever the load (c1 pass 1 counted it: inflated).
+ */
+export const isLoadWait = (running, allowed, maxConc) => running < maxConc && allowed <= running;
 
 /** Deterministic per-family rubric from the judged pieces. */
 export function rubricFor(family, { success, turn, checkResults }) {
@@ -152,17 +173,24 @@ async function waitIdle(tm8, sessionId, worktree, getNative, deadline, { needTra
 }
 
 /** A row's identity; `base` is the fixture repo's `main` sha the lane branched from. */
-function newRow({ node, nodeFx, cell, slice, fixtureVersion, base }) {
+export function newRow({ node, nodeFx, cell, slice, fixtureVersion, base }) {
   const tpl = nodeFx.tasks[cell.taskKey];
   return {
     schema: 'context-eval.row.v1', slice, arm: node.arm, node: { port: node.port, db: node.db, env: node.env }, buildSha: node.buildSha, fixtureVersion,
     model: cell.model, teammateId: node.teammates[MODELS[cell.model]], family: tpl.family, taskKey: cell.taskKey, rep: cell.rep,
     templateTaskId: tpl.templateId, taskId: null, sessionId: null, worktree: null, base,
-    startedAt: null, endedAt: null, ended: null, wallSeconds: null, uptimeStart: null, uptimeEnd: null, loadAtStart: null, waitedSeconds: cell.waitedSeconds ?? 0,
+    startedAt: null, endedAt: null, ended: null, wallSeconds: null, uptimeStart: null, uptimeEnd: null, loadAtStart: null, gateLoad: cell.gateLoad ?? null, waitedSeconds: cell.waitedSeconds ?? 0,
     laneTm8: null, turn: null,
     ...(cell.memoryGuard ?? {}),
   };
 }
+
+/**
+ * The lane-start log line. `gateLoad` is the 1-min load the concurrency gate compared
+ * before the lane; `load` (uptimeStart) is read later, after the task copy's CLI calls,
+ * and can sit above the cap without the gate having let an over-cap start through.
+ */
+export const startLine = (tag, row) => `${tag} session ${row.sessionId} gate ${row.gateLoad ?? '-'} load ${row.uptimeStart}`;
 
 async function runLane({ node, nodeFx, tm8, cell, slice, out, timeoutMin, fixtureVersion }) {
   const tpl = nodeFx.tasks[cell.taskKey];
@@ -183,7 +211,7 @@ async function runLane({ node, nodeFx, tm8, cell, slice, out, timeoutMin, fixtur
   }
   row.startedAt = new Date().toISOString();
   row.uptimeStart = uptime();
-  row.loadAtStart = Number(row.uptimeStart.split(/\s+/)[0]);
+  row.loadAtStart = Number(row.uptimeStart.split(/[\s,]+/)[0]);
   let spawn;
   try {
     spawn = tm8('session', 'spawn', '--teammate', teammateId, '--task', row.taskId, '--launch-project', node.projectId, '--workdir', 'worktree', '--base-ref', 'main', '--mode', 'worker', '--access-mode', 'fullAccess');
@@ -193,7 +221,7 @@ async function runLane({ node, nodeFx, tm8, cell, slice, out, timeoutMin, fixtur
   }
   row.sessionId = spawn.id;
   row.worktree = spawn.workdir?.path ?? null;
-  console.error(`${tag} session ${row.sessionId} load ${row.uptimeStart}`);
+  console.error(startLine(tag, row));
   const deadline = Date.now() + timeoutMin * 60_000;
   let pid = null;
   let nativeId = null;
@@ -307,7 +335,7 @@ async function main() {
   const models = (arg('models') ?? 'sonnet5,haiku45').split(',').filter(Boolean);
   for (const m of models) {
     if (!MODELS[m]) throw new Error(`unknown model key ${m}; known: ${Object.keys(MODELS).join(', ')}`);
-    if (!node.teammates[MODELS[m]]) throw new Error(`node ${port} has no teammate "${MODELS[m]}" (catalog seeding needs TM8_LAUNCH_BOOTSTRAP=1 and a space)`);
+    if (!node.teammates[MODELS[m]]) throw new Error(`node ${port} has no teammate "${MODELS[m]}" (dev-node.sh up seeds the eval teammates)`);
   }
   let keys = Object.keys(nodeFx.tasks);
   if (arg('only')) keys = arg('only').split(',').filter((k) => keys.includes(k));
@@ -320,8 +348,9 @@ async function main() {
   const plan = planSlice({ keys, models, reps });
   const maxConc = arg('concurrency', 'auto') === 'auto' ? 2 : Number(arg('concurrency'));
   const timeoutMin = Number(arg('timeout-min') ?? 25);
+  const tiers = loadTiers(arg('load-max') ?? process.env.CTX_EVAL_LOAD_MAX);
   const fixtureVersion = { schemaVersion: fx.schemaVersion, contentHash: fx.contentHash };
-  console.error(`slice ${slice ?? explicitArm} arm ${arm} node ${port} build ${node.buildSha}: ${plan.length} lanes (${models.join(',')} × ${keys.length} tasks × ${reps} reps), max ${maxConc} concurrent, out ${out}`);
+  console.error(`slice ${slice ?? explicitArm} arm ${arm} node ${port} build ${node.buildSha}: ${plan.length} lanes (${models.join(',')} × ${keys.length} tasks × ${reps} reps), max ${maxConc} concurrent, load tiers ${tiers.two}/${tiers.one}, out ${out}`);
   if (process.argv.includes('--dry-run')) {
     for (const c of plan) console.log(`${c.model}\t${c.taskKey}\t${c.rep}`);
     return;
@@ -333,7 +362,7 @@ async function main() {
   let i = 0;
   while (i < plan.length || running.size) {
     const load = load1();
-    const allowed = allowedConcurrency(load, maxConc);
+    const allowed = allowedConcurrency(load, maxConc, tiers);
     if (i < plan.length && running.size < allowed) {
       const foreign = foreignMainCommits(sh('git', ['-C', node.repo, 'log', '--format=%h %s', 'main']).split('\n'));
       if (foreign.length) {
@@ -350,6 +379,7 @@ async function main() {
         continue;
       }
       const cell = plan[i++];
+      cell.gateLoad = load;
       cell.memoryGuard = guardMemoryDir(node.repo, node.dataDir);
       if (cell.memoryGuard.memoryDirState === 'moved') {
         console.error(`\n${'!'.repeat(72)}\nAUTO-MEMORY GUARD: ${memoryDirFor(node.repo)} held ${cell.memoryGuard.memoryDirMovedFiles.join(', ')}: a lane wrote Claude auto-memory, which would load into every later lane. MOVED to ${cell.memoryGuard.memoryDirMovedTo}; rows started since the write are contaminated (report.mjs flags them).\n${'!'.repeat(72)}\n`);
@@ -360,9 +390,9 @@ async function main() {
       continue;
     }
     // Only a LOAD wait counts: waiting for a free slot at full concurrency is the plan.
-    if (i < plan.length && allowed <= running.size && allowed < maxConc) {
+    if (i < plan.length && isLoadWait(running.size, allowed, maxConc)) {
       plan[i].waitedSeconds = (plan[i].waitedSeconds ?? 0) + 20;
-      if (allowed === 0) console.error(`load ${load} > ${LOAD_TIERS.one}: waiting (${plan[i].model}/${plan[i].taskKey}#${plan[i].rep} waited ${plan[i].waitedSeconds}s)`);
+      if (allowed === 0) console.error(`load ${load} > ${tiers.one}: waiting (${plan[i].model}/${plan[i].taskKey}#${plan[i].rep} waited ${plan[i].waitedSeconds}s)`);
     }
     await sleep(20_000);
   }

@@ -24,6 +24,11 @@ import { ChatHomeScreen } from './ChatHomeScreen';
 import { CHAT_HOME_FIXTURE_THREAD, createChatHomeFixturePort } from './fixtures';
 import type { ChatHomePort, ChatModelOption, ChatThreadDetail } from './types';
 
+/* "The fixture thread has opened" = its first turn is in the transcript. Not
+   its title: the title is on screen twice from the first frame (the row, and
+   the header, which names the thread being opened — D26). */
+const OPENED_FIXTURE_TURN = 'Plan the launch sequence and check what is already blocked.';
+
 const SPACE_ID = '019f0000-0000-7000-8000-000000000090';
 const MODELS: ChatModelOption[] = [
   { model: 'claude-sonnet-4-5', label: 'Sonnet 4.5', provider: 'Anthropic', agentTool: 'claude-code' },
@@ -139,7 +144,7 @@ describe('a conversation opens at its newest turn', () => {
   it('scrolls the transcript to the end once the thread has loaded', async () => {
     const { port } = createChatHomeFixturePort();
     const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
-    await waitFor(() => expect(view.getByText('Plan the launch sequence')).toBeTruthy());
+    await waitFor(() => expect(view.getByText(OPENED_FIXTURE_TURN)).toBeTruthy());
     await waitFor(() => expect(writes.length).toBeGreaterThan(0));
     expect(writes.at(-1)).toBe(CONTENT);
   });
@@ -152,7 +157,7 @@ describe('a conversation opens at its newest turn', () => {
   it('stops following once the reader scrolls up, and follows again at the end', async () => {
     const { port, controls } = createChatHomeFixturePort();
     const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
-    await waitFor(() => expect(view.getByText('Plan the launch sequence')).toBeTruthy());
+    await waitFor(() => expect(view.getByText(OPENED_FIXTURE_TURN)).toBeTruthy());
     await waitFor(() => expect(writes.length).toBeGreaterThan(0));
 
     const transcript = view.container.querySelector('.tch-transcript') as HTMLElement;
@@ -248,12 +253,16 @@ describe('the waits are drawn when there is something to wait for', () => {
   });
 
   /**
-   * HINGES ON: the same arm, via `startingThread`.
+   * HINGES ON: the optimistic echo in `send` (lane 1, D12).
    *
-   * `thinking` is gated on `detail !== null` — it has to be, `showThinking`
-   * reads the turns — and a thread being BORN has no detail. So the two round
-   * trips a first message costs (`posting-root`, `configuring`) drew the
-   * greeting, on the one screen state where pressing Send is the whole point.
+   * A thread being BORN used to have no detail, so the round trip a first
+   * message costs drew either the greeting or a bare "Starting this
+   * conversation…" line — the reader's own words were nowhere. Now the words
+   * move into the transcript on Send and the agent's turn shell stands under
+   * them, before `chat.start` has answered. The greeting must still be gone.
+   *
+   * (This used to override `createRoot`, a port method that no longer exists,
+   * so `create` was never actually held and the wait it asserted was a race.)
    */
   it('waits while a brand-new thread is being created', async () => {
     const { port: base } = createChatHomeFixturePort([]);
@@ -262,10 +271,10 @@ describe('the waits are drawn when there is something to wait for', () => {
       ...base,
       startThread: {
         ...base.startThread,
-        createRoot: (input) =>
+        create: (input) =>
           new Promise((resolve) => {
-            release = () => resolve(base.startThread.createRoot(input) as never);
-          }) as ReturnType<ChatHomePort['startThread']['createRoot']>,
+            release = () => resolve(base.startThread.create(input));
+          }),
       },
     };
     const view = render(
@@ -278,9 +287,9 @@ describe('the waits are drawn when there is something to wait for', () => {
     });
     fireEvent.click(view.getByRole('button', { name: /send/i }));
 
-    await waitFor(() =>
-      expect(view.getByTestId('chat-home-loading').textContent).toContain('Starting this conversation'),
-    );
+    expect(view.getByTestId('chat-user-body').textContent).toContain('Start something.');
+    expect(view.getByTestId('chat-turn-shell')).toBeTruthy();
+    expect(view.getByTestId('chat-thinking')).toBeTruthy();
     expect(view.queryByText(/New conversation — pick a mode/)).toBeNull();
     await act(async () => { release(); });
   });

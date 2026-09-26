@@ -17,8 +17,10 @@ import type { SettingsPort } from './port';
 export type SettingsSectionId =
   | 'profile'
   | 'account'
+  | 'my-sessions'
   | 'members'
   | 'invites'
+  | 'sessions'
   | 'sharing'
   | 'axes'
   | 'workflows'
@@ -27,6 +29,7 @@ export type SettingsSectionId =
   | 'credentials'
   | 'space-credentials'
   | 'node-credentials'
+  | 'space-links'
   | 'projects'
   | 'menu'
   | 'kinds'
@@ -55,8 +58,15 @@ export interface SettingsSectionDef {
 export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
   { id: 'profile', label: 'Profile', heading: 'Profile' },
   { id: 'account', label: 'Your profile', heading: 'Your profile' },
+  /* W4 — the account half of settings: every place YOU are signed in, beside
+     "Your profile" because both are about the person, not the space. */
+  { id: 'my-sessions', label: 'Your sessions', heading: 'Your sessions' },
   { id: 'members', label: 'Members & roles', heading: 'Members & roles' },
   { id: 'invites', label: 'Invites', heading: 'Invites' },
+  /* W4 — the admin's view: sessions pinned to THIS space, anyone's. After
+     members and invites because it answers the same question — who is in
+     here — for credentials rather than memberships. */
+  { id: 'sessions', label: 'Sessions', heading: 'Sessions' },
   /* 187's two space defaults. Beside members and invites because it answers
      the same question — who in this space gets at what — for terminals. */
   { id: 'sharing', label: 'Session sharing', heading: 'Session sharing' },
@@ -89,6 +99,10 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
      Both built in `settings-credentials/` and injected through `sections`. */
   { id: 'space-credentials', label: 'Space credentials', heading: 'Space credentials', externallyOwned: true },
   { id: 'node-credentials', label: 'Node credentials', heading: 'Node credentials', externallyOwned: true },
+  /* W6 — links to the viewer's other spaces. After the credentials because a
+     link is another sign-in your agents act with; built in
+     `settings-space-links/` and injected through `sections`. */
+  { id: 'space-links', label: 'Space links', heading: 'Space links', externallyOwned: true },
   { id: 'projects', label: 'Linked projects', heading: 'Linked projects', externallyOwned: true },
   { id: 'menu', label: 'Menu', heading: 'Menu' },
   { id: 'kinds', label: 'Custom kinds', heading: 'Custom kinds', externallyOwned: true },
@@ -152,6 +166,13 @@ export interface SettingsShellProps {
    * re-reads its own list either way.
    */
   onAxesChanged?: () => void;
+  /**
+   * Fired after the viewer LEAVES the space (G6, `spaces.leave` landed). The
+   * viewer is no longer a member, so every read of this space now refuses —
+   * the host must move them out of it. Absent ⇒ the shell stays put and the
+   * next read says why.
+   */
+  onLeftSpace?: (spaceId: string) => void;
 }
 
 /**

@@ -41,6 +41,7 @@ interface SessionRow {
   agent_tool: string | null;
   agent_config_dir: string | null;
   model?: string | null;
+  credential_allowed?: boolean;
 }
 
 function row(over: Partial<SessionRow> = {}): SessionRow {
@@ -50,6 +51,7 @@ function row(over: Partial<SessionRow> = {}): SessionRow {
     workdir_mode: 'project',
     agent_tool: 'claude-code',
     agent_config_dir: null,
+    credential_allowed: true,
     ...over,
   };
 }
@@ -161,6 +163,14 @@ describe('execution.transcript handler', () => {
   it('refuses when the entity is not a readable work_session (empty rows = unauthorized or absent)', async () => {
     const handler = buildHandler({ dataDir, home, rows: () => [] });
     await expect(call(handler, ctxFor(SESSION_ID))).rejects.toMatchObject({ code: 'not_found' });
+  });
+
+  it('W10c / N2: refuses a readable session on a private credential the caller does not own — forbidden, no hint', async () => {
+    const handler = buildHandler({ dataDir, home, rows: () => [row({ credential_allowed: false })] });
+    await expect(call(handler, ctxFor(SESSION_ID))).rejects.toMatchObject({
+      code: 'forbidden',
+      message: 'this session runs on a private credential; only its owner may read it',
+    });
   });
 
   it('reads a claude transcript located purely from the session row', async () => {

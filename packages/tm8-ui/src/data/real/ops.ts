@@ -53,6 +53,8 @@ import {
   type CollectionResult,
   type CommandContext,
   type CommandResult,
+  type MembershipEndResult,
+  type AccountDisableResult,
   type ContainersCreateInput,
   type ContainersDestroyInput,
   type ContainersLifecycleInput,
@@ -78,10 +80,16 @@ import {
   type CredentialsSpaceListView,
   type CredentialsSpacePolicySetResult,
   type CredentialsSpacePolicyView,
+  type CredentialsSpaceSetVisibilityResult,
+  type CredentialsSpaceMyDefaultResult,
+  type CredentialsSpaceUsageView,
+  type SpaceCredentialVisibilityName,
   type NodeCredentialPolicyEntry,
   type NodeCredentialsStatusView,
+  type NodeMetricsView,
   type SpaceCredentialProviderName,
   type SpaceCredentialView,
+  type SpaceLinkView,
   type CredentialsServiceKeysStatusView,
   type ServiceKeyProviderName,
   type ServiceKeyView,
@@ -167,6 +175,8 @@ import {
   type SpaceKindCounts,
   type SpaceSettingsView,
   type SpaceConfigsView,
+  type AuthSessionsListResult,
+  type AuthSessionsRevokeResult,
   type ChatDefault,
   type ChatDefaultsView,
   type SpaceSummary,
@@ -329,6 +339,33 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<CommandResult>('spaces.members.updateRole', {
         params: { spaceId, memberId },
         body: input,
+      });
+    },
+
+    /**
+     * G6 (232): end a membership. The row is kept (`left` / `removed`), so the
+     * member's authorship still renders; the server revokes, stops and clears
+     * in one transaction and closes their sockets on the Space.
+     */
+    leaveSpace(spaceId: SpaceId): Promise<MembershipEndResult> {
+      return http.call<MembershipEndResult>('spaces.leave', {
+        params: { spaceId },
+        body: { clientMutationId: newId('leave') },
+      });
+    },
+
+    removeMember(spaceId: SpaceId, memberId: EntityId): Promise<MembershipEndResult> {
+      return http.call<MembershipEndResult>('spaces.members.remove', {
+        params: { spaceId, memberId },
+        body: { clientMutationId: newId('memremove') },
+      });
+    },
+
+    /** Node admin only: revoke every session of an account and stop its agents. */
+    disableAccount(accountId: string): Promise<AccountDisableResult> {
+      return http.call<AccountDisableResult>('accounts.disable', {
+        params: { accountId },
+        body: { clientMutationId: newId('acctdisable') },
       });
     },
 
@@ -555,6 +592,58 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       });
     },
 
+    // W10b ops and W10d's addMine: each a thin call, the refusal is the server's.
+
+    spaceCredentialsSetVisibility(credentialId: string, visibility: SpaceCredentialVisibilityName): Promise<CredentialsSpaceSetVisibilityResult> {
+      return http.call<CredentialsSpaceSetVisibilityResult>('credentials.space.setVisibility', {
+        params: { credentialId },
+        body: { visibility, clientMutationId: newId('spcredvis') },
+      });
+    },
+
+    spaceCredentialsDefaultConsent(credentialId: string, allowed: boolean): Promise<SpaceCredentialView> {
+      return http.call<SpaceCredentialView>('credentials.space.spaceDefaultConsent', {
+        params: { credentialId },
+        body: { allowed, clientMutationId: newId('spcredconsent') },
+      });
+    },
+
+    spaceCredentialsClaim(credentialId: string): Promise<SpaceCredentialView> {
+      return http.call<SpaceCredentialView>('credentials.space.claim', {
+        params: { credentialId },
+        body: { clientMutationId: newId('spcredclaim') },
+      });
+    },
+
+    spaceCredentialsSetMyDefault(credentialId: string): Promise<CredentialsSpaceMyDefaultResult> {
+      return http.call<CredentialsSpaceMyDefaultResult>('credentials.space.myDefault.set', {
+        params: { credentialId },
+        body: { clientMutationId: newId('spcredmine') },
+      });
+    },
+
+    spaceCredentialsClearMyDefault(spaceId: SpaceId, provider: SpaceCredentialProviderName): Promise<CredentialsSpaceMyDefaultResult> {
+      return http.call<CredentialsSpaceMyDefaultResult>('credentials.space.myDefault.clear', {
+        params: { spaceId, provider },
+        body: { clientMutationId: newId('spcredunmine') },
+      });
+    },
+
+    spaceCredentialsUsage(credentialId: string): Promise<CredentialsSpaceUsageView> {
+      return http.call<CredentialsSpaceUsageView>('credentials.space.usage', { params: { credentialId } });
+    },
+
+    spaceCredentialsAddMine(spaceId: SpaceId, provider: 'github', label: string): Promise<SpaceCredentialView> {
+      return http.call<SpaceCredentialView>('credentials.space.addMine', {
+        params: { spaceId },
+        body: { provider, label, clientMutationId: newId('spcredaddmine') },
+      });
+    },
+
+    nodeMetrics(): Promise<NodeMetricsView> {
+      return http.call<NodeMetricsView>('node.metrics.get');
+    },
+
     nodeCredentialsStatus(): Promise<NodeCredentialsStatusView> {
       return http.call<NodeCredentialsStatusView>('node.credentials.status');
     },
@@ -566,6 +655,42 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<NodeCredentialPolicyEntry>('node.credentials.policy.set', {
         params: { provider },
         body: { allowNode, clientMutationId: newId('nodecredpol') },
+      });
+    },
+
+    // -- space links (`spaceLinks.*`, W6) ------------------------------------
+    // Every write is human-only server-side; no answer carries a stored session.
+
+    /** Bare array: every link of the home space, the viewer's own row as `mine`. */
+    spaceLinksList(spaceId: SpaceId): Promise<SpaceLinkView[]> {
+      return http.call<SpaceLinkView[]>('spaceLinks.list', { params: { spaceId } });
+    },
+
+    spaceLinksAdd(spaceId: SpaceId, targetSpaceId: string): Promise<SpaceLinkView> {
+      return http.call<SpaceLinkView>('spaceLinks.add', {
+        params: { spaceId },
+        body: { targetSpaceId, clientMutationId: newId('splink') },
+      });
+    },
+
+    spaceLinksMutate(
+      op: 'spaceLinks.login' | 'spaceLinks.relogin' | 'spaceLinks.logout' | 'spaceLinks.remove',
+      linkId: EntityId,
+    ): Promise<SpaceLinkView> {
+      return http.call<SpaceLinkView>(op, {
+        params: { linkId },
+        body: { clientMutationId: newId('splinkop') },
+      });
+    },
+
+    spaceLinksSetSpawn(linkId: EntityId, allowSpawn: boolean, spawnBudget?: number): Promise<SpaceLinkView> {
+      return http.call<SpaceLinkView>('spaceLinks.setSpawn', {
+        params: { linkId },
+        body: {
+          allowSpawn,
+          ...(spawnBudget === undefined ? {} : { spawnBudget }),
+          clientMutationId: newId('splinkspawn'),
+        },
       });
     },
 
@@ -588,6 +713,16 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     chatDefaults(spaceId: SpaceId): Promise<ChatDefaultsView> {
       return http.call<ChatDefaultsView>('spaces.chatDefaults.get', { params: { spaceId } });
+    },
+
+    authSessions(spaceId: SpaceId | null): Promise<AuthSessionsListResult> {
+      return http.call<AuthSessionsListResult>('auth.sessions.list', spaceId ? { query: { spaceId } } : {});
+    },
+
+    revokeAuthSession(sessionId: string): Promise<AuthSessionsRevokeResult> {
+      // Body-less by contract (UNBOUND_COMMAND_OPERATIONS): the session id in
+      // the path is the whole request.
+      return http.call<AuthSessionsRevokeResult>('auth.sessions.revoke', { params: { sessionId } });
     },
 
     setChatDefaults(spaceId: SpaceId, defaults: Record<string, ChatDefault | null>): Promise<ChatDefaultsView> {
@@ -946,7 +1081,19 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       // not a non-negative safe integer becomes null — "cannot establish".
       const hwm = raw.eventHwm;
       const eventHwm = typeof hwm === 'number' && Number.isSafeInteger(hwm) && hwm >= 0 ? hwm : null;
-      return { ...raw, spaceId, eventHwm };
+      // The status-strip counts get the same treatment: anything that is not
+      // a non-negative safe integer (including an older node's absence) is
+      // null — "unknown" — so a strip can never render a made-up zero.
+      const count = (v: unknown): number | null =>
+        typeof v === 'number' && Number.isSafeInteger(v) && v >= 0 ? v : null;
+      return {
+        ...raw,
+        spaceId,
+        eventHwm,
+        liveSessionCount: count(raw.liveSessionCount),
+        liveChatCount: count(raw.liveChatCount),
+        workingChatCount: count(raw.workingChatCount),
+      };
     },
 
     // -- commands ------------------------------------------------------------

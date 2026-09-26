@@ -6,6 +6,11 @@ import { ChatHomeScreen } from './ChatHomeScreen';
 import { CHAT_HOME_FIXTURE_THREAD, createChatHomeFixturePort } from './fixtures';
 import type { ChatHomePort, ChatModelOption, ChatThreadDetail } from './types';
 
+/* "The fixture thread has opened" = its first turn is in the transcript. Not
+   its title: the title is on screen twice from the first frame (the row, and
+   the header, which names the thread being opened — D26). */
+const OPENED_FIXTURE_TURN = 'Plan the launch sequence and check what is already blocked.';
+
 /**
  * THE WAITING MARKS — the figure-8 in the composer and in the transcript.
  *
@@ -42,7 +47,7 @@ function mount(port: ChatHomePort) {
  * parallel suite loses.
  */
 async function settled(view: ReturnType<typeof mount>) {
-  await waitFor(() => expect(view.getByText('Plan the launch sequence')).toBeTruthy());
+  await waitFor(() => expect(view.getByText(OPENED_FIXTURE_TURN)).toBeTruthy());
   await waitFor(() => expect(view.queryByTestId('chat-detail-loading')).toBeNull());
 }
 
@@ -92,12 +97,14 @@ describe('chat waiting marks', () => {
     });
     fireEvent.click(view.getByRole('button', { name: /send/i }));
 
+    /* The pending row IS the live status row now (lane 2; advisor D20), and
+       it carries the same ribbon — one wait glyph, not two. */
     const thinking = await view.findByTestId('chat-thinking');
     expect(thinking.querySelector('[data-testid="ribbon-mark"]')).not.toBeNull();
     // The words are still the accessible content; the mark is decorative and
     // must not be reachable, or every wait row gains a nameless graphic.
     expect(thinking.getAttribute('role')).toBe('status');
-    expect(thinking.querySelector('.tch-wait__mark')?.getAttribute('aria-hidden')).toBe('true');
+    expect(thinking.querySelector('.tch-live__mark')?.getAttribute('aria-hidden')).toBe('true');
   });
 
   /**

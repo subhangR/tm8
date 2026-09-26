@@ -413,6 +413,8 @@ export function createChatHomeFixturePort(
           teammateId: input.teammateId,
           model: input.model,
           mode: input.mode,
+          // The opening message — this fixture stores it under the chat's id.
+          messageId: chatId,
         };
       },
     },

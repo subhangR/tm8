@@ -125,7 +125,7 @@ describe('EntityDetailPanel — the fixed anatomy', () => {
       // ORDER IS THE ASSERTION, not just membership: Connections BEFORE
       // Discussion (user ruling 2026-08-19), and no fourth tab — Activity was
       // removed in the same ruling and a `toEqual` is what keeps it removed.
-      expect(labels).toEqual([getKind(kind).label, 'Connections', 'Discussion']);
+      expect(labels).toEqual([getKind(kind).label, 'Connections', 'Messages']);
     },
   );
 
@@ -1849,7 +1849,7 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
 
     expect(header.contains(actions)).toBe(false);
     expect(toolbar.contains(tabs)).toBe(true);
-    for (const label of ['Task', 'Connections', 'Discussion']) {
+    for (const label of ['Task', 'Connections', 'Messages']) {
       expect(tabs.textContent).toContain(label);
     }
     expect(toolbar.contains(actions)).toBe(true);
@@ -1896,7 +1896,7 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     expect(header.textContent).toContain(detail.title);
     expect(header.contains(actions)).toBe(false);
     expect(toolbar.contains(tabs)).toBe(true);
-    for (const label of ['Session', 'Connections', 'Discussion']) {
+    for (const label of ['Session', 'Connections', 'Messages']) {
       expect(tabs.textContent).toContain(label);
     }
     expect(toolbar.contains(actions)).toBe(true);

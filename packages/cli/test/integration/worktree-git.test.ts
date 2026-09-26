@@ -27,7 +27,7 @@ import { promisify } from 'node:util';
 
 import { runGit } from '@tm8/execution/worktree';
 
-import { assertBuilt, cli, startRealServer, type RealServer } from './harness.js';
+import { adminUrl, assertBuilt, cli, startRealServer, type RealServer } from './harness.js';
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
 
@@ -39,12 +39,9 @@ const BINARY_TIMEOUT_MS = 60_000;
 const PSQL = ['-w', '--no-psqlrc', '-v', 'ON_ERROR_STOP=1', '-q', '-t', '-A'] as const;
 const PG_ENV = { ...process.env, PGCONNECT_TIMEOUT: '10' };
 
+/** The harness's guarded admin URL — refuses 5442 and an unset port (./pg-port-guard.ts). */
 function adminBase(): string {
-  const explicit = process.env['TM8_W4_ADMIN_DATABASE_URL'] ?? process.env['TM8_MIGRATION_DATABASE_URL'];
-  if (explicit) return explicit;
-  const port = process.env['TM8_PG_PORT'] ?? '5442';
-  const user = process.env['TM8_PG_USER'] ?? 'tm8';
-  return `postgres://${user}@127.0.0.1:${port}/postgres`;
+  return adminUrl();
 }
 
 async function psql(url: string, sql: string): Promise<string> {

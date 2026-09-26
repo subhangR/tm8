@@ -591,6 +591,45 @@
   font-size: var(--pn-fs-sm);
 }
 
+/* THE UNDO TOAST. Confirmation on the left, the action on the right, on ONE
+   line — the whole thing sits between the bar and the list, and a two-line
+   notice there would shove the row it refers to out of view, which is the one
+   thing it must not do. Quiet by design: it reports a success, so it gets the
+   soft surface and none of the `__notice` alarm colour above. */
+.cv2-root .att-req__undo {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pn-space-3);
+  margin: var(--pn-space-2) 0 0;
+  padding: var(--pn-space-2) var(--pn-space-3);
+  border-radius: var(--pn-r-sm);
+  /* CARD + HAIRLINE, not a tinted surface. The sheet behind this paints
+     `--pn-panel-bg, var(--pn-surface)` and two panel modifiers repaint it, so a
+     background alone is not guaranteed to differ from whatever is underneath —
+     the border is what makes the toast a distinct object under every modifier
+     and both themes. (`--pn-surface-2` does not exist; reaching for it is how
+     this shipped invisible the first time.) */
+  border: 1px solid var(--pn-line);
+  background: var(--pn-card);
+  font-size: var(--pn-fs-sm);
+}
+
+.cv2-root .att-req__undo-text {
+  color: var(--pn-ink-2);
+  /* The label truncates and the button never does: losing a word of "Request
+     resolved." costs nothing, losing Undo costs the entire affordance. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cv2-root .att-req__undo-act {
+  flex: none;
+}
+
 .cv2-root .att-req__error {
   margin: var(--pn-space-2) 0 0;
   color: var(--pn-block);

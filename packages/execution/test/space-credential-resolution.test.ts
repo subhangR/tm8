@@ -628,3 +628,242 @@ describe('A3 / C1 — an agent may choose a space credential; its claims are the
     expect(r.spaceCredentialIds).toEqual([ANT_PINNED]);
   });
 });
+
+// 256 (W7p): a link-bound launch — a `link` session, or an agent minted under
+// one — has no member rung (ruling (i)) and runs git only on this space's
+// default GitHub credential (ruling 4). The SQL half (093/206/083 refusing the
+// same caller) is `packages/server/test/db/space-link-provenance.pg.test.ts`.
+describe('W7p — a link-bound launch never reaches the linking human\'s own credentials', () => {
+  const linked = (l: ResolvedLaunchConfig, d: CredentialResolutionDeps, resume = false) =>
+    resolveSessionCredentials({ auth: AUTH_A, spaceId: SPACE, launch: l, resume, linkBound: true }, d);
+  const both = { anthropic: ANT_DEFAULT, github: GH_DEFAULT };
+
+  it('auto: runs on the space defaults even with the member connected, and never asks the member', async () => {
+    const port = fakePort({ defaults: both });
+    const d = deps(port, { home: MEMBER_HOME, github: MEMBER_GH });
+    const r = await linked(launch(), d);
+    expect(d.memberAsks).toEqual([]);
+    expect(r.credentialHome?.space?.credentialId).toBe(ANT_DEFAULT);
+    expect(r.gitHubCredential?.token).toBe(`secret-${GH_DEFAULT}`);
+    expect(r.launch.effectiveCredentialSources).toEqual({ anthropic: 'space', github: 'space' });
+    // Only ever the DEFAULT: 206 refuses a pinned id for this caller.
+    expect(port.reads.map((x) => x.credentialId)).toEqual([null, null]);
+  });
+
+  it("explicit 'member' is refused by name", async () => {
+    const d = deps(fakePort({ defaults: both }), { home: MEMBER_HOME });
+    const e = await refusal(linked(launch({ credentialSources: { anthropic: 'member' } }), d));
+    expect(e.code).toBe('forbidden');
+    expect(e.detail).toMatchObject({ provider: 'anthropic', reason: 'member_refused', spaceLink: true });
+    expect(d.memberAsks).toEqual([]);
+  });
+
+  it('no space model default: falls to the node when the node is allowed', async () => {
+    const r = await linked(launch(), deps(fakePort({ defaults: { github: GH_DEFAULT } }), { home: MEMBER_HOME }));
+    expect(r.credentialHome).toBeNull();
+    expect(r.launch.effectiveCredentialSources).toEqual({ anthropic: 'node', github: 'space' });
+  });
+
+  // D1(a): the link path RECORDS 'node', so the session's own posture keeps
+  // it off the member rung on every later resume — including one that is not
+  // link-bound. H links A->B, H's agent spawns W through the link on the node;
+  // then H (a direct B session, no link) or another member R resumes W. If
+  // the source were left blank, the resume would replay auto, and auto's first
+  // rung is the resumer's account key. This holds with the resume's own stamp
+  // check (D1(b)) switched off: the resumes below pass no linkBound at all.
+  describe("D1(a) — a node-effective link spawn records 'node', so a non-link resume never asks a member", () => {
+    const AUTH_R = { accountId: 'account-R', kind: 'human' };
+    const recordedFrom = (l: ResolvedLaunchConfig) =>
+      ({
+        accessMode: null,
+        permissionMode: null,
+        // What manifest.ts writes: the RESOLVED launch's sources and ids.
+        credentialSources: l.credentialSources,
+        spaceCredentialIds: l.spaceCredentialIds,
+      }) as SessionLaunchPosture;
+
+    async function spawnW() {
+      const port = fakePort({
+        defaults: { github: GH_DEFAULT },
+        byId: { [GH_DEFAULT]: { ok: true, grant: apiKeyGrant('github', GH_DEFAULT) } },
+      });
+      const r = await linked(launch(), deps(port, { home: MEMBER_HOME, github: MEMBER_GH }));
+      return { port, r };
+    }
+
+    it("the link spawn records anthropic 'node' explicitly", async () => {
+      const { r } = await spawnW();
+      expect(r.launch.effectiveCredentialSources?.anthropic).toBe('node');
+      expect(r.launch.credentialSources.anthropic).toBe('node');
+    });
+
+    for (const [who, auth] of [['H (a direct, non-link session)', AUTH_A], ['R (another member)', AUTH_R]] as const) {
+      it(`${who} resumes W without linkBound: no member home, no account key, still on the node`, async () => {
+        const { port, r } = await spawnW();
+        const d = deps(port, { home: MEMBER_HOME, github: MEMBER_GH });
+        const resumed = await resolveSessionCredentials(
+          { auth, spaceId: SPACE, launch: launch({}, recordedFrom(r.launch)), resume: true },
+          d,
+        );
+        expect(d.memberAsks).toEqual([]);
+        expect(d.materialized).toEqual([]);
+        expect(resumed.credentialHome).toBeNull();
+        expect(resumed.launch.effectiveCredentialSources?.anthropic).toBe('node');
+      });
+    }
+
+    // D4: a provider the space cannot hold runs on the node through the link,
+    // and must record 'node' too. Left blank, a non-link resume takes the
+    // pre-space branch, whose resolveMemberHome(null) is the resumer's home.
+    for (const [tool, model] of [['gemini', 'gemini-2.5-pro'], ['hermes', 'some-private-model'], ['cursor', 'some-private-model']] as const) {
+      it(`${tool}: the link spawn records 'node', and R's non-link resume never asks a member`, async () => {
+        const port = fakePort({
+          defaults: { github: GH_DEFAULT },
+          byId: { [GH_DEFAULT]: { ok: true, grant: apiKeyGrant('github', GH_DEFAULT) } },
+        });
+        const r = await linked(launch({}, null, tool, model), deps(port, { home: MEMBER_HOME, github: MEMBER_GH }));
+        expect((r.launch.credentialSources as Record<string, unknown>)[tool]).toBe('node');
+
+        const d = deps(port, { home: MEMBER_HOME, github: MEMBER_GH });
+        const resumed = await resolveSessionCredentials(
+          { auth: AUTH_R, spaceId: SPACE, launch: launch({}, recordedFrom(r.launch), tool, model), resume: true },
+          d,
+        );
+        expect(d.memberAsks).toEqual([]);
+        expect(resumed.credentialHome).toBeNull();
+      });
+    }
+  });
+
+  it('no space model default and no node: a named "no model credential" refusal, never the member key', async () => {
+    const d = deps(
+      fakePort({ defaults: { github: GH_DEFAULT }, policies: { space: {}, node: { anthropic: false } } }),
+      { home: MEMBER_HOME },
+    );
+    const e = await refusal(linked(launch(), d));
+    expect(e.code).toBe('forbidden');
+    expect(e.detail).toMatchObject({ provider: 'anthropic', reason: 'no_model_credential' });
+    expect(e.message).toContain('this space has no default anthropic credential');
+    expect(e.message).toContain('node anthropic credentials are not allowed here');
+    expect(d.memberAsks).toEqual([]);
+  });
+
+  it('a model only a member API key serves is refused by name', async () => {
+    const d = deps(fakePort({ defaults: both }), { home: MEMBER_HOME });
+    const e = await refusal(linked(launch({}, null, 'claude-code', 'kimi-k2-thinking'), d));
+    expect(e.detail).toMatchObject({ reason: 'member_key_model', model: 'kimi-k2-thinking' });
+    expect(d.memberAsks).toEqual([]);
+  });
+
+  it('no space GitHub default: a named "no git" refusal, never the member login and never without git', async () => {
+    const d = deps(fakePort({ defaults: { anthropic: ANT_DEFAULT } }), { github: MEMBER_GH });
+    const e = await refusal(linked(launch(), d));
+    expect(e.code).toBe('forbidden');
+    expect(e.detail).toMatchObject({ provider: 'github', reason: 'no_git_credential' });
+  });
+
+  it("GitHub 'node' is refused: git runs only on the space default", async () => {
+    const d = deps(fakePort({ defaults: both }));
+    const e = await refusal(linked(launch({ credentialSources: { github: 'node' } }), d));
+    expect(e.detail).toMatchObject({ provider: 'github', reason: 'node_git_refused' });
+  });
+
+  it('a recorded id that is no longer the default refuses rather than switch credentials', async () => {
+    const port = fakePort({ defaults: both });
+    const recorded = {
+      credentialSources: { anthropic: 'space' },
+      spaceCredentialIds: { anthropic: ANT_PINNED },
+    } as unknown as SessionLaunchPosture;
+    const e = await refusal(linked(launch({}, recorded), deps(port), true));
+    expect(e.detail).toMatchObject({ provider: 'anthropic', reason: 'not_default', spaceCredentialId: ANT_PINNED });
+    expect(port.reads.map((x) => x.credentialId)).toEqual([null]);
+  });
+
+  it("206's 42501 (link signed out, or spawning switched off) surfaces as a named refusal", async () => {
+    const d = deps(fakePort({ readError: Object.assign(new Error('link not signed in'), { code: '42501' }) }));
+    const e = await refusal(linked(launch(), d));
+    expect(e.code).toBe('forbidden');
+    expect(e.detail).toMatchObject({ provider: 'anthropic', reason: 'space_read_refused' });
+  });
+
+  it('control: the same launch without linkBound still takes the member rung', async () => {
+    const d = deps(fakePort({ defaults: both }), { home: MEMBER_HOME, github: MEMBER_GH });
+    const r = await resolve(launch(), d);
+    expect(r.credentialHome).toBe(MEMBER_HOME);
+  });
+});
+
+describe('a3 / T43 — auto order: my default → legacy member → space default → node, one test per rung', () => {
+  const MINE = 'dddddddd-0000-4000-8000-000000000001';
+  /** The fake port plus the launcher's own default (255's my_space_credential_default_id). */
+  const withMine = (port: FakePort, mine: string | null, asks: unknown[] = []): FakePort => ({
+    ...port,
+    async myDefaultId(auth, _spaceId, provider) {
+      asks.push({ auth, provider });
+      return provider === 'anthropic' ? mine : null;
+    },
+  });
+
+  it('rung 1: my default wins over a connected member credential and the space default, read as a pin under the launcher', async () => {
+    const asks: unknown[] = [];
+    const port = withMine(fakePort({
+      defaults: { anthropic: ANT_DEFAULT },
+      byId: { [MINE]: { ok: true, grant: apiKeyGrant('anthropic', MINE) } },
+    }), MINE, asks);
+    const d = deps(port, { home: MEMBER_HOME });
+    const r = await resolve(launch(), d);
+    expect(r.launch.spaceCredentialIds).toEqual({ anthropic: MINE });
+    expect(r.launch.spaceCredentialPicks).toEqual({ anthropic: 'my_default' });
+    expect(port.reads).toContainEqual({ auth: AUTH_A, provider: 'anthropic', credentialId: MINE });
+    expect(asks).toContainEqual({ auth: AUTH_A, provider: 'anthropic' });
+    expect(d.memberAsks).toEqual([]);
+  });
+
+  it('rung 1 refuses when my default exists but is not usable — it never falls to another rung', async () => {
+    const port = withMine(fakePort({
+      defaults: { anthropic: ANT_DEFAULT },
+      byId: { [MINE]: { ok: false, reason: 'revoked' } },
+    }), MINE);
+    const d = deps(port, { home: MEMBER_HOME });
+    const error = await refusal(resolve(launch(), d));
+    expect(error.message).toContain(MINE);
+    expect(port.reads.map((r) => r.credentialId)).toEqual([MINE]);
+    expect(d.memberAsks).toEqual([]);
+  });
+
+  it('rung 2: with no default of mine, the legacy member credential', async () => {
+    const d = deps(withMine(fakePort({ defaults: { anthropic: ANT_DEFAULT } }), null), { home: MEMBER_HOME });
+    const r = await resolve(launch(), d);
+    expect(r.credentialHome).toBe(MEMBER_HOME);
+    expect(r.launch.effectiveCredentialSources?.anthropic).toBe('member');
+    expect(r.launch.spaceCredentialPicks).toBeUndefined();
+  });
+
+  it('rung 3: with neither, the space default, recorded as space_default', async () => {
+    const d = deps(withMine(fakePort({ defaults: { anthropic: ANT_DEFAULT } }), null));
+    const r = await resolve(launch(), d);
+    expect(r.launch.spaceCredentialIds).toEqual({ anthropic: ANT_DEFAULT });
+    expect(r.launch.spaceCredentialPicks).toEqual({ anthropic: 'space_default' });
+  });
+
+  it('rung 4: with none of the three, the node key', async () => {
+    const d = deps(withMine(fakePort({}), null));
+    const r = await resolve(launch(), d);
+    expect(r.launch.effectiveCredentialSources?.anthropic).toBe('node');
+    expect(r.spaceCredentialIds).toEqual([]);
+  });
+
+  it('an explicit pin is recorded as pinned, and a resume never consults my default', async () => {
+    const asks: unknown[] = [];
+    const port = withMine(fakePort({
+      byId: { [ANT_PINNED]: { ok: true, grant: apiKeyGrant('anthropic', ANT_PINNED) } },
+    }), MINE, asks);
+    const r = await resolve(launch({ credentialSources: { anthropic: 'space' }, spaceCredentialIds: { anthropic: ANT_PINNED } }), deps(port));
+    expect(r.launch.spaceCredentialPicks).toEqual({ anthropic: 'pinned' });
+    // The pinned provider is not asked (github, still on auto, is).
+    expect(asks).not.toContainEqual(expect.objectContaining({ provider: 'anthropic' }));
+    asks.length = 0;
+    await resolve(launch(), deps(port), true);
+    expect(asks).toEqual([]);
+  });
+});

@@ -265,7 +265,7 @@ describe('management rights (D1, D11) and the human-only gate (I2)', () => {
     await expect(store.rename(claims(B), credential.id, label('b'))).rejects.toThrow(/creator or a space admin/);
     await expect(store.setDefault(claims(B), credential.id)).rejects.toThrow(/creator or a space admin/);
     await expect(store.recordProbe(claims(B), credential.id, true)).rejects.toThrow(/creator or a space admin/);
-    await expect(store.revoke(claims(B), credential.id)).rejects.toThrow(/creator or a space admin/);
+    await expect(store.revoke(claims(B), credential.id)).rejects.toThrow(/owner or a space admin can revoke it/ /* W10b (N12) */);
     await expect(store.rename(claims(A), credential.id, label('a'))).resolves.toMatchObject({ id: credential.id });
     await expect(store.rename(claims(ADM), credential.id, label('adm'))).resolves.toMatchObject({ id: credential.id });
     await expect(store.rename(claims(OWN), credential.id, label('own'))).resolves.toMatchObject({ id: credential.id });
@@ -810,7 +810,7 @@ describe('the session record (D8, M7, M9) and containment (M6)', () => {
     expect(live.sessions.find((x) => x.workSessionId === byAforTB)!.launcherAccountId).toBe(accounts[A]);
     expect(live.loginTerminals.map((x) => x.workSessionId)).toEqual([terminal.workSessionId]);
     // B, who can use it but not manage it, cannot enumerate it.
-    await expect(store.liveSessions(claims(B), cred)).rejects.toThrow(/creator or a space admin/);
+    await expect(store.liveSessions(claims(B), cred)).rejects.toThrow(/owner or a space admin can revoke it/ /* W10b (N12) */);
 
     // Member removal: an admin finds what A launched — including the session
     // for B's teammate — and nothing of B's.

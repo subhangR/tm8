@@ -86,6 +86,21 @@ export const OPERATIONS = [
   { name: 'spaces.configs',          method: 'GET',    path: '/v2/spaces/:spaceId/configs',                 kind: 'read',    status: 'v1' },
   { name: 'spaces.members.list',     method: 'GET',    path: '/v2/spaces/:spaceId/members',                 kind: 'read',    status: 'v1' },
   { name: 'spaces.members.updateRole', method: 'PATCH', path: '/v2/spaces/:spaceId/members/:memberId',       kind: 'command', status: 'v1' },
+  // G6 (migration 232): a membership ends by tombstone. Both human-only; the
+  // member row and everything it authored stay. POST verbs, like invites.revoke.
+  { name: 'spaces.members.remove', method: 'POST',  path: '/v2/spaces/:spaceId/members/:memberId/remove', kind: 'command', status: 'v1' },
+  { name: 'spaces.leave',          method: 'POST',  path: '/v2/spaces/:spaceId/leave',                   kind: 'command', status: 'v1' },
+  // Node admin turns an account off: every session refused, launched work contained (232).
+  { name: 'accounts.disable',      method: 'POST',  path: '/v2/accounts/:accountId/disable',             kind: 'command', status: 'v1' },
+  // Space links (W6, migrations 250/251). Every write is human-only in SQL;
+  // list is open to every home member and carries no secret.
+  { name: 'spaceLinks.list',     method: 'GET',    path: '/v2/spaces/:spaceId/space-links',   kind: 'read',    status: 'v1' },
+  { name: 'spaceLinks.add',      method: 'POST',   path: '/v2/spaces/:spaceId/space-links',   kind: 'command', status: 'v1' },
+  { name: 'spaceLinks.login',    method: 'POST',   path: '/v2/space-links/:linkId/login',     kind: 'command', status: 'v1' },
+  { name: 'spaceLinks.relogin',  method: 'POST',   path: '/v2/space-links/:linkId/relogin',   kind: 'command', status: 'v1' },
+  { name: 'spaceLinks.logout',   method: 'POST',   path: '/v2/space-links/:linkId/logout',    kind: 'command', status: 'v1' },
+  { name: 'spaceLinks.remove',   method: 'POST',   path: '/v2/space-links/:linkId/remove',    kind: 'command', status: 'v1' },
+  { name: 'spaceLinks.setSpawn', method: 'PATCH',  path: '/v2/space-links/:linkId/spawn',     kind: 'command', status: 'v1' },
   { name: 'spaces.invites.list',     method: 'GET',    path: '/v2/spaces/:spaceId/invites',                 kind: 'read',    status: 'v1' },
   { name: 'spaces.invites.create',   method: 'POST',   path: '/v2/spaces/:spaceId/invites',                 kind: 'command', status: 'v1' },
   { name: 'spaces.invites.revoke',   method: 'POST',   path: '/v2/spaces/:spaceId/invites/:inviteId/revoke', kind: 'command', status: 'v1' },
@@ -401,6 +416,14 @@ export const OPERATIONS = [
   { name: 'auth.login',                                  method: 'POST',   path: '/v2/auth/login',                                                     kind: 'command', status: 'v1' },
   { name: 'auth.logout',                                 method: 'POST',   path: '/v2/auth/logout',                                                    kind: 'command', status: 'v1' },
   { name: 'auth.session.get',                            method: 'GET',    path: '/v2/auth/session',                                                   kind: 'read',    status: 'v1' },
+  // W3 (plan 01a0d9eb): a gate session + membership mints a session pinned to
+  // one space. Under TM8_SPACE_SESSIONS=enforce this is how a human gets past
+  // the gate at all.
+  { name: 'auth.space.enter',                            method: 'POST',   path: '/v2/auth/space/enter',                                               kind: 'command', status: 'v1' },
+  // W4 (plan 01a0d9eb): your own sessions, or (space admin) the sessions
+  // pinned to a space, and revoking one — the control K5's rejection left.
+  { name: 'auth.sessions.list',                          method: 'GET',    path: '/v2/auth/sessions',                                                  kind: 'read',    status: 'v1' },
+  { name: 'auth.sessions.revoke',                        method: 'POST',   path: '/v2/auth/sessions/:sessionId/revoke',                                kind: 'command', status: 'v1' },
   // `auth.password.change` — the day a human forgets their password, the only
   // recovery was `psql` (FIRST-RUN-CLAIM-DESIGN.md §10.3). This is CHANGE, not
   // reset: it demands the CURRENT password in the body and proves it with the
@@ -506,11 +529,23 @@ export const OPERATIONS = [
   { name: 'credentials.space.setDefault',                method: 'POST',   path: '/v2/space-credentials/:credentialId/default',                        kind: 'command', status: 'v1' },
   { name: 'credentials.space.rename',                    method: 'PATCH',  path: '/v2/space-credentials/:credentialId',                                kind: 'command', status: 'v1' },
   { name: 'credentials.space.delete',                    method: 'DELETE', path: '/v2/space-credentials/:credentialId',                                kind: 'command', status: 'v1' },
+  { name: 'credentials.space.setVisibility',             method: 'PUT',    path: '/v2/space-credentials/:credentialId/visibility',                     kind: 'command', status: 'v1' },
+  { name: 'credentials.space.spaceDefaultConsent',       method: 'PUT',    path: '/v2/space-credentials/:credentialId/space-default-consent',          kind: 'command', status: 'v1' },
+  // W10d (doc 13 §7 step 2): add your own server-level GitHub token to this
+  // space as a PRIVATE credential — read, probed and re-sealed in TS server-side;
+  // the token never reaches the client. A login is a fresh sign-in, not this op.
+  { name: 'credentials.space.addMine',                   method: 'POST',   path: '/v2/spaces/:spaceId/credentials/from-mine',                          kind: 'command', status: 'v1' },
+  { name: 'credentials.space.claim',                     method: 'POST',   path: '/v2/space-credentials/:credentialId/claim',                          kind: 'command', status: 'v1' },
+  { name: 'credentials.space.myDefault.set',             method: 'POST',   path: '/v2/space-credentials/:credentialId/my-default',                     kind: 'command', status: 'v1' },
+  { name: 'credentials.space.myDefault.clear',           method: 'DELETE', path: '/v2/spaces/:spaceId/credentials/my-default/:provider',               kind: 'command', status: 'v1' },
+  { name: 'credentials.space.usage',                     method: 'GET',    path: '/v2/space-credentials/:credentialId/usage',                          kind: 'read',    status: 'v1' },
   { name: 'credentials.space.policy.get',                method: 'GET',    path: '/v2/spaces/:spaceId/credential-policy',                              kind: 'read',    status: 'v1' },
   { name: 'credentials.space.policy.set',                method: 'PUT',    path: '/v2/spaces/:spaceId/credential-policy/:provider',                    kind: 'command', status: 'v1' },
   // The node's own fallback credentials (D5/D9): node admin, and human-only.
   { name: 'node.credentials.status',                     method: 'GET',    path: '/v2/node/credentials',                                               kind: 'read',    status: 'v1' },
   { name: 'node.credentials.policy.set',                 method: 'PUT',    path: '/v2/node/credential-policy/:provider',                               kind: 'command', status: 'v1' },
+  // Host metrics for the desktop status strip: node admin, human sessions only.
+  { name: 'node.metrics.get',                            method: 'GET',    path: '/v2/node/metrics',                                                   kind: 'read',    status: 'v1' },
 
   // What the agent SAID — the third face of a session, after `execution.launch`
   // (told) and `execution.journal` (did). The bytes are the agent's OWN native
@@ -575,7 +610,6 @@ export const OPERATIONS = [
   { name: 'containers.proxy',            method: 'GET',    path: '/v2/containers/:containerId/ports/:port/*',             kind: 'read',    status: 'v1' },
   { name: 'containers.snapshot',         method: 'POST',   path: '/v2/containers/:containerId/commands/snapshot',         kind: 'command', status: 'v1' },
   { name: 'containers.fork',             method: 'POST',   path: '/v2/containers/:containerId/commands/fork',             kind: 'command', status: 'v1' },
-  { name: 'containers.attention',        method: 'POST',   path: '/v2/containers/:containerId/commands/attention',        kind: 'command', status: 'v1' },
   { name: 'containers.providers.list',   method: 'GET',    path: '/v2/containers/providers',                              kind: 'read',    status: 'v1' },
   { name: 'containers.pools.set',        method: 'POST',   path: '/v2/containers/:containerId/commands/pool',             kind: 'command', status: 'v1' },
 ] as const satisfies readonly OperationBinding[];

@@ -104,7 +104,7 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'TM8_ALLOWED_HOSTNAMES', group: 'Network & access', summary: 'Extra Host header names accepted (comma-separated).', default: null, definedIn: CONFIG },
   { name: 'TM8_ALLOWED_ORIGINS', group: 'Network & access', summary: 'Extra browser origins accepted (comma-separated).', default: null, definedIn: CONFIG },
   { name: 'TM8_NODE_MODE', group: 'Network & access', summary: 'single: a loopback caller is the owner. multi: everyone signs in.', default: 'single', definedIn: CONFIG },
-  { name: 'TM8_SPACE_SESSIONS', group: 'Network & access', summary: 'off | agents | enforce. agents pins agent tokens to their session\'s space (226/227); enforce behaves as agents until W3. Read once at boot.', default: 'agents', definedIn: CONFIG },
+  { name: 'TM8_SPACE_SESSIONS', group: 'Network & access', summary: 'off | agents | enforce. agents pins agent tokens to their session\'s space (226/227); enforce also refuses a human gate session (no space) everything but spaces.list, auth.* and node admin until it calls auth.space.enter (W3). Every mode but off binds a human session auth.space.enter pinned. Read once at boot.', default: 'agents', definedIn: CONFIG },
   { name: 'TM8_DISABLE_AUTO_OWNER', group: 'Network & access', summary: 'Turns off the loopback auto-owner arm. Implied by multi.', default: 'false', definedIn: CONFIG },
   { name: 'TM8_MAX_BODY_BYTES', group: 'Network & access', summary: 'Request body cap; larger bodies answer 413.', default: String(8 * 1024 * 1024), definedIn: CONFIG },
   { name: 'TM8_IDEMPOTENCY_ENABLED', group: 'Network & access', summary: 'Command-ledger replay and dedup. Off only for a local loop.', default: 'true', definedIn: CONFIG },
@@ -188,6 +188,7 @@ export const NODE_ENV: readonly EnvKnob[] = [
 
 export const CLI_ENV: readonly EnvKnob[] = [
   { name: 'TM8_BASE_URL', group: 'CLI', summary: 'Server the tm8 CLI talks to.', default: 'http://127.0.0.1:4610', definedIn: 'packages/cli/src/env.ts' },
+  { name: 'TM8_RETRY_WINDOW_MS', group: 'CLI', summary: 'How long an agent\'s call keeps retrying while the server is down across a restart (0 = fail on the first refusal). A human shell (no session id) fails at once.', default: '120000 for agents', definedIn: 'packages/cli/src/context.ts' },
   { name: 'TM8_CONFIG_PATH', group: 'CLI', summary: 'CLI config file.', default: '$XDG_CONFIG_HOME/tm8/config.json', definedIn: 'packages/cli/src/context.ts' },
   { name: 'TM8_CREDENTIALS_PATH', group: 'CLI', summary: 'CLI credentials file (forces the file store).', default: '$XDG_CONFIG_HOME/tm8/credentials.json', definedIn: 'packages/cli/src/credentials.ts' },
   { name: 'TM8_CREDENTIALS_MODE', group: 'CLI', summary: 'CLI credential store: keychain or file.', default: 'platform default', definedIn: 'packages/cli/src/credentials.ts' },

@@ -93,9 +93,22 @@ export const CORE_KIND_INFO: Readonly<Record<CoreEntityKind, KindInfo>> = {
     summary: 'a running agent session; it can be messaged like any anchor',
     createWith: ['session spawn'],
   },
+  // Human-only (W10a): a person adds one under Space settings → Credentials.
+  // No command creates one, so none is advertised.
+  credential: {
+    group: 'runtime',
+    summary: 'a space credential a session can launch on; its secret never leaves the server',
+    createWith: [],
+  },
   container: { group: 'runtime', summary: 'a machine an agent runs in or drives', createWith: ['container create'] },
   artifact: { group: 'runtime', summary: 'a published, versioned web page', createWith: ['artifact publish'] },
 
+  space_link: {
+    group: 'runtime',
+    summary: 'a link from this space to another space; each member signs in with their own stored session',
+    createWith: [],
+  },
+  server: { group: 'runtime', summary: 'a remote tm8 server a space link points at', createWith: [] },
   member: { group: 'people', summary: 'a human in the space', createWith: ['auth signup', 'space invite create'] },
   team_member: {
     group: 'people',

@@ -32,8 +32,14 @@ export interface PtyAttachAuthzLogger {
 
 export interface PtyAttachAuthorizerDeps {
   readonly db: Pick<Db, 'rpc'>;
-  /** Resolve a verified browser cookie/header identity when one is present. */
-  readonly resolveIdentityId?: (req: IncomingMessage) => Promise<string | undefined>;
+  /**
+   * Resolve a verified browser cookie/header identity when one is present.
+   * The object form also carries the session's space pin (W3), which
+   * `consume_stream_attach` checks against the work session's space.
+   */
+  readonly resolveIdentityId?: (
+    req: IncomingMessage,
+  ) => Promise<string | { identityId: string; sessionSpaceId?: string; viaLinkId?: string } | undefined>;
   readonly logger?: PtyAttachAuthzLogger;
 }
 
@@ -68,9 +74,13 @@ export function createPtyAttachAuthorizer(deps: PtyAttachAuthorizerDeps): PtyAtt
     if (!mode) return refused;
 
     let identityId: string | undefined;
+    let sessionSpaceId: string | undefined;
+    let viaLinkId: string | undefined;
     if (deps.resolveIdentityId) {
       try {
-        identityId = await deps.resolveIdentityId(req);
+        const resolved = await deps.resolveIdentityId(req);
+        if (typeof resolved === 'string') identityId = resolved;
+        else if (resolved) ({ identityId, sessionSpaceId, viaLinkId } = resolved);
       } catch {
         // A presented but invalid/mismatched cookie is indistinguishable from
         // every other bad grant use. Do not let a valid capability override a
@@ -79,7 +89,11 @@ export function createPtyAttachAuthorizer(deps: PtyAttachAuthorizerDeps): PtyAtt
       }
     }
 
-    const claims: DbClaims = identityId ? { identityId } : {};
+    const claims: DbClaims = {
+      ...(identityId ? { identityId } : {}),
+      ...(sessionSpaceId ? { sessionSpaceId } : {}),
+      ...(viaLinkId ? { viaLinkId } : {}),
+    };
     try {
       const consumed = await deps.db.rpc<ConsumedGrant>(
         claims,

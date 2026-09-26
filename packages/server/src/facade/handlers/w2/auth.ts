@@ -1,7 +1,7 @@
 /**
  * auth.* — local accounts (Identity v2 Stage 1, doc 4 §6).
  *
- * Ten operations, and the seam is deliberately thin: every authorization
+ * Thirteen operations, and the seam is deliberately thin: every authorization
  * decision except the scrypt comparison lives inside the SECURITY DEFINER
  * RPCs (`ensure_account`'s F1 node-admin gate, `revoke_auth_session`'s
  * self-or-admin gate, `resolve_auth_session`'s revocation/expiry/status
@@ -43,11 +43,15 @@ import type {
   AuthPasswordChangeInput,
   AuthPasswordChangeResult,
   AuthSessionGetResult,
+  AuthSessionsListResult,
   AuthSignupInput,
   AuthSignupResult,
+  AuthSpaceEnterInput,
+  AuthSpaceEnterResult,
   InvitePreview,
   ResolveInviteInput,
 } from '@tm8/contract';
+import { AuthSessionsListInputSchema } from '@tm8/contract';
 import { chmod, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -56,18 +60,22 @@ import { clearSessionCookie, sessionCookie } from '../../../http/session-cookie.
 import { json, type OperationHandler, type RequestContext } from '../../../http/types.js';
 import type { FacadeDeps } from '../../deps.js';
 import type { HandlerRegistry } from '../../registry.js';
-import { claimsFor } from '../../context.js';
+import { claimsFor, requireUuidParam } from '../../context.js';
 import {
   changePassword,
   claimNode,
+  enterSpace,
   issueNodeClaimToken,
+  listAuthSessions,
   loginWithPassword,
   nodeIsClaimed,
   resolveBearerIdentity,
+  revokeListedAuthSession,
   signupAccount,
   signupViaInvite,
   type AccountRowJson,
 } from '../../../identity/pg-auth.js';
+import { closeSessionSockets, type SessionSocketPort } from '../../../identity/session-sockets.js';
 
 function accountView(row: AccountRowJson): AuthAccountView {
   return {
@@ -193,6 +201,7 @@ function authSessionGet(deps: FacadeDeps): OperationHandler {
             : {}),
           ...(session.runtimeChatId ? { runtimeChatId: session.runtimeChatId } : {}),
           label: session.label,
+          spaceId: session.spaceId,
           expiresAt: session.expiresAt,
         },
       };
@@ -309,6 +318,59 @@ function authInviteResolve(deps: FacadeDeps): OperationHandler {
       'preview_invite',
       [body.code],
     );
+  };
+}
+
+/**
+ * `auth.space.enter` (plan W3) — a gate session plus membership mints a session
+ * pinned to one space.
+ *
+ * NOT claim-free: it runs under the caller's own claims, so `enter_space` sees
+ * the verified identity, auth kind and (absent) pin. The parent is the session
+ * the resolver verified from the presented token — never the body — and the
+ * token itself is never passed to SQL. A `browser` result replaces the
+ * session cookie so the browser's WebSocket follows the space it entered.
+ */
+function authSpaceEnter(deps: FacadeDeps): OperationHandler {
+  return async (ctx) => {
+    const body = ctx.body as AuthSpaceEnterInput;
+    const identity = ctx.identity;
+    if (identity.sessionSpaceId) {
+      throw new CollabError('forbidden', 'a space-pinned session cannot enter a space; use the gate session');
+    }
+    let kind: 'browser' | 'cli';
+    let parentSessionId: string | null;
+    if (identity.kind === 'bearer') {
+      if (identity.authKind !== 'browser' && identity.authKind !== 'cli') {
+        throw new CollabError('forbidden', 'only a human session can enter a space');
+      }
+      if (!identity.sessionId) throw new CollabError('unauthenticated', 'bearer session is unresolved');
+      kind = identity.authKind;
+      parentSessionId = identity.sessionId;
+    } else {
+      // The loopback auto-owner: no session row, so no parent to inherit from.
+      kind = 'browser';
+      parentSessionId = null;
+    }
+    const owner = await deps.owner();
+    const issued = await enterSpace(deps.db, claimsFor(owner, ctx), {
+      spaceId: body.spaceId,
+      parentSessionId,
+      kind,
+      label: body.label ?? null,
+    });
+    const result: AuthSpaceEnterResult = {
+      token: issued.token,
+      spaceId: issued.spaceId,
+      session: issued.session,
+    };
+    if (issued.session.kind !== 'browser') return result;
+    return json(result, {
+      headers: {
+        'cache-control': 'no-store',
+        'set-cookie': sessionCookie(issued.token, issued.session.expiresAt),
+      },
+    });
   };
 }
 
@@ -563,13 +625,61 @@ function authInviteSignup(deps: FacadeDeps): OperationHandler {
   };
 }
 
+/**
+ * `auth.sessions.list` (plan W4, 232) — the caller's own sessions, or with
+ * `?spaceId=` every session pinned to that space. Who may see what is
+ * `list_auth_sessions`' decision under the caller's claims (humans only; space
+ * admin for a space, pin-aware). No token or hash ever leaves SQL.
+ */
+function authSessionsList(deps: FacadeDeps): OperationHandler {
+  return async (ctx) => {
+    const raw = ctx.query.get('spaceId');
+    const parsed = AuthSessionsListInputSchema.safeParse(raw === null ? {} : { spaceId: raw });
+    if (!parsed.success) throw new CollabError('invalid_input', 'spaceId must be a uuid');
+    const spaceId = parsed.data.spaceId ?? null;
+    const owner = await deps.owner();
+    const sessions = await listAuthSessions(deps.db, claimsFor(owner, ctx), spaceId, ctx.identity.sessionId);
+    const result: AuthSessionsListResult = { spaceId, sessions };
+    return json(result, { headers: { 'cache-control': 'no-store' } });
+  };
+}
+
+/**
+ * `auth.sessions.revoke` (plan W4, 232) — end one session the caller could
+ * list. SQL revokes it and, through 232's trigger, the pinned sessions entered
+ * from it, and returns every id it ended. After commit, the open event sockets
+ * of exactly those sessions are closed; a failed close is logged, not thrown.
+ */
+function authSessionsRevoke(deps: FacadeDeps, sockets: SessionSocketPort | undefined): OperationHandler {
+  return async (ctx) => {
+    const sessionId = requireUuidParam(ctx, 'sessionId');
+    const owner = await deps.owner();
+    const result = await revokeListedAuthSession(deps.db, claimsFor(owner, ctx), sessionId);
+    closeSessionSockets(sockets, new Set(result.revokedSessionIds), (message, fields) =>
+      console.warn(`[auth.sessions.revoke] ${message}`, fields));
+    return result;
+  };
+}
+
+export interface AuthHandlerDeps {
+  /** The live event sockets; absent (tests, no event server) skips the close. */
+  readonly sockets?: SessionSocketPort;
+}
+
 /** The complete auth seam — one registration, one honest group. */
-export function registerW2AuthHandlers(registry: HandlerRegistry, deps: FacadeDeps): void {
+export function registerW2AuthHandlers(
+  registry: HandlerRegistry,
+  deps: FacadeDeps,
+  auth: AuthHandlerDeps = {},
+): void {
   registry.registerAll({
     'auth.signup': authSignup(deps),
     'auth.login': authLogin(deps),
     'auth.logout': authLogout(deps),
     'auth.session.get': authSessionGet(deps),
+    'auth.space.enter': authSpaceEnter(deps),
+    'auth.sessions.list': authSessionsList(deps),
+    'auth.sessions.revoke': authSessionsRevoke(deps, auth.sockets),
     'auth.claim': authClaim(deps),
     'auth.claim.status': authClaimStatus(deps),
     'auth.claim.reissue': authClaimReissue(deps),

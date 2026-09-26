@@ -15,7 +15,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { assertBuilt, cli, startRealServer, type RealServer } from './harness.js';
+import { adminUrl, assertBuilt, cli, startRealServer, type RealServer } from './harness.js';
 
 let server: RealServer;
 let spaceId = '';
@@ -112,11 +112,7 @@ async function psql(sql: string): Promise<{ code: number; stdout: string; stderr
 }
 
 async function psqlOn(database: string, sql: string): Promise<{ code: number; stdout: string; stderr: string }> {
-  const admin = new URL(
-    process.env.TM8_W4_ADMIN_DATABASE_URL ??
-      process.env.TM8_MIGRATION_DATABASE_URL ??
-      `postgres://${process.env.TM8_PG_USER ?? 'tm8'}@127.0.0.1:${process.env.TM8_PG_PORT ?? '5442'}/postgres`,
-  );
+  const admin = new URL(adminUrl());
   if (database) admin.pathname = `/${database}`;
   return await new Promise((resolve) => {
     const child = spawn('psql', ['-w', '--no-psqlrc', '-v', 'ON_ERROR_STOP=1', '-q', '-t', '-A', admin.href, '-c', sql], {

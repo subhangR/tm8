@@ -20,7 +20,7 @@
 //       does not bump entities.version — the whole reason 081 narrowed those
 //       snapshot triggers
 //
-//   TM8_DATABASE_URL=postgres://tm8@127.0.0.1:5442/tm8_worktree_verify \
+//   TM8_DATABASE_URL=postgres://tm8@127.0.0.1:5443/tm8_worktree_verify \
 //     node db/migrate.mjs reset --force && node db/test/worktree-provisioning.mjs
 // =============================================================================
 import { json, run, scalar, claimsFor, buildWorld, literal, uuid, cmid, OWNER_URL } from './helpers.mjs';

@@ -39,6 +39,7 @@ import { WorkflowsSection } from './WorkflowsSection';
 import { ProfileSection } from './ProfileSection';
 import { DangerSection } from './DangerSection';
 import { ConfigsSection } from './ConfigsSection';
+import { SessionsSection } from './SessionsSection';
 import { SectionAbsent, SectionFrame } from './SectionFrame';
 import { SECTION_NOT_MOUNTED } from './reasons';
 import { SETTINGS_SECTIONS, type SettingsData, type SettingsSectionId, type SettingsShellProps } from './types';
@@ -50,6 +51,7 @@ export function SettingsShell({
   onSectionChange,
   nodeKey = 'local',
   onAxesChanged,
+  onLeftSpace,
 }: SettingsShellProps) {
   const [active, setActive] = useState<SettingsSectionId>(initialSection);
   const [data, setData] = useState<SettingsData>({
@@ -230,6 +232,7 @@ export function SettingsShell({
             port={port}
             onProfileSaved={refreshIdentity}
             onMembersChanged={refreshMembers}
+            {...(onLeftSpace ? { onLeftSpace } : {})}
             onInvitesChanged={refreshInvites}
             onSpaceWritten={spaceWritten}
             onAxesChanged={refreshAxes}
@@ -250,6 +253,7 @@ function SectionBody({
   port,
   onProfileSaved,
   onMembersChanged,
+  onLeftSpace,
   onInvitesChanged,
   onSpaceWritten,
   onAxesChanged,
@@ -263,6 +267,7 @@ function SectionBody({
   port: SettingsShellProps['port'];
   onProfileSaved: () => void;
   onMembersChanged: () => void;
+  onLeftSpace?: SettingsShellProps['onLeftSpace'];
   onInvitesChanged: () => void;
   onSpaceWritten: (space: SpaceSummary) => void;
   onAxesChanged: () => void;
@@ -289,6 +294,17 @@ function SectionBody({
             await port.setMemberRole(memberId, role);
             onMembersChanged();
           }}
+          {...(port.removeMember
+            ? {
+                onRemove: async (memberId: string) => {
+                  // Not caught, as above: the confirmation prints the refusal.
+                  // No local hide set: the entities query stops listing an
+                  // ended member (G6, #841), so the re-read is the authority.
+                  await port.removeMember!(memberId);
+                  onMembersChanged();
+                },
+              }
+            : {})}
         />
       );
     case 'invites':
@@ -406,8 +422,39 @@ function SectionBody({
          opens, not on the shell's boot round trip, so a closed Configs tab
          costs nothing. */
       return <ConfigsSection heading={def.heading} load={port.loadConfigs} />;
+    case 'my-sessions':
+      return (
+        <SessionsSection
+          heading={def.heading}
+          scope="own"
+          {...(port.loadOwnSessions ? { load: port.loadOwnSessions } : {})}
+          {...(port.revokeSession ? { revoke: port.revokeSession } : {})}
+        />
+      );
+    case 'sessions':
+      return (
+        <SessionsSection
+          heading={def.heading}
+          scope="space"
+          {...(port.loadSpaceSessions ? { load: port.loadSpaceSessions } : {})}
+          {...(port.revokeSession ? { revoke: port.revokeSession } : {})}
+        />
+      );
     case 'danger':
-      return <DangerSection heading={def.heading} />;
+      return (
+        <DangerSection
+          heading={def.heading}
+          {...(data.space ? { spaceName: data.space.name } : {})}
+          {...(port.leaveSpace
+            ? {
+                onLeave: async () => {
+                  const result = await port.leaveSpace!();
+                  onLeftSpace?.(result.spaceId);
+                },
+              }
+            : {})}
+        />
+      );
     default:
       return (
         <SectionFrame title={def.heading}>

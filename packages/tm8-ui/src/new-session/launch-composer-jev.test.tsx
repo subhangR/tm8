@@ -3,15 +3,15 @@
  * ✦ Jev in the Run popup (Jev UX lane D, parent 01a0d77c).
  *
  * The popup mounts the SAME collapsed entry point and panel as LaunchSheet.
- * What must hold here specifically: Jev reads the popup's LIVE title and
- * description, not the saved task; nothing reaches the launch without an
+ * What must hold here specifically: Jev reads the popup's LIVE title, task
+ * description and instructions, not the saved task; nothing reaches the launch without an
  * Apply click; an applied group is an ordinary selection edit (the popup's
  * own chips show it) and Undo takes it back; the model Apply sets model, tool
  * and effort together; and the spawn carries the selection, `jevRunId`, the
  * unapplied groups' reasons and the per-launch `contextBudgets` — or nothing
  * new without Jev.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, waitFor, within } from '@testing-library/react';
 import type { ExecutionSpawnInput, LaunchSuggestResult, ModelSuggestion, ProjectId } from '@tm8/contract';
 
@@ -38,6 +38,9 @@ const RANKS = okGroup({
   noFit: false,
   floor: 1.5,
 });
+
+/* Remembered picks are localStorage; each test starts with none. */
+beforeEach(() => { localStorage.clear(); });
 
 function renderPopup(over: Partial<LaunchComposerPopupProps> = {}, groups: Partial<LaunchSuggestResult['groups']> = {}) {
   const port = answeringPort({ teammates: RANKS, memories: JEV_MEMORIES, ...groups });
@@ -66,8 +69,11 @@ function renderPopup(over: Partial<LaunchComposerPopupProps> = {}, groups: Parti
   const ask = async () => {
     /* The description autofills first: asking over a half-loaded draft would
        answer a text the popup is about to replace, and read stale. */
-    const area = view.getByLabelText('Describe what this session should do') as HTMLTextAreaElement;
+    const chip = view.getByTestId('lcd-subject');
+    if (chip.getAttribute('aria-expanded') !== 'true') fireEvent.click(chip);
+    const area = view.getByTestId('lcd-description') as HTMLTextAreaElement;
     await waitFor(() => expect(area.value).not.toBe(''));
+    fireEvent.keyDown(document, { key: 'Escape' });
     await act(async () => { fireEvent.click(view.getByTestId('jev-entry-button')); });
     await waitFor(() => expect(view.getByTestId('jev-entry').getAttribute('data-state')).toBe('ready'));
   };
@@ -103,14 +109,20 @@ describe('the entry point', () => {
 });
 
 describe('the draft is the popup’s live text', () => {
-  it('sends the edited title and description, not the saved task', async () => {
+  it('sends the edited title, description and instructions, not the saved task', async () => {
     const view = renderPopup();
-    const area = view.getByLabelText('Describe what this session should do') as HTMLTextAreaElement;
+    fireEvent.click(view.getByTestId('lcd-subject'));
+    const area = view.getByTestId('lcd-description') as HTMLTextAreaElement;
     await waitFor(() => expect(area.value).toBe('Reconnect drops after 30s.'));
     fireEvent.change(area, { target: { value: 'Reconnect drops after 30s. Logs in #build.' } });
     fireEvent.change(view.getByTestId('nsx-title'), { target: { value: 'Fix reconnect' } });
+    fireEvent.change(view.getByLabelText('Instructions for this session'), { target: { value: 'Start with the backoff.' } });
     await view.ask();
-    expect(view.port.inputs[0]!.draft).toEqual({ title: 'Fix reconnect', description: 'Reconnect drops after 30s. Logs in #build.' });
+    // The briefing the agent gets: the task as edited, then this launch's instructions.
+    expect(view.port.inputs[0]!.draft).toEqual({
+      title: 'Fix reconnect',
+      description: 'Reconnect drops after 30s. Logs in #build.\n\nStart with the backoff.',
+    });
     expect(view.port.inputs[0]!.teamMemberId).toBe('tm-forge');
     expect(view.port.inputs[0]!.subjectId).toBe('task-9');
   });
@@ -181,6 +193,19 @@ describe('Apply is a click, and an ordinary edit', () => {
     expect(input).toMatchObject({ teamMemberId: 'tm-scout', model: 'gpt-5.6-sol', agentTool: 'codex', reasoningEffort: 'xhigh' });
   });
 
+  it('Apply all onto a teammate with remembered picks still launches Jev’s model', async () => {
+    localStorage.setItem('tm8.launch.picks.v1', JSON.stringify({
+      'tm-scout': { model: 'claude-haiku-4-5-20251001', effort: 'low', accessMode: 'plan' },
+    }));
+    const view = renderPopup({}, { model: okGroup({ ...MODEL, model: 'gpt-5.6-sol', agentTool: 'codex', effort: 'xhigh' }) });
+    await view.ask();
+    fireEvent.click(view.getByTestId('jev-apply-all'));
+    await waitFor(() => expect(view.getByTestId('jev-undo-all')).toBeTruthy());
+    const input = await view.spawn();
+    expect(input).toMatchObject({ teamMemberId: 'tm-scout', model: 'gpt-5.6-sol', agentTool: 'codex', reasoningEffort: 'xhigh' });
+    expect(input.jevRunId).toBeTruthy();
+  });
+
   it('Apply all, then Undo all, returns the launch to what it was', async () => {
     const bare = renderPopup({ jev: undefined });
     const before = await bare.spawn();
@@ -220,6 +245,18 @@ describe('applied model and teammate stay honest', () => {
     await waitFor(() => expect(view.getByTestId('jev-applied-teammate')).toBeTruthy());
     expect(view.getByTestId('jev-applied-model')).toBeTruthy();
     expect(view.queryByTestId('jev-replaced-model')).toBeNull();
+    const input = await view.spawn();
+    expect(input).toMatchObject({ teamMemberId: 'tm-scout', model: 'gpt-5.6-sol', agentTool: 'codex', reasoningEffort: 'xhigh' });
+  });
+
+  it('Apply model, then Apply teammate onto remembered picks: the applied model still goes out', async () => {
+    localStorage.setItem('tm8.launch.picks.v1', JSON.stringify({
+      'tm-scout': { model: 'claude-haiku-4-5-20251001', effort: 'low', accessMode: 'plan' },
+    }));
+    const view = await answered();
+    fireEvent.click(view.getByTestId('jev-apply-model'));
+    fireEvent.click(view.getByTestId('jev-apply-teammate'));
+    await waitFor(() => expect(view.getByTestId('jev-applied-teammate')).toBeTruthy());
     const input = await view.spawn();
     expect(input).toMatchObject({ teamMemberId: 'tm-scout', model: 'gpt-5.6-sol', agentTool: 'codex', reasoningEffort: 'xhigh' });
   });

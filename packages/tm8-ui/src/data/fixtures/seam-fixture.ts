@@ -37,6 +37,8 @@ import {
   type TaskWorkflowInput,
   type UpdateMemberRoleInput,
   type UpdateSpaceInput,
+  type MembershipEndResult,
+  type MembershipEndStatus,
   bindPath,
   CollabError,
   FILE_MAX_SIZE_BYTES_DEFAULT,
@@ -102,6 +104,7 @@ import {
   type CredentialsSpacePolicyView,
   type NodeCredentialsStatusView,
   type SpaceCredentialView,
+  type SpaceLinkView,
   type ContentionReport,
   type ProjectBranchTopology,
   type ProjectFileBlame,
@@ -138,6 +141,9 @@ import {
   type SpaceKindCounts,
   type SpaceSettingsView,
   type SpaceConfigsView,
+  type AuthSessionListing,
+  type AuthSessionsListResult,
+  type AuthSessionsRevokeResult,
   type ChatDefault,
   type ChatDefaultsView,
   type SpaceSummary,
@@ -813,6 +819,9 @@ function synthesizeContent(s: EntitySummary): EntityContent {
         openedAt: null,
         closedAt: null,
       };
+    case 'credential':
+      // W10a: content is the same allow-list as state — no secret, hint or login.
+      return { ...state };
     default:
       // pull_request | commit | file | spell | skill — the open content variant
       return { kind: state.kind };
@@ -1245,24 +1254,29 @@ export function createFixtureSeam(): FixtureSeam {
       shape: 'api_key', label: 'Team Claude', isDefault: true, status: 'active',
       createdByAccountId: 'acct-ada', displayLogin: null, keyHint: 'x9Qa',
       createdAt: FIXTURE_NOW, updatedAt: FIXTURE_NOW, lastUsedAt: FIXTURE_NOW, lastProbeAt: FIXTURE_NOW,
+      // W10d: a migrated row — nobody owns it yet, and the viewer created it, so "Claim as mine" is offered.
+      ownerAccountId: null, visibility: 'public', mayBeSpaceDefault: false,
     },
     {
       id: '0f1e2d3c-0000-4000-8000-000000000a02', spaceId: FIXTURE_SPACE_ID, provider: 'anthropic',
       shape: 'api_key', label: 'Research budget', isDefault: false, status: 'stale',
       createdByAccountId: 'acct-other', displayLogin: null, keyHint: '7fPk',
       createdAt: FIXTURE_NOW, updatedAt: FIXTURE_NOW, lastUsedAt: null, lastProbeAt: FIXTURE_NOW,
+      ownerAccountId: 'acct-other', visibility: 'public', mayBeSpaceDefault: false,
     },
     {
       id: '0f1e2d3c-0000-4000-8000-000000000b01', spaceId: FIXTURE_SPACE_ID, provider: 'openai',
       shape: 'api_key', label: 'Codex shared', isDefault: false, status: 'active',
       createdByAccountId: null, displayLogin: null, keyHint: 'Zt2m',
       createdAt: FIXTURE_NOW, updatedAt: FIXTURE_NOW, lastUsedAt: null, lastProbeAt: FIXTURE_NOW,
+      ownerAccountId: null, visibility: 'public', mayBeSpaceDefault: false,
     },
     {
       id: '0f1e2d3c-0000-4000-8000-000000000c01', spaceId: FIXTURE_SPACE_ID, provider: 'github',
       shape: 'token', label: 'tm8-bot', isDefault: true, status: 'active',
       createdByAccountId: 'acct-ada', displayLogin: 'tm8-bot', keyHint: 'k3Jd',
       createdAt: FIXTURE_NOW, updatedAt: FIXTURE_NOW, lastUsedAt: FIXTURE_NOW, lastProbeAt: FIXTURE_NOW,
+      ownerAccountId: 'acct-ada', visibility: 'public', mayBeSpaceDefault: true,
     },
   ];
   const spacePolicyState: CredentialsSpacePolicyView = {
@@ -1289,6 +1303,51 @@ export function createFixtureSeam(): FixtureSeam {
     const row = spaceCredentialsState.find((c) => c.id === id);
     if (!row) throw new CollabError('not_found', `space credential ${id} not found`);
     return row;
+  };
+  /**
+   * Space links (W6) — one link from the fixture space to a second space the
+   * viewer is signed out of, so Sign in, Allow spawn and Remove all have a row
+   * to act on without a node. Metadata only: the fixture holds no session.
+   */
+  const spaceLinksState: SpaceLinkView[] = [
+    {
+      id: '0f1e2d3c-0000-4000-8000-000000000d01', homeSpaceId: FIXTURE_SPACE_ID,
+      targetSpaceId: '0f1e2d3c-0000-4000-8000-0000000000e1', targetServerId: null,
+      targetSpaceName: 'Research', createdAt: FIXTURE_NOW,
+      statusSummary: { signedIn: 1, signedOut: 1, left: 0, unreachable: 0 },
+      mine: {
+        memberId: ada.id, status: 'signed_out', allowSpawn: false, spawnBudget: 5,
+        alias: null, sessionId: null, expiresAt: null, lastUsedAt: null,
+      },
+    },
+  ];
+  const spaceLinkById = (id: string): SpaceLinkView => {
+    const link = spaceLinksState.find((l) => l.id === id);
+    if (!link) throw new CollabError('not_found', `space link ${id} not found`);
+    return link;
+  };
+  /** The viewer's own row on a link, created signed out if absent. */
+  const myLinkRow = (link: SpaceLinkView) => {
+    link.mine ??= {
+      memberId: ada.id, status: 'signed_out', allowSpawn: false, spawnBudget: 5,
+      alias: null, sessionId: null, expiresAt: null, lastUsedAt: null,
+    };
+    return link.mine;
+  };
+  const summarize = (link: SpaceLinkView, from: SpaceLinkView['mine'], to: SpaceLinkView['mine']) => {
+    const key = { signed_in: 'signedIn', signed_out: 'signedOut', left: 'left', unreachable: 'unreachable' } as const;
+    if (from) link.statusSummary[key[from.status]] = Math.max(0, link.statusSummary[key[from.status]] - 1);
+    if (to) link.statusSummary[key[to.status]] += 1;
+  };
+  const signLink = (id: string, status: 'signed_in' | 'signed_out'): SpaceLinkView => {
+    const link = spaceLinkById(id);
+    const before = link.mine ? { ...link.mine } : null;
+    const mine = myLinkRow(link);
+    mine.status = status;
+    mine.sessionId = status === 'signed_in' ? `fixture-link-session-${tick()}` : null;
+    mine.expiresAt = status === 'signed_in' ? new Date(FIXTURE_BASE_MS + 90 * 86_400_000).toISOString() : null;
+    summarize(link, before, mine);
+    return clone(link);
   };
   const credentialsState: CredentialsStatusView = {
     providers: [
@@ -1627,6 +1686,33 @@ export function createFixtureSeam(): FixtureSeam {
   let inviteSeq = 0;
 
   /**
+   * The viewer's auth sessions — W4. A gate login, the tab pinned to the
+   * fixture space from it (current), and a CLI login. Ids only — a session
+   * listing never carries a token, and neither does this fixture.
+   */
+  const fixtureSessionAt = (minutesAgo: number): string => new Date(Date.UTC(2026, 8, 1, 12, 0) - minutesAgo * 60_000).toISOString();
+  const authSessions: AuthSessionListing[] = [
+    {
+      sessionId: 'ses-ada-tab', kind: 'browser', createdAt: fixtureSessionAt(60), lastUsedAt: fixtureSessionAt(0),
+      expiresAt: fixtureSessionAt(-60 * 24 * 7), label: null, spaceId: FIXTURE_SPACE_ID, spaceName: 'Atelier',
+      parentSessionId: 'ses-ada-gate', origin: 'space_enter', originEntityId: null,
+      owner: { identityId: 'idn-ada', displayName: 'Ada' }, current: true,
+    },
+    {
+      sessionId: 'ses-ada-gate', kind: 'browser', createdAt: fixtureSessionAt(61), lastUsedAt: fixtureSessionAt(60),
+      expiresAt: fixtureSessionAt(-60 * 24 * 7), label: null, spaceId: null, spaceName: null,
+      parentSessionId: null, origin: 'login', originEntityId: null,
+      owner: { identityId: 'idn-ada', displayName: 'Ada' }, current: false,
+    },
+    {
+      sessionId: 'ses-ada-cli', kind: 'cli', createdAt: fixtureSessionAt(60 * 26), lastUsedAt: fixtureSessionAt(60 * 3),
+      expiresAt: fixtureSessionAt(-60 * 24 * 30), label: 'laptop', spaceId: null, spaceName: null,
+      parentSessionId: null, origin: 'login', originEntityId: null,
+      owner: { identityId: 'idn-ada', displayName: 'Ada' }, current: false,
+    },
+  ];
+
+  /**
    * The task-axis registry, MUTABLE — W2. Seeded with exactly what the node
    * seeds every space (001's `type` axis, kind 'default', position 0), so
    * the fixture-backed product draws the axis picker and the Settings > Axes
@@ -1725,10 +1811,50 @@ export function createFixtureSeam(): FixtureSeam {
     return typeof state?.role === 'string' ? state.role : null;
   }
 
+  /**
+   * G6 (232): member rows whose membership ENDED. The summary stays exactly
+   * where it was — a node keeps the row so authorship still resolves — and it
+   * still resolves BY ID with `state.memberStatus` set, but the entities query
+   * no longer lists it (#841, 00c0db5e) and it is no longer a member for any
+   * rule. (The node also drops personas of ended owners from the listing; the
+   * fixture's personas are not owned by a member row, so there is none to drop.)
+   */
+  const endedMembers = new Map<EntityId, MembershipEndStatus>();
+
   function membersOfSpace(spaceId: SpaceId): EntitySummary[] {
     return [...summaries.values()].filter(
-      (s) => s.kind === 'member' && s.spaceId === spaceId && !s.deletedAt,
+      (s) => s.kind === 'member' && s.spaceId === spaceId && !s.deletedAt && !endedMembers.has(s.id),
     );
+  }
+
+  /** The viewer's live member row, found the way `setMemberRole` finds it. */
+  function viewerMemberOf(spaceId: SpaceId): EntitySummary | undefined {
+    const members = membersOfSpace(spaceId);
+    return members.find((m) => m.id === viewerActor.id)
+      ?? members.find((m) => roleOfSummary(m) === 'owner');
+  }
+
+  function endMembership(
+    spaceId: SpaceId,
+    target: EntitySummary,
+    status: MembershipEndStatus,
+  ): MembershipEndResult {
+    endedMembers.set(target.id, status);
+    if (target.state.kind === 'member') target.state = { ...target.state, memberStatus: status };
+    spaceSummary.memberCount = Math.max(0, spaceSummary.memberCount - 1);
+    touch(target);
+    emit(spaceId, { type: 'entity.upsert', entity: clone(target) });
+    return {
+      spaceId,
+      memberId: target.id,
+      status,
+      leftAt: target.activityAt,
+      stoppedSessionIds: [],
+      deactivatedPersonaIds: [],
+      unassignedEntityIds: [],
+      revokedTokenCount: 0,
+      activity: `act-${status}-${target.id}`,
+    };
   }
 
   function requireSummary(id: EntityId): EntitySummary {
@@ -2355,7 +2481,7 @@ export function createFixtureSeam(): FixtureSeam {
       return clone(identityView);
     },
     async spaces() {
-      return clone([spaceSummary]);
+      return clone(identityView.memberships.some((m) => m.spaceId === FIXTURE_SPACE_ID) ? [spaceSummary] : []);
     },
     /** Per-kind chat defaults (migration 229): a PATCH over kinds, `null` / `{}` clears. */
     async chatDefaults(spaceId): Promise<ChatDefaultsView> {
@@ -2378,6 +2504,14 @@ export function createFixtureSeam(): FixtureSeam {
         chatDefaults = { ...chatDefaults, defaults: next, revision: chatDefaults.revision + 1 };
       }
       return clone(chatDefaults);
+    },
+    /** Own list, or the sessions pinned to the fixture space (Ada owns it). */
+    async authSessions(spaceId): Promise<AuthSessionsListResult> {
+      if (spaceId !== null && spaceId !== FIXTURE_SPACE_ID) {
+        throw new CollabError('forbidden', 'only a space admin can list its sessions');
+      }
+      const rows = spaceId === null ? authSessions : authSessions.filter((r) => r.spaceId === spaceId);
+      return { spaceId, sessions: clone(rows) };
     },
     /** A small, honest sample: the fixture has no server environment to report. */
     async spaceConfigs(spaceId): Promise<SpaceConfigsView> {
@@ -2588,6 +2722,8 @@ export function createFixtureSeam(): FixtureSeam {
            production defect in miniature: the live node's session list read
            "To Do 1" over an empty tab. */
         if ((s.state as { sessionKind?: unknown }).sessionKind === 'credential') return false;
+        /* G6 (#841): an ended member is not LISTED — by id it still resolves. */
+        if (endedMembers.has(s.id)) return false;
         const f = input.filters;
         /* Empty lists are NO constraint — the server guards every arm with
            `length > 0` (collections.ts), so `priority: []` must not read as
@@ -3817,6 +3953,42 @@ export function createFixtureSeam(): FixtureSeam {
         return commandResult(target);
       },
 
+      /**
+       * G6, mirrored: the SQL rules of `leave_space` / `remove_space_member`
+       * (231), in the order they refuse. The row is tombstoned, never deleted.
+       */
+      async leaveSpace(spaceId: SpaceId): Promise<MembershipEndResult> {
+        const self = viewerMemberOf(spaceId);
+        if (!self) throw new CollabError('forbidden', 'not a member of this space');
+        if (roleOfSummary(self) === 'owner'
+          && membersOfSpace(spaceId).filter((m) => roleOfSummary(m) === 'owner').length <= 1) {
+          throw new CollabError('forbidden',
+            'the last owner cannot leave: promote a successor first');
+        }
+        const result = endMembership(spaceId, self, 'left');
+        identityView.memberships = identityView.memberships.filter((m) => m.spaceId !== spaceId);
+        return result;
+      },
+
+      async removeMember(spaceId: SpaceId, memberId: EntityId): Promise<MembershipEndResult> {
+        const target = requireSummary(memberId);
+        if (target.kind !== 'member' || target.spaceId !== spaceId || endedMembers.has(target.id)) {
+          throw new CollabError('not_found', `member ${memberId} not found in this space`);
+        }
+        const viewer = viewerMemberOf(spaceId);
+        const viewerRole = viewer ? roleOfSummary(viewer) : null;
+        if (viewerRole !== 'owner' && viewerRole !== 'admin') {
+          throw new CollabError('forbidden', 'space admin required');
+        }
+        if (viewer?.id === target.id) {
+          throw new CollabError('invalid_input', 'you cannot remove yourself: leave the space instead');
+        }
+        if (roleOfSummary(target) === 'owner' && viewerRole !== 'owner') {
+          throw new CollabError('forbidden', 'only an owner may remove an owner');
+        }
+        return endMembership(spaceId, target, 'removed');
+      },
+
       async createInvite(spaceId: SpaceId, input: CreateInviteInput): Promise<SpaceInviteView> {
         if (spaceId !== FIXTURE_SPACE_ID) {
           throw new CollabError('not_found', `space ${spaceId} not found`);
@@ -3840,6 +4012,15 @@ export function createFixtureSeam(): FixtureSeam {
         };
         invites.unshift(invite);
         return clone(invite);
+      },
+
+      /** Gate revoke cascades to the sessions entered from it, as 249 does. */
+      async revokeAuthSession(sessionId: string): Promise<AuthSessionsRevokeResult> {
+        const target = authSessions.find((r) => r.sessionId === sessionId);
+        if (!target) throw new CollabError('not_found', 'session not found');
+        const gone = authSessions.filter((r) => r.sessionId === sessionId || r.parentSessionId === sessionId);
+        for (const row of gone) authSessions.splice(authSessions.indexOf(row), 1);
+        return { sessionId, revoked: true, revokedSessionIds: gone.map((r) => r.sessionId) };
       },
 
       /** Revoking KEEPS the row. A list that forgot it could not stay truthful. */
@@ -5345,6 +5526,9 @@ export function createFixtureSeam(): FixtureSeam {
             displayLogin: input.provider === 'github' ? 'ada' : null,
             keyHint: input.secret.trim().slice(-4),
             createdAt: tick(), updatedAt: tick(), lastUsedAt: null, lastProbeAt: tick(),
+            ownerAccountId: input.spaceOwned === true ? null : 'acct-ada',
+            visibility: input.spaceOwned === true ? 'public' : (input.visibility ?? 'public'),
+            mayBeSpaceDefault: input.mayBeSpaceDefault === true,
           };
           spaceCredentialsState.push(row);
           return clone(row);
@@ -5383,6 +5567,63 @@ export function createFixtureSeam(): FixtureSeam {
           if (entry) entry.allowedSources = allowedSources ? [...allowedSources] : null;
           return { spaceId, provider, allowedSources };
         },
+        // W10b/W10d — the fixture viewer (acct-ada) mirrors the server's owner rules.
+        async setVisibility(credentialId, visibility) {
+          const row = spaceCredentialById(credentialId);
+          if (row.ownerAccountId !== 'acct-ada') {
+            throw new CollabError('forbidden', 'only the owner can change who may use this credential');
+          }
+          row.visibility = visibility;
+          if (visibility === 'private') { row.isDefault = false; row.mayBeSpaceDefault = false; }
+          row.updatedAt = tick();
+          return { credential: clone(row), terminatedAgentSessionIds: [], failures: [] };
+        },
+        async spaceDefaultConsent(credentialId, allowed) {
+          const row = spaceCredentialById(credentialId);
+          if (row.ownerAccountId !== 'acct-ada' || row.visibility !== 'public') {
+            throw new CollabError('forbidden', 'only the owner of a public credential can allow it as the space default');
+          }
+          row.mayBeSpaceDefault = allowed;
+          if (!allowed) row.isDefault = false;
+          return clone(row);
+        },
+        async claim(credentialId) {
+          const row = spaceCredentialById(credentialId);
+          if (row.ownerAccountId !== null || row.createdByAccountId !== 'acct-ada') {
+            throw new CollabError('forbidden', 'only the member who added this credential can claim it');
+          }
+          row.ownerAccountId = 'acct-ada';
+          return clone(row);
+        },
+        async setMyDefault(credentialId) {
+          const row = spaceCredentialById(credentialId);
+          return { spaceId: row.spaceId, provider: row.provider, credentialId: row.id };
+        },
+        async clearMyDefault(spaceId, provider) {
+          return { spaceId, provider, credentialId: null };
+        },
+        async usage(credentialId) {
+          const row = spaceCredentialById(credentialId);
+          return {
+            credentialId,
+            sessions: row.lastUsedAt === null ? [] : [{
+              workSessionId: 'ws-fixture-usage', provider: row.provider, source: 'space_default',
+              credentialId, ownerAccountId: row.ownerAccountId ?? null, launcherAccountId: 'acct-ada',
+              agentSessionId: null, status: 'ended', recordedAt: FIXTURE_NOW, updatedAt: FIXTURE_NOW,
+            }],
+          };
+        },
+        async addMine(spaceId, provider, label) {
+          const row: SpaceCredentialView = {
+            id: `0f1e2d3c-0000-4000-8000-${String(Date.now() + 1).padStart(12, '0').slice(-12)}`,
+            spaceId, provider, shape: 'token', label: label.trim(), isDefault: false, status: 'active',
+            createdByAccountId: 'acct-ada', displayLogin: 'ada', keyHint: 'mIn3',
+            createdAt: tick(), updatedAt: tick(), lastUsedAt: null, lastProbeAt: tick(),
+            ownerAccountId: 'acct-ada', visibility: 'private', mayBeSpaceDefault: false,
+          };
+          spaceCredentialsState.push(row);
+          return clone(row);
+        },
       },
 
       node: {
@@ -5396,6 +5637,42 @@ export function createFixtureSeam(): FixtureSeam {
           if (policy) policy.allowNode = allowNode;
           return { provider, allowNode };
         },
+      },
+    },
+
+    spaceLinks: {
+      async list(spaceId) {
+        return clone(spaceLinksState.filter((l) => l.homeSpaceId === spaceId));
+      },
+      async add(spaceId, targetSpaceId) {
+        const existing = spaceLinksState.find((l) => l.homeSpaceId === spaceId && l.targetSpaceId === targetSpaceId);
+        if (existing) return clone(existing);
+        const link: SpaceLinkView = {
+          id: `0f1e2d3c-0000-4000-8000-${String(Date.now()).padStart(12, '0').slice(-12)}`,
+          homeSpaceId: spaceId, targetSpaceId, targetServerId: null, targetSpaceName: null,
+          createdAt: tick(),
+          statusSummary: { signedIn: 0, signedOut: 0, left: 0, unreachable: 0 },
+          mine: null,
+        };
+        summarize(link, null, myLinkRow(link));
+        spaceLinksState.push(link);
+        return clone(link);
+      },
+      async login(linkId) { return signLink(linkId, 'signed_in'); },
+      async relogin(linkId) { return signLink(linkId, 'signed_in'); },
+      async logout(linkId) { return signLink(linkId, 'signed_out'); },
+      async remove(linkId) {
+        const link = spaceLinkById(linkId);
+        summarize(link, link.mine, null);
+        link.mine = null;
+        return clone(link);
+      },
+      async setSpawn(linkId, allowSpawn, spawnBudget) {
+        const link = spaceLinkById(linkId);
+        const mine = myLinkRow(link);
+        mine.allowSpawn = allowSpawn;
+        if (spawnBudget !== undefined) mine.spawnBudget = spawnBudget;
+        return clone(link);
       },
     },
 

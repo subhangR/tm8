@@ -29,7 +29,16 @@
  * the pair. It reads as duplication and it is not optional: `DisabledAction`
  * wires it through `aria-describedby`, so a hoisted copy would be a reason
  * only a sighted reader gets, on the two acts that least tolerate that.
+ *
+ * LEAVE IS REAL (G6, migration 231), and it sits ABOVE the refused pair and
+ * outside their prose, because that prose says "neither has an executor" and
+ * Leave has one. It destroys nothing — the viewer's row is tombstoned and
+ * everything they wrote stays — but it ends their access, so it goes through
+ * the same confirmation as Remove. SQL refuses the last owner; that refusal is
+ * printed in the dialog. Rendered only when the host passes `onLeave`.
  */
+import { useState } from 'react';
+import { MembershipConfirm } from './MembershipConfirm';
 import { SectionFrame } from './SectionFrame';
 import { DisabledAction } from '../panels';
 import { DANGER_ZONE_UNAVAILABLE } from './reasons';
@@ -57,10 +66,36 @@ const DANGER_ACTS = [
   },
 ] as const;
 
-export function DangerSection({ heading }: { heading: string }) {
+export function DangerSection({
+  heading,
+  spaceName,
+  onLeave,
+}: {
+  heading: string;
+  /** Named in the confirmation, so the reader knows which space they leave. */
+  spaceName?: string;
+  /** `spaces.leave`. Resolves when the write lands; the host then moves the viewer out. */
+  onLeave?: () => Promise<unknown>;
+}) {
+  const [confirming, setConfirming] = useState(false);
   return (
     <SectionFrame title={heading} bodyTestId="danger-body">
       <div className="set-danger" data-testid="danger-bulkhead">
+        {onLeave ? (
+          <div className="set-danger__leave" data-testid="danger-act-leave">
+            <span className="set-danger__act-what">
+              You stop being a member. Your sessions here stop; what you wrote stays, marked “(left)”.
+            </span>
+            <button
+              type="button"
+              className="set-danger__leave-go"
+              data-testid="danger-leave"
+              onClick={() => setConfirming(true)}
+            >
+              Leave this space
+            </button>
+          </div>
+        ) : null}
         <p className="set-danger__prose">
           These two acts are irreversible and neither has an executor in this build. They are shown
           so you know where they live — not so you can be told “nothing happened” after clicking.
@@ -76,6 +111,27 @@ export function DangerSection({ heading }: { heading: string }) {
           ))}
         </ul>
       </div>
+      {confirming && onLeave ? (
+        <MembershipConfirm
+          testId="leave-confirm"
+          title={spaceName ? `Leave ${spaceName}?` : 'Leave this space?'}
+          body={
+            <>
+              <p>
+                You lose access now: your sessions here stop, your tokens for this space are revoked,
+                and your tasks are unassigned.
+              </p>
+              <p>What you wrote stays, marked “(left)”. To come back, you need an invite.</p>
+            </>
+          }
+          confirmLabel="Leave space"
+          onCancel={() => setConfirming(false)}
+          onConfirm={async () => {
+            await onLeave();
+            setConfirming(false);
+          }}
+        />
+      ) : null}
     </SectionFrame>
   );
 }

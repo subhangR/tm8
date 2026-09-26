@@ -757,6 +757,59 @@ async function spaceMemberRole(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
+/** One line for a leave/remove result: who, what became of them, what it stopped. */
+function renderMembershipEnd(dto: unknown): string {
+  const count = (key: string): number => {
+    const value = field(dto, key);
+    return Array.isArray(value) ? value.length : 0;
+  };
+  return [
+    `${field(dto, 'status') ?? 'ended'}  member ${field(dto, 'memberId') ?? '?'}`,
+    `sessions stopped ${count('stoppedSessionIds')}`,
+    `personas deactivated ${count('deactivatedPersonaIds')}`,
+    `assignments cleared ${count('unassignedEntityIds')}`,
+    `tokens revoked ${field(dto, 'revokedTokenCount') ?? 0}`,
+  ].join('  ');
+}
+
+/**
+ * `space leave` — end your own membership of a Space (G6, migration 232).
+ *
+ * The row is kept (status `left`): what you wrote still renders under your
+ * name. Your tokens pinned to the Space are revoked, your agent sessions there
+ * stop, your personas are deactivated and your assignments cleared, in one
+ * transaction. The last owner cannot leave. Destructive, so `--yes`.
+ */
+async function spaceLeave(cmd: CommandContext): Promise<ExitCode> {
+  noExtraArgs('space leave', cmd.args, 0);
+  requireConsent('space leave', cmd);
+  const spaceId = requireSpace(cmd.ctx);
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'spaces.leave', {
+    params: { spaceId },
+    body: authorlessMutationBody('space leave', cmd),
+  });
+  cmd.out.data(data, renderMembershipEnd);
+  return EXIT_OK;
+}
+
+/**
+ * `space member remove <member-id>` — an admin ends someone else's membership
+ * (G6, migration 232). Same effects as `space leave`, status `removed`; only an
+ * owner may remove an owner, and removing yourself is `space leave`.
+ */
+async function spaceMemberRemove(cmd: CommandContext): Promise<ExitCode> {
+  const memberId = requireArg('space member remove', cmd.args[0], 'a <member-id>');
+  noExtraArgs('space member remove', cmd.args, 1);
+  requireConsent('space member remove', cmd);
+  const spaceId = requireSpace(cmd.ctx);
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'spaces.members.remove', {
+    params: { spaceId, memberId },
+    body: authorlessMutationBody('space member remove', cmd),
+  });
+  cmd.out.data(data, renderMembershipEnd);
+  return EXIT_OK;
+}
+
 /**
  * `space invite resolve <code>` — what a code lets you join, before you join.
  *
@@ -1262,6 +1315,8 @@ export const SPACE_COMMANDS: CommandModule[] = [
   },
   { path: ['space', 'member', 'list'], run: spaceMemberList },
   { path: ['space', 'member', 'role'], run: spaceMemberRole },
+  { path: ['space', 'member', 'remove'], run: spaceMemberRemove },
+  { path: ['space', 'leave'], run: spaceLeave },
   { path: ['space', 'invite', 'list'], run: spaceInviteList },
   { path: ['space', 'invite', 'resolve'], run: spaceInviteResolve },
   { path: ['space', 'invite', 'create'], run: spaceInviteCreate },

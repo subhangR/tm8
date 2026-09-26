@@ -3,7 +3,10 @@ import { registerSkillMutations } from '../skills/mutations.js';
 import { registerJevHandlers } from '../jev/handlers.js';
 import { registerLaunchDefaultsHandler } from '../launch/defaults.js';
 import { registerChatDefaultsHandlers } from '../chat/defaults.js';
+import { registerMembershipHandlers, type MembershipHandlerDeps } from '../membership/handlers.js';
+import { registerNodeMetricsHandlers } from '../node-metrics/handlers.js';
 import type { JevAdvisorResolver } from '../jev/port.js';
+import type { SessionSocketPort } from '../identity/session-sockets.js';
 /**
  * The facade block: the handler registry, the operation→input-schema table,
  * and the one function the composition root calls to mount everything.
@@ -86,6 +89,7 @@ import {
   registerCredentialHandlers,
   type CredentialHandlerDeps,
 } from './handlers/w2/credentials.js';
+import { registerSpaceLinkHandlers, type SpaceLinkHandlerDeps } from './handlers/w2/space-links.js';
 import { registerVoiceHandlers } from './handlers/voice.js';
 import { registerChatHandlers, type ChatHandlerDeps } from '../chat/handlers.js';
 
@@ -148,6 +152,12 @@ export interface RegisterFacadeHandlersDeps {
    * the same conditional shape `deps.files` already uses.
    */
   readonly credentials?: CredentialHandlerDeps;
+  /**
+   * W6 space links. Absent: the node key's root comes from `credentials`, so a
+   * composition with credentials still mounts them; with neither, `spaceLinks.*`
+   * is not mounted (no key to seal a stored session with).
+   */
+  readonly spaceLinks?: SpaceLinkHandlerDeps;
   /** TM8 Chat runtime composition; absent mounts a narrowed 503 degraded mode. */
   readonly chat?: ChatHandlerDeps;
   /**
@@ -156,6 +166,20 @@ export interface RegisterFacadeHandlersDeps {
    * `failed: no_key`.
    */
   readonly resolveJevAdvisor?: JevAdvisorResolver;
+  /**
+   * G6 (migration 232): what `spaces.leave` / `spaces.members.remove` /
+   * `accounts.disable` reach after their commit — the PTYs of the sessions SQL
+   * recorded ended, and the open event sockets. A parameter here, like
+   * `credentials`, because it reaches exactly one call. Absent: the three are
+   * still mounted and the revocation still happens; only the kill and the
+   * socket close are skipped (a node with no execution runtime has no PTYs).
+   */
+  readonly membership?: MembershipHandlerDeps;
+  /**
+   * W4: the live event sockets `auth.sessions.revoke` closes for the sessions
+   * it ended. Absent: the revoke still happens; only the close is skipped.
+   */
+  readonly sessionSockets?: SessionSocketPort;
 }
 
 /**
@@ -190,7 +214,7 @@ export function registerFacadeHandlers(
   registerW2EntitiesCommandsTrackingHandlers(registry, facade);
   registerW2IdentitySpacesHandlers(registry, facade);
   // auth.* (Identity v2 Stage 1): local accounts over the 007 RPC surface.
-  registerW2AuthHandlers(registry, facade);
+  registerW2AuthHandlers(registry, facade, deps.sessionSockets ? { sockets: deps.sessionSockets } : {});
   registerW2ServerConnectionHandlers(registry, facade);
   registerW2EdgesPlacementsHandlers(registry, facade);
   registerW2CollectionsGraphUndoHandlers(registry, facade);
@@ -208,6 +232,10 @@ export function registerFacadeHandlers(
   registerLaunchDefaultsHandler(registry, facade);
   // spaces.chatDefaults.get/set (entity-chat §3.4): per-kind chat defaults, migration 229.
   registerChatDefaultsHandlers(registry, facade);
+  // spaces.leave / spaces.members.remove / accounts.disable (G6, migration 232).
+  registerMembershipHandlers(registry, facade, deps.membership ?? {});
+  // node.metrics.get: host CPU/memory/load/disk for the desktop status strip (node admin).
+  registerNodeMetricsHandlers(registry, facade);
   // Tier 4 git×graph: the read-only file-contention map over active worktrees.
   registerContentionHandlers(registry, facade);
   // Git UI wave: the session git rail — status/diff reads and the #76 verbs
@@ -308,4 +336,8 @@ export function registerFacadeHandlers(
    * forgets.
    */
   if (deps.credentials) registerCredentialHandlers(registry, facade, deps.credentials);
+
+  // W6 space links: the writes are human-only inside the registration (and in SQL).
+  const spaceLinks = deps.spaceLinks ?? (deps.credentials ? { dataDir: deps.credentials.dataDir } : undefined);
+  if (spaceLinks) registerSpaceLinkHandlers(registry, facade, spaceLinks);
 }

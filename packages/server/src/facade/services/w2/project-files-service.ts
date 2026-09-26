@@ -423,7 +423,8 @@ export class W2ProjectFilesService {
     const claims: DbClaims = {
       ...base,
       identityId: viewerIdentityId,
-      nodeAdmin: viewerIdentityId === owner.identityId ? owner.isNodeAdmin : false,
+      // K6 (W3): a space-pinned session never holds node admin.
+      nodeAdmin: ctx.identity?.sessionSpaceId ? false : viewerIdentityId === owner.identityId ? owner.isNodeAdmin : false,
     };
     if (requireNodeAdmin && claims.nodeAdmin !== true) {
       throw new CollabError('forbidden', 'node-admin access is required to attach project files');

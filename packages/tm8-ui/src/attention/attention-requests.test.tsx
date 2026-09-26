@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, waitFor } from '@testing-library/react';
 import type {
   AttentionRequest,
   AttentionRequestMutationResult,
@@ -8,7 +8,7 @@ import type {
   EntityId,
   SpaceId,
 } from '@tm8/contract';
-import { AttentionRequests } from './AttentionRequests';
+import { AttentionRequests, UNDO_WINDOW_MS } from './AttentionRequests';
 import { leadPending, orderHistory, settlementLine, summarizeHistory } from './attention-history';
 import { attentionPortFromSeam, type AttentionPort } from './port';
 import { createFixtureSeam } from '../data/fixtures/seam-fixture';
@@ -588,6 +588,171 @@ describe('stability under a re-rendering host', () => {
 
     await waitFor(() => expect(fresh).toHaveBeenCalledTimes(1));
     expect(stale).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * SETTLING RECONCILES, AND CAN BE TAKEN BACK (Attention v2 S0, G4/G5/Q18).
+ *
+ * Two behaviours that used to be missing and one that was actively broken:
+ *   · `onSettled` now carries the mutation's summary, so the host can update the
+ *     tile and the top-bar count with no request. It used to be `() => void` and
+ *     every host answered it with `data.pull`, which returns early on an open
+ *     panel and therefore never moved the badge at all.
+ *   · The dock patches the settled row in place from the returned copy instead of
+ *     refetching its whole history.
+ *   · Undo puts the row back to `open`, using the version the SERVER returned —
+ *     the pre-write version in `rows` would conflict.
+ */
+describe('settling the dock — reconcile and Undo', () => {
+  const settled = (over: Partial<AttentionRequest>): AttentionRequest =>
+    req({ id: 'open1', points: 65, version: 2, status: 'resolved', ...over });
+
+  /** A port whose settle answers with the row as the server would return it. */
+  function settlingPort(rows: AttentionRequest[]) {
+    const settle = vi.fn(async (input: { requestId: string; expectedVersion: number; status: AttentionRequestStatus }) => ({
+      request: settled({ id: input.requestId, status: input.status, version: input.expectedVersion + 1 }),
+      entity: { id: ENTITY, badges: {} } as never,
+      affectedCount: 1,
+    }));
+    return { settle, port: fakePort(rows, { settle }) };
+  }
+
+  const openRow = () => [req({ id: 'open1', points: 65, status: 'open', version: 1 })];
+
+  async function resolveIt(rows: AttentionRequest[], onSettled?: (r: AttentionRequestMutationResult) => void) {
+    const { settle, port } = settlingPort(rows);
+    const view = render(
+      <AttentionRequests entityId={ENTITY} port={port} rows={rows} now={NOW} {...(onSettled ? { onSettled } : {})} />,
+    );
+    await view.findByTestId('attention-request-open1');
+    fireEvent.click(view.getByTestId('attention-resolve-open1'));
+    fireEvent.click(view.getByTestId('attention-confirm-open1'));
+    return { ...view, settle };
+  }
+
+  it('settle reconciles the tile — onSettled carries the summary, not a bare ping', async () => {
+    const onSettled = vi.fn();
+    await resolveIt(openRow(), onSettled);
+
+    await waitFor(() => expect(onSettled).toHaveBeenCalledTimes(1));
+    // THE WHOLE POINT: the host is handed the entity summary the mutation
+    // already returned, so `reconcileCommand` can ingest it without a read.
+    const result = onSettled.mock.calls[0]![0] as AttentionRequestMutationResult;
+    expect(result.entity).toMatchObject({ id: ENTITY });
+    expect(result.affectedCount).toBe(1);
+  });
+
+  it('patches the settled row in place — no refetch of the history', async () => {
+    const rows = openRow();
+    const history = vi.fn(async () => ({ rows, truncated: false }));
+    const { settle, port } = settlingPort(rows);
+    const view = render(
+      <AttentionRequests entityId={ENTITY} port={{ ...port, history }} now={NOW} />,
+    );
+    await view.findByTestId('attention-request-open1');
+    expect(history).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(view.getByTestId('attention-resolve-open1'));
+    fireEvent.click(view.getByTestId('attention-confirm-open1'));
+    await waitFor(() => expect(settle).toHaveBeenCalledTimes(1));
+
+    // The row now reads as settled...
+    await waitFor(() =>
+      expect(view.getByTestId('attention-request-open1').getAttribute('data-status')).toBe('resolved'),
+    );
+    // ...and the history was never re-read to learn that.
+    expect(history).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers Undo after a Resolve, and names the outcome', async () => {
+    const view = await resolveIt(openRow());
+    const toast = await view.findByTestId('attention-undo');
+    expect(toast.textContent).toContain('Request resolved.');
+    expect(view.getByTestId('attention-undo-act')).toBeTruthy();
+  });
+
+  it('says "declined" after a Decline', async () => {
+    const rows = openRow();
+    const { port } = settlingPort(rows);
+    const view = render(<AttentionRequests entityId={ENTITY} port={port} rows={rows} now={NOW} />);
+    await view.findByTestId('attention-request-open1');
+    fireEvent.click(view.getByTestId('attention-dismiss-open1'));
+    fireEvent.click(view.getByTestId('attention-confirm-open1'));
+
+    const toast = await view.findByTestId('attention-undo');
+    expect(toast.textContent).toContain('Request declined.');
+  });
+
+  it('Undo re-opens the settled row, at the version the SERVER returned', async () => {
+    const onSettled = vi.fn();
+    const view = await resolveIt(openRow(), onSettled);
+    await view.findByTestId('attention-undo');
+
+    fireEvent.click(view.getByTestId('attention-undo-act'));
+
+    await waitFor(() => expect(view.settle).toHaveBeenCalledTimes(2));
+    // Version 2, not the 1 that is still sitting in the injected `rows`: the
+    // resolve bumped it, and sending the stale number is a version_conflict.
+    expect(view.settle.mock.calls[1]![0]).toMatchObject({
+      requestId: 'open1',
+      expectedVersion: 2,
+      status: 'open',
+    });
+    // The row is actionable again, and the host was told so it can re-amber.
+    await waitFor(() =>
+      expect(view.getByTestId('attention-request-open1').getAttribute('data-status')).toBe('open'),
+    );
+    expect(onSettled).toHaveBeenCalledTimes(2);
+  });
+
+  it('the Undo offer clears once taken — one step back, not a toggle', async () => {
+    const view = await resolveIt(openRow());
+    await view.findByTestId('attention-undo');
+
+    fireEvent.click(view.getByTestId('attention-undo-act'));
+
+    await waitFor(() => expect(view.queryByTestId('attention-undo')).toBeNull());
+  });
+
+  it('expires the Undo offer after its window, so a stale toast never lingers', async () => {
+    vi.useFakeTimers();
+    try {
+      const rows = openRow();
+      const { port } = settlingPort(rows);
+      const view = render(<AttentionRequests entityId={ENTITY} port={port} rows={rows} now={NOW} />);
+      fireEvent.click(view.getByTestId('attention-resolve-open1'));
+      fireEvent.click(view.getByTestId('attention-confirm-open1'));
+      await vi.waitFor(() => expect(view.queryByTestId('attention-undo')).not.toBeNull());
+
+      await act(async () => { vi.advanceTimersByTime(UNDO_WINDOW_MS + 1); });
+      expect(view.queryByTestId('attention-undo')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('no Undo is offered when the server returned no row — there is no version to send', async () => {
+    const rows = openRow();
+    const settle = vi.fn(async () => ({ request: null, entity: { id: ENTITY } as never, affectedCount: 1 }));
+    const view = render(
+      <AttentionRequests entityId={ENTITY} port={fakePort(rows, { settle })} rows={rows} now={NOW} />,
+    );
+    fireEvent.click(view.getByTestId('attention-resolve-open1'));
+    fireEvent.click(view.getByTestId('attention-confirm-open1'));
+
+    await waitFor(() => expect(settle).toHaveBeenCalledTimes(1));
+    expect(view.queryByTestId('attention-undo')).toBeNull();
+  });
+
+  it('the FOOTNOTE about opening resolving things is gone — it is no longer true', async () => {
+    const rows = [req({ id: 'r1', points: 20, status: 'resolved', version: 2 })];
+    const view = render(
+      <AttentionRequests entityId={ENTITY} port={fakePort(rows)} rows={rows} now={NOW} />,
+    );
+    fireEvent.click(view.getByTestId('attention-bar'));
+    await view.findByTestId('attention-sheet');
+    expect(view.container.textContent).not.toContain('Opening an entity resolves');
   });
 });
 

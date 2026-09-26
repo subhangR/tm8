@@ -45,9 +45,9 @@ describe('containers — the kind itself', () => {
     expect(CreatableEntityKindSchema.safeParse('container').success).toBe(false);
   });
 
-  it('carries all 25 catalog rows, every one v1', () => {
+  it('carries all 24 catalog rows, every one v1', () => {
     const rows = OPERATIONS.filter((op) => op.name.startsWith('containers.'));
-    expect(rows).toHaveLength(25);
+    expect(rows).toHaveLength(24); /* -1 containers.attention (Attention v2 S7a). MEASURED. */
     expect(rows.every((op) => op.status === 'v1')).toBe(true);
   });
 

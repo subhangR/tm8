@@ -109,7 +109,6 @@ const COMPUTER_ACTIONS = [
  *  are `containers.computer` actions with a friendlier spelling. */
 const BROWSER_ACTIONS = ['endpoint', 'goto', 'text'] as const;
 
-const ATTENTION_REASONS = ['login', 'captcha', '2fa', 'payment', 'approval', 'other'] as const;
 
 /**
  * A closed-set option, with the whole set in the diagnostic.
@@ -1357,35 +1356,6 @@ async function containerFork(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
-/** `tm8 container attention <id> --reason <r>` — ask a human to take over
- *  (§12.5). The same bounded-points shape `attentionRequests.create` uses. */
-async function containerAttention(cmd: CommandContext): Promise<ExitCode> {
-  assertKnownOptions(cmd, ['reason', 'detail', 'points', 'mutation-id']);
-  const containerId = requireContainerId('container attention', cmd.args[0]);
-  const reason = closed('reason', cmd.options.value('reason'), ATTENTION_REASONS);
-  if (reason === undefined) {
-    throw new CliError(
-      `\`tm8 container attention\` requires --reason ${ATTENTION_REASONS.join('|')}`,
-      EXIT_USAGE,
-    );
-  }
-  const body: Record<string, unknown> = {
-    clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
-    reason,
-  };
-  const detail = boundedOption(cmd, 'detail', 0, 4096);
-  if (detail !== undefined) body.detail = detail;
-  const points = boundedInt(cmd, 'points', 1, 100);
-  if (points !== undefined) body.points = points;
-
-  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'containers.attention', {
-    params: { containerId },
-    body: withActor(cmd, body),
-  });
-  cmd.out.data(data, renderContainer);
-  return EXIT_OK;
-}
-
 /** `tm8 container pool <template-id> --expect-version <n> --warm <n>` — how
  *  many machines to keep warm from a TEMPLATE container. The positional is the
  *  template's id and the guard is the template's version. */
@@ -1453,7 +1423,6 @@ export const CONTAINER_COMMANDS: CommandModule[] = [
   { path: ['container', 'unexpose'], run: containerUnexpose },
   { path: ['container', 'snapshot'], run: containerSnapshot },
   { path: ['container', 'fork'], run: containerFork },
-  { path: ['container', 'attention'], run: containerAttention },
   { path: ['container', 'pool'], run: containerPool },
   { path: ['container', 'providers'], run: containerProviders },
 ];

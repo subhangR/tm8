@@ -81,7 +81,7 @@ export function LedgerPanel({
   streamingIds,
 }: LedgerPanelProps) {
   const [expanded, setExpanded] = useState(false);
-  const [scope, setScope] = useState<Scope>('sessions');
+  const [chosenScope, setScope] = useState<Scope>('sessions');
   const [menuOpen, setMenuOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -134,6 +134,13 @@ export function LedgerPanel({
     }
     return [...parents].filter((id) => ledger.creates.some((c) => c.id === id));
   }, [ledger]);
+  /* A CHOSEN ENTITY SCOPE HOLDS ONLY WHILE THIS LEDGER OFFERS IT. The panel
+     is not remounted per thread, so a scope picked in one conversation used
+     to follow the viewer into the next — where its id matched nothing, the
+     bar printed the truncated raw id as its label (R8) and "nothing created
+     here" as its summary. Out of the menu means back to sessions. */
+  const scope: Scope =
+    chosenScope !== 'sessions' && !entityScopes.includes(chosenScope) ? 'sessions' : chosenScope;
 
   const statusOf = useCallback(
     (id: string): LedgerNodeStatus | null => {

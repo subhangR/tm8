@@ -39,6 +39,7 @@ import { createHttpClient, type HttpClient } from '../data/real/http';
 import { LOCAL_SERVER_ID, readActiveServerId, routeBaseUrlFor } from '../servers/server-key';
 import { ptyTransport } from '../terminal/pty/ptyTransport';
 import { endSession } from './session-reset';
+import { endSpaceSessions, spaceSessionFor } from './space-sessions';
 import {
   KNOWN_ACCOUNTS_KEY,
   PASSES_STORAGE_KEY,
@@ -101,6 +102,9 @@ function clientForActiveServer(): { client: HttpClient; serverId: string } {
     baseUrl: routeBaseUrlFor(serverId),
     fetch: (url, init) => globalThis.fetch(url, init),
     getAuthToken: () => readServerPass(serverId)?.token ?? null,
+    // Only ever gate calls (logout, session.get): on an enforcing server they
+    // go without the pinned cookie, which would conflict with the pass.
+    spaceSession: spaceSessionFor(serverId),
   });
   return { client, serverId };
 }
@@ -394,6 +398,9 @@ export function signOutOfServer(): void {
   clearCachedAutoOwner(serverId);
 
   if (pass) {
+    // W3: the pinned sessions minted from this pass go first, each revoked
+    // with its own token, while their parent still matches.
+    endSpaceSessions(serverId);
     // Capture-free: the client's getAuthToken still reads the store, so the
     // revoke must be DISPATCHED before the pass is cleared.
     void client.call('auth.logout', { body: {} }).catch(() => {

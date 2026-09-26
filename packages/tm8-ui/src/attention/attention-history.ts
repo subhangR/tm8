@@ -76,6 +76,8 @@ export const STATUS_LABEL: Readonly<Record<AttentionRequestStatus, string>> = {
   acknowledged: 'Seen',
   resolved: 'Resolved',
   dismissed: 'Declined',
+  // Attention v2: tm8 settled its own system row because the condition ended.
+  cleared: 'Cleared',
 };
 
 /**
@@ -93,7 +95,7 @@ export function settlementLine(row: AttentionRequest, now?: string): string | nu
     if (!who && !when) return 'Seen';
     return `Seen by ${who ?? 'someone'}${when ? ` · ${relTime(when, now ? Date.parse(now) : undefined)}` : ''}`;
   }
-  const verb = row.status === 'resolved' ? 'Resolved' : 'Declined';
+  const verb = STATUS_LABEL[row.status];
   const who = row.resolvedBy?.displayName;
   const when = row.resolvedAt;
   if (!who && !when) return verb;

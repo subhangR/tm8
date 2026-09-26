@@ -278,7 +278,13 @@ export function createArtifactPreviewHandler(opts: ArtifactPreviewHandlerOptions
       return;
     }
 
-    const viewerClaims: DbClaims = { identityId: session.viewer_identity_id, nodeAdmin: false };
+    // W3: the capability is pinned to the artifact's own space, so the reads
+    // below cannot reach another space whatever the viewer belongs to.
+    const viewerClaims: DbClaims = {
+      identityId: session.viewer_identity_id,
+      nodeAdmin: false,
+      sessionSpaceId: session.space_id,
+    };
     // Soft delete and authorization in one read: RLS answers nothing for a
     // viewer who is no longer a member, and the predicate refuses a deleted
     // artifact — both land as the same honest `forbidden`.

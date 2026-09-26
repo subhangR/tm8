@@ -117,9 +117,9 @@ export interface ServerConfig {
   readonly nodeMode?: 'single' | 'multi';
   /**
    * `TM8_SPACE_SESSIONS=off|agents|enforce`, default `agents` (plan W0a).
-   * Whether an agent session's `auth_sessions.space_id` is bound as the
-   * `tm8.session_space_id` claim. Read once here; a change is a restart.
-   * `enforce` is reserved for W3 and behaves as `agents` until then.
+   * Whether a session's `auth_sessions.space_id` is bound as the
+   * `tm8.session_space_id` claim, and (`enforce`, W3) whether a human gate
+   * session is confined to the gate's ops. Read once here; a change is a restart.
    */
   readonly spaceSessions?: SpaceSessionsMode;
   /**
