@@ -1471,7 +1471,11 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
       <EntityListPanel kind="task" rowsFor={() => [taskUuidTitle]} ctx={ctx} />,
     );
     const tile = list.getAllByTestId('list-tile')[0]!;
-    expect(tile.querySelectorAll('.lp__rowaction')).toHaveLength(0);
+    // The one live row verb is a LAUNCH verb: any member who can spawn may
+    // open the card (owner, launch card v3), and with nothing wired its
+    // Launch refuses inside it with the reason — not enabled-inert.
+    const live = [...tile.querySelectorAll<HTMLElement>('.lp__rowaction')];
+    expect(live.map((b) => b.getAttribute('aria-label') ?? b.textContent ?? '').every((w) => /\b(Run|Coordinate)\b/.test(w))).toBe(true);
     expect(tile.querySelectorAll('[data-testid="disabled-with-reason"]').length).toBeGreaterThan(0);
   });
 
@@ -1706,8 +1710,8 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     fireEvent.click(
       within(view.getByTestId('panel-action-bar')).getByRole('button', { name: /^Run$/i }),
     );
-    // The subject's name is the title field's VALUE now (not chrome text).
-    expect((view.getByTestId('nsx-title') as HTMLInputElement).value).toBe(task.title);
+    // The card names its subject in the pinned title-row chip.
+    expect(view.getByTestId('lcd3-subject').textContent).toContain(task.title);
 
     // The SAME instance, a different entity — exactly what a Back press does.
     view.rerender(
@@ -1784,7 +1788,8 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     fireEvent.click(within(bar).getByRole('button', { name: /^Run$/i }));
     expect(view.getByTestId('launch-quick-config').getAttribute('aria-label')).toBe('Run configuration');
 
-    fireEvent.click(view.getByTestId('nsx-send')); // the popup composer's Launch
+    fireEvent.click(view.getByTestId('nsx-send')); // the card's Launch opens its preview…
+    fireEvent.click(await view.findByTestId('lcd3-preview-confirm')); // …whose Launch commits
     await waitFor(() => expect(onSpawn).toHaveBeenCalled());
     // The payload must agree with the button that was actually pressed.
     expect(onSpawn.mock.calls[0]![0].mode).toBe('worker');
@@ -1804,7 +1809,8 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     const bar = view.getByTestId('panel-action-bar');
     fireEvent.click(within(bar).getByRole('button', { name: /^Run$/i }));
     fireEvent.click(within(bar).getByRole('button', { name: /^Coordinate$/i }));
-    fireEvent.click(view.getByTestId('nsx-send')); // the popup composer's Launch
+    fireEvent.click(view.getByTestId('nsx-send')); // the card's Launch opens its preview…
+    fireEvent.click(await view.findByTestId('lcd3-preview-confirm')); // …whose Launch commits
     await waitFor(() => expect(onSpawn).toHaveBeenCalled());
     expect(onSpawn.mock.calls[0]![0].mode).toBe('coordinator');
   });

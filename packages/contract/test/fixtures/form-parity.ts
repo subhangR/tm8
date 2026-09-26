@@ -39,14 +39,19 @@ export interface FormConfigParityCase {
 
 export const PARITY_QUESTIONS: FormParityQuestion[] = [
   { key: 'sc', type: 'single_choice', title: 'Pick one', config: {
-    options: [{ value: 'x', label: 'Ex' }, { value: 'y', label: 'Why', recommended: true }] } },
+    options: [{ value: 'x', label: 'Ex' }, { value: 'y', label: 'Why', recommended: true }], allowOther: false } },
   { key: 'sco', type: 'single_choice', title: 'Pick one or write in', required: false, config: {
     options: [{ value: 'x', label: 'Ex' }, { value: 'y', label: 'Why' }], allowOther: true, display: 'dropdown' } },
   { key: 'mc', type: 'multi_choice', title: 'Pick one or two', config: {
     options: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }, { value: 'c', label: 'C' }],
-    minSelected: 1, maxSelected: 2 } },
+    minSelected: 1, maxSelected: 2, allowOther: false } },
   { key: 'mco', type: 'multi_choice', title: 'Pick any', required: false, config: {
     options: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }], allowOther: true } },
+  // No `allowOther` at all: the write-in is ON by default (both arms).
+  { key: 'scd', type: 'single_choice', title: 'Pick one, default write-in', required: false, config: {
+    options: [{ value: 'x', label: 'Ex' }, { value: 'y', label: 'Why' }] } },
+  { key: 'mcd', type: 'multi_choice', title: 'Pick any, default write-in', required: false, config: {
+    options: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }] } },
   { key: 'st', type: 'short_text', title: 'Short', config: { maxLength: 5 } },
   { key: 'stp', type: 'short_text', title: 'Code', required: false, config: { pattern: '[a-z]+-[0-9]{2}' } },
   { key: 'lt', type: 'long_text', title: 'Long', required: false, config: { minLength: 3, maxLength: 10 } },
@@ -94,6 +99,7 @@ export const ANSWER_CASES: FormAnswerParityCase[] = [
   final('single: write-in blank', withAnswer({ sco: { other: ' \t ' } }), ['sco:invalid_shape']),
   final('single: write-in too long', withAnswer({ sco: { other: 'w'.repeat(2001) } }), ['sco:too_long']),
   final('single: write-in at the limit', withAnswer({ sco: { other: 'w'.repeat(2000) } }), []),
+  final('single: write-in allowed by default', withAnswer({ scd: { other: 'z' } }), []),
 
   // multi_choice
   final('multi: nothing selected, required', withAnswer({ mc: { values: [] } }), ['mc:required']),
@@ -106,6 +112,7 @@ export const ANSWER_CASES: FormAnswerParityCase[] = [
     ['mc:not_an_option', 'mc:too_many']),
   final('multi: write-in not allowed', withAnswer({ mc: { values: ['a'], other: 'x' } }), ['mc:other_not_allowed']),
   final('multi: write-in only', withAnswer({ mco: { values: [], other: 'x' } }), []),
+  final('multi: write-in allowed by default', withAnswer({ mcd: { values: ['a'], other: 'x' } }), []),
   final('multi: write-in blank', withAnswer({ mco: { values: ['a'], other: '' } }), ['mco:invalid_shape']),
   final('multi: values not an array', withAnswer({ mc: { values: 'a' } }), ['mc:invalid_shape']),
   final('multi: values missing', withAnswer({ mc: { other: 'x' } }), ['mc:invalid_shape']),

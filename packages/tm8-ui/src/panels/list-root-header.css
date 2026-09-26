@@ -1,4 +1,4 @@
-/* THE ROOT HEADER (task 01a00932 R5): [Chats ＋][Kind ＋ ▾]. Two segmented
+/* THE ROOT HEADER (task 01a00932 R5; task 01a0df28): [☐ ❝ ▮][Kind ＋ ▾]. Segmented
    cells sharing one strip — the label half switches the root, the ＋ half
    creates, the caret opens the kind menu. Labels only — no counts (D16). */
 /* Lifted verbatim out of `chat-home.css` when the Work tab adopted this same
@@ -282,4 +282,39 @@
      query, so the reveal is unpinned here too — a simulated shell on a mouse
      would otherwise hide a control the ledger counts as tappable. */
   opacity: 1;
+}
+
+/* THE QUICK-CREATE ICONS (task 01a0df28) — [☐ ❝ ▮] before the tablist, in
+   the place the [Chats ＋] cell held. Framed like `.tch-roots` so the two
+   groups read as siblings on one strip; each icon is one create. */
+.tch-quick {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+}
+.tch-quick__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: calc(var(--pn-r-sm) - 2px);
+  background: transparent;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-ui);
+  font-size: 12px;
+  cursor: pointer;
+}
+.tch-quick__btn:hover { color: var(--pn-ink); background: var(--pn-hover); }
+.tch-quick__btn[aria-disabled='true'] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.cv2-root[data-shell='mobile'] .tch-quick__btn {
+  min-inline-size: var(--mobile-touch-min);
+  min-block-size: var(--mobile-touch-min);
 }

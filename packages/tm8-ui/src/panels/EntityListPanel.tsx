@@ -8,6 +8,7 @@ import type {
   EntityCapabilities,
   EntityId,
   EntitySummary,
+  CredentialsServiceKeysStatusView,
   ExecutionDispatchResult,
   ExecutionSpawnInput,
 } from '@tm8/contract';
@@ -534,7 +535,14 @@ export interface LaunchSources {
    * chooses the teammate itself; `note` is the card's instructions. Absent ⇒
    * the launch card draws no Dispatch button.
    */
-  dispatch?: (subjectId: EntityId, note?: string) => Promise<ExecutionDispatchResult>;
+  dispatch?: (subjectId: EntityId, note?: string, clientMutationId?: string) => Promise<ExecutionDispatchResult>;
+  /**
+   * `credentials.serviceKeys.status`, so the v3 card's ✦ knows before the
+   * first click whether a TypeSafe key (the member's, else the node's) exists.
+   */
+  jevKeyStatus?: () => Promise<CredentialsServiceKeysStatusView>;
+  /** Sessions working on `subjectId` created since `since` — checked after a spawn timeout, before any retry. */
+  sessionsSince?: (subjectId: string, since: string) => Promise<readonly { id: string; title: string }[]>;
 }
 
 /**
@@ -3611,18 +3619,16 @@ export function Tile({
               selection={props.launch?.selection}
               profileFor={props.launch?.profileFor}
               upload={props.launch?.upload}
-              onDispatch={props.launch?.dispatch ? (note) => props.launch!.dispatch!(row.id, note) : undefined}
+              onDispatch={props.launch?.dispatch ? (note, key) => props.launch!.dispatch!(row.id, note, key) : undefined}
+              jevKeyStatus={props.launch?.jevKeyStatus}
+              sessionsSince={props.launch?.sessionsSince}
               onSpawn={props.launch?.onSpawn}
               loadDescription={
                 props.launch?.descriptionOf
                   ? () => props.launch!.descriptionOf!(row.id)
                   : undefined
               }
-              onSaveSubject={
-                props.launch?.onUpdateEntity
-                  ? (edits) => props.launch!.onUpdateEntity!(row.id, edits)
-                  : undefined
-              }
+              canEditSubject={Boolean(props.launch?.onUpdateEntity)}
               onDismiss={() => setFlowRef(null)}
               newClientMutationId={() => props.launch?.mutationId(row.id) ?? newLaunchMutationId()}
             />
@@ -3871,18 +3877,16 @@ export function Tile({
               selection={props.launch?.selection}
               profileFor={props.launch?.profileFor}
               upload={props.launch?.upload}
-              onDispatch={props.launch?.dispatch ? (note) => props.launch!.dispatch!(row.id, note) : undefined}
+              onDispatch={props.launch?.dispatch ? (note, key) => props.launch!.dispatch!(row.id, note, key) : undefined}
+              jevKeyStatus={props.launch?.jevKeyStatus}
+              sessionsSince={props.launch?.sessionsSince}
             onSpawn={props.launch?.onSpawn}
             loadDescription={
               props.launch?.descriptionOf
                 ? () => props.launch!.descriptionOf!(row.id)
                 : undefined
             }
-            onSaveSubject={
-              props.launch?.onUpdateEntity
-                ? (edits) => props.launch!.onUpdateEntity!(row.id, edits)
-                : undefined
-            }
+            canEditSubject={Boolean(props.launch?.onUpdateEntity)}
             onDismiss={() => setFlowRef(null)}
             newClientMutationId={() => props.launch?.mutationId(row.id) ?? newLaunchMutationId()}
           />

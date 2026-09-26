@@ -9,7 +9,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { useState } from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import {
   FORM_QUESTION_TYPE_NAMES,
@@ -126,6 +126,19 @@ describe('single_choice input', () => {
     fireEvent.change(screen.getByLabelText('Other answer'), { target: { value: 'Gamma' } });
     expect(m.last()).toEqual({ other: 'Gamma' });
     expect(m.valid()).toEqual([]);
+  });
+
+  it('offers the write-in as the last option unless the author turns it off', () => {
+    mount(q({ type: 'single_choice', config: { options: OPTIONS } }));
+    const radios = screen.getAllByRole('radio');
+    expect(radios).toHaveLength(OPTIONS.length + 1);
+    expect(radios.at(-1)).toBe(screen.getByLabelText('Other'));
+    cleanup();
+    mount(q({ type: 'multi_choice', config: { options: OPTIONS } }));
+    expect(screen.getAllByRole('checkbox').at(-1)).toBe(screen.getByLabelText('Other'));
+    cleanup();
+    mount(q({ type: 'single_choice', config: { options: OPTIONS, allowOther: false } }));
+    expect(screen.queryByLabelText('Other')).toBeNull();
   });
 
   it('dropdown: selects, writes in, and clears', () => {

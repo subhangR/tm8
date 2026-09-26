@@ -40,7 +40,7 @@ import type { NavPort } from '../shell/nav-port';
 import type { Notice } from '../shell/notices';
 import { toSessionRow } from '../terminal';
 import { placeholderTitleFor, useNewTask } from '../authoring';
-import { homeRootKinds } from '../domain/home-rail';
+import { homeQuickBirthKinds, homeRootKinds } from '../domain/home-rail';
 import { allKinds, getKind } from '../domain/registry';
 import { placeholderNameFor } from '../domain/title-grammar';
 import { QUIET_SESSION_DETAIL, needsAttentionOf } from '../domain/needs-attention';
@@ -746,9 +746,17 @@ export function WorkspaceView(props: WorkspaceViewProps) {
     return (
       <ListRootHeader
         rootsLabel={`${isLeft ? 'Left' : 'Right'} panel list`}
+        /* The same quick-create icons Home draws (task 01a0df28). The chat
+           icon's `chat-about` navigates to Home's composer — this surface's
+           centre is the ink stage and cannot host one. */
+        quickKinds={homeQuickBirthKinds().map((k) => ({
+          kind: k.kind,
+          label: k.labelPlural,
+          single: k.label,
+        }))}
         cell={{ kind: config.kind, label: config.labelPlural, single: config.label }}
-        /* No Chats cell here, so this column's one root is always the
-           selected one — there is nothing else it could be showing. */
+        /* The column's one root is always the selected one — there is
+           nothing else it could be showing. */
         cellActive
         onSelectCell={() => undefined}
         {...(birth.refusal === null ? { onCreate: birth.perform } : {})}
@@ -762,6 +770,8 @@ export function WorkspaceView(props: WorkspaceViewProps) {
         onPickKind={(kind) => onKindChange?.(kind)}
         onCreateKind={(kind) => birthFor(kind).perform()}
         createKindUnavailable={(kind) => birthFor(kind).refusal}
+        onQuickBirth={(kind) => birthFor(kind).perform()}
+        quickBirthUnavailable={(kind) => birthFor(kind).refusal}
       />
     );
   };
