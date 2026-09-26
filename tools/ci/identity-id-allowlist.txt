@@ -27,6 +27,7 @@ identity_id internal.current_member_id(target_space uuid)  # PIN-HELPER: pinned;
 identity_id internal.entity_readable(target uuid)  # PIN-HELPER: inline pin on entity_row.space_id plus membership (227_session_space_pin.sql)
 identity_id internal.entity_row_visible(p_id uuid, p_space_id uuid, p_kind text, p_visibility text)  # PIN-HELPER: inline pin on p_space_id plus membership (227_session_space_pin.sql)
 identity_id internal.form_is_caller(p_respondent_id uuid)  # GUARDED: only used in form_responses/form_deliveries RLS, ANDed with a pinned entities_select subquery (209_forms_foundation.sql)
+identity_id internal.grant_folder_row(p_space_id uuid, p_folder_id uuid)  # STAMP: identity_id() only stamps space_projects.linked_by/granted_by; EXECUTE revoked from public, no tm8_app grant; callers guard first: grant_folder and register_folder run require_gate_admin (refuses any pinned session), create_space_project runs require_space_admin(p_space_id) -> is_space_admin and require_gate_admin unless already granted (234_space_owned_projects.sql)
 identity_id internal.is_authenticated()  # PIN-HELPER: identity primitive; not security definer, reads accounts only (002_identity.sql)
 identity_id internal.is_space_admin(target_space uuid)  # PIN-HELPER: pinned (227_session_space_pin.sql)
 identity_id internal.is_space_member(target_space uuid)  # PIN-HELPER: pinned; require_space_member calls it (227_session_space_pin.sql)
