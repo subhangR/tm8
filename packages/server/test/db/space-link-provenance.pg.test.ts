@@ -523,6 +523,20 @@ describe('W7p setSpawn(false) — no new mint under the link; running sessions u
     const resumed = await mintChild(L.human, { workSessionId: child.workSessionId });
     expect((await sessionRow(resumed.id)).via_link_id).toBe(L.link.id);
   });
+
+  // A-6b (lead's final ruling): the 206 read stays gated on allow_spawn, so a
+  // RUNNING child keeps its token (3) but cannot re-read the space default.
+  it("(5) a running via_link child's 206 re-read is refused while spawning is off, and admitted after setSpawn(true)", async () => {
+    const L = await linked();
+    const child = await claimsForToken((await mintChild(L.linkClaims)).token);
+    expect(await read206(child)).toMatchObject({ credentialId: fixture.antDefaultB });
+    await withSpawnOff(L, async () => {
+      expect(await outcome(() => read206(child))).toBe('42501');
+      expect(await outcome(() => read206(child, null, 'github'))).toBe('42501');
+    });
+    expect(await read206(child)).toMatchObject({ credentialId: fixture.antDefaultB });
+    expect(await read206(child, null, 'github')).toMatchObject({ credentialId: fixture.ghDefaultB });
+  });
 });
 
 describe('W7p open_space_link_token and mark_space_link_stale — no chaining', () => {
