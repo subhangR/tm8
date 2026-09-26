@@ -5,7 +5,7 @@ import { loadMemoriesById, renderMemoryText, type MemoryRow } from './spawn-memo
 import { loadSkillsById } from '../skills/equipment.js';
 import { linkSession } from '../jev/store.js';
 import { CRITICAL_SCORE } from '../jev/groups.js';
-import { computeEffectiveSkills, splitTaskSkillCollisions, type ResolvedSkillRow } from '@tm8/execution';
+import { computeEffectiveSkills, splitSelectionSkillCollisions, splitTaskSkillCollisions, type ResolvedSkillRow } from '@tm8/execution';
 import { scanSpaceSkills } from '../skills/service.js';
 /**
  * The execution.* handler family (R16) — where the graph meets the terminal.
@@ -631,6 +631,24 @@ export class DbGraphPort implements GraphPort {
           ...(row.sourcePath ? { sourcePath: row.sourcePath } : {}),
           reason: 'not-selected',
         }));
+        // A skill picked for this launch beside an equipped one of the same
+        // name (a full skill and its reference card) never fails the spawn:
+        // the pick wins and the equipped row is declared. Equipped-only
+        // collisions still refuse, as the persona path always has.
+        const selectionCollisions = splitSelectionSkillCollisions(skillEquips, new Set(selectionOnlySkillIds));
+        if (selectionCollisions.collided.length > 0) {
+          skillEquips = selectionCollisions.kept;
+          skippedSkills = [
+            ...skippedSkills,
+            ...selectionCollisions.collided.map((row) => ({
+              entityId: row.entityId,
+              name: row.name,
+              ...(row.contentHash ? { hash: row.contentHash } : {}),
+              ...(row.sourcePath ? { sourcePath: row.sourcePath } : {}),
+              reason: 'selection-name-collision',
+            })),
+          ];
+        }
       }
       // Two task skills with one name never fail the spawn: the first in task
       // order (then name, as the loader sorts) wins and the rest are declared.

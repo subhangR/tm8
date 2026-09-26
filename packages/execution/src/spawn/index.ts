@@ -66,6 +66,7 @@ export {
 export {
   resolveSkills,
   skillIdentityKey,
+  splitSelectionSkillCollisions,
   splitTaskSkillCollisions,
   type ResolvedSkillRow,
   type SkillResolution,

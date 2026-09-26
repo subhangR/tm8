@@ -677,6 +677,7 @@ export type ContextDropReason =
   | 'not-selected'
   | 'byte-budget'
   | 'task-name-collision'
+  | 'selection-name-collision'
   | 'native-shadowed'
   | 'count-cap'
   /**
