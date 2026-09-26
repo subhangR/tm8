@@ -104,6 +104,26 @@ describe('StatusStrip — order and content', () => {
     expect(text('status-strip-rss')).toBe('tm8412 MB');
   });
 
+  /* The in-bar ladder (`shell.css`) hides `--shed-N` in ascending N as the
+     top bar narrows. Pinned here because jsdom cannot see the ladder itself:
+     a renumbered segment would silently change what the owner loses first. */
+  it('carries the in-bar shed order: tm8, disk, load, mem, cpu, chats, sessions', async () => {
+    const { seam } = fakeSeam();
+    render(<StatusStrip seam={seam} spaceId={SPACE} placement="bar" />);
+    await waitFor(() => expect(screen.queryByTestId('status-strip-cpu')).not.toBeNull());
+    expect(screen.getByTestId('status-strip').className).toContain('status-strip--in-bar');
+    const shedOf = (id: string) => /--shed-(\d)/.exec(screen.getByTestId(id).className)?.[1];
+    expect(
+      ['rss', 'disk', 'load', 'memory', 'cpu', 'chats', 'sessions'].map((k) => shedOf(`status-strip-${k}`)),
+    ).toEqual(['1', '2', '3', '4', '5', '6', '7']);
+  });
+
+  it('defaults to its own row', async () => {
+    const { seam } = fakeSeam();
+    render(<StatusStrip seam={seam} spaceId={SPACE} />);
+    expect(screen.getByTestId('status-strip').className).not.toContain('status-strip--in-bar');
+  });
+
   it('live sessions and chats come from the liveness counts, with working as a suffix', async () => {
     const { seam } = fakeSeam();
     render(<StatusStrip seam={seam} spaceId={SPACE} />);
