@@ -581,8 +581,10 @@ function Strip(props: LaunchCardV3Props) {
   const group = openGroup ? strip.find((g) => g.def.kind === openGroup) ?? null : null;
 
   const pool = candidates ?? [];
-  const shown = filterCandidates(pool, search, STRIP_KINDS.map((d) => d.kind));
-  const allKinds = STRIP_KINDS.map((d) => d.kind);
+  /* Under DISPATCH a dispatcher gets the whole roster, so Attach offers no
+     Teammates type at all (coordinator ruling, mock rev 18). */
+  const allKinds = STRIP_KINDS.map((d) => d.kind).filter((k) => !(k === 'teammate' && props.verb === 'dispatcher'));
+  const shown = filterCandidates(pool, search, allKinds);
 
   const addPicked = () => {
     const rows = pool.filter((c) => picked.includes(c.row.id)).map((c) => c.row);
