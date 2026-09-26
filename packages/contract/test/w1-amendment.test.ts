@@ -238,6 +238,10 @@ describe('W1 frozen-row schema amendments', () => {
       // 2026-09-24: `form` — a question set with revisioned responses (209).
       // Not creatable through entities.create: `forms.create` is its door.
       'form',
+      // 2026-09-26: `credential` — a space credential's card (W10a). Not
+      // creatable: only the credential writers make one, and SQL refuses any
+      // other insert. Its secret, hint and login never reach the entity.
+      'credential',
     ]);
     expect(CoreEntityKindSchema.safeParse('ui_template').success).toBe(false);
   });

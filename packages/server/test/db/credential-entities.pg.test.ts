@@ -666,4 +666,37 @@ describe('T42 / N11 — the backfill: a same-id entity per 206 row, idempotent',
     });
     expect(await count()).toEqual(first);
   });
+  it('refuses the migration when a pre-existing entity of another kind shares a 206 row\'s id', async () => {
+    // The loop skips a row whose id already names an entity, and the FK checks
+    // only that some entity has the id — so without the post-backfill
+    // assertion this collision would migrate green with no card.
+    const collide = await createW1ScratchDatabase('credential_entities_collision');
+    try {
+      const all = migrationFiles();
+      collide.apply(all.slice(0, all.indexOf(MIGRATION!)));
+      await collide.transaction(async (c) => {
+        await c.query('set local role tm8_graph_owner');
+        const id = async () => (await c.query<{ id: string }>('select internal.new_id()::text id')).rows[0]!.id;
+        await c.query(`insert into public.user_profiles(identity_id, display_name) values ('cx-owner', 'cx-owner')`);
+        const space = await id();
+        await c.query(`insert into public.spaces(id, name, created_by_identity) values ($1, 'CX', 'cx-owner')`, [space]);
+        const member = await id();
+        await c.query(`insert into public.entities(id, space_id, kind, position, created_by) values ($1, $2, 'member', 0, $1)`, [member, space]);
+        await c.query(`insert into public.members(entity_id, space_id, identity_id, role, display_name) values ($1, $2, 'cx-owner', 'owner', 'cx-owner')`, [member, space]);
+        // The collision: a credential row whose id is ALREADY a member entity's.
+        await c.query(
+          `insert into public.space_credentials(id, space_id, provider, shape, label, key_hint, secret_ciphertext, secret_nonce)
+           values ($1, $2, 'anthropic', 'api_key', 'collides', 'Fk5x', '\\x00112233445566778899aabbccddeeff00'::bytea, '\\x000102030405060708090a0b'::bytea)`,
+          [member, space],
+        );
+      });
+      expect(() => collide.apply([MIGRATION!])).toThrow(/lack a credential card in their own space/);
+      // Positive, same DB: the refused migration left nothing behind (-1).
+      const [row] = await collide.query<{ applied: boolean }>(
+        `select to_regclass('public.member_defaults') is not null applied`);
+      expect(row).toEqual({ applied: false });
+    } finally {
+      await collide.destroy();
+    }
+  });
 });
