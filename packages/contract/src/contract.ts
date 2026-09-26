@@ -1145,8 +1145,10 @@ export interface CollectionQuery {
      * (flagged upstream): they make the `getHome` preset queries reproducible
      * on re-execution. Actor scope = the actor's member + owned team_members.
      * `inFlightForActorId` = tasks that stable pulled / is working on (not
-     * done/cancelled); `needsActorId` = union of `inReviewForActorId` and
-     * `mentionedActorId` semantics.
+     * done/cancelled); `needsActorId` = has an OPEN attention request
+     * assigned to exactly this actor (a member), pinned to it or rolled up to
+     * it (Attention v2, G1/Q17; it no longer means review or mentions, and it
+     * is NOT widened to owned team_members).
      */
     inFlightForActorId?: EntityId; needsActorId?: EntityId;
     /**
@@ -3049,6 +3051,50 @@ export interface ResolveEntityAttentionInput extends CommandContext {
  */
 export interface MarkAttentionSeenInput extends CommandContext {
   clientMutationId: string;
+}
+
+/**
+ * Attention v2 S6: a SYSTEM signal tm8 raises on a caller's behalf. A CLOSED
+ * vocabulary: the caller names the situation, never a signal key, level or
+ * type; the server builds the key (`conflict:<worktreeId>:<flow>`) and fixes level /
+ * type from the kind (conflict = high / review). Only `conflict` exists today;
+ * the permission prompt is deferred (F2).
+ */
+export interface AttentionSignal {
+  kind: 'conflict';
+  /** The worktree the merge, cherry-pick or stash pop conflicted in. */
+  worktreeId: EntityId;
+  /**
+   * Which CLI flow conflicted. The key is `conflict:<worktreeId>:<flow>`, so
+   * only a clean run of the SAME flow clears it (ch2).
+   */
+  flow: AttentionSignalFlow;
+}
+
+export type AttentionSignalFlow = 'merge' | 'cherry_pick' | 'stash_pop';
+
+/**
+ * POST /v2/entities/:entityId/attention-signals (Attention v2 S6). The CLI's
+ * conflict rail. `entityId` must be the worktree, a session in it, or a task
+ * linked to either. Raises an origin=system request attributed to the caller,
+ * or returns the open one with the same key (`affectedCount` 0). CLI only: not
+ * in MCP tm8_act; agents and chats raise through attentionRequests.create.
+ */
+export interface RaiseAttentionSignalInput extends CommandContext {
+  clientMutationId: string;
+  signal: AttentionSignal;
+  reason: string;
+}
+
+/**
+ * POST /v2/entities/:entityId/attention-signals/clear (Attention v2 S6).
+ * Clears (status `cleared`, no delivery) the open request with the signal's
+ * key anywhere in `entityId`'s space. Idempotent: nothing open is
+ * `affectedCount` 0.
+ */
+export interface ClearAttentionSignalInput extends CommandContext {
+  clientMutationId: string;
+  signal: AttentionSignal;
 }
 
 /**

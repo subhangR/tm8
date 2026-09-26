@@ -28,7 +28,6 @@ import type { Notice } from '../shell/notices';
 import { usePanelPrimaries } from '../views/usePanelPrimaries';
 import type { Seam, SessionLiveness } from '../data/seam';
 import { GraphView, type GraphTimelineStep } from './GraphView';
-import { attentionSectionFor } from '../views/attentionSurface';
 import { debugSurfaceFor } from '../views/debugSurface';
 import { sessionStatsSurfaceFor } from '../views/sessionStatsSurface';
 import { sessionContextSurfaceFor } from '../views/sessionContextSurface';
@@ -236,7 +235,6 @@ export function GraphScreen(props: GraphScreenProps) {
       // so the pin verb is refused with the true reason, never hidden (L6).
       pinRefusal="Pinning lives in the Workspace — this view keeps the panel beside the graph already"
       liveness={data.livenessOf(selectedId)}
-      attentionSection={attentionSectionFor(data.seam, data.spaceId, selectedId, data.reconcileCommand)}
       debugSurface={debugSurfaceFor(data.seam, selectedId, data.livenessOf)}
       sessionStatsSurface={sessionStatsSurfaceFor(data.seam, selectedId)}
       sessionContextSurface={sessionContextSurfaceFor(data.seam, selectedId, data.livenessOf)}

@@ -684,7 +684,7 @@ function authSessionsRevoke(deps: FacadeDeps, sockets: SessionSocketPort | undef
 
 /**
  * W5 (K2, decision 30) — the space-password setting and the P5 admin ops.
- * Human space admins only; every guard but the node-mode one is in SQL (264).
+ * Human space admins only; every guard but the node-mode one is in SQL (267).
  * Reset and lock end the member's sessions pinned to the space, turning the
  * setting on ends every human session pinned to it, and their sockets are
  * closed here.
@@ -710,7 +710,7 @@ function spacesSpacePasswordSetRequired(deps: FacadeDeps, sockets: SessionSocket
       deps.db, claimsFor(owner, ctx),
       { spaceId, required: body.required, ...(body.password ? { ownPassword: body.password } : {}) },
     );
-    // Turning it on ends the space's pinned human sessions (264); close them.
+    // Turning it on ends the space's pinned human sessions (267); close them.
     closeSessionSockets(sockets, new Set(result.revokedSessionIds), (message, fields) =>
       console.warn(`[spaces.spacePassword.setRequired] ${message}`, fields));
     return json(result, { headers: { 'cache-control': 'no-store' } });

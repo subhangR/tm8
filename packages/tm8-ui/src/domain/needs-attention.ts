@@ -4,7 +4,11 @@ import type { ListRowFacts } from './types';
 import { getKind } from './registry';
 
 /**
- * THE ONE PLACE "does this entity need a human" is decided.
+ * THE ONE PLACE "does this entity need a human" is decided, for PRESENTATION.
+ *
+ * NOT THE ATTENTION MODULE. Chips, counts, the banner and every resolve read
+ * `src/attention/` (Attention v2, chapter 5). This predicate only feeds the
+ * session pill and the list's needs-attention group.
  *
  * WHY IT IS A MODULE. The predicate itself lives in the registry
  * (`KindConfig.list.needsAttentionGroup`) because it is per-kind knowledge, and
@@ -61,17 +65,3 @@ export function needsAttentionOf(
   if (!predicate || !livenessOf) return false;
   return predicate(toRowFacts(row), livenessOf(row.id));
 }
-
-/**
- * The banner/aria sentence for a derived block.
- *
- * STATES ONLY WHAT WAS MEASURED. The detector behind `status === 'idle'` reports
- * that a live PTY stopped producing output for its quiescence threshold — it
- * does not know whether an agent is waiting on a permission, waiting on a
- * question, or running a long silent command. So this sentence says the agent
- * has gone quiet and points at the terminal, and it never invents a question to
- * put in the banner. When a structured signal exists, it supplies its own detail
- * and this fallback is not used.
- */
-export const QUIET_SESSION_DETAIL =
-  'no terminal output for a while — it may be waiting for you. Open the terminal to see.';

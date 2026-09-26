@@ -48,6 +48,11 @@ export interface ScheduledJob {
   readonly runOnStart?: boolean;
   /** Abort + report failure after this long. Default 5 min. */
   readonly timeoutMs?: number;
+  /**
+   * Do not log a `skipped` outcome. For a fast poller (seconds) whose idle tick
+   * is the normal case; runs that do work and failures still log.
+   */
+  readonly quietSkips?: boolean;
   run(ctx: JobContext): Promise<JobOutcome | void>;
 }
 

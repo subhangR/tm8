@@ -1,6 +1,6 @@
 /**
  * `spaces.spacePassword.setRequired` — the two things the handler owns (W5,
- * review 5327376587); every other guard is SQL (264, space-logins.pg.test.ts).
+ * review 5327376587); every other guard is SQL (267, space-logins.pg.test.ts).
  *
  *   #1  turning it ON needs TM8_SPACE_SESSIONS=enforce. Below enforce an
  *       unpinned gate session still reaches the space, so the password would

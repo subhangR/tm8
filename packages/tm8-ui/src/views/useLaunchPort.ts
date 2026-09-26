@@ -88,6 +88,7 @@ export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): 
       label: t.name,
       agentTool: t.agentTool,
       model: t.model,
+      ...(t.mode !== undefined ? { mode: t.mode } : {}),
     })),
     [sourceTeammates],
   );
@@ -198,14 +199,28 @@ export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): 
      the dispatcher decides later), so unlike `onSpawn` the port wires it
      itself, for every surface. */
   const dispatch = useCallback(
-    (subjectId: EntityId, note?: string) => data.seam.commands.dispatch({
-      clientMutationId: newLaunchMutationId(),
+    (subjectId: EntityId, note?: string, clientMutationId?: string) => data.seam.commands.dispatch({
+      clientMutationId: clientMutationId ?? newLaunchMutationId(),
       spaceId: data.spaceId ?? '',
       subjectId,
       ...(note ? { note } : {}),
     }),
     [data.seam, data.spaceId],
   );
+
+  /* AFTER A SPAWN TIMEOUT: sessions working on the subject that started at or
+     after `since` — the launch that may have gone through. The ledger only
+     replays a FINISHED attempt, so the card must look before retrying. */
+  const sessionsSince = useCallback(async (subjectId: string, since: string) => {
+    const page = await data.seam.connections(subjectId as EntityId, { types: ['working_on'], direction: 'incoming', limit: 50 });
+    return page.items
+      .map((edge) => edge.source)
+      .filter((s) => s.kind === 'work_session' && s.createdAt >= since)
+      .map((s) => ({ id: s.id, title: s.title }));
+  }, [data.seam]);
+
+  /* ✦'s key: the member's stored TypeSafe key, else the node's fallback. */
+  const jevKeyStatus = useCallback(() => data.seam.credentials.serviceKeys(), [data.seam]);
 
   return useMemo(
     () => ({
@@ -224,7 +239,9 @@ export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): 
       ...(onFullOptions ? { onFullOptions } : {}),
       ...(upload ? { upload } : {}),
       ...(data.spaceId ? { dispatch } : {}),
+      jevKeyStatus,
+      sessionsSince,
     }),
-    [data.spaceId, selection, teammates, projects, profileFor, descriptionOf, onUpdateEntity, capacity, jev, loadInstalledPlugins, onSpawn, onFullOptions, upload, dispatch],
+    [data.spaceId, selection, teammates, projects, profileFor, descriptionOf, onUpdateEntity, capacity, jev, loadInstalledPlugins, onSpawn, onFullOptions, upload, dispatch, jevKeyStatus, sessionsSince],
   );
 }

@@ -997,11 +997,9 @@ const ATTENTION_HISTORY_ENTITIES = 3;
  *
  * TWO HALVES, AND THE SECOND ONE EXISTS BECAUSE THE FIRST FOUND NOTHING.
  *
- * The PENDING half is the old badge-synthesis, moved here verbatim, because its
- * arithmetic is load-bearing: `attention-model.ts` regroups these rows and its
- * result is asserted to equal `badges.attention`. Points are spread across
- * `pendingCount` rows with the largest pinned to `maxPoints`, so count/sum/max
- * survive the round trip.
+ * The PENDING half is the old badge-synthesis, moved here verbatim. Points are
+ * spread across `pendingCount` rows with the largest pinned to `maxPoints`, so
+ * a surface that sums the rows gets back the badge's count/sum/max.
  *
  * It produces ZERO ROWS TODAY. Not one summary in `fixtures/entities.ts`
  * carries a `badges.attention`, so the fixture seam has always answered the

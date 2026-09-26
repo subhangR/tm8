@@ -1471,7 +1471,11 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
       <EntityListPanel kind="task" rowsFor={() => [taskUuidTitle]} ctx={ctx} />,
     );
     const tile = list.getAllByTestId('list-tile')[0]!;
-    expect(tile.querySelectorAll('.lp__rowaction')).toHaveLength(0);
+    // The one live row verb is a LAUNCH verb: any member who can spawn may
+    // open the card (owner, launch card v3), and with nothing wired its
+    // Launch refuses inside it with the reason — not enabled-inert.
+    const live = [...tile.querySelectorAll<HTMLElement>('.lp__rowaction')];
+    expect(live.map((b) => b.getAttribute('aria-label') ?? b.textContent ?? '').every((w) => /\b(Run|Coordinate)\b/.test(w))).toBe(true);
     expect(tile.querySelectorAll('[data-testid="disabled-with-reason"]').length).toBeGreaterThan(0);
   });
 
@@ -1706,8 +1710,8 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     fireEvent.click(
       within(view.getByTestId('panel-action-bar')).getByRole('button', { name: /^Run$/i }),
     );
-    // The subject's name is the title field's VALUE now (not chrome text).
-    expect((view.getByTestId('nsx-title') as HTMLInputElement).value).toBe(task.title);
+    // The card names its subject in the pinned title-row chip.
+    expect(view.getByTestId('lcd3-subject').textContent).toContain(task.title);
 
     // The SAME instance, a different entity — exactly what a Back press does.
     view.rerender(
@@ -1784,7 +1788,8 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     fireEvent.click(within(bar).getByRole('button', { name: /^Run$/i }));
     expect(view.getByTestId('launch-quick-config').getAttribute('aria-label')).toBe('Run configuration');
 
-    fireEvent.click(view.getByTestId('nsx-send')); // the popup composer's Launch
+    fireEvent.click(view.getByTestId('nsx-send')); // the card's Launch opens its preview…
+    fireEvent.click(await view.findByTestId('lcd3-preview-confirm')); // …whose Launch commits
     await waitFor(() => expect(onSpawn).toHaveBeenCalled());
     // The payload must agree with the button that was actually pressed.
     expect(onSpawn.mock.calls[0]![0].mode).toBe('worker');
@@ -1804,7 +1809,8 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     const bar = view.getByTestId('panel-action-bar');
     fireEvent.click(within(bar).getByRole('button', { name: /^Run$/i }));
     fireEvent.click(within(bar).getByRole('button', { name: /^Coordinate$/i }));
-    fireEvent.click(view.getByTestId('nsx-send')); // the popup composer's Launch
+    fireEvent.click(view.getByTestId('nsx-send')); // the card's Launch opens its preview…
+    fireEvent.click(await view.findByTestId('lcd3-preview-confirm')); // …whose Launch commits
     await waitFor(() => expect(onSpawn).toHaveBeenCalled());
     expect(onSpawn.mock.calls[0]![0].mode).toBe('coordinator');
   });
@@ -2384,132 +2390,5 @@ describe('file-preview renders the real image', () => {
     const block = getByTestId('block-file-preview');
     expect(within(block).queryByTestId('file-preview-image')).toBeNull();
     expect(block.textContent).toContain('no download URL');
-  });
-});
-
-/**
- * THE ATTENTION DOCK LANDS IN EXACTLY ONE PLACE — THE SAME ONE, FOR EVERYTHING.
- *
- * This used to assert a two-halved rule: the Content body for every archetype
- * that could host an inline section, and the Connections tab for the two that
- * could not — terminal (a live PTY owning its full height) and a declared
- * `composition` (a body that ends at its composer, or an artifact frame that
- * fills the panel). The relocation existed because work sessions are among the
- * most-escalated entities in a space and CLI-only history for them was not
- * acceptable (user ruling 2026-08-16).
- *
- * THE COLLAPSE REMOVED THE CONSTRAINT (user ruling 2026-09-07). A four-card
- * section is what a body owning its own height could not spare; a one-line dock
- * is not, so the section became panel chrome below the scroll host and the
- * second home was deleted. What is asserted now is stronger and simpler: ONE
- * mount, for EVERY kind, on EVERY tab.
- *
- * THE "NEVER TWICE" ASSERTION IS KEPT even though there is only one mount left,
- * because it is not testing the old split — it is testing that reintroducing a
- * body-level mount alongside this one fails the build. That is the exact defect
- * the two-place rule shipped with the risk of, and it costs one render to keep
- * a guard against it.
- */
-describe('EntityDetailPanel — the attention dock has one home for every kind', () => {
-  const SECTION = <div data-testid="attention-section-probe" />;
-
-  /** Every kind with a live, undeleted fixture. */
-  function livingKinds() {
-    return allKinds()
-      .map((config) => ({
-        config,
-        detail: Object.values(fixtureDetails).find((d) => d.kind === config.kind && d.deletedAt == null),
-      }))
-      .filter((r) => r.detail != null);
-  }
-
-  /** The two that used to be exiled to Connections, named by the panel's own predicate. */
-  function ownsItsBottom(config: ReturnType<typeof allKinds>[number]) {
-    return config.panel.archetype === 'terminal' || config.panel.composition != null;
-  }
-
-  it.each(['content', 'connections', 'discussion'] as const)(
-    'mounts the dock exactly once for every kind on the %s tab',
-    (tab) => {
-      const covered = livingKinds();
-      // Guards against a vacuous pass if the registry or the fixture set moves.
-      expect(covered.length).toBeGreaterThan(8);
-
-      for (const { config, detail } of covered) {
-        const { getByTestId, unmount } = render(
-          <EntityDetailPanel
-            detail={detail!}
-            reasons={REASONS}
-            ctx={ctx}
-            attentionSection={SECTION}
-            activeTab={tab}
-          />,
-        );
-        expect(
-          within(getByTestId('entity-detail-panel')).queryAllByTestId('attention-section-probe'),
-          `${config.kind} does not mount the attention dock exactly once on the ${tab} tab`,
-        ).toHaveLength(1);
-        unmount();
-      }
-    },
-  );
-
-  it('gives the dock to the bodies that own their own bottom edge — the exile is over', () => {
-    const relocated = livingKinds().filter((r) => ownsItsBottom(r.config));
-    // work_session (terminal), channel/voice_channel (chat), artifact (frame).
-    expect(relocated.length).toBeGreaterThan(0);
-
-    for (const { config, detail } of relocated) {
-      const { getByTestId, unmount } = render(
-        <EntityDetailPanel detail={detail!} reasons={REASONS} ctx={ctx} attentionSection={SECTION} />,
-      );
-      expect(
-        within(getByTestId('entity-detail-panel')).queryAllByTestId('attention-section-probe'),
-        `${config.kind} lost its attention history — it used to have a Connections-tab home ` +
-          `and the dock was supposed to replace it in place`,
-      ).toHaveLength(1);
-      unmount();
-    }
-  });
-
-  it('never renders TWICE — a body-level mount must not come back alongside the chrome one', () => {
-    for (const { config, detail } of livingKinds()) {
-      for (const tab of ['content', 'connections'] as const) {
-        const { getByTestId, unmount } = render(
-          <EntityDetailPanel
-            detail={detail!}
-            reasons={REASONS}
-            ctx={ctx}
-            attentionSection={SECTION}
-            activeTab={tab}
-          />,
-        );
-        expect(
-          within(getByTestId('entity-detail-panel')).queryAllByTestId('attention-section-probe'),
-          `${config.kind} renders the attention dock more than once on the ${tab} tab`,
-        ).toHaveLength(1);
-        unmount();
-      }
-    }
-  });
-
-  it('a TOMBSTONE gets no dock — there is nothing left to escalate about a deleted entity', () => {
-    // SYNTHESISED, because the fixture set carries no deleted entity — the
-    // panel reads `detail.deletedAt` and nothing else, so stamping a living
-    // fixture is the same input it would get from a real tombstone.
-    const dead = { ...livingKinds()[0]!.detail!, deletedAt: '2026-09-01T00:00:00.000Z' };
-    const { getByTestId, queryByTestId } = render(
-      <EntityDetailPanel detail={dead} reasons={REASONS} ctx={ctx} attentionSection={SECTION} />,
-    );
-    expect(getByTestId('entity-detail-panel')).toBeTruthy();
-    expect(queryByTestId('attention-section-probe')).toBeNull();
-  });
-
-  it('an unwired host renders nothing at all — no empty strip on every entity in the product', () => {
-    const { getByTestId, queryByTestId } = render(
-      <EntityDetailPanel detail={livingKinds()[0]!.detail!} reasons={REASONS} ctx={ctx} />,
-    );
-    expect(getByTestId('entity-detail-panel')).toBeTruthy();
-    expect(queryByTestId('attention-section-probe')).toBeNull();
   });
 });

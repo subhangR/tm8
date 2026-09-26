@@ -92,7 +92,7 @@ import { SettingsShell, ownerRoleRef, settingsPortFromSeam } from '../settings-s
 import { FilesExplorerScreen, filesExplorerPortFromSeam } from '../files-explorer';
 import { InboxView } from './InboxView';
 import { StatusStrip } from '../status-strip';
-import { AttentionSegment } from '../attention-segment';
+import { AttentionProvider, AttentionTopSegment, AttentionUndoToast } from '../attention';
 import { MessagesView } from './MessagesView';
 import { nodeKeyOf } from '../data/launch-cache';
 import {
@@ -347,8 +347,15 @@ export function GateApp(props: GateAppProps = {}) {
   /* Forms waiting on sessions (decision 11): one store per space, read by
      every session tile's chip and the session panel's banner. */
   const pendingFormsStore = usePendingFormsStoreFor(data.seam, data.spaceId);
+  /* Attention v2 (chapter 5): ONE attention store per shell, above both the
+     desktop and the phone trees, so every chip, count and list reads the same
+     rows and a Resolve anywhere settles everywhere. */
   const withPendingForms = (node: ReactNode) => (
-    <PendingFormsProvider store={pendingFormsStore}>{node}</PendingFormsProvider>
+    <PendingFormsProvider store={pendingFormsStore}>
+      <AttentionProvider seam={data.seam} spaceId={data.spaceId} viewerId={data.viewerActor?.id ?? null}>
+        {node}
+      </AttentionProvider>
+    </PendingFormsProvider>
   );
   const kinds = useSidePanelKinds({
     viewerId: 'viewer',
@@ -1906,6 +1913,7 @@ export function GateApp(props: GateAppProps = {}) {
           onLaunchDispatch={submitDispatch}
           notices={<NoticeHost notices={notices.notices} onDismiss={notices.dismiss} />}
         />
+        <AttentionUndoToast />
       </div>
     );
   }
@@ -1969,9 +1977,9 @@ export function GateApp(props: GateAppProps = {}) {
         spaceId={data.spaceId as SpaceId}
         placement={placement}
         leadSlot={
-          <AttentionSegment
-            seam={data.seam}
-            spaceId={data.spaceId as SpaceId}
+          /* Attention v2 (chapter 4): `! mine · all` and the one list, read
+             from the shell's attention store. */
+          <AttentionTopSegment
             onOpenEntity={(id) => {
               navigateTo(WORKSPACE_TARGET);
               nav.push(id as EntityId);
@@ -2938,6 +2946,7 @@ export function GateApp(props: GateAppProps = {}) {
           />
         ) : null}
       </div>
+      <AttentionUndoToast />
     </div>
   );
 }

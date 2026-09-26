@@ -53,7 +53,14 @@ describe.sequential('generic attention requests through the production HTTP surf
       'PATCH', `/v2/attention-requests/${first.request!.id}`,
       { clientMutationId: 'attention-ack', expectedVersion: 1, status: 'acknowledged' },
     ));
-    expect(acknowledged.request).toMatchObject({ status: 'acknowledged', version: 2 });
+    // Attention v2 replaced `acknowledged` with per-person Seen (spec ch. 3;
+    // migration 265's update_attention_request): the legacy transition records
+    // Seen for the caller and leaves the row itself untouched, still open.
+    expect(acknowledged.request).toMatchObject({ status: 'open', version: 1 });
+    const seen = await harness.rows<{ total: number }>(
+      'select count(*)::int total from public.attention_seen where request_id = $1', [first.request!.id],
+    );
+    expect(seen).toEqual([{ total: 1 }]);
 
     const second = successData<AttentionResult>(await harness.request(
       'POST', `/v2/entities/${entityId}/attention-requests`,

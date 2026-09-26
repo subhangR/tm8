@@ -1,5 +1,5 @@
 /**
- * W5 (K2, decision 30) — per-space credentials: `space_logins` (264).
+ * W5 (K2, decision 30) — per-space credentials: `space_logins` (267).
  *
  * Two spaces, C and D, both owned by O. A is an admin of C; M is a plain
  * member of both; N is a member of C who never gets a space password. Each
