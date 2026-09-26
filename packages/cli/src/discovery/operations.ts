@@ -3160,7 +3160,8 @@ export const CATALOG_DIGEST =
   // Re-measured (I9b): + launch.defaults. Read from the failing digest test.
   // Re-measured (entity chat G): + spaces.chatDefaults.get/set. RECOMPUTED from JSON.stringify(OPERATIONS).
   // Re-measured (G6, 232): + spaces.members.remove, spaces.leave, accounts.disable. Read from the failing digest test.
-  'sha256:ac682c491fd5abae761557c8b4e155f9e4925ca45cd3ca9112f70f9d9f4f229d';
+  // +7 spaceLinks.* (W6, 243/244): RECOMPUTED from JSON.stringify(OPERATIONS); equals the regenerated manifest.
+  'sha256:3b8dcc96fcc96d2e640bdf6794ab7f5ba5dde491274e8f5b12c010038be27e78';
 
 export const GRAMMAR_VERSION = '2';
 
