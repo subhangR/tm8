@@ -286,6 +286,20 @@ can_query() {
   "$PSQL" "$url" -tAc 'select 1' >/dev/null 2>&1
 }
 
+# Can this URL connect AND is the role it lands on actually a superuser?
+#
+# SEPARATE FROM can_query ON PURPOSE. Every caller below wants "is the cluster
+# reachable"; find_superuser wants something strictly stronger, and conflating
+# the two is what let an unprivileged role be adopted as the installer's
+# superuser for a whole run. `is_superuser` is the server's own answer, so it
+# stays right for a role whose attributes changed after this script started.
+can_query_as_superuser() {
+  local url="$1"
+  [[ -n "${PSQL:-}" ]] || return 1
+  [[ "$("$PSQL" "$url" -tAc "select current_setting('is_superuser')" 2>/dev/null \
+        | head -1 | tr -d '[:space:]')" == "on" ]]
+}
+
 # One scalar out of Postgres, or empty.
 pg_scalar() {
   local url="$1" sql="$2"
@@ -300,11 +314,19 @@ pg_scalar() {
 # Homebrew's initdb makes the INSTALLING USER the superuser instead. Neither is
 # the `tm8` role tm8's URLs use, so finding a way in is a real step.
 SU_KIND=""; SU_URL=""; SU_SUDO_USER=""
+# Find a role on this cluster that IS a superuser — not merely one that can
+# connect. The distinction is the whole point: `$TM8_ENV_SUPERUSER` is the first
+# candidate and it very often exists WITHOUT the attribute (an older installer
+# made it, or a hand-rolled cluster did), in which case a `select 1` probe
+# adopts it, every su_sql below silently runs unprivileged, and the install
+# proceeds to create the database and run 157 migrations as a role that cannot
+# own what it creates. What the operator sees is phase 9 dying on `must be owner
+# of table applied_migrations`, which names neither this function nor the role.
 find_superuser() {
   local port="$1" cand
   for cand in "$TM8_ENV_SUPERUSER" postgres "$(id -un)"; do
     [[ -n "$cand" ]] || continue
-    if can_query "postgres://$cand@127.0.0.1:$port/postgres"; then
+    if can_query_as_superuser "postgres://$cand@127.0.0.1:$port/postgres"; then
       SU_KIND=url; SU_URL="postgres://$cand@127.0.0.1:$port/postgres"
       return 0
     fi
@@ -312,7 +334,8 @@ find_superuser() {
   # Peer auth as the postgres OS user — the Debian path before a TCP role exists.
   if (( IS_ROOT )) || (( HAVE_SUDO )); then
     local runner=(sudo -u postgres); (( IS_ROOT )) && runner=(runuser -u postgres --)
-    if "${runner[@]}" "$PSQL" -p "$port" -tAc 'select 1' >/dev/null 2>&1; then
+    if [[ "$("${runner[@]}" "$PSQL" -p "$port" -tAc "select current_setting('is_superuser')" \
+             2>/dev/null | head -1 | tr -d '[:space:]')" == "on" ]]; then
       SU_KIND=sudo; SU_SUDO_USER=postgres
       return 0
     fi
@@ -1075,8 +1098,42 @@ else
       auth as the postgres OS user. Grant one of those and re-run."
   dim "superuser access via ${SU_KIND}${SU_URL:+ $SU_URL}${SU_SUDO_USER:+ (peer as $SU_SUDO_USER)}"
 
+  # PRESENT IS NOT THE SAME AS CORRECT, and this is the one phase that used to
+  # confuse the two. A role left by an older installer — or by hand — can exist
+  # with none of the attributes everything downstream assumes, and the check was
+  # `select 1 from pg_roles`: it reported "present", moved on, and the install
+  # then failed three phases later with errors that name none of this.
+  #
+  # Measured on a checkout whose tm8 role had LOGIN and nothing else:
+  #
+  #   phase 9   migrations die mid-sequence on `must be owner of table
+  #             applied_migrations`, then `must be owner of function
+  #             execution_spawn` — forward-only, so the database is left part
+  #             migrated and every re-run stops at the same file.
+  #   phase 11  the node cannot mint a claim token. `node_claim_tokens` is FORCE
+  #             RLS with no policies by design (116), so the SECURITY DEFINER
+  #             that writes it clears RLS only by being owned by a superuser.
+  #             Without that the server logs one line and prints no setup link,
+  #             and first run cannot be completed at all.
+  #   tests     the suite creates a scratch database per file; without CREATEDB
+  #             126 of 236 files fail on `permission denied to create database`.
+  #
+  # So verify the attributes, and repair them: `--reset` is a much bigger hammer
+  # for a role that is one ALTER away from correct, and this installer's promise
+  # is that re-running it converges.
   if [[ "$(su_scalar "select 1 from pg_roles where rolname='$TM8_ENV_SUPERUSER'")" == 1 ]]; then
-    ok "role $TM8_ENV_SUPERUSER present"
+    role_missing="$(su_scalar "select concat_ws(',',
+        case when not rolsuper     then 'superuser'  end,
+        case when not rolcreatedb  then 'createdb'   end,
+        case when not rolcreaterole then 'createrole' end,
+        case when not rolcanlogin  then 'login'      end)
+      from pg_roles where rolname='$TM8_ENV_SUPERUSER'")"
+    if [[ -z "$role_missing" ]]; then
+      ok "role $TM8_ENV_SUPERUSER present"
+    else
+      su_sql "alter role \"$TM8_ENV_SUPERUSER\" with login superuser createdb createrole"
+      ok "role $TM8_ENV_SUPERUSER repaired — it existed but lacked: ${role_missing//,/ }"
+    fi
   else
     su_sql "create role \"$TM8_ENV_SUPERUSER\" login superuser createdb createrole"
     ok "role $TM8_ENV_SUPERUSER created (superuser — it owns the schema and runs migrations)"
