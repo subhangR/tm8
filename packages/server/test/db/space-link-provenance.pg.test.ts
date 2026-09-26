@@ -68,8 +68,8 @@ async function mintHuman(accountId: string, identityId: string, kind: 'browser' 
   return formatToken(row.id, secret);
 }
 
-async function claimsForToken(token: string): Promise<DbClaims> {
-  const resolve = createSessionIdentityResolver({ db, owner: async () => NOT_THE_OWNER, spaceSessions: 'agents' });
+async function claimsForToken(token: string, spaceSessions: 'agents' | 'off' = 'agents'): Promise<DbClaims> {
+  const resolve = createSessionIdentityResolver({ db, owner: async () => NOT_THE_OWNER, spaceSessions });
   const identity = await resolve(
     { authorization: `Bearer ${token}` },
     { remoteAddress: '203.0.113.9', disableAutoOwner: true },
@@ -388,6 +388,78 @@ describe('W7p 206 — a link-bound caller gets the target default only, while it
   });
 });
 
+// D2: every predicate of 206's link admission, one cell each, each with its
+// paired positive on the same caller first. The admission is an EXISTS over
+// the caller's own row; a predicate a cell does not reach is a mutant that
+// survives (the review's M1 `status = 'signed_in'` and M2 `target_space_id`).
+describe('W7p 206 — each predicate of the link admission refuses on its own', () => {
+  it("row not signed_in: stale 'unreachable' keeps the link session live, and that session is refused", async () => {
+    const L = await linked();
+    expect(await outcome(() => read206(L.linkClaims))).toBe('ok');
+    await db.rpc(L.human, 'mark_space_link_stale', [L.link.id, 'unreachable']);
+    expect((await sessionRow(L.linkSessionId)).revoked).toBe(false);
+    expect(await outcome(() => read206(L.linkClaims))).toBe('42501');
+  });
+
+  it('wrong launch space: unpinned claims (TM8_SPACE_SESSIONS=off) launching into A, where H is a member, are refused', async () => {
+    const L = await linked();
+    const unpinned = await claimsForToken(L.linkToken, 'off');
+    expect(unpinned.sessionSpaceId).toBeUndefined();
+    expect(unpinned.viaLinkId).toBe(L.link.id);
+    // A has its own default, so only the target predicate stands between
+    // this caller and A's key.
+    const antDefaultA = randomUUID();
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(
+        `insert into public.space_credentials(id, space_id, provider, shape, label, is_default, key_hint, secret_ciphertext, secret_nonce)
+         values ($1, $2, 'anthropic', 'api_key', 'A anthropic', true, 'abcd', decode(repeat('00', 17), 'hex'), decode(repeat('00', 12), 'hex'))`,
+        [antDefaultA, fixture.spaceA]);
+    });
+    try {
+      // Paired positive: the same unpinned claims into the link's target.
+      expect(await read206(unpinned)).toMatchObject({ credentialId: fixture.antDefaultB });
+      // Control: H's own session reads A's default — the refusal is the link's.
+      expect(await db.rpc(L.human, 'read_space_credential_for_spawn', [fixture.spaceA, 'anthropic', null]))
+        .toMatchObject({ credentialId: antDefaultA });
+      expect(await outcome(() => db.rpc(unpinned, 'read_space_credential_for_spawn', [fixture.spaceA, 'anthropic', null])))
+        .toBe('42501');
+    } finally {
+      await database.query(`delete from public.space_credentials where id = $1`, [antDefaultA]);
+    }
+  });
+
+  it("the linking member no longer active (m.status <> 'active'): refused; active again: admitted", async () => {
+    const L = await linked('H3');
+    expect(await outcome(() => read206(L.linkClaims))).toBe('ok');
+    const setStatus = (status: 'left' | 'active') => database.query(
+      `update public.members set status = $2, left_at = case when $2 = 'active' then null else now() end
+        where entity_id = (select t.member_id from public.space_link_tokens t
+                             join public.members m on m.entity_id = t.member_id
+                            where t.link_id = $1 and m.identity_id = $3)`,
+      [L.link.id, status, fixture.identityH3]);
+    await setStatus('left');
+    try {
+      expect(await outcome(() => read206(L.linkClaims))).toBe('42501');
+    } finally {
+      await setStatus('active');
+    }
+    expect(await outcome(() => read206(L.linkClaims))).toBe('ok');
+  });
+
+  it('the link entity soft-deleted (e.deleted_at not null): refused; restored: admitted', async () => {
+    const L = await linked();
+    expect(await outcome(() => read206(L.linkClaims))).toBe('ok');
+    await database.query(`update public.entities set deleted_at = now() where id = $1`, [L.link.id]);
+    try {
+      expect(await outcome(() => read206(L.linkClaims))).toBe('42501');
+    } finally {
+      await database.query(`update public.entities set deleted_at = null where id = $1`, [L.link.id]);
+    }
+    expect(await outcome(() => read206(L.linkClaims))).toBe('ok');
+  });
+});
+
 describe('W7p open_space_link_token and mark_space_link_stale — no chaining', () => {
   it('a link child cannot open a link (42501); an ordinary agent child of H opens H\'s row', async () => {
     const L = await linked();
@@ -504,6 +576,19 @@ describe('W7p end paths — every way a link ends, ends its descendants', () => 
       `select count(*) as n from public.auth_sessions where id = any($1::uuid[]) and revoked_at is null`,
       [[L.linkSessionId, ...ids]]);
     expect(Number(row!.n)).toBe(0);
+  });
+
+  it('membership end — H3 removed from the TARGET space: the link session and every descendant end', async () => {
+    const L = await linked('H3');
+    const ids = await family(L);
+    expect((await sessionRow(L.linkSessionId)).revoked).toBe(false);
+    const h = await humanClaims('H');
+    await db.rpc(h, 'remove_space_member', [fixture.spaceB, fixture.memberH3B, null]);
+    // Two independent paths end it: 251's target trigger revokes the link
+    // session (249's cascade then ends its via_link children), and 232's
+    // end_membership revokes every session pinned to B for H3's account. Only
+    // switching off both lets anything survive.
+    await expectEnded([L.linkSessionId, ...ids]);
   });
 
   it('a resume after the link ended is refused, not silently unlinked', async () => {
