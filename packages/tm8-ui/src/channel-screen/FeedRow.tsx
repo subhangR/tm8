@@ -483,6 +483,9 @@ function MessageBody({
       <TurnParts
         parts={parts.map(turnPartFromMessagePart)}
         {...(onOpenEntity ? { onOpenEntity } : {})}
+        /* Only the claimed turn can still be running; a turn whose runtime
+           died before writing `done` must not pulse here forever. */
+        settled={!message.turnInFlight}
       />
     );
   }

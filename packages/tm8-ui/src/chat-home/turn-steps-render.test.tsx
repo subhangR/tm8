@@ -6,6 +6,7 @@
  * `tool_call(running)` → `tool_result` → `tool_call(completed|error)`, text
  * between most batches, and `error` + `done` when a turn dies mid-call.
  */
+import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, within } from '@testing-library/react';
 import { TurnParts } from './TurnParts';
@@ -161,6 +162,47 @@ describe('failures are shown, once, where they happened', () => {
     expect(lines(view.container)[0]!.textContent).toContain('Exit code 1');
   });
 
+  it('claims no retry when the later call acted on a DIFFERENT target', () => {
+    /* Review finding: a target-less signature matched ANY later call of the
+       same operation, so a failed create of “Alpha” read as retried by a
+       create of “Beta”. A failure must never hide behind a retry it was not. */
+    const create = (title: string) => ({ operation: 'entities.create', body: { kind: 'task', title } });
+    const parts: ChatTurnPart[] = [
+      ...call(0, 'c1', 'mcp__tm8__tm8_act', create('Alpha'), { result: 'parent not found', isError: true }),
+      ...call(3, 'c2', 'mcp__tm8__tm8_act', create('Beta'), { result: { entity: { id: TASK, kind: 'task', title: 'Beta' } } }),
+      ...call(6, 'c3', 'Grep', { pattern: 'aaa' }, { result: 'no match', isError: true }),
+      ...call(9, 'c4', 'Grep', { pattern: 'bbb' }, { result: 'x' }),
+      ...call(12, 'c5', 'mcp__acme__frobnicate', {}, { result: 'boom', isError: true }),
+      ...call(15, 'c6', 'mcp__acme__frobnicate', {}, { result: 'ok' }),
+      { seq: 18, kind: 'done' },
+    ];
+    const view = render(<TurnParts parts={parts} />);
+    const errlines = view.getAllByTestId('chat-step-errline');
+    expect(errlines).toHaveLength(3);
+    for (const line of errlines) expect(line.textContent).not.toContain('retried');
+    // The same create, retried, still says so.
+    cleanup();
+    const retried = render(
+      <TurnParts
+        parts={[
+          ...call(0, 'c1', 'mcp__tm8__tm8_act', create('Alpha'), { result: 'parent not found', isError: true }),
+          ...call(3, 'c2', 'mcp__tm8__tm8_act', create('Alpha'), { result: { entity: { id: TASK, kind: 'task', title: 'Alpha' } } }),
+        ]}
+      />,
+    );
+    expect(retried.getByTestId('chat-step-errline').textContent).toContain('The agent retried');
+  });
+
+  it('claims no retry when the same-target retry ALSO failed', () => {
+    const parts: ChatTurnPart[] = [
+      ...call(0, 'c1', 'Bash', { command: 'bun test' }, { result: 'Exit code 1', isError: true }),
+      ...call(3, 'c2', 'Bash', { command: 'bun test' }, { result: 'Exit code 1', isError: true }),
+      { seq: 6, kind: 'done' },
+    ];
+    const view = render(<TurnParts parts={parts} />);
+    for (const line of view.getAllByTestId('chat-step-errline')) expect(line.textContent).not.toContain('retried');
+  });
+
   it('does not claim a retry that never happened', () => {
     const parts: ChatTurnPart[] = [
       ...call(0, 'c1', 'mcp__tm8__tm8_act', { operation: 'entities.commands.complete', params: { id: TASK } }, {
@@ -301,8 +343,10 @@ describe('a 150-tool-call turn is scannable', () => {
     const head = view.getByTestId('chat-steps-head');
     expect(view.getAllByTestId('chat-steps')).toHaveLength(1);
     expect(head.getAttribute('aria-expanded')).toBe('false');
-    expect(head.textContent).toMatch(/^150 steps · /);
-    expect(head.textContent).toContain('· 3 failed');
+    // Exactly the top TWO verb groups (D15 §1), then the failure count.
+    const sentence = head.cloneNode(true) as HTMLElement;
+    sentence.querySelectorAll('[aria-hidden]').forEach((el) => el.remove());
+    expect(sentence.textContent).toBe('150 steps · read 38 files, ran 38 commands · 3 failed');
     // Collapsed: no step lines at all — just the header, and the three errlines.
     expect(lines(view.container)).toHaveLength(0);
     expect(view.getAllByTestId('chat-step-errline')).toHaveLength(3);
@@ -311,6 +355,7 @@ describe('a 150-tool-call turn is scannable', () => {
   });
 
   it('expands to the latest five lines, with the rest behind one "earlier" button', () => {
+    expect(STEP_TAIL).toBe(5); // D15 §2 — pinned, not read back from the constant
     const view = render(<TurnParts parts={longTurn(150, { live: false })} />);
     fireEvent.click(view.getByTestId('chat-steps-head'));
     expect(lines(view.container)).toHaveLength(STEP_TAIL);
@@ -320,6 +365,8 @@ describe('a 150-tool-call turn is scannable', () => {
     expect(hidden + shown).toBe(150);
 
     fireEvent.click(earlier);
+    // The button is gone; focus follows the steps it revealed, not <body>.
+    expect(document.activeElement).toBe(view.container.querySelector('.tch-steps__list'));
     const all = lines(view.container);
     expect(all.reduce((n, li) => n + Number(li.dataset.count), 0)).toBe(150);
     // The four categories alternate, so nothing folds here — but no line is a
@@ -432,5 +479,20 @@ describe('doc tools (D17)', () => {
     const view = render(<TurnParts parts={parts} />);
     expect(view.queryByTestId('chat-doc-edit')).toBeNull();
     expect(view.getByTestId('chat-step-errline')).toBeTruthy();
+  });
+});
+
+describe('the step block stylesheet', () => {
+  it('lets its buttons inherit the transcript font (jsdom loads no CSS)', () => {
+    /* Review finding: a <button> does not inherit `font`, so the header and
+       the "earlier" control rendered in the UA's system-ui while the lines
+       under them used the transcript's face. */
+    const css = readFileSync(`${process.cwd()}/src/chat-home/turn-steps.css`, 'utf8');
+    for (const selector of ['.tch-steps__head {', '.tch-steps__earlier {']) {
+      const start = css.indexOf(selector);
+      expect(start).toBeGreaterThanOrEqual(0);
+      const block = css.slice(start, css.indexOf('}', start));
+      expect(block).toMatch(/\bfont: inherit;/);
+    }
   });
 });

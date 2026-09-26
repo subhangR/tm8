@@ -23,6 +23,10 @@
   border: none;
   background: none;
   color: var(--pn-ink-3);
+  /* A <button> does not inherit the page font: without this the header
+     renders in the UA's system-ui while the lines under it are in the
+     transcript's face. */
+  font: inherit;
   font-size: var(--pn-fs-fine);
   text-align: left;
   cursor: pointer;
@@ -39,6 +43,7 @@
   border: none;
   background: none;
   color: var(--pn-ink-3);
+  font: inherit;
   font-size: var(--pn-fs-fine);
   text-align: left;
   cursor: pointer;
@@ -48,6 +53,7 @@
 
 .tch-steps__head:focus-visible,
 .tch-steps__earlier:focus-visible,
+.tch-steps__list:focus-visible,
 .tch-steps__thought-toggle:focus-visible,
 .tch-docedit__open:focus-visible {
   outline: 2px solid var(--pn-brand);

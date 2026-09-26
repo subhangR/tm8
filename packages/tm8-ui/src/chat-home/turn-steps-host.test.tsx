@@ -30,6 +30,9 @@ function threadWithOpenCall(state: ChatThreadDetail['summary']['state']): ChatTh
       author: thread.turns[1]!.author,
       createdAt: '2026-08-13T08:20:00.000Z',
       body: '',
+      // The server's in-flight marker (133) is present only while the turn
+      // is still claimed — which is exactly when the thread streams.
+      ...(state === 'streaming' ? { turnInFlight: true } : {}),
       parts: [
         { seq: 0, kind: 'text', text: 'Building it now.' },
         {
@@ -54,6 +57,13 @@ describe('the host settles every turn but the live one', () => {
     expect(line.dataset.state).toBe('stopped');
     expect(line.textContent).toContain('Stopped while running a shell command');
     expect(view.container.querySelector('.tch-steps__line[data-state="running"]')).toBeNull();
+  });
+
+  it('a STOPPED thread shows the call it abandoned as stopped', async () => {
+    const { port } = createChatHomeFixturePort([threadWithOpenCall('stopped-continuable')]);
+    const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
+    const line = await waitFor(() => view.getByTestId('chat-step-line'));
+    expect(line.dataset.state).toBe('stopped');
   });
 
   it('a STREAMING thread keeps its newest assistant turn live', async () => {

@@ -581,7 +581,6 @@
 .tch-asset__file a { color: var(--pn-brand); font-size: var(--pn-fs-tick); }
 .tch-asset__file em { color: var(--pn-ink-4); font-size: var(--pn-fs-tick); }
 
-
 /* The ledger lines — what a turn DID to the graph, as sentences (design
    ruling 1): one counted read line, one line per create (tree-indented via
    inline padding), one line per transition. They stand free in the transcript

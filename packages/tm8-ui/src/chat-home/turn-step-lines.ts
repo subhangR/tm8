@@ -103,12 +103,16 @@ export function buildStepViews(
   const signatures = steps.map(signature);
   steps.forEach((part, index) => {
     const state = toolStepState(part, options.settled || part.seq < options.endSeq);
+    const own = signatures[index];
+    // FAILS CLOSED: a call whose target cannot be named never claims a retry.
+    // "The agent retried" over a different target would hide a real failure.
     const retried =
       state === 'error' &&
+      own !== null &&
       steps.some(
         (later, j) =>
           j > index &&
-          signatures[j] === signatures[index] &&
+          signatures[j] === own &&
           toolStepState(later, true) === 'completed',
       );
     views.set(part.seq, {
@@ -122,14 +126,32 @@ export function buildStepViews(
   return views;
 }
 
-/** "Same operation and target" (D13): the tool, its operation, and the one
- *  field that names what it acted on. */
-function signature(part: ToolStepPart): string {
+/**
+ * "Same operation and target" (D13): the tool, its operation, and what it
+ * acted on — or NULL when the call names no target, which never matches.
+ * A create's target is the thing it tried to make (kind + title); a search's
+ * is what it searched for.
+ */
+function signature(part: ToolStepPart): string | null {
   const args = record(part.args);
   const params = record(args?.params);
+  const body = record(args?.body);
+  const operation = operationOf(part.args);
+  const created =
+    operation === 'entities.create' && str(body?.title) ? `${str(body?.kind) ?? ''}:${str(body?.title)}` : null;
   const target =
-    params?.id ?? args?.docId ?? args?.file_path ?? args?.path ?? args?.command ?? args?.url ?? '';
-  return `${bareToolName(part.name)}|${operationOf(part.args) ?? ''}|${typeof target === 'string' ? target : ''}`;
+    str(params?.id) ??
+    str(args?.docId) ??
+    created ??
+    str(args?.file_path) ??
+    str(args?.path) ??
+    str(args?.command) ??
+    str(args?.url) ??
+    str(args?.pattern) ??
+    str(args?.query) ??
+    (operation === null ? str(args?.title) : null);
+  if (target === null) return null;
+  return `${bareToolName(part.name)}|${operation ?? ''}|${target}`;
 }
 
 export type StepLine =
@@ -259,6 +281,10 @@ function itemSeq(item: RunItem): number {
 
 function lowerFirst(text: string): string {
   return text.length > 0 ? `${text[0]!.toLowerCase()}${text.slice(1)}` : text;
+}
+
+function str(value: unknown): string | null {
+  return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
 function record(value: unknown): Record<string, unknown> | null {

@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { EntityId } from '@tm8/contract';
 import {
   stepsIn,
@@ -48,6 +48,16 @@ export function TurnSteps({
   const [open, setOpen] = useState<boolean | null>(null);
   const [showAll, setShowAll] = useState(false);
   const listId = useId();
+  const listRef = useRef<HTMLOListElement>(null);
+  // The "earlier" button unmounts on press; focus follows the steps it
+  // revealed rather than falling to <body>.
+  const focusList = useRef(false);
+  useEffect(() => {
+    if (showAll && focusList.current) {
+      focusList.current = false;
+      listRef.current?.focus();
+    }
+  }, [showAll]);
   const expanded = open ?? live;
 
   let visible: readonly StepLine[];
@@ -90,7 +100,10 @@ export function TurnSteps({
           data-testid="chat-steps-earlier"
           aria-expanded={false}
           aria-controls={listId}
-          onClick={() => setShowAll(true)}
+          onClick={() => {
+            focusList.current = true;
+            setShowAll(true);
+          }}
         >
           {hiddenSteps > 0
             ? `Show ${hiddenSteps} earlier ${hiddenSteps === 1 ? 'step' : 'steps'}`
@@ -98,7 +111,7 @@ export function TurnSteps({
         </button>
       ) : null}
       {visible.length > 0 ? (
-        <ol className="tch-steps__list" id={listId}>
+        <ol className="tch-steps__list" id={listId} ref={listRef} tabIndex={-1}>
           {visible.map((line) =>
             line.kind === 'thought' ? (
               <ThoughtLine key={line.key} text={line.text} />
