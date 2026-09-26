@@ -647,7 +647,6 @@ button.tch-ledger__open:hover {
   text-decoration: underline;
 }
 
-
 .tch-entity-chip {
   display: inline-flex;
   gap: var(--pn-space-1);
