@@ -102,7 +102,7 @@ describe('Home header rows', () => {
     // after the removal too, because the bar is still where a future control
     // would be tempted to land.
     expect(tablist.querySelector('[data-testid="view-switcher"]')).toBeNull();
-    expect(view.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Chats', 'Tasks']);
+    expect(view.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Tasks']);
   });
 
   it('the host still decides the layout — the mode prop reaches the body without a control', () => {
