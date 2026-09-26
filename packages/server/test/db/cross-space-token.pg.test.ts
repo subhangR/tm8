@@ -3018,7 +3018,9 @@ describe('W3-audit ledger replay before the space guard (046 ledger_replay) — 
   // may still reach it. Each function gets: record pinned to A; replay pinned
   // to B with the same cmid (the cell); the same call pinned to B with a FRESH
   // cmid (the guard, which is what the replay skips); replay pinned to A (the
-  // positive).
+  // positive). CLOSED by 247: the ledger records the pin and a pinned caller
+  // replays only rows recorded under its own pin, so each former KNOWN GAP
+  // cell below now asserts the 23514 refusal.
   const pinnedTo = (spaceId: string) => mintPinned(fixture.accountH, fixture.identityH, spaceId);
   // `marker` is the A resource the recorded body names.
   type Case = { name: string; fresh: string; marker: (cmid: string) => string;
@@ -3043,13 +3045,13 @@ describe('W3-audit ledger replay before the space guard (046 ledger_replay) — 
     fixture.spaceA, fixture.memberH2A, 'member', null, cmid]), 'enforce'));
 
   for (const { name, call, fresh, marker } of cases) {
-    it(`KNOWN GAP (W3-audit F4): ${name} replays A's recorded result to H pinned to B`, async () => {
+    it(`CLOSED by 247 (W3-audit F4): ${name} recorded pinned to A is refused, not replayed, to H pinned to B`, async () => {
       const cmid = `w3-audit-replay-${name}-${randomUUID()}`;
       expect(await outcome(async () => call(await pinnedTo(fixture.spaceA), cmid))).toBe('ok');
-      // Expected after the fix: 42501, the same as the fresh call below.
-      const replayed = await call(await pinnedTo(fixture.spaceB), cmid);
-      // The body a B-pinned session receives is A's: it names the A resource.
-      expect(JSON.stringify(replayed)).toContain(marker(cmid));
+      // Before 247 this returned A's body (it named marker(cmid)); now the pin refuses it.
+      let replayed: unknown = null;
+      expect(await outcome(async () => { replayed = await call(await pinnedTo(fixture.spaceB), cmid); })).toBe('23514');
+      expect(JSON.stringify(replayed ?? null)).not.toContain(marker(cmid));
     });
     it(`${name}: the guard the replay skips — pinned to B with a fresh cmid is refused`, async () => {
       expect(await outcome(async () => call(await pinnedTo(fixture.spaceB), `w3-audit-fresh-${randomUUID()}`)))
@@ -3062,20 +3064,23 @@ describe('W3-audit ledger replay before the space guard (046 ledger_replay) — 
     });
   }
 
-  it('KNOWN GAP (W3-audit F4): w2_withdraw_handoff returns a recorded A withdrawal to H pinned to B (ledger row seeded)', async () => {
+  it('CLOSED by 247 (W3-audit F4): w2_withdraw_handoff refuses a recorded A withdrawal to H pinned to B (ledger row seeded)', async () => {
     // A real handoff needs the dispatcher; the replay branch reads only the
     // ledger, so the row it would have recorded is seeded as graph owner.
     const cmid = `w3-audit-withdraw-${randomUUID()}`;
     const handoffId = `w3-audit-${randomUUID()}`;
     await database.query(
-      `insert into public.command_ledger(client_mutation_id, identity_id, operation, result)
+      `insert into public.command_ledger(client_mutation_id, identity_id, operation, result, session_space_id)
        values ($1, $2, 'handoffs.withdraw', jsonb_build_object('handoff', jsonb_build_object(
-         'id', $3::text, 'source_space_id', $4::text)))`,
+         'id', $3::text, 'source_space_id', $4::text)), $4::uuid)`,
       [cmid, fixture.identityH, handoffId, fixture.spaceA]);
     const withdraw = async (spaceId: string, id: string) => asToken(await pinnedTo(spaceId),
       (q) => q.rpc<{ handoff?: { source_space_id?: string } }>('w2_withdraw_handoff', [handoffId, 1, null, null, id]),
       'enforce');
-    expect((await withdraw(fixture.spaceB, cmid)).handoff?.source_space_id).toBe(fixture.spaceA);
+    // The row carries the A pin (as ledger_record writes it since 247); before 247 this returned it.
+    expect(await outcome(() => withdraw(fixture.spaceB, cmid))).toBe('23514');
+    // Positive: the same row replays to H pinned to A.
+    expect((await withdraw(fixture.spaceA, cmid)).handoff?.source_space_id).toBe(fixture.spaceA);
     // The guard path: a fresh cmid reaches the handoff lookup and finds none.
     expect(await outcome(() => withdraw(fixture.spaceB, `w3-audit-fresh-${randomUUID()}`))).not.toBe('ok');
   });
@@ -3098,10 +3103,11 @@ describe('W3-audit ledger replay before the space guard (046 ledger_replay) — 
     await refreshAll(await mintBrowser(fixture.accountH, fixture.identityH));
     expect([await trackingRows(fixture.spaceA), await trackingRows(fixture.spaceB)]).toEqual([a + 1, b + 1]);
   });
-  it('KNOWN GAP (W3-audit F4): queue_tracking_refresh replays a gate-recorded A+B result to H pinned to B', async () => {
+  it('CLOSED by 247 (W3-audit F4): queue_tracking_refresh refuses a gate-recorded A+B result to H pinned to B', async () => {
     const cmid = `w3-audit-replay-tracking-${randomUUID()}`;
     await refreshAll(await mintBrowser(fixture.accountH, fixture.identityH), cmid);
-    expect(await outcome(async () => refreshAll(await pinnedTo(fixture.spaceB), cmid))).toBe('ok');
+    // Recorded unpinned (null row pin): a pinned caller may not replay it. Before 247 this was 'ok'.
+    expect(await outcome(async () => refreshAll(await pinnedTo(fixture.spaceB), cmid))).toBe('23514');
     expect(await outcome(async () => refreshAll(await pinnedTo(fixture.spaceB)))).toBe('42501');
   });
 });
@@ -3455,7 +3461,7 @@ describe('S3 a replay honours the session space pin (247 command_ledger.session_
     expect(returned).toBeNull();
   });
 
-  it('a6: set_member_role recorded pinned to A, presented pinned to B — H2\'s row is absent and the write path never runs', async () => {
+  it('a6: set_member_role recorded pinned to A, presented pinned to B — refused 23514 at require_replay_principal, before require_space_admin; H2\'s row is absent', async () => {
     const id = cmid('a-to-b');
     const recorded = await setRole(fixture.spaceA, fixture.spaceA, fixture.memberH2A, 'admin', id);
     expect(JSON.stringify(recorded)).toContain(fixture.identityH2);
@@ -3468,6 +3474,9 @@ describe('S3 a replay honours the session space pin (247 command_ledger.session_
       .toBe('23514 require_replay_principal');
     expect(returned).toBeNull();
     expect(JSON.stringify(returned ?? {})).not.toContain(fixture.identityH2);
+    // Not a write-path proof: with or without 247 a known cmid returns at the
+    // replay (118:263) before require_space_admin (118:267), so the role stays
+    // put either way. The exit point is proven by the 23514 detail above.
     expect(await roleOf(fixture.memberH2A)).toBe('member');
   });
 
@@ -3519,6 +3528,18 @@ describe('S3 a replay honours the session space pin (247 command_ledger.session_
     expect(await refusal(async () => { returned = await startChat(fixture.spaceB, id); })).toBe('23514 ledger_replay');
     expect(returned).toBeNull();
   });
+  it('ledger_replay exit: start_chat recorded UNPINNED (null row pin), presented pinned to A, is refused and returns nothing', async () => {
+    // The null-pin twin of the cell above, at the ledger_replay exit. It is the
+    // cell that goes red under a fail-open pin check at 247:90 (for example
+    // `<>` in place of `is distinct from`, which lets a null row pin through).
+    const id = cmid('chat-open-to-a');
+    await startChat(null, id);
+    expect((await database.query<{ p: string | null }>(
+      'select session_space_id::text p from public.command_ledger where client_mutation_id = $1', [id]))[0]!.p).toBeNull();
+    let returned: unknown = null;
+    expect(await refusal(async () => { returned = await startChat(fixture.spaceA, id); })).toBe('23514 ledger_replay');
+    expect(returned).toBeNull();
+  });
   it('ledger_replay exit: positive — the same A-pinned session replays its own start_chat and gets the identical body', async () => {
     const id = cmid('chat-a-to-a');
     const first = await startChat(fixture.spaceA, id);
@@ -3532,6 +3553,9 @@ describe('S3 a replay honours the session space pin (247 command_ledger.session_
   describe('P6 stream_grants_select honours the pin on its subject_identity arm (247)', () => {
     const sessionB = randomUUID();
     const containerB = randomUUID();
+    // Its own A session: the W3-audit block's grant_stream_attach cells already
+    // hold H's live view grant on fixture.workSessionA (stream_grants_live_idx).
+    const sessionA = randomUUID();
     const grantSessionB = randomUUID();
     const grantContainerB = randomUUID();
     const grantSessionA = randomUUID();
@@ -3546,11 +3570,16 @@ describe('S3 a replay honours the session space pin (247 command_ledger.session_
           [sessionB, containerB, fixture.spaceB, fixture.memberHB],
         );
         await client.query(
+          `insert into public.entities(id, space_id, kind, created_by, visibility)
+           values ($1, $2, 'work_session', $3, 'space')`,
+          [sessionA, fixture.spaceA, fixture.memberHA],
+        );
+        await client.query(
           `insert into public.stream_grants(id, work_session_id, container_entity_id, surface, subject_identity, mode, granted_by, token_hash, expires_at)
            values ($1, $4, null, null, $7, 'view', $8, $9, now() + interval '1 hour'),
                   ($2, null, $5, 'screen', $7, 'view', $8, $10, now() + interval '1 hour'),
                   ($3, $6, null, null, $7, 'view', $11, $12, now() + interval '1 hour')`,
-          [grantSessionB, grantContainerB, grantSessionA, sessionB, containerB, fixture.workSessionA,
+          [grantSessionB, grantContainerB, grantSessionA, sessionB, containerB, sessionA,
             fixture.identityH, fixture.memberHB, hash('b'), hash('c'), fixture.memberHA, hash('a')],
         );
       });
