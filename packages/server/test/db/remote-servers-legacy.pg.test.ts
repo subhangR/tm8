@@ -11,7 +11,8 @@
  *
  * Paired: once adopted, the row appears ONCE (as the entity), never twice —
  * and never again as a 044 row, even after the entity is soft-deleted (lead
- * ruling: delete means gone), even for a node admin outside the home space.
+ * ruling: delete means gone), even for a node admin outside the home space —
+ * and a generic restore_entity cannot bring it back (991 §8b).
  */
 import { randomUUID } from 'node:crypto';
 
@@ -193,11 +194,20 @@ describe('lead 09:52Z (a) — a pre-991 044 row after the repoint', () => {
     expect(await adoptedDirect(adminN2)).toBe(true);
   });
 
-  it('restore_entity brings the ENTITY back, once; the 044 row stays shadowed', async () => {
-    await db.rpc({ identityId: adminN, nodeAdmin: true, authKind: 'browser', requestId: 'legacy-restore' },
-      'restore_entity', [serverId, null, `legacy-restore-${randomUUID()}`]);
-    expect(await readAll(adminN)).toEqual(VISIBLE);
-    expect(await directory(adminN)).toEqual([{ legacy: false }]);
+  it('delete means gone: generic restore_entity is refused for a server; the 044 row stays shadowed', async () => {
+    // A server's lifecycle is command-owned (991 §8b): no generic door revives it.
+    const refused = await db.rpc({ identityId: adminN, nodeAdmin: true, authKind: 'browser', requestId: 'legacy-restore' },
+      'restore_entity', [serverId, null, `legacy-restore-${randomUUID()}`]).then(() => 'ok', (err: unknown) => `${(err as { details?: { sqlstate?: string } }).details?.sqlstate}: ${(err as Error).message}`);
+    expect(refused).toBe('42501: entity lifecycle is command-owned for kind server');
+    expect(await readAll(adminN)).toEqual(HIDDEN);
     expect(await readAll(adminN2)).toEqual(HIDDEN);
+    expect(await readAll(plainM)).toEqual(HIDDEN);
+    expect(await directory(adminN)).toEqual([]);
+    expect(await directory(adminN2)).toEqual([]);
+    expect(await directory(plainM)).toEqual([]);
+    // Shadowed, not rewritten: the 044 row is where it was, and still counts as adopted.
+    expect(await database.query(`select name, base_url from public.server_connections`))
+      .toEqual([{ name: NAME, base_url: URL_ }]);
+    expect(await adoptedDirect(adminN2)).toBe(true);
   });
 });
