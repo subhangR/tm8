@@ -151,7 +151,14 @@ function signature(part: ToolStepPart): string | null {
     str(args?.query) ??
     (operation === null ? str(args?.title) : null);
   if (target === null) return null;
-  return `${bareToolName(part.name)}|${operation ?? ''}|${target}`;
+  /* A SEARCH IS WHAT IT LOOKED FOR, NOT ONLY WHERE. Grep and Glob name a
+     `path` AND a `pattern`, and `path` wins the chain above — so a failed
+     search and a later one for a DIFFERENT pattern in the same place matched,
+     and the failure read as retried. Folding the sought term in only ever
+     splits signatures, so it can never invent a retry. */
+  const sought = str(args?.pattern) ?? str(args?.query);
+  const searched = sought !== null && sought !== target ? `|${sought}` : '';
+  return `${bareToolName(part.name)}|${operation ?? ''}|${target}${searched}`;
 }
 
 export type StepLine =

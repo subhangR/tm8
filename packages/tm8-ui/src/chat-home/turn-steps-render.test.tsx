@@ -11,9 +11,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, within } from '@testing-library/react';
 import { TurnParts } from './TurnParts';
 import { STEP_TAIL } from './TurnSteps';
-import { mergeChatTurnFrame, reconcileDetails } from './turn-model';
-import type { ChatThreadDetail, ChatTurnPart } from './types';
-import type { EntityId } from '@tm8/contract';
+import type { ChatTurnPart } from './types';
 
 afterEach(cleanup);
 
@@ -187,6 +185,34 @@ describe('failures are shown, once, where they happened', () => {
         parts={[
           ...call(0, 'c1', 'mcp__tm8__tm8_act', create('Alpha'), { result: 'parent not found', isError: true }),
           ...call(3, 'c2', 'mcp__tm8__tm8_act', create('Alpha'), { result: { entity: { id: TASK, kind: 'task', title: 'Alpha' } } }),
+        ]}
+      />,
+    );
+    expect(retried.getByTestId('chat-step-errline').textContent).toContain('The agent retried');
+  });
+
+  it('claims no retry when a search in the same path looked for something ELSE', () => {
+    /* #877 review, item 6: `path` outranked `pattern` in the signature, so a
+       failed Grep and a later Grep for a different pattern in the SAME path
+       matched, and the failure read as retried. */
+    const view = render(
+      <TurnParts
+        parts={[
+          ...call(0, 'c1', 'Grep', { pattern: 'aaa', path: 'src' }, { result: 'no match', isError: true }),
+          ...call(3, 'c2', 'Grep', { pattern: 'bbb', path: 'src' }, { result: 'x' }),
+          { seq: 6, kind: 'done' },
+        ]}
+      />,
+    );
+    expect(view.getByTestId('chat-step-errline').textContent).not.toContain('retried');
+    // The same search in the same path, retried, still says so.
+    cleanup();
+    const retried = render(
+      <TurnParts
+        parts={[
+          ...call(0, 'c1', 'Grep', { pattern: 'aaa', path: 'src' }, { result: 'no match', isError: true }),
+          ...call(3, 'c2', 'Grep', { pattern: 'aaa', path: 'src' }, { result: 'x' }),
+          { seq: 6, kind: 'done' },
         ]}
       />,
     );
@@ -405,33 +431,18 @@ describe('a 150-tool-call turn is scannable', () => {
 });
 
 describe('reconnects and streaming', () => {
-  it('draws ONE usage card when a reconnect leaves two usage parts', () => {
-    /* Real path: the client saw parts up to the `done` delta but MISSED the
-       usage delta; the done FRAME then synthesises a usage part at max+1,
-       and the next snapshot brings the stored one at its real seq. The
-       reconcile unions by seq, so both survive — two usage cards. */
-    const chatId = '019f0000-0000-7000-8000-0000000000c1' as EntityId;
-    const messageId = '019f0000-0000-7000-8000-0000000000c2' as EntityId;
-    const turnWith = (parts: ChatTurnPart[]): ChatThreadDetail => ({
-      summary: { rootId: chatId, state: 'streaming' } as ChatThreadDetail['summary'],
-      turns: [{ messageId, role: 'assistant', author: null, createdAt: '', body: '', parts }],
-    } as ChatThreadDetail);
-    const seen: ChatTurnPart[] = [
-      { seq: 0, kind: 'text', text: 'Done.' },
-      { seq: 2, kind: 'done' },
-    ];
-    const afterDone = mergeChatTurnFrame(turnWith(seen), {
-      type: 'chat.turn.done', chatId, messageId, usage: { input_tokens: 10, output_tokens: 5 },
-    });
-    const snapshot = turnWith([
+  it('draws ONE usage card even if a turn holds two usage parts', () => {
+    /* The render guard. The state path that produced two — a reconnect gap
+       missed the usage delta, the done frame put a stand-in at max+1, and the
+       next snapshot brought the stored one at its real seq — is closed in
+       `turn-model` ("one usage part per turn"). This keeps the screen honest
+       should any other path ever hand it two. */
+    const parts: ChatTurnPart[] = [
       { seq: 0, kind: 'text', text: 'Done.' },
       { seq: 1, kind: 'usage', usage: { input_tokens: 10, output_tokens: 5 } },
       { seq: 2, kind: 'done' },
-    ]);
-    const reconciled = reconcileDetails(afterDone, snapshot);
-    const parts = reconciled.turns[0]!.parts;
-    expect(parts.filter((p) => p.kind === 'usage')).toHaveLength(2); // the defect's precondition
-
+      { seq: 3, kind: 'usage', usage: { input_tokens: 10, output_tokens: 5 }, synthetic: true },
+    ];
     const view = render(<TurnParts parts={parts} />);
     expect(view.getAllByTestId('chat-usage-card')).toHaveLength(1);
   });

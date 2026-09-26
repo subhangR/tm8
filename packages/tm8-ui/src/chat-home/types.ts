@@ -13,7 +13,13 @@ export type ChatTurnItem =
       state: 'running' | 'completed' | 'error';
     }
   | { kind: 'tool_result'; toolCallId: string; content: unknown; isError?: boolean }
-  | { kind: 'usage'; usage: ChatUsage }
+  | {
+      kind: 'usage';
+      usage: ChatUsage;
+      /** CLIENT-ONLY: filled in from a done frame's usage because the usage
+       *  part's own delta was never seen. The stored one replaces it. */
+      synthetic?: true;
+    }
   | { kind: 'error'; message: string }
   | { kind: 'done'; reason?: 'success' | 'error' | 'interrupted' | 'closed' };
 

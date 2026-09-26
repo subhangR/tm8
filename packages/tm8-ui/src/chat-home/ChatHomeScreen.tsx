@@ -2918,24 +2918,43 @@ function phaseLabel(phase: ComposerPhase): string {
   }
 }
 
-/** The error a turn ended with, from its not-yet-pruned deltas or its merged
- *  parts; `null` for a turn that ended cleanly. */
+/**
+ * The error a turn ended with, from its not-yet-pruned deltas and its merged
+ * parts; `null` for a turn that ended cleanly.
+ *
+ * JUDGED BY ITS LAST ATTEMPT. One agent message can hold TWO terminal `done`
+ * parts: a turn whose `complete_chat_turn` did not land after its first done
+ * is re-claimed when its lease expires and re-run into the SAME message, seq
+ * continuing (live: turn 01a0d439, done at seq 18, then seq 19–34 fifty
+ * minutes later). Only the parts after the previous done belong to the
+ * attempt that just ended — the first done describes an attempt that is over.
+ */
 function turnFailureOf(
   messageId: EntityId,
   frames: readonly ChatTurnFrame[],
   detail: ChatThreadDetail | null,
 ): string | null {
-  const parts = [
-    ...(detail?.turns.find((candidate) => candidate.messageId === messageId)?.parts ?? []),
-    ...frames.flatMap((frame) =>
-      frame.type === 'chat.turn.delta' && frame.messageId === messageId ? [frame.part] : []),
-  ];
-  const error = [...parts].reverse().find((part) => part.kind === 'error');
+  const bySeq = new Map<number, ChatThreadDetail['turns'][number]['parts'][number]>();
+  for (const part of detail?.turns.find((candidate) => candidate.messageId === messageId)?.parts ?? []) {
+    bySeq.set(part.seq, part);
+  }
+  for (const frame of frames) {
+    if (frame.type === 'chat.turn.delta' && frame.messageId === messageId) {
+      bySeq.set(frame.seq, { ...frame.part, seq: frame.seq });
+    }
+  }
+  const ordered = [...bySeq.values()].sort((a, b) => a.seq - b.seq);
+  const dones = ordered.flatMap((part, index) => (part.kind === 'done' ? [index] : []));
+  const last = dones.length > 0 ? dones[dones.length - 1]! : -1;
+  const previous = dones.length > 1 ? dones[dones.length - 2]! : -1;
+  const attempt = ordered.slice(previous + 1, last < 0 ? undefined : last + 1);
+  const error = [...attempt].reverse().find((part) => part.kind === 'error');
   const message = error?.kind === 'error' ? error.message : 'The turn failed.';
-  /* The terminal `done` part names HOW the turn ended; when it is here it is
-     the authority. Without it (an older node), an error part is the tell. */
-  const done = parts.find((part) => part.kind === 'done' && part.reason !== undefined);
-  if (done?.kind === 'done') return done.reason === 'error' ? message : null;
+  /* The terminal `done` part names HOW the attempt ended; when it carries a
+     reason it is the authority. Without one (an older node), an error part in
+     the same attempt is the tell. */
+  const done = last < 0 ? undefined : ordered[last];
+  if (done?.kind === 'done' && done.reason !== undefined) return done.reason === 'error' ? message : null;
   return error ? message : null;
 }
 
