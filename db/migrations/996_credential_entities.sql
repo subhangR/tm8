@@ -1059,14 +1059,20 @@ create trigger accounts_disable_revokes_owned_credentials
 after update of status on public.accounts
 for each row execute function internal.revoke_disabled_owner_credentials();
 
--- A member whose account still owns a live credential in the space cannot be
--- deleted: G6 member removal (#841) revokes first, then deletes. A cascade
--- from deleting the whole space is admitted — the space row is already gone
--- when the cascade reaches members, and its credentials go with it.
+-- A member whose account still owns a live credential in the space cannot
+-- stop being a member. G6 (232) ends a membership by TOMBSTONE, so the guard
+-- sits on the status flip as well as on DELETE; internal.end_membership
+-- (section 12b) revokes first, then tombstones. A DELETE cascade from
+-- deleting the whole space is admitted — the space row is already gone when
+-- the cascade reaches members, and its credentials go with it.
 create or replace function internal.guard_member_owned_credentials() returns trigger
 language plpgsql security definer set search_path = public, internal, pg_temp as $$
 begin
-  if not exists (select 1 from public.spaces s where s.id = old.space_id) then
+  if tg_op = 'UPDATE' then
+    if not (old.status = 'active' and new.status is distinct from 'active') then
+      return new;
+    end if;
+  elsif not exists (select 1 from public.spaces s where s.id = old.space_id) then
     return old;
   end if;
   if exists (select 1 from public.space_credentials sc
@@ -1077,6 +1083,9 @@ begin
     raise exception 'this member owns live credentials in the space; revoke them before removing the member'
       using errcode = '23503';
   end if;
+  if tg_op = 'UPDATE' then
+    return new;
+  end if;
   return old;
 end
 $$;
@@ -1084,6 +1093,124 @@ $$;
 create trigger members_owned_credentials_backstop
 before delete on public.members
 for each row execute function internal.guard_member_owned_credentials();
+
+create trigger members_owned_credentials_tombstone_backstop
+before update of status on public.members
+for each row execute function internal.guard_member_owned_credentials();
+
+-- -----------------------------------------------------------------------------
+-- 12b. G6 (232, #841): a membership that ends takes the member's owned
+--      credentials in that space with it (T41b); an account disable reports
+--      the sessions its trigger's revoke strands (section 12).
+-- -----------------------------------------------------------------------------
+
+-- Revoke every live credential the account owns in the space, with
+-- delete_space_credential's revoke fields; space_credentials_touch_entity
+-- drops the member defaults on each. Returns what the TS step after commit
+-- must reach:
+--   credentialSessionIds  live sessions ANOTHER launcher holds on a credential
+--                         the account owns here, whatever its status, so a
+--                         retry after a failed kill finds them again. The
+--                         account's own launches are 232's stoppedSessionIds;
+--   credentialHomes       the file home of each login credential revoked.
+-- Ids and provider names only, never a secret column.
+create or replace function internal.revoke_member_owned_credentials(p_space_id uuid, p_account_id uuid)
+returns jsonb language plpgsql
+set search_path = public, internal, pg_temp as $$
+declare
+  v_sessions uuid[];
+  v_homes jsonb;
+begin
+  if p_account_id is null then
+    return jsonb_build_object('credentialSessionIds', '[]'::jsonb, 'credentialHomes', '[]'::jsonb);
+  end if;
+  with revoked as (
+    update public.space_credentials
+       set status = 'revoked',
+           is_default = false,
+           may_be_space_default = false,
+           pending_expires_at = null,
+           secret_ciphertext = null,
+           secret_nonce = null
+     where space_id = p_space_id
+       and owner_account_id = p_account_id
+       and status <> 'revoked'
+    returning id, provider, shape
+  )
+  select coalesce(jsonb_agg(jsonb_build_object('spaceId', p_space_id, 'credentialId', r.id, 'provider', r.provider)
+                            order by r.id) filter (where r.shape = 'login'), '[]'::jsonb)
+    into v_homes
+    from revoked r;
+  select coalesce(array_agg(distinct ssc.work_session_id), '{}'::uuid[]) into v_sessions
+    from public.session_space_credentials ssc
+    join public.space_credentials sc on sc.id = ssc.space_credential_id
+    join public.work_sessions ws on ws.entity_id = ssc.work_session_id
+   where sc.space_id = p_space_id
+     and sc.owner_account_id = p_account_id
+     and ssc.launcher_account_id is distinct from p_account_id
+     and ws.status in ('spawning', 'running', 'idle');
+  return jsonb_build_object('credentialSessionIds', to_jsonb(v_sessions), 'credentialHomes', v_homes);
+end
+$$;
+
+-- 232's end_membership keeps its body under a new name; leave_space and
+-- remove_space_member call this wrapper by the old name. It revokes BEFORE
+-- the tombstone (so the backstop above passes) and adds the two lists to the
+-- result, which the caller then records in the ledger: a replay returns them.
+alter function internal.end_membership(uuid, text, uuid) rename to end_membership_tombstone;
+
+create function internal.end_membership(p_member_id uuid, p_status text, p_actor uuid)
+returns jsonb language plpgsql
+set search_path = public, internal, pg_temp as $$
+declare
+  target public.members;
+  v_account uuid;
+  v_credentials jsonb := jsonb_build_object('credentialSessionIds', '[]'::jsonb, 'credentialHomes', '[]'::jsonb);
+begin
+  select * into target from public.members where entity_id = p_member_id for update;
+  -- Anything else is refused by the tombstone body below, and this
+  -- transaction's revoke goes with it.
+  if target.entity_id is not null and target.status = 'active' and p_status in ('left', 'removed') then
+    select a.id into v_account from public.accounts a where a.identity_id = target.identity_id;
+    v_credentials := internal.revoke_member_owned_credentials(target.space_id, v_account);
+  end if;
+  return internal.end_membership_tombstone(p_member_id, p_status, p_actor) || v_credentials;
+end
+$$;
+
+-- 232's disable_account likewise keeps its body, moved out of reach of
+-- tm8_app. It authorises, replays, disables and revokes the account's auth
+-- sessions; the accounts trigger (section 12) revokes every credential the
+-- account owns, once, in that same statement. This wrapper runs it FIRST,
+-- then lists the other launchers' live sessions on those credentials and the
+-- login homes, so nothing is read before the caller is authorised.
+alter function public.disable_account(uuid, text) rename to disable_account_core;
+alter function public.disable_account_core(uuid, text) set schema internal;
+
+create function public.disable_account(p_account_id uuid, p_client_mutation_id text default null)
+returns jsonb language plpgsql security definer
+set search_path = public, internal, pg_temp as $$
+declare
+  result jsonb;
+  v_sessions uuid[];
+  v_homes jsonb;
+begin
+  result := internal.disable_account_core(p_account_id, p_client_mutation_id);
+  select coalesce(array_agg(distinct ssc.work_session_id), '{}'::uuid[]) into v_sessions
+    from public.session_space_credentials ssc
+    join public.space_credentials sc on sc.id = ssc.space_credential_id
+    join public.work_sessions ws on ws.entity_id = ssc.work_session_id
+   where sc.owner_account_id = p_account_id
+     and ssc.launcher_account_id is distinct from p_account_id
+     and ws.status in ('spawning', 'running', 'idle');
+  select coalesce(jsonb_agg(jsonb_build_object('spaceId', sc.space_id, 'credentialId', sc.id, 'provider', sc.provider)
+                            order by sc.id), '[]'::jsonb)
+    into v_homes
+    from public.space_credentials sc
+   where sc.owner_account_id = p_account_id and sc.shape = 'login' and sc.status = 'revoked';
+  return result || jsonb_build_object('credentialSessionIds', to_jsonb(v_sessions), 'credentialHomes', v_homes);
+end
+$$;
 
 -- -----------------------------------------------------------------------------
 -- 13. Data step: every existing 206 row gets a same-id card (§7 step 1).
@@ -1173,6 +1300,9 @@ revoke all on function internal.may_see_space_credential_detail(public.space_cre
 revoke all on function internal.space_credential_json(public.space_credentials) from public;
 revoke all on function internal.revoke_disabled_owner_credentials() from public;
 revoke all on function internal.guard_member_owned_credentials() from public;
+revoke all on function internal.revoke_member_owned_credentials(uuid, uuid) from public;
+revoke all on function internal.end_membership(uuid, text, uuid) from public;
+revoke all on function internal.disable_account_core(uuid, text) from public, tm8_app;
 
 revoke all on function public.list_space_credentials(uuid, boolean) from public;
 revoke all on function public.read_space_credential(uuid) from public;
@@ -1182,6 +1312,8 @@ grant execute on function public.list_space_credentials(uuid, boolean) to tm8_ap
 grant execute on function public.read_space_credential(uuid) to tm8_app;
 grant execute on function public.usable_space_credential_ids(uuid[]) to tm8_app;
 grant execute on function public.set_space_credential_visibility(uuid, text) to tm8_app;
+revoke all on function public.disable_account(uuid, text) from public;
+grant execute on function public.disable_account(uuid, text) to tm8_app;
 
 -- A fresh table is estimated at 10 pages until analyzed (225); do it here.
 analyze public.member_defaults;
