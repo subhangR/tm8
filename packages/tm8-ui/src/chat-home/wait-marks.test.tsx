@@ -97,12 +97,14 @@ describe('chat waiting marks', () => {
     });
     fireEvent.click(view.getByRole('button', { name: /send/i }));
 
+    /* The pending row IS the live status row now (lane 2; advisor D20), and
+       it carries the same ribbon — one wait glyph, not two. */
     const thinking = await view.findByTestId('chat-thinking');
     expect(thinking.querySelector('[data-testid="ribbon-mark"]')).not.toBeNull();
     // The words are still the accessible content; the mark is decorative and
     // must not be reachable, or every wait row gains a nameless graphic.
     expect(thinking.getAttribute('role')).toBe('status');
-    expect(thinking.querySelector('.tch-wait__mark')?.getAttribute('aria-hidden')).toBe('true');
+    expect(thinking.querySelector('.tch-live__mark')?.getAttribute('aria-hidden')).toBe('true');
   });
 
   /**

@@ -1,0 +1,182 @@
+/* ── THE LIVE STATUS ROW + THE WAY BACK TO IT ────────────────────────────────
+   `LiveTurnStatus.tsx`. Anatomy and tokens are the advisor's rulings D1–D5 as
+   amended by D16 and D20 (task 01a0dc86-911e): one card, sticky at the bottom
+   of the transcript's scroll box, 4px above the composer; mark · now sentence ·
+   muted aside · mono meta; the jump pill in the card's right slot while a turn
+   runs, a pill of its own otherwise.
+
+   HEIGHT DOES NOT TICK. The meta line changes every second, and the transcript
+   only re-follows its end when the SCREEN re-renders — not when this row's own
+   clock does. So nothing that ticks is allowed to wrap: the text and the meta
+   are `nowrap` + ellipsis, and on a phone the meta takes its own line for the
+   whole turn rather than wrapping onto one when it grows.
+
+   4px ABOVE THE COMPOSER MEANS A NEGATIVE OFFSET. A sticky box sticks inside
+   its scroller's CONTENT box, so `bottom: 4px` left the card 4px above the
+   transcript's bottom PADDING — measured 31px above the composer, with the
+   turns scrolling past visibly underneath it. The offset gives the padding
+   back (`.tch-transcript`: `--pn-space-6`, `--pn-space-4` under 760px). At the
+   end of the thread it changes nothing: the card's natural place is already
+   above the stick line, so it only sticks once the reader scrolls up. */
+
+.tch-dock {
+  position: sticky;
+  bottom: calc(4px - var(--pn-space-6));
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  margin-top: var(--pn-space-2);
+  /* The dock spans the measure but only its children take clicks: the strip
+     beside a standalone pill must not swallow a click on the turn beneath it. */
+  pointer-events: none;
+}
+.tch-dock > * { pointer-events: auto; }
+
+/* With a turn in flight the dock IS the card. */
+.tch-dock[data-live] {
+  padding: 9px 14px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-md);
+  animation: tch-live-rise 0.35s var(--pn-ease-out) both;
+}
+.tch-dock[data-phase='failed'] { border-left: 3px solid var(--pn-block); }
+
+/* Without one, it is only the pill, centred and floated a little higher. */
+.tch-dock:not([data-live]) {
+  bottom: calc(12px - var(--pn-space-6));
+  justify-content: center;
+}
+@media (max-width: 760px) {
+  .tch-dock { bottom: calc(4px - var(--pn-space-4)); }
+  .tch-dock:not([data-live]) { bottom: calc(12px - var(--pn-space-4)); }
+}
+
+@keyframes tch-live-rise {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* `.tch-dock .tch-live`, two classes, on purpose: in `sending` / `waiting` the
+   row also wears `.tch-wait` (the old wait row's class, which tests and lane 1
+   still find it by), and that rule's mono micro type and padding must not win
+   whichever stylesheet happens to load last. */
+.tch-dock .tch-live {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 0;
+  color: var(--pn-ink);
+  font: var(--pn-fs-sm) / 1.4 var(--pn-ui);
+}
+
+/* tm8's wait glyph — the ribbon `WaitMark` turns — at 14px tall (D20). The
+   mark's design box is 560×700, so its width follows at 0.8 of the height.
+   `.cv2-root` for the same reason `.tch-wait__ribbon` carries it: the kit's
+   own ribbon rule is scoped there, and this must outrank it. */
+.tch-live__mark {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+}
+.cv2-root .tch-live__ribbon {
+  width: 11.2px;
+  height: 14px;
+}
+
+.tch-live__glyph {
+  flex: none;
+  width: 14px;
+  text-align: center;
+  font-size: var(--pn-fs-label);
+  line-height: 1;
+}
+.tch-live__glyph--stopped { color: var(--pn-ink-3); }
+.tch-live__glyph--failed { color: var(--pn-block); }
+
+.tch-live__text {
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  gap: var(--pn-space-2);
+  min-width: 0;
+  overflow: hidden;
+}
+.tch-live__now,
+.tch-live__aside {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.tch-live__now { flex: none; max-width: 100%; font-weight: 600; }
+.tch-live__aside { flex: 1; color: var(--pn-ink-3); }
+
+/* `nowrap` so the clock never changes the row's height, and ELLIPSIS so it
+   never sets the row's WIDTH either: measured at 390px, the escalated line
+   (`… still working · 1m 43s since last step`) held every card at 501px. */
+.tch-live__meta {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--pn-ink-3);
+  font: var(--pn-fs-fine) var(--pn-mono);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* Silence past 90s changes TONE, never to an error colour — 74s was measured
+   as normal, and silence is not a fault (advisor ruling 3). */
+.tch-live[data-quiet='long'] .tch-live__meta { color: var(--pn-wait); }
+
+/* Visually hidden, still spoken: the status region's one sentence. */
+.tch-live__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.tch-jump {
+  flex: none;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-ink);
+  color: var(--pn-surface);
+  box-shadow: var(--pn-sh-md);
+  font: 600 var(--pn-fs-fine) var(--pn-ui);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tch-jump:hover { background: var(--pn-ink-2); }
+.tch-jump:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
+
+/* A phone: the meta takes its own line for the WHOLE turn (see the note at the
+   top — a line that appears only once the clock grows would move the end of
+   the transcript without the screen knowing). */
+@media (max-width: 560px) {
+  .tch-dock .tch-live { flex-wrap: wrap; row-gap: 2px; }
+  .tch-live__meta { flex-basis: 100%; padding-left: 24px; }
+}
+
+/* Reduced motion: the ribbon already holds its rest pose (RibbonMark never
+   subscribes to the frame clock), and D20 asks for it STATIC — so it gets no
+   fade either, unlike the transcript's other wait marks. The card simply
+   appears. */
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .tch-live__ribbon { animation: none; }
+  .tch-dock[data-live] { animation: none; }
+}
