@@ -25,12 +25,18 @@ import { randomUUID } from 'node:crypto';
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { TM8_CLIENT_HEADER, TM8_CLIENT_HEADER_VALUE } from '@tm8/contract';
+import {
+  SPACE_LINK_VIA_HEADER,
+  TM8_CLIENT_HEADER,
+  TM8_CLIENT_HEADER_VALUE,
+  spaceLinkRefusal,
+} from '@tm8/contract';
 
 import { createDb } from '../../src/db/client.js';
 import type { Db, DbClaims, Querier } from '../../src/db/types.js';
 import { claimsFor } from '../../src/facade/context.js';
 import { loadConfig } from '../../src/http/config.js';
+import { FixedWindowLimiter } from '../../src/http/fixed-window.js';
 import { createSessionIdentityResolver } from '../../src/http/identity-resolver.js';
 import { TM8_SESSION_COOKIE } from '../../src/http/session-cookie.js';
 import type { RequestContext, SpaceSessionsMode } from '../../src/http/types.js';
@@ -41,6 +47,7 @@ import type { EventSink } from '../../src/events/ws-connection.js';
 import { SubscriptionRegistry } from '../../src/events/subscriptions.js';
 import type { FacadeDeps } from '../../src/facade/deps.js';
 import { HandlerRegistry } from '../../src/facade/registry.js';
+import { createSpaceLinkInvokeHandlers } from '../../src/facade/handlers/w2/space-link-invoke.js';
 import { registerMembershipHandlers } from '../../src/membership/handlers.js';
 import { DbSpaceLinkStore, SpaceLinkUnusable, type SpaceLink, type SpaceLinkStaleNotice } from '../../src/credentials/space-link-store.js';
 import { loadOrCreateCredentialKey } from '../../src/credentials/credential-key.js';
@@ -1661,3 +1668,511 @@ describe.sequential('T17 leave / remove ends a member\'s link sessions', () => {
     expect(await outcome(() => asToken(hLinkToken, (q) => idsIn(q, fixture.spaceB)))).toBe('ok');
   });
 });
+
+// ---------------------------------------------------------------------------
+// W7 spaceLinks.invoke (990). Over HTTP on a bootstrapped node whose data dir
+// is the link store's, so the node key that sealed H's row opens it. The
+// caller is G, H's agent in A. Every refusal is paired with a positive.
+//
+// Strict gate (internal.require_human_auth_kind): no W7 cell reaches it. The
+// refused set is refused on the home server before anything is unsealed, and
+// every forwarded op here (entities.create/get/patch/delete, invites, member
+// role, spaceLinks.list) is a member op. W6 T20b pins the gate itself.
+// ---------------------------------------------------------------------------
+
+interface InvokeResponse {
+  status: number;
+  body: { data?: { result: unknown; auditId: string; linkId: string; targetSpaceId: string }; error?: { code: string; message: string; details?: Record<string, unknown> } };
+}
+
+describe.sequential('W7 spaceLinks.invoke — G runs one op in B as H, audited in A', () => {
+  let node: BootstrappedServer;
+  let ownerBefore: Array<{ id: string; is_node_admin: boolean; is_owner: boolean }> = [];
+  let gToken: string;
+  const logged: string[] = [];
+  const spies: Array<{ mockRestore(): void }> = [];
+
+  beforeAll(async () => {
+    await ensureHLink();
+    for (const method of ['log', 'warn', 'error', 'info', 'debug'] as const) {
+      const original = console[method].bind(console);
+      spies.push(vi.spyOn(console, method).mockImplementation((...args: unknown[]) => {
+        logged.push(args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' '));
+        original(...args);
+      }));
+    }
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      ownerBefore = (await client.query<{ id: string; is_node_admin: boolean; is_owner: boolean }>(
+        'select id::text, is_node_admin, is_owner from public.accounts where id = any($1::uuid[])',
+        [[fixture.accountH, fixture.accountH2]])).rows;
+      await client.query(
+        'update public.accounts set is_node_admin = (id = $1::uuid), is_owner = (id = $1::uuid) where id = any($2::uuid[])',
+        [fixture.accountH, [fixture.accountH, fixture.accountH2]]);
+    });
+    const configured = loadConfig({
+      ...process.env,
+      TM8_BIND: '127.0.0.1',
+      TM8_PORT: '4610',
+      TM8_NODE_MODE: 'single',
+      TM8_DATABASE_URL: database.url,
+      TM8_DATA_DIR: linkDataDir,
+      TM8_DISABLE_AUTO_OWNER: '1',
+    });
+    node = await bootstrap({ config: { ...configured, port: 0 } });
+    gToken = await mintAgent();
+  }, 180_000);
+
+  afterAll(async () => {
+    await node?.server.close();
+    await node?.db?.end();
+    for (const spy of spies) spy.mockRestore();
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      for (const row of ownerBefore) {
+        await client.query('update public.accounts set is_node_admin = $2, is_owner = $3 where id = $1::uuid',
+          [row.id, row.is_node_admin, row.is_owner]);
+      }
+    });
+  }, 180_000);
+
+  async function call(method: string, path: string, token: string, body?: unknown, headers: Record<string, string> = {}): Promise<InvokeResponse> {
+    const response = await fetch(new URL(path, node.url), {
+      method,
+      headers: {
+        [TM8_CLIENT_HEADER]: TM8_CLIENT_HEADER_VALUE,
+        authorization: `Bearer ${token}`,
+        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+        ...headers,
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    return { status: response.status, body: await response.json() as InvokeResponse['body'] };
+  }
+
+  const invoke = (
+    token: string,
+    input: { op: string; params?: Record<string, string>; query?: Record<string, string>; input?: unknown },
+    { ref = hLink.id, headers = {} }: { ref?: string; headers?: Record<string, string> } = {},
+  ): Promise<InvokeResponse> =>
+    call('POST', `/v2/spaces/${fixture.spaceA}/space-links/${ref}/invoke`, token, input, headers);
+
+  const refusalOf = (res: InvokeResponse): unknown => res.body.error?.details?.['refusal'];
+  const cmid = (label: string): string => `w7-${label}-${randomUUID()}`;
+
+  /** The audit rows in A, read as the graph owner (the table has no tm8_app grant). */
+  const auditRows = (where: string, args: unknown[]): Promise<Array<Record<string, unknown>>> =>
+    database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      return (await client.query(`select * from public.cross_space_audit where ${where} order by created_at`, args)).rows;
+    });
+  const auditById = async (id: string): Promise<Record<string, unknown>> => (await auditRows('id = $1', [id]))[0]!;
+  /** The newest audit row for `op` by H's member in A. */
+  const lastAudit = async (op: string): Promise<Record<string, unknown>> =>
+    (await auditRows('member_id = $1 and op = $2', [fixture.memberHA, op])).at(-1)!;
+
+  async function createInB(title: string): Promise<string> {
+    const res = await invoke(gToken, {
+      op: 'entities.create',
+      input: { spaceId: fixture.spaceB, kind: 'doc', title, clientMutationId: cmid('create') },
+    });
+    expect(res.status).toBe(200);
+    const result = res.body.data!.result as { id?: string; entity?: { id: string } };
+    return (result.entity?.id ?? result.id)!;
+  }
+
+  // ---- a1 / T21 -----------------------------------------------------------
+
+  it('T21 — G creates a document in B through the link; B records H\'s B member as the actor; one ok audit row in A', async () => {
+    const res = await invoke(gToken, {
+      op: 'entities.create',
+      input: { spaceId: fixture.spaceB, kind: 'doc', title: 'W7 T21', clientMutationId: cmid('t21') },
+    });
+    expect(res.body.error).toBeUndefined();
+    expect(res.status).toBe(200);
+    const result = res.body.data!.result as { id?: string; entity?: { id: string } };
+    const created = (result.entity?.id ?? result.id)!;
+    expect(res.body.data).toMatchObject({ linkId: hLink.id, targetSpaceId: fixture.spaceB });
+    const [row] = await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      return (await client.query<{ space_id: string; created_by: string }>(
+        'select space_id::text, created_by::text from public.entities where id = $1', [created])).rows;
+    });
+    expect(row).toEqual({ space_id: fixture.spaceB, created_by: fixture.memberHB });
+    expect(await auditById(res.body.data!.auditId)).toMatchObject({
+      link_id: hLink.id, home_space_id: fixture.spaceA, target_space_id: fixture.spaceB,
+      member_id: fixture.memberHA, team_member_id: fixture.personaA, work_session_id: fixture.workSessionA,
+      op: 'entities.create', result: 'ok', reason: null, remote_id: created, via_chain: [],
+    });
+  });
+
+  it('T21 — the forwarded session is kind link pinned to B: G cannot reach A\'s doc through it', async () => {
+    const res = await invoke(gToken, { op: 'entities.get', params: { id: fixture.docA } });
+    expect(res.status).toBe(404);
+    expect((await lastAudit('entities.get')).result).toBe('error');
+  });
+
+  it('T21 positive — the same op on B\'s doc through the link returns it', async () => {
+    const res = await invoke(gToken, { op: 'entities.get', params: { id: fixture.docB } });
+    expect(res.status).toBe(200);
+    expect(JSON.stringify(res.body.data!.result)).toContain(fixture.docB);
+  });
+
+  // ---- a2 / T22: refused on the home server before forwarding -------------
+
+  it.each([
+    ['credentials.status', {}, 'credential_management'],
+    ['credentials.delete', { params: { provider: 'anthropic' }, input: { clientMutationId: 'x' } }, 'credential_management'],
+    ['credentials.space.list', { params: { spaceId: 'B' } }, 'credential_management'],
+    ['credentials.space.policy.set', { params: { spaceId: 'B', provider: 'anthropic' }, input: { clientMutationId: 'x' } }, 'credential_management'],
+    ['node.credentials.status', {}, 'credential_management'],
+    ['node.credentials.policy.set', { params: { provider: 'anthropic' }, input: { clientMutationId: 'x' } }, 'credential_management'],
+    ['spaceLinks.add', { params: { spaceId: 'B' }, input: { targetSpaceId: 'A', clientMutationId: 'x' } }, 'link_management'],
+    ['spaceLinks.setSpawn', { params: { linkId: 'L' }, input: { allowSpawn: true, clientMutationId: 'x' } }, 'link_management'],
+    ['spaceLinks.invoke', { params: { spaceId: 'B', link: 'L' }, input: { op: 'entities.get' } }, 'link_management'],
+    ['auth.session.get', {}, 'session_minting'],
+    ['auth.logout', { input: { clientMutationId: 'x' } }, 'session_minting'],
+  ] as const)('T22 refused — %s (%s)', async (op, shape, reason) => {
+    const res = await invoke(gToken, { op, ...(shape as object) });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatchObject({ code: 'forbidden', details: { reason: 'space_link_refused', refusal: reason } });
+    expect(await lastAudit(op)).toMatchObject({ result: 'refused', reason, link_id: null, target_space_id: null });
+  });
+
+  it('T22 refused — a future credentials.* op is caught by the prefix, not a list', () => {
+    expect(spaceLinkRefusal('credentials.future.rotate', 'command', {}, true)).toBe('credential_management');
+    expect(spaceLinkRefusal('node.credentials.future', 'read', {}, true)).toBe('credential_management');
+    expect(spaceLinkRefusal('auth.future.mint', 'read', {}, true)).toBe('session_minting');
+  });
+
+  // ---- Stricter than D31 (lead 09:08Z, fail-closed; reversible) ----------
+
+  it('stricter than D31 refused — serverConnections.* (the credential-bearing remote-server surface), reads too', async () => {
+    for (const op of ['serverConnections.list', 'serverConnections.create'] as const) {
+      const res = await invoke(gToken, { op, ...(op === 'serverConnections.create' ? { input: { name: 'x', clientMutationId: 'x' } } : {}) });
+      expect(res.status).toBe(403);
+      expect(res.body.error).toMatchObject({ details: { reason: 'space_link_refused', refusal: 'credential_management' } });
+      expect(await lastAudit(op)).toMatchObject({ result: 'refused', reason: 'credential_management', link_id: null });
+    }
+    expect(spaceLinkRefusal('serverConnections.future', 'read', {}, true)).toBe('credential_management');
+  });
+
+  it('stricter than D31 positive — the same serverConnections.list passes for H\'s own (non-link) session', async () => {
+    const res = await call('GET', '/v2/server-connections', await mintBrowser(fixture.accountH, fixture.identityH));
+    expect(res.body.error?.details?.['reason']).not.toBe('space_link_refused');
+    expect(res.status).toBe(200);
+  });
+
+  it('stricter than D31 refused — voice.token.create (it mints a token), exact op only', async () => {
+    const res = await invoke(gToken, { op: 'voice.token.create', params: { id: fixture.docB }, input: { clientMutationId: 'x' } });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatchObject({ details: { reason: 'space_link_refused', refusal: 'token_minting' } });
+    expect(await lastAudit('voice.token.create')).toMatchObject({ result: 'refused', reason: 'token_minting' });
+    // Exact, not a prefix: a neighbour of the name is not caught by this entry.
+    expect(spaceLinkRefusal('voice.token.createAnother', 'command', {}, true)).toBeNull();
+    expect(spaceLinkRefusal('voice.channels.list', 'read', {}, true)).toBeNull();
+  });
+
+  it('stricter than D31 positive — the same voice.token.create reaches the voice service for H\'s own session', async () => {
+    // This node has no LiveKit: the SERVICE answers 501, which proves the op
+    // ran as H; through the link it never got past the home guard (403 above).
+    const res = await call('POST', `/v2/entities/${fixture.docB}/commands/voice-token`,
+      await mintBrowser(fixture.accountH, fixture.identityH), {});
+    expect(res.body.error?.details?.['reason']).not.toBe('space_link_refused');
+    expect(res.status).toBe(501);
+  });
+
+  it('T22 positive — spaceLinks reads are not writes: spaceLinks.list in B passes as the member', async () => {
+    expect(spaceLinkRefusal('spaceLinks.list', 'read', {}, true)).toBeNull();
+    const res = await invoke(gToken, { op: 'spaceLinks.list', params: { spaceId: fixture.spaceB } });
+    expect(res.status).toBe(200);
+  });
+
+  it('T22 positive — spaces.invites.create in B passes as the member', async () => {
+    const res = await invoke(gToken, {
+      op: 'spaces.invites.create', params: { spaceId: fixture.spaceB },
+      input: { maxUses: 1, clientMutationId: cmid('invite') },
+    });
+    expect(res.status).toBe(200);
+    expect((await lastAudit('spaces.invites.create')).result).toBe('ok');
+  });
+
+  it('T22 positive — spaces.members.updateRole in B passes as the member', async () => {
+    const other = await seedMemberOfAB('w7-role');
+    const res = await invoke(gToken, {
+      op: 'spaces.members.updateRole', params: { spaceId: fixture.spaceB, memberId: other.memberB },
+      input: { role: 'admin', clientMutationId: cmid('role') },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it('T22 positive — entities.delete in B passes as the member', async () => {
+    const doc = await createInB('W7 delete me');
+    const res = await invoke(gToken, {
+      op: 'entities.delete', params: { id: doc }, input: { clientMutationId: cmid('delete') },
+    });
+    expect(res.body.error).toBeUndefined();
+    expect(res.status).toBe(200);
+  });
+
+  // ---- canonical op id (coordinator addition 1) ---------------------------
+
+  it('canonical — an unknown op is refused, audited as (unknown)', async () => {
+    const res = await invoke(gToken, { op: 'nothing.here' });
+    expect(res.status).toBe(403);
+    expect(refusalOf(res)).toBe('unknown_op');
+    expect((await auditRows('member_id = $1 and op = $2', [fixture.memberHA, '(unknown)'])).length).toBeGreaterThan(0);
+  });
+
+  it('canonical — a case variant (Credentials.status) is refused, never folded to a pass', async () => {
+    const res = await invoke(gToken, { op: 'Credentials.status' });
+    expect(res.status).toBe(403);
+    expect(refusalOf(res)).toBe('unknown_op');
+  });
+
+  it('canonical — a name that only CONTAINS credentials is not credential management (the prefix is anchored)', async () => {
+    // No catalog op contains "credentials" outside the refused prefixes, so
+    // the pure rule is the cell: an anchored prefix does not over-refuse.
+    expect(spaceLinkRefusal('spaces.credentialsSummary', 'read', {}, true)).toBeNull();
+    expect(spaceLinkRefusal('entities.get', 'read', { title: 'credentials.status' }, true)).toBeNull();
+    // Over the wire the same made-up name is still unknown, not credential management.
+    expect(refusalOf(await invoke(gToken, { op: 'spaces.credentialsSummary' }))).toBe('unknown_op');
+  });
+
+  it('canonical positive — the exact catalog spelling of a member op passes', async () => {
+    expect((await invoke(gToken, { op: 'entities.get', params: { id: fixture.docB } })).status).toBe(200);
+  });
+
+  // ---- a3 / T18 ------------------------------------------------------------
+
+  it('T18 — H2\'s agent in A cannot use H\'s link (no row of H2\'s): not_found, nothing forwarded', async () => {
+    const h2 = await seedAgentFor(fixture.identityH2, fixture.memberH2A);
+    const before = (await auditRows('member_id = $1', [fixture.memberHA])).length;
+    for (const ref of [hLink.id, hLink.mine?.alias ?? hLink.id]) {
+      const res = await invoke(h2, { op: 'entities.get', params: { id: fixture.docB } }, { ref });
+      expect(res.status).toBe(404);
+      expect(res.body.error?.message).toContain('tm8 link add');
+    }
+    expect((await auditRows('member_id = $1', [fixture.memberHA])).length).toBe(before);
+    expect(await auditRows('member_id = $1 and op = $2', [fixture.memberH2A, 'entities.get']))
+      .toEqual(expect.arrayContaining([expect.objectContaining({ result: 'refused', reason: 'not_linked', link_id: null })]));
+  });
+
+  it('T18 positive — H\'s own agent G on the same link reads B', async () => {
+    expect((await invoke(gToken, { op: 'entities.get', params: { id: fixture.docB } })).status).toBe(200);
+  });
+
+  // ---- a4 / T24 ------------------------------------------------------------
+
+  it('T24 — a chain already containing A (the home) is refused', async () => {
+    const res = await invoke(gToken, { op: 'entities.get', params: { id: fixture.docB } },
+      { headers: { [SPACE_LINK_VIA_HEADER]: fixture.spaceA } });
+    expect(refusalOf(res)).toBe('via_loop');
+  });
+
+  it('T24 — a chain already containing B (the target) is refused', async () => {
+    const res = await invoke(gToken, { op: 'entities.get', params: { id: fixture.docB } },
+      { headers: { [SPACE_LINK_VIA_HEADER]: fixture.spaceB } });
+    expect(refusalOf(res)).toBe('via_loop');
+    expect((await lastAudit('entities.get')).via_chain).toEqual([fixture.spaceB]);
+  });
+
+  it('T24 — more than 2 hops is refused', async () => {
+    const res = await invoke(gToken, { op: 'entities.get', params: { id: fixture.docB } },
+      { headers: { [SPACE_LINK_VIA_HEADER]: `${randomUUID()},${randomUUID()}` } });
+    expect(refusalOf(res)).toBe('via_hops');
+  });
+
+  it('T24 — a malformed chain is refused', async () => {
+    const res = await invoke(gToken, { op: 'entities.get', params: { id: fixture.docB } },
+      { headers: { [SPACE_LINK_VIA_HEADER]: 'not-a-space' } });
+    expect(refusalOf(res)).toBe('via_hops');
+  });
+
+  it('T24 positive — one prior hop through a third space passes (2 hops)', async () => {
+    const res = await invoke(gToken, { op: 'entities.get', params: { id: fixture.docB } },
+      { headers: { [SPACE_LINK_VIA_HEADER]: randomUUID() } });
+    expect(res.status).toBe(200);
+  });
+
+  // ---- a5 / T23 ------------------------------------------------------------
+
+  const spawnInput = (extra: Record<string, unknown> = {}) => ({
+    op: 'execution.spawn',
+    input: { spaceId: fixture.spaceB, clientMutationId: cmid('spawn'), ...extra },
+  });
+
+  it('T23 positive — a new link defaults to allow_spawn; a default spawn passes the link guard', async () => {
+    // The guard admits it; the spawn itself then answers on its own terms
+    // (this input names no teammate) — nothing is launched on this box.
+    const res = await invoke(gToken, spawnInput());
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatchObject({ code: 'invalid_input' });
+    expect(res.body.error?.details?.['reason']).not.toBe('space_link_refused');
+    // Past the guard, the spawn's own schema answered, and that is audited too.
+    expect(await lastAudit('execution.spawn')).toMatchObject({ result: 'error', reason: 'invalid_input', link_id: hLink.id });
+  });
+
+  it('T23 — explicit credentialSources is refused (F9)', async () => {
+    const res = await invoke(gToken, spawnInput({ credentialSources: { anthropic: 'personal' } }));
+    expect(refusalOf(res)).toBe('spawn_explicit_credentials');
+  });
+
+  it('T23 / K11 — an explicit space credential id is refused', async () => {
+    const res = await invoke(gToken, spawnInput({ spaceCredentialIds: [randomUUID()] }));
+    expect(refusalOf(res)).toBe('spawn_explicit_credentials');
+  });
+
+  it('T23 — allow_spawn off is refused; positive — a non-spawn op on the same link still passes', async () => {
+    const h = await claimsForToken(await mintBrowser(fixture.accountH, fixture.identityH));
+    await linkStore.setSpawn(h, { linkId: hLink.id, allowSpawn: false });
+    try {
+      expect(refusalOf(await invoke(gToken, spawnInput()))).toBe('spawn_switch_off');
+      expect((await invoke(gToken, { op: 'entities.get', params: { id: fixture.docB } })).status).toBe(200);
+    } finally {
+      await linkStore.setSpawn(h, { linkId: hLink.id, allowSpawn: true });
+    }
+  });
+
+  // ---- a8 / T28: read B, write A ------------------------------------------
+
+  it('T28 — an injected agent reading B then writing into A is allowed, and the read is audited in A', async () => {
+    const read = await invoke(gToken, { op: 'entities.get', params: { id: fixture.docB } });
+    expect(read.status).toBe(200);
+    expect(await auditById(read.body.data!.auditId)).toMatchObject({
+      op: 'entities.get', result: 'ok', remote_id: fixture.docB, home_space_id: fixture.spaceA,
+      work_session_id: fixture.workSessionA,
+    });
+    // The write into A is G's own, on G's own A-pinned session (decision 31: allowed).
+    expect(await outcome(() => editDoc(gToken, fixture.docA))).toBe('ok');
+  });
+
+  // ---- spaceLinks.audit visibility ------------------------------------------
+
+  it('audit — H (home owner) reads the link\'s rows; H2 (member) sees only their own (none on this link)', async () => {
+    const h = await mintBrowser(fixture.accountH, fixture.identityH);
+    const mine = await call('GET', `/v2/space-links/${hLink.id}/audit?limit=200`, h);
+    expect(mine.status).toBe(200);
+    expect((mine.body.data as unknown as unknown[]).length).toBeGreaterThan(0);
+    const h2 = await mintBrowser(fixture.accountH2, fixture.identityH2);
+    const theirs = await call('GET', `/v2/space-links/${hLink.id}/audit`, h2);
+    expect(theirs.status).toBe(200);
+    expect(theirs.body.data).toEqual([]);
+  });
+
+  it('audit — a non-member of A gets not_found; the audit table is not readable by tm8_app', async () => {
+    const outsider = await seedOutsider();
+    expect((await call('GET', `/v2/space-links/${hLink.id}/audit`, outsider)).status).toBe(404);
+    expect(await outcome(() => asIdentity(fixture.identityH, (q) => q.query('select 1 from public.cross_space_audit'))))
+      .toBe('42501');
+  });
+
+  // ---- rate bucket (per token row) -----------------------------------------
+
+  it('rate — the per-row bucket refuses past its limit; positive — the first call in the window passes', async () => {
+    const registry = new HandlerRegistry();
+    registry.register('entities.get', () => ({ id: fixture.docB }));
+    const facade = { db, config: {}, owner: async () => NOT_THE_OWNER } as unknown as FacadeDeps;
+    const { invoke: handler } = createSpaceLinkInvokeHandlers(registry, facade, linkStore,
+      async (ctx) => claimsFor(NOT_THE_OWNER, ctx),
+      { limiter: new FixedWindowLimiter({ limit: 1, windowMs: 60_000 }) });
+    const resolve = createSessionIdentityResolver({ db, owner: async () => NOT_THE_OWNER, spaceSessions: 'agents' });
+    const identity = await resolve({ authorization: `Bearer ${gToken}` }, { remoteAddress: '203.0.113.9', disableAutoOwner: true });
+    const ctx = () => ({
+      params: { spaceId: fixture.spaceA, link: hLink.id }, query: new URLSearchParams(), headers: {},
+      body: { op: 'entities.get', params: { id: fixture.docB } }, identity, requestId: `w7-rate-${randomUUID()}`,
+    }) as unknown as RequestContext;
+    await expect(handler(ctx())).resolves.toMatchObject({ op: 'entities.get' });
+    await expect(handler(ctx())).rejects.toMatchObject({ code: 'rate_limited' });
+  });
+
+  // ---- a6: a revoked link session fails at resolveBearerIdentity (F6) ------
+
+  it('a6 — B revokes the link session: invoke answers 401 space_link_signed_out, audited, nothing forwarded', async () => {
+    const h = await claimsForToken(await mintBrowser(fixture.accountH, fixture.identityH));
+    await db.rpc(h, 'revoke_auth_session', [hLink.mine!.sessionId]);
+    const res = await invoke(gToken, { op: 'entities.get', params: { id: fixture.docB } });
+    expect(res.status).toBe(401);
+    expect(res.body.error?.details).toMatchObject({ reason: 'space_link_signed_out' });
+    expect(await lastAudit('entities.get')).toMatchObject({ result: 'error', reason: 'link_signed_out' });
+    // No retry: the next call is refused in SQL (row signed_out) without a resolve.
+    expect((await invoke(gToken, { op: 'entities.get', params: { id: fixture.docB } })).status).not.toBe(200);
+  });
+
+  it('a6 positive — after H signs the link in again, the same call passes', async () => {
+    const h = await claimsForToken(await mintBrowser(fixture.accountH, fixture.identityH));
+    hLink = await linkStore.login(h, hLink.id, { relogin: true });
+    hLinkToken = (await linkStore.use(h, hLink.id)).token;
+    expect((await invoke(gToken, { op: 'entities.get', params: { id: fixture.docB } })).status).toBe(200);
+  });
+
+  // ---- a7: no token in entity_versions, the ledger, the audit or logs -------
+
+  it('a7 — no link token (whole or secret half) is in entity_versions, command_ledger, cross_space_audit or the logs', async () => {
+    const secrets = [hLinkToken, parseToken(hLinkToken)!.secret];
+    const hits = await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      const counts: Record<string, number> = {};
+      for (const table of ['entity_versions', 'command_ledger', 'cross_space_audit']) {
+        const { rows } = await client.query<{ n: string }>(
+          `select count(*)::text as n from public.${table} t where strpos(t::text, $1) > 0 or strpos(t::text, $2) > 0`,
+          secrets);
+        counts[table] = Number(rows[0]!.n);
+      }
+      return counts;
+    });
+    expect(hits).toEqual({ entity_versions: 0, command_ledger: 0, cross_space_audit: 0 });
+    expect(logged.length).toBeGreaterThan(0);
+    expect(logged.filter((line) => secrets.some((s) => line.includes(s)))).toEqual([]);
+  });
+
+  it('a7 positive — the scan is live: the invoke path did write ledger rows for the forwarded commands', async () => {
+    const [ledger] = await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      return (await client.query<{ n: string }>(
+        `select count(*)::text as n from public.command_ledger where client_mutation_id like 'w7-%'`)).rows;
+    }) as Array<{ n: string }>;
+    expect(Number(ledger!.n)).toBeGreaterThan(0);
+  });
+});
+
+/** An agent session for `identityId`'s own persona and work session in A. */
+async function seedAgentFor(identityId: string, memberId: string): Promise<string> {
+  const persona = randomUUID();
+  const workSession = randomUUID();
+  await database.transaction(async (client) => {
+    await client.query('set local role tm8_graph_owner');
+    await client.query(
+      `insert into public.entities(id, space_id, kind, created_by, visibility)
+       values ($1, $3, 'team_member', $4, 'space'), ($2, $3, 'work_session', $1, 'space')`,
+      [persona, workSession, fixture.spaceA, memberId]);
+    await client.query(
+      `insert into public.team_members(entity_id, owner_member_id, name, role, identity)
+       values ($1, $2, 'W7 agent', 'worker', 'persona')`, [persona, memberId]);
+    await client.query(
+      `insert into public.work_sessions(entity_id, title, status, share_mode, started_at)
+       values ($1, 'W7 run', 'running', 'none', now())`, [workSession]);
+    await client.query(
+      `insert into public.edges(space_id, src_id, dst_id, type, created_by)
+       values ($1, $2, $3, 'participates_in', $2)`, [fixture.spaceA, persona, workSession]);
+  });
+  const secret = generateSecret();
+  const row = await asIdentity(identityId, (q) =>
+    q.rpc<{ id: string }>('issue_agent_auth_session', [
+      workSession, persona, hashToken(secret), new Date(Date.now() + 3_600_000).toISOString(), 'W7 agent',
+    ]));
+  return formatToken(row.id, secret);
+}
+
+/** A browser session for an account that is a member of neither space. */
+async function seedOutsider(): Promise<string> {
+  const identity = `cross-space-outsider-${randomUUID()}`;
+  const account = randomUUID();
+  await database.transaction(async (client) => {
+    await client.query('set local role tm8_graph_owner');
+    await client.query(`insert into public.user_profiles(identity_id, display_name) values ($1, 'O')`, [identity]);
+    await client.query(`insert into public.accounts(id, identity_id, username) values ($1, $2, $3)`,
+      [account, identity, `cross-space-o-${account.slice(0, 8)}`]);
+  });
+  return mintBrowser(account, identity);
+}

@@ -19,10 +19,10 @@ import { CollabError } from '@tm8/contract';
 import type { Db } from '../db/types.js';
 import type { LoopbackOwner } from '../identity/loopback.js';
 import { TOKEN_PREFIX } from '../identity/crypto.js';
-import { resolveBearerIdentity } from '../identity/pg-auth.js';
+import { resolveBearerIdentity, type ResolvedAuthSession } from '../identity/pg-auth.js';
 import { readTm8SessionCookie } from './session-cookie.js';
 import { autoOwnerResolver } from './security.js';
-import type { IdentityResolver, SpaceSessionsMode } from './types.js';
+import type { IdentityResolver, RequestIdentity, SpaceSessionsMode } from './types.js';
 
 export interface SessionIdentityResolverOptions {
   readonly db: Db;
@@ -69,32 +69,7 @@ export function createSessionIdentityResolver(
     const raw = authorization || cookie;
     if (raw.startsWith(TOKEN_PREFIX)) {
       const session = await resolveBearerIdentity(db, raw);
-      return {
-        kind: 'bearer',
-        identityId: session.identityId,
-        nodeAdmin: session.isNodeAdmin,
-        accountId: session.accountId,
-        sessionId: session.sessionId,
-        ...(session.workSessionId ? { workSessionId: session.workSessionId } : {}),
-        token: raw,
-        ...(session.actingAsTeamMemberId ? { actorId: session.actingAsTeamMemberId } : {}),
-        ...(session.runtimeMemberId ? { runtimeMemberId: session.runtimeMemberId } : {}),
-        ...(session.runtimeThreadRootId
-          ? { runtimeThreadRootId: session.runtimeThreadRootId }
-          : {}),
-        ...(session.runtimeChatId ? { runtimeChatId: session.runtimeChatId } : {}),
-        // 082 / R11. Taken straight off the verified session row, which
-        // `resolveBearerIdentity` looked up by TOKEN HASH — so it is a
-        // server fact, not a client assertion. This is the only thing that
-        // distinguishes a human from an agent carrying that human's full
-        // identity (sub-doc 14, channel C7).
-        authKind: session.kind,
-        // 226/227. The space the session was minted for, off the same
-        // verified row. Every membership helper intersects with it.
-        ...(spaceSessions !== 'off' && PINNED_KINDS.has(session.kind) && session.spaceId
-          ? { sessionSpaceId: session.spaceId }
-          : {}),
-      };
+      return identityFromSession(session, raw, spaceSessions);
     }
 
     const fallback = await autoOwnerResolver(headers, context);
@@ -107,5 +82,44 @@ export function createSessionIdentityResolver(
     // kind here would duplicate that control in the wrong file and break
     // local development for no gain.
     return { kind: 'auto-owner', identityId: resolved.identityId, authKind: 'browser' };
+  };
+}
+
+/**
+ * The ONE mapping from a verified session row to a request identity. The
+ * bearer arm above uses it, and so does `spaceLinks.invoke` (W7) for a link
+ * session it re-resolved through `resolveBearerIdentity` (F6): a second copy
+ * of this mapping would be a second place for the pin or the kind to drift.
+ */
+export function identityFromSession(
+  session: ResolvedAuthSession,
+  raw: string,
+  spaceSessions: SpaceSessionsMode = 'agents',
+): RequestIdentity {
+  return {
+    kind: 'bearer',
+    identityId: session.identityId,
+    nodeAdmin: session.isNodeAdmin,
+    accountId: session.accountId,
+    sessionId: session.sessionId,
+    ...(session.workSessionId ? { workSessionId: session.workSessionId } : {}),
+    token: raw,
+    ...(session.actingAsTeamMemberId ? { actorId: session.actingAsTeamMemberId } : {}),
+    ...(session.runtimeMemberId ? { runtimeMemberId: session.runtimeMemberId } : {}),
+    ...(session.runtimeThreadRootId
+      ? { runtimeThreadRootId: session.runtimeThreadRootId }
+      : {}),
+    ...(session.runtimeChatId ? { runtimeChatId: session.runtimeChatId } : {}),
+    // 082 / R11. Taken straight off the verified session row, which
+    // `resolveBearerIdentity` looked up by TOKEN HASH — so it is a
+    // server fact, not a client assertion. This is the only thing that
+    // distinguishes a human from an agent carrying that human's full
+    // identity (sub-doc 14, channel C7).
+    authKind: session.kind,
+    // 226/227. The space the session was minted for, off the same
+    // verified row. Every membership helper intersects with it.
+    ...(spaceSessions !== 'off' && PINNED_KINDS.has(session.kind) && session.spaceId
+      ? { sessionSpaceId: session.spaceId }
+      : {}),
   };
 }
