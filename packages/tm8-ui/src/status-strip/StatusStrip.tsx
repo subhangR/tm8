@@ -1,6 +1,8 @@
 /**
- * THE STATUS STRIP — a thin row directly beneath the desktop top bar
- * (owner ask, 2026-09-26). Order is the owner's:
+ * THE STATUS STRIP — host metrics and live counts. On the current top bar it
+ * rides in the bar's RIGHT zone (`placement="bar"`, owner 2026-09-26: "both of
+ * them collapse into a single row"); beside the legacy bar it keeps its own
+ * thin row beneath (`placement="row"`). Order is the owner's:
  *
  *   [lead slot: pending attention] [CPU] [memory] [load] [disk] [tm8 RSS]
  *   [live sessions] [live chats]
@@ -36,6 +38,12 @@ export interface StatusStripProps {
   spaceId: SpaceId;
   /** Rendered FIRST — the attention segment's seat. */
   leadSlot?: ReactNode;
+  /**
+   * `row` — its own row beneath the top bar (the legacy bar's layout).
+   * `bar` — a guest in the top bar's right zone (owner, 2026-09-26: one row);
+   * the bar's container ladder sheds host metrics as it narrows.
+   */
+  placement?: 'row' | 'bar';
 }
 
 function HostSegments({ host, stale }: { host: NodeMetricsView; stale: boolean }) {
@@ -55,6 +63,7 @@ function HostSegments({ host, stale }: { host: NodeMetricsView; stale: boolean }
         tone={toneOfFraction(cpu)}
         title={`CPU ${cpu === null ? 'not measured' : formatPercent(cpu)} busy across ${host.cpu.cores} cores${staleNote}`}
         testId="status-strip-cpu"
+        shed={5}
       />
       <StatusSegment
         label="Mem"
@@ -62,6 +71,7 @@ function HostSegments({ host, stale }: { host: NodeMetricsView; stale: boolean }
         tone={toneOfFraction(memFraction)}
         title={`Memory in use ${formatBytes(host.memory.usedBytes)} of ${formatBytes(host.memory.totalBytes)} (${formatPercent(memFraction)}), excluding reclaimable cache${staleNote}`}
         testId="status-strip-memory"
+        shed={4}
       />
       {load ? (
         <StatusSegment
@@ -70,6 +80,7 @@ function HostSegments({ host, stale }: { host: NodeMetricsView; stale: boolean }
           tone={loadTone}
           title={`Load average ${load.map((l) => l.toFixed(2)).join(' / ')} (1 / 5 / 15 min) on ${host.cpu.cores} cores${staleNote}`}
           testId="status-strip-load"
+          shed={3}
         />
       ) : null}
       {host.disk ? (
@@ -79,6 +90,7 @@ function HostSegments({ host, stale }: { host: NodeMetricsView; stale: boolean }
           tone={toneOfFraction(diskFraction)}
           title={`Data volume (${host.disk.path}): ${formatBytes(host.disk.usedBytes)} used of ${formatBytes(host.disk.totalBytes)}${staleNote}`}
           testId="status-strip-disk"
+          shed={2}
         />
       ) : null}
       <StatusSegment
@@ -86,6 +98,7 @@ function HostSegments({ host, stale }: { host: NodeMetricsView; stale: boolean }
         value={formatBytes(host.process.rssBytes)}
         title={`tm8 server process: ${formatBytes(host.process.rssBytes)} resident, ${formatBytes(host.process.heapUsedBytes)} JS heap, up ${formatDuration(host.process.uptimeSeconds)}${staleNote}`}
         testId="status-strip-rss"
+        shed={1}
       />
     </>
   );
@@ -98,13 +111,15 @@ function chatValue(live: LivenessSnapshot | null): string {
   return working ? `${n} · ${working} working` : String(n);
 }
 
-export function StatusStrip({ seam, spaceId, leadSlot }: StatusStripProps) {
+export function StatusStrip({ seam, spaceId, leadSlot, placement = 'row' }: StatusStripProps) {
   const { host, hostAccess, hostStale, liveness } = useStatusStrip(seam, spaceId);
   const sessions = liveness?.liveSessionCount ?? null;
   const chats = liveness?.liveChatCount ?? null;
   const working = liveness?.workingChatCount ?? null;
   return (
-    <div className="status-strip" role="region" aria-label="System status" data-testid="status-strip">
+    <div
+      className={`status-strip${placement === 'bar' ? ' status-strip--in-bar' : ''}`}
+      role="region" aria-label="System status" data-testid="status-strip">
       {leadSlot}
       {hostAccess === 'granted' && host ? <HostSegments host={host} stale={hostStale} /> : null}
       <StatusSegment
@@ -116,6 +131,7 @@ export function StatusStrip({ seam, spaceId, leadSlot }: StatusStripProps) {
             : `${sessions} live work session${sessions === 1 ? '' : 's'} in this space (a running terminal whose record is live)`
         }
         testId="status-strip-sessions"
+        shed={7}
       />
       <StatusSegment
         label="Chats"
@@ -126,6 +142,7 @@ export function StatusStrip({ seam, spaceId, leadSlot }: StatusStripProps) {
             : `${chats} live chat${chats === 1 ? '' : 's'} in this space; ${working ?? 0} answering (a turn running or queued)`
         }
         testId="status-strip-chats"
+        shed={6}
       />
     </div>
   );

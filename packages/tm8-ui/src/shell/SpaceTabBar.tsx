@@ -172,6 +172,15 @@ export interface SpaceTabBarProps {
    * keep working.
    */
   shareSlot?: ReactNode;
+  /**
+   * THE STATUS STRIP, IN THIS ROW (owner, 2026-09-26: "both of them collapse
+   * into a single row"). When supplied, the tabs leave the centre and follow
+   * the switcher on the LEFT, and this slot leads the RIGHT zone ahead of the
+   * palette hint and the account menu. Absent → the three-zone bar with the
+   * tabs centred, exactly as before, so every existing shell test and the
+   * legacy bar are unchanged.
+   */
+  statusSlot?: ReactNode;
 }
 
 export function SpaceTabBar(props: SpaceTabBarProps) {
@@ -216,7 +225,10 @@ export function SpaceTabBar(props: SpaceTabBarProps) {
   };
 
   return (
-    <header className="shell-tabbar shell-tabbar--r21" data-testid="space-tab-bar">
+    <header
+      className={`shell-tabbar shell-tabbar--r21${props.statusSlot ? ' shell-tabbar--with-status' : ''}`}
+      data-testid="space-tab-bar"
+    >
       {/* LEFT ZONE. `minmax(0, 1fr)` in the grid, so its contents ellipsise
           rather than push the tabs off centre. */}
       <div className="shell-tabbar__zone shell-tabbar__zone--lead">
@@ -287,6 +299,8 @@ export function SpaceTabBar(props: SpaceTabBarProps) {
 
       {/* RIGHT ZONE. */}
       <div className="shell-tabbar__zone shell-tabbar__zone--trail">
+        {props.statusSlot ?? null}
+
         {/* THE PALETTE HINT STAYS IN THE BAR while the utilities leave, and
             deliberately: it is the one control whose job is to reach the
             others. Folding three verbs into a menu is only safe while there is

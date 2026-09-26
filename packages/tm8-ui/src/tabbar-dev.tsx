@@ -8,6 +8,8 @@ import './shell/shell.css';
 import { SpaceTabBar, type ShellTab } from './shell';
 import { VectorIcon } from './kit';
 import { VIEW_ART } from './domain';
+import { StatusSegment } from './status-strip/StatusSegment';
+import './status-strip/status-strip.css';
 
 /**
  * TOP BAR SCRATCH HARNESS (task 01a0dc6d) — a gate-free mount of the real
@@ -48,8 +50,24 @@ const SWITCHER = (
   </div>
 );
 const WIDTHS = [1400, 1100, 900, 800, 760, 720, 680, 640, 600, 560];
+/* THE ONE-ROW BAR (owner, 2026-09-26): the status strip in the bar's right
+   zone, built from the REAL segment component and the values in the owner's
+   screenshot, so the shed rungs are measured against the widths prod draws. */
+const STATUS = (
+  <div className="status-strip status-strip--in-bar" role="region" aria-label="System status">
+    <StatusSegment label="Attention" value="28" onClick={() => {}} />
+    <StatusSegment label="CPU" value="32%" shed={5} />
+    <StatusSegment label="Mem" value="10.9 / 16 GB" shed={4} />
+    <StatusSegment label="Load" value="10.67" tone="warn" shed={3} />
+    <StatusSegment label="Disk" value="97%" tone="alert" shed={2} />
+    <StatusSegment label="tm8" value="175 MB" shed={1} />
+    <StatusSegment label="Sessions" value="1" shed={7} />
+    <StatusSegment label="Chats" value="1" shed={6} />
+  </div>
+);
+const STATUS_WIDTHS = [1700, 1641, 1551, 1471, 1381, 1241, 1191, 1111, 1061, 981, 911, 800, 691, 611, 560];
 
-function Row({ width }: { width: number }) {
+function Row({ width, status = false }: { width: number; status?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState('board-v2');
   const [report, setReport] = useState('');
@@ -57,13 +75,24 @@ function Row({ width }: { width: number }) {
     const el = ref.current!;
     const measure = () => {
       const bar = el.querySelector<HTMLElement>('.shell-tabbar')!;
-      const over = [bar, ...bar.querySelectorAll<HTMLElement>('.shell-tabbar__zone')].some(
-        (n) => n.scrollWidth > n.clientWidth + 1,
-      );
+      const over =
+        [bar, ...bar.querySelectorAll<HTMLElement>('.shell-tabbar__zone, .status-strip')].some(
+          (n) => n.scrollWidth > n.clientWidth + 1,
+        ) ||
+        [...bar.querySelectorAll<HTMLElement>('.shell-tabbar__zone--trail > *')].some(
+          (n) => n.getBoundingClientRect().height > 30,
+        );
       const pill = el.querySelector<HTMLElement>('.shell-tabbar__views')!;
       const form = getComputedStyle(pill).display === 'none' ? 'SELECT' : 'pill';
       const tabs = el.querySelector<HTMLElement>('.shell-tabbar__tabs')!;
-      setReport(`${over ? 'OVERFLOW' : 'fits'} · ${form} · centre ${Math.round(tabs.getBoundingClientRect().width)}px`);
+      const shown = [...el.querySelectorAll<HTMLElement>('.status-strip__segment')]
+        .filter((n) => getComputedStyle(n).display !== 'none')
+        .map((n) => n.querySelector('.status-strip__label')?.textContent)
+        .join(',');
+      setReport(
+        `${over ? 'OVERFLOW' : 'fits'} · ${form} · centre ${Math.round(tabs.getBoundingClientRect().width)}px` +
+          (status ? ` · strip [${shown}]` : ''),
+      );
     };
     measure();
     const ro = new ResizeObserver(measure);
@@ -73,7 +102,7 @@ function Row({ width }: { width: number }) {
   return (
     <div style={{ margin: '0 0 14px' }}>
       <div style={{ font: '11px monospace', color: '#666', margin: '0 0 3px' }}>
-        {width}px — <b data-testid={`report-${width}`}>{report}</b>
+        {width}px{status ? ' +status' : ''} — <b data-testid={`report-${status ? 's' : ''}${width}`}>{report}</b>
       </div>
       <div ref={ref} style={{ width, border: '1px dashed #bbb' }}>
         <SpaceTabBar
@@ -84,7 +113,8 @@ function Row({ width }: { width: number }) {
           onSelectTab={setActive}
           onGoHome={() => {}}
           onOpenPalette={() => {}}
-          accountSlot={<span style={{ font: '12px system-ui' }}>◯ Subhang</span>}
+          accountSlot={<span style={{ font: '12px system-ui', whiteSpace: 'nowrap' }}>◯ Subhang</span>}
+          {...(status ? { statusSlot: STATUS } : {})}
         />
       </div>
     </div>
@@ -93,6 +123,9 @@ function Row({ width }: { width: number }) {
 
 createRoot(document.getElementById('root')!).render(
   <div className="cv2-root" style={{ padding: 16, overflow: 'auto', height: '100vh' }}>
+    {STATUS_WIDTHS.map((w) => (
+      <Row key={`s${w}`} width={w} status />
+    ))}
     {WIDTHS.map((w) => (
       <Row key={w} width={w} />
     ))}
