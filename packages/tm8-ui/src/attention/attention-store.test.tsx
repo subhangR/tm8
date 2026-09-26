@@ -51,7 +51,10 @@ function summary(id: string, attention: EntityAttentionSummary | null): EntitySu
   return { id, badges: { attention } } as unknown as EntitySummary;
 }
 
-function fakeSeam(initial: AttentionRequest[], options: { v2?: boolean; failResolve?: boolean } = {}) {
+function fakeSeam(
+  initial: AttentionRequest[],
+  options: { v2?: boolean; failResolve?: boolean; gate?: Promise<void>; failUpdateFor?: string } = {},
+) {
   const table = { rows: [...initial] };
   const listeners: ((e: DurableWorkspaceEvent) => void)[] = [];
   const pendingOn = (id: string) => table.rows.filter((r) => (r.rootId ?? r.entityId) === id && (r.status === 'open' || r.status === 'acknowledged'));
@@ -61,13 +64,27 @@ function fakeSeam(initial: AttentionRequest[], options: { v2?: boolean; failReso
     items: table.rows.filter((r) => r.status === input.status).map((r) => ({ ...r })),
     nextCursor: null,
   }));
-  const resolveAttention = vi.fn(async (entityId: EntityId) => {
+  /** The batch each resolved row was settled by, like `resolution_batch_id`. */
+  const batchOf = new Map<string, string>();
+  const resolveAttention = vi.fn(async (entityId: EntityId, input: { resolutionBatchId?: string }) => {
+    if (options.gate) await options.gate;
     if (options.failResolve) throw new Error('node unreachable');
-    for (const r of table.rows) if (r.entityId === entityId && r.status === 'open') { r.status = 'resolved'; r.version += 1; }
+    for (const r of table.rows) {
+      if (r.entityId === entityId && r.status === 'open') {
+        r.status = 'resolved';
+        r.version += 1;
+        if (input.resolutionBatchId) batchOf.set(r.id, input.resolutionBatchId);
+      }
+    }
     return result(entityId);
   });
-  const updateAttentionRequest = vi.fn(async (id: string, input: { status?: string }) => {
+  const updateAttentionRequest = vi.fn(async (id: string, input: { status?: string; expectedVersion?: number }) => {
     const row = table.rows.find((r) => r.id === id)!;
+    if (options.failUpdateFor === id) throw new Error('node unreachable');
+    // As 050:126 does: a stale version is a conflict, not a write.
+    if (input.expectedVersion !== undefined && input.expectedVersion !== row.version) {
+      throw Object.assign(new Error(`expected ${input.expectedVersion}, have ${row.version}`), { code: 'version_conflict' });
+    }
     row.status = input.status as AttentionRequest['status'];
     row.version += 1;
     return { ...result(row.entityId), request: row };
@@ -75,9 +92,12 @@ function fakeSeam(initial: AttentionRequest[], options: { v2?: boolean; failReso
   const postMessage = vi.fn(async () => ({}));
   const v2 = {
     markSeen: vi.fn(async (id: EntityId) => result(id)),
-    unresolve: vi.fn(async () => {
-      for (const r of table.rows) if (r.status === 'resolved') r.status = 'open';
-      return result('task-1');
+    unresolve: vi.fn(async (batchId: string) => {
+      let affected = 0;
+      for (const r of table.rows) {
+        if (r.status === 'resolved' && batchOf.get(r.id) === batchId) { r.status = 'open'; affected += 1; }
+      }
+      return { ...result('task-1'), affectedCount: affected };
     }),
     withdraw: vi.fn(async (id: string) => {
       const row = table.rows.find((r) => r.id === id)!;
@@ -318,5 +338,75 @@ describe('AttentionProvider', () => {
     const fake = fakeSeam([req({ entityId: 'task-1' })]);
     const ref = await ready(mount(fake));
     await waitFor(() => expect(ref.api!.queue('all')[0]!.title).toBe('Title task-1'));
+  });
+});
+
+describe('review fixes (S5a review, findings 1, 2, 4)', () => {
+  function gated() {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    return { gate, release };
+  }
+
+  it('Undo pressed while the resolve is in flight waits for it, then really reopens (v1)', async () => {
+    const { gate, release } = gated();
+    const fake = fakeSeam([req({ id: 'r1', entityId: 'task-1', version: 3 })], { gate });
+    const ref = await ready(mount(fake));
+    let resolving!: Promise<void>;
+    act(() => { resolving = ref.api!.resolve('task-1' as EntityId); });
+    const batch = ref.api!.undo!.batchId;
+    let undoing!: Promise<void>;
+    act(() => { undoing = ref.api!.unresolve(batch); });
+    await act(async () => { release(); await resolving; await undoing; });
+    expect(fake.table.rows[0]!.status).toBe('open');
+    expect(ref.api!.error).toBeNull();
+    await waitFor(() => expect(ref.api!.counts().all).toBe(1));
+  });
+
+  it('Undo pressed while the resolve is in flight waits for it (v2 batch)', async () => {
+    const { gate, release } = gated();
+    const fake = fakeSeam([req({ id: 'r1', entityId: 'task-1' })], { gate, v2: true });
+    const ref = await ready(mount(fake));
+    let resolving!: Promise<void>;
+    act(() => { resolving = ref.api!.resolve('task-1' as EntityId); });
+    const batch = ref.api!.undo!.batchId;
+    let undoing!: Promise<void>;
+    act(() => { undoing = ref.api!.unresolve(batch); });
+    await act(async () => { release(); await resolving; await undoing; });
+    expect(fake.v2.unresolve).toHaveBeenCalledWith(batch, expect.anything());
+    expect(fake.table.rows[0]!.status).toBe('open');
+    await waitFor(() => expect(ref.api!.counts().all).toBe(1));
+  });
+
+  it('a partial v1 Undo failure hides nothing the server has open', async () => {
+    const fake = fakeSeam([
+      req({ id: 'r1', entityId: 'task-1' }),
+      req({ id: 'r2', entityId: 'task-1' }),
+    ], { failUpdateFor: 'r2' });
+    const ref = await ready(mount(fake));
+    await act(() => ref.api!.resolve('task-1' as EntityId));
+    await act(() => ref.api!.unresolve(ref.api!.undo!.batchId));
+    expect(ref.api!.error).toMatch(/Couldn't undo/);
+    // r1 was reopened on the server; the read after the settle shows it.
+    await waitFor(() => expect(ref.api!.requestsFor('task-1').map((r) => r.id)).toEqual(['r1']));
+    expect(ref.api!.counts().all).toBe(1);
+  });
+
+  it('a settled hide ends when a later read has the row open again (reopened elsewhere)', async () => {
+    const fake = fakeSeam([req({ id: 'r1', entityId: 'task-1' })]);
+    const ref = await ready(mount(fake));
+    await act(() => ref.api!.resolve('task-1' as EntityId));
+    await waitFor(() => expect(ref.api!.counts().all).toBe(0));
+    // Another surface reopens it; the next read is the truth.
+    fake.table.rows[0]!.status = 'open';
+    act(() => ref.api!.refresh());
+    await waitFor(() => expect(ref.api!.counts().all).toBe(1));
+  });
+
+  it("a fresh badge's maxLevel beats the rows' older level", async () => {
+    const fake = fakeSeam([req({ entityId: 'task-1', level: 'normal' })]);
+    const ref = await ready(mount(fake));
+    fake.upsert('task-1', { ...badge(2), maxLevel: 'urgent' } as EntityAttentionSummary);
+    expect(ref.api!.chipFor(summary('task-1', badge(1)))).toMatchObject({ level: 'urgent', tone: 'block' });
   });
 });

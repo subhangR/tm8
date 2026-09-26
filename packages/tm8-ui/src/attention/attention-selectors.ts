@@ -116,7 +116,9 @@ export function chipFromBadge(
 ): AttentionChip | null {
   if (!badge || badge.pendingCount <= 0) return null;
   const loose = (badge as EntityAttentionSummary & { maxLevel?: AttentionLevel | null }).maxLevel;
-  const level = rowsLevel ?? loose ?? 'normal';
+  // The badge's own level wins when it carries one: it is the fresher of the
+  // two (the rows refetch on a 2s throttle after the upsert that brought it).
+  const level = loose ?? rowsLevel ?? 'normal';
   return {
     level,
     ...chipLook(level),

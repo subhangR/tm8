@@ -50,8 +50,16 @@ export interface AttentionCommandContext {
   /** Pending rows as the store currently shows them. */
   rowsOn(entityId: EntityId): readonly AttentionRequest[];
   rowById(requestId: string): AttentionRequest | undefined;
+  /** Hide rows (and a root) optimistically, until `settleRows` and a later read. */
   hideRows(ids: readonly string[], rootId?: EntityId): void;
   showRows(ids: readonly string[], rootId?: EntityId): void;
+  /**
+   * The write behind these hidden rows has settled: the next list read that
+   * STARTS after this point is the truth, and replaces the hide. This is what
+   * keeps a hide from outliving the server (a partial failure, a reopen from
+   * another surface).
+   */
+  settleRows(ids: readonly string[]): void;
   markSeenLocally(ids: readonly string[]): void;
   /** Reconcile from a command response. */
   applyResult(result: AttentionRequestMutationResult): void;
@@ -81,6 +89,14 @@ function codeOf(error: unknown): string | undefined {
 
 export function createAttentionCommands(ctx: AttentionCommandContext): AttentionCommands {
   const v2 = () => ctx.seam.commands.attentionV2;
+  /**
+   * Resolves still in flight, by batch: true when the server recorded it.
+   * Undo is offered BEFORE the reply (chapter 3), so an Undo pressed early must
+   * wait for the resolve it undoes; otherwise it reopens nothing (v2: the batch
+   * does not exist yet; v1: the version it sends is one ahead) and the resolve
+   * then lands after it, silently.
+   */
+  const inflight = new Map<string, Promise<boolean>>();
 
   return {
     async markSeen(entityId) {
@@ -109,28 +125,44 @@ export function createAttentionCommands(ctx: AttentionCommandContext): Attention
         resolutionBatchId: batchId,
         ...(trimmed ? { resolutionNote: trimmed } : {}),
       };
-      try {
-        // v1 `resolveEntity` settles only rows pinned on the named entity, so
-        // before S4 each rolled-up child is resolved by name. Children first,
-        // the root last, so the root's response carries the final badge.
-        if (!v2()?.unresolve) {
-          const children = [...new Set(rows.map((row) => row.entityId))].filter((id) => id !== root);
-          for (const child of children) {
-            ctx.applyResult(await ctx.seam.commands.resolveAttention(child, {
-              clientMutationId: `attention-resolve:${batchId}:${child}`,
-              ...input,
-            }));
+      const run = (async () => {
+        let settledChildren = 0;
+        try {
+          // v1 `resolveEntity` settles only rows pinned on the named entity, so
+          // before S4 each rolled-up child is resolved by name. Children first,
+          // the root last, so the root's response carries the final badge.
+          // (The presence of `unresolve` stands for "S4 is here": S4 ships all
+          // three verbs and the roll-up resolve together.)
+          if (!v2()?.unresolve) {
+            const children = [...new Set(rows.map((row) => row.entityId))].filter((id) => id !== root);
+            for (const child of children) {
+              ctx.applyResult(await ctx.seam.commands.resolveAttention(child, {
+                clientMutationId: `attention-resolve:${batchId}:${child}`,
+                ...input,
+              }));
+              settledChildren += 1;
+            }
           }
+          ctx.applyResult(await ctx.seam.commands.resolveAttention(root, {
+            clientMutationId: `attention-resolve:${batchId}`,
+            ...input,
+          }));
+          return true;
+        } catch (error) {
+          // Show everything again; the read after `settleRows` hides whatever
+          // the children's resolves did settle.
+          ctx.showRows(ids, root);
+          if (ctx.currentUndo()?.batchId === batchId) ctx.setUndo(null);
+          ctx.setError(settledChildren > 0
+            ? `Resolved only part of this: ${messageOf(error)}`
+            : `Couldn't resolve: ${messageOf(error)}`);
+          return false;
         }
-        ctx.applyResult(await ctx.seam.commands.resolveAttention(root, {
-          clientMutationId: `attention-resolve:${batchId}`,
-          ...input,
-        }));
-      } catch (error) {
-        ctx.showRows(ids, root);
-        if (ctx.currentUndo()?.batchId === batchId) ctx.setUndo(null);
-        ctx.setError(`Couldn't resolve: ${messageOf(error)}`);
-      }
+      })();
+      inflight.set(batchId, run);
+      await run;
+      inflight.delete(batchId);
+      ctx.settleRows(ids);
       ctx.refresh();
     },
 
@@ -140,11 +172,20 @@ export function createAttentionCommands(ctx: AttentionCommandContext): Attention
       ctx.setUndo(null);
       const ids = undo.rows.map((row) => row.id);
       ctx.showRows(ids, undo.rootId);
+      // An Undo pressed while its Resolve is in flight waits for it. A resolve
+      // that failed left nothing to undo (and has said so).
+      const pending = inflight.get(batchId);
+      if (pending && !(await pending)) return;
+      const reopened = new Set<string>();
       try {
         const unresolve = v2()?.unresolve;
         if (unresolve) {
           ctx.applyResult(await unresolve(batchId, { clientMutationId: `attention-unresolve:${batchId}` }));
+          for (const id of ids) reopened.add(id);
         } else {
+          // v1 limits, fixed by S4's batch unresolve: only the rows this tab
+          // knew about are reopened (v1 resolve also settles any row that
+          // arrived after the last read), and a reopened row keeps its note.
           // A resolve bumps each row's version by exactly one (050), which is
           // the version the reopen must send.
           for (const row of undo.rows) {
@@ -155,13 +196,19 @@ export function createAttentionCommands(ctx: AttentionCommandContext): Attention
                 status: 'open',
               }));
             } catch (error) {
-              // Someone else moved this row since: leave it where they put it.
+              // The resolve has landed, so a conflict now means someone else
+              // moved this row since: leave it where they put it, and let the
+              // next read show it.
               if (codeOf(error) !== 'version_conflict') throw error;
             }
+            reopened.add(row.id);
           }
         }
       } catch (error) {
-        ctx.hideRows(ids, undo.rootId);
+        // Re-hide only what was NOT reopened, and only until the next read.
+        const failed = ids.filter((id) => !reopened.has(id));
+        ctx.hideRows(failed, reopened.size === 0 ? undo.rootId : undefined);
+        ctx.settleRows(failed);
         ctx.setError(`Couldn't undo: ${messageOf(error)}`);
       }
       ctx.refresh();
@@ -187,6 +234,7 @@ export function createAttentionCommands(ctx: AttentionCommandContext): Attention
         ctx.showRows([requestId]);
         ctx.setError(`Couldn't withdraw: ${messageOf(error)}`);
       }
+      ctx.settleRows([requestId]);
       ctx.refresh();
     },
 

@@ -107,7 +107,12 @@ export function AttentionProvider(props: AttentionProviderProps) {
   const pending = useAttentionPending(seam, spaceId, props.delayMs !== undefined ? { delayMs: props.delayMs } : {});
 
   const [badges, setBadges] = useState<ReadonlyMap<string, EntityAttentionSummary | null>>(new Map());
-  const [hiddenRows, setHiddenRows] = useState<ReadonlySet<string>>(new Set());
+  /**
+   * Rows hidden by a command, keyed to when its write settled: `null` while it
+   * is in flight, else `readsStarted()` at settle. A read that started later is
+   * the server's word and ends the hide, so a hide can never outlive the truth.
+   */
+  const [hiddenRows, setHiddenRows] = useState<ReadonlyMap<string, number | null>>(new Map());
   const [hiddenRoots, setHiddenRoots] = useState<ReadonlySet<string>>(new Set());
   const [seenRows, setSeenRows] = useState<ReadonlySet<string>>(new Set());
   const [names, setNames] = useState<ReadonlyMap<EntityId, EntityName>>(new Map());
@@ -117,7 +122,7 @@ export function AttentionProvider(props: AttentionProviderProps) {
   // A new space starts clean.
   useEffect(() => {
     setBadges(new Map());
-    setHiddenRows(new Set());
+    setHiddenRows(new Map());
     setHiddenRoots(new Set());
     setSeenRows(new Set());
     setNames(new Map());
@@ -136,8 +141,13 @@ export function AttentionProvider(props: AttentionProviderProps) {
   /** Pending rows with the optimistic overlay applied. */
   const rows = useMemo<readonly AttentionRequest[]>(() => {
     if (pending.state.phase !== 'ready') return [];
+    const { readNo } = pending.state;
     return pending.state.rows
-      .filter((row) => !hiddenRows.has(row.id))
+      .filter((row) => {
+        if (!hiddenRows.has(row.id)) return true;
+        const settledAt = hiddenRows.get(row.id);
+        return settledAt != null && readNo > settledAt;
+      })
       .map((row) => (seenRows.has(row.id) && row.seenByMe !== true ? { ...row, seenByMe: true } : row));
   }, [pending.state, hiddenRows, seenRows]);
 
@@ -196,17 +206,22 @@ export function AttentionProvider(props: AttentionProviderProps) {
   }, []);
 
   const refresh = pending.refresh;
+  const readsStarted = pending.readsStarted;
   const commands = useMemo(() => createAttentionCommands({
     seam,
     rowsOn: (entityId) => requestsOn(live.current.rows, entityId),
     rowById: (id) => live.current.rows.find((row) => row.id === id),
     hideRows: (ids, rootId) => {
-      setHiddenRows((current) => new Set([...current, ...ids]));
+      setHiddenRows((current) => {
+        const next = new Map(current);
+        for (const id of ids) next.set(id, null);
+        return next;
+      });
       if (rootId) setHiddenRoots((current) => new Set(current).add(rootId));
     },
     showRows: (ids, rootId) => {
       setHiddenRows((current) => {
-        const next = new Set(current);
+        const next = new Map(current);
         for (const id of ids) next.delete(id);
         return next;
       });
@@ -217,6 +232,14 @@ export function AttentionProvider(props: AttentionProviderProps) {
           return next;
         });
       }
+    },
+    settleRows: (ids) => {
+      const mark = readsStarted();
+      setHiddenRows((current) => {
+        const next = new Map(current);
+        for (const id of ids) if (next.has(id) && next.get(id) === null) next.set(id, mark);
+        return next;
+      });
     },
     markSeenLocally: (ids) => setSeenRows((current) => new Set([...current, ...ids])),
     applyResult: (result) => {
@@ -238,7 +261,7 @@ export function AttentionProvider(props: AttentionProviderProps) {
     refresh,
     now,
     newId,
-  }), [seam, setUndo, showError, refresh, now, newId]);
+  }), [seam, setUndo, showError, refresh, readsStarted, now, newId]);
 
   const api = useMemo<AttentionApi>(() => ({
     ...commands,
