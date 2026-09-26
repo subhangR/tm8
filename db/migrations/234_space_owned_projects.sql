@@ -220,7 +220,13 @@ begin
     end if;
     -- W11 (234): a folder is granted to at most one space. Rows that already
     -- break this (double links from before 234) stay until W11-migrate splits
-    -- them; no new one can be made.
+    -- them; no new one can be made. A re-grant of a pair that already exists
+    -- (grant_folder re-run, ON CONFLICT DO NOTHING) is not a new grant: it
+    -- passes here, so the conflict clause, not this check, decides it (R845-F2).
+    if exists (select 1 from public.space_projects same
+                where same.space_id = new.space_id and same.project_id = new.project_id) then
+      return new;
+    end if;
     if exists (select 1 from public.space_projects other
                 where other.project_id = new.project_id
                   and other.space_id <> new.space_id) then
@@ -557,9 +563,22 @@ begin
   end if;
   perform 1 from public.projects where id = p_folder_id for update;
   if not found then
-    raise exception 'Folder not found' using errcode = 'P0002';
+    -- Only a gate admin learns that a folder id does not exist; anyone else
+    -- gets the same refusal as for a folder that exists but is not granted
+    -- here, so the error code cannot probe the gate's folders (R845-F6).
+    if internal.is_node_admin()
+       and coalesce(current_setting('tm8.session_space_id', true), '') = '' then
+      raise exception 'Folder not found' using errcode = 'P0002';
+    end if;
+    raise exception 'this folder is not granted to this space'
+      using errcode = '42501', detail = 'folder_not_granted';
   end if;
+  -- A folder already granted to THIS space (including one of the double links
+  -- from before 234) is named here whatever other space also holds it; the
+  -- elsewhere refusal is for a folder this space does not hold (R845-F2).
   if not internal.project_folders_shared()
+     and not exists (select 1 from public.space_projects same
+                      where same.project_id = p_folder_id and same.space_id = p_space_id)
      and exists (select 1 from public.space_projects other
               where other.project_id = p_folder_id and other.space_id <> p_space_id) then
     -- T30: the refusal a space admin of B gets for a folder granted to A.

@@ -83,13 +83,19 @@ export async function ensureLaunchResources(args: {
   // W11 (234): a folder is granted to ONE space. On a fresh node that is the
   // owner's personal/first space (launchFolderSpace — not K13); when the
   // folder is already granted — by an earlier boot or a gate admin — the grant
-  // is left exactly where it is.
-  const granted = await args.db.query<{ space_id: string }>(
-    claims,
-    'select space_id::text space_id from public.space_projects where project_id = $1',
-    [project.id],
-  );
-  if (granted.length === 0) {
+  // is left exactly where it is. The grants are read through the gate's own
+  // list, not `space_projects`: that table is member-scoped, so a grant to a
+  // space the owner is not in would read as "none" and the grant below would
+  // then fail boot with folder_granted_elsewhere (R845-F3). Granting is a
+  // gate-admin act, so an owner who is not one makes no launch grant.
+  const granted = args.owner.isNodeAdmin
+    ? await args.db.query<{ grants: unknown[] }>(
+      claims,
+      'select grants from public.gate_folders_list() where folder_id = $1',
+      [project.id],
+    )
+    : [];
+  if (args.owner.isNodeAdmin && (granted[0]?.grants ?? []).length === 0) {
     const target = launchFolderSpace(spaces.map((space) => ({
       spaceId: space.id,
       createdByOwner: space.created_by_owner === true,

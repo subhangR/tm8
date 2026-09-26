@@ -156,6 +156,7 @@ export class W2ProjectFolderUploadService {
     // ensureWorkingDir precedent. Provisional policy until an owner approves
     // a server-managed import root for ordinary members.
     requireNodeAdmin(nodeAdmin);
+    requireUnpinned(claims);
 
     // Containment BEFORE the first probe of the target: a lexically
     // out-of-jail parent is forbidden without any filesystem access, so the
@@ -256,6 +257,7 @@ export class W2ProjectFolderUploadService {
     // C1: gate BEFORE the session is even looked up — a non-admin cannot
     // probe which folderUploadIds exist.
     requireNodeAdmin(nodeAdmin);
+    requireUnpinned(claims);
     const state = await this.loadState(folderUploadId, viewerIdentityId);
 
     if (new Date(state.expiresAt).getTime() <= this.now().getTime()) {
@@ -444,6 +446,17 @@ export class W2ProjectFolderUploadService {
         await this.options.blobStore.remove(file.storagePath, spaceId).catch(() => undefined);
       }
     }
+  }
+}
+
+/**
+ * W11 (234): the upload ends in `grant_folder`, and `require_gate_admin`
+ * refuses a space-pinned session. Refuse it here, before any byte is written,
+ * rather than with a 42501 after the folder is materialized (R845-F5).
+ */
+function requireUnpinned(claims: DbClaims): void {
+  if (claims.sessionSpaceId) {
+    throw new CollabError('forbidden', 'a folder import grants a gate folder, which a space-pinned session cannot do');
   }
 }
 

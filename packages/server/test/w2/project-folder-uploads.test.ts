@@ -496,6 +496,33 @@ describe('projects.folderUploads security corrections', () => {
     )).rejects.toMatchObject({ code: 'forbidden', message: expect.stringMatching(/node-admin/i) });
   });
 
+  it('R845-F5: a node-admin session PINNED to a space is forbidden on init AND complete, before any write', async () => {
+    // A folder import grants a gate folder (234's grant_folder), which
+    // require_gate_admin refuses to a space-pinned session. The handler refuses
+    // it first, so no slot is opened and nothing lands on disk.
+    const db = stagingDb();
+    const registry = configuredWithOwner(db, true);
+    const pinned = { kind: 'bearer', identityId: 'a-signed-in-human', nodeAdmin: true, sessionSpaceId: SPACE } as RequestContext['identity'];
+    await expect(handler(registry, 'projects.folderUploads.init')(
+      request('projects.folderUploads.init', { params: { spaceId: SPACE }, body: initBody(), identity: pinned }),
+    )).rejects.toMatchObject({ code: 'forbidden', message: expect.stringMatching(/space-pinned/i) });
+    expect(db.calls.filter((call) => call.name === 'w2_init_file_upload')).toHaveLength(0);
+
+    const unpinned = { kind: 'bearer', identityId: 'a-signed-in-human', nodeAdmin: true } as RequestContext['identity'];
+    const grant = await handler(registry, 'projects.folderUploads.init')(
+      request('projects.folderUploads.init', { params: { spaceId: SPACE }, body: initBody(), identity: unpinned }),
+    ) as ProjectFolderUploadGrant;
+    const callsBefore = db.calls.length;
+    await expect(handler(registry, 'projects.folderUploads.complete')(
+      request('projects.folderUploads.complete', {
+        params: { folderUploadId: grant.folderUploadId },
+        body: { clientMutationId: 'cmid-f5-pinned' },
+        identity: pinned,
+      }),
+    )).rejects.toMatchObject({ code: 'forbidden', message: expect.stringMatching(/space-pinned/i) });
+    expect(db.calls.length).toBe(callsBefore);
+  });
+
   it('C2: traversal/absolute rootName and secret entry names refuse BEFORE any filesystem probe', async () => {
     const db = stagingDb();
     const { registry } = configured(db);

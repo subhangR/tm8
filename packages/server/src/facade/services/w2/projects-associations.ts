@@ -397,13 +397,12 @@ async function loadCorrectionEdge(
             coalesce(project_counter.messages, 0) project_messages,
             case project_reaction.type when 'likes' then 'like'
                  when 'dislikes' then 'dislike' when 'stars' then 'star' end project_viewer_reaction,
-            detail.project_id, coalesce(detail.name, resource.name) project_name,
+            detail.project_id, detail.name project_name,
             detail.materialized_version
        from public.edges edge
        join public.entities artifact on artifact.id = edge.src_id and artifact.deleted_at is null
        join public.entities projection on projection.id = edge.dst_id and projection.deleted_at is null
        join public.project_projection_details detail on detail.entity_id = projection.id
-       join public.projects resource on resource.id = detail.project_id
        left join public.pull_requests pr on pr.entity_id = artifact.id
        left join public.commits commit_row on commit_row.entity_id = artifact.id
        left join public.entity_counters artifact_counter on artifact_counter.entity_id = artifact.id

@@ -29,14 +29,21 @@ class SeedDb implements Db {
   live = new Set<string>();
   /** W11 (234): folder id -> the ONE space it is granted to. */
   grants = new Map<string, string>();
+  /** Whether the caller passes require_gate_admin(). */
+  gateAdmin = true;
   calls: Array<{ fn: string; args: readonly unknown[] }> = [];
 
   async query<R>(_claims: DbClaims, sql: string, params: readonly unknown[] = []): Promise<R[]> {
     if (sql.includes('from public.spaces')) return [{ id: SPACE_ID }] as R[];
     if (sql.includes('from public.projects')) return (this.project ? [this.project] : []) as R[];
-    if (sql.includes('from public.space_projects')) {
+    // The gate's list sees every grant, whether or not the owner is a member
+    // of the granted space (R845-F3); member-scoped `space_projects` must not
+    // be read for this.
+    if (sql.includes('public.space_projects')) throw new Error(`member-scoped grant read: ${sql}`);
+    if (sql.includes('public.gate_folders_list()')) {
+      if (!this.gateAdmin) throw Object.assign(new Error('gate admin required'), { code: '42501' });
       const spaceId = this.grants.get(String(params[0]));
-      return (spaceId ? [{ space_id: spaceId }] : []) as R[];
+      return (this.project ? [{ grants: spaceId ? [{ spaceId }] : [] }] : []) as R[];
     }
     // The retire sweep, answered from the fake's own state and the query's own
     // params, so a wrong role or name list reds here rather than passing.
@@ -60,6 +67,11 @@ class SeedDb implements Db {
       return { project: { id: PROJECT_ID } } as T;
     }
     if (fn === 'public.grant_folder') {
+      // 234's guard: a folder granted to another space is refused.
+      const holder = this.grants.get(String(args[1]));
+      if (holder && holder !== args[0]) {
+        throw Object.assign(new Error('this folder belongs to another space'), { code: '23505' });
+      }
       this.grants.set(String(args[1]), String(args[0]));
       return { spaceId: args[0], projectId: args[1] } as T;
     }
@@ -207,6 +219,38 @@ describe('launch resource bootstrap', () => {
     const later = await ensureLaunchResources(bootArgs(db));
     expect(later.teammatesRetired).toBe(1);
     expect(deleted()).toEqual(['opus', 'kimi', 'busy']);
+  });
+
+  it('a folder already granted to a space the owner is NOT a member of is left there, and boot succeeds (R845-F3)', async () => {
+    const db = new SeedDb();
+    db.project = { id: PROJECT_ID, trust: 'trusted' };
+    const OTHER_SPACE = '44444444-4444-4444-8444-444444444444';
+    db.grants.set(PROJECT_ID, OTHER_SPACE); // not in the owner's spaces (the fake lists only SPACE_ID)
+
+    const result = await ensureLaunchResources(bootArgs(db));
+
+    expect(result.projectId).toBe(PROJECT_ID);
+    expect(db.calls.some(({ fn }) => fn === 'public.grant_folder')).toBe(false);
+    expect(db.grants.get(PROJECT_ID)).toBe(OTHER_SPACE);
+  });
+
+  it('positive — an ungranted folder is granted to the owner\'s space, exactly once over two boots', async () => {
+    const db = new SeedDb();
+    db.project = { id: PROJECT_ID, trust: 'trusted' };
+    await ensureLaunchResources(bootArgs(db));
+    await ensureLaunchResources(bootArgs(db));
+    expect(db.calls.filter(({ fn }) => fn === 'public.grant_folder')).toHaveLength(1);
+    expect(db.grants.get(PROJECT_ID)).toBe(SPACE_ID);
+  });
+
+  it('an owner who is not a gate admin makes no launch grant and still boots', async () => {
+    const db = new SeedDb();
+    db.gateAdmin = false;
+    db.project = { id: PROJECT_ID, trust: 'trusted' };
+    const args = bootArgs(db);
+    const result = await ensureLaunchResources({ ...args, owner: { ...args.owner, isNodeAdmin: false } });
+    expect(result.projectId).toBe(PROJECT_ID);
+    expect(db.calls.some(({ fn }) => fn === 'public.grant_folder')).toBe(false);
   });
 
   it('does not silently grant trust to an existing untrusted project', async () => {

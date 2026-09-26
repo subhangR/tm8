@@ -1,11 +1,12 @@
 /**
- * W11 (plan 01a0d9eb §3, migrations 234 + 235) — a node that ALREADY has a
- * folder linked into two spaces still migrates, and every chat, work session
- * and worktree that existed before keeps opening the right folder.
+ * W11 (plan 01a0d9eb §3, migration 234) — a node that ALREADY has a folder
+ * linked into two spaces still migrates, and every chat, work session and
+ * worktree that existed before keeps opening the right folder. The backfill
+ * of the new columns on those old rows (235) is its own PR.
  *
  * The chain is applied up to 231, an old-shaped node is seeded at that level
  * (folder F linked into A AND B, the shape 7 folders have on the perf copy),
- * then 234 and 235 are applied on top. Nothing here runs against anything but
+ * then 234 is applied on top. Nothing here runs against anything but
  * this scratch database.
  */
 import { randomUUID } from 'node:crypto';
@@ -22,8 +23,7 @@ vi.setConfig({ testTimeout: 120_000, hookTimeout: 240_000 });
 const ordinal = (file: string): number => Number(file.slice(0, 3));
 const BEFORE = migrationFiles().filter((f) => ordinal(f) < 234);
 const W11_MODEL = migrationFiles().filter((f) => f === '234_space_owned_projects.sql');
-const W11_BACKFILL = migrationFiles().filter((f) => f === '235_space_owned_projects_backfill.sql');
-// The chain is applied through 235 — this PR's own ceiling — and no further.
+// The chain is applied through 234 — this PR's own ceiling — and no further.
 // Later ordinals are owned elsewhere: 245 (W11-repoint) refuses shared-folder
 // seeds by design, and this file seeds exactly that double-linked state.
 
@@ -52,9 +52,6 @@ const ids = {
   wtA: randomUUID(),
   wtB: randomUUID(),
 };
-
-interface Stamp { id: string; updated_at: string }
-let stampsBefore: Stamp[] = [];
 
 async function asOwner<T>(fn: (q: { query: (sql: string, p?: unknown[]) => Promise<{ rows: any[] }> }) => Promise<T>): Promise<T> {
   return database.transaction(async (client) => {
@@ -158,20 +155,10 @@ async function seedOldShape(): Promise<void> {
   });
 }
 
-const stamps = (): Promise<Stamp[]> =>
-  database.query<Stamp>(
-    `select entity_id::text id, updated_at::text from public.chats where entity_id = any($1::uuid[])
-     union all select entity_id::text, updated_at::text from public.work_sessions where entity_id = any($1::uuid[])
-     union all select entity_id::text, updated_at::text from public.worktrees where entity_id = any($1::uuid[])
-     order by 1`,
-    [[ids.chatA, ids.chatB, ids.wsA, ids.wsB, ids.wtA, ids.wtB]],
-  );
-
 beforeAll(async () => {
   database = await createW1ScratchDatabase('w11_migrate');
   database.apply(BEFORE);
   await seedOldShape();
-  stampsBefore = await stamps();
   database.apply(W11_MODEL);
   db = createDb(database.url, { max: 2 });
 }, 240_000);
@@ -182,9 +169,8 @@ afterAll(async () => {
 }, 180_000);
 
 describe('234 on a node with a double-linked folder', () => {
-  it('the chain has exactly one 234 and one 235', () => {
+  it('the chain has exactly one 234', () => {
     expect(W11_MODEL).toHaveLength(1);
-    expect(W11_BACKFILL).toHaveLength(1);
   });
 
   it('migrates, and the existing double link is kept as it was', async () => {
@@ -196,9 +182,10 @@ describe('234 on a node with a double-linked folder', () => {
   });
 
   it('the one-space-per-folder unique index is DEFERRED: building it now fails on this data', async () => {
-    const [{ ddl }] = await database.query<{ ddl: string }>(
+    const [row] = await database.query<{ ddl: string }>(
       'select internal.space_project_unique_index_sql() ddl',
     );
+    const ddl = row!.ddl;
     expect(ddl).toMatch(/unique index .* on public\.space_projects\s*\(project_id\)/i);
     expect(await rawOutcome(ddl, [])).toBe('23505');
   });
@@ -229,7 +216,7 @@ describe('234 on a node with a double-linked folder', () => {
     )).toBe('ok');
   });
 
-  it('before 235, the old rows carry no project entity ref (only new rows are filled)', async () => {
+  it('the old rows carry no project entity ref (234 fills only new rows)', async () => {
     const rows = await database.query<{ n: number }>(
       `select count(*)::int n from public.chats where entity_id = any($1::uuid[]) and project_entity_id is not null`,
       [[ids.chatA, ids.chatB]],
@@ -258,62 +245,6 @@ describe('234 on a node with a double-linked folder', () => {
       'select project_entity_id::text from public.chats where entity_id = $1', [chat]);
     expect(row!.project_entity_id).toBe(await linkOf(ids.spaceB, ids.folderF));
   });
-});
-
-describe('235 backfill on the old-shaped rows (a5)', () => {
-  beforeAll(() => {
-    database.apply(W11_BACKFILL);
-  });
-
-  it('each chat points at ITS space\'s project entity; project_id is untouched', async () => {
-    const rows = await database.query<{ id: string; project_id: string; project_entity_id: string }>(
-      `select entity_id::text id, project_id::text, project_entity_id::text from public.chats
-        where entity_id = any($1::uuid[])`,
-      [[ids.chatA, ids.chatB]],
-    );
-    const byId = new Map(rows.map((r) => [r.id, r]));
-    expect(byId.get(ids.chatA)!.project_entity_id).toBe(await linkOf(ids.spaceA, ids.folderF));
-    expect(byId.get(ids.chatB)!.project_entity_id).toBe(await linkOf(ids.spaceB, ids.folderF));
-    expect(byId.get(ids.chatA)!.project_entity_id).not.toBe(byId.get(ids.chatB)!.project_entity_id);
-    expect(rows.every((r) => r.project_id === ids.folderF)).toBe(true);
-  });
-
-  it('each work session points at its entity\'s space\'s project entity', async () => {
-    const rows = await database.query<{ id: string; project_id: string; project_entity_id: string }>(
-      `select entity_id::text id, project_id::text, project_entity_id::text from public.work_sessions
-        where entity_id = any($1::uuid[])`,
-      [[ids.wsA, ids.wsB]],
-    );
-    const byId = new Map(rows.map((r) => [r.id, r]));
-    expect(byId.get(ids.wsA)!.project_entity_id).toBe(await linkOf(ids.spaceA, ids.folderF));
-    expect(byId.get(ids.wsB)!.project_entity_id).toBe(await linkOf(ids.spaceB, ids.folderF));
-    expect(rows.every((r) => r.project_id === ids.folderF)).toBe(true);
-  });
-
-  it('each worktree gets its space and its space\'s project entity', async () => {
-    const rows = await database.query<{ id: string; space_id: string; project_entity_id: string }>(
-      `select entity_id::text id, space_id::text, project_entity_id::text from public.worktrees
-        where entity_id = any($1::uuid[])`,
-      [[ids.wtA, ids.wtB]],
-    );
-    const byId = new Map(rows.map((r) => [r.id, r]));
-    expect(byId.get(ids.wtA)).toMatchObject({ space_id: ids.spaceA, project_entity_id: await linkOf(ids.spaceA, ids.folderF) });
-    expect(byId.get(ids.wtB)).toMatchObject({ space_id: ids.spaceB, project_entity_id: await linkOf(ids.spaceB, ids.folderF) });
-  });
-
-  it('no updated_at moved: no chat reorders, no worktree emits a version', async () => {
-    expect(await stamps()).toEqual(stampsBefore);
-  });
-
-  it('the touch triggers are back on after 235', async () => {
-    const rows = await database.query<{ tgname: string; tgenabled: string }>(
-      `select tgname, tgenabled from pg_trigger
-        where tgname in ('chats_touch_updated_at', 'work_sessions_touch_updated_at',
-                         'worktrees_touch_updated_at', 'worktrees_snapshot_version')`,
-    );
-    expect(rows).toHaveLength(4);
-    expect(rows.every((r) => r.tgenabled === 'O')).toBe(true);
-  });
 
   it('existing sessions and chats still open the right folder, from either space', async () => {
     for (const space of [ids.spaceA, ids.spaceB]) {
@@ -328,7 +259,7 @@ describe('235 backfill on the old-shaped rows (a5)', () => {
     }
   });
 
-  it('the backfilled project entity resolves to the same folder', async () => {
+  it('a space\'s project entity resolves to the same folder', async () => {
     const entityB = await linkOf(ids.spaceB, ids.folderF);
     const rows = await db.tx(
       { identityId: ids.identityH, authKind: 'browser', requestId: `w11-a5-${randomUUID()}` },
@@ -336,13 +267,5 @@ describe('235 backfill on the old-shaped rows (a5)', () => {
         'select folder_id::text id, space_id::text from public.resolve_project_ref($1::uuid)', [entityB]),
     );
     expect(rows).toEqual([{ id: ids.folderF, space_id: ids.spaceB }]);
-  });
-
-  it('235 is idempotent: a second application changes nothing', async () => {
-    const before = await database.query(
-      'select entity_id, project_entity_id from public.chats order by entity_id');
-    database.apply(W11_BACKFILL);
-    expect(await database.query(
-      'select entity_id, project_entity_id from public.chats order by entity_id')).toEqual(before);
   });
 });
