@@ -211,29 +211,46 @@ function ProviderGroup({
     setLoginFailure(null);
     try {
       const started = await port.startLogin(provider, target);
-      const label = started.spaceCredential?.label ?? target.label ?? allRows.find((r) => r.id === target.credentialId)?.label ?? '';
-      if (opts.asPrivate) {
-        // "Add to this space as private" for a login (doc 13 §7): a FRESH
-        // sign-in — no login file is ever copied. The pending row is claimed
-        // and made private BEFORE the terminal is shown, so nobody else can
-        // launch on it or open its terminal once it is signed in.
-        const id = started.spaceCredential?.id ?? null;
-        try {
-          if (!id) throw new Error('the server did not name the pending credential');
-          await port.claim(id);
-          await port.setVisibility(id, 'private');
-        } catch (err) {
-          const why = failureOf(err);
-          setLoginFailure({
-            kind: 'failure',
-            failure: {
-              kind: why.kind,
-              text: `The login for “${label}” was not opened: it could not be made private. ${why.text} Nothing was signed in; delete the pending “${label}” to free its label.`,
-            },
-          });
-          await onChanged();
-          return { kind: 'failure', failure: why };
+      // "Add to this space as private" for a login (doc 13 §7): a FRESH
+      // sign-in — no login file is ever copied. The pending row is claimed
+      // and made private BEFORE the terminal is shown, so nobody else can
+      // launch on it or open its terminal once it is signed in. The server
+      // login PTY already runs from login.start, so EVERY throw from here
+      // to setLogin lands in the one catch below, which deletes the pending
+      // row (terminating that PTY) instead of leaving it live until the TTL
+      // sweep.
+      const pendingId = started.spaceCredential?.id ?? null;
+      let label = target.label ?? '';
+      try {
+        label = started.spaceCredential?.label ?? target.label ?? allRows.find((r) => r.id === target.credentialId)?.label ?? '';
+        if (opts.asPrivate) {
+          if (!pendingId) throw new Error('the server did not name the pending credential');
+          await port.claim(pendingId);
+          await port.setVisibility(pendingId, 'private');
         }
+      } catch (err) {
+        if (!opts.asPrivate) throw err;
+        const why = failureOf(err);
+        let removed = false;
+        if (pendingId) {
+          try {
+            await port.remove(pendingId);
+            removed = true;
+          } catch {
+            // The pending row stays; the text below says to delete it.
+          }
+        }
+        setLoginFailure({
+          kind: 'failure',
+          failure: {
+            kind: why.kind,
+            text: removed
+              ? `The login for “${label}” was not opened: it could not be made private. ${why.text} Nothing was signed in, and the pending “${label}” was deleted.`
+              : `The login for “${label}” was not opened: it could not be made private. ${why.text} Nothing was signed in; delete the pending “${label}” to free its label.`,
+          },
+        });
+        await onChanged();
+        return { kind: 'failure', failure: why };
       }
       setLogin({
         provider,

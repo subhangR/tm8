@@ -935,19 +935,79 @@ describe('W10d — owner, visibility, claim, my default, usage (doc 13 §7)', ()
     expect(order).toEqual(['start', 'claim', 'visibility:private']);
     expect(port.startLogin).toHaveBeenCalledWith('anthropic', { label: 'Mine' });
     expect(port.setVisibility).toHaveBeenCalledWith('l-p', 'private');
+    expect(port.remove).not.toHaveBeenCalled();
   });
 
-  it('if the pending login cannot be made private, no terminal opens and the server reason is shown', async () => {
-    const port = fakePort({ rows: ROWS, viewer: shared });
-    port.claim.mockRejectedValueOnce(new CollabError('forbidden', 'only its creator can claim this credential'));
+  async function addPrivateLogin(port: ReturnType<typeof fakePort>) {
     await mount(port);
     fireEvent.click(screen.getByRole('button', { name: 'Add Claude (Anthropic) to this space as private' }));
     fireEvent.change(screen.getByLabelText('Label for your private Claude (Anthropic) credential'), { target: { value: 'Mine' } });
     fireEvent.click(screen.getByRole('button', { name: 'Add private Claude (Anthropic)' }));
-    const refusal = await screen.findByTestId('space-cred-failure-refused');
+    return screen.findByTestId('space-cred-failure-refused');
+  }
+
+  async function addPrivateLoginAnyFailure(port: ReturnType<typeof fakePort>) {
+    await mount(port);
+    fireEvent.click(screen.getByRole('button', { name: 'Add Claude (Anthropic) to this space as private' }));
+    fireEvent.change(screen.getByLabelText('Label for your private Claude (Anthropic) credential'), { target: { value: 'Mine' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add private Claude (Anthropic)' }));
+    return screen.findByText(/The login for “Mine” was not opened/);
+  }
+
+  it('if the pending login cannot be claimed, no terminal opens, the pending row is deleted (ending its PTY) and the server reason is shown', async () => {
+    const port = fakePort({ rows: ROWS, viewer: shared });
+    port.claim.mockRejectedValueOnce(new CollabError('forbidden', 'only its creator can claim this credential'));
+    const refusal = await addPrivateLogin(port);
     expect(refusal.textContent).toContain('Refused: only its creator can claim this credential');
+    expect(refusal.textContent).toContain('the pending “Mine” was deleted');
     expect(screen.queryByText(/Logging in for your new private credential/)).toBeNull();
     expect(port.setVisibility).not.toHaveBeenCalled();
+    const pendingId = (await port.startLogin.mock.results[0]!.value).spaceCredential.id;
+    expect(port.remove).toHaveBeenCalledTimes(1);
+    expect(port.remove).toHaveBeenCalledWith(pendingId);
+  });
+
+  it('if the claimed login cannot be made private, the pending row is deleted (ending its PTY) and the server reason is shown', async () => {
+    const port = fakePort({ rows: ROWS, viewer: shared });
+    port.setVisibility.mockRejectedValueOnce(new CollabError('forbidden', 'only its owner can change its visibility'));
+    const refusal = await addPrivateLogin(port);
+    expect(refusal.textContent).toContain('Refused: only its owner can change its visibility');
+    expect(screen.queryByText(/Logging in for your new private credential/)).toBeNull();
+    const pendingId = (await port.startLogin.mock.results[0]!.value).spaceCredential.id;
+    expect(port.claim).toHaveBeenCalledWith(pendingId);
+    expect(port.remove).toHaveBeenCalledTimes(1);
+    expect(port.remove).toHaveBeenCalledWith(pendingId);
+  });
+
+  it('any other throw after login.start (not a server refusal) also deletes the pending row', async () => {
+    const port = fakePort({ rows: ROWS, viewer: shared });
+    port.setVisibility.mockImplementationOnce(async () => { throw new TypeError('network down'); });
+    await addPrivateLoginAnyFailure(port);
+    expect(screen.queryByText(/Logging in for your new private credential/)).toBeNull();
+    const pendingId = (await port.startLogin.mock.results[0]!.value).spaceCredential.id;
+    expect(port.remove).toHaveBeenCalledTimes(1);
+    expect(port.remove).toHaveBeenCalledWith(pendingId);
+  });
+
+  it('if login.start names no pending row, no terminal opens and nothing is claimed (there is no id to delete)', async () => {
+    const port = fakePort({ rows: ROWS, viewer: shared });
+    port.startLogin.mockImplementationOnce(async (provider) => (
+      { workSessionId: 'ws-x', spaceId: 'space-1', provider, expiresAt: '2026-09-24T12:15:00.000Z', command: 'claude auth login', spaceCredential: null }
+    ) as unknown as Awaited<ReturnType<SpaceCredentialsPort['startLogin']>>);
+    await addPrivateLoginAnyFailure(port);
+    expect(screen.queryByText(/Logging in for your new private credential/)).toBeNull();
+    expect(port.claim).not.toHaveBeenCalled();
+    expect(port.remove).not.toHaveBeenCalled();
+  });
+
+  it('if deleting the refused pending login also fails, the refusal still shows and says to delete it', async () => {
+    const port = fakePort({ rows: ROWS, viewer: shared });
+    port.claim.mockRejectedValueOnce(new CollabError('forbidden', 'only its creator can claim this credential'));
+    port.remove.mockRejectedValueOnce(new CollabError('forbidden', 'nope'));
+    const refusal = await addPrivateLogin(port);
+    expect(refusal.textContent).toContain('Refused: only its creator can claim this credential');
+    expect(refusal.textContent).toContain('delete the pending “Mine” to free its label');
+    expect(port.remove).toHaveBeenCalledTimes(1);
   });
 
   it('claim as mine is offered on a migrated row its viewer created, and a refusal reads the server reason', async () => {
