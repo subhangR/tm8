@@ -73,7 +73,7 @@ identity_id public.w2_settle_handoff(p_handoff_id text, p_outcome text, p_failur
 identity_id public.w2_withdraw_handoff(p_handoff_id text, p_expected_record_version integer, p_reason text, p_actor_id uuid, p_client_mutation_id text)  # GUARDED: require_space_member(source_space_id), resolve_actor, is_space_admin; replay path per ledger_replay (019_w2_messages_handoffs.sql)
 setting internal.identity_id()  # PIN-HELPER: identity primitive (001_core_graph.sql)
 setting internal.require_identity()  # PIN-HELPER: identity primitive (001_core_graph.sql)
-setting public.consume_stream_attach(p_session_id uuid, p_mode text, p_token_hash text)  # GUARDED: explicit session_space_id check on the work session's entity (231 section 5) (space_enter_and_pin, #848)
+setting public.consume_stream_attach(p_session_id uuid, p_mode text, p_token_hash text)  # GUARDED: explicit session_space_id check on the work session's entity (233); SECURITY DEFINER owned by tm8 (the migrator), one of the 24 definers it owns (space_enter_and_pin, #848)
 setting public.consume_surface_attach(p_container_id uuid, p_surface text, p_mode text, p_token_hash text)  # KNOWN-GAP: token plus identity only, no pin, unlike consume_stream_attach (LATENT) (177_container_kind.sql)
 
 # ---- Policies and column defaults (pg_depend; review 5324130793 B2) ----------
