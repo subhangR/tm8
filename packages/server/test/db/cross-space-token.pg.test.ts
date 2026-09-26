@@ -54,6 +54,7 @@ import {
   migrationFiles,
   type W1ScratchDatabase,
 } from './w1-pg.js';
+import { leaksSecret } from './secret-probe.js';
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
 
@@ -3826,7 +3827,7 @@ describe.sequential('T28 link visibility — every home member sees the link, on
     const listed = await linkStore.list(h2, fixture.spaceA);
     const seen = listed.find((l) => l.id === hLink.id);
     expect(seen).toMatchObject({ targetSpaceId: fixture.spaceB, targetSpaceName: null, mine: null });
-    expect(JSON.stringify(listed)).not.toMatch(/ciphertext|nonce|tm8s_/i);
+    expect(leaksSecret(JSON.stringify(listed))).toBe(false);
   });
 
   it('H2 cannot read H\'s token row', async () => {

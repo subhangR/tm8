@@ -34,6 +34,7 @@ import { loadOrCreateCredentialKey } from '../../src/credentials/credential-key.
 import { openSecret, sealSecret } from '../../src/credentials/secret-box.js';
 
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from './w1-pg.js';
+import { leaksSecret } from './secret-probe.js';
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
 
@@ -408,7 +409,18 @@ describe('W6 a5 — defaults, the link session, no target-consent setting', () =
     expect(Number(session!.days)).toBeGreaterThan(89.9);
     expect(Number(session!.days)).toBeLessThanOrEqual(90.01);
     const listed = JSON.stringify(await store.list(await hClaims(), fixture.spaceA));
-    expect(listed).not.toMatch(/ciphertext|nonce|aad|tm8s_/i);
+    expect(leaksSecret(listed)).toBe(false);
+  });
+
+  it('the secret probe catches a planted sealed key and a planted token, and ignores an "aad…" UUID', () => {
+    expect(leaksSecret(JSON.stringify({ id: 'x', ciphertext: 'AAAA' }))).toBe(true);
+    expect(leaksSecret('{"nonce" : "b"}')).toBe(true);
+    expect(leaksSecret(JSON.stringify({ AAD: 'h|l|m|t' }))).toBe(true);
+    expect(leaksSecret(JSON.stringify({ note: 'tm8s_abc.secret' }))).toBe(true);
+    expect(leaksSecret(JSON.stringify({ note: 'tm8c_abc.secret' }))).toBe(true);
+    // negative controls — the #885 flake: a UUID with the hex run "aad", and keys that merely contain the words
+    expect(leaksSecret(JSON.stringify({ memberId: 'aad52e5a-0c1d-4e6f-9aad-1234567890ab', status: 'signed_in' }))).toBe(false);
+    expect(leaksSecret(JSON.stringify({ hasCiphertext: false, nonceless: true }))).toBe(false);
   });
 
   it('no allow_stored_sessions exists anywhere (decision 33)', async () => {
