@@ -275,6 +275,23 @@ describe('merge conflict, live — durable message + attention, worktree left cl
     expect(await readFile(join(wt, 'shared.txt'), 'utf8')).not.toContain('<<<<<<<');
   }, BINARY_TIMEOUT_MS * 2);
 
+  it("the next CLEAN merge clears tm8's conflict signal (Attention v2 S6)", async () => {
+    const open = async () => (await get<{ items: Array<{ reason: string }> }>(
+      `/v2/attention-requests?spaceId=${spaceId}&entityId=${taskId}&status=open`)).items
+      .filter((a) => a.reason.includes('merge conflict'));
+    // A second conflicting run dedupes on the worktree's signal key.
+    expect((await tm8(['worktree', 'merge', worktreeId, '--from', 'main'])).code).toBe(6);
+    expect(await open()).toHaveLength(1);
+
+    // Resolve by hand in the worktree, then the rail's merge is up to date: clean.
+    await runGit(['-c', 'user.email=t@t', '-c', 'user.name=t', 'merge', 'main', '-s', 'ours', '-m', 'resolve'], { cwd: wt });
+    const res = await tm8(['worktree', 'merge', worktreeId, '--from', 'main']);
+    expect(res.code).toBe(0);
+    // Settled as 'cleared' (asserted in attention-system-signals.pg.test.ts;
+    // the list query's status filter predates 'cleared').
+    expect(await open()).toHaveLength(0);
+  }, BINARY_TIMEOUT_MS * 3);
+
   it('the suite is bound to one migration chain', async () => {
     await server.assertBindCoherent();
   });

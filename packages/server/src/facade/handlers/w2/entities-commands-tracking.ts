@@ -26,6 +26,8 @@ export function registerW2EntitiesCommandsTrackingHandlers(
     'attentionRequests.create': async (ctx) => json(await service.createAttentionRequest(ctx), { status: 201 }),
     'attentionRequests.update': service.updateAttentionRequest,
     'attentionRequests.resolveEntity': service.resolveEntityAttention,
+    'attentionSignals.raise': async (ctx) => json(await service.raiseAttentionSignal(ctx), { status: 201 }),
+    'attentionSignals.clear': service.clearAttentionSignal,
     'entities.move': service.moveEntity,
     'entities.delete': service.deleteEntity,
     'entities.restore': service.restoreEntity,

@@ -1,16 +1,16 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:6b238c551fc1ad46d0ed85add3a62625988ebac82d67e035161663b33a0a9e7b",
+  "catalogDigest": "sha256:635781c240ce2bdb638d55d12022f80be1fcc0d94ebf12f4b76cbe41decdfa64",
   "catalog": {
-    "total": 269,
-    "v1": 267,
+    "total": 271,
+    "v1": 269,
     "reserved": 2,
-    "http": 267,
+    "http": 269,
     "ws": 1,
-    "registerableV1Http": 265,
+    "registerableV1Http": 267,
     "methods": {
       "GET": 87,
-      "POST": 128,
+      "POST": 130,
       "PATCH": 17,
       "DELETE": 18,
       "PUT": 17,
@@ -18,11 +18,11 @@
     },
     "kinds": {
       "read": 91,
-      "command": 176,
+      "command": 178,
       "stream": 2
     },
-    "uniqueNames": 269,
-    "uniqueBindings": 268
+    "uniqueNames": 271,
+    "uniqueBindings": 270
   },
   "reservedOperations": [
     "search.query",
@@ -645,6 +645,20 @@
         "operation": "attentionRequests.resolveEntity",
         "method": "POST",
         "path": "/v2/entities/:entityId/attention-requests/resolve",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "attentionSignals.raise",
+        "method": "POST",
+        "path": "/v2/entities/:entityId/attention-signals",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "attentionSignals.clear",
+        "method": "POST",
+        "path": "/v2/entities/:entityId/attention-signals/clear",
         "status": "registered",
         "source": "server-router"
       },
@@ -2287,7 +2301,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 237
+    "unimplementedV1Http": 239
   },
   "schemas": {
     "additive": {
@@ -3520,6 +3534,40 @@
         ],
         "inputSchemaRef": "ResolveEntityAttentionInputSchema",
         "resultSchemaRef": "AttentionRequestMutationResultSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "attentionSignals.raise",
+        "noun": "attention",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/attentionSignals.raise",
+        "intentTags": [
+          "attention",
+          "signals",
+          "raise"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "attentionSignals.clear",
+        "noun": "attention",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/attentionSignals.clear",
+        "intentTags": [
+          "attention",
+          "signals",
+          "clear"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
         "invocationSyntax": null,
         "actionDiscoverable": true,
         "reason": null,
