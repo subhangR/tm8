@@ -598,4 +598,260 @@ describe.sequential('spaces.members.remove — the owner race', () => {
     expect(results.sort()).toEqual(['42501', 'ok']);
     expect(await activeOwners(s.spaceId)).toBe(1);
   });
+
+  // -------------------------------------------------------------------------
+  // Forcing interleavings. Every wait below is observed in pg_stat_activity /
+  // pg_blocking_pids, never assumed from a sleep. The forcing device is a
+  // plain row lock held open on the scratch cluster's admin connection.
+  // -------------------------------------------------------------------------
+
+  /** Admin-side reads (pg_stat_activity, pg_blocking_pids) on the 5443 scratch cluster's admin role. */
+  async function adminRead<T extends Record<string, unknown>>(sql: string, params: unknown[] = []): Promise<T[]> {
+    return database.transaction(async (client) => (await client.query<T>(sql, params)).rows);
+  }
+
+  /** The poll must see OTHER roles' backends, or every wait below reads as "none". */
+  async function assertStatsRole(): Promise<void> {
+    const [row] = await adminRead<{ ok: boolean }>(
+      `select (r.rolsuper or pg_has_role(current_user, 'pg_read_all_stats', 'member')) as ok
+         from pg_roles r where r.rolname = current_user`);
+    expect(row!.ok).toBe(true);
+  }
+
+  async function until(cond: () => Promise<boolean> | boolean, what: string): Promise<void> {
+    const deadline = Date.now() + 8_000;
+    while (Date.now() < deadline) {
+      if (await cond()) return;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    throw new Error(what);
+  }
+
+  const blockersOf = async (pid: number): Promise<number[]> =>
+    (await adminRead<{ b: number[] }>('select pg_blocking_pids($1) as b', [pid]))[0]!.b;
+
+  interface Held {
+    pid: Promise<number>;
+    /** The SQLSTATE `work` raised, or 'ok'; published before the commit. */
+    worked: Promise<string>;
+    release: () => void;
+    done: Promise<void>;
+    settled: () => boolean;
+    /** Settled, or waiting on a lock right now. */
+    parked: () => Promise<boolean>;
+  }
+
+  /** A transaction held open: `work` runs, then it commits (or rolls back if refused) on release(). */
+  function held(identityId: string, work: (q: Querier) => Promise<unknown>): Held {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let publishPid!: (pid: number) => void;
+    const pid = new Promise<number>((resolve) => { publishPid = resolve; });
+    let publish!: (o: string) => void;
+    const worked = new Promise<string>((resolve) => { publish = resolve; });
+    let isSettled = false;
+    void worked.then(() => { isSettled = true; });
+    const done = as(identityId, async (q) => {
+      publishPid((await q.query<{ pid: number }>('select pg_backend_pid() as pid'))[0]!.pid);
+      const o = await outcome(() => work(q));
+      publish(o);
+      await gate;
+      if (o !== 'ok') throw new Error(o);
+    }).then(() => undefined, () => undefined);
+    const settled = () => isSettled;
+    const parked = async () => isSettled || (await blockersOf(await pid)).length > 0;
+    return { pid, worked, release, done, settled, parked };
+  }
+
+  /** The forcing device: `select … for update` on one members row, held open until release(). */
+  function holdRow(memberId: string): { pid: Promise<number>; release: () => void; done: Promise<void> } {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let publishPid!: (pid: number) => void;
+    const pid = new Promise<number>((resolve) => { publishPid = resolve; });
+    const done = database.transaction(async (client) => {
+      await client.query('select 1 from public.members where entity_id = $1 for update', [memberId]);
+      publishPid((await client.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid);
+      await gate;
+    });
+    return { pid, release, done };
+  }
+
+  const setRole = (q: Querier, spaceId: string, memberId: string, role: string) =>
+    q.rpc('set_member_role', [spaceId, memberId, role, null, cmid()]);
+
+  // -------------------------------------------------------------------------
+  // N1: a PROMOTION between two removals. O is the only owner, D an admin.
+  // O removes D; O promotes D; D, now an owner, removes O. Before the fix,
+  // set_member_role locked owner rows only on demotion and remove_space_member
+  // took them only for a target it had READ as an owner, so O's removal of
+  // "an admin" and D's removal of O serialized on nothing: both committed and
+  // the space had no owner.
+  // -------------------------------------------------------------------------
+
+  /** A fresh space whose only owner is O and whose admin is D. */
+  async function ownerAndAdminSpace(): Promise<{ spaceId: string; ownerO: string; adminD: string }> {
+    const spaceId = randomUUID();
+    const ownerO = randomUUID();
+    const adminD = randomUUID();
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(
+        `insert into public.spaces(id, name, created_by_identity, visibility) values ($1, 'Owner and admin', $2, 'private')`,
+        [spaceId, f.identityO]);
+      await client.query(
+        `insert into public.entities(id, space_id, kind, created_by, visibility) values
+         ($1, $3, 'member', $1, 'space'), ($2, $3, 'member', $2, 'space')`,
+        [ownerO, adminD, spaceId]);
+      await client.query(
+        `insert into public.members(entity_id, space_id, identity_id, role, display_name) values
+         ($1, $3, $4, 'owner', 'O'), ($2, $3, $5, 'admin', 'D')`,
+        [ownerO, adminD, spaceId, f.identityO, f.identityD]);
+    });
+    return { spaceId, ownerO, adminD };
+  }
+
+  it('positive: uncontended, O promotes admin D and D then removes O; it commits and D is the one owner', async () => {
+    const s = await ownerAndAdminSpace();
+    await as(f.identityO, (q) => setRole(q, s.spaceId, s.adminD, 'owner'));
+    expect(await removeMember(f.identityD, s.spaceId, s.ownerO)).toMatchObject({ memberId: s.ownerO, status: 'removed' });
+    expect(await activeOwners(s.spaceId)).toBe(1);
+    expect((await memberRow(s.adminD))[0]!).toMatchObject({ role: 'owner', status: 'active' });
+  });
+
+  it('refused: N1, forced — O removes admin D, O promotes D, D removes O; the space keeps an owner', async () => {
+    await assertStatsRole();
+    const s = await ownerAndAdminSpace();
+
+    // The forcing device holds O's row. Before the fix it parks D's removal of
+    // O between its owner-row lock (taken while D is an admin, so it covers O
+    // alone) and its caller re-read (after the promotion commits: an owner).
+    const lock = holdRow(s.ownerO);
+    const lockPid = await lock.pid;
+
+    // X: O promotes D, held open. (Fixed: it waits on O's row for the owner set.)
+    const x = held(f.identityO, (q) => setRole(q, s.spaceId, s.adminD, 'owner'));
+    await until(x.parked, 'the promotion neither finished nor waited');
+
+    // B: D removes O. It waits on O's row.
+    const b = held(f.identityD, (q) => q.rpc('remove_space_member', [s.spaceId, s.ownerO, cmid()]));
+    b.release();
+    await until(async () => (await blockersOf(await b.pid)).length > 0, "D's removal of O never waited");
+    // A: O removes D. It waits — before the fix on the promotion's lock on D's row.
+    const a = held(f.identityO, (q) => q.rpc('remove_space_member', [s.spaceId, s.adminD, cmid()]));
+    await until(async () => (await blockersOf(await a.pid)).length > 0, "O's removal of D never waited");
+    if (!x.settled()) {
+      // Fixed order: all three queue on O's row behind the forcing device.
+      expect(await blockersOf(await x.pid)).toContain(lockPid);
+    }
+
+    // The promotion is released to commit; O's removal then finishes or stays parked.
+    x.release();
+    if (x.settled()) await x.done; // before the fix it ran; now it commits
+    await until(a.parked, "O's removal neither finished nor waited after the promotion");
+
+    // The device lets go: D's removal re-reads its caller and runs until it finishes or parks.
+    lock.release();
+    await lock.done;
+    await until(b.parked, "D's removal neither finished nor waited after the device let go");
+
+    a.release();
+    await Promise.all([x.done, a.done, b.done]);
+    const outcomes = [await x.worked, await a.worked, await b.worked];
+    expect(await activeOwners(s.spaceId)).toBe(1);
+    expect(outcomes).not.toContain('40P01');
+    // Serialized: the promotion commits, and of the two removals the second
+    // finds its caller tombstoned.
+    expect(outcomes.sort()).toEqual(['42501', 'ok', 'ok']);
+  });
+
+  // -------------------------------------------------------------------------
+  // LOCK ORDER. All three functions lock the owner set (entity_id order)
+  // first, then their own/target row. At 00c0db5e leave_space and
+  // set_member_role took the row first, so each pair below deadlocked (40P01).
+  // Owners A < C < B by entity_id. The device holds C: the first call locks A
+  // and parks on C; the second call starts; then the device lets go. Old
+  // order: the second call already held B, the first reaches for B — 40P01.
+  // Fixed order: the second call parks on A behind the first — no row held.
+  // -------------------------------------------------------------------------
+
+  /** A fresh space with owners A < C < B (entity_id order): O is A, N is C, D is B. */
+  async function threeOwnerSpace(): Promise<{ spaceId: string; a: string; c: string; b: string }> {
+    const spaceId = randomUUID();
+    const [a, c, b] = [randomUUID(), randomUUID(), randomUUID()].sort();
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(
+        `insert into public.spaces(id, name, created_by_identity, visibility) values ($1, 'Three owners', $2, 'private')`,
+        [spaceId, f.identityO]);
+      await client.query(
+        `insert into public.entities(id, space_id, kind, created_by, visibility) values
+         ($1, $4, 'member', $1, 'space'), ($2, $4, 'member', $2, 'space'), ($3, $4, 'member', $3, 'space')`,
+        [a, c, b, spaceId]);
+      await client.query(
+        `insert into public.members(entity_id, space_id, identity_id, role, display_name) values
+         ($1, $4, $5, 'owner', 'A'), ($2, $4, $6, 'owner', 'C'), ($3, $4, $7, 'owner', 'B')`,
+        [a, c, b, spaceId, f.identityO, f.identityN, f.identityD]);
+    });
+    return { spaceId, a: a!, c: c!, b: b! };
+  }
+
+  type Call = [identityId: string, work: (q: Querier) => Promise<unknown>];
+
+  async function forcedPair(s: { c: string }, first: Call, second: Call): Promise<string[]> {
+    await assertStatsRole();
+    const lock = holdRow(s.c);
+    const lockPid = await lock.pid;
+    const one = held(...first);
+    one.release();
+    await until(async () => (await blockersOf(await one.pid)).includes(lockPid),
+      'the first call never parked on C');
+    const two = held(...second);
+    two.release();
+    await until(async () => (await blockersOf(await two.pid)).length > 0, 'the second call never waited');
+    lock.release();
+    await lock.done;
+    await Promise.all([one.done, two.done]);
+    return [await one.worked, await two.worked];
+  }
+
+  it('lock order: leave_space(B) against remove_space_member(A removes B), forced — no 40P01; A and C stay owners', async () => {
+    const s = await threeOwnerSpace();
+    const outcomes = await forcedPair(s,
+      [f.identityO, (q) => q.rpc('remove_space_member', [s.spaceId, s.b, cmid()])],
+      [f.identityD, (q) => q.rpc('leave_space', [s.spaceId, cmid()])]);
+    expect(outcomes).not.toContain('40P01');
+    expect(outcomes).toEqual(['ok', 'P0002']); // B was removed first, so B's leave finds no membership
+    expect(await activeOwners(s.spaceId)).toBe(2);
+  });
+
+  it('lock order: leave_space(A) against leave_space(B), forced — no 40P01; both leave, C stays owner', async () => {
+    const s = await threeOwnerSpace();
+    const outcomes = await forcedPair(s,
+      [f.identityO, (q) => q.rpc('leave_space', [s.spaceId, cmid()])],
+      [f.identityD, (q) => q.rpc('leave_space', [s.spaceId, cmid()])]);
+    expect(outcomes).not.toContain('40P01');
+    expect(outcomes).toEqual(['ok', 'ok']);
+    expect(await activeOwners(s.spaceId)).toBe(1);
+  });
+
+  it('lock order: demote B (set_member_role) against remove_space_member(A removes B), forced — no 40P01; A and C stay owners', async () => {
+    const s = await threeOwnerSpace();
+    const outcomes = await forcedPair(s,
+      [f.identityO, (q) => q.rpc('remove_space_member', [s.spaceId, s.b, cmid()])],
+      [f.identityN, (q) => setRole(q, s.spaceId, s.b, 'admin')]);
+    expect(outcomes).not.toContain('40P01');
+    expect(outcomes).toEqual(['ok', 'P0002']); // B was removed first, so the demotion finds no member
+    expect(await activeOwners(s.spaceId)).toBe(2);
+  });
+
+  it('lock order: demote A against demote B (set_member_role), forced — no 40P01; both demote, C stays owner', async () => {
+    const s = await threeOwnerSpace();
+    const outcomes = await forcedPair(s,
+      [f.identityN, (q) => setRole(q, s.spaceId, s.a, 'admin')],
+      [f.identityN, (q) => setRole(q, s.spaceId, s.b, 'admin')]);
+    expect(outcomes).not.toContain('40P01');
+    expect(outcomes).toEqual(['ok', 'ok']);
+    expect(await activeOwners(s.spaceId)).toBe(1);
+  });
 });
