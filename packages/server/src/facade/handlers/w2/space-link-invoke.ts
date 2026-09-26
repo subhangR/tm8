@@ -77,19 +77,21 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const UNKNOWN_OP = '(unknown)';
 
 /*
- * PROVISIONAL stub typed to W8's forwarder shape as relayed by the coordinator.
- * The real one is `packages/server/src/remote/forwarder.ts` (W8); once that
- * file is pushed these declarations are deleted and imported from there.
- * `remote_links_disabled` is pending a lead ruling.
+ * TYPE-ONLY COPY. MUST EQUAL `packages/server/src/remote/forwarder.ts` (W8,
+ * #885 @ 7c8a9ea6); replaced by an import on re-stack. Until then, when both
+ * files are present, this compile-time equality check goes in beside the import:
+ *
+ *   type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+ *   const _req: Same<RemoteInvokeRequest, W8.RemoteInvokeRequest> = true;
+ *   const _res: Same<RemoteInvokeResult, W8.RemoteInvokeResult> = true;
+ *   const _fwd: Same<RemoteInvokeForwarder, W8.RemoteInvokeForwarder> = true;
  */
 export interface RemoteInvokeRequest {
   claims: DbClaims;
   linkId: string;
   serverId: string;
   op: string;
-  /** Path params of the op (`:id` → `params.id`); coordinator 09:2xZ, W8 to add. */
   params?: Record<string, string>;
-  /** Query string of a read; coordinator 09:2xZ, W8 to add. */
   query?: Record<string, string>;
   input: unknown;
   via: readonly string[];
@@ -100,9 +102,9 @@ export type RemoteInvokeResult =
   | { kind: 'ok'; status: number; body: unknown }
   | { kind: 'refused'; status: number; code: string; message: string }
   | { kind: 'signed_out' }
-  | { kind: 'unreachable'; reason: 'non_public_address' | 'dns' | 'tls' | 'invalid_url' }
+  | { kind: 'unreachable'; reason: 'non_public_address' | 'invalid_url' | 'dns' | 'tls' }
   | { kind: 'offline'; reason: 'connect_refused' | 'timeout' | 'reset' }
-  | { kind: 'remote_links_disabled' };
+  | { kind: 'disabled'; reason: 'remote_links_disabled' };
 export interface RemoteInvokeForwarder {
   forward(req: RemoteInvokeRequest): Promise<RemoteInvokeResult>;
 }
@@ -313,8 +315,8 @@ export function createSpaceLinkInvokeHandlers(
         throw new SpaceLinkExecuteFailure(`offline.${outcome.reason}`, new CollabError('upstream_unavailable',
           `the linked server is offline (${outcome.reason})`,
           { details: { reason: SPACE_LINK_OFFLINE, cause: outcome.reason }, retryable: true }));
-      case 'remote_links_disabled':
-        throw new SpaceLinkExecuteFailure('remote_links_disabled', new CollabError('forbidden',
+      case 'disabled':
+        throw new SpaceLinkExecuteFailure(outcome.reason, new CollabError('forbidden',
           'remote space links are disabled on this node', { details: { reason: SPACE_LINK_REMOTE_DISABLED } }));
       case 'refused': {
         // B's own refusal, re-typed: its code when it is one of ours, else by status. No B text is audited.

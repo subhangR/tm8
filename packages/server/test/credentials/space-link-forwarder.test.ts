@@ -136,8 +136,8 @@ describe('W7 forward seam — a remote link is forwarded, never resolved here', 
     expect(h.audits.at(-1)).toMatchObject({ result: 'error', reason: audited });
   });
 
-  it('remote_links_disabled — 403 typed, audited, never resolved locally', async () => {
-    const h = harness(SERVER, async () => ({ kind: 'remote_links_disabled' }));
+  it('disabled (remote_links_disabled) — 403 typed, audited, never resolved locally', async () => {
+    const h = harness(SERVER, async () => ({ kind: 'disabled', reason: 'remote_links_disabled' }));
     const error = await failure(h.run(GET_DOC));
     expect(error).toMatchObject({ code: 'forbidden', details: { reason: SPACE_LINK_REMOTE_DISABLED } });
     expect(h.use).not.toHaveBeenCalled();
