@@ -482,12 +482,14 @@ export class W2ProjectsAssociationsService {
    * member's view of that space's projects, kept in the legacy
    * `ProjectResource` shape (id = the folder id every client still keys on,
    * plus `projectEntityId`) until the clients move to `spaces.projects.list`.
-   * A path is present only for a gate admin.
+   * A path is present only for a gate admin. A session pinned to space S
+   * (227, #848) is a member-scoped caller of S whatever its account is: with
+   * no `?spaceId=` it gets S's projects, never the gate's node-wide list.
    */
   readonly listProjects = async (ctx: RequestContext): Promise<ProjectResource[]> => {
     const owner = await this.deps.owner();
     const claims = claimsFor(owner, ctx);
-    const spaceId = optionalUuid(ctx.query.get('spaceId'), 'spaceId');
+    const spaceId = optionalUuid(ctx.query.get('spaceId'), 'spaceId') ?? claims.sessionSpaceId ?? null;
     if (!spaceId) {
       if (!isGateAdmin(claims)) {
         throw new CollabError('forbidden', 'gate-admin access is required to list the folders on this server');

@@ -355,6 +355,8 @@ export interface LaunchTeammate {
   owner: string;
   defaultProfileId?: string;
   liveSessions?: number | null;
+  /** `team_members.mode` as the summary projects it; absent on a node that doesn't. */
+  mode?: string | null;
 }
 
 /**
@@ -464,6 +466,12 @@ export function describeCapacity(c: LaunchCapacity): string {
     return `${used} live · no session limit`;
   }
   return `${c.slotsFree} of ${c.slotsTotal} session slots free`;
+}
+
+/** The launch card's compact count: "12/40", or "14/∞" when the node has no cap. */
+export function capacitySlots(c: LaunchCapacity): string {
+  const used = c.slotsTotal - c.slotsFree;
+  return `${String(used)}/${c.slotsTotal >= EFFECTIVELY_UNLIMITED_SLOTS ? '∞' : String(c.slotsTotal)}`;
 }
 
 // ---------------------------------------------------------------------------

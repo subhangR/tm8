@@ -22,7 +22,12 @@
  * - signup/logout run under the CALLER's claims; `ensure_account` and
  *   `revoke_auth_session` carry their own `require_*` guards in SQL.
  */
-import { CollabError, type AuthSessionView } from '@tm8/contract';
+import {
+  CollabError,
+  type AuthSessionListing,
+  type AuthSessionsRevokeResult,
+  type AuthSessionView,
+} from '@tm8/contract';
 import { randomUUID } from 'node:crypto';
 import type { Db, DbClaims } from '../db/types.js';
 import {
@@ -67,6 +72,8 @@ export interface ResolvedAuthSession {
   runtimeChatId: string | null;
   /** 226: required for agent kinds, null for a human (gate) session. */
   spaceId: string | null;
+  /** 256 (W7p): the space link a `link` session, or an agent minted under one, descends from. */
+  viaLinkId?: string | null;
   expiresAt: string;
   label: string | null;
 }
@@ -194,7 +201,23 @@ export async function revokeAgentRuntimeSession(
 
 /** One message and one code for every rejection: a caller holding a bad credential learns nothing. */
 function invalidToken(): CollabError {
-  return new CollabError('unauthenticated', 'invalid token');
+  const error = new CollabError('unauthenticated', 'invalid token');
+  issuedInvalidToken.add(error);
+  return error;
+}
+
+/**
+ * The rejections `invalidToken()` minted, by identity. A caller that must tell
+ * "this token is dead" from "the database hiccupped" (a space link marks
+ * itself stale on the first, and must never on the second) asks
+ * `isInvalidTokenError` rather than matching a code or message a translated
+ * pool or statement error could also carry.
+ */
+const issuedInvalidToken = new WeakSet<object>();
+
+/** True only for the rejection `resolveBearerIdentity` gives a dead or bad token. */
+export function isInvalidTokenError(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && issuedInvalidToken.has(error);
 }
 
 function invalidCredentials(): CollabError {
@@ -256,6 +279,22 @@ export async function resolveBearerIdentity(db: Db, token: string): Promise<Reso
   return session;
 }
 
+const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Did THIS node ever issue the session id in `token` — live, revoked or
+ * expired? (236 `auth_session_issued_here`.) The named-Server relay asks this
+ * of an `Authorization` that did not resolve, so a dead local token is never
+ * forwarded as a remote's pass. Only the session id reaches the database, never
+ * the secret. A token that does not parse, or whose id is not a uuid, cannot be
+ * one of ours: `false`.
+ */
+export async function sessionIssuedHere(db: Db, token: string): Promise<boolean> {
+  const sessionId = parseToken(token)?.sessionId;
+  if (!sessionId || !SESSION_ID.test(sessionId)) return false;
+  return (await db.rpc<boolean | null>({}, 'auth_session_issued_here', [sessionId])) === true;
+}
+
 export interface LoginInput {
   username: string;
   password: string;
@@ -271,6 +310,47 @@ export interface IssuedSpaceSession {
   session: AuthSessionView;
 }
 
+/** `space_login_for_enter` (268): what entering a space needs. Never a plaintext. */
+interface SpaceLoginRequirement {
+  required: boolean;
+  locked: boolean;
+  verifier: string | null;
+}
+
+const spacePasswordRefused = (reason: 'space_password_required' | 'space_password_rejected'): CollabError =>
+  new CollabError(
+    'forbidden',
+    reason === 'space_password_required'
+      ? 'this space requires its space password'
+      : 'space password not accepted',
+    { details: { reason } },
+  );
+
+/**
+ * W5 (K2): check the member's space password for `spaceId` before a mint.
+ *
+ * Returns the verifier the password was checked against (passed on to
+ * `enter_space`, which refuses unless it is still the active row's), or null
+ * when the space needs none. The comparison is the same constant-work scrypt
+ * `loginWithPassword` uses: a member with no login row, or a locked one, spends
+ * the same work against the unmatchable verifier and gets the same answer as a
+ * wrong password.
+ */
+export async function checkSpacePassword(
+  db: Db,
+  claims: DbClaims,
+  spaceId: string,
+  password: string | undefined,
+): Promise<string | null> {
+  const need = await db.rpc<SpaceLoginRequirement>(claims, 'space_login_for_enter', [spaceId]);
+  if (!need.required) return null;
+  if (password === undefined || password === '') throw spacePasswordRefused('space_password_required');
+  const verifier = need.verifier ?? UNMATCHABLE_VERIFIER;
+  const ok = await hasher.verify(password, verifier);
+  if (!ok || need.locked || need.verifier === null) throw spacePasswordRefused('space_password_rejected');
+  return need.verifier;
+}
+
 /**
  * `auth.space.enter` (plan W3): mint a session pinned to `spaceId`.
  *
@@ -283,7 +363,14 @@ export interface IssuedSpaceSession {
 export async function enterSpace(
   db: Db,
   claims: DbClaims,
-  input: { spaceId: string; parentSessionId: string | null; kind: 'browser' | 'cli'; label?: string | null },
+  input: {
+    spaceId: string;
+    parentSessionId: string | null;
+    kind: 'browser' | 'cli';
+    label?: string | null;
+    /** W5: the verifier `checkSpacePassword` accepted, or null. */
+    spaceVerifier?: string | null;
+  },
 ): Promise<IssuedSpaceSession> {
   const secret = generateSecret();
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS[input.kind]).toISOString();
@@ -293,6 +380,7 @@ export async function enterSpace(
     hashToken(secret),
     expiresAt,
     input.label ?? null,
+    input.spaceVerifier ?? null,
   ]);
   if (session.space_id !== input.spaceId) {
     throw new CollabError('upstream_unavailable', 'space session returned no space');
@@ -310,6 +398,46 @@ export async function enterSpace(
       expiresAt: session.expires_at,
     },
   };
+}
+
+/** One row of `list_auth_sessions` (232), before `current` is known. */
+type SessionListingRow = Omit<AuthSessionListing, 'current'>;
+
+const iso = (value: string | null): string | null => (value === null ? null : new Date(value).toISOString());
+
+/**
+ * `auth.sessions.list` (plan W4): the caller's own live sessions (`spaceId`
+ * null), or every live session pinned to `spaceId` (space admin, pin-aware).
+ * The SQL decides who may see what and never returns a token hash.
+ * `currentSessionId` is the verified session of this request, if any.
+ */
+export async function listAuthSessions(
+  db: Db,
+  claims: DbClaims,
+  spaceId: string | null,
+  currentSessionId: string | undefined,
+): Promise<AuthSessionListing[]> {
+  const rows = await db.rpc<SessionListingRow[]>(claims, 'list_auth_sessions', [spaceId]);
+  return rows.map((row) => ({
+    ...row,
+    createdAt: iso(row.createdAt)!,
+    lastUsedAt: iso(row.lastUsedAt),
+    expiresAt: iso(row.expiresAt)!,
+    current: row.sessionId === currentSessionId,
+  }));
+}
+
+/**
+ * `auth.sessions.revoke` (plan W4): revoke one session the caller could list.
+ * Returns every id this call revoked (the session plus the pinned sessions
+ * entered from it), which is the set whose sockets the caller must close.
+ */
+export async function revokeListedAuthSession(
+  db: Db,
+  claims: DbClaims,
+  sessionId: string,
+): Promise<AuthSessionsRevokeResult> {
+  return db.rpc<AuthSessionsRevokeResult>(claims, 'revoke_listed_auth_session', [sessionId]);
 }
 
 /**
@@ -617,6 +745,8 @@ export interface SignupViaInviteInput {
   displayName?: string | null;
   email?: string | null;
   kind?: 'browser' | 'cli';
+  /** W5: the space password, when the invite's space requires one. */
+  spacePassword?: string;
 }
 
 export interface IssuedInviteSignup extends IssuedLogin {
@@ -645,6 +775,13 @@ export async function signupViaInvite(
 ): Promise<IssuedInviteSignup> {
   const identityId = `id_${randomUUID()}`;
   const passwordHash = await hasher.hash(input.password);
+  // W5 (K2): the space password is asked for only when the space requires it.
+  // The SQL refuses a missing one; this read makes the refusal readable.
+  const needsSpacePassword = await db.rpc<boolean>({}, 'invite_requires_space_password', [input.code]);
+  if (needsSpacePassword && !input.spacePassword) throw spacePasswordRefused('space_password_required');
+  const spaceVerifier = needsSpacePassword && input.spacePassword
+    ? await hasher.hash(input.spacePassword)
+    : null;
 
   const created = await db.rpc<{
     account: AccountRowJson;
@@ -658,6 +795,7 @@ export async function signupViaInvite(
     input.email ?? null,
     hasher.algorithm,
     passwordHash,
+    spaceVerifier,
   ]);
   if (!created) {
     throw new CollabError('upstream_unavailable', 'signup_via_invite returned no row');
@@ -675,4 +813,53 @@ export async function signupViaInvite(
   );
 
   return { ...issued, spaceId: created.spaceId, memberId: created.memberId };
+}
+
+/** What `reset_space_login` / `set_space_login_locked` (268) answer. */
+export interface SpacePasswordAdminRow {
+  spaceId: string;
+  memberId: string;
+  status: 'active' | 'locked';
+  revokedSessionIds: string[];
+}
+
+/**
+ * W5 (K2) space-admin ops. Every guard is in SQL (human-only, pin-aware space
+ * admin, owner rows owner-only); the only TypeScript step is hashing a new
+ * password, so no plaintext reaches SQL.
+ */
+export async function setSpaceRequirePassword(
+  db: Db,
+  claims: DbClaims,
+  input: { spaceId: string; required: boolean; ownPassword?: string },
+): Promise<{ spaceId: string; requireSpacePassword: boolean; revokedSessionIds: string[] }> {
+  const ownVerifier = input.required && input.ownPassword ? await hasher.hash(input.ownPassword) : null;
+  return db.rpc(claims, 'set_space_require_credential', [input.spaceId, input.required, ownVerifier]);
+}
+
+export async function resetSpaceLogin(
+  db: Db,
+  claims: DbClaims,
+  input: { spaceId: string; memberId: string; password: string },
+): Promise<SpacePasswordAdminRow> {
+  const verifier = await hasher.hash(input.password);
+  return db.rpc(claims, 'reset_space_login', [input.spaceId, input.memberId, verifier]);
+}
+
+export async function setSpaceLoginLocked(
+  db: Db,
+  claims: DbClaims,
+  input: { spaceId: string; memberId: string; locked: boolean },
+): Promise<SpacePasswordAdminRow> {
+  return db.rpc(claims, 'set_space_login_locked', [input.spaceId, input.memberId, input.locked]);
+}
+
+/** W5: a space password as the verifier `space_logins` stores (redeem path). */
+export function hashSpacePassword(password: string): Promise<string> {
+  return hasher.hash(password);
+}
+
+/** W5: does this live invite code join a space that requires a space password? */
+export function inviteRequiresSpacePassword(db: Db, code: string): Promise<boolean> {
+  return db.rpc<boolean>({}, 'invite_requires_space_password', [code]);
 }

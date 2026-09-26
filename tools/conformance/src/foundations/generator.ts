@@ -201,6 +201,8 @@ function nounForOperation(operation: OperationName): string {
     case 'spaces': return 'space';
     case 'entities': return 'entity';
     case 'attentionRequests': return 'attention';
+    // Attention v2 S6 (`cmd: null`, the worktree conflict rail): `attention`, as NOUN_BY_FAMILY says.
+    case 'attentionSignals': return 'attention';
     case 'tracking': return 'tracking';
     case 'edges': return 'edge';
     case 'edgeTypes': return 'edge-type';
@@ -247,6 +249,10 @@ function nounForOperation(operation: OperationName): string {
     // `accounts.disable` (G6, 232): its own noun, `account` — the CLI spells
     // the command `tm8 node account disable`. NOUN_BY_FAMILY says the same.
     case 'accounts': return 'account';
+    // `spaceLinks.*` (W6, 250/251, `cmd: null`): `space-link`, as NOUN_BY_FAMILY says.
+    case 'spaceLinks': return 'space-link';
+    // `servers.*` (W8, 261): `server`, as NOUN_BY_FAMILY says.
+    case 'servers': return 'server';
 
     // 177: the CLI noun is `container` (`NOUN_BY_FAMILY.containers`), singular
     // like every other row here.
@@ -400,7 +406,10 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // 238 -> 240 (headers I4): entities.header.set (PUT) and entities.header.clear (DELETE). MEASURED.
   // 238 -> 240 (Forms W3): forms.responses.redeliver and forms.pendingForSessions. MEASURED.
   // 240 -> 242: headers I4 and Forms W3 each added two, on the merged tree. MEASURED.
-  assertEqual(names.length, 253, 'catalog total'); // +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. // +2 spaces.chatDefaults.get/set (entity chat G). // +1 launch.defaults (I9b). MEASURED.
+  // +6 credentials.space.* (W10b). MEASURED.
+  // 253 -> 254 (status strip): node.metrics.get, one GET read. MEASURED.
+  // 256 -> 255 (Attention v2 S7a): containers.attention deleted. MEASURED.
+  assertEqual(names.length, 286 /* +1 execution.dispatchers (launch v3 C). MEASURED. */, 'catalog total'); /* +3 spaces.spacePassword.setRequired, spaces.members.spacePassword.reset|lock (W5). MEASURED. */ /* +2 attentionSignals.raise|clear (Attention v2 S6; stacked on tm8/attention-v2-integration). MEASURED. */ /* +6 servers.* (W8, 261). MEASURED. */ /* +2 spaceLinks.invoke/audit (W7, 260). MEASURED. */ /* +7 spaceLinks.* (W6, 250/251). MEASURED. */ // +1 credentials.space.addMine (W10d). MEASURED. // +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. // +2 spaces.chatDefaults.get/set (entity chat G). // +1 launch.defaults (I9b). MEASURED. // +2 auth.sessions.list/revoke (W4). MEASURED. /* +3 attentionRequests.markSeen|unresolve|withdraw (Attention v2 S4; stacked on tm8/attention-v2-integration). MEASURED. */
   // 157 -> 159 (114): spaces.members.updateRole (PATCH command) and
   // auth.invite.resolve (POST read — the code rides in the body, never a URL).
   // 161 -> 164 (W4/132): the three taskWorkflows rows are v1.
@@ -420,7 +429,10 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // 236 -> 238 (headers I4): entities.header.set (PUT) and entities.header.clear (DELETE). MEASURED.
   // 236 -> 238 (Forms W3): both new forms.* rows ship v1. MEASURED.
   // 238 -> 240: headers I4 and Forms W3 each added two v1 rows, on the merged tree. MEASURED.
-  assertEqual(V1_OPERATIONS.length, 251, 'v1 total'); // +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. // +2 spaces.chatDefaults.get/set (entity chat G). // +1 launch.defaults (I9b). MEASURED.
+  // +6 credentials.space.* (W10b). MEASURED.
+  // 251 -> 252 (status strip): node.metrics.get ships v1. MEASURED.
+  // 254 -> 253 (Attention v2 S7a): containers.attention deleted. MEASURED.
+  assertEqual(V1_OPERATIONS.length, 284 /* +1 execution.dispatchers (launch v3 C). MEASURED. */, 'v1 total'); /* +3 W5 space password ops. MEASURED. */ /* +2 attentionSignals.raise|clear (Attention v2 S6; stacked on tm8/attention-v2-integration). MEASURED. */ /* +6 servers.* (W8, 261). MEASURED. */ /* +2 spaceLinks.invoke/audit (W7, 260). MEASURED. */ /* +7 spaceLinks.* (W6, 250/251). MEASURED. */ // +1 credentials.space.addMine (W10d). MEASURED. // +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. // +2 spaces.chatDefaults.get/set (entity chat G). // +1 launch.defaults (I9b). MEASURED. // +2 auth.sessions.list/revoke (W4). MEASURED. /* +3 attentionRequests.markSeen|unresolve|withdraw (Attention v2 S4; stacked on tm8/attention-v2-integration). MEASURED. */
   assertEqual(RESERVED_OPERATIONS.map(({ name }) => name), ['search.query', 'bridge.fetchBlob'], 'reserved operations');
   assertEqual(additive.map(({ name }) => name), [...ADDITIVE_OPERATION_NAMES], 'A01-A21 order');
   assertEqual(new Set(names).size, names.length, 'unique operation names');
@@ -459,7 +471,7 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // GET 74 -> 75 (task 01a0d350): spaces.configs. MEASURED.
   // GET 75 -> 78, POST 108 -> 113, PATCH 14 -> 16, DELETE 14 -> 16, PUT 12 -> 13 (Forms W1). MEASURED.
   // PUT 13 -> 14, DELETE 16 -> 17 (headers I4): entities.header.set (PUT) and entities.header.clear (DELETE). MEASURED.
-  assertEqual(methods, { GET: 83, POST: 120, PATCH: 16, DELETE: 17, PUT: 15, WS: 2 }, 'method accounting'); // W11: GET +2, POST +2 (projects.link stays, decision 29). // POST +3 G6 leave/remove/disable. // GET +1, PUT +1 spaces.chatDefaults.get/set.
+  assertEqual(methods, { GET: 91 /* +1 execution.dispatchers (launch v3 C). MEASURED. */, /* +2 attentionSignals.raise|clear (Attention v2 S6; stacked on tm8/attention-v2-integration). MEASURED. */ /* GET +2, POST +4 servers.* (W8, 261). MEASURED. */ /* GET +1, POST +5, PATCH +1 spaceLinks.* (W6). MEASURED. */ /* +1 node.metrics.get (status strip). MEASURED. */ /* -1 containers.attention (Attention v2 S7a). MEASURED. */ POST: 140, /* +2 spaces.members.spacePassword.reset|lock (W5). MEASURED. */ PATCH: 17, DELETE: 18, PUT: 18, /* +1 spaces.spacePassword.setRequired (W5). MEASURED. */ WS: 2 }, 'method accounting'); // W10d: POST +1 credentials.space.addMine. MEASURED. // W11: GET +2, POST +2 (projects.link stays, decision 29). // W10b: GET +1 usage, POST +2 claim/myDefault.set, DELETE +1 myDefault.clear, PUT +2 setVisibility/spaceDefaultConsent. MEASURED. // POST +3 G6 leave/remove/disable. // GET +1, PUT +1 spaces.chatDefaults.get/set. // GET +1 auth.sessions.list, POST +1 auth.sessions.revoke (W4). MEASURED. /* +3 attentionRequests.markSeen|unresolve|withdraw (Attention v2 S4; stacked on tm8/attention-v2-integration). MEASURED. */
   // GET 78 -> 79, POST 113 -> 114 (Forms W3): pendingForSessions, responses.redeliver. MEASURED.
   // 141: command 101->104 — the three account-lifecycle ops are all commands.
   // 148: read 64->65, command 104->106.
@@ -474,7 +486,7 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // read 78 -> 79 (task 01a0d350): spaces.configs. MEASURED.
   // read 79 -> 82, command 144 -> 154 (Forms W1): three reads, ten commands. MEASURED.
   // command 154 -> 156 (headers I4): entities.header.set (PUT) and entities.header.clear (DELETE). MEASURED.
-  assertEqual(kinds, { read: 87, command: 164, stream: 2 }, 'kind accounting'); // W11: read +2, command +2 (projects.link stays, decision 29). // command +3 G6 leave/remove/disable. // read +1, command +1 spaces.chatDefaults.get/set.
+  assertEqual(kinds, { read: 95 /* +1 execution.dispatchers (launch v3 C). MEASURED. */, /* +2 attentionSignals.raise|clear (Attention v2 S6; stacked on tm8/attention-v2-integration). MEASURED. */ /* read +2, command +4 servers.* (W8, 261). MEASURED. */ /* read +1, command +6 spaceLinks.* (W6). MEASURED. */ /* +1 node.metrics.get (status strip). MEASURED. */ /* -1 containers.attention (Attention v2 S7a). MEASURED. */ command: 189, /* +3 W5 space password ops. MEASURED. */ stream: 2 }, 'kind accounting'); // W10d: +1 command (addMine). MEASURED. // W11: read +2, command +2 (projects.link stays, decision 29). // W10b: +1 read (usage), +5 commands. MEASURED. // command +3 G6 leave/remove/disable. // read +1, command +1 spaces.chatDefaults.get/set. // read +1 auth.sessions.list, command +1 auth.sessions.revoke (W4). MEASURED. /* +3 attentionRequests.markSeen|unresolve|withdraw (Attention v2 S4; stacked on tm8/attention-v2-integration). MEASURED. */
   // read 82 -> 83, command 154 -> 155 (Forms W3): pendingForSessions is a read, redeliver a command. MEASURED.
   // W4/132: 162 -> 165, the three taskWorkflows routes.
   // 141: 165 -> 168, the three account-lifecycle routes.
@@ -494,7 +506,7 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // 236 -> 238 (headers I4): entities.header.set (PUT) and entities.header.clear (DELETE). MEASURED.
   // 236 -> 238 (Forms W3): the two new forms.* routes. MEASURED.
   // 238 -> 240: headers I4 + Forms W3 routes, on the merged tree. MEASURED.
-  assertEqual(router.http.length, 251, 'server router HTTP total'); // +3 G6 leave/remove/disable. MEASURED. // +2 spaces.chatDefaults.get/set (entity chat G). // +1 launch.defaults (I9b). MEASURED.
+  assertEqual(router.http.length, 284 /* +1 execution.dispatchers (launch v3 C). MEASURED. */, 'server router HTTP total'); /* +3 W5 space password ops. MEASURED. */ /* +2 attentionSignals.raise|clear (Attention v2 S6; stacked on tm8/attention-v2-integration). MEASURED. */ /* +6 servers.* (W8, 261). MEASURED. */ /* +7 spaceLinks.* (W6). MEASURED. */ /* -1 containers.attention (Attention v2 S7a). MEASURED. */ /* +1 node.metrics.get (status strip). MEASURED. */ // +1 credentials.space.addMine (W10d). MEASURED. // +6 credentials.space.* (W10b). MEASURED. // +3 G6 leave/remove/disable. MEASURED. // +2 spaces.chatDefaults.get/set (entity chat G). // +1 launch.defaults (I9b). MEASURED. // +2 auth.sessions.list/revoke (W4). MEASURED. /* +3 attentionRequests.markSeen|unresolve|withdraw (Attention v2 S4; stacked on tm8/attention-v2-integration). MEASURED. */
   // STILL 1, and that is the whole point of `aliasOf`: `containers.stream`
   // adds a discoverable NAME for the existing socket, not a second socket.
   assertEqual(router.ws.length, 1, 'server router WS total');

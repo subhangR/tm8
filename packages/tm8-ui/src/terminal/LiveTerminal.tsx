@@ -10,10 +10,12 @@ import { dispatchClipboardData } from './clipboardPaste.js';
 import { uploadClipboardFile } from './clipboardUpload.js';
 import { copyToClipboardOrWarn } from './domUtils.js';
 import { notifyUser } from './notifications.js';
+import { attachOsc52Clipboard } from './osc52.js';
 import { ptyTransport } from './pty/ptyTransport.js';
 import { mintPtyAttachGrant } from './pty/ptyGrant.js';
 import { describePtyAttachRefusal } from './pty/ptyAttachRefusal.js';
-import { readActivePass } from '../auth/pass-store';
+import { spaceSessionFor } from '../auth/space-sessions';
+import { readActiveServerId } from '../servers/server-key';
 import { registerTerminal } from './pty/runtime.js';
 import { attachTouchScroll } from './touchScroll.js';
 import { scrollTerminalLines } from './scrollTerminal';
@@ -355,6 +357,10 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       fontWeightBold: TERMINAL_FONT_WEIGHT_BOLD,
       lineHeight: TERMINAL_LINE_HEIGHT,
       letterSpacing: TERMINAL_LETTER_SPACING,
+      // A full-screen agent turns on mouse tracking, which hands every drag to
+      // the agent. Shift+drag forces xterm's own selection on Linux/Windows;
+      // this makes Option+drag do the same on macOS.
+      macOptionClickForcesSelection: true,
       theme: buildTerminalTheme(container),
       scrollback: TERMINAL_SCROLLBACK,
     });
@@ -393,25 +399,69 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
         scheduleResize();
       });
     };
+    let replayWritesInFlight = 0;
+    const osc52 = attachOsc52Clipboard(term, {
+      element: container,
+      isReadOnly: () => readOnlyRef.current,
+      isReplaying: () => replayWritesInFlight > 0,
+    });
     const hydrateReplay = (data: string) => {
       if (!term.element) return;
       // Hide imperative xterm DOM until its async parser reaches the final
       // replay byte; otherwise a retained full-screen TUI visibly redraws
       // top-to-bottom.
       term.element.style.visibility = 'hidden';
+      replayWritesInFlight += 1;
       try {
-        term.write(data, finishReplayHydration);
+        term.write(data, () => {
+          replayWritesInFlight -= 1;
+          finishReplayHydration();
+        });
       } catch {
+        replayWritesInFlight -= 1;
         term.element.style.removeProperty('visibility');
       }
     };
 
     const unregister = registerTerminal(sessionId, term, hydrateReplay);
 
+    /**
+     * A VIEW-ONLY TERMINAL DRAWS AT THE PTY'S GEOMETRY, NOT ITS OWN BOX'S.
+     *
+     * The server drops a view socket's resize (a resize is a PTY mutation), so
+     * fitting the grid to this box only ever changes what the browser draws,
+     * never what the agent draws for. The agent's renderer leans on auto-wrap
+     * at ITS width and jumps over cells it believes are unchanged; on a grid
+     * even five columns narrower every full-width row wraps early and every
+     * later jump lands in the wrong cell. That was the "Claude renders as
+     * garbage in some sessions" report (task 01a0df2c-4106): a 111-col PTY
+     * replayed into a 106-col panel reproduces it byte for byte, and at 111 the
+     * same bytes are clean. "Some sessions" were the ones another principal
+     * created, where `mintPtyAttachGrant` had silently narrowed drive to view.
+     *
+     * Wider than the box clips at `.term-host { overflow: hidden }`; narrower
+     * leaves a margin. Both are legible, which a mismatched grid never is.
+     */
+    const followsPty = () =>
+      readOnlyRef.current || ptyTransport.attachMode(sessionId) === 'view';
+
     const sendResize = () => {
       const currentTerm = termRef.current;
       const currentFit = fitRef.current;
       if (!currentTerm || !currentFit || !currentTerm.element) return;
+      if (followsPty()) {
+        // No fit, no send, no layout guards: resizing xterm to a known grid
+        // needs no measured box, and a view has nothing to tell the server.
+        const pty = serverPtySizes.get(sessionId);
+        if (pty && (currentTerm.cols !== pty.cols || currentTerm.rows !== pty.rows)) {
+          try {
+            currentTerm.resize(pty.cols, pty.rows);
+          } catch {
+            // Renderer not ready; the next size frame or refit retries.
+          }
+        }
+        return;
+      }
       // THESE TWO GUARDS ARE NOT SYMMETRIC, and treating them as if they were
       // is a regression. Both return early, but only one of them is stranded.
       //
@@ -692,8 +742,10 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       serverPtySizes.set(id, { cols: size.cols, rows: size.rows });
       // Attach snapshots stop applying after this view fits; live peer
       // resizes always bypass that latch so passive views follow shared PTY
-      // truth.
-      if (!size.live && clientFittedSessions.has(id)) return;
+      // truth. A view-only attach bypasses it too: its first fit can land
+      // while the grant is still a drive REQUEST, and the latch it set then
+      // would pin the grid at a width the PTY never took (see followsPty).
+      if (!size.live && clientFittedSessions.has(id) && !followsPty()) return;
       if (size.cols <= 0 || size.rows <= 0) return;
       try {
         term.resize(size.cols, size.rows);
@@ -732,7 +784,7 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
     ptyTransport.openSession(
       sessionId,
       serverBaseUrl,
-      () => readActivePass()?.token ?? null,
+      () => spaceSessionFor(readActiveServerId()).requestToken(),
       (id) => mintPtyAttachGrant(id, serverBaseUrl, readOnlyRef.current ? 'view' : 'drive'),
       readOnlyRef.current ? 'view' : 'drive',
     );
@@ -753,6 +805,7 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       offRefusalCleared();
       onData.dispose();
       onBinary.dispose();
+      osc52.dispose();
       unregister();
       // Eviction teardown is intentionally exhaustive: ptyTransport clears
       // its sockets/decoders/offsets/epochs/suspend/replay maps; unregister

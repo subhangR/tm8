@@ -105,6 +105,12 @@ export interface FacadeServerOptions {
   /** Same-origin relay for node-local named Server connections. */
   readonly remoteServerProxy?: RemoteServerProxy;
   /**
+   * Did this node ever issue the session id in this token, in any state? The
+   * relay drops such an `Authorization` instead of forwarding it as a remote's
+   * pass (`resolveRelayCaller`, 236).
+   */
+  readonly sessionIssuedHere?: (token: string) => Promise<boolean>;
+  /**
    * The artifact-preview renderer mounted same-origin (the default preview
    * deployment): every `/p/...` request is handed to it wholesale. It
    * authenticates by the capability token IN THE PATH and must never go
@@ -214,7 +220,7 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
         void resolveRelayCaller(req.headers, resolveIdentity, {
           remoteAddress: req.socket.remoteAddress,
           disableAutoOwner: config.disableAutoOwner === true,
-        }).then(
+        }, opts.sessionIssuedHere).then(
           (caller) => relay.handleUpgrade(req, socket, head, caller),
           (error: unknown) => refuseUpgrade(socket, upgradeRefusalStatus(error),
             error instanceof Error ? error.message : String(error)),
@@ -368,7 +374,7 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
         const caller = await resolveRelayCaller(req.headers, resolveIdentity, {
           remoteAddress: req.socket.remoteAddress,
           disableAutoOwner: config.disableAutoOwner === true,
-        });
+        }, opts.sessionIssuedHere);
         await opts.remoteServerProxy.handleHttp(req, res, caller);
         return;
       }
@@ -472,6 +478,10 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
       // W3 (T8c). Under enforce, a gate session reaches only the gate's ops.
       assertSpaceGate(config.spaceSessions, identity, match.opName);
 
+      // W5: the per-(identity, space) failure bucket for auth.space.enter —
+      // it needs the verified identity, so it cannot sit with `check` above.
+      authRateLimiter?.checkIdentity(match.opName, identity.identityId, body);
+
       const handler = registry.get(match.opName);
       if (!handler) throw notImplemented(match.opName);
 
@@ -508,10 +518,10 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
       try {
         result = await handler(ctx);
       } catch (err) {
-        authRateLimiter?.recordOutcome(match.opName, body, true);
+        authRateLimiter?.recordOutcome(match.opName, body, true, identity.identityId);
         throw err;
       }
-      authRateLimiter?.recordOutcome(match.opName, body, false);
+      authRateLimiter?.recordOutcome(match.opName, body, false, identity.identityId);
       writeResult(res, requestId, result);
     } catch (err) {
       sendWireError(res, err, requestId);

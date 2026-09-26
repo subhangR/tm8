@@ -52,6 +52,23 @@ export type HomeRoot = string;
 export const DEFAULT_HOME_KIND = 'task';
 
 /**
+ * WHAT THE COLUMN LISTS WHILE THE ADDRESS SAYS `CHATS_ROOT` (task 01a0df28):
+ * the `chat` kind's own list. The `[Chats ＋]` header cell — the only door to
+ * the thread-list arrangement — was removed once a chat became an entity, and
+ * the reporter ruled the kind list replaces it. The address keeps its `chats`
+ * form (`/home/chat/{id}` still names the open conversation); only the COLUMN
+ * stopped drawing the thread list.
+ */
+export const CHATS_ROOT_LIST_KIND = 'chat';
+
+/**
+ * The quick-create icons, in order — task, chat, terminal (task 01a0df28).
+ * Kinds, not verbs: each is born through its own registry birth verb
+ * (`list.quickStart`) or the generic create, exactly as the kind menu's ＋.
+ */
+export const HOME_QUICK_BIRTH_KINDS: readonly string[] = ['task', 'chat', 'work_session'];
+
+/**
  * `homeRegionStore` persisted the three-tab column's names before the roots
  * generalized (task 01a006f8 → 01a00932). A stored legacy value still means
  * what it meant.
@@ -186,6 +203,10 @@ const HOME_RAIL_GROUP_SPINE: readonly HomeRailGroupSpec[] = [
  * the list header's kind switcher entry, the Workspace column menu and the
  * mobile drawer row, all four of which read this one table.
  *
+ * `space_link` and `server` (250, W6): not populations either. A link is
+ * signed in, out and removed from Settings → Space links, which carries the
+ * P8 warning a bare list would drop; `server` has no detail row until W8.
+ *
  * `isHomeRootKind` honours this too, on purpose. A withheld kind that a
  * stored root or a hand-typed `k/` route could still select would open a list
  * whose own switcher cannot name it — so a stale selection falls back to the
@@ -193,7 +214,10 @@ const HOME_RAIL_GROUP_SPINE: readonly HomeRailGroupSpec[] = [
  * about the product, not a display filter, and it is deliberately harder to
  * reach for than adding a spine group.
  */
-export const HOME_RAIL_WITHHELD_KINDS: readonly string[] = ['interaction_profile'];
+// `credential` (W10a) is withheld for the same reason: it has a home already —
+// Space settings → Credentials, where its human-only doors live — and a rail
+// list would be a second, door-less surface for it.
+export const HOME_RAIL_WITHHELD_KINDS: readonly string[] = ['interaction_profile', 'credential', 'space_link', 'server'];
 
 export interface HomeRailGroup {
   id: string;
@@ -236,4 +260,19 @@ export function homeRootKinds(): KindConfig[] {
 
 export function isHomeRootKind(kind: string): boolean {
   return railEligibleKinds().some((config) => config.kind === kind);
+}
+
+/** The column root for an address root — `CHATS_ROOT` lists the chat kind. */
+export function homeColumnRoot(root: HomeRoot): HomeRoot {
+  if (root !== CHATS_ROOT) return root;
+  return isHomeRootKind(CHATS_ROOT_LIST_KIND) ? CHATS_ROOT_LIST_KIND : DEFAULT_HOME_KIND;
+}
+
+/** The quick-create kinds this registry actually has, in `HOME_QUICK_BIRTH_KINDS` order. */
+export function homeQuickBirthKinds(): KindConfig[] {
+  const byKind = new Map<string, KindConfig>(homeRootKinds().map((config) => [config.kind, config]));
+  return HOME_QUICK_BIRTH_KINDS.flatMap((kind) => {
+    const config = byKind.get(kind);
+    return config ? [config] : [];
+  });
 }

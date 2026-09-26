@@ -5,7 +5,7 @@ import {
   TM8_CLIENT_HEADER_VALUE,
   type ServerConnection,
 } from '@tm8/contract';
-import { authTokenFor, noteServerOrigin } from '../auth/pass-store';
+import { authTokenFor, noteServerOrigin, readSpaceSessionsEnforced } from '../auth/pass-store';
 import { ACTIVE_SERVER_KEY, LOCAL_SERVER_ID, routeBaseUrlFor } from './server-key';
 
 export type ServerReachability = 'checking' | 'online' | 'offline';
@@ -25,6 +25,8 @@ export interface AddServerInput {
   name: string;
   baseUrl: string;
   username?: string;
+  /** The Space the server joins (W8, 261). Omitted: the caller's first Space. */
+  spaceId?: string | null;
 }
 
 export const LOCAL_SERVER: UiServer = {
@@ -81,8 +83,12 @@ function persistActiveServer(id: string): void {
  */
 async function jsonData<T>(url: string, init?: RequestInit): Promise<T> {
   const localToken = authTokenFor(LOCAL_SERVER_ID);
+  // `serverConnections.*` is a gate call (W3). On an enforcing node the cookie
+  // is a pinned session and would conflict with the pass, so it stays home.
+  const omitCookie = !!localToken && readSpaceSessionsEnforced(LOCAL_SERVER_ID);
   const response = await fetch(url, {
     ...init,
+    ...(omitCookie ? { credentials: 'omit' as const } : {}),
     headers: {
       ...(init?.headers as Record<string, string> | undefined),
       [TM8_CLIENT_HEADER]: TM8_CLIENT_HEADER_VALUE,
@@ -195,17 +201,27 @@ export function useServerRegistry(): ServerRegistryState {
   const addServer = useCallback(async (input: AddServerInput): Promise<UiServer> => {
     const name = input.name.trim().toLowerCase();
     const baseUrl = new URL(input.baseUrl.trim()).origin;
-    const connection = await jsonData<unknown>('/v2/server-connections', {
+    // W8 (261): a server is an entity in a Space (`servers.add`); 044's
+    // `/v2/server-connections` is read-only and only lists.
+    const server = await jsonData<Record<string, unknown>>('/v2/servers', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
+        ...(input.spaceId ? { spaceId: input.spaceId } : {}),
         name,
         baseUrl,
         ...(input.username?.trim() ? { username: input.username.trim() } : {}),
         clientMutationId: crypto.randomUUID(),
       }),
     });
-    const parsed = ServerConnectionSchema.safeParse(connection);
+    const parsed = ServerConnectionSchema.safeParse({
+      id: server.id,
+      name: server.name,
+      baseUrl: server.baseUrl,
+      username: server.username,
+      createdAt: server.createdAt,
+      updatedAt: server.updatedAt,
+    });
     if (!parsed.success) throw new Error('local tm8 returned an invalid Server connection');
     const added = toUiServer(parsed.data);
     setServers((current) => [...current.filter((server) => server.id !== added.id), added]);

@@ -1,4 +1,5 @@
 import { PendingFormsBanner } from '../forms/PendingFormsBanner';
+import { AttentionBlock } from '../attention/AttentionBlock';
 import { SkillBody } from '../skills/SkillBody';
 import { SkillEquipment } from '../skills/SkillEquipment';
 import type { SkillPort } from '../skills/port';
@@ -344,7 +345,6 @@ export interface EntityDetailPanelProps {
   onMarkSessionExited?: () => void;
   streaming?: boolean;
   needsAttention?: boolean;
-  attentionDetail?: string;
   /** Viewer-local presentation state for the work-session Content panes. */
   contentSurface?: ContentSurface | null;
   viewerMemberId?: string | null;
@@ -406,33 +406,6 @@ export interface EntityDetailPanelProps {
    * shell, whose end cluster collapses when empty and would grow a row for it.
    */
   sessionContextSurface?: ReactNode;
-  /**
-   * ATTENTION HISTORY — every request ever escalated on this entity, settled or
-   * not. Self-fetching; the host wires the seam (`views/attentionSurface.tsx`).
-   *
-   * ONE PROP FOR EVERY KIND, like `attachments` and for the same reason:
-   * `attention_requests.entity_id` references `entities`, so the server will
-   * flag any kind at all and a per-kind prop would be a restriction the backend
-   * does not have.
-   *
-   * IT MOUNTS IN EXACTLY ONE PLACE, and that is new. Until 2026-09-07 it had
-   * two: inline in the Content body for most archetypes, and on the CONNECTIONS
-   * tab for the terminal archetype and any declared `composition` — a live PTY
-   * owns its full height, a chat body ends at its composer, and neither could
-   * spare four cards of history (user ruling 2026-08-16; it rode the Activity
-   * tab until that tab was removed on 2026-08-19). Collapsing the section into
-   * a one-line dock removed the constraint that forced the split, so the panel
-   * now renders this below the body as chrome, for every kind and on every tab.
-   * The complementary-condition pair — and the test whose whole job was proving
-   * no kind drew it twice — went with it.
-   *
-   * A TOMBSTONE is the only entity that does not get it: there is nothing left
-   * to escalate about a deleted one.
-   *
-   * Absent ⇒ nothing renders. The section is invisible on any entity with no
-   * history anyway, so an unwired host leaves no dangling affordance to explain.
-   */
-  attentionSection?: ReactNode;
   /**
    * ATTACHMENTS — bytes and an uploader for the strip in the Content body.
    *
@@ -823,11 +796,11 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
   const alwaysDark = isTerminal;
 
   /**
-   * THE BODY ENDS THE PANEL — the three trailing regions are off.
+   * THE BODY ENDS THE PANEL — the trailing regions are off.
    *
-   * ONE PREDICATE for the attachment strip, the attention section and the
-   * footer, because they are one decision: does anything belong between this
-   * body and the panel's bottom edge? The terminal archetype has always
+   * ONE PREDICATE for the attachment strip and the footer, because they are
+   * one decision: does anything belong between this body and the panel's
+   * bottom edge? The terminal archetype has always
    * answered no through its own arm; `composition` is how a kind answers no
    * WITHOUT being a terminal, and it is read as PRESENCE rather than value by
    * design — a third composition arriving must not silently inherit a footer
@@ -1024,11 +997,28 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         />
       ) : null}
 
+      {/* ATTENTION v2 — the block on top of the detail, above the tabs, for
+          every kind (chapter 4, tab 3 variant A). The entity stays usable
+          underneath; it renders nothing when no request is open or when no
+          attention module is mounted. On a session or chat the requests it
+          RAISED are the banner's ("waiting on you", chapter 4 "Session"), so
+          the block lists only the rest; opening still marks all of them seen. */}
+      {isTombstone ? null : (
+        <AttentionBlock
+          excludeRaisedBy={isTerminal || config.panel.archetype === 'conversation' ? detail.id : null}
+          key={detail.id}
+          entityId={detail.id}
+          badges={detail.badges}
+          noun={config.label.toLowerCase()}
+          onOpenEntity={props.onOpenEntity}
+        />
+      )}
+
       <TabStrip
         active={tab}
         contentLabel={config.label}
         counts={{
-          discussion: props.messages?.length,
+          discussion: countMessages(detail, props.messages),
           connections: countConnections(detail, props.connections),
         }}
         end={
@@ -1190,17 +1180,18 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                     jev={props.launch.jev}
                     loadInstalledPlugins={props.launch.loadInstalledPlugins}
                     selection={props.launch.selection}
+                    profileFor={props.launch.profileFor}
+                    upload={props.launch.upload}
+                    onDispatch={props.launch.dispatch ? (note, key) => props.launch!.dispatch!(detail.id, note, key) : undefined}
+                    jevKeyStatus={props.launch.jevKeyStatus}
+                    sessionsSince={props.launch.sessionsSince}
                     onSpawn={props.launch.onSpawn}
                     loadDescription={
                       props.launch.descriptionOf
                         ? () => props.launch!.descriptionOf!(detail.id)
                         : undefined
                     }
-                    onSaveSubject={
-                      props.launch.onUpdateEntity
-                        ? (edits) => props.launch!.onUpdateEntity!(detail.id, edits)
-                        : undefined
-                    }
+                    canEditSubject={Boolean(props.launch.onUpdateEntity)}
                     onDismiss={() => setFlowRef(null)}
                     newClientMutationId={() =>
                       props.launch?.mutationId(detail.id) ?? newLaunchMutationId()
@@ -1418,54 +1409,6 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         </CatchBoundary>
       )}
 
-      {/* THE ATTENTION DOCK — one pinned line, OUTSIDE the scroller.
-
-          USER RULING 2026-09-07 ("taking up too much space at the bottom"):
-          the escalation record folds behind a bar, and the bar lives here.
-
-          WHY HERE AND NOT IN A BODY, which is where it spent its whole life
-          until now. Two reasons, and the second is the one that mattered:
-
-          1. PINNED IS FREE FROM THIS POSITION. The scroll host is `.pn-body`,
-             one level in; a sibling below it is outside the scroller, so the
-             bar is on screen at any scroll offset with no `position: sticky`,
-             no listener and no measurement.
-          2. IT KILLED THE SECOND MOUNT. The section had two homes — this
-             panel's content body, and the Connections tab for terminal and
-             `composition` bodies that own their own height and could not spare
-             four cards. One line they can spare. So the exile is gone, the
-             complementary-condition pair that enforced it is gone, and the
-             thing renders in exactly one place for every kind in the product.
-
-          ON EVERY TAB, deliberately. An escalation is a fact about the
-          ENTITY's standing, not about whichever view of it you happen to have
-          open, and the badge that announces it is not tab-scoped either.
-
-          A TOMBSTONE IS THE ONE EXCLUSION, on the same reasoning as the
-          strip and the controls above: there is nothing left to escalate about
-          a deleted entity, and offering Resolve on one would be offering a
-          write the server will refuse.
-
-          IT DOES COST THE TERMINAL A LINE, and that is deliberate rather than
-          an oversight of the 2026-07-31 ruling ("terminal all the way, till the
-          component bottom") that sends the FOOTER away just below. The two are
-          not the same trade. The footer is unconditional chrome carrying a
-          reading — presence · author · version — that a live PTY does not want
-          at any price. This dock renders ONLY when the entity has escalation
-          history, which almost no session does, and when it does render it is
-          reporting something somebody is waiting on. A session with a pending
-          escalation is exactly the case where 28px of terminal is the cheaper
-          thing to give up; a session with none still gets its full height. If
-          that reads as a conflict later, this is the note that says it was
-          weighed (user ruling 2026-09-07: one bar everywhere, work sessions
-          named explicitly as the reason).
-
-          UNWIRED HOSTS RENDER NOTHING — `attentionSectionFor` returns
-          undefined without a seam, and the component itself returns null for
-          an entity with no history, which is the overwhelming majority. No
-          empty strip appears on every entity in the app. */}
-      {isTombstone ? null : props.attentionSection}
-
       {/* USER RULING 2026-07-31 — "terminal all the way, till the component
           bottom." The footer is the last strip between the canvas and the
           panel edge, so terminal panels do without it. It stays for every
@@ -1537,17 +1480,11 @@ function PanelBody(
      */
     return props.discussionSurface ?? (
       <p className="pn-surface-host-missing" role="alert">
-        This entity&rsquo;s Discussion surface is unavailable in this view.
+        This entity&rsquo;s Messages surface is unavailable in this view.
       </p>
     );
   }
   if (tab === 'connections') {
-    /* The attention section used to have its OVERFLOW HOME here, for the bodies
-       that could not take it inline — terminal (a live PTY owning its full
-       height) and any declared `composition`. That exile is over: the dock is
-       one pinned line of panel chrome, which a body owning its own height can
-       spare, so every kind now draws it in the same single place and this arm
-       is a plain list of edges again (user ruling 2026-09-07). */
     return (
       <>
         <ConnectionsTab
@@ -1637,7 +1574,6 @@ function PanelBody(
             liveness={props.liveness ?? 'unknown'}
             streaming={props.streaming}
             needsAttention={props.needsAttention}
-            attentionDetail={props.attentionDetail}
             /* `handoffs`, the two share reasons and `onOpenEntity` are no
                longer passed: `TerminalBody` stopped accepting them when the
                session-details drawer was removed (user ruling 2026-08-19).
@@ -1769,8 +1705,8 @@ function PanelBody(
      * `{ kind: 'chat' }`, so anything drawn above the transcript would be a
      * header repeating the first bubble.
      *
-     * `composition: 'chat'` on the same row is what removes the strip, the
-     * attention section and the footer below — the body ends at its composer,
+     * `composition: 'chat'` on the same row is what removes the strip and the
+     * footer below — the body ends at its composer,
      * whose ＋ already owns attach.
      *
      * The missing-host alert is the terminal arm's honesty, kept: every host
@@ -1922,6 +1858,21 @@ function PanelBody(
       }}
     />
   );
+}
+
+/**
+ * THE MESSAGES TAB'S COUNT — the server's trigger-owned `counters.messages`,
+ * not the length of whatever `messages.list` page the host happens to hold.
+ *
+ * The loaded list is a PAGE: absent until something pulls it (so the tab drew
+ * no number at all), and short of the total whenever the thread is longer
+ * than one page. The counter is on every detail read and moves with
+ * `counter.changed`. The loaded length only wins when it is larger — a post
+ * that has landed locally before its counter event has.
+ */
+export function countMessages(detail: EntityDetail, messages?: readonly unknown[]): number {
+  const counted = typeof detail.counters?.messages === 'number' ? detail.counters.messages : 0;
+  return Math.max(counted, messages?.length ?? 0);
 }
 
 /** Exported for the phone's action menu, which must show the SAME number the

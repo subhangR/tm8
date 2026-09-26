@@ -374,6 +374,33 @@ describe('W2.G09 saved views and action discovery', () => {
     ));
   }
 
+  it('W6 review D1: never advertises delete/move/patch on a space_link; the same row as a doc does', async () => {
+    const listFor = async (kind: string) => {
+      const db = new FakeDb();
+      db.queryImpl = async <R>(sql: string) => {
+        if (sql.includes('internal.current_member_id')) {
+          return [{
+            id: IDS.entity, space_id: IDS.space, kind, version: 1, deleted_at: null,
+            work_status: null, actor_id: IDS.member, is_space_admin: true,
+          }] as R[];
+        }
+        throw new Error(`unexpected query: ${sql}`);
+      };
+      const noOp: OperationHandler = async () => ({ ok: true });
+      const registry = register(db, (target) => {
+        for (const op of ['entities.get', 'entities.patch', 'entities.move', 'entities.delete'] as const) target.register(op, noOp);
+      });
+      const parsed = ActionDiscoveryResultSchema.parse(await handler(registry, 'actions.list')(
+        request('actions.list', { query: `contextEntityId=${IDS.entity}` }),
+      ));
+      return parsed.actions.map((action) => action.operation);
+    };
+    const link = await listFor('space_link');
+    expect(link).toContain('entities.get');
+    for (const op of ['entities.delete', 'entities.move', 'entities.patch']) expect(link).not.toContain(op);
+    expect(await listFor('doc')).toEqual(expect.arrayContaining(['entities.get', 'entities.delete', 'entities.move', 'entities.patch']));
+  });
+
   it('lists a working task\'s own operations first, most relevant first, and withholds global ones', async () => {
     const registry = registerTaskSurface(taskContextDb('working'));
     const result = await discover(registry, `contextEntityId=${IDS.entity}`);

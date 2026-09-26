@@ -202,6 +202,9 @@ export type SpaceCredentialGrant =
       homeDir: string;
     };
 
+/** How a launch picked its space credential (doc 13 §6c). */
+export type SpaceCredentialPick = 'pinned' | 'my_default' | 'space_default';
+
 /**
  * Why a space credential is not usable. Every one refuses the launch: none of
  * them is a reason to fall back to another source (I3).
@@ -212,11 +215,13 @@ export type SpaceCredentialRefusalReason =
   | 'pending'
   | 'stale'
   | 'revoked'
-  | 'unreadable';
+  | 'unreadable'
+  /** Another member's private credential: never usable by this launcher (W10a). */
+  | 'not_usable';
 
 export type SpaceCredentialRepoint =
   | { ok: true; credentials: ReadonlyArray<{ provider: SpaceCredentialProvider; spaceCredentialId: string }> }
-  | { ok: false; reason: 'inactive' };
+  | { ok: false; reason: 'inactive' | 'not_usable' };
 
 export type SpaceCredentialRead =
   | { ok: true; grant: SpaceCredentialGrant }
@@ -240,14 +245,31 @@ export interface SpaceCredentialPort {
     provider: SpaceCredentialProvider,
     credentialId: string | null,
   ): Promise<SpaceCredentialRead>;
-  /** The subset of `credentialIds` that is active AND visible to the caller now. */
+  /**
+   * The subset of `credentialIds` that is active, in a space the caller still
+   * belongs to, and usable by the caller as launcher (public, space-owned, or
+   * the caller's own) now.
+   */
   activeIds(auth: GraphAuth, credentialIds: readonly string[]): Promise<ReadonlySet<string>>;
   /**
    * Resume (C3): the resumer becomes the recorded launcher of every space
    * credential the session holds, and the recorded rows come back. `inactive`
-   * means one of them is no longer active (206 refuses the re-point whole).
+   * means one of them is no longer active, `not_usable` that one is now
+   * another member's private credential (206 refuses the re-point whole).
+   * With `providers` (R13), rows for every provider this resume did not
+   * resolve to a space credential are dropped first, in the same transaction.
    */
-  repointSession(auth: GraphAuth, sessionId: string): Promise<SpaceCredentialRepoint>;
+  repointSession(
+    auth: GraphAuth,
+    sessionId: string,
+    providers?: readonly SpaceCredentialProvider[],
+  ): Promise<SpaceCredentialRepoint>;
+  /**
+   * The launcher's own default for this provider in this space (W10b, §3e),
+   * if it is active; null otherwise. Optional: a port without it has no
+   * my-default rung.
+   */
+  myDefaultId?(auth: GraphAuth, spaceId: string, provider: SpaceCredentialProvider): Promise<string | null>;
 }
 
 /**
@@ -373,7 +395,7 @@ export interface SessionLaunchPosture {
    */
   skillOverrides?: Record<string, unknown> | null;
   /** `context.index.source`: the launch rendered `<context_index>`; resume renders it too. */
-  contextIndex?: 'env' | 'profile' | null;
+  contextIndex?: 'env' | 'profile' | 'default' | null;
 }
 
 /** A project as the server computed it — `workingDir` is graph truth (S11). */
@@ -517,6 +539,8 @@ export interface SpawnContext {
     title: string | null;
     via: 'selection' | 'linked' | 'attached';
     link?: string;
+    /** A file's declared mime, for its `<attachments>` line (files are never index entries). */
+    mime?: string | null;
   }>;
   /**
    * Selection headers (`GraphPort.loadContextHeaders`, under RLS) for the
@@ -541,6 +565,16 @@ export interface SpawnContext {
    * read are declared, never dropped silently.
    */
   roster?: DispatcherRoster;
+  /**
+   * The EXACT teammates group when the launch selected teammates
+   * (`selection.teammateIds`, launch card v3 Decision 7), in the selected
+   * order, the launch teammate removed; each a live, same-space teammate the
+   * caller can read, with the roster's columns. Rendered as the `teammates`
+   * group of `<context_index>`, replacing the tasks' linked teammates.
+   * Absent when teammates were not selected, and for a dispatcher, which
+   * keeps its roster (`applyDispatcherTeammates` removes the set).
+   */
+  teammates?: DispatcherRoster['members'];
 }
 
 /** The teammates a dispatcher routes to, as `loadDispatcherRoster` read them. */
@@ -557,6 +591,8 @@ export interface SpawnContextAudit {
    * group's edge-driven defaults. A group not listed kept its defaults.
    */
   selectedGroups: ReadonlyArray<SpawnSelectionGroup>;
+  /** `selection.teammateIds` a dispatcher ignored (`applyDispatcherTeammates`). */
+  teammatesIgnored?: number;
   /** One per `teamMember.memoryIds` entry, same order. */
   memoryVia: ContextVia[];
   /** Skills that are in the session only because the selection named them. */
@@ -596,7 +632,13 @@ export interface ContextGroupAudit {
    * validated at the wire, audit-only). `replay-invalid`: a resume found the
    * launch's recorded selection malformed, so it loaded the defaults instead.
    */
-  reason?: 'no-selection' | 'not-selectable' | 'replay-invalid' | SpawnSelectionDefaultReason;
+  reason?: 'no-selection' | 'not-selectable' | 'replay-invalid' | 'dispatcher-roster' | SpawnSelectionDefaultReason;
+  /**
+   * Teammates only, with reason `dispatcher-roster`: how many
+   * `selection.teammateIds` a dispatcher launch ignored (it keeps its full
+   * roster).
+   */
+  ignored?: number;
   /** Linked rows (a dispatcher's teammates: roster rows) beyond the spawn read; declared as `omitted` in the prompt. */
   unread?: number;
   /** See `SpawnContextAudit.legacyMemoriesDropped`. */
@@ -703,8 +745,8 @@ export interface ContextBudgetsRecord {
 
 /** `manifest.context.index`. */
 export interface ContextIndexRecord {
-  /** `env`: `TM8_CONTEXT_INDEX`; `profile`: the pinned profile's `contextIndex`. */
-  source: 'env' | 'profile';
+  /** `default`: always on (launch card v3); `env` / `profile`: the switch a launch before that recorded. */
+  source: 'env' | 'profile' | 'default';
   /** Rendered bytes of the whole element plus its joining newline. */
   bytes: number;
   /**
@@ -758,6 +800,11 @@ export interface CreateWorkSessionInput {
   nodeId: string | null;
   confirmUntrusted: boolean;
   clientMutationId: string | null;
+  /**
+   * `SpawnRequest.newTask`'s title: the RPC creates that task in the spawn's
+   * own transaction (267). Absent/null creates none.
+   */
+  newTaskTitle?: string | null;
 }
 
 export interface CreateWorkSessionResult {
@@ -766,6 +813,8 @@ export interface CreateWorkSessionResult {
   commandResult: unknown;
   /** True when the command ledger returned an earlier spawn result. */
   replayed: boolean;
+  /** The task `newTaskTitle` created (a replay answers the same one). */
+  createdTaskId?: string;
 }
 
 // --- vanilla terminals (101) -------------------------------------------------
@@ -936,6 +985,19 @@ export interface GraphPort {
   /** Reads. Runs before the session exists. */
   loadSpawnContext(auth: GraphAuth, input: LoadSpawnContextInput): Promise<SpawnContext>;
   /**
+   * Whether this launch is link-bound (256, W7p): `auth` is a `link` session
+   * or an agent minted under one, OR `agentToken` — the session just minted
+   * for the launch — carries a via_link stamp. The second arm is the resume
+   * case: a non-link member resuming a work session that ran under a link
+   * gets a stamped child in SQL, and the TS policy must follow that stamp,
+   * never the resumer's own claims. `GraphAuth` is opaque here, so the graph
+   * answers. Such a launch has no member credential rung
+   * (`resolveLinkBoundCredentials`). REQUIRED: an optional member would let
+   * a graph that forgot it answer "not link-bound" silently, and that answer
+   * is the one that opens the member rung.
+   */
+  isLinkBound(auth: GraphAuth, agentToken: string): Promise<boolean>;
+  /**
    * Selection headers for `<context_index>` (design 01a0d348 §2.1), read
    * under the caller's RLS: an id the caller cannot read is simply absent.
    * Optional so a graph without it renders the index from loader rows.
@@ -1016,6 +1078,12 @@ export interface GraphPort {
     auth: GraphAuth,
     input: { taskIds: string[] },
   ): Promise<Array<{ id: string; version: number; status: string }>>;
+  /**
+   * R14: retire the agent token of a session whose spawn or resume failed, so
+   * `auth_sessions` carries no live token for a session that never ran.
+   * Optional: a graph without it leaves the token to its TTL.
+   */
+  revokeWorkSessionAgentToken?(auth: GraphAuth, sessionId: string): Promise<void>;
   /** Mint a credential bound to this exact work-session/persona pair. */
   issueWorkSessionAgentToken(
     auth: GraphAuth,
@@ -1290,6 +1358,8 @@ export interface Tm8Manifest {
      * auto choice resolved, so a node-key launch is visible as one.
      */
     effectiveCredentialSources?: Partial<Record<SpaceCredentialProvider, CredentialSource>>;
+    /** §6c: how each space credential was picked (W10b); absent when none. */
+    spaceCredentialPicks?: Partial<Record<SpaceCredentialProvider, SpaceCredentialPick>>;
     /** Effective shell-command networking, independent of filesystem posture. */
     commandNetwork: CommandNetworkPolicy;
     /**
@@ -1406,6 +1476,12 @@ export interface SpawnRequest {
   /** Session that invoked this spawn; null/absent means a human-launched root. */
   parentSessionId?: string | null;
   taskIds?: string[];
+  /**
+   * Create the session's task in the same transaction as the session (launch
+   * v3 gap 4). The caller refuses it beside `taskIds`; see
+   * `ExecutionSpawnInput.newTask`.
+   */
+  newTask?: { title: string };
   projectId?: string | null;
   workdir?: { mode?: WorkdirMode; baseRef?: string | null };
   interactionProfileId?: string | null;
@@ -1487,6 +1563,14 @@ export interface SpawnResult {
   envVarNames: string[];
   reused: boolean;
   commandResult: unknown;
+  /** The task `SpawnRequest.newTask` created. */
+  createdTaskId?: string;
+  /**
+   * A dispatcher launched on tasks ROUTES them (launch v3): these are the tasks
+   * its first turn asked it to route, in order. The caller stores the durable
+   * request on each. Absent for every other mode.
+   */
+  routedTaskIds?: string[];
 }
 
 /** Raised for every spawn-flow failure that has a contract error code. */

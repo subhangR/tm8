@@ -19,6 +19,7 @@ import type { Logger, PtyActivity, PtyExitInfo, PtyKillOutcome, PtySessionStatus
 import {
   BYTE_BUDGETS,
   composePrompt,
+  dispatchRequestInjection,
   primaryContextBudgetV2,
   PROMPT_VERSION_V2,
   utf8Bytes,
@@ -69,7 +70,7 @@ import {
   readProjectSkillKeys,
   type ConfigHomeSkill,
 } from './harness-surface.js';
-import { contextHeaderIds, contextIndexForResume, contextIndexSwitch, DISPATCHER_ROSTER_READ_MAX } from './context-index.js';
+import { applyDispatcherTeammates, contextHeaderIds, contextIndexForResume, contextIndexSwitch, DISPATCHER_ROSTER_READ_MAX } from './context-index.js';
 import { resolveCodexNativeSessionId } from './native-session.js';
 import { knownAgentConfigDirs } from '../transcript/agent-config-dirs.js';
 import { readSessionUsage } from '../transcript/session-usage.js';
@@ -116,6 +117,7 @@ import type {
   SpawnRequest,
   SpawnResult,
   SpaceCredentialPort,
+  SpaceCredentialProvider,
   Tm8Manifest,
   TransitionInput,
   WorkSessionEndedKind,
@@ -129,11 +131,14 @@ import { ContextBudgetsSchema, SpawnSelectionReasonsSchema, SpawnSelectionSchema
 /**
  * Why a credential containment killed a session (`containCredentialSession`).
  *   - `space_credential_deleted`: SC-3 — a space credential was deleted.
+ *   - `space_credential_made_private`: W10a — its owner made it private, and
+ *     this session's launcher is not the owner.
  *   - `member_credential_disconnected`: the member Disconnect of their own credential.
  *   - `member_removed`: SC-6 — the launching member was removed or disabled.
  */
 export type CredentialContainmentCause =
   | 'space_credential_deleted'
+  | 'space_credential_made_private'
   | 'member_credential_disconnected'
   | 'member_removed';
 
@@ -162,6 +167,12 @@ const CREDENTIAL_CONTAINMENT_ENDINGS: Record<
     endedReason: 'Stopped because the space credential it was running on was deleted.',
     error:
       'credential containment: the space credential this session launched on was deleted — ' +
+      'PTY killed, exit code not observed',
+  },
+  space_credential_made_private: {
+    endedReason: 'Stopped because the space credential it was running on was made private by its owner.',
+    error:
+      'credential containment: the space credential this session launched on was made private — ' +
       'PTY killed, exit code not observed',
   },
   member_credential_disconnected: {
@@ -437,6 +448,21 @@ function endingFromPtyExit(
 }
 
 /**
+ * A dispatcher launched on tasks (launch v3, DISPATCH verb + Launch): one
+ * dispatch request per task, the same control block `execution.dispatch`
+ * pushes at a live dispatcher, so the first thing it does is route them — and
+ * then it stays resident like any dispatcher. The durable request message is
+ * stored on each task by the caller once the session exists; the turn names
+ * no message id because none exists yet.
+ */
+function routingTurn(taskIds: readonly string[], sessionId: string): string {
+  return taskIds
+    .map((taskId) =>
+      dispatchRequestInjection({ taskId, subjectId: taskId, destinationSessionId: sessionId }))
+    .join('\n');
+}
+
+/**
  * The first user turn: the composed task, plus the caller's appendix. The
  * appendix is offered only the bytes the combined budget has left, so a large
  * task turn shrinks the appendix and never the reverse; one that ignores its
@@ -656,15 +682,19 @@ export class SpawnService {
    * space API key is materialized into the session's own 0700 home from the
    * key read NOW, so a resume picks up a rekey (D7).
    */
-  private resolveSessionCredentials(
+  private async resolveSessionCredentials(
     auth: GraphAuth,
     spaceId: string,
     sessionId: string,
     launch: ResolvedLaunchConfig,
+    agentToken: string,
     resume = false,
   ): Promise<ResolvedSessionCredentials> {
+    // After the mint, so a resume of a link-provenance session is link-bound
+    // off the child's own stamp (256), whoever resumes it.
+    const linkBound = (await this.graph.isLinkBound(auth, agentToken)) === true;
     return resolveSessionCredentials(
-      { auth, spaceId, launch, resume },
+      { auth, spaceId, launch, resume, linkBound },
       {
         ...(this.spaceCredentials ? { spaceCredentials: this.spaceCredentials } : {}),
         resolveMemberHome: (source) =>
@@ -703,11 +733,28 @@ export class SpawnService {
     const gone = credentialIds.filter((id) => !active.has(id));
     if (gone.length > 0) {
       throw new SpawnError(
-        `space credential ${gone.join(', ')} was deleted or disabled while this session was ` +
-          'starting, so it was stopped — launch again to use another credential',
+        `space credential ${gone.join(', ')} was deleted, disabled or made private while this ` +
+          'session was starting, so it was stopped — launch again to use another credential',
         'conflict',
-        { sessionId, spaceCredentialIds: gone },
+        { sessionId, spaceCredentialIds: gone, reason: 'credential_not_usable' },
       );
+    }
+  }
+
+  /**
+   * R14: retire the agent token of a session that failed to spawn or resume.
+   * Best effort — the session is already failed and the token maps only to
+   * it — so a failure is logged by session id and the TTL is the backstop.
+   */
+  private async revokeAgentToken(auth: GraphAuth, sessionId: string): Promise<void> {
+    if (!this.graph.revokeWorkSessionAgentToken) return;
+    try {
+      await this.graph.revokeWorkSessionAgentToken(auth, sessionId);
+    } catch (error) {
+      this.logger?.warn?.('SpawnService: could not revoke a failed session agent token', {
+        sessionId,
+        cause: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -1123,10 +1170,21 @@ export class SpawnService {
     postureUnreadable: boolean,
   ): Promise<void> {
     if (!this.spaceCredentials) return;
-    if (resolved.spaceCredentialIds.length === 0 && !postureUnreadable) return;
+    const chosen = resolved.launch.spaceCredentialIds ?? {};
     let repoint;
     try {
-      repoint = await this.spaceCredentials.repointSession(auth, sessionId);
+      // R13: a readable posture names exactly the providers this resume runs
+      // on a space credential, so rows for any other provider — a run that
+      // was on the space and now resolves to a member or node key — are
+      // dropped rather than left naming the old launcher. An unreadable
+      // posture drops nothing: its recorded rows are what refuses below.
+      repoint = postureUnreadable
+        ? await this.spaceCredentials.repointSession(auth, sessionId)
+        : await this.spaceCredentials.repointSession(
+            auth,
+            sessionId,
+            Object.keys(chosen) as SpaceCredentialProvider[],
+          );
     } catch (error) {
       throw new SpawnError(
         'could not re-point the space credentials this session runs on to you, so the resume ' +
@@ -1143,7 +1201,6 @@ export class SpawnService {
         { sessionId, reason: repoint.reason },
       );
     }
-    const chosen = resolved.launch.spaceCredentialIds ?? {};
     const recorded = new Map(repoint.credentials.map((c) => [c.provider, c.spaceCredentialId]));
     const agrees =
       recorded.size === Object.keys(chosen).length &&
@@ -1266,7 +1323,8 @@ export class SpawnService {
    * same header read (design 01a0d348 §8 I8).
    */
   private async loadIndexHeaders(auth: GraphAuth, context: SpawnContext, mode: string | null | undefined, jevRunId?: string): Promise<void> {
-    if (mode === 'dispatcher' && this.graph.loadDispatcherRoster) {
+    // Selected teammates (`selection.teammateIds`) replace the roster read.
+    if (mode === 'dispatcher' && !context.teammates && this.graph.loadDispatcherRoster) {
       context.roster = await this.graph.loadDispatcherRoster(auth, {
         spaceId: context.spaceId,
         excludeTeamMemberId: context.teamMember.id,
@@ -1391,13 +1449,14 @@ export class SpawnService {
       teamMemberId: request.teamMemberId,
       interactionProfileId: request.interactionProfileId ?? null,
     });
-    // `<context_index>` (design 01a0d348 §2), shipped dark: the node env or
-    // the pinned profile turns it on, and only then are its headers read.
+    // `<context_index>` (design 01a0d348 §2): always on (launch card v3), so
+    // its headers are always read.
     const indexSwitch = contextIndexSwitch(this.env, resolvedProfile.snapshot);
     const contextIndex = indexSwitch.on ? { source: indexSwitch.source } : null;
+    applyDispatcherTeammates(context, launch.mode);
     if (contextIndex) await this.loadIndexHeaders(auth, context, launch.mode, request.jevRunId);
 
-    const { sessionId, commandResult, replayed } = await this.graph.createWorkSession(auth, {
+    const { sessionId, commandResult, replayed, createdTaskId } = await this.graph.createWorkSession(auth, {
       spaceId: request.spaceId,
       teamMemberId: request.teamMemberId,
       parentSessionId: request.parentSessionId ?? null,
@@ -1417,10 +1476,43 @@ export class SpawnService {
       nodeId: this.nodeId,
       confirmUntrusted: request.confirmUntrusted ?? false,
       clientMutationId: request.clientMutationId ?? null,
+      ...(request.newTask ? { newTaskTitle: request.newTask.title } : {}),
     });
+    // Launch v3 gap 4: the task the RPC just created is known only now. It is
+    // new, so it has nothing but its title — the rest is what the row holds.
+    if (createdTaskId) {
+      context.tasks = [
+        ...context.tasks,
+        {
+          id: createdTaskId,
+          version: 1,
+          title: request.newTask?.title.trim() ?? '',
+          description: '',
+          priority: 'medium',
+          status: 'working',
+          acceptanceCriteria: [],
+          attachments: [],
+          threadRootMessageId: null,
+          threadChannelId: null,
+          linked: [],
+          linkedTotal: 0,
+        },
+      ];
+    }
     // The RPC just started the tasks, so their version moved (a replay's did,
     // the first time). Compose from the task as it stands now.
     await this.refreshStartedTasks(auth, context);
+    // A dispatcher launched on tasks ROUTES them rather than working them:
+    // its first turn is a dispatch request per task, not an assignment (and
+    // 267 wrote it neither `working_on` nor `assigned_to`).
+    const routedTaskIds = launch.mode === 'dispatcher' && context.tasks.length > 0
+      ? context.tasks.map((task) => task.id)
+      : undefined;
+    if (routedTaskIds) context.tasks = [];
+    const spawnFacts = {
+      ...(createdTaskId ? { createdTaskId } : {}),
+      ...(routedTaskIds ? { routedTaskIds } : {}),
+    };
 
     // A projectless scratch session's directory is named for the session, which
     // only exists now. Re-resolve so the manifest and the PTY agree.
@@ -1466,9 +1558,11 @@ export class SpawnService {
         envVarNames: [],
         reused: true,
         commandResult,
+        ...spawnFacts,
       };
     }
 
+    let agentTokenIssued = false;
     this.sessionAuth.set(sessionId, auth);
     // The OOM baseline, captured with the claims because it is the same kind
     // of launch-time bookkeeping and must exist before the PTY can die (171).
@@ -1517,6 +1611,7 @@ export class SpawnService {
         sessionId,
         request.teamMemberId,
       );
+      agentTokenIssued = true;
       // The base command is built FIRST and recorded in the manifest; the system
       // prompt is then derived FROM that manifest and appended to produce the
       // line the PTY actually runs. See `withAgentPrompt` for why this is two
@@ -1532,6 +1627,7 @@ export class SpawnService {
         request.spaceId,
         sessionId,
         launch,
+        agentToken,
       );
       spaceCredentialIds = credentials.spaceCredentialIds;
       const { credentialHome, gitHubCredential } = credentials;
@@ -1594,10 +1690,13 @@ export class SpawnService {
       // durable link between this tm8 session and its rollout file is a marker
       // in the first user turn. That marker is what resume's capture scan
       // matches (native-session.ts). Claude needs none: its id is pre-minted.
+      const turn = routedTaskIds
+        ? `${firstTurn(envelope, sessionId, request)}\n${routingTurn(routedTaskIds, sessionId)}`
+        : firstTurn(envelope, sessionId, request);
       const task =
         launch.agentTool === 'codex'
-          ? `${firstTurn(envelope, sessionId, request)}\n<tm8_session_id>${sessionId}</tm8_session_id>`
-          : firstTurn(envelope, sessionId, request);
+          ? `${turn}\n<tm8_session_id>${sessionId}</tm8_session_id>`
+          : turn;
       // THE FIRST TURN RIDES IN ARGV wherever the binary accepts one, because a
       // prompt that is already in the process cannot be lost to a boot race. The
       // alternative — launch an idle REPL and type the task into the TUI once it
@@ -1681,6 +1780,12 @@ export class SpawnService {
       }
       if (launch.agentTool === 'codex') await trustCodexWorkspace(cwd, env);
 
+      // R1 (W10a): the manifest was recorded under the recorder's lock, but a
+      // credential can be revoked or switched to private between that commit
+      // and here. Ask again before a child exists to hold the key; the
+      // post-spawn check below still closes the window after it.
+      await this.assertSpaceCredentialsStillActive(auth, sessionId, spaceCredentialIds);
+
       // Prompts accepted between here and the PTY being live must not be
       // dropped on the floor; the handoff parks them in the bounded FIFO and
       // spawnIfAbsent drains it.
@@ -1756,7 +1861,7 @@ export class SpawnService {
         this.watchWorkspaceTrust(sessionId, manifestPath, manifest, env);
       }
 
-      return { sessionId, manifestPath, manifest, command, cwd, envVarNames, reused, commandResult };
+      return { sessionId, manifestPath, manifest, command, cwd, envVarNames, reused, commandResult, ...spawnFacts };
     } catch (error) {
       // The row exists and the graph believes a session is spawning. Leaving it
       // there would burn a slot against the concurrency cap forever, so mark it
@@ -1779,6 +1884,8 @@ export class SpawnService {
       }
       // The session is dead; its space key must not outlive it on disk.
       await this.scrubSpaceSecrets(sessionId);
+      // R14: nor its agent token in auth_sessions.
+      if (agentTokenIssued) await this.revokeAgentToken(auth, sessionId);
       this.sessionAuth.delete(sessionId);
       throw error;
     }
@@ -2059,6 +2166,7 @@ export class SpawnService {
     const commandNetwork = resolveCommandNetworkPolicy(launch, this.env);
     // After the launch resolves, so a resumed dispatcher reads its roster by
     // the mode it runs in, exactly as its spawn did.
+    applyDispatcherTeammates(context, launch.mode);
     if (resumeIndex) await this.loadIndexHeaders(auth, context, launch.mode);
 
     if (launch.agentTool !== 'claude-code' && launch.agentTool !== 'codex') {
@@ -2212,6 +2320,7 @@ export class SpawnService {
       };
     }
 
+    let agentTokenIssued = false;
     this.sessionAuth.set(sessionId, auth);
     // The OOM baseline, captured with the claims because it is the same kind
     // of launch-time bookkeeping and must exist before the PTY can die (171).
@@ -2304,6 +2413,7 @@ export class SpawnService {
         sessionId,
         info.teamMemberId,
       );
+      agentTokenIssued = true;
 
       // NO --session-id on a resume invocation: the id is already Claude's, and
       // naming it twice (`--session-id` + `--resume`) is two flags to disagree.
@@ -2322,6 +2432,7 @@ export class SpawnService {
         info.spaceId,
         sessionId,
         launch,
+        agentToken,
         true,
       );
       spaceCredentialIds = credentials.spaceCredentialIds;
@@ -2401,6 +2512,12 @@ export class SpawnService {
       }
       if (launch.agentTool === 'codex') await trustCodexWorkspace(cwd, env);
 
+      // R1 (W10a): the manifest was recorded under the recorder's lock, but a
+      // credential can be revoked or switched to private between that commit
+      // and here. Ask again before a child exists to hold the key; the
+      // post-spawn check below still closes the window after it.
+      await this.assertSpaceCredentialsStillActive(auth, sessionId, spaceCredentialIds);
+
       this.pty.beginPromptHandoff(sessionId);
       const { reused } = this.pty.spawnIfAbsent({
         sessionId,
@@ -2436,7 +2553,11 @@ export class SpawnService {
       await this.failSession(auth, sessionId, error, bootExit);
       if (launchedPty) this.pty.kill(sessionId);
       // A PTY this resume merely FOUND is healthy and still reads its key.
-      if (!this.pty.hasSession(sessionId)) await this.scrubSpaceSecrets(sessionId);
+      if (!this.pty.hasSession(sessionId)) {
+        await this.scrubSpaceSecrets(sessionId);
+        // R14: the re-minted agent token of a resume that never ran.
+        if (agentTokenIssued) await this.revokeAgentToken(auth, sessionId);
+      }
       this.sessionAuth.delete(sessionId);
       throw error;
     }

@@ -70,7 +70,22 @@ export type CoreEntityKind =
   // Forms (migration 209, FORMS-DESIGN v3): a question set an agent asks a
   // human, with validated, revisioned responses delivered back to the
   // requesting session. Born only from `forms.create` (W1).
-  | 'form';
+  | 'form'
+  // Space credentials (W10a, doc 13): the same-id entity of a
+  // space_credentials row. Born only from credentials.space.create or a
+  // login start, under a SQL guard; never moved, deleted or restored through
+  // the generic doors. The secret, hint and vendor login are never on it.
+  | 'credential'
+  // Space links (migrations 250/251, Phase 1b W6): a home space's link to a
+  // target space. Every home member sees the link; each member's stored
+  // session for the target is their own sealed row. Born only from
+  // `spaceLinks.add`.
+  | 'space_link'
+  // A remote tm8 server a space link points at (W8). Registered with W6's kinds.
+  | 'server';
+
+/** A credential entity's visibility (W10a): who may launch on it. */
+export type CredentialVisibility = 'private' | 'public';
 
 /** tm8: runtime-registered custom kinds are namespaced (T-L4). */
 export type CustomEntityKind = `c:${string}`;
@@ -498,6 +513,17 @@ export type CoreEntityState =
   | { kind: 'drawing'; format: string; elementCount: number }
   /** A form's row facts (209): where it is in its lifecycle, and how long. */
   | { kind: 'form'; status: FormStatus; questionCount: number }
+  /** A space credential's row facts (W10a). Never the secret, hint or login. */
+  | { kind: 'credential'; provider: string; shape: string; visibility: CredentialVisibility;
+      status: string; ownerAccountId: string | null }
+  /**
+   * Space links (250, W6): no row facts on the entity. A link's target and
+   * every member's status are `spaceLinks.list`'s answer, never a list row's —
+   * a join here would widen the shared entity read for a settings screen.
+   * `server` has no detail row until W8.
+   */
+  | { kind: 'space_link' }
+  | { kind: 'server' }
   /**
    * A chat's row facts (176). Everything here answers a question a list row
    * asks — who is it with, what is it running, is it busy — without a second
@@ -657,7 +683,34 @@ export interface EntityStaleness {
                independenceBasis: 'session' | 'actor' };
 }
 
-export type AttentionRequestStatus = 'open' | 'acknowledged' | 'resolved' | 'dismissed';
+/**
+ * Attention v2 (chapter 1): `acknowledged` is LEGACY — read as `open`, never
+ * written again (Seen moved to the per-person `attention_seen` table).
+ * `dismissed` means the raising agent withdrew it; `cleared` means tm8 settled
+ * its own `system` row because the condition ended.
+ */
+export type AttentionRequestStatus = 'open' | 'acknowledged' | 'resolved' | 'dismissed' | 'cleared';
+
+/** How loud a request is. Default `normal`; points derive from it when omitted. */
+export type AttentionLevel = 'fyi' | 'normal' | 'high' | 'urgent';
+
+/** What the raiser wants the human to do. Default `decide`. */
+export type AttentionActionType = 'decide' | 'approve' | 'unblock' | 'review' | 'fyi';
+
+/**
+ * Who raised a request, derived from the CALLER, never from input: an agent
+ * persona is `agent`, a member is `human`, tm8's own writers are `system`.
+ * The public create never produces `system`.
+ */
+export type AttentionOrigin = 'agent' | 'human' | 'system';
+
+/** Points a request gets from its level when the raiser gives none (chapter 1). */
+export const ATTENTION_LEVEL_POINTS: Readonly<Record<AttentionLevel, number>> = {
+  fyi: 10,
+  normal: 40,
+  high: 70,
+  urgent: 95,
+};
 
 /** Compact aggregate carried by every entity summary and used to prioritize lists. */
 export interface EntityAttentionSummary {
@@ -685,11 +738,32 @@ export interface AttentionRequest {
   updatedAt: string;
   acknowledgedAt: string | null;
   resolvedAt: string | null;
+  // Attention v2 (chapter 1). OPTIONAL until the v2 migration and the S4
+  // server verbs land, so a server that does not emit them still validates.
+  /** Whether the VIEWER has marked this request seen. Per person; never changes status. */
+  seenByMe?: boolean;
+  /** The roll-up root it counts against: itself, or the task of a work session / form. */
+  rootId?: EntityId;
+  level?: AttentionLevel;
+  actionType?: AttentionActionType;
+  /** The member it is assigned to; null when unassigned (counts only in "all"). */
+  assigneeId?: EntityId | null;
+  /** The work session OR chat that raised it (F1); null for humans and legacy rows. */
+  sourceWorkSessionId?: EntityId | null;
+  /** Whether that raising session or chat is still live; false when there is none. */
+  sourceSessionLive?: boolean;
+  origin?: AttentionOrigin;
+  /** The Resolve that settled it, so Undo can reopen exactly that set. */
+  resolutionBatchId?: string | null;
 }
 
 export interface AttentionRequestListQuery {
   spaceId: SpaceId;
   entityId?: EntityId;
+  /**
+   * Omitted means OPEN (Attention v2): `open` plus legacy `acknowledged`,
+   * which is read as open. Pass a status to read history.
+   */
   status?: AttentionRequestStatus;
   minPoints?: number;
   limit?: number;
@@ -702,6 +776,11 @@ export interface AttentionRequestMutationResult {
   request: AttentionRequest | null;
   entity: EntitySummary;
   affectedCount: number;
+  /**
+   * Set by a Resolve (and echoed by Unresolve): the batch the settled rows
+   * share, which is what Undo sends back. Optional until S4.
+   */
+  resolutionBatchId?: string | null;
 }
 
 export interface PullState {
@@ -879,6 +958,15 @@ export type CoreEntityContent =
   | { kind: 'form'; status: FormStatus; description: string | null; settings: FormSettings;
       structureVersion: number; sections: FormSectionRow[]; questions: FormQuestionRow[];
       openedAt: string | null; closedAt: string | null }
+  /** Space links (250, W6): content is `spaceLinks.list`'s; see EntityState. */
+  | { kind: 'space_link' }
+  | { kind: 'server' }
+  /**
+   * A space credential (W10a): the same allow-list as its state. The sealed
+   * secret, key hint and vendor login never reach an entity read.
+   */
+  | { kind: 'credential'; provider: string; shape: string; visibility: CredentialVisibility;
+      status: string; ownerAccountId: string | null }
   /**
    * Containers (§4.2), hydrated in the panel.
    *
@@ -1057,8 +1145,10 @@ export interface CollectionQuery {
      * (flagged upstream): they make the `getHome` preset queries reproducible
      * on re-execution. Actor scope = the actor's member + owned team_members.
      * `inFlightForActorId` = tasks that stable pulled / is working on (not
-     * done/cancelled); `needsActorId` = union of `inReviewForActorId` and
-     * `mentionedActorId` semantics.
+     * done/cancelled); `needsActorId` = has an OPEN attention request
+     * assigned to exactly this actor (a member), pinned to it or rolled up to
+     * it (Attention v2, G1/Q17; it no longer means review or mentions, and it
+     * is NOT widened to owned team_members).
      */
     inFlightForActorId?: EntityId; needsActorId?: EntityId;
     /**
@@ -1823,9 +1913,10 @@ export function commandAcceptsClientMutationId(opName: string): boolean {
 
 /**
  * How a session authenticates thereafter. `agent` and `agent_runtime` are
- * internal mints, never accepted by `auth.login`.
+ * internal mints, never accepted by `auth.login`. `link` (W6, 250) is a
+ * member's stored session for a linked space, minted by `spaceLinks.login`.
  */
-export type AuthSessionKindView = 'browser' | 'cli' | 'agent' | 'agent_runtime';
+export type AuthSessionKindView = 'browser' | 'cli' | 'agent' | 'agent_runtime' | 'link';
 
 /** The session half of every auth response. The token itself appears exactly once, at issuance. */
 export interface AuthSessionView {
@@ -1917,6 +2008,14 @@ export interface AuthSpaceEnterInput {
   spaceId: string;
   /** Free-form label shown in session listings. */
   label?: string;
+  /**
+   * W5 (K2): the member's space password, required when the space has
+   * `requireSpacePassword` on (or the member's login there is locked). A
+   * missing one is refused `forbidden` with `details.reason =
+   * 'space_password_required'`; a wrong or locked one with
+   * `'space_password_rejected'`. Never stored or logged.
+   */
+  spacePassword?: string;
 }
 
 export interface AuthSpaceEnterResult {
@@ -1939,6 +2038,60 @@ export interface AuthLogoutInput {
 export interface AuthLogoutResult {
   sessionId: string;
   revoked: boolean;
+}
+
+/**
+ * `auth.sessions.list` (plan 01a0d9eb W4, migration 232). Without `spaceId`:
+ * the caller's own live sessions, every kind and space. With `spaceId`: every
+ * live session PINNED to that space, whoever owns it — space admins only (a
+ * session pinned elsewhere is refused). Humans only; never carries a token.
+ */
+export interface AuthSessionsListInput {
+  spaceId?: string;
+}
+
+/** Where a session came from — derived from the row, never stored. */
+export type AuthSessionOrigin = 'login' | 'space_enter' | 'spawn' | 'chat' | 'link';
+
+export interface AuthSessionListing {
+  sessionId: string;
+  kind: AuthSessionKindView;
+  createdAt: string;
+  lastUsedAt: string | null;
+  expiresAt: string;
+  label: string | null;
+  /** Null for a gate session. */
+  spaceId: string | null;
+  spaceName: string | null;
+  /** The gate session `auth.space.enter` minted this one from; revoking it ends this too. */
+  parentSessionId: string | null;
+  origin: AuthSessionOrigin;
+  /** The work session (`spawn`) or chat (`chat`) the session was minted for. */
+  originEntityId: string | null;
+  owner: { identityId: string; displayName: string | null };
+  /** True for the session that made this request. */
+  current: boolean;
+}
+
+export interface AuthSessionsListResult {
+  /** Echoes the input: null for the caller's own list. */
+  spaceId: string | null;
+  sessions: AuthSessionListing[];
+}
+
+/**
+ * `auth.sessions.revoke` — end one session the caller could list: their own,
+ * or one pinned to a space they administer. Revoking a gate session also
+ * revokes the sessions `auth.space.enter` minted from it, and every open event
+ * socket opened with any of them is closed (1008). A session the caller cannot
+ * list answers `not_found`, like a missing one.
+ */
+export interface AuthSessionsRevokeResult {
+  sessionId: string;
+  /** False when the session was already revoked. */
+  revoked: boolean;
+  /** This session plus the children revoked with it, by this call. */
+  revokedSessionIds: string[];
 }
 
 /** `auth.session.get` — who am I, on this server, and how am I authenticated. */
@@ -2090,6 +2243,11 @@ export interface AuthInviteSignupInput {
   email?: string;
   /** Defaults to `browser`. `agent` is refused — agent tokens are minted at spawn. */
   kind?: 'browser' | 'cli';
+  /**
+   * W5 (K2): the space password for the space the invite joins. Required when
+   * `auth.invite.resolve` answered `requiresSpacePassword: true`.
+   */
+  spacePassword?: string;
 }
 
 export interface AuthInviteSignupResult {
@@ -2462,7 +2620,19 @@ export interface SpaceCredentialView {
   updatedAt: string;
   lastUsedAt: string | null;
   lastProbeAt: string | null;
+  /**
+   * Doc 13 §7 (W10a/W10b). Null = space-owned. The server always sets these
+   * three; they are optional only so a view built before them still types.
+   */
+  ownerAccountId?: string | null;
+  /** `private`: only the owner may launch on it. Space-owned is always `public`. */
+  visibility?: SpaceCredentialVisibilityName;
+  /** An owned public credential's consent to be the space default. */
+  mayBeSpaceDefault?: boolean;
 }
+
+/** Who may launch on a space credential (doc 13 §3a). */
+export type SpaceCredentialVisibilityName = 'private' | 'public';
 
 /** `credentials.space.list`. Revoked tombstones are not listed. */
 export interface CredentialsSpaceListView {
@@ -2480,7 +2650,89 @@ export interface CredentialsSpaceCreateInput {
   shape: 'api_key' | 'token';
   label: string;
   secret: string;
+  /**
+   * E1: an owned credential's visibility, OR `spaceOwned: true` — never both.
+   * Neither keeps the pre-W10b contract: space-owned, public, and claimable
+   * by its creator. The contract never takes an account id (I1): the owner
+   * is always the caller.
+   */
+  visibility?: SpaceCredentialVisibilityName;
+  spaceOwned?: boolean;
+  /** An owned public credential may also be the space default (§3e). */
+  mayBeSpaceDefault?: boolean;
   clientMutationId?: string;
+}
+
+/**
+ * `credentials.space.setVisibility` — the owner only; a space-owned credential
+ * has no visibility to change. Going private clears both default flags in the
+ * same statement and kills every live session another member launched on it.
+ */
+export interface CredentialsSpaceSetVisibilityInput {
+  visibility: SpaceCredentialVisibilityName;
+  clientMutationId?: string;
+}
+
+export interface CredentialsSpaceSetVisibilityResult {
+  credential: SpaceCredentialView;
+  terminatedAgentSessionIds: string[];
+  failures: Array<{ sessionId: string; reason: string }>;
+}
+
+/**
+ * `credentials.space.spaceDefaultConsent` — the owner allows (or withdraws)
+ * their public credential as the space default. Withdrawing clears the
+ * space default in the same statement.
+ */
+export interface CredentialsSpaceDefaultConsentInput {
+  allowed: boolean;
+  clientMutationId?: string;
+}
+
+/**
+ * `credentials.space.addMine` (W10d, doc 13 §7 step 2) — "Add to this space as
+ * private": the server reads the CALLER'S own server-level credential for
+ * `provider`, probes it, and re-seals it in TypeScript as a new private space
+ * credential the caller owns. Only a string-shaped personal credential can be
+ * re-sealed (today the GitHub token, 093); a Claude or Codex login is a file
+ * whose refresh token breaks if copied (SC-8 §5), so it takes a fresh sign-in
+ * instead. One space per call: there is no bulk add (R4). The body never
+ * carries a secret and the answer is metadata only (I5).
+ */
+export interface CredentialsSpaceAddMineInput {
+  provider: 'github';
+  label: string;
+  clientMutationId?: string;
+}
+
+/** `credentials.space.myDefault.set|clear` — the caller's own default, per space and provider. */
+export interface CredentialsSpaceMyDefaultResult {
+  spaceId: string;
+  provider: SpaceCredentialProviderName;
+  credentialId: string | null;
+}
+
+/** How a launch picked its space credential (§6c); null on rows recorded before it. */
+export type SpaceCredentialPickName = 'pinned' | 'my_default' | 'space_default';
+
+/**
+ * `credentials.space.usage` — launches on a credential: the owner; admins too
+ * for a public or space-owned one.
+ */
+export interface CredentialsSpaceUsageView {
+  credentialId: string;
+  sessions: Array<{
+    workSessionId: string;
+    provider: SpaceCredentialProviderName;
+    source: SpaceCredentialPickName | null;
+    credentialId: string;
+    ownerAccountId: string | null;
+    launcherAccountId: string | null;
+    agentSessionId: string | null;
+    status: string;
+    recordedAt: string;
+    updatedAt: string;
+  }>;
 }
 
 /** `credentials.space.rekey` — creator or space admin; the next spawn uses it (D7). */
@@ -2561,6 +2813,43 @@ export interface NodeCredentialStatusEntry extends NodeCredentialPolicyEntry {
 /** `node.credentials.status` — node admin. */
 export interface NodeCredentialsStatusView {
   providers: NodeCredentialStatusEntry[];
+}
+
+/**
+ * `node.metrics.get` — node admin. Host metrics for the machine this tm8
+ * server runs on, measured at request time. Every figure is a measurement;
+ * a figure the host cannot supply is `null`, never a guess or a zero.
+ */
+export interface NodeMetricsView {
+  /** When the figures were taken. */
+  sampledAt: string;
+  cpu: {
+    /**
+     * Busy share of all cores, 0–100, over the window since the previous read
+     * (or a short in-request window on the first read).
+     */
+    percent: number | null;
+    /** Logical cores. */
+    cores: number;
+  };
+  memory: {
+    totalBytes: number;
+    /**
+     * In use by the host, excluding reclaimable cache. On macOS this is read
+     * from `vm_stat`, because the kernel's "free" figure there leaves out
+     * inactive and purgeable pages and would read near 100% on a healthy
+     * machine.
+     */
+    usedBytes: number;
+  };
+  /** 1, 5 and 15 minute load averages. `null` on hosts without them (Windows). */
+  loadAverage: [number, number, number] | null;
+  /** The volume holding the server's data directory. `null` when it cannot be read. */
+  disk: { path: string; totalBytes: number; usedBytes: number } | null;
+  /** The tm8 server process itself. */
+  process: { rssBytes: number; heapUsedBytes: number; uptimeSeconds: number };
+  /** Host uptime. */
+  hostUptimeSeconds: number;
 }
 
 /** `node.credentials.policy.set` — node admin. `null` removes the policy. */
@@ -2674,6 +2963,13 @@ export type CreatableEntityKind = Exclude<
   // `form` is born ONLY from `forms.create`, which writes its questions,
   // sections and the requesting-session edge in one call (FORMS-DESIGN §6).
   | 'form'
+  // `credential` is human-only and born under a SQL guard from
+  // credentials.space.* (W10a); no generic door writes one.
+  | 'credential'
+  // `space_link` is born ONLY from `spaceLinks.add` (W6), which checks the
+  // caller belongs to both spaces; `server` has no door in W6.
+  | 'space_link'
+  | 'server'
 >;
 
 export interface CreateEntityInput extends CommandContext {
@@ -2711,7 +3007,17 @@ export interface PatchEntityInput extends CommandContext {
 export interface CreateAttentionRequestInput extends CommandContext {
   clientMutationId: string;
   reason: string;
-  points: number;
+  /** An override for fine ordering; when omitted it derives from `level` (ATTENTION_LEVEL_POINTS). */
+  points?: number;
+  /** Default `normal`. */
+  level?: AttentionLevel;
+  /** Default `decide`. */
+  actionType?: AttentionActionType;
+  /** A member of the same space. No default: unassigned counts only in "all". */
+  assigneeId?: EntityId;
+  // NEVER input: the raising session (stamped from the bearer,
+  // `workSessionId ?? runtimeChatId`, F1a), `origin` (derived from the
+  // caller), and `signal_key` (internal writers only).
 }
 
 /** PATCH /v2/attention-requests/:requestId. */
@@ -2728,6 +3034,92 @@ export interface UpdateAttentionRequestInput extends CommandContext {
 export interface ResolveEntityAttentionInput extends CommandContext {
   clientMutationId: string;
   resolutionNote?: string;
+  /**
+   * Attention v2: a CLIENT-generated uuid naming this Resolve, so the UI can
+   * settle rows in place and offer Undo before the server replies. The server
+   * generates one when absent and echoes it on the result.
+   */
+  resolutionBatchId?: string;
+}
+
+/**
+ * POST /v2/entities/:entityId/attention-requests/seen (Attention v2).
+ * `entityId` may be ANY entity: the server maps it to its roll-up root and
+ * marks every open request on that root (own and rolled-up) seen by the
+ * CALLER only. Status and counts never change. Result: `request` null,
+ * `entity` the root, `affectedCount` the rows newly seen.
+ */
+export interface MarkAttentionSeenInput extends CommandContext {
+  clientMutationId: string;
+}
+
+/**
+ * Attention v2 S6: a SYSTEM signal tm8 raises on a caller's behalf. A CLOSED
+ * vocabulary: the caller names the situation, never a signal key, level or
+ * type; the server builds the key (`conflict:<worktreeId>:<flow>`) and fixes level /
+ * type from the kind (conflict = high / review). Only `conflict` exists today;
+ * the permission prompt is deferred (F2).
+ */
+export interface AttentionSignal {
+  kind: 'conflict';
+  /** The worktree the merge, cherry-pick or stash pop conflicted in. */
+  worktreeId: EntityId;
+  /**
+   * Which CLI flow conflicted. The key is `conflict:<worktreeId>:<flow>`, so
+   * only a clean run of the SAME flow clears it (ch2).
+   */
+  flow: AttentionSignalFlow;
+}
+
+export type AttentionSignalFlow = 'merge' | 'cherry_pick' | 'stash_pop';
+
+/**
+ * POST /v2/entities/:entityId/attention-signals (Attention v2 S6). The CLI's
+ * conflict rail. `entityId` must be the worktree, a session in it, or a task
+ * linked to either. Raises an origin=system request attributed to the caller,
+ * or returns the open one with the same key (`affectedCount` 0). CLI only: not
+ * in MCP tm8_act; agents and chats raise through attentionRequests.create.
+ */
+export interface RaiseAttentionSignalInput extends CommandContext {
+  clientMutationId: string;
+  signal: AttentionSignal;
+  reason: string;
+}
+
+/**
+ * POST /v2/entities/:entityId/attention-signals/clear (Attention v2 S6).
+ * Clears (status `cleared`, no delivery) the open request with the signal's
+ * key anywhere in `entityId`'s space. Idempotent: nothing open is
+ * `affectedCount` 0.
+ */
+export interface ClearAttentionSignalInput extends CommandContext {
+  clientMutationId: string;
+  signal: AttentionSignal;
+}
+
+/**
+ * POST /v2/attention-requests/batches/:batchId/unresolve (Attention v2).
+ * Undo of one Resolve: only rows of that batch still `resolved` go back to
+ * open, and their pending note deliveries are cancelled (zero messages).
+ * Only the member who resolved the batch (`forbidden` otherwise), and only
+ * within 8s of the resolve (`conflict` with reason `undo_window_closed`
+ * after). Result: `request` null, `entity` the root, `affectedCount` the
+ * rows reopened, `resolutionBatchId` the batch.
+ */
+export interface UnresolveAttentionBatchInput extends CommandContext {
+  clientMutationId: string;
+}
+
+/**
+ * POST /v2/attention-requests/:requestId/withdraw (Attention v2).
+ * The raising agent takes back its own request: the caller's actor must be
+ * the row's `requestedBy`, and only an `origin: 'agent'` row that is still
+ * open qualifies (system and human rows are refused). The row goes to
+ * `dismissed` and nothing is delivered. Result: `request` the dismissed row.
+ */
+export interface WithdrawAttentionRequestInput extends CommandContext {
+  clientMutationId: string;
+  expectedVersion?: number;
 }
 
 export interface MoveEntityInput extends CommandContext {
@@ -3091,6 +3483,11 @@ export interface ResolveInviteInput {
 /** POST /v2/invites/redeem — join as the CURRENT caller. */
 export interface RedeemInviteInput extends CommandContext {
   code: string;
+  /**
+   * W5 (K2): the space password to set when the space requires one and this
+   * account has none there yet. Ignored otherwise; never overwrites a login.
+   */
+  spacePassword?: string;
 }
 
 /** One row of the invite list, as `spaces.settings` and the invite ops project it. */
@@ -3134,7 +3531,56 @@ export type InvitePreview =
       /** The inviter's display name, or `null` when they have never set one. */
       invitedBy: string | null;
       expiresAt: string | null;
+      /** W5 (K2): joining sets a space password; ask for one. */
+      requiresSpacePassword?: boolean;
     };
+
+// ---------------------------------------------------------------------------
+// W5 (K2, decision 30): space passwords — the setting and the admin ops (P5).
+// ---------------------------------------------------------------------------
+
+/**
+ * PUT /v2/spaces/:spaceId/space-password — turn the space's password
+ * requirement on or off. Human space admins only; turning it ON is an owner's
+ * act, refused (409 `space_password_requires_enforce`) unless the node runs
+ * TM8_SPACE_SESSIONS=enforce, and refused while any owner of the space lacks
+ * an active space password. It needs the caller's own space password
+ * (`password`) unless they already have one, so the owner is never locked
+ * out; members without one are refused entry until an admin resets theirs.
+ * Turning it off always works.
+ */
+export interface SpacePasswordSetRequiredInput {
+  required: boolean;
+  password?: string;
+}
+
+/**
+ * `revokedSessionIds`: turning it on ends every browser/cli session pinned to
+ * the space (they were entered without a password); empty when turning it off.
+ */
+export interface SpacePasswordSetRequiredResult {
+  spaceId: SpaceId;
+  requireSpacePassword: boolean;
+  revokedSessionIds: string[];
+}
+
+/** POST /v2/spaces/:spaceId/members/:memberId/space-password/reset — admin sets a new one. */
+export interface SpacePasswordResetInput {
+  password: string;
+}
+
+/** POST /v2/spaces/:spaceId/members/:memberId/space-password/lock — lock or unlock. */
+export interface SpacePasswordLockInput {
+  locked: boolean;
+}
+
+/** What reset and lock answer. `revokedSessionIds`: the member's sessions pinned to the space, ended. */
+export interface SpacePasswordAdminResult {
+  spaceId: SpaceId;
+  memberId: EntityId;
+  status: 'active' | 'locked';
+  revokedSessionIds: string[];
+}
 
 // ---------------------------------------------------------------------------
 // W0 dossier: Space menu and shared settings revision
@@ -4260,13 +4706,6 @@ export interface ContainersForkInput extends CommandContext {
   spec?: ContainerSpecInput;
 }
 
-export interface ContainersAttentionInput extends CommandContext {
-  clientMutationId: string;
-  reason: 'login' | 'captcha' | '2fa' | 'payment' | 'approval' | 'other';
-  detail?: string;
-  points?: number;
-}
-
 export interface ContainersPoolsSetInput extends CommandContext {
   clientMutationId: string;
   expectedVersion: number;
@@ -4905,6 +5344,21 @@ export interface SpawnSelection {
    * tasks' `attached_to` / `relates_to` references and file attachments.
    */
   referenceIds?: EntityId[];
+  /**
+   * Teammates, same space (launch card v3, Decision 7): rendered as the
+   * `teammates` group of `<context_index>` — the group a dispatcher uses for
+   * its roster — budgeted by `contextBudgets.teammates`. Replaces the tasks'
+   * linked teammates. Only `team_member` entities the caller can read: a
+   * readable non-teammate is `invalid_input` (`details.reason:
+   * 'teammate_kind_not_allowed'`), a missing or unreadable id `not_found`,
+   * both naming the ids in `details.ids`; a resume leaves such an id out,
+   * recorded `unavailable` in the launch record, never refusing. The
+   * launch teammate itself is removed silently, never refused. IGNORED by a
+   * dispatcher launch, whose teammates group stays its full roster; the
+   * launch record says so (`manifest.context.groups.teammates.reason:
+   * 'dispatcher-roster'`, `ignored`).
+   */
+  teammateIds?: EntityId[];
 }
 
 /** A claude-code lane's harness surface — see `ExecutionSpawnInput.harnessSurface`. */
@@ -4930,6 +5384,17 @@ export interface ExecutionSpawnInput extends CommandContext {
    * path). Default false = reuse the one open derivation.
    */
   forceNewTask?: boolean;
+  /**
+   * Create the task this session works on IN THE SAME REQUEST (launch v3 gap
+   * 4). Exclusive with `taskIds` and `forceNewTask` — otherwise `invalid_input`
+   * with `details.reason = 'new_task_conflict'`. The task is created with
+   * assignee = `teamMemberId`, project = `projectId` (when given), status
+   * `working`, in the same transaction as the spawn's ledger entry: a refused
+   * spawn leaves no task, and a retry with the same `clientMutationId` replays
+   * the same task and the same session. Its id comes back as `createdTaskId`.
+   * `title` is trimmed, 1..200 chars.
+   */
+  newTask?: ExecutionNewTask;
   /**
    * AM-2 §1: typed project reference (replaces the untyped `projectRef`).
    * The project must be linked to `spaceId` and pass its trust gate.
@@ -5039,6 +5504,24 @@ export interface ExecutionSpawnInput extends CommandContext {
   rows?: number;
 }
 
+/** `execution.spawn.newTask` — see `ExecutionSpawnInput.newTask`. */
+export interface ExecutionNewTask {
+  /** Trimmed, 1..200 chars. */
+  title: string;
+}
+
+/** Upper bound on `newTask.title` (after trimming) on spawn and dispatch. */
+export const EXECUTION_NEW_TASK_TITLE_MAX = 200;
+
+/**
+ * What `execution.spawn` answers with: the usual command result, plus the id
+ * of the task it created when the request carried `newTask`.
+ */
+export interface ExecutionSpawnResult extends CommandResult {
+  /** Present only when the request carried `newTask`. */
+  createdTaskId?: EntityId;
+}
+
 /**
  * execution.terminal.start — POST /v2/execution/terminal (101).
  *
@@ -5098,8 +5581,34 @@ export interface ExecutionTerminalStartInput extends CommandContext {
 export interface ExecutionDispatchInput extends CommandContext {
   clientMutationId: string;
   spaceId: EntityId;
-  /** Any launchable entity; derived to a task server-side via 064. */
-  subjectId: EntityId;
+  /**
+   * Any launchable entity; derived to a task server-side via 064. Exactly one
+   * of `subjectId` and `newTask` — otherwise `invalid_input` with
+   * `details.reason = 'new_task_conflict'`.
+   */
+  subjectId?: EntityId;
+  /**
+   * Create the task to dispatch in the same request (launch v3 gap 4). Status
+   * `working`, no assignee (routing is the dispatcher's job), filed under
+   * `projectId` when given — filing only, it does not steer routing. A retry
+   * with the same `clientMutationId` replays the same task. The result's
+   * `taskId` is the created task and `taskCreated` is true.
+   */
+  newTask?: ExecutionDispatchNewTask;
+  /**
+   * The dispatcher session to route to (launch v3 gap 5). When it is a live
+   * dispatcher in this space the request goes to it; when it is no longer live
+   * the server falls back exactly as without it (newest live dispatcher, else
+   * start the resident one) and the result says what really happened. A
+   * session that is not a dispatcher, or is in another space, is refused:
+   * `invalid_input`, `details.reason = 'not_a_dispatcher'`.
+   */
+  dispatcherSessionId?: EntityId;
+  /**
+   * The kind of session the dispatcher should start for the task; carried in
+   * the routing request. Default `worker`.
+   */
+  kind?: ExecutionDispatchKind;
   /**
    * Mint a NEW derived task for `subjectId` even when an open one exists —
    * "start a different piece of work in this thread". Without it, one open
@@ -5111,10 +5620,26 @@ export interface ExecutionDispatchInput extends CommandContext {
   note?: string;
 }
 
+/** `execution.dispatch.newTask` — see `ExecutionDispatchInput.newTask`. */
+export interface ExecutionDispatchNewTask {
+  /** Trimmed, 1..200 chars. */
+  title: string;
+  /** The project the task is filed under. Filing only, never routing. */
+  projectId?: ProjectId;
+}
+
+/** `execution.dispatch.kind` — the session kind the dispatcher should start. */
+export type ExecutionDispatchKind = 'worker' | 'coordinator' | 'dispatcher';
+
 /** What `execution.dispatch` answers with — see the handler for the states. */
 export interface ExecutionDispatchResult {
-  /** The task the subject derived to; the dispatcher's anchor for this request. */
+  /**
+   * The task the subject derived to, or the task `newTask` created; the
+   * dispatcher's anchor for this request.
+   */
   taskId: EntityId;
+  /** True when this request created `taskId` from `newTask`. */
+  taskCreated: boolean;
   /** The dispatcher session the request was delivered to. */
   dispatcherSessionId: EntityId;
   /** True when this call had to spawn the dispatcher rather than reuse one. */
@@ -5123,6 +5648,32 @@ export interface ExecutionDispatchResult {
   requestMessageId?: EntityId;
   /** Honest delivery outcome; `undelivered` still leaves a durable message. */
   delivery: 'delivered' | 'undelivered';
+}
+
+/**
+ * One row of `execution.dispatchers`. `title` and `purpose` are UNTRUSTED text
+ * (a session title and a teammate's purpose), for display only.
+ */
+export interface ExecutionDispatcherRow {
+  sessionId: EntityId;
+  teamMemberId: EntityId;
+  teammateName: string;
+  title: string;
+  purpose: string | null;
+  /** Probed against the node's PTY map, never read off `work_sessions.status`. */
+  live: boolean;
+  /** Requests waiting on this dispatcher; null when it is not cheap to compute. */
+  queuedCount: number | null;
+}
+
+/**
+ * execution.dispatchers — GET /v2/spaces/:spaceId/execution/dispatchers.
+ * The space's dispatcher sessions, newest first, stopped ones included with
+ * `live: false`. Membership-gated: a space the caller cannot read is
+ * `not_found`.
+ */
+export interface ExecutionDispatchers {
+  dispatchers: ExecutionDispatcherRow[];
 }
 
 /**
@@ -5693,6 +6244,24 @@ export interface ExecutionLiveness {
    * entire retained log. See `DurableSeqSource.latest` for the full argument.
    */
   eventHwm: number | null;
+  /**
+   * How many of THIS space's work sessions are live by BOTH truths: the id is
+   * in this process's PTY map (`liveEntityIds`) AND the recorded
+   * `work_sessions.status` is `spawning`, `running` or `idle`. Either truth
+   * alone overcounts: the PTY map can still hold a session whose record says
+   * it exited, and a record can say `running` about a PTY this boot never
+   * started. Optional because an older node omits it; absence is "unknown",
+   * never zero.
+   */
+  liveSessionCount?: number;
+  /**
+   * This space's chats whose durable `runtimeState` is `live` (the headless
+   * child is up) — the chat parallel of `liveSessionCount`. Exact, counted in
+   * SQL, never a capped page. Optional for the same older-node reason.
+   */
+  liveChatCount?: number;
+  /** Of `liveChatCount`, those with a turn `running` or `queued` right now. */
+  workingChatCount?: number;
 }
 
 // --- execution.journal — the session CLI command journal --------------------
@@ -6795,9 +7364,10 @@ export interface InteractionProfileDraft {
       means "defer to the pinned static template", which is what every draft
       written before this field existed meant implicitly. */
   initialContentSurface?: 'terminal' | 'chat';
-  /** Sessions on this profile render `<context_index>` in place of `<skills>`
-      (design 01a0d348 §2; shipped dark, §10 Q2). Absent or false: off.
-      `TM8_CONTEXT_INDEX` on the node outranks it either way. */
+  /** @deprecated Accepted and ignored (launch card v3, owner answer
+      `index_always`): every launch renders `<context_index>`, whatever this
+      says and whatever the node's `TM8_CONTEXT_INDEX` says. Kept so earlier
+      drafts stay valid. */
   contextIndex?: boolean;
   /** Per-kind prompt byte budgets (§10 Q5); absent keys take the node default. */
   contextBudgets?: import('./context-budgets.js').ContextBudgets;

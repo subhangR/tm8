@@ -4,7 +4,7 @@ import { fireEvent, render, within } from '@testing-library/react';
 import type { EntityDetail, EntitySummary } from '@tm8/contract';
 import { CONVERSATION_KIND } from '../../domain';
 import { fixtureDetails } from '../../fixtures';
-import { countConnections } from '../EntityDetailPanel';
+import { countConnections, countMessages } from '../EntityDetailPanel';
 import { ConnectionsTab } from './tabs';
 
 /**
@@ -374,7 +374,7 @@ describe('ConnectionsTab — messages as one summary row', () => {
     const { getByText, unmount } = render(
       <ConnectionsTab detail={withMessages()} onOpenDiscussion={onOpenDiscussion} />,
     );
-    fireEvent.click(getByText('Open Discussion →'));
+    fireEvent.click(getByText('Open Messages →'));
     expect(onOpenDiscussion).toHaveBeenCalledTimes(1);
     unmount();
     const { container } = render(<ConnectionsTab detail={withMessages()} />);
@@ -411,5 +411,23 @@ describe('ConnectionsTab — messages as one summary row', () => {
   it('leaves messages out of the tab-strip count, which counts what the tab lists', () => {
     // 1 relates_to + 4 message edges; the count is the one connection.
     expect(countConnections(withMessages())).toBe(1);
+  });
+});
+
+describe('countMessages — the Messages tab number', () => {
+  const counted = (messages: number) =>
+    ({ ...detailWith([], []), counters: { ...self.counters, messages } }) as unknown as EntityDetail;
+
+  it('is the server counter even when no message page has been loaded', () => {
+    // The old number was `messages?.length`: undefined here, so no count drew.
+    expect(countMessages(counted(12), undefined)).toBe(12);
+  });
+
+  it('is the counter, not the loaded page, when the thread is longer than a page', () => {
+    expect(countMessages(counted(120), new Array(50).fill(null))).toBe(120);
+  });
+
+  it('takes the loaded length only while a local post is ahead of its counter event', () => {
+    expect(countMessages(counted(3), new Array(4).fill(null))).toBe(4);
   });
 });

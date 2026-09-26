@@ -38,13 +38,27 @@ describe('dashboard route', () => {
     expect(await view.findByTestId('home-page')).toBeTruthy();
     expect(await view.findByTestId('chat-home-screen')).toBeTruthy();
     expect(view.queryByTestId('home-screen')).toBeNull();
-    // TWO sightings, one conversation: the panel row (the inventory and the
-    // only selector) and the conversation's own head. It was three while the
+    // EVERY sighting is a panel row (the inventory and the only selector) or
+    // the conversation's own head — there was a third surface while the
     // working-set tab strip existed; revision 14 removed the strip, and this
-    // count is how that stays removed.
+    // is how that stays removed. Not a bare count: the fixture app holds TWO
+    // threads with this title, so "2" only ever held in the frame before the
+    // head named the opened thread.
     await waitFor(() =>
-      expect(view.getAllByText('Plan the launch sequence')).toHaveLength(2),
+      expect(view.container.querySelector('.tch-title strong')?.textContent).toBe('Plan the launch sequence'),
     );
+    const sightings = view.getAllByText('Plan the launch sequence');
+    expect(sightings.length).toBeGreaterThan(1);
+    // Task 01a0df28: the column's inventory is the `chat` KIND's list now (the
+    // thread list's `[Chats ＋]` door was removed), hosted in the panel slot.
+    const where = sightings.map((node) =>
+      node.closest('[data-testid="tch-hosted-list"]') !== null
+        ? 'list'
+        : node.closest('.tch-conversation__head') !== null
+          ? 'head'
+          : (node.parentElement?.className ?? '?'),
+    );
+    expect(where.every((w) => w === 'list' || w === 'head'), where.join(',')).toBe(true);
     fireEvent.click(view.getByRole('button', { name: /^New chat$/ }));
     expect(await view.findByText(/New conversation — pick a mode/)).toBeTruthy();
   });
@@ -97,7 +111,7 @@ describe('dashboard route', () => {
   it('is EXACTLY TWO PANES — no rail beside the list, no tab strip above the conversation', async () => {
     const view = render(<GateApp />);
     await view.findByTestId('chat-home-screen');
-    await waitFor(() => expect(view.container.querySelector('.tch-thread__title')).toBeTruthy());
+    await waitFor(() => expect(view.getByTestId('tch-hosted-list')).toBeTruthy());
 
     // NO RAIL. The Chats group is railless, so the shell draws no third
     // column — the conversation LIST is the navigation and the screen owns it.
@@ -105,11 +119,13 @@ describe('dashboard route', () => {
 
     // NO WORKING-SET STRIP. The panel is the only conversation selector.
     // The tablists on this screen are the shell's top row and the left
-    // column's OWN root header (task 01a00932 R5: [Chats ＋][Kind ＋ ▾]) —
+    // column's OWN root header (task 01a00932 R5; 01a0df28: [☐ ❝ ▮][Kind ＋ ▾]) —
     // which lives in the panel and selects a POPULATION, not a conversation.
     expect(view.queryByRole('tablist', { name: 'Open conversations' })).toBeNull();
+    // The third is the hosted `chat` kind list's own lifecycle tabs — the
+    // same list every kind root draws (task 01a0df28), not a thread selector.
     expect(view.getAllByRole('tablist').map((n) => n.getAttribute('aria-label')))
-      .toEqual(['Screens', 'Home roots']);
+      .toEqual(['Screens', 'Home roots', 'Lifecycle']);
 
     // And the two panes are both really there.
     expect(view.getByRole('complementary', { name: 'Tasks, chats and sessions' })).toBeTruthy();

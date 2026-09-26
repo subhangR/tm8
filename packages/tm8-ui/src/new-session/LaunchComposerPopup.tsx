@@ -1,10 +1,19 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ContextBudgets, ExecutionSpawnInput } from '@tm8/contract';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type {
+  ContextBudgets,
+  CredentialsServiceKeysStatusView,
+  ExecutionDispatchResult,
+  ExecutionSpawnInput,
+  SpawnSelectionGroup,
+} from '@tm8/contract';
 
 import {
+  accessModeLabel,
   buildSpawnInput,
   canLaunch,
   continuesSubject,
+  describeProfile,
+  effortLabel,
   launchTitleFor,
   newLaunchMutationId,
   type LaunchCapacity,
@@ -13,64 +22,72 @@ import {
   type LaunchProjectOption,
   type LaunchTeammate,
   type LoadInstalledPlugins,
+  type ProfileResolution,
 } from '../domain/launch';
 import { modelCatalog } from '../domain/model-catalog';
 import { currentNodeKey } from '../domain/launch';
 import {
+  formatRunCost,
   JEV_ENTITY_GROUPS,
-  JevEntryPoint,
+  JEV_UNWIRED_REASON,
   modelApplyRefusal,
   modelLabel,
+  openJevKeySettings,
   useJevSuggestions,
   type JevApplyHost,
   type JevPort,
 } from '../jev';
-import { composeLaunchSelection } from '../domain/launch-selection';
+import { composeLaunchSelection, type LaunchContextRow } from '../domain/launch-selection';
 import {
-  appliedReasons,
   BudgetOverride,
-  LaunchSelectionChips,
-  type LaunchRanked,
-  type LaunchSelectionBudgetProps,
+  REASON_WORDS,
   useLaunchSelection,
   type LaunchSelectionSources,
 } from '../launch-selection';
-import { NewSessionComposer } from './NewSessionComposer';
+import type { FileUploadTask } from '../files/upload';
+import { LaunchCardV3, VERBS, aKind, type JevButton, type LaunchCandidate, type LaunchVerb } from './LaunchCardV3';
+import { AgentPreview, DispatchPreview, type PreviewRow } from './LaunchPreview';
+import { addToEdits, buildStrip, STRIP_KINDS, stripKindOf, type StripJev, type StripRow } from './launch-strip';
+import { clearDraft, readDraft, writeDraft } from './launch-draft';
+import { describePicks, readPicks, readRemember, writePicks, writeRemember, type RememberedPicks } from './launch-picks';
 import { useLaunchComposerState } from './useLaunchComposerState';
-/* The popup mounts WITHOUT the screen, so it carries the stylesheet itself —
+/* The popup mounts WITHOUT the screen, so it carries the stylesheets itself —
    the same mounting-styles-it rule the screen's import states. */
 import './new-session.css';
 
 /**
- * THE LAUNCH COMPOSER POPUP — the Run button's configuration, as the canvas
- * card in a modal tile.
+ * THE LAUNCH COMPOSER POPUP — the Run button's configuration, as the launch
+ * card v3 (mock 01a0df08, owner's decisions on task 01a0dee8) in a modal
+ * layer. It replaced the v2 card outright (owner, form 01a0df25).
  *
- * It replaces the inline `LaunchQuickConfig` expand behind Run/Coordinate on
- * the task surfaces (owner's ask, 2026-09-07: "when we hit button — we pop up
- * this screen and take inputs"). The RULED interaction survives the reskin:
- * the verb OPENS this; the popup carries the primary Launch that commits.
- * Two clicks to launch, never one.
+ * The verb OPENS this; Launch or Dispatch commit it, each through a preview
+ * of what goes. Two clicks at least, never one.
  *
- * THE TEXTAREA IS THE TASK'S DESCRIPTION (owner's ruling 2026-09-07) — not a
- * separate "extra context" side-channel. It opens holding the task's real
- * body (loaded through `loadDescription`, because a list row's summary does
- * not carry it), edits like any field, and a launch persists the edit onto
- * the task together with a title edit in ONE patch. The agent then reads the
- * UPDATED description as its first-turn briefing, because the save is
- * sequenced before the spawn. This mirrors the create screen, where the same
- * textarea BECOMES `content.description` — one field, one meaning, both hosts.
+ * THE CARD IS A LAYER OVER THE TASK. The task's title and description are
+ * read here (the subject chip's peek) and edited on the task — nothing is
+ * written back from the card. The notes box rides the spawn as `promptExtra`
+ * (and the dispatch as its `note`); a DRAFT of it is kept per subject until
+ * a launch succeeds (owner: close keeps a draft).
  *
- * DISMISSAL: Escape closes an open menu first, then the popup (the composer
- * owns that ordering); the scrim click closes it; and Launch closes the tile
- * ONLY ON SUCCESS (owner's final ruling 2026-09-07) — a refusal keeps it up
- * with the reason under the card and a shake, so a failed launch can never
- * be pixel-identical to a successful one.
+ * THE STRIP IS THE SELECTION. Its type groups are a view over the three
+ * selection groups (`launch-strip.ts`); ticks, Attach picks and uploads are
+ * ordinary selection edits and ride `selection.*Ids` exactly as before.
  *
- * A SESSION SUBJECT IS CONTINUED, NOT EDITED (migration 200, `continuesSubject`):
- * the title field names the NEW session and the textarea carries instructions
- * for it as `promptExtra`; neither is loaded from nor saved onto the session
- * being continued.
+ * ✦ JEV asks for the strip's groups and its picks land TICKED (owner); Undo
+ * reverts only Jev's own adds and removals. A teammate change clears them.
+ *
+ * IDEMPOTENT RETRIES: one client mutation id per distinct launch (and per
+ * distinct dispatch), so a retry after a timeout replays the node's ledger
+ * rather than starting a second session.
+ *
+ * DISMISSAL: Escape closes the preview, then a menu, then the drawer, then
+ * the popup (the shell owns that order); the scrim and ✕ close it; a commit
+ * closes it ONLY ON SUCCESS — a refusal keeps it up with the reason and a
+ * shake (owner's ruling 2026-09-07).
  */
+
+/** `ExecutionDispatchInput.note`'s cap in the contract schema. */
+const DISPATCH_NOTE_MAX = 4000;
 
 /** The persona rows as the panels supply them — `LaunchTeammateOption`'s shape. */
 export interface PopupTeammate {
@@ -78,12 +95,14 @@ export interface PopupTeammate {
   label: string;
   agentTool?: string | null;
   model?: string | null;
+  /** `team_members.mode`; absent on a node that doesn't project it. */
+  mode?: string | null;
 }
 
 export interface LaunchComposerPopupProps {
   /**
    * The entity being run — supplies the assignment link and the session title.
-   * `kind` decides whether the launch edits it or continues it.
+   * `kind` decides whether the launch works it or continues it.
    */
   subject: { id: string; title: string; kind?: string };
   spaceId: string;
@@ -92,39 +111,90 @@ export interface LaunchComposerPopupProps {
   capacity?: LaunchCapacity;
   /** Commits the spawn. ABSENT ⇒ Launch refuses with the unwired reason (R5 #9). */
   onSpawn?: (input: ExecutionSpawnInput) => void | Promise<void>;
-  /**
-   * The subject's current description, for the body field's autofill. Absent
-   * ⇒ the field starts empty and an edit still reaches `onSaveSubject`.
-   */
+  /** The subject's current description, for the read-only peek. */
   loadDescription?: () => Promise<string | null>;
-  /**
-   * Persists edits back onto the SUBJECT — the title, the description, or
-   * both, in one patch. Runs BEFORE the spawn so the agent's first turn reads
-   * the updated task; a failed save is logged and the launch proceeds (the
-   * tile is already closed, and a silently-stopped launch would be worse).
-   * Absent ⇒ the edits still shape the SESSION, and the task keeps its record.
-   */
-  onSaveSubject?: (edits: { title?: string; description?: string }) => void | Promise<unknown>;
+  /** The viewer may edit the task: the peek offers "Edit on the task ↗" (closing onto it). */
+  canEditSubject?: boolean;
   onDismiss?: () => void;
-  /** The session mode the OPENING VERB commits — `ActionDef.launchMode`. */
+  /** The session mode the OPENING VERB commits — `ActionDef.launchMode`. The card's verb switch starts on it. */
   mode?: LaunchMode;
   /** The opening verb's word — `ActionDef.label`. Absent ⇒ "Run". */
   verbLabel?: string;
-  /** Fresh id minted when the viewer deliberately submits. */
+  /** Mints a client mutation id; called once per distinct launch. */
   newClientMutationId?: () => string;
   /** Compatibility injection for deterministic component tests. */
   clientMutationId?: string;
-  /** ✦ Ask Jev (design 01a0cb80 §3.2). Absent ⇒ the button is refused with the reason. */
+  /** ✦ Jev (design 01a0cb80). Absent ⇒ ✦ is greyed with the reason. */
   jev?: JevPort;
-  /** The ··· menu's Plugins list. Absent ⇒ the row says the node cannot list them. */
+  /** The drawer's Plugins list. Absent ⇒ it says the node cannot list them. */
   loadInstalledPlugins?: LoadInstalledPlugins;
   /**
    * The launch's per-group context (I9): defaults pre-ticked, removals and
-   * additions. Absent ⇒ the Context line says the defaults are unknown, and
-   * the launch sends no selection.
+   * additions — and the pool Attach offers. Absent ⇒ the strip says the
+   * defaults are unknown, nothing can be attached, and no selection is sent.
    */
   selection?: LaunchSelectionSources;
+  /** The resolved Interaction Profile for a teammate, for the drawer's line. */
+  profileFor?: (teamMemberId: string | null) => ProfileResolution | undefined;
+  /** Uploads one file into the space library (no anchor). Absent ⇒ Attach says this surface cannot upload. */
+  upload?: (file: File) => FileUploadTask;
+  /**
+   * Hands the SUBJECT to the space's dispatcher (`execution.dispatch`) with
+   * the notes as its `note`; the dispatcher picks everything else. Absent ⇒
+   * no Dispatch button. The result's `delivery` is read: 'undelivered' is
+   * shown as a warning, never as success.
+   */
+  onDispatch?: (note?: string, clientMutationId?: string) => void | Promise<unknown>;
+  /**
+   * `credentials.serviceKeys.status` — whether ✦ has a TypeSafe key to use
+   * (the member's own, else the node's) BEFORE the first click. Absent ⇒ ✦
+   * shows in colour until an ask comes back no_key.
+   */
+  jevKeyStatus?: () => Promise<CredentialsServiceKeysStatusView>;
+  /**
+   * Sessions working on the subject created since a time. After a spawn
+   * TIMEOUT the card asks this before offering a retry: a retry while the
+   * first attempt is still in flight starts a second session (the ledger
+   * replays only a finished one). Absent ⇒ the card can't check, and says so.
+   */
+  sessionsSince?: (subjectId: string, since: string) => Promise<readonly { id: string; title: string }[]>;
 }
+
+/** An upload in flight or failed — a finished one is a strip row by then. */
+interface PendingUpload {
+  key: string;
+  name: string;
+  size: number;
+  status: 'uploading' | 'failed';
+  error?: string;
+  cancel(): void;
+  /** Kept so a failed upload can be retried. */
+  file: File;
+}
+
+let uploadSequence = 0;
+
+/** One idempotency key per distinct payload: the same payload again reuses its key. */
+function keyLedger(mint: () => string) {
+  let last: { payload: string; key: string } | null = null;
+  return {
+    keyFor(payload: string): string {
+      if (!last || last.payload !== payload) last = { payload, key: mint() };
+      return last.key;
+    },
+  };
+}
+
+const IN_FULL_REFUSAL =
+  'Sending more in full needs a node change that isn’t built yet (an in-full channel separate from the task). Add it to the strip instead — it goes in as a context index entry.';
+
+const TEAMMATES_UNSENT = 'Not sent yet — the node can’t take teammates in a launch’s selection (coming with selection.teammateIds).';
+
+const NO_KEY_WORDS = 'Jev is off — no key. Add your TypeSafe key in Settings → Agent credentials.';
+
+const groupOf = (row: { kind: string }): SpawnSelectionGroup => (
+  row.kind === 'memory' ? 'memories' : row.kind === 'skill' ? 'skills' : 'references'
+);
 
 export function LaunchComposerPopup({
   subject,
@@ -134,7 +204,7 @@ export function LaunchComposerPopup({
   capacity,
   onSpawn,
   loadDescription,
-  onSaveSubject,
+  canEditSubject = false,
   onDismiss,
   mode,
   verbLabel,
@@ -143,10 +213,14 @@ export function LaunchComposerPopup({
   jev: jevPort,
   loadInstalledPlugins,
   selection: selectionSources,
+  profileFor,
+  upload,
+  onDispatch,
+  jevKeyStatus,
+  sessionsSince,
 }: LaunchComposerPopupProps) {
   /* The panels' option shapes, adapted ONCE into the composer's vocabulary.
-     Absent facts stay absent — no invented owner, no invented path — and the
-     composer renders only the facts a row actually carries. */
+     Absent facts stay absent — no invented owner, no invented path. */
   const teammateRows = useMemo<readonly LaunchTeammate[]>(
     () => teammates.map((t) => ({
       id: t.id,
@@ -172,84 +246,103 @@ export function LaunchComposerPopup({
   /* The spawn's `taskIds`, so a plugin tick's exact skill set keeps what the
      subject equips (F3). Memoized: the hook keys its read on it. */
   const subjectTaskIds = useMemo(() => [subject.id], [subject.id]);
-  const { config, projectOptions, bind } = useLaunchComposerState({
+  const { config, projectOptions, bind, more } = useLaunchComposerState({
     teammates: teammateRows,
     projects: projectRows,
     launchMode: mode,
     ...(loadInstalledPlugins ? { loadInstalledPlugins } : {}),
     taskIds: subjectTaskIds,
+    initialAccessMode: null,
   });
 
-  /* THE DESCRIPTION, autofilled. `null` means "not answered yet": the load
-     seeds it exactly once, and ONLY if the viewer has not started typing —
-     text under the cursor is never overwritten by a slow read. `seed` keeps
-     what the task actually said, so the save can tell an edit from an echo.
+  /* PER-TEAMMATE REMEMBERED PICKS: when the resolved teammate changes (the
+     first render included), its last launch's model, effort, access and
+     checkout are put back. A teammate switch re-seeds the persona's own
+     defaults first (`pickTeammate`); this runs after and wins. */
+  const [remember, setRemember] = useState(readRemember);
+  const [restored, setRestored] = useState<RememberedPicks | null>(null);
+  const resolvedTeammate = config.teamMemberId;
+  const restoreRef = useRef(bind);
+  restoreRef.current = bind;
+  /* Re-picking the teammate already resolved changes no id, so the effect
+     below would not re-run while `pickTeammate` had already re-seeded the
+     persona's defaults: the picks were wiped under a "restored: …" line
+     (found live on a real node). Every pick from the menu re-runs it. */
+  const [pickCount, setPickCount] = useState(0);
+  const onPickTeammate = bind.onPickTeammate;
+  /* A teammate picked BY HAND is the person's: Jev no longer overrides it
+     (Decision 7 amendment) — its pick waits in the menu instead. */
+  const teammateTouched = useRef(false);
+  const pickTeammate = useCallback((id: string | null) => {
+    teammateTouched.current = true;
+    onPickTeammate(id);
+    setPickCount((n) => n + 1);
+  }, [onPickTeammate]);
+  useEffect(() => {
+    const picks = readPicks(resolvedTeammate);
+    setRestored(picks);
+    if (!picks) return;
+    const b = restoreRef.current;
+    if (picks.model) b.onPickModel(picks.model);
+    if (picks.effort !== undefined) b.onEffortChange(picks.effort);
+    if (picks.accessMode) b.onAccessModeChange(picks.accessMode);
+    if (picks.workdirMode) b.onWorkdirModeChange(picks.workdirMode);
+  }, [resolvedTeammate, pickCount]);
 
-     THE LOAD RUNS ONCE PER MOUNT, deliberately outside the dependency
-     machinery: hosts pass `loadDescription` as an inline closure whose
-     identity changes every parent render, and a dep on it cancelled the
-     in-flight read on the first re-render — the answer arrived, found
-     `alive === false`, and was discarded, so the field stayed empty (found
-     live, 2026-09-07). The ref pins the closure from the first render;
-     `alive` now means "this popup is still mounted", nothing shorter. */
+  /* THE DESCRIPTION, for the read-only peek. Loaded once per mount — hosts
+     pass the loader as an inline closure (see the v2 note in git history:
+     a dep on it cancelled the read on every parent render). */
   const continuing = continuesSubject(subject);
-  const [draft, setDraftState] = useState<string | null>(loadDescription && !continuing ? null : '');
-  const seed = useRef('');
+  const [description, setDescription] = useState<string | null>(loadDescription && !continuing ? null : '');
   const loadRef = useRef(continuing ? undefined : loadDescription);
   useEffect(() => {
     const load = loadRef.current;
     if (!load) return;
     let alive = true;
-    load()
-      .then((text) => {
-        if (!alive) return;
-        seed.current = text ?? '';
-        setDraftState((current) => (current === null ? (text ?? '') : current));
-      })
-      .catch(() => {
-        if (alive) setDraftState((current) => (current === null ? '' : current));
-      });
+    load().then(
+      (text) => { if (alive) setDescription(text ?? ''); },
+      () => { if (alive) setDescription(''); },
+    );
     return () => { alive = false; };
-    // Once per mount — see the docblock; the ref carries the closure.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const description = draft ?? '';
 
-  /* THE TASK'S TITLE, AS A VALUE — not a placeholder (owner's ask 2026-09-07).
-     The field opens holding the real name so "continue" is doing nothing and
-     "rename" is ordinary editing; a launch persists an edit to the task. */
+  /* THE NOTES — `promptExtra`, never the task — and their per-subject draft. */
+  const [draft] = useState(() => readDraft(subject.id));
+  const [notes, setNotes] = useState(draft?.notes ?? '');
   const defaultTitle = launchTitleFor(subject);
-  const [title, setTitle] = useState(defaultTitle);
 
-  /* ✦ ASK JEV reads the popup's LIVE text, not the saved task (design §3.2):
-     the popup saves these edits before it spawns, so the draft is what the
-     agent will actually be briefed with. Editing either after an answer makes
-     the state stale. */
-  const jevDraft = useMemo(
-    () => ({ title: title.trim() || defaultTitle, description }),
-    [title, defaultTitle, description],
-  );
-  /* THE LAUNCH'S CONTEXT (I9) — the same per-group selection the launch
-     sheet holds, as three count chips that each open their group. */
+  /* THE LAUNCH'S CONTEXT (I9). */
   const selection = useLaunchSelection({
     load: selectionSources?.load,
     teammateId: config.teamMemberId,
     subjectId: subject.id,
-    /* The harness this popup launches decides what a skill's entry costs, so
-       the meter measures it. The popup picks no Interaction Profile, so none
-       is sent and the teammate's own pins. */
+    /* The harness this popup launches decides what a skill's entry costs. */
     agentTool: config.agentToolId,
   });
-  /* THIS LAUNCH'S BUDGET OVERRIDE — the same `config.contextBudgets` the
-     sheet sends. Empty means the profile's budgets hold. */
-  const [contextBudgets, setContextBudgets] = useState<ContextBudgets>({});
-  const jevCatalog = useMemo(() => modelCatalog(currentNodeKey()), []);
+  /* A finished upload toggles the selection LATER than the render that
+     started it; the ref is the selection as it is now. */
+  const selectionRef = useRef(selection);
+  selectionRef.current = selection;
 
-  /* WHERE JEV'S APPLY WRITES: the popup's own selection edits and the card's
-     own setters. Nothing reaches the launch except through these, and only on
-     a person's Apply click; each Apply has an Undo. The TOOL follows the
-     model here (the catalog entry knows it), and `modelRefusal` guarantees
-     it is the tool Jev named. */
+  /* A DRAFT'S STRIP EDITS come back once the defaults are read. */
+  const draftApplied = useRef(!draft?.edits);
+  useEffect(() => {
+    if (draftApplied.current || !draft?.edits) return;
+    if (JEV_ENTITY_GROUPS.some((g) => selection.defaults[g].status === 'loading')) return;
+    draftApplied.current = true;
+    for (const group of JEV_ENTITY_GROUPS) {
+      const edit = draft.edits[group];
+      if (edit.added.length || edit.removed.length) selection.setEdit(group, edit, draft.added?.[group] ?? []);
+    }
+  }, [draft, selection]);
+
+  /* THIS LAUNCH'S BUDGET OVERRIDE. Empty means the profile's budgets hold. */
+  const [contextBudgets, setContextBudgets] = useState<ContextBudgets>({});
+  const catalog = useMemo(() => modelCatalog(currentNodeKey()), []);
+
+  /* WHERE JEV'S APPLY WRITES: the selection, and — the owner kept Jev's
+     teammate and model suggestions (answers 01a0df30) — the card's own
+     setters, for surfaces that surface them. */
   const host: JevApplyHost = {
     defaults: selection.defaults,
     edits: selection.edits,
@@ -262,8 +355,12 @@ export function LaunchComposerPopup({
       bind.onPickModel(choice.model);
       bind.onEffortChange(choice.reasoningEffort);
     },
-    modelRefusal: (suggestion) => modelApplyRefusal(suggestion, { catalog: jevCatalog }),
+    modelRefusal: (suggestion) => modelApplyRefusal(suggestion, { catalog }),
   };
+  const jevDraft = useMemo(
+    () => ({ title: defaultTitle, description: [description ?? '', notes.trim()].filter(Boolean).join('\n\n') }),
+    [defaultTitle, description, notes],
+  );
   const jev = useJevSuggestions({
     port: jevPort,
     spaceId,
@@ -273,45 +370,86 @@ export function LaunchComposerPopup({
     ...(config.agentToolId === 'claude-code' || config.agentToolId === 'codex' ? { agentTool: config.agentToolId } : {}),
     host,
     contextBudgets,
+    reaskOnChange: false,
   });
-  const jevModel = jev.groups.model.status === 'ok' ? jev.groups.model.value : null;
-  /* What the context groups' meters and rows read from Jev — the same
-     facts the sheet passes: its ok answers (prompt bytes, budget) and, for
-     the defaults an Apply removed, why ("over budget", "below Jev's floor"). */
-  const jevRanked: LaunchRanked = {};
-  const jevReasons: NonNullable<LaunchSelectionBudgetProps['reasons']> = {};
-  for (const group of JEV_ENTITY_GROUPS) {
-    const state = jev.entity[group].state;
-    if (state.status !== 'ok') continue;
-    jevRanked[group] = state.value;
-    jevReasons[group] = appliedReasons(state.value, jev.applied[group]?.removed, selection, group);
-  }
+  const contextIndex = jev.contextIndex ?? selection.contextIndex;
+
+  /* ---- UPLOADS: in flight or failed; a finished one is a strip row ---- */
+  const [uploads, setUploads] = useState<readonly PendingUpload[]>([]);
+  const startUploads = useCallback((files: readonly File[]) => {
+    if (!upload) return;
+    for (const file of files) {
+      uploadSequence += 1;
+      const key = `upload:${String(uploadSequence)}`;
+      const task = upload(file);
+      setUploads((current) => [...current, { key, name: file.name, size: file.size, status: 'uploading', cancel: task.cancel, file }]);
+      task.result.then(
+        (done) => {
+          /* A file is a reference the node takes (`SPAWN_SELECTION_REFERENCE_KINDS`),
+             so the uploaded entity joins the references selection as an addition
+             — the strip's Files group. */
+          const row: LaunchContextRow = {
+            id: done.fileEntityId, kind: 'file', title: done.name || file.name, text: null, derived: false, via: null,
+          };
+          const refused = selectionRef.current.toggle('references', row);
+          setUploads((current) => (refused
+            ? current.map((u) => (u.key === key ? { ...u, status: 'failed' as const, error: refused } : u))
+            : current.filter((u) => u.key !== key)));
+        },
+        (error: unknown) => {
+          const reason = String((error as { message?: string })?.message ?? error);
+          setUploads((current) => current.map((u) => (u.key === key ? { ...u, status: 'failed' as const, error: reason } : u)));
+        },
+      );
+    }
+  }, [upload]);
+  const removeUpload = (key: string) => {
+    uploads.find((u) => u.key === key)?.cancel();
+    setUploads((current) => current.filter((u) => u.key !== key));
+  };
+  const retryUpload = (key: string) => {
+    const failed = uploads.find((u) => u.key === key);
+    if (!failed) return;
+    setUploads((current) => current.filter((u) => u.key !== key));
+    startUploads([failed.file]);
+  };
 
   const [pending, setPending] = useState(false);
   /** The node's own words when it refuses. Null until it does. */
   const [nodeRefusal, setNodeRefusal] = useState<string | null>(null);
   /** One shake per refusal — cleared by its own animationend. */
   const [shaking, setShaking] = useState(false);
+  /* A spawn that timed out: checking for its session, found one, found none, or can't tell. */
+  const [timedOut, setTimedOut] = useState<null | 'checking' | 'found' | 'none' | 'unknown'>(null);
+  const openedAt = useRef(new Date().toISOString());
 
+  const spawnKey = useRef(keyLedger(() => newClientMutationId?.() ?? clientMutationId ?? newLaunchMutationId()));
+  const dispatchKey = useRef(keyLedger(newLaunchMutationId));
+
+  const uploading = uploads.filter((u) => u.status === 'uploading').length;
   const verdict = canLaunch(config, { projects: projectOptions, capacity });
-  const refusal = !onSpawn
+  const refusal = timedOut === 'checking'
+    ? 'Checking whether the launch that timed out started…'
+    : timedOut === 'found'
+      ? 'A session from this launch is already working on the task.'
+      : !onSpawn
     ? 'Launching isn’t connected on this surface yet — the configuration is real; this screen does not dispatch it.'
     : !verdict.ok ? verdict.reason
       /* An edited group's defaults are re-reading: wait, or that group would
          launch on its defaults and drop the person's removals. */
-      : selection.launchBlock;
+      : selection.launchBlock
+        ?? (uploading > 0 ? `Waiting for ${String(uploading)} upload${uploading === 1 ? '' : 's'} to finish before launching.` : null);
 
-  /*
-   * DISMISS ONLY ON SUCCESS — the owner's final ruling (2026-09-07, reversing
-   * the brief close-on-trigger experiment): a refused launch must not be
-   * pixel-identical to a successful one, so failure keeps the tile up, prints
-   * the node's reason under the card, AND SHAKES the tile so the refusal is
-   * felt even before it is read.
-   *
-   * Save first, then spawn — sequenced so the agent's first turn reads the
-   * task as edited, and a refused save stops the launch with its reason
-   * rather than launching against edits that did not land.
-   */
+  /* DRAFT: kept while the card is open, cleared by a successful commit. */
+  const committed = useRef(false);
+  const draftNow = useRef({ notes, edits: selection.edits, added: selection.added });
+  draftNow.current = { notes, edits: selection.edits, added: selection.added };
+  useEffect(() => () => {
+    if (committed.current) return;
+    const d = draftNow.current;
+    writeDraft(subject.id, { notes: d.notes, edits: d.edits, added: d.added });
+  }, [subject.id]);
+
   const fail = (error: unknown) => {
     setPending(false);
     setNodeRefusal(
@@ -320,110 +458,524 @@ export function LaunchComposerPopup({
     );
     setShaking(true);
   };
+  const succeed = () => {
+    committed.current = true;
+    clearDraft(subject.id);
+    onDismiss?.();
+  };
+
+  /* A SPAWN THAT TIMED OUT MAY HAVE STARTED. Until the node dedupes an
+     in-flight retry, the card looks for the session before offering one. */
+  const afterTimeout = () => {
+    setPending(false);
+    setShaking(true);
+    if (!sessionsSince) {
+      setTimedOut('unknown');
+      setNodeRefusal('The node didn’t answer in time — the launch may have started. This surface can’t check, so look at the task’s sessions before launching again.');
+      return;
+    }
+    setTimedOut('checking');
+    setNodeRefusal('The node didn’t answer in time — the launch may have started. Checking…');
+    sessionsSince(subject.id, openedAt.current).then(
+      (found) => {
+        if (found.length > 0) {
+          setTimedOut('found');
+          setNodeRefusal(`It started: “${found[0]!.title}” is working on this task. Nothing more to launch.`);
+        } else {
+          setTimedOut('none');
+          setNodeRefusal('No session started on this task. Launch again to retry.');
+        }
+      },
+      () => {
+        setTimedOut('unknown');
+        setNodeRefusal('The node didn’t answer in time, and checking for the session failed too — look at the task’s sessions before launching again.');
+      },
+    );
+  };
 
   const commit = () => {
-    if (!onSpawn || pending || refusal) return;
+    if (!onSpawn || pending || refusal || timedOut === 'checking' || timedOut === 'found') return;
+    setTimedOut(null);
     setNodeRefusal(null);
     setPending(true);
-    const sessionTitle = title.trim() || defaultTitle;
-    const edits: { title?: string; description?: string } = continuing ? {} : {
-      ...(sessionTitle !== subject.title ? { title: sessionTitle } : {}),
-      /* Only a REAL edit is saved: an untouched autofill (or a load that never
-         answered) writes nothing back. Clearing the text IS an edit — it
-         empties the task's description deliberately. */
-      ...(draft !== null && description !== seed.current ? { description } : {}),
-    };
-    const saved = onSaveSubject && Object.keys(edits).length > 0
-      ? Promise.resolve(onSaveSubject(edits))
-      : Promise.resolve();
-    /* PER-GROUP SEND (I9), read at commit time: the ticks are whatever is on
-       screen. An untouched group is omitted (its defaults load) with a
-       reason; an edited group is its exact set — an applied Jev group is an
-       ordinary edit by now. A group Jev was asked about but nobody applied
-       launches on its defaults and says why. No group edited ⇒ no
-       `selection`. The budget override rides the same config the sheet's does. */
+    /* PER-GROUP SEND (I9), read at commit time: an untouched group is
+       omitted (its defaults load) with a reason; an edited group is its
+       exact set. No group edited ⇒ no `selection`. */
     const jevFields = jev.toSpawnFields();
+    const promptExtra = notes.trim();
     const launchFields = {
       ...composeLaunchSelection(selection.outcomes(), jevFields.defaultReasons),
       ...(jevFields.jevRunId ? { jevRunId: jevFields.jevRunId } : {}),
       ...(Object.keys(contextBudgets).length > 0 ? { contextBudgets } : {}),
+      ...(promptExtra ? { promptExtra } : {}),
     };
-    saved
-      .then(() => onSpawn(
-        buildSpawnInput({
-          clientMutationId: newClientMutationId?.() ?? clientMutationId ?? newLaunchMutationId(),
-          spaceId,
-          config: continuing && description.trim()
-            ? { ...config, promptExtra: description.trim(), ...launchFields }
-            : { ...config, ...launchFields },
-          // Still named `taskIds` on the wire; the server maps a non-task
-          // subject through `derive_task_for_entity` (064).
-          taskIds: subjectTaskIds,
-          title: sessionTitle,
-        }),
-      ))
-      .then(() => onDismiss?.())
+    const launched = { ...config };
+    const inputWith = (id: string) => buildSpawnInput({
+      clientMutationId: id,
+      spaceId,
+      config: { ...config, ...launchFields },
+      // Still named `taskIds` on the wire; the server maps a non-task
+      // subject through `derive_task_for_entity` (064).
+      taskIds: subjectTaskIds,
+      title: defaultTitle,
+    });
+    /* ONE KEY PER UNCHANGED LAUNCH: a retry of the same launch reuses its
+       key, so the node's ledger replays the session instead of starting a
+       second one; any change to what is launched mints a fresh key. */
+    const input = inputWith(spawnKey.current.keyFor(JSON.stringify(inputWith(''))));
+    Promise.resolve()
+      .then(() => onSpawn(input))
+      .then(() => {
+        if (remember && launched.teamMemberId) {
+          writePicks(launched.teamMemberId, {
+            model: launched.model,
+            effort: launched.reasoningEffort,
+            accessMode: launched.accessMode,
+            ...(launched.target.kind === 'project' && launched.workdirMode ? { workdirMode: launched.workdirMode } : {}),
+          });
+        }
+        succeed();
+      })
+      .catch((error: unknown) => {
+        const e = error as { code?: string; message?: string };
+        if (e?.code === 'upstream_unavailable' || /did not answer within/.test(String(e?.message ?? ''))) afterTimeout();
+        else fail(error);
+      });
+  };
+
+  /* ---- THE VERB: the KIND of session ---- */
+  const verb: LaunchVerb = VERBS.some((v) => v.id === config.mode) ? config.mode as LaunchVerb : 'worker';
+  /* UNDER DISPATCH the picker offers only dispatcher-capable teammates —
+     the server's own predicate (`team_members.mode = 'dispatcher'`,
+     resolveDispatcherSession), read off the summary's projected `mode`. A
+     node that doesn't project it can't be filtered honestly, so it refuses. */
+  const modesKnown = teammates.length > 0 && teammates.every((t) => t.mode !== undefined);
+  const canDispatch = (id: string | null) => teammates.find((t) => t.id === id)?.mode === 'dispatcher';
+  const roster = verb === 'dispatcher' && modesKnown
+    ? bind.teammates.filter((t) => canDispatch(t.id))
+    : bind.teammates;
+  const verbRef = useRef(verb);
+  useEffect(() => {
+    const entered = verbRef.current !== verb;
+    verbRef.current = verb;
+    if (!entered || verb !== 'dispatcher' || !modesKnown || canDispatch(config.teamMemberId)) return;
+    const first = teammates.find((t) => t.mode === 'dispatcher');
+    if (first) bind.onPickTeammate(first.id);
+    // Runs on a verb change only; the roster and setter are read as they are then.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [verb]);
+  const dispatcherRefusal = verb !== 'dispatcher'
+    ? null
+    : !modesKnown
+      ? 'This node doesn’t say which teammates can run as a dispatcher, so a dispatcher can’t be launched from here.'
+      : roster.length === 0
+        ? 'No teammate in this space can run as a dispatcher.'
+        : !canDispatch(config.teamMemberId) ? 'Pick a teammate that can run as a dispatcher.' : null;
+  const accessLock = verb === 'dispatcher'
+    ? 'A dispatcher always runs with full access — the node forces it for dispatchers, whatever is picked here.'
+    : null;
+
+  /* ---- ✦ JEV ---- */
+  const [jevKey, setJevKey] = useState<'yes' | 'none' | 'unknown'>('unknown');
+  const keyStatusRef = useRef(jevKeyStatus);
+  useEffect(() => {
+    const read = keyStatusRef.current;
+    if (!read) return;
+    let alive = true;
+    read().then((view) => {
+      if (!alive || view.store === 'absent') return;
+      const key = view.keys.find((k) => k.provider === 'typesafe');
+      setJevKey(key && (key.connected || key.nodeFallback) ? 'yes' : 'none');
+    }, () => { /* unknown stays unknown: ✦ stays in colour until an ask says no_key */ });
+    return () => { alive = false; };
+  }, []);
+
+  /* ✦ asks for the strip's groups and APPLIES what comes back once every
+     asked group has answered (owner: Jev's picks land ticked). */
+  const [jevApplying, setJevApplying] = useState(false);
+  /** A teammate change Jev made (or its Undo) — not the person's, so it doesn't clear Jev's picks. */
+  const tookJevTeammate = useRef<string | null>(null);
+  const askedGroups = [...JEV_ENTITY_GROUPS, 'teammates'] as const;
+  const stripGroupStates = askedGroups.map((g) => jev.groups[g].status).join('|');
+  useEffect(() => {
+    if (!jevApplying) return;
+    if (askedGroups.some((g) => jev.groups[g].status === 'asking')) return;
+    setJevApplying(false);
+    for (const group of JEV_ENTITY_GROUPS) if (jev.groups[group].status === 'ok') jev.applyGroup(group);
+    /* JEV'S TOP TEAMMATE IS AUTO-APPLIED (owner, via the v3 coordinator);
+       Undo reverts it. The strip picks above were ranked for the teammate
+       asked with — until the node ranks for Jev's own pick
+       (`rankedForTeamMemberId`), they stay as ranked. */
+    const pick = jev.teammatePick;
+    if (pick && verbRef.current !== 'dispatcher' && !teammateTouched.current && pick.entityId !== config.teamMemberId && !jev.teammateRefusal) {
+      tookJevTeammate.current = pick.entityId;
+      jev.applyTeammate();
+    }
+    // The group states are the trigger; `jev` is a fresh object every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jevApplying, stripGroupStates]);
+  const askJev = () => {
+    if (jev.askRefusal) return;
+    setJevCleared(false);
+    setJevApplying(true);
+    /* All five groups: the strip's three auto-apply; the teammate and model
+       wait in their menus until clicked (owner, form 01a0df34-2cd4). */
+    /* Under DISPATCH a dispatcher gets the whole roster: no teammate ranks. */
+    jev.ask(verbRef.current === 'dispatcher' ? ['model', ...JEV_ENTITY_GROUPS] : undefined);
+  };
+  /* Undo reverts ONLY what Jev's Apply decided (the hook restores those rows
+     and keeps later hand edits to others). */
+  const undoJev = () => {
+    for (const group of JEV_ENTITY_GROUPS) if (jev.applied[group]) jev.undo(group);
+    if (jev.applied.teammate && !jev.replaced.teammate) {
+      tookJevTeammate.current = jev.applied.teammate.previous;
+      jev.undo('teammate');
+    }
+  };
+  /* A TEAMMATE CHANGE CLEARS JEV'S PICKS (owner): they were ranked for the
+     previous teammate. The person's own edits stay. */
+  const [jevCleared, setJevCleared] = useState(false);
+  const lastTeammate = useRef(config.teamMemberId);
+  const undoRef = useRef(undoJev);
+  undoRef.current = undoJev;
+  const jevAppliedRef = useRef(jev.applied);
+  jevAppliedRef.current = jev.applied;
+  useEffect(() => {
+    if (lastTeammate.current === config.teamMemberId) return;
+    lastTeammate.current = config.teamMemberId;
+    if (tookJevTeammate.current === config.teamMemberId) { tookJevTeammate.current = null; return; }
+    if (JEV_ENTITY_GROUPS.some((g) => jevAppliedRef.current[g])) setJevCleared(true);
+    undoRef.current();
+  }, [config.teamMemberId]);
+
+  /* ✦ JEV SUGGESTS rows at the top of the teammate and model menus. Undo
+     Jev's changes leaves a clicked one alone: the person applied it. */
+  /** Jev's changes the launch still carries: an applied group, or its teammate unless the person replaced it. */
+  function jevStillApplied(): boolean {
+    return JEV_ENTITY_GROUPS.some((g) => jev.applied[g]) || Boolean(jev.applied.teammate && !jev.replaced.teammate);
+  }
+
+  /* JEV'S TEAMMATES (Decision 7): its top pick is the launch teammate while
+     the person hasn't picked one (else a click-to-apply row in the menu);
+     the other suggested teammates land in the strip's Teammates group —
+     drawn, but not sent until the node takes `selection.teammateIds`. */
+  const jevTeamPick = jev.teammatePick;
+  const jevTeammate = jevTeamPick && verb !== 'dispatcher' ? {
+    label: jevTeamPick.title,
+    reason: jevTeamPick.header.whenToUse ?? jevTeamPick.header.summary ?? `${jevTeamPick.level} fit`,
+    current: config.teamMemberId === jevTeamPick.entityId,
+    refusal: jev.teammateRefusal,
+    onApply: () => { tookJevTeammate.current = jevTeamPick.entityId; jev.applyTeammate(); },
+  } : null;
+  const jevTeammateRows: StripRow[] = verb !== 'dispatcher' && jev.groups.teammates.status === 'ok' && !jev.groups.teammates.value.noFit && !jevCleared
+    && jevStillApplied()
+    ? jev.groups.teammates.value.items
+      .filter((i) => i.suggested && i.entityId !== jevTeamPick?.entityId && i.entityId !== config.teamMemberId)
+      .map((i) => ({
+        id: i.entityId as StripRow['id'], kind: 'team_member', title: i.title, group: 'teammates' as const, ticked: true,
+        source: 'jev' as const, via: null, jev: 'picked' as const, jevWhy: `${i.level} · ${i.score.toFixed(1)}`,
+        unsent: TEAMMATES_UNSENT,
+      }))
+    : [];
+  const jevOtherTeammates = jevTeammateRows.length;
+  const jevModelValue = jev.groups.model.status === 'ok' ? jev.groups.model.value : null;
+  const jevModel = jevModelValue ? {
+    label: modelLabel(jevModelValue, catalog),
+    reason: jevModelValue.reasons.join(' · ') || jevModelValue.workKind,
+    current: jev.modelMatches,
+    refusal: jev.modelRefusal,
+    onApply: () => { jev.applyModel(); },
+  } : null;
+  const jevFailures = JEV_ENTITY_GROUPS.flatMap((group) => {
+    const st = jev.groups[group];
+    if (st.status !== 'failed' || st.reason === 'no_key') return [];
+    return [{ group, reason: String(st.reason).replace(/_/g, ' '), onRetry: () => { setJevApplying(true); jev.retry(group); } }];
+  });
+  const jevApplied = jevStillApplied();
+  const noKey = jevKey === 'none' || jev.state === 'unavailable';
+  const jevButton: JevButton = {
+    status: !jevPort || noKey || jev.askRefusal
+      ? 'off'
+      : jevApplying || JEV_ENTITY_GROUPS.some((g) => jev.groups[g].status === 'asking')
+        ? 'busy'
+        : jevApplied || jevFailures.length > 0 ? 'done' : jevCleared ? 'stale' : 'ready',
+    reason: !jevPort ? JEV_UNWIRED_REASON : noKey ? NO_KEY_WORDS : jev.askRefusal,
+    picked: JEV_ENTITY_GROUPS.reduce((n, g) => n + jev.entity[g].carried.added.length, 0),
+    leftOut: JEV_ENTITY_GROUPS.reduce((n, g) => n + jev.entity[g].carried.removed.length, 0),
+    cost: jev.run ? formatRunCost(jev.run) : null,
+    suggests: jevModel && !jevModel.current ? 'a model' : null,
+    teammate: jev.applied.teammate && !jev.replaced.teammate
+      ? teammates.find((t) => t.id === jev.applied.teammate?.teamMemberId)?.label ?? null
+      : null,
+    otherTeammates: jevOtherTeammates,
+    failures: jevFailures,
+    onAsk: askJev,
+    onAskAgain: () => { undoJev(); askJev(); },
+    onUndo: undoJev,
+    ...(jevPort && noKey ? { onFixKey: () => { onDismiss?.(); openJevKeySettings(); } } : {}),
+  };
+
+  /* ---- THE STRIP: the selection's three groups as seven type groups ---- */
+  const jevWhy: Record<string, string> = {};
+  for (const group of JEV_ENTITY_GROUPS) {
+    const st = jev.entity[group].state;
+    if (st.status !== 'ok') continue;
+    for (const item of st.value.items) {
+      jevWhy[item.entityId] = item.reason ? REASON_WORDS[item.reason] : `${item.level} · ${item.score.toFixed(1)}`;
+    }
+  }
+  const stripJev: StripJev = {
+    carried: { memories: jev.entity.memories.carried, skills: jev.entity.skills.carried, references: jev.entity.references.carried },
+    why: jevWhy,
+  };
+  const strip = buildStrip({ defaults: selection.defaults, edits: selection.edits, added: selection.added, jev: stripJev, teammates: jevTeammateRows });
+  const stripRows = strip.flatMap((g) => g.rows);
+  const stripLoading = JEV_ENTITY_GROUPS.some((g) => selection.defaults[g].status === 'loading');
+  const stripLock = stripLoading ? null : JEV_ENTITY_GROUPS.map((g) => selection.lock(g)).find(Boolean) ?? null;
+  const [stripNotice, setStripNotice] = useState<string | null>(null);
+  const tickRow = (row: StripRow) => {
+    if (row.group === 'teammates') { setStripNotice(row.unsent ?? TEAMMATES_UNSENT); return; }
+    setStripNotice(selection.toggle(row.group, { id: row.id, kind: row.kind, title: row.title, text: null, derived: false, via: null }));
+  };
+  const addRows = (rows: readonly LaunchContextRow[]): string | null => {
+    if (rows.some((r) => r.kind === 'team_member')) return TEAMMATES_UNSENT;
+    const byGroup = addToEdits(selection.defaults, selection.edits, rows, groupOf);
+    for (const [group, change] of Object.entries(byGroup)) {
+      if (!change) continue;
+      const refused = selection.setEdit(group as SpawnSelectionGroup, change.edit, change.rows);
+      if (refused) return refused;
+    }
+    return null;
+  };
+
+  /* ---- SENT IN FULL: drawn, refused until the node has a channel ---- */
+  const [inFull, setInFull] = useState<readonly LaunchContextRow[]>([]);
+
+  /* ---- THE + AND ATTACH POOL: memories, skills and references read in,
+     plus every strip row (an unticked default picked again is ticked back).
+     The task itself and sessions are never offered. ---- */
+  const pools = selectionSources?.candidates;
+  const poolsKnown = Boolean(pools && (pools.memories || pools.skills || pools.references));
+  const tickedIds = new Set<string>(stripRows.filter((r) => r.ticked).map((r) => r.id));
+  const fullIds = new Set<string>(inFull.map((r) => r.id));
+  const byId = new Map<string, { row: LaunchContextRow; group: StripRow['group'] }>();
+  /* Attach's Teammates type: the roster minus the launch teammate — not sendable yet. */
+  for (const t of verb === 'dispatcher' ? [] : teammates) {
+    if (t.id !== config.teamMemberId) byId.set(t.id, { row: { id: t.id as StripRow['id'], kind: 'team_member', title: t.label, text: null, derived: false, via: null }, group: 'teammates' });
+  }
+  for (const group of JEV_ENTITY_GROUPS) for (const row of pools?.[group] ?? []) byId.set(row.id, { row, group });
+  for (const r of stripRows) {
+    if (!byId.has(r.id)) byId.set(r.id, { row: { id: r.id, kind: r.kind, title: r.title, text: null, derived: false, via: null }, group: r.group });
+  }
+  const candidates: LaunchCandidate[] | undefined = poolsKnown
+    ? [...byId.values()]
+      .filter(({ row }) => row.id !== subject.id && row.kind !== 'work_session')
+      .map(({ row, group }) => ({
+        row,
+        kind: stripKindOf(group, row.kind),
+        inLaunch: fullIds.has(row.id) ? 'full' as const : tickedIds.has(row.id) ? 'strip' as const : null,
+        ...(group === 'teammates' ? { unsent: TEAMMATES_UNSENT } : {}),
+      }))
+      /* In the strip's order — files first — so "All" reads like the strip. */
+      .sort((a, b) => STRIP_KINDS.findIndex((d) => d.kind === a.kind) - STRIP_KINDS.findIndex((d) => d.kind === b.kind))
+    : undefined;
+
+  /* ---- DISPATCH and THE PREVIEWS ---- */
+  const [preview, setPreview] = useState<null | { kind: 'launch' } | { kind: 'dispatch' }>(null);
+  const note = notes.trim();
+  const dispatchRefusal = verb !== 'worker'
+    ? `Dispatch can’t ask for ${aKind(verb)} yet — the node’s dispatch takes no session kind, so its dispatcher would start a worker. Launch it yourself, or switch to RUN.`
+    : note.length > DISPATCH_NOTE_MAX
+      ? `Dispatch carries at most ${String(DISPATCH_NOTE_MAX)} characters of notes (these are ${String(note.length)}).`
+      : null;
+  const dispatch = () => {
+    if (!onDispatch || pending || dispatchRefusal) return;
+    setNodeRefusal(null);
+    setPending(true);
+    Promise.resolve()
+      .then(() => onDispatch(note || undefined, dispatchKey.current.keyFor(`${subject.id}\n${note}`)))
+      .then((result) => {
+        const r = result as Partial<ExecutionDispatchResult> | undefined;
+        if (r?.delivery === 'undelivered') {
+          /* Not a success: the request is stored on the task, but no
+             dispatcher received it. Say so and keep the card up. */
+          setPending(false);
+          setNodeRefusal(`The request is stored on the task, but the node couldn’t deliver it to ${r.dispatcherSpawned ? 'the dispatcher it just started' : 'the dispatcher'}. Dispatching again sends the same request.`);
+          return;
+        }
+        succeed();
+      })
       .catch(fail);
   };
+  /** ⌘↵ and Launch: open the preview; inside it, commit. */
+  const onLaunch = () => {
+    if (preview?.kind === 'launch') { commit(); return; }
+    if (preview?.kind === 'dispatch') { dispatch(); return; }
+    if (refusal || dispatcherRefusal) return;
+    setNodeRefusal(null);
+    setPreview({ kind: 'launch' });
+  };
+
+  const modelWord = (id: string) => catalog.find((m) => m.model === id)?.label ?? id;
+  const rowOf = (r: StripRow, noteText?: string): PreviewRow => ({
+    id: r.id, kind: stripKindOf(r.group, r.kind), title: r.title, ...(noteText ? { note: noteText } : {}),
+  });
+  const ticked = stripRows.filter((r) => r.ticked);
+  const runsAs = [
+    config.model ? modelWord(config.model) : 'the teammate’s model',
+    config.reasoningEffort ? effortLabel(config.reasoningEffort) : 'default effort',
+    accessLock ? 'Full access (forced for a dispatcher)' : config.accessMode ? accessModeLabel(config.accessMode) : 'the teammate’s default access',
+  ].join(' · ');
+  const previewNode = preview?.kind === 'launch' ? (
+    <AgentPreview
+      verb={verb}
+      subjectTitle={subject.title}
+      continuing={continuing}
+      runsAs={runsAs}
+      inFull={[]}
+      notes={notes}
+      memories={ticked.filter((r) => r.group === 'memories').map((r) => rowOf(r))}
+      skills={ticked.filter((r) => r.group === 'skills').map((r) => rowOf(r))}
+      references={ticked.filter((r) => r.group === 'references' && r.kind !== 'file').map((r) => rowOf(r, `tm8 entity context ${r.id}`))}
+      files={ticked.filter((r) => r.group === 'references' && r.kind === 'file').map((r) => rowOf(r, `tm8 entity context ${r.id}`))}
+      leftOut={stripRows.filter((r) => !r.ticked).map((r) => rowOf(r, r.jev === 'left-out' ? `✦ ${r.jevWhy ?? 'left out by Jev'}` : 'unticked'))}
+      contextIndex={contextIndex}
+      onBack={() => setPreview(null)}
+      onConfirm={commit}
+      busy={pending}
+      notice={nodeRefusal}
+    />
+  ) : preview?.kind === 'dispatch' ? (
+    <DispatchPreview
+      verb={verb}
+      subjectTitle={subject.title}
+      target={null}
+      targetUnknown
+      notes={notes}
+      inFullCount={inFull.length}
+      onBack={() => setPreview(null)}
+      onConfirm={dispatch}
+      busy={pending}
+      notice={nodeRefusal}
+    />
+  ) : null;
+
+  const restoredLine = restored
+    ? describePicks(restored, { model: modelWord, access: accessModeLabel }) || null
+    : null;
+  const profile = profileFor?.(config.teamMemberId);
+  const advancedEdited = bind.credential !== null
+    || more.githubCredential !== null
+    || bind.harnessSurface !== null
+    || bind.plugins !== null
+    || Object.keys(contextBudgets).length > 0;
 
   const heading = `${verbLabel ?? 'Run'} configuration`;
 
   return (
-    <div className="nsx-popup" role="dialog" aria-modal="true" aria-label={heading} data-testid="launch-quick-config">
+    <div className="nsx-popup nsx-popup--card" role="dialog" aria-modal="true" aria-label={heading} data-testid="launch-quick-config">
       {/* The scrim IS the outside: any click on it is a click away. */}
       <div className="nsx-popup__scrim" onClick={onDismiss} aria-hidden="true" />
-      {/* NO CHROME ABOVE THE CARD (owner's ask 2026-09-07): the tile is the
-          whole surface. The verb survives as the dialog's accessible name, the
-          subject as the title field's VALUE, and dismissal as Escape and the
-          scrim. */}
-      <div
-        className="nsx-popup__frame"
-        data-shake={shaking || undefined}
-        onAnimationEnd={() => setShaking(false)}
-      >
-        <NewSessionComposer
-          {...bind}
-          draft={description}
-          onDraftChange={setDraftState}
-          onSubmit={commit}
-          busy={pending}
-          /* A node/save refusal is a NOTICE, not a block: the tile stays up
-             so the viewer can correct and retry. Feeding it through `refusal`
-             greys Launch out and the only exit is dismiss, which drops the
-             edits that never landed. `canLaunch` / unwired still withhold. */
-          refusal={refusal}
-          notice={nodeRefusal}
-          /* The subject names the session unless the viewer types their own. */
-          derivedTitle={defaultTitle}
-          title={title}
-          onTitleChange={setTitle}
-          requirePrompt={false}
-          promptPlaceholder={continuing
-            ? 'Instructions for the new session (optional) — it reads this session’s transcript first…'
-            : 'Task description — the agent reads this as its briefing…'}
-          onDismissRequest={onDismiss}
-          autoFocus
-          aboveControls={
-            <>
-            <LaunchSelectionChips
-              selection={selection}
-              candidates={selectionSources?.candidates ?? {}}
-              ranked={jevRanked}
-              contextIndex={jev.contextIndex ?? selection.contextIndex}
-              budgets={contextBudgets}
-              reasons={jevReasons}
-            />
-            <BudgetOverride value={contextBudgets} onChange={setContextBudgets} />
-            {/* THE ONE JEV ENTRY POINT (Subhang's I9b note) — the same
-                collapsed ✦ button and panel the launch sheet mounts. */}
-            <JevEntryPoint
-              jev={jev}
-              modelLabel={jevModel ? modelLabel(jevModel, jevCatalog) : ''}
-            />
-            </>
-          }
-        />
-      </div>
+      <LaunchCardV3
+        verbLabel={verbLabel ?? 'Run'}
+        verb={verb}
+        onVerbChange={(next) => bind.onModeChange(next)}
+        accessLock={accessLock}
+        teammates={roster}
+        teammateId={bind.teammateId}
+        onPickTeammate={pickTeammate}
+        remember={remember}
+        onRememberChange={(on) => { setRemember(on); writeRemember(on); }}
+        restoredLine={restoredLine}
+        workdirs={bind.workdirs}
+        workdirId={bind.workdirId}
+        onPickWorkdir={bind.onPickWorkdir}
+        workdirMode={bind.workdirMode}
+        onWorkdirModeChange={bind.onWorkdirModeChange}
+        workdirChoosable={bind.workdirChoosable ?? true}
+        worktreeBaseRef={more.worktreeBaseRef}
+        onWorktreeBaseRefChange={more.onWorktreeBaseRefChange}
+        {...(capacity ? { capacity } : {})}
+        onClose={() => onDismiss?.()}
+        {...(upload ? { onFiles: startUploads } : {})}
+        subject={subject}
+        continuing={continuing}
+        description={description}
+        {...(canEditSubject && onDismiss && !continuing ? { onEditSubject: () => onDismiss() } : {})}
+        inFull={{
+          items: inFull.map((r) => ({ id: r.id, kind: r.kind, title: r.title, bytes: null, over: false })),
+          refusal: IN_FULL_REFUSAL,
+          onAdd: (row) => setInFull((now) => (now.some((r) => r.id === row.id) ? now : [...now, row])),
+          onRemove: (id) => setInFull((now) => now.filter((r) => r.id !== id)),
+          onToIndex: (id) => setInFull((now) => now.filter((r) => r.id !== id)),
+        }}
+        notes={notes}
+        onNotesChange={setNotes}
+        notesPlaceholder={continuing
+          ? 'Notes for the new session (optional) — it reads this session’s transcript first…'
+          : 'Notes or extra context for this launch — the task stays as written.'}
+        strip={strip}
+        stripRefusal={stripLock ?? stripNotice}
+        stripLoading={stripLoading}
+        onTick={tickRow}
+        onAddRows={addRows}
+        candidates={candidates}
+        {...(selectionSources?.hydrateReferences ? { onAttachOpen: selectionSources.hydrateReferences } : {})}
+        uploads={uploads.map((u) => ({ key: u.key, name: u.name, status: u.status, ...(u.error ? { error: u.error } : {}) }))}
+        onDismissUpload={removeUpload}
+        onRetryUpload={retryUpload}
+        jev={jevButton}
+        dispatch={onDispatch ? {
+          refusal: dispatchRefusal,
+          /* No read of the space's dispatcher sessions exists yet: unknown. */
+          dispatchers: null,
+          onDispatch: () => { setNodeRefusal(null); setPreview({ kind: 'dispatch' }); },
+        } : null}
+        onLaunch={onLaunch}
+        preview={previewNode}
+        onClosePreview={() => { if (!preview) return false; setPreview(null); return true; }}
+        models={catalog.map((entry) => ({
+          id: entry.model,
+          label: entry.label,
+          provider: entry.provider,
+          agentTool: entry.agentTool,
+          ...(entry.note ? { note: entry.note } : {}),
+        }))}
+        model={bind.model}
+        onPickModel={bind.onPickModel}
+        effortStops={bind.effortStops}
+        effort={bind.effort}
+        onEffortChange={bind.onEffortChange}
+        accessMode={bind.accessMode}
+        onAccessModeChange={bind.onAccessModeChange}
+        onSubmit={onLaunch}
+        busy={pending}
+        refusal={refusal ?? dispatcherRefusal}
+        notice={preview ? null : nodeRefusal}
+        shaking={shaking}
+        onShakeEnd={() => setShaking(false)}
+        mode={bind.mode}
+        onModeChange={bind.onModeChange}
+        profileLine={profile ? describeProfile(profile) : null}
+        credentialProviderLabel={bind.credentialProviderLabel}
+        credential={bind.credential}
+        onCredentialChange={bind.onCredentialChange}
+        githubCredential={more.githubCredential}
+        onGithubCredentialChange={more.onGithubCredentialChange}
+        harnessApplies={bind.harnessApplies ?? false}
+        harnessSurface={bind.harnessSurface ?? null}
+        {...(bind.onHarnessChange ? { onHarnessChange: bind.onHarnessChange } : {})}
+        installedPlugins={bind.installedPlugins ?? null}
+        installedPluginsNote={bind.installedPluginsNote ?? null}
+        pluginSkillCounts={bind.pluginSkillCounts ?? null}
+        plugins={bind.plugins ?? null}
+        {...(bind.onPluginsChange ? { onPluginsChange: bind.onPluginsChange } : {})}
+        budget={<BudgetOverride value={contextBudgets} onChange={setContextBudgets} />}
+        advancedEdited={advancedEdited}
+        jevModel={jevModel}
+        jevTeammate={jevTeammate}
+      />
     </div>
   );
 }
+

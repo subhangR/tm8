@@ -13,11 +13,7 @@ import {
   SELECTION_HEADER_KINDS,
   type ActivityItem,
   type ActorSummary,
-  type AttentionRequest,
-  type AttentionRequestMutationResult,
-  type AttentionRequestPage,
   type CommandResult,
-  type CreateAttentionRequestInput,
   type CreateEntityInput,
   type CustomFieldValue,
   type EdgeView,
@@ -39,9 +35,7 @@ import {
   type SetEntityHeaderInput,
   type PullInput,
   type ReactionInput,
-  type ResolveEntityAttentionInput,
   type TrackingRefreshInput,
-  type UpdateAttentionRequestInput,
 } from '@tm8/contract';
 
 import type { Querier } from '../../../db/types.js';
@@ -74,7 +68,7 @@ import { projectForgeFacts } from '../../../tracking/pr-projection.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const REACTION_TYPES = new Set(['likes', 'dislikes', 'stars']);
-const RESTRICTED_LIFECYCLE_KINDS = new Set([
+export const RESTRICTED_LIFECYCLE_KINDS = new Set([
   'member',
   'message',
   'work_session',
@@ -94,6 +88,24 @@ const RESTRICTED_LIFECYCLE_KINDS = new Set([
   // title is patched through `containers.update`, which is ledgered and
   // asserts a version like the rest of the family.
   'container',
+  // `credential` (W10a) is the same-id envelope of a space_credentials row.
+  // It is born, re-labelled and revoked only through credentials.space.*,
+  // which are human-only; a generic create, patch, move, delete or restore
+  // would split the envelope from its row. The SQL guards refuse all of
+  // these too (T39/T44) — this is the door's early, named refusal.
+  'credential',
+  // `space_link` (W6, 250/251) is born from `spaceLinks.add` and ends only
+  // through `spaceLinks.*` (P7). A generic delete would soft-delete the
+  // envelope without the cascade or the revoke-on-delete trigger, hiding the
+  // link while its tokens and target sessions stayed live (review D1). SQL
+  // refuses the same doors (251 §10b). `server` joins in W8.
+  'space_link',
+  // `server` (W8, 261) is born from `servers.add`/`servers.adopt` and ends only
+  // through `servers.remove`, which drops every member's gate row and refuses
+  // while a space link still targets it. A generic delete would skip both; a
+  // generic restore would revive a server whose gate rows are gone. SQL refuses
+  // the same doors (261 §8b re-creates 251 §10b's trigger with `server` added).
+  'server',
 ]);
 // `memory` is here to HIDE hierarchy on the read surfaces; the actual refusal
 // of a memory parent lives at the data layer (056's entities trigger), because
@@ -136,32 +148,6 @@ interface ActivityRow {
   created_at: Date | string;
   /** Microsecond TEXT from `to_char`, REQUIRED — see edges-placements.ts. */
   cursor_created_at: string;
-}
-
-interface AttentionRequestRow {
-  id: string;
-  space_id: string;
-  entity_id: string;
-  reason: string;
-  points: number;
-  status: AttentionRequest['status'];
-  version: number;
-  requested_by: string;
-  acknowledged_by: string | null;
-  resolved_by: string | null;
-  resolution_note: string | null;
-  created_at: Date | string;
-  updated_at: Date | string;
-  acknowledged_at: Date | string | null;
-  resolved_at: Date | string | null;
-  /** Microsecond cursor key, selected only on queue reads. */
-  cursor_created_at?: string;
-}
-
-interface AttentionMutationRpcResult {
-  attentionRequestId: string | null;
-  entityId: string;
-  affectedCount: number;
 }
 
 interface VersionRow {
@@ -861,61 +847,6 @@ async function activityById(q: Querier, id: string): Promise<ActivityItem | unde
   };
 }
 
-const ATTENTION_COLUMNS = `
-  id, space_id, entity_id, reason, points, status, version,
-  requested_by, acknowledged_by, resolved_by, resolution_note,
-  created_at, updated_at, acknowledged_at, resolved_at
-`;
-
-async function attentionRequestsOf(
-  q: Querier,
-  rows: readonly AttentionRequestRow[],
-): Promise<AttentionRequest[]> {
-  const actors = await loadActors(q, rows.flatMap((row) => [
-    row.requested_by,
-    row.acknowledged_by ?? '',
-    row.resolved_by ?? '',
-  ]));
-  return rows.map((row) => ({
-    id: row.id,
-    spaceId: row.space_id,
-    entityId: row.entity_id,
-    reason: row.reason,
-    points: Number(row.points),
-    status: row.status,
-    version: Number(row.version),
-    requestedBy: actorOf(actors, row.requested_by),
-    acknowledgedBy: row.acknowledged_by ? actorOf(actors, row.acknowledged_by) : null,
-    resolvedBy: row.resolved_by ? actorOf(actors, row.resolved_by) : null,
-    resolutionNote: row.resolution_note,
-    createdAt: iso(row.created_at),
-    updatedAt: iso(row.updated_at),
-    acknowledgedAt: isoOrNull(row.acknowledged_at),
-    resolvedAt: isoOrNull(row.resolved_at),
-  }));
-}
-
-async function attentionMutationResult(
-  q: Querier,
-  raw: AttentionMutationRpcResult,
-  viewerIdentityId: string,
-): Promise<AttentionRequestMutationResult> {
-  const entityRows = await q.query<EntityRow>(
-    `select ${ENTITY_COLUMNS} ${ENTITY_FROM} where e.id = $1 and e.deleted_at is null`,
-    [raw.entityId],
-  );
-  const entity = (await loadUniversalSummaries(q, entityRows, viewerIdentityId))[0];
-  if (!entity) throw new CollabError('not_found', `no such entity: ${raw.entityId}`);
-  const requestRows = raw.attentionRequestId
-    ? await q.query<AttentionRequestRow>(
-      `select ${ATTENTION_COLUMNS} from public.attention_requests where id = $1`,
-      [raw.attentionRequestId],
-    )
-    : [];
-  const request = (await attentionRequestsOf(q, requestRows))[0] ?? null;
-  return { request, entity, affectedCount: Number(raw.affectedCount) };
-}
-
 const HEADER_KINDS: ReadonlySet<string> = new Set(SELECTION_HEADER_KINDS);
 
 /** The entity's resolved header, under the caller's RLS; undefined for a kind with none. */
@@ -1080,6 +1011,9 @@ const PATCH_CONTENT_MEMBERS: Readonly<Record<string, readonly string[]>> = {
   commit: ['url', 'author', 'committedAt'],
   memory: ['statement', 'mechanism', 'subjectScope', 'doesNotEstablish', 'measuredAt'],
   loop: ['schedule', 'teamMemberId', 'subjectId', 'prompt', 'config', 'enabled', 'nextRunAt'],
+  // W10a: no member is patchable. The lifecycle refusal fires first; this is
+  // the second lock, so a door that skipped it still forwards nothing.
+  credential: [],
 };
 
 function assertPatchContentMembers(
@@ -1782,122 +1716,6 @@ export class W2EntitiesCommandsTrackingService {
     } catch (error) {
       throw await this.withCurrent(error, owner, ctx, id);
     }
-  };
-
-  readonly listAttentionRequests = async (ctx: RequestContext): Promise<AttentionRequestPage> => {
-    const owner = await this.deps.owner();
-    const spaceId = ctx.query.get('spaceId') ?? '';
-    if (!UUID_RE.test(spaceId)) throw new CollabError('invalid_input', 'spaceId must be a uuid');
-    const entityId = ctx.query.get('entityId');
-    if (entityId !== null && !UUID_RE.test(entityId)) {
-      throw new CollabError('invalid_input', 'entityId must be a uuid');
-    }
-    const status = ctx.query.get('status');
-    const statuses = new Set(['open', 'acknowledged', 'resolved', 'dismissed']);
-    if (status !== null && !statuses.has(status)) {
-      throw new CollabError('invalid_input', 'invalid attention request status');
-    }
-    const minPointsRaw = ctx.query.get('minPoints');
-    const minPoints = minPointsRaw === null ? null : Number(minPointsRaw);
-    if (minPoints !== null && (!Number.isInteger(minPoints) || minPoints < 1 || minPoints > 100)) {
-      throw new CollabError('invalid_input', 'minPoints must be an integer from 1 to 100');
-    }
-    const limit = limitOf(ctx.query.get('limit'));
-    const fp = fingerprint('attentionRequests.list', { spaceId, entityId, status, minPoints });
-    return this.deps.db.tx(claimsFor(owner, ctx), async (q) => {
-      const values: unknown[] = [spaceId];
-      const where = ['space_id = $1'];
-      if (entityId) { values.push(entityId); where.push(`entity_id = $${values.length}`); }
-      if (status) { values.push(status); where.push(`status = $${values.length}`); }
-      if (minPoints !== null) { values.push(minPoints); where.push(`points >= $${values.length}`); }
-      const cursor = ctx.query.get('cursor');
-      if (cursor) {
-        const decoded = decodeCursor(cursor);
-        if (decoded.k[0] !== fp || decoded.k.length !== 5) {
-          throw new CollabError('invalid_cursor', 'attention cursor does not match this query');
-        }
-        const points = Number(decoded.k[1]);
-        const at = cursorIso(decoded.k[2]);
-        const id = cursorUuid(decoded.k[3]);
-        if (!Number.isInteger(points)) throw new CollabError('invalid_cursor', 'invalid attention points cursor');
-        values.push(points, at, id);
-        const pointParam = `$${values.length - 2}`;
-        const atParam = `$${values.length - 1}`;
-        const idParam = `$${values.length}`;
-        where.push(`(points < ${pointParam} or (points = ${pointParam} and (created_at, id) > (${atParam}::timestamptz, ${idParam}::uuid)))`);
-      }
-      const rows = await q.query<AttentionRequestRow>(
-        `select ${ATTENTION_COLUMNS}, ${MICROS('created_at')} cursor_created_at
-           from public.attention_requests
-          where ${where.join(' and ')}
-          order by points desc, created_at asc, id asc
-          limit ${limit + 1}`,
-        values,
-      );
-      const hasMore = rows.length > limit;
-      const pageRows = hasMore ? rows.slice(0, limit) : rows;
-      const items = await attentionRequestsOf(q, pageRows);
-      const last = pageRows.at(-1);
-      return {
-        items,
-        nextCursor: hasMore && last
-          ? encodeCursor([fp, Number(last.points), last.cursor_created_at!, last.id, 'attention'])
-          : null,
-      };
-    });
-  };
-
-  readonly createAttentionRequest = async (ctx: RequestContext): Promise<AttentionRequestMutationResult> => {
-    const owner = await this.deps.owner();
-    const entityId = requireUuidParam(ctx, 'entityId');
-    const input = ctx.body as CreateAttentionRequestInput;
-    const envelope = commandEnvelope(ctx);
-    return this.deps.db.tx(claimsFor(owner, ctx, envelope), async (q) => {
-      const raw = await q.rpc<AttentionMutationRpcResult>('create_attention_request', [
-        entityId,
-        input.reason,
-        input.points,
-        envelope.actorId ?? null,
-        envelope.clientMutationId ?? null,
-      ]);
-      return attentionMutationResult(q, raw, owner.identityId);
-    });
-  };
-
-  readonly updateAttentionRequest = async (ctx: RequestContext): Promise<AttentionRequestMutationResult> => {
-    const owner = await this.deps.owner();
-    const requestId = requireUuidParam(ctx, 'requestId');
-    const input = ctx.body as UpdateAttentionRequestInput;
-    const envelope = commandEnvelope(ctx);
-    return this.deps.db.tx(claimsFor(owner, ctx, envelope), async (q) => {
-      const raw = await q.rpc<AttentionMutationRpcResult>('update_attention_request', [
-        requestId,
-        input.expectedVersion,
-        input.reason ?? null,
-        input.points ?? null,
-        input.status ?? null,
-        input.resolutionNote ?? null,
-        envelope.actorId ?? null,
-        envelope.clientMutationId ?? null,
-      ]);
-      return attentionMutationResult(q, raw, owner.identityId);
-    });
-  };
-
-  readonly resolveEntityAttention = async (ctx: RequestContext): Promise<AttentionRequestMutationResult> => {
-    const owner = await this.deps.owner();
-    const entityId = requireUuidParam(ctx, 'entityId');
-    const input = ctx.body as ResolveEntityAttentionInput;
-    const envelope = commandEnvelope(ctx);
-    return this.deps.db.tx(claimsFor(owner, ctx, envelope), async (q) => {
-      const raw = await q.rpc<AttentionMutationRpcResult>('resolve_entity_attention', [
-        entityId,
-        input.resolutionNote ?? null,
-        envelope.actorId ?? null,
-        envelope.clientMutationId ?? null,
-      ]);
-      return attentionMutationResult(q, raw, owner.identityId);
-    });
   };
 
   readonly moveEntity = async (ctx: RequestContext): Promise<CommandResult> => {

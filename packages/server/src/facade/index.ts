@@ -4,7 +4,9 @@ import { registerJevHandlers } from '../jev/handlers.js';
 import { registerLaunchDefaultsHandler } from '../launch/defaults.js';
 import { registerChatDefaultsHandlers } from '../chat/defaults.js';
 import { registerMembershipHandlers, type MembershipHandlerDeps } from '../membership/handlers.js';
+import { registerNodeMetricsHandlers } from '../node-metrics/handlers.js';
 import type { JevAdvisorResolver } from '../jev/port.js';
+import type { SessionSocketPort } from '../identity/session-sockets.js';
 /**
  * The facade block: the handler registry, the operation→input-schema table,
  * and the one function the composition root calls to mount everything.
@@ -57,6 +59,7 @@ import type { W2FilesServiceOptions } from './services/w2/files.js';
 import { registerW2AuthHandlers } from './handlers/w2/auth.js';
 import { registerW2EdgesPlacementsHandlers } from './handlers/w2/edges-placements.js';
 import { registerW2EntitiesCommandsTrackingHandlers } from './handlers/w2/entities-commands-tracking.js';
+import { registerAttentionHandlers } from './services/attention/index.js';
 import { registerW2EntityKindsProfileHandlers } from './handlers/w2/entity-kinds-profiles.js';
 import { registerW2FeedContextHandlers } from './handlers/w2/feed-context.js';
 import { registerW2FileHandlers } from './handlers/w2/files.js';
@@ -87,6 +90,9 @@ import {
   registerCredentialHandlers,
   type CredentialHandlerDeps,
 } from './handlers/w2/credentials.js';
+import { registerSpaceLinkHandlers, type SpaceLinkHandlerDeps } from './handlers/w2/space-links.js';
+import { registerServerHandlers } from './handlers/w2/servers.js';
+import { DisabledRemoteInvokeForwarder } from '../remote/forwarder.js';
 import { registerVoiceHandlers } from './handlers/voice.js';
 import { registerChatHandlers, type ChatHandlerDeps } from '../chat/handlers.js';
 
@@ -149,6 +155,12 @@ export interface RegisterFacadeHandlersDeps {
    * the same conditional shape `deps.files` already uses.
    */
   readonly credentials?: CredentialHandlerDeps;
+  /**
+   * W6 space links. Absent: the node key's root comes from `credentials`, so a
+   * composition with credentials still mounts them; with neither, `spaceLinks.*`
+   * is not mounted (no key to seal a stored session with).
+   */
+  readonly spaceLinks?: SpaceLinkHandlerDeps;
   /** TM8 Chat runtime composition; absent mounts a narrowed 503 degraded mode. */
   readonly chat?: ChatHandlerDeps;
   /**
@@ -166,6 +178,11 @@ export interface RegisterFacadeHandlersDeps {
    * socket close are skipped (a node with no execution runtime has no PTYs).
    */
   readonly membership?: MembershipHandlerDeps;
+  /**
+   * W4: the live event sockets `auth.sessions.revoke` closes for the sessions
+   * it ended. Absent: the revoke still happens; only the close is skipped.
+   */
+  readonly sessionSockets?: SessionSocketPort;
 }
 
 /**
@@ -183,6 +200,7 @@ export function registerFacadeHandlers(
     db: deps.db,
     config: deps.config,
     owner: deps.owner ?? createLoopbackOwnerResolver(deps.db),
+    remoteInvokeForwarder: new DisabledRemoteInvokeForwarder(),
   };
 
   /**
@@ -198,9 +216,11 @@ export function registerFacadeHandlers(
    * `entities.get` and `entities.children` disagree about the same row.
    */
   registerW2EntitiesCommandsTrackingHandlers(registry, facade);
+  // Attention v2: the one attention module owns every attentionRequests.* op.
+  registerAttentionHandlers(registry, facade);
   registerW2IdentitySpacesHandlers(registry, facade);
   // auth.* (Identity v2 Stage 1): local accounts over the 007 RPC surface.
-  registerW2AuthHandlers(registry, facade);
+  registerW2AuthHandlers(registry, facade, deps.sessionSockets ? { sockets: deps.sessionSockets } : {});
   registerW2ServerConnectionHandlers(registry, facade);
   registerW2EdgesPlacementsHandlers(registry, facade);
   registerW2CollectionsGraphUndoHandlers(registry, facade);
@@ -220,6 +240,8 @@ export function registerFacadeHandlers(
   registerChatDefaultsHandlers(registry, facade);
   // spaces.leave / spaces.members.remove / accounts.disable (G6, migration 232).
   registerMembershipHandlers(registry, facade, deps.membership ?? {});
+  // node.metrics.get: host CPU/memory/load/disk for the desktop status strip (node admin).
+  registerNodeMetricsHandlers(registry, facade);
   // Tier 4 git×graph: the read-only file-contention map over active worktrees.
   registerContentionHandlers(registry, facade);
   // Git UI wave: the session git rail — status/diff reads and the #76 verbs
@@ -320,4 +342,10 @@ export function registerFacadeHandlers(
    * forgets.
    */
   if (deps.credentials) registerCredentialHandlers(registry, facade, deps.credentials);
+
+  // W6 space links: the writes are human-only inside the registration (and in SQL).
+  const spaceLinks = deps.spaceLinks ?? (deps.credentials ? { dataDir: deps.credentials.dataDir } : undefined);
+  if (spaceLinks) registerSpaceLinkHandlers(registry, facade, spaceLinks);
+  // W8 servers: the same node-key root; add/adopt/remove are human-only inside.
+  if (spaceLinks) registerServerHandlers(registry, facade, { dataDir: spaceLinks.dataDir });
 }

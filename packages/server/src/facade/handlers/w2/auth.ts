@@ -1,7 +1,7 @@
 /**
  * auth.* — local accounts (Identity v2 Stage 1, doc 4 §6).
  *
- * Eleven operations, and the seam is deliberately thin: every authorization
+ * Thirteen operations, and the seam is deliberately thin: every authorization
  * decision except the scrypt comparison lives inside the SECURITY DEFINER
  * RPCs (`ensure_account`'s F1 node-admin gate, `revoke_auth_session`'s
  * self-or-admin gate, `resolve_auth_session`'s revocation/expiry/status
@@ -43,13 +43,20 @@ import type {
   AuthPasswordChangeInput,
   AuthPasswordChangeResult,
   AuthSessionGetResult,
+  AuthSessionsListResult,
   AuthSignupInput,
   AuthSignupResult,
   AuthSpaceEnterInput,
   AuthSpaceEnterResult,
   InvitePreview,
   ResolveInviteInput,
+  SpacePasswordAdminResult,
+  SpacePasswordLockInput,
+  SpacePasswordResetInput,
+  SpacePasswordSetRequiredInput,
+  SpacePasswordSetRequiredResult,
 } from '@tm8/contract';
+import { AuthSessionsListInputSchema } from '@tm8/contract';
 import { chmod, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -58,19 +65,27 @@ import { clearSessionCookie, sessionCookie } from '../../../http/session-cookie.
 import { json, type OperationHandler, type RequestContext } from '../../../http/types.js';
 import type { FacadeDeps } from '../../deps.js';
 import type { HandlerRegistry } from '../../registry.js';
-import { claimsFor } from '../../context.js';
+import { claimsFor, requireUuidParam } from '../../context.js';
 import {
   changePassword,
+  checkSpacePassword,
   claimNode,
   enterSpace,
+  inviteRequiresSpacePassword,
+  resetSpaceLogin,
+  setSpaceLoginLocked,
+  setSpaceRequirePassword,
   issueNodeClaimToken,
+  listAuthSessions,
   loginWithPassword,
   nodeIsClaimed,
   resolveBearerIdentity,
+  revokeListedAuthSession,
   signupAccount,
   signupViaInvite,
   type AccountRowJson,
 } from '../../../identity/pg-auth.js';
+import { closeSessionSockets, type SessionSocketPort } from '../../../identity/session-sockets.js';
 
 function accountView(row: AccountRowJson): AuthAccountView {
   return {
@@ -308,11 +323,15 @@ function authInviteResolve(deps: FacadeDeps): OperationHandler {
       ctx.identity?.kind === 'bearer' || ctx.identity?.kind === 'auto-owner'
         ? ctx.identity.identityId
         : undefined;
-    return deps.db.rpc<InvitePreview>(
+    const preview = await deps.db.rpc<InvitePreview>(
       { requestId: ctx.requestId, ...(viewer ? { identityId: viewer } : {}) },
       'preview_invite',
       [body.code],
     );
+    // W5 (K2): a live code into a space that requires a space password says
+    // so, so the join form can ask for one. Dead codes answer as before.
+    if (preview.status !== 'valid') return preview;
+    return { ...preview, requiresSpacePassword: await inviteRequiresSpacePassword(deps.db, body.code) };
   };
 }
 
@@ -348,11 +367,17 @@ function authSpaceEnter(deps: FacadeDeps): OperationHandler {
       parentSessionId = null;
     }
     const owner = await deps.owner();
-    const issued = await enterSpace(deps.db, claimsFor(owner, ctx), {
+    const claims = claimsFor(owner, ctx);
+    // W5 (K2): the space password, when the space requires one. Checked here
+    // (scrypt cannot run in SQL); `enter_space` then refuses unless the
+    // verifier checked is still the member's active one.
+    const spaceVerifier = await checkSpacePassword(deps.db, claims, body.spaceId, body.spacePassword);
+    const issued = await enterSpace(deps.db, claims, {
       spaceId: body.spaceId,
       parentSessionId,
       kind,
       label: body.label ?? null,
+      spaceVerifier,
     });
     const result: AuthSpaceEnterResult = {
       token: issued.token,
@@ -600,6 +625,7 @@ function authInviteSignup(deps: FacadeDeps): OperationHandler {
         displayName: body.displayName ?? null,
         email: body.email ?? null,
         ...(body.kind ? { kind: body.kind } : {}),
+        ...(body.spacePassword ? { spacePassword: body.spacePassword } : {}),
       },
       ctx.requestId,
     );
@@ -620,19 +646,132 @@ function authInviteSignup(deps: FacadeDeps): OperationHandler {
   };
 }
 
+/**
+ * `auth.sessions.list` (plan W4, 232) — the caller's own sessions, or with
+ * `?spaceId=` every session pinned to that space. Who may see what is
+ * `list_auth_sessions`' decision under the caller's claims (humans only; space
+ * admin for a space, pin-aware). No token or hash ever leaves SQL.
+ */
+function authSessionsList(deps: FacadeDeps): OperationHandler {
+  return async (ctx) => {
+    const raw = ctx.query.get('spaceId');
+    const parsed = AuthSessionsListInputSchema.safeParse(raw === null ? {} : { spaceId: raw });
+    if (!parsed.success) throw new CollabError('invalid_input', 'spaceId must be a uuid');
+    const spaceId = parsed.data.spaceId ?? null;
+    const owner = await deps.owner();
+    const sessions = await listAuthSessions(deps.db, claimsFor(owner, ctx), spaceId, ctx.identity.sessionId);
+    const result: AuthSessionsListResult = { spaceId, sessions };
+    return json(result, { headers: { 'cache-control': 'no-store' } });
+  };
+}
+
+/**
+ * `auth.sessions.revoke` (plan W4, 232) — end one session the caller could
+ * list. SQL revokes it and, through 232's trigger, the pinned sessions entered
+ * from it, and returns every id it ended. After commit, the open event sockets
+ * of exactly those sessions are closed; a failed close is logged, not thrown.
+ */
+function authSessionsRevoke(deps: FacadeDeps, sockets: SessionSocketPort | undefined): OperationHandler {
+  return async (ctx) => {
+    const sessionId = requireUuidParam(ctx, 'sessionId');
+    const owner = await deps.owner();
+    const result = await revokeListedAuthSession(deps.db, claimsFor(owner, ctx), sessionId);
+    closeSessionSockets(sockets, new Set(result.revokedSessionIds), (message, fields) =>
+      console.warn(`[auth.sessions.revoke] ${message}`, fields));
+    return result;
+  };
+}
+
+/**
+ * W5 (K2, decision 30) — the space-password setting and the P5 admin ops.
+ * Human space admins only; every guard but the node-mode one is in SQL (268).
+ * Reset and lock end the member's sessions pinned to the space, turning the
+ * setting on ends every human session pinned to it, and their sockets are
+ * closed here.
+ */
+function spacesSpacePasswordSetRequired(deps: FacadeDeps, sockets: SessionSocketPort | undefined): OperationHandler {
+  return async (ctx) => {
+    const spaceId = requireUuidParam(ctx, 'spaceId');
+    const body = ctx.body as SpacePasswordSetRequiredInput;
+    // A space password guards the pinned session enter_space mints. Below
+    // `enforce`, an unpinned gate session still reaches the space, so turning
+    // it on would promise a boundary the node does not keep. Turning it off
+    // is always allowed.
+    const spaceSessions = deps.config.spaceSessions ?? 'agents';
+    if (body.required === true && spaceSessions !== 'enforce') {
+      throw new CollabError(
+        'conflict',
+        `a space password needs TM8_SPACE_SESSIONS=enforce; this node runs '${spaceSessions}'`,
+        { details: { reason: 'space_password_requires_enforce', spaceSessions } },
+      );
+    }
+    const owner = await deps.owner();
+    const result: SpacePasswordSetRequiredResult = await setSpaceRequirePassword(
+      deps.db, claimsFor(owner, ctx),
+      { spaceId, required: body.required, ...(body.password ? { ownPassword: body.password } : {}) },
+    );
+    // Turning it on ends the space's pinned human sessions (268); close them.
+    closeSessionSockets(sockets, new Set(result.revokedSessionIds), (message, fields) =>
+      console.warn(`[spaces.spacePassword.setRequired] ${message}`, fields));
+    return json(result, { headers: { 'cache-control': 'no-store' } });
+  };
+}
+
+function spacesMembersSpacePasswordReset(deps: FacadeDeps, sockets: SessionSocketPort | undefined): OperationHandler {
+  return async (ctx) => {
+    const spaceId = requireUuidParam(ctx, 'spaceId');
+    const memberId = requireUuidParam(ctx, 'memberId');
+    const body = ctx.body as SpacePasswordResetInput;
+    const owner = await deps.owner();
+    const result: SpacePasswordAdminResult = await resetSpaceLogin(
+      deps.db, claimsFor(owner, ctx), { spaceId, memberId, password: body.password });
+    closeSessionSockets(sockets, new Set(result.revokedSessionIds), (message, fields) =>
+      console.warn(`[spaces.members.spacePassword.reset] ${message}`, fields));
+    return json(result, { headers: { 'cache-control': 'no-store' } });
+  };
+}
+
+function spacesMembersSpacePasswordLock(deps: FacadeDeps, sockets: SessionSocketPort | undefined): OperationHandler {
+  return async (ctx) => {
+    const spaceId = requireUuidParam(ctx, 'spaceId');
+    const memberId = requireUuidParam(ctx, 'memberId');
+    const body = ctx.body as SpacePasswordLockInput;
+    const owner = await deps.owner();
+    const result: SpacePasswordAdminResult = await setSpaceLoginLocked(
+      deps.db, claimsFor(owner, ctx), { spaceId, memberId, locked: body.locked });
+    closeSessionSockets(sockets, new Set(result.revokedSessionIds), (message, fields) =>
+      console.warn(`[spaces.members.spacePassword.lock] ${message}`, fields));
+    return json(result, { headers: { 'cache-control': 'no-store' } });
+  };
+}
+
+export interface AuthHandlerDeps {
+  /** The live event sockets; absent (tests, no event server) skips the close. */
+  readonly sockets?: SessionSocketPort;
+}
+
 /** The complete auth seam — one registration, one honest group. */
-export function registerW2AuthHandlers(registry: HandlerRegistry, deps: FacadeDeps): void {
+export function registerW2AuthHandlers(
+  registry: HandlerRegistry,
+  deps: FacadeDeps,
+  auth: AuthHandlerDeps = {},
+): void {
   registry.registerAll({
     'auth.signup': authSignup(deps),
     'auth.login': authLogin(deps),
     'auth.logout': authLogout(deps),
     'auth.session.get': authSessionGet(deps),
     'auth.space.enter': authSpaceEnter(deps),
+    'auth.sessions.list': authSessionsList(deps),
+    'auth.sessions.revoke': authSessionsRevoke(deps, auth.sockets),
     'auth.claim': authClaim(deps),
     'auth.claim.status': authClaimStatus(deps),
     'auth.claim.reissue': authClaimReissue(deps),
     'auth.password.change': authPasswordChange(deps),
     'auth.invite.resolve': authInviteResolve(deps),
     'auth.invite.signup': authInviteSignup(deps),
+    'spaces.spacePassword.setRequired': spacesSpacePasswordSetRequired(deps, auth.sockets),
+    'spaces.members.spacePassword.reset': spacesMembersSpacePasswordReset(deps, auth.sockets),
+    'spaces.members.spacePassword.lock': spacesMembersSpacePasswordLock(deps, auth.sockets),
   });
 }

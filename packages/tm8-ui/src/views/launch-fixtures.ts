@@ -122,12 +122,14 @@ export const LAUNCH_DEFAULTS: LaunchDefaultsResult = {
     total: 1,
     budget: 12288,
     floor: 1.5,
+    minEntries: 1,
   },
   skills: {
     items: [{ entityId: 'ent-sk-review', kind: 'skill', title: 'code-review', via: 'teammate', headerText: 'Review a diff for defects', headerSource: 'native', promptBytes: 236 }],
     total: 1,
     budget: null,
     floor: 1.5,
+    minEntries: 1,
   },
   references: {
     items: [
@@ -137,7 +139,9 @@ export const LAUNCH_DEFAULTS: LaunchDefaultsResult = {
     total: 2,
     budget: 8192,
     floor: 1.5,
+    minEntries: 1,
   },
+  teammates: { items: [], total: 0, budget: null, floor: 1, minEntries: 1 },
   taskId: 'task-1',
   contextIndex: 'on',
   warnings: [],

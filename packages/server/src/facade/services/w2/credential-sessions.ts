@@ -274,7 +274,7 @@ export interface W2CredentialSessionsServiceOptions {
 
 export type SpaceLoginStorePort = Pick<
   DbSpaceCredentialStore,
-  'startLogin' | 'finishLogin' | 'liveSessions' | 'expirePending' | 'recordProbe'
+  'startLogin' | 'finishLogin' | 'liveSessions' | 'expirePending' | 'recordProbe' | 'read'
 >;
 
 /** What `closeSpaceLogin` did for a caller outside this service (delete). */
@@ -1373,20 +1373,7 @@ export class W2CredentialSessionsService {
       terminated = killed === 'killed';
       credential = (await this.spaceStore.finishLogin(principal.claims, workSessionId, false)).credential;
     } else {
-      const found = await this.db.query<{ credential: SpaceCredential }>(
-        principal.claims,
-        `select jsonb_build_object(
-                  'id', id, 'spaceId', space_id, 'provider', provider, 'shape', shape,
-                  'label', label, 'isDefault', is_default, 'status', status,
-                  'createdByAccountId', created_by_account_id,
-                  'displayLogin', display_login, 'keyHint', key_hint,
-                  'pendingExpiresAt', pending_expires_at,
-                  'createdAt', created_at, 'updatedAt', updated_at,
-                  'lastUsedAt', last_used_at, 'lastProbeAt', last_probe_at) as credential
-           from public.space_credentials where id = $1`,
-        [row.space_credential_id],
-      );
-      credential = found[0]?.credential;
+      credential = (await this.spaceStore.read(principal.claims, row.space_credential_id)) ?? undefined;
     }
     const connected = credential?.status === 'active';
     return {

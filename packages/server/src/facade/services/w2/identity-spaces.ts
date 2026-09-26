@@ -17,6 +17,7 @@ import {
 } from '@tm8/contract';
 
 import type { DbClaims, Querier } from '../../../db/types.js';
+import { hashSpacePassword, inviteRequiresSpacePassword } from '../../../identity/pg-auth.js';
 import type { OperationHandler } from '../../../http/types.js';
 import { claimsFor, commandEnvelope, limitOf, requireUuidParam } from '../../context.js';
 import type { FacadeDeps } from '../../deps.js';
@@ -635,17 +636,25 @@ export class W2IdentitySpacesService {
   readonly spacesInvitesRedeem: OperationHandler = async (ctx) => {
     const owner = await this.deps.owner();
     const body = bodyObject(ctx.body);
-    assertStrictKeys(body, ['actorId', 'clientMutationId', 'code']);
+    assertStrictKeys(body, ['actorId', 'clientMutationId', 'code', 'spacePassword']);
     const clientMutationId = requireMutationId(body);
     optionalActorId(body);
     const code = requireString(body, 'code');
+    // W5 (K2): the space password, hashed here and only when the invite's
+    // space requires one. `redeem_invite` refuses a join that needs one and
+    // has none, and never overwrites an existing login row.
+    const spacePassword = typeof body.spacePassword === 'string' && body.spacePassword !== ''
+      ? body.spacePassword
+      : undefined;
+    const needsSpacePassword = await inviteRequiresSpacePassword(this.deps.db, code);
+    const spaceVerifier = needsSpacePassword && spacePassword ? await hashSpacePassword(spacePassword) : null;
     return this.deps.db.rpc(
       // Redeeming creates the caller's human membership. Acting as a persona
       // from another Space is neither an authorization input nor honest audit
       // attribution for this identity-level transition.
       claimsFor(owner, ctx, { clientMutationId }),
       'redeem_invite',
-      [code, clientMutationId],
+      [code, clientMutationId, spaceVerifier],
     );
   };
 

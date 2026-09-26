@@ -65,8 +65,12 @@ export interface ManifestContextInput {
    * and each of its drops is recorded (`header` or `entry`, `byte-budget`).
    */
   index?: FitContextIndexResult;
-  /** The memory collapse (§10 Q1), when one ran; indices are into `teamMember.memoryIds`. */
-  memoryCollapse?: import('./context-index.js').MemoryCollapseResult;
+  /**
+   * The files the assignment snapshot lists in `<attachments>`
+   * (`launchTaskSnapshots`), when the launch rendered an index: files are
+   * never index entries, so this is their record.
+   */
+  attachments?: ReadonlyArray<{ fileEntityId: string; name: string; mime: string }>;
 }
 
 const REFERENCE_KINDS: ReadonlySet<string> = new Set(SPAWN_SELECTION_REFERENCE_KINDS);
@@ -100,30 +104,21 @@ export function buildManifestContext(input: ManifestContextInput): Required<Omit
     entries.push({ ...entry, rank: ranks[entry.group] });
   };
 
-  // Memories: the PREFIX RULE — the first `memoryIds.length` texts are these.
-  // A memory the budget collapsed is a `<context_index>` line instead of a
-  // whole `<entry>`, recorded as a `body`-level drop (§10 Q1 rule 3).
+  // Memories. With the index (always, since launch card v3) each is an index
+  // entry; one the trim dropped is recorded with the index's drops below.
+  // Without it (a manifest recomposed from before), the PREFIX RULE: the first
+  // `memoryIds.length` texts are these, each a whole `<entry>`.
   const member = context.teamMember;
-  const collapsed = new Set(input.memoryCollapse?.collapsed ?? []);
   const indexedMemories = new Map(
     (input.index?.index.groups.find((g) => g.name === 'memories')?.entries ?? []).map((e) => [e.id, e]),
   );
   (member.memoryIds ?? []).forEach((entityId, index) => {
     const text = member.memories[index];
     const via = audit?.memoryVia[index] ?? (selectedGroups.has('memories') ? 'selection' : 'teammate');
-    if (collapsed.has(index)) {
+    if (input.index) {
       const entry = indexedMemories.get(entityId);
-      dropped.push({ entityId, kind: 'memory', group: 'memories', reason: 'byte-budget', level: 'body' });
-      // Dropped from the index too: its `entry`-level drop is recorded below.
       if (!entry) return;
-      add({
-        entityId,
-        kind: 'memory',
-        group: 'memories',
-        via,
-        state: indexState(entry),
-        bytes: contextEntryBytes(entry),
-      });
+      add({ entityId, kind: 'memory', group: 'memories', via, state: indexState(entry), bytes: contextEntryBytes(entry) });
       return;
     }
     add({
@@ -220,6 +215,22 @@ export function buildManifestContext(input: ManifestContextInput): Required<Omit
         });
       }
     }
+    // Files ride in `<attachments>`, never the index.
+    const pickedVia = new Map((context.references ?? []).map((ref) => [ref.entityId, ref.via]));
+    for (const file of input.attachments ?? []) {
+      const key = `references:${file.fileEntityId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      add({
+        entityId: file.fileEntityId,
+        kind: 'file',
+        group: 'references',
+        via: pickedVia.get(file.fileEntityId) === 'selection' ? 'selection' : 'attached',
+        link: 'attached_to',
+        state: 'collapsed',
+        bytes: utf8Bytes(serializeAttachmentEntry(file)),
+      });
+    }
     for (const drop of input.index.drops) {
       // A skill's whole-entry drop is already recorded from `skippedSkills`.
       if (drop.group === 'harness' || (drop.group === 'skills' && drop.level === 'entry')) continue;
@@ -305,22 +316,21 @@ export function buildManifestContext(input: ManifestContextInput): Required<Omit
     memories: {
       ...selectable('memories'),
       ...(audit?.legacyMemoriesDropped ? { legacyDropped: audit.legacyMemoriesDropped } : {}),
-      ...(input.memoryCollapse && input.memoryCollapse.collapsed.length > 0
-        ? input.memoryCollapse.rank === 'jev'
-          ? { rank: 'jev' as const }
-          : { rank: 'none' as const, collapseOrder: 'teammate>task>requested' as const }
-        : {}),
     },
     skills: selectable('skills'),
     references: {
       ...selectable('references'),
       ...(unreadReferences > 0 ? { unread: unreadReferences } : {}),
     },
-    // Selection cannot name teammates: the teammate pick is its own click.
-    // A dispatcher's roster rows past its read are counted, as unread links are.
-    teammates: {
+    // `selection.teammateIds` (Decision 7) is an exact set; without it the
+    // defaults are the tasks' linked teammates (and a dispatcher's roster),
+    // audited as not selectable, as before. A dispatcher's roster rows past
+    // its read are counted, as unread links are.
+    teammates: context.teammates ? { mode: 'selected' } : {
       mode: 'default',
-      reason: 'not-selectable',
+      ...(audit?.teammatesIgnored !== undefined
+        ? { reason: 'dispatcher-roster' as const, ignored: audit.teammatesIgnored }
+        : { reason: 'not-selectable' as const }),
       ...(input.index && context.roster && context.roster.total > context.roster.members.length
         ? { unread: context.roster.total - context.roster.members.length }
         : {}),

@@ -72,13 +72,14 @@ import {
   type SpaceKindCounts,
   type SpaceSettingsView,
   type SpaceConfigsView,
+  type AuthSessionsListResult,
   type ChatDefault,
   type ChatDefaultsView,
   type Workflow,
   type SpaceSummary,
 } from '@tm8/contract';
 import type { BranchTopologyOpts, ConnectionOpts, FeedOpts, FileBlameOpts, FileHistoryOpts, GitDiffOpts, IdentityView, JournalOpts, PageOpts, Seam, TranscriptOpts, Unsubscribe } from '../seam';
-import { createHttpClient, type FetchLike } from './http';
+import { createHttpClient, type FetchLike, type SpaceSessionPort } from './http';
 import { chatTurnFrameFromWire, type WireChatTurnFrame } from '../../chat-home/wire';
 import { createOps } from './ops';
 import {
@@ -115,6 +116,8 @@ export interface RealSeamOptions {
    * host from the per-server pass store for authenticated HTTP requests.
    */
   getAuthToken?: () => string | null;
+  /** W3 pinned space sessions; see `HttpOptions.spaceSession`. */
+  spaceSession?: SpaceSessionPort;
   timers?: Timers;
   now?: () => number;
   random?: () => number;
@@ -192,6 +195,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     fetch: options.fetch,
     onTransport: (reachable) => conn?.noteTransport(reachable),
     ...(options.getAuthToken ? { getAuthToken: options.getAuthToken } : {}),
+    ...(options.spaceSession ? { spaceSession: options.spaceSession } : {}),
   });
 
   const ops = createOps(http, { newClientMutationId: options.newClientMutationId });
@@ -327,6 +331,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     spaces: (): Promise<SpaceSummary[]> => ops.spaces(),
     spaceSettings: (spaceId: SpaceId): Promise<SpaceSettingsView> => ops.spaceSettings(spaceId),
     spaceConfigs: (spaceId: SpaceId): Promise<SpaceConfigsView> => ops.spaceConfigs(spaceId),
+    authSessions: (spaceId: SpaceId | null): Promise<AuthSessionsListResult> => ops.authSessions(spaceId),
     chatDefaults: (spaceId: SpaceId): Promise<ChatDefaultsView> => ops.chatDefaults(spaceId),
     setChatDefaults: (spaceId: SpaceId, defaults: Record<string, ChatDefault | null>): Promise<ChatDefaultsView> =>
       ops.setChatDefaults(spaceId, defaults),
@@ -433,6 +438,10 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       work: (id, input) => ops.work(id, input),
       skills: ops.skills,
       jev: ops.jev,
+      /* `launch.defaults` (I9) — what a launch loads per group. Without this
+         line every launch surface on a real node read its defaults as
+         unknown: the chips said "?" and nothing could be edited or attached. */
+      launchDefaults: ops.launchDefaults,
       forms: ops.forms,
       createEdge: (input) => ops.createEdge(input),
       deleteEdge: (edgeId, ctx) => ops.deleteEdge(edgeId, ctx),
@@ -445,6 +454,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       react: (id, input) => ops.react(id, input),
       resolveAttention: (id, input) => ops.resolveAttention(id, input),
       updateAttentionRequest: (requestId, input) => ops.updateAttentionRequest(requestId, input),
+      attentionV2: ops.attentionV2,
       updateProfile: (input) => ops.updateProfile(input),
       setMemberRole: (spaceId, memberId, input) => ops.setMemberRole(spaceId, memberId, input),
       leaveSpace: (spaceId) => ops.leaveSpace(spaceId),
@@ -455,6 +465,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       // revoke body binds `RequiredCommandContextSchema`, so a missing body is
       // a 400 and an absent object is not the same as an empty one on the wire.
       revokeInvite: (spaceId, inviteId, ctx) => ops.revokeInvite(spaceId, inviteId, ctx ?? {}),
+      revokeAuthSession: (sessionId) => ops.revokeAuthSession(sessionId),
       createTaskAxis: (spaceId, input) => ops.createTaskAxis(spaceId, input),
       updateTaskAxis: (spaceId, axisId, input) => ops.updateTaskAxis(spaceId, axisId, input),
       deleteTaskAxis: (spaceId, axisId, ctx) => ops.deleteTaskAxis(spaceId, axisId, ctx),
@@ -498,6 +509,8 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       containerProviders: () => ops.containerProviders(),
     },
 
+    nodeMetrics: () => ops.nodeMetrics(),
+
     // -- credentials ---------------------------------------------------------
 
     credentials: {
@@ -518,11 +531,30 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
         policy: (spaceId) => ops.spaceCredentialsPolicy(spaceId),
         setPolicy: (spaceId, provider, allowedSources) =>
           ops.spaceCredentialsSetPolicy(spaceId, provider, allowedSources),
+        setVisibility: (credentialId, visibility) => ops.spaceCredentialsSetVisibility(credentialId, visibility),
+        spaceDefaultConsent: (credentialId, allowed) => ops.spaceCredentialsDefaultConsent(credentialId, allowed),
+        claim: (credentialId) => ops.spaceCredentialsClaim(credentialId),
+        setMyDefault: (credentialId) => ops.spaceCredentialsSetMyDefault(credentialId),
+        clearMyDefault: (spaceId, provider) => ops.spaceCredentialsClearMyDefault(spaceId, provider),
+        usage: (credentialId) => ops.spaceCredentialsUsage(credentialId),
+        addMine: (spaceId, provider, label) => ops.spaceCredentialsAddMine(spaceId, provider, label),
       },
       node: {
         status: () => ops.nodeCredentialsStatus(),
         setPolicy: (provider, allowNode) => ops.nodeCredentialsSetPolicy(provider, allowNode),
       },
+    },
+
+    // -- space links (W6) ----------------------------------------------------
+
+    spaceLinks: {
+      list: (spaceId) => ops.spaceLinksList(spaceId),
+      add: (spaceId, targetSpaceId) => ops.spaceLinksAdd(spaceId, targetSpaceId),
+      login: (linkId) => ops.spaceLinksMutate('spaceLinks.login', linkId),
+      relogin: (linkId) => ops.spaceLinksMutate('spaceLinks.relogin', linkId),
+      logout: (linkId) => ops.spaceLinksMutate('spaceLinks.logout', linkId),
+      remove: (linkId) => ops.spaceLinksMutate('spaceLinks.remove', linkId),
+      setSpawn: (linkId, allowSpawn, spawnBudget) => ops.spaceLinksSetSpawn(linkId, allowSpawn, spawnBudget),
     },
 
     // -- liveness ------------------------------------------------------------

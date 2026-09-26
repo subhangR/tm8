@@ -31,9 +31,6 @@ export interface SessionChatSurfaceProps {
   filter?: string;
   focusAround?: `message:${string}` | `activity:${string}` | null;
   composerPolicy?: ComposerInteractionPolicy | null;
-  /** The session is quiet and may be waiting for a human — see ChannelScreen. */
-  needsAttention?: boolean;
-  attentionDetail?: string;
   /** Test/integration injection. Production uses the retained global store. */
   store?: StoreApi<ChatStoreState>;
   onOpenEntity?: (id: EntityId) => void;
@@ -56,8 +53,6 @@ export function SessionChatSurface({
   filter = 'chronological',
   focusAround = null,
   composerPolicy = null,
-  needsAttention = false,
-  attentionDetail,
   store = chatStore,
   onOpenEntity,
   onSwitchToTerminal,
@@ -190,8 +185,6 @@ export function SessionChatSurface({
       downloadHref={attachmentHref}
       turnGraphs
       onSwitchToTerminal={onSwitchToTerminal}
-      needsAttention={needsAttention}
-      {...(attentionDetail ? { attentionDetail } : {})}
       draft={feed.draft}
       onDraftChange={feed.setDraft}
       replyState={{

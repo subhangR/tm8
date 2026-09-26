@@ -237,7 +237,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'auth.space.enter': {
     cmd: ['auth', 'space', 'enter'],
-    syn: 'tm8 auth space enter <space-id> [--label <label>]',
+    syn: 'tm8 auth space enter <space-id> [--label <label>] [--space-password <password>] [--print-token]',
     sum: 'Mint a session pinned to one space from your unpinned (gate) session',
     authz: 'server',
     input: 'bound',
@@ -247,7 +247,33 @@ const ROWS: Record<OperationName, Row> = {
       'requires membership of the space and an unpinned browser/cli session; a pinned session cannot enter another space',
       'the new session has the same kind, never carries node-admin power, and expires no later than the session that minted it',
       'under TM8_SPACE_SESSIONS=enforce an unpinned human session can call only spaces.list, auth.* and node administration until it enters a space',
-      'the pinned token is printed once and not stored, so the stored gate credential stays usable for entering other spaces',
+      'with a stored gate credential the pinned token is stored next to it, keyed by space, and `tm8 --space <space-id>` presents it; the gate stays usable for entering other spaces',
+      'with --print-token (or in an agent session, or with no stored credential) nothing is stored: export the printed token as TM8_AGENT_TOKEN',
+      'a space that requires a space password (or a locked space login) refuses entry without --space-password; the password is checked for that space only',
+    ],
+  },
+  'auth.sessions.list': {
+    cmd: ['auth', 'sessions'],
+    syn: 'tm8 auth sessions [--pinned-to <space-id>]',
+    sum: 'List your own live sessions, or (space admin) every session pinned to a space',
+    authz: 'server',
+    input: 'none',
+    tags: ['sessions', 'session', 'token', 'devices', 'list', 'revoke'],
+    notes: [
+      'humans only; the admin view needs owner/admin of the space and a session that is not pinned elsewhere',
+      'never shows a token; origin is login, space_enter, spawn or chat',
+    ],
+  },
+  'auth.sessions.revoke': {
+    cmd: ['auth', 'sessions', 'revoke'],
+    syn: 'tm8 auth sessions revoke <session-id>',
+    sum: 'Revoke a session you can list; its event sockets close and a gate session takes its pinned sessions with it',
+    authz: 'server',
+    input: 'none',
+    side: 'durable',
+    tags: ['sessions', 'session', 'revoke', 'logout', 'token', 'sign out'],
+    notes: [
+      'a session you cannot list answers not_found',
     ],
   },
   'auth.password.change': {
@@ -266,7 +292,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'auth.invite.signup': {
     cmd: ['auth', 'invite', 'signup'],
-    syn: 'tm8 auth invite signup --code <inv_…> --username <username> --password <password> [--display-name <name>] [--email <email>]',
+    syn: 'tm8 auth invite signup --code <inv_…> --username <username> --password <password> [--space-password <password>] [--display-name <name>] [--email <email>]',
     sum: 'Redeem a space invite that creates your account and signs you in — the operator never learns your password',
     authz: 'server',
     input: 'bound',
@@ -468,7 +494,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'credentials.space.rekey': {
     cmd: null,
-    sum: 'Replace a space credential\'s key — its creator or a space admin, human sessions only',
+    sum: 'Replace a space credential\'s key — its owner (a space admin for a space-owned one), human sessions only',
     authz: 'server',
     input: 'bound',
     tags: ['credential', 'space', 'rotate', 'settings'],
@@ -479,7 +505,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'credentials.space.setDefault': {
     cmd: null,
-    sum: 'Make a space credential its provider\'s default — its creator or a space admin, human sessions only',
+    sum: 'Make a space credential its provider\'s space default — an opted-in owner or a space admin, human sessions only',
     authz: 'server',
     input: 'bound',
     tags: ['credential', 'space', 'default', 'settings'],
@@ -490,7 +516,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'credentials.space.rename': {
     cmd: null,
-    sum: 'Rename a space credential — its creator or a space admin, human sessions only',
+    sum: 'Rename a space credential — its owner (a space admin for a space-owned one), human sessions only',
     authz: 'server',
     input: 'bound',
     tags: ['credential', 'space', 'settings'],
@@ -501,13 +527,90 @@ const ROWS: Record<OperationName, Row> = {
   },
   'credentials.space.delete': {
     cmd: null,
-    sum: 'Delete a space credential and kill every live session using it — its creator or a space admin, human sessions only',
+    sum: 'Delete a space credential and kill every live session using it — its owner or a space admin, human sessions only',
     authz: 'server',
     input: 'bound',
     tags: ['credential', 'space', 'disconnect', 'settings'],
     reason: 'human_settings_only',
     notes: [
       'the row is revoked first; every live session and login terminal on it is then killed, whoever launched it',
+    ],
+  },
+  'credentials.space.setVisibility': {
+    cmd: null,
+    sum: 'Make a space credential private or public — its owner (a space admin for a space-owned one), human sessions only',
+    authz: 'server',
+    input: 'bound',
+    tags: ['credential', 'space', 'visibility', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'private clears both default flags and kills every live session its owner did not launch',
+    ],
+  },
+  'credentials.space.spaceDefaultConsent': {
+    cmd: null,
+    sum: 'Let (or stop) a public credential you own serving as the space default — its owner, human sessions only',
+    authz: 'server',
+    input: 'bound',
+    tags: ['credential', 'space', 'default', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'withdrawing consent clears the space default flag in the same statement',
+    ],
+  },
+  'credentials.space.addMine': {
+    cmd: null,
+    sum: 'Add your own server-level GitHub token to this space as a private credential — human sessions only',
+    authz: 'server',
+    input: 'bound',
+    tags: ['credential', 'space', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'the token is read and re-sealed server-side; a Claude or Codex login takes a fresh sign-in instead',
+    ],
+  },
+  'credentials.space.claim': {
+    cmd: null,
+    sum: 'Take ownership of a migrated space credential you created — human sessions only',
+    authz: 'server',
+    input: 'bound',
+    tags: ['credential', 'space', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'only a pre-ownership row its creator never chose to leave space-owned can be claimed',
+    ],
+  },
+  'credentials.space.myDefault.set': {
+    cmd: null,
+    sum: 'Make a credential you own your own default for its provider in this space — human sessions only',
+    authz: 'server',
+    input: 'bound',
+    tags: ['credential', 'space', 'default', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'auto order: my default, then legacy member key, then space default, then node',
+    ],
+  },
+  'credentials.space.myDefault.clear': {
+    cmd: null,
+    sum: 'Clear your own default credential for a provider in this space — human sessions only',
+    authz: 'server',
+    input: 'bound',
+    tags: ['credential', 'space', 'default', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'idempotent',
+    ],
+  },
+  'credentials.space.usage': {
+    cmd: null,
+    sum: 'List the sessions launched on a space credential — its owner, or an admin for a public or space-owned one',
+    authz: 'server',
+    input: 'none',
+    tags: ['credential', 'space', 'audit', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'each row names the pick source, owner, root launcher and agent session',
     ],
   },
   'credentials.space.policy.get': {
@@ -532,6 +635,104 @@ const ROWS: Record<OperationName, Row> = {
       'null removes the policy',
     ],
   },
+  // ── space links (W6, migrations 250/251; CLI W7) ─────────────────────────
+  //
+  // `tm8 link list|add|login|audit` (commands/link.ts). The writes are refused
+  // to agent and link sessions twice (the handler guard and the strict SQL
+  // gate); the CLI adds no check and no bypass. relogin/logout/remove/setSpawn
+  // stay command-less for scope. `list` is open and secret-free.
+  'spaceLinks.list': {
+    cmd: ['link', 'list'],
+    syn: 'tm8 link list',
+    sum: 'List the Spaces this Space links to, with your own sign-in status on each — no secret is ever returned',
+    authz: 'space',
+    input: 'none',
+    tags: ['link', 'space', 'cross-space', 'settings'],
+    notes: [
+      'open to every Member of the home Space, agents included; a target Space name shows only when you are a Member of it',
+    ],
+  },
+  'spaceLinks.add': {
+    cmd: ['link', 'add'],
+    syn: 'tm8 link add <target-space-id> [--alias <alias>] [--mutation-id <id>]',
+    sum: 'Link another Space you are a Member of to this one — human sessions only',
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['link', 'space', 'cross-space', 'settings'],
+    notes: ['an agent is refused by the Server; it asks its human to run this'],
+  },
+  'spaceLinks.login': {
+    cmd: ['link', 'login'],
+    syn: 'tm8 link login <alias|link-id> [--mutation-id <id>]',
+    sum: 'Sign in to a linked Space: store your own 90-day session for it, sealed — human sessions only',
+    authz: 'server',
+    input: 'bound',
+    side: 'durable',
+    tags: ['link', 'login', 'session', 'cross-space'],
+    notes: [
+      'agents you launch may use it; nobody else can, and no response carries it',
+      'an agent is refused by the Server; it asks its human to run this',
+    ],
+  },
+  'spaceLinks.relogin': {
+    cmd: null,
+    sum: 'Replace your stored session for a linked Space; the old one is revoked — human sessions only',
+    authz: 'server',
+    input: 'bound',
+    side: 'durable',
+    tags: ['link', 'login', 'session', 'cross-space'],
+    reason: 'human_settings_only',
+  },
+  'spaceLinks.logout': {
+    cmd: null,
+    sum: 'Sign out of a linked Space: your stored session is revoked and forgotten — human sessions only',
+    authz: 'server',
+    input: 'bound',
+    side: 'durable',
+    tags: ['link', 'logout', 'revoke', 'cross-space'],
+    reason: 'human_settings_only',
+  },
+  'spaceLinks.remove': {
+    cmd: null,
+    sum: 'Remove your own row on a linked Space; the link stays for other Members — human sessions only',
+    authz: 'server',
+    input: 'bound',
+    side: 'durable',
+    tags: ['link', 'remove', 'cross-space'],
+    reason: 'human_settings_only',
+  },
+  'spaceLinks.setSpawn': {
+    cmd: null,
+    sum: 'Set your own spawn switch and budget on a linked Space — human sessions only. Allow spawn is stored per link; it is enforced when cross-space spawn ships.',
+    authz: 'server',
+    input: 'bound',
+    side: 'durable',
+    tags: ['link', 'spawn', 'budget', 'cross-space'],
+    reason: 'human_settings_only',
+  },
+  'spaceLinks.invoke': {
+    cmd: null,
+    sum: 'Run one operation in a linked Space as the Member who launched you — credential management, link and session management are refused',
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['link', 'cross-space', 'invoke', 'agent'],
+    reason: 'use_space_flag',
+    notes: [
+      'the CLI sends it for you: from a session, `--space <alias|space-id>` naming another Space routes every call of that command through it, and nothing else reaches the target',
+      'the refused set is SPACE_LINK_REFUSED in @tm8/contract, prefix-matched plus exact entries (voice.token.create) on the exact catalog name, on the home server before anything is forwarded',
+      'every call writes one audit row in the home Space; read it with spaceLinks.audit',
+    ],
+  },
+  'spaceLinks.audit': {
+    cmd: ['link', 'audit'],
+    syn: 'tm8 link audit <alias|link-id> [--limit <count>] [--before <timestamp>]',
+    sum: 'Read the audit of calls made through a space link — your own rows, or every Member\'s for a home admin',
+    authz: 'server',
+    input: 'none',
+    tags: ['link', 'cross-space', 'audit'],
+  },
   'node.credentials.status': {
     cmd: null,
     sum: 'Read the node\'s credential fallback per provider — node admin, human sessions only',
@@ -554,37 +755,107 @@ const ROWS: Record<OperationName, Row> = {
       'null removes the policy: node fallback is allowed',
     ],
   },
+  'node.metrics.get': {
+    cmd: null,
+    sum: 'Read host metrics (CPU, memory, load, disk, server RSS) for this node — node admin, human sessions only',
+    authz: 'server',
+    input: 'none',
+    tags: ['node', 'metrics', 'status'],
+    reason: 'human_settings_only',
+    notes: [
+      'the desktop status strip polls it; a figure the host cannot supply is null',
+    ],
+  },
   'serverConnections.list': {
     cmd: ['server', 'list'],
     syn: 'tm8 server list',
-    sum: 'List named routes to other tm8 Servers stored on this local node',
+    sum: 'List the tm8 Servers you can reach: servers in your Spaces, plus node-local 044 routes not yet adopted',
     authz: 'server',
     input: 'none',
     tags: ['remote', 'connection', 'target'],
   },
   'serverConnections.create': {
-    cmd: ['server', 'add'],
-    syn: 'tm8 server add <name> --url <base-url> [--username <username>] [--mutation-id <id>]',
-    sum: 'Register a named route to another tm8 Server after checking its health endpoint',
+    cmd: null,
+    sum: 'Refused: 044 server connections are read-only (W8, 261) — add a server with `tm8 server add`',
     authz: 'server',
     input: 'bound',
-    tags: ['remote', 'connection', 'target'],
+    tags: ['remote', 'connection', 'target', 'legacy'],
+    reason: 'use_servers_add',
   },
   'serverConnections.get': {
     cmd: ['server', 'get'],
     syn: 'tm8 server get <name>',
-    sum: 'Read one named Server route',
+    sum: 'Read one tm8 Server by name; a name held by two of your Spaces is refused as ambiguous',
     authz: 'server',
     input: 'none',
     tags: ['remote', 'connection', 'target'],
   },
   'serverConnections.delete': {
-    cmd: ['server', 'remove'],
-    syn: 'tm8 server remove <name> --yes [--mutation-id <id>]',
-    sum: 'Remove a named Server route from this local node',
+    cmd: null,
+    sum: 'Refused: 044 server connections are read-only (W8, 261) — remove a server with `tm8 server remove`',
     authz: 'server',
     input: 'bound',
-    tags: ['remote', 'connection', 'target'],
+    tags: ['remote', 'connection', 'target', 'legacy'],
+    reason: 'use_servers_remove',
+  },
+  // ── remote servers (W8, migration 261) ────────────────────────────────────
+  //
+  // add / adopt / remove are refused to agent and link sessions twice (the
+  // handler guard and the strict SQL gate). No response carries a gate token.
+  'servers.list': {
+    cmd: null,
+    sum: 'List the tm8 Servers one Space holds, with reachability and your own sign-in status — no secret',
+    authz: 'space',
+    input: 'none',
+    tags: ['remote', 'server', 'space'],
+    reason: 'use_server_list',
+  },
+  'servers.get': {
+    cmd: null,
+    sum: 'Read one tm8 Server by id, for a Member of its home Space',
+    authz: 'server',
+    input: 'none',
+    tags: ['remote', 'server'],
+    reason: 'use_server_list',
+  },
+  'servers.add': {
+    cmd: ['server', 'add'],
+    syn: 'tm8 server add <name> --url <base-url> [--space <space-id>] [--username <username>] [--mutation-id <id>]',
+    sum: 'Add a tm8 Server to a Space after checking its health endpoint — human sessions only',
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['remote', 'server', 'space'],
+    notes: ['without --space, the server joins your first Space'],
+  },
+  'servers.adopt': {
+    cmd: null,
+    sum: 'Give a node-local 044 route its server entity in a Space — node admin, human sessions only',
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['remote', 'server', 'legacy'],
+    reason: 'human_settings_only',
+    notes: ['the 044 row is not rewritten; adopting twice returns the same server'],
+  },
+  'servers.remove': {
+    cmd: ['server', 'remove'],
+    syn: 'tm8 server remove <name|id> --yes [--mutation-id <id>]',
+    sum: 'Remove a tm8 Server from its Space — its creator or a Space admin, human sessions only',
+    authz: 'server',
+    input: 'bound',
+    side: 'durable',
+    tags: ['remote', 'server'],
+    notes: ['refused while a space link still targets it; a node-local 044 route cannot be removed'],
+  },
+  'servers.probe': {
+    cmd: null,
+    sum: 'Check a tm8 Server is reachable through the SSRF-guarded client and record the answer',
+    authz: 'server',
+    input: 'bound',
+    tags: ['remote', 'server', 'health'],
+    reason: 'human_settings_only',
+    notes: ['a loopback-only or private address is unreachable; a refused, reset or silent one is offline'],
   },
   'spaces.list': {
     cmd: ['space', 'list'],
@@ -699,6 +970,39 @@ const ROWS: Record<OperationName, Row> = {
       'in one transaction: your tokens pinned to the Space are revoked, your agent sessions there stop, your personas are deactivated and your assignments cleared',
     ],
   },
+  'spaces.spacePassword.setRequired': {
+    cmd: null,
+    sum: 'Require (or stop requiring) a per-space password to enter this Space — space admins, human sessions only',
+    authz: 'space',
+    input: 'bound',
+    tags: ['space', 'password', 'login', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'turning it on takes your own space password unless you already have one; members without one are refused entry until an admin resets them',
+    ],
+  },
+  'spaces.members.spacePassword.reset': {
+    cmd: null,
+    sum: "Set a new space password for a member and unlock it — space admins, human sessions only",
+    authz: 'space',
+    input: 'bound',
+    tags: ['space', 'password', 'member', 'reset'],
+    reason: 'human_settings_only',
+    notes: [
+      "the member's sessions pinned to this Space are revoked; an admin cannot reset an owner",
+    ],
+  },
+  'spaces.members.spacePassword.lock': {
+    cmd: null,
+    sum: "Lock or unlock a member's space password — a locked login cannot enter the Space",
+    authz: 'space',
+    input: 'bound',
+    tags: ['space', 'password', 'member', 'lock'],
+    reason: 'human_settings_only',
+    notes: [
+      "locking revokes the member's sessions pinned to this Space; you cannot lock yourself or an owner",
+    ],
+  },
   'spaces.invites.list': {
     cmd: ['space', 'invite', 'list'],
     syn: 'tm8 space invite list [<space-id>] [--limit <count>] [--cursor <cursor>]',
@@ -722,7 +1026,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'spaces.invites.redeem': {
     cmd: ['space', 'invite', 'redeem'],
-    syn: 'tm8 space invite redeem <code> [--mutation-id <id>]',
+    syn: 'tm8 space invite redeem <code> [--space-password <password>] [--mutation-id <id>]',
     sum: 'Redeem an invitation code and join its Space',
     authz: 'server',
     input: 'unbound',
@@ -919,12 +1223,17 @@ const ROWS: Record<OperationName, Row> = {
   },
   'attentionRequests.create': {
     cmd: ['entity', 'attention'],
-    syn: 'tm8 entity attention <entity-id> --reason <text> --points <1-100> [--mutation-id <id>]',
-    sum: 'Request scored attention for any entity',
+    syn: 'tm8 entity attention <entity-id> --reason <text> [--level fyi|normal|high|urgent] [--type decide|approve|unblock|review|fyi] [--assignee <member-id>] [--points <1-100>] [--mutation-id <id>]',
+    sum: 'Ask a human for attention on any entity',
     authz: 'entity',
     input: 'bound',
     tags: ['attention', 'needs-attention', 'triage'],
-    examples: ['tm8 entity attention <entity-id> --reason "Need a decision" --points 80'],
+    notes: [
+      '--level defaults to normal and --type to decide; --points is an override, otherwise it derives from the level (fyi 10, normal 40, high 70, urgent 95)',
+      'from inside a session the request is stamped with that session (never a flag); the same session asking the same reason again returns the open request (affected: 0)',
+      'the resolver\'s note arrives as a message in the raising session about 8s after the resolve; end your turn and wait',
+    ],
+    examples: ['tm8 entity attention <task-id> --reason "Pick the retry policy" --level high'],
   },
   'attentionRequests.list': {
     cmd: ['attention', 'list'],
@@ -940,9 +1249,55 @@ const ROWS: Record<OperationName, Row> = {
   },
   'attentionRequests.resolveEntity': {
     cmd: ['attention', 'resolve-entity'],
-    syn: 'tm8 attention resolve-entity <entity-id> [--note <text>] [--mutation-id <id>]',
-    sum: 'Resolve every pending attention request for one entity',
+    syn: 'tm8 attention resolve-entity <entity-id> [--note <text>] [--batch-id <uuid>] [--mutation-id <id>]',
+    sum: 'Resolve every pending attention request on an entity\'s roll-up root',
     authz: 'entity', input: 'bound', tags: ['attention', 'resolve', 'clear'],
+    notes: [
+      'resolving is for humans: an agent should not resolve (a convention, not enforced); an agent takes back its own request with `tm8 attention withdraw`',
+      'settles the root\'s own requests and those rolled up from its sessions and forms, as one batch; `tm8 attention unresolve <batch-id>` undoes it within 8s, after which the note is delivered to each raising session',
+    ],
+  },
+  'attentionRequests.markSeen': {
+    cmd: ['attention', 'seen'],
+    syn: 'tm8 attention seen <entity-id> [--mutation-id <id>]',
+    sum: 'Mark every pending attention request on an entity\'s roll-up root seen by you',
+    authz: 'entity', input: 'bound', tags: ['attention', 'seen', 'read'],
+    notes: ['seen is per person: it never changes a request\'s status, the counts, or anyone else\'s view'],
+  },
+  'attentionRequests.unresolve': {
+    cmd: ['attention', 'unresolve'],
+    syn: 'tm8 attention unresolve <batch-id> [--mutation-id <id>]',
+    sum: 'Undo one resolve within 8s, reopening its requests and cancelling its note',
+    authz: 'entity', input: 'bound', tags: ['attention', 'undo', 'reopen'],
+    notes: ['only the resolver, and only within 8s of the resolve (conflict undo_window_closed after)'],
+  },
+  'attentionRequests.withdraw': {
+    cmd: ['attention', 'withdraw'],
+    syn: 'tm8 attention withdraw <request-id> [--expect-version <n>] [--mutation-id <id>]',
+    sum: 'Withdraw an open attention request you raised',
+    authz: 'entity', input: 'bound', ver: 'expectedVersion', tags: ['attention', 'withdraw', 'dismiss'],
+    notes: ['only the agent that raised it, and only an open agent request; nothing is delivered'],
+  },
+  // Attention v2 S6. Deliberately `cmd: null`: tm8's OWN conflict signal is
+  // raised and cleared by the worktree rail (`worktree merge|cherry-pick|stash`),
+  // never by hand. Agents and humans ask through `tm8 entity attention`.
+  'attentionSignals.raise': {
+    cmd: null,
+    sum: "Raise tm8's own merge-conflict attention signal (high / review) on a worktree, its session or a linked task",
+    authz: 'entity',
+    input: 'bound',
+    tags: ['attention', 'conflict', 'signal', 'worktree', 'system'],
+    reason: 'cli_worktree_rail',
+    notes: ['a closed vocabulary: {kind:"conflict", worktreeId}; the server builds the key and fixes level and type'],
+  },
+  'attentionSignals.clear': {
+    cmd: null,
+    sum: "Clear tm8's own merge-conflict attention signal once the worktree flow completes clean",
+    authz: 'entity',
+    input: 'bound',
+    tags: ['attention', 'conflict', 'signal', 'worktree', 'system', 'clear'],
+    reason: 'cli_worktree_rail',
+    notes: ['idempotent: nothing open is affectedCount 0'],
   },
   'entities.move': {
     cmd: ['entity', 'move'],
@@ -1857,6 +2212,18 @@ const ROWS: Record<OperationName, Row> = {
       'if no dispatcher session is alive the Server spawns one first and waits for it to settle, so the first dispatch in a space is the slow one',
       'liveness is probed, never read off `work_sessions.status` — `idle` is a legal live status and a crashed session keeps its last status forever',
       'the request reaches the dispatcher session id as a trusted envelope AND is stored on the task, so a missed delivery is still recoverable',
+    ],
+  },
+  'execution.dispatchers': {
+    cmd: null,
+    sum: 'List a Space’s dispatcher sessions, newest first, with whether each is live',
+    authz: 'space',
+    input: 'none',
+    tags: ['dispatch', 'dispatcher', 'route', 'launch', 'live'],
+    notes: [
+      'Launch-card API (launch v3 gap 5): the dispatch-target drop-up. No CLI — `session dispatch` routes to the newest live dispatcher on its own',
+      'stopped dispatchers are listed with `live: false`; liveness is probed against the node’s PTY map, never read off `work_sessions.status`',
+      '`queuedCount` is null when it is not cheap to compute; `title` and `purpose` are untrusted display text',
     ],
   },
   'execution.prompt': {
@@ -2945,18 +3312,6 @@ const ROWS: Record<OperationName, Row> = {
     tags: ['container', 'fork', 'clone', 'copy', 'branch', 'snapshot'],
     notes: ['no version guard: a fork READS the source machine and never changes its record'],
   },
-  'containers.attention': {
-    cmd: ['container', 'attention'],
-    syn: 'tm8 container attention <container-id> --reason login|captcha|2fa|payment|approval|other [--detail <text>] [--points <n>] [--mutation-id <id>]',
-    sum: 'Ask a human to take over a machine, with a bounded score',
-    authz: 'entity',
-    input: 'bound',
-    tags: ['container', 'attention', 'takeover', 'human', 'login', 'captcha', '2fa'],
-    notes: [
-      'the takeover path for the moments an agent must not automate: a login, a captcha, a payment (§12.5)',
-      'points are 1-100 and rank the request against every other call on human attention',
-    ],
-  },
   'containers.providers.list': {
     cmd: ['container', 'providers'],
     syn: 'tm8 container providers [--node <name>]',
@@ -3003,6 +3358,7 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   spaces: 'space',
   entities: 'entity',
   attentionRequests: 'attention',
+  attentionSignals: 'attention',
   tracking: 'tracking',
   edges: 'edge',
   edgeTypes: 'edge-type',
@@ -3054,6 +3410,12 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   // but `node` already groups the credential rows, so the noun is `account`.
   // `tools/conformance`'s generator holds the same map.
   accounts: 'account',
+  // `spaceLinks.*` (W6, 250/251, all `cmd: null`): the noun a later CLI lane
+  // would spell `tm8 space-link`. generator.ts nounForOperation says the same.
+  spaceLinks: 'space-link',
+  // `servers.*` (W8, 261): the same `tm8 server` noun 044's rows used.
+  // generator.ts nounForOperation says the same.
+  servers: 'server',
 };
 
 function nounFor(operation: OperationName): string {
@@ -3106,6 +3468,7 @@ function exposureFor(operation: OperationName): Exposure {
 // 2026-08-13 (first-run claim): auth.claim + auth.claim.status take the catalog
 // to 161 rows. RECOMPUTED from `JSON.stringify(OPERATIONS)`, not adjusted.
 export const CATALOG_DIGEST =
+  // Re-measured for Attention v2 S4 (+attentionRequests.markSeen/unresolve/withdraw).
   // Re-measured for W11 (+spaces.projects.list, +spaces.projects.create at
   // /projects/create, +gate.folders.list/create; projects.link stays, decision 29) — read from the regenerated conformance manifest.
   // Re-measured 141 (+ auth.password.change, auth.invite.signup,
@@ -3140,7 +3503,18 @@ export const CATALOG_DIGEST =
   // Re-measured (G6, 232): + spaces.members.remove, spaces.leave, accounts.disable. Read from the failing digest test.
   // Re-measured (W3-server, on main bd1841bf): + auth.space.enter. Read from the conformance generator.
   // Rebased onto main d11e0be5 (#848): W11's +4 on top of auth.space.enter; digest re-measured on the rebased tree.
-  'sha256:b7a5a5ff6ae8f7320bad8055cdf9485c166d5f5f4e60cf2501c030f5612ea437';
+  // Re-measured for node.metrics.get (status strip) — read from the regenerated conformance manifest.
+  // +2 auth.sessions.list/revoke (W4, on main 96f6b61e): read from the regenerated conformance manifest.
+  // -1 containers.attention (Attention v2 S7a): read from the regenerated conformance manifest.
+  // +7 spaceLinks.* (W6, 250/251, re-stacked on f54f9ffd): RECOMPUTED from JSON.stringify(OPERATIONS); equals the regenerated manifest's catalogDigest.
+  // +6 credentials.space.* (W10b, merged onto main d8343503 after #864): read from the regenerated conformance manifest.
+  // Re-measured (W10d #883, composed onto 257 after #869/#898/#904): + credentials.space.addMine. Read from the regenerated conformance manifest.
+  // +2 attentionSignals.raise|clear (Attention v2 S6, stacked on tm8/attention-v2-integration): read from the regenerated conformance manifest.
+  // +3 attentionRequests.markSeen|unresolve|withdraw (Attention v2 S4, stacked on tm8/attention-v2-integration): read from the regenerated conformance manifest.
+  // Re-measured (W8, 261, rebuilt on main f01b1566): +6 servers.* and the serverConnections create/delete rows. Read from the regenerated conformance manifest.
+  // Re-measured (W5 #917, merges of main dd1c8215 and 2fa4999f): +3 spaces.spacePassword.* on top of main's servers.*, spaceLinks, attention and launch v3 rows. Read from the regenerated conformance manifest.
+  // Re-measured (#915 merge of main 0be3b796): main's servers.* + spaceLinks.invoke/audit and the five attention rows together. Read from the regenerated conformance manifest.
+  'sha256:89a7173aa0badf0233ebd13818273f789f5ef1142682b1e46ecdf4af7241f395';
 
 export const GRAMMAR_VERSION = '2';
 
@@ -3390,7 +3764,7 @@ const COMMAND_ALIASES = new Map<string, {
   // The Tier 2 mutating git verbs are ALIASES for the same reason `worktree
   // list|status` are: every graph touch is an operation that already exists
   // (entities.get + edges.list resolve, messages.post writes the receipt,
-  // attentionRequests.create raises a conflict), and the git mutation itself
+  // attentionSignals.raise|clear raise and clear a conflict), and the git mutation itself
   // is local argv-only execution, which the catalog does not model. A
   // `worktrees.checkpoint` row would have opened the catalog for a command
   // whose graph writes are all existing doors.
@@ -3467,7 +3841,7 @@ const COMMAND_ALIASES = new Map<string, {
     syntax: 'tm8 worktree merge <session-id|worktree-id> --from <ref> [--task <task-id>] [--mutation-id <id>]',
     summary: 'Merge a ref into the session branch; a conflict aborts cleanly and is surfaced durably',
     notes: [
-      'on conflict: abort + verify clean, then a message listing conflicted paths on the owning task anchor (fallback session, then worktree) AND attentionRequests.create — never silent, never mid-merge',
+      'on conflict: abort + verify clean, then a message listing conflicted paths on the owning task anchor (fallback session, then worktree) AND attentionSignals.raise — never silent, never mid-merge; a later clean completion clears it (attentionSignals.clear)',
       'merging the session branch INTO base is refused by design: base is checked out in the user’s tree or nowhere',
     ],
     examples: ['tm8 worktree merge <session-id> --from main'],
@@ -3664,10 +4038,10 @@ COMMAND_OPS.set('session checkpoint', ['entities.get', 'edges.list', 'messages.p
 COMMAND_OPS.set('session rollback', ['entities.get', 'edges.list', 'messages.post']);
 COMMAND_OPS.set('worktree stage', ['entities.get', 'edges.list']);
 COMMAND_OPS.set('worktree commit', ['entities.get', 'edges.list', 'messages.post']);
-COMMAND_OPS.set('worktree merge', ['entities.get', 'edges.list', 'messages.post', 'attentionRequests.create']);
-COMMAND_OPS.set('worktree cherry-pick', ['entities.get', 'edges.list', 'messages.post', 'attentionRequests.create']);
+COMMAND_OPS.set('worktree merge', ['entities.get', 'edges.list', 'messages.post', 'attentionSignals.raise', 'attentionSignals.clear']);
+COMMAND_OPS.set('worktree cherry-pick', ['entities.get', 'edges.list', 'messages.post', 'attentionSignals.raise', 'attentionSignals.clear']);
 COMMAND_OPS.set('worktree branch', ['entities.get', 'edges.list', 'messages.post']);
-COMMAND_OPS.set('worktree stash', ['entities.get', 'edges.list', 'messages.post', 'attentionRequests.create']);
+COMMAND_OPS.set('worktree stash', ['entities.get', 'edges.list', 'messages.post', 'attentionSignals.raise', 'attentionSignals.clear']);
 COMMAND_ORDER.push('session checkpoint', 'session rollback', 'worktree stage', 'worktree commit', 'worktree merge', 'worktree cherry-pick', 'worktree branch', 'worktree stash');
 
 /**

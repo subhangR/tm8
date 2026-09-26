@@ -54,6 +54,11 @@ class SpawnDb implements Db {
         snapshot: { profile: { source: 'core_default' } },
       } as T;
     }
+    if (fn === 'resolve_auth_session') {
+      // 256 (W7p): the spawn port re-resolves the minted token to read its
+      // via_link stamp. The real mint always resolves; no link here.
+      return { sessionId: AUTH_SESSION, viaLinkId: null } as T;
+    }
     if (fn === 'public.issue_work_session_agent_session') {
       // The real function returns the inserted auth_sessions row as jsonb minus
       // token_hash (072_session_io_routes.sql); the mint only reads `.id`, and
@@ -211,7 +216,10 @@ describe('server spawn integration with a stub PTY', () => {
     expect(rendered.command).toContain("features.network_proxy.enabled=true");
     expect(db.rpcCalls.find(({ fn }) => fn === 'public.execution_spawn')?.args)
       .toEqual(expect.arrayContaining([PROJECT, 'project', 'gpt-5.6-sol', 'codex']));
-    expect(db.rpcCalls.find(({ fn }) => fn === 'public.execution_spawn')?.args.at(-1))
-      .toBe(PARENT_SESSION);
+    // p_parent_session_id is the 17th positional parameter; 267 appended an
+    // 18th, p_new_task_title, which a spawn without `newTask` sends as null.
+    const spawnArgs = db.rpcCalls.find(({ fn }) => fn === 'public.execution_spawn')?.args;
+    expect(spawnArgs?.[16]).toBe(PARENT_SESSION);
+    expect(spawnArgs?.[17]).toBeNull();
   });
 });

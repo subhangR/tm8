@@ -584,7 +584,7 @@ export function ConnectionsTab({
             </span>
             {onOpenDiscussion ? (
               <button type="button" className="pn-convo__open" onClick={onOpenDiscussion}>
-                Open Discussion →
+                Open Messages →
               </button>
             ) : null}
           </div>

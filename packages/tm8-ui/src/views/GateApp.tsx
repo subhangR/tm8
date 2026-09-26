@@ -40,6 +40,7 @@ import { chatAboutTarget } from './useChatAbout';
 import { EntityChatDock, EntityChatSlot, openEntityChat, type EntityChatSlotProps } from '../entity-chat';
 import { UNADDRESSED_HASH, createBrowserTarget, type RouterTarget } from '../routes';
 import { forgetSpaceScopedPanels } from '../auth/session-reset';
+import { fetchNodeClaim, readCachedNodeClaim } from '../auth/session';
 import { CommandPalette, type PaletteView } from '../shell/CommandPalette';
 import { CopyLinkControl } from '../share';
 import { useShellKind } from '../mobile';
@@ -76,6 +77,7 @@ import { REFERENCE_KINDS } from '../domain/launch-selection';
 import { useLaunchPort } from './useLaunchPort';
 import { useTheme } from '../theme/useTheme';
 import { AccountMenu, AuthFlow, authTokenFor, noteServerOrigin, useAuthActions } from '../auth';
+import { spaceSessionFor } from '../auth/space-sessions';
 import { WorkspaceView } from './WorkspaceView';
 import { EntityView } from './EntityView';
 import { ChatHomeSurface } from '../chat-home';
@@ -89,6 +91,8 @@ import { channelFeedPortFromGateData } from './channel-feed-port';
 import { SettingsShell, ownerRoleRef, settingsPortFromSeam } from '../settings-space';
 import { FilesExplorerScreen, filesExplorerPortFromSeam } from '../files-explorer';
 import { InboxView } from './InboxView';
+import { StatusStrip } from '../status-strip';
+import { AttentionProvider, AttentionTopSegment, AttentionUndoToast } from '../attention';
 import { MessagesView } from './MessagesView';
 import { nodeKeyOf } from '../data/launch-cache';
 import {
@@ -105,6 +109,7 @@ import {
   shouldOfferSetup,
   writeSetupDismissed,
 } from '../settings-credentials';
+import { SpaceLinksSection, spaceLinksPortFromSeam } from '../settings-space-links';
 import { readLastSpace, readLastTarget, writeLastTarget } from './last-place';
 import {
   NewSpaceProjectDialog,
@@ -165,6 +170,19 @@ const HOME_TARGET: MenuTarget = { type: 'view', ref: 'dashboard' };
 
 /** Board v2's client-appended tab seat — not a menu group id (see shellTabs). */
 const BOARD_V2_TAB_ID = 'board-v2';
+
+/**
+ * The groups the top bar draws as its VIEW switcher, in pill order, and the
+ * art each segment carries. Keyed by GROUP id, not view ref: Home's group has
+ * been `chats` since revision 14 and kept that id through two renames.
+ */
+const VIEW_GROUP_ORDER: readonly string[] = ['chats', 'work', BOARD_V2_TAB_ID, 'graph'];
+const VIEW_GROUP_ART: Record<string, readonly string[]> = {
+  chats: VIEW_ART.dashboard,
+  work: VIEW_ART.workspace,
+  [BOARD_V2_TAB_ID]: VIEW_ART.board,
+  graph: VIEW_ART.graph,
+};
 
 /*
  * THE VIEW-REF CLASSIFICATION NOW LIVES IN `view-ref-screens.ts`.
@@ -320,14 +338,24 @@ export function GateApp(props: GateAppProps = {}) {
     // component on the server id, so a server switch remounts with the right
     // store entry anyway.
     getAuthToken: () => authTokenFor(activeServer.id),
+    // W3: on an enforcing server, a space switch mints a pinned session and
+    // the transport presents it; elsewhere the pass above is all there is.
+    spaceSession: spaceSessionFor(activeServer.id),
     cursorScope: `${activeServer.id}:${authAccount?.accountId ?? 'anonymous'}`,
     ...(props.seam ? { seam: props.seam } : {}),
   });
   /* Forms waiting on sessions (decision 11): one store per space, read by
      every session tile's chip and the session panel's banner. */
   const pendingFormsStore = usePendingFormsStoreFor(data.seam, data.spaceId);
+  /* Attention v2 (chapter 5): ONE attention store per shell, above both the
+     desktop and the phone trees, so every chip, count and list reads the same
+     rows and a Resolve anywhere settles everywhere. */
   const withPendingForms = (node: ReactNode) => (
-    <PendingFormsProvider store={pendingFormsStore}>{node}</PendingFormsProvider>
+    <PendingFormsProvider store={pendingFormsStore}>
+      <AttentionProvider seam={data.seam} spaceId={data.spaceId} viewerId={data.viewerActor?.id ?? null}>
+        {node}
+      </AttentionProvider>
+    </PendingFormsProvider>
   );
   const kinds = useSidePanelKinds({
     viewerId: 'viewer',
@@ -1575,7 +1603,14 @@ export function GateApp(props: GateAppProps = {}) {
   // SC-5: the space's own credentials and the node's fallback policy. One
   // port for both sections, bound to the same (seam, space) pair.
   const spaceCredentialsPort = useMemo(
-    () => (data.spaceId ? spaceCredentialsPortFromSeam(data.seam, data.spaceId, ownerRoleRef()) : null),
+    () => (data.spaceId
+      ? spaceCredentialsPortFromSeam(data.seam, data.spaceId, ownerRoleRef(), async () => (await fetchNodeClaim())?.mode ?? readCachedNodeClaim()?.mode ?? null)
+      : null),
+    [data.seam, data.spaceId],
+  );
+  // W6: links from this space to the viewer's other spaces, on the same pair.
+  const spaceLinksPort = useMemo(
+    () => (data.spaceId ? spaceLinksPortFromSeam(data.seam, data.spaceId) : null),
     [data.seam, data.spaceId],
   );
 
@@ -1703,10 +1738,15 @@ export function GateApp(props: GateAppProps = {}) {
   }, [channelEntities, navigateTo]);
 
   /* The resolved menu's groups are the tabs, with one route-only seat for the
-     new Board. The shipped result is exactly:
-       Home | Work | Board | Craft | Graph | Settings | Help
-     Customized menus remain data-driven and are never rewritten client-side. */
-  const shellTabs = useMemo<ShellTab[]>(
+     new Board — then split in two (task 01a0dc6d, owner-ruled 2026-09-26):
+     the VIEWS of the space ride one segmented pill, every other group is an
+     ordinary tab after it. The shipped result is exactly:
+       [ Home | Work | Board | Graph ]  Craft  Settings  Help
+     The partition is CLIENT-SIDE by group id and deliberately so: no
+     MenuConfig change, no migration. A customized menu is never rewritten —
+     a group id outside `VIEW_GROUP_ORDER` (renamed, custom, or the legacy
+     `board`) simply stays a tab, and a view group a space removed is absent. */
+  const { viewTabs, shellTabs } = useMemo<{ viewTabs: ShellTab[]; shellTabs: ShellTab[] }>(
     () => {
       const tabs: ShellTab[] = data.menu.config.groups.map((group) => ({ id: group.id, label: group.label }));
       /* BOARD V2 owns the single visible Board seat. It remains route-only so
@@ -1715,7 +1755,11 @@ export function GateApp(props: GateAppProps = {}) {
       const workIndex = tabs.findIndex((tab) => tab.id === 'work');
       const v2: ShellTab = { id: BOARD_V2_TAB_ID, label: 'Board' };
       tabs.splice(workIndex >= 0 ? workIndex + 1 : Math.min(1, tabs.length), 0, v2);
-      return tabs;
+      const views = VIEW_GROUP_ORDER.flatMap((id) => {
+        const tab = tabs.find((t) => t.id === id);
+        return tab ? [{ ...tab, glyph: <VectorIcon paths={VIEW_GROUP_ART[id]} size={13} /> }] : [];
+      });
+      return { viewTabs: views, shellTabs: tabs.filter((tab) => !VIEW_GROUP_ORDER.includes(tab.id)) };
     },
     [data.menu.config],
   );
@@ -1869,6 +1913,7 @@ export function GateApp(props: GateAppProps = {}) {
           onLaunchDispatch={submitDispatch}
           notices={<NoticeHost notices={notices.notices} onDismiss={notices.dismiss} />}
         />
+        <AttentionUndoToast />
       </div>
     );
   }
@@ -1893,10 +1938,11 @@ export function GateApp(props: GateAppProps = {}) {
           // and the screen names the missing step instead.
           {...(authAccount
             ? {
-                onRedeem: (code: string) =>
+                onRedeem: (code: string, spacePassword?: string) =>
                   data.seam.commands.redeemInvite({
                     code,
                     clientMutationId: newJoinMutationId(),
+                    ...(spacePassword ? { spacePassword } : {}),
                   }),
               }
             : {})}
@@ -1921,6 +1967,28 @@ export function GateApp(props: GateAppProps = {}) {
     );
   }
 
+  /* THE STATUS STRIP (task 01a0dc78): host metrics + live sessions and
+     chats. The lead slot is the attention segment's seat (task 01a0dc79-0015).
+     Rendered in ONE place per bar — never both. */
+  const statusStrip = (placement: 'row' | 'bar') =>
+    data.spaceId ? (
+      <StatusStrip
+        seam={data.seam}
+        spaceId={data.spaceId as SpaceId}
+        placement={placement}
+        leadSlot={
+          /* Attention v2 (chapter 4): `! mine · all` and the one list, read
+             from the shell's attention store. */
+          <AttentionTopSegment
+            onOpenEntity={(id) => {
+              navigateTo(WORKSPACE_TARGET);
+              nav.push(id as EntityId);
+            }}
+          />
+        }
+      />
+    ) : null;
+
   return withPendingForms(
     /* `shell-scope` is the height link, not a style hook: it hands `.shell-root`
        a containing block that is exactly the viewport, so the shell can size
@@ -1935,6 +2003,10 @@ export function GateApp(props: GateAppProps = {}) {
     >
       <div className="shell-root">
         <TopBar
+          /* ONE ROW (owner, 2026-09-26): on the current bar the status strip
+             is the right zone's lead, and the tabs move left beside the
+             switcher. The legacy bar ignores the slot. */
+          statusSlot={LEGACY_BAR ? undefined : statusStrip('bar')}
           /* R1 (2026-08-15): the identity block lives in the TOP ROW now.
              Still ONE control — the single-home rule holds, only the address
              changed; the old read-only server label is not restored. The
@@ -1962,6 +2034,7 @@ export function GateApp(props: GateAppProps = {}) {
             />
           }
           /* R2: the menu's groups, as tabs. */
+          viewTabs={viewTabs}
           tabs={shellTabs}
           activeTabId={activeGroupId}
           onSelectTab={openTab}
@@ -2061,6 +2134,9 @@ export function GateApp(props: GateAppProps = {}) {
             ) : undefined
           }
         />
+
+        {/* The legacy bar has no seat for the strip, so it keeps its own row. */}
+        {LEGACY_BAR ? statusStrip('row') : null}
 
         <div className="shell-body">
           {/* THE CHAT SLOT's interim host (entity chat §3.1): a sheet from the
@@ -2535,8 +2611,11 @@ export function GateApp(props: GateAppProps = {}) {
                 data.forgetSpace(spaceId);
               }}
               sections={
-                credentialsPort || branchesPort || spaceCredentialsPort
+                credentialsPort || branchesPort || spaceCredentialsPort || spaceLinksPort
                   ? {
+                      ...(spaceLinksPort
+                        ? { 'space-links': <SpaceLinksSection port={spaceLinksPort} /> }
+                        : {}),
                       ...(spaceCredentialsPort
                         ? {
                             'space-credentials': <SpaceCredentialsSection port={spaceCredentialsPort} serverBaseUrl={activeServer.routeBaseUrl} />,
@@ -2823,7 +2902,7 @@ export function GateApp(props: GateAppProps = {}) {
           onDismiss={() => setAddServerOpen(false)}
           onAdd={async (input) => {
             if (!props.onAddServer) throw new Error('Adding Servers is unavailable.');
-            await props.onAddServer(input);
+            await props.onAddServer({ ...input, spaceId: data.spaceId ?? null });
           }}
         />
         {credentialsPort ? (
@@ -2867,6 +2946,7 @@ export function GateApp(props: GateAppProps = {}) {
           />
         ) : null}
       </div>
+      <AttentionUndoToast />
     </div>
   );
 }

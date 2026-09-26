@@ -565,12 +565,16 @@ const ACTIONS: Readonly<Record<ActionRef, ActionDef>> = {
   // D44: Run and Coordinate open the launch configuration (teammate, model,
   // project, mode) rather than firing a bare spawn. The flow marker is DATA —
   // every surface reads it, so none of them can skip the config by accident.
+  //
+  // ANY MEMBER WHO CAN SPAWN may run a task (owner, launch card v3 answers
+  // 01a0df30): the server gates `execution.spawn`, not an edit right on the
+  // subject — the card never writes onto the task, so `canEdit` is not asked.
   run: launching(
     define(
       'run',
       'Run',
       '▶',
-      (ctx) => opGate(ctx, 'execution.spawn') ?? capabilityGate(ctx, 'canEdit', REASONS.cannotEdit) ?? AVAILABLE,
+      (ctx) => opGate(ctx, 'execution.spawn') ?? AVAILABLE,
     ),
   ),
 
@@ -579,7 +583,7 @@ const ACTIONS: Readonly<Record<ActionRef, ActionDef>> = {
       'coordinate',
       'Coordinate',
       '⛭',
-      (ctx) => opGate(ctx, 'execution.spawn') ?? capabilityGate(ctx, 'canEdit', REASONS.cannotEdit) ?? AVAILABLE,
+      (ctx) => opGate(ctx, 'execution.spawn') ?? AVAILABLE,
     ),
     // The whole difference between this verb and Run: it spawns something that
     // directs its own workers. Without it the two are the same button.

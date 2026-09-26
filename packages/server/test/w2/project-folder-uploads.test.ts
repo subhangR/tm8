@@ -499,13 +499,15 @@ describe('projects.folderUploads security corrections', () => {
   it('R845-F5: a node-admin session PINNED to a space is forbidden on init AND complete, before any write', async () => {
     // A folder import grants a gate folder (234's grant_folder), which
     // require_gate_admin refuses to a space-pinned session. The handler refuses
-    // it first, so no slot is opened and nothing lands on disk.
+    // it first, so no slot is opened and nothing lands on disk. The refusal is
+    // #848's (K6): a space-pinned session never holds node admin, so it is the
+    // node-admin refusal that fires, ahead of requireUnpinned.
     const db = stagingDb();
     const registry = configuredWithOwner(db, true);
     const pinned = { kind: 'bearer', identityId: 'a-signed-in-human', nodeAdmin: true, sessionSpaceId: SPACE } as RequestContext['identity'];
     await expect(handler(registry, 'projects.folderUploads.init')(
       request('projects.folderUploads.init', { params: { spaceId: SPACE }, body: initBody(), identity: pinned }),
-    )).rejects.toMatchObject({ code: 'forbidden', message: expect.stringMatching(/space-pinned/i) });
+    )).rejects.toMatchObject({ code: 'forbidden', message: expect.stringMatching(/node-admin access is required/i) });
     expect(db.calls.filter((call) => call.name === 'w2_init_file_upload')).toHaveLength(0);
 
     const unpinned = { kind: 'bearer', identityId: 'a-signed-in-human', nodeAdmin: true } as RequestContext['identity'];
@@ -519,7 +521,7 @@ describe('projects.folderUploads security corrections', () => {
         body: { clientMutationId: 'cmid-f5-pinned' },
         identity: pinned,
       }),
-    )).rejects.toMatchObject({ code: 'forbidden', message: expect.stringMatching(/space-pinned/i) });
+    )).rejects.toMatchObject({ code: 'forbidden', message: expect.stringMatching(/node-admin access is required/i) });
     expect(db.calls.length).toBe(callsBefore);
   });
 

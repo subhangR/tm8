@@ -31,7 +31,8 @@ import { useCallback, useMemo } from 'react';
 import type { EntityId, ExecutionSpawnInput } from '@tm8/contract';
 import { newLaunchMutationId, pluginFactsOf, type ProfileResolution } from '../domain';
 import { entityPatchInput } from '../authoring';
-import { memoryCandidateRow } from '../domain/launch-selection';
+import { memoryCandidateRow, REFERENCE_KINDS } from '../domain/launch-selection';
+import { attachmentsFor } from '../files/port';
 import type { LaunchSources } from '../panels';
 import type { GateData } from './useGateData';
 
@@ -87,6 +88,7 @@ export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): 
       label: t.name,
       agentTool: t.agentTool,
       model: t.model,
+      ...(t.mode !== undefined ? { mode: t.mode } : {}),
     })),
     [sourceTeammates],
   );
@@ -180,9 +182,45 @@ export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): 
     () => ({
       ...(loadLaunchDefaults ? { load: loadLaunchDefaults } : {}),
       candidates: { memories: memories?.map(memoryCandidateRow), skills: skillCandidates, references: referenceCandidates },
+      hydrateReferences: () => { for (const kind of REFERENCE_KINDS) data.ensureKind(kind); },
     }),
-    [loadLaunchDefaults, memories, skillCandidates, referenceCandidates],
+    [loadLaunchDefaults, memories, skillCandidates, referenceCandidates, data],
   );
+
+  /* The launch card's attach row: an ANCHOR-LESS upload into the space
+     library — the file becomes a reference of this launch, not an attachment
+     of the task, so nothing is written onto the subject by attaching. */
+  const upload = useMemo(() => {
+    const port = attachmentsFor(data.seam, data.spaceId ?? '');
+    return port ? (file: File) => port.startUpload(file) : undefined;
+  }, [data.seam, data.spaceId]);
+
+  /* Dispatch owns no host behaviour (it opens nothing and navigates nowhere:
+     the dispatcher decides later), so unlike `onSpawn` the port wires it
+     itself, for every surface. */
+  const dispatch = useCallback(
+    (subjectId: EntityId, note?: string, clientMutationId?: string) => data.seam.commands.dispatch({
+      clientMutationId: clientMutationId ?? newLaunchMutationId(),
+      spaceId: data.spaceId ?? '',
+      subjectId,
+      ...(note ? { note } : {}),
+    }),
+    [data.seam, data.spaceId],
+  );
+
+  /* AFTER A SPAWN TIMEOUT: sessions working on the subject that started at or
+     after `since` — the launch that may have gone through. The ledger only
+     replays a FINISHED attempt, so the card must look before retrying. */
+  const sessionsSince = useCallback(async (subjectId: string, since: string) => {
+    const page = await data.seam.connections(subjectId as EntityId, { types: ['working_on'], direction: 'incoming', limit: 50 });
+    return page.items
+      .map((edge) => edge.source)
+      .filter((s) => s.kind === 'work_session' && s.createdAt >= since)
+      .map((s) => ({ id: s.id, title: s.title }));
+  }, [data.seam]);
+
+  /* ✦'s key: the member's stored TypeSafe key, else the node's fallback. */
+  const jevKeyStatus = useCallback(() => data.seam.credentials.serviceKeys(), [data.seam]);
 
   return useMemo(
     () => ({
@@ -199,7 +237,11 @@ export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): 
       ...(loadInstalledPlugins ? { loadInstalledPlugins } : {}),
       ...(onSpawn ? { onSpawn } : {}),
       ...(onFullOptions ? { onFullOptions } : {}),
+      ...(upload ? { upload } : {}),
+      ...(data.spaceId ? { dispatch } : {}),
+      jevKeyStatus,
+      sessionsSince,
     }),
-    [data.spaceId, selection, teammates, projects, profileFor, descriptionOf, onUpdateEntity, capacity, jev, loadInstalledPlugins, onSpawn, onFullOptions],
+    [data.spaceId, selection, teammates, projects, profileFor, descriptionOf, onUpdateEntity, capacity, jev, loadInstalledPlugins, onSpawn, onFullOptions, upload, dispatch, jevKeyStatus, sessionsSince],
   );
 }

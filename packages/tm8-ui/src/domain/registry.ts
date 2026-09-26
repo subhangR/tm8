@@ -1905,6 +1905,34 @@ const ROWS: readonly KindConfig[] = [
   },
 
   /*
+   * -- credential (W10a: a space credential's same-id envelope) --
+   *
+   * The honest minimum, as chat's Wave 1 was: `registry.test.ts` asserts
+   * totality over `CoreEntityKindSchema`. Credentials are managed in Space
+   * settings → Credentials (human-only doors); this row only lets an entity
+   * read of one render as a named thing. `quickCreate` is off — no generic
+   * door can create one, and the SQL guard refuses it anyway.
+   */
+  {
+    kind: 'credential',
+    label: 'Credential',
+    labelPlural: 'Credentials',
+    icon: '⚿',
+    iconArt: KIND_ART.credential,
+    slug: 'credentials',
+    strategy: 'collection',
+    defaultMode: 'list',
+    hiddenModes: ['board', 'tree', 'gallery'],
+    chip: { glyph: '⚿', tintBy: 'none' },
+    card: { fields: ['excerpt', 'activityAt'] },
+    list: baseList({ quickCreate: false, tile: { badges: [] } }),
+    panel: {
+      archetype: 'generic',
+      blocks: [COLLECTIONS_BLOCK],
+    },
+  },
+
+  /*
    * -- chat (migration 176: a conversation with a teammate, as an entity) --
    *
    * WAVE 2 MAKES THIS THE REAL ROW. Wave 1 shipped the honest minimum — a
@@ -2337,6 +2365,54 @@ const ROWS: readonly KindConfig[] = [
         canEdit:
           'A worktree accepts exactly one edit: the forward-only status transition (merged / abandoned / deleted). Every other field is immutable after creation.',
       },
+    },
+  },
+
+  // -- space_link (250, W6: managed from Space settings, not browsed) --------
+  {
+    kind: 'space_link',
+    label: 'Space link',
+    labelPlural: 'Space links',
+    icon: '⛓',
+    iconArt: KIND_ART.space_link,
+    slug: 'space-links',
+    strategy: 'collection',
+    defaultMode: 'list',
+    hiddenModes: ['board', 'tree', 'gallery'],
+    chip: { glyph: '⛓', tintBy: 'none' },
+    card: { fields: ['activityAt', 'createdBy'] },
+    // Born only from `spaceLinks.add` (generic create is refused server-side);
+    // the Space settings section is where a link is signed in, out or removed.
+    list: baseList({
+      quickCreate: false,
+      tile: { badges: [] },
+    }),
+    panel: {
+      archetype: 'generic',
+      blocks: [{ block: 'fields', label: 'LINK' }],
+    },
+  },
+
+  // -- server (250 registers it; W8 gives it a detail row) ------------------
+  {
+    kind: 'server',
+    label: 'Server',
+    labelPlural: 'Servers',
+    icon: '◎',
+    iconArt: KIND_ART.server,
+    slug: 'servers',
+    strategy: 'collection',
+    defaultMode: 'list',
+    hiddenModes: ['board', 'tree', 'gallery'],
+    chip: { glyph: '◎', tintBy: 'none' },
+    card: { fields: ['activityAt', 'createdBy'] },
+    list: baseList({
+      quickCreate: false,
+      tile: { badges: [] },
+    }),
+    panel: {
+      archetype: 'generic',
+      blocks: [{ block: 'fields', label: 'SERVER' }],
     },
   },
 

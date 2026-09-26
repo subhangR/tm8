@@ -251,9 +251,11 @@ function structurallyAvailable(operation: OperationName, row: ActionContextRow):
       // `container` joins the refusals: it is DESTROYED, not deleted, and
       // `containers.destroy` stops the runtime before soft-deleting the
       // envelope. Advertising a delete the door refuses would offer a control
-      // whose only outcome is a 403.
+      // whose only outcome is a 403. `space_link` likewise (W6 review D1):
+      // `spaceLinks.remove` is its only delete.
       return live && row.kind !== 'member' && row.kind !== 'project'
-        && row.kind !== 'interaction_profile' && row.kind !== 'container';
+        && row.kind !== 'interaction_profile' && row.kind !== 'container'
+        && row.kind !== 'space_link';
     case 'entities.restore':
       return false;
     case 'entities.children':

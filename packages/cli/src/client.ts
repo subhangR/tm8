@@ -27,6 +27,7 @@ import {
   getOperation,
   WireErrorBodySchema,
   type OperationName,
+  type SpaceLinksInvokeResult,
 } from '@tm8/contract';
 import {
   ApiError,
@@ -34,6 +35,8 @@ import {
   StreamOperationError,
   TransportError,
 } from './errors.js';
+import type { SpaceLinkRoute } from './context.js';
+import { activeLink } from './space-link-active.js';
 import { CliError, EXIT_USAGE } from './exit.js';
 import { journal } from './journal.js';
 import { readCache, type CacheEntry, type ReadCache } from './read-cache.js';
@@ -108,7 +111,72 @@ export interface ClientOptions {
   fresh?: boolean | undefined;
   /** Injectable for tests; defaults to the session singleton (read-cache.ts). */
   cache?: ReadCache;
+  /**
+   * How long to keep re-sending while the node is DOWN (a restart gap), in ms.
+   * 0, the default, fails on the first failure, which is what a human at a
+   * terminal wants. See `mayResend` for what is re-sent.
+   */
+  gapRetryMs?: number | undefined;
+  /** Injectable for tests. */
+  sleepImpl?: (ms: number) => Promise<void>;
+  /**
+   * `--space` through a space link (space-link-route.ts). When set, EVERY
+   * catalog call leaves as `spaceLinks.invoke` on the home Space, so the home
+   * server's refused set and audit see all of it; bytes are refused here.
+   */
+  link?: SpaceLinkRoute | undefined;
 }
+
+/**
+ * How a failed `fetch` failed, for the restart-gap retry.
+ *
+ * `refused` — the TCP connect was refused, so no byte of the request reached
+ * any node. This is what a restart looks like from loopback: the port is
+ * closed from the moment the old process exits until `server.listen()`, which
+ * runs last in boot.
+ *
+ * `ambiguous` — any other transport failure (reset, socket closed, EPIPE…):
+ * the node may have read and committed the request before the socket dropped.
+ *
+ * undici reports both as `TypeError('fetch failed')` with the errno on
+ * `cause.code`; a dual-stack connect nests them in an AggregateError that
+ * carries the same code.
+ */
+export function gapFailureKind(err: unknown): 'refused' | 'ambiguous' {
+  const cause = (err as { cause?: unknown } | null)?.cause;
+  return (cause as { code?: unknown } | null)?.code === 'ECONNREFUSED' ? 'refused' : 'ambiguous';
+}
+
+/**
+ * Whether this request may be sent again after `kind` of failure.
+ *
+ * A refused connect never reached a node: always. Otherwise the first attempt
+ * may have committed, so only a GET, or a command carrying a
+ * `clientMutationId`: the Server's command ledger (TM8_IDEMPOTENCY_ENABLED,
+ * default on and set on prod) replays the stored result for a repeated id
+ * instead of applying it twice. The body is re-sent verbatim, so the id is the
+ * one this invocation minted, never a fresh one. A command WITHOUT an id (the
+ * few auth bootstraps) is never re-sent after an ambiguous failure.
+ *
+ * A request TIMEOUT is never re-sent at all: a restart gap is a refusal or a
+ * reset, never a slow answer. A timeout is a node that is up and busy, and
+ * re-sending for two minutes adds load to exactly the node that cannot keep up.
+ *
+ * Nor is any HTTP answer, 5xx included. An agent calls its node directly with
+ * no proxy in between, so a 502/504 never reaches it, and every 503 was
+ * written by a LIVE node: read admission refusing under pool pressure, a
+ * handler that threw (the ledger stores only committed results, so a re-send
+ * re-runs it), or /health on a sick database. A node that answered is not in
+ * a restart gap.
+ */
+function mayResend(method: string, body: unknown, kind: 'refused' | 'ambiguous'): boolean {
+  if (kind === 'refused' || method === 'GET') return true;
+  const cmid = (body as { clientMutationId?: unknown } | null | undefined)?.clientMutationId;
+  return typeof cmid === 'string' && cmid !== '';
+}
+
+const GAP_RETRY_FIRST_DELAY_MS = 250;
+const GAP_RETRY_MAX_DELAY_MS = 5_000;
 
 export interface InvokeOptions {
   params?: Record<string, string>;
@@ -155,6 +223,26 @@ const SLOW_OPERATION_TIMEOUT_MS: Partial<Record<OperationName, number>> = {
   'execution.resume': 180_000,
 };
 
+/**
+ * A link whose target Space is on ANOTHER server: home refuses it, since remote
+ * forwarding is not enabled (W8 ships it disabled; W9c turns it on). The home
+ * server stays the authority, so the CLI does not pre-refuse by
+ * `targetServerId`; it only says why, and that no retry or flag changes it.
+ * With no forwarder wired it is a `not_implemented` naming a remote space link;
+ * `space_link_remote_disabled` is W8's disabled forwarder.
+ */
+export const REMOTE_LINK_HINT =
+  'the linked Space is on another server and remote space links are not enabled on this node; run the command from a session in that Space';
+
+function isRemoteLinkRefusal(err: unknown): err is ApiError {
+  if (!(err instanceof ApiError)) return false;
+  const reason = (err.details as { reason?: unknown } | null | undefined)?.reason;
+  if (reason === 'space_link_remote_disabled') return true;
+  // No forwarder wired: home's 501 carries no reason, only this message. A
+  // reserved op's own 501 through a link must not read as a remote refusal.
+  return err.code === 'not_implemented' && /remote space link/.test(err.message);
+}
+
 export class Tm8Client {
   private readonly baseUrl: string;
   private readonly token: string | undefined;
@@ -163,6 +251,9 @@ export class Tm8Client {
   private readonly fetchImpl: typeof fetch;
   private readonly fresh: boolean;
   private readonly cache: ReadCache;
+  private readonly gapRetryMs: number;
+  private readonly sleep: (ms: number) => Promise<void>;
+  private readonly link: SpaceLinkRoute | undefined;
 
   constructor(opts: ClientOptions) {
     this.baseUrl = opts.baseUrl;
@@ -174,6 +265,21 @@ export class Tm8Client {
     this.fetchImpl = opts.fetchImpl ?? fetch;
     this.fresh = opts.fresh ?? false;
     this.cache = opts.cache ?? readCache;
+    this.gapRetryMs = Math.max(0, opts.gapRetryMs ?? 0);
+    this.sleep = opts.sleepImpl ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+    // While a link is active, a client without it would send a call straight
+    // to home with the home pass, skipping the invoke, the refused set and the
+    // audit. Checked here, so it holds however the client is built (an alias,
+    // options from a variable, a subclass); a source scan cannot promise that.
+    const activeSpaceLink = activeLink();
+    if (activeSpaceLink && opts.link?.linkId !== activeSpaceLink.linkId) {
+      throw new CliError(
+        `internal: a request client was built without the active space link ${activeSpaceLink.linkId}; ` +
+          'every call in a linked invocation must go through spaceLinks.invoke on home',
+        EXIT_USAGE,
+      );
+    }
+    this.link = opts.link;
   }
 
   /**
@@ -205,7 +311,55 @@ export class Tm8Client {
         EXIT_USAGE,
       );
     }
+    if (this.link) return this.invokeThroughLink<T>(this.link, name, opts);
+    return this.invokeDirect<T>(name, opts);
+  }
 
+  /**
+   * One catalog op, run in the linked Space as the launching Member: the op's
+   * own params, query and body ride inside ONE `spaceLinks.invoke` to the HOME
+   * Space. There is no other path — no call to the target, no token here.
+   */
+  private async invokeThroughLink<T>(
+    link: SpaceLinkRoute,
+    name: OperationName,
+    opts: InvokeOptions,
+  ): Promise<InvokeResult<T>> {
+    const query: Record<string, string> = {};
+    for (const [key, value] of Object.entries(opts.query ?? {})) {
+      if (value === undefined) continue;
+      if (typeof value === 'string') {
+        query[key] = value;
+      } else if (value.length === 1) {
+        query[key] = value[0] as string;
+      } else if (value.length > 1) {
+        throw new CliError(
+          `${name} through a space link carries one value per query key; --${key} was given ${value.length}`,
+          EXIT_USAGE,
+        );
+      }
+    }
+    const params = opts.params ?? {};
+    let inner: InvokeResult<SpaceLinksInvokeResult>;
+    try {
+      inner = await this.invokeDirect<SpaceLinksInvokeResult>('spaceLinks.invoke', {
+        params: { spaceId: link.homeSpaceId, link: link.linkId },
+        body: {
+          op: name,
+          ...(Object.keys(params).length > 0 ? { params } : {}),
+          ...(Object.keys(query).length > 0 ? { query } : {}),
+          ...(opts.body === undefined ? {} : { input: opts.body }),
+        },
+        timeoutMs: opts.timeoutMs ?? this.deadlineFor(name),
+      });
+    } catch (err) {
+      if (isRemoteLinkRefusal(err)) err.hint = REMOTE_LINK_HINT;
+      throw err;
+    }
+    return { data: inner.data.result as T, requestId: inner.requestId, status: inner.status };
+  }
+
+  private async invokeDirect<T>(name: OperationName, opts: InvokeOptions): Promise<InvokeResult<T>> {
     const { res, url, method, text } = await this.send(name, opts);
     const requestId = res.headers.get('x-tm8-request-id') ?? '';
 
@@ -249,6 +403,12 @@ export class Tm8Client {
     if (mode !== 'bytes') {
       throw new CliError(
         `operation ${name} answers with the JSON envelope, not bytes; use invoke()`,
+        EXIT_USAGE,
+      );
+    }
+    if (this.link) {
+      throw new CliError(
+        `${name} answers with raw bytes and cannot run through a space link; run it from a session in the target Space`,
         EXIT_USAGE,
       );
     }
@@ -393,46 +553,75 @@ export class Tm8Client {
     if (opts.body !== undefined) headers['content-type'] = 'application/json';
     if (this.token) headers.authorization = `Bearer ${this.token}`;
 
-    const controller = new AbortController();
     const timeoutMs = opts.timeoutMs ?? this.deadlineFor(name);
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
     // Only the SIZE of the request body is journalled, never its content and
     // never the headers — `authorization` is set two lines above.
     const requestChars = opts.body === undefined ? 0 : JSON.stringify(opts.body).length;
-    const startedMs = Date.now();
+    // The per-request deadline is per ATTEMPT; the gap window bounds how long
+    // attempts continue. A restart gap is the node being down, so an attempt
+    // fails fast on the refusal and the time goes to the backoff, not to it.
+    const gapDeadlineMs = Date.now() + this.gapRetryMs;
+    let delayMs = GAP_RETRY_FIRST_DELAY_MS;
+    let retries = 0;
+    /** Sleeps and returns true when another attempt fits in the window. */
+    const backoff = async (why: string): Promise<boolean> => {
+      if (Date.now() + delayMs > gapDeadlineMs) return false;
+      retries += 1;
+      process.stderr.write(
+        `tm8: ${name} ${why}; retry ${retries} in ${delayMs}ms (server restart window ${Math.round(this.gapRetryMs / 1000)}s)\n`,
+      );
+      await this.sleep(delayMs);
+      delayMs = Math.min(delayMs * 2, GAP_RETRY_MAX_DELAY_MS);
+      return true;
+    };
+    let controller: AbortController;
+    let timer: ReturnType<typeof setTimeout>;
+    let startedMs: number;
     let res: Response;
-    try {
-      res = await this.fetchImpl(url, {
-        method: op.method,
-        headers,
-        signal: controller.signal,
-        ...(opts.body === undefined ? {} : { body: JSON.stringify(opts.body) }),
-      });
-    } catch (err) {
-      // A transport failure is still a call the agent made and paid for, so it
-      // is journalled with a null status: the node never answered.
-      journal.noteCall({
-        operation: name,
-        method: op.method,
-        path: url.pathname,
-        baseUrl: this.baseUrl,
-        status: null,
-        requestChars,
-        responseChars: 0,
-        durationMs: Date.now() - startedMs,
-      });
-      clearTimeout(timer);
-      if (controller.signal.aborted) {
+    for (;;) {
+      controller = new AbortController();
+      const attempt = controller;
+      timer = setTimeout(() => attempt.abort(), timeoutMs);
+      startedMs = Date.now();
+      try {
+        res = await this.fetchImpl(url, {
+          method: op.method,
+          headers,
+          signal: controller.signal,
+          ...(opts.body === undefined ? {} : { body: JSON.stringify(opts.body) }),
+        });
+      } catch (err) {
+        // A transport failure is still a call the agent made and paid for, so it
+        // is journalled with a null status: the node never answered.
+        journal.noteCall({
+          operation: name,
+          method: op.method,
+          path: url.pathname,
+          baseUrl: this.baseUrl,
+          status: null,
+          requestChars,
+          responseChars: 0,
+          durationMs: Date.now() - startedMs,
+        });
+        clearTimeout(timer);
+        if (controller.signal.aborted) {
+          throw new TransportError(
+            `${op.method} ${url.pathname} timed out after ${timeoutMs}ms (per-request deadline)`,
+            err,
+          );
+        }
+        const kind = gapFailureKind(err);
+        if (mayResend(op.method, opts.body, kind) && await backoff(`could not reach ${this.baseUrl} (${kind})`)) {
+          continue;
+        }
+        const reason = err instanceof Error ? err.message : String(err);
+        const retried = retries > 0 ? ` after ${retries} retries` : '';
         throw new TransportError(
-          `${op.method} ${url.pathname} timed out after ${timeoutMs}ms (per-request deadline)`,
+          `${op.method} ${url.pathname} failed: ${reason}${retried} (is tm8-server running at ${this.baseUrl}?)`,
           err,
         );
       }
-      const reason = err instanceof Error ? err.message : String(err);
-      throw new TransportError(
-        `${op.method} ${url.pathname} failed: ${reason} (is tm8-server running at ${this.baseUrl}?)`,
-        err,
-      );
+      break;
     }
 
     // A byte response is only drained as text when it FAILED; a success is

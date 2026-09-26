@@ -31,6 +31,9 @@ export type CapabilityProfile =
   | 'artifact-lifecycle'
   | 'container-lifecycle'
   | 'form-lifecycle'
+  | 'credential-lifecycle'
+  | 'space-link-lifecycle'
+  | 'server-lifecycle'
   | 'custom-scalar'
   | 'static-no-authority';
 
@@ -58,6 +61,8 @@ export type MigrationStrategy =
   | 'container-detail'
   | 'drawing-detail'
   | 'form-detail'
+  | 'credential-detail'
+  | 'space-link-kinds'
   | 'custom-registry'
   | 'none';
 
@@ -295,6 +300,88 @@ function capabilities(profile: CapabilityProfile): CapabilityDisposition {
           'containers.attach',
         ],
       };
+    case 'credential-lifecycle':
+      // NOTHING generic (W10a), mirroring `container-lifecycle`: the entity
+      // is the same-id envelope of a space_credentials row, and every write
+      // to it — birth, label, visibility, revoke — is a human-only
+      // `credentials.space.*` door. SQL refuses the generic create, move,
+      // delete and restore as well (the insert and envelope guards, 017).
+      return {
+        profile,
+        genericCreate: false,
+        genericPatch: false,
+        genericMove: false,
+        genericHierarchy: false,
+        genericDeleteRestore: false,
+        genericPoints: false,
+        messages: true,
+        reactions: true,
+        connections: true,
+        lifecycleOperations: [
+          'credentials.space.create',
+          'credentials.space.rename',
+          'credentials.space.rekey',
+          'credentials.space.setDefault',
+          'credentials.space.delete',
+          // W10b: the owner-facing writes on the same row.
+          'credentials.space.setVisibility',
+          'credentials.space.spaceDefaultConsent',
+          'credentials.space.claim',
+          // W10d: add your own token as a private credential (a create).
+          'credentials.space.addMine',
+        ],
+      };
+    case 'space-link-lifecycle':
+      // NOTHING generic (W6, 250/251). A link is born only from
+      // `spaceLinks.add`, and every write is a named, human-only door over the
+      // caller's own row; a generic patch, move or delete would be a second way
+      // to reach a record whose writes SQL restricts to browser/cli sessions.
+      return {
+        profile,
+        genericCreate: false,
+        genericPatch: false,
+        genericMove: false,
+        genericHierarchy: false,
+        genericDeleteRestore: false,
+        genericPoints: false,
+        messages: false,
+        reactions: false,
+        connections: false,
+        lifecycleOperations: [
+          'spaceLinks.list',
+          'spaceLinks.add',
+          'spaceLinks.login',
+          'spaceLinks.relogin',
+          'spaceLinks.logout',
+          'spaceLinks.remove',
+          'spaceLinks.setSpawn',
+        ],
+      };
+    case 'server-lifecycle':
+      // NOTHING generic (W8, 261). A server is born only from `servers.add`
+      // or `servers.adopt` (a 044 row, first use), and add/adopt/remove are
+      // human-only in SQL; a generic patch would be a second way to change a
+      // base URL that the gate token and the SSRF guard are bound to.
+      return {
+        profile,
+        genericCreate: false,
+        genericPatch: false,
+        genericMove: false,
+        genericHierarchy: false,
+        genericDeleteRestore: false,
+        genericPoints: false,
+        messages: false,
+        reactions: false,
+        connections: false,
+        lifecycleOperations: [
+          'servers.list',
+          'servers.get',
+          'servers.add',
+          'servers.adopt',
+          'servers.remove',
+          'servers.probe',
+        ],
+      };
     case 'static-no-authority':
       return {
         profile,
@@ -483,6 +570,29 @@ export const CORE_KIND_DISPOSITIONS = {
     collection: typedCollection, projection: universal,
     capabilities: { profile: 'form-lifecycle' },
     menu: { strategy: 'registered-not-default' }, migration: { strategy: 'form-detail' },
+  }),
+  // Space credentials (W10a). The entity is an envelope for hierarchy,
+  // messages and attention; the secret stays in its side row and never
+  // reaches a projection. Human-only doors, so nothing is addressable from
+  // the generic menu.
+  credential: core('credential', 'credentials', {
+    collection: typedCollection, projection: universal,
+    capabilities: { profile: 'credential-lifecycle' },
+    menu: { strategy: 'not-addressable' }, migration: { strategy: 'credential-detail' },
+  }),
+  // Space links (W6, migration 250). Born only from `spaceLinks.add`, managed
+  // from space settings by a human; never menu-addressable.
+  space_link: core('space_link', 'space-links', {
+    collection: typedCollection, projection: universal,
+    capabilities: { profile: 'space-link-lifecycle' },
+    menu: { strategy: 'not-addressable' }, migration: { strategy: 'space-link-kinds' },
+  }),
+  // A remote tm8 server (W6 kind, W8 migration 261). Born only from
+  // `servers.add` / `servers.adopt`, managed by a human; never menu-addressable.
+  server: core('server', 'servers', {
+    collection: typedCollection, projection: universal,
+    capabilities: { profile: 'server-lifecycle' },
+    menu: { strategy: 'not-addressable' }, migration: { strategy: 'space-link-kinds' },
   }),
 } as const satisfies Readonly<Record<CoreEntityKind, KindDisposition>>;
 

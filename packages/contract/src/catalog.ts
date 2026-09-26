@@ -90,8 +90,35 @@ export const OPERATIONS = [
   // member row and everything it authored stay. POST verbs, like invites.revoke.
   { name: 'spaces.members.remove', method: 'POST',  path: '/v2/spaces/:spaceId/members/:memberId/remove', kind: 'command', status: 'v1' },
   { name: 'spaces.leave',          method: 'POST',  path: '/v2/spaces/:spaceId/leave',                   kind: 'command', status: 'v1' },
+  // W5 (migration 268 placeholder, K2 / decision 30): the space password. The
+  // setting and the P5 admin ops; human space admins only.
+  { name: 'spaces.spacePassword.setRequired',   method: 'PUT',  path: '/v2/spaces/:spaceId/space-password',                              kind: 'command', status: 'v1' },
+  { name: 'spaces.members.spacePassword.reset', method: 'POST', path: '/v2/spaces/:spaceId/members/:memberId/space-password/reset', kind: 'command', status: 'v1' },
+  { name: 'spaces.members.spacePassword.lock',  method: 'POST', path: '/v2/spaces/:spaceId/members/:memberId/space-password/lock',  kind: 'command', status: 'v1' },
   // Node admin turns an account off: every session refused, launched work contained (232).
   { name: 'accounts.disable',      method: 'POST',  path: '/v2/accounts/:accountId/disable',             kind: 'command', status: 'v1' },
+  // Space links (W6, migrations 250/251). Every write is human-only in SQL;
+  // list is open to every home member and carries no secret.
+  { name: 'spaceLinks.list',     method: 'GET',    path: '/v2/spaces/:spaceId/space-links',   kind: 'read',    status: 'v1' },
+  { name: 'spaceLinks.add',      method: 'POST',   path: '/v2/spaces/:spaceId/space-links',   kind: 'command', status: 'v1' },
+  { name: 'spaceLinks.login',    method: 'POST',   path: '/v2/space-links/:linkId/login',     kind: 'command', status: 'v1' },
+  { name: 'spaceLinks.relogin',  method: 'POST',   path: '/v2/space-links/:linkId/relogin',   kind: 'command', status: 'v1' },
+  { name: 'spaceLinks.logout',   method: 'POST',   path: '/v2/space-links/:linkId/logout',    kind: 'command', status: 'v1' },
+  { name: 'spaceLinks.remove',   method: 'POST',   path: '/v2/space-links/:linkId/remove',    kind: 'command', status: 'v1' },
+  { name: 'spaceLinks.setSpawn', method: 'PATCH',  path: '/v2/space-links/:linkId/spawn',     kind: 'command', status: 'v1' },
+  // W7: one op in the target, as the calling agent's launching member, minus
+  // the refused set (SPACE_LINK_REFUSED). `:link` is the caller's alias or the link id.
+  { name: 'spaceLinks.invoke',   method: 'POST',   path: '/v2/spaces/:spaceId/space-links/:link/invoke', kind: 'command', status: 'v1' },
+  // W7: the home-space audit of invokes — the member's own rows, all rows for a home admin.
+  { name: 'spaceLinks.audit',    method: 'GET',    path: '/v2/space-links/:linkId/audit',     kind: 'read',    status: 'v1' },
+  // Remote servers (W8, 261): `server` entities over 044's read-only rows.
+  // add/adopt/remove are human-only in SQL; no response carries a gate token.
+  { name: 'servers.list',   method: 'GET',  path: '/v2/spaces/:spaceId/servers',  kind: 'read',    status: 'v1' },
+  { name: 'servers.get',    method: 'GET',  path: '/v2/servers/:serverId',        kind: 'read',    status: 'v1' },
+  { name: 'servers.add',    method: 'POST', path: '/v2/servers',                  kind: 'command', status: 'v1' },
+  { name: 'servers.adopt',  method: 'POST', path: '/v2/servers/adopt',            kind: 'command', status: 'v1' },
+  { name: 'servers.remove', method: 'POST', path: '/v2/servers/:serverId/remove', kind: 'command', status: 'v1' },
+  { name: 'servers.probe',  method: 'POST', path: '/v2/servers/:serverId/probe',  kind: 'command', status: 'v1' },
   { name: 'spaces.invites.list',     method: 'GET',    path: '/v2/spaces/:spaceId/invites',                 kind: 'read',    status: 'v1' },
   { name: 'spaces.invites.create',   method: 'POST',   path: '/v2/spaces/:spaceId/invites',                 kind: 'command', status: 'v1' },
   { name: 'spaces.invites.revoke',   method: 'POST',   path: '/v2/spaces/:spaceId/invites/:inviteId/revoke', kind: 'command', status: 'v1' },
@@ -130,6 +157,13 @@ export const OPERATIONS = [
   { name: 'attentionRequests.create',method: 'POST',   path: '/v2/entities/:entityId/attention-requests',   kind: 'command', status: 'v1' },
   { name: 'attentionRequests.update',method: 'PATCH',  path: '/v2/attention-requests/:requestId',           kind: 'command', status: 'v1' },
   { name: 'attentionRequests.resolveEntity', method: 'POST', path: '/v2/entities/:entityId/attention-requests/resolve', kind: 'command', status: 'v1' },
+  // Attention v2 S6: tm8's own conflict signal, raised and cleared by the CLI's worktree rail.
+  { name: 'attentionSignals.raise',  method: 'POST',   path: '/v2/entities/:entityId/attention-signals',    kind: 'command', status: 'v1' },
+  { name: 'attentionSignals.clear',  method: 'POST',   path: '/v2/entities/:entityId/attention-signals/clear', kind: 'command', status: 'v1' },
+  // Attention v2 (S4, spec chapter 3 + 5): per-person Seen over the roll-up root, Undo of one resolve batch, and the raising agent's withdraw.
+  { name: 'attentionRequests.markSeen', method: 'POST', path: '/v2/entities/:entityId/attention-requests/seen', kind: 'command', status: 'v1' },
+  { name: 'attentionRequests.unresolve', method: 'POST', path: '/v2/attention-requests/batches/:batchId/unresolve', kind: 'command', status: 'v1' },
+  { name: 'attentionRequests.withdraw', method: 'POST', path: '/v2/attention-requests/:requestId/withdraw', kind: 'command', status: 'v1' },
   { name: 'entities.move',           method: 'POST',   path: '/v2/entities/:id/move',                       kind: 'command', status: 'v1' },
   { name: 'entities.delete',         method: 'DELETE', path: '/v2/entities/:id',                            kind: 'command', status: 'v1' },
   { name: 'entities.restore',        method: 'POST',   path: '/v2/entities/:id/restore',                    kind: 'command', status: 'v1' },
@@ -411,6 +445,10 @@ export const OPERATIONS = [
   // one space. Under TM8_SPACE_SESSIONS=enforce this is how a human gets past
   // the gate at all.
   { name: 'auth.space.enter',                            method: 'POST',   path: '/v2/auth/space/enter',                                               kind: 'command', status: 'v1' },
+  // W4 (plan 01a0d9eb): your own sessions, or (space admin) the sessions
+  // pinned to a space, and revoking one — the control K5's rejection left.
+  { name: 'auth.sessions.list',                          method: 'GET',    path: '/v2/auth/sessions',                                                  kind: 'read',    status: 'v1' },
+  { name: 'auth.sessions.revoke',                        method: 'POST',   path: '/v2/auth/sessions/:sessionId/revoke',                                kind: 'command', status: 'v1' },
   // `auth.password.change` — the day a human forgets their password, the only
   // recovery was `psql` (FIRST-RUN-CLAIM-DESIGN.md §10.3). This is CHANGE, not
   // reset: it demands the CURRENT password in the body and proves it with the
@@ -516,11 +554,23 @@ export const OPERATIONS = [
   { name: 'credentials.space.setDefault',                method: 'POST',   path: '/v2/space-credentials/:credentialId/default',                        kind: 'command', status: 'v1' },
   { name: 'credentials.space.rename',                    method: 'PATCH',  path: '/v2/space-credentials/:credentialId',                                kind: 'command', status: 'v1' },
   { name: 'credentials.space.delete',                    method: 'DELETE', path: '/v2/space-credentials/:credentialId',                                kind: 'command', status: 'v1' },
+  { name: 'credentials.space.setVisibility',             method: 'PUT',    path: '/v2/space-credentials/:credentialId/visibility',                     kind: 'command', status: 'v1' },
+  { name: 'credentials.space.spaceDefaultConsent',       method: 'PUT',    path: '/v2/space-credentials/:credentialId/space-default-consent',          kind: 'command', status: 'v1' },
+  // W10d (doc 13 §7 step 2): add your own server-level GitHub token to this
+  // space as a PRIVATE credential — read, probed and re-sealed in TS server-side;
+  // the token never reaches the client. A login is a fresh sign-in, not this op.
+  { name: 'credentials.space.addMine',                   method: 'POST',   path: '/v2/spaces/:spaceId/credentials/from-mine',                          kind: 'command', status: 'v1' },
+  { name: 'credentials.space.claim',                     method: 'POST',   path: '/v2/space-credentials/:credentialId/claim',                          kind: 'command', status: 'v1' },
+  { name: 'credentials.space.myDefault.set',             method: 'POST',   path: '/v2/space-credentials/:credentialId/my-default',                     kind: 'command', status: 'v1' },
+  { name: 'credentials.space.myDefault.clear',           method: 'DELETE', path: '/v2/spaces/:spaceId/credentials/my-default/:provider',               kind: 'command', status: 'v1' },
+  { name: 'credentials.space.usage',                     method: 'GET',    path: '/v2/space-credentials/:credentialId/usage',                          kind: 'read',    status: 'v1' },
   { name: 'credentials.space.policy.get',                method: 'GET',    path: '/v2/spaces/:spaceId/credential-policy',                              kind: 'read',    status: 'v1' },
   { name: 'credentials.space.policy.set',                method: 'PUT',    path: '/v2/spaces/:spaceId/credential-policy/:provider',                    kind: 'command', status: 'v1' },
   // The node's own fallback credentials (D5/D9): node admin, and human-only.
   { name: 'node.credentials.status',                     method: 'GET',    path: '/v2/node/credentials',                                               kind: 'read',    status: 'v1' },
   { name: 'node.credentials.policy.set',                 method: 'PUT',    path: '/v2/node/credential-policy/:provider',                               kind: 'command', status: 'v1' },
+  // Host metrics for the desktop status strip: node admin, human sessions only.
+  { name: 'node.metrics.get',                            method: 'GET',    path: '/v2/node/metrics',                                                   kind: 'read',    status: 'v1' },
 
   // What the agent SAID — the third face of a session, after `execution.launch`
   // (told) and `execution.journal` (did). The bytes are the agent's OWN native
@@ -543,6 +593,10 @@ export const OPERATIONS = [
   // own actions are existing ops (`entities.patch`, `edges.create`,
   // `execution.spawn`, `messages.post`).
   { name: 'execution.dispatch',                          method: 'POST',   path: '/v2/execution/dispatch',                                             kind: 'command', status: 'v1' },
+  // Launch v3 gap 5: the space's dispatcher sessions for the launch card's
+  // dispatch-target drop-up — newest first, stopped ones included with
+  // `live: false`. Liveness is probed exactly as `execution.dispatch` probes it.
+  { name: 'execution.dispatchers',                       method: 'GET',    path: '/v2/spaces/:spaceId/execution/dispatchers',                          kind: 'read',    status: 'v1' },
 
   // containers — machines agents run in or drive (TM8-CONTAINERS-DESIGN §4.1).
   //
@@ -585,7 +639,6 @@ export const OPERATIONS = [
   { name: 'containers.proxy',            method: 'GET',    path: '/v2/containers/:containerId/ports/:port/*',             kind: 'read',    status: 'v1' },
   { name: 'containers.snapshot',         method: 'POST',   path: '/v2/containers/:containerId/commands/snapshot',         kind: 'command', status: 'v1' },
   { name: 'containers.fork',             method: 'POST',   path: '/v2/containers/:containerId/commands/fork',             kind: 'command', status: 'v1' },
-  { name: 'containers.attention',        method: 'POST',   path: '/v2/containers/:containerId/commands/attention',        kind: 'command', status: 'v1' },
   { name: 'containers.providers.list',   method: 'GET',    path: '/v2/containers/providers',                              kind: 'read',    status: 'v1' },
   { name: 'containers.pools.set',        method: 'POST',   path: '/v2/containers/:containerId/commands/pool',             kind: 'command', status: 'v1' },
 ] as const satisfies readonly OperationBinding[];

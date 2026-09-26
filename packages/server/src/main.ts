@@ -44,15 +44,20 @@ import { jevAdvisorForKey } from './jev/jev-adapter.js';
 import { createJevAdvisorResolver } from './jev/advisor.js';
 import type { SpaceCredentialProbe } from './credentials/space-credential-probe.js';
 import { DbServiceKeyStore } from './credentials/service-key-store.js';
+import { SpaceLoginHomes } from './credentials/space-credential-home.js';
 import { createW2BlobStore } from './files/w2-blob-store.js';
 import { createDeletedFileBlobPurgeJob, createFileUploadSweepJob } from './scheduler/jobs/file-uploads.js';
+import { createSpaceCredentialSweepJob } from './scheduler/jobs/space-credential-sweep.js';
+import { DbSpaceCredentialStore } from './credentials/space-credential-store.js';
 import { createEventSubjectBackfillJob } from './scheduler/jobs/event-subject-backfill.js';
 import { createClipboardStore } from './files/clipboard-store.js';
 import { createLoopbackOwnerResolver } from './identity/loopback.js';
+import { sessionIssuedHere } from './identity/pg-auth.js';
 import { createTrackingObserverJob } from './tracking/observer.js';
 import { createCommitRecorderJob } from './tracking/commit-recorder.js';
-import { createSessionIdentityResolver } from './http/identity-resolver.js';
+import { createSessionIdentityResolver, createSocketIdentityResolver } from './http/identity-resolver.js';
 import { createForgeWatcherJob } from './tracking/loops.js';
+import { createAttentionDeliveryJob } from './facade/services/attention/index.js';
 import { createTaskNudgeJob } from './tracking/task-nudges.js';
 import { createFormDeliveryJob, FormDeliveryDrain } from './facade/services/w2/form-delivery.js';
 import { createSpawnModeHandlers } from './facade/services/w2/form-delivery-spawn.js';
@@ -75,16 +80,21 @@ import { autoOwnerResolver } from './http/security.js';
 import { announceNodeClaim } from './identity/node-claim-boot.js';
 import { createStaticHandler } from './http/static.js';
 import { createRemoteServerProxy } from './http/remote-proxy.js';
+import { directoryTargetResolver } from './remote/directory-resolver.js';
 import { createW2FileUploadRoute } from './http/w2-file-upload.js';
 import { createClipboardUploadRoute } from './http/clipboard-upload.js';
 import { createVoiceWebhookRoute } from './http/voice-webhook.js';
 import { InMemoryVoiceRosterStore } from './voice/roster.js';
 import {
+  createCredentialStreamSweepJob,
   createPtyAttachAuthorizer,
   createPtyAuditLogger,
+  createPtyCredentialRecheck,
   createPtyWsServer,
   isPtyUpgrade,
+  type CredentialStreamPort,
   type PtyAttachAuthorizer,
+  type PtyWsServer,
 } from './pty/index.js';
 import { readTm8SessionCookie } from './http/session-cookie.js';
 import { WsAdmissionController } from './http/ws-admission.js';
@@ -388,10 +398,23 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    * runtime there is no PTY, and these four operations start real processes.
    * Absent, they are simply not mounted — the honest degraded mode.
    */
+  /**
+   * Doc 13 §3h / R9 (257): after a switch to private or a revoke commits, the
+   * space-credential catalog (W10b) closes every already-open PTY socket the
+   * credential no longer admits. LATE-BOUND because the PTY socket server is
+   * composed below, after the facade deps; until it exists nothing is open.
+   */
+  let credentialStreamTarget: Pick<PtyWsServer, 'recheckCredentialStreams'> | undefined;
+  const credentialStreams: CredentialStreamPort = {
+    closeUnpermittedStreams: async (sessionIds) =>
+      credentialStreamTarget ? credentialStreamTarget.recheckCredentialStreams(sessionIds) : 0,
+  };
+
   const credentials = execution
     ? {
         launcher: new CredentialSessionLauncher({ pty: execution.pty }),
         agentSessions: execution.spawnService,
+        streams: credentialStreams,
         dataDir,
         ...(opts.spaceCredentialProbe ? { probeSpaceCredential: opts.spaceCredentialProbe } : {}),
       }
@@ -437,7 +460,13 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       membership: {
         sockets: subscriptions,
         ...(execution ? { sessions: execution.spawnService } : {}),
+        // W10a T41b: a revoked member credential's login home, as delete removes it.
+        ...(credentials
+          ? { removeCredentialHome: (home: { spaceId: string; credentialId: string }) => new SpaceLoginHomes({ dataDir }).remove(home) }
+          : {}),
       },
+      // W4: auth.sessions.revoke closes the revoked sessions' event sockets.
+      sessionSockets: subscriptions,
       ...(delivery ? { messageDelivery: delivery.messageDelivery } : {}),
       ...(formDelivery
         ? {
@@ -508,6 +537,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       // K6 (W3): the resolver already clears nodeAdmin for a pinned session.
       nodeAdmin: identity.sessionSpaceId ? false : identity.nodeAdmin === true,
       ...(identity.sessionSpaceId ? { sessionSpaceId: identity.sessionSpaceId } : {}),
+      ...(identity.viaLinkId ? { viaLinkId: identity.viaLinkId } : {}),
     };
   };
 
@@ -555,17 +585,10 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     : undefined;
 
   /** Browser sockets authenticate with the Secure HttpOnly session cookie. */
-  const resolveSocketIdentity = async (req: IncomingMessage): Promise<RequestIdentity> => {
-    const resolver = identityResolver ?? autoOwnerResolver;
-    const identity = await resolver(req.headers, {
-      remoteAddress: req.socket.remoteAddress,
-      disableAutoOwner: config.disableAutoOwner === true,
-    });
-    if (identity.kind === 'anonymous') {
-      throw new CollabError('unauthenticated', 'authentication is required');
-    }
-    return identity;
-  };
+  const resolveSocketIdentity = createSocketIdentityResolver(
+    identityResolver ?? autoOwnerResolver,
+    config.disableAutoOwner === true,
+  );
 
   /**
    * PTY grants are bearer capabilities and therefore work for the CLI without
@@ -574,7 +597,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    */
   const resolveOptionalSocketIdentityId = async (
     req: IncomingMessage,
-  ): Promise<{ identityId: string; sessionSpaceId?: string } | undefined> => {
+  ): Promise<{ identityId: string; sessionSpaceId?: string; viaLinkId?: string } | undefined> => {
     if (!readTm8SessionCookie(req.headers) && req.headers.authorization === undefined) return undefined;
     const identity = await resolveSocketIdentity(req);
     if (!identity.identityId) return undefined;
@@ -582,6 +605,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     return {
       identityId: identity.identityId,
       ...(identity.sessionSpaceId ? { sessionSpaceId: identity.sessionSpaceId } : {}),
+      ...(identity.viaLinkId ? { viaLinkId: identity.viaLinkId } : {}),
     };
   };
 
@@ -639,9 +663,11 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         pty: execution.pty,
         admission: wsAdmission,
         ...(ptyAuthorize ? { authorize: ptyAuthorize } : {}),
+        ...(db ? { credentialRecheck: createPtyCredentialRecheck(db) } : {}),
         logger: ptyAuditLogger,
       })
     : undefined;
+  credentialStreamTarget = ptyWs;
   const upgrades: UpgradeTarget = ptyWs
     ? {
         handleUpgrade: (req, socket, head) =>
@@ -664,24 +690,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     : undefined;
 
   const remoteServerProxy = db && owner
-    ? createRemoteServerProxy(async (name, caller) => {
-        // THE CALLER'S claims, never the owner's (G1). A bearer carries its
-        // own identity and admin bit; the auto-owner IS the owner. 044's RLS
-        // then admits node admins only — the rule until per-member links exist.
-        const nodeOwner = await owner();
-        const bearer = caller.kind === 'bearer' ? caller : undefined;
-        if (bearer && !bearer.identityId) return null;
-        const rows = await db.query<{ base_url: string }>(
-          {
-            identityId: bearer ? bearer.identityId! : nodeOwner.identityId,
-            nodeAdmin: bearer ? bearer.nodeAdmin === true : nodeOwner.isNodeAdmin,
-            ...(caller.authKind ? { authKind: caller.authKind } : {}),
-          },
-          `select base_url from public.server_connections where lower(name) = lower($1)`,
-          [name],
-        );
-        return rows[0]?.base_url ?? null;
-      })
+    ? createRemoteServerProxy(directoryTargetResolver(db, owner))
     : undefined;
 
   /**
@@ -763,6 +772,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     ...(clipboardUpload ? { clipboardUploadRoute: clipboardUpload } : {}),
     ...(voiceWebhook ? { voiceWebhookRoute: voiceWebhook } : {}),
     ...(remoteServerProxy ? { remoteServerProxy } : {}),
+    ...(db ? { sessionIssuedHere: (token: string) => sessionIssuedHere(db, token) } : {}),
     ...(config.uiDir ? { staticHandler: createStaticHandler(config.uiDir) } : {}),
   });
 
@@ -968,9 +978,26 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         ...nudgeDispatch('task-nudges'),
       }),
     );
+    // Attention v2 (256): a resolve's note reaches the raising session (or
+    // the task, once it has ended) ~8s later, unless the resolver undid it.
+    scheduler.register(
+      createAttentionDeliveryJob({
+        db,
+        ownerClaims: async () => {
+          const o = await owner();
+          return { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'attention-delivery' };
+        },
+        ...nudgeDispatch('attention-note'),
+        ...(chat ? { wakeChat: (chatId: string, identityId: string) => { void chat.wake(chatId, identityId); } } : {}),
+      }),
+    );
     // Forms W2 (214): the backstop for the hooks above — a restart, a lost
     // hook, or a session that went live through a path that fired none.
     if (formDelivery) scheduler.register(createFormDeliveryJob({ drain: formDelivery }));
+    // Doc 13 §3h / R9 (257): the backstop for W10b's post-commit close — every
+    // open PTY socket re-asked, as its own subject, whether a private
+    // credential still admits it. Process-local like the sockets themselves.
+    if (ptyWs) scheduler.register(createCredentialStreamSweepJob({ streams: ptyWs }));
     // Migration 205's online subject_ids backfill. It runs on every node that
     // applied 205 — until it finishes, the change feed refuses windows below
     // the watermark — and each batch is its own short transaction.
@@ -997,10 +1024,28 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         createDeletedFileBlobPurgeJob({ db, blobStore, claims: sweepClaims('file-blob-purge') }),
       );
     }
+    // W10b (R8 / N8): the backstop for revoke and switch-to-private. It runs
+    // once at boot — the post-boot re-check — and then every minute, killing
+    // any live session left on a revoked credential, or on a private one its
+    // owner did not launch. Only with an execution runtime: no PTY, nothing to kill.
+    if (credentials) {
+      scheduler.register(
+        createSpaceCredentialSweepJob({
+          store: new DbSpaceCredentialStore({ db, dataDir }),
+          agentSessions: credentials.agentSessions,
+          claims: async () => {
+            const o = await owner();
+            return { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'space-credential-sweep' };
+          },
+        }),
+      );
+    }
     scheduler.start();
     console.log('  tracking: observer draining the refresh queue every 60s');
     console.log('  tracking: commit recorder walking active worktrees every 60s');
     console.log('  tracking: forge watcher closing CI/conflict/review loops every 90s');
+    if (ptyWs) console.log('  pty: private-credential stream sweep re-checking open terminals every 15s');
+    console.log('  attention: delivering resolve notes to raising sessions every 2s (after the 8s undo window)');
     console.log('  events: subject_ids backfill indexing older events every 60s until done');
     if (blobStore) {
       console.log('  files: upload-slot sweep expiring slots and purging staged bytes every 10m');

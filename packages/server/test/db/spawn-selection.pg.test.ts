@@ -95,6 +95,16 @@ beforeAll(async () => {
     ids.task = await entity(c, s, 'task');
     await c.query(`insert into public.tasks(entity_id, title) values ($1, 'Fix login')`, [ids.task]);
 
+    // Decision 7: a task that links a teammate, and one it does not.
+    ids.mateLinked = await entity(c, s, 'team_member');
+    await c.query(`insert into public.team_members(entity_id, owner_member_id, name, role, identity, mode, model) values ($1, $2, 'Linked mate', '', 'x', 'worker', 'claude-sonnet-5')`, [ids.mateLinked, ids[`member:${s}`]]);
+    ids.mateFree = await entity(c, s, 'team_member');
+    await c.query(`insert into public.team_members(entity_id, owner_member_id, name, role, identity) values ($1, $2, 'Free mate', '', 'y')`, [ids.mateFree, ids[`member:${s}`]]);
+    ids.teamTask = await entity(c, s, 'task');
+    await c.query(`insert into public.tasks(entity_id, title) values ($1, 'Pair on it')`, [ids.teamTask]);
+    await edge(c, s, ids.teamTask, ids.mateLinked, 'relates_to');
+    await edge(c, s, ids.teamTask, ids.teammate, 'relates_to');
+
     ids.mWorking = await memory(c, s, 'working set memory');
     await edge(c, s, ids.teammate, ids.mWorking, 'remembers');
     ids.mTask = await memory(c, s, 'task memory');
@@ -426,5 +436,50 @@ describe('a task dressed by the attach palette', () => {
     expect(selected.skippedSkills?.filter((row) => twins.has(row.entityId)))
       .toEqual([expect.objectContaining({ entityId: ids.sTwinB, reason: 'task-name-collision' })]);
     expect(() => manifestOf(selected)).not.toThrow();
+  });
+});
+
+describe('selection.teammateIds (launch card v3, Decision 7)', () => {
+  const loadTeam = (extra: Record<string, unknown> = {}) => load({ taskIds: [ids.teamTask], ...extra });
+
+  it('is the exact teammates set, in order, with the roster columns; the launch teammate is removed silently', async () => {
+    const context = await loadTeam({ selection: { teammateIds: [ids.mateFree, ids.teammate, ids.mateFree] } });
+    expect(context.teammates).toEqual([{ entityId: ids.mateFree, name: 'Free mate', mode: null, model: null }]);
+    // The linked teammate the set leaves out is audited; the launch teammate is never its own default.
+    expect(context.contextAudit!.dropped.filter((d) => d.group === 'teammates')).toEqual([
+      { entityId: ids.mateLinked, kind: 'team_member', group: 'teammates', reason: 'not-selected' },
+    ]);
+  });
+
+  it('a kept linked teammate is not recorded as removed', async () => {
+    const context = await loadTeam({ selection: { teammateIds: [ids.mateLinked] } });
+    expect(context.teammates).toEqual([{ entityId: ids.mateLinked, name: 'Linked mate', mode: 'worker', model: 'claude-sonnet-5' }]);
+    expect(context.contextAudit!.dropped.filter((d) => d.group === 'teammates')).toEqual([]);
+  });
+
+  it('absent: no teammates set, nothing audited (the linked teammates are the defaults)', async () => {
+    const context = await loadTeam({ selection: { memoryIds: [] } });
+    expect(context.teammates).toBeUndefined();
+    expect(context.contextAudit!.dropped.filter((d) => d.group === 'teammates')).toEqual([]);
+  });
+
+  it('refuses a readable non-teammate: invalid_input, teammate_kind_not_allowed, every such id named', async () => {
+    const refusal = loadTeam({ selection: { teammateIds: [ids.mateFree, ids.mA, ids.doc, randomUUID()] } });
+    await expect(refusal).rejects.toMatchObject({
+      code: 'invalid_input', details: { reason: 'teammate_kind_not_allowed', ids: [ids.mA, ids.doc] },
+    });
+  });
+
+  it('refuses a missing, deleted or other-space id as not_found, naming it in details.ids', async () => {
+    const unknown = randomUUID();
+    const refusal = loadTeam({ selection: { teammateIds: [ids.mateFree, unknown, ids.docElsewhere] } });
+    await expect(refusal).rejects.toMatchObject({ code: 'not_found', details: { ids: [unknown, ids.docElsewhere] } });
+  });
+
+  it('a resume drops a teammate that no longer resolves as unavailable, and keeps the rest', async () => {
+    const gone = randomUUID();
+    const context = await loadTeam({ selection: { teammateIds: [ids.mateFree, gone] }, selectionReplay: true });
+    expect(context.teammates?.map((t) => t.entityId)).toEqual([ids.mateFree]);
+    expect(context.contextAudit!.dropped).toContainEqual({ entityId: gone, kind: 'unknown', group: 'teammates', reason: 'unavailable' });
   });
 });

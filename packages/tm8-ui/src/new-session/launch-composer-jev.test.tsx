@@ -1,309 +1,186 @@
 // @vitest-environment jsdom
 /**
- * ✦ Jev in the Run popup (Jev UX lane D, parent 01a0d77c).
+ * ✦ Jev on the launch card v3 (mock 01a0df08; owner answers 01a0df30 and
+ * 01a0df3e; the v3 coordinator's Decision 7).
  *
- * The popup mounts the SAME collapsed entry point and panel as LaunchSheet.
- * What must hold here specifically: Jev reads the popup's LIVE title and
- * description, not the saved task; nothing reaches the launch without an
- * Apply click; an applied group is an ordinary selection edit (the popup's
- * own chips show it) and Undo takes it back; the model Apply sets model, tool
- * and effort together; and the spawn carries the selection, `jevRunId`, the
- * unapplied groups' reasons and the per-launch `contextBudgets` — or nothing
- * new without Jev.
+ * What must hold: ✦ is icon-only and says why when it can't ask (no port,
+ * no key before any click); one press asks, and the strip's picks land
+ * TICKED, marked ✦ in their groups; Jev's top teammate is applied while the
+ * teammate is untouched, else it waits in the teammate menu; the model waits
+ * in the model menu until clicked; "Undo Jev's changes" reverts Jev's picks
+ * and its teammate but keeps the person's later edits; a hand-picked teammate
+ * clears Jev's picks and turns ✦ stale WITHOUT re-asking; Jev's other
+ * teammates are drawn in the Teammates group but not sent.
  */
-import { describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, waitFor, within } from '@testing-library/react';
-import type { ExecutionSpawnInput, LaunchSuggestResult, ModelSuggestion, ProjectId } from '@tm8/contract';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { act, fireEvent, waitFor, within } from '@testing-library/react';
+import type { CredentialsServiceKeysStatusView, LaunchSuggestResult } from '@tm8/contract';
 
-import type { LaunchProjectOption } from '../domain/launch';
-import { answeringPort, item, MEMORIES, MODEL, okGroup } from '../jev/test-support';
-import { LAUNCH_DEFAULTS } from '../views/launch-fixtures';
-import { LaunchComposerPopup, type LaunchComposerPopupProps } from './LaunchComposerPopup';
+import { answeringPort, failedGroup, item, MEMORIES, okGroup } from '../jev/test-support';
+import { renderPopup } from './launch-test-kit';
 
-const TEAMMATES = [
-  { id: 'tm-forge', label: 'forge', agentTool: 'claude-code', model: 'claude-sonnet-5' },
-  { id: 'tm-scout', label: 'scout', agentTool: 'claude-code', model: 'claude-opus-5' },
-];
-const PROJECTS: readonly LaunchProjectOption[] = [{ projectId: 'pj-a' as ProjectId, name: 'tm8-ui', trusted: true }];
+beforeEach(() => { localStorage.clear(); });
 
 /* Jev's memories as NON-defaults of LAUNCH_DEFAULTS (whose one memory default
-   is ent-mem-tokens): Apply must ADD the two it ticks beside that default. */
+   is ent-mem-tokens): its two suggested ones are ADDED. */
 const JEV_MEMORIES = okGroup({
   ...MEMORIES,
   items: [item('mem-a', 'memory', 2.8, true), item('mem-b', 'memory', 1.9, true), item('mem-c', 'memory', 0.3, false)],
 });
 
 const RANKS = okGroup({
-  items: [item('tm-scout', 'team_member', 2.7, true, ['space'], 'scout'), item('tm-forge', 'team_member', 1.1, true, ['space'], 'forge')],
+  items: [
+    item('tm-scout', 'team_member', 2.7, true, ['space'], 'scout'),
+    item('tm-forge', 'team_member', 1.8, true, ['space'], 'forge'),
+    item('tm-other', 'team_member', 1.6, true, ['space'], 'reviewer'),
+  ],
   noFit: false,
   floor: 1.5,
 });
 
-function renderPopup(over: Partial<LaunchComposerPopupProps> = {}, groups: Partial<LaunchSuggestResult['groups']> = {}) {
+function setup(groups: Partial<LaunchSuggestResult['groups']> = {}, over: Parameters<typeof renderPopup>[0] = {}) {
   const port = answeringPort({ teammates: RANKS, memories: JEV_MEMORIES, ...groups });
-  const onSpawn = vi.fn<(input: ExecutionSpawnInput) => void>();
-  const props: LaunchComposerPopupProps = {
-    subject: { id: 'task-9', title: 'Wire the launch flow' },
-    spaceId: 'sp-1',
-    teammates: TEAMMATES,
-    projects: PROJECTS,
-    onSpawn,
-    onDismiss: vi.fn(),
-    clientMutationId: 'm:test',
-    loadDescription: () => Promise.resolve('Reconnect drops after 30s.'),
-    jev: port,
-    selection: { load: () => Promise.resolve(LAUNCH_DEFAULTS), candidates: {} },
-    ...over,
-  };
-  const view = render(<LaunchComposerPopup {...props} />);
-  const spawn = async () => {
-    const calls = onSpawn.mock.calls.length;
-    fireEvent.click(view.getByTestId('nsx-send'));
-    await waitFor(() => expect(onSpawn.mock.calls.length).toBe(calls + 1));
-    return onSpawn.mock.calls[onSpawn.mock.calls.length - 1]![0];
-  };
-  /** The entry point's first press asks Jev AND opens the panel. */
+  const view = renderPopup({ jev: port, ...over });
   const ask = async () => {
-    /* The description autofills first: asking over a half-loaded draft would
-       answer a text the popup is about to replace, and read stale. */
-    const area = view.getByLabelText('Describe what this session should do') as HTMLTextAreaElement;
-    await waitFor(() => expect(area.value).not.toBe(''));
-    await act(async () => { fireEvent.click(view.getByTestId('jev-entry-button')); });
-    await waitFor(() => expect(view.getByTestId('jev-entry').getAttribute('data-state')).toBe('ready'));
+    await view.ready();
+    await act(async () => { fireEvent.click(view.getByTestId('lcd3-jev')); });
+    await waitFor(() => expect(view.getByTestId('lcd3-jev').getAttribute('data-status')).toBe('done'));
   };
-  return { ...view, port, onSpawn, spawn, ask };
+  return { ...view, port, ask };
 }
 
-describe('the entry point', () => {
-  it('is one collapsed ✦ button — no strip, no drawer, no second Ask button', () => {
+/** `credentials.serviceKeys.status` as the host reads it; no key of the member's, and no node fallback, unless said. */
+const keyStatus = (status: Partial<CredentialsServiceKeysStatusView> = {}) => async (): Promise<CredentialsServiceKeysStatusView> => ({
+  store: 'present',
+  keys: [{ provider: 'typesafe', connected: false, keyHint: null, updatedAt: null, nodeFallback: false }],
+  ...status,
+});
+
+describe('the ✦ button', () => {
+  it('is greyed with the reason when the host wires no Jev', () => {
     const view = renderPopup();
-    expect(view.getByTestId('jev-entry-badge').textContent).toBe('✦ Ask Jev');
-    expect(view.getByTestId('jev-entry-button').getAttribute('aria-expanded')).toBe('false');
-    expect(view.queryByTestId('jev-panel')).toBeNull();
-    expect(view.queryByTestId('jev-ask')).toBeNull();
-    expect(view.queryByTestId('jev-strip')).toBeNull();
-    expect(view.queryByTestId('jev-review-drawer')).toBeNull();
+    const jev = view.getByTestId('lcd3-jev');
+    expect(jev.getAttribute('data-status')).toBe('off');
+    expect(jev.getAttribute('title')).toMatch(/isn’t wired/);
   });
 
-  it('is refused with the reason when the host wires no Jev port', () => {
-    const view = renderPopup({ jev: undefined });
-    const button = view.getByTestId('jev-entry-button');
-    expect(button.getAttribute('aria-disabled')).toBe('true');
-    fireEvent.click(button);
-    expect(view.queryByTestId('jev-panel')).toBeNull();
+  it('is greyed BEFORE any click when no key resolves — neither yours nor the node’s', async () => {
+    const view = setup({}, { jevKeyStatus: keyStatus() });
+    await waitFor(() => expect(view.getByTestId('lcd3-jev').getAttribute('data-status')).toBe('off'));
+    expect(view.getByTestId('lcd3-jev').getAttribute('title')).toMatch(/Add your TypeSafe key/);
+    expect(view.port.inputs).toHaveLength(0);
   });
 
-  it('the first press asks and opens the panel; the badge counts suggestions and applies', async () => {
-    const view = renderPopup();
+  it('is in colour when the node’s key is the fallback', async () => {
+    const status = { keys: [{ provider: 'typesafe' as const, connected: false, keyHint: null, updatedAt: null, nodeFallback: true }] };
+    const view = setup({}, { jevKeyStatus: keyStatus(status) });
+    await view.ready();
+    expect(view.getByTestId('lcd3-jev').getAttribute('data-status')).toBe('ready');
+  });
+});
+
+describe('asking', () => {
+  it('one press asks, and the strip’s picks land ticked, marked ✦', async () => {
+    const view = setup();
     await view.ask();
     expect(view.port.inputs).toHaveLength(1);
-    expect(view.getByTestId('jev-panel')).toBeTruthy();
-    expect(view.getByTestId('jev-entry-badge').textContent).toMatch(/suggested · 0 changes applied/);
-  });
-});
-
-describe('the draft is the popup’s live text', () => {
-  it('sends the edited title and description, not the saved task', async () => {
-    const view = renderPopup();
-    const area = view.getByLabelText('Describe what this session should do') as HTMLTextAreaElement;
-    await waitFor(() => expect(area.value).toBe('Reconnect drops after 30s.'));
-    fireEvent.change(area, { target: { value: 'Reconnect drops after 30s. Logs in #build.' } });
-    fireEvent.change(view.getByTestId('nsx-title'), { target: { value: 'Fix reconnect' } });
-    await view.ask();
-    expect(view.port.inputs[0]!.draft).toEqual({ title: 'Fix reconnect', description: 'Reconnect drops after 30s. Logs in #build.' });
-    expect(view.port.inputs[0]!.teamMemberId).toBe('tm-forge');
-    expect(view.port.inputs[0]!.subjectId).toBe('task-9');
-  });
-
-  it('editing after the answer is stale, with Ask again', async () => {
-    const view = renderPopup();
-    await view.ask();
-    fireEvent.change(view.getByTestId('nsx-title'), { target: { value: 'Something else' } });
-    expect(view.getByTestId('jev-panel-stale').textContent).toMatch(/Changed since Jev looked/);
-    await act(async () => { fireEvent.click(view.getByTestId('jev-panel-ask-again')); });
-    expect(view.port.inputs[1]!.draft?.title).toBe('Something else');
-  });
-});
-
-describe('Apply is a click, and an ordinary edit', () => {
-  it('an answer alone changes nothing the launch sends', async () => {
-    const bare = renderPopup({ jev: undefined });
-    const plain = await bare.spawn();
-    bare.unmount();
-    const view = renderPopup();
-    await view.ask();
+    expect(view.getByTestId('lcd3-group-memory').textContent).toMatch(/✦ 2/);
     const input = await view.spawn();
-    expect(input.selection).toEqual(plain.selection);
-    expect(input.teamMemberId).toBe(plain.teamMemberId);
-    expect(input.model).toBe(plain.model);
-    // Asked but never applied: the groups launch on their defaults and say why.
-    expect(input.jevRunId).toBe(view.port.inputs[0]!.runId);
-    expect(input.selectionReasons?.memories).toBeDefined();
+    expect(input.selection?.memoryIds).toEqual(['ent-mem-tokens', 'mem-a', 'mem-b']);
+    expect(input.jevRunId).toBeTruthy();
   });
 
-  it('applying memories writes Jev’s ticks into the popup’s own selection', async () => {
-    const view = renderPopup();
+  it('its top teammate is applied while the teammate is untouched; the others are drawn but not sent', async () => {
+    const view = setup();
     await view.ask();
-    await waitFor(() => expect(view.getByTestId('jev-apply-memories').getAttribute('aria-disabled')).toBeNull());
-    fireEvent.click(view.getByTestId('jev-apply-memories'));
-    // The popup's own chip carries the edit: two added beside the one default.
-    expect(view.getByTestId('lsel-chip-memories').className).toMatch(/lsel-chip--edited/);
-    const input = await view.spawn();
-    expect([...(input.selection?.memoryIds ?? [])].sort()).toEqual(['ent-mem-tokens', 'mem-a', 'mem-b']);
-  });
-
-  it('Undo takes an applied group back out of the launch', async () => {
-    const view = renderPopup();
-    await view.ask();
-    await waitFor(() => expect(view.getByTestId('jev-apply-memories').getAttribute('aria-disabled')).toBeNull());
-    fireEvent.click(view.getByTestId('jev-apply-memories'));
-    fireEvent.click(view.getByTestId('jev-undo-memories'));
-    expect(view.getByTestId('lsel-chip-memories').className).not.toMatch(/lsel-chip--edited/);
-    const input = await view.spawn();
-    expect(input.selection?.memoryIds).toBeUndefined();
-    expect(input.selectionReasons?.memories).toBeDefined();
-  });
-
-  it('Apply model sets model, tool and effort together', async () => {
-    const view = renderPopup({}, { model: okGroup({ ...MODEL, model: 'gpt-5.6-sol', agentTool: 'codex', effort: 'xhigh' }) });
-    await view.ask();
-    fireEvent.click(view.getByTestId('jev-apply-model'));
-    const input = await view.spawn();
-    expect(input).toMatchObject({ model: 'gpt-5.6-sol', agentTool: 'codex', reasoningEffort: 'xhigh' });
-  });
-
-  it('Apply all that changes the teammate still launches Jev’s model (the teammate re-seed must not undo it)', async () => {
-    const view = renderPopup({}, { model: okGroup({ ...MODEL, model: 'gpt-5.6-sol', agentTool: 'codex', effort: 'xhigh' }) });
-    await view.ask();
-    fireEvent.click(view.getByTestId('jev-apply-all'));
-    await waitFor(() => expect(view.getByTestId('jev-undo-all')).toBeTruthy());
-    const input = await view.spawn();
-    expect(input).toMatchObject({ teamMemberId: 'tm-scout', model: 'gpt-5.6-sol', agentTool: 'codex', reasoningEffort: 'xhigh' });
-  });
-
-  it('Apply all, then Undo all, returns the launch to what it was', async () => {
-    const bare = renderPopup({ jev: undefined });
-    const before = await bare.spawn();
-    bare.unmount();
-    const view = renderPopup();
-    await view.ask();
-    await waitFor(() => expect(view.getByTestId('jev-apply-memories').getAttribute('aria-disabled')).toBeNull());
-    fireEvent.click(view.getByTestId('jev-apply-all'));
-    await waitFor(() => expect(view.getByTestId('jev-undo-all')).toBeTruthy());
-    fireEvent.click(view.getByTestId('jev-undo-all'));
-    const after = await view.spawn();
-    expect(after.selection).toEqual(before.selection);
-    expect(after.teamMemberId).toBe(before.teamMemberId);
-    expect(after.model).toBe(before.model);
-  });
-});
-
-/* THE MODEL AND TEAMMATE ENTRIES ARE CURRENT OR THEY SAY SO (coordinator's
-   ruling on #828): two Jev Applies compose in either order; a person's own
-   teammate pick is not overridden, and the row stops claiming "Applied". */
-describe('applied model and teammate stay honest', () => {
-  const SOL = okGroup<ModelSuggestion>({ ...MODEL, model: 'gpt-5.6-sol', agentTool: 'codex', effort: 'xhigh' });
-  const handPick = (view: ReturnType<typeof renderPopup>, name: string) => {
-    fireEvent.click(view.getByTestId('nsx-team'));
-    fireEvent.click(within(view.getByTestId('nsx-team-menu')).getByRole('menuitemradio', { name: new RegExp(`^${name}`) }));
-  };
-  const answered = async () => {
-    const view = renderPopup({}, { model: SOL });
-    await view.ask();
-    return view;
-  };
-
-  it('Apply model, then Apply teammate: the launch carries the applied model and both rows say Applied', async () => {
-    const view = await answered();
-    fireEvent.click(view.getByTestId('jev-apply-model'));
-    fireEvent.click(view.getByTestId('jev-apply-teammate'));
-    await waitFor(() => expect(view.getByTestId('jev-applied-teammate')).toBeTruthy());
-    expect(view.getByTestId('jev-applied-model')).toBeTruthy();
-    expect(view.queryByTestId('jev-replaced-model')).toBeNull();
-    const input = await view.spawn();
-    expect(input).toMatchObject({ teamMemberId: 'tm-scout', model: 'gpt-5.6-sol', agentTool: 'codex', reasoningEffort: 'xhigh' });
-  });
-
-  it('Apply model, then a teammate picked BY HAND: that teammate’s default goes out, and the row says it was replaced', async () => {
-    const view = await answered();
-    fireEvent.click(view.getByTestId('jev-apply-model'));
-    handPick(view, 'scout');
-    expect(view.getByTestId('jev-replaced-model').textContent).toBe('Applied, then replaced by scout’s default model.');
-    expect(view.queryByTestId('jev-applied-model')).toBeNull();
-    expect(view.queryByTestId('jev-undo-model')).toBeNull();
-    await waitFor(() => expect(view.getByTestId('jev-entry-badge').textContent).toMatch(/0 changes applied/));
-    const input = await view.spawn();
-    expect(input).toMatchObject({ teamMemberId: 'tm-scout', model: 'claude-opus-5' });
-  });
-
-  it('Re-apply on a replaced model restores it, and the row says Applied again', async () => {
-    const view = await answered();
-    fireEvent.click(view.getByTestId('jev-apply-model'));
-    handPick(view, 'scout');
-    fireEvent.click(view.getByTestId('jev-reapply-model'));
-    expect(view.getByTestId('jev-applied-model')).toBeTruthy();
-    await waitFor(() => expect(view.getByTestId('jev-entry-badge').textContent).toMatch(/1 change applied/));
-    const input = await view.spawn();
-    expect(input).toMatchObject({ teamMemberId: 'tm-scout', model: 'gpt-5.6-sol', agentTool: 'codex', reasoningEffort: 'xhigh' });
-  });
-
-  it('an applied teammate changed by hand says so; Re-apply brings Jev’s pick back', async () => {
-    const view = await answered();
-    fireEvent.click(view.getByTestId('jev-apply-teammate'));
-    await waitFor(() => expect(view.getByTestId('jev-applied-teammate')).toBeTruthy());
-    handPick(view, 'forge');
-    expect(view.getByTestId('jev-replaced-teammate').textContent).toBe('Applied, then changed by hand.');
-    expect(view.queryByTestId('jev-undo-teammate')).toBeNull();
-    fireEvent.click(view.getByTestId('jev-reapply-teammate'));
+    expect(view.getByTestId('nsx-team').getAttribute('aria-label')).toBe('Teammate: scout');
+    const group = view.getByTestId('lcd3-group-teammate');
+    expect(group.getAttribute('data-unsent')).toBe('true');
+    fireEvent.click(group);
+    expect(view.getByTestId('lcd3-group-unsent').textContent).toMatch(/can’t take teammates/);
     const input = await view.spawn();
     expect(input.teamMemberId).toBe('tm-scout');
   });
 
-  it('Undo all leaves replaced entries alone: the hand-picked teammate and its model survive', async () => {
-    const ATLAS = { id: 'tm-atlas', label: 'atlas', agentTool: 'claude-code', model: 'claude-fable-5-1' };
-    const view = renderPopup({ teammates: [...TEAMMATES, ATLAS] }, { model: SOL });
-    await view.ask();
-    fireEvent.click(view.getByTestId('jev-apply-all'));
-    await waitFor(() => expect(view.getByTestId('jev-undo-all')).toBeTruthy());
-    /* By hand: atlas, whose default is fable-5-1. The teammate Apply's "previous"
-       is forge and the model Apply's is forge's sonnet-5, so an Undo that
-       ignored the replacement would put forge + sonnet-5 back over the pick. */
-    handPick(view, 'atlas');
-    expect(view.getByTestId('jev-replaced-model')).toBeTruthy();
-    expect(view.getByTestId('jev-replaced-teammate')).toBeTruthy();
-    fireEvent.click(view.getByTestId('jev-undo-all'));
-    expect(view.getByTestId('jev-replaced-model')).toBeTruthy();
-    const input = await view.spawn();
-    expect(input).toMatchObject({ teamMemberId: 'tm-atlas', model: 'claude-fable-5-1' });
+  it('after a hand-picked teammate, Jev’s pick waits in the teammate menu instead', async () => {
+    const view = setup();
+    await view.ready();
+    fireEvent.click(view.getByTestId('nsx-team'));
+    fireEvent.click(within(view.getByTestId('nsx-team-menu')).getByRole('menuitemradio', { name: /^forge/ }));
+    await act(async () => { fireEvent.click(view.getByTestId('lcd3-jev')); });
+    await waitFor(() => expect(view.getByTestId('lcd3-jev').getAttribute('data-status')).toBe('done'));
+    expect(view.getByTestId('nsx-team').getAttribute('aria-label')).toBe('Teammate: forge');
+    fireEvent.click(view.getByTestId('nsx-team'));
+    fireEvent.click(view.getByTestId('lcd3-jev-teammate'));
+    expect(view.getByTestId('nsx-team').getAttribute('aria-label')).toBe('Teammate: scout');
   });
 
-  it('a group re-ticked by hand after Apply stops counting, says so, and Re-apply restores it', async () => {
-    const view = await answered();
-    await waitFor(() => expect(view.getByTestId('jev-apply-memories').getAttribute('aria-disabled')).toBeNull());
-    fireEvent.click(view.getByTestId('jev-apply-memories'));
-    await waitFor(() => expect(view.getByTestId('jev-entry-badge').textContent).toMatch(/2 changes applied/));
-    // By hand, in the popup's own Memories group: take mem-a back out.
-    fireEvent.click(view.getByTestId('lsel-chip-memories'));
-    fireEvent.click(view.getByTestId('lsel-row-memories-mem-a'));
-    expect(view.getByTestId('jev-replaced-memories').textContent).toBe('Applied, then changed by hand.');
-    expect(view.queryByTestId('jev-undo-memories')).toBeNull();
-    expect(view.getByTestId('jev-entry-badge').textContent).toMatch(/1 change applied/);
-    expect(view.getByTestId('jev-ledger-memories').textContent).not.toContain('mem-a');
-    fireEvent.click(view.getByTestId('jev-reapply-memories'));
+  it('the model waits in the model menu until clicked', async () => {
+    const view = setup({ model: okGroup({ tier: 'deep', model: 'claude-opus-5', agentTool: 'claude-code', effort: 'max', need: 2.4, workKind: 'design', reasons: ['Cross-package change.'] }) });
+    await view.ask();
+    expect(view.getByTestId('nsx-model').textContent).toContain('✦');
+    fireEvent.click(view.getByTestId('lcd3-jev'));
+    expect(view.getByTestId('lcd3-jev-suggests').textContent).toMatch(/a model/);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.click(view.getByTestId('nsx-model'));
+    const row = view.getByTestId('lcd3-jev-model');
+    expect(row.textContent).toContain('Cross-package change.');
+    fireEvent.click(row);
     const input = await view.spawn();
-    expect([...(input.selection?.memoryIds ?? [])].sort()).toEqual(['ent-mem-tokens', 'mem-a', 'mem-b']);
+    expect(input.model).toBe('claude-opus-5');
+    expect(input.reasoningEffort).toBe('max');
+  });
+
+  it('a failed group has a Retry in the ✦ menu', async () => {
+    const view = setup({ skills: failedGroup('timeout') });
+    await view.ask();
+    fireEvent.click(view.getByTestId('lcd3-jev'));
+    const retry = view.getByTestId('lcd3-jev-retry-skills');
+    expect(retry.textContent).toContain('timeout');
+    await act(async () => { fireEvent.click(retry); });
+    expect(view.port.inputs).toHaveLength(2);
+  });
+
+  it('its cost shows in the menu', async () => {
+    const view = setup();
+    await view.ask();
+    fireEvent.click(view.getByTestId('lcd3-jev'));
+    expect(view.getByTestId('lcd3-jev-menu').textContent).toMatch(/\$/);
+  });
+});
+
+describe('undo and staleness', () => {
+  it('Undo Jev’s changes reverts its picks and its teammate, and keeps a later edit of yours', async () => {
+    const view = setup();
+    await view.ask();
+    const menu = await view.openGroup('skill');
+    fireEvent.click(within(menu).getByTestId('lcd3-group-add-sk-extra'));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.click(view.getByTestId('lcd3-jev'));
+    fireEvent.click(view.getByTestId('lcd3-jev-undo'));
+    expect(view.getByTestId('nsx-team').getAttribute('aria-label')).toBe('Teammate: forge');
+    const input = await view.spawn();
+    expect(input.selection?.memoryIds ?? ['ent-mem-tokens']).toEqual(['ent-mem-tokens']);
+    expect(input.selection?.skillIds).toContain('sk-extra');
+  });
+
+  it('a hand-picked teammate clears Jev’s picks and turns ✦ stale — without asking again', async () => {
+    const view = setup();
+    await view.ask();
+    fireEvent.click(view.getByTestId('nsx-team'));
+    fireEvent.click(within(view.getByTestId('nsx-team-menu')).getByRole('menuitemradio', { name: /^forge/ }));
+    await waitFor(() => expect(view.getByTestId('lcd3-jev').getAttribute('data-status')).toBe('stale'));
+    expect(view.port.inputs).toHaveLength(1);
+    expect(view.getByTestId('lcd3-group-memory').textContent).not.toMatch(/✦/);
   });
 });
 
 describe('the spawn payload', () => {
-  it('without pressing Ask Jev, the payload is identical to a popup with no Jev', async () => {
-    const first = renderPopup();
-    const a = await first.spawn();
-    first.unmount();
-    const b = await renderPopup({ jev: undefined }).spawn();
-    expect(a).toEqual(b);
-    expect('selection' in a).toBe(false);
-    expect('jevRunId' in a).toBe(false);
-    expect('contextBudgets' in a).toBe(false);
+  it('without pressing ✦, the payload carries no Jev run', async () => {
+    const view = setup();
+    await view.ready();
+    const input = await view.spawn();
+    expect(input.jevRunId).toBeUndefined();
+    expect(view.port.inputs).toHaveLength(0);
   });
 });

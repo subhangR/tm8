@@ -77,7 +77,7 @@ import { createOutput } from '../src/output.js';
 // MEASURED from this file's own failing run on the MERGED tree.
 // F2 adds skills.scan/list/show.
 // 203 -> 208: skills.roots/create/edit/equip/unequip (F4, #648). MEASURED on the merged tree.
-const EXPECTED_ROWS = 253; /* W11: +4 (projects.link stays, decision 29) spaces.projects.list|create and gate.folders.list|create. MEASURED. */ /* +1 auth.space.enter (W3-server). MEASURED. */ /* +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. */ /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b), on the merged tree. MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ // +1 events.changes (change feed step 3). MEASURED. // +10 credentials.space.* + node.credentials.* (SC-3). MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED.
+const EXPECTED_ROWS = 286 /* +1 execution.dispatchers (launch v3 C). MEASURED. */; /* +3 spaces.spacePassword.setRequired, spaces.members.spacePassword.reset|lock (W5). MEASURED. */ /* +2 attentionSignals.raise|clear (Attention v2 S6; stacked on tm8/attention-v2-integration). MEASURED. */ /* +6 servers.* (W8, 261). MEASURED. */ /* +2 spaceLinks.invoke/audit (W7, 260). MEASURED. */ /* +1 credentials.space.addMine (W10d). MEASURED. */ /* +7 spaceLinks.* (W6, 250/251). MEASURED. */ /* +1 node.metrics.get (status strip). MEASURED. */ /* W11: +4 (projects.link stays, decision 29) spaces.projects.list|create and gate.folders.list|create. MEASURED. */ /* +1 auth.space.enter (W3-server). MEASURED. */ /* +6 credentials.space.* (W10b). MEASURED. */ /* +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. */ /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b), on the merged tree. MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ // +1 events.changes (change feed step 3). MEASURED. // +10 credentials.space.* + node.credentials.* (SC-3). MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED. /* +2 auth.sessions.list/revoke (W4). MEASURED. */ /* -1 containers.attention (Attention v2 S7a). MEASURED. */ /* +3 attentionRequests.markSeen|unresolve|withdraw (Attention v2 S4; stacked on tm8/attention-v2-integration). MEASURED. */
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -199,7 +199,7 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
     // every other row in the session git rail. MEASURED from the failing run.
     // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): execution.gitStage is public, like every other row in the
     // session git rail. 187's row moved this to 194; gitStage takes it to 195. MEASURED.
-    expect(histogram).toEqual({ public: 249 /* W11: +4 (projects.link stays, decision 29) spaces.projects.list|create and gate.folders.list|create. MEASURED. */ /* +1 auth.space.enter (W3-server). MEASURED. */ /* +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. */, /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b), on the merged tree. MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ composite: 1, internal: 1, reserved: 2 }); /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED.
+    expect(histogram).toEqual({ public: 282 /* +3 spaces.spacePassword.setRequired, spaces.members.spacePassword.reset|lock (W5). MEASURED. */ /* +1 execution.dispatchers (launch v3 C). MEASURED. */ /* +2 attentionSignals.raise|clear (Attention v2 S6; stacked on tm8/attention-v2-integration). MEASURED. */ /* +6 servers.* (W8, 261). MEASURED. */ /* +2 spaceLinks.invoke/audit (W7, 260). MEASURED. */ /* +1 credentials.space.addMine (W10d). MEASURED. */ /* +6 credentials.space.* (W10b). MEASURED. */ /* +7 spaceLinks.* (W6, 250/251). MEASURED. */ /* +1 node.metrics.get (status strip). MEASURED. */ /* W11: +4 (projects.link stays, decision 29) spaces.projects.list|create and gate.folders.list|create. MEASURED. */ /* +1 auth.space.enter (W3-server). MEASURED. */ /* +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. */, /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b), on the merged tree. MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ composite: 1, internal: 1, reserved: 2 }); /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED. /* +2 auth.sessions.list/revoke (W4). MEASURED. */ /* -1 containers.attention (Attention v2 S7a). MEASURED. */ /* +3 attentionRequests.markSeen|unresolve|withdraw (Attention v2 S4; stacked on tm8/attention-v2-integration). MEASURED. */
   });
 });
 
@@ -213,6 +213,9 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
  * With the count derived, that whole class of drift cannot recur.
  */
 const COMMANDLESS_OPERATIONS = [
+      // Attention v2 S6: tm8's own conflict signal, reached only through the worktree rail.
+      'attentionSignals.clear',
+      'attentionSignals.raise',
       'bridge.fetchBlob',
       // `chat.start` LEFT this set in Wave 2's CLI lane: it is `tm8 chat start`
       // now. It was here because chat v1 exposed the composer only, and the
@@ -236,15 +239,24 @@ const COMMANDLESS_OPERATIONS = [
       'credentials.serviceKeys.put',
       'credentials.serviceKeys.status',
       // SC-3: the space credential rows are settings-screen operations too.
+      'credentials.space.addMine',
+      'credentials.space.claim',
       'credentials.space.create',
       'credentials.space.delete',
       'credentials.space.list',
+      'credentials.space.myDefault.clear',
+      'credentials.space.myDefault.set',
       'credentials.space.policy.get',
       'credentials.space.policy.set',
       'credentials.space.rekey',
       'credentials.space.rename',
       'credentials.space.setDefault',
+      'credentials.space.setVisibility',
+      'credentials.space.spaceDefaultConsent',
+      'credentials.space.usage',
       'credentials.status',
+      // Launch v3 C: the launch card's dispatch-target drop-up; `session dispatch` needs no read.
+      'execution.dispatchers',
       // The TEN execution.git* rows are deliberately commandless (see the
       // EXPECTED_ROWS note): the CLI runs the same verbs locally as
       // `tm8 session git-*`, and one action must not have two names.
@@ -270,6 +282,8 @@ const COMMANDLESS_OPERATIONS = [
       // SC-3: node admin settings, commandless for the same reason.
       'node.credentials.policy.set',
       'node.credentials.status',
+      // Status strip: host metrics are a desktop-UI read.
+      'node.metrics.get',
       'projects.directories.list',
       'projects.files.archive',
       'projects.files.attach',
@@ -278,11 +292,34 @@ const COMMANDLESS_OPERATIONS = [
       'projects.folderUploads.abort',
       'projects.folderUploads.complete',
       'projects.folderUploads.init',
+      // W8 (261): 044's create/delete are refused in SQL; `tm8 server add` and
+      // `tm8 server remove` bind servers.add/remove. list/get stay on 044's
+      // commands (they read the directory view); adopt is settings-only and
+      // probe is the settings screen's reachability check.
+      'serverConnections.create',
+      'serverConnections.delete',
+      'servers.adopt',
+      'servers.get',
+      'servers.list',
+      'servers.probe',
       // #646: the launch-sheet preview is a read the composer calls; its row
       // records "effective CLI is deferred", so it is commandless by decision.
       'skills.preview',
       // F4: authoring roots are a composer read with no CLI verb.
       'skills.roots',
+      // W6 (250/251) / W7 (260): `tm8 link list|add|login|audit` exist; invoke is
+      // reached through `--space`, and relogin/logout/remove/setSpawn stay
+      // settings-only for scope.
+      'spaceLinks.invoke',
+      'spaceLinks.logout',
+      'spaceLinks.relogin',
+      'spaceLinks.remove',
+      'spaceLinks.setSpawn',
+      // W5: the space password setting and member reset/lock are space-settings
+      // operations for a human admin. Commandless by decision.
+      'spaces.members.spacePassword.lock',
+      'spaces.members.spacePassword.reset',
+      'spaces.spacePassword.setRequired',
 ];
 
 describe('the CLI command projection', () => {
@@ -661,6 +698,8 @@ const DTO_BY_OPERATION: Partial<Record<OperationName, string>> = {
   'forms.questions.remove': 'FormsQuestionsRemoveInputSchema',
   'forms.questions.move': 'FormsQuestionsMoveInputSchema',
   'forms.transition': 'FormsTransitionInputSchema',
+  // Attention v2 S4: withdraw's optional expectedVersion.
+  'attentionRequests.withdraw': 'WithdrawAttentionRequestInputSchema',
 };
 
 /**
@@ -837,6 +876,7 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
    */
   const GUARD_PIN: ReadonlyArray<readonly [OperationName, string, string]> = [
     ['attentionRequests.update', '--expect-version', 'expectedVersion'],
+    ['attentionRequests.withdraw', '--expect-version', 'expectedVersion'],
     ['entities.patch', '--expect-version', 'expectedVersion'],
     ['entities.move', '--expect-version', 'expectedVersion'],
     ['entities.commands.complete', '--expect-version', 'expectedVersion'],
@@ -932,7 +972,7 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
     // Non-vacuity: an empty derivation would equal an empty table.
     expect(actual.length).toBe(GUARD_PIN.length);
     // 31 -> 32 (187): execution.sessions.share.
-    expect(actual.length).toBe(41); /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +6 forms.* guard rows (Forms W1 CLI). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect(actual.length).toBe(42) /* +1 attentionRequests.withdraw guard row (Attention v2 S4). MEASURED. */; /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +6 forms.* guard rows (Forms W1 CLI). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
     expect(norm(actual)).toEqual(norm(GUARD_PIN));
   });
 

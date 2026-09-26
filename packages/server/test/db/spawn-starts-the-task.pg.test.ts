@@ -33,6 +33,7 @@ vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
  * and 130 are already taken twice over on unmerged branches.
  */
 const MIGRATION_SUFFIX = '_spawn_starts_the_task.sql';
+const LAUNCH_V3_SUFFIX = '_launch_v3_new_task_and_dispatcher_routing.sql';
 
 function spawnStartsTheTaskMigration(files: readonly string[]): string {
   const matches = files.filter((file) => file.endsWith(MIGRATION_SUFFIX));
@@ -195,7 +196,12 @@ beforeAll(async () => {
   database = await createW1ScratchDatabase('spawn-starts-the-task');
   const files = migrationFiles();
   const migration = spawnStartsTheTaskMigration(files);
-  database.apply(files.filter((f) => f !== migration));
+  // Launch v3 (267) DROPS the 17-argument execution_spawn for an 18-argument
+  // one. Applied before 131 here, 131's create-or-replace would bring the old
+  // signature back beside it and every positional call would be ambiguous — an
+  // artifact of this out-of-order fixture, not of the real chain, where 267
+  // runs last. 267 has its own suite (launch-v3-new-task.pg.test.ts).
+  database.apply(files.filter((f) => f !== migration && !f.endsWith(LAUNCH_V3_SUFFIX)));
   fixture = await seedPre131(database);
   database.apply([migration]);
 });

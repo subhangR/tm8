@@ -104,7 +104,7 @@ export {
 
 export { actorName, actorPresentation, LEFT_SUFFIX, type ActorPresentation } from './actors';
 
-export { QUIET_SESSION_DETAIL, needsAttentionOf, toRowFacts } from './needs-attention';
+export { needsAttentionOf, toRowFacts } from './needs-attention';
 
 export {
   AGENT_TOOLS,
@@ -195,9 +195,13 @@ export { HOME_PRESENCE_KIND, HOME_RAIL_KINDS } from './home-page';
 export { CATEGORY_DEFAULT_STATUS } from './status-categories';
 export {
   CHATS_ROOT,
+  CHATS_ROOT_LIST_KIND,
   DEFAULT_HOME_KIND,
+  HOME_QUICK_BIRTH_KINDS,
   HOME_RAIL_WITHHELD_KINDS,
   LEGACY_HOME_TAB_KINDS,
+  homeColumnRoot,
+  homeQuickBirthKinds,
   homeRailGroups,
   homeRootKinds,
   isHomeRootKind,

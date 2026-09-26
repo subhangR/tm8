@@ -1,0 +1,407 @@
+/*
+ * THE LAUNCH CARD v3 (mock 01a0df08) — on top of launch-card.css, which
+ * still owns the shell: bands, pickers, menus, drawer, narrow-width steps.
+ *
+ * SIZE. 56% of the popup layer's width (80% − 30%, decision 10), same 82%
+ * height, in the layer's container units — never `vw`, which a zoomed
+ * `.cv2-root` would multiply.
+ *
+ * NOTHING OVERFLOWS (owner): every row is one line that scrolls or
+ * ellipsizes, and long unbroken text wraps anywhere.
+ */
+
+.lcd--v3 {
+  /* Jev's violet is the palette's one violet (the merged-PR hue); the verbs
+     take the palette's info and run hues. No raw colours (hex-ban). */
+  --lcd3-jev: var(--pn-pr-merged);
+  --lcd3-jev-soft: var(--pn-pr-merged-soft);
+  width: clamp(min(640px, calc(100cqw - 24px)), 56cqw, 1100px);
+}
+
+.lcd3-wrap { white-space: normal !important; }
+.lcd3-refused { color: var(--pn-block); }
+.lcd3-bad { color: var(--pn-block); }
+
+/* ------------------------------------------------------------ verb switch */
+
+.lcd3-verb {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 9px 0 10px;
+  border: 0;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-brand-soft);
+  color: var(--pn-brand) !important;
+  cursor: pointer;
+  font: 700 10.5px/1 var(--pn-ui) !important;
+  letter-spacing: 0.09em;
+}
+.lcd3-verb .lcd-caret { color: inherit; opacity: 0.7; }
+.lcd3-verb--coordinator { background: var(--pn-info-soft); color: var(--pn-info) !important; }
+.lcd3-verb--dispatcher { background: var(--pn-run-soft); color: var(--pn-run) !important; }
+.lcd3-verb--sm { height: 20px; padding: 0 7px; font-size: 9.5px !important; }
+.lcd3-verbmenu { width: 340px; }
+.lcd3-verbmenu .lcd-mi { align-items: flex-start; }
+
+/* -------------------------------------------------------------- the center */
+
+/* The v3 rows carry their own gutter, so the shell's center padding goes. */
+.lcd3-center { min-width: 0; padding: 0; }
+
+.lcd3-titlerow {
+  position: relative;
+  flex: none;
+  padding: clamp(14px, 2.2cqh, 22px) var(--g) 6px;
+}
+.lcd3-titleline { display: flex; align-items: center; gap: 8px; min-width: 0; }
+
+.lcd3-addfull {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px dashed var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: none;
+  cursor: pointer;
+  color: var(--pn-ink-3) !important;
+  font-size: 16px !important;
+}
+.lcd3-addfull:hover { border-color: var(--pn-ink-3); color: var(--pn-ink) !important; }
+.lcd3-addfull[aria-disabled='true'] { opacity: 0.6; }
+
+.lcd3-subject-slot { flex: 0 1 auto; min-width: 12ch; }
+.lcd3-subject {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 100%;
+  padding: 4px 10px 4px 6px;
+  border: 0;
+  border-radius: var(--pn-r-md);
+  background: none;
+  cursor: pointer;
+  color: var(--pn-ink) !important;
+  font: 500 clamp(19px, 2.4cqh, 24px)/1.25 var(--pn-serif) !important;
+}
+.lcd3-subject:hover, .lcd3-subject[aria-expanded='true'] { background: var(--pn-hover); }
+.lcd3-subject__k {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: var(--pn-brand-soft);
+  color: var(--pn-brand);
+  font: 14px var(--pn-ui);
+}
+.lcd3-subject__t { overflow: hidden; min-width: 0; text-overflow: ellipsis; white-space: nowrap; }
+
+.lcd3-lane {
+  position: relative;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 2px 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.lcd3-lane::-webkit-scrollbar { display: none; }
+.lcd3-lane > * { flex: none; }
+.lcd3-lane[data-more] { mask-image: linear-gradient(90deg, black calc(100% - 44px), transparent); }
+.lcd3-lane[data-less] { mask-image: linear-gradient(90deg, transparent, black 36px); }
+.lcd3-lane[data-less][data-more] { mask-image: linear-gradient(90deg, transparent, black 36px, black calc(100% - 44px), transparent); }
+
+.lcd3-fullchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 240px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-surface);
+  cursor: pointer;
+  font-size: 13px !important;
+}
+.lcd3-fullchip__t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lcd3-fullchip__kb { color: var(--pn-ink-3); font: 11px var(--pn-mono); }
+.lcd3-fullchip[data-over] { border-color: var(--pn-block); background: color-mix(in srgb, var(--pn-block) 9%, var(--pn-card)); }
+
+/* A menu for an item inside a scrolling lane, placed by layout offsets. */
+.lcd3-float { position: absolute; z-index: 21; width: 0; height: 0; }
+.lcd3-float > .lcd-menu--down { top: 6px; }
+.lcd3-float > .lcd-menu--up { bottom: 6px; }
+
+.lcd3-peek { width: min(460px, calc(100cqw - 48px)); padding: 6px 10px 10px; }
+.lcd3-peek__body {
+  max-height: 260px;
+  margin: 2px 8px 10px;
+  overflow: auto;
+  color: var(--pn-ink-2);
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.lcd3-link {
+  margin: 0 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  color: var(--pn-brand) !important;
+  font-size: 12.5px !important;
+}
+
+.lcd3-notes {
+  flex: 1;
+  width: auto;
+  min-height: 0;
+  margin: 0 var(--g);
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------- the strip */
+
+.lcd3-strip {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 8px var(--g) 12px;
+}
+.lcd3-attach { flex: none; }
+.lcd3-lane--strip { gap: 6px; }
+
+.lcd3-grp {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 260px;
+  height: 30px;
+  padding: 0 11px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-surface);
+  cursor: pointer;
+  white-space: nowrap;
+  color: var(--pn-ink-2) !important;
+  font-size: 12.5px !important;
+}
+.lcd3-grp b { color: var(--pn-ink); font-weight: 600; }
+.lcd3-grp:hover, .lcd3-grp[aria-expanded='true'] { border-color: var(--pn-ink-3); }
+.lcd3-grp[data-edited] { border-color: color-mix(in srgb, var(--pn-wait) 55%, transparent); background: var(--pn-wait-soft); }
+.lcd3-grp[data-jev] { border-color: color-mix(in srgb, var(--lcd3-jev) 45%, transparent); background: var(--lcd3-jev-soft); }
+.lcd3-grp[data-unsent] { border-style: dashed; opacity: 0.8; }
+.lcd3-jevn { color: var(--lcd3-jev); font-weight: 600; }
+.lcd3-grp--upload { cursor: default; }
+.lcd3-grp__name { overflow: hidden; max-width: 140px; text-overflow: ellipsis; }
+.lcd3-grp__meta { color: var(--pn-ink-3); font: 11px var(--pn-mono); }
+.lcd3-grp__meta--bad { color: var(--pn-block); }
+.lcd3-grp[data-status='failed'] { border-color: var(--pn-block); }
+.lcd3-mini {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  cursor: pointer;
+  color: var(--pn-ink-3) !important;
+  font-size: 13px !important;
+}
+.lcd3-mini:hover { background: var(--pn-hover); color: var(--pn-ink) !important; }
+
+.lcd3-menu { width: min(420px, calc(100cqw - 32px)); }
+.lcd3-list { max-height: min(280px, 40cqh); overflow-y: auto; }
+.lcd3-searchbox { position: relative; margin-bottom: 4px; }
+.lcd3-searchbox .lcd-search { margin: 0; padding-right: 110px; }
+.lcd3-typebtn {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  padding: 2px 8px;
+  border: 1px solid var(--pn-line);
+  border-radius: 6px;
+  background: var(--pn-surface);
+  cursor: pointer;
+  white-space: nowrap;
+  color: var(--pn-ink-3) !important;
+  font-size: 12px !important;
+}
+.lcd3-typebtn[data-on] { border-color: color-mix(in srgb, var(--pn-wait) 55%, transparent); background: var(--pn-wait-soft); color: var(--pn-wait) !important; }
+
+.lcd3-box {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: 4px;
+  font-size: 11px;
+}
+.lcd3-box[data-on] { border-color: var(--pn-ink); background: var(--pn-ink); color: var(--pn-paper); }
+
+.lcd3-row { gap: 8px; cursor: default; }
+.lcd3-rowtick {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+}
+.lcd3-rowtick .lcd-mi__body { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lcd3-rowtick [data-off] { color: var(--pn-ink-3); text-decoration: line-through; }
+.lcd3-tag { flex: none; color: var(--pn-ink-3); font-size: 11px; white-space: nowrap; }
+.lcd3-tag--jev { color: var(--lcd3-jev); }
+.lcd3-tag--added { color: var(--pn-wait); }
+.lcd3-rowact {
+  flex: none;
+  padding: 1px 6px;
+  border: 1px solid var(--pn-line);
+  border-radius: 5px;
+  background: none;
+  cursor: pointer;
+  white-space: nowrap;
+  color: var(--pn-ink-3) !important;
+  font-size: 11px !important;
+}
+.lcd3-rowact[aria-disabled='true'] { opacity: 0.45; cursor: not-allowed; }
+.lcd3-groupfoot { margin-top: 6px; padding: 6px 2px 2px; border-top: 1px solid var(--pn-line); }
+.lcd3-small { height: 28px; padding: 0 12px; }
+
+/* ------------------------------------------------------------------- ✦ */
+
+.lcd3-jev {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px dashed var(--lcd3-jev);
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+  color: var(--lcd3-jev) !important;
+  font-size: 16px !important;
+}
+.lcd3-jev:hover { background: var(--lcd3-jev-soft); }
+.lcd3-jev[data-status='off'] { border-style: solid; border-color: var(--pn-line); color: var(--pn-ink-4) !important; cursor: not-allowed; }
+.lcd3-jev[data-status='busy'] { cursor: progress; animation: lcd3-spin 1.2s linear infinite; }
+.lcd3-jev[data-status='done'] { border-style: solid; background: var(--lcd3-jev-soft); }
+.lcd3-jev[data-status='stale'] { border-color: var(--pn-wait); color: var(--pn-wait) !important; }
+.lcd3-jevmenu { right: 0; left: auto; min-width: 260px; }
+.lcd3-jevmark { color: var(--lcd3-jev); }
+.lcd3-suggest .lcd-mi__body { color: var(--lcd3-jev); }
+
+@keyframes lcd3-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .lcd3-jev[data-status='busy'], .lcd3-dispatch[data-live] { animation: none; }
+}
+
+/* ------------------------------------------------------------ dispatch */
+
+.lcd3-dispatch { gap: 8px; }
+.lcd3-dispatch[data-live] {
+  border-color: color-mix(in srgb, var(--pn-run) 60%, transparent);
+  color: var(--pn-run) !important;
+  animation: lcd3-glow 2.4s ease-in-out infinite;
+}
+.lcd3-dispatch[aria-disabled='true'] { opacity: 0.55; cursor: not-allowed; }
+@keyframes lcd3-glow {
+  0%, 100% { box-shadow: 0 0 0 0 transparent; }
+  50% { box-shadow: 0 0 12px 2px var(--pn-run-soft); }
+}
+.lcd3-ddot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--pn-ink-4); }
+.lcd3-ddot[data-on] { background: var(--pn-run); box-shadow: 0 0 6px var(--pn-run); }
+.lcd3-ddot[data-unknown] { border: 1px dashed var(--pn-ink-3); background: none; }
+.lcd3-dispmenu { right: 0; left: auto; }
+
+/* ------------------------------------------------------------ previews */
+
+.lcd3-preview {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: color-mix(in srgb, var(--pn-paper) 55%, transparent);
+  backdrop-filter: blur(2px);
+}
+.lcd3-preview__card {
+  width: min(720px, 100%);
+  max-height: 100%;
+  overflow: auto;
+  padding: 18px 20px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-lg);
+  background: var(--pn-card);
+  box-shadow: var(--pn-sh-pop);
+}
+.lcd3-preview h2 { margin: 0 0 4px; font: 500 21px var(--pn-serif); }
+.lcd3-preview__sub { margin-bottom: 12px; color: var(--pn-ink-3); font-size: 13px; overflow-wrap: anywhere; }
+.lcd3-preview__notice { margin: 10px 0 0; color: var(--pn-block); font-size: 12.5px; overflow-wrap: anywhere; }
+.lcd3-preview__actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.lcd3-sec { margin: 8px 0; border: 1px solid var(--pn-line); border-radius: var(--pn-r-md); }
+.lcd3-sec__h {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--pn-line);
+  color: var(--pn-brand);
+  font: 600 12px var(--pn-mono);
+}
+.lcd3-sec__hint { color: var(--pn-ink-3); font: 400 11.5px var(--pn-ui); text-align: right; }
+.lcd3-sec__b { padding: 6px 12px; font-size: 13px; }
+.lcd3-prow { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 3px 0; }
+.lcd3-prow__t { overflow: hidden; min-width: 0; text-overflow: ellipsis; white-space: nowrap; }
+.lcd3-prow code { margin-left: auto; overflow: hidden; color: var(--pn-ink-3); font: 11px var(--pn-mono); text-overflow: ellipsis; white-space: nowrap; }
+.lcd3-none { color: var(--pn-ink-3); }
+.lcd3-pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* ---------------------------------------------- narrow: shed text, keep controls */
+
+/* The shell sheds the Dispatch word at 820px of CARD width — sized for the
+   80% v2 card. At 56% the card is under 820px on most laptops, so v3 keeps
+   the word until the card is really narrow. */
+@container card (min-width: 681px) {
+  .lcd--v3 .lcd3-dispatch .lcd-btn__label { display: inline; }
+}
+
+@container card (max-width: 680px) {
+  .lcd3-subject { font-size: 18px !important; }
+  .lcd3-fullchip { max-width: 180px; }
+  .lcd3-grp { padding: 0 9px; }
+}
+@container card (max-width: 560px) {
+  .lcd3-strip { flex-wrap: wrap; }
+  .lcd3-lane--strip { order: 3; flex-basis: 100%; }
+}
+
+/* THE PHONE: the popup layer's own bottom-sheet rule (launch-card.css) sets
+   the width; this sheet loads after it, so it has to say it again. */
+@container lcpop (max-width: 600px) {
+  .lcd--v3 { width: 100%; }
+}

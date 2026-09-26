@@ -535,3 +535,28 @@ describe('command input schemas (DEF-1/2/3 conventions)', () => {
     expect(ActorSummarySchema.safeParse({ ...actor, kind: 'robot' }).success).toBe(false);
   });
 });
+
+describe('launch v3 lane C shapes', () => {
+  const id = '11111111-1111-4111-8111-111111111111';
+  it('trims newTask titles and bounds them 1..200', async () => {
+    const { ExecutionSpawnInputSchema, ExecutionDispatchInputSchema } = await import('../src/schemas.js');
+    const base = { clientMutationId: 'c', spaceId: id, teamMemberId: id };
+    const parsed = ExecutionSpawnInputSchema.parse({ ...base, newTask: { title: '  Fix  ' } });
+    expect(parsed.newTask).toEqual({ title: 'Fix' });
+    expect(ExecutionSpawnInputSchema.safeParse({ ...base, newTask: { title: '   ' } }).success).toBe(false);
+    expect(ExecutionSpawnInputSchema.safeParse({ ...base, newTask: { title: 'x'.repeat(201) } }).success).toBe(false);
+    expect(ExecutionDispatchInputSchema.safeParse({
+      clientMutationId: 'c', spaceId: id, newTask: { title: 'x', projectId: id }, dispatcherSessionId: id, kind: 'coordinator',
+    }).success).toBe(true);
+    expect(ExecutionDispatchInputSchema.safeParse({ clientMutationId: 'c', spaceId: id, subjectId: id, kind: 'reviewer' }).success).toBe(false);
+  });
+  it('validates the results and the dispatchers read', async () => {
+    const { ExecutionDispatchResultSchema, ExecutionDispatchersSchema, ExecutionSpawnResultSchema } = await import('../src/schemas.js');
+    expect(ExecutionDispatchResultSchema.safeParse({ taskId: id, dispatcherSessionId: id, dispatcherSpawned: false, delivery: 'delivered' }).success).toBe(false);
+    expect(ExecutionDispatchResultSchema.safeParse({ taskId: id, taskCreated: true, dispatcherSessionId: id, dispatcherSpawned: false, delivery: 'delivered' }).success).toBe(true);
+    expect(ExecutionSpawnResultSchema.safeParse({ patches: [], createdTaskId: id }).success).toBe(true);
+    const row = { sessionId: id, teamMemberId: id, teammateName: 'R', title: '', purpose: null, live: false, queuedCount: null };
+    expect(ExecutionDispatchersSchema.safeParse({ dispatchers: [row] }).success).toBe(true);
+    expect(ExecutionDispatchersSchema.safeParse({ dispatchers: [{ ...row, queuedCount: -1 }] }).success).toBe(false);
+  });
+});

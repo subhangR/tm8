@@ -128,6 +128,7 @@ describe('remote server relay — caller resolution (G1)', () => {
     tm8s_cli: { kind: 'bearer', identityId: 'h', authKind: 'cli' },
     tm8s_agent: { kind: 'bearer', identityId: 'h', authKind: 'agent' },
     tm8s_runtime: { kind: 'bearer', identityId: 'h', authKind: 'agent_runtime' },
+    tm8s_link: { kind: 'bearer', identityId: 'h', authKind: 'link' },
   };
   const resolver = (loopback: boolean): IdentityResolver => (headers: IncomingHttpHeaders) => {
     const auth = typeof headers.authorization === 'string'
@@ -159,6 +160,13 @@ describe('remote server relay — caller resolution (G1)', () => {
     expect(await code({ authorization: 'Bearer tm8s_agent' }, true)).toBe('forbidden');
     expect(await code({ authorization: 'Bearer tm8s_runtime' }, true)).toBe('forbidden');
     expect(await code({ cookie: '__Host-tm8-session=tm8s_agent' })).toBe('forbidden');
+  });
+
+  // W8 a5: a link session (W6) is no more a human's than an agent's.
+  it('refuses a link session with forbidden; POSITIVE: the same shape as a cli token is admitted', async () => {
+    expect(await code({ authorization: 'Bearer tm8s_link' }, true)).toBe('forbidden');
+    expect(await code({ cookie: '__Host-tm8-session=tm8s_link' })).toBe('forbidden');
+    expect(await code({ authorization: 'Bearer tm8s_cli' }, true)).toBe('ok');
   });
 
   it('admits a browser cookie and forwards the remote pass it carries', async () => {

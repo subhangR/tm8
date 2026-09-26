@@ -17,7 +17,8 @@
  * by the production `claimsFor` — so a row here fails if any hop between the
  * `auth_sessions` row and `SET LOCAL` drops the pin, not only if the SQL does.
  */
-import { mkdtemp } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
+import { mkdtemp, writeFile } from 'node:fs/promises';
 import { createServer, type IncomingHttpHeaders, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -25,7 +26,13 @@ import { randomUUID } from 'node:crypto';
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { TM8_CLIENT_HEADER, TM8_CLIENT_HEADER_VALUE } from '@tm8/contract';
+import {
+  SPACE_LINK_VIA_HEADER,
+  TM8_CLIENT_HEADER,
+  TM8_CLIENT_HEADER_VALUE,
+  getOperation,
+  spaceLinkRefusal,
+} from '@tm8/contract';
 
 import { createDb } from '../../src/db/client.js';
 import type { Db, DbClaims, Querier } from '../../src/db/types.js';
@@ -34,22 +41,32 @@ import type { DurableEventLog } from '../../src/events/poll.js';
 import { SubscriptionRegistry } from '../../src/events/subscriptions.js';
 import { claimsFor } from '../../src/facade/context.js';
 import { loadConfig } from '../../src/http/config.js';
-import { createSessionIdentityResolver } from '../../src/http/identity-resolver.js';
+import { FixedWindowLimiter } from '../../src/http/fixed-window.js';
+import { createSessionIdentityResolver, identityFromSession } from '../../src/http/identity-resolver.js';
 import { TM8_SESSION_COOKIE } from '../../src/http/session-cookie.js';
 import type { RequestContext, RequestIdentity, SpaceSessionsMode } from '../../src/http/types.js';
 import { formatToken, generateSecret, hashToken, parseToken } from '../../src/identity/crypto.js';
+import { admitLinkInvoke, LINK_BEARER_OP_REFUSED } from '../../src/identity/link-bearer.js';
 import type { LoopbackOwner } from '../../src/identity/loopback.js';
+import { hashSpacePassword, resolveBearerIdentity } from '../../src/identity/pg-auth.js';
 import { bootstrap, type BootstrappedServer } from '../../src/main.js';
 import type { EventSink } from '../../src/events/ws-connection.js';
 import type { FacadeDeps } from '../../src/facade/deps.js';
 import { HandlerRegistry } from '../../src/facade/registry.js';
+import { createSpaceLinkInvokeHandlers } from '../../src/facade/handlers/w2/space-link-invoke.js';
 import { registerMembershipHandlers } from '../../src/membership/handlers.js';
+import { DbSpaceLinkStore, SpaceLinkUnusable, type SpaceLink, type SpaceLinkStaleNotice } from '../../src/credentials/space-link-store.js';
+import { loadOrCreateCredentialKey } from '../../src/credentials/credential-key.js';
+import { openSecret } from '../../src/credentials/secret-box.js';
+import { registerCredentialHandlers } from '../../src/facade/handlers/w2/credentials.js';
+import { DbGitHubCredentialStore } from '../../src/credentials/github-credential-store.js';
 
 import {
   createW1ScratchDatabase,
   migrationFiles,
   type W1ScratchDatabase,
 } from './w1-pg.js';
+import { leaksSecret } from './secret-probe.js';
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
 
@@ -126,6 +143,14 @@ async function mintAgentRuntime(): Promise<string> {
 
 /** The production identity resolver's answer for a bearer string. */
 async function identityForToken(token: string, mode: SpaceSessionsMode = 'agents'): Promise<RequestIdentity> {
+  // 256 (W7p, layer (i)) refuses a `link` session's token on every wire, so
+  // a link token is bound in-process — resolved by hash and mapped by the
+  // wire's own `identityFromSession`, as `DbSpaceLinkStore.use` and #884's
+  // invoke do. Every other token still goes through the wire resolver. These
+  // are SQL-policy cells; the wire refusal has its own
+  // (link-session-transport.test.ts).
+  const session = await resolveBearerIdentity(db, token);
+  if (String(session.kind) === 'link') return identityFromSession(session, token, mode);
   const resolve = createSessionIdentityResolver({
     db,
     owner: async () => NOT_THE_OWNER,
@@ -545,6 +570,50 @@ describe('T9 agent G (A) reads B through inline-membership surfaces — refused 
   });
 
   /**
+   * S2 (W3-audit #852 F1, task 01a0db30): the 4-argument `mark_notification_read`
+   * is SECURITY DEFINER and authorized its member arm by identity alone, so a
+   * session pinned to A marked the same identity's B notification read. 246
+   * adds the pin to both member-arm `exists`. A fresh notification per cell,
+   * so a mark in one cell cannot satisfy another's read_at assertion.
+   */
+  async function freshNotification(spaceId: string, memberId: string): Promise<string> {
+    const id = randomUUID();
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(
+        `insert into public.notifications(id, space_id, recipient_member_id, kind)
+         values ($1, $2, $3, 'mention')`,
+        [id, spaceId, memberId],
+      );
+    });
+    return id;
+  }
+  const markRead = (q: Querier, id: string): Promise<unknown> =>
+    q.query('select public.mark_notification_read($1, $2, null, $3)', [id, 'member', `s2-${randomUUID()}`]);
+  const readAt = (id: string): Promise<unknown> =>
+    database.query<{ read_at: unknown }>('select read_at from public.notifications where id = $1', [id])
+      .then((rows) => rows[0]?.read_at ?? null);
+
+  it('agent, persona-less (S2): marking B\'s notification read is refused P0002 and it stays unread', async () => {
+    const token = await mintPersonalessAgent();
+    const notification = await freshNotification(fixture.spaceB, fixture.memberHB);
+    expect(await outcome(() => asToken(token, (q) => markRead(q, notification)))).toBe('P0002');
+    expect(await readAt(notification)).toBeNull();
+  });
+  it('agent, persona-less (S2): positive — marking A\'s notification read succeeds', async () => {
+    const token = await mintPersonalessAgent();
+    const notification = await freshNotification(fixture.spaceA, fixture.memberHA);
+    expect(await outcome(() => asToken(token, (q) => markRead(q, notification)))).toBe('ok');
+    expect(await readAt(notification)).not.toBeNull();
+  });
+  it('agent, persona-less, off (S2): the pin is inert — B\'s notification is marked read', async () => {
+    const token = await mintPersonalessAgent();
+    const notification = await freshNotification(fixture.spaceB, fixture.memberHB);
+    expect(await outcome(() => asToken(token, (q) => markRead(q, notification), 'off'))).toBe('ok');
+    expect(await readAt(notification)).not.toBeNull();
+  });
+
+  /**
    * K7 REJECTED (owner decision 32): nobody reads a public space without
    * joining it. 233 closed spaces_select's public arm (218:291, the W0a gap
    * this cell used to document), so a public B is as invisible as a private one.
@@ -722,6 +791,318 @@ describe('T11 agent G manages credentials in A — refused (regression pin)', ()
     const token = await mintBrowser(fixture.accountH, fixture.identityH);
     expect(await outcome(() => asToken(token, (q) =>
       q.rpc('set_space_credential_policy', [fixture.spaceA, 'anthropic', null])))).toBe('ok');
+  });
+});
+
+describe('W10a (T35/T36/T44) agent G and private credentials in A — refused by launcher, not by space', () => {
+  // G is H's agent in A, so its launcher is H. H2's PRIVATE credential in the
+  // same space must stay unusable to G; H's own private one must not. Seeded
+  // through the real writer; ownership is set as the graph owner, the state
+  // W10b's create will produce. The ciphertext is a fake of the right shape.
+  let privateOfH2: string;
+  let privateOfH: string;
+  const seedCredential = async (identityId: string, accountId: string): Promise<string> => {
+    const id = randomUUID();
+    await asIdentity(identityId, (q) => q.rpc('create_space_credential', [
+      id, fixture.spaceA, 'anthropic', 'api_key', `w10a ${id.slice(0, 8)}`, 'Fk0x',
+      Buffer.alloc(17, 7), Buffer.alloc(12, 3),
+    ]));
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(
+        `update public.space_credentials set owner_account_id = $2, is_default = false where id = $1`, [id, accountId]);
+    });
+    await asIdentity(identityId, (q) => q.rpc('set_space_credential_visibility', [id, 'private']));
+    return id;
+  };
+  beforeAll(async () => {
+    privateOfH2 = await seedCredential(fixture.identityH2, fixture.accountH2);
+    privateOfH = await seedCredential(fixture.identityH, fixture.accountH);
+  });
+  // Revoke both through the real writer, so the rest of the file sees no live
+  // credential owned by H or H2 in A: 239's members backstop (G6) refuses to
+  // end a membership whose account still owns one, and the enter_space cells
+  // below flip H2's status by hand.
+  afterAll(async () => {
+    await asIdentity(fixture.identityH2, (q) => q.rpc('delete_space_credential', [privateOfH2]));
+    await asIdentity(fixture.identityH, (q) => q.rpc('delete_space_credential', [privateOfH]));
+  });
+
+  for (const [kind, mint] of AGENT_KINDS) {
+    it(`${kind}: H2's private credential is not usable; H's own private one is (launcher = H)`, async () => {
+      const token = await mint();
+      expect(await asToken(token, (q) =>
+        q.rpc<string[]>('usable_space_credential_ids', [[privateOfH2, privateOfH]]))).toEqual([privateOfH]);
+    });
+    it(`${kind}: set_space_credential_visibility is refused (human-only), even on H's own`, async () => {
+      const token = await mint();
+      expect(await outcome(() => asToken(token, (q) =>
+        q.rpc('set_space_credential_visibility', [privateOfH, 'public'])))).toBe('42501');
+    });
+  }
+  it('positive — H2 (browser) can use H2\'s own private credential', async () => {
+    const token = await mintBrowser(fixture.accountH2, fixture.identityH2);
+    expect(await asToken(token, (q) =>
+      q.rpc<string[]>('usable_space_credential_ids', [[privateOfH2, privateOfH]]))).toEqual([privateOfH2]);
+  });
+  it('positive — H (browser) switches H\'s own credential; H2 (browser) cannot', async () => {
+    const h = await mintBrowser(fixture.accountH, fixture.identityH);
+    const h2 = await mintBrowser(fixture.accountH2, fixture.identityH2);
+    expect(await outcome(() => asToken(h2, (q) =>
+      q.rpc('set_space_credential_visibility', [privateOfH, 'public'])))).toBe('42501');
+    expect(await outcome(() => asToken(h, (q) =>
+      q.rpc('set_space_credential_visibility', [privateOfH, 'private'])))).toBe('ok');
+  });
+  it('T44: the generic delete refuses a credential entity even for H, owner of A and of the credential', async () => {
+    const token = await mintBrowser(fixture.accountH, fixture.identityH);
+    expect(await outcome(() => asToken(token, (q) => q.rpc('delete_entity', [privateOfH])))).toBe('42501');
+  });
+  it('positive — the same H token deletes a doc in A through the same door', async () => {
+    const doc = await asIdentity(fixture.identityH, async (q) =>
+      (await q.rpc<{ id?: string; entity?: { id: string } }>('create_document', [fixture.spaceA, 'W10a scratch doc'])))
+      .then((row) => (row.entity?.id ?? row.id)!);
+    const token = await mintBrowser(fixture.accountH, fixture.identityH);
+    expect(await outcome(() => asToken(token, (q) => q.rpc('delete_entity', [doc])))).toBe('ok');
+  });
+});
+
+describe('W10c (T38) a session on a PRIVATE credential in A is its owner\'s alone to watch and drive', () => {
+  // The W3-audit a6 row ("H2 — a plain member of A — may DRIVE H's agent
+  // session in A", #852, not on this branch's base) recorded CURRENT BEHAVIOUR.
+  // Its closure lands here: when the session records H's PRIVATE credential,
+  // H2 is refused at grant_stream_attach even though 075 lets any member act
+  // as G. The public-credential session is the paired positive: the a6
+  // behaviour is unchanged there.
+  const sessionOn = async (visibility: 'public' | 'private'): Promise<string> => {
+    const credentialId = randomUUID();
+    await asIdentity(fixture.identityH, (q) => q.rpc('create_space_credential', [
+      credentialId, fixture.spaceA, 'anthropic', 'api_key', `w10c ${credentialId.slice(0, 8)}`, 'Fk0x',
+      Buffer.alloc(17, 7), Buffer.alloc(12, 3),
+    ]));
+    const sessionId = randomUUID();
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(
+        `update public.space_credentials set owner_account_id = $2, is_default = false where id = $1`,
+        [credentialId, fixture.accountH]);
+      await client.query(
+        `insert into public.entities(id, space_id, kind, created_by, visibility) values ($1, $2, 'work_session', $3, 'space')`,
+        [sessionId, fixture.spaceA, fixture.personaA]);
+      await client.query(
+        `insert into public.work_sessions(entity_id, title, status, session_kind, agent_tool)
+         values ($1, 'W10c G run', 'spawning', 'agent', 'claude-code')`, [sessionId]);
+    });
+    if (visibility === 'private') {
+      await asIdentity(fixture.identityH, (q) => q.rpc('set_space_credential_visibility', [credentialId, 'private']));
+    }
+    await asIdentity(fixture.identityH, (q) => q.rpc('record_session_manifest', [
+      sessionId,
+      JSON.stringify({ launch: { credentialSources: { anthropic: 'space' }, spaceCredentialIds: { anthropic: credentialId } } }),
+    ]), 'agent');
+    return sessionId;
+  };
+  const attach = (token: string, sessionId: string, mode: 'view' | 'drive') =>
+    outcome(() => asToken(token, (q) =>
+      q.rpc('grant_stream_attach', [sessionId, mode, hashToken(generateSecret()), null, null]), 'enforce'));
+
+  for (const mode of ['view', 'drive'] as const) {
+    it(`H2 (browser, member of A): ${mode} on G's session on H's PRIVATE credential is refused`, async () => {
+      const sessionId = await sessionOn('private');
+      expect(await attach(await mintBrowser(fixture.accountH2, fixture.identityH2), sessionId, mode)).toBe('42501');
+    });
+    it(`positive — H (browser, the credential's owner): ${mode} on the same session succeeds`, async () => {
+      const sessionId = await sessionOn('private');
+      expect(await attach(await mintBrowser(fixture.accountH, fixture.identityH), sessionId, mode)).toBe('ok');
+    });
+    it(`positive — H2 (browser): ${mode} on G's session on a PUBLIC credential succeeds (a6 behaviour unchanged)`, async () => {
+      const sessionId = await sessionOn('public');
+      expect(await attach(await mintBrowser(fixture.accountH2, fixture.identityH2), sessionId, mode)).toBe('ok');
+    });
+  }
+  it('H2 (browser): widening sharing on the private-credential session is refused; H widens', async () => {
+    const sessionId = await sessionOn('private');
+    const h2 = await mintBrowser(fixture.accountH2, fixture.identityH2);
+    const h = await mintBrowser(fixture.accountH, fixture.identityH);
+    expect(await outcome(() => asToken(h2, (q) =>
+      q.rpc('set_work_session_sharing', [sessionId, null, null, 'space', null, null]), 'enforce'))).toBe('42501');
+    expect(await outcome(() => asToken(h, (q) =>
+      q.rpc('set_work_session_sharing', [sessionId, null, null, 'space', null, null]), 'enforce'))).toBe('ok');
+  });
+});
+
+describe('W10b (a1/T37) agent G cannot create, make public, rekey or revoke a credential in A — refused by kind', () => {
+  // Every writer is require_human_auth_kind first, so G is refused even on
+  // H's own credential; the paired positive is H's browser token on the same
+  // row. Ciphertext and hint are fakes of the right shape.
+  const fakeCreate = (id: string, visibility: string | null) => [
+    id, fixture.spaceA, 'anthropic', 'api_key', `w10b ${id.slice(0, 8)}`, 'Fk0y',
+    Buffer.alloc(17, 7), Buffer.alloc(12, 3), null, visibility, null, false,
+  ];
+  let ownedByH: string;
+  beforeAll(async () => {
+    ownedByH = randomUUID();
+    await asIdentity(fixture.identityH, (q) => q.rpc('create_space_credential', fakeCreate(ownedByH, 'private')));
+  });
+
+  for (const [kind, mint] of AGENT_KINDS) {
+    it(`${kind}: create (public, private) is refused`, async () => {
+      const token = await mint();
+      for (const visibility of ['public', 'private']) {
+        expect(await outcome(() => asToken(token, (q) =>
+          q.rpc('create_space_credential', fakeCreate(randomUUID(), visibility))))).toBe('42501');
+      }
+    });
+    it(`${kind}: setVisibility(public), rekey, consent and revoke of H's own credential are refused`, async () => {
+      const token = await mint();
+      expect(await outcome(() => asToken(token, (q) =>
+        q.rpc('set_space_credential_visibility', [ownedByH, 'public'])))).toBe('42501');
+      expect(await outcome(() => asToken(token, (q) =>
+        q.rpc('rekey_space_credential', [ownedByH, 'Fk0z', Buffer.alloc(17, 9), Buffer.alloc(12, 4), null])))).toBe('42501');
+      expect(await outcome(() => asToken(token, (q) =>
+        q.rpc('set_space_credential_default_consent', [ownedByH, true])))).toBe('42501');
+      expect(await outcome(() => asToken(token, (q) => q.rpc('delete_space_credential', [ownedByH])))).toBe('42501');
+    });
+  }
+  it('positive — H (browser) creates, makes public, re-keys, consents and revokes the same row', async () => {
+    const token = await mintBrowser(fixture.accountH, fixture.identityH);
+    expect(await outcome(() => asToken(token, (q) =>
+      q.rpc('create_space_credential', fakeCreate(randomUUID(), 'public'))))).toBe('ok');
+    expect(await outcome(() => asToken(token, (q) =>
+      q.rpc('set_space_credential_visibility', [ownedByH, 'public'])))).toBe('ok');
+    expect(await outcome(() => asToken(token, (q) =>
+      q.rpc('rekey_space_credential', [ownedByH, 'Fk0z', Buffer.alloc(17, 9), Buffer.alloc(12, 4), null])))).toBe('ok');
+    expect(await outcome(() => asToken(token, (q) =>
+      q.rpc('set_space_credential_default_consent', [ownedByH, true])))).toBe('ok');
+    expect(await outcome(() => asToken(token, (q) => q.rpc('delete_space_credential', [ownedByH])))).toBe('ok');
+  });
+});
+
+describe('W10d addMine — my own 093 GitHub token into a space as private; human-only, own token, own membership', () => {
+  // credentials.space.addMine behind requireHumanSession (credentials.ts), then
+  // the caller's OWN account_git_credentials row, then create_space_credential
+  // (require_human_auth_kind + require_space_member). Driven through the
+  // registered handler with a real bearer resolved by the production resolver.
+  // The token strings are random test values, never real credentials; the
+  // hint is the last four characters, so each owner's tail is distinguishable.
+  let registry: HandlerRegistry;
+  let dataDir: string;
+  const tailH = 'hH1x';
+  const tailH2 = 'h2Q9';
+  const fakeToken = (tail: string): string => `test-${randomUUID()}-${tail}`;
+  // Every card a positive cell creates, with its owner, so afterAll can revoke it.
+  const created: Array<{ id: string; identityId: string }> = [];
+
+  const addMine = async (token: string, spaceId: string): Promise<{ ok: true; card: Record<string, unknown> } | { ok: false; code: string; reason: unknown }> => {
+    const identity = await createSessionIdentityResolver({ db, owner: async () => NOT_THE_OWNER })(
+      { authorization: `Bearer ${token}` },
+      { remoteAddress: '203.0.113.9', disableAutoOwner: true },
+    );
+    const ctx = {
+      op: { name: 'credentials.space.addMine', method: 'POST', path: '/v2/spaces/:spaceId/credentials/from-mine', kind: 'command', status: 'v1' },
+      opName: 'credentials.space.addMine',
+      params: { spaceId },
+      query: new URLSearchParams(),
+      body: { provider: 'github', label: `w10d ${randomUUID().slice(0, 8)}` },
+      requestId: `cross-space-${randomUUID()}`,
+      identity,
+      headers: {},
+      method: 'POST',
+      path: `/v2/spaces/${spaceId}/credentials/from-mine`,
+    } as unknown as RequestContext;
+    try {
+      return { ok: true, card: await registry.get('credentials.space.addMine')!(ctx) as Record<string, unknown> };
+    } catch (err) {
+      const e = err as { code?: string; details?: Record<string, unknown> };
+      return { ok: false, code: String(e.details?.['sqlstate'] ?? e.code), reason: e.details?.['reason'] };
+    }
+  };
+
+  const storeGitHub = async (accountId: string, identityId: string, tail: string): Promise<void> => {
+    const token = await mintBrowser(accountId, identityId);
+    await new DbGitHubCredentialStore({ db, dataDir })
+      .store(await claimsForToken(token), { login: `w10d-${tail}`, token: fakeToken(tail) });
+  };
+
+  const countIn = (spaceId: string): Promise<number> =>
+    database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      const { rows } = await client.query<{ n: string }>(
+        `select count(*)::text as n from public.space_credentials where space_id = $1 and provider = 'github'`, [spaceId]);
+      return Number(rows[0]!.n);
+    });
+
+  beforeAll(async () => {
+    dataDir = await mkdtemp(join(tmpdir(), 'tm8-w10d-addmine-'));
+    registry = new HandlerRegistry();
+    const deps = { db, owner: async () => NOT_THE_OWNER } as unknown as FacadeDeps;
+    registerCredentialHandlers(registry, deps, {
+      launcher: { launch: () => { throw new Error('no PTY in this suite'); } } as never,
+      agentSessions: { containCredentialSession: () => { throw new Error('no agent sessions in this suite'); } } as never,
+      dataDir,
+      // Never reach GitHub from a test.
+      probeSpaceCredential: async () => ({ ok: true, displayLogin: null }),
+    });
+    await storeGitHub(fixture.accountH, fixture.identityH, tailH);
+  });
+  // Revoke every created card through the real writer and drop both seeded 093
+  // rows, so the rest of the file sees neither: 239's members backstop refuses
+  // to end a membership whose account still owns a live credential (the
+  // enter_space cells flip H2's status by hand), and W3-audit seeds its own
+  // github row for H under account_git_credentials_one_per_provider.
+  afterAll(async () => {
+    for (const { id, identityId } of created) {
+      await asIdentity(identityId, (q) => q.rpc('delete_space_credential', [id]));
+    }
+    await database.query(
+      `delete from public.account_git_credentials where account_id = any($1::uuid[]) and provider = 'github' and login like 'w10d-%'`,
+      [[fixture.accountH, fixture.accountH2]]);
+  });
+
+  for (const [kind, mint] of AGENT_KINDS) {
+    it(`${kind} (pinned to A, launcher H who HAS a token): refused credentials_human_only, no row written`, async () => {
+      const before = await countIn(fixture.spaceA);
+      const result = await addMine(await mint(), fixture.spaceA);
+      expect(result).toEqual({ ok: false, code: 'forbidden', reason: 'credentials_human_only' });
+      expect(await countIn(fixture.spaceA)).toBe(before);
+    });
+  }
+  it('positive — H (browser) adds H\'s own token to A: private, owned by H, token shape, H\'s hint, no secret in the card', async () => {
+    const result = await addMine(await mintBrowser(fixture.accountH, fixture.identityH), fixture.spaceA);
+    expect(result.ok).toBe(true);
+    const card = (result as { card: Record<string, unknown> }).card;
+    created.push({ id: String(card['id']), identityId: fixture.identityH });
+    expect(card).toMatchObject({ provider: 'github', shape: 'token', visibility: 'private', ownerAccountId: fixture.accountH, keyHint: tailH });
+    expect(JSON.stringify(card)).not.toMatch(/test-[0-9a-f-]{36}-/);
+    expect(Object.keys(card)).not.toEqual(expect.arrayContaining(['secret']));
+  });
+
+  it('non-owner token source: H2 (browser, no token of H2\'s own) is refused not_found — never H\'s token', async () => {
+    const before = await countIn(fixture.spaceA);
+    const result = await addMine(await mintBrowser(fixture.accountH2, fixture.identityH2), fixture.spaceA);
+    expect(result).toEqual({ ok: false, code: 'not_found', reason: 'no_personal_credential' });
+    expect(await countIn(fixture.spaceA)).toBe(before);
+  });
+  it('positive — once H2 connects a token of H2\'s own, H2 adds it to A, and the hint is H2\'s, not H\'s', async () => {
+    await storeGitHub(fixture.accountH2, fixture.identityH2, tailH2);
+    const result = await addMine(await mintBrowser(fixture.accountH2, fixture.identityH2), fixture.spaceA);
+    expect(result.ok).toBe(true);
+    created.push({ id: String((result as { card: Record<string, unknown> }).card['id']), identityId: fixture.identityH2 });
+    expect((result as { card: Record<string, unknown> }).card)
+      .toMatchObject({ visibility: 'private', ownerAccountId: fixture.accountH2, keyHint: tailH2 });
+  });
+
+  it('other space: H2 (browser, member of A only, token connected) adding to B is refused forbidden, no row in B', async () => {
+    const before = await countIn(fixture.spaceB);
+    const result = await addMine(await mintBrowser(fixture.accountH2, fixture.identityH2), fixture.spaceB);
+    expect(result.ok).toBe(false);
+    expect((result as { code: string }).code).toBe('forbidden');
+    expect(await countIn(fixture.spaceB)).toBe(before);
+  });
+  it('positive — H (browser, member of B) adds the same kind of row to B', async () => {
+    const result = await addMine(await mintBrowser(fixture.accountH, fixture.identityH), fixture.spaceB);
+    expect(result.ok).toBe(true);
+    created.push({ id: String((result as { card: Record<string, unknown> }).card['id']), identityId: fixture.identityH });
+    expect((result as { card: Record<string, unknown> }).card).toMatchObject({ visibility: 'private', ownerAccountId: fixture.accountH });
   });
 });
 
@@ -977,24 +1358,131 @@ describe('T26 relay — dispatch after resolveIdentity, human session required',
     expect(seen).toBeDefined();
   });
 
+  async function expire(token: string): Promise<void> {
+    const sessionId = parseToken(token)?.sessionId;
+    if (!sessionId) throw new Error('minted token did not parse');
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(
+        `update public.auth_sessions
+            set created_at = now() - interval '2 days', expires_at = now() - interval '1 day'
+          where id = $1::uuid`,
+        [sessionId],
+      );
+    });
+  }
+
   /**
-   * DOCUMENTS A KNOWN GAP (review round 1, item 2). A LOCAL token that no
-   * longer resolves (revoked, expired) is indistinguishable here from a
-   * remote's pass: both are `tm8s_<uuid>.<secret>`, and `tm8_app` cannot read
-   * `auth_sessions` to ask "was this session id ever ours?" — that needs a new
-   * security-definer RPC, i.e. a migration, which this PR does not add. So
-   * next to a live cookie such a token is FORWARDED. It is dead on this node,
-   * so the remote cannot replay it here; the disclosure is of a spent secret.
-   * When the RPC lands, flip this cell to `false`.
+   * WAS A KNOWN GAP (review round 1, item 2), CLOSED BY 236. A LOCAL token that
+   * no longer resolves (revoked, expired) has the same `tm8s_<uuid>.<secret>`
+   * shape as a remote's pass. The relay now asks `auth_session_issued_here`
+   * whether this node ever issued its session id, in any state; if it did, the
+   * token is ours and never leaves. A DEAD one is refused 401 with or without a
+   * cookie (program-lead ruling, R18: a presented invalid credential never
+   * degrades — the DEAD-* cells). Paired positives: a real remote pass is still
+   * forwarded, a live local token equal to the cookie proceeds.
    */
-  it('KNOWN GAP: a revoked LOCAL token beside H\'s cookie is forwarded as if it were a remote pass', async () => {
+  it('DEAD-REVOKED-BESIDE-COOKIE: a revoked LOCAL token beside H\'s live cookie is refused 401, nothing reaches the remote', async () => {
     const cookieToken = await mintBrowser(fixture.accountH, fixture.identityH);
     const dead = await mintCli(fixture.accountH, fixture.identityH);
     await revoke(dead);
     const { status, seen } = await relay({ ...cookie(cookieToken), ...bearer(dead) });
+    expect(status).toBe(401);
+    expect(seen).toBeUndefined();
+  });
+
+  it('DEAD-EXPIRED-BESIDE-COOKIE: an expired LOCAL token beside H\'s live cookie is refused 401, nothing reaches the remote', async () => {
+    const cookieToken = await mintBrowser(fixture.accountH, fixture.identityH);
+    const dead = await mintCli(fixture.accountH, fixture.identityH);
+    await expire(dead);
+    const { status, seen } = await relay({ ...cookie(cookieToken), ...bearer(dead) });
+    expect(status).toBe(401);
+    expect(seen).toBeUndefined();
+  });
+
+  it('positive — H\'s live cookie with the SAME token as Authorization proceeds, and it stays on this node', async () => {
+    const token = await mintBrowser(fixture.accountH, fixture.identityH);
+    const { status, seen } = await relay({ ...cookie(token), ...bearer(token) });
     expect(status).toBe(200);
-    expect(seen?.authorization === `Bearer ${dead}`).toBe(true);
-    expect(JSON.stringify(seen).includes(cookieToken)).toBe(false);
+    // Booleans, not values: a failing assertion must never print a token.
+    expect(seen !== undefined && 'authorization' in seen).toBe(false);
+    expect(JSON.stringify(seen).includes(token)).toBe(false);
+  });
+
+  /**
+   * FOLLOW-ON CELL (for the owner), pinned as it stands: a LIVE local token
+   * that is not the cookie is dropped and the cookie names the caller. The
+   * ordinary path answers the same pair 401 `conflicting authentication
+   * credentials` (identity-resolver.ts).
+   */
+
+  it('a LIVE LOCAL token that is not the cookie, beside H\'s cookie, is NOT forwarded', async () => {
+    const cookieToken = await mintBrowser(fixture.accountH, fixture.identityH);
+    const other = await mintCli(fixture.accountH, fixture.identityH);
+    const { status, seen } = await relay({ ...cookie(cookieToken), ...bearer(other) });
+    expect(status).toBe(200);
+    expect(seen !== undefined && 'authorization' in seen).toBe(false);
+    expect(JSON.stringify(seen).includes(other)).toBe(false);
+  });
+
+  /**
+   * DEAD-REVOKED-NO-COOKIE / DEAD-EXPIRED-NO-COOKIE — program-lead ruling (R18,
+   * as for W10b): a presented credential that is invalid never downgrades to
+   * the loopback auto-owner. Auto-owner ON, so a fall-through would be 200.
+   * Paired positives: a LIVE local token, and no header at all (still the
+   * auto-owner, the F1/W2 pin above).
+   */
+  it('DEAD-REVOKED-NO-COOKIE: auto-owner on, a revoked LOCAL token is refused 401, nothing reaches the remote', async () => {
+    const dead = await mintCli(fixture.accountH, fixture.identityH);
+    await revoke(dead);
+    const { status, seen } = await relay(bearer(dead), ownerRelayServer);
+    expect(status).toBe(401);
+    expect(seen).toBeUndefined();
+  });
+
+  it('DEAD-EXPIRED-NO-COOKIE: auto-owner on, an expired LOCAL token is refused 401, nothing reaches the remote', async () => {
+    const dead = await mintCli(fixture.accountH, fixture.identityH);
+    await expire(dead);
+    const { status, seen } = await relay(bearer(dead), ownerRelayServer);
+    expect(status).toBe(401);
+    expect(seen).toBeUndefined();
+  });
+
+  it('positive — auto-owner on, a LIVE LOCAL token reaches the connection and stays on this node', async () => {
+    const live = await mintCli(fixture.accountH, fixture.identityH);
+    const { status, seen } = await relay(bearer(live), ownerRelayServer);
+    expect(status).toBe(200);
+    expect(seen !== undefined && 'authorization' in seen).toBe(false);
+    expect(JSON.stringify(seen).includes(live)).toBe(false);
+  });
+
+  it('positive — auto-owner on, no header at all is still the auto-owner', async () => {
+    const { status, seen } = await relay({}, ownerRelayServer);
+    expect(status).toBe(200);
+    expect(seen !== undefined && 'authorization' in seen).toBe(false);
+  });
+
+  it('positive — auto-owner on, no cookie: a real remote pass IS forwarded', async () => {
+    const remotePass = 'tm8s_00000000-0000-0000-0000-000000000000.remote-pass-not-local';
+    const { status, seen } = await relay(bearer(remotePass), ownerRelayServer);
+    expect(status).toBe(200);
+    expect(seen?.authorization).toBe(`Bearer ${remotePass}`);
+  });
+
+  it('positive — a remote pass whose session id is not a uuid IS forwarded beside H\'s cookie', async () => {
+    const cookieToken = await mintBrowser(fixture.accountH, fixture.identityH);
+    const remotePass = 'tm8s_not-a-uuid.remote-pass-not-local';
+    const { status, seen } = await relay({ ...cookie(cookieToken), ...bearer(remotePass) });
+    expect(status).toBe(200);
+    expect(seen?.authorization).toBe(`Bearer ${remotePass}`);
+  });
+
+  it('an expired LOCAL token alone is refused 401 with auto-owner off, and nothing reaches the remote', async () => {
+    const dead = await mintCli(fixture.accountH, fixture.identityH);
+    await expire(dead);
+    const { status, seen } = await relay(bearer(dead));
+    expect(status).toBe(401);
+    expect(seen).toBeUndefined();
   });
 
   it('a revoked LOCAL token alone is refused 401 with auto-owner off, and nothing reaches the remote', async () => {
@@ -1699,19 +2187,35 @@ describe('T6 H pinned to A — projects without a spaceId are only A\'s (W3)', (
     });
   });
 
-  // projects.list's no-spaceId query is `PROJECT_SELECT` with no filter: RLS
-  // (projects_select: is_node_admin() OR linked into member_space_ids()) is
-  // the whole answer, so H is a NODE ADMIN here — the arm that used to make it
-  // node-wide.
+  // A raw read of public.projects: RLS is the whole answer. Since 234 (W11)
+  // projects_select admits only a gate admin — a node admin on an UNPINNED
+  // session — so H is a NODE ADMIN here, the arm that used to make it node-wide.
   const projectsVisible = (token: string): Promise<string[]> =>
     asToken(token, (q) => q.query<{ id: string }>(
       'select id::text from public.projects where id = any($1::uuid[])', [[projectA, projectB]]), 'enforce')
       .then((rows) => rows.map((r) => r.id));
 
+  // W11 (234 §5): public.projects is the gate's folder table, and a pinned
+  // session is never a gate admin, so H pinned to A reads it as a member of A
+  // does: no folder rows. A's project reaches it through the member-scoped
+  // resolver (resolve_project_ref, membership carrying 227's inline pin).
+  const projectsResolved = (token: string): Promise<string[]> =>
+    asToken(token, async (q) => {
+      const ids: string[] = [];
+      for (const ref of [projectA, projectB]) {
+        const rows = await q.query<{ folder_id: string }>(
+          'select folder_id::text from public.resolve_project_ref($1::uuid)', [ref]);
+        ids.push(...rows.map((r) => r.folder_id));
+      }
+      return ids;
+    }, 'enforce');
+
   it('pinned node-admin H sees only A\'s project', async () => {
     await withNodeAdmin(fixture.accountH, true, async () => {
       const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
-      expect(await projectsVisible(token)).toEqual([projectA]);
+      expect(await projectsResolved(token)).toEqual([projectA]);
+      // never the unpinned node-admin view: no gate folder rows at all
+      expect(await projectsVisible(token)).toEqual([]);
     });
   });
   it('positive — H\'s gate session (node admin) sees both: the pin, not the account, narrowed it', async () => {
@@ -1900,6 +2404,24 @@ describe('enter_space — who may pin a session to which space (W3)', () => {
     const gate = await mintBrowser(fixture.accountH2, fixture.identityH2);
     expect(await enter(fixture.identityH2, fixture.spaceA, parseToken(gate)!.sessionId)).toBe('ok');
   });
+  it('enter_space: a member who LEFT or was removed cannot pin (232 tombstone, 248)', async () => {
+    const gate = await mintBrowser(fixture.accountH2, fixture.identityH2);
+    const sessionId = parseToken(gate)!.sessionId;
+    for (const status of ['left', 'removed']) {
+      await database.query(
+        `update public.members set status = $3, left_at = now() where space_id = $1 and identity_id = $2`,
+        [fixture.spaceA, fixture.identityH2, status]);
+      try {
+        expect(await enter(fixture.identityH2, fixture.spaceA, sessionId)).toBe('42501');
+      } finally {
+        await database.query(
+          `update public.members set status = 'active', left_at = null where space_id = $1 and identity_id = $2`,
+          [fixture.spaceA, fixture.identityH2]);
+      }
+    }
+    // The positive: reactivated, the same gate enters A again.
+    expect(await enter(fixture.identityH2, fixture.spaceA, sessionId)).toBe('ok');
+  });
   it('a parent session that belongs to another account is refused', async () => {
     const gateH = await mintBrowser(fixture.accountH, fixture.identityH);
     expect(await enter(fixture.identityH2, fixture.spaceA, parseToken(gateH)!.sessionId)).toBe('42501');
@@ -1984,8 +2506,8 @@ describe('claim-free resolvers — returned keys pinned (W3)', () => {
 const RESOLVE_AUTH_SESSION_KEYS = [
   'accountId', 'actingAsTeamMemberId', 'displayName', 'expiresAt', 'identityId', 'isNodeAdmin',
   'isOwner', 'kind', 'label', 'runtimeChatId', 'runtimeMemberId', 'runtimeThreadRootId',
-  'sessionId', 'spaceId', 'username', 'workSessionId',
-];
+  'sessionId', 'spaceId', 'username', 'viaLinkId', 'workSessionId',
+]; // + viaLinkId (256, W7p): the link a session descends from; null on both rows here.
 const RESOLVE_ACCOUNT_CREDENTIAL_KEYS = [
   'accountId', 'disabledAt', 'identityId', 'isNodeAdmin', 'isOwner', 'passwordAlgorithm',
   'passwordHash', 'status', 'username',
@@ -2328,3 +2850,2467 @@ describe('T8c / T6 / T8 over HTTP — the enforce gate and auth.space.enter (W3)
     expect(res.status).not.toBe(403);
   });
 });
+
+// ---------------------------------------------------------------------------
+// W3-AUDIT (task 01a0d9fd-737c, plan 01a0d9eb §3 W3 "Audit, as tests").
+//
+// One block per path the plan lists as able to bypass membership. Every row
+// runs under `enforce` with H pinned to A unless it says otherwise. A path
+// found OPEN is NOT fixed here: its cell asserts today's behaviour and is
+// named `KNOWN GAP (W3-audit Fn)`, so the fix flips it and the matrix records
+// who owns it. Rows #848 already carries are referenced, not duplicated:
+//   - spaces.list / public spaces (218:291, a5): `T8b …`, `K7 rejected, agent …`,
+//     `spaces.list does not list an unjoined public space …`
+//   - claim-free resolver key sets (a4): `claim-free resolvers — returned keys pinned`
+//   - six-claim immutability (a4): `a3 six claims — …`
+//   - PTY attach (/p PTY): `T5 …`; projects without a spaceId: `T6 …`
+// ---------------------------------------------------------------------------
+
+describe('W3-audit node-admin policies (002, K6) — every is_node_admin() arm is pinned out', () => {
+  // The live catalog, not a migration grep: a new policy with a node-admin
+  // arm fails the first cell until it is reviewed here and added.
+  const NODE_ADMIN_POLICIES = [
+    'artifact_bundle_revisions.artifact_bundle_revisions_select',
+    'artifact_preview_sessions.artifact_preview_sessions_select',
+    'projects.projects_select',
+    'server_connections.server_connections_node_admin_select',
+  ];
+  const connection = `w3-audit-${randomUUID().slice(0, 8)}`;
+
+  beforeAll(async () => {
+    await database.query(
+      `insert into public.server_connections(name, base_url) values ($1, 'https://w3-audit.invalid')`,
+      [connection],
+    );
+  });
+  afterAll(async () => {
+    await database.query('delete from public.server_connections where name = $1', [connection]);
+  });
+
+  it('the node-admin policy set is exactly the reviewed four', async () => {
+    const rows = await database.query<{ policy: string }>(
+      `select tablename || '.' || policyname as policy from pg_policies
+        where schemaname = 'public'
+          and coalesce(qual, '') || coalesce(with_check, '') ~ 'is_node_admin'
+        order by 1`);
+    expect(rows.map((r) => r.policy)).toEqual(NODE_ADMIN_POLICIES);
+  });
+  it('server_connections (044): a pinned node-admin H sees no connection', async () => {
+    await withNodeAdmin(fixture.accountH, true, async () => {
+      const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+      expect(await asToken(token, (q) => q.query(
+        'select name from public.server_connections where name = $1', [connection]), 'enforce')).toEqual([]);
+    });
+  });
+  it('server_connections: positive — H\'s gate session (node admin) sees it', async () => {
+    await withNodeAdmin(fixture.accountH, true, async () => {
+      const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+      expect(await asToken(gate, (q) => q.query(
+        'select name from public.server_connections where name = $1', [connection]), 'enforce'))
+        .toEqual([{ name: connection }]);
+    });
+  });
+});
+
+describe('W3-audit owner fallback (facade/context.ts claimsFor) — KNOWN GAP (W3-audit F3, owner W2)', () => {
+  // The loopback auto-owner has no session row, so neither the resolver nor
+  // the enforce gate pins it (space-gate.ts "Deliberately NOT gated"). W2's
+  // path-derived claim is what pins it; until then the owner is unpinned.
+  const H_AS_OWNER = (): LoopbackOwner => ({
+    identityId: fixture.identityH,
+    accountId: fixture.accountH,
+    username: 'cross-space-h',
+    isNodeAdmin: true,
+    isOwner: true,
+  });
+  const ownerTx = <T>(sessionSpaceId: string | undefined, fn: (q: Querier) => Promise<T>): Promise<T> => {
+    const identity = {
+      kind: 'auto-owner', authKind: 'browser', ...(sessionSpaceId ? { sessionSpaceId } : {}),
+    } as unknown as RequestIdentity;
+    return db.tx(claimsFor(H_AS_OWNER(), { identity, requestId: `w3-audit-${randomUUID()}` } as unknown as RequestContext), fn);
+  };
+
+  it('KNOWN GAP (W3-audit F3): the auto-owner reads B under enforce — unpinned, node admin (W2 closes it)', async () => {
+    expect(await ownerTx(undefined, (q) => idsIn(q, fixture.spaceB))).toContain(fixture.docB);
+    const claims = claimsFor(H_AS_OWNER(), {
+      identity: { kind: 'auto-owner', authKind: 'browser' }, requestId: 'w3-audit',
+    } as unknown as RequestContext);
+    expect(claims.nodeAdmin).toBe(true);
+    expect(claims.sessionSpaceId).toBeUndefined();
+  });
+  it('the fallback never sheds a pin: an auto-owner carrying a space claim reads only that space', async () => {
+    expect(await ownerTx(fixture.spaceA, (q) => idsIn(q, fixture.spaceB))).toEqual([]);
+    const claims = claimsFor(H_AS_OWNER(), {
+      identity: { kind: 'auto-owner', authKind: 'browser', sessionSpaceId: fixture.spaceA }, requestId: 'w3-audit',
+    } as unknown as RequestContext);
+    expect(claims.nodeAdmin).toBe(false);
+  });
+  it('positive — the same pinned auto-owner reads A', async () => {
+    expect(await ownerTx(fixture.spaceA, (q) => idsIn(q, fixture.spaceA))).toContain(fixture.docA);
+  });
+});
+
+describe('W3-audit wallet rows (083 / 093 / 203) — account-scoped, not space-scoped', () => {
+  // credential_sessions, account_git_credentials and account_service_keys are
+  // the ACCOUNT's rows (policy account_id = current_account_id()). A pin does
+  // not narrow them, by design: they are no space's. What must hold is that
+  // no other account reaches them. (The wallet is dropped in plan v3; W10's
+  // credential entities replace it.)
+  const gitCredential = randomUUID();
+
+  beforeAll(async () => {
+    await database.query(
+      `insert into public.account_git_credentials(id, account_id, provider, login, token_ciphertext, token_nonce)
+       values ($1, $2, 'github', 'w3-audit', decode(repeat('00', 17), 'hex'), decode(repeat('00', 12), 'hex'))`,
+      [gitCredential, fixture.accountH],
+    );
+  });
+  afterAll(async () => {
+    await database.query('delete from public.account_git_credentials where id = $1', [gitCredential]);
+  });
+
+  const visible = (token: string) => asToken(token, (q) => q.query<{ id: string }>(
+    'select id::text from public.account_git_credentials where id = $1', [gitCredential]), 'enforce');
+
+  it('H2 pinned to A (another account, same space) cannot read H\'s wallet row', async () => {
+    expect(await visible(await mintPinned(fixture.accountH2, fixture.identityH2, fixture.spaceA))).toEqual([]);
+  });
+  it('positive — H pinned to A reads its own wallet row (account, not space)', async () => {
+    expect(await visible(await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA)))
+      .toEqual([{ id: gitCredential }]);
+  });
+  it('the three wallet policies are account-only (no membership arm to pin)', async () => {
+    const rows = await database.query<{ tablename: string; qual: string }>(
+      `select tablename, qual from pg_policies
+        where tablename in ('account_git_credentials', 'account_service_keys', 'credential_sessions')
+        order by 1`);
+    expect(rows.map((r) => [r.tablename, r.qual.replace(/\s+/g, ' ')])).toEqual([
+      ['account_git_credentials', '(account_id = internal.current_account_id())'],
+      ['account_service_keys', '(account_id = internal.current_account_id())'],
+      ['credential_sessions', '(account_id = internal.current_account_id())'],
+    ]);
+  });
+});
+
+describe('W3-audit WS admission (control.ts canSubscribe) under enforce', () => {
+  // Built as main.ts builds it: the boot-time mode reaches the authorizer.
+  const authorizer = () => new DbSubscriptionAuthorizer(db, async (identity) =>
+    claimsFor(NOT_THE_OWNER, { identity, requestId: `w3-audit-${randomUUID()}` } as unknown as RequestContext),
+  { spaceSessions: 'enforce' });
+
+  it('closed (W3-audit F2, #848 S1): a GATE session is refused its own member space\'s event stream under enforce', async () => {
+    // Was OPEN at #848 3b0a25eb (canSubscribe never consulted the gate). #848
+    // 13880032 refuses it in canSubscribe; its own cells are T3's "a gate
+    // session subscribes to nothing when the authorizer runs under enforce"
+    // and the subscribe-AND-resume cell. This row asserts the audit path.
+    const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+    const identity = await identityForToken(gate, 'enforce');
+    expect(await authorizer().canSubscribe(identity, fixture.spaceA)).toBe(false);
+  });
+  it('a pinned session is refused a space other than its pin', async () => {
+    const identity = await identityForToken(
+      await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA), 'enforce');
+    expect(await authorizer().canSubscribe(identity, fixture.spaceB)).toBe(false);
+  });
+  it('positive — the same pinned session is admitted to its own space', async () => {
+    const identity = await identityForToken(
+      await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA), 'enforce');
+    expect(await authorizer().canSubscribe(identity, fixture.spaceA)).toBe(true);
+  });
+  it('H2 (not a member of B) is refused B even from a gate session', async () => {
+    const identity = await identityForToken(await mintBrowser(fixture.accountH2, fixture.identityH2), 'enforce');
+    expect(await authorizer().canSubscribe(identity, fixture.spaceB)).toBe(false);
+  });
+});
+
+describe('W3-audit Fable\'s cross-space project read (176 start_chat project mode)', () => {
+  // start_chat is SECURITY DEFINER and resolves the project through
+  // space_projects for p_space_id (176:691-700). The space itself is guarded by
+  // require_space_member (pinned, 227) before the lookup runs.
+  const projectA = randomUUID();
+  const projectB = randomUUID();
+
+  beforeAll(async () => {
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(
+        `insert into public.projects(id, name, working_dir, trust)
+         values ($1, 'audit A project', '/tmp/w3-audit-a', 'trusted'),
+                ($2, 'audit B project', '/tmp/w3-audit-b', 'trusted')`,
+        [projectA, projectB]);
+      await client.query(
+        `insert into public.space_projects(space_id, project_id, linked_by)
+         values ($1, $3, $5), ($2, $4, $6)`,
+        [fixture.spaceA, fixture.spaceB, projectA, projectB, fixture.memberHA, fixture.memberHB]);
+    });
+  });
+
+  const startChat = (token: string, spaceId: string, projectId: string) =>
+    asToken(token, (q) => q.rpc('start_chat', [
+      randomUUID(), spaceId, fixture.personaA, 'claude-opus-5', 'anthropic', 'claude-code',
+      'ask', 'project', projectId, randomUUID(), null, 'w3-audit', 'hello', null, null,
+      `w3-audit-${randomUUID()}`,
+    ]), 'enforce');
+
+  it('a chat in B on B\'s project is refused to H pinned to A', async () => {
+    const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect(await outcome(() => startChat(token, fixture.spaceB, projectB))).toBe('42501');
+  });
+  it('a chat in A naming B\'s project is refused (the project is resolved through A\'s link only)', async () => {
+    const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect(await outcome(() => startChat(token, fixture.spaceA, projectB))).toBe('P0002');
+  });
+  it('positive — a chat in A on A\'s project starts', async () => {
+    const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect(await outcome(() => startChat(token, fixture.spaceA, projectA))).toBe('ok');
+  });
+});
+
+describe('W3-audit T31 (W3 half) — B\'s project and everything read through it (DB)', () => {
+  // projects.get / branches / blame / file-history / files / contention all
+  // start from `PROJECT_SELECT where id = $1` under the caller's claims
+  // (projects-associations.ts projectRowFor, contention.ts), so the project row
+  // IS their authorization. The HTTP twin is in the W3-audit HTTP block.
+  const projectB = randomUUID();
+  const projectOfA = randomUUID();
+
+  beforeAll(async () => {
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(
+        `insert into public.projects(id, name, working_dir, trust)
+         values ($1, 'T31 B project', '/tmp/w3-audit-t31-b', 'trusted'),
+                ($2, 'T31 A project', '/tmp/w3-audit-t31-a', 'trusted')`,
+        [projectB, projectOfA]);
+      await client.query(
+        `insert into public.space_projects(space_id, project_id, linked_by)
+         values ($2, $3, $5), ($1, $4, $6)`,
+        [fixture.spaceA, fixture.spaceB, projectB, projectOfA, fixture.memberHB, fixture.memberHA]);
+    });
+  });
+
+  const seen = (token: string, id: string) => asToken(token, (q) => q.query(
+    'select id from public.projects where id = $1', [id]), 'enforce');
+
+  it('B\'s project row is not_found to H pinned to A, even as node admin', async () => {
+    await withNodeAdmin(fixture.accountH, true, async () => {
+      expect(await seen(await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA), projectB)).toEqual([]);
+    });
+  });
+  // 234 (W11): public.projects is the folder grant, readable only by a gate
+  // admin on an unpinned session (projects_select); the space's project is the
+  // `project` entity.
+  it('positive — H\'s unpinned gate-admin session sees it', async () => {
+    await withNodeAdmin(fixture.accountH, true, async () => {
+      expect((await seen(await mintBrowser(fixture.accountH, fixture.identityH), projectB)).length).toBe(1);
+    });
+  });
+  it('A\'s own folder is not readable pinned to A, even as node admin (234: folders are the gate\'s; one space per folder)', async () => {
+    await withNodeAdmin(fixture.accountH, true, async () => {
+      expect(await seen(await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA), projectOfA)).toEqual([]);
+    });
+  });
+});
+
+describe('W3-audit teammate-session hole (075 + grant_stream_attach 187/202) — closed by W10c', () => {
+  // Credentials doc 01a0da24 §3h. can_act_as (075) lets every active member act
+  // as a teammate, and grant_stream_attach treats "may act as the creator" plus
+  // sharing_set_at null as the owner right, so any member of A can view AND
+  // drive an unconfigured agent session in A. Nothing stamps sharing_set_at at
+  // launch. Recorded, NOT fixed here: closed by W10c (private-credential
+  // owner-only attach gate). W3 neither closes nor widens it — the pin keeps it
+  // inside the session's own space.
+  const grant = (token: string, sessionId: string, mode: 'view' | 'drive') =>
+    asToken(token, (q) => q.rpc('grant_stream_attach', [
+      sessionId, mode, hashToken(generateSecret()), null, null]), 'enforce');
+
+  it('CURRENT BEHAVIOUR (closed by W10c): H2 — a plain member of A — may DRIVE H\'s agent session in A', async () => {
+    const token = await mintPinned(fixture.accountH2, fixture.identityH2, fixture.spaceA);
+    expect(await outcome(() => grant(token, fixture.workSessionA, 'drive'))).toBe('ok');
+  });
+  it('W3 does not widen it: H2\'s gate session gets exactly the same answer as pinned', async () => {
+    const gate = await mintBrowser(fixture.accountH2, fixture.identityH2);
+    expect(await outcome(() => grant(gate, fixture.workSessionA, 'drive'))).toBe('ok');
+  });
+  it('the hole stops at the space: H pinned to A cannot view its own agent sessions\' peers in B', async () => {
+    const workSessionB = randomUUID();
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(
+        `insert into public.entities(id, space_id, kind, created_by, visibility) values ($1, $2, 'work_session', $3, 'space')`,
+        [workSessionB, fixture.spaceB, fixture.memberHB]);
+      await client.query(
+        `insert into public.work_sessions(entity_id, title, status, share_mode, started_at)
+         values ($1, 'audit B run', 'running', 'none', now())`, [workSessionB]);
+    });
+    const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect(await outcome(() => grant(token, workSessionB, 'view'))).toBe('42501');
+    // Positive: H's gate session (a member of B) holds the owner right there.
+    const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+    expect(await outcome(() => grant(gate, workSessionB, 'view'))).toBe('ok');
+  });
+});
+
+describe('W3-audit identity_id() readers that skip the pin — KNOWN GAPs found by the F7 gate review', () => {
+  // tools/ci/identity-id-allowlist.txt tags every live identity_id() reader;
+  // these are the OPEN ones a pinned caller reaches today.
+  const notificationIn = async (spaceId: string, memberId: string): Promise<string> => {
+    const rows = await database.query<{ id: string }>(
+      `insert into public.notifications(space_id, recipient_member_id, kind, payload)
+       values ($1, $2, 'mention', '{}'::jsonb) returning id::text`, [spaceId, memberId]);
+    return rows[0]!.id;
+  };
+  const readAt = async (id: string) => (await database.query<{ read_at: Date | null }>(
+    'select read_at from public.notifications where id = $1', [id]))[0]!.read_at;
+  const markRead = (token: string, id: string) => asToken(token, (q) => q.rpc(
+    'mark_notification_read', [id, 'member', null, `w3-audit-${randomUUID()}`]), 'enforce');
+
+  it('pinned H cannot SEE B\'s notification (notifications_select is pinned)', async () => {
+    const nB = await notificationIn(fixture.spaceB, fixture.memberHB);
+    const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect(await asToken(token, (q) => q.query(
+      'select id from public.notifications where id = $1', [nB]), 'enforce')).toEqual([]);
+  });
+  it('F1 CLOSED (246): …and mark_notification_read (4-arg) refuses it pinned to A — not found, read_at stays null', async () => {
+    const nB = await notificationIn(fixture.spaceB, fixture.memberHB);
+    const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect(await outcome(() => markRead(token, nB))).toBe('P0002');
+    expect(await readAt(nB)).toBeNull();
+  });
+  it('positive — the same pinned credential marks A\'s notification read', async () => {
+    const nA = await notificationIn(fixture.spaceA, fixture.memberHA);
+    const token = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect(await outcome(() => markRead(token, nA))).toBe('ok');
+    expect(await readAt(nA)).not.toBeNull();
+  });
+  it('H2 (no member row in B) cannot mark B\'s notification — the gap is same-identity only', async () => {
+    const nB = await notificationIn(fixture.spaceB, fixture.memberHB);
+    const token = await mintPinned(fixture.accountH2, fixture.identityH2, fixture.spaceA);
+    expect(await outcome(() => markRead(token, nB))).not.toBe('ok');
+    expect(await readAt(nB)).toBeNull();
+  });
+});
+
+describe('W3-audit over HTTP under enforce — T31 project routes, T4 files.download, inbox.markRead', () => {
+  let server: BootstrappedServer;
+  const projectA = randomUUID();
+  const projectB = randomUUID();
+  const fileA = randomUUID();
+  const fileB = randomUUID();
+  const checksum = 'ab'.repeat(32);
+  let adminBefore: Array<{ id: string; is_node_admin: boolean; is_owner: boolean }> = [];
+  const dirs: Record<'a' | 'b', string> = { a: '', b: '' };
+
+  // A real repository per project, so a B refusal is the authorization and
+  // not a missing working dir, and the A positive runs the same git code.
+  const repo = async (label: string): Promise<string> => {
+    const dir = await mkdtemp(join(tmpdir(), `tm8-w3-audit-${label}-`));
+    const git = (...args: string[]) => {
+      const run = spawnSync('git', args, { cwd: dir, encoding: 'utf8' });
+      if (run.status !== 0) throw new Error(`git ${args[0]}: ${run.stderr}`);
+    };
+    git('init', '-q', '-b', 'main');
+    await writeFile(join(dir, 'README.md'), `w3 audit ${label}\n`);
+    git('add', 'README.md');
+    git('-c', 'user.name=w3-audit', '-c', 'user.email=w3-audit@invalid', 'commit', '-q', '-m', 'seed');
+    return dir;
+  };
+
+  beforeAll(async () => {
+    const [dirA, dirB] = [dirs.a, dirs.b] = [await repo('a'), await repo('b')];
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      adminBefore = (await client.query<{ id: string; is_node_admin: boolean; is_owner: boolean }>(
+        'select id::text, is_node_admin, is_owner from public.accounts where id = any($1::uuid[])',
+        [[fixture.accountH, fixture.accountH2]],
+      )).rows;
+      await client.query(
+        `update public.accounts set is_node_admin = (id = $1::uuid), is_owner = (id = $1::uuid)
+          where id = any($2::uuid[])`,
+        [fixture.accountH, [fixture.accountH, fixture.accountH2]],
+      );
+      await client.query(
+        `insert into public.projects(id, name, working_dir, trust)
+         values ($1, 'W3-audit HTTP A', $3, 'trusted'), ($2, 'W3-audit HTTP B', $4, 'trusted')`,
+        [projectA, projectB, dirA, dirB],
+      );
+      await client.query(
+        `insert into public.space_projects(space_id, project_id, linked_by)
+         values ($1, $3, $5), ($2, $4, $6)`,
+        [fixture.spaceA, fixture.spaceB, projectA, projectB, fixture.memberHA, fixture.memberHB],
+      );
+      await client.query(
+        `insert into public.entities(id, space_id, kind, created_by, visibility)
+         values ($1, $3, 'file', $5, 'space'), ($2, $4, 'file', $6, 'space')`,
+        [fileA, fileB, fixture.spaceA, fixture.spaceB, fixture.memberHA, fixture.memberHB],
+      );
+      await client.query(
+        `insert into public.files(entity_id, name, mime_type, size_bytes, storage_path, checksum_sha256)
+         values ($1, 'a.txt', 'text/plain', 1, 'spaces/' || $3::text || '/w3-audit-a.txt', $5),
+                ($2, 'b.txt', 'text/plain', 1, 'spaces/' || $4::text || '/w3-audit-b.txt', $5)`,
+        [fileA, fileB, fixture.spaceA, fixture.spaceB, checksum],
+      );
+    });
+    const configured = loadConfig({
+      ...process.env,
+      TM8_BIND: '127.0.0.1',
+      TM8_PORT: '4610',
+      TM8_NODE_MODE: 'single',
+      TM8_DATABASE_URL: database.url,
+      TM8_DATA_DIR: await mkdtemp(join(tmpdir(), 'tm8-w3-audit-')),
+      TM8_DISABLE_AUTO_OWNER: '1',
+      TM8_SPACE_SESSIONS: 'enforce',
+    });
+    server = await bootstrap({ config: { ...configured, port: 0 } });
+  }, 180_000);
+
+  afterAll(async () => {
+    await server?.server.close();
+    await server?.db?.end();
+    for (const row of adminBefore) {
+      await database.query(
+        'update public.accounts set is_node_admin = $2, is_owner = $3 where id = $1::uuid',
+        [row.id, row.is_node_admin, row.is_owner],
+      );
+    }
+  }, 180_000);
+
+  async function send(
+    token: string,
+    method: 'GET' | 'PUT',
+    path: string,
+    headers: Record<string, string> = {},
+    body?: unknown,
+  ): Promise<number> {
+    const response = await fetch(new URL(path, server.url), {
+      method,
+      headers: {
+        [TM8_CLIENT_HEADER]: TM8_CLIENT_HEADER_VALUE,
+        authorization: `Bearer ${token}`,
+        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+        ...headers,
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    await response.arrayBuffer();
+    return response.status;
+  }
+  const pinnedH = () => mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+
+  // Every read keyed on a project id alone (T31). The file-scoped reads take
+  // a path; `files` and `files/archive` list the root.
+  // files/content wants an absolute path inside the project's own dir.
+  const PROJECT_READS: Array<[string, (dir: string) => string]> = [
+    ['', () => ''], ['/contention', () => ''], ['/branches', () => ''],
+    ['/files', () => ''], ['/files/archive', () => ''],
+    ['/file-history', () => '?path=README.md'], ['/blame', () => '?path=README.md'],
+    ['/files/content', (dir) => `?path=${encodeURIComponent(join(dir, 'README.md'))}`],
+  ];
+
+  for (const [read, query] of PROJECT_READS) {
+    it(`T31 GET /v2/projects/:B${read} is 404 to H pinned to A (node admin on its gate session)`, async () => {
+      expect(await send(await pinnedH(), 'GET', `/v2/projects/${projectB}${read}${query(dirs.b)}`)).toBe(404);
+    });
+    it(`T31 positive — GET /v2/projects/:A${read} answers 200 to the same pin`, async () => {
+      expect(await send(await pinnedH(), 'GET', `/v2/projects/${projectA}${read}${query(dirs.a)}`)).toBe(200);
+    });
+  }
+
+  it('T4 /p file: files.download of B\'s file is 404 to H pinned to A', async () => {
+    expect(await send(await pinnedH(), 'GET', `/v2/files/${fileB}/download`,
+      { 'if-none-match': `"sha256-${checksum}"` })).toBe(404);
+  });
+  it('T4 positive — the same pin revalidates A\'s file (304 on its checksum ETag, no blob read)', async () => {
+    expect(await send(await pinnedH(), 'GET', `/v2/files/${fileA}/download`,
+      { 'if-none-match': `"sha256-${checksum}"` })).toBe(304);
+  });
+
+  const notificationIn = async (spaceId: string, memberId: string): Promise<string> =>
+    (await database.query<{ id: string }>(
+      `insert into public.notifications(space_id, recipient_member_id, kind, payload)
+       values ($1, $2, 'mention', '{}'::jsonb) returning id::text`, [spaceId, memberId]))[0]!.id;
+  const readAt = async (id: string) => (await database.query<{ read_at: Date | null }>(
+    'select read_at from public.notifications where id = $1', [id]))[0]!.read_at;
+
+  it('F1 CLOSED (246) over HTTP: PUT /v2/inbox/:B/read from H pinned to A answers 404 and leaves B\'s row unread', async () => {
+    const nB = await notificationIn(fixture.spaceB, fixture.memberHB);
+    const status = await send(await pinnedH(), 'PUT', `/v2/inbox/${nB}/read`, {},
+      { clientMutationId: `w3-audit-${randomUUID()}` });
+    expect({ status, marked: (await readAt(nB)) !== null }).toEqual({ status: 404, marked: false });
+  });
+  it('inbox.markRead positive — PUT /v2/inbox/:A/read from the same pin marks it', async () => {
+    const nA = await notificationIn(fixture.spaceA, fixture.memberHA);
+    expect(await send(await pinnedH(), 'PUT', `/v2/inbox/${nA}/read`, {},
+      { clientMutationId: `w3-audit-${randomUUID()}` })).toBe(200);
+    expect(await readAt(nA)).not.toBeNull();
+  });
+});
+
+describe('W3-audit ledger replay before the space guard (046 ledger_replay) — executed per function', () => {
+  // command_ledger is keyed (client_mutation_id, identity, operation): no space
+  // and no pin. A function that replays BEFORE its space guard hands a result
+  // recorded in A to the same identity pinned to B. require_replay_subject
+  // only checks the request addresses the same resource, not that the caller
+  // may still reach it. Each function gets: record pinned to A; replay pinned
+  // to B with the same cmid (the cell); the same call pinned to B with a FRESH
+  // cmid (the guard, which is what the replay skips); replay pinned to A (the
+  // positive). CLOSED by 247: the ledger records the pin and a pinned caller
+  // replays only rows recorded under its own pin, so each former KNOWN GAP
+  // cell below now asserts the 23514 refusal.
+  const pinnedTo = (spaceId: string) => mintPinned(fixture.accountH, fixture.identityH, spaceId);
+  // `marker` is the A resource the recorded body names.
+  type Case = { name: string; fresh: string; marker: (cmid: string) => string;
+    call: (token: string, cmid: string) => Promise<unknown> };
+  const cases: Case[] = [];
+  const add = (name: string, fresh: string, marker: Case['marker'], call: Case['call']) =>
+    cases.push({ name, call, fresh, marker });
+
+  const streamHash = hashToken(generateSecret());
+  add('grant_stream_attach', '42501', () => fixture.workSessionA, (token, cmid) => asToken(token, (q) => q.rpc('grant_stream_attach', [
+    fixture.workSessionA, 'view', streamHash, null, cmid]), 'enforce'));
+
+  // One chat per cmid: a replay must address the chat it recorded.
+  const chats = new Map<string, [string, string]>();
+  const chatFor = (cmid: string) => chats.get(cmid) ?? chats.set(cmid, [randomUUID(), randomUUID()]).get(cmid)!;
+  add('start_chat', '42501', (cmid) => chatFor(cmid)[0], (token, cmid) => asToken(token, (q) => q.rpc('start_chat', [
+    chatFor(cmid)[0], fixture.spaceA, fixture.personaA, 'claude-opus-5', 'anthropic', 'claude-code',
+    'ask', 'scratch', null, chatFor(cmid)[1], '/tmp/w3-audit-replay', 'w3-audit replay', 'hello', null, null, cmid,
+  ]), 'enforce'));
+
+  add('set_member_role', '42501', () => fixture.spaceA, (token, cmid) => asToken(token, (q) => q.rpc('set_member_role', [
+    fixture.spaceA, fixture.memberH2A, 'member', null, cmid]), 'enforce'));
+
+  for (const { name, call, fresh, marker } of cases) {
+    it(`CLOSED by 247 (W3-audit F4): ${name} recorded pinned to A is refused, not replayed, to H pinned to B`, async () => {
+      const cmid = `w3-audit-replay-${name}-${randomUUID()}`;
+      expect(await outcome(async () => call(await pinnedTo(fixture.spaceA), cmid))).toBe('ok');
+      // Before 247 this returned A's body (it named marker(cmid)); now the pin refuses it.
+      let replayed: unknown = null;
+      expect(await outcome(async () => { replayed = await call(await pinnedTo(fixture.spaceB), cmid); })).toBe('23514');
+      expect(JSON.stringify(replayed ?? null)).not.toContain(marker(cmid));
+    });
+    it(`${name}: the guard the replay skips — pinned to B with a fresh cmid is refused`, async () => {
+      expect(await outcome(async () => call(await pinnedTo(fixture.spaceB), `w3-audit-fresh-${randomUUID()}`)))
+        .toBe(fresh);
+    });
+    it(`${name}: positive — the replay pinned to A returns`, async () => {
+      const cmid = `w3-audit-replay-${name}-${randomUUID()}`;
+      expect(await outcome(async () => call(await pinnedTo(fixture.spaceA), cmid))).toBe('ok');
+      expect(await outcome(async () => call(await pinnedTo(fixture.spaceA), cmid))).toBe('ok');
+    });
+  }
+
+  it('CLOSED by 247 (W3-audit F4): w2_withdraw_handoff refuses a recorded A withdrawal to H pinned to B (ledger row seeded)', async () => {
+    // A real handoff needs the dispatcher; the replay branch reads only the
+    // ledger, so the row it would have recorded is seeded as graph owner.
+    const cmid = `w3-audit-withdraw-${randomUUID()}`;
+    const handoffId = `w3-audit-${randomUUID()}`;
+    await database.query(
+      `insert into public.command_ledger(client_mutation_id, identity_id, operation, result, session_space_id)
+       values ($1, $2, 'handoffs.withdraw', jsonb_build_object('handoff', jsonb_build_object(
+         'id', $3::text, 'source_space_id', $4::text)), $4::uuid)`,
+      [cmid, fixture.identityH, handoffId, fixture.spaceA]);
+    const withdraw = async (spaceId: string, id: string) => asToken(await pinnedTo(spaceId),
+      (q) => q.rpc<{ handoff?: { source_space_id?: string } }>('w2_withdraw_handoff', [handoffId, 1, null, null, id]),
+      'enforce');
+    // The row carries the A pin (as ledger_record writes it since 247); before 247 this returned it.
+    expect(await outcome(() => withdraw(fixture.spaceB, cmid))).toBe('23514');
+    // Positive: the same row replays to H pinned to A.
+    expect((await withdraw(fixture.spaceA, cmid)).handoff?.source_space_id).toBe(fixture.spaceA);
+    // The guard path: a fresh cmid reaches the handoff lookup and finds none.
+    expect(await outcome(() => withdraw(fixture.spaceB, `w3-audit-fresh-${randomUUID()}`))).not.toBe('ok');
+  });
+
+  const trackingRows = async (spaceId: string) => (await database.query<{ n: number }>(
+    'select count(*)::int n from public.tracking_refresh_requests where space_id = $1', [spaceId]))[0]!.n;
+  const refreshAll = (token: string, cmid = `w3-audit-${randomUUID()}`) =>
+    asToken(token, (q) => q.rpc('queue_tracking_refresh', [[], null, cmid]), 'enforce');
+
+  it('queue_tracking_refresh (no ids) pinned to A is refused outright and queues nothing in B', async () => {
+    // Its members loop (raw members, no pin) reaches B, where resolve_actor
+    // refuses under the A pin, so the whole call fails: CLOSED for the leak,
+    // but a pinned session cannot "refresh all" at all (a W3 functional gap).
+    const before = await trackingRows(fixture.spaceB);
+    expect(await outcome(async () => refreshAll(await pinnedTo(fixture.spaceA)))).toBe('42501');
+    expect(await trackingRows(fixture.spaceB)).toBe(before);
+  });
+  it('queue_tracking_refresh positive — H\'s gate session (unpinned) queues A and B', async () => {
+    const [a, b] = [await trackingRows(fixture.spaceA), await trackingRows(fixture.spaceB)];
+    await refreshAll(await mintBrowser(fixture.accountH, fixture.identityH));
+    expect([await trackingRows(fixture.spaceA), await trackingRows(fixture.spaceB)]).toEqual([a + 1, b + 1]);
+  });
+  it('CLOSED by 247 (W3-audit F4): queue_tracking_refresh refuses a gate-recorded A+B result to H pinned to B', async () => {
+    const cmid = `w3-audit-replay-tracking-${randomUUID()}`;
+    await refreshAll(await mintBrowser(fixture.accountH, fixture.identityH), cmid);
+    // Recorded unpinned (null row pin): a pinned caller may not replay it. Before 247 this was 'ok'.
+    expect(await outcome(async () => refreshAll(await pinnedTo(fixture.spaceB), cmid))).toBe('23514');
+    expect(await outcome(async () => refreshAll(await pinnedTo(fixture.spaceB)))).toBe('42501');
+  });
+});
+
+/**
+ * W3-client (task 01a0d9fd): the walk the UI and CLI make, over the real
+ * server. H (a member of A and B) holds one gate session and switches A → B
+ * without logging out. Every rule the clients rely on is a cell here, each
+ * refusal paired with its positive:
+ *   - `auth.space.enter` accepts gate Authorization next to an older pinned
+ *     cookie and replaces the cookie (the browser's mint path);
+ *   - any other op refuses gate Authorization next to a pinned cookie, and
+ *     serves the same header alone (why clients omit cookies under enforce);
+ *   - both pins stay live after the switch, each confined to its own space;
+ *   - the enforce refusal names `auth.space.enter` (the clients' detector);
+ *   - a pin revoked with its own token dies, and its gate lives on.
+ * `agents` twin: the pre-W3 walk (gate header plus gate cookie) is served.
+ */
+describe('T8c client walk — switch A → B without logout, cookie rules (W3-client)', () => {
+  let enforceServer: BootstrappedServer;
+  let agentsServer: BootstrappedServer;
+  let adminBefore: Array<{ id: string; is_node_admin: boolean; is_owner: boolean }> = [];
+
+  beforeAll(async () => {
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      adminBefore = (await client.query<{ id: string; is_node_admin: boolean; is_owner: boolean }>(
+        'select id::text, is_node_admin, is_owner from public.accounts where id = any($1::uuid[])',
+        [[fixture.accountH, fixture.accountH2]],
+      )).rows;
+      await client.query(
+        `update public.accounts set is_node_admin = (id = $1::uuid), is_owner = (id = $1::uuid)
+          where id = any($2::uuid[])`,
+        [fixture.accountH, [fixture.accountH, fixture.accountH2]],
+      );
+    });
+    const start = async (mode: SpaceSessionsMode): Promise<BootstrappedServer> => {
+      const configured = loadConfig({
+        ...process.env,
+        TM8_BIND: '127.0.0.1',
+        TM8_PORT: '4610',
+        TM8_NODE_MODE: 'single',
+        TM8_DATABASE_URL: database.url,
+        TM8_DATA_DIR: await mkdtemp(join(tmpdir(), 'tm8-w3c-')),
+        TM8_DISABLE_AUTO_OWNER: '1',
+        TM8_SPACE_SESSIONS: mode,
+      });
+      return bootstrap({ config: { ...configured, port: 0 } });
+    };
+    enforceServer = await start('enforce');
+    agentsServer = await start('agents');
+  }, 180_000);
+
+  afterAll(async () => {
+    for (const server of [enforceServer, agentsServer]) {
+      await server?.server.close();
+      await server?.db?.end();
+    }
+    for (const row of adminBefore) {
+      await database.query(
+        'update public.accounts set is_node_admin = $2, is_owner = $3 where id = $1::uuid',
+        [row.id, row.is_node_admin, row.is_owner],
+      );
+    }
+  }, 180_000);
+
+  interface Sent { status: number; json: any; setCookie: string | null }
+
+  /** One request as a client sends it: optional bearer, optional cookie. */
+  async function send(
+    server: BootstrappedServer,
+    creds: { bearer?: string; cookie?: string },
+    method: 'GET' | 'POST',
+    path: string,
+    body?: unknown,
+  ): Promise<Sent> {
+    const response = await fetch(new URL(path, server.url), {
+      method,
+      headers: {
+        [TM8_CLIENT_HEADER]: TM8_CLIENT_HEADER_VALUE,
+        ...(creds.bearer ? { authorization: `Bearer ${creds.bearer}` } : {}),
+        ...(creds.cookie ? { cookie: `${TM8_SESSION_COOKIE}=${creds.cookie}` } : {}),
+        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    const text = await response.text();
+    const parsed = text ? JSON.parse(text) : null;
+    return {
+      status: response.status,
+      json: parsed && 'data' in parsed ? parsed.data : parsed,
+      setCookie: response.headers.get('set-cookie'),
+    };
+  }
+
+  const cookieValue = (setCookie: string | null): string | null =>
+    setCookie?.match(new RegExp(`${TM8_SESSION_COOKIE}=([^;]*)`))?.[1] ?? null;
+
+  /** The browser walk: gate pass in the jar, enter A, then enter B. */
+  async function switchAB(): Promise<{ gate: string; pinA: string; pinB: string }> {
+    const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+    const intoA = await send(enforceServer, { bearer: gate, cookie: gate }, 'POST', '/v2/auth/space/enter',
+      { spaceId: fixture.spaceA });
+    expect(intoA.status, JSON.stringify(intoA.json)).toBe(200);
+    const pinA = intoA.json.token as string;
+    expect(cookieValue(intoA.setCookie)).toBe(pinA);
+    // The jar now holds pinA; the switch presents the gate next to it.
+    const intoB = await send(enforceServer, { bearer: gate, cookie: pinA }, 'POST', '/v2/auth/space/enter',
+      { spaceId: fixture.spaceB });
+    expect(intoB.status, JSON.stringify(intoB.json)).toBe(200);
+    const pinB = intoB.json.token as string;
+    expect(cookieValue(intoB.setCookie)).toBe(pinB);
+    return { gate, pinA, pinB };
+  }
+
+  it('switch: enter B with the gate next to A\'s pinned cookie is accepted and replaces the cookie', async () => {
+    const { pinA, pinB } = await switchAB();
+    expect(pinB).not.toBe(pinA);
+  });
+  it('switch, paired: a PINNED Authorization cannot enter, cookie or not', async () => {
+    const { pinA } = await switchAB();
+    expect((await send(enforceServer, { bearer: pinA }, 'POST', '/v2/auth/space/enter',
+      { spaceId: fixture.spaceB })).status).toBe(403);
+  });
+
+  it('A\'s pin reads B → not_found after the switch; positive — B\'s pin reads B', async () => {
+    const { pinA, pinB } = await switchAB();
+    expect((await send(enforceServer, { bearer: pinA }, 'GET', `/v2/entities/${fixture.docB}`)).status).toBe(404);
+    expect((await send(enforceServer, { bearer: pinB }, 'GET', `/v2/entities/${fixture.docB}`)).status).toBe(200);
+  });
+  it('B\'s pin reads A → not_found; positive — A\'s pin still reads A (no logout on switch)', async () => {
+    const { pinA, pinB } = await switchAB();
+    expect((await send(enforceServer, { bearer: pinB }, 'GET', `/v2/entities/${fixture.docA}`)).status).toBe(404);
+    expect((await send(enforceServer, { bearer: pinA }, 'GET', `/v2/entities/${fixture.docA}`)).status).toBe(200);
+  });
+
+  it('cookie rule: gate Authorization next to a pinned cookie is refused on spaces.list', async () => {
+    const { gate, pinB } = await switchAB();
+    const refused = await send(enforceServer, { bearer: gate, cookie: pinB }, 'GET', '/v2/spaces');
+    expect(refused.status).toBe(401);
+  });
+  it('cookie rule: positive — the same gate Authorization with cookies omitted lists spaces', async () => {
+    const { gate } = await switchAB();
+    const listed = await send(enforceServer, { bearer: gate }, 'GET', '/v2/spaces');
+    expect(listed.status).toBe(200);
+    expect(JSON.stringify(listed.json)).toContain(fixture.spaceB);
+  });
+  it('cookie rule: a pinned Authorization next to a different pinned cookie is refused; alone it is served', async () => {
+    const { pinA, pinB } = await switchAB();
+    expect((await send(enforceServer, { bearer: pinA, cookie: pinB }, 'GET', `/v2/entities/${fixture.docA}`)).status)
+      .toBe(401);
+    expect((await send(enforceServer, { bearer: pinA }, 'GET', `/v2/entities/${fixture.docA}`)).status).toBe(200);
+  });
+
+  it('detector: the enforce refusal of a gate read is 403 forbidden naming auth.space.enter', async () => {
+    const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+    const refused = await send(enforceServer, { bearer: gate }, 'GET', `/v2/entities/${fixture.docA}`);
+    expect(refused.status).toBe(403);
+    expect(refused.json.error.code).toBe('forbidden');
+    expect(refused.json.error.message).toContain('auth.space.enter');
+  });
+  it('detector, paired: a not_found from a pin does NOT name auth.space.enter (no mint loop)', async () => {
+    const { pinA } = await switchAB();
+    const missing = await send(enforceServer, { bearer: pinA }, 'GET', `/v2/entities/${fixture.docB}`);
+    expect(missing.status).toBe(404);
+    expect(JSON.stringify(missing.json)).not.toContain('auth.space.enter');
+  });
+
+  it('revoke: auth.logout with the pin alone kills the pin; positive — the gate lives on and re-enters', async () => {
+    const { gate, pinA } = await switchAB();
+    expect((await send(enforceServer, { bearer: pinA }, 'POST', '/v2/auth/logout', {})).status).toBe(200);
+    expect((await send(enforceServer, { bearer: pinA }, 'GET', `/v2/entities/${fixture.docA}`)).status).toBe(401);
+    expect((await send(enforceServer, { bearer: gate }, 'GET', '/v2/spaces')).status).toBe(200);
+    const again = await send(enforceServer, { bearer: gate }, 'POST', '/v2/auth/space/enter', { spaceId: fixture.spaceA });
+    expect(again.status).toBe(200);
+    expect((await send(enforceServer, { bearer: again.json.token }, 'GET', `/v2/entities/${fixture.docA}`)).status)
+      .toBe(200);
+  });
+
+  it('agents (a4): the pre-W3 walk — gate header plus gate cookie — reads A and B, nothing entered', async () => {
+    const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+    expect((await send(agentsServer, { bearer: gate, cookie: gate }, 'GET', `/v2/entities/${fixture.docA}`)).status)
+      .toBe(200);
+    expect((await send(agentsServer, { bearer: gate, cookie: gate }, 'GET', `/v2/entities/${fixture.docB}`)).status)
+      .toBe(200);
+  });
+  it('agents, paired: the same gate walk under enforce is refused (the client must enter)', async () => {
+    const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+    expect((await send(enforceServer, { bearer: gate, cookie: gate }, 'GET', `/v2/entities/${fixture.docA}`)).status)
+      .toBe(403);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// W4 — auth.sessions.list / auth.sessions.revoke across the boundary (249).
+//
+// The full a1–a3 matrix lives in auth-sessions-list-revoke.pg.test.ts; these
+// rows are the cross-space cells: which credential sees and revokes sessions
+// pinned to which space. Refusal + positive per cell, as everywhere above.
+// ---------------------------------------------------------------------------
+
+describe('W4 — session listing and revoke across spaces', () => {
+  const listAs = (token: string, spaceId: string | null) =>
+    asToken(token, (q) => q.rpc<unknown[]>('list_auth_sessions', [spaceId]), 'enforce');
+  const revokeAs = (token: string, sessionId: string) =>
+    asToken(token, (q) => q.rpc<{ revoked: boolean }>('revoke_listed_auth_session', [sessionId]), 'enforce');
+  const sessionIdOf = (token: string): string => parseToken(token)!.sessionId;
+  const listed = async (token: string, spaceId: string | null): Promise<string[]> =>
+    ((await listAs(token, spaceId)) as Array<{ sessionId: string }>).map((r) => r.sessionId);
+
+  it('W4-1: H pinned to A cannot list B\'s sessions (42501)', async () => {
+    const pinnedA = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect(await outcome(() => listAs(pinnedA, fixture.spaceB))).toBe('42501');
+  });
+  it('W4-1: positive — H pinned to B lists B', async () => {
+    const pinnedB = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceB);
+    expect(await outcome(() => listAs(pinnedB, fixture.spaceB))).toBe('ok');
+  });
+
+  it('W4-2: H2 (member, not admin, of A) cannot list A\'s sessions (42501)', async () => {
+    const h2 = await mintPinned(fixture.accountH2, fixture.identityH2, fixture.spaceA);
+    expect(await outcome(() => listAs(h2, fixture.spaceA))).toBe('42501');
+  });
+  it('W4-2: positive — H (owner of A) lists A and sees H2\'s A-pinned session', async () => {
+    const h2 = await mintPinned(fixture.accountH2, fixture.identityH2, fixture.spaceA);
+    const h = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect(await listed(h, fixture.spaceA)).toContain(sessionIdOf(h2));
+  });
+
+  it('W4-3: H2 cannot revoke H\'s A-pinned session (P0002)', async () => {
+    const h = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    const h2 = await mintBrowser(fixture.accountH2, fixture.identityH2);
+    expect(await outcome(() => revokeAs(h2, sessionIdOf(h)))).toBe('P0002');
+  });
+  it('W4-3: positive — H pinned to A revokes H2\'s A-pinned session', async () => {
+    const h2 = await mintPinned(fixture.accountH2, fixture.identityH2, fixture.spaceA);
+    const h = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect((await revokeAs(h, sessionIdOf(h2))).revoked).toBe(true);
+  });
+
+  it('W4-4: an agent token (pinned to A by construction) cannot list A or revoke (42501)', async () => {
+    const agent = await mintAgent();
+    const target = await mintPinned(fixture.accountH2, fixture.identityH2, fixture.spaceA);
+    expect(await outcome(() => listAs(agent, fixture.spaceA))).toBe('42501');
+    expect(await outcome(() => revokeAs(agent, sessionIdOf(target)))).toBe('42501');
+  });
+  it('W4-4: positive — the launching human revokes that agent session from A', async () => {
+    const agent = await mintAgent();
+    const h = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect((await revokeAs(h, sessionIdOf(agent))).revoked).toBe(true);
+  });
+
+  it('W4-5: a node admin PINNED to A cannot revoke H2\'s gate session (K6: no node admin under a pin)', async () => {
+    await withNodeAdmin(fixture.accountH, true, async () => {
+      const h2Gate = await mintBrowser(fixture.accountH2, fixture.identityH2);
+      const pinned = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+      expect(await outcome(() => revokeAs(pinned, sessionIdOf(h2Gate)))).toBe('P0002');
+    });
+  });
+  it('W4-5: positive — the same node admin\'s GATE session revokes it', async () => {
+    await withNodeAdmin(fixture.accountH, true, async () => {
+      const h2Gate = await mintBrowser(fixture.accountH2, fixture.identityH2);
+      const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+      expect((await revokeAs(gate, sessionIdOf(h2Gate))).revoked).toBe(true);
+    });
+  });
+
+  // W4-P1 (train-1 security audit) reversed the earlier person-scoped decision:
+  // under a pin the OWN list and revoke stay inside the pinned space. H pinned
+  // to A neither sees nor revokes H's own B-pinned session; H's unpinned gate
+  // session still can (the Sessions page from the gate kills a stolen session).
+  it('W4-6: refusal — H pinned to A neither lists nor revokes its OWN B-pinned session', async () => {
+    const inB = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceB);
+    const inA = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect(await listed(inA, null)).not.toContain(sessionIdOf(inB));
+    expect(await outcome(() => revokeAs(inA, sessionIdOf(inB)))).toBe('P0002');
+  });
+  it('W4-6: positive — H\'s unpinned gate session lists and revokes the B-pinned one', async () => {
+    const inB = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceB);
+    const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+    expect(await listed(gate, null)).toContain(sessionIdOf(inB));
+    expect((await revokeAs(gate, sessionIdOf(inB))).revoked).toBe(true);
+  });
+  it('W4-6: refusal — H2 pinned to A never sees H\'s B-pinned session in its own list', async () => {
+    const inB = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceB);
+    const h2 = await mintPinned(fixture.accountH2, fixture.identityH2, fixture.spaceA);
+    expect(await listed(h2, null)).not.toContain(sessionIdOf(inB));
+  });
+});
+
+
+describe('S3 a replay honours the session space pin (247 command_ledger.session_space_id)', () => {
+  // W3-audit #852 F4, task 01a0db50. command_ledger had no space: a cmid one
+  // session of H recorded under one pin replayed to another session of H under
+  // a different pin, and the cached body carried the first space's content.
+  // The pin is set on H's own browser claims, which is exactly what a pinned
+  // session binds (226/227); nodeAdmin false as for every pinned session (K6).
+  // Every cmid here is supplied by the test: the refusal must not depend on a
+  // cmid being unguessable (a8).
+  const memberH2B = randomUUID();
+  let browserH = '';
+
+  beforeAll(async () => {
+    browserH = await mintBrowser(fixture.accountH, fixture.identityH);
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(
+        `insert into public.entities(id, space_id, kind, created_by, visibility)
+         values ($1, $2, 'member', $3, 'space')`,
+        [memberH2B, fixture.spaceB, fixture.memberHB],
+      );
+      await client.query(
+        `insert into public.members(entity_id, space_id, identity_id, role, display_name)
+         values ($1, $2, $3, 'member', 'H2 in B')`,
+        [memberH2B, fixture.spaceB, fixture.identityH2],
+      );
+    });
+  });
+
+  async function asH<T>(pin: string | null, fn: (q: Querier) => Promise<T>): Promise<T> {
+    const claims = await claimsForToken(browserH);
+    return db.tx(pin ? { ...claims, sessionSpaceId: pin, nodeAdmin: false } : claims, fn);
+  }
+  /** `'ok'`, or the SQLSTATE plus the exit point named in 247's detail. */
+  async function refusal(run: () => Promise<unknown>): Promise<string> {
+    try {
+      await run();
+      return 'ok';
+    } catch (err) {
+      const text = `${String((err as Error).message)} ${JSON.stringify(err)} ${String((err as { cause?: unknown }).cause && JSON.stringify((err as { cause?: unknown }).cause))}`;
+      const exit = /(ledger_replay|require_replay_principal): a pinned session/.exec(text)?.[1] ?? 'no-247-detail';
+      return `${await outcome(() => Promise.reject(err))} ${exit}`;
+    }
+  }
+  const setRole = (pin: string | null, spaceId: string, memberId: string, role: string, cmid: string) =>
+    asH(pin, (q) => q.rpc<unknown>('set_member_role', [spaceId, memberId, role, null, cmid]));
+  const roleOf = async (memberId: string): Promise<string> =>
+    (await database.query<{ role: string }>('select role from public.members where entity_id = $1', [memberId]))[0]!.role;
+  const cmid = (label: string): string => `s3-${label}-${randomUUID()}`;
+
+  it('a1/a5: a cmid recorded pinned to B, presented pinned to A, is refused and B\'s member row is not returned', async () => {
+    const id = cmid('b-to-a');
+    const recorded = await setRole(fixture.spaceB, fixture.spaceB, memberH2B, 'member', id);
+    // What was at stake: the body names another member of B (a5): identity id, display name, role.
+    expect(JSON.stringify(recorded)).toContain(fixture.identityH2);
+    expect(JSON.stringify(recorded)).toContain('"display_name":"H2 in B"');
+    expect(JSON.stringify(recorded)).toContain('"role":"member"');
+    let returned: unknown = null;
+    expect(await refusal(async () => { returned = await setRole(fixture.spaceA, fixture.spaceB, memberH2B, 'member', id); }))
+      .toBe('23514 require_replay_principal');
+    expect(returned).toBeNull();
+  });
+
+  it('a6: set_member_role recorded pinned to A, presented pinned to B — refused 23514 at require_replay_principal, before require_space_admin; H2\'s row is absent', async () => {
+    const id = cmid('a-to-b');
+    const recorded = await setRole(fixture.spaceA, fixture.spaceA, fixture.memberH2A, 'admin', id);
+    expect(JSON.stringify(recorded)).toContain(fixture.identityH2);
+    // Put the row back, so a write path reached below would show as a change.
+    await database.query(`update public.members set role = 'member' where entity_id = $1`, [fixture.memberH2A]);
+    let returned: unknown = null;
+    // 23514 from the replay guard, not 42501 from require_space_admin: the
+    // refusal happens before the handler's first guard.
+    expect(await refusal(async () => { returned = await setRole(fixture.spaceB, fixture.spaceA, fixture.memberH2A, 'admin', id); }))
+      .toBe('23514 require_replay_principal');
+    expect(returned).toBeNull();
+    expect(JSON.stringify(returned ?? {})).not.toContain(fixture.identityH2);
+    // Not a write-path proof: with or without 247 a known cmid returns at the
+    // replay (118:263) before require_space_admin (118:267), so the role stays
+    // put either way. The exit point is proven by the 23514 detail above.
+    expect(await roleOf(fixture.memberH2A)).toBe('member');
+  });
+
+  it('a3/a7: positive — the same A-pinned session replays its own cmid and gets the identical body', async () => {
+    const id = cmid('a-to-a');
+    const first = await setRole(fixture.spaceA, fixture.spaceA, fixture.memberH2A, 'member', id);
+    expect(await setRole(fixture.spaceA, fixture.spaceA, fixture.memberH2A, 'member', id)).toEqual(first);
+  });
+
+  it('a3: an unpinned caller is unchanged — it replays its own row and a row it recorded under a pin', async () => {
+    const own = cmid('open-to-open');
+    const first = await setRole(null, fixture.spaceA, fixture.memberH2A, 'member', own);
+    expect(await setRole(null, fixture.spaceA, fixture.memberH2A, 'member', own)).toEqual(first);
+    const pinned = cmid('a-to-open');
+    const recorded = await setRole(fixture.spaceA, fixture.spaceA, fixture.memberH2A, 'member', pinned);
+    expect(await setRole(null, fixture.spaceA, fixture.memberH2A, 'member', pinned)).toEqual(recorded);
+  });
+
+  it('a9: a null row pin refuses under a pinned caller (an unpinned or pre-247 row)', async () => {
+    const id = cmid('open-to-a');
+    await setRole(null, fixture.spaceA, fixture.memberH2A, 'member', id);
+    expect((await database.query<{ p: string | null }>(
+      'select session_space_id::text p from public.command_ledger where client_mutation_id = $1', [id]))[0]!.p).toBeNull();
+    expect(await refusal(() => setRole(fixture.spaceA, fixture.spaceA, fixture.memberH2A, 'member', id)))
+      .toBe('23514 require_replay_principal');
+  });
+
+  it('ledger_record writes the recording session\'s pin', async () => {
+    const id = cmid('record');
+    await setRole(fixture.spaceA, fixture.spaceA, fixture.memberH2A, 'member', id);
+    expect((await database.query<{ p: string | null }>(
+      'select session_space_id::text p from public.command_ledger where client_mutation_id = $1', [id]))[0]!.p)
+      .toBe(fixture.spaceA);
+  });
+
+  // start_chat calls ledger_replay without require_replay_principal first, so
+  // this is the other exit point, guarded identically.
+  const chatIds = new Map<string, [string, string]>();
+  const chatFor = (id: string) => chatIds.get(id) ?? chatIds.set(id, [randomUUID(), randomUUID()]).get(id)!;
+  const startChat = (pin: string | null, id: string) => asH(pin, (q) => q.rpc<unknown>('start_chat', [
+    chatFor(id)[0], fixture.spaceA, fixture.personaA, 'claude-opus-5', 'anthropic', 'claude-code',
+    'ask', 'scratch', null, chatFor(id)[1], '/tmp/s3-replay', 's3 replay', 'hello', null, null, id,
+  ]));
+
+  it('ledger_replay exit: start_chat recorded pinned to A, presented pinned to B, is refused and returns nothing', async () => {
+    const id = cmid('chat-a-to-b');
+    await startChat(fixture.spaceA, id);
+    let returned: unknown = null;
+    expect(await refusal(async () => { returned = await startChat(fixture.spaceB, id); })).toBe('23514 ledger_replay');
+    expect(returned).toBeNull();
+  });
+  it('ledger_replay exit: start_chat recorded UNPINNED (null row pin), presented pinned to A, is refused and returns nothing', async () => {
+    // The null-pin twin of the cell above, at the ledger_replay exit. It is the
+    // cell that goes red under a fail-open pin check at 247:90 (for example
+    // `<>` in place of `is distinct from`, which lets a null row pin through).
+    const id = cmid('chat-open-to-a');
+    await startChat(null, id);
+    expect((await database.query<{ p: string | null }>(
+      'select session_space_id::text p from public.command_ledger where client_mutation_id = $1', [id]))[0]!.p).toBeNull();
+    let returned: unknown = null;
+    expect(await refusal(async () => { returned = await startChat(fixture.spaceA, id); })).toBe('23514 ledger_replay');
+    expect(returned).toBeNull();
+  });
+  it('ledger_replay exit: positive — the same A-pinned session replays its own start_chat and gets the identical body', async () => {
+    const id = cmid('chat-a-to-a');
+    const first = await startChat(fixture.spaceA, id);
+    expect(await startChat(fixture.spaceA, id)).toEqual(first);
+  });
+
+  // P6 (flip precondition on 01a0db7a-4bf2, verified by #852 review 5324246747):
+  // stream_grants_select's subject_identity arm had no pin, so a session pinned
+  // to A listed H's own grants on B's sessions and containers, every column
+  // including token_hash. The fix pins that arm to the grant's entity space.
+  describe('P6 stream_grants_select honours the pin on its subject_identity arm (247)', () => {
+    const sessionB = randomUUID();
+    const containerB = randomUUID();
+    // Its own A session: the W3-audit block's grant_stream_attach cells already
+    // hold H's live view grant on fixture.workSessionA (stream_grants_live_idx).
+    const sessionA = randomUUID();
+    const grantSessionB = randomUUID();
+    const grantContainerB = randomUUID();
+    const grantSessionA = randomUUID();
+    const hash = (c: string) => c.repeat(64);
+
+    beforeAll(async () => {
+      await database.transaction(async (client) => {
+        await client.query('set local role tm8_graph_owner');
+        await client.query(
+          `insert into public.entities(id, space_id, kind, created_by, visibility)
+           values ($1, $3, 'work_session', $4, 'space'), ($2, $3, 'container', $4, 'space')`,
+          [sessionB, containerB, fixture.spaceB, fixture.memberHB],
+        );
+        await client.query(
+          `insert into public.entities(id, space_id, kind, created_by, visibility)
+           values ($1, $2, 'work_session', $3, 'space')`,
+          [sessionA, fixture.spaceA, fixture.memberHA],
+        );
+        await client.query(
+          `insert into public.stream_grants(id, work_session_id, container_entity_id, surface, subject_identity, mode, granted_by, token_hash, expires_at)
+           values ($1, $4, null, null, $7, 'view', $8, $9, now() + interval '1 hour'),
+                  ($2, null, $5, 'screen', $7, 'view', $8, $10, now() + interval '1 hour'),
+                  ($3, $6, null, null, $7, 'view', $11, $12, now() + interval '1 hour')`,
+          [grantSessionB, grantContainerB, grantSessionA, sessionB, containerB, sessionA,
+            fixture.identityH, fixture.memberHB, hash('b'), hash('c'), fixture.memberHA, hash('a')],
+        );
+      });
+    });
+
+    const visible = (pin: string | null) => asH(pin, async (q) =>
+      (await q.query<{ id: string; token_hash: string | null }>(
+        'select id, token_hash from public.stream_grants where id = any($1::uuid[]) order by id',
+        [[grantSessionB, grantContainerB, grantSessionA]])).map((r) => r.id).sort());
+
+    it('P6: H pinned to A does not list its own grants on B\'s session or container (no row, so no token_hash)', async () => {
+      expect(await visible(fixture.spaceA)).toEqual([grantSessionA]);
+    });
+    it('P6 positive: H pinned to B lists its B grants; unpinned H lists all three', async () => {
+      expect(await visible(fixture.spaceB)).toEqual([grantSessionB, grantContainerB].sort());
+      expect(await visible(null)).toEqual([grantSessionB, grantContainerB, grantSessionA].sort());
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// W6 — space links (migrations 250/251). H holds a `link` session from A for
+// B: kind `link`, pinned to B, sealed in H's own space_link_tokens row. The
+// mechanism is pinned in space-links.pg.test.ts; these are the matrix cells.
+// ---------------------------------------------------------------------------
+
+/** A second-identity member of A and B (T17 needs someone other than H). */
+async function seedMemberOfAB(label: string, spaces: 'AB' | 'A' = 'AB'): Promise<{ identity: string; account: string; memberA: string; memberB: string }> {
+  const ids = {
+    identity: `cross-space-${label}-${randomUUID()}`,
+    account: randomUUID(), memberA: randomUUID(), memberB: randomUUID(),
+  };
+  await database.transaction(async (client) => {
+    await client.query('set local role tm8_graph_owner');
+    await client.query(`insert into public.user_profiles(identity_id, display_name) values ($1, $2)`, [ids.identity, label]);
+    await client.query(`insert into public.accounts(id, identity_id, username) values ($1, $2, $3)`,
+      [ids.account, ids.identity, `cross-space-${label}-${ids.account.slice(0, 8)}`]);
+    const memberships = spaces === 'AB'
+      ? [[ids.memberA, fixture.spaceA], [ids.memberB, fixture.spaceB]] as const
+      : [[ids.memberA, fixture.spaceA]] as const;
+    for (const [member, space] of memberships) {
+      await client.query(`insert into public.entities(id, space_id, kind, created_by, visibility) values ($1, $2, 'member', $1, 'space')`, [member, space]);
+      await client.query(`insert into public.members(entity_id, space_id, identity_id, role, display_name) values ($1, $2, $3, 'member', $4)`,
+        [member, space, ids.identity, label]);
+    }
+  });
+  return ids;
+}
+
+let linkStore: DbSpaceLinkStore;
+let linkDataDir: string;
+let hLink: SpaceLink;
+/** H's stored link session for B, as the use path returns it. Never printed. */
+let hLinkToken: string;
+
+async function linkLoginAs(accountId: string, identityId: string): Promise<{ link: SpaceLink; token: string }> {
+  const claims = await claimsForToken(await mintBrowser(accountId, identityId));
+  const added = await linkStore.add(claims, { spaceId: fixture.spaceA, targetSpaceId: fixture.spaceB });
+  const link = await linkStore.login(claims, added.id);
+  return { link, token: (await linkStore.use(claims, link.id)).token };
+}
+
+/** Idempotent: every W6 block calls it, so a `-t` filter on one block still sets up. */
+async function ensureHLink(): Promise<void> {
+  if (hLinkToken) return;
+  linkDataDir = await mkdtemp(join(tmpdir(), 'tm8-cross-space-links-'));
+  linkStore = new DbSpaceLinkStore({ db, dataDir: linkDataDir });
+  ({ link: hLink, token: hLinkToken } = await linkLoginAs(fixture.accountH, fixture.identityH));
+}
+
+describe.sequential('W6 space links — H\'s link session A → B', () => {
+  beforeAll(ensureHLink);
+
+  it('the stored session is kind link, pinned to B', async () => {
+    // Resolved in-process, as `DbSpaceLinkStore.use` does: 256 (W7p) refuses a
+    // link session's token on every wire (identity-resolver.ts), so the bare
+    // wire resolver answers 42501 for the same token.
+    expect(await resolveBearerIdentity(db, hLinkToken))
+      .toMatchObject({ identityId: fixture.identityH, kind: 'link', spaceId: fixture.spaceB });
+    const wire = createSessionIdentityResolver({ db, owner: async () => NOT_THE_OWNER, spaceSessions: 'agents' });
+    await expect(wire({ authorization: `Bearer ${hLinkToken}` }, { remoteAddress: '203.0.113.9', disableAutoOwner: true }))
+      .rejects.toMatchObject({ code: 'forbidden', details: { sqlstate: '42501' } });
+  });
+});
+
+describe.sequential('T16 L_B after B revokes it: G invokes B → 401 → signed_out, no retry', () => {
+  beforeAll(ensureHLink);
+
+  it('positive — before the revoke, G (H\'s agent) uses the link and resolves in B as kind link', async () => {
+    const g = await claimsForToken(await mintAgent());
+    const use = await linkStore.use(g, hLink.id, { workSessionId: fixture.workSessionA });
+    expect(use.targetSpaceId).toBe(fixture.spaceB);
+    expect(await resolveBearerIdentity(db, use.token)).toMatchObject({ kind: 'link', spaceId: fixture.spaceB });
+  });
+
+  it('B revokes the link session; G\'s next use is signed_out, forgets the bytes, notifies G\'s session once, and never retries', async () => {
+    const notices: SpaceLinkStaleNotice[] = [];
+    const store = new DbSpaceLinkStore({ db, dataDir: linkDataDir, onStale: (n) => { notices.push(n); } });
+    const h = await claimsForToken(await mintBrowser(fixture.accountH, fixture.identityH));
+    // The revoke on this base: revoke_auth_session as the session's owner. W4's
+    // Sessions page (238, auth.sessions.revoke by a B admin) reaches the same row.
+    await db.rpc(h, 'revoke_auth_session', [hLink.mine!.sessionId]);
+    await expect(resolveBearerIdentity(db, hLinkToken)).rejects.toMatchObject({ code: 'unauthenticated' });
+
+    const g = await claimsForToken(await mintAgent());
+    await expect(store.use(g, hLink.id, { workSessionId: fixture.workSessionA }))
+      .rejects.toMatchObject({ status: 'signed_out' });
+    expect(notices).toEqual([{ linkId: hLink.id, status: 'signed_out', callerWorkSessionId: fixture.workSessionA }]);
+    const [row] = await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      return (await client.query<{ status: string; ciphertext: Buffer | null; auth_session_id: string | null }>(
+        'select status, ciphertext, auth_session_id from public.space_link_tokens where link_id = $1 and member_id = $2',
+        [hLink.id, fixture.memberHA])).rows;
+    });
+    expect(row).toEqual({ status: 'signed_out', ciphertext: null, auth_session_id: null });
+
+    // No retry: refused in SQL before any resolve, and no second notice.
+    await expect(store.use(g, hLink.id, { workSessionId: fixture.workSessionA })).rejects.toBeInstanceOf(SpaceLinkUnusable);
+    expect(notices).toHaveLength(1);
+    // G cannot sign it back in (human-only) — the paired positive is H's relogin.
+    await expect(store.login(g, hLink.id, { relogin: true })).rejects.toBeTruthy();
+    hLink = await store.login(h, hLink.id, { relogin: true });
+    hLinkToken = (await store.use(g, hLink.id)).token;
+    expect(await claimsForToken(hLinkToken)).toMatchObject({ authKind: 'link', sessionSpaceId: fixture.spaceB });
+  });
+});
+
+describe.sequential('T19 link token copied to another row does not open (a1, AAD home|link|member|target)', () => {
+  beforeAll(ensureHLink);
+  const sealedOf = async (memberId: string) => {
+    const rows = await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      return (await client.query<{ ciphertext: Buffer; nonce: Buffer }>(
+        'select ciphertext, nonce from public.space_link_tokens where link_id = $1 and member_id = $2',
+        [hLink.id, memberId])).rows;
+    });
+    return rows[0]!;
+  };
+  const bindingFor = (memberId: string, overrides: Partial<{ homeSpaceId: string; linkId: string; targetSpaceId: string }> = {}) => ({
+    homeSpaceId: fixture.spaceA, linkId: hLink.id, memberId, targetSpaceId: fixture.spaceB, ...overrides,
+  });
+
+  it('positive — H\'s sealed session opens under H\'s own row binding', async () => {
+    const key = await loadOrCreateCredentialKey(linkDataDir);
+    expect(openSecret(key, await sealedOf(fixture.memberHA), bindingFor(fixture.memberHA)).startsWith('tm8s_')).toBe(true);
+  });
+
+  it('refused — the same bytes under another member\'s binding (H2)', async () => {
+    const key = await loadOrCreateCredentialKey(linkDataDir);
+    const sealed = await sealedOf(fixture.memberHA);
+    expect(() => openSecret(key, sealed, bindingFor(fixture.memberH2A))).toThrow();
+  });
+
+  it('refused — the same bytes under another link or another target', async () => {
+    const key = await loadOrCreateCredentialKey(linkDataDir);
+    const sealed = await sealedOf(fixture.memberHA);
+    expect(() => openSecret(key, sealed, bindingFor(fixture.memberHA, { linkId: randomUUID() }))).toThrow();
+    expect(() => openSecret(key, sealed, bindingFor(fixture.memberHA, { targetSpaceId: fixture.spaceA }))).toThrow();
+  });
+});
+
+describe.sequential('T20 link session for B reads or writes A — refused', () => {
+  beforeAll(ensureHLink);
+  it('refused — A\'s doc is invisible to H\'s link session', async () => {
+    const ids = await asToken(hLinkToken, (q) => idsIn(q, fixture.spaceA));
+    expect(ids).not.toContain(fixture.docA);
+  });
+
+  it('refused — editing A\'s doc with H\'s link session', async () => {
+    expect(await outcome(() => editDoc(hLinkToken, fixture.docA))).not.toBe('ok');
+    expect(await outcome(() => recordEtag(hLinkToken, fixture.spaceA))).toBe('42501');
+  });
+
+  it('positive — the same link session reads and edits B\'s doc', async () => {
+    expect(await asToken(hLinkToken, (q) => idsIn(q, fixture.spaceB))).toContain(fixture.docB);
+    expect(await outcome(() => editDoc(hLinkToken, fixture.docB))).toBe('ok');
+  });
+});
+
+describe.sequential('T20b link session in B — credential management refused, the rest as the member', () => {
+  beforeAll(ensureHLink);
+  // E2: credential MANAGEMENT refuses `link` through the strict gate
+  // (internal.require_human_auth_kind, unchanged). Decision 31 / T22: invites,
+  // roles and delete are forwarded as the member.
+  it('refused — set_space_credential_policy in B (strict gate, 42501)', async () => {
+    expect(await outcome(() => asToken(hLinkToken, (q) =>
+      q.rpc('set_space_credential_policy', [fixture.spaceB, 'anthropic', null])))).toBe('42501');
+  });
+
+  it('positive — H (browser) sets the same policy in B', async () => {
+    const token = await mintBrowser(fixture.accountH, fixture.identityH);
+    expect(await outcome(() => asToken(token, (q) =>
+      q.rpc('set_space_credential_policy', [fixture.spaceB, 'anthropic', null])))).toBe('ok');
+  });
+
+  it('refused — spaceLinks management (add) with the link session', async () => {
+    expect(await outcome(async () => linkStore.add(await claimsForToken(hLinkToken),
+      { spaceId: fixture.spaceB, targetSpaceId: fixture.spaceA }))).toBe('42501');
+  });
+
+  it('admitted — spaceLinks.list in B with the link session', async () => {
+    expect(await outcome(async () => linkStore.list(await claimsForToken(hLinkToken), fixture.spaceB))).toBe('ok');
+  });
+
+  it('refused — spaceLinks.list for A with the B-pinned link session (fails closed)', async () => {
+    expect(await outcome(async () => linkStore.list(await claimsForToken(hLinkToken), fixture.spaceA))).not.toBe('ok');
+  });
+
+  it('admitted as the member — create_invite in B', async () => {
+    expect(await outcome(() => asToken(hLinkToken, (q) =>
+      q.rpc('create_invite', [fixture.spaceB, 1, null, null, `w6-t20b-invite-${randomUUID()}`])))).toBe('ok');
+  });
+
+  it('admitted as the member — set_member_role in B', async () => {
+    const other = await seedMemberOfAB('t20b-role');
+    expect(await outcome(() => asToken(hLinkToken, (q) =>
+      q.rpc('set_member_role', [fixture.spaceB, other.memberB, 'admin', null, `w6-t20b-role-${randomUUID()}`])))).toBe('ok');
+  });
+
+  it('admitted as the member — delete_entity in B', async () => {
+    const doc = await asIdentity(fixture.identityH, async (q) =>
+      (await q.rpc<{ id?: string; entity?: { id: string } }>('create_document', [fixture.spaceB, 'W6 delete me'])))
+      .then((row) => (row.entity?.id ?? row.id)!);
+    expect(await outcome(() => asToken(hLinkToken, (q) =>
+      q.rpc('delete_entity', [doc, null, `w6-t20b-delete-${randomUUID()}`])))).toBe('ok');
+  });
+
+  it('KNOWN GAP 01a0db78-f1ab: start_chat in B is REFUSED for a link session (strict gate)', async () => {
+    expect(await outcome(() => asToken(hLinkToken, (q) => q.rpc('start_chat', [
+      randomUUID(), fixture.spaceB, fixture.personaA, 'claude-opus-5', 'anthropic', 'claude-code',
+      'ask', 'scratch', null, randomUUID(), '/tmp/tm8-cross-space', 'W6 gap', 'hello', [], null,
+      `w6-gap-${randomUUID()}`,
+    ])))).toBe('42501');
+  });
+
+  it('positive for the gap — H (browser) with the same arguments gets past the gate', async () => {
+    const token = await mintBrowser(fixture.accountH, fixture.identityH);
+    expect(await outcome(() => asToken(token, (q) => q.rpc('start_chat', [
+      randomUUID(), fixture.spaceB, fixture.personaA, 'claude-opus-5', 'anthropic', 'claude-code',
+      'ask', 'scratch', null, randomUUID(), '/tmp/tm8-cross-space', 'W6 gap', 'hello', [], null,
+      `w6-gap-${randomUUID()}`,
+    ])))).not.toBe('42501');
+  });
+});
+
+describe.sequential('T28 link visibility — every home member sees the link, only the holder sees a token row', () => {
+  // A fresh member of A only. Not H2: S3 (#861, 247) makes H2 a member of B
+  // earlier in this file, so "H2 is A only" stopped holding on the composed tree.
+  let z: Awaited<ReturnType<typeof seedMemberOfAB>>;
+  beforeAll(async () => {
+    await ensureHLink();
+    z = await seedMemberOfAB('t28-z', 'A');
+  });
+  it('Z (A only) sees the link in A, with no target name (P8) and no row of their own', async () => {
+    const zClaims = await claimsForToken(await mintBrowser(z.account, z.identity));
+    const listed = await linkStore.list(zClaims, fixture.spaceA);
+    const seen = listed.find((l) => l.id === hLink.id);
+    expect(seen).toMatchObject({ targetSpaceId: fixture.spaceB, targetSpaceName: null, mine: null });
+    expect(leaksSecret(JSON.stringify(listed))).toBe(false);
+  });
+
+  it('Z cannot read H\'s token row', async () => {
+    const rows = await asIdentity(z.identity, (q) =>
+      q.query('select id from public.space_link_tokens where link_id = $1', [hLink.id]));
+    expect(rows).toHaveLength(0);
+  });
+
+  it('positive — H sees the target\'s name and H\'s own row', async () => {
+    const h = await claimsForToken(await mintBrowser(fixture.accountH, fixture.identityH));
+    const seen = (await linkStore.list(h, fixture.spaceA)).find((l) => l.id === hLink.id);
+    expect(seen).toMatchObject({ targetSpaceName: 'Cross-space B', mine: { memberId: fixture.memberHA, status: 'signed_in' } });
+  });
+
+  it('the A link is not listed in B', async () => {
+    const h = await claimsForToken(await mintBrowser(fixture.accountH, fixture.identityH));
+    expect((await linkStore.list(h, fixture.spaceB)).map((l) => l.id)).not.toContain(hLink.id);
+  });
+});
+
+describe.sequential('T17 leave / remove ends a member\'s link sessions', () => {
+  beforeAll(ensureHLink);
+  it('X removed from A (home): X\'s link session no longer resolves, X\'s rows are gone', async () => {
+    const x = await seedMemberOfAB('t17-x');
+    const { token } = await linkLoginAs(x.account, x.identity);
+    expect(await outcome(() => asToken(token, (q) => idsIn(q, fixture.spaceB)))).toBe('ok');
+    const h = await claimsForToken(await mintBrowser(fixture.accountH, fixture.identityH));
+    await db.rpc(h, 'remove_space_member', [fixture.spaceA, x.memberA, `w6-t17-remove-${randomUUID()}`]);
+    expect(await outcome(() => asToken(token, (q) => idsIn(q, fixture.spaceB)))).toBe('unauthenticated');
+    const rows = await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      return (await client.query('select id from public.space_link_tokens where member_id = $1', [x.memberA])).rows;
+    });
+    expect(rows).toHaveLength(0);
+  });
+
+  it('Y leaves B (target): Y\'s row turns left and the link session no longer resolves', async () => {
+    const y = await seedMemberOfAB('t17-y');
+    const { link, token } = await linkLoginAs(y.account, y.identity);
+    const yClaims = await claimsForToken(await mintBrowser(y.account, y.identity));
+    await db.rpc(yClaims, 'leave_space', [fixture.spaceB, `w6-t17-leave-${randomUUID()}`]);
+    expect(await outcome(() => asToken(token, (q) => idsIn(q, fixture.spaceB)))).toBe('unauthenticated');
+    const mine = (await linkStore.list(yClaims, fixture.spaceA)).find((l) => l.id === link.id)?.mine;
+    expect(mine).toMatchObject({ status: 'left', sessionId: null });
+  });
+
+  it('positive — H\'s link session on the same link still resolves in B', async () => {
+    expect(await outcome(() => asToken(hLinkToken, (q) => idsIn(q, fixture.spaceB)))).toBe('ok');
+  });
+});
+
+/**
+ * W5 (K2, decision 30) over HTTP — per-space passwords. A fresh space E owned
+ * by H with H2 a member, so A and B keep their W3 behaviour for every other
+ * block. Every refusal has its positive with the same credential.
+ *
+ *   a1  setting on → a gate session alone cannot enter E; with its password it can.
+ *   a2  E's password does not enter B (off there, but H2 is no member) and
+ *       B's lookup is untouched; a wrong one is refused.
+ *   a3  setting off → enter needs no password (W3 behaviour).
+ *   a4  auth.invite.resolve says so; signup and redeem set the password.
+ *   a5  reset and lock over HTTP, human-only (an agent token is refused).
+ *   #1  turning it on needs TM8_SPACE_SESSIONS=enforce (review 5327376587).
+ *   #3  wrong passwords are rate-limited per (identity, space) — on a third
+ *       node with a small budget and window, so the cell can outwait it.
+ *   #4  turning it on ends the sessions pinned to E before the flip.
+ */
+describe.sequential('W5 over HTTP — space passwords (auth.space.enter, invites, admin reset/lock)', () => {
+  let enforceServer: BootstrappedServer;
+  let agentsServer: BootstrappedServer;
+  let limitedServer: BootstrappedServer;
+  const LIMITED_FAILURES = 3;
+  const LIMITED_WINDOW_MS = 2_500;
+  const spaceE = randomUUID();
+  const memberHE = randomUUID();
+  const memberH2E = randomUUID();
+  const passwordOf = { H: `sp-h-${randomUUID()}`, H2: `sp-h2-${randomUUID()}` };
+  let adminBefore: Array<{ id: string; is_node_admin: boolean; is_owner: boolean; password_hash: string | null; password_algorithm: string | null }> = [];
+
+  beforeAll(async () => {
+    const claimHash = await hashSpacePassword(`claim-${randomUUID()}`);
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      adminBefore = (await client.query(
+        `select id::text, is_node_admin, is_owner, password_hash, password_algorithm
+           from public.accounts where id = any($1::uuid[])`,
+        [[fixture.accountH, fixture.accountH2]],
+      )).rows;
+      // H owns and administers the node (bootstrap needs an owner) and holds a
+      // password, so the node counts as claimed for auth.invite.signup (143).
+      await client.query(
+        `update public.accounts set is_node_admin = (id = $1::uuid), is_owner = (id = $1::uuid),
+                password_algorithm = case when id = $1::uuid then 'scrypt' else password_algorithm end,
+                password_hash = case when id = $1::uuid then $3 else password_hash end
+          where id = any($2::uuid[])`,
+        [fixture.accountH, [fixture.accountH, fixture.accountH2], claimHash],
+      );
+      await client.query(
+        `insert into public.spaces(id, name, created_by_identity) values ($1, 'W5 space E', $2)`,
+        [spaceE, fixture.identityH],
+      );
+      await client.query(
+        `insert into public.entities(id, space_id, kind, created_by, visibility)
+         values ($1, $3, 'member', $1, 'space'), ($2, $3, 'member', $2, 'space')`,
+        [memberHE, memberH2E, spaceE],
+      );
+      await client.query(
+        `insert into public.members(entity_id, space_id, identity_id, role, display_name)
+         values ($1, $3, $4, 'owner', 'H'), ($2, $3, $5, 'member', 'H2')`,
+        [memberHE, memberH2E, spaceE, fixture.identityH, fixture.identityH2],
+      );
+    });
+    const start = async (mode: SpaceSessionsMode, extra: Record<string, string> = {}): Promise<BootstrappedServer> => {
+      const configured = loadConfig({
+        ...process.env,
+        TM8_BIND: '127.0.0.1',
+        TM8_PORT: '4610',
+        TM8_NODE_MODE: 'single',
+        TM8_DATABASE_URL: database.url,
+        TM8_DATA_DIR: await mkdtemp(join(tmpdir(), 'tm8-w5-')),
+        TM8_DISABLE_AUTO_OWNER: '1',
+        TM8_SPACE_SESSIONS: mode,
+        ...extra,
+      });
+      return bootstrap({ config: { ...configured, port: 0 } });
+    };
+    enforceServer = await start('enforce');
+    agentsServer = await start('agents');
+    limitedServer = await start('enforce', {
+      TM8_AUTH_MAX_FAILURES: String(LIMITED_FAILURES),
+      TM8_AUTH_FAILURE_WINDOW_MS: String(LIMITED_WINDOW_MS),
+    });
+  }, 180_000);
+
+  afterAll(async () => {
+    for (const server of [enforceServer, agentsServer, limitedServer]) {
+      await server?.server.close();
+      await server?.db?.end();
+    }
+    for (const row of adminBefore) {
+      await database.query(
+        `update public.accounts set is_node_admin = $2, is_owner = $3, password_hash = $4, password_algorithm = $5
+          where id = $1::uuid`,
+        [row.id, row.is_node_admin, row.is_owner, row.password_hash, row.password_algorithm],
+      );
+    }
+  }, 180_000);
+
+  async function call(
+    server: BootstrappedServer,
+    token: string | null,
+    method: 'GET' | 'POST' | 'PUT',
+    path: string,
+    body?: unknown,
+  ): Promise<{ status: number; json: any }> {
+    const response = await fetch(new URL(path, server.url), {
+      method,
+      headers: {
+        [TM8_CLIENT_HEADER]: TM8_CLIENT_HEADER_VALUE,
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    const text = await response.text();
+    const parsed = text ? JSON.parse(text) : null;
+    return { status: response.status, json: parsed && 'data' in parsed ? parsed.data : parsed };
+  }
+
+  /** The refusal reason a 403 carries, wherever the error envelope puts it. */
+  const reasonOf = (json: any): string | undefined =>
+    json?.error?.details?.reason ?? json?.details?.reason;
+
+  const enter = async (server: BootstrappedServer, who: 'H' | 'H2', spaceId: string, spacePassword?: string) => {
+    const gate = who === 'H'
+      ? await mintBrowser(fixture.accountH, fixture.identityH)
+      : await mintBrowser(fixture.accountH2, fixture.identityH2);
+    return call(server, gate, 'POST', '/v2/auth/space/enter',
+      { spaceId, ...(spacePassword === undefined ? {} : { spacePassword }) });
+  };
+
+  const pinnedH = async (): Promise<string> => {
+    const entered = await enter(enforceServer, 'H', spaceE, passwordOf.H);
+    expect(entered.status).toBe(200);
+    return entered.json.token as string;
+  };
+
+  it('a3: setting off — E is entered with no space password, in both modes', async () => {
+    for (const server of [enforceServer, agentsServer]) {
+      expect((await enter(server, 'H2', spaceE)).status).toBe(200);
+    }
+  });
+
+  it('turning it on without the admin\'s own password is refused (400); positive: with one (200)', async () => {
+    const pinned = (await enter(enforceServer, 'H', spaceE)).json.token as string;
+    const pinnedH2 = (await enter(enforceServer, 'H2', spaceE)).json.token as string;
+    const refused = await call(enforceServer, pinned, 'PUT', `/v2/spaces/${spaceE}/space-password`, { required: true });
+    expect(refused.status).toBe(400);
+    expect((await call(enforceServer, pinnedH2, 'GET', '/v2/auth/session')).status).toBe(200);
+    const on = await call(enforceServer, pinned, 'PUT', `/v2/spaces/${spaceE}/space-password`,
+      { required: true, password: passwordOf.H });
+    expect(on.status).toBe(200);
+    expect(on.json).toMatchObject({ spaceId: spaceE, requireSpacePassword: true });
+    // #4: every session pinned to E before the flip was entered without a
+    // password, and ends with it — H2's and the flipping session itself.
+    expect(on.json.revokedSessionIds).toEqual(expect.arrayContaining(
+      [parseToken(pinned)!.sessionId, parseToken(pinnedH2)!.sessionId]));
+    expect((await call(enforceServer, pinnedH2, 'GET', '/v2/auth/session')).status).toBe(401);
+    expect((await call(enforceServer, pinned, 'GET', '/v2/auth/session')).status).toBe(401);
+    expect((await call(enforceServer, await pinnedH(), 'GET', '/v2/auth/session')).status).toBe(200);
+  });
+
+  it('#1: under TM8_SPACE_SESSIONS=agents turning it on is refused (409 space_password_requires_enforce); positive: off works there, and enforce turns it on', async () => {
+    const pinnedAgents = (await enter(agentsServer, 'H', spaceE, passwordOf.H)).json.token as string;
+    const refused = await call(agentsServer, pinnedAgents, 'PUT', `/v2/spaces/${spaceE}/space-password`,
+      { required: true, password: passwordOf.H });
+    expect(refused.status).toBe(409);
+    expect(reasonOf(refused.json)).toBe('space_password_requires_enforce');
+    expect(refused.json.error?.details?.spaceSessions ?? refused.json.details?.spaceSessions).toBe('agents');
+    expect((await call(agentsServer, pinnedAgents, 'PUT', `/v2/spaces/${spaceE}/space-password`,
+      { required: false })).status).toBe(200);
+    expect((await call(enforceServer, await pinnedH(), 'PUT', `/v2/spaces/${spaceE}/space-password`,
+      { required: true })).status).toBe(200);
+  });
+
+  it('a5: a member (H2) cannot set it (403); positive: owner H can', async () => {
+    const reset = await call(enforceServer, await pinnedH(), 'POST',
+      `/v2/spaces/${spaceE}/members/${memberH2E}/space-password/reset`, { password: passwordOf.H2 });
+    expect(reset.status).toBe(200);
+    const pinnedH2 = (await enter(enforceServer, 'H2', spaceE, passwordOf.H2)).json.token as string;
+    expect((await call(enforceServer, pinnedH2, 'PUT', `/v2/spaces/${spaceE}/space-password`,
+      { required: false })).status).toBe(403);
+    expect((await call(enforceServer, await pinnedH(), 'PUT', `/v2/spaces/${spaceE}/space-password`,
+      { required: true })).status).toBe(200);
+  });
+
+  it('a1: no space password → 403 space_password_required; wrong → 403 space_password_rejected; right → 200', async () => {
+    const missing = await enter(enforceServer, 'H2', spaceE);
+    expect(missing.status).toBe(403);
+    expect(reasonOf(missing.json)).toBe('space_password_required');
+    const wrong = await enter(enforceServer, 'H2', spaceE, `wrong-${randomUUID()}`);
+    expect(wrong.status).toBe(403);
+    expect(reasonOf(wrong.json)).toBe('space_password_rejected');
+    const right = await enter(enforceServer, 'H2', spaceE, passwordOf.H2);
+    expect(right.status).toBe(200);
+    expect(right.json.spaceId).toBe(spaceE);
+  });
+
+  it('a1: the agents mode checks it too (the check is on enter, not on the gate mode)', async () => {
+    expect((await enter(agentsServer, 'H2', spaceE)).status).toBe(403);
+    expect((await enter(agentsServer, 'H2', spaceE, passwordOf.H2)).status).toBe(200);
+  });
+
+  it('a2: H\'s password for E is H\'s alone — H2 presenting it is refused; positive: H presenting it', async () => {
+    expect(reasonOf((await enter(enforceServer, 'H2', spaceE, passwordOf.H)).json)).toBe('space_password_rejected');
+    expect((await enter(enforceServer, 'H', spaceE, passwordOf.H)).status).toBe(200);
+  });
+
+  it('a2/a3: a space with the setting off (A) ignores E\'s password and admits without one', async () => {
+    expect((await enter(enforceServer, 'H2', fixture.spaceA)).status).toBe(200);
+    expect((await enter(enforceServer, 'H2', fixture.spaceA, passwordOf.H2)).status).toBe(200);
+  });
+
+  it('#3: after N wrong passwords for (H2, E) the next try, even the right one, is 429; H in E and H2 in A are not; positive: after the window the right one is admitted', async () => {
+    for (let i = 0; i < LIMITED_FAILURES; i++) {
+      expect(reasonOf((await enter(limitedServer, 'H2', spaceE, `wrong-${randomUUID()}`)).json)).toBe('space_password_rejected');
+    }
+    const limited = await enter(limitedServer, 'H2', spaceE, passwordOf.H2);
+    expect(limited.status).toBe(429);
+    expect(limited.json.error?.code).toBe('rate_limited');
+    expect((await enter(limitedServer, 'H', spaceE, passwordOf.H)).status).toBe(200);
+    expect((await enter(limitedServer, 'H2', fixture.spaceA)).status).toBe(200);
+    await new Promise((resolve) => setTimeout(resolve, LIMITED_WINDOW_MS + 300));
+    expect((await enter(limitedServer, 'H2', spaceE, passwordOf.H2)).status).toBe(200);
+  });
+
+  it('a5: lock ends H2\'s pinned E session and refuses the right password; positive: unlock admits', async () => {
+    const pinnedH2 = (await enter(enforceServer, 'H2', spaceE, passwordOf.H2)).json.token as string;
+    expect((await call(enforceServer, pinnedH2, 'GET', '/v2/auth/session')).status).toBe(200);
+    const locked = await call(enforceServer, await pinnedH(), 'POST',
+      `/v2/spaces/${spaceE}/members/${memberH2E}/space-password/lock`, { locked: true });
+    expect(locked.status).toBe(200);
+    expect(locked.json.status).toBe('locked');
+    expect(locked.json.revokedSessionIds).toContain(parseToken(pinnedH2)!.sessionId);
+    expect((await call(enforceServer, pinnedH2, 'GET', '/v2/auth/session')).status).toBe(401);
+    expect(reasonOf((await enter(enforceServer, 'H2', spaceE, passwordOf.H2)).json)).toBe('space_password_rejected');
+    const unlocked = await call(enforceServer, await pinnedH(), 'POST',
+      `/v2/spaces/${spaceE}/members/${memberH2E}/space-password/lock`, { locked: false });
+    expect(unlocked.json.status).toBe('active');
+    expect((await enter(enforceServer, 'H2', spaceE, passwordOf.H2)).status).toBe(200);
+  });
+
+  it('a5: reset replaces the password — the old one is refused, the new one admitted', async () => {
+    const old = passwordOf.H2;
+    passwordOf.H2 = `sp-h2-${randomUUID()}`;
+    expect((await call(enforceServer, await pinnedH(), 'POST',
+      `/v2/spaces/${spaceE}/members/${memberH2E}/space-password/reset`, { password: passwordOf.H2 })).status).toBe(200);
+    expect(reasonOf((await enter(enforceServer, 'H2', spaceE, old)).json)).toBe('space_password_rejected');
+    expect((await enter(enforceServer, 'H2', spaceE, passwordOf.H2)).status).toBe(200);
+  });
+
+  it('a5: a member cannot reset or lock (403); positive: the owner can (above)', async () => {
+    const pinnedH2 = (await enter(enforceServer, 'H2', spaceE, passwordOf.H2)).json.token as string;
+    expect((await call(enforceServer, pinnedH2, 'POST',
+      `/v2/spaces/${spaceE}/members/${memberHE}/space-password/reset`, { password: `x-${randomUUID()}` })).status).toBe(403);
+    expect((await call(enforceServer, pinnedH2, 'POST',
+      `/v2/spaces/${spaceE}/members/${memberHE}/space-password/lock`, { locked: true })).status).toBe(403);
+  });
+
+  it('a5 human-only: H\'s agent token in A is refused the admin ops; positive: H\'s pinned browser token in A', async () => {
+    const agent = await mintAgent();
+    const pinnedA = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    for (const server of [enforceServer, agentsServer]) {
+      expect((await call(server, agent, 'PUT', `/v2/spaces/${fixture.spaceA}/space-password`,
+        { required: false })).status).toBe(403);
+      expect((await call(server, agent, 'POST',
+        `/v2/spaces/${fixture.spaceA}/members/${fixture.memberH2A}/space-password/lock`, { locked: false })).status).toBe(403);
+      expect((await call(server, pinnedA, 'PUT', `/v2/spaces/${fixture.spaceA}/space-password`,
+        { required: false })).status).toBe(200);
+    }
+  });
+
+  it('a4: auth.invite.resolve reports requiresSpacePassword — true for E, false for A', async () => {
+    const codeE = await asIdentity(fixture.identityH, (q) => q.rpc<{ invite: { code: string } }>(
+      'create_invite', [spaceE, 3, null, null, `w5-${randomUUID()}`, 'member']));
+    const codeA = await asIdentity(fixture.identityH, (q) => q.rpc<{ invite: { code: string } }>(
+      'create_invite', [fixture.spaceA, 3, null, null, `w5-${randomUUID()}`, 'member']));
+    const e = await call(enforceServer, null, 'POST', '/v2/auth/invite/resolve', { code: codeE.invite.code });
+    expect(e.status).toBe(200);
+    expect(e.json.requiresSpacePassword).toBe(true);
+    const a = await call(enforceServer, null, 'POST', '/v2/auth/invite/resolve', { code: codeA.invite.code });
+    expect(a.json.requiresSpacePassword).toBe(false);
+  });
+
+  it('a4: auth.invite.signup into E without a space password → 403; positive: with one, then enter with it', async () => {
+    const { invite } = await asIdentity(fixture.identityH, (q) => q.rpc<{ invite: { code: string } }>(
+      'create_invite', [spaceE, 3, null, null, `w5-${randomUUID()}`, 'member']));
+    const username = `w5-signup-${randomUUID().slice(0, 8)}`;
+    const accountPassword = `acct-${randomUUID()}`;
+    const spacePassword = `sp-new-${randomUUID()}`;
+    const refused = await call(enforceServer, null, 'POST', '/v2/auth/invite/signup',
+      { code: invite.code, username, password: accountPassword });
+    expect(refused.status).toBe(403);
+    expect(reasonOf(refused.json)).toBe('space_password_required');
+    const signed = await call(enforceServer, null, 'POST', '/v2/auth/invite/signup',
+      { code: invite.code, username, password: accountPassword, spacePassword });
+    expect(signed.status).toBe(200);
+    const gate = signed.json.token as string;
+    const noPw = await call(enforceServer, gate, 'POST', '/v2/auth/space/enter', { spaceId: spaceE });
+    expect(reasonOf(noPw.json)).toBe('space_password_required');
+    expect((await call(enforceServer, gate, 'POST', '/v2/auth/space/enter', { spaceId: spaceE, spacePassword })).status).toBe(200);
+  });
+
+  it('a4: redeem into E by an existing account without a space password → 403; positive: with one, then enter', async () => {
+    const r = await seedMemberOfAB('w5-redeem', 'A');
+    const { invite } = await asIdentity(fixture.identityH, (q) => q.rpc<{ invite: { code: string } }>(
+      'create_invite', [spaceE, 3, null, null, `w5-${randomUUID()}`, 'member']));
+    const gate = await mintBrowser(r.account, r.identity);
+    const spacePassword = `sp-r-${randomUUID()}`;
+    expect((await call(enforceServer, gate, 'POST', '/v2/invites/redeem', { code: invite.code, clientMutationId: `w5-${randomUUID()}` })).status).toBe(403);
+    const redeemed = await call(enforceServer, gate, 'POST', '/v2/invites/redeem', { code: invite.code, spacePassword, clientMutationId: `w5-${randomUUID()}` });
+    expect(redeemed.status).toBe(200);
+    expect(redeemed.json.joined).toBe(true);
+    expect((await call(enforceServer, gate, 'POST', '/v2/auth/space/enter', { spaceId: spaceE, spacePassword })).status).toBe(200);
+  });
+
+  it('a3: turning it off again — H2 enters E with no password (W3 behaviour restored)', async () => {
+    expect((await call(enforceServer, await pinnedH(), 'PUT', `/v2/spaces/${spaceE}/space-password`,
+      { required: false })).status).toBe(200);
+    expect((await enter(enforceServer, 'H2', spaceE)).status).toBe(200);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// W7 spaceLinks.invoke (260). Over HTTP on a bootstrapped node whose data dir
+// is the link store's, so the node key that sealed H's row opens it. The
+// caller is G, H's agent in A. Every refusal is paired with a positive.
+//
+// Strict gate (internal.require_human_auth_kind): no W7 cell reaches it. The
+// refused set is refused on the home server before anything is unsealed, and
+// every forwarded op here (entities.create/get/patch/delete, invites, member
+// role, spaceLinks.list) is a member op. W6 T20b pins the gate itself.
+// ---------------------------------------------------------------------------
+
+interface InvokeResponse {
+  status: number;
+  body: { data?: { result: unknown; auditId: string; linkId: string; targetSpaceId: string }; error?: { code: string; message: string; details?: Record<string, unknown> } };
+}
+
+describe.sequential('W7 spaceLinks.invoke — G runs one op in B as H, audited in A', () => {
+  let node: BootstrappedServer;
+  let ownerBefore: Array<{ id: string; is_node_admin: boolean; is_owner: boolean }> = [];
+  let gToken: string;
+  const logged: string[] = [];
+  const spies: Array<{ mockRestore(): void }> = [];
+
+  beforeAll(async () => {
+    await ensureHLink();
+    for (const method of ['log', 'warn', 'error', 'info', 'debug'] as const) {
+      const original = console[method].bind(console);
+      spies.push(vi.spyOn(console, method).mockImplementation((...args: unknown[]) => {
+        logged.push(args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' '));
+        original(...args);
+      }));
+    }
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      ownerBefore = (await client.query<{ id: string; is_node_admin: boolean; is_owner: boolean }>(
+        'select id::text, is_node_admin, is_owner from public.accounts where id = any($1::uuid[])',
+        [[fixture.accountH, fixture.accountH2]])).rows;
+      await client.query(
+        'update public.accounts set is_node_admin = (id = $1::uuid), is_owner = (id = $1::uuid) where id = any($2::uuid[])',
+        [fixture.accountH, [fixture.accountH, fixture.accountH2]]);
+    });
+    const configured = loadConfig({
+      ...process.env,
+      TM8_BIND: '127.0.0.1',
+      TM8_PORT: '4610',
+      TM8_NODE_MODE: 'single',
+      TM8_DATABASE_URL: database.url,
+      TM8_DATA_DIR: linkDataDir,
+      TM8_DISABLE_AUTO_OWNER: '1',
+    });
+    node = await bootstrap({ config: { ...configured, port: 0 } });
+    gToken = await mintAgent();
+  }, 180_000);
+
+  afterAll(async () => {
+    await node?.server.close();
+    await node?.db?.end();
+    for (const spy of spies) spy.mockRestore();
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      for (const row of ownerBefore) {
+        await client.query('update public.accounts set is_node_admin = $2, is_owner = $3 where id = $1::uuid',
+          [row.id, row.is_node_admin, row.is_owner]);
+      }
+    });
+  }, 180_000);
+
+  async function call(method: string, path: string, token: string, body?: unknown, headers: Record<string, string> = {}): Promise<InvokeResponse> {
+    const response = await fetch(new URL(path, node.url), {
+      method,
+      headers: {
+        [TM8_CLIENT_HEADER]: TM8_CLIENT_HEADER_VALUE,
+        authorization: `Bearer ${token}`,
+        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+        ...headers,
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    return { status: response.status, body: await response.json() as InvokeResponse['body'] };
+  }
+
+  const invoke = (
+    token: string,
+    input: { op: string; params?: Record<string, string>; query?: Record<string, string>; input?: unknown },
+    { ref = hLink.id, headers = {} }: { ref?: string; headers?: Record<string, string> } = {},
+  ): Promise<InvokeResponse> =>
+    call('POST', `/v2/spaces/${fixture.spaceA}/space-links/${ref}/invoke`, token, input, headers);
+
+  const refusalOf = (res: InvokeResponse): unknown => res.body.error?.details?.['refusal'];
+  const cmid = (label: string): string => `w7-${label}-${randomUUID()}`;
+
+  /** The audit rows in A, read as the graph owner (the table has no tm8_app grant). */
+  const auditRows = (where: string, args: unknown[]): Promise<Array<Record<string, unknown>>> =>
+    database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      return (await client.query(`select * from public.cross_space_audit where ${where} order by created_at`, args)).rows;
+    });
+  const auditById = async (id: string): Promise<Record<string, unknown>> => (await auditRows('id = $1', [id]))[0]!;
+  /** The newest audit row for `op` by H's member in A. */
+  const lastAudit = async (op: string): Promise<Record<string, unknown>> =>
+    (await auditRows('member_id = $1 and op = $2', [fixture.memberHA, op])).at(-1)!;
+
+  async function createInB(title: string): Promise<string> {
+    const res = await invoke(gToken, {
+      op: 'entities.create',
+      input: { spaceId: fixture.spaceB, kind: 'doc', title, clientMutationId: cmid('create') },
+    });
+    expect(res.status).toBe(200);
+    const result = res.body.data!.result as { id?: string; entity?: { id: string } };
+    return (result.entity?.id ?? result.id)!;
+  }
+
+  // ---- a1 / T21 -----------------------------------------------------------
+
+  it('T21 — G creates a document in B through the link; B records H\'s B member as the actor; one ok audit row in A', async () => {
+    const res = await invoke(gToken, {
+      op: 'entities.create',
+      input: { spaceId: fixture.spaceB, kind: 'doc', title: 'W7 T21', clientMutationId: cmid('t21') },
+    });
+    expect(res.body.error).toBeUndefined();
+    expect(res.status).toBe(200);
+    const result = res.body.data!.result as { id?: string; entity?: { id: string } };
+    const created = (result.entity?.id ?? result.id)!;
+    expect(res.body.data).toMatchObject({ linkId: hLink.id, targetSpaceId: fixture.spaceB });
+    const [row] = await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      return (await client.query<{ space_id: string; created_by: string }>(
+        'select space_id::text, created_by::text from public.entities where id = $1', [created])).rows;
+    });
+    expect(row).toEqual({ space_id: fixture.spaceB, created_by: fixture.memberHB });
+    expect(await auditById(res.body.data!.auditId)).toMatchObject({
+      link_id: hLink.id, home_space_id: fixture.spaceA, target_space_id: fixture.spaceB,
+      member_id: fixture.memberHA, team_member_id: fixture.personaA, work_session_id: fixture.workSessionA,
+      op: 'entities.create', result: 'ok', reason: null, remote_id: created, via_chain: [],
+    });
+  });
+
+  it('T21 — the forwarded session is kind link pinned to B: G cannot reach A\'s doc through it', async () => {
+    const res = await invoke(gToken, { op: 'entities.get', params: { id: fixture.docA } });
+    expect(res.status).toBe(404);
+    expect((await lastAudit('entities.get')).result).toBe('error');
+  });
+
+  it('T21 positive — the same op on B\'s doc through the link returns it', async () => {
+    const res = await invoke(gToken, { op: 'entities.get', params: { id: fixture.docB } });
+    expect(res.status).toBe(200);
+    expect(JSON.stringify(res.body.data!.result)).toContain(fixture.docB);
+  });
+
+  // ---- #884 lead ruling (a): layer (ii) admits a link identity ONLY on the
+  // invoke executor's in-process marker. Each refusal has its paired
+  // positive; red-checks are listed in the PR body.
+
+  /** B's registered entities.get context under H's link identity, built the way the wire would (no marker). */
+  async function linkContext(): Promise<RequestContext> {
+    const op = getOperation('entities.get');
+    const { token: _token, ...identity } = await identityForToken(hLinkToken);
+    return {
+      op, opName: 'entities.get', params: { id: fixture.docB }, query: new URLSearchParams(), body: undefined,
+      requestId: `w7-marker-${randomUUID()}`, identity, headers: {}, method: op.method, path: op.path,
+    };
+  }
+
+  it('(a)1 — H\'s raw link bearer over HTTP is refused on entities.get (42501), and B\'s doc is not returned', async () => {
+    const res = await call('GET', getOperation('entities.get').path.replace(':id', fixture.docB), hLinkToken);
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatchObject({ code: 'forbidden', details: { sqlstate: '42501' } });
+    expect(JSON.stringify(res.body)).not.toContain('W7 T21');
+  });
+
+  it('(a)1 layer (ii) alone — the node\'s own registry refuses the same link identity on entities.get with no marker (a replayed or rebuilt context), before the handler', async () => {
+    const context = await linkContext();
+    const error = await (async () => node.server.registry.get('entities.get')!(context))().then(() => 'resolved', (e: unknown) => e);
+    expect(error).toMatchObject({ code: 'forbidden', message: LINK_BEARER_OP_REFUSED, details: { sqlstate: '42501' } });
+  });
+
+  it('(a)1 positive — the same op via invoke runs in-process as the member; and the same context, once marked, reaches B\'s handler exactly once', async () => {
+    const res = await invoke(gToken, { op: 'entities.get', params: { id: fixture.docB } });
+    expect(res.status).toBe(200);
+    expect(JSON.stringify(res.body.data!.result)).toContain(fixture.docB);
+    const ctx = await linkContext();
+    admitLinkInvoke(ctx, 'entities.get');
+    expect(JSON.stringify(await node.server.registry.get('entities.get')!(ctx))).toContain(fixture.docB);
+    const again = await (async () => node.server.registry.get('entities.get')!(ctx))().then(() => 'resolved', (e: unknown) => e);
+    expect(again).toMatchObject({ message: LINK_BEARER_OP_REFUSED, details: { sqlstate: '42501' } });
+  });
+
+  it('(a)2 — credentials.status via invoke is refused at home (E2): B\'s credentials handler is never looked up; positive — entities.get via invoke reaches B\'s handler', async () => {
+    const lookups = vi.spyOn(node.server.registry, 'get');
+    try {
+      const refused = await invoke(gToken, { op: 'credentials.status' });
+      expect(refused.status).toBe(403);
+      expect(refused.body.error).toMatchObject({ details: { reason: 'space_link_refused', refusal: 'credential_management' } });
+      expect(lookups.mock.calls.map(([name]) => name).filter((name) => name !== 'spaceLinks.invoke')).toEqual([]);
+      lookups.mockClear();
+      const passed = await invoke(gToken, { op: 'entities.get', params: { id: fixture.docB } });
+      expect(passed.status).toBe(200);
+      expect(lookups.mock.calls.map(([name]) => name)).toContain('entities.get');
+    } finally {
+      lookups.mockRestore();
+    }
+  });
+
+  // ---- a2 / T22: refused on the home server before forwarding -------------
+
+  it.each([
+    ['credentials.status', {}, 'credential_management'],
+    ['credentials.delete', { params: { provider: 'anthropic' }, input: { clientMutationId: 'x' } }, 'credential_management'],
+    ['credentials.space.list', { params: { spaceId: 'B' } }, 'credential_management'],
+    ['credentials.space.policy.set', { params: { spaceId: 'B', provider: 'anthropic' }, input: { clientMutationId: 'x' } }, 'credential_management'],
+    ['node.credentials.status', {}, 'credential_management'],
+    ['node.credentials.policy.set', { params: { provider: 'anthropic' }, input: { clientMutationId: 'x' } }, 'credential_management'],
+    ['spaceLinks.add', { params: { spaceId: 'B' }, input: { targetSpaceId: 'A', clientMutationId: 'x' } }, 'link_management'],
+    ['spaceLinks.setSpawn', { params: { linkId: 'L' }, input: { allowSpawn: true, clientMutationId: 'x' } }, 'link_management'],
+    ['spaceLinks.invoke', { params: { spaceId: 'B', link: 'L' }, input: { op: 'entities.get' } }, 'link_management'],
+    ['auth.session.get', {}, 'session_minting'],
+    ['auth.logout', { input: { clientMutationId: 'x' } }, 'session_minting'],
+  ] as const)('T22 refused — %s (%s)', async (op, shape, reason) => {
+    const res = await invoke(gToken, { op, ...(shape as object) });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatchObject({ code: 'forbidden', details: { reason: 'space_link_refused', refusal: reason } });
+    expect(await lastAudit(op)).toMatchObject({ result: 'refused', reason, link_id: null, target_space_id: null });
+  });
+
+  it('T22 refused — a future credentials.* op is caught by the prefix, not a list', () => {
+    expect(spaceLinkRefusal('credentials.future.rotate', 'command', {}, true)).toBe('credential_management');
+    expect(spaceLinkRefusal('node.credentials.future', 'read', {}, true)).toBe('credential_management');
+    expect(spaceLinkRefusal('auth.future.mint', 'read', {}, true)).toBe('session_minting');
+  });
+
+  // ---- Stricter than D31 (lead 09:08Z, fail-closed; reversible) ----------
+
+  it('stricter than D31 refused — serverConnections.* (the credential-bearing remote-server surface), reads too', async () => {
+    for (const op of ['serverConnections.list', 'serverConnections.create'] as const) {
+      const res = await invoke(gToken, { op, ...(op === 'serverConnections.create' ? { input: { name: 'x', clientMutationId: 'x' } } : {}) });
+      expect(res.status).toBe(403);
+      expect(res.body.error).toMatchObject({ details: { reason: 'space_link_refused', refusal: 'credential_management' } });
+      expect(await lastAudit(op)).toMatchObject({ result: 'refused', reason: 'credential_management', link_id: null });
+    }
+    expect(spaceLinkRefusal('serverConnections.future', 'read', {}, true)).toBe('credential_management');
+  });
+
+  it('stricter than D31 positive — the same serverConnections.list passes for H\'s own (non-link) session', async () => {
+    const res = await call('GET', '/v2/server-connections', await mintBrowser(fixture.accountH, fixture.identityH));
+    expect(res.body.error?.details?.['reason']).not.toBe('space_link_refused');
+    expect(res.status).toBe(200);
+  });
+
+  it('stricter than D31 refused — voice.token.create (it mints a token), exact op only', async () => {
+    const res = await invoke(gToken, { op: 'voice.token.create', params: { id: fixture.docB }, input: { clientMutationId: 'x' } });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatchObject({ details: { reason: 'space_link_refused', refusal: 'grant' } });
+    expect(await lastAudit('voice.token.create')).toMatchObject({ result: 'refused', reason: 'grant' });
+    // Exact, not a prefix: a neighbour of the name is not caught by this entry.
+    expect(spaceLinkRefusal('voice.token.createAnother', 'command', {}, true)).toBeNull();
+    expect(spaceLinkRefusal('voice.channels.list', 'read', {}, true)).toBeNull();
+  });
+
+  // ---- S1 (W9 review): side-channel grants are refused at home ------------
+
+  it('S1 refused — execution.streams.attach via invoke (a PTY attach grant for B\'s session): 403 grant at home, B\'s handler never looked up', async () => {
+    const lookups = vi.spyOn(node.server.registry, 'get');
+    try {
+      const res = await invoke(gToken, {
+        op: 'execution.streams.attach', params: { id: fixture.workSessionA }, input: { mode: 'drive' },
+      });
+      expect(res.status).toBe(403);
+      expect(res.body.error).toMatchObject({ code: 'forbidden', details: { reason: 'space_link_refused', refusal: 'grant' } });
+      expect(JSON.stringify(res.body)).not.toMatch(/"token"/);
+      expect(lookups.mock.calls.map(([name]) => name).filter((name) => name !== 'spaceLinks.invoke')).toEqual([]);
+    } finally {
+      lookups.mockRestore();
+    }
+    expect(await lastAudit('execution.streams.attach')).toMatchObject({ result: 'refused', reason: 'grant', link_id: null });
+  });
+
+  it('S1 positive — entities.get via invoke passes on the same link', async () => {
+    const res = await invoke(gToken, { op: 'entities.get', params: { id: fixture.docB } });
+    expect(res.status).toBe(200);
+  });
+
+  it.each([
+    ['execution.streams.attach', 'command'],
+    ['execution.streams.future', 'read'],
+    ['files.uploadInit', 'command'],
+    ['projects.folderUploads.init', 'command'],
+    ['artifacts.preview.start', 'command'],
+    ['containers.attach', 'command'],
+    ['containers.browser.endpoint', 'command'],
+    ['containers.expose', 'command'],
+  ] as const)('S1 refused — %s mints a side-channel grant (%s)', (op, kind) => {
+    expect(spaceLinkRefusal(op, kind, {}, true)).toBe('grant');
+  });
+
+  it.each([
+    ['execution.sessions.share', 'command'],
+    ['files.uploadComplete', 'command'],
+    ['files.download', 'read'],
+    ['projects.folderUploads.complete', 'command'],
+    ['artifacts.previewAnother', 'command'],
+    ['containers.unexpose', 'command'],
+  ] as const)('S1 positive (scope) — %s mints no grant and is not caught by these entries', (op, kind) => {
+    expect(spaceLinkRefusal(op, kind, {}, true)).toBeNull();
+  });
+
+  // ---- R-1 + W9 v4: process starts and session bodies are refused at home ----
+
+  /** Refused at home with `refusal`, B's handler never looked up, and audited in A. */
+  async function refusedAtHome(input: Parameters<typeof invoke>[1], refusal: string): Promise<void> {
+    const lookups = vi.spyOn(node.server.registry, 'get');
+    try {
+      const res = await invoke(gToken, input);
+      expect(res.status, JSON.stringify(res.body)).toBe(403);
+      expect(res.body.error).toMatchObject({ code: 'forbidden', details: { reason: 'space_link_refused', refusal } });
+      expect(lookups.mock.calls.map(([name]) => name).filter((name) => name !== 'spaceLinks.invoke')).toEqual([]);
+    } finally {
+      lookups.mockRestore();
+    }
+    expect(await lastAudit(input.op)).toMatchObject({ result: 'refused', reason: refusal, link_id: null });
+  }
+
+  it('R-1 refused (process_start) — execution.terminal.start via invoke (an unbudgeted shell in B)', async () => {
+    await refusedAtHome({ op: 'execution.terminal.start', input: { spaceId: fixture.spaceB, clientMutationId: cmid('term') } }, 'process_start');
+  });
+
+  it('R-1 refused (process_start) — execution.resume and execution.dispatch via invoke, at home, before layer (iii)', async () => {
+    await refusedAtHome({ op: 'execution.resume', params: { id: fixture.workSessionA }, input: { clientMutationId: cmid('resume') } }, 'process_start');
+    await refusedAtHome({ op: 'execution.dispatch', input: { spaceId: fixture.spaceB, clientMutationId: cmid('dispatch') } }, 'process_start');
+  });
+
+  it('R-1 refused (process_start) — forms.create with the default delivery (resume) via invoke', async () => {
+    await refusedAtHome({ op: 'forms.create', input: { spaceId: fixture.spaceB, title: 'r1', questions: [], clientMutationId: cmid('form') } }, 'process_start');
+  });
+
+  it('W9 v4 refused (session_body) — execution.journal via invoke', async () => {
+    await refusedAtHome({ op: 'execution.journal', params: { workSessionId: fixture.workSessionA } }, 'session_body');
+  });
+
+  it('R-1 / W9 v4 positive — entities.get via invoke passes on the same link', async () => {
+    const res = await invoke(gToken, { op: 'entities.get', params: { id: fixture.docB } });
+    expect(res.status).toBe(200);
+  });
+
+  it.each([
+    ['execution.spawn', 'command', {}],
+    ['execution.terminal.start', 'command', {}],
+    ['execution.resume', 'command', {}],
+    ['execution.dispatch', 'command', {}],
+    ['execution.prompt', 'command', {}],
+    ['chat.start', 'command', {}],
+    ['containers.create', 'command', {}],
+    ['containers.start', 'command', {}],
+    ['containers.resume', 'command', {}],
+    ['containers.run', 'command', {}],
+    ['containers.terminal.start', 'command', {}],
+    ['containers.computer', 'command', {}],
+    ['containers.fork', 'command', {}],
+    ['containers.pools.set', 'command', {}],
+    ['execution.gitStatus', 'read', {}],
+    ['execution.gitCommit', 'command', {}],
+    ['forms.responses.submit', 'command', {}],
+    ['forms.responses.redeliver', 'command', {}],
+    ['forms.create', 'command', {}],
+    ['forms.create', 'command', { settings: { delivery: { onSessionNotLive: 'spawn_new' } } }],
+    ['forms.create', 'command', { settings: { delivery: { target: 'new_session', onSessionNotLive: 'queue' } } }],
+    ['forms.update', 'command', { settings: { delivery: { onSessionNotLive: 'resume' } } }],
+    ['forms.update', 'command', { settings: { delivery: { target: 'new_session' } } }],
+  ] as const)('R-1 refused (process_start) — %s (%s) %j', (op, kind, input) => {
+    expect(spaceLinkRefusal(op, kind, input, true)).toBe('process_start');
+  });
+
+  it.each([
+    ['execution.journal', 'read'],
+    ['execution.transcript', 'read'],
+  ] as const)('W9 v4 refused (session_body) — %s (%s)', (op, kind) => {
+    expect(spaceLinkRefusal(op, kind, {}, true)).toBe('session_body');
+  });
+
+  it.each([
+    ['execution.terminate', 'command', {}],
+    ['execution.launch', 'read', {}],
+    ['execution.liveness', 'read', {}],
+    ['containers.stop', 'command', {}],
+    ['containers.destroy', 'command', {}],
+    ['messages.post', 'command', {}],
+    ['forms.create', 'command', { settings: { delivery: { onSessionNotLive: 'queue' } } }],
+    ['forms.update', 'command', {}],
+    ['forms.update', 'command', { settings: { delivery: { onSessionNotLive: 'queue' } } }],
+    ['forms.responses.save', 'command', {}],
+    ['forms.transition', 'command', {}],
+  ] as const)('R-1 / W9 v4 positive (scope) — %s (%s) %j starts nothing and reads no session body', (op, kind, input) => {
+    expect(spaceLinkRefusal(op, kind, input, true)).toBeNull();
+  });
+
+  it('stricter than D31 positive — the same voice.token.create reaches the voice service for H\'s own session', async () => {
+    // This node has no LiveKit: the SERVICE answers 501, which proves the op
+    // ran as H; through the link it never got past the home guard (403 above).
+    const res = await call('POST', `/v2/entities/${fixture.docB}/commands/voice-token`,
+      await mintBrowser(fixture.accountH, fixture.identityH), {});
+    expect(res.body.error?.details?.['reason']).not.toBe('space_link_refused');
+    expect(res.status).toBe(501);
+  });
+
+  it('T22 positive — spaceLinks reads are not writes: spaceLinks.list in B passes as the member', async () => {
+    expect(spaceLinkRefusal('spaceLinks.list', 'read', {}, true)).toBeNull();
+    const res = await invoke(gToken, { op: 'spaceLinks.list', params: { spaceId: fixture.spaceB } });
+    expect(res.status).toBe(200);
+  });
+
+  it('T22 positive — spaces.invites.create in B passes as the member', async () => {
+    const res = await invoke(gToken, {
+      op: 'spaces.invites.create', params: { spaceId: fixture.spaceB },
+      input: { maxUses: 1, clientMutationId: cmid('invite') },
+    });
+    expect(res.status).toBe(200);
+    expect((await lastAudit('spaces.invites.create')).result).toBe('ok');
+  });
+
+  it('T22 positive — spaces.members.updateRole in B passes as the member', async () => {
+    const other = await seedMemberOfAB('w7-role');
+    const res = await invoke(gToken, {
+      op: 'spaces.members.updateRole', params: { spaceId: fixture.spaceB, memberId: other.memberB },
+      input: { role: 'admin', clientMutationId: cmid('role') },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it('T22 positive — entities.delete in B passes as the member', async () => {
+    const doc = await createInB('W7 delete me');
+    const res = await invoke(gToken, {
+      op: 'entities.delete', params: { id: doc }, input: { clientMutationId: cmid('delete') },
+    });
+    expect(res.body.error).toBeUndefined();
+    expect(res.status).toBe(200);
+  });
+
+  // ---- canonical op id (coordinator addition 1) ---------------------------
+
+  it('canonical — an unknown op is refused, audited as (unknown)', async () => {
+    const res = await invoke(gToken, { op: 'nothing.here' });
+    expect(res.status).toBe(403);
+    expect(refusalOf(res)).toBe('unknown_op');
+    expect((await auditRows('member_id = $1 and op = $2', [fixture.memberHA, '(unknown)'])).length).toBeGreaterThan(0);
+  });
+
+  it('canonical — a case variant (Credentials.status) is refused, never folded to a pass', async () => {
+    const res = await invoke(gToken, { op: 'Credentials.status' });
+    expect(res.status).toBe(403);
+    expect(refusalOf(res)).toBe('unknown_op');
+  });
+
+  it('canonical — a name that only CONTAINS credentials is not credential management (the prefix is anchored)', async () => {
+    // No catalog op contains "credentials" outside the refused prefixes, so
+    // the pure rule is the cell: an anchored prefix does not over-refuse.
+    expect(spaceLinkRefusal('spaces.credentialsSummary', 'read', {}, true)).toBeNull();
+    expect(spaceLinkRefusal('entities.get', 'read', { title: 'credentials.status' }, true)).toBeNull();
+    // Over the wire the same made-up name is still unknown, not credential management.
+    expect(refusalOf(await invoke(gToken, { op: 'spaces.credentialsSummary' }))).toBe('unknown_op');
+  });
+
+  it('canonical positive — the exact catalog spelling of a member op passes', async () => {
+    expect((await invoke(gToken, { op: 'entities.get', params: { id: fixture.docB } })).status).toBe(200);
+  });
+
+  // ---- a3 / T18 ------------------------------------------------------------
+
+  it('T18 — H2\'s agent in A cannot use H\'s link (no row of H2\'s): not_found, nothing forwarded', async () => {
+    const h2 = await seedAgentFor(fixture.identityH2, fixture.memberH2A);
+    const before = (await auditRows('member_id = $1', [fixture.memberHA])).length;
+    for (const ref of [hLink.id, hLink.mine?.alias ?? hLink.id]) {
+      const res = await invoke(h2, { op: 'entities.get', params: { id: fixture.docB } }, { ref });
+      expect(res.status).toBe(404);
+      expect(res.body.error?.message).toContain('tm8 link add');
+    }
+    expect((await auditRows('member_id = $1', [fixture.memberHA])).length).toBe(before);
+    expect(await auditRows('member_id = $1 and op = $2', [fixture.memberH2A, 'entities.get']))
+      .toEqual(expect.arrayContaining([expect.objectContaining({ result: 'refused', reason: 'not_linked', link_id: null })]));
+  });
+
+  it('T18 positive — H\'s own agent G on the same link reads B', async () => {
+    expect((await invoke(gToken, { op: 'entities.get', params: { id: fixture.docB } })).status).toBe(200);
+  });
+
+  // ---- a4 / T24 ------------------------------------------------------------
+
+  it('T24 — a chain already containing A (the home) is refused', async () => {
+    const res = await invoke(gToken, { op: 'entities.get', params: { id: fixture.docB } },
+      { headers: { [SPACE_LINK_VIA_HEADER]: fixture.spaceA } });
+    expect(refusalOf(res)).toBe('via_loop');
+  });
+
+  it('T24 — a chain already containing B (the target) is refused', async () => {
+    const res = await invoke(gToken, { op: 'entities.get', params: { id: fixture.docB } },
+      { headers: { [SPACE_LINK_VIA_HEADER]: fixture.spaceB } });
+    expect(refusalOf(res)).toBe('via_loop');
+    expect((await lastAudit('entities.get')).via_chain).toEqual([fixture.spaceB]);
+  });
+
+  it('T24 — more than 2 hops is refused', async () => {
+    const res = await invoke(gToken, { op: 'entities.get', params: { id: fixture.docB } },
+      { headers: { [SPACE_LINK_VIA_HEADER]: `${randomUUID()},${randomUUID()}` } });
+    expect(refusalOf(res)).toBe('via_hops');
+  });
+
+  it('T24 — a malformed chain is refused', async () => {
+    const res = await invoke(gToken, { op: 'entities.get', params: { id: fixture.docB } },
+      { headers: { [SPACE_LINK_VIA_HEADER]: 'not-a-space' } });
+    expect(refusalOf(res)).toBe('via_hops');
+  });
+
+  it('T24 positive — one prior hop through a third space passes (2 hops)', async () => {
+    const res = await invoke(gToken, { op: 'entities.get', params: { id: fixture.docB } },
+      { headers: { [SPACE_LINK_VIA_HEADER]: randomUUID() } });
+    expect(res.status).toBe(200);
+  });
+
+  // ---- #884 review HIGH: the inner identity is pinned to B in every mode ----
+
+  /** A node booted with `TM8_SPACE_SESSIONS=mode`; `agents` is the block's own node. */
+  async function withMode<T>(mode: 'off' | 'agents' | 'enforce', run: (url: URL) => Promise<T>): Promise<T> {
+    if (mode === 'agents') return run(new URL(node.url));
+    const configured = loadConfig({
+      ...process.env,
+      TM8_BIND: '127.0.0.1',
+      TM8_PORT: '4610',
+      TM8_NODE_MODE: 'single',
+      TM8_DATABASE_URL: database.url,
+      TM8_DATA_DIR: linkDataDir,
+      TM8_DISABLE_AUTO_OWNER: '1',
+      TM8_SPACE_SESSIONS: mode,
+    });
+    const other = await bootstrap({ config: { ...configured, port: 0 } });
+    try {
+      return await run(new URL(other.url));
+    } finally {
+      await other.server.close();
+      await other.db?.end();
+    }
+  }
+
+  const invokeAt = async (url: URL, input: Record<string, unknown>): Promise<InvokeResponse> => {
+    const response = await fetch(new URL(`/v2/spaces/${fixture.spaceA}/space-links/${hLink.id}/invoke`, url), {
+      method: 'POST',
+      headers: {
+        [TM8_CLIENT_HEADER]: TM8_CLIENT_HEADER_VALUE,
+        authorization: `Bearer ${gToken}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(input),
+    });
+    return { status: response.status, body: await response.json() as InvokeResponse['body'] };
+  };
+
+  it.each(['off', 'agents', 'enforce'] as const)(
+    'pin (%s) — through the link, A\'s doc is not readable and A takes no write; positive: B\'s doc reads and a B create passes (T21)',
+    async (mode) => {
+      await withMode(mode, async (url) => {
+        const readA = await invokeAt(url, { op: 'entities.get', params: { id: fixture.docA } });
+        expect(readA.status, JSON.stringify(readA.body)).not.toBe(200);
+        const writeA = await invokeAt(url, {
+          op: 'entities.create',
+          input: { spaceId: fixture.spaceA, kind: 'doc', title: `pin-${mode}-A`, clientMutationId: cmid(`pin-${mode}-a`) },
+        });
+        expect(writeA.status, JSON.stringify(writeA.body)).not.toBe(200);
+
+        const readB = await invokeAt(url, { op: 'entities.get', params: { id: fixture.docB } });
+        expect(readB.status, JSON.stringify(readB.body)).toBe(200);
+        const writeB = await invokeAt(url, {
+          op: 'entities.create',
+          input: { spaceId: fixture.spaceB, kind: 'doc', title: `pin-${mode}-B`, clientMutationId: cmid(`pin-${mode}-b`) },
+        });
+        expect(writeB.status, JSON.stringify(writeB.body)).toBe(200);
+        expect(writeB.body.data?.targetSpaceId).toBe(fixture.spaceB);
+      });
+    },
+    180_000,
+  );
+
+  // ---- a5 / T23 ------------------------------------------------------------
+
+  const spawnInput = (extra: Record<string, unknown> = {}) => ({
+    op: 'execution.spawn',
+    input: { spaceId: fixture.spaceB, clientMutationId: cmid('spawn'), ...extra },
+  });
+
+  // Every T23 spawn cell is a refusal until W7b: restored by W7b via a
+  // budgeted reservation (lead tightening on #884). Before this, the old
+  // "positive" only ever reached the spawn schema's 400; W7p layer (iii)
+  // refuses a link identity's spawn in B regardless.
+
+  it('T23 refused (restored by W7b via a budgeted reservation) — a default spawn is refused at home: 403 process_start, B\'s handler never looked up', async () => {
+    const lookups = vi.spyOn(node.server.registry, 'get');
+    try {
+      const res = await invoke(gToken, spawnInput());
+      expect(res.status).toBe(403);
+      expect(res.body.error).toMatchObject({ code: 'forbidden', details: { reason: 'space_link_refused', refusal: 'process_start' } });
+      expect(lookups.mock.calls.map(([name]) => name).filter((name) => name !== 'spaceLinks.invoke')).toEqual([]);
+    } finally {
+      lookups.mockRestore();
+    }
+    expect(await lastAudit('execution.spawn')).toMatchObject({ result: 'refused', reason: 'process_start', link_id: null });
+  });
+
+  it('T23 refused (restored by W7b via a budgeted reservation) — explicit credentialSources (F9)', async () => {
+    const res = await invoke(gToken, spawnInput({ credentialSources: { anthropic: 'personal' } }));
+    expect(refusalOf(res)).toBe('process_start');
+  });
+
+  it('T23 / K11 refused (restored by W7b via a budgeted reservation) — an explicit space credential id', async () => {
+    const res = await invoke(gToken, spawnInput({ spaceCredentialIds: [randomUUID()] }));
+    expect(refusalOf(res)).toBe('process_start');
+  });
+
+  it('T23 refused (restored by W7b via a budgeted reservation) — allow_spawn off; positive — a non-spawn op on the same link still passes', async () => {
+    const h = await claimsForToken(await mintBrowser(fixture.accountH, fixture.identityH));
+    await linkStore.setSpawn(h, { linkId: hLink.id, allowSpawn: false });
+    try {
+      expect(refusalOf(await invoke(gToken, spawnInput()))).toBe('process_start');
+      expect((await invoke(gToken, { op: 'entities.get', params: { id: fixture.docB } })).status).toBe(200);
+    } finally {
+      await linkStore.setSpawn(h, { linkId: hLink.id, allowSpawn: true });
+    }
+  });
+
+  // ---- a8 / T28: read B, write A ------------------------------------------
+
+  it('T28 — an injected agent reading B then writing into A is allowed, and the read is audited in A', async () => {
+    const read = await invoke(gToken, { op: 'entities.get', params: { id: fixture.docB } });
+    expect(read.status).toBe(200);
+    expect(await auditById(read.body.data!.auditId)).toMatchObject({
+      op: 'entities.get', result: 'ok', remote_id: fixture.docB, home_space_id: fixture.spaceA,
+      work_session_id: fixture.workSessionA,
+    });
+    // The write into A is G's own, on G's own A-pinned session (decision 31: allowed).
+    expect(await outcome(() => editDoc(gToken, fixture.docA))).toBe('ok');
+  });
+
+  // ---- spaceLinks.audit visibility ------------------------------------------
+
+  it('audit — H (home owner) reads the link\'s rows; H2 (member) sees only their own (none on this link)', async () => {
+    const h = await mintBrowser(fixture.accountH, fixture.identityH);
+    const mine = await call('GET', `/v2/space-links/${hLink.id}/audit?limit=200`, h);
+    expect(mine.status).toBe(200);
+    expect((mine.body.data as unknown as unknown[]).length).toBeGreaterThan(0);
+    const h2 = await mintBrowser(fixture.accountH2, fixture.identityH2);
+    const theirs = await call('GET', `/v2/space-links/${hLink.id}/audit`, h2);
+    expect(theirs.status).toBe(200);
+    expect(theirs.body.data).toEqual([]);
+  });
+
+  it('audit — a non-member of A gets not_found; the audit table is not readable by tm8_app', async () => {
+    const outsider = await seedOutsider();
+    expect((await call('GET', `/v2/space-links/${hLink.id}/audit`, outsider)).status).toBe(404);
+    expect(await outcome(() => asIdentity(fixture.identityH, (q) => q.query('select 1 from public.cross_space_audit'))))
+      .toBe('42501');
+  });
+
+  // ---- rate bucket (per token row) -----------------------------------------
+
+  it('rate — the per-row bucket refuses past its limit; positive — the first call in the window passes', async () => {
+    const registry = new HandlerRegistry();
+    registry.register('entities.get', () => ({ id: fixture.docB }));
+    const facade = { db, config: {}, owner: async () => NOT_THE_OWNER } as unknown as FacadeDeps;
+    const { invoke: handler } = createSpaceLinkInvokeHandlers(registry, facade, linkStore,
+      async (ctx) => claimsFor(NOT_THE_OWNER, ctx),
+      { limiter: new FixedWindowLimiter({ limit: 1, windowMs: 60_000 }) });
+    const resolve = createSessionIdentityResolver({ db, owner: async () => NOT_THE_OWNER, spaceSessions: 'agents' });
+    const identity = await resolve({ authorization: `Bearer ${gToken}` }, { remoteAddress: '203.0.113.9', disableAutoOwner: true });
+    const ctx = () => ({
+      params: { spaceId: fixture.spaceA, link: hLink.id }, query: new URLSearchParams(), headers: {},
+      body: { op: 'entities.get', params: { id: fixture.docB } }, identity, requestId: `w7-rate-${randomUUID()}`,
+    }) as unknown as RequestContext;
+    await expect(handler(ctx())).resolves.toMatchObject({ op: 'entities.get' });
+    await expect(handler(ctx())).rejects.toMatchObject({ code: 'rate_limited' });
+  });
+
+  // ---- a6: a revoked link session fails at resolveBearerIdentity (F6) ------
+
+  it('a6 — B revokes the link session: invoke answers 401 space_link_signed_out, audited, nothing forwarded', async () => {
+    const h = await claimsForToken(await mintBrowser(fixture.accountH, fixture.identityH));
+    await db.rpc(h, 'revoke_auth_session', [hLink.mine!.sessionId]);
+    const res = await invoke(gToken, { op: 'entities.get', params: { id: fixture.docB } });
+    expect(res.status).toBe(401);
+    expect(res.body.error?.details).toMatchObject({ reason: 'space_link_signed_out' });
+    expect(await lastAudit('entities.get')).toMatchObject({ result: 'error', reason: 'link_signed_out' });
+    // No retry: the next call is refused in SQL (row signed_out) without a resolve.
+    expect((await invoke(gToken, { op: 'entities.get', params: { id: fixture.docB } })).status).not.toBe(200);
+  });
+
+  it('a6 positive — after H signs the link in again, the same call passes', async () => {
+    const h = await claimsForToken(await mintBrowser(fixture.accountH, fixture.identityH));
+    hLink = await linkStore.login(h, hLink.id, { relogin: true });
+    hLinkToken = (await linkStore.use(h, hLink.id)).token;
+    expect((await invoke(gToken, { op: 'entities.get', params: { id: fixture.docB } })).status).toBe(200);
+  });
+
+  // ---- a7: no token in entity_versions, the ledger, the audit or logs -------
+
+  it('a7 — no link token (whole or secret half) is in entity_versions, command_ledger, cross_space_audit or the logs', async () => {
+    const secrets = [hLinkToken, parseToken(hLinkToken)!.secret];
+    const hits = await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      const counts: Record<string, number> = {};
+      for (const table of ['entity_versions', 'command_ledger', 'cross_space_audit']) {
+        const { rows } = await client.query<{ n: string }>(
+          `select count(*)::text as n from public.${table} t where strpos(t::text, $1) > 0 or strpos(t::text, $2) > 0`,
+          secrets);
+        counts[table] = Number(rows[0]!.n);
+      }
+      return counts;
+    });
+    expect(hits).toEqual({ entity_versions: 0, command_ledger: 0, cross_space_audit: 0 });
+    expect(logged.length).toBeGreaterThan(0);
+    expect(logged.filter((line) => secrets.some((s) => line.includes(s)))).toEqual([]);
+  });
+
+  it('a7 positive — the scan is live: the invoke path did write ledger rows for the forwarded commands', async () => {
+    const [ledger] = await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      return (await client.query<{ n: string }>(
+        `select count(*)::text as n from public.command_ledger where client_mutation_id like 'w7-%'`)).rows;
+    }) as Array<{ n: string }>;
+    expect(Number(ledger!.n)).toBeGreaterThan(0);
+  });
+});
+
+/** An agent session for `identityId`'s own persona and work session in A. */
+async function seedAgentFor(identityId: string, memberId: string): Promise<string> {
+  const persona = randomUUID();
+  const workSession = randomUUID();
+  await database.transaction(async (client) => {
+    await client.query('set local role tm8_graph_owner');
+    await client.query(
+      `insert into public.entities(id, space_id, kind, created_by, visibility)
+       values ($1, $3, 'team_member', $4, 'space'), ($2, $3, 'work_session', $1, 'space')`,
+      [persona, workSession, fixture.spaceA, memberId]);
+    await client.query(
+      `insert into public.team_members(entity_id, owner_member_id, name, role, identity)
+       values ($1, $2, 'W7 agent', 'worker', 'persona')`, [persona, memberId]);
+    await client.query(
+      `insert into public.work_sessions(entity_id, title, status, share_mode, started_at)
+       values ($1, 'W7 run', 'running', 'none', now())`, [workSession]);
+    await client.query(
+      `insert into public.edges(space_id, src_id, dst_id, type, created_by)
+       values ($1, $2, $3, 'participates_in', $2)`, [fixture.spaceA, persona, workSession]);
+  });
+  const secret = generateSecret();
+  const row = await asIdentity(identityId, (q) =>
+    q.rpc<{ id: string }>('issue_agent_auth_session', [
+      workSession, persona, hashToken(secret), new Date(Date.now() + 3_600_000).toISOString(), 'W7 agent',
+    ]));
+  return formatToken(row.id, secret);
+}
+
+/** A browser session for an account that is a member of neither space. */
+async function seedOutsider(): Promise<string> {
+  const identity = `cross-space-outsider-${randomUUID()}`;
+  const account = randomUUID();
+  await database.transaction(async (client) => {
+    await client.query('set local role tm8_graph_owner');
+    await client.query(`insert into public.user_profiles(identity_id, display_name) values ($1, 'O')`, [identity]);
+    await client.query(`insert into public.accounts(id, identity_id, username) values ($1, $2, $3)`,
+      [account, identity, `cross-space-o-${account.slice(0, 8)}`]);
+  });
+  return mintBrowser(account, identity);
+}

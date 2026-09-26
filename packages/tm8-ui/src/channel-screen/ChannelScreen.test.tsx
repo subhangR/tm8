@@ -335,6 +335,30 @@ describe('the feed region', () => {
     expect(screen.getByTestId('chs-state').textContent).toMatch(/work status.*in_review/i);
   });
 
+  it('draws a created/updated row about the feed\'s OWN anchor as a line, not a card', () => {
+    // A task's feed is mostly activity on the task itself; as cards, every one
+    // repeated the task's title and excerpt the panel is already showing.
+    const self = activityItem('updated', { kind: 'task' }, {
+      itemId: 'feed-self',
+      anchor: { id: ANCHOR, kind: 'task', title: 'The task itself', excerpt: 'Its whole body' } as never,
+    });
+    const other = activityItem('created', { kind: 'doc' }, {
+      itemId: 'feed-other',
+      anchor: { id: 'doc-other', kind: 'doc', title: 'A different doc', excerpt: 'Its excerpt' } as never,
+    });
+    render(<ChannelScreen {...base} page={page([self, other])} onOpenEntity={vi.fn()} />);
+    const line = screen.getByTestId('chs-self-change');
+    expect(line.textContent).toMatch(/forge\s*edited this task/);
+    expect(line.textContent).not.toContain('Its whole body');
+    // The one card is the OTHER entity's, and its text sits in ONE cell — the
+    // loose auto-placed children are what collapsed the title column.
+    const cards = screen.getAllByTestId('chs-artifact');
+    expect(cards).toHaveLength(1);
+    const text = cards[0]!.querySelector('.chs-artifact__text')!;
+    expect(text.querySelector('.chs-artifact__title')!.textContent).toBe('A different doc');
+    expect(text.querySelector('.chs-artifact__excerpt')!.textContent).toBe('Its excerpt');
+  });
+
   it('renders an activity variant it does not understand rather than dropping it (S15)', () => {
     // Oracle: "A pinned template can be older than the feed … rows are never
     // silently dropped." The safe card always carries timestamp + actor +
@@ -1027,67 +1051,5 @@ describe('paging and the honest absences', () => {
       <ChannelScreen {...base} page={page([messageItem()])} onPost={vi.fn()} connection={{ phase: 'live' }} />,
     );
     expect(screen.getByRole('status').textContent).toMatch(/connected/i);
-  });
-});
-
-/**
- * THE BLOCK SIGNAL, ON THE CHAT SIDE.
- *
- * The terminal has shown "needs you" since R8. Both surfaces are mounted at
- * once and only one is visible (WorkSessionContent keeps the terminal mounted
- * unconditionally and the chat mounted-once-then-kept), so a signal drawn only
- * in the terminal is invisible to precisely the reader this feature exists for:
- * someone watching chat who cannot see the PTY. That invisibility IS the
- * terminal/chat disagreement, in its smallest form.
- */
-describe('the needs-you strip', () => {
-  it('is absent by default — no strip without a measurement', () => {
-    render(<ChannelScreen {...base} page={page([messageItem()])} />);
-    expect(screen.queryByTestId('chs-needs-you')).toBeNull();
-  });
-
-  it('announces the block politely and states what was measured', () => {
-    render(
-      <ChannelScreen
-        {...base}
-        page={page([messageItem()])}
-        needsAttention
-        attentionDetail="no terminal output for a while — it may be waiting for you."
-      />,
-    );
-    const strip = screen.getByTestId('chs-needs-you');
-    expect(strip.getAttribute('aria-live')).toBe('polite');
-    expect(strip.textContent).toMatch(/needs you/i);
-    // The DETAIL is the host's sentence, rendered verbatim. The component must
-    // not compose its own claim about what the agent wants: the detector behind
-    // this knows only that bytes stopped, and a component that phrased it as a
-    // question would be inventing one.
-    expect(strip.textContent).toMatch(/no terminal output for a while/i);
-  });
-
-  it('offers the terminal as the way to answer, because chat cannot yet', () => {
-    const onSwitchToTerminal = vi.fn();
-    render(
-      <ChannelScreen
-        {...base}
-        page={page([messageItem()])}
-        needsAttention
-        onSwitchToTerminal={onSwitchToTerminal}
-      />,
-    );
-    fireEvent.click(
-      within(screen.getByTestId('chs-needs-you')).getByRole('button', { name: /terminal/i }),
-    );
-    expect(onSwitchToTerminal).toHaveBeenCalledTimes(1);
-  });
-
-  it('renders with no detail and no terminal switch rather than inventing either', () => {
-    // A channel anchor has no terminal, and a host that measured a block but has
-    // no sentence for it still has something true to say. Neither absence may
-    // become a fabricated string or a dead button (R7/L6).
-    render(<ChannelScreen {...base} page={page([messageItem()])} needsAttention />);
-    const strip = screen.getByTestId('chs-needs-you');
-    expect(strip.textContent).toMatch(/needs you/i);
-    expect(within(strip).queryByRole('button')).toBeNull();
   });
 });

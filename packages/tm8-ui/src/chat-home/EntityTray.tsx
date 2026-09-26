@@ -13,6 +13,11 @@
  *    `?stage=fleet` address keeps working for links already in the wild; only
  *    the tab is gone. Graph stays a stage — a canvas is not a tree.
  *
+ * THE BUSY PULSE LEFT TOO (ruling D18). It drew on the Chat tab "while
+ * something else holds the stage" — but the screen mounts this strip only
+ * when NOTHING holds it, so it could never render. The stage's own header
+ * carries the busy signal and the way back now (`StageExit`).
+ *
  * The honesty rule is unchanged and now gates the whole strip: absent
  * handlers ⇒ nothing renders, never a dead control. `MobileShell` wires no
  * handlers, so the phone draws nothing here — the 01a01c91 revert holds with
@@ -25,7 +30,6 @@ export function EntityTray({
   activeStage = null,
   activeEntityId = null,
   onShowChat,
-  chatBusy = false,
 }: {
   /** Swap to a non-entity stage, or back to the chat with `null`. Absent ⇒
    *  no stage tab — never a dead control. */
@@ -38,9 +42,6 @@ export function EntityTray({
   /** The way back (Cockpit ruling 2026-08-18): a Chat tab, always first.
    *  Absent ⇒ this host has no stage to come back from, no tab drawn. */
   onShowChat?: (() => void) | undefined;
-  /** The thread is streaming/thinking while something else holds the stage —
-   *  the Chat tab pulses so an answer never lands unseen. */
-  chatBusy?: boolean;
 }) {
   const stageActive = activeEntityId != null || activeStage != null;
   if (!onShowChat && !onStage) return null;
@@ -57,9 +58,6 @@ export function EntityTray({
             onClick={onShowChat}
           >
             <span aria-hidden>⌂</span> Chat
-            {stageActive && chatBusy ? (
-              <span className="tch-tray__pulse" role="status" aria-label="The agent is still working in this thread" />
-            ) : null}
           </button>
         ) : null}
       </div>

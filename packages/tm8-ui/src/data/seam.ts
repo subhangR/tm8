@@ -126,6 +126,9 @@ import type {
   AttentionRequestListQuery,
   AttentionRequestMutationResult,
   AttentionRequestPage,
+  MarkAttentionSeenInput,
+  UnresolveAttentionBatchInput,
+  WithdrawAttentionRequestInput,
   CollectionAddItemInput,
   CollectionQuery,
   CollectionResult,
@@ -150,10 +153,16 @@ import type {
   CredentialsSpaceListView,
   CredentialsSpacePolicySetResult,
   CredentialsSpacePolicyView,
+  CredentialsSpaceSetVisibilityResult,
+  CredentialsSpaceMyDefaultResult,
+  CredentialsSpaceUsageView,
+  SpaceCredentialVisibilityName,
   NodeCredentialPolicyEntry,
   NodeCredentialsStatusView,
+  NodeMetricsView,
   SpaceCredentialProviderName,
   SpaceCredentialView,
+  SpaceLinkView,
   CredentialsServiceKeysStatusView,
   ServiceKeyProviderName,
   ServiceKeyView,
@@ -248,6 +257,8 @@ import type {
   SpaceKindCounts,
   SpaceSettingsView,
   SpaceConfigsView,
+  AuthSessionsListResult,
+  AuthSessionsRevokeResult,
   ChatDefault,
   ChatDefaultsView,
   SpaceSummary,
@@ -312,6 +323,15 @@ export interface LivenessSnapshot {
    * avoid going.
    */
   eventHwm?: number | null;
+  /**
+   * Status strip. Live work sessions by BOTH truths (PTY map AND recorded
+   * status), live chats (`runtimeState === 'live'`), and the live chats with a
+   * turn running or queued. Exact server-side counts. `null` when the node
+   * predates the field — "unknown", never zero.
+   */
+  liveSessionCount?: number | null;
+  liveChatCount?: number | null;
+  workingChatCount?: number | null;
 }
 
 /**
@@ -488,6 +508,19 @@ export interface GitDiffOpts {
   scope?: SessionGitDiffScope;
 }
 
+/**
+ * The Attention v2 verbs (`attentionRequests.markSeen|unresolve|withdraw`),
+ * each present only once the catalog declares it. See `commands.attentionV2`.
+ */
+export interface AttentionV2Ops {
+  /** Mark every open request on `entityId`'s roll-up root seen by the CALLER. */
+  markSeen?(entityId: EntityId, input: MarkAttentionSeenInput): Promise<AttentionRequestMutationResult>;
+  /** Undo one Resolve: reopen that batch's rows (resolver only, within 8s). */
+  unresolve?(batchId: string, input: UnresolveAttentionBatchInput): Promise<AttentionRequestMutationResult>;
+  /** The raising agent takes back its own open request. */
+  withdraw?(requestId: string, input: WithdrawAttentionRequestInput): Promise<AttentionRequestMutationResult>;
+}
+
 export interface Seam {
   // -- lifecycle -------------------------------------------------------------
   /** Subscribe the space's event stream and start the liveness cadence. Idempotent. */
@@ -530,6 +563,12 @@ export interface Seam {
   spaceSettings(spaceId: SpaceId): Promise<SpaceSettingsView>;
   /** Settings → Configs (`spaces.configs`): every config knob, read-only. Node env for node admins only. */
   spaceConfigs(spaceId: SpaceId): Promise<SpaceConfigsView>;
+  /**
+   * Settings → Sessions (`auth.sessions.list`, W4). `null` = the caller's own
+   * sessions; a space id = the sessions pinned to that space (space admins
+   * only — anyone else is refused by the server, and the section says so).
+   */
+  authSessions(spaceId: SpaceId | null): Promise<AuthSessionsListResult>;
   /** Per-kind chat defaults (`spaces.chatDefaults.get`, entity-chat §3.4): space-wide, any member reads. */
   chatDefaults(spaceId: SpaceId): Promise<ChatDefaultsView>;
   /**
@@ -962,6 +1001,15 @@ export interface Seam {
       input: UpdateAttentionRequestInput,
     ): Promise<AttentionRequestMutationResult>;
     /**
+     * Attention v2's three new verbs (chapter 3), FEATURE-DETECTED: each method
+     * exists only when this build's catalog carries its op, so a caller tests
+     * for the method and degrades when it is absent. The namespace itself is
+     * always present on the real seam (so the lock below does not move when S4
+     * adds the catalog rows) and optional on the type (so a fixture that never
+     * heard of v2 still satisfies it). Only `src/attention/` may call these.
+     */
+    attentionV2?: AttentionV2Ops;
+    /**
      * Amendment 4: write the VIEWER'S OWN profile row — the DTO names no
      * subject by design (`identity.profile.update`, contract.ts). All fields
      * optional; only provided fields are written. The server enforces the
@@ -1014,6 +1062,11 @@ export interface Seam {
     createInvite(spaceId: SpaceId, input: CreateInviteInput): Promise<SpaceInviteView>;
     /** Kill a live code. The row survives, revoked, so the list stays truthful. */
     revokeInvite(spaceId: SpaceId, inviteId: string, ctx?: CommandContext): Promise<SpaceInviteView>;
+    /**
+     * `auth.sessions.revoke` (W4): kill one listed session — and, for a gate
+     * session, the pinned sessions entered from it. Their sockets close.
+     */
+    revokeAuthSession(sessionId: string): Promise<AuthSessionsRevokeResult>;
     /**
      * The task-axis registry's writes (W2, 2026-08-16) — over catalog ops
      * that existed all along (`spaces.taskAxes.create|update|delete`): new
@@ -1275,6 +1328,14 @@ export interface Seam {
    * no space except when opening a terminal, so filing the read under
    * `commands` would have been the only alternative and a worse lie.
    */
+  /**
+   * `node.metrics.get` — host CPU / memory / load / disk / server RSS for the
+   * desktop status strip. NODE ADMIN ONLY: a non-admin (or space-pinned)
+   * session gets `forbidden`, which the strip reads as "hide host metrics".
+   * Optional so a seam that predates the strip still type-checks.
+   */
+  nodeMetrics?(): Promise<NodeMetricsView>;
+
   credentials: {
     /** The merged view + `gitCredentialStore`, its own completeness report. */
     status(): Promise<CredentialsStatusView>;
@@ -1328,12 +1389,49 @@ export interface Seam {
         provider: SpaceCredentialProviderName,
         allowedSources: CredentialPolicySource[] | null,
       ): Promise<CredentialsSpacePolicySetResult>;
+      /**
+       * W10b/W10d (doc 13 §7): ownership, visibility and the caller's own
+       * default. The OWNER switches visibility and consent; the creator claims
+       * a migrated row; every member sets their own default. All human-only;
+       * a refusal is rendered with the server's reason text.
+       */
+      setVisibility(credentialId: string, visibility: SpaceCredentialVisibilityName): Promise<CredentialsSpaceSetVisibilityResult>;
+      spaceDefaultConsent(credentialId: string, allowed: boolean): Promise<SpaceCredentialView>;
+      claim(credentialId: string): Promise<SpaceCredentialView>;
+      setMyDefault(credentialId: string): Promise<CredentialsSpaceMyDefaultResult>;
+      clearMyDefault(spaceId: SpaceId, provider: SpaceCredentialProviderName): Promise<CredentialsSpaceMyDefaultResult>;
+      usage(credentialId: string): Promise<CredentialsSpaceUsageView>;
+      /** "Add to this space as private" for the caller's own GitHub token (093). The body names no token. */
+      addMine(spaceId: SpaceId, provider: 'github', label: string): Promise<SpaceCredentialView>;
     };
     /** The node's own fallback credentials (D9) — node admin only. */
     node: {
       status(): Promise<NodeCredentialsStatusView>;
       setPolicy(provider: SpaceCredentialProviderName, allowNode: boolean | null): Promise<NodeCredentialPolicyEntry>;
     };
+  };
+
+  /**
+   * -- space links (`spaceLinks.*`, W6, migrations 250/251) -------------------
+   *
+   * A link from a home space to a target space the viewer is also a member of.
+   * `list` is open to every home member and carries no secret. Every write is
+   * HUMAN-ONLY in SQL and at the facade: an agent is refused `forbidden` with
+   * `details.reason === 'space_links_human_only'`. No answer here ever carries
+   * the stored session — only the viewer's own row's metadata (`mine`).
+   */
+  spaceLinks: {
+    list(spaceId: SpaceId): Promise<SpaceLinkView[]>;
+    add(spaceId: SpaceId, targetSpaceId: string): Promise<SpaceLinkView>;
+    login(linkId: EntityId): Promise<SpaceLinkView>;
+    /** Replaces the stored session; the old one is revoked. */
+    relogin(linkId: EntityId): Promise<SpaceLinkView>;
+    /** Revokes the viewer's session and forgets the stored bytes. */
+    logout(linkId: EntityId): Promise<SpaceLinkView>;
+    /** Deletes the viewer's own row; the link stays for other members. */
+    remove(linkId: EntityId): Promise<SpaceLinkView>;
+    /** `spawnBudget` 0..100; omitted keeps the current budget. */
+    setSpawn(linkId: EntityId, allowSpawn: boolean, spawnBudget?: number): Promise<SpaceLinkView>;
   };
 
   // -- liveness (Delta 2, LLD C-1 / §9) --------------------------------------

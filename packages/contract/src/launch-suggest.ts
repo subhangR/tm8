@@ -201,8 +201,21 @@ export interface LaunchSuggestInput {
   subjectId: string;
   /** The Run popup's live text, when it differs from the subject's. */
   draft?: LaunchSuggestDraft;
-  /** Required by the memories and skills groups; without it they are skipped with `no_teammate`. */
+  /**
+   * The launch teammate the card has now. Required by the memories and skills
+   * groups unless Jev's own top teammate ranks them (below); without either
+   * they are skipped with `no_teammate`.
+   */
   teamMemberId?: string;
+  /**
+   * Rank memories, skills and references for JEV'S top teammate (launch card
+   * v3, Decision 7), not for `teamMemberId`. Implied when `teamMemberId` is
+   * absent. Takes effect only when `groups` asks for `teammates` and Jev
+   * suggests one; otherwise the strip is ranked for `teamMemberId`. The
+   * result names the teammate in `rankedForTeamMemberId`. False, or absent
+   * with a `teamMemberId`: that teammate is fixed.
+   */
+  rankForSuggestedTeammate?: boolean;
   /**
    * The harness the launch will run, which decides whether a skill is native
    * and so how its index entry reads. Absent: the teammate's own, else
@@ -232,13 +245,22 @@ export interface LaunchSuggestResult {
     references?: JevGroupResult<EntitySuggestion>;
   };
   /**
-   * Whether the launch would render `<context_index>` (the node's
-   * `TM8_CONTEXT_INDEX`, else the profile's `contextIndex`). `off`: references
+   * Whether the launch would render `<context_index>`: always `on` (launch
+   * card v3, `index_always`); `off` is kept for back-compat, never served.
+   * Historically `off` meant: references
    * reach the prompt only as linked names, so their `promptBytes` are 0 and
    * their group has no budget, and a skill's `promptBytes` is its `<skills>`
    * line. `promptBytes` never counts bytes that do not reach the prompt.
    */
   contextIndex: 'on' | 'off';
+  /**
+   * The teammate memories, skills and references were ranked for, and whose
+   * profile set their budgets and floors: Jev's top suggested teammate when
+   * `rankForSuggestedTeammate` applied and Jev suggested one, else
+   * `teamMemberId`. Null: neither (memories and skills were skipped
+   * `no_teammate`).
+   */
+  rankedForTeamMemberId: string | null;
   /** Running total for the whole run, including earlier requests. */
   run: JevCost;
 }
@@ -267,6 +289,7 @@ const launchSuggestInputObject = z.object({
   subjectId: Uuid,
   draft: LaunchSuggestDraftSchema.optional(),
   teamMemberId: Uuid.optional(),
+  rankForSuggestedTeammate: z.boolean().optional(),
   agentTool: z.enum(['claude-code', 'codex']).optional(),
   interactionProfileId: Uuid.optional(),
   groups: z.array(LaunchSuggestGroupSchema)
@@ -359,6 +382,7 @@ export const LaunchSuggestResultSchema = z.object({
     references: jevGroupResultSchema(EntitySuggestionSchema).optional(),
   }).strict(),
   contextIndex: z.enum(['on', 'off']),
+  rankedForTeamMemberId: Uuid.nullable(),
   run: JevCostSchema,
 }).strict();
 

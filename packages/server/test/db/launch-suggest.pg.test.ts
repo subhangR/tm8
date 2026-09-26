@@ -21,7 +21,7 @@
 import { randomUUID } from 'node:crypto';
 
 import type { LaunchSuggestResult } from '@tm8/contract';
-import { BYTE_BUDGETS, serializeMemoryEntry, utf8Bytes } from '@tm8/prompt';
+import { BYTE_BUDGETS, contextGroupFrameBytes, serializeMemoryEntry, utf8Bytes } from '@tm8/prompt';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { createDb } from '../../src/db/index.js';
@@ -373,7 +373,9 @@ describe('candidates', () => {
 
 describe('skips, failures and no_key', () => {
   it('without a teammate, memories and skills are skipped: no_teammate; the rest still answer', async () => {
-    const result = await handlerFor(fakePort())(input({ teamMemberId: undefined }));
+    // rankForSuggestedTeammate false: Jev's top teammate does not rank the strip (Decision 7).
+    const result = await handlerFor(fakePort())(input({ teamMemberId: undefined, rankForSuggestedTeammate: false }));
+    expect(result.rankedForTeamMemberId).toBeNull();
     expect(result.groups.memories).toMatchObject({ status: 'skipped', reason: 'no_teammate', cost: { calls: 0 } });
     expect(result.groups.skills).toMatchObject({ status: 'skipped', reason: 'no_teammate' });
     expect(result.groups.teammates?.status).toBe('ok');
@@ -486,6 +488,79 @@ describe('cost records', () => {
   });
 });
 
+describe('Decision 7: the strip is ranked for Jev\'s top teammate', () => {
+  // Draco (ids.teammate) remembers mWorking and equips sEquipped; Lead (ids.parent) neither.
+  const dracoTop = (noun: string, candidate: JevCandidate): number =>
+    noun === 'teammate' ? (candidate.id === ids.teammate ? 3 : 0.5) : 2;
+
+  it('no fixed teammate: teammates answer first, then memories and skills rank for the top one', async () => {
+    const port = fakePort({ score: dracoTop });
+    const result = await handlerFor(port)(input({ teamMemberId: undefined }));
+    expect(result.rankedForTeamMemberId).toBe(ids.teammate);
+    const nouns = port.seen.map((row) => row.noun);
+    expect(nouns.indexOf('teammate')).toBeLessThan(nouns.indexOf('memory'));
+    expect(items(result, 'memories').find((item) => item.entityId === ids.mWorking)?.sources).toContain('teammate');
+    expect(items(result, 'skills').find((item) => item.entityId === ids.sEquipped)?.default).toBe(true);
+  });
+
+  it('rankForSuggestedTeammate overrides a teammate the card still holds by default', async () => {
+    const result = await handlerFor(fakePort({ score: dracoTop }))(
+      input({ teamMemberId: ids.parent, rankForSuggestedTeammate: true }),
+    );
+    expect(result.rankedForTeamMemberId).toBe(ids.teammate);
+    expect(items(result, 'memories').find((item) => item.entityId === ids.mWorking)?.sources).toContain('teammate');
+  });
+
+  it('a fixed teammate (flag absent or false) ranks the strip for that teammate', async () => {
+    for (const flag of [undefined, false]) {
+      const result = await handlerFor(fakePort({ score: dracoTop }))(
+        input({ teamMemberId: ids.parent, ...(flag === undefined ? {} : { rankForSuggestedTeammate: flag }) }),
+      );
+      expect(result.rankedForTeamMemberId).toBe(ids.parent);
+      expect(items(result, 'memories').find((item) => item.entityId === ids.mWorking)?.sources).toEqual(['space']);
+    }
+  });
+
+  it('no teammate fits: the strip falls back to teamMemberId, else skips no_teammate', async () => {
+    const noFit = (noun: string): number => (noun === 'teammate' ? 0 : 2);
+    const fallback = await handlerFor(fakePort({ score: noFit }))(
+      input({ teamMemberId: ids.parent, rankForSuggestedTeammate: true }),
+    );
+    expect(fallback.rankedForTeamMemberId).toBe(ids.parent);
+    const none = await handlerFor(fakePort({ score: noFit }))(input({ teamMemberId: undefined }));
+    expect(none.rankedForTeamMemberId).toBeNull();
+    expect(none.groups.memories).toMatchObject({ status: 'skipped', reason: 'no_teammate' });
+  });
+
+  it('without the teammates group the flag cannot apply: the strip ranks for teamMemberId', async () => {
+    const result = await handlerFor(fakePort({ score: dracoTop }))(
+      input({ teamMemberId: ids.parent, rankForSuggestedTeammate: true, groups: ['memories'] }),
+    );
+    expect(result.rankedForTeamMemberId).toBe(ids.parent);
+  });
+
+  it('the strip uses the suggested teammate\'s profile for budgets and floors', async () => {
+    const seen: Array<string | null> = [];
+    const registry = new HandlerRegistry();
+    const deps = { db, config: {}, owner: async () => ({ identityId: OWNER, isNodeAdmin: false }) } as unknown as FacadeDeps;
+    registerJevHandlers(registry, deps, {
+      advisor: fakePort({ score: dracoTop }),
+      env: {},
+      resolveProfile: async (_claims, profileInput) => {
+        seen.push(profileInput.teamMemberId);
+        return profileInput.teamMemberId === ids.teammate ? { draft: { contextFloors: { memories: 0.5 } } } : null;
+      },
+    });
+    const result = await registry.get('launch.suggest')!({
+      params: { spaceId: ids.space }, query: new URLSearchParams(), body: input({ teamMemberId: undefined }), requestId: randomUUID(),
+      identity: { kind: 'loopback' }, headers: {}, method: 'POST', path: '/',
+    } as unknown as RequestContext) as LaunchSuggestResult;
+    expect(seen).toEqual([null, ids.teammate]);
+    const memories = result.groups.memories;
+    expect(memories?.status === 'ok' ? memories.value.floor : null).toBe(0.5);
+  });
+});
+
 describe('parallelism', () => {
   it('all four groups are in flight at once', async () => {
     const port = fakePort({ barrier: 4 });
@@ -542,8 +617,9 @@ describe('I7: references, defaults and the budget fill (design 01a0d348 §8 I7, 
     expect(result.contextIndex).toBe('on');
     const mTask = items(result, 'memories').find((row) => row.entityId === ids.mTask)!;
     expect(mTask.header).toEqual({ whenToUse: 'scratch', summary: 'task memory', keywords: [], source: 'native', version: 0 });
-    // A memory costs its whole rendered <entry>.
-    expect(mTask.promptBytes).toBe(utf8Bytes(serializeMemoryEntry('task memory')));
+    // A memory costs its <context_index> entry (launch card v3), not a whole <entry>.
+    expect(mTask.promptBytes).toBeGreaterThan(0);
+    expect(mTask.promptBytes).not.toBe(utf8Bytes(serializeMemoryEntry('task memory')));
     for (const group of ['memories', 'skills', 'teammates'] as const) {
       for (const row of items(result, group)) expect(row.promptBytes, `${group} ${row.entityId}`).toBeGreaterThan(0);
     }
@@ -557,22 +633,21 @@ describe('I7: references, defaults and the budget fill (design 01a0d348 §8 I7, 
     expect(teammates.value.floor).toBe(1.0);
   });
 
-  it('with <context_index> off (the fleet default), never counts bytes that do not reach the prompt', async () => {
-    const off = await handlerFor(fakePort())(input({ subjectId: ids.refTask, groups: ['references'] }));
-    expect(off.contextIndex).toBe('off');
-    const references = off.groups.references;
-    if (references?.status !== 'ok') throw new Error('references');
-    expect(references.value.budget).toBeNull();
-    expect(references.value.items.every((row) => row.promptBytes === 0)).toBe(true);
-    // A skill is its <skills> line, not an index entry: the two measure differently.
-    const skillOff = items(await handlerFor(fakePort())(input({ groups: ['skills'] })), 'skills').find((row) => row.entityId === ids.sEquipped)!;
-    const skillOn = items(await handlerFor(fakePort(), OWNER, { env: INDEX_ON })(input({ groups: ['skills'] })), 'skills').find((row) => row.entityId === ids.sEquipped)!;
-    expect(skillOff.promptBytes).toBeGreaterThan(0);
-    expect(skillOff.promptBytes).not.toBe(skillOn.promptBytes);
+  it('the index is always on (launch card v3): no env, or TM8_CONTEXT_INDEX=off, measures as on; a file costs 0', async () => {
+    for (const env of [{}, { TM8_CONTEXT_INDEX: 'off' }]) {
+      const result = await handlerFor(fakePort(), OWNER, { env })(input({ subjectId: ids.refTask, groups: ['references'] }));
+      expect(result.contextIndex).toBe('on');
+      const references = result.groups.references;
+      if (references?.status !== 'ok') throw new Error('references');
+      expect(references.value.budget).toBe(BYTE_BUDGETS.referenceIndex);
+      // Files ride in <attachments>, never the index.
+      for (const row of references.value.items) expect(row.promptBytes > 0, row.entityId).toBe(row.kind !== 'file');
+    }
   });
 
   it('the profile the launch would pin sets the floors and budgets; a default the budget leaves out says over-budget', async () => {
-    const taskEntry = utf8Bytes(serializeMemoryEntry('task memory'));
+    const measured = items(await handlerFor(fakePort(), OWNER, { env: INDEX_ON })(input({ groups: ['memories'] })), 'memories');
+    const taskEntry = measured.find((row) => row.entityId === ids.mTask)!.promptBytes + contextGroupFrameBytes('memories', 1);
     const profile = { draft: { contextIndex: true, contextBudgets: { memories: taskEntry }, contextFloors: { skills: 2.5 } } };
     const score = (noun: string, c: { id: string }) => (noun === 'memory' && c.id === ids.mTask ? 2.4 : 2);
     const result = await handlerFor(fakePort({ score }), OWNER, { profile })(input({ groups: ['memories', 'skills'] }));

@@ -11,6 +11,13 @@
   overflow: auto;
 }
 
+/* Title left, the host's `StageExit` line right (D18). */
+.cgs__titlerow {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
 .cgs__head h2 {
   margin: 0 0 4px;
   font-size: 14px;

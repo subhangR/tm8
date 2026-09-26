@@ -280,7 +280,9 @@ export function createJevFixture(read: () => readonly EntitySummary[]): FixtureJ
       }
       const run = add(runTotals.get(input.runId) ?? ZERO, spent);
       runTotals.set(input.runId, run);
-      const result: LaunchSuggestResult = { runId: input.runId, groups, contextIndex: contextIndex(), run };
+      const result: LaunchSuggestResult = {
+        runId: input.runId, groups, contextIndex: contextIndex(), rankedForTeamMemberId: input.teamMemberId ?? null, run,
+      };
       answered.set(input.requestId, result);
       return structuredClone(result);
     },

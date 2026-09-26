@@ -9,6 +9,8 @@
  * admission or demotion: it measures the centre, calls the engine, and hands
  * the settled result to the store (the direction A1a's DAG correction fixed).
  */
+import { useAttentionOptional } from '../attention';
+import { needsMeListSource } from '../attention/needs-me';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type {
   EntityId,
@@ -40,10 +42,10 @@ import type { NavPort } from '../shell/nav-port';
 import type { Notice } from '../shell/notices';
 import { toSessionRow } from '../terminal';
 import { placeholderTitleFor, useNewTask } from '../authoring';
-import { homeRootKinds } from '../domain/home-rail';
+import { homeQuickBirthKinds, homeRootKinds } from '../domain/home-rail';
 import { allKinds, getKind } from '../domain/registry';
 import { placeholderNameFor } from '../domain/title-grammar';
-import { QUIET_SESSION_DETAIL, needsAttentionOf } from '../domain/needs-attention';
+import { needsAttentionOf } from '../domain/needs-attention';
 import { newLaunchMutationId } from '../domain/launch';
 import { useLaunchPort } from './useLaunchPort';
 import { mergePrPortFor } from './mergePrPort';
@@ -55,10 +57,9 @@ import { useNewContainerSheet } from './useNewContainerSheet';
 import { EmptyCenter } from './EmptyCenter';
 import { LaunchSheet, type DispatchSelection, type LaunchSelection } from './LaunchSheet';
 import type { GateData } from './useGateData';
-import { openEntityAndResolve } from './open-entity';
+import { openEntityAndMarkRead } from './open-entity';
 import { conversationSurfaceFor } from './conversationSurface';
 import { channelFeedPortFromGateData } from './channel-feed-port';
-import { attentionSectionFor } from './attentionSurface';
 import { debugSurfaceFor } from './debugSurface';
 import { sessionStatsSurfaceFor } from './sessionStatsSurface';
 import { sessionContextSurfaceFor } from './sessionContextSurface';
@@ -127,11 +128,9 @@ export interface WorkspaceViewProps {
 }
 
 export function WorkspaceView(props: WorkspaceViewProps) {
+  const attentionApi = useAttentionOptional();
   const { data, nav, leftKind, rightKind, menuCollapsed, reasons } = props;
-  const resolvingAttention = useRef(new Set<EntityId>());
-  // Separate from `resolvingAttention`: a read mark is written on every open,
-  // an attention resolve only sometimes, so one shared set would let either
-  // suppress the other.
+  /** In-flight read marks, so a double click on a row is one write. */
   const markingRead = useRef(new Set<EntityId>());
 
   // The measurement the whole engine hangs on. `null` until a real
@@ -305,32 +304,18 @@ export function WorkspaceView(props: WorkspaceViewProps) {
   const handleSessionResume = primaries.resume;
   const resumingId = primaries.resumingId;
 
-  /** Opening is never blocked on the mutation. Resolve only when the rendered
-      summary says attention is pending, and coalesce rapid repeated clicks. */
+  /** Opening is a read: it navigates and records a read mark, and never
+      settles an attention request (Attention v2 — see `open-entity.ts`). */
   const openEntity = useCallback((entityId: string) => {
     const id = entityId as EntityId;
-    const summary = data.detailOf(id)
-      ?? data.rowsFor(leftKind)(undefined).find((row) => row.id === id)
-      ?? data.rowsFor(rightKind)(undefined).find((row) => row.id === id)
-      ?? data.graph.nodes.find((row) => row.id === id);
-    openEntityAndResolve({
+    openEntityAndMarkRead({
       entityId: id,
-      needsAttention: summary?.badges.attention != null,
       open: (id) => nav.push(id),
       commands: data.seam.commands,
-      reconcile: data.reconcileCommand,
-      resolving: resolvingAttention.current,
       marking: markingRead.current,
       onRead: data.refreshCounts,
-      onError: (error) => props.onNotice({
-          id: `attention-resolve-failed:${entityId}`,
-          tone: 'error',
-          title: 'Attention could not be resolved',
-          body: String((error as { message?: string })?.message ?? error),
-          ttlMs: 6_000,
-        }),
     });
-  }, [data, leftKind, nav, props.onNotice, rightKind]);
+  }, [data, nav]);
 
   /** Panels at the side-panel floors drop metas and abbreviate badges. */
   const leftCompact = layout.left <= 220;
@@ -519,7 +504,6 @@ export function WorkspaceView(props: WorkspaceViewProps) {
                         : `${admission.cause} — ${admission.remedy}`
                     }
                     liveness={data.livenessOf(id)}
-                    attentionSection={attentionSectionFor(data.seam, data.spaceId, id, () => data.pull?.(id))}
                     debugSurface={debugSurfaceFor(data.seam, id, data.livenessOf)}
                     sessionStatsSurface={sessionStatsSurfaceFor(data.seam, id)}
                     sessionContextSurface={sessionContextSurfaceFor(data.seam, id, data.livenessOf)}
@@ -535,7 +519,6 @@ export function WorkspaceView(props: WorkspaceViewProps) {
                        the block signal must reach the terminal AND the chat surface, not
                        whichever one is on top. */
                     needsAttention={detail ? needsAttentionOf(detail, data.livenessOf) : false}
-                    attentionDetail={QUIET_SESSION_DETAIL}
                     viewerMemberId={props.viewerMemberId}
                     contentSurface={nav.surfaceOf?.(id) ?? null}
                     onContentSurfaceChange={(surface) => nav.setContentSurface?.(id, surface)}
@@ -763,9 +746,17 @@ export function WorkspaceView(props: WorkspaceViewProps) {
     return (
       <ListRootHeader
         rootsLabel={`${isLeft ? 'Left' : 'Right'} panel list`}
+        /* The same quick-create icons Home draws (task 01a0df28). The chat
+           icon's `chat-about` navigates to Home's composer — this surface's
+           centre is the ink stage and cannot host one. */
+        quickKinds={homeQuickBirthKinds().map((k) => ({
+          kind: k.kind,
+          label: k.labelPlural,
+          single: k.label,
+        }))}
         cell={{ kind: config.kind, label: config.labelPlural, single: config.label }}
-        /* No Chats cell here, so this column's one root is always the
-           selected one — there is nothing else it could be showing. */
+        /* The column's one root is always the selected one — there is
+           nothing else it could be showing. */
         cellActive
         onSelectCell={() => undefined}
         {...(birth.refusal === null ? { onCreate: birth.perform } : {})}
@@ -779,6 +770,8 @@ export function WorkspaceView(props: WorkspaceViewProps) {
         onPickKind={(kind) => onKindChange?.(kind)}
         onCreateKind={(kind) => birthFor(kind).perform()}
         createKindUnavailable={(kind) => birthFor(kind).refusal}
+        onQuickBirth={(kind) => birthFor(kind).perform()}
+        quickBirthUnavailable={(kind) => birthFor(kind).refusal}
       />
     );
   };
@@ -830,9 +823,12 @@ export function WorkspaceView(props: WorkspaceViewProps) {
                mismatched shape, which is the same blindness that let `rowsFor`
                ignore its filter for so long. The signatures line up on their
                own now. */
-            rowsFor={data.rowsFor(leftKind)}
-            pageStateOf={data.pageStateOf(leftKind)}
-            loadMore={data.loadMore(leftKind)}
+            /* ATTENTION v2: "Needs me" reads the attention queue (needs-me.ts). */
+            {...needsMeListSource(attentionApi, leftKind, data, {
+              rowsFor: data.rowsFor(leftKind),
+              pageStateOf: data.pageStateOf(leftKind),
+              loadMore: data.loadMore(leftKind),
+            })}
             boardFor={data.boardFor(leftKind) as never}
             mode={leftLayout}
             members={data.members}
@@ -995,6 +991,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
               rows={rosterRows}
               livenessOf={data.livenessOf}
               onFocusSession={openEntity}
+              onOpenEntity={openEntity}
               newTask={{
                 unavailable: centreCreateFlow.unavailable,
                 create: centreCreateFlow.create,
@@ -1019,9 +1016,12 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           <EntityListPanel
             kind={rightKind}
             selectorSlot="host"
-            rowsFor={data.rowsFor(rightKind)}
-            pageStateOf={data.pageStateOf(rightKind)}
-            loadMore={data.loadMore(rightKind)}
+            /* ATTENTION v2: "Needs me" reads the attention queue (needs-me.ts). */
+            {...needsMeListSource(attentionApi, rightKind, data, {
+              rowsFor: data.rowsFor(rightKind),
+              pageStateOf: data.pageStateOf(rightKind),
+              loadMore: data.loadMore(rightKind),
+            })}
             boardFor={data.boardFor(rightKind) as never}
             mode={rightLayout}
             members={data.members}

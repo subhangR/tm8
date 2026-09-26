@@ -42,9 +42,7 @@ async function classify(page) {
         const pw = document.querySelector('input[type="password"]');
         const root = document.getElementById('root');
         const appish =
-          !!document.querySelector('[data-testid="account-menu-trigger"]') ||
-          !!document.querySelector('[data-testid="live-session-bar"]') ||
-          !!document.querySelector('[data-testid="live-bar-idle"]');
+          !!document.querySelector('[data-testid="account-menu-trigger"]');
         return gate || pw || appish || (!!root && root.childElementCount > 0);
       },
       { timeout: 15000 },

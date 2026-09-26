@@ -195,7 +195,7 @@ const singleChoice = defineQuestionType({
   label: 'Single choice',
   configSchema: z.object({
     options: optionsSchema(1),
-    allowOther: z.boolean().default(false),
+    allowOther: z.boolean().default(true),
     display: z.enum(['radio', 'dropdown']).default('radio'),
   }).strict(),
   answerSchema: z.union([
@@ -232,7 +232,7 @@ const multiChoice = defineQuestionType({
   label: 'Multiple choice',
   configSchema: z.object({
     options: optionsSchema(50),
-    allowOther: z.boolean().default(false),
+    allowOther: z.boolean().default(true),
     minSelected: z.number().int().min(0).max(50).optional(),
     maxSelected: z.number().int().min(1).max(50).optional(),
   }).strict().refine(

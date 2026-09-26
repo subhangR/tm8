@@ -21,7 +21,6 @@ export {
   rootBirthAction,
   rootBirthDispatch,
   type BirthDispatcher,
-  type ListRootChatsCell,
   type ListRootHeaderProps,
   type ListRootOption,
 } from './ListRootHeader';
@@ -33,6 +32,7 @@ export {
 export {
   EntityDetailPanel,
   countConnections,
+  countMessages,
   type DetailReasons,
   type EntityDetailPanelProps,
   type MergePrSources,

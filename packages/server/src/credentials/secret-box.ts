@@ -28,13 +28,53 @@ export interface SpaceSecretBinding {
   readonly provider: string;
 }
 
-export type SecretBinding = AccountSecretBinding | SpaceSecretBinding;
+/**
+ * A member's stored space-link session (251): AAD
+ * `<home_space_id>|<link_id>|<member_id>|<target_space_id>`. Three separators,
+ * so it collides with neither the account form (one) nor the space form (two):
+ * a link ciphertext copied to another row, member or target does not open.
+ */
+export interface SpaceLinkSecretBinding {
+  readonly homeSpaceId: string;
+  readonly linkId: string;
+  readonly memberId: string;
+  readonly targetSpaceId: string;
+}
 
-function bindingBytes(binding: SecretBinding): Buffer {
-  const aad = 'spaceId' in binding
+/**
+ * A member's gate session on a remote server (W8): AAD
+ * `server-gate|<home_space_id>|<server_id>|<member_id>`. The literal prefix
+ * keeps it apart from every other form, whatever the ids hold.
+ */
+export interface ServerGateSecretBinding {
+  readonly homeSpaceId: string;
+  readonly serverId: string;
+  readonly memberId: string;
+}
+
+export type SecretBinding =
+  | AccountSecretBinding | SpaceSecretBinding | SpaceLinkSecretBinding | ServerGateSecretBinding;
+
+/** The AAD string for `binding`; for a link or server gate, the value its `aad` column holds. */
+export function bindingAad(binding: SecretBinding): string {
+  if ('serverId' in binding) {
+    return `server-gate|${binding.homeSpaceId}|${binding.serverId}|${binding.memberId}`;
+  }
+  if ('linkId' in binding) {
+    return `${binding.homeSpaceId}|${binding.linkId}|${binding.memberId}|${binding.targetSpaceId}`;
+  }
+  // The separator count IS the domain separation between the three forms, so
+  // a provider carrying `|` could make an account AAD read as a space or link
+  // one. Every sealed table pins its provider to a closed, `|`-free list
+  // (space-links.pg asserts it); this refuses the rest before sealing/opening.
+  if (binding.provider.includes('|')) throw new Error('secret binding provider must not contain "|"');
+  return 'spaceId' in binding
     ? `${binding.spaceId}|${binding.credentialId}|${binding.provider}`
     : `${binding.accountId}|${binding.provider}`;
-  return Buffer.from(aad, 'utf8');
+}
+
+function bindingBytes(binding: SecretBinding): Buffer {
+  return Buffer.from(bindingAad(binding), 'utf8');
 }
 
 function assertKey(key: Buffer): void {
