@@ -2179,6 +2179,18 @@ const TRANSCRIPT_LAST_DEFAULT = 20;
 const TRANSCRIPT_LAST_MAX = 200;
 
 /**
+ * The journal and transcript refusal for a session on someone else's private
+ * credential (doc 13 §3h, 997). Says nothing about the credential: no label,
+ * hint, login or owner (threat review R16).
+ */
+function privateCredentialSessionRefusal(): CollabError {
+  return new CollabError(
+    'forbidden',
+    'this session runs on a private credential; only its owner may read it',
+  );
+}
+
+/**
  * `relative()`-based containment: true iff `candidate` is at or beneath `root`.
  * Copied from `files/w2-blob-store.ts` so the journal path can never escape the
  * journals dir even through a symlink (we realpath before trusting it).
@@ -2794,15 +2806,19 @@ function registerHandlers(
     const owner = await resolveOwner();
     const claims = claimsFor(owner, ctx);
     const sessionId = requireUuidParam(ctx, 'workSessionId');
-    const sessions = await db.query<{ id: string }>(
+    const sessions = await db.query<{ id: string; credential_allowed: boolean }>(
       claims,
-      `select e.id from public.entities e
+      `select e.id, public.session_stream_credential_allowed(e.id) as credential_allowed
+         from public.entities e
         where e.id = $1 and e.kind = 'work_session' and e.deleted_at is null`,
       [sessionId],
     );
     if (!sessions[0]) {
       throw new CollabError('not_found', `no such work session: ${sessionId}`);
     }
+    // Doc 13 §3h (997): the journal is a VIEW path like the PTY. A session on a
+    // private credential is readable by that credential's owner only.
+    if (!sessions[0].credential_allowed) throw privateCredentialSessionRefusal();
 
     const rawLimit = ctx.query.get('limit');
     let limit = JOURNAL_LIMIT_DEFAULT;
@@ -2939,10 +2955,12 @@ function registerHandlers(
       agent_tool: string | null;
       agent_config_dir: string | null;
       model: string | null;
+      credential_allowed: boolean;
     }>(
       claims,
       `select ws.native_session_id, ws.workdir_path, ws.workdir_mode, ws.agent_tool,
-              ws.agent_config_dir, ws.model
+              ws.agent_config_dir, ws.model,
+              public.session_stream_credential_allowed(e.id) as credential_allowed
          from public.entities e
          join public.work_sessions ws on ws.entity_id = e.id
         where e.id = $1 and e.kind = 'work_session' and e.deleted_at is null`,
@@ -2952,6 +2970,8 @@ function registerHandlers(
     if (!session) {
       throw new CollabError('not_found', `no such work session: ${sessionId}`);
     }
+    // Doc 13 §3h (997): as for the journal — owner-only on a private credential.
+    if (!session.credential_allowed) throw privateCredentialSessionRefusal();
 
     const rawLast = ctx.query.get('last');
     let last = TRANSCRIPT_LAST_DEFAULT;

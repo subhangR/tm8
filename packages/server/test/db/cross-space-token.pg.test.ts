@@ -842,6 +842,70 @@ describe('W10a (T35/T36/T44) agent G and private credentials in A — refused by
   });
 });
 
+describe('W10c (T38) a session on a PRIVATE credential in A is its owner\'s alone to watch and drive', () => {
+  // The W3-audit a6 row ("H2 — a plain member of A — may DRIVE H's agent
+  // session in A", #852, not on this branch's base) recorded CURRENT BEHAVIOUR.
+  // Its closure lands here: when the session records H's PRIVATE credential,
+  // H2 is refused at grant_stream_attach even though 075 lets any member act
+  // as G. The public-credential session is the paired positive: the a6
+  // behaviour is unchanged there.
+  const sessionOn = async (visibility: 'public' | 'private'): Promise<string> => {
+    const credentialId = randomUUID();
+    await asIdentity(fixture.identityH, (q) => q.rpc('create_space_credential', [
+      credentialId, fixture.spaceA, 'anthropic', 'api_key', `w10c ${credentialId.slice(0, 8)}`, 'Fk0x',
+      Buffer.alloc(17, 7), Buffer.alloc(12, 3),
+    ]));
+    const sessionId = randomUUID();
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(
+        `update public.space_credentials set owner_account_id = $2, is_default = false where id = $1`,
+        [credentialId, fixture.accountH]);
+      await client.query(
+        `insert into public.entities(id, space_id, kind, created_by, visibility) values ($1, $2, 'work_session', $3, 'space')`,
+        [sessionId, fixture.spaceA, fixture.personaA]);
+      await client.query(
+        `insert into public.work_sessions(entity_id, title, status, session_kind, agent_tool)
+         values ($1, 'W10c G run', 'spawning', 'agent', 'claude-code')`, [sessionId]);
+    });
+    if (visibility === 'private') {
+      await asIdentity(fixture.identityH, (q) => q.rpc('set_space_credential_visibility', [credentialId, 'private']));
+    }
+    await asIdentity(fixture.identityH, (q) => q.rpc('record_session_manifest', [
+      sessionId,
+      JSON.stringify({ launch: { credentialSources: { anthropic: 'space' }, spaceCredentialIds: { anthropic: credentialId } } }),
+    ]), 'agent');
+    return sessionId;
+  };
+  const attach = (token: string, sessionId: string, mode: 'view' | 'drive') =>
+    outcome(() => asToken(token, (q) =>
+      q.rpc('grant_stream_attach', [sessionId, mode, hashToken(generateSecret()), null, null]), 'enforce'));
+
+  for (const mode of ['view', 'drive'] as const) {
+    it(`H2 (browser, member of A): ${mode} on G's session on H's PRIVATE credential is refused`, async () => {
+      const sessionId = await sessionOn('private');
+      expect(await attach(await mintBrowser(fixture.accountH2, fixture.identityH2), sessionId, mode)).toBe('42501');
+    });
+    it(`positive — H (browser, the credential's owner): ${mode} on the same session succeeds`, async () => {
+      const sessionId = await sessionOn('private');
+      expect(await attach(await mintBrowser(fixture.accountH, fixture.identityH), sessionId, mode)).toBe('ok');
+    });
+    it(`positive — H2 (browser): ${mode} on G's session on a PUBLIC credential succeeds (a6 behaviour unchanged)`, async () => {
+      const sessionId = await sessionOn('public');
+      expect(await attach(await mintBrowser(fixture.accountH2, fixture.identityH2), sessionId, mode)).toBe('ok');
+    });
+  }
+  it('H2 (browser): widening sharing on the private-credential session is refused; H widens', async () => {
+    const sessionId = await sessionOn('private');
+    const h2 = await mintBrowser(fixture.accountH2, fixture.identityH2);
+    const h = await mintBrowser(fixture.accountH, fixture.identityH);
+    expect(await outcome(() => asToken(h2, (q) =>
+      q.rpc('set_work_session_sharing', [sessionId, null, null, 'space', null, null]), 'enforce'))).toBe('42501');
+    expect(await outcome(() => asToken(h, (q) =>
+      q.rpc('set_work_session_sharing', [sessionId, null, null, 'space', null, null]), 'enforce'))).toBe('ok');
+  });
+});
+
 describe('T29 member_space_ids() policies stay once per statement under a pinned token (W0a)', () => {
   // 218's reason for existing, re-asked with the pin bound: the pin is inlined
   // into member_space_ids() (A10), so the policy must still resolve membership
