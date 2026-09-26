@@ -35,11 +35,12 @@ import type { DurableEventLog } from '../../src/events/poll.js';
 import { SubscriptionRegistry } from '../../src/events/subscriptions.js';
 import { claimsFor } from '../../src/facade/context.js';
 import { loadConfig } from '../../src/http/config.js';
-import { createSessionIdentityResolver } from '../../src/http/identity-resolver.js';
+import { createSessionIdentityResolver, identityFromSession } from '../../src/http/identity-resolver.js';
 import { TM8_SESSION_COOKIE } from '../../src/http/session-cookie.js';
 import type { RequestContext, RequestIdentity, SpaceSessionsMode } from '../../src/http/types.js';
 import { formatToken, generateSecret, hashToken, parseToken } from '../../src/identity/crypto.js';
 import type { LoopbackOwner } from '../../src/identity/loopback.js';
+import { resolveBearerIdentity } from '../../src/identity/pg-auth.js';
 import { bootstrap, type BootstrappedServer } from '../../src/main.js';
 import type { EventSink } from '../../src/events/ws-connection.js';
 import type { FacadeDeps } from '../../src/facade/deps.js';
@@ -131,6 +132,14 @@ async function mintAgentRuntime(): Promise<string> {
 
 /** The production identity resolver's answer for a bearer string. */
 async function identityForToken(token: string, mode: SpaceSessionsMode = 'agents'): Promise<RequestIdentity> {
+  // 256 (W7p, layer (i)) refuses a `link` session's token on every wire, so
+  // a link token is bound in-process — resolved by hash and mapped by the
+  // wire's own `identityFromSession`, as `DbSpaceLinkStore.use` and #884's
+  // invoke do. Every other token still goes through the wire resolver. These
+  // are SQL-policy cells; the wire refusal has its own
+  // (link-session-transport.test.ts).
+  const session = await resolveBearerIdentity(db, token);
+  if (String(session.kind) === 'link') return identityFromSession(session, token, mode);
   const resolve = createSessionIdentityResolver({
     db,
     owner: async () => NOT_THE_OWNER,
@@ -2293,8 +2302,8 @@ describe('claim-free resolvers — returned keys pinned (W3)', () => {
 const RESOLVE_AUTH_SESSION_KEYS = [
   'accountId', 'actingAsTeamMemberId', 'displayName', 'expiresAt', 'identityId', 'isNodeAdmin',
   'isOwner', 'kind', 'label', 'runtimeChatId', 'runtimeMemberId', 'runtimeThreadRootId',
-  'sessionId', 'spaceId', 'username', 'workSessionId',
-];
+  'sessionId', 'spaceId', 'username', 'viaLinkId', 'workSessionId',
+]; // + viaLinkId (256, W7p): the link a session descends from; null on both rows here.
 const RESOLVE_ACCOUNT_CREDENTIAL_KEYS = [
   'accountId', 'disabledAt', 'identityId', 'isNodeAdmin', 'isOwner', 'passwordAlgorithm',
   'passwordHash', 'status', 'username',
@@ -3777,8 +3786,14 @@ describe.sequential('W6 space links — H\'s link session A → B', () => {
   beforeAll(ensureHLink);
 
   it('the stored session is kind link, pinned to B', async () => {
-    const claims = await claimsForToken(hLinkToken);
-    expect(claims).toMatchObject({ identityId: fixture.identityH, authKind: 'link', sessionSpaceId: fixture.spaceB });
+    // Resolved in-process, as `DbSpaceLinkStore.use` does: 256 (W7p) refuses a
+    // link session's token on every wire (identity-resolver.ts), so the bare
+    // wire resolver answers 42501 for the same token.
+    expect(await resolveBearerIdentity(db, hLinkToken))
+      .toMatchObject({ identityId: fixture.identityH, kind: 'link', spaceId: fixture.spaceB });
+    const wire = createSessionIdentityResolver({ db, owner: async () => NOT_THE_OWNER, spaceSessions: 'agents' });
+    await expect(wire({ authorization: `Bearer ${hLinkToken}` }, { remoteAddress: '203.0.113.9', disableAutoOwner: true }))
+      .rejects.toMatchObject({ code: 'forbidden', details: { sqlstate: '42501' } });
   });
 });
 
@@ -3789,7 +3804,7 @@ describe.sequential('T16 L_B after B revokes it: G invokes B → 401 → signed_
     const g = await claimsForToken(await mintAgent());
     const use = await linkStore.use(g, hLink.id, { workSessionId: fixture.workSessionA });
     expect(use.targetSpaceId).toBe(fixture.spaceB);
-    expect(await claimsForToken(use.token)).toMatchObject({ authKind: 'link', sessionSpaceId: fixture.spaceB });
+    expect(await resolveBearerIdentity(db, use.token)).toMatchObject({ kind: 'link', spaceId: fixture.spaceB });
   });
 
   it('B revokes the link session; G\'s next use is signed_out, forgets the bytes, notifies G\'s session once, and never retries', async () => {
@@ -3799,7 +3814,7 @@ describe.sequential('T16 L_B after B revokes it: G invokes B → 401 → signed_
     // The revoke on this base: revoke_auth_session as the session's owner. W4's
     // Sessions page (238, auth.sessions.revoke by a B admin) reaches the same row.
     await db.rpc(h, 'revoke_auth_session', [hLink.mine!.sessionId]);
-    await expect(claimsForToken(hLinkToken)).rejects.toBeTruthy();
+    await expect(resolveBearerIdentity(db, hLinkToken)).rejects.toMatchObject({ code: 'unauthenticated' });
 
     const g = await claimsForToken(await mintAgent());
     await expect(store.use(g, hLink.id, { workSessionId: fixture.workSessionA }))
