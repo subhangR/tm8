@@ -18,7 +18,14 @@ import { gatePosture, writeNodePolicy } from './projects/node-policy.js';
 
 import { createDb } from './db/index.js';
 import type { Db, DbClaims } from './db/types.js';
-import { bootDesktopSidecar, desktopNodeId, desktopServerConfig, isDesktopProfile, report } from './desktop.js';
+import {
+  bootDesktopSidecar,
+  desktopNodeId,
+  desktopReadyUrl,
+  desktopServerConfig,
+  isDesktopProfile,
+  report,
+} from './desktop.js';
 import { SidecarError } from './sidecar/errors.js';
 import type { SidecarManager } from './sidecar/manager.js';
 import {
@@ -52,7 +59,7 @@ import { createLoopbackOwnerResolver } from './identity/loopback.js';
 import { createTrackingObserverJob } from './tracking/observer.js';
 import { createCommitRecorderJob } from './tracking/commit-recorder.js';
 import { createSessionIdentityResolver } from './http/identity-resolver.js';
-import { loadLaunchCookieIssuer } from './http/launch-cookie.js';
+import { loadLaunchCookieIssuer, type LaunchCookieIssuer } from './http/launch-cookie.js';
 import { createForgeWatcherJob } from './tracking/loops.js';
 import { createTaskNudgeJob } from './tracking/task-nudges.js';
 import { createFormDeliveryJob, FormDeliveryDrain } from './facade/services/w2/form-delivery.js';
@@ -199,6 +206,12 @@ export interface BootstrappedServer {
    * hunt through a terminal that does not exist.
    */
   readonly claimUrl: string | undefined;
+  /**
+   * W2 / K4 — the launch cookie issuer, present only where the loopback owner
+   * needs the cookie. Returned so the desktop shell can be handed a one-time
+   * `/launch/` URL (see `desktopReadyUrl`); nothing else outside bootstrap mints.
+   */
+  readonly launchCookie: LaunchCookieIssuer | undefined;
 }
 
 export async function bootstrap(opts: BootstrapOptions = {}): Promise<BootstrappedServer> {
@@ -1069,7 +1082,9 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     });
   }
 
-  return { server, subscriptions, events, url, db, delivery, preview, scheduler, execution, claimUrl };
+  return {
+    server, subscriptions, events, url, db, delivery, preview, scheduler, execution, claimUrl, launchCookie,
+  };
 }
 
 export async function main(): Promise<void> {
@@ -1081,7 +1096,7 @@ export async function main(): Promise<void> {
 
     // TRUE only here: this is the one caller that owns the process lifetime and
     // can therefore stop what it starts (see BootstrapOptions.startBackgroundJobs).
-    const { server, url, db, delivery, preview, scheduler, execution, claimUrl } = await bootstrap({
+    const { server, url, db, delivery, preview, scheduler, execution, claimUrl, launchCookie } = await bootstrap({
       startBackgroundJobs: true,
       ...(sidecar ? { config: await desktopServerConfig() } : {}),
       // TM8 Chat production composition: ClaudeHeadlessAdapter + the C5-minting
@@ -1184,7 +1199,15 @@ export async function main(): Promise<void> {
       if ((msg as { type?: string } | null)?.type === 'tm8:shutdown') shutdown('IPC shutdown');
     });
 
-    report({ phase: 'ready', message: 'Ready', url: claimUrl ?? url });
+    // IPC only: with a launch cookie in play the ready URL carries a one-time
+    // code, so it must never reach stdout or a log line.
+    // Only the desktop profile mints: a server install has no IPC parent to
+    // hand the code to, and an unused code is still a live credential.
+    report({
+      phase: 'ready',
+      message: 'Ready',
+      url: isDesktopProfile() ? desktopReadyUrl(url, claimUrl, launchCookie) : claimUrl ?? url,
+    });
   } catch (err) {
     report({
       phase: 'failed',
