@@ -117,6 +117,11 @@ function claimValue(value: string | undefined): string {
  * only for agent kinds while `TM8_SPACE_SESSIONS` is not `off`. Every
  * membership helper intersects with it, so the owner's full identity is
  * narrowed to that space. Immutable for the session's life, like `kind`.
+ *
+ * `tm8.via_link` — the SEVENTH claim (256, W7p). The space link a `link`
+ * session, or an agent session minted under one, descends from
+ * (`auth_sessions.via_link_id`). Written once by the issuing RPC, like the
+ * two above; `internal.link_bound()` reads it.
  */
 const BIND_CLAIMS_SQL = `select
   set_config('tm8.identity_id', $1, true),
@@ -125,7 +130,8 @@ const BIND_CLAIMS_SQL = `select
   set_config('tm8.request_id',  $4, true),
   set_config('tm8.auth_kind',   $5, true),
   set_config('tm8.session_space_id', $6, true),
-  set_config('role',            $7, true)`;
+  set_config('tm8.via_link',    $7, true),
+  set_config('role',            $8, true)`;
 
 /**
  * An RPC name must be a bare (optionally schema-qualified) identifier. `fn` is
@@ -424,6 +430,8 @@ export class PgDb implements Db {
         claimValue(claims.authKind),
         // Absent binds as `''`: unpinned, every helper answers as before 227.
         claimValue(claims.sessionSpaceId),
+        // 256 (W7p). Absent binds as `''`: not link-bound.
+        claimValue(claims.viaLinkId),
         this.role,
       ]);
 

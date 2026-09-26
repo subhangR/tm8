@@ -442,6 +442,13 @@ export class FakeGraph implements GraphPort {
     return true;
   }
 
+  // --- link provenance seam (256, W7p) -----------------------------------------
+
+  /** No links in the fake: nothing is link-bound. `link-bound-resume.test.ts` overrides. */
+  async isLinkBound(_auth: GraphAuth, _agentToken: string): Promise<boolean> {
+    return false;
+  }
+
   // --- posture inheritance seam ----------------------------------------------
 
   /** Recorded postures by session id — what a parent session was launched with. */

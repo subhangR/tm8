@@ -683,7 +683,11 @@ describe('W2.I02 tranche-v2 public composition', () => {
     const facade: FacadeDeps = { db, config, owner: async () => FAKE_OWNER };
     const registry = composeTrancheV2(dataDir, db, facade.owner);
 
-    const composed = registry.get('messages.list')!;
+    // 256 (W7p): `get` returns the frame's link-bearer wrapper around the
+    // registered handler, so the comparison reads the registered handler.
+    const registered = (name: string) =>
+      (registry as unknown as { handlers: Map<string, ReturnType<HandlerRegistry['get']>> }).handlers.get(name);
+    const composed = registered('messages.list')!;
     const legacy = messagesList(facade);
 
     // POSITIVE: the composed handler IS the legacy reader.
@@ -697,8 +701,8 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // alike. Both controls read the registry rather than importing a second
     // factory, so deleting a handler module's export cannot silently disarm
     // them the way it did when this control named `messagesPost` directly.
-    expect(registry.get('messages.edit')!.toString()).not.toBe(legacy.toString());
-    expect(registry.get('messages.delete')!.toString()).not.toBe(legacy.toString());
+    expect(registered('messages.edit')!.toString()).not.toBe(legacy.toString());
+    expect(registered('messages.delete')!.toString()).not.toBe(legacy.toString());
   });
 
   /**

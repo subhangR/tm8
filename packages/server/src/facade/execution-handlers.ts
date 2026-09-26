@@ -105,6 +105,7 @@ import type { ServerConfig } from '../http/config.js';
 import { fail } from '../http/errors.js';
 import { json } from '../http/types.js';
 import { claimsFor, commandEnvelope, requireUuidParam } from './context.js';
+import { refuseLinkBearer } from '../identity/link-bearer.js';
 import { LIVE_CHAT_COUNTS_SQL, type LiveChatCountRow } from './live-counts.js';
 import { projectLaunchContext } from './launch-context.js';
 import { loadContextV2 } from './services/w2/feed-context-v2.js';
@@ -119,7 +120,7 @@ import {
   resolveInteractionProfileForLaunch,
 } from '../profiles/w2-profile-resolver.js';
 import { formatToken, generateSecret, hashToken } from '../identity/crypto.js';
-import { SESSION_TTL_MS } from '../identity/pg-auth.js';
+import { resolveBearerIdentity, SESSION_TTL_MS } from '../identity/pg-auth.js';
 
 // Claims come from ./context.ts, deliberately NOT from a local helper.
 //
@@ -359,6 +360,28 @@ export class DbGraphPort implements GraphPort {
 
   private claims(auth: GraphAuth): DbClaims {
     return auth as DbClaims;
+  }
+
+  /**
+   * 256 (W7p): a `link` session, or an agent minted under one — read off the
+   * verified auth-session row (`createSessionIdentityResolver`), never from
+   * the client — OR a launch whose freshly minted session carries the
+   * via_link stamp: a non-link member resuming a work session that ran under
+   * a link. That stamp is the SQL decision (`link_provenance_for`), so the TS
+   * policy follows it rather than the resumer's claims. A token that does not
+   * resolve throws, and the launch is refused.
+   *
+   * The `authKind === 'link'` half is not live in #898: a link session's
+   * token is refused on every wire (identity-resolver.ts), the registry
+   * refuses a link identity on every operation (its allow-list is empty), and
+   * execution.spawn, execution.resume and execution.dispatch refuse it again
+   * before any launch — see identity/link-bearer.ts. It becomes reachable only
+   * when #884 allow-lists `spaceLinks.invoke`, and fails closed.
+   */
+  async isLinkBound(auth: GraphAuth, agentToken: string): Promise<boolean> {
+    const claims = this.claims(auth);
+    if (claims.authKind === 'link' || claims.viaLinkId) return true;
+    return Boolean((await resolveBearerIdentity(this.db, agentToken)).viaLinkId);
   }
 
   /**
@@ -2183,6 +2206,18 @@ const TRANSCRIPT_LAST_DEFAULT = 20;
 const TRANSCRIPT_LAST_MAX = 200;
 
 /**
+ * The journal and transcript refusal for a session on someone else's private
+ * credential (doc 13 §3h, 257). Says nothing about the credential: no label,
+ * hint, login or owner (threat review R16).
+ */
+function privateCredentialSessionRefusal(): CollabError {
+  return new CollabError(
+    'forbidden',
+    'this session runs on a private credential; only its owner may read it',
+  );
+}
+
+/**
  * `relative()`-based containment: true iff `candidate` is at or beneath `root`.
  * Copied from `files/w2-blob-store.ts` so the journal path can never escape the
  * journals dir even through a symlink (we realpath before trusting it).
@@ -2798,15 +2833,19 @@ function registerHandlers(
     const owner = await resolveOwner();
     const claims = claimsFor(owner, ctx);
     const sessionId = requireUuidParam(ctx, 'workSessionId');
-    const sessions = await db.query<{ id: string }>(
+    const sessions = await db.query<{ id: string; credential_allowed: boolean }>(
       claims,
-      `select e.id from public.entities e
+      `select e.id, public.session_stream_credential_allowed(e.id) as credential_allowed
+         from public.entities e
         where e.id = $1 and e.kind = 'work_session' and e.deleted_at is null`,
       [sessionId],
     );
     if (!sessions[0]) {
       throw new CollabError('not_found', `no such work session: ${sessionId}`);
     }
+    // Doc 13 §3h (257): the journal is a VIEW path like the PTY. A session on a
+    // private credential is readable by that credential's owner only.
+    if (!sessions[0].credential_allowed) throw privateCredentialSessionRefusal();
 
     const rawLimit = ctx.query.get('limit');
     let limit = JOURNAL_LIMIT_DEFAULT;
@@ -2943,10 +2982,12 @@ function registerHandlers(
       agent_tool: string | null;
       agent_config_dir: string | null;
       model: string | null;
+      credential_allowed: boolean;
     }>(
       claims,
       `select ws.native_session_id, ws.workdir_path, ws.workdir_mode, ws.agent_tool,
-              ws.agent_config_dir, ws.model
+              ws.agent_config_dir, ws.model,
+              public.session_stream_credential_allowed(e.id) as credential_allowed
          from public.entities e
          join public.work_sessions ws on ws.entity_id = e.id
         where e.id = $1 and e.kind = 'work_session' and e.deleted_at is null`,
@@ -2956,6 +2997,8 @@ function registerHandlers(
     if (!session) {
       throw new CollabError('not_found', `no such work session: ${sessionId}`);
     }
+    // Doc 13 §3h (257): as for the journal — owner-only on a private credential.
+    if (!session.credential_allowed) throw privateCredentialSessionRefusal();
 
     const rawLast = ctx.query.get('last');
     let last = TRANSCRIPT_LAST_DEFAULT;
@@ -3032,6 +3075,9 @@ function registerHandlers(
     const owner = await resolveOwner();
     const envelope = commandEnvelope(ctx);
     const claims = claimsFor(owner, ctx, envelope);
+    // 256 (W7p, ruling A'): a link session launches nothing, before anything
+    // is read or written. See identity/link-bearer.ts.
+    refuseLinkBearer(claims);
 
     // `selection` names exact memories, skills and references (design 01a0d348 §5.1).
     // Refused by name BEFORE anything is written — resolving the anchors
@@ -3236,6 +3282,11 @@ function registerHandlers(
     const owner = await resolveOwner();
     const envelope = commandEnvelope(ctx);
     const claims = claimsFor(owner, ctx, envelope);
+    // 256 (W7p, ruling A', layer (iii)): nor dispatches — a dispatch derives a
+    // task and may spawn the dispatcher, both before any credential read would
+    // refuse it. Defence in depth behind the wire and registry refusals; see
+    // identity/link-bearer.ts.
+    refuseLinkBearer(claims);
 
     // Any launchable entity, exactly as execution.spawn treats taskIds — a task
     // passes through untouched.
@@ -3321,6 +3372,8 @@ function registerHandlers(
     const owner = await resolveOwner();
     const envelope = commandEnvelope(ctx);
     const claims = claimsFor(owner, ctx, envelope);
+    // 256 (W7p, ruling A'): nor resumes anything. See identity/link-bearer.ts.
+    refuseLinkBearer(claims);
     const resumeInput = ctx.body as ExecutionResumeInput;
     const result = await rethrowing(() =>
       spawnService.resume(claims, {
