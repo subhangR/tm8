@@ -3,7 +3,8 @@
  * the placeholder ordinal 999 until #874 leaves draft; it is found by name.
  *
  * A node is seeded before 234 with folder F granted to spaces A and B (the
- * shape 7 folders had on prod), then migrated through the rest of the chain. The index file is applied
+ * shape 7 folders had on prod), then migrated through 234, recorded as a
+ * 'shared' node, and migrated through the rest of the chain. The index file is applied
  * repeatedly as the node policy and the grants change: it builds the index
  * only on a 'one_space' node, refuses there while F is granted twice, and
  * builds it once the second grant is unlinked.
@@ -21,7 +22,8 @@ vi.setConfig({ testTimeout: 120_000, hookTimeout: 240_000 });
 const ordinal = (file: string): number => Number(file.slice(0, 3));
 const INDEX_FILE = /^\d{3}_space_projects_one_space_per_folder\.sql$/;
 const BEFORE_234 = migrationFiles().filter((f) => ordinal(f) < 234);
-const REST = migrationFiles().filter((f) => ordinal(f) >= 234 && !INDEX_FILE.test(f));
+const AT_234 = migrationFiles().filter((f) => ordinal(f) === 234);
+const REST = migrationFiles().filter((f) => ordinal(f) > 234 && !INDEX_FILE.test(f));
 const INDEX_MIGRATION = migrationFiles().filter((f) => INDEX_FILE.test(f));
 const INDEX = ONE_SPACE_INDEX;
 
@@ -35,6 +37,7 @@ const ids = {
   memberA: randomUUID(),
   memberB: randomUUID(),
   folderF: randomUUID(),
+  folderG: randomUUID(),
 };
 
 async function asOwner(fn: (q: { query: (sql: string, p?: unknown[]) => Promise<unknown> }) => Promise<void>): Promise<void> {
@@ -107,6 +110,12 @@ beforeAll(async () => {
   database = await createW1ScratchDatabase('w11_index');
   database.apply(BEFORE_234);
   await seedDoubleGrant();
+  database.apply(AT_234);
+  // Record the loopback posture before the rest of the chain: a later
+  // migration may refuse a folder granted to two spaces on any other node
+  // (#866's W11-repoint is fail-closed on no policy row). Each cell below
+  // sets the policy it tests.
+  await setPolicy('shared');
   database.apply(REST);
 }, 240_000);
 
@@ -173,5 +182,23 @@ describe('one space per folder index', () => {
       code = String((error as { code?: string }).code);
     }
     expect(code).toBe('23505');
+  });
+
+  it('the paired positive: a folder granted to one space only is still linkable', async () => {
+    await asOwner(async (q) => {
+      await q.query(
+        `insert into public.projects(id, name, working_dir, trust) values ($1, 'IDX G', '/tmp/w11-idx-g', 'trusted')`,
+        [ids.folderG],
+      );
+      await q.query(
+        'insert into public.space_projects(space_id, project_id, linked_by) values ($1, $2, $3)',
+        [ids.spaceB, ids.folderG, ids.memberB],
+      );
+    });
+    const rows = await database.query<{ space_id: string }>(
+      'select space_id from public.space_projects where project_id = $1',
+      [ids.folderG],
+    );
+    expect(rows.map((r) => r.space_id)).toEqual([ids.spaceB]);
   });
 });
