@@ -4966,8 +4966,8 @@ async function seedAgentFor(identityId: string, memberId: string): Promise<strin
       `insert into public.team_members(entity_id, owner_member_id, name, role, identity)
        values ($1, $2, 'W7 agent', 'worker', 'persona')`, [persona, memberId]);
     await client.query(
-      `insert into public.work_sessions(entity_id, title, status, share_mode, started_at)
-       values ($1, 'W7 run', 'running', 'none', now())`, [workSession]);
+      `insert into public.work_sessions(entity_id, title, status, share_mode, started_at, workdir_mode)
+       values ($1, 'W7 run', 'running', 'none', now(), 'scratch')`, [workSession]);
     await client.query(
       `insert into public.edges(space_id, src_id, dst_id, type, created_by)
        values ($1, $2, $3, 'participates_in', $2)`, [fixture.spaceA, persona, workSession]);

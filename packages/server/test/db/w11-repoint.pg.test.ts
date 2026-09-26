@@ -29,13 +29,18 @@ import { createW1ScratchDatabase, migrationFiles, REPO_ROOT, type W1ScratchDatab
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 300_000 });
 
-const REPOINT = '260_w11_repoint_project_entity.sql';
+const REPOINT = '262_w11_repoint_project_entity.sql';
 const ordinal = (file: string): number => Number(file.slice(0, 3));
 const BEFORE = migrationFiles().filter((f) => ordinal(f) < 234);
 const W11_MODEL = migrationFiles().filter((f) => ordinal(f) === 234);
 const W11_BACKFILL = migrationFiles().filter((f) => ordinal(f) === 259);
 const MID = migrationFiles().filter((f) => ordinal(f) > 234 && ordinal(f) < 259);
-const AFTER = migrationFiles().filter((f) => ordinal(f) > 260);
+// The repoint's ordinal is a PLACEHOLDER the owner's merge re-takes; everything keys off it.
+const REPOINT_ORDINAL = ordinal(REPOINT);
+// Main's migrations between 259 and the repoint (260 space_link_invoke today): a node applies
+// them before the owner runs the repoint, so the chain here does too.
+const LATE = migrationFiles().filter((f) => ordinal(f) > 259 && ordinal(f) < REPOINT_ORDINAL);
+const AFTER = migrationFiles().filter((f) => ordinal(f) > REPOINT_ORDINAL);
 const repointSql = readFileSync(join(REPO_ROOT, 'db/migrations', REPOINT), 'utf8');
 
 let database: W1ScratchDatabase;
@@ -219,6 +224,7 @@ describe.sequential('260 needs 259 to have RUN', () => {
 describe.sequential('the sharing refusal under decision 29 (after 259)', () => {
   beforeAll(() => {
     database.apply(W11_BACKFILL);
+    database.apply(LATE);
   });
 
   const sharingLine = (): string => `1 folder(s) granted to more than one space: ${ids.folderF} "W11R F" in 2 spaces`;
@@ -596,7 +602,7 @@ function latestBodyBefore260(name: string): { file: string; lines: string[] } {
   const [schema, fn] = name.split('.') as [string, string];
   const head = new RegExp(`create\\s+or\\s+replace\\s+function\\s+(?:${schema}\\.)${fn}\\s*\\(`, 'gi');
   let found: { file: string; lines: string[] } | null = null;
-  for (const file of migrationFiles().filter((f) => ordinal(f) < 260)) {
+  for (const file of migrationFiles().filter((f) => ordinal(f) < REPOINT_ORDINAL)) {
     const sql = readFileSync(join(REPO_ROOT, 'db/migrations', file), 'utf8');
     for (const m of sql.matchAll(head)) {
       const lineStart = sql.lastIndexOf('\n', m.index) + 1;
