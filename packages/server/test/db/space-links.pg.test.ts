@@ -1004,6 +1004,17 @@ describe('W6 D2 — a database failure while resolving a link session is NOT sig
     expect(staleNotices.length).toBe(before);
     // Paired positive: the real store still resolves it.
     expect((await store.use(claims, live.id)).linkId).toBe(live.id);
+
+    // And a DEAD token (its session revoked) still marks the link signed_out.
+    const sessionId = (await store.list(claims, fixture.spaceA)).find((l) => l.id === live.id)!.mine!.sessionId!;
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query('update public.auth_sessions set revoked_at = now() where id = $1', [sessionId]);
+    });
+    await expect(store.use(claims, live.id)).rejects.toMatchObject({ status: 'signed_out' });
+    expect(staleNotices.slice(before)).toEqual([expect.objectContaining({ linkId: live.id, status: 'signed_out' })]);
+    expect((await store.list(claims, fixture.spaceA)).find((l) => l.id === live.id)?.mine?.status).toBe('signed_out');
+    await store.login(claims, live.id, { relogin: true });
   });
 });
 

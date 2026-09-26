@@ -27,7 +27,8 @@
 -- link tokens (decision 31's refused set). The credential READERS and sweeps
 -- that are security definer and do not call it (e.g. read_account_git_credential,
 -- read_space_credential_for_spawn, read_space_credential_policy,
--- expire_pending_space_credentials, repoint_session_space_credentials) are
+-- expire_pending_space_credentials, repoint_session_space_credentials,
+-- read_node_credential_policy (returns policy only, no secret)) are
 -- not refused for `link` by this file: that SQL refusal is W7's gate, and W7
 -- owns it. What decision 31 admits for `link` (invites, roles, delete) never
 -- called the gate, so it passes as the member with no change here.
