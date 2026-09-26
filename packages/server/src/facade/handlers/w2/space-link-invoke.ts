@@ -67,6 +67,7 @@ import { SpaceLinkUnusable, type DbSpaceLinkStore, type SpaceLinkInvokeRow } fro
 import type { FacadeDeps } from '../../deps.js';
 import { INPUT_SCHEMAS } from '../../input-schemas.js';
 import type { HandlerRegistry } from '../../registry.js';
+import type { RemoteInvokeForwarder } from '../../../remote/forwarder.js';
 
 /** The typed refusal code for anything in the refused set or the via rule. */
 export const SPACE_LINK_REFUSED_CODE = 'space_link_refused';
@@ -82,38 +83,9 @@ export const SPACE_LINK_INVOKE_LIMIT = { limit: 120, windowMs: 60_000 } as const
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const UNKNOWN_OP = '(unknown)';
 
-/*
- * TYPE-ONLY COPY. MUST EQUAL `packages/server/src/remote/forwarder.ts` (W8,
- * #885 @ 7c8a9ea6); replaced by an import on re-stack. Until then, when both
- * files are present, this compile-time equality check goes in beside the import:
- *
- *   type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
- *   const _req: Same<RemoteInvokeRequest, W8.RemoteInvokeRequest> = true;
- *   const _res: Same<RemoteInvokeResult, W8.RemoteInvokeResult> = true;
- *   const _fwd: Same<RemoteInvokeForwarder, W8.RemoteInvokeForwarder> = true;
- */
-export interface RemoteInvokeRequest {
-  claims: DbClaims;
-  linkId: string;
-  serverId: string;
-  op: string;
-  params?: Record<string, string>;
-  query?: Record<string, string>;
-  input: unknown;
-  via: readonly string[];
-  workSessionId?: string;
-  timeoutMs?: number;
-}
-export type RemoteInvokeResult =
-  | { kind: 'ok'; status: number; body: unknown }
-  | { kind: 'refused'; status: number; code: string; message: string }
-  | { kind: 'signed_out' }
-  | { kind: 'unreachable'; reason: 'non_public_address' | 'invalid_url' | 'dns' | 'tls' }
-  | { kind: 'offline'; reason: 'connect_refused' | 'timeout' | 'reset' }
-  | { kind: 'disabled'; reason: 'remote_links_disabled' };
-export interface RemoteInvokeForwarder {
-  forward(req: RemoteInvokeRequest): Promise<RemoteInvokeResult>;
-}
+// W8 (#885, rebuilt on main f01b1566): the forwarder types, formerly a
+// type-only copy here, now come from their one home.
+export type { RemoteInvokeForwarder, RemoteInvokeRequest, RemoteInvokeResult } from '../../../remote/forwarder.js';
 
 /** Typed `details.reason` for a remote target that did not run the op. */
 export const SPACE_LINK_UNREACHABLE = 'space_link_unreachable';
@@ -126,7 +98,10 @@ export interface SpaceLinkInvokeOptions {
   limiter?: FixedWindowLimiter;
   /**
    * Runs an invoke whose link targets another server (`target_server_id` set).
-   * Absent: a remote link is refused as not implemented, never resolved here.
+   * Defaults to `deps.remoteInvokeForwarder` — in production W8's
+   * `DisabledRemoteInvokeForwarder`, so a remote link refuses at once with
+   * `space_link_remote_disabled`. Neither set: refused as not implemented,
+   * never resolved here.
    */
   forwarder?: RemoteInvokeForwarder;
 }
@@ -300,7 +275,7 @@ export function createSpaceLinkInvokeHandlers(
    */
   const remote: SpaceLinkExecutor = async (request) => {
     const serverId = request.row.targetServerId;
-    const forwarder = options.forwarder;
+    const forwarder = options.forwarder ?? deps.remoteInvokeForwarder;
     if (!forwarder || !serverId) {
       throw new SpaceLinkExecuteFailure('remote_not_wired',
         new CollabError('not_implemented', 'this node cannot forward to a remote space link yet'));
