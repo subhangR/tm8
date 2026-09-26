@@ -1027,12 +1027,17 @@ const ROWS: Record<OperationName, Row> = {
   },
   'attentionRequests.create': {
     cmd: ['entity', 'attention'],
-    syn: 'tm8 entity attention <entity-id> --reason <text> --points <1-100> [--mutation-id <id>]',
-    sum: 'Request scored attention for any entity',
+    syn: 'tm8 entity attention <entity-id> --reason <text> [--level fyi|normal|high|urgent] [--type decide|approve|unblock|review|fyi] [--assignee <member-id>] [--points <1-100>] [--mutation-id <id>]',
+    sum: 'Ask a human for attention on any entity',
     authz: 'entity',
     input: 'bound',
     tags: ['attention', 'needs-attention', 'triage'],
-    examples: ['tm8 entity attention <entity-id> --reason "Need a decision" --points 80'],
+    notes: [
+      '--level defaults to normal and --type to decide; --points is an override, otherwise it derives from the level (fyi 10, normal 40, high 70, urgent 95)',
+      'from inside a session the request is stamped with that session (never a flag); the same session asking the same reason again returns the open request (affected: 0)',
+      'the resolver\'s note arrives as a message in the raising session about 8s after the resolve; end your turn and wait',
+    ],
+    examples: ['tm8 entity attention <task-id> --reason "Pick the retry policy" --level high'],
   },
   'attentionRequests.list': {
     cmd: ['attention', 'list'],
@@ -1048,9 +1053,34 @@ const ROWS: Record<OperationName, Row> = {
   },
   'attentionRequests.resolveEntity': {
     cmd: ['attention', 'resolve-entity'],
-    syn: 'tm8 attention resolve-entity <entity-id> [--note <text>] [--mutation-id <id>]',
-    sum: 'Resolve every pending attention request for one entity',
+    syn: 'tm8 attention resolve-entity <entity-id> [--note <text>] [--batch-id <uuid>] [--mutation-id <id>]',
+    sum: 'Resolve every pending attention request on an entity\'s roll-up root',
     authz: 'entity', input: 'bound', tags: ['attention', 'resolve', 'clear'],
+    notes: [
+      'resolving is for humans: an agent should not resolve (a convention, not enforced); an agent takes back its own request with `tm8 attention withdraw`',
+      'settles the root\'s own requests and those rolled up from its sessions and forms, as one batch; `tm8 attention unresolve <batch-id>` undoes it within 8s, after which the note is delivered to each raising session',
+    ],
+  },
+  'attentionRequests.markSeen': {
+    cmd: ['attention', 'seen'],
+    syn: 'tm8 attention seen <entity-id> [--mutation-id <id>]',
+    sum: 'Mark every pending attention request on an entity\'s roll-up root seen by you',
+    authz: 'entity', input: 'bound', tags: ['attention', 'seen', 'read'],
+    notes: ['seen is per person: it never changes a request\'s status, the counts, or anyone else\'s view'],
+  },
+  'attentionRequests.unresolve': {
+    cmd: ['attention', 'unresolve'],
+    syn: 'tm8 attention unresolve <batch-id> [--mutation-id <id>]',
+    sum: 'Undo one resolve within 8s, reopening its requests and cancelling its note',
+    authz: 'entity', input: 'bound', tags: ['attention', 'undo', 'reopen'],
+    notes: ['only the resolver, and only within 8s of the resolve (conflict undo_window_closed after)'],
+  },
+  'attentionRequests.withdraw': {
+    cmd: ['attention', 'withdraw'],
+    syn: 'tm8 attention withdraw <request-id> [--expect-version <n>] [--mutation-id <id>]',
+    sum: 'Withdraw an open attention request you raised',
+    authz: 'entity', input: 'bound', ver: 'expectedVersion', tags: ['attention', 'withdraw', 'dismiss'],
+    notes: ['only the agent that raised it, and only an open agent request; nothing is delivered'],
   },
   'entities.move': {
     cmd: ['entity', 'move'],

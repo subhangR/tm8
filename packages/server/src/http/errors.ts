@@ -64,6 +64,9 @@ export const SQLSTATE_TO_ERROR_CODE: Readonly<Record<string, CommandErrorCode>> 
   // 211: a form question/section key or position already taken, or an
   // illegal lifecycle transition; details.reason says which.
   TFC01: 'conflict',
+  // Attention v2 (256): an undo past its window, a withdraw of a row that is
+  // not an open agent row, a reused batch id; details.reason says which.
+  TAC01: 'conflict',
 };
 
 /** Translate a driver error carrying a SQLSTATE into the taxonomy. */

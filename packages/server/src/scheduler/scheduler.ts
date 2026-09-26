@@ -225,7 +225,7 @@ export class Scheduler {
       rec.lastError = null;
       const ms = Date.now() - startedAtMs;
       if (outcome.skipped) {
-        this.logger.info(`job "${rec.job.name}" skipped: ${outcome.reason ?? 'no reason given'} (${ms}ms)`);
+        if (!rec.job.quietSkips) this.logger.info(`job "${rec.job.name}" skipped: ${outcome.reason ?? 'no reason given'} (${ms}ms)`);
       } else {
         this.logger.info(
           `job "${rec.job.name}" ok${outcome.affected === undefined ? '' : ` (affected ${outcome.affected})`} (${ms}ms)`,

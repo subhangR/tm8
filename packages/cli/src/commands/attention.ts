@@ -5,7 +5,9 @@ import { clientFor, observedInvoke } from '../discovery/observe.js';
 import type { CommandContext, CommandModule } from '../run.js';
 import { assertKnownOptions, pageQuery, requireArg, summaryLine, withActor } from './entity.js';
 
-const STATUSES = ['open', 'acknowledged', 'resolved', 'dismissed'] as const;
+// `cleared` (Attention v2) is tm8's own settle of a system row: listable, never settable here.
+const STATUSES = ['open', 'acknowledged', 'resolved', 'dismissed', 'cleared'] as const;
+const UPDATE_STATUSES = ['open', 'acknowledged', 'resolved', 'dismissed'] as const;
 
 function renderAttentionPage(dto: unknown): string {
   const page = dto as { items?: unknown[]; nextCursor?: string | null };
@@ -18,11 +20,12 @@ function renderAttentionPage(dto: unknown): string {
 }
 
 function renderMutation(dto: unknown): string {
-  const result = dto as { request?: { id?: unknown; status?: unknown }; entity?: Parameters<typeof summaryLine>[0]; affectedCount?: unknown };
+  const result = dto as { request?: { id?: unknown; status?: unknown }; entity?: Parameters<typeof summaryLine>[0]; affectedCount?: unknown; resolutionBatchId?: unknown };
   const lines = [];
   if (result.request?.id) lines.push(`attention  ${String(result.request.id)}  ${String(result.request.status ?? '')}`);
   if (result.entity) lines.push(summaryLine(result.entity));
   lines.push(`affected: ${String(result.affectedCount ?? 0)}`);
+  if (typeof result.resolutionBatchId === 'string') lines.push(`batch: ${result.resolutionBatchId}`);
   return lines.join('\n');
 }
 
@@ -55,7 +58,7 @@ async function attentionUpdate(cmd: CommandContext): Promise<ExitCode> {
   const expectedVersion = cmd.options.integer('expect-version');
   if (expectedVersion === undefined) throw new CliError('attention update requires --expect-version <n>', EXIT_USAGE);
   const status = cmd.options.value('status');
-  if (status && !(STATUSES as readonly string[]).includes(status)) {
+  if (status && !(UPDATE_STATUSES as readonly string[]).includes(status)) {
     throw new CliError(`invalid attention status: ${status}`, EXIT_USAGE);
   }
   const points = cmd.options.integer('points');
@@ -80,13 +83,52 @@ async function attentionUpdate(cmd: CommandContext): Promise<ExitCode> {
 }
 
 async function attentionResolveEntity(cmd: CommandContext): Promise<ExitCode> {
-  assertKnownOptions(cmd, ['note', 'mutation-id']);
+  assertKnownOptions(cmd, ['note', 'batch-id', 'mutation-id']);
   const entityId = requireArg(cmd, 0, '<entity-id>');
   const body: Record<string, unknown> = { clientMutationId: resolveMutationId(cmd.options.value('mutation-id')) };
   const note = cmd.options.value('note');
   if (note !== undefined) body.resolutionNote = note;
+  const batchId = cmd.options.value('batch-id');
+  if (batchId !== undefined) body.resolutionBatchId = batchId;
   const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'attentionRequests.resolveEntity', {
     params: { entityId }, body: withActor(cmd, body),
+  });
+  cmd.out.data(data, renderMutation);
+  return EXIT_OK;
+}
+
+async function attentionSeen(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['mutation-id']);
+  const entityId = requireArg(cmd, 0, '<entity-id>');
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'attentionRequests.markSeen', {
+    params: { entityId },
+    body: { clientMutationId: resolveMutationId(cmd.options.value('mutation-id')) },
+  });
+  cmd.out.data(data, renderMutation);
+  return EXIT_OK;
+}
+
+async function attentionUnresolve(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['mutation-id']);
+  const batchId = requireArg(cmd, 0, '<batch-id>');
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'attentionRequests.unresolve', {
+    params: { batchId },
+    body: withActor(cmd, { clientMutationId: resolveMutationId(cmd.options.value('mutation-id')) }),
+  });
+  cmd.out.data(data, renderMutation);
+  return EXIT_OK;
+}
+
+async function attentionWithdraw(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['expect-version', 'mutation-id']);
+  const requestId = requireArg(cmd, 0, '<attention-request-id>');
+  const expectedVersion = cmd.options.integer('expect-version');
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'attentionRequests.withdraw', {
+    params: { requestId },
+    body: withActor(cmd, {
+      clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
+      ...(expectedVersion === undefined ? {} : { expectedVersion }),
+    }),
   });
   cmd.out.data(data, renderMutation);
   return EXIT_OK;
@@ -96,4 +138,7 @@ export const ATTENTION_COMMANDS: CommandModule[] = [
   { path: ['attention', 'list'], run: attentionList },
   { path: ['attention', 'update'], run: attentionUpdate },
   { path: ['attention', 'resolve-entity'], run: attentionResolveEntity },
+  { path: ['attention', 'seen'], run: attentionSeen },
+  { path: ['attention', 'unresolve'], run: attentionUnresolve },
+  { path: ['attention', 'withdraw'], run: attentionWithdraw },
 ];
