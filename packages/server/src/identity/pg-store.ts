@@ -73,6 +73,10 @@ const SQLSTATE_TO_CODE: Record<string, CommandErrorCode> = {
   '22023': 'invalid_input',
   '23514': 'invariant_violation',
   '23503': 'invariant_violation',
+  // PostgreSQL 18 reports a RESTRICT referential action as 23001 rather than
+  // 23503. Unmapped, `translatePgError` returns the raw driver error instead of
+  // a CollabError. See the note in http/errors.ts.
+  '23001': 'invariant_violation',
   '23505': 'invariant_violation',
   '40001': 'version_conflict',
   '53400': 'limit_exceeded',
