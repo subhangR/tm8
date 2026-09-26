@@ -165,6 +165,29 @@ describe.sequential('decision 29 — internal.node_policy is the owner\'s alone'
   });
 });
 
+describe('234/235 — no function carries PUBLIC EXECUTE', () => {
+  it('every function 234 creates or replaces is revoked from PUBLIC (a grant property, not a test outcome)', async () => {
+    const names = [
+      'fill_project_entity_ref', 'fill_worktree_space', 'guard_space_project_link', 'sync_project_projections',
+      'materialize_project_projection', 'grant_folder_row', 'project_entity_for', 'project_folders_shared',
+      'require_gate_admin', 'space_project_unique_index_sql', 'create_space_project', 'gate_folders_list',
+      'grant_folder', 'register_folder', 'resolve_project_ref', 'space_folders_for_caller', 'space_projects_for_caller',
+    ];
+    const rows = await asOwner((c) => c.query<{ fn: string; public_execute: boolean }>(
+      `select p.oid::regprocedure::text fn,
+              p.proacl is null
+              or exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0 and a.privilege_type = 'EXECUTE')
+                public_execute
+         from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname in ('public', 'internal') and p.proname = any($1::text[])`,
+      [names],
+    ));
+    // Every name resolves (a rename would otherwise shrink this to a vacuous pass).
+    expect(new Set(rows.rows.map((r) => r.fn.replace(/^(public|internal)\./, '').replace(/\(.*$/, '')))).toEqual(new Set(names));
+    expect(rows.rows.filter((r) => r.public_execute).map((r) => r.fn)).toEqual([]);
+  });
+});
+
 describe.sequential('decision 29 — a second grant of one folder', () => {
   it('no row: projects.link refuses F into B (23505) — the paired positive is the last case', async () => {
     await clearPolicy();

@@ -4,7 +4,7 @@
  * Since migration 234 a folder is granted to at most one space on any node
  * that is not loopback-only (decision 29).
  *
- * K13, as the owner answered it (form 01a0db32-d438): NOT a heuristic. Every
+ * K13, per Subhang's note on form 01a0db32: NOT a heuristic. Every
  * project is owned by the space the owner names for it in an explicit,
  * owner-confirmed mapping (project -> owning space). W11-migrate takes that
  * mapping as input and REFUSES any project it does not name — a folder is

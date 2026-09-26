@@ -448,6 +448,17 @@ const FORMS_NET_NEW_OPERATIONS = [
   'forms.update',
 ] as const;
 
+/**
+ * W11 (234, decision 29): space-scoped projects and gate folders. Net-new;
+ * projects.link stays, so nothing is replaced. MEASURED.
+ */
+const W11_NET_NEW_OPERATIONS = [
+  'gate.folders.create',
+  'gate.folders.list',
+  'spaces.projects.create',
+  'spaces.projects.list',
+] as const;
+
 const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
   ...EXPECTED_TRANCHE_V2_FACADE_OPERATIONS,
   ...TRANCHE_V3_NET_NEW_OPERATIONS,
@@ -464,6 +475,7 @@ const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
   ...SKILLS_NET_NEW_OPERATIONS,
   ...JEV_NET_NEW_OPERATIONS,
   ...FORMS_NET_NEW_OPERATIONS,
+  ...W11_NET_NEW_OPERATIONS,
 ].sort();
 
 /** Substituted for every `:param` so one probe covers any catalog path shape. */
@@ -622,7 +634,8 @@ describe('W2.I02 tranche-v2 public composition', () => {
         + CONTAINER_NET_NEW_OPERATIONS.length
         + SKILLS_NET_NEW_OPERATIONS.length
         + JEV_NET_NEW_OPERATIONS.length
-        + FORMS_NET_NEW_OPERATIONS.length,
+        + FORMS_NET_NEW_OPERATIONS.length
+        + W11_NET_NEW_OPERATIONS.length,
     );
     expect(registry.has('search.query')).toBe(false);
     expect(registry.has('bridge.fetchBlob')).toBe(false);
@@ -791,7 +804,7 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 119 -> 120 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): one bound input schema each. MEASURED on the merged tree from this assertion's own failing run.
     // 120 -> 125 (2026-09-23): skills.scan + F4's create/edit/equip/unequip bind input schemas. MEASURED.
     // 125 -> 126 (Jev lane F #655): launch.suggest binds LaunchSuggestInputSchema. MEASURED from CI's failing run.
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(150); /* +1 spaces.chatDefaults.set binds SetChatDefaultsInputSchema (entity chat G). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +10 forms.* command schemas (Forms W1). MEASURED. */ // +7 SC-3 space/node credential command schemas. MEASURED. // +2 service-key put/delete (Jev lane K). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(152); /* W11: +2 input schemas, spaces.projects.create and gate.folders.create. MEASURED. */ /* +1 spaces.chatDefaults.set binds SetChatDefaultsInputSchema (entity chat G). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +10 forms.* command schemas (Forms W1). MEASURED. */ // +7 SC-3 space/node credential command schemas. MEASURED. // +2 service-key put/delete (Jev lane K). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
 
     // DERIVED, and the load-bearing half of this test. The count above cannot
     // catch a new command operation that forgets a schema — it passes as long
@@ -968,7 +981,7 @@ describe.sequential('W2.I02 real production public surface', () => {
     // branch's execution.gitStage BOTH land, so this moves twice. Git merged
     // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
     // 2026-09-23 (filesystem skills, #647 + #649): nine skills.* rows, all mounted v1 HTTP. MEASURED.
-    expect(health).toMatchObject({ ok: true, /* +13 forms.* (Forms W1). MEASURED. */ operations: 243, implemented: 241 } /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b). MEASURED. */); /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10/+10 SC-3 space/node credential ops. MEASURED. // +3/+3 service keys (Jev lane K). MEASURED. // +1/+1 launch.suggest (Jev lane F #655). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect(health).toMatchObject({ ok: true, /* +13 forms.* (Forms W1). MEASURED. */ operations: 247, implemented: 245 } /* W11: +4 (projects.link stays, decision 29) spaces.projects.list|create and gate.folders.list|create. MEASURED. */ /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b). MEASURED. */); /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10/+10 SC-3 space/node credential ops. MEASURED. // +3/+3 service keys (Jev lane K). MEASURED. // +1/+1 launch.suggest (Jev lane F #655). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
     expect(harness.production.server.registry.size).toBe(245); /* W11: +4 (projects.link stays, decision 29) spaces.projects.list|create and gate.folders.list|create. MEASURED. */ /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +10 SC-3. MEASURED. // +3 service keys (Jev lane K). MEASURED. // +1 launch.suggest (Jev lane F #655). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
 
     // Residual honesty, derived from the live catalog rather than a literal.

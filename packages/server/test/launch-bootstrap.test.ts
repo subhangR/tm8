@@ -27,11 +27,17 @@ class SeedDb implements Db {
   }];
   /** Teammate ids with a spawning/running/idle session. */
   live = new Set<string>();
+  /** W11 (234): folder id -> the ONE space it is granted to. */
+  grants = new Map<string, string>();
   calls: Array<{ fn: string; args: readonly unknown[] }> = [];
 
   async query<R>(_claims: DbClaims, sql: string, params: readonly unknown[] = []): Promise<R[]> {
     if (sql.includes('from public.spaces')) return [{ id: SPACE_ID }] as R[];
     if (sql.includes('from public.projects')) return (this.project ? [this.project] : []) as R[];
+    if (sql.includes('from public.space_projects')) {
+      const spaceId = this.grants.get(String(params[0]));
+      return (spaceId ? [{ space_id: spaceId }] : []) as R[];
+    }
     // The retire sweep, answered from the fake's own state and the query's own
     // params, so a wrong role or name list reds here rather than passing.
     if (sql.includes('public.work_sessions')) {
@@ -52,6 +58,10 @@ class SeedDb implements Db {
     if (fn === 'public.create_project') {
       this.project = { id: PROJECT_ID, trust: 'trusted' };
       return { project: { id: PROJECT_ID } } as T;
+    }
+    if (fn === 'public.grant_folder') {
+      this.grants.set(String(args[1]), String(args[0]));
+      return { spaceId: args[0], projectId: args[1] } as T;
     }
     if (fn === 'public.create_team_member') {
       this.teammates.push({
@@ -142,9 +152,12 @@ describe('launch resource bootstrap', () => {
     expect(db.row('Smoke Agent')).toMatchObject({ model: 'claude-sonnet-5', agent_tool: 'claude-code' });
     expect(createdNames(db)).toEqual(Object.values(HOUSE_TEAMMATE_NAMES));
     expect(db.row('Worker')).toMatchObject({ model: 'claude-opus-5-5[1m]', agent_tool: 'claude-code' });
-    expect(db.calls.some(({ fn, args: callArgs }) =>
-      fn === 'public.link_project_w2' && callArgs[0] === SPACE_ID && callArgs[1] === PROJECT_ID,
-    )).toBe(true);
+    // W11 (234): the folder is granted to exactly one space, once — a second
+    // boot finds the grant and leaves it where it is.
+    expect(db.calls.filter(({ fn, args: callArgs }) =>
+      fn === 'public.grant_folder' && callArgs[0] === SPACE_ID && callArgs[1] === PROJECT_ID,
+    )).toHaveLength(1);
+    expect(db.calls.some(({ fn }) => fn === 'public.link_project_w2')).toBe(false);
   });
 
   it('seeds once: a deleted default stays deleted and a renamed one is not minted again', async () => {

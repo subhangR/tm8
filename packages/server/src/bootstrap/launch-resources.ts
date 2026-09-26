@@ -81,7 +81,7 @@ export async function ensureLaunchResources(args: {
   }
 
   // W11 (234): a folder is granted to ONE space. On a fresh node that is the
-  // owner's personal/first space (the K13 tie-break: no activity yet); when the
+  // owner's personal/first space (launchFolderSpace — not K13); when the
   // folder is already granted — by an earlier boot or a gate admin — the grant
   // is left exactly where it is.
   const granted = await args.db.query<{ space_id: string }>(

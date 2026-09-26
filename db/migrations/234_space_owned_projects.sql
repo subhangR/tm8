@@ -691,4 +691,18 @@ grant execute on function public.space_folders_for_caller(uuid) to tm8_app;
 -- resolving the folder for a member; it now also accepts the project entity id
 -- through the server, which maps it to the folder before calling.
 
+-- Every function this file creates or replaces executes for the roles it is
+-- granted to and no one else: the two new trigger functions would otherwise
+-- carry the default PUBLIC EXECUTE, and the replaced ones are re-stated so the
+-- property is visible here rather than inherited from 015/021/228's ACLs.
+revoke all on function internal.fill_project_entity_ref() from public;
+revoke all on function internal.fill_worktree_space() from public;
+revoke all on function internal.guard_space_project_link() from public;
+revoke all on function internal.sync_project_projections() from public;
+revoke all on function internal.materialize_project_projection(uuid, uuid, boolean) from public;
+
 reset role;
+
+-- A new table is estimated at 10 pages until analyzed (225); analyze it here,
+-- as 229 does, rather than wait for the runner's post-up sweep.
+analyze internal.node_policy;

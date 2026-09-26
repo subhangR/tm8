@@ -57,8 +57,8 @@ describe('W3 evaluator-owned generated discovery adapter', () => {
       },
       nouns: expect.arrayContaining([
         { noun: 'edge', operationCount: 4 },
-        { noun: 'project', operationCount: 19 },
-        { noun: 'space', operationCount: 33 }, // +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. +1 spaces.configs (task 01a0d350). +3 (148): spaces.workflows.*
+        { noun: 'project', operationCount: 21 }, // W11: +2 of the four new ops (spaces.projects.list/create sit under 'space'). MEASURED.
+        { noun: 'space', operationCount: 35 }, // W11: +2 spaces.projects.list|create. MEASURED. // +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. +1 spaces.configs (task 01a0d350). +3 (148): spaces.workflows.*
       ]),
     });
     expect(JSON.stringify(response.result)).not.toContain('/v2/');

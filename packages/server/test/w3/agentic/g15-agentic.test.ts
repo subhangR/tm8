@@ -46,7 +46,7 @@ import {
 // line and this is that string, copied.
 // Re-measured 2026-09-23: the catalog with the nine skills.* rows (#647 + #649).
 // Re-measured 2026-09-23 (Jev lane F): + launch.suggest; the live Received value, copied.
-/* +2 forms.responses.redeliver, forms.pendingForSessions (Forms W3), merged with headers I4. MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ const CATALOG_DIGEST = 'sha256:3e308e7c93717cd9d972dc35a5b3753d237ee27e05c7fb6b50ff1554971b8074' /* I9b: + launch.defaults */ /* headers I4: + entities.header.set/clear; matched to the regenerated manifest. */; /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ // SC-3: +10 space/node credential rows; /* +1 events.changes (change feed step 3). MEASURED. */ Jev lane K: +3 service-key rows
+/* W11: +4 ops (projects.link stays, decision 29); same digest as packages/cli CATALOG_DIGEST. MEASURED from CI run 36209050360 a1. */ /* +2 forms.responses.redeliver, forms.pendingForSessions (Forms W3), merged with headers I4. MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ const CATALOG_DIGEST = 'sha256:90b14327553c62db4cd25f0088af80a3ff54d05df89a008ba551792fb5321125' /* I9b: + launch.defaults */ /* headers I4: + entities.header.set/clear; matched to the regenerated manifest. */; /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ // SC-3: +10 space/node credential rows; /* +1 events.changes (change feed step 3). MEASURED. */ Jev lane K: +3 service-key rows
 const FILLER_ID = '00000000-0000-4000-8000-000000000001';
 
 interface DiscoveredOperation {

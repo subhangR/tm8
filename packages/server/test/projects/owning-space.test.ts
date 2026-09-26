@@ -7,7 +7,7 @@ import {
 } from '../../src/projects/owning-space.js';
 
 /**
- * K13 as answered on form 01a0db32-d438: the owning space comes from an
+ * K13 per Subhang's note on form 01a0db32: the owning space comes from an
  * explicit owner-confirmed mapping; an unmapped project is refused. The
  * fixture is the W11 dry run's seven multi-linked projects (report doc
  * 01a0db2d-aaed) with their activity and owner columns — which a heuristic

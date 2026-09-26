@@ -237,6 +237,11 @@ const DROPPED_BY_LATER_MIGRATION: ReadonlyMap<string, string> = new Map([
   // so 216's keyword-shape check has no caller and is dropped rather than left
   // orphaned. See db/migrations/223_entity_headers_lenient.sql.
   ['internal.valid_header_keywords', '223_entity_headers_lenient.sql'],
+  // 234 (W11) drops 007's legacy `public.link_project(uuid, uuid, uuid, text)`
+  // (228 re-declared it): `projects.link` goes through `link_project_w2`, and a
+  // second door that skipped 234's one-space-per-folder guard is not left
+  // behind. See db/migrations/234_space_owned_projects.sql, section 4.
+  ['public.link_project', '234_space_owned_projects.sql'],
 ]);
 
 function declaredObjects(sql: string): string[] {

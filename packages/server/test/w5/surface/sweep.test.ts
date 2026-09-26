@@ -1373,6 +1373,9 @@ const HANDLER_AUTHORED_400: readonly string[] = [
   // Forms W1: forms.responses.mine without ?spaceId= is refused in-handler
   // (the attentionRequests.list precedent), a handler-reached 400.
   'forms.responses.mine',
+  // W11: gate.folders.create canonicalizes the sweep's synthetic workingDir
+  // in-handler (a path that does not exist), a handler-reached 400.
+  'gate.folders.create',
   'interactionProfiles.activate',
   'interactionProfiles.preview',
   'interactionProfiles.propose',
