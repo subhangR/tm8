@@ -94,6 +94,25 @@ describe('the transcript always says what the agent is doing', () => {
     expect(view.queryByTestId('chat-dock')).toBeNull();
   });
 
+  /** Lane 1's real `TurnInProgress` (#875) carries the stop through: Stop
+   *  turns the row to `Stopping…`, then a FROZEN `Stopped · after …` summary
+   *  that stays until the next send — not a row that vanishes mid-sentence. */
+  it('Stop: the row says so, then freezes as a summary', async () => {
+    const { view, emit } = await sendAndStream();
+    await emit({ kind: 'tool_call', toolCallId: 'b1', name: 'Bash', args: BASH_ARGS, state: 'running' });
+    await view.findByTestId('chat-live-turn');
+    fireEvent.click(view.getByTestId('tch-send-working'));
+    const row = await waitFor(() => {
+      const found = view.getByTestId('chat-live-turn');
+      expect(found.dataset.phase).toBe('stopped');
+      return found;
+    });
+    expect(now(view)).toBe('Stopped');
+    expect(view.getByTestId('chat-live-aside').textContent).toMatch(/^after 1 step · \d+s$/);
+    expect(row.querySelector('.tch-live__glyph--stopped')?.textContent).toBe('■');
+    expect(view.queryByTestId('chat-live-meta')).toBeNull();
+  });
+
   /** D20: one wait line, not two — the old `Agent is thinking…` pulse is the
    *  row now, and nothing else in the transcript says it again. */
   it('never shows two status lines for one turn', async () => {
