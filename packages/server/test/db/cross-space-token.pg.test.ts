@@ -2246,8 +2246,8 @@ describe('claim-free resolvers — returned keys pinned (W3)', () => {
 const RESOLVE_AUTH_SESSION_KEYS = [
   'accountId', 'actingAsTeamMemberId', 'displayName', 'expiresAt', 'identityId', 'isNodeAdmin',
   'isOwner', 'kind', 'label', 'runtimeChatId', 'runtimeMemberId', 'runtimeThreadRootId',
-  'sessionId', 'spaceId', 'username', 'workSessionId',
-];
+  'sessionId', 'spaceId', 'username', 'viaLinkId', 'workSessionId',
+]; // + viaLinkId (992, W7p): the link a session descends from; null on both rows here.
 const RESOLVE_ACCOUNT_CREDENTIAL_KEYS = [
   'accountId', 'disabledAt', 'identityId', 'isNodeAdmin', 'isOwner', 'passwordAlgorithm',
   'passwordHash', 'status', 'username',

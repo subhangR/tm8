@@ -26,6 +26,11 @@
 --      A link that is not signed in mints nothing (42501).
 --   4. A new trigger ends the descendants when the row LEAVES `signed_in`
 --      without revoking the link session (stale `unreachable`).
+--      (250's header says every credential RPC calls 083's
+--      `require_human_auth_kind()`. Only the MANAGEMENT RPCs do. The two
+--      spawn-time reads below admit agent kinds by design and never called the
+--      gate, which is why kind `link` needs the explicit refusals in 5. 250's
+--      text is left as is: editing an applied file is a checksum DRIFT.)
 --   5. 093 `read_account_git_credential` refuses a link-bound caller (42501,
 --      never null). 206 `read_space_credential_for_spawn` admits a link-bound
 --      caller only for the target's DEFAULT credential (no pinned id), and only
