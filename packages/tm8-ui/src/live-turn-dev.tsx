@@ -128,7 +128,7 @@ function Gallery() {
   return (
     <div style={{ padding: 24, display: 'grid', gap: 14, width: '100%', maxWidth: 760, margin: '0 auto' }}>
       {GALLERY.map((item) => (
-        <section key={item.label} data-gallery={item.label}>
+        <section key={item.label} data-gallery={item.label} style={{ minWidth: 0 }}>
           <div style={{ font: '600 11px var(--pn-mono)', color: 'var(--pn-ink-3)', marginBottom: 4 }}>{item.label}</div>
           <TranscriptDock turn={item.turn} parts={item.parts} away={item.away !== undefined} unseen={item.away ?? 0} onJump={() => {}} />
         </section>

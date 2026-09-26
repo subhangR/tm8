@@ -54,8 +54,14 @@ describe('live-turn-status.css', () => {
 
   /** Nothing that ticks may wrap: the transcript re-follows its end only when
    *  the SCREEN re-renders, not when the row's own clock does. */
-  it('the ticking meta and the sentences never wrap', () => {
-    expect(rule('.tch-live__meta')).toMatch(/white-space:\s*nowrap/);
+  /** …and never set the row's width: at 390px the escalated meta held every
+   *  card at 501px until it could shrink and ellipsize. */
+  it('the ticking meta and the sentences never wrap, and never widen the row', () => {
+    const meta = rule('.tch-live__meta');
+    expect(meta).toMatch(/white-space:\s*nowrap/);
+    expect(meta).toMatch(/min-width:\s*0/);
+    expect(meta).toMatch(/text-overflow:\s*ellipsis/);
+    expect(rule('.tch-dock')).toMatch(/min-width:\s*0/);
     expect(rule('.tch-live__now,\n.tch-live__aside')).toMatch(/white-space:\s*nowrap/);
     expect(rule('.tch-live__now,\n.tch-live__aside')).toMatch(/text-overflow:\s*ellipsis/);
   });

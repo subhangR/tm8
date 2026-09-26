@@ -26,6 +26,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
   margin-top: var(--pn-space-2);
   /* The dock spans the measure but only its children take clicks: the strip
      beside a standalone pill must not swallow a click on the turn beneath it. */
@@ -119,11 +120,17 @@
 .tch-live__now { flex: none; max-width: 100%; font-weight: 600; }
 .tch-live__aside { flex: 1; color: var(--pn-ink-3); }
 
+/* `nowrap` so the clock never changes the row's height, and ELLIPSIS so it
+   never sets the row's WIDTH either: measured at 390px, the escalated line
+   (`… still working · 1m 43s since last step`) held every card at 501px. */
 .tch-live__meta {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
   color: var(--pn-ink-3);
   font: var(--pn-fs-fine) var(--pn-mono);
   white-space: nowrap;
+  text-overflow: ellipsis;
 }
 /* Silence past 90s changes TONE, never to an error colour — 74s was measured
    as normal, and silence is not a fault (advisor ruling 3). */
