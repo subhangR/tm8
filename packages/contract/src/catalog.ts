@@ -92,6 +92,15 @@ export const OPERATIONS = [
   { name: 'spaces.leave',          method: 'POST',  path: '/v2/spaces/:spaceId/leave',                   kind: 'command', status: 'v1' },
   // Node admin turns an account off: every session refused, launched work contained (232).
   { name: 'accounts.disable',      method: 'POST',  path: '/v2/accounts/:accountId/disable',             kind: 'command', status: 'v1' },
+  // Space links (W6, migrations 243/244). Every write is human-only in SQL;
+  // list is open to every home member and carries no secret.
+  { name: 'spaceLinks.list',     method: 'GET',    path: '/v2/spaces/:spaceId/space-links',   kind: 'read',    status: 'v1' },
+  { name: 'spaceLinks.add',      method: 'POST',   path: '/v2/spaces/:spaceId/space-links',   kind: 'command', status: 'v1' },
+  { name: 'spaceLinks.login',    method: 'POST',   path: '/v2/space-links/:linkId/login',     kind: 'command', status: 'v1' },
+  { name: 'spaceLinks.relogin',  method: 'POST',   path: '/v2/space-links/:linkId/relogin',   kind: 'command', status: 'v1' },
+  { name: 'spaceLinks.logout',   method: 'POST',   path: '/v2/space-links/:linkId/logout',    kind: 'command', status: 'v1' },
+  { name: 'spaceLinks.remove',   method: 'POST',   path: '/v2/space-links/:linkId/remove',    kind: 'command', status: 'v1' },
+  { name: 'spaceLinks.setSpawn', method: 'PATCH',  path: '/v2/space-links/:linkId/spawn',     kind: 'command', status: 'v1' },
   { name: 'spaces.invites.list',     method: 'GET',    path: '/v2/spaces/:spaceId/invites',                 kind: 'read',    status: 'v1' },
   { name: 'spaces.invites.create',   method: 'POST',   path: '/v2/spaces/:spaceId/invites',                 kind: 'command', status: 'v1' },
   { name: 'spaces.invites.revoke',   method: 'POST',   path: '/v2/spaces/:spaceId/invites/:inviteId/revoke', kind: 'command', status: 'v1' },

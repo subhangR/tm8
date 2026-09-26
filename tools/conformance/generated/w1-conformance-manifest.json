@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:ac682c491fd5abae761557c8b4e155f9e4925ca45cd3ca9112f70f9d9f4f229d",
+  "catalogDigest": "sha256:3b8dcc96fcc96d2e640bdf6794ab7f5ba5dde491274e8f5b12c010038be27e78",
   "catalog": {
-    "total": 248,
-    "v1": 246,
+    "total": 255,
+    "v1": 253,
     "reserved": 2,
-    "http": 246,
+    "http": 253,
     "ws": 1,
-    "registerableV1Http": 244,
+    "registerableV1Http": 251,
     "methods": {
-      "GET": 81,
-      "POST": 117,
-      "PATCH": 16,
+      "GET": 82,
+      "POST": 122,
+      "PATCH": 17,
       "DELETE": 17,
       "PUT": 15,
       "WS": 2
     },
     "kinds": {
-      "read": 85,
-      "command": 161,
+      "read": 86,
+      "command": 167,
       "stream": 2
     },
-    "uniqueNames": 248,
-    "uniqueBindings": 247
+    "uniqueNames": 255,
+    "uniqueBindings": 254
   },
   "reservedOperations": [
     "search.query",
@@ -421,6 +421,55 @@
         "operation": "accounts.disable",
         "method": "POST",
         "path": "/v2/accounts/:accountId/disable",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaceLinks.list",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/space-links",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaceLinks.add",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/space-links",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaceLinks.login",
+        "method": "POST",
+        "path": "/v2/space-links/:linkId/login",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaceLinks.relogin",
+        "method": "POST",
+        "path": "/v2/space-links/:linkId/relogin",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaceLinks.logout",
+        "method": "POST",
+        "path": "/v2/space-links/:linkId/logout",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaceLinks.remove",
+        "method": "POST",
+        "path": "/v2/space-links/:linkId/remove",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaceLinks.setSpawn",
+        "method": "PATCH",
+        "path": "/v2/space-links/:linkId/spawn",
         "status": "registered",
         "source": "server-router"
       },
@@ -2140,7 +2189,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 216
+    "unimplementedV1Http": 223
   },
   "schemas": {
     "additive": {
@@ -2822,6 +2871,126 @@
         "intentTags": [
           "accounts",
           "disable"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaceLinks.list",
+        "noun": "space-link",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaceLinks.list",
+        "intentTags": [
+          "space",
+          "links",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaceLinks.add",
+        "noun": "space-link",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaceLinks.add",
+        "intentTags": [
+          "space",
+          "links",
+          "add"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaceLinks.login",
+        "noun": "space-link",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaceLinks.login",
+        "intentTags": [
+          "space",
+          "links",
+          "login"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaceLinks.relogin",
+        "noun": "space-link",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaceLinks.relogin",
+        "intentTags": [
+          "space",
+          "links",
+          "relogin"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaceLinks.logout",
+        "noun": "space-link",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaceLinks.logout",
+        "intentTags": [
+          "space",
+          "links",
+          "logout"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaceLinks.remove",
+        "noun": "space-link",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaceLinks.remove",
+        "intentTags": [
+          "space",
+          "links",
+          "remove"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaceLinks.setSpawn",
+        "noun": "space-link",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaceLinks.setSpawn",
+        "intentTags": [
+          "space",
+          "links",
+          "set",
+          "spawn"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
