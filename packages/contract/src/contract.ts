@@ -1145,8 +1145,10 @@ export interface CollectionQuery {
      * (flagged upstream): they make the `getHome` preset queries reproducible
      * on re-execution. Actor scope = the actor's member + owned team_members.
      * `inFlightForActorId` = tasks that stable pulled / is working on (not
-     * done/cancelled); `needsActorId` = union of `inReviewForActorId` and
-     * `mentionedActorId` semantics.
+     * done/cancelled); `needsActorId` = has an OPEN attention request
+     * assigned to exactly this actor (a member), pinned to it or rolled up to
+     * it (Attention v2, G1/Q17; it no longer means review or mentions, and it
+     * is NOT widened to owned team_members).
      */
     inFlightForActorId?: EntityId; needsActorId?: EntityId;
     /**
