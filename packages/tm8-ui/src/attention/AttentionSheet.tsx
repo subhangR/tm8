@@ -23,13 +23,19 @@ import './attention-surfaces.css';
  * `MobileSurfaceProvider` — the header sits outside it, and `MobileSheet`
  * portals through that context, so a sheet mounted here would have no host.
  */
+const LEVEL_RANK = { fyi: 0, normal: 1, high: 2, urgent: 3 } as const;
+
 export function AttentionHeaderButton(props: { expanded: boolean; onOpen(): void }) {
   const api = useAttentionOptional();
   if (!api) return null;
   const { mine, all } = api.counts();
   if (all === 0) return null;
   const showMine = mine > 0;
-  const lead = api.queue(showMine ? 'mine' : 'all')[0];
+  // The LOUDEST row colours the button, not the first: the queue puts unseen
+  // rows first, so an unseen FYI would otherwise grey out an urgent request.
+  const lead = [...api.queue(showMine ? 'mine' : 'all')].sort(
+    (a, b) => LEVEL_RANK[b.chip.level] - LEVEL_RANK[a.chip.level],
+  )[0];
   const tone = showMine ? (lead?.chip.tone ?? 'wait') : 'muted';
   return (
     <button

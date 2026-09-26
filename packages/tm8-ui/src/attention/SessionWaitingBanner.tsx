@@ -93,7 +93,6 @@ export function SessionWaitingBanner({ sessionId, legacy = null, tone = 'light' 
         <span className="att-banner__meta">
           · {attentionAge(latest.request.createdAt)}
           {onOther && latest.row.title ? ` · on ${latest.row.kind ?? 'entity'} ${latest.row.title}` : ''}
-          {raised.length > 1 ? ` · ×${raised.length}` : ''}
         </span>
         <span className="att-banner__actions">
           <button

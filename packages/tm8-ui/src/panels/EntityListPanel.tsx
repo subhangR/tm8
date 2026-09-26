@@ -110,6 +110,7 @@ import type { LaunchSelectionSources } from '../launch-selection';
 import { newLaunchMutationId, type LoadInstalledPlugins } from '../domain/launch';
 import { useAttentionOptional } from '../attention';
 import { attentionTileLine } from '../attention/AttentionTileSubtitle';
+import { isNeedsMeFilter } from '../attention/needs-me';
 
 const EMPTY_MEMBERS: readonly ActorSummary[] = Object.freeze([]);
 
@@ -2697,6 +2698,13 @@ function Band({
             glyph={config.chip.glyph}
             sentence={`No rows: the filters you have picked contradict this tab, so nothing could satisfy both. Clear a filter chip or switch tabs.`}
           />
+        ) : isNeedsMeFilter(filter) && (!query || query.trim().length === 0) ? (
+          /* Attention v2: "Needs me" is the attention queue (needs-me.ts), so
+             its empty state is "nothing is waiting on you", not "create one". */
+          <EmptyBody
+            glyph={<KindIcon kind={config.kind} size={22} />}
+            sentence="Nothing needs you."
+          />
         ) : query && query.trim().length > 0 ? (
           <EmptyBody
             glyph={<KindIcon kind={config.kind} size={22} />}
@@ -3589,7 +3597,12 @@ export function Tile({
         }
         assignees={controlFacts.assignees}
         creator={controlFacts.creator}
-        badges={tileBadges}
+        badges={attentionLine || tileBadges ? (
+          <>
+            {attentionLine ? <span className="att-tile-sub" data-testid="attention-tile-subtitle">{attentionLine}</span> : null}
+            {tileBadges}
+          </>
+        ) : null}
         /* The same cluster the standard tile draws, in the same order — one
            component, not a second copy. The control-card's own chevron lives
            inside `MaestroTaskTile` after this slot, so no `trailing` here. */
