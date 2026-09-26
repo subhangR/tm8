@@ -752,6 +752,9 @@ button.lcd-ent--subject:hover, .lcd-ent--subject[aria-expanded='true'] { border-
   .lcd-a-tm { flex: 1 1 0; }
   .lcd-a-tm .lcd-tool { max-width: 100%; }
   .lcd-tool b { min-width: 0; }
+  /* The teammate now pushes ⋯ and ✕ right itself; a growing spacer beside it
+     took half the row and cut the name to "AO …". */
+  .lcd-band--top .lcd-spacer { flex: 0 0 0; }
   .lcd-wt-name { display: inline; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .lcd-node { display: none; }
   .lcd-band--bot .lcd-spacer { flex-basis: 100%; height: 0; }

@@ -242,6 +242,25 @@ describe('Dispatch', () => {
   });
 });
 
+describe('what a launch writes back onto its subject', () => {
+  it('a task subject: an edited title is saved onto the task before the spawn', async () => {
+    const onSaveSubject = vi.fn((_edits: { title?: string; description?: string }) => Promise.resolve());
+    const view = renderPopup({ subject: { id: 'task-9', title: 'Wire the launch flow', kind: 'task' }, onSaveSubject });
+    fireEvent.change(view.getByTestId('nsx-title'), { target: { value: 'Wire the launch flow, again' } });
+    await view.spawn();
+    expect(onSaveSubject.mock.calls).toEqual([[{ title: 'Wire the launch flow, again' }]]);
+  });
+
+  it('a teammate subject (Coordinate from its profile): the title names the session and the teammate is NOT renamed', async () => {
+    const onSaveSubject = vi.fn((_edits: { title?: string; description?: string }) => Promise.resolve());
+    const view = renderPopup({ subject: { id: 'tm-scout', title: 'scout', kind: 'team_member' }, onSaveSubject, verbLabel: 'Coordinate' });
+    fireEvent.change(view.getByTestId('nsx-title'), { target: { value: 'Audit the hooks' } });
+    const input = await view.spawn();
+    expect(onSaveSubject).not.toHaveBeenCalled();
+    expect(input.title).toBe('Audit the hooks');
+  });
+});
+
 describe('the keyboard', () => {
   it('Escape closes a menu first, then the drawer, then the popup', () => {
     const view = renderPopup();

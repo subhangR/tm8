@@ -511,9 +511,15 @@ export function LaunchComposerPopup({
     setShaking(true);
   };
 
-  /* The subject edits both verbs save before they hand anything off. */
+  /* The subject edits both verbs save before they hand anything off — onto a
+     TASK only. Coordinate on a teammate's profile makes the teammate the
+     subject, and a typed session title was PATCHed onto it as its title:
+     launching renamed the teammate. For any other subject the title names the
+     session and nothing is written back, as for a continued session. A
+     subject with no kind is a task (every host passes the row's kind). */
+  const savesOntoSubject = !continuing && (subject.kind === undefined || subject.kind === 'task');
   const saveSubject = (sessionTitle: string): Promise<unknown> => {
-    const edits: { title?: string; description?: string } = continuing ? {} : {
+    const edits: { title?: string; description?: string } = !savesOntoSubject ? {} : {
       ...(sessionTitle !== subject.title ? { title: sessionTitle } : {}),
       /* Only a REAL edit is saved: an untouched autofill (or a load that never
          answered) writes nothing back. Clearing the text IS an edit — it
