@@ -10,13 +10,14 @@
   z-index: 210;
   display: flex;
   align-items: center;
-  gap: var(--pn-space-3);
+  gap: var(--pn-space-4);
   max-width: min(420px, calc(100% - 32px));
-  padding: var(--pn-space-2) var(--pn-space-3);
-  border-radius: var(--pn-r-sm);
-  border: 1px solid var(--pn-line);
-  background: var(--pn-card);
-  color: var(--pn-ink);
+  padding: var(--pn-space-2) var(--pn-space-4);
+  border-radius: var(--pn-r-md);
+  /* Inverted, as in the mock: the one dark object on the page is the one
+     that is about to expire. */
+  background: var(--pn-ink);
+  color: var(--pn-paper);
   font-size: var(--pn-fs-sm);
 }
 
@@ -28,7 +29,7 @@
 }
 
 .att-toast__text--error {
-  color: var(--pn-block);
+  color: var(--pn-block-soft);
 }
 
 .att-toast__act {
@@ -36,9 +37,270 @@
   border: 0;
   background: none;
   padding: 0;
-  color: var(--pn-ink);
-  text-decoration: underline;
+  color: var(--pn-wait);
   font: inherit;
-  font-weight: 600;
+  font-weight: 800;
   cursor: pointer;
+}
+
+/* The chip (chapter 4). */
+.att-chip {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px 1px 3px;
+  border-radius: var(--pn-r-pill);
+  font-family: var(--pn-ui);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 15px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.att-chip__b {
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  color: var(--pn-paper);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.att-chip--wait { background: var(--pn-wait-soft); color: var(--pn-wait); }
+.att-chip--wait .att-chip__b { background: var(--pn-wait); }
+.att-chip--block { background: var(--pn-block-soft); color: var(--pn-block); }
+.att-chip--block .att-chip__b { background: var(--pn-block); }
+.att-chip--fyi { background: var(--pn-idle-soft); color: var(--pn-ink-2); }
+.att-chip--fyi .att-chip__b { background: var(--pn-idle); }
+
+/* The list (chapter 4): popover, empty right column, and S5b's hosts. */
+.att-list {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-family: var(--pn-ui);
+  color: var(--pn-ink);
+}
+
+.att-list__head {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-2) var(--pn-space-3);
+  border-bottom: 1px solid var(--pn-line);
+}
+
+.att-list__title {
+  font-size: var(--pn-fs-body);
+}
+
+.att-list__filter {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.att-list__f {
+  padding: 2px 9px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+  font: inherit;
+  font-size: var(--pn-fs-fine);
+  cursor: pointer;
+}
+
+.att-list__f--on {
+  border-color: var(--pn-ink);
+  background: var(--pn-ink);
+  color: var(--pn-paper);
+}
+
+.att-list__rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.att-list__row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-2) var(--pn-space-3);
+  border-bottom: 1px solid var(--pn-line);
+  transition: opacity var(--pn-dur-base);
+}
+
+.att-list__row:last-child {
+  border-bottom: 0;
+}
+
+/* Seen dims the row for this viewer; it never removes it (Q3). */
+.att-list__row--seen {
+  opacity: 0.55;
+}
+
+.att-list__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.att-list__line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--pn-space-2);
+  min-width: 0;
+}
+
+.att-list__name {
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.att-list__name--raw {
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-weight: 400;
+}
+
+.att-list__type {
+  flex: none;
+  padding: 0 5px;
+  border-radius: var(--pn-r-xs);
+  background: var(--pn-active);
+  color: var(--pn-ink-2);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-tick);
+  text-transform: uppercase;
+}
+
+.att-list__reason {
+  overflow: hidden;
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-fine);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.att-list__facts {
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-micro);
+}
+
+.att-list__acts {
+  display: flex;
+  flex: none;
+  gap: 4px;
+}
+
+.att-list__act {
+  padding: 2px 8px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  color: var(--pn-ink);
+  font: inherit;
+  font-size: var(--pn-fs-fine);
+  cursor: pointer;
+}
+
+.att-list__act:hover {
+  background: var(--pn-hover);
+}
+
+.att-list__act--go {
+  border-color: var(--pn-ink);
+  background: var(--pn-ink);
+  color: var(--pn-paper);
+}
+
+.att-list__note {
+  display: flex;
+  gap: 4px;
+  margin-top: var(--pn-space-1);
+}
+
+.att-list__input {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 6px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  color: var(--pn-ink);
+  font: inherit;
+  font-size: var(--pn-fs-fine);
+}
+
+.att-list__empty {
+  margin: 0;
+  padding: var(--pn-space-4);
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-sm);
+  text-align: center;
+}
+
+/* The top-bar segment (chapter 4, mock tab 2). */
+.att-top {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 100%;
+}
+
+.att-top__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px 2px 3px;
+  border: 0;
+  border-radius: var(--pn-r-pill);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-fine);
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.att-top__bang {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  color: var(--pn-paper);
+  font-size: 11px;
+}
+
+.att-top__btn--wait { background: var(--pn-wait-soft); color: var(--pn-wait); }
+.att-top__btn--wait .att-top__bang { background: var(--pn-wait); }
+.att-top__btn--block { background: var(--pn-block-soft); color: var(--pn-block); }
+.att-top__btn--block .att-top__bang { background: var(--pn-block); }
+.att-top__btn--fyi { background: var(--pn-idle-soft); color: var(--pn-ink-2); }
+.att-top__btn--fyi .att-top__bang { background: var(--pn-idle); }
+.att-top__btn--clear { background: transparent; color: var(--pn-ink-3); }
+.att-top__btn--clear .att-top__bang { background: var(--pn-idle-soft); color: var(--pn-ink-3); }
+
+.att-top__pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 1000;
+  width: 470px;
+  max-width: calc(100vw - 32px);
+  max-height: min(520px, 70vh);
+  overflow-y: auto;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-lg);
+  background: var(--pn-card);
+  box-shadow: 0 16px 36px rgb(0 0 0 / 0.18);
 }

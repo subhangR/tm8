@@ -2760,6 +2760,15 @@
 .cv2-root .lp__tile--attention {
   background: var(--pn-wait-soft);
 }
+/* Attention v2 (chapter 4): the tint follows the chip's level. Urgent is red;
+   FYI keeps the tile plain with a grey edge. */
+.cv2-root .lp__tile--attention[data-attention-tone='block'] {
+  background: var(--pn-block-soft);
+}
+.cv2-root .lp__tile--attention[data-attention-tone='fyi'] {
+  background: none;
+  box-shadow: inset 3px 0 0 var(--pn-idle);
+}
 /* The session list's `pn-st__tag--attention`, verbatim — one badge, the same
    words, in every list. It read as three different components only because it
    was 10px/650 rounded in two of them and 9px mono uppercase in the third. */

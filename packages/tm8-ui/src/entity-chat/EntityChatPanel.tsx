@@ -16,6 +16,7 @@
  *     with its title, teammate and last turn;
  *   · `+ New` and Close.
  */
+import { EntityAttentionChip } from '../attention';
 import { useCallback, useId, useRef, useState, type ReactNode } from 'react';
 import type { EntityId } from '@tm8/contract';
 import type { ChatSlot } from '../routes';
@@ -141,6 +142,7 @@ export function EntityChatPanel({
                     >
                       <span className="ecp__item-title">{chat.title}</span>
                       <span className="ecp__item-meta">
+                        <EntityAttentionChip entity={{ id: chat.id }} compact />
                         {teammate ? <span className="ecp__item-who">{teammate}</span> : null}
                         <span className="ecp__item-when">{relativeTime(chat.lastActivityAt, at)}</span>
                       </span>
