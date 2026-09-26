@@ -4,8 +4,10 @@
  * 01a00932 — rulings R3/R4/R5, plus the surviving lettered rulings D6–D10,
  * D15/D16).
  *
- * The header is two cells: [Chats ＋] and [Kind ＋ ▾]. A cell's LABEL
- * switches the root (browsing, D6); its ＋ creates (the D10 exception); the
+ * The header is the quick-create icons [task · chat · terminal] (task
+ * 01a0df28, which removed the [Chats ＋] cell) and one cell, [Kind ＋ ▾]. The
+ * cell's LABEL switches the root (browsing, D6); its ＋ creates (the D10
+ * exception), as does every icon; the
  * caret menu only ever SWITCHES — picking a kind never creates (R5). Every
  * kind root's list content is the host's `renderRootList` (the workspace's
  * own EntityListPanel); the tab-era built-in task/session rows are retired.
@@ -34,6 +36,13 @@ const ROOT_OPTIONS: ListRootOption[] = [
   { kind: 'doc', label: 'Docs', single: 'Doc' },
 ];
 
+/** The kind cell — inside the roots tablist, apart from the quick icons. */
+const rootsOf = (view: ReturnType<typeof render>) =>
+  within(view.getByRole('tablist', { name: 'Home roots' }));
+/** The quick-create icons — a group beside the tablist, never inside it. */
+const quickOf = (view: ReturnType<typeof render>) =>
+  within(view.getByRole('group', { name: 'Create' }));
+
 function renderHome(over: Partial<ChatHomeScreenProps> = {}) {
   const { port } = createChatHomeFixturePort([CHAT_HOME_FIXTURE_THREAD]);
   return render(
@@ -49,18 +58,29 @@ function renderHome(over: Partial<ChatHomeScreenProps> = {}) {
 }
 
 describe('Home root column', () => {
-  it('R5/D16: the header is [Chats ＋][Kind ＋ ▾] — two root tabs, labels only, no counts', () => {
+  it('R5/D16 + 01a0df28: the header is [☐ ❝ ▮][Kind ＋ ▾] — ONE root tab, no Chats cell, no counts', () => {
     const view = renderHome();
     const tabs = view.getAllByRole('tab');
-    expect(tabs.map((tab) => tab.textContent)).toEqual(['Chats', 'Tasks']);
-    expect(view.getByRole('button', { name: 'New chat' })).toBeTruthy();
-    expect(view.getByRole('button', { name: 'New task' })).toBeTruthy();
+    expect(tabs.map((tab) => tab.textContent)).toEqual(['Tasks']);
+    expect(view.queryByRole('tab', { name: 'Chats' })).toBeNull();
+    /* The icons, in order, named by what each makes. */
+    expect(
+      quickOf(view)
+        .getAllByRole('button')
+        .map((button) => button.getAttribute('aria-label')),
+    ).toEqual(['New task', 'New chat', 'New terminal']);
+    expect(rootsOf(view).getByRole('button', { name: 'New task' })).toBeTruthy();
     expect(view.getByRole('button', { name: 'Choose which list to show' })).toBeTruthy();
   });
 
-  it('D15 default: an uncontrolled mount opens on Chats', async () => {
+  it('the icons sit OUTSIDE the tablist — a create is not a root', () => {
     const view = renderHome();
-    expect(view.getByRole('tab', { name: 'Chats' }).getAttribute('aria-selected')).toBe('true');
+    const group = view.getByRole('group', { name: 'Create' });
+    expect(group.closest('[role="tablist"]')).toBeNull();
+  });
+
+  it('D15 default: an uncontrolled (standalone) mount still opens the conversation, and no root tab claims it', async () => {
+    const view = renderHome();
     expect(view.getByRole('tab', { name: /Tasks/ }).getAttribute('aria-selected')).toBe('false');
     await waitFor(() => expect(view.getByText(OPENED_FIXTURE_TURN)).toBeTruthy());
   });
@@ -98,18 +118,70 @@ describe('Home root column', () => {
     const onNewEntity = vi.fn();
     const onRoot = vi.fn();
     const view = renderHome({ root: 'chats', onRoot, onNewEntity });
-    fireEvent.click(view.getByRole('button', { name: 'New task' }));
+    fireEvent.click(rootsOf(view).getByRole('button', { name: 'New task' }));
     expect(onNewEntity).toHaveBeenCalled();
     expect(onRoot).toHaveBeenCalledWith('task');
   });
 
-  it('D10: ＋ New chat takes B AND flips the column to Chats — the one D6 exception', () => {
-    const onShowChat = vi.fn();
-    const onRoot = vi.fn();
-    const view = renderHome({ root: 'task', onRoot, onShowChat });
-    fireEvent.click(view.getByRole('button', { name: 'New chat' }));
-    expect(onShowChat).toHaveBeenCalled();
-    expect(onRoot).toHaveBeenCalledWith('chats');
+  /**
+   * THE QUICK ICONS (task 01a0df28). Task and terminal go through the host's
+   * `onCreateKind` — the same door as the menu row's ＋. The CHAT icon does
+   * not: a chat cannot be created empty, so it is this screen's own reset to
+   * the new-conversation composer, and the host's `chat-about` (a bare
+   * navigation that changed nothing while B held an entity) is never asked.
+   */
+  describe('the quick-create icons', () => {
+    it('task and terminal birth THAT kind through onCreateKind and land the column on its root', () => {
+      const onCreateKind = vi.fn();
+      const onRoot = vi.fn();
+      const view = renderHome({ root: 'doc', onRoot, onCreateKind });
+      fireEvent.click(quickOf(view).getByRole('button', { name: 'New task' }));
+      expect(onCreateKind).toHaveBeenLastCalledWith('task');
+      expect(onRoot).toHaveBeenLastCalledWith('task');
+      fireEvent.click(quickOf(view).getByRole('button', { name: 'New terminal' }));
+      expect(onCreateKind).toHaveBeenLastCalledWith('work_session');
+      expect(onRoot).toHaveBeenLastCalledWith('work_session');
+    });
+
+    it('chat opens the composer: B returns to the conversation, the column lands on the chat kind, and the box is focused', async () => {
+      const onCreateKind = vi.fn();
+      const onShowChat = vi.fn();
+      const onRoot = vi.fn();
+      const view = renderHome({ root: 'task', onRoot, onShowChat, onCreateKind });
+      await waitFor(() => expect(view.getByText(OPENED_FIXTURE_TURN)).toBeTruthy());
+      fireEvent.click(quickOf(view).getByRole('button', { name: 'New chat' }));
+      expect(onShowChat).toHaveBeenCalled();
+      expect(onRoot).toHaveBeenCalledWith('chat');
+      expect(onCreateKind).not.toHaveBeenCalled();
+      /* The open thread gave way to the new-conversation composer. */
+      expect(await view.findByText(/New conversation — pick a mode/)).toBeTruthy();
+      await waitFor(() => expect(document.activeElement?.tagName).toBe('TEXTAREA'));
+    });
+
+    it('a Chat kind cell’s New does the same — the defect was that it only navigated', async () => {
+      const onNewEntity = vi.fn();
+      const onShowChat = vi.fn();
+      const view = renderHome({
+        root: 'chat',
+        kindCell: { kind: 'chat', label: 'Chats', single: 'Chat' },
+        onNewEntity,
+        onShowChat,
+      });
+      await waitFor(() => expect(view.getByText(OPENED_FIXTURE_TURN)).toBeTruthy());
+      fireEvent.click(rootsOf(view).getByRole('button', { name: 'Chat' }));
+      expect(onShowChat).toHaveBeenCalled();
+      expect(onNewEntity).not.toHaveBeenCalled();
+      expect(await view.findByText(/New conversation — pick a mode/)).toBeTruthy();
+    });
+
+    it('an unwired host refuses task and terminal WITH a reason, never hides them', () => {
+      const view = renderHome({ root: 'task' });
+      for (const name of ['New task', 'New terminal']) {
+        const button = quickOf(view).getByRole('button', { name });
+        expect(button.getAttribute('aria-disabled')).toBe('true');
+        expect(button.getAttribute('title')).toContain('isn’t wired on this surface');
+      }
+    });
   });
 
   /**
@@ -178,7 +250,7 @@ describe('Home root column', () => {
       const menu = openMenu(view);
       expect(menu.queryByRole('button', { name: 'New doc' })).toBeNull();
       /* The cell's own ＋ still says it, once, out loud. */
-      expect(view.getByRole('button', { name: 'New task' })).toBeTruthy();
+      expect(rootsOf(view).getByRole('button', { name: 'New task' })).toBeTruthy();
     });
 
     it('the CELL wears the same verb its menu row does — a sessions cell is a terminal', () => {
@@ -196,7 +268,7 @@ describe('Home root column', () => {
     const view = renderHome({
       newEntityUnavailable: { cause: 'Creating is not wired here', remedy: 'no executor' },
     });
-    const button = view.getByRole('button', { name: 'New task' });
+    const button = rootsOf(view).getByRole('button', { name: 'New task' });
     expect(button.getAttribute('aria-disabled')).toBe('true');
     expect(button.getAttribute('title')).toContain('Creating is not wired here');
   });

@@ -18,9 +18,22 @@
   border: 1px solid color-mix(in srgb, var(--pn-info) 35%, transparent);
 }
 
+/* THE BANNER SCROLLS ITSELF. It is a child of `.pn-panel`, a flex column with
+   `overflow: hidden`, above the tab strip. A flex item's `min-height: auto`
+   kept it at its full content height, so an opened form taller than the panel
+   was cut off with nothing to scroll. `min-height: 0` lets it shrink,
+   `overflow-y: auto` scrolls what does not fit, and the cap keeps the tab
+   strip and the session below it on screen. Its children keep their height
+   (`flex-shrink: 0`): the banner is a flex column too, and shrinking them would
+   squash the form instead of scrolling it. */
 .pf-banner {
   display: flex;
   flex-direction: column;
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 70%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   gap: var(--pn-space-2);
   padding: var(--pn-space-2) var(--pn-space-4);
   background: color-mix(in srgb, var(--pn-wait) 9%, transparent);
@@ -28,6 +41,7 @@
   color: var(--pn-ink);
   font-size: var(--pn-fs-sm);
 }
+.pf-banner > * { flex-shrink: 0; }
 .pf-banner__head { display: flex; align-items: center; gap: var(--pn-space-2); font-weight: 600; }
 .pf-banner__list { display: flex; flex-direction: column; gap: var(--pn-space-1); margin: 0; padding: 0; list-style: none; }
 .pf-banner__item { display: flex; flex-direction: column; gap: var(--pn-space-2); min-width: 0; }

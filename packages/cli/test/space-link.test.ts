@@ -10,12 +10,12 @@
  */
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative } from 'node:path';
+import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer, type Server } from 'node:http';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { run } from '../src/run.js';
-import { REMOTE_LINK_HINT, Tm8Client } from '../src/client.js';
+import { REMOTE_LINK_HINT, Tm8Client, type ClientOptions } from '../src/client.js';
 import { REDACTED, scrubSecrets, scrubText } from '../src/commands/link.js';
 import { ledger } from '../src/discovery/availability.js';
 
@@ -294,40 +294,79 @@ describe('W7 review follow-ups (#887)', () => {
     expect(direct.stderr).toContain(`tm8 auth space enter ${TARGET}`);
   });
 
-  it('every `new Tm8Client` in the CLI forwards ctx.link, except an exact allow-list of home-only clients', () => {
-    // A client that drops `link` would send a linked call straight to the
-    // server with the home pass, skipping home's refused set and audit.
-    const ALLOWED: Record<string, string> = {
-      // The link lookup itself is a home read and must not be routed.
-      'space-link-route.ts': 'spaceLinks.list on home, before the link exists',
+  it('while a link is active, a client built without it throws however it is built; paired with-link client builds; nothing outlives the invocation', async () => {
+    class Sub extends Tm8Client {
+      constructor(o: ClientOptions) { super(o); }
+    }
+    const Alias = Tm8Client;
+    const opts: ClientOptions = { baseUrl, token: undefined, timeoutMs: 1_000 };
+    const attempts: Record<string, string> = {};
+    const tryBuild = (name: string, build: () => unknown): void => {
+      try { build(); attempts[name] = 'built'; } catch (e) { attempts[name] = (e as Error).message; }
+    };
+    const home = defaultRoutes()[INVOKE]!;
+    // The stub runs in this process, mid-invocation: the link is active here.
+    routes[INVOKE] = (body) => {
+      tryBuild('literal', () => new Tm8Client({ baseUrl, timeoutMs: 1_000 }));
+      tryBuild('variable options', () => new Tm8Client(opts));
+      tryBuild('alias', () => new Alias(opts));
+      tryBuild('subclass', () => new Sub(opts));
+      tryBuild('with link', () => new Tm8Client({ ...opts, link: { homeSpaceId: HOME, linkId: LINK, targetSpaceId: TARGET } }));
+      return home(body);
+    };
+    const r = await tm8(['--space', 'bee', 'entity', 'get', DOC, '--format', 'json']);
+    expect(r.code, r.stderr).toBe(0);
+    for (const name of ['literal', 'variable options', 'alias', 'subclass']) {
+      expect(attempts[name], name).toMatch(/without the active space link/);
+    }
+    expect(attempts['with link']).toBe('built');
+    expect(() => new Tm8Client(opts)).not.toThrow();
+
+    // A linked invocation that FAILS clears it too.
+    routes[INVOKE] = () => fail(403, 'forbidden', 'refused through a space link: grant', { reason: 'space_link_refused' });
+    const refused = await tm8(['--space', 'bee', 'entity', 'get', DOC]);
+    expect(refused.code).not.toBe(0);
+    expect(() => new Tm8Client(opts)).not.toThrow();
+  });
+
+  it('source scan: the exact count of `new Tm8Client` per file that does not forward ctx.link (a lint; the constructor is the guard)', () => {
+    // Keyed by path and count: a second unforwarded client in an allowed
+    // file, or one in a file of the same basename elsewhere, fails.
+    const ALLOWED: Record<string, number> = {
+      // The link lookup itself is a home read, built before the link exists.
+      'space-link-route.ts': 1,
       // Reached only with --server, which routeThroughSpaceLink refuses when a
       // link would be set (cell "--server with a linked --space").
-      'server-target.ts': 'registry read on home; --server and a link are exclusive',
+      'server-target.ts': 1,
     };
     const src = join(dirname(fileURLToPath(import.meta.url)), '..', 'src');
     const files = (readdirSync(src, { recursive: true }) as string[]).filter((f) => f.endsWith('.ts'));
-    const seen = new Set<string>();
-    const dropped: string[] = [];
+    const unforwarded: Record<string, number> = {};
+    const indirect: string[] = [];
     let forwarding = 0;
     for (const file of files) {
+      const rel = relative(src, join(src, file)).split(sep).join('/');
       const text = readFileSync(join(src, file), 'utf8');
-      for (const m of text.matchAll(/new Tm8Client\(\{/g)) {
-        let depth = 0;
-        let end = m.index + m[0].length - 1;
-        for (; end < text.length; end += 1) {
-          if (text[end] === '{') depth += 1;
-          else if (text[end] === '}' && (depth -= 1) === 0) break;
+      // An alias or subclass hides constructions from this scan; the
+      // constructor check still refuses them (previous cell).
+      if (rel !== 'client.ts' && /extends\s+Tm8Client\b|=\s*Tm8Client\b|Tm8Client\s+as\b/.test(text)) indirect.push(rel);
+      for (const m of text.matchAll(/new\s+Tm8Client\s*\(\s*/g)) {
+        let end = m.index + m[0].length;
+        let args = '';
+        if (text[end] === '{') {
+          for (let depth = 0; end < text.length; end += 1) {
+            if (text[end] === '{') depth += 1;
+            else if (text[end] === '}' && (depth -= 1) === 0) break;
+          }
+          args = text.slice(m.index, end + 1);
         }
-        const args = text.slice(m.index, end + 1);
-        const rel = relative(src, join(src, file));
-        if (/\blink: ctx\.link\b/.test(args)) forwarding += 1;
-        else if (rel.split('/').pop()! in ALLOWED) seen.add(rel.split('/').pop()!);
-        else dropped.push(rel);
+        // Options from a variable cannot be read here: counted as unforwarded.
+        if (/\blink\s*:\s*ctx\.link\b/.test(args)) forwarding += 1;
+        else unforwarded[rel] = (unforwarded[rel] ?? 0) + 1;
       }
     }
-    expect(dropped).toEqual([]);
-    // Exact: an allow-listed file that no longer builds a client is stale.
-    expect([...seen].sort()).toEqual(Object.keys(ALLOWED).sort());
+    expect(indirect).toEqual([]);
+    expect(unforwarded).toEqual(ALLOWED);
     expect(forwarding).toBeGreaterThanOrEqual(2);
   });
 });
@@ -419,6 +458,38 @@ describe('tm8 link login|add never print a secret', () => {
     expect(scrubText('tm8 link login bee')).toBe('tm8 link login bee');
     expect(scrubText(`a ${PLANT_SESSION} b`)).toBe(`a ${REDACTED} b`);
     expect(scrubSecrets({ a: [{ b: PLANT_HEX }], n: 3, x: null })).toEqual({ a: [{ b: REDACTED }], n: 3, x: null });
+  });
+
+  it('a secret with a tm8 prefix in its MIDDLE is redacted whole; its head never stays visible', () => {
+    // generateSecret() is 32 random bytes as base64url (43 chars): about 7 in
+    // 2,000,000 carry `tm8x_` somewhere inside. The head before it is under 40.
+    const head = 'Qw3rTy9UioP' + 'a8Sd7Fg6Hj5Kl4Zx3Cv';
+    const secret = head + 'tm8x_' + 'Bn2Mq1Wz';
+    expect(secret).toHaveLength(43);
+    const out = scrubText(`login refused for ${secret} (retry)`);
+    expect(out).toBe(`login refused for ${REDACTED} (retry)`);
+    expect(out).not.toContain(head.slice(0, 8));
+    // Pair: a plain prefixed token and prose around it keep working.
+    expect(scrubText(`use ${PLANT_CRED} now`)).toBe(`use ${REDACTED} now`);
+    expect(scrubText('tm8 link login bee')).toBe('tm8 link login bee');
+  });
+
+  it('a name-shaped run made of a UUID pair or dashed hex is redacted; paired names with years and hex-letter words are kept', () => {
+    const uuidPair = `${LINK}-${TARGET}`;
+    expect(scrubText(`pair ${uuidPair} end`)).toBe(`pair ${REDACTED} end`);
+    const lowerPair = 'c0ffee00-1234-4abc-9def-0123456789ab_' + '0a1b2c3d-4e5f-4a6b-8c7d-8e9f0a1b2c3d';
+    expect(scrubText(lowerPair)).toBe(REDACTED);
+    const dashedHex = 'a1b2-c3d4-e5f6-a7b8-c9d0-e1f2-a3b4-c5d6-e7f8';
+    expect(dashedHex.length).toBeGreaterThanOrEqual(40);
+    expect(scrubText(dashedHex)).toBe(REDACTED);
+    // Pair: words that are hex-lettered or all digits, but not hex ids.
+    const names = ['quarterly-review-2026-09-research-space-notes', 'dead-code-audit-for-the-face-and-cafe-teams'];
+    for (const name of names) {
+      expect(name.length).toBeGreaterThanOrEqual(40);
+      expect(scrubText(name)).toBe(name);
+    }
+    // One UUID alone is under 40 and stays readable.
+    expect(scrubText(`link ${LINK}`)).toBe(`link ${LINK}`);
   });
 
   it('long aliases and names are kept; a token of the same length is still redacted', () => {
