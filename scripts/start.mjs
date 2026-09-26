@@ -4,7 +4,7 @@
 //   bun run start          → build everything, then run tm8-server under NODE
 //
 // There is no installed desktop app (AM-1). This is the whole product entry point:
-// tm8-server serves the built web UI and the user opens http://localhost:<TM8_PORT>.
+// tm8-server serves the built web UI; the user opens it through `tm8 open` (W2 launch cookie).
 //
 // It does NOT own a Postgres. The sidecar subsystem that would have (fourteen
 // files under packages/server/src/sidecar/) is imported by nothing but
@@ -107,7 +107,9 @@ const proc = start("node", ["--enable-source-maps", SERVER_ENTRY], {
   log: serverLog,
 });
 
-log.info(`open http://localhost:${env.TM8_PORT}`);
+// W2 / K4: the bare origin is anonymous to a loopback browser now; the owner
+// arm needs the launch cookie, which only a one-time `tm8 open` URL sets.
+log.info(`then run \`tm8 open\` and open the one-time URL it prints (server: http://localhost:${env.TM8_PORT})`);
 
 proc.on("exit", (code, signal) => {
   if (signal) {
