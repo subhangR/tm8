@@ -28,7 +28,6 @@ import { LAUNCH_MODEL_CATALOG, type LaunchModelCatalogEntry, type LaunchModelEff
 /** The tools this UI knows how to launch. Free strings on the wire; a closed
     set here, because the launcher builds a different CLI invocation per tool. */
 export const KNOWN_AGENT_TOOLS = ['claude-code', 'codex'] as const;
-export type KnownAgentTool = (typeof KNOWN_AGENT_TOOLS)[number];
 
 export interface CatalogModel {
   model: string;
