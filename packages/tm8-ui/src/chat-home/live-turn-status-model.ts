@@ -28,7 +28,7 @@
  */
 import type { EntityId } from '@tm8/contract';
 import { projectTurnParts, type ProjectedTurnPart } from './turn-model';
-import { describeToolStep, toolStepState } from './turn-steps';
+import { describeToolStep, groupDone, toolStepState, type ToolStepWords } from './turn-steps';
 import type { ChatTurnPart } from './types';
 
 /**
@@ -113,35 +113,59 @@ function inProgress(words: string): string {
   return words.endsWith('…') ? words : `${words}…`;
 }
 
-/**
- * The live phases' sentence while parts are arriving (D2 as amended by D16):
- *   - a step is RUNNING → its present tense, `Reading 3 tasks…`;
- *   - the newest block is TEXT → `Writing…`;
- *   - otherwise the model is between blocks → `Thinking…`.
- * Parallel running steps of one kind count themselves (`Reading 3 tasks…`);
- * a mixed set names the newest and says how many more are running.
- */
-function streamingNow(running: readonly ToolPart[], newest: ProjectedTurnPart | null): string {
-  if (running.length > 0) {
-    const last = running[running.length - 1]!;
-    const words = describeToolStep(last.name, last.args, last.result);
-    if (running.length === 1) return inProgress(words.active);
-    const sameCategory = running.every(
-      (part) => describeToolStep(part.name, part.args, part.result).category === words.category,
-    );
-    return sameCategory
-      ? inProgress(words.counted(running.length))
-      : `${inProgress(words.active)} +${running.length - 1} more`;
-  }
-  if (newest?.kind === 'text') return 'Writing…';
-  return 'Thinking…';
+const wordsOf = (part: ToolPart): ToolStepWords => describeToolStep(part.name, part.args, part.result);
+
+/** A step's one human fact (a created title, a file's basename, the agent's
+ *  own description of a command), joined to its words. A quoted title or a
+ *  `→ status` reads as part of the sentence; anything else is set apart. */
+function withDetail(words: string, detail: string | null): string {
+  if (!detail) return words;
+  return /^[“→]/.test(detail) ? `${words} ${detail}` : `${words} · ${detail}`;
 }
 
-/** The newest settled step's past tense — `Read 3 tasks`, `Ran a shell command`. */
+/**
+ * The live phases' sentence while parts are arriving (D2 as amended by D16):
+ *   - a step is RUNNING → its present tense, `Creating a task…`, with the
+ *     step's detail (`“Provider interface”`) muted beside it;
+ *   - the newest block is TEXT → `Writing…`;
+ *   - otherwise the model is between blocks → `Thinking…`.
+ * Several running at once (parallel reads) name the newest and say how many
+ * more — the classifier's `counted` is past tense, a settled count, and would
+ * claim the reads had finished.
+ */
+function streamingNow(
+  running: readonly ToolPart[],
+  newest: ProjectedTurnPart | null,
+): { now: string; detail: string | null } {
+  const last = running[running.length - 1];
+  if (last) {
+    const words = wordsOf(last);
+    return {
+      now: inProgress(words.active),
+      detail: running.length > 1 ? `+${running.length - 1} more` : words.detail,
+    };
+  }
+  return { now: newest?.kind === 'text' ? 'Writing…' : 'Thinking…', detail: null };
+}
+
+/**
+ * The newest settled step, past tense — and when it closes a run of steps
+ * that fold together (reads, commands: the classifier's `merges`), the run as
+ * one counted line, `Read 3 tasks, 1 doc`, exactly as the transcript's step
+ * list counts it.
+ */
 function settledStep(settled: readonly ToolPart[]): string | null {
   const last = settled[settled.length - 1];
   if (!last) return null;
-  return describeToolStep(last.name, last.args, last.result).done;
+  const lastWords = wordsOf(last);
+  if (!lastWords.merges) return withDetail(lastWords.done, lastWords.detail);
+  const run: ToolStepWords[] = [lastWords];
+  for (let index = settled.length - 2; index >= 0; index -= 1) {
+    const words = wordsOf(settled[index]!);
+    if (words.category !== lastWords.category) break;
+    run.unshift(words);
+  }
+  return run.length === 1 ? withDetail(lastWords.done, lastWords.detail) : groupDone(run);
 }
 
 /**
@@ -184,10 +208,12 @@ export function liveTurnView(
     case 'waiting':
       nowText = 'Thinking…';
       break;
-    case 'streaming':
-      nowText = streamingNow(running, newest);
-      aside = running.length > 0 ? null : settledStep(settled);
+    case 'streaming': {
+      const live = streamingNow(running, newest);
+      nowText = live.now;
+      aside = running.length > 0 ? live.detail : settledStep(settled);
       break;
+    }
     case 'stopping':
       nowText = 'Stopping…';
       aside = settledStep(settled);

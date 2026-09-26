@@ -18,19 +18,30 @@ import type { ChatTurnPart } from './types';
  * `live-turn-row.test.tsx`, through the real screen.
  */
 vi.mock('./turn-steps', () => ({
+  /* `read.*` operations fold into a counted run (the classifier's `merges`);
+     anything else stays its own line. `args.detail` stands in for the one
+     human fact the real classifier extracts (a title, a basename). */
   describeToolStep: (name: string, args: unknown) => {
-    const op = (args as { operation?: string } | null)?.operation ?? name;
+    const a = (args ?? {}) as { operation?: string; detail?: string };
+    const op = a.operation ?? name;
     return {
-      category: op.split('.')[0],
+      category: op,
       active: `Doing ${op}`,
       done: `Did ${op}`,
-      counted: (n: number) => `Doing ${n} ${op}`,
+      counted: (n: number) => `Did ${n}× ${op}`,
+      merges: op.startsWith('read.'),
+      detail: a.detail ?? null,
     };
   },
-  toolStepState: (part: { state: string; result?: unknown }, settled: boolean) =>
-    part.result !== undefined || part.state !== 'running'
-      ? part.state === 'error' ? 'error' : 'completed'
-      : settled ? 'stopped' : 'running',
+  groupDone: (steps: { done: string; counted: (n: number) => string }[]) =>
+    steps.length === 1 ? steps[0]!.done : steps[0]!.counted(steps.length),
+  // The real rule: a result or a terminal record settles it; an ended turn
+  // stops what never settled.
+  toolStepState: (part: { state: string; result?: unknown; resultIsError?: boolean }, settled: boolean) => {
+    if (part.state === 'error' || part.resultIsError === true) return 'error';
+    if (part.state === 'completed' || part.result !== undefined) return 'completed';
+    return settled ? 'stopped' : 'running';
+  },
 }));
 
 const T0 = Date.parse('2026-09-26T07:00:00.000Z');
@@ -48,12 +59,18 @@ function turn(patch: Partial<TurnInProgress> = {}): TurnInProgress {
 }
 
 let seq = 0;
-function call(id: string, operation: string, state: 'running' | 'completed' | 'error' = 'running'): ChatTurnPart[] {
+function call(
+  id: string,
+  operation: string,
+  state: 'running' | 'completed' | 'error' = 'running',
+  detail?: string,
+): ChatTurnPart[] {
+  const args = detail ? { operation, detail } : { operation };
   const parts: ChatTurnPart[] = [
-    { seq: (seq += 1), kind: 'tool_call', toolCallId: id, name: 'mcp__tm8__tm8_read', args: { operation }, state: 'running' },
+    { seq: (seq += 1), kind: 'tool_call', toolCallId: id, name: 'mcp__tm8__tm8_read', args, state: 'running' },
   ];
   if (state !== 'running') {
-    parts.push({ seq: (seq += 1), kind: 'tool_call', toolCallId: id, name: 'mcp__tm8__tm8_read', args: { operation }, state });
+    parts.push({ seq: (seq += 1), kind: 'tool_call', toolCallId: id, name: 'mcp__tm8__tm8_read', args, state });
     parts.push({ seq: (seq += 1), kind: 'tool_result', toolCallId: id, content: { ok: true } });
   }
   return parts;
@@ -91,21 +108,34 @@ describe('the phase copy (D2 as amended by D16)', () => {
     expect(view.aside).toBeNull();
   });
 
-  it('a running step is the headline, in the present tense, with no aside', () => {
-    const view = liveTurnView(turn(), [...call('a', 'entities.get')], T0 + 2 * S);
-    expect(view.now).toBe('Doing entities.get…');
+  it('a running step is the headline, in the present tense', () => {
+    const view = liveTurnView(turn(), [...call('a', 'read.get')], T0 + 2 * S);
+    expect(view.now).toBe('Doing read.get…');
     expect(view.aside).toBeNull();
     expect(view.meta).toBe('step 1 · 2s');
   });
 
-  it('parallel running steps of one category count themselves', () => {
-    const parts = [...call('a', 'entities.get'), ...call('b', 'entities.context'), ...call('c', 'entities.get')];
-    expect(liveTurnView(turn(), parts, T0).now).toBe('Doing 3 entities.get…');
+  it('a running step’s one human fact (a title) sits muted beside it', () => {
+    const view = liveTurnView(turn(), [...call('a', 'write.create', 'running', '“Provider interface”')], T0);
+    expect(view.now).toBe('Doing write.create…');
+    expect(view.aside).toBe('“Provider interface”');
   });
 
-  it('a mixed running set names the newest and how many more', () => {
-    const parts = [...call('a', 'entities.get'), ...call('b', 'execution.spawn')];
-    expect(liveTurnView(turn(), parts, T0).now).toBe('Doing execution.spawn… +1 more');
+  /** `counted` is a SETTLED count; using it for calls still in flight would
+   *  claim they had finished. */
+  it('parallel running steps name the newest and how many more are running', () => {
+    const parts = [...call('a', 'read.get'), ...call('b', 'read.get'), ...call('c', 'read.context')];
+    const view = liveTurnView(turn(), parts, T0);
+    expect(view.now).toBe('Doing read.context…');
+    expect(view.aside).toBe('+2 more');
+  });
+
+  it('a step whose result has landed is not running, whatever its record says', () => {
+    const parts: ChatTurnPart[] = [
+      { seq: 1, kind: 'tool_call', toolCallId: 'r', name: 'x', args: { operation: 'read.get' }, state: 'running' },
+      { seq: 2, kind: 'tool_result', toolCallId: 'r', content: { ok: true } },
+    ];
+    expect(liveTurnView(turn(), parts, T0).now).toBe('Thinking…');
   });
 
   /**
@@ -114,33 +144,57 @@ describe('the phase copy (D2 as amended by D16)', () => {
    * would be false for most of the turn.
    */
   it('between blocks it is Thinking…, with the settled step muted beside it', () => {
-    const parts = [...call('a', 'entities.get', 'completed')];
+    const parts = [...call('a', 'read.get', 'completed')];
     const view = liveTurnView(turn({ lastFrameAt: T0 + 3 * S }), parts, T0 + 40 * S);
     expect(view.now).toBe('Thinking…');
-    expect(view.aside).toBe('Did entities.get');
+    expect(view.aside).toBe('Did read.get');
     expect(view.meta).toBe('step 1 · 40s · last step 37s ago');
   });
 
+  it('a settled run of steps that fold together is ONE counted aside', () => {
+    const parts = [
+      ...call('w', 'write.create', 'completed'),
+      ...call('a', 'read.get', 'completed'),
+      ...call('b', 'read.get', 'completed'),
+      ...call('c', 'read.get', 'completed'),
+    ];
+    // The run stops at the create: only the three reads fold.
+    expect(liveTurnView(turn(), parts, T0).aside).toBe('Did 3× read.get');
+  });
+
+  it('a settled step that does not fold keeps its own words and its detail', () => {
+    const parts = [
+      ...call('w', 'write.create', 'completed', '“Provider interface”'),
+      ...call('x', 'write.create', 'completed', '“Docker provider”'),
+    ];
+    expect(liveTurnView(turn(), parts, T0).aside).toBe('Did write.create “Docker provider”');
+  });
+
+  it('a detail that is not a title is set apart from the words', () => {
+    const parts = [...call('a', 'command', 'completed', 'Run the focused tests')];
+    expect(liveTurnView(turn(), parts, T0).aside).toBe('Did command · Run the focused tests');
+  });
+
   it('after a text block it is Writing…', () => {
-    const parts = [...call('a', 'entities.get', 'completed'), text('Here is the plan.')];
+    const parts = [...call('a', 'read.get', 'completed'), text('Here is the plan.')];
     const view = liveTurnView(turn(), parts, T0);
     expect(view.now).toBe('Writing…');
-    expect(view.aside).toBe('Did entities.get');
+    expect(view.aside).toBe('Did read.get');
   });
 
   it('stopping keeps the spinner and the settled step', () => {
-    const parts = [...call('a', 'entities.patch', 'completed')];
+    const parts = [...call('a', 'write.patch', 'completed')];
     const view = liveTurnView(turn({ phase: 'stopping' }), parts, T0 + 2 * S);
     expect(view.now).toBe('Stopping…');
     expect(view.glyph).toBe('spinner');
-    expect(view.aside).toBe('Did entities.patch');
+    expect(view.aside).toBe('Did write.patch');
     expect(view.ticking).toBe(true);
   });
 });
 
 describe('the ended phases are frozen', () => {
   it('stopped: ■, `after N steps · clock`, and no ticking clock', () => {
-    const parts = [...call('a', 'entities.get', 'completed'), ...call('b', 'entities.get', 'completed'), ...call('c', 'execution.spawn')];
+    const parts = [...call('a', 'read.get', 'completed'), ...call('b', 'read.get', 'completed'), ...call('c', 'write.spawn')];
     const stopped = turn({ phase: 'stopped', lastFrameAt: T0 + 50 * S, endedAt: T0 + 72 * S });
     const early = liveTurnView(stopped, parts, T0 + 80 * S);
     const late = liveTurnView(stopped, parts, T0 + 900 * S);
@@ -160,7 +214,7 @@ describe('the ended phases are frozen', () => {
 
   /** D16: the transcript already renders the error part as `role=alert`. */
   it('failed: ✕, the step count, and NOT the error text', () => {
-    const parts = [...call('a', 'entities.get', 'completed')];
+    const parts = [...call('a', 'read.get', 'completed')];
     const view = liveTurnView(
       turn({ phase: 'failed', error: 'Provider refused the request', endedAt: T0 + 5 * S }),
       parts,
