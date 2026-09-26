@@ -1,5 +1,5 @@
 import { lazy, Suspense, useMemo, useSyncExternalStore } from 'react';
-import type { EntityId, SpaceId, WorkSessionStatus } from '@tm8/contract';
+import type { EntityId, SpaceId } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 import {
   modelCatalog,
@@ -10,6 +10,7 @@ import { attachmentsPortFromSeam } from '../files/port';
 import type { TriggerOption } from '../rich-input';
 import type { ConnectionsReader } from '../session-graph/load';
 import { createChatHomePortFromSeam, type ChatHomeL2Bridge } from './real-port';
+import { useLivenessOf } from './use-liveness-of';
 import {
   chatEntityRefFrom,
   readFleetEntity,
@@ -109,12 +110,9 @@ export function ChatHomeSurface({ seam, nodeKey, bridge, onOpenEntity, ...screen
     () => async (id) => chatEntityRefFrom(await readFleetEntity(id, readEntity)),
     [readEntity],
   );
-  /** The seam's verdict, the ONLY authority on live (R-UI-5). */
-  const livenessOf = useMemo(
-    () => (session: { id: string; status: WorkSessionStatus | null }) =>
-      seam.liveness.statusOf({ id: session.id as EntityId, status: session.status }),
-    [seam],
-  );
+  /** The seam's verdict, the ONLY authority on live (R-UI-5) — re-minted on
+   *  every liveness snapshot, so the ledger's `N live` follows it. */
+  const livenessOf = useLivenessOf(seam.liveness);
   /** The entity graph's induced-relations read — `entities.connections`, the
    *  same seam op the Connections tab and the session graph use. */
   const connections = useMemo<ConnectionsReader>(

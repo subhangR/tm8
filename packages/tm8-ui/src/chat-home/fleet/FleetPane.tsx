@@ -27,7 +27,7 @@
  *  · It never renders a second transcript. The Transcript view is the session
  *    panel's, and this pane links to it.
  */
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import type { EntityId } from '@tm8/contract';
 import { KindIcon } from '../../domain/KindIcon';
 import { Pill } from '../../kit';
@@ -57,6 +57,8 @@ export interface FleetPaneProps {
    * one, which is why this is optional and why the button is conditional.
    */
   onOpenTranscript?: ((id: EntityId) => void) | undefined;
+  /** The host's right-aligned header line — the screen's `StageExit` (D18). */
+  headerEnd?: ReactNode;
 }
 
 export function FleetPane({
@@ -67,6 +69,7 @@ export function FleetPane({
   streamingIds,
   onOpenEntity,
   onOpenTranscript,
+  headerEnd,
 }: FleetPaneProps) {
   const fold = useMemo(() => foldFleet(turns, suppressEntityIds), [turns, suppressEntityIds]);
   const ids = useMemo(() => fold.drawn.map((ref) => ref.id), [fold]);
@@ -105,6 +108,7 @@ export function FleetPane({
                   : []),
               ].join(' · ')}
         </span>
+        {headerEnd}
       </header>
 
       {nothingYet ? (

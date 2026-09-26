@@ -6,6 +6,11 @@ import { ChatHomeScreen } from './ChatHomeScreen';
 import { CHAT_HOME_FIXTURE_THREAD, createChatHomeFixturePort } from './fixtures';
 import type { ChatContextFrame, ChatHomePort, ChatModelOption, ChatThreadDetail, ChatTurn } from './types';
 
+/* "The fixture thread has opened" = its first turn is in the transcript. Not
+   its title: the title is on screen twice from the first frame (the row, and
+   the header, which names the thread being opened — D26). */
+const OPENED_FIXTURE_TURN = 'Plan the launch sequence and check what is already blocked.';
+
 const SPACE_ID = '019f0000-0000-7000-8000-000000000090';
 const MODELS: ChatModelOption[] = [
   {
@@ -60,7 +65,7 @@ function claimingPort(thread: ChatThreadDetail, claimed: readonly ChatTurn[]): C
 
 async function sendInto(port: ChatHomePort) {
   const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
-  await waitFor(() => expect(view.getByText('Plan the launch sequence')).toBeTruthy());
+  await waitFor(() => expect(view.getByText(OPENED_FIXTURE_TURN)).toBeTruthy());
   fireEvent.change(view.getByLabelText('Message the chat agent'), {
     target: { value: 'Keep going.' },
   });
@@ -311,7 +316,7 @@ describe('Chat Home', () => {
   it('appends a streamed part by seq and settles on done', async () => {
     const { port, controls } = createChatHomeFixturePort();
     const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
-    await waitFor(() => expect(view.getByText('Plan the launch sequence')).toBeTruthy());
+    await waitFor(() => expect(view.getByText(OPENED_FIXTURE_TURN)).toBeTruthy());
     const rootId = controls.roots[0]?.aboutId ?? '019f0000-0000-7000-8000-000000000010';
     const messageId = '019f0000-0000-7000-8000-000000000077' as EntityId;
 
@@ -365,7 +370,7 @@ describe('Chat Home', () => {
         newMutationId={(prefix) => `${prefix}:interrupt-test`}
       />,
     );
-    await waitFor(() => expect(view.getByText('Plan the launch sequence')).toBeTruthy());
+    await waitFor(() => expect(view.getByText(OPENED_FIXTURE_TURN)).toBeTruthy());
 
     fireEvent.change(view.getByLabelText('Message the chat agent'), {
       target: { value: 'Read the current context.' },
@@ -631,7 +636,7 @@ describe('Chat Home', () => {
     const view = render(
       <ChatHomeScreen port={withoutInterrupt} spaceId={SPACE_ID} models={MODELS} />,
     );
-    await waitFor(() => expect(view.getByText('Plan the launch sequence')).toBeTruthy());
+    await waitFor(() => expect(view.getByText(OPENED_FIXTURE_TURN)).toBeTruthy());
 
     fireEvent.change(view.getByLabelText('Message the chat agent'), {
       target: { value: 'Read the current context.' },

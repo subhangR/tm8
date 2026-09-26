@@ -110,6 +110,28 @@ describe('the collapsed row is scope-general (ruling 9)', () => {
   });
 });
 
+describe('a chosen scope belongs to the thread that offered it', () => {
+  it('falls back to sessions when the next thread’s ledger has no such entity — never a raw id', async () => {
+    resetFleetEntityCache();
+    const view = render(<LedgerPanel turns={THREAD()} onOpenEntity={vi.fn()} />);
+    fireEvent.click(view.getByTestId('ledger-panel-scope'));
+    fireEvent.click(await view.findByTestId('ledger-scope-entity'));
+    expect(view.getByTestId('ledger-panel-scope').textContent).toContain('Task 1');
+
+    // The screen does not remount the panel per thread: the next thread's
+    // turns arrive as new props. This one spawned a session and created no
+    // parent-with-children, so `Task 1` is not a scope it offers.
+    const OTHER = id(9);
+    view.rerender(
+      <LedgerPanel turns={[turn([...spawnSession(OTHER, 'Other worker')])]} onOpenEntity={vi.fn()} />,
+    );
+    const label = view.getByTestId('ledger-panel-scope').textContent ?? '';
+    expect(label).toContain('sessions');
+    expect(label).not.toContain(TASK.slice(0, 8));
+    expect(view.getByTestId('ledger-panel-summary').textContent).not.toBe('nothing created here');
+  });
+});
+
 describe('scope switching is a filter, not a refetch (ruling 6)', () => {
   it('changes what the body shows without any read being issued', async () => {
     resetFleetEntityCache();
