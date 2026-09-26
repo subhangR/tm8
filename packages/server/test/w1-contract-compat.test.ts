@@ -504,8 +504,12 @@ describe('W1 honest W2-only skeletons', () => {
     expect(registry.get('messages.post')).toBeTypeOf('function');
     // And bound to something that is NOT the old skeleton. Registering a
     // handler that still refused with not_implemented would satisfy the line
-    // above and mean nothing.
-    expect(registry.get('messages.post')).not.toBe(registry.get('messages.list'));
+    // above and mean nothing. 256 (W7p): `get` returns a fresh link-bearer
+    // wrapper on every call, so the identity check reads the registered
+    // handlers — two wrappers would never compare equal.
+    const registered = (registry as unknown as { handlers: Map<string, unknown> }).handlers;
+    expect(registered.get('messages.post')).toBeTypeOf('function');
+    expect(registered.get('messages.post')).not.toBe(registered.get('messages.list'));
     // Constructing the seam must not have reached identity or the database;
     // that half of the original assertion is still worth keeping.
     expect(owner).not.toHaveBeenCalled();
