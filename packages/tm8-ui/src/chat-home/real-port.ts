@@ -1,4 +1,4 @@
-import type { ChatMode, ChatWorkdirMode, CommandResult, EntityId, EntitySummary, MessageBatchResult, MessageView, SpaceId } from '@tm8/contract';
+import type { ChatMode, ChatWorkdirMode, CommandResult, EntityId, EntitySummary, MessageBatchResult, MessageView, SessionTranscriptContext, SpaceId } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 import {
   CHAT_HOME_FIXTURE_THREAD,
@@ -40,6 +40,8 @@ interface ChatListItem {
   title: string | null;
   turnCount: number;
   state: ChatThreadSummary['state'];
+  runtimeState: NonNullable<ChatThreadSummary['runtimeState']>;
+  context: SessionTranscriptContext | null;
 }
 
 /**
@@ -76,6 +78,8 @@ function itemFromSummary(summary: EntitySummary, aboutId: EntityId | null): Chat
     state: state.turnState === 'running' || state.turnState === 'queued'
       ? 'streaming'
       : state.runtimeState === 'stopped' ? 'stopped-continuable' : 'idle',
+    runtimeState: state.runtimeState,
+    context: state.context ?? null,
   };
 }
 
@@ -273,6 +277,8 @@ export function createChatHomePortFromSeam(
         projectId: item.projectId,
       },
       state: item.state,
+      runtimeState: item.runtimeState,
+      context: item.context,
     }));
   };
 
@@ -351,6 +357,8 @@ export function createChatHomePortFromSeam(
             projectId: item.projectId,
           },
           state: item.state,
+          runtimeState: item.runtimeState,
+          context: item.context,
         },
         turns,
       } satisfies ChatThreadDetail;
@@ -409,6 +417,9 @@ export function createChatHomePortFromSeam(
     },
     subscribe(listener) {
       return seam.onChatTurn(listener);
+    },
+    subscribeContext(listener) {
+      return seam.onChatContext?.(listener) ?? (() => undefined);
     },
   };
 }

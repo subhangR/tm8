@@ -1118,7 +1118,7 @@ describe('B4 link_project — caller must see the project', () => {
 });
 
 // ---------------------------------------------------------------------------
-// T14 / T15 — G6, the member tombstone (migration 231, W1-server).
+// T14 / T15 — G6, the member tombstone (migration 232, W1-server).
 //
 // Each block seeds its OWN principal, so no earlier row's H or H2 loses a
 // membership or a session. The command runs through the PRODUCTION handler

@@ -158,7 +158,7 @@ export interface RegisterFacadeHandlersDeps {
    */
   readonly resolveJevAdvisor?: JevAdvisorResolver;
   /**
-   * G6 (migration 231): what `spaces.leave` / `spaces.members.remove` /
+   * G6 (migration 232): what `spaces.leave` / `spaces.members.remove` /
    * `accounts.disable` reach after their commit — the PTYs of the sessions SQL
    * recorded ended, and the open event sockets. A parameter here, like
    * `credentials`, because it reaches exactly one call. Absent: the three are
@@ -218,7 +218,7 @@ export function registerFacadeHandlers(
   registerLaunchDefaultsHandler(registry, facade);
   // spaces.chatDefaults.get/set (entity-chat §3.4): per-kind chat defaults, migration 229.
   registerChatDefaultsHandlers(registry, facade);
-  // spaces.leave / spaces.members.remove / accounts.disable (G6, migration 231).
+  // spaces.leave / spaces.members.remove / accounts.disable (G6, migration 232).
   registerMembershipHandlers(registry, facade, deps.membership ?? {});
   // Tier 4 git×graph: the read-only file-contention map over active worktrees.
   registerContentionHandlers(registry, facade);

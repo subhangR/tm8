@@ -2968,7 +2968,7 @@ export class SpawnService {
   }
 
   /**
-   * MEMBERSHIP CONTAINMENT (migration 231) — kill a session whose ending the
+   * MEMBERSHIP CONTAINMENT (migration 232) — kill a session whose ending the
    * database has ALREADY recorded.
    *
    * `spaces.leave` / `spaces.members.remove` write the ending in the same

@@ -17,6 +17,11 @@
  *    usage record, the previous sample is still the newest truth, and is
  *    shown with that qualifier. Compaction and a model change are the
  *    opposite: the old sample is wrong now, so it is dropped, not kept.
+ *
+ * `formatContext` is those rules over one reading, with no transcript in
+ * sight, so a chat (whose reading arrives on the chat entity and a WS frame)
+ * says exactly what the session strip says. `readContext` is the strip's
+ * wrapper: the tail read's loading, failure and delay states around it.
  */
 import type { SessionTranscriptContext, SessionTranscriptPage } from '@tm8/contract';
 import { absTime, ageAgo, ageLabel } from '../kit/time';
@@ -100,10 +105,10 @@ function unknown(tone: ContextTone, used: string, why: string, extra: ContextDet
   };
 }
 
-function delayedDetail(snap: TailSnapshot): ContextDetail[] {
-  if (snap.error === null) return [];
+function delayedDetail(snap: TailSnapshot): ContextDetail | null {
+  if (snap.error === null) return null;
   const since = snap.errorAt === null ? '' : ` (${absTime(snap.errorAt)})`;
-  return [{ term: 'Update', value: `delayed — ${snap.error}${since}` }];
+  return { term: 'Update', value: `delayed — ${snap.error}${since}` };
 }
 
 function pageReason(page: SessionTranscriptPage): string {
@@ -127,18 +132,46 @@ export function readContext(
       ? unknown('loading', '…', 'reading')
       : unknown('unknown', '—', `transcript read failed — ${snap.error}`);
   }
-  const current = page.available ? page.context ?? null : null;
-  if (!current) return unknown('unknown', '—', pageReason(page), delayedDetail(snap));
+  return formatContext(page.available ? page.context ?? null : null, now, {
+    previous,
+    missing: pageReason(page),
+    delay: delayedDetail(snap),
+  });
+}
+
+export interface FormatContextOptions {
+  /** The newest usable sample seen earlier, for a window that holds none. */
+  previous?: SessionTranscriptContext | null;
+  /**
+   * The reading is no longer being updated, and why — a stopped runtime, say.
+   * A usable sample is then shown as last known, with this as its status.
+   */
+  stale?: string | null;
+  /** Why there is no reading at all, when `current` is null. */
+  missing?: string;
+  /** The update is late: the tone becomes 'delayed' and this detail says why. */
+  delay?: ContextDetail | null;
+}
+
+/** One reading in words, by the rules at the top of this file. Pure. */
+export function formatContext(
+  current: SessionTranscriptContext | null,
+  now: number,
+  options: FormatContextOptions = {},
+): ContextReading {
+  const delay = options.delay ?? null;
+  const delayed = delay === null ? [] : [delay];
+  if (!current) return unknown('unknown', '—', options.missing ?? REASONS.not_reported, delayed);
 
   let sample = usableSample(current);
-  let lastKnown = false;
-  if (!sample && current.unavailableReason === 'sample_outside_window' && previous) {
-    sample = previous;
-    lastKnown = true;
+  let lastKnown: string | null = sample && options.stale ? options.stale : null;
+  if (!sample && current.unavailableReason === 'sample_outside_window' && options.previous) {
+    sample = options.previous;
+    lastKnown = 'the newest transcript window holds no request usage';
   }
   if (!sample || sample.usedTokens === null) {
     const why = REASONS[current.unavailableReason ?? 'not_reported'];
-    return unknown('unknown', '—', why, delayedDetail(snap));
+    return unknown('unknown', '—', why, delayed);
   }
 
   const used = sample.usedTokens;
@@ -149,14 +182,14 @@ export function readContext(
       ? percentOf(sample.cacheReadTokens, sample.requestInputTokens)
       : null;
   const age = ageLabel(sample.observedAt, now);
-  const tone: ContextTone = snap.error !== null ? 'delayed' : 'ok';
+  const tone: ContextTone = delay !== null ? 'delayed' : 'ok';
 
   const words = [
     `Context ${exact(used)} tokens`,
     capacity !== null ? `of ${exact(capacity)}, ${String(pct)}%` : 'capacity unknown',
   ].join(' ');
   const label = [
-    lastKnown ? `Last known: ${words}` : words,
+    lastKnown !== null ? `Last known: ${words}` : words,
     cachePct !== null ? `cache reuse ${String(cachePct)}%` : 'cache reuse unknown',
     age !== null ? `sampled ${ageAgo(age)}` : 'sample time unknown',
     tone === 'delayed' ? 'update delayed' : null,
@@ -193,10 +226,8 @@ export function readContext(
   });
   if (sample.model) details.push({ term: 'Model', value: sample.model });
   if (sample.source) details.push({ term: 'Source', value: SOURCE_LABEL[sample.source] });
-  if (lastKnown) {
-    details.push({ term: 'Status', value: 'last known — the newest transcript window holds no request usage' });
-  }
-  details.push(...delayedDetail(snap));
+  if (lastKnown !== null) details.push({ term: 'Status', value: `last known — ${lastKnown}` });
+  details.push(...delayed);
 
   return {
     tone,
@@ -205,7 +236,7 @@ export function readContext(
     cache: cachePct === null ? '—' : `${String(cachePct)}%`,
     age: age === null ? null : ageAgo(age),
     ageShort: age,
-    lastKnown,
+    lastKnown: lastKnown !== null,
     label,
     details,
   };

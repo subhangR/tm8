@@ -1,6 +1,6 @@
 /**
  * `spaces.leave`, `spaces.members.remove`, `accounts.disable` — G6 (plan
- * 01a0d9eb W1, migration 231).
+ * 01a0d9eb W1, migration 232).
  *
  * THE TRANSACTION is SQL's: `leave_space` / `remove_space_member` tombstone
  * the member and, in the same commit, revoke the tokens pinned to the space,

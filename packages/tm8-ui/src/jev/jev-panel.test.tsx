@@ -277,6 +277,23 @@ describe('JevPanel', () => {
     expect(view.getByTestId('jev-panel-notice').textContent).toMatch(/no teammate before/);
   });
 
+  it('two panels on one page never share an id, and each region and section is named by its OWN heading', () => {
+    const view = render(<><JevPanel jev={source()} modelLabel="m" /><JevPanel jev={source()} modelLabel="m" /></>);
+    const ids = [...view.container.querySelectorAll('[id]')].map((el) => el.id);
+    expect(ids.length).toBeGreaterThan(2);
+    expect(new Set(ids).size).toBe(ids.length);
+    const regions = view.getAllByTestId('jev-panel');
+    expect(regions).toHaveLength(2);
+    for (const region of regions) {
+      const title = region.ownerDocument.getElementById(region.getAttribute('aria-labelledby')!);
+      expect(region.contains(title)).toBe(true);
+      expect(title?.textContent).toBe('✦ Jev’s recommendations');
+      for (const section of region.querySelectorAll('section[aria-labelledby]')) {
+        expect(region.contains(region.ownerDocument.getElementById(section.getAttribute('aria-labelledby')!))).toBe(true);
+      }
+    }
+  });
+
   it('an applied group turns into Undo, and every undo path calls undo', () => {
     const applied: JevAppliedLedger = {
       model: { at: 1, value: MODEL_CHOICE, previous: null, teammateId: null },
@@ -390,7 +407,7 @@ describe('JevPanel', () => {
     expect(view.getByTestId('jev-why-mem-a').textContent).toBe('A default, left out: you unticked it.');
     expect(view.queryByTestId('jev-why-mem-b')).toBeNull();
     const box = within(view.getByTestId('jev-prow-mem-c')).getByRole('checkbox');
-    expect(box.getAttribute('aria-describedby')).toBe('jev-why-mem-c');
+    expect(box.getAttribute('aria-describedby')).toBe(view.getByTestId('jev-why-mem-c').id);
   });
 
   it('a tick calls toggle with the row’s group, and a refused tick says why at the row', () => {

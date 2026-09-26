@@ -1,5 +1,5 @@
 -- =============================================================================
--- 231 — a membership ends by TOMBSTONE, never by DELETE (plan 01a0d9eb W1, G6,
+-- 232 — a membership ends by TOMBSTONE, never by DELETE (plan 01a0d9eb W1, G6,
 -- K8; rows T14/T15).
 --
 -- THE GAP. There was no way to leave a space or remove a member. The only exit
@@ -76,16 +76,16 @@ alter table public.members
 
 comment on column public.members.status is
   'active | left (spaces.leave) | removed (spaces.members.remove). A membership '
-  'ends by tombstone, never by DELETE (231, K8). Every membership helper reads '
+  'ends by tombstone, never by DELETE (232, K8). Every membership helper reads '
   'active rows only.';
 comment on column public.members.left_at is
-  'When the membership ended; null exactly while status = active (231).';
+  'When the membership ended; null exactly while status = active (232).';
 
 alter table public.team_members
   add column deactivated_at timestamptz;
 
 comment on column public.team_members.deactivated_at is
-  'Set when the owning member leaves or is removed (231). The persona and its '
+  'Set when the owning member leaves or is removed (232). The persona and its '
   'history are kept; nobody can act as it until the owner is reactivated.';
 
 -- ---------------------------------------------------------------------------
@@ -443,7 +443,7 @@ begin
     return member_id;
   end if;
   if member_id is not null then
-    -- 231: a tombstoned membership comes back as itself, with the role this
+    -- 232: a tombstoned membership comes back as itself, with the role this
     -- door grants, so everything it authored is theirs again.
     update public.members
        set status = 'active', left_at = null, role = p_role
@@ -511,7 +511,7 @@ begin
     if target.visibility <> 'public' then
       raise exception 'space is not public' using errcode = '42501';
     end if;
-    -- 231: a member an admin REMOVED does not walk back in through the public
+    -- 232: a member an admin REMOVED does not walk back in through the public
     -- door. An invite is the way back; leaving on your own is not a ban.
     if member_status = 'removed' then
       raise exception 'you were removed from this space: ask an admin for an invite'
@@ -561,7 +561,7 @@ begin
     raise exception 'invite has expired' using errcode = '42501';
   end if;
 
-  -- 231: "already a member" means an ACTIVE member. A tombstoned row is
+  -- 232: "already a member" means an ACTIVE member. A tombstoned row is
   -- reactivated by attach_member and spends a use, as a first join does.
   select entity_id into member_id from public.members
    where space_id = invite.space_id and identity_id = identity and status = 'active';
@@ -610,7 +610,7 @@ begin
   -- NULL for an anonymous caller, which is most of them. `redeem_invite`
   -- resolves membership by (space_id, identity_id) against this same table;
   -- this asks the identical question so the two operations cannot answer
-  -- differently about the same person again (231: an ACTIVE membership).
+  -- differently about the same person again (232: an ACTIVE membership).
   viewer := internal.identity_id();
   if viewer is not null and exists (
        select 1 from public.members
@@ -687,7 +687,7 @@ begin
 
   -- The space is named in the predicate, not just used to authorize: a member
   -- id from another Space must be "not found here", never "found and updated".
-  -- 231: so is a member who has left or been removed.
+  -- 232: so is a member who has left or been removed.
   select * into target from public.members
    where entity_id = p_member_id and space_id = p_space_id and status = 'active'
    for update;
@@ -1083,7 +1083,7 @@ begin
      and (p.prosrc not like '%current_setting(''tm8.session_space_id'', true)%'
           or p.prosrc like '%session_space_id()%');
   if missing is not null then
-    raise exception 'VERIFY 231: not pinned inline: %', missing;
+    raise exception 'VERIFY 232: not pinned inline: %', missing;
   end if;
 
   select string_agg(p.oid::regprocedure::text, ', ') into missing
@@ -1096,7 +1096,7 @@ begin
      and p.prosrc not like '%status = ''active''%'
      and p.prosrc not like '%status=''active''%';
   if missing is not null then
-    raise exception 'VERIFY 231: membership helper reads tombstoned rows: %', missing;
+    raise exception 'VERIFY 232: membership helper reads tombstoned rows: %', missing;
   end if;
 end
 $verify$;

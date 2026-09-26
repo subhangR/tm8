@@ -304,7 +304,7 @@ const ROWS: Record<OperationName, Row> = {
       'refused once any account on the node has a password: a claim token is inert on a claimed node, so there is nothing to reissue',
     ],
   },
-  // ── node accounts (G6, migration 231) ──────────────────────────────────
+  // ── node accounts (G6, migration 232) ──────────────────────────────────
   'accounts.disable': {
     cmd: ['node', 'account', 'disable'],
     syn: 'tm8 node account disable <account-id> --yes [--mutation-id <id>]',
@@ -3000,7 +3000,7 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   // it is `cmd: null` (Jev is UI-only, design 01a0cb80), so a separate noun
   // would name no command. `tools/conformance`'s generator holds the same map.
   launch: 'session',
-  // `accounts.disable` (G6, 231): the command is `tm8 node account disable`,
+  // `accounts.disable` (G6, 232): the command is `tm8 node account disable`,
   // but `node` already groups the credential rows, so the noun is `account`.
   // `tools/conformance`'s generator holds the same map.
   accounts: 'account',
@@ -3084,7 +3084,7 @@ export const CATALOG_DIGEST =
   // Re-measured (Forms W3 merged with headers I4): + forms.responses.redeliver, forms.pendingForSessions. Read from the failing digest test.
   // Re-measured (I9b): + launch.defaults. Read from the failing digest test.
   // Re-measured (entity chat G): + spaces.chatDefaults.get/set. RECOMPUTED from JSON.stringify(OPERATIONS).
-  // Re-measured (G6, 231): + spaces.members.remove, spaces.leave, accounts.disable. Read from the failing digest test.
+  // Re-measured (G6, 232): + spaces.members.remove, spaces.leave, accounts.disable. Read from the failing digest test.
   'sha256:ac682c491fd5abae761557c8b4e155f9e4925ca45cd3ca9112f70f9d9f4f229d';
 
 export const GRAMMAR_VERSION = '2';

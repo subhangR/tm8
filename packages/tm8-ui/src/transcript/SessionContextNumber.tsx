@@ -20,19 +20,19 @@
  * The read is the SHARED tail (`tail-resource`), so a Transcript or Debug tab
  * open on the same session costs no second poll.
  */
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import type { EntityId, SessionTranscriptContext } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 import { useNow, useNowSeconds } from '../kit/time';
 import { useDismissable } from '../panels/useDismissable';
-import { readContext, usableSample } from './context-reading';
+import { readContext, usableSample, type ContextReading } from './context-reading';
 import { useTranscriptTail } from './tail-resource';
 import './session-context.css';
 
 /** The same cadence the Transcript surface polls a live session at. */
 export const CONTEXT_POLL_MS = 5_000;
 
-type Fit = 'wide' | 'medium' | 'narrow';
+export type Fit = 'wide' | 'medium' | 'narrow';
 
 /** Bar widths (CSS px of `.pn-panelbar`) at which the reading gives up words. */
 export const FIT_WIDE_PX = 760;
@@ -81,10 +81,8 @@ export function SessionContextNumber({ seam, sessionId, live }: SessionContextNu
   const fine = useNowSeconds(young);
   const reading = readContext(snap, prior, Math.max(coarse, fine));
 
-  const [open, setOpen] = useState(false);
   const [fit, setFit] = useState<Fit>('wide');
   const root = useRef<HTMLSpanElement>(null);
-  const detailsId = useId();
 
   // Measured off the BAR, not this element: the question is how much room the
   // row has, and this element's own width is the answer to a different one.
@@ -100,13 +98,34 @@ export function SessionContextNumber({ seam, sessionId, live }: SessionContextNu
     return () => ro.disconnect();
   }, []);
 
+  return <ContextChip reading={reading} fit={fit} rootRef={root} testId="session-context" />;
+}
+
+export interface ContextChipProps {
+  reading: ContextReading;
+  fit: Fit;
+  testId: string;
+  /** The chip's root, for a caller that measures its surroundings. */
+  rootRef?: RefObject<HTMLSpanElement | null>;
+}
+
+/**
+ * The number and its details disclosure, for one reading — the session strip
+ * and the chat header draw the same chip.
+ */
+export function ContextChip({ reading, fit, testId, rootRef }: ContextChipProps) {
+  const [open, setOpen] = useState(false);
+  const ownRoot = useRef<HTMLSpanElement>(null);
+  const root = rootRef ?? ownRoot;
+  const detailsId = useId();
+
   // The house dismissal: Esc is claimed in the CAPTURE phase, so closing the
   // details never also walks the panel stack down a rung.
   const dismiss = useCallback(() => {
     setOpen(false);
     // Only hand focus back when it was inside — an outside click keeps its own.
     if (root.current?.contains(document.activeElement)) root.current.querySelector('button')?.focus();
-  }, []);
+  }, [root]);
   useDismissable(open, root, dismiss);
 
   const parts: string[] = [];
@@ -128,7 +147,7 @@ export function SessionContextNumber({ seam, sessionId, live }: SessionContextNu
     <span
       ref={root}
       className="pn-context"
-      data-testid="session-context"
+      data-testid={testId}
       data-tone={reading.tone}
       data-fit={fit}
     >

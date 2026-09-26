@@ -10,6 +10,7 @@ import {
   type StartAgentThreadInput,
   type TurnItem,
 } from '../src/index.js';
+import { contextWindowFor } from '../src/runtime/ClaudeHeadlessAdapter.js';
 
 const FAKE_AGENT = fileURLToPath(new URL('../harness/headless-agent.mjs', import.meta.url));
 const NATIVE_SESSION_ID = '018f47f2-c091-7b2e-8f8a-101010101010';
@@ -277,7 +278,7 @@ describe('ClaudeHeadlessAdapter', () => {
         output_tokens: 5,
         cache_creation_input_tokens: 2,
         cache_read_input_tokens: 7,
-        total_cost_usd: 0,
+        total_cost_usd: 0.01,
       },
       { kind: 'done', reason: 'success' },
     ]);
@@ -291,13 +292,25 @@ describe('ClaudeHeadlessAdapter', () => {
     const first = await collect(runtime.sendTurn(thread.threadId, { text: 'first' }));
     const second = await collect(runtime.sendTurn(thread.threadId, { text: 'no-cost' }));
     const costOnly = await collect(runtime.sendTurn(thread.threadId, { text: 'cost-only' }));
+    const fourth = await collect(runtime.sendTurn(thread.threadId, { text: 'fourth' }));
+    const perTurn = {
+      input_tokens: 11,
+      output_tokens: 5,
+      cache_creation_input_tokens: 2,
+      cache_read_input_tokens: 7,
+    };
     expect(first).toContainEqual({ kind: 'text', text: 'echo:first:1' });
+    expect(first).toContainEqual({ kind: 'usage', ...perTurn, total_cost_usd: 0.01 });
     expect(second).toContainEqual({ kind: 'text', text: 'echo:no-cost:2' });
-    const usage = second.find((item) => item.kind === 'usage');
-    expect(usage).toBeDefined();
-    expect(usage).not.toHaveProperty('total_cost_usd');
+    // Tokens are the step in the running totals, not the totals (22, 10, ...).
+    expect(second).toContainEqual({ kind: 'usage', ...perTurn });
     expect(second.at(-1)).toEqual({ kind: 'done', reason: 'success' });
-    expect(costOnly).toContainEqual({ kind: 'usage', total_cost_usd: 0.25 });
+    // The previous turn reported no running cost, so this turn's step is
+    // unknown: 0.27 is the process total and must not be shown as the turn's.
+    // Tokens fall back to the per-turn top-level usage of a successful turn.
+    expect(costOnly).toContainEqual({ kind: 'usage', ...perTurn });
+    // Both running costs known again: 0.28 - 0.27.
+    expect(fourth.find((item) => item.kind === 'usage')).toMatchObject({ total_cost_usd: 0.01 });
   });
 
   it('rejects an overlapping turn synchronously, outside the C1 stream', async () => {
@@ -516,6 +529,320 @@ describe('ClaudeHeadlessAdapter', () => {
       expected: false,
     });
     expect(runtime.hasThread(thread.threadId)).toBe(false);
+  });
+
+  describe('context and per-turn usage from recorded stream shapes', () => {
+    // Shapes as claude 2.1.280 emits them (probed live, haiku and opus [1m]):
+    // every event of one streamed message repeats that request's usage;
+    // `result.usage` is per turn; `modelUsage` and `total_cost_usd` are running
+    // totals for the process; the modelUsage key is the launch model.
+    const OPUS = 'claude-opus-5-5';
+    const OPUS_1M = `${OPUS}[1m]`;
+
+    function assistant(
+      id: string,
+      usage: Record<string, number>,
+      content: unknown[],
+      extra: Record<string, unknown> = {},
+    ) {
+      return {
+        type: 'assistant',
+        parent_tool_use_id: null,
+        session_id: NATIVE_SESSION_ID,
+        ...extra,
+        message: { id, model: OPUS, role: 'assistant', usage, content, ...(extra['message'] as object) },
+      };
+    }
+
+    function result(
+      turnUsage: Record<string, number>,
+      running: { input: number; output: number; read: number; created: number; cost: number },
+      extra: Record<string, unknown> = {},
+    ) {
+      return {
+        type: 'result',
+        subtype: 'success',
+        is_error: false,
+        session_id: NATIVE_SESSION_ID,
+        usage: turnUsage,
+        modelUsage: {
+          [OPUS_1M]: {
+            inputTokens: running.input,
+            outputTokens: running.output,
+            cacheReadInputTokens: running.read,
+            cacheCreationInputTokens: running.created,
+            costUSD: running.cost,
+            contextWindow: 1_000_000,
+            canonicalModel: OPUS,
+          },
+        },
+        total_cost_usd: running.cost,
+        ...extra,
+      };
+    }
+
+    const request = (input: number, read: number, created: number, output = 9) => ({
+      input_tokens: input,
+      cache_read_input_tokens: read,
+      cache_creation_input_tokens: created,
+      output_tokens: output,
+    });
+
+    async function fixtureThread(turns: Record<string, unknown[]>, env: Record<string, string> = {}) {
+      const file = join(root, `fixture-${String(nextThread + 1)}.json`);
+      await writeFile(file, JSON.stringify(turns));
+      const runtime = adapter();
+      const thread = input({ model: OPUS_1M, env: { TM8_FAKE_STREAM_FIXTURE: file, ...env } });
+      await runtime.startThread(thread);
+      return { runtime, thread };
+    }
+
+    const contexts = (items: TurnItem[]) =>
+      items.flatMap((item) => (item.kind === 'context' ? [item.context] : []));
+
+    it('measures a multi-request turn once per request and attaches the [1m] window', async () => {
+      const { runtime, thread } = await fixtureThread({
+        work: [
+          // Request 1: thinking and a tool call, streamed as two events that
+          // repeat one usage. It must be measured once.
+          assistant('msg_1', request(3, 17_000, 600), [{ type: 'thinking', thinking: 'look' }]),
+          assistant('msg_1', request(3, 17_000, 600), [
+            { type: 'tool_use', id: 't1', name: 'Read', input: { path: 'a' } },
+          ]),
+          {
+            type: 'user',
+            parent_tool_use_id: null,
+            message: { content: [{ type: 'tool_result', tool_use_id: 't1', content: 'ok' }] },
+          },
+          // Request 2: the context grew by the tool result.
+          assistant('msg_2', request(1, 17_600, 900), [{ type: 'text', text: 'done' }]),
+          result(request(4, 34_600, 1_500, 18), { input: 4, output: 18, read: 34_600, created: 1_500, cost: 0.05 }),
+        ],
+      });
+
+      const items = await collect(runtime.sendTurn(thread.threadId, { text: 'work' }));
+      const seen = contexts(items);
+      // Two requests, two samples (no capacity yet: the window only arrives on
+      // `result`), then the latest re-emitted with the provider's window.
+      expect(seen.map((c) => [c.usedTokens, c.capacityTokens])).toEqual([
+        [17_603, null],
+        [18_501, null],
+        [18_501, 1_000_000],
+      ]);
+      expect(seen.at(-1)).toMatchObject({
+        usedTokens: 18_501,
+        cacheReadTokens: 17_600,
+        requestInputTokens: 18_501,
+        capacityTokens: 1_000_000,
+        model: OPUS,
+        source: 'claude_request_usage',
+        capacitySource: 'provider',
+        unavailableReason: null,
+      });
+      // Per-turn usage is the SUM over the turn's requests, not the context.
+      expect(items).toContainEqual({
+        kind: 'usage',
+        input_tokens: 4,
+        output_tokens: 18,
+        cache_read_input_tokens: 34_600,
+        cache_creation_input_tokens: 1_500,
+        total_cost_usd: 0.05,
+      });
+      expect(items.at(-1)).toEqual({ kind: 'done', reason: 'success' });
+    });
+
+    it('reports a 2-turn process per turn, and knows the window before turn 2 samples', async () => {
+      const { runtime, thread } = await fixtureThread({
+        one: [
+          assistant('msg_a', request(3, 17_690, 0), [{ type: 'text', text: 'a' }]),
+          result(request(3, 17_690, 0, 12), { input: 3, output: 12, read: 17_690, created: 0, cost: 0.009524 }),
+        ],
+        two: [
+          assistant('msg_b', request(3, 21_355, 40), [{ type: 'text', text: 'b' }]),
+          // Running totals: turn one plus turn two.
+          result(request(3, 21_355, 40, 20), {
+            input: 6,
+            output: 32,
+            read: 39_045,
+            created: 40,
+            cost: 0.0138285,
+          }),
+        ],
+      });
+
+      await collect(runtime.sendTurn(thread.threadId, { text: 'one' }));
+      const two = await collect(runtime.sendTurn(thread.threadId, { text: 'two' }));
+      expect(two).toContainEqual({
+        kind: 'usage',
+        input_tokens: 3,
+        output_tokens: 20,
+        cache_read_input_tokens: 21_355,
+        cache_creation_input_tokens: 40,
+        total_cost_usd: 0.0043045,
+      });
+      // The window is cached per thread, so turn two's sample carries it at
+      // once and nothing is re-emitted on `result`.
+      expect(contexts(two)).toEqual([
+        expect.objectContaining({ usedTokens: 21_398, capacityTokens: 1_000_000, capacitySource: 'provider' }),
+      ]);
+    });
+
+    it('skips sub-agent and synthetic messages, and never reads a missing part as zero', async () => {
+      const { runtime, thread } = await fixtureThread({
+        mixed: [
+          assistant('msg_main', request(2, 20_000, 100), [{ type: 'text', text: 'main' }]),
+          // A Task sub-agent's request runs in its own context window.
+          assistant('msg_sub', request(5, 3_000, 3_000), [{ type: 'text', text: 'sub' }], {
+            parent_tool_use_id: 'toolu_task',
+          }),
+          assistant('msg_syn', request(0, 0, 0), [{ type: 'text', text: 'No response requested.' }], {
+            message: { model: '<synthetic>' },
+          }),
+          // A request whose usage lacks the cache parts is unknown, not 2.
+          assistant('msg_partial', { input_tokens: 2, output_tokens: 1 }, [{ type: 'text', text: 'p' }]),
+          result(request(4, 20_000, 100), { input: 9, output: 20, read: 23_000, created: 3_100, cost: 0.02 }),
+        ],
+      });
+
+      const items = await collect(runtime.sendTurn(thread.threadId, { text: 'mixed' }));
+      const seen = contexts(items);
+      expect(seen.map((c) => c.usedTokens)).toEqual([20_102, null, null]);
+      expect(seen[1]).toMatchObject({ cacheReadTokens: null, requestInputTokens: null, unavailableReason: 'incomplete_usage' });
+      expect(items).toContainEqual({ kind: 'text', text: 'sub' });
+    });
+
+    it('clears the reading on compact_boundary until the next request measures it', async () => {
+      const { runtime, thread } = await fixtureThread({
+        compact: [
+          assistant('msg_before', request(2, 180_000, 0), [{ type: 'text', text: 'long' }]),
+          { type: 'system', subtype: 'compact_boundary', compact_metadata: { trigger: 'manual', pre_tokens: 180_002 } },
+          assistant('msg_after', request(2, 9_000, 1_000), [{ type: 'text', text: 'short' }]),
+          result(request(4, 189_000, 1_000), { input: 4, output: 18, read: 189_000, created: 1_000, cost: 0.1 }),
+        ],
+      });
+
+      const seen = contexts(await collect(runtime.sendTurn(thread.threadId, { text: 'compact' })));
+      expect(seen.map((c) => [c.usedTokens, c.unavailableReason])).toEqual([
+        [180_002, null],
+        [null, 'awaiting_new_sample'],
+        [10_002, null],
+        [10_002, null],
+      ]);
+      expect(seen.at(-1)?.capacityTokens).toBe(1_000_000);
+    });
+
+    it('takes an interrupted turn from the running totals, and a resume continues them', async () => {
+      const { runtime, thread } = await fixtureThread({
+        first: [
+          assistant('msg_1', request(3, 10_000, 0), [{ type: 'text', text: '1' }]),
+          result(request(3, 10_000, 0), { input: 3, output: 9, read: 10_000, created: 0, cost: 0.01 }),
+        ],
+        stopped: [
+          assistant('msg_2', request(3, 11_000, 0), [{ type: 'text', text: '2' }]),
+          // An aborted result zeroes the top-level usage; the totals are real.
+          result({ input_tokens: 0, output_tokens: 0 }, { input: 6, output: 18, read: 21_000, created: 0, cost: 0.025 }, {
+            subtype: 'error_during_execution',
+            terminal_reason: 'aborted_streaming',
+          }),
+        ],
+      });
+      await collect(runtime.sendTurn(thread.threadId, { text: 'first' }));
+      const stopped = await collect(runtime.sendTurn(thread.threadId, { text: 'stopped' }));
+      expect(stopped.find((item) => item.kind === 'usage')).toEqual({
+        kind: 'usage',
+        input_tokens: 3,
+        output_tokens: 9,
+        cache_read_input_tokens: 11_000,
+        cache_creation_input_tokens: 0,
+        total_cost_usd: 0.015,
+      });
+      await runtime.close(thread.threadId);
+
+      // `--resume` restores the session's running totals in the new process
+      // (measured: cost 0.010661 -> 0.0133114 on the first resumed turn), so the
+      // base is the last totals this adapter saw, not zero.
+      const file = join(root, 'resumed.json');
+      await writeFile(
+        file,
+        JSON.stringify({
+          again: [result(request(3, 12_000, 0), { input: 9, output: 27, read: 33_000, created: 0, cost: 0.03 })],
+        }),
+      );
+      await runtime.startThread({
+        ...thread,
+        resume: 'post_interrupt',
+        env: { TM8_FAKE_STREAM_FIXTURE: file, CLAUDE_CONFIG_DIR: await configHomeWithTranscript() },
+      });
+      const again = await collect(runtime.sendTurn(thread.threadId, { text: 'again' }));
+      expect(again.find((item) => item.kind === 'usage')).toMatchObject({
+        input_tokens: 3,
+        cache_read_input_tokens: 12_000,
+        total_cost_usd: 0.005,
+      });
+    });
+
+    it('does not guess a resumed turn cost when the base is unknown', async () => {
+      // A node restart forgets the totals; the resumed process's first result
+      // reports the whole session's cost, which is not this turn's.
+      const { runtime, thread } = await fixtureThread({
+        again: [result(request(3, 12_000, 0), { input: 9, output: 27, read: 33_000, created: 0, cost: 0.03 })],
+      });
+      await runtime.close(thread.threadId);
+      await runtime.startThread({
+        ...thread,
+        resume: 'post_interrupt',
+        env: { ...thread.env, CLAUDE_CONFIG_DIR: await configHomeWithTranscript() },
+      });
+      const again = await collect(runtime.sendTurn(thread.threadId, { text: 'again' }));
+      expect(again.find((item) => item.kind === 'usage')).toEqual({
+        kind: 'usage',
+        input_tokens: 3,
+        output_tokens: 9,
+        cache_read_input_tokens: 12_000,
+        cache_creation_input_tokens: 0,
+      });
+    });
+    it('counts from zero when an expired transcript turns a resume into a fresh session', async () => {
+      // No transcript anywhere: the adapter drops `--resume`, so the new
+      // process's totals start at zero and are all this turn's.
+      const { runtime, thread } = await fixtureThread({
+        again: [result(request(3, 12_000, 0), { input: 3, output: 9, read: 12_000, created: 0, cost: 0.004 })],
+      });
+      await runtime.close(thread.threadId);
+      const emptyHome = join(root, 'expired-home');
+      await mkdir(join(emptyHome, 'projects'), { recursive: true });
+      await runtime.startThread({
+        ...thread,
+        resume: 'post_interrupt',
+        env: { ...thread.env, CLAUDE_CONFIG_DIR: emptyHome },
+      });
+      const again = await collect(runtime.sendTurn(thread.threadId, { text: 'again' }));
+      expect(again.find((item) => item.kind === 'usage')).toMatchObject({ input_tokens: 3, total_cost_usd: 0.004 });
+    });
+  });
+
+  it('matches a context window across the [1m] key and a dated message.model', () => {
+    const usage = {
+      'claude-opus-5-5[1m]': { contextWindow: 1_000_000, canonicalModel: 'claude-opus-5-5' },
+      'claude-haiku-4-5-20251001': { contextWindow: 200_000, canonicalModel: 'claude-haiku-4-5' },
+    };
+    expect(contextWindowFor(usage, 'claude-opus-5-5', 'claude-opus-5-5[1m]')).toBe(1_000_000);
+    expect(contextWindowFor(usage, 'claude-opus-5-5', null)).toBe(1_000_000);
+    expect(contextWindowFor(usage, 'claude-haiku-4-5-20251001', 'claude-opus-5-5[1m]')).toBe(200_000);
+    expect(contextWindowFor(usage, 'claude-haiku-4-5', null)).toBe(200_000);
+    expect(contextWindowFor(usage, 'claude-sonnet-5', null)).toBeNull();
+    // Two entries claiming one canonical model: ambiguous, so unknown rather
+    // than whichever came first.
+    expect(
+      contextWindowFor(
+        {
+          'claude-x-1': { contextWindow: 1_000_000, canonicalModel: 'claude-x' },
+          'claude-x-2': { contextWindow: 200_000, canonicalModel: 'claude-x' },
+        },
+        'claude-x',
+        null,
+      ),
+    ).toBeNull();
   });
 
   it('closes stdin for a clean idle shutdown and makes close idempotent', async () => {
