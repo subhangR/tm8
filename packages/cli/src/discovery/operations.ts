@@ -237,7 +237,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'auth.space.enter': {
     cmd: ['auth', 'space', 'enter'],
-    syn: 'tm8 auth space enter <space-id> [--label <label>]',
+    syn: 'tm8 auth space enter <space-id> [--label <label>] [--print-token]',
     sum: 'Mint a session pinned to one space from your unpinned (gate) session',
     authz: 'server',
     input: 'bound',
@@ -247,7 +247,8 @@ const ROWS: Record<OperationName, Row> = {
       'requires membership of the space and an unpinned browser/cli session; a pinned session cannot enter another space',
       'the new session has the same kind, never carries node-admin power, and expires no later than the session that minted it',
       'under TM8_SPACE_SESSIONS=enforce an unpinned human session can call only spaces.list, auth.* and node administration until it enters a space',
-      'the pinned token is printed once and not stored, so the stored gate credential stays usable for entering other spaces',
+      'with a stored gate credential the pinned token is stored next to it, keyed by space, and `tm8 --space <space-id>` presents it; the gate stays usable for entering other spaces',
+      'with --print-token (or in an agent session, or with no stored credential) nothing is stored: export the printed token as TM8_AGENT_TOKEN',
     ],
   },
   'auth.password.change': {

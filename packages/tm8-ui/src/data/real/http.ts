@@ -85,6 +85,32 @@ export interface HttpOptions {
    * only slower.
    */
   timeoutMs?: number;
+  /**
+   * W3 pinned space sessions (plan 01a0d9eb §3). Absent, or answering null,
+   * leaves `getAuthToken` in charge exactly as before, which is the whole of
+   * the `TM8_SPACE_SESSIONS=agents` behaviour.
+   */
+  spaceSession?: SpaceSessionPort;
+}
+
+/**
+ * Picks the credential per operation once a server enforces space sessions,
+ * and recovers from the enforce gate's refusal. Implemented by
+ * `auth/space-sessions.ts`; the transport only asks.
+ */
+export interface SpaceSessionPort {
+  /**
+   * The credential for `op` (undefined for a `callPath` escape-hatch route),
+   * or null to fall back to `getAuthToken`. `omitCookie` sends the request
+   * with `credentials: 'omit'`: once the session cookie is a pinned session,
+   * a different token in `Authorization` next to it is refused as a pair.
+   */
+  credentialFor(op: OperationName | undefined): { token: string; omitCookie: boolean } | null;
+  /**
+   * Called with a refusal. Resolves true when the port has minted a session
+   * that makes the same request worth sending once more.
+   */
+  recover(error: CollabError, op: OperationName | undefined): Promise<boolean>;
 }
 
 export const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
@@ -213,6 +239,23 @@ export function createHttpClient(options: HttpOptions = {}): HttpClient {
   const doFetch: FetchLike | undefined = options.fetch;
   const onTransport = options.onTransport;
   const getAuthToken = options.getAuthToken;
+  const spaceSession = options.spaceSession;
+  /** Read per request, like `getAuthToken`; the space port speaks first. */
+  function credentialFor(op: OperationName | undefined): { token: string | null; omitCookie: boolean } {
+    const pinned = spaceSession?.credentialFor(op) ?? null;
+    if (pinned) return pinned;
+    return { token: getAuthToken?.() ?? null, omitCookie: false };
+  }
+  /** One retry after the space port recovered from a refusal; never a loop. */
+  async function withRecovery<T>(op: OperationName | undefined, send: () => Promise<T>): Promise<T> {
+    try {
+      return await send();
+    } catch (error) {
+      if (!spaceSession || !(error instanceof CollabError)) throw error;
+      if (!(await spaceSession.recover(error, op))) throw error;
+      return await send();
+    }
+  }
   const defaultTimeoutMs = options.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
   const timeoutExplicit = options.timeoutMs !== undefined;
   function timeoutFor(op: OperationName): number {
@@ -240,11 +283,12 @@ export function createHttpClient(options: HttpOptions = {}): HttpClient {
   }
 
   function callPath<T>(method: string, path: string, opts: RequestOptions = {}): Promise<T> {
-    return callPathWithin<T>(defaultTimeoutMs, method, path, opts);
+    return withRecovery(undefined, () => callPathWithin<T>(defaultTimeoutMs, undefined, method, path, opts));
   }
 
   async function callPathWithin<T>(
     timeoutMs: number,
+    op: OperationName | undefined,
     method: string,
     path: string,
     opts: RequestOptions = {},
@@ -260,13 +304,14 @@ export function createHttpClient(options: HttpOptions = {}): HttpClient {
     // Read per request (see the option's docblock): the pass can change
     // between calls, and a stale capture here would keep acting as a viewer
     // who already signed out.
-    const authToken = getAuthToken?.() ?? null;
+    const { token: authToken, omitCookie } = credentialFor(op);
 
     try {
       let res: Response;
       try {
         res = await doFetch(url, {
           method,
+          ...(omitCookie ? { credentials: 'omit' as const } : {}),
           // S6 on EVERY request, not just mutations. The gate only applies to
           // state-changing methods, but there is no list of "the mutating
           // calls" in this file to keep in sync with the server's — sending it
@@ -334,19 +379,25 @@ export function createHttpClient(options: HttpOptions = {}): HttpClient {
    * parse the body and one MUST NOT — and a boolean that flips "parse" is the
    * kind of parameter that ends with a zip through `JSON.parse`.
    */
-  async function callPathBytes(method: string, path: string, opts: RequestOptions = {}): Promise<Blob> {
+  async function callPathBytes(
+    op: OperationName,
+    method: string,
+    path: string,
+    opts: RequestOptions = {},
+  ): Promise<Blob> {
     if (doFetch === undefined) {
       throw new CollabError('upstream_unavailable', 'no fetch implementation was provided to createHttpClient()');
     }
     const url = `${baseUrl}${path}${buildQuery(opts.query)}`;
     const guard = armTimeout(defaultTimeoutMs);
-    const authToken = getAuthToken?.() ?? null;
+    const { token: authToken, omitCookie } = credentialFor(op);
 
     try {
       let res: Response;
       try {
         res = await doFetch(url, {
           method,
+          ...(omitCookie ? { credentials: 'omit' as const } : {}),
           headers: {
             [TM8_CLIENT_HEADER]: TM8_CLIENT_HEADER_VALUE,
             ...(authToken ? { authorization: `Bearer ${authToken}` } : {}),
@@ -432,11 +483,12 @@ export function createHttpClient(options: HttpOptions = {}): HttpClient {
     // A FOREIGN store has no tm8 identity to preserve and no cookie of ours to
     // collide with; there the grant IS the credential, in the header a
     // presigned PUT expects.
-    const authToken = getAuthToken?.() ?? null;
+    const { token: authToken, omitCookie } = credentialFor(undefined);
     let res: Response;
     try {
       res = await doFetch(url, {
         method: 'PUT',
+        ...(!foreign && omitCookie ? { credentials: 'omit' as const } : {}),
         headers: foreign
           ? { authorization: `Bearer ${token}` }
           : {
@@ -481,11 +533,13 @@ export function createHttpClient(options: HttpOptions = {}): HttpClient {
     putGrantedBytes,
     call<T>(op: OperationName, opts: RequestOptions = {}): Promise<T> {
       const binding = getOperation(op);
-      return callPathWithin<T>(timeoutFor(op), binding.method, bindPath(op, opts.params ?? {}), opts);
+      const path = bindPath(op, opts.params ?? {});
+      return withRecovery(op, () => callPathWithin<T>(timeoutFor(op), op, binding.method, path, opts));
     },
     callBytes(op: OperationName, opts: RequestOptions = {}): Promise<Blob> {
       const binding = getOperation(op);
-      return callPathBytes(binding.method, bindPath(op, opts.params ?? {}), opts);
+      const path = bindPath(op, opts.params ?? {});
+      return withRecovery(op, () => callPathBytes(op, binding.method, path, opts));
     },
   };
 }

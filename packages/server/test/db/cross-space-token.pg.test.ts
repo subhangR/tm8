@@ -3105,3 +3105,192 @@ describe('W3-audit ledger replay before the space guard (046 ledger_replay) — 
     expect(await outcome(async () => refreshAll(await pinnedTo(fixture.spaceB)))).toBe('42501');
   });
 });
+
+/**
+ * W3-client (task 01a0d9fd): the walk the UI and CLI make, over the real
+ * server. H (a member of A and B) holds one gate session and switches A → B
+ * without logging out. Every rule the clients rely on is a cell here, each
+ * refusal paired with its positive:
+ *   - `auth.space.enter` accepts gate Authorization next to an older pinned
+ *     cookie and replaces the cookie (the browser's mint path);
+ *   - any other op refuses gate Authorization next to a pinned cookie, and
+ *     serves the same header alone (why clients omit cookies under enforce);
+ *   - both pins stay live after the switch, each confined to its own space;
+ *   - the enforce refusal names `auth.space.enter` (the clients' detector);
+ *   - a pin revoked with its own token dies, and its gate lives on.
+ * `agents` twin: the pre-W3 walk (gate header plus gate cookie) is served.
+ */
+describe('T8c client walk — switch A → B without logout, cookie rules (W3-client)', () => {
+  let enforceServer: BootstrappedServer;
+  let agentsServer: BootstrappedServer;
+  let adminBefore: Array<{ id: string; is_node_admin: boolean; is_owner: boolean }> = [];
+
+  beforeAll(async () => {
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      adminBefore = (await client.query<{ id: string; is_node_admin: boolean; is_owner: boolean }>(
+        'select id::text, is_node_admin, is_owner from public.accounts where id = any($1::uuid[])',
+        [[fixture.accountH, fixture.accountH2]],
+      )).rows;
+      await client.query(
+        `update public.accounts set is_node_admin = (id = $1::uuid), is_owner = (id = $1::uuid)
+          where id = any($2::uuid[])`,
+        [fixture.accountH, [fixture.accountH, fixture.accountH2]],
+      );
+    });
+    const start = async (mode: SpaceSessionsMode): Promise<BootstrappedServer> => {
+      const configured = loadConfig({
+        ...process.env,
+        TM8_BIND: '127.0.0.1',
+        TM8_PORT: '4610',
+        TM8_NODE_MODE: 'single',
+        TM8_DATABASE_URL: database.url,
+        TM8_DATA_DIR: await mkdtemp(join(tmpdir(), 'tm8-w3c-')),
+        TM8_DISABLE_AUTO_OWNER: '1',
+        TM8_SPACE_SESSIONS: mode,
+      });
+      return bootstrap({ config: { ...configured, port: 0 } });
+    };
+    enforceServer = await start('enforce');
+    agentsServer = await start('agents');
+  }, 180_000);
+
+  afterAll(async () => {
+    for (const server of [enforceServer, agentsServer]) {
+      await server?.server.close();
+      await server?.db?.end();
+    }
+    for (const row of adminBefore) {
+      await database.query(
+        'update public.accounts set is_node_admin = $2, is_owner = $3 where id = $1::uuid',
+        [row.id, row.is_node_admin, row.is_owner],
+      );
+    }
+  }, 180_000);
+
+  interface Sent { status: number; json: any; setCookie: string | null }
+
+  /** One request as a client sends it: optional bearer, optional cookie. */
+  async function send(
+    server: BootstrappedServer,
+    creds: { bearer?: string; cookie?: string },
+    method: 'GET' | 'POST',
+    path: string,
+    body?: unknown,
+  ): Promise<Sent> {
+    const response = await fetch(new URL(path, server.url), {
+      method,
+      headers: {
+        [TM8_CLIENT_HEADER]: TM8_CLIENT_HEADER_VALUE,
+        ...(creds.bearer ? { authorization: `Bearer ${creds.bearer}` } : {}),
+        ...(creds.cookie ? { cookie: `${TM8_SESSION_COOKIE}=${creds.cookie}` } : {}),
+        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    const text = await response.text();
+    const parsed = text ? JSON.parse(text) : null;
+    return {
+      status: response.status,
+      json: parsed && 'data' in parsed ? parsed.data : parsed,
+      setCookie: response.headers.get('set-cookie'),
+    };
+  }
+
+  const cookieValue = (setCookie: string | null): string | null =>
+    setCookie?.match(new RegExp(`${TM8_SESSION_COOKIE}=([^;]*)`))?.[1] ?? null;
+
+  /** The browser walk: gate pass in the jar, enter A, then enter B. */
+  async function switchAB(): Promise<{ gate: string; pinA: string; pinB: string }> {
+    const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+    const intoA = await send(enforceServer, { bearer: gate, cookie: gate }, 'POST', '/v2/auth/space/enter',
+      { spaceId: fixture.spaceA });
+    expect(intoA.status, JSON.stringify(intoA.json)).toBe(200);
+    const pinA = intoA.json.token as string;
+    expect(cookieValue(intoA.setCookie)).toBe(pinA);
+    // The jar now holds pinA; the switch presents the gate next to it.
+    const intoB = await send(enforceServer, { bearer: gate, cookie: pinA }, 'POST', '/v2/auth/space/enter',
+      { spaceId: fixture.spaceB });
+    expect(intoB.status, JSON.stringify(intoB.json)).toBe(200);
+    const pinB = intoB.json.token as string;
+    expect(cookieValue(intoB.setCookie)).toBe(pinB);
+    return { gate, pinA, pinB };
+  }
+
+  it('switch: enter B with the gate next to A\'s pinned cookie is accepted and replaces the cookie', async () => {
+    const { pinA, pinB } = await switchAB();
+    expect(pinB).not.toBe(pinA);
+  });
+  it('switch, paired: a PINNED Authorization cannot enter, cookie or not', async () => {
+    const { pinA } = await switchAB();
+    expect((await send(enforceServer, { bearer: pinA }, 'POST', '/v2/auth/space/enter',
+      { spaceId: fixture.spaceB })).status).toBe(403);
+  });
+
+  it('A\'s pin reads B → not_found after the switch; positive — B\'s pin reads B', async () => {
+    const { pinA, pinB } = await switchAB();
+    expect((await send(enforceServer, { bearer: pinA }, 'GET', `/v2/entities/${fixture.docB}`)).status).toBe(404);
+    expect((await send(enforceServer, { bearer: pinB }, 'GET', `/v2/entities/${fixture.docB}`)).status).toBe(200);
+  });
+  it('B\'s pin reads A → not_found; positive — A\'s pin still reads A (no logout on switch)', async () => {
+    const { pinA, pinB } = await switchAB();
+    expect((await send(enforceServer, { bearer: pinB }, 'GET', `/v2/entities/${fixture.docA}`)).status).toBe(404);
+    expect((await send(enforceServer, { bearer: pinA }, 'GET', `/v2/entities/${fixture.docA}`)).status).toBe(200);
+  });
+
+  it('cookie rule: gate Authorization next to a pinned cookie is refused on spaces.list', async () => {
+    const { gate, pinB } = await switchAB();
+    const refused = await send(enforceServer, { bearer: gate, cookie: pinB }, 'GET', '/v2/spaces');
+    expect(refused.status).toBe(401);
+  });
+  it('cookie rule: positive — the same gate Authorization with cookies omitted lists spaces', async () => {
+    const { gate } = await switchAB();
+    const listed = await send(enforceServer, { bearer: gate }, 'GET', '/v2/spaces');
+    expect(listed.status).toBe(200);
+    expect(JSON.stringify(listed.json)).toContain(fixture.spaceB);
+  });
+  it('cookie rule: a pinned Authorization next to a different pinned cookie is refused; alone it is served', async () => {
+    const { pinA, pinB } = await switchAB();
+    expect((await send(enforceServer, { bearer: pinA, cookie: pinB }, 'GET', `/v2/entities/${fixture.docA}`)).status)
+      .toBe(401);
+    expect((await send(enforceServer, { bearer: pinA }, 'GET', `/v2/entities/${fixture.docA}`)).status).toBe(200);
+  });
+
+  it('detector: the enforce refusal of a gate read is 403 forbidden naming auth.space.enter', async () => {
+    const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+    const refused = await send(enforceServer, { bearer: gate }, 'GET', `/v2/entities/${fixture.docA}`);
+    expect(refused.status).toBe(403);
+    expect(refused.json.error.code).toBe('forbidden');
+    expect(refused.json.error.message).toContain('auth.space.enter');
+  });
+  it('detector, paired: a not_found from a pin does NOT name auth.space.enter (no mint loop)', async () => {
+    const { pinA } = await switchAB();
+    const missing = await send(enforceServer, { bearer: pinA }, 'GET', `/v2/entities/${fixture.docB}`);
+    expect(missing.status).toBe(404);
+    expect(JSON.stringify(missing.json)).not.toContain('auth.space.enter');
+  });
+
+  it('revoke: auth.logout with the pin alone kills the pin; positive — the gate lives on and re-enters', async () => {
+    const { gate, pinA } = await switchAB();
+    expect((await send(enforceServer, { bearer: pinA }, 'POST', '/v2/auth/logout', {})).status).toBe(200);
+    expect((await send(enforceServer, { bearer: pinA }, 'GET', `/v2/entities/${fixture.docA}`)).status).toBe(401);
+    expect((await send(enforceServer, { bearer: gate }, 'GET', '/v2/spaces')).status).toBe(200);
+    const again = await send(enforceServer, { bearer: gate }, 'POST', '/v2/auth/space/enter', { spaceId: fixture.spaceA });
+    expect(again.status).toBe(200);
+    expect((await send(enforceServer, { bearer: again.json.token }, 'GET', `/v2/entities/${fixture.docA}`)).status)
+      .toBe(200);
+  });
+
+  it('agents (a4): the pre-W3 walk — gate header plus gate cookie — reads A and B, nothing entered', async () => {
+    const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+    expect((await send(agentsServer, { bearer: gate, cookie: gate }, 'GET', `/v2/entities/${fixture.docA}`)).status)
+      .toBe(200);
+    expect((await send(agentsServer, { bearer: gate, cookie: gate }, 'GET', `/v2/entities/${fixture.docB}`)).status)
+      .toBe(200);
+  });
+  it('agents, paired: the same gate walk under enforce is refused (the client must enter)', async () => {
+    const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+    expect((await send(enforceServer, { bearer: gate, cookie: gate }, 'GET', `/v2/entities/${fixture.docA}`)).status)
+      .toBe(403);
+  });
+});

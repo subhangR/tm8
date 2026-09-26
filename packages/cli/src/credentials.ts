@@ -76,6 +76,76 @@ export function tokenSessionId(token: string): string | undefined {
   return token.slice('tm8s_'.length, dot);
 }
 
+/**
+ * W3 PINNED SPACE SESSIONS share this store under their own keys. Under
+ * `TM8_SPACE_SESSIONS=enforce` the origin's credential is a GATE session, and
+ * every command that acts in a space needs a session pinned to it
+ * (`tm8 auth space enter <space-id>`). The key carries the gate session id,
+ * so a fresh `auth login` orphans every pin minted by the previous one and a
+ * pinned token is only ever presented next to the gate it came from.
+ *
+ * `<origin>#spaces` indexes the pin keys, because the keychain backend cannot
+ * enumerate: logout and login read it to revoke and forget them.
+ */
+export function spaceCredentialKey(origin: string, spaceId: string, gateSessionId: string): string {
+  return `${origin}#space:${spaceId}#gate:${gateSessionId}`;
+}
+
+function spaceIndexKey(origin: string): string {
+  return `${origin}#spaces`;
+}
+
+function readSpaceIndex(store: CredentialStore, origin: string): string[] {
+  const raw = store.get(spaceIndexKey(origin));
+  return raw ? raw.split(',').filter(Boolean) : [];
+}
+
+/** The pinned token for `spaceId` minted from the stored gate session, if any. */
+export function spaceCredential(
+  store: CredentialStore,
+  origin: string,
+  spaceId: string,
+): string | undefined {
+  const gate = store.get(origin);
+  const gateSessionId = gate ? tokenSessionId(gate) : undefined;
+  if (!gateSessionId) return undefined;
+  return store.get(spaceCredentialKey(origin, spaceId, gateSessionId));
+}
+
+/**
+ * Store a pinned token under the current gate session. Returns the token it
+ * replaced for the same space, so the caller can revoke it.
+ */
+export function storeSpaceCredential(
+  store: CredentialStore,
+  origin: string,
+  spaceId: string,
+  token: string,
+  meta?: CredentialMeta,
+): string | undefined {
+  const gate = store.get(origin);
+  const gateSessionId = gate ? tokenSessionId(gate) : undefined;
+  if (!gateSessionId) throw new Error(`no stored gate credential for ${origin}`);
+  const key = spaceCredentialKey(origin, spaceId, gateSessionId);
+  const previous = store.get(key);
+  store.set(key, token, meta);
+  const index = readSpaceIndex(store, origin);
+  if (!index.includes(key)) store.set(spaceIndexKey(origin), [...index, key].join(','));
+  return previous;
+}
+
+/** Forget every pinned token stored for `origin`; returns them for revocation. */
+export function dropSpaceCredentials(store: CredentialStore, origin: string): string[] {
+  const tokens: string[] = [];
+  for (const key of readSpaceIndex(store, origin)) {
+    const token = store.get(key);
+    if (token) tokens.push(token);
+    store.delete(key);
+  }
+  store.delete(spaceIndexKey(origin));
+  return tokens;
+}
+
 /** `$TM8_CREDENTIALS_PATH`, else `~/.config/tm8/credentials.json`. */
 export function credentialsPath(env: NodeJS.ProcessEnv = process.env): string {
   const explicit = env.TM8_CREDENTIALS_PATH?.trim();

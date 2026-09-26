@@ -5,7 +5,7 @@ import {
   TM8_CLIENT_HEADER_VALUE,
   type ServerConnection,
 } from '@tm8/contract';
-import { authTokenFor, noteServerOrigin } from '../auth/pass-store';
+import { authTokenFor, noteServerOrigin, readSpaceSessionsEnforced } from '../auth/pass-store';
 import { ACTIVE_SERVER_KEY, LOCAL_SERVER_ID, routeBaseUrlFor } from './server-key';
 
 export type ServerReachability = 'checking' | 'online' | 'offline';
@@ -81,8 +81,12 @@ function persistActiveServer(id: string): void {
  */
 async function jsonData<T>(url: string, init?: RequestInit): Promise<T> {
   const localToken = authTokenFor(LOCAL_SERVER_ID);
+  // `serverConnections.*` is a gate call (W3). On an enforcing node the cookie
+  // is a pinned session and would conflict with the pass, so it stays home.
+  const omitCookie = !!localToken && readSpaceSessionsEnforced(LOCAL_SERVER_ID);
   const response = await fetch(url, {
     ...init,
+    ...(omitCookie ? { credentials: 'omit' as const } : {}),
     headers: {
       ...(init?.headers as Record<string, string> | undefined),
       [TM8_CLIENT_HEADER]: TM8_CLIENT_HEADER_VALUE,

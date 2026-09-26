@@ -13,7 +13,8 @@ import { notifyUser } from './notifications.js';
 import { ptyTransport } from './pty/ptyTransport.js';
 import { mintPtyAttachGrant } from './pty/ptyGrant.js';
 import { describePtyAttachRefusal } from './pty/ptyAttachRefusal.js';
-import { readActivePass } from '../auth/pass-store';
+import { spaceSessionFor } from '../auth/space-sessions';
+import { readActiveServerId } from '../servers/server-key';
 import { registerTerminal } from './pty/runtime.js';
 import { attachTouchScroll } from './touchScroll.js';
 import { scrollTerminalLines } from './scrollTerminal';
@@ -732,7 +733,7 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
     ptyTransport.openSession(
       sessionId,
       serverBaseUrl,
-      () => readActivePass()?.token ?? null,
+      () => spaceSessionFor(readActiveServerId()).requestToken(),
       (id) => mintPtyAttachGrant(id, serverBaseUrl, readOnlyRef.current ? 'view' : 'drive'),
       readOnlyRef.current ? 'view' : 'drive',
     );

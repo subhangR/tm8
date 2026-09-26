@@ -78,7 +78,7 @@ import {
   type SpaceSummary,
 } from '@tm8/contract';
 import type { BranchTopologyOpts, ConnectionOpts, FeedOpts, FileBlameOpts, FileHistoryOpts, GitDiffOpts, IdentityView, JournalOpts, PageOpts, Seam, TranscriptOpts, Unsubscribe } from '../seam';
-import { createHttpClient, type FetchLike } from './http';
+import { createHttpClient, type FetchLike, type SpaceSessionPort } from './http';
 import { chatTurnFrameFromWire, type WireChatTurnFrame } from '../../chat-home/wire';
 import { createOps } from './ops';
 import {
@@ -115,6 +115,8 @@ export interface RealSeamOptions {
    * host from the per-server pass store for authenticated HTTP requests.
    */
   getAuthToken?: () => string | null;
+  /** W3 pinned space sessions; see `HttpOptions.spaceSession`. */
+  spaceSession?: SpaceSessionPort;
   timers?: Timers;
   now?: () => number;
   random?: () => number;
@@ -192,6 +194,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     fetch: options.fetch,
     onTransport: (reachable) => conn?.noteTransport(reachable),
     ...(options.getAuthToken ? { getAuthToken: options.getAuthToken } : {}),
+    ...(options.spaceSession ? { spaceSession: options.spaceSession } : {}),
   });
 
   const ops = createOps(http, { newClientMutationId: options.newClientMutationId });

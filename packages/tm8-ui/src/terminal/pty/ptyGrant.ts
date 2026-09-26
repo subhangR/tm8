@@ -1,7 +1,8 @@
 /** Mint a fresh, single-use PTY capability over authenticated HTTPS. */
 import { CollabError, type StreamAttachGrant } from '@tm8/contract';
 
-import { readActivePass } from '../../auth/pass-store.js';
+import { spaceSessionFor } from '../../auth/space-sessions.js';
+import { readActiveServerId } from '../../servers/server-key.js';
 import { PtyAttachRefused, type PtyAttachRefusalReason } from './ptyAttachRefusal.js';
 import { createHttpClient } from '../../data/real/http.js';
 
@@ -13,7 +14,10 @@ function grantClient(serverBaseUrl: string) {
     fetch: window.fetch.bind(window),
     // Transitional bearer support for the HTTPS mint. Browser WebSockets use
     // the HttpOnly cookie and never receive this long-lived value.
-    getAuthToken: () => readActivePass()?.token ?? null,
+    // W3: the space session picks the pinned token on an enforcing server
+    // and re-enters on the gate's refusal; elsewhere it defers to the pass.
+    getAuthToken: () => spaceSessionFor(readActiveServerId()).requestToken(),
+    spaceSession: spaceSessionFor(readActiveServerId()),
   });
 }
 
