@@ -17,6 +17,7 @@
  */
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import type { SpaceLinkStatus, SpaceLinkView } from '@tm8/contract';
+import { shortDate } from '../kit/time';
 import { SectionAbsent, SectionFrame } from '../settings-space';
 import type { SpaceLinkCandidate, SpaceLinksPort } from './port';
 import '../settings-credentials/credentials.css';
@@ -167,7 +168,7 @@ function LinkRow({
       </div>
       <p className="set-spl__muted">
         {link.statusSummary.signedIn} of this space&apos;s members signed in
-        {mine?.expiresAt ? ` · your sign-in expires ${new Date(mine.expiresAt).toLocaleDateString()}` : ''}
+        {mine?.expiresAt ? ` · your sign-in expires ${shortDate(mine.expiresAt)}` : ''}
       </p>
       <div className="set-spl__actions">
         {signedIn ? (
