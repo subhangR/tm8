@@ -1096,6 +1096,10 @@ describe('W10d — owner, visibility, claim, my default, usage (doc 13 §7)', ()
     expect(canSeeUsage(row({ ownerAccountId: OTHER, visibility: 'public' }), admin)).toBe(true);
     expect(isSharedServer('single')).toBe(false);
     expect(isSharedServer('multi')).toBe(true);
+    // Doc 15 modes (#850): only Personal is single-user; Peer admits others.
+    expect(isSharedServer('personal')).toBe(false);
+    expect(isSharedServer('peer')).toBe(true);
+    expect(isSharedServer('server')).toBe(true);
     expect(isSharedServer(null)).toBe(true);
   });
 });
