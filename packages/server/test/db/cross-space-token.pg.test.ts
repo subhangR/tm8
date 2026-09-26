@@ -545,6 +545,50 @@ describe('T9 agent G (A) reads B through inline-membership surfaces — refused 
   });
 
   /**
+   * S2 (W3-audit #852 F1, task 01a0db30): the 4-argument `mark_notification_read`
+   * is SECURITY DEFINER and authorized its member arm by identity alone, so a
+   * session pinned to A marked the same identity's B notification read. 246
+   * adds the pin to both member-arm `exists`. A fresh notification per cell,
+   * so a mark in one cell cannot satisfy another's read_at assertion.
+   */
+  async function freshNotification(spaceId: string, memberId: string): Promise<string> {
+    const id = randomUUID();
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(
+        `insert into public.notifications(id, space_id, recipient_member_id, kind)
+         values ($1, $2, $3, 'mention')`,
+        [id, spaceId, memberId],
+      );
+    });
+    return id;
+  }
+  const markRead = (q: Querier, id: string): Promise<unknown> =>
+    q.query('select public.mark_notification_read($1, $2, null, $3)', [id, 'member', `s2-${randomUUID()}`]);
+  const readAt = (id: string): Promise<unknown> =>
+    database.query<{ read_at: unknown }>('select read_at from public.notifications where id = $1', [id])
+      .then((rows) => rows[0]?.read_at ?? null);
+
+  it('agent, persona-less (S2): marking B\'s notification read is refused P0002 and it stays unread', async () => {
+    const token = await mintPersonalessAgent();
+    const notification = await freshNotification(fixture.spaceB, fixture.memberHB);
+    expect(await outcome(() => asToken(token, (q) => markRead(q, notification)))).toBe('P0002');
+    expect(await readAt(notification)).toBeNull();
+  });
+  it('agent, persona-less (S2): positive — marking A\'s notification read succeeds', async () => {
+    const token = await mintPersonalessAgent();
+    const notification = await freshNotification(fixture.spaceA, fixture.memberHA);
+    expect(await outcome(() => asToken(token, (q) => markRead(q, notification)))).toBe('ok');
+    expect(await readAt(notification)).not.toBeNull();
+  });
+  it('agent, persona-less, off (S2): the pin is inert — B\'s notification is marked read', async () => {
+    const token = await mintPersonalessAgent();
+    const notification = await freshNotification(fixture.spaceB, fixture.memberHB);
+    expect(await outcome(() => asToken(token, (q) => markRead(q, notification), 'off'))).toBe('ok');
+    expect(await readAt(notification)).not.toBeNull();
+  });
+
+  /**
    * K7 REJECTED (owner decision 32): nobody reads a public space without
    * joining it. 233 closed spaces_select's public arm (218:291, the W0a gap
    * this cell used to document), so a public B is as invisible as a private one.
