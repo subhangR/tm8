@@ -13,10 +13,16 @@
 #              on: internal.require_identity() and internal.current_account_id().
 #   BY SOURCE  a function whose body names a root, case-insensitively and with or
 #              without quotes (IDENTITY_ID(), "identity_id"()), read from prosrc AND
-#              from a BEGIN ATOMIC body (prosqlbody, where prosrc is empty); or
-#              whose body reads the raw setting tm8.identity_id (reader `setting`).
+#              from a BEGIN ATOMIC body (prosqlbody, where prosrc is empty).
 #   BY CATALOG anything pg_depend records as depending on a root: RLS policies,
 #              column defaults, views, BEGIN ATOMIC functions.
+#   SETTING    anything that reads the raw setting tm8.identity_id directly
+#              (reader `setting`), matched case-insensitively in: function bodies
+#              (prosrc and BEGIN ATOMIC), RLS policy USING and WITH CHECK
+#              expressions (pg_policy polqual, polwithcheck), column defaults
+#              (pg_attrdef), and view and materialized view definitions
+#              (pg_get_viewdef). A setting read creates no pg_depend edge, so these
+#              four are scanned by text (review 5324246747 B4).
 # Each line is `<root|setting> <object>`: a function as schema.name(identity args),
 # anything else as pg_describe_object prints it with an empty search_path.
 #
@@ -78,6 +84,22 @@ fns as (
 select r.reader || ' ' || f.obj from roots r join fns f on f.body ~* r.pat
 union
 select 'setting ' || f.obj from fns f where f.body ~* 'tm8\\.identity_id'
+union
+select 'setting ' || pg_describe_object('pg_policy'::regclass, pol.oid, 0)
+  from pg_policy pol
+ where (coalesce(pg_get_expr(pol.polqual, pol.polrelid), '') || ' ' ||
+        coalesce(pg_get_expr(pol.polwithcheck, pol.polrelid), '')) ~* 'tm8\\.identity_id'
+union
+select 'setting ' || pg_describe_object('pg_attrdef'::regclass, ad.oid, 0)
+  from pg_attrdef ad
+ where pg_get_expr(ad.adbin, ad.adrelid) ~* 'tm8\\.identity_id'
+union
+select 'setting ' || pg_describe_object('pg_class'::regclass, c.oid, 0)
+  from pg_class c
+  join pg_namespace n on n.oid = c.relnamespace
+ where c.relkind in ('v', 'm')
+   and n.nspname not in ('pg_catalog', 'information_schema')
+   and pg_get_viewdef(c.oid) ~* 'tm8\\.identity_id'
 union
 select r.reader || ' ' || coalesce(f.obj, pg_describe_object(d.classid, d.objid, d.objsubid))
   from roots r

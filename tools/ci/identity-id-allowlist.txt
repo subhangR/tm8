@@ -5,8 +5,9 @@
 # where <root> is `identity_id` (internal.identity_id()), `require_identity` or
 # `current_account_id` (the two wrappers that hand the identity on), `setting`
 # means the raw tm8.identity_id setting, and <object> is a function
-# schema.name(identity args) or a policy / column default as pg_describe_object
-# prints it. The gate fails on a live reader missing from this list AND on a line
+# schema.name(identity args) or a policy / column default / view as
+# pg_describe_object prints it. A `setting` reader is found in function bodies,
+# policy USING/WITH CHECK, column defaults and view definitions. The gate fails on a live reader missing from this list AND on a line
 # here that matches no live reader. `identity-id-gate.sh --list <url>` prints the
 # live set.
 #
@@ -88,7 +89,7 @@ identity_id policy node_credential_policies_identity_select on table public.node
 identity_id policy notifications_select on table public.notifications  # GUARDED: members subqueries, pinned by members_select; T9 "B's inbox row is invisible by id"
 identity_id policy read_marks_select on table public.read_marks  # GUARDED: members subquery, pinned by members_select
 identity_id policy saved_views_select on table public.saved_views  # GUARDED: member_space_ids (pinned) AND own or space-shared
-identity_id policy stream_grants_select on table public.stream_grants  # NEEDS-REVIEW: the subject_identity = caller arm is unpinned, so a pinned session may list its own grants in another space (metadata incl. token_hash); unverified, audit task 01a0db76
+identity_id policy stream_grants_select on table public.stream_grants  # KNOWN-GAP: the subject_identity = caller arm is unpinned; a pinned session lists its OWN-subject grants in another space (all 12 columns incl. token_hash), other identities' rows are not returned (verified by review 5324246747); fix P6 rides with S3 #861 (247)
 identity_id policy user_profiles_select on table public.user_profiles  # GUARDED: own row, or co-members through two members subqueries pinned by members_select
 identity_id policy work_session_view_preferences_select on table public.work_session_view_preferences  # GUARDED: readable entity (RLS) AND own member row (pinned)
 identity_id policy workspace_events_select on table public.workspace_events  # GUARDED: member_space_ids (pinned) AND own recipient member (pinned)
