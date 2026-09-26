@@ -188,6 +188,7 @@ export const NODE_ENV: readonly EnvKnob[] = [
 
 export const CLI_ENV: readonly EnvKnob[] = [
   { name: 'TM8_BASE_URL', group: 'CLI', summary: 'Server the tm8 CLI talks to.', default: 'http://127.0.0.1:4610', definedIn: 'packages/cli/src/env.ts' },
+  { name: 'TM8_RETRY_WINDOW_MS', group: 'CLI', summary: 'How long an agent\'s call keeps retrying while the server is down across a restart (0 = fail on the first refusal). A human shell (no session id) fails at once.', default: '120000 for agents', definedIn: 'packages/cli/src/context.ts' },
   { name: 'TM8_CONFIG_PATH', group: 'CLI', summary: 'CLI config file.', default: '$XDG_CONFIG_HOME/tm8/config.json', definedIn: 'packages/cli/src/context.ts' },
   { name: 'TM8_CREDENTIALS_PATH', group: 'CLI', summary: 'CLI credentials file (forces the file store).', default: '$XDG_CONFIG_HOME/tm8/credentials.json', definedIn: 'packages/cli/src/credentials.ts' },
   { name: 'TM8_CREDENTIALS_MODE', group: 'CLI', summary: 'CLI credential store: keychain or file.', default: 'platform default', definedIn: 'packages/cli/src/credentials.ts' },
