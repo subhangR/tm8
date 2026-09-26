@@ -355,6 +355,8 @@ export interface LaunchTeammate {
   owner: string;
   defaultProfileId?: string;
   liveSessions?: number | null;
+  /** `team_members.mode` as the summary projects it; absent on a node that doesn't. */
+  mode?: string | null;
 }
 
 /**

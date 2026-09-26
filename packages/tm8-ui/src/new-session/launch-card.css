@@ -97,21 +97,6 @@
 .lcd-brk { display: none; }
 .lcd-anchor { position: relative; flex: none; min-width: 0; }
 
-.lcd-verb {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  height: 24px;
-  padding: 0 10px;
-  margin-right: 2px;
-  border-radius: var(--pn-r-pill);
-  background: var(--pn-brand-soft);
-  color: var(--pn-brand);
-  font: 600 10.5px/1 var(--pn-ui);
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-}
-
 .lcd-tool {
   display: inline-flex;
   align-items: center;
@@ -209,7 +194,7 @@
 .lcd-bars i[data-on] { background: var(--pn-ink-2); }
 
 .lcd-tool:focus-visible, .lcd-icon:focus-visible, .lcd-attbtn:focus-visible,
-.lcd-ent:focus-visible, .lcd-btn:focus-visible, .lcd-more:focus-visible {
+.lcd-btn:focus-visible, .lcd-more:focus-visible {
   outline: 2px solid var(--pn-brand);
   outline-offset: 1px;
 }
@@ -230,97 +215,8 @@
 /* ROW 1 — what the agent starts with: one bordered row, never wraps. Not
    `overflow: hidden` — its popovers hang below it — so the container steps
    below are what keep it inside the card. */
-.lcd-ctx {
-  position: relative;
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 2px;
-  height: 40px;
-  min-width: 0;
-  padding: 0 12px 0 4px;
-  border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-md);
-  background: var(--pn-surface);
-  white-space: nowrap;
-  z-index: 6;
-}
-
-.lcd-lead {
-  flex: none;
-  padding: 0 8px;
-  color: var(--pn-ink-3);
-  font: 600 10px/1 var(--pn-ui);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
 
 /* The context chips, flattened into the row: their popover hangs below it. */
-.lcd-ctx .lsel-chips { display: contents; }
-.lcd-ctx .lsel-chips__row { display: flex; flex-wrap: nowrap; gap: 2px; min-width: 0; }
-.lcd-ctx .lsel-chip {
-  flex: none;
-  gap: 6px;
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid transparent;
-  background: none;
-  font-size: 12px;
-}
-.lcd-ctx .lsel-chip:hover { border-color: var(--pn-line); background: var(--pn-card); }
-.lcd-ctx .lsel-chip--edited { border-color: var(--pn-wait); background: var(--pn-wait-soft); }
-.lcd-ctx .lsel-chip b { font-weight: 600; color: var(--pn-ink); }
-.lcd-ctx .lsel-chip__bytes { color: var(--pn-ink-3); font: 11px var(--pn-mono); }
-.lcd-ctx .lsel-popover,
-.lcd-ctx .jev-entry__pop {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  right: 0;
-  z-index: 12;
-  max-height: min(440px, 52cqh);
-  overflow-y: auto;
-  box-shadow: var(--pn-sh-pop);
-}
-.lcd-ctx .jev-entry__pop { background: var(--pn-card); border-radius: 10px; }
-.lcd-ctx .jev-entry { flex: none; flex-direction: row; }
-.lcd-ctx .jev-entry__bar { flex-wrap: nowrap; }
-.lcd-ctx .jev-entry__button { height: 28px; }
-.lcd-ctx .jev-entry__badge { max-width: 280px; }
-
-.lcd-meter {
-  flex: none;
-  width: 110px;
-  height: 5px;
-  margin: 0 8px 0 6px;
-  overflow: hidden;
-  border-radius: 3px;
-  background: var(--pn-active);
-}
-.lcd-meter i { display: block; height: 100%; background: var(--pn-run); }
-.lcd-meter[data-over] i { background: var(--pn-wait); }
-.lcd-budget { flex: none; color: var(--pn-ink-3); font: 11.5px var(--pn-mono); }
-
-.lcd-title {
-  width: 100%;
-  padding: clamp(14px, 2.2cqh, 24px) 0 0;
-  border: 0;
-  outline: none;
-  background: none;
-  color: var(--pn-ink);
-  font: 500 clamp(20px, 2.4cqh, 26px)/1.25 var(--pn-serif);
-  letter-spacing: -0.005em;
-  text-overflow: ellipsis;
-}
-.lcd-title::placeholder { color: var(--pn-ink-4); }
-.lcd-title::-webkit-contacts-auto-fill-button,
-.lcd-title::-webkit-credentials-auto-fill-button {
-  display: none !important;
-  visibility: hidden;
-  pointer-events: none;
-  position: absolute;
-  right: 0;
-}
 
 .lcd-instr {
   flex: 1;
@@ -338,7 +234,6 @@
 .lcd-instr::placeholder { color: var(--pn-ink-4); }
 
 /* ROW 3 — what the agent is handed: attach, the pinned subject, a scroller. */
-.lcd-attrow { display: flex; flex: none; align-items: center; gap: 6px; height: 52px; min-width: 0; }
 
 .lcd-attbtn {
   display: inline-flex;
@@ -357,61 +252,11 @@
 }
 .lcd-attbtn:hover, .lcd-attbtn[aria-expanded='true'] { border-style: solid; background: var(--pn-hover); }
 
-.lcd-ent {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: 6px;
-  max-width: 260px;
-  height: 30px;
-  padding: 0 4px 0 10px;
-  border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-pill);
-  background: var(--pn-surface);
-  color: var(--pn-ink);
-  font-size: 12.5px;
-  white-space: nowrap;
-}
-.lcd-ent__kind { flex: none; color: var(--pn-ink-3); font-size: 12px; }
-.lcd-ent__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.lcd-ent__meta { flex: none; color: var(--pn-ink-3); font: 11px var(--pn-mono); }
-.lcd-ent__meta--bad { color: var(--pn-block); }
-.lcd-ent[data-status='failed'] { border-color: var(--pn-block-soft); }
-.lcd-ent__rm {
-  flex: none;
-  width: 20px;
-  height: 20px;
-  border: 0;
-  border-radius: 50%;
-  background: none;
-  cursor: pointer;
-  line-height: 1;
-  color: var(--pn-ink-3) !important;
-}
-.lcd-ent__rm:hover { background: var(--pn-active); color: var(--pn-ink) !important; }
 
-button.lcd-ent { cursor: pointer; padding-right: 10px; font-size: 12.5px !important; }
-.lcd-ent--subject { border-color: transparent; background: var(--pn-brand-soft); }
-.lcd-ent--subject .lcd-ent__kind, .lcd-ent--subject .lcd-caret { color: var(--pn-brand); }
-button.lcd-ent--subject:hover, .lcd-ent--subject[aria-expanded='true'] { border-color: var(--pn-line-2); }
-.lcd-a-subj { flex: 0 1 auto; max-width: 260px; }
-.lcd-a-subj .lcd-ent { max-width: 100%; }
-
-.lcd-attlist {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
 /* The fade says "more past here", so it is drawn only while something is:
    at the scroll end it faded the last chip. A mask reads ALPHA only, so the
    colour is arbitrary — `black`, not a raw hex, because §14's hex ban is a
    package law and a mask is no carve-out. */
-.lcd-attlist[data-more] { mask-image: linear-gradient(90deg, black calc(100% - 24px), transparent); }
-.lcd-attlist::-webkit-scrollbar { display: none; }
 .lcd-empty { color: var(--pn-ink-4); font-size: 12px; white-space: nowrap; }
 
 .lcd-more {
@@ -513,19 +358,6 @@ button.lcd-ent--subject:hover, .lcd-ent--subject[aria-expanded='true'] { border-
 .lcd-check { display: flex; align-items: center; gap: 6px; color: var(--pn-ink-2); font-size: 12.5px; cursor: pointer; }
 
 /* ------------------------------------------------------------ the footer */
-
-.lcd-summary {
-  flex: 1;
-  min-width: 0;
-  padding: 0 10px;
-  overflow: hidden;
-  color: var(--pn-ink-3);
-  font-size: 12.5px;
-  text-align: right;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.lcd-summary b { color: var(--pn-ink-2); font-weight: 600; }
 
 .lcd-btn {
   display: inline-flex;
@@ -669,23 +501,6 @@ button.lcd-ent--subject:hover, .lcd-ent--subject[aria-expanded='true'] { border-
   font-size: 12px;
 }
 
-.lcd-subjmenu { width: min(620px, calc(100cqw - 48px)); }
-.lcd-subjdesc {
-  display: block;
-  width: 100%;
-  min-height: 130px;
-  margin: 2px 0 0;
-  padding: 10px 12px;
-  border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-sm);
-  outline: none;
-  resize: vertical;
-  background: var(--pn-surface);
-  color: var(--pn-ink);
-  font: 13.5px/1.55 var(--pn-ui);
-}
-.lcd-subjdesc:focus { border-color: var(--pn-line-2); background: var(--pn-card); }
-
 /* -------------------------------------------- narrow: shed text in steps
    Order of sacrifice: redundant text first (summary, server name, tool), then
    labels an icon already carries (checkout, "uncommitted", Dispatch, vendor),
@@ -704,36 +519,29 @@ button.lcd-ent--subject:hover, .lcd-ent--subject[aria-expanded='true'] { border-
 }
 
 @container card (max-width: 1120px) {
-  .lcd-summary, .lcd-nodename, .lcd-meta { display: none; }
+  .lcd-nodename, .lcd-meta { display: none; }
   .lcd-band--bot .lcd-spacer { flex: 1; }
 }
 
 @container card (max-width: 820px) {
-  .lcd-lead, .lcd-ctx .lsel-chip__bytes, .lcd-ent__bytes { display: none; }
   .lcd-wt-name, .lcd-dirty__word, .lcd-btn__label, .lcd-vendor { display: none; }
   .lcd-tool b { max-width: 180px; }
-  .lcd-btn--dispatch { padding: 0 11px; }
-  .lcd-ctx .jev-entry__badge { max-width: 150px; }
 }
 
 @container card (max-width: 680px) {
-  .lcd-meter, .lcd-budget, .lcd-attbtn__label { display: none; }
+  .lcd-attbtn__label { display: none; }
   .lcd-sep, .lcd-branch, .lcd-effort-word, .lcd-kbd { display: none; }
   .lcd-tool { padding: 0 8px; }
   .lcd-band--bot > .lcd-a-first .lcd-tool { margin-left: -8px; }
   .lcd-tool b { max-width: 130px; }
   .lcd-node { padding: 0 4px; }
-  .lcd-a-subj { max-width: 180px; }
-  .lcd-ctx .jev-entry__badge { max-width: 90px; }
 }
 
 @container card (max-width: 560px) {
-  .lcd-ctx .lsel-chip__noun { display: none; }
   .lcd-tool b { max-width: 150px; }
   .lcd-effort-word { display: inline; }
   /* The top band as two planned rows: who (verb, teammate, ⋯, ✕) · where. */
   .lcd-band--top .lcd-spacer { flex: 1; order: 2; }
-  .lcd-verb { order: 0; }
   .lcd-a-tm { order: 1; }
   .lcd-i-adv { order: 3; }
   .lcd-i-close { order: 4; }
@@ -760,7 +568,6 @@ button.lcd-ent--subject:hover, .lcd-ent--subject[aria-expanded='true'] { border-
   .lcd-band--bot .lcd-spacer { flex-basis: 100%; height: 0; }
   .lcd-band--bot .lcd-btn--go { flex: 1; justify-content: center; }
   .lcd-menu { min-width: 0; width: calc(100cqw - 28px); max-width: 360px; }
-  .lcd-a-subj { max-width: 140px; }
   /* "Nothing else attached" is a hint, and at 390px the subject chip already
      fills the row: it ran off the card's right edge under the scroller's
      mask. The attach button beside it says the same thing. */

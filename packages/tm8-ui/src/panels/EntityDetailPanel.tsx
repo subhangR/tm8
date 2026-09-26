@@ -1192,18 +1192,16 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                     selection={props.launch.selection}
                     profileFor={props.launch.profileFor}
                     upload={props.launch.upload}
-                    onDispatch={props.launch.dispatch ? (note) => props.launch!.dispatch!(detail.id, note) : undefined}
+                    onDispatch={props.launch.dispatch ? (note, key) => props.launch!.dispatch!(detail.id, note, key) : undefined}
+                    jevKeyStatus={props.launch.jevKeyStatus}
+                    sessionsSince={props.launch.sessionsSince}
                     onSpawn={props.launch.onSpawn}
                     loadDescription={
                       props.launch.descriptionOf
                         ? () => props.launch!.descriptionOf!(detail.id)
                         : undefined
                     }
-                    onSaveSubject={
-                      props.launch.onUpdateEntity
-                        ? (edits) => props.launch!.onUpdateEntity!(detail.id, edits)
-                        : undefined
-                    }
+                    canEditSubject={Boolean(props.launch.onUpdateEntity)}
                     onDismiss={() => setFlowRef(null)}
                     newClientMutationId={() =>
                       props.launch?.mutationId(detail.id) ?? newLaunchMutationId()
