@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { ActorSummary, EntityId, FeedItem, Mention, MessageView } from '@tm8/contract';
 import { Avatar, Markdown, Pill, Timestamp, type MarkdownComponents } from '../kit';
 import { actorName } from '../domain/actors';
+import { getKind } from '../domain';
 import { DisabledAction, DisabledIconControl, NOT_WIRED_REASON } from '../panels/honesty/DisabledWithReason';
 /*
  * FROM `chat-home/` FOR NOW, AND DELIBERATELY NOT MOVED IN THIS COMMIT.
@@ -155,7 +156,7 @@ function FeedRow({
           {isMessage ? (
             <MessageContent item={item} anchorId={anchorId} clustered={clustered} handlers={handlers} />
           ) : (
-            <ActivityContent item={item} handlers={handlers} />
+            <ActivityContent item={item} anchorId={anchorId} handlers={handlers} />
           )}
         </div>
         {isMessage && !item.message.state.redactedAt ? (
@@ -625,7 +626,7 @@ function ContextLine({
           <span>from session </span>
           <SessionChip
             id={item.sourceWorkSessionId}
-            label={item.sourceWorkSessionId}
+            label={shortId(item.sourceWorkSessionId)}
             ariaLabel="Open source session"
             onOpenEntity={onOpenEntity}
           />
@@ -694,6 +695,16 @@ function LinkedSessions({
   );
 }
 
+/**
+ * A source session arrives as a bare id — the feed item carries no title for
+ * it — and a 36-character UUID under every message was most of the line. The
+ * leading 8 characters are what the rest of the product quotes (`01a0dcdc`),
+ * and the chip's tooltip keeps the whole id.
+ */
+function shortId(id: string): string {
+  return id.length > 8 ? id.slice(0, 8) : id;
+}
+
 function SessionChip({
   id,
   label,
@@ -711,11 +722,12 @@ function SessionChip({
       type="button"
       className="chs-session-chip"
       aria-label={ariaLabel}
+      title={id}
       onClick={() => onOpenEntity(id)}
     >
       {content}
     </button>
-  ) : <span className="chs-session-chip">{content}</span>;
+  ) : <span className="chs-session-chip" title={id}>{content}</span>;
 }
 
 /** The §6 badge: colour + WORD, never colour alone, and never its own row. */
@@ -913,26 +925,55 @@ function ParentPreview({
  */
 function ActivityContent({
   item,
+  anchorId,
   handlers,
 }: {
   item: Extract<FeedItem, { itemKind: 'activity' }>;
+  anchorId: EntityId;
   handlers: FeedRowHandlers;
 }) {
   const { activity } = item;
-  const presentation = activityPresentation(item);
+  const presentation = activityPresentation(item, anchorId);
+
+  if (presentation.kind === 'self-change') {
+    /* The feed's own anchor, created or edited: a line, like any other state
+       change — the panel is already showing its title and body. */
+    const noun = getKind(presentation.entity.kind).label.toLowerCase();
+    return (
+      <p className="chs-state chs-state--event" data-testid="chs-self-change">
+        <span aria-hidden className="chs-state__dot" />
+        {item.actor ? <InlineActor actor={item.actor} className="chs-state__actor" /> : null}
+        <span className="chs-state__verb">
+          {`${presentation.verb === 'created' ? 'created' : 'edited'} this ${noun}`}
+        </span>
+      </p>
+    );
+  }
 
   if (presentation.kind === 'entity-change') {
     const entity = presentation.entity;
+    /*
+     * THREE EXPLICIT COLUMNS — kind · text · open — and the text is ONE cell.
+     * The card used to auto-place title, excerpt and provenance straight into
+     * an `auto | 1fr | auto` grid, which put the excerpt in the trailing
+     * `auto` track: that track grew to the excerpt's full max-content width,
+     * the `1fr` title track was left with zero, and `overflow-wrap: anywhere`
+     * then stacked the title one character per line down the whole feed.
+     */
     return (
       <div className="chs-artifact" data-testid="chs-artifact">
         <span className="chs-artifact__kind">{entity.kind}</span>
-        <strong className="chs-artifact__title">{entity.title}</strong>
-        {entity.excerpt ? <span className="chs-artifact__excerpt">{entity.excerpt}</span> : null}
-        <span className="chs-artifact__provenance">
-          <span>{`${presentation.verb} by `}</span>
-          {item.actor ? <InlineActor actor={item.actor} /> : <span>unknown</span>}
-          {item.sourceWorkSessionId ? <span>{` · session ${item.sourceWorkSessionId}`}</span> : null}
-        </span>
+        <div className="chs-artifact__text">
+          <strong className="chs-artifact__title">{entity.title}</strong>
+          {entity.excerpt ? <span className="chs-artifact__excerpt">{entity.excerpt}</span> : null}
+          <span className="chs-artifact__provenance">
+            <span>{`${presentation.verb} by `}</span>
+            {item.actor ? <InlineActor actor={item.actor} /> : <span>unknown</span>}
+            {item.sourceWorkSessionId ? (
+              <span title={item.sourceWorkSessionId}>{` · session ${shortId(item.sourceWorkSessionId)}`}</span>
+            ) : null}
+          </span>
+        </div>
         {handlers.onOpenEntity ? (
           <button
             type="button"

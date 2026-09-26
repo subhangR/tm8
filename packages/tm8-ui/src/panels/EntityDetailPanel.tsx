@@ -1028,7 +1028,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         active={tab}
         contentLabel={config.label}
         counts={{
-          discussion: props.messages?.length,
+          discussion: countMessages(detail, props.messages),
           connections: countConnections(detail, props.connections),
         }}
         end={
@@ -1540,7 +1540,7 @@ function PanelBody(
      */
     return props.discussionSurface ?? (
       <p className="pn-surface-host-missing" role="alert">
-        This entity&rsquo;s Discussion surface is unavailable in this view.
+        This entity&rsquo;s Messages surface is unavailable in this view.
       </p>
     );
   }
@@ -1925,6 +1925,21 @@ function PanelBody(
       }}
     />
   );
+}
+
+/**
+ * THE MESSAGES TAB'S COUNT — the server's trigger-owned `counters.messages`,
+ * not the length of whatever `messages.list` page the host happens to hold.
+ *
+ * The loaded list is a PAGE: absent until something pulls it (so the tab drew
+ * no number at all), and short of the total whenever the thread is longer
+ * than one page. The counter is on every detail read and moves with
+ * `counter.changed`. The loaded length only wins when it is larger — a post
+ * that has landed locally before its counter event has.
+ */
+export function countMessages(detail: EntityDetail, messages?: readonly unknown[]): number {
+  const counted = typeof detail.counters?.messages === 'number' ? detail.counters.messages : 0;
+  return Math.max(counted, messages?.length ?? 0);
 }
 
 /** Exported for the phone's action menu, which must show the SAME number the
