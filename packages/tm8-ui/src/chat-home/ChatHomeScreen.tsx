@@ -1,3 +1,4 @@
+import { EntityAttentionChip } from '../attention';
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { ChatMode, EntityId, LaunchModelEffort, SessionTranscriptContext, SpaceId } from '@tm8/contract';
 import { CHATS_ROOT, KindIcon, actorName, type HomeRoot } from '../domain';
@@ -2075,6 +2076,7 @@ export function ChatHomeScreen({
                           Craft's picker already lists title + meta only; this
                           makes the two conversation lists one shape. */}
                       <span className="tch-thread__meta">
+                        <EntityAttentionChip entity={{ id: thread.rootId }} compact />
                         <span className="tch-mode-chip">{thread.config.mode}</span>
                         <span>{thread.config.teammateLabel}</span>
                         <span aria-hidden>·</span>
