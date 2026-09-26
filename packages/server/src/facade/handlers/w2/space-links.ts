@@ -48,7 +48,10 @@ export function requireHumanLinkSession(handler: OperationHandler): OperationHan
 export interface SpaceLinkHandlerDeps {
   /** Node data root: the node key that seals stored link sessions. */
   dataDir: string;
-  /** Built by the composition root when it wires `onStale`; defaults to a plain store. */
+  /**
+   * Built by the composition root when it wires `onStale` (W7-bound: see
+   * `DbSpaceLinkStoreOptions.onStale`); defaults to a plain store.
+   */
   store?: DbSpaceLinkStore;
 }
 
