@@ -48,10 +48,11 @@ function makeRecord(seq: number, exitCode = 0): SessionJournalRecord {
 /** Build the registry with fakes and return the journal handler. */
 function buildHandler(opts: {
   dataDir?: string;
-  rows: () => Array<{ id: string }>;
+  rows: () => Array<{ id: string; credential_allowed?: boolean }>;
 }): OperationHandler {
+  // 997's column defaults to the answer for a session on no private credential.
   const db: Db = {
-    query: async () => opts.rows() as never,
+    query: async () => opts.rows().map((r) => ({ credential_allowed: true, ...r })) as never,
   } as unknown as Db;
   const config: ServerConfig = {
     host: '127.0.0.1',
@@ -117,6 +118,14 @@ describe('execution.journal handler', () => {
     const handler = buildHandler({ dataDir, rows: () => [] });
     await expect(callJournal(handler, ctxFor(SESSION_ID))).rejects.toMatchObject({
       code: 'not_found',
+    });
+  });
+
+  it('W10c / N2: refuses a readable session on a private credential the caller does not own — forbidden, no hint', async () => {
+    const handler = buildHandler({ dataDir, rows: () => [{ id: SESSION_ID, credential_allowed: false }] });
+    await expect(callJournal(handler, ctxFor(SESSION_ID))).rejects.toMatchObject({
+      code: 'forbidden',
+      message: 'this session runs on a private credential; only its owner may read it',
     });
   });
 

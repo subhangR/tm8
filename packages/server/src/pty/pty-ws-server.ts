@@ -50,6 +50,7 @@ import { CLOSE_CODE } from '../events/ws-frame.js';
 import { computeAcceptKey, WS_PATH } from '../events/ws-server.js';
 import { WsAdmissionController, wsClientKey } from '../http/ws-admission.js';
 import { PtyWsConnection, type PtyWsConnectionOptions } from './pty-ws-connection.js';
+import type { PtyCredentialRecheck } from './credential-stream-close.js';
 import { PTY_PROTOCOL } from './grant-token.js';
 
 /** Minimal logger seam, structurally compatible with the execution block's. */
@@ -105,6 +106,12 @@ export interface PtyWsServerOptions {
    * attach is allowed, which is only sound behind the loopback bind.
    */
   authorize?: PtyAttachAuthorizer;
+  /**
+   * Re-asks the private-credential rule for a socket that is ALREADY open
+   * (doc 13 §3h, R9; pty/credential-stream-close.ts). Absent (tests, no db),
+   * `recheckCredentialStreams` closes nothing.
+   */
+  credentialRecheck?: PtyCredentialRecheck;
   logger?: PtyWsLogger;
   /** Forwarded to each connection's heartbeat; injectable so tests need not wait 30s. */
   heartbeatMs?: number;
@@ -119,6 +126,13 @@ export interface PtyWsServer {
   handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): Promise<void>;
   connectionCount(): number;
   closeAll(code?: number, reason?: string): void;
+  /**
+   * Re-check every open socket on `sessionIds` (all sessions when omitted)
+   * against the private-credential rule, as each socket's own subject, and
+   * close the refused ones. Returns how many were closed. A recheck that
+   * throws leaves its socket open and is logged; the next sweep asks again.
+   */
+  recheckCredentialStreams(sessionIds?: readonly string[]): Promise<number>;
 }
 
 /**
@@ -175,6 +189,14 @@ export function createPtyWsServer(opts: PtyWsServerOptions): PtyWsServer {
   const admission = opts.admission ?? new WsAdmissionController();
   const connections = new Set<PtyWsConnection>();
   const connectionsBySession = new Map<string, Set<PtyWsConnection>>();
+  /** The grant subject each socket was admitted as — what a recheck runs as. */
+  const subjectByConnection = new Map<PtyWsConnection, string>();
+  /**
+   * Sockets a credential recheck closed. A connection in its closing handshake
+   * still hands input frames to onInput until the peer ends it, so these are
+   * refused input here rather than trusting the client to hang up.
+   */
+  const credentialClosed = new WeakSet<PtyWsConnection>();
 
   function handleControl(
     sessionId: string,
@@ -429,13 +451,14 @@ export function createPtyWsServer(opts: PtyWsServerOptions): PtyWsServer {
         // bytes here rather than refusing the socket is deliberate: a view-only
         // attach is legitimate and must still render output.
         onInput: (data) => {
-          if (!canDrive) return;
+          if (!canDrive || credentialClosed.has(conn)) return;
           pty.write(sessionId, data);
         },
-        onControl: (text) => handleControl(sessionId, conn, text, canDrive),
+        onControl: (text) => handleControl(sessionId, conn, text, canDrive && !credentialClosed.has(conn)),
         onClose: () => {
           lease.release();
           connections.delete(conn);
+          subjectByConnection.delete(conn);
           const peers = connectionsBySession.get(sessionId);
           peers?.delete(conn);
           if (peers?.size === 0) connectionsBySession.delete(sessionId);
@@ -450,6 +473,11 @@ export function createPtyWsServer(opts: PtyWsServerOptions): PtyWsServer {
       },
     );
     connections.add(conn);
+    // Only a subject the grant named can be re-asked about: 'auto-owner' (no
+    // authorizer) and 'authenticated' carry no identity to run the check as.
+    if (opts.authorize && isNamedSubject(subjectIdentity)) {
+      subjectByConnection.set(conn, subjectIdentity);
+    }
     const sessionConnections = connectionsBySession.get(sessionId) ?? new Set<PtyWsConnection>();
     sessionConnections.add(conn);
     connectionsBySession.set(sessionId, sessionConnections);
@@ -524,11 +552,58 @@ export function createPtyWsServer(opts: PtyWsServerOptions): PtyWsServer {
     logger.info('PtyWsServer: client attached', { sessionId, offset });
   }
 
+  async function recheckCredentialStreams(sessionIds?: readonly string[]): Promise<number> {
+    const recheck = opts.credentialRecheck;
+    if (!recheck) return 0;
+    const targets = sessionIds ?? [...connectionsBySession.keys()];
+    let closed = 0;
+    for (const sessionId of new Set(targets)) {
+      const open = [...(connectionsBySession.get(sessionId) ?? [])];
+      // One question per (session, subject), however many tabs that subject has open.
+      const verdicts = new Map<string, Promise<boolean | 'error'>>();
+      let closedHere = 0;
+      for (const conn of open) {
+        const subject = subjectByConnection.get(conn);
+        if (subject === undefined) continue;
+        if (!verdicts.has(subject)) {
+          verdicts.set(subject, recheck(sessionId, subject).catch((error: unknown) => {
+            logger.warn('PtyWsServer: credential recheck failed; socket left open', {
+              sessionId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            return 'error' as const;
+          }));
+        }
+        if ((await verdicts.get(subject)) === false) {
+          credentialClosed.add(conn);
+          // Counted once: a later sweep must not re-close a socket still in its handshake.
+          subjectByConnection.delete(conn);
+          conn.close(CLOSE_CODE.policyViolation, 'this session runs on a private credential');
+          closedHere += 1;
+        }
+      }
+      if (closedHere > 0) {
+        closed += closedHere;
+        logger.info('PtyWsServer: closed streams a private credential no longer admits', {
+          sessionId,
+          closed: closedHere,
+        });
+      }
+    }
+    return closed;
+  }
+
   return {
     handleUpgrade,
     connectionCount: () => connections.size,
     closeAll: (code = CLOSE_CODE.goingAway, reason = 'server shutting down') => {
       for (const conn of connections) conn.close(code, reason);
     },
+    recheckCredentialStreams,
   };
+}
+
+/** The two placeholder subjects `handleUpgrade` uses when no identity was named. */
+function isNamedSubject(subject: string): boolean {
+  return subject !== 'auto-owner' && subject !== 'authenticated';
 }
