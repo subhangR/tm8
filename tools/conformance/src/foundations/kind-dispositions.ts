@@ -324,6 +324,8 @@ function capabilities(profile: CapabilityProfile): CapabilityDisposition {
           'credentials.space.setVisibility',
           'credentials.space.spaceDefaultConsent',
           'credentials.space.claim',
+          // W10d: add your own token as a private credential (a create).
+          'credentials.space.addMine',
         ],
       };
     case 'static-no-authority':

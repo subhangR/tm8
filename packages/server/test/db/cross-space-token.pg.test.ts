@@ -42,6 +42,8 @@ import { SubscriptionRegistry } from '../../src/events/subscriptions.js';
 import type { FacadeDeps } from '../../src/facade/deps.js';
 import { HandlerRegistry } from '../../src/facade/registry.js';
 import { registerMembershipHandlers } from '../../src/membership/handlers.js';
+import { registerCredentialHandlers } from '../../src/facade/handlers/w2/credentials.js';
+import { DbGitHubCredentialStore } from '../../src/credentials/github-credential-store.js';
 
 import {
   createW1ScratchDatabase,
@@ -825,6 +827,117 @@ describe('W10b (a1/T37) agent G cannot create, make public, rekey or revoke a cr
     expect(await outcome(() => asToken(token, (q) =>
       q.rpc('set_space_credential_default_consent', [ownedByH, true])))).toBe('ok');
     expect(await outcome(() => asToken(token, (q) => q.rpc('delete_space_credential', [ownedByH])))).toBe('ok');
+  });
+});
+
+describe('W10d addMine — my own 093 GitHub token into a space as private; human-only, own token, own membership', () => {
+  // credentials.space.addMine behind requireHumanSession (credentials.ts), then
+  // the caller's OWN account_git_credentials row, then create_space_credential
+  // (require_human_auth_kind + require_space_member). Driven through the
+  // registered handler with a real bearer resolved by the production resolver.
+  // The token strings are random test values, never real credentials; the
+  // hint is the last four characters, so each owner's tail is distinguishable.
+  let registry: HandlerRegistry;
+  let dataDir: string;
+  const tailH = 'hH1x';
+  const tailH2 = 'h2Q9';
+  const fakeToken = (tail: string): string => `test-${randomUUID()}-${tail}`;
+
+  const addMine = async (token: string, spaceId: string): Promise<{ ok: true; card: Record<string, unknown> } | { ok: false; code: string; reason: unknown }> => {
+    const identity = await createSessionIdentityResolver({ db, owner: async () => NOT_THE_OWNER })(
+      { authorization: `Bearer ${token}` },
+      { remoteAddress: '203.0.113.9', disableAutoOwner: true },
+    );
+    const ctx = {
+      op: { name: 'credentials.space.addMine', method: 'POST', path: '/v2/spaces/:spaceId/credentials/from-mine', kind: 'command', status: 'v1' },
+      opName: 'credentials.space.addMine',
+      params: { spaceId },
+      query: new URLSearchParams(),
+      body: { provider: 'github', label: `w10d ${randomUUID().slice(0, 8)}` },
+      requestId: `cross-space-${randomUUID()}`,
+      identity,
+      headers: {},
+      method: 'POST',
+      path: `/v2/spaces/${spaceId}/credentials/from-mine`,
+    } as unknown as RequestContext;
+    try {
+      return { ok: true, card: await registry.get('credentials.space.addMine')!(ctx) as Record<string, unknown> };
+    } catch (err) {
+      const e = err as { code?: string; details?: Record<string, unknown> };
+      return { ok: false, code: String(e.details?.['sqlstate'] ?? e.code), reason: e.details?.['reason'] };
+    }
+  };
+
+  const storeGitHub = async (accountId: string, identityId: string, tail: string): Promise<void> => {
+    const token = await mintBrowser(accountId, identityId);
+    await new DbGitHubCredentialStore({ db, dataDir })
+      .store(await claimsForToken(token), { login: `w10d-${tail}`, token: fakeToken(tail) });
+  };
+
+  const countIn = (spaceId: string): Promise<number> =>
+    database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      const { rows } = await client.query<{ n: string }>(
+        `select count(*)::text as n from public.space_credentials where space_id = $1 and provider = 'github'`, [spaceId]);
+      return Number(rows[0]!.n);
+    });
+
+  beforeAll(async () => {
+    dataDir = await mkdtemp(join(tmpdir(), 'tm8-w10d-addmine-'));
+    registry = new HandlerRegistry();
+    const deps = { db, owner: async () => NOT_THE_OWNER } as unknown as FacadeDeps;
+    registerCredentialHandlers(registry, deps, {
+      launcher: { launch: () => { throw new Error('no PTY in this suite'); } } as never,
+      agentSessions: { containCredentialSession: () => { throw new Error('no agent sessions in this suite'); } } as never,
+      dataDir,
+      // Never reach GitHub from a test.
+      probeSpaceCredential: async () => ({ ok: true, displayLogin: null }),
+    });
+    await storeGitHub(fixture.accountH, fixture.identityH, tailH);
+  });
+
+  for (const [kind, mint] of AGENT_KINDS) {
+    it(`${kind} (pinned to A, launcher H who HAS a token): refused credentials_human_only, no row written`, async () => {
+      const before = await countIn(fixture.spaceA);
+      const result = await addMine(await mint(), fixture.spaceA);
+      expect(result).toEqual({ ok: false, code: 'forbidden', reason: 'credentials_human_only' });
+      expect(await countIn(fixture.spaceA)).toBe(before);
+    });
+  }
+  it('positive — H (browser) adds H\'s own token to A: private, owned by H, token shape, H\'s hint, no secret in the card', async () => {
+    const result = await addMine(await mintBrowser(fixture.accountH, fixture.identityH), fixture.spaceA);
+    expect(result.ok).toBe(true);
+    const card = (result as { card: Record<string, unknown> }).card;
+    expect(card).toMatchObject({ provider: 'github', shape: 'token', visibility: 'private', ownerAccountId: fixture.accountH, keyHint: tailH });
+    expect(JSON.stringify(card)).not.toMatch(/test-[0-9a-f-]{36}-/);
+    expect(Object.keys(card)).not.toEqual(expect.arrayContaining(['secret']));
+  });
+
+  it('non-owner token source: H2 (browser, no token of H2\'s own) is refused not_found — never H\'s token', async () => {
+    const before = await countIn(fixture.spaceA);
+    const result = await addMine(await mintBrowser(fixture.accountH2, fixture.identityH2), fixture.spaceA);
+    expect(result).toEqual({ ok: false, code: 'not_found', reason: 'no_personal_credential' });
+    expect(await countIn(fixture.spaceA)).toBe(before);
+  });
+  it('positive — once H2 connects a token of H2\'s own, H2 adds it to A, and the hint is H2\'s, not H\'s', async () => {
+    await storeGitHub(fixture.accountH2, fixture.identityH2, tailH2);
+    const result = await addMine(await mintBrowser(fixture.accountH2, fixture.identityH2), fixture.spaceA);
+    expect(result.ok).toBe(true);
+    expect((result as { card: Record<string, unknown> }).card)
+      .toMatchObject({ visibility: 'private', ownerAccountId: fixture.accountH2, keyHint: tailH2 });
+  });
+
+  it('other space: H2 (browser, member of A only, token connected) adding to B is refused forbidden, no row in B', async () => {
+    const before = await countIn(fixture.spaceB);
+    const result = await addMine(await mintBrowser(fixture.accountH2, fixture.identityH2), fixture.spaceB);
+    expect(result.ok).toBe(false);
+    expect((result as { code: string }).code).toBe('forbidden');
+    expect(await countIn(fixture.spaceB)).toBe(before);
+  });
+  it('positive — H (browser, member of B) adds the same kind of row to B', async () => {
+    const result = await addMine(await mintBrowser(fixture.accountH, fixture.identityH), fixture.spaceB);
+    expect(result.ok).toBe(true);
+    expect((result as { card: Record<string, unknown> }).card).toMatchObject({ visibility: 'private', ownerAccountId: fixture.accountH });
   });
 });
 

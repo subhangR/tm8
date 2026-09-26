@@ -505,6 +505,10 @@ export const OPERATIONS = [
   { name: 'credentials.space.delete',                    method: 'DELETE', path: '/v2/space-credentials/:credentialId',                                kind: 'command', status: 'v1' },
   { name: 'credentials.space.setVisibility',             method: 'PUT',    path: '/v2/space-credentials/:credentialId/visibility',                     kind: 'command', status: 'v1' },
   { name: 'credentials.space.spaceDefaultConsent',       method: 'PUT',    path: '/v2/space-credentials/:credentialId/space-default-consent',          kind: 'command', status: 'v1' },
+  // W10d (doc 13 §7 step 2): add your own server-level GitHub token to this
+  // space as a PRIVATE credential — read, probed and re-sealed in TS server-side;
+  // the token never reaches the client. A login is a fresh sign-in, not this op.
+  { name: 'credentials.space.addMine',                   method: 'POST',   path: '/v2/spaces/:spaceId/credentials/from-mine',                          kind: 'command', status: 'v1' },
   { name: 'credentials.space.claim',                     method: 'POST',   path: '/v2/space-credentials/:credentialId/claim',                          kind: 'command', status: 'v1' },
   { name: 'credentials.space.myDefault.set',             method: 'POST',   path: '/v2/space-credentials/:credentialId/my-default',                     kind: 'command', status: 'v1' },
   { name: 'credentials.space.myDefault.clear',           method: 'DELETE', path: '/v2/spaces/:spaceId/credentials/my-default/:provider',               kind: 'command', status: 'v1' },

@@ -517,6 +517,17 @@ const ROWS: Record<OperationName, Row> = {
       'withdrawing consent clears the space default flag in the same statement',
     ],
   },
+  'credentials.space.addMine': {
+    cmd: null,
+    sum: 'Add your own server-level GitHub token to this space as a private credential — human sessions only',
+    authz: 'server',
+    input: 'bound',
+    tags: ['credential', 'space', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'the token is read and re-sealed server-side; a Claude or Codex login takes a fresh sign-in instead',
+    ],
+  },
   'credentials.space.claim': {
     cmd: null,
     sum: 'Take ownership of a migrated space credential you created — human sessions only',
@@ -3152,7 +3163,8 @@ export const CATALOG_DIGEST =
   // Re-measured (entity chat G): + spaces.chatDefaults.get/set. RECOMPUTED from JSON.stringify(OPERATIONS).
   // Re-measured (G6, 232): + spaces.members.remove, spaces.leave, accounts.disable. Read from the failing digest test.
   // Re-measured (W10b, on #863's merged tree): + the six credentials.space.* ops. Read from the failing digest test; matches the regenerated manifest.
-  'sha256:b68099507d6d102d53f9f177168bb19ab96e980749503fa279480937cb84682f';
+  // Re-measured (W10d): + credentials.space.addMine. Read from the failing digest test; matches the regenerated manifest.
+  'sha256:f4fe425ece26d715e768a119fa8bdee782da972e4a907e7c8ff7f12150bcd313';
 
 export const GRAMMAR_VERSION = '2';
 

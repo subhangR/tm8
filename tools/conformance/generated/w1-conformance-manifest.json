@@ -1,16 +1,16 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:b68099507d6d102d53f9f177168bb19ab96e980749503fa279480937cb84682f",
+  "catalogDigest": "sha256:f4fe425ece26d715e768a119fa8bdee782da972e4a907e7c8ff7f12150bcd313",
   "catalog": {
-    "total": 254,
-    "v1": 252,
+    "total": 255,
+    "v1": 253,
     "reserved": 2,
-    "http": 252,
+    "http": 253,
     "ws": 1,
-    "registerableV1Http": 250,
+    "registerableV1Http": 251,
     "methods": {
       "GET": 82,
-      "POST": 119,
+      "POST": 120,
       "PATCH": 16,
       "DELETE": 18,
       "PUT": 17,
@@ -18,11 +18,11 @@
     },
     "kinds": {
       "read": 86,
-      "command": 166,
+      "command": 167,
       "stream": 2
     },
-    "uniqueNames": 254,
-    "uniqueBindings": 253
+    "uniqueNames": 255,
+    "uniqueBindings": 254
   },
   "reservedOperations": [
     "search.query",
@@ -1727,6 +1727,13 @@
         "source": "server-router"
       },
       {
+        "operation": "credentials.space.addMine",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/credentials/from-mine",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "credentials.space.claim",
         "method": "POST",
         "path": "/v2/space-credentials/:credentialId/claim",
@@ -2182,7 +2189,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 222
+    "unimplementedV1Http": 223
   },
   "schemas": {
     "additive": {
@@ -6014,6 +6021,24 @@
         "publicComposite": null
       },
       {
+        "operation": "credentials.space.addMine",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/credentials.space.addMine",
+        "intentTags": [
+          "credentials",
+          "space",
+          "add",
+          "mine"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
         "operation": "credentials.space.claim",
         "noun": "credential",
         "exposure": "public",
@@ -7502,7 +7527,8 @@
             "credentials.space.delete",
             "credentials.space.setVisibility",
             "credentials.space.spaceDefaultConsent",
-            "credentials.space.claim"
+            "credentials.space.claim",
+            "credentials.space.addMine"
           ]
         },
         "menu": {

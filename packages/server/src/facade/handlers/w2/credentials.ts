@@ -60,6 +60,7 @@ import {
   CollabError,
   CredentialProviderNameSchema,
   CredentialsServiceKeyPutInputSchema,
+  CredentialsSpaceAddMineInputSchema,
   CredentialsSpaceCreateInputSchema,
   CredentialsSpaceDefaultConsentInputSchema,
   CredentialsSpacePolicySetInputSchema,
@@ -458,6 +459,28 @@ export function registerCredentialHandlers(
     });
   };
 
+  // W10d, doc 13 §7 step 2: "Add to this space as private". The caller's OWN
+  // server-level token is opened here, never sent to the client, and handed to
+  // the same probed, TS-sealed create a pasted key takes (I5, I6). No other
+  // account's credential is reachable: `resolve` reads the caller's RLS row.
+  const spaceAddMine: OperationHandler = async (ctx) => {
+    const { provider, label } = CredentialsSpaceAddMineInputSchema.parse(ctx.body);
+    const claims = await claimsOf(ctx);
+    const mine = await gitHubStore.resolve(claims);
+    if (!mine) {
+      throw new CollabError('not_found', 'you have no GitHub token connected on this server to add', {
+        details: { reason: 'no_personal_credential', provider },
+      });
+    }
+    return spaceCatalog.create(claims, pathParam(ctx, 'spaceId'), {
+      provider,
+      shape: 'token',
+      label,
+      secret: mine.token,
+      visibility: 'private',
+    });
+  };
+
   const spaceRekey: OperationHandler = async (ctx) => {
     const { secret } = CredentialsSpaceRekeyInputSchema.parse(ctx.body);
     return spaceCatalog.rekey(await claimsOf(ctx), pathParam(ctx, 'credentialId'), secret);
@@ -544,6 +567,7 @@ export function registerCredentialHandlers(
     'credentials.space.delete': requireHumanSession(spaceDelete),
     'credentials.space.setVisibility': requireHumanSession(spaceSetVisibility),
     'credentials.space.spaceDefaultConsent': requireHumanSession(spaceDefaultConsent),
+    'credentials.space.addMine': requireHumanSession(spaceAddMine),
     'credentials.space.claim': requireHumanSession(spaceClaim),
     'credentials.space.myDefault.set': requireHumanSession(spaceMyDefaultSet),
     'credentials.space.myDefault.clear': requireHumanSession(spaceMyDefaultClear),
