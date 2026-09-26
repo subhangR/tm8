@@ -194,6 +194,19 @@ export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): 
     return port ? (file: File) => port.startUpload(file) : undefined;
   }, [data.seam, data.spaceId]);
 
+  /* Dispatch owns no host behaviour (it opens nothing and navigates nowhere:
+     the dispatcher decides later), so unlike `onSpawn` the port wires it
+     itself, for every surface. */
+  const dispatch = useCallback(
+    (subjectId: EntityId, note?: string) => data.seam.commands.dispatch({
+      clientMutationId: newLaunchMutationId(),
+      spaceId: data.spaceId ?? '',
+      subjectId,
+      ...(note ? { note } : {}),
+    }),
+    [data.seam, data.spaceId],
+  );
+
   return useMemo(
     () => ({
       spaceId: data.spaceId ?? '',
@@ -210,7 +223,8 @@ export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): 
       ...(onSpawn ? { onSpawn } : {}),
       ...(onFullOptions ? { onFullOptions } : {}),
       ...(upload ? { upload } : {}),
+      ...(data.spaceId ? { dispatch } : {}),
     }),
-    [data.spaceId, selection, teammates, projects, profileFor, descriptionOf, onUpdateEntity, capacity, jev, loadInstalledPlugins, onSpawn, onFullOptions, upload],
+    [data.spaceId, selection, teammates, projects, profileFor, descriptionOf, onUpdateEntity, capacity, jev, loadInstalledPlugins, onSpawn, onFullOptions, upload, dispatch],
   );
 }
