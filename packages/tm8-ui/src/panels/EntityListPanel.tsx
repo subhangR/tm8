@@ -102,6 +102,7 @@ import { type LaunchTeammateOption } from './launch/LaunchQuickConfig';
    design import 2026-09-07. `LaunchQuickConfig` remains the inline fallback
    for surfaces not yet migrated (merge flow). */
 import { LaunchComposerPopup } from '../new-session';
+import type { FileUploadTask } from '../files/upload';
 import type { LaunchSelectionSources } from '../launch-selection';
 import { newLaunchMutationId, type LoadInstalledPlugins } from '../domain/launch';
 
@@ -520,6 +521,12 @@ export interface LaunchSources {
   loadInstalledPlugins?: LoadInstalledPlugins;
   /** The launch's per-group context (I9): `launch.defaults` and the add pools. */
   selection?: LaunchSelectionSources;
+  /**
+   * Uploads a file into the space library for the launch card's attach row;
+   * the finished file rides the launch as a reference. Absent ⇒ the card's
+   * Files row says this surface cannot upload.
+   */
+  upload?: (file: File) => FileUploadTask;
 }
 
 /**
@@ -3594,6 +3601,8 @@ export function Tile({
               jev={props.launch?.jev}
               loadInstalledPlugins={props.launch?.loadInstalledPlugins}
               selection={props.launch?.selection}
+              profileFor={props.launch?.profileFor}
+              upload={props.launch?.upload}
               onSpawn={props.launch?.onSpawn}
               loadDescription={
                 props.launch?.descriptionOf
@@ -3851,6 +3860,8 @@ export function Tile({
             jev={props.launch?.jev}
               loadInstalledPlugins={props.launch?.loadInstalledPlugins}
               selection={props.launch?.selection}
+              profileFor={props.launch?.profileFor}
+              upload={props.launch?.upload}
             onSpawn={props.launch?.onSpawn}
             loadDescription={
               props.launch?.descriptionOf

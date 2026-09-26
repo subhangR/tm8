@@ -31,7 +31,8 @@ import { useCallback, useMemo } from 'react';
 import type { EntityId, ExecutionSpawnInput } from '@tm8/contract';
 import { newLaunchMutationId, pluginFactsOf, type ProfileResolution } from '../domain';
 import { entityPatchInput } from '../authoring';
-import { memoryCandidateRow } from '../domain/launch-selection';
+import { memoryCandidateRow, REFERENCE_KINDS } from '../domain/launch-selection';
+import { attachmentsFor } from '../files/port';
 import type { LaunchSources } from '../panels';
 import type { GateData } from './useGateData';
 
@@ -180,9 +181,18 @@ export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): 
     () => ({
       ...(loadLaunchDefaults ? { load: loadLaunchDefaults } : {}),
       candidates: { memories: memories?.map(memoryCandidateRow), skills: skillCandidates, references: referenceCandidates },
+      hydrateReferences: () => { for (const kind of REFERENCE_KINDS) data.ensureKind(kind); },
     }),
-    [loadLaunchDefaults, memories, skillCandidates, referenceCandidates],
+    [loadLaunchDefaults, memories, skillCandidates, referenceCandidates, data],
   );
+
+  /* The launch card's attach row: an ANCHOR-LESS upload into the space
+     library — the file becomes a reference of this launch, not an attachment
+     of the task, so nothing is written onto the subject by attaching. */
+  const upload = useMemo(() => {
+    const port = attachmentsFor(data.seam, data.spaceId ?? '');
+    return port ? (file: File) => port.startUpload(file) : undefined;
+  }, [data.seam, data.spaceId]);
 
   return useMemo(
     () => ({
@@ -199,7 +209,8 @@ export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): 
       ...(loadInstalledPlugins ? { loadInstalledPlugins } : {}),
       ...(onSpawn ? { onSpawn } : {}),
       ...(onFullOptions ? { onFullOptions } : {}),
+      ...(upload ? { upload } : {}),
     }),
-    [data.spaceId, selection, teammates, projects, profileFor, descriptionOf, onUpdateEntity, capacity, jev, loadInstalledPlugins, onSpawn, onFullOptions],
+    [data.spaceId, selection, teammates, projects, profileFor, descriptionOf, onUpdateEntity, capacity, jev, loadInstalledPlugins, onSpawn, onFullOptions, upload],
   );
 }
