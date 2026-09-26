@@ -60,6 +60,7 @@ import {
 } from './composer';
 import { EntityTray } from './EntityTray';
 import { LedgerHostProvider } from './LedgerCards';
+import { StageExit } from './StageExit';
 import { LedgerPanel } from './LedgerPanel';
 import { foldChatLedger, type ChatLedger } from './ledger';
 import { TurnParts, type TurnPartsProps } from './TurnParts';
@@ -474,7 +475,22 @@ export function ChatHomeScreen({
    *  these; `useTurnInProgress` folds them with `phase` and `detail` into the
    *  one value the live status row reads. */
   const [turnClock, setTurnClock] = useState<TurnClock | null>(null);
-  const [submitError, setSubmitError] = useState<string | null>(null);
+  /* A FAILED SEND BELONGS TO ITS THREAD, like the draft it failed to post.
+     One screen-wide string followed the viewer into every conversation they
+     opened next, under a composer holding nobody's failed message. Keyed like
+     the drafts, it shows beside the draft that survived and nowhere else, and
+     — D26 — survives navigation and sends in other threads: nothing the
+     viewer typed, or was told, vanishes because they moved. */
+  const [submitFailures, setSubmitFailures] = useState<Readonly<Record<string, string>>>({});
+  const submitError = submitFailures[draftKey] ?? null;
+  const fileSubmitFailure = useCallback((key: string, message: string | null) => {
+    setSubmitFailures((current) => {
+      if (message !== null) return { ...current, [key]: message };
+      if (!(key in current)) return current;
+      const { [key]: _cleared, ...rest } = current;
+      return rest;
+    });
+  }, []);
   const [teammateId, setTeammateId] = useState<EntityId | ''>('');
   const [modelId, setModelId] = useState(() =>
     newChatSeed?.model && models.some((model) => model.model === newChatSeed.model)
@@ -598,6 +614,10 @@ export function ChatHomeScreen({
   useEffect(() => {
     turnClockRef.current = turnClock;
   }, [turnClock]);
+  /* The list as of the last render, for the select effect's phase — read, not
+     depended on: a row changing state must not re-read the open thread. */
+  const threadsRef = useRef(threads);
+  threadsRef.current = threads;
 
   /** ANSWER the question "which conversation?" — `null` is a real answer here
    *  (the new-conversation composer), not the absence of one. Every deliberate
@@ -644,7 +664,7 @@ export function ChatHomeScreen({
    * render, and what the guard there now suppresses.
    *
    * ONLY THE ADOPT HALF MOVED. The solo RESET below is still an effect,
-   * deliberately: it clears `detail`, `phase` and `submitError` and writes a
+   * deliberately: it clears `detail` and `phase` and writes a
    * ref, and a render pass is not allowed to do any of that. It also does not
    * need to be early — it lands on the new-conversation composer, which is not
    * a thread whose turns could be shown under the wrong selection.
@@ -683,7 +703,6 @@ export function ChatHomeScreen({
     setDetail(null);
     stoppedRootRef.current = null;
     setPhase('idle');
-    setSubmitError(null);
   }, [chooseRoot, routeThreadId, soloConversation, spaceId]);
 
   /* Publish the list and the RESOLVED selection to a solo host — see the
@@ -888,6 +907,17 @@ export function ChatHomeScreen({
       setDetail(null);
       return;
     }
+    /* THE OUTGOING THREAD'S PHASE DOES NOT CARRY IN. It stood until the read
+       below landed, so opening an idle thread out of a streaming one drew the
+       working button over it — whose Stop names `selectedRootId`, the thread
+       just opened. The row is what is known about the incoming one now. */
+    const listedState = () =>
+      threadsRef.current.find((thread) => thread.rootId === selectedRootId)?.state;
+    setPhase(
+      expectingRootRef.current === selectedRootId
+        ? 'streaming'
+        : phaseForThreadState(listedState() ?? 'idle'),
+    );
     let alive = true;
     setLoadError(null);
     void loadDetail(selectedRootId)
@@ -1212,11 +1242,39 @@ export function ChatHomeScreen({
    */
   const followedHeightRef = useRef(-1);
 
-  const activeConfig = detail?.summary.config ?? null;
+  /* THE OPEN THREAD'S DETAIL, OR NONE. `detail` keeps the OUTGOING thread
+     until the incoming read lands; the transcript already refuses to draw it
+     under another selection (`ThreadOpening`), and so must the header, the
+     composer's pins and the ledger — which drew the previous thread's title,
+     teammate, model and entities over the one just opened. Until its read
+     lands, the incoming thread's own list row speaks for it. A chat being
+     BORN is open too: its stand-in thread (`optimistic-chat:…`, D22) is what
+     the new-conversation selection is showing until the ack re-keys it. */
+  const openDetail =
+    detail !== null
+    && (detail.summary.rootId === selectedRootId
+      || (selectedRootId === null && detail.summary.rootId.startsWith(OPTIMISTIC_CHAT_PREFIX)))
+      ? detail
+      : null;
+  const selectedRow = selectedRootId === null
+    ? undefined
+    : threads.find((thread) => thread.rootId === selectedRootId);
+  const activeConfig = openDetail?.summary.config ?? selectedRow?.config ?? null;
   const selectedModel = useMemo(
     () => models.find((model) => model.model === modelId) ?? null,
     [modelId, models],
   );
+  /* The pick is read once, at mount; the catalog is live (Settings can hide a
+     model, a node can retire one). A pick the catalog no longer lists snaps to
+     its first entry rather than refusing every new chat with "no model is
+     available" beside a picker full of them. Keyed on the ids: the surface
+     rebuilds `models` on every render. */
+  const modelIdsKey = models.map((model) => model.model).join('\n');
+  useEffect(() => {
+    const first = models[0]?.model;
+    if (first !== undefined && !models.some((model) => model.model === modelId)) setModelId(first);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by the id list
+  }, [modelIdsKey, modelId]);
   const busy = isBusyPhase(phase);
   /** A thread being BORN — the two round trips between Send and a root that
    *  exists. There is no `detail` to hang a pulse off during either, which is
@@ -1295,12 +1353,18 @@ export function ChatHomeScreen({
     element.scrollTop = height;
   }, [detail, thinking]);
 
+  /* THE NEW-CHAT PICKS REFUSE ONLY A NEW CHAT. A started thread's teammate and
+     model are pinned facts on the server, and a turn names neither — yet an
+     empty roster or a model the catalog no longer lists refused every
+     existing conversation, under a composer that could not change either. */
   const selectionUnavailable =
-    teammateId === ''
-      ? 'No agent teammate is available in this space.'
-      : !selectedModel
-        ? 'No model is available from the launch catalog.'
-        : null;
+    activeConfig !== null
+      ? null
+      : teammateId === ''
+        ? 'No agent teammate is available in this space.'
+        : !selectedModel
+          ? 'No model is available from the launch catalog.'
+          : null;
   const refusal = startUnavailable ?? selectionUnavailable;
 
   /**
@@ -1510,7 +1574,20 @@ export function ChatHomeScreen({
      naming a stage while the chat is on screen, which is the one state a
      linkable stage must not produce. Turns are taken exactly as the tray takes
      them, so the two never disagree about what this thread contains. */
-  const stageTurns = detail && !newThread ? detail.turns : [];
+  const stageTurns = openDetail && !newThread ? openDetail.turns : [];
+  /* LEAVING A STAGE is one verb with three doors — Escape, the stage
+     header's `← Chat` and column A. A stage is addressed, so leaving it is a
+     navigation, not a local reset — otherwise Back would still walk into a
+     stage the viewer just dismissed. */
+  const leaveStage = (): void => {
+    if (centerOverride == null && stage !== null && onStageChange) onStageChange(null);
+    else onShowChat?.();
+  };
+  /* D18: the stage's own header says whether the conversation behind it is
+     working, and is the way back — nothing of the chat is drawn under a stage. */
+  const stageExit = onStageChange || onShowChat
+    ? <StageExit busy={phase === 'streaming' || busy} onExit={leaveStage} />
+    : null;
   const stagePane: ReactNode =
     centerOverride != null
       ? null
@@ -1523,6 +1600,7 @@ export function ChatHomeScreen({
               livenessOf={livenessOf}
               onOpenEntity={onSelectEntity ? (id) => onSelectEntity(id) : onOpenEntity}
               {...(onOpenTranscript ? { onOpenTranscript } : {})}
+              headerEnd={stageExit}
             />
           )
         : stage === 'graph'
@@ -1533,6 +1611,7 @@ export function ChatHomeScreen({
                 connections={connections}
                 readEntity={readEntity}
                 onOpenEntity={onSelectEntity ? (id) => onSelectEntity(id) : onOpenEntity}
+                headerEnd={stageExit}
               />
             )
           : null;
@@ -1589,13 +1668,41 @@ export function ChatHomeScreen({
     wasCentredRef.current = composerCentred;
   }, [newThread, composerCentred, birthing]);
   const chatOccupiesCenter = centre === undefined || centre === null;
+
+  /**
+   * ── FOCUS FOLLOWS A STAGE IN, AND COMES BACK OUT WITH IT (D18) ─────────────
+   *
+   * Escape is handled on the conversation section, so it only works while
+   * focus is INSIDE it — and opening a stage from the tray's Graph tab unmounts
+   * the tab that had focus (the tray is not drawn under a stage), dropping
+   * focus to <body>. Escape then did nothing at all: the stage's documented way
+   * back was dead on the one path that opens it (reproduced live).
+   *
+   * So a stage opening lands focus on the stage region, and a stage closing
+   * lands it in the composer. ONLY WHEN FOCUS IS ADRIFT: a viewer who closed
+   * the stage by picking a row in column A has focus on that row, and moving
+   * it would steal their place.
+   */
+  const centreRef = useRef<HTMLElement | null>(null);
+  const stageUp = centerOverride == null && stagePane !== null;
+  const stageWasUpRef = useRef(stageUp);
+  useLayoutEffect(() => {
+    if (stageWasUpRef.current === stageUp) return;
+    stageWasUpRef.current = stageUp;
+    const active = document.activeElement;
+    if (active !== null && active !== document.body) return;
+    if (stageUp) centreRef.current?.focus();
+    else composer.current?.focus();
+  }, [stageUp]);
   /** The host's whole-root takeover: the workspace list panel, with its own
    *  search — so this screen's find box stands down for that root. */
   const hostedList = onChatsRoot ? null : (renderRootList?.(root) ?? null);
 
   const send = useCallback(async () => {
     const draftBody = draft.trim();
-    if (draftBody === '' || busy || refusal || teammateId === '' || !selectedModel) return;
+    // Teammate and model are checked on the NEW-chat path only — a turn in a
+    // started thread names neither (see `selectionUnavailable`).
+    if (draftBody === '' || busy || refusal) return;
     /* The crew rides the opening turn (see `crewBrief`): visible before send,
        verbatim in the transcript. Only a NEW orchestrate chat has one. */
     const brief = newThread && chatMode === 'orchestrate'
@@ -1609,7 +1716,9 @@ export function ChatHomeScreen({
     const attachmentIds = staged.uploadedIds() as EntityId[];
     const continuingStoppedRoot =
       selectedRootId && phase === 'stopped-continuable' ? selectedRootId : null;
-    setSubmitError(null);
+    // Clears THIS thread's filed failure only — another thread's stays with
+    // the draft it returned there.
+    fileSubmitFailure(draftKey, null);
     const originRoot = selectedRootId;
     /*
      * ── SEND PAINTS IN THE SAME FRAME ────────────────────────────────────────
@@ -1697,6 +1806,7 @@ export function ChatHomeScreen({
       // opening turn in one transaction, so the intermediate `configuring`
       // phase — and the window it named, in which a message existed that was
       // not yet a chat — has nothing left to describe.
+      if (teammateId === '' || !selectedModel) return;
       setPhase('posting-root');
       /* A CHAT BEING BORN HAS NO ID YET, so the echo rides a stand-in thread
          keyed `optimistic-chat:…`. `selectedRootId` stays null until the ack,
@@ -1810,8 +1920,11 @@ export function ChatHomeScreen({
         } else {
           setPhase(stillLive ? 'streaming' : 'idle');
         }
-        setSubmitError(describeError(error));
       }
+      /* The failure is filed under the thread whose draft it returned, and
+         shows beside those words wherever the viewer is now — never under an
+         unrelated conversation. An acked post did not fail. */
+      if (!acked) fileSubmitFailure(originRoot ?? 'new-thread', describeError(error));
     }
   }, [
     aboutId,
@@ -1869,7 +1982,7 @@ export function ChatHomeScreen({
         stoppedRootRef.current = null;
         setPhase('streaming');
         setTurnClock((current) => (current && current.chatId === rootId ? { ...current, stopping: false } : current));
-        setSubmitError(describeError(error));
+        fileSubmitFailure(rootId, describeError(error));
       }
     }
   }, [port, selectedRootId]);
@@ -1952,7 +2065,6 @@ export function ChatHomeScreen({
               setDetail(null);
               stoppedRootRef.current = null;
               setPhase('idle');
-              setSubmitError(null);
               /* D10: takes region B (back to the chat's new-conversation
                  composer) AND switches the column to its own root. */
               onShowChat?.();
@@ -2045,7 +2157,9 @@ export function ChatHomeScreen({
                         <span className="tch-mode-chip">{thread.config.mode}</span>
                         <span>{thread.config.teammateLabel}</span>
                         <span aria-hidden>·</span>
-                        <span>{thread.config.modelLabel}</span>
+                        {/* The catalog's words, not the wire's: the real port
+                            fills `modelLabel` with the raw model id (R8). */}
+                        <span>{models.find((model) => model.model === thread.config.model)?.label ?? thread.config.modelLabel}</span>
                         <Timestamp at={thread.updatedAt} />
                       </span>
                     </button>
@@ -2106,11 +2220,8 @@ export function ChatHomeScreen({
         onKeyDown={(event) => {
           if (event.key !== 'Escape' || centre == null || event.defaultPrevented) return;
           event.preventDefault();
-          /* Esc leaves WHATEVER holds the stage. A stage is addressed, so
-             leaving it is a navigation, not a local reset — otherwise Back
-             would still walk into a stage the viewer just dismissed. */
-          if (centerOverride == null && stage !== null) onStageChange?.(null);
-          else onShowChat?.();
+          /* Esc leaves WHATEVER holds the stage (see `leaveStage`). */
+          leaveStage();
         }}
       >
         {/* NOT IN SOLO MODE. Solo means the HOST drew the thread column as its
@@ -2133,7 +2244,11 @@ export function ChatHomeScreen({
         {soloConversation || centre != null ? null : (
           <header className="tch-conversation__head">
             <div className="tch-title">
-              <strong>{detail?.summary.title ?? 'New conversation'}</strong>
+              {/* Never the OUTGOING thread's title while the incoming one is
+                  read (`openDetail`): its own row names it from the first frame
+                  (D26). Empty only for a chat being born, whose stand-in has no
+                  title yet (D22 §4). */}
+              <strong>{openDetail?.summary.title ?? selectedRow?.title ?? (selectedRootId === null ? 'New conversation' : '')}</strong>
               <span>{activeConfig ? `with ${activeConfig.teammateLabel}` : 'Work with your graph from one place'}</span>
             </div>
             {/* THE `about` RELATION, where the conversation is (Wave 2).
@@ -2148,11 +2263,11 @@ export function ChatHomeScreen({
                 chat actually on screen. The LIST does not carry it (see
                 `ChatThreadSummary.aboutId`), so this renders once a thread is
                 open and never flickers a wrong subject in from a stale row. */}
-            {detail?.summary.aboutId ? (
+            {openDetail?.summary.aboutId ? (
               <div className="tch-about" data-testid="chat-about-relation">
                 <span className="tch-about__word">about</span>
                 <EntityChip
-                  refInfo={{ id: detail.summary.aboutId }}
+                  refInfo={{ id: openDetail.summary.aboutId }}
                   resolve={resolveEntity}
                   onOpen={onOpenEntity}
                 />
@@ -2161,15 +2276,15 @@ export function ChatHomeScreen({
             {/* THE CONTEXT NUMBER (Chat Context). A live frame is the runtime
                 measuring right now; otherwise the stored reading, which is
                 "last known" unless the runtime is still running. */}
-            {detail
+            {openDetail
               ? (() => {
-                  const live = liveContext.get(detail.summary.rootId);
-                  const context = live ?? detail.summary.context ?? null;
+                  const live = liveContext.get(openDetail.summary.rootId);
+                  const context = live ?? openDetail.summary.context ?? null;
                   if (!context) return null;
                   return (
                     <ChatContextNumber
                       context={context}
-                      stale={live ? null : staleReason(detail.summary.runtimeState)}
+                      stale={live ? null : staleReason(openDetail.summary.runtimeState)}
                     />
                   );
                 })()
@@ -2178,7 +2293,14 @@ export function ChatHomeScreen({
         )}
 
         {centre != null ? (
-          <section className="tch-center" aria-label="Selection" data-testid="tch-center-override">
+          <section
+            ref={centreRef}
+            className="tch-center"
+            aria-label="Selection"
+            data-testid="tch-center-override"
+            /* Focusable as a landing point, never a tab stop (see below). */
+            tabIndex={-1}
+          >
             {centre}
           </section>
         ) : null}
@@ -2350,10 +2472,12 @@ export function ChatHomeScreen({
                      means BOTH are null and no tab can be the active one. */
                   activeEntityId={null}
                   onShowChat={onShowChat}
-                  chatBusy={thinking || phase === 'streaming'}
                 />
+                {/* The ledger names THIS thread's entities, so it waits for this
+                    thread's read; the tray's tabs are the same for every one. */}
+                {openDetail ? (
                 <LedgerPanel
-                  turns={detail.turns}
+                  turns={openDetail.turns}
                   suppressEntityIds={ownMessageIds}
                   resolveEntity={resolveEntity}
                   /* THE SCREEN'S OPENER, DELIBERATELY — never the
@@ -2365,6 +2489,7 @@ export function ChatHomeScreen({
                   readEntity={readEntity}
                   livenessOf={livenessOf}
                 />
+                ) : null}
               </>
             ) : null}
             {submitError ? <p className="tch-submit-error" role="alert">{submitError}</p> : null}
@@ -2383,7 +2508,12 @@ export function ChatHomeScreen({
                   value={draft}
                   aria-label="Message the chat agent"
                   aria-describedby={refusal ? 'tch-compose-refusal' : undefined}
-                  disabled={busy}
+                  /* READ-ONLY WHILE OUR WRITE IS IN FLIGHT, NOT DISABLED. A
+                     disabled field is blurred by the browser, so every Enter
+                     dropped focus to <body> and the next message needed a
+                     click back into the box (measured live, 2026-09-26).
+                     Read-only blocks the same edits and keeps the caret. */
+                  readOnly={busy}
                   placeholder={newThread ? 'What are we doing?' : 'Type a message…'}
                   onKeyDownCapture={(event) => {
                     /* `/build` on an otherwise-empty input selects the mode. */

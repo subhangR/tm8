@@ -845,18 +845,6 @@ button.tch-entity-chip:hover {
 .tch-tray__chat:hover { background: var(--pn-hover); color: var(--pn-ink-2); }
 .tch-tray__chat:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
 
-.tch-tray__pulse {
-  width: 6px;
-  height: 6px;
-  border-radius: var(--pn-r-pill);
-  background: var(--pn-run);
-  animation: tch-tray-pulse 1.1s var(--pn-ease-standard) infinite alternate;
-}
-@keyframes tch-tray-pulse { from { opacity: 0.35; } to { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) {
-  .tch-tray__pulse { animation: none; }
-}
-
 /* The chip tabs and the +N overflow left with the tray's chips (S4) —
    the ledger panel below is where the thread's entities live now. */
 

@@ -24,6 +24,11 @@ import { ChatHomeScreen } from './ChatHomeScreen';
 import { CHAT_HOME_FIXTURE_THREAD, createChatHomeFixturePort } from './fixtures';
 import type { ChatHomePort, ChatModelOption, ChatThreadDetail } from './types';
 
+/* "The fixture thread has opened" = its first turn is in the transcript. Not
+   its title: the title is on screen twice from the first frame (the row, and
+   the header, which names the thread being opened — D26). */
+const OPENED_FIXTURE_TURN = 'Plan the launch sequence and check what is already blocked.';
+
 const SPACE_ID = '019f0000-0000-7000-8000-000000000090';
 const MODELS: ChatModelOption[] = [
   { model: 'claude-sonnet-4-5', label: 'Sonnet 4.5', provider: 'Anthropic', agentTool: 'claude-code' },
@@ -139,7 +144,7 @@ describe('a conversation opens at its newest turn', () => {
   it('scrolls the transcript to the end once the thread has loaded', async () => {
     const { port } = createChatHomeFixturePort();
     const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
-    await waitFor(() => expect(view.getByText('Plan the launch sequence')).toBeTruthy());
+    await waitFor(() => expect(view.getByText(OPENED_FIXTURE_TURN)).toBeTruthy());
     await waitFor(() => expect(writes.length).toBeGreaterThan(0));
     expect(writes.at(-1)).toBe(CONTENT);
   });
@@ -152,7 +157,7 @@ describe('a conversation opens at its newest turn', () => {
   it('stops following once the reader scrolls up, and follows again at the end', async () => {
     const { port, controls } = createChatHomeFixturePort();
     const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
-    await waitFor(() => expect(view.getByText('Plan the launch sequence')).toBeTruthy());
+    await waitFor(() => expect(view.getByText(OPENED_FIXTURE_TURN)).toBeTruthy());
     await waitFor(() => expect(writes.length).toBeGreaterThan(0));
 
     const transcript = view.container.querySelector('.tch-transcript') as HTMLElement;

@@ -1,0 +1,58 @@
+/* THE STAGE HEADER'S LINE (ruling D18) — busy signal, then the exit.
+   Right-aligned in the Graph/Fleet header; see `StageExit.tsx`. */
+
+.tch-stage-exit {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-left: auto;
+  font-size: var(--pn-fs-fine);
+  white-space: nowrap;
+}
+
+.tch-stage-exit__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--pn-ink-3);
+}
+
+/* The same mark as every other "live" dot: 6px, `--pn-run`, a 1.6s fade. */
+.tch-stage-exit__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--pn-run);
+  animation: tch-stage-exit-pulse 1.6s ease-in-out infinite alternate;
+}
+.tch-stage-exit__status[data-state='finished'] .tch-stage-exit__dot {
+  background: var(--pn-idle);
+  animation: none;
+}
+@keyframes tch-stage-exit-pulse { from { opacity: 1; } to { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) {
+  .tch-stage-exit__dot { animation: none; }
+}
+
+.tch-stage-exit__sep { color: var(--pn-ink-4); }
+
+.tch-stage-exit__back {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  color: var(--pn-ink-2);
+  cursor: pointer;
+}
+.tch-stage-exit__back:hover { color: var(--pn-ink); }
+.tch-stage-exit__back:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* The stage is focused as a REGION when it opens (so Escape reaches the
+   screen's handler); the region itself is the indicator, not a ring round
+   the whole berth. */
+.tch-center:focus { outline: none; }
