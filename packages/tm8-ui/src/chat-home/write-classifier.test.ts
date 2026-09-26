@@ -83,19 +83,32 @@ describe('direct tools, unchanged', () => {
  */
 describe('every operation the MCP groups expose is classified as its group says', () => {
   const tools = readFileSync(fileURLToPath(new URL('../../../mcp/src/tools.ts', import.meta.url)), 'utf8');
-  const guidesOf = (name: string): string[] => {
-    const start = tools.indexOf(`const ${name}`);
+  /* The lists a tool is BUILT FROM, as `GROUPS` names them — containers joined
+     `tm8_act` as a new list spread in, so the next group will too. */
+  const groups = tools.slice(tools.indexOf('\nconst GROUPS = {'), tools.indexOf('\n}', tools.indexOf('\nconst GROUPS = {')));
+  const listsOf = (tool: string): string[] =>
+    [...(groups.match(new RegExp(`\\n\\s*${tool}: ([^\\n]+)`))?.[1] ?? '').matchAll(/\b[A-Z][A-Z0-9_]+\b/g)].map((m) => m[0]);
+  const blockOf = (name: string): string => {
+    const start = tools.indexOf(`\nconst ${name} = [`);
     const end = tools.indexOf('\nconst ', start + 1);
-    if (start < 0 || end < 0) return [];
-    return [...tools.slice(start, end).matchAll(/guide\('([^']+)'/g)].map((match) => match[1]!);
+    return start < 0 || end < 0 ? '' : tools.slice(start, end);
   };
-  const act = [...guidesOf('ACT_GUIDES'), ...guidesOf('CONTAINER_GUIDES')];
-  const reads = guidesOf('READ_GUIDES');
+  const guidesOf = (name: string): string[] => [...blockOf(name).matchAll(/guide\('([^']+)'/g)].map((m) => m[1]!);
+  /* Counted apart from the parse: a quote style or a constant the regex does not read reds here. */
+  const callsIn = (name: string): number => (blockOf(name).match(/\bguide\(/g) ?? []).length;
+  const actLists = listsOf('tm8_act');
+  const readLists = listsOf('tm8_read');
+  const act = actLists.flatMap(guidesOf);
+  const reads = readLists.flatMap(guidesOf);
 
   it('reads the group lists it checks', () => {
-    expect(act.length).toBeGreaterThanOrEqual(40);
+    expect(actLists).toEqual(expect.arrayContaining(['ACT_GUIDES', 'CONTAINER_GUIDES']));
+    expect(readLists).toEqual(['READ_GUIDES']);
+    for (const list of [...actLists, ...readLists]) {
+      expect(callsIn(list), list).toBeGreaterThan(0);
+      expect(guidesOf(list).length, list).toBe(callsIn(list));
+    }
     expect(act).toEqual(expect.arrayContaining(['entities.create', 'forms.transition', 'containers.fork']));
-    expect(reads.length).toBeGreaterThanOrEqual(15);
     expect(reads).toEqual(expect.arrayContaining(['entities.get', 'graph.query']));
   });
 
