@@ -1,3 +1,4 @@
+import { AttentionChipView, useAttentionOptional, useEntityChip } from '../attention';
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import type { JevPort } from '../jev/port';
@@ -108,6 +109,8 @@ import { LaunchComposerPopup } from '../new-session';
 import type { FileUploadTask } from '../files/upload';
 import type { LaunchSelectionSources } from '../launch-selection';
 import { newLaunchMutationId, type LoadInstalledPlugins } from '../domain/launch';
+import { AttentionTileSubtitle, attentionTileLine } from '../attention/AttentionTileSubtitle';
+import { isNeedsMeFilter, needsMeCount, needsMeRecheckAt } from '../attention/needs-me';
 
 const EMPTY_MEMBERS: readonly ActorSummary[] = Object.freeze([]);
 
@@ -588,6 +591,7 @@ function placeHoverBar(event: ReactPointerEvent<HTMLElement>): void {
 export function EntityListPanel(props: EntityListPanelProps) {
   const config = getKind(props.kind);
   const list = config.list;
+  const listAttentionApi = useAttentionOptional();
 
   /**
    * The open category tab, REMEMBERED PER KIND (user ruling, task 01a02470:
@@ -707,6 +711,10 @@ export function EntityListPanel(props: EntityListPanelProps) {
     list.membership && lensId
       ? ((props.membershipSets ?? []).find((set) => set.id === lensId) ?? null)
       : null;
+  /* ATTENTION v2: with an attention module mounted, "Needs me" swaps the
+     body for one flat band over the queue (see the body below). */
+  const selectedFilter = mergeSelectedFilters(config, selected, props.ctx);
+  const needsMeActive = listAttentionApi !== null && isNeedsMeFilter(selectedFilter);
   const lensFilter: QueryFilter | undefined =
     list.membership && lensSet
       ? ({
@@ -855,7 +863,24 @@ export function EntityListPanel(props: EntityListPanelProps) {
       ) : null}
 
       <div className="lp__body" onPointerOver={placeHoverBar}>
-        {mode === 'board' && list.board ? (
+        {needsMeActive ? (
+          /* ATTENTION v2 — "Needs me" is the attention QUEUE, one flat list in
+             queue order (needs-me.ts). Tabs, sections, people chips and the
+             lens partition entities, not the queue, so none of them narrow it:
+             the band reads the needs-me clause alone, and the note says so. */
+          <>
+            <p className="att-needs-me-note" data-testid="needs-me-note">
+              Needs me lists what is waiting on you, in queue order — tabs and sections don’t apply.
+            </p>
+            <Band
+              label={null}
+              filter={selectedFilter}
+              props={props}
+              config={config}
+              query={query}
+            />
+          </>
+        ) : mode === 'board' && list.board ? (
           <BoardBody
             props={props}
             config={config}
@@ -2657,8 +2682,20 @@ function Band({
   /** Present ⇒ an empty band means "no matches", not "nothing here". */
   query?: string;
 }) {
+  const bandAttention = useAttentionOptional();
   const rows = filter === null ? NO_ROWS : props.rowsFor(filter, sort);
   const page = filter === null ? undefined : props.pageStateOf?.(filter, sort);
+  /* "Needs me" reads LOADING for a bounded time per pulled root; nothing else
+     re-renders a quiet list when that time runs out, so wake once then. */
+  const [, wake] = useState(0);
+  const needsMeLoadingNow = isNeedsMeFilter(filter) && page?.loading === true;
+  useEffect(() => {
+    if (!needsMeLoadingNow) return;
+    const due = needsMeRecheckAt();
+    if (due === null) return;
+    const timer = setTimeout(() => wake((n) => n + 1), Math.max(0, due - Date.now()) + 50);
+    return () => clearTimeout(timer);
+  }, [needsMeLoadingNow, rows]);
   const visible = matching(rows, query ?? '');
   const attentionIds = attentionIdsOf(visible, props, config);
 
@@ -2701,6 +2738,22 @@ function Band({
           <EmptyBody
             glyph={config.chip.glyph}
             sentence={`No rows: the filters you have picked contradict this tab, so nothing could satisfy both. Clear a filter chip or switch tabs.`}
+          />
+        ) : isNeedsMeFilter(filter) && (!query || query.trim().length === 0) ? (
+          /* Attention v2: "Needs me" is the attention queue (needs-me.ts), so
+             its empty state is "nothing is waiting on you", not "create one". */
+          <EmptyBody
+            glyph={<KindIcon kind={config.kind} size={22} />}
+            sentence={
+              page?.loading
+                ? 'Loading what needs you…'
+                : needsMeCount(bandAttention, config.kind) > 0
+                  /* The queue names roots this list could not load (deleted,
+                     or not readable here). Saying "nothing" would contradict
+                     the top bar's count. */
+                  ? `${needsMeCount(bandAttention, config.kind)} waiting on you could not be shown here — open them from the top bar.`
+                  : 'Nothing needs you.'
+            }
           />
         ) : query && query.trim().length > 0 ? (
           <EmptyBody
@@ -3177,6 +3230,14 @@ export function Tile({
   path?: ReadonlySet<string>;
 }) {
   const { oneSurface } = useMobileSurface();
+  /* Attention v2 (chapter 4): a CHIP replaces the words "Needs attention".
+     `attention` also carries a kind's derived predicate (session liveness),
+     which has no request behind it and keeps the old label. With the store
+     above, a badge it has since seen settled no longer tints the tile. */
+  const attentionApi = useAttentionOptional();
+  const chip = useEntityChip(row);
+  const flagged = attentionApi ? chip != null || (attention && !row.badges.attention) : attention;
+  const chipView = chip ? <AttentionChipView chip={chip} /> : null;
   const list = config.list;
   const controlCard = list.tile.anatomy === 'control-card';
   const sessionTree = list.tile.anatomy === 'session-tree';
@@ -3184,6 +3245,14 @@ export function Tile({
      read serves every tile in the list — see `forms/pending.ts`. */
   const pendingForms = usePendingForms(sessionTree ? row.id : null);
   const verdict = props.livenessOf?.(row.id);
+  /* ATTENTION v2 (F1, tab 4-5): the subtitle under the chip — a session or
+     chat's `waiting on you: …`, a roll-up root's `n requests · own, via …`.
+     Null outside an attention module. */
+  const attentionLine = attentionTileLine(
+    attentionApi,
+    row,
+    verdict === 'not-running' || verdict === 'stale',
+  );
   const treatment: LiveTreatment | null =
     list.liveTreatment && verdict ? list.liveTreatment(verdict) : null;
 
@@ -3467,7 +3536,9 @@ export function Tile({
         teammate={teammate}
         model={model}
         status={recordedStatus}
-        attention={attention}
+        attention={flagged}
+        attentionChip={chipView}
+        attentionTone={chip?.tone}
         selected={selected}
         archived={archived}
         completed={completed}
@@ -3495,7 +3566,12 @@ export function Tile({
             } : undefined}
           />
         ) : undefined}
-        badges={tileBadges}
+        badges={attentionLine || tileBadges ? (
+          <>
+            <AttentionTileSubtitle line={attentionLine} />
+            {tileBadges}
+          </>
+        ) : null}
         childCount={childCount}
         childrenExpanded={expanded}
         onToggleChildren={onToggleChildren}
@@ -3529,8 +3605,10 @@ export function Tile({
         title={row.title}
         depth={depth}
         selected={selected}
-        attention={attention}
+        attention={flagged}
         attentionReason={row.badges.attention?.latestReason}
+        attentionChip={chipView}
+        attentionTone={chip?.tone}
         archived={archived}
         childCount={childCount}
         childrenExpanded={expanded}
@@ -3569,7 +3647,12 @@ export function Tile({
         }
         assignees={controlFacts.assignees}
         creator={controlFacts.creator}
-        badges={tileBadges}
+        badges={attentionLine || tileBadges ? (
+          <>
+            <AttentionTileSubtitle line={attentionLine} />
+            {tileBadges}
+          </>
+        ) : null}
         /* The same cluster the standard tile draws, in the same order — one
            component, not a second copy. The control-card's own chevron lives
            inside `MaestroTaskTile` after this slot, so no `trailing` here. */
@@ -3659,10 +3742,11 @@ export function Tile({
       className={[
         'lp__tile',
         selected ? 'lp__tile--selected' : '',
-        attention ? 'lp__tile--attention' : '',
+        flagged ? 'lp__tile--attention' : '',
       ]
         .filter(Boolean)
         .join(' ')}
+      data-attention-tone={chip?.tone}
       data-testid="list-tile"
       /* The session anatomy publishes `data-session-node`; this is the same
          identity on the default one, so `TileFlightLayer` can find either
@@ -3773,7 +3857,7 @@ export function Tile({
           {/* The badge slot YIELDS to the action cluster on hover — the card
               never grows, so hovering cannot reflow the list under the cursor. */}
           <span className="lp__badges">
-            {attention ? (
+            {chipView ?? (flagged ? (
               /* WHY it needs attention was `title`-only, and `title` renders on
                  hover and nowhere else — so on a phone this row said "Needs
                  attention" and refused to say why, with the reason present in
@@ -3793,7 +3877,7 @@ export function Tile({
               ) : (
                 <span className="lp__attention-label">Needs attention</span>
               )
-            ) : null}
+            ) : null)}
             {statusWord ? (
               <span className={`lp__word kit-pill--${statusTone}`} title={statusTitle}>
                 {statusWord}
@@ -3852,6 +3936,7 @@ export function Tile({
           expanded under a task carries the same chips and can keep going.
           Rendered as its own sub-row because the standard tile's main row
           holds the 17px floor. */}
+      <AttentionTileSubtitle line={attentionLine} />
       {tileBadges ? <div className="lp__tile-badges">{tileBadges}</div> : null}
 
       {detailsExpanded ? <EntityControlStrip row={row} props={props} config={config} /> : null}

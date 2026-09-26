@@ -33,6 +33,7 @@
  * KIND (legal here; the §15.2 guard fences `panels/`, not `board/`) but never
  * respells a vocabulary the registry already owns.
  */
+import { EntityAttentionChip } from '../attention';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ActorSummary, EntitySummary } from '@tm8/contract';
 import { getKind } from '../domain';
@@ -626,6 +627,7 @@ function CardView({
         {row.title}
       </button>
       <div className="bd__card-meta">
+        <EntityAttentionChip entity={row} />
         {/* The pivot's own axis is the COLUMN — repeating it on every card
             would be noise; the other axis stays visible. */}
         {priority && pivot !== 'priority' ? <Pill tone={priority.tone}>{priority.label}</Pill> : null}

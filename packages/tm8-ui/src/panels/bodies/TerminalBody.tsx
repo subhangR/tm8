@@ -2,10 +2,10 @@ import { useCallback, useRef, useState, type ReactNode } from 'react';
 import type { EntityDetail } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
 import { useShellKind } from '../../mobile';
+import { SessionWaitingBanner } from '../../attention/SessionWaitingBanner';
 import {
   ExitedFallback,
   LiveTerminal,
-  NeedsYouBanner,
   StaleFallback,
   TERMINAL_FONT_SIZE,
   TERMINAL_FONT_SIZE_KEY,
@@ -73,8 +73,6 @@ export interface TerminalBodyProps {
   streaming?: boolean;
   /** R8-dormant: blocked on the user. */
   needsAttention?: boolean;
-  /** What the agent is waiting for, when it is. */
-  attentionDetail?: string;
   /* GONE with the drawer (user ruling 2026-08-19): `handoffs`,
      `shareUnavailableReason`, `withdrawUnavailableReason`, `onOpenEntity` and
      `compact`. Every one of them fed only the chrome strip, the context header
@@ -118,7 +116,6 @@ export function TerminalBody({
   liveness,
   streaming,
   needsAttention,
-  attentionDetail,
   livenessLabel,
   livenessReason,
   onOpenTranscript,
@@ -204,7 +201,7 @@ export function TerminalBody({
 
   /* USER RULING 2026-07-29 — "the terminal is the main thing of our app":
    * the canvas starts DIRECTLY under the tab strip and takes every pixel
-   * down to the panel footer. The needs-you banner stays above the canvas: it
+   * down to the panel footer. The waiting-on-you banner stays above the canvas: it
    * is conditional, rare, and its whole job is to interrupt. This supersedes
    * the top-stacked order the T0-2 canvas draws; the divergence is user-ruled
    * (D63).
@@ -237,7 +234,10 @@ export function TerminalBody({
 
   return (
     <div className="pn-terminal-body" data-testid="terminal-body">
-      {needsAttention && style.isLive ? <NeedsYouBanner detail={attentionDetail} /> : null}
+      {/* ATTENTION v2 (chapter 4 "Session"): the banner carries the REAL
+          reason this session raised; PTY silence alone no longer draws one
+          (G1). */}
+      <SessionWaitingBanner sessionId={detail.id} tone="dark" />
 
       <div className="pn-terminal-stage" data-testid="terminal-stage" ref={stageRef}>
         <SessionCanvas

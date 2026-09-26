@@ -975,21 +975,37 @@ async function entityHeaderClear(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
+const ATTENTION_LEVELS: readonly string[] = ['fyi', 'normal', 'high', 'urgent'];
+const ATTENTION_TYPES: readonly string[] = ['decide', 'approve', 'unblock', 'review', 'fyi'];
+
 async function entityAttention(cmd: CommandContext): Promise<ExitCode> {
-  assertKnownOptions(cmd, ['reason', 'points', 'mutation-id']);
+  assertKnownOptions(cmd, ['reason', 'points', 'level', 'type', 'assignee', 'mutation-id']);
   const id = requireArg(cmd, 0, '<entity-id>');
   const reason = cmd.options.value('reason');
   const points = cmd.options.integer('points');
+  const level = cmd.options.value('level');
+  const actionType = cmd.options.value('type');
+  const assigneeId = cmd.options.value('assignee');
   if (!reason?.trim()) throw new CliError('`tm8 entity attention` requires --reason <text>', EXIT_USAGE);
-  if (points === undefined || points < 1 || points > 100) {
-    throw new CliError('`tm8 entity attention` requires --points <1-100>', EXIT_USAGE);
+  // R7: --points is an optional override; omitted, the server derives it from --level.
+  if (points !== undefined && (points < 1 || points > 100)) {
+    throw new CliError('--points expects an integer from 1 to 100', EXIT_USAGE);
+  }
+  if (level !== undefined && !ATTENTION_LEVELS.includes(level)) {
+    throw new CliError(`--level expects one of ${ATTENTION_LEVELS.join(', ')}`, EXIT_USAGE);
+  }
+  if (actionType !== undefined && !ATTENTION_TYPES.includes(actionType)) {
+    throw new CliError(`--type expects one of ${ATTENTION_TYPES.join(', ')}`, EXIT_USAGE);
   }
   const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'attentionRequests.create', {
     params: { entityId: id },
     body: withActor(cmd, {
       clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
       reason: reason.trim(),
-      points,
+      ...(points === undefined ? {} : { points }),
+      ...(level === undefined ? {} : { level }),
+      ...(actionType === undefined ? {} : { actionType }),
+      ...(assigneeId === undefined ? {} : { assigneeId }),
     }),
   });
   cmd.out.data(data, renderAttentionMutation);

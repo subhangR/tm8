@@ -37,6 +37,8 @@
  * share them. Two executors that disagree about what a write means is the
  * failure `auxPanel`'s docblock names. One screen, one set.
  */
+import { useAttentionOptional } from '../attention';
+import { needsMeListSource } from '../attention/needs-me';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { EntityId, ExecutionSpawnInput } from '@tm8/contract';
 import { HomePage } from '../home-page';
@@ -260,6 +262,7 @@ function homeViewOf(root: HomeRoot): NavView {
 }
 
 export function HomeView(props: HomeViewProps) {
+  const attentionApi = useAttentionOptional();
   const { data, reasons, onNotice } = props;
 
   /* THE TRAIL — route state, read live (D1). `stack` is the WHOLE walk and
@@ -699,9 +702,12 @@ export function HomeView(props: HomeViewProps) {
              draw a second one. The layout is the kind's registry default —
              there is no switcher on either row any more. */
           selectorSlot="host"
-          rowsFor={data.rowsFor(kind)}
-          pageStateOf={data.pageStateOf(kind)}
-          loadMore={data.loadMore(kind)}
+          /* ATTENTION v2: "Needs me" reads the attention queue (needs-me.ts). */
+          {...needsMeListSource(attentionApi, kind, data, {
+            rowsFor: data.rowsFor(kind),
+            pageStateOf: data.pageStateOf(kind),
+            loadMore: data.loadMore(kind),
+          })}
           boardFor={data.boardFor(kind) as never}
           members={data.members}
           ctx={ctx}
