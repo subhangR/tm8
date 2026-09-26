@@ -1,14 +1,14 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { lookup } from 'node:dns/promises';
 import { execFile, spawn } from 'node:child_process';
 import { constants, createReadStream } from 'node:fs';
-import { BlockList, isIP } from 'node:net';
 import { basename, dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
 import { lstat, mkdir, open, realpath } from 'node:fs/promises';
 import { Worker } from 'node:worker_threads';
 import { glob as globFiles } from 'tinyglobby';
 import { Agent } from 'undici';
+
+import { OutboundGuardError, resolvePublicAddresses, type ResolvedAddress } from './outbound-guard.js';
 
 import {
   ARTIFACT_MANIFEST_SCHEMA_ID,
@@ -1645,47 +1645,15 @@ async function readResponseCapped(response: Response, maxBytes: number): Promise
   return bytes;
 }
 
-type ResolvedAddress = { address: string; family: 4 | 6 };
-
 async function validatePublicUrl(url: URL): Promise<ResolvedAddress[]> {
-  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new DirectToolError('invalid_input', 'URL must be public HTTP(S) without embedded credentials');
-  const hostname = url.hostname.replace(/^\[|\]$/g, '');
-  let addresses: ResolvedAddress[];
   try {
-    const family = isIP(hostname);
-    addresses = family
-      ? [{ address: hostname, family: family as 4 | 6 }]
-      : (await lookup(hostname, { all: true })).map((item) => ({ address: item.address, family: item.family as 4 | 6 }));
-  } catch {
-    throw new DirectToolError('upstream_unavailable', 'web host could not be resolved', true);
+    return await resolvePublicAddresses(url);
+  } catch (error) {
+    if (!(error instanceof OutboundGuardError)) throw error;
+    if (error.reason === 'invalid_url') throw new DirectToolError('invalid_input', 'URL must be public HTTP(S) without embedded credentials');
+    if (error.reason === 'dns') throw new DirectToolError('upstream_unavailable', 'web host could not be resolved', true);
+    throw new DirectToolError('forbidden', 'URL resolves to a local or private address');
   }
-  if (addresses.length === 0 || addresses.some(({ address }) => privateAddress(address))) throw new DirectToolError('forbidden', 'URL resolves to a local or private address');
-  return addresses;
-}
-
-// Keep families in separate BlockLists: Node treats IPv4 input as IPv4-mapped
-// IPv6 when a list also contains `::ffff:0:0/96`, which would otherwise make
-// that defensive IPv6 rule reject every ordinary public IPv4 address.
-const NON_PUBLIC_IPV4 = new BlockList();
-const NON_PUBLIC_IPV6 = new BlockList();
-for (const [network, prefix] of [
-  ['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8],
-  ['169.254.0.0', 16], ['172.16.0.0', 12], ['192.0.0.0', 24], ['192.0.2.0', 24],
-  ['192.168.0.0', 16], ['198.18.0.0', 15], ['198.51.100.0', 24], ['203.0.113.0', 24],
-  ['224.0.0.0', 4], ['240.0.0.0', 4],
-] as const) NON_PUBLIC_IPV4.addSubnet(network, prefix, 'ipv4');
-for (const [network, prefix] of [
-  ['::', 128], ['::1', 128], ['::ffff:0:0', 96], ['fc00::', 7], ['fe80::', 10],
-  ['fec0::', 10], ['ff00::', 8], ['64:ff9b::', 96], ['64:ff9b:1::', 48],
-  ['2001::', 32], ['2001:db8::', 32], ['2002::', 16],
-] as const) NON_PUBLIC_IPV6.addSubnet(network, prefix, 'ipv6');
-
-function privateAddress(address: string): boolean {
-  const normalized = address.replace(/^\[|\]$/g, '').split('%')[0]!.toLowerCase();
-  const family = isIP(normalized);
-  if (family === 4) return NON_PUBLIC_IPV4.check(normalized, 'ipv4');
-  if (family === 6) return NON_PUBLIC_IPV6.check(normalized, 'ipv6');
-  return true;
 }
 
 function pinnedDispatcher(addresses: ResolvedAddress[]): Agent {

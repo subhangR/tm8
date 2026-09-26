@@ -7,6 +7,9 @@
  * No database: the store is a stub that records audits and fails the test if
  * `use` is reached on a remote row. Each refusal is paired with a positive.
  */
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it, vi } from 'vitest';
 import { CollabError, SPACE_LINK_VIA_HEADER } from '@tm8/contract';
 
@@ -31,6 +34,7 @@ import {
   type SpaceLinkInvokeRow,
 } from '../../src/credentials/space-link-store.js';
 import type { RequestContext } from '../../src/http/types.js';
+import { DisabledRemoteInvokeForwarder } from '../../src/remote/forwarder.js';
 
 const HOME = '11111111-1111-4111-8111-111111111111';
 const TARGET = '22222222-2222-4222-8222-222222222222';
@@ -191,5 +195,69 @@ describe('W7 forward seam — a remote link is forwarded, never resolved here', 
     const h = harness(SERVER, async () => { throw new Error('boom'); });
     await expect(h.run(GET_DOC)).rejects.toThrow('boom');
     expect(h.audits.at(-1)).toMatchObject({ result: 'error', reason: 'internal' });
+  });
+});
+
+// W8 (#885, lead ruling): remote forwarding ships DISABLED. This node's
+// composition hands W7 the hard-coded refusal as its default forwarder, so a
+// remote invoke answers at once with a typed error — never a hang, never a
+// local resolve, never a request.
+describe('W8 — a remote invoke on this node refuses cleanly (forwarding disabled)', () => {
+  function productionHarness() {
+    const audits: SpaceLinkAuditInput[] = [];
+    const row: SpaceLinkInvokeRow = {
+      linkId: LINK, tokenRowId: 'row-1', memberId: 'member-h', homeSpaceId: HOME, targetSpaceId: TARGET,
+      targetServerId: SERVER, status: 'signed_in', allowSpawn: true, spawnBudget: 3,
+    };
+    const use = vi.fn(async () => { throw new Error('store.use reached on a remote row'); });
+    const store = {
+      resolveInvoke: async () => row,
+      recordAudit: async (_claims: DbClaims, entry: SpaceLinkAuditInput) => { audits.push(entry); return 'audit-1'; },
+      use,
+    } as unknown as DbSpaceLinkStore;
+    const forwarder = new DisabledRemoteInvokeForwarder();
+    const forward = vi.spyOn(forwarder, 'forward');
+    const registry = new HandlerRegistry();
+    const local = vi.fn(async () => ({ id: DOC }));
+    registry.register('entities.get', local);
+    // No options.forwarder: the default comes from deps, as in production.
+    const { invoke } = createSpaceLinkInvokeHandlers(
+      registry, { config: {}, remoteInvokeForwarder: forwarder } as unknown as FacadeDeps, store,
+      async () => ({ identityId: 'identity-g' }) as DbClaims,
+    );
+    const run = () => invoke({
+      params: { spaceId: HOME, link: 'b' }, body: GET_DOC, headers: {}, query: new URLSearchParams(),
+      identity: { kind: 'bearer', workSessionId: 'ws-g' },
+    } as unknown as RequestContext);
+    return { run, audits, use, local, forward };
+  }
+
+  it('the composition root wires the disabled forwarder, with no switch past it', () => {
+    const index = readFileSync(fileURLToPath(new URL('../../src/facade/index.ts', import.meta.url)), 'utf8');
+    expect(index).toMatch(/remoteInvokeForwarder: new DisabledRemoteInvokeForwarder\(\),/);
+    const forwarderSrc = readFileSync(fileURLToPath(new URL('../../src/remote/forwarder.ts', import.meta.url)), 'utf8');
+    expect(forwarderSrc).not.toMatch(/process\.env|fetch\(|guardedHttps|request\(/);
+  });
+
+  it('refusal — 403 space_link_remote_disabled with a clear message, within 1s; audited; nothing resolved or run locally', async () => {
+    const h = productionHarness();
+    const started = Date.now();
+    const error = await failure(h.run());
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(error).toMatchObject({
+      code: 'forbidden', message: 'remote space links are disabled on this node',
+      details: { reason: SPACE_LINK_REMOTE_DISABLED },
+    });
+    expect(h.forward).toHaveBeenCalledTimes(1);
+    expect(h.use).not.toHaveBeenCalled();
+    expect(h.local).not.toHaveBeenCalled();
+    expect(h.audits.at(-1)).toMatchObject({ result: 'error', reason: 'remote_links_disabled' });
+  });
+
+  it('positive — the same default forwarder, given ok, carries the result: the refusal is the forwarder, not the seam', async () => {
+    const h = productionHarness();
+    h.forward.mockResolvedValueOnce({ kind: 'ok', status: 200, body: { id: DOC } });
+    await expect(h.run()).resolves.toMatchObject({ result: { id: DOC } });
+    expect(h.use).not.toHaveBeenCalled();
   });
 });
