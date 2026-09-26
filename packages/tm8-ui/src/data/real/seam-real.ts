@@ -438,6 +438,10 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       work: (id, input) => ops.work(id, input),
       skills: ops.skills,
       jev: ops.jev,
+      /* `launch.defaults` (I9) — what a launch loads per group. Without this
+         line every launch surface on a real node read its defaults as
+         unknown: the chips said "?" and nothing could be edited or attached. */
+      launchDefaults: ops.launchDefaults,
       forms: ops.forms,
       createEdge: (input) => ops.createEdge(input),
       deleteEdge: (edgeId, ctx) => ops.deleteEdge(edgeId, ctx),
