@@ -101,6 +101,14 @@ export const OPERATIONS = [
   { name: 'spaceLinks.logout',   method: 'POST',   path: '/v2/space-links/:linkId/logout',    kind: 'command', status: 'v1' },
   { name: 'spaceLinks.remove',   method: 'POST',   path: '/v2/space-links/:linkId/remove',    kind: 'command', status: 'v1' },
   { name: 'spaceLinks.setSpawn', method: 'PATCH',  path: '/v2/space-links/:linkId/spawn',     kind: 'command', status: 'v1' },
+  // Remote servers (W8, 991): `server` entities over 044's read-only rows.
+  // add/adopt/remove are human-only in SQL; no response carries a gate token.
+  { name: 'servers.list',   method: 'GET',  path: '/v2/spaces/:spaceId/servers',  kind: 'read',    status: 'v1' },
+  { name: 'servers.get',    method: 'GET',  path: '/v2/servers/:serverId',        kind: 'read',    status: 'v1' },
+  { name: 'servers.add',    method: 'POST', path: '/v2/servers',                  kind: 'command', status: 'v1' },
+  { name: 'servers.adopt',  method: 'POST', path: '/v2/servers/adopt',            kind: 'command', status: 'v1' },
+  { name: 'servers.remove', method: 'POST', path: '/v2/servers/:serverId/remove', kind: 'command', status: 'v1' },
+  { name: 'servers.probe',  method: 'POST', path: '/v2/servers/:serverId/probe',  kind: 'command', status: 'v1' },
   { name: 'spaces.invites.list',     method: 'GET',    path: '/v2/spaces/:spaceId/invites',                 kind: 'read',    status: 'v1' },
   { name: 'spaces.invites.create',   method: 'POST',   path: '/v2/spaces/:spaceId/invites',                 kind: 'command', status: 'v1' },
   { name: 'spaces.invites.revoke',   method: 'POST',   path: '/v2/spaces/:spaceId/invites/:inviteId/revoke', kind: 'command', status: 'v1' },

@@ -106,6 +106,12 @@ export const RESTRICTED_LIFECYCLE_KINDS = new Set([
   // link while its tokens and target sessions stayed live (review D1). SQL
   // refuses the same doors (251 §10b). `server` joins in W8.
   'space_link',
+  // `server` (W8, 991) is born from `servers.add`/`servers.adopt` and ends only
+  // through `servers.remove`, which drops every member's gate row and refuses
+  // while a space link still targets it. A generic delete would skip both; a
+  // generic restore would revive a server whose gate rows are gone. SQL refuses
+  // the same doors (991 §8b re-creates 251 §10b's trigger with `server` added).
+  'server',
 ]);
 // `memory` is here to HIDE hierarchy on the read surfaces; the actual refusal
 // of a memory parent lives at the data layer (056's entities trigger), because

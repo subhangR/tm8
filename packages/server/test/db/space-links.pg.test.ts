@@ -44,8 +44,8 @@ vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
 // THE STRICT GATE'S FULL CALLER SET (lead ruling 2026-09-26 02:08Z/02:19Z).
 // Measured on this branch: 22 credential management (21 + W10a's
 // set_space_credential_visibility, 239) + 6 non-credential + 2
-// W4 session management (249) + 6 spaceLinks writes = 36. A caller not on
-// this list fails; a listed caller
+// W4 session management (249) + 6 spaceLinks writes + 7 servers (W8) = 43.
+// A caller not on this list fails; a listed caller
 // that stops calling the gate fails. Changing this list is a review event.
 // ---------------------------------------------------------------------------
 const CREDENTIAL_MANAGEMENT = 'credential management: refuses link (E2)';
@@ -55,6 +55,7 @@ const AUTH_MINTING = 'refused for link (decision 31, auth minting)';
 const PENDING = 'non-credential, refused pending follow-up 01a0db78-f1ab';
 const SESSION_MANAGEMENT = 'session listing/revoke, human-only (W4, 249): refuses link';
 const SPACE_LINKS = 'spaceLinks write, human-only by design (W6)';
+const SERVERS = 'servers write or gate-token open, human-only by design (W8)';
 
 const STRICT_GATE_CALLERS: Readonly<Record<string, string>> = {
   'create_space_credential(uuid,uuid,text,text,text,text,bytea,bytea,text)': CREDENTIAL_MANAGEMENT,
@@ -101,6 +102,14 @@ const STRICT_GATE_CALLERS: Readonly<Record<string, string>> = {
   'set_space_link_spawn(uuid,boolean,integer,text)': SPACE_LINKS,
   'space_link_seal_context(uuid)': SPACE_LINKS,
   'store_space_link_session(uuid,uuid,text,timestamp with time zone,bytea,bytea,text,text)': SPACE_LINKS,
+
+  'add_server(uuid,text,text,text,text)': SERVERS,
+  'adopt_server_connection(uuid,text,text)': SERVERS,
+  'open_server_gate_token(uuid)': SERVERS,
+  'remove_server(uuid,text)': SERVERS,
+  'server_gate_seal_context(uuid)': SERVERS,
+  'sign_out_server(uuid,text)': SERVERS,
+  'store_server_gate_token(uuid,timestamp with time zone,bytea,bytea,text)': SERVERS,
 };
 
 /** Not gate callers: each admits an explicit kind allow-list and 42501s the rest. */
@@ -310,13 +319,14 @@ describe('W6 pin — the STRICT gate\'s full caller set (lead ruling 02:08Z; fol
     expect(found).toEqual(Object.keys(STRICT_GATE_CALLERS).sort());
   });
 
-  it('the list is 22 credential management + 6 non-credential + 2 session management + 6 spaceLinks writes', () => {
+  it('the list is 22 credential management + 6 non-credential + 2 session management + 6 spaceLinks writes + 7 servers (W8)', () => {
     const labels = Object.values(STRICT_GATE_CALLERS);
     expect(labels.filter((l) => l === CREDENTIAL_MANAGEMENT || l === CREDENTIAL_READ)).toHaveLength(22);
     expect(labels.filter((l) => l === IDENTITY_WIDE || l === AUTH_MINTING || l === PENDING)).toHaveLength(6);
     expect(labels.filter((l) => l === SESSION_MANAGEMENT)).toHaveLength(2);
     expect(labels.filter((l) => l === SPACE_LINKS)).toHaveLength(6);
-    expect(labels).toHaveLength(36);
+    expect(labels.filter((l) => l === SERVERS)).toHaveLength(7);
+    expect(labels).toHaveLength(43);
   });
 
   it('the matcher sees a quoted, mixed-case call and an execute format(...) that names the gate', async () => {

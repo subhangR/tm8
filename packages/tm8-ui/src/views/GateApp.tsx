@@ -2890,7 +2890,7 @@ export function GateApp(props: GateAppProps = {}) {
           onDismiss={() => setAddServerOpen(false)}
           onAdd={async (input) => {
             if (!props.onAddServer) throw new Error('Adding Servers is unavailable.');
-            await props.onAddServer(input);
+            await props.onAddServer({ ...input, spaceId: data.spaceId ?? null });
           }}
         />
         {credentialsPort ? (
