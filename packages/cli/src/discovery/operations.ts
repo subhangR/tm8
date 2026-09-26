@@ -1052,6 +1052,27 @@ const ROWS: Record<OperationName, Row> = {
     sum: 'Resolve every pending attention request for one entity',
     authz: 'entity', input: 'bound', tags: ['attention', 'resolve', 'clear'],
   },
+  // Attention v2 S6. Deliberately `cmd: null`: tm8's OWN conflict signal is
+  // raised and cleared by the worktree rail (`worktree merge|cherry-pick|stash`),
+  // never by hand. Agents and humans ask through `tm8 entity attention`.
+  'attentionSignals.raise': {
+    cmd: null,
+    sum: "Raise tm8's own merge-conflict attention signal (high / review) on a worktree, its session or a linked task",
+    authz: 'entity',
+    input: 'bound',
+    tags: ['attention', 'conflict', 'signal', 'worktree', 'system'],
+    reason: 'cli_worktree_rail',
+    notes: ['a closed vocabulary: {kind:"conflict", worktreeId}; the server builds the key and fixes level and type'],
+  },
+  'attentionSignals.clear': {
+    cmd: null,
+    sum: "Clear tm8's own merge-conflict attention signal once the worktree flow completes clean",
+    authz: 'entity',
+    input: 'bound',
+    tags: ['attention', 'conflict', 'signal', 'worktree', 'system', 'clear'],
+    reason: 'cli_worktree_rail',
+    notes: ['idempotent: nothing open is affectedCount 0'],
+  },
   'entities.move': {
     cmd: ['entity', 'move'],
     syn: 'tm8 entity move <entity-id> --parent <entity-id|none> --position <n> --expect-version <n> [--mutation-id <id>]',
@@ -3099,6 +3120,7 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   spaces: 'space',
   entities: 'entity',
   attentionRequests: 'attention',
+  attentionSignals: 'attention',
   tracking: 'tracking',
   edges: 'edge',
   edgeTypes: 'edge-type',
@@ -3243,7 +3265,8 @@ export const CATALOG_DIGEST =
   // +2 auth.sessions.list/revoke (W4, on main 96f6b61e): read from the regenerated conformance manifest.
   // -1 containers.attention (Attention v2 S7a): read from the regenerated conformance manifest.
   // +7 spaceLinks.* (W6, 250/251, re-stacked on f54f9ffd): RECOMPUTED from JSON.stringify(OPERATIONS); equals the regenerated manifest's catalogDigest.
-  'sha256:d076746a6064b8555ea0805111c8ccecd7d723c59ca3ad4672744ea01ed0df46';
+  // +2 attentionSignals.raise|clear (Attention v2 S6): read from the regenerated conformance manifest.
+  'sha256:5aa0dfd46353b9e1c9591e9ccbf8c3300721811d5097cfff55b5da8ac2c7be09';
 
 export const GRAMMAR_VERSION = '2';
 
@@ -3493,7 +3516,7 @@ const COMMAND_ALIASES = new Map<string, {
   // The Tier 2 mutating git verbs are ALIASES for the same reason `worktree
   // list|status` are: every graph touch is an operation that already exists
   // (entities.get + edges.list resolve, messages.post writes the receipt,
-  // attentionRequests.create raises a conflict), and the git mutation itself
+  // attentionSignals.raise|clear raise and clear a conflict), and the git mutation itself
   // is local argv-only execution, which the catalog does not model. A
   // `worktrees.checkpoint` row would have opened the catalog for a command
   // whose graph writes are all existing doors.
@@ -3570,7 +3593,7 @@ const COMMAND_ALIASES = new Map<string, {
     syntax: 'tm8 worktree merge <session-id|worktree-id> --from <ref> [--task <task-id>] [--mutation-id <id>]',
     summary: 'Merge a ref into the session branch; a conflict aborts cleanly and is surfaced durably',
     notes: [
-      'on conflict: abort + verify clean, then a message listing conflicted paths on the owning task anchor (fallback session, then worktree) AND attentionRequests.create — never silent, never mid-merge',
+      'on conflict: abort + verify clean, then a message listing conflicted paths on the owning task anchor (fallback session, then worktree) AND attentionSignals.raise — never silent, never mid-merge; a later clean completion clears it (attentionSignals.clear)',
       'merging the session branch INTO base is refused by design: base is checked out in the user’s tree or nowhere',
     ],
     examples: ['tm8 worktree merge <session-id> --from main'],
@@ -3767,10 +3790,10 @@ COMMAND_OPS.set('session checkpoint', ['entities.get', 'edges.list', 'messages.p
 COMMAND_OPS.set('session rollback', ['entities.get', 'edges.list', 'messages.post']);
 COMMAND_OPS.set('worktree stage', ['entities.get', 'edges.list']);
 COMMAND_OPS.set('worktree commit', ['entities.get', 'edges.list', 'messages.post']);
-COMMAND_OPS.set('worktree merge', ['entities.get', 'edges.list', 'messages.post', 'attentionRequests.create']);
-COMMAND_OPS.set('worktree cherry-pick', ['entities.get', 'edges.list', 'messages.post', 'attentionRequests.create']);
+COMMAND_OPS.set('worktree merge', ['entities.get', 'edges.list', 'messages.post', 'attentionSignals.raise', 'attentionSignals.clear']);
+COMMAND_OPS.set('worktree cherry-pick', ['entities.get', 'edges.list', 'messages.post', 'attentionSignals.raise', 'attentionSignals.clear']);
 COMMAND_OPS.set('worktree branch', ['entities.get', 'edges.list', 'messages.post']);
-COMMAND_OPS.set('worktree stash', ['entities.get', 'edges.list', 'messages.post', 'attentionRequests.create']);
+COMMAND_OPS.set('worktree stash', ['entities.get', 'edges.list', 'messages.post', 'attentionSignals.raise', 'attentionSignals.clear']);
 COMMAND_ORDER.push('session checkpoint', 'session rollback', 'worktree stage', 'worktree commit', 'worktree merge', 'worktree cherry-pick', 'worktree branch', 'worktree stash');
 
 /**

@@ -41,6 +41,8 @@ import {
   type PullInput,
   type ReactionInput,
   type ResolveEntityAttentionInput,
+  type RaiseAttentionSignalInput,
+  type ClearAttentionSignalInput,
   type TrackingRefreshInput,
   type UpdateAttentionRequestInput,
 } from '@tm8/contract';
@@ -1910,6 +1912,46 @@ export class W2EntitiesCommandsTrackingService {
       const raw = await q.rpc<AttentionMutationRpcResult>('resolve_entity_attention', [
         entityId,
         input.resolutionNote ?? null,
+        envelope.actorId ?? null,
+        envelope.clientMutationId ?? null,
+      ]);
+      return attentionMutationResult(q, raw, owner.identityId);
+    });
+  };
+
+  // Attention v2 S6: the CLI's conflict rail. The RPC builds the signal key
+  // from the closed vocabulary and fixes level / type; the source session is
+  // stamped from the bearer only (F1a), never from the body.
+  readonly raiseAttentionSignal = async (ctx: RequestContext): Promise<AttentionRequestMutationResult> => {
+    const owner = await this.deps.owner();
+    const entityId = requireUuidParam(ctx, 'entityId');
+    const input = ctx.body as RaiseAttentionSignalInput;
+    const envelope = commandEnvelope(ctx);
+    const sourceSessionId = ctx.identity.kind === 'bearer'
+      ? ctx.identity.workSessionId ?? ctx.identity.runtimeChatId ?? null
+      : null;
+    return this.deps.db.tx(claimsFor(owner, ctx, envelope), async (q) => {
+      const raw = await q.rpc<AttentionMutationRpcResult>('raise_system_attention', [
+        entityId,
+        JSON.stringify(input.signal),
+        input.reason,
+        envelope.actorId ?? null,
+        envelope.clientMutationId ?? null,
+        sourceSessionId,
+      ]);
+      return attentionMutationResult(q, raw, owner.identityId);
+    });
+  };
+
+  readonly clearAttentionSignal = async (ctx: RequestContext): Promise<AttentionRequestMutationResult> => {
+    const owner = await this.deps.owner();
+    const entityId = requireUuidParam(ctx, 'entityId');
+    const input = ctx.body as ClearAttentionSignalInput;
+    const envelope = commandEnvelope(ctx);
+    return this.deps.db.tx(claimsFor(owner, ctx, envelope), async (q) => {
+      const raw = await q.rpc<AttentionMutationRpcResult>('clear_system_attention', [
+        entityId,
+        JSON.stringify(input.signal),
         envelope.actorId ?? null,
         envelope.clientMutationId ?? null,
       ]);

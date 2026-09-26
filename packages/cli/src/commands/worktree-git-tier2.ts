@@ -5,15 +5,16 @@
  *
  *  - ALIASES over the existing catalog, zero new operations (the git runs
  *    locally at the graph-recorded path; the graph touches are entities.get /
- *    edges.list resolution, messages.post receipts, attentionRequests.create
- *    on conflict);
+ *    edges.list resolution, messages.post receipts, attentionSignals.raise
+ *    on conflict and attentionSignals.clear on a clean pick or pop);
  *  - S11 holds: the CLI never accepts a filesystem path — a host that cannot
  *    see the worktree refuses with worktree_not_local at the first probe;
  *  - a CONFLICT is never silent: cherry-pick and stash pop copy `worktree
  *    merge`'s rail verbatim — the core aborts and VERIFIES the worktree is
  *    clean, then this layer writes a durable message naming every conflicted
  *    path on the owning task anchor (fallback session, then worktree) and
- *    raises attention there, and only after both durable writes exits 6.
+ *    raises tm8's conflict signal there, and only after both durable writes
+ *    exits 6. A later clean pick or pop in the worktree clears the signal.
  *
  * The destructive gates are the core's, surfaced as flags: `branch delete`
  * of an unmerged branch and `stash drop` both refuse without --force, and
@@ -39,19 +40,19 @@ import { clientFor, observedInvoke } from '../discovery/observe.js';
 import type { CommandContext, CommandModule } from '../run.js';
 import { assertKnownOptions, requireArg } from './entity.js';
 import {
+  clearConflictSignal,
   liftWorktreeError,
   postReceipt,
+  raiseConflictSignal,
   receiptAnchor,
   renderFiles,
   resolveWorktree,
   type ResolvedWorktree,
 } from './worktree-git.js';
 
-const CONFLICT_ATTENTION_POINTS = 60;
-
 /**
  * The conflict rail, shared by cherry-pick and stash pop — one durable
- * message + one attention request on the owning anchor, then exit 6. Copied
+ * message + tm8's conflict signal on the owning anchor, then exit 6. Copied
  * from `worktree merge`'s contract; the vocabulary must stay identical.
  */
 async function surfaceConflict(
@@ -70,16 +71,8 @@ async function surfaceConflict(
     conflictedPaths.map((p) => `- ${p}`).join('\n') +
     `\nResolve manually in the worktree, then re-run: ${rerun}`;
   await postReceipt(cmd, anchorId, body);
-  const attentionBody: Record<string, unknown> = {
-    clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
-    reason: `${what} conflict on ${resolved.branch}, ${conflictedPaths.length} path(s)`,
-    points: CONFLICT_ATTENTION_POINTS,
-  };
-  if (cmd.ctx.actor) attentionBody.actorId = cmd.ctx.actor.value;
-  await observedInvoke<unknown>(clientFor(cmd.ctx), 'attentionRequests.create', {
-    params: { entityId: anchorId },
-    body: attentionBody,
-  });
+  await raiseConflictSignal(cmd, resolved, anchorId,
+    `${what} conflict on ${resolved.branch}, ${conflictedPaths.length} path(s)`);
   cmd.out.data({ worktreeId: resolved.worktreeId, status: 'conflict', conflictedPaths, surfacedOn: anchorId }, () =>
     `CONFLICT: ${what} on ${resolved.branch} — aborted cleanly, worktree unchanged.\n` +
     `conflicted:\n${conflictedPaths.map((p) => `  ${p}`).join('\n')}\n` +
@@ -121,6 +114,7 @@ async function worktreeCherryPick(cmd: CommandContext): Promise<ExitCode> {
   await postReceipt(cmd, receiptAnchor(resolved),
     `git cherry-pick onto ${resolved.branch} (worktree ${resolved.worktreeId}): ` +
     `${result.fromOids.join(', ')} applied as ${result.newOids.join(', ')}.`);
+  await clearConflictSignal(cmd, resolved);
   return EXIT_OK;
 }
 
@@ -229,6 +223,7 @@ async function worktreeStash(cmd: CommandContext): Promise<ExitCode> {
       }
       cmd.out.data({ worktreeId: resolved.worktreeId, ...r }, () =>
         `popped ${r.oid.slice(0, 12)} onto ${r.branch}:\n${renderFiles(r.files)}`);
+      await clearConflictSignal(cmd, resolved);
       return EXIT_OK;
     }
     if (action === 'drop') {

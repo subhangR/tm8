@@ -2945,6 +2945,43 @@ export interface MarkAttentionSeenInput extends CommandContext {
 }
 
 /**
+ * Attention v2 S6: a SYSTEM signal tm8 raises on a caller's behalf. A CLOSED
+ * vocabulary: the caller names the situation, never a signal key, level or
+ * type; the server builds the key (`conflict:<worktreeId>`) and fixes level /
+ * type from the kind (conflict = high / review). Only `conflict` exists today;
+ * the permission prompt is deferred (F2).
+ */
+export interface AttentionSignal {
+  kind: 'conflict';
+  /** The worktree the merge, cherry-pick or stash pop conflicted in. */
+  worktreeId: EntityId;
+}
+
+/**
+ * POST /v2/entities/:entityId/attention-signals (Attention v2 S6). The CLI's
+ * conflict rail. `entityId` must be the worktree, a session in it, or a task
+ * linked to either. Raises an origin=system request attributed to the caller,
+ * or returns the open one with the same key (`affectedCount` 0). CLI only: not
+ * in MCP tm8_act; agents and chats raise through attentionRequests.create.
+ */
+export interface RaiseAttentionSignalInput extends CommandContext {
+  clientMutationId: string;
+  signal: AttentionSignal;
+  reason: string;
+}
+
+/**
+ * POST /v2/entities/:entityId/attention-signals/clear (Attention v2 S6).
+ * Clears (status `cleared`, no delivery) the open request with the signal's
+ * key anywhere in `entityId`'s space. Idempotent: nothing open is
+ * `affectedCount` 0.
+ */
+export interface ClearAttentionSignalInput extends CommandContext {
+  clientMutationId: string;
+  signal: AttentionSignal;
+}
+
+/**
  * POST /v2/attention-requests/batches/:batchId/unresolve (Attention v2).
  * Undo of one Resolve: only rows of that batch still `resolved` go back to
  * open, and their pending note deliveries are cancelled (zero messages).

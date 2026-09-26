@@ -7,7 +7,8 @@
  * read surface (`worktree list|status`, PR #67) states in its own header.
  * Every graph touch here is an operation that already exists: `entities.get`
  * and `edges.list` resolve a session to its worktree, `messages.post` writes
- * the durable receipts, `attentionRequests.create` raises a conflict. The GIT
+ * the durable receipts, `attentionSignals.raise` raises a conflict and
+ * `attentionSignals.clear` clears it once the flow completes clean. The GIT
  * mutation itself runs through `@tm8/execution/worktree` — the same argv-only
  * hardened invoker the server's provisioning saga uses, never a shell string.
  *
@@ -24,8 +25,11 @@
  * and verifies the worktree is clean (that contract lives in
  * git-mutations.ts), then THIS layer writes a durable message listing the
  * conflicted paths on the owning task anchor (fallback: session, then the
- * worktree itself — some anchor ALWAYS gets it) and raises attention on that
- * anchor. Only after both durable writes does the command exit 6.
+ * worktree itself — some anchor ALWAYS gets it) and raises tm8's own conflict
+ * signal on that anchor (Attention v2 S6: origin system, keyed by the
+ * worktree, high / review). Only after both durable writes does the command
+ * exit 6. The next CLEAN merge, cherry-pick or stash pop in the same worktree
+ * clears the signal, wherever it was raised.
  */
 import {
   WorktreeError,
@@ -173,6 +177,47 @@ export async function postReceipt(cmd: CommandContext, anchorId: string, body: s
   await observedInvoke<unknown>(clientFor(cmd.ctx), 'messages.post', { body: request });
 }
 
+/**
+ * Attention v2 S6: tm8's own conflict signal. The body names the situation
+ * only ({kind:'conflict', worktreeId}); the server builds the key
+ * `conflict:<worktreeId>`, fixes high / review, and refuses an anchor that is
+ * not the worktree, its session or a task linked to either. Raising again while
+ * it is open returns the open request.
+ */
+export async function raiseConflictSignal(
+  cmd: CommandContext,
+  resolved: ResolvedWorktree,
+  anchorId: string,
+  reason: string,
+): Promise<void> {
+  const body: Record<string, unknown> = {
+    clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
+    signal: { kind: 'conflict', worktreeId: resolved.worktreeId },
+    reason,
+  };
+  if (cmd.ctx.actor) body.actorId = cmd.ctx.actor.value;
+  await observedInvoke<unknown>(clientFor(cmd.ctx), 'attentionSignals.raise', {
+    params: { entityId: anchorId },
+    body,
+  });
+}
+
+/**
+ * The clean-completion half: clears the worktree's open conflict signal, on
+ * whichever anchor it was raised. Idempotent, so every clean flow calls it.
+ */
+export async function clearConflictSignal(cmd: CommandContext, resolved: ResolvedWorktree): Promise<void> {
+  const body: Record<string, unknown> = {
+    clientMutationId: resolveMutationId(undefined),
+    signal: { kind: 'conflict', worktreeId: resolved.worktreeId },
+  };
+  if (cmd.ctx.actor) body.actorId = cmd.ctx.actor.value;
+  await observedInvoke<unknown>(clientFor(cmd.ctx), 'attentionSignals.clear', {
+    params: { entityId: resolved.worktreeId },
+    body,
+  });
+}
+
 /** The receipt anchor: the session that owns the worktree, else the worktree. */
 export function receiptAnchor(resolved: ResolvedWorktree): string {
   return resolved.sessionId ?? resolved.worktreeId;
@@ -237,8 +282,6 @@ async function worktreeCommit(cmd: CommandContext): Promise<ExitCode> {
 
 // ── merge, with the conflict rail ───────────────────────────────────────────
 
-const CONFLICT_ATTENTION_POINTS = 60;
-
 /**
  * `tm8 worktree merge <id> --from <ref> [--task <task-id>]` — merge the base
  * (or any safe ref) INTO the session branch, in the session's own worktree.
@@ -270,6 +313,7 @@ async function worktreeMerge(cmd: CommandContext): Promise<ExitCode> {
         `git merge: ${fromRef} (${result.fromOid}) merged into ${resolved.branch} ` +
         `(worktree ${resolved.worktreeId}), HEAD now ${result.oid}.`);
     }
+    await clearConflictSignal(cmd, resolved);
     return EXIT_OK;
   }
 
@@ -284,16 +328,8 @@ async function worktreeMerge(cmd: CommandContext): Promise<ExitCode> {
     result.conflictedPaths.map((p: string) => `- ${p}`).join('\n') +
     `\nResolve by merging manually in the worktree, or rebase the branch. Re-run: tm8 worktree merge ${id} --from ${fromRef}`;
   await postReceipt(cmd, anchorId, body);
-  const attentionBody: Record<string, unknown> = {
-    clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
-    reason: `merge conflict: ${fromRef} into ${resolved.branch}, ${result.conflictedPaths.length} path(s)`,
-    points: CONFLICT_ATTENTION_POINTS,
-  };
-  if (cmd.ctx.actor) attentionBody.actorId = cmd.ctx.actor.value;
-  await observedInvoke<unknown>(clientFor(cmd.ctx), 'attentionRequests.create', {
-    params: { entityId: anchorId },
-    body: attentionBody,
-  });
+  await raiseConflictSignal(cmd, resolved, anchorId,
+    `merge conflict: ${fromRef} into ${resolved.branch}, ${result.conflictedPaths.length} path(s)`);
 
   cmd.out.data({ worktreeId: resolved.worktreeId, ...result, surfacedOn: anchorId }, () =>
     `CONFLICT merging ${fromRef} into ${resolved.branch} — aborted cleanly, worktree unchanged.\n` +

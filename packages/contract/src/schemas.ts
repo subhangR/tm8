@@ -127,6 +127,7 @@ import type {
   AttentionRequest, AttentionRequestListQuery, AttentionRequestMutationResult,
   CreateAttentionRequestInput, UpdateAttentionRequestInput, ResolveEntityAttentionInput,
   MarkAttentionSeenInput, UnresolveAttentionBatchInput, WithdrawAttentionRequestInput,
+  RaiseAttentionSignalInput, ClearAttentionSignalInput, AttentionSignal,
   KindCounts, SpaceKindCounts,
   SetTeammateProfileDefaultInput, ShareProjectionEnvelope, SpaceNavigation,
   SpaceProfileDefaultView, SpaceSettings, SpaceSettingsView, SpaceSummary,
@@ -2575,6 +2576,25 @@ export const ResolveEntityAttentionInputSchema: z.ZodType<ResolveEntityAttention
   clientMutationId: z.string().min(1),
   resolutionNote: z.string().trim().max(1000).optional(),
   resolutionBatchId: z.string().uuid().optional(),
+}).strict();
+
+const AttentionSignalSchema: z.ZodType<AttentionSignal> = z.object({
+  kind: z.literal('conflict'),
+  worktreeId: EntityIdSchema,
+}).strict();
+
+// Attention v2 S6. .strict(): no signal key, level, type or points from input.
+export const RaiseAttentionSignalInputSchema: z.ZodType<RaiseAttentionSignalInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  signal: AttentionSignalSchema,
+  reason: z.string().trim().min(1).max(500),
+}).strict();
+
+export const ClearAttentionSignalInputSchema: z.ZodType<ClearAttentionSignalInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  signal: AttentionSignalSchema,
 }).strict();
 
 export const MarkAttentionSeenInputSchema: z.ZodType<MarkAttentionSeenInput> = z.object({

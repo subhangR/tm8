@@ -139,6 +139,9 @@ export const OPERATIONS = [
   { name: 'attentionRequests.create',method: 'POST',   path: '/v2/entities/:entityId/attention-requests',   kind: 'command', status: 'v1' },
   { name: 'attentionRequests.update',method: 'PATCH',  path: '/v2/attention-requests/:requestId',           kind: 'command', status: 'v1' },
   { name: 'attentionRequests.resolveEntity', method: 'POST', path: '/v2/entities/:entityId/attention-requests/resolve', kind: 'command', status: 'v1' },
+  // Attention v2 S6: tm8's own conflict signal, raised and cleared by the CLI's worktree rail.
+  { name: 'attentionSignals.raise',  method: 'POST',   path: '/v2/entities/:entityId/attention-signals',    kind: 'command', status: 'v1' },
+  { name: 'attentionSignals.clear',  method: 'POST',   path: '/v2/entities/:entityId/attention-signals/clear', kind: 'command', status: 'v1' },
   { name: 'entities.move',           method: 'POST',   path: '/v2/entities/:id/move',                       kind: 'command', status: 'v1' },
   { name: 'entities.delete',         method: 'DELETE', path: '/v2/entities/:id',                            kind: 'command', status: 'v1' },
   { name: 'entities.restore',        method: 'POST',   path: '/v2/entities/:id/restore',                    kind: 'command', status: 'v1' },

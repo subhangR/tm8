@@ -92,6 +92,8 @@ describe('W2.G02 universal entities, commands, and tracking', () => {
       'attentionRequests.list',
       'attentionRequests.resolveEntity',
       'attentionRequests.update',
+      'attentionSignals.clear', // Attention v2 S6
+      'attentionSignals.raise', // Attention v2 S6
       'entities.activity',
       'entities.children',
       'entities.commands.complete',
