@@ -99,12 +99,15 @@ export interface SpaceLinkRefusedPrefix {
   /** `all` refuses reads too; `command` refuses writes only. */
   readonly kinds: 'all' | 'command';
   readonly reason: SpaceLinkRefusalReason;
+  /** The whole op name, not a prefix: a single op, not a namespace. */
+  readonly exact?: true;
 }
 
 export type SpaceLinkRefusalReason =
   | 'credential_management'
   | 'link_management'
   | 'session_minting'
+  | 'token_minting'
   | 'spawn_switch_off'
   | 'spawn_explicit_credentials'
   | 'unknown_op'
@@ -117,12 +120,18 @@ export type SpaceLinkRefusalReason =
  * `spaceLinks.*` reads (list, audit) carry no secret and pass; every
  * `spaceLinks.*` write, including a nested invoke, is the link's own token
  * management. `auth.*` is refused whole: it mints, reads and ends sessions.
+ *
+ * Stricter than D31 (lead 09:08Z, fail-closed; reversible): `serverConnections.*`
+ * manages the credential-bearing remote-server surface, and `voice.token.create`
+ * mints a token. Both are the class of credential management D31 refuses.
  */
 export const SPACE_LINK_REFUSED: readonly SpaceLinkRefusedPrefix[] = [
   { prefix: 'credentials.', kinds: 'all', reason: 'credential_management' },
   { prefix: 'node.credentials.', kinds: 'all', reason: 'credential_management' },
   { prefix: 'spaceLinks.', kinds: 'command', reason: 'link_management' },
   { prefix: 'auth.', kinds: 'all', reason: 'session_minting' },
+  { prefix: 'serverConnections.', kinds: 'all', reason: 'credential_management' },
+  { prefix: 'voice.token.create', kinds: 'all', reason: 'token_minting', exact: true },
 ];
 
 /** The spawn op, refused through a link with the switch off or explicit credentials (F9). */
@@ -153,7 +162,8 @@ export function spaceLinkRefusal(
   allowSpawn: boolean | undefined,
 ): SpaceLinkRefusalReason | null {
   for (const entry of SPACE_LINK_REFUSED) {
-    if (op.startsWith(entry.prefix) && (entry.kinds === 'all' || opKind !== 'read')) return entry.reason;
+    const hit = entry.exact ? op === entry.prefix : op.startsWith(entry.prefix);
+    if (hit && (entry.kinds === 'all' || opKind !== 'read')) return entry.reason;
   }
   if (op === SPACE_LINK_SPAWN_OP) {
     const body = typeof input === 'object' && input !== null ? input as Record<string, unknown> : {};

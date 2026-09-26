@@ -65,6 +65,7 @@ returns jsonb language plpgsql security definer set search_path = public, intern
 declare
   me uuid;
   row public.space_link_tokens;
+  server_id uuid;
 begin
   if coalesce(internal.claim_text('tm8.auth_kind'), '') not in ('browser', 'cli', 'agent') then
     raise exception 'this session kind cannot use a space link' using errcode = '42501',
@@ -84,12 +85,15 @@ begin
   if row.id is null then
     raise exception 'space link not found' using errcode = 'P0002';
   end if;
+  -- Null: B is on this server. Set (W8): the invoke is forwarded, never resolved here.
+  select l.target_server_id into server_id from public.space_links l where l.entity_id = row.link_id;
   return jsonb_build_object(
     'linkId', row.link_id,
     'tokenRowId', row.id,
     'memberId', row.member_id,
     'homeSpaceId', row.home_space_id,
     'targetSpaceId', row.target_space_id,
+    'targetServerId', server_id,
     'status', row.status,
     'allowSpawn', row.allow_spawn,
     'spawnBudget', row.spawn_budget);

@@ -32,6 +32,7 @@
  */
 import {
   CollabError,
+  ERROR_STATUS,
   SPACE_LINK_MAX_HOPS,
   SPACE_LINK_VIA_HEADER,
   SpaceLinksInvokeInputSchema,
@@ -40,6 +41,8 @@ import {
   isOperationName,
   spaceLinkRefusal,
   spaceLinkViaRefusal,
+  type CommandErrorCode,
+  type OperationBinding,
   type OperationName,
   type SpaceLinkAuditEntry,
   type SpaceLinkRefusalReason,
@@ -72,9 +75,86 @@ export const SPACE_LINK_INVOKE_LIMIT = { limit: 120, windowMs: 60_000 } as const
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const UNKNOWN_OP = '(unknown)';
 
+/*
+ * PROVISIONAL stub typed to W8's forwarder shape as relayed by the coordinator.
+ * The real one is `packages/server/src/remote/forwarder.ts` (W8); once that
+ * file is pushed these declarations are deleted and imported from there.
+ * `remote_links_disabled` is pending a lead ruling.
+ */
+export interface RemoteInvokeRequest {
+  claims: DbClaims;
+  linkId: string;
+  serverId: string;
+  op: string;
+  input: unknown;
+  via: readonly string[];
+  workSessionId?: string;
+  timeoutMs?: number;
+}
+export type RemoteInvokeResult =
+  | { kind: 'ok'; status: number; body: unknown }
+  | { kind: 'refused'; status: number; code: string; message: string }
+  | { kind: 'signed_out' }
+  | { kind: 'unreachable'; reason: 'non_public_address' | 'dns' | 'tls' | 'invalid_url' }
+  | { kind: 'offline'; reason: 'connect_refused' | 'timeout' | 'reset' }
+  | { kind: 'remote_links_disabled' };
+export interface RemoteInvokeForwarder {
+  forward(req: RemoteInvokeRequest): Promise<RemoteInvokeResult>;
+}
+
+/** Typed `details.reason` for a remote target that did not run the op. */
+export const SPACE_LINK_UNREACHABLE = 'space_link_unreachable';
+export const SPACE_LINK_OFFLINE = 'space_link_offline';
+export const SPACE_LINK_REMOTE_REFUSED = 'space_link_remote_refused';
+export const SPACE_LINK_REMOTE_DISABLED = 'space_link_remote_disabled';
+
 export interface SpaceLinkInvokeOptions {
   /** Overrides the per-token-row bucket (tests). */
   limiter?: FixedWindowLimiter;
+  /**
+   * Runs an invoke whose link targets another server (`target_server_id` set).
+   * Absent: a remote link is refused as not implemented, never resolved here.
+   */
+  forwarder?: RemoteInvokeForwarder;
+}
+
+/** One guarded, resolved invoke, handed to whatever runs it on B. */
+export interface SpaceLinkExecuteRequest {
+  /** The caller's HOME claims (the store unseals under these). */
+  readonly claims: DbClaims;
+  readonly row: SpaceLinkInvokeRow;
+  readonly op: OperationName;
+  readonly binding: OperationBinding;
+  readonly params: Readonly<Record<string, string>>;
+  readonly query: Readonly<Record<string, string>>;
+  /** The raw op input; the executor validates it against B's schema. */
+  readonly input: unknown;
+  /** The chain as received; the executor appends the home space when forwarding. */
+  readonly via: readonly string[];
+  readonly homeSpaceId: string;
+  readonly workSessionId: string | null;
+}
+
+export interface SpaceLinkExecution {
+  /** The op's JSON data (never bytes). */
+  data: unknown;
+  /** B-side request id, the audit's fallback remote id, when B names one. */
+  requestId: string | null;
+}
+
+/**
+ * THE seam between the home server's guards and the target. In-process (B on
+ * this node) is the only implementation today; W8's `RemoteInvokeForwarder`
+ * plugs in here for a remote target and nowhere else.
+ */
+export type SpaceLinkExecutor = (request: SpaceLinkExecuteRequest) => Promise<SpaceLinkExecution>;
+
+/** An executor failure with the closed audit reason it should be recorded under. */
+export class SpaceLinkExecuteFailure extends Error {
+  constructor(readonly reason: string, readonly error: unknown) {
+    super(reason);
+    this.name = 'SpaceLinkExecuteFailure';
+  }
 }
 
 /** `x-tm8-via`: a comma list of space ids already traversed. Malformed refuses. */
@@ -130,6 +210,118 @@ export function createSpaceLinkInvokeHandlers(
   const limiter = options.limiter ?? new FixedWindowLimiter(SPACE_LINK_INVOKE_LIMIT);
   const spaceSessions = deps.config.spaceSessions ?? 'agents';
   const idempotencyEnabled = deps.config.idempotencyEnabled !== false;
+
+  /** B on this node: unseal, re-resolve (F6), run B's registered handler as the member. */
+  const inProcess: SpaceLinkExecutor = async (request) => {
+    const { claims, row, op, binding } = request;
+    const handler = registry.get(op);
+    if (!handler) throw new SpaceLinkExecuteFailure('not_implemented',
+      new CollabError('not_implemented', `operation ${op} is not implemented on this node`));
+
+    // Unseal in memory and re-resolve (F6). A dead session fails HERE.
+    let identity: RequestIdentity;
+    try {
+      const use = await store.use(claims, row.linkId, request.workSessionId ? { workSessionId: request.workSessionId } : {});
+      identity = innerIdentity(identityFromSession(use.session, use.token, spaceSessions));
+    } catch (error) {
+      if (error instanceof SpaceLinkUnusable) {
+        throw new SpaceLinkExecuteFailure(`link_${error.status}`, new CollabError(
+          error.status === 'signed_out' ? 'unauthenticated' : 'forbidden',
+          `space link is ${error.status}: ask your human to sign in to the link again`,
+          { details: { reason: error.status === 'signed_out' ? SPACE_LINK_SIGNED_OUT : `space_link_${error.status}` } },
+        ));
+      }
+      throw new SpaceLinkExecuteFailure('link_unusable', error);
+    }
+    if (identity.authKind !== 'link') {
+      // The row can only ever hold a link session; anything else is refused, not run.
+      throw new SpaceLinkExecuteFailure('link_kind', new CollabError('forbidden', 'the stored session is not a link session'));
+    }
+
+    let body: unknown;
+    try {
+      body = validate(op, normalizeCommandInputForIdempotencyMode(binding, request.input, idempotencyEnabled));
+    } catch (error) {
+      throw new SpaceLinkExecuteFailure(isCollabError(error) ? error.code : 'invalid_input', error);
+    }
+    const inner: RequestContext = {
+      op: binding,
+      opName: op,
+      params: request.params,
+      query: new URLSearchParams(request.query),
+      body,
+      requestId: nextRequestId(),
+      identity,
+      // Only the chain travels: never authorization or cookie.
+      headers: { [SPACE_LINK_VIA_HEADER]: [...request.via, request.homeSpaceId].join(',') },
+      method: binding.method,
+      path: binding.path,
+    };
+
+    const result = await handler(inner);
+    if (isHandlerResult(result)) {
+      if (result.kind !== 'json') {
+        throw new SpaceLinkExecuteFailure('raw_result',
+          new CollabError('invalid_input', `${op} returns bytes and cannot run through a space link`));
+      }
+      return { data: result.data, requestId: inner.requestId };
+    }
+    return { data: result, requestId: inner.requestId };
+  };
+  /**
+   * B on another server (W8). The home guards have all run; nothing is
+   * unsealed or resolved here (`store.use` would resolve B's session against
+   * THIS node and wrongly mark the row signed_out). Every result kind maps to
+   * a typed error and a closed audit reason.
+   */
+  const remote: SpaceLinkExecutor = async (request) => {
+    const serverId = request.row.targetServerId;
+    const forwarder = options.forwarder;
+    if (!forwarder || !serverId) {
+      throw new SpaceLinkExecuteFailure('remote_not_wired',
+        new CollabError('not_implemented', 'this node cannot forward to a remote space link yet'));
+    }
+    const outcome = await forwarder.forward({
+      claims: request.claims,
+      linkId: request.row.linkId,
+      serverId,
+      op: request.op,
+      input: request.input,
+      via: [...request.via, request.homeSpaceId],
+      ...(request.workSessionId ? { workSessionId: request.workSessionId } : {}),
+    });
+    switch (outcome.kind) {
+      case 'ok':
+        return { data: outcome.body, requestId: null };
+      case 'signed_out':
+        throw new SpaceLinkExecuteFailure('link_signed_out', new CollabError('unauthenticated',
+          'space link is signed_out: ask your human to sign in to the link again',
+          { details: { reason: SPACE_LINK_SIGNED_OUT } }));
+      case 'unreachable':
+        throw new SpaceLinkExecuteFailure(`unreachable.${outcome.reason}`, new CollabError('upstream_unavailable',
+          `the linked server is unreachable (${outcome.reason})`,
+          { details: { reason: SPACE_LINK_UNREACHABLE, cause: outcome.reason }, retryable: false }));
+      case 'offline':
+        throw new SpaceLinkExecuteFailure(`offline.${outcome.reason}`, new CollabError('upstream_unavailable',
+          `the linked server is offline (${outcome.reason})`,
+          { details: { reason: SPACE_LINK_OFFLINE, cause: outcome.reason }, retryable: true }));
+      case 'remote_links_disabled':
+        throw new SpaceLinkExecuteFailure('remote_links_disabled', new CollabError('forbidden',
+          'remote space links are disabled on this node', { details: { reason: SPACE_LINK_REMOTE_DISABLED } }));
+      case 'refused': {
+        // B's own refusal, re-typed: its code when it is one of ours, else by status. No B text is audited.
+        const code: CommandErrorCode = outcome.code in ERROR_STATUS ? outcome.code as CommandErrorCode
+          : outcome.status === 401 ? 'unauthenticated' : outcome.status === 404 ? 'not_found'
+            : outcome.status === 400 ? 'invalid_input' : 'forbidden';
+        throw new SpaceLinkExecuteFailure(`remote.${code}`, new CollabError(code, outcome.message,
+          { details: { reason: SPACE_LINK_REMOTE_REFUSED, status: outcome.status } }));
+      }
+    }
+  };
+  /** THE seam: null target server is this node; anything else is forwarded. */
+  const execute: SpaceLinkExecutor = (request) =>
+    request.row.targetServerId === null || request.row.targetServerId === undefined
+      ? inProcess(request) : remote(request);
 
   const invoke: OperationHandler = async (ctx): Promise<SpaceLinksInvokeResult> => {
     const homeSpaceId = ctx.params['spaceId'];
@@ -202,75 +394,30 @@ export function createSpaceLinkInvokeHandlers(
       }), 'rate_limited');
     }
 
-    const handler = registry.get(requested);
-    if (!handler || binding.status !== 'v1') {
+    const local = row.targetServerId === null || row.targetServerId === undefined;
+    if ((local && !registry.get(requested)) || binding.status !== 'v1') {
       return refuse(new CollabError('not_implemented', `operation ${requested} is not implemented on this node`), 'not_implemented');
     }
     if (binding.kind === 'stream') {
       return refuse(new CollabError('invalid_input', 'a streaming operation cannot run through a space link'), 'stream_op');
     }
 
-    // Unseal in memory and re-resolve (F6). A dead session fails HERE.
-    let identity: RequestIdentity;
+    // Everything above is the home server's decision; from here the op runs
+    // on B. The one seam a remote target (W8) plugs into.
+    let outcome: SpaceLinkExecution;
     try {
-      const use = await store.use(claims, row.linkId, workSessionId ? { workSessionId } : {});
-      identity = innerIdentity(identityFromSession(use.session, use.token, spaceSessions));
+      outcome = await execute({ claims, row, op: requested, binding, params: params ?? {}, query: query ?? {},
+        input, via, homeSpaceId, workSessionId });
     } catch (error) {
-      if (error instanceof SpaceLinkUnusable) {
-        await audit('error', `link_${error.status}`).catch(() => undefined);
-        throw new CollabError(
-          error.status === 'signed_out' ? 'unauthenticated' : 'forbidden',
-          `space link is ${error.status}: ask your human to sign in to the link again`,
-          { details: { reason: error.status === 'signed_out' ? SPACE_LINK_SIGNED_OUT : `space_link_${error.status}` } },
-        );
+      if (error instanceof SpaceLinkExecuteFailure) {
+        await audit('error', error.reason).catch(() => undefined);
+        throw error.error;
       }
-      await audit('error', 'link_unusable').catch(() => undefined);
-      throw error;
-    }
-    if (identity.authKind !== 'link') {
-      // The row can only ever hold a link session; anything else is refused, not run.
-      await audit('error', 'link_kind').catch(() => undefined);
-      throw new CollabError('forbidden', 'the stored session is not a link session');
-    }
-
-    let body: unknown;
-    try {
-      body = validate(requested, normalizeCommandInputForIdempotencyMode(binding, input, idempotencyEnabled));
-    } catch (error) {
-      await audit('error', isCollabError(error) ? error.code : 'invalid_input').catch(() => undefined);
-      throw error;
-    }
-    const search = new URLSearchParams(query ?? {});
-    const inner: RequestContext = {
-      op: binding,
-      opName: requested,
-      params: params ?? {},
-      query: search,
-      body,
-      requestId: nextRequestId(),
-      identity,
-      // Only the chain travels: never authorization or cookie.
-      headers: { [SPACE_LINK_VIA_HEADER]: [...via, homeSpaceId].join(',') },
-      method: binding.method,
-      path: binding.path,
-    };
-
-    let result: unknown;
-    try {
-      result = await handler(inner);
-    } catch (error) {
       await audit('error', isCollabError(error) ? error.code : 'internal').catch(() => undefined);
       throw error;
     }
-    let data: unknown = result;
-    if (isHandlerResult(result)) {
-      if (result.kind !== 'json') {
-        await audit('error', 'raw_result').catch(() => undefined);
-        throw new CollabError('invalid_input', `${requested} returns bytes and cannot run through a space link`);
-      }
-      data = result.data;
-    }
-    const auditId = await audit('ok', null, remoteIdOf(data) ?? inner.requestId);
+    const { data, requestId } = outcome;
+    const auditId = await audit('ok', null, remoteIdOf(data) ?? requestId);
     return { op: requested, linkId: row.linkId, targetSpaceId: row.targetSpaceId, auditId, result: data };
   };
 

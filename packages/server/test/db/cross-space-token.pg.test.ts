@@ -1845,6 +1845,43 @@ describe.sequential('W7 spaceLinks.invoke — G runs one op in B as H, audited i
     expect(spaceLinkRefusal('auth.future.mint', 'read', {}, true)).toBe('session_minting');
   });
 
+  // ---- Stricter than D31 (lead 09:08Z, fail-closed; reversible) ----------
+
+  it('stricter than D31 refused — serverConnections.* (the credential-bearing remote-server surface), reads too', async () => {
+    for (const op of ['serverConnections.list', 'serverConnections.create'] as const) {
+      const res = await invoke(gToken, { op, ...(op === 'serverConnections.create' ? { input: { name: 'x', clientMutationId: 'x' } } : {}) });
+      expect(res.status).toBe(403);
+      expect(res.body.error).toMatchObject({ details: { reason: 'space_link_refused', refusal: 'credential_management' } });
+      expect(await lastAudit(op)).toMatchObject({ result: 'refused', reason: 'credential_management', link_id: null });
+    }
+    expect(spaceLinkRefusal('serverConnections.future', 'read', {}, true)).toBe('credential_management');
+  });
+
+  it('stricter than D31 positive — the same serverConnections.list passes for H\'s own (non-link) session', async () => {
+    const res = await call('GET', '/v2/server-connections', await mintBrowser(fixture.accountH, fixture.identityH));
+    expect(res.body.error?.details?.['reason']).not.toBe('space_link_refused');
+    expect(res.status).toBe(200);
+  });
+
+  it('stricter than D31 refused — voice.token.create (it mints a token), exact op only', async () => {
+    const res = await invoke(gToken, { op: 'voice.token.create', params: { id: fixture.docB }, input: { clientMutationId: 'x' } });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatchObject({ details: { reason: 'space_link_refused', refusal: 'token_minting' } });
+    expect(await lastAudit('voice.token.create')).toMatchObject({ result: 'refused', reason: 'token_minting' });
+    // Exact, not a prefix: a neighbour of the name is not caught by this entry.
+    expect(spaceLinkRefusal('voice.token.createAnother', 'command', {}, true)).toBeNull();
+    expect(spaceLinkRefusal('voice.channels.list', 'read', {}, true)).toBeNull();
+  });
+
+  it('stricter than D31 positive — the same voice.token.create reaches the voice service for H\'s own session', async () => {
+    // This node has no LiveKit: the SERVICE answers 501, which proves the op
+    // ran as H; through the link it never got past the home guard (403 above).
+    const res = await call('POST', `/v2/entities/${fixture.docB}/commands/voice-token`,
+      await mintBrowser(fixture.accountH, fixture.identityH), {});
+    expect(res.body.error?.details?.['reason']).not.toBe('space_link_refused');
+    expect(res.status).toBe(501);
+  });
+
   it('T22 positive — spaceLinks reads are not writes: spaceLinks.list in B passes as the member', async () => {
     expect(spaceLinkRefusal('spaceLinks.list', 'read', {}, true)).toBeNull();
     const res = await invoke(gToken, { op: 'spaceLinks.list', params: { spaceId: fixture.spaceB } });
@@ -2090,12 +2127,12 @@ describe.sequential('W7 spaceLinks.invoke — G runs one op in B as H, audited i
   });
 
   it('a7 positive — the scan is live: the invoke path did write ledger rows for the forwarded commands', async () => {
-    const [{ n }] = await database.transaction(async (client) => {
+    const [ledger] = await database.transaction(async (client) => {
       await client.query('set local role tm8_graph_owner');
       return (await client.query<{ n: string }>(
         `select count(*)::text as n from public.command_ledger where client_mutation_id like 'w7-%'`)).rows;
     }) as Array<{ n: string }>;
-    expect(Number(n)).toBeGreaterThan(0);
+    expect(Number(ledger!.n)).toBeGreaterThan(0);
   });
 });
 

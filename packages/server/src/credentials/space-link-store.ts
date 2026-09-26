@@ -82,6 +82,8 @@ export interface SpaceLinkInvokeRow {
   memberId: string;
   homeSpaceId: string;
   targetSpaceId: string;
+  /** `space_links.target_server_id`: null when B is on this server, else the `server` entity (W8). */
+  targetServerId: string | null;
   status: SpaceLinkStatus;
   allowSpawn: boolean;
   spawnBudget: number;
