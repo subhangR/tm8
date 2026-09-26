@@ -45,12 +45,16 @@ import type { EventSink } from '../../src/events/ws-connection.js';
 import type { FacadeDeps } from '../../src/facade/deps.js';
 import { HandlerRegistry } from '../../src/facade/registry.js';
 import { registerMembershipHandlers } from '../../src/membership/handlers.js';
+import { DbSpaceLinkStore, SpaceLinkUnusable, type SpaceLink, type SpaceLinkStaleNotice } from '../../src/credentials/space-link-store.js';
+import { loadOrCreateCredentialKey } from '../../src/credentials/credential-key.js';
+import { openSecret } from '../../src/credentials/secret-box.js';
 
 import {
   createW1ScratchDatabase,
   migrationFiles,
   type W1ScratchDatabase,
 } from './w1-pg.js';
+import { leaksSecret } from './secret-probe.js';
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
 
@@ -3669,5 +3673,289 @@ describe('S3 a replay honours the session space pin (247 command_ledger.session_
       expect(await visible(fixture.spaceB)).toEqual([grantSessionB, grantContainerB].sort());
       expect(await visible(null)).toEqual([grantSessionB, grantContainerB, grantSessionA].sort());
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// W6 — space links (migrations 250/251). H holds a `link` session from A for
+// B: kind `link`, pinned to B, sealed in H's own space_link_tokens row. The
+// mechanism is pinned in space-links.pg.test.ts; these are the matrix cells.
+// ---------------------------------------------------------------------------
+
+/** A second-identity member of A and B (T17 needs someone other than H). */
+async function seedMemberOfAB(label: string, spaces: 'AB' | 'A' = 'AB'): Promise<{ identity: string; account: string; memberA: string; memberB: string }> {
+  const ids = {
+    identity: `cross-space-${label}-${randomUUID()}`,
+    account: randomUUID(), memberA: randomUUID(), memberB: randomUUID(),
+  };
+  await database.transaction(async (client) => {
+    await client.query('set local role tm8_graph_owner');
+    await client.query(`insert into public.user_profiles(identity_id, display_name) values ($1, $2)`, [ids.identity, label]);
+    await client.query(`insert into public.accounts(id, identity_id, username) values ($1, $2, $3)`,
+      [ids.account, ids.identity, `cross-space-${label}-${ids.account.slice(0, 8)}`]);
+    const memberships = spaces === 'AB'
+      ? [[ids.memberA, fixture.spaceA], [ids.memberB, fixture.spaceB]] as const
+      : [[ids.memberA, fixture.spaceA]] as const;
+    for (const [member, space] of memberships) {
+      await client.query(`insert into public.entities(id, space_id, kind, created_by, visibility) values ($1, $2, 'member', $1, 'space')`, [member, space]);
+      await client.query(`insert into public.members(entity_id, space_id, identity_id, role, display_name) values ($1, $2, $3, 'member', $4)`,
+        [member, space, ids.identity, label]);
+    }
+  });
+  return ids;
+}
+
+let linkStore: DbSpaceLinkStore;
+let linkDataDir: string;
+let hLink: SpaceLink;
+/** H's stored link session for B, as the use path returns it. Never printed. */
+let hLinkToken: string;
+
+async function linkLoginAs(accountId: string, identityId: string): Promise<{ link: SpaceLink; token: string }> {
+  const claims = await claimsForToken(await mintBrowser(accountId, identityId));
+  const added = await linkStore.add(claims, { spaceId: fixture.spaceA, targetSpaceId: fixture.spaceB });
+  const link = await linkStore.login(claims, added.id);
+  return { link, token: (await linkStore.use(claims, link.id)).token };
+}
+
+/** Idempotent: every W6 block calls it, so a `-t` filter on one block still sets up. */
+async function ensureHLink(): Promise<void> {
+  if (hLinkToken) return;
+  linkDataDir = await mkdtemp(join(tmpdir(), 'tm8-cross-space-links-'));
+  linkStore = new DbSpaceLinkStore({ db, dataDir: linkDataDir });
+  ({ link: hLink, token: hLinkToken } = await linkLoginAs(fixture.accountH, fixture.identityH));
+}
+
+describe.sequential('W6 space links — H\'s link session A → B', () => {
+  beforeAll(ensureHLink);
+
+  it('the stored session is kind link, pinned to B', async () => {
+    const claims = await claimsForToken(hLinkToken);
+    expect(claims).toMatchObject({ identityId: fixture.identityH, authKind: 'link', sessionSpaceId: fixture.spaceB });
+  });
+});
+
+describe.sequential('T16 L_B after B revokes it: G invokes B → 401 → signed_out, no retry', () => {
+  beforeAll(ensureHLink);
+
+  it('positive — before the revoke, G (H\'s agent) uses the link and resolves in B as kind link', async () => {
+    const g = await claimsForToken(await mintAgent());
+    const use = await linkStore.use(g, hLink.id, { workSessionId: fixture.workSessionA });
+    expect(use.targetSpaceId).toBe(fixture.spaceB);
+    expect(await claimsForToken(use.token)).toMatchObject({ authKind: 'link', sessionSpaceId: fixture.spaceB });
+  });
+
+  it('B revokes the link session; G\'s next use is signed_out, forgets the bytes, notifies G\'s session once, and never retries', async () => {
+    const notices: SpaceLinkStaleNotice[] = [];
+    const store = new DbSpaceLinkStore({ db, dataDir: linkDataDir, onStale: (n) => { notices.push(n); } });
+    const h = await claimsForToken(await mintBrowser(fixture.accountH, fixture.identityH));
+    // The revoke on this base: revoke_auth_session as the session's owner. W4's
+    // Sessions page (238, auth.sessions.revoke by a B admin) reaches the same row.
+    await db.rpc(h, 'revoke_auth_session', [hLink.mine!.sessionId]);
+    await expect(claimsForToken(hLinkToken)).rejects.toBeTruthy();
+
+    const g = await claimsForToken(await mintAgent());
+    await expect(store.use(g, hLink.id, { workSessionId: fixture.workSessionA }))
+      .rejects.toMatchObject({ status: 'signed_out' });
+    expect(notices).toEqual([{ linkId: hLink.id, status: 'signed_out', callerWorkSessionId: fixture.workSessionA }]);
+    const [row] = await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      return (await client.query<{ status: string; ciphertext: Buffer | null; auth_session_id: string | null }>(
+        'select status, ciphertext, auth_session_id from public.space_link_tokens where link_id = $1 and member_id = $2',
+        [hLink.id, fixture.memberHA])).rows;
+    });
+    expect(row).toEqual({ status: 'signed_out', ciphertext: null, auth_session_id: null });
+
+    // No retry: refused in SQL before any resolve, and no second notice.
+    await expect(store.use(g, hLink.id, { workSessionId: fixture.workSessionA })).rejects.toBeInstanceOf(SpaceLinkUnusable);
+    expect(notices).toHaveLength(1);
+    // G cannot sign it back in (human-only) — the paired positive is H's relogin.
+    await expect(store.login(g, hLink.id, { relogin: true })).rejects.toBeTruthy();
+    hLink = await store.login(h, hLink.id, { relogin: true });
+    hLinkToken = (await store.use(g, hLink.id)).token;
+    expect(await claimsForToken(hLinkToken)).toMatchObject({ authKind: 'link', sessionSpaceId: fixture.spaceB });
+  });
+});
+
+describe.sequential('T19 link token copied to another row does not open (a1, AAD home|link|member|target)', () => {
+  beforeAll(ensureHLink);
+  const sealedOf = async (memberId: string) => {
+    const rows = await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      return (await client.query<{ ciphertext: Buffer; nonce: Buffer }>(
+        'select ciphertext, nonce from public.space_link_tokens where link_id = $1 and member_id = $2',
+        [hLink.id, memberId])).rows;
+    });
+    return rows[0]!;
+  };
+  const bindingFor = (memberId: string, overrides: Partial<{ homeSpaceId: string; linkId: string; targetSpaceId: string }> = {}) => ({
+    homeSpaceId: fixture.spaceA, linkId: hLink.id, memberId, targetSpaceId: fixture.spaceB, ...overrides,
+  });
+
+  it('positive — H\'s sealed session opens under H\'s own row binding', async () => {
+    const key = await loadOrCreateCredentialKey(linkDataDir);
+    expect(openSecret(key, await sealedOf(fixture.memberHA), bindingFor(fixture.memberHA)).startsWith('tm8s_')).toBe(true);
+  });
+
+  it('refused — the same bytes under another member\'s binding (H2)', async () => {
+    const key = await loadOrCreateCredentialKey(linkDataDir);
+    const sealed = await sealedOf(fixture.memberHA);
+    expect(() => openSecret(key, sealed, bindingFor(fixture.memberH2A))).toThrow();
+  });
+
+  it('refused — the same bytes under another link or another target', async () => {
+    const key = await loadOrCreateCredentialKey(linkDataDir);
+    const sealed = await sealedOf(fixture.memberHA);
+    expect(() => openSecret(key, sealed, bindingFor(fixture.memberHA, { linkId: randomUUID() }))).toThrow();
+    expect(() => openSecret(key, sealed, bindingFor(fixture.memberHA, { targetSpaceId: fixture.spaceA }))).toThrow();
+  });
+});
+
+describe.sequential('T20 link session for B reads or writes A — refused', () => {
+  beforeAll(ensureHLink);
+  it('refused — A\'s doc is invisible to H\'s link session', async () => {
+    const ids = await asToken(hLinkToken, (q) => idsIn(q, fixture.spaceA));
+    expect(ids).not.toContain(fixture.docA);
+  });
+
+  it('refused — editing A\'s doc with H\'s link session', async () => {
+    expect(await outcome(() => editDoc(hLinkToken, fixture.docA))).not.toBe('ok');
+    expect(await outcome(() => recordEtag(hLinkToken, fixture.spaceA))).toBe('42501');
+  });
+
+  it('positive — the same link session reads and edits B\'s doc', async () => {
+    expect(await asToken(hLinkToken, (q) => idsIn(q, fixture.spaceB))).toContain(fixture.docB);
+    expect(await outcome(() => editDoc(hLinkToken, fixture.docB))).toBe('ok');
+  });
+});
+
+describe.sequential('T20b link session in B — credential management refused, the rest as the member', () => {
+  beforeAll(ensureHLink);
+  // E2: credential MANAGEMENT refuses `link` through the strict gate
+  // (internal.require_human_auth_kind, unchanged). Decision 31 / T22: invites,
+  // roles and delete are forwarded as the member.
+  it('refused — set_space_credential_policy in B (strict gate, 42501)', async () => {
+    expect(await outcome(() => asToken(hLinkToken, (q) =>
+      q.rpc('set_space_credential_policy', [fixture.spaceB, 'anthropic', null])))).toBe('42501');
+  });
+
+  it('positive — H (browser) sets the same policy in B', async () => {
+    const token = await mintBrowser(fixture.accountH, fixture.identityH);
+    expect(await outcome(() => asToken(token, (q) =>
+      q.rpc('set_space_credential_policy', [fixture.spaceB, 'anthropic', null])))).toBe('ok');
+  });
+
+  it('refused — spaceLinks management (add) with the link session', async () => {
+    expect(await outcome(async () => linkStore.add(await claimsForToken(hLinkToken),
+      { spaceId: fixture.spaceB, targetSpaceId: fixture.spaceA }))).toBe('42501');
+  });
+
+  it('admitted — spaceLinks.list in B with the link session', async () => {
+    expect(await outcome(async () => linkStore.list(await claimsForToken(hLinkToken), fixture.spaceB))).toBe('ok');
+  });
+
+  it('refused — spaceLinks.list for A with the B-pinned link session (fails closed)', async () => {
+    expect(await outcome(async () => linkStore.list(await claimsForToken(hLinkToken), fixture.spaceA))).not.toBe('ok');
+  });
+
+  it('admitted as the member — create_invite in B', async () => {
+    expect(await outcome(() => asToken(hLinkToken, (q) =>
+      q.rpc('create_invite', [fixture.spaceB, 1, null, null, `w6-t20b-invite-${randomUUID()}`])))).toBe('ok');
+  });
+
+  it('admitted as the member — set_member_role in B', async () => {
+    const other = await seedMemberOfAB('t20b-role');
+    expect(await outcome(() => asToken(hLinkToken, (q) =>
+      q.rpc('set_member_role', [fixture.spaceB, other.memberB, 'admin', null, `w6-t20b-role-${randomUUID()}`])))).toBe('ok');
+  });
+
+  it('admitted as the member — delete_entity in B', async () => {
+    const doc = await asIdentity(fixture.identityH, async (q) =>
+      (await q.rpc<{ id?: string; entity?: { id: string } }>('create_document', [fixture.spaceB, 'W6 delete me'])))
+      .then((row) => (row.entity?.id ?? row.id)!);
+    expect(await outcome(() => asToken(hLinkToken, (q) =>
+      q.rpc('delete_entity', [doc, null, `w6-t20b-delete-${randomUUID()}`])))).toBe('ok');
+  });
+
+  it('KNOWN GAP 01a0db78-f1ab: start_chat in B is REFUSED for a link session (strict gate)', async () => {
+    expect(await outcome(() => asToken(hLinkToken, (q) => q.rpc('start_chat', [
+      randomUUID(), fixture.spaceB, fixture.personaA, 'claude-opus-5', 'anthropic', 'claude-code',
+      'ask', 'scratch', null, randomUUID(), '/tmp/tm8-cross-space', 'W6 gap', 'hello', [], null,
+      `w6-gap-${randomUUID()}`,
+    ])))).toBe('42501');
+  });
+
+  it('positive for the gap — H (browser) with the same arguments gets past the gate', async () => {
+    const token = await mintBrowser(fixture.accountH, fixture.identityH);
+    expect(await outcome(() => asToken(token, (q) => q.rpc('start_chat', [
+      randomUUID(), fixture.spaceB, fixture.personaA, 'claude-opus-5', 'anthropic', 'claude-code',
+      'ask', 'scratch', null, randomUUID(), '/tmp/tm8-cross-space', 'W6 gap', 'hello', [], null,
+      `w6-gap-${randomUUID()}`,
+    ])))).not.toBe('42501');
+  });
+});
+
+describe.sequential('T28 link visibility — every home member sees the link, only the holder sees a token row', () => {
+  // A fresh member of A only. Not H2: S3 (#861, 247) makes H2 a member of B
+  // earlier in this file, so "H2 is A only" stopped holding on the composed tree.
+  let z: Awaited<ReturnType<typeof seedMemberOfAB>>;
+  beforeAll(async () => {
+    await ensureHLink();
+    z = await seedMemberOfAB('t28-z', 'A');
+  });
+  it('Z (A only) sees the link in A, with no target name (P8) and no row of their own', async () => {
+    const zClaims = await claimsForToken(await mintBrowser(z.account, z.identity));
+    const listed = await linkStore.list(zClaims, fixture.spaceA);
+    const seen = listed.find((l) => l.id === hLink.id);
+    expect(seen).toMatchObject({ targetSpaceId: fixture.spaceB, targetSpaceName: null, mine: null });
+    expect(leaksSecret(JSON.stringify(listed))).toBe(false);
+  });
+
+  it('Z cannot read H\'s token row', async () => {
+    const rows = await asIdentity(z.identity, (q) =>
+      q.query('select id from public.space_link_tokens where link_id = $1', [hLink.id]));
+    expect(rows).toHaveLength(0);
+  });
+
+  it('positive — H sees the target\'s name and H\'s own row', async () => {
+    const h = await claimsForToken(await mintBrowser(fixture.accountH, fixture.identityH));
+    const seen = (await linkStore.list(h, fixture.spaceA)).find((l) => l.id === hLink.id);
+    expect(seen).toMatchObject({ targetSpaceName: 'Cross-space B', mine: { memberId: fixture.memberHA, status: 'signed_in' } });
+  });
+
+  it('the A link is not listed in B', async () => {
+    const h = await claimsForToken(await mintBrowser(fixture.accountH, fixture.identityH));
+    expect((await linkStore.list(h, fixture.spaceB)).map((l) => l.id)).not.toContain(hLink.id);
+  });
+});
+
+describe.sequential('T17 leave / remove ends a member\'s link sessions', () => {
+  beforeAll(ensureHLink);
+  it('X removed from A (home): X\'s link session no longer resolves, X\'s rows are gone', async () => {
+    const x = await seedMemberOfAB('t17-x');
+    const { token } = await linkLoginAs(x.account, x.identity);
+    expect(await outcome(() => asToken(token, (q) => idsIn(q, fixture.spaceB)))).toBe('ok');
+    const h = await claimsForToken(await mintBrowser(fixture.accountH, fixture.identityH));
+    await db.rpc(h, 'remove_space_member', [fixture.spaceA, x.memberA, `w6-t17-remove-${randomUUID()}`]);
+    expect(await outcome(() => asToken(token, (q) => idsIn(q, fixture.spaceB)))).toBe('unauthenticated');
+    const rows = await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      return (await client.query('select id from public.space_link_tokens where member_id = $1', [x.memberA])).rows;
+    });
+    expect(rows).toHaveLength(0);
+  });
+
+  it('Y leaves B (target): Y\'s row turns left and the link session no longer resolves', async () => {
+    const y = await seedMemberOfAB('t17-y');
+    const { link, token } = await linkLoginAs(y.account, y.identity);
+    const yClaims = await claimsForToken(await mintBrowser(y.account, y.identity));
+    await db.rpc(yClaims, 'leave_space', [fixture.spaceB, `w6-t17-leave-${randomUUID()}`]);
+    expect(await outcome(() => asToken(token, (q) => idsIn(q, fixture.spaceB)))).toBe('unauthenticated');
+    const mine = (await linkStore.list(yClaims, fixture.spaceA)).find((l) => l.id === link.id)?.mine;
+    expect(mine).toMatchObject({ status: 'left', sessionId: null });
+  });
+
+  it('positive — H\'s link session on the same link still resolves in B', async () => {
+    expect(await outcome(() => asToken(hLinkToken, (q) => idsIn(q, fixture.spaceB)))).toBe('ok');
   });
 });

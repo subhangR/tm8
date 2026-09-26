@@ -32,6 +32,7 @@ export type CapabilityProfile =
   | 'container-lifecycle'
   | 'form-lifecycle'
   | 'credential-lifecycle'
+  | 'space-link-lifecycle'
   | 'custom-scalar'
   | 'static-no-authority';
 
@@ -60,6 +61,7 @@ export type MigrationStrategy =
   | 'drawing-detail'
   | 'form-detail'
   | 'credential-detail'
+  | 'space-link-kinds'
   | 'custom-registry'
   | 'none';
 
@@ -322,6 +324,32 @@ function capabilities(profile: CapabilityProfile): CapabilityDisposition {
           'credentials.space.delete',
         ],
       };
+    case 'space-link-lifecycle':
+      // NOTHING generic (W6, 250/251). A link is born only from
+      // `spaceLinks.add`, and every write is a named, human-only door over the
+      // caller's own row; a generic patch, move or delete would be a second way
+      // to reach a record whose writes SQL restricts to browser/cli sessions.
+      return {
+        profile,
+        genericCreate: false,
+        genericPatch: false,
+        genericMove: false,
+        genericHierarchy: false,
+        genericDeleteRestore: false,
+        genericPoints: false,
+        messages: false,
+        reactions: false,
+        connections: false,
+        lifecycleOperations: [
+          'spaceLinks.list',
+          'spaceLinks.add',
+          'spaceLinks.login',
+          'spaceLinks.relogin',
+          'spaceLinks.logout',
+          'spaceLinks.remove',
+          'spaceLinks.setSpawn',
+        ],
+      };
     case 'static-no-authority':
       return {
         profile,
@@ -519,6 +547,21 @@ export const CORE_KIND_DISPOSITIONS = {
     collection: typedCollection, projection: universal,
     capabilities: { profile: 'credential-lifecycle' },
     menu: { strategy: 'not-addressable' }, migration: { strategy: 'credential-detail' },
+  }),
+  // Space links (W6, migration 250). Born only from `spaceLinks.add`, managed
+  // from space settings by a human; never menu-addressable.
+  space_link: core('space_link', 'space-links', {
+    collection: typedCollection, projection: universal,
+    capabilities: { profile: 'space-link-lifecycle' },
+    menu: { strategy: 'not-addressable' }, migration: { strategy: 'space-link-kinds' },
+  }),
+  // A linked space's server (W6, migration 250). Registered with the kind so a
+  // link can name a remote target; W6 ships no operation on it (null = this
+  // server), so it has no authority of its own.
+  server: core('server', 'servers', {
+    collection: typedCollection, projection: universal,
+    capabilities: { profile: 'static-no-authority' },
+    menu: { strategy: 'not-addressable' }, migration: { strategy: 'space-link-kinds' },
   }),
 } as const satisfies Readonly<Record<CoreEntityKind, KindDisposition>>;
 

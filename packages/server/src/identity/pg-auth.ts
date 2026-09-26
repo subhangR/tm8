@@ -199,7 +199,23 @@ export async function revokeAgentRuntimeSession(
 
 /** One message and one code for every rejection: a caller holding a bad credential learns nothing. */
 function invalidToken(): CollabError {
-  return new CollabError('unauthenticated', 'invalid token');
+  const error = new CollabError('unauthenticated', 'invalid token');
+  issuedInvalidToken.add(error);
+  return error;
+}
+
+/**
+ * The rejections `invalidToken()` minted, by identity. A caller that must tell
+ * "this token is dead" from "the database hiccupped" (a space link marks
+ * itself stale on the first, and must never on the second) asks
+ * `isInvalidTokenError` rather than matching a code or message a translated
+ * pool or statement error could also carry.
+ */
+const issuedInvalidToken = new WeakSet<object>();
+
+/** True only for the rejection `resolveBearerIdentity` gives a dead or bad token. */
+export function isInvalidTokenError(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && issuedInvalidToken.has(error);
 }
 
 function invalidCredentials(): CollabError {

@@ -258,6 +258,23 @@ export const KIND_ART = {
     'M5.4 11.3a0.7 0.7 0 1 0 0-1.4 0.7 0.7 0 0 0 0 1.4z',
   ],
 
+  /** Two chain links — a space link joins this space to another one (250). */
+  space_link: [
+    'M7 9 9 7',
+    'M8.6 4.6 9.8 3.4a2.3 2.3 0 0 1 3.2 3.2l-2.4 2.4a2.3 2.3 0 0 1-3.2 0',
+    'M7.4 11.4 6.2 12.6a2.3 2.3 0 0 1-3.2-3.2l2.4-2.4a2.3 2.3 0 0 1 3.2 0',
+  ],
+
+  /**
+   * A globe — a `server` is another tm8 node (250, used from W8). Not a rack:
+   * that silhouette is `container`'s.
+   */
+  server: [
+    'M8 2.6a5.4 5.4 0 1 0 0 10.8 5.4 5.4 0 0 0 0-10.8z',
+    'M2.6 8h10.8',
+    'M8 2.6c1.6 1.5 2.2 3.4 2.2 5.4s-.6 3.9-2.2 5.4c-1.6-1.5-2.2-3.4-2.2-5.4s.6-3.9 2.2-5.4z',
+  ],
+
   /**
    * The custom-kind fallback. A plain diamond ON PURPOSE: it is the one mark
    * that must say "this kind has no artwork of its own", so it stays the

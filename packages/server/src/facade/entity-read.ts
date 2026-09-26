@@ -1984,6 +1984,12 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         ...(row.commit_url ? { url: row.commit_url } : {}),
         ...(row.commit_author ? { author: row.commit_author } : {}),
       } as EntityState;
+    case 'space_link':
+    case 'server':
+      // 250 (W6): no row facts on the entity — `spaceLinks.list` answers for a
+      // link, so the shared entity read takes no join for it. MIRRORS the
+      // projector twin.
+      return { kind: row.kind };
     default:
       // A custom `c:*` kind. Its scalar fields live in `custom_entities` and
       // are out of the G1A slice, so the shape is honest and empty rather than
@@ -2659,6 +2665,10 @@ export function contentOf(row: EntityRow): EntityContent {
         ...projectForgeFacts(row.pr_ci_status, row.pr_mergeable_state, row.pr_head_ref),
       };
     }
+    case 'space_link':
+    case 'server':
+      // 250 (W6): a link's content is `spaceLinks.list`'s answer (see stateOf).
+      return { kind: row.kind };
     default:
       return { kind: row.kind as `c:${string}`, fields: {} };
   }

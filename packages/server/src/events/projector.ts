@@ -1492,6 +1492,12 @@ export class PgEntityProjector implements EntityProjector {
         // hypothetical stray envelope projectable instead of poisoning the feed
         // on a strict-schema refusal.
         return { kind: 'artifact', revisionNumber: r.artifact_revision_number ?? 1 };
+      case 'space_link':
+      case 'server':
+        // 250 (W6): no row facts on the entity; `spaceLinks.list` answers for a
+        // link. MIRRORS entity-read.ts stateOf. Without this arm the default
+        // below raises EntityKindDriftError for every space_link event.
+        return { kind: r.kind };
       default: {
         // T-L4: custom c:* kinds carry their schema-validated scalars.
         //

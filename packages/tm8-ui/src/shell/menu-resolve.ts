@@ -27,6 +27,15 @@ export type MenuSource =
   | { source: 'server'; revision: number }
   | { source: 'default'; because: MenuFallbackReason; detail?: string };
 
+/**
+ * The menu came from the space's saved row. A predicate rather than a
+ * `source === 'server'` at each call site: `server` is also a core kind (250),
+ * so the settings lane's kind-literal guard cannot tell the two apart.
+ */
+export function isSavedMenu(origin: MenuSource): origin is Extract<MenuSource, { source: 'server' }> {
+  return origin.source === 'server';
+}
+
 export type MenuFallbackReason =
   /** `menu()` resolved null — C-4's soft exception covers BOTH 501 and a missing row. */
   | 'absent'
