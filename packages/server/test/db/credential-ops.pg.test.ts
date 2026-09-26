@@ -112,6 +112,15 @@ async function setStatus(sessionId: string, status: string): Promise<void> {
   });
 }
 
+/** execution_resume's session cap: this scratch database holds every earlier test's live sessions. */
+const RESUME_CAP = 100_000;
+
+/** The resume window (F-R13a): the run ended, then execution_resume made it 'spawning' with a resume on record. */
+async function resumeWindow(sessionId: string, who = A): Promise<void> {
+  await setStatus(sessionId, 'exited');
+  await db.rpc(claims(who), 'execution_resume', [sessionId, RESUME_CAP]);
+}
+
 function record(
   who: DbClaims,
   sessionId: string,
@@ -399,8 +408,10 @@ describe('a4 / D7 — switch to private: row first, then kill; a session B resum
     // A launched this one, then B resumed it: the repoint makes B its launcher.
     const resumed = await session(ids[`member:S:${A}`]!);
     await record(claims(A), resumed, cred);
-    await setStatus(resumed, 'idle');
+    // Re-pointed in the resume window (F-R13a), then running idle.
+    await resumeWindow(resumed, B);
     await store.repointSession(claims(B), resumed, ['anthropic']);
+    await setStatus(resumed, 'idle');
     const byA = await session(ids[`member:S:${A}`]!);
     await record(claims(A), byA, cred);
     await setStatus(byA, 'running');
@@ -441,12 +452,139 @@ describe('N13 — repoint takes the providers the resume resolved', () => {
     const cred = await create(A, { visibility: 'public' });
     const s = await session(ids[`member:S:${A}`]!);
     await record(claims(A), s, cred);
+    await resumeWindow(s, B);
     const kept = await store.repointSession(claims(B), s, ['anthropic']);
     expect(kept).toMatchObject({ launcherAccountId: accounts[B], credentials: [{ provider: 'anthropic', spaceCredentialId: cred }] });
     const dropped = await store.repointSession(claims(B), s, ['openai']);
     expect(dropped.credentials).toEqual([]);
     const left = await asOwner(async (c) => (await c.query('select 1 from public.session_space_credentials where work_session_id = $1', [s])).rowCount);
     expect(left).toBe(0);
+  });
+});
+
+describe('N13 / F-R13a — the providers overload: resume\'s window, resume\'s authorization, and a refusal rolls back its delete', () => {
+  type Recorded = { provider: string; credential: string; launcher: string | null; touched: boolean };
+  const recorded = (s: string) => asOwner(async (c) => (await c.query<Recorded>(
+    `select provider, space_credential_id::text credential, launcher_account_id::text launcher,
+            updated_at <> recorded_at touched
+       from public.session_space_credentials where work_session_id = $1 order by provider`, [s])).rows);
+  /** A row no writer records: a credential of space T on a session of S (the FK admits it only under T's space_id). */
+  const recordForeign = (s: string, credential: string, provider: string) => asOwner((c) => c.query(
+    `insert into public.session_space_credentials(work_session_id, provider, space_credential_id, space_id, launcher_account_id)
+     values ($1, $2, $3, $4, $5)`, [s, provider, credential, ids.T, accounts[A]]));
+
+  // Every refusal is asked with ['openai'] on a session recorded on anthropic
+  // unless it says otherwise: had the R13 delete run, the anthropic row would be gone.
+
+  it('a non-member of the session\'s space is refused, and nothing is deleted or re-pointed', async () => {
+    const cred = await create(A, { visibility: 'public' });
+    const s = await session(ids[`member:S:${A}`]!);
+    await record(claims(A), s, cred);
+    await resumeWindow(s);
+    const before = await recorded(s);
+    expect(await outcome(() => store.repointSession(claims(OUT), s, ['openai']))).toBe('42501');
+    expect(await recorded(s)).toEqual(before);
+    expect(await store.repointSession(claims(B), s, ['anthropic'])).toMatchObject({
+      launcherAccountId: accounts[B], credentials: [{ provider: 'anthropic', spaceCredentialId: cred }],
+    });
+  });
+
+  it('a recorded credential from another space is refused (the space pin), and its row is not re-pointed', async () => {
+    const foreign = await create(OUT, { visibility: 'public' }, 'T');
+    const s = await session(ids[`member:S:${A}`]!);
+    await recordForeign(s, foreign, 'anthropic');
+    await resumeWindow(s);
+    const before = await recorded(s);
+    expect(await outcome(() => store.repointSession(claims(B), s, ['anthropic']))).toBe('23514');
+    expect(await recorded(s)).toEqual(before);
+    const local = await create(A, { visibility: 'public' });
+    const t = await session(ids[`member:S:${A}`]!);
+    await record(claims(A), t, local);
+    await resumeWindow(t);
+    expect(await store.repointSession(claims(B), t, ['anthropic'])).toMatchObject({ launcherAccountId: accounts[B] });
+  });
+
+  it('a refused re-point rolls back the R13 delete: the dropped provider\'s row is still there, untouched', async () => {
+    const local = await create(A, { visibility: 'public' });
+    const foreign = await create(OUT, { visibility: 'public' }, 'T');
+    const s = await session(ids[`member:S:${A}`]!);
+    await record(claims(A), s, local);
+    await recordForeign(s, foreign, 'openai');
+    await resumeWindow(s);
+    const before = await recorded(s);
+    expect(before.map((r) => r.provider)).toEqual(['anthropic', 'openai']);
+    // Keeping only openai deletes the anthropic row first; the re-point then finds
+    // openai's credential not active in S and raises, in the same call.
+    const refused = await outcome(() => store.repointSession(claims(B), s, ['openai']));
+    expect(await recorded(s)).toEqual(before);
+    expect(refused).toBe('23514');
+  });
+
+  it('F-R13a (1): a running or idle session is not re-pointed, though it was resumed once, and nothing is deleted', async () => {
+    const cred = await create(A, { visibility: 'public' });
+    for (const status of ['running', 'idle']) {
+      const s = await session(ids[`member:S:${A}`]!);
+      await record(claims(A), s, cred);
+      await resumeWindow(s);
+      await setStatus(s, status);
+      const before = await recorded(s);
+      expect(await outcome(() => store.repointSession(claims(B), s, ['openai']))).toBe('55000');
+      expect(await recorded(s)).toEqual(before);
+    }
+  });
+
+  it('F-R13a (2): an exited or failed session not resumed THIS time is not re-pointed, and nothing is deleted', async () => {
+    const cred = await create(A, { visibility: 'public' });
+    for (const status of ['exited', 'failed']) {
+      const s = await session(ids[`member:S:${A}`]!);
+      await record(claims(A), s, cred);
+      // An earlier resume is on record; this run ended and nobody resumed it.
+      await resumeWindow(s);
+      await setStatus(s, 'running');
+      await setStatus(s, status);
+      const before = await recorded(s);
+      expect(await outcome(() => store.repointSession(claims(B), s, ['openai']))).toBe('55000');
+      expect(await recorded(s)).toEqual(before);
+    }
+  });
+
+  it('F-R13a (3): the resume path — exited, execution_resume, re-point — re-points', async () => {
+    const cred = await create(A, { visibility: 'public' });
+    const s = await session(ids[`member:S:${A}`]!);
+    await record(claims(A), s, cred);
+    await setStatus(s, 'exited');
+    await db.rpc(claims(B), 'execution_resume', [s, RESUME_CAP]);
+    expect(await store.repointSession(claims(B), s, ['anthropic'])).toMatchObject({
+      launcherAccountId: accounts[B], credentials: [{ provider: 'anthropic', spaceCredentialId: cred }],
+    });
+  });
+
+  it('F-R13a (4): in the resume window, a member who cannot act as the session\'s persona is refused, and nothing is deleted', async () => {
+    const cred = await create(A, { visibility: 'public' });
+    const s = await session(ids[`member:S:${A}`]!);
+    // The persona is A's own member entity: A may act as it (can_act_as), B may not.
+    await asOwner((c) => c.query(
+      `insert into public.edges(space_id, src_id, dst_id, type, created_by) values ($1, $2, $3, 'relates_to', $3)`,
+      [ids.S, s, ids[`member:S:${A}`]]));
+    await record(claims(A), s, cred);
+    await resumeWindow(s);
+    const before = await recorded(s);
+    expect(await outcome(() => store.repointSession(claims(B), s, ['openai']))).toBe('42501');
+    expect(await recorded(s)).toEqual(before);
+    expect(await store.repointSession(claims(A), s, ['anthropic'])).toMatchObject({ launcherAccountId: accounts[A] });
+  });
+
+  it('F-R13a (5): a FRESH spawn is spawning too, but no resume is on record — refused, and nothing is deleted', async () => {
+    // Harmful if admitted: anyone who may act as the persona could drop a live
+    // spawn's rows, and a session with no row escapes the R8 sweep and the kill
+    // on revoke or switch-to-private, while running on that credential.
+    const cred = await create(A, { visibility: 'public' });
+    const s = await session(ids[`member:S:${A}`]!);
+    await record(claims(A), s, cred);
+    const before = await recorded(s);
+    expect(await outcome(() => store.repointSession(claims(A), s, ['openai']))).toBe('55000');
+    expect(await outcome(() => store.repointSession(claims(B), s, ['openai']))).toBe('55000');
+    expect(await recorded(s)).toEqual(before);
   });
 });
 
@@ -628,8 +766,10 @@ describe('R1/R17 narrow scrub — a private login credential loses only its non-
     await setStatus(ownA, 'exited');
     const resumed = await session(ids[`member:S:${A}`]!);
     await record(claims(A), resumed, cred);
-    await setStatus(resumed, 'idle');
+    // Re-pointed in the resume window (F-R13a), then running idle.
+    await resumeWindow(resumed, B);
     await store.repointSession(claims(B), resumed, ['anthropic']);
+    await setStatus(resumed, 'idle');
     await setStatus(resumed, 'exited');
     const project = join(configDir, 'projects', '-work');
     await mkdir(project, { recursive: true });
