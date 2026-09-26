@@ -26,7 +26,6 @@
  * TOOL NAMES NEVER REACH THE SURFACE (R8). Nothing here reads a tool name;
  * that is the classifier's job, and it returns human words.
  */
-import type { EntityId } from '@tm8/contract';
 import { projectTurnParts, type ProjectedTurnPart } from './turn-model';
 import {
   describeToolStep,
@@ -36,24 +35,12 @@ import {
   type StepLabels,
   type ToolStepWords,
 } from './turn-steps';
+import type { TurnInProgress } from './turn-in-progress';
 import type { ChatTurnPart } from './types';
 
-/**
- * OWNER: lane 1, `turn-in-progress.ts`. A STRUCTURAL COPY of the pinned
- * contract, declared here only until that file is on main (merge order is
- * lane 1 first). On the rebase this interface is deleted and
- * `import type { TurnInProgress } from './turn-in-progress'` takes its place —
- * one line, because the shapes are identical field for field.
- */
-export interface TurnInProgress {
-  phase: 'sending' | 'waiting' | 'streaming' | 'stopping' | 'stopped' | 'failed';
-  chatId: EntityId | null;
-  messageId: EntityId | null;
-  startedAt: number;
-  lastFrameAt: number | null;
-  error?: string;
-  endedAt?: number;
-}
+/* The turn's phase and clock are lane 1's contract; re-exported so this
+   module's callers name one type from one place. */
+export type { TurnInProgress };
 
 /** Under this, `last step Ns ago` is noise — a stream that is plainly alive. */
 export const QUIET_SHOW_MS = 5_000;
@@ -151,7 +138,8 @@ function streamingNow(
     const words = wordsOf(last, labels);
     return {
       now: inProgress(words.active),
-      detail: running.length > 1 ? `+${running.length - 1} more` : words.detail,
+      // D24: `and 1 more`, not `+1 more` — the row is a sentence.
+      detail: running.length > 1 ? `and ${running.length - 1} more` : words.detail,
     };
   }
   return { now: newest?.kind === 'text' ? 'Writing…' : 'Thinking…', detail: null };

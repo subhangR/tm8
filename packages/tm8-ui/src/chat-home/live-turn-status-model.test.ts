@@ -130,7 +130,7 @@ describe('the phase copy (D2 as amended by D16)', () => {
     const parts = [...call('a', 'read.get'), ...call('b', 'read.get'), ...call('c', 'read.context')];
     const view = liveTurnView(turn(), parts, T0);
     expect(view.now).toBe('Doing read.context…');
-    expect(view.aside).toBe('+2 more');
+    expect(view.aside).toBe('and 2 more');
   });
 
   /** Lane 3's stuck-call guard: a continued turn appends after its first

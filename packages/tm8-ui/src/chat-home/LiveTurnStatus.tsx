@@ -1,14 +1,9 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { RibbonMark } from '../kit';
-import {
-  announcementKey,
-  isTicking,
-  liveTurnView,
-  type TurnInProgress,
-} from './live-turn-status-model';
-import { projectTurnParts } from './turn-model';
+import { announcementKey, isTicking, liveTurnView } from './live-turn-status-model';
+import type { TurnInProgress } from './turn-in-progress';
 import type { StepLabels } from './turn-steps';
-import type { ChatThreadDetail, ChatTurnPart } from './types';
+import type { ChatTurnPart } from './types';
 import './live-turn-status.css';
 
 /**
@@ -186,70 +181,4 @@ function useCalmAnnouncement(sentence: string, key: string): string {
     return () => window.clearTimeout(id);
   }, [sentence, key, spoken]);
   return spoken;
-}
-
-/**
- * ── INTERIM — DELETE WHEN LANE 1's `turn-in-progress.ts` IS ON MAIN ────────
- *
- * OWNER of this value: lane 1 (`useTurnInProgress`, fed by the pipeline's own
- * clock in the frame handler). Merge order is lane 1 first, so on the rebase
- * the one call site in `ChatHomeScreen` becomes
- * `useTurnInProgress({ phase, detail, clock: turnClock })` and this function
- * goes. It exists only so this lane's row can be exercised before then, and
- * it deliberately covers only what today's state can say honestly —
- * `sending`, `waiting`, `streaming`. `stopping` / `stopped` / `failed` need
- * lane 1's clock, and are not faked here.
- */
-export function useInterimTurnInProgress({
-  phase,
-  detail,
-}: {
-  phase: string;
-  detail: ChatThreadDetail | null;
-}): TurnInProgress | null {
-  const sending = phase === 'posting-root' || phase === 'configuring' || phase === 'posting-turn';
-  const streaming = phase === 'streaming' && detail !== null;
-  const last = detail?.turns[detail.turns.length - 1];
-  const agent =
-    streaming && last?.role === 'assistant' && !last.parts.some((part) => part.kind === 'usage')
-      && (last.turnInFlight === true || last.parts.length > 0)
-      ? last
-      : null;
-  const key = sending || streaming ? (detail?.summary.rootId ?? 'new') : null;
-  const partCount = agent?.parts.length ?? 0;
-  const [clock, setClock] = useState<{
-    key: string;
-    startedAt: number;
-    lastFrameAt: number | null;
-    seen: number;
-  } | null>(null);
-  useLayoutEffect(() => {
-    setClock((current) => {
-      if (key === null) return null;
-      const now = Date.now();
-      if (!current || current.key !== key) {
-        const claimed = agent ? Date.parse(agent.createdAt) : Number.NaN;
-        return {
-          key,
-          startedAt: Number.isFinite(claimed) && claimed <= now ? claimed : now,
-          lastFrameAt: partCount > 0 ? now : null,
-          seen: partCount,
-        };
-      }
-      return partCount === current.seen ? current : { ...current, lastFrameAt: now, seen: partCount };
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by turn identity + part count
-  }, [key, partCount]);
-  if (key === null || !clock || clock.key !== key) {
-    return key === null
-      ? null
-      : { phase: sending ? 'sending' : 'waiting', chatId: detail?.summary.rootId ?? null, messageId: agent?.messageId ?? null, startedAt: Date.now(), lastFrameAt: null };
-  }
-  return {
-    phase: sending ? 'sending' : agent && projectTurnParts(agent.parts).length > 0 ? 'streaming' : 'waiting',
-    chatId: detail?.summary.rootId ?? null,
-    messageId: agent?.messageId ?? null,
-    startedAt: clock.startedAt,
-    lastFrameAt: clock.lastFrameAt,
-  };
 }
