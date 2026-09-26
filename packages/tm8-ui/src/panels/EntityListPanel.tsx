@@ -3470,6 +3470,7 @@ export function Tile({
         status={recordedStatus}
         attention={flagged}
         attentionChip={chipView}
+        attentionTone={chip?.tone}
         selected={selected}
         archived={archived}
         completed={completed}
@@ -3534,6 +3535,7 @@ export function Tile({
         attention={flagged}
         attentionReason={row.badges.attention?.latestReason}
         attentionChip={chipView}
+        attentionTone={chip?.tone}
         archived={archived}
         childCount={childCount}
         childrenExpanded={expanded}

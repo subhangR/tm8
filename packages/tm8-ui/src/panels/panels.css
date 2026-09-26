@@ -2559,6 +2559,8 @@
 }
 .cv2-root .pn-st--selected { background: var(--pn-active); }
 .cv2-root .pn-st--attention { background: var(--pn-wait-soft); }
+.cv2-root .pn-st--attention[data-attention-tone='block'] { background: var(--pn-block-soft); }
+.cv2-root .pn-st--attention[data-attention-tone='fyi'] { background: none; box-shadow: inset 3px 0 0 var(--pn-idle); }
 .cv2-root .pn-st--archived { opacity: 0.62; }
 /* THE ROW METRIC. The session row is the reference and it is NOT altered here:
    29px is simply what it already measures — 17px for the tallest in-flow child
