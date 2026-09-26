@@ -72,6 +72,16 @@ function stripHtmlInputType(text: string): string {
     .replace(/\.type\s*=\s*(["'])file\1/g, '.type = INPUT_TYPE');
 }
 
+/**
+ * `<SubsystemRow name="server" …>` in `NodeRoom.tsx` is the node health card's
+ * row label for the server PROCESS, not the `server` KIND (which 243 made a
+ * core kind for W6/W8). Masked the same narrow way: only the literal `server`
+ * as the `name` attribute on the line after `<SubsystemRow`.
+ */
+function stripSubsystemName(text: string): string {
+  return text.replace(/(<SubsystemRow\s+name=)(["'])server\2/g, '$1SUBSYSTEM_NAME');
+}
+
 const ownedFiles = walk(HERE);
 
 const sourceFiles = ownedFiles
@@ -92,7 +102,7 @@ describe('§15.2 — the files lane knows no kind', () => {
 
     const offenders: string[] = [];
     for (const file of sourceFiles) {
-      const text = stripHtmlInputType(stripComments(readFileSync(file, 'utf8')));
+      const text = stripSubsystemName(stripHtmlInputType(stripComments(readFileSync(file, 'utf8'))));
       for (const kind of kinds) {
         if (new RegExp(`['"\`]${kind}['"\`]`).test(text)) {
           offenders.push(`${relative(SRC, file)} → '${kind}'`);

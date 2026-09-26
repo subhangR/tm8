@@ -186,6 +186,10 @@ const HOME_RAIL_GROUP_SPINE: readonly HomeRailGroupSpec[] = [
  * the list header's kind switcher entry, the Workspace column menu and the
  * mobile drawer row, all four of which read this one table.
  *
+ * `space_link` and `server` (243, W6): not populations either. A link is
+ * signed in, out and removed from Settings → Space links, which carries the
+ * P8 warning a bare list would drop; `server` has no detail row until W8.
+ *
  * `isHomeRootKind` honours this too, on purpose. A withheld kind that a
  * stored root or a hand-typed `k/` route could still select would open a list
  * whose own switcher cannot name it — so a stale selection falls back to the
@@ -193,7 +197,7 @@ const HOME_RAIL_GROUP_SPINE: readonly HomeRailGroupSpec[] = [
  * about the product, not a display filter, and it is deliberately harder to
  * reach for than adding a spine group.
  */
-export const HOME_RAIL_WITHHELD_KINDS: readonly string[] = ['interaction_profile'];
+export const HOME_RAIL_WITHHELD_KINDS: readonly string[] = ['interaction_profile', 'space_link', 'server'];
 
 export interface HomeRailGroup {
   id: string;
