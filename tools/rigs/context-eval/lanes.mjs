@@ -166,17 +166,24 @@ async function waitIdle(tm8, sessionId, worktree, getNative, deadline, { needTra
 }
 
 /** A row's identity; `base` is the fixture repo's `main` sha the lane branched from. */
-function newRow({ node, nodeFx, cell, slice, fixtureVersion, base }) {
+export function newRow({ node, nodeFx, cell, slice, fixtureVersion, base }) {
   const tpl = nodeFx.tasks[cell.taskKey];
   return {
     schema: 'context-eval.row.v1', slice, arm: node.arm, node: { port: node.port, db: node.db, env: node.env }, buildSha: node.buildSha, fixtureVersion,
     model: cell.model, teammateId: node.teammates[MODELS[cell.model]], family: tpl.family, taskKey: cell.taskKey, rep: cell.rep,
     templateTaskId: tpl.templateId, taskId: null, sessionId: null, worktree: null, base,
-    startedAt: null, endedAt: null, ended: null, wallSeconds: null, uptimeStart: null, uptimeEnd: null, loadAtStart: null, waitedSeconds: cell.waitedSeconds ?? 0,
+    startedAt: null, endedAt: null, ended: null, wallSeconds: null, uptimeStart: null, uptimeEnd: null, loadAtStart: null, gateLoad: cell.gateLoad ?? null, waitedSeconds: cell.waitedSeconds ?? 0,
     laneTm8: null, turn: null,
     ...(cell.memoryGuard ?? {}),
   };
 }
+
+/**
+ * The lane-start log line. `gateLoad` is the 1-min load the concurrency gate compared
+ * before the lane; `load` (uptimeStart) is read later, after the task copy's CLI calls,
+ * and can sit above the cap without the gate having let an over-cap start through.
+ */
+export const startLine = (tag, row) => `${tag} session ${row.sessionId} gate ${row.gateLoad ?? '-'} load ${row.uptimeStart}`;
 
 async function runLane({ node, nodeFx, tm8, cell, slice, out, timeoutMin, fixtureVersion }) {
   const tpl = nodeFx.tasks[cell.taskKey];
@@ -207,7 +214,7 @@ async function runLane({ node, nodeFx, tm8, cell, slice, out, timeoutMin, fixtur
   }
   row.sessionId = spawn.id;
   row.worktree = spawn.workdir?.path ?? null;
-  console.error(`${tag} session ${row.sessionId} load ${row.uptimeStart}`);
+  console.error(startLine(tag, row));
   const deadline = Date.now() + timeoutMin * 60_000;
   let pid = null;
   let nativeId = null;
@@ -365,6 +372,7 @@ async function main() {
         continue;
       }
       const cell = plan[i++];
+      cell.gateLoad = load;
       cell.memoryGuard = guardMemoryDir(node.repo, node.dataDir);
       if (cell.memoryGuard.memoryDirState === 'moved') {
         console.error(`\n${'!'.repeat(72)}\nAUTO-MEMORY GUARD: ${memoryDirFor(node.repo)} held ${cell.memoryGuard.memoryDirMovedFiles.join(', ')}: a lane wrote Claude auto-memory, which would load into every later lane. MOVED to ${cell.memoryGuard.memoryDirMovedTo}; rows started since the write are contaminated (report.mjs flags them).\n${'!'.repeat(72)}\n`);

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { allowedConcurrency, loadTiers } from './lanes.mjs';
+import { allowedConcurrency, loadTiers, newRow, startLine } from './lanes.mjs';
 
 test('default tiers: 2 under 40, 1 at 40..80, 0 above 80', () => {
   assert.equal(allowedConcurrency(39.9, 2), 2);
@@ -23,4 +23,16 @@ test('an unreadable load refuses instead of running unthrottled', () => {
   // Linux `uptime` prints `12.65, 10.46, ...`: Number('12.65,') is NaN, which
   // compared false against every tier and let lanes start at any load.
   assert.throws(() => allowedConcurrency(Number('12.65,'), 2), /unreadable load/);
+});
+
+test('gateLoad: the row and the start line carry the load the gate compared, not only the later uptime read', () => {
+  const node = { arm: 'lean', port: 4621, db: 'tm8_eval1', env: {}, buildSha: 'x', teammates: { 'Sonnet 5 Eval': 'tm-1' } };
+  const nodeFx = { tasks: { fee: { family: 'needle', templateId: 't-1' } } };
+  const gated = newRow({ node, nodeFx, cell: { model: 'sonnet5', taskKey: 'fee', rep: 1, gateLoad: 10.23 }, slice: 'c1', fixtureVersion: {}, base: 'b' });
+  assert.equal(gated.gateLoad, 10.23);
+  // An older cell (no gate sample) records null, never a guess.
+  assert.equal(newRow({ node, nodeFx, cell: { model: 'sonnet5', taskKey: 'fee', rep: 1 }, slice: 'c1', fixtureVersion: {}, base: 'b' }).gateLoad, null);
+  const line = startLine('c1/sonnet5/fee#1', { ...gated, sessionId: 's-1', uptimeStart: '12.23, 15.93, 20.16' });
+  assert.equal(line, 'c1/sonnet5/fee#1 session s-1 gate 10.23 load 12.23, 15.93, 20.16');
+  assert.match(startLine('t', { sessionId: 's', uptimeStart: 'u' }), / gate - load u$/);
 });
