@@ -76,6 +76,7 @@ import { autoOwnerResolver } from './http/security.js';
 import { announceNodeClaim } from './identity/node-claim-boot.js';
 import { createStaticHandler } from './http/static.js';
 import { createRemoteServerProxy } from './http/remote-proxy.js';
+import { directoryTargetResolver } from './remote/directory-resolver.js';
 import { createW2FileUploadRoute } from './http/w2-file-upload.js';
 import { createClipboardUploadRoute } from './http/clipboard-upload.js';
 import { createVoiceWebhookRoute } from './http/voice-webhook.js';
@@ -655,26 +656,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     : undefined;
 
   const remoteServerProxy = db && owner
-    ? createRemoteServerProxy(async (name, caller) => {
-        // THE CALLER'S claims, never the owner's (G1). A bearer carries its
-        // own identity and admin bit; the auto-owner IS the owner. 044's RLS
-        // then admits node admins only; W8 (991) reads `server_directory`,
-        // so a home member also reaches a server entity their space holds.
-        // Names are unique per space, not per node: two matches refuse.
-        const nodeOwner = await owner();
-        const bearer = caller.kind === 'bearer' ? caller : undefined;
-        if (bearer && !bearer.identityId) return null;
-        const rows = await db.query<{ base_url: string }>(
-          {
-            identityId: bearer ? bearer.identityId! : nodeOwner.identityId,
-            nodeAdmin: bearer ? bearer.nodeAdmin === true : nodeOwner.isNodeAdmin,
-            ...(caller.authKind ? { authKind: caller.authKind } : {}),
-          },
-          `select base_url from public.server_directory where lower(name) = lower($1) limit 2`,
-          [name],
-        );
-        return rows.length === 1 ? rows[0]!.base_url : null;
-      })
+    ? createRemoteServerProxy(directoryTargetResolver(db, owner))
     : undefined;
 
   /**
