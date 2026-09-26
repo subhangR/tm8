@@ -9,7 +9,9 @@
  * RLS admitted before (node admins). No backfill: 991 inserts nothing into
  * `servers`, so the row is visible through the view's union arm only.
  *
- * Paired: once adopted, the row appears ONCE (as the entity), never twice.
+ * Paired: once adopted, the row appears ONCE (as the entity), never twice —
+ * and never again as a 044 row, even after the entity is soft-deleted (lead
+ * ruling: delete means gone), even for a node admin outside the home space.
  */
 import { randomUUID } from 'node:crypto';
 
@@ -34,6 +36,8 @@ const URL_ = 'https://legacy-pre.example';
 let database: W1ScratchDatabase;
 let db: Db;
 let service: W2ServerConnectionsService;
+let legacyId: string;
+let serverId: string;
 const spaceA = randomUUID();
 const memberNA = randomUUID();
 const memberMA = randomUUID();
@@ -65,6 +69,18 @@ async function readAll(identityId: string): Promise<Seen> {
   }
   const relay = await directoryTargetResolver(db, async () => OWNER)(NAME, bearer(identityId));
   return { list, get, relay };
+}
+
+async function directory(identityId: string): Promise<Array<{ legacy: boolean }>> {
+  return db.query({ identityId, nodeAdmin: node[identityId], authKind: 'browser', requestId: `legacy-dir-${randomUUID()}` },
+    `select legacy from public.server_directory where name = $1`, [NAME]);
+}
+
+async function adoptedDirect(identityId: string): Promise<boolean> {
+  const [row] = await db.query<{ adopted: boolean }>(
+    { identityId, nodeAdmin: node[identityId], authKind: 'browser', requestId: `legacy-direct-${randomUUID()}` },
+    `select internal.server_connection_adopted($1) as adopted`, [legacyId]);
+  return row!.adopted;
 }
 
 const VISIBLE: Seen = { list: [{ name: NAME, baseUrl: URL_ }], get: { name: NAME, baseUrl: URL_ }, relay: URL_ };
@@ -105,6 +121,8 @@ beforeAll(async () => {
   expect(await db.query({ identityId: plainM, authKind: 'browser', requestId: 'legacy-m' },
     `select 1 from public.server_connections`)).toHaveLength(0);
 
+  legacyId = (await database.query<{ id: string }>(`select id::text from public.server_connections where name = $1`, [NAME]))[0]!.id;
+
   database.apply([W8]);
   service = new W2ServerConnectionsService({ db, owner: async () => OWNER } as unknown as FacadeDeps);
 }, 180_000);
@@ -131,14 +149,44 @@ describe('lead 09:52Z (a) — a pre-991 044 row after the repoint', () => {
     expect(await readAll(plainM)).toEqual(HIDDEN);
   });
 
-  it('PAIRED: once adopted it appears ONCE to every reader — never the entity and the 044 row together', async () => {
-    await db.rpc({ identityId: adminN, nodeAdmin: true, authKind: 'browser', requestId: 'legacy-adopt' },
+  it('PAIRED: once adopted, the home member sees the entity ONCE, and the node admin in no space sees nothing — no duplicate, no resurrected legacy row', async () => {
+    const adopted = await db.rpc<{ id: string }>({ identityId: adminN, nodeAdmin: true, authKind: 'browser', requestId: 'legacy-adopt' },
       'adopt_server_connection', [spaceA, NAME, `legacy-adopt-${randomUUID()}`]);
+    serverId = adopted.id;
     expect(await readAll(adminN)).toEqual(VISIBLE);  // the entity (home member)
-    expect(await readAll(adminN2)).toEqual(VISIBLE); // node admin outside A: still exactly one
-    expect(await readAll(plainM)).toEqual(VISIBLE);  // new: a home member now sees the entity
-    const dir = await db.query<{ legacy: boolean }>({ identityId: adminN, nodeAdmin: true, requestId: 'legacy-dir' },
-      `select legacy from public.server_directory where name = $1`, [NAME]);
-    expect(dir).toEqual([{ legacy: false }]);
+    expect(await readAll(plainM)).toEqual(VISIBLE);  // a home member now sees the entity
+    // Outside A, the entity is invisible and the 044 row is shadowed anyway:
+    // the exclusion does not depend on this reader's RLS on servers.
+    expect(await readAll(adminN2)).toEqual(HIDDEN);
+    expect(await directory(adminN)).toEqual([{ legacy: false }]);
+    expect(await directory(adminN2)).toEqual([]);
+  });
+
+  it('the helper answers only callers who can already see every 044 row: a plain member gets false, node admins get true', async () => {
+    expect(await adoptedDirect(plainM)).toBe(false);
+    expect(await adoptedDirect(adminN)).toBe(true);
+    expect(await adoptedDirect(adminN2)).toBe(true);
+  });
+
+  it('delete means gone: after the adopted server is soft-deleted, every reader returns NOTHING for both node admins and the member', async () => {
+    await db.rpc({ identityId: adminN, nodeAdmin: true, authKind: 'browser', requestId: 'legacy-remove' },
+      'remove_server', [serverId, `legacy-remove-${randomUUID()}`]);
+    expect(await readAll(adminN)).toEqual(HIDDEN);
+    expect(await readAll(adminN2)).toEqual(HIDDEN);
+    expect(await readAll(plainM)).toEqual(HIDDEN);
+    expect(await directory(adminN)).toEqual([]);
+    expect(await directory(adminN2)).toEqual([]);
+    // Still no rewrite: the 044 row is where it was.
+    expect(await database.query(`select name, base_url from public.server_connections`))
+      .toEqual([{ name: NAME, base_url: URL_ }]);
+    expect(await adoptedDirect(adminN2)).toBe(true);
+  });
+
+  it('restore_entity brings the ENTITY back, once; the 044 row stays shadowed', async () => {
+    await db.rpc({ identityId: adminN, nodeAdmin: true, authKind: 'browser', requestId: 'legacy-restore' },
+      'restore_entity', [serverId, null, `legacy-restore-${randomUUID()}`]);
+    expect(await readAll(adminN)).toEqual(VISIBLE);
+    expect(await directory(adminN)).toEqual([{ legacy: false }]);
+    expect(await readAll(adminN2)).toEqual(HIDDEN);
   });
 });

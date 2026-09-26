@@ -26,8 +26,10 @@
 --   5. `public.server_directory`: the one list every reader uses (Recent
 --      Spaces, the server rail, the relay, the CLI) — server entities the
 --      caller can read, plus 044 rows (node admins only, as before) that no
---      readable server entity has adopted. security_invoker, so both halves
---      keep their own RLS.
+--      server entity has EVER adopted (live or soft-deleted: adoption shadows
+--      the 044 row permanently; delete means gone). security_invoker, so both
+--      halves keep their own RLS; the adoption test alone is a definer helper
+--      so it does not depend on the reader's view of `servers`.
 -- =============================================================================
 
 set local lock_timeout = '5s';
@@ -554,6 +556,22 @@ $$;
 --    this. security_invoker: each half keeps its own RLS (servers: readable
 --    entity; server_connections: node admin).
 -- -----------------------------------------------------------------------------
+
+-- Has ANY server entity (live or soft-deleted, in any space) adopted this 044
+-- row? Definer, so the answer does not depend on the reader's RLS on `servers`
+-- (which hides soft-deleted rows and other spaces' servers). It takes only the
+-- connection id and returns only a boolean, and it answers only callers who
+-- pass 044's own read predicate (`internal.is_node_admin()`, 044's
+-- server_connections_node_admin_select): anyone else gets false.
+create or replace function internal.server_connection_adopted(p_connection_id uuid)
+returns boolean language sql stable security definer
+set search_path = public, internal, pg_temp as $$
+  select internal.is_node_admin()
+     and exists (select 1 from public.servers s where s.legacy_connection_id = p_connection_id)
+$$;
+revoke all on function internal.server_connection_adopted(uuid) from public;
+grant execute on function internal.server_connection_adopted(uuid) to tm8_app;
+
 create view public.server_directory with (security_invoker = true) as
   select s.entity_id as id, s.name, s.base_url, s.username, s.home_space_id,
          s.reach_status, false as legacy, s.created_at, s.updated_at
@@ -563,7 +581,7 @@ create view public.server_directory with (security_invoker = true) as
   select sc.id, sc.name, sc.base_url, sc.username, null::uuid as home_space_id,
          'unknown'::text as reach_status, true as legacy, sc.created_at, sc.updated_at
     from public.server_connections sc
-   where not exists (select 1 from public.servers s2 where s2.legacy_connection_id = sc.id);
+   where not internal.server_connection_adopted(sc.id);
 
 grant select on public.server_directory to tm8_app;
 
