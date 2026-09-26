@@ -48,7 +48,15 @@ import {
   checkHost,
   checkTransport,
   checkUpgradeTransport,
+  loopbackOwnerReachable,
 } from './security.js';
+import {
+  LAUNCH_REDEEM_PATH_PREFIX,
+  launchCookieHeader,
+  readLaunchCookie,
+  TM8_LAUNCH_COOKIE,
+  type LaunchCookieIssuer,
+} from './launch-cookie.js';
 import type { StaticHandler } from './static.js';
 import { wsClientKey } from './ws-admission.js';
 import {
@@ -65,6 +73,7 @@ import { assertSpaceGate } from './space-gate.js';
 import {
   isHandlerResult,
   type HandlerResult,
+  type IdentityResolutionContext,
   type IdentityResolver,
   type RequestContext,
 } from './types.js';
@@ -157,6 +166,13 @@ export interface FacadeServerOptions {
    * Absent: no cap, the historical behaviour (tests, database-less nodes).
    */
   readonly readAdmission?: ReadAdmission;
+  /**
+   * The launch cookie (plan W2, K4): verifies the cookie on the auto-owner arm
+   * and redeems the one-time `/launch/<code>` URL `tm8 open` prints. Absent
+   * with `TM8_AUTO_OWNER_COOKIE=required` means NO cookie is valid, so the
+   * arm is closed rather than open — the fail-closed direction.
+   */
+  readonly launchCookie?: LaunchCookieIssuer;
 }
 
 export interface FacadeServer {
@@ -172,6 +188,18 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
   const { config, registry, staticHandler, upgrades } = opts;
   const router = opts.router ?? new Router();
   const resolveIdentity = opts.identityResolver ?? autoOwnerResolver;
+  // W2 / K4. Only an explicit `off` restores the peer-only rule; `required`
+  // (or absent) with no issuer wired verifies nothing, so the arm stays shut.
+  const autoOwnerCookie: IdentityResolutionContext['autoOwnerCookie'] =
+    config.autoOwnerCookie === 'off'
+      ? 'off'
+      : (opts.launchCookie ? opts.launchCookie.verify : () => false);
+  /** The transport facts every resolution site passes — one builder, so none can drift. */
+  const identityContext = (req: IncomingMessage): IdentityResolutionContext => ({
+    remoteAddress: req.socket.remoteAddress,
+    disableAutoOwner: config.disableAutoOwner === true,
+    autoOwnerCookie,
+  });
   // `undefined` means "build the default"; `null` means "explicitly none".
   // Defaulting to ON is the point: a limiter you have to remember to enable is
   // one that is off on every node whose operator never read this file.
@@ -211,10 +239,7 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
       if (relay?.matches(pathname)) {
         // Same gate as the HTTP relay: a human session, resolved here, before
         // anything is looked up or dialled.
-        void resolveRelayCaller(req.headers, resolveIdentity, {
-          remoteAddress: req.socket.remoteAddress,
-          disableAutoOwner: config.disableAutoOwner === true,
-        }).then(
+        void resolveRelayCaller(req.headers, resolveIdentity, identityContext(req)).then(
           (caller) => relay.handleUpgrade(req, socket, head, caller),
           (error: unknown) => refuseUpgrade(socket, upgradeRefusalStatus(error),
             error instanceof Error ? error.message : String(error)),
@@ -320,6 +345,22 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
         return;
       }
 
+      // W2 / K4 — the one-time launch URL `tm8 open` prints. A page, not an
+      // API: it answers a redirect, never JSON, and sets the HttpOnly launch
+      // cookie the auto-owner arm then requires. It refuses wherever the arm
+      // itself would (non-loopback peer, forwarding header, kill switch), so a
+      // URL that leaked off the box redeems nothing. The code is burned on its
+      // first try and never logged.
+      if (
+        method === 'GET'
+        && pathname.startsWith(LAUNCH_REDEEM_PATH_PREFIX)
+        && opts.launchCookie
+        && config.autoOwnerCookie !== 'off'
+      ) {
+        sendLaunchRedemption(req, res, requestId, opts.launchCookie, pathname, identityContext(req));
+        return;
+      }
+
       // NOTE: the interim `GET /pty/output` 500ms scrollback poll used to live
       // here. It was replaced by the real push stream — the PTY WebSocket in
       // ../pty/, which shares the events WS path and is told apart by its
@@ -340,20 +381,14 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
       }
 
       if (method === 'PUT' && FILE_UPLOAD_SUPPORT_PATH.test(pathname) && opts.fileUploadRoute) {
-        const identity = await resolveIdentity(req.headers, {
-          remoteAddress: req.socket.remoteAddress,
-          disableAutoOwner: config.disableAutoOwner === true,
-        });
+        const identity = await resolveIdentity(req.headers, identityContext(req));
         // W3: a gate session under enforce has no space to upload into.
         assertSpaceGate(config.spaceSessions, identity, undefined);
         if (await opts.fileUploadRoute(req, res, { requestId, identity })) return;
       }
 
       if (method === 'POST' && pathname === CLIPBOARD_UPLOAD_PATH && opts.clipboardUploadRoute) {
-        const identity = await resolveIdentity(req.headers, {
-          remoteAddress: req.socket.remoteAddress,
-          disableAutoOwner: config.disableAutoOwner === true,
-        });
+        const identity = await resolveIdentity(req.headers, identityContext(req));
         // W3: a gate session under enforce has no space to upload into.
         assertSpaceGate(config.spaceSessions, identity, undefined);
         if (await opts.clipboardUploadRoute(req, res, { requestId, identity })) return;
@@ -365,10 +400,7 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
       // registered remote as the node owner. Before readJsonBody, because the
       // body is piped upstream untouched.
       if (opts.remoteServerProxy?.matches(pathname)) {
-        const caller = await resolveRelayCaller(req.headers, resolveIdentity, {
-          remoteAddress: req.socket.remoteAddress,
-          disableAutoOwner: config.disableAutoOwner === true,
-        });
+        const caller = await resolveRelayCaller(req.headers, resolveIdentity, identityContext(req));
         await opts.remoteServerProxy.handleHttp(req, res, caller);
         return;
       }
@@ -420,10 +452,7 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
 
       let identity: Awaited<ReturnType<typeof resolveIdentity>>;
       try {
-        identity = await resolveIdentity(req.headers, {
-          remoteAddress: req.socket.remoteAddress,
-          disableAutoOwner: config.disableAutoOwner === true,
-        });
+        identity = await resolveIdentity(req.headers, identityContext(req));
       } catch (err) {
         /*
          * A CREDENTIAL EXCHANGE STANDS ON THE CREDENTIAL IN ITS BODY.
@@ -455,17 +484,21 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
           throw err;
         }
         if (enter) {
+          // The launch cookie goes with the rest of the cookie header here: the
+          // Authorization header must verify on its own (W3), and nothing falls
+          // back to the auto-owner on this call.
           const { cookie: _cookie, ...headerOnly } = req.headers;
-          identity = await resolveIdentity(headerOnly, {
-            remoteAddress: req.socket.remoteAddress,
-            disableAutoOwner: config.disableAutoOwner === true,
-          });
+          identity = await resolveIdentity(headerOnly, identityContext(req));
         } else {
           const { authorization: _authorization, cookie: _cookie, ...bare } = req.headers;
-          identity = await resolveIdentity(bare, {
-            remoteAddress: req.socket.remoteAddress,
-            disableAutoOwner: config.disableAutoOwner === true,
-          });
+          // The launch cookie is not a session carrier and was not the dead
+          // credential, so it survives the strip (W2): the retry lands on the
+          // auto-owner exactly when the request would have without the stale pass.
+          const launch = readLaunchCookie(req.headers);
+          identity = await resolveIdentity(
+            launch ? { ...bare, cookie: `${TM8_LAUNCH_COOKIE}=${launch}` } : bare,
+            identityContext(req),
+          );
         }
       }
 
@@ -615,6 +648,53 @@ function sendJson(
 }
 
 /** Writes a JSON body verbatim — used only for `/health`, which is not an operation. */
+function sendLaunchPage(res: ServerResponse, status: number, requestId: string, text: string): void {
+  res.writeHead(status, {
+    ...BASE_SECURITY_HEADERS,
+    'content-type': 'text/plain; charset=utf-8',
+    'cache-control': 'no-store',
+    'referrer-policy': 'no-referrer',
+    'x-tm8-request-id': requestId,
+  });
+  res.end(`${text}\n`);
+}
+
+function sendLaunchRedemption(
+  req: IncomingMessage,
+  res: ServerResponse,
+  requestId: string,
+  issuer: LaunchCookieIssuer,
+  pathname: string,
+  context: IdentityResolutionContext,
+): void {
+  if (!loopbackOwnerReachable(req.headers, context)) {
+    sendLaunchPage(res, 403, requestId,
+      'This launch link only works in a browser on the machine running tm8, and not through a proxy or tunnel.');
+    return;
+  }
+  let code = '';
+  try {
+    code = decodeURIComponent(pathname.slice(LAUNCH_REDEEM_PATH_PREFIX.length));
+  } catch {
+    // A malformed escape is simply not a code this node minted.
+  }
+  const cookie = code ? issuer.redeem(code) : null;
+  if (!cookie) {
+    sendLaunchPage(res, 410, requestId,
+      'This launch link was already used or has expired. Run `tm8 open` again for a new one.');
+    return;
+  }
+  res.writeHead(303, {
+    ...BASE_SECURITY_HEADERS,
+    location: '/',
+    'set-cookie': launchCookieHeader(cookie),
+    'cache-control': 'no-store',
+    'referrer-policy': 'no-referrer',
+    'x-tm8-request-id': requestId,
+  });
+  res.end();
+}
+
 function sendRaw(
   res: ServerResponse,
   status: number,

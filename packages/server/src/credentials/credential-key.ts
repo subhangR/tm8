@@ -26,10 +26,10 @@ export function credentialKeyPath(dataDir: string): string {
   return join(dataDir, CREDENTIAL_KEY_FILE);
 }
 
-async function loadOrCreate(dataDir: string): Promise<Buffer> {
+async function loadOrCreate(dataDir: string, fileName: string): Promise<Buffer> {
   await mkdir(dataDir, { recursive: true, mode: DATA_DIR_MODE });
   await chmod(dataDir, DATA_DIR_MODE);
-  const path = credentialKeyPath(dataDir);
+  const path = join(dataDir, fileName);
 
   try {
     const handle = await open(
@@ -52,12 +52,12 @@ async function loadOrCreate(dataDir: string): Promise<Buffer> {
   const reader = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
   try {
     const info = await reader.stat();
-    if (!info.isFile()) throw new Error(`credential key path is not a regular file: ${path}`);
+    if (!info.isFile()) throw new Error(`node key path is not a regular file: ${path}`);
     if ((info.mode & 0o777) !== KEY_FILE_MODE) await reader.chmod(KEY_FILE_MODE);
 
     const key = await reader.readFile();
     if (key.length !== SECRET_KEY_BYTES) {
-      throw new Error(`credential key at ${path} has an invalid length`);
+      throw new Error(`node key at ${path} has an invalid length`);
     }
     return key;
   } finally {
@@ -66,13 +66,23 @@ async function loadOrCreate(dataDir: string): Promise<Buffer> {
 }
 
 export function loadOrCreateCredentialKey(dataDir: string): Promise<Buffer> {
-  const existing = cache.get(dataDir);
+  return loadOrCreateNodeKeyFile(dataDir, CREDENTIAL_KEY_FILE);
+}
+
+/**
+ * The same 0600, O_EXCL, O_NOFOLLOW discipline for another node-local key.
+ * Each caller names its OWN file: one key per purpose, so rotating one (by
+ * deleting its file) never orphans another's ciphertexts or cookies.
+ */
+export function loadOrCreateNodeKeyFile(dataDir: string, fileName: string): Promise<Buffer> {
+  const cacheKey = join(dataDir, fileName);
+  const existing = cache.get(cacheKey);
   if (existing) return existing;
-  const pending = loadOrCreate(dataDir).catch((error: unknown) => {
-    cache.delete(dataDir);
+  const pending = loadOrCreate(dataDir, fileName).catch((error: unknown) => {
+    cache.delete(cacheKey);
     throw error;
   });
-  cache.set(dataDir, pending);
+  cache.set(cacheKey, pending);
   return pending;
 }
 

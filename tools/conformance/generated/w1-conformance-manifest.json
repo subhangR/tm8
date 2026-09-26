@@ -1,16 +1,16 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:b7a5a5ff6ae8f7320bad8055cdf9485c166d5f5f4e60cf2501c030f5612ea437",
+  "catalogDigest": "sha256:259ff014fbb373f2bf6e5e6bfa8738f894612634846b79f2f8945d136c5e26cf",
   "catalog": {
-    "total": 253,
-    "v1": 251,
+    "total": 254,
+    "v1": 252,
     "reserved": 2,
-    "http": 251,
+    "http": 252,
     "ws": 1,
-    "registerableV1Http": 249,
+    "registerableV1Http": 250,
     "methods": {
       "GET": 83,
-      "POST": 120,
+      "POST": 121,
       "PATCH": 16,
       "DELETE": 17,
       "PUT": 15,
@@ -18,11 +18,11 @@
     },
     "kinds": {
       "read": 87,
-      "command": 164,
+      "command": 165,
       "stream": 2
     },
-    "uniqueNames": 253,
-    "uniqueBindings": 252
+    "uniqueNames": 254,
+    "uniqueBindings": 253
   },
   "reservedOperations": [
     "search.query",
@@ -1657,6 +1657,13 @@
         "source": "server-router"
       },
       {
+        "operation": "auth.launch",
+        "method": "POST",
+        "path": "/v2/auth/launch",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "credentials.status",
         "method": "GET",
         "path": "/v2/identity/credentials",
@@ -2175,7 +2182,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 221
+    "unimplementedV1Http": 222
   },
   "schemas": {
     "additive": {
@@ -5822,6 +5829,22 @@
           "auth",
           "claim",
           "reissue"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "auth.launch",
+        "noun": "auth",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/auth.launch",
+        "intentTags": [
+          "auth",
+          "launch"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

@@ -2043,6 +2043,22 @@ export interface AuthClaimReissueResult {
 }
 
 /**
+ * `auth.launch` — mint the one-time no-login URL `tm8 open` prints (plan W2).
+ *
+ * Opening `url` in a browser ON THE NODE'S MACHINE sets the HttpOnly launch
+ * cookie the loopback auto-owner arm requires (`TM8_AUTO_OWNER_COOKIE=required`)
+ * and redirects to the app. The code works once and expires at `expiresAt`.
+ * Only the node owner's human session may mint one; an agent's token is
+ * refused. The cookie itself never appears in any response body.
+ */
+export interface AuthLaunchResult {
+  /** The one-time URL. Print it to the human; never log or store it. */
+  url: string;
+  /** When the code stops working if nobody has opened it. */
+  expiresAt: string;
+}
+
+/**
  * `auth.password.change` — rotate your OWN credential (design §10.3).
  *
  * CHANGE, NOT RESET: the current password is required and proven server-side, so

@@ -312,11 +312,11 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // branch's execution.gitStage BOTH land, so this moves twice. Git merged
     // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
     // 195 -> 204 (2026-09-23): the nine skills.* v1 HTTP rows. MEASURED.
-    expect(SURFACE).toHaveLength(249); /* W11: +4 (projects.link stays, decision 29) spaces.projects.list|create and gate.folders.list|create. MEASURED. */ /* +1 auth.space.enter (W3-server). MEASURED. */ /* 241→244 G6 W1-server: spaces.leave, spaces.members.remove, accounts.disable. MEASURED: CI run 36198882819 "expected [ …(244) ] to have a length of 241". */ /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ // +10 SC-3 space/node credential ops. MEASURED. // +3 service keys (Jev lane K); /* +1 events.changes (change feed step 3). MEASURED. */ +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect(SURFACE).toHaveLength(250 /* +1 auth.launch (plan W2 launch cookie). MEASURED. */); /* W11: +4 (projects.link stays, decision 29) spaces.projects.list|create and gate.folders.list|create. MEASURED. */ /* +1 auth.space.enter (W3-server). MEASURED. */ /* 241→244 G6 W1-server: spaces.leave, spaces.members.remove, accounts.disable. MEASURED: CI run 36198882819 "expected [ …(244) ] to have a length of 241". */ /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ // +10 SC-3 space/node credential ops. MEASURED. // +3 service keys (Jev lane K); /* +1 events.changes (change feed step 3). MEASURED. */ +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
     // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): sharing + gitStage. MEASURED on the merged tree from this assertion's own failing run.
-    expect(rows).toHaveLength(249); /* W11: +4 (projects.link stays, decision 29) spaces.projects.list|create and gate.folders.list|create. MEASURED. */ /* +1 auth.space.enter (W3-server). MEASURED. */ /* 241→244 G6 W1-server. MEASURED. */ /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ // +10 SC-3. MEASURED. // +3 service keys (Jev lane K); /* +1 events.changes (change feed step 3). MEASURED. */ +1 launch.suggest (Jev lane F). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect(rows).toHaveLength(250 /* +1 auth.launch (plan W2 launch cookie). MEASURED. */); /* W11: +4 (projects.link stays, decision 29) spaces.projects.list|create and gate.folders.list|create. MEASURED. */ /* +1 auth.space.enter (W3-server). MEASURED. */ /* 241→244 G6 W1-server. MEASURED. */ /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ // +10 SC-3. MEASURED. // +3 service keys (Jev lane K); /* +1 events.changes (change feed step 3). MEASURED. */ +1 launch.suggest (Jev lane F). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
     // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): registerable v1 HTTP. MEASURED from this assertion's own failing run (Received 195).
-    expect(new Set(rows.map((r) => r.op)).size).toBe(249); /* W11: +4 (projects.link stays, decision 29) spaces.projects.list|create and gate.folders.list|create. MEASURED. */ /* +1 auth.space.enter (W3-server). MEASURED. */ /* 241→244 G6 W1-server. MEASURED. */ /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ // +10 SC-3. MEASURED. // +3 service keys (Jev lane K); /* +1 events.changes (change feed step 3). MEASURED. */ +1 launch.suggest (Jev lane F). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect(new Set(rows.map((r) => r.op)).size).toBe(250 /* +1 auth.launch (plan W2 launch cookie). MEASURED. */); /* W11: +4 (projects.link stays, decision 29) spaces.projects.list|create and gate.folders.list|create. MEASURED. */ /* +1 auth.space.enter (W3-server). MEASURED. */ /* 241→244 G6 W1-server. MEASURED. */ /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ // +10 SC-3. MEASURED. // +3 service keys (Jev lane K); /* +1 events.changes (change feed step 3). MEASURED. */ +1 launch.suggest (Jev lane F). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
   });
 
   /**
@@ -1224,6 +1224,23 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
   });
 
   /**
+   * plan W2 x W11: the loopback auto-owner is pinned to the space its PATH
+   * names, and a pinned caller cannot import a folder (W11 `requireUnpinned`:
+   * the upload ends in `grant_folder`). The refusal is the security boundary,
+   * kept on purpose (follow-up 01a0dc4c), so it is asserted here rather than
+   * left as an absence from the 400 list below.
+   */
+  it('PATH PIN: projects.folderUploads.init answers 403 for the path-pinned auto-owner', () => {
+    const row = rows.find((r) => r.op === 'projects.folderUploads.init');
+    expect(row?.schemaAccepts).toBe(true);
+    expect(row?.status).toBe(403);
+    expect(row?.errorCode).toBe('forbidden');
+    expect(row?.errorMessage).toBe(
+      'a folder import grants a gate folder, which a space-pinned session cannot do',
+    );
+  });
+
+  /**
    * The mounting claim, re-derived at the wire rather than inherited. This is
    * the half the existing no-body probe already established; it is repeated here
    * so the two halves of the sizing come from ONE instrument.
@@ -1385,10 +1402,15 @@ const HANDLER_AUTHORED_400: readonly string[] = [
   // SC-3: node policy set reads `:provider` off the PATH (see space above).
   'node.credentials.policy.set',
   // 2026-08-10 (files consolidation): projects.files.read validates its `path`
-  // query in-handler, and folderUploads.init validates its manifest in-handler;
-  // the sweep's synthetic bodies reach both refusals.
+  // query in-handler; the sweep's synthetic body reaches that refusal.
+  // projects.folderUploads.init LEFT this list (38 -> 37) on the plan W2
+  // launch-cookie tree: the sweep's loopback auto-owner is PATH-pinned to
+  // `:spaceId` on `/v2/spaces/:spaceId/project-folder-uploads`, and W11's
+  // `requireUnpinned` refuses a pinned caller 403 before the manifest is read
+  // (#847 x W11 composition; ruled keep-the-pin, follow-up 01a0dc4c). Asserted
+  // as a 403 by its own test above. MEASURED on the merged tree: this
+  // assertion's own failing run received 37 with folderUploads.init at 403.
   'projects.files.read',
-  'projects.folderUploads.init',
   'savedViews.create',
   'savedViews.update',
   'spaces.create',

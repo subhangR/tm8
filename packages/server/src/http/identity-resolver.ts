@@ -110,7 +110,18 @@ export function createSessionIdentityResolver(
     // arrives with a bearer credential on the branch above. The auto-owner
     // path's own exposure is gated by TM8_DISABLE_AUTO_OWNER; refusing it a
     // kind here would duplicate that control in the wrong file and break
-    // local development for no gain.
-    return { kind: 'auto-owner', identityId: resolved.identityId, authKind: 'browser' };
+    // local development for no gain. Since W2 the arm also needs the launch
+    // cookie (`autoOwnerResolver`), which is what keeps an agent's bare
+    // `curl 127.0.0.1` out of this branch.
+    //
+    // W2: the owner's claims pin to the space the request PATH names, so an
+    // owner request under /v2/spaces/:spaceId/... obeys the same pinned
+    // policies an agent's does. `claimsFor` binds it; `off` pins nothing.
+    return {
+      kind: 'auto-owner',
+      identityId: resolved.identityId,
+      authKind: 'browser',
+      ...(spaceSessions !== 'off' ? { pinToPathSpace: true } : {}),
+    };
   };
 }

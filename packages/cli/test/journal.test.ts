@@ -197,6 +197,21 @@ describe('redaction happens at write time, so the secret never reaches the disk'
     expect(readRecords(path)[0].command.argv).toContain('--format');
   });
 
+  it('redacts a one-time launch code (tm8 open, plan W2) from the output samples; positive — the rest of the line survives', () => {
+    const path = tempJournal();
+    const j = createJournal(envFor(path));
+    const out = j.wrapStreams(sink);
+    out.stdout('  https://127.0.0.1:4610/launch/tm8l_AbC-dEf_123\n');
+    out.stderr('retry with tm8l_ZZZ\n');
+    j.finish({ path: ['open'], argv: ['open'], exitCode: 0 });
+    const raw = readFileSync(path, 'utf8');
+    expect(raw).not.toContain('AbC-dEf_123');
+    expect(raw).not.toContain('tm8l_ZZZ');
+    const [rec] = readRecords(path);
+    expect(rec.output.stdoutSample).toBe('  https://127.0.0.1:4610/launch/tm8l_<redacted>\n');
+    expect(rec.output.stderrSample).toBe('retry with tm8l_<redacted>\n');
+  });
+
   it('redacts a minted token printed on stdout, so the file never holds it', () => {
     // `auth login --print-token`, `auth claim` and `auth space enter` print a
     // live token; the journal samples stdout verbatim. Synthetic token only.

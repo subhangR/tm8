@@ -72,6 +72,13 @@ export interface RequestIdentity {
    * `authKind`.
    */
   sessionSpaceId?: string;
+  /**
+   * `auto-owner` only (plan W2). The request's claims pin to the space its
+   * PATH names (`/v2/spaces/:spaceId/...`), so owner requests obey the same
+   * pinned policies an agent's do. Space-less routes stay unpinned. Set by the
+   * resolver while `TM8_SPACE_SESSIONS` is not `off`; read by `claimsFor`.
+   */
+  pinToPathSpace?: boolean;
 }
 
 /**
@@ -184,6 +191,14 @@ export interface IdentityResolutionContext {
   readonly remoteAddress: string | undefined;
   /** Operator kill switch. When true, even a bare loopback request is anonymous. */
   readonly disableAutoOwner: boolean;
+  /**
+   * K4 / `TM8_AUTO_OWNER_COOKIE` (plan W2). `'off'`: the loopback arm stands on
+   * the peer alone, as before W2. Otherwise the check the request's launch
+   * cookie must pass (`http/launch-cookie.ts`) before a bare loopback request
+   * may auto-own. REQUIRED, not optional, so no call site can forget it and
+   * silently fall back to the pre-W2 rule.
+   */
+  readonly autoOwnerCookie: 'off' | ((headers: IncomingHttpHeaders) => boolean);
 }
 
 /**

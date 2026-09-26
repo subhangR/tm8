@@ -22,6 +22,7 @@
  */
 import type {
   AuthClaimReissueResult,
+  AuthLaunchResult,
   AuthClaimResult,
   AuthClaimStatusResult,
   AuthInviteSignupResult,
@@ -438,6 +439,28 @@ async function authClaimReissue(cmd: CommandContext): Promise<ExitCode> {
 }
 
 /**
+ * `tm8 open` (= `tm8 auth open`) — print a one-time URL that signs THIS machine's browser in as the
+ * node owner, with no password (plan W2, `auth.launch`).
+ *
+ * The Server mints it only for the owner's own human session (`tm8 auth login`);
+ * an agent's token is refused. The URL is printed to the terminal and nowhere
+ * else: nothing is written to the credentials file, and the cookie it sets
+ * lives only in the browser that opens it.
+ */
+async function openLaunch(cmd: CommandContext): Promise<ExitCode> {
+  refuseMutationId('open', cmd.options.value('mutation-id'));
+  if (cmd.args.length > 0) throw new CliError('usage: tm8 open  (or: tm8 auth open)', EXIT_USAGE);
+  const data = await observedInvoke<AuthLaunchResult>(clientFor(cmd.ctx), 'auth.launch');
+  cmd.out.data(data, (r) => [
+    'open this in a browser on this machine to sign in as the node owner:',
+    `  ${r.url}`,
+    '',
+    `it works once and expires at ${r.expiresAt}. Do not paste it anywhere else.`,
+  ].join('\n'));
+  return EXIT_OK;
+}
+
+/**
  * `tm8 auth password` — change your own password. CHANGE, not reset: the current
  * password is required, so an open session cannot silently re-credential the
  * account. Every OTHER live session is revoked; this one stays signed in.
@@ -550,4 +573,8 @@ export const AUTH_COMMANDS: CommandModule[] = [
   { path: ['auth', 'claim'], run: authClaim },
   { path: ['auth', 'claim', 'status'], run: authClaimStatus },
   { path: ['auth', 'claim', 'reissue'], run: authClaimReissue },
+  { path: ['auth', 'open'], run: openLaunch },
+  // `tm8 open` — root shorthand (plan W2 names it so). Root paths are one
+  // token, outside the 2–3 token catalog grammar, like `help` and `doctor`.
+  { path: ['open'], run: openLaunch },
 ];

@@ -89,6 +89,15 @@ export interface ServerConfig {
    */
   readonly disableAutoOwner?: boolean;
   /**
+   * `TM8_AUTO_OWNER_COOKIE=required|off`, default `required` (plan W2, K4).
+   * `required`: the loopback auto-owner arm also needs the launch cookie a
+   * browser gets from the one-time URL `tm8 open` prints, so a local process
+   * with no token — an agent's `curl 127.0.0.1` — is anonymous (T12). `off`
+   * restores the pre-W2 rule: the loopback peer alone. ABSENT READS AS
+   * `required` everywhere it is consulted, so a hand-built config fails closed.
+   */
+  readonly autoOwnerCookie?: 'required' | 'off';
+  /**
    * Auth rate limits. Absent means the built-in defaults, which are what a
    * node should run — these exist for an operator with an unusual topology
    * (a shared NAT putting a whole office in one client bucket, say), not as a
@@ -516,6 +525,19 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   const spaceSessions: SpaceSessionsMode =
     spaceSessionsRaw === 'off' || spaceSessionsRaw === 'enforce' ? spaceSessionsRaw : 'agents';
 
+  // W2 / K4. Anything but an explicit `off` is `required`; a typo refuses boot
+  // rather than silently choosing either side of a security arm.
+  const autoOwnerCookieRaw = env.TM8_AUTO_OWNER_COOKIE?.trim().toLowerCase();
+  if (
+    autoOwnerCookieRaw !== undefined && autoOwnerCookieRaw !== ''
+    && autoOwnerCookieRaw !== 'required' && autoOwnerCookieRaw !== 'off'
+  ) {
+    throw new ConfigError(
+      `TM8_AUTO_OWNER_COOKIE must be "required" or "off", got ${JSON.stringify(env.TM8_AUTO_OWNER_COOKIE)}`,
+    );
+  }
+  const autoOwnerCookie: 'required' | 'off' = autoOwnerCookieRaw === 'off' ? 'off' : 'required';
+
   // Validated at load rather than at print time: a malformed origin should stop
   // the operator now, not silently produce a broken claim link on the one boot
   // where it matters.
@@ -583,6 +605,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     containers,
     nodeMode,
     spaceSessions,
+    autoOwnerCookie,
     ...(publicOrigin ? { publicOrigin } : {}),
     // `multi` implies the kill switch. The explicit env var still wins when it
     // asks for MORE restriction (a hardened single-player node), and can never

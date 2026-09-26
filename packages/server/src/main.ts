@@ -18,7 +18,14 @@ import { gatePosture, writeNodePolicy } from './projects/node-policy.js';
 
 import { createDb } from './db/index.js';
 import type { Db, DbClaims } from './db/types.js';
-import { bootDesktopSidecar, desktopNodeId, desktopServerConfig, isDesktopProfile, report } from './desktop.js';
+import {
+  bootDesktopSidecar,
+  desktopNodeId,
+  desktopReadyUrl,
+  desktopServerConfig,
+  isDesktopProfile,
+  report,
+} from './desktop.js';
 import { SidecarError } from './sidecar/errors.js';
 import type { SidecarManager } from './sidecar/manager.js';
 import {
@@ -52,6 +59,7 @@ import { createLoopbackOwnerResolver } from './identity/loopback.js';
 import { createTrackingObserverJob } from './tracking/observer.js';
 import { createCommitRecorderJob } from './tracking/commit-recorder.js';
 import { createSessionIdentityResolver } from './http/identity-resolver.js';
+import { loadLaunchCookieIssuer, type LaunchCookieIssuer } from './http/launch-cookie.js';
 import { createForgeWatcherJob } from './tracking/loops.js';
 import { createTaskNudgeJob } from './tracking/task-nudges.js';
 import { createFormDeliveryJob, FormDeliveryDrain } from './facade/services/w2/form-delivery.js';
@@ -198,6 +206,12 @@ export interface BootstrappedServer {
    * hunt through a terminal that does not exist.
    */
   readonly claimUrl: string | undefined;
+  /**
+   * W2 / K4 — the launch cookie issuer, present only where the loopback owner
+   * needs the cookie. Returned so the desktop shell can be handed a one-time
+   * `/launch/` URL (see `desktopReadyUrl`); nothing else outside bootstrap mints.
+   */
+  readonly launchCookie: LaunchCookieIssuer | undefined;
 }
 
 export async function bootstrap(opts: BootstrapOptions = {}): Promise<BootstrappedServer> {
@@ -255,6 +269,15 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    * ONE identity path for every transport — the rule lives in
    * `http/identity-resolver.ts` so a test can reach it; this is the wiring.
    */
+  /**
+   * W2 / K4 — the launch cookie. Built only where it can matter: a node whose
+   * auto-owner arm is live and whose cookie is `required`. Everywhere else the
+   * arm is closed (kill switch, multi) or open on the peer alone (`off`).
+   */
+  const launchCookie = db && config.disableAutoOwner !== true && config.autoOwnerCookie !== 'off'
+    ? await loadLaunchCookieIssuer(dataDir)
+    : undefined;
+
   const identityResolver: IdentityResolver | undefined = db
     ? createSessionIdentityResolver({
         db,
@@ -413,6 +436,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       db,
       config,
       owner,
+      ...(launchCookie ? { launchCookie } : {}),
       files: { blobStore: blobStore!, maxSizeBytes: fileMaxSizeBytes },
       folderUploads: {
         blobStore: blobStore!,
@@ -548,6 +572,11 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     const identity = await resolver(req.headers, {
       remoteAddress: req.socket.remoteAddress,
       disableAutoOwner: config.disableAutoOwner === true,
+      // Same rule as the HTTP frame (server.ts `identityContext`): only an
+      // explicit `off` skips the cookie; `required` with no issuer admits none.
+      autoOwnerCookie: config.autoOwnerCookie === 'off'
+        ? 'off'
+        : (launchCookie ? launchCookie.verify : () => false),
     });
     if (identity.kind === 'anonymous') {
       throw new CollabError('unauthenticated', 'authentication is required');
@@ -747,6 +776,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     // wave cannot starve spawn/complete of a connection (read-admission.ts).
     ...(db ? { readAdmission: new ReadAdmission({ limit: readLimitForPool(config.dbPoolMax ?? 8) }) } : {}),
     ...(identityResolver ? { identityResolver } : {}),
+    ...(launchCookie ? { launchCookie } : {}),
     ...(rawUpload ? { fileUploadRoute: rawUpload } : {}),
     ...(clipboardUpload ? { clipboardUploadRoute: clipboardUpload } : {}),
     ...(voiceWebhook ? { voiceWebhookRoute: voiceWebhook } : {}),
@@ -1052,7 +1082,9 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     });
   }
 
-  return { server, subscriptions, events, url, db, delivery, preview, scheduler, execution, claimUrl };
+  return {
+    server, subscriptions, events, url, db, delivery, preview, scheduler, execution, claimUrl, launchCookie,
+  };
 }
 
 export async function main(): Promise<void> {
@@ -1064,7 +1096,7 @@ export async function main(): Promise<void> {
 
     // TRUE only here: this is the one caller that owns the process lifetime and
     // can therefore stop what it starts (see BootstrapOptions.startBackgroundJobs).
-    const { server, url, db, delivery, preview, scheduler, execution, claimUrl } = await bootstrap({
+    const { server, url, db, delivery, preview, scheduler, execution, claimUrl, launchCookie } = await bootstrap({
       startBackgroundJobs: true,
       ...(sidecar ? { config: await desktopServerConfig() } : {}),
       // TM8 Chat production composition: ClaudeHeadlessAdapter + the C5-minting
@@ -1167,7 +1199,15 @@ export async function main(): Promise<void> {
       if ((msg as { type?: string } | null)?.type === 'tm8:shutdown') shutdown('IPC shutdown');
     });
 
-    report({ phase: 'ready', message: 'Ready', url: claimUrl ?? url });
+    // IPC only: with a launch cookie in play the ready URL carries a one-time
+    // code, so it must never reach stdout or a log line.
+    // Only the desktop profile mints: a server install has no IPC parent to
+    // hand the code to, and an unused code is still a live credential.
+    report({
+      phase: 'ready',
+      message: 'Ready',
+      url: isDesktopProfile() ? desktopReadyUrl(url, claimUrl, launchCookie) : claimUrl ?? url,
+    });
   } catch (err) {
     report({
       phase: 'failed',

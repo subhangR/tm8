@@ -40,6 +40,8 @@ describeDb('G1A loop over HTTP', () => {
       uiDir: undefined,
       maxBodyBytes: 8 * 1024 * 1024,
       databaseUrl: DATABASE_URL,
+      // Loopback owner with no credential: opt out of the plan W2 launch cookie.
+      autoOwnerCookie: 'off',
     };
     registerFacadeHandlers(registry, { db, config });
     // The frame is assembled directly rather than through `bootstrap()`, so

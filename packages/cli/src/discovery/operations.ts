@@ -314,9 +314,24 @@ const ROWS: Record<OperationName, Row> = {
     side: 'durable',
     tags: ['claim', 'reissue', 'rotate', 'first-run', 'setup', 'token', 'recover'],
     notes: [
-      'ON-BOX BY CONSTRUCTION: only the loopback auto-owner may run it, and the fresh token is written to <dataDir>/setup-token (0600) — the file, not the network, is the boundary',
+      'ON-BOX BY CONSTRUCTION: only the loopback auto-owner (which now also needs the `tm8 open` launch cookie) may run it, and the fresh token is written to <dataDir>/setup-token (0600) — the file, not the network, is the boundary',
       'an ordinary restart REPRINTS the live token rather than rotating it, so this is the deliberate act that rotates: reissuing invalidates any previously printed token',
       'refused once any account on the node has a password: a claim token is inert on a claimed node, so there is nothing to reissue',
+    ],
+  },
+  'auth.launch': {
+    cmd: ['auth', 'open'],
+    syn: 'tm8 auth open',
+    sum: 'Print a one-time URL that signs this machine\'s browser in as the node owner, no password',
+    authz: 'server',
+    input: 'none',
+    side: 'durable',
+    tags: ['open', 'launch', 'browser', 'cookie', 'no-login', 'owner', 'single-player'],
+    notes: [
+      'the node owner\'s own human session only (`tm8 auth login`): an agent token is refused, so an agent never sees the URL',
+      'the URL works once, for a few minutes, and only from a browser on the node\'s own machine (loopback, no forwarding headers); it sets an HttpOnly cookie the no-login owner path requires',
+      'nothing is written to the CLI credentials file; set TM8_AUTO_OWNER_COOKIE=off to restore the pre-cookie loopback behaviour',
+      '`tm8 open` is the root shorthand for the same command',
     ],
   },
   // ── node accounts (G6, migration 232) ──────────────────────────────────
@@ -3139,8 +3154,9 @@ export const CATALOG_DIGEST =
   // Re-measured (W11, decision 29): + spaces.projects.list/create, gate.folders.list/create; projects.link stays. Read from the failing digest test. Merged onto G6 (232): digest re-measured on the merged tree.
   // Re-measured (G6, 232): + spaces.members.remove, spaces.leave, accounts.disable. Read from the failing digest test.
   // Re-measured (W3-server, on main bd1841bf): + auth.space.enter. Read from the conformance generator.
+  // Re-measured (plan W2 launch cookie on W11, main f94c6adc): + auth.launch. Read from the failing digest test.
   // Rebased onto main d11e0be5 (#848): W11's +4 on top of auth.space.enter; digest re-measured on the rebased tree.
-  'sha256:b7a5a5ff6ae8f7320bad8055cdf9485c166d5f5f4e60cf2501c030f5612ea437';
+  'sha256:259ff014fbb373f2bf6e5e6bfa8738f894612634846b79f2f8945d136c5e26cf';
 
 export const GRAMMAR_VERSION = '2';
 

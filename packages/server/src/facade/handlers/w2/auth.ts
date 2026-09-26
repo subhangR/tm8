@@ -19,7 +19,8 @@
  *
  * This count is load-bearing and goes stale silently: it read "Four" on the
  * members branch while five were registered, "Six" here after the merge union
- * made it seven, and "Seven" until 141 added the three account-lifecycle ops.
+ * made it seven, "Seven" until 141 added the three account-lifecycle ops, and
+ * "Ten" until W2 added `auth.launch`.
  * If you add an operation below, change this line.
  *
  * These commands sit OUTSIDE the idempotency ledger on purpose: a session row
@@ -35,6 +36,7 @@ import type {
   AuthClaimResult,
   AuthClaimStatusResult,
   AuthInviteSignupInput,
+  AuthLaunchResult,
   AuthInviteSignupResult,
   AuthLoginInput,
   AuthLoginResult,
@@ -55,6 +57,7 @@ import { join } from 'node:path';
 
 import { resolveServerDataDir } from '../../../http/config.js';
 import { clearSessionCookie, sessionCookie } from '../../../http/session-cookie.js';
+import { LAUNCH_REDEEM_PATH_PREFIX } from '../../../http/launch-cookie.js';
 import { json, type OperationHandler, type RequestContext } from '../../../http/types.js';
 import type { FacadeDeps } from '../../deps.js';
 import type { HandlerRegistry } from '../../registry.js';
@@ -474,6 +477,11 @@ function authClaimStatus(deps: FacadeDeps): OperationHandler {
  *
  * An ordinary restart REPRINTS the live token (node-claim-boot.ts) rather than
  * rotating it, so this is the deliberate act §3.1 leans on.
+ *
+ * Since W2 the auto-owner arm also needs the launch cookie
+ * (`TM8_AUTO_OWNER_COOKIE=required`), so a bare `curl` on the host no longer
+ * reaches this: the browser `tm8 open` launched does, and an unclaimed node
+ * with the cookie off (`TM8_AUTO_OWNER_COOKIE=off`) behaves as before.
  */
 function authClaimReissue(deps: FacadeDeps): OperationHandler {
   return async (ctx) => {
@@ -514,6 +522,59 @@ function authClaimReissue(deps: FacadeDeps): OperationHandler {
       tokenPath: written,
     };
     return result;
+  };
+}
+
+/** A Host header that names this machine's loopback, so a printed URL stays on-box. */
+const LOOPBACK_HOST_RE = /^(?:localhost|127(?:\.\d{1,3}){3}|\[::1\])(?::\d{1,5})?$/i;
+
+/**
+ * `auth.launch` — mint the one-time no-login URL `tm8 open` prints (plan W2).
+ *
+ * WHO MAY MINT. Only the node owner, and only as a HUMAN: a bearer session of
+ * kind `browser`/`cli` on the owner's account, or the auto-owner arm (which,
+ * with the cookie required, already holds a launch cookie). An `agent` or
+ * `agent_runtime` token is refused even when it belongs to the owner, so an
+ * agent never sees the URL; anonymous is refused outright. A non-owner member
+ * is refused too: the cookie makes its holder the OWNER.
+ *
+ * WHERE IT POINTS. The redemption route admits only a loopback peer with no
+ * forwarding headers, so the URL is always a loopback URL: the caller's own
+ * Host when that is a loopback name, else `http://localhost:<port>`. It is
+ * never built from `publicOrigin`, which would name a URL that cannot redeem.
+ */
+function authLaunch(deps: FacadeDeps): OperationHandler {
+  return async (ctx: RequestContext) => {
+    const identity = ctx.identity;
+    if (identity.kind === 'anonymous') {
+      throw new CollabError('unauthenticated', 'sign in as the node owner (`tm8 auth login`) to mint a launch URL');
+    }
+    if (identity.authKind !== 'browser' && identity.authKind !== 'cli') {
+      throw new CollabError('forbidden', 'a launch URL is minted only by the owner\'s own human session, never by an agent');
+    }
+    if (identity.kind === 'bearer') {
+      const owner = await deps.owner();
+      if (!identity.accountId || identity.accountId !== owner.accountId) {
+        throw new CollabError('forbidden', 'only the node owner may mint a launch URL');
+      }
+    }
+    const issuer = deps.launchCookie;
+    if (!issuer) {
+      throw new CollabError(
+        'forbidden',
+        'this node has no launch cookie: auto-owner is disabled (TM8_DISABLE_AUTO_OWNER) or not cookie-gated (TM8_AUTO_OWNER_COOKIE=off)',
+      );
+    }
+    const hostHeader = ctx.headers.host;
+    const host = typeof hostHeader === 'string' && LOOPBACK_HOST_RE.test(hostHeader)
+      ? hostHeader
+      : `localhost:${deps.config.port}`;
+    const { code, expiresAt } = issuer.mintCode();
+    const result: AuthLaunchResult = {
+      url: `http://${host}${LAUNCH_REDEEM_PATH_PREFIX}${encodeURIComponent(code)}`,
+      expiresAt,
+    };
+    return json(result, { headers: { 'cache-control': 'no-store' } });
   };
 }
 
@@ -631,6 +692,7 @@ export function registerW2AuthHandlers(registry: HandlerRegistry, deps: FacadeDe
     'auth.claim': authClaim(deps),
     'auth.claim.status': authClaimStatus(deps),
     'auth.claim.reissue': authClaimReissue(deps),
+    'auth.launch': authLaunch(deps),
     'auth.password.change': authPasswordChange(deps),
     'auth.invite.resolve': authInviteResolve(deps),
     'auth.invite.signup': authInviteSignup(deps),

@@ -25,7 +25,16 @@ import {
 } from '../src/events/index.js';
 import { bootstrap, type BootstrappedServer } from '../src/main.js';
 
-const TEST_CONFIG = { host: '127.0.0.1', port: 0, uiDir: undefined, maxBodyBytes: 1024 * 1024 };
+// `autoOwnerCookie: 'off'`: these sockets connect as the loopback owner with
+// no credential. Since plan W2 (K4) that arm needs the launch cookie unless a
+// node opts out, and a config with no setting fails closed.
+const TEST_CONFIG = {
+  host: '127.0.0.1',
+  port: 0,
+  uiDir: undefined,
+  maxBodyBytes: 1024 * 1024,
+  autoOwnerCookie: 'off' as const,
+};
 
 const ACTIVITY = {
   type: 'activity.created',
