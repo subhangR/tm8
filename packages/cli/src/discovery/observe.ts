@@ -37,6 +37,7 @@ export function clientFor(ctx: CliContext): Tm8Client {
     timeoutMs: ctx.timeoutMs,
     fresh: ctx.fresh,
     gapRetryMs: ctx.gapRetryMs,
+    link: ctx.link,
   });
 }
 

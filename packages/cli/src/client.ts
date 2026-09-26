@@ -27,6 +27,7 @@ import {
   getOperation,
   WireErrorBodySchema,
   type OperationName,
+  type SpaceLinksInvokeResult,
 } from '@tm8/contract';
 import {
   ApiError,
@@ -34,6 +35,7 @@ import {
   StreamOperationError,
   TransportError,
 } from './errors.js';
+import type { SpaceLinkRoute } from './context.js';
 import { CliError, EXIT_USAGE } from './exit.js';
 import { journal } from './journal.js';
 import { readCache, type CacheEntry, type ReadCache } from './read-cache.js';
@@ -116,6 +118,11 @@ export interface ClientOptions {
   gapRetryMs?: number | undefined;
   /** Injectable for tests. */
   sleepImpl?: (ms: number) => Promise<void>;
+   * `--space` through a space link (space-link-route.ts). When set, EVERY
+   * catalog call leaves as `spaceLinks.invoke` on the home Space, so the home
+   * server's refused set and audit see all of it; bytes are refused here.
+   */
+  link?: SpaceLinkRoute | undefined;
 }
 
 /**
@@ -224,6 +231,7 @@ export class Tm8Client {
   private readonly cache: ReadCache;
   private readonly gapRetryMs: number;
   private readonly sleep: (ms: number) => Promise<void>;
+  private readonly link: SpaceLinkRoute | undefined;
 
   constructor(opts: ClientOptions) {
     this.baseUrl = opts.baseUrl;
@@ -237,6 +245,7 @@ export class Tm8Client {
     this.cache = opts.cache ?? readCache;
     this.gapRetryMs = Math.max(0, opts.gapRetryMs ?? 0);
     this.sleep = opts.sleepImpl ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+    this.link = opts.link;
   }
 
   /**
@@ -268,7 +277,49 @@ export class Tm8Client {
         EXIT_USAGE,
       );
     }
+    if (this.link) return this.invokeThroughLink<T>(this.link, name, opts);
+    return this.invokeDirect<T>(name, opts);
+  }
 
+  /**
+   * One catalog op, run in the linked Space as the launching Member: the op's
+   * own params, query and body ride inside ONE `spaceLinks.invoke` to the HOME
+   * Space. There is no other path — no call to the target, no token here.
+   */
+  private async invokeThroughLink<T>(
+    link: SpaceLinkRoute,
+    name: OperationName,
+    opts: InvokeOptions,
+  ): Promise<InvokeResult<T>> {
+    const query: Record<string, string> = {};
+    for (const [key, value] of Object.entries(opts.query ?? {})) {
+      if (value === undefined) continue;
+      if (typeof value === 'string') {
+        query[key] = value;
+      } else if (value.length === 1) {
+        query[key] = value[0] as string;
+      } else if (value.length > 1) {
+        throw new CliError(
+          `${name} through a space link carries one value per query key; --${key} was given ${value.length}`,
+          EXIT_USAGE,
+        );
+      }
+    }
+    const params = opts.params ?? {};
+    const inner = await this.invokeDirect<SpaceLinksInvokeResult>('spaceLinks.invoke', {
+      params: { spaceId: link.homeSpaceId, link: link.linkId },
+      body: {
+        op: name,
+        ...(Object.keys(params).length > 0 ? { params } : {}),
+        ...(Object.keys(query).length > 0 ? { query } : {}),
+        ...(opts.body === undefined ? {} : { input: opts.body }),
+      },
+      timeoutMs: opts.timeoutMs ?? this.deadlineFor(name),
+    });
+    return { data: inner.data.result as T, requestId: inner.requestId, status: inner.status };
+  }
+
+  private async invokeDirect<T>(name: OperationName, opts: InvokeOptions): Promise<InvokeResult<T>> {
     const { res, url, method, text } = await this.send(name, opts);
     const requestId = res.headers.get('x-tm8-request-id') ?? '';
 
@@ -312,6 +363,12 @@ export class Tm8Client {
     if (mode !== 'bytes') {
       throw new CliError(
         `operation ${name} answers with the JSON envelope, not bytes; use invoke()`,
+        EXIT_USAGE,
+      );
+    }
+    if (this.link) {
+      throw new CliError(
+        `${name} answers with raw bytes and cannot run through a space link; run it from a session in the target Space`,
         EXIT_USAGE,
       );
     }
