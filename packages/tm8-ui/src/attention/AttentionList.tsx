@@ -64,7 +64,11 @@ export function AttentionList({ filter: initial, onOpen, nameOf, title = 'Needs 
           ))}
         </div>
       </header>
-      {api.status === 'loading' ? (
+      {api.status === 'error' ? (
+        <p className="att-list__empty" data-testid="attention-list-error">
+          Attention could not be loaded. It will retry on the next change.
+        </p>
+      ) : api.status === 'loading' ? (
         <p className="att-list__empty">Loading…</p>
       ) : rows.length === 0 ? (
         <p className="att-list__empty" data-testid="attention-list-empty">

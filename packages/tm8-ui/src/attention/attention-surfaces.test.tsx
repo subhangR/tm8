@@ -130,4 +130,15 @@ describe('the top bar (chapter 4, mock tab 2)', () => {
     mount(fake);
     await waitFor(() => expect(screen.getByTestId('attention-top-segment').textContent).toContain('nothing needs you'));
   });
+
+  it('a failed read says so; it is never the all-clear', async () => {
+    const fake = fakeSeam([]);
+    fake.attentionRequests.mockRejectedValue(new Error('forbidden'));
+    mount(fake);
+    await waitFor(() => expect(screen.getByTestId('attention-top-segment').textContent).toContain('attention unavailable'));
+    expect(screen.getByTestId('attention-top-segment').textContent).not.toContain('nothing needs you');
+    fireEvent.click(screen.getByTestId('attention-top-segment'));
+    expect(screen.getByTestId('attention-list-error')).toBeTruthy();
+    expect(screen.queryByTestId('attention-list-empty')).toBeNull();
+  });
 });

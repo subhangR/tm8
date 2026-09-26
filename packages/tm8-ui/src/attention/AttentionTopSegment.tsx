@@ -35,8 +35,12 @@ export function AttentionTopSegment({ onOpenEntity, nameOf }: AttentionTopSegmen
     (best, row) => (!best || levelRank(row.chip.level) > levelRank(best.level) ? row.chip : best),
     null,
   );
-  const tone = counts.all === 0 ? 'clear' : loudest?.tone ?? 'wait';
-  const label = api.status === 'loading'
+  // A failed read is NOT an all-clear: it has its own face, never the ✓.
+  const failed = api.status === 'error';
+  const tone = failed ? 'fyi' : counts.all === 0 ? 'clear' : loudest?.tone ?? 'wait';
+  const label = failed
+    ? 'Attention could not be loaded'
+    : api.status === 'loading'
     ? 'Loading attention'
     : counts.all === 0
       ? 'Nothing needs you'
@@ -54,8 +58,10 @@ export function AttentionTopSegment({ onOpenEntity, nameOf }: AttentionTopSegmen
         title={label}
         onClick={() => setOpen((value) => !value)}
       >
-        <span className="att-top__bang" aria-hidden>{counts.all === 0 ? '✓' : loudest?.icon ?? '!'}</span>
-        {api.status === 'loading' ? (
+        <span className="att-top__bang" aria-hidden>{failed ? '—' : counts.all === 0 ? '✓' : loudest?.icon ?? '!'}</span>
+        {failed ? (
+          <span>attention unavailable</span>
+        ) : api.status === 'loading' ? (
           <span>…</span>
         ) : counts.all === 0 ? (
           <span>nothing needs you</span>
