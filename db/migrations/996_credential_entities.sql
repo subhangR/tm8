@@ -391,7 +391,25 @@ $$;
 --    the five §3a fields and the label as its title — never key_hint,
 --    display_login or a secret column, so entity_versions and export cannot
 --    keep them (T1, T34).
+--
+--    The arm reads a narrow view rather than building the object inline, so
+--    it has the shape every other arm has (`to_jsonb(alias) - 'entity_id'
+--    from public.<relation> alias`) and entity-content-all-kinds resolves it
+--    like any other. The view's column list IS the card: no secret, hint or
+--    login column exists in it to leak. Granted to nobody; entity_content
+--    reads it as its owner.
 -- -----------------------------------------------------------------------------
+create view public.credential_cards as
+  select sc.id as entity_id,
+         sc.label as title,
+         sc.provider,
+         sc.shape,
+         sc.visibility,
+         sc.status,
+         sc.owner_account_id as "ownerAccountId"
+    from public.space_credentials sc;
+revoke all on public.credential_cards from public;
+
 create or replace function internal.entity_content(target uuid)
 returns jsonb language plpgsql stable set search_path = public, internal, pg_temp as $$
 declare e public.entities; content jsonb;
@@ -437,11 +455,7 @@ begin
                          into content from public.forms fm where fm.entity_id = target;
       -- An allow-list, never to_jsonb(sc): the row holds the sealed secret,
       -- the hint and the vendor login (§3a).
-      when 'credential' then select jsonb_build_object(
-                                'title', sc.label, 'provider', sc.provider, 'shape', sc.shape,
-                                'visibility', sc.visibility, 'status', sc.status,
-                                'ownerAccountId', sc.owner_account_id)
-                         into content from public.space_credentials sc where sc.id = target;
+      when 'credential' then select to_jsonb(cc) - 'entity_id' into content from public.credential_cards cc where cc.entity_id = target;
       else content := '{}'::jsonb;
     end case;
   end if;
@@ -1079,11 +1093,15 @@ for each row execute function internal.guard_member_owned_credentials();
 --     member row in that space when there is one, else the space's owner,
 --     then an admin, then any member (live before deleted); a space with no
 --     member at all cannot hold a credential a member made, and is refused.
+--     It ends by asserting that every side row has a same-id card of kind
+--     credential in its own space, so an id collision cannot pass silently.
 -- -----------------------------------------------------------------------------
 do $$
 declare
   r record;
   v_actor uuid;
+  v_missing bigint;
+  v_example text;
 begin
   for r in select sc.id, sc.space_id, sc.created_by_account_id, sc.created_at
              from public.space_credentials sc
@@ -1117,6 +1135,20 @@ begin
   -- The flag is cleared by every insert; say so once more for the migration's
   -- own transaction (R11: "flag reset at end").
   perform set_config('tm8.credential_write', '', true);
+  -- The loop skips a row whose id already names an entity, and the FK below
+  -- checks only that SOME entity has the id. A pre-existing entity of another
+  -- kind, or in another space, sharing a 206 row's id would therefore pass
+  -- both silently. Refuse it here instead: every side row must end with a
+  -- same-id card of kind credential in its own space. Ids only, never a
+  -- secret column.
+  select count(*), min(sc.id::text) into v_missing, v_example
+    from public.space_credentials sc
+   where not exists (select 1 from public.entities e
+                      where e.id = sc.id and e.kind = 'credential' and e.space_id = sc.space_id);
+  if v_missing > 0 then
+    raise exception '% space credential row(s) lack a credential card in their own space (e.g. %)',
+      v_missing, v_example;
+  end if;
 end
 $$;
 
@@ -1150,5 +1182,8 @@ grant execute on function public.list_space_credentials(uuid, boolean) to tm8_ap
 grant execute on function public.read_space_credential(uuid) to tm8_app;
 grant execute on function public.usable_space_credential_ids(uuid[]) to tm8_app;
 grant execute on function public.set_space_credential_visibility(uuid, text) to tm8_app;
+
+-- A fresh table is estimated at 10 pages until analyzed (225); do it here.
+analyze public.member_defaults;
 
 reset role;
