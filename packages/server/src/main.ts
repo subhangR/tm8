@@ -55,7 +55,7 @@ import { createLoopbackOwnerResolver } from './identity/loopback.js';
 import { sessionIssuedHere } from './identity/pg-auth.js';
 import { createTrackingObserverJob } from './tracking/observer.js';
 import { createCommitRecorderJob } from './tracking/commit-recorder.js';
-import { createSessionIdentityResolver } from './http/identity-resolver.js';
+import { createSessionIdentityResolver, createSocketIdentityResolver } from './http/identity-resolver.js';
 import { createForgeWatcherJob } from './tracking/loops.js';
 import { createTaskNudgeJob } from './tracking/task-nudges.js';
 import { createFormDeliveryJob, FormDeliveryDrain } from './facade/services/w2/form-delivery.js';
@@ -506,6 +506,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       // K6 (W3): the resolver already clears nodeAdmin for a pinned session.
       nodeAdmin: identity.sessionSpaceId ? false : identity.nodeAdmin === true,
       ...(identity.sessionSpaceId ? { sessionSpaceId: identity.sessionSpaceId } : {}),
+      ...(identity.viaLinkId ? { viaLinkId: identity.viaLinkId } : {}),
     };
   };
 
@@ -553,17 +554,10 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     : undefined;
 
   /** Browser sockets authenticate with the Secure HttpOnly session cookie. */
-  const resolveSocketIdentity = async (req: IncomingMessage): Promise<RequestIdentity> => {
-    const resolver = identityResolver ?? autoOwnerResolver;
-    const identity = await resolver(req.headers, {
-      remoteAddress: req.socket.remoteAddress,
-      disableAutoOwner: config.disableAutoOwner === true,
-    });
-    if (identity.kind === 'anonymous') {
-      throw new CollabError('unauthenticated', 'authentication is required');
-    }
-    return identity;
-  };
+  const resolveSocketIdentity = createSocketIdentityResolver(
+    identityResolver ?? autoOwnerResolver,
+    config.disableAutoOwner === true,
+  );
 
   /**
    * PTY grants are bearer capabilities and therefore work for the CLI without
@@ -572,7 +566,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    */
   const resolveOptionalSocketIdentityId = async (
     req: IncomingMessage,
-  ): Promise<{ identityId: string; sessionSpaceId?: string } | undefined> => {
+  ): Promise<{ identityId: string; sessionSpaceId?: string; viaLinkId?: string } | undefined> => {
     if (!readTm8SessionCookie(req.headers) && req.headers.authorization === undefined) return undefined;
     const identity = await resolveSocketIdentity(req);
     if (!identity.identityId) return undefined;
@@ -580,6 +574,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     return {
       identityId: identity.identityId,
       ...(identity.sessionSpaceId ? { sessionSpaceId: identity.sessionSpaceId } : {}),
+      ...(identity.viaLinkId ? { viaLinkId: identity.viaLinkId } : {}),
     };
   };
 
