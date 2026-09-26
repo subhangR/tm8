@@ -42,7 +42,7 @@ import { SubscriptionRegistry } from '../../src/events/subscriptions.js';
 import type { FacadeDeps } from '../../src/facade/deps.js';
 import { HandlerRegistry } from '../../src/facade/registry.js';
 import { registerMembershipHandlers } from '../../src/membership/handlers.js';
-import { DbSpaceLinkStore, type SpaceLink } from '../../src/credentials/space-link-store.js';
+import { DbSpaceLinkStore, SpaceLinkUnusable, type SpaceLink, type SpaceLinkStaleNotice } from '../../src/credentials/space-link-store.js';
 import { loadOrCreateCredentialKey } from '../../src/credentials/credential-key.js';
 import { openSecret } from '../../src/credentials/secret-box.js';
 
@@ -1443,8 +1443,46 @@ describe.sequential('W6 space links — H\'s link session A → B', () => {
   });
 });
 
-describe.sequential('T16 link spawn budget on the W4 Sessions page — after W4', () => {
-  it.todo('T16: the link row shows on W4\'s Sessions page and its spawn budget is enforced (re-stack on W4 238)');
+describe.sequential('T16 L_B after B revokes it: G invokes B → 401 → signed_out, no retry', () => {
+  beforeAll(ensureHLink);
+
+  it('positive — before the revoke, G (H\'s agent) uses the link and resolves in B as kind link', async () => {
+    const g = await claimsForToken(await mintAgent());
+    const use = await linkStore.use(g, hLink.id, { workSessionId: fixture.workSessionA });
+    expect(use.targetSpaceId).toBe(fixture.spaceB);
+    expect(await claimsForToken(use.token)).toMatchObject({ authKind: 'link', sessionSpaceId: fixture.spaceB });
+  });
+
+  it('B revokes the link session; G\'s next use is signed_out, forgets the bytes, notifies G\'s session once, and never retries', async () => {
+    const notices: SpaceLinkStaleNotice[] = [];
+    const store = new DbSpaceLinkStore({ db, dataDir: linkDataDir, onStale: (n) => { notices.push(n); } });
+    const h = await claimsForToken(await mintBrowser(fixture.accountH, fixture.identityH));
+    // The revoke on this base: revoke_auth_session as the session's owner. W4's
+    // Sessions page (238, auth.sessions.revoke by a B admin) reaches the same row.
+    await db.rpc(h, 'revoke_auth_session', [hLink.mine!.sessionId]);
+    await expect(claimsForToken(hLinkToken)).rejects.toBeTruthy();
+
+    const g = await claimsForToken(await mintAgent());
+    await expect(store.use(g, hLink.id, { workSessionId: fixture.workSessionA }))
+      .rejects.toMatchObject({ status: 'signed_out' });
+    expect(notices).toEqual([{ linkId: hLink.id, status: 'signed_out', callerWorkSessionId: fixture.workSessionA }]);
+    const [row] = await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      return (await client.query<{ status: string; ciphertext: Buffer | null; auth_session_id: string | null }>(
+        'select status, ciphertext, auth_session_id from public.space_link_tokens where link_id = $1 and member_id = $2',
+        [hLink.id, fixture.memberHA])).rows;
+    });
+    expect(row).toEqual({ status: 'signed_out', ciphertext: null, auth_session_id: null });
+
+    // No retry: refused in SQL before any resolve, and no second notice.
+    await expect(store.use(g, hLink.id, { workSessionId: fixture.workSessionA })).rejects.toBeInstanceOf(SpaceLinkUnusable);
+    expect(notices).toHaveLength(1);
+    // G cannot sign it back in (human-only) — the paired positive is H's relogin.
+    await expect(store.login(g, hLink.id, { relogin: true })).rejects.toBeTruthy();
+    hLink = await store.login(h, hLink.id, { relogin: true });
+    hLinkToken = (await store.use(g, hLink.id)).token;
+    expect(await claimsForToken(hLinkToken)).toMatchObject({ authKind: 'link', sessionSpaceId: fixture.spaceB });
+  });
 });
 
 describe.sequential('T19 link token copied to another row does not open (a1, AAD home|link|member|target)', () => {
