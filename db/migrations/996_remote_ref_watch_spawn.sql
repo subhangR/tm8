@@ -106,6 +106,19 @@ create trigger remote_refs_announce_unblocked after update of remote_status_cate
 for each row when (new.remote_status_category = 'done' and old.remote_status_category is distinct from 'done')
 execute function internal.on_resolution_change();
 
+-- SHARED OBJECT: 266's entities_announce_unblocked, re-created verbatim with
+-- `remote_ref` added to its exclusion. Like a pull_request (which 266 already
+-- excludes), a remote_ref resolves by its own state -- the watcher's cached
+-- category (is_resolved's 996 arm) -- not by entities.status_category, so the
+-- trigger above is its one announcing path. Without this the status mirror
+-- moving the ref's entity to done announced every waiter a second time.
+drop trigger entities_announce_unblocked on public.entities;
+create trigger entities_announce_unblocked
+after update on public.entities
+for each row when (new.status_category = 'done' and old.status_category is distinct from 'done'
+                   and new.kind not in ('pull_request', 'remote_ref'))
+execute function internal.on_status_category_done();
+
 -- -----------------------------------------------------------------------------
 -- 2. Content hydration. SHARED OBJECT: body copied from 261 (W8) verbatim; the
 --    `remote_ref` arm is the only addition. An allow-list: the token row id is
