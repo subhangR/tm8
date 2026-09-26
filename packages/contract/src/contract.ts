@@ -5277,6 +5277,15 @@ export interface SpawnSelection {
    * tasks' `attached_to` / `relates_to` references and file attachments.
    */
   referenceIds?: EntityId[];
+  /**
+   * Teammates, same space (launch card v3, Decision 7): rendered as the
+   * `teammates` group of `<context_index>` — the group a dispatcher uses for
+   * its roster — budgeted by `contextBudgets.teammates`. Replaces the tasks'
+   * linked teammates (and a dispatcher's roster). Only `team_member`
+   * entities the caller can read; the launch teammate itself is removed
+   * silently, never refused.
+   */
+  teammateIds?: EntityId[];
 }
 
 /** A claude-code lane's harness surface — see `ExecutionSpawnInput.harnessSurface`. */

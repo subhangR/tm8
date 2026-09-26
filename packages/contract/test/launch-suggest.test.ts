@@ -140,6 +140,7 @@ describe('LaunchSuggestResultSchema', () => {
       skills: { status: 'skipped', reason: 'no_teammate', cost: { ...cost, calls: 0, inputTokens: 0, outputTokens: 0, usd: 0, latencyMs: 0 } },
     },
     contextIndex: 'on',
+    rankedForTeamMemberId: null,
     run: { ...cost, calls: 3 },
   };
 
