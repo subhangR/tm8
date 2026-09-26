@@ -122,7 +122,7 @@ export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose }: AuxEnt
       pinned={false}
       pinRefusal="Pinning lives in the Workspace"
       liveness={data.livenessOf(entityId)}
-      attentionSection={attentionSectionFor(data.seam, data.spaceId, entityId, () => data.pull?.(entityId))}
+      attentionSection={attentionSectionFor(data.seam, data.spaceId, entityId, data.reconcileCommand)}
       debugSurface={debugSurfaceFor(data.seam, entityId, data.livenessOf)}
       sessionStatsSurface={sessionStatsSurfaceFor(data.seam, entityId)}
       sessionContextSurface={sessionContextSurfaceFor(data.seam, entityId, data.livenessOf)}

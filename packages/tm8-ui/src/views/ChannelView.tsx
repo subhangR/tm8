@@ -249,7 +249,7 @@ export function ChannelView({
       pinned={false}
       pinRefusal="Pinning lives in the Workspace — this channel keeps the entity beside its feed already"
       liveness={data.livenessOf(selectedId)}
-      attentionSection={attentionSectionFor(data.seam, data.spaceId, selectedId, () => data.pull?.(selectedId))}
+      attentionSection={attentionSectionFor(data.seam, data.spaceId, selectedId, data.reconcileCommand)}
       debugSurface={debugSurfaceFor(data.seam, selectedId, data.livenessOf)}
       sessionStatsSurface={sessionStatsSurfaceFor(data.seam, selectedId)}
       sessionContextSurface={sessionContextSurfaceFor(data.seam, selectedId, data.livenessOf)}

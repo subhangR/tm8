@@ -9,20 +9,25 @@
  * THE COUNT IS REQUESTS, THE LIST IS ENTITIES. The number answers "how many
  * requests are waiting"; the popover groups them one row per entity
  * (`groupAttentionByEntity`, the same arithmetic as the server badge) because
- * an entity is the unit of work — opening it resolves its whole queue.
+ * an entity is the unit of work — it is where the requests get settled.
  *
- * OPENING GOES THROUGH `openEntityAndResolve`, the rule every other door into
- * an entity follows: navigate first, then bulk-resolve the queue and record a
- * read mark. The host supplies only the navigation.
+ * OPENING GOES THROUGH `openEntityAndMarkRead`, the rule every other door into
+ * an entity follows: navigate first, then record a read mark. THE COUNT DOES
+ * NOT DROP HERE, and that is the change (Attention v2, G4/G5): picking a row
+ * used to bulk-resolve that entity's whole queue on the way through, so this
+ * popover emptied itself by being used and nobody could see what had been
+ * escalated. Now it navigates, and the entity's attention dock is where a
+ * request is resolved or declined — explicitly, one row at a time, undoably.
+ * The count clears when the dock settles the rows, not when you look at them.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { AttentionRequestMutationResult, EntityId, SpaceId } from '@tm8/contract';
+import type { EntityId, SpaceId } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 import { KindIcon } from '../domain/KindIcon';
 import { getKind } from '../domain/registry';
 import { groupAttentionByEntity, type AttentionEntityGroup } from '../attention/attention-model';
 import { useDismissable } from '../panels/useDismissable';
-import { openEntityAndResolve } from '../views/open-entity';
+import { openEntityAndMarkRead } from '../views/open-entity';
 import { useAttentionPending, type AttentionPendingSeam } from './useAttentionPending';
 import './attention-segment.css';
 
@@ -33,15 +38,11 @@ type EntityName = { title: string; kind: string };
 
 export interface AttentionSegmentProps {
   seam: AttentionPendingSeam & Pick<Seam, 'entity'> & {
-    commands: Pick<Seam['commands'], 'resolveAttention' | 'upsertReadMark'>;
+    commands: Pick<Seam['commands'], 'upsertReadMark'>;
   };
   spaceId: SpaceId | null | undefined;
-  /** Navigate to the entity. Resolution and the read mark are done here. */
+  /** Navigate to the entity. The read mark is done here. */
   onOpenEntity(id: EntityId): void;
-  /** Fold a resolve result into the host's store (`data.reconcileCommand`). */
-  reconcile?(result: AttentionRequestMutationResult): void;
-  /** A resolve that failed after navigation — the host decides how loud. */
-  onError?(error: unknown): void;
   /** Names the host already holds — consulted before any network read. */
   nameOf?(id: EntityId): EntityName | undefined;
   /** Test seam: the event-triggered refresh delay. */
@@ -49,8 +50,8 @@ export interface AttentionSegmentProps {
 }
 
 export function AttentionSegment(props: AttentionSegmentProps) {
-  const { seam, spaceId, onOpenEntity, reconcile, onError, nameOf } = props;
-  const { state, refresh } = useAttentionPending(
+  const { seam, spaceId, onOpenEntity, nameOf } = props;
+  const { state } = useAttentionPending(
     seam,
     spaceId,
     props.refreshDelayMs != null ? { delayMs: props.refreshDelayMs } : {},
@@ -59,7 +60,6 @@ export function AttentionSegment(props: AttentionSegmentProps) {
   const boxRef = useRef<HTMLSpanElement>(null);
   const close = useCallback(() => setOpen(false), []);
   useDismissable(open, boxRef, close);
-  const resolving = useRef<Set<EntityId>>(new Set());
   const marking = useRef<Set<EntityId>>(new Set());
 
   const rows = state.phase === 'ready' ? state.rows : [];
@@ -90,19 +90,14 @@ export function AttentionSegment(props: AttentionSegmentProps) {
 
   const openRow = (id: EntityId) => {
     setOpen(false);
-    openEntityAndResolve({
+    // NO `refresh()` AFTERWARDS, deliberately. Navigating changes nothing about
+    // what is pending, so re-reading here would spend a request to redraw the
+    // same number. The hook already refreshes on the event that a settlement
+    // emits, which is the only thing that can actually move this count.
+    openEntityAndMarkRead({
       entityId: id,
-      needsAttention: true,
       open: onOpenEntity,
       commands: seam.commands,
-      reconcile: (result) => {
-        reconcile?.(result);
-        // Re-read without waiting for the event echo, so the count drops as
-        // soon as the server has actually resolved the queue.
-        refresh();
-      },
-      onError: (error) => onError?.(error),
-      resolving: resolving.current,
       marking: marking.current,
     });
   };

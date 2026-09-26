@@ -1968,7 +1968,6 @@ export function GateApp(props: GateAppProps = {}) {
           <AttentionSegment
             seam={data.seam}
             spaceId={data.spaceId as SpaceId}
-            reconcile={data.reconcileCommand}
             onOpenEntity={(id) => {
               navigateTo(WORKSPACE_TARGET);
               nav.push(id as EntityId);

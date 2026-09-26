@@ -3053,18 +3053,6 @@ const ROWS: Record<OperationName, Row> = {
     tags: ['container', 'fork', 'clone', 'copy', 'branch', 'snapshot'],
     notes: ['no version guard: a fork READS the source machine and never changes its record'],
   },
-  'containers.attention': {
-    cmd: ['container', 'attention'],
-    syn: 'tm8 container attention <container-id> --reason login|captcha|2fa|payment|approval|other [--detail <text>] [--points <n>] [--mutation-id <id>]',
-    sum: 'Ask a human to take over a machine, with a bounded score',
-    authz: 'entity',
-    input: 'bound',
-    tags: ['container', 'attention', 'takeover', 'human', 'login', 'captcha', '2fa'],
-    notes: [
-      'the takeover path for the moments an agent must not automate: a login, a captcha, a payment (§12.5)',
-      'points are 1-100 and rank the request against every other call on human attention',
-    ],
-  },
   'containers.providers.list': {
     cmd: ['container', 'providers'],
     syn: 'tm8 container providers [--node <name>]',
@@ -3253,8 +3241,9 @@ export const CATALOG_DIGEST =
   // Rebased onto main d11e0be5 (#848): W11's +4 on top of auth.space.enter; digest re-measured on the rebased tree.
   // Re-measured for node.metrics.get (status strip) — read from the regenerated conformance manifest.
   // +2 auth.sessions.list/revoke (W4, on main 96f6b61e): read from the regenerated conformance manifest.
+  // -1 containers.attention (Attention v2 S7a): read from the regenerated conformance manifest.
   // +7 spaceLinks.* (W6, 250/251, re-stacked on f54f9ffd): RECOMPUTED from JSON.stringify(OPERATIONS); equals the regenerated manifest's catalogDigest.
-  'sha256:3bebae0a98d86cfac8f66704f1c4c1dddbd4df87cbd179bf856c14d983f66925';
+  'sha256:d076746a6064b8555ea0805111c8ccecd7d723c59ca3ad4672744ea01ed0df46';
 
 export const GRAMMAR_VERSION = '2';
 

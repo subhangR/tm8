@@ -1,16 +1,16 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:3bebae0a98d86cfac8f66704f1c4c1dddbd4df87cbd179bf856c14d983f66925",
+  "catalogDigest": "sha256:d076746a6064b8555ea0805111c8ccecd7d723c59ca3ad4672744ea01ed0df46",
   "catalog": {
-    "total": 263,
-    "v1": 261,
+    "total": 262,
+    "v1": 260,
     "reserved": 2,
-    "http": 261,
+    "http": 260,
     "ws": 1,
-    "registerableV1Http": 259,
+    "registerableV1Http": 258,
     "methods": {
       "GET": 86,
-      "POST": 126,
+      "POST": 125,
       "PATCH": 17,
       "DELETE": 17,
       "PUT": 15,
@@ -18,11 +18,11 @@
     },
     "kinds": {
       "read": 90,
-      "command": 171,
+      "command": 170,
       "stream": 2
     },
-    "uniqueNames": 263,
-    "uniqueBindings": 262
+    "uniqueNames": 262,
+    "uniqueBindings": 261
   },
   "reservedOperations": [
     "search.query",
@@ -2007,13 +2007,6 @@
         "source": "server-router"
       },
       {
-        "operation": "containers.attention",
-        "method": "POST",
-        "path": "/v2/containers/:containerId/commands/attention",
-        "status": "registered",
-        "source": "server-router"
-      },
-      {
         "operation": "containers.providers.list",
         "method": "GET",
         "path": "/v2/containers/providers",
@@ -2245,7 +2238,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 231
+    "unimplementedV1Http": 230
   },
   "schemas": {
     "additive": {
@@ -6748,22 +6741,6 @@
         "intentTags": [
           "containers",
           "fork"
-        ],
-        "inputSchemaRef": null,
-        "resultSchemaRef": null,
-        "invocationSyntax": null,
-        "actionDiscoverable": true,
-        "reason": null,
-        "publicComposite": null
-      },
-      {
-        "operation": "containers.attention",
-        "noun": "container",
-        "exposure": "public",
-        "helpRef": "tm8://help/operation/containers.attention",
-        "intentTags": [
-          "containers",
-          "attention"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
