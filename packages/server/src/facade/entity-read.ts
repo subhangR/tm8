@@ -1083,8 +1083,8 @@ export async function loadRelations(q: Querier, ids: readonly string[]): Promise
     latest_reason: string;
     oldest_requested_at: Date | string;
   }>(
-    // The one badge aggregate (252, rolled up by 255), shared with the projector.
-    // Since 255 a row can carry only the raised-by badge (pending_count 0);
+    // The one badge aggregate (252, rolled up by 256), shared with the projector.
+    // Since 256 a row can carry only the raised-by badge (pending_count 0);
     // badges.attention is only for entities with a pending request (own or rolled up).
     `select * from public.attention_badges($1::uuid[]) where pending_count > 0`,
     [unique],

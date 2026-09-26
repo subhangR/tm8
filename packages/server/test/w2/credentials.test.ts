@@ -260,6 +260,9 @@ function bodyFor(opName: OperationName): unknown {
   if (opName === 'credentials.space.rekey') return { secret: 'sk-test-positive-control' };
   if (opName === 'credentials.space.rename') return { label: 'Renamed' };
   if (opName === 'credentials.space.policy.set') return { allowedSources: ['space'] };
+  // W10b: the two owner commands with bodies.
+  if (opName === 'credentials.space.setVisibility') return { visibility: 'public' };
+  if (opName === 'credentials.space.spaceDefaultConsent') return { allowed: true };
   if (opName === 'node.credentials.policy.set') return { allowNode: false };
   return {};
 }
@@ -271,6 +274,7 @@ function paramsFor(opName: OperationName): Record<string, string> {
   if (opName === 'credentials.space.policy.set' || opName === 'node.credentials.policy.set') {
     return { spaceId: SPACE_ID, provider: 'anthropic' };
   }
+  if (opName === 'credentials.space.myDefault.clear') return { spaceId: SPACE_ID, provider: 'anthropic' };
   if (opName.startsWith('credentials.space.')) {
     return { spaceId: SPACE_ID, credentialId: SPACE_CREDENTIAL_ID };
   }
@@ -302,6 +306,13 @@ describe('the four credential operations exist in the contract', () => {
       'POST /v2/space-credentials/:credentialId/default',
       'PATCH /v2/space-credentials/:credentialId',
       'DELETE /v2/space-credentials/:credentialId',
+      // W10b: ownership, visibility, per-member default and usage.
+      'PUT /v2/space-credentials/:credentialId/visibility',
+      'PUT /v2/space-credentials/:credentialId/space-default-consent',
+      'POST /v2/space-credentials/:credentialId/claim',
+      'POST /v2/space-credentials/:credentialId/my-default',
+      'DELETE /v2/spaces/:spaceId/credentials/my-default/:provider',
+      'GET /v2/space-credentials/:credentialId/usage',
       'GET /v2/spaces/:spaceId/credential-policy',
       'PUT /v2/spaces/:spaceId/credential-policy/:provider',
     ]);
