@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import type { EntityId } from '@tm8/contract';
 import { CHAT_HOME_FIXTURE_THREAD } from './fixtures';
-import { hasUsage, mergeChatTurnFrame, projectTurnParts } from './turn-model';
+import {
+  appendOptimisticTurn,
+  hasUsage,
+  mergeChatTurnFrame,
+  optimisticTurnId,
+  projectTurnParts,
+  reconcileDetails,
+  settleOptimisticTurn,
+} from './turn-model';
+import type { ChatThreadDetail, ChatTurn } from './types';
 
 describe('rich turn projection', () => {
   it('updates one tool card from later append-only state parts', () => {
@@ -47,3 +56,62 @@ describe('rich turn projection', () => {
   });
 });
 
+
+describe('lane 1: a done settles its turn, and an echo retires exactly once', () => {
+  const root = CHAT_HOME_FIXTURE_THREAD.summary.rootId;
+  const agentId = '019f0000-0000-7000-8000-0000000000d1' as EntityId;
+  const claimed: ChatTurn = {
+    messageId: agentId,
+    role: 'assistant',
+    author: null,
+    createdAt: '2026-09-26T00:00:00.000Z',
+    body: 'Agent turn in progress.',
+    parts: [],
+    turnInFlight: true,
+  };
+  const base = (): ChatThreadDetail => ({ ...structuredClone(CHAT_HOME_FIXTURE_THREAD), turns: [claimed] });
+
+  /* HINGES ON: the done arm's `turnInFlight` strip. Left set, the marker
+     outlived the turn and hid the body of a turn that finished while it was
+     watched. The placeholder body goes too — it described the claim. */
+  it('clears the in-flight marker and the claim placeholder on done', () => {
+    const settled = mergeChatTurnFrame(base(), { type: 'chat.turn.done', chatId: root, messageId: agentId, usage: {} });
+    expect(settled.turns[0]!.turnInFlight).toBeUndefined();
+    expect(settled.turns[0]!.body).toBe('');
+  });
+
+  const echo = (body: string, id = optimisticTurnId('m1')): ChatTurn => ({
+    messageId: id, role: 'user', author: null, createdAt: '2026-09-26T00:00:00.000Z', body, parts: [], optimistic: true,
+  });
+  const stored = (id: string, body: string): ChatTurn => ({
+    messageId: id as EntityId, role: 'user', author: null, createdAt: '2026-09-26T00:00:01.000Z', body, parts: [],
+  });
+
+  it('re-keys an echo to the acked id so the snapshot replaces it', () => {
+    const painted = appendOptimisticTurn(base(), root, echo('Hi.'))!;
+    const acked = settleOptimisticTurn(painted, optimisticTurnId('m1'), 'real-1' as EntityId)!;
+    const next = reconcileDetails(acked, { ...base(), turns: [claimed, stored('real-1', 'Hi.')] });
+    expect(next.turns.map((turn) => turn.messageId)).toEqual([agentId, 'real-1']);
+    expect(next.turns[1]!.optimistic).toBeUndefined();
+  });
+
+  /* HINGES ON: the one-to-one `arrivals` match in `reconcileDetails`. A
+     snapshot that beats the ack (or a port that names no id) must not leave
+     the echo standing beside the stored copy. */
+  it('retires an un-keyed echo against a NEW stored turn with its words, one for one', () => {
+    const painted = appendOptimisticTurn(
+      appendOptimisticTurn(base(), root, echo('yes', optimisticTurnId('a')))!,
+      root,
+      echo('yes', optimisticTurnId('b')),
+    )!;
+    const next = reconcileDetails(painted, { ...base(), turns: [claimed, stored('real-a', 'yes')] });
+    // One stored "yes" retires ONE echo; the second is still in flight.
+    expect(next.turns.map((turn) => turn.messageId)).toEqual([agentId, 'real-a', optimisticTurnId('b')]);
+  });
+
+  it('never paints an echo into another thread', () => {
+    const other = '019f0000-0000-7000-8000-0000000000ff' as EntityId;
+    const painted = appendOptimisticTurn(base(), other, echo('Hi.'));
+    expect(painted!.turns).toHaveLength(1);
+  });
+});
