@@ -19,6 +19,14 @@ RIG=tools/rigs/context-eval
 ls /private/tmp/ctxeval/build/packages/server/dist/index.js /private/tmp/ctxeval/build/packages/cli/dist/index.js
 ```
 
+**On a shared Linux box (utho, 2026-09-26 re-run).** Same steps with overrides; nothing else changes:
+```sh
+export CTX_EVAL_HOME=/home/tm8/ctxeval CTX_EVAL_PG_PORT=5443   # staging PG; never 5442 (prod) there
+# build: git archive <sha> into $CTX_EVAL_HOME/build, echo <sha> > build/BUILD_SHA, build, chmod -R a-w (no .git)
+node $RIG/lanes.mjs ... --concurrency 1 --load-max 12          # or CTX_EVAL_LOAD_MAX=12
+```
+`dev-node.sh` picks `/bin/bash` when zsh is absent and `C.UTF-8` when `en_US.UTF-8` is; datadirs must be their own `realpath` (the old `/tmp/*` refusal was macOS-only). Every node now runs with `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` (DESIGN §7 (l)); the 2026-09-25 baseline did not, and set contaminated rows aside instead, so harness chars are comparable across arms of one run but not with that baseline's lanes.
+
 ## 1. Bring up your node (idempotent; ~30 s)
 
 ```sh

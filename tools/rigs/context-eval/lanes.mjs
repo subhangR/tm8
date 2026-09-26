@@ -3,7 +3,7 @@
 //
 //   node lanes.mjs --slice c1 --node 4621 --out results/<run>.jsonl
 //     [--reps 2] [--models sonnet5,haiku45] [--only fee,stress30] [--families needle,memory]
-//     [--concurrency auto|1|2] [--timeout-min 25] [--dry-run]
+//     [--concurrency auto|1|2] [--load-max 80] [--timeout-min 25] [--dry-run]
 //
 // A slice is one ARM (c1 lean, c2 index-derived, c3 index-authored, c4
 // inherit); the node must be registered under that arm (dev-node.sh up ...
@@ -11,7 +11,10 @@
 // an INTERLEAVED order (model alternates first, then task, then rep) so no
 // cell owns a time window. Concurrency follows the host load, read before
 // every start: 2 lanes when the 1-min load is under 40, 1 at 40-80, none above
-// 80 (the lane waits, and the row records how long).
+// 80 (the lane waits, and the row records how long). `--load-max N` (or
+// CTX_EVAL_LOAD_MAX=N) lowers the ceiling for a shared box: above N nothing
+// starts, and at most one lane runs from min(40, N) up (utho: --load-max 12
+// --concurrency 1).
 //
 // Every lane runs on a FRESH COPY of its template task (title, content with
 // every criterion unticked, edges re-created in the recorded order): a
@@ -86,10 +89,19 @@ export function planSlice({ keys, models, reps }) {
   return plan;
 }
 
-/** How many lanes may run at this load: 2 under 40, 1 at 40..80, 0 above 80. */
-export function allowedConcurrency(load, max = 2) {
-  if (load > LOAD_TIERS.one) return 0;
-  if (load >= LOAD_TIERS.two) return Math.min(1, max);
+/** The load tiers, with the ceiling lowered to `loadMax` when one is given. */
+export function loadTiers(loadMax) {
+  if (loadMax == null || loadMax === '') return LOAD_TIERS;
+  const n = Number(loadMax);
+  if (!(n > 0)) throw new Error(`--load-max ${loadMax} is not a positive number`);
+  return { two: Math.min(LOAD_TIERS.two, n), one: Math.min(LOAD_TIERS.one, n) };
+}
+
+/** How many lanes may run at this load: 2 under 40, 1 at 40..80, 0 above 80 (or the given tiers). */
+export function allowedConcurrency(load, max = 2, tiers = LOAD_TIERS) {
+  if (!Number.isFinite(load)) throw new Error(`unreadable load ${load}`);
+  if (load > tiers.one) return 0;
+  if (load >= tiers.two) return Math.min(1, max);
   return max;
 }
 
@@ -183,7 +195,7 @@ async function runLane({ node, nodeFx, tm8, cell, slice, out, timeoutMin, fixtur
   }
   row.startedAt = new Date().toISOString();
   row.uptimeStart = uptime();
-  row.loadAtStart = Number(row.uptimeStart.split(/\s+/)[0]);
+  row.loadAtStart = Number(row.uptimeStart.split(/[\s,]+/)[0]);
   let spawn;
   try {
     spawn = tm8('session', 'spawn', '--teammate', teammateId, '--task', row.taskId, '--launch-project', node.projectId, '--workdir', 'worktree', '--base-ref', 'main', '--mode', 'worker', '--access-mode', 'fullAccess');
@@ -320,8 +332,9 @@ async function main() {
   const plan = planSlice({ keys, models, reps });
   const maxConc = arg('concurrency', 'auto') === 'auto' ? 2 : Number(arg('concurrency'));
   const timeoutMin = Number(arg('timeout-min') ?? 25);
+  const tiers = loadTiers(arg('load-max') ?? process.env.CTX_EVAL_LOAD_MAX);
   const fixtureVersion = { schemaVersion: fx.schemaVersion, contentHash: fx.contentHash };
-  console.error(`slice ${slice ?? explicitArm} arm ${arm} node ${port} build ${node.buildSha}: ${plan.length} lanes (${models.join(',')} × ${keys.length} tasks × ${reps} reps), max ${maxConc} concurrent, out ${out}`);
+  console.error(`slice ${slice ?? explicitArm} arm ${arm} node ${port} build ${node.buildSha}: ${plan.length} lanes (${models.join(',')} × ${keys.length} tasks × ${reps} reps), max ${maxConc} concurrent, load tiers ${tiers.two}/${tiers.one}, out ${out}`);
   if (process.argv.includes('--dry-run')) {
     for (const c of plan) console.log(`${c.model}\t${c.taskKey}\t${c.rep}`);
     return;
@@ -333,7 +346,7 @@ async function main() {
   let i = 0;
   while (i < plan.length || running.size) {
     const load = load1();
-    const allowed = allowedConcurrency(load, maxConc);
+    const allowed = allowedConcurrency(load, maxConc, tiers);
     if (i < plan.length && running.size < allowed) {
       const foreign = foreignMainCommits(sh('git', ['-C', node.repo, 'log', '--format=%h %s', 'main']).split('\n'));
       if (foreign.length) {
@@ -362,7 +375,7 @@ async function main() {
     // Only a LOAD wait counts: waiting for a free slot at full concurrency is the plan.
     if (i < plan.length && allowed <= running.size && allowed < maxConc) {
       plan[i].waitedSeconds = (plan[i].waitedSeconds ?? 0) + 20;
-      if (allowed === 0) console.error(`load ${load} > ${LOAD_TIERS.one}: waiting (${plan[i].model}/${plan[i].taskKey}#${plan[i].rep} waited ${plan[i].waitedSeconds}s)`);
+      if (allowed === 0) console.error(`load ${load} > ${tiers.one}: waiting (${plan[i].model}/${plan[i].taskKey}#${plan[i].rep} waited ${plan[i].waitedSeconds}s)`);
     }
     await sleep(20_000);
   }
