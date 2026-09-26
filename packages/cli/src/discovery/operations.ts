@@ -622,7 +622,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'spaceLinks.setSpawn': {
     cmd: null,
-    sum: 'Set whether agents you launch may spawn through a linked Space, and their budget — human sessions only. Turning spawning off stops new sessions and resumes under this link. Sessions already running keep running, but cannot fetch space credentials again until spawning is back on; revoke the link to end them.',
+    sum: 'Set your own spawn switch and budget on a linked Space — human sessions only. Allow spawn is stored per link; it is enforced when cross-space spawn ships.',
     authz: 'server',
     input: 'bound',
     side: 'durable',

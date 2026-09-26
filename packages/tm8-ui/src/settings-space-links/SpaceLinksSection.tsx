@@ -6,13 +6,10 @@
  * WHAT A MEMBER MUST BE TOLD (P8), drawn above everything else: the link itself
  * is shared, so every member of this space can see that a link to the target
  * exists; and while you are signed in, agents working for you in this space can
- * act in the target space as you. Allow spawn decides whether they may also
- * start sessions there. Its help text is the lead's Q-a wording, verbatim:
- * "Turning spawning off stops new sessions and resumes under this link.
- * Sessions already running keep running, but cannot fetch space credentials
- * again until spawning is back on; revoke the link to end them." (The lead's
- * final default A-6b appended the credential clause.) (Enforcement is W7's,
- * #898; this surface only states it.)
+ * act in the target space as you. Nothing in W6 reads the Allow spawn switch,
+ * so every place that describes it says only: "Allow spawn is stored per link;
+ * it is enforced when cross-space spawn ships." (Lead's rule, R3 (ii): every
+ * sentence describes only enforcement W6 ships.)
  *
  * Every write is human-only on the server. A refusal it answers (an agent
  * session, a target you are not a member of, anything else) is rendered as a
@@ -110,7 +107,7 @@ export function SpaceLinksSection({ port, heading = 'Space links' }: SpaceLinksS
           </p>
           <p>
             While you are signed in, agents working for you in this space can act in the target space as you.
-            Allow spawn controls whether they may also start sessions there. Turning spawning off stops new sessions and resumes under this link. Sessions already running keep running, but cannot fetch space credentials again until spawning is back on; revoke the link to end them.
+            Allow spawn is stored per link; it is enforced when cross-space spawn ships.
           </p>
         </div>
         {notice ? (
@@ -207,14 +204,14 @@ function LinkRow({
                   void run(
                     () => port.setSpawn(link.id, next),
                     next
-                      ? `Agents may start sessions in ${name}.`
-                      : `Agents may no longer start or resume sessions in ${name}. Sessions already running keep running, but cannot fetch space credentials again until spawning is back on; revoke the link to end them.`,
+                      ? `Allow spawn is on for ${name}. Allow spawn is stored per link; it is enforced when cross-space spawn ships.`
+                      : `Allow spawn is off for ${name}. Allow spawn is stored per link; it is enforced when cross-space spawn ships.`,
                   );
                 }}
               />
               Allow spawn
               <span className="set-spl__spawn-help" id={`set-spl-spawn-help-${link.id}`} data-testid="space-links-spawn-help">
-                Turning spawning off stops new sessions and resumes under this link. Sessions already running keep running, but cannot fetch space credentials again until spawning is back on; revoke the link to end them.
+                Allow spawn is stored per link; it is enforced when cross-space spawn ships.
               </span>
             </label>
             <button type="button" className="cred-action" aria-label={`Remove ${name}`} disabled={busy}
