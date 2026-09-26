@@ -62,7 +62,7 @@ import { createLoopbackOwnerResolver } from './identity/loopback.js';
 import { sessionIssuedHere } from './identity/pg-auth.js';
 import { createTrackingObserverJob } from './tracking/observer.js';
 import { createCommitRecorderJob } from './tracking/commit-recorder.js';
-import { createSessionIdentityResolver } from './http/identity-resolver.js';
+import { createSessionIdentityResolver, createSocketIdentityResolver } from './http/identity-resolver.js';
 import { loadLaunchCookieIssuer, type LaunchCookieIssuer } from './http/launch-cookie.js';
 import { createForgeWatcherJob } from './tracking/loops.js';
 import { createTaskNudgeJob } from './tracking/task-nudges.js';
@@ -595,22 +595,13 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     : undefined;
 
   /** Browser sockets authenticate with the Secure HttpOnly session cookie. */
-  const resolveSocketIdentity = async (req: IncomingMessage): Promise<RequestIdentity> => {
-    const resolver = identityResolver ?? autoOwnerResolver;
-    const identity = await resolver(req.headers, {
-      remoteAddress: req.socket.remoteAddress,
-      disableAutoOwner: config.disableAutoOwner === true,
-      // Same rule as the HTTP frame (server.ts `identityContext`): only an
-      // explicit `off` skips the cookie; `required` with no issuer admits none.
-      autoOwnerCookie: config.autoOwnerCookie === 'off'
-        ? 'off'
-        : (launchCookie ? launchCookie.verify : () => false),
-    });
-    if (identity.kind === 'anonymous') {
-      throw new CollabError('unauthenticated', 'authentication is required');
-    }
-    return identity;
-  };
+  const resolveSocketIdentity = createSocketIdentityResolver(
+    identityResolver ?? autoOwnerResolver,
+    config.disableAutoOwner === true,
+    // Same rule as the HTTP frame (server.ts `identityContext`): only an
+    // explicit `off` skips the cookie; `required` with no issuer admits none.
+    config.autoOwnerCookie === 'off' ? 'off' : (launchCookie ? launchCookie.verify : () => false),
+  );
 
   /**
    * PTY grants are bearer capabilities and therefore work for the CLI without

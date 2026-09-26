@@ -24,7 +24,7 @@ import { refuseLinkSessionOnTransport } from '../identity/link-bearer.js';
 import { resolveBearerIdentity, type ResolvedAuthSession } from '../identity/pg-auth.js';
 import { readTm8SessionCookie } from './session-cookie.js';
 import { autoOwnerResolver } from './security.js';
-import type { IdentityResolver, RequestIdentity, SpaceSessionsMode } from './types.js';
+import type { IdentityResolutionContext, IdentityResolver, RequestIdentity, SpaceSessionsMode } from './types.js';
 
 export interface SessionIdentityResolverOptions {
   readonly db: Db;
@@ -160,11 +160,15 @@ export function identityFromSession(
 export function createSocketIdentityResolver(
   resolver: IdentityResolver,
   disableAutoOwner: boolean,
+  // W2: the same launch-cookie rule as the HTTP frame. The default admits no
+  // cookie, so a caller that does not state it fails closed.
+  autoOwnerCookie: IdentityResolutionContext['autoOwnerCookie'] = () => false,
 ): (req: IncomingMessage) => Promise<RequestIdentity> {
   return async (req) => {
     const identity = await resolver(req.headers, {
       remoteAddress: req.socket.remoteAddress,
       disableAutoOwner,
+      autoOwnerCookie,
     });
     if (identity.kind === 'anonymous') {
       throw new CollabError('unauthenticated', 'authentication is required');
