@@ -496,9 +496,10 @@ export const OPERATIONS = [
   // inert on a claimed node, exactly like the token it mints.
   { name: 'auth.claim.reissue',                          method: 'POST',   path: '/v2/auth/claim/reissue',                                             kind: 'command', status: 'v1' },
   // `auth.launch` — the one-time no-login URL `tm8 open` prints (plan W2, K4).
-  // The loopback auto-owner arm needs the launch cookie that URL sets, so a
-  // local process with no token is anonymous. Only the node owner's HUMAN
-  // session (`browser`/`cli`, or the cookie-holding auto-owner) may mint one:
+  // A loopback BROWSER needs the launch cookie that URL sets to be the
+  // auto-owner; a local process with no token is still the owner, as before W2
+  // (plan W2 L1). Only the node owner's HUMAN session (`browser`/`cli`, or the
+  // loopback auto-owner) may mint one:
   // an agent's token is refused, so an agent never sees the URL. The code is
   // single-use, lives only in the server's memory, and expires in minutes.
   { name: 'auth.launch',                                 method: 'POST',   path: '/v2/auth/launch',                                                    kind: 'command', status: 'v1' },

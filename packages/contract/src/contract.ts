@@ -2189,8 +2189,9 @@ export interface AuthClaimReissueResult {
  * `auth.launch` — mint the one-time no-login URL `tm8 open` prints (plan W2).
  *
  * Opening `url` in a browser ON THE NODE'S MACHINE sets the HttpOnly launch
- * cookie the loopback auto-owner arm requires (`TM8_AUTO_OWNER_COOKIE=required`)
- * and redirects to the app. The code works once and expires at `expiresAt`.
+ * cookie a loopback BROWSER needs to be the auto-owner
+ * (`TM8_AUTO_OWNER_COOKIE=required`) and redirects to the app. A local process
+ * with no token needs no cookie: it is the owner as before W2 (plan W2 L1). The code works once and expires at `expiresAt`.
  * Only the node owner's human session may mint one; an agent's token is
  * refused. The cookie itself never appears in any response body.
  */

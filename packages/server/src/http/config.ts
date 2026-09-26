@@ -90,11 +90,14 @@ export interface ServerConfig {
   readonly disableAutoOwner?: boolean;
   /**
    * `TM8_AUTO_OWNER_COOKIE=required|off`, default `required` (plan W2, K4).
-   * `required`: the loopback auto-owner arm also needs the launch cookie a
-   * browser gets from the one-time URL `tm8 open` prints, so a local process
-   * with no token — an agent's `curl 127.0.0.1` — is anonymous (T12). `off`
-   * restores the pre-W2 rule: the loopback peer alone. ABSENT READS AS
-   * `required` everywhere it is consulted, so a hand-built config fails closed.
+   * `required`: a BROWSER on loopback (any browser marker: Origin,
+   * Sec-Fetch-Site/-Dest, a Cookie, or Sec-Fetch-Mode navigate) is the
+   * auto-owner only with the launch cookie it gets from the one-time URL
+   * `tm8 open` prints. A local PROCESS with no token and no browser marker is
+   * still the owner, exactly as before W2 (plan W2 L1, owner form 01a0df1e).
+   * `off` restores the pre-W2 rule for browsers too: the loopback peer alone.
+   * ABSENT READS AS `required` everywhere it is consulted, so a hand-built
+   * config fails closed.
    */
   readonly autoOwnerCookie?: 'required' | 'off';
   /**

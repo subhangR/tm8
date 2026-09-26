@@ -1,14 +1,17 @@
 /**
  * The LAUNCH COOKIE (plan 01a0d9eb W2, decision K4).
  *
- * THE PROBLEM IT CLOSES (plan finding F1). On a single-mode node the loopback
- * auto-owner arm made ANY local process with no token the node owner, with
- * `authKind: 'browser'`. An agent with a shell could `curl 127.0.0.1` and act
- * as the owner AND as a human, around the guard, the audit and
- * `require_human_auth_kind()`.
+ * WHAT IT GATES (plan W2 L1, owner form 01a0df1e). The cookie is for BROWSERS
+ * only. On a single-mode node a loopback request that carries any browser
+ * marker (Origin, Sec-Fetch-Site/-Dest, a Cookie, or Sec-Fetch-Mode navigate)
+ * is the auto-owner only with this cookie (`TM8_AUTO_OWNER_COOKIE=required`,
+ * the default), so a page the owner did not open through `tm8 open` is not the
+ * owner. A local PROCESS with no token and no browser marker is still the
+ * node owner, exactly as before W2: the owner's CLI on loopback is unchanged.
+ * Plan finding F1 (an agent's `curl 127.0.0.1` acting as the owner) is
+ * therefore NOT closed by this cookie; see doc 11 P10.
  *
- * THE FIX. The arm now also needs this cookie (`TM8_AUTO_OWNER_COOKIE=required`,
- * the default). A browser gets it by opening a ONE-TIME URL that `tm8 open`
+ * HOW A BROWSER GETS IT. It opens a ONE-TIME URL that `tm8 open`
  * prints; `tm8 open` mints that URL through `auth.launch`, which only the
  * node owner's HUMAN session (`tm8 auth login`, kind `cli`/`browser`) may call.
  * An agent's token is refused there, so an agent never sees the URL, and the
@@ -22,12 +25,11 @@
  *     after `LAUNCH_COOKIE_MAX_AGE_S`, and deleting the key file revokes every
  *     cookie at once. No cookie is stored anywhere: the server recomputes it.
  *
- * WHAT IT DOES NOT CLOSE (doc 11 P10). On a single-user node an agent runs as
- * the same OS user as the server, so it can read the 0600 key file (and the
- * CLI's credential file) and forge its way in. The cookie stops the ambient
- * path — a local process with no credential is anonymous — not a hostile agent
- * that sets out to read the owner's files. Sandboxing agents is what closes
- * that, and it is not this change.
+ * WHAT IT DOES NOT CLOSE (doc 11 P10). A token-less local process is the
+ * owner by design (L1), so the cookie is no barrier to a local agent. Even
+ * for a browser, an agent running as the same OS user can read the 0600 key
+ * file (and the CLI's credential file) and forge a cookie. Sandboxing agents
+ * is what closes that, and it is not this change.
  */
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingHttpHeaders } from 'node:http';

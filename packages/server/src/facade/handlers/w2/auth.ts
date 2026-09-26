@@ -537,8 +537,9 @@ const LOOPBACK_HOST_RE = /^(?:localhost|127(?:\.\d{1,3}){3}|\[::1\])(?::\d{1,5})
  * `auth.launch` — mint the one-time no-login URL `tm8 open` prints (plan W2).
  *
  * WHO MAY MINT. Only the node owner, and only as a HUMAN: a bearer session of
- * kind `browser`/`cli` on the owner's account, or the auto-owner arm (which,
- * with the cookie required, already holds a launch cookie). An `agent` or
+ * kind `browser`/`cli` on the owner's account, or the auto-owner arm: a local
+ * process with no token (the loopback owner, as before W2; plan W2 L1) or a
+ * browser that already holds a launch cookie. An `agent` or
  * `agent_runtime` token is refused even when it belongs to the owner, so an
  * agent never sees the URL; anonymous is refused outright. A non-owner member
  * is refused too: the cookie makes its holder the OWNER.

@@ -266,4 +266,30 @@ describe('980 create_project_in_space', () => {
     expect(await projectRows('/tmp/a3-replay')).toBe(1);
     expect(await linkedSpaces(first.project.id)).toEqual([fixture.spaceS]);
   });
+  it('DEV-9 today: the projects.create ledger row carries the cmid; the link\'s audit event does NOT', async () => {
+    // RESIDUAL, pinned so a fix flips it (lead ruling, #847 LOW 2 option 2).
+    // link_project_w2(..., null) runs ledger_replay(null), which re-binds
+    // tm8.client_mutation_id to '' before materialize_project_projection writes
+    // the audit event; the cmid cannot be passed through, because
+    // command_ledger.client_mutation_id is the global key and belongs to
+    // projects.create. Follow-up: split link_project_w2 into a core function
+    // that 980 calls with its own cmid bound (option 1) — then expect the cmid.
+    const cmid = `a3-cmid-${randomUUID()}`;
+    const created = await createInSpace(fixture.identityN, unpinned, fixture.spaceS, '/tmp/a3-cmid', cmid);
+    const { ledger, events } = await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      const ledgerRows = await client.query<{ operation: string }>(
+        'select operation from public.command_ledger where client_mutation_id = $1', [cmid]);
+      const eventRows = await client.query<{ event_type: string; client_mutation_id: string | null }>(
+        `select event_type, client_mutation_id from public.workspace_events
+          where space_id = $1 and payload::text like $2 order by seq`,
+        [fixture.spaceS, `%${created.project.id}%`]);
+      return { ledger: ledgerRows.rows, events: eventRows.rows };
+    });
+
+    expect(ledger).toEqual([{ operation: 'projects.create' }]);
+    // Positive control: the event exists, so a NULL below is the cmid, not a missed row.
+    expect(events.map((event) => event.event_type)).toEqual(['migration.w1.audit']);
+    expect(events.map((event) => event.client_mutation_id)).toEqual([null]);
+  });
 });
