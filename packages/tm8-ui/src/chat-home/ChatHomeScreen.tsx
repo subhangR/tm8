@@ -62,6 +62,8 @@ import { EntityTray } from './EntityTray';
 import { LedgerHostProvider } from './LedgerCards';
 import { StageExit } from './StageExit';
 import { LedgerPanel } from './LedgerPanel';
+import { TranscriptDock } from './LiveTurnStatus';
+import { useTranscriptFollow } from './live-turn-status-follow';
 import { foldChatLedger, type ChatLedger } from './ledger';
 import { TurnParts, type TurnPartsProps } from './TurnParts';
 import { composeThreadColumn } from './thread-column';
@@ -354,15 +356,6 @@ export interface ChatHomeScreenProps {
  * real, and one that would have broken HomeView for no reason the day this
  * file moved or shrank. Importers now name the canonical type directly.
  */
-
-/**
- * How close to the end still counts as "at the end" for the transcript's
- * stick-to-bottom. Named once because it is read in two places — the `scroll`
- * handler that records the reader's intent and the docblock that explains it —
- * and because a bare `48` in a scroll comparison is the kind of number that
- * gets tuned by whoever is annoyed that week.
- */
-const NEAR_BOTTOM_PX = 48;
 
 type ComposerPhase =
   | 'idle'
@@ -1203,44 +1196,6 @@ export function ChatHomeScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by id list
   }, [ownMessageIdsKey]);
 
-  /**
-   * ── THE TRANSCRIPT OPENS AT THE NEWEST TURN, AND STAYS THERE WHILE IT GROWS ─
-   *
-   * There was NO scroll logic on this screen at all. `.tch-transcript` is a
-   * plain `overflow-y: auto` box, so a conversation opened at `scrollTop: 0` —
-   * the reader landed on the oldest message of a thread they came back to for
-   * its newest, and a streaming answer wrote itself off the bottom of a box
-   * that never followed it. Reported on task 01a01c3f: "it should always scroll
-   * to the bottom, when opened, it stays on top."
-   *
-   * TWO REFS AND NO STATE, deliberately. Scroll position is not something this
-   * component renders — nothing on screen changes because the reader scrolled —
-   * so putting it in state would re-render the whole transcript on every
-   * `scroll` event, which on a long thread is the one place that cost is felt.
-   *
-   * `stickToBottom` IS THE READER'S INTENT, not a position. Once they scroll up
-   * to read back, a still-streaming answer must NOT yank them to the bottom
-   * again; the moment they return to within `NEAR_BOTTOM_PX` of the end they
-   * have opted back in. That threshold is a tolerance, not a guess: a phone's
-   * momentum scroll and the browser's own sub-pixel rounding both land a few
-   * pixels short of the exact maximum, and an exact comparison would read a
-   * reader who IS at the bottom as one who left.
-   *
-   * `useLayoutEffect`, so the correction lands in the same frame as the content
-   * that caused it. A `useEffect` here paints the un-scrolled frame first and
-   * the transcript visibly jumps on every streamed chunk.
-   */
-  const transcriptRef = useRef<HTMLDivElement | null>(null);
-  const stickToBottomRef = useRef(true);
-  /**
-   * THE HEIGHT THE TRANSCRIPT WAS LAST FOLLOWED TO — the third ref, and the one
-   * that keeps this effect from being a scroll SOURCE as well as a scroll sink.
-   *
-   * `-1` is not "zero pixels", it is NOT FOLLOWING: set while the reader is
-   * reading back, and on every thread switch, so the next opt-in re-anchors
-   * even when the height it lands on is one this box has been to before.
-   */
-  const followedHeightRef = useRef(-1);
 
   /* THE OPEN THREAD'S DETAIL, OR NONE. `detail` keeps the OUTGOING thread
      until the incoming read lands; the transcript already refuses to draw it
@@ -1299,59 +1254,12 @@ export function ChatHomeScreen({
   const newThread = selectedRootId === null;
   const startUnavailable = newThread ? port.startThread.unavailableReason : null;
 
-  /* Opening a conversation is not "growth" — it always lands on the newest
-     turn, whatever the reader was doing in the thread they just left. The
-     followed height goes with it: the incoming thread is a different box of
-     content, so a height it happens to share with the outgoing one must not
-     read as "already there". */
-  useLayoutEffect(() => {
-    stickToBottomRef.current = true;
-    followedHeightRef.current = -1;
-  }, [selectedRootId]);
-
-  /**
-   * ── STICK TO THE BOTTOM, BUT ONLY WHEN THE BOTTOM MOVED ───────────────────
-   *
-   * Keyed on `detail` and `thinking` because those are exactly the two things
-   * that change the transcript's height: every frame merge mints a new detail
-   * object (`mergeChatTurnFrame` is immutable), and the waiting mark is a row
-   * that appears and disappears under the last turn.
-   *
-   * A NEW `detail` IS NOT EVIDENCE OF GROWTH, and treating it as such made this
-   * effect the phone's jitter source. During a stream a delta lands per token
-   * and each one mints a fresh object, but most of them append INSIDE a line
-   * that has not wrapped yet: the transcript's `scrollHeight` is unchanged and
-   * there is nothing to follow. The old code wrote `scrollTop` anyway, on every
-   * one of them. Measured on this task, 10 stream frames at an unchanged height
-   * cost 10 scroll writes; with this guard they cost 0.
-   *
-   * WHY THAT MATTERS HERE AND NOT ON A DESKTOP. `MobileFrame` publishes
-   * `--mobile-keyboard-inset` from `useKeyboardInset`, which recomputes on
-   * visualViewport `resize` AND `scroll` and resizes the WHOLE frame — so a
-   * programmatic scroll is an input to a measurement whose output is a layout
-   * change, which is an input to the next scroll. On iOS that closed loop reads
-   * as jitter. The hook is not the fault and is not touched: it already rounds
-   * and bails on an unchanged value (read its docblock — the `offsetTop` term
-   * is load-bearing). The fault is a scroll that nothing asked for.
-   *
-   * THE READER'S INTENT STILL WINS, and it wins in BOTH directions. While they
-   * are reading back, the followed height is dropped rather than remembered —
-   * so the moment they come back within `NEAR_BOTTOM_PX` and the next frame
-   * lands, they are re-anchored to the end even though the height never moved.
-   * Remembering it would have made opting back in silently do nothing.
-   */
-  useLayoutEffect(() => {
-    const element = transcriptRef.current;
-    if (!element) return;
-    if (!stickToBottomRef.current) {
-      followedHeightRef.current = -1;
-      return;
-    }
-    const height = element.scrollHeight;
-    if (height === followedHeightRef.current) return;
-    followedHeightRef.current = height;
-    element.scrollTop = height;
-  }, [detail, thinking]);
+  /* LANE 2: the in-flight message's parts, for the live row's words. The
+     turn itself is lane 1's `turnInProgress` above; this only looks it up. */
+  const liveParts =
+    turnInProgress?.messageId && detail
+      ? (detail.turns.find((turn) => turn.messageId === turnInProgress.messageId)?.parts ?? null)
+      : null;
 
   /* THE NEW-CHAT PICKS REFUSE ONLY A NEW CHAT. A started thread's teammate and
      model are pinned facts on the server, and a turn names neither — yet an
@@ -1616,6 +1524,19 @@ export function ChatHomeScreen({
             )
           : null;
   const centre: ReactNode = centerOverride ?? stagePane;
+  /* THE TRANSCRIPT OPENS AT ITS NEWEST TURN, STAYS THERE WHILE IT GROWS, and
+     never moves a reader who scrolled up — `live-turn-status-follow.ts`, which
+     also offers that reader the way back. `tail` is the live row's phase: the
+     row sits under the last turn, so it appearing or changing moves the end.
+     `visible`: a stage or host panel hides the transcript, and a hidden box
+     measures zero — coming back must re-anchor, not trust that reading. */
+  const follow = useTranscriptFollow({
+    threadKey: selectedRootId,
+    content: detail,
+    tail: turnInProgress?.phase ?? null,
+    itemCount: detail?.turns.length ?? 0,
+    visible: centre == null,
+  });
 
   /* THE DOCK-DOWN (Cockpit ruling 2026-08-18): the centred composer of a new
      thread travels to its bottom berth when the first send lands, instead of
@@ -2305,21 +2226,19 @@ export function ChatHomeScreen({
           </section>
         ) : null}
         <div
-          ref={transcriptRef}
+          ref={follow.ref}
           className="tch-transcript"
           data-turn-phase={turnInProgress?.phase}
           aria-live="polite"
           data-hidden={centre != null ? 'true' : undefined}
           hidden={centre != null || undefined}
-          /* THE READER'S INTENT, recorded on every scroll and read by the
-             stick-to-bottom effect above. Scrolling up to read back opts out of
-             following a streaming answer; coming back within the tolerance opts
-             straight back in, with no control to find and press. */
-          onScroll={(event) => {
-            const element = event.currentTarget;
-            stickToBottomRef.current =
-              element.scrollHeight - element.scrollTop - element.clientHeight <= NEAR_BOTTOM_PX;
-          }}
+          /* Not a tab stop — only where "Jump to latest" puts focus back, so a
+             keyboard reader is not dropped to <body> when the pill unmounts. */
+          tabIndex={-1}
+          /* THE READER'S INTENT, recorded on every scroll. Scrolling up to read
+             back opts out of following a streaming answer; coming back within
+             the tolerance opts straight back in. */
+          onScroll={follow.onScroll}
         >
           {loadError ? (
             <div className="tch-load-error" role="alert">
@@ -2375,12 +2294,19 @@ export function ChatHomeScreen({
                 />
               ) : null}
               </LedgerHostProvider>
-              {thinking ? (
-                <div className="tch-wait" role="status" data-testid="chat-thinking">
-                  <WaitMark />
-                  {phase === 'streaming' ? 'Agent is thinking…' : 'Sending your message…'}
-                </div>
-              ) : null}
+              {/* THE LIVE STATUS ROW (lane 2), sticky under the last turn, and
+                  the way back to it for a reader who scrolled up. It replaces
+                  the wait row that only ever said "Agent is thinking…" — the
+                  row now says what the agent is doing, for how long, and how
+                  long it has been quiet, in every phase of the turn. */}
+              <TranscriptDock
+                turn={turnInProgress}
+                parts={liveParts}
+                labels={foldChatLedger(detail.turns).labels}
+                away={follow.away}
+                unseen={follow.unseen}
+                onJump={follow.jumpToLatest}
+              />
             </>
           ) : loading || startingThread ? (
             /*

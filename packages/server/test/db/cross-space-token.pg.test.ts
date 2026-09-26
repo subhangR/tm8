@@ -3177,3 +3177,289 @@ describe('W3-audit ledger replay before the space guard (046 ledger_replay) — 
     expect(await outcome(async () => refreshAll(await pinnedTo(fixture.spaceB)))).toBe('42501');
   });
 });
+
+/**
+ * W3-client (task 01a0d9fd): the walk the UI and CLI make, over the real
+ * server. H (a member of A and B) holds one gate session and switches A → B
+ * without logging out. Every rule the clients rely on is a cell here, each
+ * refusal paired with its positive:
+ *   - `auth.space.enter` accepts gate Authorization next to an older pinned
+ *     cookie and replaces the cookie (the browser's mint path);
+ *   - any other op refuses gate Authorization next to a pinned cookie, and
+ *     serves the same header alone (why clients omit cookies under enforce);
+ *   - both pins stay live after the switch, each confined to its own space;
+ *   - the enforce refusal names `auth.space.enter` (the clients' detector);
+ *   - a pin revoked with its own token dies, and its gate lives on.
+ * `agents` twin: the pre-W3 walk (gate header plus gate cookie) is served.
+ */
+describe('T8c client walk — switch A → B without logout, cookie rules (W3-client)', () => {
+  let enforceServer: BootstrappedServer;
+  let agentsServer: BootstrappedServer;
+  let adminBefore: Array<{ id: string; is_node_admin: boolean; is_owner: boolean }> = [];
+
+  beforeAll(async () => {
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      adminBefore = (await client.query<{ id: string; is_node_admin: boolean; is_owner: boolean }>(
+        'select id::text, is_node_admin, is_owner from public.accounts where id = any($1::uuid[])',
+        [[fixture.accountH, fixture.accountH2]],
+      )).rows;
+      await client.query(
+        `update public.accounts set is_node_admin = (id = $1::uuid), is_owner = (id = $1::uuid)
+          where id = any($2::uuid[])`,
+        [fixture.accountH, [fixture.accountH, fixture.accountH2]],
+      );
+    });
+    const start = async (mode: SpaceSessionsMode): Promise<BootstrappedServer> => {
+      const configured = loadConfig({
+        ...process.env,
+        TM8_BIND: '127.0.0.1',
+        TM8_PORT: '4610',
+        TM8_NODE_MODE: 'single',
+        TM8_DATABASE_URL: database.url,
+        TM8_DATA_DIR: await mkdtemp(join(tmpdir(), 'tm8-w3c-')),
+        TM8_DISABLE_AUTO_OWNER: '1',
+        TM8_SPACE_SESSIONS: mode,
+      });
+      return bootstrap({ config: { ...configured, port: 0 } });
+    };
+    enforceServer = await start('enforce');
+    agentsServer = await start('agents');
+  }, 180_000);
+
+  afterAll(async () => {
+    for (const server of [enforceServer, agentsServer]) {
+      await server?.server.close();
+      await server?.db?.end();
+    }
+    for (const row of adminBefore) {
+      await database.query(
+        'update public.accounts set is_node_admin = $2, is_owner = $3 where id = $1::uuid',
+        [row.id, row.is_node_admin, row.is_owner],
+      );
+    }
+  }, 180_000);
+
+  interface Sent { status: number; json: any; setCookie: string | null }
+
+  /** One request as a client sends it: optional bearer, optional cookie. */
+  async function send(
+    server: BootstrappedServer,
+    creds: { bearer?: string; cookie?: string },
+    method: 'GET' | 'POST',
+    path: string,
+    body?: unknown,
+  ): Promise<Sent> {
+    const response = await fetch(new URL(path, server.url), {
+      method,
+      headers: {
+        [TM8_CLIENT_HEADER]: TM8_CLIENT_HEADER_VALUE,
+        ...(creds.bearer ? { authorization: `Bearer ${creds.bearer}` } : {}),
+        ...(creds.cookie ? { cookie: `${TM8_SESSION_COOKIE}=${creds.cookie}` } : {}),
+        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    const text = await response.text();
+    const parsed = text ? JSON.parse(text) : null;
+    return {
+      status: response.status,
+      json: parsed && 'data' in parsed ? parsed.data : parsed,
+      setCookie: response.headers.get('set-cookie'),
+    };
+  }
+
+  const cookieValue = (setCookie: string | null): string | null =>
+    setCookie?.match(new RegExp(`${TM8_SESSION_COOKIE}=([^;]*)`))?.[1] ?? null;
+
+  /** The browser walk: gate pass in the jar, enter A, then enter B. */
+  async function switchAB(): Promise<{ gate: string; pinA: string; pinB: string }> {
+    const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+    const intoA = await send(enforceServer, { bearer: gate, cookie: gate }, 'POST', '/v2/auth/space/enter',
+      { spaceId: fixture.spaceA });
+    expect(intoA.status, JSON.stringify(intoA.json)).toBe(200);
+    const pinA = intoA.json.token as string;
+    expect(cookieValue(intoA.setCookie)).toBe(pinA);
+    // The jar now holds pinA; the switch presents the gate next to it.
+    const intoB = await send(enforceServer, { bearer: gate, cookie: pinA }, 'POST', '/v2/auth/space/enter',
+      { spaceId: fixture.spaceB });
+    expect(intoB.status, JSON.stringify(intoB.json)).toBe(200);
+    const pinB = intoB.json.token as string;
+    expect(cookieValue(intoB.setCookie)).toBe(pinB);
+    return { gate, pinA, pinB };
+  }
+
+  it('switch: enter B with the gate next to A\'s pinned cookie is accepted and replaces the cookie', async () => {
+    const { pinA, pinB } = await switchAB();
+    expect(pinB).not.toBe(pinA);
+  });
+  it('switch, paired: a PINNED Authorization cannot enter, cookie or not', async () => {
+    const { pinA } = await switchAB();
+    expect((await send(enforceServer, { bearer: pinA }, 'POST', '/v2/auth/space/enter',
+      { spaceId: fixture.spaceB })).status).toBe(403);
+  });
+
+  it('A\'s pin reads B → not_found after the switch; positive — B\'s pin reads B', async () => {
+    const { pinA, pinB } = await switchAB();
+    expect((await send(enforceServer, { bearer: pinA }, 'GET', `/v2/entities/${fixture.docB}`)).status).toBe(404);
+    expect((await send(enforceServer, { bearer: pinB }, 'GET', `/v2/entities/${fixture.docB}`)).status).toBe(200);
+  });
+  it('B\'s pin reads A → not_found; positive — A\'s pin still reads A (no logout on switch)', async () => {
+    const { pinA, pinB } = await switchAB();
+    expect((await send(enforceServer, { bearer: pinB }, 'GET', `/v2/entities/${fixture.docA}`)).status).toBe(404);
+    expect((await send(enforceServer, { bearer: pinA }, 'GET', `/v2/entities/${fixture.docA}`)).status).toBe(200);
+  });
+
+  it('cookie rule: gate Authorization next to a pinned cookie is refused on spaces.list', async () => {
+    const { gate, pinB } = await switchAB();
+    const refused = await send(enforceServer, { bearer: gate, cookie: pinB }, 'GET', '/v2/spaces');
+    expect(refused.status).toBe(401);
+  });
+  it('cookie rule: positive — the same gate Authorization with cookies omitted lists spaces', async () => {
+    const { gate } = await switchAB();
+    const listed = await send(enforceServer, { bearer: gate }, 'GET', '/v2/spaces');
+    expect(listed.status).toBe(200);
+    expect(JSON.stringify(listed.json)).toContain(fixture.spaceB);
+  });
+  it('cookie rule: a pinned Authorization next to a different pinned cookie is refused; alone it is served', async () => {
+    const { pinA, pinB } = await switchAB();
+    expect((await send(enforceServer, { bearer: pinA, cookie: pinB }, 'GET', `/v2/entities/${fixture.docA}`)).status)
+      .toBe(401);
+    expect((await send(enforceServer, { bearer: pinA }, 'GET', `/v2/entities/${fixture.docA}`)).status).toBe(200);
+  });
+
+  it('detector: the enforce refusal of a gate read is 403 forbidden naming auth.space.enter', async () => {
+    const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+    const refused = await send(enforceServer, { bearer: gate }, 'GET', `/v2/entities/${fixture.docA}`);
+    expect(refused.status).toBe(403);
+    expect(refused.json.error.code).toBe('forbidden');
+    expect(refused.json.error.message).toContain('auth.space.enter');
+  });
+  it('detector, paired: a not_found from a pin does NOT name auth.space.enter (no mint loop)', async () => {
+    const { pinA } = await switchAB();
+    const missing = await send(enforceServer, { bearer: pinA }, 'GET', `/v2/entities/${fixture.docB}`);
+    expect(missing.status).toBe(404);
+    expect(JSON.stringify(missing.json)).not.toContain('auth.space.enter');
+  });
+
+  it('revoke: auth.logout with the pin alone kills the pin; positive — the gate lives on and re-enters', async () => {
+    const { gate, pinA } = await switchAB();
+    expect((await send(enforceServer, { bearer: pinA }, 'POST', '/v2/auth/logout', {})).status).toBe(200);
+    expect((await send(enforceServer, { bearer: pinA }, 'GET', `/v2/entities/${fixture.docA}`)).status).toBe(401);
+    expect((await send(enforceServer, { bearer: gate }, 'GET', '/v2/spaces')).status).toBe(200);
+    const again = await send(enforceServer, { bearer: gate }, 'POST', '/v2/auth/space/enter', { spaceId: fixture.spaceA });
+    expect(again.status).toBe(200);
+    expect((await send(enforceServer, { bearer: again.json.token }, 'GET', `/v2/entities/${fixture.docA}`)).status)
+      .toBe(200);
+  });
+
+  it('agents (a4): the pre-W3 walk — gate header plus gate cookie — reads A and B, nothing entered', async () => {
+    const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+    expect((await send(agentsServer, { bearer: gate, cookie: gate }, 'GET', `/v2/entities/${fixture.docA}`)).status)
+      .toBe(200);
+    expect((await send(agentsServer, { bearer: gate, cookie: gate }, 'GET', `/v2/entities/${fixture.docB}`)).status)
+      .toBe(200);
+  });
+  it('agents, paired: the same gate walk under enforce is refused (the client must enter)', async () => {
+    const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+    expect((await send(enforceServer, { bearer: gate, cookie: gate }, 'GET', `/v2/entities/${fixture.docA}`)).status)
+      .toBe(403);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// W4 — auth.sessions.list / auth.sessions.revoke across the boundary (249).
+//
+// The full a1–a3 matrix lives in auth-sessions-list-revoke.pg.test.ts; these
+// rows are the cross-space cells: which credential sees and revokes sessions
+// pinned to which space. Refusal + positive per cell, as everywhere above.
+// ---------------------------------------------------------------------------
+
+describe('W4 — session listing and revoke across spaces', () => {
+  const listAs = (token: string, spaceId: string | null) =>
+    asToken(token, (q) => q.rpc<unknown[]>('list_auth_sessions', [spaceId]), 'enforce');
+  const revokeAs = (token: string, sessionId: string) =>
+    asToken(token, (q) => q.rpc<{ revoked: boolean }>('revoke_listed_auth_session', [sessionId]), 'enforce');
+  const sessionIdOf = (token: string): string => parseToken(token)!.sessionId;
+  const listed = async (token: string, spaceId: string | null): Promise<string[]> =>
+    ((await listAs(token, spaceId)) as Array<{ sessionId: string }>).map((r) => r.sessionId);
+
+  it('W4-1: H pinned to A cannot list B\'s sessions (42501)', async () => {
+    const pinnedA = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect(await outcome(() => listAs(pinnedA, fixture.spaceB))).toBe('42501');
+  });
+  it('W4-1: positive — H pinned to B lists B', async () => {
+    const pinnedB = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceB);
+    expect(await outcome(() => listAs(pinnedB, fixture.spaceB))).toBe('ok');
+  });
+
+  it('W4-2: H2 (member, not admin, of A) cannot list A\'s sessions (42501)', async () => {
+    const h2 = await mintPinned(fixture.accountH2, fixture.identityH2, fixture.spaceA);
+    expect(await outcome(() => listAs(h2, fixture.spaceA))).toBe('42501');
+  });
+  it('W4-2: positive — H (owner of A) lists A and sees H2\'s A-pinned session', async () => {
+    const h2 = await mintPinned(fixture.accountH2, fixture.identityH2, fixture.spaceA);
+    const h = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect(await listed(h, fixture.spaceA)).toContain(sessionIdOf(h2));
+  });
+
+  it('W4-3: H2 cannot revoke H\'s A-pinned session (P0002)', async () => {
+    const h = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    const h2 = await mintBrowser(fixture.accountH2, fixture.identityH2);
+    expect(await outcome(() => revokeAs(h2, sessionIdOf(h)))).toBe('P0002');
+  });
+  it('W4-3: positive — H pinned to A revokes H2\'s A-pinned session', async () => {
+    const h2 = await mintPinned(fixture.accountH2, fixture.identityH2, fixture.spaceA);
+    const h = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect((await revokeAs(h, sessionIdOf(h2))).revoked).toBe(true);
+  });
+
+  it('W4-4: an agent token (pinned to A by construction) cannot list A or revoke (42501)', async () => {
+    const agent = await mintAgent();
+    const target = await mintPinned(fixture.accountH2, fixture.identityH2, fixture.spaceA);
+    expect(await outcome(() => listAs(agent, fixture.spaceA))).toBe('42501');
+    expect(await outcome(() => revokeAs(agent, sessionIdOf(target)))).toBe('42501');
+  });
+  it('W4-4: positive — the launching human revokes that agent session from A', async () => {
+    const agent = await mintAgent();
+    const h = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect((await revokeAs(h, sessionIdOf(agent))).revoked).toBe(true);
+  });
+
+  it('W4-5: a node admin PINNED to A cannot revoke H2\'s gate session (K6: no node admin under a pin)', async () => {
+    await withNodeAdmin(fixture.accountH, true, async () => {
+      const h2Gate = await mintBrowser(fixture.accountH2, fixture.identityH2);
+      const pinned = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+      expect(await outcome(() => revokeAs(pinned, sessionIdOf(h2Gate)))).toBe('P0002');
+    });
+  });
+  it('W4-5: positive — the same node admin\'s GATE session revokes it', async () => {
+    await withNodeAdmin(fixture.accountH, true, async () => {
+      const h2Gate = await mintBrowser(fixture.accountH2, fixture.identityH2);
+      const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+      expect((await revokeAs(gate, sessionIdOf(h2Gate))).revoked).toBe(true);
+    });
+  });
+
+  // W4-P1 (train-1 security audit) reversed the earlier person-scoped decision:
+  // under a pin the OWN list and revoke stay inside the pinned space. H pinned
+  // to A neither sees nor revokes H's own B-pinned session; H's unpinned gate
+  // session still can (the Sessions page from the gate kills a stolen session).
+  it('W4-6: refusal — H pinned to A neither lists nor revokes its OWN B-pinned session', async () => {
+    const inB = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceB);
+    const inA = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceA);
+    expect(await listed(inA, null)).not.toContain(sessionIdOf(inB));
+    expect(await outcome(() => revokeAs(inA, sessionIdOf(inB)))).toBe('P0002');
+  });
+  it('W4-6: positive — H\'s unpinned gate session lists and revokes the B-pinned one', async () => {
+    const inB = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceB);
+    const gate = await mintBrowser(fixture.accountH, fixture.identityH);
+    expect(await listed(gate, null)).toContain(sessionIdOf(inB));
+    expect((await revokeAs(gate, sessionIdOf(inB))).revoked).toBe(true);
+  });
+  it('W4-6: refusal — H2 pinned to A never sees H\'s B-pinned session in its own list', async () => {
+    const inB = await mintPinned(fixture.accountH, fixture.identityH, fixture.spaceB);
+    const h2 = await mintPinned(fixture.accountH2, fixture.identityH2, fixture.spaceA);
+    expect(await listed(h2, null)).not.toContain(sessionIdOf(inB));
+  });
+});

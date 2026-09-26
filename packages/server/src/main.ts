@@ -432,6 +432,8 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
           ? { removeCredentialHome: (home: { spaceId: string; credentialId: string }) => new SpaceLoginHomes({ dataDir }).remove(home) }
           : {}),
       },
+      // W4: auth.sessions.revoke closes the revoked sessions' event sockets.
+      sessionSockets: subscriptions,
       ...(delivery ? { messageDelivery: delivery.messageDelivery } : {}),
       ...(formDelivery
         ? {

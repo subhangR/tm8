@@ -170,6 +170,8 @@ import {
   type SpaceKindCounts,
   type SpaceSettingsView,
   type SpaceConfigsView,
+  type AuthSessionsListResult,
+  type AuthSessionsRevokeResult,
   type ChatDefault,
   type ChatDefaultsView,
   type SpaceSummary,
@@ -622,6 +624,16 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     chatDefaults(spaceId: SpaceId): Promise<ChatDefaultsView> {
       return http.call<ChatDefaultsView>('spaces.chatDefaults.get', { params: { spaceId } });
+    },
+
+    authSessions(spaceId: SpaceId | null): Promise<AuthSessionsListResult> {
+      return http.call<AuthSessionsListResult>('auth.sessions.list', spaceId ? { query: { spaceId } } : {});
+    },
+
+    revokeAuthSession(sessionId: string): Promise<AuthSessionsRevokeResult> {
+      // Body-less by contract (UNBOUND_COMMAND_OPERATIONS): the session id in
+      // the path is the whole request.
+      return http.call<AuthSessionsRevokeResult>('auth.sessions.revoke', { params: { sessionId } });
     },
 
     setChatDefaults(spaceId: SpaceId, defaults: Record<string, ChatDefault | null>): Promise<ChatDefaultsView> {

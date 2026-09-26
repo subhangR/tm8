@@ -22,7 +22,12 @@
  * - signup/logout run under the CALLER's claims; `ensure_account` and
  *   `revoke_auth_session` carry their own `require_*` guards in SQL.
  */
-import { CollabError, type AuthSessionView } from '@tm8/contract';
+import {
+  CollabError,
+  type AuthSessionListing,
+  type AuthSessionsRevokeResult,
+  type AuthSessionView,
+} from '@tm8/contract';
 import { randomUUID } from 'node:crypto';
 import type { Db, DbClaims } from '../db/types.js';
 import {
@@ -326,6 +331,46 @@ export async function enterSpace(
       expiresAt: session.expires_at,
     },
   };
+}
+
+/** One row of `list_auth_sessions` (232), before `current` is known. */
+type SessionListingRow = Omit<AuthSessionListing, 'current'>;
+
+const iso = (value: string | null): string | null => (value === null ? null : new Date(value).toISOString());
+
+/**
+ * `auth.sessions.list` (plan W4): the caller's own live sessions (`spaceId`
+ * null), or every live session pinned to `spaceId` (space admin, pin-aware).
+ * The SQL decides who may see what and never returns a token hash.
+ * `currentSessionId` is the verified session of this request, if any.
+ */
+export async function listAuthSessions(
+  db: Db,
+  claims: DbClaims,
+  spaceId: string | null,
+  currentSessionId: string | undefined,
+): Promise<AuthSessionListing[]> {
+  const rows = await db.rpc<SessionListingRow[]>(claims, 'list_auth_sessions', [spaceId]);
+  return rows.map((row) => ({
+    ...row,
+    createdAt: iso(row.createdAt)!,
+    lastUsedAt: iso(row.lastUsedAt),
+    expiresAt: iso(row.expiresAt)!,
+    current: row.sessionId === currentSessionId,
+  }));
+}
+
+/**
+ * `auth.sessions.revoke` (plan W4): revoke one session the caller could list.
+ * Returns every id this call revoked (the session plus the pinned sessions
+ * entered from it), which is the set whose sockets the caller must close.
+ */
+export async function revokeListedAuthSession(
+  db: Db,
+  claims: DbClaims,
+  sessionId: string,
+): Promise<AuthSessionsRevokeResult> {
+  return db.rpc<AuthSessionsRevokeResult>(claims, 'revoke_listed_auth_session', [sessionId]);
 }
 
 /**

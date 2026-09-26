@@ -29,6 +29,8 @@ import type {
   AuthLogoutResult,
   AuthPasswordChangeResult,
   AuthSessionGetResult,
+  AuthSessionsListResult,
+  AuthSessionsRevokeResult,
   AuthSpaceEnterResult,
   AuthSignupResult,
 } from '@tm8/contract';
@@ -38,6 +40,8 @@ import { join } from 'node:path';
 import {
   credentialOrigin,
   credentialStoreFor,
+  dropSpaceCredentials,
+  storeSpaceCredential,
   tokenSessionId,
   type CredentialStore,
 } from '../credentials.js';
@@ -119,6 +123,9 @@ async function authLogin(cmd: CommandContext): Promise<ExitCode> {
     if (store) {
       const origin = credentialOrigin(cmd.ctx.baseUrl.value);
       try {
+        // W3: pins minted from the previous gate are keyed to it and would
+        // never be read again; revoke and forget them rather than leave them.
+        revokeSpaceCredentials(cmd, dropSpaceCredentials(store, origin));
         store.set(origin, data.token, {
           username: data.account.username,
           expiresAt: data.session.expiresAt,
@@ -158,6 +165,7 @@ async function authLogin(cmd: CommandContext): Promise<ExitCode> {
  * and must leave this shell's credential alone.
  */
 function dropStoredCredential(
+  cmd: CommandContext,
   store: CredentialStore | undefined,
   origin: string,
   revokedSessionId: string | undefined,
@@ -166,7 +174,23 @@ function dropStoredCredential(
   const stored = store.get(origin);
   if (!stored) return false;
   if (revokedSessionId !== undefined && tokenSessionId(stored) !== revokedSessionId) return false;
+  // W3: the gate is going, so the pinned sessions minted from it go too, each
+  // revoked with its own token (revoking a gate does not revoke its children).
+  revokeSpaceCredentials(cmd, dropSpaceCredentials(store, origin));
   return store.delete(origin);
+}
+
+/**
+ * Best-effort revoke of pinned sessions, each presenting only itself. Not
+ * awaited past the command: they expire with their gate session anyway, and a
+ * slow node must not hold a logout hostage.
+ */
+function revokeSpaceCredentials(cmd: CommandContext, tokens: readonly string[]): void {
+  for (const token of tokens) {
+    void clientFor({ ...cmd.ctx, token })
+      .invoke('auth.logout', { body: {} })
+      .catch(() => undefined);
+  }
 }
 
 async function authLogout(cmd: CommandContext): Promise<ExitCode> {
@@ -190,7 +214,7 @@ async function authLogout(cmd: CommandContext): Promise<ExitCode> {
     // make every later command fail the same way. Local removal + exit 0,
     // not a rethrow: "log me out" succeeded, just not via revocation.
     if (err instanceof ApiError && err.code === 'unauthenticated') {
-      const removed = dropStoredCredential(store, origin, undefined);
+      const removed = dropStoredCredential(cmd, store, origin, undefined);
       if (removed) {
         cmd.out.data(
           { sessionId: null, revoked: false, removedStoredCredential: origin },
@@ -203,7 +227,7 @@ async function authLogout(cmd: CommandContext): Promise<ExitCode> {
     throw err;
   }
 
-  const removed = dropStoredCredential(store, origin, data.sessionId);
+  const removed = dropStoredCredential(cmd, store, origin, data.sessionId);
   cmd.out.data(data, (result) =>
     removed
       ? `revoked session ${result.sessionId}\nremoved the stored credential for ${origin}`
@@ -233,28 +257,111 @@ async function authSession(cmd: CommandContext): Promise<ExitCode> {
  * `tm8 auth space enter <space-id>` — mint a session pinned to one space from
  * this shell's gate (unpinned) session (plan W3).
  *
- * The pinned token is PRINTED, never stored: the stored credential for this
- * Server origin is the gate session, and overwriting it with a pinned one would
- * leave the shell unable to enter any other space. How a shell holds both is
- * W3-client's; until then the caller exports the printed token.
+ * WHEN THE GATE CAME FROM THE STORE, the pinned token is stored next to it
+ * (`storeSpaceCredential`), never over it: the gate must survive to enter the
+ * next space. From then on `tm8 --space <space-id> …` presents the pinned
+ * token (run.ts). A pin it replaces for the same space is revoked.
+ *
+ * Otherwise (an agent context, `TM8_CREDENTIALS_MODE=off`, an exported token,
+ * or `--print-token`) there is nowhere to keep it, so it is printed once for
+ * the caller to export, as before.
  */
 async function authSpaceEnter(cmd: CommandContext): Promise<ExitCode> {
   refuseMutationId('auth space enter', cmd.options.value('mutation-id'));
-  const usage = 'usage: tm8 auth space enter <space-id> [--label <label>]';
+  const usage = 'usage: tm8 auth space enter <space-id> [--label <label>] [--print-token]';
   const spaceId = requireOnePositional(cmd, usage);
   const body: Record<string, unknown> = { spaceId };
   const label = cmd.options.value('label');
   if (label !== undefined) body.label = label;
 
   const data = await observedInvoke<AuthSpaceEnterResult>(clientFor(cmd.ctx), 'auth.space.enter', { body });
+
+  let storedTo: string | undefined;
+  let storeFailure: string | undefined;
+  const store = cmd.options.bool('print-token') ? undefined : credentialStoreFor();
+  const origin = credentialOrigin(cmd.ctx.baseUrl.value);
+  if (store && cmd.ctx.token !== undefined && store.get(origin) === cmd.ctx.token) {
+    try {
+      const replaced = storeSpaceCredential(store, origin, data.spaceId, data.token, {
+        expiresAt: data.session.expiresAt,
+      });
+      if (replaced && replaced !== data.token) revokeSpaceCredentials(cmd, [replaced]);
+      storedTo = `${origin} (${store.kind})`;
+    } catch (err) {
+      storeFailure = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  // A stored token is not echoed, not even in --format json.
+  const { token: _token, ...withoutToken } = data;
+  cmd.out.data(storedTo ? { ...withoutToken, storedTo } : data, () => {
+    const lines = [
+      `entered space ${data.spaceId}`,
+      `session ${data.session.sessionId} (${data.session.kind}) expires ${data.session.expiresAt}`,
+    ];
+    if (storedTo) {
+      lines.push(`credential stored for ${storedTo} — \`tm8 --space ${data.spaceId} …\` now acts in this space`);
+    } else {
+      if (storeFailure) lines.push(`warning: could not store the credential (${storeFailure})`);
+      lines.push(
+        '',
+        '# The token below is shown exactly once and acts only in this space:',
+        `export TM8_AGENT_TOKEN=${data.token}`,
+      );
+    }
+    return lines.join('\n');
+  });
+  return EXIT_OK;
+}
+
+/**
+ * `tm8 auth sessions [--pinned-to <space-id>]` — your own live sessions, or
+ * (space admin) every live session pinned to a space (plan W4). A named flag
+ * rather than the global space, so a shell with a default space still lists
+ * its own sessions unless it asks for the admin view.
+ */
+async function authSessions(cmd: CommandContext): Promise<ExitCode> {
+  if (cmd.args.length > 0) throw new CliError('usage: tm8 auth sessions [--pinned-to <space-id>]', EXIT_USAGE);
+  const spaceId = cmd.options.value('pinned-to');
+  const data = await observedInvoke<AuthSessionsListResult>(clientFor(cmd.ctx), 'auth.sessions.list', {
+    query: { spaceId },
+  });
+  cmd.out.data(data, (result) => {
+    if (result.sessions.length === 0) return 'no live sessions';
+    return result.sessions
+      .map((s) =>
+        [
+          s.current ? '*' : ' ',
+          s.sessionId,
+          s.kind,
+          s.origin,
+          s.spaceName ?? (s.spaceId ? s.spaceId : 'gate'),
+          `created ${s.createdAt}`,
+          `last used ${s.lastUsedAt ?? 'never'}`,
+          ...(result.spaceId ? [`owner ${s.owner.displayName ?? s.owner.identityId}`] : []),
+          ...(s.label ? [JSON.stringify(s.label)] : []),
+        ].join('  '),
+      )
+      .join('\n');
+  });
+  return EXIT_OK;
+}
+
+/**
+ * `tm8 auth sessions revoke <session-id>` — end a session you could list
+ * (plan W4). A gate session takes the sessions entered from it with it, and
+ * every event socket opened with any of them is closed.
+ */
+async function authSessionsRevoke(cmd: CommandContext): Promise<ExitCode> {
+  refuseMutationId('auth sessions revoke', cmd.options.value('mutation-id'));
+  const sessionId = requireOnePositional(cmd, 'usage: tm8 auth sessions revoke <session-id>');
+  const data = await observedInvoke<AuthSessionsRevokeResult>(clientFor(cmd.ctx), 'auth.sessions.revoke', {
+    params: { sessionId },
+  });
   cmd.out.data(data, (result) =>
-    [
-      `entered space ${result.spaceId}`,
-      `session ${result.session.sessionId} (${result.session.kind}) expires ${result.session.expiresAt}`,
-      '',
-      '# The token below is shown exactly once and acts only in this space:',
-      `export TM8_AGENT_TOKEN=${result.token}`,
-    ].join('\n'),
+    result.revoked
+      ? `revoked ${result.revokedSessionIds.length} session(s): ${result.revokedSessionIds.join(', ')}`
+      : `session ${result.sessionId} was already revoked`,
   );
   return EXIT_OK;
 }
@@ -304,6 +411,9 @@ async function authClaim(cmd: CommandContext): Promise<ExitCode> {
     if (store) {
       const origin = credentialOrigin(cmd.ctx.baseUrl.value);
       try {
+        // W3: pins minted from the previous gate are keyed to it and would
+        // never be read again; revoke and forget them rather than leave them.
+        revokeSpaceCredentials(cmd, dropSpaceCredentials(store, origin));
         store.set(origin, data.token, {
           username: data.account.username,
           expiresAt: data.session.expiresAt,
@@ -505,6 +615,9 @@ async function authInviteSignup(cmd: CommandContext): Promise<ExitCode> {
     if (store) {
       const origin = credentialOrigin(cmd.ctx.baseUrl.value);
       try {
+        // W3: pins minted from the previous gate are keyed to it and would
+        // never be read again; revoke and forget them rather than leave them.
+        revokeSpaceCredentials(cmd, dropSpaceCredentials(store, origin));
         store.set(origin, data.token, {
           username: data.account.username,
           expiresAt: data.session.expiresAt,
@@ -537,6 +650,8 @@ export const AUTH_COMMANDS: CommandModule[] = [
   { path: ['auth', 'logout'], run: authLogout },
   { path: ['auth', 'session'], run: authSession },
   { path: ['auth', 'space', 'enter'], run: authSpaceEnter },
+  { path: ['auth', 'sessions'], run: authSessions },
+  { path: ['auth', 'sessions', 'revoke'], run: authSessionsRevoke },
   { path: ['auth', 'password'], run: authPasswordChange },
   { path: ['auth', 'invite', 'signup'], run: authInviteSignup },
   // Order here is irrelevant — `findCommand` is an exact Map lookup on the
