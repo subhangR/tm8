@@ -1145,7 +1145,8 @@ export class DbGraphPort implements GraphPort {
         native_session_id: string | null;
         agent_config_dir: string | null;
       }>(
-        `select ws.entity_id, e.space_id, e.parent_id, ws.project_id, ws.workdir_mode,
+        `select ws.entity_id, e.space_id, e.parent_id,
+                internal.project_folder_for(e.space_id, ws.project_entity_id) as project_id, ws.workdir_mode,
                 ws.workdir_path, ws.mode, ws.model, ws.agent_tool, ws.title,
                 ws.status, ws.native_session_id, ws.agent_config_dir
            from public.work_sessions ws

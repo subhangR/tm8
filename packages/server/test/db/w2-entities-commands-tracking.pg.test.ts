@@ -98,7 +98,7 @@ async function seed(database: W1ScratchDatabase): Promise<Fixture> {
       [fixture.messageId, fixture.channelId, fixture.memberId],
     );
     await client.query(
-      `insert into public.work_sessions(entity_id,title,status,share_mode) values($1,'G02 run','running','space')`,
+      `insert into public.work_sessions(entity_id,title,status,share_mode, workdir_mode) values($1,'G02 run','running','space', 'scratch')`,
       [fixture.workSessionId],
     );
     await client.query(`insert into public.interaction_profiles(entity_id) values($1)`, [fixture.profileId]);

@@ -177,8 +177,8 @@ async function seed(): Promise<Fixture> {
       fx.taskId,
     ]);
     await client.query(
-      `insert into public.work_sessions(entity_id, title, status, share_mode, session_kind)
-       values ($1, 'worker', 'running', 'space', 'agent')`,
+      `insert into public.work_sessions(entity_id, title, status, share_mode, session_kind, workdir_mode)
+       values ($1, 'worker', 'running', 'space', 'agent', 'scratch')`,
       [fx.sessionId],
     );
     await client.query(

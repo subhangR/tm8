@@ -197,9 +197,9 @@ async function seed(scratch: W1ScratchDatabase): Promise<Fixture> {
       [base.taskId, base.quietTaskId],
     );
     await client.query(
-      `insert into public.work_sessions(entity_id,title,status) values
-       ($1,'live worker','running'),($2,'second worker','idle'),
-       ($3,'dead worker','exited'),($4,'bystander','running')`,
+      `insert into public.work_sessions(entity_id,title,status, workdir_mode) values
+       ($1,'live worker','running', 'scratch'),($2,'second worker','idle', 'scratch'),
+       ($3,'dead worker','exited', 'scratch'),($4,'bystander','running', 'scratch')`,
       [base.liveSessionId, base.secondSessionId, base.deadSessionId, base.bystanderSessionId],
     );
     // Three sessions claim the task; the bystander claims nothing.
@@ -410,7 +410,7 @@ describe.sequential('task-anchor session fan-out (121)', () => {
         [ids.sessionId, ids.spaceId, fixture.alice],
       );
       await client.query(
-        `insert into public.work_sessions(entity_id,title,status) values($1,'foreign','running')`,
+        `insert into public.work_sessions(entity_id,title,status, workdir_mode) values($1,'foreign','running', 'scratch')`,
         [ids.sessionId],
       );
       return ids.sessionId;

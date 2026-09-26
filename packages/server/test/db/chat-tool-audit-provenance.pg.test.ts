@@ -102,8 +102,8 @@ async function seed(db: W1ScratchDatabase): Promise<Fixture> {
       [values.channelId, values.spaceId],
     );
     await client.query(
-      `insert into public.work_sessions(entity_id, title, status, share_mode)
-       values ($1,'reporting worker','running','space')`,
+      `insert into public.work_sessions(entity_id, title, status, share_mode, workdir_mode)
+       values ($1,'reporting worker','running','space', 'scratch')`,
       [values.workSessionId],
     );
     // `w2_post_message_batch` authorizes `p_source_work_session_id` against a

@@ -184,7 +184,7 @@ export class ChangesFixture {
         [this.spaceId, this.memberId],
       );
       const id = rows[0]!.id;
-      await q.query(`insert into public.work_sessions(entity_id,title,status) values($1,$2,'spawning')`, [id, title]);
+      await q.query(`insert into public.work_sessions(entity_id,title,status,workdir_mode) values($1,$2,'spawning','scratch')`, [id, title]);
       return id;
     });
   }

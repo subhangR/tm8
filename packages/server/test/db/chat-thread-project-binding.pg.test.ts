@@ -171,7 +171,8 @@ async function storedRow(chatId: string) {
   return database.transaction(async (client) => {
     await client.query('set local role tm8_graph_owner');
     return (await client.query<{ cwd: string; project_id: string | null; workdir_mode: string }>(
-      'select cwd, project_id, workdir_mode from public.chats where entity_id = $1',
+      // 245 dropped chats.project_id: the folder is the row's entity, mapped back.
+      'select cwd, internal.project_folder_for(space_id, project_entity_id) project_id, workdir_mode from public.chats where entity_id = $1',
       [chatId],
     )).rows[0]!;
   });
@@ -330,7 +331,7 @@ describe.sequential('start_chat project binding', () => {
         ],
       );
       return (await client.query<{ project_id: string | null; workdir_mode: string }>(
-        'select project_id, workdir_mode from public.chats where entity_id = $1',
+        'select internal.project_folder_for(space_id, project_entity_id) project_id, workdir_mode from public.chats where entity_id = $1',
         [chat],
       )).rows[0]!;
     });

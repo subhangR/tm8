@@ -622,8 +622,8 @@ describe('forms.pendingForSessions', () => {
                values ($1, $2, $3, 'owner', $3)`, [otherMember, other, ID1]);
     await sql(`insert into public.entities(id, space_id, kind, visibility, created_by)
                values ($1, $2, 'work_session', 'space', $3)`, [otherSession, other, otherMember]);
-    await sql(`insert into public.work_sessions(entity_id, title, status, share_mode, started_at)
-               values ($1, 'Other requester', 'running', 'space', now())`, [otherSession]);
+    await sql(`insert into public.work_sessions(entity_id, title, status, share_mode, started_at, workdir_mode)
+               values ($1, 'Other requester', 'running', 'space', now(), 'scratch')`, [otherSession]);
     const created = await service.create(ctx('forms.create', human(ID1), {}, {
       clientMutationId: cmid(), spaceId: other, title: 'Anyone, over there', questions: QUESTIONS,
       open: true, forSession: otherSession, settings: { respondents: 'anyone' },

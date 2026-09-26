@@ -194,7 +194,7 @@ async function mintSession(): Promise<string> {
        values($1,$2,'work_session',null,0,$3)`,
       [id, fixture.spaceId, fixture.teamMemberId],
     );
-    await client.query(`insert into public.work_sessions(entity_id) values($1)`, [id]);
+    await client.query(`insert into public.work_sessions(entity_id, workdir_mode) values($1, 'scratch')`, [id]);
     await client.query(
       `insert into public.edges(space_id,src_id,dst_id,type,props,created_by)
        values($1,$2,$3,'participates_in','{}'::jsonb,$2)`,
@@ -449,7 +449,7 @@ describe('089 D10 — the authoring session remembers', () => {
          values($1,$2,'work_session',null,0,$3)`,
         [id, fixture.spaceId, fixture.teamMemberId],
       );
-      await client.query(`insert into public.work_sessions(entity_id) values($1)`, [id]);
+      await client.query(`insert into public.work_sessions(entity_id, workdir_mode) values($1, 'scratch')`, [id]);
       return id;
     });
     await expect(createViaDoor('forged provenance attempt', orphanSession))

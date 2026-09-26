@@ -691,7 +691,7 @@ describe('O1 — `message send --wait settled` and exit 11', () => {
       `insert into public.entities(id, space_id, kind, visibility, created_by)
          select '${workSessionId}', space_id, 'work_session', visibility, created_by
            from public.entities where id = '${anchorId}';
-       insert into public.work_sessions(entity_id) values ('${workSessionId}');
+       insert into public.work_sessions(entity_id, workdir_mode) values ('${workSessionId}', 'scratch');
        insert into public.session_message_deliveries
          (delivery_id, message_id, target_work_session_id, status, settled_at)
        values ('${uuidv7()}', '${messageId}', '${workSessionId}', 'failed_permanent', now());`,
@@ -758,7 +758,7 @@ describe('O1 — `message send --wait settled` and exit 11', () => {
       `insert into public.entities(id, space_id, kind, visibility, created_by)
          select '${workSessionId}', space_id, 'work_session', visibility, created_by
            from public.entities where id = '${anchorId}';
-       insert into public.work_sessions(entity_id) values ('${workSessionId}');
+       insert into public.work_sessions(entity_id, workdir_mode) values ('${workSessionId}', 'scratch');
        insert into public.session_message_deliveries
          (delivery_id, message_id, target_work_session_id, status, settled_at)
        values ('${uuidv7()}', '${messageId}', '${workSessionId}', 'failed_retryable', now());`,
@@ -805,7 +805,7 @@ describe('O1 — `message send --wait settled` and exit 11', () => {
       `insert into public.entities(id, space_id, kind, visibility, created_by)
          select '${workSessionId}', space_id, 'work_session', visibility, created_by
            from public.entities where id = '${anchorId}';
-       insert into public.work_sessions(entity_id, status) values ('${workSessionId}', 'running');`,
+       insert into public.work_sessions(entity_id, status, workdir_mode) values ('${workSessionId}', 'running', 'scratch');`,
     );
     expect(made.code).toBe(0);
 
@@ -1044,7 +1044,7 @@ describe('coverage closure for the rows that were otherwise unit-only', () => {
       `insert into public.entities(id, space_id, kind, visibility, created_by)
          select '${workSessionId}', space_id, 'work_session', visibility, created_by
            from public.entities where id = '${anchorId}';
-       insert into public.work_sessions(entity_id, status) values ('${workSessionId}', 'running');`,
+       insert into public.work_sessions(entity_id, status, workdir_mode) values ('${workSessionId}', 'running', 'scratch');`,
     );
     expect(made.code).toBe(0);
 
