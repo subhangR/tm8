@@ -796,8 +796,9 @@ export class DbGraphPort implements GraphPort {
 
       // `selection.teammateIds` (launch card v3, Decision 7): exactly these
       // teammates, in the selected order, as the `teammates` group of
-      // `<context_index>` — replacing the tasks' linked teammates and a
-      // dispatcher's roster. The launch teammate is removed silently (it is
+      // `<context_index>` — replacing the tasks' linked teammates (a
+      // dispatcher ignores it: `applyDispatcherTeammates`, once its mode is
+      // known). The launch teammate is removed silently (it is
       // never in its own group). Validated above; read here under RLS with
       // the roster's columns, so an entry renders as a roster entry does.
       let teammates: SpawnContext['teammates'];
