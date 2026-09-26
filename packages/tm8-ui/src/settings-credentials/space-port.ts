@@ -37,6 +37,7 @@ import type {
   SpaceCredentialProviderName,
   SpaceCredentialView,
   EntityId,
+  NodeModeView,
   SpaceId,
 } from '@tm8/contract';
 import type { Seam } from '../data/seam';
@@ -102,18 +103,22 @@ export function isSpaceAdminRole(role: string | null | undefined, ownerWord: str
 
 /**
  * Is this a shared server? `mode` is `auth.claim.status`'s node mode; only a
- * measured `single` is single-user. Null (not yet known, or unreadable) is
- * shared, so the §6b warning is never hidden on a guess.
+ * measured `personal` (or its deprecated alias `single`) is single-user. Peer
+ * admits other people, and Server is multiplayer, so both are shared (doc 15).
+ * Null (not yet known, or unreadable) is shared, so the §6b warning is never
+ * hidden on a guess.
  */
-export function isSharedServer(mode: 'single' | 'multi' | null | undefined): boolean {
-  return mode !== 'single';
+export type CredentialsNodeMode = NodeModeView | 'single' | 'multi';
+
+export function isSharedServer(mode: CredentialsNodeMode | null | undefined): boolean {
+  return mode !== 'personal' && mode !== 'single';
 }
 
 export function spaceCredentialsPortFromSeam(
   seam: Pick<Seam, 'credentials' | 'identity'>,
   spaceId: SpaceId,
   ownerWord: string | null,
-  nodeMode: () => Promise<'single' | 'multi' | null> = async () => null,
+  nodeMode: () => Promise<CredentialsNodeMode | null> = async () => null,
 ): SpaceCredentialsPort {
   return {
     viewer: async () => {

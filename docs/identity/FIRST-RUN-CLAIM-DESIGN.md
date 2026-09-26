@@ -7,6 +7,41 @@ directly. Nothing here is taken from `AUTH-AND-IDENTITY-VERIFIED-STATE.md`,
 `IDENTITY-OPEN-THREADS.md` or `STATE.md` — all three are dated audits and at
 least one load-bearing claim in them is now false (§8.1).
 
+> **Amended 2026-09-26 by Stage A of node modes** (task
+> `01a0dab5-7776-7d42-8ed5-ee8024dafc07`, PR #850; design in tm8 docs 19
+> `01a0daba-e747-77fb-8d0a-a6f84068c688` and 20
+> `01a0dabe-853b-7150-9c11-d153de5a07df`). Where this section disagrees with the
+> text below, this section wins; the body is kept as the record of the original
+> reasoning.
+>
+> - **Three modes, not two.** `TM8_NODE_MODE` ∈ `personal | peer | server`.
+>   `single` and `multi` are accepted as deprecated aliases for `personal` and
+>   `server`, and the boot line says so. Personal and Peer keep the loopback
+>   auto-owner arm; Server turns it off (`runtimeOf`). Peer is Personal plus
+>   other people signing in with passwords.
+> - **D3, revised.** The owner always keeps a local proof: the machine in
+>   Personal, a password from Peer on. Under decision 34 a local agent is never
+>   the owner, so **every node is claimed once with a password, Personal
+>   included**. The boot banner prints the claim box in every mode, and
+>   `node.mode.set` refuses every mode on an unclaimed node (`node_unclaimed`).
+>   Stage A is "one-time claim, then cookie login": the cookie is #847's
+>   `__Host-tm8-launch`, which gates the auto-owner arm once #847 lands.
+> - **D4, revised.** The mode is chosen **after the claim** in the app ("Who will
+>   use this node?"), or with `tm8 node mode set <mode>` (`node.mode.set`), and
+>   recorded in `<dataDir>/mode`. `TM8_NODE_MODE` in the environment still wins
+>   and pins it, and then no operation can move it (`mode_pinned`). The
+>   passwordless auto-owner may only tighten (personal → peer → server);
+>   loosening needs the owner's password session. Moving to or from `server`
+>   needs a restart; personal ↔ peer does not. `tm8 node mode` (§4.3) is no
+>   longer read-only.
+> - **Installer (§7.1).** `install.sh --service` / `--systemd` writes
+>   `TM8_NODE_MODE=server` into a NEW env file, overridable with
+>   `--mode personal|peer|server`. An existing env file is never rewritten.
+> - **The claim token (D1) is unchanged**: stdout, `<dataDir>/setup-token`
+>   (0600) in every mode, reused across restarts while live, burned on use.
+>   Whether to stop writing the file in Personal mode is an open owner decision,
+>   not part of Stage A.
+
 ---
 
 ## 0. The decisions, and who made them

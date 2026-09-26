@@ -2,7 +2,7 @@
  * Decision 29 — may one folder be linked into several spaces on this node?
  *
  * Only on a node whose gate is closed to everyone but this machine: a
- * `single` node with no public origin, no extra hostnames, no extra origins,
+ * `personal` node (the old `single`; doc 15) with no public origin, no extra hostnames, no extra origins,
  * and no preview reachable by a non-loopback name. Everywhere else a folder
  * belongs to one space (decision 28).
  *
@@ -22,7 +22,10 @@ export type GatePosture = 'loopback' | 'open';
 export function gatePosture(
   config: Pick<ServerConfig, 'nodeMode' | 'publicOrigin' | 'extraAllowedHostnames' | 'allowedOrigins' | 'preview'>,
 ): GatePosture {
-  if ((config.nodeMode ?? 'single') !== 'single') return 'open';
+  // Node modes (doc 15): `personal` is the old `single` (the alias normalises to
+  // it). `peer` lets other people sign in, so its gate is not this machine's
+  // alone: one space per folder, the fail-closed side, like `server`.
+  if ((config.nodeMode ?? 'personal') !== 'personal') return 'open';
   if (config.publicOrigin) return 'open';
   if ((config.extraAllowedHostnames ?? []).length > 0) return 'open';
   if ((config.allowedOrigins ?? []).length > 0) return 'open';

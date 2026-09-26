@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:61cdc78ba1aa992c3d436ca20307bdaba760bfbe4acc86daa059eae2814cde21",
+  "catalogDigest": "sha256:fb8290e01153e94952afce53c3eac15ce24c312e2a201d711f4d944d518d3e90",
   "catalog": {
-    "total": 278,
-    "v1": 276,
+    "total": 279,
+    "v1": 277,
     "reserved": 2,
-    "http": 276,
+    "http": 277,
     "ws": 1,
-    "registerableV1Http": 274,
+    "registerableV1Http": 275,
     "methods": {
       "GET": 90,
       "POST": 134,
       "PATCH": 17,
       "DELETE": 18,
-      "PUT": 17,
+      "PUT": 18,
       "WS": 2
     },
     "kinds": {
       "read": 94,
-      "command": 182,
+      "command": 183,
       "stream": 2
     },
-    "uniqueNames": 278,
-    "uniqueBindings": 277
+    "uniqueNames": 279,
+    "uniqueBindings": 278
   },
   "reservedOperations": [
     "search.query",
@@ -1776,6 +1776,13 @@
         "source": "server-router"
       },
       {
+        "operation": "node.mode.set",
+        "method": "PUT",
+        "path": "/v2/node/mode",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "auth.launch",
         "method": "POST",
         "path": "/v2/auth/launch",
@@ -2350,7 +2357,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 246
+    "unimplementedV1Http": 247
   },
   "schemas": {
     "additive": {
@@ -6281,6 +6288,23 @@
           "auth",
           "claim",
           "reissue"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "node.mode.set",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/node.mode.set",
+        "intentTags": [
+          "node",
+          "mode",
+          "set"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

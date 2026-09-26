@@ -1,26 +1,50 @@
 /**
- * `tm8 node …` — read-only facts about the Server as a node.
+ * `tm8 node …` — the Server as a node: its mode, Personal / Peer / Server
+ * (doc 14; plan doc 15 §4).
  *
- * Today that is one verb, `node mode`, which is SUGAR over `auth.claim.status`:
- * that operation already reports the mode, and this is a second, purpose-named
- * spelling of the same read (the same relationship `worktree status` has to
- * `entities.get`). It adds no catalog operation.
+ * `node mode` is SUGAR over `auth.claim.status`: that operation already reports
+ * the mode and where it came from, and this is a purpose-named spelling of the
+ * same read (the relationship `worktree status` has to `entities.get`).
  *
- * READ-ONLY BY DESIGN, and the design is the point (FIRST-RUN-CLAIM-DESIGN.md
- * D4). The mode lives in server config (`TM8_NODE_MODE`), never in a graph row,
- * because it gates a security arm and before a node is claimed "node admin"
- * means anyone who reaches loopback — precisely the population the mode exists
- * to constrain. Converting is an env edit and a restart. A command that let you
- * flip it over the wire would be lying about where the switch is, so this one
- * reports the mode and names where the switch lives, and offers no way to move
- * it.
+ * `node mode set <mode>` calls `node.mode.set`, and the Server holds every rule
+ * (FIRST-RUN-CLAIM-DESIGN.md D4 as revised by doc 14 §5.2) — this command
+ * enforces none of them and only reports the refusal:
+ *
+ * - `TM8_NODE_MODE` in the Server's environment PINS the mode, and every
+ *   switch is refused (`conflict`, `mode_pinned`);
+ * - every mode needs the node claimed first (`conflict`, `node_unclaimed`).
+ *   It never takes a password: `tm8 auth claim` does that;
+ * - tightening is open to the owner on the Server's own machine; LOOSENING
+ *   (`server → peer|personal`, `peer → personal`) needs the owner signed in
+ *   with their password (`forbidden`, `owner_session_required`).
+ *
+ * The mode is read at boot, so a switch that moves the loopback auto-owner arm
+ * says to restart. Like `auth`, no `--space`, no `--as` and no mutation id: the
+ * mode belongs to the node, not to a space or a persona.
+ *
+ * `node account disable` (G6) is the node-admin write described on its own
+ * function below; it does carry a mutation id.
  */
-import type { AccountDisableResult, AuthClaimStatusResult } from '@tm8/contract';
+import type { AccountDisableResult, AuthClaimStatusResult, NodeModeSetResult, NodeModeView } from '@tm8/contract';
 
 import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
 import { resolveMutationId } from '../mutation.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
 import type { CommandContext, CommandModule } from '../run.js';
+
+const MODES: readonly NodeModeView[] = ['personal', 'peer', 'server'];
+
+const MEANING: Record<NodeModeView, string> = {
+  personal: 'personal: one person — a loopback browser holding the launch cookie (tm8 open) is the owner; nobody else signs in.',
+  peer: 'peer: a loopback browser holding the launch cookie (tm8 open) is the owner; other people sign in with a password.',
+  server: 'server: the loopback auto-owner arm is off; everyone signs in, everywhere.',
+};
+
+function sourceText(result: AuthClaimStatusResult): string {
+  if (result.modeSource === 'env') return 'from env';
+  if (result.modeSource === 'file') return 'from file';
+  return 'default, no mode chosen yet';
+}
 
 async function nodeMode(cmd: CommandContext): Promise<ExitCode> {
   if (cmd.args.length > 0) throw new CliError('usage: tm8 node mode', EXIT_USAGE);
@@ -29,16 +53,11 @@ async function nodeMode(cmd: CommandContext): Promise<ExitCode> {
     'auth.claim.status',
   );
   cmd.out.data(data, (r) => {
-    const lines = [`node mode: ${r.mode}`];
+    const lines = [`node mode: ${r.mode} (${sourceText(r)})`, MEANING[r.mode], ''];
     lines.push(
-      r.mode === 'single'
-        ? 'single-player: a loopback caller with no credential is resolved as the owner, so there is no gate on the Server\'s own machine.'
-        : 'multiplayer: the loopback auto-owner arm is off; everyone signs in, everywhere.',
-    );
-    lines.push(
-      '',
-      'read-only: the mode is server config (TM8_NODE_MODE), not something this command can flip.',
-      'to convert, edit TM8_NODE_MODE in the Server\'s env and restart it (design D4).',
+      r.modeSource === 'env'
+        ? 'pinned by TM8_NODE_MODE in the Server\'s environment; change it there and restart the Server'
+        : 'switch with: tm8 node mode set <personal|peer|server>',
     );
     return lines.join('\n');
   });
@@ -75,7 +94,25 @@ async function nodeAccountDisable(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
+async function nodeModeSet(cmd: CommandContext): Promise<ExitCode> {
+  const usage = 'usage: tm8 node mode set <personal|peer|server>';
+  if (cmd.args.length !== 1) throw new CliError(usage, EXIT_USAGE);
+  const mode = cmd.args[0]!.trim().toLowerCase();
+  if (!(MODES as readonly string[]).includes(mode)) throw new CliError(usage, EXIT_USAGE);
+
+  const data = await observedInvoke<NodeModeSetResult>(clientFor(cmd.ctx), 'node.mode.set', {
+    body: { mode },
+  });
+  cmd.out.data(data, (r) => {
+    const lines = [`mode: ${r.previous} → ${r.mode}`];
+    if (r.restartRequired) lines.push('restart the Server to apply');
+    return lines.join('\n');
+  });
+  return EXIT_OK;
+}
+
 export const NODE_COMMANDS: CommandModule[] = [
   { path: ['node', 'mode'], run: nodeMode },
+  { path: ['node', 'mode', 'set'], run: nodeModeSet },
   { path: ['node', 'account', 'disable'], run: nodeAccountDisable },
 ];

@@ -27,6 +27,7 @@
  */
 import { useState } from 'react';
 import type { CreateInviteInput, SpaceInviteView, SpaceMemberRole } from '@tm8/contract';
+import { RequirePeer } from '../auth/RequirePeer';
 import { BrandMark } from '../kit';
 import { DisabledAction, DisabledIconControl } from '../panels';
 import { defaultInviteRole, inviteRoles } from './port';
@@ -320,15 +321,17 @@ export function InvitesPanel({
             </span>
             <span className="set-invites__go">
               {onCreate ? (
-                <button
-                  type="button"
-                  className="set-chip"
-                  data-testid="invite-create"
-                  disabled={busy}
-                  onClick={() => void create()}
-                >
-                  {busy ? 'Creating…' : 'Create invite link'}
-                </button>
+                <RequirePeer>
+                  <button
+                    type="button"
+                    className="set-chip"
+                    data-testid="invite-create"
+                    disabled={busy}
+                    onClick={() => void create()}
+                  >
+                    {busy ? 'Creating…' : 'Create invite link'}
+                  </button>
+                </RequirePeer>
               ) : (
                 <DisabledAction reason={INVITE_CREATE_NOT_ADMIN} label="create invite link">
                   Create invite link

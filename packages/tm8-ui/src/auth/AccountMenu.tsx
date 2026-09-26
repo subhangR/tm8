@@ -44,6 +44,7 @@ import { Avatar, VectorIcon } from '../kit';
 import { VIEW_ART } from '../domain/kind-art';
 import { useTheme, type Theme } from '../theme/useTheme';
 import { useAuthActions } from './gate-context';
+import { NodeModeRow } from './NodeModeRow';
 import { ACCOUNT_MENU } from './specimen';
 
 export interface AccountMenuProps {
@@ -259,6 +260,8 @@ export function AccountMenu({
                 ))}
               </span>
             </div>
+
+            <NodeModeRow />
 
             {onOpenAgentTools ? (
               <button
