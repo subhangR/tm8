@@ -90,7 +90,7 @@ export const OPERATIONS = [
   // member row and everything it authored stay. POST verbs, like invites.revoke.
   { name: 'spaces.members.remove', method: 'POST',  path: '/v2/spaces/:spaceId/members/:memberId/remove', kind: 'command', status: 'v1' },
   { name: 'spaces.leave',          method: 'POST',  path: '/v2/spaces/:spaceId/leave',                   kind: 'command', status: 'v1' },
-  // W5 (migration 995 placeholder, K2 / decision 30): the space password. The
+  // W5 (migration 264 placeholder, K2 / decision 30): the space password. The
   // setting and the P5 admin ops; human space admins only.
   { name: 'spaces.spacePassword.setRequired',   method: 'PUT',  path: '/v2/spaces/:spaceId/space-password',                              kind: 'command', status: 'v1' },
   { name: 'spaces.members.spacePassword.reset', method: 'POST', path: '/v2/spaces/:spaceId/members/:memberId/space-password/reset', kind: 'command', status: 'v1' },

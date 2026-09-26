@@ -1,5 +1,5 @@
 -- =============================================================================
--- 995 (PLACEHOLDER — the merge coordinator assigns the real number) — per-space
+-- 264 (set at the merge position after #919's 263; 262 stays a hole; was placeholder 995) — per-space
 -- passwords, W5 (plan 01a0d9eb §3 W5, phases 01a0d9fb §2, final design
 -- 01a0da94 decision 30 / K2).
 --
@@ -58,7 +58,7 @@ alter table public.spaces
   add column require_space_credential boolean not null default false;
 
 comment on column public.spaces.require_space_credential is
-  'K2 (995, W5): when true, auth.space.enter needs the member''s space password '
+  'K2 (264, W5): when true, auth.space.enter needs the member''s space password '
   'and both invite paths set one. Written only by set_space_require_credential.';
 
 create or replace function internal.guard_space_require_credential()
@@ -105,8 +105,8 @@ alter table public.space_logins enable row level security;
 revoke all on public.space_logins from public;
 
 comment on table public.space_logins is
-  'W5 (995, K2): one space password per (space, account), as a scrypt verifier. '
-  'No plaintext, no grant to tm8_app; only the 995 SECURITY DEFINER functions touch it.';
+  'W5 (264, K2): one space password per (space, account), as a scrypt verifier. '
+  'No plaintext, no grant to tm8_app; only the 264 SECURITY DEFINER functions touch it.';
 
 -- The account a member's identity signs in as: the one enter_space picks.
 create or replace function internal.space_login_account(p_identity text)
@@ -208,7 +208,7 @@ begin
     raise exception 'not a member of that space' using errcode = '42501';
   end if;
 
-  -- 995 (W5, K2): the space password. Required when the space says so, and
+  -- 264 (W5, K2): the space password. Required when the space says so, and
   -- always when this account's login for the space is locked. The verifier
   -- must be the one the server checked the password against AND the current
   -- active row's; a null never matches.
@@ -238,7 +238,7 @@ revoke all on function public.enter_space(uuid, uuid, text, timestamptz, text, t
 grant execute on function public.enter_space(uuid, uuid, text, timestamptz, text, text) to tm8_app;
 
 comment on function public.enter_space(uuid, uuid, text, timestamptz, text, text) is
-  'auth.space.enter (233, plan W3; 995 W5): a gate session plus membership mints a '
+  'auth.space.enter (233, plan W3; 264 W5): a gate session plus membership mints a '
   'session pinned to one space. Refuses a pinned caller and agent kinds. When the '
   'space requires a password (or the login is locked) the caller must present the '
   'active space_logins verifier the server checked the password against.';
@@ -283,7 +283,7 @@ revoke all on function public.space_login_for_enter(uuid) from public;
 grant execute on function public.space_login_for_enter(uuid) to tm8_app;
 
 comment on function public.space_login_for_enter(uuid) is
-  'W5 (995): for a human gate session, whether entering p_space_id needs a space '
+  'W5 (264): for a human gate session, whether entering p_space_id needs a space '
   'password and the active verifier to check it against. Never a plaintext.';
 
 -- -----------------------------------------------------------------------------
@@ -311,7 +311,7 @@ revoke all on function public.invite_requires_space_password(text) from public;
 grant execute on function public.invite_requires_space_password(text) to tm8_app;
 
 comment on function public.invite_requires_space_password(text) is
-  'W5 (995): true when a live invite code joins a space that requires a space '
+  'W5 (264): true when a live invite code joins a space that requires a space '
   'password. Claim-free, like preview_invite: the code is the authorization. A '
   'dead code (unknown, revoked, expired, exhausted) answers false.';
 
@@ -367,7 +367,7 @@ begin
     raise exception 'invite is exhausted' using errcode = '53400';
   end if;
 
-  -- 995 (W5, K2): a space that requires a password gets one at join, checked
+  -- 264 (W5, K2): a space that requires a password gets one at join, checked
   -- AFTER the invite so a dead code learns nothing about the space.
   select sp.require_space_credential into needs_space_password
     from public.spaces sp where sp.id = invite.space_id;
@@ -417,7 +417,7 @@ revoke all on function public.signup_via_invite(text, text, text, text, text, te
 grant execute on function public.signup_via_invite(text, text, text, text, text, text, text, text) to tm8_app;
 
 comment on function public.signup_via_invite(text, text, text, text, text, text, text, text) is
-  'D5 (141, 143; 995 W5): redeem an invite that creates the account. Claim-free; '
+  'D5 (141, 143; 264 W5): redeem an invite that creates the account. Claim-free; '
   'the code is the authorization. When the invite''s space requires a space '
   'password, p_space_verifier (scrypt) is required and stored for the new account.';
 
@@ -476,7 +476,7 @@ begin
     if invite.use_count >= invite.max_uses then
       raise exception 'invite is exhausted' using errcode = '53400';
     end if;
-    -- 995 (W5, K2): joining a space that requires a password sets one, unless
+    -- 264 (W5, K2): joining a space that requires a password sets one, unless
     -- this account already has a login row there (never overwritten here: a
     -- locked or admin-reset row stays as the admin left it). Humans only.
     if exists (select 1 from public.spaces sp

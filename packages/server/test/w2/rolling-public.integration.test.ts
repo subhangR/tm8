@@ -472,7 +472,7 @@ const W11_NET_NEW_OPERATIONS = [
 ] as const;
 
 /**
- * W5 (995, decision 30): the space password — the admin toggle and the admin
+ * W5 (264, decision 30): the space password — the admin toggle and the admin
  * reset/lock of a member's login. Net-new; nothing is replaced. MEASURED.
  */
 const W5_SPACE_PASSWORD_NET_NEW_OPERATIONS = [
@@ -640,7 +640,7 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // same number from the component lists, so this literal cannot drift alone.
     // MEASURED from this assertion's own failing run.
     // 177 -> 186 (2026-09-23): the nine skills.* facade handlers. MEASURED.
-    expect(registry.size).toBe(222); /* +3 W5 space password ops (995). MEASURED. */ /* +1 node.metrics.get (status strip). MEASURED. */ /* W11: +4 (projects.link stays, decision 29) spaces.projects.list|create and gate.folders.list|create. MEASURED. */ /* +1 auth.space.enter (W3-server). MEASURED. */ /* +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. */ /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ // +1 launch.suggest (Jev lane F #655). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +2 auth.sessions.list/revoke (W4). MEASURED. */ /* -1 containers.attention (Attention v2 S7a). MEASURED. */
+    expect(registry.size).toBe(222); /* +3 W5 space password ops (264). MEASURED. */ /* +1 node.metrics.get (status strip). MEASURED. */ /* W11: +4 (projects.link stays, decision 29) spaces.projects.list|create and gate.folders.list|create. MEASURED. */ /* +1 auth.space.enter (W3-server). MEASURED. */ /* +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. */ /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ // +1 launch.suggest (Jev lane F #655). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +2 auth.sessions.list/revoke (W4). MEASURED. */ /* -1 containers.attention (Attention v2 S7a). MEASURED. */
     expect(registry.size).toBe(
       TRANCHE_V1_FACADE_OPERATIONS.length
         + G02_NET_NEW_OPERATIONS.length

@@ -310,7 +310,7 @@ export interface IssuedSpaceSession {
   session: AuthSessionView;
 }
 
-/** `space_login_for_enter` (995): what entering a space needs. Never a plaintext. */
+/** `space_login_for_enter` (264): what entering a space needs. Never a plaintext. */
 interface SpaceLoginRequirement {
   required: boolean;
   locked: boolean;
@@ -815,7 +815,7 @@ export async function signupViaInvite(
   return { ...issued, spaceId: created.spaceId, memberId: created.memberId };
 }
 
-/** What `reset_space_login` / `set_space_login_locked` (995) answer. */
+/** What `reset_space_login` / `set_space_login_locked` (264) answer. */
 export interface SpacePasswordAdminRow {
   spaceId: string;
   memberId: string;
