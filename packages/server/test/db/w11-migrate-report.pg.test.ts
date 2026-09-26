@@ -261,7 +261,25 @@ describe('W11-migrate dry-run report on a two-space node', () => {
     expect(realRunRefusals(report)).toEqual([{ code: 'live_sessions', folderId: ids.folderF, liveSessions: 1 }]);
   });
 
-  it('reading the report writes nothing: the double grants are still there', async () => {
+  it('soft-deleted sessions, chats and worktrees are not counted (rolled back after)', async () => {
+    const rollback = new Error('w11r-rollback');
+    let soft: W11Evidence[] = [];
+    await database.transaction(async (client) => {
+      await client.query('set local session_replication_role = replica');
+      await client.query('update public.entities set deleted_at = now() where id = any($1::uuid[])',
+        [[ids.wsB1, ids.chatBg, ids.wtBg]]);
+      soft = await loadW11Evidence(client, AS_OF);
+      throw rollback;
+    }).catch((err: unknown) => { if (err !== rollback) throw err; });
+    const at = (folderId: string, spaceId: string) => soft.find((e) => e.folderId === folderId && e.spaceId === spaceId)!;
+    expect(at(ids.folderF, ids.spaceB)).toMatchObject({ sessions: 1, liveSessions: 0 });
+    expect(at(ids.folderG, ids.spaceB)).toMatchObject({ chats: 0, worktrees: 0 });
+    // Paired positive: the same rows, not deleted, are counted (the rollback held).
+    expect(spaceIn(report, ids.folderF, ids.spaceB)).toMatchObject({ sessions: 2, liveSessions: 1 });
+    expect(spaceIn(report, ids.folderG, ids.spaceB)).toMatchObject({ chats: 1, worktrees: 1 });
+  });
+
+  it('the report does not change the double grants (the READ ONLY transaction is the real guard)', async () => {
     const rows = await database.query<{ n: number }>(
       'select count(*)::int n from public.space_projects where project_id = any($1::uuid[])',
       [[ids.folderF, ids.folderG]],
@@ -270,13 +288,13 @@ describe('W11-migrate dry-run report on a two-space node', () => {
   });
 
   describe('the job entry', () => {
-    const run = async (args: string[]) => {
+    const run = async (args: string[], url = database.url) => {
       const out: string[] = [];
       const err: string[] = [];
       const o = vi.spyOn(process.stdout, 'write').mockImplementation((c) => { out.push(String(c)); return true; });
       const e = vi.spyOn(process.stderr, 'write').mockImplementation((c) => { err.push(String(c)); return true; });
       try {
-        const code = await main(['--as-of', AS_OF, ...args], { TM8_DATABASE_URL: database.url });
+        const code = await main(['--as-of', AS_OF, ...args], { TM8_DATABASE_URL: url });
         return { code, out: out.join(''), err: err.join('') };
       } finally {
         o.mockRestore();
@@ -297,6 +315,36 @@ describe('W11-migrate dry-run report on a two-space node', () => {
         expect(err).toContain('--mapping');
         expect(out).toBe('');
       }
+    });
+
+    it('under the app role (row level security) the job refuses before reading (exit 64); the admin role runs', async () => {
+      const asApp = new URL(database.url);
+      asApp.searchParams.set('options', '-c role=tm8_app');
+      for (const args of [['--mapping', full(), '--dry-run'], ['--mapping', full()]]) {
+        const refused = await run(args, asApp.toString());
+        expect(refused.code).toBe(64);
+        expect(refused.err).toContain('role tm8_app is under row level security');
+        expect(refused.out).toBe('');
+      }
+      const admin = await run(['--mapping', full(), '--dry-run']);
+      expect(admin.code).toBe(0);
+      expect(admin.err).not.toContain('row level security');
+    });
+
+    it('rejects a bad --format or --as-of (exit 64) and names mapping keys that match no reported folder', async () => {
+      expect((await run(['--mapping', full(), '--dry-run', '--format', 'html'])).code).toBe(64);
+      expect((await run(['--mapping', full(), '--dry-run', '--as-of', 'yesterday'])).code).toBe(64);
+      const extra = mappingFile({ [ids.folderF]: ids.spaceB, [ids.folderG]: ids.spaceA, [ids.folderK]: ids.spaceA });
+      const listed = await run(['--mapping', extra, '--dry-run', '--format', 'json']);
+      expect(listed.code).toBe(0);
+      expect(listed.err).toContain(`not granted to more than one space, ignored: ${ids.folderK}`);
+      expect((await run(['--mapping', full(), '--dry-run'])).err).not.toContain('ignored');
+    });
+
+    it('a real run mapping G outside its grants is REFUSED for G (exit 2)', async () => {
+      const { code, err } = await run(['--mapping', mappingFile({ [ids.folderF]: ids.spaceB, [ids.folderG]: ids.spaceX })]);
+      expect(code).toBe(2);
+      expect(err).toContain(`"mapped_space_not_granted","folderId":"${ids.folderG}","spaceId":"${ids.spaceX}"`);
     });
 
     it('--dry-run prints one row per folder from the mapping and exits 0', async () => {

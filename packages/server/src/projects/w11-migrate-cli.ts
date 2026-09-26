@@ -15,7 +15,8 @@
  * owner step not built into this job.
  *
  * Every read runs in one READ ONLY transaction. The database URL is read from
- * the environment and never printed.
+ * the environment and never printed. The role must see every space: under row
+ * level security (the node's app role) the job exits 64 before reading.
  */
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
@@ -25,6 +26,8 @@ import pg from 'pg';
 
 import {
   DEFAULT_WINDOW_DAYS,
+  NarrowedRoleError,
+  assertUnnarrowedRole,
   buildW11Report,
   formatW11Report,
   loadNodeOwnerIdentity,
@@ -54,8 +57,17 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env)
     process.stderr.write('w11-migrate: --mapping <file.json> is required (folder id -> owning space id)\n');
     return 64;
   }
+  if (values.format !== 'md' && values.format !== 'json') {
+    process.stderr.write('w11-migrate: --format must be md or json\n');
+    return 64;
+  }
   const mapping = parseOwningSpaceMapping(readFileSync(values.mapping, 'utf8'));
-  const asOf = new Date(values['as-of'] ?? Date.now()).toISOString();
+  const asOfDate = new Date(values['as-of'] ?? Date.now());
+  if (Number.isNaN(asOfDate.getTime())) {
+    process.stderr.write('w11-migrate: --as-of must be an ISO timestamp\n');
+    return 64;
+  }
+  const asOf = asOfDate.toISOString();
   const windowDays = values['window-days'] ? Number(values['window-days']) : DEFAULT_WINDOW_DAYS;
   if (!Number.isInteger(windowDays) || windowDays <= 0) {
     process.stderr.write('w11-migrate: --window-days must be a positive integer\n');
@@ -67,12 +79,25 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env)
   let report;
   try {
     await client.query('begin transaction isolation level repeatable read, read only');
+    try {
+      await assertUnnarrowedRole(client);
+    } catch (err) {
+      if (!(err instanceof NarrowedRoleError)) throw err;
+      process.stderr.write(`w11-migrate: ${err.message}\n`);
+      return 64;
+    }
     const evidence = await loadW11Evidence(client, asOf, windowDays);
     const nodeOwnerIdentity = await loadNodeOwnerIdentity(client);
     await client.query('commit');
     report = buildW11Report({ evidence, mapping, nodeOwnerIdentity, asOf, windowDays });
   } finally {
     await client.end();
+  }
+
+  const reported = new Set(report.projects.map((p) => p.folderId));
+  const unknown = [...mapping.keys()].filter((folderId) => !reported.has(folderId));
+  if (unknown.length > 0) {
+    process.stderr.write(`w11-migrate: mapping names ${unknown.length} folder(s) not granted to more than one space, ignored: ${unknown.join(', ')}\n`);
   }
 
   const out = values.format === 'json' ? JSON.stringify(report, null, 2) : formatW11Report(report);

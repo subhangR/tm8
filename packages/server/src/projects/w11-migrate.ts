@@ -29,6 +29,19 @@
  * the folder by `work_sessions.project_id`, in the space of its entity. A chat
  * is on the folder by `chats.project_id`, or by a `cwd` at or under the
  * folder's path (chats on the prod node carry cwd and no project_id).
+ * Soft-deleted sessions, chats and worktrees (`entities.deleted_at` set) are
+ * not counted.
+ *
+ * KNOWN LIMIT (conservative): a chat's cwd is attributed to EVERY double-granted
+ * folder it is at or under, not only the most specific one. With nested shared
+ * folders a chat counts for both, which can only raise activity (toward
+ * `owner_decides`), never lower it.
+ *
+ * THE ROLE. The evidence spans every space, and every table it reads has row
+ * level security. `assertUnnarrowedRole` refuses (the CLI exits 64) unless the
+ * connected role is a superuser, has BYPASSRLS, or owns every one of those
+ * tables without FORCE ROW LEVEL SECURITY — under the app role the report
+ * would be silently narrowed, and zeroed counts flip `owner_decides` to unlink.
  */
 import { pickOwningSpace, type OwningSpaceMapping } from './owning-space.js';
 
@@ -113,7 +126,7 @@ with shared as (
     from grants g
     cross join win
     join public.work_sessions ws on ws.project_id = g.project_id
-    join public.entities e on e.id = ws.entity_id and e.space_id = g.space_id
+    join public.entities e on e.id = ws.entity_id and e.space_id = g.space_id and e.deleted_at is null
    group by g.project_id, g.space_id
 ), cht as (
   select g.project_id, g.space_id,
@@ -128,6 +141,7 @@ with shared as (
      and (c.project_id = g.project_id
           or c.cwd = g.working_dir
           or c.cwd like replace(replace(replace(g.working_dir, '\\', '\\\\'), '%', '\\%'), '_', '\\_') || '/%')
+    join public.entities ce on ce.id = c.entity_id and ce.deleted_at is null
     left join lateral (
       select max(msg.created_at) last_at from public.messages msg
        where msg.anchor_id = c.entity_id and msg.created_at <= win.as_of
@@ -140,7 +154,7 @@ with shared as (
          array_agg(w.branch order by w.branch) branches
     from grants g
     join public.worktrees w on w.project_id = g.project_id
-    join public.entities e on e.id = w.entity_id
+    join public.entities e on e.id = w.entity_id and e.deleted_at is null
    where coalesce(w.space_id, e.space_id) = g.space_id
    group by g.project_id, g.space_id
 )
@@ -159,6 +173,40 @@ select g.project_id::text folder_id, g.folder_name, g.working_dir,
   left join cht on cht.project_id = g.project_id and cht.space_id = g.space_id
   left join wt on wt.project_id = g.project_id and wt.space_id = g.space_id
  order by g.folder_name, g.project_id, s.created_at, s.id`;
+
+/** The tables W11_EVIDENCE_SQL and NODE_OWNER_SQL read, all under RLS. */
+export const W11_EVIDENCE_TABLES = [
+  'spaces', 'projects', 'space_projects', 'entities', 'work_sessions', 'chats', 'messages', 'worktrees', 'accounts',
+] as const;
+
+/**
+ * One row: `ok` is true when row level security cannot narrow what the current
+ * role reads from any evidence table. $1 = the table names (schema public).
+ */
+export const ROLE_SEES_ALL_SQL = `
+select r.rolname::text role_name,
+       r.rolsuper or r.rolbypassrls
+       or not exists (
+         select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
+          where n.nspname = 'public' and c.relname = any($1::text[]) and c.relrowsecurity
+            and (c.relforcerowsecurity or not pg_has_role(r.oid, c.relowner, 'USAGE'))
+       ) ok
+  from pg_roles r where r.rolname = current_user`;
+
+export class NarrowedRoleError extends Error {
+  override readonly name = 'NarrowedRoleError';
+}
+
+/** Throws NarrowedRoleError unless the connected role sees every row of every evidence table. */
+export async function assertUnnarrowedRole(client: Queryable): Promise<void> {
+  const { rows } = await client.query(ROLE_SEES_ALL_SQL, [[...W11_EVIDENCE_TABLES]]);
+  const row = rows[0];
+  if (row?.ok === true) return;
+  throw new NarrowedRoleError(
+    `role ${String(row?.role_name ?? '?')} is under row level security on the evidence tables, so the report ` +
+      'would be silently narrowed. Connect as the node\'s migration role (superuser, BYPASSRLS, or the tables\' owner).',
+  );
+}
 
 /** The node owner (002's single `is_owner` row): the `createdByOwner` report column. */
 export const NODE_OWNER_SQL = 'select identity_id from public.accounts where is_owner limit 1';
