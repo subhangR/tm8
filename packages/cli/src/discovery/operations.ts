@@ -237,7 +237,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'auth.space.enter': {
     cmd: ['auth', 'space', 'enter'],
-    syn: 'tm8 auth space enter <space-id> [--label <label>] [--print-token]',
+    syn: 'tm8 auth space enter <space-id> [--label <label>] [--space-password <password>] [--print-token]',
     sum: 'Mint a session pinned to one space from your unpinned (gate) session',
     authz: 'server',
     input: 'bound',
@@ -249,6 +249,7 @@ const ROWS: Record<OperationName, Row> = {
       'under TM8_SPACE_SESSIONS=enforce an unpinned human session can call only spaces.list, auth.* and node administration until it enters a space',
       'with a stored gate credential the pinned token is stored next to it, keyed by space, and `tm8 --space <space-id>` presents it; the gate stays usable for entering other spaces',
       'with --print-token (or in an agent session, or with no stored credential) nothing is stored: export the printed token as TM8_AGENT_TOKEN',
+      'a space that requires a space password (or a locked space login) refuses entry without --space-password; the password is checked for that space only',
     ],
   },
   'auth.sessions.list': {
@@ -291,7 +292,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'auth.invite.signup': {
     cmd: ['auth', 'invite', 'signup'],
-    syn: 'tm8 auth invite signup --code <inv_…> --username <username> --password <password> [--display-name <name>] [--email <email>]',
+    syn: 'tm8 auth invite signup --code <inv_…> --username <username> --password <password> [--space-password <password>] [--display-name <name>] [--email <email>]',
     sum: 'Redeem a space invite that creates your account and signs you in — the operator never learns your password',
     authz: 'server',
     input: 'bound',
@@ -884,6 +885,39 @@ const ROWS: Record<OperationName, Row> = {
       'in one transaction: your tokens pinned to the Space are revoked, your agent sessions there stop, your personas are deactivated and your assignments cleared',
     ],
   },
+  'spaces.spacePassword.setRequired': {
+    cmd: null,
+    sum: 'Require (or stop requiring) a per-space password to enter this Space — space admins, human sessions only',
+    authz: 'space',
+    input: 'bound',
+    tags: ['space', 'password', 'login', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'turning it on takes your own space password unless you already have one; members without one are refused entry until an admin resets them',
+    ],
+  },
+  'spaces.members.spacePassword.reset': {
+    cmd: null,
+    sum: "Set a new space password for a member and unlock it — space admins, human sessions only",
+    authz: 'space',
+    input: 'bound',
+    tags: ['space', 'password', 'member', 'reset'],
+    reason: 'human_settings_only',
+    notes: [
+      "the member's sessions pinned to this Space are revoked; an admin cannot reset an owner",
+    ],
+  },
+  'spaces.members.spacePassword.lock': {
+    cmd: null,
+    sum: "Lock or unlock a member's space password — a locked login cannot enter the Space",
+    authz: 'space',
+    input: 'bound',
+    tags: ['space', 'password', 'member', 'lock'],
+    reason: 'human_settings_only',
+    notes: [
+      "locking revokes the member's sessions pinned to this Space; you cannot lock yourself or an owner",
+    ],
+  },
   'spaces.invites.list': {
     cmd: ['space', 'invite', 'list'],
     syn: 'tm8 space invite list [<space-id>] [--limit <count>] [--cursor <cursor>]',
@@ -907,7 +941,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'spaces.invites.redeem': {
     cmd: ['space', 'invite', 'redeem'],
-    syn: 'tm8 space invite redeem <code> [--mutation-id <id>]',
+    syn: 'tm8 space invite redeem <code> [--space-password <password>] [--mutation-id <id>]',
     sum: 'Redeem an invitation code and join its Space',
     authz: 'server',
     input: 'unbound',
@@ -3322,7 +3356,8 @@ export const CATALOG_DIGEST =
   // +7 spaceLinks.* (W6, 250/251, re-stacked on f54f9ffd): RECOMPUTED from JSON.stringify(OPERATIONS); equals the regenerated manifest's catalogDigest.
   // +6 credentials.space.* (W10b, merged onto main d8343503 after #864): read from the regenerated conformance manifest.
   // Re-measured (W10d #883, composed onto 257 after #869/#898/#904): + credentials.space.addMine. Read from the regenerated conformance manifest.
-  'sha256:6b238c551fc1ad46d0ed85add3a62625988ebac82d67e035161663b33a0a9e7b';
+  // Re-measured (W5): + spaces.spacePassword.setRequired, spaces.members.spacePassword.reset|lock. Read from the regenerated conformance manifest.
+  'sha256:6015a3675e918dac27dda407e806021fe946a4d103efa42ea50441619b5eac15';
 
 export const GRAMMAR_VERSION = '2';
 

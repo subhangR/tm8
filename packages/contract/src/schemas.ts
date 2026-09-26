@@ -48,6 +48,7 @@ import type {
   AuthLogoutResult, AuthPasswordChangeInput, AuthPasswordChangeResult,
   AuthSessionGetResult, AuthSessionListing, AuthSessionsListInput, AuthSessionsListResult,
   AuthSessionsRevokeResult, AuthSessionView, AuthSignupInput, AuthSpaceEnterInput, AuthSpaceEnterResult,
+  SpacePasswordLockInput, SpacePasswordResetInput, SpacePasswordSetRequiredInput,
   AuthSignupResult, ChannelTab, ChatContextFrame, ChatTurnFrame, ChatTurnUsage,
   ClosedPromptPolicy, CollectionAddItemInput, CollectionGroup, CollectionQuery, CollectionResult,
   CommandContext, CommandErrorCode, CommandResult, CompleteTaskInput,
@@ -1877,6 +1878,21 @@ export const AuthLoginResultSchema: z.ZodType<AuthLoginResult> = z.object({
 export const AuthSpaceEnterInputSchema: z.ZodType<AuthSpaceEnterInput> = z.object({
   spaceId: z.string().uuid(),
   label: z.string().min(1).max(200).optional(),
+  spacePassword: z.string().min(1).max(1024).optional(),
+}).strict();
+
+/** W5 (K2): the space-password setting and the P5 admin ops. Strict bodies. */
+export const SpacePasswordSetRequiredInputSchema: z.ZodType<SpacePasswordSetRequiredInput> = z.object({
+  required: z.boolean(),
+  password: AuthPasswordSchema.optional(),
+}).strict();
+
+export const SpacePasswordResetInputSchema: z.ZodType<SpacePasswordResetInput> = z.object({
+  password: AuthPasswordSchema,
+}).strict();
+
+export const SpacePasswordLockInputSchema: z.ZodType<SpacePasswordLockInput> = z.object({
+  locked: z.boolean(),
 }).strict();
 
 export const AuthSpaceEnterResultSchema: z.ZodType<AuthSpaceEnterResult> = z.object({
@@ -2000,6 +2016,7 @@ export const AuthInviteSignupInputSchema: z.ZodType<AuthInviteSignupInput> = z.o
   displayName: z.string().min(1).max(200).optional(),
   email: z.string().min(3).max(320).optional(),
   kind: z.enum(['browser', 'cli']).optional(),
+  spacePassword: AuthPasswordSchema.optional(),
 }).strict();
 
 export const AuthInviteSignupResultSchema: z.ZodType<AuthInviteSignupResult> = z.object({

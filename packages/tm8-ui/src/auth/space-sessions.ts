@@ -116,6 +116,92 @@ function revokePin(serverId: string, pin: PinnedSession): void {
   });
 }
 
+/** W5: `auth.space.enter` refused for a missing or wrong space password. */
+export function isSpacePasswordRefusal(error: unknown): boolean {
+  if (!(error instanceof CollabError) || error.code !== 'forbidden') return false;
+  const reason = error.details?.reason;
+  return reason === 'space_password_required' || reason === 'space_password_rejected';
+}
+
+/**
+ * Asks the viewer for a space's password; null means they declined. The
+ * default is a masked native dialog; tests (and a future app-level modal)
+ * replace it.
+ */
+export type SpacePasswordPrompter = (spaceId: string, rejected: boolean) => Promise<string | null>;
+
+const MAX_SPACE_PASSWORD_ATTEMPTS = 3;
+
+function defaultSpacePasswordPrompter(spaceId: string, rejected: boolean): Promise<string | null> {
+  if (typeof document === 'undefined' || typeof HTMLDialogElement === 'undefined') {
+    return Promise.resolve(null);
+  }
+  return new Promise((resolve) => {
+    const dialog = document.createElement('dialog');
+    const form = document.createElement('form');
+    form.method = 'dialog';
+    const label = document.createElement('label');
+    label.textContent = rejected
+      ? 'Space password not accepted. Try again:'
+      : 'This space needs its space password:';
+    const input = document.createElement('input');
+    input.type = 'password';
+    input.autocomplete = 'current-password';
+    input.setAttribute('aria-label', `Space password for ${spaceId}`);
+    const ok = document.createElement('button');
+    ok.type = 'submit';
+    ok.value = 'ok';
+    ok.textContent = 'Enter space';
+    const cancel = document.createElement('button');
+    cancel.type = 'submit';
+    cancel.value = 'cancel';
+    cancel.textContent = 'Cancel';
+    label.append(input);
+    form.append(label, ok, cancel);
+    dialog.append(form);
+    dialog.addEventListener('close', () => {
+      const value = dialog.returnValue === 'ok' && input.value ? input.value : null;
+      input.value = '';
+      dialog.remove();
+      resolve(value);
+    });
+    document.body.append(dialog);
+    dialog.showModal();
+  });
+}
+
+let spacePasswordPrompter: SpacePasswordPrompter = defaultSpacePasswordPrompter;
+
+/** Replace the space-password prompt; returns the previous one. */
+export function setSpacePasswordPrompter(next: SpacePasswordPrompter): SpacePasswordPrompter {
+  const previous = spacePasswordPrompter;
+  spacePasswordPrompter = next;
+  return previous;
+}
+
+/**
+ * `auth.space.enter`, asking for the space password when the space refuses
+ * without one. The password goes in the request body only; nothing keeps it.
+ */
+async function enterWithSpacePassword(
+  client: ReturnType<typeof createHttpClient>,
+  spaceId: string,
+): Promise<AuthSpaceEnterResult> {
+  let spacePassword: string | undefined;
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await client.call<AuthSpaceEnterResult>('auth.space.enter', {
+        body: { spaceId, label: 'tm8 web', ...(spacePassword ? { spacePassword } : {}) },
+      });
+    } catch (error) {
+      if (!isSpacePasswordRefusal(error) || attempt >= MAX_SPACE_PASSWORD_ATTEMPTS) throw error;
+      const next = await spacePasswordPrompter(spaceId, spacePassword !== undefined);
+      if (!next) throw error;
+      spacePassword = next;
+    }
+  }
+}
+
 async function mint(serverId: string, spaceId: string): Promise<PinnedSession | null> {
   const gate = readServerPass(serverId);
   if (!gate) return null;
@@ -127,9 +213,7 @@ async function mint(serverId: string, spaceId: string): Promise<PinnedSession | 
     fetch: (url, init) => globalThis.fetch(url, init),
     getAuthToken: () => gate.token,
   });
-  const result = await client.call<AuthSpaceEnterResult>('auth.space.enter', {
-    body: { spaceId, label: 'tm8 web' },
-  });
+  const result = await enterWithSpacePassword(client, spaceId);
   const next: PinnedSession = {
     token: result.token,
     sessionId: result.session.sessionId,
