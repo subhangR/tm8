@@ -1130,7 +1130,7 @@ describe('W10d — credentials.space.addMine takes no token and no token id, and
     (ctx.identity as { authKind?: string }).authKind = 'link';
     const error = await invoke(registryFor(db), 'credentials.space.addMine', ctx).then(() => null, (e: unknown) => e);
     // 256 (W7p #898) deny-by-default: the registry refuses kind link on every op
-    // outside LINK_BEARER_ALLOWED_OPS before requireHumanSession runs, so the
+    // without the in-process invoke marker (#884) before requireHumanSession runs, so the
     // typed code is the registry's. The agent-kind sweep above still pins
     // CREDENTIALS_HUMAN_ONLY on this op.
     expect(error).toMatchObject({ code: 'forbidden', message: LINK_BEARER_OP_REFUSED, details: { sqlstate: '42501' } });

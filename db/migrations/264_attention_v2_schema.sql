@@ -1,5 +1,5 @@
 -- =============================================================================
--- 260 · ATTENTION v2 SCHEMA (slice S3, renumbered from 255 through 258: W10b #869, W7p #898, W10c #904 and W11 #865 took 255-257 and 259, and #884/#887 claim 258; spec chapter 1 "Model & lifecycle",
+-- 264 · ATTENTION v2 SCHEMA (slice S3, renumbered from 255 through 258 and then 260 (#915 merge: main took 260, 261 and 263; #923 and #866 claim 262 and 263): W10b #869, W7p #898, W10c #904 and W11 #865 took 255-257 and 259, and #884/#887 claim 258; spec chapter 1 "Model & lifecycle",
 -- chapter 5 "Database: one aggregate", register F1).
 --
 -- ONE migration, additive. The RPCs from 050 and the form raise/resolve from
@@ -123,7 +123,7 @@ begin
    where id = any(touched) and deleted_at is null;
 
   if exists (select 1 from public.attention_requests where status in ('open', 'acknowledged')) then
-    raise exception '260: clean-slate cutover left an open attention request';
+    raise exception '264: clean-slate cutover left an open attention request';
   end if;
 end
 $cutover$;
@@ -309,7 +309,7 @@ returns table (
 $$;
 
 comment on function public.attention_badges(uuid[]) is
-  'Attention v2 badge per entity (migration 260): open requests rolled up to it '
+  'Attention v2 badge per entity (migration 264): open requests rolled up to it '
   'or pinned to it, plus the raised-by badge (raised_*) for work sessions and '
   'chats. A row may carry pending_count 0 when only raised_* applies. Security '
   'invoker: RLS on attention_requests applies. The single source for '
@@ -390,19 +390,19 @@ grant select on public.attention_rollup to tm8_app, tm8_graph_owner;
 do $verify$
 begin
   if exists (select 1 from public.attention_requests where status in ('open', 'acknowledged')) then
-    raise exception '260: open attention requests remain after the clean slate';
+    raise exception '264: open attention requests remain after the clean slate';
   end if;
   if (select count(*) from pg_indexes where schemaname = 'public'
         and indexname in ('attention_requests_open_session_reason_uq', 'attention_requests_open_signal_uq')) <> 2 then
-    raise exception '260: the two dedupe indexes must exist';
+    raise exception '264: the two dedupe indexes must exist';
   end if;
   if not (select relrowsecurity from pg_class where oid = 'public.attention_seen'::regclass) then
-    raise exception '260: attention_seen must have RLS enabled';
+    raise exception '264: attention_seen must have RLS enabled';
   end if;
   if (select count(*) from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
        where ns.nspname = 'internal' and p.proname = 'attention_requests_flag_changed'
          and p.prosrc like '%attention_root_id%' and p.prosrc like '%clock_timestamp()%') <> 1 then
-    raise exception '260: the flag trigger must flag and touch the rollup root';
+    raise exception '264: the flag trigger must flag and touch the rollup root';
   end if;
 end
 $verify$;

@@ -1,8 +1,8 @@
 -- =============================================================================
--- 261 · ATTENTION v2 VERBS (slice S4; spec chapter 3 "Resolve, Seen &
+-- 265 · ATTENTION v2 VERBS (slice S4; spec chapter 3 "Resolve, Seen &
 -- delivery", chapter 2 "Writers", chapter 5 "Database: one aggregate").
 --
--- 260 (the S3 schema; 255 on the lane branch) added the columns; this file gives them their writers.
+-- 264 (the S3 schema; 255 on the lane branch, 260 before the #915 merge) added the columns; this file gives them their writers.
 --
 --   1. create_attention_request gains trailing p_source_session_id, p_level,
 --      p_action_type and p_assignee_id, derives points from the level, and
@@ -154,7 +154,7 @@ begin
     raise exception 'attention assignee must be an active member of this space' using errcode = '22023';
   end if;
 
-  -- origin is left to 260's (S3) BEFORE trigger: agent for a teammate persona,
+  -- origin is left to 264's (S3) BEFORE trigger: agent for a teammate persona,
   -- human otherwise. The public create never writes `system`.
   -- Two passes: if the conflicting open row is settled between the insert and
   -- the read, the second pass inserts instead of returning nothing.
@@ -226,7 +226,7 @@ begin
   replay := internal.ledger_replay(p_client_mutation_id, 'attentionRequests.resolveEntity');
   if replay is not null then
     perform internal.require_replay_principal(p_client_mutation_id);
-    -- Pre-261 ledger rows carry only entityId (then always the requested id).
+    -- Pre-265 ledger rows carry only entityId (then always the requested id).
     perform internal.require_replay_subject(
       coalesce(replay->>'requestedEntityId', replay->>'entityId'), p_entity_id::text, 'entity');
     return replay;
@@ -854,13 +854,13 @@ do $verify$
 begin
   if (select count(*) from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
        where ns.nspname = 'public' and p.proname = 'create_attention_request') <> 1 then
-    raise exception '261: exactly one create_attention_request must exist';
+    raise exception '265: exactly one create_attention_request must exist';
   end if;
   if (select count(*) from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
        where ns.nspname = 'public'
          and p.proname in ('resolve_attention_root', 'unresolve_attention_batch', 'withdraw_attention_request',
                            'mark_attention_seen', 'list_due_attention_notes', 'deliver_attention_batch')) <> 6 then
-    raise exception '261: the six attention verbs must exist';
+    raise exception '265: the six attention verbs must exist';
   end if;
   if exists (
     select 1 from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
@@ -871,7 +871,7 @@ begin
                          'attention_conflict')
        and has_function_privilege('public', p.oid, 'execute')
   ) then
-    raise exception '261: an attention function is still executable by PUBLIC';
+    raise exception '265: an attention function is still executable by PUBLIC';
   end if;
 end
 $verify$;

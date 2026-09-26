@@ -91,6 +91,8 @@ import {
   type CredentialHandlerDeps,
 } from './handlers/w2/credentials.js';
 import { registerSpaceLinkHandlers, type SpaceLinkHandlerDeps } from './handlers/w2/space-links.js';
+import { registerServerHandlers } from './handlers/w2/servers.js';
+import { DisabledRemoteInvokeForwarder } from '../remote/forwarder.js';
 import { registerVoiceHandlers } from './handlers/voice.js';
 import { registerChatHandlers, type ChatHandlerDeps } from '../chat/handlers.js';
 
@@ -198,6 +200,7 @@ export function registerFacadeHandlers(
     db: deps.db,
     config: deps.config,
     owner: deps.owner ?? createLoopbackOwnerResolver(deps.db),
+    remoteInvokeForwarder: new DisabledRemoteInvokeForwarder(),
   };
 
   /**
@@ -343,4 +346,6 @@ export function registerFacadeHandlers(
   // W6 space links: the writes are human-only inside the registration (and in SQL).
   const spaceLinks = deps.spaceLinks ?? (deps.credentials ? { dataDir: deps.credentials.dataDir } : undefined);
   if (spaceLinks) registerSpaceLinkHandlers(registry, facade, spaceLinks);
+  // W8 servers: the same node-key root; add/adopt/remove are human-only inside.
+  if (spaceLinks) registerServerHandlers(registry, facade, { dataDir: spaceLinks.dataDir });
 }

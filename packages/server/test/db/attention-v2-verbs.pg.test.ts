@@ -1,5 +1,5 @@
 /**
- * Migration 256 — the Attention v2 verbs (slice S4, spec chapter 3).
+ * Migration 265 — the Attention v2 verbs (slice S4, spec chapter 3).
  *
  * Every door is called as `tm8_app` under a real identity claim, exactly as the
  * server calls it. The chapter 3 invariants are the `it`s named "INV n"; the
@@ -80,7 +80,7 @@ async function seed(database: W1ScratchDatabase): Promise<Fixture> {
   });
 }
 
-describe.sequential('attention v2 verbs (migration 256)', () => {
+describe.sequential('attention v2 verbs (migration 265)', () => {
   let database: W1ScratchDatabase;
   let f: Fixture;
 

@@ -1,5 +1,5 @@
 /**
- * Migration 256 — Attention v2 system signals (slice S6, spec chapter 2).
+ * Migration 266 — Attention v2 system signals (slice S6, spec chapter 2).
  *
  * tm8 raises its own requests (origin 'system', keyed by signal_key) and clears
  * them itself (status 'cleared', no resolver, no delivery) when the condition
@@ -38,7 +38,7 @@ interface Row extends Record<string, unknown> {
   requested_by: string;
 }
 
-describe.sequential('attention v2 system signals (migration 256)', () => {
+describe.sequential('attention v2 system signals (migration 266)', () => {
   let database: W1ScratchDatabase;
   let f: Fixture;
 

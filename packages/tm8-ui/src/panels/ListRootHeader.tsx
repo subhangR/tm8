@@ -113,27 +113,29 @@ function birthVerbFor(option: ListRootOption): BirthVerb {
   };
 }
 
-/**
- * The Chats cell — Home's first root, and the reason this bar is a `tablist`
- * rather than a lone kind button. It is OPTIONAL because it is not portable:
- * Chats hosts no list, it swaps the surface's CENTRE to the conversation
- * composer. A surface whose centre cannot become a composer (the Work tab,
- * whose centre is the ink stage) must omit it rather than draw a cell that
- * would have nowhere to land.
- */
-export interface ListRootChatsCell {
-  active: boolean;
-  onSelect: () => void;
-  onCreate: () => void;
-}
-
 export interface ListRootHeaderProps {
   /** `aria-label` for the tablist — names WHICH roots, so it differs per host. */
   rootsLabel: string;
-  chats?: ListRootChatsCell | undefined;
+  /**
+   * THE QUICK-CREATE ICONS (task 01a0df28): one icon per kind, drawn BEFORE
+   * the tablist. They replaced the `[Chats ＋]` cell once a chat became an
+   * entity with its own list (the `chat` kind in the menu). Absent or empty ⇒
+   * no icons.
+   */
+  quickKinds?: readonly ListRootOption[] | undefined;
+  /**
+   * An icon's press. ITS OWN PROP, not `onCreateKind`, because the two have
+   * opposite absence rules: an absent `onCreateKind` HIDES fourteen menu
+   * controls, while three icons refuse out loud — and a host can perform some
+   * icons without a generic create (Home opens its own composer for a chat).
+   * Absent ⇒ every icon refuses with the not-wired reason.
+   */
+  onQuickBirth?: ((kind: string) => void) | undefined;
+  /** Why a given icon is refused, or null. Consulted per icon. */
+  quickBirthUnavailable?: ((kind: string) => { cause: string; remedy: string } | null) | undefined;
   /** The kind cell. Absent only while a host has no kind to name yet. */
   cell?: ListRootOption | undefined;
-  /** Whether the kind cell is the selected root. Always true where `chats` is absent. */
+  /** Whether the kind cell is the selected root. */
   cellActive: boolean;
   /** The label half: SWITCH to this cell's kind. */
   onSelectCell: (kind: string) => void;
@@ -166,14 +168,14 @@ export interface ListRootHeaderProps {
   onCreateKind?: ((kind: string) => void) | undefined;
   /** Why a given kind's menu ＋ is refused, or null. Consulted per row. */
   createKindUnavailable?: ((kind: string) => { cause: string; remedy: string } | null) | undefined;
-  /** Which option reads as current. Not always `cell.kind`: Home parks the last kind here while sitting on Chats. */
+  /** Which option reads as current. Defaults to `cell.kind`. */
   currentKind?: string | undefined;
   onPickKind: (kind: string) => void;
 }
 
 /**
- * THE ROOT HEADER — `[Chats ＋] [◫ Kind ＋ ▾]` plus the hosted list's layout
- * switcher. Extracted from `ChatHomeScreen` (task 01a0102f) so the Work tab's
+ * THE ROOT HEADER — `[☐ ❝ ▮] [◫ Kind ＋ ▾]`: the quick-create icons, then
+ * the kind cell. Extracted from `ChatHomeScreen` (task 01a0102f) so the Work tab's
  * two columns draw the SAME bar Home draws instead of `EntityListPanel`'s own
  * `KindSelector`. Both hosts pass `selectorSlot="host"` to the panel, which is
  * what retires that row: the panel's header restated this one's kind and spent
@@ -195,7 +197,7 @@ export function ListRootHeader(props: ListRootHeaderProps) {
     useCallback(() => setMenuOpen(false), []),
   );
 
-  const { chats, cell, onCreate, createUnavailable, options, onCreateKind } = props;
+  const { quickKinds, onQuickBirth, cell, onCreate, createUnavailable, options, onCreateKind } = props;
   const current = props.currentKind ?? cell?.kind;
   /* The cell wears its kind's OWN birth verb, so the sessions cell shows the
      terminal glyph rather than a ＋ that would promise an authored entity. */
@@ -203,29 +205,35 @@ export function ListRootHeader(props: ListRootHeaderProps) {
 
   return (
     <div className="tch-rootbar">
+      {quickKinds && quickKinds.length > 0 ? (
+        /* OUTSIDE THE TABLIST for the switcher's reason: these create, they do
+           not select a root, and a non-tab inside `role="tablist"` is a lie to
+           the a11y tree. */
+        <div className="tch-quick" role="group" aria-label="Create">
+          {quickKinds.map((option) => (
+            <QuickBirth
+              key={option.kind}
+              option={option}
+              refusal={
+                onQuickBirth
+                  ? (props.quickBirthUnavailable?.(option.kind) ?? null)
+                  : {
+                      cause: `Creating ${option.label.toLowerCase()} isn’t wired on this surface`,
+                      remedy: 'this surface was mounted without a create flow',
+                    }
+              }
+              onBirth={() => {
+                onQuickBirth?.(option.kind);
+                /* D10, the same as the cell's ＋ and a menu row's: the column
+                   lands on the newborn's own root, or it lands in a list that
+                   cannot show it. */
+                props.onPickKind(option.kind);
+              }}
+            />
+          ))}
+        </div>
+      ) : null}
       <div className="tch-roots" role="tablist" aria-label={props.rootsLabel}>
-        {chats ? (
-          <div className={`tch-rootcell${chats.active ? ' tch-rootcell--active' : ''}`}>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={chats.active}
-              className="tch-rootcell__label"
-              onClick={chats.onSelect}
-            >
-              Chats
-            </button>
-            <button
-              type="button"
-              className="tch-rootcell__plus"
-              aria-label="New chat"
-              title="Start a new conversation"
-              onClick={chats.onCreate}
-            >
-              <span aria-hidden>＋</span>
-            </button>
-          </div>
-        ) : null}
         {cell ? (
           <div
             className={`tch-rootcell tch-rootcell--kind${props.cellActive ? ' tch-rootcell--active' : ''}`}
@@ -379,6 +387,43 @@ function RowBirth({
       onClick={refusal ? (event) => event.preventDefault() : onBirth}
     >
       <span aria-hidden>{birth.glyph}</span>
+    </button>
+  );
+}
+
+/**
+ * One quick-create icon. The icon is the KIND's (a task, a chat, a terminal),
+ * not the verb's glyph: three verb glyphs side by side say "three ways to
+ * act", three kind icons say "one of these". The accessible name is the verb's
+ * noun (`New task`, `New chat`, `New terminal`), and it is refused with a reason
+ * rather than hidden, per the rule the cell's ＋ follows.
+ */
+function QuickBirth({
+  option,
+  refusal,
+  onBirth,
+}: {
+  option: ListRootOption;
+  refusal: { cause: string; remedy: string } | null;
+  onBirth: () => void;
+}) {
+  const action = rootBirthAction(option.kind);
+  /* "New terminal", "New chat", "New task" — the verb's noun where the kind
+     is born by a verb, so the sessions icon names what actually opens. */
+  const label = action
+    ? `New ${resolveAction(action).label.toLowerCase()}`
+    : birthVerbFor(option).label;
+  return (
+    <button
+      type="button"
+      className="tch-quick__btn"
+      aria-label={label}
+      aria-disabled={refusal ? 'true' : undefined}
+      title={refusal ? `${refusal.cause} — ${refusal.remedy}` : label}
+      data-quick-kind={option.kind}
+      onClick={refusal ? (event) => event.preventDefault() : onBirth}
+    >
+      <KindIcon kind={option.kind} />
     </button>
   );
 }

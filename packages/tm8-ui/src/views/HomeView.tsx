@@ -61,7 +61,7 @@ import { openEntityChat, useChatSlot } from '../entity-chat';
 import { loadHomeRoot, rememberHomeRoot, type HomeRoot } from '../stores/homeRegionStore';
 import {
   CHATS_ROOT,
-  DEFAULT_HOME_KIND,
+  homeColumnRoot,
   homeRailGroups,
   homeRootKinds,
   isHomeRootKind,
@@ -312,13 +312,12 @@ export function HomeView(props: HomeViewProps) {
     [data.spaceId],
   );
 
-  /* THE KIND CELL'S MEMORY (R5): while Chats is the root, the cell keeps
-     naming the kind the viewer would return to — the last kind root this
-     mount saw, defaulting to tasks. In-memory only: the ROOT is what
-     persists (D15), the cell is presentation. */
-  const lastKindRef = useRef<string>(DEFAULT_HOME_KIND);
-  if (root !== CHATS_ROOT) lastKindRef.current = root;
-  const cellKind = root === CHATS_ROOT ? lastKindRef.current : root;
+  /* THE COLUMN'S ROOT (task 01a0df28). The `[Chats ＋]` cell is gone, so the
+     column never draws the thread list: a `chats` address — an open
+     conversation, the composer, a stage — lists the `chat` KIND beside it.
+     The address is untouched; only what column A shows is resolved here. */
+  const columnRoot = homeColumnRoot(root);
+  const cellKind = columnRoot;
   const cellConfig = getKind(cellKind);
   const kindCell = useMemo<ListRootOption>(
     () => ({ kind: cellConfig.kind, label: cellConfig.labelPlural, single: cellConfig.label }),
@@ -751,7 +750,7 @@ export function HomeView(props: HomeViewProps) {
   );
 
   const regions: HomeChatRegions = {
-    root,
+    root: columnRoot,
     onRoot: setRoot,
     kindCell,
     rootKindOptions,
@@ -796,15 +795,15 @@ export function HomeView(props: HomeViewProps) {
   };
 
   /* THE ICON RAIL (R4) — the switcher's twin: same groups, same select, no
-     view rows. No row is active while Chats is the root; chats live in the
-     list header's own cell, not the rail. */
+     view rows. A `chats` address lights the `chat` row, the list column A
+     shows for it (task 01a0df28). */
   /* Focus mode takes the rail off the row entirely rather than collapsing it
      to its 72px icon strip — "collapsing entire left panel AND icon rail" was
      the ask, and a 72px strip left standing is not a collapse. */
   const rail = focus ? null : (
     <HomeRail
       groups={homeRailGroups()}
-      activeKind={root === CHATS_ROOT ? null : root}
+      activeKind={columnRoot}
       onSelect={setRoot}
       collapsed={railCollapsed}
       onToggleCollapsed={() => setRailCollapsed((collapsed) => !collapsed)}

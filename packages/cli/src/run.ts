@@ -44,6 +44,7 @@ import {
 } from './exit.js';
 import { createOutput, processStreams, type Output } from './output.js';
 import { journal } from './journal.js';
+import { setActiveLink } from './space-link-active.js';
 import { CLI_VERSION } from './discovery/help.js';
 import { isCommandPath } from './discovery/operations.js';
 
@@ -256,6 +257,15 @@ async function dispatch(
   };
   await applyStoredCredential();
 
+  // `--space` naming another Space than the session's: through a space link on
+  // the home server, or not at all (space-link-route.ts).
+  // Before `--server`: a linked --space with --server is refused before the
+  // registry lookup, so neither route is half-taken.
+  const { routeThroughSpaceLink } = await import('./space-link-route.js');
+  ctx = await routeThroughSpaceLink(ctx, match.path, { serverFlag: globals.server });
+  // From here, a client without this link is a bug the constructor refuses.
+  setActiveLink(ctx.link);
+
   if (globals.server !== undefined) {
     if (match.path[0] === 'server') {
       throw new CliError('server registry commands always act on the local Server; omit --server', EXIT_USAGE);
@@ -283,7 +293,13 @@ async function dispatch(
     // prompt for the one command that mints the session this needs.
     if (err instanceof ApiError && err.code === 'forbidden' && err.message.includes('auth.space.enter')) {
       const space = ctx.space?.value;
-      err.hint = space
+      // Through a space link the gate is HOME's: the linked Space is reached
+      // only by the link, so entering it would be the wrong fix (W7).
+      err.hint = ctx.link
+        ? `the refusal came through the space link on this session's Space ${ctx.link.homeSpaceId}; ` +
+          `do not enter the linked Space ${ctx.link.targetSpaceId} — this session must be pinned to its own Space ` +
+          `(\`tm8 auth space enter ${ctx.link.homeSpaceId}\`), or ask your human`
+        : space
         ? `this Server needs a session pinned to the space: run \`tm8 auth space enter ${space}\`, then retry`
         : 'this Server needs a session pinned to a space: run `tm8 auth space enter <space-id>`, then retry with --space <space-id>';
       throw err;
@@ -316,6 +332,7 @@ export async function run(argv: readonly string[]): Promise<ExitCode> {
   const streams = journal.enabled ? journal.wrapStreams(processStreams) : undefined;
   let commandPath: readonly string[] = [];
   let out = createOutput({ format: 'human', streams });
+  setActiveLink(undefined);
   try {
     const invocation = parseInvocation(argv);
     out = createOutput({
@@ -336,5 +353,7 @@ export async function run(argv: readonly string[]): Promise<ExitCode> {
     const exit = exitCodeFor(err);
     journal.finish({ path: commandPath, argv, exitCode: exit, error: err });
     return exit;
+  } finally {
+    setActiveLink(undefined);
   }
 }

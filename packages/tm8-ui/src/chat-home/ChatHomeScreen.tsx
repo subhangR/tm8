@@ -1,11 +1,11 @@
 import { EntityAttentionChip } from '../attention';
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { ChatMode, EntityId, LaunchModelEffort, SessionTranscriptContext, SpaceId } from '@tm8/contract';
-import { CHATS_ROOT, KindIcon, actorName, type HomeRoot } from '../domain';
+import { CHATS_ROOT, KindIcon, actorName, homeQuickBirthKinds, type HomeRoot } from '../domain';
 import { rememberChatStart } from '../chat-defaults/lastUsed';
 import { Avatar, Markdown, RibbonMark, Timestamp } from '../kit';
 import { chatMarkdownSource } from '../channel-screen/feed-model';
-import { ListRootHeader, type ListRootOption } from '../panels/ListRootHeader';
+import { ListRootHeader, rootBirthAction, type ListRootOption } from '../panels/ListRootHeader';
 import { MessageAttachments } from '../files/MessageAttachments';
 import type { FileUploadTask } from '../files/upload';
 import {
@@ -1457,6 +1457,47 @@ export function ChatHomeScreen({
   );
   const onChatsRoot = root === CHATS_ROOT;
 
+  /**
+   * A NEW CHAT, ON THIS SCREEN (task 01a0df28) — the chat icon and the Chat
+   * kind cell's New both land here, and neither may merely navigate.
+   *
+   * A chat cannot be created empty (`chat.start` requires its opening turn),
+   * so "create a chat" is: put the new-conversation composer in region B and
+   * focus it; the entity is born on the first send. The host's `chat-about`
+   * verb only NAVIGATES to the `chats` address with no thread — which changed
+   * nothing on screen while an entity held region B or a thread was selected,
+   * and that no-op is the "New doesn't create a chat" defect this replaces.
+   * So the reset is this screen's own: clear the selection, the detail and the
+   * phase, hand region B back to the conversation, then focus the box.
+   */
+  const [composerFocusNonce, setComposerFocusNonce] = useState(0);
+  const startNewChat = useCallback(() => {
+    chooseRoot(null);
+    setDetail(null);
+    stoppedRootRef.current = null;
+    setPhase('idle');
+    onShowChat?.();
+    setComposerFocusNonce((n) => n + 1);
+  }, [chooseRoot, onShowChat]);
+  useEffect(() => {
+    if (composerFocusNonce === 0) return;
+    /* After the host's re-render: region B only shows the conversation once
+       the cleared trail has committed, and a hidden textarea takes no focus. */
+    const frame = requestAnimationFrame(() => composer.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [composerFocusNonce]);
+  /** Whether `kind` is born by opening this screen's composer (the `chat` kind). */
+  const bornByComposer = (kind: string): boolean => rootBirthAction(kind) === 'chat-about';
+  const quickKinds = useMemo<ListRootOption[]>(
+    () =>
+      homeQuickBirthKinds().map((config) => ({
+        kind: config.kind,
+        label: config.labelPlural,
+        single: config.label,
+      })),
+    [],
+  );
+
   /* The find box serves the CHATS root only (D4's one-box law survives): a
      kind root's hosted list brings its own in-panel search. It filters WHAT
      IS READ — there is no server-side search behind it, and its labels must
@@ -1924,8 +1965,9 @@ export function ChatHomeScreen({
         two views of it).
         Switching the root is BROWSING — it re-lists this column only (D6);
         clicking a row is SELECTING — it puts that entity in region B (D7).
-        The two ＋ buttons in the header are the single exception to D6:
-        each takes region B AND switches this column to its own root (D10).
+        The header's creates (the quick icons and the cell's ＋) are the single
+        exception to D6: each takes region B AND switches this column to its
+        own root (D10).
 
         NO COUNTS ON THE ROOT LABELS (D16): the only number obtainable is
         "how many are loaded", which would read as a total — absent ≠ zero.
@@ -1960,10 +2002,11 @@ export function ChatHomeScreen({
           second grid — so the id stays unique. */}
       {soloConversation ? null : (
       <aside id="home-view-list" className="tch-sidebar" aria-label="Tasks, chats and sessions">
-        {/* THE ROOT HEADER (task 01a00932 R5) — two cells, [Chats ＋] and
-            [Kind ＋ ▾]. Each cell's LABEL switches the root (browsing, D6);
-            each cell's ＋ CREATES (the D10 exception: it takes region B and
-            lands the column on its own root). The caret only ever SWITCHES —
+        {/* THE ROOT HEADER (task 01a00932 R5; task 01a0df28) — the quick-create
+            icons [task · chat · terminal], then [Kind ＋ ▾]. The cell's LABEL
+            switches the root (browsing, D6); every create — an icon, the cell's
+            ＋, a menu row's ＋ — CREATES (the D10 exception: it takes region B
+            and lands the column on its own root). The caret only ever SWITCHES —
             picking a kind from the menu never creates (R5). Labels only, no
             counts (D16).
 
@@ -1972,38 +2015,43 @@ export function ChatHomeScreen({
 
             THE BAR ITSELF NOW LIVES IN `panels/ListRootHeader` (task 01a0102f):
             the Work tab's two columns draw this same header, so it stopped
-            being Home's and became a panel-level control. Home keeps the
-            `chats` cell; Work omits it, because Chats hosts no list — it swaps
-            the surface's CENTRE to the composer, and Work's centre is the ink
-            stage. Everything else about the bar is shared, which is the point:
-            the two surfaces differ by LAYOUT, not by header. */}
+            being Home's and became a panel-level control. The `[Chats ＋]` cell
+            it used to carry is gone (task 01a0df28): a chat is an entity, the
+            `chat` kind lists them, and the chat icon opens the composer. The
+            two surfaces differ by LAYOUT, not by header. */}
         <ListRootHeader
           rootsLabel="Home roots"
-          chats={{
-            active: onChatsRoot,
-            onSelect: () => setRoot(CHATS_ROOT),
-            onCreate: () => {
-              chooseRoot(null);
-              setDetail(null);
-              stoppedRootRef.current = null;
-              setPhase('idle');
-              /* D10: takes region B (back to the chat's new-conversation
-                 composer) AND switches the column to its own root. */
-              onShowChat?.();
-              setRoot(CHATS_ROOT);
-              onThreadSelected?.(null);
-            },
-          }}
+          quickKinds={quickKinds}
+          /* The chat icon is ALWAYS performable here — it is this screen's own
+             composer — so it never waits on the host's generic create. */
+          onQuickBirth={(kind) => (bornByComposer(kind) ? startNewChat() : onCreateKind?.(kind))}
+          quickBirthUnavailable={(kind) =>
+            bornByComposer(kind)
+              ? null
+              : onCreateKind
+                ? (createKindUnavailable?.(kind) ?? null)
+                : {
+                    cause: `Creating ${(quickKinds.find((q) => q.kind === kind)?.label ?? kind).toLowerCase()} isn’t wired on this surface`,
+                    remedy: 'this surface was mounted without a create flow',
+                  }
+          }
           cell={kindCell}
           cellActive={!onChatsRoot}
           onSelectCell={setRoot}
-          onCreate={onNewEntity}
-          createUnavailable={newEntityUnavailable}
+          onCreate={kindCell && bornByComposer(kindCell.kind) ? startNewChat : onNewEntity}
+          createUnavailable={kindCell && bornByComposer(kindCell.kind) ? null : newEntityUnavailable}
           options={rootKindOptions}
           currentKind={root}
           onPickKind={setRoot}
-          onCreateKind={onCreateKind}
-          createKindUnavailable={createKindUnavailable}
+          {...(onCreateKind
+            ? {
+                onCreateKind: (kind: string) =>
+                  bornByComposer(kind) ? startNewChat() : onCreateKind(kind),
+              }
+            : {})}
+          createKindUnavailable={(kind) =>
+            bornByComposer(kind) ? null : (createKindUnavailable?.(kind) ?? null)
+          }
         />
         {onChatsRoot ? (
           <input

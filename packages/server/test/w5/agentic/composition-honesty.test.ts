@@ -102,6 +102,17 @@ const CREDENTIAL_SEAM = new Set<OperationName>([
   'spaceLinks.logout',
   'spaceLinks.remove',
   'spaceLinks.setSpawn',
+  // W7 (260): invoke + audit, same seam.
+  'spaceLinks.invoke',
+  'spaceLinks.audit',
+  // W8 (261): servers.* mount in the same registration, on the same node-key
+  // root (facade/index.ts), so they share the seam's condition too.
+  'servers.list',
+  'servers.get',
+  'servers.add',
+  'servers.adopt',
+  'servers.remove',
+  'servers.probe',
 ]);
 
 class StubDb implements Db {
