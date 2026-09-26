@@ -244,7 +244,7 @@ function nounForOperation(operation: OperationName): string {
     // `launch.suggest` (Jev, UI-only, `cmd: null`) groups under the session
     // noun it advises; NOUN_BY_FAMILY in the CLI projection says the same.
     case 'launch': return 'session';
-    // `accounts.disable` (G6, 230): its own noun, `account` — the CLI spells
+    // `accounts.disable` (G6, 232): its own noun, `account` — the CLI spells
     // the command `tm8 node account disable`. NOUN_BY_FAMILY says the same.
     case 'accounts': return 'account';
 
@@ -397,7 +397,7 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // 238 -> 240 (headers I4): entities.header.set (PUT) and entities.header.clear (DELETE). MEASURED.
   // 238 -> 240 (Forms W3): forms.responses.redeliver and forms.pendingForSessions. MEASURED.
   // 240 -> 242: headers I4 and Forms W3 each added two, on the merged tree. MEASURED.
-  assertEqual(names.length, 248, 'catalog total'); // +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 230). MEASURED. // +2 spaces.chatDefaults.get/set (entity chat G). // +1 launch.defaults (I9b). MEASURED.
+  assertEqual(names.length, 248, 'catalog total'); // +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. // +2 spaces.chatDefaults.get/set (entity chat G). // +1 launch.defaults (I9b). MEASURED.
   // 157 -> 159 (114): spaces.members.updateRole (PATCH command) and
   // auth.invite.resolve (POST read — the code rides in the body, never a URL).
   // 161 -> 164 (W4/132): the three taskWorkflows rows are v1.
@@ -417,7 +417,7 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // 236 -> 238 (headers I4): entities.header.set (PUT) and entities.header.clear (DELETE). MEASURED.
   // 236 -> 238 (Forms W3): both new forms.* rows ship v1. MEASURED.
   // 238 -> 240: headers I4 and Forms W3 each added two v1 rows, on the merged tree. MEASURED.
-  assertEqual(V1_OPERATIONS.length, 246, 'v1 total'); // +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 230). MEASURED. // +2 spaces.chatDefaults.get/set (entity chat G). // +1 launch.defaults (I9b). MEASURED.
+  assertEqual(V1_OPERATIONS.length, 246, 'v1 total'); // +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. // +2 spaces.chatDefaults.get/set (entity chat G). // +1 launch.defaults (I9b). MEASURED.
   assertEqual(RESERVED_OPERATIONS.map(({ name }) => name), ['search.query', 'bridge.fetchBlob'], 'reserved operations');
   assertEqual(additive.map(({ name }) => name), [...ADDITIVE_OPERATION_NAMES], 'A01-A21 order');
   assertEqual(new Set(names).size, names.length, 'unique operation names');

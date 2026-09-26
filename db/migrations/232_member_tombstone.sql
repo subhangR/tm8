@@ -31,6 +31,18 @@
 -- (A10): the conjunct is a column test on the row the body already reads, not
 -- a call, so the once-per-statement budgets are unchanged.
 --
+-- THE OWNER FLOOR. After ANY interleaving of remove_space_member,
+-- leave_space and set_member_role (promote or demote), the space keeps at
+-- least one active owner. Every call that can end or demote an owner locks
+-- the space's active owner rows, in entity_id order, BEFORE it locks its own
+-- or its target's row, and counts under that lock — one order in all three
+-- functions, so they queue instead of deadlocking (40P01).
+-- Each takes that lock UNCONDITIONALLY, not on a non-locking read of the
+-- target's role: before this, set_member_role locked owner rows on demotion
+-- only, so a concurrent promotion could make an admin an owner between that
+-- read and the target's FOR UPDATE, and "O removes admin D" / "O promotes D" /
+-- "D removes O" left no owner (N1). Promotions now take the lock as well.
+--
 -- THE EFFECTS, in the one transaction that flips the status
 -- (internal.end_membership):
 --   * auth sessions pinned to the space for the member's account (browser/cli
@@ -688,6 +700,14 @@ begin
   -- The space is named in the predicate, not just used to authorize: a member
   -- id from another Space must be "not found here", never "found and updated".
   -- 232: so is a member who has left or been removed.
+  -- 232, LOCK ORDER: the space's active owner rows (entity_id order) FIRST,
+  -- then the target row — the order leave_space and remove_space_member take
+  -- too, so no two of them can each hold a row the other waits for (see THE
+  -- OWNER FLOOR in the header). Taken for every role change, promotion
+  -- included: whether the target is an owner is only known under its lock.
+  perform 1 from public.members
+   where space_id = p_space_id and role = 'owner' and status = 'active'
+   order by entity_id for update;
   select * into target from public.members
    where entity_id = p_member_id and space_id = p_space_id and status = 'active'
    for update;
@@ -714,15 +734,10 @@ begin
     return internal.ledger_record(p_client_mutation_id, 'spaces.members.updateRole', result);
   end if;
 
-  -- R3. The lock is over the space's OWNER rows, taken before the count, so
-  -- two concurrent demotions serialize on each other instead of both reading
-  -- "there are two of us" and both committing. A concurrent PROMOTION is not
-  -- covered by this lock and does not need to be: it only ever raises the
-  -- count, and the invariant this defends is a floor.
+  -- R3. The count runs under the owner-row lock taken above, so two
+  -- concurrent demotions serialize on each other instead of both reading
+  -- "there are two of us" and both committing.
   if target.role = 'owner' and p_role <> 'owner' then
-    perform 1 from public.members
-     where space_id = p_space_id and role = 'owner' and status = 'active'
-     order by entity_id for update;
     select count(*) into owner_count from public.members
      where space_id = p_space_id and role = 'owner' and status = 'active';
     if owner_count <= 1 then
@@ -932,6 +947,12 @@ begin
 
   perform internal.require_human_auth_kind();
   perform internal.require_space_member(p_space_id);
+  -- LOCK ORDER: the owner rows first, then the caller's own row (THE OWNER
+  -- FLOOR, header). Taken whatever the caller's role: it is only known under
+  -- the row lock, and a promotion can land in between.
+  perform 1 from public.members
+   where space_id = p_space_id and role = 'owner' and status = 'active'
+   order by entity_id for update;
   select * into target from public.members
    where space_id = p_space_id and identity_id = internal.identity_id() and status = 'active'
    for update;
@@ -939,11 +960,8 @@ begin
     raise exception 'not a member of this space' using errcode = 'P0002';
   end if;
 
-  -- The owner floor, as set_member_role keeps it: lock, then count.
+  -- The owner floor, counted under the lock above.
   if target.role = 'owner' then
-    perform 1 from public.members
-     where space_id = p_space_id and role = 'owner' and status = 'active'
-     order by entity_id for update;
     select count(*) into owner_count from public.members
      where space_id = p_space_id and role = 'owner' and status = 'active';
     if owner_count <= 1 then
@@ -982,19 +1000,23 @@ begin
   perform internal.require_space_admin(p_space_id);
 
   -- THE OWNER RACE (review of #841). Two owners removing each other must not
-  -- both commit and leave the space ownerless. Removing an owner takes the
+  -- both commit and leave the space ownerless. Every removal takes the
   -- owner-row lock leave_space and set_member_role take — every active owner
-  -- row of the space, in entity_id order — BEFORE the target row, so the two
-  -- calls serialize (a fixed order, so they queue rather than deadlock). The
-  -- second one then re-reads under the lock, finds its caller tombstoned, and
-  -- is refused below.
-  select * into target from public.members
-   where entity_id = p_member_id and space_id = p_space_id and status = 'active';
-  if target.role = 'owner' then
-    perform 1 from public.members
-     where space_id = p_space_id and role = 'owner' and status = 'active'
-     order by entity_id for update;
-  end if;
+  -- row of the space, in entity_id order — BEFORE the target row. All three
+  -- functions lock in that one order (owner set, then row), so concurrent
+  -- calls queue rather than deadlock (member-tombstone.pg.test.ts, "lock
+  -- order" cells: leave/remove, leave/leave, demote/remove, demote/demote).
+  -- The second one then re-reads under the lock, finds its caller
+  -- tombstoned, and is refused below.
+  -- UNCONDITIONALLY (N1): deciding from a non-locking read of the target's
+  -- role let "O removes admin D" skip the lock while O promoted D and D, now
+  -- an owner, removed O — set_member_role locks owner rows only on demotion,
+  -- so nothing serialized the two removals and both committed: zero owners.
+  -- Whatever the target turns out to be under its FOR UPDATE, this removal
+  -- already holds a lock that any other removal of a then-current owner needs.
+  perform 1 from public.members
+   where space_id = p_space_id and role = 'owner' and status = 'active'
+   order by entity_id for update;
   select * into target from public.members
    where entity_id = p_member_id and space_id = p_space_id and status = 'active'
    for update;
