@@ -1,6 +1,6 @@
 /**
  * W11-migrate, THE DRY-RUN REPORT (plan 01a0d9eb §3 W11 steps 1, 2 and 4; K13
- * as the owner answered it on form 01a0db32-d438).
+ * as Subhang's note on form 01a0db32 gives it).
  *
  * Before 234 a folder could be granted to several spaces; 7 folders on the prod
  * node are granted to two. The split gives each folder ONE owning space. The
