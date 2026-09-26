@@ -74,6 +74,39 @@ export class OutputBuffer {
     return this.produced - this.bufferedBytes;
   }
 
+  /**
+   * Re-base an EMPTY buffer at absolute `offset`, so its coordinates match a
+   * stream that has already produced `offset` bytes elsewhere. The server calls
+   * this when it adopts a session a session host kept alive across a restart:
+   * the host's offsets are the ones browsers hold, so the server's ring must
+   * count from the same origin. Refuses once anything has been appended — a
+   * live stream is never re-based (R7).
+   */
+  startAt(offset: number): void {
+    if (this.produced !== 0 || this.chunks.length !== 0) {
+      throw new Error('OutputBuffer.startAt: buffer already holds output');
+    }
+    if (!Number.isSafeInteger(offset) || offset < 0) {
+      throw new RangeError(`OutputBuffer.startAt: invalid offset ${offset}`);
+    }
+    this.produced = offset;
+  }
+
+  /**
+   * Drop whole chunks that lie entirely below absolute `offset`. Used by the
+   * session host for ack-driven retention of a chat child's stdout: bytes the
+   * controller has committed are never needed again. Never drops a chunk that
+   * straddles `offset`, so every byte at or above it stays replayable.
+   */
+  discardBefore(offset: number): void {
+    let start = this.startOffset;
+    while (this.chunks.length > 0 && start + this.chunks[0]!.length <= offset) {
+      const dropped = this.chunks.shift()!;
+      this.bufferedBytes -= dropped.length;
+      start += dropped.length;
+    }
+  }
+
   /** Append newly produced output. Takes ownership of `chunk` and retains the
    *  reference without copying (see the buffer-ownership note on the class) — the
    *  caller must not mutate it afterward. Evicts oldest chunks over the cap, but

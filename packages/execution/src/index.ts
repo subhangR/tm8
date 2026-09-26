@@ -23,6 +23,18 @@
 
 export { NODE_BOOT_ID, PtyHostService, stripScrollbackDeviceQueries } from './pty/PtyHostService.js';
 export { OutputBuffer, type ReplaySlice } from './pty/OutputBuffer.js';
+export {
+  SessionHostConnection,
+  SessionHostPool,
+  SessionHostError,
+  computeGeneration,
+  type DeadHost,
+  type SessionHostPoolOptions,
+  type SessionHostRegistry,
+  type SessionHostRow,
+} from './session-host/client.js';
+export type { HostSessionRecord, ExitRecord as SessionHostExitRecord } from './session-host/frames.js';
+export { RemoteChild, RemotePty, type PtyProcess } from './session-host/remote.js';
 export { TerminalStateMirror } from './pty/TerminalStateMirror.js';
 // Two-signal prompt-delivery completion bridge (honest delivery-saga settle —
 // see PromptSettlementWaiter's own docs). Exported for the same reason

@@ -1,6 +1,8 @@
 import * as pty from 'node-pty';
-import type { IPty } from 'node-pty';
 import { randomUUID } from 'node:crypto';
+import type { SessionHostConnection } from '../session-host/client.js';
+import type { HostSessionRecord } from '../session-host/frames.js';
+import { RemotePty, type PtyProcess } from '../session-host/remote.js';
 import { OutputBuffer, type ReplaySlice } from './OutputBuffer.js';
 import { TerminalStateMirror } from './TerminalStateMirror.js';
 import type {
@@ -29,7 +31,8 @@ interface PendingSubscriber {
 }
 
 interface PtyEntry {
-  proc: IPty;
+  /** node-pty in-process, or a {@link RemotePty} whose process lives in the session host. */
+  proc: PtyProcess;
   /** Offset-tracked scrollback buffer: counts every raw byte the PTY has ever
    *  produced and retains a bounded tail, so a reconnecting client can resume
    *  from the exact byte offset it last saw (see {@link PtyHostService.getReplay}). */
@@ -128,6 +131,11 @@ interface PendingPromptQueue {
 
 const DEFAULT_COLS = 80;
 const DEFAULT_ROWS = 24;
+/** Exit-status write retries for host-backed PTYs: 1s doubling, capped at 5 min, ~1h total. */
+const DEFAULT_STATUS_RETRY_DELAYS_MS: readonly number[] = [
+  1_000, 2_000, 4_000, 8_000, 16_000, 32_000, 64_000, 128_000,
+  ...Array.from({ length: 11 }, () => 300_000),
+];
 const MAX_PENDING_SNAPSHOT_BYTES = 4 * 1024 * 1024;
 // Keep server attach handoff bounds aligned with the client-side queue.
 // Overflow preserves the already-accepted FIFO prefix and rejects newer input.
@@ -421,6 +429,8 @@ export class PtyHostService {
   private readonly coalesceMaxBytes: number;
   private readonly outputCapBytes: number;
   private readonly defaultShell?: string;
+  private readonly sessionHost?: () => SessionHostConnection | null;
+  private readonly statusRetryDelaysMs: readonly number[];
 
   /**
    * Per-INSTANCE boot nonce for stream epochs (#151). Minted once when the
@@ -457,6 +467,8 @@ export class PtyHostService {
     this.coalesceMaxBytes = options.coalesceMaxBytes ?? DEFAULT_SEND_COALESCE_MAX_BYTES;
     this.outputCapBytes = options.outputCapBytes ?? 1024 * 1024;
     this.defaultShell = options.defaultShell;
+    this.sessionHost = options.sessionHost;
+    this.statusRetryDelaysMs = options.statusRetryDelaysMs ?? DEFAULT_STATUS_RETRY_DELAYS_MS;
   }
 
   /** Mint the next opaque stream epoch: a per-instance boot nonce (restart
@@ -487,21 +499,91 @@ export class PtyHostService {
       v && v > 0 ? Math.min(v, 1000) : fallback;
     const initialCols = clampDim(cols, DEFAULT_COLS);
     const initialRows = clampDim(rows, DEFAULT_ROWS);
-    const proc = pty.spawn(shell, ['-c', command], {
-      name: 'xterm-256color',
+    const host = this.sessionHost?.() ?? null;
+    const epoch = this.newEpoch();
+    const proc: PtyProcess = host
+      ? RemotePty.spawn(host, {
+          sid: sessionId,
+          epoch,
+          command,
+          shell,
+          cwd,
+          env,
+          cols: initialCols,
+          rows: initialRows,
+        })
+      : pty.spawn(shell, ['-c', command], {
+          name: 'xterm-256color',
+          cols: initialCols,
+          rows: initialRows,
+          cwd,
+          // The caller supplies the COMPLETE allowlisted child environment. Never
+          // merge process.env here: that would leak database URLs and unrelated
+          // operator secrets while the manifest audits only the curated names.
+          env,
+          encoding: null as unknown as undefined, // emit raw Buffers, not decoded strings
+        });
+
+    this.install(sessionId, proc, {
+      output: new OutputBuffer(this.outputCapBytes),
       cols: initialCols,
       rows: initialRows,
-      cwd,
-      // The caller supplies the COMPLETE allowlisted child environment. Never
-      // merge process.env here: that would leak database URLs and unrelated
-      // operator secrets while the manifest audits only the curated names.
-      env,
-      encoding: null as unknown as undefined, // emit raw Buffers, not decoded strings
+      epoch,
+      adopted: false,
     });
 
+    this.completePromptHandoff(sessionId);
+    this.logger.info('PtyHostService: spawned session PTY', { sessionId, pid: proc.pid, cwd, host: host?.generation ?? null });
+  }
+
+  /**
+   * Adopt a PTY a session host kept alive across a server restart (D6).
+   *
+   * The entry is built exactly as for a spawn — ring, mirror, subscribers,
+   * activity, prompt queue all live here — but its ring is re-based at the
+   * host's offsets and its epoch is the host-stored one, so a browser holding
+   * (epoch, offset) from before the restart resumes byte-exactly. The retained
+   * scrollback replays through the normal onData path into the ring AND the
+   * mirror. R7: a sid that already has an entry is never re-adopted.
+   *
+   * A record whose process already exited is adopted too: its exit then runs
+   * the ordinary onExit path, which is what records the status the dead server
+   * never wrote.
+   */
+  adopt(conn: SessionHostConnection, record: HostSessionRecord): boolean {
+    if (record.kind !== 'pty' || this.sessions.has(record.sid)) return false;
+    const output = new OutputBuffer(this.outputCapBytes);
+    output.startAt(record.out.start);
+    const proc = RemotePty.adopt(conn, record);
+    const entry = this.install(record.sid, proc, {
+      output,
+      cols: record.cols ?? DEFAULT_COLS,
+      rows: record.rows ?? DEFAULT_ROWS,
+      epoch: record.epoch,
+      adopted: true,
+    });
+    proc.start();
+    this.logger.info('PtyHostService: adopted session PTY from session host', {
+      sessionId: record.sid,
+      pid: record.pid,
+      generation: conn.generation,
+      exited: record.exit !== null,
+      replayFrom: record.out.start,
+      next: record.out.next,
+    });
+    return entry !== null;
+  }
+
+  private install(
+    sessionId: string,
+    proc: PtyProcess,
+    init: { output: OutputBuffer; cols: number; rows: number; epoch: string; adopted: boolean },
+  ): PtyEntry {
+    const initialCols = init.cols;
+    const initialRows = init.rows;
     const entry: PtyEntry = {
       proc,
-      output: new OutputBuffer(this.outputCapBytes),
+      output: init.output,
       state: new TerminalStateMirror(initialCols, initialRows),
       subscribers: new Set(),
       pendingSubscribers: new Map(),
@@ -509,12 +591,13 @@ export class PtyHostService {
       exitCode: null,
       cols: initialCols,
       rows: initialRows,
-      epoch: this.newEpoch(),
+      epoch: init.epoch,
       sendBuf: [],
       sendBytes: 0,
       sendTimer: null,
       lastOutputAt: Date.now(),
-      bootSettled: false,
+      // An adopted agent has been running since before this server booted.
+      bootSettled: init.adopted,
       // A fresh PTY is 'busy': it was just spawned and is booting its agent.
       // Starting at 'idle' would make the first output chunk report a
       // busy-transition for every session that ever spawns, and starting at a
@@ -523,7 +606,7 @@ export class PtyHostService {
       // claim.
       activity: 'busy',
       idleTimer: null,
-      everSpoke: false,
+      everSpoke: init.adopted,
     };
     this.sessions.set(sessionId, entry);
 
@@ -558,7 +641,12 @@ export class PtyHostService {
       // process's late exit — it must not delete the freshly-installed entry or
       // stomp a status the stop path already set. Identity-check the live entry
       // before touching any shared state.
-      if (this.sessions.get(sessionId) !== entry) return;
+      if (this.sessions.get(sessionId) !== entry) {
+        // Whoever replaced or removed the entry already settled its status, so
+        // a host-backed process's retained exit record has nothing left to say.
+        proc.release?.();
+        return;
+      }
       entry.exited = true;
       entry.exitCode = exitCode;
       this.logger.info('PtyHostService: session PTY exited', { sessionId, exitCode, signal });
@@ -600,23 +688,30 @@ export class PtyHostService {
       // Single-writer status transition (R29): the host is the sole writer on
       // the exit path; the injected sink decides where it lands (tm8 → a graph
       // work-command; old maestro → the session file store).
-      try {
-        const result = this.onSessionStatus?.(sessionId, status, exitInfo);
-        if (result && typeof (result as Promise<void>).catch === 'function') {
-          void (result as Promise<void>).catch((err: unknown) =>
-            this.logger.error(
-              'PtyHostService: failed to update session status on exit',
-              err instanceof Error ? err : new Error(String(err)),
-              { sessionId },
-            ),
+      if (proc.release) {
+        // Host-backed: the host keeps the exit record until the status write
+        // COMMITS, so a write that fails here is re-tried and, failing that,
+        // re-reported by the next server's hello (D6, advisor (b)).
+        this.writeExitStatusThenRelease(sessionId, status, exitInfo, proc, 0);
+      } else {
+        try {
+          const result = this.onSessionStatus?.(sessionId, status, exitInfo);
+          if (result && typeof (result as Promise<void>).catch === 'function') {
+            void (result as Promise<void>).catch((err: unknown) =>
+              this.logger.error(
+                'PtyHostService: failed to update session status on exit',
+                err instanceof Error ? err : new Error(String(err)),
+                { sessionId },
+              ),
+            );
+          }
+        } catch (err) {
+          this.logger.error(
+            'PtyHostService: failed to update session status on exit',
+            err instanceof Error ? err : new Error(String(err)),
+            { sessionId },
           );
         }
-      } catch (err) {
-        this.logger.error(
-          'PtyHostService: failed to update session status on exit',
-          err instanceof Error ? err : new Error(String(err)),
-          { sessionId },
-        );
       }
       // Signal a REAL process exit to subscribers before closing their sockets,
       // so clients can distinguish "the agent finished/crashed" from a plain
@@ -636,8 +731,7 @@ export class PtyHostService {
       this.promptHandoffs.delete(sessionId);
     });
 
-    this.completePromptHandoff(sessionId);
-    this.logger.info('PtyHostService: spawned session PTY', { sessionId, pid: proc.pid, cwd });
+    return entry;
   }
 
   /**
@@ -1405,6 +1499,49 @@ export class PtyHostService {
    *   failure. Finalization (notify/close + delete) is UNCONDITIONAL regardless
    *   of the outcome, so internal callers can keep ignoring the return.
    */
+  private readonly statusRetryTimers = new Set<ReturnType<typeof setTimeout>>();
+
+  /**
+   * Write a host-backed PTY's exit status, releasing the host's exit record
+   * only once the write commits. Each failure is logged loud and re-tried on
+   * {@link statusRetryDelaysMs}; when those run out the record stays in the
+   * host, and the next server's hello reports the exit again.
+   */
+  private writeExitStatusThenRelease(
+    sessionId: string,
+    status: PtySessionStatus,
+    exitInfo: PtyExitInfo,
+    proc: PtyProcess,
+    attempt: number,
+  ): void {
+    const retry = (err: unknown): void => {
+      const delay = this.statusRetryDelaysMs[attempt];
+      this.logger.error(
+        'PtyHostService: failed to update session status on exit; the session host keeps the exit record',
+        err instanceof Error ? err : new Error(String(err)),
+        { sessionId, attempt: attempt + 1, retryInMs: delay ?? null },
+      );
+      if (delay === undefined) return;
+      const timer = setTimeout(() => {
+        this.statusRetryTimers.delete(timer);
+        this.writeExitStatusThenRelease(sessionId, status, exitInfo, proc, attempt + 1);
+      }, delay);
+      timer.unref?.();
+      this.statusRetryTimers.add(timer);
+    };
+    let result: void | Promise<void>;
+    try {
+      result = this.onSessionStatus?.(sessionId, status, exitInfo);
+    } catch (err) {
+      retry(err);
+      return;
+    }
+    Promise.resolve(result).then(
+      () => proc.release?.(),
+      (err: unknown) => retry(err),
+    );
+  }
+
   kill(sessionId: string, notify = true): PtyKillOutcome {
     const entry = this.sessions.get(sessionId);
     if (!entry) {
@@ -1662,11 +1799,20 @@ export class PtyHostService {
     return () => this.removeSubscriber(sessionId, sink);
   }
 
-  /** Kill all PTYs (graceful shutdown). */
+  /**
+   * Graceful shutdown. An in-process PTY dies with this process, so it is
+   * killed exactly as it always was. A host-backed PTY is DETACHED: its
+   * subscribers see a plain socket close (no exit frame — the agent is not
+   * exiting), and the process and its host record are left for the next
+   * server to adopt (D6).
+   */
   shutdownAll(): void {
-    for (const sessionId of Array.from(this.sessions.keys())) {
-      this.kill(sessionId);
+    for (const [sessionId, entry] of Array.from(this.sessions)) {
+      if (entry.proc.detach) this.detach(sessionId, entry);
+      else this.kill(sessionId);
     }
+    for (const timer of this.statusRetryTimers) clearTimeout(timer);
+    this.statusRetryTimers.clear();
     // kill() above already abandons queues for sessions that had a live entry.
     // What is LEFT here is queued-before-any-spawn deliveries — a session id
     // that was never in `this.sessions` at all — which kill()'s loop never
@@ -1676,6 +1822,17 @@ export class PtyHostService {
     }
     this.pendingPrompts.clear();
     this.promptHandoffs.clear();
+  }
+
+  /** Forget a host-backed session locally, leaving it running in its host. */
+  private detach(sessionId: string, entry: PtyEntry): void {
+    this.flushOutput(entry);
+    this.closeSubscribers(entry);
+    this.clearIdleTimer(entry);
+    entry.proc.detach?.();
+    entry.state.dispose();
+    this.sessions.delete(sessionId);
+    this.logger.info('PtyHostService: detached session PTY; it stays in its session host', { sessionId });
   }
 
   /**

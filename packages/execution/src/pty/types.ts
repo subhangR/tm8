@@ -1,3 +1,4 @@
+import type { SessionHostConnection } from '../session-host/client.js';
 // @tm8/execution — PTY host seam types.
 //
 // These interfaces are the clean seam that replaces old maestro's concrete
@@ -174,6 +175,17 @@ export interface PtyHostOptions {
   outputCapBytes?: number;
   /** Default shell when neither the spawn env nor process env sets SHELL. */
   defaultShell?: string;
+  /**
+   * The session host new PTYs are spawned in, or null to spawn in-process
+   * (TM8_SESSION_HOST=off, desktop, tests, or a host that failed to start). A
+   * getter, because the active host can change while the server runs.
+   */
+  sessionHost?: () => SessionHostConnection | null;
+  /**
+   * Backoff (ms) for re-trying a failed exit status write of a host-backed PTY
+   * before its host exit record is released. Default 1s doubling to 5 min.
+   */
+  statusRetryDelaysMs?: readonly number[];
 }
 
 /**
