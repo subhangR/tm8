@@ -44,6 +44,7 @@ import {
 } from './exit.js';
 import { createOutput, processStreams, type Output } from './output.js';
 import { journal } from './journal.js';
+import { setActiveLink } from './space-link-active.js';
 import { CLI_VERSION } from './discovery/help.js';
 import { isCommandPath } from './discovery/operations.js';
 
@@ -262,6 +263,8 @@ async function dispatch(
   // registry lookup, so neither route is half-taken.
   const { routeThroughSpaceLink } = await import('./space-link-route.js');
   ctx = await routeThroughSpaceLink(ctx, match.path, { serverFlag: globals.server });
+  // From here, a client without this link is a bug the constructor refuses.
+  setActiveLink(ctx.link);
 
   if (globals.server !== undefined) {
     if (match.path[0] === 'server') {
@@ -329,6 +332,7 @@ export async function run(argv: readonly string[]): Promise<ExitCode> {
   const streams = journal.enabled ? journal.wrapStreams(processStreams) : undefined;
   let commandPath: readonly string[] = [];
   let out = createOutput({ format: 'human', streams });
+  setActiveLink(undefined);
   try {
     const invocation = parseInvocation(argv);
     out = createOutput({
@@ -349,5 +353,7 @@ export async function run(argv: readonly string[]): Promise<ExitCode> {
     const exit = exitCodeFor(err);
     journal.finish({ path: commandPath, argv, exitCode: exit, error: err });
     return exit;
+  } finally {
+    setActiveLink(undefined);
   }
 }
