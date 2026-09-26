@@ -48,6 +48,11 @@ export function bindingAad(binding: SecretBinding): string {
   if ('linkId' in binding) {
     return `${binding.homeSpaceId}|${binding.linkId}|${binding.memberId}|${binding.targetSpaceId}`;
   }
+  // The separator count IS the domain separation between the three forms, so
+  // a provider carrying `|` could make an account AAD read as a space or link
+  // one. Every sealed table pins its provider to a closed, `|`-free list
+  // (space-links.pg asserts it); this refuses the rest before sealing/opening.
+  if (binding.provider.includes('|')) throw new Error('secret binding provider must not contain "|"');
   return 'spaceId' in binding
     ? `${binding.spaceId}|${binding.credentialId}|${binding.provider}`
     : `${binding.accountId}|${binding.provider}`;

@@ -20,7 +20,7 @@ import { randomUUID } from 'node:crypto';
 import type { Db, DbClaims } from '../db/types.js';
 import { isCollabError } from '@tm8/contract';
 import { formatToken, generateSecret, hashToken } from '../identity/crypto.js';
-import { resolveBearerIdentity, type ResolvedAuthSession } from '../identity/pg-auth.js';
+import { isInvalidTokenError, resolveBearerIdentity, type ResolvedAuthSession } from '../identity/pg-auth.js';
 import { DEFAULT_SESSION_TTL_MS } from '../identity/service.js';
 import { loadOrCreateCredentialKey } from './credential-key.js';
 import { bindingAad, openSecret, sealSecret, type SpaceLinkSecretBinding } from './secret-box.js';
@@ -202,7 +202,12 @@ export class DbSpaceLinkStore {
     let session: ResolvedAuthSession;
     try {
       session = await resolveBearerIdentity(this.db, token);
-    } catch {
+    } catch (error) {
+      // Only a token the target no longer honours is `signed_out` (review
+      // D2). A pool timeout, statement_timeout or restart says nothing about
+      // the token, and marking stale on it would revoke every link on one
+      // saturated minute. Those propagate; the link stays signed_in.
+      if (!isInvalidTokenError(error)) throw error;
       await this.markStale(claims, linkId, 'signed_out', caller);
       throw new SpaceLinkUnusable(linkId, 'signed_out');
     }

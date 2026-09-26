@@ -17,14 +17,20 @@
 --
 -- THE GATE IS NOT TOUCHED (deputy ruling, 2026-09-26 02:04Z, interim until the
 -- lead rules). `internal.require_human_auth_kind()` (083) stays strict: it
--- admits browser and cli only, so it refuses `link`. Every credential RPC
--- calls it (083, 093, 203, 206), so kind `link` is refused IN SQL on every
--- current and future credential op with no edit (E2, T20b), fail-closed. The
--- spaceLinks.* writes (251) call it too: a link session never manages link
--- tokens (decision 31's refused set). What decision 31 admits for `link`
--- (invites, roles, delete) never called the gate, so it passes as the member
--- with no change here. `space-links.pg.test.ts` pins every caller of the gate
--- against an explicit, labelled list.
+-- admits browser and cli only, so it refuses `link`. It is NOT on every
+-- credential RPC (review Q1). Its callers are exactly the list
+-- `space-links.pg.test.ts` pins (STRICT_GATE_CALLERS, a caller added or lost
+-- fails): the credential MANAGEMENT writes and session RPCs of 083/093/203/206,
+-- read_account_service_key, disable_account, the agent-runtime mint/revoke,
+-- leave_space/remove_space_member/start_chat, W4's list/revoke of auth sessions
+-- (249), and the six spaceLinks.* writes (251): a link session never manages
+-- link tokens (decision 31's refused set). The credential READERS and sweeps
+-- that are security definer and do not call it (e.g. read_account_git_credential,
+-- read_space_credential_for_spawn, read_space_credential_policy,
+-- expire_pending_space_credentials, repoint_session_space_credentials) are
+-- not refused for `link` by this file: that SQL refusal is W7's gate, and W7
+-- owns it. What decision 31 admits for `link` (invites, roles, delete) never
+-- called the gate, so it passes as the member with no change here.
 -- =============================================================================
 
 set local lock_timeout = '5s';

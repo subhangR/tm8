@@ -94,6 +94,12 @@ const RESTRICTED_LIFECYCLE_KINDS = new Set([
   // title is patched through `containers.update`, which is ledgered and
   // asserts a version like the rest of the family.
   'container',
+  // `space_link` (W6, 250/251) is born from `spaceLinks.add` and ends only
+  // through `spaceLinks.*` (P7). A generic delete would soft-delete the
+  // envelope without the cascade or the revoke-on-delete trigger, hiding the
+  // link while its tokens and target sessions stayed live (review D1). SQL
+  // refuses the same doors (251 §10b). `server` joins in W8.
+  'space_link',
 ]);
 // `memory` is here to HIDE hierarchy on the read surfaces; the actual refusal
 // of a memory parent lives at the data layer (056's entities trigger), because

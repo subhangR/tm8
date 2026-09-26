@@ -128,7 +128,11 @@ declare
   row public.space_link_tokens;
 begin
   select * into link from public.space_links where entity_id = p_link_id;
-  if link.entity_id is null then
+  -- A soft-deleted link is gone for every link op (review D1): its tokens are
+  -- not opened, re-signed or managed through it. The lifecycle guard (§10b)
+  -- keeps the generic doors from getting it there; this is the second lock.
+  if link.entity_id is null
+     or exists (select 1 from public.entities e where e.id = p_link_id and e.deleted_at is not null) then
     raise exception 'space link not found' using errcode = 'P0002';
   end if;
   me := internal.current_member_id(link.home_space_id);
@@ -608,10 +612,46 @@ when (old.status = 'active' and new.status <> 'active')
 execute function internal.space_link_target_membership_ended();
 
 -- -----------------------------------------------------------------------------
+-- 10b. The link's lifecycle is command-owned (review D1). A generic
+--    delete/restore/move of the space_link entity would soft-delete the
+--    envelope without firing the FK cascade or the revoke-on-delete trigger:
+--    list_space_links would hide it while its tokens and 90-day target sessions
+--    stayed live. So the generic doors refuse it here, in SQL, 42501 — the
+--    same answer 017's own kind gate gives — and the TS gate
+--    (RESTRICTED_LIFECYCLE_KINDS) refuses it before SQL. A link ends only
+--    through spaceLinks.* (P7). A trigger, not re-copied 017/239 bodies, so
+--    it composes with every present and future definition of those doors.
+--
+--    THE KIND LIST is the one `in (...)` in the WHEN clause below. W8 adds
+--    'server' there when it re-stacks (lead ruling): a one-token change.
+--
+--    Adds-only: a new function and a new trigger. Creating them touches no
+--    row. The columns are exactly what move/delete/restore write; the link's
+--    own activity/attention touch (§2, updated_at/activity_at) passes.
+-- -----------------------------------------------------------------------------
+create or replace function internal.refuse_generic_link_lifecycle()
+returns trigger language plpgsql set search_path = public, internal, pg_temp as $$
+begin
+  raise exception 'entity lifecycle is command-owned for kind %', old.kind using errcode = '42501';
+end
+$$;
+
+create trigger entities_link_lifecycle_command_owned
+before update of deleted_at, parent_id, position, space_id on public.entities
+for each row
+when (old.kind in ('space_link')
+      and (new.deleted_at is distinct from old.deleted_at
+           or new.parent_id is distinct from old.parent_id
+           or new.position is distinct from old.position
+           or new.space_id is distinct from old.space_id))
+execute function internal.refuse_generic_link_lifecycle();
+
+-- -----------------------------------------------------------------------------
 -- 11. Grants — full signatures.
 -- -----------------------------------------------------------------------------
 revoke all on function internal.space_link_tokens_revoke_on_delete() from public;
 revoke all on function internal.space_link_target_membership_ended() from public;
+revoke all on function internal.refuse_generic_link_lifecycle() from public;
 
 revoke all on function public.add_space_link(uuid, uuid, text, text) from public;
 grant execute on function public.add_space_link(uuid, uuid, text, text) to tm8_app;

@@ -31,7 +31,9 @@ import { formatToken, generateSecret, hashToken } from '../../src/identity/crypt
 import type { LoopbackOwner } from '../../src/identity/loopback.js';
 import { DbSpaceLinkStore, SpaceLinkUnusable, type SpaceLink, type SpaceLinkStaleNotice } from '../../src/credentials/space-link-store.js';
 import { loadOrCreateCredentialKey } from '../../src/credentials/credential-key.js';
-import { openSecret, sealSecret } from '../../src/credentials/secret-box.js';
+import { bindingAad, openSecret, sealSecret } from '../../src/credentials/secret-box.js';
+import { W2EntitiesCommandsTrackingService } from '../../src/facade/services/w2/entities-commands-tracking.js';
+import type { ServerConfig } from '../../src/http/config.js';
 
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from './w1-pg.js';
 import { EXEMPT_KEYS, leaksSecret } from './secret-probe.js';
@@ -803,6 +805,40 @@ describe('W6 × W4 — session listing and revoke meet a link session', () => {
     await expect(store.use(claims, link.id)).rejects.toMatchObject({ status: 'signed_out' });
     await store.login(claims, link.id, { relogin: true });
   });
+
+  // Q3 (lead default-accept): with no cascade from browser logout, B's admins
+  // still end a link session from B's Sessions page (249:238 lists a space's
+  // pinned sessions for its admin; 249:287 lets that admin revoke one).
+  it('positive — B\'s admin (H3, not the holder) lists H\'s A → B link session and revokes it; a non-member of B cannot', async () => {
+    const link = await linkAB();
+    const hSession = link.mine!.sessionId!;
+    const setH3RoleInB = (role: string) => database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query('update public.members set role = $2 where entity_id = $1', [fixture.memberH3B, role]);
+    });
+    await setH3RoleInB('admin');
+    try {
+      const adminToken = await mintBrowser(fixture.accountH3, fixture.identityH3);
+      const h2Token = await mintBrowser(fixture.accountH2, fixture.identityH2);
+      // Refused: H2 is not a member of B, so B's sessions are not H2's to list or end.
+      expect(await outcome(() => asToken(h2Token, (q) => q.rpc('list_auth_sessions', [fixture.spaceB])))).toBe('42501');
+      expect(await outcome(() => asToken(h2Token, (q) => q.rpc('revoke_listed_auth_session', [hSession])))).toBe('P0002');
+      expect((await store.use(await hClaims(), link.id)).token).toEqual(expect.any(String));
+
+      const listed = await asToken(adminToken, (q) => q.rpc<unknown>('list_auth_sessions', [fixture.spaceB]));
+      const rows = listed as Array<{ sessionId: string; kind: string; spaceId: string | null }>;
+      expect(rows.find((r) => r.sessionId === hSession)).toMatchObject({ kind: 'link', spaceId: fixture.spaceB });
+      expect(leaksSecret(JSON.stringify(listed))).toBe(false);
+      const ended = await asToken(adminToken, (q) =>
+        q.rpc<{ revoked: boolean; revokedSessionIds: string[] }>('revoke_listed_auth_session', [hSession]));
+      expect(ended).toMatchObject({ revoked: true, revokedSessionIds: [hSession] });
+      const claims = await hClaims();
+      await expect(store.use(claims, link.id)).rejects.toMatchObject({ status: 'signed_out' });
+      await store.login(claims, link.id, { relogin: true });
+    } finally {
+      await setH3RoleInB('member');
+    }
+  });
 });
 
 // identity_id() gate (tools/ci/identity-id-gate.sh): add_space_link and
@@ -854,5 +890,149 @@ describe('W6 pin — link creation needs an unpinned human session; a pinned one
     // Paired positive: the link is untouched and the unpinned session still reads it.
     const after = (await store.list(await hClaims(), fixture.spaceA)).find((l) => l.id === link.id);
     expect(after).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review D1: a link's lifecycle is command-owned. The generic doors refuse it
+// in BOTH layers — the facade (RESTRICTED_LIFECYCLE_KINDS, `forbidden`, before
+// SQL) and SQL (251 §10b trigger, 42501, whatever the caller) — and a deleted
+// link is dead to every link op. Paired positive: spaceLinks.remove works.
+// ---------------------------------------------------------------------------
+
+describe('W6 D1 — the generic entity doors refuse a space_link; spaceLinks.* still work', () => {
+  const facade = () => new W2EntitiesCommandsTrackingService({
+    db, config: {} as ServerConfig, owner: async () => NOT_THE_OWNER,
+  });
+  async function facadeCtx(params: Record<string, string>, body: unknown): Promise<RequestContext> {
+    const resolve = createSessionIdentityResolver({ db, owner: async () => NOT_THE_OWNER, spaceSessions: 'agents' });
+    const token = await mintBrowser(fixture.accountH, fixture.identityH);
+    const identity = await resolve({ authorization: `Bearer ${token}` }, { remoteAddress: '203.0.113.9', disableAutoOwner: true });
+    return {
+      identity, requestId: `space-links-${randomUUID()}`, params, query: new URLSearchParams(), body,
+      headers: {}, method: 'POST', path: '/test',
+    } as unknown as RequestContext;
+  }
+  const versionOf = async (id: string) =>
+    (await database.query<{ version: number }>('select version from public.entities where id = $1', [id]))[0]!.version;
+  /** Soft-delete or undelete as the superuser, past every trigger: the state the doors must never reach. */
+  async function forceDeletedAt(id: string, deleted: boolean): Promise<void> {
+    await database.query(`set session_replication_role = replica;
+      update public.entities set deleted_at = ${deleted ? 'now()' : 'null'} where id = '${id}';
+      set session_replication_role = origin;`);
+  }
+
+  let linkId: string;
+  beforeAll(async () => {
+    const claims = await hClaims();
+    const link = await store.add(claims, { spaceId: fixture.spaceA, targetSpaceId: fixture.spaceB });
+    linkId = link.id;
+    if (link.mine?.status !== 'signed_in') await store.login(claims, link.id);
+  });
+
+  it('facade: entities.delete / move / restore / patch / create of a space_link are forbidden before SQL', async () => {
+    const s = facade();
+    expect(await outcome(async () => s.deleteEntity(await facadeCtx({ id: linkId }, {})))).toBe('forbidden');
+    expect(await outcome(async () => s.moveEntity(await facadeCtx({ id: linkId },
+      { parentId: null, position: 424242.5, expectedVersion: await versionOf(linkId) })))).toBe('forbidden');
+    expect(await outcome(async () => s.restoreEntity(await facadeCtx({ id: linkId }, {})))).toBe('forbidden');
+    expect(await outcome(async () => s.patchEntity(await facadeCtx({ id: linkId },
+      { title: 'renamed', expectedVersion: await versionOf(linkId) })))).toBe('forbidden');
+    expect(await outcome(async () => s.createEntity(await facadeCtx({},
+      { spaceId: fixture.spaceA, kind: 'space_link', title: 'forged', clientMutationId: randomUUID() })))).toBe('forbidden');
+    expect(await versionOf(linkId)).toBeGreaterThan(0);
+  });
+
+  it('RPC: delete_entity / move_entity = 42501; the patch and create doors refuse the kind', async () => {
+    const claims = await hClaims();
+    expect({
+      delete: await outcome(() => db.rpc(claims, 'delete_entity', [linkId, null, null])),
+      // A real move (a new position); a no-op move changes no lifecycle column.
+      move: await outcome(async () => db.rpc(claims, 'move_entity',
+        [linkId, null, 424242.5, await versionOf(linkId), null, null])),
+      patch: await outcome(async () => db.rpc(claims, 'update_custom_entity',
+        [linkId, await versionOf(linkId), 'renamed', null, null, null])),
+      create: await outcome(() => db.rpc(claims, 'create_custom_entity',
+        [fixture.spaceA, 'space_link', 'forged', null, '{}', null, null, null])),
+    }).toEqual({ delete: '42501', move: '42501', patch: '22023', create: '22023' });
+    const [row] = await database.query<{ deleted_at: string | null }>('select deleted_at from public.entities where id = $1', [linkId]);
+    expect(row!.deleted_at).toBeNull();
+  });
+
+  it('RPC: restore_entity of a (forced) deleted link = 42501, and a deleted link is dead to every link op', async () => {
+    const claims = await hClaims();
+    await forceDeletedAt(linkId, true);
+    try {
+      expect(await outcome(() => db.rpc(claims, 'restore_entity', [linkId, null, null]))).toBe('42501');
+      expect(await outcome(() => db.rpc(claims, 'open_space_link_token', [linkId]))).toBe('P0002');
+      expect(await outcome(() => store.use(claims, linkId))).toBe('P0002');
+      expect(await outcome(() => store.logout(claims, linkId))).toBe('P0002');
+      expect(await outcome(() => store.login(claims, linkId))).toBe('P0002');
+    } finally {
+      await forceDeletedAt(linkId, false);
+    }
+    // Paired positive: undeleted, the same link opens again.
+    expect((await store.use(claims, linkId)).linkId).toBe(linkId);
+  });
+
+  it('positive — spaceLinks.remove still ends the member\'s link (P7 path 3)', async () => {
+    const claims = await hClaims();
+    const removed = await store.remove(claims, linkId);
+    expect(removed.id).toBe(linkId);
+    expect(await outcome(() => store.use(claims, linkId))).toBe('P0002');
+  });
+});
+
+describe('W6 D2 — a database failure while resolving a link session is NOT signed_out', () => {
+  it('a rejecting claim-free resolve propagates its error and leaves the link signed_in; a dead token still marks it', async () => {
+    const claims = await hClaims();
+    const link = await store.add(claims, { spaceId: fixture.spaceA, targetSpaceId: fixture.spaceB });
+    const live = link.mine?.status === 'signed_in' ? link : await store.login(claims, link.id);
+    const poolTimeout = new Error('timeout exceeded when trying to connect');
+    // resolveBearerIdentity's read is the one claim-free tx; every other call passes through.
+    const flaky: Db = {
+      tx: ((c: DbClaims, fn: (q: Querier) => Promise<unknown>) =>
+        Object.keys(c).length === 0 ? Promise.reject(poolTimeout) : db.tx(c, fn)) as Db['tx'],
+      rpc: db.rpc.bind(db),
+      query: db.query.bind(db),
+      end: async () => {},
+    };
+    const flakyStore = new DbSpaceLinkStore({ db: flaky, dataDir, onStale: (n) => { staleNotices.push(n); } });
+    const before = staleNotices.length;
+    await expect(flakyStore.use(claims, live.id)).rejects.toBe(poolTimeout);
+    expect((await store.list(claims, fixture.spaceA)).find((l) => l.id === live.id)?.mine?.status).toBe('signed_in');
+    expect(staleNotices.length).toBe(before);
+    // Paired positive: the real store still resolves it.
+    expect((await store.use(claims, live.id)).linkId).toBe(live.id);
+  });
+});
+
+describe('W6 (b) — the AAD domain separation holds: no sealed provider carries "|"', () => {
+  it('every table with a sealed column pins its provider to a closed, "|"-free list', async () => {
+    const sealed = await database.query<{ table_name: string; has_provider: boolean }>(`
+      select c.table_name,
+             exists (select 1 from information_schema.columns p
+                      where p.table_schema = 'public' and p.table_name = c.table_name and p.column_name = 'provider') as has_provider
+        from information_schema.columns c
+       where c.table_schema = 'public' and c.column_name like '%ciphertext' and c.data_type = 'bytea'
+       group by c.table_name order by c.table_name`);
+    expect(sealed.map((t) => t.table_name)).toContain('space_link_tokens');
+    for (const t of sealed.filter((x) => x.has_provider)) {
+      const checks = await database.query<{ def: string }>(`
+        select pg_get_constraintdef(k.oid) as def from pg_constraint k
+         where k.conrelid = ('public.' || $1)::regclass and k.contype = 'c'
+           and pg_get_constraintdef(k.oid) ~ '\\mprovider\\M'`, [t.table_name]);
+      const literals = checks.flatMap((c) => [...c.def.matchAll(/'([^']*)'::text/g)].map((m) => m[1]!));
+      expect(literals.length, `${t.table_name} has no closed provider list`).toBeGreaterThan(0);
+      for (const lit of literals) expect(lit, `${t.table_name} provider ${lit}`).not.toContain('|');
+    }
+    // The link table has no provider: its AAD is four uuids.
+    expect(sealed.find((t) => t.table_name === 'space_link_tokens')!.has_provider).toBe(false);
+  });
+
+  it('bindingAad refuses a provider with "|"; a plain provider binds', () => {
+    expect(() => bindingAad({ accountId: randomUUID(), provider: 'a|b' })).toThrow(/must not contain/);
+    expect(() => bindingAad({ spaceId: randomUUID(), credentialId: randomUUID(), provider: 'x|y' })).toThrow(/must not contain/);
+    expect(bindingAad({ accountId: 'acc', provider: 'github' })).toBe('acc|github');
   });
 });
