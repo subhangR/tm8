@@ -1,7 +1,7 @@
 /**
  * auth.* — local accounts (Identity v2 Stage 1, doc 4 §6).
  *
- * Ten operations, and the seam is deliberately thin: every authorization
+ * Eleven operations, and the seam is deliberately thin: every authorization
  * decision except the scrypt comparison lives inside the SECURITY DEFINER
  * RPCs (`ensure_account`'s F1 node-admin gate, `revoke_auth_session`'s
  * self-or-admin gate, `resolve_auth_session`'s revocation/expiry/status
@@ -45,6 +45,8 @@ import type {
   AuthSessionGetResult,
   AuthSignupInput,
   AuthSignupResult,
+  AuthSpaceEnterInput,
+  AuthSpaceEnterResult,
   InvitePreview,
   ResolveInviteInput,
 } from '@tm8/contract';
@@ -60,6 +62,7 @@ import { claimsFor } from '../../context.js';
 import {
   changePassword,
   claimNode,
+  enterSpace,
   issueNodeClaimToken,
   loginWithPassword,
   nodeIsClaimed,
@@ -193,6 +196,7 @@ function authSessionGet(deps: FacadeDeps): OperationHandler {
             : {}),
           ...(session.runtimeChatId ? { runtimeChatId: session.runtimeChatId } : {}),
           label: session.label,
+          spaceId: session.spaceId,
           expiresAt: session.expiresAt,
         },
       };
@@ -309,6 +313,59 @@ function authInviteResolve(deps: FacadeDeps): OperationHandler {
       'preview_invite',
       [body.code],
     );
+  };
+}
+
+/**
+ * `auth.space.enter` (plan W3) — a gate session plus membership mints a session
+ * pinned to one space.
+ *
+ * NOT claim-free: it runs under the caller's own claims, so `enter_space` sees
+ * the verified identity, auth kind and (absent) pin. The parent is the session
+ * the resolver verified from the presented token — never the body — and the
+ * token itself is never passed to SQL. A `browser` result replaces the
+ * session cookie so the browser's WebSocket follows the space it entered.
+ */
+function authSpaceEnter(deps: FacadeDeps): OperationHandler {
+  return async (ctx) => {
+    const body = ctx.body as AuthSpaceEnterInput;
+    const identity = ctx.identity;
+    if (identity.sessionSpaceId) {
+      throw new CollabError('forbidden', 'a space-pinned session cannot enter a space; use the gate session');
+    }
+    let kind: 'browser' | 'cli';
+    let parentSessionId: string | null;
+    if (identity.kind === 'bearer') {
+      if (identity.authKind !== 'browser' && identity.authKind !== 'cli') {
+        throw new CollabError('forbidden', 'only a human session can enter a space');
+      }
+      if (!identity.sessionId) throw new CollabError('unauthenticated', 'bearer session is unresolved');
+      kind = identity.authKind;
+      parentSessionId = identity.sessionId;
+    } else {
+      // The loopback auto-owner: no session row, so no parent to inherit from.
+      kind = 'browser';
+      parentSessionId = null;
+    }
+    const owner = await deps.owner();
+    const issued = await enterSpace(deps.db, claimsFor(owner, ctx), {
+      spaceId: body.spaceId,
+      parentSessionId,
+      kind,
+      label: body.label ?? null,
+    });
+    const result: AuthSpaceEnterResult = {
+      token: issued.token,
+      spaceId: issued.spaceId,
+      session: issued.session,
+    };
+    if (issued.session.kind !== 'browser') return result;
+    return json(result, {
+      headers: {
+        'cache-control': 'no-store',
+        'set-cookie': sessionCookie(issued.token, issued.session.expiresAt),
+      },
+    });
   };
 }
 
@@ -570,6 +627,7 @@ export function registerW2AuthHandlers(registry: HandlerRegistry, deps: FacadeDe
     'auth.login': authLogin(deps),
     'auth.logout': authLogout(deps),
     'auth.session.get': authSessionGet(deps),
+    'auth.space.enter': authSpaceEnter(deps),
     'auth.claim': authClaim(deps),
     'auth.claim.status': authClaimStatus(deps),
     'auth.claim.reissue': authClaimReissue(deps),

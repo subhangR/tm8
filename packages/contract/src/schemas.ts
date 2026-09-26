@@ -46,7 +46,7 @@ import type {
   AuthInviteSignupInput, AuthInviteSignupResult,
   AuthLoginInput, AuthLoginResult, AuthLogoutInput,
   AuthLogoutResult, AuthPasswordChangeInput, AuthPasswordChangeResult,
-  AuthSessionGetResult, AuthSessionView, AuthSignupInput,
+  AuthSessionGetResult, AuthSessionView, AuthSignupInput, AuthSpaceEnterInput, AuthSpaceEnterResult,
   AuthSignupResult, ChannelTab, ChatContextFrame, ChatTurnFrame, ChatTurnUsage,
   ClosedPromptPolicy, CollectionAddItemInput, CollectionGroup, CollectionQuery, CollectionResult,
   CommandContext, CommandErrorCode, CommandResult, CompleteTaskInput,
@@ -1823,6 +1823,7 @@ export const AuthSessionViewSchema: z.ZodType<AuthSessionView> = z.object({
   runtimeThreadRootId: z.string().uuid().nullable().optional(),
   runtimeChatId: z.string().uuid().nullable().optional(),
   label: z.string().nullable(),
+  spaceId: z.string().uuid().nullable().optional(),
   createdAt: IsoTimestamp.optional(),
   expiresAt: IsoTimestamp,
 }).strict();
@@ -1834,6 +1835,22 @@ export const AuthSignupResultSchema: z.ZodType<AuthSignupResult> = z.object({
 export const AuthLoginResultSchema: z.ZodType<AuthLoginResult> = z.object({
   token: z.string().min(1),
   account: AuthAccountViewSchema,
+  session: AuthSessionViewSchema,
+}).strict();
+
+/**
+ * `auth.space.enter`. Strict: the kind is inherited from the presenting session
+ * and the space is the only choice the caller makes, so a `kind` or `actorId`
+ * on the wire is a 400.
+ */
+export const AuthSpaceEnterInputSchema: z.ZodType<AuthSpaceEnterInput> = z.object({
+  spaceId: z.string().uuid(),
+  label: z.string().min(1).max(200).optional(),
+}).strict();
+
+export const AuthSpaceEnterResultSchema: z.ZodType<AuthSpaceEnterResult> = z.object({
+  token: z.string().min(1),
+  spaceId: z.string().uuid(),
   session: AuthSessionViewSchema,
 }).strict();
 

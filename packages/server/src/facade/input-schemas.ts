@@ -56,6 +56,7 @@ import {
   AuthClaimInputSchema,
   AuthInviteSignupInputSchema,
   AuthLoginInputSchema,
+  AuthSpaceEnterInputSchema,
   AuthLogoutInputSchema,
   AuthPasswordChangeInputSchema,
   AuthSignupInputSchema,
@@ -193,6 +194,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   // authentication has no authoring persona and no idempotency ledger entry.
   'auth.signup': AuthSignupInputSchema,
   'auth.login': AuthLoginInputSchema,
+  'auth.space.enter': AuthSpaceEnterInputSchema,
   'auth.logout': AuthLogoutInputSchema,
   // auth.claim.status takes no input; the catalog marks it a read.
   'auth.claim': AuthClaimInputSchema,

@@ -1,16 +1,16 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:ac682c491fd5abae761557c8b4e155f9e4925ca45cd3ca9112f70f9d9f4f229d",
+  "catalogDigest": "sha256:33d3b716fdba0a7b9f4a0dfca4abd8824038589b0556608c35682b40d9c933b5",
   "catalog": {
-    "total": 248,
-    "v1": 246,
+    "total": 249,
+    "v1": 247,
     "reserved": 2,
-    "http": 246,
+    "http": 247,
     "ws": 1,
-    "registerableV1Http": 244,
+    "registerableV1Http": 245,
     "methods": {
       "GET": 81,
-      "POST": 117,
+      "POST": 118,
       "PATCH": 16,
       "DELETE": 17,
       "PUT": 15,
@@ -18,11 +18,11 @@
     },
     "kinds": {
       "read": 85,
-      "command": 161,
+      "command": 162,
       "stream": 2
     },
-    "uniqueNames": 248,
-    "uniqueBindings": 247
+    "uniqueNames": 249,
+    "uniqueBindings": 248
   },
   "reservedOperations": [
     "search.query",
@@ -1580,6 +1580,13 @@
         "source": "server-router"
       },
       {
+        "operation": "auth.space.enter",
+        "method": "POST",
+        "path": "/v2/auth/space/enter",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "auth.password.change",
         "method": "POST",
         "path": "/v2/auth/password",
@@ -2140,7 +2147,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 216
+    "unimplementedV1Http": 217
   },
   "schemas": {
     "additive": {
@@ -5601,6 +5608,23 @@
           "auth",
           "session",
           "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "auth.space.enter",
+        "noun": "auth",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/auth.space.enter",
+        "intentTags": [
+          "auth",
+          "space",
+          "enter"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
