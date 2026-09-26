@@ -3561,6 +3561,8 @@ const executionSpawnInputObject = z.object({
   selectionReasons: SpawnSelectionReasonsSchema.optional(),
   // Kinds and readability are checked against the graph (`in_full_kind_not_allowed`, `not_found`).
   inFullIds: SelectionGroupIdsSchema.optional(),
+  // Advisory (decision 8): only the preview's leftOut reasons and the launch record read it.
+  jevRemovedIds: SelectionGroupIdsSchema.optional(),
   contextBudgets: ContextBudgetsSchema.optional(),
   jevRunId: SpawnUuidSchema.optional(),
   harnessSurface: z.enum(['minimal', 'inherit']).optional(),
@@ -3634,6 +3636,10 @@ export type SpawnSelectionShapeProof = [
   Assert<SameShape<
     z.infer<typeof executionSpawnInputObject>['inFullIds'],
     ExecutionSpawnInput['inFullIds']
+  >>,
+  Assert<SameShape<
+    z.infer<typeof executionSpawnInputObject>['jevRemovedIds'],
+    ExecutionSpawnInput['jevRemovedIds']
   >>,
   Assert<SameShape<keyof z.infer<typeof launchPreviewInputObject>, keyof LaunchPreviewInput>>,
 ];

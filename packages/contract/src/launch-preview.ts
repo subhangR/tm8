@@ -47,7 +47,7 @@ export interface LaunchPreviewSection {
 
 /**
  * Why a candidate is not in this launch. `unticked`: a default the selection
- * left out; `jev`: left out for a Jev reason (`selectionReasons`);
+ * left out; `jev`: a default Ask Jev removed (`jevRemovedIds`);
  * `duplicate`: listed once elsewhere (in full wins over the index and
  * `<linked>`).
  */

@@ -16,6 +16,8 @@ export {
   type SessionLiveCause,
   type SessionLiveListener,
   type SpawnServiceOptions,
+  type SpawnPreview,
+  PREVIEW_SESSION_ID,
 } from './SpawnService.js';
 export {
   DEFAULT_AGENT_TOOL,
@@ -143,6 +145,7 @@ export type {
   DispatcherRoster,
   LaunchHarnessRecord,
   ManifestContext,
+  InFullEntity,
   ManifestSkillContext,
   SpawnContextAudit,
   PermissionMode,
@@ -193,3 +196,4 @@ export {
   type ContextIndexSource,
   type LaunchIndexFitInput,
 } from './context-index.js';
+export { dedupInFull, withoutInFullEntries, type InFullDuplicate } from './in-full.js';

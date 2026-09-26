@@ -19,7 +19,8 @@
  * `PromptRuntime.taskContext`. A caller that has none (`tm8 worker init`, a
  * failed render) gets the §2.3 degraded header, which names the one read to run.
  */
-import { assertWithinBudget, BYTE_BUDGETS, utf8Bytes } from './budgets.js';
+import { BudgetExceededError, BYTE_BUDGETS, utf8Bytes } from './budgets.js';
+import { inFullBytesWithin, serializeInFullEntity } from './in-full.js';
 import { escapeAttr, untrustedData } from './escape.js';
 import { PROMPT_VERSION_V2 } from './prompt-version.js';
 import { serializeMemoryEntry } from './skill-index.js';
@@ -385,11 +386,13 @@ export function composePromptV2(
     s.push('</authorization>');
   }
   if (runtime.codeGraph === true) s.push(`<repo>${V2_REPO_GRAPH_LINE}</repo>`);
+  // The in-full channel (launch card v3), as on the v1 frame.
+  const inFullSections = (manifest.inFull ?? []).map(serializeInFullEntity);
+  s.push(...inFullSections);
   const skillIndex = serializeLaunchIndex(manifest);
   if (skillIndex) s.push(skillIndex);
-  if (manifest.promptExtra) {
-    s.push(untrustedData({ type: 'launch-context', body: manifest.promptExtra }));
-  }
+  const notes = manifest.promptExtra ? untrustedData({ type: 'launch-context', body: manifest.promptExtra }) : null;
+  if (notes) s.push(notes);
   s.push('</tm8_system_prompt>');
 
   // ---- task ------------------------------------------------------------------
@@ -446,7 +449,26 @@ export function composePromptV2(
 
   const system = s.join('\n');
   const task = t.join('\n');
-  assertWithinBudget('combinedInitialInjection', `${system}\n\n${task}`);
+  // The v2 task turn is a bounded snapshot with no reference mode, so a
+  // subject past the in-full budget on its own simply does not count toward it.
+  const record = runtime.budget === 'record';
+  let overBudget: NonNullable<PromptEnvelope['layout']>['overBudget'];
+  const over = (error: unknown): void => {
+    if (!record || !(error instanceof BudgetExceededError)) throw error;
+    overBudget ??= { material: error.material, bytes: error.bytes, cap: error.cap };
+  };
+  const taskBytes = utf8Bytes(task);
+  let inFullBytes = 0;
+  try {
+    inFullBytes = inFullBytesWithin(taskBytes, primary !== undefined && taskBytes <= BYTE_BUDGETS.inFullInjection, inFullSections);
+  } catch (error) {
+    over(error);
+    inFullBytes = error instanceof BudgetExceededError ? error.bytes : 0;
+  }
+  const totalBytes = utf8Bytes(`${system}\n\n${task}`);
+  if (totalBytes > BYTE_BUDGETS.combinedInitialInjection) {
+    over(new BudgetExceededError('combinedInitialInjection', totalBytes, BYTE_BUDGETS.combinedInitialInjection));
+  }
   return {
     system,
     task,
@@ -458,6 +480,20 @@ export function composePromptV2(
       // Every distinct command the base, the role layer and the modifier name.
       commandCount: commandsNamed(layers.join('\n')),
       promptVersion: PROMPT_VERSION_V2,
+    },
+    layout: {
+      taskBytes,
+      taskDelivery: primary ? 'inline' : 'none',
+      inFull: (manifest.inFull ?? []).map((entity, i) => ({
+        entityId: entity.entityId,
+        kind: entity.kind,
+        title: entity.title ?? '',
+        bytes: utf8Bytes(inFullSections[i]!) + 1,
+      })),
+      inFullBytes,
+      notesBytes: notes ? utf8Bytes(notes) + 1 : 0,
+      indexBytes: skillIndex ? utf8Bytes(skillIndex) + 1 : 0,
+      ...(overBudget ? { overBudget } : {}),
     },
   };
 }

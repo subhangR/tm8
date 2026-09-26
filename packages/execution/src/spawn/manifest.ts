@@ -79,6 +79,7 @@ import {
   isApiKeyCredentialProvider,
 } from '../credentials/api-key-credentials.js';
 import { redactSecretsDeep } from './secret-redaction.js';
+import { dedupInFull, withoutInFullEntries } from './in-full.js';
 
 /** Fallback when neither the request nor the persona names a model. */
 export const DEFAULT_MODEL = 'sonnet';
@@ -1789,6 +1790,18 @@ export interface ComposeManifestInput {
   homeDir?: string;
   /** Existence probe for a worktree's project skills (`computeEffectiveSkills`); tests inject it. */
   pathExists?: (path: string) => boolean;
+  /**
+   * `throw` (spawn, the default): an over-budget prompt refuses the launch.
+   * `record` (`launch.preview`): the same composition runs to the end and
+   * the overrun is left for the caller's final `composePrompt` to report.
+   */
+  budget?: 'throw' | 'record';
+  /**
+   * `launch.preview` only: handed the index candidates and the fit this
+   * composition settled on, so the dry run reports the drops spawn makes
+   * rather than re-deriving them.
+   */
+  onIndexFit?: (fit: FitContextIndexResult, candidates: readonly PromptContextGroup[]) => void;
 }
 
 /**
@@ -1851,7 +1864,11 @@ function referencesTaskBodies(task: string): boolean {
 }
 
 export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
-  const { sessionId, request, context, launch, workdir, command, baseUrl } = input;
+  const { sessionId, request, launch, workdir, command, baseUrl } = input;
+  // In full wins (launch card v3): an entity sent whole is not also a memory,
+  // an index entry or a `<linked>` line.
+  const { context } = dedupInFull(input.context);
+  const budget = input.budget ?? 'throw';
   const coordinatorSessionId = resolveCoordinatorSessionId(launch.mode, request.parentSessionId);
   const interactionProfile = input.interactionProfile ?? {
     profileId: null,
@@ -1945,6 +1962,9 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
       // The launch sheet's budget override, recorded so resume replays it;
       // absent when the launch sent none.
       ...(request.contextBudgets ? { contextBudgets: { ...request.contextBudgets } } : {}),
+      // Recorded so resume re-reads them (launch card v3); absent when none.
+      ...(request.inFullIds?.length ? { inFullIds: [...request.inFullIds] } : {}),
+      ...(request.jevRemovedIds?.length ? { jevRemovedIds: [...request.jevRemovedIds] } : {}),
       // Absent unless the launch UI (or the session this one continues) picked
       // a harness, so an ordinary launch writes the manifest it always wrote.
       ...(launch.harnessChoice ? { harnessChoice: { ...launch.harnessChoice } } : {}),
@@ -1982,6 +2002,7 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
       : null,
     directive: null,
     promptExtra: request.promptExtra?.trim() || null,
+    ...(context.inFull?.length ? { inFull: structuredClone(context.inFull) } : {}),
   });
   // The profile's budgets, each key replaced by this launch's override (§10 Q5.4).
   const budgets = input.contextIndex ? { ...contextBudgetsFrom(interactionProfile.snapshot), ...request.contextBudgets } : {};
@@ -2011,12 +2032,16 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
     manifest.context = { ...manifest.context, memoryIds: [] };
     // Candidates are redacted BEFORE the trim, so the bytes it counts are the
     // bytes that ship.
-    candidates = redactSecretsDeep(contextIndexCandidates({ context, skills: manifest.skills, memories, mode: launch.mode }));
+    // In full wins (launch card v3): an entity sent whole is not also an entry.
+    candidates = withoutInFullEntries(
+      redactSecretsDeep(contextIndexCandidates({ context, skills: manifest.skills, memories, mode: launch.mode })),
+      context,
+    );
     manifest.tasks = redactSecretsDeep(launchTaskSnapshots(manifest.tasks, context.references));
   }
   // Measure the real non-index prompt once, then account for the exact escaped
   // serializer. This stays linear even when a deep equipment chain has no count cap.
-  const baseline = composePrompt({ ...manifest, skills: [] }, { sessionId, baseUrl });
+  const baseline = composePrompt({ ...manifest, skills: [] }, { sessionId, baseUrl, budget });
   const baseBytes = utf8Bytes(`${baseline.system}\n\n${baseline.task}`);
   const dropped: ManifestSkillContext[] = [];
   let indexFit: FitContextIndexResult | null = null;
@@ -2067,6 +2092,7 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
     dropped.push(...manifest.skills.filter(skill => gone.has(skill.entityId)));
     manifest.skills = manifest.skills.filter(skill => !gone.has(skill.entityId));
     manifest.contextIndex = indexFit.index;
+    input.onIndexFit?.(indexFit, candidates);
   } else {
     let indexBytes = manifest.skills.length ? utf8Bytes(serializeSkillIndex(manifest.skills)) + 1 : 0;
     while (baseBytes + indexBytes > BYTE_BUDGETS.combinedInitialInjection && manifest.skills.length) {
@@ -2143,6 +2169,19 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
           },
         }
       : {}),
+    ...(context.inFull?.length || context.inFullUnavailable?.length
+      ? {
+          inFull: {
+            ids: (context.inFull ?? []).map(entity => entity.entityId),
+            ...(context.inFullUnavailable?.length
+              ? {
+                  unavailable: [...context.inFullUnavailable],
+                  warning: `Left out on resume, gone or unreadable now: ${context.inFullUnavailable.join(', ')}`,
+                }
+              : {}),
+          },
+        }
+      : {}),
     ...(request.contextBudgets
       ? {
           budgets: {
@@ -2152,7 +2191,7 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
         }
       : {}),
   };
-  composePrompt(manifest, { sessionId, baseUrl });
+  composePrompt(manifest, { sessionId, baseUrl, budget });
   return manifest;
 }
 

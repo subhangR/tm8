@@ -5485,6 +5485,14 @@ export interface ExecutionSpawnInput extends CommandContext {
    */
   inFullIds?: EntityId[];
   /**
+   * Defaults Ask Jev removed from this launch (launch card v3, decision 8).
+   * ADVISORY: it never changes what renders. `launch.preview` marks these ids
+   * `leftOut` reason `jev` and every other unticked default `unticked`; an id
+   * that is not a default, or is still selected, is ignored. Recorded as
+   * `launch.jevRemovedIds`. At most `SPAWN_SELECTION_GROUP_LIMIT`.
+   */
+  jevRemovedIds?: EntityId[];
+  /**
    * This launch's override of the pinned profile's `contextBudgets` (design
    * 01a0d348 §10 Q5.4, the launch sheet's meter): each key replaces the
    * profile's (else the node default) for this session only. Lenient: budgets

@@ -30,7 +30,8 @@ export { serializeMemoryEntry, serializeSkillIndex, serializeSkillIndexEntry, ty
  * failure mode that makes an agent look broken to the user.
  */
 
-import { assertWithinBudget, BYTE_BUDGETS, utf8Bytes } from './budgets.js';
+import { assertWithinBudget, BudgetExceededError, BYTE_BUDGETS, utf8Bytes } from './budgets.js';
+import { inFullBytesWithin, serializeInFullEntity, type PromptInFullEntity, type PromptLayout } from './in-full.js';
 import { untrustedData } from './escape.js';
 import { composeKernel } from './kernel.js';
 import {
@@ -58,6 +59,7 @@ export * from './kernel.js';
 export * from './prompt-version.js';
 export * from './templates.js';
 export * from './prompt-v2.js';
+export * from './in-full.js';
 
 export type AgentMode =
   | 'worker'
@@ -171,6 +173,8 @@ export interface PromptManifest {
    */
   contextIndex?: PromptContextIndex | undefined;
   promptExtra?: string | null | undefined;
+  /** Entities sent whole (launch card v3, `inFullIds`); see `in-full.ts`. */
+  inFull?: ReadonlyArray<PromptInFullEntity> | undefined;
 }
 
 export interface PromptRuntime {
@@ -188,6 +192,13 @@ export interface PromptRuntime {
    * caller checks the disk; this package has no `fs` (Q9).
    */
   codeGraph?: boolean | undefined;
+  /**
+   * `throw` (default, spawn): an over-budget prompt throws
+   * `BudgetExceededError`. `record` (`launch.preview`): the SAME render is
+   * returned with the overrun in `layout.overBudget`, so a dry run can show
+   * what spawn would send and why it would refuse.
+   */
+  budget?: 'throw' | 'record' | undefined;
 }
 
 export interface PromptEnvelope {
@@ -202,6 +213,8 @@ export interface PromptEnvelope {
     /** The manifest's `promptVersion`, or the default when it predates the stamp. */
     promptVersion: string;
   };
+  /** Per-section bytes of this render (absent on the v2 bootstrap-manifest path). */
+  layout?: PromptLayout & { overBudget?: { material: BudgetExceededError['material']; bytes: number; cap: number } };
 }
 
 /** The frame attribute the agent reads — not the analytics tag (`promptVersion`). */
@@ -991,6 +1004,11 @@ export function composePrompt(
   }
   s.push('  </command_surface>');
 
+  // The in-full channel, before the index and the notes (its budget comes
+  // first after the subject's; see in-full.ts).
+  const inFullSections = (manifest.inFull ?? []).map(serializeInFullEntity);
+  s.push(...inFullSections);
+
   const skillIndex = serializeLaunchIndex(manifest);
   if (skillIndex) s.push(skillIndex);
 
@@ -1006,6 +1024,10 @@ export function composePrompt(
   }
 
   s.push('</tm8_system_prompt>');
+  const notesBytes = manifest.promptExtra
+    ? utf8Bytes(untrustedData({ type: 'launch-context', body: manifest.promptExtra })) + 1
+    : 0;
+  const indexBytes = skillIndex ? utf8Bytes(skillIndex) + 1 : 0;
 
   // ---- task --------------------------------------------------------------
   const t: string[] = [];
@@ -1074,9 +1096,26 @@ export function composePrompt(
    * byte-for-byte unchanged when it fits. Coordinator directives remain
    * inline because the v1 manifest has no durable directive id to reference.
    */
+  const record = runtime.budget === 'record';
+  let overBudget: NonNullable<PromptEnvelope['layout']>['overBudget'];
+  const over = (error: unknown): void => {
+    if (!record || !(error instanceof BudgetExceededError)) throw error;
+    overBudget ??= { material: error.material, bytes: error.bytes, cap: error.cap };
+  };
+  // Launch card v3 budget order (in-full.ts): a subject past the in-full
+  // budget on its own goes to reference mode, never a refusal; then the
+  // subject (when inline) and the in-full extras must fit that budget.
+  const subjectOverOwnBudget = tasks.length > 0 && utf8Bytes(inlineTask) > BYTE_BUDGETS.inFullInjection;
+  let inFullBytes = 0;
+  try {
+    inFullBytes = inFullBytesWithin(utf8Bytes(inlineTask), tasks.length > 0 && !subjectOverOwnBudget, inFullSections);
+  } catch (error) {
+    over(error);
+    inFullBytes = error instanceof BudgetExceededError ? error.bytes : 0;
+  }
   if (
     tasks.length > 0
-    && utf8Bytes(`${system}\n\n${inlineTask}`) > BYTE_BUDGETS.combinedInitialInjection
+    && (subjectOverOwnBudget || utf8Bytes(`${system}\n\n${inlineTask}`) > BYTE_BUDGETS.combinedInitialInjection)
   ) {
     const referenced: string[] = [`<tm8_task_prompt count="${tasks.length}" delivery="reference">`];
     for (const assigned of tasks) {
@@ -1106,7 +1145,10 @@ export function composePrompt(
   // push the envelope over sit at the tail. Throwing refuses the launch loudly
   // instead. Headroom is real, not theoretical: the largest persona in the prod
   // graph is 6,680 bytes against this 32,768-byte cap.
-  assertWithinBudget('combinedInitialInjection', `${system}\n\n${task}`);
+  const totalBytes = utf8Bytes(`${system}\n\n${task}`);
+  if (totalBytes > BYTE_BUDGETS.combinedInitialInjection) {
+    over(new BudgetExceededError('combinedInitialInjection', totalBytes, BYTE_BUDGETS.combinedInitialInjection));
+  }
 
   return {
     system,
@@ -1118,6 +1160,20 @@ export function composePrompt(
       taskCount: tasks.length,
       commandCount: commands.length,
       promptVersion,
+    },
+    layout: {
+      taskBytes: utf8Bytes(task),
+      taskDelivery: tasks.length === 0 ? 'none' : task === inlineTask ? 'inline' : 'reference',
+      inFull: (manifest.inFull ?? []).map((entity, i) => ({
+        entityId: entity.entityId,
+        kind: entity.kind,
+        title: entity.title ?? '',
+        bytes: utf8Bytes(inFullSections[i]!) + 1,
+      })),
+      inFullBytes,
+      notesBytes,
+      indexBytes,
+      ...(overBudget ? { overBudget } : {}),
     },
   };
 }

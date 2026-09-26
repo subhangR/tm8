@@ -321,6 +321,24 @@ export interface LoadSpawnContextInput {
    * make a session impossible to resume.
    */
   selectionReplay?: boolean;
+  /**
+   * `ExecutionSpawnInput.inFullIds` (launch card v3, decision 1): entities
+   * sent whole. Each must be a live task, doc, memory or skill the caller can
+   * read in this space; the loader refuses otherwise (`invalid_input` with
+   * `reason: 'in_full_kind_not_allowed'`, else `not_found`), both with `ids`.
+   */
+  inFullIds?: string[];
+  /**
+   * `inFullIds` is a RESUME re-reading the launch's recorded ids: one that is
+   * gone or unreadable now is left out (`SpawnContext.inFullUnavailable`), not
+   * refused, exactly as `selectionReplay` prunes a selection.
+   */
+  inFullReplay?: boolean;
+  /**
+   * Skip the pre-read skill scan (`launch.preview`): the scan refreshes cached
+   * skill rows, and a dry run writes nothing.
+   */
+  skipSkillScan?: boolean;
 }
 
 /**
@@ -396,6 +414,16 @@ export interface SessionLaunchPosture {
   skillOverrides?: Record<string, unknown> | null;
   /** `context.index.source`: the launch rendered `<context_index>`; resume renders it too. */
   contextIndex?: 'env' | 'profile' | 'default' | null;
+  /**
+   * `launch.reasoningEffort`, which resume replays (launch card v3, decision
+   * 2). Stored JSON, narrowed before use. A child never inherits it: only a
+   * resume is the same launch.
+   */
+  reasoningEffort?: string | null;
+  /** `launch.inFullIds`, which resume re-reads as the entities are now. Stored JSON, parsed before use. */
+  inFullIds?: unknown;
+  /** `launch.jevRemovedIds`, carried into the resumed launch record. Stored JSON, parsed before use. */
+  jevRemovedIds?: unknown;
 }
 
 /** A project as the server computed it — `workingDir` is graph truth (S11). */
@@ -575,6 +603,23 @@ export interface SpawnContext {
    * keeps its roster (`applyDispatcherTeammates` removes the set).
    */
   teammates?: DispatcherRoster['members'];
+  /**
+   * The launch's `inFullIds`, read whole, in request order, deduplicated, the
+   * subject task left out (it is already `<task>`). Absent when none were sent.
+   */
+  inFull?: InFullEntity[];
+  /** Resume only: recorded `inFullIds` that are gone or unreadable now, left out. */
+  inFullUnavailable?: string[];
+}
+
+/** One entity sent in full (`ExecutionSpawnInput.inFullIds`), as the loader read it. */
+export interface InFullEntity {
+  entityId: string;
+  kind: 'task' | 'doc' | 'memory' | 'skill';
+  title: string;
+  version: number;
+  /** The whole text as the agent receives it (graph content, rendered untrusted). */
+  body: string;
 }
 
 /** The teammates a dispatcher routes to, as `loadDispatcherRoster` read them. */
@@ -729,6 +774,12 @@ export interface ManifestContext {
    * ceiling (§10 Q1 rule 2) — so the sub-cap is never exceeded silently.
    */
   budgets?: ContextBudgetsRecord;
+  /**
+   * The in-full channel (launch card v3, decision 1): what was sent whole,
+   * and on a resume which recorded ids were left out because they are gone
+   * or unreadable now, with the warning that says so.
+   */
+  inFull?: { ids: string[]; unavailable?: string[]; warning?: string };
 }
 
 /**
@@ -1395,6 +1446,14 @@ export interface Tm8Manifest {
      */
     contextBudgets?: ContextBudgets;
     /**
+     * `ExecutionSpawnInput.inFullIds` as requested (launch card v3, decision
+     * 1). Absent when the launch sent none. Resume re-reads them as they are
+     * then, never the recorded texts.
+     */
+    inFullIds?: string[];
+    /** `ExecutionSpawnInput.jevRemovedIds` as sent (advisory; nothing renders from it). */
+    jevRemovedIds?: string[];
+    /**
      * The launch UI's harness pick (or the one a resume replays), when there
      * was one; claude-code lanes only. See `ResolvedLaunchConfig.harnessChoice`.
      */
@@ -1466,6 +1525,9 @@ export interface Tm8Manifest {
 
   /** Extra prompt context from `ExecutionSpawnInput.promptExtra`. */
   promptExtra: string | null;
+
+  /** The entities sent in full, as read at this launch (or resume); absent when none. */
+  inFull?: InFullEntity[];
 }
 
 // --- SpawnService inputs/outputs ---------------------------------------------
@@ -1513,6 +1575,10 @@ export interface SpawnRequest {
   selectionReasons?: Partial<Record<SpawnSelectionGroup, SpawnSelectionDefaultReason>>;
   /** This launch's `contextBudgets` override (`ExecutionSpawnInput.contextBudgets`). */
   contextBudgets?: ContextBudgets;
+  /** Entities sent whole (`ExecutionSpawnInput.inFullIds`); see `LoadSpawnContextInput.inFullIds`. */
+  inFullIds?: string[];
+  /** Defaults Ask Jev removed (`ExecutionSpawnInput.jevRemovedIds`): advisory, recorded only. */
+  jevRemovedIds?: string[];
   /**
    * Set by resume only, never from the wire: the recorded selection could not
    * be parsed, so every group loaded its defaults. Audited as `replay-invalid`.
