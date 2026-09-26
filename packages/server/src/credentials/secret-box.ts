@@ -41,10 +41,25 @@ export interface SpaceLinkSecretBinding {
   readonly targetSpaceId: string;
 }
 
-export type SecretBinding = AccountSecretBinding | SpaceSecretBinding | SpaceLinkSecretBinding;
+/**
+ * A member's gate session on a remote server (W8): AAD
+ * `server-gate|<home_space_id>|<server_id>|<member_id>`. The literal prefix
+ * keeps it apart from every other form, whatever the ids hold.
+ */
+export interface ServerGateSecretBinding {
+  readonly homeSpaceId: string;
+  readonly serverId: string;
+  readonly memberId: string;
+}
 
-/** The AAD string for `binding`; for a link, the value 251's `aad` column holds. */
+export type SecretBinding =
+  | AccountSecretBinding | SpaceSecretBinding | SpaceLinkSecretBinding | ServerGateSecretBinding;
+
+/** The AAD string for `binding`; for a link or server gate, the value its `aad` column holds. */
 export function bindingAad(binding: SecretBinding): string {
+  if ('serverId' in binding) {
+    return `server-gate|${binding.homeSpaceId}|${binding.serverId}|${binding.memberId}`;
+  }
   if ('linkId' in binding) {
     return `${binding.homeSpaceId}|${binding.linkId}|${binding.memberId}|${binding.targetSpaceId}`;
   }

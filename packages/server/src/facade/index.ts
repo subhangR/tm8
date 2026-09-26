@@ -90,6 +90,7 @@ import {
   type CredentialHandlerDeps,
 } from './handlers/w2/credentials.js';
 import { registerSpaceLinkHandlers, type SpaceLinkHandlerDeps } from './handlers/w2/space-links.js';
+import { DisabledRemoteInvokeForwarder } from '../remote/forwarder.js';
 import { registerVoiceHandlers } from './handlers/voice.js';
 import { registerChatHandlers, type ChatHandlerDeps } from '../chat/handlers.js';
 
@@ -197,6 +198,7 @@ export function registerFacadeHandlers(
     db: deps.db,
     config: deps.config,
     owner: deps.owner ?? createLoopbackOwnerResolver(deps.db),
+    remoteInvokeForwarder: new DisabledRemoteInvokeForwarder(),
   };
 
   /**

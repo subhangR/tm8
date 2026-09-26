@@ -9,10 +9,17 @@
 import type { Db } from '../db/types.js';
 import type { ServerConfig } from '../http/config.js';
 import type { LoopbackOwner } from '../identity/loopback.js';
+import type { RemoteInvokeForwarder } from '../remote/forwarder.js';
 
 export interface FacadeDeps {
   readonly db: Db;
   readonly config: ServerConfig;
   /** The v1 loopback auto-owner, resolved once per process. */
   readonly owner: () => Promise<LoopbackOwner>;
+  /**
+   * W8: forwards `spaceLinks.invoke` to a link whose target is on another
+   * server. W7 passes it into `SpaceLinkInvokeOptions.forwarder`. Today it
+   * refuses every call with `remote_links_disabled` (remote/forwarder.ts).
+   */
+  readonly remoteInvokeForwarder?: RemoteInvokeForwarder;
 }
