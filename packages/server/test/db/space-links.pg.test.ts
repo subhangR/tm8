@@ -804,3 +804,55 @@ describe('W6 × W4 — session listing and revoke meet a link session', () => {
     await store.login(claims, link.id, { relogin: true });
   });
 });
+
+// identity_id() gate (tools/ci/identity-id-gate.sh): add_space_link and
+// space_link_json read the caller's TARGET membership through is_space_member,
+// so the 227 session pin holds. Design: a link is created and signed in from an
+// UNPINNED human session (the gate browser session issue_auth_session mints, or
+// cli) — the only session that is a member of both sides at once, and the same
+// rule store_space_link_session already applied to login. A session pinned to
+// either space reaches only that space: pinned to the home it can list the
+// home's links but not name, add or sign in to the target; pinned to the target
+// it cannot create, read or act on the home's links. H is still an active member
+// of A and B at this point in the file (H3 was removed from A above).
+describe('W6 pin — link creation needs an unpinned human session; a pinned one reaches only its own space', () => {
+  it('positive — unpinned: H adds A → B, signs in, and list names the target', async () => {
+    const unpinned = await hClaims();
+    const added = await store.add(unpinned, { spaceId: fixture.spaceA, targetSpaceId: fixture.spaceB });
+    expect(added.targetSpaceName).toEqual(expect.any(String));
+    const signedIn = await store.login(unpinned, added.id, { relogin: added.mine?.status !== 'signed_out' });
+    expect(signedIn.mine).toMatchObject({ status: 'signed_in' });
+    const listed = (await store.list(unpinned, fixture.spaceA)).find((l) => l.id === added.id);
+    expect(listed!.targetSpaceName).toBe(added.targetSpaceName);
+  });
+
+  it('pinned to the home A: add A → B is refused as not found, login is refused, list works without the target name', async () => {
+    const link = await store.add(await hClaims(), { spaceId: fixture.spaceA, targetSpaceId: fixture.spaceB });
+    const pinnedA: DbClaims = { ...(await hClaims()), sessionSpaceId: fixture.spaceA };
+    expect(await outcome(() => store.add(pinnedA, { spaceId: fixture.spaceA, targetSpaceId: fixture.spaceB }))).toBe('P0002');
+    expect(await outcome(() => store.login(pinnedA, link.id, { relogin: true }))).toBe('42501');
+    const listed = (await store.list(pinnedA, fixture.spaceA)).find((l) => l.id === link.id);
+    expect(listed).toBeDefined();
+    expect(listed!.targetSpaceName).toBeNull();
+  });
+
+  it('pinned to the target B: cannot create, read or act on A\'s links', async () => {
+    const link = await store.add(await hClaims(), { spaceId: fixture.spaceA, targetSpaceId: fixture.spaceB });
+    const pinnedB: DbClaims = { ...(await hClaims()), sessionSpaceId: fixture.spaceB };
+    const refusals = {
+      add: await outcome(() => store.add(pinnedB, { spaceId: fixture.spaceA, targetSpaceId: fixture.spaceB })),
+      list: await outcome(() => store.list(pinnedB, fixture.spaceA)),
+      login: await outcome(() => store.login(pinnedB, link.id, { relogin: true })),
+      logout: await outcome(() => db.rpc(pinnedB, 'logout_space_link', [link.id])),
+      setSpawn: await outcome(() => db.rpc(pinnedB, 'set_space_link_spawn', [link.id, false, 1])),
+      remove: await outcome(() => db.rpc(pinnedB, 'remove_space_link', [link.id])),
+      open: await outcome(() => db.rpc(pinnedB, 'open_space_link_token', [link.id])),
+    };
+    expect(refusals).toEqual({
+      add: '42501', list: '42501', login: 'P0002', logout: 'P0002', setSpawn: 'P0002', remove: 'P0002', open: 'P0002',
+    });
+    // Paired positive: the link is untouched and the unpinned session still reads it.
+    const after = (await store.list(await hClaims(), fixture.spaceA)).find((l) => l.id === link.id);
+    expect(after).toBeDefined();
+  });
+});

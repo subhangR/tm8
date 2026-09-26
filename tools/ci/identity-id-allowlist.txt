@@ -93,6 +93,7 @@ identity_id policy node_credential_policies_identity_select on table public.node
 identity_id policy notifications_select on table public.notifications  # GUARDED: members subqueries, pinned by members_select; T9 "B's inbox row is invisible by id"
 identity_id policy read_marks_select on table public.read_marks  # GUARDED: members subquery, pinned by members_select
 identity_id policy saved_views_select on table public.saved_views  # GUARDED: member_space_ids (pinned) AND own or space-shared
+identity_id policy space_link_tokens_select on table public.space_link_tokens  # GUARDED: own member row only (m.identity_id = caller, active) with an inline session_space_id conjunct on m.space_id, so a pinned session sees only its pinned-space member's rows; node admin gets no bypass (251_space_link_tokens.sql)
 identity_id policy stream_grants_select on table public.stream_grants  # closed by 247: the subject_identity = caller arm also requires internal.stream_grant_in_pin (the grant's session or container is in the pinned space); the readable-entity arm reads entities under RLS; was KNOWN-GAP P6 (verified by review 5324246747) (247_command_ledger_session_space_pin.sql)
 identity_id policy user_profiles_select on table public.user_profiles  # GUARDED: own row, or co-members through two members subqueries pinned by members_select
 identity_id policy work_session_view_preferences_select on table public.work_session_view_preferences  # GUARDED: readable entity (RLS) AND own member row (pinned)
@@ -129,6 +130,7 @@ current_account_id public.set_node_credential_policy(p_provider text, p_allow_no
 current_account_id public.set_space_credential_policy(p_space_id uuid, p_provider text, p_allowed_sources text[])
 current_account_id public.start_credential_session(p_space_id uuid, p_provider text, p_ttl_seconds integer, p_session_cap integer)
 current_account_id public.start_space_credential_login(p_space_id uuid, p_provider text, p_label text, p_credential_id uuid, p_ttl_seconds integer, p_session_cap integer)
+current_account_id public.store_space_link_session(p_link_id uuid, p_session_id uuid, p_token_hash text, p_expires_at timestamp with time zone, p_ciphertext bytea, p_nonce bytea, p_operation text, p_client_mutation_id text)  # ACCOUNT: mints a link session for the caller's own account only; require_human_auth_kind; the row comes through space_link_own_row -> current_member_id (pinned) and the target through is_space_member (pinned), so a session pinned elsewhere cannot mint for the target (251_space_link_tokens.sql)
 require_identity internal.require_human_space_admin(target_space uuid)
 require_identity internal.require_node_admin()
 require_identity internal.require_space_admin(target_space uuid)

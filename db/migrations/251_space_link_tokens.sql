@@ -176,10 +176,7 @@ returns jsonb language sql stable security definer set search_path = public, int
     'targetSpaceName', (select s.name from public.spaces s
                          where s.id = l.target_space_id
                            and l.target_server_id is null
-                           and exists (select 1 from public.members m
-                                        where m.space_id = s.id
-                                          and m.identity_id = internal.identity_id()
-                                          and m.status = 'active')),
+                           and internal.is_space_member(s.id)),
     'createdAt', l.created_at,
     'statusSummary', jsonb_build_object(
       'signedIn',    (select count(*) from public.space_link_tokens t where t.link_id = l.entity_id and t.status = 'signed_in'),
@@ -243,12 +240,11 @@ begin
   if p_target_space_id is null or p_target_space_id = p_space_id then
     raise exception 'a space link needs a target space other than its home' using errcode = '22023';
   end if;
-  -- Same server: the caller must be an active member of the target. The same
-  -- answer for "no such space" and "not a member", so add does not probe.
-  if not exists (select 1 from public.members m
-                  where m.space_id = p_target_space_id
-                    and m.identity_id = internal.identity_id()
-                    and m.status = 'active') then
+  -- Same server: the caller must be an active member of the target, through
+  -- is_space_member so the session pin holds (a session pinned to the home space
+  -- cannot reach the target; the same rule store_space_link_session applies). The
+  -- same answer for "no such space" and "not a member", so add does not probe.
+  if not internal.is_space_member(p_target_space_id) then
     raise exception 'target space not found' using errcode = 'P0002';
   end if;
 
