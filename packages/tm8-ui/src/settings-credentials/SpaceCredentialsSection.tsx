@@ -31,21 +31,31 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import type {
   CredentialPolicySource,
+  CredentialsSpaceCreateInput,
   CredentialsSpacePolicyView,
+  CredentialsSpaceUsageView,
   SpaceCredentialProviderName,
   SpaceCredentialView,
 } from '@tm8/contract';
 import { SectionAbsent, SectionFrame } from '../settings-space';
 import type { SpaceCredentialsPort, SpaceCredentialsViewer, SpaceLoginProvider, SpaceLoginTarget } from './space-port';
 import {
+  SHARED_SERVER_WARNING,
   SOURCE_WORD,
   SPACE_CREDENTIAL_PROVIDERS,
   SPACE_PROVIDER_NAME,
   SPACE_SECRET_NOUN,
   afterDeleteNotice,
   allowedSourcesOf,
+  canClaim,
   canManage,
+  canMyDefault,
+  canRevoke,
+  canSeeUsage,
+  canSetVisibility,
   creatorLabel,
+  ownerLabel,
+  visibilityWord,
   failureOf,
   formatWhen,
   groupByProvider,
@@ -119,9 +129,10 @@ export function SpaceCredentialsSection({ port, heading = 'Space credentials', s
     <SectionFrame title={heading}>
       <div className="set-spc" data-testid="space-credentials">
         <p className="set-spc__lede">
-          Keys this space owns. Every member can launch with them; a launch picks yours first, then the
-          space&apos;s default, then the node&apos;s, unless a policy below says otherwise. Only a
-          credential&apos;s creator and space admins can change or delete it.
+          Keys in this space. Every member can launch with a public one; a private one is its
+          owner&apos;s alone. A launch picks yours first, then the space&apos;s default, then the
+          node&apos;s, unless a policy below says otherwise. An owned credential is changed by its
+          owner; any other by its creator or a space admin.
         </p>
         {notice ? (
           <div className="cred-notice set-spc__notice" role="status" data-testid="space-cred-notice">
@@ -179,6 +190,8 @@ function ProviderGroup({
   const [login, setLogin] = useState<OpenSpaceLogin | null>(null);
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginFailure, setLoginFailure] = useState<SpaceLoginStartFailure | null>(null);
+  // The view carries no "my default": it is known here from the set/clear answer.
+  const [myDefault, setMyDefaultId] = useState<string | null>(null);
 
   // A login whose credential has left the list (deleted here, or by anyone)
   // has no row left to finish onto: close its panel instead of holding the
@@ -192,13 +205,53 @@ function ProviderGroup({
   }, [allRows, login]);
 
   /** Resolves to the refusal, or null once the terminal is open. */
-  async function startLogin(target: SpaceLoginTarget): Promise<SpaceLoginStartFailure | null> {
+  async function startLogin(target: SpaceLoginTarget, opts: { asPrivate?: boolean } = {}): Promise<SpaceLoginStartFailure | null> {
     if (!isLoginProvider(provider)) return null;
     setLoginBusy(true);
     setLoginFailure(null);
     try {
       const started = await port.startLogin(provider, target);
-      const label = started.spaceCredential?.label ?? target.label ?? allRows.find((r) => r.id === target.credentialId)?.label ?? '';
+      // "Add to this space as private" for a login (doc 13 §7): a FRESH
+      // sign-in — no login file is ever copied. The pending row is claimed
+      // and made private BEFORE the terminal is shown, so nobody else can
+      // launch on it or open its terminal once it is signed in. The server
+      // login PTY already runs from login.start, so EVERY throw from here
+      // to setLogin lands in the one catch below, which deletes the pending
+      // row (terminating that PTY) instead of leaving it live until the TTL
+      // sweep.
+      const pendingId = started.spaceCredential?.id ?? null;
+      let label = target.label ?? '';
+      try {
+        label = started.spaceCredential?.label ?? target.label ?? allRows.find((r) => r.id === target.credentialId)?.label ?? '';
+        if (opts.asPrivate) {
+          if (!pendingId) throw new Error('the server did not name the pending credential');
+          await port.claim(pendingId);
+          await port.setVisibility(pendingId, 'private');
+        }
+      } catch (err) {
+        if (!opts.asPrivate) throw err;
+        const why = failureOf(err);
+        let removed = false;
+        if (pendingId) {
+          try {
+            await port.remove(pendingId);
+            removed = true;
+          } catch {
+            // The pending row stays; the text below says to delete it.
+          }
+        }
+        setLoginFailure({
+          kind: 'failure',
+          failure: {
+            kind: why.kind,
+            text: removed
+              ? `The login for “${label}” was not opened: it could not be made private. ${why.text} Nothing was signed in, and the pending “${label}” was deleted.`
+              : `The login for “${label}” was not opened: it could not be made private. ${why.text} Nothing was signed in; delete the pending “${label}” to free its label.`,
+          },
+        });
+        await onChanged();
+        return { kind: 'failure', failure: why };
+      }
       setLogin({
         provider,
         workSessionId: started.workSessionId,
@@ -206,7 +259,9 @@ function ProviderGroup({
         command: started.command,
         credentialId: started.spaceCredential?.id ?? target.credentialId ?? null,
         seen: false,
-        lede: target.credentialId
+        lede: opts.asPrivate
+          ? `Logging in for your new private credential “${label}”. Only you can launch with it or open its terminals. Follow the terminal prompts, then press “I’ve finished signing in”.`
+          : target.credentialId
           ? `Logging in again onto the space credential “${label}”. Follow the terminal prompts, then press “I’ve finished signing in”. Until it completes, “${label}” keeps the login it had.`
           : `Logging in for the new space credential “${label}”. It belongs to the space, not your account. Follow the terminal prompts, then press “I’ve finished signing in”.`,
       });
@@ -260,11 +315,12 @@ function ProviderGroup({
       ) : (
         <ul className="set-spc__list">
           {rows.map((row) => (
-            <CredentialRow key={row.id} row={row} allRows={allRows} viewer={viewer} port={port} onChanged={onChanged} login={loginControls} />
+            <CredentialRow key={row.id} row={row} allRows={allRows} viewer={viewer} port={port} onChanged={onChanged} login={loginControls}
+              myDefault={myDefault === row.id} onMyDefault={setMyDefaultId} />
           ))}
         </ul>
       )}
-      <AddByKey provider={provider} rows={allRows} port={port} onChanged={onChanged} login={loginControls} />
+      <AddByKey provider={provider} rows={allRows} viewer={viewer} port={port} onChanged={onChanged} login={loginControls} />
       {loginFailure ? (
         <LoginStartFailure failure={loginFailure} provider={provider} allRows={allRows} viewer={viewer} login={loginControls} />
       ) : null}
@@ -289,6 +345,8 @@ function CredentialRow({
   port,
   onChanged,
   login,
+  myDefault,
+  onMyDefault,
 }: {
   row: SpaceCredentialView;
   allRows: SpaceCredentialView[];
@@ -296,9 +354,18 @@ function CredentialRow({
   port: SpaceCredentialsPort;
   onChanged(message?: string): Promise<void>;
   login: LoginControls | null;
+  /** This row is the viewer's own default for its provider, as last set here. */
+  myDefault: boolean;
+  onMyDefault(credentialId: string | null): void;
 }) {
   const manage = canManage(row, viewer);
-  const [mode, setMode] = useState<'idle' | 'rename' | 'rekey' | 'confirm-delete'>('idle');
+  const revoke = canRevoke(row, viewer);
+  const owner = canSetVisibility(row, viewer);
+  const claimable = canClaim(row, viewer);
+  const mine = canMyDefault(row, viewer);
+  const usageAllowed = canSeeUsage(row, viewer);
+  const [mode, setMode] = useState<'idle' | 'rename' | 'rekey' | 'confirm-delete' | 'confirm-private'>('idle');
+  const [usage, setUsage] = useState<CredentialsSpaceUsageView | null>(null);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState<null | 'probe' | 'plain'>(null);
   const [failure, setFailure] = useState<SpaceCredentialFailure | null>(null);
@@ -325,25 +392,129 @@ function CredentialRow({
   const secretProblem = mode === 'rekey' ? validateSecret(draft) : null;
   const pasted = row.shape !== 'login';
   const statusWord = row.status === 'stale' ? 'failed its last check' : row.status === 'pending' ? 'login not finished' : 'active';
+  const visibility = visibilityWord(row);
+  const ownedBy = ownerLabel(row, viewer);
+
+  async function toggleUsage() {
+    if (usage) { setUsage(null); return; }
+    setBusy('plain');
+    setFailure(null);
+    try {
+      setUsage(await port.usage(row.id));
+    } catch (err) {
+      setFailure(failureOf(err));
+    } finally {
+      setBusy(null);
+    }
+  }
 
   return (
     <li className={`set-spc__row set-spc__row--${row.status}`} data-testid={`space-cred-row-${row.id}`}>
       <div className="set-spc__row-head">
         <span className="set-spc__label">{row.label}</span>
         {row.isDefault ? <span className="set-spc__badge set-spc__badge--default">default</span> : null}
+        {myDefault ? <span className="set-spc__badge set-spc__badge--default" data-testid={`space-cred-my-default-${row.id}`}>my default</span> : null}
+        {visibility ? (
+          <span className={`set-spc__badge set-spc__badge--${visibility}`} data-testid={`space-cred-visibility-${row.id}`}>{visibility}</span>
+        ) : null}
         <span className={`set-spc__badge set-spc__badge--${row.status}`}>{statusWord}</span>
       </div>
       <div className="set-spc__meta">
         <span>{row.shape === 'login' ? 'login' : row.shape === 'token' ? 'token' : 'API key'}</span>
         {row.keyHint ? <span data-testid={`space-cred-hint-${row.id}`}>ends …{row.keyHint}</span> : null}
         {row.displayLogin ? <span>as {row.displayLogin}</span> : null}
+        {ownedBy ? <span data-testid={`space-cred-owner-${row.id}`}>owned by {ownedBy}</span> : null}
         <span>added by {creatorLabel(row, viewer)}</span>
         <span>last used {formatWhen(row.lastUsedAt)}</span>
       </div>
 
-      {manage ? (
+      {owner || claimable || mine || usageAllowed ? (
+        <div className="cred-card__actions set-spc__actions" data-testid={`space-cred-owner-actions-${row.id}`}>
+          {claimable ? (
+            <button type="button" className="cred-action" aria-label={`Claim as mine ${row.label}`} disabled={busy !== null}
+              onClick={() => void run('plain', async () => { await port.claim(row.id); return `“${row.label}” is now yours. It stays public until you make it private.`; })}>
+              Claim as mine
+            </button>
+          ) : null}
+          {owner && row.visibility === 'private' ? (
+            <button type="button" className="cred-action" aria-label={`Make public ${row.label}`} disabled={busy !== null}
+              onClick={() => void run('plain', async () => { await port.setVisibility(row.id, 'public'); return `“${row.label}” is public: every member can launch with it.`; })}>
+              Make public
+            </button>
+          ) : null}
+          {owner && row.visibility !== 'private' ? (
+            <button type="button" className="cred-action" aria-label={`Make private ${row.label}`} disabled={busy !== null}
+              onClick={() => { setFailure(null); setMode(mode === 'confirm-private' ? 'idle' : 'confirm-private'); }}>
+              Make private
+            </button>
+          ) : null}
+          {owner && row.visibility === 'public' ? (
+            <button type="button" className="cred-action" aria-pressed={row.mayBeSpaceDefault === true}
+              aria-label={`${row.mayBeSpaceDefault ? 'Withdraw space-default consent' : 'Allow as space default'} ${row.label}`} disabled={busy !== null}
+              onClick={() => void run('plain', async () => {
+                const next = row.mayBeSpaceDefault !== true;
+                await port.spaceDefaultConsent(row.id, next);
+                return next
+                  ? `“${row.label}” may now be made the space default.`
+                  : `“${row.label}” may no longer be the space default${row.isDefault ? ', so the space has no default for it now' : ''}.`;
+              })}>
+              {row.mayBeSpaceDefault ? 'Withdraw space-default consent' : 'Allow as space default'}
+            </button>
+          ) : null}
+          {mine && !myDefault ? (
+            <button type="button" className="cred-action" aria-label={`Make my default ${row.label}`} disabled={busy !== null}
+              onClick={() => void run('plain', async () => {
+                const result = await port.setMyDefault(row.id);
+                onMyDefault(result.credentialId);
+                return `Your ${SPACE_PROVIDER_NAME[row.provider]} launches in this space now use “${row.label}” first.`;
+              })}>
+              Make my default
+            </button>
+          ) : null}
+          {myDefault ? (
+            <button type="button" className="cred-action" aria-label={`Clear my default ${row.label}`} disabled={busy !== null}
+              onClick={() => void run('plain', async () => {
+                const result = await port.clearMyDefault(row.provider);
+                onMyDefault(result.credentialId);
+                return `You have no ${SPACE_PROVIDER_NAME[row.provider]} default of your own in this space now.`;
+              })}>
+              Clear my default
+            </button>
+          ) : null}
+          {usageAllowed ? (
+            <button type="button" className="cred-action" aria-expanded={usage !== null} aria-label={`Usage ${row.label}`} disabled={busy !== null}
+              onClick={() => void toggleUsage()}>
+              {usage ? 'Hide usage' : 'Usage'}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {owner && mode === 'confirm-private' ? (
+        <div className="set-spc__confirm" data-testid={`space-cred-private-confirm-${row.id}`}>
+          {viewer?.sharedServer ? (
+            <p className="set-spc__warn" data-testid="space-cred-shared-warning">{SHARED_SERVER_WARNING}</p>
+          ) : null}
+          <p className="set-spc__muted">Sessions other members launched with it end now, and it stops being any default.</p>
+          <div className="cred-card__actions">
+            <button type="button" className="cred-action cred-action--primary" aria-label={`Confirm make private ${row.label}`} disabled={busy !== null}
+              onClick={() => void run('plain', async () => {
+                const result = await port.setVisibility(row.id, 'private');
+                const ended = result.terminatedAgentSessionIds.length;
+                return `“${row.label}” is private.${ended ? ` ${ended} session${ended === 1 ? '' : 's'} another member launched with it ended.` : ''}`;
+              })}>
+              Make private
+            </button>
+            <button type="button" className="cred-action" aria-label={`Keep public ${row.label}`} onClick={() => setMode('idle')}>Keep public</button>
+          </div>
+        </div>
+      ) : null}
+
+      {usage ? <UsageList usage={usage} viewer={viewer} /> : null}
+
+      {manage || revoke ? (
         <div className="cred-card__actions set-spc__actions">
-          {!row.isDefault && row.status === 'active' ? (
+          {manage && !row.isDefault && row.status === 'active' ? (
             <button
               type="button"
               className="cred-action"
@@ -354,18 +525,20 @@ function CredentialRow({
               Make default
             </button>
           ) : null}
-          <button type="button" className="cred-action" aria-label={`Rename ${row.label}`} disabled={busy !== null}
-            onClick={() => { setDraft(row.label); setFailure(null); setMode(mode === 'rename' ? 'idle' : 'rename'); }}>
-            Rename
-          </button>
-          {!pasted && login ? (
+          {manage ? (
+            <button type="button" className="cred-action" aria-label={`Rename ${row.label}`} disabled={busy !== null}
+              onClick={() => { setDraft(row.label); setFailure(null); setMode(mode === 'rename' ? 'idle' : 'rename'); }}>
+              Rename
+            </button>
+          ) : null}
+          {manage && !pasted && login ? (
             <button type="button" className="cred-action" aria-label={`Log in again ${row.label}`}
               disabled={busy !== null || login.busy}
               onClick={() => void login.start({ credentialId: row.id })}>
               Log in again
             </button>
           ) : null}
-          {pasted ? (
+          {manage && pasted ? (
             <button type="button" className="cred-action" aria-label={`Replace ${SPACE_SECRET_NOUN[row.provider]} ${row.label}`} disabled={busy !== null}
               onClick={() => { setDraft(''); setFailure(null); setMode(mode === 'rekey' ? 'idle' : 'rekey'); }}>
               Replace {SPACE_SECRET_NOUN[row.provider]}
@@ -391,11 +564,20 @@ function CredentialRow({
         </div>
       ) : (
         <p className="set-spc__muted" data-testid={`space-cred-readonly-${row.id}`}>
-          You can launch with it. Only its creator or a space admin can change it.
+          {row.ownerAccountId
+            ? row.visibility === 'private'
+              ? 'Private to another member. Only its owner can launch with it or change it.'
+              : 'You can launch with it. Only its owner can change it.'
+            : 'You can launch with it. Only its creator or a space admin can change it.'}
         </p>
       )}
+      {!manage && revoke ? (
+        <p className="set-spc__muted" data-testid={`space-cred-admin-only-${row.id}`}>
+          Another member owns it: as a space admin you can delete it, not change it.
+        </p>
+      ) : null}
 
-      {manage && mode === 'confirm-delete' ? (
+      {revoke && mode === 'confirm-delete' ? (
         <p className="set-spc__warn">
           Deleting ends every live session using this credential.
           {row.isDefault ? ' It is the default, and no other credential becomes the default in its place.' : ''}
@@ -438,15 +620,27 @@ function CredentialRow({
   );
 }
 
+/** Who a pasted key is for (doc 13 §3a, E1). `legacy` sends neither field. */
+type AddAudience = 'legacy' | 'private' | 'public' | 'space';
+
+function audienceFields(audience: AddAudience, mayBeSpaceDefault: boolean): Pick<CredentialsSpaceCreateInput, 'visibility' | 'spaceOwned' | 'mayBeSpaceDefault'> {
+  if (audience === 'private') return { visibility: 'private' };
+  if (audience === 'public') return mayBeSpaceDefault ? { visibility: 'public', mayBeSpaceDefault: true } : { visibility: 'public' };
+  if (audience === 'space') return { spaceOwned: true };
+  return {};
+}
+
 function AddByKey({
   provider,
   rows,
+  viewer,
   port,
   onChanged,
   login,
 }: {
   provider: SpaceCredentialProviderName;
   rows: SpaceCredentialView[];
+  viewer: SpaceCredentialsViewer | null;
   port: SpaceCredentialsPort;
   onChanged(message?: string): Promise<void>;
   login: LoginControls | null;
@@ -463,6 +657,12 @@ function AddByKey({
   const [secret, setSecret] = useState('');
   const [busy, setBusy] = useState<null | 'probe'>(null);
   const [failure, setFailure] = useState<SpaceCredentialFailure | null>(null);
+  const [audience, setAudience] = useState<AddAudience>('legacy');
+  const [mayBeDefault, setMayBeDefault] = useState(false);
+  /** "Add to this space as private": a fresh sign-in (Claude/Codex) or my own token re-sealed (GitHub). */
+  const [privateOpen, setPrivateOpen] = useState(false);
+  const [privateLabel, setPrivateLabel] = useState('');
+  const privateTaken = labelTakenReason(provider, privateLabel, rows);
 
   const taken = labelTakenReason(provider, label, rows);
   const secretProblem = validateSecret(secret.trim());
@@ -475,7 +675,9 @@ function AddByKey({
     setBusy('probe');
     setFailure(null);
     try {
-      const created = await port.create({ provider, shape: pasteShapeOf(provider), label: cleanLabel, secret: cleanSecret });
+      const created = await port.create({
+        provider, shape: pasteShapeOf(provider), label: cleanLabel, secret: cleanSecret, ...audienceFields(audience, mayBeDefault),
+      });
       setLabel('');
       setOpen(false);
       await onChanged(
@@ -492,20 +694,79 @@ function AddByKey({
     }
   }
 
+  async function submitPrivate(event: FormEvent) {
+    event.preventDefault();
+    const cleanLabel = privateLabel.trim();
+    if (!cleanLabel || privateTaken) return;
+    setFailure(null);
+    if (login) {
+      // A login is never copied: a fresh sign-in, claimed and made private first.
+      if (login.busy) return;
+      const refused = await login.start({ label: cleanLabel }, { asPrivate: true });
+      if (refused === null) {
+        setPrivateOpen(false);
+        setPrivateLabel('');
+      } else if (refused.kind === 'label_taken') {
+        setFailure({ kind: 'invalid', text: refused.text });
+      }
+      return;
+    }
+    if (provider !== 'github') return;
+    setBusy('probe');
+    try {
+      // The server re-seals MY server-level token; no secret passes through here.
+      const created = await port.addMine('github', cleanLabel);
+      setPrivateOpen(false);
+      setPrivateLabel('');
+      await onChanged(`Added your GitHub token to this space as “${created.label}”, private to you.`);
+    } catch (err) {
+      setFailure(failureOf(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const canAddPrivate = viewer?.accountId != null && (login !== null || provider === 'github');
+
   return (
     <div className="set-spc__add">
       <div className="cred-card__actions">
         <button type="button" className="cred-action cred-action--primary" aria-label={`Add ${name} ${noun}`}
-          aria-expanded={open} onClick={() => { setOpen(!open); setLoginOpen(false); setFailure(null); }}>
+          aria-expanded={open} onClick={() => { setOpen(!open); setLoginOpen(false); setPrivateOpen(false); setFailure(null); }}>
           + Add {noun}
         </button>
         {login ? (
           <button type="button" className="cred-action" aria-label={`Add ${name} by login`} aria-expanded={loginOpen}
-            onClick={() => { setLoginOpen(!loginOpen); setOpen(false); }}>
+            onClick={() => { setLoginOpen(!loginOpen); setOpen(false); setPrivateOpen(false); }}>
             + Add by login
           </button>
         ) : null}
+        {canAddPrivate ? (
+          <button type="button" className="cred-action" aria-label={`Add ${name} to this space as private`} aria-expanded={privateOpen}
+            onClick={() => { setPrivateOpen(!privateOpen); setOpen(false); setLoginOpen(false); setFailure(null); }}>
+            + Add to this space as private
+          </button>
+        ) : null}
       </div>
+      {privateOpen ? (
+        <form className="set-spc__form" data-testid={`space-cred-private-form-${provider}`} onSubmit={(e) => void submitPrivate(e)}>
+          <input className="set-spc__input" aria-label={`Label for your private ${name} credential`} placeholder="Label, e.g. Mine"
+            value={privateLabel} maxLength={80} onChange={(e) => setPrivateLabel(e.target.value)} />
+          <button type="submit" className="cred-action cred-action--primary" aria-label={`Add private ${name}`}
+            disabled={busy !== null || (login?.busy ?? false) || !privateLabel.trim() || privateTaken !== null}>
+            {login ? 'Open login terminal' : 'Add my token'}
+          </button>
+          {privateTaken ? <span className="set-spc__why">{privateTaken}</span> : null}
+          <span className="set-spc__why">
+            {login
+              ? 'A fresh sign-in, yours alone: your existing login is never copied.'
+              : 'Uses the GitHub token on your account, re-sealed for this space. Nothing is pasted, and no other space gets it.'}
+          </span>
+          {viewer?.sharedServer ? (
+            <p className="set-spc__warn" data-testid="space-cred-shared-warning">{SHARED_SERVER_WARNING}</p>
+          ) : null}
+        </form>
+      ) : null}
       {login && loginOpen ? (
         <form className="set-spc__form" data-testid={`space-cred-login-form-${provider}`} onSubmit={(e: FormEvent) => {
           e.preventDefault();
@@ -548,8 +809,25 @@ function AddByKey({
             disabled={busy !== null || !label.trim() || !secret.trim() || taken !== null || secretProblem !== null}>
             Save
           </button>
+          <select className="set-spc__input" aria-label={`Who can use the new ${name} ${noun}`} value={audience}
+            onChange={(e) => setAudience(e.target.value as AddAudience)}>
+            <option value="legacy">The space, until I claim it</option>
+            <option value="private">Only me (private)</option>
+            <option value="public">Every member, owned by me</option>
+            <option value="space">The space, for good</option>
+          </select>
+          {audience === 'public' ? (
+            <label className="set-spc__why">
+              <input type="checkbox" aria-label={`May be the space default ${name}`} checked={mayBeDefault}
+                onChange={(e) => setMayBeDefault(e.target.checked)} />
+              {' '}May be the space default
+            </label>
+          ) : null}
           {taken ? <span className="set-spc__why" data-testid="space-cred-label-taken">{taken}</span> : null}
           {secretProblem ? <span className="set-spc__why">{secretProblem}</span> : null}
+          {audience === 'private' && viewer?.sharedServer ? (
+            <p className="set-spc__warn" data-testid="space-cred-shared-warning">{SHARED_SERVER_WARNING}</p>
+          ) : null}
         </form>
       ) : null}
       <BusyAndFailure busy={busy} failure={failure} provider={provider} />
@@ -561,7 +839,27 @@ interface LoginControls {
   /** A start is in flight, or a login terminal is already open in this group. */
   busy: boolean;
   /** Resolves to the refusal, or null once the terminal is open. */
-  start(target: SpaceLoginTarget): Promise<SpaceLoginStartFailure | null>;
+  start(target: SpaceLoginTarget, opts?: { asPrivate?: boolean }): Promise<SpaceLoginStartFailure | null>;
+}
+
+/** The launches on one credential (`credentials.space.usage`): who, when, and how it was picked. */
+function UsageList({ usage, viewer }: { usage: CredentialsSpaceUsageView; viewer: SpaceCredentialsViewer | null }) {
+  if (usage.sessions.length === 0) {
+    return <p className="set-spc__muted" data-testid={`space-cred-usage-${usage.credentialId}`}>No launches on it yet.</p>;
+  }
+  const PICK: Record<string, string> = { pinned: 'pinned', my_default: "the launcher's own default", space_default: 'space default' };
+  return (
+    <ul className="set-spc__usage" data-testid={`space-cred-usage-${usage.credentialId}`}>
+      {usage.sessions.map((s) => (
+        <li key={s.workSessionId}>
+          {s.launcherAccountId && s.launcherAccountId === viewer?.accountId ? 'you' : s.launcherAccountId ? 'another member' : 'unknown'}
+          {' · '}{s.source ? PICK[s.source] ?? s.source : 'picked before this was recorded'}
+          {' · '}{s.status}
+          {' · '}{formatWhen(s.recordedAt)}
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 /** An open space login terminal, and the credential it logs in onto. */

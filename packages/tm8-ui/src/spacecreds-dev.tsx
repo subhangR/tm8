@@ -26,6 +26,7 @@ import type { Seam } from './data/seam';
  *
  *   /spacecreds-dev.html?view=settings            Settings → Space credentials (admin)
  *   /spacecreds-dev.html?view=settings&as=member  … as a member who created none (D11)
+ *   …&node=single                                 a single-user node: no §6b warning
  *   /spacecreds-dev.html?view=node                Settings → Node credentials (node admin)
  *   /spacecreds-dev.html?view=picker              the launch sheet's credential rows
  *   /spacecreds-dev.html?view=session             a session's launch facts (D8/D9)
@@ -36,6 +37,7 @@ const SPACE = 'space-dev';
 const params = new URLSearchParams(window.location.search);
 const view = params.get('view') ?? 'settings';
 const asMember = params.get('as') === 'member';
+const nodeSingle = params.get('node') === 'single';
 
 const at = '2026-09-20T09:30:00.000Z';
 function row(over: Partial<SpaceCredentialView> & Pick<SpaceCredentialView, 'id' | 'provider' | 'label'>): SpaceCredentialView {
@@ -46,11 +48,12 @@ function row(over: Partial<SpaceCredentialView> & Pick<SpaceCredentialView, 'id'
   } as SpaceCredentialView;
 }
 const rows: SpaceCredentialView[] = [
-  row({ id: 'c-team', provider: 'anthropic', label: 'Team Claude', isDefault: true, lastUsedAt: '2026-09-23T21:04:00.000Z' }),
-  row({ id: 'c-batch', provider: 'anthropic', label: 'Batch Claude', createdByAccountId: 'acct-other', lastUsedAt: '2026-09-22T16:40:00.000Z' }),
-  row({ id: 'c-login', provider: 'anthropic', shape: 'login', label: 'Max plan login', status: 'pending', createdByAccountId: 'acct-other' }),
-  row({ id: 'o-shared', provider: 'openai', label: 'Shared Codex', status: 'stale', createdByAccountId: null }),
-  row({ id: 'g-bot', provider: 'github', label: 'Release bot', isDefault: true, displayLogin: 'tm8-release-bot' }),
+  row({ id: 'c-team', provider: 'anthropic', label: 'Team Claude', isDefault: true, lastUsedAt: '2026-09-23T21:04:00.000Z', ownerAccountId: null, visibility: 'public' }),
+  row({ id: 'c-batch', provider: 'anthropic', label: 'Batch Claude', createdByAccountId: 'acct-other', lastUsedAt: '2026-09-22T16:40:00.000Z', ownerAccountId: 'acct-other', visibility: 'public', mayBeSpaceDefault: true }),
+  row({ id: 'c-login', provider: 'anthropic', shape: 'login', label: 'Max plan login', status: 'pending', createdByAccountId: 'acct-other', ownerAccountId: null, visibility: 'public' }),
+  row({ id: 'c-mine', provider: 'anthropic', label: 'My Claude', ownerAccountId: 'acct-me', visibility: 'private', keyHint: 'k9Qz' }),
+  row({ id: 'o-shared', provider: 'openai', label: 'Shared Codex', status: 'stale', createdByAccountId: null, ownerAccountId: null, visibility: 'public' }),
+  row({ id: 'g-bot', provider: 'github', label: 'Release bot', isDefault: true, displayLogin: 'tm8-release-bot', ownerAccountId: 'acct-me', visibility: 'public', mayBeSpaceDefault: true }),
 ];
 let policy: CredentialsSpacePolicyView = {
   spaceId: SPACE,
@@ -59,7 +62,7 @@ let policy: CredentialsSpacePolicyView = {
 };
 
 const port: SpaceCredentialsPort = {
-  viewer: async () => ({ accountId: 'acct-me', isSpaceAdmin: !asMember, isNodeAdmin: !asMember }),
+  viewer: async () => ({ accountId: 'acct-me', isSpaceAdmin: !asMember, isNodeAdmin: !asMember, sharedServer: !nodeSingle }),
   list: async () => rows.filter((r) => !(asMember && r.status === 'pending' && r.createdByAccountId !== 'acct-me')),
   create: async (input) => row({ id: `n-${rows.length}`, provider: input.provider, label: input.label }),
   rekey: async (id) => rows.find((r) => r.id === id)!,
@@ -93,6 +96,36 @@ const port: SpaceCredentialsPort = {
     if (!target.credentialId) rows.push(cred);
     openLogin = cred.id;
     return { workSessionId: 'ws-login', spaceId: SPACE, provider, expiresAt: '2026-09-24T12:15:00.000Z', command: provider === 'anthropic' ? 'claude auth login' : 'codex login', spaceCredential: cred };
+  },
+  setVisibility: async (id, visibility) => {
+    const i = rows.findIndex((r) => r.id === id);
+    rows[i] = { ...rows[i]!, visibility, ...(visibility === 'private' ? { isDefault: false, mayBeSpaceDefault: false } : {}) };
+    return { credential: rows[i]!, terminatedAgentSessionIds: visibility === 'private' ? ['s-other'] : [], failures: [] };
+  },
+  spaceDefaultConsent: async (id, allowed) => {
+    const i = rows.findIndex((r) => r.id === id);
+    rows[i] = { ...rows[i]!, mayBeSpaceDefault: allowed, ...(allowed ? {} : { isDefault: false }) };
+    return rows[i]!;
+  },
+  claim: async (id) => {
+    const i = rows.findIndex((r) => r.id === id);
+    if (id === 'c-team') throw new CollabError('forbidden', 'this credential was created as space-owned and cannot be claimed');
+    rows[i] = { ...rows[i]!, ownerAccountId: 'acct-me' };
+    return rows[i]!;
+  },
+  setMyDefault: async (id) => ({ spaceId: SPACE, provider: rows.find((r) => r.id === id)!.provider, credentialId: id }),
+  clearMyDefault: async (provider) => ({ spaceId: SPACE, provider, credentialId: null }),
+  usage: async (id) => ({
+    credentialId: id,
+    sessions: [
+      { workSessionId: 'ws-a', provider: 'anthropic', source: 'my_default', credentialId: id, ownerAccountId: 'acct-me', launcherAccountId: 'acct-me', agentSessionId: 'ag-1', status: 'running', recordedAt: '2026-09-25T08:00:00.000Z', updatedAt: '2026-09-25T08:00:00.000Z' },
+      { workSessionId: 'ws-b', provider: 'anthropic', source: 'space_default', credentialId: id, ownerAccountId: 'acct-me', launcherAccountId: 'acct-other', agentSessionId: 'ag-2', status: 'ended', recordedAt: '2026-09-24T14:10:00.000Z', updatedAt: '2026-09-24T15:00:00.000Z' },
+    ],
+  }),
+  addMine: async (provider, label) => {
+    const cred = row({ id: `m-${rows.length}`, provider, label, ownerAccountId: 'acct-me', visibility: 'private', keyHint: 'mIn3' });
+    rows.push(cred);
+    return cred;
   },
   finishLogin: async (workSessionId) => {
     const i = rows.findIndex((r) => r.id === openLogin);

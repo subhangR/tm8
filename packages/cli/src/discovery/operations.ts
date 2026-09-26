@@ -557,6 +557,17 @@ const ROWS: Record<OperationName, Row> = {
       'withdrawing consent clears the space default flag in the same statement',
     ],
   },
+  'credentials.space.addMine': {
+    cmd: null,
+    sum: 'Add your own server-level GitHub token to this space as a private credential — human sessions only',
+    authz: 'server',
+    input: 'bound',
+    tags: ['credential', 'space', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'the token is read and re-sealed server-side; a Claude or Codex login takes a fresh sign-in instead',
+    ],
+  },
   'credentials.space.claim': {
     cmd: null,
     sum: 'Take ownership of a migrated space credential you created — human sessions only',
@@ -3310,7 +3321,8 @@ export const CATALOG_DIGEST =
   // -1 containers.attention (Attention v2 S7a): read from the regenerated conformance manifest.
   // +7 spaceLinks.* (W6, 250/251, re-stacked on f54f9ffd): RECOMPUTED from JSON.stringify(OPERATIONS); equals the regenerated manifest's catalogDigest.
   // +6 credentials.space.* (W10b, merged onto main d8343503 after #864): read from the regenerated conformance manifest.
-  'sha256:e82356d2c70dd8b3d6dea41085510153d3489f7c11effbe9a230706e11e66b7e';
+  // Re-measured (W10d #883, composed onto 257 after #869/#898/#904): + credentials.space.addMine. Read from the regenerated conformance manifest.
+  'sha256:6b238c551fc1ad46d0ed85add3a62625988ebac82d67e035161663b33a0a9e7b';
 
 export const GRAMMAR_VERSION = '2';
 
