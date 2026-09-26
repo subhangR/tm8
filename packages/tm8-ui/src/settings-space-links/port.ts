@@ -4,7 +4,7 @@
  * and never imports a seam, so a fixture and a real node are indistinguishable
  * to it.
  *
- * EVERY WRITE BEHIND THIS IS HUMAN-ONLY, at the facade and again in SQL (244):
+ * EVERY WRITE BEHIND THIS IS HUMAN-ONLY, at the facade and again in SQL (251):
  * an agent is refused `forbidden` / `space_links_human_only`. The section
  * renders any refusal as a refusal, never swallowed.
  *

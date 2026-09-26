@@ -1,8 +1,8 @@
 -- =============================================================================
--- 244 — space links, part 2: sealed per-member token rows, the spaceLinks.*
+-- 251 — space links, part 2: sealed per-member token rows, the spaceLinks.*
 -- RPCs and stale handling (plan 01a0d9eb §3 W6; decisions 31, 33, 38).
 --
--- Ordinal 244 was reserved for W6 by the Phase 1b coordinator; 243 is part 1.
+-- Ordinal 251 set at the merge position (reserved as 244; re-stacked onto main f54f9ffd); 250 is part 1.
 --
 -- POSTURE — 206's, applied to one member's row instead of a space's:
 --
@@ -19,7 +19,7 @@
 --     The `aad` column stores that string and a CHECK holds it equal to the
 --     row's own columns, but the opener RECOMPUTES it from the columns: a
 --     ciphertext copied to another row, member or target does not open (T19).
---   * The plaintext is a `link` auth session (243) minted here for the target
+--   * The plaintext is a `link` auth session (250) minted here for the target
 --     space: 90 days (identity/service.ts DEFAULT_SESSION_TTL_MS.link, K10),
 --     pinned, and seen and revocable on the target's Sessions page (W4).
 --     There is no target-consent setting (decision 33, K5 rejected).
@@ -109,7 +109,7 @@ grant select (id, link_id, home_space_id, member_id, target_space_id, auth_sessi
   on public.space_link_tokens to tm8_app;
 
 comment on table public.space_link_tokens is
-  'W6 (244): one member''s sealed link session for a space_link. ciphertext is '
+  'W6 (251): one member''s sealed link session for a space_link. ciphertext is '
   'AES-256-GCM under the node key, AAD home_space_id|link_id|member_id|target_space_id. '
   'tm8_app cannot select ciphertext or nonce; RLS shows a row to its member only.';
 

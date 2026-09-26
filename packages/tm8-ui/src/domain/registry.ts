@@ -2340,7 +2340,7 @@ const ROWS: readonly KindConfig[] = [
     },
   },
 
-  // -- space_link (243, W6: managed from Space settings, not browsed) --------
+  // -- space_link (250, W6: managed from Space settings, not browsed) --------
   {
     kind: 'space_link',
     label: 'Space link',
@@ -2365,7 +2365,7 @@ const ROWS: readonly KindConfig[] = [
     },
   },
 
-  // -- server (243 registers it; W8 gives it a detail row) ------------------
+  // -- server (250 registers it; W8 gives it a detail row) ------------------
   {
     kind: 'server',
     label: 'Server',

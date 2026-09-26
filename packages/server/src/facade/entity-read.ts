@@ -1972,7 +1972,7 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
       } as EntityState;
     case 'space_link':
     case 'server':
-      // 243 (W6): no row facts on the entity — `spaceLinks.list` answers for a
+      // 250 (W6): no row facts on the entity — `spaceLinks.list` answers for a
       // link, so the shared entity read takes no join for it. MIRRORS the
       // projector twin.
       return { kind: row.kind };
@@ -2644,7 +2644,7 @@ export function contentOf(row: EntityRow): EntityContent {
     }
     case 'space_link':
     case 'server':
-      // 243 (W6): a link's content is `spaceLinks.list`'s answer (see stateOf).
+      // 250 (W6): a link's content is `spaceLinks.list`'s answer (see stateOf).
       return { kind: row.kind };
     default:
       return { kind: row.kind as `c:${string}`, fields: {} };

@@ -298,7 +298,7 @@ function capabilities(profile: CapabilityProfile): CapabilityDisposition {
         ],
       };
     case 'space-link-lifecycle':
-      // NOTHING generic (W6, 243/244). A link is born only from
+      // NOTHING generic (W6, 250/251). A link is born only from
       // `spaceLinks.add`, and every write is a named, human-only door over the
       // caller's own row; a generic patch, move or delete would be a second way
       // to reach a record whose writes SQL restricts to browser/cli sessions.
@@ -512,14 +512,14 @@ export const CORE_KIND_DISPOSITIONS = {
     capabilities: { profile: 'form-lifecycle' },
     menu: { strategy: 'registered-not-default' }, migration: { strategy: 'form-detail' },
   }),
-  // Space links (W6, migration 243). Born only from `spaceLinks.add`, managed
+  // Space links (W6, migration 250). Born only from `spaceLinks.add`, managed
   // from space settings by a human; never menu-addressable.
   space_link: core('space_link', 'space-links', {
     collection: typedCollection, projection: universal,
     capabilities: { profile: 'space-link-lifecycle' },
     menu: { strategy: 'not-addressable' }, migration: { strategy: 'space-link-kinds' },
   }),
-  // A linked space's server (W6, migration 243). Registered with the kind so a
+  // A linked space's server (W6, migration 250). Registered with the kind so a
   // link can name a remote target; W6 ships no operation on it (null = this
   // server), so it has no authority of its own.
   server: core('server', 'servers', {

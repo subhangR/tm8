@@ -1,11 +1,11 @@
 /**
- * `spaceLinks.*` (W6, migrations 243/244) — registration and request
+ * `spaceLinks.*` (W6, migrations 250/251) — registration and request
  * adaptation over `DbSpaceLinkStore`.
  *
  * `spaceLinks.list` is open to every home member: it carries no secret, and
  * an agent needs it to know which linked spaces its human has signed in to.
  * The six writes are HUMAN-ONLY, twice: `requireHumanLinkSession` here reads the
- * server-resolved `ctx.identity.authKind`, and every write RPC in 244 calls
+ * server-resolved `ctx.identity.authKind`, and every write RPC in 251 calls
  * the strict `internal.require_human_auth_kind()` on the bound claim. A `link`
  * session is refused by both, so a link can never manage links.
  *

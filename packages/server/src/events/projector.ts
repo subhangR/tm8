@@ -1470,7 +1470,7 @@ export class PgEntityProjector implements EntityProjector {
         return { kind: 'artifact', revisionNumber: r.artifact_revision_number ?? 1 };
       case 'space_link':
       case 'server':
-        // 243 (W6): no row facts on the entity; `spaceLinks.list` answers for a
+        // 250 (W6): no row facts on the entity; `spaceLinks.list` answers for a
         // link. MIRRORS entity-read.ts stateOf. Without this arm the default
         // below raises EntityKindDriftError for every space_link event.
         return { kind: r.kind };

@@ -184,7 +184,7 @@ export const CoreEntityKindSchema = z.enum([
   'drawing',
   // Forms (209). Not in `CreatableEntityKind`: `forms.create` is its door.
   'form',
-  // Space links (243/244, W6). Not in `CreatableEntityKind`: `spaceLinks.add`
+  // Space links (250/251, W6). Not in `CreatableEntityKind`: `spaceLinks.add`
   // is its door. `server` is registered with it and has no door in W6.
   'space_link',
   'server',
@@ -626,7 +626,7 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     status: FormStatusSchema,
     questionCount: z.number().int().nonnegative(),
   }).strict(),
-  // 243 (W6) — space links carry no row facts on the entity; `spaceLinks.list`
+  // 250 (W6) — space links carry no row facts on the entity; `spaceLinks.list`
   // answers for them. `server` has no detail row until W8.
   z.object({ kind: z.literal('space_link') }).strict(),
   z.object({ kind: z.literal('server') }).strict(),
@@ -1033,7 +1033,7 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
     openedAt: z.string().nullable(),
     closedAt: z.string().nullable(),
   }).strict(),
-  // 243 (W6) — a space link's content is `spaceLinks.list`'s answer.
+  // 250 (W6) — a space link's content is `spaceLinks.list`'s answer.
   z.object({ kind: z.literal('space_link') }).strict(),
   z.object({ kind: z.literal('server') }).strict(),
   // A chat has no content beyond its summary (R5): the working directory and

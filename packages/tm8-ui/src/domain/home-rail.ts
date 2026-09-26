@@ -186,7 +186,7 @@ const HOME_RAIL_GROUP_SPINE: readonly HomeRailGroupSpec[] = [
  * the list header's kind switcher entry, the Workspace column menu and the
  * mobile drawer row, all four of which read this one table.
  *
- * `space_link` and `server` (243, W6): not populations either. A link is
+ * `space_link` and `server` (250, W6): not populations either. A link is
  * signed in, out and removed from Settings → Space links, which carries the
  * P8 warning a bare list would drop; `server` has no detail row until W8.
  *

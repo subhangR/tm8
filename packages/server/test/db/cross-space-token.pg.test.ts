@@ -3605,7 +3605,7 @@ describe('S3 a replay honours the session space pin (247 command_ledger.session_
 });
 
 // ---------------------------------------------------------------------------
-// W6 — space links (migrations 243/244). H holds a `link` session from A for
+// W6 — space links (migrations 250/251). H holds a `link` session from A for
 // B: kind `link`, pinned to B, sealed in H's own space_link_tokens row. The
 // mechanism is pinned in space-links.pg.test.ts; these are the matrix cells.
 // ---------------------------------------------------------------------------

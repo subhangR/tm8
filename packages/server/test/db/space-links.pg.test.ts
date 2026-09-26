@@ -1,5 +1,5 @@
 /**
- * W6 — space links (migrations 243/244, plan 01a0d9eb §3 W6). The DB half:
+ * W6 — space links (migrations 250/251, plan 01a0d9eb §3 W6). The DB half:
  * the strict-gate caller pin, the sealed token rows (T19 AAD, a5 defaults,
  * a6 no ciphertext anywhere), the use path's kind allow-list, stale handling
  * with no retry, and W1's removal deleting the member's rows (T17). The
@@ -731,7 +731,7 @@ describe('W6 kind `link` — the resolver, the session view, revoke', () => {
 });
 
 // SECURITY CHOICE (PR #864): a link session is inserted with no parent session
-// (244's login insert), so revoking the browser session that performed the
+// (251's login insert), so revoking the browser session that performed the
 // login does not end it. Only logout / relogin / remove / leaving / W1 removal
 // (the five P7 paths) and a direct revoke end it.
 describe('W6 no cascade — a link session outlives the browser session that minted it', () => {

@@ -1,5 +1,5 @@
 /**
- * The SPACE LINK store (migrations 243/244, plan 01a0d9eb §3 W6): typed
+ * The SPACE LINK store (migrations 250/251, plan 01a0d9eb §3 W6): typed
  * wrappers for the spaceLinks.* RPCs, and the only module that seals or opens
  * a member's stored link session.
  *
@@ -39,7 +39,7 @@ export interface SpaceLinkMine {
   lastUsedAt: string | null;
 }
 
-/** One link as a home-space member sees it (244 `internal.space_link_json`). */
+/** One link as a home-space member sees it (251 `internal.space_link_json`). */
 export interface SpaceLink {
   id: string;
   homeSpaceId: string;
@@ -100,7 +100,7 @@ export interface DbSpaceLinkStoreOptions {
    * W7-BOUND. Nothing in W6 calls `use()` outside tests: the only path that
    * presents a stored link session to the target is W7's cross-space invoke,
    * which owns the caller's claims and work session. So the composition root
-   * wires no `onStale` yet. The member's half needs no hook: 244's
+   * wires no `onStale` yet. The member's half needs no hook: 251's
    * `mark_space_link_stale` and the leave/remove trigger raise attention in
    * SQL. The agent-message half lands with W7's caller.
    */
@@ -240,7 +240,7 @@ export class DbSpaceLinkStore {
   }
 }
 
-/** The `aad` column value for a binding: what 244's CHECK holds the row to. */
+/** The `aad` column value for a binding: what 251's CHECK holds the row to. */
 export function spaceLinkAad(binding: SpaceLinkSecretBinding): string {
   return bindingAad(binding);
 }

@@ -248,7 +248,7 @@ export const KIND_ART = {
     'M5.4 11.3a0.7 0.7 0 1 0 0-1.4 0.7 0.7 0 0 0 0 1.4z',
   ],
 
-  /** Two chain links — a space link joins this space to another one (243). */
+  /** Two chain links — a space link joins this space to another one (250). */
   space_link: [
     'M7 9 9 7',
     'M8.6 4.6 9.8 3.4a2.3 2.3 0 0 1 3.2 3.2l-2.4 2.4a2.3 2.3 0 0 1-3.2 0',
@@ -256,7 +256,7 @@ export const KIND_ART = {
   ],
 
   /**
-   * A globe — a `server` is another tm8 node (243, used from W8). Not a rack:
+   * A globe — a `server` is another tm8 node (250, used from W8). Not a rack:
    * that silhouette is `container`'s.
    */
   server: [

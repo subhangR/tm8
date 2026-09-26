@@ -1,5 +1,5 @@
 /**
- * Space links (migrations 243/244, Phase 1b W6). A home space links to a
+ * Space links (migrations 250/251, Phase 1b W6). A home space links to a
  * target space; each member of the home space who is also a member of the
  * target signs in once and the server stores that member's own `link`
  * session for the target, sealed, 90 days. Agents launched by that member use

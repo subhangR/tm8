@@ -28,7 +28,7 @@ export interface SpaceLinksSectionProps {
   heading?: string;
 }
 
-/** The server's typed refusal for a non-human session (244). */
+/** The server's typed refusal for a non-human session (251). */
 export const SPACE_LINKS_HUMAN_ONLY = 'space_links_human_only';
 
 const STATUS_WORD: Record<SpaceLinkStatus, string> = {

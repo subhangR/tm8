@@ -253,7 +253,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'spaces.members.remove': SpacesMembersRemoveInputSchema,
   'spaces.leave': SpacesLeaveInputSchema,
   'accounts.disable': AccountsDisableInputSchema,
-  // W6 (243/244): human-only in SQL; the body never carries a secret.
+  // W6 (250/251): human-only in SQL; the body never carries a secret.
   'spaceLinks.add': SpaceLinksAddInputSchema,
   'spaceLinks.login': SpaceLinksMutationInputSchema,
   'spaceLinks.relogin': SpaceLinksMutationInputSchema,

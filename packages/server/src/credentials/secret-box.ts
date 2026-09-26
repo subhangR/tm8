@@ -29,7 +29,7 @@ export interface SpaceSecretBinding {
 }
 
 /**
- * A member's stored space-link session (244): AAD
+ * A member's stored space-link session (251): AAD
  * `<home_space_id>|<link_id>|<member_id>|<target_space_id>`. Three separators,
  * so it collides with neither the account form (one) nor the space form (two):
  * a link ciphertext copied to another row, member or target does not open.
@@ -43,7 +43,7 @@ export interface SpaceLinkSecretBinding {
 
 export type SecretBinding = AccountSecretBinding | SpaceSecretBinding | SpaceLinkSecretBinding;
 
-/** The AAD string for `binding`; for a link, the value 244's `aad` column holds. */
+/** The AAD string for `binding`; for a link, the value 251's `aad` column holds. */
 export function bindingAad(binding: SecretBinding): string {
   if ('linkId' in binding) {
     return `${binding.homeSpaceId}|${binding.linkId}|${binding.memberId}|${binding.targetSpaceId}`;

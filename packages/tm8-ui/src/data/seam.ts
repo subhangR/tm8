@@ -1369,7 +1369,7 @@ export interface Seam {
   };
 
   /**
-   * -- space links (`spaceLinks.*`, W6, migrations 243/244) -------------------
+   * -- space links (`spaceLinks.*`, W6, migrations 250/251) -------------------
    *
    * A link from a home space to a target space the viewer is also a member of.
    * `list` is open to every home member and carries no secret. Every write is

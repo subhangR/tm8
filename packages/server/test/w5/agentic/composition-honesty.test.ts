@@ -84,7 +84,7 @@ const CREDENTIAL_SEAM = new Set<OperationName>([
   'credentials.space.policy.set',
   'node.credentials.status',
   'node.credentials.policy.set',
-  // W6 (243/244): spaceLinks.* mount on the same seam — the node key's root
+  // W6 (250/251): spaceLinks.* mount on the same seam — the node key's root
   // comes from `deps.spaceLinks` or `deps.credentials` (facade/index.ts).
   'spaceLinks.list',
   'spaceLinks.add',

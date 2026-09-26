@@ -557,7 +557,7 @@ const ROWS: Record<OperationName, Row> = {
       'null removes the policy',
     ],
   },
-  // ── space links (W6, migrations 243/244) ─────────────────────────────────
+  // ── space links (W6, migrations 250/251) ─────────────────────────────────
   //
   // No CLI command yet, for scope, as with the credential rows above: the Server
   // admits a `cli` human to every write, so a later lane adds commands with no
@@ -3162,7 +3162,7 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   // but `node` already groups the credential rows, so the noun is `account`.
   // `tools/conformance`'s generator holds the same map.
   accounts: 'account',
-  // `spaceLinks.*` (W6, 243/244, all `cmd: null`): the noun a later CLI lane
+  // `spaceLinks.*` (W6, 250/251, all `cmd: null`): the noun a later CLI lane
   // would spell `tm8 space-link`. generator.ts nounForOperation says the same.
   spaceLinks: 'space-link',
 };
@@ -3253,7 +3253,7 @@ export const CATALOG_DIGEST =
   // Rebased onto main d11e0be5 (#848): W11's +4 on top of auth.space.enter; digest re-measured on the rebased tree.
   // Re-measured for node.metrics.get (status strip) — read from the regenerated conformance manifest.
   // +2 auth.sessions.list/revoke (W4, on main 96f6b61e): read from the regenerated conformance manifest.
-  // +7 spaceLinks.* (W6, 243/244, re-stacked on f54f9ffd): RECOMPUTED from JSON.stringify(OPERATIONS); equals the regenerated manifest's catalogDigest.
+  // +7 spaceLinks.* (W6, 250/251, re-stacked on f54f9ffd): RECOMPUTED from JSON.stringify(OPERATIONS); equals the regenerated manifest's catalogDigest.
   'sha256:3bebae0a98d86cfac8f66704f1c4c1dddbd4df87cbd179bf856c14d983f66925';
 
 export const GRAMMAR_VERSION = '2';

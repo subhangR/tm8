@@ -71,7 +71,7 @@ export type CoreEntityKind =
   // human, with validated, revisioned responses delivered back to the
   // requesting session. Born only from `forms.create` (W1).
   | 'form'
-  // Space links (migrations 243/244, Phase 1b W6): a home space's link to a
+  // Space links (migrations 250/251, Phase 1b W6): a home space's link to a
   // target space. Every home member sees the link; each member's stored
   // session for the target is their own sealed row. Born only from
   // `spaceLinks.add`.
@@ -506,7 +506,7 @@ export type CoreEntityState =
   /** A form's row facts (209): where it is in its lifecycle, and how long. */
   | { kind: 'form'; status: FormStatus; questionCount: number }
   /**
-   * Space links (243, W6): no row facts on the entity. A link's target and
+   * Space links (250, W6): no row facts on the entity. A link's target and
    * every member's status are `spaceLinks.list`'s answer, never a list row's —
    * a join here would widen the shared entity read for a settings screen.
    * `server` has no detail row until W8.
@@ -894,7 +894,7 @@ export type CoreEntityContent =
   | { kind: 'form'; status: FormStatus; description: string | null; settings: FormSettings;
       structureVersion: number; sections: FormSectionRow[]; questions: FormQuestionRow[];
       openedAt: string | null; closedAt: string | null }
-  /** Space links (243, W6): content is `spaceLinks.list`'s; see EntityState. */
+  /** Space links (250, W6): content is `spaceLinks.list`'s; see EntityState. */
   | { kind: 'space_link' }
   | { kind: 'server' }
   /**
@@ -1841,7 +1841,7 @@ export function commandAcceptsClientMutationId(opName: string): boolean {
 
 /**
  * How a session authenticates thereafter. `agent` and `agent_runtime` are
- * internal mints, never accepted by `auth.login`. `link` (W6, 243) is a
+ * internal mints, never accepted by `auth.login`. `link` (W6, 250) is a
  * member's stored session for a linked space, minted by `spaceLinks.login`.
  */
 export type AuthSessionKindView = 'browser' | 'cli' | 'agent' | 'agent_runtime' | 'link';

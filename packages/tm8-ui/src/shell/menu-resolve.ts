@@ -29,7 +29,7 @@ export type MenuSource =
 
 /**
  * The menu came from the space's saved row. A predicate rather than a
- * `source === 'server'` at each call site: `server` is also a core kind (243),
+ * `source === 'server'` at each call site: `server` is also a core kind (250),
  * so the settings lane's kind-literal guard cannot tell the two apart.
  */
 export function isSavedMenu(origin: MenuSource): origin is Extract<MenuSource, { source: 'server' }> {

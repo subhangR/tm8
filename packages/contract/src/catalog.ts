@@ -92,7 +92,7 @@ export const OPERATIONS = [
   { name: 'spaces.leave',          method: 'POST',  path: '/v2/spaces/:spaceId/leave',                   kind: 'command', status: 'v1' },
   // Node admin turns an account off: every session refused, launched work contained (232).
   { name: 'accounts.disable',      method: 'POST',  path: '/v2/accounts/:accountId/disable',             kind: 'command', status: 'v1' },
-  // Space links (W6, migrations 243/244). Every write is human-only in SQL;
+  // Space links (W6, migrations 250/251). Every write is human-only in SQL;
   // list is open to every home member and carries no secret.
   { name: 'spaceLinks.list',     method: 'GET',    path: '/v2/spaces/:spaceId/space-links',   kind: 'read',    status: 'v1' },
   { name: 'spaceLinks.add',      method: 'POST',   path: '/v2/spaces/:spaceId/space-links',   kind: 'command', status: 'v1' },

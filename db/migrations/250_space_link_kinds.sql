@@ -1,8 +1,8 @@
 -- =============================================================================
--- 243 — space links, part 1: the kinds, auth kind `link`, the space_links table
+-- 250 — space links, part 1: the kinds, auth kind `link`, the space_links table
 -- (plan 01a0d9eb §3 W6; phases doc 01a0d9fb §3 W6; decisions 31, 33, 38).
 --
--- Ordinal 243 was reserved for W6 by the Phase 1b coordinator. 244 is the
+-- Ordinal 250 set at the merge position (reserved as 243; re-stacked onto main f54f9ffd). 251 is the
 -- second half (space_link_tokens and the spaceLinks.* RPCs).
 --
 -- WHAT THIS FILE DOES
@@ -20,7 +20,7 @@
 -- admits browser and cli only, so it refuses `link`. Every credential RPC
 -- calls it (083, 093, 203, 206), so kind `link` is refused IN SQL on every
 -- current and future credential op with no edit (E2, T20b), fail-closed. The
--- spaceLinks.* writes (244) call it too: a link session never manages link
+-- spaceLinks.* writes (251) call it too: a link session never manages link
 -- tokens (decision 31's refused set). What decision 31 admits for `link`
 -- (invites, roles, delete) never called the gate, so it passes as the member
 -- with no change here. `space-links.pg.test.ts` pins every caller of the gate
@@ -66,7 +66,7 @@ alter table public.auth_sessions
 -- The entity lives in the home space (K9: the member's personal space when
 -- they have one, else the shared home; there is no personal space on this
 -- base, so it is always the home). Every member of the home space can SEE that
--- the link exists (P8); only a member's own token row is theirs (244).
+-- the link exists (P8); only a member's own token row is theirs (251).
 -- target_server_id null = this server; W8 points it at a `server` entity.
 -- -----------------------------------------------------------------------------
 create table public.space_links (
@@ -94,8 +94,8 @@ create policy space_links_select on public.space_links for select to tm8_app
 grant select on public.space_links to tm8_app;
 
 comment on table public.space_links is
-  'W6 (243): the shared space_link entity''s detail row. Holds no secret: the '
-  'per-member sealed token is public.space_link_tokens (244).';
+  'W6 (250): the shared space_link entity''s detail row. Holds no secret: the '
+  'per-member sealed token is public.space_link_tokens (251).';
 
 
 -- -----------------------------------------------------------------------------
@@ -147,8 +147,8 @@ begin
                               || jsonb_build_object('sections', internal.form_sections_json(target),
                                                     'questions', internal.form_questions_json(target))
                          into content from public.forms fm where fm.entity_id = target;
-      -- 243 (W6): the shared link's metadata. `space_links` holds no secret; the
-      -- sealed per-member token is `space_link_tokens` (244) and has no arm.
+      -- 250 (W6): the shared link's metadata. `space_links` holds no secret; the
+      -- sealed per-member token is `space_link_tokens` (251) and has no arm.
       when 'space_link' then select to_jsonb(sl) - 'entity_id' into content from public.space_links sl where sl.entity_id = target;
       else content := '{}'::jsonb;
     end case;
