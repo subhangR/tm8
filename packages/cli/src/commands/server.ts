@@ -96,7 +96,7 @@ async function serverAdd(cmd: CommandContext): Promise<ExitCode> {
   const baseUrl = new URL(parsed.data).origin;
   await requireHealthyTm8Server(baseUrl, cmd.ctx.timeoutMs);
 
-  // W8 (991): a server is an entity in a Space; 044's table is read-only.
+  // W8 (261): a server is an entity in a Space; 044's table is read-only.
   // `servers.add` takes no actor: it is human-only.
   const body: Record<string, unknown> = {
     name,

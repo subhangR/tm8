@@ -105,7 +105,7 @@ const CREDENTIAL_SEAM = new Set<OperationName>([
   // W7 (260): invoke + audit, same seam.
   'spaceLinks.invoke',
   'spaceLinks.audit',
-  // W8 (991): servers.* mount in the same registration, on the same node-key
+  // W8 (261): servers.* mount in the same registration, on the same node-key
   // root (facade/index.ts), so they share the seam's condition too.
   'servers.list',
   'servers.get',

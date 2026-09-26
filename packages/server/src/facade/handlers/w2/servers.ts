@@ -1,12 +1,12 @@
 /**
- * `servers.*` (W8, migration 991) — registration and request adaptation over
+ * `servers.*` (W8, migration 261) — registration and request adaptation over
  * `DbServerStore`.
  *
  * `list`, `get` and `probe` are open to every home member: no response carries
  * a secret, and `probe` only records reachability through the SSRF-guarded
  * client. `add`, `adopt` and `remove` are HUMAN-ONLY, twice: the same
  * `requireHumanLinkSession` guard W6 uses, and the strict
- * `internal.require_human_auth_kind()` in every 991 write RPC. Signing in to a
+ * `internal.require_human_auth_kind()` in every 261 write RPC. Signing in to a
  * server (the sealed gate token) is not an operation yet: it rides the remote
  * sign-in flow that lands with remote invoke.
  */

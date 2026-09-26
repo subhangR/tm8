@@ -1,5 +1,5 @@
 /**
- * The SERVER store (W8, migration 991): typed wrappers for the servers.* RPCs,
+ * The SERVER store (W8, migration 261): typed wrappers for the servers.* RPCs,
  * the reachability probe, and the only module that seals or opens a member's
  * gate session on a remote server.
  *
@@ -21,7 +21,7 @@ import { guardedHttpsRequest, type GuardedHttpsOptions, type GuardedResult } fro
 
 export type ServerReachStatus = 'unknown' | 'reachable' | 'unreachable' | 'offline';
 
-/** One server as a home member sees it (991 `internal.server_json`). No secret. */
+/** One server as a home member sees it (261 `internal.server_json`). No secret. */
 export interface Server {
   id: string;
   homeSpaceId: string;

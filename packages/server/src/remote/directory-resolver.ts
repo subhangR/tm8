@@ -1,5 +1,5 @@
 /**
- * The relay's name -> base URL lookup (W8, 991), lifted out of `main.ts` so a
+ * The relay's name -> base URL lookup (W8, 261), lifted out of `main.ts` so a
  * test drives the same code the relay runs.
  *
  * THE CALLER'S claims, never the owner's (G1). A bearer carries its own

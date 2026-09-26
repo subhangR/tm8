@@ -274,7 +274,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'spaceLinks.setSpawn': SpaceLinksSetSpawnInputSchema,
   // W7: the envelope only; the inner op's own schema runs inside invoke.
   'spaceLinks.invoke': SpaceLinksInvokeInputSchema,
-  // W8 (991): add/adopt/remove human-only in SQL; no body carries a secret.
+  // W8 (261): add/adopt/remove human-only in SQL; no body carries a secret.
   'servers.add': ServersAddInputSchema,
   'servers.adopt': ServersAdoptInputSchema,
   'servers.remove': ServersMutationInputSchema,

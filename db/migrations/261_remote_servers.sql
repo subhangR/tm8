@@ -1,5 +1,5 @@
 -- =============================================================================
--- 991 (PLACEHOLDER ORDINAL — the coordinator assigns the real one at merge) —
+-- 261 (set at the merge position after #884's 260; was placeholder 991) —
 -- remote servers (plan 01a0d9eb §3 W8; phases doc 01a0d9fb §3 W8; T25, T27).
 --
 -- WHAT THIS FILE DOES

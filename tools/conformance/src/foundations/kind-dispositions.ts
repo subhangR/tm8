@@ -358,7 +358,7 @@ function capabilities(profile: CapabilityProfile): CapabilityDisposition {
         ],
       };
     case 'server-lifecycle':
-      // NOTHING generic (W8, 991). A server is born only from `servers.add`
+      // NOTHING generic (W8, 261). A server is born only from `servers.add`
       // or `servers.adopt` (a 044 row, first use), and add/adopt/remove are
       // human-only in SQL; a generic patch would be a second way to change a
       // base URL that the gate token and the SSRF guard are bound to.
@@ -587,7 +587,7 @@ export const CORE_KIND_DISPOSITIONS = {
     capabilities: { profile: 'space-link-lifecycle' },
     menu: { strategy: 'not-addressable' }, migration: { strategy: 'space-link-kinds' },
   }),
-  // A remote tm8 server (W6 kind, W8 migration 991). Born only from
+  // A remote tm8 server (W6 kind, W8 migration 261). Born only from
   // `servers.add` / `servers.adopt`, managed by a human; never menu-addressable.
   server: core('server', 'servers', {
     collection: typedCollection, projection: universal,

@@ -22,9 +22,9 @@ interface ServerConnectionMutationResult {
 }
 
 /**
- * W8 (991): reads go through `public.server_directory` — server entities the
+ * W8 (261): reads go through `public.server_directory` — server entities the
  * caller can read, plus 044 rows no entity has adopted. 044 itself is
- * read-only: `create` / `delete` below reach the 991 redefinitions, which
+ * read-only: `create` / `delete` below reach the 261 redefinitions, which
  * refuse with 42501 and point at `servers.add` / `servers.remove`.
  */
 const SELECT = `

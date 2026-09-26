@@ -1,5 +1,5 @@
 /**
- * W8 — remote servers (migration 991). The DB half:
+ * W8 — remote servers (migration 261). The DB half:
  *
  *   · a4: 044 is read-only — create/delete refuse 42501 and its rows are
  *     untouched; a 044 row gets an entity only through `adopt` (node admin),
@@ -119,7 +119,7 @@ async function seed(): Promise<Fixture> {
     }
   });
   // A 044 row as it exists on a node today; written as the table owner, since
-  // 991 refuses every write through the RPCs.
+  // 261 refuses every write through the RPCs.
   await database.query(
     `insert into public.server_connections(id, name, base_url) values ($1, 'legacy-one', 'https://legacy.example')`,
     [fx.legacyId]);
@@ -297,7 +297,7 @@ describe('reach status (probe) — any home member on a human or agent session',
 });
 
 // ---------------------------------------------------------------------------
-// A server's lifecycle is command-owned (991 §8b, like 251 §10b for a space
+// A server's lifecycle is command-owned (261 §8b, like 251 §10b for a space
 // link). The generic doors refuse it in BOTH layers — the facade
 // (RESTRICTED_LIFECYCLE_KINDS, `forbidden`, before SQL) and SQL (the re-created
 // guard trigger, 42501, whatever the caller). Paired positive: servers.remove

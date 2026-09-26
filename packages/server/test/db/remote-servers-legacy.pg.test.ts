@@ -1,18 +1,18 @@
 /**
- * W8 — legacy 044 visibility across the 991 repoint (lead ruling 09:52Z (a)).
+ * W8 — legacy 044 visibility across the 261 repoint (lead ruling 09:52Z (a)).
  *
- * A 044 row is written through the PRE-991 path (the old
- * `create_server_connection` RPC, on a chain that stops before 991), then 991
+ * A 044 row is written through the PRE-261 path (the old
+ * `create_server_connection` RPC, on a chain that stops before 261), then 261
  * is applied on top. The three readers that moved to `server_directory` — the
  * `serverConnections.list` / `.get` service and the relay's target resolver —
  * must still show it, with the same name and URL, to exactly the callers 044's
- * RLS admitted before (node admins). No backfill: 991 inserts nothing into
+ * RLS admitted before (node admins). No backfill: 261 inserts nothing into
  * `servers`, so the row is visible through the view's union arm only.
  *
  * Paired: once adopted, the row appears ONCE (as the entity), never twice —
  * and never again as a 044 row, even after the entity is soft-deleted (lead
  * ruling: delete means gone), even for a node admin outside the home space —
- * and a generic restore_entity cannot bring it back (991 §8b).
+ * and a generic restore_entity cannot bring it back (261 §8b).
  */
 import { randomUUID } from 'node:crypto';
 
@@ -113,13 +113,13 @@ beforeAll(async () => {
     }
   });
 
-  // THE PRE-991 PATH: 044's own RPC, as a node admin, on the 990-level chain.
+  // THE PRE-261 PATH: 044's own RPC, as a node admin, on the 260-level chain.
   const claims: DbClaims = { identityId: adminN, nodeAdmin: true, authKind: 'browser', requestId: 'legacy-seed' };
   await db.rpc(claims, 'create_server_connection', [NAME, URL_, null, `legacy-seed-${randomUUID()}`]);
   const before = await db.query<{ n: number }>({ ...claims, requestId: 'legacy-count' },
     `select count(*)::int as n from public.server_connections where name = $1`, [NAME]);
   expect(before[0]!.n).toBe(1);
-  // A plain member could not read 044 before 991.
+  // A plain member could not read 044 before 261.
   expect(await db.query({ identityId: plainM, authKind: 'browser', requestId: 'legacy-m' },
     `select 1 from public.server_connections`)).toHaveLength(0);
 
@@ -134,8 +134,8 @@ afterAll(async () => {
   await database?.destroy();
 }, 180_000);
 
-describe('lead 09:52Z (a) — a pre-991 044 row after the repoint', () => {
-  it('991 backfilled nothing: no servers row, and the 044 row is byte-identical', async () => {
+describe('lead 09:52Z (a) — a pre-261 044 row after the repoint', () => {
+  it('261 backfilled nothing: no servers row, and the 044 row is byte-identical', async () => {
     expect(await database.query(`select 1 from public.servers`)).toHaveLength(0);
     const rows = await database.query<{ name: string; base_url: string }>(
       `select name, base_url from public.server_connections`);
@@ -147,7 +147,7 @@ describe('lead 09:52Z (a) — a pre-991 044 row after the repoint', () => {
     expect(await readAll(adminN2)).toEqual(VISIBLE);
   });
 
-  it('a plain member did not see it before 991 and does not now: 044\'s RLS is unchanged', async () => {
+  it('a plain member did not see it before 261 and does not now: 044\'s RLS is unchanged', async () => {
     expect(await readAll(plainM)).toEqual(HIDDEN);
   });
 
@@ -195,7 +195,7 @@ describe('lead 09:52Z (a) — a pre-991 044 row after the repoint', () => {
   });
 
   it('delete means gone: generic restore_entity is refused for a server; the 044 row stays shadowed', async () => {
-    // A server's lifecycle is command-owned (991 §8b): no generic door revives it.
+    // A server's lifecycle is command-owned (261 §8b): no generic door revives it.
     const refused = await db.rpc({ identityId: adminN, nodeAdmin: true, authKind: 'browser', requestId: 'legacy-restore' },
       'restore_entity', [serverId, null, `legacy-restore-${randomUUID()}`]).then(() => 'ok', (err: unknown) => `${(err as { details?: { sqlstate?: string } }).details?.sqlstate}: ${(err as Error).message}`);
     expect(refused).toBe('42501: entity lifecycle is command-owned for kind server');

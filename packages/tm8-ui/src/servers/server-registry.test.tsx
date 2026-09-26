@@ -168,7 +168,7 @@ describe('useServerRegistry revalidation', () => {
   });
 });
 
-describe('useServerRegistry addServer (W8, 991)', () => {
+describe('useServerRegistry addServer (W8, 261)', () => {
   it('adds through servers.add (POST /v2/servers) with the Space, never the read-only 044 route', async () => {
     const state: { connections: Connection[] } = { connections: [] };
     const list = mockFetch(state);

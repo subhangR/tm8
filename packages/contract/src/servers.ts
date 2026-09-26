@@ -1,5 +1,5 @@
 /**
- * Remote servers (migration 991, Phase 1b W8). A `server` entity lives in a
+ * Remote servers (migration 261, Phase 1b W8). A `server` entity lives in a
  * home space; every member of that space sees it. It replaces 044's
  * node-local `server_connections`, which is now read-only: its rows stay, and
  * `servers.adopt` makes an entity for one on first use (no backfill).

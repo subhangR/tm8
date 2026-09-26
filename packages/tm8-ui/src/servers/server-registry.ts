@@ -25,7 +25,7 @@ export interface AddServerInput {
   name: string;
   baseUrl: string;
   username?: string;
-  /** The Space the server joins (W8, 991). Omitted: the caller's first Space. */
+  /** The Space the server joins (W8, 261). Omitted: the caller's first Space. */
   spaceId?: string | null;
 }
 
@@ -201,7 +201,7 @@ export function useServerRegistry(): ServerRegistryState {
   const addServer = useCallback(async (input: AddServerInput): Promise<UiServer> => {
     const name = input.name.trim().toLowerCase();
     const baseUrl = new URL(input.baseUrl.trim()).origin;
-    // W8 (991): a server is an entity in a Space (`servers.add`); 044's
+    // W8 (261): a server is an entity in a Space (`servers.add`); 044's
     // `/v2/server-connections` is read-only and only lists.
     const server = await jsonData<Record<string, unknown>>('/v2/servers', {
       method: 'POST',

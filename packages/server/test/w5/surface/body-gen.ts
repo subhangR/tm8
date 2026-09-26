@@ -367,7 +367,7 @@ export const BODY_OVERRIDES: Readonly<Record<string, unknown>> = {
     name: 'w5surfac',
     baseUrl: 'https://example.invalid',
   },
-  // W8 (991): `servers.add` takes the same origin-only baseUrl, for the same reason.
+  // W8 (261): `servers.add` takes the same origin-only baseUrl, for the same reason.
   'servers.add': {
     clientMutationId: 'w5-surface-sweep-cmid',
     name: 'w5surfac',

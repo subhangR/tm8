@@ -106,7 +106,7 @@ export const OPERATIONS = [
   { name: 'spaceLinks.invoke',   method: 'POST',   path: '/v2/spaces/:spaceId/space-links/:link/invoke', kind: 'command', status: 'v1' },
   // W7: the home-space audit of invokes — the member's own rows, all rows for a home admin.
   { name: 'spaceLinks.audit',    method: 'GET',    path: '/v2/space-links/:linkId/audit',     kind: 'read',    status: 'v1' },
-  // Remote servers (W8, 991): `server` entities over 044's read-only rows.
+  // Remote servers (W8, 261): `server` entities over 044's read-only rows.
   // add/adopt/remove are human-only in SQL; no response carries a gate token.
   { name: 'servers.list',   method: 'GET',  path: '/v2/spaces/:spaceId/servers',  kind: 'read',    status: 'v1' },
   { name: 'servers.get',    method: 'GET',  path: '/v2/servers/:serverId',        kind: 'read',    status: 'v1' },

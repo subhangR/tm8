@@ -775,7 +775,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'serverConnections.create': {
     cmd: null,
-    sum: 'Refused: 044 server connections are read-only (W8, 991) — add a server with `tm8 server add`',
+    sum: 'Refused: 044 server connections are read-only (W8, 261) — add a server with `tm8 server add`',
     authz: 'server',
     input: 'bound',
     tags: ['remote', 'connection', 'target', 'legacy'],
@@ -791,13 +791,13 @@ const ROWS: Record<OperationName, Row> = {
   },
   'serverConnections.delete': {
     cmd: null,
-    sum: 'Refused: 044 server connections are read-only (W8, 991) — remove a server with `tm8 server remove`',
+    sum: 'Refused: 044 server connections are read-only (W8, 261) — remove a server with `tm8 server remove`',
     authz: 'server',
     input: 'bound',
     tags: ['remote', 'connection', 'target', 'legacy'],
     reason: 'use_servers_remove',
   },
-  // ── remote servers (W8, migration 991) ────────────────────────────────────
+  // ── remote servers (W8, migration 261) ────────────────────────────────────
   //
   // add / adopt / remove are refused to agent and link sessions twice (the
   // handler guard and the strict SQL gate). No response carries a gate token.
@@ -3315,7 +3315,7 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   // `spaceLinks.*` (W6, 250/251, all `cmd: null`): the noun a later CLI lane
   // would spell `tm8 space-link`. generator.ts nounForOperation says the same.
   spaceLinks: 'space-link',
-  // `servers.*` (W8, 991): the same `tm8 server` noun 044's rows used.
+  // `servers.*` (W8, 261): the same `tm8 server` noun 044's rows used.
   // generator.ts nounForOperation says the same.
   servers: 'server',
 };
@@ -3410,7 +3410,7 @@ export const CATALOG_DIGEST =
   // +7 spaceLinks.* (W6, 250/251, re-stacked on f54f9ffd): RECOMPUTED from JSON.stringify(OPERATIONS); equals the regenerated manifest's catalogDigest.
   // +6 credentials.space.* (W10b, merged onto main d8343503 after #864): read from the regenerated conformance manifest.
   // Re-measured (W10d #883, composed onto 257 after #869/#898/#904): + credentials.space.addMine. Read from the regenerated conformance manifest.
-  // Re-measured (W8, 991, rebuilt on main f01b1566): +6 servers.* and the serverConnections create/delete rows. Read from the regenerated conformance manifest.
+  // Re-measured (W8, 261, rebuilt on main f01b1566): +6 servers.* and the serverConnections create/delete rows. Read from the regenerated conformance manifest.
   'sha256:dd7db73e2459c019172b6dace70e2186c875f14b333d12401d8a7130f9161dbe';
 
 export const GRAMMAR_VERSION = '2';
