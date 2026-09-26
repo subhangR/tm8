@@ -443,6 +443,7 @@ const DELIBERATE_SPELLINGS: Readonly<Record<string, string>> = {
   spaceOwned: 'no CLI flag: credentials.space.create is a commandless human-settings row; the space credentials screen sets it (2026-09-26)',
   mayBeSpaceDefault: 'no CLI flag: credentials.space.create is a commandless human-settings row (2026-09-26)',
   allowed: 'no CLI flag: credentials.space.spaceDefaultConsent is a commandless human-settings row (2026-09-26)',
+  rankForSuggestedTeammate: 'no CLI flag: launch.suggest is UI-only (Ask Jev on the launch card), no CLI verb; Decision 7 (2026-09-27)',
   ro: '`--mount <host>:<guest>:ro`, a per-element suffix — a top-level --ro could not name which mount it meant (2026-09-03)',
 };
 
