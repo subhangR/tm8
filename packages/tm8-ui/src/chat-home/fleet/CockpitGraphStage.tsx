@@ -42,7 +42,7 @@
  *
  * A LEAF, like the fleet pane: no route, no nav store, no seam.
  */
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import type { EntityId } from '@tm8/contract';
 import type { ConnectionsReader } from '../../session-graph/load';
 import '../../session-graph/session-graph.css';
@@ -88,6 +88,8 @@ export interface CockpitGraphStageProps {
    */
   readEntity?: FleetEntityReader | undefined;
   onOpenEntity?: ((id: EntityId) => void) | undefined;
+  /** The host's right-aligned header line — the screen's `StageExit` (D18). */
+  headerEnd?: ReactNode;
 }
 
 export function CockpitGraphStage({
@@ -96,6 +98,7 @@ export function CockpitGraphStage({
   connections,
   readEntity,
   onOpenEntity,
+  headerEnd,
 }: CockpitGraphStageProps) {
   const fold = useMemo(
     () => foldGraphSeeds(turns, suppressEntityIds, { limit: MAX_DRAWN_STAGE }),
@@ -124,7 +127,10 @@ export function CockpitGraphStage({
   return (
     <section className="cgs" aria-label="Entity graph" data-testid="cockpit-graph">
       <header className="cgs__head">
-        <h2>Graph</h2>
+        <div className="cgs__titlerow">
+          <h2>Graph</h2>
+          {headerEnd}
+        </div>
         <p className="cgs__sub">
           The entities this conversation read or edited, and the relations they actually hold. The
           conversation selects what is here; it is not itself a node.

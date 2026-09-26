@@ -110,6 +110,13 @@ export function mergeChatTurnFrame(
 
   const parts = turn.parts;
   const alreadyHasUsage = parts.some((part) => part.kind === 'usage');
+  /* A TURN HOLDING ITS DONE PART NEEDS NO STAND-IN USAGE. The server stores a
+     turn's usage part BEFORE its done part, so once the done part is here the
+     real usage is durable at a LOWER seq even if a reconnect gap kept its
+     delta from us — and the re-read this done triggers brings it. A stand-in
+     at max seq + 1 landed past the done, and the snapshot's union by seq kept
+     both: two usage parts on one turn (L3, #877). */
+  const heldDone = parts.some((part) => part.kind === 'done');
   /* THE TURN IS OVER, SO IT IS NO LONGER IN FLIGHT. `turnInFlight` came from
      the read that found the turn claimed; left set, it outlived the turn and
      kept hiding the body of a turn that finished while it was watched — and a
@@ -121,7 +128,7 @@ export function mergeChatTurnFrame(
     ...rest,
     body: turn.turnInFlight && turn.body === CLAIMED_TURN_BODY ? '' : turn.body,
     parts:
-      alreadyHasUsage || !hasUsage(frame.usage)
+      alreadyHasUsage || heldDone || !hasUsage(frame.usage)
         ? parts
         : [
             ...parts,
@@ -129,6 +136,7 @@ export function mergeChatTurnFrame(
               kind: 'usage' as const,
               seq: nextSeq(parts),
               usage: frame.usage,
+              synthetic: true as const,
             },
           ],
   };
@@ -155,7 +163,11 @@ export function reconcileDetails(
     const existing = current.turns.find((candidate) => candidate.messageId === turn.messageId);
     if (!existing) return turn;
     const seqs = new Set(turn.parts.map((part) => part.seq));
-    const extra = existing.parts.filter((part) => !seqs.has(part.seq));
+    // A stand-in usage gives way to the stored one: one usage part per turn.
+    const storedUsage = turn.parts.some((part) => part.kind === 'usage');
+    const extra = existing.parts.filter(
+      (part) => !seqs.has(part.seq) && !(storedUsage && part.kind === 'usage' && part.synthetic),
+    );
     if (extra.length === 0 && (turn.body || !existing.body)) return turn;
     return {
       ...turn,

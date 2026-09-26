@@ -38,13 +38,20 @@ describe('dashboard route', () => {
     expect(await view.findByTestId('home-page')).toBeTruthy();
     expect(await view.findByTestId('chat-home-screen')).toBeTruthy();
     expect(view.queryByTestId('home-screen')).toBeNull();
-    // TWO sightings, one conversation: the panel row (the inventory and the
-    // only selector) and the conversation's own head. It was three while the
+    // EVERY sighting is a panel row (the inventory and the only selector) or
+    // the conversation's own head — there was a third surface while the
     // working-set tab strip existed; revision 14 removed the strip, and this
-    // count is how that stays removed.
+    // is how that stays removed. Not a bare count: the fixture app holds TWO
+    // threads with this title, so "2" only ever held in the frame before the
+    // head named the opened thread.
     await waitFor(() =>
-      expect(view.getAllByText('Plan the launch sequence')).toHaveLength(2),
+      expect(view.container.querySelector('.tch-title strong')?.textContent).toBe('Plan the launch sequence'),
     );
+    const sightings = view.getAllByText('Plan the launch sequence');
+    expect(sightings.length).toBeGreaterThan(1);
+    expect(
+      sightings.every((node) => node.closest('.tch-thread') !== null || node.closest('.tch-conversation__head') !== null),
+    ).toBe(true);
     fireEvent.click(view.getByRole('button', { name: /^New chat$/ }));
     expect(await view.findByText(/New conversation — pick a mode/)).toBeTruthy();
   });

@@ -6,6 +6,11 @@ import { ChatHomeScreen } from './ChatHomeScreen';
 import { CHAT_HOME_FIXTURE_THREAD, createChatHomeFixturePort } from './fixtures';
 import type { ChatHomePort, ChatModelOption, ChatThreadDetail } from './types';
 
+/* "The fixture thread has opened" = its first turn is in the transcript. Not
+   its title: the title is on screen twice from the first frame (the row, and
+   the header, which names the thread being opened — D26). */
+const OPENED_FIXTURE_TURN = 'Plan the launch sequence and check what is already blocked.';
+
 /**
  * THE WAITING MARKS — the figure-8 in the composer and in the transcript.
  *
@@ -42,7 +47,7 @@ function mount(port: ChatHomePort) {
  * parallel suite loses.
  */
 async function settled(view: ReturnType<typeof mount>) {
-  await waitFor(() => expect(view.getByText('Plan the launch sequence')).toBeTruthy());
+  await waitFor(() => expect(view.getByText(OPENED_FIXTURE_TURN)).toBeTruthy());
   await waitFor(() => expect(view.queryByTestId('chat-detail-loading')).toBeNull());
 }
 
