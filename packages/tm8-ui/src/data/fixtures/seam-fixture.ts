@@ -37,6 +37,8 @@ import {
   type TaskWorkflowInput,
   type UpdateMemberRoleInput,
   type UpdateSpaceInput,
+  type MembershipEndResult,
+  type MembershipEndStatus,
   bindPath,
   CollabError,
   FILE_MAX_SIZE_BYTES_DEFAULT,
@@ -1725,10 +1727,50 @@ export function createFixtureSeam(): FixtureSeam {
     return typeof state?.role === 'string' ? state.role : null;
   }
 
+  /**
+   * G6 (232): member rows whose membership ENDED. The summary stays exactly
+   * where it was — a node keeps the row so authorship still resolves — and it
+   * still resolves BY ID with `state.memberStatus` set, but the entities query
+   * no longer lists it (#841, 00c0db5e) and it is no longer a member for any
+   * rule. (The node also drops personas of ended owners from the listing; the
+   * fixture's personas are not owned by a member row, so there is none to drop.)
+   */
+  const endedMembers = new Map<EntityId, MembershipEndStatus>();
+
   function membersOfSpace(spaceId: SpaceId): EntitySummary[] {
     return [...summaries.values()].filter(
-      (s) => s.kind === 'member' && s.spaceId === spaceId && !s.deletedAt,
+      (s) => s.kind === 'member' && s.spaceId === spaceId && !s.deletedAt && !endedMembers.has(s.id),
     );
+  }
+
+  /** The viewer's live member row, found the way `setMemberRole` finds it. */
+  function viewerMemberOf(spaceId: SpaceId): EntitySummary | undefined {
+    const members = membersOfSpace(spaceId);
+    return members.find((m) => m.id === viewerActor.id)
+      ?? members.find((m) => roleOfSummary(m) === 'owner');
+  }
+
+  function endMembership(
+    spaceId: SpaceId,
+    target: EntitySummary,
+    status: MembershipEndStatus,
+  ): MembershipEndResult {
+    endedMembers.set(target.id, status);
+    if (target.state.kind === 'member') target.state = { ...target.state, memberStatus: status };
+    spaceSummary.memberCount = Math.max(0, spaceSummary.memberCount - 1);
+    touch(target);
+    emit(spaceId, { type: 'entity.upsert', entity: clone(target) });
+    return {
+      spaceId,
+      memberId: target.id,
+      status,
+      leftAt: target.activityAt,
+      stoppedSessionIds: [],
+      deactivatedPersonaIds: [],
+      unassignedEntityIds: [],
+      revokedTokenCount: 0,
+      activity: `act-${status}-${target.id}`,
+    };
   }
 
   function requireSummary(id: EntityId): EntitySummary {
@@ -2355,7 +2397,7 @@ export function createFixtureSeam(): FixtureSeam {
       return clone(identityView);
     },
     async spaces() {
-      return clone([spaceSummary]);
+      return clone(identityView.memberships.some((m) => m.spaceId === FIXTURE_SPACE_ID) ? [spaceSummary] : []);
     },
     /** Per-kind chat defaults (migration 229): a PATCH over kinds, `null` / `{}` clears. */
     async chatDefaults(spaceId): Promise<ChatDefaultsView> {
@@ -2588,6 +2630,8 @@ export function createFixtureSeam(): FixtureSeam {
            production defect in miniature: the live node's session list read
            "To Do 1" over an empty tab. */
         if ((s.state as { sessionKind?: unknown }).sessionKind === 'credential') return false;
+        /* G6 (#841): an ended member is not LISTED — by id it still resolves. */
+        if (endedMembers.has(s.id)) return false;
         const f = input.filters;
         /* Empty lists are NO constraint — the server guards every arm with
            `length > 0` (collections.ts), so `priority: []` must not read as
@@ -3815,6 +3859,42 @@ export function createFixtureSeam(): FixtureSeam {
         touch(target);
         emit(spaceId, { type: 'entity.upsert', entity: clone(target) }, input);
         return commandResult(target);
+      },
+
+      /**
+       * G6, mirrored: the SQL rules of `leave_space` / `remove_space_member`
+       * (231), in the order they refuse. The row is tombstoned, never deleted.
+       */
+      async leaveSpace(spaceId: SpaceId): Promise<MembershipEndResult> {
+        const self = viewerMemberOf(spaceId);
+        if (!self) throw new CollabError('forbidden', 'not a member of this space');
+        if (roleOfSummary(self) === 'owner'
+          && membersOfSpace(spaceId).filter((m) => roleOfSummary(m) === 'owner').length <= 1) {
+          throw new CollabError('forbidden',
+            'the last owner cannot leave: promote a successor first');
+        }
+        const result = endMembership(spaceId, self, 'left');
+        identityView.memberships = identityView.memberships.filter((m) => m.spaceId !== spaceId);
+        return result;
+      },
+
+      async removeMember(spaceId: SpaceId, memberId: EntityId): Promise<MembershipEndResult> {
+        const target = requireSummary(memberId);
+        if (target.kind !== 'member' || target.spaceId !== spaceId || endedMembers.has(target.id)) {
+          throw new CollabError('not_found', `member ${memberId} not found in this space`);
+        }
+        const viewer = viewerMemberOf(spaceId);
+        const viewerRole = viewer ? roleOfSummary(viewer) : null;
+        if (viewerRole !== 'owner' && viewerRole !== 'admin') {
+          throw new CollabError('forbidden', 'space admin required');
+        }
+        if (viewer?.id === target.id) {
+          throw new CollabError('invalid_input', 'you cannot remove yourself: leave the space instead');
+        }
+        if (roleOfSummary(target) === 'owner' && viewerRole !== 'owner') {
+          throw new CollabError('forbidden', 'only an owner may remove an owner');
+        }
+        return endMembership(spaceId, target, 'removed');
       },
 
       async createInvite(spaceId: SpaceId, input: CreateInviteInput): Promise<SpaceInviteView> {

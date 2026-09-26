@@ -414,7 +414,9 @@ export class PgDb implements Db {
       await client.query(BIND_CLAIMS_SQL, [
         claimValue(claims.identityId),
         claimValue(claims.actorId),
-        nodeAdminClaim(claims.nodeAdmin),
+        // K6 (W3): the one branch every caller shares. A space-pinned session
+        // never binds node admin, whatever claims builder produced `claims`.
+        nodeAdminClaim(claims.sessionSpaceId ? false : claims.nodeAdmin),
         claimValue(claims.requestId),
         // Absent binds as `''`, which `internal.claim_text` normalises to NULL
         // and `require_human_auth_kind` refuses. Fail-closed by construction:

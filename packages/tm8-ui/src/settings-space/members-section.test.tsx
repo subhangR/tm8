@@ -214,7 +214,7 @@ describe('T2-1b — the refusal has to be READABLE', () => {
     // aria-describedby, resolvable — a reason a screen reader cannot reach is
     // not a reason.
     const described = document.getElementById(remove.getAttribute('aria-describedby')!);
-    expect(described?.textContent).toMatch(/attribution target of everything they authored/);
+    expect(described?.textContent).toMatch(/removing a member needs admin or owner here/);
     const role = within(row).getByRole('button', { name: /^role: / });
     expect(
       document.getElementById(role.getAttribute('aria-describedby')!)?.textContent,

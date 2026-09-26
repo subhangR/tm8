@@ -182,7 +182,12 @@ describe.sequential('W3.G06 projects and associations through the production Ser
     expect(after.map(({ id, version }) => ({ id, version }))).toEqual(
       before.map(({ id, version }) => ({ id, version: version + 1 })),
     );
-    expect(after.every((row) => row.name === body.name && row.repo_url === null)).toBe(true);
+    // W11 (234, decision 28): the FOLDER's fields fan out (repoUrl null reaches
+    // every projection, one version each), but each space's project keeps its
+    // OWN name — a folder rename no longer renames the space's project
+    // (234's materialize_project_projection). The folder itself (`updated`) is renamed.
+    expect(after.every((row) => row.repo_url === null)).toBe(true);
+    expect(after.map((row) => row.name)).toEqual(after.map(() => 'W3 project'));
     const ledger = await harness.rows<{ count: number }>(
       `select count(*)::integer count from public.command_ledger
         where client_mutation_id = 'w3-g06-update'`,

@@ -32,7 +32,8 @@ export async function supportClaims(
   if (!identityId) throw new CollabError('unauthenticated', 'bearer identity is unresolved');
   return {
     identityId,
-    nodeAdmin: identityId === owner.identityId ? owner.isNodeAdmin : false,
+    // K6 (W3): a space-pinned session never holds node admin.
+    nodeAdmin: identity.sessionSpaceId ? false : identityId === owner.identityId ? owner.isNodeAdmin : false,
     requestId,
     ...(identity.sessionSpaceId ? { sessionSpaceId: identity.sessionSpaceId } : {}),
   };

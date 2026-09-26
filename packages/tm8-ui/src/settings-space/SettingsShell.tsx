@@ -50,6 +50,7 @@ export function SettingsShell({
   onSectionChange,
   nodeKey = 'local',
   onAxesChanged,
+  onLeftSpace,
 }: SettingsShellProps) {
   const [active, setActive] = useState<SettingsSectionId>(initialSection);
   const [data, setData] = useState<SettingsData>({
@@ -230,6 +231,7 @@ export function SettingsShell({
             port={port}
             onProfileSaved={refreshIdentity}
             onMembersChanged={refreshMembers}
+            {...(onLeftSpace ? { onLeftSpace } : {})}
             onInvitesChanged={refreshInvites}
             onSpaceWritten={spaceWritten}
             onAxesChanged={refreshAxes}
@@ -250,6 +252,7 @@ function SectionBody({
   port,
   onProfileSaved,
   onMembersChanged,
+  onLeftSpace,
   onInvitesChanged,
   onSpaceWritten,
   onAxesChanged,
@@ -263,6 +266,7 @@ function SectionBody({
   port: SettingsShellProps['port'];
   onProfileSaved: () => void;
   onMembersChanged: () => void;
+  onLeftSpace?: SettingsShellProps['onLeftSpace'];
   onInvitesChanged: () => void;
   onSpaceWritten: (space: SpaceSummary) => void;
   onAxesChanged: () => void;
@@ -289,6 +293,17 @@ function SectionBody({
             await port.setMemberRole(memberId, role);
             onMembersChanged();
           }}
+          {...(port.removeMember
+            ? {
+                onRemove: async (memberId: string) => {
+                  // Not caught, as above: the confirmation prints the refusal.
+                  // No local hide set: the entities query stops listing an
+                  // ended member (G6, #841), so the re-read is the authority.
+                  await port.removeMember!(memberId);
+                  onMembersChanged();
+                },
+              }
+            : {})}
         />
       );
     case 'invites':
@@ -407,7 +422,20 @@ function SectionBody({
          costs nothing. */
       return <ConfigsSection heading={def.heading} load={port.loadConfigs} />;
     case 'danger':
-      return <DangerSection heading={def.heading} />;
+      return (
+        <DangerSection
+          heading={def.heading}
+          {...(data.space ? { spaceName: data.space.name } : {})}
+          {...(port.leaveSpace
+            ? {
+                onLeave: async () => {
+                  const result = await port.leaveSpace!();
+                  onLeftSpace?.(result.spaceId);
+                },
+              }
+            : {})}
+        />
+      );
     default:
       return (
         <SectionFrame title={def.heading}>

@@ -193,6 +193,7 @@ const ADMIN_SPACE_OPERATIONS = new Set<OperationName>([
   'spaces.taskAxes.update',
   'spaces.taskAxes.delete',
   'projects.link',
+  'spaces.projects.create',
   'projects.unlink',
   'entityKinds.create',
   'entityKinds.update',

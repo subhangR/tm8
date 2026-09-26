@@ -86,6 +86,12 @@ export const OPERATIONS = [
   { name: 'spaces.configs',          method: 'GET',    path: '/v2/spaces/:spaceId/configs',                 kind: 'read',    status: 'v1' },
   { name: 'spaces.members.list',     method: 'GET',    path: '/v2/spaces/:spaceId/members',                 kind: 'read',    status: 'v1' },
   { name: 'spaces.members.updateRole', method: 'PATCH', path: '/v2/spaces/:spaceId/members/:memberId',       kind: 'command', status: 'v1' },
+  // G6 (migration 232): a membership ends by tombstone. Both human-only; the
+  // member row and everything it authored stay. POST verbs, like invites.revoke.
+  { name: 'spaces.members.remove', method: 'POST',  path: '/v2/spaces/:spaceId/members/:memberId/remove', kind: 'command', status: 'v1' },
+  { name: 'spaces.leave',          method: 'POST',  path: '/v2/spaces/:spaceId/leave',                   kind: 'command', status: 'v1' },
+  // Node admin turns an account off: every session refused, launched work contained (232).
+  { name: 'accounts.disable',      method: 'POST',  path: '/v2/accounts/:accountId/disable',             kind: 'command', status: 'v1' },
   { name: 'spaces.invites.list',     method: 'GET',    path: '/v2/spaces/:spaceId/invites',                 kind: 'read',    status: 'v1' },
   { name: 'spaces.invites.create',   method: 'POST',   path: '/v2/spaces/:spaceId/invites',                 kind: 'command', status: 'v1' },
   { name: 'spaces.invites.revoke',   method: 'POST',   path: '/v2/spaces/:spaceId/invites/:inviteId/revoke', kind: 'command', status: 'v1' },
@@ -194,6 +200,15 @@ export const OPERATIONS = [
   { name: 'projects.file.blame',     method: 'GET',    path: '/v2/projects/:projectId/blame',               kind: 'read',    status: 'v1' },
   { name: 'projects.update',         method: 'PATCH',  path: '/v2/projects/:projectId',                     kind: 'command', status: 'v1' },
   { name: 'projects.link',           method: 'POST',   path: '/v2/spaces/:spaceId/projects',                kind: 'command', status: 'v1' },
+  // W11 (migration 234): a folder is the gate's and is granted to ONE space
+  // (`gate.folders.*`); the space's project is its own entity, listed to
+  // members without a path and named by a space admin on a folder granted to
+  // that space. `projects.link` stays (decision 29): only a loopback-only
+  // `single` node may link one folder into several spaces.
+  { name: 'spaces.projects.list',    method: 'GET',    path: '/v2/spaces/:spaceId/projects',                kind: 'read',    status: 'v1' },
+  { name: 'spaces.projects.create',  method: 'POST',   path: '/v2/spaces/:spaceId/projects/create',         kind: 'command', status: 'v1' },
+  { name: 'gate.folders.list',       method: 'GET',    path: '/v2/gate/folders',                            kind: 'read',    status: 'v1' },
+  { name: 'gate.folders.create',     method: 'POST',   path: '/v2/gate/folders',                            kind: 'command', status: 'v1' },
   { name: 'projects.unlink',         method: 'DELETE', path: '/v2/spaces/:spaceId/projects/:projectId',     kind: 'command', status: 'v1' },
   { name: 'projects.files.list',     method: 'GET',    path: '/v2/projects/:projectId/files',               kind: 'read',    status: 'v1' },
   { name: 'projects.files.attach',   method: 'POST',   path: '/v2/projects/:projectId/files/attach',        kind: 'command', status: 'v1' },
@@ -392,6 +407,10 @@ export const OPERATIONS = [
   { name: 'auth.login',                                  method: 'POST',   path: '/v2/auth/login',                                                     kind: 'command', status: 'v1' },
   { name: 'auth.logout',                                 method: 'POST',   path: '/v2/auth/logout',                                                    kind: 'command', status: 'v1' },
   { name: 'auth.session.get',                            method: 'GET',    path: '/v2/auth/session',                                                   kind: 'read',    status: 'v1' },
+  // W3 (plan 01a0d9eb): a gate session + membership mints a session pinned to
+  // one space. Under TM8_SPACE_SESSIONS=enforce this is how a human gets past
+  // the gate at all.
+  { name: 'auth.space.enter',                            method: 'POST',   path: '/v2/auth/space/enter',                                               kind: 'command', status: 'v1' },
   // `auth.password.change` — the day a human forgets their password, the only
   // recovery was `psql` (FIRST-RUN-CLAIM-DESIGN.md §10.3). This is CHANGE, not
   // reset: it demands the CURRENT password in the body and proves it with the

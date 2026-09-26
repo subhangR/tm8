@@ -2527,6 +2527,13 @@ export function GateApp(props: GateAppProps = {}) {
                  pickers and board options; axis rows are not entities, so no
                  event will do it. */
               onAxesChanged={data.refreshTaskAxes}
+              /* G6: after a leave the viewer is no longer a member, so every
+                 read of this space refuses. Same pairing as every switch:
+                 leave the space context, THEN drop and move. */
+              onLeftSpace={(spaceId) => {
+                leaveSpaceContext();
+                data.forgetSpace(spaceId);
+              }}
               sections={
                 credentialsPort || branchesPort || spaceCredentialsPort
                   ? {

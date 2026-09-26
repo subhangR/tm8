@@ -18,7 +18,7 @@
 //    detail, not fall through to '{}' — the ONLY way to tell a landed arm from
 //    a silently-dropped one (three later migrations re-declare this function).
 //
-//   TM8_DATABASE_URL=postgres://tm8@127.0.0.1:5442/tm8_artifacts_verify \
+//   TM8_DATABASE_URL=postgres://tm8@127.0.0.1:5443/tm8_artifacts_verify \
 //     node db/test/artifacts.mjs
 // =============================================================================
 import { randomUUID } from 'node:crypto';

@@ -133,6 +133,8 @@ function handler(registry: HandlerRegistry, name: OperationName): OperationHandl
 describe('W2.G06 projects and association correction facade', () => {
   it('exports one registration seam for the project operations', () => {
     expect(registered(new FakeDb()).implemented()).toEqual([
+      'gate.folders.create',
+      'gate.folders.list',
       'projects.associations.correct',
       'projects.branches.list',
       'projects.create',
@@ -144,6 +146,8 @@ describe('W2.G06 projects and association correction facade', () => {
       'projects.list',
       'projects.unlink',
       'projects.update',
+      'spaces.projects.create',
+      'spaces.projects.list',
     ]);
   });
 
@@ -299,22 +303,38 @@ describe('W2.G06 projects and association correction facade', () => {
     )).rejects.toMatchObject({ code: 'unauthenticated' });
   });
 
-  it('returns complete ProjectResource shapes and narrows list by a validated active Space link', async () => {
+  it('returns complete ProjectResource shapes and narrows list to the space\'s own projects (W11)', async () => {
     const db = new FakeDb();
-    let sql = '';
-    let params: readonly unknown[] = [];
+    const queries: Array<{ sql: string; params: readonly unknown[] }> = [];
+    const PROJECT_ENTITY = '00000000-0000-7000-8000-000000000605';
     db.queryImpl = async <R>(text: string, values: readonly unknown[]) => {
-      sql = text;
-      params = values;
-      return [PROJECT_ROW] as R[];
+      queries.push({ sql: text, params: values });
+      if (text.includes('space_projects_for_caller')) {
+        return [{
+          project_id: PROJECT_ENTITY,
+          folder_id: IDS.project,
+          name: 'tm8',
+          repo_url: PROJECT_ROW.repo_url,
+          trust: 'trusted',
+          defaults: PROJECT_ROW.defaults,
+          materialized_version: 1,
+          created_at: PROJECT_ROW.created_at,
+          updated_at: PROJECT_ROW.updated_at,
+        }] as R[];
+      }
+      return [{ id: IDS.project, working_dir: PROJECT_ROW.working_dir }] as R[];
     };
     const result = await handler(registered(db), 'projects.list')(
       request('projects.list', { query: `spaceId=${IDS.space}` }),
     );
     expect(ProjectResourceSchema.array().safeParse(result).success).toBe(true);
-    expect(result).toEqual([expect.objectContaining({ linkFrozen: false, activeLinkCount: 2 })]);
-    expect(sql).toContain('public.space_projects');
-    expect(params).toEqual([IDS.space]);
+    // The folder id stays `id`; the space's own project entity rides beside it.
+    // The path is the gate's — this caller is a node admin, so it is present.
+    expect(result).toEqual([expect.objectContaining({
+      id: IDS.project, projectEntityId: PROJECT_ENTITY, spaceId: IDS.space, workingDir: '/tmp/tm8',
+    })]);
+    expect(queries[0]!.sql).toContain('public.space_projects_for_caller');
+    expect(queries[0]!.params).toEqual([IDS.space]);
 
     await expect(handler(registered(db), 'projects.list')(
       request('projects.list', { query: 'spaceId=not-a-uuid' }),

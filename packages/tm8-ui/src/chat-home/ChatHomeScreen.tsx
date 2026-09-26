@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { ChatMode, EntityId, LaunchModelEffort, SessionTranscriptContext, SpaceId } from '@tm8/contract';
-import { CHATS_ROOT, KindIcon, type HomeRoot } from '../domain';
+import { CHATS_ROOT, KindIcon, actorName, type HomeRoot } from '../domain';
 import { rememberChatStart } from '../chat-defaults/lastUsed';
 import { Avatar, Markdown, RibbonMark, Timestamp } from '../kit';
 import { chatMarkdownSource } from '../channel-screen/feed-model';
@@ -2472,7 +2472,7 @@ function Turn({
   ledger?: ChatLedger | undefined;
   toolNote?: TurnPartsProps['toolNote'];
 }) {
-  const label = turn.author?.displayName ?? (turn.role === 'assistant' ? 'Agent' : 'You');
+  const label = (turn.author ? actorName(turn.author) : null) ?? (turn.role === 'assistant' ? 'Agent' : 'You');
   const actorId = turn.author?.id ?? `chat-${turn.role}`;
   const agent = turn.author?.isAgent ?? turn.role === 'assistant';
   /**

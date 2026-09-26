@@ -235,6 +235,21 @@ const ROWS: Record<OperationName, Row> = {
     input: 'none',
     tags: ['whoami', 'session', 'token', 'me'],
   },
+  'auth.space.enter': {
+    cmd: ['auth', 'space', 'enter'],
+    syn: 'tm8 auth space enter <space-id> [--label <label>]',
+    sum: 'Mint a session pinned to one space from your unpinned (gate) session',
+    authz: 'server',
+    input: 'bound',
+    side: 'durable',
+    tags: ['space', 'enter', 'switch', 'session', 'token', 'pin'],
+    notes: [
+      'requires membership of the space and an unpinned browser/cli session; a pinned session cannot enter another space',
+      'the new session has the same kind, never carries node-admin power, and expires no later than the session that minted it',
+      'under TM8_SPACE_SESSIONS=enforce an unpinned human session can call only spaces.list, auth.* and node administration until it enters a space',
+      'the pinned token is printed once and not stored, so the stored gate credential stays usable for entering other spaces',
+    ],
+  },
   'auth.password.change': {
     cmd: ['auth', 'password'],
     syn: 'tm8 auth password --current <current-password> --new <new-password>',
@@ -302,6 +317,21 @@ const ROWS: Record<OperationName, Row> = {
       'ON-BOX BY CONSTRUCTION: only the loopback auto-owner may run it, and the fresh token is written to <dataDir>/setup-token (0600) — the file, not the network, is the boundary',
       'an ordinary restart REPRINTS the live token rather than rotating it, so this is the deliberate act that rotates: reissuing invalidates any previously printed token',
       'refused once any account on the node has a password: a claim token is inert on a claimed node, so there is nothing to reissue',
+    ],
+  },
+  // ── node accounts (G6, migration 232) ──────────────────────────────────
+  'accounts.disable': {
+    cmd: ['node', 'account', 'disable'],
+    syn: 'tm8 node account disable <account-id> --yes [--mutation-id <id>]',
+    sum: 'Disable an account on this Server: every session it holds is revoked and its agent sessions stop',
+    authz: 'server',
+    input: 'bound',
+    side: 'durable',
+    tags: ['disable', 'account', 'revoke', 'ban', 'suspend', 'admin'],
+    notes: [
+      'the caller must be an authenticated human node admin; refused for yourself and for the node owner',
+      'the account row and its memberships are kept, so what it wrote still renders',
+      'links to this Server stored elsewhere go stale on their next 401',
     ],
   },
   // ── credentials (Tier B per-member vendor credentials) ───────────────────
@@ -641,6 +671,33 @@ const ROWS: Record<OperationName, Row> = {
     authz: 'space',
     input: 'bound',
     tags: ['permission', 'promote', 'demote', 'admin'],
+  },
+  'spaces.members.remove': {
+    cmd: ['space', 'member', 'remove'],
+    syn: 'tm8 space member remove <member-id> [--space <space-id>] --yes [--mutation-id <id>]',
+    sum: "End another Member's membership of a Space — the row is kept as `removed`",
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['remove', 'kick', 'revoke', 'member', 'admin'],
+    notes: [
+      'requires an authenticated human Member with the Space owner/admin capability; only an owner may remove an owner',
+      'in one transaction: their tokens pinned to the Space are revoked, their agent sessions there stop, their personas are deactivated and their assignments cleared',
+      'nothing is deleted: what they wrote still renders under their name, marked as no longer a member',
+    ],
+  },
+  'spaces.leave': {
+    cmd: ['space', 'leave'],
+    syn: 'tm8 space leave [--space <space-id>] --yes [--mutation-id <id>]',
+    sum: 'Leave a Space — your membership is kept as `left`, and a later invite brings the same row back',
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['leave', 'quit', 'exit', 'member'],
+    notes: [
+      'the last owner of a Space cannot leave it: promote another owner first',
+      'in one transaction: your tokens pinned to the Space are revoked, your agent sessions there stop, your personas are deactivated and your assignments cleared',
+    ],
   },
   'spaces.invites.list': {
     cmd: ['space', 'invite', 'list'],
@@ -1404,7 +1461,41 @@ const ROWS: Record<OperationName, Row> = {
     input: 'bound',
     notes: [
       'the result carries BOTH identities: the ProjectResource id and the per-Space projection entity id — they are never interchangeable',
+      'decision 29: one folder may be linked into several Spaces only on a loopback-only single node; everywhere else a folder that belongs to another Space is refused: this folder belongs to another space',
     ],
+  },
+  'spaces.projects.list': {
+    cmd: ['project', 'space-list'],
+    syn: 'tm8 project space-list [--space <space-id>]',
+    sum: "List the Space's projects: each is the Space's own project entity over a folder granted to it; never a path",
+    authz: 'space',
+    input: 'none',
+  },
+  'spaces.projects.create': {
+    cmd: ['project', 'add'],
+    syn: 'tm8 project add <folder-id> [--name <name>] [--space <space-id>] [--mutation-id <id>]',
+    sum: "Name the Space's project on a folder granted to that Space",
+    authz: 'space',
+    input: 'bound',
+    notes: [
+      'requires the Space owner/admin capability; a folder granted to another Space is refused: this folder belongs to another space',
+    ],
+  },
+  'gate.folders.list': {
+    cmd: ['project', 'folders'],
+    syn: 'tm8 project folders',
+    sum: 'List every folder on this server with the Space it is granted to',
+    authz: 'server',
+    input: 'none',
+    notes: ['gate (node) admins only: members never receive a disk path'],
+  },
+  'gate.folders.create': {
+    cmd: ['project', 'folder-add'],
+    syn: 'tm8 project folder-add <name> --working-dir <absolute-path> [--grant-space <space-id>] [--ensure-working-dir] [--repo-url <url>] [--trust trusted|untrusted] [--mutation-id <id>]',
+    sum: 'Register a folder inside TM8_PROJECT_ROOTS, optionally granting it to one Space',
+    authz: 'server',
+    input: 'bound',
+    notes: ['gate (node) admins only; a folder is granted to at most one Space'],
   },
   'projects.unlink': {
     cmd: ['project', 'unlink'],
@@ -2947,6 +3038,7 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   // the same map and moves with it.
   chat: 'chat',
   containers: 'container',
+  gate: 'project',
   // Required even though all four `credentials.*` rows are `cmd: null`: the
   // noun groups them in `tm8 help`, so they are DISCOVERABLE rather than
   // hidden. Someone asking "can tm8 manage my vendor logins?" gets an answer.
@@ -2958,6 +3050,10 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   // it is `cmd: null` (Jev is UI-only, design 01a0cb80), so a separate noun
   // would name no command. `tools/conformance`'s generator holds the same map.
   launch: 'session',
+  // `accounts.disable` (G6, 232): the command is `tm8 node account disable`,
+  // but `node` already groups the credential rows, so the noun is `account`.
+  // `tools/conformance`'s generator holds the same map.
+  accounts: 'account',
 };
 
 function nounFor(operation: OperationName): string {
@@ -3010,6 +3106,8 @@ function exposureFor(operation: OperationName): Exposure {
 // 2026-08-13 (first-run claim): auth.claim + auth.claim.status take the catalog
 // to 161 rows. RECOMPUTED from `JSON.stringify(OPERATIONS)`, not adjusted.
 export const CATALOG_DIGEST =
+  // Re-measured for W11 (+spaces.projects.list, +spaces.projects.create at
+  // /projects/create, +gate.folders.list/create; projects.link stays, decision 29) — read from the regenerated conformance manifest.
   // Re-measured 141 (+ auth.password.change, auth.invite.signup,
   // auth.claim.reissue) — read from the regenerated conformance manifest, never
   // hand-derived.
@@ -3038,7 +3136,11 @@ export const CATALOG_DIGEST =
   // Re-measured (Forms W3 merged with headers I4): + forms.responses.redeliver, forms.pendingForSessions. Read from the failing digest test.
   // Re-measured (I9b): + launch.defaults. Read from the failing digest test.
   // Re-measured (entity chat G): + spaces.chatDefaults.get/set. RECOMPUTED from JSON.stringify(OPERATIONS).
-  'sha256:17e587ad69818332abe3b80edc99b687f2efb861b7ac44ae203728561e7d7d35';
+  // Re-measured (W11, decision 29): + spaces.projects.list/create, gate.folders.list/create; projects.link stays. Read from the failing digest test. Merged onto G6 (232): digest re-measured on the merged tree.
+  // Re-measured (G6, 232): + spaces.members.remove, spaces.leave, accounts.disable. Read from the failing digest test.
+  // Re-measured (W3-server, on main bd1841bf): + auth.space.enter. Read from the conformance generator.
+  // Rebased onto main d11e0be5 (#848): W11's +4 on top of auth.space.enter; digest re-measured on the rebased tree.
+  'sha256:b7a5a5ff6ae8f7320bad8055cdf9485c166d5f5f4e60cf2501c030f5612ea437';
 
 export const GRAMMAR_VERSION = '2';
 

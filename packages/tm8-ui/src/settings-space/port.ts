@@ -29,18 +29,17 @@
  * authorization — this file adds none and can therefore not disagree with the
  * server about who may do what.
  *
- * MEMBER REMOVAL IS STILL ABSENT, and its absence is now a different fact than
- * it was. It is not that nobody wrote the verb: `entities.created_by` references
- * `entities(id)` with no on-delete clause, so Postgres REFUSES to delete the
- * member row of anyone who has authored anything, and the correct shape — a
- * soft removal that keeps attribution and revokes access — needs every
- * membership predicate in the schema audited. `MEMBER_REMOVE_UNAVAILABLE` says
- * so. The port still exposes no method for it, for the original reason: a
- * component that cannot reach a verb cannot quietly acquire one.
+ * MEMBER REMOVAL AND LEAVING ARRIVED WITH G6 (migration 231). The shape this
+ * header used to ask for is the shape that shipped: a TOMBSTONE
+ * (`members.status` = `left` / `removed`) that keeps attribution and revokes
+ * access, with every membership helper audited to match active rows only.
+ * `removeMember` and `leaveSpace` are the two verbs; like the others, they
+ * carry no client-side authorization.
  */
 import type {
   CommandResult,
   CreateInviteInput,
+  MembershipEndResult,
   EntityId,
   EntitySummary,
   IdentityProfileUpdateInput,
@@ -223,6 +222,22 @@ export interface SettingsPort {
   setMemberRole(memberId: EntityId, role: SpaceMemberRole): Promise<CommandResult>;
 
   /**
+   * End someone else's membership of THIS space (G6, `spaces.members.remove`).
+   * Admin only; only an owner removes an owner; never yourself — that is
+   * `leaveSpace`. The answer names the member and the status the row now has.
+   * Optional so a port built before G6 still type-checks; without it the ✕
+   * stays locked with its reason.
+   */
+  removeMember?(memberId: EntityId): Promise<MembershipEndResult>;
+
+  /**
+   * The viewer leaves THIS space (G6, `spaces.leave`). The last owner is
+   * refused by SQL. On success the viewer is no longer a member, so the host
+   * must move them out — see `SettingsShellProps.onLeftSpace`.
+   */
+  leaveSpace?(): Promise<MembershipEndResult>;
+
+  /**
    * Set THIS space's session-sharing defaults (187) through `spaces.update`.
    * Only the keys passed are sent — the PATCH leaves an absent key alone — and
    * the result is the space as the server now reports it.
@@ -376,6 +391,14 @@ export function settingsPortFromSeam(seam: Seam, spaceId: SpaceId): SettingsPort
         role,
         clientMutationId: newMutationId('role'),
       });
+    },
+
+    removeMember(memberId) {
+      return seam.commands.removeMember(spaceId, memberId);
+    },
+
+    leaveSpace() {
+      return seam.commands.leaveSpace(spaceId);
     },
 
     createInvite(input) {

@@ -261,7 +261,7 @@ describe('inline read shape', () => {
 
 class FakeDb implements Db {
   queryImpl: <R>(sql: string) => Promise<R[]> = async (sql) =>
-    (/from public\.projects/.test(sql) ? [{ working_dir: workingDir }] : []) as never;
+    (/from public\.(projects|resolve_project_ref)\b/.test(sql) ? [{ working_dir: workingDir }] : []) as never;
 
   tx<T>(_claims: DbClaims, fn: (q: Querier) => Promise<T>): Promise<T> {
     return fn({

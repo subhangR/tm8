@@ -18,12 +18,12 @@
  *
  *   cd /Users/subhang/Desktop/Projects/tm8 && bun run build && \
  *   PATH=/opt/homebrew/opt/postgresql@18/bin:$PATH \
- *   TM8_DATABASE_URL=postgres://tm8@127.0.0.1:5442/tm8_sirius node db/migrate.mjs reset --force && \
- *   (TM8_DATABASE_URL=postgres://tm8@127.0.0.1:5442/tm8_sirius TM8_PORT=4613 \
+ *   TM8_DATABASE_URL=postgres://tm8@127.0.0.1:5443/tm8_sirius node db/migrate.mjs reset --force && \
+ *   (TM8_DATABASE_URL=postgres://tm8@127.0.0.1:5443/tm8_sirius TM8_PORT=4613 \
  *    TM8_AGENT_CMD=echo-agent node packages/server/dist/index.js &) ; sleep 5 ; \
  *   TM8_BASE_URL=http://127.0.0.1:4613 node scripts/smoke-loop.mjs && \
  *   cd packages/server && TM8_BASE_URL=http://127.0.0.1:4613 \
- *   TM8_DATABASE_URL=postgres://tm8@127.0.0.1:5442/tm8_sirius \
+ *   TM8_DATABASE_URL=postgres://tm8@127.0.0.1:5443/tm8_sirius \
  *   bunx vitest run test/events/loop-visibility.pg.test.ts
  *
  * Skips (rather than fails) with no TM8_BASE_URL, so the normal suite stays

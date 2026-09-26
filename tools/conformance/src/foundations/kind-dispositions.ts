@@ -163,7 +163,7 @@ function capabilities(profile: CapabilityProfile): CapabilityDisposition {
         messages: true,
         reactions: true,
         connections: true,
-        lifecycleOperations: ['projects.link', 'projects.unlink', 'projects.associations.correct'],
+        lifecycleOperations: ['projects.link', 'spaces.projects.create', 'projects.unlink', 'projects.associations.correct'],
       };
     case 'interaction-profile-lifecycle':
       return {

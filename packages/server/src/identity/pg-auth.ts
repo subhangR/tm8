@@ -22,7 +22,7 @@
  * - signup/logout run under the CALLER's claims; `ensure_account` and
  *   `revoke_auth_session` carry their own `require_*` guards in SQL.
  */
-import { CollabError } from '@tm8/contract';
+import { CollabError, type AuthSessionView } from '@tm8/contract';
 import { randomUUID } from 'node:crypto';
 import type { Db, DbClaims } from '../db/types.js';
 import {
@@ -94,6 +94,8 @@ interface SessionRowJson {
   runtime_member_id?: string | null;
   runtime_thread_root_id?: string | null;
   runtime_chat_id?: string | null;
+  /** 226; set on agent kinds and on a session `enter_space` (233) minted. */
+  space_id?: string | null;
   label: string | null;
   created_at: string;
   expires_at: string;
@@ -259,6 +261,55 @@ export interface LoginInput {
   password: string;
   kind?: 'browser' | 'cli';
   label?: string | null;
+}
+
+/** A session pinned to one space, minted by `enter_space` (233). */
+export interface IssuedSpaceSession {
+  /** Plaintext `tm8s_<id>.<secret>` — returned exactly once, never stored. */
+  token: string;
+  spaceId: string;
+  session: AuthSessionView;
+}
+
+/**
+ * `auth.space.enter` (plan W3): mint a session pinned to `spaceId`.
+ *
+ * `parentSessionId` is the VERIFIED gate session the caller presented (never
+ * request input), or null for the loopback auto-owner. The SQL refuses a
+ * pinned caller, an agent kind, a non-member and a dead or foreign parent; the
+ * new row inherits the parent's kind and never outlives it. `kind` here only
+ * picks the TTL ceiling to ask for.
+ */
+export async function enterSpace(
+  db: Db,
+  claims: DbClaims,
+  input: { spaceId: string; parentSessionId: string | null; kind: 'browser' | 'cli'; label?: string | null },
+): Promise<IssuedSpaceSession> {
+  const secret = generateSecret();
+  const expiresAt = new Date(Date.now() + SESSION_TTL_MS[input.kind]).toISOString();
+  const session = await db.rpc<SessionRowJson>(claims, 'enter_space', [
+    input.spaceId,
+    input.parentSessionId,
+    hashToken(secret),
+    expiresAt,
+    input.label ?? null,
+  ]);
+  if (session.space_id !== input.spaceId) {
+    throw new CollabError('upstream_unavailable', 'space session returned no space');
+  }
+  return {
+    token: formatToken(session.id, secret),
+    spaceId: session.space_id,
+    session: {
+      sessionId: session.id,
+      kind: session.kind,
+      actingAsTeamMemberId: session.acting_as_team_member_id,
+      label: session.label,
+      spaceId: session.space_id,
+      createdAt: session.created_at,
+      expiresAt: session.expires_at,
+    },
+  };
 }
 
 /**

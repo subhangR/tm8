@@ -13,10 +13,11 @@
  *   projectEntityId — the per-Space projection entity. Space-level. What graph
  *                     commands (`entity get`, edges, `--attach-to`) address.
  *
- * `project link` is the one place both exist at once, so it renders both, names
- * both, and NEVER prints one where the other belongs — including when the node
- * answers without the projection id, where it says exactly that instead of
- * quietly reusing the resource id. Calling a ProjectResource id a "project
+ * `project link`, `project add` (W11) and `project unlink` are
+ * where both exist at once, so they render both, name both, and NEVER print one
+ * where the other belongs — including when the node answers without the
+ * projection id, where they say exactly that instead of quietly reusing the
+ * resource id. Calling a ProjectResource id a "project
  * entity id" sends an operator to `entity get` with an id that will 404, and
  * the reverse silently attributes work to the wrong Space.
  *
@@ -35,10 +36,8 @@
  *
  * REPORTED, NOT NORMALIZED — two places where the authorities disagree and this
  * file deliberately does not paper over the gap (see the slot report):
- *  - `projects.link` on this Server answers `{spaceId, projectId, patches}`.
- *    Grammar §4.9 requires `projectEntityId` in that result and the frozen
- *    discovery note says the result "carries BOTH identities". It does not yet.
- *    Rendering a fabricated projection id would be worse than saying so.
+ *  - `projects.unlink` may answer without `projectEntityId`; the renderer says
+ *    so rather than fabricating a projection id.
  *  - `projects.associations.correct` REQUIRES `expectedArtifactVersion` in the
  *    frozen strict DTO, and the dossier's §7 CLI freeze spells the flag
  *    `--expect-version <n>`. The discovery projection's syntax string omits it
@@ -371,6 +370,12 @@ async function projectUpdate(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
+/**
+ * `project link <folder-id>` — link a folder into a Space (`projects.link`).
+ * Decision 29: it stays. On a loopback-only `single` node one folder may be
+ * linked into several of your Spaces; on every other node a folder that
+ * belongs to another Space is refused ("this folder belongs to another space").
+ */
 async function projectLink(cmd: CommandContext): Promise<ExitCode> {
   const projectId = requireArg(cmd.args[0], 'project link', '<project-resource-id>');
   const spaceId = requireSpace(cmd.ctx);
@@ -395,6 +400,76 @@ async function projectLink(cmd: CommandContext): Promise<ExitCode> {
     );
   }
   cmd.out.data(data, renderLink);
+  return EXIT_OK;
+}
+
+/**
+ * `project space-list` — the Space's projects (W11): each is the Space's own
+ * project entity over a folder granted to that Space. No path: the folder is
+ * the gate's.
+ */
+async function projectSpaceList(cmd: CommandContext): Promise<ExitCode> {
+  refuseMutationId('project space-list', cmd.options.value('mutation-id'));
+  const spaceId = requireSpace(cmd.ctx);
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'spaces.projects.list', {
+    params: { spaceId },
+  });
+  cmd.out.data(data, renderSpaceProjects);
+  return EXIT_OK;
+}
+
+/**
+ * `project add <folder-id>` — a Space admin names the Space's project on a
+ * folder granted to that Space (W11). A folder that belongs to another Space
+ * is refused.
+ */
+async function projectAdd(cmd: CommandContext): Promise<ExitCode> {
+  const folderId = requireArg(cmd.args[0], 'project add', '<folder-id>');
+  const spaceId = requireSpace(cmd.ctx);
+  const body: Record<string, unknown> = {
+    folderId,
+    clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
+  };
+  const name = cmd.options.value('name');
+  if (name !== undefined) body.name = name;
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'spaces.projects.create', {
+    params: { spaceId },
+    body: withActor(cmd, body),
+  });
+  cmd.out.data(data, renderSpaceProjectDetail);
+  return EXIT_OK;
+}
+
+/** `project folders` — every folder on this server and the Space it is granted to. Gate admins only. */
+async function projectFolders(cmd: CommandContext): Promise<ExitCode> {
+  refuseMutationId('project folders', cmd.options.value('mutation-id'));
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'gate.folders.list', {});
+  cmd.out.data(data, renderFolders);
+  return EXIT_OK;
+}
+
+/** `project folder-add <name> --working-dir <path> [--grant-space <space-id>]` — register a folder. Gate admins only. */
+async function projectFolderAdd(cmd: CommandContext): Promise<ExitCode> {
+  const name = requireArg(cmd.args[0], 'project folder-add', '<name>');
+  const workingDir = workingDirOf(cmd.options.require('working-dir'));
+  const body: Record<string, unknown> = {
+    name,
+    workingDir,
+    clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
+  };
+  if (cmd.options.bool('ensure-working-dir')) body.ensureWorkingDir = true;
+  const grantSpace = cmd.options.value('grant-space');
+  if (grantSpace !== undefined) body.spaceId = grantSpace;
+  const repoUrl = clearable(cmd.options.value('repo-url'));
+  const trust = closedChoice(cmd.options.value('trust'), TRUST_LEVELS, 'trust');
+  const defaults = defaultsOf(cmd);
+  if (repoUrl !== undefined) body.repoUrl = repoUrl;
+  if (trust !== undefined) body.trust = trust;
+  if (defaults !== undefined) body.defaults = defaults;
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'gate.folders.create', {
+    body: withActor(cmd, body),
+  });
+  cmd.out.data(data, (dto) => renderFolders([(dto as { folder?: unknown })?.folder]));
   return EXIT_OK;
 }
 
@@ -478,7 +553,7 @@ function renderProjects(dto: unknown): string {
   const rows = rowsOf(dto);
   if (rows.length === 0) return 'no ProjectResources';
   return rows
-    .map((r) => `${String(r.id)}  ${String(r.name)}  ${String(r.trust)}  ${String(r.workingDir)}`)
+    .map((r) => `${String(r.id)}  ${String(r.name)}  ${String(r.trust)}${r.workingDir === undefined ? '' : `  ${String(r.workingDir)}`}`)
     .join('\n');
 }
 
@@ -488,7 +563,7 @@ function renderProject(dto: unknown): string {
   const lines = [
     `projectId (ProjectResource): ${String(r.id)}`,
     `name: ${String(r.name)}`,
-    `workingDir: ${String(r.workingDir)}`,
+    ...(r.workingDir === undefined ? [] : [`workingDir: ${String(r.workingDir)}`]),
     `trust: ${String(r.trust)}`,
   ];
   if (r.repoUrl !== undefined) lines.push(`repoUrl: ${r.repoUrl === null ? 'none' : String(r.repoUrl)}`);
@@ -649,9 +724,44 @@ function renderLink(dto: unknown): string {
     `projectId (ProjectResource): ${String(d.projectId)}`,
     `spaceId: ${String(d.spaceId)}`,
     `projectEntityId (per-Space projection entity): ${
-      projection ?? 'not part of the frozen projects.link result'
+      projection ?? 'not returned by this node'
     }`,
   ].join('\n');
+}
+
+function renderSpaceProjects(dto: unknown): string {
+  const rows = Array.isArray(dto) ? dto : [];
+  if (rows.length === 0) return 'no projects in this Space';
+  return rows.map(renderSpaceProject).join('\n');
+}
+
+function renderSpaceProject(dto: unknown): string {
+  const r = (dto ?? {}) as { id?: unknown; folderId?: unknown; name?: unknown; trust?: unknown };
+  return `${String(r.id)}  ${String(r.name)}  ${String(r.trust)}  folder ${String(r.folderId)}`;
+}
+
+/** Both identities, each labelled with its domain — never one where the other belongs. */
+function renderSpaceProjectDetail(dto: unknown): string {
+  const r = (dto ?? {}) as { id?: unknown; folderId?: unknown; spaceId?: unknown; name?: unknown };
+  return [
+    `projectEntityId (the Space's project entity): ${String(r.id)}`,
+    `folderId (ProjectResource): ${String(r.folderId)}`,
+    `spaceId: ${String(r.spaceId)}`,
+    `name: ${String(r.name)}`,
+  ].join('\n');
+}
+
+function renderFolders(dto: unknown): string {
+  const rows = (Array.isArray(dto) ? dto : []) as Array<{
+    id?: unknown; name?: unknown; workingDir?: unknown; trust?: unknown;
+    grants?: Array<{ spaceId?: unknown; spaceName?: unknown }>;
+  } | undefined>;
+  if (rows.length === 0) return 'no folders';
+  return rows.map((r) => {
+    const grants = (r?.grants ?? []).map((g) => `${String(g.spaceName)} (${String(g.spaceId)})`);
+    return `${String(r?.id)}  ${String(r?.name)}  ${String(r?.trust)}  ${String(r?.workingDir)}  -> ${
+      grants.length === 0 ? 'not granted' : grants.join(', ')}`;
+  }).join('\n');
 }
 
 function renderCorrection(dto: unknown): string {
@@ -679,6 +789,10 @@ export const PROJECT_COMMANDS: CommandModule[] = [
   { path: ['project', 'blame'], run: projectBlame },
   { path: ['project', 'update'], run: projectUpdate },
   { path: ['project', 'link'], run: projectLink },
+  { path: ['project', 'space-list'], run: projectSpaceList },
+  { path: ['project', 'add'], run: projectAdd },
+  { path: ['project', 'folders'], run: projectFolders },
+  { path: ['project', 'folder-add'], run: projectFolderAdd },
   { path: ['project', 'unlink'], run: projectUnlink },
   { path: ['project', 'association', 'correct'], run: projectAssociationCorrect },
 ];

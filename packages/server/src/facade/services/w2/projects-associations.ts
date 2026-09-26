@@ -14,8 +14,13 @@ import {
   type ProjectFileBlame,
   type ProjectFileHistory,
   type ProjectRevisionDiff,
-  type ProjectLinkInput,
+  type GateFolder,
+  type GateFolderCreateInput,
+  type GateFolderCreateResult,
   type ProjectResource,
+  type SpaceProject,
+  type ProjectLinkInput,
+  type SpaceProjectCreateInput,
   type ProjectUpdateInput,
 } from '@tm8/contract';
 
@@ -33,7 +38,14 @@ import {
 } from '../../context.js';
 import type { FacadeDeps } from '../../deps.js';
 import { actorOf, iso, isoOrNull, loadActors } from '../../entity-read.js';
-import { ensureProjectWorkingDirectory, listProjectDirectories } from './project-directories.js';
+import {
+  canonicalDirectory,
+  canonicalRoots,
+  ensureProjectWorkingDirectory,
+  listProjectDirectories,
+  requireAllowed,
+} from './project-directories.js';
+import type { DbClaims } from '../../../db/types.js';
 import { projectForgeFacts } from '../../../tracking/pr-projection.js';
 
 /** `?staleAfterDays=` — absent means "use the module's own default". */
@@ -66,6 +78,103 @@ interface ProjectMutationResult {
 interface LinkMutationResult {
   spaceId: string;
   projectId: string;
+}
+
+/**
+ * One row of `public.resolve_project_ref` (234): entity -> grant -> path.
+ * `working_dir` is for the SERVER (git, spawn, files) and reaches a client
+ * only when the caller is a gate admin.
+ */
+export interface ResolvedProjectRow {
+  folder_id: string;
+  project_entity_id: string | null;
+  space_id: string | null;
+  name: string;
+  working_dir: string;
+  trust: string;
+  repo_url: string | null;
+  defaults: Record<string, unknown> | null;
+}
+
+interface SpaceProjectRow {
+  project_id: string;
+  folder_id: string;
+  name: string;
+  repo_url: string | null;
+  trust: string;
+  defaults: Record<string, unknown> | null;
+  materialized_version: number;
+  created_at: Date | string;
+  updated_at: Date | string;
+}
+
+interface GateFolderRow {
+  folder_id: string;
+  name: string;
+  working_dir: string;
+  repo_url: string | null;
+  trust: string;
+  defaults: Record<string, unknown> | null;
+  created_at: Date | string;
+  updated_at: Date | string;
+  grants: Array<{
+    spaceId: string; spaceName: string; projectId: string | null;
+    grantedBy: string | null; grantedAt: string;
+  }> | null;
+}
+
+/**
+ * The caller's project by id — the space's project ENTITY id, or (until the
+ * clients move) the folder id — or null. Membership (pinned, 227) decides:
+ * another space's project answers exactly like one that does not exist.
+ */
+export async function resolveProjectRef(
+  q: Pick<Querier, 'query'>,
+  ref: string,
+  spaceId: string | null = null,
+): Promise<ResolvedProjectRow | null> {
+  const rows = await q.query<ResolvedProjectRow>(
+    'select * from public.resolve_project_ref($1::uuid, $2::uuid)',
+    [ref, spaceId],
+  );
+  return rows[0] ?? null;
+}
+
+/** A gate (node) admin on a session not pinned to one space: the only caller that sees paths. */
+export function isGateAdmin(claims: DbClaims): boolean {
+  return claims.nodeAdmin === true && !claims.sessionSpaceId;
+}
+
+function toSpaceProject(spaceId: string, row: SpaceProjectRow): SpaceProject {
+  return {
+    id: row.project_id,
+    spaceId,
+    folderId: row.folder_id,
+    name: row.name,
+    repoUrl: row.repo_url,
+    trust: row.trust as SpaceProject['trust'],
+    defaults: (row.defaults ?? {}) as SpaceProject['defaults'],
+    materializedVersion: Number(row.materialized_version),
+    createdAt: iso(row.created_at),
+    updatedAt: iso(row.updated_at),
+  };
+}
+
+function toGateFolder(row: GateFolderRow): GateFolder {
+  return {
+    id: row.folder_id,
+    name: row.name,
+    workingDir: row.working_dir,
+    repoUrl: row.repo_url,
+    trust: row.trust as GateFolder['trust'],
+    defaults: (row.defaults ?? {}) as GateFolder['defaults'],
+    grants: (row.grants ?? []).map((grant) => ({
+      ...grant,
+      grantedAt: iso(grant.grantedAt),
+    })),
+    createdAt: iso(row.created_at),
+    updatedAt: iso(row.updated_at),
+  };
 }
 
 interface CorrectionMutationResult {
@@ -159,7 +268,7 @@ function normalizeFrozenProjectReason(error: unknown): never {
   if (isCollabError(error)) {
     const details = error.details as Record<string, unknown> | undefined;
     const reason = typeof details?.detail === 'string' ? details.detail : undefined;
-    if (reason && ['project_not_linked', 'project_over_cap', 'project_association_cap'].includes(reason)) {
+    if (reason && ['project_not_linked', 'project_over_cap', 'project_association_cap', 'folder_granted_elsewhere'].includes(reason)) {
       const { detail: _detail, ...rest } = details ?? {};
       throw new CollabError(error.code, error.message, {
         details: { ...rest, reason },
@@ -288,13 +397,12 @@ async function loadCorrectionEdge(
             coalesce(project_counter.messages, 0) project_messages,
             case project_reaction.type when 'likes' then 'like'
                  when 'dislikes' then 'dislike' when 'stars' then 'star' end project_viewer_reaction,
-            detail.project_id, coalesce(detail.name, resource.name) project_name,
+            detail.project_id, detail.name project_name,
             detail.materialized_version
        from public.edges edge
        join public.entities artifact on artifact.id = edge.src_id and artifact.deleted_at is null
        join public.entities projection on projection.id = edge.dst_id and projection.deleted_at is null
        join public.project_projection_details detail on detail.entity_id = projection.id
-       join public.projects resource on resource.id = detail.project_id
        left join public.pull_requests pr on pr.entity_id = artifact.id
        left join public.commits commit_row on commit_row.entity_id = artifact.id
        left join public.entity_counters artifact_counter on artifact_counter.entity_id = artifact.id
@@ -368,64 +476,121 @@ export class W2ProjectsAssociationsService {
     return listProjectDirectories(ctx.query.get('path') ?? undefined);
   };
 
+  /**
+   * `projects.list`. W11 (234): the node-wide folder list is the gate's
+   * (`gate.folders.list` is its successor); with `?spaceId=` it is the
+   * member's view of that space's projects, kept in the legacy
+   * `ProjectResource` shape (id = the folder id every client still keys on,
+   * plus `projectEntityId`) until the clients move to `spaces.projects.list`.
+   * A path is present only for a gate admin.
+   */
   readonly listProjects = async (ctx: RequestContext): Promise<ProjectResource[]> => {
     const owner = await this.deps.owner();
+    const claims = claimsFor(owner, ctx);
     const spaceId = optionalUuid(ctx.query.get('spaceId'), 'spaceId');
-    const rows = spaceId
-      ? await this.deps.db.query<ProjectRow>(
-          claimsFor(owner, ctx),
-          `${PROJECT_SELECT}
-            where exists (select 1 from public.space_projects link
-                           where link.space_id = $1 and link.project_id = projects.id)
-            order by name asc, id asc`,
-          [spaceId],
-        )
-      : await this.deps.db.query<ProjectRow>(
-          claimsFor(owner, ctx),
-          `${PROJECT_SELECT} order by name asc, id asc`,
-        );
-    return rows.map(toProjectResource);
+    if (!spaceId) {
+      if (!isGateAdmin(claims)) {
+        throw new CollabError('forbidden', 'gate-admin access is required to list the folders on this server');
+      }
+      const rows = await this.deps.db.query<ProjectRow>(claims, `${PROJECT_SELECT} order by name asc, id asc`);
+      return rows.map(toProjectResource);
+    }
+    const rows = await this.deps.db.query<SpaceProjectRow>(
+      claims,
+      'select * from public.space_projects_for_caller($1::uuid)',
+      [spaceId],
+    );
+    const paths = await this.gatePaths(claims, rows.map((row) => row.folder_id));
+    return rows.map((row) => ({
+      id: row.folder_id,
+      name: row.name,
+      repoUrl: row.repo_url,
+      ...(paths.has(row.folder_id) ? { workingDir: paths.get(row.folder_id)! } : {}),
+      projectEntityId: row.project_id,
+      spaceId,
+      trust: row.trust as ProjectResource['trust'],
+      defaults: (row.defaults ?? {}) as ProjectResource['defaults'],
+      createdAt: iso(row.created_at),
+      updatedAt: iso(row.updated_at),
+    }));
   };
 
-  readonly getProject = async (ctx: RequestContext): Promise<ProjectResource> => {
-    const owner = await this.deps.owner();
-    const projectId = requireUuidParam(ctx, 'projectId');
-    const rows = await this.deps.db.query<ProjectRow>(
-      claimsFor(owner, ctx),
-      `${PROJECT_SELECT} where id = $1`,
-      [projectId],
+  /** Folder paths for a gate admin (RLS: `projects_select` is gate-only since 234); empty for anyone else. */
+  private async gatePaths(claims: DbClaims, folderIds: readonly string[]): Promise<Map<string, string>> {
+    if (!isGateAdmin(claims) || folderIds.length === 0) return new Map();
+    const rows = await this.deps.db.query<{ id: string; working_dir: string }>(
+      claims,
+      'select id, working_dir from public.projects where id = any($1::uuid[])',
+      [folderIds],
     );
-    const row = rows[0];
+    return new Map(rows.map((row) => [row.id, row.working_dir]));
+  }
+
+  /**
+   * The project a request names (`:projectId` = the space's project entity id
+   * or the folder id), resolved under the caller's claims. The path it carries
+   * is for the server; `not_found` covers "another space's".
+   */
+  private async resolvedFor(ctx: RequestContext): Promise<{ row: ResolvedProjectRow; claims: DbClaims; projectId: string }> {
+    const owner = await this.deps.owner();
+    const claims = claimsFor(owner, ctx);
+    const projectId = requireUuidParam(ctx, 'projectId');
+    const row = await this.deps.db.tx(claims, (q) => resolveProjectRef(q, projectId));
     if (!row) throw new CollabError('not_found', `no such project: ${projectId}`);
-    return toProjectResource(row);
+    return { row, claims, projectId };
+  }
+
+  readonly getProject = async (ctx: RequestContext): Promise<ProjectResource> => {
+    const { row, claims } = await this.resolvedFor(ctx);
+    if (isGateAdmin(claims)) {
+      const full = (await this.deps.db.query<ProjectRow>(claims, `${PROJECT_SELECT} where id = $1`, [row.folder_id]))[0];
+      if (full) {
+        return {
+          ...toProjectResource(full),
+          ...(row.project_entity_id ? { name: row.name, projectEntityId: row.project_entity_id, spaceId: row.space_id } : {}),
+        };
+      }
+    }
+    const stamps = row.project_entity_id
+      ? (await this.deps.db.query<{ created_at: Date | string; updated_at: Date | string }>(
+          claims,
+          'select created_at, updated_at from public.entities where id = $1',
+          [row.project_entity_id],
+        ))[0]
+      : undefined;
+    const epoch = new Date(0).toISOString();
+    return {
+      id: row.folder_id,
+      name: row.name,
+      repoUrl: row.repo_url,
+      projectEntityId: row.project_entity_id,
+      spaceId: row.space_id,
+      trust: row.trust as ProjectResource['trust'],
+      defaults: (row.defaults ?? {}) as ProjectResource['defaults'],
+      createdAt: stamps ? iso(stamps.created_at) : epoch,
+      updatedAt: stamps ? iso(stamps.updated_at) : epoch,
+    };
   };
 
   /**
    * Branch topology for the project's working directory.
    *
-   * THE PATH COMES FROM THE ROW, NEVER FROM THE REQUEST. This read runs git in
-   * a directory on the node, so a caller-supplied `workingDir` would be an
-   * arbitrary-directory read wearing a project id. Authorization is therefore
-   * exactly `getProject`'s: if you cannot read the project, you cannot learn
-   * anything about its checkout.
+   * THE PATH COMES FROM THE GRANT, NEVER FROM THE REQUEST. This read runs git
+   * in a directory on the node, so a caller-supplied `workingDir` would be an
+   * arbitrary-directory read wearing a project id. Authorization is exactly
+   * `projects.get`'s (`resolve_project_ref`): if you cannot read the project,
+   * you cannot learn anything about its checkout — and a member never learns
+   * where the checkout is.
    */
   readonly listBranches = async (ctx: RequestContext): Promise<ProjectBranchTopology> => {
-    const owner = await this.deps.owner();
-    const projectId = requireUuidParam(ctx, 'projectId');
-    const rows = await this.deps.db.query<ProjectRow>(
-      claimsFor(owner, ctx),
-      `${PROJECT_SELECT} where id = $1`,
-      [projectId],
-    );
-    const row = rows[0];
-    if (!row) throw new CollabError('not_found', `no such project: ${projectId}`);
-
+    const { row, claims, projectId } = await this.resolvedFor(ctx);
+    const showPath = isGateAdmin(claims);
     try {
       const topology = await readBranchTopology(row.working_dir, {
         staleAfterDays: positiveInt(ctx.query.get('staleAfterDays'), 'staleAfterDays'),
         maxBranches: limitOf(ctx.query.get('limit'), MAX_LIMIT),
       });
-      return { projectId: row.id, workingDir: row.working_dir, ...topology };
+      return { projectId, ...(showPath ? { workingDir: row.working_dir } : {}), ...topology };
     } catch (error) {
       // A working directory that is not a repository is a CONFIGURATION fact
       // about the project, not a server fault. Saying `internal` here would
@@ -434,31 +599,14 @@ export class W2ProjectsAssociationsService {
       if (reason === 'not_a_git_repository' || reason === 'no_default_branch') {
         throw new CollabError(
           'invalid_input',
-          `project ${projectId} working directory ${row.working_dir}: ${reason}`,
+          showPath
+            ? `project ${projectId} working directory ${row.working_dir}: ${reason}`
+            : `project ${projectId} folder: ${reason}`,
         );
       }
       throw error;
     }
   };
-
-  /**
-   * The project row every file read starts from, under the CALLER's claims —
-   * authorization is exactly `projects.get`'s, and THE PATH COMES FROM THE
-   * ROW, NEVER FROM THE REQUEST (listBranches's law: the request names a
-   * pathspec INSIDE the checkout, never the directory git runs in).
-   */
-  private async projectRowFor(ctx: RequestContext): Promise<ProjectRow> {
-    const owner = await this.deps.owner();
-    const projectId = requireUuidParam(ctx, 'projectId');
-    const rows = await this.deps.db.query<ProjectRow>(
-      claimsFor(owner, ctx),
-      `${PROJECT_SELECT} where id = $1`,
-      [projectId],
-    );
-    const row = rows[0];
-    if (!row) throw new CollabError('not_found', `no such project: ${projectId}`);
-    return row;
-  }
 
   /** `?path=` — the one pathspec both file reads take. Shape-checked here; the execution module re-refuses. */
   private static pathParam(ctx: RequestContext): string {
@@ -474,12 +622,14 @@ export class W2ProjectsAssociationsService {
    * their contract code; anything else stays what it was. Same reasoning as
    * listBranches: `internal` for a non-repo sends users hunting a tm8 bug.
    */
-  private static liftFileReadError(error: unknown, projectId: string, workingDir: string): never {
+  private static liftFileReadError(error: unknown, projectId: string, workingDir: string | null): never {
     const maybe = error as { code?: string; reason?: string };
     if (maybe.code === 'invalid_input') {
       throw new CollabError(
         'invalid_input',
-        `project ${projectId} working directory ${workingDir}: ${maybe.reason ?? 'invalid_input'}`,
+        workingDir === null
+          ? `project ${projectId} folder: ${maybe.reason ?? 'invalid_input'}`
+          : `project ${projectId} working directory ${workingDir}: ${maybe.reason ?? 'invalid_input'}`,
         { details: { reason: maybe.reason ?? 'invalid_input' } },
       );
     }
@@ -549,7 +699,8 @@ export class W2ProjectsAssociationsService {
 
   /** `projects.file.history` — revisions of one path, each with its provenance join. */
   readonly fileHistory = async (ctx: RequestContext): Promise<ProjectFileHistory> => {
-    const row = await this.projectRowFor(ctx);
+    const { row, claims, projectId } = await this.resolvedFor(ctx);
+    const shownDir = isGateAdmin(claims) ? row.working_dir : null;
     const path = W2ProjectsAssociationsService.pathParam(ctx);
     let history;
     try {
@@ -559,7 +710,7 @@ export class W2ProjectsAssociationsService {
           : { maxRevisions: positiveInt(ctx.query.get('maxRevisions'), 'maxRevisions') as number }),
       });
     } catch (error) {
-      W2ProjectsAssociationsService.liftFileReadError(error, row.id, row.working_dir);
+      W2ProjectsAssociationsService.liftFileReadError(error, projectId, shownDir);
     }
     const attribution = await this.attributionFor(ctx, history.revisions.map((r) => r.oid));
 
@@ -573,13 +724,13 @@ export class W2ProjectsAssociationsService {
       try {
         diff = await readFileRevisionDiff(row.working_dir, revision?.path ?? path, diffOid.toLowerCase());
       } catch (error) {
-        W2ProjectsAssociationsService.liftFileReadError(error, row.id, row.working_dir);
+        W2ProjectsAssociationsService.liftFileReadError(error, projectId, shownDir);
       }
     }
 
     return {
-      projectId: row.id,
-      workingDir: row.working_dir,
+      projectId,
+      ...(shownDir === null ? {} : { workingDir: shownDir }),
       path,
       revisions: history.revisions.map((r) => ({
         ...r,
@@ -592,7 +743,8 @@ export class W2ProjectsAssociationsService {
 
   /** `projects.file.blame` — working-tree blame with the session-attribution overlay. */
   readonly fileBlame = async (ctx: RequestContext): Promise<ProjectFileBlame> => {
-    const row = await this.projectRowFor(ctx);
+    const { row, claims, projectId } = await this.resolvedFor(ctx);
+    const shownDir = isGateAdmin(claims) ? row.working_dir : null;
     const path = W2ProjectsAssociationsService.pathParam(ctx);
     let blame;
     try {
@@ -602,7 +754,7 @@ export class W2ProjectsAssociationsService {
           : { maxLines: positiveInt(ctx.query.get('maxLines'), 'maxLines') as number }),
       });
     } catch (error) {
-      W2ProjectsAssociationsService.liftFileReadError(error, row.id, row.working_dir);
+      W2ProjectsAssociationsService.liftFileReadError(error, projectId, shownDir);
     }
     // Uncommitted lines are not commits — never joined, never attributed.
     const attribution = await this.attributionFor(
@@ -610,8 +762,8 @@ export class W2ProjectsAssociationsService {
       blame.hunks.filter((h) => h.oid !== UNCOMMITTED_OID).map((h) => h.oid),
     );
     return {
-      projectId: row.id,
-      workingDir: row.working_dir,
+      projectId,
+      ...(shownDir === null ? {} : { workingDir: shownDir }),
       path,
       hunks: blame.hunks.map((h) => ({
         ...h,
@@ -681,6 +833,111 @@ export class W2ProjectsAssociationsService {
     }
   };
 
+  /**
+   * `spaces.projects.list` — the space's projects, for any member of it.
+   * Never a path (W11): the folder behind each is the gate's.
+   */
+  readonly listSpaceProjects = async (ctx: RequestContext): Promise<SpaceProject[]> => {
+    const owner = await this.deps.owner();
+    const spaceId = requireUuidParam(ctx, 'spaceId');
+    const rows = await this.deps.db.query<SpaceProjectRow>(
+      claimsFor(owner, ctx),
+      'select * from public.space_projects_for_caller($1::uuid)',
+      [spaceId],
+    );
+    return rows.map((row) => toSpaceProject(spaceId, row));
+  };
+
+  /**
+   * `spaces.projects.create` — a space admin names the space's project on a
+   * folder granted to that space. A folder granted to another space is refused
+   * with "this folder belongs to another space" (T30); a gate admin may grant
+   * an ungranted folder in the same step.
+   */
+  readonly createSpaceProject = async (ctx: RequestContext): Promise<SpaceProject> => {
+    const owner = await this.deps.owner();
+    const spaceId = requireUuidParam(ctx, 'spaceId');
+    const input = ctx.body as SpaceProjectCreateInput;
+    const envelope = commandEnvelope(ctx);
+    const claims = claimsFor(owner, ctx, envelope);
+    const raw = await this.deps.db.rpc<{ spaceId: string; folderId: string; projectId: string }>(
+      claims,
+      'create_space_project',
+      [spaceId, input.folderId, input.name ?? null, envelope.clientMutationId ?? null],
+    );
+    await scanSpaceSkills(this.deps.db, claims, raw.spaceId, { root: raw.folderId });
+    const rows = await this.deps.db.query<SpaceProjectRow>(
+      claims,
+      'select * from public.space_projects_for_caller($1::uuid) where project_id = $2',
+      [raw.spaceId, raw.projectId],
+    );
+    const row = rows[0];
+    if (!row) throw new CollabError('not_found', `no such project: ${raw.projectId}`);
+    return toSpaceProject(raw.spaceId, row);
+  };
+
+  /** `gate.folders.list` — every folder on this server with its grant(s). Gate admins only (T32). */
+  readonly listGateFolders = async (ctx: RequestContext): Promise<GateFolder[]> => {
+    const owner = await this.deps.owner();
+    const claims = claimsFor(owner, ctx);
+    if (!isGateAdmin(claims)) {
+      throw new CollabError('forbidden', 'gate-admin access is required to list the folders on this server');
+    }
+    const rows = await this.deps.db.query<GateFolderRow>(claims, 'select * from public.gate_folders_list()');
+    return rows.map(toGateFolder);
+  };
+
+  /**
+   * `gate.folders.create` — register a folder inside TM8_PROJECT_ROOTS
+   * (reusing the row when the canonical path is already registered) and,
+   * with `spaceId`, grant it to that one space. Gate admins only.
+   */
+  readonly createGateFolder = async (ctx: RequestContext): Promise<GateFolderCreateResult> => {
+    const owner = await this.deps.owner();
+    const input = ctx.body as GateFolderCreateInput;
+    const envelope = commandEnvelope(ctx);
+    const claims = claimsFor(owner, ctx, envelope);
+    if (!isGateAdmin(claims)) {
+      throw new CollabError('forbidden', 'gate-admin access is required to register a folder');
+    }
+    let workingDir: string;
+    if (input.ensureWorkingDir) {
+      workingDir = await ensureProjectWorkingDirectory(input.workingDir);
+    } else {
+      workingDir = await canonicalDirectory(input.workingDir);
+      requireAllowed(workingDir, await canonicalRoots());
+    }
+    const raw = await this.deps.db.rpc<{ folderId: string; created: boolean; spaceId: string | null }>(
+      claims,
+      'register_folder',
+      [
+        input.name,
+        workingDir,
+        input.repoUrl ?? null,
+        input.trust ?? 'untrusted',
+        JSON.stringify(input.defaults ?? {}),
+        input.spaceId ?? null,
+        envelope.clientMutationId ?? null,
+      ],
+    );
+    if (raw.spaceId) await scanSpaceSkills(this.deps.db, claims, raw.spaceId, { root: raw.folderId });
+    const rows = await this.deps.db.query<GateFolderRow>(
+      claims,
+      'select * from public.gate_folders_list() where folder_id = $1',
+      [raw.folderId],
+    );
+    const row = rows[0];
+    if (!row) throw new CollabError('not_found', `no such folder: ${raw.folderId}`);
+    return { folder: toGateFolder(row), created: raw.created };
+  };
+
+  /**
+   * `projects.link` — link a folder into a space. It stays (decision 29): the
+   * database decides whether a folder already granted to another space may be
+   * linked again, from the node policy the server wrote at boot. Only a
+   * loopback-only `single` node allows it; everywhere else it is refused with
+   * "this folder belongs to another space" (T30).
+   */
   readonly linkProject = async (ctx: RequestContext): Promise<LinkMutationResult & { patches: [] }> => {
     const owner = await this.deps.owner();
     const spaceId = requireUuidParam(ctx, 'spaceId');

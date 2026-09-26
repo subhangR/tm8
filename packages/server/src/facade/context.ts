@@ -80,11 +80,15 @@ export function claimsFor(
     throw new CollabError('forbidden', 'a session-bound credential cannot override its actor');
   }
   const actorId = bearer?.actorId ?? envelope.actorId;
+  // W3. Read off the resolved identity whatever its kind, so the owner
+  // fallback below can never shed a pin the resolver set.
+  const sessionSpaceId = ctx.identity?.sessionSpaceId;
   return {
     identityId: bearer ? bearer.identityId! : owner.identityId,
     // See the file header: unset unless explicitly requested.
     ...(actorId ? { actorId } : {}),
-    nodeAdmin: bearer ? bearer.nodeAdmin === true : owner.isNodeAdmin,
+    // K6: a pinned session never holds node admin, the owner's included.
+    nodeAdmin: sessionSpaceId ? false : bearer ? bearer.nodeAdmin === true : owner.isNodeAdmin,
     requestId: ctx.requestId,
     // 083 / R11. FORWARDED, never defaulted. A request whose resolver did not
     // state a kind binds `''`, and `internal.require_human_auth_kind()` refuses
@@ -93,7 +97,7 @@ export function claimsFor(
     // cannot see it.
     ...(ctx.identity?.authKind ? { authKind: ctx.identity.authKind } : {}),
     // 227. Forwarded exactly like authKind: only the resolver sets it.
-    ...(bearer?.sessionSpaceId ? { sessionSpaceId: bearer.sessionSpaceId } : {}),
+    ...(sessionSpaceId ? { sessionSpaceId } : {}),
   };
 }
 

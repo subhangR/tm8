@@ -46,7 +46,7 @@ class SpawnDb implements Db {
             avatar: null, capabilities: {}, command_permissions: {},
           }] as R[];
         }
-        if (sql.includes('from public.projects')) {
+        if (sql.includes('from public.projects') || sql.includes('public.resolve_project_ref')) {
           return [{ id: PROJECT, name: 'tm8', working_dir: process.cwd(), trust: 'trusted' }] as R[];
         }
         return [];

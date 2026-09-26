@@ -6,11 +6,11 @@
  * but perturbs stdout, or turns a working command into a failing one when the
  * disk is full, is a defect of a much worse kind than a missing field.
  */
-import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createJournal } from '../src/journal.js';
+import { createJournal, MINTED_TOKEN_PREFIXES, redactTokens } from '../src/journal.js';
 import type { OutputStreams } from '../src/output.js';
 
 const SESSION = '019fbbcd-cef8-7701-ae98-3d5f1d459ed8';
@@ -195,6 +195,76 @@ describe('redaction happens at write time, so the secret never reaches the disk'
     j.finish({ path: ['help'], argv: ['help', '--token', '--format', 'json'], exitCode: 0 });
     // `--format` must survive: redaction may not eat a real option.
     expect(readRecords(path)[0].command.argv).toContain('--format');
+  });
+
+  it('redacts a minted token printed on stdout, so the file never holds it', () => {
+    // `auth login --print-token`, `auth claim` and `auth space enter` print a
+    // live token; the journal samples stdout verbatim. Synthetic token only.
+    const token = 'tm8s_019fbbcd-cef8-7701-ae98-3d5f1d459ed8.SYNTHETICsecretAAAA';
+    const path = tempJournal();
+    const j = createJournal(envFor(path));
+    const out = j.wrapStreams(sink);
+    out.stdout(`export TM8_AGENT_TOKEN=${token}\n`);
+    j.finish({ path: ['auth', 'login'], argv: ['auth', 'login', '--print-token'], exitCode: 0 });
+
+    expect(readFileSync(path, 'utf8')).not.toContain('SYNTHETICsecret');
+  });
+
+  it('redacts a minted token printed on stderr, so the file never holds it', () => {
+    const path = tempJournal();
+    const j = createJournal(envFor(path));
+    const out = j.wrapStreams(sink);
+    out.stderr('claim token: tm8c_SYNTHETICclaimBBBB\n');
+    j.finish({ path: ['auth', 'claim'], argv: ['auth', 'claim'], exitCode: 1 });
+
+    expect(readFileSync(path, 'utf8')).not.toContain('SYNTHETICclaim');
+  });
+
+  it('redacts a minted token in a positional argv slot and in the error', () => {
+    const path = tempJournal();
+    const j = createJournal(envFor(path));
+    j.finish({
+      path: ['auth', 'claim'],
+      argv: ['auth', 'claim', 'tm8c_SYNTHETICargvCCCC'],
+      exitCode: 1,
+      error: new Error('rejected tm8g_SYNTHETICerrDDDD'),
+    });
+
+    const raw = readFileSync(path, 'utf8');
+    expect(raw).not.toContain('SYNTHETICargv');
+    expect(raw).not.toContain('SYNTHETICerr');
+    const [rec] = readRecords(path);
+    expect(rec.command.argv).toEqual(['auth', 'claim', 'tm8c_<redacted>']);
+  });
+
+  it('keeps the prefix, stops at whitespace and quotes, and leaves the rest of the line', () => {
+    expect(redactTokens('{"token": "tm8s_abc.def", "id": "x"}\nexport X=tm8g_q y')).toBe(
+      '{"token": "tm8s_<redacted>", "id": "x"}\nexport X=tm8g_<redacted> y',
+    );
+    expect(redactTokens('no token here, just tm8_app')).toBe('no token here, just tm8_app');
+  });
+
+  it('writes a new journal file 0600', () => {
+    const path = tempJournal();
+    createJournal(envFor(path)).finish({ path: ['help'], argv: ['help'], exitCode: 0 });
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+  });
+
+  it('lists exactly the prefixes the server mints, pinned to the minting constants', () => {
+    // The CLI cannot import the server package, so the list is a copy; this
+    // is what keeps the copy honest when a constant changes or is added.
+    const root = new URL('../../../', import.meta.url).pathname;
+    const minted = [
+      ['packages/server/src/identity/crypto.ts', 'TOKEN_PREFIX'],
+      ['packages/server/src/identity/pg-auth.ts', 'CLAIM_TOKEN_PREFIX'],
+      ['packages/server/src/pty/grant-token.ts', 'PTY_GRANT_PREFIX'],
+    ].map(([file, name]) => {
+      const src = readFileSync(join(root, file!), 'utf8');
+      const m = src.match(new RegExp(`export const ${name} = '([^']+)'`));
+      expect(m, `${name} in ${file}`).not.toBeNull();
+      return m![1];
+    });
+    expect([...MINTED_TOKEN_PREFIXES].sort()).toEqual(minted.sort());
   });
 
   it('leaves ordinary values alone', () => {

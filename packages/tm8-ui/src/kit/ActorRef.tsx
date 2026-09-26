@@ -12,7 +12,7 @@
  *     process with a face is the lie the honest kind exists to end.
  */
 import type { ActorSummary } from '@tm8/contract';
-import { actorPresentation } from '../domain/actors';
+import { actorName, actorPresentation } from '../domain/actors';
 import { Avatar } from './Avatar';
 
 export function ActorRef({
@@ -50,7 +50,7 @@ export function ActorRef({
         size={15}
         src={actor.avatar ?? null}
       />
-      <span className="kit-actorref__name">{actor.displayName}</span>
+      <span className="kit-actorref__name">{actorName(actor)}</span>
       {sessionId ? (
         onOpenSession ? (
           <button

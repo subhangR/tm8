@@ -62,6 +62,29 @@ const CHARS_PER_TOKEN = 4;
 const SECRET_OPTION_RE = /(token|secret|password|passwd|credential|api[-_]?key|bearer|authorization)/i;
 const REDACTED = '<redacted>';
 
+/**
+ * Every bearer-token prefix a tm8 node mints. The CLI prints some of them
+ * (`auth login` under --print-token or in agent context, `auth claim`), and
+ * the journal is on in exactly the agent context, so the stdout/stderr samples
+ * would otherwise carry a live token into a durable file. Enumerated from the
+ * minting constants, which live in the server package the CLI cannot import:
+ *
+ *   tm8s_  session bearer   packages/server/src/identity/crypto.ts:104 TOKEN_PREFIX
+ *   tm8c_  node claim       packages/server/src/identity/pg-auth.ts:389 CLAIM_TOKEN_PREFIX
+ *   tm8g_  PTY grant        packages/server/src/pty/grant-token.ts:5 PTY_GRANT_PREFIX
+ *
+ * A new prefix belongs here AND in `journal.test.ts`, which pins this list to
+ * those constants. The prefix is kept so a record still says WHICH kind of
+ * token was printed; everything up to whitespace or a quote is dropped.
+ */
+export const MINTED_TOKEN_PREFIXES = ['tm8s_', 'tm8c_', 'tm8g_'] as const;
+const MINTED_TOKEN_RE = new RegExp(`(${MINTED_TOKEN_PREFIXES.join('|')})[^\\s"'\`]+`, 'g');
+
+/** Replace every minted token in free text, keeping only its prefix. */
+export function redactTokens(text: string): string {
+  return text.replace(MINTED_TOKEN_RE, `$1${REDACTED}`);
+}
+
 export interface JournalCallInput {
   operation: string;
   method: string;
@@ -181,7 +204,9 @@ class FileJournal implements Journal {
     if (this.written) return;
     this.written = true;
     try {
-      const argv = redactArgv(outcome.argv);
+      // Option values by name, then any minted token in any slot (`auth claim
+      // tm8c_…` takes it positionally).
+      const argv = redactArgv(outcome.argv).map(redactTokens);
       // Direction, stated once so it cannot drift: what the agent TYPED is what
       // it emitted (its output tokens); what the CLI PRINTED is what lands in
       // its context next turn (its input tokens).
@@ -207,13 +232,15 @@ class FileJournal implements Journal {
         output: {
           stdoutChars: this.stdoutChars,
           stderrChars: this.stderrChars,
-          stdoutSample: this.stdoutSample,
-          stderrSample: this.stderrSample,
+          // Redacted at WRITE time, like argv. `truncated` below compares the
+          // RAW samples, so a redaction cannot make a sample look cut.
+          stdoutSample: redactTokens(this.stdoutSample),
+          stderrSample: redactTokens(this.stderrSample),
           truncated: this.stdoutChars > this.stdoutSample.length || this.stderrChars > this.stderrSample.length,
         },
         calls: this.calls,
         ...(this.contextRead ? { contextRead: this.contextRead } : {}),
-        result: { exitCode: outcome.exitCode, error: describeError(outcome.error) },
+        result: { exitCode: outcome.exitCode, error: redactNullable(describeError(outcome.error)) },
         tokens: {
           estimator: 'chars/4',
           agentToCli: estimateTokens(agentChars),
@@ -225,7 +252,8 @@ class FileJournal implements Journal {
       // invocations interleave whole lines rather than corrupting each other,
       // and no lock file is needed. This is why records are bounded.
       mkdirSync(dirname(this.path), { recursive: true });
-      appendFileSync(this.path, `${JSON.stringify(record)}\n`, 'utf8');
+      // 0600 on create: the file is this session's, and nobody else's to read.
+      appendFileSync(this.path, `${JSON.stringify(record)}\n`, { encoding: 'utf8', mode: 0o600 });
       if (journalClass === 'agent') this.emitSpendLine();
     } catch {
       // A full disk, a read-only path, a serialisation failure: none of them
@@ -284,6 +312,10 @@ function redactArgv(argv: readonly string[]): string[] {
     }
   }
   return out;
+}
+
+function redactNullable(text: string | null): string | null {
+  return text === null ? null : redactTokens(text);
 }
 
 function describeError(err: unknown): string | null {

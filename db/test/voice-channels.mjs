@@ -15,7 +15,7 @@
 // internal.command_entity is SECURITY DEFINER owned by tm8_graph_owner and
 // reads the detail table as THAT role on the command-result hop.
 //
-//   TM8_DATABASE_URL=postgres://tm8@127.0.0.1:5442/tm8_voice_scratch \
+//   TM8_DATABASE_URL=postgres://tm8@127.0.0.1:5443/tm8_voice_scratch \
 //     node db/test/voice-channels.mjs
 // =============================================================================
 import { readFileSync } from 'node:fs';

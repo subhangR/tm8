@@ -455,17 +455,16 @@ describe('T2-1b — members & roles', () => {
     expect(alert.textContent).toMatch(/promote a successor first/);
   });
 
-  it('self-removal carries the oracle’s own reason, others carry the seam gap', () => {
+  it('self-removal points at Leave, and a non-admin viewer is refused removing others', () => {
     renderMembers();
     expect(screen.getByRole('button', { name: 'remove yourself' })).toBeTruthy();
-    expect(document.body.textContent).toMatch(/transfer ownership first/);
+    expect(document.body.textContent).toMatch(/leave the space from Danger zone/);
     expect(screen.getByRole('button', { name: 'remove Noa Lindqvist' }).getAttribute('aria-disabled')).toBe(
       'true',
     );
-    // 114 upgraded this reason from a ruling to a measured fact: the member row
-    // is the attribution target of everything that person authored, so it
-    // cannot be deleted at all.
-    expect(document.body.textContent).toMatch(/attribution target of everything they authored/);
+    // G6: the row is tombstoned, not deleted, so removal is a real op now —
+    // refused here only because this viewer holds no admin role.
+    expect(document.body.textContent).toMatch(/removing a member needs admin or owner here/);
   });
 
   it('the handle is REAL for the viewer and hollow for everyone else', () => {
