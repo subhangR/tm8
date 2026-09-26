@@ -112,6 +112,18 @@ describe.sequential('the canonical subject set — SQL side and 208 (real Postgr
     // 231 (chat context): the entity reads now select `cht.context`. An
     // a-la-carte suite must apply every migration adding a column they select.
     database.apply(['231_chat_context.sql']);
+    // 206 is already in this suite's pre-208 chain. A SHIM of the two
+    // read-path columns the W10a credential migration (996_credential_entities.sql, final number 239) adds:
+    // `entity-read.ts` and the projector left-join `public.space_credentials scr`
+    // and select `scr.visibility` / `scr.owner_account_id`. 996 itself cannot
+    // apply on this partial chain (it needs 232's `members.status`), so only
+    // the column shapes and their tm8_app read grant are mirrored here, without
+    // 996's FK or checks. No assertion here reads them. DELETE this shim if this suite ever applies
+    // the chain through 232: then apply the credential migration instead.
+    await database.query(`alter table public.space_credentials
+      add column visibility text not null default 'public',
+      add column owner_account_id uuid`);
+    await database.query('grant select (owner_account_id, visibility) on public.space_credentials to tm8_app');
   }, 300_000);
 
   afterAll(async () => {
