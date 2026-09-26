@@ -1,6 +1,6 @@
 /**
  * The one-space-per-folder unique index W11 deferred (K13). Its file carries
- * the placeholder ordinal 999 until #874 leaves draft; it is found by name.
+ * the placeholder ordinal 999 until the owner's merge renumbers it; it is found by name.
  *
  * A node is seeded before 234 with folder F granted to spaces A and B (the
  * shape 7 folders had on prod), then migrated through 234, recorded as a

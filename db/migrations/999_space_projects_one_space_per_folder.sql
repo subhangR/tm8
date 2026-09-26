@@ -1,9 +1,9 @@
 -- =============================================================================
 -- one space per folder: the unique index W11 deferred (K13).
 --
--- ORDINAL: 999 is a placeholder, not a claim. It is renamed to the next free
--- ordinal (and sweep.test.ts re-pinned) in the push that takes #874 out of
--- draft; the NOTICE/exception texts below carry no number for that reason.
+-- ORDINAL: 999 is a placeholder, not a claim. The integrator renames it to the
+-- next free ordinal (and re-pins sweep.test.ts to main's count + 1) at the
+-- owner's merge; the NOTICE/exception texts below carry no number for that reason.
 --
 -- 234 made every NEW grant one-space-per-folder (the guard trigger) but could
 -- not build the index: 7 folders on prod were granted to two spaces. Once the
