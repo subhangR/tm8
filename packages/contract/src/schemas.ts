@@ -127,6 +127,7 @@ import type {
   SetDefaultChannelInput, SetSpaceProfileDefaultInput,
   AttentionRequest, AttentionRequestListQuery, AttentionRequestMutationResult,
   CreateAttentionRequestInput, UpdateAttentionRequestInput, ResolveEntityAttentionInput,
+  MarkAttentionSeenInput, UnresolveAttentionBatchInput, WithdrawAttentionRequestInput,
   KindCounts, SpaceKindCounts,
   SetTeammateProfileDefaultInput, ShareProjectionEnvelope, SpaceNavigation,
   SpaceProfileDefaultView, SpaceSettings, SpaceSettingsView, SpaceSummary,
@@ -2533,7 +2534,10 @@ export const ArtifactsRestoreInputSchema: z.ZodType<ArtifactsRestoreInput> = z.o
   revisionNumber: z.number().int().positive(),
 }).strict();
 
-export const AttentionRequestStatusSchema = z.enum(['open', 'acknowledged', 'resolved', 'dismissed']);
+export const AttentionRequestStatusSchema = z.enum(['open', 'acknowledged', 'resolved', 'dismissed', 'cleared']);
+export const AttentionLevelSchema = z.enum(['fyi', 'normal', 'high', 'urgent']);
+export const AttentionActionTypeSchema = z.enum(['decide', 'approve', 'unblock', 'review', 'fyi']);
+export const AttentionOriginSchema = z.enum(['agent', 'human', 'system']);
 
 export const AttentionRequestSchema: z.ZodType<AttentionRequest> = z.object({
   id: z.string().uuid(),
@@ -2551,6 +2555,16 @@ export const AttentionRequestSchema: z.ZodType<AttentionRequest> = z.object({
   updatedAt: IsoTimestamp,
   acknowledgedAt: IsoTimestamp.nullable(),
   resolvedAt: IsoTimestamp.nullable(),
+  // Attention v2: optional until the migration and S4 land (see the type).
+  seenByMe: z.boolean().optional(),
+  rootId: EntityIdSchema.optional(),
+  level: AttentionLevelSchema.optional(),
+  actionType: AttentionActionTypeSchema.optional(),
+  assigneeId: EntityIdSchema.nullable().optional(),
+  sourceWorkSessionId: EntityIdSchema.nullable().optional(),
+  sourceSessionLive: z.boolean().optional(),
+  origin: AttentionOriginSchema.optional(),
+  resolutionBatchId: z.string().uuid().nullable().optional(),
 }).strict();
 
 export const AttentionRequestListQuerySchema: z.ZodType<AttentionRequestListQuery> = z.object({
@@ -2566,7 +2580,12 @@ export const CreateAttentionRequestInputSchema: z.ZodType<CreateAttentionRequest
   ...commandContextShape,
   clientMutationId: z.string().min(1),
   reason: z.string().trim().min(1).max(500),
-  points: z.number().int().min(1).max(100),
+  points: z.number().int().min(1).max(100).optional(),
+  level: AttentionLevelSchema.optional(),
+  actionType: AttentionActionTypeSchema.optional(),
+  assigneeId: EntityIdSchema.optional(),
+  // .strict() is what keeps the raising session, origin and signal key OUT:
+  // the server stamps those from the caller (F1a), never from the body.
 }).strict();
 
 export const UpdateAttentionRequestInputSchema: z.ZodType<UpdateAttentionRequestInput> = z.object({
@@ -2586,12 +2605,30 @@ export const ResolveEntityAttentionInputSchema: z.ZodType<ResolveEntityAttention
   ...commandContextShape,
   clientMutationId: z.string().min(1),
   resolutionNote: z.string().trim().max(1000).optional(),
+  resolutionBatchId: z.string().uuid().optional(),
+}).strict();
+
+export const MarkAttentionSeenInputSchema: z.ZodType<MarkAttentionSeenInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+}).strict();
+
+export const UnresolveAttentionBatchInputSchema: z.ZodType<UnresolveAttentionBatchInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+}).strict();
+
+export const WithdrawAttentionRequestInputSchema: z.ZodType<WithdrawAttentionRequestInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  expectedVersion: z.number().int().positive().optional(),
 }).strict();
 
 export const AttentionRequestMutationResultSchema: z.ZodType<AttentionRequestMutationResult> = z.lazy(() => z.object({
   request: AttentionRequestSchema.nullable(),
   entity: EntitySummarySchema,
   affectedCount: z.number().int().nonnegative(),
+  resolutionBatchId: z.string().uuid().nullable().optional(),
 }).strict());
 
 export const MoveEntityInputSchema: z.ZodType<MoveEntityInput> = z.object({

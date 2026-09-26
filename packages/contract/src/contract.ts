@@ -683,7 +683,34 @@ export interface EntityStaleness {
                independenceBasis: 'session' | 'actor' };
 }
 
-export type AttentionRequestStatus = 'open' | 'acknowledged' | 'resolved' | 'dismissed';
+/**
+ * Attention v2 (chapter 1): `acknowledged` is LEGACY — read as `open`, never
+ * written again (Seen moved to the per-person `attention_seen` table).
+ * `dismissed` means the raising agent withdrew it; `cleared` means tm8 settled
+ * its own `system` row because the condition ended.
+ */
+export type AttentionRequestStatus = 'open' | 'acknowledged' | 'resolved' | 'dismissed' | 'cleared';
+
+/** How loud a request is. Default `normal`; points derive from it when omitted. */
+export type AttentionLevel = 'fyi' | 'normal' | 'high' | 'urgent';
+
+/** What the raiser wants the human to do. Default `decide`. */
+export type AttentionActionType = 'decide' | 'approve' | 'unblock' | 'review' | 'fyi';
+
+/**
+ * Who raised a request, derived from the CALLER, never from input: an agent
+ * persona is `agent`, a member is `human`, tm8's own writers are `system`.
+ * The public create never produces `system`.
+ */
+export type AttentionOrigin = 'agent' | 'human' | 'system';
+
+/** Points a request gets from its level when the raiser gives none (chapter 1). */
+export const ATTENTION_LEVEL_POINTS: Readonly<Record<AttentionLevel, number>> = {
+  fyi: 10,
+  normal: 40,
+  high: 70,
+  urgent: 95,
+};
 
 /** Compact aggregate carried by every entity summary and used to prioritize lists. */
 export interface EntityAttentionSummary {
@@ -711,11 +738,32 @@ export interface AttentionRequest {
   updatedAt: string;
   acknowledgedAt: string | null;
   resolvedAt: string | null;
+  // Attention v2 (chapter 1). OPTIONAL until the v2 migration and the S4
+  // server verbs land, so a server that does not emit them still validates.
+  /** Whether the VIEWER has marked this request seen. Per person; never changes status. */
+  seenByMe?: boolean;
+  /** The roll-up root it counts against: itself, or the task of a work session / form. */
+  rootId?: EntityId;
+  level?: AttentionLevel;
+  actionType?: AttentionActionType;
+  /** The member it is assigned to; null when unassigned (counts only in "all"). */
+  assigneeId?: EntityId | null;
+  /** The work session OR chat that raised it (F1); null for humans and legacy rows. */
+  sourceWorkSessionId?: EntityId | null;
+  /** Whether that raising session or chat is still live; false when there is none. */
+  sourceSessionLive?: boolean;
+  origin?: AttentionOrigin;
+  /** The Resolve that settled it, so Undo can reopen exactly that set. */
+  resolutionBatchId?: string | null;
 }
 
 export interface AttentionRequestListQuery {
   spaceId: SpaceId;
   entityId?: EntityId;
+  /**
+   * Omitted means OPEN (Attention v2): `open` plus legacy `acknowledged`,
+   * which is read as open. Pass a status to read history.
+   */
   status?: AttentionRequestStatus;
   minPoints?: number;
   limit?: number;
@@ -728,6 +776,11 @@ export interface AttentionRequestMutationResult {
   request: AttentionRequest | null;
   entity: EntitySummary;
   affectedCount: number;
+  /**
+   * Set by a Resolve (and echoed by Unresolve): the batch the settled rows
+   * share, which is what Undo sends back. Optional until S4.
+   */
+  resolutionBatchId?: string | null;
 }
 
 export interface PullState {
@@ -2939,7 +2992,17 @@ export interface PatchEntityInput extends CommandContext {
 export interface CreateAttentionRequestInput extends CommandContext {
   clientMutationId: string;
   reason: string;
-  points: number;
+  /** An override for fine ordering; when omitted it derives from `level` (ATTENTION_LEVEL_POINTS). */
+  points?: number;
+  /** Default `normal`. */
+  level?: AttentionLevel;
+  /** Default `decide`. */
+  actionType?: AttentionActionType;
+  /** A member of the same space. No default: unassigned counts only in "all". */
+  assigneeId?: EntityId;
+  // NEVER input: the raising session (stamped from the bearer,
+  // `workSessionId ?? runtimeChatId`, F1a), `origin` (derived from the
+  // caller), and `signal_key` (internal writers only).
 }
 
 /** PATCH /v2/attention-requests/:requestId. */
@@ -2956,6 +3019,48 @@ export interface UpdateAttentionRequestInput extends CommandContext {
 export interface ResolveEntityAttentionInput extends CommandContext {
   clientMutationId: string;
   resolutionNote?: string;
+  /**
+   * Attention v2: a CLIENT-generated uuid naming this Resolve, so the UI can
+   * settle rows in place and offer Undo before the server replies. The server
+   * generates one when absent and echoes it on the result.
+   */
+  resolutionBatchId?: string;
+}
+
+/**
+ * POST /v2/entities/:entityId/attention-requests/seen (Attention v2).
+ * `entityId` may be ANY entity: the server maps it to its roll-up root and
+ * marks every open request on that root (own and rolled-up) seen by the
+ * CALLER only. Status and counts never change. Result: `request` null,
+ * `entity` the root, `affectedCount` the rows newly seen.
+ */
+export interface MarkAttentionSeenInput extends CommandContext {
+  clientMutationId: string;
+}
+
+/**
+ * POST /v2/attention-requests/batches/:batchId/unresolve (Attention v2).
+ * Undo of one Resolve: only rows of that batch still `resolved` go back to
+ * open, and their pending note deliveries are cancelled (zero messages).
+ * Only the member who resolved the batch (`forbidden` otherwise), and only
+ * within 8s of the resolve (`conflict` with reason `undo_window_closed`
+ * after). Result: `request` null, `entity` the root, `affectedCount` the
+ * rows reopened, `resolutionBatchId` the batch.
+ */
+export interface UnresolveAttentionBatchInput extends CommandContext {
+  clientMutationId: string;
+}
+
+/**
+ * POST /v2/attention-requests/:requestId/withdraw (Attention v2).
+ * The raising agent takes back its own request: the caller's actor must be
+ * the row's `requestedBy`, and only an `origin: 'agent'` row that is still
+ * open qualifies (system and human rows are refused). The row goes to
+ * `dismissed` and nothing is delivered. Result: `request` the dismissed row.
+ */
+export interface WithdrawAttentionRequestInput extends CommandContext {
+  clientMutationId: string;
+  expectedVersion?: number;
 }
 
 export interface MoveEntityInput extends CommandContext {
