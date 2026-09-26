@@ -187,8 +187,8 @@ async function seed(): Promise<World> {
     for (const s of [x.session, x.session2]) {
       await c.query(`insert into public.entities(id, space_id, kind, visibility, created_by)
                      values ($1, $2, 'work_session', 'space', $3)`, [s, x.space, x.teammate]);
-      await c.query(`insert into public.work_sessions(entity_id, title, status, share_mode, started_at)
-                     values ($1, 'session', 'running', 'space', now())`, [s]);
+      await c.query(`insert into public.work_sessions(entity_id, title, status, share_mode, started_at, workdir_mode)
+                     values ($1, 'session', 'running', 'space', now(), 'scratch')`, [s]);
       await c.query(`insert into public.edges(space_id, src_id, dst_id, type, created_by)
                      values ($1, $2, $3, 'participates_in', $2)`, [x.space, x.teammate, s]);
     }

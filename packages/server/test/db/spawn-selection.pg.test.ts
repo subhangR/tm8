@@ -112,9 +112,9 @@ beforeAll(async () => {
     ids.sElsewhere = await skill(c, ids.otherSpace, 'foreign-skill');
 
     ids.session = await entity(c, s, 'work_session');
-    await c.query(`insert into public.work_sessions(entity_id) values ($1)`, [ids.session]);
+    await c.query(`insert into public.work_sessions(entity_id, workdir_mode) values ($1, 'scratch')`, [ids.session]);
     ids.session2 = await entity(c, s, 'work_session');
-    await c.query(`insert into public.work_sessions(entity_id) values ($1)`, [ids.session2]);
+    await c.query(`insert into public.work_sessions(entity_id, workdir_mode) values ($1, 'scratch')`, [ids.session2]);
 
     // A task the attach palette has dressed: one of every link it writes.
     ids.paletteTask = await entity(c, s, 'task');

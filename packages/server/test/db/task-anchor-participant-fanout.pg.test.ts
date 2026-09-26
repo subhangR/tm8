@@ -194,11 +194,11 @@ async function seed(scratch: W1ScratchDatabase): Promise<Fixture> {
       [base.taskId, base.orphanTaskId, base.shellTaskId, base.openedOnlyTaskId],
     );
     await client.query(
-      `insert into public.work_sessions(entity_id,title,status,session_kind) values
-       ($1,'the worker','running','agent'),($2,'the coordinator','idle','agent'),
-       ($3,'a speaker','running','agent'),($4,'a dead speaker','exited','agent'),
-       ($5,'a shell','running','shell'),($6,'bystander','running','agent'),
-       ($7,'the sole opener','running','agent')`,
+      `insert into public.work_sessions(entity_id,title,status,session_kind, workdir_mode) values
+       ($1,'the worker','running','agent', 'scratch'),($2,'the coordinator','idle','agent', 'scratch'),
+       ($3,'a speaker','running','agent', 'scratch'),($4,'a dead speaker','exited','agent', 'scratch'),
+       ($5,'a shell','running','shell', 'scratch'),($6,'bystander','running','agent', 'scratch'),
+       ($7,'the sole opener','running','agent', 'scratch')`,
       [base.workerSessionId, base.openerSessionId, base.speakerSessionId,
         base.deadSpeakerSessionId, base.shellSessionId, base.bystanderSessionId,
         base.soleOpenerSessionId],

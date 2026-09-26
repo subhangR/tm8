@@ -102,7 +102,7 @@ export async function runCommitRecorderTick(
             e.src_id as session_id, p.repo_url, p.name as project_name
        from public.worktrees w
        join public.edges e on e.dst_id = w.entity_id and e.type = 'in_worktree'
-       join public.projects p on p.id = w.project_id
+       join public.projects p on p.id = internal.project_folder_for(w.space_id, w.project_entity_id)
       where w.status = 'active'
       order by w.updated_at desc
       limit $1`,

@@ -167,10 +167,13 @@ async function seed(): Promise<Fixture> {
       await client.query(
         `insert into public.chats(
            entity_id, space_id, title, teammate_id, model, provider, agent_tool,
-           chat_mode, workdir_mode, project_id, cwd, native_session_id,
+           chat_mode, workdir_mode, project_entity_id, cwd, native_session_id,
            configured_by_identity_id, configured_by_member_id, client_mutation_id
          ) values ($1,$2,'Doc15 bound chat',$3,'claude-opus-5','anthropic','claude-code',
-                   'ask','project',$4,'/tmp/doc15-chat', gen_random_uuid(), $5, $6, $7)`,
+                   'ask','project',
+                   -- 245: a chat names the space's project entity, not the folder.
+                   (select project_entity_id from public.project_links where space_id = $2 and project_id = $4),
+                   '/tmp/doc15-chat', gen_random_uuid(), $5, $6, $7)`,
         [chatId, ids.spaceA, ids.personaA, ids.projectChat, ids.identityH, ids.memberHA,
           `doc15-chat-${randomUUID()}`],
       );

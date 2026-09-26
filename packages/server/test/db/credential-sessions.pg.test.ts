@@ -602,11 +602,14 @@ describe('083 — existing insert paths are untouched', () => {
       ).rows[0]!.id;
       // EXACTLY the column list 007/043/048's execution_spawn uses — no
       // session_kind anywhere. If this needed editing, the column would not be
-      // additive and the migration would be a breaking change.
+      // additive and the migration would be a breaking change. It did need
+      // editing once, and not for session_kind: 245 (W11-repoint) dropped
+      // project_id and refuses an agent 'project' row with no project entity,
+      // so the legacy null-project row is written as the scratch row it was.
       await client.query(
-        `insert into public.work_sessions(entity_id, title, node_id, project_id, workdir_mode,
+        `insert into public.work_sessions(entity_id, title, node_id, workdir_mode,
                                           workdir_path, base_ref, status, agent_tool, model, mode)
-         values ($1, 'legacy shaped', 'node-1', null, 'project', null, null,
+         values ($1, 'legacy shaped', 'node-1', 'scratch', null, null,
                  'running', 'claude', null, null)`,
         [id],
       );

@@ -58,7 +58,7 @@ beforeAll(async () => {
     `insert into public.entities(id, space_id, kind, visibility, created_by)
        select '${sessionId}', space_id, 'work_session', visibility, created_by
          from public.entities where id = '${parentId}';
-     insert into public.work_sessions(entity_id, status) values ('${sessionId}', 'running');`,
+     insert into public.work_sessions(entity_id, status, workdir_mode) values ('${sessionId}', 'running', 'scratch');`,
   );
   if (made.code !== 0) throw new Error(`work_session fixture failed: ${made.stderr}`);
 }, 240_000);

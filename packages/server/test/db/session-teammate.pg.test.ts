@@ -98,9 +98,9 @@ async function seed(): Promise<Fixture> {
       [ids.persona_id, ids.member_id],
     );
     await client.query(
-      `insert into public.work_sessions(entity_id, title, status, agent_tool, share_mode, started_at)
-       values ($1, 'Attributed run', 'running', 'claude-code', 'none', now()),
-              ($2, 'Bare terminal', 'running', null, 'none', now())`,
+      `insert into public.work_sessions(entity_id, title, status, agent_tool, share_mode, started_at, workdir_mode)
+       values ($1, 'Attributed run', 'running', 'claude-code', 'none', now(), 'scratch'),
+              ($2, 'Bare terminal', 'running', null, 'none', now(), 'scratch')`,
       [ids.attributed_id, ids.bare_id],
     );
     await client.query(

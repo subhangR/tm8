@@ -103,14 +103,18 @@ async function seedSpace(
        values ($1, $2, $3, $4, 'trusted')`,
       [f.projectId, `project ${label}`, `/tmp/tm8-148-${label}`, options.repoUrl],
     );
+    // 245: a worktree is keyed on the space's project entity, not the folder.
+    await q(`insert into public.space_projects(space_id, project_id, linked_by) values ($1, $2, $3)`,
+      [f.spaceId, f.projectId, f.memberId]);
     await q(
-      `insert into public.worktrees(entity_id, project_id, path, branch, base_ref, base_commit_oid, status)
-       values ($1, $2, $3, $4, 'main', repeat('a', 40), 'active')`,
-      [f.worktreeId, f.projectId, `/tmp/tm8-148-${label}/wt`, options.branch],
+      `insert into public.worktrees(entity_id, space_id, project_entity_id, path, branch, base_ref, base_commit_oid, status)
+       select $1, $2, l.project_entity_id, $4, $5, 'main', repeat('a', 40), 'active'
+         from public.project_links l where l.space_id = $2 and l.project_id = $3`,
+      [f.worktreeId, f.spaceId, f.projectId, `/tmp/tm8-148-${label}/wt`, options.branch],
     );
     await q(
-      `insert into public.work_sessions(entity_id, title, status, share_mode)
-       values ($1, $2, $3, 'space')`,
+      `insert into public.work_sessions(entity_id, title, status, share_mode, workdir_mode)
+       values ($1, $2, $3, 'space', 'scratch')`,
       [f.sessionId, `session ${label}`, options.status],
     );
     await q(
@@ -154,8 +158,8 @@ async function seedSession(space: SpaceFixture, label: string, status: string): 
       [sessionId, space.spaceId, space.memberId],
     );
     await q(
-      `insert into public.work_sessions(entity_id, title, status, share_mode)
-       values ($1, $2, $3, 'space')`,
+      `insert into public.work_sessions(entity_id, title, status, share_mode, workdir_mode)
+       values ($1, $2, $3, 'space', 'scratch')`,
       [sessionId, `session ${label}`, status],
     );
   });
@@ -231,14 +235,17 @@ describe('148 — tier 3 cannot cross a project boundary either', () => {
            ($1, $3, 'worktree', null, 50, $4), ($2, $3, 'work_session', null, 60, $4)`,
         [worktreeId, sessionId, space.spaceId, space.memberId],
       );
+      await q(`insert into public.space_projects(space_id, project_id, linked_by) values ($1, $2, $3)`,
+        [space.spaceId, projectId, space.memberId]);
       await q(
-        `insert into public.worktrees(entity_id, project_id, path, branch, base_ref, base_commit_oid, status)
-         values ($1, $2, '/tmp/tm8-148-a3-other/wt', $3, 'main', repeat('b', 40), 'active')`,
-        [worktreeId, projectId, BRANCH],
+        `insert into public.worktrees(entity_id, space_id, project_entity_id, path, branch, base_ref, base_commit_oid, status)
+         select $1, $2, l.project_entity_id, '/tmp/tm8-148-a3-other/wt', $4, 'main', repeat('b', 40), 'active'
+           from public.project_links l where l.space_id = $2 and l.project_id = $3`,
+        [worktreeId, space.spaceId, projectId, BRANCH],
       );
       await q(
-        `insert into public.work_sessions(entity_id, title, status, share_mode)
-         values ($1, 'other project session', 'running', 'space')`,
+        `insert into public.work_sessions(entity_id, title, status, share_mode, workdir_mode)
+         values ($1, 'other project session', 'running', 'space', 'scratch')`,
         [sessionId],
       );
       await q(

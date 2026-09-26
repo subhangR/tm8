@@ -110,7 +110,7 @@ async function createSession(title = 'A run'): Promise<string> {
       [fixture.spaceId, fixture.memberId],
     );
     const id = created[0]!.id as string;
-    await q(`insert into public.work_sessions(entity_id,title,status) values($1,$2,'spawning')`, [id, title]);
+    await q(`insert into public.work_sessions(entity_id,title,status, workdir_mode) values($1,$2,'spawning', 'scratch')`, [id, title]);
     return created;
   });
   return rows[0]!.id as string;

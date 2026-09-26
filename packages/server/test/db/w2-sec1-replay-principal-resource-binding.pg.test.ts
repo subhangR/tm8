@@ -281,7 +281,7 @@ describe.sequential('W2.SEC-1 replay principal and resource binding', () => {
       [space.spaceId, space.memberId],
     );
     const sessionId = rows[0]!.session_id;
-    await ownerRows(`insert into public.work_sessions(entity_id, title) values ($1, $2)`, [
+    await ownerRows(`insert into public.work_sessions(entity_id, title, workdir_mode) values ($1, $2, 'scratch')`, [
       sessionId,
       title,
     ]);

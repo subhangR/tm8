@@ -79,7 +79,7 @@ async function session(space: 'S' | 'T' = 'S'): Promise<string> {
     const sessionId = await newId(c);
     const createdBy = space === 'S' ? ids.TB : ids['member:T:' + A];
     await c.query(`insert into public.entities(id, space_id, kind, position, created_by) values ($1, $2, 'work_session', 0, $3)`, [sessionId, ids[space], createdBy]);
-    await c.query(`insert into public.work_sessions(entity_id, title, status, session_kind) values ($1, 'fixture', 'spawning', 'agent')`, [sessionId]);
+    await c.query(`insert into public.work_sessions(entity_id, title, status, session_kind, workdir_mode) values ($1, 'fixture', 'spawning', 'agent', 'scratch')`, [sessionId]);
     return sessionId;
   });
   live.push(id);

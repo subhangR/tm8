@@ -118,8 +118,8 @@ async function seed(): Promise<Fixture> {
       [ids.privateSession, ids.sharedSession, ids.spaceId, ids.aliceMember],
     );
     await client.query(
-      `insert into public.work_sessions(entity_id, title, status, share_mode)
-       values ($1, 'private', 'running', 'none'), ($2, 'shared', 'running', 'space')`,
+      `insert into public.work_sessions(entity_id, title, status, share_mode, workdir_mode)
+       values ($1, 'private', 'running', 'none', 'scratch'), ($2, 'shared', 'running', 'space', 'scratch')`,
       [ids.privateSession, ids.sharedSession],
     );
     return ids;
