@@ -42,6 +42,7 @@ const SKILL_DROP_REASONS: ReadonlySet<string> = new Set<ContextDropReason>([
   'not-selected',
   'byte-budget',
   'task-name-collision',
+  'selection-name-collision',
   'native-shadowed',
   'missing',
   'disabled',
