@@ -19,6 +19,7 @@ import type { Logger, PtyActivity, PtyExitInfo, PtyKillOutcome, PtySessionStatus
 import {
   BYTE_BUDGETS,
   composePrompt,
+  dispatchRequestInjection,
   primaryContextBudgetV2,
   PROMPT_VERSION_V2,
   utf8Bytes,
@@ -444,6 +445,21 @@ function endingFromPtyExit(
         ? 'Stopped unexpectedly, and no reason was reported. It can be resumed to try again.'
         : 'Stopped because it hit an error and could not continue. It can be resumed to try again.',
   };
+}
+
+/**
+ * A dispatcher launched on tasks (launch v3, DISPATCH verb + Launch): one
+ * dispatch request per task, the same control block `execution.dispatch`
+ * pushes at a live dispatcher, so the first thing it does is route them — and
+ * then it stays resident like any dispatcher. The durable request message is
+ * stored on each task by the caller once the session exists; the turn names
+ * no message id because none exists yet.
+ */
+function routingTurn(taskIds: readonly string[], sessionId: string): string {
+  return taskIds
+    .map((taskId) =>
+      dispatchRequestInjection({ taskId, subjectId: taskId, destinationSessionId: sessionId }))
+    .join('\n');
 }
 
 /**
@@ -1438,7 +1454,7 @@ export class SpawnService {
     const contextIndex = indexSwitch.on ? { source: indexSwitch.source } : null;
     if (contextIndex) await this.loadIndexHeaders(auth, context, launch.mode, request.jevRunId);
 
-    const { sessionId, commandResult, replayed } = await this.graph.createWorkSession(auth, {
+    const { sessionId, commandResult, replayed, createdTaskId } = await this.graph.createWorkSession(auth, {
       spaceId: request.spaceId,
       teamMemberId: request.teamMemberId,
       parentSessionId: request.parentSessionId ?? null,
@@ -1458,10 +1474,43 @@ export class SpawnService {
       nodeId: this.nodeId,
       confirmUntrusted: request.confirmUntrusted ?? false,
       clientMutationId: request.clientMutationId ?? null,
+      ...(request.newTask ? { newTaskTitle: request.newTask.title } : {}),
     });
+    // Launch v3 gap 4: the task the RPC just created is known only now. It is
+    // new, so it has nothing but its title — the rest is what the row holds.
+    if (createdTaskId) {
+      context.tasks = [
+        ...context.tasks,
+        {
+          id: createdTaskId,
+          version: 1,
+          title: request.newTask?.title.trim() ?? '',
+          description: '',
+          priority: 'medium',
+          status: 'working',
+          acceptanceCriteria: [],
+          attachments: [],
+          threadRootMessageId: null,
+          threadChannelId: null,
+          linked: [],
+          linkedTotal: 0,
+        },
+      ];
+    }
     // The RPC just started the tasks, so their version moved (a replay's did,
     // the first time). Compose from the task as it stands now.
     await this.refreshStartedTasks(auth, context);
+    // A dispatcher launched on tasks ROUTES them rather than working them:
+    // its first turn is a dispatch request per task, not an assignment (and
+    // 267 wrote it neither `working_on` nor `assigned_to`).
+    const routedTaskIds = launch.mode === 'dispatcher' && context.tasks.length > 0
+      ? context.tasks.map((task) => task.id)
+      : undefined;
+    if (routedTaskIds) context.tasks = [];
+    const spawnFacts = {
+      ...(createdTaskId ? { createdTaskId } : {}),
+      ...(routedTaskIds ? { routedTaskIds } : {}),
+    };
 
     // A projectless scratch session's directory is named for the session, which
     // only exists now. Re-resolve so the manifest and the PTY agree.
@@ -1507,6 +1556,7 @@ export class SpawnService {
         envVarNames: [],
         reused: true,
         commandResult,
+        ...spawnFacts,
       };
     }
 
@@ -1638,10 +1688,13 @@ export class SpawnService {
       // durable link between this tm8 session and its rollout file is a marker
       // in the first user turn. That marker is what resume's capture scan
       // matches (native-session.ts). Claude needs none: its id is pre-minted.
+      const turn = routedTaskIds
+        ? `${firstTurn(envelope, sessionId, request)}\n${routingTurn(routedTaskIds, sessionId)}`
+        : firstTurn(envelope, sessionId, request);
       const task =
         launch.agentTool === 'codex'
-          ? `${firstTurn(envelope, sessionId, request)}\n<tm8_session_id>${sessionId}</tm8_session_id>`
-          : firstTurn(envelope, sessionId, request);
+          ? `${turn}\n<tm8_session_id>${sessionId}</tm8_session_id>`
+          : turn;
       // THE FIRST TURN RIDES IN ARGV wherever the binary accepts one, because a
       // prompt that is already in the process cannot be lost to a boot race. The
       // alternative — launch an idle REPL and type the task into the TUI once it
@@ -1806,7 +1859,7 @@ export class SpawnService {
         this.watchWorkspaceTrust(sessionId, manifestPath, manifest, env);
       }
 
-      return { sessionId, manifestPath, manifest, command, cwd, envVarNames, reused, commandResult };
+      return { sessionId, manifestPath, manifest, command, cwd, envVarNames, reused, commandResult, ...spawnFacts };
     } catch (error) {
       // The row exists and the graph believes a session is spawning. Leaving it
       // there would burn a slot against the concurrency cap forever, so mark it

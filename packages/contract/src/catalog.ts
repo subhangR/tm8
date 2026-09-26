@@ -588,6 +588,10 @@ export const OPERATIONS = [
   // own actions are existing ops (`entities.patch`, `edges.create`,
   // `execution.spawn`, `messages.post`).
   { name: 'execution.dispatch',                          method: 'POST',   path: '/v2/execution/dispatch',                                             kind: 'command', status: 'v1' },
+  // Launch v3 gap 5: the space's dispatcher sessions for the launch card's
+  // dispatch-target drop-up — newest first, stopped ones included with
+  // `live: false`. Liveness is probed exactly as `execution.dispatch` probes it.
+  { name: 'execution.dispatchers',                       method: 'GET',    path: '/v2/spaces/:spaceId/execution/dispatchers',                          kind: 'read',    status: 'v1' },
 
   // containers — machines agents run in or drive (TM8-CONTAINERS-DESIGN §4.1).
   //
