@@ -776,4 +776,21 @@ describe('edits (advisor D11)', () => {
       [TASK_CHILD, ['acceptance criteria']],
     ]);
   });
+
+  it('leaves doc_update to lane 3’s own edit line (D17) — neither an edit nor a create here', () => {
+    // A settled doc_update is drawn by TurnParts' `DocEditLine`; folding it
+    // here too would put two "✎ Edited" lines on one call.
+    const ledger = buildChatLedger([
+      turn(
+        settled(
+          { docId: DOC, expectedVersion: 2, body: '# v3' },
+          mcp('doc_update', { data: { entity: { id: DOC, kind: 'doc', title: 'Plan' } } }),
+          'mcp__tm8__doc_update',
+        ),
+      ),
+    ]);
+    expect(ledger.turns[0]!.edits).toEqual([]);
+    expect(ledger.creates).toEqual([]);
+    expect(ledger.turns[0]!.reads.total).toBe(0);
+  });
 });
