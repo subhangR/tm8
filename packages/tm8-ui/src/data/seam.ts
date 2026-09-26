@@ -152,6 +152,7 @@ import type {
   CredentialsSpacePolicyView,
   NodeCredentialPolicyEntry,
   NodeCredentialsStatusView,
+  NodeMetricsView,
   SpaceCredentialProviderName,
   SpaceCredentialView,
   CredentialsServiceKeysStatusView,
@@ -312,6 +313,15 @@ export interface LivenessSnapshot {
    * avoid going.
    */
   eventHwm?: number | null;
+  /**
+   * Status strip. Live work sessions by BOTH truths (PTY map AND recorded
+   * status), live chats (`runtimeState === 'live'`), and the live chats with a
+   * turn running or queued. Exact server-side counts. `null` when the node
+   * predates the field — "unknown", never zero.
+   */
+  liveSessionCount?: number | null;
+  liveChatCount?: number | null;
+  workingChatCount?: number | null;
 }
 
 /**
@@ -1275,6 +1285,14 @@ export interface Seam {
    * no space except when opening a terminal, so filing the read under
    * `commands` would have been the only alternative and a worse lie.
    */
+  /**
+   * `node.metrics.get` — host CPU / memory / load / disk / server RSS for the
+   * desktop status strip. NODE ADMIN ONLY: a non-admin (or space-pinned)
+   * session gets `forbidden`, which the strip reads as "hide host metrics".
+   * Optional so a seam that predates the strip still type-checks.
+   */
+  nodeMetrics?(): Promise<NodeMetricsView>;
+
   credentials: {
     /** The merged view + `gitCredentialStore`, its own completeness report. */
     status(): Promise<CredentialsStatusView>;

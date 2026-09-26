@@ -54,7 +54,9 @@ export function turnItemFromMessagePart(part: MessagePart): ChatTurnItem {
     case 'error':
       return { kind: 'error', message: part.payload.message };
     case 'done':
-      return { kind: 'done' };
+      // The reason is how a turn that FAILED is told from one that merely
+      // carried an error item; absent on an older node.
+      return part.payload?.reason ? { kind: 'done', reason: part.payload.reason } : { kind: 'done' };
   }
 }
 

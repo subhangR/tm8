@@ -73,7 +73,7 @@ import type {
   CredentialsSpaceDeleteResult, CredentialsSpaceListView, CredentialsSpacePolicySetInput,
   CredentialsSpacePolicySetResult, CredentialsSpacePolicyView, CredentialsSpaceRekeyInput,
   CredentialsSpaceRenameInput, NodeCredentialPolicyEntry, NodeCredentialStatusEntry,
-  NodeCredentialsPolicySetInput, NodeCredentialsStatusView, SpaceCredentialPolicyEntry,
+  NodeCredentialsPolicySetInput, NodeCredentialsStatusView, NodeMetricsView, SpaceCredentialPolicyEntry,
   SpaceCredentialProviderName, SpaceCredentialShape, SpaceCredentialStatus, SpaceCredentialView,
   CustomEntityKind, CustomFieldDef, CustomFieldValue, DeleteMessageInput,
   DeliverySummary, EdgeCorrectionResult, EdgeGroup, EdgeView,
@@ -2200,6 +2200,25 @@ export const NodeCredentialsStatusViewSchema: z.ZodType<NodeCredentialsStatusVie
   providers: z.array(NodeCredentialStatusEntrySchema),
 }).strict();
 
+const ByteCount = z.number().int().nonnegative();
+
+export const NodeMetricsViewSchema: z.ZodType<NodeMetricsView> = z.object({
+  sampledAt: IsoTimestamp,
+  cpu: z.object({
+    percent: z.number().min(0).max(100).nullable(),
+    cores: z.number().int().nonnegative(),
+  }).strict(),
+  memory: z.object({ totalBytes: ByteCount, usedBytes: ByteCount }).strict(),
+  loadAverage: z.tuple([z.number(), z.number(), z.number()]).nullable(),
+  disk: z.object({ path: z.string().min(1), totalBytes: ByteCount, usedBytes: ByteCount }).strict().nullable(),
+  process: z.object({
+    rssBytes: ByteCount,
+    heapUsedBytes: ByteCount,
+    uptimeSeconds: z.number().nonnegative(),
+  }).strict(),
+  hostUptimeSeconds: z.number().nonnegative(),
+}).strict();
+
 export const NodeCredentialsPolicySetInputSchema: z.ZodType<NodeCredentialsPolicySetInput> = z.object({
   allowNode: z.boolean().nullable(),
   clientMutationId: z.string().min(1).optional(),
@@ -3596,6 +3615,10 @@ export const ExecutionLivenessSchema: z.ZodType<ExecutionLiveness> = z.object({
   // this read has to be able to give, and an absent field is the shape a
   // consumer reads as zero — which means "replay the entire retained log".
   eventHwm: z.number().int().nonnegative().nullable(),
+  // Optional: an older node omits it, which a consumer reads as "unknown".
+  liveSessionCount: z.number().int().nonnegative().optional(),
+  liveChatCount: z.number().int().nonnegative().optional(),
+  workingChatCount: z.number().int().nonnegative().optional(),
 }).strict();
 
 /**

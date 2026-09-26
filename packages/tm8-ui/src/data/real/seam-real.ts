@@ -498,6 +498,8 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       containerProviders: () => ops.containerProviders(),
     },
 
+    nodeMetrics: () => ops.nodeMetrics(),
+
     // -- credentials ---------------------------------------------------------
 
     credentials: {

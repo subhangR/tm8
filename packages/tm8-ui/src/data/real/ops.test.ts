@@ -50,6 +50,22 @@ describe('ops: execution.liveness — catalog row A21 (Delta 2, dd41e89)', () =>
       // An older node omits the mark. Normalized to null HERE so no consumer
       // ever has to decide what `undefined` means — and none can read it as 0.
       eventHwm: null,
+      // Same for the status-strip counts: absent is "unknown", never 0.
+      liveSessionCount: null,
+      liveChatCount: null,
+      workingChatCount: null,
+    });
+  });
+
+  it('passes the status-strip counts through and nulls anything that is not a count', async () => {
+    const { ops } = harness({
+      liveEntityIds: [], nodeBootId: 'boot-A', checkedAt: '2026-07-28T12:00:00.000Z',
+      liveSessionCount: 4, liveChatCount: 0, workingChatCount: '1',
+    });
+    await expect(ops.liveness('sp-9')).resolves.toMatchObject({
+      liveSessionCount: 4,
+      liveChatCount: 0,
+      workingChatCount: null,
     });
   });
 

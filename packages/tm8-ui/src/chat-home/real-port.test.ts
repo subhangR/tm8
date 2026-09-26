@@ -124,6 +124,8 @@ describe('real chat-home seam adapter', () => {
 
     expect(created).toEqual({
       chatId: CHAT, teammateId: TEAMMATE, model: 'claude-sonnet-4-5', mode: 'ask',
+      // The opening message, so the screen can re-key its optimistic echo.
+      messageId: MSG,
     });
     expect(startChat).toHaveBeenCalledWith({
       clientMutationId: 'start-1',
@@ -521,5 +523,79 @@ describe('real chat-home seam adapter', () => {
     expect(sent.workdirMode).toBe('project');
     expect(sent.projectId).toBe(PROJECT_ROW);
     expect(sent.projectId).not.toBe(PROJECT_ENTITY);
+  });
+});
+
+describe('the chat state the port hands the screen stays current (lane 1)', () => {
+  function withFrames() {
+    const stub = seamStub([chatSummary({ state: { ...chatSummary().state, turnState: 'running' } })]);
+    let emit: (frame: unknown) => void = () => undefined;
+    (stub.seam as { onChatTurn: unknown }).onChatTurn = vi.fn((cb: (frame: unknown) => void) => {
+      emit = cb;
+      return () => undefined;
+    });
+    (stub.seam as { messages?: unknown }).messages = vi.fn(async () => ({ items: [] }));
+    return { ...stub, emit: (frame: unknown) => emit(frame) };
+  }
+
+  /**
+   * HINGES ON: the cache update in `subscribe`. `readThread` takes a chat's
+   * state from the list cache, which only a list read refreshed — so a chat
+   * whose turn FINISHED re-opened as `streaming` (Stop button, a live row that
+   * never settles) until the next list read happened to run.
+   */
+  it('a chat whose turn finished re-reads as idle, not as the stale streaming row', async () => {
+    const { seam, emit } = withFrames();
+    const port = createChatHomePortFromSeam(seam);
+    await port.listThreads('space-1');
+    expect((await port.readThread(CHAT)).summary.state).toBe('streaming');
+
+    const unsubscribe = port.subscribe(() => undefined);
+    emit({ type: 'chat.turn.done', chatId: CHAT, messageId: MSG, usage: {} });
+    expect((await port.readThread(CHAT)).summary.state).toBe('idle');
+
+    emit({ type: 'chat.turn.delta', chatId: CHAT, messageId: MSG, seq: 0, part: { kind: 'text', text: 'x' } });
+    expect((await port.readThread(CHAT)).summary.state).toBe('streaming');
+    unsubscribe();
+  });
+
+  it('a claimed turn on the read itself outranks an idle cached row', async () => {
+    const { seam } = seamStub();
+    (seam as { messages?: unknown }).messages = vi.fn(async () => ({
+      items: [{
+        id: MSG, kind: 'message', createdAt: '2026-09-03T08:00:00.000Z', createdBy: null,
+        state: { kind: 'message', author: null }, content: { kind: 'message', body: 'Agent turn in progress.' },
+        turnInFlight: true,
+      }],
+    }));
+    const port = createChatHomePortFromSeam(seam);
+    await port.listThreads('space-1');
+    expect((await port.readThread(CHAT)).summary.state).toBe('streaming');
+  });
+
+  /**
+   * HINGES ON: `subscribeReconnect`. Chat frames are not durable events, so
+   * only a socket that was live, dropped and came back has lost any — the
+   * first `live` after boot must not fire a re-read.
+   */
+  it('fires on a reconnect, never on the first connect', () => {
+    const { seam } = seamStub();
+    let push: (state: { phase: string }) => void = () => undefined;
+    let current = { phase: 'connecting' };
+    Object.assign(seam as object, {
+      getConnection: () => current,
+      onConnection: (cb: (state: { phase: string }) => void) => { push = cb; return () => undefined; },
+    });
+    const port = createChatHomePortFromSeam(seam);
+    const listener = vi.fn();
+    port.subscribeReconnect?.(listener);
+
+    push(current = { phase: 'live' });
+    expect(listener).not.toHaveBeenCalled();
+    push(current = { phase: 'polling' });
+    push(current = { phase: 'live' });
+    expect(listener).toHaveBeenCalledTimes(1);
+    push(current = { phase: 'live' });
+    expect(listener).toHaveBeenCalledTimes(1);
   });
 });

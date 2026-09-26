@@ -105,9 +105,14 @@ describe('THE GATE — composed T0-1 master screen', () => {
     // now, and the tab duplicated that row. See domain/menu.ts. The tab row is
     // derived from the shipped default, so it moves with the spine rather than
     // being asserted independently of it.
+    // The View switcher (task 01a0dc6d, 2026-09-26): the four VIEWS lead the
+    // row inside one pill, and Craft/Settings/Help follow as plain tabs.
     expect(labels).toEqual([
-      'Home', 'Work', 'Board', 'Craft', 'Graph', 'Settings', 'Help',
+      'Home', 'Work', 'Board', 'Graph', 'Craft', 'Settings', 'Help',
     ]);
+    const pill = within(tabs).getByTestId('top-view-switcher');
+    expect([...pill.querySelectorAll('[role="tab"]')].map((n) => n.textContent?.trim()))
+      .toEqual(['Home', 'Work', 'Board', 'Graph']);
 
     // The rail is absent as a matter of design, so none of its furniture is
     // half-rendered either — a stray group or divider would mean a rail came
@@ -338,6 +343,40 @@ describe('THE GATE — composed T0-1 master screen', () => {
       });
     } else {
       expect(before.length, 'the roster must render a live count to compare against').toBeGreaterThan(0);
+    }
+  });
+
+  /**
+   * THE VIEW SWITCHER'S FOLDED FORM (task 01a0dc6d). Below a container width
+   * `shell.css` hides the pill and shows this `<select>`; jsdom loads no
+   * stylesheet, so both are present here and this drives the select directly.
+   * It must navigate exactly as the pill does, and it must NOT claim a view
+   * while a plain tab (Settings) is current.
+   */
+  it('the folded View select switches views and names none while a plain tab is current', async () => {
+    const resizeObserver = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    } as typeof ResizeObserver;
+    const view = renderGate();
+    try {
+      const select = await waitFor(() => view.getByTestId('top-view-switcher-select') as HTMLSelectElement);
+      expect([...select.options].filter((o) => !o.disabled).map((o) => o.textContent))
+        .toEqual(['Home', 'Work', 'Board', 'Graph']);
+
+      fireEvent.change(select, { target: { value: 'graph' } });
+      await waitFor(() => view.getByTestId('graph-screen'));
+      expect(select.value).toBe('graph');
+
+      fireEvent.click(within(view.getByRole('tablist', { name: 'Screens' })).getByRole('tab', { name: 'Settings' }));
+      await waitFor(() => expect(view.queryByTestId('graph-screen')).toBeNull());
+      expect(select.value).toBe('');
+    } finally {
+      view.unmount();
+      if (resizeObserver === undefined) delete (globalThis as { ResizeObserver?: unknown }).ResizeObserver;
+      else globalThis.ResizeObserver = resizeObserver;
     }
   });
 

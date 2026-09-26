@@ -573,8 +573,15 @@ describe('W1 honest W2-only skeletons', () => {
     const query = db.query as ReturnType<typeof vi.fn>;
     query
       .mockResolvedValueOnce([{ id: SPACE }])              // space readable
-      .mockResolvedValueOnce([{ id: SOURCE }])              // one live id is ours
-      .mockResolvedValueOnce([{ used: 1 }]);                // process-wide session capacity
+      // Two live ids are ours; the second's record says it exited — still in
+      // the PTY map (liveEntityIds is the map verbatim) but NOT counted live.
+      .mockResolvedValueOnce([
+        { id: SOURCE, recorded_live: true },
+        { id: TARGET, recorded_live: false },
+      ])
+      .mockResolvedValueOnce([{ used: 1 }])                 // process-wide session capacity
+      // Live chats: counts arrive from node-postgres as STRINGS (bigint).
+      .mockResolvedValueOnce([{ live: '3', working: '1' }]);
     // The event high-water mark, read under the same claims through
     // PgDurableSeqSource. bigint arrives from node-postgres as a STRING.
     const bound = q.query as unknown as ReturnType<typeof vi.fn>;
@@ -585,7 +592,10 @@ describe('W1 honest W2-only skeletons', () => {
     const parsed = ExecutionLivenessSchema.safeParse(result.data);
     expect(parsed.success).toBe(true);
     if (parsed.success) {
-      expect(parsed.data.liveEntityIds).toEqual([SOURCE]);
+      expect(parsed.data.liveEntityIds).toEqual([SOURCE, TARGET]);
+      expect(parsed.data.liveSessionCount).toBe(1);
+      expect(parsed.data.liveChatCount).toBe(3);
+      expect(parsed.data.workingChatCount).toBe(1);
       expect(parsed.data.nodeBootId.length).toBeGreaterThan(0);
       expect(parsed.data.capacity).toEqual({ used: 1, total: 64 });
       // Carried so a client can open a space at the tail of the log instead of
