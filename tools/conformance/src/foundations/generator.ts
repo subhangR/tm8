@@ -405,7 +405,7 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // +6 credentials.space.* (W10b). MEASURED.
   // 253 -> 254 (status strip): node.metrics.get, one GET read. MEASURED.
   // 256 -> 255 (Attention v2 S7a): containers.attention deleted. MEASURED.
-  assertEqual(names.length, 271, 'catalog total'); /* +2 spaceLinks.invoke/audit (W7, 258). MEASURED. */ /* +7 spaceLinks.* (W6, 250/251). MEASURED. */ // +1 credentials.space.addMine (W10d). MEASURED. // +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. // +2 spaces.chatDefaults.get/set (entity chat G). // +1 launch.defaults (I9b). MEASURED. // +2 auth.sessions.list/revoke (W4). MEASURED.
+  assertEqual(names.length, 271, 'catalog total'); /* +2 spaceLinks.invoke/audit (W7, 260). MEASURED. */ /* +7 spaceLinks.* (W6, 250/251). MEASURED. */ // +1 credentials.space.addMine (W10d). MEASURED. // +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. // +2 spaces.chatDefaults.get/set (entity chat G). // +1 launch.defaults (I9b). MEASURED. // +2 auth.sessions.list/revoke (W4). MEASURED.
   // 157 -> 159 (114): spaces.members.updateRole (PATCH command) and
   // auth.invite.resolve (POST read — the code rides in the body, never a URL).
   // 161 -> 164 (W4/132): the three taskWorkflows rows are v1.
@@ -428,7 +428,7 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // +6 credentials.space.* (W10b). MEASURED.
   // 251 -> 252 (status strip): node.metrics.get ships v1. MEASURED.
   // 254 -> 253 (Attention v2 S7a): containers.attention deleted. MEASURED.
-  assertEqual(V1_OPERATIONS.length, 269, 'v1 total'); /* +2 spaceLinks.invoke/audit (W7, 258). MEASURED. */ /* +7 spaceLinks.* (W6, 250/251). MEASURED. */ // +1 credentials.space.addMine (W10d). MEASURED. // +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. // +2 spaces.chatDefaults.get/set (entity chat G). // +1 launch.defaults (I9b). MEASURED. // +2 auth.sessions.list/revoke (W4). MEASURED.
+  assertEqual(V1_OPERATIONS.length, 269, 'v1 total'); /* +2 spaceLinks.invoke/audit (W7, 260). MEASURED. */ /* +7 spaceLinks.* (W6, 250/251). MEASURED. */ // +1 credentials.space.addMine (W10d). MEASURED. // +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. // +2 spaces.chatDefaults.get/set (entity chat G). // +1 launch.defaults (I9b). MEASURED. // +2 auth.sessions.list/revoke (W4). MEASURED.
   assertEqual(RESERVED_OPERATIONS.map(({ name }) => name), ['search.query', 'bridge.fetchBlob'], 'reserved operations');
   assertEqual(additive.map(({ name }) => name), [...ADDITIVE_OPERATION_NAMES], 'A01-A21 order');
   assertEqual(new Set(names).size, names.length, 'unique operation names');

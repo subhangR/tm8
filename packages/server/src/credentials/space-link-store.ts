@@ -75,7 +75,7 @@ export interface SpaceLinkUse {
   token: string;
 }
 
-/** The caller's own row as invoke resolves it (258): no sealed bytes. */
+/** The caller's own row as invoke resolves it (260): no sealed bytes. */
 export interface SpaceLinkInvokeRow {
   linkId: string;
   tokenRowId: string;
@@ -285,7 +285,7 @@ export class DbSpaceLinkStore {
     ]);
   }
 
-  /** W7 `spaceLinks.audit`: own rows, or every row for a home admin (258). */
+  /** W7 `spaceLinks.audit`: own rows, or every row for a home admin (260). */
   listAudit(claims: DbClaims, linkId: string, options: { limit?: number; before?: string | null } = {}): Promise<SpaceLinkAuditEntry[]> {
     return this.db.rpc<SpaceLinkAuditEntry[]>(claims, 'list_cross_space_audit', [
       linkId, options.limit ?? 50, options.before ?? null,

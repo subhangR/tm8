@@ -102,7 +102,7 @@ const CREDENTIAL_SEAM = new Set<OperationName>([
   'spaceLinks.logout',
   'spaceLinks.remove',
   'spaceLinks.setSpawn',
-  // W7 (258): invoke + audit, same seam.
+  // W7 (260): invoke + audit, same seam.
   'spaceLinks.invoke',
   'spaceLinks.audit',
 ]);

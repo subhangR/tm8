@@ -4227,7 +4227,7 @@ describe.sequential('T17 leave / remove ends a member\'s link sessions', () => {
 });
 
 // ---------------------------------------------------------------------------
-// W7 spaceLinks.invoke (258). Over HTTP on a bootstrapped node whose data dir
+// W7 spaceLinks.invoke (260). Over HTTP on a bootstrapped node whose data dir
 // is the link store's, so the node key that sealed H's row opens it. The
 // caller is G, H's agent in A. Every refusal is paired with a positive.
 //

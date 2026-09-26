@@ -360,7 +360,7 @@ describe('W7p the link session and its children carry via_link', () => {
     expect(await sessionRow(child.id)).toMatchObject({ via_link_id: null, parent_session_id: null });
   });
 
-  // #884 checklist (lead ruling (a), cell 3): 258's resolve_space_link_invoke
+  // #884 checklist (lead ruling (a), cell 3): 260's resolve_space_link_invoke
   // refuses a via_link child before any row is looked up, so the child cannot
   // chain through a link. Red-checked by removing that guard: the child then
   // answers P0002 like the control.
