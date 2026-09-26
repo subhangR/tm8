@@ -419,6 +419,7 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     role: z.enum(['owner', 'admin', 'member']),
     score: z.number(),
     taskDoneCount: z.number().int().nonnegative(),
+    memberStatus: z.enum(['left', 'removed']).optional(),
   }).strict(),
   z.object({
     kind: z.literal('team_member'),

@@ -1723,6 +1723,7 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         role: (row.member_role ?? 'member') as 'owner' | 'admin' | 'member',
         score: row.points,
         taskDoneCount: 0,
+        ...endedStatus(ctx.actors.get(row.id)?.memberStatus),
       };
     case 'team_member':
       return {
@@ -2753,6 +2754,9 @@ export async function assembleSummaries(
     // for it and the summary can name the persona behind the run. Free when
     // the page has no sessions; one extra batched query when it does.
     r.kind === 'work_session' ? r.id : '',
+    // A member row's OWN id, so its summary can say the membership ended
+    // (G6, 232) from the batch `loadActors` already runs — no ENTITY_FROM column.
+    r.kind === 'member' ? r.id : '',
   ]);
   for (const list of relations.assignees.values()) actorIds.push(...list);
   for (const list of relations.assignments.values()) {
