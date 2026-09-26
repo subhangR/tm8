@@ -21,7 +21,6 @@ export {
   rootBirthAction,
   rootBirthDispatch,
   type BirthDispatcher,
-  type ListRootChatsCell,
   type ListRootHeaderProps,
   type ListRootOption,
 } from './ListRootHeader';
