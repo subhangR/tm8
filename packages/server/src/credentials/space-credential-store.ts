@@ -565,7 +565,7 @@ export class DbSpaceCredentialStore {
     return this.db.rpc<RepointedSessionSpaceCredentials>(claims, 'repoint_session_space_credentials', args);
   }
 
-  /** S7 (270): both readiness thresholds for this space. Member-scoped, metadata only. */
+  /** S7 (migration space_credential_readiness): both readiness thresholds for this space. Member-scoped, metadata only. */
   async readiness(claims: DbClaims, spaceId: string): Promise<CredentialsSpaceReadinessView> {
     return this.db.rpc<CredentialsSpaceReadinessView>(claims, 'space_credential_readiness', [spaceId]);
   }

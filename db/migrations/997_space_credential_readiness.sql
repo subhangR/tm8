@@ -1,6 +1,6 @@
+-- ordinal: placeholder 99x; the merge coordinator assigns the real number at merge (merge order, after 269)
 -- =============================================================================
--- 270 (PROVISIONAL — the credentials-r1 integration coordinator renumbers it)
--- — space_credential_readiness(p_space_id). Spec doc 01a0e248 §10.4, §11 row
+-- space_credential_readiness(p_space_id). Spec doc 01a0e248 §10.4, §11 row
 -- S7 (connect + readiness half), §8.3 Q1. Release 1 is ADDITIVE: this is a
 -- read. Nothing refuses on it; R2's S7-refusal will.
 --
@@ -37,7 +37,7 @@
 -- (an agent's claims are its root human launcher's). The catalog operation
 -- `credentials.space.readiness` is human-only, like every credentials.* row.
 --
--- SHARED-OBJECT REGISTER (coordinator doc 01a0e26b): 270 redefines or alters
+-- SHARED-OBJECT REGISTER (coordinator doc 01a0e26b): this migration redefines or alters
 -- NOTHING. It creates one new function, public.space_credential_readiness(uuid),
 -- which no earlier migration defines. No triggers, views, checks or edge types.
 -- It only READS space_credentials, member_defaults, space_credential_policies.
@@ -170,7 +170,7 @@ comment on function public.space_credential_readiness(uuid) is
   'Doc 01a0e248 S7: per-space credential readiness, TWO thresholds (canLaunch: '
   'caller''s active my_default or space default per provider, policy allowing; '
   'canPoll: an active space-owned public github credential). Active only, '
-  'metadata only, member-scoped. Read 270''s header before changing it.';
+  'metadata only, member-scoped. Read the header of migration space_credential_readiness before changing it.';
 
 revoke all on function public.space_credential_readiness(uuid) from public;
 grant execute on function public.space_credential_readiness(uuid) to tm8_app;

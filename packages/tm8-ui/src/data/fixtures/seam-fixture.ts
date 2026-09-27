@@ -5565,7 +5565,7 @@ export function createFixtureSeam(): FixtureSeam {
         async policy(spaceId) {
           return { ...clone(spacePolicyState), spaceId };
         },
-        // S7 (migration 270), mirrored on the fixture's rows: the fixture keeps
+        // S7 (migration space_credential_readiness), mirrored on the fixture's rows: the fixture keeps
         // no my-defaults, so can-launch is the active space default under the
         // policy; can-poll is an active, space-owned, public GitHub credential.
         async readiness(spaceId) {

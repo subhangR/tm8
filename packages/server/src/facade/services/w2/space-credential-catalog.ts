@@ -502,7 +502,7 @@ export class SpaceCredentialCatalogService {
     }
   }
 
-  /** `credentials.space.readiness` (S7): the 270 read, validated at the boundary. */
+  /** `credentials.space.readiness` (S7): the space_credential_readiness read, validated at the boundary. */
   async readiness(claims: DbClaims, spaceId: string): Promise<CredentialsSpaceReadinessView> {
     return CredentialsSpaceReadinessViewSchema.parse(await this.store.readiness(claims, spaceId));
   }
