@@ -381,7 +381,7 @@ export async function resolveSessionCredentials(
       ? (launch.credentialSources as Partial<Record<string, CredentialSource>>)[toolProvider] ?? null
       : null;
     credentialHome = source === 'node' ? null : await deps.resolveMemberHome(source === 'member' ? 'member' : null);
-    // 269's roll-up reads this rung: a member home is `member`, none is the
+    // session_credential_binding's roll-up reads this rung: a member home is `member`, none is the
     // node's. A tool with no provider records nothing here; GitHub below
     // always records one, so the effective map is never empty.
     if (toolProvider) effective[toolProvider] = credentialHome ? 'member' : 'node';

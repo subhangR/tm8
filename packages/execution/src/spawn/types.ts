@@ -1109,7 +1109,7 @@ export interface GraphPort {
     agentConfigDir: string | null,
   ): Promise<void>;
   /**
-   * `public.record_session_credential_binding` (269) — resume's half of R2.
+   * `public.record_session_credential_binding` (session_credential_binding) — resume's half of R2.
    * Re-entering `spawning` resets an agent session's binding to `pending`, and
    * a `pending` session cannot go `running`; resume re-points its space
    * credential rows but does not re-record the manifest row, so it records the
@@ -1305,7 +1305,7 @@ export interface GraphPort {
  * the graph knows. Both are written, and neither is derived from the other.
  */
 /**
- * The three fields of a manifest's `launch` block that 269's roll-up reads,
+ * The three fields of a manifest's `launch` block that session_credential_binding's roll-up reads,
  * shaped exactly as `composeManifest` writes them (`credentialBindingLaunch`).
  */
 export type CredentialBindingLaunch = Pick<

@@ -430,7 +430,7 @@ describe('SC-2 spawn/resume ordering around a space credential', () => {
       expect(events).not.toContain('recordManifest');
     });
 
-    it('R2 (269): resume records the binding from THIS run, after the repoint and before the PTY and `running` — every provider on space', async () => {
+    it('R2 (session_credential_binding): resume records the binding from THIS run, after the repoint and before the PTY and `running` — every provider on space', async () => {
       const port = new FakeSpacePort(events, new Set(['identity-A', 'identity-B']));
       port.githubToken = { id: GH, token: GH_TOKEN, login: 'space-bot' };
       port.active.add(GH);
@@ -457,7 +457,7 @@ describe('SC-2 spawn/resume ordering around a space credential', () => {
       spyPty();
       await service(port).resume(A, { sessionId: SESSION_ID });
 
-      // 269 resets the binding to `pending` on re-entry to spawning and
+      // session_credential_binding resets the binding to `pending` on re-entry to spawning and
       // refuses `running` while pending: exactly one record, from this run.
       expect(graph.credentialBindings).toEqual([{
         sessionId: SESSION_ID,
@@ -473,7 +473,7 @@ describe('SC-2 spawn/resume ordering around a space credential', () => {
       expect(events.indexOf('transition:running')).toBeGreaterThan(recorded);
     });
 
-    it('R2 (269): a refused resumer records no binding', async () => {
+    it('R2 (session_credential_binding): a refused resumer records no binding', async () => {
       const port = new FakeSpacePort(events, new Set(['identity-B']));
       launchedByB(port);
       spyPty();

@@ -1,5 +1,5 @@
 /**
- * The credential-binding sweep (R2 gate 2; migration 269).
+ * The credential-binding sweep (R2 gate 2; migration session_credential_binding).
  *
  * Every agent session is minted `pending` and records which credential it
  * runs on before it may go `running`: spawn in `record_session_manifest`,

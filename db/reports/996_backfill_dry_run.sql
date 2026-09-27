@@ -1,12 +1,12 @@
--- 269 backfill dry run: READ ONLY, counts only, no secret column.
+-- session_credential_binding backfill dry run: READ ONLY, counts only, no secret column.
 -- Operator report for the one-time legacy backfill in
--- db/migrations/269_session_credential_binding.sql. The block between the
+-- the session_credential_binding migration. The block between the
 -- BEGIN/END markers is byte-for-byte the migration's predicate (a test
--- compares the two texts). Run with: psql -X -f db/reports/269_backfill_dry_run.sql
+-- compares the two texts). Run this file with psql -X -f
 -- Columns read: session_manifests.work_session_id, session_manifests.manifest
 -- (launch.effectiveCredentialSources only), session_space_credentials keys.
 begin read only;
--- BEGIN 269 BACKFILL PREDICATE
+-- BEGIN SESSION_CREDENTIAL_BINDING BACKFILL PREDICATE
 with manifest_rollup as (
   select sm.work_session_id,
          case
@@ -23,7 +23,7 @@ with manifest_rollup as (
          end as bucket
     from public.session_manifests sm
 )
--- END 269 BACKFILL PREDICATE
+-- END SESSION_CREDENTIAL_BINDING BACKFILL PREDICATE
 select
   count(*) filter (where bucket = 'every_used_provider_names_a_credential') as every_used_provider_names_a_credential,
   count(*) filter (where bucket = 'any_used_provider_on_removed_rung')      as any_used_provider_on_removed_rung,

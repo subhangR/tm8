@@ -63,7 +63,7 @@ export class FakeGraph implements GraphPort {
   > = [];
   readonly transitions: TransitionInput[] = [];
   readonly commands: RecordCommandInput[] = [];
-  /** resume's `recordCredentialBinding` calls (269), in order. */
+  /** resume's `recordCredentialBinding` calls (session_credential_binding), in order. */
   readonly credentialBindings: Array<{ sessionId: string; launch: CredentialBindingLaunch }> = [];
   readonly manifests: Array<{
     sessionId: string;

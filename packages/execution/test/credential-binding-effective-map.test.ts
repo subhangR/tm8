@@ -1,7 +1,7 @@
-// R2 (migration 269): every resolver branch records the rung it actually ran
+// R2 (migration session_credential_binding): every resolver branch records the rung it actually ran
 // on, so the manifest's `launch.effectiveCredentialSources` is never empty.
 //
-// 269's `settle_credential_binding` refuses a non-echo-agent manifest with an
+// session_credential_binding's `settle_credential_binding` refuses a non-echo-agent manifest with an
 // empty map (22023). That refusal is safe only if it is unreachable, and this
 // file is the structural half of that proof: it walks every branch of
 // `resolveSessionCredentials` and `resolveLinkBoundCredentials`, for every
@@ -165,7 +165,7 @@ const CASES: Case[] = [
     defaults: { openai: OAI, github: GH }, expected: { openai: 'space', github: 'space' } },
 ];
 
-describe('R2 — every resolver branch records the rung it ran on (269 refuses an empty map)', () => {
+describe('R2 — every resolver branch records the rung it ran on (session_credential_binding refuses an empty map)', () => {
   for (const c of CASES) {
     it(c.name, async () => {
       const l = launch(c.tool, c.model, c.request);
@@ -180,7 +180,7 @@ describe('R2 — every resolver branch records the rung it ran on (269 refuses a
       expect(effective.github).toBeDefined();
       const toolProvider = agentCredentialProviderFor(c.tool);
       if (toolProvider) expect(effective[toolProvider]).toBeDefined();
-      // Every `space` rung names the credential it ran on — 269's `bound`
+      // Every `space` rung names the credential it ran on — session_credential_binding's `bound`
       // requires a session_space_credentials row per space provider.
       for (const [provider, source] of Object.entries(effective)) {
         if (source === 'space') {

@@ -1013,7 +1013,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         createDeletedFileBlobPurgeJob({ db, blobStore, claims: sweepClaims('file-blob-purge') }),
       );
     }
-    // R2 gate 2 (269): a session still `pending` past the grace never recorded
+    // R2 gate 2 (session_credential_binding): a session still `pending` past the grace never recorded
     // the credential it runs on and can never run; ended in SQL. Every other
     // binding violation is logged, not killed (release 1 is additive).
     scheduler.register(

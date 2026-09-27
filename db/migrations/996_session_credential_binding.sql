@@ -1,8 +1,8 @@
 -- =============================================================================
--- 269 — R2: every session records its credential binding (credentials
+-- session_credential_binding — R2: every session records its credential binding (credentials
 -- release 1, stage S1; spec doc 01a0e248 §4 R2, §9 gates 1-2, §11 row S1;
--- task 01a0e268-0cb3). PROVISIONAL NUMBER: the integration coordinator
--- renumbers at merge.
+-- task 01a0e268-0cb3).
+-- ordinal: placeholder 99x; the merge coordinator assigns the real number at merge (merge order, after 269)
 --
 -- RELEASE 1 IS ADDITIVE. The member and node rungs keep working; a session on
 -- them records `legacy`. Nothing here refuses a launch that ran before.
@@ -192,10 +192,14 @@ begin
       using errcode = '42501';
   end if;
   if new.credential_binding = 'unrecorded' and old.credential_binding is distinct from 'unrecorded' then
-    raise exception 'unrecorded is the value of a session minted before 269; nothing writes it'
+    raise exception 'unrecorded is the value of a session minted before session_credential_binding; nothing writes it'
       using errcode = '23514';
   end if;
-  if new.status in ('running', 'idle') and new.status is distinct from old.status
+  -- `pending → running`: every agent mint inserts `spawning` (267) and a
+  -- resume re-enters it (062, reset above), so leaving `spawning` is the one
+  -- door into a run. A pending row that never passed through it was inserted
+  -- directly by the table owner; the sweep (7) reports it.
+  if old.status = 'spawning' and new.status in ('running', 'idle')
      and new.credential_binding = 'pending' then
     raise exception 'a session cannot run before it records the credential it runs on'
       using errcode = '23514',
@@ -215,7 +219,7 @@ for each row execute function internal.guard_credential_binding();
 insert into public.edge_types (type, src_kinds, dst_kinds, description, props_schema, acyclic, append_only) values
   ('runs_on', array['work_session'], array['credential'],
    'This session runs on that credential. The graph projection of a session_space_credentials row, '
-   || 'written only by that table''s trigger (269); props.provider names the provider.',
+   || 'written only by that table''s trigger (session_credential_binding); props.provider names the provider.',
    jsonb_build_object('type', 'object', 'properties', jsonb_build_object(
       'provider', jsonb_build_object('type', 'string')),
     'additionalProperties', false),
@@ -349,7 +353,7 @@ execute function internal.check_runs_on_pairing();
 
 -- -----------------------------------------------------------------------------
 -- 5. internal.touch_edge_activity: 001:851-865 copied verbatim, same language
---    and search_path; the ONLY change is the guard block marked ADDED IN 269
+--    and search_path; the ONLY change is the guard block marked ADDED IN session_credential_binding
 --    at the top. The trigger edges_touch_activity (001:866) is untouched: it
 --    stays one AFTER INSERT OR UPDATE OR DELETE trigger (a WHEN cannot read
 --    NEW on its DELETE arm, and dropping or splitting that arm would stop
@@ -362,7 +366,7 @@ execute function internal.check_runs_on_pairing();
 create or replace function internal.touch_edge_activity() returns trigger
 language plpgsql set search_path = public, internal, pg_temp as $$
 begin
-  -- ADDED IN 269. runs_on moves neither end's activity_at. An UPDATE is
+  -- ADDED IN session_credential_binding. runs_on moves neither end's activity_at. An UPDATE is
   -- skipped only when both rows are runs_on; a retype still moves both ends.
   if (tg_op = 'INSERT' or old.type = 'runs_on')
      and (tg_op = 'DELETE' or new.type = 'runs_on') then
@@ -486,7 +490,7 @@ grant execute on function public.record_session_credential_binding(uuid, jsonb) 
 --    such a session never reached its PTY and the guard will not let it run —
 --    by writing a failed ending exactly as work_session_transition does, and
 --    REPORTS the other violations without killing anything (R1 is additive).
---    Pre-269 `unrecorded` sessions are not violations.
+--    Pre-session_credential_binding `unrecorded` sessions are not violations.
 -- -----------------------------------------------------------------------------
 create or replace function public.credential_binding_sweep(
   p_grace interval default interval '10 minutes', p_limit integer default 200
@@ -580,14 +584,14 @@ grant execute on function public.credential_binding_sweep(interval, integer) to 
 
 -- -----------------------------------------------------------------------------
 -- 8. ONE-TIME DATA STEP: the fenced legacy backfill. On tm8_prod at ~10:58Z
---    2026-09-27 the dry run (db/reports/269_backfill_dry_run.sql) counted
+--    2026-09-27 the dry run (the backfill dry-run report in db/reports/) counted
 --    245 legacy, 1121 no map, 0 all-space, 0 unrecognized, of 1366 manifests.
 --    Not a function, not
 --    shared with the mint or the recorder, and it never runs again. The
 --    predicate between the markers is copied VERBATIM into the operator's
 --    read-only report; a test compares the two texts.
 -- -----------------------------------------------------------------------------
--- BEGIN 269 BACKFILL PREDICATE
+-- BEGIN SESSION_CREDENTIAL_BINDING BACKFILL PREDICATE
 with manifest_rollup as (
   select sm.work_session_id,
          case
@@ -604,7 +608,7 @@ with manifest_rollup as (
          end as bucket
     from public.session_manifests sm
 )
--- END 269 BACKFILL PREDICATE
+-- END SESSION_CREDENTIAL_BINDING BACKFILL PREDICATE
 update public.work_sessions ws
    set credential_binding = 'legacy'
   from manifest_rollup r
@@ -707,7 +711,7 @@ begin
     end loop;
   end if;
 
-  -- ADDED IN 269. The binding, by the roll-up, in the same transaction as the
+  -- ADDED IN session_credential_binding. The binding, by the roll-up, in the same transaction as the
   -- manifest and the rows it rolls up (the runs_on edges follow the rows).
   v_binding := internal.settle_credential_binding(
     p_session_id, coalesce(p_manifest -> 'launch', '{}'::jsonb));

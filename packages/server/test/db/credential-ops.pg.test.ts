@@ -134,6 +134,7 @@ function record(
       launch: {
         credentialSources: { [provider]: 'space' },
         spaceCredentialIds: { [provider]: credentialId },
+        effectiveCredentialSources: { [provider]: 'space' },
         ...(pick ? { spaceCredentialPicks: { [provider]: pick } } : {}),
       },
     }),

@@ -590,7 +590,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 /** The deprecated common value: one source shared by every provider, else null. */
 /**
  * The part of the manifest's `launch` block the credential binding rolls up
- * (269), built as `composeManifest` builds it, so resume's recorder reads the
+ * (session_credential_binding), built as `composeManifest` builds it, so resume's recorder reads the
  * same shape spawn's manifest carries.
  */
 export function credentialBindingLaunch(launch: ResolvedLaunchConfig): CredentialBindingLaunch {

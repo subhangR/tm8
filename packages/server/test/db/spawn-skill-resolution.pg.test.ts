@@ -256,7 +256,7 @@ it('atomically persists the effective session audit and creates no session equip
   });
   const audit = { native: [], indexed: [{ entityId: 'skill', name: 'Skill', description: 'metadata only', provider: 'tm8', level: 'space', native: false, loadPointer: 'tm8 entity get skill', hash: 'abc' }], skipped: [{ entityId: 'gone', name: 'Gone', reason: 'missing', hash: 'old' }], scannedAt: '2026-09-22T00:00:00Z' };
   const auditDb = new PgDb({ databaseUrl: database.url, role: 'tm8_app' });
-  await auditDb.rpc({ identityId: fx.identityId }, 'public.record_session_manifest', [sessionId, JSON.stringify({ effectiveSkills: audit }), [], '<system/>', '<task/>', null]);
+  await auditDb.rpc({ identityId: fx.identityId }, 'public.record_session_manifest', [sessionId, JSON.stringify({ effectiveSkills: audit, launch: { effectiveCredentialSources: { anthropic: 'node' } } }), [], '<system/>', '<task/>', null]);
   expect((await database.query<{ skills: unknown }>('select skills from public.work_sessions where entity_id=$1', [sessionId]))[0]?.skills).toEqual(audit);
   expect((await database.query<{ n: string }>(`select count(*) as n from public.edges where src_id=$1 and type='equips'`, [sessionId]))[0]?.n).toBe('0');
   const foreign = '00000000-0000-4000-8000-000000000001';
