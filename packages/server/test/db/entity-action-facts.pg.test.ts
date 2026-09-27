@@ -10,7 +10,7 @@
  *
  * Cast, in space S: OWN owner, ADM admin, A and B members. OUT is in T only.
  */
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -203,10 +203,24 @@ describe('entity_action_facts', () => {
       await c.query(`insert into public.space_links(entity_id, home_space_id, target_space_id) values ($1, $2, $3)`, [id, ids.S, ids.T]);
       for (const [who, status, used] of [[A, 'signed_in', true], [B, 'signed_out', false]] as const) {
         const member = ids[`member:${who}`]!;
+        // 251's shape: a signed_in row holds a sealed token (ciphertext + a
+        // 12-byte nonce) and a live auth session; a signed_out one holds neither.
+        let authSessionId: string | null = null;
+        if (status === 'signed_in') {
+          const session = await c.query<{ id: string }>(
+            `insert into public.auth_sessions(account_id, kind, token_hash, expires_at)
+             select id, 'browser', $2, now() + interval '1 hour' from public.accounts where identity_id = $1
+             returning id`,
+            [who, randomBytes(32).toString('hex')],
+          );
+          authSessionId = session.rows[0]!.id;
+        }
         await c.query(
-          `insert into public.space_link_tokens(link_id, home_space_id, member_id, target_space_id, aad, status, last_used_at)
-           values ($1, $2, $3, $4, $5, $6, $7)`,
-          [id, ids.S, member, ids.T, `${ids.S}|${id}|${member}|${ids.T}`, status, used ? new Date() : null],
+          `insert into public.space_link_tokens(link_id, home_space_id, member_id, target_space_id, aad, status, last_used_at,
+                                                auth_session_id, ciphertext, nonce)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+          [id, ids.S, member, ids.T, `${ids.S}|${id}|${member}|${ids.T}`, status, used ? new Date() : null,
+           authSessionId, authSessionId ? randomBytes(32) : null, authSessionId ? randomBytes(12) : null],
         );
       }
       return id;
