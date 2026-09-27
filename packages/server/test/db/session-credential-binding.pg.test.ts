@@ -352,7 +352,7 @@ describe('gate 1 — the roll-up, by both writers', () => {
     expect(r.credentialBinding).toBe('legacy');
   });
 
-  it('refusals: an empty map (unless echo-agent), a space source without its row, an unknown source, and outside spawning', async () => {
+  it('refusals: an empty map (any tool but echo-agent), a space source without its row, an unknown source', async () => {
     const s = await session();
     await expect(recordBinding(s, launch({}))).rejects.toMatchObject({ code: '22023' });
     await expect(recordBinding(s, launch({ anthropic: 'space' }, { anthropic: randomUUID() }))).rejects.toMatchObject({ code: '22023' });
@@ -360,9 +360,35 @@ describe('gate 1 — the roll-up, by both writers', () => {
     expect(await binding(s)).toMatchObject({ credential_binding: 'pending' });
 
     const echo = await session();
-    expect((await recordBinding(echo, launch({}, {}, 'echo-agent'))).credentialBinding).toBe('none');
-    expect(await binding(echo)).toMatchObject({ credential_binding: 'none', credential_none_reason: 'echo-agent' });
+    expect((await recordBinding(echo, launch({}, {}, 'echo-agent'))).credentialBinding).toBe('legacy');
+    await setStatus(echo, 'running');
+    await expect(recordBinding(echo, launch({ anthropic: 'node' }))).rejects.toMatchObject({ code: '55000' });
+    await expect(recordBinding(s, launch({ anthropic: 'node' }), claims(OUT))).rejects.toThrow();
+  });
 
+  it('echo-agent is legacy in R1, never none: an empty map records what the resolver chose, not what the process can reach', async () => {
+    // S4 flips this to none/'echo-agent' together with the no-reach isolation helper.
+    const bySpawn = await session();
+    expect((await recordManifest(bySpawn, launch({}, {}, 'echo-agent'))).credentialBinding).toBe('legacy');
+    const byResume = await session();
+    expect((await recordBinding(byResume, launch({}, {}, 'echo-agent'))).credentialBinding).toBe('legacy');
+    for (const s of [bySpawn, byResume]) {
+      const row = await binding(s);
+      expect(row).toMatchObject({ credential_binding: 'legacy', credential_none_reason: null });
+      expect(row.credential_binding).not.toBe('none');
+    }
+    // github on space: the normal roll-up.
+    const gh = await credential('github');
+    const onSpace = await session();
+    expect((await recordManifest(onSpace, launch({ github: 'space' }, { github: gh }, 'echo-agent'))).credentialBinding).toBe('bound');
+    const onNode = await session();
+    expect((await recordManifest(onNode, launch({ github: 'node' }, {}, 'echo-agent'))).credentialBinding).toBe('legacy');
+  });
+
+  it('a recorder outside spawning, and a non-member, are refused', async () => {
+    const s = await session();
+    const echo = await session();
+    await recordBinding(echo, launch({ github: 'node' }, {}, 'echo-agent'));
     await setStatus(echo, 'running');
     await expect(recordBinding(echo, launch({ anthropic: 'node' }))).rejects.toMatchObject({ code: '55000' });
     await expect(recordBinding(s, launch({ anthropic: 'node' }), claims(OUT))).rejects.toThrow();

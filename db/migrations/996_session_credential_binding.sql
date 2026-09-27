@@ -41,7 +41,8 @@
 --      The binding itself has one writer, internal.settle_credential_binding.
 --      R1-SCOPED: the transition-only guard and the sweep's report-not-reap
 --      posture are release 1's shape. S4 must revisit both when "no credential
---      means no reach" becomes the rule.
+--      means no reach" becomes the rule. S4 also flips echo-agent's empty
+--      map from `legacy` to `none`, together with the no-reach isolation helper.
 --   4. `runs_on` (work_session -> credential), a registered edge type.
 --   5. The redefined record_session_manifest (206's body) settles the binding
 --      from the manifest's launch block by the roll-up below;
@@ -57,7 +58,7 @@
 -- manifest->'launch'->'effectiveCredentialSources' (openai included):
 --   any value member|node      -> legacy
 --   every value space, each with its session_space_credentials row -> bound
---   empty map, tool echo-agent -> none/'echo-agent'
+--   empty map, tool echo-agent -> legacy (see ECHO-AGENT below; never none in R1)
 --   empty map, any other tool  -> refused (22023). Unreachable: every resolver
 --                                 branch records the rung it used (S1 makes
 --                                 the pre-space and link-bound gemini branches
@@ -77,12 +78,18 @@
 --
 -- ECHO-AGENT is `legacy` (or `bound` if github is on space) in R1, and `none`
 -- only after S4. Until isolation is unconditional an echo-agent session can
--- still reach a member token through its github resolution, so writing `none`
--- in R1 would claim "no credential reach" before the code makes that true.
+-- still reach a member or node token (the poller env chain,
+-- isolateGitHubCredential's early return, the conditional XDG_CONFIG_HOME).
+-- An empty map records what the resolver chose, not what the process can
+-- reach, so writing `none` in R1 would claim "no credential reach" before the
+-- code makes that true. An echo-agent launch with an EMPTY map is therefore
+-- `legacy`: the one `legacy` not read from a recorded member|node value, and
+-- the label still means what it means everywhere, "containment cannot reach it".
 --
 -- `legacy` IS NEVER A FALLBACK. It is written only from a recorded member or
--- node rung: at bind time by the roll-up, or once, below, from a manifest that
--- records one. A manifest with no record stays `unrecorded` forever. Release 2
+-- node rung (at bind time by the roll-up, or once, below, from a manifest that
+-- records one), or for a live echo-agent launch whose empty map is a recorded
+-- choice (ECHO-AGENT above). A manifest with no record stays `unrecorded` forever. Release 2
 -- refuses `legacy` at the mint and in the recorder (a refusal plus a test, not
 -- a CHECK: a CHECK cannot tell a new row from an old one).
 --
@@ -456,8 +463,10 @@ begin
 
   if v_effective is null or v_effective = '{}'::jsonb then
     if p_launch ->> 'tool' = 'echo-agent' then
-      v_binding := 'none';
-      v_reason := 'echo-agent';
+      -- NOT none in R1: an echo-agent process can still reach a member or node
+      -- token until S4's isolation helper lands (header, ECHO-AGENT). S4 flips
+      -- this to none/'echo-agent' together with that helper.
+      v_binding := 'legacy';
     else
       raise exception 'manifest records no credential source for any provider, so the session''s binding cannot be recorded'
         using errcode = '22023';
