@@ -2,7 +2,7 @@
 -- session_credential_binding — R2: every session records its credential binding (credentials
 -- release 1, stage S1; spec doc 01a0e248 §4 R2, §9 gates 1-2, §11 row S1;
 -- task 01a0e268-0cb3).
--- ordinal: placeholder 99x; the merge coordinator assigns the real number at merge (merge order, after 269)
+-- ordinal: placeholder 99x; the merge coordinator assigns the real number at merge (merge order, after main's tail at merge)
 --
 -- RELEASE 1 IS ADDITIVE. The member and node rungs keep working; a session on
 -- them records `legacy`. Nothing here refuses a launch that ran before.
@@ -515,8 +515,10 @@ begin
   end if;
   select status into v_status from public.work_sessions where entity_id = p_session_id;
   if v_status is distinct from 'spawning' then
+    -- 23514, not 55000: the rpc layer maps only a fixed SQLSTATE set, and an
+    -- unmapped one reaches the caller as a 503 rather than a refusal.
     raise exception 'a credential binding is recorded only while a session is spawning'
-      using errcode = '55000';
+      using errcode = '23514';
   end if;
   v_binding := internal.settle_credential_binding(p_session_id, p_launch);
   return jsonb_build_object('workSessionId', p_session_id, 'credentialBinding', v_binding);
@@ -630,6 +632,11 @@ grant execute on function public.credential_binding_sweep(interval, integer) to 
 --    predicate between the markers is copied VERBATIM into the operator's
 --    read-only report; a test compares the two texts.
 -- -----------------------------------------------------------------------------
+-- The backfill writes credential_binding, so it opens the single writer's
+-- door (3) for this one statement and closes it after. Every runner applies a
+-- migration in one transaction (-1), so the setting is transaction-local.
+select set_config('tm8.credential_binding_write', 'on', true);
+
 -- BEGIN SESSION_CREDENTIAL_BINDING BACKFILL PREDICATE
 with manifest_rollup as (
   select sm.work_session_id,
@@ -654,6 +661,8 @@ update public.work_sessions ws
  where r.work_session_id = ws.entity_id
    and r.bucket = 'any_used_provider_on_removed_rung'
    and ws.credential_binding = 'unrecorded';
+
+select set_config('tm8.credential_binding_write', '', true);
 
 alter table public.work_sessions alter column credential_binding drop default;
 
