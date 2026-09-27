@@ -1099,3 +1099,19 @@ describe('W10d — owner, visibility, claim, my default, usage (doc 13 §7)', ()
     expect(isSharedServer(null)).toBe(true);
   });
 });
+
+describe('Space credentials — a row opens its own panel (task 01a0e24d)', () => {
+  it('offers Open on each row when the host passes onOpen, and hands it the credential id', async () => {
+    const onOpen = vi.fn();
+    render(<SpaceCredentialsSection port={fakePort()} onOpen={onOpen} />);
+    await screen.findByTestId('space-cred-group-anthropic');
+    await act(async () => {});
+    fireEvent.click(screen.getByTestId('space-cred-open-c-mine'));
+    expect(onOpen).toHaveBeenCalledWith('c-mine');
+  });
+
+  it('offers no Open without a host to open into', async () => {
+    await mount(fakePort());
+    expect(screen.queryByTestId('space-cred-open-c-mine')).toBeNull();
+  });
+});

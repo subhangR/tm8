@@ -241,7 +241,9 @@ export class DbSpaceCredentialStore {
    */
   async list(claims: DbClaims, spaceId: string, options: { includeRevoked?: boolean } = {}): Promise<SpaceCredential[]> {
     // R3: key_hint and display_login are not granted to tm8_app; the definer
-    // reader masks them per caller.
+    // reader masks them per caller. The tm8-ui fixture seam mirrors this rule
+    // (`maskedCredential`, packages/tm8-ui/src/data/fixtures/seam-fixture.ts):
+    // change both together.
     return this.db.rpc<SpaceCredential[]>(claims, 'list_space_credentials', [
       spaceId,
       options.includeRevoked === true,

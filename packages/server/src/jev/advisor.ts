@@ -20,10 +20,10 @@
  * This file does not import `@tm8/jev`: building a client from a key is
  * `advisorForKey`, which main.ts takes from `jev-adapter.ts`.
  */
+import { isHumanAuthKind } from '@tm8/contract';
+
 import type { DbClaims } from '../db/types.js';
 import type { JevAdvisorPort, JevAdvisorResolver } from './port.js';
-
-const HUMAN_AUTH_KINDS: ReadonlySet<string> = new Set(['browser', 'cli']);
 
 export interface JevAdvisorResolverDeps {
   /** The caller's own stored key, or null. May throw (store absent, unreadable). */
@@ -38,7 +38,7 @@ export interface JevAdvisorResolverDeps {
 export function createJevAdvisorResolver(deps: JevAdvisorResolverDeps): JevAdvisorResolver {
   const nodeKey = deps.nodeKey?.trim() || null;
   return async (claims) => {
-    if (claims.authKind && HUMAN_AUTH_KINDS.has(claims.authKind)) {
+    if (isHumanAuthKind(claims.authKind)) {
       let memberKey: string | null = null;
       try {
         memberKey = (await deps.readMemberKey(claims))?.trim() || null;

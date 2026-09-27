@@ -6,7 +6,7 @@
  * answer. Node env is resolved only for a node admin on a human session; every
  * other caller gets `node: { visible: false }` and no env value at all.
  */
-import { CollabError } from '@tm8/contract';
+import { CollabError, isHumanAuthKind } from '@tm8/contract';
 import type {
   ConfigKnobView,
   ConfigSubjectView,
@@ -25,8 +25,6 @@ import {
   TEAMMATE_KNOBS,
   type EnvKnob,
 } from './registry.js';
-
-const HUMAN_AUTH_KINDS: readonly string[] = ['browser', 'cli'];
 
 export const NODE_CONFIG_HIDDEN =
   'Node settings come from the server\'s environment and are shown to node admins only.';
@@ -210,8 +208,7 @@ export class ConfigsService {
 
   canSeeNode(caller: ConfigsCaller): boolean {
     return caller.claims.nodeAdmin === true
-      && caller.authKind !== undefined
-      && HUMAN_AUTH_KINDS.includes(caller.authKind);
+      && isHumanAuthKind(caller.authKind);
   }
 
   async read(caller: ConfigsCaller, spaceId: string): Promise<SpaceConfigsView> {

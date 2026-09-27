@@ -8,15 +8,13 @@
  * `nodeAdmin` for a space-pinned session (K6), so that rule is inherited here
  * rather than restated.
  */
-import { CollabError } from '@tm8/contract';
+import { CollabError, isHumanAuthKind } from '@tm8/contract';
 
 import { claimsFor } from '../facade/context.js';
 import type { FacadeDeps } from '../facade/deps.js';
 import type { HandlerRegistry } from '../facade/registry.js';
 import { json } from '../http/types.js';
 import { HostMetricsSampler } from './host-metrics.js';
-
-const HUMAN_AUTH_KINDS: readonly string[] = ['browser', 'cli'];
 
 export function registerNodeMetricsHandlers(
   registry: HandlerRegistry,
@@ -29,7 +27,7 @@ export function registerNodeMetricsHandlers(
     // First, so an anonymous caller is `unauthenticated`, not `forbidden`.
     const claims = claimsFor(await deps.owner(), ctx);
     const kind = ctx.identity.authKind;
-    if (kind === undefined || !HUMAN_AUTH_KINDS.includes(kind)) {
+    if (!isHumanAuthKind(kind)) {
       throw new CollabError('forbidden', 'node metrics are available to human sessions only', {
         details: { reason: 'human_session_required' },
       });

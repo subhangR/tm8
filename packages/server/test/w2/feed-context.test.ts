@@ -432,6 +432,7 @@ const DISCOVERY: ActionDiscovery = {
     actorId: IDS.member,
     target: { id: IDS.task, kind: 'task', version: 3 },
     capabilityEpoch: 'cap:g13',
+    human: true,
     columns: ACTION_ROW_COLUMNS,
     rows: [['entities.get', 'navigate', 'entity', 'public']],
     total: 1,
