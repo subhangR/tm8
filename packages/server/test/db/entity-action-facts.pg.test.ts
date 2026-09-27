@@ -135,6 +135,20 @@ describe('entity_action_facts', () => {
               has_function_privilege('public', 'internal.entity_action_facts(uuid)', 'execute') pub`,
     );
     expect(grant).toEqual({ app: true, pub: false });
+    // The allow-list's NARROWING-ONLY verdict rests on these two: the definer
+    // is tm8_graph_owner, which owns every table read, and none forces RLS. So
+    // RLS does not constrain the reads and the pinned helpers are the control.
+    const [owner] = await database.query<{ owner: string }>(
+      `select pg_get_userbyid(proowner) owner from pg_proc where oid = 'internal.entity_action_facts(uuid)'::regprocedure`,
+    );
+    expect(owner!.owner).toBe('tm8_graph_owner');
+    const tables = await database.query<{ name: string; owner: string; forced: boolean }>(
+      `select relname::text name, pg_get_userbyid(relowner) owner, relforcerowsecurity forced from pg_class
+        where oid in ('public.space_credentials'::regclass, 'public.space_links'::regclass,
+                      'public.space_link_tokens'::regclass, 'public.servers'::regclass, 'public.entities'::regclass)
+        order by 1`,
+    );
+    expect(tables.every((t) => t.owner === 'tm8_graph_owner' && !t.forced)).toBe(true);
   });
 
   it('credential: can_manage agrees with the rename door, can_usage with the usage door, for every caller', async () => {

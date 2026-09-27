@@ -15,7 +15,14 @@
 --
 -- A non-member (and a caller who cannot see the entity) gets an all-null row,
 -- so discovery advertises nothing, which is what the doors would answer.
+--
+-- Owned by tm8_graph_owner (the `set role` below), which owns the tables it
+-- reads; none of them sets FORCE ROW LEVEL SECURITY, so RLS does not
+-- constrain these reads and the pinned helpers are the whole control. The pg
+-- suite pins both facts.
 -- =============================================================================
+
+set role tm8_graph_owner;
 
 create or replace function internal.entity_action_facts(p_entity_id uuid)
 returns table (
@@ -114,3 +121,5 @@ comment on function internal.entity_action_facts(uuid) is
   'Row-state facts actions.list needs for credential, space_link and server '
   'verbs, evaluated with the doors'' own predicates. Booleans and statuses '
   'only; never a secret, key hint, login or path.';
+
+reset role;
