@@ -427,7 +427,7 @@ describe('polling', () => {
   });
 });
 
-describe('SC-5 session detail: the credential each provider ran on (D8/D9)', () => {
+describe('R1/S2: the credential line left the debug surface', () => {
   const CRED = '01a0d000-0000-7000-8000-00000000000a';
   function spaceLaunched(): SessionLaunchRecord {
     const base = launched();
@@ -446,31 +446,17 @@ describe('SC-5 session detail: the credential each provider ran on (D8/D9)', () 
     };
   }
 
-  it('turns the space credential id into its label with ONE list read', async () => {
-    const list = vi.fn().mockResolvedValue({ credentials: [{ id: CRED, label: 'Team Claude' }] });
-    const seam = { ...seamWith(page(), spaceLaunched()), credentials: { space: { list } } } as unknown as Seam;
-    render(<SessionDebugBody seam={seam} sessionId={SESSION} live={false} />);
-    const launch = await screen.findByTestId('session-debug-launch');
-    await waitFor(() => expect(launch.textContent).toContain('space ▸ Team Claude'));
-    expect(launch.textContent).toContain('GitHub credential');
-    expect(launch.textContent).toContain('yours');
-    expect(list).toHaveBeenCalledTimes(1);
-    expect(list).toHaveBeenCalledWith('019fb748-0068-76dc-9869-1bb36133c554');
-  });
-
-  it('keeps the id showing when the list read fails: the fact is still true', async () => {
-    const list = vi.fn().mockRejectedValue(new Error('forbidden'));
-    const seam = { ...seamWith(page(), spaceLaunched()), credentials: { space: { list } } } as unknown as Seam;
-    render(<SessionDebugBody seam={seam} sessionId={SESSION} live={false} />);
-    const launch = await screen.findByTestId('session-debug-launch');
-    await waitFor(() => expect(launch.textContent).toContain(`space ▸ ${CRED}`));
-  });
-
-  it('does not read the list when no provider ran on a space credential', async () => {
+  it('no longer builds the credential line, and never reads the human-only list (R1/S2)', async () => {
+    // The line moved to the session header (credentials/credentialLine.ts),
+    // fed by the server-masked block on the session's own read.
     const list = vi.fn();
-    const seam = { ...seamWith(page()), credentials: { space: { list } } } as unknown as Seam;
+    const seam = { ...seamWith(page(), spaceLaunched()), credentials: { space: { list } } } as unknown as Seam;
     render(<SessionDebugBody seam={seam} sessionId={SESSION} live={false} />);
-    await screen.findByTestId('session-debug-launch');
+    const launch = await screen.findByTestId('session-debug-launch');
+    await waitFor(() => expect(launch.textContent).toContain('Model'));
+    expect(launch.textContent).not.toContain('Claude credential');
+    expect(launch.textContent).not.toContain('GitHub credential');
+    expect(launch.textContent).not.toContain('▸');
     expect(list).not.toHaveBeenCalled();
   });
 });

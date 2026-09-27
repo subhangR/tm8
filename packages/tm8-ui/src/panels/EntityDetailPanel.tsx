@@ -86,6 +86,7 @@ import { AttachPalette } from '../files/AttachPalette';
 import { paletteLinks, stripLinks } from '../files/palette';
 import type { TriggerOption } from '../rich-input';
 import { LinkedPullRequestChips, pullRequestFactsOf, type LinkedPullRequestFacts } from '../pull-requests';
+import { SessionCredentialLine } from '../credentials/SessionCredentialLine';
 import { TransferControl } from '../transfer';
 import { MergePullRequestFlow } from './pull-requests/MergePullRequestFlow';
 
@@ -973,11 +974,18 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         titleLockReason={editsPossible && config.list.inlineEdit?.title ? saveRefusal : undefined}
         autoFocusTitle={props.justCreated}
         supplemental={
-          (props.linkedPullRequests?.length ?? 0) > 0 ? (
-            <LinkedPullRequestChips
-              pullRequests={props.linkedPullRequests ?? []}
-              placement="detail"
-            />
+          /* The terminal archetype names its credential here, beside its
+             title (spec 01a0e248 §6); keyed on the registry archetype. */
+          (isTerminal && !isTombstone) || (props.linkedPullRequests?.length ?? 0) > 0 ? (
+            <>
+              {isTerminal && !isTombstone ? <SessionCredentialLine detail={detail} /> : null}
+              {(props.linkedPullRequests?.length ?? 0) > 0 ? (
+                <LinkedPullRequestChips
+                  pullRequests={props.linkedPullRequests ?? []}
+                  placement="detail"
+                />
+              ) : null}
+            </>
           ) : undefined
         }
         onCommitTitle={(title) => void save.commitNow({ title })}

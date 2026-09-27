@@ -832,6 +832,68 @@ export interface WorkSessionInteractionProfileProjection {
 }
 
 /**
+ * `work_sessions.credential_binding` (session_credential_binding migration):
+ * `pending` minted, not yet resolved; `bound` every provider names a
+ * credential; `none` needs no vendor credential (with a reason); `legacy` ran
+ * on a rung release 2 removes; `unrecorded` minted before bindings were
+ * recorded. `legacy` stays in this type permanently: historical rows keep it.
+ */
+export type SessionCredentialBinding = 'pending' | 'bound' | 'none' | 'legacy' | 'unrecorded';
+
+/**
+ * One credential a session ran on, read through its `runs_on` edge and masked
+ * BY THE SERVER for the caller (spec 01a0e248 §6). The masking is
+ * `read_space_credential`'s own (239 §8, the same reader the credential panel
+ * uses): `displayLogin` and `keyHint` reach a public card's members and a
+ * private card's owner, and are null for everyone else. `detailHidden` says
+ * the nulls are a mask, not an absence. The secret, the credential's home
+ * path and env var names are not representable here.
+ */
+export interface SessionCredentialCard {
+  id: EntityId;
+  label: string;
+  provider: string;
+  /** active | stale | pending | revoked. A revoked card is a tombstone the session still names. */
+  status: string;
+  visibility: 'public' | 'private';
+  /** `space`: owned by the space; `you`: the viewer's own; `other`: another member's. */
+  owner: 'space' | 'you' | 'other';
+  /** Always null in R1: tm8_app cannot map an account to a name. The line says "someone else". */
+  ownerName: string | null;
+  displayLogin: string | null;
+  keyHint: string | null;
+  detailHidden: boolean;
+}
+
+/**
+ * Per provider the session used. `space` names a credential through the
+ * `runs_on` edge; `member` and `node` are the rungs release 2 removes, read
+ * from the manifest's recorded `effectiveCredentialSources`, and carry no card.
+ */
+export interface SessionCredentialProviderView {
+  provider: string;
+  rung: 'space' | 'member' | 'node';
+  /** Present iff `rung` is `space` and the card is readable. */
+  credential: SessionCredentialCard | null;
+}
+
+/**
+ * The session's credential block: on `entities.get` of a `work_session` only
+ * (never on list reads), built server-side, and formatted by exactly one UI
+ * function (`tm8-ui/src/credentials/credentialLine.ts`).
+ */
+export interface SessionCredentialView {
+  binding: SessionCredentialBinding;
+  /** Present iff `binding` is `none`: shell, credential_login, container_exec. */
+  noneReason: string | null;
+  providers: SessionCredentialProviderView[];
+  /** The viewer launched this session (so a member rung is "your own"). */
+  launchedByViewer: boolean;
+  /** Display name of whoever last resumed the session; null when never resumed. */
+  resumedBy: string | null;
+}
+
+/**
  * Craft P1 — the lean blueprint vocabulary (rulings R1-R3, task 01a00a0b).
  *
  * DELIBERATELY A SKETCH, NOT A PROGRAM SCHEMA. A node is either a REFERENCE
@@ -895,7 +957,9 @@ export type CoreEntityContent =
       launchProjectId: ProjectId | null;
       workingOn: EntitySummary[]; transcriptDoc: EntitySummary | null;
       /** Null means no readable immutable pin, so Terminal is the only surface. */
-      interactionProfile?: WorkSessionInteractionProfileProjection | null }
+      interactionProfile?: WorkSessionInteractionProfileProjection | null;
+      /** entities.get only (hydrateDetail); absent on list reads. */
+      credential?: SessionCredentialView | null }
   | { kind: 'collection'; description: string; items: EntitySummary[] }
   | { kind: 'project'; projectId: ProjectId; repoUrl?: string | null;
       materializedVersion: number }

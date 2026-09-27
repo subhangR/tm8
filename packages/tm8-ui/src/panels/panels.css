@@ -5031,3 +5031,13 @@
 /* A primary's COUNT beside its word — the Chat button's `❝ Chat · 3`
    (entity chat design 01a0da4e §3.2). Detail header only. */
 .cv2-root .pn-btn__count { margin-left: 4px; opacity: 0.7; font-variant-numeric: tabular-nums; }
+
+/* The session's credential line (spec 01a0e248 §6), under the header row. */
+.cv2-root .pn-cred-line {
+  margin: 2px 0 0;
+  font-size: 11.5px;
+  color: var(--pn-ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

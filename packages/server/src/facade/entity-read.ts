@@ -27,6 +27,7 @@ import type { EffectiveSkills } from '@tm8/contract';
  * All of it is plain SELECT through RLS. Nothing in this file writes.
  */
 import { SKILL_REFERENCE_SQL, skillReferenceOf, readSkillDetail } from '../skills/reference.js';
+import { readSessionCredentialView } from '../credentials/session-credential-view.js';
 import type {
   WorkSessionEndedKind,
   WorkSessionKind,
@@ -2975,6 +2976,12 @@ export async function hydrateDetail(
     );
     const equipped = await loadEntitySummariesByIds(q, edges.map((edge) => edge.dst_id), viewerIdentityId);
     return { state, content: { ...content, equipped } };
+  }
+  if (content.kind === 'work_session') {
+    // R1/S2 (spec 01a0e248 §6): the session names its credential. Detail only,
+    // never in the list join; masked by read_space_credential for the caller.
+    const credential = await readSessionCredentialView(q, row.id, row.created_by, viewerIdentityId);
+    return { state, content: { ...content, credential } };
   }
   return readSkillDetail(state, content);
 }

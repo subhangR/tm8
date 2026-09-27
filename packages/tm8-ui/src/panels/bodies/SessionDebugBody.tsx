@@ -7,7 +7,7 @@ import type {
   SessionTranscriptPage,
 } from '@tm8/contract';
 import type { Seam } from '../../data/seam';
-import { describeLaunchManifest, launchSpaceCredentialIds } from '../../domain';
+import { describeLaunchManifest } from '../../domain';
 import { absTime, clockTime } from '../../kit/time';
 import { DisabledAction } from '../honesty/DisabledWithReason';
 import { TranscriptTurns } from '../../transcript/TranscriptTurns';
@@ -124,27 +124,10 @@ export function SessionDebugBody({ seam, sessionId, live }: SessionDebugBodyProp
     return () => { cancelled = true; };
   }, [seam, sessionId]);
 
-  // D8: the manifest names a space credential by id only. When it names any,
-  // ONE list read turns them into labels. A failed or absent read leaves the
-  // ids showing — the fact is still true, only less readable.
-  const [credentialLabels, setCredentialLabels] = useState<ReadonlyMap<string, string> | null>(null);
-  const manifest = launch.phase === 'ready' ? launch.record.manifest : null;
-  useEffect(() => {
-    setCredentialLabels(null);
-    const spaceId = manifest && typeof manifest.spaceId === 'string' ? manifest.spaceId : null;
-    const list = seam.credentials?.space?.list;
-    if (!spaceId || !list || launchSpaceCredentialIds(manifest).length === 0) return;
-    let cancelled = false;
-    Promise.resolve()
-      .then(() => list(spaceId))
-      .then(
-        (view) => {
-          if (!cancelled) setCredentialLabels(new Map(view.credentials.map((c) => [c.id, c.label])));
-        },
-        () => {},
-      );
-    return () => { cancelled = true; };
-  }, [seam, manifest]);
+  // The per-provider credential facts (SC-5) LEFT this surface at R1/S2: the
+  // session names its credential on its header, from the server-masked block
+  // on its own read (credentials/credentialLine.ts). The manifest's raw
+  // `launch` block below still shows what resolution recorded.
 
   useEffect(() => {
     if (!live) return;
@@ -165,7 +148,7 @@ export function SessionDebugBody({ seam, sessionId, live }: SessionDebugBodyProp
   if (state.phase === 'error') {
     return (
       <div className="pn-debug" data-testid="session-debug-body">
-        <LaunchSection state={launch} credentialLabels={credentialLabels} />
+        <LaunchSection state={launch} />
         <TranscriptSection state={transcript} />
         <div className="pn-debug__empty" data-testid="session-debug-error">
           <DisabledAction
@@ -182,7 +165,7 @@ export function SessionDebugBody({ seam, sessionId, live }: SessionDebugBodyProp
   const { page } = state;
   return (
     <div className="pn-debug" data-testid="session-debug-body">
-      <LaunchSection state={launch} credentialLabels={credentialLabels} />
+      <LaunchSection state={launch} />
       <TranscriptSection state={transcript} />
       <DebugHeader page={page} />
       {page.available ? (
@@ -215,10 +198,7 @@ export function SessionDebugBody({ seam, sessionId, live }: SessionDebugBodyProp
  * written before the prompt bytes were captured. Collapsing them into one
  * "nothing here" would misattribute a data-model gap to a spawn that failed.
  */
-function LaunchSection({ state, credentialLabels }: {
-  state: LaunchState;
-  credentialLabels: ReadonlyMap<string, string> | null;
-}) {
+function LaunchSection({ state }: { state: LaunchState }) {
   if (state.phase === 'loading') {
     return (
       <section className="pn-debug__launch" data-testid="session-debug-launch">
@@ -259,7 +239,7 @@ function LaunchSection({ state, credentialLabels }: {
   // The manifest's FIELD VOCABULARY lives in domain/, not here (§15.2): this
   // component renders labelled facts and knows none of their names, so a
   // manifest that grows a field is a domain edit and not a component edit.
-  const { facts, command, tasks } = describeLaunchManifest(m, credentialLabels);
+  const { facts, command, tasks } = describeLaunchManifest(m);
 
   return (
     <section className="pn-debug__launch" data-testid="session-debug-launch">
