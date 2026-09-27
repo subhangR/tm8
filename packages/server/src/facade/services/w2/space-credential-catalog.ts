@@ -288,7 +288,7 @@ export class SpaceCredentialCatalogService {
   async clearMyDefault(
     claims: DbClaims,
     spaceId: string,
-    provider: SpaceCredentialProviderName,
+    provider: SpaceCredentialStoredProviderName,
   ): Promise<CredentialsSpaceMyDefaultResult> {
     await this.store.clearMyDefault(claims, spaceId, provider);
     return { spaceId, provider, credentialId: null };

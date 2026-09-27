@@ -71,7 +71,7 @@ export function createVendorProbe(options: VendorProbeOptions = {}): SpaceCreden
   const timeoutMs = options.timeoutMs ?? 10_000;
 
   return async ({ provider, secret }) => {
-    // A server-only key (271: typesafe, ✦ Ask Jev) has no free authenticated
+    // A server-only key (server_only_space_credentials: typesafe, ✦ Ask Jev) has no free authenticated
     // read to probe with — TypeSafe's one endpoint is a billed completion — so
     // it is stored unmeasured, as 203's service keys always were. A refused key
     // shows up where it is spent: that Ask Jev call fails as `http_error`.

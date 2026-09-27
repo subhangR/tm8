@@ -466,7 +466,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
             },
           }
         : {}),
-      // launch.suggest's Jev key, chosen PER REQUEST (Lane K; 271): the
+      // launch.suggest's Jev key, chosen PER REQUEST (Lane K; server_only_space_credentials): the
       // space's `typesafe` credential (my_default for a human, else the space
       // default), else — release 1 only — the caller's own 203 key from
       // Settings → agent credentials, else this node's TYPESAFE_API_KEY, else

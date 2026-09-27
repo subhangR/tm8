@@ -11,23 +11,39 @@ import type {
   CredentialsLoginSessionFinishResult,
   CredentialsSpacePolicyView,
   SpaceCredentialProviderName,
+  SpaceCredentialStoredProviderName,
   SpaceCredentialView,
 } from '@tm8/contract';
 import type { SpaceCredentialsViewer } from './space-port';
 
+/** The LAUNCHABLE providers: the ones a policy, a node rung or a launch picker names. */
 export const SPACE_CREDENTIAL_PROVIDERS: readonly SpaceCredentialProviderName[] = ['anthropic', 'openai', 'github'];
 
-export const SPACE_PROVIDER_NAME: Record<SpaceCredentialProviderName, string> = {
+/**
+ * Every provider this page stores and lists (server_only_space_credentials): the launchable ones plus
+ * the SERVER-ONLY `typesafe`, the Ask Jev key. A server-only key is pasted,
+ * rekeyed and deleted here like any other, but no launch ever carries it, so
+ * it has no policy row and no launch picker offers it.
+ */
+export const SPACE_STORED_PROVIDERS: readonly SpaceCredentialStoredProviderName[] = [...SPACE_CREDENTIAL_PROVIDERS, 'typesafe'];
+
+export function isServerOnlyProvider(provider: SpaceCredentialStoredProviderName): provider is 'typesafe' {
+  return provider === 'typesafe';
+}
+
+export const SPACE_PROVIDER_NAME: Record<SpaceCredentialStoredProviderName, string> = {
   anthropic: 'Claude (Anthropic)',
   openai: 'Codex (OpenAI)',
   github: 'GitHub',
+  typesafe: 'TypeSafe (Ask Jev)',
 };
 
 /** What a pasted secret is called for each provider. */
-export const SPACE_SECRET_NOUN: Record<SpaceCredentialProviderName, string> = {
+export const SPACE_SECRET_NOUN: Record<SpaceCredentialStoredProviderName, string> = {
   anthropic: 'API key',
   openai: 'API key',
   github: 'token',
+  typesafe: 'API key',
 };
 
 export const SOURCE_WORD: Record<CredentialPolicySource, string> = {
@@ -36,21 +52,21 @@ export const SOURCE_WORD: Record<CredentialPolicySource, string> = {
   node: 'Node',
 };
 
-/** github takes a token; the model vendors take an API key (the contract's rule). */
-export function pasteShapeOf(provider: SpaceCredentialProviderName): 'api_key' | 'token' {
+/** github takes a token; the model vendors and typesafe take an API key (the contract's rule). */
+export function pasteShapeOf(provider: SpaceCredentialStoredProviderName): 'api_key' | 'token' {
   return provider === 'github' ? 'token' : 'api_key';
 }
 
 /** Rows the list draws, by provider. Revoked rows are gone for good; they never draw. */
 export function groupByProvider(
   rows: readonly SpaceCredentialView[],
-): Record<SpaceCredentialProviderName, SpaceCredentialView[]> {
-  const groups: Record<SpaceCredentialProviderName, SpaceCredentialView[]> = { anthropic: [], openai: [], github: [] };
+): Record<SpaceCredentialStoredProviderName, SpaceCredentialView[]> {
+  const groups: Record<SpaceCredentialStoredProviderName, SpaceCredentialView[]> = { anthropic: [], openai: [], github: [], typesafe: [] };
   for (const row of rows) {
     if (row.status === 'revoked') continue;
     groups[row.provider]?.push(row);
   }
-  for (const provider of SPACE_CREDENTIAL_PROVIDERS) {
+  for (const provider of SPACE_STORED_PROVIDERS) {
     groups[provider].sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || a.label.localeCompare(b.label));
   }
   return groups;
@@ -148,12 +164,15 @@ export function creatorLabel(row: SpaceCredentialView, viewer: SpaceCredentialsV
  * true, not only right after the delete that caused it.
  */
 export function noDefaultNotice(
-  provider: SpaceCredentialProviderName,
+  provider: SpaceCredentialStoredProviderName,
   rows: readonly SpaceCredentialView[],
 ): string | null {
   const usable = rows.filter((r) => r.status === 'active' || r.status === 'stale');
   if (usable.length === 0) return null;
   if (usable.some((r) => r.isDefault)) return null;
+  if (isServerOnlyProvider(provider)) {
+    return `${SPACE_PROVIDER_NAME[provider]} has no space default. Ask Jev uses a member’s own default here; everyone else gets no space key until a default is set.`;
+  }
   return `${SPACE_PROVIDER_NAME[provider]} has no space default. A launch on the space credential must name one until a default is set.`;
 }
 
@@ -173,7 +192,7 @@ export function afterDeleteNotice(deleted: SpaceCredentialView, sessionsEnded: n
  * its label until that login finishes or expires. Explains the clash, or null.
  */
 export function labelTakenReason(
-  provider: SpaceCredentialProviderName,
+  provider: SpaceCredentialStoredProviderName,
   label: string,
   rows: readonly SpaceCredentialView[],
   exceptId?: string,

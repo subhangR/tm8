@@ -2169,7 +2169,7 @@ export const CredentialsServiceKeyDeleteResultSchema: z.ZodType<CredentialsServi
 
 export const SpaceCredentialProviderNameSchema: z.ZodType<SpaceCredentialProviderName> =
   z.enum(['anthropic', 'openai', 'github']);
-/** 271: stored as a space credential, spent server-side, never bound by a session. */
+/** server_only_space_credentials: stored as a space credential, spent server-side, never bound by a session. */
 export const SERVER_ONLY_CREDENTIAL_PROVIDERS: readonly ServerOnlyCredentialProviderName[] = Object.freeze(['typesafe']);
 export const ServerOnlyCredentialProviderNameSchema: z.ZodType<ServerOnlyCredentialProviderName> = z.enum(['typesafe']);
 export const SpaceCredentialStoredProviderNameSchema: z.ZodType<SpaceCredentialStoredProviderName> =

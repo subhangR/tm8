@@ -5607,7 +5607,8 @@ export function createFixtureSeam(): FixtureSeam {
           const row = spaceCredentialById(credentialId);
           return {
             credentialId,
-            sessions: row.lastUsedAt === null ? [] : [{
+            // A server-only key (typesafe) never reaches a session: no usage rows.
+            sessions: row.lastUsedAt === null || row.provider === 'typesafe' ? [] : [{
               workSessionId: 'ws-fixture-usage', provider: row.provider, source: 'space_default',
               credentialId, ownerAccountId: row.ownerAccountId ?? null, launcherAccountId: 'acct-ada',
               agentSessionId: null, status: 'ended', recordedAt: FIXTURE_NOW, updatedAt: FIXTURE_NOW,

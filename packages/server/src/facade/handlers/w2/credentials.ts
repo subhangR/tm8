@@ -70,6 +70,7 @@ import {
   NodeCredentialsPolicySetInputSchema,
   ServiceKeyProviderNameSchema,
   SpaceCredentialProviderNameSchema,
+  SpaceCredentialStoredProviderNameSchema,
 } from '@tm8/contract';
 import type {
   CredentialProviderName,
@@ -79,6 +80,7 @@ import type {
   ServiceKeyProviderName,
   ServiceKeyView,
   SpaceCredentialProviderName,
+  SpaceCredentialStoredProviderName,
 } from '@tm8/contract';
 import { OPERATIONS } from '@tm8/contract';
 import type { OperationName } from '@tm8/contract';
@@ -188,6 +190,23 @@ function providerParam(ctx: RequestContext): CredentialProviderName {
     throw new CollabError(
       'invalid_input',
       `unsupported credential provider: ${String(ctx.params.provider)}`,
+    );
+  }
+  return parsed.data;
+}
+
+/**
+ * `:provider` for clearing MY default only (server_only_space_credentials): any STORED provider, the
+ * server-only `typesafe` included — a my_default is how a member picks their
+ * own Ask Jev key. Every other space and node operation stays on the
+ * launchable set (`spaceProviderParam`).
+ */
+function spaceStoredProviderParam(ctx: RequestContext): SpaceCredentialStoredProviderName {
+  const parsed = SpaceCredentialStoredProviderNameSchema.safeParse(ctx.params.provider);
+  if (!parsed.success) {
+    throw new CollabError(
+      'invalid_input',
+      `unsupported space credential provider: ${String(ctx.params.provider)}`,
     );
   }
   return parsed.data;
@@ -515,7 +534,7 @@ export function registerCredentialHandlers(
     spaceCatalog.setMyDefault(await claimsOf(ctx), pathParam(ctx, 'credentialId'));
 
   const spaceMyDefaultClear: OperationHandler = async (ctx) =>
-    spaceCatalog.clearMyDefault(await claimsOf(ctx), pathParam(ctx, 'spaceId'), spaceProviderParam(ctx));
+    spaceCatalog.clearMyDefault(await claimsOf(ctx), pathParam(ctx, 'spaceId'), spaceStoredProviderParam(ctx));
 
   const spaceUsage: OperationHandler = async (ctx) =>
     spaceCatalog.usage(await claimsOf(ctx), pathParam(ctx, 'credentialId'));

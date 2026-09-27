@@ -2593,7 +2593,7 @@ export interface CredentialsServiceKeyDeleteResult {
 export type SpaceCredentialProviderName = 'anthropic' | 'openai' | 'github';
 
 /**
- * SERVER-ONLY providers (271, spec 01a0e248 decision 10): stored as a space
+ * SERVER-ONLY providers (server_only_space_credentials, spec 01a0e248 decision 10): stored as a space
  * credential, spent by the server on a member's behalf (`typesafe` is ✦ Ask
  * Jev's key), and never handed to a session — the spawn reader refuses them
  * in SQL and in TS, and `session_space_credentials` cannot hold one.
@@ -2722,7 +2722,8 @@ export interface CredentialsSpaceAddMineInput {
 /** `credentials.space.myDefault.set|clear` — the caller's own default, per space and provider. */
 export interface CredentialsSpaceMyDefaultResult {
   spaceId: string;
-  provider: SpaceCredentialProviderName;
+  /** server_only_space_credentials: `typesafe` too — a member may pick their own Ask Jev key. */
+  provider: SpaceCredentialStoredProviderName;
   credentialId: string | null;
 }
 

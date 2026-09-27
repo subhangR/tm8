@@ -2,7 +2,7 @@
  * WHOSE KEY Ask Jev spends (Lane K; credentials release 1, S6 storage half).
  * Resolved per request, never once at startup:
  *
- *   1. the SPACE's `typesafe` credential (271, spec 01a0e248 decision 10):
+ *   1. the SPACE's `typesafe` credential (server_only_space_credentials, spec 01a0e248 decision 10):
  *      the caller's my_default in this space, else the space default —
  *      `read_space_service_key` picks, and reads my_default for HUMAN auth
  *      kinds only, so an agent-driven Ask Jev falls to the space default;
@@ -11,7 +11,7 @@
  *   3. [release 1 only] the node's `TYPESAFE_API_KEY`;
  *   4. otherwise none — every group answers `failed: no_key`.
  *
- * Rungs 2 and 3 are the unchanged pre-271 chain. Release 2 (S6-removal, S8)
+ * Rungs 2 and 3 are the unchanged pre-server_only_space_credentials chain. Release 2 (S6-removal, S8)
  * deletes them; nothing here decides that.
  *
  * A member's key is only ever read with THAT member's claims: both store RPCs

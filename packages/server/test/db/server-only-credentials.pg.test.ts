@@ -1,9 +1,9 @@
 /**
  * S6 (credentials release 1, storage half) — `typesafe` as a SERVER-ONLY
- * space credential, against a REAL PostgreSQL with migration 271 applied,
+ * space credential, against a REAL PostgreSQL with migration server_only_space_credentials applied,
  * running as `tm8_app` under each caller's claims.
  *
- *   · 271 widens exactly the checks that must hold typesafe (space_credentials
+ *   · server_only_space_credentials widens exactly the checks that must hold typesafe (space_credentials
  *     provider/shape, member_defaults) and adds one that refuses it on
  *     session_space_credentials, even to the owner role writing directly;
  *   · gate 8, reader half: the spawn reader refuses a server-only provider,
@@ -131,10 +131,10 @@ afterAll(async () => {
 });
 
 // ---------------------------------------------------------------------------
-// 271's checks
+// server_only_space_credentials's checks
 // ---------------------------------------------------------------------------
 
-describe('271 widens only the checks that must hold typesafe', () => {
+describe('server_only_space_credentials widens only the checks that must hold typesafe', () => {
   it('a typesafe api_key is created, rekeyed and deleted; the secret never appears in a read (I5)', async () => {
     const secret = tsKey('crud');
     const made = await store.create(claims(A), { spaceId: ids.S!, provider: 'typesafe', shape: 'api_key', label: label('crud'), secret });

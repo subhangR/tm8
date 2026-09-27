@@ -27,7 +27,7 @@ export const SPACE_CREDENTIAL_PROVIDERS = ['anthropic', 'openai', 'github'] as c
 export type SpaceCredentialProvider = (typeof SPACE_CREDENTIAL_PROVIDERS)[number];
 
 /**
- * 271: a SERVER-ONLY provider is stored as a space credential and spent by the
+ * server_only_space_credentials: a SERVER-ONLY provider is stored as a space credential and spent by the
  * server (✦ Ask Jev's `typesafe`), never handed to a session. It is outside
  * `SpaceCredentialProvider`, so the spawn reader's type refuses it, and
  * `readForSpawn` refuses it again at runtime, as SQL does (gate 8).
@@ -449,7 +449,7 @@ export class DbSpaceCredentialStore {
   async clearMyDefault(
     claims: DbClaims,
     spaceId: string,
-    provider: SpaceCredentialProvider,
+    provider: SpaceCredentialStoredProvider,
   ): Promise<SpaceCredentialMyDefault & { cleared: boolean }> {
     return this.db.rpc<SpaceCredentialMyDefault & { cleared: boolean }>(
       claims,
@@ -550,7 +550,7 @@ export class DbSpaceCredentialStore {
     credentialId?: string | null,
   ): Promise<SpaceCredentialForSpawn> {
     refuseLinkBearer(claims);
-    // Gate 8 (271): a server-only key never reaches a launch. The type already
+    // Gate 8 (server_only_space_credentials): a server-only key never reaches a launch. The type already
     // excludes it; this holds for a caller that casts, and SQL refuses it too.
     if (isServerOnlyCredentialProvider(provider)) {
       throw new ServerOnlyCredentialRefusedError(provider);
@@ -594,7 +594,7 @@ export class DbSpaceCredentialStore {
   }
 
   /**
-   * 271: the ONLY opener of a server-only key (✦ Ask Jev's `typesafe`), for
+   * server_only_space_credentials: the ONLY opener of a server-only key (✦ Ask Jev's `typesafe`), for
    * the server to spend on the caller's behalf — never a session, never a
    * catalog operation. `read_space_service_key` resolves my_default (human
    * auth kinds only) → the space default → null, under the caller's claims.

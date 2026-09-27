@@ -1,5 +1,6 @@
 -- =============================================================================
--- 271 (PROVISIONAL NUMBER) — typesafe as a server-only space credential
+-- ordinal: placeholder 99x; the merge coordinator assigns the real number at merge (merge order, after 269)
+-- server_only_space_credentials — typesafe as a server-only space credential
 -- (credentials release 1, stage S6 storage half; task 01a0e268, spec doc
 -- 01a0e248 §10.10, §11 row S6, gate 8's reader half).
 --
@@ -100,7 +101,7 @@ create or replace function public.read_space_credential_for_spawn(
 language plpgsql security definer set search_path = public, internal, pg_temp as $$
 declare stored public.space_credentials; v_launcher uuid;
 begin
-  -- 271 (gate 8): a server-only provider is never handed to a launch, for any
+  -- gate 8: a server-only provider is never handed to a launch, for any
   -- caller, pinned or default. Refused before anything is read.
   if internal.is_server_only_credential_provider(p_provider) then
     raise exception '% is a server-only credential and never reaches a session', p_provider
