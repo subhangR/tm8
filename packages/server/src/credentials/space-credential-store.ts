@@ -16,6 +16,8 @@
  */
 import { randomUUID } from 'node:crypto';
 
+import type { CredentialsSpaceReadinessView } from '@tm8/contract';
+
 import type { Db, DbClaims } from '../db/types.js';
 import { refuseLinkBearer } from '../identity/link-bearer.js';
 import { loadOrCreateCredentialKey } from './credential-key.js';
@@ -561,6 +563,11 @@ export class DbSpaceCredentialStore {
   ): Promise<RepointedSessionSpaceCredentials> {
     const args: unknown[] = providers ? [workSessionId, [...providers]] : [workSessionId];
     return this.db.rpc<RepointedSessionSpaceCredentials>(claims, 'repoint_session_space_credentials', args);
+  }
+
+  /** S7 (270): both readiness thresholds for this space. Member-scoped, metadata only. */
+  async readiness(claims: DbClaims, spaceId: string): Promise<CredentialsSpaceReadinessView> {
+    return this.db.rpc<CredentialsSpaceReadinessView>(claims, 'space_credential_readiness', [spaceId]);
   }
 
   async readSpacePolicy(claims: DbClaims, spaceId: string): Promise<SpaceCredentialPolicy> {

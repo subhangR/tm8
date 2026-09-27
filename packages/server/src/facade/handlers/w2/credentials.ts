@@ -520,6 +520,9 @@ export function registerCredentialHandlers(
   const spaceUsage: OperationHandler = async (ctx) =>
     spaceCatalog.usage(await claimsOf(ctx), pathParam(ctx, 'credentialId'));
 
+  const spaceReadiness: OperationHandler = async (ctx) =>
+    spaceCatalog.readiness(await claimsOf(ctx), pathParam(ctx, 'spaceId'));
+
   const spacePolicyGet: OperationHandler = async (ctx) =>
     spaceCatalog.policy(await claimsOf(ctx), pathParam(ctx, 'spaceId'));
 
@@ -572,6 +575,7 @@ export function registerCredentialHandlers(
     'credentials.space.myDefault.set': requireHumanSession(spaceMyDefaultSet),
     'credentials.space.myDefault.clear': requireHumanSession(spaceMyDefaultClear),
     'credentials.space.usage': requireHumanSession(spaceUsage),
+    'credentials.space.readiness': requireHumanSession(spaceReadiness),
     'credentials.space.policy.get': requireHumanSession(spacePolicyGet),
     'credentials.space.policy.set': requireHumanSession(spacePolicySet),
     'node.credentials.status': requireHumanSession(nodeStatus),
