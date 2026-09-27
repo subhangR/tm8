@@ -1291,7 +1291,15 @@ export function createFixtureSeam(): FixtureSeam {
       ownerAccountId: 'acct-other', visibility: 'private', mayBeSpaceDefault: false,
     },
   ];
-  /** The server's masking rule for the key hint and vendor login: private rows are the owner's alone. */
+  /**
+   * The server's masking rule for the key hint and vendor login: private rows
+   * are the owner's alone. A SECOND COPY of a server rule: the source is
+   * `list_space_credentials` (255, reached via
+   * packages/server/src/credentials/space-credential-store.ts `list`), which
+   * points back here. Re-check this whenever that reader or the 255 usage
+   * fix changes, because a fixture that models a stale server rule keeps UI
+   * tests green against behaviour that no longer exists.
+   */
   const maskedCredential = (c: SpaceCredentialView): SpaceCredentialView =>
     c.visibility === 'private' && c.ownerAccountId !== 'acct-ada' ? { ...c, keyHint: null, displayLogin: null } : c;
   const spacePolicyState: CredentialsSpacePolicyView = {
@@ -5824,6 +5832,10 @@ export function createFixtureSeam(): FixtureSeam {
   }
 
   // After construction: the port is a view over this seam's own nouns.
+  /* Assigned AFTER construction, not inline with the rest of `commands`:
+     `managedPortFromSeam` wraps this seam's own methods, so it needs the
+     finished object. This therefore REQUIRES an unfrozen seam; freezing
+     `seam` or `seam.commands` would break it here and nowhere else. */
   seam.commands.managed = managedPortFromSeam(seam);
   return seam;
 }

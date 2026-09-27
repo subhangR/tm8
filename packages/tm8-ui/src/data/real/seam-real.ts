@@ -588,6 +588,10 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
   };
 
   // After construction: the port is a view over this seam's own nouns.
+  /* Assigned AFTER construction, not inline with the rest of `commands`:
+     `managedPortFromSeam` wraps this seam's own methods, so it needs the
+     finished object. This therefore REQUIRES an unfrozen seam; freezing
+     `seam` or `seam.commands` would break it here and nowhere else. */
   seam.commands.managed = managedPortFromSeam(seam);
   return seam;
 }
