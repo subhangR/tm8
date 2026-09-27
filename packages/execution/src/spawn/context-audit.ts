@@ -93,7 +93,7 @@ function indexState(entry: PromptContextEntry): 'collapsed' | 'summary-dropped' 
 }
 
 /** `groups`, `entries` and `dropped`; the caller keeps `memoryIds`. */
-export function buildManifestContext(input: ManifestContextInput): Required<Omit<ManifestContext, 'memoryIds' | 'index' | 'budgets'>> {
+export function buildManifestContext(input: ManifestContextInput): Required<Omit<ManifestContext, 'memoryIds' | 'index' | 'budgets' | 'inFull'>> {
   const { context } = input;
   const audit = context.contextAudit;
   const selectedGroups = new Set<SpawnSelectionGroup>(audit?.selectedGroups ?? selectionGroupsOf(input.requestSelection));

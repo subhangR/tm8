@@ -5322,6 +5322,15 @@ export type SpawnSelectionGroup = 'memories' | 'skills' | 'references';
  */
 export type SpawnSelectionDefaultReason = 'jev-failed' | 'jev-pending' | 'not-asked' | 'cli';
 
+/**
+ * Entity kinds `ExecutionSpawnInput.inFullIds` may name (launch card v3,
+ * contract decision 1): the ones with a text body worth sending whole. Any
+ * other kind is refused `invalid_input` with `details.reason =
+ * 'in_full_kind_not_allowed'` and `details.ids` naming the offenders.
+ */
+export const SPAWN_IN_FULL_KINDS = ['task', 'doc', 'memory', 'skill'] as const;
+export type SpawnInFullKind = (typeof SPAWN_IN_FULL_KINDS)[number];
+
 /** Entity kinds `SpawnSelection.referenceIds` may name. */
 export const SPAWN_SELECTION_REFERENCE_KINDS = ['doc', 'artifact', 'drawing', 'file', 'task'] as const;
 export type SpawnSelectionReferenceKind = (typeof SPAWN_SELECTION_REFERENCE_KINDS)[number];
@@ -5453,6 +5462,36 @@ export interface ExecutionSpawnInput extends CommandContext {
    * refused (`invalid_input`). Absent groups record `no-selection`.
    */
   selectionReasons?: Partial<Record<SpawnSelectionGroup, SpawnSelectionDefaultReason>>;
+  /**
+   * Entities sent IN FULL (launch card v3 title row, contract decision 1 and
+   * its amendment): each is rendered whole in its own untrusted, read-only
+   * prompt section, separate from `taskIds` (nothing here becomes a
+   * `working_on` edge or derives a task). Kinds `SPAWN_IN_FULL_KINDS` only
+   * (else `invalid_input`, `details.reason = 'in_full_kind_not_allowed'`,
+   * `details.ids`); every id must be readable by the launcher (else
+   * `not_found`, `details.ids`); at most `SPAWN_SELECTION_GROUP_LIMIT`.
+   *
+   * One listing per id: an id also in `selection` or among the task's links
+   * is sent in full only, and the index and `<linked>` skip it. The subject
+   * task's own id is ignored (it is already `<task>`); a non-task subject
+   * named here turns its derived task's body into a pointer.
+   *
+   * Budget: the subject and these together against
+   * `LaunchDefaultsResult.inFullBudgetBytes`; over it, `payload_too_large`
+   * with `details.reason = 'in_full_budget'` and `{limitBytes, bytes}` (a
+   * subject that alone is over goes to reference mode instead and is never
+   * a refusal). Recorded as `launch.inFullIds`; resume re-reads them as they
+   * are then, leaving out (with a warning) any that are gone or unreadable.
+   */
+  inFullIds?: EntityId[];
+  /**
+   * Defaults Ask Jev removed from this launch (launch card v3, decision 8).
+   * ADVISORY: it never changes what renders. `launch.preview` marks these ids
+   * `leftOut` reason `jev` and every other unticked default `unticked`; an id
+   * that is not a default, or is still selected, is ignored. Recorded as
+   * `launch.jevRemovedIds`. At most `SPAWN_SELECTION_GROUP_LIMIT`.
+   */
+  jevRemovedIds?: EntityId[];
   /**
    * This launch's override of the pinned profile's `contextBudgets` (design
    * 01a0d348 §10 Q5.4, the launch sheet's meter): each key replaces the

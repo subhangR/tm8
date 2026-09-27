@@ -93,6 +93,7 @@ import {
   ExecutionResumeInputSchema,
   ExecutionDispatchInputSchema,
   ExecutionSpawnInputSchema,
+  LaunchPreviewInputSchema,
   LaunchSuggestInputSchema,
   SetChatDefaultsInputSchema,
   SpacesLeaveInputSchema,
@@ -369,6 +370,8 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'skills.scan': SkillScanInputSchema,
   // Jev's launch-sheet advice (design 01a0cb80 §5.1): validated for real from day one.
   'launch.suggest': LaunchSuggestInputSchema,
+  // The launch card's dry run (launch card v3, decision 6): spawn's own body rules.
+  'launch.preview': LaunchPreviewInputSchema,
   // Per-kind chat defaults (entity-chat §3.4): a PATCH over kinds.
   'spaces.chatDefaults.set': SetChatDefaultsInputSchema,
   'projects.update': ProjectUpdateInputSchema,

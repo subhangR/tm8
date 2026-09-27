@@ -1720,6 +1720,7 @@ const ROWS: Record<OperationName, Row> = {
   'launch.suggest': { cmd: null, sum: 'Ask Jev for model, teammate, memory and skill suggestions for a launch', authz: 'space', input: 'bound', tags: ['jev', 'launch', 'skills', 'memory', 'model'], notes: ['Launch-sheet API; no CLI — Jev is UI-only (design 01a0cb80).'] },
   'skills.preview': { cmd: null, sum: 'Preview equipped skill metadata for a launch', authz: 'space', input: 'none', tags: ['skills'], notes: ['Read-only launch-sheet API; effective CLI is deferred.'] },
   'launch.defaults': { cmd: null, sum: 'What a launch loads per selection group (memories, skills, references) when nothing is selected', authz: 'space', input: 'none', tags: ['launch', 'skills', 'memory', 'references'], notes: ['Launch-sheet API (design 01a0d348 §5.1, I9): spawn’s own default loaders, read in the caller’s RLS tx. Lenient — an unknown teammate or subject gives empty groups and a warning. `tm8 session spawn` needs no read: it sends no selection.'] },
+  'launch.preview': { cmd: null, sum: 'Dry-run a launch card: the sections, bytes, index drops and refusal spawn would give, with nothing written', authz: 'space', input: 'bound', tags: ['launch', 'preview'], notes: ['Launch-card API (launch card v3, decision 6): spawn’s body minus clientMutationId/cols/rows, run through spawn’s own context load and composition. A launch spawn would refuse answers 200 with `refusal` set.'] },
   'skills.scan': { cmd: ['skill', 'scan'], syn: 'tm8 skill scan [--root <project-id>|--all]', sum: 'Scan authorized filesystem roots into skill references', authz: 'space', input: 'bound' },
   'skills.list': { cmd: ['skill', 'list'], syn: 'tm8 skill list [--root <root-ref>] [--limit <count>] [--cursor <cursor>]', sum: 'List skill references with cached metadata', authz: 'space', input: 'none' },
   'skills.show': { cmd: ['skill', 'show'], syn: 'tm8 skill show <skill-id>', sum: 'Read a skill and its current filesystem body', authz: 'entity', input: 'none' },
@@ -3514,7 +3515,8 @@ export const CATALOG_DIGEST =
   // Re-measured (W8, 261, rebuilt on main f01b1566): +6 servers.* and the serverConnections create/delete rows. Read from the regenerated conformance manifest.
   // Re-measured (W5 #917, merges of main dd1c8215 and 2fa4999f): +3 spaces.spacePassword.* on top of main's servers.*, spaceLinks, attention and launch v3 rows. Read from the regenerated conformance manifest.
   // Re-measured (#915 merge of main 0be3b796): main's servers.* + spaceLinks.invoke/audit and the five attention rows together. Read from the regenerated conformance manifest.
-  'sha256:89a7173aa0badf0233ebd13818273f789f5ef1142682b1e46ecdf4af7241f395';
+  // +1 launch.preview (launch v3 B, on main a61f0350a): equals the regenerated manifest's catalogDigest. MEASURED.
+  'sha256:45dcfb351109374e929b098b85b7b8638ed7d3a141928f17a687a4bba3ad1100';
 
 export const GRAMMAR_VERSION = '2';
 

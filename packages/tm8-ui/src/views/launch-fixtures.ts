@@ -144,6 +144,8 @@ export const LAUNCH_DEFAULTS: LaunchDefaultsResult = {
   teammates: { items: [], total: 0, budget: null, floor: 1, minEntries: 1 },
   taskId: 'task-1',
   contextIndex: 'on',
+  inFullBudgetBytes: 24576,
+  launchCapBytes: 32768,
   warnings: [],
 };
 

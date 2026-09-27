@@ -2,6 +2,8 @@ import { resolveHeaders } from '../headers/resolve.js';
 import { loadDispatcherRoster } from '../launch/roster.js';
 import { loadMemoryDefaults, loadReferenceDefaults, loadSkillDefaults, loadTeammateDefaults } from './spawn-defaults.js';
 import { loadMemoriesById, renderMemoryText, type MemoryRow } from './spawn-memories.js';
+import { assertInFullIds, derivedInFullPointer, inFullIdsFor, loadInFullEntities } from '../launch/in-full.js';
+import { previewLaunch } from '../launch/preview.js';
 import { loadSkillsById } from '../skills/equipment.js';
 import { linkSession } from '../jev/store.js';
 import { CRITICAL_SCORE } from '../jev/groups.js';
@@ -85,6 +87,7 @@ import type {
   ExecutionResumeInput,
   ExecutionSessionsShareInput,
   ExecutionSpawnInput,
+  LaunchPreviewInput,
   ExecutionTerminalStartInput,
   ExecutionStreamsAttachInput,
   ExecutionTerminateInput,
@@ -181,6 +184,8 @@ interface TaskRow {
   /** First LINKED_ROW_CAP linked peers, oldest link first (see the `tl` join). */
   linked: unknown;
   linked_total: number;
+  /** The entity a derived task was launched from (`derived_from`), for the in-full pointer. */
+  derived_from_id: string | null;
 }
 
 /**
@@ -433,7 +438,7 @@ export class DbGraphPort implements GraphPort {
     // place and the spawn proceeds — RLS on the transaction below is what
     // decides whether this spawn is allowed at all.
     let skillsScannedAt: string | null = null;
-    try {
+    if (!input.skipSkillScan) try {
       skillsScannedAt = (await scanSpaceSkills(this.db, this.claims(auth), input.spaceId, input.projectId ? { root: input.projectId } : { homesOnly: true })).scannedAt;
     } catch (error) {
       console.warn(`[tm8:skills] pre-spawn scan skipped for space ${input.spaceId}: ${error instanceof Error ? error.message : String(error)}`);
@@ -687,7 +692,10 @@ export class DbGraphPort implements GraphPort {
                       dm.root_id as thread_root_message_id,
                       dm.anchor_id as thread_channel_id,
                       coalesce(tl.items, '[]'::jsonb) as linked,
-                      coalesce(tl.total, 0) as linked_total
+                      coalesce(tl.total, 0) as linked_total,
+                      (select df.dst_id from public.edges df
+                        where df.src_id = t.entity_id and df.type = 'derived_from'
+                        order by df.created_at limit 1) as derived_from_id
                  from public.tasks t
                  join public.entities e on e.id = t.entity_id
                  left join lateral (
@@ -847,11 +855,20 @@ export class DbGraphPort implements GraphPort {
           }
         }
       }
+      // The in-full channel (launch card v3, decision 1): read whole under the
+      // same RLS, the subject task left out (it is already `<task>`). A launch
+      // refuses a bad id by name; a resume leaves it out with a warning.
+      const inFull = await loadInFullEntities(q, input.spaceId, inFullIdsFor(input.inFullIds, taskIds), {
+        replay: input.inFullReplay === true,
+      });
+      const inFullIds = new Set(inFull.entities.map((entity) => entity.entityId));
 
       return {
         spaceId: input.spaceId,
         parentKind,
         project,
+        ...(inFull.entities.length > 0 ? { inFull: inFull.entities } : {}),
+        ...(inFull.unavailable.length > 0 ? { inFullUnavailable: inFull.unavailable } : {}),
         teamMember: {
           id: member.entity_id,
           name: member.name,
@@ -880,7 +897,12 @@ export class DbGraphPort implements GraphPort {
             id: t.entity_id,
             version: t.version,
             title: t.title,
-            description: t.description,
+            // A task derived from an entity that is also sent in full
+            // (owner answer non_task_subject) points at it instead of
+            // repeating it, so the text is counted once.
+            description: t.derived_from_id && inFullIds.has(t.derived_from_id)
+              ? derivedInFullPointer(t.derived_from_id)
+              : t.description,
             priority: t.priority,
             status: t.work_status,
             acceptanceCriteria: Array.isArray(t.acceptance_criteria) ? t.acceptance_criteria : [],
@@ -1345,6 +1367,9 @@ export class DbGraphPort implements GraphPort {
       effective_plugins: unknown;
       skill_overrides: unknown;
       context_index: string | null;
+      reasoning_effort: string | null;
+      in_full_ids: unknown;
+      jev_removed_ids: unknown;
     }>(
       this.claims(auth),
       `select sm.manifest #>> '{launch,accessMode}'       as access_mode,
@@ -1362,7 +1387,10 @@ export class DbGraphPort implements GraphPort {
                            where p ->> 'source' = 'effective-skill'), '[]'::jsonb)
               end                                           as effective_plugins,
               sm.manifest #>  '{launch,harness,skillOverrides}' as skill_overrides,
-              sm.manifest #>> '{context,index,source}'    as context_index
+              sm.manifest #>> '{context,index,source}'    as context_index,
+              sm.manifest #>> '{launch,reasoningEffort}'  as reasoning_effort,
+              sm.manifest #>  '{launch,inFullIds}'        as in_full_ids,
+              sm.manifest #>  '{launch,jevRemovedIds}'    as jev_removed_ids
          from public.session_manifests sm
         where sm.work_session_id = $1`,
       [sessionId],
@@ -2170,11 +2198,7 @@ export function registerExecutionHandlers(
 /** SpawnService speaks its own error vocabulary; the wire speaks the taxonomy. */
 export function toCollabError(error: unknown): unknown {
   if (error instanceof BudgetExceededError) {
-    return fail('payload_too_large', error.message, {
-      material: error.material,
-      bytes: error.bytes,
-      cap: error.cap,
-    });
+    return fail('payload_too_large', error.message, budgetRefusalDetails(error));
   }
   if (!(error instanceof SpawnError)) return error;
   switch (error.code) {
@@ -2190,6 +2214,30 @@ export function toCollabError(error: unknown): unknown {
       return fail('not_implemented', error.message, error.detail);
     default:
       return fail('upstream_unavailable', error.message, error.detail);
+  }
+}
+
+/**
+ * `details` of a prompt-budget refusal (launch card v3, decision 1): the
+ * title row's budget is `in_full_budget` with `{limitBytes, bytes}`; the whole
+ * initial injection (critical memories that borrowed past their cap included)
+ * is `launch_total`. `material` / `bytes` / `cap` stay for older readers.
+ */
+export function budgetRefusalDetails(error: BudgetExceededError): Record<string, unknown> {
+  const base = { material: error.material, bytes: error.bytes, cap: error.cap };
+  if (error.material === 'inFullInjection') return { reason: 'in_full_budget', limitBytes: error.cap, ...base };
+  if (error.material === 'combinedInitialInjection' || error.material === 'memoryInjection') {
+    return { reason: 'launch_total', limitBytes: error.cap, ...base };
+  }
+  return base;
+}
+
+/** `newTask` cannot ride with `taskIds` or `forceNewTask` (launch v3 gap 4); shared by spawn and `launch.preview`. */
+export function assertNewTaskAlone(input: Pick<ExecutionSpawnInput, 'newTask' | 'taskIds' | 'forceNewTask'>): void {
+  if (input.newTask && ((input.taskIds?.length ?? 0) > 0 || input.forceNewTask === true)) {
+    throw fail('invalid_input', 'newTask cannot be combined with taskIds or forceNewTask', {
+      reason: 'new_task_conflict',
+    });
   }
 }
 
@@ -3324,6 +3372,29 @@ function registerHandlers(
       }),
     );
   });
+  // launch.preview (launch card v3, decision 6): spawn's body, spawn's own
+  // checks and composition, nothing written. See launch/preview.ts.
+  registry.register('launch.preview', async (ctx) => {
+    const input = ctx.body as LaunchPreviewInput;
+    const spaceId = requireUuidParam(ctx, 'spaceId');
+    if (input.spaceId !== spaceId) {
+      throw fail('invalid_input', `body spaceId ${String(input.spaceId)} does not match the path's ${spaceId}`);
+    }
+    const owner = await resolveOwner();
+    const claims = claimsFor(owner, ctx);
+    refuseLinkBearer(claims);
+    return previewLaunch({
+      db,
+      spawnService,
+      assertIds: async (q, body) => {
+        assertNewTaskAlone(body);
+        if (body.selection) await assertSelectionIds(q, body.spaceId, body.selection);
+        if (body.inFullIds?.length) await assertInFullIds(q, body.spaceId, [...new Set(body.inFullIds)]);
+      },
+      toCollabError,
+      parentSessionId: resolveSpawnParentId(ctx, input.parentSessionId),
+    }, claims, input);
+  });
   registry.register('execution.spawn', (ctx) =>
     singleFlight(inFlightKey('execution.spawn', ctx, commandEnvelope(ctx).clientMutationId), () =>
       executionSpawn(ctx)));
@@ -3339,11 +3410,7 @@ function registerHandlers(
 
     // Launch v3 gap 4: `newTask` IS the session's task, so naming others (or
     // asking for one to be derived) beside it is refused by name, first.
-    if (input.newTask && ((input.taskIds?.length ?? 0) > 0 || input.forceNewTask === true)) {
-      throw fail('invalid_input', 'newTask cannot be combined with taskIds or forceNewTask', {
-        reason: 'new_task_conflict',
-      });
-    }
+    assertNewTaskAlone(input);
 
     // `selection` names exact memories, skills and references (design 01a0d348 §5.1).
     // Refused by name BEFORE anything is written — resolving the anchors
@@ -3353,6 +3420,12 @@ function registerHandlers(
     if (input.selection) {
       const selection = input.selection;
       await db.tx(claims, (q) => assertSelectionIds(q, input.spaceId, selection));
+    }
+    // `inFullIds` (launch card v3): kind and readability, refused by name
+    // before a derived task can be minted. The loader re-checks in its own tx.
+    if (input.inFullIds?.length) {
+      const inFullIds = input.inFullIds;
+      await db.tx(claims, (q) => assertInFullIds(q, input.spaceId, [...new Set(inFullIds)]));
     }
 
     // Any entity may be launched; the anchor is always a task. See
@@ -3413,6 +3486,8 @@ function registerHandlers(
       ...(input.selection ? { selection: input.selection } : {}),
       ...(input.selectionReasons ? { selectionReasons: input.selectionReasons } : {}),
       ...(input.contextBudgets ? { contextBudgets: input.contextBudgets } : {}),
+      ...(input.inFullIds?.length ? { inFullIds: input.inFullIds } : {}),
+      ...(input.jevRemovedIds?.length ? { jevRemovedIds: input.jevRemovedIds } : {}),
       ...(input.jevRunId ? { jevRunId: input.jevRunId } : {}),
       ...(input.harnessSurface ? { harnessSurface: input.harnessSurface } : {}),
       ...(input.plugins ? { plugins: input.plugins } : {}),
@@ -3831,6 +3906,10 @@ export function sessionLaunchPostureFromRecord(row: {
   skill_overrides?: unknown;
   /** `context.index.source`. */
   context_index?: string | null;
+  /** `launch.reasoningEffort`, `launch.inFullIds`, `launch.jevRemovedIds`: resume's read only (launch card v3). */
+  reasoning_effort?: string | null;
+  in_full_ids?: unknown;
+  jev_removed_ids?: unknown;
 }): SessionLaunchPosture {
   const storedCredentialSources =
     typeof row.credential_sources === 'object' &&
@@ -3886,5 +3965,10 @@ export function sessionLaunchPostureFromRecord(row: {
     ...(row.context_index === 'env' || row.context_index === 'profile' || row.context_index === 'default'
       ? { contextIndex: row.context_index }
       : {}),
+    // Resume replays the effort and re-reads the in-full ids (launch card v3,
+    // decisions 1 and 2); both are narrowed in `replayedSelection`.
+    ...(row.reasoning_effort ? { reasoningEffort: row.reasoning_effort } : {}),
+    ...(row.in_full_ids != null ? { inFullIds: row.in_full_ids } : {}),
+    ...(row.jev_removed_ids != null ? { jevRemovedIds: row.jev_removed_ids } : {}),
   };
 }

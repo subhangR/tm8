@@ -126,7 +126,25 @@ import type {
   GhostReconcileReport,
 } from './types.js';
 import { SpawnError } from './types.js';
-import { ContextBudgetsSchema, SpawnSelectionReasonsSchema, SpawnSelectionSchema, type SpawnSelection } from '@tm8/contract';
+import { dedupInFull, type InFullDuplicate } from './in-full.js';
+import type { FitContextIndexResult, PromptContextGroup, PromptEnvelope } from '@tm8/prompt';
+
+/** The id a preview composes under: no session exists, and the bytes match a real uuid's. */
+export const PREVIEW_SESSION_ID = '00000000-0000-4000-8000-000000000000';
+
+/** What `SpawnService.preview` composed; `launch.preview` turns it into sections. */
+export interface SpawnPreview {
+  manifest: Tm8Manifest;
+  /** Composed with `budget: 'record'`: an overrun is on `layout.overBudget`, not thrown. */
+  envelope: PromptEnvelope;
+  /** The context as read (before the in-full dedup). */
+  context: SpawnContext;
+  /** Entities left out of the memories, index and `<linked>` because they are sent in full. */
+  duplicates: InFullDuplicate[];
+  /** The index candidates and the fit spawn settled on; null while the index is off. */
+  index: { fit: FitContextIndexResult; candidates: readonly PromptContextGroup[] } | null;
+}
+import { ContextBudgetsSchema, SPAWN_SELECTION_GROUP_LIMIT, SpawnSelectionReasonsSchema, SpawnSelectionSchema, type SpawnSelection } from '@tm8/contract';
 
 /**
  * Why a credential containment killed a session (`containCredentialSession`).
@@ -1389,6 +1407,7 @@ export class SpawnService {
       parentSessionId: request.parentSessionId ?? null,
       ...(request.memoryIds?.length ? { memoryIds: request.memoryIds } : {}),
       ...(request.selection ? { selection: request.selection } : {}),
+      ...(request.inFullIds?.length ? { inFullIds: request.inFullIds } : {}),
     });
 
     // A child inherits its parent's posture but not its harness pick; only a
@@ -2054,6 +2073,83 @@ export class SpawnService {
   }
 
   /**
+   * launch.preview (launch card v3, decision 6): what `spawn` would compose
+   * for this request, with NOTHING written. Spawn's own steps, in its order:
+   * the context read (skill scan skipped: it refreshes cached rows), the
+   * launch resolution, the profile, the index headers, `composeManifest` and
+   * `composePrompt`. No session row, derived task, worktree, token or PTY.
+   *
+   * Composed with `budget: 'record'`, so a launch spawn would refuse still
+   * renders, and the overrun comes back on `envelope.layout.overBudget`.
+   * Any other refusal (a bad id, an unroutable coordinated mode) throws
+   * exactly as spawn throws it; the caller maps both to `refusal`.
+   *
+   * `syntheticTasks` stand in for a task spawn would MINT (a subject with no
+   * open derived task, or `newTask`); they render as spawn would render the
+   * minted one. A v2 frame's task snapshot is rendered at delivery as the
+   * spawned actor, who does not exist yet, so it is measured as unavailable.
+   */
+  async preview(
+    auth: GraphAuth,
+    request: SpawnRequest,
+    options: { syntheticTasks?: SpawnContext['tasks'] } = {},
+  ): Promise<SpawnPreview> {
+    const taskIds = request.taskIds ?? [];
+    const context = await this.graph.loadSpawnContext(auth, {
+      spaceId: request.spaceId,
+      teamMemberId: request.teamMemberId,
+      projectId: request.projectId ?? null,
+      taskIds,
+      parentSessionId: request.parentSessionId ?? null,
+      ...(request.memoryIds?.length ? { memoryIds: request.memoryIds } : {}),
+      ...(request.selection ? { selection: request.selection } : {}),
+      ...(request.inFullIds?.length ? { inFullIds: request.inFullIds } : {}),
+      skipSkillScan: true,
+    });
+    if (options.syntheticTasks?.length) context.tasks = [...context.tasks, ...options.syntheticTasks];
+    const inherited = request.inheritPosture !== undefined
+      ? request.inheritPosture
+      : childLaunchPosture(await this.inheritedPosture(auth, request));
+    const launch = resolveLaunchConfig(request, context, this.env, inherited);
+    resolveCoordinatorSessionId(launch.mode, request.parentSessionId);
+    const commandNetwork = resolveCommandNetworkPolicy(launch, this.env);
+    const workdir = resolveWorkdir(request, context, { scratchRoot: join(this.dataDir, 'scratch') });
+    const resolvedProfile = await this.graph.resolveInteractionProfile(auth, {
+      spaceId: request.spaceId,
+      teamMemberId: request.teamMemberId,
+      interactionProfileId: request.interactionProfileId ?? null,
+    });
+    const indexSwitch = contextIndexSwitch(this.env, resolvedProfile.snapshot);
+    const contextIndex = indexSwitch.on ? { source: indexSwitch.source } : null;
+    if (contextIndex) await this.loadIndexHeaders(auth, context, launch.mode, request.jevRunId);
+
+    let index: SpawnPreview['index'] = null;
+    const manifest = composeManifest({
+      sessionId: PREVIEW_SESSION_ID,
+      request,
+      context,
+      launch,
+      commandNetwork,
+      interactionProfile: { ...resolvedProfile, pinRevision: 0 },
+      workdir: { mode: workdir.mode, path: workdir.path },
+      command: buildAgentCommand(launch, this.env),
+      contextIndex,
+      baseUrl: this.baseUrl,
+      budget: 'record',
+      onIndexFit: (fit, candidates) => { index = { fit, candidates }; },
+    });
+    const envelope = composePrompt(manifest, {
+      sessionId: PREVIEW_SESSION_ID,
+      baseUrl: this.baseUrl,
+      budget: 'record',
+      ...(manifest.promptVersion === PROMPT_VERSION_V2 && manifest.tasks[0]
+        ? { taskContext: { taskId: manifest.tasks[0].id, unavailable: 'preview' } }
+        : {}),
+    });
+    return { manifest, envelope, context, duplicates: dedupInFull(context).duplicates, index };
+  }
+
+  /**
    * execution.resume — bring THIS session back, conversation and all.
    *
    * Maestro-style same-session resume: the work_session row is resurrected
@@ -2137,6 +2233,9 @@ export class SpawnService {
       // stop being described as one.
       parentSessionId: info.parentSessionId,
       ...(launchSelection.selection ? { selection: launchSelection.selection, selectionReplay: true } : {}),
+      // Re-read as they are NOW (launch card v3, owner answer resume_title_row);
+      // one gone or unreadable is left out with a warning, never refused.
+      ...(launchSelection.inFullIds ? { inFullIds: launchSelection.inFullIds, inFullReplay: true } : {}),
     });
 
     // The stored row IS the request: same precedence chain as spawn, fed the
@@ -2157,6 +2256,11 @@ export class SpawnService {
       ...(launchSelection.selectionReasons ? { selectionReasons: launchSelection.selectionReasons } : {}),
       ...(launchSelection.invalid ? { selectionReplayInvalid: true } : {}),
       ...(launchSelection.contextBudgets ? { contextBudgets: launchSelection.contextBudgets } : {}),
+      ...(launchSelection.inFullIds ? { inFullIds: launchSelection.inFullIds } : {}),
+      ...(launchSelection.jevRemovedIds ? { jevRemovedIds: launchSelection.jevRemovedIds } : {}),
+      // Effort is replayed (decision 2); the notes are not — they are already
+      // in the transcript (owner answer resume_notes_effort).
+      ...(launchSelection.reasoningEffort ? { reasoningEffort: launchSelection.reasoningEffort } : {}),
     };
     // NOT routed. A resume continues a conversation the agent already has, and
     // switching models underneath it would hand a transcript written by one
@@ -3729,22 +3833,44 @@ export class SpawnService {
  * resume loads the defaults and `invalid` makes its audit say
  * `replay-invalid`, so it is never misread as a launch that selected nothing.
  */
+const RECORDED_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const REASONING_EFFORTS: readonly NonNullable<SpawnRequest['reasoningEffort']>[] = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
+
 export function replayedSelection(posture: SessionLaunchPosture | null | undefined): {
   selection?: SpawnSelection;
   selectionReasons?: NonNullable<SpawnRequest['selectionReasons']>;
   /** The launch's budget override. A malformed record is dropped alone: it changes a trim, never what loads. */
   contextBudgets?: NonNullable<SpawnRequest['contextBudgets']>;
+  /** `launch.inFullIds`, and the advisory `launch.jevRemovedIds`; each malformed record is dropped alone. */
+  inFullIds?: string[];
+  jevRemovedIds?: string[];
+  /** `launch.reasoningEffort` (decision 2); an unknown value is dropped. */
+  reasoningEffort?: NonNullable<SpawnRequest['reasoningEffort']>;
   invalid?: true;
 } {
   const budgets = ContextBudgetsSchema.safeParse(posture?.contextBudgets);
-  const contextBudgets = posture?.contextBudgets !== undefined && budgets.success ? { contextBudgets: budgets.data } : {};
+  const ids = (value: unknown): string[] | null =>
+    Array.isArray(value) && value.length > 0 && value.length <= SPAWN_SELECTION_GROUP_LIMIT
+      && value.every(id => typeof id === 'string' && RECORDED_UUID.test(id))
+      ? [...value] as string[]
+      : null;
+  const inFullIds = ids(posture?.inFullIds);
+  const jevRemovedIds = ids(posture?.jevRemovedIds);
+  const effort = REASONING_EFFORTS.find(value => value === posture?.reasoningEffort);
+  // Each replays on its own: a malformed selection never drops these.
+  const independent = {
+    ...(posture?.contextBudgets !== undefined && budgets.success ? { contextBudgets: budgets.data } : {}),
+    ...(inFullIds ? { inFullIds } : {}),
+    ...(jevRemovedIds ? { jevRemovedIds } : {}),
+    ...(effort ? { reasoningEffort: effort } : {}),
+  };
   const hasSelection = posture?.selection !== undefined;
   const hasReasons = posture?.selectionReasons !== undefined;
   const selection = SpawnSelectionSchema.safeParse(posture?.selection);
   const reasons = SpawnSelectionReasonsSchema.safeParse(posture?.selectionReasons);
-  if ((hasSelection && !selection.success) || (hasReasons && !reasons.success)) return { invalid: true, ...contextBudgets };
+  if ((hasSelection && !selection.success) || (hasReasons && !reasons.success)) return { invalid: true, ...independent };
   return {
-    ...contextBudgets,
+    ...independent,
     ...(hasSelection && selection.success ? { selection: selection.data } : {}),
     ...(hasReasons && reasons.success ? { selectionReasons: reasons.data } : {}),
   };
