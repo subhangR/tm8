@@ -1,0 +1,112 @@
+/*
+ * THE CONVERSATION SHEET'S ROWS.
+ *
+ * Deliberately its own file and its own `mthreads__` prefix rather than a
+ * second host for `.mdrawer__*`: the drawer's classes are geometry for a
+ * 280px panel pinned beside a backdrop, and reusing them here would mean
+ * neither surface could be tuned without checking the other. What IS shared is
+ * the row CONTRACT — `--mobile-touch-min` height, `aria-current` as the one
+ * source of the current-row look — because those are shell rules, not this
+ * sheet's preferences.
+ */
+
+.mthreads__rows {
+  list-style: none;
+  margin: 0;
+  /* A `<ul>` ships discs and 40px of user-agent inline padding. */
+  padding: 0;
+}
+
+.mthreads__row {
+  inline-size: 100%;
+  /* REAL height. A pseudo-element target is not a target. */
+  min-block-size: var(--mobile-touch-min);
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-2) var(--pn-space-3);
+  text-align: start;
+
+  appearance: none;
+  -webkit-appearance: none;
+  background: none;
+  border: 0;
+
+  font-family: var(--pn-ui);
+  font-weight: 500;
+  font-size: var(--pn-fs-body);
+  line-height: var(--pn-lh-snug);
+  color: var(--pn-ink);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: background-color var(--pn-dur-fast) var(--pn-ease-standard);
+}
+
+.mthreads__row:active {
+  background: var(--pn-active);
+}
+
+/* Current from `aria-current`, which the component already emits — the look and
+   the announcement are one fact, so they cannot disagree. */
+.mthreads__row[aria-current] {
+  background: var(--pn-active);
+  color: var(--pn-brand);
+  font-weight: 600;
+}
+
+.mthreads__row:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+  border-radius: var(--pn-r-sm);
+}
+
+.mthreads__mark {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 20px;
+  color: var(--pn-ink-2);
+}
+
+.mthreads__name {
+  flex: 1 1 auto;
+  /* Without this a flex item refuses to shrink below its content. */
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mthreads__name--stacked {
+  display: flex;
+  flex-direction: column;
+  white-space: normal;
+}
+
+.mthreads__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mthreads__preview {
+  font-size: var(--pn-fs-sm);
+  font-weight: 400;
+  color: var(--pn-ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mthreads__row--verb {
+  color: var(--pn-ink-2);
+}
+
+.mthreads__empty {
+  padding: var(--pn-space-2) var(--pn-space-3);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-3);
+}
