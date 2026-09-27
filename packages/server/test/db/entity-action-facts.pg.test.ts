@@ -1,5 +1,5 @@
 /**
- * 269 — `internal.entity_action_facts` against a REAL PostgreSQL, as `tm8_app`
+ * 270 — `internal.entity_action_facts` against a REAL PostgreSQL, as `tm8_app`
  * under each caller's claims (task 01a0e24d, doc 01a0e257 v2 change 2).
  *
  * The function exists so `actions.list` can advertise a credential, link or
@@ -123,7 +123,7 @@ afterAll(async () => {
   resetCredentialKeyCache();
 });
 
-describe('269 entity_action_facts', () => {
+describe('270 entity_action_facts', () => {
   it('returns booleans and statuses only: no column that could carry a secret, hint, login or path', async () => {
     const [shape] = await database.query<{ args: string }>(
       `select pg_get_function_result('internal.entity_action_facts(uuid)'::regprocedure) args`,

@@ -1,5 +1,5 @@
 -- =============================================================================
--- 269 — action facts for credential, space_link and server (task 01a0e24d,
+-- 270 — action facts for credential, space_link and server (task 01a0e24d,
 -- proposal doc 01a0e257 v2).
 --
 -- `actions.list` derives what it advertises from row state (the forms columns
@@ -54,7 +54,7 @@ begin
     -- admin when the row is public or ownerless. The coalesce is deliberate.
     -- 255 writes `if not (owner = me or …)`, and on an ownerless row that is
     -- `not NULL`, so the door admits every member. That is a door defect
-    -- (reported, task 01a0e24d; fixed by the same coalesce in its own PR, which
+    -- (reported, task 01a0e24d; fixed by the same coalesce in 269, its own PR, which
     -- lands first), and discovery does not advertise through it. Until that
     -- fix lands, discovery is DELIBERATELY STRICTER than the door: a
     -- non-admin member is not offered a read the leaky door would grant.
