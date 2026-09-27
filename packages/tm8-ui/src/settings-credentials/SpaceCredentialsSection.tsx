@@ -36,6 +36,7 @@ import type {
   CredentialsSpaceReadinessView,
   CredentialsSpaceUsageView,
   SpaceCredentialProviderName,
+  SpaceCredentialStoredProviderName,
   SpaceCredentialView,
 } from '@tm8/contract';
 import { SectionAbsent, SectionFrame } from '../settings-space';
@@ -43,7 +44,8 @@ import type { SpaceCredentialsPort, SpaceCredentialsViewer, SpaceLoginProvider, 
 import {
   SHARED_SERVER_WARNING,
   SOURCE_WORD,
-  SPACE_CREDENTIAL_PROVIDERS,
+  SPACE_STORED_PROVIDERS,
+  isServerOnlyProvider,
   SPACE_PROVIDER_NAME,
   SPACE_SECRET_NOUN,
   afterDeleteNotice,
@@ -90,7 +92,7 @@ export interface SpaceCredentialsSectionProps {
   onOpen?: (credentialId: string) => void;
 }
 
-function isLoginProvider(provider: SpaceCredentialProviderName): provider is SpaceLoginProvider {
+function isLoginProvider(provider: SpaceCredentialStoredProviderName): provider is SpaceLoginProvider {
   return provider === 'anthropic' || provider === 'openai';
 }
 
@@ -168,7 +170,7 @@ export function SpaceCredentialsSection({ port, heading = 'Space credentials', s
         <ReadinessPanel readiness={readiness} error={readinessError} />
         {rows === null ? <p className="set-spc__muted">Reading…</p> : null}
         {rows !== null
-          ? SPACE_CREDENTIAL_PROVIDERS.map((provider) => (
+          ? SPACE_STORED_PROVIDERS.map((provider) => (
               <ProviderGroup
                 key={provider}
                 onOpen={onOpen}
@@ -274,7 +276,7 @@ function ProviderGroup({
   onOpen,
 }: {
   onOpen?: (credentialId: string) => void;
-  provider: SpaceCredentialProviderName;
+  provider: SpaceCredentialStoredProviderName;
   rows: SpaceCredentialView[];
   allRows: SpaceCredentialView[];
   viewer: SpaceCredentialsViewer | null;
@@ -432,7 +434,16 @@ function ProviderGroup({
           onFinish={() => void finishLogin(login)}
         />
       ) : null}
-      <PolicyRow provider={provider} policy={policy} viewer={viewer} port={port} onPolicy={onPolicy} />
+      {isServerOnlyProvider(provider) ? (
+        // No policy row: a server-only key never reaches a launch, so there is
+        // no launch rung for a policy to allow or refuse.
+        <p className="set-spc__muted" data-testid={`space-cred-server-only-${provider}`}>
+          Ask Jev&apos;s key. It stays on the server: no session ever receives it. Ask Jev uses your
+          own default here first, then the space&apos;s default.
+        </p>
+      ) : (
+        <PolicyRow provider={provider} policy={policy} viewer={viewer} port={port} onPolicy={onPolicy} />
+      )}
     </section>
   );
 }
@@ -743,7 +754,7 @@ function AddByKey({
   onChanged,
   login,
 }: {
-  provider: SpaceCredentialProviderName;
+  provider: SpaceCredentialStoredProviderName;
   rows: SpaceCredentialView[];
   viewer: SpaceCredentialsViewer | null;
   port: SpaceCredentialsPort;
@@ -977,7 +988,7 @@ type OpenSpaceLogin = PendingLogin & { lede: string; credentialId: string | null
  */
 function LoginStartFailure({ failure, provider, allRows, viewer, login }: {
   failure: SpaceLoginStartFailure;
-  provider: SpaceCredentialProviderName;
+  provider: SpaceCredentialStoredProviderName;
   allRows: SpaceCredentialView[];
   viewer: SpaceCredentialsViewer | null;
   login: LoginControls | null;
@@ -1022,7 +1033,7 @@ function LoginStartFailure({ failure, provider, allRows, viewer, login }: {
 function BusyAndFailure({ busy, failure, provider }: {
   busy: null | 'probe' | 'plain';
   failure: SpaceCredentialFailure | null;
-  provider: SpaceCredentialProviderName;
+  provider: SpaceCredentialStoredProviderName;
 }) {
   return (
     <>

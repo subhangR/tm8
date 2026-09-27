@@ -163,6 +163,7 @@ import type {
   NodeCredentialsStatusView,
   NodeMetricsView,
   SpaceCredentialProviderName,
+  SpaceCredentialStoredProviderName,
   SpaceCredentialView,
   SpaceLinkView,
   SpaceLinkAuditEntry,
@@ -1417,7 +1418,7 @@ export interface Seam {
       spaceDefaultConsent(credentialId: string, allowed: boolean): Promise<SpaceCredentialView>;
       claim(credentialId: string): Promise<SpaceCredentialView>;
       setMyDefault(credentialId: string): Promise<CredentialsSpaceMyDefaultResult>;
-      clearMyDefault(spaceId: SpaceId, provider: SpaceCredentialProviderName): Promise<CredentialsSpaceMyDefaultResult>;
+      clearMyDefault(spaceId: SpaceId, provider: SpaceCredentialStoredProviderName): Promise<CredentialsSpaceMyDefaultResult>;
       usage(credentialId: string): Promise<CredentialsSpaceUsageView>;
       /** "Add to this space as private" for the caller's own GitHub token (093). The body names no token. */
       addMine(spaceId: SpaceId, provider: 'github', label: string): Promise<SpaceCredentialView>;

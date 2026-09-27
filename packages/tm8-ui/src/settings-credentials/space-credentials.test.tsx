@@ -37,6 +37,7 @@ import type { SpaceCredentialsPort, SpaceCredentialsViewer, SpaceLoginTarget } f
 import { isSharedServer, isSpaceAdminRole, spaceCredentialsPortFromSeam } from './space-port';
 import {
   SHARED_SERVER_WARNING,
+  SPACE_CREDENTIAL_PROVIDERS,
   afterDeleteNotice,
   canClaim,
   canLaunchSentence,
@@ -47,14 +48,17 @@ import {
   canSeeUsage,
   canSetVisibility,
   failureOf,
+  groupByProvider,
   labelTakenReason,
   loginOpenNoticeOf,
   noDefaultNotice,
+  pasteShapeOf,
   spaceLoginOutcome,
   spaceLoginStartFailureOf,
   toggleSource,
   validateSecret,
 } from './space-credentials-model';
+import { launchableSpaceCredentials } from '../domain/launch-sources';
 
 const KEY = 'sk-ant-api03-SECRETVALUE0123456789abcdWXYZ';
 const ME = 'acct-me';
@@ -1190,6 +1194,72 @@ describe('S7 readiness — two thresholds, never one tick', () => {
     const view = readinessView({ launchMissing: { openai: 'no_credential' } });
     expect(canLaunchSentence(view)).toContain('Not ready to launch with Codex (OpenAI)');
     expect(canLaunchSentence(view, ['anthropic', 'github'])).toContain('Ready to launch');
+  });
+});
+
+describe('S6 (server_only_space_credentials) — typesafe, the server-only Ask Jev key', () => {
+  const TS_KEY = 'ts_live_TYPESAFESECRET0123456789abcdQRST';
+  const JEV = row({ id: 'c-jev', provider: 'typesafe', shape: 'api_key', label: 'Team Jev', isDefault: true, keyHint: 'jEv9' });
+
+  it('draws its own group with the masked hint, a server-only note and no policy row', async () => {
+    await mount(fakePort({ rows: [MINE_DEFAULT, GITHUB, JEV] }));
+    const group = screen.getByTestId('space-cred-group-typesafe');
+    expect(within(group).getByText('TypeSafe (Ask Jev)')).toBeTruthy();
+    expect(within(group).getByTestId('space-cred-row-c-jev').textContent).toContain('ends …jEv9');
+    expect(within(group).getByTestId('space-cred-server-only-typesafe').textContent).toMatch(/no session ever receives it/);
+    // Control: a launchable group still has its policy row; typesafe has none.
+    expect(screen.getByTestId('space-cred-policy-anthropic')).toBeTruthy();
+    expect(screen.queryByTestId('space-cred-policy-typesafe')).toBeNull();
+  });
+
+  it('adds by paste as an api_key; the key appears nowhere and the field is emptied', async () => {
+    const port = fakePort({ rows: [MINE_DEFAULT] });
+    await mount(port);
+    expect(screen.getByTestId('space-cred-empty-typesafe')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Add TypeSafe (Ask Jev) API key' }));
+    fireEvent.change(screen.getByLabelText('Label for the new TypeSafe (Ask Jev) API key'), { target: { value: 'Jev shared' } });
+    const field = screen.getByLabelText('TypeSafe (Ask Jev) API key') as HTMLInputElement;
+    expect(field.type).toBe('password');
+    fireEvent.change(field, { target: { value: TS_KEY } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save new TypeSafe (Ask Jev) API key' }));
+    await screen.findByText('Added “Jev shared”.');
+    expect(port.create).toHaveBeenCalledWith({ provider: 'typesafe', shape: 'api_key', label: 'Jev shared', secret: TS_KEY });
+    expect(document.body.innerHTML).not.toContain('TYPESAFESECRET');
+    expect(within(screen.getByTestId('space-cred-group-typesafe')).getByText('Jev shared')).toBeTruthy();
+  });
+
+  it('rekeys write-only and deletes', async () => {
+    const port = fakePort({ rows: [MINE_DEFAULT, JEV] });
+    await mount(port);
+    fireEvent.click(screen.getByRole('button', { name: 'Replace API key Team Jev' }));
+    fireEvent.change(screen.getByLabelText('New API key for Team Jev'), { target: { value: TS_KEY } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save API key Team Jev' }));
+    await screen.findByText(/Replaced the API key on “Team Jev”/);
+    expect(port.rekey).toHaveBeenCalledWith('c-jev', TS_KEY);
+    expect(document.body.innerHTML).not.toContain('TYPESAFESECRET');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Team Jev' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm delete Team Jev' }));
+    await screen.findByTestId('space-cred-notice');
+    expect(port.remove).toHaveBeenCalledWith('c-jev');
+    expect(await screen.findByTestId('space-cred-empty-typesafe')).toBeTruthy();
+  });
+
+  it('the model: api_key paste shape, its own group, and a no-default sentence about Ask Jev, not launches', () => {
+    expect(pasteShapeOf('typesafe')).toBe('api_key');
+    expect(groupByProvider([JEV, MINE_DEFAULT]).typesafe.map((r) => r.id)).toEqual(['c-jev']);
+    expect(noDefaultNotice('typesafe', [{ ...JEV, isDefault: false }])).toMatch(/Ask Jev/);
+    expect(noDefaultNotice('typesafe', [{ ...JEV, isDefault: false }])).not.toMatch(/launch/);
+    // The launchable list and the policy/node editors never name it.
+    expect(SPACE_CREDENTIAL_PROVIDERS).not.toContain('typesafe');
+  });
+
+  it('no launch picker offers it, even as the only default in the space', () => {
+    for (const provider of SPACE_CREDENTIAL_PROVIDERS) {
+      expect(launchableSpaceCredentials(provider, [JEV]).map((r) => r.id)).toEqual([]);
+    }
+    // Control: the same filter does offer a launchable row.
+    expect(launchableSpaceCredentials('anthropic', [JEV, MINE_DEFAULT]).map((r) => r.id)).toEqual(['c-mine']);
   });
 });
 
