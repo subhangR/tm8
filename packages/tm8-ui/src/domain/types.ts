@@ -136,6 +136,9 @@ export type TileBadgeSource =
   | 'profile'
   | 'provider'
   | 'isolation'
+  // credential (W10a): who can use it — `public` or `private`. Off the
+  // state's allow-list; the row carries no secret, hint or login to read.
+  | 'visibility'
   // counters, present on every summary
   | 'points'
   | 'messages';
@@ -1129,6 +1132,10 @@ export type ContentBlockKind =
   // Responses over the forms seam (`src/forms`). Named for what it draws, not
   // for the kind, for the same §15.2 reason `canvas` is.
   | 'questionnaire'
+  // The kind's Settings home (`KindConfig.settingsHome`) as a link out of the
+  // panel. Reads the registry row, not params, so the list header and the
+  // panel can never name two different sections for one kind.
+  | 'settings-home'
   // Collection membership over the `contains` edge, both directions: a
   // collection's ITEMS (outgoing) and an entity's COLLECTIONS (incoming).
   // Edge-typed like `memory-set`; which side it is on is registry params.
@@ -1347,6 +1354,12 @@ export interface EditFieldSpec {
   valueType?: 'text' | 'nullable-text' | 'json-object' | 'schedule' | 'date';
 }
 
+/** A kind's Settings home: the section that manages it, and the link's words. */
+export interface SettingsHome {
+  section: 'space-credentials' | 'space-links';
+  label: string;
+}
+
 export interface KindConfig {
   kind: CoreEntityKind | CustomKindFallback;
   label: string;
@@ -1398,6 +1411,15 @@ export interface KindConfig {
    * opens onto nothing.
    */
   editFields?: readonly EditFieldSpec[];
+  /**
+   * Where a human MANAGES this kind, when that is a Settings section rather
+   * than the entity itself. Home lists every kind (owner ruling 2026-09-27),
+   * including ones whose doors are human-only and live in Settings — a
+   * credential is added and rotated in Space credentials, a link is signed in
+   * and removed in Space links. The Home list header and the `settings-home`
+   * panel block both link here, so the list is never a door-less dead end.
+   */
+  settingsHome?: SettingsHome;
   /**
    * A kind whose required create payload cannot be produced by the immediate
    * placeholder flow. Presence selects the staged, scheduler-aware form while

@@ -334,6 +334,17 @@ describe.sequential('147 — entities.status_category', () => {
     // stops before 252 has no such function. Additive: one security-invoker
     // function over 050's `attention_requests`. No assertion here reads it.
     database.apply(['252_attention_badges.sql']);
+    // 261 (remote servers): `entity-read.ts` and the projector left-join
+    // `public.servers srv` for a server's name and base URL. 261 itself cannot
+    // apply on this partial chain, so — like the credential shim above — only
+    // the column shapes the read selects and their tm8_app read grant are
+    // mirrored (as tm8_graph_owner, like 261), without its FKs, checks or RPCs. No assertion here reads
+    // them. DELETE this shim if this suite ever applies the chain through 261.
+    await database.query(`set role tm8_graph_owner;
+      create table public.servers (
+        entity_id uuid primary key, name text not null, base_url text not null);
+      grant select on public.servers to tm8_app;
+      reset role;`);
   }, 180_000);
 
   afterAll(async () => {

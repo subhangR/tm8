@@ -9,7 +9,7 @@ import type {
 } from '@tm8/contract';
 import type { ArtifactRevisionsList, ArtifactRevisionSummary } from '../../data/seam';
 import type { ContentBlockRef } from '../../domain';
-import { KindIcon } from '../../domain';
+import { KindIcon, getKind } from '../../domain';
 import { Chip, Eyebrow, Markdown } from '../../kit';
 import { canThumbnail } from '../../files/AttachmentStrip';
 import type { DownloadHref } from '../../files/FilesScreen';
@@ -22,6 +22,7 @@ import { QuestionnaireBlock } from '../../forms/QuestionnaireBlock';
 import { PeerRowsBlock } from './PeerRowsBlock';
 import { edgesOf } from './MemorySetBlock';
 import { MembershipBlock, type MembershipAuthoring } from './MembershipBlock';
+import { SettingsHomeLink } from '../SettingsHomeLink';
 import type { EntityListPanelProps } from '../EntityListPanel';
 
 /**
@@ -237,6 +238,12 @@ function ContentBlock({
         return <LifecycleBlock detail={detail} />;
       case 'notice':
         return <NoticeBlock block={block} />;
+      /* The kind's Settings home, read off its registry row — the same datum
+         the list header links from, so the two can never disagree. */
+      case 'settings-home': {
+        const home = getKind(detail.kind).settingsHome;
+        return home ? <SettingsHomeLink home={home} /> : null;
+      }
       default:
         return null;
     }

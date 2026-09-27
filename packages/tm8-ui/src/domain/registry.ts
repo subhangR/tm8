@@ -1912,6 +1912,12 @@ const ROWS: readonly KindConfig[] = [
    * settings → Credentials (human-only doors); this row only lets an entity
    * read of one render as a named thing. `quickCreate` is off — no generic
    * door can create one, and the SQL guard refuses it anyway.
+   *
+   * A HOME ROOT since 2026-09-27 (owner ruling: Home lists every kind). The
+   * tile and the panel draw ONLY the envelope's allow-list — provider and
+   * visibility off `state`, whose server arm (`credentialFactsOf`) never
+   * reads the secret, the key hint or the vendor login. `settingsHome` is
+   * the door back to where a credential is actually added and rotated.
    */
   {
     kind: 'credential',
@@ -1925,10 +1931,11 @@ const ROWS: readonly KindConfig[] = [
     hiddenModes: ['board', 'tree', 'gallery'],
     chip: { glyph: '⚿', tintBy: 'none' },
     card: { fields: ['excerpt', 'activityAt'] },
-    list: baseList({ quickCreate: false, tile: { badges: [] } }),
+    settingsHome: { section: 'space-credentials', label: 'Manage in Space credentials' },
+    list: baseList({ quickCreate: false, tile: { badges: [{ source: 'provider' }, { source: 'visibility' }] } }),
     panel: {
       archetype: 'generic',
-      blocks: [COLLECTIONS_BLOCK],
+      blocks: [{ block: 'fields', label: 'CREDENTIAL' }, { block: 'settings-home' }, COLLECTIONS_BLOCK],
     },
   },
 
@@ -2382,14 +2389,16 @@ const ROWS: readonly KindConfig[] = [
     chip: { glyph: '⛓', tintBy: 'none' },
     card: { fields: ['activityAt', 'createdBy'] },
     // Born only from `spaceLinks.add` (generic create is refused server-side);
-    // the Space settings section is where a link is signed in, out or removed.
+    // the Space settings section is where a link is signed in, out or removed,
+    // and where the P8 warning lives — so Home's list and panel link there.
+    settingsHome: { section: 'space-links', label: 'Manage in Space links' },
     list: baseList({
       quickCreate: false,
-      tile: { badges: [] },
+      tile: { badges: [{ source: 'createdBy' }] },
     }),
     panel: {
       archetype: 'generic',
-      blocks: [{ block: 'fields', label: 'LINK' }],
+      blocks: [{ block: 'fields', label: 'LINK' }, { block: 'settings-home' }],
     },
   },
 
@@ -2405,10 +2414,12 @@ const ROWS: readonly KindConfig[] = [
     defaultMode: 'list',
     hiddenModes: ['board', 'tree', 'gallery'],
     chip: { glyph: '◎', tintBy: 'none' },
-    card: { fields: ['activityAt', 'createdBy'] },
+    // The tile's title is the server's own name and its excerpt the base URL
+    // (entity-read `titleOf`/`excerptOf`); no Settings home yet.
+    card: { fields: ['excerpt', 'activityAt'] },
     list: baseList({
       quickCreate: false,
-      tile: { badges: [] },
+      tile: { badges: [{ source: 'createdBy' }] },
     }),
     panel: {
       archetype: 'generic',
