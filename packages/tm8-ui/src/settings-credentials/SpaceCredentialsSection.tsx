@@ -81,13 +81,18 @@ export interface SpaceCredentialsSectionProps {
   heading?: string;
   /** Same-origin route prefix for the node that hosts a login terminal. */
   serverBaseUrl?: string;
+  /**
+   * Opens a credential's own panel (task 01a0e24d): per-item verbs live
+   * there; this screen keeps create, add and policy. Absent, no row offers it.
+   */
+  onOpen?: (credentialId: string) => void;
 }
 
 function isLoginProvider(provider: SpaceCredentialStoredProviderName): provider is SpaceLoginProvider {
   return provider === 'anthropic' || provider === 'openai';
 }
 
-export function SpaceCredentialsSection({ port, heading = 'Space credentials', serverBaseUrl }: SpaceCredentialsSectionProps) {
+export function SpaceCredentialsSection({ port, heading = 'Space credentials', serverBaseUrl, onOpen }: SpaceCredentialsSectionProps) {
   const [viewer, setViewer] = useState<SpaceCredentialsViewer | null>(null);
   const [rows, setRows] = useState<SpaceCredentialView[] | null>(null);
   const [policy, setPolicy] = useState<CredentialsSpacePolicyView | null>(null);
@@ -146,6 +151,7 @@ export function SpaceCredentialsSection({ port, heading = 'Space credentials', s
           ? SPACE_STORED_PROVIDERS.map((provider) => (
               <ProviderGroup
                 key={provider}
+                onOpen={onOpen}
                 provider={provider}
                 rows={groups[provider]}
                 allRows={rows}
@@ -176,7 +182,9 @@ function ProviderGroup({
   serverBaseUrl,
   onChanged,
   onPolicy,
+  onOpen,
 }: {
+  onOpen?: (credentialId: string) => void;
   provider: SpaceCredentialStoredProviderName;
   rows: SpaceCredentialView[];
   allRows: SpaceCredentialView[];
@@ -318,7 +326,7 @@ function ProviderGroup({
         <ul className="set-spc__list">
           {rows.map((row) => (
             <CredentialRow key={row.id} row={row} allRows={allRows} viewer={viewer} port={port} onChanged={onChanged} login={loginControls}
-              myDefault={myDefault === row.id} onMyDefault={setMyDefaultId} />
+              myDefault={myDefault === row.id} onMyDefault={setMyDefaultId} onOpen={onOpen} />
           ))}
         </ul>
       )}
@@ -358,7 +366,9 @@ function CredentialRow({
   login,
   myDefault,
   onMyDefault,
+  onOpen,
 }: {
+  onOpen?: (credentialId: string) => void;
   row: SpaceCredentialView;
   allRows: SpaceCredentialView[];
   viewer: SpaceCredentialsViewer | null;
@@ -429,6 +439,10 @@ function CredentialRow({
           <span className={`set-spc__badge set-spc__badge--${visibility}`} data-testid={`space-cred-visibility-${row.id}`}>{visibility}</span>
         ) : null}
         <span className={`set-spc__badge set-spc__badge--${row.status}`}>{statusWord}</span>
+        {onOpen ? (
+          <button type="button" className="cred-action" data-testid={`space-cred-open-${row.id}`}
+            aria-label={`Open ${row.label}`} onClick={() => onOpen(row.id)}>Open</button>
+        ) : null}
       </div>
       <div className="set-spc__meta">
         <span>{row.shape === 'login' ? 'login' : row.shape === 'token' ? 'token' : 'API key'}</span>

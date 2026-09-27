@@ -261,6 +261,14 @@
   color: var(--pn-ink-2);
 }
 
+/* REFUSED, NOT REMOVED. A verb whose create the seam cannot run stays in
+   place and reads as unavailable — `aria-disabled` rather than `disabled`, so
+   it keeps its place in the tab order and can still be read out. */
+.mdrawer__row[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: default;
+}
+
 /*
  * THE UNREAD COUNT. Drawn only when there IS one — see the component: an absent
  * count draws nothing, and a counted zero is the resting state of every row.

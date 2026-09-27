@@ -1350,6 +1350,14 @@ export function GateApp(props: GateAppProps = {}) {
     };
   }, [stack, pinned, contentSurface]);
 
+  /* A Settings row (space credential, space link) opens its own managed panel
+     (task 01a0e24d): same handoff as the attention segment, into the
+     workspace. */
+  const openFromSettings = useCallback((id: string) => {
+    navigateTo(WORKSPACE_TARGET);
+    nav.push(id as EntityId);
+  }, [navigateTo, nav]);
+
   /**
    * GAP #0 (Surface Audit final): the palette and the C6 controller were
    * NEVER MOUNTED while the UI's own copy taught "/ opens the palette" —
@@ -2614,11 +2622,11 @@ export function GateApp(props: GateAppProps = {}) {
                 credentialsPort || branchesPort || spaceCredentialsPort || spaceLinksPort
                   ? {
                       ...(spaceLinksPort
-                        ? { 'space-links': <SpaceLinksSection port={spaceLinksPort} /> }
+                        ? { 'space-links': <SpaceLinksSection port={spaceLinksPort} onOpen={openFromSettings} /> }
                         : {}),
                       ...(spaceCredentialsPort
                         ? {
-                            'space-credentials': <SpaceCredentialsSection port={spaceCredentialsPort} serverBaseUrl={activeServer.routeBaseUrl} />,
+                            'space-credentials': <SpaceCredentialsSection port={spaceCredentialsPort} serverBaseUrl={activeServer.routeBaseUrl} onOpen={openFromSettings} />,
                             'node-credentials': <NodeCredentialsSection port={spaceCredentialsPort} />,
                           }
                         : {}),

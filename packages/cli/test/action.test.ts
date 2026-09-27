@@ -249,6 +249,7 @@ describe('tm8.actions.v2 rollout, paging and the factored render', () => {
     actorId: ACTOR,
     target: { id: TARGET, kind: 'task', version: 7 },
     capabilityEpoch: EPOCH,
+    human: true,
     columns: ['operation', 'kind', 'authzTarget', 'exposure'],
     rows: [['entities.patch', 'status', 'entity', 'public']],
     total: 31,

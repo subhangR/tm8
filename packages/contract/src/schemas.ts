@@ -4963,6 +4963,9 @@ export const ActionDiscoveryResultSchema: z.ZodType<ActionDiscoveryResult> = z.o
   actions: z.array(PaletteActionSchema),
 }).strict();
 
+const ActionAuthzTargetSchema = z.enum(['server', 'space', 'project', 'entity', 'session']);
+const ActionExposureSchema = z.enum(['public', 'composite', 'internal', 'reserved']);
+
 const ActionRowsShape = {
   schema: z.literal('tm8.actions.v2'),
   actorId: EntityIdSchema,
@@ -4972,14 +4975,14 @@ const ActionRowsShape = {
     version: z.number().int().positive(),
   }).strict().optional(),
   capabilityEpoch: z.string().min(1),
+  human: z.boolean(),
   columns: z.tuple([
     z.literal('operation'), z.literal('kind'), z.literal('authzTarget'), z.literal('exposure'),
+    z.literal('refused'),
   ]),
-  rows: z.array(z.tuple([
-    OperationNameSchema,
-    z.string(),
-    z.enum(['server', 'space', 'project', 'entity', 'session']),
-    z.enum(['public', 'composite', 'internal', 'reserved']),
+  rows: z.array(z.union([
+    z.tuple([OperationNameSchema, z.string(), ActionAuthzTargetSchema, ActionExposureSchema]),
+    z.tuple([OperationNameSchema, z.string(), ActionAuthzTargetSchema, ActionExposureSchema, z.literal(true)]),
   ])),
   total: z.number().int().nonnegative(),
 };

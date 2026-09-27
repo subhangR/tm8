@@ -15,7 +15,7 @@
  * this file prints — success and failure — first passes `scrubSecrets`: a
  * token-shaped string is replaced, never shortened into a longer hint.
  */
-import type { SpaceLinkAuditEntry, SpaceLinkView } from '@tm8/contract';
+import { getOperation, isOperationName, type SpaceLinkAuditEntry, type SpaceLinkView } from '@tm8/contract';
 import { requireSpace } from '../context.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
 import { ApiError } from '../errors.js';
@@ -76,15 +76,25 @@ export function scrubSecrets<T>(value: T): T {
   return value;
 }
 
+/**
+ * The refused op's catalog `humanOnly` flag: the door's own declaration, not a
+ * per-command guess. A `forbidden` from `spaceLinks.list` while resolving an
+ * alias for `link login` is not a human-only refusal and gets no such hint.
+ */
+function refusedAsHumanOnly(err: ApiError): boolean {
+  return err.code === 'forbidden' && err.operation !== undefined
+    && isOperationName(err.operation) && getOperation(err.operation).humanOnly === true;
+}
+
 /** The same failure, with every message, hint and detail scrubbed. */
-function scrubbedError(err: unknown, humanOnlyHint: boolean): unknown {
+function scrubbedError(err: unknown): unknown {
   if (err instanceof ApiError) {
     const next = new ApiError(
       err.status, err.code, scrubText(err.message), err.requestId, err.retryable,
       scrubSecrets(err.details), err.operation,
     );
     if (err.hint !== undefined) next.hint = scrubText(err.hint);
-    if (humanOnlyHint && err.code === 'forbidden') {
+    if (refusedAsHumanOnly(err)) {
       next.hint = 'space link writes are human-only: ask your human to run this `tm8 link` command';
     }
     return next;
@@ -93,11 +103,11 @@ function scrubbedError(err: unknown, humanOnlyHint: boolean): unknown {
   return err;
 }
 
-async function scrubbed(humanOnly: boolean, body: () => Promise<ExitCode>): Promise<ExitCode> {
+async function scrubbed(body: () => Promise<ExitCode>): Promise<ExitCode> {
   try {
     return await body();
   } catch (err) {
-    throw scrubbedError(err, humanOnly);
+    throw scrubbedError(err);
   }
 }
 
@@ -146,7 +156,7 @@ function renderAudit(rows: SpaceLinkAuditEntry[]): string {
 
 async function linkList(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, []);
-  return scrubbed(false, async () => {
+  return scrubbed(async () => {
     const views = scrubSecrets(await listLinks(cmd));
     cmd.out.data(views, (dto) => (dto.length === 0 ? 'no space links in this Space' : dto.map(renderLink).join('\n')));
     return EXIT_OK;
@@ -156,7 +166,7 @@ async function linkList(cmd: CommandContext): Promise<ExitCode> {
 async function linkAdd(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, ['alias', 'mutation-id']);
   const targetSpaceId = requireArg(cmd.args[0], 'link add', 'the <target-space-id> to link');
-  return scrubbed(true, async () => {
+  return scrubbed(async () => {
     const alias = cmd.options.value('alias');
     const view = await observedInvoke<SpaceLinkView>(clientFor(cmd.ctx), 'spaceLinks.add', {
       params: { spaceId: requireSpace(cmd.ctx) },
@@ -174,7 +184,7 @@ async function linkAdd(cmd: CommandContext): Promise<ExitCode> {
 async function linkLogin(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, ['mutation-id']);
   const ref = requireArg(cmd.args[0], 'link login', 'the <alias|link-id> to sign in to');
-  return scrubbed(true, async () => {
+  return scrubbed(async () => {
     const view = await observedInvoke<SpaceLinkView>(clientFor(cmd.ctx), 'spaceLinks.login', {
       params: { linkId: await linkIdFor(cmd, ref) },
       body: { clientMutationId: resolveMutationId(cmd.options.value('mutation-id')) },
@@ -187,7 +197,7 @@ async function linkLogin(cmd: CommandContext): Promise<ExitCode> {
 async function linkAudit(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, ['limit', 'before']);
   const ref = requireArg(cmd.args[0], 'link audit', 'the <alias|link-id> whose calls to read');
-  return scrubbed(false, async () => {
+  return scrubbed(async () => {
     const limit = cmd.options.integer('limit');
     const before = cmd.options.value('before');
     const rows = await observedInvoke<SpaceLinkAuditEntry[]>(clientFor(cmd.ctx), 'spaceLinks.audit', {
