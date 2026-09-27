@@ -1,7 +1,7 @@
 -- =============================================================================
--- entity_action_facts (the file's ordinal is assigned when it is next to merge,
--- by the credentials coordinator, which holds the sequence for every migration
--- in flight; this header deliberately does not repeat it) — action facts for
+-- 269 entity_action_facts (merged in #935 under the placeholder name 999 and
+-- renamed to 269 before any prod deploy applied it; prod's ledger ended at
+-- 268, so every database applies it in the same order) — action facts for
 -- credential, space_link and server (task 01a0e24d, proposal doc 01a0e257 v2).
 --
 -- `actions.list` derives what it advertises from row state (the forms columns
