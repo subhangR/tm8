@@ -2586,8 +2586,22 @@ export interface CredentialsServiceKeyDeleteResult {
 // Space credentials (206, design 01a0cfa8) — `credentials.space.*`, `node.credentials.*`
 // ---------------------------------------------------------------------------
 
-/** The providers a space may own a credential for (D2, D10). */
+/**
+ * The providers a space may own a credential for AND a launch may bind (D2,
+ * D10). Policies, sessions and the spawn reader speak only this set.
+ */
 export type SpaceCredentialProviderName = 'anthropic' | 'openai' | 'github';
+
+/**
+ * SERVER-ONLY providers (271, spec 01a0e248 decision 10): stored as a space
+ * credential, spent by the server on a member's behalf (`typesafe` is ✦ Ask
+ * Jev's key), and never handed to a session — the spawn reader refuses them
+ * in SQL and in TS, and `session_space_credentials` cannot hold one.
+ */
+export type ServerOnlyCredentialProviderName = 'typesafe';
+
+/** Every provider a space credential row can carry: launchable or server-only. */
+export type SpaceCredentialStoredProviderName = SpaceCredentialProviderName | ServerOnlyCredentialProviderName;
 
 /** `login` is a vendor CLI login in a space home; the other two are pasted strings. */
 export type SpaceCredentialShape = 'login' | 'api_key' | 'token';
@@ -2606,7 +2620,7 @@ export type CredentialPolicySource = 'member' | 'space' | 'node';
 export interface SpaceCredentialView {
   id: string;
   spaceId: string;
-  provider: SpaceCredentialProviderName;
+  provider: SpaceCredentialStoredProviderName;
   shape: SpaceCredentialShape;
   label: string;
   isDefault: boolean;
@@ -2646,7 +2660,7 @@ export interface CredentialsSpaceListView {
  * refuses is never written. A login-shaped credential starts elsewhere.
  */
 export interface CredentialsSpaceCreateInput {
-  provider: SpaceCredentialProviderName;
+  provider: SpaceCredentialStoredProviderName;
   shape: 'api_key' | 'token';
   label: string;
   secret: string;

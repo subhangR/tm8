@@ -11,18 +11,21 @@
  *   openai     GET https://api.openai.com/v1/models      (Bearer)
  *   github     GET https://api.github.com/user           (Bearer) — also names
  *              the account commits will be authored by (D10).
+ *   typesafe   none: a server-only key is stored unmeasured (see below).
  *
  * The secret goes into ONE request header and nowhere else: not a URL, not a
  * log line, not an error (I5). Failures carry an HTTP status or an error NAME.
  */
-import type { SpaceCredentialProvider } from './space-credential-store.js';
+import { isServerOnlyCredentialProvider } from '@tm8/contract';
+
+import type { SpaceCredentialStoredProvider } from './space-credential-store.js';
 
 export type SpaceCredentialProbeResult =
   | { ok: true; displayLogin: string | null }
   | { ok: false; reason: 'rejected' | 'unreachable'; detail: string };
 
 export type SpaceCredentialProbe = (input: {
-  provider: SpaceCredentialProvider;
+  provider: SpaceCredentialStoredProvider;
   secret: string;
 }) => Promise<SpaceCredentialProbeResult>;
 
@@ -44,7 +47,7 @@ interface VendorRequest {
   headers(secret: string): Record<string, string>;
 }
 
-const VENDORS: Record<SpaceCredentialProvider, VendorRequest> = {
+const VENDORS: Record<Exclude<SpaceCredentialStoredProvider, 'typesafe'>, VendorRequest> = {
   anthropic: {
     url: 'https://api.anthropic.com/v1/models?limit=1',
     headers: (secret) => ({ 'x-api-key': secret, 'anthropic-version': '2023-06-01' }),
@@ -68,6 +71,11 @@ export function createVendorProbe(options: VendorProbeOptions = {}): SpaceCreden
   const timeoutMs = options.timeoutMs ?? 10_000;
 
   return async ({ provider, secret }) => {
+    // A server-only key (271: typesafe, ✦ Ask Jev) has no free authenticated
+    // read to probe with — TypeSafe's one endpoint is a billed completion — so
+    // it is stored unmeasured, as 203's service keys always were. A refused key
+    // shows up where it is spent: that Ask Jev call fails as `http_error`.
+    if (isServerOnlyCredentialProvider(provider)) return { ok: true, displayLogin: null };
     const vendor = VENDORS[provider];
     let response: Awaited<ReturnType<FetchLike>>;
     try {
