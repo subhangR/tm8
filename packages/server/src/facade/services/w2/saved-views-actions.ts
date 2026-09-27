@@ -61,7 +61,7 @@ interface ActionContextRow {
   /** The caller holds a draft on this form (RLS: only their own is visible). */
   form_has_draft?: boolean | null;
   /**
-   * Credential, space_link and server (placeholder 994 `internal.entity_action_facts`):
+   * Credential, space_link and server (placeholder 999 `internal.entity_action_facts`):
    * the doors' own predicates evaluated for THIS caller, booleans and
    * statuses only. Null for every other kind.
    */
@@ -356,7 +356,7 @@ function structurallyAvailable(operation: OperationName, row: ActionContextRow):
       return live && row.kind === 'form' && row.form_has_draft === true;
     case 'forms.responses.list':
       return live && row.kind === 'form';
-    // Credentials (255), read off 994's facts: the managers' rule, the
+    // Credentials (255), read off 999's facts: the managers' rule, the
     // revokers' rule, the owner's rule, 255's claim rule. A revoked
     // credential offers nothing but its usage.
     case 'credentials.space.rename':
@@ -757,7 +757,7 @@ async function actionContext(q: Querier, entityId: string): Promise<ActionContex
        left join public.forms f on f.entity_id = e.id
        left join public.entities who
          on who.id = coalesce(internal.actor_id(), internal.current_member_id(e.space_id))
-       -- 994: evaluated only for the three kinds whose doors it mirrors.
+       -- 999: evaluated only for the three kinds whose doors it mirrors.
        left join lateral (
          select * from internal.entity_action_facts(e.id)
           where e.kind in ('credential', 'space_link', 'server')
