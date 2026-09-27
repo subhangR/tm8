@@ -1,5 +1,5 @@
 -- =============================================================================
--- ordinal: placeholder 99x; the merge coordinator assigns the real number at merge (merge order, after main's tail at merge)
+-- 271 (placeholder 998 on lane S6 and tm8/credentials-r1; set by the Release Owner at the merge position after main 2565e40f4's 270, #936)
 -- server_only_space_credentials — typesafe as a server-only space credential
 -- (credentials release 1, stage S6 storage half; task 01a0e268, spec doc
 -- 01a0e248 §10.10, §11 row S6, gate 8's reader half).
