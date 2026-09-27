@@ -555,6 +555,19 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       logout: (linkId) => ops.spaceLinksMutate('spaceLinks.logout', linkId),
       remove: (linkId) => ops.spaceLinksMutate('spaceLinks.remove', linkId),
       setSpawn: (linkId, allowSpawn, spawnBudget) => ops.spaceLinksSetSpawn(linkId, allowSpawn, spawnBudget),
+      audit: (linkId) => ops.spaceLinksAudit(linkId),
+    },
+
+    // -- remote servers (W8) --------------------------------------------------
+
+    servers: {
+      get: (serverId) => ops.serversGet(serverId),
+      probe: (serverId) => ops.serversProbe(serverId),
+      remove: (serverId) => ops.serversRemove(serverId),
+    },
+
+    actions: {
+      list: (contextEntityId) => ops.actionsList(contextEntityId),
     },
 
     // -- liveness ------------------------------------------------------------

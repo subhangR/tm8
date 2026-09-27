@@ -163,6 +163,10 @@ import type {
   SpaceCredentialProviderName,
   SpaceCredentialView,
   SpaceLinkView,
+  SpaceLinkAuditEntry,
+  ServerView,
+  ServerProbeView,
+  ActionRows,
   CredentialsServiceKeysStatusView,
   ServiceKeyProviderName,
   ServiceKeyView,
@@ -1432,6 +1436,35 @@ export interface Seam {
     remove(linkId: EntityId): Promise<SpaceLinkView>;
     /** `spawnBudget` 0..100; omitted keeps the current budget. */
     setSpawn(linkId: EntityId, allowSpawn: boolean, spawnBudget?: number): Promise<SpaceLinkView>;
+    /**
+     * W7 `spaceLinks.audit`: the cross-space invokes made through this link —
+     * the viewer's own rows, every row for a home admin (260). No token, no
+     * body: op, result, reason and the ids involved.
+     */
+    audit(linkId: EntityId): Promise<SpaceLinkAuditEntry[]>;
+  };
+
+  /**
+   * -- remote servers (`servers.*`, W8, migration 261) ------------------------
+   *
+   * A `server` entity lives in a home space. `get` and `probe` are open to its
+   * home members; `adopt` and `remove` are HUMAN-ONLY in SQL. No answer carries
+   * a gate token — `mine` is the caller's gate-session metadata only.
+   */
+  servers: {
+    get(serverId: EntityId): Promise<ServerView>;
+    /** Reachability through the SSRF-guarded client; the answer is recorded. */
+    probe(serverId: EntityId): Promise<ServerProbeView>;
+    remove(serverId: EntityId): Promise<ServerView>;
+  };
+
+  /**
+   * `actions.list` (tm8.actions.v2) for one context entity: what THIS actor
+   * may do on it right now. The panel's verb bar reads this and nothing else
+   * to decide which verbs are live — never a hardcoded list.
+   */
+  actions: {
+    list(contextEntityId: EntityId): Promise<ActionRows>;
   };
 
   // -- liveness (Delta 2, LLD C-1 / §9) --------------------------------------

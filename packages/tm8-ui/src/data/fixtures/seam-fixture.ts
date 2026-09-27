@@ -105,6 +105,9 @@ import {
   type NodeCredentialsStatusView,
   type SpaceCredentialView,
   type SpaceLinkView,
+  type SpaceLinkAuditEntry,
+  type ServerView,
+  type ActionRows,
   type ContentionReport,
   type ProjectBranchTopology,
   type ProjectFileBlame,
@@ -1319,6 +1322,15 @@ export function createFixtureSeam(): FixtureSeam {
       },
     },
   ];
+  /** W7 audit rows (none until an agent invokes through a link). */
+  const spaceLinkAuditState: SpaceLinkAuditEntry[] = [];
+  /** W8 `server` rows. Empty by default: a node registers none until someone adds one. */
+  const serversState: ServerView[] = [];
+  const serverById = (id: string): ServerView => {
+    const server = serversState.find((x) => x.id === id);
+    if (!server) throw new CollabError('not_found', `server ${id} not found`);
+    return server;
+  };
   const spaceLinkById = (id: string): SpaceLinkView => {
     const link = spaceLinksState.find((l) => l.id === id);
     if (!link) throw new CollabError('not_found', `space link ${id} not found`);
@@ -5674,6 +5686,53 @@ export function createFixtureSeam(): FixtureSeam {
         mine.allowSpawn = allowSpawn;
         if (spawnBudget !== undefined) mine.spawnBudget = spawnBudget;
         return clone(link);
+      },
+      async audit(linkId) {
+        spaceLinkById(linkId);
+        return clone(spaceLinkAuditState.filter((a) => a.linkId === linkId));
+      },
+    },
+
+    servers: {
+      async get(serverId) {
+        return clone(serverById(serverId));
+      },
+      async probe(serverId) {
+        const server = serverById(serverId);
+        server.reachStatus = 'unreachable';
+        server.reachCheckedAt = tick();
+        return { server: clone(server), outcome: 'unreachable', reason: 'the fixture has no network' };
+      },
+      async remove(serverId) {
+        const server = serverById(serverId);
+        serversState.splice(serversState.indexOf(server), 1);
+        return clone(server);
+      },
+    },
+
+    actions: {
+      /*
+       * The fixture's discovery: the generic contextual rows every live entity
+       * gets. It advertises nothing kind-specific, exactly as the real
+       * `structurallyAvailable` does not for credential, space_link and server
+       * today — so the fixture cannot make a panel look better than a node.
+       */
+      async list(contextEntityId) {
+        const entity = detailOf(contextEntityId);
+        const rows: ActionRows['rows'] = [
+          ['messages.post', 'create', 'entity', 'composite'],
+          ['entities.get', 'navigate', 'entity', 'public'],
+          ['entities.context', 'navigate', 'entity', 'public'],
+        ];
+        return {
+          schema: 'tm8.actions.v2',
+          actorId: ada.id,
+          target: { id: entity.id, kind: entity.kind, version: entity.version },
+          capabilityEpoch: `cap:fixture:${entity.version}`,
+          columns: ['operation', 'kind', 'authzTarget', 'exposure'],
+          rows,
+          total: rows.length,
+        };
       },
     },
 
