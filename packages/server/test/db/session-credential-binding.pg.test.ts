@@ -354,16 +354,16 @@ describe('gate 1 — the roll-up, by both writers', () => {
 
   it('refusals: an empty map (any tool but echo-agent), a space source without its row, an unknown source', async () => {
     const s = await session();
-    await expect(recordBinding(s, launch({}))).rejects.toMatchObject({ code: '22023' });
-    await expect(recordBinding(s, launch({ anthropic: 'space' }, { anthropic: randomUUID() }))).rejects.toMatchObject({ code: '22023' });
-    await expect(recordBinding(s, launch({ anthropic: 'vault' }))).rejects.toMatchObject({ code: '22023' });
+    await expect(recordBinding(s, launch({}))).rejects.toMatchObject({ code: 'invalid_input', details: { sqlstate: '22023' } });
+    await expect(recordBinding(s, launch({ anthropic: 'space' }, { anthropic: randomUUID() }))).rejects.toMatchObject({ code: 'invalid_input', details: { sqlstate: '22023' } });
+    await expect(recordBinding(s, launch({ anthropic: 'vault' }))).rejects.toMatchObject({ code: 'invalid_input', details: { sqlstate: '22023' } });
     expect(await binding(s)).toMatchObject({ credential_binding: 'pending' });
 
     const echo = await session();
     expect((await recordBinding(echo, launch({}, {}, 'echo-agent'))).credentialBinding).toBe('legacy');
     await setStatus(echo, 'running');
-    await expect(recordBinding(echo, launch({ anthropic: 'node' }))).rejects.toMatchObject({ code: '55000' });
-    await expect(recordBinding(s, launch({ anthropic: 'node' }), claims(OUT))).rejects.toThrow();
+    await expect(recordBinding(echo, launch({ anthropic: 'node' }))).rejects.toMatchObject({ code: 'invariant_violation', details: { sqlstate: '23514' } });
+    await expect(recordBinding(s, launch({ anthropic: 'node' }), claims(OUT))).rejects.toMatchObject({ code: 'forbidden', details: { sqlstate: '42501' } });
   });
 
   it('echo-agent is legacy in R1, never none: an empty map records what the resolver chose, not what the process can reach', async () => {
@@ -390,8 +390,8 @@ describe('gate 1 — the roll-up, by both writers', () => {
     const echo = await session();
     await recordBinding(echo, launch({ github: 'node' }, {}, 'echo-agent'));
     await setStatus(echo, 'running');
-    await expect(recordBinding(echo, launch({ anthropic: 'node' }))).rejects.toMatchObject({ code: '55000' });
-    await expect(recordBinding(s, launch({ anthropic: 'node' }), claims(OUT))).rejects.toThrow();
+    await expect(recordBinding(echo, launch({ anthropic: 'node' }))).rejects.toMatchObject({ code: 'invariant_violation', details: { sqlstate: '23514' } });
+    await expect(recordBinding(s, launch({ anthropic: 'node' }), claims(OUT))).rejects.toMatchObject({ code: 'forbidden', details: { sqlstate: '42501' } });
   });
 
   it('a non-agent session keeps its mint binding through the recorder', async () => {
@@ -577,7 +577,7 @@ describe('gate 2 — the sweep', () => {
   });
 
   it('is node admin only', async () => {
-    await expect(db.rpc(claims(OWN), 'credential_binding_sweep', ['1 hour', 10])).rejects.toMatchObject({ code: '42501' });
+    await expect(db.rpc(claims(OWN), 'credential_binding_sweep', ['1 hour', 10])).rejects.toMatchObject({ code: 'forbidden', details: { sqlstate: '42501' } });
   });
 });
 
