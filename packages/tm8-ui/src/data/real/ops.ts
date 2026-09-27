@@ -80,6 +80,7 @@ import {
   type CredentialsSpaceListView,
   type CredentialsSpacePolicySetResult,
   type CredentialsSpacePolicyView,
+  type CredentialsSpaceReadinessView,
   type CredentialsSpaceSetVisibilityResult,
   type CredentialsSpaceMyDefaultResult,
   type CredentialsSpaceUsageView,
@@ -587,6 +588,10 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     spaceCredentialsPolicy(spaceId: SpaceId): Promise<CredentialsSpacePolicyView> {
       return http.call<CredentialsSpacePolicyView>('credentials.space.policy.get', { params: { spaceId } });
+    },
+
+    spaceCredentialsReadiness(spaceId: SpaceId): Promise<CredentialsSpaceReadinessView> {
+      return http.call<CredentialsSpaceReadinessView>('credentials.space.readiness', { params: { spaceId } });
     },
 
     spaceCredentialsSetPolicy(

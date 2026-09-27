@@ -33,6 +33,7 @@ import type {
   CredentialPolicySource,
   CredentialsSpaceCreateInput,
   CredentialsSpacePolicyView,
+  CredentialsSpaceReadinessView,
   CredentialsSpaceUsageView,
   SpaceCredentialProviderName,
   SpaceCredentialView,
@@ -48,6 +49,9 @@ import {
   afterDeleteNotice,
   allowedSourcesOf,
   canClaim,
+  canLaunchSentence,
+  canPollSentence,
+  launchReasonWord,
   canManage,
   canMyDefault,
   canRevoke,
@@ -91,18 +95,35 @@ export function SpaceCredentialsSection({ port, heading = 'Space credentials', s
   const [policy, setPolicy] = useState<CredentialsSpacePolicyView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // S7. Read on its own: an unreadable readiness says so and never hides the list.
+  const [readiness, setReadiness] = useState<CredentialsSpaceReadinessView | null>(null);
+  const [readinessError, setReadinessError] = useState<string | null>(null);
+
+  const readReadiness = useCallback(async () => {
+    try {
+      setReadiness(await port.readiness());
+      setReadinessError(null);
+    } catch (err: unknown) {
+      setReadinessError(failureOf(err).text);
+    }
+  }, [port]);
 
   const reload = useCallback(async () => {
     const [nextRows, nextPolicy] = await Promise.all([port.list(), port.policy()]);
     setRows(nextRows);
     setPolicy(nextPolicy);
-  }, [port]);
+    await readReadiness();
+  }, [port, readReadiness]);
 
   useEffect(() => {
     let live = true;
     // The viewer read may fail on its own; the list still draws, with no
     // management controls (a null viewer manages nothing).
     void port.viewer().then((v) => { if (live) setViewer(v); }, () => {});
+    void port.readiness().then(
+      (view) => { if (live) { setReadiness(view); setReadinessError(null); } },
+      (err: unknown) => { if (live) setReadinessError(failureOf(err).text); },
+    );
     void Promise.all([port.list(), port.policy()]).then(
       ([nextRows, nextPolicy]) => {
         if (!live) return;
@@ -139,6 +160,7 @@ export function SpaceCredentialsSection({ port, heading = 'Space credentials', s
             <span className="cred-notice__head">{notice}</span>
           </div>
         ) : null}
+        <ReadinessPanel readiness={readiness} error={readinessError} />
         {rows === null ? <p className="set-spc__muted">Reading…</p> : null}
         {rows !== null
           ? SPACE_CREDENTIAL_PROVIDERS.map((provider) => (
@@ -161,6 +183,75 @@ export function SpaceCredentialsSection({ port, heading = 'Space credentials', s
           : null}
       </div>
     </SectionFrame>
+  );
+}
+
+/**
+ * S7 readiness: two thresholds, each with its own sentence. The connect action
+ * takes the member to that provider's group, where adding a key or logging in
+ * lives. Nothing here disables anything.
+ */
+function ReadinessPanel({ readiness, error }: { readiness: CredentialsSpaceReadinessView | null; error: string | null }) {
+  if (error) {
+    return (
+      <div className="set-spc__readiness" data-testid="space-cred-readiness-error" role="status">
+        Readiness could not be read: {error}
+      </div>
+    );
+  }
+  if (!readiness) return null;
+  const goTo = (provider: SpaceCredentialProviderName) => {
+    const group = document.getElementById(`space-cred-group-${provider}`);
+    group?.scrollIntoView?.({ block: 'start' });
+    group?.focus();
+  };
+  const connect = (provider: SpaceCredentialProviderName) => (
+    <button
+      type="button"
+      className="set-spc__readiness-connect"
+      data-testid={`space-cred-readiness-connect-${provider}`}
+      onClick={() => goTo(provider)}
+    >
+      Connect {SPACE_PROVIDER_NAME[provider]}
+    </button>
+  );
+  return (
+    <div className="set-spc__readiness" data-testid="space-cred-readiness">
+      <div
+        className={`set-spc__threshold ${readiness.canLaunch.ready ? 'is-ready' : 'is-missing'}`}
+        data-testid="space-cred-readiness-launch"
+        data-ready={readiness.canLaunch.ready ? 'true' : 'false'}
+      >
+        <p className="set-spc__threshold-head">Can launch</p>
+        <p>{canLaunchSentence(readiness)}</p>
+        {readiness.canLaunch.missing.length > 0 ? (
+          <ul className="set-spc__threshold-missing">
+            {readiness.canLaunch.missing.map((provider) => (
+              <li key={provider} data-testid={`space-cred-readiness-missing-launch-${provider}`}>
+                <span>{SPACE_PROVIDER_NAME[provider]}: {launchReasonWord(readiness, provider)}</span> {connect(provider)}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+      <div
+        className={`set-spc__threshold ${readiness.canPoll.ready ? 'is-ready' : 'is-missing'}`}
+        data-testid="space-cred-readiness-poll"
+        data-ready={readiness.canPoll.ready ? 'true' : 'false'}
+      >
+        <p className="set-spc__threshold-head">Can track pull requests and CI</p>
+        <p>{canPollSentence(readiness)}</p>
+        {readiness.canPoll.missing.length > 0 ? (
+          <ul className="set-spc__threshold-missing">
+            {readiness.canPoll.missing.map((provider) => (
+              <li key={provider} data-testid={`space-cred-readiness-missing-poll-${provider}`}>
+                <span>{SPACE_PROVIDER_NAME[provider]}: a credential this space owns, shared with every member</span> {connect(provider)}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -303,7 +394,7 @@ function ProviderGroup({
     ? { busy: loginBusy || login !== null, start: startLogin }
     : null;
   return (
-    <section className="set-spc__group" data-testid={`space-cred-group-${provider}`} aria-label={name}>
+    <section className="set-spc__group" id={`space-cred-group-${provider}`} data-testid={`space-cred-group-${provider}`} aria-label={name} tabIndex={-1}>
       <h4 className="set-spc__group-title">{name}</h4>
       {missingDefault ? (
         <p className="set-spc__warn" data-testid={`space-cred-no-default-${provider}`}>{missingDefault}</p>

@@ -10,6 +10,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, waitFor } from '@testing-library/react';
 import type {
   CredentialsSpacePolicyView,
+  CredentialsSpaceReadinessView,
   CredentialsStatusView,
   EntityId,
   SpaceCredentialView,
@@ -206,5 +207,60 @@ describe('SC-5 launch picker: GitHub authorship (D10)', () => {
     fireEvent.change(view.getByTestId('launch-github-credential-source'), { target: { value: 'node' } });
     expect(view.getByTestId('launch-github-authorship').textContent)
       .toBe('Commits and pull requests are authored by this server’s GitHub account');
+  });
+});
+
+function readiness(missing: Array<'anthropic' | 'openai' | 'github'>): CredentialsSpaceReadinessView {
+  const entry = (p: 'anthropic' | 'openai' | 'github') => {
+    const ready = !missing.includes(p);
+    return {
+      ready, via: ready ? 'space_default' as const : null, credentialId: ready ? `c-${p}` : null, myDefaultId: null,
+      spaceDefaultId: ready ? `c-${p}` : null, spaceSourceAllowed: true, activeCredentials: ready ? 1 : 0,
+      reason: ready ? null : 'no_credential' as const,
+    };
+  };
+  return {
+    spaceId: SPACE,
+    canLaunch: {
+      ready: missing.length === 0, missing,
+      providers: { anthropic: entry('anthropic'), openai: entry('openai'), github: entry('github') },
+    },
+    canPoll: { ready: false, missing: ['github'], credentialId: null, activeSpaceOwnedCredentials: 0, reason: 'no_space_owned_credential' },
+  };
+}
+
+describe('S7 launch picker: can-launch readiness warns, never blocks', () => {
+  it('says which provider this launch lacks and where to connect one — and Launch still launches', async () => {
+    const onLaunch = vi.fn();
+    const view = renderSheet({ onLaunch, loadSpaceReadiness: async () => readiness(['anthropic']) });
+    const note = await view.findByTestId('launch-space-readiness');
+    expect(note.textContent).toContain('Not ready to launch with Claude (Anthropic)');
+    expect(note.textContent).toContain('connect a credential in this space under Space settings → Credentials');
+    expect(note.textContent).toContain('recorded as legacy');
+    const launch = view.getByText('Launch ▸') as HTMLButtonElement;
+    expect(launch.disabled).toBe(false);
+    fireEvent.click(launch);
+    expect(onLaunch).toHaveBeenCalledTimes(1);
+  });
+
+  it('names only the providers this launch uses: a missing Codex does not warn a Claude launch', async () => {
+    const view = renderSheet({ loadSpaceReadiness: async () => readiness(['openai']) });
+    await waitFor(() => expect(view.getByTestId('launch-agent-credential-source').textContent).toContain('Team Claude'));
+    await Promise.resolve();
+    expect(view.queryByTestId('launch-space-readiness')).toBeNull();
+  });
+
+  it('warns about GitHub on every launch, since every launch uses it', async () => {
+    const view = renderSheet({ loadSpaceReadiness: async () => readiness(['github']) });
+    expect((await view.findByTestId('launch-space-readiness')).textContent).toContain('Not ready to launch with GitHub');
+  });
+
+  it('an unreadable readiness draws nothing and holds nothing', async () => {
+    const onLaunch = vi.fn();
+    const view = renderSheet({ onLaunch, loadSpaceReadiness: async () => { throw new Error('boom'); } });
+    await waitFor(() => expect(view.getByTestId('launch-agent-credential-source').textContent).toContain('Team Claude'));
+    expect(view.queryByTestId('launch-space-readiness')).toBeNull();
+    fireEvent.click(view.getByText('Launch ▸'));
+    expect(onLaunch).toHaveBeenCalledTimes(1);
   });
 });

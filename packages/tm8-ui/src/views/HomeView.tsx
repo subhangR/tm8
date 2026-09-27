@@ -949,6 +949,7 @@ export function HomeView(props: HomeViewProps) {
           loadCredentialStatus={data.seam.credentials.status}
           loadSpaceCredentials={data.seam.credentials.space.list}
           loadSpacePolicy={data.seam.credentials.space.policy}
+          loadSpaceReadiness={data.seam.credentials.space.readiness}
           onCancel={() => props.onLaunchCancel?.()}
           onLaunch={(config) => props.onLaunchSubmit?.(config)}
           onDispatch={props.onLaunchDispatch}
