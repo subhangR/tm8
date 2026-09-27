@@ -1,8 +1,8 @@
 -- =============================================================================
 -- entity_action_facts (the file's ordinal is assigned when it is next to merge,
 -- by the credentials coordinator, which holds the sequence for every migration
--- in flight; this header deliberately does not repeat it) — action facts for credential, space_link and server (task 01a0e24d,
--- proposal doc 01a0e257 v2).
+-- in flight; this header deliberately does not repeat it) — action facts for
+-- credential, space_link and server (task 01a0e24d, proposal doc 01a0e257 v2).
 --
 -- `actions.list` derives what it advertises from row state (the forms columns
 -- are the precedent). For these three kinds the deciding predicates live in
@@ -56,8 +56,8 @@ begin
     -- admin when the row is public or ownerless. The coalesce is deliberate.
     -- 255 writes `if not (owner = me or …)`, and on an ownerless row that is
     -- `not NULL`, so the door admits every member. That is a door defect
-    -- (reported, task 01a0e24d; fixed by the same coalesce in 269, its own PR, which
-    -- lands first), and discovery does not advertise through it. Until that
+    -- (reported, task 01a0e24d; fixed by the same coalesce in the 255 usage
+    -- fix, its own PR), and discovery does not advertise through it. Until that
     -- fix lands, discovery is DELIBERATELY STRICTER than the door: a
     -- non-admin member is not offered a read the leaky door would grant.
     -- That is the safe direction. Do not "align" this fact down to the door;

@@ -157,13 +157,15 @@ describe('entity_action_facts', () => {
     expect(await facts(OUT, credential.id)).toMatchObject({ cred_status: null, cred_can_manage: null });
   });
 
-  it('credential, ownerless: usage is advertised to an admin only, per the fixed 255 door', async () => {
+  it('credential, ownerless: usage is advertised to an admin only (the rule the 255 usage fix enforces)', async () => {
     const credential = await store.create(claims(A), {
       spaceId: ids.S!, provider: 'anthropic', shape: 'api_key', label: 'eaf ownerless', secret: `sk-eaf-${randomUUID()}`,
     });
-    // Written against the door AFTER its NULL fix (coalesce(owner = me,
-    // false), separate PR, lands first): an ownerless row's usage is the
-    // admins'. The door itself is pinned by that PR, not here.
+    // These are FACTS, not the door: an ownerless row's usage is the admins'.
+    // Until the 255 usage fix (coalesce(owner = me, false), its own PR) is on
+    // main, the door still admits a member that discovery does not advertise:
+    // stricter in discovery, looser in the door, which is the safe direction.
+    // Merge order does not change this test; the door is pinned by that PR.
     expect((await facts(ADM, credential.id)).cred_can_usage).toBe(true);
     expect((await facts(B, credential.id)).cred_can_usage).toBe(false);
     expect((await facts(A, credential.id)).cred_can_usage).toBe(false);
