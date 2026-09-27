@@ -31,9 +31,9 @@
  * honesty rule the desktop switch was repaired to follow.
  */
 import { AttentionHeaderButton, AttentionSheet } from '../attention/AttentionSheet';
-import { useCallback, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import type { ActorSummary, EntityId, SpaceId } from '@tm8/contract';
+import type { ActorSummary, EntityId, EntityKind, SpaceId } from '@tm8/contract';
 import { MobileFrame, MobileSurfaceProvider } from '../mobile';
 import { MobileAccountSheet } from '../mobile/MobileAccountSheet';
 import '../mobile/mobile-chrome.css';
@@ -42,7 +42,8 @@ import { CopyLinkControl } from '../share';
 import { Avatar, BootLoader, VectorIcon } from '../kit';
 import type { Theme } from '../theme/useTheme';
 import { isUnbuiltViewRef } from './view-ref-screens';
-import { CHANNEL_KIND, getKind, slugOfKind, type KindArt } from '../domain';
+import { CHANNEL_KIND, getKind, placeholderNameFor, slugOfKind, type KindArt } from '../domain';
+import { placeholderTitleFor, useNewTask } from '../authoring';
 import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
 import { VIEW_PRESENTATION, type MenuTarget } from '../shell';
 import { CatchBoundary } from '../panels/detail/CatchBoundary';
@@ -337,6 +338,20 @@ export function useSpaceScopedChat(spaceId: SpaceId): {
   return { threads, setThreads, threadsKnown, threadId, setThreadId };
 }
 
+/**
+ * WHAT THE DRAWER'S SECOND VERB MAKES.
+ *
+ * Named HERE and not in the drawer, because the drawer is the file that is
+ * not allowed to know a kind — it reads the word off the registry from this.
+ * A shell choosing a default kind is ordinary (`GateApp.DEFAULT_LEFT_KIND` is
+ * the same choice for the same reason); a NAVIGATION PANEL spelling one is
+ * how the two shells start drifting.
+ *
+ * TASK, and not chat or session: the other verb in that section already makes
+ * a conversation, and a session is born by launching rather than by a ＋.
+ */
+const DRAWER_CREATE_KIND: EntityKind = 'task';
+
 export function MobileShell(props: MobileShellProps) {
   const { data, activeTarget, navigateTo, spaceId } = props;
 
@@ -494,6 +509,48 @@ export function MobileShell(props: MobileShellProps) {
   const { threads, setThreads, threadsKnown, threadId, setThreadId } =
     useSpaceScopedChat(spaceId);
   const onChatScreen = activeTarget?.type === 'view' && activeTarget.ref === 'dashboard';
+
+  /*
+   * ── THE DRAWER'S SECOND VERB, ON THE CREATE PATH THAT ALREADY EXISTS ─────
+   *
+   * `useNewTask` is the whole flow — it is what `EntityCreateControl` runs,
+   * what Home's kind cell ＋ runs and what the Work tab's ＋ runs. Calling it
+   * here gives the phone drawer the SAME create rather than a phone-shaped
+   * copy of it: one placeholder grammar, one double-press guard, one refusal
+   * vocabulary. The oracle's shape holds unchanged — the task exists the
+   * instant you press, named "Untitled task", and the panel's inline title
+   * editor is what names it.
+   *
+   * IT LANDS ON THE NEW TASK, because on a phone it has to. The desktop can
+   * create into a list column the reader is already looking at; this shell has
+   * one surface, so a create that left the drawer's screen up would be a press
+   * with no visible consequence — the exact "I click and nothing happens"
+   * failure the authoring lane's R7 is written against. `openEntityOnPhone` is
+   * the shell's own way in, so this builds no route of its own.
+   */
+  const newTaskConfig = getKind(DRAWER_CREATE_KIND);
+  const newTask = useNewTask({
+    spaceId,
+    kind: DRAWER_CREATE_KIND,
+    placeholderTitle: placeholderNameFor(newTaskConfig, placeholderTitleFor(newTaskConfig.label)),
+    commands: data.seam.commands,
+    onCreated: (id) => openEntityOnPhone(navigateTo, id, DRAWER_CREATE_KIND),
+  });
+  /* A REFUSAL IS SAID OUT LOUD. The drawer is gone by the time the create
+     answers, so the notice rail is the only place left that can carry it —
+     the same handling Home gives the same flow. */
+  const { onNotice } = props;
+  useEffect(() => {
+    if (newTask.state.phase !== 'refused') return;
+    onNotice({
+      id: 'mobile-drawer-new-entity-refused',
+      tone: 'error',
+      title: newTask.state.failure.cause,
+      body: newTask.state.failure.detail,
+      ttlMs: 8_000,
+    });
+    newTask.dismiss();
+  }, [newTask, onNotice]);
 
   /*
    * ── UNSEEN HAD TO SURVIVE THE TAB BAR (owner ruling 5) ──────────────────
@@ -688,6 +745,12 @@ export function MobileShell(props: MobileShellProps) {
                  the same absent-is-not-zero rule the kind counters follow. */
               {...(threadsKnown ? { chatCount: threads.length } : {})}
               onOpenChats={() => setChatsOpen(true)}
+              newEntityKind={DRAWER_CREATE_KIND}
+              newEntityUnavailable={newTask.unavailable}
+              onNewEntity={() => {
+                void newTask.create();
+                setDrawerOpen(false);
+              }}
               onNewThread={() => {
                 setThreadId(null);
                 if (!onChatScreen) navigateTo({ type: 'view', ref: 'dashboard' });

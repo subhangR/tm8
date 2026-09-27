@@ -342,6 +342,47 @@ describe('the drawer replaced the tab bar, and the bar cannot come back by halve
     expect(shell).toContain('setChatsOpen');
   });
 
+  it('keeps TWO verbs in that section, and the second reuses the create that already exists', () => {
+    /*
+     * A reader who opens the drawer to START something was only ever answered
+     * one way — a conversation. Making a task meant a kind row, a list screen
+     * and its header's ＋. The second verb is that answer, one tap in.
+     *
+     * THE ROWS ARE PINNED BY WHAT THEY ARE, NOT BY THEIR WORDS: the drawer
+     * spells no kind (§15.2, and the file's own head), so "New task" appears
+     * nowhere in it — the label is read off the registry. Asserting the
+     * string here would pin the one thing this design refuses to do.
+     */
+    expect(drawer).toContain('onNewThread');
+    expect(drawer).toContain('onNewEntity');
+    expect(drawer).toContain('data-testid="mobile-drawer-new-entity"');
+    expect(drawer).toContain('palette?.createLabel');
+    expect(drawer).not.toMatch(/['"`]New task['"`]/);
+
+    /* REFUSED, NEVER HIDDEN (R7). A verb that disappears when the seam cannot
+       create teaches the reader the feature is not there. */
+    expect(drawer).toContain('newEntityUnavailable');
+    expect(drawer).toContain("'aria-disabled'");
+
+    /*
+     * AND IT IS THE SAME CREATE, not a phone-shaped copy. `useNewTask` is what
+     * `EntityCreateControl`, Home's kind cell and the Work tab all run; a
+     * second create path here would mean two placeholder grammars, two
+     * double-press guards and two refusal vocabularies for one verb.
+     */
+    const shell = read('../views/MobileShell.tsx');
+    expect(shell).toContain('useNewTask');
+    expect(shell).toMatch(/from '\.\.\/authoring'/);
+    expect(shell).toContain('newEntityKind={DRAWER_CREATE_KIND}');
+    /* The kind is the SHELL'S to name — see `DRAWER_CREATE_KIND`. The drawer
+       receives it; it does not know it. */
+    expect(shell).toContain('const DRAWER_CREATE_KIND');
+
+    /* A VERB ROW DISMISSES. On one surface a create that left the drawer up
+       would be a press with no visible consequence. */
+    expect(shell).toMatch(/onNewEntity=\{\(\) => \{[\s\S]*?setDrawerOpen\(false\);[\s\S]*?\}\}/);
+  });
+
   it('grows its targets with real geometry, never a pseudo-element', () => {
     // The audit measures `getBoundingClientRect()` OF THE ELEMENT, so an
     // `::after` hit area scores as fixed while the thumb still misses. Same

@@ -26,10 +26,19 @@
  *
  * ── FOUR SECTIONS, IN ONE ORDER (owner ruling 3) ───────────────────────────
  *
- *   Chats        ＋ New conversation, and ONE row that opens the conversation
- *                list. FIRST, because it is what a reader returns to. It is
- *                also where the ☰ used to lead on the chat screen, so nothing
- *                was taken away to make room for it.
+ *   Chats        TWO VERBS — ＋ New conversation and ＋ New {kind} — and ONE
+ *                row that opens the conversation list. FIRST, because it is
+ *                what a reader returns to. It is also where the ☰ used to lead
+ *                on the chat screen, so nothing was taken away to make room
+ *                for it.
+ *
+ *                THE SECOND VERB IS THERE because opening this drawer to
+ *                START something was only ever answered one way. Making a
+ *                task meant a kind row, a list screen and its header's ＋ —
+ *                three taps for the thing a reader reaches for as often as a
+ *                conversation. It runs the SHELL'S create (`useNewTask`, the
+ *                desktop's own flow) and takes its word from the registry, so
+ *                the drawer still names no kind.
  *
  *                IT USED TO BE THE LIST ITSELF, inline, and that was the one
  *                thing ruling 7 below says this drawer never does. It held
@@ -69,10 +78,10 @@
 import { useCallback, useEffect, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
-import { KindIcon, collectionKinds, homeRailGroups, type KindArt } from '../domain';
+import { KindIcon, collectionKinds, getKind, homeRailGroups, type KindArt } from '../domain';
 import { VectorIcon } from '../kit';
 import { VIEW_PRESENTATION, type MenuTarget } from '../shell';
-import type { MenuViewRef } from '@tm8/contract';
+import type { EntityKind, MenuViewRef } from '@tm8/contract';
 import { useMobileSurface } from './surface';
 import './mobile-drawer.css';
 
@@ -146,6 +155,20 @@ const PLUS_ART: KindArt = ['M8 3.25v9.5', 'M3.25 8h9.5'];
  */
 const CHAT_ART: KindArt = ['M13.2 9.4a1.6 1.6 0 0 1-1.6 1.6H6l-3 2.4V4.2a1.6 1.6 0 0 1 1.6-1.6h7a1.6 1.6 0 0 1 1.6 1.6z'];
 
+/**
+ * The second verb's word, off the registry.
+ *
+ * `palette.createLabel` is the SAME string `EntityCreateControl` renders for
+ * this kind, which is the point — the drawer is not allowed a second opinion
+ * about what creating a task is called. The fallback covers a kind whose row
+ * carries no palette; it is built from the registry's label, still not from a
+ * word written here.
+ */
+function newEntityLabel(kind: EntityKind): string {
+  const config = getKind(kind);
+  return config.palette?.createLabel ?? `New ${config.label.toLowerCase()}`;
+}
+
 /** The account row's mark: a head over shoulders, same grid. */
 const PERSON_ART: KindArt = ['M8 8.2a2.4 2.4 0 1 0 0-4.8 2.4 2.4 0 0 0 0 4.8', 'M3.4 13.2a4.6 4.6 0 0 1 9.2 0'];
 
@@ -177,6 +200,32 @@ export interface MobileDrawerProps {
   /** Opens the conversation list. The drawer renders no list of its own. */
   readonly onOpenChats: () => void;
   readonly onNewThread: () => void;
+
+  /**
+   * THE SECOND VERB, and the kind it makes.
+   *
+   * A reader who opens this drawer to start something is as likely to be
+   * starting a piece of WORK as a conversation, and until now the only verb
+   * here made a conversation — so the other half of the answer was three taps
+   * away through a kind row and a list header. Two verbs, side by side.
+   *
+   * THE KIND TRAVELS, THE WORD DOES NOT. `onNewEntity` is the shell's create
+   * — `useNewTask`'s, the same flow the desktop's ＋ runs, not a second one —
+   * and the label is read off the registry's own `palette.createLabel` here,
+   * exactly as the kind rows below read their names. This file names no kind,
+   * and the head says why that matters.
+   */
+  readonly newEntityKind: EntityKind;
+  readonly onNewEntity: () => void;
+  /**
+   * Why that create cannot run right now, or null/absent when it can.
+   *
+   * REFUSED, NEVER HIDDEN, and never a live button that does nothing (R7).
+   * The row stays in place, states the cause, and does not fire — a verb that
+   * vanishes when the seam is missing teaches the reader the feature does not
+   * exist.
+   */
+  readonly newEntityUnavailable?: { cause: string; remedy: string } | null | undefined;
 
   /**
    * The header's Copy link, re-hosted in the foot beside Settings.
@@ -264,6 +313,33 @@ export function MobileDrawer(props: MobileDrawerProps) {
                   <VectorIcon paths={PLUS_ART} size={16} strokeWidth={1.6} />
                 </span>
                 <span className="mdrawer__name">New conversation</span>
+              </button>
+            </li>
+            <li>
+              {/* THE WORK VERB, beside the conversation one. Its word comes
+                  from the registry so the drawer and the desktop's ＋ cannot
+                  come to say different things about the same create.
+
+                  DISABLED-WITH-REASON RATHER THAN ABSENT when the seam cannot
+                  create: `aria-disabled` keeps the row in the tab order (a
+                  `disabled` attribute would take it out, D28) while the guard
+                  below is what actually stops the press. */}
+              <button
+                type="button"
+                className="mdrawer__row mdrawer__row--verb"
+                data-testid="mobile-drawer-new-entity"
+                {...(props.newEntityUnavailable
+                  ? { 'aria-disabled': true as const, title: props.newEntityUnavailable.cause }
+                  : {})}
+                onClick={() => {
+                  if (props.newEntityUnavailable) return;
+                  props.onNewEntity();
+                }}
+              >
+                <span className="mdrawer__mark" aria-hidden>
+                  <VectorIcon paths={PLUS_ART} size={16} strokeWidth={1.6} />
+                </span>
+                <span className="mdrawer__name">{newEntityLabel(props.newEntityKind)}</span>
               </button>
             </li>
             <li>
