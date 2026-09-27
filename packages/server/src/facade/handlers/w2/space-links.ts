@@ -17,6 +17,7 @@ import {
   SpaceLinksAddInputSchema,
   SpaceLinksMutationInputSchema,
   SpaceLinksSetSpawnInputSchema,
+  isHumanAuthKind,
 } from '@tm8/contract';
 import type { SpaceLinkView } from '@tm8/contract';
 
@@ -27,8 +28,6 @@ import { claimsFor } from '../../context.js';
 import { DbSpaceLinkStore } from '../../../credentials/space-link-store.js';
 import { createSpaceLinkInvokeHandlers, type SpaceLinkInvokeOptions } from './space-link-invoke.js';
 
-const HUMAN_AUTH_KINDS: readonly string[] = ['browser', 'cli'];
-
 /** The typed refusal code. Stable, and asserted by test. */
 export const SPACE_LINKS_HUMAN_ONLY = 'space_links_human_only';
 
@@ -36,7 +35,7 @@ export const SPACE_LINKS_HUMAN_ONLY = 'space_links_human_only';
 export function requireHumanLinkSession(handler: OperationHandler): OperationHandler {
   return async (ctx) => {
     const kind = ctx.identity.authKind;
-    if (kind === undefined || !HUMAN_AUTH_KINDS.includes(kind)) {
+    if (!isHumanAuthKind(kind)) {
       throw new CollabError(
         'forbidden',
         'space link management is available to human sessions only',

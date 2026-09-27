@@ -70,6 +70,7 @@ import {
   NodeCredentialsPolicySetInputSchema,
   ServiceKeyProviderNameSchema,
   SpaceCredentialProviderNameSchema,
+  isHumanAuthKind,
 } from '@tm8/contract';
 import type {
   CredentialProviderName,
@@ -111,20 +112,17 @@ import {
 } from '../../services/w2/space-credential-catalog.js';
 import { assertSpaceLoginProvider, SpaceLoginHomes } from '../../../credentials/space-credential-home.js';
 
-/**
- * The session kinds that may reach `credentials.*`.
- *
- * `cli` is here on purpose and it is not an oversight: a human at a terminal
- * has exactly the entitlement of a human in the settings screen. What the guard
- * separates is HUMAN from AGENT, not browser from everything else.
- */
-const HUMAN_AUTH_KINDS: readonly string[] = ['browser', 'cli'];
-
 /** The typed refusal code. Stable, and asserted by test. */
 export const CREDENTIALS_HUMAN_ONLY = 'credentials_human_only';
 
 /**
- * Refuse a caller whose auth session kind is not human.
+ * Refuse a caller whose auth session kind is not human: `isHumanAuthKind`,
+ * the shared mirror of 083's `internal.require_human_auth_kind()`.
+ *
+ * `cli` passes on purpose and it is not an oversight: a human at a terminal
+ * has exactly the entitlement of a human in the settings screen. What the guard
+ * separates is HUMAN from AGENT (and from a `link` session), not browser from
+ * everything else.
  *
  * Exported so a registration-shape test can prove that every `credentials.*`
  * handler on the registry is this function's return value, rather than proving
@@ -133,7 +131,7 @@ export const CREDENTIALS_HUMAN_ONLY = 'credentials_human_only';
 export function requireHumanSession(handler: OperationHandler): OperationHandler {
   return async (ctx) => {
     const kind = ctx.identity.authKind;
-    if (kind === undefined || !HUMAN_AUTH_KINDS.includes(kind)) {
+    if (!isHumanAuthKind(kind)) {
       throw new CollabError(
         'forbidden',
         'credential operations are available to human sessions only',
