@@ -157,15 +157,16 @@ describe('269 entity_action_facts', () => {
     expect(await facts(OUT, credential.id)).toMatchObject({ cred_status: null, cred_can_manage: null });
   });
 
-  it('credential, ownerless: usage is advertised to an admin only, though 255\'s door admits any member (NULL, reported)', async () => {
+  it('credential, ownerless: usage is advertised to an admin only, per the fixed 255 door', async () => {
     const credential = await store.create(claims(A), {
       spaceId: ids.S!, provider: 'anthropic', shape: 'api_key', label: 'eaf ownerless', secret: `sk-eaf-${randomUUID()}`,
     });
+    // Written against the door AFTER its NULL fix (coalesce(owner = me,
+    // false), separate PR, lands first): an ownerless row's usage is the
+    // admins'. The door itself is pinned by that PR, not here.
     expect((await facts(ADM, credential.id)).cred_can_usage).toBe(true);
     expect((await facts(B, credential.id)).cred_can_usage).toBe(false);
-    // The door defect this deliberately does not follow. When 255 is fixed,
-    // this flips to false and the pin should be deleted with the fix.
-    expect(await admits(() => store.usage(claims(B), credential.id))).toBe(true);
+    expect((await facts(A, credential.id)).cred_can_usage).toBe(false);
   });
 
   it('credential: can_revoke agrees with the revoke door; a revoked row reports revoked', async () => {

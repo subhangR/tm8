@@ -54,7 +54,12 @@ begin
     -- admin when the row is public or ownerless. The coalesce is deliberate.
     -- 255 writes `if not (owner = me or …)`, and on an ownerless row that is
     -- `not NULL`, so the door admits every member. That is a door defect
-    -- (reported, task 01a0e24d), and discovery does not advertise through it.
+    -- (reported, task 01a0e24d; fixed by the same coalesce in its own PR, which
+    -- lands first), and discovery does not advertise through it. Until that
+    -- fix lands, discovery is DELIBERATELY STRICTER than the door: a
+    -- non-admin member is not offered a read the leaky door would grant.
+    -- That is the safe direction. Do not "align" this fact down to the door;
+    -- that reopens the hole while making the two agree.
     cred_can_usage := coalesce(sc.owner_account_id = internal.current_account_id(), false)
       or ((sc.visibility = 'public' or sc.owner_account_id is null)
           and internal.is_space_admin(sc.space_id));
