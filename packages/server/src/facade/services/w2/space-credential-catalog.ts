@@ -26,11 +26,13 @@ import type {
   NodeCredentialPolicyEntry,
   NodeCredentialsStatusView,
   SpaceCredentialProviderName,
+  SpaceCredentialStoredProviderName,
   SpaceCredentialView,
 } from '@tm8/contract';
 
 import type { Db, DbClaims } from '../../../db/types.js';
 import type { SpaceCredentialProbe } from '../../../credentials/space-credential-probe.js';
+import { assertSpaceLoginProvider } from '../../../credentials/space-credential-home.js';
 import {
   SPACE_CREDENTIAL_PROVIDERS,
   type DbSpaceCredentialStore,
@@ -159,7 +161,7 @@ export class SpaceCredentialCatalogService {
     claims: DbClaims,
     spaceId: string,
     input: {
-      provider: SpaceCredentialProviderName;
+      provider: SpaceCredentialStoredProviderName;
       shape: 'api_key' | 'token';
       label: string;
       secret: string;
@@ -286,7 +288,7 @@ export class SpaceCredentialCatalogService {
   async clearMyDefault(
     claims: DbClaims,
     spaceId: string,
-    provider: SpaceCredentialProviderName,
+    provider: SpaceCredentialStoredProviderName,
   ): Promise<CredentialsSpaceMyDefaultResult> {
     await this.store.clearMyDefault(claims, spaceId, provider);
     return { spaceId, provider, credentialId: null };
@@ -349,6 +351,8 @@ export class SpaceCredentialCatalogService {
     // login and stays (206: a login's secret is a file, never a column).
     if (visibility === 'private' && stored.shape === 'login' && this.scrubForeignLaunches) {
       try {
+        // A login is anthropic or openai by 206's CHECK; this narrows the type.
+        assertSpaceLoginProvider(stored.provider);
         const launches = (await this.store.foreignLaunches(claims, credentialId))
           .filter((launch) => launch.provider === stored.provider);
         if (launches.length > 0) {
@@ -463,6 +467,7 @@ export class SpaceCredentialCatalogService {
     // 5. The file home, last.
     if (revoked.shape === 'login') {
       try {
+        assertSpaceLoginProvider(revoked.provider);
         await this.removeLoginHome({
           spaceId: revoked.spaceId,
           credentialId: revoked.id,
@@ -551,7 +556,7 @@ export class SpaceCredentialCatalogService {
    * vendor both refuse the write; they differ only in what the member does
    * next. Neither message carries the key.
    */
-  private async probeOrRefuse(provider: SpaceCredentialProviderName, secret: string): Promise<string | null> {
+  private async probeOrRefuse(provider: SpaceCredentialStoredProviderName, secret: string): Promise<string | null> {
     const result = await this.probe({ provider, secret });
     if (result.ok) return result.displayLogin;
     if (result.reason === 'rejected') {
