@@ -1,5 +1,6 @@
 import type { FormsPendingForSessionsResult } from '@tm8/contract';
 import type { SkillPort } from '../skills/port';
+import type { ManagedPort } from '../managed/port';
 import type { JevPort } from '../jev/port';
 import type { LaunchDefaultsPort } from '../launch-selection/port';
 import type { FormsOps } from '../forms/ops-port';
@@ -934,6 +935,12 @@ export interface Seam {
      * synthesized id the caller could not reconcile.
      */
     skills?: SkillPort;
+    /**
+     * The managed panel's port (task 01a0e24d): credential, space link and
+     * server verbs by OPERATION name, gated by `actions.list`. Optional like
+     * `skills`: a seam without it renders every verb refused-with-reason.
+     */
+    managed?: ManagedPort;
     /**
      * `launch.suggest` — Ask Jev on LaunchSheet and the Run popup (design
      * 01a0cb80 §5.1). Optional like `skills`: a seam without it renders the

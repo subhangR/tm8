@@ -29,6 +29,7 @@
  *      a liveness cadence trigger (LLD §9).
  *   3. connection `onReconnect` → liveness `noteReconnect` — same.
  */
+import { managedPortFromSeam } from '../../managed/port';
 import {
   type CreateInviteInput,
   type InvitePreview,
@@ -586,5 +587,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     },
   };
 
+  // After construction: the port is a view over this seam's own nouns.
+  seam.commands.managed = managedPortFromSeam(seam);
   return seam;
 }

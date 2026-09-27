@@ -76,6 +76,7 @@ import type { MembershipAuthoring } from './bodies/MembershipBlock';
 import type { MemoryMarkKind } from '../domain/memory';
 import { GovernedBody } from './bodies/GovernedBody';
 import { MachineBody } from './bodies/MachineBody';
+import type { ManagedPort } from '../managed/port';
 import { RestrictedBody } from './bodies/RestrictedBody';
 import { WorkSessionContent } from './bodies/WorkSessionContent';
 import { AttachmentStrip } from '../files/AttachmentStrip';
@@ -440,7 +441,7 @@ export interface EntityDetailPanelProps {
    * only the task half gets a reader panel whose `Edit` is
    * disabled-with-reason, which is the honest report of what it wired.
    */
-  commands?: ({ skills?: SkillPort } & AuthoringCommands & Partial<DocCommands> & Partial<ArtifactPreviewCommands> & Partial<HeaderCommands>) | null;
+  commands?: ({ skills?: SkillPort; managed?: ManagedPort } & AuthoringCommands & Partial<DocCommands> & Partial<ArtifactPreviewCommands> & Partial<HeaderCommands>) | null;
   /** A save landed. The durable event carries only a summary, so the host
       must receive this result to reconcile heavy detail fields such as the
       task description into its detail cache. */
@@ -1828,6 +1829,7 @@ function PanelBody(
       detail={detail}
       blocks={config.panel.blocks ?? DEFAULT_BLOCKS}
       onOpenEntity={onOpenEntity}
+      serverBaseUrl={props.serverBaseUrl}
       /* The panel bar's end slot, for a block whose controls belong to the bar
          rather than to a row above itself — `composition: 'frame'`. Null for
          every other kind AND for a panel too narrow to seat them (`barHasRoom`),
