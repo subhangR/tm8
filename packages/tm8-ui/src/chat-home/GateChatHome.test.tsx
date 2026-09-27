@@ -38,6 +38,13 @@ describe('dashboard route', () => {
     expect(await view.findByTestId('home-page')).toBeTruthy();
     expect(await view.findByTestId('chat-home-screen')).toBeTruthy();
     expect(view.queryByTestId('home-screen')).toBeNull();
+    // Attention's only entry on Home is the tab bar's segment (2026-09-27):
+    // no NEEDS YOU section on the page, and the segment still seats up top.
+    expect(view.queryByTestId('hp-needs-you')).toBeNull();
+    expect(view.getByTestId('attention-top-segment')).toBeTruthy();
+    fireEvent.click(view.getByTestId('attention-top-segment'));
+    expect(view.getByTestId('attention-top-popover')).toBeTruthy();
+    fireEvent.click(view.getByTestId('attention-top-segment'));
     // EVERY sighting is a panel row (the inventory and the only selector) or
     // the conversation's own head — there was a third surface while the
     // working-set tab strip existed; revision 14 removed the strip, and this
