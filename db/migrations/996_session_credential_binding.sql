@@ -9,7 +9,7 @@
 --
 -- WHAT LANDS
 --   1. work_sessions.credential_binding
---        pending    minted, credentials not yet resolved (agent sessions only)
+--        pending    minted, credentials not yet resolved (agent, and any unmapped kind)
 --        bound      every provider the session used names a space credential:
 --                   one session_space_credentials row AND one `runs_on` edge each
 --        none       needs no vendor credential, with credential_none_reason
@@ -18,15 +18,30 @@
 --      plus credential_none_reason (`none` <=> a non-empty reason).
 --   2. The mint: a BEFORE INSERT trigger fills the binding by session kind —
 --      agent -> pending; shell -> none/'shell'; credential (a vendor login
---      terminal) -> none/'credential_login'; container_exec -> none/'container_exec'.
+--      terminal) -> none/'credential_login'; container_exec -> none/'container_exec';
+--      ANY OTHER KIND -> pending. The fall-through is deliberate: `none` is a
+--      claim about reach that a new kind has not earned. An unmapped kind shows
+--      up as exactly one refusal, at spawning -> running|idle, naming the kind
+--      and this trigger (work_sessions_credential_binding_at_mint); the mapping
+--      lives in internal.credential_binding_at_mint (§2), and adding a kind to
+--      the session_kind CHECK means adding its arm there.
 --      It does the mint's job for all four mints (execution_spawn 267,
 --      start_shell_session 101, start_credential_session 183,
 --      start_space_credential_login 239) and any future one, without copying
 --      a mint body, so none of those functions is in the collision surface.
---   3. A guard: a session cannot go spawning -> running|idle while `pending`,
---      and re-entering `spawning` (resume, execution_resume 062) resets an
---      agent session to `pending`, so a resume must record its binding again.
+--   3. A guard. The spec (§4 R2): "A trigger refuses `pending → running`".
+--      NARROWED to the transition: a session cannot go spawning -> running|idle
+--      while `pending`, for every kind (not only agent). Every product mint
+--      inserts `spawning` (the 15 insert sites, pinned by
+--      packages/server/test/db/work-session-mint-status.test.ts), so leaving
+--      `spawning` is the one door into a run; a row INSERTED as running while
+--      pending (only the table owner can) is not refused but reported by the
+--      sweep (6). Re-entering `spawning` (resume, execution_resume 062) resets
+--      an agent session to `pending`, so a resume must record its binding again.
 --      The binding itself has one writer, internal.settle_credential_binding.
+--      R1-SCOPED: the transition-only guard and the sweep's report-not-reap
+--      posture are release 1's shape. S4 must revisit both when "no credential
+--      means no reach" becomes the rule.
 --   4. `runs_on` (work_session -> credential), a registered edge type.
 --   5. The redefined record_session_manifest (206's body) settles the binding
 --      from the manifest's launch block by the roll-up below;
@@ -136,8 +151,11 @@ alter table public.work_sessions
   add constraint work_sessions_credential_none_reason_check
     check ((credential_binding = 'none') = (credential_none_reason is not null)
            and (credential_none_reason is null or length(btrim(credential_none_reason)) > 0)),
-  add constraint work_sessions_credential_pending_agent_check
-    check (credential_binding <> 'pending' or session_kind = 'agent');
+  -- The three kinds the mint maps to `none` are never pending. Every other
+  -- kind may be: agent by design, an unmapped kind by the fall-through (2).
+  add constraint work_sessions_credential_pending_kind_check
+    check (credential_binding <> 'pending'
+           or session_kind not in ('shell', 'credential', 'container_exec'));
 
 grant select (credential_binding, credential_none_reason) on public.work_sessions to tm8_app;
 
@@ -147,14 +165,7 @@ grant select (credential_binding, credential_none_reason) on public.work_session
 create or replace function internal.credential_binding_at_mint() returns trigger
 language plpgsql set search_path = public, internal, pg_temp as $$
 begin
-  if new.session_kind = 'agent' then
-    if new.credential_binding is not null and new.credential_binding <> 'pending' then
-      raise exception 'an agent session is minted pending; its binding is recorded when its credentials resolve'
-        using errcode = '23514';
-    end if;
-    new.credential_binding := 'pending';
-    new.credential_none_reason := null;
-  else
+  if new.session_kind in ('shell', 'credential', 'container_exec') then
     if new.credential_binding is not null and new.credential_binding <> 'none' then
       raise exception 'a % session needs no vendor credential and is minted none', new.session_kind
         using errcode = '23514';
@@ -163,7 +174,17 @@ begin
     new.credential_none_reason := case new.session_kind
       when 'shell' then 'shell'
       when 'credential' then 'credential_login'
-      else new.session_kind end;
+      when 'container_exec' then 'container_exec' end;
+  else
+    -- agent, and the DELIBERATE fall-through for any kind with no arm here:
+    -- `none` is a claim about reach that a new kind has not earned, so it is
+    -- `pending` and the guard (3) refuses to run it, naming the kind.
+    if new.credential_binding is not null and new.credential_binding <> 'pending' then
+      raise exception 'a % session is minted pending; its binding is recorded when its credentials resolve',
+        new.session_kind using errcode = '23514';
+    end if;
+    new.credential_binding := 'pending';
+    new.credential_none_reason := null;
   end if;
   return new;
 end
@@ -199,6 +220,16 @@ begin
   -- resume re-enters it (062, reset above), so leaving `spawning` is the one
   -- door into a run. A pending row that never passed through it was inserted
   -- directly by the table owner; the sweep (7) reports it.
+  if old.status = 'spawning' and new.status in ('running', 'idle')
+     and new.credential_binding = 'pending'
+     and new.session_kind not in ('agent', 'shell', 'credential', 'container_exec') then
+    -- An unmapped kind fell through the mint to `pending` (2). Name the cause,
+    -- not the credential: the fix is an arm in the mint, not a credential.
+    raise exception 'session_kind ''%'' has no credential-binding arm in work_sessions_credential_binding_at_mint (session_credential_binding migration)',
+      new.session_kind
+      using errcode = '23514',
+            detail = jsonb_build_object('reason', 'session_kind_unmapped', 'sessionKind', new.session_kind)::text;
+  end if;
   if old.status = 'spawning' and new.status in ('running', 'idle')
      and new.credential_binding = 'pending' then
     raise exception 'a session cannot run before it records the credential it runs on'
@@ -539,8 +570,7 @@ begin
              jsonb_build_object('workSessionId', ws.entity_id, 'status', ws.status,
                                 'credentialBinding', ws.credential_binding, 'problem', 'pending') as row
         from public.work_sessions ws
-       where ws.session_kind = 'agent' and ws.status in ('running', 'idle')
-         and ws.credential_binding = 'pending'
+       where ws.status in ('running', 'idle') and ws.credential_binding = 'pending'
       union all
       select ws.entity_id, 'bound_without_row',
              jsonb_build_object('workSessionId', ws.entity_id, 'status', ws.status,
