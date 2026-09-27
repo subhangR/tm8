@@ -38,6 +38,7 @@ import {
 } from '../credentials/api-key-credentials.js';
 import { commonCredentialSource, type ResolvedLaunchConfig } from './manifest.js';
 import type {
+  CredentialProvider,
   CredentialSource,
   GitHubCredential,
   GraphAuth,
@@ -182,7 +183,7 @@ export async function resolveSessionCredentials(
   const sources = { ...launch.credentialSources };
   const ids: Partial<Record<SpaceCredentialProvider, string>> = {};
   const picks: Partial<Record<SpaceCredentialProvider, SpaceCredentialPick>> = {};
-  const effective: Partial<Record<SpaceCredentialProvider, Effective>> = {};
+  const effective: Partial<Record<CredentialProvider, Effective>> = {};
 
   const readSpace = async (
     provider: SpaceCredentialProvider,
@@ -380,6 +381,10 @@ export async function resolveSessionCredentials(
       ? (launch.credentialSources as Partial<Record<string, CredentialSource>>)[toolProvider] ?? null
       : null;
     credentialHome = source === 'node' ? null : await deps.resolveMemberHome(source === 'member' ? 'member' : null);
+    // 269's roll-up reads this rung: a member home is `member`, none is the
+    // node's. A tool with no provider records nothing here; GitHub below
+    // always records one, so the effective map is never empty.
+    if (toolProvider) effective[toolProvider] = credentialHome ? 'member' : 'node';
   }
 
   // ---- GitHub -----------------------------------------------------------
@@ -488,7 +493,7 @@ async function resolveLinkBoundCredentials(
   const toolProvider = agentCredentialProviderFor(launch.agentTool);
   const sources = { ...launch.credentialSources };
   const ids: Partial<Record<SpaceCredentialProvider, string>> = {};
-  const effective: Partial<Record<SpaceCredentialProvider, Effective>> = {};
+  const effective: Partial<Record<CredentialProvider, Effective>> = {};
 
   const readDefault = async (provider: SpaceCredentialProvider): Promise<SpaceCredentialGrant | null> => {
     if (!deps.spaceCredentials) return null;
@@ -584,6 +589,7 @@ async function resolveLinkBoundCredentials(
     // takes the pre-space branch, whose resolveMemberHome(null) is the
     // resumer's own account home.
     (sources as Partial<Record<string, CredentialSource>>)[toolProvider] = 'node';
+    effective[toolProvider] = 'node';
   }
 
   // ---- GitHub: this space's default, nothing else ------------------------

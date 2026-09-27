@@ -1108,6 +1108,19 @@ export interface GraphPort {
     prompts: { system: string; task: string },
     agentConfigDir: string | null,
   ): Promise<void>;
+  /**
+   * `public.record_session_credential_binding` (269) — resume's half of R2.
+   * Re-entering `spawning` resets an agent session's binding to `pending`, and
+   * a `pending` session cannot go `running`; resume re-points its space
+   * credential rows but does not re-record the manifest row, so it records the
+   * binding here from the re-resolved launch, before the PTY exists. Spawn
+   * needs no call: `recordManifest` settles it in the same transaction.
+   */
+  recordCredentialBinding(
+    auth: GraphAuth,
+    sessionId: string,
+    launch: CredentialBindingLaunch,
+  ): Promise<void>;
   /** `public.work_session_transition` — R29's single writer. Never UPDATE directly. */
   transition(auth: GraphAuth, input: TransitionInput): Promise<void>;
   /** Read the stored launch facts of an existing session, for resume. */
@@ -1291,6 +1304,15 @@ export interface GraphPort {
  * The FILE is what the agent reads; the ROW (record_session_manifest) is what
  * the graph knows. Both are written, and neither is derived from the other.
  */
+/**
+ * The three fields of a manifest's `launch` block that 269's roll-up reads,
+ * shaped exactly as `composeManifest` writes them (`credentialBindingLaunch`).
+ */
+export type CredentialBindingLaunch = Pick<
+  Tm8Manifest['launch'],
+  'tool' | 'spaceCredentialIds' | 'effectiveCredentialSources'
+>;
+
 export interface Tm8Manifest {
   manifestVersion: '1';
   /**
@@ -1358,7 +1380,7 @@ export interface Tm8Manifest {
      * What each provider this launch authenticates actually ran on (D9): the
      * auto choice resolved, so a node-key launch is visible as one.
      */
-    effectiveCredentialSources?: Partial<Record<SpaceCredentialProvider, CredentialSource>>;
+    effectiveCredentialSources?: Partial<Record<CredentialProvider, CredentialSource>>;
     /** §6c: how each space credential was picked (W10b); absent when none. */
     spaceCredentialPicks?: Partial<Record<SpaceCredentialProvider, SpaceCredentialPick>>;
     /** Effective shell-command networking, independent of filesystem posture. */

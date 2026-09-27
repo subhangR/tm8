@@ -48,6 +48,7 @@ import { SpaceLoginHomes } from './credentials/space-credential-home.js';
 import { createW2BlobStore } from './files/w2-blob-store.js';
 import { createDeletedFileBlobPurgeJob, createFileUploadSweepJob } from './scheduler/jobs/file-uploads.js';
 import { createSpaceCredentialSweepJob } from './scheduler/jobs/space-credential-sweep.js';
+import { createCredentialBindingSweepJob } from './scheduler/jobs/credential-binding-sweep.js';
 import { DbSpaceCredentialStore } from './credentials/space-credential-store.js';
 import { createEventSubjectBackfillJob } from './scheduler/jobs/event-subject-backfill.js';
 import { createClipboardStore } from './files/clipboard-store.js';
@@ -1012,6 +1013,18 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         createDeletedFileBlobPurgeJob({ db, blobStore, claims: sweepClaims('file-blob-purge') }),
       );
     }
+    // R2 gate 2 (269): a session still `pending` past the grace never recorded
+    // the credential it runs on and can never run; ended in SQL. Every other
+    // binding violation is logged, not killed (release 1 is additive).
+    scheduler.register(
+      createCredentialBindingSweepJob({
+        db,
+        claims: async () => {
+          const o = await owner();
+          return { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'credential-binding-sweep' };
+        },
+      }),
+    );
     // W10b (R8 / N8): the backstop for revoke and switch-to-private. It runs
     // once at boot — the post-boot re-check — and then every minute, killing
     // any live session left on a revoked credential, or on a private one its

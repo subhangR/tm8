@@ -48,7 +48,13 @@
 --                                 the pre-space and link-bound gemini branches
 --                                 record theirs), and github is always
 --                                 resolved or the launch throws. A test
---                                 enumerates the branches.
+--                                 enumerates the branches. Prod evidence
+--                                 (operator dry run, tm8_prod, 2026-09-27
+--                                 ~10:58Z): no_effective_map was 1121 at
+--                                 10:00 and 1121 at 10:58, and each of the
+--                                 4 manifests written in between is mapped;
+--                                 the 1121 are all pre-D9 and stay
+--                                 `unrecorded`.
 -- The path is `launch`, not `agent`: composeManifest writes
 -- effectiveCredentialSources inside `launch:`; `agent:` is the persona. The
 -- spec's first text said `agent`, which matches no row (measured on the 09-24
@@ -77,7 +83,7 @@
 -- transaction-local GUC tm8.runs_on_write is 'on', and the projection restores
 -- the previous value before it returns (so a later statement in the same
 -- transaction cannot write one), or the delete is an FK cascade whose endpoint
--- or space is already gone. Two DEFERRED constraint triggers make "a row
+-- or space is already gone. DEFERRED constraint triggers on both tables make "a row
 -- without its edge" and "an edge without its row" fail at commit. The edge
 -- survives a revoke, because 206 keeps revoked rows as tombstones.
 --
@@ -95,9 +101,11 @@
 --       when the edge is runs_on (on UPDATE, only when both rows are runs_on);
 --       nothing else in the body changed.
 --   public.work_sessions      ADD columns, checks, two new triggers.
---   public.edges              three new triggers (WHEN type = 'runs_on');
+--   public.edges              six new triggers, all WHEN type = 'runs_on': the
+--                             write guard and the deferred pairing check, one
+--                             per event (insert/update/delete);
 --                             guard_w1_edge (211) is NOT redefined.
---   public.session_space_credentials  two new triggers.
+--   public.session_space_credentials  two new triggers (projection, pairing).
 --   public.edge_types         one row, runs_on.
 -- NOT redefined: execution_spawn (267), start_shell_session (101),
 -- internal.record_session_space_credential (239),
@@ -571,7 +579,10 @@ revoke all on function public.credential_binding_sweep(interval, integer) from p
 grant execute on function public.credential_binding_sweep(interval, integer) to tm8_app;
 
 -- -----------------------------------------------------------------------------
--- 8. ONE-TIME DATA STEP: the fenced legacy backfill. Not a function, not
+-- 8. ONE-TIME DATA STEP: the fenced legacy backfill. On tm8_prod at ~10:58Z
+--    2026-09-27 the dry run (db/reports/269_backfill_dry_run.sql) counted
+--    245 legacy, 1121 no map, 0 all-space, 0 unrecognized, of 1366 manifests.
+--    Not a function, not
 --    shared with the mint or the recorder, and it never runs again. The
 --    predicate between the markers is copied VERBATIM into the operator's
 --    read-only report; a test compares the two texts.
@@ -605,7 +616,7 @@ alter table public.work_sessions alter column credential_binding drop default;
 
 -- -----------------------------------------------------------------------------
 -- 9. ONE-TIME DATA STEP: project a runs_on edge for every existing
---    session_space_credentials row (3 on prod, 2026-09-27). Transcription of
+--    session_space_credentials row (3 on tm8_prod, dry run 2026-09-27 ~10:58Z). Transcription of
 --    the authoritative row, not invention; counted apart from the backfill.
 -- -----------------------------------------------------------------------------
 do $$
