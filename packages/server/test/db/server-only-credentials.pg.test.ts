@@ -156,16 +156,23 @@ describe('server_only_space_credentials widens only the checks that must hold ty
 
   it('typesafe takes an api_key only (control: github still takes a token)', async () => {
     await asOwner(async (c) => {
+      // A well-formed sealed secret (17-byte ciphertext, 12-byte nonce), so the
+      // provider checks, not the earlier-sorting ciphertext/nonce checks, answer.
       const id = await newId(c);
       const insert = (provider: string, shape: string) => c.query(
         `insert into public.space_credentials(id, space_id, provider, shape, label, key_hint, secret_ciphertext, secret_nonce, created_by_account_id)
-         select $1, $2, $3, $4, $5, 'abcd', '\\x00', '\\x00', a.id from public.accounts a where a.identity_id = $6`,
+         select $1, $2, $3, $4, $5, 'abcd', decode(repeat('00', 17), 'hex'), decode(repeat('00', 12), 'hex'), a.id
+           from public.accounts a where a.identity_id = $6`,
         [id, ids.S, provider, shape, label('shape'), A],
       );
       await c.query('savepoint s');
       await expect(insert('typesafe', 'token')).rejects.toThrow(/space_credentials_provider_shape_check/);
       await c.query('rollback to savepoint s');
       await expect(insert('nope', 'api_key')).rejects.toThrow(/space_credentials_provider_check/);
+      await c.query('rollback to savepoint s');
+      // Control: the same row as typesafe/api_key is accepted, so each refusal
+      // above is the provider check alone. Rolled back: S keeps no stray key.
+      await expect(insert('typesafe', 'api_key')).resolves.toMatchObject({ rowCount: 1 });
       await c.query('rollback to savepoint s');
     });
     const control = await store.create(claims(A), { spaceId: ids.S!, provider: 'github', shape: 'token', label: label('gh'), secret: tsKey('gh') });
