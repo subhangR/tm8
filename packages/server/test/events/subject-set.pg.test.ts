@@ -126,6 +126,17 @@ describe.sequential('the canonical subject set — SQL side and 208 (real Postgr
     await database.query('grant select (owner_account_id, visibility) on public.space_credentials to tm8_app');
     // 252: `entity-read.ts` and the projector call `public.attention_badges`.
     database.apply(['252_attention_badges.sql']);
+    // 261 (remote servers): `entity-read.ts` and the projector left-join
+    // `public.servers srv` for a server's name and base URL. 261 itself cannot
+    // apply on this partial chain, so — like the credential shim above — only
+    // the column shapes the read selects and their tm8_app read grant are
+    // mirrored (as tm8_graph_owner, like 261), without its FKs, checks or RPCs. No assertion here reads
+    // them. DELETE this shim if this suite ever applies the chain through 261.
+    await database.query(`set role tm8_graph_owner;
+      create table public.servers (
+        entity_id uuid primary key, name text not null, base_url text not null);
+      grant select on public.servers to tm8_app;
+      reset role;`);
   }, 300_000);
 
   afterAll(async () => {

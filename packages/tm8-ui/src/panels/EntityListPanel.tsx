@@ -111,6 +111,7 @@ import type { LaunchSelectionSources } from '../launch-selection';
 import { newLaunchMutationId, type LoadInstalledPlugins } from '../domain/launch';
 import { AttentionTileSubtitle, attentionTileLine } from '../attention/AttentionTileSubtitle';
 import { isNeedsMeFilter, needsMeCount, needsMeRecheckAt } from '../attention/needs-me';
+import { SettingsHomeLink } from './SettingsHomeLink';
 
 const EMPTY_MEMBERS: readonly ActorSummary[] = Object.freeze([]);
 
@@ -1371,10 +1372,14 @@ function HeaderActions({
    */
   const showLaunch = Boolean(quickLaunch && dispatcherFor(quickLaunch));
   const showStart = Boolean(!hostOwnsBirth && quickStart && dispatcherFor(quickStart));
-  if (!showCreate && !showLaunch && !showStart) return null;
+  // A kind managed from Settings (credentials, space links) has no create door
+  // here; its header links to the section that holds the human-only verbs.
+  const settingsHome = config.settingsHome;
+  if (!showCreate && !showLaunch && !showStart && !settingsHome) return null;
 
   return (
     <div className="lp__actions">
+      {settingsHome ? <SettingsHomeLink home={settingsHome} compact /> : null}
       {/* Authoring mount 7a: when the host supplies a REAL create flow it
           replaces the bare button — which was INERT when onCreate was absent
           (the audit's '+New inert' row). No slot and no onCreate ⇒ nothing
@@ -2763,7 +2768,13 @@ function Band({
         ) : (
           <EmptyBody
             glyph={<KindIcon kind={config.kind} size={22} />}
-            sentence={`No ${config.labelPlural.toLowerCase()} here yet — create one, or press / and type a name.`}
+            sentence={
+              config.settingsHome
+                ? `No ${config.labelPlural.toLowerCase()} here yet — add them in Settings.`
+                : !config.list.quickCreate
+                  ? `No ${config.labelPlural.toLowerCase()} here yet.`
+                  : `No ${config.labelPlural.toLowerCase()} here yet — create one, or press / and type a name.`
+            }
           />
         )
       ) : (

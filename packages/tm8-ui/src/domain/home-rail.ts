@@ -12,10 +12,9 @@
  * §15.2 makes a kind literal outside `domain/`/`fixtures/` a build failure —
  * the same D18 precedent that put `SHIPPED_DEFAULT_MENU` and
  * `HOME_RAIL_KINDS` here. It is registry-adjacent DATA: the groups only
- * CLASSIFY what `collectionKinds()` already offers, they never widen it
- * (R3: every collection kind is a root, custom kinds included) — with one
- * stated exception, `HOME_RAIL_WITHHELD_KINDS`, which NARROWS it and says
- * per kind why.
+ * CLASSIFY what `collectionKinds()` already offers, they never widen or
+ * narrow it (R3: every collection kind is a root, custom kinds included —
+ * and since 2026-09-27, with no exceptions; see `setup` below).
  *
  * WHY THIS IS NOT MenuConfig. The frozen menu DTO caps a group at 12 items
  * and caret children at 8; the full kind list does not fit, and a server
@@ -88,9 +87,7 @@ interface HomeRailGroupSpec {
  * Visual classification ONLY (R4): the order and the section labels. A kind
  * missing from the registry's collection set is skipped; a collection kind
  * missing from this spine still renders, appended under "More" — the spine
- * curates presentation, it never gates membership (the one exception is
- * `HOME_RAIL_WITHHELD_KINDS` below, which is a stated withdrawal rather than
- * an omission).
+ * curates presentation, it never gates membership.
  *
  * THE SPINE IS SEVEN GROUPS, AND THE GROUPING IS THE POINT (reporter ruling,
  * 2026-09-17, task 01a0ada5 "Organizing the icon rail"). Before this it was
@@ -108,6 +105,7 @@ interface HomeRailGroupSpec {
  *   Structure  — how any of it is organised or related.
  *   People     — the humans, and where they talk.
  *   Code       — what the repository recorded.
+ *   Setup      — how this space is wired to keys, profiles and elsewhere.
  *   Beta       — shipped, reachable, and not yet settled.
  *
  * THE LABELS ARE LOAD-BEARING, NOT DECORATION. The collapsed rail is the
@@ -174,6 +172,24 @@ const HOME_RAIL_GROUP_SPINE: readonly HomeRailGroupSpec[] = [
     kinds: ['commit', 'pull_request', 'worktree'],
   },
   {
+    id: 'setup',
+    label: 'Setup',
+    // OWNER RULING 2026-09-27: Home lists EVERY kind — nothing hidden. These
+    // four were withheld from every root surface until then
+    // (`HOME_RAIL_WITHHELD_KINDS`, now gone), on the argument that each is a
+    // setting with a home elsewhere rather than a population anybody browses.
+    // The ruling keeps that argument's CONCLUSION about where they are managed
+    // and drops its conclusion about visibility: the list shows them, and a
+    // kind with a Settings home links to it (`KindConfig.settingsHome`) from
+    // the list header and the panel, so the human-only doors stay one click
+    // away instead of being duplicated here. None has a create door on Home —
+    // each is `quickCreate: false`, and the server refuses a generic create.
+    //
+    // What a session launches under, the keys it runs with, then the other
+    // spaces and machines this one reaches.
+    kinds: ['interaction_profile', 'credential', 'space_link', 'server'],
+  },
+  {
     id: 'beta',
     label: 'Beta',
     // NAMED BY THE RULING, and the name is the content: these three ship and
@@ -185,54 +201,15 @@ const HOME_RAIL_GROUP_SPINE: readonly HomeRailGroupSpec[] = [
   },
 ];
 
-/**
- * Collection kinds the rail deliberately does NOT offer as a Home root —
- * the single, stated exception to "the spine curates, it never gates" (R3).
- *
- * `interaction_profile` (reporter ruling, 2026-09-17): a profile is not a
- * population anybody browses. It is a SETTING that a session or a teammate
- * carries, it is chosen from the entity that carries it (`EntityControls`),
- * and it is immutable once pinned. Under the old spine it belonged to no
- * group at all, so it rendered under "More" — a browsable root filed beside
- * whatever custom kinds a space happens to have, which is how a settings row
- * ended up in an entity rail in the first place.
- *
- * WITHHELD, NOT DELETED, and the distinction is the whole design. The
- * registry row stays; the kind is still created, still resolved, still drawn
- * wherever an entity names its profile. What goes is the ROOT: the rail row,
- * the list header's kind switcher entry, the Workspace column menu and the
- * mobile drawer row, all four of which read this one table.
- *
- * `space_link` and `server` (250, W6): not populations either. A link is
- * signed in, out and removed from Settings → Space links, which carries the
- * P8 warning a bare list would drop; `server` has no detail row until W8.
- *
- * `isHomeRootKind` honours this too, on purpose. A withheld kind that a
- * stored root or a hand-typed `k/` route could still select would open a list
- * whose own switcher cannot name it — so a stale selection falls back to the
- * default root instead. Withholding a kind here is therefore a real decision
- * about the product, not a display filter, and it is deliberately harder to
- * reach for than adding a spine group.
- */
-// `credential` (W10a) is withheld for the same reason: it has a home already —
-// Space settings → Credentials, where its human-only doors live — and a rail
-// list would be a second, door-less surface for it.
-export const HOME_RAIL_WITHHELD_KINDS: readonly string[] = ['interaction_profile', 'credential', 'space_link', 'server'];
-
 export interface HomeRailGroup {
   id: string;
   label: string;
   kinds: readonly KindConfig[];
 }
 
-/** Every collection kind the rail is willing to offer as a root. */
-function railEligibleKinds(): KindConfig[] {
-  return collectionKinds().filter((config) => !HOME_RAIL_WITHHELD_KINDS.includes(config.kind));
-}
-
 /** The rail, resolved against the live registry. Never empty groups. */
 export function homeRailGroups(): HomeRailGroup[] {
-  const eligible = railEligibleKinds();
+  const eligible = collectionKinds();
   const byKind = new Map<string, KindConfig>(eligible.map((config) => [config.kind, config]));
   const placed = new Set<string>();
   const groups: HomeRailGroup[] = HOME_RAIL_GROUP_SPINE.map((spec) => ({
@@ -258,8 +235,12 @@ export function homeRootKinds(): KindConfig[] {
   return homeRailGroups().flatMap((group) => [...group.kinds]);
 }
 
+/**
+ * Whether a stored root or a hand-typed `k/` route names a kind Home can list.
+ * An unknown or non-collection kind falls back to the default root.
+ */
 export function isHomeRootKind(kind: string): boolean {
-  return railEligibleKinds().some((config) => config.kind === kind);
+  return collectionKinds().some((config) => config.kind === kind);
 }
 
 /** The column root for an address root — `CHATS_ROOT` lists the chat kind. */
