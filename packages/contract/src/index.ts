@@ -29,3 +29,4 @@ export * from './kind-info.js';
 export * from './orchestration.js';
 export * from './selection-header.js';
 export * from './context-budgets.js';
+export * from './human-auth.js';

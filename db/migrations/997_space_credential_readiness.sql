@@ -1,4 +1,4 @@
--- ordinal: placeholder 99x; the merge coordinator assigns the real number at merge (merge order, after 269)
+-- ordinal: placeholder 99x; the merge coordinator assigns the real number at merge (merge order, after main's tail at merge)
 -- =============================================================================
 -- space_credential_readiness(p_space_id). Spec doc 01a0e248 §10.4, §11 row
 -- S7 (connect + readiness half), §8.3 Q1. Release 1 is ADDITIVE: this is a

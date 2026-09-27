@@ -23,7 +23,7 @@
  *     should also refuse it is W2's (TM8_DISABLE_AUTO_OWNER) call, not this
  *     file's.
  */
-import { CollabError } from '@tm8/contract';
+import { CollabError, isHumanAuthKind } from '@tm8/contract';
 
 import type { RequestIdentity, SpaceSessionsMode } from './types.js';
 
@@ -52,7 +52,7 @@ export function isGateSession(identity: RequestIdentity): boolean {
   return (
     identity.kind === 'bearer' &&
     !identity.sessionSpaceId &&
-    (identity.authKind === 'browser' || identity.authKind === 'cli')
+    isHumanAuthKind(identity.authKind)
   );
 }
 

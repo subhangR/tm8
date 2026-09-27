@@ -13,7 +13,7 @@
  * sealed store, and leaves by neither door. Every view is built field by field
  * from metadata; no error or log line here quotes an input.
  */
-import { CollabError, CredentialsSpaceReadinessViewSchema } from '@tm8/contract';
+import { CollabError, CredentialsSpaceReadinessViewSchema, isHumanAuthKind } from '@tm8/contract';
 import type {
   CredentialPolicySource,
   CredentialsSpaceDeleteResult,
@@ -600,15 +600,13 @@ function nodeEntries(node: Partial<Record<SpaceCredentialProviderName, boolean>>
 }
 
 /**
- * The auth kinds `internal.require_human_auth_kind()` accepts, checked here
- * only so that a caller the RPC will refuse never reaches the vendor probe.
- * Fail closed: an absent or unrecognised kind refuses. The facade's
- * `requireHumanSession` is layer 1; the RPC is layer 2; this is not a layer.
+ * The auth kinds `internal.require_human_auth_kind()` accepts (`isHumanAuthKind`),
+ * checked here only so that a caller the RPC will refuse never reaches the
+ * vendor probe. Fail closed: an absent or unrecognised kind refuses. The
+ * facade's `requireHumanSession` is layer 1; the RPC is layer 2; this is not a layer.
  */
-const HUMAN_AUTH_KINDS: readonly string[] = ['browser', 'cli'];
-
 function requireHumanClaims(claims: DbClaims): void {
-  if (claims.authKind === undefined || !HUMAN_AUTH_KINDS.includes(claims.authKind)) {
+  if (!isHumanAuthKind(claims.authKind)) {
     throw new CollabError('forbidden', 'credentials are human-only');
   }
 }

@@ -4222,22 +4222,49 @@ export interface ActionDiscoveryResult {
  * Every `PaletteAction` repeats the target, its version and the epoch, and
  * carries `id`, `label` and `helpRef`, which are pure functions of `operation`
  * and the target. Here each is stated once and a row carries only what varies:
- * `[operation, kind, authzTarget, exposure]`, in `columns` order. The shape is
- * reversible — `expandActionRows` (./actions.ts) rebuilds every original
- * `PaletteAction` exactly — so nothing is lost, only no longer repeated.
+ * `[operation, kind, authzTarget, exposure]`, plus a trailing `true` (`refused`)
+ * on a row the door will refuse this caller, in `columns` order.
+ * The shape is reversible for every v1 field — `expandActionRows`
+ * (./actions.ts) rebuilds every original `PaletteAction` exactly — so nothing
+ * is lost, only no longer repeated. `refused` and the header's `human` are
+ * v2-only and are dropped by the expansion.
+ *
+ * `refused` is the conclusion `binding.humanOnly && !human`, joined once on
+ * the server so no consumer repeats it: the op is listed because its refusal
+ * has a remedy (ask a person to do it), and an agent reading the rows
+ * naively still learns not to invoke it. It is not a reason vocabulary.
  *
  * Requested with `schema=v2` on `actions.list` (`actionsSchema=v2` on
  * `entities.context`). Only v2 pages: `limit` (default 20, max 100) and a
  * keyset `cursor` bound to the `capabilityEpoch` it was issued under.
  */
-export const ACTION_ROW_COLUMNS = ['operation', 'kind', 'authzTarget', 'exposure'] as const;
+export const ACTION_ROW_COLUMNS = ['operation', 'kind', 'authzTarget', 'exposure', 'refused'] as const;
 
-export type ActionRow = [
-  operation: OperationName,
-  kind: PaletteAction['kind'],
-  authzTarget: PaletteAction['authzTarget'],
-  exposure: PaletteAction['exposure'],
-];
+/**
+ * `refused` is present, as `true`, only on a row the door will refuse THIS
+ * caller (the op is human-only and the session is not human); a row that
+ * will not be refused ends after `exposure`. Absent-when-false keeps a
+ * human's page byte-identical to before and an agent's within its size gate.
+ */
+export type ActionRow =
+  | [
+    operation: OperationName,
+    kind: PaletteAction['kind'],
+    authzTarget: PaletteAction['authzTarget'],
+    exposure: PaletteAction['exposure'],
+  ]
+  | [
+    operation: OperationName,
+    kind: PaletteAction['kind'],
+    authzTarget: PaletteAction['authzTarget'],
+    exposure: PaletteAction['exposure'],
+    refused: true,
+  ];
+
+/** The row's `refused` column: true only when the door will refuse this caller. */
+export function isRefusedActionRow(row: ActionRow): boolean {
+  return row[4] === true;
+}
 
 export interface ActionRows {
   schema: 'tm8.actions.v2';
@@ -4245,6 +4272,12 @@ export interface ActionRows {
   /** Absent in global discovery (no context entity), exactly as in v1. */
   target?: { id: EntityId; kind: string; version: number };
   capabilityEpoch: string;
+  /**
+   * Mirrors `internal.require_human_auth_kind()`: true iff the session's auth
+   * kind is in `HUMAN_AUTH_KINDS` (`browser` | `cli`). Fails closed. It is not
+   * "is this a person": a `link` session is `false`.
+   */
+  human: boolean;
   columns: typeof ACTION_ROW_COLUMNS;
   rows: ActionRow[];
   /** Rows in the requested scope before paging or byte caps. */

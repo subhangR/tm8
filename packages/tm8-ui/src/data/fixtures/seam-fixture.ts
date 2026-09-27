@@ -22,6 +22,7 @@
  * Determinism: no Date.now() / Math.random(). Time advances on a fixed
  * 1-second tick from FIXTURE_NOW per mutation; ids and seqs are counters.
  */
+import { managedPortFromSeam } from '../../managed/port';
 import {
   type ContainerProfile,
   type CreateInviteInput,
@@ -107,6 +108,9 @@ import {
   type NodeCredentialsStatusView,
   type SpaceCredentialView,
   type SpaceLinkView,
+  type SpaceLinkAuditEntry,
+  type ServerView,
+  type ActionRows,
   type ContentionReport,
   type ProjectBranchTopology,
   type ProjectFileBlame,
@@ -192,7 +196,7 @@ import {
   sessionLive,
   sessionStale,
 } from '../../fixtures';
-import { SHIPPED_DEFAULT_MENU, headerAuthorable } from '../../domain';
+import { SHIPPED_DEFAULT_MENU, getKind, headerAuthorable } from '../../domain';
 
 export const FIXTURE_NODE_BOOT_ID = 'boot-fixture-1';
 
@@ -1278,7 +1282,28 @@ export function createFixtureSeam(): FixtureSeam {
       createdAt: FIXTURE_NOW, updatedAt: FIXTURE_NOW, lastUsedAt: FIXTURE_NOW, lastProbeAt: FIXTURE_NOW,
       ownerAccountId: 'acct-ada', visibility: 'public', mayBeSpaceDefault: true,
     },
+    {
+      // Someone else's PRIVATE token. The state holds its hint and login, as
+      // the server's row does; `list` below masks both from the viewer, as
+      // `list_space_credentials` does (private: owner only).
+      id: '0f1e2d3c-0000-4000-8000-000000000c02', spaceId: FIXTURE_SPACE_ID, provider: 'github',
+      shape: 'token', label: 'Personal token', isDefault: false, status: 'active',
+      createdByAccountId: 'acct-other', displayLogin: 'other-login', keyHint: 'Pv8c',
+      createdAt: FIXTURE_NOW, updatedAt: FIXTURE_NOW, lastUsedAt: null, lastProbeAt: FIXTURE_NOW,
+      ownerAccountId: 'acct-other', visibility: 'private', mayBeSpaceDefault: false,
+    },
   ];
+  /**
+   * The server's masking rule for the key hint and vendor login: private rows
+   * are the owner's alone. A SECOND COPY of a server rule: the source is
+   * `list_space_credentials` (255, reached via
+   * packages/server/src/credentials/space-credential-store.ts `list`), which
+   * points back here. Re-check this whenever that reader or the 255 usage
+   * fix changes, because a fixture that models a stale server rule keeps UI
+   * tests green against behaviour that no longer exists.
+   */
+  const maskedCredential = (c: SpaceCredentialView): SpaceCredentialView =>
+    c.visibility === 'private' && c.ownerAccountId !== 'acct-ada' ? { ...c, keyHint: null, displayLogin: null } : c;
   const spacePolicyState: CredentialsSpacePolicyView = {
     spaceId: FIXTURE_SPACE_ID,
     providers: [
@@ -1321,6 +1346,15 @@ export function createFixtureSeam(): FixtureSeam {
       },
     },
   ];
+  /** W7 audit rows (none until an agent invokes through a link). */
+  const spaceLinkAuditState: SpaceLinkAuditEntry[] = [];
+  /** W8 `server` rows. Empty by default: a node registers none until someone adds one. */
+  const serversState: ServerView[] = [];
+  const serverById = (id: string): ServerView => {
+    const server = serversState.find((x) => x.id === id);
+    if (!server) throw new CollabError('not_found', `server ${id} not found`);
+    return server;
+  };
   const spaceLinkById = (id: string): SpaceLinkView => {
     const link = spaceLinksState.find((l) => l.id === id);
     if (!link) throw new CollabError('not_found', `space link ${id} not found`);
@@ -5514,7 +5548,7 @@ export function createFixtureSeam(): FixtureSeam {
 
       space: {
         async list(spaceId) {
-          return { spaceId, credentials: clone(spaceCredentialsState.filter((c) => c.spaceId === spaceId)) };
+          return { spaceId, credentials: clone(spaceCredentialsState.filter((c) => c.spaceId === spaceId).map(maskedCredential)) };
         },
         async create(spaceId, input) {
           const row: SpaceCredentialView = {
@@ -5719,6 +5753,61 @@ export function createFixtureSeam(): FixtureSeam {
         if (spawnBudget !== undefined) mine.spawnBudget = spawnBudget;
         return clone(link);
       },
+      async audit(linkId) {
+        spaceLinkById(linkId);
+        return clone(spaceLinkAuditState.filter((a) => a.linkId === linkId));
+      },
+    },
+
+    servers: {
+      async get(serverId) {
+        return clone(serverById(serverId));
+      },
+      async probe(serverId) {
+        const server = serverById(serverId);
+        server.reachStatus = 'unreachable';
+        server.reachCheckedAt = tick();
+        return { server: clone(server), outcome: 'unreachable', reason: 'the fixture has no network' };
+      },
+      async remove(serverId) {
+        const server = serverById(serverId);
+        serversState.splice(serversState.indexOf(server), 1);
+        return clone(server);
+      },
+    },
+
+    actions: {
+      /*
+       * The fixture's discovery: the generic contextual rows every live entity
+       * gets, plus a managed panel's verb and read slots. The fixture viewer
+       * is a person (`human: true`) and the space's owner, so the server would
+       * list every one of them; the registry spec is read rather than copied,
+       * so the fixture advertises no verb its panel does not declare.
+       */
+      async list(contextEntityId) {
+        const entity = detailOf(contextEntityId);
+        const managed = getKind(entity.kind).panel.managed;
+        const slots = managed
+          ? [...managed.verbs.map((v) => v.operation), ...(managed.reads ?? []).map((r) => r.operation),
+             ...(managed.loginTerminal ? [managed.loginTerminal.operation] : [])]
+          : [];
+        const rows: ActionRows['rows'] = [
+          ['messages.post', 'create', 'entity', 'composite'],
+          ['entities.get', 'navigate', 'entity', 'public'],
+          ['entities.context', 'navigate', 'entity', 'public'],
+          ...slots.map((op): ActionRows['rows'][number] => [op as ActionRows['rows'][number][0], 'update', 'entity', 'public']),
+        ];
+        return {
+          schema: 'tm8.actions.v2',
+          human: true,
+          actorId: ada.id,
+          target: { id: entity.id, kind: entity.kind, version: entity.version },
+          capabilityEpoch: `cap:fixture:${entity.version}`,
+          columns: ['operation', 'kind', 'authzTarget', 'exposure', 'refused'],
+          rows,
+          total: rows.length,
+        };
+      },
     },
 
     liveness: {
@@ -5786,5 +5875,11 @@ export function createFixtureSeam(): FixtureSeam {
     for (const cb of livenessSubs) cb(clone(snap));
   }
 
+  // After construction: the port is a view over this seam's own nouns.
+  /* Assigned AFTER construction, not inline with the rest of `commands`:
+     `managedPortFromSeam` wraps this seam's own methods, so it needs the
+     finished object. This therefore REQUIRES an unfrozen seam; freezing
+     `seam` or `seam.commands` would break it here and nowhere else. */
+  seam.commands.managed = managedPortFromSeam(seam);
   return seam;
 }

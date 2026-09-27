@@ -29,6 +29,8 @@ import './space-links.css';
 export interface SpaceLinksSectionProps {
   port: SpaceLinksPort;
   heading?: string;
+  /** Opens a link's own panel (task 01a0e24d). Absent, no row offers it. */
+  onOpen?: (linkId: string) => void;
 }
 
 /** The server's typed refusal for a non-human session (251). */
@@ -57,7 +59,7 @@ function targetName(link: SpaceLinkView): string {
   return link.targetSpaceName ?? link.targetSpaceId;
 }
 
-export function SpaceLinksSection({ port, heading = 'Space links' }: SpaceLinksSectionProps) {
+export function SpaceLinksSection({ port, heading = 'Space links', onOpen }: SpaceLinksSectionProps) {
   const [links, setLinks] = useState<SpaceLinkView[] | null>(null);
   const [candidates, setCandidates] = useState<SpaceLinkCandidate[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -123,7 +125,7 @@ export function SpaceLinksSection({ port, heading = 'Space links' }: SpaceLinksS
         {links !== null && links.length > 0 ? (
           <ul className="set-spl__list">
             {links.map((link) => (
-              <LinkRow key={link.id} link={link} port={port} onChanged={onChanged} />
+              <LinkRow key={link.id} link={link} port={port} onChanged={onChanged} onOpen={onOpen} />
             ))}
           </ul>
         ) : null}
@@ -137,10 +139,12 @@ function LinkRow({
   link,
   port,
   onChanged,
+  onOpen,
 }: {
   link: SpaceLinkView;
   port: SpaceLinksPort;
   onChanged(message: string): Promise<void>;
+  onOpen?: (linkId: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
@@ -168,6 +172,10 @@ function LinkRow({
         <span className="set-spl__status" data-testid={`space-link-status-${link.id}`}>
           {mine ? STATUS_WORD[mine.status] : 'You have not signed in'}
         </span>
+        {onOpen ? (
+          <button type="button" className="cred-action" data-testid={`space-link-open-${link.id}`}
+            aria-label={`Open ${name}`} onClick={() => onOpen(link.id)}>Open</button>
+        ) : null}
       </div>
       <p className="set-spl__muted">
         {link.statusSummary.signedIn} of this space&apos;s members signed in

@@ -34,6 +34,10 @@ import type { FormsOps, FormsRedeliverInput } from '../../forms/ops-port';
 import {
   isOperationName,
   type OperationName,
+  type ActionRows,
+  type ServerProbeView,
+  type ServerView,
+  type SpaceLinkAuditEntry,
   type CreateInviteInput,
   type InvitePreview,
   type InviteRedemption,
@@ -693,6 +697,39 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<SpaceLinkView>(op, {
         params: { linkId },
         body: { clientMutationId: newId('splinkop') },
+      });
+    },
+
+    /** Bare array: own rows, or every row for a home admin (260). */
+    spaceLinksAudit(linkId: EntityId): Promise<SpaceLinkAuditEntry[]> {
+      return http.call<SpaceLinkAuditEntry[]>('spaceLinks.audit', { params: { linkId } });
+    },
+
+    // -- remote servers (`servers.*`, W8) -------------------------------------
+    // remove is human-only server-side; no answer carries a gate token.
+
+    serversGet(serverId: EntityId): Promise<ServerView> {
+      return http.call<ServerView>('servers.get', { params: { serverId } });
+    },
+
+    serversProbe(serverId: EntityId): Promise<ServerProbeView> {
+      return http.call<ServerProbeView>('servers.probe', {
+        params: { serverId },
+        body: { clientMutationId: newId('srvprobe') },
+      });
+    },
+
+    serversRemove(serverId: EntityId): Promise<ServerView> {
+      return http.call<ServerView>('servers.remove', {
+        params: { serverId },
+        body: { clientMutationId: newId('srvremove') },
+      });
+    },
+
+    /** One context entity's contextual actions, factored (tm8.actions.v2). */
+    actionsList(contextEntityId: EntityId): Promise<ActionRows> {
+      return http.call<ActionRows>('actions.list', {
+        query: { contextEntityId, schema: 'v2', limit: '100' },
       });
     },
 
