@@ -175,14 +175,14 @@ describe('entity_action_facts', () => {
     const credential = await store.create(claims(A), {
       spaceId: ids.S!, provider: 'anthropic', shape: 'api_key', label: 'eaf ownerless', secret: `sk-eaf-${randomUUID()}`,
     });
-    // These are FACTS, not the door: an ownerless row's usage is the admins'.
-    // Until the 255 usage fix (coalesce(owner = me, false), its own PR) is on
-    // main, the door still admits a member that discovery does not advertise:
-    // stricter in discovery, looser in the door, which is the safe direction.
-    // Merge order does not change this test; the door is pinned by that PR.
-    expect((await facts(ADM, credential.id)).cred_can_usage).toBe(true);
-    expect((await facts(B, credential.id)).cred_can_usage).toBe(false);
-    expect((await facts(A, credential.id)).cred_can_usage).toBe(false);
+    // An ownerless row's usage is the admins'. The 255 usage fix (270,
+    // coalesce(owner = me, false)) closed the door to match, so this is an
+    // AGREEMENT pin like the others: before it, the door admitted A and B.
+    for (const [who, advertised] of [[ADM, true], [B, false], [A, false]] as const) {
+      const fact = await facts(who, credential.id);
+      const used = await admits(() => store.usage(claims(who), credential.id));
+      expect({ who, fact: fact.cred_can_usage === true, door: used }).toEqual({ who, fact: advertised, door: advertised });
+    }
   });
 
   it('credential: can_revoke agrees with the revoke door; a revoked row reports revoked', async () => {
