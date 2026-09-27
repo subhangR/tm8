@@ -79,6 +79,7 @@ import type {
   NodeCredentialPolicyEntry, NodeCredentialStatusEntry,
   NodeCredentialsPolicySetInput, NodeCredentialsStatusView, NodeMetricsView, SpaceCredentialPolicyEntry,
   SpaceCredentialProviderName, SpaceCredentialShape, SpaceCredentialStatus, SpaceCredentialView,
+  ServerOnlyCredentialProviderName, SpaceCredentialStoredProviderName,
   CustomEntityKind, CustomFieldDef, CustomFieldValue, DeleteMessageInput,
   DeliverySummary, EdgeCorrectionResult, EdgeGroup, EdgeView,
   EntityBadges, EntityCapabilities, EntityConnectionsQuery, EntityContent,
@@ -2168,6 +2169,15 @@ export const CredentialsServiceKeyDeleteResultSchema: z.ZodType<CredentialsServi
 
 export const SpaceCredentialProviderNameSchema: z.ZodType<SpaceCredentialProviderName> =
   z.enum(['anthropic', 'openai', 'github']);
+/** server_only_space_credentials: stored as a space credential, spent server-side, never bound by a session. */
+export const SERVER_ONLY_CREDENTIAL_PROVIDERS: readonly ServerOnlyCredentialProviderName[] = Object.freeze(['typesafe']);
+export const ServerOnlyCredentialProviderNameSchema: z.ZodType<ServerOnlyCredentialProviderName> = z.enum(['typesafe']);
+export const SpaceCredentialStoredProviderNameSchema: z.ZodType<SpaceCredentialStoredProviderName> =
+  z.enum(['anthropic', 'openai', 'github', 'typesafe']);
+/** True for a provider that must never reach a session (gate 8). */
+export function isServerOnlyCredentialProvider(provider: string): provider is ServerOnlyCredentialProviderName {
+  return (SERVER_ONLY_CREDENTIAL_PROVIDERS as readonly string[]).includes(provider);
+}
 export const SpaceCredentialShapeSchema: z.ZodType<SpaceCredentialShape> = z.enum(['login', 'api_key', 'token']);
 export const SpaceCredentialStatusSchema: z.ZodType<SpaceCredentialStatus> =
   z.enum(['pending', 'active', 'stale', 'revoked']);
@@ -2187,7 +2197,7 @@ const SpaceCredentialSecretSchema = z.string().trim().min(8).max(SPACE_CREDENTIA
 export const SpaceCredentialViewSchema: z.ZodType<SpaceCredentialView> = z.object({
   id: z.string(),
   spaceId: z.string(),
-  provider: SpaceCredentialProviderNameSchema,
+  provider: SpaceCredentialStoredProviderNameSchema,
   shape: SpaceCredentialShapeSchema,
   label: z.string(),
   isDefault: z.boolean(),
@@ -2211,7 +2221,7 @@ export const CredentialsSpaceListViewSchema: z.ZodType<CredentialsSpaceListView>
 }).strict();
 
 export const CredentialsSpaceCreateInputSchema: z.ZodType<CredentialsSpaceCreateInput> = z.object({
-  provider: SpaceCredentialProviderNameSchema,
+  provider: SpaceCredentialStoredProviderNameSchema,
   shape: z.enum(['api_key', 'token']),
   label: SpaceCredentialLabelSchema,
   secret: SpaceCredentialSecretSchema,
@@ -2223,7 +2233,7 @@ export const CredentialsSpaceCreateInputSchema: z.ZodType<CredentialsSpaceCreate
   // 206's provider/shape CHECK, stated here so the refusal names the rule
   // instead of arriving as a constraint violation after the vendor probe.
   (input) => (input.provider === 'github') === (input.shape === 'token'),
-  { message: 'github takes a token; anthropic and openai take an api_key', path: ['shape'] },
+  { message: 'github takes a token; anthropic, openai and typesafe take an api_key', path: ['shape'] },
 ).refine(
   // E1, stated before the probe: an owner's visibility or space-owned, not both.
   (input) => !(input.spaceOwned === true && input.visibility !== undefined),
