@@ -200,6 +200,11 @@ export interface ListRootHeaderProps {
 export function ListRootHeader(props: ListRootHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  /* THE CARET OUTLIVES THE MENU. A row's (?) closes the menu as it opens
+     help, which unmounts the row — so focus cannot come back to it. The
+     caret is the control that stays, and it is the one a keyboard user
+     pressed to reach the row, so it is where focus returns (review M1). */
+  const caretRef = useRef<HTMLButtonElement>(null);
   useDismissable(
     menuOpen,
     menuRef,
@@ -308,6 +313,7 @@ export function ListRootHeader(props: ListRootHeaderProps) {
                  navigate by it. */
               <button
                 type="button"
+                ref={caretRef}
                 className="tch-rootcell__caret"
                 aria-label="Choose which list to show"
                 title="Choose which list to show"
@@ -340,9 +346,9 @@ export function ListRootHeader(props: ListRootHeaderProps) {
                     <HelpMark
                       option={option}
                       row
-                      onHelp={(kind, from) => {
+                      onHelp={(kind) => {
                         setMenuOpen(false);
-                        (props.onHelp ?? openEntityHelp)(kind, from);
+                        (props.onHelp ?? openEntityHelp)(kind, caretRef.current);
                       }}
                     />
                     {onCreateKind ? (
