@@ -44,6 +44,61 @@ export interface GitRunOptions {
 const DEFAULT_TIMEOUT_MS = 30_000;
 
 /**
+ * The ONLY names a server-run git inherits from the server's environment.
+ *
+ * Every git this node runs executes inside a directory an agent can write, and
+ * git runs code out of that directory: hooks, `core.fsmonitor`, filter
+ * drivers. Spreading `process.env` into it handed that code the server's own
+ * environment — on a deployed node `TM8_DATABASE_URL`, a superuser connection
+ * string (trust investigation 01a0db82, fix #4). An allow-list, for the reason
+ * `SAFE_BASE_ENV_KEYS` in spawn/manifest.ts is one: it stays correct when the
+ * server grows a new secret.
+ *
+ * Nothing on this list is a credential. No invocation through this file talks
+ * to a remote — there is no fetch, push or clone here — so no credential
+ * helper, `SSH_AUTH_SOCK` or token is needed, and none is passed. `HOME` is
+ * how git finds `~/.gitconfig` (identity and `safe.directory`). The locale
+ * names keep git's messages in whatever language callers already match on.
+ */
+export const GIT_ENV_KEYS = [
+  'HOME',
+  'USER',
+  'LOGNAME',
+  'PATH',
+  'LANG',
+  'LC_ALL',
+  'LC_MESSAGES',
+  'TMPDIR',
+  'TZ',
+] as const;
+
+/**
+ * Prepended to every server-run git: no hook and no fsmonitor executes.
+ *
+ * `core.hooksPath` names a directory git looks hooks up in, and `/dev/null`
+ * holds none — the documented way to disable them all, including the
+ * `post-checkout` that `worktree add` fires. `core.fsmonitor=false` stops
+ * `status`/`diff` from launching a configured monitor command. Both are
+ * config the lane can write into the shared `.git`, and `-c` outranks every
+ * config file. No flow the server runs needs a hook: the repo's only hook is
+ * pre-push (`package.json` hooks:install), and the server never pushes.
+ */
+export const GIT_NO_HOOKS_ARGS = ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false'] as const;
+
+/** Build a server-run git's environment KEY BY KEY from `parentEnv`. */
+export function gitChildEnv(parentEnv: NodeJS.ProcessEnv = process.env): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const key of GIT_ENV_KEYS) {
+    const value = parentEnv[key];
+    if (value) env[key] = value;
+  }
+  // Never let an interactive credential/editor prompt hang a server.
+  env.GIT_TERMINAL_PROMPT = '0';
+  env.GIT_EDITOR = 'true';
+  return env;
+}
+
+/**
  * Run `git <args>` and resolve with the exit code rather than rejecting on
  * non-zero — callers branch on `code` and read stderr, because for probes
  * (`merge-base --is-ancestor`) a non-zero exit is an ANSWER, not an error.
@@ -57,7 +112,7 @@ export function runGit(args: readonly string[], options: GitRunOptions = {}): Pr
       // everywhere, so instead no caller-supplied value may LOOK like an
       // option. Enforced by assertSafeRefName/assertSafeBranchName at the
       // manager layer; asserted structurally here as the last line.
-      args as string[],
+      [...GIT_NO_HOOKS_ARGS, ...args],
       {
         cwd: options.cwd,
         timeout: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
@@ -65,23 +120,18 @@ export function runGit(args: readonly string[], options: GitRunOptions = {}): Pr
         encoding: 'utf8',
         // NO `shell` option. execFile's default (false) is the point.
         windowsHide: true,
-        env: {
-          ...process.env,
-          // Never let an interactive credential/editor prompt hang a server.
-          GIT_TERMINAL_PROMPT: '0',
-          GIT_EDITOR: 'true',
-          // DELIBERATELY NOT `GIT_LITERAL_PATHSPECS` HERE. A pathspec is a
-          // glob and `--` does not change that, so every caller-supplied
-          // exact path in this package passes `--literal-pathspecs` before
-          // its subcommand (see `stage`, `unstage`, `file-history`, and the
-          // diff reads in the server facade). Setting it as an ENV default
-          // looked like the safer choke point and is not: the variable is
-          // inherited by git's own internals, and `git stash push -u` builds
-          // pathspecs of its own — under a literal default it stops matching
-          // untracked content and silently leaves it in the worktree.
-          // Measured: `execution/test/spawn-safety` stash case regresses.
-          // The guarantee belongs at the call sites that own the path.
-        },
+        // DELIBERATELY NOT `GIT_LITERAL_PATHSPECS` HERE. A pathspec is a
+        // glob and `--` does not change that, so every caller-supplied
+        // exact path in this package passes `--literal-pathspecs` before
+        // its subcommand (see `stage`, `unstage`, `file-history`, and the
+        // diff reads in the server facade). Setting it as an ENV default
+        // looked like the safer choke point and is not: the variable is
+        // inherited by git's own internals, and `git stash push -u` builds
+        // pathspecs of its own — under a literal default it stops matching
+        // untracked content and silently leaves it in the worktree.
+        // Measured: `execution/test/spawn-safety` stash case regresses.
+        // The guarantee belongs at the call sites that own the path.
+        env: gitChildEnv(),
       },
       (error, stdout, stderr) => {
         if (error && typeof (error as NodeJS.ErrnoException).code === 'string') {
