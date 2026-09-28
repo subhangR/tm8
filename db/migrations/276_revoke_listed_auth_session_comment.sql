@@ -1,6 +1,7 @@
 -- =============================================================================
--- 274 — revoke_listed_auth_session: the comment states the node-admin arm
--- correctly (task 01a0dc09, from the #857 security review 5324284172).
+-- 276 (PROVISIONAL; renumbered at merge) — revoke_listed_auth_session: the
+-- comment states the node-admin arm correctly (task 01a0dc09, from the #857
+-- security review 5324284172).
 --
 -- COMMENT ONLY. The body is 249's, unchanged.
 --
@@ -13,7 +14,7 @@
 -- =============================================================================
 
 comment on function public.revoke_listed_auth_session(uuid) is
-  'auth.sessions.revoke (249, plan W4; comment 274). Allowed: the caller''s '
+  'auth.sessions.revoke (249, plan W4; comment 276). Allowed: the caller''s '
   'own session; a session pinned to a space the caller administers; or, for '
   'an unpinned node admin (the arm is off under a pin, 233 K6), ANY session '
   'id — any account, any kind, gate or pinned — with no matching list arm, so '
