@@ -6,6 +6,7 @@ import { rememberChatStart } from '../chat-defaults/lastUsed';
 import { Avatar, Markdown, RibbonMark, Timestamp } from '../kit';
 import { chatMarkdownSource } from '../channel-screen/feed-model';
 import { ListRootHeader, rootBirthAction, type ListRootOption } from '../panels/ListRootHeader';
+import { EntityHelpOverlay } from '../entity-help/EntityHelpOverlay';
 import { MessageAttachments } from '../files/MessageAttachments';
 import type { FileUploadTask } from '../files/upload';
 import {
@@ -2195,6 +2196,12 @@ export function ChatHomeScreen({
           leaveStage();
         }}
       >
+        {/* ENTITY HELP (form 01a0e7d3): the (?) beside a kind name in the
+            column's header opens that kind's page OVER REGION B ONLY — this
+            section, which is `position: relative` for it — so the list beside
+            it stays usable while the page is open. Its Esc is stopped inside
+            the overlay, so it never doubles as `leaveStage`. */}
+        <EntityHelpOverlay />
         {/* NOT IN SOLO MODE. Solo means the HOST drew the thread column as its
             own header — Craft's `CraftChatPicker` prints this exact title one
             row above — so rendering it again spends 57px restating what the

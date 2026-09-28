@@ -25,6 +25,7 @@ import {
   rootBirthDispatch,
   type DetailReasons,
 } from '../panels';
+import { EntityHelpOverlay } from '../entity-help/EntityHelpOverlay';
 import { useRowLifecycle } from './useRowLifecycle';
 import { EntityVerbs } from './EntityVerbs';
 import type { ActionContext, ActionRef, CollectionMode } from '../domain/types';
@@ -902,6 +903,10 @@ export function WorkspaceView(props: WorkspaceViewProps) {
       }
       center={
         <>
+          {/* ENTITY HELP (form 01a0e7d3): a kind's page over the centre only —
+              `.shell-ws__center` is already `position: relative` — so both
+              column headers' (?) marks open it here and the columns stay live. */}
+          <EntityHelpOverlay />
           {/* USER RULING 2026-07-29 (D64): the live-session bar is UNMOUNTED —
               the strip above the terminal duplicated the panel header one row
               below it and taxed the canvas. Its facts survive elsewhere: the

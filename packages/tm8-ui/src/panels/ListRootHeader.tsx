@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState, type ReactNode } from 'react';
 
 import { KindIcon, getKind, resolveAction, type ActionRef } from '../domain';
+import { openEntityHelp } from '../entity-help/entityHelpStore';
 import { useDismissable } from './useDismissable';
 import './list-root-header.css';
 
@@ -171,6 +172,14 @@ export interface ListRootHeaderProps {
   /** Which option reads as current. Defaults to `cell.kind`. */
   currentKind?: string | undefined;
   onPickKind: (kind: string) => void;
+  /**
+   * THE (?) MARK'S PRESS (Entity Help, form 01a0e7d3). Beside the kind name in
+   * the cell and on every menu row. Absent ⇒ the default: open that kind's
+   * help in the store the hosts' `EntityHelpOverlay` reads. Help is client
+   * data with no executor behind it, so this is the one control on the bar
+   * that is never refused and never hidden.
+   */
+  onHelp?: ((kind: string, from: HTMLElement | null) => void) | undefined;
 }
 
 /**
@@ -191,6 +200,11 @@ export interface ListRootHeaderProps {
 export function ListRootHeader(props: ListRootHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  /* THE CARET OUTLIVES THE MENU. A row's (?) closes the menu as it opens
+     help, which unmounts the row — so focus cannot come back to it. The
+     caret is the control that stays, and it is the one a keyboard user
+     pressed to reach the row, so it is where focus returns (review M1). */
+  const caretRef = useRef<HTMLButtonElement>(null);
   useDismissable(
     menuOpen,
     menuRef,
@@ -252,6 +266,7 @@ export function ListRootHeader(props: ListRootHeaderProps) {
               </span>
               {cell.label}
             </button>
+            <HelpMark option={cell} onHelp={props.onHelp} />
             <button
               type="button"
               className="tch-rootcell__plus"
@@ -298,6 +313,7 @@ export function ListRootHeader(props: ListRootHeaderProps) {
                  navigate by it. */
               <button
                 type="button"
+                ref={caretRef}
                 className="tch-rootcell__caret"
                 aria-label="Choose which list to show"
                 title="Choose which list to show"
@@ -327,6 +343,14 @@ export function ListRootHeader(props: ListRootHeaderProps) {
                       <KindIcon kind={option.kind} />
                       {option.label}
                     </button>
+                    <HelpMark
+                      option={option}
+                      row
+                      onHelp={(kind) => {
+                        setMenuOpen(false);
+                        (props.onHelp ?? openEntityHelp)(kind, caretRef.current);
+                      }}
+                    />
                     {onCreateKind ? (
                       <RowBirth
                         option={option}
@@ -350,6 +374,43 @@ export function ListRootHeader(props: ListRootHeaderProps) {
         ) : null}
       </div>
     </div>
+  );
+}
+
+/**
+ * THE (?) MARK — "Help for Tasks", beside the kind name in the cell and on
+ * every row of the kind menu.
+ *
+ * NOT a `role="tab"` and NOT a `role="menuitem"`, for the reasons the ＋ and
+ * the caret are neither: the tablist is the root SELECTION and the menu is
+ * the root LIST, and a help control is not a root. It sits beside them as a
+ * plain button with an accessible name that says the kind, so a screen
+ * reader hears "Help for Sessions" and not a bare question mark.
+ *
+ * Its accessible name is the only new name on this bar; every name that was
+ * here before is VERBATIM (`home-roots.test.tsx`, `gate.test.tsx` navigate
+ * by them).
+ */
+function HelpMark({
+  option,
+  row = false,
+  onHelp,
+}: {
+  option: ListRootOption;
+  row?: boolean;
+  onHelp?: ((kind: string, from: HTMLElement | null) => void) | undefined;
+}) {
+  return (
+    <button
+      type="button"
+      className={row ? 'tch-rootopt__help' : 'tch-rootcell__help'}
+      aria-label={`Help for ${option.label}`}
+      title={`Help for ${option.label.toLowerCase()} — what they are, the commands, the relations`}
+      data-help-kind={option.kind}
+      onClick={(event) => (onHelp ?? openEntityHelp)(option.kind, event.currentTarget)}
+    >
+      <span aria-hidden>?</span>
+    </button>
   );
 }
 
