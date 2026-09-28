@@ -17,9 +17,27 @@
  * scan's stated purpose, not a breach of it.
  */
 import type { KindHelpModule } from '../types';
-import { DRAWING_HELP } from './drawing';
+import { CHAT_HELP } from './chat';
+import { FORM_HELP } from './form';
+import { PROJECT_HELP } from './project';
+import { TASK_HELP } from './task';
+import { WORK_SESSION_HELP } from './work_session';
+import { SKILL_HELP } from './skill';
+import { TEAM_MEMBER_HELP } from './team_member';
+import { DOC_HELP } from './doc';
+import { MEMORY_HELP } from './memory';
 
-const MODULES: readonly KindHelpModule[] = [DRAWING_HELP];
+const MODULES: readonly KindHelpModule[] = [
+  CHAT_HELP,
+  TASK_HELP,
+  WORK_SESSION_HELP,
+  FORM_HELP,
+  PROJECT_HELP,
+  SKILL_HELP,
+  TEAM_MEMBER_HELP,
+  DOC_HELP,
+  MEMORY_HELP,
+];
 
 const BY_KIND: ReadonlyMap<string, KindHelpModule> = new Map(MODULES.map((module) => [module.kind, module]));
 
