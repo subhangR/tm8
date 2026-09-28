@@ -18,8 +18,9 @@
  */
 import type { KindHelpModule } from '../types';
 import { LOOP_HELP } from './loop';
+import { SPELL_HELP } from './spell';
 
-const MODULES: readonly KindHelpModule[] = [LOOP_HELP];
+const MODULES: readonly KindHelpModule[] = [LOOP_HELP, SPELL_HELP];
 
 const BY_KIND: ReadonlyMap<string, KindHelpModule> = new Map(MODULES.map((module) => [module.kind, module]));
 
