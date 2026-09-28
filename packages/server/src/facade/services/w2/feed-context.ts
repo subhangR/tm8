@@ -86,6 +86,7 @@ import { loadMessageViewsByIds } from '../../handlers/messages.js';
 import { childCursor } from './entities-commands-tracking.js';
 import { taggedQuerier } from './context-tags.js';
 import { V2_DEFAULT_TOTAL_BYTES, decodeV2Cursor, loadContextV2, parseV2Sections } from './feed-context-v2.js';
+import { runsOnListedFrom } from './runs-on-visibility.js';
 
 // ---------------------------------------------------------------------------
 // The versioned named-scope registry — the whole M1/M3 surface
@@ -1226,7 +1227,7 @@ export class W2FeedContextService {
                 g.created_at, g.updated_at,
                 case when g.type = 'depends_on' then internal.is_resolved(g.dst_id) else null end dst_resolved
            from public.edges g
-          where g.src_id = $1 or g.dst_id = $1
+          where (g.src_id = $1 or g.dst_id = $1) and ${runsOnListedFrom('g', '$1')}
           order by g.type asc, g.created_at desc, g.id desc
           limit ${SECTION_ROW_LIMIT + 1}`,
         [id],

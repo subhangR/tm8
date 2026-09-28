@@ -430,6 +430,57 @@ describe('SC-2 spawn/resume ordering around a space credential', () => {
       expect(events).not.toContain('recordManifest');
     });
 
+    it('R2 (session_credential_binding): resume records the binding from THIS run, after the repoint and before the PTY and `running` — every provider on space', async () => {
+      const port = new FakeSpacePort(events, new Set(['identity-A', 'identity-B']));
+      port.githubToken = { id: GH, token: GH_TOKEN, login: 'space-bot' };
+      port.active.add(GH);
+      graph.resumeInfo = { ...INFO };
+      graph.postures.set(SESSION_ID, {
+        credentialSources: { anthropic: 'space', github: 'space' },
+        spaceCredentialIds: { anthropic: ANT, github: GH },
+      } as SessionLaunchPosture);
+      port.recorded.set(SESSION_ID, [
+        { provider: 'anthropic', spaceCredentialId: ANT },
+        { provider: 'github', spaceCredentialId: GH },
+      ]);
+      port.launcher.set(SESSION_ID, 'identity-B');
+      const bind = graph.recordCredentialBinding.bind(graph);
+      graph.recordCredentialBinding = async (...args) => {
+        events.push('recordCredentialBinding');
+        return bind(...args);
+      };
+      const transition = graph.transition.bind(graph);
+      graph.transition = async (auth, input) => {
+        events.push(`transition:${input.status}`);
+        return transition(auth, input);
+      };
+      spyPty();
+      await service(port).resume(A, { sessionId: SESSION_ID });
+
+      // session_credential_binding resets the binding to `pending` on re-entry to spawning and
+      // refuses `running` while pending: exactly one record, from this run.
+      expect(graph.credentialBindings).toEqual([{
+        sessionId: SESSION_ID,
+        launch: {
+          tool: 'claude-code',
+          spaceCredentialIds: { anthropic: ANT, github: GH },
+          effectiveCredentialSources: { anthropic: 'space', github: 'space' },
+        },
+      }]);
+      const recorded = events.indexOf('recordCredentialBinding');
+      expect(recorded).toBeGreaterThan(events.indexOf('repoint:identity-A'));
+      expect(recorded).toBeLessThan(events.indexOf('spawnIfAbsent'));
+      expect(events.indexOf('transition:running')).toBeGreaterThan(recorded);
+    });
+
+    it('R2 (session_credential_binding): a refused resumer records no binding', async () => {
+      const port = new FakeSpacePort(events, new Set(['identity-B']));
+      launchedByB(port);
+      spyPty();
+      await expect(service(port).resume(A, { sessionId: SESSION_ID })).rejects.toThrow();
+      expect(graph.credentialBindings).toEqual([]);
+    });
+
     it('t2-2: a non-member resumer is refused, and NO repoint happens', async () => {
       const port = new FakeSpacePort(events, new Set(['identity-B']));
       launchedByB(port);

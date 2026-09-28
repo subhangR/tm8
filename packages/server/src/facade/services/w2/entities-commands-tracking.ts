@@ -16,6 +16,7 @@ import {
   type CommandResult,
   type CreateEntityInput,
   type CustomFieldValue,
+  type EdgeGroup,
   type EdgeView,
   type EntityCapabilities,
   type EntityContent,
@@ -64,6 +65,7 @@ import {
 } from '../../entity-read.js';
 import type { RpcCommandResult } from '../../handlers/entities.js';
 import { buildReceipt, receiptSnapshot, wantsReceipt, type ServerReceipt } from '../../receipt.js';
+import { RUNS_ON, RUNS_ON_USAGE_OPERATION, runsOnListedFrom } from './runs-on-visibility.js';
 import { projectForgeFacts } from '../../../tracking/pr-projection.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -549,6 +551,7 @@ async function queryConnections(
     : query.direction === 'incoming'
       ? `g.dst_id = ${anchor}`
       : `(g.src_id = ${anchor} or g.dst_id = ${anchor})`];
+  where.push(runsOnListedFrom('g', anchor));
   if (query.types.length > 0) where.push(`g.type = any(${params.add(query.types)}::text[])`);
   if (query.peerIds.length > 0) {
     where.push(`(case when g.src_id = ${anchor} then g.dst_id else g.src_id end) = any(${params.add(query.peerIds)}::uuid[])`);
@@ -790,6 +793,12 @@ async function buildUniversalDetail(
     connectionItems.push(...page.items);
     connectionCursor = page.nextCursor;
   } while (connectionCursor !== null);
+  // A credential's sessions are counted here, never listed (runs-on-visibility.ts).
+  const runsOnCount = row.kind === 'credential'
+    ? Number((await q.query<{ n: string }>(
+      `select count(*) n from public.edges g where g.dst_id = $1 and g.type = '${RUNS_ON}'`, [id],
+    ))[0]?.n ?? 0)
+    : 0;
   const byType = (direction: 'incoming' | 'outgoing') => {
     const grouped = new Map<string, EdgeView[]>();
     for (const edge of connectionItems) {
@@ -798,12 +807,22 @@ async function buildUniversalDetail(
       const list = grouped.get(edge.type);
       if (list) list.push(edge); else grouped.set(edge.type, [edge]);
     }
-    return [...grouped].map(([type, edges]) => ({
+    const groups: EdgeGroup[] = [...grouped].map(([type, edges]) => ({
       type,
       direction,
       label: direction === 'outgoing' ? type : `${type} (incoming)`,
       edges,
     }));
+    if (direction === 'incoming' && runsOnCount > 0) {
+      groups.push({
+        type: RUNS_ON,
+        direction,
+        label: `${RUNS_ON} (incoming)`,
+        edges: [],
+        summary: { count: runsOnCount, operation: RUNS_ON_USAGE_OPERATION },
+      });
+    }
+    return groups;
   };
   const unresolvedHardDependencyCount = connectionItems.filter((edge) =>
     edge.source.id === id && edge.type === 'depends_on' && edge.hard !== false && edge.resolved === false,

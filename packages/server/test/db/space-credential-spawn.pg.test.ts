@@ -346,7 +346,10 @@ describe('A8 — a manifest re-recorded without a space source', () => {
       spaceCredentialIds: { anthropic: credential.id },
     }))).launch;
     await recordManifest(claims(A), sessionId, onSpace);
-    const onNode = launch({ credentialSources: { anthropic: 'node' } });
+    // Resolved like the space launch above, so the manifest records the rung it
+    // ran on (session_credential_binding refuses a manifest with no effective map).
+    const onNode = (await resolve(claims(A), sessionId, launch({ credentialSources: { anthropic: 'node' } }))).launch;
+    expect(onNode.effectiveCredentialSources?.anthropic).toBe('node');
     await recordManifest(claims(A), sessionId, onNode);
     // The row is NOT removed by the re-record — nothing may rely on it going.
     expect((await recorded(sessionId)).map((r) => r.space_credential_id)).toEqual([credential.id]);

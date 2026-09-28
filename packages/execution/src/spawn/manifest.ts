@@ -46,6 +46,8 @@ import type {
   AgentMode,
   CommandNetworkPolicy,
   CoordinatorKind,
+  CredentialBindingLaunch,
+  CredentialProvider,
   CredentialSource,
   GitHubCredential,
   PermissionMode,
@@ -241,7 +243,7 @@ export interface ResolvedLaunchConfig {
    */
   spaceCredentialIds?: Partial<Record<SpaceCredentialProvider, string>>;
   /** D9: set by the spawn path once it has resolved auto; absent before that. */
-  effectiveCredentialSources?: Partial<Record<SpaceCredentialProvider, CredentialSource>>;
+  effectiveCredentialSources?: Partial<Record<CredentialProvider, CredentialSource>>;
   /**
    * §6c: how the spawn path picked each space credential — a pin, the
    * launcher's own default, or the space default. Set with the ids; 255's
@@ -586,6 +588,23 @@ export function resolveLaunchConfig(
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The deprecated common value: one source shared by every provider, else null. */
+/**
+ * The part of the manifest's `launch` block the credential binding rolls up
+ * (session_credential_binding), built as `composeManifest` builds it, so resume's recorder reads the
+ * same shape spawn's manifest carries.
+ */
+export function credentialBindingLaunch(launch: ResolvedLaunchConfig): CredentialBindingLaunch {
+  return {
+    tool: launch.agentTool,
+    ...(launch.spaceCredentialIds && Object.keys(launch.spaceCredentialIds).length > 0
+      ? { spaceCredentialIds: { ...launch.spaceCredentialIds } }
+      : {}),
+    ...(launch.effectiveCredentialSources && Object.keys(launch.effectiveCredentialSources).length > 0
+      ? { effectiveCredentialSources: { ...launch.effectiveCredentialSources } }
+      : {}),
+  };
+}
+
 export function commonCredentialSource(
   credentialSources: ResolvedCredentialSources,
 ): CredentialSource | null {

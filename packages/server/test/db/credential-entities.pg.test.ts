@@ -124,7 +124,7 @@ async function setStatus(sessionId: string, status: string): Promise<void> {
 function record(who: DbClaims, sessionId: string, credentialId: string, provider = 'anthropic'): Promise<unknown> {
   return db.rpc(who, 'record_session_manifest', [
     sessionId,
-    JSON.stringify({ launch: { credentialSources: { [provider]: 'space' }, spaceCredentialIds: { [provider]: credentialId } } }),
+    JSON.stringify({ launch: { credentialSources: { [provider]: 'space' }, spaceCredentialIds: { [provider]: credentialId }, effectiveCredentialSources: { [provider]: 'space' } } }),
   ]);
 }
 

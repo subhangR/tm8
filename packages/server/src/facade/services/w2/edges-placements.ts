@@ -28,6 +28,7 @@ import {
   type EntityRow,
 } from '../../entity-read.js';
 import { toCommandResult, type RpcCommandResult } from '../../handlers/entities.js';
+import { runsOnListedFrom } from './runs-on-visibility.js';
 
 type EdgeDirection = 'incoming' | 'outgoing';
 
@@ -169,7 +170,10 @@ export async function queryEdges(
   const where: string[] = [];
   const sourceColumn = query.direction === 'outgoing' ? 'g.src_id' : 'g.dst_id';
   const destinationColumn = query.direction === 'outgoing' ? 'g.dst_id' : 'g.src_id';
-  if (query.source) where.push(`${sourceColumn} = ${params.add(query.source)}`);
+  const sourceParam = query.source ? params.add(query.source) : null;
+  if (sourceParam) where.push(`${sourceColumn} = ${sourceParam}`);
+  // runs_on is listed only from its session: an outgoing read anchored on it.
+  where.push(runsOnListedFrom('g', query.direction === 'outgoing' ? sourceParam : null));
   if (query.destination) where.push(`${destinationColumn} = ${params.add(query.destination)}`);
   if (query.type) where.push(`g.type = ${params.add(query.type)}`);
 
