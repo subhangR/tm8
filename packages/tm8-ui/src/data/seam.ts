@@ -366,6 +366,11 @@ export interface IdentityView {
   status: string;
   actingAs: string | null;
   memberships: Array<{ spaceId: string; memberId: string; role: string }>;
+  /**
+   * The node's `TM8_SPACE_SESSIONS` mode (contract `IdentityGetResult`).
+   * Absent from a node that predates the field: unknown, not `agents`.
+   */
+  spaceSessions?: 'off' | 'agents' | 'enforce';
 }
 
 /**

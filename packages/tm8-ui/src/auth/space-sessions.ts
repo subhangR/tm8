@@ -9,10 +9,12 @@
  * and hands the transport the right credential per operation.
  *
  * UNDER `agents` NOTHING HERE ACTS (acceptance a4). A server is treated as
- * enforcing only after it has refused a gate session once, and that fact is
- * remembered per origin (`noteSpaceSessionsEnforced`). A node that never
- * refuses never gets an `auth.space.enter`, so its requests go out exactly as
- * they did before: the gate pass, cookies included.
+ * enforcing once `identity.get` advertises `spaceSessions: 'enforce'`, or
+ * once it has refused a gate session (a node that predates the field), and
+ * that fact is remembered per origin (`noteSpaceSessionsEnforced`). An
+ * advertised `agents` or `off` forgets it. A node that never enforces never
+ * gets an `auth.space.enter`, so its requests go out exactly as they did
+ * before: the gate pass, cookies included.
  *
  * THE PINNED TOKENS LIVE IN MEMORY ONLY. They are re-minted from the gate pass
  * on the next switch or reload, so nothing new is written to storage. The
@@ -37,6 +39,7 @@ import { CollabError, type AuthSpaceEnterResult, type OperationName } from '@tm8
 import { createHttpClient, type SpaceSessionPort } from '../data/real/http';
 import { routeBaseUrlFor } from '../servers/server-key';
 import {
+  forgetSpaceSessionsEnforced,
   noteSpaceSessionsEnforced,
   passKeyFor,
   readServerPass,
@@ -301,6 +304,12 @@ export function spaceSessionFor(serverId: string): SpaceSessionHandle {
 
     requestToken() {
       return handle.credentialFor(undefined)?.token ?? readServerPass(serverId)?.token ?? null;
+    },
+
+    advertised(mode) {
+      if (mode === 'enforce') noteSpaceSessionsEnforced(serverId);
+      else if (mode === 'agents' || mode === 'off') forgetSpaceSessionsEnforced(serverId);
+      // Absent: a node that predates the field; the 403 still teaches us.
     },
   };
   handles.set(serverId, handle);

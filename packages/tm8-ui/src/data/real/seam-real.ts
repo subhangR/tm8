@@ -328,7 +328,12 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
 
     // -- reads ---------------------------------------------------------------
 
-    identity: (): Promise<IdentityView> => ops.identity(),
+    identity: async (): Promise<IdentityView> => {
+      const view = await ops.identity();
+      // W3: the mode tells the space-session port whether to pin up front.
+      options.spaceSession?.advertised?.(view.spaceSessions);
+      return view;
+    },
     spaces: (): Promise<SpaceSummary[]> => ops.spaces(),
     spaceSettings: (spaceId: SpaceId): Promise<SpaceSettingsView> => ops.spaceSettings(spaceId),
     spaceConfigs: (spaceId: SpaceId): Promise<SpaceConfigsView> => ops.spaceConfigs(spaceId),
