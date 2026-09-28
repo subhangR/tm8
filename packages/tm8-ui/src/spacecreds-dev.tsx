@@ -91,7 +91,7 @@ const port: SpaceCredentialsPort = {
     providers: [
       { provider: 'anthropic', envKeyPresent: true, allowNode: null },
       { provider: 'openai', envKeyPresent: false, allowNode: null },
-      { provider: 'github', envKeyPresent: true, allowNode: false },
+      { provider: 'github', envKeyPresent: false, allowNode: false },
     ],
   }),
   setNodePolicy: async (provider, allowNode) => ({ provider, allowNode }),

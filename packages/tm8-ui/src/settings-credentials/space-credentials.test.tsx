@@ -104,7 +104,7 @@ const NODE_STATUS: NodeCredentialsStatusView = {
   providers: [
     { provider: 'anthropic', allowNode: null, envKeyPresent: true },
     { provider: 'openai', allowNode: null, envKeyPresent: false },
-    { provider: 'github', allowNode: false, envKeyPresent: true },
+    { provider: 'github', allowNode: false, envKeyPresent: false },
   ],
 };
 
