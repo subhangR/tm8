@@ -593,31 +593,50 @@ describe('W6 a1 / T19 — AAD home|link|member|target', () => {
   });
 });
 
-describe('W6 a6 — no ciphertext or token in entity_versions, the command ledger or any list', () => {
-  it('after add + login + relogin with client mutation ids, nothing carries the sealed bytes or the token', async () => {
+describe('W6 a6 — no ciphertext or token in entity_versions, the command ledger, the logs or any list', () => {
+  it('after add + login + relogin + use + a failed open with client mutation ids, nothing carries the sealed bytes or the token', async () => {
+    const warned: unknown[] = [];
+    const logged = new DbSpaceLinkStore({ db, dataDir, logger: { warn: (message, fields) => { warned.push([message, fields]); } } });
     const claims = await hClaims();
-    const link = await store.add(claims, { spaceId: fixture.spaceA, targetSpaceId: fixture.spaceB, clientMutationId: `w6-a6-add-${randomUUID()}` });
-    await store.login(claims, link.id, { clientMutationId: `w6-a6-login-${randomUUID()}` });
-    await store.login(claims, link.id, { relogin: true, clientMutationId: `w6-a6-relogin-${randomUUID()}` });
+    const link = await logged.add(claims, { spaceId: fixture.spaceA, targetSpaceId: fixture.spaceB, clientMutationId: `w6-a6-add-${randomUUID()}` });
+    await logged.login(claims, link.id, { clientMutationId: `w6-a6-login-${randomUUID()}` });
+    await logged.login(claims, link.id, { relogin: true, clientMutationId: `w6-a6-relogin-${randomUUID()}` });
     const row = await sealedRow(link.id, fixture.memberHA);
-    const use = await store.use(claims, link.id);
+    const use = await logged.use(claims, link.id);
     const needles = [
       row.ciphertext!.toString('base64'),
       row.ciphertext!.toString('hex'),
+      row.nonce!.toString('base64'),
       use.token,
       use.token.split('.')[1]!,
     ];
-    const [hits] = await database.query<{ n: number }>(
-      `select (select count(*) from public.entity_versions v, unnest($1::text[]) k where position(k in v.snapshot::text) > 0)
-            + (select count(*) from public.command_ledger c, unnest($1::text[]) k where position(k in coalesce(c.result::text, '')) > 0)
-            + (select count(*) from public.activity_log a, unnest($1::text[]) k where position(k in a::text) > 0) as n`,
-      [needles]).catch(async () => database.query<{ n: number }>(
-      `select (select count(*) from public.entity_versions v, unnest($1::text[]) k where position(k in v.snapshot::text) > 0)
-            + (select count(*) from public.command_ledger c, unnest($1::text[]) k where position(k in coalesce(c.result::text, '')) > 0) as n`,
-      [needles]));
-    expect(Number(hits!.n)).toBe(0);
-    const listed = JSON.stringify(await store.list(claims, fixture.spaceA));
+    // The one log line on the use path: a row that no longer opens. Flip one
+    // nonce byte so the store logs its warn, then search what it logged.
+    const tampered = Buffer.from(row.nonce!);
+    tampered[0] = tampered[0]! ^ 0xff;
+    await database.query(`update public.space_link_tokens set nonce = $2 where id = $1`, [row.id, tampered]);
+    await expect(logged.use(claims, link.id)).rejects.toMatchObject({ status: 'unreadable' });
+    expect(warned).toHaveLength(1);
+    for (const needle of needles) expect(JSON.stringify(warned).includes(needle)).toBe(false);
+    // Whole rows, every column, of the tables that record what happened: the
+    // versions, the ledger, the event log (workspace_events) and the link audit.
+    const [hits] = await database.query<{ versions: number; ledger: number; events: number; audit: number }>(
+      `select (select count(*) from public.entity_versions v, unnest($1::text[]) k where position(k in v::text) > 0) as versions,
+              (select count(*) from public.command_ledger c, unnest($1::text[]) k where position(k in c::text) > 0) as ledger,
+              (select count(*) from public.workspace_events e, unnest($1::text[]) k where position(k in e::text) > 0) as events,
+              (select count(*) from public.cross_space_audit a, unnest($1::text[]) k where position(k in a::text) > 0) as audit`,
+      [needles]);
+    expect(Object.fromEntries(Object.entries(hits!).map(([k, v]) => [k, Number(v)])))
+      .toEqual({ versions: 0, ledger: 0, events: 0, audit: 0 });
+    // The event log did record this link (so the search above had rows to search).
+    const [events] = await database.query<{ n: number }>(
+      `select count(*) as n from public.workspace_events where position($1 in payload::text) > 0`, [link.id]);
+    expect(Number(events!.n)).toBeGreaterThan(0);
+    const listed = JSON.stringify(await logged.list(claims, fixture.spaceA));
     for (const needle of needles) expect(listed.includes(needle)).toBe(false);
+    // add is one shared link per target: sign it in again so later cells see a readable row.
+    await logged.login(claims, link.id, { relogin: true });
+    expect((await logged.use(claims, link.id)).targetSpaceId).toBe(fixture.spaceB);
     // The ledger DID record the three commands (so the search above had rows to search).
     const [ledger] = await database.query<{ n: number }>(
       `select count(*) as n from public.command_ledger where operation in ('spaceLinks.add', 'spaceLinks.login', 'spaceLinks.relogin') and client_mutation_id like 'w6-a6-%'`);
