@@ -54,10 +54,13 @@ export interface DurableEventPumpDeps {
    * P7: re-verify every open socket's session before delivering, and close
    * the ended ones (`identity/session-sockets.ts`). Runs first in each tick, so
    * no durable event reaches a socket whose session a committed revoke ended
-   * before the tick began. Absent: no re-verification.
+   * before the tick began. If it rejects (failure or timeout) the tick
+   * delivers NOTHING — fail closed. Absent: no re-verification.
    */
   readonly liveness?: { sweep(): Promise<number> };
   readonly onError?: (message: string) => void;
+  /** A failed liveness check (delivery skipped). Falls back to `onError`. */
+  readonly onLivenessError?: (message: string) => void;
 }
 
 export interface DurableEventPump {
@@ -71,6 +74,8 @@ export interface DurableEventPump {
    */
   seed(connId: string, spaceId: string, seq: number): void;
   forget(connId: string): void;
+  /** Ticks whose delivery a failed liveness check skipped, since start. */
+  livenessFailures(): number;
 }
 
 export const DEFAULT_PUMP_INTERVAL_MS = 1_000;
@@ -83,6 +88,7 @@ export function createDurableEventPump(deps: DurableEventPumpDeps): DurableEvent
   const cursors = new Map<string, Map<string, number>>();
   let timer: ReturnType<typeof setInterval> | undefined;
   let running = false;
+  let livenessFailures = 0;
 
   function cursorsFor(connId: string): Map<string, number> {
     let bySpace = cursors.get(connId);
@@ -142,9 +148,15 @@ export function createDurableEventPump(deps: DurableEventPumpDeps): DurableEvent
           try {
             await deps.liveness.sweep();
           } catch (error) {
-            // A failed check closes nothing and must not stop delivery; the
-            // next tick checks again.
-            deps.onError?.(`session liveness: ${error instanceof Error ? error.message : String(error)}`);
+            // FAIL CLOSED: a failed or timed-out check delivers nothing this
+            // tick, rather than deliver to a set nobody verified. Cursors do
+            // not move, so the next verified tick delivers what this one held.
+            livenessFailures += 1;
+            (deps.onLivenessError ?? deps.onError)?.(
+              `session liveness check failed, delivery SKIPPED this tick (${livenessFailures} so far): `
+              + (error instanceof Error ? error.message : String(error)),
+            );
+            return 0;
           }
         }
         for (const sink of deps.registry.sinks()) {
@@ -187,6 +199,10 @@ export function createDurableEventPump(deps: DurableEventPumpDeps): DurableEvent
 
     forget(connId: string): void {
       cursors.delete(connId);
+    },
+
+    livenessFailures(): number {
+      return livenessFailures;
     },
   };
 }

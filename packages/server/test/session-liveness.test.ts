@@ -124,14 +124,41 @@ describe('the event pump re-verifies liveness before it delivers', () => {
     expect(h.read).toEqual(['space-live']);
   });
 
-  it('a failed liveness read is reported and does not stop delivery', async () => {
+  it('FAIL CLOSED: a failed liveness check delivers nothing that tick, is reported and counted; the next verified tick delivers', async () => {
     const live = new Sink('live', bearer('s-live'));
-    const h = pumpWith({ sweep: async () => { throw new Error('db down'); } }, [live]);
+    let healthy = false;
+    const h = pumpWith({ sweep: async () => { if (!healthy) throw new Error('db down'); return 0; } }, [live]);
 
+    expect(await h.pump.tick()).toBe(0);
+    expect(h.read).toEqual([]);
+    expect(h.pump.livenessFailures()).toBe(1);
+    expect(h.errors).toHaveLength(1);
+    expect(h.errors[0]).toMatch(/delivery SKIPPED this tick \(1 so far\): db down/);
+    expect(live.isOpen).toBe(true);
+
+    // Paired: once the check answers, the same socket is read for again.
+    healthy = true;
     await h.pump.tick();
-
-    expect(h.errors).toEqual(['session liveness: db down']);
     expect(h.read).toEqual(['space-live']);
+    expect(h.pump.livenessFailures()).toBe(1);
+  });
+
+  it('a stalled check times out and is treated as a failure: the tick skips delivery instead of waiting', async () => {
+    const live = new Sink('live', bearer('s-live'));
+    const registry = registryOf(live);
+    const stalled = createSessionLivenessSweep({
+      sockets: registry,
+      ended: () => new Promise<never>(() => undefined),
+      timeoutMs: 20,
+    });
+    const h = pumpWith(stalled, [live]);
+
+    const started = Date.now();
+    expect(await h.pump.tick()).toBe(0);
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(h.read).toEqual([]);
+    expect(h.pump.livenessFailures()).toBe(1);
+    expect(h.errors[0]).toMatch(/did not answer within 20ms/);
     expect(live.isOpen).toBe(true);
   });
 });

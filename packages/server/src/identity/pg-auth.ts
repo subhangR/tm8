@@ -445,9 +445,19 @@ export async function revokeListedAuthSession(
  * their pinned space membership ended. Claim-free, like `resolve_auth_session`:
  * the socket liveness sweep has no caller identity.
  */
-export async function endedAuthSessions(db: Db, sessionIds: readonly string[]): Promise<string[]> {
+export async function endedAuthSessions(
+  db: Db,
+  sessionIds: readonly string[],
+  statementTimeoutMs?: number,
+): Promise<string[]> {
   if (sessionIds.length === 0) return [];
-  return db.rpc<string[]>({}, 'ended_auth_sessions', [sessionIds]);
+  return db.tx({}, async (q) => {
+    // Bounded in the database too, so a stalled check frees its connection.
+    if (statementTimeoutMs !== undefined) {
+      await q.query(`select set_config('statement_timeout', $1, true)`, [`${Math.trunc(statementTimeoutMs)}ms`]);
+    }
+    return q.rpc<string[]>('ended_auth_sessions', [sessionIds]);
+  });
 }
 
 /**

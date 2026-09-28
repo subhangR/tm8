@@ -331,6 +331,54 @@ describe.each(MODES)('TM8_SPACE_SESSIONS=%s', (mode: Mode) => {
     await expectOpen(bWs);
   });
 
+  /** Subscribe `sock` (opened with session `sessionId`) to `spaceId`; resolves once the server registered it. */
+  async function subscribe(sock: Socket, sessionId: string, spaceId: string): Promise<void> {
+    sock.ws.send(JSON.stringify({ type: 'subscribe', spaceIds: [spaceId] }));
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+      const sink = server.subscriptions.sinks().find((s) => s.identity.sessionId === sessionId);
+      if (sink && server.subscriptions.spacesFor(sink.id).includes(spaceId)) return;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    throw new Error(`socket of ${sessionId} never subscribed to ${spaceId}`);
+  }
+
+  it('W1 spaces.leave over HTTP: the SUBSCRIBED pinned socket closes with 4401 (dead credential) in every mode; the unpinned gate\'s gets 1008', async () => {
+    const who = await human('w1-http-leave', [[s.spaceA, 'member'], [s.spaceB, 'member']]);
+    const pinned = await mintPinned(who, s.spaceA);
+    const pinnedWs = await socket(pinned.token);
+    await subscribe(pinnedWs, pinned.id, s.spaceA);
+    const gateWs = await socket(pinned.parent.token);
+    // Under enforce a gate session may not subscribe to a space at all.
+    if (mode !== 'enforce') await subscribe(gateWs, pinned.parent.id, s.spaceA);
+
+    expect(await call('POST', `/v2/spaces/${s.spaceA}/leave`, pinned.token, { clientMutationId: `p7-${randomUUID()}` })).toBe(200);
+
+    // Keyed on the session ROW's space, not the claim pin (empty under off).
+    const got = await within(pinnedWs.closed, CLOSES_WITHIN_MS);
+    expect(got).toMatchObject({ code: 4401 });
+    if (mode === 'enforce') {
+      await expectOpen(gateWs);
+    } else {
+      // The gate is still good elsewhere: 1008, and a reconnect is fine.
+      expect(await within(gateWs.closed, CLOSES_WITHIN_MS)).toEqual({ code: 1008, reason: 'membership ended' });
+    }
+  });
+
+  it('(a) at UPGRADE: a pinned session whose membership ended is refused, not opened and closed a tick later; the same human\'s other pin still opens', async () => {
+    const who = await human('upgrade-left', [[s.spaceA, 'member'], [s.spaceB, 'member']]);
+    const inA = await mintPinned(who, s.spaceA);
+    const inB = await mintPinned(who, s.spaceB, inA.parent);
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(
+        `update public.members set status = 'left', left_at = now() where entity_id = $1`, [who.memberIds.get(s.spaceA)]);
+    });
+
+    await expect(socket(inA.token)).rejects.toThrow('ws connection failed');
+    await expectOpen(await socket(inB.token));
+  });
+
   it('disable_account closes every socket of the account; another account\'s stays open', async () => {
     const who = await human('disabled', [[s.spaceA, 'member']]);
     const bystander = await human('bystander', [[s.spaceA, 'member']]);

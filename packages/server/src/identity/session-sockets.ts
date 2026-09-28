@@ -72,15 +72,28 @@ export function closeSessionSockets(
 export type EndedSessionsReader = (sessionIds: readonly string[]) => Promise<readonly string[]>;
 
 export interface SessionLivenessSweep {
-  /** Re-verify every open socket's session; close the ended ones. Returns how many closed. */
+  /**
+   * Re-verify every open socket's session; close the ended ones. Returns how
+   * many closed. REJECTS when the check fails or outlives `timeoutMs`: the
+   * pump then delivers nothing that tick rather than deliver on an unverified
+   * set.
+   */
   sweep(): Promise<number>;
 }
+
+/**
+ * The sweep's deadline, and the reader's statement_timeout. Short on purpose:
+ * one stalled check must not hold delivery for every socket past the next tick.
+ */
+export const SESSION_LIVENESS_TIMEOUT_MS = 500;
 
 export function createSessionLivenessSweep(deps: {
   readonly sockets: SessionSocketPort;
   readonly ended: EndedSessionsReader;
   readonly log?: Log;
+  readonly timeoutMs?: number;
 }): SessionLivenessSweep {
+  const timeoutMs = deps.timeoutMs ?? SESSION_LIVENESS_TIMEOUT_MS;
   return {
     async sweep(): Promise<number> {
       const live = new Set<string>();
@@ -89,8 +102,20 @@ export function createSessionLivenessSweep(deps: {
         if (sink.isOpen && sink.identity.sessionId) live.add(sink.identity.sessionId);
       }
       if (live.size === 0) return 0;
-      const ended = await deps.ended([...live]);
-      return closeSessionSockets(deps.sockets, new Set(ended), deps.log, SESSION_ENDED_CLOSE_REASON);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const deadline = new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`the check did not answer within ${timeoutMs}ms`)),
+          timeoutMs,
+        );
+        timer.unref?.();
+      });
+      try {
+        const ended = await Promise.race([deps.ended([...live]), deadline]);
+        return closeSessionSockets(deps.sockets, new Set(ended), deps.log, SESSION_ENDED_CLOSE_REASON);
+      } finally {
+        clearTimeout(timer);
+      }
     },
   };
 }

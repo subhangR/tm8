@@ -209,9 +209,11 @@ export function closeSockets(
   for (const sink of sockets.sinks()) {
     if (!sink.isOpen || sink.identity.identityId !== identityId) continue;
     if (spaceId !== null && !sockets.spacesFor(sink.id).includes(spaceId)) continue;
-    // Dead credential: every session of a disabled account, or one pinned to
-    // the space just left. The client must not reconnect with it.
-    const dead = spaceId === null || sink.identity.sessionSpaceId === spaceId;
+    // Dead credential: every session of a disabled account, or one whose ROW
+    // is pinned to the space just left (232 revoked it), whether or not the
+    // mode binds the pin — under `off` `sessionSpaceId` is empty. The client
+    // must not reconnect with it.
+    const dead = spaceId === null || sink.identity.sessionRowSpaceId === spaceId;
     try {
       sink.close(dead ? WS_CLOSE_SESSION_ENDED : CLOSE_CODE.policyViolation, reason);
       closed += 1;

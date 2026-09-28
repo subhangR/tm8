@@ -54,7 +54,7 @@ import { createEventSubjectBackfillJob } from './scheduler/jobs/event-subject-ba
 import { createClipboardStore } from './files/clipboard-store.js';
 import { createLoopbackOwnerResolver } from './identity/loopback.js';
 import { endedAuthSessions, sessionIssuedHere } from './identity/pg-auth.js';
-import { createSessionLivenessSweep } from './identity/session-sockets.js';
+import { createSessionLivenessSweep, SESSION_LIVENESS_TIMEOUT_MS } from './identity/session-sockets.js';
 import { createTrackingObserverJob } from './tracking/observer.js';
 import { createCommitRecorderJob } from './tracking/commit-recorder.js';
 import { createSessionIdentityResolver, createSocketIdentityResolver } from './http/identity-resolver.js';
@@ -543,12 +543,14 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         claimsFor: wsClaimsFor,
         // P7: each tick first closes the sockets of every session that ended
         // in SQL, by any path, in one query; see identity/session-sockets.ts.
+        // A failed or slow check skips that tick's delivery (fail closed).
         liveness: createSessionLivenessSweep({
           sockets: subscriptions,
-          ended: (ids) => endedAuthSessions(db, ids),
+          ended: (ids) => endedAuthSessions(db, ids, SESSION_LIVENESS_TIMEOUT_MS),
           log: (message, fields) => console.warn(`[session liveness] ${message}`, fields),
         }),
         onError: (message) => console.warn(`event pump: ${message}`),
+        onLivenessError: (message) => console.error(`event pump: ${message}`),
       })
     : undefined;
 
@@ -614,7 +616,17 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   const ws = createWsServer({
     registry: subscriptions,
     admission: wsAdmission,
-    authorize: resolveSocketIdentity,
+    // P7: a pinned session whose membership ended still authenticates (the
+    // membership is not part of resolve_auth_session), so the events socket
+    // re-checks it at upgrade rather than open and be closed a tick later.
+    authorize: async (req) => {
+      const identity = await resolveSocketIdentity(req);
+      if (db && identity.sessionId && identity.sessionRowSpaceId) {
+        const ended = await endedAuthSessions(db, [identity.sessionId], SESSION_LIVENESS_TIMEOUT_MS);
+        if (ended.length > 0) throw new CollabError('unauthenticated', 'session ended');
+      }
+      return identity;
+    },
     ...(control ? { onClientMessage: (conn, text) => void control.handle(conn, text) } : {}),
     onDisconnect: (connId) => {
       presence.dropConnection(connId);
