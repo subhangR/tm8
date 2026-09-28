@@ -113,6 +113,13 @@ export interface SpaceSessionPort {
    */
   recover(error: CollabError, op: OperationName | undefined): Promise<boolean>;
   /**
+   * The session cookie changed under this page: `auth.space.enter` just
+   * replaced it with a new pinned session. A browser WebSocket keeps the
+   * identity it upgraded with, so the event socket must reconnect to follow
+   * the space (enforce-flip precondition F1). Returns the unsubscribe.
+   */
+  onCookieChanged?(listener: () => void): () => void;
+  /**
    * `identity.get` answered with the node's `spaceSessions` mode (undefined
    * from a node that predates the field). Lets the port know `enforce` before
    * the first refusal instead of from it.

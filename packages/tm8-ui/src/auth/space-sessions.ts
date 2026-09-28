@@ -37,7 +37,7 @@
 import { CollabError, type AuthSpaceEnterResult, type OperationName } from '@tm8/contract';
 
 import { createHttpClient, type SpaceSessionPort } from '../data/real/http';
-import { routeBaseUrlFor } from '../servers/server-key';
+import { LOCAL_SERVER_ID, routeBaseUrlFor } from '../servers/server-key';
 import {
   forgetSpaceSessionsEnforced,
   noteSpaceSessionsEnforced,
@@ -90,6 +90,12 @@ const pinned = new Map<string, PinnedSession>();
 const activeSpaces = new Map<string, string>();
 /** In-flight mints, so a switch and a recovery share one `auth.space.enter`. */
 const entering = new Map<string, Promise<PinnedSession | null>>();
+/** serverId → who follows the session cookie (the event socket; F1). */
+const cookieListeners = new Map<string, Set<() => void>>();
+/** serverId → the pin whose `auth.space.enter` last set the cookie on this page. */
+const cookiePins = new Map<string, PinnedSession>();
+/** How long the gate logout may wait on the cookie logout at sign-out. */
+export const COOKIE_LOGOUT_TIMEOUT_MS = 3_000;
 
 function pinKey(serverId: string, spaceId: string): string {
   return `${passKeyFor(serverId)}\u0000${spaceId}`;
@@ -232,8 +238,42 @@ async function mint(serverId: string, spaceId: string): Promise<PinnedSession | 
   const key = pinKey(serverId, spaceId);
   const previous = pinned.get(key);
   pinned.set(key, next);
+  cookiePins.set(serverId, next);
   if (previous) revokePin(serverId, previous);
+  // The response's Set-Cookie made `next` the cookie. Anything that upgraded
+  // on the old one (the event socket) now speaks as the wrong session.
+  for (const listener of [...(cookieListeners.get(serverId) ?? [])]) {
+    try { listener(); } catch { /* one follower must not stop the others */ }
+  }
   return next;
+}
+
+/**
+ * F2: `auth.logout` presenting ONLY the session cookie, credentials included,
+ * so the response's cookie-clearing `Set-Cookie` lands. Every other call on an
+ * enforcing server goes `credentials: 'omit'` (see the module comment), which
+ * is why a sign-out could revoke the pinned session but never clear the
+ * cookie: a browser ignores `Set-Cookie` on an omitted-credentials response.
+ * No `Authorization`, because a header next to a different cookie is refused
+ * as a pair. Resolves true when the node revoked the cookie's session.
+ */
+async function logoutCookie(serverId: string): Promise<boolean> {
+  const client = createHttpClient({
+    baseUrl: routeBaseUrlFor(serverId),
+    // keepalive: a sign-out is often the last act before the tab closes, and
+    // the request must outlive the page.
+    fetch: (url, init) => globalThis.fetch(url, { ...init, credentials: 'include', keepalive: true }),
+    getAuthToken: () => null,
+    // Short, because the gate's own logout waits on this one (see
+    // `endSpaceSessions`). A slow node falls back to the header revoke.
+    timeoutMs: COOKIE_LOGOUT_TIMEOUT_MS,
+  });
+  try {
+    await client.call('auth.logout', { body: {} });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function enter(serverId: string, spaceId: string): Promise<PinnedSession | null> {
@@ -306,6 +346,17 @@ export function spaceSessionFor(serverId: string): SpaceSessionHandle {
       return handle.credentialFor(undefined)?.token ?? readServerPass(serverId)?.token ?? null;
     },
 
+    onCookieChanged(listener) {
+      let followers = cookieListeners.get(serverId);
+      if (!followers) {
+        followers = new Set();
+        cookieListeners.set(serverId, followers);
+      }
+      followers.add(listener);
+      const mine = followers;
+      return () => { mine.delete(listener); };
+    },
+
     advertised(mode) {
       if (mode === 'enforce') noteSpaceSessionsEnforced(serverId);
       else if (mode === 'agents' || mode === 'off') forgetSpaceSessionsEnforced(serverId);
@@ -317,17 +368,43 @@ export function spaceSessionFor(serverId: string): SpaceSessionHandle {
 }
 
 /**
+ * Only the local node's cookie is this page's: a named server is reached
+ * through the relay, and its pinned session rides in `Authorization`.
+ */
+function holdsPinnedCookie(serverId: string): boolean {
+  return serverId === LOCAL_SERVER_ID && readSpaceSessionsEnforced(serverId);
+}
+
+/**
  * Sign-out: revoke every pinned session minted on `serverId` and forget them.
  * Called BEFORE the gate pass is cleared, so a pin's parent still matches.
+ *
+ * F2. On an enforcing local node the session cookie is a pinned session —
+ * whichever space was entered last, on this page or before a reload — and
+ * only a cookie-carrying logout clears it (`logoutCookie`). That one goes
+ * instead of the header revoke for the pin that set the cookie, and the
+ * returned promise settles once it has, so the caller holds the GATE logout
+ * until then: the gate's revoke cascades to its pinned children, and a cookie
+ * whose session is already dead is refused (401) and left in the jar. If the
+ * cookie logout fails, that pin is revoked by header as before. Null when
+ * there is no cookie to clear, and the caller need not wait.
  */
-export function endSpaceSessions(serverId: string): void {
+export function endSpaceSessions(serverId: string): Promise<void> | null {
   const prefix = `${passKeyFor(serverId)}\u0000`;
+  const clearCookie = holdsPinnedCookie(serverId);
+  const cookiePin = cookiePins.get(serverId) ?? null;
+  cookiePins.delete(serverId);
   for (const [key, pin] of [...pinned]) {
     if (!key.startsWith(prefix)) continue;
     pinned.delete(key);
+    if (clearCookie && pin === cookiePin) continue;
     revokePin(serverId, pin);
   }
   activeSpaces.delete(serverId);
+  if (!clearCookie) return null;
+  return logoutCookie(serverId).then((revoked) => {
+    if (!revoked && cookiePin) revokePin(serverId, cookiePin);
+  });
 }
 
 /** Test affordance: forget every pinned session and handle, revoking nothing. */
@@ -336,4 +413,6 @@ export function resetSpaceSessions(): void {
   activeSpaces.clear();
   entering.clear();
   handles.clear();
+  cookieListeners.clear();
+  cookiePins.clear();
 }
