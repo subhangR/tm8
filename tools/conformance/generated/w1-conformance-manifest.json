@@ -1,15 +1,15 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:1b1892fb7590ed2956f73a88444455f0a9d70f5c28753c8f01c1eb71d489a371",
+  "catalogDigest": "sha256:be85230eefda1327169810033105a3ce920537605fcb7e909486b9679c3538ab",
   "catalog": {
-    "total": 286,
-    "v1": 284,
+    "total": 287,
+    "v1": 285,
     "reserved": 2,
-    "http": 284,
+    "http": 285,
     "ws": 1,
-    "registerableV1Http": 282,
+    "registerableV1Http": 283,
     "methods": {
-      "GET": 91,
+      "GET": 92,
       "POST": 140,
       "PATCH": 17,
       "DELETE": 18,
@@ -17,12 +17,12 @@
       "WS": 2
     },
     "kinds": {
-      "read": 95,
+      "read": 96,
       "command": 189,
       "stream": 2
     },
-    "uniqueNames": 286,
-    "uniqueBindings": 285
+    "uniqueNames": 287,
+    "uniqueBindings": 286
   },
   "reservedOperations": [
     "search.query",
@@ -1979,6 +1979,13 @@
         "source": "server-router"
       },
       {
+        "operation": "credentials.space.readiness",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/credential-readiness",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "credentials.space.policy.set",
         "method": "PUT",
         "path": "/v2/spaces/:spaceId/credential-policy/:provider",
@@ -2406,7 +2413,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 254
+    "unimplementedV1Http": 255
   },
   "schemas": {
     "additive": {
@@ -6849,6 +6856,23 @@
           "space",
           "policy",
           "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "credentials.space.readiness",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/credentials.space.readiness",
+        "intentTags": [
+          "credentials",
+          "space",
+          "readiness"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

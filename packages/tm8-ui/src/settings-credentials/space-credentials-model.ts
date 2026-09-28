@@ -10,6 +10,8 @@ import type {
   CredentialPolicySource,
   CredentialsLoginSessionFinishResult,
   CredentialsSpacePolicyView,
+  CredentialsSpaceReadinessView,
+  CredentialReadinessLaunchReason,
   SpaceCredentialProviderName,
   SpaceCredentialStoredProviderName,
   SpaceCredentialView,
@@ -385,4 +387,69 @@ export function formatWhen(iso: string | null): string {
   const at = new Date(iso);
   if (Number.isNaN(at.getTime())) return iso;
   return `${at.toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+}
+
+// -- readiness (credentials release 1, S7) -----------------------------------
+//
+// TWO thresholds, never one tick: a space can be ready to launch and still
+// have nothing keeping pull requests and CI tracked. Each sentence names its
+// threshold. In release 1 nothing refuses on either: a launch without a space
+// credential still runs on the member or node rung and is recorded as legacy.
+
+/** Where a member connects one — the words the launch picker points at. */
+export const CONNECT_WHERE = 'Space settings → Credentials';
+
+const LAUNCH_REASON_WORD: Record<CredentialReadinessLaunchReason, string> = {
+  no_credential: 'no credential you can use',
+  stale: 'its credential has gone stale — log in again or replace the key',
+  policy_excludes_space: 'this space’s policy does not allow space credentials',
+};
+
+function nameList(providers: readonly SpaceCredentialProviderName[]): string {
+  const names = providers.map((p) => SPACE_PROVIDER_NAME[p]);
+  if (names.length <= 1) return names.join('');
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
+/**
+ * The providers of `view` that are not ready to launch, narrowed to `only`
+ * when given (the launch picker asks about the providers ITS launch uses).
+ */
+export function launchMissing(
+  view: CredentialsSpaceReadinessView,
+  only?: readonly SpaceCredentialProviderName[],
+): SpaceCredentialProviderName[] {
+  return view.canLaunch.missing.filter((p) => !only || only.includes(p));
+}
+
+/** The can-launch sentence, shared by Space → Credentials and the launch picker. */
+export function canLaunchSentence(
+  view: CredentialsSpaceReadinessView,
+  only?: readonly SpaceCredentialProviderName[],
+): string {
+  const missing = launchMissing(view, only);
+  if (missing.length === 0) {
+    return only
+      ? 'Ready to launch: this space has a credential your launch will use for each provider it needs.'
+      : 'Ready to launch: every provider has a credential in this space that your launches will use.';
+  }
+  return `Not ready to launch with ${nameList(missing)}: connect a credential in this space under ${CONNECT_WHERE}. `
+    + 'Until then a launch still runs on your own or the node’s credential, and is recorded as legacy.';
+}
+
+/** The can-poll sentence. A member's own GitHub credential never makes this green. */
+export function canPollSentence(view: CredentialsSpaceReadinessView): string {
+  if (view.canPoll.ready) {
+    return 'Ready to track: this space’s own GitHub credential keeps pull requests and CI up to date.';
+  }
+  const why = view.canPoll.reason === 'stale'
+    ? 'this space’s own GitHub credential has gone stale'
+    : 'this space has no GitHub credential of its own that every member shares';
+  return `Not ready to track pull requests and CI: ${why}. A member’s private GitHub credential lets that member launch, but does not keep tracking alive.`;
+}
+
+/** One provider's can-launch reason, or null when it is ready. */
+export function launchReasonWord(view: CredentialsSpaceReadinessView, provider: SpaceCredentialProviderName): string | null {
+  const reason = view.canLaunch.providers[provider]?.reason ?? null;
+  return reason ? LAUNCH_REASON_WORD[reason] : null;
 }

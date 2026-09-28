@@ -613,6 +613,18 @@ const ROWS: Record<OperationName, Row> = {
       'each row names the pick source, owner, root launcher and agent session',
     ],
   },
+  'credentials.space.readiness': {
+    cmd: ['space', 'credential-readiness', 'get'],
+    syn: 'tm8 space credential-readiness get [<space-id>]',
+    sum: 'Read a space\'s credential readiness: can-launch per provider for you, and can-poll (a space-owned GitHub credential) — human sessions only',
+    authz: 'server',
+    input: 'none',
+    tags: ['credential', 'space', 'readiness', 'seeding', 'settings'],
+    notes: [
+      'two thresholds, never one: can-launch counts your own default; can-poll needs a space-owned public GitHub credential',
+      'active only: a stale credential is reported, never counted',
+    ],
+  },
   'credentials.space.policy.get': {
     cmd: null,
     sum: 'Read a space\'s credential source policy and the node\'s — human sessions only',
@@ -3516,7 +3528,7 @@ export const CATALOG_DIGEST =
   // Re-measured (W8, 261, rebuilt on main f01b1566): +6 servers.* and the serverConnections create/delete rows. Read from the regenerated conformance manifest.
   // Re-measured (W5 #917, merges of main dd1c8215 and 2fa4999f): +3 spaces.spacePassword.* on top of main's servers.*, spaceLinks, attention and launch v3 rows. Read from the regenerated conformance manifest.
   // Re-measured (#915 merge of main 0be3b796): main's servers.* + spaceLinks.invoke/audit and the five attention rows together. Read from the regenerated conformance manifest.
-  'sha256:1b1892fb7590ed2956f73a88444455f0a9d70f5c28753c8f01c1eb71d489a371';
+  'sha256:be85230eefda1327169810033105a3ce920537605fcb7e909486b9679c3538ab';
 
 export const GRAMMAR_VERSION = '2';
 
