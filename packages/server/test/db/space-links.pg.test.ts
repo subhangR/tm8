@@ -45,7 +45,8 @@ vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
 // THE STRICT GATE'S FULL CALLER SET (lead ruling 2026-09-26 02:08Z/02:19Z).
 // Measured on this branch: 28 credential management (21 + W10a's
 // set_space_credential_visibility, 239 + W10b's six, 255) + 6 non-credential
-// + 2 W4 session management (249) + 6 spaceLinks writes + 7 servers (W8) = 49.
+// + 2 W4 session management (249) + 6 spaceLinks writes + 7 servers (W8) = 49,
+// + 3 space password (W5, 268) = 52, + 1 hardening sweep (L1, 988) = 53.
 // A caller not on this list fails; a listed caller
 // that stops calling the gate fails. Changing this list is a review event.
 // ---------------------------------------------------------------------------
@@ -58,6 +59,7 @@ const SESSION_MANAGEMENT = 'session listing/revoke, human-only (W4, 249): refuse
 const SPACE_LINKS = 'spaceLinks write, human-only by design (W6)';
 const SPACE_PASSWORD = 'space password, human-only (W5, 268): refuses link';
 const SERVERS = 'servers write or gate-token open, human-only by design (W8)';
+const HARDENING = 'node-wide sweep, human caller class (hardening 01a0db7e a1, L1 988): refuses link, agent and claim-free';
 
 const STRICT_GATE_CALLERS: Readonly<Record<string, string>> = {
   'claim_space_credential(uuid)': CREDENTIAL_MANAGEMENT, // W10b (255, #869)
@@ -125,6 +127,9 @@ const STRICT_GATE_CALLERS: Readonly<Record<string, string>> = {
   'server_gate_seal_context(uuid)': SERVERS,
   'sign_out_server(uuid,text)': SERVERS,
   'store_server_gate_token(uuid,timestamp with time zone,bytea,bytea,text)': SERVERS,
+  // L1 (988): every caller borrows a human space-login principal's claims
+  // (credential-sessions.ts:957, :1473), so tm8_app keeps EXECUTE.
+  'expire_pending_space_credentials()': HARDENING,
 };
 
 /** Not gate callers: each admits an explicit kind allow-list and 42501s the rest. */
@@ -340,7 +345,7 @@ describe('W6 pin — the STRICT gate\'s full caller set (lead ruling 02:08Z; fol
     expect(found).toEqual(Object.keys(STRICT_GATE_CALLERS).sort());
   });
 
-  it('the list is 28 credential management + 6 non-credential + 2 session management + 6 spaceLinks writes + 3 space password + 7 servers (W8)', () => {
+  it('the list is 28 credential management + 6 non-credential + 2 session management + 6 spaceLinks writes + 3 space password + 7 servers (W8) + 1 hardening sweep (L1)', () => {
     const labels = Object.values(STRICT_GATE_CALLERS);
     expect(labels.filter((l) => l === CREDENTIAL_MANAGEMENT || l === CREDENTIAL_READ)).toHaveLength(28);
     expect(labels.filter((l) => l === IDENTITY_WIDE || l === AUTH_MINTING || l === PENDING)).toHaveLength(6);
@@ -348,7 +353,8 @@ describe('W6 pin — the STRICT gate\'s full caller set (lead ruling 02:08Z; fol
     expect(labels.filter((l) => l === SPACE_LINKS)).toHaveLength(6);
     expect(labels.filter((l) => l === SPACE_PASSWORD)).toHaveLength(3);
     expect(labels.filter((l) => l === SERVERS)).toHaveLength(7);
-    expect(labels).toHaveLength(52);
+    expect(labels.filter((l) => l === HARDENING)).toHaveLength(1);
+    expect(labels).toHaveLength(53);
   });
 
   it('the matcher sees a quoted, mixed-case call and an execute format(...) that names the gate', async () => {
@@ -1198,5 +1204,120 @@ describe('W6 × W10a — both lifecycle guards fire: 239 owns credential, 251 ow
   it('arm 3 — the merged TS gate names both kinds', () => {
     expect(RESTRICTED_LIFECYCLE_KINDS.has('credential')).toBe(true);
     expect(RESTRICTED_LIFECYCLE_KINDS.has('space_link')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// L1 (988, tasks 01a0e767-3aaf + 01a0db7e-6ef5): W6 a2's SQL half. A `link`
+// session in B is the member for everything EXCEPT credential ops (decision
+// 31, E2). These readers admitted it before 988; the TS layer alone stopped
+// them. Each refusal is paired with the same human's browser in B.
+// ---------------------------------------------------------------------------
+/** Credential-family readers a link session is refused outright (988 §1-§3, §5b). */
+const LINK_REFUSED_CREDENTIAL_READERS: ReadonlyArray<readonly [string, (b: string) => unknown[]]> = [
+  ['list_space_credentials', (b) => [b, false]],
+  ['read_space_credential', () => [randomUUID()]],
+  ['my_space_credential_default_id', (b) => [b, 'anthropic']],
+  ['repoint_session_space_credentials', () => [randomUUID()]],
+];
+
+/**
+ * Credential-family functions a link session still reaches, each with the
+ * condition that admits it. Adding a name here is a widening and a review
+ * event (P1b coordinator ruling on 01a0e767-3aaf).
+ */
+const LINK_ADMITTED_CREDENTIAL_READERS: Readonly<Record<string, string>> = {
+  'session_stream_credential_allowed(uuid)':
+    'CONDITIONAL (988 §4): no raise; a link caller loses 257\'s private-credential owner exemption',
+};
+
+describe('L1 988 — a link session in B is refused the credential readers in SQL; the member is not', () => {
+  const linkClaims = async (): Promise<DbClaims> => {
+    const link = await linkAB();
+    return claimsForToken((await store.use(await hClaims(), link.id)).token);
+  };
+
+  for (const [fn, args] of LINK_REFUSED_CREDENTIAL_READERS) {
+    it(`refused — ${fn} with H's link session (42501, reason link_session); positive — H's browser gets past the guard`, async () => {
+      const link = await linkClaims();
+      const refused = await db.rpc(link, fn, args(fixture.spaceB)).then(() => null, (e: unknown) => e);
+      expect(refused).toMatchObject({ details: { sqlstate: '42501' } });
+      expect(String((refused as Error).message)).toMatch(/space link session cannot/);
+      // Paired positive: the same human, browser, same arguments. It may still
+      // answer "not found" (a random id) but never the link refusal.
+      const browser = await db.rpc(await hClaims(), fn, args(fixture.spaceB)).then(() => 'ok', (e: unknown) => e);
+      if (browser !== 'ok') expect(String((browser as Error).message)).not.toMatch(/space link session cannot/);
+    });
+  }
+
+  it('refused — repoint_session_space_credentials(uuid, text[]) too: the overload calls the guarded one', async () => {
+    expect(await outcome(async () => db.rpc(await linkClaims(), 'repoint_session_space_credentials', [randomUUID(), ['anthropic']])))
+      .not.toBe('ok');
+  });
+
+  it('hardening 01a0db7e a1 — expire_pending_space_credentials: link and agent refused 42501; positive — H\'s browser runs the sweep', async () => {
+    expect(await outcome(async () => db.rpc(await linkClaims(), 'expire_pending_space_credentials', []))).toBe('42501');
+    expect(await outcome(async () => db.rpc(await claimsForToken(await mintAgent()), 'expire_pending_space_credentials', []))).toBe('42501');
+    expect(await db.rpc(await hClaims(), 'expire_pending_space_credentials', [])).toMatchObject({ expired: expect.any(Number) });
+  });
+
+  it('the link-admitted list is exactly the pinned one (a widening is a pin change)', () => {
+    expect(Object.keys(LINK_ADMITTED_CREDENTIAL_READERS).sort()).toEqual(['session_stream_credential_allowed(uuid)']);
+  });
+});
+
+describe('L1 988 §4 — session_stream_credential_allowed: a link never sees a private-credential session, not even the holder\'s own', () => {
+  let privateSession: string;
+  let plainSession: string;
+  beforeAll(async () => {
+    privateSession = randomUUID();
+    plainSession = randomUUID();
+    const credential = randomUUID();
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      // 239's envelope admits a credential entity only under the writers' flag.
+      await client.query(`select set_config('tm8.credential_write', 'on', true)`);
+      await client.query(`insert into public.entities(id, space_id, kind, created_by, visibility) values ($1, $2, 'credential', $3, 'space')`,
+        [credential, fixture.spaceB, fixture.memberHB]);
+      await client.query(
+        `insert into public.space_credentials(id, space_id, provider, shape, label, key_hint, secret_ciphertext, secret_nonce,
+                                              created_by_account_id, owner_account_id, visibility, status)
+         values ($1, $2, 'anthropic', 'api_key', 'L1 private', 'abcd', decode(repeat('00', 17), 'hex'), decode(repeat('00', 12), 'hex'),
+                 $3, $3, 'private', 'active')`,
+        [credential, fixture.spaceB, fixture.accountH]);
+      for (const ws of [privateSession, plainSession]) {
+        await client.query(`insert into public.entities(id, space_id, kind, created_by, visibility) values ($1, $2, 'work_session', $3, 'space')`,
+          [ws, fixture.spaceB, fixture.memberHB]);
+        await client.query(`insert into public.work_sessions(entity_id, title, status, session_kind) values ($1, 'L1 stream', 'spawning', 'agent')`, [ws]);
+      }
+      await client.query(
+        `insert into public.session_space_credentials(work_session_id, provider, space_credential_id, space_id, launcher_account_id)
+         values ($1, 'anthropic', $2, $3, $4)`,
+        [privateSession, credential, fixture.spaceB, fixture.accountH]);
+    });
+  });
+
+  // The execution.journal / execution.transcript select (execution-handlers.ts:3105, :3257), verbatim in shape.
+  const streamRows = async (claims: DbClaims): Promise<Record<string, boolean>> => {
+    const rows = await db.query<{ id: string; credential_allowed: boolean }>(claims,
+      `select e.id::text as id, public.session_stream_credential_allowed(e.id) as credential_allowed
+         from public.entities e where e.id = any($1::uuid[]) and e.kind = 'work_session' and e.deleted_at is null`,
+      [[privateSession, plainSession]]);
+    return Object.fromEntries(rows.map((r) => [r.id, r.credential_allowed]));
+  };
+
+  it('link (H\'s own link, H owns the private credential): the journal/transcript select SUCCEEDS; the private session is false, the plain one true', async () => {
+    const link = await linkAB();
+    const claims = await claimsForToken((await store.use(await hClaims(), link.id)).token);
+    expect(await streamRows(claims)).toEqual({ [privateSession]: false, [plainSession]: true });
+  });
+
+  it('positive — H\'s browser, the owner: both true (257 unchanged)', async () => {
+    expect(await streamRows(await hClaims())).toEqual({ [privateSession]: true, [plainSession]: true });
+  });
+
+  it('positive — H3 (a B member, not the owner): private false, plain true (257 unchanged)', async () => {
+    const h3 = await claimsForToken(await mintBrowser(fixture.accountH3, fixture.identityH3));
+    expect(await streamRows(h3)).toEqual({ [privateSession]: false, [plainSession]: true });
   });
 });
