@@ -80,6 +80,7 @@ export const EDGE_VERBS: Readonly<Record<string, EdgeVerb>> = {
   relates_to: { out: 'Related', in: 'Related' },
   remembers: { out: 'Remembers', in: 'Remembered by' },
   runs_in: { out: 'Runs in', in: 'Hosts' },
+  runs_on: { out: 'Runs on', in: 'Used by' },
   selected_profile: { out: 'Profile', in: 'Profile of' },
   shared_into: { out: 'Shared into', in: 'Shared here' },
   snapshot_of: { out: 'Forked from', in: 'Forked as' },

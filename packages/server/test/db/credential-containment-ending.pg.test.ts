@@ -156,8 +156,11 @@ async function liveAgentSession(
     );
   });
   const sources = Object.fromEntries(Object.keys(spaceCredentialIds).map((p) => [p, 'space']));
+  // With no space credential the launch runs on the node key; session_credential_binding refuses a
+  // manifest whose effective map is empty.
+  const effective = Object.keys(sources).length > 0 ? sources : { anthropic: 'node' };
   await db.rpc(claims(launcher), 'record_session_manifest', [sessionId, JSON.stringify({
-    launch: { credentialSources: sources, spaceCredentialIds, effectiveCredentialSources: sources },
+    launch: { credentialSources: sources, spaceCredentialIds, effectiveCredentialSources: effective },
   })]);
   await asOwner(async (c) => setStatus(c, sessionId, 'running'));
   expect(runtime.pty.hasSession(sessionId)).toBe(true);

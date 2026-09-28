@@ -57,6 +57,7 @@ import {
   type SpawnContext,
   type SpawnRequest,
   type Tm8Manifest,
+  type CredentialBindingLaunch,
   type TransitionInput,
   type WorkdirMode,
   type WorkSessionResumeInfo,
@@ -1227,6 +1228,17 @@ export class DbGraphPort implements GraphPort {
       prompts.system,
       prompts.task,
       agentConfigDir,
+    ]);
+  }
+
+  async recordCredentialBinding(
+    auth: GraphAuth,
+    sessionId: string,
+    launch: CredentialBindingLaunch,
+  ): Promise<void> {
+    await this.db.rpc(this.claims(auth), 'public.record_session_credential_binding', [
+      sessionId,
+      JSON.stringify(launch),
     ]);
   }
 

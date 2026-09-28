@@ -40,6 +40,7 @@ import {
   assembleSummaries, ENTITY_COLUMNS, ENTITY_FROM, MICROS, type EntityRow,
 } from '../entity-read.js';
 import { toCommandResult, type RpcCommandResult } from './entities.js';
+import { runsOnListedFrom } from '../services/w2/runs-on-visibility.js';
 
 // ---------------------------------------------------------------------------
 // Sorting
@@ -451,10 +452,14 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
     const { type, direction, entityId } = f.edge;
     const self = direction === 'outgoing' ? 'src_id' : 'dst_id';
     const other = direction === 'outgoing' ? 'dst_id' : 'src_id';
+    const anchor = p.add(assertUuid(entityId, 'filters.edge.entityId'));
+    // runs_on counts only when the filter's anchor is the session: listing the
+    // sessions that point at a credential is its gated usage read.
     where.push(`exists (
       select 1 from public.edges g
        where g.${self} = e.id and g.type = ${p.add(type)}
-         and g.${other} = ${p.add(assertUuid(entityId, 'filters.edge.entityId'))}
+         and g.${other} = ${anchor}
+         and ${runsOnListedFrom('g', `${anchor}::uuid`)}
     )`);
   }
 

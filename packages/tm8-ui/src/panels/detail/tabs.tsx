@@ -450,7 +450,9 @@ export function ConnectionsTab({
   const conversation = conversationOf(groups, detail.id);
   const parent = detail.hierarchy.parent;
   const children = detail.hierarchy.children.items;
-  const empty = !parent && children.length === 0 && peers.length === 0 && conversation.total === 0;
+  // Counted, never listed: a credential's sessions are its gated usage read.
+  const counted = groups.filter((group) => group.summary !== undefined && group.summary.count > 0);
+  const empty = !parent && children.length === 0 && peers.length === 0 && conversation.total === 0 && counted.length === 0;
 
   if (graph !== undefined && view === 'graph') {
     return (
@@ -493,6 +495,13 @@ export function ConnectionsTab({
           </div>
         </section>
       ) : null}
+
+      {counted.map((group) => (
+        <section className="pn-section" key={`${group.direction}:${group.type}`} data-testid="pn-counted-group">
+          <Eyebrow faint>{`${edgeVerb(group.type, group.direction).toUpperCase()} · ${group.summary!.count}`}</Eyebrow>
+          <p className="pn-muted">Listed in this credential&apos;s usage, which its owner and space admins can open.</p>
+        </section>
+      ))}
 
       {peers.length > 0 ? (
         <section className="pn-section">

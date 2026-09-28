@@ -163,6 +163,7 @@ export type {
   TaskContext,
   TeamMemberContext,
   Tm8Manifest,
+  CredentialBindingLaunch,
   TransitionInput,
   WorkdirMode,
   WorkSessionResumeInfo,

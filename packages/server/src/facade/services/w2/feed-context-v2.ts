@@ -71,6 +71,7 @@ import type { Querier } from '../../../db/types.js';
 import { resolveAuthoredHeaderView, resolveHeaderViews } from '../../../headers/resolve.js';
 import { ENTITY_COLUMNS, ENTITY_FROM, MICROS, iso, isoOrNull, titleOf, type EntityRow } from '../../entity-read.js';
 import { taggedQuerier, type ContextLoadTag } from './context-tags.js';
+import { runsOnListedFrom } from './runs-on-visibility.js';
 
 // ---------------------------------------------------------------------------
 // Constants (c761 §3.2–3.3, c904 §2.2–2.8)
@@ -1014,7 +1015,7 @@ async function loadV2(q: Querier, id: string, request: V2Request): Promise<{ loa
            union all
            (select g.id, g.type, g.created_at, false, g.src_id
               from public.edges g
-             where g.dst_id = $1 and g.src_id <> $1 and ${typeFilter} ${keyset})
+             where g.dst_id = $1 and g.src_id <> $1 and ${runsOnListedFrom('g', '$1')} and ${typeFilter} ${keyset})
          ) c on c.other_id = e.id
         order by c.edge_at desc, c.edge_id desc
         limit ${ROW_LIMIT + 1}`,

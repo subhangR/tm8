@@ -897,7 +897,7 @@ describe('W10c (T38) a session on a PRIVATE credential in A is its owner\'s alon
     }
     await asIdentity(fixture.identityH, (q) => q.rpc('record_session_manifest', [
       sessionId,
-      JSON.stringify({ launch: { credentialSources: { anthropic: 'space' }, spaceCredentialIds: { anthropic: credentialId } } }),
+      JSON.stringify({ launch: { credentialSources: { anthropic: 'space' }, spaceCredentialIds: { anthropic: credentialId }, effectiveCredentialSources: { anthropic: 'space' } } }),
     ]), 'agent');
     return sessionId;
   };
