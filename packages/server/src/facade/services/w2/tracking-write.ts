@@ -9,9 +9,11 @@
  * merge call itself still carries `expectedHeadSha`, and GitHub answers
  * `head_moved` rather than merging commits nobody looked at.
  *
- * THE CREDENTIAL IS THE ACTING MEMBER'S OWN. `read_account_git_credential`
- * resolves under the caller's claims, so a node token can never merge and an
- * unauthorized member gets `forbidden` with the reason named. Every merge on
+ * THE CREDENTIAL IS THE ACTING MEMBER'S OWN, IN THE PR'S SPACE (doc 01a0e248
+ * §10.6). `readMemberToken` reads, under the caller's claims, a GitHub
+ * credential of that space OWNED BY THE CALLER — their my_default first. A
+ * space-owned credential, another member's, or a node token can never merge,
+ * and a member with none gets `forbidden` with the fix named. Every merge on
  * the forge is attributable to the account whose credential performed it.
  *
  * AFTER A MERGE, THE OBSERVER CLOSES THE LOOP: `queue_tracking_refresh` (with
@@ -22,7 +24,11 @@
  */
 import { CollabError, type TrackingPrMergeInput, type TrackingPrMergeResult } from '@tm8/contract';
 
-import { DbGitHubCredentialStore } from '../../../credentials/github-credential-store.js';
+import {
+  memberGithubRefusal,
+  serverGithubCredentials,
+  type ServerGithubCredentialReader,
+} from '../../../credentials/space-credential-port.js';
 import { GithubWriteClient } from '../../../tracking/github-write.js';
 import { resolveServerDataDir } from '../../../http/config.js';
 import type { RequestContext } from '../../../http/types.js';
@@ -31,6 +37,7 @@ import type { FacadeDeps } from '../../deps.js';
 
 interface PullRequestRow {
   entity_id: string;
+  space_id: string;
   repo: string;
   number: number;
   state: 'open' | 'merged' | 'closed' | 'draft';
@@ -42,13 +49,13 @@ interface PullRequestRow {
 export interface TrackingWriteServiceOptions {
   /** Injected in tests; defaults to the real client. */
   writeClient?: Pick<GithubWriteClient, 'mergePullRequest'>;
-  /** Injected in tests; defaults to the DB-backed store. */
-  credentials?: Pick<DbGitHubCredentialStore, 'resolve'>;
+  /** Injected in tests; defaults to the space-credential reader. */
+  credentials?: Pick<ServerGithubCredentialReader, 'readMemberToken'>;
 }
 
 export class W2TrackingWriteService {
   private readonly writeClient: Pick<GithubWriteClient, 'mergePullRequest'>;
-  private readonly credentials: Pick<DbGitHubCredentialStore, 'resolve'>;
+  private readonly credentials: Pick<ServerGithubCredentialReader, 'readMemberToken'>;
 
   constructor(
     private readonly deps: FacadeDeps,
@@ -57,10 +64,7 @@ export class W2TrackingWriteService {
     this.writeClient = options.writeClient ?? new GithubWriteClient();
     this.credentials =
       options.credentials ??
-      new DbGitHubCredentialStore({
-        db: this.deps.db,
-        dataDir: this.deps.config.dataDir ?? resolveServerDataDir(),
-      });
+      serverGithubCredentials(this.deps.db, this.deps.config.dataDir ?? resolveServerDataDir());
   }
 
   readonly mergePr = async (ctx: RequestContext): Promise<TrackingPrMergeResult> => {
@@ -73,8 +77,11 @@ export class W2TrackingWriteService {
     // ── observed-facts guards, before any network ─────────────────────────
     const rows = await this.deps.db.query<PullRequestRow>(
       claims,
-      `select entity_id, repo, number, state, head_sha, ci_status, mergeable_state
-         from public.pull_requests where entity_id = $1`,
+      `select pr.entity_id, e.space_id, pr.repo, pr.number, pr.state, pr.head_sha,
+              pr.ci_status, pr.mergeable_state
+         from public.pull_requests pr
+         join public.entities e on e.id = pr.entity_id
+        where pr.entity_id = $1`,
       [id],
     );
     const pr = rows[0];
@@ -95,11 +102,11 @@ export class W2TrackingWriteService {
       });
     }
 
-    // ── the acting member's own credential, or a named refusal ────────────
-    const credential = await this.credentials.resolve(claims as never);
-    if (credential === null) {
-      throw new CollabError('forbidden', 'no GitHub credential stored for this account — connect one under Settings → Agent credentials', {
-        details: { reason: 'no_github_credential' },
+    // ── the acting member's own credential in the PR's space, or a named refusal
+    const credential = await this.credentials.readMemberToken(claims, pr.space_id);
+    if (!credential.ok) {
+      throw new CollabError('forbidden', memberGithubRefusal(credential), {
+        details: { reason: 'no_github_credential', spaceId: pr.space_id, credential: credential.reason },
       });
     }
 

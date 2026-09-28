@@ -5311,7 +5311,7 @@ export function createFixtureSeam(): FixtureSeam {
               details: { reason: 'ci_red' },
             });
           case 'no_github_credential':
-            throw new CollabError('forbidden', 'no GitHub credential stored for this account — connect one under Settings → Agent credentials', {
+            throw new CollabError('forbidden', 'you have no GitHub credential of your own in this space — connect a GitHub token under Space settings → Credentials (owned by you), then merge again', {
               details: { reason: 'no_github_credential' },
             });
           case 'forge_blocked':

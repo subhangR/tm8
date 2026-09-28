@@ -17,15 +17,16 @@ import type { FacadeDeps } from '../../src/facade/deps.js';
 import type { RequestContext } from '../../src/http/types.js';
 
 const PR_ID = '019f0000-0000-7000-8000-00000000aaaa';
+const SPACE_ID = '019f0000-0000-7000-8000-00000000bbbb';
 
 interface Row {
-  entity_id: string; repo: string; number: number; state: string;
+  entity_id: string; space_id: string; repo: string; number: number; state: string;
   head_sha: string | null; ci_status: string | null; mergeable_state: string | null;
 }
 
 function row(over: Partial<Row> = {}): Row {
   return {
-    entity_id: PR_ID, repo: 'octo/widgets', number: 7, state: 'open',
+    entity_id: PR_ID, space_id: SPACE_ID, repo: 'octo/widgets', number: 7, state: 'open',
     head_sha: 'headsha1', ci_status: 'passing', mergeable_state: 'clean',
     ...over,
   };
@@ -61,8 +62,11 @@ function ctxFor(body: Record<string, unknown> = {}): RequestContext {
   } as never;
 }
 
-const CRED = { resolve: async () => ({ provider: 'github', login: 'alice', token: 'ghp_t' }) } as never;
-const NO_CRED = { resolve: async () => null } as never;
+/** The acting member's own GitHub credential in the PR's space (§10.6). */
+const CRED = {
+  readMemberToken: async () => ({ ok: true, token: 'ghp_t', credentialId: 'cred-own', label: 'alice' }),
+} as never;
+const NO_CRED = { readMemberToken: async () => ({ ok: false, reason: 'none' }) } as never;
 
 function merging(outcome: unknown, calls: unknown[] = []) {
   return {
@@ -114,13 +118,41 @@ describe('observed-facts guards, before credential and network', () => {
     expect(calls).toHaveLength(0);
   });
 
-  it('no stored member credential is forbidden with the reason named — never a node-token fallback', async () => {
+  it('no own credential in the space is forbidden with the fix named — never a space or node token', async () => {
     const calls: unknown[] = [];
     const service = new W2TrackingWriteService(depsWith([row()]), { credentials: NO_CRED, writeClient: merging({}, calls) });
     const err = await failure(service.mergePr(ctxFor()));
     expect(err.code).toBe('forbidden');
-    expect(err.details).toMatchObject({ reason: 'no_github_credential' });
+    expect(err.details).toMatchObject({ reason: 'no_github_credential', spaceId: SPACE_ID, credential: 'none' });
+    expect(err.message).toBe(
+      'you have no GitHub credential of your own in this space — connect a GitHub token under Space settings → Credentials (owned by you), then merge again',
+    );
     expect(calls).toHaveLength(0);
+  });
+
+  it('a stale own credential refuses naming it and the re-key', async () => {
+    const stale = { readMemberToken: async () => ({ ok: false, reason: 'stale', label: 'alice-pat' }) } as never;
+    const service = new W2TrackingWriteService(depsWith([row()]), { credentials: stale, writeClient: merging({}) });
+    const err = await failure(service.mergePr(ctxFor()));
+    expect(err.details).toMatchObject({ reason: 'no_github_credential', credential: 'stale' });
+    expect(err.message).toContain('"alice-pat" in this space is stale — re-key it under Space settings → Credentials');
+  });
+
+  it("reads the member's credential in the PR's OWN space", async () => {
+    const asked: unknown[][] = [];
+    const credentials = {
+      readMemberToken: async (...args: unknown[]) => {
+        asked.push(args);
+        return { ok: true, token: 'ghp_t', credentialId: 'c', label: 'l' };
+      },
+    } as never;
+    const service = new W2TrackingWriteService(depsWith([row()]), {
+      credentials,
+      writeClient: merging({ ok: true, value: { sha: 's', merged: true, message: 'ok' } }),
+    });
+    await service.mergePr(ctxFor());
+    expect(asked).toHaveLength(1);
+    expect(asked[0]![1]).toBe(SPACE_ID);
   });
 });
 

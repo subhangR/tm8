@@ -47,11 +47,16 @@ import {
 } from '../../../credentials/agent-session-containment.js';
 import type { CredentialTerminalPort } from './credential-catalog.js';
 
-/** The node environment variable whose presence is the node fallback (D9). */
+/**
+ * The node environment variable whose presence is the node fallback (D9).
+ * GitHub has none: no server path reads a GitHub token from the environment
+ * (doc 01a0e248 §10.5, gate 6), and a git spawn's node rung is the machine's
+ * `gh` login, not an env var.
+ */
 const NODE_ENV_KEYS: Record<SpaceCredentialProviderName, readonly string[]> = {
   anthropic: ['ANTHROPIC_API_KEY'],
   openai: ['OPENAI_API_KEY'],
-  github: ['GH_TOKEN', 'GITHUB_TOKEN'],
+  github: [],
 };
 
 type SpaceCredentialStorePort = Pick<

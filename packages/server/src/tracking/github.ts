@@ -12,15 +12,20 @@
  *     returning nulls that a caller could mistake for facts. A rate limit and a
  *     deleted PR are different answers, and writing `state = null` for both
  *     would let a 403 quietly erase a merge.
- *   * THE TOKEN IS OPTIONAL AND NEVER LOGGED. S15 keeps provider credentials
- *     out of Postgres; they arrive from the environment. Unauthenticated
- *     requests still work against public repositories at a much lower rate
- *     limit, which is the right default for a node that was never given one.
+ *   * THE TOKEN IS OPTIONAL AND NEVER LOGGED. It is the space-owned GitHub
+ *     credential of the project's space (doc 01a0e248 §10.5), read per space
+ *     by `SpaceGithubClients` below — never the node's environment and never
+ *     a member's credential. Unauthenticated requests still work against
+ *     public repositories at a much lower rate limit, which is the right
+ *     default for a space that was never given one.
  *   * `repo` IS VALIDATED BEFORE IT REACHES A URL. It comes from a stored row
  *     that a client's link-pr call put there, so it is attacker-influenced
  *     text; `owner/name` shape-checking is what stops it from walking the API
  *     path.
  */
+
+import type { ServerGithubCredentialReader } from '../credentials/space-credential-port.js';
+import type { DbClaims } from '../db/types.js';
 
 const GITHUB_API = 'https://api.github.com';
 const REPO_RE = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
@@ -119,7 +124,7 @@ export class GithubClient {
     this.timeoutMs = options.timeoutMs ?? 10_000;
   }
 
-  /** True when this node was given a credential. Used only for reporting. */
+  /** True when this client holds a credential. Used only for reporting. */
   get authenticated(): boolean {
     return this.token !== undefined;
   }
@@ -718,14 +723,59 @@ export function lastLines(text: string, count: number, truncated = false): strin
 }
 
 /**
- * `TM8_GITHUB_TOKEN`, then `GITHUB_TOKEN`, then `GH_TOKEN`.
+ * The pollers' GitHub clients for ONE tick, one per space (doc 01a0e248 §10.5).
  *
- * The tm8-prefixed name is checked first so an operator can point this one
- * subsystem at a narrowly-scoped read token without disturbing whatever else on
- * the box reads the conventional names.
+ * A pull request is read with the space-owned credential of the space it lives
+ * in, else anonymously; `ServerGithubCredentialReader.readPollToken` is the
+ * whole rule. There is no node token: the environment chain that used to sit
+ * here (`TM8_GITHUB_TOKEN` → `GITHUB_TOKEN` → `GH_TOKEN`) was a second node
+ * rung, and gate 6 (test/tracking/github-env-ban.test.ts) keeps it deleted.
+ *
+ * Resolved once per space per tick, so a tick over twenty PRs in one space
+ * reads one credential, and a credential revoked between ticks stops being
+ * spent on the next one. `summary()` says, per space, which credential was
+ * used or why none was: an anonymous poller that does not say so is how a
+ * tracking outage goes unnoticed.
  */
-export function resolveGithubToken(env: NodeJS.ProcessEnv = process.env): string | undefined {
-  return (
-    env.TM8_GITHUB_TOKEN?.trim() || env.GITHUB_TOKEN?.trim() || env.GH_TOKEN?.trim() || undefined
-  );
+export class SpaceGithubClients {
+  private readonly clients = new Map<string, Promise<GithubClient>>();
+  private readonly sources = new Map<string, string>();
+
+  constructor(
+    private readonly options: {
+      claims: DbClaims;
+      reader?: Pick<ServerGithubCredentialReader, 'readPollToken'> | undefined;
+      /** Test seam: one client for every space, and no credential is read. */
+      client?: GithubClient | undefined;
+    },
+  ) {}
+
+  forSpace(spaceId: string): Promise<GithubClient> {
+    const injected = this.options.client;
+    if (injected) return Promise.resolve(injected);
+    let client = this.clients.get(spaceId);
+    if (!client) {
+      client = this.resolve(spaceId);
+      this.clients.set(spaceId, client);
+    }
+    return client;
+  }
+
+  /** Per space: the credential spent, or why the reads were anonymous. Never a secret. */
+  summary(): Record<string, string> {
+    return Object.fromEntries(this.sources);
+  }
+
+  private async resolve(spaceId: string): Promise<GithubClient> {
+    const reader = this.options.reader;
+    const read = reader
+      ? await reader.readPollToken(this.options.claims, spaceId)
+      : { ok: false as const, reason: 'no space credential reader is configured' };
+    if (read.ok) {
+      this.sources.set(spaceId, `space credential ${read.credentialId} (${read.label})`);
+      return new GithubClient({ token: read.token });
+    }
+    this.sources.set(spaceId, `anonymous: ${read.reason}`);
+    return new GithubClient();
+  }
 }
