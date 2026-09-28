@@ -9,14 +9,16 @@
  */
 import { act, fireEvent, render, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { commands } from '@tm8/cli/discovery';
-import { homeRootKinds } from '../domain';
+import { NOUNS, commands } from '@tm8/cli/discovery';
+import { EDGE_KINDS, collectionKinds, homeRootKinds, relationsOf } from '../domain';
 import { ListRootHeader, type ListRootOption } from '../panels/ListRootHeader';
 import { EntityHelpOverlay } from './EntityHelpOverlay';
 import { commandByPath } from './catalog';
 import { entityHelpStore, resetEntityHelp } from './entityHelpStore';
 import { registeredHelpModules } from './kinds';
 import { TEMPLATE_HELP } from './kinds/_template';
+import { neighboursOf } from './tabs/ConstellationTab';
+import type { KindHelpModule } from './types';
 import { MotionProvider } from './motion/MotionContext';
 import { TypedTerminal } from './motion/TypedTerminal';
 import { resolveHelp } from './resolve';
@@ -82,6 +84,29 @@ describe('the (?) mark', () => {
     expect(view.queryByRole('menu')).toBeNull();
     expect(view.getByRole('dialog', { name: 'Docs' }).getAttribute('data-kind')).toBe('doc');
   });
+
+  it('opened from a row, focus returns to the caret on close — the row is gone with the menu (M1)', () => {
+    const view = renderHost();
+    const caret = view.getByLabelText('Choose which list to show');
+    caret.focus();
+    fireEvent.click(caret);
+    const mark = view.getByRole('button', { name: 'Help for Docs' });
+    mark.focus();
+    fireEvent.click(mark);
+    const dialog = view.getByRole('dialog', { name: 'Docs' });
+    expect(mark.isConnected).toBe(false);
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    expect(view.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(caret);
+  });
+
+  it('closes when its host unmounts, so it never follows the reader into another view (L3)', () => {
+    const view = renderHost();
+    fireEvent.click(view.getByRole('button', { name: 'Help for Tasks' }));
+    expect(entityHelpStore.getState().kind).toBe('task');
+    view.unmount();
+    expect(entityHelpStore.getState().kind).toBeNull();
+  });
 });
 
 describe('the overlay shell', () => {
@@ -146,20 +171,18 @@ describe('the overlay shell', () => {
     expect(within(dialog).getByRole('tabpanel').getAttribute('aria-labelledby')).toBe('eh-tab-story');
   });
 
-  it('Tab wraps inside the dialog in both directions', () => {
+  it('is non-modal: Tab is not trapped, and the list beside it stays a control (L2)', () => {
     const view = renderHost();
     fireEvent.click(view.getByRole('button', { name: 'Help for Tasks' }));
     const dialog = dialogOf(view);
+    expect(dialog.getAttribute('aria-modal')).toBeNull();
     const close = within(dialog).getByRole('button', { name: 'Close help' });
-    const focusable = [
-      ...dialog.querySelectorAll<HTMLElement>('button:not([tabindex="-1"]), [tabindex]:not([tabindex="-1"])'),
-    ].filter((el) => !el.closest('[aria-hidden="true"]'));
-    const last = focusable[focusable.length - 1]!;
-    last.focus();
-    fireEvent.keyDown(dialog, { key: 'Tab' });
+    close.focus();
+    const event = fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true });
+    /* Not prevented: the browser moves focus out of the dialog as it would from any region. */
+    expect(event).toBe(true);
     expect(document.activeElement).toBe(close);
-    fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true });
-    expect(document.activeElement).toBe(last);
+    expect(view.getByRole('tab', { name: 'Tasks' })).toBeTruthy();
   });
 
   it('a Constellation neighbour opens that kind, with a way back', () => {
@@ -221,19 +244,80 @@ describe('the toolkit reads the live catalog', () => {
     expect(card.querySelector('.eh-cmd__syntax')?.textContent).toBe(`tm8 ${tick.syntax.replace(/^tm8 /, '')}`);
   });
 
-  it('every registered module names a dropdown kind and only commands the catalog knows', () => {
-    const kinds = new Set(homeRootKinds().map((k) => k.kind));
+  /**
+   * THE MODULE VALIDATOR (review M3). Every registered module, and the
+   * template: kind is a dropdown kind; no two modules share a kind; every
+   * scene command, `toolkit.commands` path and demo line names a command the
+   * catalog knows; every `toolkit.nouns` entry is a catalog noun; every
+   * `constellation.notes` key is a relation the kind actually holds; every
+   * `spotlight` kind is a neighbour of the kind. The template's kind is
+   * `c:template`, so its kind-bound checks are skipped and everything
+   * catalog-bound is held.
+   */
+  function validateModule(module: KindHelpModule, kindBound: boolean): string[] {
+    const problems: string[] = [];
     const paths = new Set(commands().map((row) => row.command));
-    for (const module of registeredHelpModules()) {
-      expect(kinds.has(module.kind), module.kind).toBe(true);
-      for (const scene of module.toolkit?.scenes ?? []) {
-        for (const path of scene.commands) expect(paths.has(path), `${module.kind}: ${path}`).toBe(true);
+    const knownPath = (line: string) => [...paths].some((path) => line === path || line.startsWith(`${path} `));
+    const where = module.kind;
+    if (kindBound && !homeRootKinds().some((k) => k.kind === module.kind)) problems.push(`${where}: not a dropdown kind`);
+    for (const noun of module.toolkit?.nouns ?? []) if (!NOUNS.includes(noun)) problems.push(`${where}: unknown noun ${noun}`);
+    for (const path of module.toolkit?.commands ?? []) if (!paths.has(path)) problems.push(`${where}: unknown command ${path}`);
+    for (const scene of module.toolkit?.scenes ?? []) {
+      for (const path of scene.commands) if (!paths.has(path)) problems.push(`${where}/${scene.title}: unknown command ${path}`);
+      for (const line of scene.demo ?? []) {
+        if (line.startsWith('#')) continue;
+        if (!line.startsWith('tm8 ') || !knownPath(line.slice(4))) problems.push(`${where}/${scene.title}: demo line is not a known tm8 command: ${line}`);
       }
     }
-    /* The template's command paths are real too, so a copy starts green. */
-    for (const scene of TEMPLATE_HELP.toolkit?.scenes ?? []) {
-      for (const path of scene.commands) expect(paths.has(path), path).toBe(true);
+    const relations = kindBound ? relationsOf(module.kind) : null;
+    for (const key of Object.keys(module.constellation?.notes ?? {})) {
+      const [type, direction] = key.split(':');
+      if (!type || !(type in EDGE_KINDS)) {
+        problems.push(`${where}: note for unknown edge type ${key}`);
+        continue;
+      }
+      if (direction && direction !== 'outgoing' && direction !== 'incoming') problems.push(`${where}: note key ${key} has a bad direction`);
+      if (relations && !relations.some((r) => r.type === type && (!direction || r.direction === direction))) {
+        problems.push(`${where}: note for a relation the kind does not hold: ${key}`);
+      }
     }
+    if (relations) {
+      const neighbours = new Set(neighboursOf(module.kind, relations).map((n) => n.kind));
+      const kinds = new Set(collectionKinds().map((k) => k.kind));
+      for (const kind of module.constellation?.spotlight ?? []) {
+        if (!kinds.has(kind)) problems.push(`${where}: spotlight names a non-kind ${kind}`);
+        else if (!neighbours.has(kind)) problems.push(`${where}: spotlight names a non-neighbour ${kind}`);
+      }
+    }
+    return problems;
+  }
+
+  it('every registered module passes the validator, and no two modules share a kind (M3)', () => {
+    const modules = registeredHelpModules();
+    const kinds = modules.map((m) => m.kind);
+    expect(new Set(kinds).size, 'duplicate kinds in the registry').toBe(kinds.length);
+    const problems = modules.flatMap((module) => validateModule(module, true));
+    expect(problems).toEqual([]);
+  });
+
+  it('the template passes the catalog-bound checks, so a copy starts green', () => {
+    expect(validateModule(TEMPLATE_HELP, false)).toEqual([]);
+  });
+
+  it('the validator actually rejects (a green run over a permissive check proves nothing)', () => {
+    const bad: KindHelpModule = {
+      kind: 'task',
+      toolkit: {
+        intro: null,
+        nouns: ['no-such-noun'],
+        commands: ['task no-such-verb'],
+        scenes: [{ title: 'x', narrative: null, commands: ['entity get'], demo: ['tm8 nothing here', 'ls -la'] }],
+      },
+      constellation: { intro: null, notes: { no_such_edge: 'x', 'assigned_to:incoming': 'x' }, spotlight: ['loop', 'c:nope'] },
+    };
+    const problems = validateModule(bad, true);
+    expect(problems).toHaveLength(7);
+    expect(validateModule({ ...bad, kind: 'c:not-a-root' }, true)).toContain('c:not-a-root: not a dropdown kind');
   });
 });
 
