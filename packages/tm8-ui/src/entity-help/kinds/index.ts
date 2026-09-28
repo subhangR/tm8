@@ -26,6 +26,7 @@ import { SKILL_HELP } from './skill';
 import { TEAM_MEMBER_HELP } from './team_member';
 import { DOC_HELP } from './doc';
 import { MEMORY_HELP } from './memory';
+import { DRAWING_HELP } from './drawing';
 
 const MODULES: readonly KindHelpModule[] = [
   CHAT_HELP,
@@ -37,6 +38,7 @@ const MODULES: readonly KindHelpModule[] = [
   TEAM_MEMBER_HELP,
   DOC_HELP,
   MEMORY_HELP,
+  DRAWING_HELP,
 ];
 
 const BY_KIND: ReadonlyMap<string, KindHelpModule> = new Map(MODULES.map((module) => [module.kind, module]));
