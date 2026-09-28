@@ -125,7 +125,7 @@ async function workSession(space: string, persona: string, createdBy: string): P
 interface Minted { token: string; id: string; workSessionId: string }
 
 /**
- * W7b (996): the one launch under a link. `mintClaimsOf` registers the link
+ * W7b (274): the one launch under a link. `mintClaimsOf` registers the link
  * session's claims here with the human whose row it is; `mintChild` then
  * reserves on that row (as `spaceLinks.invoke` does, under home claims) and
  * mints through `issue_work_session_agent_session`, the link's only mint.
@@ -280,7 +280,7 @@ async function linked(who: 'H' | 'H3' | 'H4' = 'H'): Promise<Linked> {
 
 /**
  * The claims a first via_link child is minted under. 256 (W7p, Q4) refuses a
- * `link` session in BOTH agent mints unless, since W7b (996), it binds a live
+ * `link` session in BOTH agent mints unless, since W7b (274), it binds a live
  * spawn reservation on its own row — and a link-bound AGENT mints nothing (W9
  * R-2). So the fixture takes the real path: the link session's own claims, a
  * reservation made first by `mintChild`, and the reservation mint. The mint

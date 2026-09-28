@@ -1,5 +1,5 @@
 /**
- * W7b: the remote_ref watcher is a clock around `poll_remote_refs` (996). The
+ * W7b: the remote_ref watcher is a clock around `poll_remote_refs` (274). The
  * SQL half — referenced ids only, signed-in links only, the system actor — is
  * celled in db/remote-refs.pg.test.ts; this pins the job's own contract.
  */

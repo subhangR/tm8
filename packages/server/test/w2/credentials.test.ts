@@ -321,6 +321,8 @@ describe('the four credential operations exist in the contract', () => {
       'DELETE /v2/spaces/:spaceId/credentials/my-default/:provider',
       'GET /v2/space-credentials/:credentialId/usage',
       'GET /v2/spaces/:spaceId/credential-policy',
+      // Credentials r1 S7: both readiness thresholds for the space (read, human-only).
+      'GET /v2/spaces/:spaceId/credential-readiness',
       'PUT /v2/spaces/:spaceId/credential-policy/:provider',
     ]);
   });

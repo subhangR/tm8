@@ -33,8 +33,10 @@ import type {
   CredentialPolicySource,
   CredentialsSpaceCreateInput,
   CredentialsSpacePolicyView,
+  CredentialsSpaceReadinessView,
   CredentialsSpaceUsageView,
   SpaceCredentialProviderName,
+  SpaceCredentialStoredProviderName,
   SpaceCredentialView,
 } from '@tm8/contract';
 import { SectionAbsent, SectionFrame } from '../settings-space';
@@ -42,12 +44,16 @@ import type { SpaceCredentialsPort, SpaceCredentialsViewer, SpaceLoginProvider, 
 import {
   SHARED_SERVER_WARNING,
   SOURCE_WORD,
-  SPACE_CREDENTIAL_PROVIDERS,
+  SPACE_STORED_PROVIDERS,
+  isServerOnlyProvider,
   SPACE_PROVIDER_NAME,
   SPACE_SECRET_NOUN,
   afterDeleteNotice,
   allowedSourcesOf,
   canClaim,
+  canLaunchSentence,
+  canPollSentence,
+  launchReasonWord,
   canManage,
   canMyDefault,
   canRevoke,
@@ -79,30 +85,52 @@ export interface SpaceCredentialsSectionProps {
   heading?: string;
   /** Same-origin route prefix for the node that hosts a login terminal. */
   serverBaseUrl?: string;
+  /**
+   * Opens a credential's own panel (task 01a0e24d): per-item verbs live
+   * there; this screen keeps create, add and policy. Absent, no row offers it.
+   */
+  onOpen?: (credentialId: string) => void;
 }
 
-function isLoginProvider(provider: SpaceCredentialProviderName): provider is SpaceLoginProvider {
+function isLoginProvider(provider: SpaceCredentialStoredProviderName): provider is SpaceLoginProvider {
   return provider === 'anthropic' || provider === 'openai';
 }
 
-export function SpaceCredentialsSection({ port, heading = 'Space credentials', serverBaseUrl }: SpaceCredentialsSectionProps) {
+export function SpaceCredentialsSection({ port, heading = 'Space credentials', serverBaseUrl, onOpen }: SpaceCredentialsSectionProps) {
   const [viewer, setViewer] = useState<SpaceCredentialsViewer | null>(null);
   const [rows, setRows] = useState<SpaceCredentialView[] | null>(null);
   const [policy, setPolicy] = useState<CredentialsSpacePolicyView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // S7. Read on its own: an unreadable readiness says so and never hides the list.
+  const [readiness, setReadiness] = useState<CredentialsSpaceReadinessView | null>(null);
+  const [readinessError, setReadinessError] = useState<string | null>(null);
+
+  const readReadiness = useCallback(async () => {
+    try {
+      setReadiness(await port.readiness());
+      setReadinessError(null);
+    } catch (err: unknown) {
+      setReadinessError(failureOf(err).text);
+    }
+  }, [port]);
 
   const reload = useCallback(async () => {
     const [nextRows, nextPolicy] = await Promise.all([port.list(), port.policy()]);
     setRows(nextRows);
     setPolicy(nextPolicy);
-  }, [port]);
+    await readReadiness();
+  }, [port, readReadiness]);
 
   useEffect(() => {
     let live = true;
     // The viewer read may fail on its own; the list still draws, with no
     // management controls (a null viewer manages nothing).
     void port.viewer().then((v) => { if (live) setViewer(v); }, () => {});
+    void port.readiness().then(
+      (view) => { if (live) { setReadiness(view); setReadinessError(null); } },
+      (err: unknown) => { if (live) setReadinessError(failureOf(err).text); },
+    );
     void Promise.all([port.list(), port.policy()]).then(
       ([nextRows, nextPolicy]) => {
         if (!live) return;
@@ -139,11 +167,13 @@ export function SpaceCredentialsSection({ port, heading = 'Space credentials', s
             <span className="cred-notice__head">{notice}</span>
           </div>
         ) : null}
+        <ReadinessPanel readiness={readiness} error={readinessError} />
         {rows === null ? <p className="set-spc__muted">Reading…</p> : null}
         {rows !== null
-          ? SPACE_CREDENTIAL_PROVIDERS.map((provider) => (
+          ? SPACE_STORED_PROVIDERS.map((provider) => (
               <ProviderGroup
                 key={provider}
+                onOpen={onOpen}
                 provider={provider}
                 rows={groups[provider]}
                 allRows={rows}
@@ -164,6 +194,75 @@ export function SpaceCredentialsSection({ port, heading = 'Space credentials', s
   );
 }
 
+/**
+ * S7 readiness: two thresholds, each with its own sentence. The connect action
+ * takes the member to that provider's group, where adding a key or logging in
+ * lives. Nothing here disables anything.
+ */
+function ReadinessPanel({ readiness, error }: { readiness: CredentialsSpaceReadinessView | null; error: string | null }) {
+  if (error) {
+    return (
+      <div className="set-spc__readiness" data-testid="space-cred-readiness-error" role="status">
+        Readiness could not be read: {error}
+      </div>
+    );
+  }
+  if (!readiness) return null;
+  const goTo = (provider: SpaceCredentialProviderName) => {
+    const group = document.getElementById(`space-cred-group-${provider}`);
+    group?.scrollIntoView?.({ block: 'start' });
+    group?.focus();
+  };
+  const connect = (provider: SpaceCredentialProviderName) => (
+    <button
+      type="button"
+      className="set-spc__readiness-connect"
+      data-testid={`space-cred-readiness-connect-${provider}`}
+      onClick={() => goTo(provider)}
+    >
+      Connect {SPACE_PROVIDER_NAME[provider]}
+    </button>
+  );
+  return (
+    <div className="set-spc__readiness" data-testid="space-cred-readiness">
+      <div
+        className={`set-spc__threshold ${readiness.canLaunch.ready ? 'is-ready' : 'is-missing'}`}
+        data-testid="space-cred-readiness-launch"
+        data-ready={readiness.canLaunch.ready ? 'true' : 'false'}
+      >
+        <p className="set-spc__threshold-head">Can launch</p>
+        <p>{canLaunchSentence(readiness)}</p>
+        {readiness.canLaunch.missing.length > 0 ? (
+          <ul className="set-spc__threshold-missing">
+            {readiness.canLaunch.missing.map((provider) => (
+              <li key={provider} data-testid={`space-cred-readiness-missing-launch-${provider}`}>
+                <span>{SPACE_PROVIDER_NAME[provider]}: {launchReasonWord(readiness, provider)}</span> {connect(provider)}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+      <div
+        className={`set-spc__threshold ${readiness.canPoll.ready ? 'is-ready' : 'is-missing'}`}
+        data-testid="space-cred-readiness-poll"
+        data-ready={readiness.canPoll.ready ? 'true' : 'false'}
+      >
+        <p className="set-spc__threshold-head">Can track pull requests and CI</p>
+        <p>{canPollSentence(readiness)}</p>
+        {readiness.canPoll.missing.length > 0 ? (
+          <ul className="set-spc__threshold-missing">
+            {readiness.canPoll.missing.map((provider) => (
+              <li key={provider} data-testid={`space-cred-readiness-missing-poll-${provider}`}>
+                <span>{SPACE_PROVIDER_NAME[provider]}: a credential this space owns, shared with every member</span> {connect(provider)}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function ProviderGroup({
   provider,
   rows,
@@ -174,8 +273,10 @@ function ProviderGroup({
   serverBaseUrl,
   onChanged,
   onPolicy,
+  onOpen,
 }: {
-  provider: SpaceCredentialProviderName;
+  onOpen?: (credentialId: string) => void;
+  provider: SpaceCredentialStoredProviderName;
   rows: SpaceCredentialView[];
   allRows: SpaceCredentialView[];
   viewer: SpaceCredentialsViewer | null;
@@ -303,7 +404,7 @@ function ProviderGroup({
     ? { busy: loginBusy || login !== null, start: startLogin }
     : null;
   return (
-    <section className="set-spc__group" data-testid={`space-cred-group-${provider}`} aria-label={name}>
+    <section className="set-spc__group" id={`space-cred-group-${provider}`} data-testid={`space-cred-group-${provider}`} aria-label={name} tabIndex={-1}>
       <h4 className="set-spc__group-title">{name}</h4>
       {missingDefault ? (
         <p className="set-spc__warn" data-testid={`space-cred-no-default-${provider}`}>{missingDefault}</p>
@@ -316,7 +417,7 @@ function ProviderGroup({
         <ul className="set-spc__list">
           {rows.map((row) => (
             <CredentialRow key={row.id} row={row} allRows={allRows} viewer={viewer} port={port} onChanged={onChanged} login={loginControls}
-              myDefault={myDefault === row.id} onMyDefault={setMyDefaultId} />
+              myDefault={myDefault === row.id} onMyDefault={setMyDefaultId} onOpen={onOpen} />
           ))}
         </ul>
       )}
@@ -333,7 +434,16 @@ function ProviderGroup({
           onFinish={() => void finishLogin(login)}
         />
       ) : null}
-      <PolicyRow provider={provider} policy={policy} viewer={viewer} port={port} onPolicy={onPolicy} />
+      {isServerOnlyProvider(provider) ? (
+        // No policy row: a server-only key never reaches a launch, so there is
+        // no launch rung for a policy to allow or refuse.
+        <p className="set-spc__muted" data-testid={`space-cred-server-only-${provider}`}>
+          Ask Jev&apos;s key. It stays on the server: no session ever receives it. Ask Jev uses your
+          own default here first, then the space&apos;s default.
+        </p>
+      ) : (
+        <PolicyRow provider={provider} policy={policy} viewer={viewer} port={port} onPolicy={onPolicy} />
+      )}
     </section>
   );
 }
@@ -347,7 +457,9 @@ function CredentialRow({
   login,
   myDefault,
   onMyDefault,
+  onOpen,
 }: {
+  onOpen?: (credentialId: string) => void;
   row: SpaceCredentialView;
   allRows: SpaceCredentialView[];
   viewer: SpaceCredentialsViewer | null;
@@ -418,6 +530,10 @@ function CredentialRow({
           <span className={`set-spc__badge set-spc__badge--${visibility}`} data-testid={`space-cred-visibility-${row.id}`}>{visibility}</span>
         ) : null}
         <span className={`set-spc__badge set-spc__badge--${row.status}`}>{statusWord}</span>
+        {onOpen ? (
+          <button type="button" className="cred-action" data-testid={`space-cred-open-${row.id}`}
+            aria-label={`Open ${row.label}`} onClick={() => onOpen(row.id)}>Open</button>
+        ) : null}
       </div>
       <div className="set-spc__meta">
         <span>{row.shape === 'login' ? 'login' : row.shape === 'token' ? 'token' : 'API key'}</span>
@@ -638,7 +754,7 @@ function AddByKey({
   onChanged,
   login,
 }: {
-  provider: SpaceCredentialProviderName;
+  provider: SpaceCredentialStoredProviderName;
   rows: SpaceCredentialView[];
   viewer: SpaceCredentialsViewer | null;
   port: SpaceCredentialsPort;
@@ -872,7 +988,7 @@ type OpenSpaceLogin = PendingLogin & { lede: string; credentialId: string | null
  */
 function LoginStartFailure({ failure, provider, allRows, viewer, login }: {
   failure: SpaceLoginStartFailure;
-  provider: SpaceCredentialProviderName;
+  provider: SpaceCredentialStoredProviderName;
   allRows: SpaceCredentialView[];
   viewer: SpaceCredentialsViewer | null;
   login: LoginControls | null;
@@ -917,7 +1033,7 @@ function LoginStartFailure({ failure, provider, allRows, viewer, login }: {
 function BusyAndFailure({ busy, failure, provider }: {
   busy: null | 'probe' | 'plain';
   failure: SpaceCredentialFailure | null;
-  provider: SpaceCredentialProviderName;
+  provider: SpaceCredentialStoredProviderName;
 }) {
   return (
     <>

@@ -310,6 +310,47 @@ export interface IssuedSpaceSession {
   session: AuthSessionView;
 }
 
+/** `space_login_for_enter` (268): what entering a space needs. Never a plaintext. */
+interface SpaceLoginRequirement {
+  required: boolean;
+  locked: boolean;
+  verifier: string | null;
+}
+
+const spacePasswordRefused = (reason: 'space_password_required' | 'space_password_rejected'): CollabError =>
+  new CollabError(
+    'forbidden',
+    reason === 'space_password_required'
+      ? 'this space requires its space password'
+      : 'space password not accepted',
+    { details: { reason } },
+  );
+
+/**
+ * W5 (K2): check the member's space password for `spaceId` before a mint.
+ *
+ * Returns the verifier the password was checked against (passed on to
+ * `enter_space`, which refuses unless it is still the active row's), or null
+ * when the space needs none. The comparison is the same constant-work scrypt
+ * `loginWithPassword` uses: a member with no login row, or a locked one, spends
+ * the same work against the unmatchable verifier and gets the same answer as a
+ * wrong password.
+ */
+export async function checkSpacePassword(
+  db: Db,
+  claims: DbClaims,
+  spaceId: string,
+  password: string | undefined,
+): Promise<string | null> {
+  const need = await db.rpc<SpaceLoginRequirement>(claims, 'space_login_for_enter', [spaceId]);
+  if (!need.required) return null;
+  if (password === undefined || password === '') throw spacePasswordRefused('space_password_required');
+  const verifier = need.verifier ?? UNMATCHABLE_VERIFIER;
+  const ok = await hasher.verify(password, verifier);
+  if (!ok || need.locked || need.verifier === null) throw spacePasswordRefused('space_password_rejected');
+  return need.verifier;
+}
+
 /**
  * `auth.space.enter` (plan W3): mint a session pinned to `spaceId`.
  *
@@ -322,7 +363,14 @@ export interface IssuedSpaceSession {
 export async function enterSpace(
   db: Db,
   claims: DbClaims,
-  input: { spaceId: string; parentSessionId: string | null; kind: 'browser' | 'cli'; label?: string | null },
+  input: {
+    spaceId: string;
+    parentSessionId: string | null;
+    kind: 'browser' | 'cli';
+    label?: string | null;
+    /** W5: the verifier `checkSpacePassword` accepted, or null. */
+    spaceVerifier?: string | null;
+  },
 ): Promise<IssuedSpaceSession> {
   const secret = generateSecret();
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS[input.kind]).toISOString();
@@ -332,6 +380,7 @@ export async function enterSpace(
     hashToken(secret),
     expiresAt,
     input.label ?? null,
+    input.spaceVerifier ?? null,
   ]);
   if (session.space_id !== input.spaceId) {
     throw new CollabError('upstream_unavailable', 'space session returned no space');
@@ -696,6 +745,8 @@ export interface SignupViaInviteInput {
   displayName?: string | null;
   email?: string | null;
   kind?: 'browser' | 'cli';
+  /** W5: the space password, when the invite's space requires one. */
+  spacePassword?: string;
 }
 
 export interface IssuedInviteSignup extends IssuedLogin {
@@ -724,6 +775,13 @@ export async function signupViaInvite(
 ): Promise<IssuedInviteSignup> {
   const identityId = `id_${randomUUID()}`;
   const passwordHash = await hasher.hash(input.password);
+  // W5 (K2): the space password is asked for only when the space requires it.
+  // The SQL refuses a missing one; this read makes the refusal readable.
+  const needsSpacePassword = await db.rpc<boolean>({}, 'invite_requires_space_password', [input.code]);
+  if (needsSpacePassword && !input.spacePassword) throw spacePasswordRefused('space_password_required');
+  const spaceVerifier = needsSpacePassword && input.spacePassword
+    ? await hasher.hash(input.spacePassword)
+    : null;
 
   const created = await db.rpc<{
     account: AccountRowJson;
@@ -737,6 +795,7 @@ export async function signupViaInvite(
     input.email ?? null,
     hasher.algorithm,
     passwordHash,
+    spaceVerifier,
   ]);
   if (!created) {
     throw new CollabError('upstream_unavailable', 'signup_via_invite returned no row');
@@ -754,4 +813,53 @@ export async function signupViaInvite(
   );
 
   return { ...issued, spaceId: created.spaceId, memberId: created.memberId };
+}
+
+/** What `reset_space_login` / `set_space_login_locked` (268) answer. */
+export interface SpacePasswordAdminRow {
+  spaceId: string;
+  memberId: string;
+  status: 'active' | 'locked';
+  revokedSessionIds: string[];
+}
+
+/**
+ * W5 (K2) space-admin ops. Every guard is in SQL (human-only, pin-aware space
+ * admin, owner rows owner-only); the only TypeScript step is hashing a new
+ * password, so no plaintext reaches SQL.
+ */
+export async function setSpaceRequirePassword(
+  db: Db,
+  claims: DbClaims,
+  input: { spaceId: string; required: boolean; ownPassword?: string },
+): Promise<{ spaceId: string; requireSpacePassword: boolean; revokedSessionIds: string[] }> {
+  const ownVerifier = input.required && input.ownPassword ? await hasher.hash(input.ownPassword) : null;
+  return db.rpc(claims, 'set_space_require_credential', [input.spaceId, input.required, ownVerifier]);
+}
+
+export async function resetSpaceLogin(
+  db: Db,
+  claims: DbClaims,
+  input: { spaceId: string; memberId: string; password: string },
+): Promise<SpacePasswordAdminRow> {
+  const verifier = await hasher.hash(input.password);
+  return db.rpc(claims, 'reset_space_login', [input.spaceId, input.memberId, verifier]);
+}
+
+export async function setSpaceLoginLocked(
+  db: Db,
+  claims: DbClaims,
+  input: { spaceId: string; memberId: string; locked: boolean },
+): Promise<SpacePasswordAdminRow> {
+  return db.rpc(claims, 'set_space_login_locked', [input.spaceId, input.memberId, input.locked]);
+}
+
+/** W5: a space password as the verifier `space_logins` stores (redeem path). */
+export function hashSpacePassword(password: string): Promise<string> {
+  return hasher.hash(password);
+}
+
+/** W5: does this live invite code join a space that requires a space password? */
+export function inviteRequiresSpacePassword(db: Db, code: string): Promise<boolean> {
+  return db.rpc<boolean>({}, 'invite_requires_space_password', [code]);
 }

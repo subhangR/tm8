@@ -40,6 +40,7 @@ import {
   LEGACY_CONTENT_SURFACES,
   MAX_HASH_LENGTH,
   PANEL_TABS,
+  SETTINGS_ROUTE_SECTIONS,
   emptyPanels,
 } from './types';
 
@@ -468,7 +469,8 @@ function parseTarget(
     }
     case 'settings': {
       const section = rest[1];
-      if (section === 'projects' || section === 'menu' || section === 'credentials' || section === 'configs') return { view: 'settings', section };
+      const known = SETTINGS_ROUTE_SECTIONS.find((candidate) => candidate === section);
+      if (known) return { view: 'settings', section: known };
       return { view: 'settings', section: null };
     }
     case 'channel': {

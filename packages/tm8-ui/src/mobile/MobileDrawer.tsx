@@ -26,9 +26,29 @@
  *
  * ── FOUR SECTIONS, IN ONE ORDER (owner ruling 3) ───────────────────────────
  *
- *   Chats        the conversation list — FIRST, because it is what a reader
- *                returns to. It is also where the ☰ used to lead on the chat
- *                screen, so nothing was taken away to make room for it.
+ *   Chats        TWO VERBS — ＋ New conversation and ＋ New {kind} — and ONE
+ *                row that opens the conversation list. FIRST, because it is
+ *                what a reader returns to. It is also where the ☰ used to lead
+ *                on the chat screen, so nothing was taken away to make room
+ *                for it.
+ *
+ *                THE SECOND VERB IS THERE because opening this drawer to
+ *                START something was only ever answered one way. Making a
+ *                task meant a kind row, a list screen and its header's ＋ —
+ *                three taps for the thing a reader reaches for as often as a
+ *                conversation. It runs the SHELL'S create (`useNewTask`, the
+ *                desktop's own flow) and takes its word from the registry, so
+ *                the drawer still names no kind.
+ *
+ *                IT USED TO BE THE LIST ITSELF, inline, and that was the one
+ *                thing ruling 7 below says this drawer never does. It held
+ *                while a space had three conversations; at eight it put every
+ *                entity kind in the app below a population that grows without
+ *                bound, and reaching Tasks meant scrolling past every
+ *                conversation anyone had started (owner report 2026-09-15,
+ *                task 01a0a5f2). The list moved to `MobileThreadsSheet`, whose
+ *                head carries the rest of the reasoning — including why a chat
+ *                thread cannot simply become a kind row in the Entities band.
  *   Destinations the view refs (Home, Inbox, Work, Board, Craft, Graph, Files)
  *   Entities     every collection kind, grouped as the desktop rail groups them
  *   Foot         Settings and the account
@@ -58,11 +78,10 @@
 import { useCallback, useEffect, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
-import { KindIcon, collectionKinds, homeRailGroups, type KindArt } from '../domain';
+import { KindIcon, collectionKinds, getKind, homeRailGroups, type KindArt } from '../domain';
 import { VectorIcon } from '../kit';
 import { VIEW_PRESENTATION, type MenuTarget } from '../shell';
-import type { ChatThreadSummary } from '../chat-home/types';
-import type { EntityId, MenuViewRef } from '@tm8/contract';
+import type { EntityKind, MenuViewRef } from '@tm8/contract';
 import { useMobileSurface } from './surface';
 import './mobile-drawer.css';
 
@@ -125,6 +144,31 @@ const HELP_REF: MenuViewRef = 'help';
 /** ＋, on `VectorIcon`'s 16x16 grid — drawn, so it inherits the stroke weight. */
 const PLUS_ART: KindArt = ['M8 3.25v9.5', 'M3.25 8h9.5'];
 
+/**
+ * The Chats row's mark: a speech bubble with a tail, same grid.
+ *
+ * NOT `KindIcon('channel')`, and the distinction is the whole reason this row
+ * is not in the Entities band — a channel is an entity with a slug and a
+ * collection route, a conversation is an anchored message subtree. Wearing the
+ * channel's # would say they were the same population, and the Channels row
+ * three sections down would then be an unexplained duplicate.
+ */
+const CHAT_ART: KindArt = ['M13.2 9.4a1.6 1.6 0 0 1-1.6 1.6H6l-3 2.4V4.2a1.6 1.6 0 0 1 1.6-1.6h7a1.6 1.6 0 0 1 1.6 1.6z'];
+
+/**
+ * The second verb's word, off the registry.
+ *
+ * `palette.createLabel` is the SAME string `EntityCreateControl` renders for
+ * this kind, which is the point — the drawer is not allowed a second opinion
+ * about what creating a task is called. The fallback covers a kind whose row
+ * carries no palette; it is built from the registry's label, still not from a
+ * word written here.
+ */
+function newEntityLabel(kind: EntityKind): string {
+  const config = getKind(kind);
+  return config.palette?.createLabel ?? `New ${config.label.toLowerCase()}`;
+}
+
 /** The account row's mark: a head over shoulders, same grid. */
 const PERSON_ART: KindArt = ['M8 8.2a2.4 2.4 0 1 0 0-4.8 2.4 2.4 0 0 0 0 4.8', 'M3.4 13.2a4.6 4.6 0 0 1 9.2 0'];
 
@@ -145,11 +189,43 @@ export interface MobileDrawerProps {
   /** Per-kind counters. `undefined` for a kind the node could not count. */
   readonly countsFor: CountsFor;
 
-  /** The conversation list — the first section. */
-  readonly threads: readonly ChatThreadSummary[];
-  readonly selectedThreadId: EntityId | null;
-  readonly onSelectThread: (id: EntityId) => void;
+  /**
+   * How many conversations the space has, for the Chats row's counter.
+   *
+   * ABSENT IS NOT ZERO here too: the shell only learns the count once the chat
+   * screen has published its threads back, so before that there is no fact and
+   * the row draws no number rather than claiming none exist.
+   */
+  readonly chatCount?: number | undefined;
+  /** Opens the conversation list. The drawer renders no list of its own. */
+  readonly onOpenChats: () => void;
   readonly onNewThread: () => void;
+
+  /**
+   * THE SECOND VERB, and the kind it makes.
+   *
+   * A reader who opens this drawer to start something is as likely to be
+   * starting a piece of WORK as a conversation, and until now the only verb
+   * here made a conversation — so the other half of the answer was three taps
+   * away through a kind row and a list header. Two verbs, side by side.
+   *
+   * THE KIND TRAVELS, THE WORD DOES NOT. `onNewEntity` is the shell's create
+   * — `useNewTask`'s, the same flow the desktop's ＋ runs, not a second one —
+   * and the label is read off the registry's own `palette.createLabel` here,
+   * exactly as the kind rows below read their names. This file names no kind,
+   * and the head says why that matters.
+   */
+  readonly newEntityKind: EntityKind;
+  readonly onNewEntity: () => void;
+  /**
+   * Why that create cannot run right now, or null/absent when it can.
+   *
+   * REFUSED, NEVER HIDDEN, and never a live button that does nothing (R7).
+   * The row stays in place, states the cause, and does not fire — a verb that
+   * vanishes when the seam is missing teaches the reader the feature does not
+   * exist.
+   */
+  readonly newEntityUnavailable?: { cause: string; remedy: string } | null | undefined;
 
   /**
    * The header's Copy link, re-hosted in the foot beside Settings.
@@ -224,10 +300,12 @@ export function MobileDrawer(props: MobileDrawerProps) {
 
         <div className="mdrawer__scroll">
           {/* ── CHATS ─────────────────────────────────────────────────────
-              First, because it is what a reader returns to (ruling 3). The
-              rows are the SAME summaries the chat screen publishes back
-              through `onThreadsChange`, so this is one list with one source
-              rather than a second read of the same thing. */}
+              First, because it is what a reader returns to (ruling 3). TWO
+              ROWS, not the list: the verb, and a door to the list. The list
+              itself is `MobileThreadsSheet`, which still renders the SAME
+              summaries the chat screen publishes back through
+              `onThreadsChange` — one list with one source, now on a surface
+              that can hold it. */}
           <Section label="Chats">
             <li>
               <button type="button" className="mdrawer__row mdrawer__row--verb" onClick={props.onNewThread}>
@@ -237,24 +315,67 @@ export function MobileDrawer(props: MobileDrawerProps) {
                 <span className="mdrawer__name">New conversation</span>
               </button>
             </li>
-            {props.threads.map((thread) => (
-              <li key={thread.rootId}>
-                <button
-                  type="button"
-                  className="mdrawer__row"
-                  aria-current={thread.rootId === props.selectedThreadId ? 'true' : undefined}
-                  onClick={() => props.onSelectThread(thread.rootId)}
-                >
-                  <span className="mdrawer__name mdrawer__name--stacked">
-                    <span className="mdrawer__title">{thread.title}</span>
-                    <span className="mdrawer__preview">{thread.preview}</span>
+            <li>
+              {/* THE WORK VERB, beside the conversation one. Its word comes
+                  from the registry so the drawer and the desktop's ＋ cannot
+                  come to say different things about the same create.
+
+                  DISABLED-WITH-REASON RATHER THAN ABSENT when the seam cannot
+                  create: `aria-disabled` keeps the row in the tab order (a
+                  `disabled` attribute would take it out, D28) while the guard
+                  below is what actually stops the press. */}
+              <button
+                type="button"
+                className="mdrawer__row mdrawer__row--verb"
+                data-testid="mobile-drawer-new-entity"
+                {...(props.newEntityUnavailable
+                  ? { 'aria-disabled': true as const, title: props.newEntityUnavailable.cause }
+                  : {})}
+                onClick={() => {
+                  if (props.newEntityUnavailable) return;
+                  props.onNewEntity();
+                }}
+              >
+                <span className="mdrawer__mark" aria-hidden>
+                  <VectorIcon paths={PLUS_ART} size={16} strokeWidth={1.6} />
+                </span>
+                <span className="mdrawer__name">{newEntityLabel(props.newEntityKind)}</span>
+              </button>
+            </li>
+            <li>
+              {/* ONE ROW, SHAPED LIKE A KIND ROW — mark, name, total — so the
+                  conversations read as one more population of the space rather
+                  than as a band of the menu. It opens a full-screen list and
+                  dismisses, which is what every other row in this drawer does.
+
+                  It does NOT go through `go()`: the sheet is not a `MenuTarget`
+                  and this drawer builds no routes. Dismissing here is the same
+                  dismissal for the same reason, written out because the shared
+                  helper cannot carry it. */}
+              <button
+                type="button"
+                className="mdrawer__row"
+                data-testid="mobile-drawer-chats"
+                aria-haspopup="dialog"
+                onClick={() => {
+                  props.onOpenChats();
+                  onDismiss();
+                }}
+              >
+                <span className="mdrawer__mark" aria-hidden>
+                  <VectorIcon paths={CHAT_ART} size={16} strokeWidth={1.4} />
+                </span>
+                <span className="mdrawer__name">Conversations</span>
+                {/* Absent is not zero — see `chatCount`. A counted zero DOES
+                    draw, exactly as a kind total does: "0 conversations" is a
+                    fact about the space and the reason the row still exists. */}
+                {props.chatCount !== undefined ? (
+                  <span className="mdrawer__total" aria-label={`${props.chatCount} conversations`}>
+                    {props.chatCount}
                   </span>
-                </button>
-              </li>
-            ))}
-            {props.threads.length === 0 ? (
-              <li className="mdrawer__empty">No conversations on this space yet.</li>
-            ) : null}
+                ) : null}
+              </button>
+            </li>
           </Section>
 
           {/* ── DESTINATIONS ──────────────────────────────────────────────

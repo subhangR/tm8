@@ -1,5 +1,5 @@
 /**
- * The remote_ref watcher (W7b, 996).
+ * The remote_ref watcher (W7b, 274).
  *
  * A `remote_ref` in home space A caches the status of an entity that
  * `spaceLinks.invoke` created (or spawned) in the link's target B, so a

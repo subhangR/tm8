@@ -14,7 +14,7 @@ const WATCHED_WORD = /(spawn|start|resume|dispatch|terminal|attach|grant|token|u
 
 /** Watched ops the executor admits, each with why it starts, grants and reads nothing of that class. */
 const PASSES: Record<string, string> = {
-  'execution.spawn': 'W7b (996): admitted only through a budgeted reservation on the caller\'s own token row (reserve_space_link_spawn at home, admit_space_link_spawn and the SQL mint in B); the switch and explicit credentials are refused by INPUT/row, and the spawned agent is refused every launch (W9 R-2)',
+  'execution.spawn': 'W7b (274): admitted only through a budgeted reservation on the caller\'s own token row (reserve_space_link_spawn at home, admit_space_link_spawn and the SQL mint in B); the switch and explicit credentials are refused by INPUT/row, and the spawned agent is refused every launch (W9 R-2)',
   // #884 review LOW 2: `messages.` and `handoffs.` are watched. A post or a
   // handoff delivers only into a LIVE work session of B (routes are live,
   // same-space sessions) and, on a chat anchor, wakes that chat's next turn
@@ -32,6 +32,7 @@ const PASSES: Record<string, string> = {
   'execution.sessions.share': 'changes sharing on B\'s own entity; mints no bearer',
   'execution.launch': 'reads the launch posture; no body, no token',
   'execution.liveness': 'reads liveness flags',
+  'execution.dispatchers': 'reads the dispatcher list (ids, titles, liveness); starts nothing, no body, no token',
   'containers.stop': 'stops',
   'containers.pause': 'stops',
   'containers.destroy': 'stops',

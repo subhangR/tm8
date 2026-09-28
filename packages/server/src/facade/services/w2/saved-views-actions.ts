@@ -7,6 +7,7 @@ import {
   encodeCursor,
   expandActionRows,
   getOperation,
+  isHumanAuthKind,
   type ActionDiscoveryPage,
   type ActionDiscoveryResult,
   type ActionRow,
@@ -59,6 +60,22 @@ interface ActionContextRow {
   form_can_respond?: boolean | null;
   /** The caller holds a draft on this form (RLS: only their own is visible). */
   form_has_draft?: boolean | null;
+  /**
+   * Credential, space_link and server (`internal.entity_action_facts`):
+   * the doors' own predicates evaluated for THIS caller, booleans and
+   * statuses only. Null for every other kind.
+   */
+  cred_can_manage?: boolean | null;
+  cred_can_revoke?: boolean | null;
+  cred_is_owner?: boolean | null;
+  cred_can_claim?: boolean | null;
+  cred_can_usage?: boolean | null;
+  cred_status?: string | null;
+  cred_shape?: string | null;
+  link_mine_status?: string | null;
+  link_is_member?: boolean | null;
+  link_ever_signed_in?: boolean | null;
+  server_can_remove?: boolean | null;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -227,6 +244,20 @@ function operationParams(operation: OperationName): string[] {
   return [...getOperation(operation).path.matchAll(/:([A-Za-z]+)/g)].map((match) => match[1] ?? '');
 }
 
+/**
+ * Whether an operation that needs this entity is offered on it, from the row's
+ * state alone. The rule each case follows is the door's own rule.
+ *
+ * ONE POLICY FOR REFUSALS. Advertise an op the door will refuse when, and only
+ * when, the refusal carries a remedy the caller can act on. Human-only is the
+ * one such case today: the op stays listed to an agent with `refused: true`
+ * (the human-only join in `discover`), because the agent can ask its human to
+ * do it — the same remedy the CLI's `link` hint gives. A refusal without a
+ * remedy (a kind whose door cannot delete it, a row state that forbids the
+ * verb) is WITHHELD here, because it would only offer a 403. The
+ * `entities.delete` comment below is the canonical instance of the second
+ * half; the credential, link and server cases follow it.
+ */
 function structurallyAvailable(operation: OperationName, row: ActionContextRow): boolean {
   const live = row.deleted_at === null;
   switch (operation) {
@@ -252,11 +283,14 @@ function structurallyAvailable(operation: OperationName, row: ActionContextRow):
       // `containers.destroy` stops the runtime before soft-deleting the
       // envelope. Advertising a delete the door refuses would offer a control
       // whose only outcome is a 403. `space_link` likewise (W6 review D1):
-      // `spaceLinks.remove` is its only delete. `remote_ref` (W7b, 996) is
+      // `spaceLinks.remove` is its only delete. `credential` and `server`
+      // join for the same reason: `credentials.space.delete` (revoke) and
+      // `servers.remove` are their only deletes. `remote_ref` (W7b) is
       // refused by the generic doors too (entities-commands-tracking).
       return live && row.kind !== 'member' && row.kind !== 'project'
         && row.kind !== 'interaction_profile' && row.kind !== 'container'
-        && row.kind !== 'space_link' && row.kind !== 'remote_ref';
+        && row.kind !== 'space_link' && row.kind !== 'credential' && row.kind !== 'server'
+        && row.kind !== 'remote_ref';
     case 'entities.restore':
       return false;
     case 'entities.children':
@@ -324,6 +358,48 @@ function structurallyAvailable(operation: OperationName, row: ActionContextRow):
       return live && row.kind === 'form' && row.form_has_draft === true;
     case 'forms.responses.list':
       return live && row.kind === 'form';
+    // Credentials (255), read off `entity_action_facts`: the managers' rule, the
+    // revokers' rule, the owner's rule, 255's claim rule. A revoked
+    // credential offers nothing but its usage.
+    case 'credentials.space.rename':
+    case 'credentials.space.rekey':
+    case 'credentials.space.setDefault':
+      return live && row.kind === 'credential' && row.cred_can_manage === true
+        && row.cred_status !== 'revoked';
+    case 'credentials.space.delete':
+      return live && row.kind === 'credential' && row.cred_can_revoke === true
+        && row.cred_status !== 'revoked';
+    case 'credentials.space.setVisibility':
+    case 'credentials.space.spaceDefaultConsent':
+      return live && row.kind === 'credential' && row.cred_is_owner === true
+        && row.cred_status !== 'revoked';
+    case 'credentials.space.claim':
+      return live && row.kind === 'credential' && row.cred_can_claim === true;
+    case 'credentials.space.myDefault.set':
+      return live && row.kind === 'credential' && row.cred_is_owner === true
+        && row.cred_status === 'active';
+    case 'credentials.space.usage':
+      return live && row.kind === 'credential' && row.cred_can_usage === true;
+    // Space links (251/256): every door acts on the caller's OWN row, which a
+    // member always has (created signed_out on first touch). Relogin needs a
+    // row that was signed in once; logout is offered only when signed in,
+    // because anywhere else it changes nothing.
+    case 'spaceLinks.login':
+    case 'spaceLinks.setSpawn':
+    case 'spaceLinks.remove':
+    case 'spaceLinks.audit':
+      return live && row.kind === 'space_link' && row.link_is_member === true;
+    case 'spaceLinks.relogin':
+      return live && row.kind === 'space_link' && row.link_ever_signed_in === true;
+    case 'spaceLinks.logout':
+      return live && row.kind === 'space_link' && row.link_mine_status === 'signed_in';
+    // Servers (261). `servers.adopt` is NOT here: it acts on a 044 row that
+    // has no entity yet, so it stays a space-scoped verb.
+    case 'servers.get':
+    case 'servers.probe':
+      return live && row.kind === 'server';
+    case 'servers.remove':
+      return live && row.kind === 'server' && row.server_can_remove === true;
     default:
       return false;
   }
@@ -380,6 +456,10 @@ function anchoredOn(operation: OperationName, row: ActionContextRow): boolean {
     case 'execution.spawn':
     case 'execution.dispatch':
       return row.kind === 'task';
+    // `{ credentialId }` in the body: the login terminal of THIS credential.
+    case 'credentials.loginSessions.start':
+      return row.kind === 'credential' && row.cred_shape === 'login'
+        && row.cred_can_manage === true && row.cred_status !== 'revoked';
     default:
       return false;
   }
@@ -519,6 +599,30 @@ function kindRelevance(row: ActionContextRow): readonly OperationName[] {
         default:
           return ['forms.responses.list', 'messages.post', 'entities.context'];
       }
+    case 'credential':
+      return [
+        'credentials.loginSessions.start',
+        'credentials.space.rekey',
+        'credentials.space.rename',
+        'credentials.space.setDefault',
+        'credentials.space.myDefault.set',
+        'credentials.space.setVisibility',
+        'credentials.space.spaceDefaultConsent',
+        'credentials.space.claim',
+        'credentials.space.usage',
+        'credentials.space.delete',
+      ];
+    case 'space_link':
+      return [
+        'spaceLinks.login',
+        'spaceLinks.relogin',
+        'spaceLinks.logout',
+        'spaceLinks.setSpawn',
+        'spaceLinks.audit',
+        'spaceLinks.remove',
+      ];
+    case 'server':
+      return ['servers.get', 'servers.probe', 'servers.remove'];
     case 'interaction_profile':
       return [
         'interactionProfiles.updateDraft',
@@ -596,6 +700,7 @@ function exposure(operation: OperationName): PaletteAction['exposure'] {
 function capabilityEpoch(
   actorId: string,
   row: ActionContextRow | null,
+  human: boolean,
   operations: readonly OperationName[],
 ): string {
   const digest = createHash('sha256').update(JSON.stringify({
@@ -610,7 +715,13 @@ function capabilityEpoch(
       form: row.kind === 'form'
         ? [row.form_can_edit, row.form_frozen, row.form_can_respond, row.form_has_draft]
         : null,
+      facts: row.kind === 'credential' || row.kind === 'space_link' || row.kind === 'server'
+        ? [row.cred_can_manage, row.cred_can_revoke, row.cred_is_owner, row.cred_can_claim,
+          row.cred_can_usage, row.cred_status, row.cred_shape, row.link_mine_status,
+          row.link_is_member, row.link_ever_signed_in, row.server_can_remove]
+        : null,
     } : null,
+    human,
     operations,
   })).digest('hex');
   return `cap:${digest}`;
@@ -638,13 +749,21 @@ async function actionContext(q: Querier, entityId: string): Promise<ActionContex
               exists (select 1 from public.form_responses r
                        where r.form_id = e.id and r.status = 'draft'
                          and internal.form_is_caller(r.respondent_id))
-            end form_has_draft
+            end form_has_draft,
+            af.cred_can_manage, af.cred_can_revoke, af.cred_is_owner, af.cred_can_claim,
+            af.cred_can_usage, af.cred_status, af.cred_shape, af.link_mine_status,
+            af.link_is_member, af.link_ever_signed_in, af.server_can_remove
        from public.entities e
        left join public.tasks t on t.entity_id = e.id
        left join public.messages m on m.entity_id = e.id
        left join public.forms f on f.entity_id = e.id
        left join public.entities who
          on who.id = coalesce(internal.actor_id(), internal.current_member_id(e.space_id))
+       -- entity_action_facts: evaluated only for the three kinds whose doors it mirrors.
+       left join lateral (
+         select * from internal.entity_action_facts(e.id)
+          where e.kind in ('credential', 'space_link', 'server')
+       ) af on true
       where e.id = $1 and e.deleted_at is null`,
     [entityId],
   );
@@ -705,7 +824,11 @@ async function discover(
     // state must carry the same epoch, and a client comparing epochs must not
     // see a change that is only a change of presentation.
     const authorized = registry.implemented().filter((operation) => isAvailable(operation, row));
-    const epoch = capabilityEpoch(actorId, row, authorized);
+    // The same allow-list as 083's `require_human_auth_kind()`: a `link`
+    // session is NOT human. Joined with each binding's `humanOnly` into the
+    // row's `refused`, once, here.
+    const human = isHumanAuthKind(ctx.identity.authKind);
+    const epoch = capabilityEpoch(actorId, row, human, authorized);
     // Without a context entity every authorized operation is already global,
     // and the order stays the registry's. With one, the entity's own
     // operations lead, most relevant first; space and global ones follow only
@@ -720,10 +843,12 @@ async function discover(
         actorId,
         ...(row ? { target: { id: row.id, kind: row.kind, version: row.version } } : {}),
         capabilityEpoch: epoch,
+        human,
         columns: ACTION_ROW_COLUMNS,
-        rows: operations.map((operation): ActionRow => [
-          operation, actionKind(operation), authzTarget(operation), exposure(operation),
-        ]),
+        rows: operations.map((operation): ActionRow => {
+          const row = [operation, actionKind(operation), authzTarget(operation), exposure(operation)] as const;
+          return getOperation(operation).humanOnly === true && !human ? [...row, true] : [...row];
+        }),
         total: operations.length,
       },
       fingerprint: listingFingerprint(row?.id ?? null, scope, epoch),

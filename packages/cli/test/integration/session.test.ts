@@ -749,7 +749,8 @@ describe('O2 — tm8 exits 130 when interrupted', () => {
     // 21 -> 22 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): the merged tree holds BOTH execution.sessions.share (187)
     // and execution.gitStage, so the family moves twice from 20. MEASURED from this
     // assertion's own failing run on the merged tree.
-    expect(OPERATIONS.filter((o) => o.name.startsWith('execution.')).length).toBe(22);
+    // 22 -> 23 (launch v3 C, #923): execution.dispatchers. MEASURED from CI run 36275330910 (`expected 23 to be 22`).
+    expect(OPERATIONS.filter((o) => o.name.startsWith('execution.')).length).toBe(23);
 
     // A REAL Space, so the spawn refusal below cannot be dismissed as "your
     // space id was fake".

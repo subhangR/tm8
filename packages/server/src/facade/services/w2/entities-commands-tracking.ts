@@ -106,7 +106,7 @@ export const RESTRICTED_LIFECYCLE_KINDS = new Set([
   // generic restore would revive a server whose gate rows are gone. SQL refuses
   // the same doors (261 §8b re-creates 251 §10b's trigger with `server` added).
   'server',
-  // `remote_ref` (W7b, 996) is recorded only by `spaceLinks.invoke`
+  // `remote_ref` (W7b, 274) is recorded only by `spaceLinks.invoke`
   // (record_remote_ref) and kept current only by the watcher. A generic
   // create would make a ref with no `remote_refs` row behind it, and a generic
   // patch or move would detach it from the link it was recorded under.

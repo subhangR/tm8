@@ -478,6 +478,10 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
       // W3 (T8c). Under enforce, a gate session reaches only the gate's ops.
       assertSpaceGate(config.spaceSessions, identity, match.opName);
 
+      // W5: the per-(identity, space) failure bucket for auth.space.enter —
+      // it needs the verified identity, so it cannot sit with `check` above.
+      authRateLimiter?.checkIdentity(match.opName, identity.identityId, body);
+
       const handler = registry.get(match.opName);
       if (!handler) throw notImplemented(match.opName);
 
@@ -514,10 +518,10 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
       try {
         result = await handler(ctx);
       } catch (err) {
-        authRateLimiter?.recordOutcome(match.opName, body, true);
+        authRateLimiter?.recordOutcome(match.opName, body, true, identity.identityId);
         throw err;
       }
-      authRateLimiter?.recordOutcome(match.opName, body, false);
+      authRateLimiter?.recordOutcome(match.opName, body, false, identity.identityId);
       writeResult(res, requestId, result);
     } catch (err) {
       sendWireError(res, err, requestId);

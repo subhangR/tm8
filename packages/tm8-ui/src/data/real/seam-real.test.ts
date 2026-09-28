@@ -483,6 +483,10 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // raw zip bytes. Catalog READS riding the commands group deliberately;
       // the amendment on `listArtifactRevisions` records why.
       'listArtifactRevisions', 'exportArtifactRevision',
+      // Task 01a0e24d (2026-09-27): the managed panels' port (credential,
+      // space_link, server). Not a new wire call: `managedPortFromSeam`
+      // re-exposes existing seam methods keyed by operation name.
+      'managed',
       'prompt', 'react',
       // `resolveAttention` shipped into the seam without this lock being
       // updated, so the guard was red in-tree before the attention inbox

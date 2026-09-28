@@ -1,4 +1,4 @@
--- 996 (PLACEHOLDER ordinal; the integrator numbers it at composition) — W7b.
+-- 274 (PLACEHOLDER ordinal; the integrator numbers it at composition) — W7b.
 --
 -- Task 01a0d9fd; F (01a0da94) v4 §3 and decision 38; phases P2 W7b row; plan
 -- T23 (explicit-share half) and T33. Stacked on W7 (#884, 258_space_link_invoke):
@@ -88,7 +88,7 @@ create policy remote_refs_select on public.remote_refs for select to tm8_app
 grant select on public.remote_refs to tm8_app;
 
 comment on table public.remote_refs is
-  'W7b (996): the detail row of a remote_ref entity in the home space. Holds B''s '
+  'W7b (274): the detail row of a remote_ref entity in the home space. Holds B''s '
   'id as text and the watcher''s cached status; no token, no secret. Written only '
   'by record_remote_ref and poll_remote_refs.';
 
@@ -109,7 +109,7 @@ execute function internal.on_resolution_change();
 -- SHARED OBJECT: 266's entities_announce_unblocked, re-created verbatim with
 -- `remote_ref` added to its exclusion. Like a pull_request (which 266 already
 -- excludes), a remote_ref resolves by its own state -- the watcher's cached
--- category (is_resolved's 996 arm) -- not by entities.status_category, so the
+-- category (is_resolved's 274 arm) -- not by entities.status_category, so the
 -- trigger above is its one announcing path. Without this the status mirror
 -- moving the ref's entity to done announced every waiter a second time.
 drop trigger entities_announce_unblocked on public.entities;
@@ -176,7 +176,7 @@ begin
       -- W8: the server's metadata. `servers` holds no secret; the sealed
       -- per-member gate session is `server_gate_tokens` and has no arm.
       when 'server' then select to_jsonb(sv) - 'entity_id' into content from public.servers sv where sv.entity_id = target;
-      -- 996 (W7b): the other side's id as text and the watcher's cached status.
+      -- 274 (W7b): the other side's id as text and the watcher's cached status.
       when 'remote_ref' then select jsonb_build_object(
                                  'link_id', r.link_id, 'target_space_id', r.target_space_id,
                                  'remote_id', r.remote_id, 'remote_kind', r.remote_kind,
@@ -212,7 +212,7 @@ begin
      where p.entity_id = target;
     return coalesce(resolved, false);
   end if;
-  -- 996 (W7b): a remote_ref gates on the watcher's CACHED category only. Its
+  -- 274 (W7b): a remote_ref gates on the watcher's CACHED category only. Its
   -- envelope status is display, and a member of A can move it by hand.
   if e.kind = 'remote_ref' then
     select r.remote_status_category = 'done' into resolved from public.remote_refs r
@@ -455,7 +455,7 @@ create unique index space_link_spawns_one_per_session on public.space_link_spawn
 alter table public.space_link_spawns enable row level security;
 
 comment on table public.space_link_spawns is
-  'W7b (996): one row per spawn through a space link. Live = unreleased and '
+  'W7b (274): one row per spawn through a space link. Live = unreleased and '
   'either unbound within internal.space_link_spawn_reservation_ttl() or bound '
   'to a spawning/running/idle work session. The budget is space_link_tokens.spawn_budget.';
 
@@ -544,7 +544,14 @@ end
 $$;
 
 -- The link session's own token row (256's shape: via_link claim + identity),
--- locked, signed in with spawning allowed, targeting `p_space`.
+-- locked, signed in with spawning allowed, targeting `p_space`. EQUIVALENT to
+-- W7p's link-bound admission predicate (256/271 read_space_credential_for_spawn,
+-- lead ruling B): the same joins and the same six conditions (t.link_id = own
+-- via_link claim, m.identity_id = identity_id(), m.status active, link entity
+-- not deleted, target = p_space, signed_in, allow_spawn); it differs only in
+-- returning the row under FOR UPDATE (the budget's serialisation point) and
+-- raising 42501 where W7p's EXISTS is false. Every caller adds a live
+-- reservation on top, so each door is ruling B AND a reservation.
 create or replace function internal.link_spawn_row(p_space uuid)
 returns public.space_link_tokens language plpgsql security definer
 set search_path = public, internal, pg_temp as $$
@@ -612,11 +619,14 @@ end
 $$;
 
 -- -----------------------------------------------------------------------------
--- 8. read_space_credential_for_spawn — 256's body; the first-statement link
---    refusal now admits a link session holding a live UNBOUND reservation of
---    its own row for this space (or one bound to a session still spawning).
---    The link-bound arm below then applies unchanged: the default credential
---    only. Lead ruling A: never a private credential, restated explicitly.
+-- 8. read_space_credential_for_spawn — 271's body (the latest definer; gate 8's
+--    server-only refusal stays the first statement, for every caller). The
+--    link session's flat refusal now admits it only against a live
+--    reservation of its own row for this space (unbound within the TTL, or
+--    bound to a session still spawning), found by W7p's own-row predicate.
+--    W7p's link-bound arm (lead ruling B) then applies unchanged: the default
+--    credential only, signed in, spawning allowed. Net: ruling B AND a live
+--    reservation. Lead ruling A: never a private credential, restated.
 -- -----------------------------------------------------------------------------
 create or replace function public.read_space_credential_for_spawn(
   p_launch_space_id uuid,
@@ -624,16 +634,37 @@ create or replace function public.read_space_credential_for_spawn(
   p_credential_id uuid default null
 ) returns jsonb
 language plpgsql security definer set search_path = public, internal, pg_temp as $$
-declare stored public.space_credentials; v_launcher uuid; v_row public.space_link_tokens;
+declare stored public.space_credentials; v_launcher uuid;
 begin
-  -- W7p (ruling A'): a link session's own claims read no spawn credential,
-  -- except (W7b) against a live spawn reservation of its own token row.
+  -- gate 8: a server-only provider is never handed to a launch, for any
+  -- caller, pinned or default. Refused before anything is read.
+  if internal.is_server_only_credential_provider(p_provider) then
+    raise exception '% is a server-only credential and never reaches a session', p_provider
+      using errcode = '42501',
+      detail = jsonb_build_object('reason', 'server_only', 'provider', p_provider)::text;
+  end if;
+
+  -- W7p (ruling A') as narrowed by W7b: a link session's own claims read a
+  -- spawn credential only while a live spawn reservation exists on its OWN
+  -- token row for this space (unbound within the TTL, or bound to a session
+  -- still spawning). The row is found by exactly W7p's predicate below
+  -- (own via_link claim, own active home-space member, link not deleted);
+  -- W7p's link-bound arm then still applies unchanged (default credential
+  -- only, signed in, spawning allowed). So this can only narrow lead ruling
+  -- B: ruling B AND a live reservation.
   if coalesce(internal.claim_text('tm8.auth_kind'), '') = 'link' then
-    v_row := internal.link_spawn_row(p_launch_space_id);
     if not exists (
-      select 1 from public.space_link_spawns s
+      select 1
+        from public.space_link_spawns s
+        join public.space_link_tokens t on t.id = s.token_row_id
+        join public.members m on m.entity_id = t.member_id
+        join public.entities e on e.id = t.link_id
         left join public.work_sessions ws on ws.entity_id = s.work_session_id
-       where s.token_row_id = v_row.id
+       where t.link_id = internal.claim_text('tm8.via_link')::uuid
+         and m.identity_id = internal.identity_id()
+         and m.status = 'active'
+         and e.deleted_at is null
+         and s.target_space_id = p_launch_space_id
          and s.released_at is null
          and ((s.bound_at is null and s.reserved_at > now() - internal.space_link_spawn_reservation_ttl())
               or ws.status = 'spawning')

@@ -20,7 +20,7 @@
  *      resolves its launching member's row and nobody else's (T18);
  *   5. the target half of the via rule, and the row's spawn switch;
  *   6. a rate bucket per token row;
- *   7. W7b (996), `execution.spawn` only: same-server targets only (a remote
+ *   7. W7b (274), `execution.spawn` only: same-server targets only (a remote
  *      one is W8's), `spaceId` must be the link's target, `projectId` and
  *      `parentSessionId` must be ids, and a spawn RESERVATION on the caller's
  *      own row, taken under home claims (`reserve_space_link_spawn`: the
@@ -191,13 +191,13 @@ function remoteIdOf(result: unknown): string | null {
 /**
  * W7b: the ops whose result is a NEW thing in B worth a `remote_ref` in A —
  * any `*.create` and the spawn. SQL admits the ref only against an ok audit
- * row of the same shape (996 record_remote_ref), so this list cannot widen it.
+ * row of the same shape (274 record_remote_ref), so this list cannot widen it.
  */
 export function makesRemoteRef(op: string): boolean {
   return op === SPACE_LINK_SPAWN_OP || /^[a-z0-9_.]+\.create$/i.test(op);
 }
 
-/** W7b: 996's reserve refusals, mapped to the invoke refusal they are. */
+/** W7b: 274's reserve refusals, mapped to the invoke refusal they are. */
 function reservationRefusal(error: unknown): CollabError | null {
   if (!isCollabError(error) || error.details?.['sqlstate'] !== '42501') return null;
   switch (error.details?.['reason']) {

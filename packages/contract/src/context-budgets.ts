@@ -34,3 +34,29 @@ export const CONTEXT_FLOOR_DEFAULTS: Readonly<Required<ContextFloors>> = Object.
   references: 1.5,
   teammates: 1.0,
 });
+
+/** The `<context_index>` groups the launch budget ranks (lane A, launch card v3). */
+export type ContextIndexBudgetGroup = 'memories' | 'skills' | 'references' | 'teammates';
+
+/**
+ * When even every group's `minEntries` does not fit what the prompt has
+ * left, groups give way in this order: teammates first, memories last
+ * (coordinator ruling on the D7 amendment point 4).
+ */
+export const CONTEXT_INDEX_GIVE_WAY_ORDER: readonly ContextIndexBudgetGroup[] = Object.freeze([
+  'teammates',
+  'references',
+  'skills',
+  'memories',
+]);
+
+/**
+ * The COUNT of entries the cross-group shrink never takes a group below
+ * (`LaunchDefaultsGroup.minEntries`): 1 for every group, teammates included
+ * (coordinator ruling, task 01a0df3a). Not `contextFloors`, which is Jev's
+ * relevance-score floor. Only when even the minimums do not fit do groups
+ * give way, in `CONTEXT_INDEX_GIVE_WAY_ORDER`.
+ */
+export function contextIndexMinEntries(_group: ContextIndexBudgetGroup): number {
+  return 1;
+}

@@ -35,7 +35,7 @@
  * The renderer honours that by never describing a listed action in availability
  * vocabulary.
  */
-import { expandActionRows, isActionRows, type ActionDiscoveryPage } from '@tm8/contract';
+import { expandActionRows, isActionRows, isRefusedActionRow, type ActionDiscoveryPage } from '@tm8/contract';
 
 import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
 import { refuseMutationId } from '../mutation.js';
@@ -137,12 +137,16 @@ function renderActions(dto: unknown, request: { target?: string; all: boolean })
     return [header, 'no actions for this actor on this target'].filter(Boolean).join('\n');
   }
 
+  // v2's `refused` is not a v1 field, so the expansion drops it; read it off
+  // the rows. The door is human-only and this session is not: say who can.
+  const refused = new Set<unknown>(page ? page.rows.filter(isRefusedActionRow).map((row) => row[0]) : []);
   const lines = rows.map((row) =>
     [
       String(row.operation ?? ''),
       String(row.kind ?? ''),
       String(row.authzTarget ?? ''),
       String(row.exposure ?? ''),
+      refused.has(row.operation) ? 'refused: human-only, ask your human' : '',
     ]
       .filter((part) => part.length > 0)
       .join('  '),

@@ -52,8 +52,11 @@ export interface JoinScreenProps {
   code: string;
   /** `seam.previewInvite` — the claim-free read. */
   onPreview: (code: string) => Promise<InvitePreview>;
-  /** `seam.commands.redeemInvite`. Absent when nobody is signed in. */
-  onRedeem?: (code: string) => Promise<InviteRedemption>;
+  /**
+   * `seam.commands.redeemInvite`. Absent when nobody is signed in. W5: the
+   * space password, when the space requires one, travels with the redeem.
+   */
+  onRedeem?: (code: string, spacePassword?: string) => Promise<InviteRedemption>;
   /** Where to go once membership exists. The host owns navigation. */
   onJoined: (spaceId: SpaceId, joined: boolean) => void;
   /** Abandon the code and continue into whatever this account already has. */
@@ -109,6 +112,7 @@ export function refusalOf(code: string, message: string): string {
 
 export function JoinScreen({ code, onPreview, onRedeem, onJoined, onDismiss }: JoinScreenProps) {
   const [phase, setPhase] = useState<Phase>({ kind: 'reading' });
+  const [spacePassword, setSpacePassword] = useState('');
 
   useEffect(() => {
     let live = true;
@@ -132,7 +136,10 @@ export function JoinScreen({ code, onPreview, onRedeem, onJoined, onDismiss }: J
     if (!onRedeem) return;
     setPhase({ kind: 'joining', preview });
     try {
-      const result = await onRedeem(code);
+      const result = await onRedeem(
+        code,
+        preview.requiresSpacePassword ? spacePassword : undefined,
+      );
       // `joined: false` means this account was already a member — a success
       // whose effect had already happened. Same destination either way, so the
       // screen does not stop to explain a distinction the person never
@@ -266,11 +273,28 @@ export function JoinScreen({ code, onPreview, onRedeem, onJoined, onDismiss }: J
 
       {onRedeem ? (
         <>
+          {/* W5: this space asks every member for its own space password,
+              set here on first join. It is sent with the join and not kept. */}
+          {preview.requiresSpacePassword ? (
+            <label className="join__why">
+              {'Choose a password for this space (8+ characters) '}
+              <input
+                type="password"
+                autoComplete="new-password"
+                data-testid="join-space-password"
+                value={spacePassword}
+                onChange={(event) => setSpacePassword(event.target.value)}
+              />
+            </label>
+          ) : null}
           <button
             type="button"
             className="join__primary"
             data-testid="join-accept"
-            disabled={phase.kind === 'joining'}
+            disabled={
+              phase.kind === 'joining' ||
+              (preview.requiresSpacePassword === true && spacePassword.length < 8)
+            }
             onClick={() => void join(preview)}
           >
             {phase.kind === 'joining' ? 'Joining…' : `Join ${preview.spaceName}`}

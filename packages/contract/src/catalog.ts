@@ -42,6 +42,18 @@ export interface OperationBinding {
    * help) must include them — being listed is the entire point.
    */
   aliasOf?: string;
+  /**
+   * THE DOOR ADMITS ONLY A HUMAN SESSION: the handler is wrapped in
+   * `requireHumanSession` / `requireHumanLinkSession`, whose test is
+   * `isHumanAuthKind` (`./human-auth.ts`, the mirror of 083's
+   * `internal.require_human_auth_kind()`). Static: a property of the door,
+   * identical on every target. Discovery joins it with the caller's auth kind
+   * into a row's `refused` column; the CLI reads it to tell an agent to ask
+   * its human. Set op by op against the handler tables, never by prefix;
+   * `humanOnly ⇔ wrapped` is asserted per registration file by the
+   * server's human-only registration test.
+   */
+  humanOnly?: true;
 }
 
 export const BASE_PATH = '/v2';
@@ -90,17 +102,22 @@ export const OPERATIONS = [
   // member row and everything it authored stay. POST verbs, like invites.revoke.
   { name: 'spaces.members.remove', method: 'POST',  path: '/v2/spaces/:spaceId/members/:memberId/remove', kind: 'command', status: 'v1' },
   { name: 'spaces.leave',          method: 'POST',  path: '/v2/spaces/:spaceId/leave',                   kind: 'command', status: 'v1' },
+  // W5 (migration 268 placeholder, K2 / decision 30): the space password. The
+  // setting and the P5 admin ops; human space admins only.
+  { name: 'spaces.spacePassword.setRequired',   method: 'PUT',  path: '/v2/spaces/:spaceId/space-password',                              kind: 'command', status: 'v1' },
+  { name: 'spaces.members.spacePassword.reset', method: 'POST', path: '/v2/spaces/:spaceId/members/:memberId/space-password/reset', kind: 'command', status: 'v1' },
+  { name: 'spaces.members.spacePassword.lock',  method: 'POST', path: '/v2/spaces/:spaceId/members/:memberId/space-password/lock',  kind: 'command', status: 'v1' },
   // Node admin turns an account off: every session refused, launched work contained (232).
   { name: 'accounts.disable',      method: 'POST',  path: '/v2/accounts/:accountId/disable',             kind: 'command', status: 'v1' },
   // Space links (W6, migrations 250/251). Every write is human-only in SQL;
   // list is open to every home member and carries no secret.
   { name: 'spaceLinks.list',     method: 'GET',    path: '/v2/spaces/:spaceId/space-links',   kind: 'read',    status: 'v1' },
-  { name: 'spaceLinks.add',      method: 'POST',   path: '/v2/spaces/:spaceId/space-links',   kind: 'command', status: 'v1' },
-  { name: 'spaceLinks.login',    method: 'POST',   path: '/v2/space-links/:linkId/login',     kind: 'command', status: 'v1' },
-  { name: 'spaceLinks.relogin',  method: 'POST',   path: '/v2/space-links/:linkId/relogin',   kind: 'command', status: 'v1' },
-  { name: 'spaceLinks.logout',   method: 'POST',   path: '/v2/space-links/:linkId/logout',    kind: 'command', status: 'v1' },
-  { name: 'spaceLinks.remove',   method: 'POST',   path: '/v2/space-links/:linkId/remove',    kind: 'command', status: 'v1' },
-  { name: 'spaceLinks.setSpawn', method: 'PATCH',  path: '/v2/space-links/:linkId/spawn',     kind: 'command', status: 'v1' },
+  { name: 'spaceLinks.add',      method: 'POST',   path: '/v2/spaces/:spaceId/space-links',   kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'spaceLinks.login',    method: 'POST',   path: '/v2/space-links/:linkId/login',     kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'spaceLinks.relogin',  method: 'POST',   path: '/v2/space-links/:linkId/relogin',   kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'spaceLinks.logout',   method: 'POST',   path: '/v2/space-links/:linkId/logout',    kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'spaceLinks.remove',   method: 'POST',   path: '/v2/space-links/:linkId/remove',    kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'spaceLinks.setSpawn', method: 'PATCH',  path: '/v2/space-links/:linkId/spawn',     kind: 'command', status: 'v1', humanOnly: true },
   // W7: one op in the target, as the calling agent's launching member, minus
   // the refused set (SPACE_LINK_REFUSED). `:link` is the caller's alias or the link id.
   { name: 'spaceLinks.invoke',   method: 'POST',   path: '/v2/spaces/:spaceId/space-links/:link/invoke', kind: 'command', status: 'v1' },
@@ -110,9 +127,9 @@ export const OPERATIONS = [
   // add/adopt/remove are human-only in SQL; no response carries a gate token.
   { name: 'servers.list',   method: 'GET',  path: '/v2/spaces/:spaceId/servers',  kind: 'read',    status: 'v1' },
   { name: 'servers.get',    method: 'GET',  path: '/v2/servers/:serverId',        kind: 'read',    status: 'v1' },
-  { name: 'servers.add',    method: 'POST', path: '/v2/servers',                  kind: 'command', status: 'v1' },
-  { name: 'servers.adopt',  method: 'POST', path: '/v2/servers/adopt',            kind: 'command', status: 'v1' },
-  { name: 'servers.remove', method: 'POST', path: '/v2/servers/:serverId/remove', kind: 'command', status: 'v1' },
+  { name: 'servers.add',    method: 'POST', path: '/v2/servers',                  kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'servers.adopt',  method: 'POST', path: '/v2/servers/adopt',            kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'servers.remove', method: 'POST', path: '/v2/servers/:serverId/remove', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'servers.probe',  method: 'POST', path: '/v2/servers/:serverId/probe',  kind: 'command', status: 'v1' },
   { name: 'spaces.invites.list',     method: 'GET',    path: '/v2/spaces/:spaceId/invites',                 kind: 'read',    status: 'v1' },
   { name: 'spaces.invites.create',   method: 'POST',   path: '/v2/spaces/:spaceId/invites',                 kind: 'command', status: 'v1' },
@@ -527,43 +544,44 @@ export const OPERATIONS = [
   // login terminal for that pair, then the account's live agent sessions
   // carrying that provider. Containment, not revocation — only rotating at the
   // vendor invalidates a secret a running process already read.
-  { name: 'credentials.status',                          method: 'GET',    path: '/v2/identity/credentials',                                           kind: 'read',    status: 'v1' },
-  { name: 'credentials.delete',                          method: 'DELETE', path: '/v2/identity/credentials/:provider',                                 kind: 'command', status: 'v1' },
-  { name: 'credentials.loginSessions.start',             method: 'POST',   path: '/v2/identity/credentials/login-sessions',                            kind: 'command', status: 'v1' },
-  { name: 'credentials.loginSessions.finish',            method: 'POST',   path: '/v2/identity/credentials/login-sessions/:id/finish',                 kind: 'command', status: 'v1' },
+  { name: 'credentials.status',                          method: 'GET',    path: '/v2/identity/credentials',                                           kind: 'read',    status: 'v1', humanOnly: true },
+  { name: 'credentials.delete',                          method: 'DELETE', path: '/v2/identity/credentials/:provider',                                 kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'credentials.loginSessions.start',             method: 'POST',   path: '/v2/identity/credentials/login-sessions',                            kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'credentials.loginSessions.finish',            method: 'POST',   path: '/v2/identity/credentials/login-sessions/:id/finish',                 kind: 'command', status: 'v1', humanOnly: true },
   // Service keys — keys tm8 uses SERVER-SIDE for this member (today only
   // `typesafe`, Jev's key for ✦ Ask Jev). Encrypted at rest (203), never shown
   // back beyond the last four characters, and never injected into a spawned
   // session: they are not agent credentials, so they are not providers above.
-  { name: 'credentials.serviceKeys.status',              method: 'GET',    path: '/v2/identity/credentials/service-keys',                              kind: 'read',    status: 'v1' },
-  { name: 'credentials.serviceKeys.put',                 method: 'PUT',    path: '/v2/identity/credentials/service-keys/:provider',                    kind: 'command', status: 'v1' },
-  { name: 'credentials.serviceKeys.delete',              method: 'DELETE', path: '/v2/identity/credentials/service-keys/:provider',                    kind: 'command', status: 'v1' },
+  { name: 'credentials.serviceKeys.status',              method: 'GET',    path: '/v2/identity/credentials/service-keys',                              kind: 'read',    status: 'v1', humanOnly: true },
+  { name: 'credentials.serviceKeys.put',                 method: 'PUT',    path: '/v2/identity/credentials/service-keys/:provider',                    kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'credentials.serviceKeys.delete',              method: 'DELETE', path: '/v2/identity/credentials/service-keys/:provider',                    kind: 'command', status: 'v1', humanOnly: true },
   // Space credentials (206, design 01a0cfa8) — agent credentials a SPACE owns.
   // Any member adds one (D1) and every member launches with it (D3); only its
   // creator or a space admin changes it (D11). Every row is human-only (I2)
   // and answers metadata, never the secret (I5). The spawn reader is not a
   // catalog operation (A1). A login-shaped create/finish is SC-4's.
-  { name: 'credentials.space.list',                      method: 'GET',    path: '/v2/spaces/:spaceId/credentials',                                    kind: 'read',    status: 'v1' },
-  { name: 'credentials.space.create',                    method: 'POST',   path: '/v2/spaces/:spaceId/credentials',                                    kind: 'command', status: 'v1' },
-  { name: 'credentials.space.rekey',                     method: 'PUT',    path: '/v2/space-credentials/:credentialId/secret',                         kind: 'command', status: 'v1' },
-  { name: 'credentials.space.setDefault',                method: 'POST',   path: '/v2/space-credentials/:credentialId/default',                        kind: 'command', status: 'v1' },
-  { name: 'credentials.space.rename',                    method: 'PATCH',  path: '/v2/space-credentials/:credentialId',                                kind: 'command', status: 'v1' },
-  { name: 'credentials.space.delete',                    method: 'DELETE', path: '/v2/space-credentials/:credentialId',                                kind: 'command', status: 'v1' },
-  { name: 'credentials.space.setVisibility',             method: 'PUT',    path: '/v2/space-credentials/:credentialId/visibility',                     kind: 'command', status: 'v1' },
-  { name: 'credentials.space.spaceDefaultConsent',       method: 'PUT',    path: '/v2/space-credentials/:credentialId/space-default-consent',          kind: 'command', status: 'v1' },
+  { name: 'credentials.space.list',                      method: 'GET',    path: '/v2/spaces/:spaceId/credentials',                                    kind: 'read',    status: 'v1', humanOnly: true },
+  { name: 'credentials.space.create',                    method: 'POST',   path: '/v2/spaces/:spaceId/credentials',                                    kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'credentials.space.rekey',                     method: 'PUT',    path: '/v2/space-credentials/:credentialId/secret',                         kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'credentials.space.setDefault',                method: 'POST',   path: '/v2/space-credentials/:credentialId/default',                        kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'credentials.space.rename',                    method: 'PATCH',  path: '/v2/space-credentials/:credentialId',                                kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'credentials.space.delete',                    method: 'DELETE', path: '/v2/space-credentials/:credentialId',                                kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'credentials.space.setVisibility',             method: 'PUT',    path: '/v2/space-credentials/:credentialId/visibility',                     kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'credentials.space.spaceDefaultConsent',       method: 'PUT',    path: '/v2/space-credentials/:credentialId/space-default-consent',          kind: 'command', status: 'v1', humanOnly: true },
   // W10d (doc 13 §7 step 2): add your own server-level GitHub token to this
   // space as a PRIVATE credential — read, probed and re-sealed in TS server-side;
   // the token never reaches the client. A login is a fresh sign-in, not this op.
-  { name: 'credentials.space.addMine',                   method: 'POST',   path: '/v2/spaces/:spaceId/credentials/from-mine',                          kind: 'command', status: 'v1' },
-  { name: 'credentials.space.claim',                     method: 'POST',   path: '/v2/space-credentials/:credentialId/claim',                          kind: 'command', status: 'v1' },
-  { name: 'credentials.space.myDefault.set',             method: 'POST',   path: '/v2/space-credentials/:credentialId/my-default',                     kind: 'command', status: 'v1' },
-  { name: 'credentials.space.myDefault.clear',           method: 'DELETE', path: '/v2/spaces/:spaceId/credentials/my-default/:provider',               kind: 'command', status: 'v1' },
-  { name: 'credentials.space.usage',                     method: 'GET',    path: '/v2/space-credentials/:credentialId/usage',                          kind: 'read',    status: 'v1' },
-  { name: 'credentials.space.policy.get',                method: 'GET',    path: '/v2/spaces/:spaceId/credential-policy',                              kind: 'read',    status: 'v1' },
-  { name: 'credentials.space.policy.set',                method: 'PUT',    path: '/v2/spaces/:spaceId/credential-policy/:provider',                    kind: 'command', status: 'v1' },
+  { name: 'credentials.space.addMine',                   method: 'POST',   path: '/v2/spaces/:spaceId/credentials/from-mine',                          kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'credentials.space.claim',                     method: 'POST',   path: '/v2/space-credentials/:credentialId/claim',                          kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'credentials.space.myDefault.set',             method: 'POST',   path: '/v2/space-credentials/:credentialId/my-default',                     kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'credentials.space.myDefault.clear',           method: 'DELETE', path: '/v2/spaces/:spaceId/credentials/my-default/:provider',               kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'credentials.space.usage',                     method: 'GET',    path: '/v2/space-credentials/:credentialId/usage',                          kind: 'read',    status: 'v1', humanOnly: true },
+  { name: 'credentials.space.policy.get',                method: 'GET',    path: '/v2/spaces/:spaceId/credential-policy',                              kind: 'read',    status: 'v1', humanOnly: true },
+  { name: 'credentials.space.readiness',                 method: 'GET',    path: '/v2/spaces/:spaceId/credential-readiness',                           kind: 'read',    status: 'v1', humanOnly: true },
+  { name: 'credentials.space.policy.set',                method: 'PUT',    path: '/v2/spaces/:spaceId/credential-policy/:provider',                    kind: 'command', status: 'v1', humanOnly: true },
   // The node's own fallback credentials (D5/D9): node admin, and human-only.
-  { name: 'node.credentials.status',                     method: 'GET',    path: '/v2/node/credentials',                                               kind: 'read',    status: 'v1' },
-  { name: 'node.credentials.policy.set',                 method: 'PUT',    path: '/v2/node/credential-policy/:provider',                               kind: 'command', status: 'v1' },
+  { name: 'node.credentials.status',                     method: 'GET',    path: '/v2/node/credentials',                                               kind: 'read',    status: 'v1', humanOnly: true },
+  { name: 'node.credentials.policy.set',                 method: 'PUT',    path: '/v2/node/credential-policy/:provider',                               kind: 'command', status: 'v1', humanOnly: true },
   // Host metrics for the desktop status strip: node admin, human sessions only.
   { name: 'node.metrics.get',                            method: 'GET',    path: '/v2/node/metrics',                                                   kind: 'read',    status: 'v1' },
 
@@ -588,6 +606,10 @@ export const OPERATIONS = [
   // own actions are existing ops (`entities.patch`, `edges.create`,
   // `execution.spawn`, `messages.post`).
   { name: 'execution.dispatch',                          method: 'POST',   path: '/v2/execution/dispatch',                                             kind: 'command', status: 'v1' },
+  // Launch v3 gap 5: the space's dispatcher sessions for the launch card's
+  // dispatch-target drop-up — newest first, stopped ones included with
+  // `live: false`. Liveness is probed exactly as `execution.dispatch` probes it.
+  { name: 'execution.dispatchers',                       method: 'GET',    path: '/v2/spaces/:spaceId/execution/dispatchers',                          kind: 'read',    status: 'v1' },
 
   // containers — machines agents run in or drive (TM8-CONTAINERS-DESIGN §4.1).
   //

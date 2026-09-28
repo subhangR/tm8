@@ -188,6 +188,10 @@ export const ENTITY_COLUMNS = `
   scr.label as cred_label, scr.provider as cred_provider, scr.shape as cred_shape,
   scr.visibility as cred_visibility, scr.status as cred_status,
   scr.owner_account_id as cred_owner_account_id,
+  -- Servers (W8): the name and URL only, for a Home list row's title and
+  -- excerpt. servers holds no secret; the gate session is
+  -- server_gate_tokens, which this read never names.
+  srv.name as srv_name, srv.base_url as srv_base_url,
   wt.project_id as wt_project_id, wt.path as wt_path, wt.branch as wt_branch,
   wt.base_ref as wt_base_ref, wt.base_commit_oid as wt_base_commit_oid,
   wt.status as wt_status, wt.status_changed_at as wt_status_changed_at,
@@ -380,6 +384,7 @@ export const ENTITY_FROM = `
   left join public.drawings drw           on drw.entity_id = e.id
   left join public.forms frm              on frm.entity_id = e.id
   left join public.space_credentials scr  on e.kind = 'credential' and scr.id = e.id
+  left join public.servers srv            on e.kind = 'server' and srv.entity_id = e.id
   left join public.pull_requests pr      on pr.entity_id = e.id
   left join public.commits cm            on cm.entity_id = e.id
   left join public.artifacts art         on art.entity_id = e.id
@@ -574,6 +579,8 @@ export interface EntityRow {
   cred_visibility?: string | null;
   cred_status?: string | null;
   cred_owner_account_id?: string | null;
+  srv_name?: string | null;
+  srv_base_url?: string | null;
   memory_statement: string | null;
   memory_mechanism: string | null;
   memory_subject_scope: string | null;
@@ -1505,6 +1512,14 @@ export function titleOf(row: EntityRow): string {
     case 'credential':
       // The side row's label. MIRRORS the projector twin.
       return row.cred_label ?? 'Credential';
+    case 'server':
+      // Its own name. MIRRORS the projector twin.
+      return row.srv_name ?? 'Server';
+    case 'space_link':
+      // A fixed word, never the target space's name: P8 lets a non-member of
+      // the target see THAT a link exists, not what the target is called.
+      // Before this arm the title fell through to the raw kind string.
+      return 'Space link';
     case 'chat':
       // The chat's own title, which `start_chat` seeds from the opening message.
       // An empty one is legal (the column defaults to '') and must still render
@@ -1592,6 +1607,9 @@ function excerptOf(row: EntityRow): string | undefined {
     case 'credential':
       // Which vendor — never the login or the hint (W10a). MIRRORS the projector twin.
       return excerpt(row.cred_provider ?? null);
+    case 'server':
+      // Where it is. MIRRORS the projector twin.
+      return excerpt(row.srv_base_url ?? null);
     default:
       return undefined;
   }
@@ -1988,7 +2006,7 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
       } as EntityState;
     case 'space_link':
     case 'server':
-    // 996 (W7b): a remote_ref likewise — its cached remote category is the
+    // 274 (W7b): a remote_ref likewise — its cached remote category is the
     // entity's workflow status, so no `remote_refs` join is taken here.
     case 'remote_ref':
       // 250 (W6): no row facts on the entity — `spaceLinks.list` answers for a
@@ -2672,7 +2690,7 @@ export function contentOf(row: EntityRow): EntityContent {
     }
     case 'space_link':
     case 'server':
-    // 996 (W7b): a remote_ref has no content on the entity read (see stateOf).
+    // 274 (W7b): a remote_ref has no content on the entity read (see stateOf).
     case 'remote_ref':
       // 250 (W6): a link's content is `spaceLinks.list`'s answer (see stateOf).
       return { kind: row.kind };

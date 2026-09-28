@@ -20,7 +20,13 @@ import {
   writeServerPass,
   type ServerPass,
 } from './pass-store';
-import { endSpaceSessions, resetSpaceSessions, spaceSessionFor } from './space-sessions';
+import {
+  endSpaceSessions,
+  resetSpaceSessions,
+  setSpacePasswordPrompter,
+  spaceSessionFor,
+  type SpacePasswordPrompter,
+} from './space-sessions';
 
 const SPACE_A = '0a0a0a0a-0000-4000-8000-00000000000a';
 const SPACE_B = '0b0b0b0b-0000-4000-8000-00000000000b';
@@ -69,7 +75,7 @@ interface Sent {
 }
 
 /** A node with one gate session, a cookie jar, and `TM8_SPACE_SESSIONS=mode`. */
-function fakeNode(mode: 'agents' | 'enforce') {
+function fakeNode(mode: 'agents' | 'enforce', spacePasswords: Record<string, string> = {}) {
   const sent: Sent[] = [];
   let jar: string | null = GATE; // `auth.login` set the gate cookie
   let minted = 0;
@@ -78,8 +84,8 @@ function fakeNode(mode: 'agents' | 'enforce') {
 
   const reply = (status: number, body: unknown) =>
     new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
-  const refuse = (status: number, code: string, message: string) =>
-    reply(status, { error: { code, message, requestId: 'r' } });
+  const refuse = (status: number, code: string, message: string, details?: Record<string, unknown>) =>
+    reply(status, { error: { code, message, requestId: 'r', ...(details ? { details } : {}) } });
 
   const fetchImpl = vi.fn(async (url: string, init: RequestInit = {}) => {
     const path = new URL(url, 'http://localhost').pathname;
@@ -108,7 +114,14 @@ function fakeNode(mode: 'agents' | 'enforce') {
         record(403);
         return refuse(403, 'forbidden', 'a space-pinned session cannot enter a space; use the gate session');
       }
-      const spaceId = (JSON.parse(String(init.body)) as { spaceId: string }).spaceId;
+      const { spaceId, spacePassword } = JSON.parse(String(init.body)) as { spaceId: string; spacePassword?: string };
+      // W5: a space with a password refuses without it (required) or with a wrong one (rejected).
+      const needed = spacePasswords[spaceId];
+      if (needed !== undefined && spacePassword !== needed) {
+        record(403);
+        const reason = spacePassword === undefined ? 'space_password_required' : 'space_password_rejected';
+        return refuse(403, 'forbidden', 'space password', { reason });
+      }
       const sessionId = `0c0c0c0c-0000-4000-8000-${String(++minted).padStart(12, '0')}`;
       const pinned = `tm8s_${sessionId}.pin-${spaceId.slice(0, 4)}-${minted}`;
       pins.set(pinned, spaceId);
@@ -289,5 +302,49 @@ describe('W3 space sessions — enforce (a1)', () => {
     await session.enterSpace(SPACE_A);
     await vi.waitFor(() => expect(node.revoked.size).toBe(1));
     expect(session.credentialFor('inbox.list')).toBeNull();
+  });
+});
+
+describe('W5 space passwords — the enter prompt', () => {
+  let restore: SpacePasswordPrompter | undefined;
+  afterEach(() => {
+    if (restore) setSpacePasswordPrompter(restore);
+    restore = undefined;
+  });
+
+  it('asks for the password on a refusal, re-asks after a wrong one, and enters with the right one', async () => {
+    const node = fakeNode('enforce', { [SPACE_A]: 'pw-a' });
+    vi.stubGlobal('fetch', node.fetchImpl);
+    const asked: Array<[string, boolean]> = [];
+    const answers = ['wrong', 'pw-a'];
+    restore = setSpacePasswordPrompter(async (spaceId, rejected) => {
+      asked.push([spaceId, rejected]);
+      return answers.shift() ?? null;
+    });
+    const { session, client } = clientFor();
+    await session.enterSpace(SPACE_A);
+
+    await expect(client.call('inbox.list')).resolves.toEqual({ servedBy: SPACE_A });
+    expect(asked).toEqual([[SPACE_A, false], [SPACE_A, true]]);
+    expect(node.sent.filter((s) => s.path === '/v2/auth/space/enter').map((s) => s.status)).toEqual([403, 403, 200]);
+  });
+
+  it('a declined prompt leaves the space refused (no pinned session); positive: a space without a password never prompts', async () => {
+    const node = fakeNode('enforce', { [SPACE_A]: 'pw-a' });
+    vi.stubGlobal('fetch', node.fetchImpl);
+    let prompts = 0;
+    restore = setSpacePasswordPrompter(async () => {
+      prompts += 1;
+      return null;
+    });
+    const { session, client } = clientFor();
+    await session.enterSpace(SPACE_A);
+    await expect(client.call('inbox.list')).rejects.toMatchObject({ code: 'forbidden' });
+    expect(prompts).toBe(1);
+    expect(node.sent.filter((s) => s.path === '/v2/auth/space/enter').map((s) => s.status)).toEqual([403]);
+
+    await session.enterSpace(SPACE_B);
+    await expect(client.call('inbox.list')).resolves.toEqual({ servedBy: SPACE_B });
+    expect(prompts).toBe(1);
   });
 });

@@ -28,7 +28,7 @@
  *     handler (same context object or a copy) finds no marker.
  * (iii) Defence in depth. `execution.resume` and `execution.dispatch`
  *     refuse it again with `refuseLinkBearer`, and `issue_agent_auth_session`
- *     refuses `tm8.auth_kind = 'link'` as its first statement. W7b (996)
+ *     refuses `tm8.auth_kind = 'link'` as its first statement. W7b (274)
  *     opens exactly one launch: `execution.spawn` calls SQL
  *     `admit_space_link_spawn`, which admits a link identity only against a
  *     live, unbound spawn reservation that `spaceLinks.invoke` made on the

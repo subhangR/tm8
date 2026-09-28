@@ -79,6 +79,31 @@ export async function loadReferenceDefaults(
   spaceId: string,
   taskIds: readonly string[],
 ): Promise<Array<{ entityId: string; kind: string; link: string }>> {
+  return loadLinkDefaults(q, spaceId, taskIds, SPAWN_SELECTION_REFERENCE_KINDS);
+}
+
+/**
+ * The spawn tasks' TEAMMATE defaults (`selection.teammateIds`, launch card v3
+ * Decision 7): the live same-space teammates a task links, by the same edges
+ * and in the same order as `loadReferenceDefaults`, the launch teammate
+ * excluded (it is never in its own teammates group). Empty for most workers.
+ */
+export async function loadTeammateDefaults(
+  q: Querier,
+  spaceId: string,
+  taskIds: readonly string[],
+  launchTeamMemberId: string,
+): Promise<Array<{ entityId: string; kind: string; link: string }>> {
+  return (await loadLinkDefaults(q, spaceId, taskIds, ['team_member']))
+    .filter((row) => row.entityId !== launchTeamMemberId);
+}
+
+async function loadLinkDefaults(
+  q: Querier,
+  spaceId: string,
+  taskIds: readonly string[],
+  kinds: readonly string[],
+): Promise<Array<{ entityId: string; kind: string; link: string }>> {
   if (taskIds.length === 0) return [];
   const rows = await q.query<{ entity_id: string; kind: string; link: string }>(
     `select d.entity_id, d.kind, d.link
@@ -99,7 +124,7 @@ export async function loadReferenceDefaults(
           order by l.peer_id, l.created_at, l.edge_id
        ) d
       order by d.created_at, d.edge_id`,
-    [taskIds, spaceId, [...SPAWN_SELECTION_REFERENCE_KINDS]],
+    [taskIds, spaceId, [...kinds]],
   );
   return rows.map((row) => ({ entityId: row.entity_id, kind: row.kind, link: row.link }));
 }

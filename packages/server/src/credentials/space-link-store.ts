@@ -75,7 +75,7 @@ export interface SpaceLinkUse {
   token: string;
 }
 
-/** W7b (996): a held spawn slot on one token row. */
+/** W7b (274): a held spawn slot on one token row. */
 export interface SpaceLinkSpawnReservation {
   reservationId: string;
   live: number;
@@ -294,7 +294,7 @@ export class DbSpaceLinkStore {
   }
 
   /**
-   * W7b (996): reserve one spawn slot on the caller's own token row, under HOME
+   * W7b (274): reserve one spawn slot on the caller's own token row, under HOME
    * claims, before invoke runs `execution.spawn` in B. The budget is counted
    * under a row lock, so racing reserves cannot overrun it. The mint in B binds
    * the reservation to the new session; an unbound one lapses after

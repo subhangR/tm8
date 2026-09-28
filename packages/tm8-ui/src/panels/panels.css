@@ -1998,6 +1998,27 @@
   border: 1px solid var(--pn-line-2);
 }
 .cv2-root .lp__quick:hover { background: var(--pn-hover); }
+/* A kind managed from Settings (`KindConfig.settingsHome`): the header's link
+   out to its section. The quiet outline chip, not the ink create chip — it
+   leaves the list rather than making something in it. */
+.cv2-root .lp__settings,
+.cv2-root .pn-settings-home {
+  flex: none;
+  appearance: none;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px;
+  padding: 2px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  color: var(--pn-ink-2);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+}
+.cv2-root .lp__settings:hover,
+.cv2-root .pn-settings-home:hover { background: var(--pn-hover); }
+.cv2-root .pn-settings-home { font-size: 12px; padding: 4px 10px; }
 
 /*
  * `overflow: hidden` is kept deliberately: it is the floor guard that stops a

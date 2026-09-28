@@ -14,6 +14,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { Db, DbClaims, Querier } from '../../src/db/types.js';
 import { HandlerRegistry } from '../../src/facade/registry.js';
+import { admitLinkInvoke } from '../../src/identity/link-bearer.js';
 import { registerW2SavedViewsActionsHandlers } from '../../src/facade/handlers/w2/saved-views-actions.js';
 import type { OperationHandler, RequestContext } from '../../src/http/types.js';
 
@@ -398,7 +399,7 @@ describe('W2.G09 saved views and action discovery', () => {
     const link = await listFor('space_link');
     expect(link).toContain('entities.get');
     for (const op of ['entities.delete', 'entities.move', 'entities.patch']) expect(link).not.toContain(op);
-    // W7b (996): a remote_ref is recorded by `spaceLinks.invoke`; the generic
+    // W7b (274): a remote_ref is recorded by `spaceLinks.invoke`; the generic
     // doors refuse it, so none is advertised.
     const ref = await listFor('remote_ref');
     expect(ref).toContain('entities.get');
@@ -687,5 +688,150 @@ describe('actions.list schema=v2 — factored rows, paging, size gate', () => {
     ]) {
       await expect(list(registry, query)).rejects.toMatchObject({ code: 'invalid_input' });
     }
+  });
+});
+
+describe('actions.list — credential, space_link and server verbs (task 01a0e24d, doc 01a0e257 v2)', () => {
+  /** `null`: the session row carried no kind at all. */
+  type AuthKind = 'browser' | 'cli' | 'agent' | 'agent_runtime' | 'link' | null;
+
+  /** A context row of `kind` carrying the 269 facts `facts`, viewed under `authKind`. */
+  async function listFor(
+    kind: string,
+    facts: Record<string, unknown>,
+    authKind: AuthKind = 'browser',
+  ): Promise<ActionDiscoveryPage> {
+    const db = new FakeDb();
+    db.queryImpl = async <R>(sql: string) => {
+      if (sql.includes('internal.current_member_id')) {
+        return [{
+          id: IDS.entity, space_id: IDS.space, kind, version: 2, deleted_at: null,
+          work_status: null, actor_id: IDS.member, is_space_admin: false, ...facts,
+        }] as R[];
+      }
+      throw new Error(`unexpected query: ${sql}`);
+    };
+    const noOp: OperationHandler = async () => ({ ok: true });
+    const registry = register(db, (target) => {
+      for (const op of OPERATIONS) {
+        if (op.status === 'reserved' || op.name.startsWith('savedViews.') || op.name === 'actions.list') continue;
+        target.register(op.name, noOp);
+      }
+    });
+    const ctx = request('actions.list', { query: `contextEntityId=${IDS.entity}&schema=v2&limit=100` });
+    ctx.identity = { ...ctx.identity, ...(authKind ? { authKind } : {}) };
+    // A link bearer reaches actions.list only through the spaceLinks.invoke
+    // executor's one admission (link-bearer.ts layer ii); use that door.
+    if (authKind === 'link') admitLinkInvoke(ctx, 'actions.list');
+    return ActionDiscoveryPageSchema.parse(await handler(registry, 'actions.list')(ctx));
+  }
+
+  const ops = (page: ActionDiscoveryPage) => page.rows.map((row) => row[0]);
+  const refusedOf = (page: ActionDiscoveryPage, op: string) =>
+    page.rows.find((row) => row[0] === op)?.[4] === true;
+
+  const MANAGER = {
+    cred_can_manage: true, cred_can_revoke: true, cred_is_owner: true, cred_can_claim: false,
+    cred_can_usage: true, cred_status: 'active', cred_shape: 'login',
+  };
+
+  describe('`human` mirrors 083 require_human_auth_kind(): browser|cli, fail closed', () => {
+    it.each([
+      ['browser', true],
+      ['cli', true],
+      // Correction A: a link session acts AS the member but is not human.
+      ['link', false],
+      ['agent', false],
+      ['agent_runtime', false],
+      [null, false],
+    ] as const)('authKind %s ⇒ human %s, and a human-only verb is refused iff not human', async (authKind, human) => {
+      const page = await listFor('credential', MANAGER, authKind);
+      expect(page.human).toBe(human);
+      expect(ops(page)).toContain('credentials.space.rename');
+      expect(refusedOf(page, 'credentials.space.rename')).toBe(!human);
+      // Negative control: a verb that is not human-only is never refused.
+      expect(ops(page)).toContain('entities.get');
+      expect(refusedOf(page, 'entities.get')).toBe(false);
+    });
+
+    it('pins one spaceLinks verb: an agent sees spaceLinks.logout listed and refused; audit is not refused', async () => {
+      const page = await listFor('space_link',
+        { link_is_member: true, link_mine_status: 'signed_in', link_ever_signed_in: true }, 'agent');
+      expect(refusedOf(page, 'spaceLinks.logout')).toBe(true);
+      expect(ops(page)).toContain('spaceLinks.audit');
+      expect(refusedOf(page, 'spaceLinks.audit')).toBe(false);
+    });
+
+    it('changes the capability epoch with `human`, since the rows differ', async () => {
+      const browser = await listFor('credential', MANAGER, 'browser');
+      const agent = await listFor('credential', MANAGER, 'agent');
+      expect(browser.capabilityEpoch).not.toBe(agent.capabilityEpoch);
+    });
+  });
+
+  describe('credential', () => {
+    it('offers the manager every row verb, the inline login start, and never entities.delete', async () => {
+      const listed = ops(await listFor('credential', MANAGER));
+      for (const op of [
+        'credentials.space.rename', 'credentials.space.rekey', 'credentials.space.setDefault',
+        'credentials.space.delete', 'credentials.space.setVisibility',
+        'credentials.space.spaceDefaultConsent', 'credentials.space.myDefault.set',
+        'credentials.space.usage', 'credentials.loginSessions.start',
+      ]) expect(listed).toContain(op);
+      expect(listed).not.toContain('credentials.space.claim');
+      expect(listed).not.toContain('entities.delete');
+    });
+
+    it('offers a non-owner non-manager of a private credential no verb of the owner', async () => {
+      const listed = ops(await listFor('credential', {
+        cred_can_manage: false, cred_can_revoke: false, cred_is_owner: false, cred_can_claim: false,
+        cred_can_usage: false, cred_status: 'active', cred_shape: 'api_key',
+      }));
+      expect(listed.filter((op) => op.startsWith('credentials.'))).toEqual([]);
+    });
+
+    it('offers nothing but claim-free reads on a revoked row, and only the creator a claim', async () => {
+      const revoked = ops(await listFor('credential', { ...MANAGER, cred_status: 'revoked' }));
+      for (const op of ['credentials.space.rename', 'credentials.space.delete', 'credentials.space.setVisibility',
+        'credentials.space.myDefault.set', 'credentials.loginSessions.start']) expect(revoked).not.toContain(op);
+      const claimable = ops(await listFor('credential', {
+        ...MANAGER, cred_is_owner: false, cred_can_claim: true,
+      }));
+      expect(claimable).toContain('credentials.space.claim');
+    });
+
+    it('withholds the login start from an api-key credential', async () => {
+      expect(ops(await listFor('credential', { ...MANAGER, cred_shape: 'api_key' })))
+        .not.toContain('credentials.loginSessions.start');
+    });
+  });
+
+  describe('space_link', () => {
+    it('offers a signed-in member logout and relogin, a signed-out one login but no logout', async () => {
+      const signedIn = ops(await listFor('space_link',
+        { link_is_member: true, link_mine_status: 'signed_in', link_ever_signed_in: true }));
+      expect(signedIn).toEqual(expect.arrayContaining(['spaceLinks.logout', 'spaceLinks.relogin', 'spaceLinks.remove']));
+      const signedOut = ops(await listFor('space_link',
+        { link_is_member: true, link_mine_status: 'signed_out', link_ever_signed_in: false }));
+      expect(signedOut).toContain('spaceLinks.login');
+      expect(signedOut).not.toContain('spaceLinks.logout');
+      expect(signedOut).not.toContain('spaceLinks.relogin');
+    });
+
+    it('offers a non-member no link verb', async () => {
+      const listed = ops(await listFor('space_link', {}));
+      expect(listed.filter((op) => op.startsWith('spaceLinks.'))).toEqual([]);
+    });
+  });
+
+  describe('server', () => {
+    it('offers get and probe to a member, remove only to the creator or an admin, never entities.delete', async () => {
+      const member = ops(await listFor('server', { server_can_remove: false }));
+      expect(member).toEqual(expect.arrayContaining(['servers.get', 'servers.probe']));
+      expect(member).not.toContain('servers.remove');
+      expect(member).not.toContain('entities.delete');
+      expect(member).not.toContain('servers.adopt');
+      expect(ops(await listFor('server', { server_can_remove: true }))).toContain('servers.remove');
+    });
   });
 });

@@ -9,6 +9,18 @@ import type { EntityId, MenuViewRef, SpaceId } from '@tm8/contract';
 import type { CollectionMode, GroupByKey, QueryFilter, SortKey } from '../domain';
 
 /**
+ * The Settings sections an address can open directly (`/settings/{section}`).
+ * `space-credentials` and `space-links` are the SETTINGS HOMES the registry
+ * names for the `credential` and `space_link` kinds (`KindConfig.settingsHome`):
+ * their Home list and detail panel link here, because the human-only doors
+ * (add, rotate, sign in, remove) live in those sections and nowhere else.
+ */
+export const SETTINGS_ROUTE_SECTIONS = [
+  'projects', 'menu', 'credentials', 'configs', 'space-credentials', 'space-links',
+] as const;
+export type SettingsRouteSection = (typeof SETTINGS_ROUTE_SECTIONS)[number];
+
+/**
  * The three outer panel tabs, fixed order — the vocabulary of `t=`.
  *
  * `activity` was a member until 2026-08-19 and is deliberately NOT given a
@@ -184,7 +196,7 @@ export type NavView =
   | { view: 'entity'; entityId: EntityId; origin: Origin | null; originView?: MenuViewRef | null }
   | { view: 'channels' }
   | { view: 'channel'; channelId: EntityId; msg: EntityId | null }
-  | { view: 'settings'; section: 'projects' | 'menu' | 'credentials' | 'configs' | null }
+  | { view: 'settings'; section: SettingsRouteSection | null }
   /*
    * The four screens that rendered from the rail with NO route line, added by
    * the 2026-08-14 amendment to WLT §2.1/§2.2.

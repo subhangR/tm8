@@ -56,6 +56,9 @@ import {
   AuthInviteSignupInputSchema,
   AuthLoginInputSchema,
   AuthSpaceEnterInputSchema,
+  SpacePasswordLockInputSchema,
+  SpacePasswordResetInputSchema,
+  SpacePasswordSetRequiredInputSchema,
   AuthLogoutInputSchema,
   AuthPasswordChangeInputSchema,
   AuthSignupInputSchema,
@@ -193,6 +196,7 @@ const InviteRedeemInputSchema = z.object({
   actorId: EntityIdSchema.optional(),
   clientMutationId: z.string().min(1),
   code: z.string().min(1),
+  spacePassword: z.string().min(8).max(1024).optional(),
 }).strict();
 
 const UndoCommandInputSchema = z.object({
@@ -211,6 +215,9 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'auth.signup': AuthSignupInputSchema,
   'auth.login': AuthLoginInputSchema,
   'auth.space.enter': AuthSpaceEnterInputSchema,
+  'spaces.spacePassword.setRequired': SpacePasswordSetRequiredInputSchema,
+  'spaces.members.spacePassword.reset': SpacePasswordResetInputSchema,
+  'spaces.members.spacePassword.lock': SpacePasswordLockInputSchema,
   'auth.logout': AuthLogoutInputSchema,
   // auth.claim.status takes no input; the catalog marks it a read.
   'auth.claim': AuthClaimInputSchema,

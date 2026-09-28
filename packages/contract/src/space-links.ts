@@ -149,7 +149,7 @@ export type SpaceLinkRefusalReason =
  * refused at home. `execution.terminal.start` starts an unbudgeted shell work
  * session that no spawn switch, budget or link gate covers, so through a link
  * it would be a shell in B; it stays refused for good. `execution.spawn` is
- * NOT in this list (W7b, 996): it runs only through the spawn rule below
+ * NOT in this list (W7b, 274): it runs only through the spawn rule below
  * (switch, explicit credentials) and then a budgeted reservation on the
  * caller's own token row (`reserve_space_link_spawn`); W7p layer (iii) admits
  * the link identity's spawn on B only against that reservation, and the

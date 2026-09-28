@@ -48,6 +48,8 @@ export interface SkippedSkill {
    *   `selection` (design 01a0cb80 §5.2).
    * - `task-name-collision` — equipped on a spawn task, but an earlier task
    *   skill has the same name (or path); the first in task order won.
+   * - `selection-name-collision` — in an `execution.spawn` `selection`, but a
+   *   skill the person picked for this launch has the same name (or path).
    * - `relevance` — legacy: spawn-time Jev trimmed it. No longer written.
    */
   reason: string;

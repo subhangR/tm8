@@ -158,7 +158,7 @@ describe('internal.entity_content resolves every core kind', () => {
   function resolvableArms(
     source: string,
   ): { kind: string; alias: string; table: string; columns?: string[] }[] {
-    // W7b (996): `remote_ref` is the first arm that is an allow-list rather
+    // W7b (274): `remote_ref` is the first arm that is an allow-list rather
     // than `to_jsonb(row) - ...`, so it needs its own shape. Its argument list
     // holds no parentheses; the lazy `[\s\S]*?` stops at the first `)` that
     // is followed by `into content from public.<table> <alias>`.

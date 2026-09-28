@@ -1,5 +1,5 @@
 /**
- * W7b — remote_ref, the watcher, spawn in B (migration 996, task 01a0d9fd).
+ * W7b — remote_ref, the watcher, spawn in B (migration 274, task 01a0d9fd).
  * The DB half: record_remote_ref's audit requirement, the watcher's
  * signed_in-only polling and the cached-status gate (a1, a4), the spawn
  * budget per token row including the race (a5), the switch (a6), T33's
@@ -796,6 +796,22 @@ describe('W7b link-kind admission — the mint and the credential read, only aga
     expect(await outcome(() => db.rpc(claims, 'read_space_credential_for_spawn', [fixture.spaceB, 'anthropic', null]))).toBe('ok');
     // H's own browser session may use its own private one: the refusal is the link's.
     expect(await outcome(async () => db.rpc(await hClaims(), 'read_space_credential_for_spawn', [fixture.spaceB, 'anthropic', privateCredential]))).toBe('ok');
+    await db.rpc(await hClaims(), 'release_space_link_spawn', [fixture.spaceA, link.id, r.reservationId]);
+  });
+
+  it('gate 8 holds through the link branch: a server-only (typesafe) provider is refused to a link session holding a live reservation, default or pinned; positive — the same reservation reads the anthropic default', async () => {
+    const typesafe = randomUUID();
+    await asIdentity(fixture.identityH, (q) => q.rpc('create_space_credential', [
+      typesafe, fixture.spaceB, 'typesafe', 'api_key', 'w7b typesafe', 'Tk0x', Buffer.alloc(17, 9), Buffer.alloc(12, 4),
+    ]));
+    await asOwner(async (c) => { await c.query(`update public.space_credentials set is_default = true where id = $1`, [typesafe]); });
+    const r = await db.rpc<{ reservationId: string }>(await hClaims(), 'reserve_space_link_spawn', [fixture.spaceA, link.id, null, null]);
+    const claims = await linkClaims();
+    await expect(db.rpc(claims, 'read_space_credential_for_spawn', [fixture.spaceB, 'typesafe', null])).rejects.toThrow(/server-only/);
+    expect(await outcome(() => db.rpc(claims, 'read_space_credential_for_spawn', [fixture.spaceB, 'typesafe', null]))).toBe('42501');
+    expect(await outcome(() => db.rpc(claims, 'read_space_credential_for_spawn', [fixture.spaceB, 'typesafe', typesafe]))).toBe('42501');
+    const got = await db.rpc<{ credentialId: string }>(claims, 'read_space_credential_for_spawn', [fixture.spaceB, 'anthropic', null]);
+    expect(got.credentialId).toBe(publicCredential);
     await db.rpc(await hClaims(), 'release_space_link_spawn', [fixture.spaceA, link.id, r.reservationId]);
   });
 });

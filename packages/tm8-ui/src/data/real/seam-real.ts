@@ -29,6 +29,7 @@
  *      a liveness cadence trigger (LLD §9).
  *   3. connection `onReconnect` → liveness `noteReconnect` — same.
  */
+import { managedPortFromSeam } from '../../managed/port';
 import {
   type CreateInviteInput,
   type InvitePreview,
@@ -529,6 +530,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
         setDefault: (credentialId) => ops.spaceCredentialsSetDefault(credentialId),
         remove: (credentialId) => ops.spaceCredentialsDelete(credentialId),
         policy: (spaceId) => ops.spaceCredentialsPolicy(spaceId),
+        readiness: (spaceId) => ops.spaceCredentialsReadiness(spaceId),
         setPolicy: (spaceId, provider, allowedSources) =>
           ops.spaceCredentialsSetPolicy(spaceId, provider, allowedSources),
         setVisibility: (credentialId, visibility) => ops.spaceCredentialsSetVisibility(credentialId, visibility),
@@ -555,6 +557,19 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       logout: (linkId) => ops.spaceLinksMutate('spaceLinks.logout', linkId),
       remove: (linkId) => ops.spaceLinksMutate('spaceLinks.remove', linkId),
       setSpawn: (linkId, allowSpawn, spawnBudget) => ops.spaceLinksSetSpawn(linkId, allowSpawn, spawnBudget),
+      audit: (linkId) => ops.spaceLinksAudit(linkId),
+    },
+
+    // -- remote servers (W8) --------------------------------------------------
+
+    servers: {
+      get: (serverId) => ops.serversGet(serverId),
+      probe: (serverId) => ops.serversProbe(serverId),
+      remove: (serverId) => ops.serversRemove(serverId),
+    },
+
+    actions: {
+      list: (contextEntityId) => ops.actionsList(contextEntityId),
     },
 
     // -- liveness ------------------------------------------------------------
@@ -573,5 +588,11 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     },
   };
 
+  // After construction: the port is a view over this seam's own nouns.
+  /* Assigned AFTER construction, not inline with the rest of `commands`:
+     `managedPortFromSeam` wraps this seam's own methods, so it needs the
+     finished object. This therefore REQUIRES an unfrozen seam; freezing
+     `seam` or `seam.commands` would break it here and nowhere else. */
+  seam.commands.managed = managedPortFromSeam(seam);
   return seam;
 }

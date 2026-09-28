@@ -277,7 +277,7 @@ export const KIND_ART = {
 
   /**
    * An open box with an arrow leaving it — a `remote_ref` points at an entity
-   * in another, linked space (996, W7b). The SQL registry names its icon
+   * in another, linked space (274, W7b). The SQL registry names its icon
    * `external-link`; this is that mark. Not chain links: those are `space_link`'s.
    */
   remote_ref: [

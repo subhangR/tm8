@@ -9,7 +9,7 @@
  *   (link-session-transport.test.ts).
  * - Layer (iii), defence in depth: `execution.resume` and
  *   `execution.dispatch` refuse a link bearer themselves; `execution.spawn`
- *   admits one only past SQL `admit_space_link_spawn` (W7b, 996: a live
+ *   admits one only past SQL `admit_space_link_spawn` (W7b, 274: a live
  *   reservation made by `spaceLinks.invoke`), and the spawn-credential read is
  *   gated in SQL alone. These cells call the RAW handler, past the registry,
  *   so each refusal is its own red.

@@ -337,6 +337,8 @@ interface SummaryRow {
   cred_visibility: string | null;
   cred_status: string | null;
   cred_owner_account_id: string | null;
+  srv_name: string | null;
+  srv_base_url: string | null;
   memory_statement: string | null;
   memory_mechanism: string | null;
   memory_subject_scope: string | null;
@@ -511,6 +513,10 @@ select
   scr.visibility       as cred_visibility,
   scr.status           as cred_status,
   scr.owner_account_id as cred_owner_account_id,
+  -- Servers (W8): the name and URL only — the title and excerpt a Home list
+  -- row draws. servers holds no secret. MIRRORS entity-read.ts.
+  srv.name             as srv_name,
+  srv.base_url         as srv_base_url,
   wt.project_id      as wt_project_id,
   wt.branch          as wt_branch,
   wt.base_ref        as wt_base_ref,
@@ -583,6 +589,7 @@ left join public.graphs gr           on gr.entity_id = e.id
 left join public.drawings drw         on drw.entity_id = e.id
 left join public.forms frm            on frm.entity_id = e.id
 left join public.space_credentials scr on e.kind = 'credential' and scr.id = e.id
+left join public.servers srv          on e.kind = 'server' and srv.entity_id = e.id
 left join public.containers ctr      on ctr.entity_id = e.id
 -- No container_runtime_state join, and no runtime_ref / host_spec columns.
 -- Usage is CONTENT, not summary state, and heartbeats deliberately emit no
@@ -1092,6 +1099,12 @@ export class PgEntityProjector implements EntityProjector {
       case 'artifact':
         // The artifact's own name — MIRRORS entity-read.ts titleOf.
         return r.artifact_name ?? 'Artifact';
+      case 'server':
+        // Its own name — MIRRORS entity-read.ts titleOf.
+        return r.srv_name ?? 'Server';
+      case 'space_link':
+        // Never the target's name (P8) — MIRRORS entity-read.ts titleOf.
+        return 'Space link';
       default:
         // Custom c:* kinds: no title column exists. `fields.title` is the
         // convention when the kind schema declares one.
@@ -1134,6 +1147,7 @@ export class PgEntityProjector implements EntityProjector {
       : r.kind === 'drawing' ? r.drawing_format
       : r.kind === 'form' ? r.form_description
       : r.kind === 'credential' ? r.cred_provider
+      : r.kind === 'server' ? r.srv_base_url
       : null;
     if (source === null || source === '') return null;
     // Empty becomes "no excerpt", not an empty one — `entity-read.ts` maps the
@@ -1496,7 +1510,7 @@ export class PgEntityProjector implements EntityProjector {
         return { kind: 'artifact', revisionNumber: r.artifact_revision_number ?? 1 };
       case 'space_link':
       case 'server':
-      // 996 (W7b): same for remote_ref; without it every remote_ref event
+      // 274 (W7b): same for remote_ref; without it every remote_ref event
       // raises EntityKindDriftError.
       case 'remote_ref':
         // 250 (W6): no row facts on the entity; `spaceLinks.list` answers for a

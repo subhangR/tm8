@@ -57,6 +57,9 @@ describe('grammar (WLT §2.2 verbatim)', () => {
     // Lane K: the Jev no-key link's destination.
     [`#/s/${SPACE}/settings/credentials`, { view: 'settings', section: 'credentials' }],
     [`#/s/${SPACE}/settings/configs`, { view: 'settings', section: 'configs' }],
+    // Task 01a0e036: the Settings homes of `credential` and `space_link`.
+    [`#/s/${SPACE}/settings/space-credentials`, { view: 'settings', section: 'space-credentials' }],
+    [`#/s/${SPACE}/settings/space-links`, { view: 'settings', section: 'space-links' }],
   ];
 
   it.each(cases)('parses %s', (hash, target) => {

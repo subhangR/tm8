@@ -109,7 +109,7 @@ export const CORE_KIND_INFO: Readonly<Record<CoreEntityKind, KindInfo>> = {
     createWith: [],
   },
   server: { group: 'runtime', summary: 'a remote tm8 server a space link points at', createWith: [] },
-  // W7b (996): recorded by `spaceLinks.invoke` after a create or spawn in a
+  // W7b (274): recorded by `spaceLinks.invoke` after a create or spawn in a
   // linked space; no command creates one directly.
   remote_ref: {
     group: 'runtime',

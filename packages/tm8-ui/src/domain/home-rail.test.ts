@@ -14,11 +14,14 @@
  * rail is the ONLY door to most of these populations, so "it still renders"
  * is not the property worth asserting — WHICH rows, in WHICH order, under
  * WHICH heading is.
+ *
+ * Task 01a0e036 (owner ruling 2026-09-27) ended the withholding: Home lists
+ * EVERY kind. The four formerly withheld kinds sit in an eighth group, Setup,
+ * and the assertions below pin that no kind is gated any more.
  */
 import { describe, expect, it } from 'vitest';
 import { collectionKinds } from './registry';
 import {
-  HOME_RAIL_WITHHELD_KINDS,
   homeRailGroups,
   homeRootKinds,
   isHomeRootKind,
@@ -62,7 +65,7 @@ describe('the Home icon rail', () => {
    * `commit` somewhere contains `commit`. The complaint was never about
    * membership — it was that the ORDER and the HEADINGS carried no meaning.
    */
-  it('cuts seven groups, in the ruled order, each under its own heading', () => {
+  it('cuts eight groups, in the ruled order, each under its own heading', () => {
     expect(homeRailGroups().map((group) => [group.id, group.label])).toEqual([
       ['work', 'Work'],
       ['agents', 'Agents'],
@@ -70,6 +73,7 @@ describe('the Home icon rail', () => {
       ['structure', 'Structure'],
       ['people', 'People'],
       ['code', 'Code'],
+      ['setup', 'Setup'],
       ['beta', 'Beta'],
     ]);
   });
@@ -81,6 +85,7 @@ describe('the Home icon rail', () => {
     expect(kindsOf('structure')).toEqual(['collection', 'graph']);
     expect(kindsOf('people')).toEqual(['member', 'channel']);
     expect(kindsOf('code')).toEqual(['commit', 'pull_request', 'worktree']);
+    expect(kindsOf('setup')).toEqual(['interaction_profile', 'credential', 'space_link', 'server']);
     expect(kindsOf('beta')).toEqual(['loop', 'spell', 'container']);
   });
 
@@ -106,34 +111,26 @@ describe('the Home icon rail', () => {
   });
 
   /*
-   * THE WITHHELD KIND.
+   * NOTHING WITHHELD (task 01a0e036). Until 2026-09-27 four kinds were kept
+   * off every root surface; the owner ruled Home shows every kind.
    */
-  it('withholds `interaction_profile` from every root surface', () => {
-    const railed = homeRailGroups().flatMap((group) => group.kinds.map((config) => config.kind));
-    expect(railed).not.toContain('interaction_profile');
-    expect(homeRootKinds().map((config) => config.kind)).not.toContain('interaction_profile');
-    // Not merely un-drawn: not selectable either, so a stored root or a
-    // hand-typed `k/` route falls back instead of opening a list whose own
-    // switcher cannot name it.
-    expect(isHomeRootKind('interaction_profile')).toBe(false);
-  });
+  it.each(['interaction_profile', 'credential', 'space_link', 'server'])(
+    'offers `%s` on every root surface — rail, switcher, and a selectable root',
+    (kind) => {
+      const railed = homeRailGroups().flatMap((group) => group.kinds.map((config) => config.kind));
+      expect(railed).toContain(kind);
+      expect(homeRootKinds().map((config) => config.kind)).toContain(kind);
+      // Selectable too: a stored root or a hand-typed `k/` route opens its list
+      // instead of falling back to the default root.
+      expect(isHomeRootKind(kind)).toBe(true);
+    },
+  );
 
-  it('withholds it from the RAIL, not from the registry', () => {
-    // The kind still exists and is still resolved everywhere an entity names
-    // its profile. Deleting the registry row would be a different change with
-    // a much larger blast radius, and it is not what was asked for.
-    expect(collectionKinds().map((config) => config.kind)).toContain('interaction_profile');
-  });
-
-  it('still lists every collection kind exactly once, minus the withheld ones', () => {
+  it('lists every collection kind exactly once — no kind is gated', () => {
     // The guard against "fixing" a group by hand-listing kinds: re-cutting the
-    // spine must not drop a kind from, or duplicate it in, the population.
-    // R3 with its one stated narrowing — the spine curates, and withholding is
-    // the only way to gate, which keeps gating visible.
+    // spine must not drop a kind from, or duplicate it in, the population (R3).
     const railed = homeRailGroups().flatMap((group) => group.kinds.map((config) => config.kind));
-    const expected = collectionKinds()
-      .map((config) => config.kind)
-      .filter((kind) => !HOME_RAIL_WITHHELD_KINDS.includes(kind));
+    const expected = collectionKinds().map((config) => config.kind);
     expect([...railed].sort()).toEqual([...expected].sort());
     expect(new Set(railed).size).toBe(railed.length);
   });

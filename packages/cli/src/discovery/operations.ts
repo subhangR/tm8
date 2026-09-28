@@ -237,7 +237,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'auth.space.enter': {
     cmd: ['auth', 'space', 'enter'],
-    syn: 'tm8 auth space enter <space-id> [--label <label>] [--print-token]',
+    syn: 'tm8 auth space enter <space-id> [--label <label>] [--space-password <password>] [--print-token]',
     sum: 'Mint a session pinned to one space from your unpinned (gate) session',
     authz: 'server',
     input: 'bound',
@@ -249,6 +249,7 @@ const ROWS: Record<OperationName, Row> = {
       'under TM8_SPACE_SESSIONS=enforce an unpinned human session can call only spaces.list, auth.* and node administration until it enters a space',
       'with a stored gate credential the pinned token is stored next to it, keyed by space, and `tm8 --space <space-id>` presents it; the gate stays usable for entering other spaces',
       'with --print-token (or in an agent session, or with no stored credential) nothing is stored: export the printed token as TM8_AGENT_TOKEN',
+      'a space that requires a space password (or a locked space login) refuses entry without --space-password; the password is checked for that space only',
     ],
   },
   'auth.sessions.list': {
@@ -291,7 +292,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'auth.invite.signup': {
     cmd: ['auth', 'invite', 'signup'],
-    syn: 'tm8 auth invite signup --code <inv_…> --username <username> --password <password> [--display-name <name>] [--email <email>]',
+    syn: 'tm8 auth invite signup --code <inv_…> --username <username> --password <password> [--space-password <password>] [--display-name <name>] [--email <email>]',
     sum: 'Redeem a space invite that creates your account and signs you in — the operator never learns your password',
     authz: 'server',
     input: 'bound',
@@ -610,6 +611,18 @@ const ROWS: Record<OperationName, Row> = {
     reason: 'human_settings_only',
     notes: [
       'each row names the pick source, owner, root launcher and agent session',
+    ],
+  },
+  'credentials.space.readiness': {
+    cmd: ['space', 'credential-readiness', 'get'],
+    syn: 'tm8 space credential-readiness get [<space-id>]',
+    sum: 'Read a space\'s credential readiness: can-launch per provider for you, and can-poll (a space-owned GitHub credential) — human sessions only',
+    authz: 'server',
+    input: 'none',
+    tags: ['credential', 'space', 'readiness', 'seeding', 'settings'],
+    notes: [
+      'two thresholds, never one: can-launch counts your own default; can-poll needs a space-owned public GitHub credential',
+      'active only: a stale credential is reported, never counted',
     ],
   },
   'credentials.space.policy.get': {
@@ -969,6 +982,39 @@ const ROWS: Record<OperationName, Row> = {
       'in one transaction: your tokens pinned to the Space are revoked, your agent sessions there stop, your personas are deactivated and your assignments cleared',
     ],
   },
+  'spaces.spacePassword.setRequired': {
+    cmd: null,
+    sum: 'Require (or stop requiring) a per-space password to enter this Space — space admins, human sessions only',
+    authz: 'space',
+    input: 'bound',
+    tags: ['space', 'password', 'login', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'turning it on takes your own space password unless you already have one; members without one are refused entry until an admin resets them',
+    ],
+  },
+  'spaces.members.spacePassword.reset': {
+    cmd: null,
+    sum: "Set a new space password for a member and unlock it — space admins, human sessions only",
+    authz: 'space',
+    input: 'bound',
+    tags: ['space', 'password', 'member', 'reset'],
+    reason: 'human_settings_only',
+    notes: [
+      "the member's sessions pinned to this Space are revoked; an admin cannot reset an owner",
+    ],
+  },
+  'spaces.members.spacePassword.lock': {
+    cmd: null,
+    sum: "Lock or unlock a member's space password — a locked login cannot enter the Space",
+    authz: 'space',
+    input: 'bound',
+    tags: ['space', 'password', 'member', 'lock'],
+    reason: 'human_settings_only',
+    notes: [
+      "locking revokes the member's sessions pinned to this Space; you cannot lock yourself or an owner",
+    ],
+  },
   'spaces.invites.list': {
     cmd: ['space', 'invite', 'list'],
     syn: 'tm8 space invite list [<space-id>] [--limit <count>] [--cursor <cursor>]',
@@ -992,7 +1038,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'spaces.invites.redeem': {
     cmd: ['space', 'invite', 'redeem'],
-    syn: 'tm8 space invite redeem <code> [--mutation-id <id>]',
+    syn: 'tm8 space invite redeem <code> [--space-password <password>] [--mutation-id <id>]',
     sum: 'Redeem an invitation code and join its Space',
     authz: 'server',
     input: 'unbound',
@@ -2178,6 +2224,18 @@ const ROWS: Record<OperationName, Row> = {
       'if no dispatcher session is alive the Server spawns one first and waits for it to settle, so the first dispatch in a space is the slow one',
       'liveness is probed, never read off `work_sessions.status` — `idle` is a legal live status and a crashed session keeps its last status forever',
       'the request reaches the dispatcher session id as a trusted envelope AND is stored on the task, so a missed delivery is still recoverable',
+    ],
+  },
+  'execution.dispatchers': {
+    cmd: null,
+    sum: 'List a Space’s dispatcher sessions, newest first, with whether each is live',
+    authz: 'space',
+    input: 'none',
+    tags: ['dispatch', 'dispatcher', 'route', 'launch', 'live'],
+    notes: [
+      'Launch-card API (launch v3 gap 5): the dispatch-target drop-up. No CLI — `session dispatch` routes to the newest live dispatcher on its own',
+      'stopped dispatchers are listed with `live: false`; liveness is probed against the node’s PTY map, never read off `work_sessions.status`',
+      '`queuedCount` is null when it is not cheap to compute; `title` and `purpose` are untrusted display text',
     ],
   },
   'execution.prompt': {
@@ -3422,6 +3480,8 @@ function exposureFor(operation: OperationName): Exposure {
 // 2026-08-13 (first-run claim): auth.claim + auth.claim.status take the catalog
 // to 161 rows. RECOMPUTED from `JSON.stringify(OPERATIONS)`, not adjusted.
 export const CATALOG_DIGEST =
+  // Re-measured for task 01a0e24d (+humanOnly on 33 rows: 24 credentials.*/node.credentials.*,
+  // 6 spaceLinks.* writes, servers.add/adopt/remove) — read from the regenerated conformance manifest. MEASURED.
   // Re-measured for Attention v2 S4 (+attentionRequests.markSeen/unresolve/withdraw).
   // Re-measured for W11 (+spaces.projects.list, +spaces.projects.create at
   // /projects/create, +gate.folders.list/create; projects.link stays, decision 29) — read from the regenerated conformance manifest.
@@ -3466,8 +3526,9 @@ export const CATALOG_DIGEST =
   // +2 attentionSignals.raise|clear (Attention v2 S6, stacked on tm8/attention-v2-integration): read from the regenerated conformance manifest.
   // +3 attentionRequests.markSeen|unresolve|withdraw (Attention v2 S4, stacked on tm8/attention-v2-integration): read from the regenerated conformance manifest.
   // Re-measured (W8, 261, rebuilt on main f01b1566): +6 servers.* and the serverConnections create/delete rows. Read from the regenerated conformance manifest.
+  // Re-measured (W5 #917, merges of main dd1c8215 and 2fa4999f): +3 spaces.spacePassword.* on top of main's servers.*, spaceLinks, attention and launch v3 rows. Read from the regenerated conformance manifest.
   // Re-measured (#915 merge of main 0be3b796): main's servers.* + spaceLinks.invoke/audit and the five attention rows together. Read from the regenerated conformance manifest.
-  'sha256:0cc615d74d968f00e2c8f424368ba0c9cb36bfe69d73b5754c2830e9b6b57b1f';
+  'sha256:be85230eefda1327169810033105a3ce920537605fcb7e909486b9679c3538ab';
 
 export const GRAMMAR_VERSION = '2';
 
