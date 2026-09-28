@@ -120,8 +120,9 @@ function startChat(facade: FacadeDeps, chat?: ChatHandlerDeps): OperationHandler
  * actually happens is an operation added later, born unguarded and looking
  * exactly like its guarded neighbours.
  *
- * This is layer 1 of two. Layer 2 is `internal.require_human_auth_kind()`
- * inside `start_chat`, reading the `tm8.auth_kind` claim. Either alone would
+ * This is layer 1 of two. Layer 2 is `internal.require_human_or_link_auth_kind()`
+ * inside `start_chat` (990, task 01a0db78: a `link` session starts a chat as
+ * the member, decision 31), reading the `tm8.auth_kind` claim. Either alone would
  * refuse the call; both are here because this one is the readable one and that
  * one is the one a future caller reaching the RPC another way cannot bypass.
  */

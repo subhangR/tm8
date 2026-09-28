@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { ChatContextFrame, ChatTurnFrame } from '@tm8/contract';
+import {
+  LINK_RUNTIME_REFUSED_CODE,
+  LINK_RUNTIME_REFUSED_MESSAGE,
+  createChatLaunchConfigResolver,
+} from '../../src/chat/compose.js';
 import { ChatOrchestrator } from '../../src/chat/orchestrator.js';
 import { ChatTurnPublisher } from '../../src/chat/publisher.js';
 import type {
@@ -795,6 +800,74 @@ describe('TM8 Chat durable orchestration', () => {
       await orchestrator.wake(CHAT, IDENTITY);
       expect(runtime.turns).toEqual(['[mode: ask]\nhuman prompt verbatim']);
       expect(errors.map((e) => (e as Error).message)).toEqual(['about read failed']);
+    });
+  });
+
+  // Task 01a0db78: start_chat admits a `link` session (decision 31), but the
+  // runtime mint for its turns is an OWNER DECISION PENDING, so the production
+  // resolver refuses a link-authorized turn BY NAME before minting anything.
+  // The turn must end with that code and text, never silently or hanging.
+  describe('a turn authorized by a space link (owner decision pending)', () => {
+    function linkRig(turn: Record<string, unknown>) {
+      const events: string[] = [];
+      const db = new FakeDb(turn, events);
+      const runtime = new FakeRuntime([{ kind: 'done', reason: 'success' }]);
+      const registry = new SubscriptionRegistry();
+      const sink = new FakeSink(events);
+      registry.add(sink);
+      registry.subscribe(sink.id, SPACE);
+      const mintDb = {
+        rpc: async () => { throw new Error('the mint was reached'); },
+        tx: async () => { throw new Error('the mint was reached'); },
+      } as unknown as Db;
+      const orchestrator = new ChatOrchestrator({
+        db,
+        runtime,
+        publisher: new ChatTurnPublisher(registry),
+        resolveLaunchConfig: createChatLaunchConfigResolver({
+          db: mintDb, dataDir: '/nonexistent', baseUrl: 'http://127.0.0.1:1', mcpCliPath: '/nonexistent',
+        }),
+      });
+      return { db, orchestrator, runtime, sink };
+    }
+
+    function expectNamedRefusal(rigged: ReturnType<typeof linkRig>): void {
+      const errorPart = rigged.sink.frames
+        .flatMap((f) => (f.type === 'chat.turn.delta' ? [f.part] : []))
+        .find((part) => part.kind === 'error');
+      expect(errorPart).toMatchObject({
+        kind: 'error',
+        payload: { code: LINK_RUNTIME_REFUSED_CODE, message: LINK_RUNTIME_REFUSED_MESSAGE },
+      });
+      expect(rigged.db.completed[0]?.[1]).toBe('error');
+      expect(rigged.db.completed[0]?.[5]).toEqual({ code: LINK_RUNTIME_REFUSED_CODE });
+      expect(rigged.sink.frames.at(-1)).toMatchObject({ type: 'chat.turn.done' });
+      expect(rigged.runtime.starts).toHaveLength(0);
+    }
+
+    it('refused by name — the first turn of a chat a link session started', async () => {
+      const rigged = linkRig({ ...claim('cold'), agentTool: 'claude-code', requesterAuthKind: 'link' });
+      await rigged.orchestrator.wake(CHAT, IDENTITY);
+      expectNamedRefusal(rigged);
+    });
+
+    it('refused by name — a turn a link session posts to an existing chat', async () => {
+      const rigged = linkRig({
+        ...claim('cold'), agentTool: 'claude-code',
+        requestedByIdentityId: OTHER_IDENTITY, requestedByAuthKind: 'link', requestedByMemberId: MEMBER_B,
+      });
+      await rigged.orchestrator.wake(CHAT, IDENTITY);
+      expectNamedRefusal(rigged);
+    });
+
+    it('positive — the same browser turn gets past the refusal to the mint', async () => {
+      const rigged = linkRig({ ...claim('cold'), agentTool: 'claude-code' });
+      await rigged.orchestrator.wake(CHAT, IDENTITY);
+      expect(rigged.db.completed[0]?.[5]).toEqual({ code: 'runtime_error' });
+      const errorPart = rigged.sink.frames
+        .flatMap((f) => (f.type === 'chat.turn.delta' ? [f.part] : []))
+        .find((part) => part.kind === 'error');
+      expect(errorPart).toMatchObject({ payload: { message: 'the mint was reached' } });
     });
   });
 });

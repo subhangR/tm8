@@ -232,6 +232,23 @@ export function chatSystemPrompt(input: ChatLaunchConfigInput): string {
 
 
 /**
+ * The named refusal for a turn authorized by a `link` session (task 01a0db78).
+ *
+ * Decision 31 lets a space link start a chat in its target space (start_chat
+ * admits `link`), but whether a link session may mint that chat's 24h
+ * agent_runtime token is an OWNER DECISION PENDING: the token would outlive
+ * revoking the link session. Until it is answered `issue_agent_runtime_session`
+ * stays on the strict gate, and this refuses first, by name, so the turn ends
+ * with a code and text the person can read instead of a bare 42501. It covers
+ * both a link-started chat's first turn and a turn a link session posts to an
+ * existing chat: both reach the resolver as `requesterAuthKind: 'link'`.
+ */
+export const LINK_RUNTIME_REFUSED_CODE = 'link_runtime_refused';
+export const LINK_RUNTIME_REFUSED_MESSAGE =
+  'This turn cannot run: a chat\'s runtime token cannot be minted through a space link. '
+  + 'Send the turn from your own session in this space.';
+
+/**
  * Production ResolveChatLaunchConfig: mint the thread's agent_runtime MCP
  * credential (C5) under the REQUESTING HUMAN's claims, write the per-thread
  * strict MCP config, and hand back the closed tool surface with the system
@@ -243,6 +260,11 @@ export function createChatLaunchConfigResolver(
 ): ResolveChatLaunchConfig {
   const cliPath = options.mcpCliPath ?? defaultMcpCliPath();
   return async (input: ChatLaunchConfigInput): Promise<ChatLaunchConfig> => {
+    if (input.requesterAuthKind === 'link') {
+      throw new CollabError('forbidden', LINK_RUNTIME_REFUSED_MESSAGE, {
+        details: { reason: LINK_RUNTIME_REFUSED_CODE },
+      });
+    }
     if (input.agentTool !== 'claude-code') {
       // Honest v1 refusal (D12/DECISION §4): the codex adapter is Stage 2.
       throw new CollabError(

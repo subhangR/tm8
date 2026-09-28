@@ -3986,6 +3986,46 @@ async function ensureHLink(): Promise<void> {
   ({ link: hLink, token: hLinkToken } = await linkLoginAs(fixture.accountH, fixture.identityH));
 }
 
+/**
+ * Which gate refused, by its message: `strict-gate` (083's
+ * require_human_auth_kind), `permissive-gate` (990's
+ * require_human_or_link_auth_kind), `past-gate:<sqlstate>` for a refusal
+ * after the gate, or `ok`.
+ */
+async function gateOutcome(run: () => Promise<unknown>): Promise<string> {
+  try {
+    await run();
+    return 'ok';
+  } catch (err) {
+    const e = err as { message?: string; cause?: { message?: string } };
+    const text = `${e.message ?? ''} ${e.cause?.message ?? ''}`;
+    if (text.includes('credentials are human-only')) return 'strict-gate';
+    if (text.includes('only a person, or a space link acting as the member')) return 'permissive-gate';
+    return `past-gate:${await outcome(() => Promise.reject(err))}`;
+  }
+}
+
+/** A teammate in B that H (owner of B) may act as, for start_chat cells. */
+async function seedPersonaB(): Promise<string> {
+  const persona = randomUUID();
+  await database.transaction(async (client) => {
+    await client.query('set local role tm8_graph_owner');
+    await client.query(
+      `insert into public.entities(id, space_id, kind, created_by, visibility) values ($1, $2, 'team_member', $3, 'space')`,
+      [persona, fixture.spaceB, fixture.memberHB]);
+    await client.query(
+      `insert into public.team_members(entity_id, owner_member_id, name, role, identity) values ($1, $2, 'db78 B teammate', 'worker', 'persona')`,
+      [persona, fixture.memberHB]);
+  });
+  return persona;
+}
+
+const startChatArgs = (personaB: string): unknown[] => [
+  randomUUID(), fixture.spaceB, personaB, 'claude-opus-5', 'anthropic', 'claude-code',
+  'ask', 'scratch', null, randomUUID(), '/tmp/tm8-cross-space', '01a0db78 chat', 'hello', [], null,
+  `01a0db78-${randomUUID()}`,
+];
+
 describe.sequential('W6 space links — H\'s link session A → B', () => {
   beforeAll(ensureHLink);
 
@@ -4143,21 +4183,131 @@ describe.sequential('T20b link session in B — credential management refused, t
       q.rpc('delete_entity', [doc, null, `w6-t20b-delete-${randomUUID()}`])))).toBe('ok');
   });
 
-  it('KNOWN GAP 01a0db78-f1ab: start_chat in B is REFUSED for a link session (strict gate)', async () => {
-    expect(await outcome(() => asToken(hLinkToken, (q) => q.rpc('start_chat', [
-      randomUUID(), fixture.spaceB, fixture.personaA, 'claude-opus-5', 'anthropic', 'claude-code',
-      'ask', 'scratch', null, randomUUID(), '/tmp/tm8-cross-space', 'W6 gap', 'hello', [], null,
-      `w6-gap-${randomUUID()}`,
-    ])))).toBe('42501');
+  // 01a0db78: this cell asserted REFUSED as W6's known gap. start_chat now
+  // calls the permissive variant (990), so the same link session is ADMITTED.
+  it('ADMITTED as the member (01a0db78, was KNOWN GAP) — start_chat in B with the link session', async () => {
+    const personaB = await seedPersonaB();
+    expect(await gateOutcome(() => asToken(hLinkToken, (q) => q.rpc('start_chat', startChatArgs(personaB))))).toBe('ok');
   });
 
-  it('positive for the gap — H (browser) with the same arguments gets past the gate', async () => {
+  it('positive pair — H (browser) with the same arguments', async () => {
+    const personaB = await seedPersonaB();
     const token = await mintBrowser(fixture.accountH, fixture.identityH);
-    expect(await outcome(() => asToken(token, (q) => q.rpc('start_chat', [
-      randomUUID(), fixture.spaceB, fixture.personaA, 'claude-opus-5', 'anthropic', 'claude-code',
-      'ask', 'scratch', null, randomUUID(), '/tmp/tm8-cross-space', 'W6 gap', 'hello', [], null,
-      `w6-gap-${randomUUID()}`,
-    ])))).not.toBe('42501');
+    expect(await gateOutcome(() => asToken(token, (q) => q.rpc('start_chat', startChatArgs(personaB))))).toBe('ok');
+  });
+
+  it('refused — an agent session still cannot start a chat (the permissive variant admits link, not agent)', async () => {
+    const token = await mintAgent();
+    expect(await gateOutcome(() => asToken(token, (q) => q.rpc('start_chat', [
+      randomUUID(), fixture.spaceA, fixture.personaA, 'claude-opus-5', 'anthropic', 'claude-code',
+      'ask', 'scratch', null, randomUUID(), '/tmp/tm8-cross-space', '01a0db78 agent', 'hello', [], null,
+      `01a0db78-agent-${randomUUID()}`,
+    ])))).toBe('permissive-gate');
+  });
+});
+
+/**
+ * 01a0db78 — the other non-credential callers of the strict gate, classified
+ * against decision 31 ("Phase 1 agents through a link act as the full member,
+ * except for credential operations (E2)"). Each refusal is paired with the
+ * positive a browser session of the same person gets. `gateOutcome` names
+ * WHICH gate refused, so a role or membership refusal past the gate is not
+ * mistaken for the gate.
+ */
+describe.sequential('01a0db78 link session in B — leave_space and remove_space_member admit link as the member', () => {
+  beforeAll(ensureHLink);
+
+  async function asAdminOfB(label: string): Promise<Awaited<ReturnType<typeof seedMemberOfAB>>> {
+    const x = await seedMemberOfAB(label);
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(`update public.members set role = 'admin' where entity_id = $1`, [x.memberB]);
+    });
+    return x;
+  }
+
+  it('refused — an ADMIN\'s link session cannot remove B\'s OWNER (the member\'s own authority, never more)', async () => {
+    const x = await asAdminOfB('db78-admin-x');
+    const { token } = await linkLoginAs(x.account, x.identity);
+    expect(await gateOutcome(() => asToken(token, (q) =>
+      q.rpc('remove_space_member', [fixture.spaceB, fixture.memberHB, `db78-rm-owner-${randomUUID()}`])))).toBe('past-gate:42501');
+  });
+
+  it('refused — a plain MEMBER\'s link session cannot remove anyone in B (not an admin there)', async () => {
+    const w = await seedMemberOfAB('db78-member-w');
+    const z = await seedMemberOfAB('db78-member-z');
+    const { token } = await linkLoginAs(w.account, w.identity);
+    expect(await gateOutcome(() => asToken(token, (q) =>
+      q.rpc('remove_space_member', [fixture.spaceB, z.memberB, `db78-rm-peer-${randomUUID()}`])))).toBe('past-gate:42501');
+  });
+
+  it('admitted — the same admin\'s link session removes a plain member of B', async () => {
+    const x = await asAdminOfB('db78-admin-x2');
+    const z = await seedMemberOfAB('db78-member-z2');
+    const { token } = await linkLoginAs(x.account, x.identity);
+    expect(await gateOutcome(() => asToken(token, (q) =>
+      q.rpc('remove_space_member', [fixture.spaceB, z.memberB, `db78-rm-ok-${randomUUID()}`])))).toBe('ok');
+  });
+
+  it('refused — a B-pinned link session cannot leave A (home) on the member\'s behalf', async () => {
+    const y = await seedMemberOfAB('db78-leave-a');
+    const { token } = await linkLoginAs(y.account, y.identity);
+    expect(await gateOutcome(() => asToken(token, (q) =>
+      q.rpc('leave_space', [fixture.spaceA, `db78-leave-a-${randomUUID()}`])))).toMatch(/^past-gate:/);
+    expect(await outcome(() => asToken(token, (q) => idsIn(q, fixture.spaceB)))).toBe('ok');
+  });
+
+  it('admitted — the link session leaves B; that ends the member\'s own B membership, and the link session is refused on its next use (W6 a4)', async () => {
+    const y = await seedMemberOfAB('db78-leave-b');
+    const { token } = await linkLoginAs(y.account, y.identity);
+    expect(await gateOutcome(() => asToken(token, (q) =>
+      q.rpc('leave_space', [fixture.spaceB, `db78-leave-b-${randomUUID()}`])))).toBe('ok');
+    expect(await outcome(() => asToken(token, (q) => idsIn(q, fixture.spaceB)))).toBe('unauthenticated');
+  });
+});
+
+describe.sequential('01a0db78 link session in B — kept on the strict gate (refused), each paired with a browser positive', () => {
+  beforeAll(ensureHLink);
+  const browserH = (): Promise<string> => mintBrowser(fixture.accountH, fixture.identityH);
+
+  it('refused — disable_account (identity-wide; lead 02:08Z)', async () => {
+    expect(await gateOutcome(() => asToken(hLinkToken, (q) =>
+      q.rpc('disable_account', [randomUUID(), `db78-disable-${randomUUID()}`])))).toBe('strict-gate');
+  });
+  it('positive pair — H (browser) gets past the gate on the same call', async () => {
+    const token = await browserH();
+    expect(await gateOutcome(() => asToken(token, (q) =>
+      q.rpc('disable_account', [randomUUID(), `db78-disable-${randomUUID()}`])))).not.toBe('strict-gate');
+  });
+
+  it('refused — read_account_service_key (a credential read, E2; account-level)', async () => {
+    expect(await gateOutcome(() => asToken(hLinkToken, (q) =>
+      q.rpc('read_account_service_key', ['typesafe'])))).toBe('strict-gate');
+  });
+  it('positive pair — H (browser) reads it', async () => {
+    const token = await browserH();
+    expect(await gateOutcome(() => asToken(token, (q) => q.rpc('read_account_service_key', ['typesafe'])))).toBe('ok');
+  });
+
+  it('refused — issue_agent_runtime_session (OWNER DECISION PENDING: the runtime mint outlives the link session)', async () => {
+    expect(await gateOutcome(() => asToken(hLinkToken, (q) => q.rpc('issue_agent_runtime_session', [
+      randomUUID(), fixture.personaA, 'a'.repeat(64), new Date(Date.now() + 3_600_000).toISOString(), 'db78',
+    ])))).toBe('strict-gate');
+  });
+  it('positive pair — H (browser) gets past the gate on the same call (no such chat)', async () => {
+    const token = await browserH();
+    expect(await gateOutcome(() => asToken(token, (q) => q.rpc('issue_agent_runtime_session', [
+      randomUUID(), fixture.personaA, 'a'.repeat(64), new Date(Date.now() + 3_600_000).toISOString(), 'db78',
+    ])))).toBe('past-gate:P0002');
+  });
+
+  it('refused — revoke_agent_runtime_session (OWNER DECISION PENDING)', async () => {
+    expect(await gateOutcome(() => asToken(hLinkToken, (q) =>
+      q.rpc('revoke_agent_runtime_session', [randomUUID()])))).toBe('strict-gate');
+  });
+  it('positive pair — H (browser) revokes (no such chat is a no-op)', async () => {
+    const token = await browserH();
+    expect(await gateOutcome(() => asToken(token, (q) => q.rpc('revoke_agent_runtime_session', [randomUUID()])))).toBe('ok');
   });
 });
 

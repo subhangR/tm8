@@ -35,8 +35,9 @@
  *     token carries its configuring human's claims (R-C), so a chat that could
  *     open chats could spend that human's authority on conversations they never
  *     asked for, each with a fresh 24h credential of its own. `start_chat`'s
- *     `require_human_auth_kind` already refuses it in SQL; this is the readable
- *     layer, exactly as `credentials.ts` is layer 1 to that RPC's layer 2.
+ *     `require_human_or_link_auth_kind` (990) already refuses it in SQL; this
+ *     is the readable layer, exactly as `credentials.ts` is layer 1 to that
+ *     RPC's layer 2.
  *
  *  2. `execution.spawn`'s `parentSessionId` — IN, and scoped. The handler
  *     defaults it to the bearer's own `runtimeChatId`, which is a server fact.
