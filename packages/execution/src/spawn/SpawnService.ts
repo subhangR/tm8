@@ -49,6 +49,7 @@ import {
   childLaunchPosture,
   composeEnv,
   composeManifest,
+  credentialBindingLaunch,
   resolveAgentBinary,
   resolveCommandNetworkPolicy,
   resolveCoordinatorSessionId,
@@ -2438,6 +2439,10 @@ export class SpawnService {
       spaceCredentialIds = credentials.spaceCredentialIds;
       const { credentialHome, gitHubCredential } = credentials;
       await this.repointSpaceCredentials(auth, sessionId, credentials, recorded.unreadable);
+      // R2 (session_credential_binding): re-entering `spawning` reset the binding to `pending`, which
+      // cannot go `running`. Recorded from THIS run's resolution, after the
+      // rows it rolls up were re-pointed and before a PTY exists.
+      await this.graph.recordCredentialBinding(auth, sessionId, credentialBindingLaunch(credentials.launch));
       // Same harness surface as the fresh spawn: `withAgentResume` builds on
       // this base command, so the minimal-surface flags survive `--resume`.
       // Read once: the same lists build the argv and the manifest's record of

@@ -1023,7 +1023,13 @@ export interface Connections {
   unresolvedHardDependencyCount: number;
 }
 
-export interface EdgeGroup { type: string; direction: 'outgoing'|'incoming'; label: string; edges: EdgeView[]; nextCursor?: Cursor }
+/**
+ * `summary` replaces `edges` for a group that is counted, not listed: a
+ * credential's incoming `runs_on` (the sessions that ran on it) is listed only
+ * by `operation`, which applies its own gate.
+ */
+export interface EdgeGroupSummary { count: number; operation: string }
+export interface EdgeGroup { type: string; direction: 'outgoing'|'incoming'; label: string; edges: EdgeView[]; nextCursor?: Cursor; summary?: EdgeGroupSummary }
 
 export interface EdgeView { id: string; type: string; source: EntitySummary; target: EntitySummary; props: Record<string, unknown>;
   createdBy: ActorSummary; createdAt: string; updatedAt: string; resolved?: boolean; hard?: boolean }

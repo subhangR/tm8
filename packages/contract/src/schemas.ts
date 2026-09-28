@@ -873,6 +873,7 @@ export const EdgeGroupSchema: z.ZodType<EdgeGroup> = z.lazy(() => z.object({
   label: z.string(),
   edges: z.array(EdgeViewSchema),
   nextCursor: CursorSchema.optional(),
+  summary: z.object({ count: z.number().int().nonnegative(), operation: z.string() }).strict().optional(),
 }).strict());
 
 export const ConnectionsSchema: z.ZodType<Connections> = z.lazy(() => z.object({

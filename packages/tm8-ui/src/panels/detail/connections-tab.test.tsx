@@ -431,3 +431,17 @@ describe('countMessages — the Messages tab number', () => {
     expect(countMessages(counted(3), new Array(4).fill(null))).toBe(4);
   });
 });
+
+describe('ConnectionsTab — a counted group (a credential\'s runs_on)', () => {
+  it('shows the count and where the list lives, and no session row', () => {
+    const counted = {
+      type: 'runs_on', label: 'runs_on (incoming)', direction: 'incoming', edges: [],
+      summary: { count: 3, operation: 'credentials.space.usage' },
+    };
+    const { getByTestId, queryByText } = render(<ConnectionsTab detail={detailWith([], [counted])} />);
+    const section = getByTestId('pn-counted-group');
+    expect(section.textContent).toContain('USED BY · 3');
+    expect(section.textContent).toContain('usage');
+    expect(queryByText(/Nothing linked yet/)).toBeNull();
+  });
+});

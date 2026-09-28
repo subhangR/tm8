@@ -40,6 +40,7 @@ import type {
 import type { Querier } from '../db/types.js';
 import { OffContractEventError, assertWorkspaceEvent } from './emitter.js';
 import type { EntityProjector } from './projector.js';
+import { RUNS_ON } from '../facade/services/w2/runs-on-visibility.js';
 
 /**
  * A row of `public.workspace_events`, exactly as node-postgres returns it.
@@ -192,6 +193,11 @@ interface LiveMessageContent {
 }
 
 /** Which entity ids a row's projection will need hydrated. */
+function isRunsOnEdgeEvent(row: WorkspaceEventRow): boolean {
+  return (row.event_type === 'edge.upsert' || row.event_type === 'edge.deleted')
+    && row.payload['type'] === RUNS_ON;
+}
+
 function referencedEntityIds(row: WorkspaceEventRow): string[] {
   const p = row.payload;
   switch (row.event_type) {
@@ -274,20 +280,25 @@ export class WorkspaceEventMapper {
     rows: readonly WorkspaceEventRow[],
     onSkip?: (err: UnprojectableEventError) => void,
   ): Promise<DurableWorkspaceEvent[]> {
-    if (rows.length === 0) return [];
+    // A `runs_on` edge is listed only from its session (runs-on-visibility.ts),
+    // and the feed has no anchor: one event per launch would list a card's
+    // sessions to every member. A reader wanting the binding reads the session.
+    // Not a skip, so not reported: nothing is wrong with the row.
+    const listed = rows.filter((row) => !isRunsOnEdgeEvent(row));
+    if (listed.length === 0) return [];
 
     const ids = new Set<string>();
-    for (const row of rows) for (const id of referencedEntityIds(row)) ids.add(id);
+    for (const row of listed) for (const id of referencedEntityIds(row)) ids.add(id);
     const entities = await this.projector.entitySummaries(q, [...ids]);
     const actors =
       this.projector.actorSummaries === undefined
         ? new Map<string, ActorSummary>()
         : await this.projector.actorSummaries(q, [...ids]);
-    const contents = await this.messageContents(q, rows);
-    const sourceSessions = await this.messageSourceSessions(q, rows);
+    const contents = await this.messageContents(q, listed);
+    const sourceSessions = await this.messageSourceSessions(q, listed);
 
     const out: DurableWorkspaceEvent[] = [];
-    for (const row of rows) {
+    for (const row of listed) {
       try {
         out.push(this.mapRow(row, entities, actors, contents, sourceSessions));
       } catch (err) {
