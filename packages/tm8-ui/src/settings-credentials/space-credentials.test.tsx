@@ -27,6 +27,7 @@ import { CollabError } from '@tm8/contract';
 import type {
   CredentialPolicySource,
   CredentialsSpacePolicyView,
+  CredentialsSpaceReadinessView,
   NodeCredentialsStatusView,
   SpaceCredentialView,
 } from '@tm8/contract';
@@ -39,6 +40,8 @@ import {
   SPACE_CREDENTIAL_PROVIDERS,
   afterDeleteNotice,
   canClaim,
+  canLaunchSentence,
+  canPollSentence,
   canManage,
   canMyDefault,
   canRevoke,
@@ -105,10 +108,40 @@ const NODE_STATUS: NodeCredentialsStatusView = {
   ],
 };
 
+type Provider = SpaceCredentialView['provider'];
+
+/** A readiness answer: `launchMissing` per provider (with a reason), and whether can-poll is green. */
+function readinessView(opts: {
+  launchMissing?: Partial<Record<Provider, 'no_credential' | 'stale' | 'policy_excludes_space'>>;
+  poll?: boolean;
+  pollReason?: 'no_space_owned_credential' | 'stale';
+} = {}): CredentialsSpaceReadinessView {
+  const missingOf = opts.launchMissing ?? {};
+  const entry = (p: Provider) => {
+    const reason = missingOf[p] ?? null;
+    return {
+      ready: reason === null, via: reason === null ? 'space_default' as const : null,
+      credentialId: reason === null ? `c-${p}` : null, myDefaultId: null, spaceDefaultId: reason === null ? `c-${p}` : null,
+      spaceSourceAllowed: reason !== 'policy_excludes_space', activeCredentials: reason === null ? 1 : 0, reason,
+    };
+  };
+  const missing = (['anthropic', 'openai', 'github'] as const).filter((p) => missingOf[p]);
+  const poll = opts.poll ?? true;
+  return {
+    spaceId: 'space-1',
+    canLaunch: { ready: missing.length === 0, missing, providers: { anthropic: entry('anthropic'), openai: entry('openai'), github: entry('github') } },
+    canPoll: {
+      ready: poll, missing: poll ? [] : ['github'], credentialId: poll ? 'c-gh' : null,
+      activeSpaceOwnedCredentials: poll ? 1 : 0, reason: poll ? null : opts.pollReason ?? 'no_space_owned_credential',
+    },
+  };
+}
+
 function fakePort(opts: {
   viewer?: SpaceCredentialsViewer;
   rows?: SpaceCredentialView[];
   policy?: CredentialsSpacePolicyView;
+  readiness?: CredentialsSpaceReadinessView | Error;
 } = {}) {
   let rows = [...(opts.rows ?? [MINE_DEFAULT, THEIRS, ORPHAN_OPENAI, GITHUB])];
   let policy = structuredClone(opts.policy ?? POLICY);
@@ -146,6 +179,10 @@ function fakePort(opts: {
       return { credentialId: id, revoked: true, terminatedLoginSessionIds: [], terminatedAgentSessionIds: ['s-1', 's-2'], failures: [] };
     }),
     policy: vi.fn(async () => structuredClone(policy)),
+    readiness: vi.fn(async () => {
+      if (opts.readiness instanceof Error) throw opts.readiness;
+      return structuredClone(opts.readiness ?? readinessView());
+    }),
     setPolicy: vi.fn(async (provider: SpaceCredentialView['provider'], allowedSources: CredentialPolicySource[] | null) => {
       policy = { ...policy, providers: policy.providers.map((p) => (p.provider === provider ? { provider, allowedSources } : p)) };
       return { spaceId: 'space-1', provider, allowedSources };
@@ -800,7 +837,7 @@ describe('the seam adapter', () => {
         space: {
           list: vi.fn(async () => ({ spaceId: 'space-1', credentials: [MINE_DEFAULT] })),
           create: record('create'), rekey: record('rekey'), rename: record('rename'), setDefault: record('setDefault'),
-          remove: record('remove'), policy: record('policy'), setPolicy: record('setPolicy'),
+          remove: record('remove'), policy: record('policy'), readiness: record('readiness'), setPolicy: record('setPolicy'),
           setVisibility: record('setVisibility'), spaceDefaultConsent: record('spaceDefaultConsent'), claim: record('claim'),
           setMyDefault: record('setMyDefault'), clearMyDefault: record('clearMyDefault'), usage: record('usage'), addMine: record('addMine'),
         },
@@ -1101,6 +1138,62 @@ describe('W10d — owner, visibility, claim, my default, usage (doc 13 §7)', ()
     expect(isSharedServer('single')).toBe(false);
     expect(isSharedServer('multi')).toBe(true);
     expect(isSharedServer(null)).toBe(true);
+  });
+});
+
+describe('S7 readiness — two thresholds, never one tick', () => {
+  it('draws can-launch and can-poll apart, each naming its threshold, with the missing providers and a connect action', async () => {
+    await mount(fakePort({ readiness: readinessView({ launchMissing: { openai: 'no_credential', anthropic: 'stale' }, poll: false }) }));
+    const launch = await screen.findByTestId('space-cred-readiness-launch');
+    expect(launch.getAttribute('data-ready')).toBe('false');
+    expect(launch.textContent).toContain('Can launch');
+    expect(launch.textContent).toContain('Not ready to launch with Claude (Anthropic) and Codex (OpenAI)');
+    expect(within(launch).getByTestId('space-cred-readiness-missing-launch-anthropic').textContent).toContain('gone stale');
+    expect(within(launch).getByTestId('space-cred-readiness-missing-launch-openai').textContent).toContain('no credential you can use');
+    expect(within(launch).queryByTestId('space-cred-readiness-missing-launch-github')).toBeNull();
+    const poll = screen.getByTestId('space-cred-readiness-poll');
+    expect(poll.getAttribute('data-ready')).toBe('false');
+    expect(poll.textContent).toContain('Can track pull requests and CI');
+    expect(within(poll).getByTestId('space-cred-readiness-missing-poll-github')).toBeTruthy();
+  });
+
+  it('a member-owned GitHub credential alone: can-launch green, can-poll red — and the page says so', async () => {
+    await mount(fakePort({ readiness: readinessView({ poll: false }) }));
+    const launch = await screen.findByTestId('space-cred-readiness-launch');
+    expect(launch.getAttribute('data-ready')).toBe('true');
+    expect(launch.textContent).toContain('Ready to launch');
+    const poll = screen.getByTestId('space-cred-readiness-poll');
+    expect(poll.getAttribute('data-ready')).toBe('false');
+    expect(poll.textContent).toContain('A member’s private GitHub credential lets that member launch, but does not keep tracking alive.');
+  });
+
+  it('the connect action takes the member to that provider’s group', async () => {
+    await mount(fakePort({ readiness: readinessView({ launchMissing: { openai: 'no_credential' } }) }));
+    fireEvent.click(await screen.findByTestId('space-cred-readiness-connect-openai'));
+    expect(document.activeElement).toBe(screen.getByTestId('space-cred-group-openai'));
+  });
+
+  it('an unreadable readiness says so and never hides the list', async () => {
+    await mount(fakePort({ readiness: new CollabError('forbidden', 'not a member of this space') }));
+    expect((await screen.findByTestId('space-cred-readiness-error')).textContent).toContain('Readiness could not be read');
+    expect(screen.getByTestId('space-cred-group-anthropic')).toBeTruthy();
+  });
+
+  it('re-reads readiness after a change', async () => {
+    const port = fakePort({ viewer: { accountId: ME, isSpaceAdmin: true, isNodeAdmin: false, sharedServer: false } });
+    await mount(port);
+    await screen.findByTestId('space-cred-readiness');
+    const before = port.readiness.mock.calls.length;
+    const row = screen.getByTestId('space-cred-row-c-openai');
+    fireEvent.click(within(row).getByRole('button', { name: /make default|set default/i }));
+    await waitFor(() => expect(port.readiness.mock.calls.length).toBeGreaterThan(before));
+  });
+
+  it('the sentences: stale can-poll says stale; a narrowed can-launch ignores providers it was not asked about', () => {
+    expect(canPollSentence(readinessView({ poll: false, pollReason: 'stale' }))).toContain('has gone stale');
+    const view = readinessView({ launchMissing: { openai: 'no_credential' } });
+    expect(canLaunchSentence(view)).toContain('Not ready to launch with Codex (OpenAI)');
+    expect(canLaunchSentence(view, ['anthropic', 'github'])).toContain('Ready to launch');
   });
 });
 

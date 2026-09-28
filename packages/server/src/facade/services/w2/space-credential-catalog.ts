@@ -13,7 +13,7 @@
  * sealed store, and leaves by neither door. Every view is built field by field
  * from metadata; no error or log line here quotes an input.
  */
-import { CollabError, isHumanAuthKind } from '@tm8/contract';
+import { CollabError, CredentialsSpaceReadinessViewSchema, isHumanAuthKind } from '@tm8/contract';
 import type {
   CredentialPolicySource,
   CredentialsSpaceDeleteResult,
@@ -23,6 +23,7 @@ import type {
   CredentialsSpaceListView,
   CredentialsSpacePolicySetResult,
   CredentialsSpacePolicyView,
+  CredentialsSpaceReadinessView,
   NodeCredentialPolicyEntry,
   NodeCredentialsStatusView,
   SpaceCredentialProviderName,
@@ -71,6 +72,7 @@ type SpaceCredentialStorePort = Pick<
   | 'liveSessions'
   | 'finishLogin'
   | 'readSpacePolicy'
+  | 'readiness'
   | 'setSpacePolicy'
   | 'readNodePolicy'
   | 'setNodePolicy'
@@ -503,6 +505,11 @@ export class SpaceCredentialCatalogService {
     } catch (error) {
       return `stream_close_failed: ${reasonOf(error)}`;
     }
+  }
+
+  /** `credentials.space.readiness` (S7): the space_credential_readiness read, validated at the boundary. */
+  async readiness(claims: DbClaims, spaceId: string): Promise<CredentialsSpaceReadinessView> {
+    return CredentialsSpaceReadinessViewSchema.parse(await this.store.readiness(claims, spaceId));
   }
 
   async policy(claims: DbClaims, spaceId: string): Promise<CredentialsSpacePolicyView> {

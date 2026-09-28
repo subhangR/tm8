@@ -577,6 +577,7 @@ export const OPERATIONS = [
   { name: 'credentials.space.myDefault.clear',           method: 'DELETE', path: '/v2/spaces/:spaceId/credentials/my-default/:provider',               kind: 'command', status: 'v1', humanOnly: true },
   { name: 'credentials.space.usage',                     method: 'GET',    path: '/v2/space-credentials/:credentialId/usage',                          kind: 'read',    status: 'v1', humanOnly: true },
   { name: 'credentials.space.policy.get',                method: 'GET',    path: '/v2/spaces/:spaceId/credential-policy',                              kind: 'read',    status: 'v1', humanOnly: true },
+  { name: 'credentials.space.readiness',                 method: 'GET',    path: '/v2/spaces/:spaceId/credential-readiness',                           kind: 'read',    status: 'v1', humanOnly: true },
   { name: 'credentials.space.policy.set',                method: 'PUT',    path: '/v2/spaces/:spaceId/credential-policy/:provider',                    kind: 'command', status: 'v1', humanOnly: true },
   // The node's own fallback credentials (D5/D9): node admin, and human-only.
   { name: 'node.credentials.status',                     method: 'GET',    path: '/v2/node/credentials',                                               kind: 'read',    status: 'v1', humanOnly: true },

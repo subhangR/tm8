@@ -154,6 +154,7 @@ import type {
   CredentialsSpaceListView,
   CredentialsSpacePolicySetResult,
   CredentialsSpacePolicyView,
+  CredentialsSpaceReadinessView,
   CredentialsSpaceSetVisibilityResult,
   CredentialsSpaceMyDefaultResult,
   CredentialsSpaceUsageView,
@@ -1396,6 +1397,12 @@ export interface Seam {
       /** Revoke, then kill every live session on it whoever launched it (D7). */
       remove(credentialId: string): Promise<CredentialsSpaceDeleteResult>;
       policy(spaceId: SpaceId): Promise<CredentialsSpacePolicyView>;
+      /**
+       * Credentials release 1, S7: the space's readiness at TWO thresholds —
+       * can-launch (per provider, for the caller) and can-poll (a space-owned
+       * public GitHub credential). Metadata only; member-scoped.
+       */
+      readiness(spaceId: SpaceId): Promise<CredentialsSpaceReadinessView>;
       setPolicy(
         spaceId: SpaceId,
         provider: SpaceCredentialProviderName,
