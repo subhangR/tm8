@@ -85,7 +85,8 @@ describe('the Home icon rail', () => {
     expect(kindsOf('structure')).toEqual(['collection', 'graph']);
     expect(kindsOf('people')).toEqual(['member', 'channel']);
     expect(kindsOf('code')).toEqual(['commit', 'pull_request', 'worktree']);
-    expect(kindsOf('setup')).toEqual(['interaction_profile', 'credential', 'space_link', 'server']);
+    // `remote_ref` (W7b, 274) seated after the ruling, beside the link it reaches through.
+    expect(kindsOf('setup')).toEqual(['interaction_profile', 'credential', 'space_link', 'server', 'remote_ref']);
     expect(kindsOf('beta')).toEqual(['loop', 'spell', 'container']);
   });
 
