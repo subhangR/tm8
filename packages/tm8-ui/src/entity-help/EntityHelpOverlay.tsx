@@ -16,7 +16,11 @@
  *                            underneath; the ✕ is the first control;
  *   focus in, focus back     the first tab takes focus on open; the (?) that
  *                            opened it (`takeOpener`) gets it back on close;
- *   focus stays              Tab and Shift+Tab wrap inside the dialog;
+ *   focus is NOT trapped     the overlay is non-modal by ruling — the list
+ *                            beside it is live — so Tab leaves it as it would
+ *                            leave any region (review decision L2);
+ *   host unmount             closes the page, so it never follows the reader
+ *                            into another view (L3);
  *   tabs by keyboard         a roving tablist — arrows move and select,
  *                            Home/End jump, per the ARIA tabs pattern;
  *   deep links               NOT offered. The route codec is a hand-written
@@ -26,8 +30,8 @@
  *
  * It is not `aria-modal`: the list beside it is, deliberately, still live.
  */
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { KindIcon } from '../domain';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { KindIcon, getKind } from '../domain';
 import { entityHelpStore, takeOpener, useEntityHelp } from './entityHelpStore';
 import { MotionProvider, useMotion } from './motion/MotionContext';
 import { Reveal } from './motion/Reveal';
@@ -53,6 +57,9 @@ export function EntityHelpOverlay({ reducedMotion }: EntityHelpOverlayProps = {}
   const kind = useEntityHelp((s) => s.kind);
   const [shown, setShown] = useState<string | null>(kind);
   const [leaving, setLeaving] = useState(false);
+
+  /* L3: a page open when its host leaves the screen is closed with it. */
+  useEffect(() => () => entityHelpStore.getState().close(), []);
 
   useEffect(() => {
     if (kind !== null) {
@@ -80,7 +87,7 @@ function Surface({ kind, leaving, onLeft }: { kind: string; leaving: boolean; on
   const { reduced } = useMotion();
   const tab = useEntityHelp((s) => s.tab);
   const trail = useEntityHelp((s) => s.trail);
-  const page = resolveHelp(kind);
+  const page = useMemo(() => resolveHelp(kind), [kind]);
   const root = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<Record<HelpTab, HTMLButtonElement | null>>({ story: null, toolkit: null, constellation: null });
   const titleId = `eh-title-${kind.replace(/[^a-z0-9]/gi, '-')}`;
@@ -112,25 +119,6 @@ function Surface({ kind, leaving, onLeft }: { kind: string; leaving: boolean; on
       event.preventDefault();
       event.stopPropagation();
       entityHelpStore.getState().close();
-      return;
-    }
-    if (event.key === 'Tab' && root.current) {
-      const focusable = [
-        ...root.current.querySelectorAll<HTMLElement>(
-          'button:not([tabindex="-1"]), a[href], input, textarea, select, [tabindex]:not([tabindex="-1"])',
-        ),
-      ].filter((el) => !el.hasAttribute('disabled') && !el.closest('[aria-hidden="true"]'));
-      if (focusable.length === 0) return;
-      const first = focusable[0]!;
-      const last = focusable[focusable.length - 1]!;
-      const active = document.activeElement;
-      if (event.shiftKey && active === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && active === last) {
-        event.preventDefault();
-        first.focus();
-      }
     }
   };
 
@@ -148,7 +136,8 @@ function Surface({ kind, leaving, onLeft }: { kind: string; leaving: boolean; on
     tabRefs.current[next]?.focus();
   };
 
-  const previous = trail.length > 0 ? trail[trail.length - 1] : null;
+  const previous = trail.length > 0 ? (trail[trail.length - 1] ?? null) : null;
+  const previousLabel = useMemo(() => (previous ? getKind(previous).labelPlural : null), [previous]);
   const activeIndex = HELP_TABS.findIndex((t) => t.id === tab);
 
   return (
@@ -178,7 +167,7 @@ function Surface({ kind, leaving, onLeft }: { kind: string; leaving: boolean; on
           <div className="eh-head__controls">
             {previous ? (
               <button type="button" className="eh-back" onClick={() => entityHelpStore.getState().back()}>
-                <span aria-hidden>←</span> Back to {resolveHelp(previous).labelPlural}
+                <span aria-hidden>←</span> Back to {previousLabel}
               </button>
             ) : null}
             <button
