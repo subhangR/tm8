@@ -94,7 +94,7 @@ describe('the event pump re-verifies liveness before it delivers', () => {
     const registry = registryOf(...sinks);
     const read: string[] = [];
     const log: DurableEventLog = {
-      since: async (spaceId) => { read.push(spaceId); return { items: [], nextCursor: null, hasMore: false } as never; },
+      since: async (spaceId: string) => { read.push(spaceId); return { items: [], nextCursor: null, hasMore: false } as never; },
     } as unknown as DurableEventLog;
     const errors: string[] = [];
     const pump = createDurableEventPump({
