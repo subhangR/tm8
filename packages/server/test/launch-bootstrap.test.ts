@@ -33,9 +33,23 @@ class SeedDb implements Db {
   gateAdmin = true;
   calls: Array<{ fn: string; args: readonly unknown[] }> = [];
 
-  async query<R>(_claims: DbClaims, sql: string, params: readonly unknown[] = []): Promise<R[]> {
+  async query<R>(claims: DbClaims, sql: string, params: readonly unknown[] = []): Promise<R[]> {
     if (sql.includes('from public.spaces')) return [{ id: SPACE_ID }] as R[];
-    if (sql.includes('from public.projects')) return (this.project ? [this.project] : []) as R[];
+    // 234's projects_select: only a (unpinned) node admin sees a folder row.
+    // Everyone else reads zero rows, not an error — exactly what hid the
+    // registered folder from a non-admin owner and sent boot into
+    // create_project (R845-F7).
+    if (sql.includes('from public.projects')) {
+      return (claims.nodeAdmin === true && this.project ? [this.project] : []) as R[];
+    }
+    // 234's member view: the folders granted to the spaces in $1 that the
+    // caller is a member of (the fake's owner is a member of SPACE_ID only).
+    if (sql.includes('public.space_folders_for_caller(')) {
+      const [spaceIds, workingDir] = params as [string[], string];
+      const held = this.project && spaceIds.includes(SPACE_ID)
+        && this.grants.get(this.project.id) === SPACE_ID && workingDir === process.cwd();
+      return (held ? [this.project] : []) as R[];
+    }
     // The gate's list sees every grant, whether or not the owner is a member
     // of the granted space (R845-F3); member-scoped `space_projects` must not
     // be read for this.
@@ -243,14 +257,43 @@ describe('launch resource bootstrap', () => {
     expect(db.grants.get(PROJECT_ID)).toBe(SPACE_ID);
   });
 
-  it('an owner who is not a gate admin makes no launch grant and still boots', async () => {
-    const db = new SeedDb();
+  const notAdmin = (db: SeedDb) => {
     db.gateAdmin = false;
-    db.project = { id: PROJECT_ID, trust: 'trusted' };
     const args = bootArgs(db);
-    const result = await ensureLaunchResources({ ...args, owner: { ...args.owner, isNodeAdmin: false } });
+    return { ...args, owner: { ...args.owner, isNodeAdmin: false } };
+  };
+  const rpcNames = (db: SeedDb) => db.calls.map(({ fn }) => fn);
+
+  it('an owner who is not a gate admin finds a folder granted to their space, makes no grant, and boots (R845-F7)', async () => {
+    const db = new SeedDb();
+    db.project = { id: PROJECT_ID, trust: 'trusted' };
+    db.grants.set(PROJECT_ID, SPACE_ID);
+    const result = await ensureLaunchResources(notAdmin(db));
     expect(result.projectId).toBe(PROJECT_ID);
-    expect(db.calls.some(({ fn }) => fn === 'public.grant_folder')).toBe(false);
+    expect(rpcNames(db)).not.toContain('public.grant_folder');
+    expect(rpcNames(db)).not.toContain('public.create_project');
+  });
+
+  it('an owner who is not a gate admin never registers the folder: registered but not theirs, or not registered at all, boot goes on without one (R845-F7)', async () => {
+    const registeredElsewhere = new SeedDb();
+    registeredElsewhere.project = { id: PROJECT_ID, trust: 'trusted' };
+    registeredElsewhere.grants.set(PROJECT_ID, '44444444-4444-4444-8444-444444444444');
+    const unregistered = new SeedDb();
+    for (const db of [registeredElsewhere, unregistered]) {
+      const result = await ensureLaunchResources(notAdmin(db));
+      expect(result.projectId).toBeNull();
+      expect(result.teammatesCreated).toBe(HOUSE_COUNT);
+      expect(rpcNames(db)).not.toContain('public.create_project');
+      expect(rpcNames(db)).not.toContain('public.grant_folder');
+    }
+  });
+
+  it('an owner who is not a gate admin still refuses an untrusted folder granted to their space', async () => {
+    const db = new SeedDb();
+    db.project = { id: PROJECT_ID, trust: 'untrusted' };
+    db.grants.set(PROJECT_ID, SPACE_ID);
+    await expect(ensureLaunchResources(notAdmin(db))).rejects.toThrow('will not override untrusted project');
+    expect(db.calls).toEqual([]);
   });
 
   it('does not silently grant trust to an existing untrusted project', async () => {
