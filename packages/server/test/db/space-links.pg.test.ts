@@ -763,6 +763,75 @@ async function resolveOnWire(token: string): Promise<unknown> {
   return resolve({ authorization: `Bearer ${token}` }, { remoteAddress: '203.0.113.9', disableAutoOwner: true });
 }
 
+describe('W6 a4 / T17 — an agent of the member who left or was removed is refused', () => {
+  /** A fresh member of A and B with their own agent (persona + work session in A), so H's fixture is untouched. */
+  async function seedMemberWithAgent(label: string): Promise<{ claims: DbClaims; agent: string; memberA: string }> {
+    const ids = {
+      identity: `space-links-${label}-${randomUUID()}`, account: randomUUID(),
+      memberA: randomUUID(), memberB: randomUUID(), persona: randomUUID(), workSession: randomUUID(),
+    };
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(`insert into public.user_profiles(identity_id, display_name) values ($1, $2)`, [ids.identity, label]);
+      await client.query(`insert into public.accounts(id, identity_id, username) values ($1, $2, $3)`,
+        [ids.account, ids.identity, `space-links-${label}-${ids.account.slice(0, 8)}`]);
+      for (const [member, space] of [[ids.memberA, fixture.spaceA], [ids.memberB, fixture.spaceB]] as const) {
+        await client.query(`insert into public.entities(id, space_id, kind, created_by, visibility) values ($1, $2, 'member', $1, 'space')`, [member, space]);
+        await client.query(`insert into public.members(entity_id, space_id, identity_id, role, display_name) values ($1, $2, $3, 'member', $4)`,
+          [member, space, ids.identity, label]);
+      }
+      await client.query(
+        `insert into public.entities(id, space_id, kind, created_by, visibility)
+         values ($1, $3, 'team_member', $4, 'space'), ($2, $3, 'work_session', $1, 'space')`,
+        [ids.persona, ids.workSession, fixture.spaceA, ids.memberA]);
+      await client.query(`insert into public.team_members(entity_id, owner_member_id, name, role, identity) values ($1, $2, $3, 'worker', 'persona')`,
+        [ids.persona, ids.memberA, `${label} agent`]);
+      await client.query(`insert into public.work_sessions(entity_id, title, status, share_mode, started_at) values ($1, $2, 'running', 'none', now())`,
+        [ids.workSession, `${label} run`]);
+      await client.query(`insert into public.edges(space_id, src_id, dst_id, type, created_by) values ($1, $2, $3, 'participates_in', $2)`,
+        [fixture.spaceA, ids.persona, ids.workSession]);
+    });
+    const secret = generateSecret();
+    const row = await asIdentity(ids.identity, (q) => q.rpc<{ id: string }>('issue_agent_auth_session', [
+      ids.workSession, ids.persona, hashToken(secret), new Date(Date.now() + 3_600_000).toISOString(), `${label} agent`,
+    ]));
+    return {
+      claims: await claimsForToken(await mintBrowser(ids.account, ids.identity)),
+      agent: formatToken(row.id, secret),
+      memberA: ids.memberA,
+    };
+  }
+
+  /** The member signs in to a fresh A → B link; their agent uses it once (the paired positive). */
+  async function linkAndUseOnce(m: { claims: DbClaims; agent: string }): Promise<SpaceLink> {
+    const link = await store.login(m.claims, (await store.add(m.claims, { spaceId: fixture.spaceA, targetSpaceId: fixture.spaceB })).id);
+    const use = await store.use(await claimsForToken(m.agent), link.id);
+    expect(use.targetSpaceId).toBe(fixture.spaceB);
+    expect(await resolveToken(use.token)).toMatchObject({ authKind: 'link', sessionSpaceId: fixture.spaceB });
+    return link;
+  }
+
+  it('Y leaves the TARGET B: Y\'s agent, which used the link a moment ago, is refused with `left`', async () => {
+    const y = await seedMemberWithAgent('a4-leave');
+    const link = await linkAndUseOnce(y);
+    await db.rpc(y.claims, 'leave_space', [fixture.spaceB, null]);
+    await expect(store.use(await claimsForToken(y.agent), link.id)).rejects.toMatchObject({ status: 'left' });
+  });
+
+  it('X is removed from the HOME A: X\'s rows are gone and X\'s agent is refused, before or at the link', async () => {
+    const x = await seedMemberWithAgent('a4-remove');
+    const link = await linkAndUseOnce(x);
+    await db.rpc(await hClaims(), 'remove_space_member', [fixture.spaceA, x.memberA, null]);
+    const [rows] = await database.query<{ n: number }>(
+      `select count(*) as n from public.space_link_tokens where member_id = $1`, [x.memberA]);
+    expect(Number(rows!.n)).toBe(0);
+    expect(await outcome(async () => store.use(await claimsForToken(x.agent), link.id))).not.toBe('ok');
+    // Paired positive: H's own agent G still uses H's link on the same A → B pair.
+    const ab = await linkAB();
+    expect((await store.use(await claimsForToken(await mintAgent()), ab.id)).targetSpaceId).toBe(fixture.spaceB);
+  });
+});
+
 describe('W6 kind `link` — the resolver, the session view, revoke', () => {
   it('a stored link token resolves in-process as authKind `link`, pinned to the target space; the wire refuses it (256)', async () => {
     const link = await linkAB();
