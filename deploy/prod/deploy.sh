@@ -483,7 +483,8 @@ if (( DO_MIGRATE )); then
   # From NEXT, so the migration files are exactly the ones this build expects.
   # The server does NOT auto-migrate at boot. Forward-only and checksum-locked:
   # a file edited after it was applied is a loud error here, not silent drift.
-  (cd "$NEXT" && TM8_DATABASE_URL="$TM8_DATABASE_URL" "$TM8_NODE_BIN" db/migrate.mjs up) \
+  # --i-mean-prod: this IS the prod database (5442); migrate.mjs refuses 5442 without it.
+  (cd "$NEXT" && TM8_DATABASE_URL="$TM8_DATABASE_URL" "$TM8_NODE_BIN" db/migrate.mjs up --i-mean-prod) \
     || die "migration failed — prod is STOPPED and $LIVE is still the old build.
        Fix the migration, then re-run. Restore with:
          pg_restore -c -d '$TM8_DATABASE_URL' \"\$(cat $TM8_PROD_BACKUP_DIR/LAST_PROD_BACKUP)\"

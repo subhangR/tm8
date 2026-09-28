@@ -45,6 +45,24 @@ migrations; import none of them verbatim.
 Naming: `NNN_description.sql`, applied in lexical order by the migration runner
 (`tools/conformance` gate: migrations apply clean to a fresh sidecar PG on 5442).
 
+## Running the runner: name the target
+
+`db/migrate.mjs` has **no default database** (`db/target.mjs`). It needs
+`TM8_DATABASE_URL` (or `DATABASE_URL`, or both `TM8_PG_PORT` and `TM8_DB`), and
+refuses — before it looks for psql or connects — when none is set. The test
+harnesses' `TM8_MIGRATION_DATABASE_URL` / `TM8_W1_ADMIN_DATABASE_URL` are not
+targets: set alone, they are named in the refusal. Port **5442** is refused
+unless you pass `--i-mean-prod` (on the tm8 host 5442 is the PROD cluster),
+except on a GitHub Actions runner, whose 5442 is the job's own container. It
+prints only `host:port/db`.
+
+```
+TM8_DATABASE_URL=postgres://tm8@127.0.0.1:5443/tm8_mine node db/migrate.mjs up
+```
+
+This is a guard against a missing or mistyped target, not an access boundary:
+the cluster's own authentication is what decides who can connect.
+
 ## Cross-file couplings you cannot see from the file you are editing
 
 A migration is **immutable once applied** — `db/migrate.mjs` keeps a content

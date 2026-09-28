@@ -35,6 +35,7 @@ beforeAll(() => {
   const migrationsDir = join(dbDir, 'migrations');
   mkdirSync(migrationsDir, { recursive: true });
   cpSync(join(REPO_ROOT, 'db', 'migrate.mjs'), join(dbDir, 'migrate.mjs'));
+  cpSync(join(REPO_ROOT, 'db', 'target.mjs'), join(dbDir, 'target.mjs')); // migrate.mjs imports it
   for (const filename of w1MigrationFiles()) {
     cpSync(join(MIGRATIONS_DIR, filename), join(migrationsDir, filename));
   }

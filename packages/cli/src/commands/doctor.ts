@@ -330,9 +330,12 @@ export const checkAgentClis: Check = async ({ io }) => {
 // ── 2. postgres ────────────────────────────────────────────────────────────
 
 /**
- * The connection string, resolved EXACTLY as `db/migrate.mjs` resolves it. Two
+ * The connection string. An explicit target (TM8_DATABASE_URL, DATABASE_URL,
+ * TM8_PG_PORT/TM8_DB) resolves EXACTLY as `db/migrate.mjs` resolves it — two
  * resolvers that disagree is how doctor certifies a database the migration
- * runner never touches.
+ * runner never touches. With nothing set, doctor still inspects the dev
+ * default below; `db/migrate.mjs` refuses to assume it (db/target.mjs), which
+ * is why every remedy here spells out TM8_DATABASE_URL.
  */
 export function databaseUrl(env: NodeJS.ProcessEnv): string {
   const explicit = env.TM8_DATABASE_URL?.trim() || env.DATABASE_URL?.trim();
@@ -502,7 +505,7 @@ export const checkMigrations: Check = async ({ io }) => {
         MIG_TITLE,
         `${onDisk.length} migration file(s) on disk; the database could not be read: ${why}`,
         /applied_migrations/.test(why)
-          ? 'the ledger table does not exist — this database has never been migrated: `node db/migrate.mjs up`'
+          ? 'the ledger table does not exist — this database has never been migrated: `TM8_DATABASE_URL=<url> node db/migrate.mjs up` (add --i-mean-prod for port 5442)'
           : 'fix the postgres check above first; migration drift cannot be judged without reading the ledger',
       ),
     ];
@@ -553,12 +556,12 @@ export const checkMigrations: Check = async ({ io }) => {
       MIG_TITLE,
       parts.join('; '),
       pending.length
-        ? 'apply them: `node db/migrate.mjs up` (`node db/migrate.mjs status` first to see the plan)'
+        ? 'apply them: `TM8_DATABASE_URL=<url> node db/migrate.mjs up` (`TM8_DATABASE_URL=<url> node db/migrate.mjs status` first to see the plan; add --i-mean-prod for port 5442)'
         : drifted.length && !orphaned.length
           ? 'a migration was edited after it was applied, so this database does NOT have the schema the tree ' +
             'describes. Revert the edit, or add a NEW migration — never edit an applied one'
           : 'this database is AHEAD of the tree — it was migrated from another branch. Check out the branch that ' +
-            'owns those files, or reset the dev database with `node db/migrate.mjs reset --force`',
+            'owns those files, or reset the dev database with `TM8_DATABASE_URL=<url> node db/migrate.mjs reset --force`',
     ),
   ];
 };
