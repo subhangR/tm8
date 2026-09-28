@@ -1353,13 +1353,8 @@ const HANDLER_AUTHORED_400: readonly string[] = [
   // `authKind` is `browser`, so the R2 guard ADMITS it and they answer
   // normally rather than 400.
   'credentials.delete',
-  // Jev lane K: the service-key put/delete read `:provider` off the PATH and
-  // refuse the sweep's synthetic value against the one-member set — handler-
-  // reached, like credentials.delete above.
-  'credentials.serviceKeys.delete',
-  'credentials.serviceKeys.put',
   // SC-3: policy.set on both space and node read `:provider` off the PATH and
-  // refuse the sweep's synthetic value, like the service-key ops above.
+  // refuse the sweep's synthetic value, like credentials.delete above.
   // credentials.space.create is NOT here: it refuses a non-member of the
   // synthetic space (403) before the vendor probe, so it never reaches a 400.
   // W10b: myDefault.clear reads `:provider` off the PATH the same way.

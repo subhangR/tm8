@@ -12,9 +12,9 @@
  *     caller's claims, reads my_default for HUMAN auth kinds only (an agent
  *     falls to the space default), answers null when the space holds none,
  *     and refuses a launchable provider, a link bearer and a non-member;
- *   · Ask Jev (`launch.suggest`) spends the space key first, and the release-1
- *     chain behind it — 203 member key, then the node key, then no_key —
- *     still works rung by rung.
+ *   · Ask Jev (`launch.suggest`) resolves my_default → space_default → no_key
+ *     only (decision 10, release 2): a caller's stored 203 key and the node's
+ *     TYPESAFE_API_KEY, both present, are never spent.
  *
  * Every refusal has a control beside it that shows the assertion can pass.
  */
@@ -26,8 +26,8 @@ import { randomUUID } from 'node:crypto';
 import type { LaunchSuggestResult } from '@tm8/contract';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { resetCredentialKeyCache } from '../../src/credentials/credential-key.js';
-import { DbServiceKeyStore } from '../../src/credentials/service-key-store.js';
+import { loadOrCreateCredentialKey, resetCredentialKeyCache } from '../../src/credentials/credential-key.js';
+import { sealSecret } from '../../src/credentials/secret-box.js';
 import { DbSpaceCredentialStore, ServerOnlyCredentialRefusedError } from '../../src/credentials/space-credential-store.js';
 import { createDb } from '../../src/db/index.js';
 import type { Db, DbClaims } from '../../src/db/types.js';
@@ -53,7 +53,6 @@ let database: W1ScratchDatabase;
 let db: Db;
 let dataDir: string;
 let store: DbSpaceCredentialStore;
-let serviceKeys: DbServiceKeyStore;
 const ids: Record<string, string> = {};
 
 const claims = (identityId: string, authKind = 'browser'): DbClaims =>
@@ -82,7 +81,6 @@ beforeAll(async () => {
   database.apply(migrationFiles());
   db = createDb(database.url);
   store = new DbSpaceCredentialStore({ db, dataDir });
-  serviceKeys = new DbServiceKeyStore({ db, dataDir });
   await asOwner(async (c) => {
     for (const identity of [OWN, A, B, OUT]) {
       await c.query(`insert into public.user_profiles(identity_id, display_name) values ($1, $1)`, [identity]);
@@ -318,7 +316,7 @@ describe('read_space_service_key', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Ask Jev: the space key first, then the release-1 chain, then no_key
+// Ask Jev: my_default → space_default → no_key; no member or node rung
 // ---------------------------------------------------------------------------
 
 function recordingAdvisors() {
@@ -337,15 +335,13 @@ function recordingAdvisors() {
 }
 
 /** launch.suggest wired exactly as main.ts wires it, in `space`. */
-function suggestAs(identity: string, space: string, opts: { nodeKey: string | null; authKind?: string }) {
+function suggestAs(identity: string, space: string, opts: { authKind?: string } = {}) {
   const advisors = recordingAdvisors();
   const registry = new HandlerRegistry();
   const deps = { db, config: {}, owner: async () => ({ identityId: identity, isNodeAdmin: false }) } as unknown as FacadeDeps;
   registerJevHandlers(registry, deps, {
     resolveAdvisor: createJevAdvisorResolver({
       readSpaceKey: async (c, spaceId) => (await store.readServiceKey(c, spaceId, 'typesafe'))?.secret ?? null,
-      readMemberKey: (c) => serviceKeys.resolve(c, 'typesafe'),
-      nodeKey: opts.nodeKey,
       advisorForKey: advisors.advisorForKey,
     }),
   });
@@ -359,52 +355,53 @@ function suggestAs(identity: string, space: string, opts: { nodeKey: string | nu
   return { run, built: advisors.built };
 }
 
-describe('Ask Jev resolves my_default → space_default → [R1: 203 member key → node key] → no_key', () => {
+describe('Ask Jev resolves my_default → space_default → no_key', () => {
   let spaceSecret = '';
   let mineSecret = '';
 
   beforeAll(async () => {
+    // The removed rungs' inputs are both PRESENT, so a rung that came back
+    // would answer instead of no_key: the node environment has a key, and A
+    // has a 203 row sealed exactly as the retired store sealed one.
+    vi.stubEnv('TYPESAFE_API_KEY', NODE_KEY);
     spaceSecret = tsKey('jev-space');
     await store.create(claims(OWN), { spaceId: ids.S!, provider: 'typesafe', shape: 'api_key', label: label('jev-space'), secret: spaceSecret, spaceOwned: true })
       .then(async (made) => { if (!made.isDefault) await store.setDefault(claims(OWN), made.id); });
     mineSecret = tsKey('jev-mine');
     const mine = await store.create(claims(A), { spaceId: ids.S!, provider: 'typesafe', shape: 'api_key', label: label('jev-mine'), secret: mineSecret, visibility: 'private' });
     await store.setMyDefault(claims(A), mine.id);
-    // A 203 key for A, which the space key must outrank and E must still reach.
-    await serviceKeys.put(claims(A), 'typesafe', MEMBER_203_KEY);
+    const [account] = await db.query<{ account_id: string }>(claims(A), 'select internal.current_account_id() as account_id');
+    const sealed = sealSecret(await loadOrCreateCredentialKey(dataDir), MEMBER_203_KEY, { accountId: account!.account_id, provider: 'typesafe' });
+    await db.rpc(claims(A), 'set_account_service_key', ['typesafe', MEMBER_203_KEY.slice(-4), sealed.ciphertext, sealed.nonce]);
+  });
+  afterAll(() => { vi.unstubAllEnvs(); });
+
+  it('control: A really holds a 203 row the removed rung would have read', async () => {
+    const [row] = await db.query<{ n: number }>(claims(A), `select count(*)::int as n from public.account_service_keys where provider = 'typesafe'`);
+    expect(row!.n).toBe(1);
   });
 
-  it('rung 1a: a human’s my_default wins over the space default, the 203 key and the node key', async () => {
-    const asA = suggestAs(A, ids.S!, { nodeKey: NODE_KEY });
+  it('my_default: a human’s my_default wins over the space default', async () => {
+    const asA = suggestAs(A, ids.S!);
     expect((await asA.run()).groups.model?.status).toBe('ok');
     expect(asA.built).toEqual([mineSecret]);
   });
 
-  it('rung 1b: the space default — for a member with no my_default, and for an agent', async () => {
-    const asB = suggestAs(B, ids.S!, { nodeKey: NODE_KEY });
+  it('space_default: for a member with no my_default, and for an agent', async () => {
+    const asB = suggestAs(B, ids.S!);
     expect((await asB.run()).groups.model?.status).toBe('ok');
     expect(asB.built).toEqual([spaceSecret]);
-    const asAgent = suggestAs(A, ids.S!, { nodeKey: NODE_KEY, authKind: 'agent' });
+    const asAgent = suggestAs(A, ids.S!, { authKind: 'agent' });
     expect((await asAgent.run()).groups.model?.status).toBe('ok');
     expect(asAgent.built).toEqual([spaceSecret]);
   });
 
-  it('rung 2 (R1): a space with no typesafe credential falls to the caller’s 203 key', async () => {
-    const asA = suggestAs(A, ids.E!, { nodeKey: NODE_KEY });
-    expect((await asA.run()).groups.model?.status).toBe('ok');
-    expect(asA.built).toEqual([MEMBER_203_KEY]);
-  });
-
-  it('rung 3 (R1): no space key and no 203 key falls to the node key', async () => {
-    const asOwnerInE = suggestAs(OWN, ids.E!, { nodeKey: NODE_KEY });
-    expect((await asOwnerInE.run()).groups.model?.status).toBe('ok');
-    expect(asOwnerInE.built).toEqual([NODE_KEY]);
-  });
-
-  it('no_key: no space key, no 203 key, no node key', async () => {
-    const none = suggestAs(OWN, ids.E!, { nodeKey: null });
-    const result = await none.run();
-    expect(result.groups.model).toMatchObject({ status: 'failed', reason: 'no_key' });
-    expect(none.built).toEqual([]);
+  it('no_key: a space with no typesafe credential never falls to the caller’s 203 key or the node key', async () => {
+    for (const identity of [A, OWN]) {
+      const run = suggestAs(identity, ids.E!);
+      const result = await run.run();
+      expect(result.groups.model).toMatchObject({ status: 'failed', reason: 'no_key' });
+      expect(run.built).toEqual([]);
+    }
   });
 });

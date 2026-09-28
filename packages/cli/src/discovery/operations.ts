@@ -434,40 +434,6 @@ const ROWS: Record<OperationName, Row> = {
       '`connected` and `stored` are separate answers — a verified GitHub login reports stored=false where its string-shaped store is not present',
     ],
   },
-  'credentials.serviceKeys.status': {
-    cmd: null,
-    sum: 'Read which server-side service keys (TypeSafe, for Ask Jev) this member has stored — human sessions only',
-    authz: 'server',
-    input: 'none',
-    tags: ['credential', 'service-key', 'typesafe', 'jev', 'settings'],
-    reason: 'human_settings_only',
-    notes: [
-      'answers the last four characters of a stored key at most — never the key',
-      'a service key is used by the server for this member alone and is never injected into a spawned session',
-    ],
-  },
-  'credentials.serviceKeys.put': {
-    cmd: null,
-    sum: 'Store or replace this member\'s TypeSafe key for Ask Jev, encrypted at rest — human sessions only',
-    authz: 'server',
-    input: 'bound',
-    tags: ['credential', 'service-key', 'typesafe', 'jev', 'paste', 'settings'],
-    reason: 'human_settings_only',
-    notes: [
-      'the key is sealed with the node credential key before it reaches Postgres and is never echoed back',
-    ],
-  },
-  'credentials.serviceKeys.delete': {
-    cmd: null,
-    sum: 'Remove this member\'s stored TypeSafe key — human sessions only',
-    authz: 'server',
-    input: 'bound',
-    tags: ['credential', 'service-key', 'typesafe', 'jev', 'disconnect', 'settings'],
-    reason: 'human_settings_only',
-    notes: [
-      'idempotent; Ask Jev then falls back to the node key, if the node has one',
-    ],
-  },
   'credentials.space.list': {
     cmd: null,
     sum: 'List a space\'s shared agent credentials (metadata only) — human sessions only',
@@ -3480,6 +3446,7 @@ function exposureFor(operation: OperationName): Exposure {
 // 2026-08-13 (first-run claim): auth.claim + auth.claim.status take the catalog
 // to 161 rows. RECOMPUTED from `JSON.stringify(OPERATIONS)`, not adjusted.
 export const CATALOG_DIGEST =
+  // Re-measured for credentials r2 S6-removal (-3 credentials.serviceKeys.*) — read from the regenerated conformance manifest. MEASURED.
   // Re-measured for task 01a0e24d (+humanOnly on 33 rows: 24 credentials.*/node.credentials.*,
   // 6 spaceLinks.* writes, servers.add/adopt/remove) — read from the regenerated conformance manifest. MEASURED.
   // Re-measured for Attention v2 S4 (+attentionRequests.markSeen/unresolve/withdraw).
@@ -3528,7 +3495,7 @@ export const CATALOG_DIGEST =
   // Re-measured (W8, 261, rebuilt on main f01b1566): +6 servers.* and the serverConnections create/delete rows. Read from the regenerated conformance manifest.
   // Re-measured (W5 #917, merges of main dd1c8215 and 2fa4999f): +3 spaces.spacePassword.* on top of main's servers.*, spaceLinks, attention and launch v3 rows. Read from the regenerated conformance manifest.
   // Re-measured (#915 merge of main 0be3b796): main's servers.* + spaceLinks.invoke/audit and the five attention rows together. Read from the regenerated conformance manifest.
-  'sha256:be85230eefda1327169810033105a3ce920537605fcb7e909486b9679c3538ab';
+  'sha256:46f8600247e25a1ac99fb878485c8758437ff9dfcdf2be9e005924199f637dcd';
 
 export const GRAMMAR_VERSION = '2';
 

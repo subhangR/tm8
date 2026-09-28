@@ -137,9 +137,6 @@ describe('W5.C generator proof', () => {
       // spaceId and provider, so {} is correctly refused.
       'credentials.delete',
       'credentials.loginSessions.finish',
-      // Jev lane K: service-key delete carries only clientMutationId; the
-      // provider rides the path. (put requires apiKey, so {} is refused.)
-      'credentials.serviceKeys.delete',
       // SC-3: space-credential delete and setDefault carry only
       // clientMutationId; the credential id rides the path.
       // W10b: claim and both my-default commands carry only clientMutationId

@@ -9,7 +9,6 @@ import { fileURLToPath } from 'node:url';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const jev = vi.hoisted(() => ({
-  jevClientFromEnv: vi.fn(),
   createJevClient: vi.fn((options: { apiKey: string }) => ({ ask: vi.fn(), apiKey: options.apiKey })),
   rankByRelevance: vi.fn(),
   adviseModel: vi.fn(),
@@ -19,39 +18,8 @@ vi.mock('@tm8/jev', () => jev);
 import {
   JEV_ADVISOR_CACHE_LIMIT,
   jevAdvisorForKey,
-  jevAdvisorFromEnv,
   resetJevAdvisorCache,
 } from '../../src/jev/jev-adapter.js';
-
-describe('jevAdvisorFromEnv', () => {
-  beforeEach(() => vi.clearAllMocks());
-
-  it('is null without a key — the handler then answers no_key', () => {
-    jev.jevClientFromEnv.mockReturnValue(null);
-    expect(jevAdvisorFromEnv({})).toBeNull();
-  });
-
-  it('builds the client ONCE and hands every call to rankByRelevance / adviseModel unchanged', async () => {
-    const client = { ask: vi.fn() };
-    jev.jevClientFromEnv.mockReturnValue(client);
-    const ranked = { ok: true, ranked: [], calls: [] };
-    const advised = { ok: false, reason: 'timeout', call: { jevModel: null, inputTokens: 0, outputTokens: 0, costUsd: 0, latencyMs: 5000, outcome: 'timeout' } };
-    jev.rankByRelevance.mockResolvedValue(ranked);
-    jev.adviseModel.mockResolvedValue(advised);
-
-    const advisor = jevAdvisorFromEnv({ TYPESAFE_API_KEY: 'k' })!;
-    const task = { title: 'Fix login', description: 'SSO lands on 404' };
-    const candidates = [{ id: 'm1', text: 'a memory' }];
-    await expect(advisor.rank({ task, candidates, noun: 'memory' })).resolves.toBe(ranked);
-    await expect(advisor.model(task)).resolves.toBe(advised);
-    await advisor.rank({ task, candidates, noun: 'skill' });
-
-    expect(jev.jevClientFromEnv).toHaveBeenCalledTimes(1);
-    expect(jev.jevClientFromEnv).toHaveBeenCalledWith({ TYPESAFE_API_KEY: 'k' });
-    expect(jev.rankByRelevance).toHaveBeenNthCalledWith(1, client, { task, candidates, noun: 'memory' });
-    expect(jev.adviseModel).toHaveBeenCalledWith(client, task);
-  });
-});
 
 describe('jevAdvisorForKey — one client per key (Lane K)', () => {
   beforeEach(() => { vi.clearAllMocks(); resetJevAdvisorCache(); });
@@ -67,6 +35,24 @@ describe('jevAdvisorForKey — one client per key (Lane K)', () => {
     await b.model(task);
     // Control for the line above: a's client is a different object from b's.
     expect((jev.adviseModel.mock.calls[0]![0] as { apiKey: string }).apiKey).toBe('key-b');
+  });
+
+  it('hands every call to rankByRelevance / adviseModel unchanged, on the key’s own client', async () => {
+    const ranked = { ok: true, ranked: [], calls: [] };
+    const advised = { ok: false, reason: 'timeout', call: { jevModel: null, inputTokens: 0, outputTokens: 0, costUsd: 0, latencyMs: 5000, outcome: 'timeout' } };
+    jev.rankByRelevance.mockResolvedValue(ranked);
+    jev.adviseModel.mockResolvedValue(advised);
+
+    const advisor = jevAdvisorForKey('k');
+    const client = jev.createJevClient.mock.results[0]!.value;
+    const task = { title: 'Fix login', description: 'SSO lands on 404' };
+    const candidates = [{ id: 'm1', text: 'a memory' }];
+    await expect(advisor.rank({ task, candidates, noun: 'memory' })).resolves.toBe(ranked);
+    await expect(advisor.model(task)).resolves.toBe(advised);
+
+    expect(jev.createJevClient).toHaveBeenCalledTimes(1);
+    expect(jev.rankByRelevance).toHaveBeenNthCalledWith(1, client, { task, candidates, noun: 'memory' });
+    expect(jev.adviseModel).toHaveBeenCalledWith(client, task);
   });
 
   it('bounds the cache and rebuilds an evicted key rather than handing out another', () => {
