@@ -33,6 +33,7 @@ import {
   getOperation,
   type CommandErrorCode,
   type OperationName,
+  type SpaceSessionsMode,
 } from '@tm8/contract';
 
 /** The subset of `fetch` this client uses. Injectable; never captured at import time. */
@@ -111,6 +112,12 @@ export interface SpaceSessionPort {
    * that makes the same request worth sending once more.
    */
   recover(error: CollabError, op: OperationName | undefined): Promise<boolean>;
+  /**
+   * `identity.get` answered with the node's `spaceSessions` mode (undefined
+   * from a node that predates the field). Lets the port know `enforce` before
+   * the first refusal instead of from it.
+   */
+  advertised?(mode: SpaceSessionsMode | undefined): void;
 }
 
 export const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
