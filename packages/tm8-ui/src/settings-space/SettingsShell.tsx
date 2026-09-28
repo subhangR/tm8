@@ -429,6 +429,7 @@ function SectionBody({
           scope="own"
           {...(port.loadOwnSessions ? { load: port.loadOwnSessions } : {})}
           {...(port.revokeSession ? { revoke: port.revokeSession } : {})}
+          {...(port.signOutHere ? { signOutHere: port.signOutHere } : {})}
         />
       );
     case 'sessions':
@@ -438,6 +439,7 @@ function SectionBody({
           scope="space"
           {...(port.loadSpaceSessions ? { load: port.loadSpaceSessions } : {})}
           {...(port.revokeSession ? { revoke: port.revokeSession } : {})}
+          {...(port.signOutHere ? { signOutHere: port.signOutHere } : {})}
         />
       );
     case 'danger':

@@ -76,7 +76,7 @@ import { useLaunchSheet } from './useLaunchSheet';
 import { REFERENCE_KINDS } from '../domain/launch-selection';
 import { useLaunchPort } from './useLaunchPort';
 import { useTheme } from '../theme/useTheme';
-import { AccountMenu, AuthFlow, authTokenFor, noteServerOrigin, useAuthActions } from '../auth';
+import { AccountMenu, AuthFlow, authTokenFor, noteServerOrigin, signOut, useAuthActions } from '../auth';
 import { spaceSessionFor } from '../auth/space-sessions';
 import { WorkspaceView } from './WorkspaceView';
 import { EntityView } from './EntityView';
@@ -317,7 +317,11 @@ export function screenKeyOfTarget(target: MenuTarget | null): ScreenKey | null {
 export function GateApp(props: GateAppProps = {}) {
   // null when this GateApp is not inside an <AuthGate> — the shell tests, and
   // any host that has not mounted the gate.
-  const authAccount = useAuthActions()?.account ?? null;
+  const authActions = useAuthActions();
+  const authAccount = authActions?.account ?? null;
+  // Revoking this browser's own session from Settings → Sessions signs out.
+  // The gate's sign-out when there is a gate; the standalone one otherwise.
+  const signOutHere = authActions?.signOut ?? signOut;
 
   // Boot hydrates the RULED defaults; the viewer's persisted choice is applied
   // after, because the persistence is scoped per (viewer, space) and the space
@@ -1592,8 +1596,8 @@ export function GateApp(props: GateAppProps = {}) {
   );
 
   const settingsPort = useMemo(
-    () => (data.spaceId ? settingsPortFromSeam(data.seam, data.spaceId) : null),
-    [data.seam, data.spaceId],
+    () => (data.spaceId ? settingsPortFromSeam(data.seam, data.spaceId, { signOut: signOutHere }) : null),
+    [data.seam, data.spaceId, signOutHere],
   );
 
   // The credentials section's own adapter, built the same way and on the same

@@ -33,6 +33,7 @@ import {
   type ParsedInvocation,
 } from './args.js';
 import { loadLocalConfig, resolveContext, sessionContextFromEnv, type CliContext } from './context.js';
+import type { CredentialStore } from './credentials.js';
 import { ApiError, errorLines, exitCodeFor, RetiredCommandError } from './errors.js';
 import {
   CliError,
@@ -239,7 +240,10 @@ async function dispatch(
   // administration, which a pinned session never holds (K6).
   const gateCommand = match.path[0] === 'auth' || match.path[0] === 'server' || match.path[0] === 'node';
   let usedStoredCredential = false;
-  let usedSpaceCredential: string | undefined;
+  // The pin this invocation presents, kept so a refusal can forget exactly it.
+  let usedSpaceCredential:
+    | { store: CredentialStore; origin: string; spaceId: string; token: string }
+    | undefined;
   const applyStoredCredential = async (): Promise<void> => {
     usedSpaceCredential = undefined;
     if (isLogin || ctx.token !== undefined) return;
@@ -252,7 +256,7 @@ async function dispatch(
       const pinned = store && space && !gateCommand ? spaceCredential(store, origin, space) : undefined;
       ctx = { ...ctx, token: pinned ?? stored };
       usedStoredCredential = true;
-      usedSpaceCredential = pinned ? space : undefined;
+      usedSpaceCredential = pinned && store && space ? { store, origin, spaceId: space, token: pinned } : undefined;
     }
   };
   await applyStoredCredential();
@@ -305,9 +309,20 @@ async function dispatch(
       throw err;
     }
     if (usedSpaceCredential && err instanceof ApiError && err.code === 'unauthenticated') {
+      // A dead pin left in the store would be presented, and refused, on every
+      // later command in this space; forget it so they fall back to the gate.
+      const { store, origin, spaceId, token } = usedSpaceCredential;
+      let removed = false;
+      try {
+        const { forgetSpaceCredential } = await import('./credentials.js');
+        removed = forgetSpaceCredential(store, origin, spaceId, token);
+      } catch {
+        /* best effort: the hint below still names the fix */
+      }
       err.hint =
-        `the stored session for space ${usedSpaceCredential} was refused — it may have expired or been revoked; ` +
-        `run \`tm8 auth space enter ${usedSpaceCredential}\` to store a fresh one`;
+        `the stored session for space ${spaceId} was refused — it may have expired or been revoked` +
+        `${removed ? ', so it was removed' : ''}; ` +
+        `run \`tm8 auth space enter ${spaceId}\` to store a fresh one`;
       throw err;
     }
     if (usedStoredCredential && err instanceof ApiError && err.code === 'unauthenticated') {

@@ -46,10 +46,16 @@ async function http(method: string, path: string, token: string | null, body?: u
   return { status: res.status, data: parsed?.data ?? parsed };
 }
 
-const pinKeys = (): string[] => Object.keys(stored()).filter((k) => k.includes('#space:'));
+const credentialFile = () =>
+  JSON.parse(readFileSync(credPath, 'utf8')) as {
+    credentials: Record<string, { token: string }>;
+    spaces?: Record<string, string[]>;
+  };
 
-const stored = (): Record<string, { token: string }> =>
-  (JSON.parse(readFileSync(credPath, 'utf8')) as { credentials: Record<string, { token: string }> }).credentials;
+const stored = (): Record<string, { token: string }> => credentialFile().credentials;
+
+// The store's own space index names the pins; nothing sorts them out of the credentials.
+const pinKeys = (): string[] => credentialFile().spaces?.[server.baseUrl] ?? [];
 
 beforeAll(async () => {
   await assertBuilt();
