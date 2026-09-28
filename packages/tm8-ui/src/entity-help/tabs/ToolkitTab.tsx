@@ -43,8 +43,8 @@ function CommandCard({ row }: { row: CommandDiscovery }) {
         <div className="eh-cmd__detail">
           {row.notes.length > 0 ? (
             <ul className="eh-cmd__notes">
-              {row.notes.map((note) => (
-                <li key={note}>{note}</li>
+              {row.notes.map((note, index) => (
+                <li key={index}>{note}</li>
               ))}
             </ul>
           ) : null}
@@ -70,7 +70,7 @@ export function ToolkitTab({ page }: { page: HelpPage }) {
       </Reveal>
 
       {toolkit.scenes.map((scene, index) => (
-        <Reveal key={scene.title} as="section" className="eh-scene" delay={220 + index * 160} data-testid="toolkit-scene">
+        <Reveal key={index} as="section" className="eh-scene" delay={220 + index * 160} data-testid="toolkit-scene">
           <span className="eh-eyebrow">Scene {String(index + 1).padStart(2, '0')}</span>
           <h3 className="eh-scene__title">{scene.title}</h3>
           <div className="eh-prose">{scene.narrative}</div>
