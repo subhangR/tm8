@@ -494,6 +494,10 @@ async function resolveLinkBoundCredentials(
   const sources = { ...launch.credentialSources };
   const ids: Partial<Record<SpaceCredentialProvider, string>> = {};
   const effective: Partial<Record<CredentialProvider, Effective>> = {};
+  // §6c (W10b): a link-bound launch only ever runs on the space default, so
+  // every grant below is recorded as that pick — left out, 255's recorder
+  // wrote source = NULL for every launch through a link.
+  const picks: Partial<Record<SpaceCredentialProvider, SpaceCredentialPick>> = {};
 
   const readDefault = async (provider: SpaceCredentialProvider): Promise<SpaceCredentialGrant | null> => {
     if (!deps.spaceCredentials) return null;
@@ -559,6 +563,7 @@ async function resolveLinkBoundCredentials(
       credentialHome = await spaceHome(deps, provider, grant);
       sources[provider] = 'space';
       ids[provider] = grant.credentialId;
+      picks[provider] = 'space_default';
       effective[provider] = 'space';
     } else if (source !== 'space' && nodeOk) {
       // Recorded, never left blank: a later resume of this session may not be
@@ -612,6 +617,7 @@ async function resolveLinkBoundCredentials(
   const gitHubCredential = spaceGitHub(ghGrant);
   sources.github = 'space';
   ids.github = ghGrant.credentialId;
+  picks.github = 'space_default';
   effective.github = 'space';
 
   // ---- an explicit space source for a provider this tool does not use ------
@@ -623,6 +629,7 @@ async function resolveLinkBoundCredentials(
     if (grant) {
       sources[provider] = 'space';
       ids[provider] = grant.credentialId;
+      picks[provider] = 'space_default';
     }
   }
 
@@ -632,6 +639,7 @@ async function resolveLinkBoundCredentials(
     credentialSource: commonCredentialSource(sources),
     spaceCredentialIds: ids,
     effectiveCredentialSources: effective,
+    ...(Object.keys(picks).length > 0 ? { spaceCredentialPicks: picks } : {}),
   };
   return {
     launch: resolvedLaunch,

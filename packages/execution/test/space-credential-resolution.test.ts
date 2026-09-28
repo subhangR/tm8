@@ -650,6 +650,22 @@ describe('W7p — a link-bound launch never reaches the linking human\'s own cre
     expect(port.reads.map((x) => x.credentialId)).toEqual([null, null]);
   });
 
+  // §6c (W10b) through a link: 255's recorder stamps session_space_credentials.source
+  // from these picks, so leaving them out recorded NULL for every link-bound launch.
+  it("records every space grant through a link as 'space_default' (anthropic and github); paired — the same launch, not link-bound, picks my default", async () => {
+    const MINE = 'dddddddd-0000-4000-8000-000000000002';
+    const port: FakePort = {
+      ...fakePort({ defaults: both, byId: { [MINE]: { ok: true, grant: apiKeyGrant('anthropic', MINE) } } }),
+      async myDefaultId(_auth, _spaceId, provider) { return provider === 'anthropic' ? MINE : null; },
+    };
+    const r = await linked(launch(), deps(port, { home: MEMBER_HOME }));
+    expect(r.launch.spaceCredentialIds).toEqual({ anthropic: ANT_DEFAULT, github: GH_DEFAULT });
+    expect(r.launch.spaceCredentialPicks).toEqual({ anthropic: 'space_default', github: 'space_default' });
+    const normal = await resolveSessionCredentials({ auth: AUTH_A, spaceId: SPACE, launch: launch(), resume: false }, deps(port, { home: MEMBER_HOME }));
+    expect(normal.launch.spaceCredentialIds?.anthropic).toBe(MINE);
+    expect(normal.launch.spaceCredentialPicks?.anthropic).toBe('my_default');
+  });
+
   it("explicit 'member' is refused by name", async () => {
     const d = deps(fakePort({ defaults: both }), { home: MEMBER_HOME });
     const e = await refusal(linked(launch({ credentialSources: { anthropic: 'member' } }), d));

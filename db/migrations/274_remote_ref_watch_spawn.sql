@@ -618,6 +618,42 @@ begin
 end
 $$;
 
+-- The one definition of "this caller holds a live link-spawn reservation for
+-- p_space": its OWN token row (W7p's own-row predicate: its own via_link
+-- claim, its own active home-space member, the link not deleted) has a
+-- reservation into p_space that is unreleased and either unbound within the
+-- TTL or bound to a session still spawning. A boolean, stable and lock-free,
+-- so a reader can ask it; `internal.link_spawn_row` (locking, raising) stays
+-- the budget's door. `p_bound_live` (default false) also admits a reservation
+-- bound to a session that is still live (spawning, running or idle: the
+-- budget's own `space_link_spawn_is_live`), for a reader the spawn reaches
+-- after the PTY exists (the post-spawn usable-ids recheck); the credential
+-- read keeps the default. Callers: read_space_credential_for_spawn below, and the
+-- W6 a2 readers stacked on this migration (task 01a0e767) — keep the name and
+-- signature stable.
+create or replace function internal.link_spawn_reservation_live(p_space uuid, p_bound_live boolean default false)
+returns boolean language sql stable security definer
+set search_path = public, internal, pg_temp as $$
+  select exists (
+    select 1
+      from public.space_link_spawns s
+      join public.space_link_tokens t on t.id = s.token_row_id
+      join public.members m on m.entity_id = t.member_id
+      join public.entities e on e.id = t.link_id
+      left join public.work_sessions ws on ws.entity_id = s.work_session_id
+     where t.link_id = internal.claim_text('tm8.via_link')::uuid
+       and m.identity_id = internal.identity_id()
+       and m.status = 'active'
+       and e.deleted_at is null
+       and s.target_space_id = p_space
+       and s.released_at is null
+       and case when p_bound_live then internal.space_link_spawn_is_live(s)
+                else (s.bound_at is null and s.reserved_at > now() - internal.space_link_spawn_reservation_ttl())
+                     or ws.status = 'spawning' end
+  )
+$$;
+revoke all on function internal.link_spawn_reservation_live(uuid, boolean) from public;
+
 -- -----------------------------------------------------------------------------
 -- 8. read_space_credential_for_spawn — 271's body (the latest definer; gate 8's
 --    server-only refusal stays the first statement, for every caller). The
@@ -653,22 +689,7 @@ begin
   -- only, signed in, spawning allowed). So this can only narrow lead ruling
   -- B: ruling B AND a live reservation.
   if coalesce(internal.claim_text('tm8.auth_kind'), '') = 'link' then
-    if not exists (
-      select 1
-        from public.space_link_spawns s
-        join public.space_link_tokens t on t.id = s.token_row_id
-        join public.members m on m.entity_id = t.member_id
-        join public.entities e on e.id = t.link_id
-        left join public.work_sessions ws on ws.entity_id = s.work_session_id
-       where t.link_id = internal.claim_text('tm8.via_link')::uuid
-         and m.identity_id = internal.identity_id()
-         and m.status = 'active'
-         and e.deleted_at is null
-         and s.target_space_id = p_launch_space_id
-         and s.released_at is null
-         and ((s.bound_at is null and s.reserved_at > now() - internal.space_link_spawn_reservation_ttl())
-              or ws.status = 'spawning')
-    ) then
+    if not internal.link_spawn_reservation_live(p_launch_space_id) then
       raise exception 'a space link session cannot read a spawn credential' using errcode = '42501';
     end if;
   end if;

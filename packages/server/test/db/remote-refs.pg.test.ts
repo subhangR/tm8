@@ -21,6 +21,8 @@ import { randomUUID } from 'node:crypto';
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { materializeSpaceApiKeyHome, resolveSessionCredentials, type ResolvedLaunchConfig } from '@tm8/execution';
+
 import { createDb } from '../../src/db/client.js';
 import type { Db, DbClaims, Querier } from '../../src/db/types.js';
 import { claimsFor } from '../../src/facade/context.js';
@@ -30,6 +32,8 @@ import type { RequestContext } from '../../src/http/types.js';
 import { formatToken, generateSecret, hashToken } from '../../src/identity/crypto.js';
 import type { LoopbackOwner } from '../../src/identity/loopback.js';
 import { DbSpaceLinkStore, type SpaceLink } from '../../src/credentials/space-link-store.js';
+import { DbSpaceCredentialPort } from '../../src/credentials/space-credential-port.js';
+import { DbSpaceCredentialStore } from '../../src/credentials/space-credential-store.js';
 
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from './w1-pg.js';
 
@@ -813,6 +817,98 @@ describe('W7b link-kind admission — the mint and the credential read, only aga
     const got = await db.rpc<{ credentialId: string }>(claims, 'read_space_credential_for_spawn', [fixture.spaceB, 'anthropic', null]);
     expect(got.credentialId).toBe(publicCredential);
     await db.rpc(await hClaims(), 'release_space_link_spawn', [fixture.spaceA, link.id, r.reservationId]);
+  });
+
+  // The one predicate the W6 a2 readers (task 01a0e767) call: default mode is
+  // exactly the credential read's gate; p_bound_live also covers a bound
+  // session that has gone running (the post-PTY usable-ids recheck).
+  it('link_spawn_reservation_live: none → false; unbound → true; bound and running → false by default, true with p_bound_live; released → false both ways', async () => {
+    await asOwner(async (c) => { await c.query(`update public.space_link_spawns set released_at = now() where released_at is null`); });
+    const lc = await linkClaims();
+    const live = async (boundLive: boolean): Promise<boolean> => asOwner(async (c) => {
+      await c.query(`select set_config('tm8.identity_id', $1, true), set_config('tm8.auth_kind', $2, true),
+                            set_config('tm8.via_link', $3, true), set_config('tm8.session_space_id', $4, true)`,
+        [lc.identityId, lc.authKind ?? '', lc.viaLinkId ?? '', lc.sessionSpaceId ?? '']);
+      const rows = await c.query(`select internal.link_spawn_reservation_live($1, $2) as live`, [fixture.spaceB, boundLive]) as Array<{ live: boolean }>;
+      return rows[0]!.live;
+    });
+    expect([await live(false), await live(true)]).toEqual([false, false]);
+    const r = await db.rpc<{ reservationId: string }>(await hClaims(), 'reserve_space_link_spawn', [fixture.spaceA, link.id, null, null]);
+    expect([await live(false), await live(true)]).toEqual([true, true]);
+    const ws = await newSessionInB();
+    await mint(lc, ws);
+    expect([await live(false), await live(true)]).toEqual([true, true]);
+    // 273: a session runs only once its binding is recorded; the node rung settles it (legacy).
+    await db.rpc(lc, 'record_session_manifest', [ws, JSON.stringify({ launch: {
+      credentialSources: { anthropic: 'node' }, spaceCredentialIds: {}, effectiveCredentialSources: { anthropic: 'node' },
+    } })]);
+    await asOwner(async (c) => {
+      await c.query(`select set_config('tm8.work_session_transition', 'on', true)`);
+      await c.query(`update public.work_sessions set status = 'running' where entity_id = $1`, [ws]);
+    });
+    expect([await live(false), await live(true)]).toEqual([false, true]);
+    await asOwner(async (c) => { await c.query(`update public.space_link_spawns set released_at = now() where id = $1`, [r.reservationId]); });
+    expect([await live(false), await live(true)]).toEqual([false, false]);
+  });
+
+  // §6c (W10b) through a link, end to end over the REAL port, resolver and
+  // recorder: 255's stamp reads launch.spaceCredentialPicks from the manifest,
+  // so a link-bound launch that leaves the picks out records source = NULL.
+  it("§6c: a link-bound spawn records source 'space_default' with the credential id, no owner and H as launcher; paired — H's own launch on my default records 'my_default'", async () => {
+    const credDir = await mkdtemp(join(tmpdir(), 'tm8-remote-refs-cred-'));
+    const credStore = new DbSpaceCredentialStore({ db, dataDir: credDir });
+    const port = new DbSpaceCredentialPort({ db, store: credStore, dataDir: credDir });
+    const h = await hClaims();
+    const ant = await credStore.create(h, { spaceId: fixture.spaceB, provider: 'anthropic', shape: 'api_key', label: 'w7b 6c anthropic', secret: `sk-ant-w7b6c-${randomUUID()}`, spaceOwned: true });
+    const gh = await credStore.create(h, { spaceId: fixture.spaceB, provider: 'github', shape: 'token', label: 'w7b 6c github', secret: `ghp_w7b6c${randomUUID().replace(/-/g, '')}`, displayLogin: 'w7b-bot', spaceOwned: true });
+    const mine = await credStore.create(h, { spaceId: fixture.spaceB, provider: 'anthropic', shape: 'api_key', label: 'w7b 6c mine', secret: `sk-ant-w7b6c-mine-${randomUUID()}`, visibility: 'public' });
+    const priorDefaults = await asOwner(async (c) => (await c.query(
+      `select id::text from public.space_credentials where space_id = $1 and is_default`, [fixture.spaceB]) as Array<{ id: string }>).map((row) => row.id));
+    await asOwner(async (c) => {
+      await c.query(`update public.space_credentials set is_default = false where space_id = $1`, [fixture.spaceB]);
+      await c.query(`update public.space_credentials set is_default = true where id = any($1::uuid[])`, [[ant.id, gh.id]]);
+    });
+    await asIdentity(fixture.identityH, (q) => q.rpc('set_my_space_credential_default', [mine.id]));
+    const minimal = { agentTool: 'claude-code', model: 'opus', credentialSources: {} } as unknown as ResolvedLaunchConfig;
+    const run = async (claims: DbClaims, ws: string, linkBound: boolean) => {
+      const resolved = await resolveSessionCredentials({ auth: claims, spaceId: fixture.spaceB, launch: minimal, resume: false, linkBound }, {
+        spaceCredentials: port,
+        async resolveMemberHome() { return null; },
+        async resolveMemberGitHub() { return null; },
+        materializeApiKeyHome: (input) => materializeSpaceApiKeyHome({ dataDir: credDir, sessionId: ws, ...input }),
+      });
+      await db.rpc(claims, 'record_session_manifest', [ws, JSON.stringify({ launch: {
+        credentialSources: resolved.launch.credentialSources,
+        spaceCredentialIds: resolved.launch.spaceCredentialIds ?? {},
+        effectiveCredentialSources: resolved.launch.effectiveCredentialSources ?? {},
+        ...(resolved.launch.spaceCredentialPicks ? { spaceCredentialPicks: resolved.launch.spaceCredentialPicks } : {}),
+      } })]);
+      return asOwner(async (c) => c.query(
+        `select provider, source, space_credential_id::text as credential, owner_account_id::text as owner, launcher_account_id::text as launcher
+           from public.session_space_credentials where work_session_id = $1 order by provider`, [ws]));
+    };
+    try {
+      await asOwner(async (c) => { await c.query(`update public.space_link_spawns set released_at = now() where released_at is null`); });
+      await db.rpc(await hClaims(), 'reserve_space_link_spawn', [fixture.spaceA, link.id, null, null]);
+      const lc = await linkClaims();
+      const linked = await newSessionInB();
+      await mint(lc, linked);
+      expect(await run(lc, linked, true)).toEqual([
+        { provider: 'anthropic', source: 'space_default', credential: ant.id, owner: null, launcher: fixture.accountH },
+        { provider: 'github', source: 'space_default', credential: gh.id, owner: null, launcher: fixture.accountH },
+      ]);
+      // Paired: the same space, H's own browser launch, is unchanged — my default wins and is recorded as such.
+      const direct = await newSessionInB();
+      const rows = await run(await hClaims(), direct, false);
+      expect(rows).toContainEqual({ provider: 'anthropic', source: 'my_default', credential: mine.id, owner: fixture.accountH, launcher: fixture.accountH });
+    } finally {
+      await asOwner(async (c) => {
+        await c.query(`update public.space_link_spawns set released_at = now() where released_at is null`);
+        await c.query(`update public.space_credentials set is_default = false where space_id = $1`, [fixture.spaceB]);
+        await c.query(`update public.space_credentials set is_default = true where id = any($1::uuid[])`, [priorDefaults]);
+      });
+      await asIdentity(fixture.identityH, (q) => q.rpc('clear_my_space_credential_default', [fixture.spaceB, 'anthropic']));
+    }
   });
 });
 
