@@ -17,10 +17,57 @@
  * scan's stated purpose, not a breach of it.
  */
 import type { KindHelpModule } from '../types';
-import { LOOP_HELP } from './loop';
-import { SPELL_HELP } from './spell';
+import { CHAT_HELP } from './chat';
+import { FORM_HELP } from './form';
+import { PROJECT_HELP } from './project';
+import { TASK_HELP } from './task';
+import { WORK_SESSION_HELP } from './work_session';
+import { SKILL_HELP } from './skill';
+import { TEAM_MEMBER_HELP } from './team_member';
+import { DOC_HELP } from './doc';
+import { MEMORY_HELP } from './memory';
+import { DRAWING_HELP } from './drawing';
+import { MEMBER_HELP } from './member';
+import { GRAPH_HELP } from './graph';
+import { ARTIFACT_HELP } from './artifact';
+import { COLLECTION_HELP } from './collection';
+import { FILE_HELP } from './file';
+import { CHANNEL_HELP } from './channel';
+import { PULL_REQUEST_HELP } from './pull_request';
+import { WORKTREE_HELP } from './worktree';
+import { COMMIT_HELP } from './commit';
+import { INTERACTION_PROFILE_HELP } from './interaction_profile';
+import { CREDENTIAL_HELP } from './credential';
+import { SPACE_LINK_HELP } from './space_link';
+import { CONTAINER_HELP } from './container';
+import { SERVER_HELP } from './server';
 
-const MODULES: readonly KindHelpModule[] = [LOOP_HELP, SPELL_HELP];
+const MODULES: readonly KindHelpModule[] = [
+  CHAT_HELP,
+  TASK_HELP,
+  WORK_SESSION_HELP,
+  FORM_HELP,
+  PROJECT_HELP,
+  SKILL_HELP,
+  TEAM_MEMBER_HELP,
+  DOC_HELP,
+  MEMORY_HELP,
+  DRAWING_HELP,
+  MEMBER_HELP,
+  GRAPH_HELP,
+  ARTIFACT_HELP,
+  COLLECTION_HELP,
+  FILE_HELP,
+  CHANNEL_HELP,
+  PULL_REQUEST_HELP,
+  WORKTREE_HELP,
+  COMMIT_HELP,
+  INTERACTION_PROFILE_HELP,
+  CREDENTIAL_HELP,
+  SPACE_LINK_HELP,
+  SERVER_HELP,
+  CONTAINER_HELP,
+];
 
 const BY_KIND: ReadonlyMap<string, KindHelpModule> = new Map(MODULES.map((module) => [module.kind, module]));
 
