@@ -90,7 +90,12 @@ export async function ensureLaunchResources(args: {
     const projectId = created.project?.id;
     if (!projectId) throw new Error('launch bootstrap create_project returned no id');
     project = { id: projectId, trust: 'trusted' };
-  } else if (project && project.trust !== 'trusted') {
+  } else if (!project) {
+    console.warn(
+      `  launch bootstrap: TM8_PROJECT_DIR ${args.projectDir} is not granted to any space this owner runs; ` +
+        'a node admin must grant it before it can be launched from',
+    );
+  } else if (project.trust !== 'trusted') {
     throw new Error(
       `launch bootstrap will not override untrusted project ${project.id}; trust it explicitly or disable TM8_LAUNCH_BOOTSTRAP`,
     );

@@ -37,6 +37,8 @@ import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from 
 vi.setConfig({ testTimeout: 180_000, hookTimeout: 300_000 });
 
 const OWNER = 'id_space_owner_not_node_admin';
+/** A real identity with an account and no membership anywhere. */
+const STRANGER = 'id_stranger_no_membership';
 /** The folder's name on the gate. The space's project entity may be renamed; this is the key. */
 const FOLDER_NAME = 'r845-folder';
 
@@ -88,10 +90,14 @@ beforeAll(async () => {
   const keys = ['space', 'member', 'folder', 'worktree', 'session', 'other', 'otherMember'] as const;
   keys.forEach((key, index) => { ids[key] = fresh[index]!.id; });
 
-  await asGraphOwner(`insert into public.user_profiles(identity_id, display_name) values ($1, 'Owner')`, [OWNER]);
   await asGraphOwner(
-    `insert into public.accounts(identity_id, username, is_node_admin, is_owner) values ($1, $1, false, true)`,
-    [OWNER],
+    `insert into public.user_profiles(identity_id, display_name) values ($1, 'Owner'), ($2, 'Stranger')`,
+    [OWNER, STRANGER],
+  );
+  await asGraphOwner(
+    `insert into public.accounts(identity_id, username, is_node_admin, is_owner)
+     values ($1, $1, false, true), ($2, $2, false, false)`,
+    [OWNER, STRANGER],
   );
   await asGraphOwner(
     `insert into public.spaces(id, name, created_by_identity) values ($1, 'R845 home', $3), ($2, 'R845 other', $3)`,
@@ -179,6 +185,21 @@ describe('R845-F4 — the commit recorder, as a non-node-admin space owner', () 
     expect(pinned).toEqual([]);
     const own = await db.query(ownerClaims, 'select * from public.worktree_repo_source($1)', [ids.worktree]);
     expect(own).toEqual([{ repo_url: null, folder_name: FOLDER_NAME }]);
+  });
+
+  it('the same pin through the tick: a recorder whose claims are pinned to the other space finds no lane', async () => {
+    const outcome = await runCommitRecorderTick({
+      db, claims: async () => ({ ...ownerClaims, sessionSpaceId: ids.other }),
+    });
+    expect(outcome).toMatchObject({ skipped: true });
+  });
+
+  it('an unpinned identity that is a member of no space resolves nothing, directly or through the tick', async () => {
+    const strangerClaims: DbClaims = { identityId: STRANGER, nodeAdmin: false };
+    const direct = await db.query(strangerClaims, 'select * from public.worktree_repo_source($1)', [ids.worktree]);
+    expect(direct).toEqual([]);
+    const outcome = await runCommitRecorderTick({ db, claims: async () => strangerClaims });
+    expect(outcome).toMatchObject({ skipped: true });
   });
 });
 

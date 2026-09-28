@@ -32,11 +32,6 @@
 -- NOT AN identity_id() READER. The body names no root of
 -- tools/ci/identity-id-gate.sh; it reaches the caller only through
 -- internal.entity_readable, which is on the allow-list as a PIN-HELPER.
---
--- A NOTE ON 234's HEADER (R845-F7's deferred comment fixes). 234:26 and :105
--- say "235" fills the new columns on existing rows. There is no 235: that
--- backfill landed as 259. 234 is not edited to say so, because it is applied
--- and migrate.mjs would report checksum drift.
 -- =============================================================================
 
 set local lock_timeout = '5s';

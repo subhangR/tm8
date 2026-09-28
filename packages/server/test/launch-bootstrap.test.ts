@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { HOUSE_TEAMMATE_NAMES } from '@tm8/contract';
 import { ensureLaunchResources } from '../src/bootstrap/launch-resources.js';
 import type { Db, DbClaims, Querier } from '../src/db/types.js';
@@ -280,7 +280,11 @@ describe('launch resource bootstrap', () => {
     registeredElsewhere.grants.set(PROJECT_ID, '44444444-4444-4444-8444-444444444444');
     const unregistered = new SeedDb();
     for (const db of [registeredElsewhere, unregistered]) {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
       const result = await ensureLaunchResources(notAdmin(db));
+      // Not silent: the owner is told a node admin must grant the folder.
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('is not granted to any space'));
+      warn.mockRestore();
       expect(result.projectId).toBeNull();
       expect(result.teammatesCreated).toBe(HOUSE_COUNT);
       expect(rpcNames(db)).not.toContain('public.create_project');
