@@ -228,6 +228,9 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
   // Wires 2 and 3 (see header).
   connection.onEvent((event) => liveness.noteEvent(event));
   connection.onReconnect(() => liveness.noteReconnect());
+  // W3 F1: a space switch under enforce swaps the session cookie, and the
+  // socket only ever speaks as the cookie it upgraded with.
+  const stopCookieWatch = options.spaceSession?.onCookieChanged?.(() => connection.reconnect());
 
   const seam: RealSeam = {
     // -- lifecycle -----------------------------------------------------------
@@ -302,6 +305,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     },
 
     dispose(): void {
+      stopCookieWatch?.();
       connection.dispose();
       liveness.dispose();
       cursorCache?.dispose();

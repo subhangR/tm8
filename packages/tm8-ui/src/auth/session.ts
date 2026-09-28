@@ -110,6 +110,21 @@ function clientForActiveServer(): { client: HttpClient; serverId: string } {
 }
 
 /**
+ * A client that presents exactly `token`, without the cookie — the gate's
+ * logout on an enforcing server, sent after the pass has left the store.
+ */
+function gateLogoutClient(serverId: string, token: string): HttpClient {
+  return createHttpClient({
+    baseUrl: routeBaseUrlFor(serverId),
+    fetch: (url, init) => globalThis.fetch(url, init),
+    spaceSession: {
+      credentialFor: () => ({ token, omitCookie: true }),
+      recover: async () => false,
+    },
+  });
+}
+
+/**
  * The same client with NO pass attached — for the two calls that EXCHANGE a
  * credential rather than present one (`auth.login`, `auth.signup`).
  *
@@ -400,12 +415,22 @@ export function signOutOfServer(): void {
   if (pass) {
     // W3: the pinned sessions minted from this pass go first, each revoked
     // with its own token, while their parent still matches.
-    endSpaceSessions(serverId);
-    // Capture-free: the client's getAuthToken still reads the store, so the
-    // revoke must be DISPATCHED before the pass is cleared.
-    void client.call('auth.logout', { body: {} }).catch(() => {
-      // The pass is gone locally regardless; a lost revoke expires server-side.
-    });
+    const cookieCleared = endSpaceSessions(serverId);
+    if (cookieCleared) {
+      // F2: the pinned cookie's own logout must land before the gate's, whose
+      // revoke cascades to it (see `endSpaceSessions`). The pass is cleared
+      // below before this runs, so the gate token is captured, not re-read.
+      const gate = gateLogoutClient(serverId, pass.token);
+      void cookieCleared.then(() => gate.call('auth.logout', { body: {} })).catch(() => {
+        // The pass is gone locally regardless; a lost revoke expires server-side.
+      });
+    } else {
+      // Capture-free: the client's getAuthToken still reads the store, so the
+      // revoke must be DISPATCHED before the pass is cleared.
+      void client.call('auth.logout', { body: {} }).catch(() => {
+        // The pass is gone locally regardless; a lost revoke expires server-side.
+      });
+    }
     clearServerPass(serverId);
   }
   // The auto-owner arm carries no pass and no session to revoke, but the

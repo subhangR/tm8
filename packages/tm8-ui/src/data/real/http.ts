@@ -111,6 +111,13 @@ export interface SpaceSessionPort {
    * that makes the same request worth sending once more.
    */
   recover(error: CollabError, op: OperationName | undefined): Promise<boolean>;
+  /**
+   * The session cookie changed under this page: `auth.space.enter` just
+   * replaced it with a new pinned session. A browser WebSocket keeps the
+   * identity it upgraded with, so the event socket must reconnect to follow
+   * the space (enforce-flip precondition F1). Returns the unsubscribe.
+   */
+  onCookieChanged?(listener: () => void): () => void;
 }
 
 export const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
