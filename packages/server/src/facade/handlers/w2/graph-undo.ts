@@ -13,6 +13,7 @@ import { actorOf, loadActors } from '../../entity-read.js';
 import type { HandlerRegistry } from '../../registry.js';
 import { collectionsAddItem, collectionsQuery, collectionsRemoveItem, queryCollection } from '../collections.js';
 import { toCommandResult, type RpcCommandResult } from '../entities.js';
+import { runsOnListedFrom } from '../../services/w2/runs-on-visibility.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_GRAPH_HOPS = 3;
@@ -89,6 +90,9 @@ export async function queryGraph(
   ): Promise<GraphEdgeRow[]> => {
     const params: unknown[] = [query.spaceId, endpointIds];
     const predicates: string[] = [];
+    // runs_on is drawn only from a session in focus (runs-on-visibility.ts).
+    if (lens.focusId) params.push(lens.focusId);
+    predicates.push(runsOnListedFrom('g', lens.focusId ? `$${params.length}::uuid` : null));
     if (effectiveEdgeTypes.length > 0) {
       params.push(effectiveEdgeTypes);
       predicates.push(`g.type = any($${params.length}::text[])`);
