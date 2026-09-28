@@ -116,7 +116,9 @@ function clientForActiveServer(): { client: HttpClient; serverId: string } {
 function gateLogoutClient(serverId: string, token: string): HttpClient {
   return createHttpClient({
     baseUrl: routeBaseUrlFor(serverId),
-    fetch: (url, init) => globalThis.fetch(url, init),
+    // keepalive: it is sent after the cookie logout settles, so a tab closed
+    // in that window must not take it down.
+    fetch: (url, init) => globalThis.fetch(url, { ...init, keepalive: true }),
     spaceSession: {
       credentialFor: () => ({ token, omitCookie: true }),
       recover: async () => false,

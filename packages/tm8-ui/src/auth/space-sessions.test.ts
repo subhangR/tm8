@@ -14,10 +14,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createHttpClient } from '../data/real/http';
 import { createRealSeam } from '../data/real/seam-real';
 import { FakeClock, fakeSocketPool, flush, type FakeSocket } from '../data/real/test-support';
-import { LOCAL_SERVER_ID } from '../servers/server-key';
+import { ACTIVE_SERVER_KEY, LOCAL_SERVER_ID } from '../servers/server-key';
 import {
   SPACE_SESSIONS_ENFORCED_KEY,
   clearServerPass,
+  noteSpaceSessionsEnforced,
   readSpaceSessionsEnforced,
   writeServerPass,
   type ServerPass,
@@ -516,6 +517,61 @@ describe('enforce-flip precondition F2: sign-out clears the pinned cookie', () =
     // The gate's own logout still goes without the cookie, and nothing is refused.
     expect(logouts[byGate]!.omitCookie).toBe(true);
     expect(logouts.every((s) => s.status === 200)).toBe(true);
+  });
+
+  it('a failed cookie logout falls back to the header revoke of that pin, and the gate logout still lands', async () => {
+    const node = fakeNode('enforce');
+    // The cookie-only logout (no Authorization, credentials sent) fails at the node.
+    vi.stubGlobal('fetch', async (url: string, init: RequestInit = {}) => {
+      const headers = (init.headers ?? {}) as Record<string, string>;
+      if (url.endsWith('/v2/auth/logout') && !headers.authorization && init.credentials !== 'omit') {
+        return new Response(JSON.stringify({ error: { code: 'upstream_unavailable', message: 'down', requestId: 'r' } }), { status: 503 });
+      }
+      return node.fetchImpl(url, init);
+    });
+    const { session, client } = clientFor();
+    await session.enterSpace(SPACE_A);
+    await client.call('inbox.list'); // learns enforce
+    await session.enterSpace(SPACE_B);
+    await client.call('inbox.list');
+    const pinB = node.sent.at(-1)!.authorization!;
+    expect(node.pinnedSpace(pinB)).toBe(SPACE_B);
+
+    signOutOfServer();
+
+    await vi.waitFor(() => expect(node.revoked.has(GATE)).toBe(true));
+    await vi.waitFor(() => expect(node.revoked.has(pinB)).toBe(true));
+    const revokeB = node.sent.find((s) => s.path === '/v2/auth/logout' && s.authorization === pinB);
+    expect(revokeB).toMatchObject({ omitCookie: true, status: 200 });
+  });
+
+  it('a named server is not the page\'s cookie: no cookie-only call, and the gate logout goes out at once', async () => {
+    const REMOTE = 'remote-1';
+    localStorage.setItem(ACTIVE_SERVER_KEY, REMOTE);
+    writeServerPass(REMOTE, gatePass);
+    noteSpaceSessionsEnforced(REMOTE);
+    const node = fakeNode('enforce');
+    const proxy = `/v2/server-connections/${REMOTE}/proxy`;
+    const calls: Array<{ path: string; authorization: string | null; credentials: RequestCredentials | undefined }> = [];
+    vi.stubGlobal('fetch', (url: string, init: RequestInit = {}) => {
+      const path = url.replace(proxy, '');
+      const headers = (init.headers ?? {}) as Record<string, string>;
+      const authorization = headers.authorization?.replace(/^Bearer /, '') ?? null;
+      calls.push({ path, authorization, credentials: init.credentials });
+      // Every logout but the gate's hangs: a sign-out that waited on one would
+      // never send the gate logout within this test.
+      if (path === '/v2/auth/logout' && authorization !== GATE) return new Promise<Response>(() => {});
+      return node.fetchImpl(path, init);
+    });
+    const session = spaceSessionFor(REMOTE);
+    await session.enterSpace(SPACE_A);
+
+    signOutOfServer();
+
+    await vi.waitFor(() => expect(node.revoked.has(GATE)).toBe(true));
+    const logouts = calls.filter((c) => c.path === '/v2/auth/logout');
+    expect(logouts.some((c) => c.authorization === null)).toBe(false);
+    expect(logouts.some((c) => c.credentials === 'include')).toBe(false);
   });
 
   it('under agents sign-out is what it was: one gate logout, cookie included, no cookie-only call', async () => {

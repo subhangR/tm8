@@ -862,20 +862,28 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
     onReconnect(cb) { reconnectSubs.add(cb); return () => { reconnectSubs.delete(cb); }; },
 
     reconnect() {
-      if (disposed || socket === null) return;
-      // `close()` silences the old socket's handlers, so no `handleClose` runs
-      // and no backoff is scheduled for a close this client chose.
-      socket.close();
-      socket = null;
-      connecting = false;
-      stopIdleWatchdog();
-      if (reconnectTimer !== null) { timers.clearTimeout(reconnectTimer); reconnectTimer = null; }
-      reconnectAttempt = 0;
+      if (disposed) return;
       // Refusals were the OLD identity's answers. The new one may be allowed
       // what that one was not, and `openSpace` rejects on a recorded refusal.
       refusals.clear();
+      // A backoff ladder built against the old credential is not this one's.
+      reconnectAttempt = 0;
+      if (reconnectTimer !== null) { timers.clearTimeout(reconnectTimer); reconnectTimer = null; }
+      if (socket !== null) {
+        // `close()` silences the old socket's handlers, so no `handleClose`
+        // runs and no backoff is scheduled for a close this client chose.
+        socket.close();
+        socket = null;
+        connecting = false;
+        stopIdleWatchdog();
+      } else if (open.size === 0) {
+        // Down with nothing open (a switch closed the old space first): the
+        // next `openSpace` connects fresh, with whatever cookie is current.
+        return;
+      }
       // `handleOpen` re-subscribes every open space and resumes each from its
-      // cursor, so nothing delivered in the gap is lost.
+      // cursor, so nothing delivered in the gap is lost. From polling or a
+      // pending backoff this is simply the next attempt, made now.
       connect();
     },
 

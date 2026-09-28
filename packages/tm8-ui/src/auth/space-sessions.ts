@@ -91,6 +91,8 @@ const entering = new Map<string, Promise<PinnedSession | null>>();
 const cookieListeners = new Map<string, Set<() => void>>();
 /** serverId → the pin whose `auth.space.enter` last set the cookie on this page. */
 const cookiePins = new Map<string, PinnedSession>();
+/** How long the gate logout may wait on the cookie logout at sign-out. */
+export const COOKIE_LOGOUT_TIMEOUT_MS = 3_000;
 
 function pinKey(serverId: string, spaceId: string): string {
   return `${passKeyFor(serverId)}\u0000${spaceId}`;
@@ -255,8 +257,13 @@ async function mint(serverId: string, spaceId: string): Promise<PinnedSession | 
 async function logoutCookie(serverId: string): Promise<boolean> {
   const client = createHttpClient({
     baseUrl: routeBaseUrlFor(serverId),
-    fetch: (url, init) => globalThis.fetch(url, { ...init, credentials: 'include' }),
+    // keepalive: a sign-out is often the last act before the tab closes, and
+    // the request must outlive the page.
+    fetch: (url, init) => globalThis.fetch(url, { ...init, credentials: 'include', keepalive: true }),
     getAuthToken: () => null,
+    // Short, because the gate's own logout waits on this one (see
+    // `endSpaceSessions`). A slow node falls back to the header revoke.
+    timeoutMs: COOKIE_LOGOUT_TIMEOUT_MS,
   });
   try {
     await client.call('auth.logout', { body: {} });

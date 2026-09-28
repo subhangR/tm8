@@ -922,3 +922,44 @@ describe('connection: half-open watchdog — silence is probed, not trusted', ()
     h.conn.dispose();
   });
 });
+
+describe('reconnect() — the credential changed under the socket (W3 F1)', () => {
+  const S = 'sp-1' as SpaceId;
+
+  it('on a live socket: closes it without backoff and opens a fresh one that re-subscribes', () => {
+    const h = mk();
+    h.conn.openSpace(S);
+    h.pool.last().openIt();
+    const first = h.pool.last();
+
+    h.conn.reconnect();
+
+    expect(first.closeCalls).toBe(1);
+    expect(h.pool.sockets).toHaveLength(2);
+    h.pool.last().openIt();
+    expect(h.pool.last().frames()[0]).toEqual({ type: 'subscribe', spaceIds: [S] });
+  });
+
+  it('while down (backoff pending): drops the old refusals and ladder and connects now, not at the old delay', () => {
+    const h = mk();
+    h.conn.openSpace(S);
+    h.pool.last().openIt();
+    h.pool.last().deliver({ type: 'control.refused', frame: 'subscribe', spaceId: S, reason: 'forbidden' });
+    expect(h.conn.refusalOf(S)).toBeDefined();
+    h.pool.last().drop(); // backoff scheduled, socket === null
+    const before = h.pool.sockets.length;
+
+    h.conn.reconnect();
+
+    expect(h.conn.refusalOf(S)).toBeUndefined();
+    expect(h.pool.sockets).toHaveLength(before + 1);
+  });
+
+  it('down with nothing open: no socket is made; the next openSpace connects fresh', () => {
+    const h = mk();
+    h.conn.reconnect();
+    expect(h.pool.sockets).toHaveLength(0);
+    h.conn.openSpace(S);
+    expect(h.pool.sockets).toHaveLength(1);
+  });
+});
