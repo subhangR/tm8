@@ -74,7 +74,7 @@ import type {
   ServiceKeyProviderName, ServiceKeyView,
   CredentialPolicySource, CredentialsSpaceCommandInput, CredentialsSpaceCreateInput,
   CredentialsSpaceDeleteResult, CredentialsSpaceListView, CredentialsSpacePolicySetInput,
-  CredentialsSpacePolicySetResult, CredentialsSpacePolicyView, CredentialsSpaceRekeyInput,
+  CredentialsSpacePolicySetResult, CredentialsSpacePolicyView, CredentialsSpaceReadinessView, CredentialsSpaceRekeyInput,
   CredentialsSpaceRenameInput, CredentialsSpaceSetVisibilityInput, CredentialsSpaceAddMineInput, CredentialsSpaceDefaultConsentInput,
   NodeCredentialPolicyEntry, NodeCredentialStatusEntry,
   NodeCredentialsPolicySetInput, NodeCredentialsStatusView, NodeMetricsView, SpaceCredentialPolicyEntry,
@@ -2301,6 +2301,37 @@ export const CredentialsSpacePolicyViewSchema: z.ZodType<CredentialsSpacePolicyV
   spaceId: z.string(),
   providers: z.array(SpaceCredentialPolicyEntrySchema),
   node: z.array(NodeCredentialPolicyEntrySchema),
+}).strict();
+
+const CredentialReadinessProviderSchema = z.object({
+  ready: z.boolean(),
+  via: z.enum(['my_default', 'space_default']).nullable(),
+  credentialId: z.string().nullable(),
+  myDefaultId: z.string().nullable(),
+  spaceDefaultId: z.string().nullable(),
+  spaceSourceAllowed: z.boolean(),
+  activeCredentials: z.number().int().nonnegative(),
+  reason: z.enum(['no_credential', 'stale', 'policy_excludes_space']).nullable(),
+}).strict();
+
+export const CredentialsSpaceReadinessViewSchema: z.ZodType<CredentialsSpaceReadinessView> = z.object({
+  spaceId: z.string(),
+  canLaunch: z.object({
+    ready: z.boolean(),
+    missing: z.array(SpaceCredentialProviderNameSchema),
+    providers: z.object({
+      anthropic: CredentialReadinessProviderSchema,
+      openai: CredentialReadinessProviderSchema,
+      github: CredentialReadinessProviderSchema,
+    }).strict(),
+  }).strict(),
+  canPoll: z.object({
+    ready: z.boolean(),
+    missing: z.array(SpaceCredentialProviderNameSchema),
+    credentialId: z.string().nullable(),
+    activeSpaceOwnedCredentials: z.number().int().nonnegative(),
+    reason: z.enum(['no_space_owned_credential', 'stale']).nullable(),
+  }).strict(),
 }).strict();
 
 export const CredentialsSpacePolicySetInputSchema: z.ZodType<CredentialsSpacePolicySetInput> = z.object({

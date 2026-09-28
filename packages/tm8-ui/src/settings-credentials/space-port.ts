@@ -32,6 +32,7 @@ import type {
   SpaceCredentialVisibilityName,
   CredentialsSpacePolicySetResult,
   CredentialsSpacePolicyView,
+  CredentialsSpaceReadinessView,
   NodeCredentialPolicyEntry,
   NodeCredentialsStatusView,
   SpaceCredentialProviderName,
@@ -71,6 +72,8 @@ export interface SpaceCredentialsPort {
   setDefault(credentialId: string): Promise<SpaceCredentialView>;
   remove(credentialId: string): Promise<CredentialsSpaceDeleteResult>;
   policy(): Promise<CredentialsSpacePolicyView>;
+  /** S7: can-launch (for me, per provider) and can-poll (the space's own GitHub), apart. */
+  readiness(): Promise<CredentialsSpaceReadinessView>;
   setPolicy(
     provider: SpaceCredentialProviderName,
     allowedSources: CredentialPolicySource[] | null,
@@ -134,6 +137,7 @@ export function spaceCredentialsPortFromSeam(
     setDefault: (credentialId) => seam.credentials.space.setDefault(credentialId),
     remove: (credentialId) => seam.credentials.space.remove(credentialId),
     policy: () => seam.credentials.space.policy(spaceId),
+    readiness: () => seam.credentials.space.readiness(spaceId),
     setPolicy: (provider, allowedSources) => seam.credentials.space.setPolicy(spaceId, provider, allowedSources),
     nodeStatus: () => seam.credentials.node.status(),
     setNodePolicy: (provider, allowNode) => seam.credentials.node.setPolicy(provider, allowNode),

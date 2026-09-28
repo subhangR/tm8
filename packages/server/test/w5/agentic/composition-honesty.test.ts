@@ -91,6 +91,7 @@ const CREDENTIAL_SEAM = new Set<OperationName>([
   'credentials.space.myDefault.set',
   'credentials.space.myDefault.clear',
   'credentials.space.usage',
+  'credentials.space.readiness',
   'node.credentials.status',
   'node.credentials.policy.set',
   // W6 (250/251): spaceLinks.* mount on the same seam — the node key's root

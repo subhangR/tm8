@@ -942,6 +942,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
               loadCredentialStatus={data.seam.credentials.status}
               loadSpaceCredentials={data.seam.credentials.space.list}
               loadSpacePolicy={data.seam.credentials.space.policy}
+              loadSpaceReadiness={data.seam.credentials.space.readiness}
               onCancel={() => props.onLaunchCancel?.()}
               onLaunch={(config) => props.onLaunchSubmit?.(config)}
               /* Passed straight through, unbound to any sheet state — see the

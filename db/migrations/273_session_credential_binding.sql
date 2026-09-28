@@ -2,7 +2,7 @@
 -- session_credential_binding — R2: every session records its credential binding (credentials
 -- release 1, stage S1; spec doc 01a0e248 §4 R2, §9 gates 1-2, §11 row S1;
 -- task 01a0e268-0cb3).
--- ordinal: placeholder 99x; the merge coordinator assigns the real number at merge (merge order, after main's tail at merge)
+-- 273 (placeholder 99x on lane S1; set at the merge position after main 79efe3fb's 272)
 --
 -- RELEASE 1 IS ADDITIVE. The member and node rungs keep working; a session on
 -- them records `legacy`. Nothing here refuses a launch that ran before.
