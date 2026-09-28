@@ -344,6 +344,13 @@ false`. There is no input that can make it mint an admin.
 4. From the couch, over the tailnet: the sign-in card, and the password from
    step 2 works. **Day one, no extra setup** — this is the whole point of D3.
 
+5. **Before the first agent launch**, connect a credential in the Space
+   (Space settings → Credentials). Claiming the node settles *tm8 identity*
+   only. Nothing is adopted from the machine's own agent logins at install, and
+   no ambient-login path will be added. Once credentials release 2 ships, a
+   Space with no connected credential refuses to launch (credentials spec doc
+   `01a0e248`, §10.4).
+
 ### 5.2 Converting to multiplayer
 
 ```

@@ -145,6 +145,15 @@ it — `install.sh --systemd` pins `server`. The old values `single` and `multi`
 still work and mean `personal` and `server`; the boot line says they are
 deprecated.
 
+### Before your first agent: connect a credential
+
+"Zero-login" above is about *tm8 identity*: who you are to the node. It
+never signs an agent in on your behalf. Once the node is claimed, **connect a
+credential in the Space (Space settings → Credentials) before the first agent
+launch.** Nothing is adopted from the machine's own `claude` or `codex` logins
+at install. Once credentials release 2 ships, a Space with no connected
+credential refuses to launch.
+
 ---
 
 ## 2. Your first Space
@@ -257,6 +266,10 @@ are changing.
 ---
 
 ## 5. Put an agent on it
+
+**First, connect a credential** to the Space (Space settings → Credentials; see
+§1, *Before your first agent*). Until credentials release 2 ships, the fallback
+below still applies.
 
 **First, one prerequisite.** tm8 stores no agent credential of its own — a
 session runs *your machine's* `claude` or `codex` login. If neither is installed
