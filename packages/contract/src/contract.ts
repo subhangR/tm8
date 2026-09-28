@@ -1893,6 +1893,35 @@ export interface IdentityProfileView {
   globalId: string | null;
 }
 
+/**
+ * `TM8_SPACE_SESSIONS` — which sessions this server pins to one space (W3):
+ * `off` pins none, `agents` (the default) pins agent sessions, `enforce` also
+ * requires a human to enter a space (`auth.space.enter`) before acting in it.
+ */
+export type SpaceSessionsMode = 'off' | 'agents' | 'enforce';
+
+/** `identity.get` — who the caller is, and how this server gates spaces. */
+export interface IdentityGetResult {
+  identityId: string;
+  accountId: string;
+  username: string;
+  displayName: string | null;
+  avatar: string | null;
+  email: string | null;
+  globalId: string | null;
+  isNodeAdmin: boolean;
+  isOwner: boolean;
+  status: string;
+  actingAs: string | null;
+  memberships: Array<{ spaceId: string; memberId: string; role: string }>;
+  /**
+   * The node's space-sessions mode, so a client knows up front whether a
+   * space pin is required instead of discovering it from a 403. A node that
+   * predates the field omits it; read absent as "unknown", not `agents`.
+   */
+  spaceSessions?: SpaceSessionsMode;
+}
+
 // ---------------------------------------------------------------------------
 // auth.* — local accounts (Identity v2 Stage 1, doc 4 §6).
 //

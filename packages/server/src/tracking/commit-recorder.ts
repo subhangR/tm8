@@ -96,13 +96,17 @@ export async function runCommitRecorderTick(
 ): Promise<JobOutcome> {
   const claims = await options.claims();
 
+  // The folder comes through `worktree_repo_source` (274), not a join on
+  // `public.projects`: 234 shows that table to a gate admin only, and the
+  // loopback owner need not be one (R845-F4). It returns the FOLDER name, so
+  // the `local:<name>` key below is the one existing commit rows carry.
   const lanes = await options.db.query<LaneRow>(
     claims,
     `select w.entity_id as worktree_id, w.path, w.base_commit_oid,
-            e.src_id as session_id, p.repo_url, p.name as project_name
+            e.src_id as session_id, src.repo_url, src.folder_name as project_name
        from public.worktrees w
        join public.edges e on e.dst_id = w.entity_id and e.type = 'in_worktree'
-       join public.projects p on p.id = w.project_id
+       cross join lateral public.worktree_repo_source(w.entity_id) src
       where w.status = 'active'
       order by w.updated_at desc
       limit $1`,

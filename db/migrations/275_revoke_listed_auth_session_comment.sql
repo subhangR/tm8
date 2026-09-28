@@ -1,5 +1,5 @@
 -- =============================================================================
--- 276 (PROVISIONAL; renumbered at merge) — revoke_listed_auth_session: the
+-- 275 — revoke_listed_auth_session: the
 -- comment states the node-admin arm correctly (task 01a0dc09, from the #857
 -- security review 5324284172).
 --
