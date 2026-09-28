@@ -18,7 +18,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { SERVICE_KEY_PROVIDERS } from '../../src/credentials/service-key-store.js';
 import type { Db, DbClaims, Querier } from '../../src/db/types.js';
 import { registerExecutionHandlers } from '../../src/facade/execution-handlers.js';
 import { HandlerRegistry } from '../../src/facade/registry.js';
@@ -157,10 +156,6 @@ describe('a stored TypeSafe key never reaches a spawned session', () => {
     vi.unstubAllEnvs();
     if (dataDir) await rm(dataDir, { recursive: true, force: true });
     if (binDir) await rm(binDir, { recursive: true, force: true });
-  });
-
-  it('is marked not-injected in the service key table', () => {
-    for (const provider of Object.values(SERVICE_KEY_PROVIDERS)) expect(provider.injectedAtSpawn).toBe(false);
   });
 
   it('spawn with a stored member key AND a node TYPESAFE_API_KEY carries nothing TypeSafe anywhere', async () => {

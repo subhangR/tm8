@@ -103,7 +103,6 @@ import {
   credentialSetupState,
   credentialsPortFromSeam,
   spaceCredentialsPortFromSeam,
-  serviceKeysPortFromSeam,
   readSetupDismissed,
   setupNudgeOf,
   shouldOfferSetup,
@@ -1607,7 +1606,6 @@ export function GateApp(props: GateAppProps = {}) {
   );
   // Service keys (TypeSafe, for ✦ Ask Jev) ride the same section; account-
   // scoped, so no space is bound.
-  const serviceKeysPort = useMemo(() => serviceKeysPortFromSeam(data.seam), [data.seam]);
   // SC-5: the space's own credentials and the node's fallback policy. One
   // port for both sections, bound to the same (seam, space) pair.
   const spaceCredentialsPort = useMemo(
@@ -2638,7 +2636,6 @@ export function GateApp(props: GateAppProps = {}) {
                             credentials: (
                               <CredentialsSection
                                 port={credentialsPort}
-                                serviceKeysPort={serviceKeysPort}
                                 serverBaseUrl={activeServer.routeBaseUrl}
                                 /* Settings is the OTHER reader of the same
                                    derivation. Without this, connecting GitHub

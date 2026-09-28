@@ -101,7 +101,6 @@ import {
   type PatchTaskInput,
   type PostMessageInput,
   type CredentialsStatusView,
-  type CredentialsServiceKeysStatusView,
   type CredentialsSpacePolicyView,
   type CredentialsSpaceReadinessView,
   type SpaceCredentialProviderName,
@@ -1240,10 +1239,6 @@ export function createFixtureSeam(): FixtureSeam {
    * describe what connecting it would do). A surface that only renders
    * routing when `connected` is true fails on the second one.
    */
-  const serviceKeysState: CredentialsServiceKeysStatusView = {
-    keys: [{ provider: 'typesafe', connected: false, keyHint: null, updatedAt: null, nodeFallback: false }],
-    store: 'present',
-  };
   /**
    * SPACE credentials (SC-3). Scripted so every state a screen must say is
    * reachable without a node: an anthropic group WITH a default (one the
@@ -5522,28 +5517,6 @@ export function createFixtureSeam(): FixtureSeam {
           stored: false,
           terminated: true,
         };
-      },
-
-      // Service keys: none stored and no node fallback, so the TypeSafe row
-      // opens on its empty "paste a key" state — the case a new member meets.
-      async serviceKeys() {
-        return clone(serviceKeysState);
-      },
-
-      async saveServiceKey(provider, apiKey) {
-        const entry = serviceKeysState.keys.find((key) => key.provider === provider)!;
-        entry.connected = true;
-        entry.keyHint = apiKey.trim().slice(-4);
-        entry.updatedAt = tick();
-        return clone(entry);
-      },
-
-      async removeServiceKey(provider) {
-        const entry = serviceKeysState.keys.find((key) => key.provider === provider)!;
-        entry.connected = false;
-        entry.keyHint = null;
-        entry.updatedAt = null;
-        return { provider, revoked: true };
       },
 
       space: {

@@ -283,9 +283,9 @@ export interface JevSuggestions {
 
 }
 
-/** Every group said `no_key`: neither this member nor this node has a TypeSafe key. */
-export const JEV_UNAVAILABLE_COPY = 'Ask Jev needs a TypeSafe key, and none is saved for you.';
-export const JEV_ADD_KEY_COPY = 'Add yours in Settings → Agent credentials';
+/** Every group said `no_key`: the space has no TypeSafe key for this member (no my_default, no space default). */
+export const JEV_UNAVAILABLE_COPY = 'Ask Jev needs a TypeSafe key, and this space has none for you.';
+export const JEV_ADD_KEY_COPY = 'Add one under Space settings → Credentials';
 export const JEV_UNWIRED_REASON = 'Jev isn’t wired on this surface, so there is nobody to ask.';
 export const JEV_NO_HOST_REASON = 'This surface can’t take Jev’s picks yet — tick them yourself.';
 export const JEV_NOT_ANSWERED_REASON = 'Jev hasn’t answered this group yet — ask, then apply.';

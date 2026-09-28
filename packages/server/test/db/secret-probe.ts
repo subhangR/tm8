@@ -10,7 +10,7 @@
 //      ciphertext — 251:59 ciphertext, 206:142 secret_ciphertext, 203:48 key_ciphertext,
 //                   093:38 token_ciphertext; secret-box.ts:10 ciphertext,
 //                   space-credential-store.ts:138 secretCiphertext,
-//                   service-key-store.ts:57 keyCiphertext, github-credential-store.ts:21 tokenCiphertext
+//                   203 read_account_service_key keyCiphertext, github-credential-store.ts:21 tokenCiphertext
 //      nonce      — 251:60 nonce, 206:143 secret_nonce, 203:49 key_nonce, 093:39 token_nonce;
 //                   secret-box.ts:11 nonce, secretNonce, keyNonce, tokenNonce (same files, next line)
 //      aad        — 251:61 aad (the binding string, not itself secret, but it names the sealed row)

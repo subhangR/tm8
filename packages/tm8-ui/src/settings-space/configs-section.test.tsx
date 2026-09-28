@@ -22,7 +22,7 @@ const VIEW: SpaceConfigsView = {
     visible: true,
     knobs: [
       knob({ name: 'TM8_DB_POOL_MAX', group: 'Storage & database', value: { kind: 'value', text: '16' }, source: 'env', default: '8', definedAt: 'packages/server/src/http/config.ts:471' }),
-      knob({ name: 'TYPESAFE_API_KEY', group: 'Keys', value: { kind: 'secret', present: true }, source: 'env' }),
+      knob({ name: 'ANTHROPIC_API_KEY', group: 'Keys', value: { kind: 'secret', present: true }, source: 'env' }),
     ],
   },
   cli: [knob({ name: 'TM8_BASE_URL', group: 'CLI', value: { kind: 'unobservable', reason: 'r' }, source: 'env' })],
@@ -39,7 +39,7 @@ describe('ConfigsSection', () => {
     expect(pool.textContent).toContain('default 8');
     expect(pool.textContent).toContain('packages/server/src/http/config.ts:471');
     expect(pool.textContent).toContain('set TM8_DB_POOL_MAX in the server environment and restart');
-    expect(screen.getByTestId('config-TYPESAFE_API_KEY').textContent).toContain('set (value hidden)');
+    expect(screen.getByTestId('config-ANTHROPIC_API_KEY').textContent).toContain('set (value hidden)');
     expect(screen.getByTestId('config-MEMORY_TICK_LIMIT').textContent).toContain('code constant');
     expect(screen.getByTestId('config-capabilities.launch.harnessSurface').textContent).toContain('persona');
     expect(screen.getByTestId('config-TM8_BASE_URL').textContent).toContain('set TM8_BASE_URL in your shell');

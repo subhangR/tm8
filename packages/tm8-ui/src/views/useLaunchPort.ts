@@ -33,6 +33,7 @@ import { newLaunchMutationId, pluginFactsOf, type ProfileResolution } from '../d
 import { entityPatchInput } from '../authoring';
 import { memoryCandidateRow, REFERENCE_KINDS } from '../domain/launch-selection';
 import { attachmentsFor } from '../files/port';
+import { jevKeyStateOf, type JevKeyState } from '../jev';
 import type { LaunchSources } from '../panels';
 import type { GateData } from './useGateData';
 
@@ -219,8 +220,18 @@ export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): 
       .map((s) => ({ id: s.id, title: s.title }));
   }, [data.seam]);
 
-  /* ✦'s key: the member's stored TypeSafe key, else the node's fallback. */
-  const jevKeyStatus = useCallback(() => data.seam.credentials.serviceKeys(), [data.seam]);
+  /* ✦'s key: the space's TypeSafe credential (my_default, else the space
+     default). There is no member or node fallback. */
+  const jevKeyStatus = useCallback(async (): Promise<JevKeyState> => {
+    if (!data.spaceId) return 'unknown';
+    try {
+      return jevKeyStateOf(await data.seam.credentials.space.list(data.spaceId));
+    } catch {
+      // An unreadable list says nothing about the key: ✦ stays in colour
+      // until an ask answers, never greyed on a failed read.
+      return 'unknown';
+    }
+  }, [data.seam, data.spaceId]);
 
   return useMemo(
     () => ({

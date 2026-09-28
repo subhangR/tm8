@@ -178,7 +178,6 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'TM8_LIVEKIT_API_SECRET', group: 'Previews & voice', summary: 'LiveKit API secret.', default: null, definedIn: CONFIG, secret: true },
 
   // ── Keys ─────────────────────────────────────────────────────────────
-  { name: 'TYPESAFE_API_KEY', group: 'Keys', summary: 'Node key for Jev (TypeSafe), used when a member has none.', default: null, definedIn: MAIN, secret: true },
   { name: 'ANTHROPIC_API_KEY', group: 'Keys', summary: 'Node fallback Anthropic key for launches.', default: null, definedIn: NODE_KEYS, secret: true },
   { name: 'OPENAI_API_KEY', group: 'Keys', summary: 'Node fallback OpenAI key for launches.', default: null, definedIn: NODE_KEYS, secret: true },
   { name: 'GH_TOKEN', group: 'Keys', summary: 'Node fallback GitHub token (launches and PR tracking).', default: null, definedIn: NODE_KEYS, secret: true },

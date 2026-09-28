@@ -519,9 +519,6 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       disconnect: (provider) => ops.credentialsDisconnect(provider),
       startLogin: (spaceId, provider, spaceCredential) => ops.credentialsStartLogin(spaceId, provider, spaceCredential),
       finishLogin: (workSessionId) => ops.credentialsFinishLogin(workSessionId),
-      serviceKeys: () => ops.credentialsServiceKeys(),
-      saveServiceKey: (provider, apiKey) => ops.credentialsSaveServiceKey(provider, apiKey),
-      removeServiceKey: (provider) => ops.credentialsRemoveServiceKey(provider),
       space: {
         list: (spaceId) => ops.spaceCredentialsList(spaceId),
         create: (spaceId, input) => ops.spaceCredentialsCreate(spaceId, input),

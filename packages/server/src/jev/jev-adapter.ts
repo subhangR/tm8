@@ -5,11 +5,12 @@
  * testable with a fake and the client package never learns about the graph.
  *
  * Which key a request spends is decided per request by `advisor.ts` (the
- * caller's own, else the node's); this file only turns a key into an advisor.
+ * space's `typesafe` credential, else none); this file only turns a key into
+ * an advisor. It reads no environment: there is no node key.
  */
 import { createHash } from 'node:crypto';
 
-import { adviseModel, createJevClient, jevClientFromEnv, rankByRelevance, type JevClient } from '@tm8/jev';
+import { adviseModel, createJevClient, rankByRelevance, type JevClient } from '@tm8/jev';
 
 import type { JevAdvisorPort } from './port.js';
 
@@ -18,11 +19,6 @@ function advisorOf(client: JevClient): JevAdvisorPort {
     rank: ({ task, candidates, noun }) => rankByRelevance(client, { task, candidates, noun }),
     model: (subject) => adviseModel(client, subject),
   };
-}
-
-export function jevAdvisorFromEnv(env: Readonly<Record<string, string | undefined>>): JevAdvisorPort | null {
-  const client = jevClientFromEnv(env);
-  return client ? advisorOf(client) : null;
 }
 
 /** How many distinct keys keep a built advisor. Beyond it the oldest is rebuilt on next use. */

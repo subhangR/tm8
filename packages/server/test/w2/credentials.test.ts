@@ -274,7 +274,6 @@ function bodyFor(opName: OperationName): unknown {
 function paramsFor(opName: OperationName): Record<string, string> {
   if (opName === 'credentials.delete') return { provider: 'anthropic' };
   if (opName === 'credentials.loginSessions.finish') return { id: SESSION_ID };
-  if (opName.startsWith('credentials.serviceKeys.')) return { provider: 'anthropic' };
   if (opName === 'credentials.space.policy.set' || opName === 'node.credentials.policy.set') {
     return { spaceId: SPACE_ID, provider: 'anthropic' };
   }
@@ -299,10 +298,6 @@ describe('the four credential operations exist in the contract', () => {
       'DELETE /v2/identity/credentials/:provider',
       'POST /v2/identity/credentials/login-sessions',
       'POST /v2/identity/credentials/login-sessions/:id/finish',
-      // Jev lane K: the TypeSafe service key — its own resource, never a provider above.
-      'GET /v2/identity/credentials/service-keys',
-      'PUT /v2/identity/credentials/service-keys/:provider',
-      'DELETE /v2/identity/credentials/service-keys/:provider',
       // SC-3: space credentials — keyed by space for list/create/policy, by
       // credential id for the per-credential commands.
       'GET /v2/spaces/:spaceId/credentials',

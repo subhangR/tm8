@@ -4,6 +4,7 @@ import {
   disabledSourcesNote,
   githubAuthorshipLine,
   launchSourceOptions,
+  launchableSpaceCredentials,
   parseLaunchSourceChoice,
   sourcePolicyReason,
 } from './launch-sources';
@@ -17,6 +18,18 @@ const policy = (over: Partial<CredentialsSpacePolicyView>): CredentialsSpacePoli
   ({ spaceId: 's', providers: [], node: [], ...over });
 
 describe('launch source choices', () => {
+  it('never offers a server-only typesafe credential as a launch or pinned choice, even as the space default', () => {
+    const list = [
+      row({ id: 'ts', provider: 'typesafe', shape: 'api_key', isDefault: true }),
+      row({ id: 'gh', provider: 'github', shape: 'token' }),
+    ];
+    for (const provider of ['anthropic', 'openai', 'github'] as const) {
+      expect(launchableSpaceCredentials(provider, list).map((c) => c.id)).not.toContain('ts');
+    }
+    // Control: the same list does yield a launchable row, so the filter is not simply empty.
+    expect(launchableSpaceCredentials('github', list).map((c) => c.id)).toEqual(['gh']);
+  });
+
   it('decodes a choice without ever producing an account', () => {
     expect(parseLaunchSourceChoice('')).toBeNull();
     expect(parseLaunchSourceChoice('member')).toEqual({ source: 'member', spaceCredentialId: null });

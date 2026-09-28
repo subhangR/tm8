@@ -41,4 +41,4 @@ export {
 export { modelApplyRefusal, modelLabel } from './model-apply';
 export { formatGroupCost, formatRunCost, formatUsd } from './format';
 import './jev.css';
-export { openJevKeySettings } from './credentials-link';
+export { jevKeyStateOf, openJevKeySettings, type JevKeyState } from './credentials-link';

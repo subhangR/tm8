@@ -18,10 +18,9 @@
  *      retry free), and the run's running total, which is what `run` returns.
  *
  * WHOSE KEY is decided per request (`advisor.ts`): the space's `typesafe`
- * credential (my_default, else the space default), else — release 1 only —
- * the caller's own 203 key from Settings → agent credentials, else the node's
- * `TYPESAFE_API_KEY`.
- * Neither is an ANSWER, not an error: every requested group is `failed:
+ * credential (my_default, else the space default), else none. There is no
+ * member or node fallback (spec 01a0e248 decision 10).
+ * No key is an ANSWER, not an error: every requested group is `failed:
  * no_key` and the response is still 200, so the UI can say the key is missing
  * and Launch is unaffected.
  *
@@ -150,8 +149,8 @@ export function registerJevHandlers(
     const spaceId = requireUuidParam(ctx, 'spaceId');
     const owner = await deps.owner();
     const claims = claimsFor(owner, ctx);
-    // THIS caller's advisor in THIS space: the space's key, else (release 1)
-    // their 203 key, else the node's, else null (no_key).
+    // THIS caller's advisor in THIS space: the space's key (my_default, else
+    // the space default), else null (no_key).
     const advisor = await resolveAdvisor(claims, { spaceId });
     // The profile the launch would pin decides the budgets, floors and index
     // switch. Unresolvable (no such profile, a teammate not yet readable) is

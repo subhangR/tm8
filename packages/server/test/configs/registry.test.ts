@@ -160,7 +160,7 @@ const MEMBER: DbClaims = { identityId: 'i', nodeAdmin: false } as DbClaims;
 describe('spaces.configs redaction', () => {
   const env = {
     TM8_DATABASE_URL: 'postgres://u:hunter2@db/tm8',
-    TYPESAFE_API_KEY: 'ts-SECRET-KEY',
+    ANTHROPIC_API_KEY: 'ts-SECRET-KEY',
     TM8_HARNESS_SURFACE: 'inherit',
     TM8_DB_POOL_MAX: '16',
   };

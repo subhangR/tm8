@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   ContextBudgets,
-  CredentialsServiceKeysStatusView,
   ExecutionDispatchResult,
   ExecutionSpawnInput,
   SpawnSelectionGroup,
@@ -35,6 +34,7 @@ import {
   openJevKeySettings,
   useJevSuggestions,
   type JevApplyHost,
+  type JevKeyState,
   type JevPort,
 } from '../jev';
 import { composeLaunchSelection, type LaunchContextRow } from '../domain/launch-selection';
@@ -146,11 +146,12 @@ export interface LaunchComposerPopupProps {
    */
   onDispatch?: (note?: string, clientMutationId?: string) => void | Promise<unknown>;
   /**
-   * `credentials.serviceKeys.status` — whether ✦ has a TypeSafe key to use
-   * (the member's own, else the node's) BEFORE the first click. Absent ⇒ ✦
-   * shows in colour until an ask comes back no_key.
+   * Whether ✦ has a TypeSafe key to spend in this space (the space's
+   * `typesafe` credential: my_default, else the space default) BEFORE the
+   * first click — `jevKeyStateOf` over `credentials.space.list`. Absent, or
+   * `unknown` ⇒ ✦ shows in colour until an ask comes back no_key.
    */
-  jevKeyStatus?: () => Promise<CredentialsServiceKeysStatusView>;
+  jevKeyStatus?: () => Promise<JevKeyState>;
   /**
    * Sessions working on the subject created since a time. After a spawn
    * TIMEOUT the card asks this before offering a retry: a retry while the
@@ -190,7 +191,7 @@ const IN_FULL_REFUSAL =
 
 const TEAMMATES_UNSENT = 'Not sent yet — the node can’t take teammates in a launch’s selection (coming with selection.teammateIds).';
 
-const NO_KEY_WORDS = 'Jev is off — no key. Add your TypeSafe key in Settings → Agent credentials.';
+const NO_KEY_WORDS = 'Jev is off — no key. Add a TypeSafe key under Space settings → Credentials.';
 
 const groupOf = (row: { kind: string }): SpawnSelectionGroup => (
   row.kind === 'memory' ? 'memories' : row.kind === 'skill' ? 'skills' : 'references'
@@ -582,10 +583,8 @@ export function LaunchComposerPopup({
     const read = keyStatusRef.current;
     if (!read) return;
     let alive = true;
-    read().then((view) => {
-      if (!alive || view.store === 'absent') return;
-      const key = view.keys.find((k) => k.provider === 'typesafe');
-      setJevKey(key && (key.connected || key.nodeFallback) ? 'yes' : 'none');
+    read().then((state) => {
+      if (alive) setJevKey(state);
     }, () => { /* unknown stays unknown: ✦ stays in colour until an ask says no_key */ });
     return () => { alive = false; };
   }, []);

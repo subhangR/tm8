@@ -66,8 +66,6 @@ import {
   CollectionQuerySchema,
   CredentialsDeleteInputSchema,
   CredentialsLoginSessionFinishInputSchema,
-  CredentialsServiceKeyDeleteInputSchema,
-  CredentialsServiceKeyPutInputSchema,
   CredentialsSpaceAddMineInputSchema,
   CredentialsSpaceCommandInputSchema,
   CredentialsSpaceDefaultConsentInputSchema,
@@ -242,8 +240,6 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'credentials.loginSessions.start': CredentialsLoginSessionStartInputSchema,
   'credentials.loginSessions.finish': CredentialsLoginSessionFinishInputSchema,
   // The key is the put body's one field; the provider rides the path.
-  'credentials.serviceKeys.put': CredentialsServiceKeyPutInputSchema,
-  'credentials.serviceKeys.delete': CredentialsServiceKeyDeleteInputSchema,
   'credentials.space.create': CredentialsSpaceCreateInputSchema,
   'credentials.space.rekey': CredentialsSpaceRekeyInputSchema,
   'credentials.space.setDefault': CredentialsSpaceCommandInputSchema,
