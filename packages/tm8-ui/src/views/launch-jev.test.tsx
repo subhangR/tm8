@@ -123,7 +123,7 @@ describe('Jev only suggests: nothing changes until Apply', () => {
     expect(config.selectionReasons?.skills).toBe('jev-failed');
   });
 
-  it('with no key anywhere the entry point links to Settings, and Launch is unaffected', async () => {
+  it('with no key in the space the entry point links to Space → Credentials, and Launch is unaffected', async () => {
     const port = answeringPort({
       model: failedGroup('no_key'), teammates: failedGroup('no_key'), memories: failedGroup('no_key'),
       skills: failedGroup('no_key'), references: failedGroup('no_key'),
@@ -132,7 +132,7 @@ describe('Jev only suggests: nothing changes until Apply', () => {
     await act(async () => { fireEvent.click(view.getByTestId('jev-entry-button')); });
     navStore.getState().navigate({ view: 'home' });
     fireEvent.click(await waitFor(() => view.getByTestId('jev-add-key')));
-    expect(navStore.getState().view).toEqual({ view: 'settings', section: 'credentials' });
+    expect(navStore.getState().view).toEqual({ view: 'settings', section: 'space-credentials' });
     const config = view.launch();
     expect(config.selection).toBeUndefined();
     expect(config.model).toBe('claude-sonnet-5');

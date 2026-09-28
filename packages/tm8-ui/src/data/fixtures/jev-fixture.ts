@@ -14,7 +14,7 @@
  * SCENARIOS, one word each so a test (or the dev harness) can script them:
  *   · `ok`              — every group answers.
  *   · `group_failed`    — skills fails with `timeout`; the other three answer.
- *   · `no_key`          — every group fails with `no_key` (no TYPESAFE_API_KEY).
+ *   · `no_key`          — every group fails with `no_key` (the space holds no TypeSafe credential).
  *   · `not_implemented` — the node predates the handler and answers 501.
  *   · `tight_budget`    — every answer, with budgets small enough to BIND: rows
  *                         above the floor are left unticked `over-budget`,

@@ -32,19 +32,12 @@ export {
   type ProviderStanding,
 } from './setup-gate';
 export {
-  ServiceKeysBlock,
-  SERVICE_KEY_PRESENTATIONS,
-  type ServiceKeysBlockProps,
-} from './ServiceKeysBlock';
-export {
   credentialsPortFromSeam,
-  serviceKeysPortFromSeam,
   disconnectVerdictOf,
   verdictOf,
   type ConnectionVerdict,
   type CredentialsPort,
   type DisconnectVerdict,
-  type ServiceKeysPort,
 } from './port';
 export {
   SpaceCredentialsSection,

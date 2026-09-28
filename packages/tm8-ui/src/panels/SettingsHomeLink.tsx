@@ -7,7 +7,7 @@ import { navStore } from '../stores/navStore';
  * credential or a space link the human-only verbs — add, rotate, sign in,
  * remove — live in Settings and nowhere else; this is how the list stops
  * being a dead end. A route, not a callback threaded through every host, the
- * same way `openJevKeySettings` reaches Agent credentials.
+ * same way `openJevKeySettings` reaches Space → Credentials.
  */
 export function SettingsHomeLink({ home, compact = false }: { home: SettingsHome; compact?: boolean }) {
   return (

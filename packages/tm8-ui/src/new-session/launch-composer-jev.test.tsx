@@ -14,8 +14,9 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import { act, fireEvent, waitFor, within } from '@testing-library/react';
-import type { CredentialsServiceKeysStatusView, LaunchSuggestResult } from '@tm8/contract';
+import type { LaunchSuggestResult } from '@tm8/contract';
 
+import type { JevKeyState } from '../jev';
 import { answeringPort, failedGroup, item, MEMORIES, okGroup } from '../jev/test-support';
 import { renderPopup } from './launch-test-kit';
 
@@ -49,12 +50,8 @@ function setup(groups: Partial<LaunchSuggestResult['groups']> = {}, over: Parame
   return { ...view, port, ask };
 }
 
-/** `credentials.serviceKeys.status` as the host reads it; no key of the member's, and no node fallback, unless said. */
-const keyStatus = (status: Partial<CredentialsServiceKeysStatusView> = {}) => async (): Promise<CredentialsServiceKeysStatusView> => ({
-  store: 'present',
-  keys: [{ provider: 'typesafe', connected: false, keyHint: null, updatedAt: null, nodeFallback: false }],
-  ...status,
-});
+/** ✦'s key as the host reads it (`jevKeyStateOf` over the space's credential list): none unless said. */
+const keyStatus = (state: JevKeyState = 'none') => async (): Promise<JevKeyState> => state;
 
 describe('the ✦ button', () => {
   it('is greyed with the reason when the host wires no Jev', () => {
@@ -64,16 +61,27 @@ describe('the ✦ button', () => {
     expect(jev.getAttribute('title')).toMatch(/isn’t wired/);
   });
 
-  it('is greyed BEFORE any click when no key resolves — neither yours nor the node’s', async () => {
-    const view = setup({}, { jevKeyStatus: keyStatus() });
+  it('is greyed BEFORE any click when the space holds no TypeSafe credential', async () => {
+    const view = setup({}, { jevKeyStatus: keyStatus('none') });
     await waitFor(() => expect(view.getByTestId('lcd3-jev').getAttribute('data-status')).toBe('off'));
-    expect(view.getByTestId('lcd3-jev').getAttribute('title')).toMatch(/Add your TypeSafe key/);
+    expect(view.getByTestId('lcd3-jev').getAttribute('title')).toMatch(/Add a TypeSafe key under Space settings → Credentials/);
     expect(view.port.inputs).toHaveLength(0);
   });
 
-  it('is in colour when the node’s key is the fallback', async () => {
-    const status = { keys: [{ provider: 'typesafe' as const, connected: false, keyHint: null, updatedAt: null, nodeFallback: true }] };
-    const view = setup({}, { jevKeyStatus: keyStatus(status) });
+  it('is in colour when the space has a TypeSafe default', async () => {
+    const view = setup({}, { jevKeyStatus: keyStatus('yes') });
+    await view.ready();
+    expect(view.getByTestId('lcd3-jev').getAttribute('data-status')).toBe('ready');
+  });
+
+  it('stays in colour when the key read fails — a refused read is not no_key', async () => {
+    const view = setup({}, { jevKeyStatus: async () => { throw new Error('forbidden'); } });
+    await view.ready();
+    expect(view.getByTestId('lcd3-jev').getAttribute('data-status')).toBe('ready');
+  });
+
+  it('stays in colour when the list cannot say (a my_default may answer)', async () => {
+    const view = setup({}, { jevKeyStatus: keyStatus('unknown') });
     await view.ready();
     expect(view.getByTestId('lcd3-jev').getAttribute('data-status')).toBe('ready');
   });

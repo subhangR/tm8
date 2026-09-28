@@ -1,5 +1,6 @@
 import { AttentionChipView, useAttentionOptional, useEntityChip } from '../attention';
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import type { JevKeyState } from '../jev';
 import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import type { JevPort } from '../jev/port';
 import type {
@@ -9,7 +10,6 @@ import type {
   EntityCapabilities,
   EntityId,
   EntitySummary,
-  CredentialsServiceKeysStatusView,
   ExecutionDispatchResult,
   ExecutionSpawnInput,
 } from '@tm8/contract';
@@ -541,10 +541,10 @@ export interface LaunchSources {
    */
   dispatch?: (subjectId: EntityId, note?: string, clientMutationId?: string) => Promise<ExecutionDispatchResult>;
   /**
-   * `credentials.serviceKeys.status`, so the v3 card's ✦ knows before the
-   * first click whether a TypeSafe key (the member's, else the node's) exists.
+   * `jevKeyStateOf(credentials.space.list)`, so the v3 card's ✦ knows before
+   * the first click whether the space has a TypeSafe key to spend.
    */
-  jevKeyStatus?: () => Promise<CredentialsServiceKeysStatusView>;
+  jevKeyStatus?: () => Promise<JevKeyState>;
   /** Sessions working on `subjectId` created since `since` — checked after a spawn timeout, before any retry. */
   sessionsSince?: (subjectId: string, since: string) => Promise<readonly { id: string; title: string }[]>;
 }

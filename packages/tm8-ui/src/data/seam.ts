@@ -147,7 +147,6 @@ import type {
   CredentialsLoginSessionStartInput,
   CredentialsLoginSessionStartResult,
   CredentialsStatusView,
-  CredentialsServiceKeyDeleteResult,
   CredentialPolicySource,
   CredentialsSpaceCreateInput,
   CredentialsSpaceDeleteResult,
@@ -170,9 +169,6 @@ import type {
   ServerView,
   ServerProbeView,
   ActionRows,
-  CredentialsServiceKeysStatusView,
-  ServiceKeyProviderName,
-  ServiceKeyView,
   Cursor,
   DurableWorkspaceEvent,
   EdgeView,
@@ -1370,14 +1366,6 @@ export interface Seam {
     ): Promise<CredentialsLoginSessionStartResult>;
     /** Harvests what the terminal achieved. `connected` and `stored` differ. */
     finishLogin(workSessionId: EntityId): Promise<CredentialsLoginSessionFinishResult>;
-    /**
-     * Service keys (`credentials.serviceKeys.*`) — keys the SERVER uses for this
-     * member, today only the TypeSafe key behind ✦ Ask Jev. Pasted here, never
-     * shown back beyond four characters, never given to an agent session.
-     */
-    serviceKeys(): Promise<CredentialsServiceKeysStatusView>;
-    saveServiceKey(provider: ServiceKeyProviderName, apiKey: string): Promise<ServiceKeyView>;
-    removeServiceKey(provider: ServiceKeyProviderName): Promise<CredentialsServiceKeyDeleteResult>;
     /**
      * SPACE credentials (`credentials.space.*`, 206/SC-3) — credentials the
      * SPACE owns, which every member may launch with (D3). Human-only like the

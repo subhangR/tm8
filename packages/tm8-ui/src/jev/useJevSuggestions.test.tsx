@@ -199,7 +199,7 @@ describe('groups are independent', () => {
 });
 
 describe('unavailable', () => {
-  it('every group failing with no_key is unavailable (fixture: no TYPESAFE_API_KEY)', async () => {
+  it('every group failing with no_key is unavailable (fixture: no TypeSafe key in the space)', async () => {
     const seam = createFixtureSeam();
     seam.fixtureControls.setJevScenario('no_key');
     const { result } = mount({ port: seam.commands.jev });
