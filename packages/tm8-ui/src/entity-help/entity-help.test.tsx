@@ -15,7 +15,7 @@ import { ListRootHeader, type ListRootOption } from '../panels/ListRootHeader';
 import { EntityHelpOverlay } from './EntityHelpOverlay';
 import { commandByPath } from './catalog';
 import { entityHelpStore, resetEntityHelp } from './entityHelpStore';
-import { registeredHelpModules } from './kinds';
+import { kindHelpModule, registeredHelpModules } from './kinds';
 import { TEMPLATE_HELP } from './kinds/_template';
 import { neighboursOf } from './tabs/ConstellationTab';
 import type { KindHelpModule } from './types';
@@ -202,12 +202,16 @@ describe('the overlay shell', () => {
 describe('the baseline — every dropdown kind has a full page', () => {
   it.each(homeRootKinds().map((k) => [k.kind, k.labelPlural]))('%s (%s) resolves three non-empty tabs', (kind) => {
     const page = resolveHelp(kind);
+    /* THE EXPECTATION FOLLOWS THE REGISTRY (W2 finding): a kind with an
+       authored module reports it, and the baseline's shape is only asserted
+       where the baseline is what stands. */
+    const m = kindHelpModule(kind);
+    expect(page.authored).toEqual({ story: !!m?.story, toolkit: !!m?.toolkit, constellation: !!m?.constellation });
     expect(page.story.logline.length).toBeGreaterThan(20);
-    expect(page.story.beats.length).toBeGreaterThanOrEqual(3);
-    expect(page.story.lifecycle?.length ?? 0).toBeGreaterThanOrEqual(3);
+    expect(page.story.beats.length).toBeGreaterThanOrEqual(m?.story ? 1 : 3);
+    if (!m?.story) expect(page.story.lifecycle?.length ?? 0).toBeGreaterThanOrEqual(3);
     expect(page.toolkit.scenes.length).toBeGreaterThanOrEqual(1);
     expect(page.toolkit.catalog.own.length + page.toolkit.catalog.generic.length).toBeGreaterThan(5);
-    expect(page.authored).toEqual({ story: false, toolkit: false, constellation: false });
   });
 
   it.each(homeRootKinds().map((k) => [k.kind, k.labelPlural]))('%s (%s) renders text on every tab', (kind) => {
