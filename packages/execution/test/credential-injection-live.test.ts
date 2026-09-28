@@ -627,119 +627,50 @@ describe('SpawnService injects the resolved credential home into a real spawn', 
   }, 30000);
 
   // -------------------------------------------------------------------------
-  // 6. A Kimi model runs on the member's Kimi key and nothing else.
-  //
-  // Routing is per model: a Claude model keeps the Anthropic login whether or
-  // not a Kimi key is connected (the tests above), and a Kimi model has exactly
-  // one route. There is no node credential for it and no native provider that
-  // serves it, so a missing or unreadable key refuses the launch in EVERY
-  // posture, naming the key, instead of starting a session whose first request
-  // goes to a vendor that does not serve its model.
+  // 6. Gate 5 (spec 01a0e248 §10 decision 3, lane S3): a Kimi or Groq model
+  // was withdrawn from the launch catalog and refuses BY NAME in a real spawn,
+  // in every posture, even when the member still has that key connected. The
+  // key is never asked for, nothing is launched on the tool's native login
+  // (which does not serve the model), and no manifest is written.
   // -------------------------------------------------------------------------
 
-  const KIMI_MODEL = 'kimi-k2-thinking';
-
-  function kimiHome(apiKey?: string): AgentCredentialHome {
-    return {
-      provider: 'kimi',
-      homeDir: `${dataDir}/credentials/identity-alice`,
-      configDir: `${dataDir}/credentials/identity-alice/kimi`,
-      ...(apiKey === undefined ? {} : { apiKey }),
-    };
-  }
-
-  it('a Kimi model asks the port with its model and routes to the Kimi key', async () => {
-    const asked: Array<{ agentTool: string; model: string | null }> = [];
-    const service = serviceWith({
-      async resolve(_auth, input) {
-        asked.push(input);
-        return kimiHome('sk-test-kimi');
-      },
-    });
-
-    const result = await service.spawn(AUTH, {
-      spaceId: SPACE_ID,
-      teamMemberId: MEMBER_ID,
-      model: KIMI_MODEL,
-      agentTool: 'claude-code',
-    });
-
-    expect(asked).toEqual([{ agentTool: 'claude-code', model: KIMI_MODEL }]);
-    expect(result.envVarNames).toContain('ANTHROPIC_BASE_URL');
-    expect(result.envVarNames).toContain('ANTHROPIC_AUTH_TOKEN');
-    expect(result.envVarNames).toContain('CLAUDE_CONFIG_DIR');
-  }, 30000);
-
-  it.each([null, 'member', 'node'] as const)(
-    'a Kimi model with no Kimi key connected is refused, naming the key (source %s)',
-    async (credentialSource) => {
-      const service = serviceWith({ async resolve() { return null; } });
+  it.each([
+    ['kimi-k2-thinking', 'claude-code', 'Kimi K2 Thinking', 'Kimi'],
+    ['openai/gpt-oss-120b', 'codex', 'GPT-OSS 120B (Groq)', 'Groq'],
+  ] as const)('%s on %s is refused by name in every posture, with its key still connected', async (model, agentTool, label, vendor) => {
+    for (const credentialSource of [null, 'member', 'node'] as const) {
+      const asked: Array<{ agentTool: string; model: string | null }> = [];
+      const service = serviceWith({
+        async resolve(_auth, input) {
+          asked.push(input);
+          return {
+            provider: vendor === 'Kimi' ? 'kimi' : 'groq',
+            homeDir: `${dataDir}/credentials/identity-alice`,
+            configDir: `${dataDir}/credentials/identity-alice/${vendor.toLowerCase()}`,
+            apiKey: 'sk-still-connected',
+          };
+        },
+      });
 
       const spawn = service.spawn(AUTH, {
         spaceId: SPACE_ID,
         teamMemberId: MEMBER_ID,
-        model: KIMI_MODEL,
-        agentTool: 'claude-code',
+        model,
+        agentTool,
         ...(credentialSource ? { credentialSource } : {}),
       });
       await expect(spawn).rejects.toMatchObject({
         name: 'SpawnError',
         code: 'conflict',
-        detail: { agentTool: 'claude-code', model: KIMI_MODEL, provider: 'kimi' },
+        detail: { model, reason: 'model_withdrawn' },
       });
-      await expect(spawn).rejects.toThrow(/no Kimi \(Moonshot AI\) key is connected/);
-      // Nothing was launched on some other vendor's account instead.
+      await expect(spawn).rejects.toThrow(
+        `${model} (${label}) can no longer be launched: ${vendor} models were withdrawn from tm8's launch catalog`,
+      );
+      expect(asked).toEqual([]);
       expect(graph.manifests).toHaveLength(0);
-    },
-    30000,
-  );
-
-  it('a Kimi model is refused, not sent to Anthropic, even when the port answers with the Anthropic login', async () => {
-    // The real resolver never does this; the refusal must not depend on it.
-    const service = serviceWith({
-      async resolve() {
-        return {
-          provider: 'anthropic',
-          homeDir: `${dataDir}/credentials/identity-alice`,
-          configDir: `${dataDir}/credentials/identity-alice/anthropic`,
-        };
-      },
-    });
-
-    await expect(
-      service.spawn(AUTH, {
-        spaceId: SPACE_ID,
-        teamMemberId: MEMBER_ID,
-        model: KIMI_MODEL,
-        agentTool: 'claude-code',
-      }),
-    ).rejects.toMatchObject({ name: 'SpawnError', detail: { provider: 'kimi' } });
-  }, 30000);
-
-  it.each([null, 'member'] as const)(
-    'a Kimi model whose connected key cannot be read is refused with "reconnect" (source %s)',
-    async (credentialSource) => {
-      // Exactly what `DbAgentCredentialHome` returns for an active kimi row
-      // whose `api-key` file is unreadable: provider and directories, no secret.
-      const service = serviceWith({ async resolve() { return kimiHome(); } });
-
-      const spawn = service.spawn(AUTH, {
-        spaceId: SPACE_ID,
-        teamMemberId: MEMBER_ID,
-        model: KIMI_MODEL,
-        agentTool: 'claude-code',
-        ...(credentialSource ? { credentialSource } : {}),
-      });
-      await expect(spawn).rejects.toMatchObject({
-        name: 'SpawnError',
-        code: 'conflict',
-        detail: { provider: 'kimi' },
-      });
-      // Connected, but unreadable: the no-key wording would be untrue here.
-      await expect(spawn).rejects.toThrow(/could not be read — reconnect it/);
-    },
-    30000,
-  );
+    }
+  }, 60000);
 
   it('auto (absent) still records what it did, as null', async () => {
     const service = serviceWith({ async resolve() { return null; } });

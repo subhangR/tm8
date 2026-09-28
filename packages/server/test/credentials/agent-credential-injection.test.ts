@@ -210,8 +210,6 @@ describe('DbAgentCredentialHome', () => {
     ['claude-sonnet-5', 'anthropic'],
     ['opus', 'anthropic'],
     [null, 'anthropic'],
-    ['kimi-k2-thinking', 'kimi'],
-    ['kimi-k2-turbo-preview', 'kimi'],
   ] as const)(
     'with Kimi AND Anthropic connected, claude-code model %s runs on %s',
     async (model, expected) => {
@@ -229,9 +227,6 @@ describe('DbAgentCredentialHome', () => {
 
   it.each([
     ['gpt-6-astra', 'openai'],
-    ['qwen/qwen3-32b', 'groq'],
-    // Named Kimi, served by Groq: the serving vendor decides.
-    ['moonshotai/kimi-k2-instruct-0905', 'groq'],
   ] as const)(
     'with Groq AND OpenAI connected, codex model %s runs on %s',
     async (model, expected) => {
@@ -246,17 +241,6 @@ describe('DbAgentCredentialHome', () => {
     },
   );
 
-  it('a Kimi model does not fall back to the Anthropic login when no Kimi key is connected', async () => {
-    // Only the Anthropic row exists. Sending a Kimi model to Anthropic is a
-    // request to a server that does not serve it; spawn turns this `null` into
-    // a refusal naming the Kimi key.
-    const home = await resolver([{ provider: 'anthropic' }]).resolve(CLAIMS, {
-      agentTool: 'claude-code',
-      model: 'kimi-k2-thinking',
-    });
-    expect(home).toBeNull();
-  });
-
   it('a Claude model does not borrow the Kimi key when no Anthropic login is connected', async () => {
     const home = await resolver([{ provider: 'kimi' }]).resolve(CLAIMS, {
       agentTool: 'claude-code',
@@ -266,77 +250,22 @@ describe('DbAgentCredentialHome', () => {
   });
 
   /**
-   * AN UNREADABLE KEY MUST NOT SILENTLY BILL THE NODE'S ACCOUNT.
+   * WITHDRAWN MODELS NO LONGER ROUTE HERE (spec 01a0e248 §10 decision 3, S3).
    *
-   * `DATA_DIR` is `/var/lib/tm8`, which does not exist under the test runner, so
-   * `readApiKey` genuinely fails here — ENOENT from a real `readFile`, not a
-   * mocked rejection. That is the whole class: an `active` index row whose key
-   * file cannot be read. A partial write, a restored backup that skipped the
-   * 0700 directory, an operator `chown`; the row says connected and the bytes
-   * are not there.
-   *
-   * WHAT MAKES `null` THE WRONG ANSWER, AND WHY IT LOOKS LIKE THE RIGHT ONE.
-   * `null` is documented as "this identity has not connected this provider",
-   * and for that member it is exactly right — injecting an empty config
-   * directory would leave an unconnected member with no agent authentication at
-   * all, which is the over-eager failure the header of this file warns about.
-   * But this member DID connect. Returning the unconnected answer for a
-   * connected member is not conservative; it is a different claim, and it is
-   * false.
-   *
-   * The consequence is measured in `@tm8/execution`'s `spawn-manifest.test.ts`
-   * ("a keyless credential home suppresses the node key that a null home leaves
-   * behind") rather than asserted here, because it belongs to `composeEnv`:
-   * every line that removes the node's own `ANTHROPIC_API_KEY` lives inside
-   * `if (credentialHome)`, and `AUTH_ENV_KEYS` forwards that key a few lines
-   * earlier. So `null` does not mean "inject nothing" — it means the node's
-   * Anthropic key stays in the environment and a member who deliberately
-   * connected Kimi runs `claude-code` on the NODE's account. Wrong vendor,
-   * wrong bill, and nothing red anywhere.
-   *
-   * A KEYLESS HOME IS THE HONEST ANSWER. It carries the provider, so suppression
-   * runs and `CLAUDE_CONFIG_DIR` is pinned to the member's own `kimi/`
-   * directory; `apiKey` is `undefined`, so the routing step injects nothing.
-   * The session starts with no credential for anyone and fails visibly and
-   * attributably — the same treatment this file's own header already demands
-   * for a `stale` row, owed equally to a row that is active but unreadable.
+   * The Kimi and Groq rows left the launch catalog, so `apiKeyBackendForModel`
+   * answers null for them and this resolver would look up the tool's native
+   * provider. It is never asked: `resolveSessionCredentials` refuses a withdrawn
+   * model by name first (execution's gate-5 tests). This pins the unreachable
+   * answer so a re-admission changes it on purpose. The keyless-home path for
+   * an unreadable Kimi/Groq key is unreachable for the same reason.
    */
-  it('returns a KEYLESS home, not null, when an active API key cannot be read', async () => {
-    const home = await resolver([{ provider: 'kimi' }]).resolve(CLAIMS, {
-      agentTool: 'claude-code',
-      model: 'kimi-k2-thinking',
-    });
-
-    // Not null. The member connected; the answer must say so.
-    expect(home).not.toBeNull();
-    // Asserted with `toEqual` on the whole object rather than field by field,
-    // because the ABSENCE of `apiKey` is the load-bearing half: a home carrying
-    // an empty-string key would pass every per-field check and then route the
-    // session to Moonshot with no credential, which is a 401 a long way from
-    // here instead of an immediately legible failure.
-    expect(home).toEqual({
-      provider: 'kimi',
-      homeDir: `${DATA_DIR}/credentials/${IDENTITY}`,
-      configDir: `${DATA_DIR}/credentials/${IDENTITY}/kimi`,
-    });
-    expect(home).not.toHaveProperty('apiKey');
-  });
-
-  /**
-   * An unreadable Kimi key is still Kimi's problem. A doubly-connected member
-   * whose Kimi key is unreadable, launching a Kimi model, must not quietly be
-   * handed their working Anthropic login: that sends a Kimi model to a server
-   * that does not serve it. They get Kimi, keyless, and spawn refuses with
-   * "reconnect".
-   */
-  it('does not fall through to the native provider when the Kimi key is unreadable', async () => {
-    const home = await resolver([{ provider: 'kimi' }, { provider: 'anthropic' }]).resolve(
-      CLAIMS,
-      { agentTool: 'claude-code', model: 'kimi-k2-thinking' },
-    );
-
-    expect(home?.provider).toBe('kimi');
-    expect(home).not.toHaveProperty('apiKey');
+  it.each([
+    ['claude-code', 'kimi-k2-thinking', 'anthropic'],
+    ['codex', 'qwen/qwen3-32b', 'openai'],
+  ] as const)('%s model %s is withdrawn: no backend route, only the native %s row is asked', async (agentTool, model, native) => {
+    const recorded: RecordedQuery[] = [];
+    await resolver([{ provider: 'kimi' }, { provider: 'groq' }], recorded).resolve(CLAIMS, { agentTool, model });
+    expect(recorded[0]?.params).toEqual([native]);
   });
 
   it('asks only for ACTIVE credentials, so stale and revoked never inject', async () => {

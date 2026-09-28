@@ -550,91 +550,69 @@ describe('credentials.status merges two stores and degrades honestly', () => {
       'gemini',
       'hermes',
       'cursor',
-      'kimi',
-      'groq',
     ]);
     expect(parsed.providers.every((p) => p.connected === false)).toBe(true);
 
-    // ROUTING IS REPORTED BEFORE IT HAPPENS, AND ONLY IN ONE DIRECTION.
-    //
-    // Nothing is connected here, so no displacement is in effect — and the
-    // anthropic and openai cards say nothing, because there is nothing yet to
-    // warn them about. The kimi and groq cards still describe themselves, with
-    // `active: false`, because "what would connecting this do" is precisely the
-    // question a member has in front of the Connect button. A surface that only
-    // emitted routing for connected providers would answer it only after it was
-    // too late to matter.
-    const routingOf = new Map(parsed.providers.map((p) => [p.provider, p.routing]));
-    expect(routingOf.get('anthropic')).toBeNull();
-    expect(routingOf.get('openai')).toBeNull();
-    expect(routingOf.get('github')).toBeNull();
-    expect(routingOf.get('kimi')).toEqual({
-      agentTool: 'claude-code',
-      role: 'backend',
-      counterpart: 'anthropic',
-      active: false,
-    });
-    expect(routingOf.get('groq')).toEqual({
-      agentTool: 'codex',
-      role: 'backend',
-      counterpart: 'openai',
-      active: false,
-    });
+    // No card carries a routing line: the only backends that had one, Kimi and
+    // Groq, were withdrawn (spec 01a0e248 §10 decision 3).
+    expect(parsed.providers.every((p) => p.routing === null)).toBe(true);
   });
 
-  it('says on the Kimi card which models it serves, and leaves the Anthropic card alone', async () => {
-    // The member has connected Kimi AND still has a working Anthropic login —
-    // the state that used to read as Kimi taking over. Each now serves its own
-    // models, and only the backend's card needs a routing line to say so.
+  it('draws no Kimi or Groq card even when a key is still connected (withdrawn, decision 3)', async () => {
+    // The node has two Groq homes at the cut. Their rows stay (S8 drops the
+    // legacy tree) but Settings → Connections no longer offers the provider.
     const db = new FakeDb(async (sql) => {
       if (sql.includes('to_regclass')) return [{ present: false }];
       if (sql.includes('account_agent_credentials')) {
-        return [
-          {
-            provider: 'anthropic',
-            login: null,
-            auth_method: 'oauth',
-            status: 'active',
-            connected_at: new Date('2026-09-01T00:00:00.000Z'),
-            last_verified_at: new Date('2026-09-01T00:00:00.000Z'),
-          },
-          {
-            provider: 'kimi',
-            login: null,
-            auth_method: 'api_key',
-            status: 'active',
-            connected_at: new Date('2026-09-02T00:00:00.000Z'),
-            last_verified_at: new Date('2026-09-02T00:00:00.000Z'),
-          },
-        ];
+        return ['anthropic', 'kimi', 'groq'].map((provider) => ({
+          provider,
+          login: null,
+          auth_method: provider === 'anthropic' ? 'oauth' : 'api_key',
+          status: 'active',
+          connected_at: new Date('2026-09-01T00:00:00.000Z'),
+          last_verified_at: new Date('2026-09-01T00:00:00.000Z'),
+        }));
       }
       return [];
     });
-    const registry = registryFor(db);
     const parsed = CredentialsStatusViewSchema.parse(
-      await invoke(registry, 'credentials.status', context('credentials.status', 'browser')),
+      await invoke(registryFor(db), 'credentials.status', context('credentials.status', 'browser')),
     );
-    const routingOf = new Map(parsed.providers.map((p) => [p.provider, p.routing]));
+    const providers = parsed.providers.map((p) => p.provider);
+    expect(providers).not.toContain('kimi');
+    expect(providers).not.toContain('groq');
+    expect(parsed.providers.find((p) => p.provider === 'anthropic')?.connected).toBe(true);
+    expect(parsed.providers.find((p) => p.provider === 'anthropic')?.routing).toBeNull();
+  });
 
-    // The backend says what it is doing.
-    expect(routingOf.get('kimi')).toEqual({
-      agentTool: 'claude-code',
-      role: 'backend',
-      counterpart: 'anthropic',
-      active: true,
+  it.each(['kimi', 'groq'])('start refuses a new %s key by name, before anything runs', async (provider) => {
+    const db = new FakeDb(serviceQueries, serviceRpcs);
+    const launcher = {
+      launch: () => {
+        throw new Error('launch must not be reached');
+      },
+      terminate: () => 'not_found',
+      hasLiveTerminal: () => false,
+    };
+    const service = new W2CredentialSessionsService({
+      db,
+      launcher: launcher as never,
+      dataDir: '/tmp/tm8-credentials-test',
+      env: { HOME: '/server-home', PATH: '/server-path' },
+      binaryResolver: () => null,
     });
 
-    // And the native provider is NOT displaced. Routing is per model: Claude
-    // models keep running on the Anthropic login while Kimi is connected, so
-    // the Anthropic card carries no routing line and says nothing about Kimi.
-    // (Before per-model routing it read "Not currently used for claude-code
-    // sessions — Moonshot AI is connected and takes over".)
-    expect(parsed.providers.find((p) => p.provider === 'anthropic')?.connected).toBe(true);
-    expect(routingOf.get('anthropic')).toBeNull();
+    const error = await service.start(
+      { spaceId: SPACE_ID, provider },
+      { identityId: 'identity-human', claims: { identityId: 'identity-human', authKind: 'browser' } },
+    ).then(() => null, (reason: unknown) => reason);
 
-    // Groq is not connected, so codex is untouched and openai stays silent.
-    expect(routingOf.get('openai')).toBeNull();
-    expect(routingOf.get('groq')?.active).toBe(false);
+    expect(error).toBeInstanceOf(CollabError);
+    expect((error as CollabError).code).toBe('invalid_input');
+    expect((error as Error).message).toMatch(
+      new RegExp(`^${provider === 'kimi' ? 'Kimi \\(Moonshot AI\\)' : 'Groq'} keys can no longer be connected`),
+    );
+    expect(db.calls).toEqual([]);
   });
 
   it('reports an absent CLI as unavailable, never as a measured disconnection', async () => {

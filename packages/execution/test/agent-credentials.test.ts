@@ -28,7 +28,7 @@ import {
   type AgentCredentialHome,
   type AgentCredentialProvider,
 } from '../src/spawn/agent-credentials.js';
-import { LAUNCH_MODEL_CATALOG } from '@tm8/contract';
+import { LAUNCH_MODEL_CATALOG, WITHDRAWN_LAUNCH_MODELS } from '@tm8/contract';
 
 import {
   apiKeyBackendForModel,
@@ -544,24 +544,27 @@ describe('API-key backend routing — the env a member with Kimi or Groq actuall
   });
 });
 
-describe('per-model routing — a Kimi model gets the Kimi key, a Claude model the Anthropic login', () => {
-  // The expected answers are written out as literals rather than derived from
-  // the catalog, so a catalog edit that moves a model to another vendor has to
-  // change this table on purpose.
+describe('per-model routing — withdrawn Kimi/Groq models reach no backend (decision 3)', () => {
+  // The Kimi and Groq rows left LAUNCH_MODEL_CATALOG (spec 01a0e248 §10
+  // decision 3, lane S3). `API_KEY_BACKEND_ROUTING` stays for re-admission, but
+  // nothing can reach it: every withdrawn model answers null here, and spawn
+  // refuses it by name before this is ever asked (space-credential-resolution
+  // gate 5). Written out as literals so a re-admission changes this on purpose.
   it.each([
-    ['kimi-k2-thinking', 'claude-code', 'kimi'],
-    ['kimi-k2-thinking-turbo', 'claude-code', 'kimi'],
-    ['kimi-k2-turbo-preview', 'claude-code', 'kimi'],
-    ['kimi-k2-0905-preview', 'claude-code', 'kimi'],
-    ['openai/gpt-oss-120b', 'codex', 'groq'],
-    ['openai/gpt-oss-20b', 'codex', 'groq'],
-    // A Kimi model SERVED BY GROQ: routed by who serves it, not by its name.
-    ['moonshotai/kimi-k2-instruct-0905', 'codex', 'groq'],
-    ['llama-3.3-70b-versatile', 'codex', 'groq'],
-    ['qwen/qwen3-32b', 'codex', 'groq'],
-    ['deepseek-r1-distill-llama-70b', 'codex', 'groq'],
-  ] as const)('%s on %s runs on the %s key', (model, agentTool, backend) => {
-    expect(apiKeyBackendForModel(agentTool, model)).toBe(backend);
+    ['kimi-k2-thinking', 'claude-code'],
+    ['kimi-k2-thinking-turbo', 'claude-code'],
+    ['kimi-k2-turbo-preview', 'claude-code'],
+    ['kimi-k2-0905-preview', 'claude-code'],
+    ['openai/gpt-oss-120b', 'codex'],
+    ['openai/gpt-oss-20b', 'codex'],
+    ['moonshotai/kimi-k2-instruct-0905', 'codex'],
+    ['llama-3.3-70b-versatile', 'codex'],
+    ['qwen/qwen3-32b', 'codex'],
+    ['deepseek-r1-distill-llama-70b', 'codex'],
+  ] as const)('%s on %s is withdrawn and routes nowhere', (model, agentTool) => {
+    expect(WITHDRAWN_LAUNCH_MODELS.some((e) => e.model === model)).toBe(true);
+    expect(LAUNCH_MODEL_CATALOG.some((e) => e.model === model)).toBe(false);
+    expect(apiKeyBackendForModel(agentTool, model)).toBeNull();
   });
 
   it.each([
@@ -575,16 +578,13 @@ describe('per-model routing — a Kimi model gets the Kimi key, a Claude model t
     expect(apiKeyBackendForModel(agentTool, model)).toBeNull();
   });
 
-  it('every catalog row agrees with its provider: moonshot/groq have a backend, the rest none', () => {
-    // The sweep behind the literal tables above — a new catalog row cannot
-    // slip through with no route.
+  it('no offered catalog row is served by an API-key backend', () => {
+    // The sweep behind the tables above: a moonshot/groq row cannot slip back
+    // into the catalog without this, and gate 5, changing on purpose.
     for (const entry of LAUNCH_MODEL_CATALOG) {
-      const expected =
-        entry.provider === 'moonshot' ? 'kimi' : entry.provider === 'groq' ? 'groq' : null;
-      expect([entry.model, apiKeyBackendForModel(entry.agentTool, entry.model)]).toEqual([
-        entry.model,
-        expected,
-      ]);
+      expect([entry.model, entry.provider]).not.toEqual([entry.model, 'moonshot']);
+      expect([entry.model, entry.provider]).not.toEqual([entry.model, 'groq']);
+      expect([entry.model, apiKeyBackendForModel(entry.agentTool, entry.model)]).toEqual([entry.model, null]);
     }
   });
 

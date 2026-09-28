@@ -23,7 +23,12 @@
  * "reset" is implemented by deleting the delta rather than by remembering what
  * the original was.
  */
-import { LAUNCH_MODEL_CATALOG, type LaunchModelCatalogEntry, type LaunchModelEffort } from '@tm8/contract';
+import {
+  LAUNCH_MODEL_CATALOG,
+  withdrawnLaunchModel,
+  type LaunchModelCatalogEntry,
+  type LaunchModelEffort,
+} from '@tm8/contract';
 
 /** The tools this UI knows how to launch. Free strings on the wire; a closed
     set here, because the launcher builds a different CLI invocation per tool. */
@@ -214,6 +219,12 @@ export function addCustomModel(nodeKey: string, input: CustomModel): string | nu
   const delta = readDelta(nodeKey);
   if (LAUNCH_MODEL_CATALOG.some((e) => e.model === model)) {
     return `${model} is already a built-in model — edit it instead of adding a second one.`;
+  }
+  // Withdrawn with the Kimi/Groq keys (spec 01a0e248 §10 decision 3): the node
+  // refuses it at spawn, so adding it back here would only offer a failure.
+  const withdrawn = withdrawnLaunchModel(model);
+  if (withdrawn) {
+    return `${model} (${withdrawn.label}) was withdrawn from the launch catalog — the node refuses it at launch.`;
   }
   if (delta.custom.some((c) => c.model === model)) {
     return `${model} has already been added in this browser.`;

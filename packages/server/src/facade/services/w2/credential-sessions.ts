@@ -52,7 +52,12 @@
  */
 import { CollabError } from '@tm8/contract';
 import type { CredentialProvider, CredentialSessionLauncher, Logger } from '@tm8/execution';
-import { CREDENTIAL_LOGIN_COMMANDS, CREDENTIAL_PROVIDERS } from '@tm8/execution';
+import {
+  API_KEY_PROVIDER_DISPLAY_NAME,
+  CREDENTIAL_LOGIN_COMMANDS,
+  CREDENTIAL_PROVIDERS,
+  isWithdrawnCredentialProvider,
+} from '@tm8/execution';
 
 import type { Db, DbClaims } from '../../../db/types.js';
 import {
@@ -402,6 +407,14 @@ export class W2CredentialSessionsService {
     if (input.spaceCredential) return this.startSpace(input, input.spaceCredential, principal);
     const { provider } = input;
     assertKnownProvider(provider);
+    if (isWithdrawnCredentialProvider(provider)) {
+      throw new CollabError(
+        'invalid_input',
+        `${API_KEY_PROVIDER_DISPLAY_NAME[provider]} keys can no longer be ` +
+          "connected: their models were withdrawn from tm8's launch catalog, so the key would " +
+          'serve no session',
+      );
+    }
 
     // D2. Stated as an assertion rather than a comment, because "we simply do
     // not set it" is invisible to a reviewer and to a future edit.

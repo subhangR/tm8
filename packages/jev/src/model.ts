@@ -185,9 +185,8 @@ export interface TierRung {
  *
  * Every model here must exist in `LAUNCH_MODEL_CATALOG` with the rung's effort;
  * `test/model.test.ts` holds that, so a ladder typo fails CI rather than a
- * launch. Kimi and the Groq rows are in the catalog but not on the ladder:
- * each needs the member's own Kimi or Groq key, which a suggestion cannot
- * see.
+ * launch. Kimi and Groq are not on the ladder: their rows were withdrawn from
+ * the catalog (spec 01a0e248 §10 decision 3).
  */
 export const TIER_LADDER: readonly TierRung[] = [
   { tier: 'economy', claude: 'claude-haiku-4-5-20251001', codex: 'gpt-5.6-luna', effort: 'medium' },

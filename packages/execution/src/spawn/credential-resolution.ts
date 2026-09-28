@@ -25,17 +25,20 @@
  * their own model key and git login stay home (rulings (i) and 4). See
  * `resolveLinkBoundCredentials`; 093, 206 and 083's credential index refuse
  * the same caller in SQL, so this is the second layer, not the only one.
+ *
+ * A WITHDRAWN MODEL (a Kimi or Groq row, spec 01a0e248 §10 decision 3) refuses
+ * by name before any rung is read, on every path above. Its only route was the
+ * member's own API key; `API_KEY_BACKEND_ROUTING` still holds that route for
+ * re-admission, but nothing here reaches it.
  */
 import { join } from 'node:path';
+
+import { withdrawnLaunchModel } from '@tm8/contract';
 
 import {
   agentCredentialProviderFor,
   type AgentCredentialHome,
 } from './agent-credentials.js';
-import {
-  API_KEY_PROVIDER_DISPLAY_NAME,
-  apiKeyBackendForModel,
-} from '../credentials/api-key-credentials.js';
 import { commonCredentialSource, type ResolvedLaunchConfig } from './manifest.js';
 import type {
   CredentialProvider,
@@ -150,6 +153,26 @@ function refusalSentence(
   }
 }
 
+/**
+ * S3, gate 5: a model withdrawn from the launch catalog refuses by name — a
+ * fresh launch that asks for one, a child that inherits one and a resume that
+ * recorded one alike. Without this a Kimi model would fall to the Anthropic
+ * login (the catalog no longer marks it as a Kimi model), and its first turn
+ * would go to a vendor that does not serve it.
+ */
+function refuseWithdrawnModel(launch: ResolvedLaunchConfig): void {
+  const withdrawn = withdrawnLaunchModel(launch.model);
+  if (!withdrawn) return;
+  const vendor = withdrawn.provider === 'moonshot' ? 'Kimi' : 'Groq';
+  throw new SpawnError(
+    `${launch.model} (${withdrawn.label}) can no longer be launched: ${vendor} models were withdrawn ` +
+      "from tm8's launch catalog, because they ran only on a member's own key and a space cannot " +
+      `hold a ${vendor} key — pick a model ${launch.agentTool} runs natively`,
+    'conflict',
+    { model: launch.model, provider: withdrawn.provider, reason: 'model_withdrawn' },
+  );
+}
+
 async function readPolicies(
   deps: CredentialResolutionDeps,
   auth: GraphAuth,
@@ -176,6 +199,7 @@ export async function resolveSessionCredentials(
   deps: CredentialResolutionDeps,
 ): Promise<ResolvedSessionCredentials> {
   const { auth, spaceId, launch } = input;
+  refuseWithdrawnModel(launch);
   const policies = await readPolicies(deps, auth, spaceId);
   if (input.linkBound === true) return resolveLinkBoundCredentials(input, deps, policies);
   const toolProvider = agentCredentialProviderFor(launch.agentTool);
@@ -305,37 +329,7 @@ export async function resolveSessionCredentials(
 
   // ---- the tool's own provider ------------------------------------------
   let credentialHome: AgentCredentialHome | null = null;
-  const backend = apiKeyBackendForModel(launch.agentTool, launch.model);
-  if (backend && (toolProvider === 'anthropic' || toolProvider === 'openai')) {
-    // A model served by an API-key backend (a Kimi model on claude-code, a
-    // Groq model on codex) has exactly one route, the member's own key for
-    // that backend (#679). A space credential cannot serve it, so an explicit
-    // or inherited `space` refuses rather than being recorded and not used.
-    if (launch.credentialSources[toolProvider] === 'space') {
-      throw new SpawnError(
-        `${launch.model} runs only on your own ${API_KEY_PROVIDER_DISPLAY_NAME[backend]} key, so ` +
-          `credentialSources.${toolProvider} 'space' cannot serve it — pick a model ` +
-          `${launch.agentTool} runs natively, or choose 'member' or 'node'`,
-        'conflict',
-        { provider: toolProvider, model: launch.model },
-      );
-    }
-    // That key is a MEMBER credential of the tool's provider (design §4, last
-    // bullet), so D5's space policy for that provider governs it: a space that
-    // requires 'space' refuses it, on every resume too, as policy is read now.
-    // The node policy is irrelevant here — a backend model has no node route.
-    if (!allowedBy(policies, toolProvider).member) {
-      throw new SpawnError(
-        `${launch.model} runs only on your own ${API_KEY_PROVIDER_DISPLAY_NAME[backend]} key, which ` +
-          `is not allowed: ${spacePolicySentence(policies, toolProvider)} — pick a model ` +
-          `${launch.agentTool} runs natively, which can use this space's credential`,
-        'forbidden',
-        { provider: toolProvider, model: launch.model },
-      );
-    }
-    credentialHome = await deps.resolveMemberHome(null);
-    effective[toolProvider] = 'member';
-  } else if (toolProvider === 'anthropic' || toolProvider === 'openai') {
+  if (toolProvider === 'anthropic' || toolProvider === 'openai') {
     const provider = toolProvider;
     const source = launch.credentialSources[provider] ?? null;
     const allowed = allowedBy(policies, provider);
@@ -475,7 +469,8 @@ function linkRefusal(
  *   * NO MEMBER RUNG, for any provider. `resolveMemberHome` and
  *     `resolveMemberGitHub` are never called, so the linking human's model key
  *     and git login are never read (ruling (i)). An explicit or recorded
- *     `member` refuses, and so does a model only a member API key serves.
+ *     `member` refuses. (A model only a member API key served is withdrawn
+ *     from the catalog and refused before this runs.)
  *   * The model provider runs on this space's DEFAULT credential or on the
  *     node, as the policies allow; neither usable refuses by name.
  *   * GitHub runs ONLY on this space's default credential (ruling 4): no
@@ -540,14 +535,6 @@ async function resolveLinkBoundCredentials(
 
   // ---- the tool's own provider ------------------------------------------
   let credentialHome: AgentCredentialHome | null = null;
-  const backend = apiKeyBackendForModel(launch.agentTool, launch.model);
-  if (backend) {
-    throw linkRefusal(
-      `cannot run ${launch.model}: it runs only on a member's own ` +
-        `${API_KEY_PROVIDER_DISPLAY_NAME[backend]} key — pick a model ${launch.agentTool} runs natively`,
-      { provider: toolProvider ?? backend, reason: 'member_key_model', model: launch.model },
-    );
-  }
   if (toolProvider === 'anthropic' || toolProvider === 'openai') {
     const provider = toolProvider;
     const source = launch.credentialSources[provider] ?? null;

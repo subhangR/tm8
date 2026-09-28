@@ -76,6 +76,7 @@ import {
   apiKeyBackendAgentTool,
   apiKeyBackendNativeProvider,
   isApiKeyCredentialProvider,
+  isWithdrawnCredentialProvider,
   type Logger,
 } from '@tm8/execution';
 
@@ -106,9 +107,14 @@ import {
  * implementation shape rather than the feature.
  * `CREDENTIAL_PROVIDERS` is also the login table's order, so the two surfaces
  * cannot drift independently.
+ *
+ * Minus the withdrawn backends (Kimi, Groq; spec 01a0e248 §10 decision 3):
+ * their models left the launch catalog, so a card would offer a key that
+ * serves nothing. Disconnect still accepts them (`assertKnownProvider`), so a
+ * member who connected one can remove it.
  */
 export const CREDENTIAL_STATUS_PROVIDERS: readonly CredentialProviderName[] =
-  CREDENTIAL_PROVIDERS;
+  CREDENTIAL_PROVIDERS.filter((provider) => !isWithdrawnCredentialProvider(provider));
 
 /**
  * R3 step 3's targeting rule. The file-shaped map lives at the spawn lookup
@@ -416,7 +422,7 @@ export class W2CredentialCatalogService {
     provider: CredentialProviderName,
     principal: CredentialPrincipal,
   ): Promise<CredentialsDeleteResult> {
-    assertStatusProvider(provider);
+    assertKnownProvider(provider);
 
     const failures: CredentialsDeleteResult['failures'] = [];
 
@@ -691,8 +697,8 @@ function notConnected(provider: CredentialProviderName): CredentialConnectionVie
   };
 }
 
-function assertStatusProvider(provider: string): asserts provider is CredentialProviderName {
-  if (!(CREDENTIAL_STATUS_PROVIDERS as readonly string[]).includes(provider)) {
+function assertKnownProvider(provider: string): asserts provider is CredentialProviderName {
+  if (!(CREDENTIAL_PROVIDERS as readonly string[]).includes(provider)) {
     throw new CollabError('invalid_input', `unsupported credential provider: ${provider}`);
   }
 }
