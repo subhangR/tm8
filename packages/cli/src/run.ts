@@ -33,7 +33,13 @@ import {
   type ParsedInvocation,
 } from './args.js';
 import { loadLocalConfig, resolveContext, sessionContextFromEnv, type CliContext } from './context.js';
-import type { CredentialStore } from './credentials.js';
+import {
+  credentialOrigin,
+  credentialStoreFor,
+  forgetSpaceCredential,
+  spaceCredential,
+  type CredentialStore,
+} from './credentials.js';
 import { ApiError, errorLines, exitCodeFor, RetiredCommandError } from './errors.js';
 import {
   CliError,
@@ -247,7 +253,6 @@ async function dispatch(
   const applyStoredCredential = async (): Promise<void> => {
     usedSpaceCredential = undefined;
     if (isLogin || ctx.token !== undefined) return;
-    const { credentialOrigin, credentialStoreFor, spaceCredential } = await import('./credentials.js');
     const store = credentialStoreFor();
     const origin = credentialOrigin(ctx.baseUrl.value);
     const stored = store?.get(origin);
@@ -314,7 +319,6 @@ async function dispatch(
       const { store, origin, spaceId, token } = usedSpaceCredential;
       let removed = false;
       try {
-        const { forgetSpaceCredential } = await import('./credentials.js');
         removed = forgetSpaceCredential(store, origin, spaceId, token);
       } catch {
         /* best effort: the hint below still names the fix */

@@ -61,6 +61,9 @@ export interface CredentialStore {
    * The pin-key index for `origin` (see `spaceCredentialKey`). Not a
    * credential — it names spaces and gate session ids, never a secret — so it
    * lives in its own slot, and nothing that reads credentials has to skip it.
+   * An absent index is `[]`; an index that exists but cannot be read (a
+   * locked keychain, a denied prompt) THROWS, so no caller mistakes it for
+   * empty and writes over it.
    */
   getSpaceIndex(origin: string): string[];
   /** Replace the index for `origin`; an empty one removes it. */
@@ -108,14 +111,35 @@ function legacySpaceIndexKey(origin: string): string {
   return `${origin}#spaces`;
 }
 
-function readSpaceIndex(store: CredentialStore, origin: string): string[] {
-  const index = store.getSpaceIndex(origin);
+interface SpaceIndexRead {
+  keys: string[];
+  /** False when the index exists but could not be read: never write it back. */
+  writable: boolean;
+}
+
+function readSpaceIndex(store: CredentialStore, origin: string): SpaceIndexRead {
+  let index: string[] = [];
+  let writable = true;
+  try {
+    index = store.getSpaceIndex(origin);
+  } catch {
+    writable = false;
+  }
   const legacy = store.get(legacySpaceIndexKey(origin));
-  if (legacy === undefined) return index;
+  if (legacy === undefined) return { keys: index, writable };
   const merged = [...new Set([...index, ...legacy.split(',').filter(Boolean)])];
-  store.setSpaceIndex(origin, merged);
-  store.delete(legacySpaceIndexKey(origin));
-  return merged;
+  // The fold is housekeeping. It never overwrites an index it could not read,
+  // and a failed write leaves the legacy entry for the next read to retry;
+  // this read still answers with every key it saw, so logout still revokes.
+  if (writable) {
+    try {
+      store.setSpaceIndex(origin, merged);
+      store.delete(legacySpaceIndexKey(origin));
+    } catch {
+      /* retried on the next read */
+    }
+  }
+  return { keys: merged, writable };
 }
 
 function storedPinKey(store: CredentialStore, origin: string, spaceId: string): string | undefined {
@@ -150,7 +174,7 @@ export function storeSpaceCredential(
   const previous = store.get(key);
   store.set(key, token, meta);
   const index = readSpaceIndex(store, origin);
-  if (!index.includes(key)) store.setSpaceIndex(origin, [...index, key]);
+  if (index.writable && !index.keys.includes(key)) store.setSpaceIndex(origin, [...index.keys, key]);
   return previous;
 }
 
@@ -169,19 +193,30 @@ export function forgetSpaceCredential(
   const key = storedPinKey(store, origin, spaceId);
   if (!key || store.get(key) !== token) return false;
   store.delete(key);
-  store.setSpaceIndex(origin, readSpaceIndex(store, origin).filter((k) => k !== key));
+  const index = readSpaceIndex(store, origin);
+  if (index.writable) store.setSpaceIndex(origin, index.keys.filter((k) => k !== key));
   return true;
 }
 
 /** Forget every pinned token stored for `origin`; returns them for revocation. */
 export function dropSpaceCredentials(store: CredentialStore, origin: string): string[] {
   const tokens: string[] = [];
-  for (const key of readSpaceIndex(store, origin)) {
+  const index = readSpaceIndex(store, origin);
+  for (const key of index.keys) {
     const token = store.get(key);
     if (token) tokens.push(token);
     store.delete(key);
   }
-  store.setSpaceIndex(origin, []);
+  // An unreadable index may still name pins this read could not see; keep it
+  // so a later logout can revoke them. A failed clear only leaves keys whose
+  // entries are already gone, so it must not fail the logout.
+  if (index.writable) {
+    try {
+      store.setSpaceIndex(origin, []);
+    } catch {
+      /* stale keys are harmless: every entry they name was deleted above */
+    }
+  }
   return tokens;
 }
 
@@ -340,6 +375,8 @@ class FileCredentialStore implements CredentialStore {
 }
 
 const KEYCHAIN_SERVICE = 'tm8';
+/** `security(1)`'s errSecItemNotFound exit status: absent, not unreadable. */
+const KEYCHAIN_ITEM_NOT_FOUND = 44;
 /** The space index's own service: next to the credentials, never among them. */
 const KEYCHAIN_INDEX_SERVICE = 'tm8-space-index';
 
@@ -399,7 +436,17 @@ class KeychainCredentialStore implements CredentialStore {
   }
 
   getSpaceIndex(origin: string): string[] {
-    return (this.get(origin, KEYCHAIN_INDEX_SERVICE) ?? '').split(',').filter(Boolean);
+    const result = spawnSync(
+      'security',
+      ['find-generic-password', '-s', KEYCHAIN_INDEX_SERVICE, '-a', origin, '-w'],
+      { encoding: 'utf8' },
+    );
+    if (result.error) throw result.error;
+    if (result.status === KEYCHAIN_ITEM_NOT_FOUND) return [];
+    if (result.status !== 0) {
+      throw new Error(`security find-generic-password failed (${result.status}): ${result.stderr.trim()}`);
+    }
+    return result.stdout.trim().split(',').filter(Boolean);
   }
 
   setSpaceIndex(origin: string, keys: readonly string[]): void {
