@@ -17,8 +17,10 @@
  * scan's stated purpose, not a breach of it.
  */
 import type { KindHelpModule } from '../types';
+import { CREDENTIAL_HELP } from './credential';
+import { SPACE_LINK_HELP } from './space_link';
 
-const MODULES: readonly KindHelpModule[] = [];
+const MODULES: readonly KindHelpModule[] = [CREDENTIAL_HELP, SPACE_LINK_HELP];
 
 const BY_KIND: ReadonlyMap<string, KindHelpModule> = new Map(MODULES.map((module) => [module.kind, module]));
 
