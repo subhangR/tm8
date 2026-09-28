@@ -2804,6 +2804,46 @@ export interface CredentialsSpacePolicyView {
   node: NodeCredentialPolicyEntry[];
 }
 
+/**
+ * `credentials.space.readiness` (credentials R1/S7, doc 01a0e248 §10.4, §8.3 Q1)
+ * — TWO thresholds, never one tick. `canLaunch`: per provider, the caller's auto
+ * ladder finds an ACTIVE credential (their own my_default, else the space
+ * default) and the space policy allows the `space` source. `canPoll`: an ACTIVE,
+ * SPACE-OWNED, PUBLIC github credential exists — background readers never use a
+ * member's credential (§10.5). `stale` never counts in either. Metadata only.
+ * In release 1 nothing refuses on it; the launch picker only warns.
+ */
+export type CredentialReadinessLaunchReason = 'no_credential' | 'stale' | 'policy_excludes_space';
+export type CredentialReadinessPollReason = 'no_space_owned_credential' | 'stale';
+
+export interface CredentialReadinessProvider {
+  ready: boolean;
+  via: 'my_default' | 'space_default' | null;
+  credentialId: string | null;
+  myDefaultId: string | null;
+  spaceDefaultId: string | null;
+  spaceSourceAllowed: boolean;
+  /** Every active credential of this provider in the space, whoever owns it — §8.3 Q1's predicate. */
+  activeCredentials: number;
+  reason: CredentialReadinessLaunchReason | null;
+}
+
+export interface CredentialsSpaceReadinessView {
+  spaceId: string;
+  canLaunch: {
+    ready: boolean;
+    missing: SpaceCredentialProviderName[];
+    providers: Record<SpaceCredentialProviderName, CredentialReadinessProvider>;
+  };
+  canPoll: {
+    ready: boolean;
+    missing: SpaceCredentialProviderName[];
+    credentialId: string | null;
+    activeSpaceOwnedCredentials: number;
+    reason: CredentialReadinessPollReason | null;
+  };
+}
+
 /** `credentials.space.policy.set` — space admin. The provider rides the path. */
 export interface CredentialsSpacePolicySetInput {
   allowedSources: CredentialPolicySource[] | null;

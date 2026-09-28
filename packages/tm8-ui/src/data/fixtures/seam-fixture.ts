@@ -103,6 +103,8 @@ import {
   type CredentialsStatusView,
   type CredentialsServiceKeysStatusView,
   type CredentialsSpacePolicyView,
+  type CredentialsSpaceReadinessView,
+  type SpaceCredentialProviderName,
   type NodeCredentialsStatusView,
   type SpaceCredentialView,
   type SpaceLinkView,
@@ -5596,6 +5598,48 @@ export function createFixtureSeam(): FixtureSeam {
         },
         async policy(spaceId) {
           return { ...clone(spacePolicyState), spaceId };
+        },
+        // S7 (migration space_credential_readiness), mirrored on the fixture's rows: the fixture keeps
+        // no my-defaults, so can-launch is the active space default under the
+        // policy; can-poll is an active, space-owned, public GitHub credential.
+        async readiness(spaceId) {
+          const inSpace = spaceCredentialsState.filter((c) => c.spaceId === spaceId);
+          const providers = {} as CredentialsSpaceReadinessView['canLaunch']['providers'];
+          const missing: SpaceCredentialProviderName[] = [];
+          for (const provider of ['anthropic', 'openai', 'github'] as const) {
+            const allowed = spacePolicyState.providers.find((p) => p.provider === provider)?.allowedSources ?? null;
+            const spaceSourceAllowed = allowed === null || allowed.includes('space');
+            const rows = inSpace.filter((c) => c.provider === provider);
+            const def = rows.find((c) => c.isDefault && c.status === 'active') ?? null;
+            const ready = spaceSourceAllowed && def !== null;
+            if (!ready) missing.push(provider);
+            providers[provider] = {
+              ready,
+              via: spaceSourceAllowed && def ? 'space_default' : null,
+              credentialId: spaceSourceAllowed ? def?.id ?? null : null,
+              myDefaultId: null,
+              spaceDefaultId: def?.id ?? null,
+              spaceSourceAllowed,
+              activeCredentials: rows.filter((c) => c.status === 'active').length,
+              reason: ready ? null
+                : !spaceSourceAllowed ? 'policy_excludes_space'
+                : rows.some((c) => c.isDefault && c.status === 'stale') ? 'stale'
+                : 'no_credential',
+            };
+          }
+          const pollable = inSpace.filter((c) => c.provider === 'github' && (c.ownerAccountId ?? null) === null && c.visibility !== 'private');
+          const poll = pollable.filter((c) => c.status === 'active').sort((a, b) => Number(b.isDefault) - Number(a.isDefault))[0] ?? null;
+          return {
+            spaceId,
+            canLaunch: { ready: missing.length === 0, missing, providers },
+            canPoll: {
+              ready: poll !== null,
+              missing: poll ? [] : ['github'],
+              credentialId: poll?.id ?? null,
+              activeSpaceOwnedCredentials: pollable.filter((c) => c.status === 'active').length,
+              reason: poll ? null : pollable.some((c) => c.status === 'stale') ? 'stale' : 'no_space_owned_credential',
+            },
+          };
         },
         async setPolicy(spaceId, provider, allowedSources) {
           const entry = spacePolicyState.providers.find((p) => p.provider === provider);

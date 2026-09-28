@@ -65,10 +65,13 @@ import type {
   CredentialProviderName,
   CredentialsSpaceListView,
   CredentialsSpacePolicyView,
+  CredentialsSpaceReadinessView,
   CredentialsStatusView,
   EntityId,
+  SpaceCredentialProviderName,
   SpaceCredentialView,
 } from '@tm8/contract';
+import { canLaunchSentence, launchMissing } from '../settings-credentials/space-credentials-model';
 import { Avatar } from '../kit';
 import { MobileSheet, useMobileSurface } from '../mobile';
 import './launch-sheet-mobile.css';
@@ -165,6 +168,13 @@ export interface LaunchSheetProps {
    */
   loadSpaceCredentials?(spaceId: string): Promise<CredentialsSpaceListView>;
   loadSpacePolicy?(spaceId: string): Promise<CredentialsSpacePolicyView>;
+  /**
+   * Credentials release 1, S7: the space's can-launch readiness. When a
+   * provider this launch uses is not ready the sheet SAYS so and where to fix
+   * it; it never disables Launch (release 1 refuses nothing). Absent or
+   * unreadable ⇒ no sentence.
+   */
+  loadSpaceReadiness?(spaceId: string): Promise<CredentialsSpaceReadinessView>;
   onLaunch(config: LaunchSelection): void;
   /**
    * D5 — route the subject through the space's resident dispatcher instead of
@@ -422,6 +432,16 @@ export function LaunchSheet(props: LaunchSheetProps) {
     void load(spaceId).then((view) => { if (!cancelled) setSpacePolicy(view); }, () => {});
     return () => { cancelled = true; };
   }, [props.loadSpacePolicy, props.spaceId]);
+  const [spaceReadiness, setSpaceReadiness] = useState<CredentialsSpaceReadinessView | null>(null);
+  useEffect(() => {
+    const load = props.loadSpaceReadiness;
+    const spaceId = props.spaceId;
+    if (!load || !spaceId) return undefined;
+    let cancelled = false;
+    // Unreadable ⇒ no sentence; the launch is never held on this read.
+    void load(spaceId).then((view) => { if (!cancelled) setSpaceReadiness(view); }, () => {});
+    return () => { cancelled = true; };
+  }, [props.loadSpaceReadiness, props.spaceId]);
 
   const agentCredentialProvider = AGENT_CREDENTIAL_PROVIDER[agentToolId] ?? null;
   const agentCredentialSource = agentCredentialProvider
@@ -801,6 +821,20 @@ export function LaunchSheet(props: LaunchSheetProps) {
               </span>
             </span>
           </label>
+          {(() => {
+            if (!spaceReadiness) return null;
+            // Only providers a space can hold a credential for; another agent
+            // provider has nothing to connect here.
+            const uses: SpaceCredentialProviderName[] = agentCredentialProvider === 'anthropic' || agentCredentialProvider === 'openai'
+              ? [agentCredentialProvider, 'github']
+              : ['github'];
+            if (launchMissing(spaceReadiness, uses).length === 0) return null;
+            return (
+              <p className="ls__rowsub" role="status" data-testid="launch-space-readiness">
+                {canLaunchSentence(spaceReadiness, uses)}
+              </p>
+            );
+          })()}
         </section>
 
         <section className="ls__section">
