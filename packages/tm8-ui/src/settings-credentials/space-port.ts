@@ -35,6 +35,7 @@ import type {
   NodeCredentialPolicyEntry,
   NodeCredentialsStatusView,
   SpaceCredentialProviderName,
+  SpaceCredentialStoredProviderName,
   SpaceCredentialView,
   EntityId,
   SpaceId,
@@ -83,7 +84,7 @@ export interface SpaceCredentialsPort {
   spaceDefaultConsent(credentialId: string, allowed: boolean): Promise<SpaceCredentialView>;
   claim(credentialId: string): Promise<SpaceCredentialView>;
   setMyDefault(credentialId: string): Promise<CredentialsSpaceMyDefaultResult>;
-  clearMyDefault(provider: SpaceCredentialProviderName): Promise<CredentialsSpaceMyDefaultResult>;
+  clearMyDefault(provider: SpaceCredentialStoredProviderName): Promise<CredentialsSpaceMyDefaultResult>;
   usage(credentialId: string): Promise<CredentialsSpaceUsageView>;
   /** "Add to this space as private" for my own server-level GitHub token — no secret leaves the client. */
   addMine(provider: 'github', label: string): Promise<SpaceCredentialView>;

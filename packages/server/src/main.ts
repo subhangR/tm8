@@ -433,6 +433,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
 
   if (db) {
     const serviceKeys = new DbServiceKeyStore({ db, dataDir });
+    const spaceServiceKeys = new DbSpaceCredentialStore({ db, dataDir });
     registerFacadeHandlers(registry, {
       db,
       config,
@@ -466,12 +467,15 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
             },
           }
         : {}),
-      // launch.suggest's Jev key, chosen PER REQUEST (Lane K): the caller's own
-      // TypeSafe key from Settings → agent credentials, else this node's
-      // TYPESAFE_API_KEY, else none — and every group answers `no_key`
-      // (design 01a0cb80 §8). The key is used here, server-side, and nowhere
-      // on the spawn path.
+      // launch.suggest's Jev key, chosen PER REQUEST (Lane K; server_only_space_credentials): the
+      // space's `typesafe` credential (my_default for a human, else the space
+      // default), else — release 1 only — the caller's own 203 key from
+      // Settings → agent credentials, else this node's TYPESAFE_API_KEY, else
+      // none — and every group answers `no_key` (design 01a0cb80 §8). The key
+      // is used here, server-side, and nowhere on the spawn path.
       resolveJevAdvisor: createJevAdvisorResolver({
+        readSpaceKey: async (claims, spaceId) =>
+          (await spaceServiceKeys.readServiceKey(claims, spaceId, 'typesafe'))?.secret ?? null,
         readMemberKey: (claims) => serviceKeys.resolve(claims, 'typesafe'),
         nodeKey: process.env.TYPESAFE_API_KEY,
         advisorForKey: jevAdvisorForKey,

@@ -92,6 +92,7 @@ import {
   type NodeCredentialsStatusView,
   type NodeMetricsView,
   type SpaceCredentialProviderName,
+  type SpaceCredentialStoredProviderName,
   type SpaceCredentialView,
   type SpaceLinkView,
   type CredentialsServiceKeysStatusView,
@@ -634,7 +635,7 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       });
     },
 
-    spaceCredentialsClearMyDefault(spaceId: SpaceId, provider: SpaceCredentialProviderName): Promise<CredentialsSpaceMyDefaultResult> {
+    spaceCredentialsClearMyDefault(spaceId: SpaceId, provider: SpaceCredentialStoredProviderName): Promise<CredentialsSpaceMyDefaultResult> {
       return http.call<CredentialsSpaceMyDefaultResult>('credentials.space.myDefault.clear', {
         params: { spaceId, provider },
         body: { clientMutationId: newId('spcredunmine') },

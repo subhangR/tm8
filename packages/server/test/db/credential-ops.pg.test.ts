@@ -414,6 +414,23 @@ describe('a5 — audit columns on every launch; usage for the owner (admins: pub
     })]);
     expect(await outcome(() => store.usage(claims(ADM), shared))).toBe('ok');
   });
+
+  it('270: an OWNERLESS credential\'s usage is the admins\' alone; an admin keeps public owned ones', async () => {
+    // The fix: 255 compared owner = me unguarded, so on an ownerless row a
+    // non-admin member's check was `not NULL` and passed.
+    const shared = await create(A, { spaceOwned: true });
+    const legacy = await create(A, {});
+    for (const cred of [shared, legacy]) {
+      expect(await outcome(() => store.usage(claims(B), cred)), 'another member').toBe('42501');
+      expect(await outcome(() => store.usage(claims(A), cred)), 'its creator').toBe('42501');
+      expect(await outcome(() => store.usage(claims(ADM), cred)), 'an admin').toBe('ok');
+    }
+    // The other direction: NOT can_manage. An admin still reads a public
+    // credential someone else owns, which can_manage would have refused.
+    const pub = await create(A, { visibility: 'public' });
+    expect(await outcome(() => store.rename(claims(ADM), pub, 'not mine'))).toBe('42501');
+    expect(await outcome(() => store.usage(claims(ADM), pub))).toBe('ok');
+  });
 });
 
 describe('a4 / D7 — switch to private: row first, then kill; a session B resumed counts as B\'s', () => {
