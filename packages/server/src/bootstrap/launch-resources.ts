@@ -57,12 +57,28 @@ export async function ensureLaunchResources(args: {
     return { spaces: 0, projectId: null, teammatesCreated: 0, teammatesUpdated: 0, teammatesRetired: 0 };
   }
 
-  let project = (await args.db.query<ProjectRow>(
-    claims,
-    `select id::text id, trust from public.projects where working_dir = $1 limit 1`,
-    [args.projectDir],
-  ))[0];
-  if (!project) {
+  // 234 shows `public.projects` to a gate (node) admin only. An owner who is
+  // not one finds the launch folder among the folders granted to their own
+  // spaces, through the member-scoped `space_folders_for_caller`, and never
+  // registers one: `create_project` is the gate's act (require_node_admin) and
+  // would fail boot (R845-F7). A folder not granted to them is simply not
+  // their launch project, so boot goes on without one.
+  let project = args.owner.isNodeAdmin
+    ? (await args.db.query<ProjectRow>(
+      claims,
+      `select id::text id, trust from public.projects where working_dir = $1 limit 1`,
+      [args.projectDir],
+    ))[0]
+    : (await args.db.query<ProjectRow>(
+      claims,
+      `select folder.folder_id::text id, folder.trust
+         from unnest($1::uuid[]) as space_row(id)
+         cross join lateral public.space_folders_for_caller(space_row.id) folder
+        where folder.working_dir = $2
+        limit 1`,
+      [spaces.map((space) => space.id), args.projectDir],
+    ))[0];
+  if (!project && args.owner.isNodeAdmin) {
     const created = await args.db.rpc<ProjectMutation>(claims, 'public.create_project', [
       basename(args.projectDir) || 'Current project',
       args.projectDir,
@@ -74,6 +90,11 @@ export async function ensureLaunchResources(args: {
     const projectId = created.project?.id;
     if (!projectId) throw new Error('launch bootstrap create_project returned no id');
     project = { id: projectId, trust: 'trusted' };
+  } else if (!project) {
+    console.warn(
+      `  launch bootstrap: TM8_PROJECT_DIR ${args.projectDir} is not granted to any space this owner runs; ` +
+        'a node admin must grant it before it can be launched from',
+    );
   } else if (project.trust !== 'trusted') {
     throw new Error(
       `launch bootstrap will not override untrusted project ${project.id}; trust it explicitly or disable TM8_LAUNCH_BOOTSTRAP`,
@@ -88,14 +109,14 @@ export async function ensureLaunchResources(args: {
   // space the owner is not in would read as "none" and the grant below would
   // then fail boot with folder_granted_elsewhere (R845-F3). Granting is a
   // gate-admin act, so an owner who is not one makes no launch grant.
-  const granted = args.owner.isNodeAdmin
+  const granted = args.owner.isNodeAdmin && project
     ? await args.db.query<{ grants: unknown[] }>(
       claims,
       'select grants from public.gate_folders_list() where folder_id = $1',
       [project.id],
     )
     : [];
-  if (args.owner.isNodeAdmin && (granted[0]?.grants ?? []).length === 0) {
+  if (args.owner.isNodeAdmin && project && (granted[0]?.grants ?? []).length === 0) {
     const target = launchFolderSpace(spaces.map((space) => ({
       spaceId: space.id,
       createdByOwner: space.created_by_owner === true,
@@ -120,5 +141,5 @@ export async function ensureLaunchResources(args: {
     teammatesRetired += seeded.retired;
   }
 
-  return { spaces: spaces.length, projectId: project.id, teammatesCreated, teammatesUpdated, teammatesRetired };
+  return { spaces: spaces.length, projectId: project?.id ?? null, teammatesCreated, teammatesUpdated, teammatesRetired };
 }
