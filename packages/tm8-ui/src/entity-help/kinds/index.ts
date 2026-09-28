@@ -33,6 +33,7 @@ import { ARTIFACT_HELP } from './artifact';
 import { COLLECTION_HELP } from './collection';
 import { FILE_HELP } from './file';
 import { CHANNEL_HELP } from './channel';
+import { PULL_REQUEST_HELP } from './pull_request';
 
 const MODULES: readonly KindHelpModule[] = [
   CHAT_HELP,
@@ -51,6 +52,7 @@ const MODULES: readonly KindHelpModule[] = [
   COLLECTION_HELP,
   FILE_HELP,
   CHANNEL_HELP,
+  PULL_REQUEST_HELP,
 ];
 
 const BY_KIND: ReadonlyMap<string, KindHelpModule> = new Map(MODULES.map((module) => [module.kind, module]));
