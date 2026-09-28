@@ -17,9 +17,45 @@
  * scan's stated purpose, not a breach of it.
  */
 import type { KindHelpModule } from '../types';
-import { COMMIT_HELP } from './commit';
+import { CHAT_HELP } from './chat';
+import { FORM_HELP } from './form';
+import { PROJECT_HELP } from './project';
+import { TASK_HELP } from './task';
+import { WORK_SESSION_HELP } from './work_session';
+import { SKILL_HELP } from './skill';
+import { TEAM_MEMBER_HELP } from './team_member';
+import { DOC_HELP } from './doc';
+import { MEMORY_HELP } from './memory';
+import { DRAWING_HELP } from './drawing';
+import { MEMBER_HELP } from './member';
+import { GRAPH_HELP } from './graph';
+import { ARTIFACT_HELP } from './artifact';
+import { COLLECTION_HELP } from './collection';
+import { FILE_HELP } from './file';
+import { CHANNEL_HELP } from './channel';
+import { PULL_REQUEST_HELP } from './pull_request';
+import { WORKTREE_HELP } from './worktree';
 
-const MODULES: readonly KindHelpModule[] = [COMMIT_HELP];
+const MODULES: readonly KindHelpModule[] = [
+  CHAT_HELP,
+  TASK_HELP,
+  WORK_SESSION_HELP,
+  FORM_HELP,
+  PROJECT_HELP,
+  SKILL_HELP,
+  TEAM_MEMBER_HELP,
+  DOC_HELP,
+  MEMORY_HELP,
+  DRAWING_HELP,
+  MEMBER_HELP,
+  GRAPH_HELP,
+  ARTIFACT_HELP,
+  COLLECTION_HELP,
+  FILE_HELP,
+  CHANNEL_HELP,
+  PULL_REQUEST_HELP,
+  WORKTREE_HELP,
+];
 
 const BY_KIND: ReadonlyMap<string, KindHelpModule> = new Map(MODULES.map((module) => [module.kind, module]));
 
