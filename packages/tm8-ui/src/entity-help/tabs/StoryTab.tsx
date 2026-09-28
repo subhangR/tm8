@@ -19,8 +19,8 @@ export function StoryTab({ page }: { page: HelpPage }) {
       </Reveal>
 
       <Stagger className="eh-beats" step={110} start={220} itemClassName="eh-beat">
-        {story.beats.map((beat) => (
-          <section key={beat.title} aria-label={beat.title}>
+        {story.beats.map((beat, index) => (
+          <section key={index} aria-label={beat.title}>
             {beat.eyebrow ? <span className="eh-eyebrow">{beat.eyebrow}</span> : null}
             <h3 className="eh-beat__title">{beat.title}</h3>
             <div className="eh-prose">{beat.body}</div>
@@ -33,7 +33,7 @@ export function StoryTab({ page }: { page: HelpPage }) {
           <span className="eh-eyebrow">Lifecycle</span>
           <ol className="eh-film__strip" aria-label={`${page.label} lifecycle`}>
             {story.lifecycle.map((stage, index) => (
-              <li key={stage.name} className="eh-film__frame" style={{ ['--eh-delay' as string]: `${index * 90}ms` }}>
+              <li key={index} className="eh-film__frame" style={{ ['--eh-delay' as string]: `${index * 90}ms` }}>
                 <span className="eh-film__number" aria-hidden>
                   {String(index + 1).padStart(2, '0')}
                 </span>
