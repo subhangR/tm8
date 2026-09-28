@@ -15,9 +15,13 @@
  *     still a member, so its captured claims record the ending, exactly as
  *     `IdentityService.disableAccount`'s SC-6 seam does);
  *   · the open event sockets — every socket of that identity subscribed to
- *     the space (every socket of it, for a disable) is closed with 1008.
- *     Subscription admission is checked only at subscribe time, so a socket
- *     left open would keep receiving the space's events.
+ *     the space (every socket of it, for a disable) is closed. Subscription
+ *     admission is checked only at subscribe time, so a socket left open would
+ *     keep receiving the space's events. A socket whose credential is now dead
+ *     (a disable, or a session pinned to the space left) closes with
+ *     `WS_CLOSE_SESSION_ENDED`; an unpinned one, still good elsewhere, with
+ *     1008. The event pump's liveness sweep (P7) closes the pinned sockets
+ *     that were not subscribed here.
  *
  * THE CREDENTIALS (W10a, T41b): a member who leaves or is removed takes the
  * credentials they own in the space with them. SQL revokes them in the same
@@ -39,6 +43,7 @@ import {
   AccountsDisableInputSchema,
   SpacesLeaveInputSchema,
   SpacesMembersRemoveInputSchema,
+  WS_CLOSE_SESSION_ENDED,
   type AccountDisableResult,
   type MembershipEndResult,
 } from '@tm8/contract';
@@ -204,8 +209,11 @@ export function closeSockets(
   for (const sink of sockets.sinks()) {
     if (!sink.isOpen || sink.identity.identityId !== identityId) continue;
     if (spaceId !== null && !sockets.spacesFor(sink.id).includes(spaceId)) continue;
+    // Dead credential: every session of a disabled account, or one pinned to
+    // the space just left. The client must not reconnect with it.
+    const dead = spaceId === null || sink.identity.sessionSpaceId === spaceId;
     try {
-      sink.close(CLOSE_CODE.policyViolation, reason);
+      sink.close(dead ? WS_CLOSE_SESSION_ENDED : CLOSE_CODE.policyViolation, reason);
       closed += 1;
     } catch (error) {
       log?.('closing a socket after a membership ended failed', { connId: sink.id, reason: reasonOf(error) });

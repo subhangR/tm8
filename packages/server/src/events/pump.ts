@@ -50,6 +50,13 @@ export interface DurableEventPumpDeps {
   readonly intervalMs?: number;
   /** Events per connection per Space per tick. */
   readonly batch?: number;
+  /**
+   * P7: re-verify every open socket's session before delivering, and close
+   * the ended ones (`identity/session-sockets.ts`). Runs first in each tick, so
+   * no durable event reaches a socket whose session a committed revoke ended
+   * before the tick began. Absent: no re-verification.
+   */
+  readonly liveness?: { sweep(): Promise<number> };
   readonly onError?: (message: string) => void;
 }
 
@@ -131,6 +138,15 @@ export function createDurableEventPump(deps: DurableEventPumpDeps): DurableEvent
       running = true;
       let delivered = 0;
       try {
+        if (deps.liveness) {
+          try {
+            await deps.liveness.sweep();
+          } catch (error) {
+            // A failed check closes nothing and must not stop delivery; the
+            // next tick checks again.
+            deps.onError?.(`session liveness: ${error instanceof Error ? error.message : String(error)}`);
+          }
+        }
         for (const sink of deps.registry.sinks()) {
           if (!sink.isOpen) {
             cursors.delete(sink.id);

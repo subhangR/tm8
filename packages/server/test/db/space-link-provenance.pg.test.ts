@@ -30,6 +30,8 @@ import { DbSpaceLinkStore, type SpaceLink } from '../../src/credentials/space-li
 import { DbGitHubCredentialStore } from '../../src/credentials/github-credential-store.js';
 import { DbAgentCredentialHome } from '../../src/credentials/agent-credential-injection.js';
 import { DbGraphPort } from '../../src/facade/execution-handlers.js';
+import { loadConfig } from '../../src/http/config.js';
+import { bootstrap, type BootstrappedServer } from '../../src/main.js';
 
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from './w1-pg.js';
 
@@ -861,3 +863,169 @@ async function sessionWs(id: string): Promise<string> {
   const [row] = await database.query<{ ws: string }>(`select work_session_id::text as ws from public.auth_sessions where id = $1`, [id]);
   return row!.ws;
 }
+
+// ---------------------------------------------------------------------------
+// P7 (task 01a0db30-b2f9, lane L2a) — every link revoke closes the sockets of
+// the sessions it ended.
+//
+// A `link` token never reaches a socket (W7p layer (i), the WS upgrade refuses
+// it: link-session-transport.test.ts). What does reach one is an agent minted
+// UNDER the link — `via_link_id` set, parented on the link session — and every
+// link exit ends it in SQL: 249's cascade when the link session is revoked,
+// 256's descendants trigger when the row leaves `signed_in`. Nothing closed its
+// socket. Real server, real WebSockets, one server per TM8_SPACE_SESSIONS mode;
+// the paired bystander is the same human's ordinary (non-link) child in B, or,
+// where the human leaves B, the same human's gate session.
+// ---------------------------------------------------------------------------
+
+describe.each(['off', 'agents', 'enforce'] as const)('P7 link revokes close via_link sockets — TM8_SPACE_SESSIONS=%s', (mode) => {
+  let server: BootstrappedServer;
+  const open: WebSocket[] = [];
+
+  beforeAll(async () => {
+    // bootstrap() resolves the loopback owner from an owner row; a separate
+    // account, so no fixture human's claims change.
+    const [owner] = await database.query<{ id: string }>('select id from public.accounts where is_owner limit 1');
+    if (!owner) {
+      const identity = `w7p-owner-${randomUUID()}`;
+      await database.transaction(async (client) => {
+        await client.query('set local role tm8_graph_owner');
+        await client.query(`insert into public.user_profiles(identity_id, display_name) values ($1, 'owner')`, [identity]);
+        await client.query(
+          `insert into public.accounts(id, identity_id, username, is_owner, is_node_admin) values ($1, $2, 'w7p-owner', true, true)`,
+          [randomUUID(), identity]);
+      });
+    }
+    const configured = loadConfig({
+      ...process.env,
+      TM8_BIND: '127.0.0.1',
+      TM8_PORT: '4610',
+      TM8_NODE_MODE: 'single',
+      TM8_DATABASE_URL: database.url,
+      TM8_DATA_DIR: await mkdtemp(join(tmpdir(), `tm8-w7p-p7-${mode}-`)),
+      TM8_DISABLE_AUTO_OWNER: '1',
+      TM8_SPACE_SESSIONS: mode,
+    });
+    server = await bootstrap({ config: { ...configured, port: 0 } });
+  }, 180_000);
+
+  afterAll(async () => {
+    for (const ws of open) ws.close();
+    await server?.server.close();
+    await server?.db?.end();
+  }, 180_000);
+
+  interface Socket { ws: WebSocket; closed: Promise<{ code: number; reason: string }> }
+
+  function socket(token: string): Promise<Socket> {
+    const url = new URL('/v2/ws', server.url);
+    url.protocol = 'ws:';
+    const ws = new WebSocket(url, { headers: { authorization: `Bearer ${token}` } } as unknown as string[]);
+    open.push(ws);
+    const closed = new Promise<{ code: number; reason: string }>((resolve) =>
+      ws.addEventListener('close', (event) => resolve({ code: event.code, reason: event.reason })));
+    return new Promise((resolve, reject) => {
+      ws.addEventListener('open', () => resolve({ ws, closed }), { once: true });
+      ws.addEventListener('error', () => reject(new Error('ws connection failed')), { once: true });
+    });
+  }
+
+  const within = <T>(p: Promise<T>, ms: number): Promise<T | 'timeout'> =>
+    Promise.race([p, new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), ms))]);
+
+  async function expectEnded(sock: Socket): Promise<void> {
+    expect(await within(sock.closed, 8_000)).toEqual({ code: 4401, reason: 'session ended' });
+  }
+
+  async function expectOpen(sock: Socket): Promise<void> {
+    expect(await within(sock.closed, 2_500)).toBe('timeout');
+  }
+
+  interface Fresh { human: DbClaims; gateToken: string; memberB: string; persona: string }
+
+  /** A fresh member of A and B with a persona in B, so no cell disturbs another. */
+  async function fresh(): Promise<Fresh> {
+    const identity = `w7p-p7-${randomUUID()}`;
+    const account = randomUUID();
+    const [memberA, memberB, persona] = [randomUUID(), randomUUID(), randomUUID()];
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(`insert into public.user_profiles(identity_id, display_name) values ($1, 'P7')`, [identity]);
+      await client.query(`insert into public.accounts(id, identity_id, username) values ($1, $2, $3)`,
+        [account, identity, `w7p-p7-${account.slice(0, 8)}`]);
+      for (const [id, space] of [[memberA, fixture.spaceA], [memberB, fixture.spaceB]] as const) {
+        await client.query(
+          `insert into public.entities(id, space_id, kind, created_by, visibility) values ($1, $2, 'member', $1, 'space')`, [id, space]);
+        await client.query(
+          `insert into public.members(entity_id, space_id, identity_id, role, display_name) values ($1, $2, $3, 'member', 'P7')`,
+          [id, space, identity]);
+      }
+      await client.query(
+        `insert into public.entities(id, space_id, kind, created_by, visibility) values ($1, $2, 'team_member', $3, 'space')`,
+        [persona, fixture.spaceB, memberB]);
+      await client.query(
+        `insert into public.team_members(entity_id, owner_member_id, name, role, identity) values ($1, $2, 'P7 persona', 'worker', 'persona')`,
+        [persona, memberB]);
+    });
+    const gateToken = await mintHuman(account, identity);
+    return { human: await claimsForToken(gateToken), gateToken, memberB, persona };
+  }
+
+  /** An agent session in B under `claims`, acting as `f`'s persona. */
+  async function child(f: Fresh, claims: DbClaims): Promise<{ token: string; id: string }> {
+    const ws = await workSession(fixture.spaceB, f.persona, f.memberB);
+    const secret = generateSecret();
+    const row = await db.rpc<{ id: string }>(claims, 'issue_agent_auth_session', [
+      ws, f.persona, hashToken(secret), new Date(Date.now() + 86_400_000).toISOString(), 'p7 child',
+    ]);
+    return { token: formatToken(row.id, secret), id: row.id };
+  }
+
+  /** `f`'s link A → B, signed in, one via_link child and one ordinary child, both with open sockets. */
+  async function setup(): Promise<{ f: Fresh; link: SpaceLink; viaLink: Socket; ordinary: Socket; viaLinkId: string }> {
+    const f = await fresh();
+    const added = await store.add(f.human, { spaceId: fixture.spaceA, targetSpaceId: fixture.spaceB });
+    const link = await store.login(f.human, added.id);
+    const use = await store.use(f.human, link.id);
+    const underLink = await child(f, mintClaimsOf(inProcessClaims(use.session, use.token)));
+    expect(await sessionRow(underLink.id)).toMatchObject({ via_link_id: link.id, parent_session_id: use.session.sessionId });
+    const plain = await child(f, f.human);
+    return { f, link, viaLink: await socket(underLink.token), ordinary: await socket(plain.token), viaLinkId: underLink.id };
+  }
+
+  it('spaceLinks.logout closes the via_link child\'s socket; the ordinary child\'s stays open', async () => {
+    const { f, link, viaLink, ordinary } = await setup();
+    await store.logout(f.human, link.id);
+    await expectEnded(viaLink);
+    await expectOpen(ordinary);
+  });
+
+  it('spaceLinks.relogin (the old link session replaced) closes the via_link child\'s socket; the ordinary child\'s stays open', async () => {
+    const { f, link, viaLink, ordinary } = await setup();
+    await store.login(f.human, link.id, { relogin: true });
+    await expectEnded(viaLink);
+    await expectOpen(ordinary);
+  });
+
+  it('spaceLinks.remove closes the via_link child\'s socket; the ordinary child\'s stays open', async () => {
+    const { f, link, viaLink, ordinary } = await setup();
+    await store.remove(f.human, link.id);
+    await expectEnded(viaLink);
+    await expectOpen(ordinary);
+  });
+
+  it('stale `unreachable` (the link session stays live, 256\'s descendants trigger) closes the via_link child\'s socket', async () => {
+    const { f, link, viaLink, ordinary } = await setup();
+    await db.rpc(f.human, 'mark_space_link_stale', [link.id, 'unreachable']);
+    await expectEnded(viaLink);
+    await expectOpen(ordinary);
+  });
+
+  it('the human leaves the TARGET (members trigger) — the via_link child\'s socket closes; the human\'s gate socket stays open', async () => {
+    const { f, viaLink } = await setup();
+    const gate = await socket(f.gateToken);
+    await db.rpc(f.human, 'leave_space', [fixture.spaceB, null]);
+    await expectEnded(viaLink);
+    await expectOpen(gate);
+  });
+});

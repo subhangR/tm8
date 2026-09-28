@@ -441,6 +441,16 @@ export async function revokeListedAuthSession(
 }
 
 /**
+ * P7 (273): which of `sessionIds` have ended — no longer authenticate, or
+ * their pinned space membership ended. Claim-free, like `resolve_auth_session`:
+ * the socket liveness sweep has no caller identity.
+ */
+export async function endedAuthSessions(db: Db, sessionIds: readonly string[]): Promise<string[]> {
+  if (sessionIds.length === 0) return [];
+  return db.rpc<string[]>({}, 'ended_auth_sessions', [sessionIds]);
+}
+
+/**
  * Password login: claim-free credential read, constant-work scrypt
  * verification, then a session mint under the just-verified identity.
  *

@@ -1866,8 +1866,8 @@ describe.sequential('T15 accounts.disable — every session of the account is re
     expect(await outcome(() => asToken(adminToken, (q) => idsIn(q, fixture.spaceA)))).toBe('ok');
   });
 
-  it('X\'s open socket closed with 1008', () => {
-    expect(sinkX.closedWith).toEqual({ code: 1008, reason: 'account disabled' });
+  it('X\'s open socket closed with 4401: the credential is dead, do not reconnect with it', () => {
+    expect(sinkX.closedWith).toEqual({ code: 4401, reason: 'account disabled' });
   });
 
   it('the membership row is untouched: the graph keeps who acted', async () => {

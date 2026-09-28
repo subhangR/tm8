@@ -53,7 +53,8 @@ import { DbSpaceCredentialStore } from './credentials/space-credential-store.js'
 import { createEventSubjectBackfillJob } from './scheduler/jobs/event-subject-backfill.js';
 import { createClipboardStore } from './files/clipboard-store.js';
 import { createLoopbackOwnerResolver } from './identity/loopback.js';
-import { sessionIssuedHere } from './identity/pg-auth.js';
+import { endedAuthSessions, sessionIssuedHere } from './identity/pg-auth.js';
+import { createSessionLivenessSweep } from './identity/session-sockets.js';
 import { createTrackingObserverJob } from './tracking/observer.js';
 import { createCommitRecorderJob } from './tracking/commit-recorder.js';
 import { createSessionIdentityResolver, createSocketIdentityResolver } from './http/identity-resolver.js';
@@ -540,6 +541,13 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         publisher: events,
         log: eventLog,
         claimsFor: wsClaimsFor,
+        // P7: each tick first closes the sockets of every session that ended
+        // in SQL, by any path, in one query; see identity/session-sockets.ts.
+        liveness: createSessionLivenessSweep({
+          sockets: subscriptions,
+          ended: (ids) => endedAuthSessions(db, ids),
+          log: (message, fields) => console.warn(`[session liveness] ${message}`, fields),
+        }),
         onError: (message) => console.warn(`event pump: ${message}`),
       })
     : undefined;

@@ -2089,7 +2089,7 @@ export interface AuthSessionsListResult {
  * `auth.sessions.revoke` — end one session the caller could list: their own,
  * or one pinned to a space they administer. Revoking a gate session also
  * revokes the sessions `auth.space.enter` minted from it, and every open event
- * socket opened with any of them is closed (1008). A session the caller cannot
+ * socket opened with any of them is closed (4401, `WS_CLOSE_SESSION_ENDED`). A session the caller cannot
  * list answers `not_found`, like a missing one.
  */
 export interface AuthSessionsRevokeResult {
