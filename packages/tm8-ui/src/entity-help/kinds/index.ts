@@ -37,6 +37,8 @@ import { PULL_REQUEST_HELP } from './pull_request';
 import { WORKTREE_HELP } from './worktree';
 import { COMMIT_HELP } from './commit';
 import { INTERACTION_PROFILE_HELP } from './interaction_profile';
+import { CREDENTIAL_HELP } from './credential';
+import { SPACE_LINK_HELP } from './space_link';
 
 const MODULES: readonly KindHelpModule[] = [
   CHAT_HELP,
@@ -59,6 +61,8 @@ const MODULES: readonly KindHelpModule[] = [
   WORKTREE_HELP,
   COMMIT_HELP,
   INTERACTION_PROFILE_HELP,
+  CREDENTIAL_HELP,
+  SPACE_LINK_HELP,
 ];
 
 const BY_KIND: ReadonlyMap<string, KindHelpModule> = new Map(MODULES.map((module) => [module.kind, module]));
