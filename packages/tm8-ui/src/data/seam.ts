@@ -5,7 +5,7 @@ import type { JevPort } from '../jev/port';
 import type { LaunchDefaultsPort } from '../launch-selection/port';
 import type { FormsOps } from '../forms/ops-port';
 import type { FixtureJevScenario } from './fixtures/jev-fixture';
-import type { LaunchSuggestInput } from '@tm8/contract';
+import type { LaunchSuggestInput, SpaceSessionsMode } from '@tm8/contract';
 /**
  * THE FACADE SEAM — the typed interface the UI consumes for everything between
  * the server's HTTP/WS surface and the UI's stores.
@@ -370,7 +370,7 @@ export interface IdentityView {
    * The node's `TM8_SPACE_SESSIONS` mode (contract `IdentityGetResult`).
    * Absent from a node that predates the field: unknown, not `agents`.
    */
-  spaceSessions?: 'off' | 'agents' | 'enforce';
+  spaceSessions?: SpaceSessionsMode;
 }
 
 /**

@@ -1913,7 +1913,7 @@ export interface IdentityGetResult {
    * space pin is required instead of discovering it from a 403. A node that
    * predates the field omits it; read absent as "unknown", not `agents`.
    */
-  spaceSessions: SpaceSessionsMode;
+  spaceSessions?: SpaceSessionsMode;
 }
 
 // ---------------------------------------------------------------------------

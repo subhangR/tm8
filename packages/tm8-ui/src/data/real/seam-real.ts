@@ -331,6 +331,8 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     identity: async (): Promise<IdentityView> => {
       const view = await ops.identity();
       // W3: the mode tells the space-session port whether to pin up front.
+      // Only seam.identity() feeds advertised(); an enterSpace before it
+      // resolves falls back to learning enforce from the gate's 403.
       options.spaceSession?.advertised?.(view.spaceSessions);
       return view;
     },
