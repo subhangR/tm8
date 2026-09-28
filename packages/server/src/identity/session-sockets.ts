@@ -12,7 +12,7 @@
  *     sessions (`auth.logout`, `auth.sessions.revoke`, W5's space-password
  *     admin ops). Immediate.
  *   - `createSessionLivenessSweep`, run once per event-pump tick: one SQL call
- *     (`ended_auth_sessions`, 273) over every open socket's session id, then
+ *     (`ended_auth_sessions`, migration auth_session_liveness) over every open socket's session id, then
  *     close whatever it names. This is what covers every revoke path that
  *     happens in SQL with no server call site to hang a close on — the 249
  *     cascade to pinned children, W1 membership end and account disable, the
@@ -68,7 +68,7 @@ export function closeSessionSockets(
   return closed;
 }
 
-/** Which of `sessionIds` have ended: `public.ended_auth_sessions` (273). */
+/** Which of `sessionIds` have ended: `public.ended_auth_sessions` (migration auth_session_liveness). */
 export type EndedSessionsReader = (sessionIds: readonly string[]) => Promise<readonly string[]>;
 
 export interface SessionLivenessSweep {

@@ -6,7 +6,7 @@
  * sockets, each from its own call site, and W1 only the sockets SUBSCRIBED to
  * the space. Every other path ended the session in SQL and the socket stayed
  * open, receiving events, until it dropped. P7 re-verifies every open socket's
- * session once per event-pump tick (`public.ended_auth_sessions`, 273) and
+ * session once per event-pump tick (`public.ended_auth_sessions`, migration auth_session_liveness) and
  * `auth.logout` closes its own session at once.
  *
  * Each cell boots the REAL server over one scratch database, opens real

@@ -441,7 +441,7 @@ export async function revokeListedAuthSession(
 }
 
 /**
- * P7 (273): which of `sessionIds` have ended — no longer authenticate, or
+ * P7 (migration auth_session_liveness): which of `sessionIds` have ended — no longer authenticate, or
  * their pinned space membership ended. Claim-free, like `resolve_auth_session`:
  * the socket liveness sweep has no caller identity.
  */

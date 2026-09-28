@@ -1,5 +1,5 @@
 -- =============================================================================
--- 273 (provisional; set at the merge position after main 79efe3fb3's 272) —
+-- 275 (provisional; next free after main b790934d4's 273 and open PRs #930/#942's 274) —
 -- which of these sessions have ended (P7, task 01a0db30-b2f9, lane L2a).
 --
 -- An event socket authenticates once, at upgrade. Before this, nothing looked
@@ -60,7 +60,7 @@ language sql stable security definer set search_path = public, internal, pg_temp
 $$;
 
 comment on function public.ended_auth_sessions(uuid[]) is
-  'P7 (273): the subset of p_session_ids that no longer authenticate (missing, '
+  'P7 (auth_session_liveness): the subset of p_session_ids that no longer authenticate (missing, '
   'revoked, expired, account not active) or whose pinned space membership is '
   'left/removed. The event pump calls it once per tick and closes those '
   'sessions'' sockets. Claim-free; returns only the ids it was given.';
