@@ -311,3 +311,17 @@ export const WITHDRAWN_LAUNCH_MODELS = [
 export function withdrawnLaunchModel(model: string | null | undefined): LaunchModelCatalogEntry | undefined {
   return WITHDRAWN_LAUNCH_MODELS.find((entry) => entry.model === model);
 }
+
+/**
+ * The credential providers withdrawn with those models: the Kimi and Groq
+ * API-key backends. Their keys serve no session, so nothing offers to connect
+ * one; a member who still has one stored sees it marked `withdrawn` in
+ * `credentials.status`, with Disconnect only.
+ */
+export const WITHDRAWN_CREDENTIAL_PROVIDERS = ['kimi', 'groq'] as const;
+
+export function isWithdrawnCredentialProvider(
+  provider: string,
+): provider is (typeof WITHDRAWN_CREDENTIAL_PROVIDERS)[number] {
+  return (WITHDRAWN_CREDENTIAL_PROVIDERS as readonly string[]).includes(provider);
+}

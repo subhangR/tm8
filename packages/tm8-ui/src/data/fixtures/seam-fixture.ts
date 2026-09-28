@@ -1452,8 +1452,10 @@ export function createFixtureSeam(): FixtureSeam {
         lastVerifiedAt: FIXTURE_NOW,
         routing: null,
       },
-      // An API-key backend that IS in effect. Its `login` is null like every
-      // other file-shaped provider: a pasted key carries no account name.
+      // A WITHDRAWN provider still connected (decision 3): the server returns it
+      // only because a key is stored, marked `withdrawn`, with no routing. The
+      // card offers Disconnect only. A never-connected withdrawn provider (Groq
+      // here) has no row at all.
       {
         provider: 'kimi',
         connected: true,
@@ -1462,29 +1464,8 @@ export function createFixtureSeam(): FixtureSeam {
         status: 'active',
         connectedAt: FIXTURE_NOW,
         lastVerifiedAt: FIXTURE_NOW,
-        routing: {
-          agentTool: 'claude-code',
-          role: 'backend',
-          counterpart: 'anthropic',
-          active: true,
-        },
-      },
-      // Not connected, and still routing-bearing: `active: false` is the
-      // "here is what Connect would do" case.
-      {
-        provider: 'groq',
-        connected: false,
-        login: null,
-        authMethod: null,
-        status: null,
-        connectedAt: null,
-        lastVerifiedAt: null,
-        routing: {
-          agentTool: 'codex',
-          role: 'backend',
-          counterpart: 'openai',
-          active: false,
-        },
+        routing: null,
+        withdrawn: true,
       },
     ],
     // 'absent' is the fixture's default deliberately: it is the state of the
@@ -5468,6 +5449,11 @@ export function createFixtureSeam(): FixtureSeam {
 
       async disconnect(provider) {
         const entry = credentialsState.providers.find((p) => p.provider === provider);
+        // A withdrawn row exists only while a key is stored; once revoked the
+        // server stops returning it, so the card goes.
+        if (entry?.withdrawn) {
+          credentialsState.providers = credentialsState.providers.filter((p) => p !== entry);
+        }
         // Revoking stored material cannot install a missing CLI. Preserve the
         // node-level measurement just as the real catalog re-applies it.
         if (entry && (entry.status as string | null) !== 'unavailable') {

@@ -558,31 +558,40 @@ describe('credentials.status merges two stores and degrades honestly', () => {
     expect(parsed.providers.every((p) => p.routing === null)).toBe(true);
   });
 
-  it('draws no Kimi or Groq card even when a key is still connected (withdrawn, decision 3)', async () => {
-    // The node has two Groq homes at the cut. Their rows stay (S8 drops the
-    // legacy tree) but Settings → Connections no longer offers the provider.
-    const db = new FakeDb(async (sql) => {
-      if (sql.includes('to_regclass')) return [{ present: false }];
-      if (sql.includes('account_agent_credentials')) {
-        return ['anthropic', 'kimi', 'groq'].map((provider) => ({
-          provider,
-          login: null,
-          auth_method: provider === 'anthropic' ? 'oauth' : 'api_key',
-          status: 'active',
-          connected_at: new Date('2026-09-01T00:00:00.000Z'),
-          last_verified_at: new Date('2026-09-01T00:00:00.000Z'),
-        }));
-      }
-      return [];
-    });
-    const parsed = CredentialsStatusViewSchema.parse(
-      await invoke(registryFor(db), 'credentials.status', context('credentials.status', 'browser')),
-    );
-    const providers = parsed.providers.map((p) => p.provider);
-    expect(providers).not.toContain('kimi');
-    expect(providers).not.toContain('groq');
-    expect(parsed.providers.find((p) => p.provider === 'anthropic')?.connected).toBe(true);
-    expect(parsed.providers.find((p) => p.provider === 'anthropic')?.routing).toBeNull();
+  it('returns a stored Kimi/Groq key marked withdrawn, with no routing; never an unconnected one', async () => {
+    // The node has two Groq homes at the cut. Settings → Connections must still
+    // let their owners remove them, so a stored key keeps its row, marked
+    // `withdrawn`, while a withdrawn provider with nothing stored has none.
+    const rows = (providers: string[], status = 'active') =>
+      providers.map((provider) => ({
+        provider,
+        login: null,
+        auth_method: provider === 'anthropic' ? 'oauth' : 'api_key',
+        status,
+        connected_at: new Date('2026-09-01T00:00:00.000Z'),
+        last_verified_at: new Date('2026-09-01T00:00:00.000Z'),
+      }));
+    const statusWith = async (stored: ReturnType<typeof rows>) => {
+      const db = new FakeDb(async (sql) => {
+        if (sql.includes('to_regclass')) return [{ present: false }];
+        if (sql.includes('account_agent_credentials')) return stored;
+        return [];
+      });
+      return CredentialsStatusViewSchema.parse(
+        await invoke(registryFor(db), 'credentials.status', context('credentials.status', 'browser')),
+      );
+    };
+
+    const parsed = await statusWith(rows(['anthropic', 'groq']));
+    const groq = parsed.providers.find((p) => p.provider === 'groq');
+    expect(groq).toMatchObject({ connected: true, routing: null, withdrawn: true });
+    expect(parsed.providers.some((p) => p.provider === 'kimi')).toBe(false);
+    expect(parsed.providers.filter((p) => p.withdrawn).map((p) => p.provider)).toEqual(['groq']);
+    expect(parsed.providers.find((p) => p.provider === 'anthropic')?.withdrawn).toBeUndefined();
+
+    // A revoked tombstone is not a stored key: no card.
+    const revoked = await statusWith(rows(['kimi'], 'revoked'));
+    expect(revoked.providers.some((p) => p.provider === 'kimi')).toBe(false);
   });
 
   it.each(['kimi', 'groq'])('start refuses a new %s key by name, before anything runs', async (provider) => {

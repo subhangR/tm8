@@ -54,7 +54,11 @@
 // tool at a different backend FOR THE MODELS THAT BACKEND SERVES, which is why
 // the routing table below names both the tool and the catalog provider.
 
-import { launchModel, type LaunchModelCatalogEntry } from '@tm8/contract';
+import {
+  isWithdrawnCredentialProvider as isWithdrawnContractProvider,
+  launchModel,
+  type LaunchModelCatalogEntry,
+} from '@tm8/contract';
 
 import type { CredentialProvider } from './credential-env.js';
 
@@ -82,15 +86,14 @@ export function isApiKeyCredentialProvider(
 
 /**
  * True for a provider withdrawn with its models (spec 01a0e248 §10 decision 3):
- * today every API-key backend, Kimi and Groq. Their models left the launch
- * catalog (`WITHDRAWN_LAUNCH_MODELS`), so a key for one would serve nothing.
- * Settings → Connections draws no card for it and a new key is refused; a key
- * already connected can still be disconnected.
+ * today every API-key backend, Kimi and Groq (the contract's
+ * `WITHDRAWN_CREDENTIAL_PROVIDERS`). A new key is refused; a stored one can
+ * still be disconnected.
  */
 export function isWithdrawnCredentialProvider(
   provider: string,
 ): provider is ApiKeyCredentialProvider {
-  return isApiKeyCredentialProvider(provider);
+  return isApiKeyCredentialProvider(provider) && isWithdrawnContractProvider(provider);
 }
 
 /**

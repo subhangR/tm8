@@ -631,3 +631,36 @@ describe('the routing sentence names the vendor whose account is billed', () => 
     );
   });
 });
+
+describe('a withdrawn provider with a stored key offers Disconnect and nothing else', () => {
+  it('says why, draws no Connect or routing, and disconnects', async () => {
+    const disconnect = vi.fn(async (provider: CredentialProviderName) => ({
+      provider,
+      revoked: true,
+      terminatedCredentialSessionIds: [],
+      terminatedAgentSessionIds: [],
+      failures: [],
+    }));
+    render(
+      <CredentialsSection
+        port={portWith(
+          {
+            providers: [connection({ provider: 'kimi', connected: true, status: 'active', withdrawn: true })],
+            gitCredentialStore: 'present',
+          },
+          { disconnect },
+        )}
+      />,
+    );
+
+    const card = await screen.findByTestId('credential-card-kimi');
+    expect(within(card).getByTestId('credential-withdrawn-kimi').textContent).toBe(
+      "Kimi models were withdrawn from tm8's launch catalog; this key serves no session.",
+    );
+    expect(within(card).queryByTestId('credential-connect-kimi')).toBeNull();
+    expect(within(card).queryByTestId('credential-routing-backend')).toBeNull();
+    fireEvent.click(within(card).getByTestId('credential-disconnect-kimi'));
+    await waitFor(() => expect(disconnect).toHaveBeenCalledWith('kimi'));
+  });
+});
+

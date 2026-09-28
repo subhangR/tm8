@@ -107,7 +107,10 @@ function standingOf(
 export function credentialSetupState(
   status: CredentialsStatusView,
 ): CredentialSetupState {
-  const measured = status.providers.map((entry) =>
+  // A withdrawn row (a stored Kimi/Groq key, decision 3) serves no session, so
+  // it can neither satisfy nor block setup; it is on the card only to be removed.
+  const providers = status.providers.filter((entry) => !entry.withdrawn);
+  const measured = providers.map((entry) =>
     standingOf(entry, status.gitCredentialStore),
   );
 
@@ -117,7 +120,7 @@ export function credentialSetupState(
   // different provider.
   const unavailable = new Set(measured.filter((s) => s.unavailable).map((s) => s.provider));
   const standings = measured.map((s, i) => {
-    const routing = status.providers[i]?.routing ?? null;
+    const routing = providers[i]?.routing ?? null;
     return routing?.role === 'backend' && unavailable.has(routing.counterpart)
       ? { ...s, borrowsMissingBinary: true }
       : s;

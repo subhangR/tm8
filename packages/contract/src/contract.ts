@@ -2392,6 +2392,13 @@ export interface CredentialConnectionView {
    * differently from "null" would draw two cards for one state.
    */
   routing: CredentialRoutingView | null;
+  /**
+   * Present, and `true`, only on a provider WITHDRAWN with its models (Kimi,
+   * Groq; spec 01a0e248 §10 decision 3) that this member still has connected.
+   * Its key serves no session, so the card offers Disconnect and nothing else.
+   * A never-connected withdrawn provider has no row at all.
+   */
+  withdrawn?: true;
 }
 
 /**
