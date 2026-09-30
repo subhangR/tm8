@@ -243,6 +243,90 @@ function entityChatThread(
 }
 
 /**
+ * A chat whose model AND mode changed mid-thread, as a server that projects
+ * `ranUnder` would read it back. Its default is still Plan on Sonnet 4.5, so a
+ * surface that labels answers from the chat's config instead of from each
+ * answer's own record gets turns 4 and 6 wrong, and this is the fixture that
+ * shows it. It is separate from `CHAT_HOME_FIXTURE_THREAD`, which about forty
+ * tests read as is.
+ *
+ * - Turn 4 ran in Build on Opus, after both switches.
+ * - Turn 5 is a worker reporting back, so it is nobody's answer.
+ * - Turn 6 is an answer read from a server that predates the field.
+ */
+export const CHAT_HOME_FIXTURE_SWITCHED_THREAD: ChatThreadDetail = {
+  summary: {
+    rootId: '019f0000-0000-7000-8000-0000000000a0' as EntityId,
+    aboutId: ANCHOR_ID,
+    title: 'Refactor the rate limiter',
+    preview: 'Done: the limiter now reads its window from config.',
+    updatedAt: '2026-08-13T09:30:00.000Z',
+    replyCount: 5,
+    config: {
+      teammateId: AGENT.id as EntityId,
+      teammateLabel: 'Forge',
+      model: 'claude-sonnet-4-5',
+      modelLabel: 'Sonnet 4.5',
+      mode: 'plan',
+    },
+    state: 'idle',
+  },
+  turns: [
+    {
+      messageId: '019f0000-0000-7000-8000-0000000000a1' as EntityId,
+      role: 'user',
+      author: HUMAN,
+      createdAt: '2026-08-13T09:00:00.000Z',
+      body: 'Plan how the rate limiter should read its window.',
+      parts: [],
+    },
+    {
+      messageId: '019f0000-0000-7000-8000-0000000000a2' as EntityId,
+      role: 'assistant',
+      author: AGENT,
+      createdAt: '2026-08-13T09:01:00.000Z',
+      body: 'Read it from config, and keep the constant as the default.',
+      parts: [],
+      ranUnder: { model: 'claude-sonnet-4-5', provider: 'anthropic', mode: 'plan' },
+    },
+    {
+      messageId: '019f0000-0000-7000-8000-0000000000a3' as EntityId,
+      role: 'user',
+      author: HUMAN,
+      createdAt: '2026-08-13T09:10:00.000Z',
+      body: 'Good. Build it.',
+      parts: [],
+    },
+    {
+      messageId: '019f0000-0000-7000-8000-0000000000a4' as EntityId,
+      role: 'assistant',
+      author: AGENT,
+      createdAt: '2026-08-13T09:12:00.000Z',
+      body: 'Done: the limiter now reads its window from config.',
+      parts: [],
+      ranUnder: { model: 'claude-opus-4-1', provider: 'anthropic', mode: 'build' },
+    },
+    {
+      messageId: '019f0000-0000-7000-8000-0000000000a5' as EntityId,
+      role: 'user',
+      author: AGENT,
+      createdAt: '2026-08-13T09:20:00.000Z',
+      body: 'Worker report: the load test passed at the new window.',
+      parts: [],
+      sourceEntityId: '019f0000-0000-7000-8000-0000000000a9' as EntityId,
+    },
+    {
+      messageId: '019f0000-0000-7000-8000-0000000000a6' as EntityId,
+      role: 'assistant',
+      author: AGENT,
+      createdAt: '2026-08-13T09:30:00.000Z',
+      body: 'Noted: the report is in.',
+      parts: [],
+    },
+  ],
+};
+
+/**
  * The conversations behind the entity fixtures' two chat rows.
  *
  * The second turn of the first thread is THIRD-PARTY: a work session reporting

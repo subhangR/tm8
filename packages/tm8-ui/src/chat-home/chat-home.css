@@ -241,6 +241,20 @@
 
 .tch-turn { margin-bottom: var(--pn-space-6); }
 
+/* What one answer ran under: its mode chip, then its model in byline ink. */
+.tch-turn__ran-under {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.tch-turn__model {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .tch-turn__byline {
   display: flex;
   flex-direction: row;
