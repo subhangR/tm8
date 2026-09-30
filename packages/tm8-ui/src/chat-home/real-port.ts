@@ -420,6 +420,13 @@ export function createChatHomePortFromSeam(
         anchorIds: [input.chatId],
         body: input.body,
         ...(input.attachmentIds?.length ? { attachmentIds: input.attachmentIds } : {}),
+        // Per-turn mode (153/154), and ONLY when the viewer picked one. The
+        // server stamps it on the message, the enqueue trigger copies it to
+        // chat_turns.mode, and the claim reads coalesce(turn.mode,
+        // chat.chat_mode) — so omitting it is how "use the thread's default"
+        // is said, and sending shownMode unconditionally would instead write a
+        // requested_chat_mode onto every turn nobody redirected.
+        ...(input.mode ? { mode: input.mode } : {}),
       });
       return { messageId: messageIdFrom(result) };
     },

@@ -217,16 +217,29 @@ describe('Chat Home', () => {
     expect(view.getByTestId('chat-usage-card').textContent).toContain('842 in');
     expect(view.getByTestId('chat-usage-card').textContent).toContain('176 out');
     expect(view.getByTestId('chat-usage-card').textContent).not.toContain('tokens');
-    // A configured thread still SAYS what it runs as, and 276 SPLIT the three.
-    // Teammate and mode stay pinned — a chat is born as one teammate's, and its
-    // mode reaches the child as argv the orchestrator does not revisit. The
-    // MODEL is now editable on an open chat: it is sticky on the chat row, and
-    // `ensureRuntime` applies it by closing the live child and resuming the same
-    // native session on the new model at the next claimed turn. The chip is
-    // enabled here because this port HAS `setModel`; a port without one locks it
-    // again, which `model-switch.test.tsx` covers along with the switch itself.
+    // A configured thread still SAYS what it runs as, and the three picks have
+    // now split into ONE pinned fact and TWO live ones.
+    //
+    // TEAMMATE stays pinned: a chat is born as one teammate's and there is no
+    // door that reassigns it.
+    //
+    // MODEL is editable (276) — sticky on the chat row, applied by
+    // `ensureRuntime` closing the live child and resuming the same native
+    // session on the new model at the next claimed turn. Enabled here because
+    // this port HAS `setModel`; a port without one locks it again, which
+    // `model-switch.test.tsx` covers along with the switch itself.
+    //
+    // MODE is editable too, and an earlier revision of this comment had the
+    // reason wrong: it said the mode "reaches the child as argv the
+    // orchestrator does not revisit". It does not. The launched system prompt
+    // is mode-INDEPENDENT and carries a guide to all six modes, every turn
+    // names its own mode in a `[mode: x]` line, and no mode narrows the tool
+    // surface (`toolPermission` returns 'allow' for all of them). So a mode
+    // change is a field on the next POST and costs the running child nothing —
+    // no relaunch, no operation, no row to write. `mode-switch.test.tsx` covers
+    // the carrying.
     expect((view.getByLabelText('Chat teammate') as HTMLButtonElement).disabled).toBe(true);
-    expect((view.getByLabelText('Chat mode') as HTMLButtonElement).disabled).toBe(true);
+    expect((view.getByLabelText('Chat mode') as HTMLButtonElement).disabled).toBe(false);
     expect((view.getByLabelText('Chat model') as HTMLButtonElement).disabled).toBe(false);
     expect(view.getByLabelText('Chat mode').textContent).toContain('plan');
     // The pinned state is the disabled triggers themselves — the foot carries
@@ -313,8 +326,11 @@ describe('Chat Home', () => {
 
     await waitFor(() => expect(controls.roots).toHaveLength(1));
     expect(controls.roots[0]).toMatchObject({ mode: 'explain' });
+    // The pick that STARTED the thread became its default mode, and the chip
+    // stays live afterwards: the thread's default is not a lock, it is just what
+    // a turn runs under when nobody redirects that turn.
     await waitFor(() => {
-      expect((view.getByLabelText('Chat mode') as HTMLButtonElement).disabled).toBe(true);
+      expect((view.getByLabelText('Chat mode') as HTMLButtonElement).disabled).toBe(false);
     });
     expect(view.getByLabelText('Chat mode').textContent).toContain('explain');
     expect(view.queryByText('pinned for this thread')).toBeNull();

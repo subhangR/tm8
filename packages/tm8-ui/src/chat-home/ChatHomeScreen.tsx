@@ -493,6 +493,15 @@ export function ChatHomeScreen({
      the switch would look refused. The entry is dropped the instant the served
      config catches up, so a switch made anywhere else still wins. */
   const [modelOverrides, setModelOverrides] = useState<Readonly<Record<string, string>>>({});
+  /* THE PER-TURN MODE PICK, per chat. Unlike `modelOverrides` this is never
+     reconciled against a served value, because there is nothing on the server
+     to reconcile with: a turn's mode is a property of THAT TURN
+     (chat_turns.mode, 154), not of the chat, and `chats.chat_mode` keeps
+     naming the thread's default for as long as the thread lives. Clearing this
+     when the served config disagreed would therefore snap the chip back on
+     every read. It is browser state on purpose, and a reload correctly shows
+     the default again — that IS what the next turn would run as. */
+  const [modeOverrides, setModeOverrides] = useState<Readonly<Record<string, ChatMode>>>({});
   const [teammateId, setTeammateId] = useState<EntityId | ''>('');
   const [modelId, setModelId] = useState(() =>
     newChatSeed?.model && models.some((model) => model.model === newChatSeed.model)
@@ -1296,7 +1305,9 @@ export function ChatHomeScreen({
    */
   const pinned = activeConfig !== null;
   const shownTeammateId = activeConfig?.teammateId ?? teammateId;
-  const shownMode = activeConfig?.mode ?? chatMode;
+  const shownMode =
+    (selectedRootId === null ? undefined : modeOverrides[selectedRootId])
+    ?? activeConfig?.mode ?? chatMode;
   /**
    * THE MODEL IS NO LONGER ONE OF THEM (276).
    *
@@ -1324,6 +1335,41 @@ export function ChatHomeScreen({
       : selectedRootId === null
         ? 'this chat is still starting'
         : null;
+  /**
+   * THE MODE IS NOT WRITE-ONCE EITHER, and it never needed a relaunch to change.
+   *
+   * The model above is sticky on the chat row and must be written through
+   * `chat.setModel` before the next claim can read it. A mode is cheaper than
+   * that in every way: it rides the next POST as `PostMessageInput.mode`, the
+   * server stamps it onto the message, 154's enqueue trigger copies it to
+   * `chat_turns.mode`, and the claim resolves `coalesce(turn.mode,
+   * chat.chat_mode)`. That path has been live since 153/154 and this composer
+   * simply never used it.
+   *
+   * And it costs the running child NOTHING, which is why there is no
+   * `ensureRuntime` dance here: the system prompt is mode-independent and
+   * carries the guide to all six modes, each turn's `[mode: x]` line picks one,
+   * and no mode narrows the tool surface (`toolPermission` is 'allow' for every
+   * mode, so `exposedToolNames` is the identity filter). A mode states intent,
+   * not permission.
+   *
+   * ONE thing can lock the chip, and it is not a running turn: a chat still
+   * being born has no id to attribute the pick to. The pick lands on the next
+   * turn claimed, so making a viewer wait for the current answer would be
+   * refusing a choice about a turn that has not been written yet.
+   */
+  const modeLocked = pinned && selectedRootId === null;
+  const chooseMode = useCallback((next: string) => {
+    /* An unstarted chat is still a PENDING PICK — `chat.start` carries this one
+       as the thread's DEFAULT mode, which is a different write. */
+    if (!pinned) { setChatMode(next as ChatMode); return; }
+    const chatId = selectedRootId;
+    if (chatId === null) return;
+    /* No optimistic-then-corrected step, because there is no round trip to be
+       wrong about: nothing is sent until the next turn is. */
+    setModeOverrides((current) => ({ ...current, [chatId]: next as ChatMode }));
+  }, [pinned, selectedRootId]);
+
   /* The override has served its purpose once the served config says the same
      thing; holding it longer would outrank a switch made in another window. */
   useEffect(() => {
@@ -1801,6 +1847,11 @@ export function ChatHomeScreen({
           body,
           clientMutationId,
           ...(attachmentIds.length ? { attachmentIds } : {}),
+          /* ONLY AN EXPLICIT PICK travels. Omitted means "the thread's
+             default", which is what `coalesce(turn.mode, chat.chat_mode)`
+             already says in SQL, so a turn nobody redirected keeps
+             requested_chat_mode NULL instead of restating the default. */
+          ...(modeOverrides[selectedRootId] ? { mode: modeOverrides[selectedRootId] } : {}),
         });
         acked = true;
         // Forget the chips WITHOUT cancelling their uploads: the ids are on
@@ -1976,6 +2027,7 @@ export function ChatHomeScreen({
     spaceId,
     teammateId,
     newThread, chatMode, crew, teammates, models, permission, modeOptions, projectBinding.workdirMode, projectBinding.projectId, pinnedMode,
+    modeOverrides,
   ]);
 
   const interrupt = useCallback(async () => {
@@ -2568,13 +2620,16 @@ export function ChatHomeScreen({
                   readOnly={busy}
                   placeholder={newThread ? 'What are we doing?' : 'Type a message…'}
                   onKeyDownCapture={(event) => {
-                    /* `/build` on an otherwise-empty input selects the mode. */
-                    if (event.key !== 'Enter' || pinned || pinnedMode !== undefined) return;
+                    /* `/build` on an otherwise-empty input selects the mode —
+                       on a STARTED thread too, where it sets the next turn's
+                       mode through the same door the chip uses. Only a
+                       host-pinned mode and a chat without an id still refuse. */
+                    if (event.key !== 'Enter' || modeLocked || pinnedMode !== undefined) return;
                     const slashMode = modeFromSlash(draft);
                     if (!slashMode) return;
                     event.preventDefault();
                     event.stopPropagation();
-                    setChatMode(slashMode);
+                    chooseMode(slashMode);
                     setDraft('');
                   }}
                   rows={2}
@@ -2636,8 +2691,8 @@ export function ChatHomeScreen({
                       emphasisGroups={['Act']}
                       tall
                       value={shownMode}
-                      onChange={(id) => setChatMode(id as ChatMode)}
-                      disabled={pinned}
+                      onChange={chooseMode}
+                      disabled={modeLocked}
                       emptyNote="No chat mode is available."
                     />
                   ) : null}

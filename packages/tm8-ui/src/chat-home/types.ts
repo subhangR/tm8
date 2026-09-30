@@ -347,6 +347,29 @@ export interface ChatPostInput {
   clientMutationId: string;
   /** Same contract as `ChatCreateInput.attachmentIds` — every turn may carry files. */
   attachmentIds?: EntityId[];
+  /**
+   * THE MODE THIS ONE TURN RUNS UNDER, and the reason it is per-turn rather
+   * than a second `setModel`-style write.
+   *
+   * The server has carried this since 153/154: `messages.requested_chat_mode`
+   * is copied onto `chat_turns.mode` by the enqueue trigger, and the claim
+   * resolves `coalesce(turn.mode, chat.chat_mode)` — so a turn names its own
+   * mode and the chat's default covers the rest. `PostMessageInput.mode`
+   * already accepts it on the wire; nothing in this UI was sending it.
+   *
+   * It needs NO relaunch, which is what separates it from the model: the
+   * system prompt is deliberately mode-independent and carries a guide to
+   * every mode (`chatSystemPrompt`, "input.chatMode is not read here"), each
+   * turn's `[mode: x]` envelope line selects which one applies, and the tool
+   * surface does not vary — `toolPermission` returns 'allow' for every mode,
+   * so `exposedToolNames` is the identity filter. A mode states INTENT, not
+   * permission.
+   *
+   * OMITTED means "the thread's default", and stays omitted unless the viewer
+   * actually picks something, so `requested_chat_mode` stays NULL on a turn
+   * nobody redirected.
+   */
+  mode?: ChatMode;
 }
 
 /**
