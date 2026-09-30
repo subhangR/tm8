@@ -76,7 +76,7 @@ import type { RequestContext } from '../http/types.js';
  * A refusal, not a scope check: there is no chat id on the request to compare
  * against, because the operation's whole purpose is to create one.
  */
-export const CHAT_OPERATIONS_CLOSED_TO_RUNTIME = ['chat.start'] as const;
+export const CHAT_OPERATIONS_CLOSED_TO_RUNTIME = ['chat.start', 'chat.setModel'] as const;
 
 /** The chat an `agent_runtime` bearer runs, or null for every other principal. */
 export function runtimeChatIdOf(ctx: RequestContext): string | null {

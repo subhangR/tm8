@@ -486,6 +486,22 @@ export function ChatHomeScreen({
       return rest;
     });
   }, []);
+  /* THE MODEL A CHAT HAS BEEN SWITCHED TO, per chat, until the server's own
+     read agrees (276). `activeConfig.model` is the truth and arrives from a list
+     read or a thread read; neither happens on a switch, so with nothing here the
+     chip would snap back to the old model the moment anything re-rendered and
+     the switch would look refused. The entry is dropped the instant the served
+     config catches up, so a switch made anywhere else still wins. */
+  const [modelOverrides, setModelOverrides] = useState<Readonly<Record<string, string>>>({});
+  /* THE PER-TURN MODE PICK, per chat. Unlike `modelOverrides` this is never
+     reconciled against a served value, because there is nothing on the server
+     to reconcile with: a turn's mode is a property of THAT TURN
+     (chat_turns.mode, 154), not of the chat, and `chats.chat_mode` keeps
+     naming the thread's default for as long as the thread lives. Clearing this
+     when the served config disagreed would therefore snap the chip back on
+     every read. It is browser state on purpose, and a reload correctly shows
+     the default again — that IS what the next turn would run as. */
+  const [modeOverrides, setModeOverrides] = useState<Readonly<Record<string, ChatMode>>>({});
   const [teammateId, setTeammateId] = useState<EntityId | ''>('');
   const [modelId, setModelId] = useState(() =>
     newChatSeed?.model && models.some((model) => model.model === newChatSeed.model)
@@ -1289,8 +1305,99 @@ export function ChatHomeScreen({
    */
   const pinned = activeConfig !== null;
   const shownTeammateId = activeConfig?.teammateId ?? teammateId;
-  const shownModelId = activeConfig?.model ?? modelId;
-  const shownMode = activeConfig?.mode ?? chatMode;
+  const shownMode =
+    (selectedRootId === null ? undefined : modeOverrides[selectedRootId])
+    ?? activeConfig?.mode ?? chatMode;
+  /**
+   * THE MODEL IS NO LONGER ONE OF THEM (276).
+   *
+   * Teammate and mode above are still write-once — a chat's teammate is who it
+   * is, and its mode decided which tools its child was given. The model is not:
+   * a Claude Code session carries turns from several models and `--resume` keeps
+   * the transcript, so switching costs the conversation nothing and `chat.start`
+   * was pinning it only because nothing could move it afterwards.
+   *
+   * Three things can still lock the chip, and each says which:
+   *  - a port with no `setModel` (an older node has no such operation),
+   *  - a chat still being born, which has no id to address yet,
+   *  - nothing else. A running turn does NOT lock it: the switch applies to the
+   *    next turn claimed, so there is no reason to make the viewer wait for an
+   *    answer to choose who writes the one after it.
+   */
+  const shownModelId =
+    (selectedRootId === null ? undefined : modelOverrides[selectedRootId])
+    ?? activeConfig?.model
+    ?? modelId;
+  const modelLockReason = !pinned
+    ? null
+    : port.setModel === undefined
+      ? 'this node cannot change a chat\u2019s model'
+      : selectedRootId === null
+        ? 'this chat is still starting'
+        : null;
+  /**
+   * THE MODE IS NOT WRITE-ONCE EITHER, and it never needed a relaunch to change.
+   *
+   * The model above is sticky on the chat row and must be written through
+   * `chat.setModel` before the next claim can read it. A mode is cheaper than
+   * that in every way: it rides the next POST as `PostMessageInput.mode`, the
+   * server stamps it onto the message, 154's enqueue trigger copies it to
+   * `chat_turns.mode`, and the claim resolves `coalesce(turn.mode,
+   * chat.chat_mode)`. That path has been live since 153/154 and this composer
+   * simply never used it.
+   *
+   * And it costs the running child NOTHING, which is why there is no
+   * `ensureRuntime` dance here: the system prompt is mode-independent and
+   * carries the guide to all six modes, each turn's `[mode: x]` line picks one,
+   * and no mode narrows the tool surface (`toolPermission` is 'allow' for every
+   * mode, so `exposedToolNames` is the identity filter). A mode states intent,
+   * not permission.
+   *
+   * ONE thing can lock the chip, and it is not a running turn: a chat still
+   * being born has no id to attribute the pick to. The pick lands on the next
+   * turn claimed, so making a viewer wait for the current answer would be
+   * refusing a choice about a turn that has not been written yet.
+   */
+  const modeLocked = pinned && selectedRootId === null;
+  const chooseMode = useCallback((next: string) => {
+    /* An unstarted chat is still a PENDING PICK — `chat.start` carries this one
+       as the thread's DEFAULT mode, which is a different write. */
+    if (!pinned) { setChatMode(next as ChatMode); return; }
+    const chatId = selectedRootId;
+    if (chatId === null) return;
+    /* No optimistic-then-corrected step, because there is no round trip to be
+       wrong about: nothing is sent until the next turn is. */
+    setModeOverrides((current) => ({ ...current, [chatId]: next as ChatMode }));
+  }, [pinned, selectedRootId]);
+
+  /* The override has served its purpose once the served config says the same
+     thing; holding it longer would outrank a switch made in another window. */
+  useEffect(() => {
+    const served = activeConfig?.model;
+    if (selectedRootId === null || served === undefined) return;
+    if (modelOverrides[selectedRootId] !== served) return;
+    setModelOverrides(({ [selectedRootId]: _settled, ...rest }) => rest);
+  }, [selectedRootId, activeConfig?.model, modelOverrides]);
+  const chooseModel = useCallback((next: string) => {
+    /* An unstarted chat is still a PENDING PICK — it has no row to write to, and
+       `chat.start` carries the choice. */
+    if (!pinned) { setModelId(next); return; }
+    const chatId = selectedRootId;
+    const setModel = port.setModel;
+    if (chatId === null || setModel === undefined) return;
+    /* Optimistic, and then corrected to what the server resolved rather than to
+       what was asked for: the two agree today, and a surface that assumed so
+       would be the place a future normalisation went unnoticed. */
+    setModelOverrides((current) => ({ ...current, [chatId]: next }));
+    fileSubmitFailure(chatId, null);
+    void setModel({ chatId, model: next }).then(
+      (result) => setModelOverrides((current) => ({ ...current, [chatId]: result.model })),
+      (error: unknown) => {
+        setModelOverrides(({ [chatId]: _failed, ...rest }) => rest);
+        fileSubmitFailure(chatId, describeError(error));
+      },
+    );
+  }, [pinned, selectedRootId, port, fileSubmitFailure]);
   /* Under orchestrate the roster is COORDINATORS ONLY (ac_7); the model
      decides, the effect below applies its preselect. */
   const roster = useMemo(
@@ -1316,6 +1423,14 @@ export function ChatHomeScreen({
       : base;
   }, [roster.options, activeConfig]);
   /* The COORDINATOR's list: codex models drawn disabled with the reason (ac_10). */
+  /* The catalog entry for the model the CHIP is showing, which since 276 is not
+     always the pending new-chat pick. `selectedModel` stays what it was — the
+     start path's pick — because that is the model `chat.start` is about to be
+     sent; this one is what the popover is describing. */
+  const shownModel = useMemo(
+    () => models.find((model) => model.model === shownModelId) ?? null,
+    [shownModelId, models],
+  );
   const modelChoices = useMemo(() => {
     const base = coordinatorModelChoices(models);
     return activeConfig && !base.some((option) => option.id === activeConfig.model)
@@ -1326,8 +1441,8 @@ export function ChatHomeScreen({
      lacks the remembered stop snaps to its nearest one. */
   const effort = useMemo<LaunchModelEffort | null>(() => {
     const wanted = effortByMode[shownMode] ?? modeSpec(shownMode).defaultEffort;
-    return nearestEffort(wanted, selectedModel?.efforts ?? []);
-  }, [effortByMode, shownMode, selectedModel]);
+    return nearestEffort(wanted, shownModel?.efforts ?? []);
+  }, [effortByMode, shownMode, shownModel]);
   const modeSelectOptions = useMemo<ComposerSelectOption[]>(
     () => MODE_SPECS.map((spec) => ({
       id: spec.id,
@@ -1732,6 +1847,11 @@ export function ChatHomeScreen({
           body,
           clientMutationId,
           ...(attachmentIds.length ? { attachmentIds } : {}),
+          /* ONLY AN EXPLICIT PICK travels. Omitted means "the thread's
+             default", which is what `coalesce(turn.mode, chat.chat_mode)`
+             already says in SQL, so a turn nobody redirected keeps
+             requested_chat_mode NULL instead of restating the default. */
+          ...(modeOverrides[selectedRootId] ? { mode: modeOverrides[selectedRootId] } : {}),
         });
         acked = true;
         // Forget the chips WITHOUT cancelling their uploads: the ids are on
@@ -1907,6 +2027,7 @@ export function ChatHomeScreen({
     spaceId,
     teammateId,
     newThread, chatMode, crew, teammates, models, permission, modeOptions, projectBinding.workdirMode, projectBinding.projectId, pinnedMode,
+    modeOverrides,
   ]);
 
   const interrupt = useCallback(async () => {
@@ -2499,13 +2620,16 @@ export function ChatHomeScreen({
                   readOnly={busy}
                   placeholder={newThread ? 'What are we doing?' : 'Type a message…'}
                   onKeyDownCapture={(event) => {
-                    /* `/build` on an otherwise-empty input selects the mode. */
-                    if (event.key !== 'Enter' || pinned || pinnedMode !== undefined) return;
+                    /* `/build` on an otherwise-empty input selects the mode —
+                       on a STARTED thread too, where it sets the next turn's
+                       mode through the same door the chip uses. Only a
+                       host-pinned mode and a chat without an id still refuse. */
+                    if (event.key !== 'Enter' || modeLocked || pinnedMode !== undefined) return;
                     const slashMode = modeFromSlash(draft);
                     if (!slashMode) return;
                     event.preventDefault();
                     event.stopPropagation();
-                    setChatMode(slashMode);
+                    chooseMode(slashMode);
                     setDraft('');
                   }}
                   rows={2}
@@ -2567,8 +2691,8 @@ export function ChatHomeScreen({
                       emphasisGroups={['Act']}
                       tall
                       value={shownMode}
-                      onChange={(id) => setChatMode(id as ChatMode)}
-                      disabled={pinned}
+                      onChange={chooseMode}
+                      disabled={modeLocked}
                       emptyNote="No chat mode is available."
                     />
                   ) : null}
@@ -2589,11 +2713,11 @@ export function ChatHomeScreen({
                     models={models}
                     choices={modelChoices}
                     value={shownModelId}
-                    onChange={setModelId}
+                    onChange={chooseModel}
                     effort={effort}
                     onEffortChange={(next) => setEffortByMode((current) => ({ ...current, [shownMode]: next }))}
-                    disabled={pinned}
-                    disabledReason="the model is fixed when a thread starts"
+                    disabled={modelLockReason !== null}
+                    {...(modelLockReason ? { disabledReason: modelLockReason } : {})}
                   />
                   <ModeOptionsSlot
                     mode={shownMode}

@@ -1628,6 +1628,24 @@ const ROWS: Record<OperationName, Row> = {
       'tm8 chat start --teammate <team-member-id> --model <model> --mode ask --workdir project --project <project-id> --about <entity-id> -',
     ],
   },
+  'chat.setModel': {
+    cmd: ['chat', 'model'],
+    syn: 'tm8 chat model <chat-id> <model>',
+    sum: 'Move an open chat onto another model — the next turn claimed runs on it',
+    authz: 'entity',
+    input: 'bound',
+    tags: ['chat', 'model', 'switch', 'change', 'upgrade', 'downgrade'],
+    notes: [
+      'the model is the ONE element of a chat\'s configuration that is not pinned for its life (276); the teammate, the mode and the working directory still are',
+      'the conversation survives the switch: the chat keeps its native session and the new model resumes it, so nothing is restarted and no history is lost',
+      'applies to the NEXT turn claimed — a turn already running finishes on the model it was claimed with, and each turn records which model ran it',
+      'names a model and never a provider: the Server resolves provider from the launch catalog, because provider decides which API key the child is given',
+      'refused with `invalid_input` for a model that launches via another agent tool; chat runs claude-code models only, and switching tool would invalidate the session being resumed',
+      'human-authenticated only, exactly like `chat start`: an agent runtime credential is refused',
+      'no --mutation-id: the write is an assignment, so asking twice leaves the chat as asking once did',
+    ],
+    examples: ['tm8 chat model <chat-id> claude-opus-5'],
+  },
 
   // ── collections / graph / placements / undo ──────────────────────────────
   'collections.query': {
@@ -3480,6 +3498,8 @@ function exposureFor(operation: OperationName): Exposure {
 // 2026-08-13 (first-run claim): auth.claim + auth.claim.status take the catalog
 // to 161 rows. RECOMPUTED from `JSON.stringify(OPERATIONS)`, not adjusted.
 export const CATALOG_DIGEST =
+  // Re-measured for 276 (+chat.setModel, chat model switch) — RECOMPUTED from
+  // JSON.stringify(OPERATIONS) by test/discovery-operations.test.ts, not adjusted.
   // Re-measured for task 01a0e24d (+humanOnly on 33 rows: 24 credentials.*/node.credentials.*,
   // 6 spaceLinks.* writes, servers.add/adopt/remove) — read from the regenerated conformance manifest. MEASURED.
   // Re-measured for Attention v2 S4 (+attentionRequests.markSeen/unresolve/withdraw).
@@ -3528,7 +3548,7 @@ export const CATALOG_DIGEST =
   // Re-measured (W8, 261, rebuilt on main f01b1566): +6 servers.* and the serverConnections create/delete rows. Read from the regenerated conformance manifest.
   // Re-measured (W5 #917, merges of main dd1c8215 and 2fa4999f): +3 spaces.spacePassword.* on top of main's servers.*, spaceLinks, attention and launch v3 rows. Read from the regenerated conformance manifest.
   // Re-measured (#915 merge of main 0be3b796): main's servers.* + spaceLinks.invoke/audit and the five attention rows together. Read from the regenerated conformance manifest.
-  'sha256:be85230eefda1327169810033105a3ce920537605fcb7e909486b9679c3538ab';
+  'sha256:5513b56c1694d513b34b1c3435bf51f30d44c15336d87b759924d0bd0d53a09b';
 
 export const GRAMMAR_VERSION = '2';
 

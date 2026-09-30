@@ -1,0 +1,126 @@
+// @vitest-environment jsdom
+/**
+ * 276 — THE CHAT MODEL CHIP IS A CONTROL ON AN OPEN CHAT, NOT A LABEL.
+ *
+ * The reported defect was precise: once a model had answered, the composer gave
+ * no way to continue the same conversation on a different model. The chip was
+ * `disabled={pinned}` and said "the model is fixed when a thread starts", which
+ * was an HONEST description of the runtime at the time — so unlocking it alone
+ * would have replaced a refusal with a lie. These tests pin the browser half of
+ * the fix: the chip is live on an open chat, it calls `chat.setModel`, and a
+ * refusal is surfaced rather than swallowed.
+ *
+ * The chip is deliberately NOT locked while a turn is running — a switch applies
+ * to the next turn claimed, so there is no reason to make the viewer wait for an
+ * answer before choosing who writes the one after it.
+ */
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it } from 'vitest';
+import type { EntityId } from '@tm8/contract';
+import { ChatHomeScreen } from './ChatHomeScreen';
+import { CHAT_HOME_FIXTURE_THREAD, createChatHomeFixturePort } from './fixtures';
+import type { ChatHomePort, ChatModelOption } from './types';
+
+const SPACE_ID = '019f0000-0000-7000-8000-000000000090';
+const FIXTURE_CHAT = CHAT_HOME_FIXTURE_THREAD.summary.rootId;
+/* The fixture chat opens on Sonnet. Opus is the switch target and Sol is the
+   control: chat runs Claude Code only, so a codex row must stay refused even
+   after the claude-to-claude lock is gone. */
+const MODELS: ChatModelOption[] = [
+  { model: 'claude-sonnet-4-5', label: 'Sonnet 4.5', provider: 'Anthropic', agentTool: 'claude-code' },
+  { model: 'claude-opus-4-1', label: 'Opus 4.1', provider: 'Anthropic', agentTool: 'claude-code' },
+  { model: 'gpt-5.6-sol', label: 'GPT 5.6 Sol', provider: 'OpenAI', agentTool: 'codex' },
+];
+
+afterEach(cleanup);
+
+/** Mount with the fixture chat already open, so the chip is on a PINNED chat. */
+async function openChat(overrides: Partial<ChatHomePort> = {}) {
+  const { port, controls } = createChatHomeFixturePort();
+  const view = render(
+    <ChatHomeScreen
+      port={{ ...port, ...overrides }}
+      spaceId={SPACE_ID}
+      models={MODELS}
+      routeThreadId={FIXTURE_CHAT}
+    />,
+  );
+  // "Open" means the served config has arrived — that is what makes `pinned`
+  // true, and asserting on it rather than on a timer keeps this off the clock.
+  await waitFor(() => expect(view.getByTestId('tch-model').textContent).toContain('Sonnet 4.5'));
+  return { view, controls };
+}
+
+describe('276: changing an open chat’s model from the composer', () => {
+  it('leaves the chip ENABLED on an open chat, with no lock reason', async () => {
+    const { view } = await openChat();
+    const chip = view.getByTestId('tch-model');
+    // The regression this guards is the original defect verbatim.
+    expect(chip.hasAttribute('disabled')).toBe(false);
+    expect(chip.getAttribute('title')).not.toMatch(/fixed when a thread starts/);
+  });
+
+  it('calls chat.setModel with the open chat and the chosen model, and shows it', async () => {
+    const { view, controls } = await openChat();
+    fireEvent.click(view.getByLabelText('Chat model'));
+    fireEvent.click(view.getByTestId('tch-model-claude-opus-4-1'));
+
+    // THE WRITE HAPPENED, addressed to the open chat. A chip that only changed
+    // locally is the bug, not the fix.
+    await waitFor(() => expect(controls.modelSwitches).toEqual([
+      { chatId: FIXTURE_CHAT, model: 'claude-opus-4-1' },
+    ]));
+    // AND THE CHIP FOLLOWS. Without the optimistic override the label snaps
+    // back on the next render and the switch reads as refused.
+    await waitFor(() => expect(view.getByTestId('tch-model').textContent).toContain('Opus 4.1'));
+  });
+
+  it('still refuses a codex model — the agent tool is the one axis a switch cannot cross', async () => {
+    const { view, controls } = await openChat();
+    fireEvent.click(view.getByLabelText('Chat model'));
+    const codexRow = view.getByTestId('tch-model-gpt-5.6-sol');
+    expect(codexRow.getAttribute('aria-disabled')).toBe('true');
+    expect(codexRow.textContent).toContain('Claude Code only');
+    fireEvent.click(codexRow);
+    // Drawn and explained, never silently omitted — and clicking it writes nothing.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(controls.modelSwitches).toEqual([]);
+    expect(view.getByTestId('tch-model').textContent).toContain('Sonnet 4.5');
+  });
+
+  it('a REFUSED switch reverts the chip and reports the reason', async () => {
+    const { view, controls } = await openChat({
+      setModel: async () => { throw new Error('chat runs on claude-code and cannot switch'); },
+    });
+    fireEvent.click(view.getByLabelText('Chat model'));
+    fireEvent.click(view.getByTestId('tch-model-claude-opus-4-1'));
+
+    // The reason reaches the user...
+    await waitFor(() => expect(view.getByRole('alert').textContent)
+      .toContain('chat runs on claude-code and cannot switch'));
+    // ...and the chip tells the truth again, rather than showing a model the
+    // chat is not on. A stuck optimistic label is worse than the original lock:
+    // the next turn would answer as Sonnet while the composer claimed Opus.
+    expect(view.getByTestId('tch-model').textContent).toContain('Sonnet 4.5');
+    expect(controls.modelSwitches).toEqual([]);
+  });
+
+  it('locks the chip, with a reason, on a node whose port has no setModel', async () => {
+    const { port } = createChatHomeFixturePort();
+    const { setModel: _absent, ...withoutSetModel } = port;
+    const view = render(
+      <ChatHomeScreen
+        port={withoutSetModel}
+        spaceId={SPACE_ID}
+        models={MODELS}
+        routeThreadId={FIXTURE_CHAT}
+      />,
+    );
+    await waitFor(() => expect(view.getByTestId('tch-model').textContent).toContain('Sonnet 4.5'));
+    const chip = view.getByTestId('tch-model');
+    // Optional on the port so a stale port literal keeps working; when it is
+    // genuinely absent the chip must say so instead of failing on click.
+    expect(chip.hasAttribute('disabled')).toBe(true);
+    expect(chip.getAttribute('title')).toContain('cannot change');
+  });
+});

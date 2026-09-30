@@ -112,7 +112,8 @@ import type {
   NavChannelNode,
   NotificationItem, Page, PaletteAction, ActionRows, ActionDiscoveryPage, ActionListResult, PatchEdgeInput, PatchEntityInput,
   PatchMessageInput, PatchTaskInput, PlacementInput, PointEventView,
-  PostMessageInput, PostMessageWireInput, PresenceSnapshot, StartChatInput,
+  PostMessageInput, PostMessageWireInput, PresenceSnapshot, SetChatModelInput,
+  SetChatModelResult, StartChatInput,
   StartChatResult,
   PreviewInteractionProfileInput, ProfileValidationIssue, ProfileValidationView,
   CommitSessionAttribution,
@@ -1391,6 +1392,22 @@ export const StartChatResultSchema: z.ZodType<StartChatResult> = z.lazy(() => z.
   chat: EntitySummarySchema,
   messageId: EntityIdSchema,
 }).strict()) as z.ZodType<StartChatResult>;
+
+/**
+ * 276. `model` is checked against the launch catalog in the handler, not here:
+ * the catalog is data that changes with releases, and a schema that enumerated
+ * it would refuse a model the node can actually run the moment the two drift.
+ * The shape is all this asserts.
+ */
+export const SetChatModelInputSchema: z.ZodType<SetChatModelInput> = z.object({
+  model: z.string().min(1),
+}).strict() as z.ZodType<SetChatModelInput>;
+
+export const SetChatModelResultSchema: z.ZodType<SetChatModelResult> = z.object({
+  chatId: EntityIdSchema,
+  model: z.string().min(1),
+  provider: z.string().min(1),
+}).strict() as z.ZodType<SetChatModelResult>;
 
 export const ChatTurnFrameSchema: z.ZodType<ChatTurnFrame> = z.discriminatedUnion('type', [
   z.object({
