@@ -82,8 +82,17 @@ export function ModelEffortPicker({
                 className="tch-pickmenu__opt"
                 data-testid={`${testId}-${choice.id}`}
                 aria-selected={choice.id === value}
-                aria-disabled={choice.disabledReason ? true : undefined}
-                title={choice.disabledReason}
+                /* A LOCKED PICKER MUST LOOK LOCKED. The onClick gate below makes the
+                   rows inert when `disabled` is set, but inert is invisible: without
+                   this, the Claude rows kept dark text and no aria-disabled while the
+                   codex row was greyed with its reason, so the menu only READ as locked
+                   once it was closed. Observed in a browser, 2026-09-30 (frame I-fix-2a)
+                   on the same open menu whose second pick this commit's sibling gate
+                   silenced. The grey costs nothing: chat-home.css:2364 already styles
+                   .tch-pickmenu__opt[aria-disabled='true']. A row with no reason of its
+                   own borrows the picker's, so the tooltip says WHY it cannot be picked. */
+                aria-disabled={(disabled || choice.disabledReason) ? true : undefined}
+                title={choice.disabledReason ?? disabledReason}
                 /* BOTH gates, and `disabled` is the one that is easy to miss.
                    `disabled` reaches ComposerPopover and stops the TRIGGER, which
                    is enough only while the menu is shut. This menu deliberately

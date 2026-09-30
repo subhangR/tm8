@@ -200,6 +200,16 @@ describe('276: changing an open chat’s model from the composer', () => {
     await waitFor(() => expect(view.getByRole('alert').textContent).toContain('needs an update'));
     expect(calls).toBe(1);
     expect(view.getByRole('alert').textContent).not.toContain('no operation bound');
+
+    /* AND THEY MUST LOOK LOCKED, not merely be inert. This row carries no reason
+       of its own -- only the picker is disabled -- so before the aria fix it kept
+       dark text and no aria-disabled while the codex row beside it was greyed,
+       which is a menu that reads as pickable and is not. Observed in a browser
+       (frame I-fix-2a). The greying follows from aria-disabled via
+       chat-home.css:2364, so asserting the attribute asserts the appearance. */
+    const lockedRow = view.getByTestId('tch-model-claude-sonnet-4-5');
+    expect(lockedRow.getAttribute('aria-disabled')).toBe('true');
+    expect(lockedRow.getAttribute('title')).toContain('cannot change');
   });
 
   it('a chat the viewer cannot configure does NOT get blamed on the node', async () => {
