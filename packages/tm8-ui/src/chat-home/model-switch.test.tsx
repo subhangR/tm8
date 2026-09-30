@@ -16,6 +16,7 @@
  */
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
+import { CollabError } from '@tm8/contract';
 import type { EntityId } from '@tm8/contract';
 import { ChatHomeScreen } from './ChatHomeScreen';
 import { CHAT_HOME_FIXTURE_THREAD, createChatHomeFixturePort } from './fixtures';
@@ -122,5 +123,52 @@ describe('276: changing an open chat’s model from the composer', () => {
     // genuinely absent the chip must say so instead of failing on click.
     expect(chip.hasAttribute('disabled')).toBe(true);
     expect(chip.getAttribute('title')).toContain('cannot change');
+  });
+  /**
+   * A UI CAN BE NEWER THAN ITS NODE, and on this host it WAS: the 276 bundle was
+   * deployed restartlessly while the server dist still predated the route, so
+   * `chat.setModel` came back 404 `not_found` and the chip failed on every
+   * click showing the router's own words. Measured against prod on 2026-09-30:
+   *   POST /v2/chats/<id>/model -> 404
+   *   {"code":"not_found","message":"no operation bound to POST /v2/chats/<id>/model"}
+   * These two pin the guard for that window, and the SECOND one is what keeps it
+   * honest: a latch that fired on any failure would pass the first test alone
+   * while quietly locking the chip on every ordinary refusal.
+   */
+  it('a node with no such route LOCKS the chip once, instead of failing on every click', async () => {
+    let calls = 0;
+    const { view } = await openChat({
+      setModel: async () => {
+        calls += 1;
+        throw new CollabError('not_found', 'no operation bound to POST /v2/chats/x/model');
+      },
+    });
+    fireEvent.click(view.getByLabelText('Chat model'));
+    fireEvent.click(view.getByTestId('tch-model-claude-opus-4-1'));
+
+    // The chip locks, and says why in words a human wrote.
+    await waitFor(() => expect(view.getByTestId('tch-model').hasAttribute('disabled')).toBe(true));
+    expect(view.getByTestId('tch-model').getAttribute('title')).toContain('cannot change');
+    // The router's own sentence never reaches the viewer.
+    expect(view.getByRole('alert').textContent).not.toContain('no operation bound');
+    expect(view.getByRole('alert').textContent).toContain('needs an update');
+    // And the label is truthful again rather than stuck on the asked-for model.
+    expect(view.getByTestId('tch-model').textContent).toContain('Sonnet 4.5');
+    expect(calls).toBe(1);
+  });
+
+  it('an ORDINARY refusal does not lock the chip — only a missing route does', async () => {
+    const { view } = await openChat({
+      setModel: async () => {
+        throw new CollabError('invalid_input', 'model is not in this space\u2019s catalog');
+      },
+    });
+    fireEvent.click(view.getByLabelText('Chat model'));
+    fireEvent.click(view.getByTestId('tch-model-claude-opus-4-1'));
+
+    await waitFor(() => expect(view.getByRole('alert').textContent).toContain('not in this space'));
+    // Still live: the node HAS the route, it refused this particular model, and
+    // the next pick deserves to reach it.
+    expect(view.getByTestId('tch-model').hasAttribute('disabled')).toBe(false);
   });
 });
