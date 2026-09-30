@@ -84,7 +84,16 @@ export function ModelEffortPicker({
                 aria-selected={choice.id === value}
                 aria-disabled={choice.disabledReason ? true : undefined}
                 title={choice.disabledReason}
-                onClick={() => { if (!choice.disabledReason) onChange(choice.id); }}
+                /* BOTH gates, and `disabled` is the one that is easy to miss.
+                   `disabled` reaches ComposerPopover and stops the TRIGGER, which
+                   is enough only while the menu is shut. This menu deliberately
+                   stays open after a pick, because the effort row lives in it — so
+                   a lock that flips WHILE IT IS OPEN (the picker's own onChange
+                   failing, and the caller latching on that failure) leaves live
+                   rows behind a disabled trigger. Picking again then sent a second
+                   doomed request and filed the same error a second time. Measured
+                   in a browser, 2026-09-30: 2 picks from one open menu, 2 POSTs. */
+                onClick={() => { if (!disabled && !choice.disabledReason) onChange(choice.id); }}
               >
                 <span className="tch-pickmenu__text">
                   <span className="tch-pickmenu__name">{choice.label}</span>

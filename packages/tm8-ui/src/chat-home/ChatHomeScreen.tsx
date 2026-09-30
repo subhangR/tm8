@@ -512,12 +512,20 @@ export function ChatHomeScreen({
      names. So the first click is the probe, and it is the only one that can
      fail this way.
 
-     `not_found` is also what a chat the viewer cannot configure would raise, and
-     the two are indistinguishable by code. That case is all but unreachable
-     here — the chip only renders for a chat already open in front of its
-     configurer — and if it ever did happen, a locked chip is the honest outcome
-     anyway: that chat's model cannot be moved either. Cleared by a reload, which
-     is also when a node that has since been updated gets noticed. */
+     `not_found` is ALSO what a chat the viewer cannot configure raises, so the
+     code alone is not enough — 276:117-124 raises the same P0002 for a
+     non-configurer as for a missing chat, deliberately, so that a caller cannot
+     probe which chats exist. An earlier version of this comment called that case
+     "all but unreachable"; it is not. Chats have visibility 'space' and
+     `chats_select` lists them for any active member, and nothing on this screen
+     checks the configurer, so a second member can open someone else's chat and
+     pick a model. On a node that HAS the route that would latch, blame the node,
+     and — because the latch is screen-wide — lock that member's OWN chats too
+     until a reload. So the two are separated STRUCTURALLY, below.
+
+     Cleared by a reload, which is also when a node that has since been updated
+     gets noticed. Each load therefore pays one failing pick; that is the price of
+     having no capability read, and it is acceptable for a mitigation. */
   const [nodeHasNoSetModel, setNodeHasNoSetModel] = useState(false);
   /* THE PER-TURN MODE PICK, per chat. Unlike `modelOverrides` this is never
      reconciled against a served value, because there is nothing on the server
@@ -1428,8 +1436,25 @@ export function ChatHomeScreen({
            not a string this file matched. Latching turns an error that would
            repeat on every click into one that is stated once, as a lock with a
            reason — and it replaces the router's "no operation bound to POST
-           /v2/chats/<id>/model", which is machine language in a human's face. */
-        if (error instanceof CollabError && error.code === 'not_found') {
+           /v2/chats/<id>/model", which is machine language in a human's face.
+
+           THE `sqlstate` TEST IS WHAT MAKES IT A ROUTE FACT rather than a chat
+           fact. A router miss never reaches a function, so its body carries no
+           `details` at all; `set_chat_model`'s refusal reaches one and comes back
+           with `details.sqlstate = 'P0002'`. Both are 404 `not_found`, so without
+           this test a non-configurer would be told the NODE needs an update and
+           would have their own chats locked with it.
+           Do NOT rewrite this as "no details": `toCollabError` always adds
+           `httpStatus`, and `serverRequestId` whenever the wire carried one
+           (http.ts:196-204), so `details` is never empty and such a test can only
+           ever be false. Measured on a node with 276 applied: an unknown chat id
+           returns `details: {sqlstate: 'P0002'}`; an unbound sibling path returns
+           no `details`. */
+        if (
+          error instanceof CollabError
+          && error.code === 'not_found'
+          && error.details?.sqlstate === undefined
+        ) {
           setNodeHasNoSetModel(true);
           fileSubmitFailure(chatId, 'this node cannot change a chat\u2019s model yet \u2014 it needs an update');
           return;

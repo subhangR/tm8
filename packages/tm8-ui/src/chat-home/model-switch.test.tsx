@@ -171,4 +171,56 @@ describe('276: changing an open chat’s model from the composer', () => {
     // the next pick deserves to reach it.
     expect(view.getByTestId('tch-model').hasAttribute('disabled')).toBe(false);
   });
+
+  /* BOTH OF THE FOLLOWING ARE REGRESSIONS FOUND IN A REAL BROWSER against the
+     build that was already serving prod (index-DkRnSAFc.js, 2026-09-30), not
+     from reading this file. The guard above was measured working; these are the
+     two ways it was still wrong. */
+
+  it('locking does not leave live rows behind a disabled trigger', async () => {
+    let calls = 0;
+    const { view } = await openChat({
+      setModel: async () => {
+        calls += 1;
+        throw new CollabError('not_found', 'no operation bound to POST /v2/chats/x/model');
+      },
+    });
+    // ONE menu, opened once, and never reopened: this popover deliberately stays
+    // open after a pick because the effort row lives in it, so the lock flips
+    // while these rows are still mounted.
+    fireEvent.click(view.getByLabelText('Chat model'));
+    fireEvent.click(view.getByTestId('tch-model-claude-opus-4-1'));
+    await waitFor(() => expect(view.getByTestId('tch-model').hasAttribute('disabled')).toBe(true));
+    expect(calls).toBe(1);
+
+    // A second pick from that same still-open menu. Measured sending a second
+    // doomed request and filing the same error again before ModelEffortPicker's
+    // rows checked the picker-level `disabled`.
+    fireEvent.click(view.getByTestId('tch-model-claude-sonnet-4-5'));
+    await waitFor(() => expect(view.getByRole('alert').textContent).toContain('needs an update'));
+    expect(calls).toBe(1);
+    expect(view.getByRole('alert').textContent).not.toContain('no operation bound');
+  });
+
+  it('a chat the viewer cannot configure does NOT get blamed on the node', async () => {
+    /* 276:117-124 raises the SAME P0002 for a non-configurer as for a missing
+       chat, so code alone cannot separate "this node is old" from "this chat is
+       not yours". The structural difference is `details.sqlstate`, which only a
+       call that reached the function carries. Without the narrowing this latched,
+       told the viewer the NODE needed updating, and — the latch being
+       screen-wide — locked their own chats along with it. */
+    const { view } = await openChat({
+      setModel: async () => {
+        throw new CollabError('not_found', 'chat not found for this identity', {
+          details: { sqlstate: 'P0002' },
+        });
+      },
+    });
+    fireEvent.click(view.getByLabelText('Chat model'));
+    fireEvent.click(view.getByTestId('tch-model-claude-opus-4-1'));
+
+    await waitFor(() => expect(view.getByRole('alert').textContent).toContain('chat not found'));
+    expect(view.getByTestId('tch-model').hasAttribute('disabled')).toBe(false);
+    expect(view.getByRole('alert').textContent).not.toContain('needs an update');
+  });
 });
