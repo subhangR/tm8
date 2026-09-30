@@ -459,6 +459,43 @@ again. No census pin moves — no new operation, no new route.
   field; nobody has watched an agent receive a switched mode in a live page.
 - **It does not touch the effort dial**, which is still decorative (§7).
 
+### 10g. What each answer ran under
+
+Once both the model (276) and the mode (153/154) can change between turns, the
+chat's config describes the NEXT turn, not the ones already on screen. The byline
+printed the chat's default mode on every turn and titled it "This answer ran in …
+mode", which was false for any turn sent in another mode and for every message a
+worker posted into the chat.
+
+**The label is read off the answer's own turn row.** `MessageView.ranUnder`
+(`{ model, provider, mode }`) comes from the `chat_turns` row whose
+`agent_message_id` is the message: `model`/`provider` stamped at claim (276), `mode`
+stamped at queue time (176:1361). It is set on answers only, and absent means "no
+record", never "the chat's default". The UI draws `chat-turn-ran-under` from it, and
+draws nothing when it is absent. It is on `MessageView` only, not on
+`WorkSessionInteractionProfileProjection.browserProjection`, whose field list is
+closed on purpose.
+
+**A row from before 276 falls back to its queue-time pricing stamp.**
+`pricing_model`/`pricing_provider` are NOT NULL and stamped when the turn was queued.
+That value is exact for any turn that predates 276, because nothing could move a
+chat's model before 276. A row with no `mode` falls back to `chats.chat_mode`, which
+is written only at insert.
+
+**Correction to 276's column comment.** 276 says of `chat_turns.model`/`provider`:
+"NULL on a pre-276 row; readers coalesce to chats.model". That is right for the
+claim, which reads `chats.model` at the moment it is the value the turn is about to
+run on. It is the wrong fallback for `ranUnder` and for any other historical read:
+`set_chat_model` moves `chats.model`, and an answer from before the move never ran
+on the new value. `chat-storage.pg.test.ts` pins the difference. It moves
+`chats.model`, clears the turn's stamps, and asserts that the label reports the
+pricing stamp and not the moved value. 276 itself is left as applied, because
+`db/migrate.mjs` checksums applied files and a comment is not worth a migration.
+
+**No deploy ordering.** A UI bundle older than the field ignores it, because the UI
+does no runtime validation of responses. A server older than the field omits it,
+and absent draws no label.
+
 ## 11. Provenance
 
 Two things about how this document was produced, both of which affect how much to
