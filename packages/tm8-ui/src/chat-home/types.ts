@@ -349,6 +349,28 @@ export interface ChatPostInput {
   attachmentIds?: EntityId[];
 }
 
+/**
+ * MOVE AN OPEN CHAT ONTO ANOTHER MODEL (276).
+ *
+ * Deliberately NOT a field on `ChatPostInput`. The model is a property of the
+ * CHAT, not of one message: a per-message field would make every turn a place
+ * the model could silently differ, and would have to be re-sent identically on
+ * every send to mean "no change". Sending the change once, when the human makes
+ * it, is also what lets the rail show the current model without inspecting the
+ * last message.
+ */
+export interface ChatSetModelInput {
+  chatId: EntityId;
+  /** A launch-catalog model id running the same agent tool as the chat. */
+  model: string;
+}
+
+export interface ChatSetModelResult {
+  model: string;
+  /** Server-resolved from the model. Shown nowhere yet; kept so it cannot be invented. */
+  provider: string;
+}
+
 export interface ChatStartResult {
   chatId: EntityId;
   teammateId: EntityId;
@@ -404,6 +426,16 @@ export interface ChatHomePort {
   };
   /** Every later turn is a messages.post ANCHORED on the chat. */
   postTurn(input: ChatPostInput): Promise<ChatPostResult>;
+  /**
+   * `chat.setModel` (276) — the only door that changes an existing chat's model.
+   *
+   * OPTIONAL for the same reason as `listProjects`: a port without one leaves the
+   * model control locked with the reason it has always shown, which is the truth
+   * on a node whose server has no such operation. The screen must therefore
+   * check for it rather than assume it, and a stale port literal in a test keeps
+   * working instead of crashing on a member it never declared.
+   */
+  setModel?(input: ChatSetModelInput): Promise<ChatSetModelResult>;
   interrupt?(chatId: EntityId): Promise<void>;
   subscribe(listener: (frame: ChatTurnFrame) => void): () => void;
   /**

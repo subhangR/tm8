@@ -462,6 +462,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
         ops.removeFromCollection(collectionId, entityId, ctx),
       postMessage: (input) => ops.postMessage(input),
       startChat: (input) => ops.startChat(input),
+      setChatModel: (chatId, input) => ops.setChatModel(chatId, input),
       editMessage: (id, input): Promise<CommandResult> => ops.editMessage(id, input),
       react: (id, input) => ops.react(id, input),
       resolveAttention: (id, input) => ops.resolveAttention(id, input),

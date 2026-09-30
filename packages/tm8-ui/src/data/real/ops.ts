@@ -179,6 +179,8 @@ import {
   type SessionTranscriptPage,
   type SpaceId,
   type HomeSnapshot,
+  type SetChatModelInput,
+  type SetChatModelResult,
   type StartChatInput,
   type StartChatResult,
   type SpaceKindCounts,
@@ -1409,6 +1411,11 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
     /** 176: `chat.start` — creates the chat entity and posts its opening turn. */
     startChat(input: StartChatInput): Promise<StartChatResult> {
       return http.call<StartChatResult>('chat.start', { body: input });
+    },
+
+    /** 276: `chat.setModel` — the chat is in the path, the model in the body. */
+    setChatModel(chatId: EntityId, input: SetChatModelInput): Promise<SetChatModelResult> {
+      return http.call<SetChatModelResult>('chat.setModel', { params: { id: chatId }, body: input });
     },
 
     /** Note 2: bare `MessageView` lifted into the seam's `CommandResult`. */

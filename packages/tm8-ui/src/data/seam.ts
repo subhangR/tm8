@@ -258,6 +258,8 @@ import type {
   SessionLaunchRecord,
   SessionTranscriptPage,
   HomeSnapshot,
+  SetChatModelInput,
+  SetChatModelResult,
   StartChatInput,
   StartChatResult,
   SpaceId,
@@ -994,6 +996,25 @@ export interface Seam {
      * opening turn in one transaction; there is no root message to post first.
      */
     startChat(input: StartChatInput): Promise<StartChatResult>;
+    /**
+     * `chat.setModel` (276) — move an EXISTING chat onto another model.
+     *
+     * Its sibling above creates a chat with a model; this is the only door that
+     * changes one afterwards, and it exists because the model stopped being a
+     * write-once fact: a Claude Code session carries turns from several models
+     * and `--resume` keeps the transcript, so the chat's model is a setting.
+     *
+     * NAMES A MODEL AND NEVER A PROVIDER. The server resolves provider from the
+     * launch catalog, and that is not a convenience — provider decides which
+     * API key the child is given, so accepting one from a browser would let the
+     * page choose whose credential to spend. The resolved provider comes back in
+     * the result so a caller can show what it actually got.
+     *
+     * Returns as soon as the setting is stored. The live child keeps running on
+     * the old model until the next turn is claimed; nothing here interrupts an
+     * answer in flight to apply a choice about the answer after it.
+     */
+    setChatModel(chatId: EntityId, input: SetChatModelInput): Promise<SetChatModelResult>;
     editMessage(id: EntityId, input: PatchMessageInput): Promise<CommandResult>;
     react(id: EntityId, input: ReactionInput): Promise<CommandResult>;
     resolveAttention(id: EntityId, input: ResolveEntityAttentionInput): Promise<AttentionRequestMutationResult>;

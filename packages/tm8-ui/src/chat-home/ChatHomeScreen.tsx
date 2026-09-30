@@ -486,6 +486,13 @@ export function ChatHomeScreen({
       return rest;
     });
   }, []);
+  /* THE MODEL A CHAT HAS BEEN SWITCHED TO, per chat, until the server's own
+     read agrees (276). `activeConfig.model` is the truth and arrives from a list
+     read or a thread read; neither happens on a switch, so with nothing here the
+     chip would snap back to the old model the moment anything re-rendered and
+     the switch would look refused. The entry is dropped the instant the served
+     config catches up, so a switch made anywhere else still wins. */
+  const [modelOverrides, setModelOverrides] = useState<Readonly<Record<string, string>>>({});
   const [teammateId, setTeammateId] = useState<EntityId | ''>('');
   const [modelId, setModelId] = useState(() =>
     newChatSeed?.model && models.some((model) => model.model === newChatSeed.model)
@@ -1289,8 +1296,62 @@ export function ChatHomeScreen({
    */
   const pinned = activeConfig !== null;
   const shownTeammateId = activeConfig?.teammateId ?? teammateId;
-  const shownModelId = activeConfig?.model ?? modelId;
   const shownMode = activeConfig?.mode ?? chatMode;
+  /**
+   * THE MODEL IS NO LONGER ONE OF THEM (276).
+   *
+   * Teammate and mode above are still write-once — a chat's teammate is who it
+   * is, and its mode decided which tools its child was given. The model is not:
+   * a Claude Code session carries turns from several models and `--resume` keeps
+   * the transcript, so switching costs the conversation nothing and `chat.start`
+   * was pinning it only because nothing could move it afterwards.
+   *
+   * Three things can still lock the chip, and each says which:
+   *  - a port with no `setModel` (an older node has no such operation),
+   *  - a chat still being born, which has no id to address yet,
+   *  - nothing else. A running turn does NOT lock it: the switch applies to the
+   *    next turn claimed, so there is no reason to make the viewer wait for an
+   *    answer to choose who writes the one after it.
+   */
+  const shownModelId =
+    (selectedRootId === null ? undefined : modelOverrides[selectedRootId])
+    ?? activeConfig?.model
+    ?? modelId;
+  const modelLockReason = !pinned
+    ? null
+    : port.setModel === undefined
+      ? 'this node cannot change a chat\u2019s model'
+      : selectedRootId === null
+        ? 'this chat is still starting'
+        : null;
+  /* The override has served its purpose once the served config says the same
+     thing; holding it longer would outrank a switch made in another window. */
+  useEffect(() => {
+    const served = activeConfig?.model;
+    if (selectedRootId === null || served === undefined) return;
+    if (modelOverrides[selectedRootId] !== served) return;
+    setModelOverrides(({ [selectedRootId]: _settled, ...rest }) => rest);
+  }, [selectedRootId, activeConfig?.model, modelOverrides]);
+  const chooseModel = useCallback((next: string) => {
+    /* An unstarted chat is still a PENDING PICK — it has no row to write to, and
+       `chat.start` carries the choice. */
+    if (!pinned) { setModelId(next); return; }
+    const chatId = selectedRootId;
+    const setModel = port.setModel;
+    if (chatId === null || setModel === undefined) return;
+    /* Optimistic, and then corrected to what the server resolved rather than to
+       what was asked for: the two agree today, and a surface that assumed so
+       would be the place a future normalisation went unnoticed. */
+    setModelOverrides((current) => ({ ...current, [chatId]: next }));
+    fileSubmitFailure(chatId, null);
+    void setModel({ chatId, model: next }).then(
+      (result) => setModelOverrides((current) => ({ ...current, [chatId]: result.model })),
+      (error: unknown) => {
+        setModelOverrides(({ [chatId]: _failed, ...rest }) => rest);
+        fileSubmitFailure(chatId, describeError(error));
+      },
+    );
+  }, [pinned, selectedRootId, port, fileSubmitFailure]);
   /* Under orchestrate the roster is COORDINATORS ONLY (ac_7); the model
      decides, the effect below applies its preselect. */
   const roster = useMemo(
@@ -1316,6 +1377,14 @@ export function ChatHomeScreen({
       : base;
   }, [roster.options, activeConfig]);
   /* The COORDINATOR's list: codex models drawn disabled with the reason (ac_10). */
+  /* The catalog entry for the model the CHIP is showing, which since 276 is not
+     always the pending new-chat pick. `selectedModel` stays what it was — the
+     start path's pick — because that is the model `chat.start` is about to be
+     sent; this one is what the popover is describing. */
+  const shownModel = useMemo(
+    () => models.find((model) => model.model === shownModelId) ?? null,
+    [shownModelId, models],
+  );
   const modelChoices = useMemo(() => {
     const base = coordinatorModelChoices(models);
     return activeConfig && !base.some((option) => option.id === activeConfig.model)
@@ -1326,8 +1395,8 @@ export function ChatHomeScreen({
      lacks the remembered stop snaps to its nearest one. */
   const effort = useMemo<LaunchModelEffort | null>(() => {
     const wanted = effortByMode[shownMode] ?? modeSpec(shownMode).defaultEffort;
-    return nearestEffort(wanted, selectedModel?.efforts ?? []);
-  }, [effortByMode, shownMode, selectedModel]);
+    return nearestEffort(wanted, shownModel?.efforts ?? []);
+  }, [effortByMode, shownMode, shownModel]);
   const modeSelectOptions = useMemo<ComposerSelectOption[]>(
     () => MODE_SPECS.map((spec) => ({
       id: spec.id,
@@ -2589,11 +2658,11 @@ export function ChatHomeScreen({
                     models={models}
                     choices={modelChoices}
                     value={shownModelId}
-                    onChange={setModelId}
+                    onChange={chooseModel}
                     effort={effort}
                     onEffortChange={(next) => setEffortByMode((current) => ({ ...current, [shownMode]: next }))}
-                    disabled={pinned}
-                    disabledReason="the model is fixed when a thread starts"
+                    disabled={modelLockReason !== null}
+                    {...(modelLockReason ? { disabledReason: modelLockReason } : {})}
                   />
                   <ModeOptionsSlot
                     mode={shownMode}

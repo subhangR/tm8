@@ -42,6 +42,7 @@ import {
   type MembershipEndStatus,
   bindPath,
   CollabError,
+  launchModel,
   FILE_MAX_SIZE_BYTES_DEFAULT,
   WORKSPACE_EVENT_SCHEMA_VERSION,
   type ActivityItem,
@@ -4576,6 +4577,34 @@ export function createFixtureSeam(): FixtureSeam {
           },
         });
         return { chat: clone(chat), messageId: message.id };
+      },
+
+      /**
+       * 276: fixture echo of `chat.setModel`.
+       *
+       * It repeats the server's two refusals rather than always succeeding,
+       * because this is the seam UI tests run against: a fixture that happily
+       * moved a chat onto a codex model would let a test prove a switch the real
+       * node refuses, and the composer's disabled-codex rule would look like a
+       * cosmetic choice instead of the constraint it is.
+       */
+      async setChatModel(chatId, input) {
+        const chat = requireSummary(chatId);
+        if (chat.state.kind !== 'chat') {
+          throw new CollabError('invalid_input', `entity ${chatId} is not a chat`);
+        }
+        const picked = launchModel(input.model);
+        if (!picked) throw new CollabError('invalid_input', `unsupported chat model: ${input.model}`);
+        if (picked.agentTool !== chat.state.agentTool) {
+          throw new CollabError(
+            'invalid_input',
+            `chat ${chatId} runs on ${chat.state.agentTool} and cannot switch to a ${picked.agentTool} model`,
+          );
+        }
+        chat.state = { ...chat.state, model: input.model, provider: picked.provider };
+        touch(chat);
+        emit(chat.spaceId, { type: 'entity.upsert', entity: clone(chat) });
+        return { chatId, model: input.model, provider: picked.provider };
       },
 
       async postMessage(input: PostMessageInput): Promise<CommandResult | MessageBatchResult> {

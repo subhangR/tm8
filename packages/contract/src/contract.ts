@@ -1418,6 +1418,43 @@ export interface StartChatResult {
   messageId: EntityId;
 }
 
+/**
+ * MOVE A RUNNING CHAT ONTO ANOTHER MODEL (276).
+ *
+ * The model used to be a write-once fact for a chat's whole life, so finishing a
+ * conversation on a stronger model meant abandoning the conversation. It does
+ * not any more: a Claude Code session carries turns from different models and
+ * `--resume` keeps the transcript across the switch, so the chat's model is a
+ * setting, and the turn records what actually ran it.
+ *
+ * STICKY, NOT PER-MESSAGE. This moves the chat; every turn claimed after it runs
+ * on the new model until it is moved again. A turn already claimed keeps the
+ * model it was stamped with — the claim is the serialization point, so a switch
+ * can never rewrite a run that is already under way.
+ *
+ * `agentTool` is the one axis that cannot move: chat runs claude-code only, and
+ * a tool change would invalidate the native session the resume depends on. The
+ * server resolves the tool from the launch catalog and the database refuses a
+ * mismatch.
+ */
+export interface SetChatModelInput {
+  /**
+   * A `LAUNCH_MODEL_CATALOG` id whose `agentTool` matches the chat's.
+   *
+   * The chat is addressed by the PATH (`/v2/chats/:id/model`) and so is absent
+   * here, like every other `:id`-addressed command: two places to name the same
+   * chat is two places for them to disagree.
+   */
+  model: string;
+}
+
+export interface SetChatModelResult {
+  chatId: EntityId;
+  model: string;
+  /** Server-resolved from the catalog; decides which API-key backend is used. */
+  provider: string;
+}
+
 export interface ChatTurnDeltaFrame {
   type: 'chat.turn.delta';
   chatId: EntityId;

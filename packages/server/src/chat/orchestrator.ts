@@ -281,6 +281,15 @@ export class ChatOrchestrator {
     readonly threadId: string;
     readonly authorizationIdentityId: string;
     readonly authorizationAuthKind: string | null;
+    // 276: the model the LIVE CHILD was spawned on, which is not always the
+    // model the chat is set to any more — `chat.setModel` moves the row while
+    // this process keeps a child running on the old one. Recording what
+    // actually spawned is the only way `ensureRuntime` can notice the
+    // difference; reading `chats.model` back would just re-read the new value
+    // and conclude nothing changed. `provider` is deliberately absent: it is
+    // derived from the model by the launch catalog, so one model is one
+    // provider and comparing both would add a field that cannot disagree.
+    readonly model: string;
   }>();
 
   constructor(private readonly options: ChatOrchestratorOptions) {}
@@ -599,11 +608,24 @@ export class ChatOrchestrator {
     const authorizationAuthKind = turn.requestedByAuthKind
       ?? (authorizationIdentityId === turn.requesterIdentityId ? turn.requesterAuthKind ?? null : null);
     const live = this.liveChats.get(turn.chatId);
+    // A live child is reused only when NOTHING that was fixed at spawn has
+    // moved. Authorization was the original reason (a different human must not
+    // inherit a child holding the first one's credential); 276 adds the model,
+    // because `--model` is an argv value and argv cannot be changed on a
+    // running process. Without this comparison a switch would be accepted,
+    // stored, and then quietly ignored for the rest of the chat's life — the
+    // exact failure the composer's "the model is fixed when a thread starts"
+    // copy was describing.
     if (
       live?.authorizationIdentityId === authorizationIdentityId
       && live.authorizationAuthKind === authorizationAuthKind
+      && live.model === turn.model
     ) return live.threadId;
-    let authorizationChanged = false;
+    // True when we just tore a live child down, whatever the reason. It is not
+    // named for the reason because the CONSEQUENCE is what the next line needs:
+    // the native session already exists, so this must resume it rather than
+    // start a new one, or the switch would cost the user the conversation.
+    let closedLiveRuntime = false;
     if (live) {
       await this.options.runtime.close(live.threadId);
       this.liveChats.delete(turn.chatId);
@@ -612,9 +634,9 @@ export class ChatOrchestrator {
         'mark_chat_runtime_state',
         [turn.chatId, 'stopped'],
       );
-      authorizationChanged = true;
+      closedLiveRuntime = true;
     }
-    const mode = authorizationChanged || turn.runtimeState === 'stopped' ? 'resume-after-interrupt' : 'new';
+    const mode = closedLiveRuntime || turn.runtimeState === 'stopped' ? 'resume-after-interrupt' : 'new';
     const launch = await this.options.resolveLaunchConfig({
       chatId: turn.chatId,
       requesterIdentityId: authorizationIdentityId,
@@ -648,6 +670,7 @@ export class ChatOrchestrator {
       threadId: started.threadId,
       authorizationIdentityId,
       authorizationAuthKind,
+      model: turn.model,
     });
     await this.options.db.rpc(
       claims(turn.requesterIdentityId),

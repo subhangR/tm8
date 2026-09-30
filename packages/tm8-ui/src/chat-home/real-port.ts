@@ -423,6 +423,18 @@ export function createChatHomePortFromSeam(
       });
       return { messageId: messageIdFrom(result) };
     },
+    async setModel(input) {
+      const result = await seam.commands.setChatModel(input.chatId, { model: input.model });
+      /* THE CACHE FOLLOWS THE WRITE, for the same reason `create` seeds it:
+         `readThread` takes a chat's config from `listCache`, and nothing
+         refreshes it between list reads — so switching model and immediately
+         reopening the chat would draw the OLD model and look like the switch had
+         been dropped. The next list read still overrides this with the server's
+         own answer. */
+      const cached = listCache.get(input.chatId);
+      if (cached) listCache.set(input.chatId, { ...cached, model: result.model });
+      return { model: result.model, provider: result.provider };
+    },
     subscribe(listener) {
       return seam.onChatTurn((frame) => {
         /* THE CACHE FOLLOWS THE STREAM. `readThread` takes a chat's state from
