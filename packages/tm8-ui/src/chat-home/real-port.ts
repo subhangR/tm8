@@ -334,6 +334,9 @@ export function createChatHomePortFromSeam(
           // field entirely, and an absent list is not a malformed message.
           attachments: message.content.attachments ?? [],
           ...(message.turnInFlight ? { turnInFlight: true } : {}),
+          // What this answer ran under, off its own turn row. A node that
+          // predates the field omits it, and absent draws no label.
+          ...(message.ranUnder ? { ranUnder: message.ranUnder } : {}),
         })),
       );
       return {

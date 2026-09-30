@@ -236,6 +236,34 @@ describe('real chat-home seam adapter', () => {
     expect(detail.turns.at(-1)?.turnInFlight).toBe(true);
   });
 
+  it('carries what each answer ran under, and nothing when the node omits it', async () => {
+    const { seam } = seamStub();
+    const message = (id: string, body: string, extra: Record<string, unknown> = {}) => ({
+      id: id as EntityId,
+      kind: 'message',
+      createdAt: '2026-09-03T08:00:00.000Z',
+      createdBy: null,
+      state: { kind: 'message', author: null },
+      content: { kind: 'message', body },
+      ...extra,
+    });
+    const ranUnder = { model: 'claude-opus-4-1', provider: 'anthropic', mode: 'build' };
+    (seam as { messages?: unknown }).messages = vi.fn(async () => ({
+      items: [
+        message('019f0000-0000-7000-8000-000000000206', 'An answer from Build on Opus.', { ranUnder }),
+        // A node that predates the field: no key at all, and no label drawn.
+        message('019f0000-0000-7000-8000-000000000207', 'An answer from an older node.'),
+      ],
+    }));
+    (seam as { entity?: unknown }).entity = vi.fn();
+    const port = createChatHomePortFromSeam(seam);
+    await port.listThreads('space-1');
+
+    const detail = await port.readThread(CHAT);
+    expect(detail.turns[0]?.ranUnder).toEqual(ranUnder);
+    expect(detail.turns[1]).not.toHaveProperty('ranUnder');
+  });
+
   /**
    * THE DROPPED FIELD. `messages.list` has returned `content.attachments` on
    * every message since the attachments slice landed (`facade/handlers/
