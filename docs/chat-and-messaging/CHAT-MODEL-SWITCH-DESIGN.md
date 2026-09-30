@@ -330,8 +330,9 @@ forwarded. Everything else was already built — and built deliberately for this
 
 | Layer | Already present | Evidence |
 |---|---|---|
-| SQL 153 | `messages.requested_chat_mode`; the enqueue trigger copies it onto `chat_turns.mode` | `154_*.sql:4-7` |
+| SQL 153 | `messages.requested_chat_mode`, and the enqueue trigger that first copied it onto `chat_turns.mode` (dropped by 176, below) | `154_*.sql:4-7` |
 | SQL 154 | `w2_post_message_batch` takes `p_chat_turn_mode` (defaulted, so every existing 8-arg caller still compiles) and validates against the six modes, raising `22023` on an unknown one | `154_*.sql:31,56-60` |
+| SQL 176 | drops 153's trigger; `w2_post_message_batch` now queues every turn itself and stamps `coalesce(turn_mode, chat_anchor.chat_mode)` onto `chat_turns.mode` at queue time | `176_*.sql:456-457,1361` |
 | claim | the turn's effective mode resolves `coalesce(turn.mode, chat.chat_mode)` — the same first-wins shape Part I gives the model | 176 claim body |
 | contract | `PostMessageInput.mode` / `PostMessageWireInputSchema.mode` — the field was already in the wire type | `contract.ts:3311`, `schemas.ts:2791` |
 | server | already forwards it to the RPC | `messages-handoffs.ts:465-485` |
@@ -339,6 +340,18 @@ forwarded. Everything else was already built — and built deliberately for this
 Migration 154's own header states the intent: *"getting the mode a human chose at
 send time ONTO the message, so it flows message → chat_turns.mode → the turn
 envelope."* **The browser was the only thing in that chain that never sent it.**
+
+**Correction: whose trigger, and whether it still exists.** #978 shipped comments
+saying the mode is copied onto `chat_turns.mode` by "154's enqueue trigger"
+(ChatHomeScreen.tsx and mode-switch.test.tsx) or "the enqueue trigger"
+(real-port.ts, types.ts), and this table's first row read the same way. The
+trigger was 153's, and it has not existed since 176, which dropped it
+(`176_chat_entity.sql:456-457`) and moved the copy into `w2_post_message_batch`,
+which stamps the mode when it queues the turn (`:1361`). The comments were
+corrected in the follow-up, and the rows above now give the history. 276's header,
+which calls this "the 153/154 message-borne carrier", is left as applied:
+`db/migrate.mjs` checksums every applied file, so an edit fails loudly on any
+database that has already run it, and nobody can list every such database.
 
 ### 10b. Why a mode switch needs no restart and a model switch does
 
