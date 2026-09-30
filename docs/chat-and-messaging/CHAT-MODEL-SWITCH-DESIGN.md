@@ -1,12 +1,17 @@
-# Switching a running chat onto another model
+# Switching a running chat onto another model — and onto another mode
 
 **Status:** design, for review. Implementation exists on branch
-`tm8/01a0f370-de77-7c6b-99e1-446abaea6040` and is NOT merged — see *Provenance* at
-the bottom for the honest sequencing of this document against that code.
+`tm8/01a0f370-de77-7c6b-99e1-446abaea6040` (PR #978) and is NOT merged — see
+*Provenance* at the bottom for the honest sequencing of this document against that
+code.
 **Date:** 2026-09-30
 **Task:** 01a0f36c-43eb-7060-9abc-4e966840c531
-**Migration:** `db/migrations/276_chat_model_switchable.sql` (written, **not applied
-anywhere**)
+**Scope:** §1-§9 are the MODEL picker (the reported defect). §10 is the MODE picker
+(`ask` / `explain` / `plan` / `build` / `orchestrate` / `craft`), added when the task
+was extended to the composer's other controls. The two look like one feature and are
+not: read §10 before assuming what holds for one holds for the other.
+**Migration:** `db/migrations/276_chat_model_switchable.sql` — **executed**, on CI's
+ephemeral postgres only. See §9.
 
 ---
 
@@ -224,6 +229,11 @@ happened in production.** The mechanism works; nothing has ever used it for what
 was built for. That is a weaker and more accurate statement than "it is dead", and
 it is also part of why §4a rejects extending that path rather than trusting it.
 
+**§10 is the sequel to this section.** Having measured that the 153/154 carrier works
+and has never been used for a follow-up turn, the extended task then USED it — the
+mode picker now sends per-turn mode over exactly this path. So the plumbing this
+section calls "exercised only by `start_chat`" is, as of §10, exercised properly.
+
 ## 7. Named non-goals
 
 **The composer's effort dial is decorative, and this change does not fix it.**
@@ -262,11 +272,25 @@ inside this one. **It deserves its own task.**
 
 ## 9. Risks and open questions
 
-- **Migration 276 is unapplied.** `db/migrate.mjs up` applies *all* pending files,
-  cannot target one, and currently refuses to run at all on a checksum drift in
-  007. Landing 276 means trialling it as `begin; <file> rollback;` first, then
-  `psql -1` plus the ledger insert — a deliberate, supervised act, not part of a
-  deploy.
+- **Migration 276 has been EXECUTED, but on no durable database.** An earlier
+  revision of this bullet — and a closing report from the implementation fork —
+  said it "has never been executed anywhere, not even trialled". Both were wrong
+  and are corrected here. What actually happened: CI's `migrations apply clean` job
+  ran the whole sequence including 276 against a fresh postgres and **passed**,
+  which means 276's own `do $$` VERIFY block ran and its assertions held — both
+  `chat_turns` columns exist, `set_chat_model(uuid,text,text,text)` and
+  `claim_next_chat_turn(uuid)` both resolve via `to_regprocedure`, and the
+  `revoke … from public` posture is correct (the 156 -> 160 lesson). I also trialled
+  the patched function as `begin; create …; rollback;` on `tm8_dev`.
+  **What that does NOT prove:** the guard's runtime BEHAVIOUR. Nobody has called
+  `set_chat_model` as one identity against another identity's chat and watched it
+  raise `P0002`. "It applies and its assertions hold" and "its authorization works"
+  are different claims and only the first is made here.
+  It remains applied to no persistent database (prod was at 275, dev at 273), and
+  landing it there is still a supervised act, not part of a deploy: `db/migrate.mjs
+  up` applies *all* pending files, cannot target one, and currently refuses to run
+  at all on a checksum drift in 007. The route is `begin; <file> rollback;` first,
+  then `psql -1` plus the ledger insert.
 - **Cost is now user-switchable mid-conversation.** A chat can be moved onto an
   expensive model and left there. There is no budget guard in this design and I do
   not think there should be one here, but it should be a conscious acceptance.
@@ -279,7 +303,110 @@ inside this one. **It deserves its own task.**
   page. "The API accepts it" and "I saw it work" are different claims and I am only
   making the first.
 
-## 10. Provenance
+## 10. Part II — switching MODE mid-conversation
+
+The task was then extended to the composer's other picker: *"many features in the
+chat composer ask, plan build orchestrate and all check these as well"*. **The
+finding is the mirror image of Part I's, and that is the single most useful thing in
+this document.** Part I needed a migration, a new operation, six unlocked layers and
+a child restart. Part II needed a `disabled` attribute removed and one field
+forwarded. Everything else was already built — and built deliberately for this.
+
+### 10a. The carrier exists end to end, and always did
+
+| Layer | Already present | Evidence |
+|---|---|---|
+| SQL 153 | `messages.requested_chat_mode`; the enqueue trigger copies it onto `chat_turns.mode` | `154_*.sql:4-7` |
+| SQL 154 | `w2_post_message_batch` takes `p_chat_turn_mode` (defaulted, so every existing 8-arg caller still compiles) and validates against the six modes, raising `22023` on an unknown one | `154_*.sql:31,56-60` |
+| claim | the turn's effective mode resolves `coalesce(turn.mode, chat.chat_mode)` — the same first-wins shape Part I gives the model | 176 claim body |
+| contract | `PostMessageInput.mode` / `PostMessageWireInputSchema.mode` — the field was already in the wire type | `contract.ts:3311`, `schemas.ts:2791` |
+| server | already forwards it to the RPC | `messages-handoffs.ts:465-485` |
+
+Migration 154's own header states the intent: *"getting the mode a human chose at
+send time ONTO the message, so it flows message → chat_turns.mode → the turn
+envelope."* **The browser was the only thing in that chain that never sent it.**
+
+### 10b. Why a mode switch needs no restart and a model switch does
+
+The chat system prompt is **deliberately mode-independent**. `chatSystemPrompt`
+embeds a `MODE_GUIDE` describing *all six* modes at once, and `compose.ts:204` says
+so outright — *"envelope line selects which one applies. `input.chatMode` is not read
+here."* Each turn then carries its own `[mode: x]` line from `chatModeLine`, and
+`compose.ts:156` records the reason: *"so a mode switch never rewrites the launched
+prompt."*
+
+That is the whole asymmetry:
+
+- the **model** is *argv*. Changing it means a different process, so Part I has
+  `ensureRuntime` close the live child and restart it with `--resume` — which is
+  also why Part I needed the adapter's `resume_mismatch` carve-out.
+- the **mode** is *prompt text inside one turn*. The running child needs no notice;
+  the next envelope simply says something different.
+
+### 10c. A mode states INTENT, not PERMISSION — and that is what makes 10b safe
+
+`toolPermission(_mode, _tool, _operation)` in `packages/mcp/src/modes.ts:52`
+returns `'allow'` unconditionally, so `exposedToolNames` is the **identity filter**:
+every tool is exposed in every mode. Its comment is explicit — *"Every mode carries
+the SAME full tool surface … What separates the modes is the system prompt, which
+says how to work, not what may be touched."*
+
+**This is load-bearing for the mid-chat switch, and it was not load-bearing before.**
+The launch mode has two spawn-time consumers, and a running child keeps both:
+
+1. `TM8_CHAT_MODE` is stamped into the child's env at spawn (`compose.ts:280`) and
+   parsed back by the MCP server (`packages/mcp/src/env.ts:38`).
+2. the provider's `--allowedTools` list is computed once at spawn from
+   `exposedToolNames(launchMode, …)` (`compose.ts:89`).
+
+Both collapse to the identity *while* `toolPermission` returns `allow`, so a per-turn
+switch is behaviourally complete with no restart. **Narrow a mode there and the
+switch silently half-applies:** the envelope would tell the agent to `build` while
+the env var and the argv still carried `ask`'s tool surface — instructed to do one
+job while holding another's tools, with no error raised anywhere. This is now written
+as a warning at `modes.ts`'s own policy comment, because that is where someone would
+break it; whoever re-introduces a narrowing owns either respawning on a mode change
+or refusing the mid-chat switch for that mode.
+
+### 10d. The two pickers resolve differently, on purpose
+
+|   | MODEL (Part I) | MODE (Part II) |
+|---|---|---|
+| Scope | **sticky** on the chat — "continue this conversation on Opus" | **per-turn** — "answer *this one* as plan" |
+| Carrier | `chats.model`, via a new `chat.setModel` operation | `messages.requested_chat_mode` on the turn itself |
+| Reverts? | no — it stays until changed again | yes — the next turn is the thread's default again |
+| Restart? | yes, close + `--resume` | no |
+| New migration | 276 | none |
+
+The asymmetry is intentional and matches what a human means by each word. "Switch to
+Opus" is a decision about the conversation; "plan this" is a decision about the
+request in front of you. §4a rejected a per-message model override for exactly the
+reason §10 embraces a per-turn mode: the mode already had a validated carrier and the
+model would have needed a ~255-line RPC reproduced.
+
+### 10e. Change surface (browser only)
+
+| File | Change |
+|---|---|
+| `chat-home/types.ts` | `ChatPostInput.mode?: ChatMode` — omitted means "the thread's default" |
+| `chat-home/real-port.ts` | `postTurn` forwards `mode` when present |
+| `ChatHomeScreen.tsx` | `modeOverrides` state beside `modelOverrides`; chip `disabled={modeLocked}` (was `disabled={pinned}`); `/build`-style slash picks route through the same `chooseMode`; the send site attaches the pick |
+| `chat-home/mode-switch.test.tsx` | 5 tests, new |
+
+`modeOverrides` is deliberately **never reconciled against a served value**: a
+turn's mode belongs to the turn, so a reload correctly shows the thread default
+again. No census pin moves — no new operation, no new route.
+
+### 10f. What Part II does not do
+
+- **It does not make the mode sticky.** There is no "set this chat's mode to build
+  from now on" — `chat.setMode` does not exist. A pick rides one turn.
+- **It is unverified in a browser**, exactly as §9's last bullet says of Part I.
+  The tests drive the real component through a fixture port and assert the outgoing
+  field; nobody has watched an agent receive a switched mode in a live page.
+- **It does not touch the effort dial**, which is still decorative (§7).
+
+## 11. Provenance
 
 Two things about how this document was produced, both of which affect how much to
 trust it:
@@ -297,3 +424,12 @@ reading the files, not from one `graphify affected` call. CLAUDE.md permits that
 fallback only if it is stated, so it is stated. Anyone re-verifying should run
 `ln -s <launch-project>/graphify-out graphify-out` first and re-ask the structural
 questions properly.
+
+**Part II was written in the same wrong order — and it caught something anyway.**
+§10 also documents code that already existed. But §10c's finding (the two spawn-time
+consumers of the launch mode, and what breaks if `toolPermission` ever narrows again)
+was found *while writing the section*, not while writing the code: the act of having
+to state why no restart is needed is what exposed the assumption the fix rests on. I
+had already shipped the change believing "mode is prompt text" was the whole story.
+It is the whole story only because of an invariant three files away. That is the
+argument for the sequencing the user asked for in the first place.
