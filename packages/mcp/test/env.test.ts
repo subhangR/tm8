@@ -52,7 +52,7 @@ describe('routerOptionsFromEnv', () => {
     expect(routerOptionsFromEnv({ TM8_CHAT_MODE: 'nonsense' }).mode).toBe('ask');
   });
 
-  it('reaches tm8_overview, which is the only place a model can read it', async () => {
+  it('reaches tm8_overview for the chat id, and deliberately not for the mode', async () => {
     // THE WHOLE WIRE, end to end: the variable the server writes, through the
     // mapping this module owns, into the answer a tool call returns.
     const router = new Tm8ToolRouter(new NullTransport(), routerOptionsFromEnv({
@@ -60,6 +60,12 @@ describe('routerOptionsFromEnv', () => {
     }));
     const overview = await router.call('tm8_overview', {});
     expect((overview.structuredContent.chat as { id: string }).id).toBe(CHAT);
-    expect(overview.structuredContent.mode).toBe('orchestrate');
+    // This test used to pin `mode: 'orchestrate'` here. But TM8_CHAT_MODE is
+    // the mode the chat LAUNCHED in: a chat's mode is picked per turn and a
+    // switch keeps this server running, so after one the agent was told
+    // `[mode: build]` by its turn and `mode: orchestrate` by this. The overview
+    // now says where the current mode is rather than repeating a stale copy.
+    expect(overview.structuredContent).not.toHaveProperty('mode');
+    expect(overview.structuredContent.modeSource).toContain('[mode: <name>]');
   });
 });

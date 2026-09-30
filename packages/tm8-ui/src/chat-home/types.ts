@@ -352,7 +352,8 @@ export interface ChatPostInput {
    * than a second `setModel`-style write.
    *
    * The server has carried this since 153/154: `messages.requested_chat_mode`
-   * is copied onto `chat_turns.mode` by the enqueue trigger, and the claim
+   * becomes `chat_turns.mode` when the post queues the turn (153's enqueue
+   * trigger did that; `w2_post_message_batch` has since 176), and the claim
    * resolves `coalesce(turn.mode, chat.chat_mode)` — so a turn names its own
    * mode and the chat's default covers the rest. `PostMessageInput.mode`
    * already accepts it on the wire; nothing in this UI was sending it.

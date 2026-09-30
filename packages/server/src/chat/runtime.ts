@@ -37,7 +37,12 @@ export interface StartAgentThreadInput {
   readonly mcpConfigPath: string;
   /** Provider-native tools visible to the model. */
   readonly availableTools: readonly string[];
-  /** Provider-native and MCP calls pre-approved for this immutable mode. */
+  /**
+   * Provider-native and MCP calls pre-approved at spawn, computed from the mode
+   * the chat LAUNCHED in. It is the same list for every mode, and a child kept
+   * across a mid-chat mode switch depends on that ("the spawn surface is
+   * mode-independent", orchestrator.test.ts).
+   */
   readonly allowedTools: readonly string[];
   readonly env?: Readonly<Record<string, string>>;
   /** R8: the one v1 resume path, used lazily after an interrupted turn. */

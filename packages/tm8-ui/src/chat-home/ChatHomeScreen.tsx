@@ -1341,8 +1341,9 @@ export function ChatHomeScreen({
    * The model above is sticky on the chat row and must be written through
    * `chat.setModel` before the next claim can read it. A mode is cheaper than
    * that in every way: it rides the next POST as `PostMessageInput.mode`, the
-   * server stamps it onto the message, 154's enqueue trigger copies it to
-   * `chat_turns.mode`, and the claim resolves `coalesce(turn.mode,
+   * server stamps it onto the message, the same post queues the turn with it
+   * as `chat_turns.mode` (`w2_post_message_batch` since 176; 153's enqueue
+   * trigger before that), and the claim resolves `coalesce(turn.mode,
    * chat.chat_mode)`. That path has been live since 153/154 and this composer
    * simply never used it.
    *
@@ -1351,7 +1352,9 @@ export function ChatHomeScreen({
    * carries the guide to all six modes, each turn's `[mode: x]` line picks one,
    * and no mode narrows the tool surface (`toolPermission` is 'allow' for every
    * mode, so `exposedToolNames` is the identity filter). A mode states intent,
-   * not permission.
+   * not permission. That last fact is enforced, not assumed: the server's
+   * "the spawn surface is mode-independent" test fails if a mode ever narrows
+   * while a switch keeps the running child.
    *
    * ONE thing can lock the chip, and it is not a running turn: a chat still
    * being born has no id to attribute the pick to. The pick lands on the next

@@ -359,7 +359,7 @@ That is the whole asymmetry:
 
 ### 10c. A mode states INTENT, not PERMISSION — and that is what makes 10b safe
 
-`toolPermission(_mode, _tool, _operation)` in `packages/mcp/src/modes.ts:52`
+`toolPermission(_mode, _tool, _operation)` in `packages/mcp/src/modes.ts:81`
 returns `'allow'` unconditionally, so `exposedToolNames` is the **identity filter**:
 every tool is exposed in every mode. Its comment is explicit — *"Every mode carries
 the SAME full tool surface … What separates the modes is the system prompt, which
@@ -381,6 +381,32 @@ job while holding another's tools, with no error raised anywhere. This is now wr
 as a warning at `modes.ts`'s own policy comment, because that is where someone would
 break it; whoever re-introduces a narrowing owns either respawning on a mode change
 or refusing the mid-chat switch for that mode.
+
+**A third consumer was live, not latent (found after #978 merged).** `tm8_overview`
+echoed the router's mode back as `mode` (`packages/mcp/src/tools.ts`). So after a
+mid-chat switch the agent was told `[mode: build]` by its turn and `mode: ask` by its
+own overview tool, and a human reading the tool result in the thread saw the same
+contradiction. The fix is a read fix, not a restart. The overview now says where the
+current mode lives (`modeSource`: the turn's `[mode: …]` line) instead of echoing the
+launch value; the MCP server has no per-turn channel, and that line is the one copy
+that is always current. Respawning on a mode change was considered and rejected. A
+mode is per turn, so every switch would become a restart just to keep a stale copy
+consistent. The child's close is stdin → SIGTERM → SIGKILL, so whatever it still had
+running would die, on top of a cold start.
+
+**The invariant is a test now, not only a comment.** `packages/server/test/chat/
+orchestrator.test.ts` › "the spawn surface is mode-independent" runs the real launch
+resolver under the real orchestrator for all 36 ordered mode pairs. It requires the
+child answering the second turn to hold exactly what a launch in that turn's mode
+would hold: argv, the MCP env, and the MCP router rebuilt from the child's own config
+file. Negative controls, run when it was written:
+
+- restoring the overview echo fails it on `mode`;
+- narrowing Ask's `tm8_act` without a respawn fails it on `tm8_act`;
+- the same narrowing *with* a mode respawn passes it, and fails only the pin test
+  that says a mode switch keeps the child.
+
+It fails exactly when a mode narrows and nothing restarts.
 
 ### 10d. The two pickers resolve differently, on purpose
 
