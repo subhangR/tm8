@@ -217,10 +217,17 @@ describe('Chat Home', () => {
     expect(view.getByTestId('chat-usage-card').textContent).toContain('842 in');
     expect(view.getByTestId('chat-usage-card').textContent).toContain('176 out');
     expect(view.getByTestId('chat-usage-card').textContent).not.toContain('tokens');
-    // A configured thread still SAYS what it runs as; it just cannot be edited.
+    // A configured thread still SAYS what it runs as, and 276 SPLIT the three.
+    // Teammate and mode stay pinned — a chat is born as one teammate's, and its
+    // mode reaches the child as argv the orchestrator does not revisit. The
+    // MODEL is now editable on an open chat: it is sticky on the chat row, and
+    // `ensureRuntime` applies it by closing the live child and resuming the same
+    // native session on the new model at the next claimed turn. The chip is
+    // enabled here because this port HAS `setModel`; a port without one locks it
+    // again, which `model-switch.test.tsx` covers along with the switch itself.
     expect((view.getByLabelText('Chat teammate') as HTMLButtonElement).disabled).toBe(true);
     expect((view.getByLabelText('Chat mode') as HTMLButtonElement).disabled).toBe(true);
-    expect((view.getByLabelText('Chat model') as HTMLButtonElement).disabled).toBe(true);
+    expect((view.getByLabelText('Chat model') as HTMLButtonElement).disabled).toBe(false);
     expect(view.getByLabelText('Chat mode').textContent).toContain('plan');
     // The pinned state is the disabled triggers themselves — the foot carries
     // controls, not copy (user ruling 2026-08-18).

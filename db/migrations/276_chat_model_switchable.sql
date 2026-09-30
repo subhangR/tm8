@@ -100,8 +100,27 @@ begin
     raise exception 'chat provider must be a non-empty string' using errcode = '22023';
   end if;
   select * into chat_row from public.chats where entity_id = p_chat_id for update;
+  -- THE SPACE PIN IS PART OF THE AUTHORIZATION HERE, not decoration (227).
+  --
+  -- `configured_by_identity_id = identity_id()` is an OWNER check, and one
+  -- identity may own chats in SEVERAL spaces. On its own it would therefore let
+  -- a session pinned to space A repoint a chat in space B onto any catalog
+  -- model and spend B's credential running it -- the same asymmetry that puts
+  -- `chat.setModel` in SPACE_LINK_REFUSED as `process_start`, refused one layer
+  -- lower so it also holds for a caller that reaches this RPC another way.
+  --
+  -- The conjunct is INLINE rather than internal.session_space_id() to match the
+  -- other SECURITY DEFINER surfaces 227 pinned (inspect_owned_teammate_inbox);
+  -- a definer function reads `chats` with RLS off, so the pin has to be written
+  -- here or it is not enforced at all. An unpinned session (null) is unchanged.
+  --
+  -- It raises the SAME P0002 as a missing chat, deliberately: a caller must not
+  -- be able to tell "exists in another space" from "does not exist".
   if chat_row.entity_id is null
-     or chat_row.configured_by_identity_id <> internal.identity_id() then
+     or chat_row.configured_by_identity_id <> internal.identity_id()
+     or (nullif(current_setting('tm8.session_space_id', true), '')::uuid is not null
+         and chat_row.space_id
+             <> nullif(current_setting('tm8.session_space_id', true), '')::uuid) then
     raise exception 'chat not found for this identity' using errcode = 'P0002';
   end if;
   if p_agent_tool is distinct from chat_row.agent_tool then
