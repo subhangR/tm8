@@ -264,7 +264,21 @@ inside this one. **It deserves its own task.**
 5. **UI** — the chip is enabled on a pinned chat and calls `setModel`; a rejected
    call clears the optimistic override and shows the reason.
 6. **Census** — the catalog/discovery pins move by exactly +1 operation and +1
-   command path.
+   command path. That is the semantics; the COST is not proportional to it, and
+   this is the part to budget for. MEASURED on the finished branch: that single
+   +1 landed in **59 changed assertion lines across 24 test files**. Three of
+   them are not counts and cannot be derived by hand — the generated catalog
+   **digest** (a 64-hex hash; take it verbatim from a failing run's Received
+   value), sweep's `HANDLER_AUTHORED_400` exact **list**, and the migration chain
+   length. And the pins come in FAMILIES that move together: an operation with a
+   registered handler moves the catalog totals AND every count of handlers
+   (`registry.size`, `registered.size + residual.length`, distinct swept ops),
+   which in two files sit on the line immediately after a total I had already
+   bumped. Sweep for the ASSERTION, not for one pin's spelling: the same pin is
+   written `implemented: N` in most files and `expect(body.implemented).toBe(N)`
+   in `public-harness.test.ts`, and a shape-matched grep silently clears the
+   second form. Fixing these one CI round per file costs a round per file and
+   stops at the first aborting assertion in each test.
 7. **Space-link classification** — `chat.setModel` must appear in
    `SPACE_LINK_REFUSED`, not in `PASSES`. That test is not a count pin, it is a
    decision gate, and the edit that would have made it green without leaving
