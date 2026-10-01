@@ -1,5 +1,6 @@
 import { EntityAttentionChip } from '../attention';
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { CollabError } from '@tm8/contract';
 import type { ChatMode, EntityId, LaunchModelEffort, SessionTranscriptContext, SpaceId } from '@tm8/contract';
 import { CHATS_ROOT, KindIcon, actorName, homeQuickBirthKinds, type HomeRoot } from '../domain';
 import { rememberChatStart } from '../chat-defaults/lastUsed';
@@ -493,6 +494,39 @@ export function ChatHomeScreen({
      the switch would look refused. The entry is dropped the instant the served
      config catches up, so a switch made anywhere else still wins. */
   const [modelOverrides, setModelOverrides] = useState<Readonly<Record<string, string>>>({});
+  /* THIS NODE HAS NO `chat.setModel` ROUTE — LEARNED FROM A REFUSAL, BECAUSE
+     NOTHING ELSE ANSWERS IT (276).
+
+     A browser can be NEWER than the node serving it: the UI bundle and the
+     server dist deploy separately. The `port.setModel === undefined` arm of
+     `modelLockReason` reads like the guard for that, but it CANNOT fire against
+     a real node — `real-port.ts` defines `setModel` unconditionally, so that arm
+     only ever describes a fixture. Against a pre-276 node the route simply is
+     not mounted and the call comes back 404 `not_found`, so before this latch
+     every click on the chip failed and showed the router's own words:
+     "no operation bound to POST /v2/chats/<id>/model".
+
+     A missing route is a fact about the NODE, not about one chat, so it latches
+     for the screen rather than per chat. There is no capability read to ask
+     first: the catalog exposes no such op, and `/health` carries counts, not
+     names. So the first click is the probe, and it is the only one that can
+     fail this way.
+
+     `not_found` is ALSO what a chat the viewer cannot configure raises, so the
+     code alone is not enough — 276:117-124 raises the same P0002 for a
+     non-configurer as for a missing chat, deliberately, so that a caller cannot
+     probe which chats exist. An earlier version of this comment called that case
+     "all but unreachable"; it is not. Chats have visibility 'space' and
+     `chats_select` lists them for any active member, and nothing on this screen
+     checks the configurer, so a second member can open someone else's chat and
+     pick a model. On a node that HAS the route that would latch, blame the node,
+     and — because the latch is screen-wide — lock that member's OWN chats too
+     until a reload. So the two are separated STRUCTURALLY, below.
+
+     Cleared by a reload, which is also when a node that has since been updated
+     gets noticed. Each load therefore pays one failing pick; that is the price of
+     having no capability read, and it is acceptable for a mitigation. */
+  const [nodeHasNoSetModel, setNodeHasNoSetModel] = useState(false);
   /* THE PER-TURN MODE PICK, per chat. Unlike `modelOverrides` this is never
      reconciled against a served value, because there is nothing on the server
      to reconcile with: a turn's mode is a property of THAT TURN
@@ -1318,7 +1352,9 @@ export function ChatHomeScreen({
    * was pinning it only because nothing could move it afterwards.
    *
    * Three things can still lock the chip, and each says which:
-   *  - a port with no `setModel` (an older node has no such operation),
+   *  - a node with no `chat.setModel` route, which is learned from the 404 its
+   *    first use comes back with, NOT from `port.setModel` being absent: the
+   *    real port always defines it, so that arm only ever catches a fixture,
    *  - a chat still being born, which has no id to address yet,
    *  - nothing else. A running turn does NOT lock it: the switch applies to the
    *    next turn claimed, so there is no reason to make the viewer wait for an
@@ -1330,7 +1366,7 @@ export function ChatHomeScreen({
     ?? modelId;
   const modelLockReason = !pinned
     ? null
-    : port.setModel === undefined
+    : port.setModel === undefined || nodeHasNoSetModel
       ? 'this node cannot change a chat\u2019s model'
       : selectedRootId === null
         ? 'this chat is still starting'
@@ -1394,6 +1430,35 @@ export function ChatHomeScreen({
       (result) => setModelOverrides((current) => ({ ...current, [chatId]: result.model })),
       (error: unknown) => {
         setModelOverrides(({ [chatId]: _failed, ...rest }) => rest);
+        /* A NODE THAT HAS NO SUCH ROUTE IS NOT A REFUSED SWITCH. Keyed on the
+           code, never on the message: `toCollabError` preserves a recognised
+           server code verbatim, so `not_found` here is the wire's own word and
+           not a string this file matched. Latching turns an error that would
+           repeat on every click into one that is stated once, as a lock with a
+           reason — and it replaces the router's "no operation bound to POST
+           /v2/chats/<id>/model", which is machine language in a human's face.
+
+           THE `sqlstate` TEST IS WHAT MAKES IT A ROUTE FACT rather than a chat
+           fact. A router miss never reaches a function, so its body carries no
+           `details` at all; `set_chat_model`'s refusal reaches one and comes back
+           with `details.sqlstate = 'P0002'`. Both are 404 `not_found`, so without
+           this test a non-configurer would be told the NODE needs an update and
+           would have their own chats locked with it.
+           Do NOT rewrite this as "no details": `toCollabError` always adds
+           `httpStatus`, and `serverRequestId` whenever the wire carried one
+           (http.ts:196-204), so `details` is never empty and such a test can only
+           ever be false. Measured on a node with 276 applied: an unknown chat id
+           returns `details: {sqlstate: 'P0002'}`; an unbound sibling path returns
+           no `details`. */
+        if (
+          error instanceof CollabError
+          && error.code === 'not_found'
+          && error.details?.sqlstate === undefined
+        ) {
+          setNodeHasNoSetModel(true);
+          fileSubmitFailure(chatId, 'this node cannot change a chat\u2019s model yet \u2014 it needs an update');
+          return;
+        }
         fileSubmitFailure(chatId, describeError(error));
       },
     );
