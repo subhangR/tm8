@@ -135,6 +135,14 @@ export interface ChatThreadConfig {
   /** The write-once directory binding. Absent on a port that predates 167. */
   workdirMode?: ChatWorkdirMode;
   projectId?: EntityId | null;
+  /**
+   * Whether THIS viewer may change the chat's model, as the server answered it
+   * (`state.canSetModel`: 276's rule, evaluated under the viewer's claims).
+   * ABSENT means unknown — a node older than the field — and must never lock:
+   * read as "someone else's chat", it would lock every configurer out of their
+   * own chat on every node that predates it.
+   */
+  canSetModel?: boolean;
 }
 
 export interface ChatThreadSummary {

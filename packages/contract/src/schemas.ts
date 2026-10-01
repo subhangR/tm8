@@ -679,6 +679,9 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
       kind: EntityKindSchema,
       title: z.string(),
     }).strict().nullable().optional(),
+    // Additive (276 configurer lock): per viewer; absent = not computed, which
+    // a client reads as unknown and never as a refusal.
+    canSetModel: z.boolean().optional(),
   }).strict(),
   z.object({
     kind: z.literal('artifact'),

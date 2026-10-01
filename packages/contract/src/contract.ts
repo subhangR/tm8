@@ -559,7 +559,23 @@ export type CoreEntityState =
        * cannot see or that was deleted). ABSENT means the answering door did
        * not compute it — a client must not read absence as "no subject".
        */
-      about?: { id: EntityId; kind: EntityKind; title: string } | null }
+      about?: { id: EntityId; kind: EntityKind; title: string } | null;
+      /**
+       * Whether THE VIEWER may change this chat's model (`chat.setModel`, 276),
+       * answered by the server under the viewer's claims from the two conjuncts
+       * `set_chat_model` refuses on: the viewer's identity configured the chat,
+       * and the session is not pinned to another space. Per viewer, like
+       * `capabilities`: two members reading one chat get different answers.
+       *
+       * ABSENT means the answering door did not compute it (a server older
+       * than the field). A client must read absence as UNKNOWN and must not
+       * lock on it — absent is not "someone else's chat".
+       *
+       * It does not say WHICH models: the catalog and `agentTool` decide that
+       * per model. Nor does it cover `spaceLinks.invoke`, which refuses
+       * `chat.setModel` for every caller that arrives over a link.
+       */
+      canSetModel?: boolean }
   /**
    * Containers (§4.2). Hot and small — this arrives on EVERY list row, so it
    * carries the surface KINDS that are live and not their detail; the panel
