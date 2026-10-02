@@ -12,6 +12,8 @@ written).
 | [`SESSION-COMMUNICATION-MODEL.md`](SESSION-COMMUNICATION-MODEL.md) | How sessions address each other, and what an anchor is |
 | [`BACKEND-BRIEFING-FOR-CHAT-TEMPLATES.md`](BACKEND-BRIEFING-FOR-CHAT-TEMPLATES.md) | The backend as it actually stands, written for whoever builds chat and agent templates on it |
 | [`MESSAGE-LOOPBACK-ANALYSIS.md`](MESSAGE-LOOPBACK-ANALYSIS.md) | Analysis of the loopback path |
+| [`CHAT-MODEL-SWITCH-DESIGN.md`](CHAT-MODEL-SWITCH-DESIGN.md) | Switching a running chat's model (276) and per-turn mode |
+| [`CHAT-PROVIDER-EXTENSION-RESEARCH.md`](CHAT-PROVIDER-EXTENSION-RESEARCH.md) | The headless Claude runtime with its exact argv and wire protocol, plus research on Codex chat and cross-provider switching |
 
 ## Surface
 
