@@ -458,6 +458,24 @@ begin
 end
 $$;
 
+-- The caller's personal styles and preference are IDENTITY-WIDE: they follow
+-- the person into every space. A space-link session (256's link_bound: kind
+-- `link`, or a via_link claim) is a delegation INTO one target space and must
+-- not reach identity-wide state, the same rule as the other identity-wide
+-- acts (credentials, profile). Pinned sessions (227) are NOT refused: an agent
+-- session is pinned by default and the spec gives agents personal styles and
+-- push (§6.1); every SPACE-scoped step they take still goes through the
+-- pin-aware require_space_member / entity_readable.
+create or replace function internal.refuse_link_for_style_write()
+returns void language plpgsql stable set search_path = public, internal, pg_temp as $$
+begin
+  if internal.link_bound() then
+    raise exception 'personal styles and style preferences are identity-wide; a space-link session cannot change them'
+      using errcode = '42501';
+  end if;
+end
+$$;
+
 -- The common text checks every door repeats, in one place.
 create or replace function internal.assert_style_fields(
   p_title text, p_description text, p_foundation text, p_css text, p_tags text[]
@@ -608,6 +626,7 @@ declare
   ps public.personal_styles;
 begin
   perform internal.require_replay_principal(p_client_mutation_id);
+  perform internal.refuse_link_for_style_write();
   replay := internal.ledger_replay(p_client_mutation_id, 'styles.personal.create');
   if replay is not null then return replay; end if;
   identity := internal.require_identity();
@@ -648,6 +667,7 @@ declare
   ps public.personal_styles;
 begin
   perform internal.require_replay_principal(p_client_mutation_id);
+  perform internal.refuse_link_for_style_write();
   replay := internal.ledger_replay(p_client_mutation_id, 'styles.personal.update');
   if replay is not null then return replay; end if;
   identity := internal.require_identity();
@@ -700,6 +720,7 @@ declare
   ps public.personal_styles;
 begin
   perform internal.require_replay_principal(p_client_mutation_id);
+  perform internal.refuse_link_for_style_write();
   replay := internal.ledger_replay(p_client_mutation_id, 'styles.personal.delete');
   if replay is not null then return replay; end if;
   identity := internal.require_identity();
@@ -743,6 +764,7 @@ declare
   ps public.personal_styles;
 begin
   perform internal.require_replay_principal(p_client_mutation_id);
+  perform internal.refuse_link_for_style_write();
   replay := internal.ledger_replay(p_client_mutation_id, 'styles.pull');
   if replay is not null then return replay; end if;
   identity := internal.require_identity();
@@ -811,6 +833,7 @@ declare
   final_title text;
 begin
   perform internal.require_replay_principal(p_client_mutation_id);
+  perform internal.refuse_link_for_style_write();
   replay := internal.ledger_replay(p_client_mutation_id, 'styles.push');
   if replay is not null then
     -- Security boundary: runs with ledger_replay's advisory lock HELD.
@@ -952,6 +975,7 @@ declare
   prefs public.identity_style_prefs;
 begin
   perform internal.require_replay_principal(p_client_mutation_id);
+  perform internal.refuse_link_for_style_write();
   replay := internal.ledger_replay(p_client_mutation_id, 'identity.stylePrefs.set');
   if replay is not null then return replay; end if;
   identity := internal.require_identity();
