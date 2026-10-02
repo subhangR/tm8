@@ -10,6 +10,10 @@
  * under this root" rides `actions.createTask`; the ✎ beside a title renames it
  * through `actions.rename`. A row the live feed just landed flashes.
  *
+ * The page's hops filter (`filter.hops`) narrows each trail to items within
+ * that many hops of their root, as the graph does; progress stays the
+ * server's whole-trail figure either way.
+ *
  * Root hover is shared with the graph (`hover`): entering a row lights that
  * root everywhere, and a root lit from the graph lights its row and its trail
  * chips here.
@@ -39,6 +43,8 @@ import { CardHead, Empty, flashOf, InlineEntry, MenuDot, Meter, PersonAvatar, Pr
 
 export function RootsCard(props: StoryBlockProps) {
   const { view, actions, live, hover } = props;
+  /** The server always follows STORY_FOLLOW_DEPTH (3); absent filter = all of it. */
+  const hops = props.filter?.hops ?? 3;
   const press = pressOf(props);
   const roots = view.page.roots;
   const { addRoot, searchRoots } = actions;
@@ -62,7 +68,7 @@ export function RootsCard(props: StoryBlockProps) {
         <Empty>Nothing has been put in this story yet. Put a task in and it becomes a root: its children, sessions, docs and pull requests follow along.</Empty>
       ) : (
         roots.map((root, i) => (
-          <RootRow key={root.id} root={root} index={i} view={view} actions={actions} live={live} hover={hover} press={press} />
+          <RootRow key={root.id} root={root} index={i} view={view} actions={actions} live={live} hover={hover} press={press} hops={hops} />
         ))
       )}
     </section>
@@ -81,7 +87,8 @@ function RootRow({
   live,
   hover,
   press,
-}: StoryBlockProps & { root: StoryRoot; index: number; press: Press }) {
+  hops,
+}: StoryBlockProps & { root: StoryRoot; index: number; press: Press; hops: number }) {
   const [adding, setAdding] = useState(false);
   const byId = nodesById(view);
   const running = liveOn(view);
@@ -93,6 +100,8 @@ function RootRow({
   const createTask = actions.createTask;
   const landed = live?.landed;
   const lit = !!hover && hover.rootId === root.id;
+  const trail = root.trail.filter((x) => x.depth <= hops);
+  const hidden = root.trail.length - trail.length;
 
   return (
     <div
@@ -194,9 +203,15 @@ function RootRow({
       </div>
 
       <div className="stc-trail">
-        <div className="stc-lbl">trail · {root.trail.length}</div>
-        {root.trail.length === 0 ? <span className="stc-quiet">nothing follows from it yet</span> : null}
-        {root.trail.map((x) => {
+        <div className="stc-lbl" title={hidden ? `${hidden} further than ${hops} ${hops === 1 ? 'hop' : 'hops'} from the root` : undefined}>
+          trail · {hidden ? `${trail.length} of ${root.trail.length}` : root.trail.length}
+        </div>
+        {root.trail.length === 0 ? (
+          <span className="stc-quiet">nothing follows from it yet</span>
+        ) : trail.length === 0 ? (
+          <span className="stc-quiet">nothing within {hops} {hops === 1 ? 'hop' : 'hops'}</span>
+        ) : null}
+        {trail.map((x) => {
           const n = byId.get(x.id);
           const exited = n?.live === false;
           const memory = VIEW_OF_KIND[x.kind] === 'memories';
