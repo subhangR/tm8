@@ -14,7 +14,7 @@ import type { TeamMemberMode } from '@tm8/contract';
 import { KindIcon } from '../../domain';
 import { Pill } from '../../kit';
 import type { StoryIntent } from '../actions';
-import { MODE_WORD, nodesById, SESSION_KIND, TASK_KIND, type StorySession, type StoryTeammate } from '../model';
+import { MODE_WORD, nodesById, SESSION_KIND, TASK_KIND, teammatesOf, type StorySession, type StoryTeammate } from '../model';
 import type { StoryBlockProps, StoryNodePick } from '../props';
 import { CardHead, Empty, flashOf, InlineEntry, PersonAvatar, picker } from './shared';
 
@@ -52,7 +52,7 @@ const ROW_ADDS: Readonly<Partial<Record<TeamMemberMode, readonly AddSpec[]>>> = 
 const MODES: readonly TeamMemberMode[] = ['coordinator', 'coordinated-coordinator', 'coordinated-worker', 'worker', 'dispatcher'];
 
 export function TeamCard({ view, actions, live, onPick }: StoryBlockProps & { onPick?: (pick: StoryNodePick) => void }) {
-  const team = view.page.team;
+  const team = teammatesOf(view.page);
   const [adding, setAdding] = useState<{ spec: AddSpec; onId: string; asId: string | null; tellIds: string[] } | null>(null);
 
   const ids = new Set(team.map((t) => t.id));
@@ -147,7 +147,7 @@ function TeamRows({
   const person = view.people[t.id] ?? null;
   const signOf = (id: string | null): StorySession | undefined => (id ? view.page.sessions.find((s) => s.id === id) : undefined);
   const latest = [...sessions].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0];
-  const reports = view.page.team.filter((x) => x.parentId === t.id);
+  const reports = teammatesOf(view.page).filter((x) => x.parentId === t.id);
   const adds = (t.mode && ROW_ADDS[t.mode]) || [];
 
   const pick = picker(onPick, actions.open);

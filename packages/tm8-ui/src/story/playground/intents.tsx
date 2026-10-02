@@ -22,6 +22,7 @@ import {
   rootNumber,
   storyCallSign,
   type StoryView,
+  teammatesOf,
 } from '../model';
 
 export interface IntentSpec {
@@ -100,7 +101,7 @@ export interface AsOption {
 
 /** Teammates who can run a session (a dispatcher routes work, it does not run it). */
 export function asOptions(view: StoryView): AsOption[] {
-  return view.page.team
+  return teammatesOf(view.page)
     .filter((t) => t.mode !== 'dispatcher')
     .map((t) => ({
       id: t.id,
@@ -120,7 +121,7 @@ export interface TellOption {
 
 /** Teammates first, then the people on the story. */
 export function tellOptions(view: StoryView): TellOption[] {
-  const out: TellOption[] = view.page.team.map((t) => ({
+  const out: TellOption[] = teammatesOf(view.page).map((t) => ({
     id: t.id,
     name: t.name,
     initials: view.people[t.id]?.initials ?? t.name.charAt(0),

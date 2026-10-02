@@ -26,6 +26,7 @@ import {
   type StoryProgress,
   type StorySession,
   type StoryState,
+  type StoryTeammate,
   type TeamMemberMode,
 } from '@tm8/contract';
 
@@ -186,6 +187,15 @@ export function emptyPage(asOf: string = new Date(0).toISOString()): StoryPage {
     feedAnchorIds: [],
     recentMessages: [],
   };
+}
+
+/**
+ * The agent teammates on the story. Since 283 `page.team` also carries the
+ * humans (kind 'member', mode null); they belong in Members, not in the team
+ * tree, the graph's flanks or the "as" picker.
+ */
+export function teammatesOf(page: StoryPage): StoryTeammate[] {
+  return page.team.filter((t) => t.kind !== 'member');
 }
 
 export function nodesById(view: StoryView): Map<string, StoryNode> {

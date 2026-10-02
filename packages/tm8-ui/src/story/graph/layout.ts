@@ -32,6 +32,7 @@ import {
   type StoryTeammate,
   type StoryTone,
   type StoryView,
+  teammatesOf,
 } from '../model';
 
 export type GraphRole = 'self' | 'child-story' | 'story-trail' | 'teammate' | 'root' | 'child' | 'trail';
@@ -326,7 +327,7 @@ export function layoutStoryGraph(view: StoryView, now: number = Date.now()): Gra
   };
   const left: StoryTeammate[] = [];
   const right: StoryTeammate[] = [];
-  for (const t of page.team) {
+  for (const t of teammatesOf(page)) {
     const flank = t.mode ? FLANK_OF_MODE[t.mode] : 'left';
     if (flank === 'right') right.push(t);
     else if (flank === 'left' || !capsuleOfMember(t.id)) left.push(t);
@@ -467,10 +468,10 @@ export function layoutStoryGraph(view: StoryView, now: number = Date.now()): Gra
     if (parent) push({ from: parent.fromId, to: node.id, type: WORKING_ON, family: 'runs', bulge: true, rootIds: node.rootIds });
   }
   /* The team layer: top teammates hang off the story; coordinators coordinate; dispatchers hand out. */
-  for (const t of page.team) {
+  for (const t of teammatesOf(page)) {
     if (!nodes.has(t.id)) continue;
     if (!t.parentId || !nodes.has(t.parentId)) push({ from: view.id, to: t.id, type: CONTAINS, rootIds: allRootIds });
-    for (const c of page.team) {
+    for (const c of teammatesOf(page)) {
       if (c.parentId !== t.id) continue;
       const target = nodes.has(c.id) ? c.id : capsuleOfMember(c.id);
       if (target) push({ from: t.id, to: target, type: COORDINATES, family: 'team', team: true, rootIds: nodes.get(target)!.rootIds });

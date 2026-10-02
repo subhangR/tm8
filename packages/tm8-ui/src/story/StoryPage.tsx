@@ -34,6 +34,7 @@ import {
   pct,
   segments,
   since,
+  teammatesOf,
   type StoryGraphView,
   type StoryTone,
   type StoryView,
@@ -143,7 +144,7 @@ function StoryHero({
   const tone = view.statusCategory ? CATEGORY_TONE[view.statusCategory] : 'idle';
   const last = since(state.lastActivityAt);
 
-  const teammates = page.team;
+  const teammates = teammatesOf(page);
   const members = Object.values(view.people).filter((p) => !p.agent);
   const onIt = members.length + teammates.length;
 
