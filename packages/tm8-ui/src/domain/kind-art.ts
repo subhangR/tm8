@@ -281,6 +281,19 @@ export const KIND_ART = {
    * neutral shape the old set used for exactly that job.
    */
   custom: ['M8 2.6 13.4 8 8 13.4 2.6 8z'],
+
+  /**
+   * An open book (282, the story page artifact 01a0fc3e rev 4's `ART.story`).
+   * The two facing pages with a line on each are what separate it from
+   * `skill`'s bound, closed book: a story is read across, page to page.
+   */
+  story: [
+    'M8 4.2C6.9 3.3 5.5 2.9 3 2.9v8.6c2.5 0 3.9.4 5 1.3',
+    'M8 4.2c1.1-.9 2.5-1.3 5-1.3v8.6c-2.5 0-3.9.4-5 1.3',
+    'M8 4.2v8.6',
+    'M5 6.2h1.4',
+    'M9.6 6.2H11',
+  ],
 } as const satisfies Record<string, KindArt>;
 
 /**
