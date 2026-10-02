@@ -606,7 +606,7 @@ footer.site { border-top: 1px solid var(--line-strong); color: var(--muted); fon
           <div class="failure-sheet" id="failure-migrations" role="region" aria-label="Migration failure and repair" aria-hidden="true"><div><div class="failure-sheet-inner">
             <span class="failure-kicker">Fail · ledger unreadable or drifted</span>
             <p>Captured: <code>145 migration file(s) on disk; the database could not be read</code>.</p>
-            <p class="remedy"><b>Repair.</b> Fix Postgres first. For pending files, run <code>TM8_DATABASE_URL=&lt;url&gt; node db/migrate.mjs status</code>, then the same with <code>up</code> (the runner has no default database, and wants <code>--i-mean-prod</code> for port 5442). Never edit an applied migration; add a new one.</p>
+            <p class="remedy"><b>Repair.</b> Fix Postgres first. For pending files, run <code>node db/migrate.mjs status</code>, then <code>node db/migrate.mjs up</code>. Never edit an applied migration; add a new one.</p>
           </div></div></div>
         </article>
 
