@@ -24,7 +24,7 @@
 //                      `page.recentMessages`.
 //   * agents         — `tm8 entity context <story>` renders the same page as
 //                      a bounded text section.
-import type { StatusCategory, TeamMemberMode } from './contract.js';
+import type { ActorSummary, StatusCategory, TeamMemberMode } from './contract.js';
 import { z } from 'zod';
 
 /**
@@ -94,10 +94,10 @@ export function storyCallSign(index: number): string {
 
 /**
  * A progress tally over a set of followed rows. `work` = rows whose status
- * category is not `cancelled`; `done` = rows at category `done`. `inProgress`
- * and `toDo` split the rest by category; `blocked` counts work rows (not done)
- * that hold an unresolved hard `depends_on` — it overlaps `inProgress`/`toDo`,
- * it is not a fifth bucket.
+ * category is not `cancelled`; `done` = rows at category `done`. `blocked` =
+ * work rows not done that hold an unresolved hard `depends_on`. The bands are
+ * DISJOINT: `inProgress` and `toDo` exclude blocked rows, so
+ * done + inProgress + toDo + blocked = work.
  */
 export interface StoryProgress {
   work: number;
@@ -266,6 +266,7 @@ export interface StoryActivityItem {
   /** The activity verb as stored (`created`, `updated`, `linked`, …). */
   verb: string;
   actorId: string | null;
+  actor: ActorSummary | null;
 }
 
 /** A message on any anchor in the story — the live feed's backlog. */
@@ -276,6 +277,7 @@ export interface StoryFeedMessage {
   anchorKind: string;
   anchorTitle: string;
   authorId: string | null;
+  author: ActorSummary | null;
   excerpt: string;
 }
 
@@ -298,7 +300,7 @@ export interface StoryPage {
   activity: StoryActivityItem[];
   /** The story, every root and every followed row that can carry messages. */
   feedAnchorIds: string[];
-  /** Newest first, at most 30. */
+  /** Newest first, at most 50. */
   recentMessages: StoryFeedMessage[];
 }
 
