@@ -39,6 +39,7 @@ export function Z4Host({ entityId, children, onCollapse, immersive }: Z4HostProp
       data-immersive={immersive || undefined}
       // The stage is dark in both themes, as in the workspace center (§12).
       data-theme="dark"
+      data-always-dark="true"
       role="region"
       aria-label="Full view"
     >

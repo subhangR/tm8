@@ -121,6 +121,7 @@ export function WorkspaceGrid({
       <main
         className="shell-ws__center"
         data-theme="dark"
+        data-always-dark="true"
         ref={centerRef}
         aria-label="Workspace center"
       >

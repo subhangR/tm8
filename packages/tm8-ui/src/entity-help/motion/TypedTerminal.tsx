@@ -69,6 +69,7 @@ export function TypedTerminal({ lines, title, speed = 16, lineGap = 320, delay =
     <div
       className="cv2-root eh-term"
       data-theme="dark"
+      data-always-dark="true"
       role="group"
       aria-label={title ?? 'Terminal demonstration'}
       data-typed={done ? 'complete' : 'typing'}

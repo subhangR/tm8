@@ -30,3 +30,5 @@ export * from './orchestration.js';
 export * from './selection-header.js';
 export * from './context-budgets.js';
 export * from './human-auth.js';
+export * from './style.js';
+export * from './builtins/index.js';
