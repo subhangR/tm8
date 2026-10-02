@@ -646,10 +646,21 @@ function contextSchemaVersion(data: unknown): string | null {
  */
 async function entityQuery(cmd: CommandContext): Promise<ExitCode> {
   refuseMutationId('entity query', cmd.options.value('mutation-id'));
-  assertKnownOptions(cmd, ['kind', 'subtree', 'status', 'assignee', 'ready', 'limit', 'cursor']);
+  assertKnownOptions(cmd, ['kind', 'subtree', 'parent', 'roots', 'status', 'assignee', 'ready', 'limit', 'cursor']);
 
   const kinds = cmd.options.values('kind');
   const subtreeOf = cmd.options.value('subtree');
+  /* `--parent <id|none>` names the DIRECT parent (`CollectionQuery.parentId`);
+     `none` is the top level. `--roots` is that same `none`, spelled for the
+     question it answers (#16: "which stories are roots?"). */
+  const roots = cmd.options.bool('roots');
+  let parentId = nullableOption(cmd, 'parent');
+  if (roots) {
+    if (parentId !== undefined && parentId !== null) {
+      throw new CliError('--roots means --parent none; pass one or the other, not --roots with a parent id', EXIT_USAGE);
+    }
+    parentId = null;
+  }
   /* `--status`, NOT `--work-status` (phase 9's rename table). The flag names
      the `CollectionQuery.filters` member, and that member is `status` now. */
   const status = cmd.options.values('status');
@@ -666,6 +677,7 @@ async function entityQuery(cmd: CommandContext): Promise<ExitCode> {
   const body: Record<string, unknown> = { spaceId: requireSpace(cmd.ctx) };
   if (kinds.length > 0) body.kinds = kinds;
   if (subtreeOf !== undefined) body.subtreeOf = subtreeOf;
+  if (parentId !== undefined) body.parentId = parentId;
   if (Object.keys(filters).length > 0) body.filters = filters;
   if (limit !== undefined) body.limit = limit;
   if (cursor !== undefined) body.cursor = cursor;

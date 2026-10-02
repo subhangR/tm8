@@ -221,6 +221,9 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
       guideLines: true,
       messagePulse: true,
     });
+    // #16: a child story nests under its parent instead of sitting flat
+    // beside the roots.
+    expect(getKind('story').list.tree).toEqual({ by: 'hierarchy', guideLines: true });
   });
 
   it('3. inline status / edit / complete → list.inlineEdit + list.rowActions (B1)', () => {
