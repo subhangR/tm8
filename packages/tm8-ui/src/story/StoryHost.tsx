@@ -16,7 +16,7 @@ import type { EntityDetail, EntityId } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 import { toStoryView, useStoryActions, useStoryLive } from './data';
 import type { StoryActions } from './actions';
-import { StoryPage } from './StoryPage';
+import { StoryPage, type StoryFilterRoute } from './StoryPage';
 import type { StoryRunner } from './props';
 
 export function StoryLiveHost({
@@ -24,12 +24,20 @@ export function StoryLiveHost({
   storyId,
   open,
   runners,
+  selectedId,
+  filterRoute,
+  layout,
 }: {
   seam: Seam;
   storyId: EntityId;
+  /** The BESIDE opener: the host shows that entity's details next to the story. */
   open?: (entityId: string) => void;
   /** The space's launch roster, so the playground can spawn as any agent teammate. */
   runners?: readonly StoryRunner[] | null;
+  /** The entity whose details are open beside the story (the host's state). */
+  selectedId?: string | null;
+  filterRoute?: StoryFilterRoute | null;
+  layout?: 'panel' | 'full';
 }) {
   const { view, live, loading, error, refresh } = useStoryLive(seam, storyId);
   const actions = useStoryActions(seam, storyId, { view, ...(open ? { open } : {}) });
@@ -59,7 +67,15 @@ export function StoryLiveHost({
           Showing the last good read · {error.message}
         </div>
       ) : null}
-      <StoryPage view={view} actions={actions} live={live} runners={runners ?? null} />
+      <StoryPage
+        view={view}
+        actions={actions}
+        live={live}
+        runners={runners ?? null}
+        selectedId={selectedId ?? null}
+        filterRoute={filterRoute ?? null}
+        {...(layout ? { layout } : {})}
+      />
     </>
   );
 }

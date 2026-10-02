@@ -39,7 +39,7 @@ import {
   type StoryTone,
   type StoryView,
 } from './model';
-import type { StoryBlockProps, StoryLive, StoryNodePick } from './props';
+import type { StoryBlockProps, StoryGraphFilter, StoryHops, StoryLive, StoryNodePick } from './props';
 import './story-page.css';
 
 /** The status pill's tone per category (status is always colour + word). */
@@ -60,42 +60,168 @@ const METER: ReadonlyArray<{ tone: StoryTone; token: string }> = [
 
 const plural = (n: number, one: string, many: string = `${one}s`): string => `${n} ${n === 1 ? one : many}`;
 
+/**
+ * Where the graph filter lives when the host can address it (PR 1004): the
+ * entity route's `?hops` / `?kinds`. Absent ⇒ the page keeps it locally.
+ */
+export interface StoryFilterRoute {
+  hops: StoryHops | null;
+  kinds: readonly string[] | null;
+  set: (hops: StoryHops | null, kinds: readonly string[] | null) => void;
+}
+
+export interface StoryPageProps extends StoryBlockProps {
+  initialGraphView?: StoryGraphView;
+  /** The route-backed filter; absent ⇒ local state. */
+  filterRoute?: StoryFilterRoute | null;
+  /**
+   * `full` = the Z4 full view: the rail sits beside the main column and the
+   * graph takes a tall, definite box (StoryGraph `fill`). Default `panel`.
+   */
+  layout?: 'panel' | 'full';
+}
+
 export function StoryPage({
   view,
   actions,
   live,
   runners,
   initialGraphView,
-}: StoryBlockProps & { initialGraphView?: StoryGraphView }) {
-  const [pick, setPick] = useState<StoryNodePick | null>(null);
+  selectedId,
+  filterRoute,
+  layout = 'panel',
+}: StoryPageProps) {
+  /* THE MENU PICK IS NOT THE SELECTION (PR 1004). Selection is the entity
+     whose detail panel is open beside the story — the HOST's state, handed in
+     as `selectedId`, so closing that panel clears it. The menu pick is only
+     the action popover's anchor; the popover closing never touches the
+     selection, and a right-click never drops it. */
+  const [menuPick, setMenuPick] = useState<StoryNodePick | null>(null);
   // Stable: the popover's outside-pointerdown listener depends on it.
-  const closePick = useCallback(() => setPick(null), []);
+  const closeMenu = useCallback(() => setMenuPick(null), []);
   // A pick names a node of THIS story; a different story drops it.
-  useEffect(() => setPick(null), [view.id]);
+  useEffect(() => setMenuPick(null), [view.id]);
   const [hoverRootId, setHoverRootId] = useState<string | null>(null);
   const hover = useMemo(() => ({ rootId: hoverRootId, setRootId: setHoverRootId }), [hoverRootId]);
-  const block = { view, actions, live, hover, onPick: setPick };
+
+  /* PRIMARY press opens the entity's details BESIDE the story: the host's
+     `open` port is the beside opener (the kind screen's aux column, the
+     workspace's next panel, the full view's right slot). No port ⇒ nothing
+     to open, and the blocks draw no press affordance beyond the menu. */
+  const open = actions.open;
+  const onPick = useCallback((pick: StoryNodePick) => open?.(pick.entityId), [open]);
+
+  const filter = useStoryFilter(view.id, filterRoute ?? null);
+
+  const block = {
+    view,
+    actions,
+    live,
+    hover,
+    selectedId: selectedId ?? null,
+    filter,
+    onMenu: setMenuPick,
+    ...(open ? { onPick } : {}),
+  };
+  const full = layout === 'full';
+  const graph = (
+    <StoryGraph {...block} {...(initialGraphView ? { initialView: initialGraphView } : {})} {...(full ? { fill: true } : {})} />
+  );
 
   return (
-    <div className="sty-page" data-testid="story-page" data-story-root="" data-story-id={view.id}>
+    <div
+      className={`sty-page${full ? ' sty-page--full' : ''}`}
+      data-testid="story-page"
+      data-story-root=""
+      data-story-id={view.id}
+    >
       <StoryBar view={view} open={actions.open} />
       <StoryHero view={view} rename={actions.rename} live={live ?? null} />
       <StoryStats view={view} />
-      <StoryGraph {...block} {...(initialGraphView ? { initialView: initialGraphView } : {})} />
-      <TeamCard {...block} />
-      <RootsCard {...block} />
-      <ChildStoriesCard {...block} />
-      <section className="sty-cols">
-        <div className="sty-cols__main">
-          <LiveFeed {...block} />
-          <WhatsHappening {...block} />
-        </div>
-        <aside className="sty-cols__rail">
-          <StoryRail {...block} />
-        </aside>
-      </section>
-      <StoryPlayground view={view} actions={actions} live={live} pick={pick} onClosePick={closePick} runners={runners ?? null} />
+      {filter.hops < 3 ? (
+        <p className="sty-hopsnote" role="status">
+          showing {plural(filter.hops, 'hop')} from the roots · the figures above are the whole story
+        </p>
+      ) : null}
+      {full ? (
+        /* FULL VIEW: the rail beside the main column, the graph in a tall
+           definite box so `fill` can grow it. */
+        <section className="sty-full">
+          <div className="sty-full__main">
+            <div className="sty-graphbox">{graph}</div>
+            <TeamCard {...block} />
+            <RootsCard {...block} />
+            <ChildStoriesCard {...block} />
+            <LiveFeed {...block} />
+            <WhatsHappening {...block} />
+          </div>
+          <aside className="sty-full__rail">
+            <StoryRail {...block} />
+          </aside>
+        </section>
+      ) : (
+        <>
+          {graph}
+          <TeamCard {...block} />
+          <RootsCard {...block} />
+          <ChildStoriesCard {...block} />
+          <section className="sty-cols">
+            <div className="sty-cols__main">
+              <LiveFeed {...block} />
+              <WhatsHappening {...block} />
+            </div>
+            <aside className="sty-cols__rail">
+              <StoryRail {...block} />
+            </aside>
+          </section>
+        </>
+      )}
+      <StoryPlayground
+        view={view}
+        actions={actions}
+        live={live}
+        pick={menuPick}
+        onClosePick={closeMenu}
+        runners={runners ?? null}
+      />
     </div>
+  );
+}
+
+/**
+ * The graph filter (hops + kinds), from the route when the host addresses it
+ * and local otherwise. View only: the server's figures never move with it.
+ */
+function useStoryFilter(storyId: string, route: StoryFilterRoute | null): StoryGraphFilter {
+  const [localHops, setLocalHops] = useState<StoryHops>(3);
+  const [localKinds, setLocalKinds] = useState<ReadonlySet<string> | null>(null);
+  useEffect(() => {
+    setLocalHops(3);
+    setLocalKinds(null);
+  }, [storyId]);
+  const routeKinds = route?.kinds ?? null;
+  const routeKindsKey = routeKinds ? routeKinds.join(',') : null;
+  const kindsFromRoute = useMemo(
+    () => (routeKindsKey === null ? null : new Set(routeKindsKey.split(',').filter(Boolean))),
+    [routeKindsKey],
+  );
+  const hops: StoryHops = route ? (route.hops ?? 3) : localHops;
+  const kinds = route ? kindsFromRoute : localKinds;
+  const set = route?.set;
+  return useMemo<StoryGraphFilter>(
+    () => ({
+      hops,
+      kinds,
+      setHops: (next) => {
+        if (set) set(next === 3 ? null : next, kinds ? [...kinds] : null);
+        else setLocalHops(next);
+      },
+      setKinds: (next) => {
+        if (set) set(hops === 3 ? null : hops, next ? [...next] : null);
+        else setLocalKinds(next);
+      },
+    }),
+    [hops, kinds, set],
   );
 }
 

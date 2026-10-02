@@ -70,6 +70,7 @@ import {
 } from '../authoring';
 import { useEntityVerbs } from './useEntityVerbs';
 import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
+import { navStore } from '../stores/navStore';
 import { EntityFab, MobileSheet, useMobileSurface } from '../mobile';
 import type { Notice } from '../shell/notices';
 import type { GateData } from './useGateData';
@@ -845,7 +846,13 @@ export function EntityView(props: EntityViewProps) {
       changesSurface={detail ? changesSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
       taskGitSection={taskGitSectionFor(data.seam, detail, (id) => setAux({ sort: 'entity', id: id as EntityId }))}
       storySurface={
-        detail ? storySurfaceFor(data.seam, selectedId, (id) => setAux({ sort: 'entity', id: id as EntityId }), data.launch.teammates) : undefined
+        detail
+          ? storySurfaceFor(data.seam, selectedId, (id) => setAux({ sort: 'entity', id: id as EntityId }), data.launch.teammates, {
+              /* The aux column IS "beside the story" here; its subject is the
+                 story's selection, so closing the column clears it. */
+              selectedId: aux?.sort === 'entity' ? aux.id : null,
+            })
+          : undefined
       }
       graphSurface={
         detail
@@ -890,6 +897,21 @@ export function EntityView(props: EntityViewProps) {
         setSelectedId(null);
         setAux(null);
       }}
+      /* ⤢ OPEN FULL VIEW, only for a kind whose registry row built one
+         (`panel.fullView`, PR 1004): the Z4 route `e/{id}?full=1`, carrying
+         this screen as its origin so ⤡ / Esc come back here with the entity
+         still open. Every other kind passes nothing, as before. */
+      {...(detail && getKind(detail.kind).panel.fullView && selectedId
+        ? {
+            onPromote: () =>
+              navStore.getState().navigate({
+                view: 'entity',
+                entityId: selectedId,
+                origin: config.slug ? { slug: config.slug, mode: props.mode ?? null } : null,
+                full: true,
+              }),
+          }
+        : {})}
     />
   ) : null;
 

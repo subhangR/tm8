@@ -192,3 +192,24 @@
   .cv2-root .sty-strip { grid-template-columns: minmax(0, 1fr); }
   .cv2-root .sty-strip__cell + .sty-strip__cell { border-left: 0; border-top: 1px solid var(--pn-line); }
 }
+
+/* ---- the graph filter's quiet note (PR 1004) ---- */
+.cv2-root .sty-hopsnote {
+  margin: -4px 2px 0; font-size: var(--pn-fs-micro); color: var(--pn-ink-3); font-style: italic;
+}
+
+/* ---- full view (Z4, PR 1004): main column + rail, a tall graph ---- */
+.cv2-root .sty-page--full { padding: var(--pn-space-3) var(--pn-space-5) 70px; }
+.cv2-root .sty-full { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 14px; align-items: start; }
+.cv2-root .sty-full__main,
+.cv2-root .sty-full__rail { display: flex; flex-direction: column; gap: var(--pn-space-3); min-width: 0; }
+.cv2-root .sty-full__rail { position: sticky; top: var(--pn-space-3); }
+/* StoryGraph `fill` takes 100% of a parent with a definite height: this box.
+   Tall enough that the graph is the page, short enough that the strip above
+   it stays on screen. */
+.cv2-root .sty-graphbox { height: clamp(420px, calc(100vh - 240px), 1100px); min-height: 0; display: flex; flex-direction: column; }
+.cv2-root .sty-graphbox > * { flex: 1 1 auto; min-height: 0; }
+@container (max-width: 980px) {
+  .cv2-root .sty-full { grid-template-columns: minmax(0, 1fr); }
+  .cv2-root .sty-full__rail { position: static; }
+}
