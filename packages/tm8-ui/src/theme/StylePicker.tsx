@@ -255,7 +255,7 @@ export function StylePicker({ seam, spaceId, members, variant = 'menu' }: StyleP
               <ul className="stylepick__list">
                 {lists.mine.map((m) => {
                   const bits = [`edited ${relTime(m.updatedAt, now)}`];
-                  if (m.publishedAs) bits.push('pushed to a space');
+                  if (m.publishedAs) bits.push(m.publishedVersion ? `pushed as v${m.publishedVersion}` : 'pushed to a space');
                   if (m.pulledFrom?.upstreamVersion && m.pulledFrom.upstreamVersion > m.pulledFrom.version) {
                     bits.push(`upstream v${m.pulledFrom.upstreamVersion} available`);
                   }

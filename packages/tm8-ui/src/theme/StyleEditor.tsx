@@ -81,6 +81,13 @@ export interface StyleEditorProps {
   onOpen?: (target: StyleEditorTarget) => void;
 }
 
+/** A push that lost the race (§9.2): the version now current, who pushed it, its doc for Compare. */
+interface PushConflict {
+  version: number;
+  pushedBy: string | null;
+  doc: StyleDoc | null;
+}
+
 type Tab = 'basics' | 'variables' | 'advanced' | 'versions';
 
 interface Draft {
@@ -168,16 +175,6 @@ function splitLength(value: string | undefined): [number, string] | null {
 
 function isHex(value: string | undefined): boolean {
   return /^#[0-9a-f]{6}$/i.test((value ?? '').trim());
-}
-
-/**
- * The space-style version this author last pushed (`publishedVersion`, added
- * to `PersonalStyleView` by #1002 for §9.2), or null on a first push / a node
- * that predates the field.
- */
-function publishedVersionOf(view: PersonalStyleView): number | null {
-  const v = (view as PersonalStyleView & { publishedVersion?: number | null }).publishedVersion;
-  return typeof v === 'number' && v > 0 ? v : null;
 }
 
 /** A space style's doc out of an `entities.versions` snapshot (the `styles` detail row). */
@@ -269,8 +266,9 @@ function PersonalEditor({
   const [serverWarnings, setServerWarnings] = useState<StyleWarning[]>(initialWarnings ?? []);
   const [elsewhere, setElsewhere] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  /* §9.2: a push that lost the race — the space style as it stands now. */
-  const [pushConflict, setPushConflict] = useState<StyleGetResult | null>(null);
+  /* §9.2: a push that lost the race — who moved the space style, and (for
+     Compare) the space style as it stands now. */
+  const [pushConflict, setPushConflict] = useState<PushConflict | null>(null);
   const [comparing, setComparing] = useState(false);
 
   const load = useCallback(async () => {
@@ -378,8 +376,7 @@ function PersonalEditor({
   const pushTo = async (overVersion?: number) => {
     if (!saved || !seam.pushStyle || !spaceId) return;
     if (dirty) throw new Error('Save first: Push sends the saved version.');
-    const lastPushed = publishedVersionOf(saved);
-    const expectedVersion = overVersion ?? lastPushed ?? undefined;
+    const expectedVersion = overVersion ?? saved.publishedVersion ?? undefined;
     try {
       const res = await seam.pushStyle({
         personalStyleId: saved.id,
@@ -394,8 +391,16 @@ function PersonalEditor({
       await load();
       onChanged?.();
     } catch (e) {
-      if (errorCode(e) === 'version_conflict' && saved.publishedAs && seam.style) {
-        setPushConflict(await seam.style(`space:${saved.publishedAs}`));
+      if (errorCode(e) === 'version_conflict' && saved.publishedAs) {
+        /* The 409 names who moved it (`details.currentVersion`, `pushedBy`);
+           it carries no style body, so Compare reads the style once. */
+        const details = (e as { details?: Record<string, unknown> }).details ?? {};
+        const current = seam.style ? await seam.style(`space:${saved.publishedAs}`).catch(() => null) : null;
+        setPushConflict({
+          version: typeof details.currentVersion === 'number' ? details.currentVersion : current?.version ?? 0,
+          pushedBy: typeof details.pushedBy === 'string' ? details.pushedBy : current?.space?.pushedBy ?? null,
+          doc: current?.doc ?? null,
+        });
         return;
       }
       throw e;
@@ -450,7 +455,7 @@ function PersonalEditor({
         title={draft.title || 'Untitled style'}
         meta={[
           `personal · v${saved.version}`,
-          saved.publishedAs ? 'pushed to a space' : null,
+          saved.publishedAs ? (saved.publishedVersion ? `pushed as v${saved.publishedVersion}` : 'pushed to a space') : null,
           saved.pulledFrom ? `pulled from v${saved.pulledFrom.version}` : null,
           dirty ? 'unsaved changes' : null,
         ]}
@@ -507,13 +512,15 @@ function PersonalEditor({
         <div className="styleed__banner styleed__banner--block" role="alert" data-testid="style-push-conflict">
           <span>
             v{pushConflict.version} was pushed by{' '}
-            {memberName(members, pushConflict.space?.pushedBy) ?? 'another member'} since your last push: compare,
+            {memberName(members, pushConflict.pushedBy) ?? 'another member'} since your last push: compare,
             then push over it or pull first.
           </span>
           <span className="styleed__actions">
-            <button type="button" className="styleed__btn" aria-pressed={comparing} onClick={() => setComparing((v) => !v)}>
-              Compare
-            </button>
+            {pushConflict.doc ? (
+              <button type="button" className="styleed__btn" aria-pressed={comparing} onClick={() => setComparing((v) => !v)}>
+                Compare
+              </button>
+            ) : null}
             <button type="button" className="styleed__btn" disabled={busy !== null} onClick={() => void pushOver()}>
               Push over it
             </button>
@@ -523,7 +530,9 @@ function PersonalEditor({
               </button>
             ) : null}
           </span>
-          {comparing ? <StyleDiff mine={doc} theirs={pushConflict.doc} theirLabel={`v${pushConflict.version}`} /> : null}
+          {comparing && pushConflict.doc ? (
+            <StyleDiff mine={doc} theirs={pushConflict.doc} theirLabel={`v${pushConflict.version}`} />
+          ) : null}
         </div>
       ) : null}
 
