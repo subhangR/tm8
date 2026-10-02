@@ -993,8 +993,8 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
       <EntityListPanel kind="task" rowsFor={rowsFor([])} ctx={ctx} />,
     );
     const chips = container.querySelectorAll('.lp__filters .lp__chip');
-    // Nothing selected: exactly the trigger + the sort chip.
-    expect(chips).toHaveLength(2);
+    // Nothing selected: exactly the trigger, the View chip and the sort chip.
+    expect(chips).toHaveLength(3);
     expect(chips.length).toBeLessThan(optionCount);
     /* Sentence case, and the caret is its own muted glyph rather than an
        ASCII character inside the label. The BOUND is what this test holds:
@@ -1012,9 +1012,9 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
       />,
     );
     // Authorship in the result page is deliberately irrelevant: a one-member
-    // space keeps the exact two-chip row it had before this feature.
+    // space keeps the exact row it had before this feature: filter · view · sort.
     expect(solo.queryByTestId('people-filter-trigger')).toBeNull();
-    expect(solo.container.querySelectorAll('.lp__filters .lp__chip')).toHaveLength(2);
+    expect(solo.container.querySelectorAll('.lp__filters .lp__chip')).toHaveLength(3);
     solo.unmount();
 
     const seen: QueryFilter[] = [];
