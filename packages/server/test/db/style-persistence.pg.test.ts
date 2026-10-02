@@ -229,12 +229,14 @@ describe('284 personal styles (a0): owner-only CRUD', () => {
 
 describe('284 space styles (a0): push, pull, remove', () => {
   let spaceStyleId: string;
+  let anasPersonalId: string;
 
   it('a first push creates a read-only style entity carrying the document', async () => {
     const personal = await createPersonal(fixture.identityA, 'Midnight', { '--pn-paper': '#0F1320' });
     const first = await push(fixture.identityA, personal.id, fixture.spaceS, null, null);
     expect(first.created).toBe(true);
     spaceStyleId = first.style.id;
+    anasPersonalId = personal.id;
     expect(first.style).toMatchObject({
       ref: `space:${spaceStyleId}`, spaceId: fixture.spaceS, version: 1, title: 'Midnight',
       pushedBy: fixture.memberAS, sourceOwnerIdentityId: fixture.identityA,
@@ -250,6 +252,8 @@ describe('284 space styles (a0): push, pull, remove', () => {
 
     const mine = await as(fixture.identityA, (q) => q.rpc<PersonalStyleView>('get_personal_style', [personal.id]));
     expect(mine.publishedAs).toBe(spaceStyleId);
+    // §9.2 gap filled: the version THIS push produced, for the conflict text.
+    expect(mine.publishedVersion).toBe(1);
     // The entity row's own capture trigger announced it to the space.
     const upserts = await database.query<{ n: string }>(
       `select count(*)::text n from public.workspace_events
@@ -281,6 +285,42 @@ describe('284 space styles (a0): push, pull, remove', () => {
   it('a stale expectedVersion on push is version_conflict', async () => {
     const personal = await createPersonal(fixture.identityB, 'Racer', {});
     expect(await outcome(() => push(fixture.identityB, personal.id, fixture.spaceS, spaceStyleId, 1))).toBe('version_conflict');
+  });
+
+  it('§9.2: pushing at your publishedVersion after someone pushed over you is 409 naming the pusher', async () => {
+    // Ana's last push made v1; Ben pushed v2 above.
+    const mine = await as(fixture.identityA, (q) => q.rpc<PersonalStyleView>('get_personal_style', [anasPersonalId]));
+    expect(mine.publishedVersion).toBe(1);
+    let conflict: CollabError | null = null;
+    try {
+      await push(fixture.identityA, anasPersonalId, fixture.spaceS, null, mine.publishedVersion);
+    } catch (err) {
+      if (!(err instanceof CollabError)) throw err;
+      conflict = err;
+    }
+    expect(conflict?.code).toBe('version_conflict');
+    expect(conflict?.details).toMatchObject({ entityId: spaceStyleId, currentVersion: 2, pushedBy: fixture.memberBS });
+    expect(typeof (conflict?.details as { pushedAt?: unknown }).pushedAt).toBe('string');
+
+    // Pushing over it on purpose: expectedVersion = currentVersion. Her
+    // publishedVersion follows the version she produced.
+    const over = await push(fixture.identityA, anasPersonalId, fixture.spaceS, null, 2);
+    expect(over.style.version).toBe(3);
+    const after = await as(fixture.identityA, (q) => q.rpc<PersonalStyleView>('get_personal_style', [anasPersonalId]));
+    expect(after.publishedVersion).toBe(3);
+    // The list row carries it too.
+    const list = await as(fixture.identityA, (q) => q.rpc<{ items: Array<{ id: string; publishedVersion: number | null }> }>(
+      'list_personal_styles', []));
+    expect(list.items.find((i) => i.id === anasPersonalId)?.publishedVersion).toBe(3);
+  });
+
+  it('publishedVersion is cleared whenever publishedAs is (the pair trigger)', async () => {
+    const personal = await createPersonal(fixture.identityA, 'Pair', {});
+    await push(fixture.identityA, personal.id, fixture.spaceS, null, null);
+    await database.query('update public.personal_styles set published_as = null where id = $1', [personal.id]);
+    const [row] = await database.query<{ published_version: number | null }>(
+      'select published_version from public.personal_styles where id = $1', [personal.id]);
+    expect(row!.published_version).toBeNull();
   });
 
   it('a non-member cannot push, pull or read it', async () => {

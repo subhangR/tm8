@@ -51,7 +51,7 @@ const DOC = { schemaVersion: 1, foundation: 'builtin:atelier-dark', vars: { '--p
 function personalGet(version: number, publishedAs: string | null = null) {
   const style = {
     id: PERSONAL, ref: `personal:${PERSONAL}`, title: 'Mine', description: null, tags: [], version,
-    doc: DOC, resolvedHash: 'sha256:x', publishedAs, pulledFrom: null,
+    doc: DOC, resolvedHash: 'sha256:x', publishedAs, publishedVersion: publishedAs ? 1 : null, pulledFrom: null,
     createdAt: '2026-10-02T00:00:00.000Z', updatedAt: '2026-10-02T00:00:00.000Z',
   };
   return {

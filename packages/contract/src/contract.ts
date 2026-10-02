@@ -7983,6 +7983,13 @@ export interface PersonalStyleView {
   doc: StyleDoc;
   resolvedHash: string | null;
   publishedAs: EntityId | null;
+  /**
+   * The space-style version this personal style's LAST push produced; null
+   * when `publishedAs` is null. Send it as `styles.push`'s `expectedVersion`
+   * to learn (409, `details.currentVersion` + `pushedBy`) that someone pushed
+   * over you since (spec §9.2).
+   */
+  publishedVersion: number | null;
   pulledFrom: StylePulledFrom | null;
   createdAt: string;
   updatedAt: string;
@@ -8000,6 +8007,8 @@ export interface PersonalStyleSummary {
   version: number;
   resolvedHash: string | null;
   publishedAs: EntityId | null;
+  /** As on `PersonalStyleView`. */
+  publishedVersion: number | null;
   pulledFrom: StylePulledFrom | null;
   updatedAt: string;
 }

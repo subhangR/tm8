@@ -119,6 +119,10 @@ create table public.personal_styles (
   tags                 text[] not null default '{}' check (cardinality(tags) <= 16),
   resolved_hash        text,
   published_as         uuid references public.entities(id) on delete set null,
+  -- The space-style version THIS personal style's last push produced (spec
+  -- §9.2's conflict text: "v4 was pushed by Ana since your last push"). Set
+  -- by push_style with published_as; null whenever published_as is null.
+  published_version    integer check (published_version is null or published_version > 0),
   pulled_from          uuid references public.entities(id) on delete set null,
   pulled_from_version  integer,
   version              integer not null default 1 check (version > 0),
@@ -131,6 +135,21 @@ create trigger personal_styles_touch_updated_at before update on public.personal
 for each row execute function internal.touch_updated_at();
 create trigger personal_styles_validate_vars before insert or update on public.personal_styles
 for each row execute function internal.validate_style_vars();
+
+-- published_version means nothing without published_as. The FK's ON DELETE
+-- SET NULL clears only published_as, and RI actions fire row triggers, so
+-- this keeps the pair honest on that path as well as on every RPC write.
+create or replace function internal.personal_style_published_pair()
+returns trigger language plpgsql set search_path = public, internal, pg_temp as $$
+begin
+  if new.published_as is null then
+    new.published_version := null;
+  end if;
+  return new;
+end
+$$;
+create trigger personal_styles_published_pair before insert or update on public.personal_styles
+for each row execute function internal.personal_style_published_pair();
 
 alter table public.personal_styles enable row level security;
 create policy personal_styles_owner on public.personal_styles for all to tm8_app
@@ -273,6 +292,7 @@ returns jsonb language sql stable security definer set search_path = public, int
     'doc', internal.style_doc_json(ps.schema_version, ps.foundation, ps.vars, ps.css),
     'resolvedHash', ps.resolved_hash,
     'publishedAs', ps.published_as,
+    'publishedVersion', ps.published_version,
     'pulledFrom', case when ps.pulled_from is null then null else jsonb_build_object(
         'id', ps.pulled_from,
         'version', ps.pulled_from_version,
@@ -887,7 +907,20 @@ begin
     activity_id := internal.record_activity(p_space_id, target_id, actor, 'created',
                      null, jsonb_build_object('kind', 'style'));
   else
-    perform internal.assert_version(target_id, p_expected_version);
+    -- assert_version with no expectation is the 014 row lock alone. The
+    -- comparison is made here so the 409 can say WHO moved it (spec §9.2:
+    -- "v4 was pushed by Ana since your last push"): currentVersion as
+    -- assert_version reports it, plus the last pusher and when.
+    perform internal.assert_version(target_id, null);
+    select e.version into target.version from public.entities e where e.id = target_id;
+    if p_expected_version is not null and target.version <> p_expected_version then
+      raise exception 'version conflict on %', target_id
+        using errcode = '40001',
+              detail = (select jsonb_build_object(
+                          'entityId', target_id, 'currentVersion', target.version,
+                          'pushedBy', st.pushed_by, 'pushedAt', st.pushed_at)
+                          from public.styles st where st.entity_id = target_id)::text;
+    end if;
     update public.styles
        set title = final_title,
            description = ps.description,
@@ -907,8 +940,12 @@ begin
                      null, jsonb_build_object('kind', 'style'));
   end if;
 
-  update public.personal_styles set published_as = target_id where id = ps.id
-     and published_as is distinct from target_id;
+  -- published_version: the version THIS push produced (1 on a first push;
+  -- the snapshot trigger has already bumped it on a re-push).
+  update public.personal_styles
+     set published_as = target_id,
+         published_version = (select e.version from public.entities e where e.id = target_id)
+   where id = ps.id;
 
   perform internal.refresh_style_snapshots('space:' || target_id, p_space_id,
     internal.style_doc_json(ps.schema_version, ps.foundation, ps.vars, ps.css),
