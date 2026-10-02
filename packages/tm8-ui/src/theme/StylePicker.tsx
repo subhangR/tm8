@@ -9,10 +9,13 @@
  * space style, a PULL into a personal copy. Then Follow OS with its dark
  * style, and the kill switch "Reset to Atelier Light" (§6.8 item 6).
  *
- * WHAT IT DOES NOT, YET. No editor, no Push and no Import — they arrive with
- * the editor in phase 3, and a button that opens nothing is the enabled-inert
- * defect this codebase refuses. No hover preview either: the list rows carry
- * no document, and a preview that has to fetch first is not one.
+ * EDIT, VIEW, NEW, IMPORT (phase 3). A personal row's Edit and a space row's
+ * View open the editor (`StyleEditorHost`, mounted by the shell — the menu
+ * closing must not close it); Push lives in the editor, next to Save, so a
+ * push always sends what the author just looked at. New style… duplicates the
+ * built-in the viewer is closest to; Import… reads a `.tm8style.json` or an
+ * exported `.css` into a new personal style. No hover preview: the list rows
+ * carry no document, and a preview that has to fetch first is not one.
  *
  * COLLAPSED BY DEFAULT. The light/dark toggle above it stays exactly where it
  * was; this is one disclosure row beneath it, so the menu a viewer opens
@@ -23,6 +26,7 @@ import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 
 import {
   BUILTIN_STYLES,
   BUILTIN_STYLE_IDS,
+  importStyle,
   parseStyleRef,
   type ActorSummary,
   type PersonalStyleSummary,
@@ -42,9 +46,11 @@ import {
   stylePrefsWritable,
   subscribeStyleCatalog,
 } from './style-sync';
+import { openStyleEditor } from './StyleEditorHost';
+import { pickStyleFile, titleFromFileName } from './style-io';
 import './style-picker.css';
 
-export type StylePickerSeam = Partial<Pick<Seam, 'styles' | 'personalStyles' | 'pullStyle'>>;
+export type StylePickerSeam = Partial<Pick<Seam, 'styles' | 'personalStyles' | 'pullStyle' | 'createPersonalStyle'>>;
 
 export interface StylePickerProps {
   seam: StylePickerSeam | null;
@@ -249,7 +255,7 @@ export function StylePicker({ seam, spaceId, members, variant = 'menu' }: StyleP
               <ul className="stylepick__list">
                 {lists.mine.map((m) => {
                   const bits = [`edited ${relTime(m.updatedAt, now)}`];
-                  if (m.publishedAs) bits.push('pushed to a space');
+                  if (m.publishedAs) bits.push(m.publishedVersion ? `pushed as v${m.publishedVersion}` : 'pushed to a space');
                   if (m.pulledFrom?.upstreamVersion && m.pulledFrom.upstreamVersion > m.pulledFrom.version) {
                     bits.push(`upstream v${m.pulledFrom.upstreamVersion} available`);
                   }
@@ -262,7 +268,19 @@ export function StylePicker({ seam, spaceId, members, variant = 'menu' }: StyleP
                       inUse={inUse(m.ref)}
                       busy={busy !== null}
                       onUse={() => void use(m.ref as StyleRef)}
-                    />
+                    >
+                      <span className="stylepick__actions">
+                        <button
+                          type="button"
+                          className="stylepick__action"
+                          disabled={busy !== null}
+                          onClick={() => openStyleEditor({ kind: 'personal', id: m.id })}
+                          data-testid={`style-edit-${m.id}`}
+                        >
+                          Edit
+                        </button>
+                      </span>
+                    </Row>
                   );
                 })}
               </ul>
@@ -292,6 +310,15 @@ export function StylePicker({ seam, spaceId, members, variant = 'menu' }: StyleP
                       testId={`style-row-${s.id}`}
                     >
                       <span className="stylepick__actions">
+                        <button
+                          type="button"
+                          className="stylepick__action"
+                          disabled={busy !== null}
+                          title="Variables, custom CSS and versions (read-only)"
+                          onClick={() => openStyleEditor({ kind: 'space', id: s.id })}
+                        >
+                          View
+                        </button>
                         {s.hasCss && stylePrefsWritable() ? (
                           <button
                             type="button"
@@ -368,6 +395,51 @@ export function StylePicker({ seam, spaceId, members, variant = 'menu' }: StyleP
               </select>
               when dark
             </label>
+            {seam?.createPersonalStyle ? (
+              <span className="stylepick__create">
+                <button
+                  type="button"
+                  className="stylepick__action"
+                  disabled={busy !== null}
+                  title="A personal copy of the built-in closest to what you see now"
+                  onClick={() =>
+                    void run('new', async () => {
+                      const from = style.active.darkish ? BUILTIN_STYLE_IDS.dark : BUILTIN_STYLE_IDS.light;
+                      const res = await seam.createPersonalStyle!({ from, title: 'New style' });
+                      reload();
+                      openStyleEditor({ kind: 'personal', id: res.style.id }, res.warnings);
+                    })
+                  }
+                  data-testid="style-new"
+                >
+                  New style…
+                </button>
+                <button
+                  type="button"
+                  className="stylepick__action"
+                  disabled={busy !== null}
+                  title="A .tm8style.json or an exported .css file"
+                  onClick={() =>
+                    void run('import', async () => {
+                      const file = await pickStyleFile();
+                      if (!file) return;
+                      const imported = importStyle(file.text);
+                      const res = await seam.createPersonalStyle!({
+                        title: titleFromFileName(file.name),
+                        foundation: imported.doc.foundation,
+                        vars: imported.doc.vars,
+                        css: imported.doc.css,
+                      });
+                      reload();
+                      openStyleEditor({ kind: 'personal', id: res.style.id }, [...imported.warnings, ...res.warnings]);
+                    })
+                  }
+                  data-testid="style-import"
+                >
+                  Import…
+                </button>
+              </span>
+            ) : null}
             <button
               type="button"
               className="stylepick__reset"
