@@ -35,8 +35,8 @@ describe('the credentials port against a real seam', () => {
       'gemini',
       'hermes',
       'cursor',
+      // A withdrawn provider appears only while a key is stored (decision 3).
       'kimi',
-      'groq',
     ]);
     expect(status.providers.find((provider) => provider.provider === 'cursor')).toMatchObject({
       connected: true,
@@ -46,27 +46,18 @@ describe('the credentials port against a real seam', () => {
     expect(status.gitCredentialStore).toBe('absent');
   });
 
-  it('carries the routing disclosure through the seam, from both ends', async () => {
-    // The fixture scripts kimi CONNECTED and groq not, so one card is stating a
-    // current fact and the other is describing a consequence. A seam that
-    // dropped `routing` would leave the member guessing whether Kimi moved
-    // their Claude sessions — which is the one thing this field exists to answer.
+  it('carries a still-connected withdrawn provider through the seam, marked, with no routing', async () => {
+    // Decision 3: Kimi's models were withdrawn. The fixture scripts a stored
+    // Kimi key, so its row is present only so the card can offer Disconnect;
+    // Groq was never connected and has no row.
     const status = await port().load();
-    const routingOf = new Map(status.providers.map((p) => [p.provider, p.routing]));
-
-    expect(routingOf.get('kimi')).toEqual({
-      agentTool: 'claude-code',
-      role: 'backend',
-      counterpart: 'anthropic',
-      active: true,
+    expect(status.providers.find((p) => p.provider === 'kimi')).toMatchObject({
+      connected: true,
+      routing: null,
+      withdrawn: true,
     });
-    // Routing is per model, so the native login is never displaced and its
-    // card carries no routing.
-    expect(routingOf.get('anthropic')).toBeNull();
-    // Not connected, and still saying what Connect would do.
-    expect(routingOf.get('groq')?.active).toBe(false);
-    // A provider that redirects nothing says nothing.
-    expect(routingOf.get('github')).toBeNull();
+    expect(status.providers.some((p) => p.provider === 'groq')).toBe(false);
+    expect(status.providers.every((p) => p.routing === null)).toBe(true);
   });
 
   it('carries the node measurement that makes Hermes unavailable, not disconnected', async () => {

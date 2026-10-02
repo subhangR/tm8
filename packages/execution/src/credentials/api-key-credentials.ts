@@ -54,7 +54,11 @@
 // tool at a different backend FOR THE MODELS THAT BACKEND SERVES, which is why
 // the routing table below names both the tool and the catalog provider.
 
-import { LAUNCH_MODEL_CATALOG, type LaunchModelCatalogEntry } from '@tm8/contract';
+import {
+  isWithdrawnCredentialProvider as isWithdrawnContractProvider,
+  launchModel,
+  type LaunchModelCatalogEntry,
+} from '@tm8/contract';
 
 import type { CredentialProvider } from './credential-env.js';
 
@@ -78,6 +82,18 @@ export function isApiKeyCredentialProvider(
   provider: string,
 ): provider is ApiKeyCredentialProvider {
   return (API_KEY_CREDENTIAL_PROVIDERS as readonly string[]).includes(provider);
+}
+
+/**
+ * True for a provider withdrawn with its models (spec 01a0e248 §10 decision 3):
+ * today every API-key backend, Kimi and Groq (the contract's
+ * `WITHDRAWN_CREDENTIAL_PROVIDERS`). A new key is refused; a stored one can
+ * still be disconnected.
+ */
+export function isWithdrawnCredentialProvider(
+  provider: string,
+): provider is ApiKeyCredentialProvider {
+  return isApiKeyCredentialProvider(provider) && isWithdrawnContractProvider(provider);
 }
 
 /**
@@ -268,13 +284,18 @@ export function apiKeyBackendsForAgentTool(
  * provider is the one that serves the tool's own default model. The row's
  * `agentTool` must match too: a catalog model launched on a tool that cannot
  * speak its backend's wire protocol is not rerouted by guessing.
+ *
+ * UNREACHABLE TODAY, KEPT FOR RE-ADMISSION. Every `moonshot` and `groq` row was
+ * withdrawn from the catalog (decision 3), so this answers null for every
+ * model, and a withdrawn model is refused by name in `resolveSessionCredentials`
+ * before any caller asks.
  */
 export function apiKeyBackendForModel(
   agentTool: string | null | undefined,
   model: string | null | undefined,
 ): ApiKeyCredentialProvider | null {
   if (!agentTool || !model) return null;
-  const entry = LAUNCH_MODEL_CATALOG.find((row) => row.model === model);
+  const entry = launchModel(model);
   if (!entry || entry.agentTool !== agentTool) return null;
   return API_KEY_CREDENTIAL_PROVIDERS.find((provider) => {
     const routing = API_KEY_BACKEND_ROUTING[provider];

@@ -76,6 +76,7 @@ import {
   apiKeyBackendAgentTool,
   apiKeyBackendNativeProvider,
   isApiKeyCredentialProvider,
+  isWithdrawnCredentialProvider,
   type Logger,
 } from '@tm8/execution';
 
@@ -106,9 +107,14 @@ import {
  * implementation shape rather than the feature.
  * `CREDENTIAL_PROVIDERS` is also the login table's order, so the two surfaces
  * cannot drift independently.
+ *
+ * Minus the withdrawn backends (Kimi, Groq; spec 01a0e248 §10 decision 3):
+ * their models left the launch catalog, so a card would offer a key that
+ * serves nothing. A member who still HAS one stored gets its row back, marked
+ * `withdrawn`, so the card can offer Disconnect (see `status`).
  */
 export const CREDENTIAL_STATUS_PROVIDERS: readonly CredentialProviderName[] =
-  CREDENTIAL_PROVIDERS;
+  CREDENTIAL_PROVIDERS.filter((provider) => !isWithdrawnCredentialProvider(provider));
 
 /**
  * R3 step 3's targeting rule. The file-shaped map lives at the spawn lookup
@@ -313,17 +319,30 @@ export class W2CredentialCatalogService {
       [...byProvider.values()].filter((view) => view.connected).map((view) => view.provider),
     );
 
+    // A withdrawn provider the member still has a stored key for (active or
+    // stale, not a revoked tombstone): its row stays, marked `withdrawn`, so
+    // Settings → Connections can offer Disconnect. It routes nothing and is
+    // never measured against a binary; one never connected has no row.
+    const withdrawn = CREDENTIAL_PROVIDERS.flatMap((provider): CredentialConnectionView[] => {
+      const stored = byProvider.get(provider);
+      if (!isWithdrawnCredentialProvider(provider) || !stored || stored.status === 'revoked') return [];
+      return [{ ...stored, routing: null, withdrawn: true }];
+    });
+
     return {
-      providers: CREDENTIAL_STATUS_PROVIDERS.map((provider) =>
-        this.withMeasuredAvailability(
-          provider,
-          {
-            ...(byProvider.get(provider) ?? notConnected(provider)),
-            routing: routingFor(provider, activeProviders),
-          },
-          principal.identityId,
+      providers: [
+        ...CREDENTIAL_STATUS_PROVIDERS.map((provider) =>
+          this.withMeasuredAvailability(
+            provider,
+            {
+              ...(byProvider.get(provider) ?? notConnected(provider)),
+              routing: routingFor(provider, activeProviders),
+            },
+            principal.identityId,
+          ),
         ),
-      ),
+        ...withdrawn,
+      ],
       gitCredentialStore: git.store,
     };
   }
@@ -416,7 +435,7 @@ export class W2CredentialCatalogService {
     provider: CredentialProviderName,
     principal: CredentialPrincipal,
   ): Promise<CredentialsDeleteResult> {
-    assertStatusProvider(provider);
+    assertKnownProvider(provider);
 
     const failures: CredentialsDeleteResult['failures'] = [];
 
@@ -691,8 +710,8 @@ function notConnected(provider: CredentialProviderName): CredentialConnectionVie
   };
 }
 
-function assertStatusProvider(provider: string): asserts provider is CredentialProviderName {
-  if (!(CREDENTIAL_STATUS_PROVIDERS as readonly string[]).includes(provider)) {
+function assertKnownProvider(provider: string): asserts provider is CredentialProviderName {
+  if (!(CREDENTIAL_PROVIDERS as readonly string[]).includes(provider)) {
     throw new CollabError('invalid_input', `unsupported credential provider: ${provider}`);
   }
 }

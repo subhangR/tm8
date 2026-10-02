@@ -35,10 +35,11 @@ export interface LaunchModelCatalogEntry {
    * The vendor that SERVES the model, which is not always the vendor whose
    * wire protocol carries it. `moonshot` is the case that makes the
    * distinction load-bearing: Kimi speaks Anthropic's protocol, so its
-   * `agentTool` is `claude-code` while its provider is Moonshot. Spawn routes
-   * on it: `apiKeyBackendForModel` in `@tm8/execution` sends a `moonshot` row
-   * to the member's Kimi key and a `groq` row to their Groq key, and every
-   * other row to the tool's native login. The UI's own catalog widens it to a
+   * `agentTool` is `claude-code` while its provider is Moonshot. `moonshot` and
+   * `groq` rows live only in `WITHDRAWN_LAUNCH_MODELS` today (decision 3), so
+   * every offered row runs on the tool's native provider; `apiKeyBackendForModel`
+   * in `@tm8/execution` keeps the per-model routing for when one is re-admitted.
+   * The UI's own catalog widens it to a
    * free string so a browser-added model can name a vendor nobody here listed;
    * such a model is not in this catalog and runs on the native login.
    */
@@ -162,7 +163,33 @@ export const LAUNCH_MODEL_CATALOG = [
     note: 'Version-pinned fast Anthropic model via Claude Code',
     efforts: CLAUDE_CODE_EFFORTS,
   },
+] as const satisfies readonly LaunchModelCatalogEntry[];
 
+/** Effort stops for a catalog model; `[]` for a model the catalog does not know. */
+export function launchModelEfforts(model: string | null | undefined): readonly LaunchModelEffort[] {
+  return launchModel(model)?.efforts ?? [];
+}
+
+export function launchModel(model: string | null | undefined): LaunchModelCatalogEntry | undefined {
+  return LAUNCH_MODEL_CATALOG.find((entry) => entry.model === model);
+}
+
+/**
+ * Models WITHDRAWN from the launch catalog (spec 01a0e248 §10 decision 3, lane
+ * S3): the Kimi rows on `claude-code` and the Groq rows on `codex`.
+ *
+ * Their only route was the member's own Kimi or Groq key, and the member rung is
+ * cut in Release 2. Kimi and Groq are not space-capable in the first pass, so
+ * after the cut these models have no credential to run on. They are not offered
+ * anywhere, and a recorded or inherited launch of one refuses BY NAME at spawn
+ * (`withdrawnLaunchModel`, read by `resolveSessionCredentials`) rather than
+ * falling to the tool's native login, which does not serve them.
+ *
+ * KEPT, NOT DELETED, for re-admission: moving a row back into
+ * `LAUNCH_MODEL_CATALOG` (with its provider widened to a space credential, §5.1a)
+ * is the whole catalog-side change. The comments below are the rows' own.
+ */
+export const WITHDRAWN_LAUNCH_MODELS = [
   // ---------------------------------------------------------------------
   // Kimi (Moonshot AI) — the cross-provider rungs.
   //
@@ -280,11 +307,21 @@ export const LAUNCH_MODEL_CATALOG = [
   },
 ] as const satisfies readonly LaunchModelCatalogEntry[];
 
-/** Effort stops for a catalog model; `[]` for a model the catalog does not know. */
-export function launchModelEfforts(model: string | null | undefined): readonly LaunchModelEffort[] {
-  return launchModel(model)?.efforts ?? [];
+/** The withdrawn row for `model`, or undefined when the model was never withdrawn. */
+export function withdrawnLaunchModel(model: string | null | undefined): LaunchModelCatalogEntry | undefined {
+  return WITHDRAWN_LAUNCH_MODELS.find((entry) => entry.model === model);
 }
 
-export function launchModel(model: string | null | undefined): LaunchModelCatalogEntry | undefined {
-  return LAUNCH_MODEL_CATALOG.find((entry) => entry.model === model);
+/**
+ * The credential providers withdrawn with those models: the Kimi and Groq
+ * API-key backends. Their keys serve no session, so nothing offers to connect
+ * one; a member who still has one stored sees it marked `withdrawn` in
+ * `credentials.status`, with Disconnect only.
+ */
+export const WITHDRAWN_CREDENTIAL_PROVIDERS = ['kimi', 'groq'] as const;
+
+export function isWithdrawnCredentialProvider(
+  provider: string,
+): provider is (typeof WITHDRAWN_CREDENTIAL_PROVIDERS)[number] {
+  return (WITHDRAWN_CREDENTIAL_PROVIDERS as readonly string[]).includes(provider);
 }

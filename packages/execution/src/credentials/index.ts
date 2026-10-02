@@ -28,6 +28,7 @@ export {
   apiKeyBackendForModel,
   apiKeyBackendsForAgentTool,
   isApiKeyCredentialProvider,
+  isWithdrawnCredentialProvider,
   type ApiKeyCredentialProvider,
 } from './api-key-credentials.js';
 

@@ -78,6 +78,11 @@ describe('adding', () => {
     expect(addCustomModel(NODE, { model: 'claude-opus-5', label: 'dup', agentTool: 'claude-code' })).toMatch(/already a built-in/i);
     addCustomModel(NODE, { model: 'dup-1', label: 'a', agentTool: 'codex' });
     expect(addCustomModel(NODE, { model: 'dup-1', label: 'b', agentTool: 'codex' })).toMatch(/already been added/i);
+    // Withdrawn with Kimi/Groq (decision 3): the node refuses it at launch, so it cannot come back here.
+    expect(addCustomModel(NODE, { model: 'kimi-k2-thinking', label: 'K', agentTool: 'claude-code' })).toBe(
+      'kimi-k2-thinking (Kimi K2 Thinking) was withdrawn from the launch catalog — the node refuses it at launch.',
+    );
+    expect(LAUNCH_MODEL_CATALOG.some((e) => e.provider === 'moonshot' || e.provider === 'groq')).toBe(false);
   });
 });
 

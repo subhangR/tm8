@@ -4,6 +4,7 @@
  * terminal lifecycle and provider marks cannot drift between the two places.
  */
 import { useCallback, useEffect, useState } from 'react';
+import { isWithdrawnCredentialProvider } from '@tm8/contract';
 import type {
   CredentialConnectionView,
   CredentialProviderName,
@@ -236,8 +237,27 @@ function ProviderCard({
         </div>
       ) : null}
 
+      {entry.withdrawn ? (
+        <div className="cred-card__routing" data-testid={`credential-withdrawn-${entry.provider}`}>
+          {withdrawnVendor(entry.provider)} models were withdrawn from tm8's launch catalog; this key serves no
+          session.
+        </div>
+      ) : null}
+
       <div className="cred-card__actions">
-        {verdict === 'unavailable' ? (
+        {entry.withdrawn ? (
+          /* Withdrawn (spec 01a0e248 §10 decision 3): nothing to connect or
+             re-login, only the stored key to remove. */
+          <button
+            type="button"
+            className="cred-action"
+            onClick={onDisconnect}
+            disabled={busy}
+            data-testid={`credential-disconnect-${entry.provider}`}
+          >
+            Disconnect
+          </button>
+        ) : verdict === 'unavailable' ? (
           <span className="cred-install" data-testid={`credential-install-${entry.provider}`}>
             {presentation.binary === null ? (
               <>This provider cannot be reached from this node.</>
@@ -278,6 +298,13 @@ function ProviderCard({
       </div>
     </article>
   );
+}
+
+/** The vendor a withdrawn card names: "Kimi models", not "Kimi (Moonshot AI) models". */
+const WITHDRAWN_VENDOR = { kimi: 'Kimi', groq: 'Groq' } as const;
+
+function withdrawnVendor(provider: CredentialConnectionView['provider']): string {
+  return isWithdrawnCredentialProvider(provider) ? WITHDRAWN_VENDOR[provider] : presentationOf(provider).name;
 }
 
 /**

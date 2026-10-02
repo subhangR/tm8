@@ -36,17 +36,9 @@ const status: CredentialsStatusView = {
     connection('gemini', { status: 'stale' }),
     connection('hermes', { status: 'unavailable' }),
     connection('cursor', { connected: true, status: 'active' }),
-    // An API-key backend, connected. The rail draws one chip per PROVIDER, not
-    // per binary, so these two have to appear here like any other — the whole
-    // point of the row is that a member can see at a glance what is signed in.
-    connection('kimi', {
-      connected: true,
-      status: 'active',
-      routing: { agentTool: 'claude-code', role: 'backend', counterpart: 'anthropic', active: true },
-    }),
-    connection('groq', {
-      routing: { agentTool: 'codex', role: 'backend', counterpart: 'openai', active: false },
-    }),
+    // A withdrawn provider with a stored key (decision 3). The rail signs in,
+    // and there is nothing to sign in to here, so it draws no chip for it.
+    { ...connection('kimi', { connected: true, status: 'active' }), withdrawn: true },
   ],
   gitCredentialStore: 'present',
 };
@@ -84,23 +76,18 @@ function portWith(over: Partial<CredentialsPort> = {}): CredentialsPort {
 
 describe('compact provider rail', () => {
   it('renders every provider and four state marks with accessible names', async () => {
-    const { findByLabelText, getAllByTestId, getByTestId } = render(
+    const { findByLabelText, getAllByTestId, getByTestId, queryByTestId } = render(
       <ProviderRail port={portWith()} />,
     );
 
     await findByLabelText('Claude Code — connected');
-    expect(getAllByTestId(/^provider-rail-chip-/)).toHaveLength(8);
+    expect(getAllByTestId(/^provider-rail-chip-/)).toHaveLength(6);
 
     const expected = {
       anthropic: ['connected', '✓'],
       openai: ['disconnected', '○'],
       hermes: ['unavailable', '×'],
       gemini: ['unknown', '?'],
-      // A backend's chip reads exactly like a vendor's: connected is connected,
-      // whoever holds the pen. Which tool it serves is the CARD's sentence, not
-      // something a twelve-pixel chip can carry.
-      kimi: ['connected', '✓'],
-      groq: ['disconnected', '○'],
     } as const;
     for (const [provider, [stateName, mark]] of Object.entries(expected)) {
       const chip = getByTestId(`provider-rail-chip-${provider}`);
@@ -111,8 +98,9 @@ describe('compact provider rail', () => {
     expect(await findByLabelText('Codex — disconnected')).toBeTruthy();
     expect(await findByLabelText('Hermes — unavailable')).toBeTruthy();
     expect(await findByLabelText('Gemini — unknown')).toBeTruthy();
-    expect(await findByLabelText('Kimi (Moonshot AI) — connected')).toBeTruthy();
-    expect(await findByLabelText('Groq — disconnected')).toBeTruthy();
+    // Withdrawn providers have no chip, connected or not.
+    expect(queryByTestId('provider-rail-chip-kimi')).toBeNull();
+    expect(queryByTestId('provider-rail-chip-groq')).toBeNull();
   });
 
   it('uses verdictOf store completeness: absent GitHub storage is unknown', async () => {

@@ -8,6 +8,8 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { WITHDRAWN_LAUNCH_MODELS } from '@tm8/contract';
+
 import {
   resolveSessionCredentials,
   type CredentialResolutionDeps,
@@ -324,56 +326,81 @@ describe('I3 — an explicit source fails closed, with a sentence naming the fix
     expect(port.reads.map((r) => r.credentialId)).toEqual([OTHER_SPACE_CRED]);
   });
 
-  it('a Kimi model on claude-code refuses an explicit space source (#679 routing has one route)', async () => {
-    const d = deps(fakePort({ defaults: { anthropic: ANT_DEFAULT } }));
-    const e = await refusal(
-      resolve(launch({ credentialSources: { anthropic: 'space' } }, null, 'claude-code', 'kimi-k2-thinking'), d),
-    );
-    expect(e.message).toContain("credentialSources.anthropic 'space' cannot serve it");
+});
+
+// Gate 5 (spec 01a0e248 §9, §10 decision 3, lane S3). The Kimi and Groq models
+// left the launch catalog; their only route was the member's own key. Every way
+// one can still reach spawn — asked for, recorded on a resume, carried by an
+// inherited posture, launched through a link — refuses NAMING THE MODEL, before
+// a policy, a space credential or a member home is read. Without this a Kimi
+// model would fall to the Anthropic login, which does not serve it.
+describe('gate 5 — a withdrawn Kimi/Groq model refuses by name', () => {
+  const toolProvider = (agentTool: string) => (agentTool === 'codex' ? 'openai' : 'anthropic');
+  const vendor = (provider: string) => (provider === 'moonshot' ? 'Kimi' : 'Groq');
+
+  it('the withdrawn list is exactly the Kimi and Groq rows', () => {
+    expect(WITHDRAWN_LAUNCH_MODELS.map((e) => e.provider).sort()).toEqual([
+      'groq', 'groq', 'groq', 'groq', 'groq', 'groq', 'moonshot', 'moonshot', 'moonshot', 'moonshot',
+    ]);
   });
 
-  // A Kimi or Groq key is a MEMBER credential of the tool's provider (design
-  // §4, last bullet), so D5's space policy for that provider governs it.
-  describe('D5 × API-key-backend models (Kimi on claude-code, Groq on codex)', () => {
-    const REQUIRE_SPACE = { space: { anthropic: ['space'], openai: ['space'] }, node: {} } as SpaceCredentialPolicies;
-    const cases = [
-      { agentTool: 'claude-code', model: 'kimi-k2-thinking', provider: 'anthropic' },
-      { agentTool: 'codex', model: 'openai/gpt-oss-120b', provider: 'openai' },
-    ] as const;
-
-    for (const { agentTool, model, provider } of cases) {
-      it(`${model} on ${agentTool}: "require space" refuses before any member home is resolved`, async () => {
-        const d = deps(fakePort({ policies: REQUIRE_SPACE, defaults: { anthropic: ANT_DEFAULT, openai: OAI_DEFAULT } }), { home: MEMBER_HOME });
-        const e = await refusal(resolve(launch({}, null, agentTool, model), d));
-        expect(e.code).toBe('forbidden');
-        expect(e.message).toContain(`a space admin allows only 'space' for ${provider} in this space`);
-        expect(e.message).toContain(`pick a model ${agentTool} runs natively, which can use this space's credential`);
+  for (const entry of WITHDRAWN_LAUNCH_MODELS) {
+    for (const source of [null, 'member', 'space', 'node'] as const) {
+      it(`${entry.model} on ${entry.agentTool}, source ${source ?? 'auto'}: refused by name, nothing read`, async () => {
+        const provider = toolProvider(entry.agentTool);
+        const port = fakePort({ defaults: { anthropic: ANT_DEFAULT, openai: OAI_DEFAULT, github: GH_DEFAULT } });
+        const d = deps(port, { home: MEMBER_HOME, github: MEMBER_GH });
+        const request = source ? { credentialSources: { [provider]: source } } : {};
+        const e = await refusal(resolve(launch(request, null, entry.agentTool, entry.model), d));
+        expect(e.code).toBe('conflict');
+        expect(e.detail).toEqual({ model: entry.model, provider: entry.provider, reason: 'model_withdrawn' });
+        expect(e.message).toBe(
+          `${entry.model} (${entry.label}) can no longer be launched: ${vendor(entry.provider)} models were ` +
+            "withdrawn from tm8's launch catalog, because they ran only on a member's own key and a space " +
+            `cannot hold a ${vendor(entry.provider)} key — pick a model ${entry.agentTool} runs natively`,
+        );
+        expect(port.reads).toEqual([]);
         expect(d.memberAsks).toEqual([]);
         expect(d.materialized).toEqual([]);
       });
-
-      it(`${model} on ${agentTool}: control — with no policy it lands on the member's own key`, async () => {
-        const d = deps(fakePort({ defaults: { anthropic: ANT_DEFAULT, openai: OAI_DEFAULT } }), { home: MEMBER_HOME });
-        const r = await resolve(launch({}, null, agentTool, model), d);
-        expect(r.credentialHome).toBe(MEMBER_HOME);
-        expect(r.launch.effectiveCredentialSources?.[provider]).toBe('member');
-        expect(d.memberAsks).toEqual([null]);
-      });
     }
+  }
 
-    it('a policy set AFTER launch refuses the resumed Kimi session (policy is read now)', async () => {
-      const recorded = { credentialSources: { anthropic: 'member' } } as SessionLaunchPosture;
-      const d = deps(fakePort({ policies: REQUIRE_SPACE }), { home: MEMBER_HOME });
-      const e = await refusal(resolve(launch({}, recorded, 'claude-code', 'kimi-k2-thinking'), d, true));
-      expect(e.code).toBe('forbidden');
-      expect(d.memberAsks).toEqual([]);
-    });
+  it('a resume of a recorded Kimi session refuses by name', async () => {
+    const recorded = { credentialSources: { anthropic: 'member' } } as SessionLaunchPosture;
+    const d = deps(fakePort({}), { home: MEMBER_HOME });
+    const e = await refusal(resolve(launch({}, recorded, 'claude-code', 'kimi-k2-thinking'), d, true));
+    expect(e.detail).toMatchObject({ model: 'kimi-k2-thinking', reason: 'model_withdrawn' });
+    expect(d.memberAsks).toEqual([]);
+  });
 
-    it('the node policy is irrelevant: a backend model has no node route, so "forbid node" still lands on member', async () => {
-      const d = deps(fakePort({ policies: { space: {}, node: { anthropic: false } } }), { home: MEMBER_HOME });
-      const r = await resolve(launch({}, null, 'claude-code', 'kimi-k2-thinking'), d);
-      expect(r.launch.effectiveCredentialSources?.anthropic).toBe('member');
-    });
+  it('a child inheriting a recorded space posture on a Groq model refuses by name', async () => {
+    const inherited = {
+      credentialSources: { openai: 'space' },
+      spaceCredentialIds: { openai: OAI_DEFAULT },
+    } as SessionLaunchPosture;
+    const port = fakePort({ defaults: { openai: OAI_DEFAULT } });
+    const e = await refusal(resolve(launch({}, inherited, 'codex', 'qwen/qwen3-32b'), deps(port)));
+    expect(e.detail).toMatchObject({ model: 'qwen/qwen3-32b', reason: 'model_withdrawn' });
+    expect(port.reads).toEqual([]);
+  });
+
+  it('a link-bound launch of a withdrawn model refuses by name the same way', async () => {
+    const d = deps(fakePort({ defaults: { anthropic: ANT_DEFAULT, github: GH_DEFAULT } }), { home: MEMBER_HOME });
+    const e = await refusal(
+      resolveSessionCredentials(
+        { auth: AUTH_A, spaceId: SPACE, launch: launch({}, null, 'claude-code', 'kimi-k2-thinking'), linkBound: true },
+        d,
+      ),
+    );
+    expect(e.detail).toMatchObject({ model: 'kimi-k2-thinking', reason: 'model_withdrawn' });
+    expect(d.memberAsks).toEqual([]);
+  });
+
+  it('control: an offered model on the same tool is not refused', async () => {
+    const d = deps(fakePort({ defaults: { anthropic: ANT_DEFAULT } }), { home: MEMBER_HOME });
+    const r = await resolve(launch({}, null, 'claude-code', 'claude-opus-5-5'), d);
+    expect(r.launch.effectiveCredentialSources?.anthropic).toBeDefined();
   });
 });
 
@@ -745,13 +772,6 @@ describe('W7p — a link-bound launch never reaches the linking human\'s own cre
     expect(e.detail).toMatchObject({ provider: 'anthropic', reason: 'no_model_credential' });
     expect(e.message).toContain('this space has no default anthropic credential');
     expect(e.message).toContain('node anthropic credentials are not allowed here');
-    expect(d.memberAsks).toEqual([]);
-  });
-
-  it('a model only a member API key serves is refused by name', async () => {
-    const d = deps(fakePort({ defaults: both }), { home: MEMBER_HOME });
-    const e = await refusal(linked(launch({}, null, 'claude-code', 'kimi-k2-thinking'), d));
-    expect(e.detail).toMatchObject({ reason: 'member_key_model', model: 'kimi-k2-thinking' });
     expect(d.memberAsks).toEqual([]);
   });
 

@@ -2141,6 +2141,8 @@ export const CredentialConnectionViewSchema: z.ZodType<CredentialConnectionView>
   // Nullable-never-absent, like `login` above: six of the eight providers route
   // nothing, permanently.
   routing: CredentialRoutingViewSchema.nullable(),
+  // Additive and optional: only a still-connected withdrawn provider carries it.
+  withdrawn: z.literal(true).optional(),
 }).strict();
 
 export const CredentialsStatusViewSchema: z.ZodType<CredentialsStatusView> = z.object({

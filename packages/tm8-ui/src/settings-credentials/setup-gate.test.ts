@@ -363,3 +363,19 @@ describe('an API-key backend borrows the binary it displaces', () => {
     expect(setupNudgeOf(state)).toBe('no agent tool is installed on this node');
   });
 });
+
+describe('a withdrawn provider neither satisfies nor blocks setup', () => {
+  it('a stored Kimi key is not an agent tool', () => {
+    const state = credentialSetupState(
+      status([
+        connection('anthropic'),
+        { ...connection('kimi', { connected: true, status: 'active' }), withdrawn: true as const },
+        connected('github', 'octocat'),
+      ]),
+    );
+    expect(state.agents.map((a) => a.provider)).toEqual(['anthropic']);
+    expect(state.hasAgent).toBe(false);
+    expect(state.complete).toBe(false);
+  });
+});
+

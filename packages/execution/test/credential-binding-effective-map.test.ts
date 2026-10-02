@@ -140,11 +140,8 @@ const CASES: Case[] = [
   { name: 'codex auto → space default', tool: 'codex', model: 'gpt-5.5', defaults: { openai: OAI, github: GH },
     expected: { openai: 'space', github: 'space' } },
   { name: 'codex auto → node', tool: 'codex', model: 'gpt-5.5', expected: { openai: 'node', github: 'node' } },
-  // ---- API-key backends: the member's own key, one route ------------------
-  { name: 'Kimi on claude-code (member route)', tool: 'claude-code', model: 'kimi-k2-thinking',
-    member: { home: true }, expected: { anthropic: 'member', github: 'node' } },
-  { name: 'Groq on codex (member route)', tool: 'codex', model: 'openai/gpt-oss-120b',
-    member: { home: true }, expected: { openai: 'member', github: 'node' } },
+  // (No API-key backend branch: Kimi/Groq models were withdrawn, S3, and refuse
+  // by name before any rung is recorded — space-credential-resolution gate 5.)
   // ---- the pre-space branch: a provider the space cannot hold -------------
   ...(['gemini', 'hermes', 'cursor'] as const).flatMap((tool): Case[] => [
     { name: `${tool} with a member home → member`, tool, model: 'some-model', member: { home: true },

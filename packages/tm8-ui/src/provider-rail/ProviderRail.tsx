@@ -17,6 +17,7 @@
  * and its test together rather than leaving this note to age.
  */
 import { useCallback, useEffect, useState } from 'react';
+import { isWithdrawnCredentialProvider } from '@tm8/contract';
 import type {
   CredentialConnectionView,
   CredentialProviderName,
@@ -54,9 +55,11 @@ type RailOutcome =
   | { kind: 'finish'; result: CredentialsLoginSessionFinishResult }
   | { kind: 'error'; provider: CredentialProviderName; message: string };
 
-const PROVIDERS = Object.keys(
+// Withdrawn providers (Kimi, Groq; decision 3) have no chip: the rail signs in,
+// and a withdrawn key can only be removed, under Settings → Connections.
+const PROVIDERS = (Object.keys(
   CREDENTIAL_PROVIDER_PRESENTATIONS,
-) as CredentialProviderName[];
+) as CredentialProviderName[]).filter((provider) => !isWithdrawnCredentialProvider(provider));
 
 const VERDICT_STATE: Record<ConnectionVerdict, ProviderRailState> = {
   'connected-named': 'connected',
