@@ -20,6 +20,10 @@
  *
  * Reading a collection's members is NOT here and gets a pointer instead:
  * `tm8 edge list --source <collection-id> --type contains` pages the edges.
+ *
+ * The container may also be a story (migration 282): the same `contains` edge
+ * is how a story's roots are put in by hand. The Server decides which kinds
+ * may contain, so nothing here checks the container's kind.
  */
 import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
 import { resolveMutationId } from '../mutation.js';

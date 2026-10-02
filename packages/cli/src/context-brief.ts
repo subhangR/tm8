@@ -20,6 +20,7 @@
  */
 
 import { escapeXml } from '@tm8/prompt';
+import { storyContextLines } from './story-render.js';
 
 type Row = Record<string, unknown>;
 
@@ -101,6 +102,7 @@ const KNOWN = new Set([
   'schemaVersion', 'id', 'kind', 'title', 'version', 'status', 'asOfSeq', 'priority', 'gate', 'assignees',
   'header', 'parent', 'assignment', 'acceptance', 'acceptanceWrite', 'blockers', 'children', 'outline', 'outlineTruncated', 'tasks',
   'anchor', 'parentMessage', 'attachments', 'connections', 'messages', 'omitted', 'notLoaded', 'errors', 'warnings', 'budget',
+  'story',
 ]);
 
 export function renderContextBrief(view: Row): string {
@@ -146,6 +148,9 @@ export function renderContextBrief(view: Row): string {
     const write = view['acceptanceWrite'];
     if (isRow(write)) out.push(`  tick: ${str(write['write'])}`);
   }
+  // A story (282): progress, roots, kinds, blocked, sessions, team, child
+  // stories — the server's bounded projection of the page; cuts are omitted[].
+  if (isRow(view['story'])) out.push(...storyContextLines(view['story']));
   for (const [key, label] of [['tasks', 'tasks'], ['children', 'children']] as const) {
     if (view[key] === undefined) continue;
     const list = rows(view[key]);
