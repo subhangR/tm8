@@ -448,8 +448,8 @@ export function composePromptV2(
   // cap it shrinks to its ref.
   const story = primary && manifest.story?.taskId === primary.id ? manifest.story : null;
   if (story) {
-    const draft = `${s.join('\n')}\n\n${[...t, renderStoryContext(story), '</tm8_task_prompt>'].join('\n')}`;
-    t.push(renderStoryContext(story, utf8Bytes(draft) <= BYTE_BUDGETS.combinedInitialInjection));
+    const draft = `${s.join('\n')}\n\n${[...t, renderStoryContext(story, true, facts.sessionId), '</tm8_task_prompt>'].join('\n')}`;
+    t.push(renderStoryContext(story, utf8Bytes(draft) <= BYTE_BUDGETS.combinedInitialInjection, facts.sessionId));
   }
   t.push('</tm8_task_prompt>');
 

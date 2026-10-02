@@ -1051,7 +1051,7 @@ export function composePrompt(
   // The story the primary task is part of. Its slot is remembered so the
   // budget check below can swap the full block for the compact one.
   const story = tasks.length > 0 && manifest.story?.taskId === tasks[0]?.id ? manifest.story : null;
-  const storySlot = story ? t.push(renderStoryContext(story)) - 1 : -1;
+  const storySlot = story ? t.push(renderStoryContext(story, true, sessionId)) - 1 : -1;
   const directive = manifest.directive;
   if (directive?.message) {
     // A coordinator directive is another AGENT's prose. Subject and originating

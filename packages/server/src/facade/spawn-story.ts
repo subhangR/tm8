@@ -20,6 +20,7 @@ import {
   type PromptStoryContext,
   type PromptStoryItem,
 } from '@tm8/prompt';
+import { storyCallSign } from '@tm8/contract';
 import type { Db, DbClaims } from '../db/types.js';
 
 interface StoryHit {
@@ -29,12 +30,46 @@ interface StoryHit {
   title: string | null;
 }
 
-function rec(v: unknown): Record<string, unknown> | null {
-  return v !== null && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+interface StoryHeadRow {
+  description: string | null;
+  status_category: string | null;
+  state: unknown;
 }
 
-function str(v: unknown): string | null {
-  return typeof v === 'string' ? v : null;
+interface StoryTrailRow {
+  id: string;
+  kind: string;
+  title: string | null;
+  created_at: string | Date;
+  status: string | null;
+  status_category: string | null;
+  depth: number | string;
+  root_position: number | null;
+  runtime_status: string | null;
+  blocked: boolean;
+}
+
+/**
+ * `public.entities` has no title column and `internal.entity_content` is not
+ * granted to tm8_app, so a trail row's title is read from the kind detail
+ * tables a story's trail actually holds (each under its own RLS).
+ */
+const TITLE_TABLES: ReadonlyArray<readonly [table: string, column: string]> = [
+  ['tasks', 'title'], ['stories', 'title'], ['work_sessions', 'title'], ['documents', 'title'],
+  ['artifacts', 'name'], ['collections', 'name'], ['team_members', 'name'], ['pull_requests', 'title'],
+  ['files', 'name'], ['drawings', 'title'], ['chats', 'title'], ['channels', 'name'], ['loops', 'title'],
+  ['forms', 'title'], ['skills', 'name'],
+];
+const TITLE_JOINS = TITLE_TABLES
+  .map(([table], i) => `left join public.${table} tt${i} on tt${i}.entity_id = e.id`)
+  .join('\n           ');
+const TITLE_SELECT = `coalesce(${TITLE_TABLES.map(([, column], i) => `tt${i}.${column}`).join(', ')})`;
+
+/** The runtime states `internal.story_summary` counts as live. */
+const LIVE_RUNTIME = new Set(['spawning', 'running', 'idle']);
+
+function rec(v: unknown): Record<string, unknown> | null {
+  return v !== null && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
 }
 
 function cap(text: string, max: number): { text: string; cut: boolean } {
@@ -45,9 +80,10 @@ function cap(text: string, max: number): { text: string; cut: boolean } {
 async function storiesContaining(db: Db, claims: DbClaims, entityId: string): Promise<StoryHit[]> {
   const rows = await db.tx(claims, (q) =>
     q.query<StoryHit>(
-      `select distinct on (s.story_id) s.story_id, s.root_id, s.depth, e.title
+      `select distinct on (s.story_id) s.story_id, s.root_id, s.depth, st.title
          from public.stories_containing($1::uuid) s
          join public.entities e on e.id = s.story_id and e.deleted_at is null
+         left join public.stories st on st.entity_id = e.id
         order by s.story_id, s.depth, s.root_id`,
       [entityId],
     ),
@@ -77,72 +113,84 @@ export async function loadStoryContextForTask(
     ...(others.length > 0 ? { others } : {}),
   };
 
-  // The detail is a second, separate read: a page that fails (a function
-  // missing on an older node, a statement timeout) still leaves the ref.
-  let row: { description: string | null; state: unknown; page: unknown } | undefined;
+  // The detail is a second, separate read: one that fails (a statement
+  // timeout, an older node) still leaves the ref. It is built from the
+  // backend's own trail and summary (282), not a walk of its own.
+  let detail: { head: StoryHeadRow | undefined; rows: StoryTrailRow[] };
   try {
-    [row] = await db.tx(claims, (q) =>
-      q.query<{ description: string | null; state: unknown; page: unknown }>(
-        `select e.content->>'description' as description,
-                internal.story_summary(e.id) as state,
-                internal.story_page(e.id) as page
-           from public.entities e
-          where e.id = $1::uuid and e.deleted_at is null`,
+    detail = await db.tx(claims, async (q) => ({
+      head: (
+        await q.query<StoryHeadRow>(
+          `select st.description, e.status_category, internal.story_summary(e.id) as state
+             from public.entities e
+             left join public.stories st on st.entity_id = e.id
+            where e.id = $1::uuid and e.deleted_at is null`,
+          [nearest.story_id],
+        )
+      )[0],
+      rows: await q.query<StoryTrailRow>(
+        `with tr as (
+           select distinct on (t.entity_id) t.entity_id, t.depth, t.root_position
+             from internal.story_trail($1::uuid) t
+            order by t.entity_id, t.depth
+         )
+         select e.id, e.kind, ${TITLE_SELECT} as title, e.created_at,
+                coalesce(tk.work_status, e.status_category) as status,
+                e.status_category, tr.depth, tr.root_position,
+                ws.status as runtime_status,
+                exists (select 1 from public.edges dep
+                         where dep.src_id = e.id and dep.type = 'depends_on'
+                           and coalesce((dep.props ->> 'hard')::boolean, true)
+                           and not internal.is_resolved(dep.dst_id)) as blocked
+           from tr
+           join public.entities e on e.id = tr.entity_id and e.deleted_at is null
+           left join public.tasks tk on tk.entity_id = e.id
+           left join public.work_sessions ws on ws.entity_id = e.id
+           ${TITLE_JOINS}`,
         [nearest.story_id],
       ),
-    );
+    }));
   } catch (error) {
     const code = (error as { code?: unknown } | null)?.code;
     return { ...ref, snapshot: typeof code === 'string' && code !== '' ? `read_failed:${code}` : 'read_failed' };
   }
-  if (!row) return { ...ref, snapshot: 'not_found' };
+  const head = detail.head;
+  if (!head) return { ...ref, snapshot: 'not_found' };
 
-  const state = rec(row.state);
-  const page = rec(row.page);
-  let truncated = state?.truncated === true || rec(page?.follow)?.truncated === true;
-
-  const description = cap(row.description ?? '', STORY_PROMPT_LIMITS.description);
+  const state = rec(head.state);
+  let truncated = state?.truncated === true;
+  const description = cap(head.description ?? '', STORY_PROMPT_LIMITS.description);
   truncated ||= description.cut;
 
-  const nodes = Array.isArray(page?.nodes) ? page.nodes.map(rec).filter((n) => n !== null) : [];
-  const self = nodes.find((n) => n.id === nearest.story_id);
-
-  const toItem = (r: Record<string, unknown>): PromptStoryItem | null => {
-    const id = str(r.id);
-    if (!id) return null;
-    return {
-      id,
-      kind: str(r.kind) ?? 'entity',
-      title: cap(str(r.title) ?? '', STORY_PROMPT_LIMITS.title).text,
-      status: str(r.status),
-      ...(r.blocked === true ? { blocked: true } : {}),
-    };
-  };
-  const allRoots = (Array.isArray(page?.roots) ? page.roots.map(rec) : [])
-    .flatMap((r) => (r ? [toItem(r)] : []))
-    .filter((r): r is PromptStoryItem => r !== null);
-  const blockedRows = nodes
-    .filter((n) => n.blocked === true && n.statusCategory !== 'done' && n.id !== nearest.story_id)
-    .flatMap((n) => {
-      const item = toItem(n);
-      return item ? [item] : [];
-    });
-  const liveRows = (Array.isArray(page?.sessions) ? page.sessions.map(rec) : [])
-    .filter((s): s is Record<string, unknown> => s !== null && s.live === true && typeof s.id === 'string')
-    .map((s) => ({
-      id: s.id as string,
-      title: cap(str(s.title) ?? '', STORY_PROMPT_LIMITS.title).text,
-      callSign: str(s.callSign),
-    }));
-  truncated ||=
-    blockedRows.length > STORY_PROMPT_LIMITS.blocked || liveRows.length > STORY_PROMPT_LIMITS.live;
+  const toItem = (r: StoryTrailRow): PromptStoryItem => ({
+    id: r.id,
+    kind: r.kind,
+    title: cap(r.title ?? '', STORY_PROMPT_LIMITS.title).text,
+    status: r.status,
+    ...(r.blocked && (r.status_category === 'to_do' || r.status_category === 'in_progress') ? { blocked: true } : {}),
+  });
+  const roots = detail.rows
+    .filter((r) => Number(r.depth) === 0)
+    .sort((a, b) => (a.root_position ?? Infinity) - (b.root_position ?? Infinity) || a.id.localeCompare(b.id))
+    .map(toItem);
+  const blocked = detail.rows.map(toItem).filter((r) => r.blocked === true);
+  // Call signs as the contract rules them: every session in the story by
+  // created_at (ties by id), so a sign here is the sign on the story page.
+  const sessions = detail.rows
+    .filter((r) => r.kind === 'work_session')
+    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime() || a.id.localeCompare(b.id));
+  const live = sessions.flatMap((r, i) =>
+    r.runtime_status !== null && LIVE_RUNTIME.has(r.runtime_status)
+      ? [{ id: r.id, title: cap(r.title ?? '', STORY_PROMPT_LIMITS.title).text, callSign: storyCallSign(i) }]
+      : [],
+  );
+  truncated ||= blocked.length > STORY_PROMPT_LIMITS.blocked || live.length > STORY_PROMPT_LIMITS.live;
 
   const progress = rec(state?.taskProgress);
-  const rootCount = typeof state?.rootCount === 'number' ? state.rootCount : allRoots.length;
   return {
     ...ref,
     snapshot: 'loaded',
-    status: str(self?.status) ?? null,
+    status: head.status_category,
     ...(description.text ? { description: description.text } : {}),
     taskProgress: progress
       ? {
@@ -153,10 +201,10 @@ export async function loadStoryContextForTask(
           blocked: Number(progress.blocked ?? 0),
         }
       : null,
-    roots: allRoots.slice(0, STORY_PROMPT_LIMITS.roots),
-    rootCount,
-    live: liveRows.slice(0, STORY_PROMPT_LIMITS.live),
-    blocked: blockedRows.slice(0, STORY_PROMPT_LIMITS.blocked),
+    roots: roots.slice(0, STORY_PROMPT_LIMITS.roots),
+    rootCount: typeof state?.rootCount === 'number' ? state.rootCount : roots.length,
+    live: live.slice(0, STORY_PROMPT_LIMITS.live),
+    blocked: blocked.slice(0, STORY_PROMPT_LIMITS.blocked),
     ...(truncated ? { truncated: true } : {}),
   };
 }

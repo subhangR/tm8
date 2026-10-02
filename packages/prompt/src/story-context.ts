@@ -161,7 +161,7 @@ function itemLine(i: PromptStoryItem): string {
 }
 
 /** The story as plain text, for the inside of the untrusted block. */
-export function storyContextText(story: PromptStoryContext): string {
+export function storyContextText(story: PromptStoryContext, selfSessionId?: string | null): string {
   const lines: string[] = [`Story: ${story.title || '(untitled)'}`];
   if (story.status) lines.push(`Status: ${story.status}`);
   const p = story.taskProgress;
@@ -181,7 +181,9 @@ export function storyContextText(story: PromptStoryContext): string {
     lines.push(
       '',
       'Live now:',
-      ...story.live.map((s) => `- ${s.callSign ? `${s.callSign}: ` : ''}${s.title || '(untitled session)'} ${s.id}`),
+      ...story.live.map((s) =>
+        `- ${s.callSign ? `${s.callSign}: ` : ''}${s.title || '(untitled session)'} ${s.id}` +
+          (s.id === selfSessionId ? ' (this session)' : '')),
     );
   }
   if (story.blocked && story.blocked.length > 0) {
@@ -203,7 +205,11 @@ const STORY_INSTRUCTION =
  * (`full`) the story as an untrusted block. `full: false` is the compact form a
  * frame falls back to when the whole would cross the combined budget.
  */
-export function renderStoryContext(story: PromptStoryContext, full = true): string {
+export function renderStoryContext(
+  story: PromptStoryContext,
+  full = true,
+  selfSessionId?: string | null,
+): string {
   const loaded = story.snapshot === 'loaded';
   const attrs = [
     `id="${escapeAttr(story.id)}"`,
@@ -218,7 +224,7 @@ export function renderStoryContext(story: PromptStoryContext, full = true): stri
     `  <instruction>${escapeAttr(STORY_INSTRUCTION.replace('<story-id>', story.id))}</instruction>`,
     '</story>',
   ];
-  const body = full && loaded ? storyContextText(story) : `Story: ${story.title || '(untitled)'}`;
+  const body = full && loaded ? storyContextText(story, selfSessionId) : `Story: ${story.title || '(untitled)'}`;
   out.push(untrustedData({
     type: 'story-context',
     body,
