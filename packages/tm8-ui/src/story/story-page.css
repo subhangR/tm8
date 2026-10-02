@@ -103,7 +103,7 @@
 .cv2-root .sty-who { display: inline-flex; align-items: center; gap: 6px; color: var(--pn-ink-2); }
 .cv2-root .sty-stack { display: inline-flex; }
 .cv2-root .sty-stack .kit-avatar { box-shadow: 0 0 0 2px var(--pn-card); }
-.cv2-root .sty-stack .kit-avatar + .kit-avatar { margin-left: -6px; }
+.cv2-root .sty-stack .kit-avatar + .kit-avatar { margin-left: -3px; }
 .cv2-root .sty-stack .sty-av--live { box-shadow: 0 0 0 2px var(--pn-card), 0 0 0 3.5px var(--pn-run); }
 .cv2-root .sty-livepill {
   display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 9px 0 7px;
@@ -150,7 +150,7 @@
 
 /* A narrow panel: stats two by two, the rail under the feed. */
 @container (max-width: 900px) {
-  .cv2-root .sty-stats { grid-template-columns: 1fr 1fr; }
+  .cv2-root .sty-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .cv2-root .sty-stat--progress { grid-column: 1 / -1; }
   .cv2-root .sty-cols { grid-template-columns: minmax(0, 1fr); }
   .cv2-root .sty-hero { padding: 18px 18px 16px; }
@@ -169,4 +169,9 @@
 .cv2-root .sty-state__retry {
   font: inherit; color: var(--pn-ink); background: var(--pn-card); cursor: pointer;
   border: 1px solid var(--pn-line-2); border-radius: var(--pn-r-sm); padding: 2px 10px;
+}
+
+/* A phone-width panel: one stat per row. */
+@container (max-width: 520px) {
+  .cv2-root .sty-stats { grid-template-columns: minmax(0, 1fr); }
 }

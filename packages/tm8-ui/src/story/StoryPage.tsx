@@ -134,6 +134,8 @@ function StoryHero({
   const kids = state.childStoryCount;
   const tone = view.statusCategory ? CATEGORY_TONE[view.statusCategory] : 'idle';
   const last = since(state.lastActivityAt);
+  // The status key, else its category in words; a read with neither draws none.
+  const statusWord = view.status || (view.statusCategory ? view.statusCategory.replace('_', ' ') : '');
 
   const teammates = page.team;
   const members = Object.values(view.people).filter((p) => !p.agent);
@@ -147,8 +149,12 @@ function StoryHero({
     >
       <div className="sty-eyebrow">
         <span>{getKind(STORY_KIND).label}</span>
-        <i className="sty-dot" />
-        <span className={`sty-eyebrow__status sty-tone--${tone}`}>{view.status}</span>
+        {statusWord ? (
+          <>
+            <i className="sty-dot" />
+            <span className={`sty-eyebrow__status sty-tone--${tone}`}>{statusWord}</span>
+          </>
+        ) : null}
         <i className="sty-dot" />
         <span>{plural(state.rootCount, 'root')}</span>
         {kids > 0 ? (
@@ -175,9 +181,11 @@ function StoryHero({
       )}
 
       <div className="sty-herometa">
-        <Pill tone={tone} dot="solid">
-          {view.status}
-        </Pill>
+        {statusWord ? (
+          <Pill tone={tone} dot="solid">
+            {statusWord}
+          </Pill>
+        ) : null}
         {onIt > 0 ? (
           <span className="sty-who">
             <span className="sty-stack">
@@ -330,7 +338,10 @@ function StoryStats({ view }: { view: StoryView }) {
     .sort((a, b) => b[1] - a[1])
     .map(([kind, n]) => {
       const row = getKind(kind);
-      return `${n} ${(n === 1 ? row.label : row.labelPlural).toLowerCase()}`;
+      // A kind with no registry row of its own says its own name, not the
+      // fallback row's generic word.
+      const word = row.kind === kind ? (n === 1 ? row.label : row.labelPlural) : kind.replace(/_/g, ' ');
+      return `${n} ${word.toLowerCase()}`;
     })
     .join(' · ');
 

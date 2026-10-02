@@ -1110,7 +1110,9 @@ export const drawingLoginFlow = summary({
  * `storyline` block draws the same story here as on /story-dev.html.
  */
 export const storyAsAnEntity = summary({
-  id: 'story-as-an-entity',
+  // The page's own id: the page names the story as its depth -1 node, and the
+  // live read finds the story's status there.
+  id: STORY_FIXTURE.id,
   kind: 'story',
   title: STORY_FIXTURE.title,
   excerpt: STORY_FIXTURE.description.slice(0, 120),
