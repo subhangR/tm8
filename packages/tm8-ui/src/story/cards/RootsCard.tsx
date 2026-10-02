@@ -7,6 +7,10 @@
  * Inline adds: "＋ task under this root" rides `actions.createTask`; clicking a
  * title renames it through `actions.rename`. A row the live feed just landed
  * flashes (`live.landed`).
+ *
+ * Root hover is shared with the graph (`hover`): entering a row lights that
+ * root everywhere, and a root lit from the graph lights its row and its trail
+ * chips here.
  */
 import { useState } from 'react';
 
@@ -26,7 +30,7 @@ import {
 import type { StoryBlockProps, StoryNodePick } from '../props';
 import { CardHead, Empty, flashOf, InlineEntry, Meter, PersonAvatar, picker, RenamableTitle, TonePill } from './shared';
 
-export function RootsCard({ view, actions, live, onPick }: StoryBlockProps & { onPick?: (pick: StoryNodePick) => void }) {
+export function RootsCard({ view, actions, live, hover, onPick }: StoryBlockProps & { onPick?: (pick: StoryNodePick) => void }) {
   const roots = view.page.roots;
   return (
     <section className="stc-card">
@@ -38,7 +42,7 @@ export function RootsCard({ view, actions, live, onPick }: StoryBlockProps & { o
         <Empty>Nothing has been put in this story yet. Put a task in and it becomes a root: its children, sessions, docs and pull requests follow along.</Empty>
       ) : (
         roots.map((root, i) => (
-          <RootRow key={root.id} root={root} index={i} view={view} actions={actions} live={live} onPick={onPick} />
+          <RootRow key={root.id} root={root} index={i} view={view} actions={actions} live={live} hover={hover} onPick={onPick} />
         ))
       )}
     </section>
@@ -55,6 +59,7 @@ function RootRow({
   view,
   actions,
   live,
+  hover,
   onPick,
 }: StoryBlockProps & { root: StoryRoot; index: number; onPick?: (pick: StoryNodePick) => void }) {
   const [adding, setAdding] = useState(false);
@@ -68,9 +73,14 @@ function RootRow({
   const rename = actions.rename;
   const createTask = actions.createTask;
   const landed = live?.landed;
+  const lit = !!hover && hover.rootId === root.id;
 
   return (
-    <div className={`stc-root${run ? ' stc-root--live' : ''}${flashOf(landed, root.id)}`}>
+    <div
+      className={`stc-root${run ? ' stc-root--live' : ''}${lit ? ' stc-root--lit' : ''}${flashOf(landed, root.id)}`}
+      onMouseEnter={hover ? () => hover.setRootId(root.id) : undefined}
+      onMouseLeave={hover ? () => hover.setRootId(null) : undefined}
+    >
       <div>
         <div className="stc-root__hd">
           <KindIcon kind={root.kind} size={16} />
@@ -152,7 +162,7 @@ function RootRow({
           const n = byId.get(x.id);
           const exited = n?.live === false;
           const memory = VIEW_OF_KIND[x.kind] === 'memories';
-          const cls = `stc-chip stc-fam--${x.family}${exited ? ' stc-chip--exited' : ''}${memory ? ' stc-chip--memory' : ''}${flashOf(landed, x.id)}`;
+          const cls = `stc-chip stc-fam--${x.family}${exited ? ' stc-chip--exited' : ''}${memory ? ' stc-chip--memory' : ''}${lit ? ' stc-chip--lit' : ''}${flashOf(landed, x.id)}`;
           const body = (
             <>
               <KindIcon kind={x.kind} size={14} />
