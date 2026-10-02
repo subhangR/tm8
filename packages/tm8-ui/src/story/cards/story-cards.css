@@ -105,7 +105,8 @@
 .cv2-root .stc-meter { display: flex; height: 6px; border-radius: var(--pn-r-pill); background: var(--pn-active); overflow: hidden; flex: 1; min-width: 0; }
 .cv2-root .stc-meter--thin { height: 4px; }
 .cv2-root .stc-meter__seg { display: block; height: 100%; background: var(--stc-tone); }
-.cv2-root .stc-av { display: inline-flex; border-radius: 6px; flex: none; }
+.cv2-root .stc-av { display: inline-flex; border-radius: 6px; flex: none; line-height: 0; }
+.cv2-root .stc-fm > .stc-av { align-self: start; }
 .cv2-root .stc-av--live { box-shadow: 0 0 0 2px var(--pn-card), 0 0 0 3.5px var(--pn-run); }
 .cv2-root .stc-flash { animation: stcLand 1.6s var(--pn-ease-out); }
 @keyframes stcLand {
