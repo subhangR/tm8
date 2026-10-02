@@ -1122,6 +1122,29 @@ export const storyAsAnEntity = summary({
 });
 
 /**
+ * Style — a published, read-only space style (migration 282). The document is
+ * a built-in foundation with NO vars: a fixture carrying colour values would
+ * put raw colour literals in `src/` (§14), and the row facts this fixture
+ * exists to exercise — title, pusher, version — do not need any.
+ */
+export const styleMidnight = summary({
+  id: 'style-midnight',
+  kind: 'style',
+  title: 'Midnight',
+  excerpt: 'The dark house style',
+  createdBy: ada,
+  state: {
+    kind: 'style',
+    doc: { schemaVersion: 1, foundation: 'builtin:atelier-dark', vars: {}, css: null },
+    resolvedHash: null,
+    pushedBy: ada.id,
+    pushedAt: '2026-10-02T09:00:00.000Z',
+    sourceOwnerIdentityId: 'fixture-identity-ada',
+    tags: ['dark'],
+  },
+});
+
+/**
  * Forms — question sets an agent asked a human (migration 209). The five
  * fixture forms live in `forms/fixtures.ts` with their responses (the forms
  * seam serves those); here they become rows, so every state the questionnaire
@@ -1361,6 +1384,7 @@ export const fixtureSummaries: EntitySummary[] = [
   spellDeploy, skillReview, collectionInbox, collectionEmpty, projectTm8Ui,
   profileHouseStyle, credentialTeamKey, customRitual, artifactPulseBoard, drawingLoginFlow,
   storyAsAnEntity,
+  styleMidnight,
   ...formSummaries,
   ...containerFixtures,
 ];
@@ -1871,6 +1895,21 @@ export const fixtureDetails: Record<string, EntityDetail> = {
 
   [credentialTeamKey.id]: detail(credentialTeamKey, {
     content: { kind: 'credential', provider: 'anthropic', shape: 'api_key', visibility: 'public', status: 'active', ownerAccountId: null },
+  }),
+
+  [styleMidnight.id]: detail(styleMidnight, {
+    content: {
+      kind: 'style',
+      description: 'The dark house style',
+      doc: { schemaVersion: 1, foundation: 'builtin:atelier-dark', vars: {}, css: null },
+      resolvedHash: null,
+      pushedBy: ada.id,
+      pushedAt: '2026-10-02T09:00:00.000Z',
+      sourceOwnerIdentityId: 'fixture-identity-ada',
+      tags: ['dark'],
+    },
+    // Read-only by construction (282): new versions arrive only by push.
+    capabilities: CAPS_READONLY,
   }),
 
   [customRitual.id]: detail(customRitual, {

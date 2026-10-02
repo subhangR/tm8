@@ -276,6 +276,18 @@ export const KIND_ART = {
   ],
 
   /**
+   * A painter's palette — a `style` is a theme for the whole UI (282). The
+   * thumb hole and three paint wells are what keep it from reading as a
+   * generic blob or as `drawing`'s pencil at 16px.
+   */
+  style: [
+    'M8 2.6c-3 0-5.4 2.2-5.4 5 0 2.8 2.4 5.8 5.4 5.8.9 0 1.4-.6 1.4-1.3 0-.9-.7-1.2-.7-2 0-.7.6-1.2 1.4-1.2h1.5c1.8 0 2.8-1.1 2.8-2.6 0-2-2.2-3.7-4.9-3.7z',
+    'M5.2 7.4a0.8 0.8 0 1 0 0-1.6 0.8 0.8 0 0 0 0 1.6z',
+    'M7.6 5.4a0.8 0.8 0 1 0 0-1.6 0.8 0.8 0 0 0 0 1.6z',
+    'M10.4 6a0.8 0.8 0 1 0 0-1.6 0.8 0.8 0 0 0 0 1.6z',
+  ],
+
+  /**
    * The custom-kind fallback. A plain diamond ON PURPOSE: it is the one mark
    * that must say "this kind has no artwork of its own", so it stays the
    * neutral shape the old set used for exactly that job.
