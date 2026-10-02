@@ -467,8 +467,12 @@ export function createSpaceLinkInvokeHandlers(
       throw error;
     }
     const { data, requestId, spawnedSessionId, provenanceUnrecorded } = outcome;
-    const auditId = await audit('ok', provenanceUnrecorded ? 'provenance_unrecorded' : null,
+    // A spawn has already happened by now: a failed audit insert must not turn
+    // it into an error the caller retries into a second child (review of #993).
+    // The audit stays best-effort for spawns, like the provenance record.
+    const recorded = audit('ok', provenanceUnrecorded ? 'provenance_unrecorded' : null,
       spawnedSessionId ?? remoteIdOf(data) ?? requestId);
+    const auditId = spawnedSessionId ? await recorded.catch(() => '') : await recorded;
     return { op: requested, linkId: row.linkId, targetSpaceId: row.targetSpaceId, auditId, result: data };
   };
 

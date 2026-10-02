@@ -49,6 +49,8 @@
 -- 1. issue_work_session_agent_session — 256's body; a link session mints with
 --    its link claim, in its target space.
 -- -----------------------------------------------------------------------------
+set role tm8_graph_owner;
+
 create or replace function public.issue_work_session_agent_session(
   p_work_session_id uuid,
   p_team_member_id uuid,
@@ -112,6 +114,20 @@ begin
      where l.entity_id = prov.via_link_id and l.target_space_id = session_space
   ) then
     raise exception 'a space link session mints only in its link''s target space' using errcode = '42501';
+  end if;
+
+  -- 277 (W7b, review of #993): a link session resumes only a session ITS link
+  -- started. A work session that already holds agent sessions none of which
+  -- descend from this link was started in B by someone else; minting for it
+  -- here would stamp it via_link_id and bind every later resume (the owner's
+  -- included) to this link for good. A fresh spawn has no prior rows.
+  if internal.link_bound() and exists (
+    select 1 from public.auth_sessions s where s.work_session_id = p_work_session_id
+  ) and not exists (
+    select 1 from public.auth_sessions s
+     where s.work_session_id = p_work_session_id and s.via_link_id = prov.via_link_id
+  ) then
+    raise exception 'a space link resumes only sessions it started' using errcode = '42501';
   end if;
 
   update public.auth_sessions
@@ -343,3 +359,5 @@ grant execute on function public.space_link_spawn_for(uuid) to tm8_app;
 
 -- Never-analyzed tables are estimated at 10 pages (225); 229/260/261 precedent.
 analyze public.space_link_spawns;
+
+reset role;

@@ -338,6 +338,16 @@ describe('W7p the link session and its children carry via_link', () => {
     expect(await sessionRow(grand.id)).toMatchObject({ kind: 'agent', via_link_id: L.link.id, parent_session_id: L.linkSessionId });
   });
 
+  it('277: the link session cannot resume a B session its link did not start; the owner\'s resume stays unbound', async () => {
+    const issuer = 'issue_work_session_agent_session';
+    const own = await mintChild(L.human, { issuer });
+    expect((await sessionRow(own.id)).via_link_id).toBeNull();
+    await expect(mintChild(L.linkClaims, { issuer, workSessionId: own.workSessionId }))
+      .rejects.toThrow(/resumes only sessions it started/);
+    const again = await mintChild(L.human, { issuer, workSessionId: own.workSessionId });
+    expect((await sessionRow(again.id)).via_link_id).toBeNull();
+  });
+
   it('a grandchild inherits via_link, parented flat on the link session', async () => {
     const child = await mintChild(L.mintClaims);
     const grand = await mintChild(await claimsForToken(child.token));
