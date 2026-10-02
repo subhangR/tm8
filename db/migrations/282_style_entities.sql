@@ -425,16 +425,17 @@ create or replace function internal.refresh_style_snapshots(
   p_ref text, p_space_id uuid, p_doc jsonb, p_hash text, p_title text
 ) returns void language plpgsql security definer set search_path = public, internal, pg_temp as $$
 begin
+  -- ONE set-based statement for both columns (no per-row loop): a row whose
+  -- current AND dark are this style gets both halves in the same write.
   update public.identity_style_prefs p
      set snapshot = p.snapshot
-           || jsonb_build_object('current', p_doc, 'currentHash', p_hash, 'currentTitle', p_title)
-   where p.current_style = p_ref
-     and (p_space_id is null or exists (
-           select 1 from public.members m
-            where m.identity_id = p.identity_id and m.space_id = p_space_id and m.status = 'active'));
-  update public.identity_style_prefs p
-     set snapshot = p.snapshot || jsonb_build_object('dark', p_doc)
-   where p.dark_style = p_ref
+           || case when p.current_style = p_ref
+                   then jsonb_build_object('current', p_doc, 'currentHash', p_hash, 'currentTitle', p_title)
+                   else '{}'::jsonb end
+           || case when p.dark_style = p_ref
+                   then jsonb_build_object('dark', p_doc)
+                   else '{}'::jsonb end
+   where (p.current_style = p_ref or p.dark_style = p_ref)
      and (p_space_id is null or exists (
            select 1 from public.members m
             where m.identity_id = p.identity_id and m.space_id = p_space_id and m.status = 'active'));
@@ -904,7 +905,8 @@ $$;
 -- -----------------------------------------------------------------------------
 -- 13. Remove (spec §1.4, §7): space admin only; soft delete. The 003 trigger
 --     emits `entity.deleted`. Viewers on it keep rendering from their prefs
---     snapshot; a personal style's `published_as` keeps pointing at the
+--     snapshot, which is DELIBERATELY NOT TOUCHED here: it holds the last
+--     pushed version, and that is exactly what a viewer falls back to; a personal style's `published_as` keeps pointing at the
 --     tombstone, which is why push_style only targets LIVE styles.
 -- -----------------------------------------------------------------------------
 create or replace function public.remove_style(
