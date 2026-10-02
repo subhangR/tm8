@@ -34,6 +34,7 @@ import {
   pct,
   segments,
   since,
+  statusWord,
   teammatesOf,
   type StoryGraphView,
   type StoryTone,
@@ -144,7 +145,7 @@ function StoryHero({
   const tone = view.statusCategory ? CATEGORY_TONE[view.statusCategory] : 'idle';
   const last = since(state.lastActivityAt);
   // The status key, else its category in words; a read with neither draws none.
-  const statusWord = view.status || (view.statusCategory ? view.statusCategory.replace('_', ' ') : '');
+  const statusLabel = statusWord(view.status) || statusWord(view.statusCategory);
 
   const teammates = teammatesOf(page);
   const members = Object.values(view.people).filter((p) => !p.agent);
@@ -158,10 +159,10 @@ function StoryHero({
     >
       <div className="sty-eyebrow">
         <span>{getKind(STORY_KIND).label}</span>
-        {statusWord ? (
+        {statusLabel ? (
           <>
             <i className="sty-dot" />
-            <span className={`sty-eyebrow__status sty-tone--${tone}`}>{statusWord}</span>
+            <span className={`sty-eyebrow__status sty-tone--${tone}`}>{statusLabel}</span>
           </>
         ) : null}
         <i className="sty-dot" />
@@ -190,9 +191,9 @@ function StoryHero({
       )}
 
       <div className="sty-herometa">
-        {statusWord ? (
+        {statusLabel ? (
           <Pill tone={tone} dot="solid">
-            {statusWord}
+            {statusLabel}
           </Pill>
         ) : null}
         {onIt > 0 ? (

@@ -171,7 +171,12 @@
   border: 1px solid var(--pn-line-2); border-radius: var(--pn-r-sm); padding: 2px 10px;
 }
 
+/* The entity panel (~560-700px): the four stats two by two. */
+@container (max-width: 700px) {
+  .cv2-root .sty-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cv2-root .sty-stat--progress { grid-column: auto; }
+}
 /* A phone-width panel: one stat per row. */
-@container (max-width: 520px) {
+@container (max-width: 400px) {
   .cv2-root .sty-stats { grid-template-columns: minmax(0, 1fr); }
 }
