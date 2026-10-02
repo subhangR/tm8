@@ -86,7 +86,7 @@ export interface GraphEdge {
   rootIds: string[];
   d: string;
   /** Edges with no node to carry their name are labelled on the line. */
-  label: { x: number; y: number; text: string } | null;
+  label: { x: number; y: number; text: string; anchor: 'start' | 'middle' } | null;
 }
 
 export interface GraphNote {
@@ -440,20 +440,26 @@ export function layoutStoryGraph(view: StoryView, now: number = Date.now()): Gra
     const teamArc = team ? (e.type === DISPATCHED ? (Math.abs(b.x - a.x) > 300 ? 120 : 60) : 44) : 0;
     const c = team ? curve(a, b, false, teamArc, true) : curve(a, b, !!e.bulge, cross ? (bothRoots ? -70 : 80) : 0);
     const labelled = cross || team || LABELLED_FAMILIES.has(family);
-    const lp = team ? c.at(e.type === COORDINATES ? 0.6 : 0.32) : c.apex;
+    /* A straight-down blocks line is labelled beside itself, clear of the node title it runs past. */
+    const vertical = !team && !cross && Math.abs(b.y - a.y) > Math.abs(b.x - a.x);
+    const lp = team ? c.at(e.type === COORDINATES ? 0.6 : 0.32) : vertical ? { x: c.apex.x + 38, y: c.apex.y } : c.apex;
     edges.push({
       key, from, to, type: e.type, family, cross, team,
       exited: a.exited || b.exited,
       rootIds: [...new Set(e.rootIds?.length ? e.rootIds : [...a.rootIds, ...b.rootIds])],
       d: c.d,
-      label: labelled ? { x: lp.x, y: lp.y + 3, text: e.type } : null,
+      label: labelled ? { x: lp.x, y: lp.y + 3, text: e.type, anchor: vertical ? 'start' : 'middle' } : null,
     });
   };
 
   /* Story → child stories (the contract carries no edge row for them). */
   for (const c of kids) push({ from: view.id, to: c.id, type: CONTAINS, rootIds: allRootIds });
   /* Every stored edge, folded onto what is drawn. Cross-root links swing as arcs. */
-  for (const e of page.edges) push({ from: e.fromId, to: e.toId, type: e.type, family: e.family, cross: e.cross, rootIds: e.rootIds });
+  for (const e of page.edges) {
+    /* "A depends on B" draws as B blocks A: the arrow points at the work that waits. */
+    const flip = e.type === DEPENDS_ON;
+    push({ from: flip ? e.toId : e.fromId, to: flip ? e.fromId : e.toId, type: flip ? BLOCKS : e.type, family: e.family, cross: e.cross, rootIds: e.rootIds });
+  }
   /* A live child capsule also hangs off its root on a green "runs" line. */
   for (const node of nodes.values()) {
     if (node.role !== 'child' || !node.capsule) continue;
@@ -484,6 +490,8 @@ const CONTAINS = 'contains';
 const COORDINATES = 'coordinates';
 const DISPATCHED = 'dispatched';
 const WORKING_ON = 'working_on';
+const DEPENDS_ON = 'depends_on';
+const BLOCKS = 'blocks';
 
 /** Spec for one graph view: what is in view, what stays as context. */
 export interface ViewMask {

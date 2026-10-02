@@ -60,7 +60,7 @@
 .sg-svg { display: block; width: 100%; height: auto; }
 
 /* ---- edges ---- */
-.sg-e { fill: none; stroke-width: 1.2; transition: opacity 0.15s var(--pn-ease-out); }
+.sg-e { fill: none; stroke-width: 1.2; pointer-events: none; transition: opacity 0.15s var(--pn-ease-out); }
 .sg-e--story { stroke-opacity: 0.6; }
 .sg-e--runs { stroke-width: 1.5; }
 .sg-e--made,
@@ -72,6 +72,7 @@
 .sg-svg:not(.sg-svg--team) .sg-e--team { opacity: 0.5; stroke-width: 1.1; }
 .sg-svg:not(.sg-svg--team) .sg-el--team { opacity: 0.6; }
 .sg-el {
+  pointer-events: none;
   font-family: var(--pn-mono);
   font-size: var(--pn-fs-tick);
   paint-order: stroke;
@@ -88,6 +89,7 @@
 /* ---- nodes ---- */
 .sg-n { transition: opacity 0.15s var(--pn-ease-out); }
 .sg-n--pickable { cursor: pointer; }
+.sg-hit { fill: transparent; }
 .sg-n:focus { outline: none; }
 .sg-n:focus-visible .sg-body,
 .sg-n:focus-visible .sg-shell { stroke: var(--pn-brand); stroke-width: 2.2; }
@@ -149,10 +151,10 @@
 .sg-shell { fill: var(--pn-card); stroke: var(--pn-run); stroke-width: 1.5; }
 .sg-shell--working { fill: var(--pn-info-soft); }
 .sg-avbox { fill: var(--pn-brand-soft); stroke: var(--pn-run); stroke-width: 1.2; }
-.sg-n .sg-avtxt { font-size: var(--pn-fs-fine); font-weight: 700; fill: var(--pn-brand-2); stroke: none; }
-.sg-n .sg-cap-title { font-size: var(--pn-fs-micro); font-weight: 600; fill: var(--pn-ink); stroke: none; }
-.sg-n .sg-cap-live { font-family: var(--pn-mono); font-size: var(--pn-fs-tick); font-weight: 600; fill: var(--pn-run); letter-spacing: 0.06em; }
-.sg-n .sg-cap-dot { fill: var(--pn-run); }
+.sg-n.sg-cap .sg-avtxt { font-size: var(--pn-fs-fine); font-weight: 700; fill: var(--pn-brand-2); stroke: none; }
+.sg-n.sg-cap .sg-cap-title { font-size: var(--pn-fs-micro); font-weight: 600; fill: var(--pn-ink); stroke: none; }
+.sg-n.sg-cap .sg-cap-live { font-family: var(--pn-mono); font-size: var(--pn-fs-tick); font-weight: 600; fill: var(--pn-run); letter-spacing: 0.06em; stroke: none; }
+.sg-n.sg-cap .sg-cap-dot { fill: var(--pn-run); }
 
 /* picked, flashed, filtered, highlighted */
 .sg-picked .sg-body,

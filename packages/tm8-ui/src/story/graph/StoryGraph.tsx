@@ -93,6 +93,7 @@ function Capsule({ node }: { node: GraphNode }) {
 function Teammate({ node }: { node: GraphNode }) {
   return (
     <>
+      <rect className="sg-hit" x={node.x - 40} y={node.y - 15} width={80} height={56} />
       {node.live && <rect className="sg-pulse" x={node.x - 15} y={node.y - 15} width={30} height={30} rx={8} />}
       <rect className="sg-box" x={node.x - 13} y={node.y - 13} width={26} height={26} rx={6} />
       <text className="sg-ini" x={node.x} y={node.y + 4} textAnchor="middle">
@@ -113,6 +114,8 @@ function Teammate({ node }: { node: GraphNode }) {
 function Disc({ node }: { node: GraphNode }) {
   return (
     <>
+      {/* The hit area: the disc and its label, gap included. */}
+      <rect className="sg-hit" x={node.x - 40} y={node.y - node.r - 9} width={80} height={2 * node.r + 43} />
       {node.recent && <circle className="sg-halo" cx={node.x} cy={node.y} r={node.r + 9} />}
       <circle className="sg-body" cx={node.x} cy={node.y} r={node.r} />
       {node.role === 'root' && <circle className="sg-ring" cx={node.x} cy={node.y} r={node.r + 4} />}
@@ -233,7 +236,7 @@ export function StoryGraph({ view, live, onPick, initialView }: StoryGraphProps)
                     className={`sg-el sg-el--${e.family}${st}${lit(e.rootIds)}`}
                     x={e.label.x}
                     y={e.label.y}
-                    textAnchor="middle"
+                    textAnchor={e.label.anchor}
                     style={{ fill: FAMILY_TOKEN[e.family] }}
                   >
                     {e.label.text}
