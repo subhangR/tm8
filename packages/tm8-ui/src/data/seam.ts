@@ -167,6 +167,8 @@ import type {
   SpaceCredentialView,
   SpaceLinkView,
   SpaceLinkAuditEntry,
+  SpaceLinkInboundAuditEntry,
+  SpaceLinkInboundView,
   ServerView,
   ServerProbeView,
   ActionRows,
@@ -1483,6 +1485,19 @@ export interface Seam {
      * body: op, result, reason and the ids involved.
      */
     audit(linkId: EntityId): Promise<SpaceLinkAuditEntry[]>;
+    /**
+     * 278 (D2): the TARGET side, for an admin of `spaceId` (anyone else is
+     * refused `forbidden`). The links INTO the space, the calls made through
+     * them (scoped to this space), and revoke/restore — the two writes are
+     * human-only like every link write.
+     */
+    inbound: {
+      list(spaceId: SpaceId): Promise<SpaceLinkInboundView[]>;
+      /** Newest first; `linkId` narrows it to one link. */
+      audit(spaceId: SpaceId, linkId?: EntityId): Promise<SpaceLinkInboundAuditEntry[]>;
+      revoke(spaceId: SpaceId, linkId: EntityId): Promise<SpaceLinkInboundView>;
+      restore(spaceId: SpaceId, linkId: EntityId): Promise<SpaceLinkInboundView>;
+    };
   };
 
   /**

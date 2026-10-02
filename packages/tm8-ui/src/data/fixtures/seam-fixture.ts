@@ -110,6 +110,8 @@ import {
   type SpaceCredentialView,
   type SpaceLinkView,
   type SpaceLinkAuditEntry,
+  type SpaceLinkInboundAuditEntry,
+  type SpaceLinkInboundView,
   type ServerView,
   type ActionRows,
   type ContentionReport,
@@ -1349,6 +1351,35 @@ export function createFixtureSeam(): FixtureSeam {
   ];
   /** W7 audit rows (none until an agent invokes through a link). */
   const spaceLinkAuditState: SpaceLinkAuditEntry[] = [];
+  /**
+   * 278 (D2): one link INTO the fixture space, from a space the viewer is not
+   * in, with one call through it, so the admin's inbound block has a row to
+   * read, audit and revoke without a node.
+   */
+  const spaceLinksInboundState: SpaceLinkInboundView[] = [
+    {
+      id: '0f1e2d3c-0000-4000-8000-000000000d02', homeSpaceId: '0f1e2d3c-0000-4000-8000-0000000000e2',
+      homeSpaceName: 'Ops', targetSpaceId: FIXTURE_SPACE_ID, createdAt: FIXTURE_NOW,
+      revokedAt: null, revokedByMemberId: null, lastCallAt: FIXTURE_NOW,
+      holders: [{
+        targetMemberId: ada.id, displayName: ada.displayName, status: 'signed_in', allowSpawn: false, spawnBudget: 3,
+        expiresAt: null, lastUsedAt: FIXTURE_NOW,
+      }],
+    },
+  ];
+  const spaceLinkInboundAuditState: SpaceLinkInboundAuditEntry[] = [
+    {
+      id: '0f1e2d3c-0000-4000-8000-000000000a01', linkId: '0f1e2d3c-0000-4000-8000-000000000d02',
+      homeSpaceId: '0f1e2d3c-0000-4000-8000-0000000000e2', targetSpaceId: FIXTURE_SPACE_ID,
+      targetMemberId: ada.id, displayName: ada.displayName, op: 'entities.create', viaChain: [],
+      result: 'ok', reason: null, remoteId: null, createdAt: FIXTURE_NOW,
+    },
+  ];
+  const inboundLinkById = (spaceId: string, id: string): SpaceLinkInboundView => {
+    const link = spaceLinksInboundState.find((l) => l.id === id && l.targetSpaceId === spaceId);
+    if (!link) throw new CollabError('not_found', `space link ${id} not found`);
+    return link;
+  };
   /** W8 `server` rows. Empty by default: a node registers none until someone adds one. */
   const serversState: ServerView[] = [];
   const serverById = (id: string): ServerView => {
@@ -5786,6 +5817,28 @@ export function createFixtureSeam(): FixtureSeam {
       async audit(linkId) {
         spaceLinkById(linkId);
         return clone(spaceLinkAuditState.filter((a) => a.linkId === linkId));
+      },
+      inbound: {
+        async list(spaceId) {
+          return clone(spaceLinksInboundState.filter((l) => l.targetSpaceId === spaceId));
+        },
+        async audit(spaceId, linkId) {
+          return clone(spaceLinkInboundAuditState.filter((a) =>
+            a.targetSpaceId === spaceId && (linkId === undefined || a.linkId === linkId)));
+        },
+        async revoke(spaceId, linkId) {
+          const link = inboundLinkById(spaceId, linkId);
+          link.revokedAt ??= tick();
+          link.revokedByMemberId ??= ada.id;
+          for (const h of link.holders) if (h.status === 'signed_in') h.status = 'signed_out';
+          return clone(link);
+        },
+        async restore(spaceId, linkId) {
+          const link = inboundLinkById(spaceId, linkId);
+          link.revokedAt = null;
+          link.revokedByMemberId = null;
+          return clone(link);
+        },
       },
     },
 

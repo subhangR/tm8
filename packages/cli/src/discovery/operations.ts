@@ -745,6 +745,52 @@ const ROWS: Record<OperationName, Row> = {
     input: 'none',
     tags: ['link', 'cross-space', 'audit'],
   },
+  // 278 (D2): the TARGET side. An admin of this Space sees the links INTO it,
+  // the calls made through them, and revokes or restores one. The admin check
+  // holds the session pin (D7): owning the home Space too changes nothing.
+  'spaceLinks.inbound.list': {
+    cmd: ['link', 'inbound'],
+    syn: 'tm8 link inbound',
+    sum: 'List the space links INTO this Space from other Spaces, with each Member who holds one — admins of this Space only',
+    authz: 'space',
+    input: 'none',
+    tags: ['link', 'inbound', 'space', 'cross-space', 'admin', 'settings'],
+    notes: [
+      'creating a link needs no approval here; an admin sees it, reads its calls with `tm8 link inbound-audit`, and revokes it with `tm8 link revoke`',
+    ],
+  },
+  'spaceLinks.inbound.audit': {
+    cmd: ['link', 'inbound-audit'],
+    syn: 'tm8 link inbound-audit [<link-id|home-space-id>] [--limit <count>] [--before <timestamp>]',
+    sum: 'Read the calls other Spaces made INTO this Space through space links, newest first — admins of this Space only',
+    authz: 'space',
+    input: 'none',
+    tags: ['link', 'inbound', 'cross-space', 'audit', 'admin'],
+    notes: ['scoped to this Space: only calls whose target is this Space are returned'],
+  },
+  'spaceLinks.inbound.revoke': {
+    cmd: ['link', 'revoke'],
+    syn: 'tm8 link revoke <link-id|home-space-id> [--mutation-id <id>]',
+    sum: 'Revoke a space link INTO this Space: every Member\'s stored session on it ends and no sign-in works until it is restored — human admins of this Space only',
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['link', 'inbound', 'revoke', 'cross-space', 'admin'],
+    notes: [
+      'an agent is refused by the Server; it asks its human to run this',
+      'owning the linking Space too is no exception: a revoked link refuses its owners\' sign-in as well',
+    ],
+  },
+  'spaceLinks.inbound.restore': {
+    cmd: ['link', 'restore'],
+    syn: 'tm8 link restore <link-id|home-space-id> [--mutation-id <id>]',
+    sum: 'Restore a revoked space link INTO this Space; each Member signs in again for themselves — human admins of this Space only',
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['link', 'inbound', 'restore', 'cross-space', 'admin'],
+    notes: ['an agent is refused by the Server; it asks its human to run this'],
+  },
   'node.credentials.status': {
     cmd: null,
     sum: 'Read the node\'s credential fallback per provider — node admin, human sessions only',
@@ -3549,7 +3595,8 @@ export const CATALOG_DIGEST =
   // Re-measured (W8, 261, rebuilt on main f01b1566): +6 servers.* and the serverConnections create/delete rows. Read from the regenerated conformance manifest.
   // Re-measured (W5 #917, merges of main dd1c8215 and 2fa4999f): +3 spaces.spacePassword.* on top of main's servers.*, spaceLinks, attention and launch v3 rows. Read from the regenerated conformance manifest.
   // Re-measured (#915 merge of main 0be3b796): main's servers.* + spaceLinks.invoke/audit and the five attention rows together. Read from the regenerated conformance manifest.
-  'sha256:5513b56c1694d513b34b1c3435bf51f30d44c15336d87b759924d0bd0d53a09b';
+  // +4 spaceLinks.inbound.list|audit|revoke|restore (278, D2): read from the regenerated conformance manifest.
+  'sha256:60b9a9e508f45de026b136f7f7aa2a8029fd52468402db158a029d4caa84f7e4';
 
 export const GRAMMAR_VERSION = '2';
 

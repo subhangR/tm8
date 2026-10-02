@@ -45,7 +45,8 @@ vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
 // THE STRICT GATE'S FULL CALLER SET (lead ruling 2026-09-26 02:08Z/02:19Z).
 // Measured on this branch: 28 credential management (21 + W10a's
 // set_space_credential_visibility, 239 + W10b's six, 255) + 6 non-credential
-// + 2 W4 session management (249) + 6 spaceLinks writes + 7 servers (W8) = 49.
+// + 2 W4 session management (249) + 8 spaceLinks writes (6 + 278's revoke and
+// restore) + 7 servers (W8) = 51.
 // A caller not on this list fails; a listed caller
 // that stops calling the gate fails. Changing this list is a review event.
 // ---------------------------------------------------------------------------
@@ -108,6 +109,9 @@ const STRICT_GATE_CALLERS: Readonly<Record<string, string>> = {
   'add_space_link(uuid,uuid,text,text)': SPACE_LINKS,
   'logout_space_link(uuid,text)': SPACE_LINKS,
   'remove_space_link(uuid,text)': SPACE_LINKS,
+  // 278 (D2): the target side's two writes, a target admin's, human-only.
+  'restore_inbound_space_link(uuid,uuid,text)': SPACE_LINKS,
+  'revoke_inbound_space_link(uuid,uuid,text)': SPACE_LINKS,
   'set_space_link_spawn(uuid,boolean,integer,text)': SPACE_LINKS,
   'space_link_seal_context(uuid)': SPACE_LINKS,
   'store_space_link_session(uuid,uuid,text,timestamp with time zone,bytea,bytea,text,text)': SPACE_LINKS,
@@ -340,15 +344,15 @@ describe('W6 pin — the STRICT gate\'s full caller set (lead ruling 02:08Z; fol
     expect(found).toEqual(Object.keys(STRICT_GATE_CALLERS).sort());
   });
 
-  it('the list is 28 credential management + 6 non-credential + 2 session management + 6 spaceLinks writes + 3 space password + 7 servers (W8)', () => {
+  it('the list is 28 credential management + 6 non-credential + 2 session management + 8 spaceLinks writes + 3 space password + 7 servers (W8)', () => {
     const labels = Object.values(STRICT_GATE_CALLERS);
     expect(labels.filter((l) => l === CREDENTIAL_MANAGEMENT || l === CREDENTIAL_READ)).toHaveLength(28);
     expect(labels.filter((l) => l === IDENTITY_WIDE || l === AUTH_MINTING || l === PENDING)).toHaveLength(6);
     expect(labels.filter((l) => l === SESSION_MANAGEMENT)).toHaveLength(2);
-    expect(labels.filter((l) => l === SPACE_LINKS)).toHaveLength(6);
+    expect(labels.filter((l) => l === SPACE_LINKS)).toHaveLength(8);
     expect(labels.filter((l) => l === SPACE_PASSWORD)).toHaveLength(3);
     expect(labels.filter((l) => l === SERVERS)).toHaveLength(7);
-    expect(labels).toHaveLength(52);
+    expect(labels).toHaveLength(54);
   });
 
   it('the matcher sees a quoted, mixed-case call and an execute format(...) that names the gate', async () => {

@@ -9,17 +9,24 @@
  * the strict `internal.require_human_auth_kind()` on the bound claim. A `link`
  * session is refused by both, so a link can never manage links.
  *
+ * The TARGET side (278, owner decision D2): `spaceLinks.inbound.*` answers an
+ * admin of the path's `:spaceId` only — the links into it, the calls made
+ * through them, and revoke/restore. SQL holds the session pin, so owning both
+ * spaces is no shortcut (D7): the admin acts from the target. revoke and
+ * restore are human-only like every other link write.
+ *
  * No handler returns the stored session. `use` is not an operation: W7's
  * `spaceLinks.invoke` calls it server-side and never returns the bytes.
  */
 import {
   CollabError,
   SpaceLinksAddInputSchema,
+  SpaceLinksInboundMutationInputSchema,
   SpaceLinksMutationInputSchema,
   SpaceLinksSetSpawnInputSchema,
   isHumanAuthKind,
 } from '@tm8/contract';
-import type { SpaceLinkView } from '@tm8/contract';
+import type { SpaceLinkInboundAuditEntry, SpaceLinkInboundView, SpaceLinkView } from '@tm8/contract';
 
 import type { OperationHandler, RequestContext } from '../../../http/types.js';
 import type { FacadeDeps } from '../../deps.js';
@@ -57,6 +64,8 @@ export interface SpaceLinkHandlerDeps {
   /** W7 invoke tuning (the per-token-row bucket); defaults are production's. */
   invoke?: SpaceLinkInvokeOptions;
 }
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function pathParam(ctx: RequestContext, name: 'spaceId' | 'linkId'): string {
   const value = ctx.params[name];
@@ -108,14 +117,39 @@ export function registerSpaceLinkHandlers(
     });
   };
 
+  const inboundList: OperationHandler = async (ctx): Promise<SpaceLinkInboundView[]> =>
+    store.listInbound(await claimsOf(ctx), pathParam(ctx, 'spaceId'));
+
+  const inboundAudit: OperationHandler = async (ctx): Promise<SpaceLinkInboundAuditEntry[]> => {
+    const linkId = ctx.query.get('linkId');
+    if (linkId !== null && !UUID_RE.test(linkId)) throw new CollabError('invalid_input', 'linkId must be a space link id');
+    const limit = Number(ctx.query.get('limit') ?? 50);
+    return store.listInboundAudit(await claimsOf(ctx), pathParam(ctx, 'spaceId'), {
+      linkId,
+      limit: Number.isFinite(limit) ? limit : 50,
+      before: ctx.query.get('before'),
+    });
+  };
+
+  const inboundWrite = (revoke: boolean): OperationHandler => async (ctx): Promise<SpaceLinkInboundView> => {
+    const { clientMutationId } = SpaceLinksInboundMutationInputSchema.parse(ctx.body);
+    const args = [await claimsOf(ctx), pathParam(ctx, 'spaceId'), pathParam(ctx, 'linkId'), clientMutationId] as const;
+    return revoke ? store.revokeInbound(...args) : store.restoreInbound(...args);
+  };
+
   // W7. invoke is NOT human-only: it is the agent's door. Its own guard
   // (space-link-invoke.ts) refuses the refused set before anything is opened.
   const { invoke, audit } = createSpaceLinkInvokeHandlers(registry, deps, store, claimsOf, links.invoke);
 
-  // Every write is wrapped; `list`, `audit` and `invoke` are the open three.
+  // Every write is wrapped; `list`, `audit`, `invoke` and the two inbound
+  // reads are open (the inbound reads to the target's admins, in SQL).
   registry.registerAll({
     'spaceLinks.list': list,
     'spaceLinks.audit': audit,
+    'spaceLinks.inbound.list': inboundList,
+    'spaceLinks.inbound.audit': inboundAudit,
+    'spaceLinks.inbound.revoke': requireHumanLinkSession(inboundWrite(true)),
+    'spaceLinks.inbound.restore': requireHumanLinkSession(inboundWrite(false)),
     'spaceLinks.invoke': invoke,
     'spaceLinks.add': requireHumanLinkSession(add),
     'spaceLinks.login': requireHumanLinkSession(login(false)),

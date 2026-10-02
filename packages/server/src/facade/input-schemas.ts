@@ -101,6 +101,7 @@ import {
   SpaceLinksAddInputSchema,
   SpaceLinksMutationInputSchema,
   SpaceLinksSetSpawnInputSchema,
+  SpaceLinksInboundMutationInputSchema,
   SpaceLinksInvokeInputSchema,
   ServersAddInputSchema,
   ServersAdoptInputSchema,
@@ -285,6 +286,9 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'spaceLinks.logout': SpaceLinksMutationInputSchema,
   'spaceLinks.remove': SpaceLinksMutationInputSchema,
   'spaceLinks.setSpawn': SpaceLinksSetSpawnInputSchema,
+  // 278 (D2): the target side's two writes, human-only in SQL.
+  'spaceLinks.inbound.revoke': SpaceLinksInboundMutationInputSchema,
+  'spaceLinks.inbound.restore': SpaceLinksInboundMutationInputSchema,
   // W7: the envelope only; the inner op's own schema runs inside invoke.
   'spaceLinks.invoke': SpaceLinksInvokeInputSchema,
   // W8 (261): add/adopt/remove human-only in SQL; no body carries a secret.
