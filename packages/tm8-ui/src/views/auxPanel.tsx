@@ -25,6 +25,7 @@
 import { useMemo, useState } from 'react';
 import type { EntityId } from '@tm8/contract';
 import { EntityDetailPanel, type ControlHost, type DetailReasons } from '../panels';
+import type { PanelHost } from '../panels/detail/chrome';
 import type { ContentSurface } from '../routes';
 import { channelFeedPortFromGateData } from './channel-feed-port';
 import { conversationSurfaceFor } from './conversationSurface';
@@ -81,9 +82,20 @@ export interface AuxEntityPanelProps {
   onOpenEntity(id: EntityId): void;
   /** Dismiss the column entirely. The host owns whatever state that clears. */
   onClose(): void;
+  /** Placement (chrome and width only). Default `stack`; the full view passes `z4`. */
+  panelHost?: PanelHost;
+  /** ⤢ — the full view passes its exit, so the same control leaves it. */
+  onPromote?: () => void;
+  /**
+   * The story page's beside port (PR 1004): a press on any entity in the story
+   * opens it in the host's beside slot rather than replacing this column's
+   * subject, and `selectedId` is what is open there. Absent ⇒ drilling
+   * replaces the subject, as before.
+   */
+  story?: { open: (id: EntityId) => void; selectedId: string | null; layout?: 'panel' | 'full' };
 }
 
-export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose }: AuxEntityPanelProps) {
+export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose, panelHost = 'stack', onPromote, story }: AuxEntityPanelProps) {
   const { data, attachments } = host;
   const detail = data.detailOf(entityId) ?? null;
   /* The feed port is a STATELESS adapter over the same GateData the host
@@ -108,7 +120,8 @@ export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose }: AuxEnt
       detail={detail}
       serverBaseUrl={host.serverBaseUrl}
       loading={!detail}
-      host="stack"
+      host={panelHost}
+      {...(onPromote ? { onPromote } : {})}
       reasons={host.reasons}
       ctx={{ ...host.ctx, entityId }}
       controls={host.controls}
@@ -132,7 +145,13 @@ export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose }: AuxEnt
         onOpenEntity(id as EntityId),
       )}
       launchContextSurface={launchContextSurfaceFor(data.seam, entityId, (id) => onOpenEntity(id as EntityId))}
-      storySurface={storySurfaceFor(data.seam, entityId, (id) => onOpenEntity(id as EntityId), data.launch.teammates)}
+      storySurface={storySurfaceFor(
+        data.seam,
+        entityId,
+        (id) => (story ? story.open(id as EntityId) : onOpenEntity(id as EntityId)),
+        data.launch.teammates,
+        story ? { selectedId: story.selectedId, ...(story.layout ? { layout: story.layout } : {}) } : {},
+      )}
       livenessOf={data.livenessOf}
       attachments={attachments}
       onAttachmentUploaded={() => data.refetchDetail(entityId)}

@@ -28,9 +28,16 @@ export interface Z4HostProps {
    * here (§15.2): the registry decides, this host only renders.
    */
   immersive?: boolean;
+  /**
+   * FOLLOW THE APP THEME instead of the always-dark stage (PR 1004). Set for
+   * kinds whose registry row opts into the full view (`panel.fullView`): §12's
+   * dark stage is narrowed to the kinds that did not opt in — a story page is
+   * a reading surface, not a terminal, and it has a light design.
+   */
+  followTheme?: boolean;
 }
 
-export function Z4Host({ entityId, children, onCollapse, immersive }: Z4HostProps) {
+export function Z4Host({ entityId, children, onCollapse, immersive, followTheme }: Z4HostProps) {
   return (
     <div
       className={`shell-z4 ${immersive ? 'shell-z4--immersive' : ''}`}
@@ -38,8 +45,8 @@ export function Z4Host({ entityId, children, onCollapse, immersive }: Z4HostProp
       data-entity-id={entityId}
       data-immersive={immersive || undefined}
       // The stage is dark in both themes, as in the workspace center (§12).
-      data-theme="dark"
-      data-always-dark="true"
+      data-theme={followTheme ? undefined : 'dark'}
+      data-always-dark={followTheme ? undefined : 'true'}
       role="region"
       aria-label="Full view"
     >
