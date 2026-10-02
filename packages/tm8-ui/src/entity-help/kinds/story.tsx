@@ -171,6 +171,6 @@ export const STORY_HELP: KindHelpModule = {
       'anchored_to:incoming': 'Messages on the story itself. The live feed also carries every message on everything in it.',
       relates_to: 'The general link, for something nearby that is not part of the work.',
     },
-    spotlight: ['task', 'work_session', 'doc', 'message'],
+    spotlight: ['task', 'work_session', 'doc'],
   },
 };

@@ -31,8 +31,8 @@ import {
 import { EMPTY_PROGRESS, emptyPage, type StoryPerson, type StoryView } from './model';
 
 const NOW = Date.now();
-const ago = (min: number): string => new Date(NOW - min * 60_000).toISOString();
-const OLD = ago(60 * 20);
+const minsBack = (min: number): string => new Date(NOW - min * 60_000).toISOString();
+const OLD = minsBack(60 * 20);
 
 const fx = (k: string): string => `fx-${k}`;
 const STORY_ID = fx('story');
@@ -79,9 +79,9 @@ const node = (n: Partial<StoryNode> & Pick<StoryNode, 'id' | 'kind' | 'title' | 
   return full;
 };
 const task = (k: string, title: string, tone: Tone, root: string, depth: number, activityMin?: number): StoryNode =>
-  node({ id: fx(k), kind: 'task', title, depth, rootIds: [fx(root)], ...CAT[tone], activityAt: activityMin === undefined ? OLD : ago(activityMin) });
+  node({ id: fx(k), kind: 'task', title, depth, rootIds: [fx(root)], ...CAT[tone], activityAt: activityMin === undefined ? OLD : minsBack(activityMin) });
 
-node({ id: STORY_ID, kind: 'story', title: 'Story as an Entity', depth: -1, rootIds: [], status: 'working', statusCategory: 'in_progress', activityAt: ago(2) });
+node({ id: STORY_ID, kind: 'story', title: 'Story as an Entity', depth: -1, rootIds: [], status: 'working', statusCategory: 'in_progress', activityAt: minsBack(2) });
 
 const edges: StoryGraphEdge[] = [];
 const edge = (from: string, to: string, type: string, rootIds: string[], cross = false): void => {
@@ -122,9 +122,9 @@ const ROOT_SPECS: RootSpec[] = [
       ['c23', 'Pinned-era pg fixtures apply 283', 'todo'],
     ],
     trail: [
-      ['s2', 'work_session', 'Forge’s session', 'working_on', 'r2', 'in', 1, { live: true, activityAt: ago(1) }],
-      ['pr2', 'pull_request', '#993 · open', 'tracks', 'r2', 'out', 1, { status: 'open', activityAt: ago(9) }],
-      ['m2', 'memory', 'Read paths are twins', 'remembers', 'r2', 'in', 1, { activityAt: ago(25) }],
+      ['s2', 'work_session', 'Forge’s session', 'working_on', 'r2', 'in', 1, { live: true, activityAt: minsBack(1) }],
+      ['pr2', 'pull_request', '#993 · open', 'tracks', 'r2', 'out', 1, { status: 'open', activityAt: minsBack(9) }],
+      ['m2', 'memory', 'Read paths are twins', 'remembers', 'r2', 'in', 1, { activityAt: minsBack(25) }],
     ],
   },
   {
@@ -136,9 +136,9 @@ const ROOT_SPECS: RootSpec[] = [
       ['c34', 'Thread and what’s happening', 'todo'],
     ],
     trail: [
-      ['s3', 'work_session', 'Worker’s session', 'working_on', 'r3', 'in', 1, { live: true, activityAt: ago(0) }],
+      ['s3', 'work_session', 'Worker’s session', 'working_on', 'r3', 'in', 1, { live: true, activityAt: minsBack(0) }],
       ['dr1', 'drawing', 'Story panel sketch', 'attached_to', 'r3', 'in', 1],
-      ['a1', 'artifact', 'This page · rev 3', 'produces', 'r3', 'out', 1, { activityAt: ago(40) }],
+      ['a1', 'artifact', 'This page · rev 3', 'produces', 'r3', 'out', 1, { activityAt: minsBack(40) }],
       ['f1', 'file', 'story-glyph.svg', 'attached_to', 'c32', 'in', 2],
     ],
   },
@@ -208,7 +208,7 @@ const roots: StoryRoot[] = ROOT_SPECS.map((spec, i) => {
 });
 
 /* The story's own trail and the cross-root links (the artifact's STORY_TRAIL + EXTRA). */
-node({ id: fx('ch1'), kind: 'chat', title: 'Design session', depth: 1, rootIds: [], activityAt: ago(60 * 30) });
+node({ id: fx('ch1'), kind: 'chat', title: 'Design session', depth: 1, rootIds: [], activityAt: minsBack(60 * 30) });
 edges.push({ id: fx('e-ch1-story'), fromId: fx('ch1'), toId: STORY_ID, type: 'about', family: 'story', cross: false, rootIds: [] });
 edge('d1', 'c33', 'attached_to', ['r1', 'r3'], true);
 edge('r3', 'm3', 'remembers', ['r3', 'r5'], true);
@@ -228,7 +228,7 @@ const sessions: StorySession[] = SESSION_SPECS.sort((a, b) => b[3] - a[3]).map((
   id: fx(k),
   title: `${PEOPLE[tm(w)]!.name}’s session`,
   callSign: storyCallSign(i),
-  createdAt: ago(createdMin),
+  createdAt: minsBack(createdMin),
   live,
   runtimeStatus: live ? 'running' : 'exited',
   teamMemberId: tm(w),
@@ -238,7 +238,7 @@ const sessions: StorySession[] = SESSION_SPECS.sort((a, b) => b[3] - a[3]).map((
   dispatchedById: w === 'M' ? null : fx('s4'),
 }));
 /* The coordinator's session sits on the story itself; it is a node too. */
-node({ id: fx('s4'), kind: 'work_session', title: 'Maestro’s session', depth: 1, rootIds: [], live: true, activityAt: ago(5) });
+node({ id: fx('s4'), kind: 'work_session', title: 'Maestro’s session', depth: 1, rootIds: [], live: true, activityAt: minsBack(5) });
 for (const s of sessions) {
   const n = nodes.find((x) => x.id === s.id);
   if (n) {
@@ -274,13 +274,13 @@ const childStories: StoryChild[] = [
     id: fx('cs1'), title: 'Story so far: the daily recap', status: 'working', statusCategory: 'in_progress', itemCount: 14,
     taskProgress: { work: 5, done: 2, inProgress: 2, toDo: 1, blocked: 0, cancelled: 0 },
     rollup: { work: 5, done: 2, inProgress: 2, toDo: 1, blocked: 0, cancelled: 0 },
-    liveSessionCount: 1, lastActivityAt: ago(60),
+    liveSessionCount: 1, lastActivityAt: minsBack(60),
   },
   {
     id: fx('cs2'), title: 'Scrub time', status: 'open', statusCategory: 'to_do', itemCount: 5,
     taskProgress: { work: 4, done: 0, inProgress: 0, toDo: 4, blocked: 0, cancelled: 0 },
     rollup: { work: 4, done: 0, inProgress: 0, toDo: 4, blocked: 0, cancelled: 0 },
-    liveSessionCount: 0, lastActivityAt: ago(60 * 30),
+    liveSessionCount: 0, lastActivityAt: minsBack(60 * 30),
   },
 ];
 
@@ -297,14 +297,14 @@ const activity: StoryActivityItem[] = (
     ['e7', 60 * 21, 'r1', 'updated', human('S')],
   ] as Array<[string, number, string, string, string]>
 ).map(([k, min, on, verb, actorId]) => ({
-  id: fx(k), at: ago(min), entityId: fx(on), entityKind: kindOf(fx(on)), entityTitle: title(fx(on)), verb, actorId, actor: actorOf(actorId),
+  id: fx(k), at: minsBack(min), entityId: fx(on), entityKind: kindOf(fx(on)), entityTitle: title(fx(on)), verb, actorId, actor: actorOf(actorId),
 }));
 
 const msg = (k: string, authorId: string, on: string, excerpt: string, min: number): StoryFeedMessage => {
   const anchorId = on === 'story' ? STORY_ID : fx(on);
   const s = sessions.find((x) => x.id === anchorId);
   return {
-    id: fx(k), at: ago(min), anchorId, anchorKind: kindOf(anchorId),
+    id: fx(k), at: minsBack(min), anchorId, anchorKind: kindOf(anchorId),
     anchorTitle: on === 'story' ? 'the story' : s ? `${s.callSign} · ${s.title}` : title(anchorId),
     authorId, author: actorOf(authorId), excerpt,
   };
@@ -336,12 +336,12 @@ export const STORY_FIXTURE_STATE: StoryState = {
   rollup: childStories.reduce((a, c) => add(a, c.rollup), taskProgress),
   liveSessionCount: sessions.filter((s) => s.live).length,
   pendingAttentionCount: 1,
-  lastActivityAt: ago(0),
+  lastActivityAt: minsBack(0),
   childStoryCount: childStories.length,
 };
 
 export const STORY_FIXTURE_PAGE: StoryPage = {
-  asOf: ago(0),
+  asOf: minsBack(0),
   follow: { depth: 3, limit: 500, truncated: false, edgeTypes: ['parent', 'attached_to', 'tracks', 'working_on', 'about', 'created_in', 'assigned_to', 'has_member', 'produces', 'remembers', 'dispatched_by'] },
   parent: { id: fx('parent'), title: 'Q4: tm8 as a team space' },
   roots,
@@ -382,7 +382,7 @@ export const STORY_FIXTURE_EMPTY: StoryView = {
     progress: EMPTY_PROGRESS, taskProgress: EMPTY_PROGRESS, rollup: EMPTY_PROGRESS,
     liveSessionCount: 0, pendingAttentionCount: 0, lastActivityAt: null, childStoryCount: 0,
   },
-  page: emptyPage(ago(0)),
+  page: emptyPage(minsBack(0)),
   feed: [],
   people: {},
 };

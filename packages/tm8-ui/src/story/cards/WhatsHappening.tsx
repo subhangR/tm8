@@ -8,6 +8,7 @@
 import { useState, type ReactNode } from 'react';
 
 import { KindIcon } from '../../domain';
+import { shortDate } from '../../kit';
 import { nameOf, nodesById, rootNumber, SESSION_KIND, since, type StoryActivityItem, type StoryView } from '../model';
 import type { StoryBlockProps, StoryNodePick } from '../props';
 import { CardHead, Empty, flashOf, picker } from './shared';
@@ -49,7 +50,7 @@ function dayLabelOf(at: string, now: Date): string {
   const days = Math.round((startOf(now) - startOf(d)) / 86_400_000);
   if (days <= 0) return 'today';
   if (days === 1) return 'yesterday';
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return shortDate(d, now.getTime());
 }
 
 /** "root 3", "story", or nothing for a row outside every root. */

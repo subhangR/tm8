@@ -656,3 +656,6 @@ revoke all on function public.stories_containing(uuid) from public;
 grant execute on function public.stories_containing(uuid) to tm8_app, tm8_graph_owner;
 
 reset role;
+
+-- Never-analyzed tables are estimated at 10 pages (225); 229's precedent.
+analyze public.stories;

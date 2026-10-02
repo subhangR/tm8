@@ -137,6 +137,12 @@ const PATCH_DOORS = [
   'update_pull_request_entity',
   'update_skill_entity',
   'update_spell_entity',
+  // 2026-10-02: migration 283 (story) added `update_story_entity`, carrying
+  // 038's replay binding from birth — `internal.ledger_replay(p_client_mutation_id,
+  // 'entities.patch')` at 283_story_kind.sql:244 and `internal.require_replay_subject`
+  // at :248. Seventeen -> eighteen. MEASURED: CI run 37009422718 test-server (3/4),
+  // the independent catalog enumeration named the eighteenth door.
+  'update_story_entity',
   'update_task_content',
   'update_team_member',
   'update_worktree',
@@ -191,9 +197,10 @@ describe.sequential('W5 Duo A — 038: the eleven entities.patch doors keep thei
   // at :188, after the membership repair above turned the derived-enumeration
   // test green. Two pins, one migration — the length and the Set size both
   // freeze the same number, so both move together or the second hides.
-  it('the frozen list is exactly seventeen and every one exists in the catalog', () => {
-    expect(PATCH_DOORS).toHaveLength(17);
-    expect(new Set(PATCH_DOORS).size).toBe(17);
+  // 2026-10-02: eighteen — 283's update_story_entity (story kind), bound from birth.
+  it('the frozen list is exactly eighteen and every one exists in the catalog', () => {
+    expect(PATCH_DOORS).toHaveLength(18);
+    expect(new Set(PATCH_DOORS).size).toBe(18);
     for (const door of PATCH_DOORS) {
       expect(bodies.get(door), `${door} is missing from the catalog`).toBeTypeOf('string');
     }

@@ -16,7 +16,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import type { StatusCategory } from '@tm8/contract';
 
-import { Avatar, Pill, VectorIcon, type PillTone } from '../kit';
+import { Avatar, Pill, VectorIcon, relTime, type PillTone } from '../kit';
 import { KIND_ART } from '../domain/kind-art';
 import { getKind } from '../domain/registry';
 import { ChildStoriesCard } from './cards/ChildStoriesCard';
@@ -33,7 +33,6 @@ import {
   liveOn,
   pct,
   segments,
-  since,
   statusWord,
   teammatesOf,
   type StoryGraphView,
@@ -145,7 +144,6 @@ function StoryHero({
   const { state, page } = view;
   const kids = state.childStoryCount;
   const tone = view.statusCategory ? CATEGORY_TONE[view.statusCategory] : 'idle';
-  const last = since(state.lastActivityAt);
   // The status key, else its category in words; a read with neither draws none.
   const statusLabel = statusWord(view.status) || statusWord(view.statusCategory);
 
@@ -180,7 +178,7 @@ function StoryHero({
         {state.lastActivityAt ? (
           <>
             <i className="sty-dot" />
-            <span>last activity {last === 'now' ? 'just now' : /(min|h)$/.test(last) ? `${last} ago` : last}</span>
+            <span>last activity {relTime(state.lastActivityAt)}</span>
           </>
         ) : null}
       </div>

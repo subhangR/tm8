@@ -13,6 +13,7 @@
  * components — §15.2's scanner forbids kind literals in components, so every
  * kind-keyed table lives in this file.
  */
+import { shortDate } from '../kit/time';
 import {
   storyCallSign,
   storyEdgeFamily,
@@ -247,5 +248,5 @@ export function since(at: string | null | undefined, now: number = Date.now()): 
   if (min < 1) return 'now';
   if (min < 60) return `${min} min`;
   if (min < 60 * 24) return `${Math.round(min / 60)} h`;
-  return new Date(at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return shortDate(at, now);
 }
