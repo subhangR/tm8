@@ -147,9 +147,12 @@ function nodeTip(node: GraphNode): string {
   return `${node.title} — ${node.capsule.line}`;
 }
 
-export function StoryGraph({ view, live, onPick, initialView }: StoryGraphProps) {
+export function StoryGraph({ view, live, hover, onPick, initialView }: StoryGraphProps) {
   const [graphView, setGraphView] = useState<StoryGraphView>(initialView ?? 'all');
-  const [hoverRoot, setHoverRoot] = useState<string | null>(null);
+  /* Root hover is shared with the Roots card through `hover` when the page holds it; local otherwise. */
+  const [ownHoverRoot, setOwnHoverRoot] = useState<string | null>(null);
+  const setHoverRoot = hover ? hover.setRootId : setOwnHoverRoot;
+  const wantedRoot = hover ? hover.rootId : ownHoverRoot;
   const [picked, setPicked] = useState<string | null>(null);
   const markerId = `stg-arrow-${useId().replace(/:/g, '')}`;
 
@@ -163,6 +166,8 @@ export function StoryGraph({ view, live, onPick, initialView }: StoryGraphProps)
     const scale = el.scrollWidth / layout.width;
     el.scrollLeft = Math.max(0, self.x * scale - el.clientWidth / 2);
   }, [layout]);
+  /* A root id from outside that this graph does not draw lights nothing rather than dimming everything. */
+  const hoverRoot = wantedRoot && layout.allRootIds.includes(wantedRoot) ? wantedRoot : null;
   const mask = useMemo(() => maskFor(layout, graphView), [layout, graphView]);
   const all = graphView === 'all';
   const landed = live?.landed;

@@ -41,6 +41,8 @@ export interface UseStoryActionsOptions {
 /** The kind with a completion door of its own (`tasks.complete`). */
 const TASK_KIND = 'task';
 const STORY_KIND = 'story';
+/** The membership picker's page size (views/membershipSurface.ts). */
+const ROOT_SEARCH_LIMIT = 50;
 
 function createdId(result: CommandResult): EntityId {
   const id = result.entity?.id;
@@ -141,6 +143,19 @@ export function createStoryActions(seam: Seam, storyId: EntityId, opts: UseStory
     },
     async removeRoot(entityId) {
       await seam.commands.removeFromCollection(storyId, entityId, ctx());
+    },
+    /* The membership picker's search (views/membershipSurface.ts), not a new
+       query: one bounded recent page of `collections.query` — `search.query`
+       is reserved, so there is no server text search — filtered by title
+       here the way MembershipBlock filters it. The story never offers itself. */
+    async searchRoots(text) {
+      const result = await seam.query({ spaceId: await space(), limit: ROOT_SEARCH_LIMIT });
+      const words = text.toLowerCase().split(/\s+/).filter(Boolean);
+      return result.page.items.filter((e) => {
+        if (e.id === storyId) return false;
+        const title = e.title.toLowerCase();
+        return words.every((w) => title.includes(w));
+      });
     },
     async setStatus(status) {
       // The kind's own state field; the seam types it as WorkStatus (useRowLifecycle).

@@ -13,7 +13,7 @@
  * tallies. The one thing it counts is the by-kind breakdown under "In the
  * story", which is a label over `page.nodes`, not a progress figure.
  */
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import type { StatusCategory } from '@tm8/contract';
 
 import { Avatar, Pill, VectorIcon, type PillTone } from '../kit';
@@ -72,7 +72,9 @@ export function StoryPage({
   const closePick = useCallback(() => setPick(null), []);
   // A pick names a node of THIS story; a different story drops it.
   useEffect(() => setPick(null), [view.id]);
-  const block = { view, actions, live, onPick: setPick };
+  const [hoverRootId, setHoverRootId] = useState<string | null>(null);
+  const hover = useMemo(() => ({ rootId: hoverRootId, setRootId: setHoverRootId }), [hoverRootId]);
+  const block = { view, actions, live, hover, onPick: setPick };
 
   return (
     <div className="sty-page" data-testid="story-page" data-story-root="" data-story-id={view.id}>

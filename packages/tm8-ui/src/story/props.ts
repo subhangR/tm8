@@ -19,10 +19,21 @@ export interface StoryLive {
   landed: ReadonlySet<string>;
 }
 
+/**
+ * The root the user is pointing at, shared by the graph and the Roots card so
+ * hovering a root in either lights that root's trail in both (artifact rev 4).
+ * Absent = the block keeps hover to itself.
+ */
+export interface StoryRootHover {
+  rootId: string | null;
+  setRootId: (rootId: string | null) => void;
+}
+
 export interface StoryBlockProps {
   view: StoryView;
   actions: StoryActions;
   live?: StoryLive | null;
+  hover?: StoryRootHover | null;
 }
 
 /** A node the user clicked, in the graph or a card — opens the node popover. */
