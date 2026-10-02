@@ -8413,6 +8413,39 @@
         "migration": {
           "strategy": "space-link-kinds"
         }
+      },
+      "story": {
+        "kind": "story",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "stories"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "generic",
+          "genericCreate": true,
+          "genericPatch": true,
+          "genericMove": true,
+          "genericHierarchy": true,
+          "genericDeleteRestore": true,
+          "genericPoints": true,
+          "messages": true,
+          "reactions": true,
+          "connections": true,
+          "lifecycleOperations": []
+        },
+        "menu": {
+          "strategy": "registered-not-default"
+        },
+        "migration": {
+          "strategy": "story-detail"
+        }
       }
     },
     "custom": {
