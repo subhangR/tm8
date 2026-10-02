@@ -6,6 +6,7 @@ import {
   applyGraphLinks,
   graphNodeKey,
   DrawingContentInputSchema,
+  StoryContentInputSchema,
   decodeCursor,
   encodeCursor,
   isCollabError,
@@ -1033,6 +1034,8 @@ const PATCH_CONTENT_MEMBERS: Readonly<Record<string, readonly string[]>> = {
   // W10a: no member is patchable. The lifecycle refusal fires first; this is
   // the second lock, so a door that skipped it still forwards nothing.
   credential: [],
+  // 282: the prose; the title rides the envelope's `title`.
+  story: ['description'],
 };
 
 function assertPatchContentMembers(
@@ -1145,6 +1148,16 @@ async function storedGraphNodes(q: Querier, id: string, expectedVersion: number)
       { details: { entityId: id, currentVersion: row.version } });
   }
   return Array.isArray(row.nodes) ? row.nodes : [];
+}
+
+function storyContent(content: Record<string, unknown>) {
+  const parsed = StoryContentInputSchema.safeParse(content);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    throw new CollabError('invalid_input',
+      `story content: ${issue ? `${issue.path.join('.')}: ${issue.message}` : 'malformed'}`);
+  }
+  return parsed.data;
 }
 
 function softDrawingContent(content: Record<string, unknown>) {
@@ -1402,6 +1415,16 @@ export class W2EntitiesCommandsTrackingService {
             input.parentId ?? null, input.position ?? null, envelope.clientMutationId ?? null]);
           break;
         }
+        case 'story': {
+          // 282: zero new catalog rows, the drawing posture. `parentId` is a
+          // parent STORY (same-kind hierarchy = child stories); putting a
+          // thing IN a story is `collections.addItem`, never hierarchy.
+          const story = storyContent(content);
+          raw = await q.rpc('create_story_entity', [input.spaceId, input.title, envelope.actorId ?? null,
+            story.description ?? '',
+            input.parentId ?? null, input.position ?? null, envelope.clientMutationId ?? null]);
+          break;
+        }
         default:
           if (!input.kind.startsWith('c:')) {
             throw new CollabError('forbidden', `entities.create is owned by the ${input.kind} lifecycle`);
@@ -1571,6 +1594,15 @@ export class W2EntitiesCommandsTrackingService {
               drawing.elements === undefined ? null : JSON.stringify(drawing.elements),
               drawing.appState === undefined ? null : JSON.stringify(drawing.appState),
               drawing.files === undefined ? null : JSON.stringify(drawing.files),
+              envelope.clientMutationId ?? null]);
+            break;
+          }
+          case 'story': {
+            // `null` MERGES: a rename sends only the title, and must not wipe
+            // the description it did not restate.
+            const story = storyContent(content);
+            raw = await q.rpc('update_story_entity', [id, input.expectedVersion, envelope.actorId ?? null,
+              input.title ?? null, story.description ?? null,
               envelope.clientMutationId ?? null]);
             break;
           }
