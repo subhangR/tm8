@@ -626,3 +626,78 @@ export function exportStyle(doc: StyleDoc, options: ExportStyleOptions): string 
   const head = `/* ${STYLE_EXPORT_FOUNDATION_MARKER} ${doc.foundation} */\n.cv2-root {\n${decls}\n}\n`;
   return css ? `${head}\n${css.endsWith('\n') ? css : `${css}\n`}` : head;
 }
+
+/**
+ * Read a style file back (the inverse of `exportStyle`), as the stored form:
+ * the parsed document goes through `normalizeStyleDoc`, so an imported file is
+ * held to exactly the rules a written one is.
+ *
+ *  - JSON (`.tm8style.json`): a StyleDoc. A missing or unknown foundation
+ *    falls back to Atelier Light with a warning.
+ *  - CSS: the first `.cv2-root { … }` (or `:root { … }`) block supplies `vars`
+ *    (its `--pn-*` declarations); everything else in the file becomes `css`
+ *    and is sanitized. The foundation comes from the export marker comment;
+ *    without one it is Atelier Light.
+ *
+ * Never throws: unparseable input yields an empty document and a warning.
+ */
+export function importStyle(text: string): { doc: StyleDoc; warnings: StyleWarning[]; clamped: StyleClamp[] } {
+  const warnings: StyleWarning[] = [];
+  const fallback: BuiltinStyleId = 'builtin:atelier-light';
+  const foundationOf = (raw: unknown): BuiltinStyleId => {
+    if (typeof raw === 'string' && raw in BUILTIN_STYLES) return raw as BuiltinStyleId;
+    if (raw !== undefined) {
+      warnings.push({
+        code: 'invalid-value',
+        key: 'foundation',
+        message: `unknown foundation "${String(raw)}"; using ${fallback}`,
+      });
+    }
+    return fallback;
+  };
+  const finish = (doc: StyleDoc) => {
+    const n = normalizeStyleDoc(doc);
+    return { doc: n.doc, warnings: [...warnings, ...n.warnings], clamped: n.clamped };
+  };
+  const source = typeof text === 'string' ? text.trim() : '';
+
+  if (source.startsWith('{')) {
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(source) as Record<string, unknown>;
+    } catch {
+      warnings.push({ code: 'invalid-value', key: 'import', message: 'file is not valid JSON; nothing imported' });
+      return finish(styleDocForBuiltin(fallback));
+    }
+    const vars: Record<string, string> = {};
+    if (parsed.vars && typeof parsed.vars === 'object') {
+      for (const [k, v] of Object.entries(parsed.vars as Record<string, unknown>)) {
+        if (typeof v === 'string') vars[k] = v;
+        else warnings.push({ code: 'invalid-value', key: k, message: `${k}: value must be a string; dropped` });
+      }
+    }
+    return finish({
+      schemaVersion: STYLE_SCHEMA_VERSION,
+      foundation: foundationOf(parsed.foundation),
+      vars,
+      css: typeof parsed.css === 'string' ? parsed.css : null,
+    });
+  }
+
+  const markerRe = new RegExp(`/\\*\\s*${STYLE_EXPORT_FOUNDATION_MARKER}\\s*(\\S+)\\s*\\*/`);
+  const marker = markerRe.exec(source);
+  let rest = marker ? source.replace(marker[0], '') : source;
+  const vars: Record<string, string> = {};
+  const block = /(^|[\s}])(\.cv2-root|:root)\s*\{([^{}]*)\}/.exec(rest);
+  if (block?.[3] !== undefined) {
+    for (const m of block[3].matchAll(/(--pn-[a-z0-9-]+)\s*:\s*([^;]+?)\s*(;|$)/g)) vars[m[1]!] = m[2]!;
+    rest = rest.slice(0, block.index + block[1]!.length) + rest.slice(block.index + block[0].length);
+  }
+  const css = rest.trim();
+  return finish({
+    schemaVersion: STYLE_SCHEMA_VERSION,
+    foundation: foundationOf(marker?.[1]),
+    vars,
+    css: css ? css : null,
+  });
+}

@@ -235,7 +235,9 @@ export function selectStyle(ref: StyleRef, doc?: StyleDoc, options: SelectStyleO
   const parsed = parseStyleRef(ref);
   if (!parsed) return false;
   const canonical = formatStyleRef(parsed);
-  if (parsed.kind === 'builtin' && !doc) {
+  /* Prefix tests on the canonical ref, not `parsed.kind` against a literal:
+     the no-branching guard reserves kind literals for domain/. */
+  if (canonical.startsWith('builtin:') && !doc) {
     if (!(canonical in BUILTIN_STYLES)) return false;
     setState(builtinState(canonical as BuiltinStyleId, false));
     return true;
@@ -246,7 +248,7 @@ export function selectStyle(ref: StyleRef, doc?: StyleDoc, options: SelectStyleO
     doc,
     active: resolveDoc(doc),
     followOs: false,
-    trustCss: options.trustCss ?? parsed.kind !== 'space',
+    trustCss: options.trustCss ?? !canonical.startsWith('space:'),
   });
   return true;
 }

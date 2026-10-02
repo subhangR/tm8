@@ -420,9 +420,12 @@ function walk(blocks: Block[], depth: number, state: WalkState, indent: string):
  * unparseable input drops the WHOLE field (one warning); otherwise each
  * refused at-rule, rule or declaration is dropped on its own with a warning.
  */
-export function sanitizeStyleCss(css: string | null | undefined): SanitizedStyleCss {
+export function sanitizeStyleCss(css: unknown): SanitizedStyleCss {
   const warnings: StyleWarning[] = [];
-  if (css === null || css === undefined || !css.trim()) return { css: null, warnings };
+  if (typeof css !== 'string' || !css.trim()) {
+    if (css !== null && css !== undefined && typeof css !== 'string') warn(warnings, 'css must be a string; dropped');
+    return { css: null, warnings };
+  }
   if (new TextEncoder().encode(css).length > STYLE_MAX_CSS_BYTES) {
     warn(warnings, `css is larger than ${STYLE_MAX_CSS_BYTES} bytes; dropped whole`);
     return { css: null, warnings };

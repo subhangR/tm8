@@ -16,10 +16,13 @@ import { ATELIER_DARK, ATELIER_LIGHT } from '@tm8/contract';
 
 import {
   ACTIVE_STYLE_ELEMENT_ID,
+  EXTRA_STYLE_ELEMENT_ID,
   __resetStyleStoreForTests,
   derivedTheme,
   getStyleState,
   installActiveStyle,
+  selectStyle,
+  subscribeStyle,
 } from './style-store';
 import { useTheme } from './useTheme';
 
@@ -145,6 +148,64 @@ describe('an explicit data-theme that disagrees with the active style keeps its 
     expect(b.bare.matches(sel)).toBe(true);
     expect(b.dark.matches(sel)).toBe(false);
     expect(b.darkNested.matches(sel)).toBe(false);
+  });
+});
+
+describe('selectStyle — the "use" operation (spec §1.4)', () => {
+  const uuid = '01a0fc78-3974-73cc-9425-c8741062c673';
+  const extra = () => document.getElementById(EXTRA_STYLE_ELEMENT_ID)?.textContent ?? null;
+  const personal = {
+    schemaVersion: 1 as const,
+    foundation: 'builtin:atelier-dark' as const,
+    vars: { '--pn-paper': '#101820' },
+    css: '.pn-chip { color: red; position: fixed }',
+  };
+
+  it('uses a built-in by ref, live, and stops following the OS', () => {
+    installActiveStyle();
+    const seen: string[] = [];
+    subscribeStyle((st) => seen.push(st.ref));
+    expect(selectStyle('builtin:atelier-dark')).toBe(true);
+    expect(getStyleState().ref).toBe('builtin:atelier-dark');
+    expect(getStyleState().followOs).toBe(false);
+    expect(derivedTheme()).toBe('dark');
+    expect(seen).toEqual(['builtin:atelier-dark']);
+  });
+
+  it('uses a personal style from its document and runs its sanitized css', () => {
+    installActiveStyle();
+    expect(selectStyle(`personal:${uuid}`, personal)).toBe(true);
+    expect(sheet()).toContain('--pn-paper: #101820;');
+    expect(extra()).toBe('.cv2-root .pn-chip {\n  color: red;\n}\n');
+    /* The css sheet comes after the vars sheet, so a style's rules are never
+       out-ordered by its own variables. */
+    const ids = [...document.head.querySelectorAll('style')].map((e) => e.id);
+    expect(ids.indexOf(EXTRA_STYLE_ELEMENT_ID)).toBeGreaterThan(ids.indexOf(ACTIVE_STYLE_ELEMENT_ID));
+  });
+
+  it('does not run a space style\'s css unless the viewer opted in', () => {
+    installActiveStyle();
+    selectStyle(`space:${uuid}`, personal);
+    expect(sheet()).toContain('--pn-paper: #101820;');
+    expect(extra()).toBeNull();
+    selectStyle(`space:${uuid}`, personal, { trustCss: true });
+    expect(extra()).not.toBeNull();
+  });
+
+  it('removes the css sheet when the next style has none', () => {
+    installActiveStyle();
+    selectStyle(`personal:${uuid}`, personal);
+    selectStyle('builtin:atelier-light');
+    expect(extra()).toBeNull();
+  });
+
+  it('changes nothing for a malformed ref, an unknown built-in, or a user style without its document', () => {
+    installActiveStyle();
+    const before = getStyleState();
+    expect(selectStyle('nonsense' as never)).toBe(false);
+    expect(selectStyle('builtin:nope')).toBe(false);
+    expect(selectStyle(`personal:${uuid}`)).toBe(false);
+    expect(getStyleState()).toBe(before);
   });
 });
 
