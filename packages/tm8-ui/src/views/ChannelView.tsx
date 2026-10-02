@@ -30,6 +30,7 @@ import { gitSurfaceFor } from './gitSurface';
 import { changesSurfaceFor } from './changesSurface';
 import { taskGitSectionFor } from './taskGitSection';
 import { graphSurfaceFor } from './graphSurface';
+import { storySurfaceFor } from './storySurface';
 import { launchContextSurfaceFor } from './launchContextSurface';
 import { attachmentsFor } from '../files/port';
 import { useMembershipSurface } from './membershipSurface';
@@ -258,6 +259,7 @@ export function ChannelView({
         setSelectedId(id as EntityId),
       )}
       launchContextSurface={launchContextSurfaceFor(data.seam, selectedId, (id) => setSelectedId(id as EntityId))}
+      storySurface={storySurfaceFor(data.seam, selectedId, (id) => setSelectedId(id as EntityId))}
       attachments={attachments}
       onAttachmentUploaded={() => data.refetchDetail(selectedId)}
       livenessOf={data.livenessOf}

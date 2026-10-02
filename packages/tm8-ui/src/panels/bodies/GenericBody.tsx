@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type {
   ArtifactPreviewSession,
@@ -18,6 +18,7 @@ import type { AuthoringCommands } from '../../authoring';
 import { LoopControls } from '../../loops/LoopControls';
 import { BlueprintBlock } from './BlueprintBlock';
 import { DrawingBlock } from './DrawingBlock';
+import { StoryStaticHost } from '../../story/StoryHost';
 import { QuestionnaireBlock } from '../../forms/QuestionnaireBlock';
 import { PeerRowsBlock } from './PeerRowsBlock';
 import { edgesOf } from './MemorySetBlock';
@@ -72,9 +73,15 @@ export function GenericBody({
   membersHost,
   barSlot,
   serverBaseUrl,
+  storySurface,
 }: {
   detail: EntityDetail;
   blocks: readonly ContentBlockRef[];
+  /**
+   * The live story page for the `storyline` block, composed by the host
+   * (`storySurfaceFor`). Absent ⇒ the block draws the row's static read.
+   */
+  storySurface?: ReactNode;
   /** Same-origin route prefix, for the `managed` block's inline login terminal. */
   serverBaseUrl?: string;
   onOpenEntity?: (id: string) => void;
@@ -133,6 +140,7 @@ export function GenericBody({
           membersHost={membersHost}
           barSlot={barSlot}
           serverBaseUrl={serverBaseUrl}
+          storySurface={storySurface}
         />
       ))}
     </div>
@@ -150,9 +158,11 @@ function ContentBlock({
   membersHost,
   barSlot,
   serverBaseUrl,
+  storySurface,
 }: {
   detail: EntityDetail;
   block: ContentBlockRef;
+  storySurface?: ReactNode;
   serverBaseUrl?: string;
   onOpenEntity?: (id: string) => void;
   commands?: GenericBodyCommands | null;
@@ -188,6 +198,10 @@ function ContentBlock({
             onSaved={onSaved}
           />
         );
+      /* The story page. The host's live surface when it wired one, else the
+         static read of the row this panel already holds. */
+      case 'storyline':
+        return storySurface ?? <StoryStaticHost key={detail.id} detail={detail} {...(onOpenEntity ? { open: onOpenEntity } : {})} />;
       /* A form's Fill / Build / Responses. It reads the question set off the
          row and everything else through the forms seam (`src/forms/seam.ts`),
          so it needs nothing from the host. Keyed by entity id: re-pointing the

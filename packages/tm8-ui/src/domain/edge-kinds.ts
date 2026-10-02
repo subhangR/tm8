@@ -17,7 +17,8 @@
  * pinned two ways — `edge-kinds.test.ts` holds these keys to `EDGE_VERBS`
  * (and so to the migrations), and this header records the snapshot.
  *
- * Snapshot: `tm8 edge type list --format json`, 2026-09-28, 46 types.
+ * Snapshot: `tm8 edge type list --format json`, 2026-09-28, 46 types; plus
+ * 282 (2026-10-02), which appends `story` to `contains` and `attached_to` sources.
  * A `*` endpoint admits any kind.
  *
  * Kind literals are legal here: `src/domain/` is one of the two directories
@@ -67,7 +68,7 @@ export const EDGE_KINDS: Readonly<Record<string, EdgeKinds>> = {
     acyclic: false,
   },
   attached_to: {
-    src: ['task', 'member', 'team_member', 'doc', 'file', 'spell', 'skill', 'pull_request', 'commit', 'work_session', 'collection', 'memory', 'artifact', 'drawing', 'form'],
+    src: ['task', 'member', 'team_member', 'doc', 'file', 'spell', 'skill', 'pull_request', 'commit', 'work_session', 'collection', 'memory', 'artifact', 'drawing', 'form', 'story'],
     dst: ['*'],
     description: 'Context attachment; channel destinations power hub tabs and pinned shelves',
     acyclic: false,
@@ -97,7 +98,8 @@ export const EDGE_KINDS: Readonly<Record<string, EdgeKinds>> = {
     acyclic: false,
   },
   contains: {
-    src: ['collection'],
+    // 282 appends `story`: a story's roots are its `contains` targets.
+    src: ['collection', 'story'],
     dst: ['*'],
     description: 'Curated membership; props.position orders it',
     acyclic: false,

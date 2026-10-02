@@ -13,6 +13,7 @@ import type {
 } from '@tm8/contract';
 import { ada, noor, forge, scout } from './actors';
 import { FORM_FIXTURE_FORMS, FORM_FIXTURE_IDS } from '../forms/fixtures';
+import { STORY_FIXTURE } from '../story/fixture';
 
 /**
  * Contract-shaped fixture dataset (A0). Shaped by EntitySummary/EntityDetail
@@ -1103,6 +1104,22 @@ export const drawingLoginFlow = summary({
 });
 
 /**
+ * Story — everything around one idea, and where it stands (migration 282).
+ * The state and page are the story page's own fixture (`story/fixture.ts`,
+ * artifact 01a0fc3e rev 4 in the published contract shape), so the panel's
+ * `storyline` block draws the same story here as on /story-dev.html.
+ */
+export const storyAsAnEntity = summary({
+  id: 'story-as-an-entity',
+  kind: 'story',
+  title: STORY_FIXTURE.title,
+  excerpt: STORY_FIXTURE.description.slice(0, 120),
+  createdBy: ada,
+  category: 'in_progress',
+  state: STORY_FIXTURE.state,
+});
+
+/**
  * Forms — question sets an agent asked a human (migration 209). The five
  * fixture forms live in `forms/fixtures.ts` with their responses (the forms
  * seam serves those); here they become rows, so every state the questionnaire
@@ -1341,6 +1358,7 @@ export const fixtureSummaries: EntitySummary[] = [
   prTransplant, commitFoundation, fileScreenshot,
   spellDeploy, skillReview, collectionInbox, collectionEmpty, projectTm8Ui,
   profileHouseStyle, credentialTeamKey, customRitual, artifactPulseBoard, drawingLoginFlow,
+  storyAsAnEntity,
   ...formSummaries,
   ...containerFixtures,
 ];
@@ -1876,6 +1894,9 @@ export const fixtureDetails: Record<string, EntityDetail> = {
     f.id,
     detail(formSummaries.find((s) => s.id === f.id)!, { content: { kind: 'form', ...f.content } }),
   ])),
+  [storyAsAnEntity.id]: detail(storyAsAnEntity, {
+    content: { kind: 'story', description: STORY_FIXTURE.description, page: STORY_FIXTURE.page },
+  }),
   [drawingLoginFlow.id]: detail(drawingLoginFlow, {
     content: {
       kind: 'drawing',
