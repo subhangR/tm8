@@ -1,5 +1,5 @@
 /**
- * Text for a story (migration 282, task 01a0fbf9) — the two places a story is
+ * Text for a story (migration 283, task 01a0fbf9) — the two places a story is
  * read from the CLI:
  *
  *   - `tm8 entity context <story>`: the server's v2 `story` section, a bounded
@@ -116,7 +116,8 @@ export function storyContextLines(story: unknown): string[] {
   out.push(`team (${team.length}):`);
   const modes = new Map<string, Row[]>();
   for (const t of team) {
-    const mode = t['mode'] == null ? 'no mode' : String(t['mode']);
+    // Space members (humans) carry no mode: they group as `members`.
+    const mode = t['mode'] != null ? String(t['mode']) : t['kind'] === 'member' ? 'members' : 'no mode';
     modes.set(mode, [...(modes.get(mode) ?? []), t]);
   }
   for (const [mode, members] of modes) {

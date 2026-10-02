@@ -148,7 +148,7 @@ export function renderContextBrief(view: Row): string {
     const write = view['acceptanceWrite'];
     if (isRow(write)) out.push(`  tick: ${str(write['write'])}`);
   }
-  // A story (282): progress, roots, kinds, blocked, sessions, team, child
+  // A story (283): progress, roots, kinds, blocked, sessions, team, child
   // stories — the server's bounded projection of the page; cuts are omitted[].
   if (isRow(view['story'])) out.push(...storyContextLines(view['story']));
   for (const [key, label] of [['tasks', 'tasks'], ['children', 'children']] as const) {
