@@ -24,6 +24,7 @@ import { escapeAttr, untrustedData } from './escape.js';
 import { PROMPT_VERSION_V2 } from './prompt-version.js';
 import { serializeMemoryEntry } from './skill-index.js';
 import { serializeLaunchIndex } from './context-index.js';
+import { renderStoryContext } from './story-context.js';
 import { acceptanceCriteriaOf, coordinatorKindOf } from './templates.js';
 import type { AgentMode, PromptEnvelope, PromptManifest, PromptRuntime } from './index.js';
 
@@ -441,6 +442,14 @@ export function composePromptV2(
         ...(directive.fromSessionId ? { from_session_id: directive.fromSessionId } : {}),
       },
     }));
+  }
+  // Spawn-on-story: the story the primary task is part of, after the
+  // assignment. It never displaces the task's own context: past the combined
+  // cap it shrinks to its ref.
+  const story = primary && manifest.story?.taskId === primary.id ? manifest.story : null;
+  if (story) {
+    const draft = `${s.join('\n')}\n\n${[...t, renderStoryContext(story, true, facts.sessionId), '</tm8_task_prompt>'].join('\n')}`;
+    t.push(renderStoryContext(story, utf8Bytes(draft) <= BYTE_BUDGETS.combinedInitialInjection, facts.sessionId));
   }
   t.push('</tm8_task_prompt>');
 

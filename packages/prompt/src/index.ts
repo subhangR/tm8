@@ -32,6 +32,7 @@ export { serializeMemoryEntry, serializeSkillIndex, serializeSkillIndexEntry, ty
 
 import { assertWithinBudget, BYTE_BUDGETS, utf8Bytes } from './budgets.js';
 import { untrustedData } from './escape.js';
+import { renderStoryContext, type PromptStoryContext } from './story-context.js';
 import { composeKernel } from './kernel.js';
 import {
   acceptanceCriteriaOf,
@@ -54,6 +55,7 @@ import { composePromptV2, HEADER_AUTHORING_RULE, type TaskContextSnapshot } from
 export * from './budgets.js';
 export * from './context-index.js';
 export * from './escape.js';
+export * from './story-context.js';
 export * from './kernel.js';
 export * from './prompt-version.js';
 export * from './templates.js';
@@ -171,6 +173,11 @@ export interface PromptManifest {
    */
   contextIndex?: PromptContextIndex | undefined;
   promptExtra?: string | null | undefined;
+  /**
+   * Spawn-on-story: the story the primary task belongs to (nearest first),
+   * read once at spawn. Rendered after the assignment on every frame.
+   */
+  story?: PromptStoryContext | null | undefined;
 }
 
 export interface PromptRuntime {
@@ -1041,6 +1048,10 @@ export function composePrompt(
   if (tasks.length === 0) {
     t.push(`  <note>${NO_TASK_NOTE_V1}</note>`);
   }
+  // The story the primary task is part of. Its slot is remembered so the
+  // budget check below can swap the full block for the compact one.
+  const story = tasks.length > 0 && manifest.story?.taskId === tasks[0]?.id ? manifest.story : null;
+  const storySlot = story ? t.push(renderStoryContext(story, true, sessionId)) - 1 : -1;
   const directive = manifest.directive;
   if (directive?.message) {
     // A coordinator directive is another AGENT's prose. Subject and originating
@@ -1058,6 +1069,15 @@ export function composePrompt(
   t.push('</tm8_task_prompt>');
 
   const system = s.join('\n');
+  // A story never costs the assignment its inline body: past the combined
+  // cap it shrinks to its ref (id, title, fetch pointer) first.
+  if (
+    story
+    && storySlot >= 0
+    && utf8Bytes(`${system}\n\n${t.join('\n')}`) > BYTE_BUDGETS.combinedInitialInjection
+  ) {
+    t[storySlot] = renderStoryContext(story, false);
+  }
   const inlineTask = t.join('\n');
   let task = inlineTask;
 
@@ -1085,6 +1105,7 @@ export function composePrompt(
       );
     }
     referenced.push(`  <note>${esc(TASK_BODIES_ELSEWHERE_NOTE)}</note>`);
+    if (story) referenced.push(renderStoryContext(story, false));
     if (directive?.message) {
       referenced.push(untrustedData({
         type: 'coordinator-directive',
