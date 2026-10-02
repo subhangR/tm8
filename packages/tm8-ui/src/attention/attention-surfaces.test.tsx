@@ -31,6 +31,11 @@ function mount(fake: ReturnType<typeof fakeSeam>, onOpen = vi.fn()) {
   return ref;
 }
 
+/** `Personal/Team` as the two top-bar sections show them. */
+function topCounts(): string {
+  return `${screen.getByTestId('attention-top-mine-count').textContent}/${screen.getByTestId('attention-top-all-count').textContent}`;
+}
+
 const NOW = Date.parse('2026-09-26T13:00:00.000Z');
 
 describe('the chip (chapter 4)', () => {
@@ -67,68 +72,96 @@ describe('the top bar (chapter 4, mock tab 2)', () => {
     req({ id: 'r3', entityId: 'doc-1', level: 'fyi', points: 10, reason: 'Have a look' }),
   ];
 
-  it('shows mine · all over roll-up roots, and the popover defaults to Mine', async () => {
+  it('shows Personal and Team over roll-up roots; each section opens its own filter', async () => {
     const fake = fakeSeam(rows());
     mount(fake);
-    await waitFor(() => expect(screen.getByTestId('attention-top-counts').textContent).toBe('1 mine · 2 all'));
-    fireEvent.click(screen.getByTestId('attention-top-segment'));
+    await waitFor(() => expect(topCounts()).toBe('1/2'));
+    fireEvent.click(screen.getByTestId('attention-top-mine'));
     const pop = screen.getByTestId('attention-top-popover');
     expect(within(pop).getByTestId('attention-filter-mine').getAttribute('aria-pressed')).toBe('true');
     expect(within(pop).getAllByTestId('attention-list-row').map((r) => r.dataset.root)).toEqual(['task-1']);
     fireEvent.click(within(pop).getByTestId('attention-filter-all'));
     expect(within(pop).getAllByTestId('attention-list-row').map((r) => r.dataset.root)).toEqual(['task-1', 'doc-1']);
+    expect(screen.getByTestId('attention-top-mine').className).toContain('att-top__btn--glow');
+    expect(screen.getByTestId('attention-top-mine').className).toContain('att-top__btn--wait');
+    fireEvent.click(screen.getByTestId('attention-top-all'));
+    const team = screen.getByTestId('attention-top-popover');
+    expect(within(team).getByTestId('attention-filter-all').getAttribute('aria-pressed')).toBe('true');
+    expect(within(team).getByTestId('attention-filter-mine').textContent).toBe('Personal · 1');
+    expect(within(team).getByTestId('attention-filter-all').textContent).toBe('Team · 2');
   });
 
   it('Resolve from the popover settles live everywhere: row, chip, count; Undo brings it back', async () => {
     const fake = fakeSeam(rows());
     mount(fake);
-    await waitFor(() => expect(screen.getByTestId('attention-top-counts').textContent).toBe('1 mine · 2 all'));
+    await waitFor(() => expect(topCounts()).toBe('1/2'));
     expect(within(screen.getByTestId('tile-task-1')).queryByTestId('attention-chip')).not.toBeNull();
     // The session that raised the rolled-up request carries the F1 marker.
     expect(within(screen.getByTestId('tile-sess-1')).queryByTestId('attention-chip')).not.toBeNull();
 
-    fireEvent.click(screen.getByTestId('attention-top-segment'));
+    fireEvent.click(screen.getByTestId('attention-top-mine'));
     const pop = screen.getByTestId('attention-top-popover');
     fireEvent.click(within(pop).getByTestId('attention-resolve'));
     fireEvent.change(within(pop).getByTestId('attention-resolve-note'), { target: { value: 'exponential' } });
     await act(async () => { fireEvent.click(within(pop).getByTestId('attention-resolve-confirm')); });
 
-    expect(screen.getByTestId('attention-top-counts').textContent).toBe('0 mine · 1 all');
+    expect(topCounts()).toBe('0/1');
     expect(within(screen.getByTestId('tile-task-1')).queryByTestId('attention-chip')).toBeNull();
     expect(within(screen.getByTestId('tile-sess-1')).queryByTestId('attention-chip')).toBeNull();
     expect(fake.resolveAttention).toHaveBeenLastCalledWith('task-1', expect.objectContaining({ resolutionNote: 'exponential' }));
 
     await act(async () => { fireEvent.click(screen.getByTestId('attention-toast-undo')); });
-    await waitFor(() => expect(screen.getByTestId('attention-top-counts').textContent).toBe('1 mine · 2 all'));
+    await waitFor(() => expect(topCounts()).toBe('1/2'));
   });
 
   it('Seen dims the row and never changes the count', async () => {
     const fake = fakeSeam(rows());
     mount(fake);
-    await waitFor(() => expect(screen.getByTestId('attention-top-counts')).toBeTruthy());
-    fireEvent.click(screen.getByTestId('attention-top-segment'));
+    await waitFor(() => expect(topCounts()).toBe('1/2'));
+    fireEvent.click(screen.getByTestId('attention-top-mine'));
     const pop = screen.getByTestId('attention-top-popover');
     await act(async () => { fireEvent.click(within(pop).getByTestId('attention-seen')); });
     const row = within(pop).getByTestId('attention-list-row');
     expect(row.className).toContain('att-list__row--seen');
-    expect(screen.getByTestId('attention-top-counts').textContent).toBe('1 mine · 2 all');
+    expect(topCounts()).toBe('1/2');
   });
 
-  it('Open navigates and closes the popover', async () => {
+  it('Open goes to the session that raised the request, and closes the popover', async () => {
     const fake = fakeSeam(rows());
     const onOpen = vi.fn();
     mount(fake, onOpen);
-    await waitFor(() => expect(screen.getByTestId('attention-top-counts')).toBeTruthy());
-    fireEvent.click(screen.getByTestId('attention-top-segment'));
+    await waitFor(() => expect(topCounts()).toBe('1/2'));
+    fireEvent.click(screen.getByTestId('attention-top-mine'));
     fireEvent.click(within(screen.getByTestId('attention-top-popover')).getByTestId('attention-open'));
-    expect(onOpen).toHaveBeenCalledWith('task-1');
+    // r1 was raised by no session: it opens where it is pinned.
+    expect(onOpen).toHaveBeenLastCalledWith('task-1');
     expect(screen.queryByTestId('attention-top-popover')).toBeNull();
   });
 
-  it('says nothing needs you when the queue is empty', async () => {
+  it('a session-raised request opens that session; a form signal opens the form', async () => {
+    const fake = fakeSeam([
+      req({ id: 'a1', entityId: 'task-2', sourceWorkSessionId: 'sess-9' as EntityId, assigneeId: ME as never, reason: 'Pick one' }),
+      req({ id: 'f1', entityId: 'form-1', rootId: 'task-3' as EntityId, origin: 'system', sourceWorkSessionId: 'sess-8' as EntityId, reason: 'Answer the form' }),
+    ]);
+    const onOpen = vi.fn();
+    mount(fake, onOpen);
+    await waitFor(() => expect(topCounts()).toBe('1/2'));
+    fireEvent.click(screen.getByTestId('attention-top-all'));
+    const pop = screen.getByTestId('attention-top-popover');
+    const rowOf = (root: string) => within(pop).getAllByTestId('attention-list-row').find((r) => r.dataset.root === root)!;
+    fireEvent.click(within(rowOf('task-2')).getByTestId('attention-open'));
+    expect(onOpen).toHaveBeenLastCalledWith('sess-9');
+    fireEvent.click(screen.getByTestId('attention-top-all'));
+    fireEvent.click(within(within(screen.getByTestId('attention-top-popover')).getAllByTestId('attention-list-row').find((r) => r.dataset.root === 'task-3')!).getByTestId('attention-open'));
+    expect(onOpen).toHaveBeenLastCalledWith('form-1');
+  });
+
+  it('shows Personal 0 and Team 0, not glowing, when the queue is empty', async () => {
     const fake = fakeSeam([]);
     mount(fake);
-    await waitFor(() => expect(screen.getByTestId('attention-top-segment').textContent).toContain('nothing needs you'));
+    await waitFor(() => expect(topCounts()).toBe('0/0'));
+    expect(screen.getByTestId('attention-top-mine').className).not.toContain('att-top__btn--glow');
+    expect(screen.getByTestId('attention-top-all').className).not.toContain('att-top__btn--glow');
   });
 
   it('a failed read says so; it is never the all-clear', async () => {
@@ -136,8 +169,8 @@ describe('the top bar (chapter 4, mock tab 2)', () => {
     fake.attentionRequests.mockRejectedValue(new Error('forbidden'));
     mount(fake);
     await waitFor(() => expect(screen.getByTestId('attention-top-segment').textContent).toContain('attention unavailable'));
-    expect(screen.getByTestId('attention-top-segment').textContent).not.toContain('nothing needs you');
-    fireEvent.click(screen.getByTestId('attention-top-segment'));
+    expect(screen.queryByTestId('attention-top-mine-count')).toBeNull();
+    fireEvent.click(screen.getByTestId('attention-top-failed'));
     expect(screen.getByTestId('attention-list-error')).toBeTruthy();
     expect(screen.queryByTestId('attention-list-empty')).toBeNull();
   });

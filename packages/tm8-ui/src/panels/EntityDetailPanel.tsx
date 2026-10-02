@@ -998,23 +998,6 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         />
       ) : null}
 
-      {/* ATTENTION v2 — the block on top of the detail, above the tabs, for
-          every kind (chapter 4, tab 3 variant A). The entity stays usable
-          underneath; it renders nothing when no request is open or when no
-          attention module is mounted. On a session or chat the requests it
-          RAISED are the banner's ("waiting on you", chapter 4 "Session"), so
-          the block lists only the rest; opening still marks all of them seen. */}
-      {isTombstone ? null : (
-        <AttentionBlock
-          excludeRaisedBy={isTerminal || config.panel.archetype === 'conversation' ? detail.id : null}
-          key={detail.id}
-          entityId={detail.id}
-          badges={detail.badges}
-          noun={config.label.toLowerCase()}
-          onOpenEntity={props.onOpenEntity}
-        />
-      )}
-
       <TabStrip
         active={tab}
         contentLabel={config.label}
@@ -1245,6 +1228,27 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         }
         onSelect={selectTab}
       />
+
+      {/* ATTENTION v2 — the requests on this entity, for every kind (chapter 4,
+          tab 3). It FLOATS: a zero-height dock under the tabs holds a pill at the
+          top-right that opens into a card OVER the body, so the entity is never
+          pushed down (Subhang, 2026-10-02). It renders nothing when no request is
+          open or when no attention module is mounted. On a session or chat the
+          requests it RAISED are the banner's ("waiting on you", chapter 4
+          "Session"), so the block lists only the rest; opening still marks all
+          of them seen. */}
+      <div className="att-block-dock">
+        {isTombstone ? null : (
+          <AttentionBlock
+            excludeRaisedBy={isTerminal || config.panel.archetype === 'conversation' ? detail.id : null}
+            key={detail.id}
+            entityId={detail.id}
+            badges={detail.badges}
+            noun={config.label.toLowerCase()}
+            onOpenEntity={props.onOpenEntity}
+          />
+        )}
+      </div>
 
       {/* The band is gated on the strip alone: a kind with no controls (a doc
           declares none) would otherwise draw an empty padded row with a
