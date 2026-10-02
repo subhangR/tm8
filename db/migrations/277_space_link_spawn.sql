@@ -340,3 +340,6 @@ $$;
 
 revoke all on function public.space_link_spawn_for(uuid) from public;
 grant execute on function public.space_link_spawn_for(uuid) to tm8_app;
+
+-- Never-analyzed tables are estimated at 10 pages (225); 229/260/261 precedent.
+analyze public.space_link_spawns;
