@@ -18,6 +18,7 @@ import {
   resolveCoordinatorSessionId,
   resolveLaunchConfig,
   resolveWorkdir,
+  spawnLaunchFacts,
   supportsPositionalPrompt,
   withAgentPrompt,
 } from '../src/spawn/manifest.js';
@@ -50,6 +51,23 @@ function context(overrides: Partial<SpawnContext['teamMember']> = {}): SpawnCont
 const base: SpawnRequest = { spaceId: 'space-1', teamMemberId: 'tm-1' };
 
 describe('resolveLaunchConfig', () => {
+  it('names the link of the chain that chose the access mode', () => {
+    const inherited = { accessMode: 'fullAccess' as const, permissionMode: 'bypassPermissions' as const };
+    const source = (request: SpawnRequest, env: NodeJS.ProcessEnv, persona: Partial<SpawnContext['teamMember']> = {}, parent = inherited as typeof inherited | null) =>
+      resolveLaunchConfig(request, context(persona), env, parent);
+    expect(source({ ...base, accessMode: 'plan' }, { TM8_PERMISSION_MODE: 'interactive' }))
+      .toMatchObject({ accessMode: 'plan', accessModeSource: 'requested' });
+    expect(source(base, { TM8_PERMISSION_MODE: 'interactive' }))
+      .toMatchObject({ accessMode: 'safe', accessModeSource: 'env' });
+    expect(source(base, {}, { permissionMode: 'interactive' }))
+      .toMatchObject({ accessMode: 'fullAccess', accessModeSource: 'inherited' });
+    expect(source(base, {}, { permissionMode: 'interactive' }, null))
+      .toMatchObject({ accessMode: 'safe', accessModeSource: 'persona' });
+    expect(source(base, {}, {}, null)).toMatchObject({ accessModeSource: 'default' });
+    expect(source({ ...base, accessMode: 'plan' }, {}, { mode: 'dispatcher' }))
+      .toMatchObject({ accessMode: 'fullAccess', accessModeSource: 'dispatcher' });
+  });
+
   it.each(['low', 'medium', 'high', 'xhigh', 'max', 'ultra'] as const)(
     'preserves Astra effort %s during launch resolution', (reasoningEffort) => {
       expect(resolveLaunchConfig({ ...base, reasoningEffort }, context({ model: 'gpt-6-astra' }), {}))
@@ -1273,5 +1291,45 @@ describe('composeManifest launch block without Jev', () => {
     expect(resolveLaunchConfig(base, context(), {}).model).toBe('opus');
     expect(resolveLaunchConfig(base, context({ model: null }), {}).model).toBe(DEFAULT_MODEL);
     expect(resolveLaunchConfig(base, context(), {}).reasoningEffort).toBeNull();
+  });
+});
+
+describe('spawnLaunchFacts', () => {
+  const SPACE_ANT = '01a0aaaa-0000-7000-8000-000000000001';
+  const launch = (extra: Record<string, unknown>) => ({
+    tool: 'claude-code', model: 'opus', permissionMode: 'bypassPermissions', accessMode: 'fullAccess',
+    reasoningEffort: null, credentialSource: null,
+    credentialSources: { anthropic: 'space', openai: 'member', github: null },
+    spaceCredentialIds: { anthropic: SPACE_ANT },
+    commandNetwork: 'enabled',
+    ...extra,
+  }) as unknown as Parameters<typeof spawnLaunchFacts>[0];
+
+  it('reports what each provider RAN on, plus an explicit space source it does not inject', () => {
+    const facts = spawnLaunchFacts(
+      launch({ effectiveCredentialSources: { github: 'node' }, spaceCredentialPicks: { anthropic: 'pinned' } }),
+      'inherited',
+      'parent-1',
+    );
+    expect(facts).toEqual({
+      accessMode: 'fullAccess',
+      accessModeSource: 'inherited',
+      parentSessionId: 'parent-1',
+      // `openai: member` was stated but never used by a claude-code lane: not reported.
+      credentials: [
+        { provider: 'anthropic', source: 'space', spaceCredentialId: SPACE_ANT, spacePick: 'pinned' },
+        { provider: 'github', source: 'node' },
+      ],
+    });
+  });
+
+  it('a replay (no effective map) reports the stated sources; no source claims nothing', () => {
+    const facts = spawnLaunchFacts(launch({}), undefined, null);
+    expect(facts.accessModeSource).toBe('default');
+    expect(facts.parentSessionId).toBeNull();
+    expect(facts.credentials).toEqual([
+      { provider: 'anthropic', source: 'space', spaceCredentialId: SPACE_ANT },
+      { provider: 'openai', source: 'member' },
+    ]);
   });
 });

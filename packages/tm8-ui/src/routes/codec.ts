@@ -503,9 +503,21 @@ function parseTarget(
         const originView = parseOriginView(rawOrigin, drop('origin'));
         /* The view form wins when present, and the collection parser is not
            consulted for it — see `parseOriginView`. */
+        /* PR 1004: the full-view mark and the story graph's filter. A bad
+           value is simply absent — the filter's default IS the full read. */
+        const full = query.get('full') === '1';
+        const rawHops = query.get('hops');
+        const hops = rawHops === '1' || rawHops === '2' || rawHops === '3' ? (Number(rawHops) as 1 | 2 | 3) : null;
+        const rawKinds = query.get('kinds');
+        const kinds = rawKinds === null ? null : rawKinds.split(',').map(dec).filter((k): k is string => !!k);
+        const extra = {
+          ...(full ? { full: true } : {}),
+          ...(hops ? { hops } : {}),
+          ...(kinds ? { kinds } : {}),
+        };
         return originView
-          ? { view: 'entity', entityId, origin: null, originView }
-          : { view: 'entity', entityId, origin: parseOrigin(rawOrigin, drop('origin')) };
+          ? { view: 'entity', entityId, origin: null, originView, ...extra }
+          : { view: 'entity', entityId, origin: parseOrigin(rawOrigin, drop('origin')), ...extra };
       }
     }
     default:
@@ -616,6 +628,9 @@ export function build(route: Route): BuildOutcome {
       const value = t.origin.mode ? `${enc(t.origin.slug)}.${t.origin.mode}` : enc(t.origin.slug);
       viewParams.push(['origin', value]);
     }
+    if (t.full) viewParams.push(['full', '1']);
+    if (t.hops) viewParams.push(['hops', String(t.hops)]);
+    if (t.kinds) viewParams.push(['kinds', t.kinds.map(enc).join(',')]);
   } else if (t.view === 'channel') {
     if (t.msg) viewParams.push(['msg', enc(t.msg)]);
   }

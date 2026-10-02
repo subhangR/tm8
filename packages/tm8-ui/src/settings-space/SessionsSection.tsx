@@ -14,6 +14,17 @@
  * login also kills the pinned sessions entered from it — the list is re-read
  * after every revoke rather than patched, so what is drawn is what is left.
  *
+ * Revoke takes TWO clicks: the first arms the row ("confirm revoke"), the
+ * second calls the server. Only signing in again undoes a revoke, so a stray
+ * click must not be enough.
+ *
+ * REVOKING THIS BROWSER'S OWN SESSION is a sign-out, not a list edit. When the
+ * revoke ends the `current` row — itself, or by cascade from its gate login —
+ * the pass this tab holds is dead: a re-read would 401 and the socket would
+ * keep reconnecting with it. So the section hands over to `signOutHere`, the
+ * host's sign-out path, which clears the stored pass and drops the viewer to
+ * the gate, and does not re-read.
+ *
  * No token is ever in this data. Rows carry ids only.
  */
 import { useCallback, useEffect, useState } from 'react';
@@ -28,6 +39,8 @@ export interface SessionsSectionProps {
   scope: SessionsScope;
   load?: () => Promise<AuthSessionsListResult>;
   revoke?: (sessionId: string) => Promise<AuthSessionsRevokeResult>;
+  /** The host's sign-out. Run instead of the re-read when a revoke ends this browser's session. */
+  signOutHere?: () => void;
 }
 
 const ORIGIN_LABEL: Record<AuthSessionOrigin, string> = {
@@ -54,10 +67,11 @@ function message(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-export function SessionsSection({ heading, scope, load, revoke }: SessionsSectionProps) {
+export function SessionsSection({ heading, scope, load, revoke, signOutHere }: SessionsSectionProps) {
   const [rows, setRows] = useState<readonly AuthSessionListing[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState<string | null>(null);
   const [revokeError, setRevokeError] = useState<string | null>(null);
 
   const read = useCallback(async () => {
@@ -86,10 +100,17 @@ export function SessionsSection({ heading, scope, load, revoke }: SessionsSectio
 
   const onRevoke = async (sessionId: string) => {
     if (!revoke) return;
+    const current = rows?.find((row) => row.current)?.sessionId ?? null;
+    setConfirming(null);
     setPending(sessionId);
     setRevokeError(null);
     try {
-      await revoke(sessionId);
+      const result = await revoke(sessionId);
+      if (signOutHere && current !== null
+          && (sessionId === current || result.revokedSessionIds.includes(current))) {
+        signOutHere();
+        return;
+      }
       await read();
     } catch (err) {
       setRevokeError(message(err));
@@ -167,15 +188,34 @@ export function SessionsSection({ heading, scope, load, revoke }: SessionsSectio
                   {scope === 'own' ? <td>{row.spaceName ?? 'any space'}</td> : null}
                   <td className="set-sessions__act-cell">
                     {revoke ? (
-                      <button
-                        type="button"
-                        className="set-sessions__act"
-                        data-testid={`session-revoke-${row.sessionId}`}
-                        disabled={pending !== null}
-                        onClick={() => void onRevoke(row.sessionId)}
-                      >
-                        {pending === row.sessionId ? 'revoking…' : row.current ? 'sign out here' : 'revoke'}
-                      </button>
+                      <>
+                        {confirming === row.sessionId ? (
+                          <button
+                            type="button"
+                            className="set-sessions__act set-sessions__act--quiet"
+                            data-testid={`session-revoke-cancel-${row.sessionId}`}
+                            onClick={() => setConfirming(null)}
+                          >
+                            cancel
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          className={confirming === row.sessionId ? 'set-sessions__act set-sessions__act--armed' : 'set-sessions__act'}
+                          data-testid={`session-revoke-${row.sessionId}`}
+                          disabled={pending !== null}
+                          onClick={() => {
+                            if (confirming === row.sessionId) void onRevoke(row.sessionId);
+                            else setConfirming(row.sessionId);
+                          }}
+                        >
+                          {pending === row.sessionId
+                            ? 'revoking…'
+                            : confirming === row.sessionId
+                              ? row.current ? 'confirm sign out' : 'confirm revoke'
+                              : row.current ? 'sign out here' : 'revoke'}
+                        </button>
+                      </>
                     ) : null}
                   </td>
                 </tr>

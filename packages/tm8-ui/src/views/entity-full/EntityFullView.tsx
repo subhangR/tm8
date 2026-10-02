@@ -139,6 +139,8 @@ export interface EntityFullViewProps {
   renderUnavailable?: (args: { entityId: EntityId; onRecover?: () => void }) => ReactNode;
   /** Registry-supplied immersive Z4; forwarded to `Z4Host` untouched. */
   immersive?: boolean;
+  /** `panel.fullView` kinds: the stage follows the app theme (see `Z4Host`). */
+  followTheme?: boolean;
 }
 
 /**
@@ -175,6 +177,7 @@ export function EntityFullView({
   onLeave,
   renderUnavailable,
   immersive,
+  followTheme,
 }: EntityFullViewProps) {
   /* The promote fast path: a known kind IS the resolution, so no read runs. */
   const resolution = knownKind ? ({ status: 'ready', kind: knownKind } as const) : port.lookup(entityId);
@@ -198,7 +201,7 @@ export function EntityFullView({
      * which is how R4 survives a second author.
      */
     return (
-      <Z4Host entityId={entityId} immersive={immersive}>
+      <Z4Host entityId={entityId} immersive={immersive} followTheme={followTheme}>
         <div className="ev-root" data-testid="entity-full-view-unavailable">
           {renderUnavailable?.({ entityId, onRecover: leave })}
         </div>
@@ -216,7 +219,7 @@ export function EntityFullView({
      * never coming.
      */
     return (
-      <Z4Host entityId={entityId} immersive={immersive}>
+      <Z4Host entityId={entityId} immersive={immersive} followTheme={followTheme}>
         <div className="ev-root" data-testid="entity-full-view-resolving" aria-busy="true">
           <span className="sr-only">Opening…</span>
         </div>
@@ -225,7 +228,7 @@ export function EntityFullView({
   }
 
   return (
-    <Z4Host entityId={entityId} onCollapse={companion ? leave : undefined} immersive={immersive}>
+    <Z4Host entityId={entityId} onCollapse={companion ? leave : undefined} immersive={immersive} followTheme={followTheme}>
       {panel}
     </Z4Host>
   );

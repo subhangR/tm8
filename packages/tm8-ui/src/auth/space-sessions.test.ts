@@ -12,14 +12,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createHttpClient } from '../data/real/http';
-import { LOCAL_SERVER_ID } from '../servers/server-key';
+import { createRealSeam } from '../data/real/seam-real';
+import { FakeClock, fakeSocketPool, flush, type FakeSocket } from '../data/real/test-support';
+import { ACTIVE_SERVER_KEY, LOCAL_SERVER_ID } from '../servers/server-key';
 import {
   SPACE_SESSIONS_ENFORCED_KEY,
   clearServerPass,
+  noteSpaceSessionsEnforced,
   readSpaceSessionsEnforced,
   writeServerPass,
   type ServerPass,
 } from './pass-store';
+import { signOutOfServer } from './session';
 import {
   endSpaceSessions,
   resetSpaceSessions,
@@ -143,6 +147,9 @@ function fakeNode(mode: 'agents' | 'enforce', spacePasswords: Record<string, str
     }
     if (path === '/v2/auth/logout') {
       revoked.add(token);
+      // The server always answers with a cookie-clearing Set-Cookie; a browser
+      // takes it only on a request that sent credentials.
+      if (!omitCookie) jar = null;
       record(200);
       return reply(200, { data: { sessionId: 'x', revoked: true } });
     }
@@ -154,7 +161,14 @@ function fakeNode(mode: 'agents' | 'enforce', spacePasswords: Record<string, str
     return reply(200, { data: { servedBy: pinnedTo ?? 'gate' } });
   });
 
-  return { fetchImpl, sent, revoked, pinnedSpace: (t: string | null) => (t ? pins.get(t) ?? null : null) };
+  return {
+    fetchImpl,
+    sent,
+    revoked,
+    pinnedSpace: (t: string | null) => (t ? pins.get(t) ?? null : null),
+    /** The browser's session cookie right now — what a WebSocket upgrades with. */
+    jar: () => jar,
+  };
 }
 
 function clientFor() {
@@ -273,19 +287,25 @@ describe('W3 space sessions — enforce (a1)', () => {
     expect(node.sent.at(-1)!.authorization).not.toBe(pin);
   });
 
-  it('sign-out revokes every pinned session with its own token', async () => {
+  it('sign-out revokes every pinned session with its own token, or its own cookie', async () => {
     const node = fakeNode('enforce');
     vi.stubGlobal('fetch', node.fetchImpl);
     const { session, client } = clientFor();
     await session.enterSpace(SPACE_A);
     await client.call('inbox.list');
     await session.enterSpace(SPACE_B);
+    await client.call('inbox.list');
     const pins = node.sent.filter((s) => s.status === 200 && s.path === '/v2/inbox').map((s) => s.authorization);
+    expect(pins).toHaveLength(2);
 
-    endSpaceSessions(LOCAL_SERVER_ID);
+    await endSpaceSessions(LOCAL_SERVER_ID);
     await vi.waitFor(() => expect(node.revoked.size).toBe(2));
     const logouts = node.sent.filter((s) => s.path === '/v2/auth/logout');
-    expect(logouts.every((s) => s.omitCookie && s.authorization !== GATE)).toBe(true);
+    // A's pin by its header, without the cookie; B's pin (the cookie) by the
+    // cookie alone. Neither presents the gate.
+    expect(logouts.every((s) => s.authorization !== GATE && s.status === 200)).toBe(true);
+    expect(logouts.filter((s) => s.omitCookie).map((s) => node.pinnedSpace(s.authorization))).toEqual([SPACE_A]);
+    expect(logouts.filter((s) => !s.omitCookie).map((s) => s.authorization)).toEqual([null]);
     expect(pins.every((p) => p && node.revoked.has(p))).toBe(true);
   });
 
@@ -346,5 +366,226 @@ describe('W5 space passwords — the enter prompt', () => {
     await session.enterSpace(SPACE_B);
     await expect(client.call('inbox.list')).resolves.toEqual({ servedBy: SPACE_B });
     expect(prompts).toBe(1);
+  });
+});
+
+describe('enforce-flip precondition F1: the event socket follows the space', () => {
+  /**
+   * The node's socket rule (control.ts): a browser WebSocket authenticates
+   * ONCE, with the cookie it upgrades with, and a socket pinned to one space
+   * is refused a subscribe to any other. `upgradedAs[i]` is socket i's
+   * identity; `serve` answers each subscribe frame the way the node would.
+   */
+  function socketRule(node: ReturnType<typeof fakeNode>) {
+    const pool = fakeSocketPool();
+    const upgradedAs: Array<string | null> = [];
+    const factory = (url: string) => {
+      upgradedAs.push(node.jar());
+      return pool.factory(url);
+    };
+    const refusedOn = new Map<FakeSocket, string[]>();
+    const serve = () => {
+      pool.sockets.forEach((socket, i) => {
+        const pinnedTo = node.pinnedSpace(upgradedAs[i] ?? null);
+        const already = refusedOn.get(socket) ?? [];
+        for (const frame of socket.frames()) {
+          if (frame.type !== 'subscribe') continue;
+          for (const spaceId of frame.spaceIds as string[]) {
+            if (spaceId === pinnedTo || already.includes(spaceId)) continue;
+            already.push(spaceId);
+            socket.deliver({ type: 'control.refused', frame: 'subscribe', spaceId, reason: 'forbidden' });
+          }
+        }
+        refusedOn.set(socket, already);
+      });
+    };
+    return { pool, upgradedAs, factory, serve };
+  }
+
+  /** The fake node, plus the two reads `openSpace` makes, answered as empty. */
+  function seamFetch(node: ReturnType<typeof fakeNode>) {
+    return async (url: string, init?: RequestInit) => {
+      const res = await node.fetchImpl(url, init);
+      if (res.status !== 200) return res;
+      const path = new URL(url, 'http://localhost').pathname;
+      const data = path.endsWith('/events')
+        ? { items: [], nextCursor: '0' }
+        : path.endsWith('/execution/liveness')
+          ? { liveEntityIds: [], nodeBootId: 'boot', checkedAt: '2026-09-28T00:00:00.000Z' }
+          : null;
+      return data ? new Response(JSON.stringify({ data }), { status: 200 }) : res;
+    };
+  }
+
+  it('enter B, then subscribe B succeeds: the socket reconnects as B\'s pinned session', async () => {
+    localStorage.setItem(SPACE_SESSIONS_ENFORCED_KEY, JSON.stringify({ [location.origin]: true }));
+    const node = fakeNode('enforce');
+    vi.stubGlobal('fetch', node.fetchImpl);
+    const rule = socketRule(node);
+    const clock = new FakeClock();
+    const session = spaceSessionFor(LOCAL_SERVER_ID);
+    const seam = createRealSeam({
+      baseUrl: '',
+      wsUrl: 'ws://fake.invalid/v2/ws',
+      fetch: seamFetch(node),
+      webSocketFactory: rule.factory,
+      getAuthToken: () => GATE,
+      spaceSession: session,
+      timers: clock.timers,
+      now: clock.now,
+      random: clock.random,
+    });
+    const refused: string[] = [];
+    seam.realControls.onSpaceRefused((spaceId) => refused.push(spaceId));
+
+    // Boot in A, the way useGateData does it: enter, then open.
+    await session.enterSpace(SPACE_A);
+    await seam.openSpace(SPACE_A as never);
+    rule.pool.last().openIt();
+    rule.serve();
+    expect(refused).toEqual([]);
+
+    // Switch to B: close A, enter B (the cookie becomes B's pin), open B.
+    seam.closeSpace(SPACE_A as never);
+    await session.enterSpace(SPACE_B);
+    await seam.openSpace(SPACE_B as never);
+    const live = rule.pool.last();
+    if (live.readyState !== 1) live.openIt();
+    await flush();
+    rule.serve();
+
+    expect(refused).toEqual([]);
+    const subscribedB = live.frames().some((f) => f.type === 'subscribe' && (f.spaceIds as string[]).includes(SPACE_B));
+    expect(subscribedB).toBe(true);
+    expect(node.pinnedSpace(rule.upgradedAs[rule.pool.sockets.indexOf(live)] ?? null)).toBe(SPACE_B);
+    // The A socket was closed by the client, not left to be refused.
+    expect(rule.pool.sockets[0]!.closeCalls).toBe(1);
+
+    seam.dispose();
+  });
+
+  it('under agents nothing is minted, so the socket is never replaced', async () => {
+    const node = fakeNode('agents');
+    vi.stubGlobal('fetch', node.fetchImpl);
+    const rule = socketRule(node);
+    const clock = new FakeClock();
+    const session = spaceSessionFor(LOCAL_SERVER_ID);
+    const seam = createRealSeam({
+      baseUrl: '',
+      wsUrl: 'ws://fake.invalid/v2/ws',
+      fetch: seamFetch(node),
+      webSocketFactory: rule.factory,
+      getAuthToken: () => GATE,
+      spaceSession: session,
+      timers: clock.timers,
+      now: clock.now,
+      random: clock.random,
+    });
+
+    await session.enterSpace(SPACE_A);
+    await seam.openSpace(SPACE_A as never);
+    rule.pool.last().openIt();
+    seam.closeSpace(SPACE_A as never);
+    await session.enterSpace(SPACE_B);
+    await seam.openSpace(SPACE_B as never);
+
+    expect(rule.pool.sockets).toHaveLength(1);
+    expect(rule.pool.sockets[0]!.closeCalls).toBe(0);
+    seam.dispose();
+  });
+});
+
+describe('enforce-flip precondition F2: sign-out clears the pinned cookie', () => {
+  it('a cookie-carrying logout clears the pinned cookie, and lands before the gate logout', async () => {
+    const node = fakeNode('enforce');
+    vi.stubGlobal('fetch', node.fetchImpl);
+    const { session, client } = clientFor();
+    await session.enterSpace(SPACE_A);
+    await client.call('inbox.list'); // learns enforce
+    await session.enterSpace(SPACE_B);
+    expect(node.pinnedSpace(node.jar())).toBe(SPACE_B);
+
+    signOutOfServer();
+
+    await vi.waitFor(() => expect(node.revoked.has(GATE)).toBe(true));
+    expect(node.jar()).toBeNull();
+    const logouts = node.sent.filter((s) => s.path === '/v2/auth/logout');
+    const byCookie = logouts.findIndex((s) => s.authorization === null && !s.omitCookie);
+    const byGate = logouts.findIndex((s) => s.authorization === GATE);
+    expect(byCookie).toBeGreaterThanOrEqual(0);
+    expect(byCookie).toBeLessThan(byGate);
+    // The gate's own logout still goes without the cookie, and nothing is refused.
+    expect(logouts[byGate]!.omitCookie).toBe(true);
+    expect(logouts.every((s) => s.status === 200)).toBe(true);
+  });
+
+  it('a failed cookie logout falls back to the header revoke of that pin, and the gate logout still lands', async () => {
+    const node = fakeNode('enforce');
+    // The cookie-only logout (no Authorization, credentials sent) fails at the node.
+    vi.stubGlobal('fetch', async (url: string, init: RequestInit = {}) => {
+      const headers = (init.headers ?? {}) as Record<string, string>;
+      if (url.endsWith('/v2/auth/logout') && !headers.authorization && init.credentials !== 'omit') {
+        return new Response(JSON.stringify({ error: { code: 'upstream_unavailable', message: 'down', requestId: 'r' } }), { status: 503 });
+      }
+      return node.fetchImpl(url, init);
+    });
+    const { session, client } = clientFor();
+    await session.enterSpace(SPACE_A);
+    await client.call('inbox.list'); // learns enforce
+    await session.enterSpace(SPACE_B);
+    await client.call('inbox.list');
+    const pinB = node.sent.at(-1)!.authorization!;
+    expect(node.pinnedSpace(pinB)).toBe(SPACE_B);
+
+    signOutOfServer();
+
+    await vi.waitFor(() => expect(node.revoked.has(GATE)).toBe(true));
+    await vi.waitFor(() => expect(node.revoked.has(pinB)).toBe(true));
+    const revokeB = node.sent.find((s) => s.path === '/v2/auth/logout' && s.authorization === pinB);
+    expect(revokeB).toMatchObject({ omitCookie: true, status: 200 });
+  });
+
+  it('a named server is not the page\'s cookie: no cookie-only call, and the gate logout goes out at once', async () => {
+    const REMOTE = 'remote-1';
+    localStorage.setItem(ACTIVE_SERVER_KEY, REMOTE);
+    writeServerPass(REMOTE, gatePass);
+    noteSpaceSessionsEnforced(REMOTE);
+    const node = fakeNode('enforce');
+    const proxy = `/v2/server-connections/${REMOTE}/proxy`;
+    const calls: Array<{ path: string; authorization: string | null; credentials: RequestCredentials | undefined }> = [];
+    vi.stubGlobal('fetch', (url: string, init: RequestInit = {}) => {
+      const path = url.replace(proxy, '');
+      const headers = (init.headers ?? {}) as Record<string, string>;
+      const authorization = headers.authorization?.replace(/^Bearer /, '') ?? null;
+      calls.push({ path, authorization, credentials: init.credentials });
+      // Every logout but the gate's hangs: a sign-out that waited on one would
+      // never send the gate logout within this test.
+      if (path === '/v2/auth/logout' && authorization !== GATE) return new Promise<Response>(() => {});
+      return node.fetchImpl(path, init);
+    });
+    const session = spaceSessionFor(REMOTE);
+    await session.enterSpace(SPACE_A);
+
+    signOutOfServer();
+
+    await vi.waitFor(() => expect(node.revoked.has(GATE)).toBe(true));
+    const logouts = calls.filter((c) => c.path === '/v2/auth/logout');
+    expect(logouts.some((c) => c.authorization === null)).toBe(false);
+    expect(logouts.some((c) => c.credentials === 'include')).toBe(false);
+  });
+
+  it('under agents sign-out is what it was: one gate logout, cookie included, no cookie-only call', async () => {
+    const node = fakeNode('agents');
+    vi.stubGlobal('fetch', node.fetchImpl);
+    const { session, client } = clientFor();
+    await session.enterSpace(SPACE_A);
+    await client.call('inbox.list');
+
+    signOutOfServer();
+
+    await vi.waitFor(() => expect(node.revoked.has(GATE)).toBe(true));
+    const logouts = node.sent.filter((s) => s.path === '/v2/auth/logout');
+    expect(logouts).toHaveLength(1);
+    expect(logouts[0]).toMatchObject({ authorization: GATE, omitCookie: false, status: 200 });
   });
 });

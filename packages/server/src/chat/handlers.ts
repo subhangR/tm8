@@ -4,13 +4,16 @@ import { resolve as pathResolve } from 'node:path';
 import {
   CollabError,
   launchModel,
+  type EntityId,
   type EntitySummary,
+  type SetChatModelInput,
+  type SetChatModelResult,
   type StartChatInput,
   type StartChatResult,
 } from '@tm8/contract';
 import type { HandlerRegistry } from '../facade/registry.js';
 import type { FacadeDeps } from '../facade/deps.js';
-import { claimsFor } from '../facade/context.js';
+import { claimsFor, requireUuidParam } from '../facade/context.js';
 import { loadEntitySummariesByIds } from '../facade/entity-read.js';
 import type { OperationHandler } from '../http/types.js';
 import type { ChatOrchestrator } from './orchestrator.js';
@@ -113,6 +116,59 @@ function startChat(facade: FacadeDeps, chat?: ChatHandlerDeps): OperationHandler
 }
 
 /**
+ * MOVE A RUNNING CHAT ONTO ANOTHER MODEL (276).
+ *
+ * The two guards below are the SAME two `chat.start` makes, and they are
+ * repeated rather than shared because they refuse different things at different
+ * moments: start refuses a chat that could never run, this refuses a switch that
+ * would break a chat that is already running.
+ *
+ * (a) the model must be in the launch catalog — the catalog is where `provider`
+ *     comes from, and provider decides which API-key backend the child is given.
+ *     A caller therefore names a MODEL and never a provider: letting a browser
+ *     post `provider: 'moonshot'` would let it choose whose credential to spend.
+ * (b) it must be a claude-code model. Chat composes one runtime adapter and the
+ *     switch resumes a claude native session; a codex model here would spawn
+ *     `claude --model gpt-…`. `set_chat_model` refuses the same mismatch in SQL,
+ *     so the rule holds for any caller that reaches the RPC another way.
+ *
+ * NOTHING IS TORN DOWN HERE. The live runtime keeps running and the switch is
+ * picked up by `ensureRuntime` on the next claimed turn, which closes the child
+ * and restarts it on the new model with `--resume`. Killing it here would end an
+ * in-flight turn to apply a setting that only affects the next one.
+ */
+function setChatModel(facade: FacadeDeps, chat?: ChatHandlerDeps): OperationHandler {
+  return async (ctx) => {
+    const chatId = requireUuidParam(ctx, 'id') as EntityId;
+    const input = ctx.body as SetChatModelInput;
+    const model = launchModel(input.model);
+    if (!model) throw new CollabError('invalid_input', `unsupported chat model: ${input.model}`);
+    if (model.agentTool !== 'claude-code') {
+      throw new CollabError(
+        'invalid_input',
+        `chat v1 runs claude-code models only; '${input.model}' launches via ${model.agentTool}`,
+      );
+    }
+    const owner = await facade.owner();
+    const requestClaims = claimsFor(owner, ctx);
+    if (!requestClaims.identityId) {
+      throw new CollabError('unauthenticated', 'authentication is required');
+    }
+    if (!chat) {
+      throw new CollabError('upstream_unavailable', 'chat runtime is unavailable on this node');
+    }
+    const stored = await facade.db.tx(requestClaims, async (q) =>
+      q.rpc<SetChatModelResult>('set_chat_model', [
+        chatId,
+        input.model,
+        model.provider,
+        model.agentTool,
+      ]));
+    return { chatId: stored.chatId, model: stored.model, provider: stored.provider };
+  };
+}
+
+/**
  * Every chat operation is human-only.
  *
  * `credentials.ts` states the reasoning at length and it holds identically
@@ -159,5 +215,6 @@ export function registerChatHandlers(
 ): void {
   registry.registerAll({
     'chat.start': humanOnly(startChat(facade, chat)),
+    'chat.setModel': humanOnly(setChatModel(facade, chat)),
   });
 }

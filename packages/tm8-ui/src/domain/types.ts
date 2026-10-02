@@ -839,6 +839,13 @@ export interface MembershipListControl {
   edgeType: string;
   /** The kind whose rows are the curated sets. Hosts hydrate it as data. */
   setKind: string;
+  /**
+   * Further kinds whose rows are sets under the SAME edge, hydrated alongside
+   * `setKind`. 282: a story's roots are its `contains` targets, so lensing a
+   * list by a story is the collection lens pointed at a story ("Tasks in this
+   * story"), and putting a row in one from the picker adds a root.
+   */
+  alsoSetKinds?: readonly string[];
 }
 
 /** One value in a `ValueControl`'s vocabulary. */
@@ -1104,6 +1111,12 @@ export type ContentBlockKind =
   // cannot tell apart. The block is also the thing a FUTURE second canvas
   // format would reuse, so naming it after one kind was wrong anyway.
   | 'canvas'
+  // The story page (283): hero, stats, graph, roots, team, feed and rail, one
+  // block because the page IS the body. The live read arrives from the host as
+  // `storySurface` (views/storySurface.tsx); without one the block draws the
+  // static read of the row. NAMED `storyline`, NOT `story`, for the same
+  // §15.2 reason `canvas` is not `drawing`.
+  | 'storyline'
   // Artifact viewer: the artifact kind's rendered bundle, in-block. The iframe
   // SHIPS here and autoruns when the detail opens (owner ruling 2026-08-16,
   // superseding the earlier click-gate); the sandbox posture is unchanged —
@@ -1149,6 +1162,9 @@ export type ContentBlockKind =
   | 'field-grid'
   | 'live-work'
   | 'session-rows'
+  // The `equips` edge as editable rows + picker (skills/SkillEquipment); the
+  // view supplies it, ProfileBody only places it.
+  | 'skill-equipment'
   // …plus the org tree: a teammate's place in the entity hierarchy, which
   // db/migrations/002_identity.sql:110 rules IS the org tree (leader = parent).
   | 'org-tree'
@@ -1315,6 +1331,15 @@ export interface PanelConfig {
    */
   attachPalette?: readonly AttachPaletteRow[];
   z4?: { immersive?: boolean };
+  /**
+   * THE FULL VIEW IS BUILT FOR THIS KIND (PR 1004, coordinator ruling
+   * 2026-10-02). The parked Z4 mechanism — ⤢ promote, the `e/{id}` route,
+   * `EntityFullView` — is mounted ONLY for kinds that set this; every other
+   * kind keeps the "full view isn't built yet" card and the refused promote.
+   * A kind that opts in also gets a stage that FOLLOWS the app theme, which
+   * narrows §12's always-dark Z4 stage to the kinds that did not.
+   */
+  fullView?: boolean;
 }
 
 /** One chip of the attach palette (see `PanelConfig.attachPalette`). */
