@@ -47,7 +47,31 @@ const OUT_DIR = fileURLToPath(new URL('../../contract/src/builtins/', import.met
  * cached resolved style knows to drop it (§2.4). It is NOT the document
  * schemaVersion and not a git count — it is "the Atelier you cached is stale".
  */
-export const BUILTIN_REVISION = 1;
+export const BUILTIN_REVISION = 2;
+
+/**
+ * THE TERMINAL OPTION KEYS (spec v8 §1.7, §10.3). xterm paints a canvas and
+ * reads none of these from CSS, so they have no declaration to extract: they
+ * are today's constants from `src/terminal/terminalTheme.ts:12-21`, restated
+ * as `--pn-term-*` values so a style can override them like any other key.
+ * Two are decisions rather than transcriptions: bold is 600 (the bundled
+ * JetBrains Mono has no 700 face — sign-off §13) and font size is `auto`
+ * (the per-device setting wins until a style names a number — §15.4).
+ * `builtins-parity.test.ts` holds the rest to terminalTheme.ts.
+ */
+export const TERMINAL_DEFAULTS = {
+  '--pn-term-chrome': 'dark',
+  '--pn-term-cursor-style': 'block',
+  '--pn-term-font':
+    '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+  '--pn-term-font-size': 'auto',
+  '--pn-term-font-weight': '400',
+  '--pn-term-font-weight-bold': '600',
+  '--pn-term-letter-spacing': '0',
+  '--pn-term-line-height': '1.2',
+  '--pn-term-padding': '0',
+  '--pn-term-scrollback': '5000',
+};
 
 /** Comments can contain braces and `--pn-…:` examples; strip them before parsing. */
 function stripComments(css) {
@@ -130,6 +154,7 @@ export function extractBuiltins() {
      (the whole type scale, spacing, radii, the terminal ANSI set) and the
      resolver's full-table contract would be a lie. */
   const dark = { ...light };
+  const lightCssKeys = Object.keys(light).length;
   for (const css of files) {
     for (const body of blocksMatching(css, isDarkRoot)) {
       for (const [name, value] of pnDeclarations(body)) dark[name] = value;
@@ -139,11 +164,14 @@ export function extractBuiltins() {
   const sorted = (table) =>
     Object.fromEntries(Object.keys(table).sort().map((k) => [k, table[k]]));
 
-  if (Object.keys(light).length < 60) {
+  if (lightCssKeys < 60) {
     throw new Error(
-      `extract-builtins: only ${Object.keys(light).length} light tokens found — the selector scan is broken, not the palette`,
+      `extract-builtins: only ${lightCssKeys} light tokens found — the selector scan is broken, not the palette`,
     );
   }
+  /* The terminal options do not flip with the theme: one set for both. */
+  Object.assign(light, TERMINAL_DEFAULTS);
+  Object.assign(dark, TERMINAL_DEFAULTS);
 
   return {
     'atelier-light': {

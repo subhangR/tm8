@@ -156,8 +156,12 @@ const HOME_RAIL_GROUP_SPINE: readonly HomeRailGroupSpec[] = [
     // other spaces and machines this one reaches.
     //
     // The last three were the "Beta" group: shipped and reachable, shape not
-    // settled. They sit last so the settled kinds read first.
-    kinds: ['interaction_profile', 'credential', 'space_link', 'server', 'loop', 'spell', 'container'],
+    // settled. They sit last so the settled kinds read first. `style` (284)
+    // follows them: the space's published themes are picked from the
+    // account menu, not created here — the same "listed, managed elsewhere" shape.
+    // `op_request` (280) follows `server`: every op an agent may ask for today
+    // changes one of these (a space link, a gate folder, a path grant).
+    kinds: ['interaction_profile', 'credential', 'space_link', 'server', 'op_request', 'style', 'loop', 'spell', 'container'],
   },
 ];
 

@@ -22,10 +22,25 @@ describe('gateSessionMayCall', () => {
       expect(gateSessionMayCall(op), op).toBe(true);
     }
   });
+  it('allows gate.folders.* (L6): a folder is the gate\'s, and only an unpinned node admin may register one', () => {
+    // isGateAdmin is nodeAdmin && !sessionSpaceId, so a pinned session can never
+    // call these; refusing them at the gate too left enforce with no human caller.
+    for (const op of ['gate.folders.list', 'gate.folders.create']) {
+      expect(gateSessionMayCall(op), op).toBe(true);
+    }
+  });
   it('refuses every space operation, including spaces.get and the other invite ops', () => {
     for (const op of ['spaces.get', 'spaces.home', 'spaces.invites.create', 'spaces.invites.list',
       'identity.profile.update', 'entities.get', 'entities.query', 'projects.list', 'events.poll',
-      'authx.fake', 'nodes.fake']) {
+      'authx.fake', 'nodes.fake', 'gatex.fake', 'spaces.projects.create']) {
+      expect(gateSessionMayCall(op), op).toBe(false);
+    }
+  });
+  it('lets a gate admin decide op requests (L5, 280), but not file or list them', () => {
+    for (const op of ['opRequests.get', 'opRequests.approve', 'opRequests.deny']) {
+      expect(gateSessionMayCall(op), op).toBe(true);
+    }
+    for (const op of ['opRequests.create', 'opRequests.list']) {
       expect(gateSessionMayCall(op), op).toBe(false);
     }
   });
@@ -53,6 +68,10 @@ describe('assertSpaceGate', () => {
     expect(() => assertSpaceGate('enforce', gate(), 'auth.space.enter')).not.toThrow();
     expect(() => assertSpaceGate('enforce', pinned, 'entities.get')).not.toThrow();
     expect(() => assertSpaceGate('enforce', pinned, undefined)).not.toThrow();
+  });
+  it('enforce: a gate session reaches gate.folders.list and gate.folders.create (L6)', () => {
+    expect(() => assertSpaceGate('enforce', gate(), 'gate.folders.list')).not.toThrow();
+    expect(() => assertSpaceGate('enforce', gate('cli'), 'gate.folders.create')).not.toThrow();
   });
   it('off and agents: never refuses (a5)', () => {
     for (const mode of ['off', 'agents', undefined] as const) {

@@ -345,6 +345,16 @@ describe.sequential('147 — entities.status_category', () => {
         entity_id uuid primary key, name text not null, base_url text not null);
       grant select on public.servers to tm8_app;
       reset role;`);
+    // 280 (op requests, L5): `entity-read.ts` and the projector left-join
+    // `public.op_requests opr` for a request's title, op and status. Same shim
+    // shape as `servers` above: only the columns the read selects and their
+    // tm8_app read grant. No assertion here reads them. DELETE this shim if
+    // this suite ever applies the chain through 280.
+    await database.query(`set role tm8_graph_owner;
+      create table public.op_requests (
+        entity_id uuid primary key, title text not null, op text not null, status text not null);
+      grant select on public.op_requests to tm8_app;
+      reset role;`);
     // 283 (story kind), the same recurring shape as 194 above: `entity-read.ts`
     // and the projector statically left-join `public.stories` and select
     // `internal.story_summary(e.id)`, so current code refuses this partial
@@ -355,6 +365,22 @@ describe.sequential('147 — entities.status_category', () => {
     // story_summary, stories_containing and entity_content ran on a seeded
     // story with a `contains` root.
     database.apply(['283_story_kind.sql']);
+    // 284 (space styles): `entity-read.ts` and the projector left-join
+    // `public.styles stl` for a style's title and document. 284 needs the
+    // chain through 283's neighbours (personal_styles FKs, identity helpers),
+    // so — like the servers shim above — only the column shapes the read
+    // selects and their tm8_app read grant are mirrored (as tm8_graph_owner),
+    // without its FKs, checks, triggers or RPCs. No assertion here reads them.
+    // DELETE this shim if this suite ever applies the chain through 284.
+    await database.query(`set role tm8_graph_owner;
+      create table public.styles (
+        entity_id uuid primary key, title text not null, description text,
+        schema_version integer not null default 1, foundation text not null,
+        vars jsonb not null default '{}'::jsonb, css text, tags text[] not null default '{}',
+        resolved_hash text, pushed_by uuid not null, source_owner_identity_id text not null,
+        pushed_at timestamptz not null default now());
+      grant select on public.styles to tm8_app;
+      reset role;`);
   }, 180_000);
 
   afterAll(async () => {

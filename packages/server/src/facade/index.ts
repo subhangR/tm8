@@ -71,6 +71,7 @@ import { registerW2IdentitySpacesHandlers } from './handlers/w2/identity-spaces.
 import { registerW2InboxReadMarksHandlers } from './handlers/w2/inbox-read-marks.js';
 import { registerW2MenuDefaultChannelHandlers } from './handlers/w2/menu-default-channel.js';
 import { registerW2ConfigsHandlers } from './handlers/w2/configs.js';
+import { registerW2StyleHandlers } from './handlers/w2/styles.js';
 import {
   registerW2MessagesHandoffsHandlers,
   type W2MessagesHandoffsServiceOptions,
@@ -81,6 +82,7 @@ import {
   type W2ProjectFolderUploadHandlerDeps,
 } from './handlers/w2/project-folder-uploads.js';
 import { registerW2ProjectsAssociationsHandlers } from './handlers/w2/projects-associations.js';
+import { registerPathGrantHandlers } from './handlers/w2/path-grants.js';
 import { registerW2ContainerHandlers } from './handlers/w2/containers.js';
 import { registerW2SavedViewsActionsHandlers } from './handlers/w2/saved-views-actions.js';
 import { registerContentionHandlers } from './services/contention.js';
@@ -92,6 +94,7 @@ import {
 } from './handlers/w2/credentials.js';
 import { registerSpaceLinkHandlers, type SpaceLinkHandlerDeps } from './handlers/w2/space-links.js';
 import { registerServerHandlers } from './handlers/w2/servers.js';
+import { registerOpRequestHandlers } from './handlers/w2/op-requests.js';
 import { DisabledRemoteInvokeForwarder } from '../remote/forwarder.js';
 import { registerVoiceHandlers } from './handlers/voice.js';
 import { registerChatHandlers, type ChatHandlerDeps } from '../chat/handlers.js';
@@ -225,6 +228,7 @@ export function registerFacadeHandlers(
   registerW2EdgesPlacementsHandlers(registry, facade);
   registerW2CollectionsGraphUndoHandlers(registry, facade);
   registerW2ProjectsAssociationsHandlers(registry, facade);
+  registerPathGrantHandlers(registry, facade);
   // skills.preview also lists the Claude plugins a launch could load (the
   // launch ··· menu's Plugins row); that needs the credential root.
   const credentialRoot = deps.credentials?.dataDir;
@@ -311,6 +315,10 @@ export function registerFacadeHandlers(
   registerW2FeedContextHandlers(registry, facade);
   registerW2MenuDefaultChannelHandlers(registry, facade);
   registerW2ConfigsHandlers(registry, facade);
+  // Styles (migration 284, styles spec §4): personal styles, read-only space
+  // styles, prefs and the space default. The human-only default door is
+  // wrapped inside the registration.
+  registerW2StyleHandlers(registry, facade);
 
   /**
    * Containers (177). REGISTERED UNCONDITIONALLY, unlike `files` or the
@@ -348,4 +356,10 @@ export function registerFacadeHandlers(
   if (spaceLinks) registerSpaceLinkHandlers(registry, facade, spaceLinks);
   // W8 servers: the same node-key root; add/adopt/remove are human-only inside.
   if (spaceLinks) registerServerHandlers(registry, facade, { dataDir: spaceLinks.dataDir });
+
+  // L5 (280) op requests: approve and deny are human-only inside the
+  // registration (and in SQL). Unconditional: an approve dispatches through
+  // this registry at call time, so an op that is not registered fails there
+  // as not_implemented rather than here.
+  registerOpRequestHandlers(registry, facade);
 }

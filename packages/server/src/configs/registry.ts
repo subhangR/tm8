@@ -42,6 +42,7 @@ import {
   CLIPBOARD_RETENTION_DAYS_DEFAULT,
 } from '../files/clipboard-store.js';
 import { DEFAULT_AUTH_RATE_LIMITS, RATE_LIMITED_AUTH_OPS } from '../http/auth-rate-limit.js';
+import { DEFAULT_STYLE_RATE_LIMITS } from '../http/style-rate-limit.js';
 import { CANDIDATE_LIMIT, TEXT_LIMIT } from '../jev/candidates.js';
 import { CRITICAL_SCORE } from '../jev/groups.js';
 
@@ -112,6 +113,13 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'TM8_AUTH_ATTEMPT_WINDOW_MS', group: 'Network & access', summary: 'Window for the per-client auth attempt count.', default: String(DEFAULT_AUTH_RATE_LIMITS.attemptWindowMs), definedIn: CONFIG },
   { name: 'TM8_AUTH_MAX_FAILURES', group: 'Network & access', summary: 'Consecutive auth failures per principal before refusal.', default: String(DEFAULT_AUTH_RATE_LIMITS.maxFailuresPerPrincipal), definedIn: CONFIG },
   { name: 'TM8_AUTH_FAILURE_WINDOW_MS', group: 'Network & access', summary: 'Window for the per-principal failure count.', default: String(DEFAULT_AUTH_RATE_LIMITS.failureWindowMs), definedIn: CONFIG },
+  { name: 'TM8_STYLE_EDIT_MAX', group: 'Network & access', summary: 'Style edits (personal create/update/delete, pull) per identity per minute; 0 disables.', default: String(DEFAULT_STYLE_RATE_LIMITS.editPerMinute), definedIn: CONFIG },
+  { name: 'TM8_STYLE_EDIT_BURST', group: 'Network & access', summary: 'Style edit burst per identity per 5 s; 0 disables.', default: String(DEFAULT_STYLE_RATE_LIMITS.editBurst), definedIn: CONFIG },
+  { name: 'TM8_STYLE_PUBLISH_MAX', group: 'Network & access', summary: 'Style push/remove per identity per minute; 0 disables.', default: String(DEFAULT_STYLE_RATE_LIMITS.publishPerMinute), definedIn: CONFIG },
+  { name: 'TM8_STYLE_PUBLISH_BURST', group: 'Network & access', summary: 'Style push/remove burst per identity per 10 s; 0 disables.', default: String(DEFAULT_STYLE_RATE_LIMITS.publishBurst), definedIn: CONFIG },
+  { name: 'TM8_STYLE_RESOLVE_MAX', group: 'Network & access', summary: 'styles.resolve per identity per minute; 0 disables.', default: String(DEFAULT_STYLE_RATE_LIMITS.resolvePerMinute), definedIn: CONFIG },
+  { name: 'TM8_STYLE_PREFS_MAX', group: 'Network & access', summary: 'Style preference writes per identity per minute; 0 disables.', default: String(DEFAULT_STYLE_RATE_LIMITS.prefsPerMinute), definedIn: CONFIG },
+  { name: 'TM8_STYLE_DEFAULT_MAX', group: 'Network & access', summary: 'Space default-style writes per space per minute; 0 disables.', default: String(DEFAULT_STYLE_RATE_LIMITS.defaultPerMinute), definedIn: CONFIG },
   { name: 'TM8_UI_DIR', group: 'Network & access', summary: 'Built web UI bundle served for non-/v2 paths. Unset in dev, where Vite serves the UI.', default: null, definedIn: CONFIG },
 
   // ── Storage & database ───────────────────────────────────────────────
@@ -222,6 +230,7 @@ export const NOT_CONFIG_ENV: Readonly<Record<string, string>> = {
   TM8_JOURNAL_PATH: 'set by tm8 on each spawned session',
   TM8_PROJECT_ID: 'set by tm8 on each spawned session',
   TM8_MODEL: 'set by tm8 on each spawned session',
+  TM8_MODE: 'set by tm8 on each spawned session (the session mode; read by tm8 whoami)',
   TM8_GIT_LOGIN: 'set by tm8 on each spawned session',
   TM8_CHAT_MODE: 'set by tm8 on each chat thread',
 };

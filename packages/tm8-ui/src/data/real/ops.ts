@@ -2,6 +2,7 @@ import type { SkillPort } from '../../skills/port';
 import type { JevPort } from '../../jev/port';
 import type { LaunchDefaultsPort } from '../../launch-selection/port';
 import type { FormsOps, FormsRedeliverInput } from '../../forms/ops-port';
+import type { OpRequestDecision } from '../seam';
 /**
  * Typed wrappers for EXACTLY the operations the seam exposes (LLD §5:
  * "one typed function per seam-exposed op. No generic op-name dispatcher, no
@@ -38,6 +39,10 @@ import {
   type ServerProbeView,
   type ServerView,
   type SpaceLinkAuditEntry,
+  type SpaceLinkInboundAuditEntry,
+  type SpaceLinkInboundView,
+  type CrossSpaceRef,
+  type CrossSpaceRefRemoved,
   type CreateInviteInput,
   type InvitePreview,
   type InviteRedemption,
@@ -91,11 +96,16 @@ import {
   type SpaceCredentialVisibilityName,
   type NodeCredentialPolicyEntry,
   type NodeCredentialsStatusView,
+  type NodeAccountListView,
+  type PathGrantListView,
+  type PathGrantView,
   type NodeMetricsView,
   type SpaceCredentialProviderName,
   type SpaceCredentialStoredProviderName,
   type SpaceCredentialView,
   type SpaceLinkView,
+  type OpRequestStatus,
+  type OpRequestView,
   type CredentialsServiceKeysStatusView,
   type ServiceKeyProviderName,
   type ServiceKeyView,
@@ -190,6 +200,20 @@ import {
   type AuthSessionsRevokeResult,
   type ChatDefault,
   type ChatDefaultsView,
+  type PersonalStyleCreateInput,
+  type PersonalStyleUpdateInput,
+  type PersonalStylesListResult,
+  type PersonalStyleWriteResult,
+  type SpaceStyleDefaultView,
+  type SpaceStyleWriteResult,
+  type StyleDoc,
+  type StylePushInput,
+  type StylesResolveResult,
+  type StyleGetResult,
+  type StylePrefsGetResult,
+  type StylePrefsSetInput,
+  type StylePrefsSetResult,
+  type StylesListResult,
   type SpaceSummary,
   type TaskAxis,
   type TaskAxisInput,
@@ -210,7 +234,7 @@ import {
 import { measureSpawnTerminalSize } from '../../terminal/pty/terminalSize.js';
 
 import type { HttpClient, QueryParams } from './http';
-import type { AttentionV2Ops } from '../seam';
+import type { AttentionV2Ops, StyleVersionsPage } from '../seam';
 import type { ArtifactRevisionsList, BranchTopologyOpts, ConnectionOpts, FeedOpts, FileBlameOpts, FileHistoryOpts, GitDiffOpts, IdentityView, JournalOpts, LivenessSnapshot, MessageListOpts, PageOpts, TranscriptOpts } from '../seam';
 
 /**
@@ -678,6 +702,37 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       });
     },
 
+    // -- filesystem path grants (282; design doc 01a0fb62 §4) -----------------
+    // `node.*` rides the gate pass under enforce (auth/space-sessions.ts), which
+    // is what `require_gate_admin` needs; the caller's own list rides the pin.
+
+    nodePathGrantsList(includeRevoked = false): Promise<PathGrantListView> {
+      return http.call<PathGrantListView>('node.pathGrants.list', {
+        query: includeRevoked ? { includeRevoked: 'true' } : {},
+      });
+    },
+
+    nodePathGrantsCreate(accountId: string, rootPath: string, note?: string): Promise<PathGrantView> {
+      return http.call<PathGrantView>('node.pathGrants.create', {
+        body: { accountId, rootPath, ...(note ? { note } : {}), clientMutationId: newId('pathgrant') },
+      });
+    },
+
+    nodePathGrantsRevoke(grantId: string): Promise<PathGrantView> {
+      return http.call<PathGrantView>('node.pathGrants.revoke', {
+        params: { grantId },
+        body: { clientMutationId: newId('pathgrantrevoke') },
+      });
+    },
+
+    nodeAccountsList(): Promise<NodeAccountListView> {
+      return http.call<NodeAccountListView>('node.accounts.list');
+    },
+
+    myPathGrants(): Promise<PathGrantListView> {
+      return http.call<PathGrantListView>('identity.pathGrants.list');
+    },
+
     // -- space links (`spaceLinks.*`, W6) ------------------------------------
     // Every write is human-only server-side; no answer carries a stored session.
 
@@ -706,6 +761,72 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
     /** Bare array: own rows, or every row for a home admin (260). */
     spaceLinksAudit(linkId: EntityId): Promise<SpaceLinkAuditEntry[]> {
       return http.call<SpaceLinkAuditEntry[]>('spaceLinks.audit', { params: { linkId } });
+    },
+
+    // 278 (D2): the target side, for an admin of `spaceId`.
+    spaceLinksInboundList(spaceId: SpaceId): Promise<SpaceLinkInboundView[]> {
+      return http.call<SpaceLinkInboundView[]>('spaceLinks.inbound.list', { params: { spaceId } });
+    },
+
+    spaceLinksInboundAudit(spaceId: SpaceId, linkId?: EntityId): Promise<SpaceLinkInboundAuditEntry[]> {
+      return http.call<SpaceLinkInboundAuditEntry[]>('spaceLinks.inbound.audit', {
+        params: { spaceId },
+        ...(linkId === undefined ? {} : { query: { linkId } }),
+      });
+    },
+
+    spaceLinksInboundMutate(
+      op: 'spaceLinks.inbound.revoke' | 'spaceLinks.inbound.restore',
+      spaceId: SpaceId,
+      linkId: EntityId,
+    ): Promise<SpaceLinkInboundView> {
+      return http.call<SpaceLinkInboundView>(op, {
+        params: { spaceId, linkId },
+        body: { clientMutationId: newId('splinkin') },
+      });
+    },
+
+    // -- cross-space references (`entities.refs.*`, L3, 279) -------------------
+    // The UI reads and removes; agents add through a link (`tm8 entity ref add`).
+
+    crossSpaceRefsList(entityId: EntityId): Promise<CrossSpaceRef[]> {
+      return http.call<CrossSpaceRef[]>('entities.refs.list', { params: { id: entityId } });
+    },
+
+    crossSpaceRefsRemove(entityId: EntityId, refId: string): Promise<CrossSpaceRefRemoved> {
+      return http.call<CrossSpaceRefRemoved>('entities.refs.remove', {
+        params: { id: entityId, refId },
+        body: { clientMutationId: newId('xsref') },
+      });
+    },
+
+    // -- op requests (`opRequests.*`, L5, 280) -------------------------------
+    // approve/deny are human-only server-side; the server runs the op as the
+    // approver and reports the outcome to the requesting session.
+
+    /** Bare array, newest first. */
+    opRequestsList(spaceId: SpaceId, query?: { status?: OpRequestStatus; limit?: number }): Promise<OpRequestView[]> {
+      return http.call<OpRequestView[]>('opRequests.list', {
+        params: { spaceId },
+        ...(query?.status !== undefined || query?.limit !== undefined
+          ? { query: { status: query.status, limit: query.limit } }
+          : {}),
+      });
+    },
+
+    opRequestsGet(requestId: EntityId): Promise<OpRequestView> {
+      return http.call<OpRequestView>('opRequests.get', { params: { requestId } });
+    },
+
+    opRequestsDecide(
+      op: 'opRequests.approve' | 'opRequests.deny',
+      requestId: EntityId,
+      note?: string | null,
+    ): Promise<OpRequestDecision> {
+      return http.call<OpRequestDecision>(op, {
+        params: { requestId },
+        body: { ...(note ? { note } : {}), clientMutationId: newId('opreq') },
+      });
     },
 
     // -- remote servers (`servers.*`, W8) -------------------------------------
@@ -766,6 +887,92 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     chatDefaults(spaceId: SpaceId): Promise<ChatDefaultsView> {
       return http.call<ChatDefaultsView>('spaces.chatDefaults.get', { params: { spaceId } });
+    },
+
+    /** The caller's style prefs (`identity.stylePrefs.get`, styles spec §4.1); `prefs: null` = no row. */
+    stylePrefs(): Promise<StylePrefsGetResult> {
+      return http.call<StylePrefsGetResult>('identity.stylePrefs.get');
+    },
+
+    /** `identity.stylePrefs.set`: self only, `expectedRevision` guarded (0 = no row yet). */
+    setStylePrefs(input: Omit<StylePrefsSetInput, 'clientMutationId'>): Promise<StylePrefsSetResult> {
+      return http.call<StylePrefsSetResult>('identity.stylePrefs.set', {
+        body: { ...input, clientMutationId: newId('styleprefs') },
+      });
+    },
+
+    /** The space's default style (`spaces.styleDefault.get`); `revision: 0` = no row. */
+    styleDefault(spaceId: SpaceId): Promise<SpaceStyleDefaultView> {
+      return http.call<SpaceStyleDefaultView>('spaces.styleDefault.get', { params: { spaceId } });
+    },
+
+    /** One style by typed ref (`styles.get`): `builtin:*`, `space:<id>` or `personal:<id>`. */
+    style(ref: string): Promise<StyleGetResult> {
+      return http.call<StyleGetResult>('styles.get', { params: { ref } });
+    },
+
+    /** Built-ins then the space's styles (`styles.list`). */
+    styles(spaceId: SpaceId): Promise<StylesListResult> {
+      return http.call<StylesListResult>('styles.list', { params: { spaceId } });
+    },
+
+    /** The caller's personal styles (`styles.personal.list`). */
+    personalStyles(): Promise<PersonalStylesListResult> {
+      return http.call<PersonalStylesListResult>('styles.personal.list');
+    },
+
+    /** Copy a space style or built-in into a new personal style (`styles.pull`). */
+    pullStyle(ref: string, title?: string): Promise<PersonalStyleWriteResult> {
+      return http.call<PersonalStyleWriteResult>('styles.pull', {
+        params: { ref },
+        body: { clientMutationId: newId('stylepull'), ...(title ? { title } : {}) },
+      });
+    },
+
+    /** `styles.personal.create`: a new personal style from a doc or `from` a ref. */
+    createPersonalStyle(input: Omit<PersonalStyleCreateInput, 'clientMutationId'>): Promise<PersonalStyleWriteResult> {
+      return http.call<PersonalStyleWriteResult>('styles.personal.create', {
+        body: { ...input, clientMutationId: newId('stylecreate') },
+      });
+    },
+
+    /** `styles.personal.update`: owner only, `expectedVersion` guarded. */
+    updatePersonalStyle(
+      id: string,
+      input: Omit<PersonalStyleUpdateInput, 'clientMutationId'>,
+    ): Promise<PersonalStyleWriteResult> {
+      return http.call<PersonalStyleWriteResult>('styles.personal.update', {
+        params: { id },
+        body: { ...input, clientMutationId: newId('styleupdate') },
+      });
+    },
+
+    /** `styles.personal.delete`: owner only. */
+    async deletePersonalStyle(id: string, expectedVersion?: number): Promise<void> {
+      await http.call<unknown>('styles.personal.delete', {
+        params: { id },
+        body: { clientMutationId: newId('styledelete'), ...(expectedVersion ? { expectedVersion } : {}) },
+      });
+    },
+
+    /** `styles.push`: first push creates the space style, later pushes re-version it. */
+    pushStyle(input: Omit<StylePushInput, 'clientMutationId'>): Promise<SpaceStyleWriteResult> {
+      return http.call<SpaceStyleWriteResult>('styles.push', {
+        body: { ...input, clientMutationId: newId('stylepush') },
+      });
+    },
+
+    /** `styles.resolve`: lint only, nothing stored. */
+    resolveStyleDoc(doc: StyleDoc): Promise<StylesResolveResult> {
+      return http.call<StylesResolveResult>('styles.resolve', { body: { doc } });
+    },
+
+    /** `entities.versions` on a space style: the push history, newest first. */
+    styleVersions(entityId: string, cursor?: string | null): Promise<StyleVersionsPage> {
+      return http.call<StyleVersionsPage>('entities.versions', {
+        params: { id: entityId },
+        query: { limit: '20', ...(cursor ? { cursor } : {}) },
+      });
     },
 
     authSessions(spaceId: SpaceId | null): Promise<AuthSessionsListResult> {

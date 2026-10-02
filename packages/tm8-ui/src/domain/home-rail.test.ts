@@ -94,6 +94,8 @@ describe('the Home icon rail', () => {
       'credential',
       'space_link',
       'server',
+      'op_request',
+      'style',
       'loop',
       'spell',
       'container',

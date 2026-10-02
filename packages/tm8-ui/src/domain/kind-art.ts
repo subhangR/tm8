@@ -276,6 +276,28 @@ export const KIND_ART = {
   ],
 
   /**
+   * A shield with a check (`shield-check`) — an op request asks a human to
+   * vouch for one operation an agent may not run itself (280). Not a key:
+   * that silhouette is `credential`'s.
+   */
+  op_request: [
+    'M8 2.4 12.8 4.2v3.7c0 2.8-2 4.9-4.8 5.9-2.8-1-4.8-3.1-4.8-5.9V4.2z',
+    'M5.9 8.1 7.3 9.5 10.1 6.6',
+  ],
+
+  /**
+   * A painter's palette — a `style` is a theme for the whole UI (284). The
+   * thumb hole and three paint wells are what keep it from reading as a
+   * generic blob or as `drawing`'s pencil at 16px.
+   */
+  style: [
+    'M8 2.6c-3 0-5.4 2.2-5.4 5 0 2.8 2.4 5.8 5.4 5.8.9 0 1.4-.6 1.4-1.3 0-.9-.7-1.2-.7-2 0-.7.6-1.2 1.4-1.2h1.5c1.8 0 2.8-1.1 2.8-2.6 0-2-2.2-3.7-4.9-3.7z',
+    'M5.2 7.4a0.8 0.8 0 1 0 0-1.6 0.8 0.8 0 0 0 0 1.6z',
+    'M7.6 5.4a0.8 0.8 0 1 0 0-1.6 0.8 0.8 0 0 0 0 1.6z',
+    'M10.4 6a0.8 0.8 0 1 0 0-1.6 0.8 0.8 0 0 0 0 1.6z',
+  ],
+
+  /**
    * The custom-kind fallback. A plain diamond ON PURPOSE: it is the one mark
    * that must say "this kind has no artwork of its own", so it stays the
    * neutral shape the old set used for exactly that job.

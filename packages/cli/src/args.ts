@@ -78,6 +78,7 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   'all',                 // skill scan --all
   'off',                 // entity react --off
   'ready',               // entity query --ready
+  'roots',               // entity query --roots — top-level rows only (= --parent none)
   'unread',              // inbox list --unread
   'until-match',         // event watch --until-match
   'events',              // event changes --events — thin rows instead of the digest
@@ -116,6 +117,15 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   'open',                // form create — start open (agents' default)
   'draft',               // form create — start as a draft (humans' default)
   'first',               // form question add|move — put the question first
+  'include-revoked',     // node path-grant list — add revoked grants (282)
+  // Styles (styles spec v8 §5).
+  'mine',                // style list — personal styles only
+  'space-only',          // style list — space styles only
+  'resolved',            // style get — include the resolved token table
+  'strict',              // style resolve — exit 2 when there are warnings
+  'follow-os',           // style use — pick the dark style when the OS is dark...
+  'no-follow-os',        // ...and its opposite; passing both is refused
+  'trust-css',           // style use — allow the named space style's css
 ]);
 
 /**
@@ -371,6 +381,15 @@ export function parseInvocation(argv: readonly string[]): ParsedInvocation {
     }
     if (eq !== -1) {
       record(name, body.slice(eq + 1));
+      continue;
+    }
+    // A STYLE VARIABLE (`tm8 style set|unset|create`). `--pn-brand=#4F7DF3`
+    // carries its value after `=` (handled above); a bare `--pn-paper` is a
+    // NAME, so it never consumes the next token — `unset` lists several in a
+    // row, and the value-taking rule would eat each one as the previous one's
+    // value. The variable namespace is open, so it cannot be an allowlist.
+    if (body.startsWith('pn-')) {
+      record(body, true);
       continue;
     }
     if (BOOLEAN_OPTIONS.has(body) && !COMMAND_SCOPED_GLOBALS.has(body)) {

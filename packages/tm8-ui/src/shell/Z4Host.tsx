@@ -15,6 +15,7 @@
  *    second copy of a panel that is also rendered in the center.
  */
 import type { EntityId } from '@tm8/contract';
+import { useAlwaysDarkTheme } from '../theme/useAlwaysDarkTheme';
 
 export interface Z4HostProps {
   entityId: EntityId;
@@ -38,6 +39,7 @@ export interface Z4HostProps {
 }
 
 export function Z4Host({ entityId, children, onCollapse, immersive, followTheme }: Z4HostProps) {
+  const alwaysDarkTheme = useAlwaysDarkTheme();
   return (
     <div
       className={`shell-z4 ${immersive ? 'shell-z4--immersive' : ''}`}
@@ -45,7 +47,7 @@ export function Z4Host({ entityId, children, onCollapse, immersive, followTheme 
       data-entity-id={entityId}
       data-immersive={immersive || undefined}
       // The stage is dark in both themes, as in the workspace center (§12).
-      data-theme={followTheme ? undefined : 'dark'}
+      data-theme={followTheme ? undefined : alwaysDarkTheme}
       data-always-dark={followTheme ? undefined : 'true'}
       role="region"
       aria-label="Full view"

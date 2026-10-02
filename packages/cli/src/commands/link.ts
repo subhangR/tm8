@@ -6,6 +6,15 @@
  *   link login <alias|link-id>     spaceLinks.login (human sessions only)
  *   link audit <alias|link-id>     spaceLinks.audit (own rows; every row for a home admin)
  *
+ * And from the TARGET Space (278, D2), for its admins:
+ *
+ *   link inbound                   spaceLinks.inbound.list    (links into this Space)
+ *   link inbound-audit [<ref>]     spaceLinks.inbound.audit   (calls made into this Space)
+ *   link revoke <ref>              spaceLinks.inbound.revoke  (human sessions only)
+ *   link restore <ref>             spaceLinks.inbound.restore (human sessions only)
+ *
+ * An inbound <ref> is the link id or the linking (home) Space's id.
+ *
  * The writes are refused to agents by the Server (the handler guard and the
  * SQL gate); this file adds no check and no bypass, and renders the refusal
  * with the one thing an agent can do about it: ask its human.
@@ -15,7 +24,14 @@
  * this file prints — success and failure — first passes `scrubSecrets`: a
  * token-shaped string is replaced, never shortened into a longer hint.
  */
-import { getOperation, isOperationName, type SpaceLinkAuditEntry, type SpaceLinkView } from '@tm8/contract';
+import {
+  getOperation,
+  isOperationName,
+  type SpaceLinkAuditEntry,
+  type SpaceLinkInboundAuditEntry,
+  type SpaceLinkInboundView,
+  type SpaceLinkView,
+} from '@tm8/contract';
 import { requireSpace } from '../context.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
 import { ApiError } from '../errors.js';
@@ -95,7 +111,8 @@ function scrubbedError(err: unknown): unknown {
     );
     if (err.hint !== undefined) next.hint = scrubText(err.hint);
     if (refusedAsHumanOnly(err)) {
-      next.hint = 'space link writes are human-only: ask your human to run this `tm8 link` command';
+      next.hint = 'space link writes are human-only: ask your human to run this `tm8 link` command, '
+        + 'or file it for approval with `tm8 request create spaceLinks.add --input \'{"targetSpaceId":"<id>"}\' --justification <why>`';
     }
     return next;
   }
@@ -212,9 +229,97 @@ async function linkAudit(cmd: CommandContext): Promise<ExitCode> {
   });
 }
 
+// -- the TARGET side (278, D2) ----------------------------------------------
+
+async function listInbound(cmd: CommandContext): Promise<SpaceLinkInboundView[]> {
+  return (
+    (await observedInvoke<SpaceLinkInboundView[]>(clientFor(cmd.ctx), 'spaceLinks.inbound.list', {
+      params: { spaceId: requireSpace(cmd.ctx) },
+    })) ?? []
+  );
+}
+
+/** A link id or the linking Space's id, among the links into this Space → the link id. */
+async function inboundLinkIdFor(cmd: CommandContext, ref: string): Promise<string> {
+  const needle = ref.toLowerCase();
+  const view = (await listInbound(cmd)).find((v) => v.id === needle || v.homeSpaceId === needle);
+  if (view) return view.id;
+  throw new CliError(`no space link ${JSON.stringify(ref)} into this Space`, EXIT_USAGE, {
+    hint: 'list the links into this Space with `tm8 link inbound`',
+  });
+}
+
+function renderInbound(v: SpaceLinkInboundView): string {
+  const home = v.homeSpaceName ? `${v.homeSpaceName} (${v.homeSpaceId})` : v.homeSpaceId;
+  const state = v.revokedAt ? `REVOKED ${v.revokedAt}` : 'active';
+  const holders = v.holders.length === 0
+    ? '  no Member holds a row'
+    : v.holders.map((h) => `  ${h.displayName ?? h.targetMemberId ?? '(not a Member here)'}: ${h.status}`
+      + `${h.lastUsedAt ? `, last used ${h.lastUsedAt}` : ''}`).join('\n');
+  return `${v.id} ← ${home}: ${state}${v.lastCallAt ? `; last call ${v.lastCallAt}` : ''}\n${holders}`;
+}
+
+function renderInboundAudit(rows: SpaceLinkInboundAuditEntry[]): string {
+  if (rows.length === 0) return 'no calls into this Space through a link';
+  return rows
+    .map((r) => `${r.createdAt}  ${r.result.padEnd(7)} ${r.op}${r.reason ? ` (${r.reason})` : ''}`
+      + `  by ${r.displayName ?? r.targetMemberId ?? '?'} via ${r.linkId}`)
+    .join('\n');
+}
+
+async function linkInbound(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, []);
+  return scrubbed(async () => {
+    const views = scrubSecrets(await listInbound(cmd));
+    cmd.out.data(views, (dto) => (dto.length === 0 ? 'no space links into this Space' : dto.map(renderInbound).join('\n')));
+    return EXIT_OK;
+  });
+}
+
+async function linkInboundAudit(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['limit', 'before']);
+  const ref = cmd.args[0]?.trim();
+  return scrubbed(async () => {
+    const limit = cmd.options.integer('limit');
+    const before = cmd.options.value('before');
+    const linkId = ref ? await inboundLinkIdFor(cmd, ref) : undefined;
+    const rows = await observedInvoke<SpaceLinkInboundAuditEntry[]>(clientFor(cmd.ctx), 'spaceLinks.inbound.audit', {
+      params: { spaceId: requireSpace(cmd.ctx) },
+      query: {
+        ...(linkId === undefined ? {} : { linkId }),
+        ...(limit === undefined ? {} : { limit: String(limit) }),
+        ...(before === undefined ? {} : { before }),
+      },
+    });
+    cmd.out.data(scrubSecrets(rows ?? []), renderInboundAudit);
+    return EXIT_OK;
+  });
+}
+
+function linkInboundWrite(revoke: boolean) {
+  const command = revoke ? 'link revoke' : 'link restore';
+  return async (cmd: CommandContext): Promise<ExitCode> => {
+    assertKnownOptions(cmd, ['mutation-id']);
+    const ref = requireArg(cmd.args[0], command, `the <link-id|home-space-id> to ${revoke ? 'revoke' : 'restore'}`);
+    return scrubbed(async () => {
+      const view = await observedInvoke<SpaceLinkInboundView>(
+        clientFor(cmd.ctx), revoke ? 'spaceLinks.inbound.revoke' : 'spaceLinks.inbound.restore', {
+          params: { spaceId: requireSpace(cmd.ctx), linkId: await inboundLinkIdFor(cmd, ref) },
+          body: { clientMutationId: resolveMutationId(cmd.options.value('mutation-id')) },
+        });
+      cmd.out.data(scrubSecrets(view), (dto) => `${revoke ? 'revoked' : 'restored'}: ${renderInbound(dto)}`);
+      return EXIT_OK;
+    });
+  };
+}
+
 export const LINK_COMMANDS: CommandModule[] = [
   { path: ['link', 'list'], run: linkList },
   { path: ['link', 'add'], run: linkAdd },
   { path: ['link', 'login'], run: linkLogin },
   { path: ['link', 'audit'], run: linkAudit },
+  { path: ['link', 'inbound'], run: linkInbound },
+  { path: ['link', 'inbound-audit'], run: linkInboundAudit },
+  { path: ['link', 'revoke'], run: linkInboundWrite(true) },
+  { path: ['link', 'restore'], run: linkInboundWrite(false) },
 ];

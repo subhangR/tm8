@@ -123,6 +123,26 @@ export const OPERATIONS = [
   { name: 'spaceLinks.invoke',   method: 'POST',   path: '/v2/spaces/:spaceId/space-links/:link/invoke', kind: 'command', status: 'v1' },
   // W7: the home-space audit of invokes — the member's own rows, all rows for a home admin.
   { name: 'spaceLinks.audit',    method: 'GET',    path: '/v2/space-links/:linkId/audit',     kind: 'read',    status: 'v1' },
+  // 278 (D2): the TARGET side. An admin of :spaceId sees the links into it and
+  // the calls made through them, and revokes or restores a link. Reads pass a
+  // link; revoke/restore are human-only in SQL and refused through a link.
+  { name: 'spaceLinks.inbound.list',    method: 'GET',  path: '/v2/spaces/:spaceId/space-links/inbound',                 kind: 'read',    status: 'v1' },
+  { name: 'spaceLinks.inbound.audit',   method: 'GET',  path: '/v2/spaces/:spaceId/space-links/inbound/audit',           kind: 'read',    status: 'v1' },
+  { name: 'spaceLinks.inbound.revoke',  method: 'POST', path: '/v2/spaces/:spaceId/space-links/inbound/:linkId/revoke',  kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'spaceLinks.inbound.restore', method: 'POST', path: '/v2/spaces/:spaceId/space-links/inbound/:linkId/restore', kind: 'command', status: 'v1', humanOnly: true },
+  // L3 (279): an entity's references into linked spaces. Not edges (D3); add
+  // needs the caller's own signed-in link (D7) and reads B through it first.
+  { name: 'entities.refs.list',   method: 'GET',    path: '/v2/entities/:id/refs',             kind: 'read',    status: 'v1' },
+  { name: 'entities.refs.add',    method: 'POST',   path: '/v2/entities/:id/refs',             kind: 'command', status: 'v1' },
+  { name: 'entities.refs.remove', method: 'DELETE', path: '/v2/entities/:id/refs/:refId',      kind: 'command', status: 'v1' },
+  // Op requests (L5, D5, 280): an agent asks for a human-only op from the
+  // OP_REQUESTABLE allow-list; a human approves and the server runs it as the
+  // approver, or denies it. approve/deny are human-only.
+  { name: 'opRequests.list',    method: 'GET',  path: '/v2/spaces/:spaceId/op-requests',     kind: 'read',    status: 'v1' },
+  { name: 'opRequests.create',  method: 'POST', path: '/v2/spaces/:spaceId/op-requests',     kind: 'command', status: 'v1' },
+  { name: 'opRequests.get',     method: 'GET',  path: '/v2/op-requests/:requestId',          kind: 'read',    status: 'v1' },
+  { name: 'opRequests.approve', method: 'POST', path: '/v2/op-requests/:requestId/approve',  kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'opRequests.deny',    method: 'POST', path: '/v2/op-requests/:requestId/deny',     kind: 'command', status: 'v1', humanOnly: true },
   // Remote servers (W8, 261): `server` entities over 044's read-only rows.
   // add/adopt/remove are human-only in SQL; no response carries a gate token.
   { name: 'servers.list',   method: 'GET',  path: '/v2/spaces/:spaceId/servers',  kind: 'read',    status: 'v1' },
@@ -448,6 +468,27 @@ export const OPERATIONS = [
   // claim. Server-authorized, no space, no actor.
   { name: 'identity.profile.update',                     method: 'POST',   path: '/v2/identity/profile',                                               kind: 'command', status: 'v1' },
 
+  // Styles (styles spec 01a0fc22 v8 §4.1, migration 284). PERSONAL styles are
+  // the caller's own (owner-only table, no space); SPACE styles are read-only
+  // `style` entities written only by `styles.push`. `styles.resolve` is a read:
+  // it lints a document and stores nothing. The space default is human-admin
+  // only (`require_human_space_admin`), so agents cannot set it.
+  { name: 'styles.personal.list',                      method: 'GET',   path: '/v2/identity/styles',                                        kind: 'read',    status: 'v1' },
+  { name: 'styles.personal.create',                    method: 'POST',  path: '/v2/identity/styles',                                        kind: 'command', status: 'v1' },
+  { name: 'styles.personal.update',                    method: 'PATCH', path: '/v2/identity/styles/:id',                                    kind: 'command', status: 'v1' },
+  { name: 'styles.personal.delete',                    method: 'DELETE', path: '/v2/identity/styles/:id',                                    kind: 'command', status: 'v1' },
+  { name: 'styles.list',                               method: 'GET',   path: '/v2/spaces/:spaceId/styles',                                 kind: 'read',    status: 'v1' },
+  { name: 'styles.get',                                method: 'GET',   path: '/v2/styles/:ref',                                            kind: 'read',    status: 'v1' },
+  { name: 'styles.push',                               method: 'POST',  path: '/v2/styles/push',                                            kind: 'command', status: 'v1' },
+  { name: 'styles.pull',                               method: 'POST',  path: '/v2/styles/:ref/pull',                                       kind: 'command', status: 'v1' },
+  { name: 'styles.remove',                             method: 'POST',  path: '/v2/styles/:ref/remove',                                     kind: 'command', status: 'v1' },
+  { name: 'styles.resolve',                            method: 'POST',  path: '/v2/styles/resolve',                                         kind: 'read',    status: 'v1' },
+  { name: 'styles.export',                             method: 'GET',   path: '/v2/styles/:ref/export',                                     kind: 'read',    status: 'v1' },
+  { name: 'identity.stylePrefs.get',                   method: 'GET',   path: '/v2/identity/style-prefs',                                   kind: 'read',    status: 'v1' },
+  { name: 'identity.stylePrefs.set',                   method: 'PUT',   path: '/v2/identity/style-prefs',                                   kind: 'command', status: 'v1' },
+  { name: 'spaces.styleDefault.get',                   method: 'GET',   path: '/v2/spaces/:spaceId/style-default',                          kind: 'read',    status: 'v1' },
+  { name: 'spaces.styleDefault.set',                   method: 'PUT',   path: '/v2/spaces/:spaceId/style-default',                          kind: 'command', status: 'v1', humanOnly: true },
+
   // Identity v2 Stage 1 (doc 4 §6): local accounts. The four operations the UI
   // asked for as MISSING_AUTH_OPS — now wired by its gate as GATE_AUTH_OPS
   // (tm8-ui src/auth). `auth.signup` is node-admin gated — never open
@@ -586,6 +627,15 @@ export const OPERATIONS = [
   // The node's own fallback credentials (D5/D9): node admin, and human-only.
   { name: 'node.credentials.status',                     method: 'GET',    path: '/v2/node/credentials',                                               kind: 'read',    status: 'v1', humanOnly: true },
   { name: 'node.credentials.policy.set',                 method: 'PUT',    path: '/v2/node/credential-policy/:provider',                               kind: 'command', status: 'v1', humanOnly: true },
+  // Space-scoped projects L1 (migration 282, doc 01a0fb62 §4): a node admin
+  // grants one account one filesystem root to browse and select under. Gate
+  // admin on the server and in SQL; `identity.pathGrants.list` is the caller's
+  // own live grants, what the Create Project page reads.
+  { name: 'node.pathGrants.list',                        method: 'GET',    path: '/v2/node/path-grants',                                               kind: 'read',    status: 'v1' },
+  { name: 'node.pathGrants.create',                      method: 'POST',   path: '/v2/node/path-grants',                                               kind: 'command', status: 'v1' },
+  { name: 'node.pathGrants.revoke',                      method: 'POST',   path: '/v2/node/path-grants/:grantId/revoke',                               kind: 'command', status: 'v1' },
+  { name: 'node.accounts.list',                          method: 'GET',    path: '/v2/node/accounts',                                                  kind: 'read',    status: 'v1' },
+  { name: 'identity.pathGrants.list',                    method: 'GET',    path: '/v2/identity/path-grants',                                           kind: 'read',    status: 'v1' },
   // Host metrics for the desktop status strip: node admin, human sessions only.
   { name: 'node.metrics.get',                            method: 'GET',    path: '/v2/node/metrics',                                                   kind: 'read',    status: 'v1' },
 

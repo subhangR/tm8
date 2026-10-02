@@ -59,6 +59,7 @@ import { WORKTREE_GIT_TIER2_COMMANDS } from './worktree-git-tier2.js';
 import { INTERACTION_PROFILE_COMMANDS } from './interaction-profile.js';
 import { PROFILE_DEFAULT_COMMANDS } from './teammate.js';
 import { ENTITY_COMMANDS } from './entity.js';
+import { ENTITY_REF_COMMANDS } from './entity-ref.js';
 import { ATTENTION_COMMANDS } from './attention.js';
 import { TASK_COMMANDS } from './task.js';
 import { TRACKING_COMMANDS } from './tracking.js';
@@ -71,6 +72,9 @@ import { VOICE_COMMANDS } from './voice.js';
 import { CONTAINER_COMMANDS } from './container.js';
 import { FORM_COMMANDS } from './form.js';
 import { LINK_COMMANDS } from './link.js';
+import { DISCOVERABILITY_COMMANDS } from './discoverability.js';
+import { REQUEST_COMMANDS } from './request.js';
+import { STYLE_COMMANDS } from './style.js';
 
 /**
  * Root discovery commands (§4.16). Not domain grammar: they take no Space, no
@@ -138,6 +142,7 @@ export const COMMANDS: CommandModule[] = [
   ...INTERACTION_PROFILE_COMMANDS,
   ...PROFILE_DEFAULT_COMMANDS,
   ...ENTITY_COMMANDS,
+  ...ENTITY_REF_COMMANDS,
   ...ATTENTION_COMMANDS,
   ...TASK_COMMANDS,
   ...TRACKING_COMMANDS,
@@ -149,6 +154,9 @@ export const COMMANDS: CommandModule[] = [
   ...CONTAINER_COMMANDS,
   ...FORM_COMMANDS,
   ...LINK_COMMANDS,
+  ...DISCOVERABILITY_COMMANDS,
+  ...REQUEST_COMMANDS,
+  ...STYLE_COMMANDS,
 ];
 
 const REGISTERED = new Map<string, CommandModule>(COMMANDS.map((c) => [c.path.join(' '), c]));

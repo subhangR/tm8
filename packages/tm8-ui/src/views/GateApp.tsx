@@ -76,6 +76,9 @@ import { useLaunchSheet } from './useLaunchSheet';
 import { REFERENCE_KINDS } from '../domain/launch-selection';
 import { useLaunchPort } from './useLaunchPort';
 import { useTheme } from '../theme/useTheme';
+import { useStyleSync } from '../theme/useStyleSync';
+import { StylePicker } from '../theme/StylePicker';
+import { StyleEditorHost } from '../theme/StyleEditorHost';
 import { AccountMenu, AuthFlow, authTokenFor, noteServerOrigin, signOut, useAuthActions } from '../auth';
 import { spaceSessionFor } from '../auth/space-sessions';
 import { WorkspaceView } from './WorkspaceView';
@@ -98,11 +101,13 @@ import { nodeKeyOf } from '../data/launch-cache';
 import {
   CredentialsSection,
   CredentialsSetupDialog,
+  FilesystemAccessSection,
   NodeCredentialsSection,
   SpaceCredentialsSection,
   credentialSetupState,
   credentialsPortFromSeam,
   spaceCredentialsPortFromSeam,
+  filesystemAccessPortFromSeam,
   serviceKeysPortFromSeam,
   readSetupDismissed,
   setupNudgeOf,
@@ -398,6 +403,9 @@ export function GateApp(props: GateAppProps = {}) {
   // unpersisted useState seeded to light, so every reload discarded the
   // viewer's choice. The control's home is still the account menu (D1).
   const { theme, setTheme, toggle: toggleTheme } = useTheme();
+  /* Styles (spec v8 §1.6, §3.6): the viewer's prefs, the space default and the
+     live style events. One owner for both shells, like the theme above. */
+  useStyleSync(data.seam, data.spaceId || null, data.viewerActor?.id ?? null);
   /**
    * THE MENU RAIL STARTS COLLAPSED, and remembers what the viewer did next.
    *
@@ -1634,6 +1642,8 @@ export function GateApp(props: GateAppProps = {}) {
       : null),
     [data.seam, data.spaceId],
   );
+  // 282: node folder grants. Node-level, so no space is bound; null off-node.
+  const filesystemAccessPort = useMemo(() => filesystemAccessPortFromSeam(data.seam), [data.seam]);
   // W6: links from this space to the viewer's other spaces, on the same pair.
   const spaceLinksPort = useMemo(
     () => (data.spaceId ? spaceLinksPortFromSeam(data.seam, data.spaceId) : null),
@@ -1905,6 +1915,9 @@ export function GateApp(props: GateAppProps = {}) {
           }}
           theme={theme}
           onThemeChange={setTheme}
+          stylePicker={
+            <StylePicker seam={data.seam} spaceId={data.spaceId || null} members={data.members} variant="sheet" />
+          }
           /*
            * DEF-004 — THE LAUNCH FLOW, HANDED TO THE PHONE.
            *
@@ -1940,6 +1953,7 @@ export function GateApp(props: GateAppProps = {}) {
           notices={<NoticeHost notices={notices.notices} onDismiss={notices.dismiss} />}
         />
         <AttentionUndoToast />
+        <StyleEditorHost seam={data.seam} spaceId={data.spaceId || null} members={data.members} />
       </div>
     );
   }
@@ -2113,6 +2127,9 @@ export function GateApp(props: GateAppProps = {}) {
                 actor={data.viewerActor}
                 theme={theme}
                 onThemeChange={setTheme}
+                stylePicker={
+                  <StylePicker seam={data.seam} spaceId={data.spaceId || null} members={data.members} />
+                }
                 agentToolsNudge={setupNudge}
                 {...(credentialsPort ? { onOpenAgentTools: () => setSetupOpen(true) } : {})}
                 /* R21 — THE UTILITY GROUP, and it is wired ONLY for the current
@@ -2675,6 +2692,7 @@ export function GateApp(props: GateAppProps = {}) {
                         ? {
                             'space-credentials': <SpaceCredentialsSection port={spaceCredentialsPort} serverBaseUrl={activeServer.routeBaseUrl} onOpen={openFromSettings} />,
                             'node-credentials': <NodeCredentialsSection port={spaceCredentialsPort} />,
+                            'filesystem-access': <FilesystemAccessSection port={filesystemAccessPort} />,
                           }
                         : {}),
                       ...(branchesPort
@@ -3002,6 +3020,7 @@ export function GateApp(props: GateAppProps = {}) {
         ) : null}
       </div>
       <AttentionUndoToast />
+      <StyleEditorHost seam={data.seam} spaceId={data.spaceId || null} members={data.members} />
     </div>
   );
 }

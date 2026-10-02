@@ -5,8 +5,17 @@
  * SPACE_LINK_REFUSED / spaceLinkRefusal, or listed in PASSES below with why
  * it starts nothing. A new op in a watched namespace, or with a watched word in
  * its name, fails this test until someone decides which it is.
+ *
+ * W7b (lane L4) DELIBERATELY reverses #884's "no link spawn" for three ops.
+ * The owner decided it in form response 01a0fbb4 (decisions D1, D4 and D8:
+ * "if link is there spawn for now", no budget): `execution.spawn`,
+ * `execution.resume` and `execution.dispatch` are SPACE_LINK_SPAWN_OPS. They
+ * are classified here as passing BY SWITCH: refused while the caller's row has
+ * allow_spawn off (or unread), passing only while it is on. Explicit credential
+ * fields stay refused whatever the switch. `chat.start`, `chat.setModel`,
+ * `execution.prompt` and `execution.terminal.start` stay refused.
  */
-import { OPERATIONS, SPACE_LINK_REFUSED, spaceLinkRefusal } from '@tm8/contract';
+import { OPERATIONS, SPACE_LINK_REFUSED, SPACE_LINK_SPAWN_OPS, spaceLinkRefusal } from '@tm8/contract';
 import { describe, expect, it } from 'vitest';
 
 const WATCHED_NAMESPACE = /^(execution|containers|chat|launch|voice|auth|serverConnections|credentials|node\.credentials|spaceLinks|files|artifacts|projects\.folderUploads|forms|agent|agents|sessions)\./;
@@ -51,6 +60,8 @@ const PASSES: Record<string, string> = {
   'messages.attachments.remove': 'unlinks',
   'spaceLinks.list': 'read of the member\'s own links, no token',
   'spaceLinks.audit': 'read of audit rows, no token',
+  'spaceLinks.inbound.list': 'read of the links into B, B admin only in SQL (278); no token',
+  'spaceLinks.inbound.audit': 'read of audit rows scoped to B, B admin only in SQL (278); no token',
   'forms.create': 'refused by INPUT when its delivery can resume or spawn (formDeliveryCanStart)',
   'forms.update': 'refused by INPUT when it sets a delivery that can resume or spawn',
   'forms.responses.save': 'a draft; delivers nothing',
@@ -64,6 +75,13 @@ const PASSES: Record<string, string> = {
   'forms.questions.move': 'edit',
   'forms.questions.remove': 'edit',
   'forms.questions.update': 'edit',
+};
+
+/** Start ops that pass only with the row's allow_spawn on (W7b, owner form response 01a0fbb4). */
+const BY_SWITCH: Record<string, string> = {
+  'execution.spawn': 'starts a session in B: only with allow_spawn on; B\'s default credential only (W7b)',
+  'execution.resume': 'resumes a session in B: only with allow_spawn on; re-minted under the link (W7b)',
+  'execution.dispatch': 'may spawn B\'s dispatcher: only with allow_spawn on (W7b)',
 };
 
 /** PASSES entries refused or admitted by their INPUT; the name alone decides nothing. */
@@ -82,12 +100,43 @@ describe('spaceLinks.invoke classification — every start, grant and session-bo
     }
   });
 
-  it('every watched op is refused at home or listed in PASSES with a reason', () => {
+  it('every watched op is refused at home or listed in PASSES or BY_SWITCH with a reason', () => {
     const unclassified = watched
       .filter((o) => refusedByName(o.name, o.kind as 'read' | 'command' | 'stream') === null && o.kind !== 'stream')
       .map((o) => o.name)
-      .filter((name) => !(name in PASSES));
+      .filter((name) => !(name in PASSES) && !(name in BY_SWITCH));
     expect(unclassified).toEqual([]);
+  });
+
+  it('BY_SWITCH is exactly SPACE_LINK_SPAWN_OPS: refused with allow_spawn off or unknown, passing only when on', () => {
+    expect(Object.keys(BY_SWITCH).sort()).toEqual([...SPACE_LINK_SPAWN_OPS].sort());
+    for (const op of SPACE_LINK_SPAWN_OPS) {
+      expect(spaceLinkRefusal(op, 'command', {}, false)).toBe('spawn_switch_off');
+      expect(spaceLinkRefusal(op, 'command', {}, true)).toBeNull();
+      // Before the row is read the switch is unknown: not refused by it, and
+      // the invoke handler re-checks with the row's value (fail closed).
+      expect(spaceLinkRefusal(op, 'command', {}, undefined)).toBeNull();
+    }
+  });
+
+  it('a spawn op naming a credential source is refused whatever the switch (F9, K11)', () => {
+    for (const input of [{ credentialSources: { anthropic: 'space' } }, { credentialSource: 'member' }, { spaceCredentialIds: { anthropic: 'x' } }]) {
+      for (const allow of [true, false, undefined]) {
+        expect(spaceLinkRefusal('execution.spawn', 'command', input, allow)).toBe('spawn_explicit_credentials');
+      }
+    }
+  });
+
+  it('the other session starts stay refused at home (process_start), switch on', () => {
+    for (const op of ['chat.start', 'chat.setModel', 'execution.prompt', 'execution.terminal.start', 'forms.responses.submit']) {
+      expect(spaceLinkRefusal(op, 'command', {}, true)).toBe('process_start');
+    }
+  });
+
+  it('entities.refs.add is refused through a link (L3: no transitive link use); list and remove pass', () => {
+    expect(spaceLinkRefusal('entities.refs.add', 'command', {}, true)).toBe('link_management');
+    expect(spaceLinkRefusal('entities.refs.list', 'read', {}, true)).toBeNull();
+    expect(spaceLinkRefusal('entities.refs.remove', 'command', {}, true)).toBeNull();
   });
 
   it('PASSES holds no op that is refused anyway, and no op missing from the catalog', () => {
@@ -96,6 +145,7 @@ describe('spaceLinks.invoke classification — every start, grant and session-bo
     expect(stale).toEqual([]);
     const refused = Object.keys(PASSES).filter((name) => !BY_INPUT.has(name) && refusedByName(name, byName.get(name)!.kind as 'read' | 'command') !== null);
     expect(refused).toEqual([]);
+    expect(Object.keys(BY_SWITCH).filter((name) => name in PASSES)).toEqual([]);
   });
 
   it('every exact refused entry names a real catalog op (a typo would refuse nothing)', () => {

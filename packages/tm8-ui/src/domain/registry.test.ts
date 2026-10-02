@@ -60,9 +60,11 @@ describe('totality over the frozen core-kind set (WLT §2.1)', () => {
     // .options.length` here would make the assertion tautological and the row
     // below could silently drift from the contract again.
     // 25 -> 26 (W10a): `credential`; 26 -> 28 (W6): `space_link` + `server`.
+    // 28 -> 29 (L5, migration 280): `op_request`.
     // 28 -> 29 (283): `story`.
     // MEASURED: CoreEntityKindSchema.options.length.
-    expect(CORE_KINDS.length).toBe(29);
+    // 28 -> 29 (280): `op_request`. 29 -> 31 (283, 284): `story`, `style`.
+    expect(CORE_KINDS.length).toBe(31);
     expect(allKinds()).toHaveLength(CORE_KINDS.length + 1);
     expect(allKinds().filter((r) => r.kind === CUSTOM_KIND_FALLBACK)).toHaveLength(1);
   });
@@ -220,6 +222,9 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
       guideLines: true,
       messagePulse: true,
     });
+    // #16: a child story nests under its parent instead of sitting flat
+    // beside the roots.
+    expect(getKind('story').list.tree).toEqual({ by: 'hierarchy', guideLines: true });
   });
 
   it('3. inline status / edit / complete → list.inlineEdit + list.rowActions (B1)', () => {

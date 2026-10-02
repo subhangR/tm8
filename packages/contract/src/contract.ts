@@ -20,10 +20,12 @@
 import type { EffectiveSkills, SkillReference } from './skill-reference.js';
 import type { OperationName } from './catalog.js';
 import type { FormQuestionRow, FormSectionRow, FormSettings, FormStatus } from './forms.js';
+import type { OpRequestStatus } from './op-requests.js';
 import type { RelevanceLevel } from './launch-suggest.js';
 import type { CoherenceFinding } from './orchestration.js';
 import type { EntityHeaderView, HeaderTextInput } from './selection-header.js';
 import type { EntityContextStory, StoryContent, StoryState } from './story.js';
+import type { ResolvedStyle, StyleClamp, StyleDoc, StyleWarning } from './style.js';
 
 // ===========================================================================
 // §1 — Inherited contract (UI snapshot, near-verbatim)
@@ -84,11 +86,20 @@ export type CoreEntityKind =
   | 'space_link'
   // A remote tm8 server a space link points at (W8). Registered with W6's kinds.
   | 'server'
+  // Op requests (280, L5): an agent's typed request for a human-only op. A
+  // human approves (the server runs the op as the approver) or denies it.
+  // Born only from `opRequests.create`.
+  | 'op_request'
   // Stories (migration 283, 2026-10-02): a title, a description and a status;
   // things put in by hand as `contains` edges are its roots, and everything
   // connected to them follows. Progress and the page are computed at read
   // time, never stored. See ./story.ts.
-  | 'story';
+  | 'story'
+  // Space styles (migration 284, styles spec 01a0fc22 v8 §3.3): a published,
+  // READ-ONLY theme in a space. Born and re-versioned only by `styles.push`;
+  // `entities.create`/`entities.patch` refuse it. Personal styles are NOT
+  // entities (they live in `personal_styles`, owner-only).
+  | 'style';
 
 /** A credential entity's visibility (W10a): who may launch on it. */
 export type CredentialVisibility = 'private' | 'public';
@@ -536,6 +547,16 @@ export type CoreEntityState =
    */
   | { kind: 'space_link' }
   | { kind: 'server' }
+  /** An op request's row facts (280): which op, and where it is. */
+  | { kind: 'op_request'; op: string; status: OpRequestStatus }
+  /**
+   * A space style's row facts (284, spec §4.3). The FULL document rides on the
+   * state on purpose (sign-off decision): `entity.upsert` after a push is how
+   * every viewer on the style repaints, and carrying the doc means no fetch.
+   * A doc is bounded (≤ 200 vars of ≤ 512 chars, css ≤ 16 KiB).
+   */
+  | { kind: 'style'; doc: StyleDoc; resolvedHash: string | null; pushedBy: EntityId;
+      pushedAt: string; sourceOwnerIdentityId: string; tags: string[] }
   /**
    * A chat's row facts (176). Everything here answers a question a list row
    * asks — who is it with, what is it running, is it busy — without a second
@@ -975,6 +996,11 @@ export type CoreEntityContent =
   /** Space links (250, W6): content is `spaceLinks.list`'s; see EntityState. */
   | { kind: 'space_link' }
   | { kind: 'server' }
+  /** An op request (280): its state's facts; the rest is `opRequests.get`'s. */
+  | { kind: 'op_request'; op: string; status: OpRequestStatus }
+  /** A space style (284): the same facts as its state plus the description. */
+  | { kind: 'style'; description: string | null; doc: StyleDoc; resolvedHash: string | null;
+      pushedBy: EntityId; pushedAt: string; sourceOwnerIdentityId: string; tags: string[] }
   /**
    * A space credential (W10a): the same allow-list as its state. The sealed
    * secret, key hint and vendor login never reach an entity read.
@@ -1595,6 +1621,16 @@ export type WorkspaceEvent = WorkspaceEventEnvelope & (
  | { type: 'menu.updated'; menu: MenuConfig; clientMutationId?: string }
  | { type: 'space.default_channel.updated'; channelId: EntityId | null;
      settingsRevision: number; clientMutationId?: string }
+ // Styles (284, spec §4.3). RPC-authored passthrough rows. The first two are
+ // RECIPIENT-TARGETED: one row per active membership of the owner, with
+ // `recipient_member_id` set, so a personal style or a preference never reaches
+ // another member's socket. `doc` is null on a delete.
+ | { type: 'personal_style.updated'; id: string; version: number; doc: StyleDoc | null;
+     resolvedHash: string | null; deleted: boolean; clientMutationId?: string }
+ | { type: 'identity.style_prefs.updated'; currentStyle: string; darkStyle: string | null;
+     followOs: boolean; revision: number; currentHash: string | null; clientMutationId?: string }
+ | { type: 'space.style_default.updated'; defaultStyle: string; revision: number;
+     clientMutationId?: string }
  // Git facts on the durable stream (Tier 4 git×graph). RPC-authored
  // passthrough rows: the SQL authors (db/migrations/083) build these payloads
  // contract-shaped, discriminant included — see mapper.ts
@@ -1982,6 +2018,12 @@ export interface IdentityGetResult {
    * predates the field omits it; read absent as "unknown", not `agents`.
    */
   spaceSessions?: SpaceSessionsMode;
+  /**
+   * The caller's style preference (styles spec §4.1), embedded so the shell
+   * learns it in the round trip it already makes. `null` = never chosen: the
+   * viewer gets the space default. Absent on a node that predates styles.
+   */
+  stylePrefs?: StylePrefsView | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -2215,6 +2257,16 @@ export interface AuthSessionGetResult {
 export type NodeModeView = 'single' | 'multi';
 
 /**
+ * How this node holds projects (space-scoped projects design §3, doc 01a0fb62).
+ * `shared`: a loopback-only single node — folders are used in place and one
+ * folder may serve several spaces. `isolated`: every other node — a folder
+ * belongs to one space, and members reach node paths only through a path grant.
+ * DERIVED from the gate posture the server writes to `internal.node_policy` at
+ * boot; there is deliberately no separate setting.
+ */
+export type ProjectIsolation = 'shared' | 'isolated';
+
+/**
  * How account #1 may be created on THIS node, right now. `claim` while
  * unclaimed; `invite` once claimed (an invite code authorizes its bearer);
  * `admin` when only a node admin may provision (`auth.signup`).
@@ -2238,6 +2290,12 @@ export interface AuthClaimStatusResult {
   claimed: boolean;
   mode: NodeModeView;
   signupPath: NodeSignupPath;
+  /**
+   * Whether this node keeps each space's projects apart. Read from the
+   * policy the server wrote at boot (`internal.node_policy`, 234), never a
+   * flag of its own; an unreadable policy answers `isolated`.
+   */
+  projectIsolation: ProjectIsolation;
 }
 
 /**
@@ -3010,6 +3068,63 @@ export interface NodeCredentialsPolicySetInput {
   clientMutationId?: string;
 }
 
+/**
+ * A filesystem path grant (migration 282, design doc 01a0fb62 §4): a node
+ * admin lets ONE account browse ONE canonical root and select a folder in it.
+ * Node admins hold an implicit grant of every `TM8_PROJECT_ROOTS` entry, which
+ * is never stored.
+ */
+export interface PathGrantView {
+  id: string;
+  accountId: string;
+  /** Canonical (realpath) directory. */
+  rootPath: string;
+  /** `select`: browse the subtree and select a folder in it. Nothing reads files through a grant. */
+  mode: 'select';
+  grantedAt: string;
+  /** Absent while the grant is live. */
+  revokedAt?: string;
+  note?: string;
+  /** Who it is addressed to — on the node-admin list only. */
+  grantee?: NodeAccountView;
+  /** Who granted it — on the node-admin list only; absent once that account is gone. */
+  grantedBy?: { accountId: string; username: string };
+}
+
+/** `node.pathGrants.list` (node admin) and `identity.pathGrants.list` (your own, live only). */
+export interface PathGrantListView {
+  grants: PathGrantView[];
+}
+
+/** `node.pathGrants.create` — node admin. Granting an existing (account, root) again re-opens it. */
+export interface PathGrantCreateInput {
+  accountId: string;
+  /** Absolute; realpath'd and required inside `TM8_PROJECT_ROOTS` before it is stored. */
+  rootPath: string;
+  note?: string;
+  clientMutationId?: string;
+}
+
+/** `node.pathGrants.revoke` — node admin. The grant is the path; revoking a revoked grant is a no-op. */
+export interface PathGrantRevokeInput {
+  clientMutationId?: string;
+}
+
+/** One account on this node, for addressing a grant. */
+export interface NodeAccountView {
+  accountId: string;
+  username: string;
+  displayName?: string;
+  status: 'active' | 'disabled';
+  /** Node admin or owner: already holds every root implicitly. */
+  isNodeAdmin?: boolean;
+}
+
+/** `node.accounts.list` — node admin. */
+export interface NodeAccountListView {
+  accounts: NodeAccountView[];
+}
+
 /** Where a config knob's effective value came from. */
 export type ConfigSource = 'env' | 'persona' | 'profile' | 'default' | 'code';
 
@@ -3122,6 +3237,12 @@ export type CreatableEntityKind = Exclude<
   // caller belongs to both spaces; `server` has no door in W6.
   | 'space_link'
   | 'server'
+  // `op_request` is born ONLY from `opRequests.create` (280), which validates
+  // the op against the allow-list and raises the approve item.
+  | 'op_request'
+  // `style` is born ONLY from `styles.push` (284): a space style is read-only
+  // and every version is a deliberate publish from a personal style.
+  | 'style'
 >;
 
 export interface CreateEntityInput extends CommandContext {
@@ -7914,4 +8035,265 @@ export interface EventChangesView {
   /** `--events` only, in place of `changed`. */
   events?: EventChangeThinRow[];
   next?: string;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STYLES — persistence, push / pull / use (styles spec 01a0fc22 v8 §3-§4,
+// migration 284). The DOCUMENT shape and the resolver live in `style.ts`; this
+// section is only the wire shapes of the `styles.*`, `identity.stylePrefs.*`
+// and `spaces.styleDefault.*` operations.
+//
+// REFERENCES ARE TYPED STRINGS: `builtin:<slug>`, `personal:<uuid>`,
+// `space:<uuid>`. They are plain `string` here and validated by
+// `StyleRefStringSchema`, so the wire layer never depends on how the resolver
+// spells its ref type.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Where a personal style was pulled from, and how far upstream has moved since. */
+export interface StylePulledFrom {
+  id: EntityId;
+  version: number;
+  /** The space style's CURRENT version, or null when it is removed / invisible. */
+  upstreamVersion: number | null;
+}
+
+/** A personal style in full (owner only). */
+export interface PersonalStyleView {
+  id: string;
+  ref: string;
+  title: string;
+  description: string | null;
+  tags: string[];
+  version: number;
+  doc: StyleDoc;
+  resolvedHash: string | null;
+  publishedAs: EntityId | null;
+  /**
+   * The space-style version this personal style's LAST push produced; null
+   * when `publishedAs` is null. Send it as `styles.push`'s `expectedVersion`
+   * to learn (409, `details.currentVersion` + `pushedBy`) that someone pushed
+   * over you since (spec §9.2).
+   */
+  publishedVersion: number | null;
+  pulledFrom: StylePulledFrom | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A personal style as `styles.personal.list` rows it. */
+export interface PersonalStyleSummary {
+  id: string;
+  ref: string;
+  title: string;
+  foundation: string;
+  varCount: number;
+  hasCss: boolean;
+  tags: string[];
+  version: number;
+  resolvedHash: string | null;
+  publishedAs: EntityId | null;
+  /** As on `PersonalStyleView`. */
+  publishedVersion: number | null;
+  pulledFrom: StylePulledFrom | null;
+  updatedAt: string;
+}
+
+/** A space style in full. */
+export interface SpaceStyleView {
+  id: EntityId;
+  ref: string;
+  spaceId: SpaceId;
+  title: string;
+  description: string | null;
+  tags: string[];
+  version: number;
+  doc: StyleDoc;
+  resolvedHash: string | null;
+  pushedBy: EntityId;
+  pushedAt: string;
+  sourceOwnerIdentityId: string;
+  sourcePersonalStyleId: string | null;
+}
+
+/** One `styles.list` row: built-ins first, then the space's styles. */
+export interface StyleListRow {
+  origin: 'builtin' | 'space';
+  /** Entity id for a space style; the `builtin:<slug>` id for a built-in. */
+  id: string;
+  ref: string;
+  title: string;
+  foundation: string;
+  varCount: number;
+  hasCss: boolean;
+  tags: string[];
+  /** Entity version for a space style; `builtinRevision` for a built-in. */
+  version: number;
+  resolvedHash: string | null;
+  pushedBy: EntityId | null;
+  pushedAt: string | null;
+  isDefault: boolean;
+  inUseByMe: boolean;
+  canPush: boolean;
+}
+
+export interface StylesListResult {
+  items: StyleListRow[];
+  /** The space default ref; flagged when it points at a removed style. */
+  defaultStyle: string;
+  defaultDangling: boolean;
+}
+
+export interface PersonalStylesListResult {
+  items: PersonalStyleSummary[];
+}
+
+/** `styles.get`: any of the three ref forms, with the resolved table. */
+export interface StyleGetResult {
+  origin: 'builtin' | 'personal' | 'space';
+  ref: string;
+  id: string;
+  title: string;
+  description: string | null;
+  tags: string[];
+  version: number;
+  doc: StyleDoc;
+  resolvedHash: string | null;
+  resolved: ResolvedStyle;
+  warnings: StyleWarning[];
+  personal?: PersonalStyleView;
+  space?: SpaceStyleView;
+}
+
+export interface PersonalStyleWriteResult {
+  style: PersonalStyleView;
+  warnings: StyleWarning[];
+  clamped: StyleClamp[];
+}
+
+export interface SpaceStyleWriteResult {
+  style: SpaceStyleView;
+  warnings: StyleWarning[];
+  clamped: StyleClamp[];
+}
+
+export interface PersonalStyleCreateInput {
+  clientMutationId: string;
+  title?: string;
+  description?: string | null;
+  foundation?: string;
+  vars?: Record<string, string>;
+  css?: string | null;
+  tags?: string[];
+  /** Copy a built-in or a space style instead of supplying a doc (same as pull). */
+  from?: string;
+}
+
+export interface PersonalStyleUpdateInput {
+  clientMutationId: string;
+  expectedVersion: number;
+  title?: string;
+  description?: string | null;
+  foundation?: string;
+  /** MERGE PATCH: a key set to `null` is removed; absent keys are untouched. */
+  vars?: Record<string, string | null>;
+  /** Replace the whole map instead of merging (`--vars-replace`). */
+  varsReplace?: Record<string, string>;
+  css?: string | null;
+  tags?: string[];
+}
+
+export interface PersonalStyleDeleteInput {
+  clientMutationId: string;
+  expectedVersion?: number;
+}
+
+export interface StylePushInput {
+  clientMutationId: string;
+  personalStyleId: string;
+  spaceId: SpaceId;
+  /** Omitted → the personal style's `publishedAs`, else a first push. */
+  targetStyleId?: EntityId;
+  expectedVersion?: number;
+  title?: string;
+  actorId?: EntityId;
+}
+
+export interface StylePullInput {
+  clientMutationId: string;
+  title?: string;
+}
+
+export interface StyleRemoveInput {
+  clientMutationId: string;
+  expectedVersion?: number;
+  actorId?: EntityId;
+}
+
+export interface StylesResolveInput {
+  doc: StyleDoc;
+}
+
+export interface StylesResolveResult {
+  resolved: ResolvedStyle;
+  warnings: StyleWarning[];
+  clamped: StyleClamp[];
+}
+
+export interface StylesExportResult {
+  ref: string;
+  format: 'css' | 'json';
+  only: 'set' | 'all';
+  text: string;
+}
+
+/** What the prefs row keeps so a style survives losing access to its source (§3.4). */
+export interface StylePrefsSnapshot {
+  current: StyleDoc | null;
+  dark: StyleDoc | null;
+  currentHash: string | null;
+  currentTitle: string | null;
+}
+
+export interface StylePrefsView {
+  currentStyle: string;
+  darkStyle: string | null;
+  followOs: boolean;
+  trustedCss: EntityId[];
+  snapshot: StylePrefsSnapshot;
+  revision: number;
+  updatedAt: string;
+}
+
+/** `identity.stylePrefs.get`: `prefs` is null until the person first chooses. */
+export interface StylePrefsGetResult {
+  prefs: StylePrefsView | null;
+}
+
+export interface StylePrefsSetInput {
+  clientMutationId: string;
+  expectedRevision?: number;
+  currentStyle?: string;
+  darkStyle?: string | null;
+  followOs?: boolean;
+  trustedCss?: { add?: EntityId[]; remove?: EntityId[] };
+}
+
+export interface StylePrefsSetResult {
+  prefs: StylePrefsView;
+  resolved: { current: ResolvedStyle; dark: ResolvedStyle | null };
+}
+
+export interface SpaceStyleDefaultView {
+  spaceId: SpaceId;
+  /** `builtin:atelier-light` when no row exists (revision 0). */
+  defaultStyle: string;
+  setBy: EntityId | null;
+  revision: number;
+  updatedAt: string | null;
+}
+
+export interface SpaceStyleDefaultSetInput {
+  clientMutationId: string;
+  expectedRevision?: number;
+  defaultStyle: string;
 }

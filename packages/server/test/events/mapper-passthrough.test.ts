@@ -211,8 +211,14 @@ describe('WorkspaceEventMapper passthrough arm', () => {
       'git.commit_recorded',
       'git.pr_state_changed',
       'git.worktree_status_changed',
+      // 284: the three style events are written by the style RPCs themselves
+      // (internal.emit_identity_style_event / the default door), contract-
+      // shaped, so they pass through. No entity row backs them.
+      'identity.style_prefs.updated',
       'menu.updated',
+      'personal_style.updated',
       'space.default_channel.updated',
+      'space.style_default.updated',
     ]);
   });
 

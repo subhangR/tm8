@@ -17,13 +17,18 @@
  * `@tm8/contract` for the specificity argument; it is load-bearing and it is
  * written down there rather than here because the CLI emits the same bytes.
  *
- * PHASE 1 IS DELIBERATELY NOT PERSISTENT BEYOND THE LEGACY KEY. There is no
- * `style` entity, no server pointer and no picker yet (§13 phase 2). The store
- * therefore has exactly two reachable states — the two built-ins — and
- * `useTheme` keeps its old API over the top of them, so nothing that compiles
- * today has to change. Every seam a later phase needs (a document rather than a
- * builtin id, a subscriber list, an idempotent `apply`) is already here, because
- * retrofitting the subscriber list is the part that would touch every caller.
+ * A PAIR, NOT ONE STYLE (spec v8 §3.4, §3.6). The viewer's preference is a
+ * CURRENT style plus an optional DARK style used while `followOs` is on and
+ * the OS is dark. The painted style is derived from that pair and the OS, so
+ * "follow the OS until you choose" is the same mechanism as "use Midnight when
+ * dark" — a viewer with nothing stored is simply `{atelier-light, atelier-dark,
+ * followOs}` and paints exactly what phase 1 painted.
+ *
+ * THE STORE IS STILL A PAINTER. Where the pair comes from — the server's prefs,
+ * the space default, a legacy key — is `style-sync.ts`'s job. The store only
+ * holds the documents, paints the active one, and remembers the pair in
+ * `localStorage['tm8ui.style']` (spec §10.1) so the NEXT boot paints it before
+ * any network answer.
  *
  * NOT A REACT STORE. `apply()` writes one string into a stylesheet; the browser
  * recalculates custom properties on the affected roots with no React involved.
@@ -34,36 +39,95 @@
 import {
   BUILTIN_STYLES,
   BUILTIN_STYLE_IDS,
+  STYLE_REGISTRY,
+  StyleDocSchema,
+  formatStyleRef,
+  parseStyleRef,
   resolveStyle,
   styleDocForBuiltin,
   styleSheetText,
   type BuiltinStyleId,
   type ResolvedStyle,
   type StyleDoc,
+  type StyleRef,
 } from '@tm8/contract';
 
 /** The id of the sheet `apply()` owns. Nothing else may write to it. */
 export const ACTIVE_STYLE_ELEMENT_ID = 'tm8-style-active';
 
+/** The sheet for a style's sanitised extra `css`, after the vars sheet (spec §1.6). */
+export const EXTRA_STYLE_ELEMENT_ID = 'tm8-style-extra';
+
 /**
- * LEGACY KEY, read and still written (§6). `'light' | 'dark'` is what every
- * installed client has in its storage right now, and phase 1 must not strand
- * them: a viewer who chose dark yesterday gets dark today, with no migration
- * step and no flash. It is still WRITTEN as well as read so that a rollback to
- * the pre-style bundle does not lose the choice either — the cheapest possible
- * answer to "what if we have to revert", and it costs one `setItem`.
+ * LEGACY KEY (spec §10.1). `'light' | 'dark'` is what every installed client
+ * has in its storage. Read at boot when the new cache is absent, migrated to
+ * the server's prefs on the first authenticated boot (`style-sync.ts`) and then
+ * deleted. Signed-out surfaces with no server to write to still write it, so a
+ * choice made on the sign-in screen survives into the first signed-in boot.
  */
-const LEGACY_THEME_KEY = 'tm8ui.theme';
+export const LEGACY_THEME_KEY = 'tm8ui.theme';
+
+/**
+ * THE BOOT CACHE (spec §10.1): `{docs, hash, followOs, revision}`, written on
+ * every apply and read synchronously before first paint. `docs` holds the
+ * whole pair so an OS flip before the network answers still has the dark half.
+ */
+export const STYLE_CACHE_KEY = 'tm8ui.style';
 
 export type Theme = 'light' | 'dark';
 
+/**
+ * Where the pair came from. `os`: nothing chosen anywhere (follow the OS
+ * between the two built-ins). `local`: chosen on this device without a
+ * server to record it. `prefs`: the server's `identity_style_prefs` row.
+ * `default`: no prefs row, the space default applies (§3.6).
+ */
+export type StyleSource = 'os' | 'local' | 'prefs' | 'default';
+
+/**
+ * Whether the entry's document is the live one (`live`), the prefs snapshot
+ * because the style is no longer readable (`detached`: a personal style that
+ * was deleted, a space this viewer left), or a space style an admin removed
+ * (`removed`). The picker labels the last two (§3.6, §9.1).
+ */
+export type StyleEntryStatus = 'live' | 'detached' | 'removed';
+
+export interface StyleEntry {
+  ref: StyleRef;
+  doc: StyleDoc;
+  /** Display title when known (built-ins, prefs snapshot, the style row). */
+  title: string | null;
+  /** Whether the style's extra css runs for this viewer (spec §6.8). */
+  trustCss: boolean;
+  status: StyleEntryStatus;
+}
+
 export interface StyleState {
+  /** Which style is painted: a built-in, personal or space ref. */
+  ref: StyleRef;
   /** What is painted right now. */
   active: ResolvedStyle;
-  /** The document `active` resolved from, so a later phase can edit it. */
+  /** The document `active` resolved from. */
   doc: StyleDoc;
-  /** True while no explicit choice has been made and the OS is in charge. */
+  /** True while the OS decides between `current` and `dark`. */
   followOs: boolean;
+  /** Whether the PAINTED style's extra css runs (spec §6.8). */
+  trustCss: boolean;
+  /** The preference pair the painted style is derived from. */
+  current: StyleEntry;
+  dark: StyleEntry | null;
+  /** `identity_style_prefs.revision` this pair reflects; 0 when there is no row. */
+  revision: number;
+  source: StyleSource;
+}
+
+/** The inputs a state is derived from — everything except what is painted. */
+export interface StyleSelection {
+  current: StyleEntry;
+  dark: StyleEntry | null;
+  followOs: boolean;
+  revision: number;
+  source: StyleSource;
 }
 
 type Listener = (state: StyleState) => void;
@@ -87,13 +151,157 @@ function storedTheme(): Theme | null {
   }
 }
 
+/** Read the legacy key (for the one-time migration in `style-sync.ts`). */
+export function readLegacyTheme(): Theme | null {
+  return storedTheme();
+}
+
+/** Delete the legacy key once the server holds the choice (spec §10.1). */
+export function clearLegacyTheme(): void {
+  try {
+    window.localStorage.removeItem(LEGACY_THEME_KEY);
+  } catch {
+    /* As above. */
+  }
+}
+
 function builtinFor(theme: Theme): BuiltinStyleId {
   return theme === 'dark' ? BUILTIN_STYLE_IDS.dark : BUILTIN_STYLE_IDS.light;
 }
 
-function resolveBuiltin(theme: Theme): { doc: StyleDoc; active: ResolvedStyle } {
-  const doc = styleDocForBuiltin(builtinFor(theme));
-  return { doc, active: resolveStyle(doc, BUILTIN_STYLES) };
+function resolveDoc(doc: StyleDoc): ResolvedStyle {
+  return resolveStyle(doc, BUILTIN_STYLES, STYLE_REGISTRY);
+}
+
+/** A built-in as a pair entry. `null` for a slug this bundle does not ship. */
+export function builtinEntry(id: StyleRef): StyleEntry | null {
+  const builtin = BUILTIN_STYLES[id];
+  if (!builtin) return null;
+  return { ref: builtin.id, doc: styleDocForBuiltin(builtin.id), title: builtin.title, trustCss: true, status: 'live' };
+}
+
+function lightEntry(): StyleEntry {
+  return builtinEntry(BUILTIN_STYLE_IDS.light)!;
+}
+
+function darkEntry(): StyleEntry {
+  return builtinEntry(BUILTIN_STYLE_IDS.dark)!;
+}
+
+/** Nothing chosen anywhere: follow the OS between the two built-ins (§10.1 row 2). */
+export function osSelection(): StyleSelection {
+  return { current: lightEntry(), dark: darkEntry(), followOs: true, revision: 0, source: 'os' };
+}
+
+function themeSelection(theme: Theme, source: StyleSource): StyleSelection {
+  return { current: theme === 'dark' ? darkEntry() : lightEntry(), dark: null, followOs: false, revision: 0, source };
+}
+
+/** The entry the OS picks from a selection right now. */
+function activeEntry(selection: StyleSelection): StyleEntry {
+  return selection.followOs && selection.dark && osPrefersDark() ? selection.dark : selection.current;
+}
+
+function deriveState(selection: StyleSelection): StyleState {
+  const entry = activeEntry(selection);
+  return {
+    ...selection,
+    ref: entry.ref,
+    doc: entry.doc,
+    active: resolveDoc(entry.doc),
+    trustCss: entry.trustCss,
+  };
+}
+
+// ── the boot cache ──────────────────────────────────────────────────────────
+
+interface CachedEntry {
+  ref: string;
+  doc: unknown;
+  title?: string | null;
+  trustCss?: boolean;
+  status?: StyleEntryStatus;
+}
+
+interface StyleCache {
+  docs: { current: CachedEntry; dark: CachedEntry | null };
+  hash: string;
+  followOs: boolean;
+  revision: number;
+  source?: StyleSource;
+}
+
+function entryFromCache(cached: CachedEntry | null | undefined): StyleEntry | null {
+  if (!cached || typeof cached.ref !== 'string') return null;
+  const parsed = parseStyleRef(cached.ref);
+  if (!parsed) return null;
+  /* A cached document is UNTRUSTED storage — another bundle wrote it, or a
+     person with devtools did. It goes through the same schema the server
+     validates with, and `resolveStyle` re-checks every value and re-sanitises
+     the css before anything reaches the DOM (§8). */
+  const doc = StyleDocSchema.safeParse(cached.doc);
+  if (!doc.success) return parsed.kind === 'builtin' ? builtinEntry(cached.ref as StyleRef) : null;
+  const status = cached.status === 'detached' || cached.status === 'removed' ? cached.status : 'live';
+  return {
+    ref: formatStyleRef(parsed),
+    doc: doc.data,
+    title: typeof cached.title === 'string' ? cached.title : null,
+    trustCss: cached.trustCss === true,
+    status,
+  };
+}
+
+function readCache(): StyleSelection | null {
+  try {
+    const raw = window.localStorage.getItem(STYLE_CACHE_KEY);
+    if (!raw) return null;
+    const cache = JSON.parse(raw) as Partial<StyleCache> | null;
+    if (!cache || typeof cache !== 'object' || !cache.docs) return null;
+    const current = entryFromCache(cache.docs.current);
+    if (!current) return null;
+    const source: StyleSource =
+      cache.source === 'os' || cache.source === 'local' || cache.source === 'prefs' || cache.source === 'default'
+        ? cache.source
+        : 'local';
+    return {
+      current,
+      dark: entryFromCache(cache.docs.dark),
+      followOs: cache.followOs === true,
+      revision: typeof cache.revision === 'number' && cache.revision >= 0 ? cache.revision : 0,
+      source,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function cachedEntry(entry: StyleEntry): CachedEntry {
+  return { ref: entry.ref, doc: entry.doc, title: entry.title, trustCss: entry.trustCss, status: entry.status };
+}
+
+function writeCache(next: StyleState): void {
+  const cache: StyleCache = {
+    docs: { current: cachedEntry(next.current), dark: next.dark ? cachedEntry(next.dark) : null },
+    hash: next.active.hash,
+    followOs: next.followOs,
+    revision: next.revision,
+    source: next.source,
+  };
+  try {
+    window.localStorage.setItem(STYLE_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    /* Quota or blocked storage: the style still applies, the next boot just
+       starts from the legacy key or the OS. */
+  }
+}
+
+/** Forget the cache (sign-out: the next person on this device is not this one). */
+export function clearStyleCache(): void {
+  try {
+    window.localStorage.removeItem(STYLE_CACHE_KEY);
+  } catch {
+    /* As above. */
+  }
 }
 
 /**
@@ -105,29 +313,37 @@ function resolveBuiltin(theme: Theme): { doc: StyleDoc; active: ResolvedStyle } 
  * than that hook was — the sheet must exist before the FIRST paint, not before
  * the first render — which is why `installActiveStyle()` is called from
  * `main.tsx` above `createRoot`.
+ *
+ * Order (spec §1.6): the `tm8ui.style` cache, else the legacy key, else the
+ * OS between the two built-ins.
  */
-function initialState(): StyleState {
+function initialSelection(): StyleSelection {
+  const cached = readCache();
+  if (cached) return cached;
   const stored = storedTheme();
-  const theme: Theme = stored ?? (osPrefersDark() ? 'dark' : 'light');
-  const { doc, active } = resolveBuiltin(theme);
-  return { active, doc, followOs: stored === null };
+  return stored ? themeSelection(stored, 'local') : osSelection();
 }
 
-let state: StyleState = initialState();
+let state: StyleState = deriveState(initialSelection());
 
 /** The last text written to the sheet, so an identical apply is a no-op. */
 let appliedHash: string | null = null;
 
-function styleElement(): HTMLStyleElement | null {
+/**
+ * The sheet element with `id`, created on first use and APPENDED TO HEAD,
+ * LAST. Vite injects `tokens.css` and `canvas-extra.css` into head too, and at
+ * equal specificity the later rule wins — so "last" is not tidiness, it is the
+ * whole mechanism. In a production build the CSS is a <link> in the
+ * document's own head, which is also earlier than this. The extra-css element
+ * is created after the vars element, so a style's own rules come after its
+ * variables (spec §1.6).
+ */
+function sheetElement(id: string): HTMLStyleElement | null {
   if (typeof document === 'undefined') return null;
-  const existing = document.getElementById(ACTIVE_STYLE_ELEMENT_ID);
+  const existing = document.getElementById(id);
   if (existing instanceof HTMLStyleElement) return existing;
   const el = document.createElement('style');
-  el.id = ACTIVE_STYLE_ELEMENT_ID;
-  /* APPENDED TO HEAD, LAST. Vite injects `tokens.css` and `canvas-extra.css`
-     into head too, and at equal specificity the later rule wins — so "last"
-     is not tidiness, it is the whole mechanism. In a production build the CSS
-     is a <link> in the document's own head, which is also earlier than this. */
+  el.id = id;
   document.head.appendChild(el);
   return el;
 }
@@ -136,12 +352,22 @@ function styleElement(): HTMLStyleElement | null {
  * Write the resolved style to the DOM. Idempotent on `hash`, so a redundant
  * call costs one string comparison rather than a style recalculation.
  */
-function paint(resolved: ResolvedStyle): void {
-  const el = styleElement();
-  if (!el) return;
-  if (appliedHash === resolved.hash && el.textContent) return;
-  el.textContent = styleSheetText(resolved);
-  appliedHash = resolved.hash;
+function paint(resolved: ResolvedStyle, trustCss: boolean): void {
+  const vars = sheetElement(ACTIVE_STYLE_ELEMENT_ID);
+  if (!vars) return;
+  const key = `${resolved.hash}|${trustCss}`;
+  if (appliedHash === key && vars.textContent) return;
+  vars.textContent = styleSheetText(resolved);
+  /* `resolved.css` was already sanitised by `resolveStyle` in THIS client —
+     a stored string is never injected as-is (§8.3). It only runs when this
+     viewer trusts it: always for their own styles, opt-in for space styles. */
+  const css = trustCss ? resolved.css : null;
+  if (css) {
+    sheetElement(EXTRA_STYLE_ELEMENT_ID)!.textContent = css;
+  } else {
+    document.getElementById(EXTRA_STYLE_ELEMENT_ID)?.remove();
+  }
+  appliedHash = key;
 }
 
 /**
@@ -153,11 +379,88 @@ function paint(resolved: ResolvedStyle): void {
  * sees tokens.
  */
 export function installActiveStyle(): void {
-  paint(state.active);
+  paint(state.active, state.trustCss);
+}
+
+/**
+ * THE EDITOR'S LIVE DRAFT (spec §9.2 "every keystroke → applyDraft"). While
+ * set, it is what this tab PAINTS and what `getStyleState` reports as
+ * `active` — so `data-theme`, every LiveTerminal and every other subscriber
+ * follow the draft exactly as they follow a real switch — but it is never
+ * written to the cache or the server, and the committed pair underneath keeps
+ * updating from events. `applyDraft(null)` reverts to the committed style.
+ */
+let draft: { doc: StyleDoc; resolved: ResolvedStyle } | null = null;
+
+/** `state` with the draft laid over it; recomputed only when either changes. */
+let viewState: StyleState = state;
+
+function overlay(committed: StyleState): StyleState {
+  return draft ? { ...committed, active: draft.resolved, doc: draft.doc, trustCss: true } : committed;
 }
 
 export function getStyleState(): StyleState {
-  return state;
+  return viewState;
+}
+
+/**
+ * ONE APPLY PER ANIMATION FRAME (spec §6.7, viewer side). An editor fires a
+ * draft per keystroke and a slider per pointer move; each is held here and
+ * the frame applies only the last — resolved, painted and announced once.
+ * Nothing is dropped that matters: the last document always wins. A commit
+ * (`setState`) arriving while a draft is pending folds it in, so the frame
+ * still paints once.
+ */
+let pendingDraft: { doc: StyleDoc | null } | null = null;
+let draftFrame: number | null = null;
+
+function scheduleFrame(run: () => void): number {
+  return typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function'
+    ? window.requestAnimationFrame(run)
+    : (setTimeout(run, 0) as unknown as number);
+}
+
+function cancelFrame(id: number): void {
+  if (typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
+    window.cancelAnimationFrame(id);
+  }
+  clearTimeout(id as unknown as ReturnType<typeof setTimeout>);
+}
+
+/** Move a pending draft into `draft` without painting; true when there was one. */
+function takePendingDraft(): boolean {
+  if (draftFrame !== null) cancelFrame(draftFrame);
+  draftFrame = null;
+  const pending = pendingDraft;
+  pendingDraft = null;
+  if (!pending) return false;
+  draft = pending.doc ? { doc: pending.doc, resolved: resolveStyle(pending.doc) } : null;
+  return true;
+}
+
+/**
+ * Preview `doc` in this tab only (the owner's own draft, so its css runs), or
+ * pass null to drop the preview. Safe to call per keystroke: calls within one
+ * animation frame collapse into one apply of the last document.
+ */
+export function applyDraft(doc: StyleDoc | null): void {
+  if (!doc && !draft && !pendingDraft) return;
+  pendingDraft = { doc };
+  if (draftFrame === null) {
+    draftFrame = scheduleFrame(() => {
+      if (takePendingDraft()) publish();
+    });
+  }
+}
+
+/** Apply a pending draft now instead of at the next frame (tests; an editor's Save). */
+export function flushStyleDraft(): void {
+  if (takePendingDraft()) publish();
+}
+
+/** Whether an editor draft is being previewed right now. */
+export function hasDraft(): boolean {
+  return draft !== null;
 }
 
 export function subscribeStyle(listener: Listener): () => void {
@@ -165,45 +468,146 @@ export function subscribeStyle(listener: Listener): () => void {
   return () => listeners.delete(listener);
 }
 
+function publish(): void {
+  viewState = overlay(state);
+  paint(viewState.active, viewState.trustCss);
+  for (const listener of [...listeners]) listener(viewState);
+}
+
 function setState(next: StyleState): void {
+  takePendingDraft();
   state = next;
-  paint(next.active);
-  for (const listener of [...listeners]) listener(next);
+  writeCache(next);
+  publish();
 }
 
 /**
- * The derived `data-theme` value (§3.2) — `luminance(paper) < 0.5`, not a
- * stored string. For the two built-ins it is exactly the old answer, which is
- * what makes phase 1 invisible; for a user style it is the only answer that
- * can be right, because the component rules keyed on `data-theme` are asking
- * "is the paper dark" and nothing else.
+ * Replace the whole preference pair (the sync layer's one write). Re-derives
+ * the painted style from the pair and the OS; an unchanged result repaints
+ * nothing (`paint` is idempotent on hash).
  */
-export function derivedTheme(): Theme {
-  return state.active.darkish ? 'dark' : 'light';
+export function applySelection(selection: StyleSelection): void {
+  setState(deriveState(selection));
 }
 
-/** An explicit choice. Stops OS following, exactly as before. */
+/** The pair the current state was derived from. */
+export function currentSelection(): StyleSelection {
+  const { current, dark, followOs, revision, source } = state;
+  return { current, dark, followOs, revision, source };
+}
+
+/**
+ * The derived `data-theme` value — `luminance(paper) < 0.5`, not a stored
+ * string. For the two built-ins it is exactly the old answer; for a user
+ * style it is the only answer that can be right, because the component rules
+ * keyed on `data-theme` are asking "is the paper dark" and nothing else.
+ */
+export function derivedTheme(): Theme {
+  return viewState.active.darkish ? 'dark' : 'light';
+}
+
+export interface SelectStyleOptions {
+  /**
+   * Run the style's extra `css`. Defaults to true for built-ins and personal
+   * styles (the viewer's own) and false for space styles, whose css runs for
+   * other viewers only after a per-viewer opt-in (spec §6.8).
+   */
+  trustCss?: boolean;
+  /** Display title for the picker; built-ins carry their own. */
+  title?: string | null;
+}
+
+/**
+ * The entry `selectStyle` would make current, or null when the ref is
+ * malformed or a non-built-in arrives without a doc.
+ */
+export function entryFor(ref: StyleRef, doc?: StyleDoc, options: SelectStyleOptions = {}): StyleEntry | null {
+  const parsed = parseStyleRef(ref);
+  if (!parsed) return null;
+  const canonical = formatStyleRef(parsed);
+  /* Prefix tests on the canonical ref, not `parsed.kind` against a literal
+     (phase 1b's convention). */
+  if (canonical.startsWith('builtin:') && !doc) return builtinEntry(canonical);
+  if (!doc) return null;
+  return {
+    ref: canonical,
+    doc,
+    title: options.title ?? BUILTIN_STYLES[canonical]?.title ?? null,
+    trustCss: options.trustCss ?? !canonical.startsWith('space:'),
+    status: 'live',
+  };
+}
+
+/**
+ * USE a style LOCALLY (spec §1.4 "use"): make `ref` current, painted now. An
+ * explicit choice, so OS following stops.
+ *
+ * A built-in resolves from the shipped JSON. A personal or space style needs
+ * its document passed in. Returns false, changing nothing, when the ref is
+ * malformed or a non-built-in arrives without a doc. Recording the choice on
+ * the server is `style-sync.ts`'s `chooseStyle`, which calls this first.
+ *
+ * Named `selectStyle`, not `use`: a bare `use` collides with React's `use`
+ * and the hooks lint treats every `use*` call as a hook.
+ */
+export function selectStyle(ref: StyleRef, doc?: StyleDoc, options: SelectStyleOptions = {}): boolean {
+  const entry = entryFor(ref, doc, options);
+  if (!entry) return false;
+  const prev = state;
+  applySelection({
+    current: entry,
+    dark: prev.dark,
+    followOs: false,
+    revision: prev.revision,
+    source: prev.source === 'prefs' ? 'prefs' : 'local',
+  });
+  return true;
+}
+
+/**
+ * THE PERSISTENCE HOOK. While a signed-in shell is mounted, `style-sync.ts`
+ * registers its writer here, and the legacy `setTheme` routes through it so a
+ * light/dark press is recorded in the server's prefs rather than in the legacy
+ * key. With nothing registered (the sign-in screen) the legacy path runs.
+ */
+type ThemeWriter = (theme: Theme) => void;
+let themeWriter: ThemeWriter | null = null;
+
+export function registerThemeWriter(writer: ThemeWriter): () => void {
+  themeWriter = writer;
+  return () => {
+    if (themeWriter === writer) themeWriter = null;
+  };
+}
+
+/**
+ * LEGACY SURFACE: an explicit light/dark choice, USING the matching built-in.
+ * Signed in, the sync layer records it; signed out, the legacy key does.
+ */
 export function setTheme(theme: Theme): void {
+  if (themeWriter) {
+    themeWriter(theme);
+    return;
+  }
   try {
     window.localStorage.setItem(LEGACY_THEME_KEY, theme);
   } catch {
     /* As above: the choice applies now even if it cannot be remembered. */
   }
-  const { doc, active } = resolveBuiltin(theme);
-  setState({ active, doc, followOs: false });
+  selectStyle(builtinFor(theme));
 }
 
 /**
- * Follow `prefers-color-scheme` while the viewer has expressed no preference.
- * Returns an unsubscribe, so the caller owns the listener's lifetime.
+ * Re-derive the painted half when `prefers-color-scheme` changes, while the
+ * selection follows the OS. Returns an unsubscribe, so the caller owns the
+ * listener's lifetime.
  */
 export function watchOsTheme(): () => void {
   if (typeof window === 'undefined' || !window.matchMedia) return () => {};
   const query = window.matchMedia('(prefers-color-scheme: dark)');
   const onChange = (): void => {
     if (!state.followOs) return;
-    const { doc, active } = resolveBuiltin(query.matches ? 'dark' : 'light');
-    setState({ active, doc, followOs: true });
+    applySelection(currentSelection());
   };
   query.addEventListener('change', onChange);
   return () => query.removeEventListener('change', onChange);
@@ -218,6 +622,13 @@ export function watchOsTheme(): () => void {
 export function __resetStyleStoreForTests(): void {
   appliedHash = null;
   listeners.clear();
+  themeWriter = null;
   document.getElementById(ACTIVE_STYLE_ELEMENT_ID)?.remove();
-  state = initialState();
+  document.getElementById(EXTRA_STYLE_ELEMENT_ID)?.remove();
+  if (draftFrame !== null) cancelFrame(draftFrame);
+  draftFrame = null;
+  pendingDraft = null;
+  draft = null;
+  state = deriveState(initialSelection());
+  viewState = state;
 }

@@ -19,7 +19,7 @@ import { randomUUID } from 'node:crypto';
 import { isServerOnlyCredentialProvider, type CredentialsSpaceReadinessView, type ServerOnlyCredentialProviderName } from '@tm8/contract';
 
 import type { Db, DbClaims } from '../db/types.js';
-import { refuseLinkBearer } from '../identity/link-bearer.js';
+import { refuseLinkBearer, refuseUnlinkedLinkBearer } from '../identity/link-bearer.js';
 import { loadOrCreateCredentialKey } from './credential-key.js';
 import { openSecret, sealSecret } from './secret-box.js';
 
@@ -542,8 +542,10 @@ export class DbSpaceCredentialStore {
    * The spawn reader (A1). The pinned credential, or the launch space's
    * default when `credentialId` is null; refused unless the caller is a member
    * of the LAUNCH space and the credential is active and in it. Works under
-   * agent claims: children inherit. Never under a link session's own claims
-   * (ruling A'; SQL refuses it too).
+   * agent claims: children inherit. Under a link session's own claims (W7b:
+   * a spawn through `spaceLinks.invoke`) only with its link claim, and SQL
+   * then hands it the target's DEFAULT credential only, while its row is
+   * signed in with spawning allowed (256, 277).
    */
   async readForSpawn(
     claims: DbClaims,
@@ -551,7 +553,7 @@ export class DbSpaceCredentialStore {
     provider: SpaceCredentialProvider,
     credentialId?: string | null,
   ): Promise<SpaceCredentialForSpawn> {
-    refuseLinkBearer(claims);
+    refuseUnlinkedLinkBearer(claims);
     // Gate 8 (server_only_space_credentials): a server-only key never reaches a launch. The type already
     // excludes it; this holds for a caller that casts, and SQL refuses it too.
     if (isServerOnlyCredentialProvider(provider)) {

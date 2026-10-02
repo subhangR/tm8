@@ -34,6 +34,8 @@ export type CapabilityProfile =
   | 'credential-lifecycle'
   | 'space-link-lifecycle'
   | 'server-lifecycle'
+  | 'op-request-lifecycle'
+  | 'style-lifecycle'
   | 'custom-scalar'
   | 'static-no-authority';
 
@@ -63,7 +65,9 @@ export type MigrationStrategy =
   | 'form-detail'
   | 'credential-detail'
   | 'space-link-kinds'
+  | 'op-request-detail'
   | 'story-detail'
+  | 'style-detail'
   | 'custom-registry'
   | 'none';
 
@@ -358,6 +362,32 @@ function capabilities(profile: CapabilityProfile): CapabilityDisposition {
           'spaceLinks.setSpawn',
         ],
       };
+    case 'style-lifecycle':
+      // NOTHING generic to WRITE (284, styles spec §3.3). A space style is
+      // read-only: born and re-versioned only by `styles.push` from a personal
+      // style, removed only by `styles.remove` (space admin). It is still an
+      // ordinary space entity to READ and talk about — messages, reactions and
+      // connections ride the envelope like any other kind.
+      return {
+        profile,
+        genericCreate: false,
+        genericPatch: false,
+        genericMove: false,
+        genericHierarchy: false,
+        genericDeleteRestore: false,
+        genericPoints: false,
+        messages: true,
+        reactions: true,
+        connections: true,
+        lifecycleOperations: [
+          'styles.list',
+          'styles.get',
+          'styles.push',
+          'styles.pull',
+          'styles.remove',
+          'styles.export',
+        ],
+      };
     case 'server-lifecycle':
       // NOTHING generic (W8, 261). A server is born only from `servers.add`
       // or `servers.adopt` (a 044 row, first use), and add/adopt/remove are
@@ -381,6 +411,29 @@ function capabilities(profile: CapabilityProfile): CapabilityDisposition {
           'servers.adopt',
           'servers.remove',
           'servers.probe',
+        ],
+      };
+    case 'op-request-lifecycle':
+      // NOTHING generic but messages (L5, 280). A request is born only from
+      // `opRequests.create`, moved only by its human-only decision doors; the
+      // outcome is posted as a message on it.
+      return {
+        profile,
+        genericCreate: false,
+        genericPatch: false,
+        genericMove: false,
+        genericHierarchy: false,
+        genericDeleteRestore: false,
+        genericPoints: false,
+        messages: true,
+        reactions: false,
+        connections: false,
+        lifecycleOperations: [
+          'opRequests.list',
+          'opRequests.get',
+          'opRequests.create',
+          'opRequests.approve',
+          'opRequests.deny',
         ],
       };
     case 'static-no-authority':
@@ -595,6 +648,13 @@ export const CORE_KIND_DISPOSITIONS = {
     capabilities: { profile: 'server-lifecycle' },
     menu: { strategy: 'not-addressable' }, migration: { strategy: 'space-link-kinds' },
   }),
+  // An op request (L5, migration 280). Born only from `opRequests.create`;
+  // decided by a human through `opRequests.approve|deny`; never menu-addressable.
+  op_request: core('op_request', 'op-requests', {
+    collection: typedCollection, projection: universal,
+    capabilities: { profile: 'op-request-lifecycle' },
+    menu: { strategy: 'not-addressable' }, migration: { strategy: 'op-request-detail' },
+  }),
   // Stories (migration 283). `drawing`'s disposition, for the same reasons: an
   // ordinary collection-routed entity created and patched through the generic
   // envelope (create_story_entity / update_story_entity), zero new catalog
@@ -605,6 +665,14 @@ export const CORE_KIND_DISPOSITIONS = {
   story: core('story', 'stories', {
     collection: typedCollection, projection: universal, capabilities: generic,
     menu: { strategy: 'registered-not-default' }, migration: { strategy: 'story-detail' },
+  }),
+  // Space styles (migration 284, styles spec v8). A published, read-only theme:
+  // born only from `styles.push`, so not generically creatable or editable.
+  // Picked from the account menu, never filed into from the generic menu.
+  style: core('style', 'styles', {
+    collection: typedCollection, projection: universal,
+    capabilities: { profile: 'style-lifecycle' },
+    menu: { strategy: 'not-addressable' }, migration: { strategy: 'style-detail' },
   }),
 } as const satisfies Readonly<Record<CoreEntityKind, KindDisposition>>;
 

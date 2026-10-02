@@ -1901,6 +1901,10 @@ const ROWS: readonly KindConfig[] = [
     card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
     list: baseList({
       quickCreate: true,
+      // A child story nests under its parent (#16): `parentId` is the story
+      // hierarchy, so a flat list showed every child beside the roots and
+      // read as "many root stories". Children start collapsed.
+      tree: { by: 'hierarchy', guideLines: true },
       tile: { badges: [{ source: 'messages' }] },
       inlineEdit: { title: true },
     }),
@@ -2598,6 +2602,64 @@ const ROWS: readonly KindConfig[] = [
         ],
       },
     },
+  },
+
+  // -- op_request (280, L5: an agent's request for a human-only op) ---------
+  {
+    kind: 'op_request',
+    label: 'Request',
+    labelPlural: 'Requests',
+    icon: '⛉',
+    iconArt: KIND_ART.op_request,
+    slug: 'requests',
+    strategy: 'collection',
+    defaultMode: 'list',
+    hiddenModes: ['board', 'tree', 'gallery'],
+    chip: { glyph: '⛉', tintBy: 'none' },
+    // The tile's title says what is asked (entity-read `titleOf`), its excerpt
+    // the op; the status word is the request's own (pending → decided).
+    card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
+    // Born only from `opRequests.create` (generic create is refused
+    // server-side): an agent files it, so there is no create door here.
+    list: baseList({
+      quickCreate: false,
+      tile: { badges: [{ source: 'status' }, { source: 'createdBy' }] },
+    }),
+    // The approve card reads the request through `opRequests.get` and decides
+    // it through `opRequests.approve|deny`, both HUMAN-ONLY at the facade; the
+    // view's `canDecide` says whether this viewer may, so nothing here does.
+    panel: {
+      archetype: 'generic',
+      blocks: [{ block: 'approval', label: 'REQUEST' }],
+    },
+  },
+
+  /*
+   * -- style (migration 284: a published, read-only space style) --
+   *
+   * MINIMAL BY DESIGN: this row registers the kind so lists, panels and the
+   * rail can show a space style. Choosing and editing styles happen in the
+   * account menu's picker and the style editor, not here. A space style is
+   * READ-ONLY — new versions arrive only by `styles.push` — so there is no
+   * quick create, no edit sheet and no `primaries`.
+   */
+  {
+    kind: 'style',
+    label: 'Style',
+    labelPlural: 'Styles',
+    icon: '◐',
+    iconArt: KIND_ART.style,
+    slug: 'styles',
+    strategy: 'collection',
+    defaultMode: 'list',
+    hiddenModes: ['board', 'tree', 'gallery'],
+    chip: { glyph: '◐', tintBy: 'none' },
+    card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
+    list: baseList({
+      quickCreate: false,
+      tile: { badges: [{ source: 'createdBy' }] },
+    }),
+    panel: { archetype: 'generic', blocks: [{ block: 'fields', label: 'STYLE' }] },
   },
 
   // -- the single custom-kind fallback row ----------------------------------

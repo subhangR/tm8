@@ -161,12 +161,21 @@ import type {
   SpaceCredentialVisibilityName,
   NodeCredentialPolicyEntry,
   NodeCredentialsStatusView,
+  NodeAccountListView,
+  PathGrantListView,
+  PathGrantView,
   NodeMetricsView,
   SpaceCredentialProviderName,
   SpaceCredentialStoredProviderName,
   SpaceCredentialView,
   SpaceLinkView,
   SpaceLinkAuditEntry,
+  SpaceLinkInboundAuditEntry,
+  SpaceLinkInboundView,
+  CrossSpaceRef,
+  CrossSpaceRefRemoved,
+  OpRequestView,
+  OpRequestStatus,
   ServerView,
   ServerProbeView,
   ActionRows,
@@ -270,6 +279,21 @@ import type {
   AuthSessionsRevokeResult,
   ChatDefault,
   ChatDefaultsView,
+  PersonalStyleCreateInput,
+  PersonalStyleUpdateInput,
+  PersonalStylesListResult,
+  PersonalStyleWriteResult,
+  SpaceStyleDefaultView,
+  SpaceStyleWriteResult,
+  StyleDoc,
+  StylePushInput,
+  StylesResolveResult,
+  StyleGetResult,
+  StylePrefsGetResult,
+  StylePrefsSetInput,
+  StylePrefsSetResult,
+  StylePrefsView,
+  StylesListResult,
   SpaceSummary,
   TaskAxis,
   TaskAxisInput,
@@ -290,6 +314,34 @@ import type {
 import type { ChatContextFrame, ChatTurnFrame } from '../chat-home/types';
 
 export type Unsubscribe = () => void;
+
+/**
+ * `opRequests.approve` / `opRequests.deny`'s answer (L5, 280): the request as
+ * it now stands, and whether the outcome reached the requesting session. A
+ * failed notify is NOT a failed decision: the request is decided either way.
+ */
+export interface OpRequestDecision {
+  request: OpRequestView;
+  notified: boolean;
+  notifyError?: { code: string; message: string };
+  delivery?: unknown[];
+}
+
+/**
+ * The op-request noun (`opRequests.*`, L5, migration 280). An agent files a
+ * typed request for a human-only op; a human approves it (the server runs the
+ * op AS THE APPROVER) or denies it. `create` is the agent's door and has no UI
+ * caller, so it is not here.
+ */
+export interface OpRequestsOps {
+  /** The space's requests, newest first. */
+  list(spaceId: SpaceId, query?: { status?: OpRequestStatus; limit?: number }): Promise<OpRequestView[]>;
+  get(requestId: EntityId): Promise<OpRequestView>;
+  /** HUMAN-ONLY. An agent caller is refused `forbidden`. */
+  approve(requestId: EntityId, note?: string | null): Promise<OpRequestDecision>;
+  /** HUMAN-ONLY. Nothing runs. */
+  deny(requestId: EntityId, note?: string | null): Promise<OpRequestDecision>;
+}
 
 /**
  * Connection honesty states (T4). The UI renders these truthfully and never
@@ -349,6 +401,22 @@ export interface LivenessSnapshot {
  * do not exist here yet — if the UI needs them, FE + bridge escalate JOINTLY
  * to master before inventing a shape (R4). Do not add fields speculatively.
  */
+/**
+ * One page of a space style's push history (`entities.versions`, newest
+ * first). `snapshot` is the `styles` detail row as it stood at that version
+ * (title, foundation, vars, css, pushed_by); the editor reads it defensively.
+ */
+export interface StyleVersionsPage {
+  items: {
+    entityId: string;
+    version: number;
+    snapshot: Record<string, unknown> | null;
+    changedBy: { id: string; displayName: string; isAgent?: boolean } | null;
+    changedAt: string;
+  }[];
+  nextCursor: string | null;
+}
+
 export interface IdentityView {
   identityId: string;
   accountId: string;
@@ -373,6 +441,12 @@ export interface IdentityView {
    * Absent from a node that predates the field: unknown, not `agents`.
    */
   spaceSessions?: SpaceSessionsMode;
+  /**
+   * The viewer's style prefs, embedded by `identity.get` (styles spec §4.1).
+   * `null` = no prefs row (the space default applies, §3.6); ABSENT = a node
+   * that predates styles, where the UI keeps its local choice.
+   */
+  stylePrefs?: StylePrefsView | null;
 }
 
 /**
@@ -590,6 +664,38 @@ export interface Seam {
    * admin only; a member's refusal arrives as the server's own `forbidden`.
    */
   setChatDefaults(spaceId: SpaceId, defaults: Record<string, ChatDefault | null>): Promise<ChatDefaultsView>;
+
+  // -- styles (styles spec v8 §4.1). OPTIONAL: fixtures and fakes that do not
+  //    model styles omit them, and the style layer then stays local-only.
+  /** `identity.stylePrefs.get` — self only; `prefs: null` = no row. */
+  stylePrefs?(): Promise<StylePrefsGetResult>;
+  /** `identity.stylePrefs.set` — verifies readability, writes the snapshot, emits per-member. */
+  setStylePrefs?(input: Omit<StylePrefsSetInput, 'clientMutationId'>): Promise<StylePrefsSetResult>;
+  /** `spaces.styleDefault.get` — any member; `revision: 0` = no row. */
+  styleDefault?(spaceId: SpaceId): Promise<SpaceStyleDefaultView>;
+  /** `styles.get` by typed ref; rejects `forbidden`/`not_found` when not readable now. */
+  style?(ref: string): Promise<StyleGetResult>;
+  /** `styles.list` — built-ins first, then the space's styles. */
+  styles?(spaceId: SpaceId): Promise<StylesListResult>;
+  /** `styles.personal.list` — the caller's own. */
+  personalStyles?(): Promise<PersonalStylesListResult>;
+  /** `styles.pull` — a new personal style copied from a space style or built-in. */
+  pullStyle?(ref: string, title?: string): Promise<PersonalStyleWriteResult>;
+  /** `styles.personal.create` — a doc, or `from` a built-in / space style. */
+  createPersonalStyle?(input: Omit<PersonalStyleCreateInput, 'clientMutationId'>): Promise<PersonalStyleWriteResult>;
+  /** `styles.personal.update` — owner; `expectedVersion` guarded, `vars` is a merge patch. */
+  updatePersonalStyle?(
+    id: string,
+    input: Omit<PersonalStyleUpdateInput, 'clientMutationId'>,
+  ): Promise<PersonalStyleWriteResult>;
+  /** `styles.personal.delete` — owner; a pushed space style stays. */
+  deletePersonalStyle?(id: string, expectedVersion?: number): Promise<void>;
+  /** `styles.push` — create or re-version a space style from a personal one. */
+  pushStyle?(input: Omit<StylePushInput, 'clientMutationId'>): Promise<SpaceStyleWriteResult>;
+  /** `styles.resolve` — lint a doc; nothing stored. */
+  resolveStyleDoc?(doc: StyleDoc): Promise<StylesResolveResult>;
+  /** `entities.versions` on a space style — its push history, newest first. */
+  styleVersions?(entityId: string, cursor?: string | null): Promise<StyleVersionsPage>;
   /**
    * The category-model workflows (`spaces.workflows.list`, migration 149):
    * the ONE global default (spaceId null) plus this space's own. Distinct
@@ -950,6 +1056,13 @@ export interface Seam {
      * `skills`: a seam without it renders every verb refused-with-reason.
      */
     managed?: ManagedPort;
+    /**
+     * The approve card's port (L5, 280): the same object as `seam.opRequests`,
+     * re-exposed here because every detail-panel host already hands the panel
+     * `seam.commands`. Optional like `managed`: absent, the card says the
+     * decision is not wired here rather than drawing dead buttons.
+     */
+    opRequests?: OpRequestsOps;
     /**
      * `launch.suggest` — Ask Jev on LaunchSheet and the Run popup (design
      * 01a0cb80 §5.1). Optional like `skills`: a seam without it renders the
@@ -1457,6 +1570,24 @@ export interface Seam {
   };
 
   /**
+   * -- filesystem path grants (282, design doc 01a0fb62 §4) ------------------
+   *
+   * A node admin lets one member browse one folder root and pick projects from
+   * it. Optional like `projectSetup`: a seam with no node behind it has none,
+   * and the section says so instead of drawing an empty list.
+   */
+  pathGrants?: {
+    /** Node admin: every grant; revoked ones when asked. */
+    list(includeRevoked?: boolean): Promise<PathGrantListView>;
+    create(accountId: string, rootPath: string, note?: string): Promise<PathGrantView>;
+    revoke(grantId: string): Promise<PathGrantView>;
+    /** Node admin: who a grant can be addressed to. */
+    accounts(): Promise<NodeAccountListView>;
+    /** Anyone: the caller's own live grants. */
+    mine(): Promise<PathGrantListView>;
+  };
+
+  /**
    * -- space links (`spaceLinks.*`, W6, migrations 250/251) -------------------
    *
    * A link from a home space to a target space the viewer is also a member of.
@@ -1483,7 +1614,43 @@ export interface Seam {
      * body: op, result, reason and the ids involved.
      */
     audit(linkId: EntityId): Promise<SpaceLinkAuditEntry[]>;
+    /**
+     * 278 (D2): the TARGET side, for an admin of `spaceId` (anyone else is
+     * refused `forbidden`). The links INTO the space, the calls made through
+     * them (scoped to this space), and revoke/restore — the two writes are
+     * human-only like every link write.
+     */
+    inbound: {
+      list(spaceId: SpaceId): Promise<SpaceLinkInboundView[]>;
+      /** Newest first; `linkId` narrows it to one link. */
+      audit(spaceId: SpaceId, linkId?: EntityId): Promise<SpaceLinkInboundAuditEntry[]>;
+      revoke(spaceId: SpaceId, linkId: EntityId): Promise<SpaceLinkInboundView>;
+      restore(spaceId: SpaceId, linkId: EntityId): Promise<SpaceLinkInboundView>;
+    };
   };
+
+  /**
+   * -- cross-space references (`entities.refs.*`, L3, migration 279) ----------
+   *
+   * An entity's pointers into linked spaces. Not edges: edges never cross
+   * spaces (D3). Each carries a kind and title SNAPSHOT; `live` is set only
+   * when the viewer can read the target entity now. Agents add them through
+   * their human's signed-in link (`tm8 entity ref add`); the UI reads and
+   * removes.
+   */
+  crossSpaceRefs: {
+    list(entityId: EntityId): Promise<CrossSpaceRef[]>;
+    remove(entityId: EntityId, refId: string): Promise<CrossSpaceRefRemoved>;
+  };
+
+  /**
+   * -- op requests (`opRequests.*`, L5, migration 280) -----------------------
+   *
+   * An agent's typed request for an allow-listed human-only op. `approve` and
+   * `deny` are HUMAN-ONLY at the facade; `canDecide` on each view says whether
+   * THIS caller may decide it now.
+   */
+  opRequests: OpRequestsOps;
 
   /**
    * -- remote servers (`servers.*`, W8, migration 261) ------------------------

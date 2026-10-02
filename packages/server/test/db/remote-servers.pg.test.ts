@@ -475,9 +475,11 @@ describe('W8 (c)1 — the §8b exemption is definer-owned: a forged tm8.server_l
 
   // §8c on its own: the trigger backstop would keep the door cases green if a
   // later redefinition dropped 'server' from a body, so pin the bodies too.
+  // 284 redefines delete_entity with `style` after `server` in the same list,
+  // so the pattern admits that one optional trailing kind and nothing else.
   it("§8c: move / delete / restore_entity each refuse the kind 'server' in their own body", async () => {
     const bodies = await database.query<{ proname: string; listed: boolean }>(`select proname,
-        prosrc like '%''interaction_profile'',''credential'',''server'')%' as listed
+        prosrc ~ '''interaction_profile'',''credential'',''server''(,''style'')?\\)' as listed
       from pg_proc where pronamespace = 'public'::regnamespace
        and proname in ('move_entity', 'delete_entity', 'restore_entity') order by proname`);
     expect(bodies).toEqual([

@@ -280,6 +280,11 @@ const LIVE_VERBS = [
   // on the seam. The body is owned by `settings-space-links/` and is not
   // injected here; its controls are held in space-links.test.tsx.
   /^Space links$/,
+  // Filesystem access (282): the NAV ROW only — `node.pathGrants.*`,
+  // `node.accounts.list` and `identity.pathGrants.list` are real catalog ops on
+  // the seam. The body is owned by `settings-credentials/` and is not injected
+  // here; its controls are held in filesystem-access.test.tsx.
+  /^Filesystem access$/,
 ];
 
 function sweepEnabledControls(root: HTMLElement) {

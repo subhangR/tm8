@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:5513b56c1694d513b34b1c3435bf51f30d44c15336d87b759924d0bd0d53a09b",
+  "catalogDigest": "sha256:727cfb8df9478dca9c67b97d04448214fbc5f8a55db0955747de95243ef8acf2",
   "catalog": {
-    "total": 288,
-    "v1": 286,
+    "total": 320,
+    "v1": 318,
     "reserved": 2,
-    "http": 286,
+    "http": 318,
     "ws": 1,
-    "registerableV1Http": 284,
+    "registerableV1Http": 316,
     "methods": {
-      "GET": 92,
-      "POST": 141,
-      "PATCH": 17,
-      "DELETE": 18,
-      "PUT": 18,
+      "GET": 106,
+      "POST": 154,
+      "PATCH": 18,
+      "DELETE": 20,
+      "PUT": 20,
       "WS": 2
     },
     "kinds": {
-      "read": 96,
-      "command": 190,
+      "read": 111,
+      "command": 207,
       "stream": 2
     },
-    "uniqueNames": 288,
-    "uniqueBindings": 287
+    "uniqueNames": 320,
+    "uniqueBindings": 319
   },
   "reservedOperations": [
     "search.query",
@@ -505,6 +505,90 @@
         "operation": "spaceLinks.audit",
         "method": "GET",
         "path": "/v2/space-links/:linkId/audit",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaceLinks.inbound.list",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/space-links/inbound",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaceLinks.inbound.audit",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/space-links/inbound/audit",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaceLinks.inbound.revoke",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/space-links/inbound/:linkId/revoke",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaceLinks.inbound.restore",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/space-links/inbound/:linkId/restore",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "entities.refs.list",
+        "method": "GET",
+        "path": "/v2/entities/:id/refs",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "entities.refs.add",
+        "method": "POST",
+        "path": "/v2/entities/:id/refs",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "entities.refs.remove",
+        "method": "DELETE",
+        "path": "/v2/entities/:id/refs/:refId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "opRequests.list",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/op-requests",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "opRequests.create",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/op-requests",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "opRequests.get",
+        "method": "GET",
+        "path": "/v2/op-requests/:requestId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "opRequests.approve",
+        "method": "POST",
+        "path": "/v2/op-requests/:requestId/approve",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "opRequests.deny",
+        "method": "POST",
+        "path": "/v2/op-requests/:requestId/deny",
         "status": "registered",
         "source": "server-router"
       },
@@ -1748,6 +1832,111 @@
         "source": "server-router"
       },
       {
+        "operation": "styles.personal.list",
+        "method": "GET",
+        "path": "/v2/identity/styles",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "styles.personal.create",
+        "method": "POST",
+        "path": "/v2/identity/styles",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "styles.personal.update",
+        "method": "PATCH",
+        "path": "/v2/identity/styles/:id",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "styles.personal.delete",
+        "method": "DELETE",
+        "path": "/v2/identity/styles/:id",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "styles.list",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/styles",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "styles.get",
+        "method": "GET",
+        "path": "/v2/styles/:ref",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "styles.push",
+        "method": "POST",
+        "path": "/v2/styles/push",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "styles.pull",
+        "method": "POST",
+        "path": "/v2/styles/:ref/pull",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "styles.remove",
+        "method": "POST",
+        "path": "/v2/styles/:ref/remove",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "styles.resolve",
+        "method": "POST",
+        "path": "/v2/styles/resolve",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "styles.export",
+        "method": "GET",
+        "path": "/v2/styles/:ref/export",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "identity.stylePrefs.get",
+        "method": "GET",
+        "path": "/v2/identity/style-prefs",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "identity.stylePrefs.set",
+        "method": "PUT",
+        "path": "/v2/identity/style-prefs",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.styleDefault.get",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/style-default",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.styleDefault.set",
+        "method": "PUT",
+        "path": "/v2/spaces/:spaceId/style-default",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "auth.signup",
         "method": "POST",
         "path": "/v2/auth/signup",
@@ -2010,6 +2199,41 @@
         "operation": "node.credentials.policy.set",
         "method": "PUT",
         "path": "/v2/node/credential-policy/:provider",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "node.pathGrants.list",
+        "method": "GET",
+        "path": "/v2/node/path-grants",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "node.pathGrants.create",
+        "method": "POST",
+        "path": "/v2/node/path-grants",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "node.pathGrants.revoke",
+        "method": "POST",
+        "path": "/v2/node/path-grants/:grantId/revoke",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "node.accounts.list",
+        "method": "GET",
+        "path": "/v2/node/accounts",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "identity.pathGrants.list",
+        "method": "GET",
+        "path": "/v2/identity/path-grants",
         "status": "registered",
         "source": "server-router"
       },
@@ -2420,7 +2644,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 256
+    "unimplementedV1Http": 288
   },
   "schemas": {
     "additive": {
@@ -3313,6 +3537,214 @@
           "space",
           "links",
           "audit"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaceLinks.inbound.list",
+        "noun": "space-link",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaceLinks.inbound.list",
+        "intentTags": [
+          "space",
+          "links",
+          "inbound",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaceLinks.inbound.audit",
+        "noun": "space-link",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaceLinks.inbound.audit",
+        "intentTags": [
+          "space",
+          "links",
+          "inbound",
+          "audit"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaceLinks.inbound.revoke",
+        "noun": "space-link",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaceLinks.inbound.revoke",
+        "intentTags": [
+          "space",
+          "links",
+          "inbound",
+          "revoke"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaceLinks.inbound.restore",
+        "noun": "space-link",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaceLinks.inbound.restore",
+        "intentTags": [
+          "space",
+          "links",
+          "inbound",
+          "restore"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "entities.refs.list",
+        "noun": "entity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/entities.refs.list",
+        "intentTags": [
+          "entities",
+          "refs",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "entities.refs.add",
+        "noun": "entity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/entities.refs.add",
+        "intentTags": [
+          "entities",
+          "refs",
+          "add"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "entities.refs.remove",
+        "noun": "entity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/entities.refs.remove",
+        "intentTags": [
+          "entities",
+          "refs",
+          "remove"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "opRequests.list",
+        "noun": "request",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/opRequests.list",
+        "intentTags": [
+          "op",
+          "requests",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "opRequests.create",
+        "noun": "request",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/opRequests.create",
+        "intentTags": [
+          "op",
+          "requests",
+          "create"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "opRequests.get",
+        "noun": "request",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/opRequests.get",
+        "intentTags": [
+          "op",
+          "requests",
+          "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "opRequests.approve",
+        "noun": "request",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/opRequests.approve",
+        "intentTags": [
+          "op",
+          "requests",
+          "approve"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "opRequests.deny",
+        "noun": "request",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/opRequests.deny",
+        "intentTags": [
+          "op",
+          "requests",
+          "deny"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
@@ -6303,6 +6735,258 @@
         "publicComposite": null
       },
       {
+        "operation": "styles.personal.list",
+        "noun": "style",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/styles.personal.list",
+        "intentTags": [
+          "styles",
+          "personal",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "styles.personal.create",
+        "noun": "style",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/styles.personal.create",
+        "intentTags": [
+          "styles",
+          "personal",
+          "create"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "styles.personal.update",
+        "noun": "style",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/styles.personal.update",
+        "intentTags": [
+          "styles",
+          "personal",
+          "update"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "styles.personal.delete",
+        "noun": "style",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/styles.personal.delete",
+        "intentTags": [
+          "styles",
+          "personal",
+          "delete"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "styles.list",
+        "noun": "style",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/styles.list",
+        "intentTags": [
+          "styles",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "styles.get",
+        "noun": "style",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/styles.get",
+        "intentTags": [
+          "styles",
+          "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "styles.push",
+        "noun": "style",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/styles.push",
+        "intentTags": [
+          "styles",
+          "push"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "styles.pull",
+        "noun": "style",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/styles.pull",
+        "intentTags": [
+          "styles",
+          "pull"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "styles.remove",
+        "noun": "style",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/styles.remove",
+        "intentTags": [
+          "styles",
+          "remove"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "styles.resolve",
+        "noun": "style",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/styles.resolve",
+        "intentTags": [
+          "styles",
+          "resolve"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "styles.export",
+        "noun": "style",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/styles.export",
+        "intentTags": [
+          "styles",
+          "export"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "identity.stylePrefs.get",
+        "noun": "identity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/identity.stylePrefs.get",
+        "intentTags": [
+          "identity",
+          "style",
+          "prefs",
+          "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "identity.stylePrefs.set",
+        "noun": "identity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/identity.stylePrefs.set",
+        "intentTags": [
+          "identity",
+          "style",
+          "prefs",
+          "set"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.styleDefault.get",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.styleDefault.get",
+        "intentTags": [
+          "spaces",
+          "style",
+          "default",
+          "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.styleDefault.set",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.styleDefault.set",
+        "intentTags": [
+          "spaces",
+          "style",
+          "default",
+          "set"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
         "operation": "auth.signup",
         "noun": "auth",
         "exposure": "public",
@@ -6950,6 +7634,95 @@
           "credentials",
           "policy",
           "set"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "node.pathGrants.list",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/node.pathGrants.list",
+        "intentTags": [
+          "node",
+          "path",
+          "grants",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "node.pathGrants.create",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/node.pathGrants.create",
+        "intentTags": [
+          "node",
+          "path",
+          "grants",
+          "create"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "node.pathGrants.revoke",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/node.pathGrants.revoke",
+        "intentTags": [
+          "node",
+          "path",
+          "grants",
+          "revoke"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "node.accounts.list",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/node.accounts.list",
+        "intentTags": [
+          "node",
+          "accounts",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "identity.pathGrants.list",
+        "noun": "identity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/identity.pathGrants.list",
+        "intentTags": [
+          "identity",
+          "path",
+          "grants",
+          "list"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
@@ -8414,6 +9187,45 @@
           "strategy": "space-link-kinds"
         }
       },
+      "op_request": {
+        "kind": "op_request",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "op-requests"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "op-request-lifecycle",
+          "genericCreate": false,
+          "genericPatch": false,
+          "genericMove": false,
+          "genericHierarchy": false,
+          "genericDeleteRestore": false,
+          "genericPoints": false,
+          "messages": true,
+          "reactions": false,
+          "connections": false,
+          "lifecycleOperations": [
+            "opRequests.list",
+            "opRequests.get",
+            "opRequests.create",
+            "opRequests.approve",
+            "opRequests.deny"
+          ]
+        },
+        "menu": {
+          "strategy": "not-addressable"
+        },
+        "migration": {
+          "strategy": "op-request-detail"
+        }
+      },
       "story": {
         "kind": "story",
         "entityKind": true,
@@ -8445,6 +9257,46 @@
         },
         "migration": {
           "strategy": "story-detail"
+        }
+      },
+      "style": {
+        "kind": "style",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "styles"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "style-lifecycle",
+          "genericCreate": false,
+          "genericPatch": false,
+          "genericMove": false,
+          "genericHierarchy": false,
+          "genericDeleteRestore": false,
+          "genericPoints": false,
+          "messages": true,
+          "reactions": true,
+          "connections": true,
+          "lifecycleOperations": [
+            "styles.list",
+            "styles.get",
+            "styles.push",
+            "styles.pull",
+            "styles.remove",
+            "styles.export"
+          ]
+        },
+        "menu": {
+          "strategy": "not-addressable"
+        },
+        "migration": {
+          "strategy": "style-detail"
         }
       }
     },

@@ -27,8 +27,12 @@ import { CollabError, isHumanAuthKind } from '@tm8/contract';
 
 import type { RequestIdentity, SpaceSessionsMode } from './types.js';
 
-/** Node-admin operation namespaces a gate session keeps (K6: node admin is gate admin). */
-const GATE_NODE_ADMIN_PREFIXES: readonly string[] = ['node.', 'serverConnections.'];
+/**
+ * Node-admin operation namespaces a gate session keeps (K6: node admin is gate
+ * admin). `gate.*` (`gate.folders.*`) checks `isGateAdmin` — node admin AND
+ * unpinned — so a gate session is the only caller that can ever pass it.
+ */
+const GATE_NODE_ADMIN_PREFIXES: readonly string[] = ['node.', 'serverConnections.', 'gate.'];
 
 /** Non-`auth.*` ops a gate session needs to find, make or join a space. */
 const GATE_SPACE_ENTRY_OPS: ReadonlySet<string> = new Set([
@@ -38,9 +42,24 @@ const GATE_SPACE_ENTRY_OPS: ReadonlySet<string> = new Set([
   'spaces.invites.redeem',
 ]);
 
+/**
+ * L5 (280): a gate admin decides op requests for gate-admin ops
+ * (`gate.folders.create`, and path grants when they land) FROM the gate,
+ * because the approved op runs as the approver's session and only an
+ * unpinned node admin passes their checks. SQL still requires the approver to
+ * be an active member of the request's Space. The approved op passes this same
+ * gate again before it runs.
+ */
+const GATE_OP_REQUEST_OPS: ReadonlySet<string> = new Set([
+  'opRequests.get',
+  'opRequests.approve',
+  'opRequests.deny',
+]);
+
 /** Whether `opName` is one a gate session may call under `enforce`. */
 export function gateSessionMayCall(opName: string): boolean {
   if (GATE_SPACE_ENTRY_OPS.has(opName)) return true;
+  if (GATE_OP_REQUEST_OPS.has(opName)) return true;
   // `auth.*` includes `auth.space.enter`, `auth.session.get`, logout and
   // `auth.invite.resolve` (the invite preview the join screen shows first).
   if (opName.startsWith('auth.')) return true;

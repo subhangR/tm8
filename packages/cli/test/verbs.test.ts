@@ -79,7 +79,6 @@ beforeEach(() => {
 
 describe('rejected vocabulary fails with a discovery hint (conformance D6)', () => {
   const cases: { argv: string[]; expect: RegExp }[] = [
-    { argv: ['whoami'], expect: /identity get/ },
     { argv: ['task', 'report', 'progress', 'ent_1', 'made progress'], expect: /task transition/ },
     { argv: ['task', 'report', 'complete', 'ent_1', 'all done'], expect: /task complete/ },
     { argv: ['task', 'report', 'blocked', 'ent_1', 'waiting'], expect: /message send/ },

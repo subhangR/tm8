@@ -1184,7 +1184,11 @@ export type ContentBlockKind =
   // its facts, and the per-item verbs `actions.list` says are live. The spec is
   // `PanelConfig.managed`, because verb slots are a list and block params are
   // scalars.
-  | 'managed';
+  | 'managed'
+  // …and the APPROVE CARD (L5, 280): a request for a human-only operation —
+  // what it would run, why, and where it stands — with Approve / Deny when the
+  // viewer may decide it. Named for what it draws, not for the kind (§15.2).
+  | 'approval';
 
 export interface ContentBlockRef {
   block: ContentBlockKind;

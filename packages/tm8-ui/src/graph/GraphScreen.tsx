@@ -38,6 +38,7 @@ import { taskGitSectionFor } from '../views/taskGitSection';
 import { graphSurfaceFor } from '../views/graphSurface';
 import { storySurfaceFor } from '../views/storySurface';
 import { launchContextSurfaceFor } from '../views/launchContextSurface';
+import { crossSpaceRefsSurfaceFor } from '../views/crossSpaceRefsSurface';
 import { attachmentsFor } from '../files/port';
 import { useMembershipSurface } from '../views/membershipSurface';
 import { conversationSurfaceFor } from '../views/conversationSurface';
@@ -245,6 +246,7 @@ export function GraphScreen(props: GraphScreenProps) {
       graphSurface={graphSurfaceFor(data.seam, selectedId, data.livenessOf, (id) =>
         setSelectedId(id as EntityId),
       )}
+      crossSpaceRefsSurface={crossSpaceRefsSurfaceFor(data.seam, selectedId)}
       launchContextSurface={launchContextSurfaceFor(data.seam, selectedId, (id) => setSelectedId(id as EntityId))}
       storySurface={storySurfaceFor(data.seam, selectedId, (id) => setSelectedId(id as EntityId))}
       attachments={attachments}
