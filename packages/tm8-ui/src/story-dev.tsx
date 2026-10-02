@@ -4,10 +4,12 @@ import './styles/tokens.css';
 import './styles/canvas-extra.css';
 import './styles/app.css';
 import './kit/kit.css';
+import './panels/panels.css';
 
 import { StoryPage } from './story/StoryPage';
 import type { StoryActions } from './story/actions';
 import { STORY_FIXTURE, STORY_FIXTURE_EMPTY } from './story/fixture';
+import { GRAPH_VIEWS } from './story/model';
 
 /**
  * STORY PAGE SCRATCH HARNESS — the story page on fixtures, no server, no auth.
@@ -43,6 +45,7 @@ function Harness() {
   const params = new URLSearchParams(window.location.search);
   const theme = params.get('theme') === 'dark' ? 'dark' : undefined;
   const view = params.get('empty') === '1' ? STORY_FIXTURE_EMPTY : STORY_FIXTURE;
+  const graphView = GRAPH_VIEWS.find((g) => g.view === params.get('view'))?.view;
   const [lines, setLines] = useState<string[]>([]);
   const actions = useMemo<StoryActions>(
     () =>
@@ -57,7 +60,7 @@ function Harness() {
   );
   return (
     <div className="cv2-root" data-theme={theme} style={{ minHeight: '100vh', background: 'var(--pn-paper)' }}>
-      <StoryPage view={view} actions={actions} />
+      <StoryPage view={view} actions={actions} {...(graphView ? { initialGraphView: graphView } : {})} />
       {lines.length > 0 && (
         <pre data-testid="story-dev-log" style={{ position: 'fixed', left: 8, bottom: 8, margin: 0, fontSize: 11, opacity: 0.7 }}>
           {lines.join('\n')}
