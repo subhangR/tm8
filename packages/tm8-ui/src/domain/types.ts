@@ -1104,6 +1104,12 @@ export type ContentBlockKind =
   // cannot tell apart. The block is also the thing a FUTURE second canvas
   // format would reuse, so naming it after one kind was wrong anyway.
   | 'canvas'
+  // The story page (282): hero, stats, graph, roots, team, feed and rail, one
+  // block because the page IS the body. The live read arrives from the host as
+  // `storySurface` (views/storySurface.tsx); without one the block draws the
+  // static read of the row. NAMED `storyline`, NOT `story`, for the same
+  // §15.2 reason `canvas` is not `drawing`.
+  | 'storyline'
   // Artifact viewer: the artifact kind's rendered bundle, in-block. The iframe
   // SHIPS here and autoruns when the detail opens (owner ruling 2026-08-16,
   // superseding the earlier click-gate); the sandbox posture is unchanged —

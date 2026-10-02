@@ -95,6 +95,7 @@ import { gitSurfaceFor } from './gitSurface';
 import { changesSurfaceFor } from './changesSurface';
 import { taskGitSectionFor } from './taskGitSection';
 import { graphSurfaceFor } from './graphSurface';
+import { storySurfaceFor } from './storySurface';
 import { launchContextSurfaceFor } from './launchContextSurface';
 import { AuxEntityPanel } from './auxPanel';
 import { representedThreadMessageCount } from './message-thread';
@@ -843,6 +844,9 @@ export function EntityView(props: EntityViewProps) {
       gitSurface={detail ? gitSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
       changesSurface={detail ? changesSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
       taskGitSection={taskGitSectionFor(data.seam, detail, (id) => setAux({ sort: 'entity', id: id as EntityId }))}
+      storySurface={
+        detail ? storySurfaceFor(data.seam, selectedId, (id) => setAux({ sort: 'entity', id: id as EntityId })) : undefined
+      }
       graphSurface={
         detail
           ? graphSurfaceFor(data.seam, selectedId, data.livenessOf, (id) =>

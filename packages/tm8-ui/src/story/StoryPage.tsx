@@ -65,7 +65,7 @@ export function StoryPage({ view, actions, live }: StoryBlockProps) {
   const block = { view, actions, live, onPick: setPick };
 
   return (
-    <div className="sty-page" data-testid="story-page" data-story-id={view.id}>
+    <div className="sty-page" data-testid="story-page" data-story-root="" data-story-id={view.id}>
       <StoryBar view={view} open={actions.open} />
       <StoryHero view={view} rename={actions.rename} live={live ?? null} />
       <StoryStats view={view} />

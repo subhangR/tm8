@@ -45,6 +45,7 @@ import { gitSurfaceFor } from './gitSurface';
 import { changesSurfaceFor } from './changesSurface';
 import { taskGitSectionFor } from './taskGitSection';
 import { graphSurfaceFor } from './graphSurface';
+import { storySurfaceFor } from './storySurface';
 import { launchContextSurfaceFor } from './launchContextSurface';
 
 /**
@@ -131,6 +132,7 @@ export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose }: AuxEnt
         onOpenEntity(id as EntityId),
       )}
       launchContextSurface={launchContextSurfaceFor(data.seam, entityId, (id) => onOpenEntity(id as EntityId))}
+      storySurface={storySurfaceFor(data.seam, entityId, (id) => onOpenEntity(id as EntityId))}
       livenessOf={data.livenessOf}
       attachments={attachments}
       onAttachmentUploaded={() => data.refetchDetail(entityId)}
