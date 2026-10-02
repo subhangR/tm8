@@ -48,4 +48,6 @@ export interface StoryActions {
   setStatus?: (status: string) => Promise<void>;
   /** Navigate to any entity. */
   open?: (entityId: string) => void;
+  /** Open a list filtered to this story (tasks / sessions / memories / messages, by kind). */
+  filterBy?: (kind: string) => void;
 }
