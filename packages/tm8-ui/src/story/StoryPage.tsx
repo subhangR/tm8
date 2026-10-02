@@ -368,6 +368,8 @@ function StoryLede({ text }: { text: string }) {
     if (!el || open) return;
     const measure = () => setClamped(el.scrollHeight > el.clientHeight + 1);
     measure();
+    // No ResizeObserver (jsdom, older embeds): the one measurement stands.
+    if (typeof ResizeObserver === 'undefined') return;
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
