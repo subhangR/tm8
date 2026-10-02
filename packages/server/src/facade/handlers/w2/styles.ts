@@ -196,7 +196,7 @@ export class W2StylesService {
     } else if (input.vars !== undefined) {
       for (const [key, value] of Object.entries(input.vars)) {
         if (value === null) delete vars[key];
-        else vars[key] = value;
+        else vars[key] = value as string;
       }
     }
     const write = normalizeForWrite({

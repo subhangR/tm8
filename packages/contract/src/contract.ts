@@ -24,7 +24,7 @@ import type { RelevanceLevel } from './launch-suggest.js';
 import type { CoherenceFinding } from './orchestration.js';
 import type { EntityHeaderView, HeaderTextInput } from './selection-header.js';
 import type { EntityContextStory, StoryContent, StoryState } from './story.js';
-import type { ResolvedStyle, StyleDoc, StyleWarning } from './style.js';
+import type { ResolvedStyle, StyleClamp, StyleDoc, StyleWarning } from './style.js';
 
 // ===========================================================================
 // §1 — Inherited contract (UI snapshot, near-verbatim)
@@ -8068,13 +8068,6 @@ export interface StyleGetResult {
   warnings: StyleWarning[];
   personal?: PersonalStyleView;
   space?: SpaceStyleView;
-}
-
-/** A stored write's companion facts: what the resolver flagged on the way in. */
-export interface StyleClamp {
-  key: string;
-  from: string;
-  to: string;
 }
 
 export interface PersonalStyleWriteResult {

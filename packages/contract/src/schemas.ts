@@ -192,6 +192,15 @@ function uniqueArray<T extends z.ZodTypeAny>(item: T, minimum = 0, maximum?: num
     'items must be unique');
 }
 
+/**
+ * A style document as it sits in a STORED row or an event (282): the same
+ * `StyleDocSchema`, typed input = output so it fits the strict
+ * `z.ZodType<T>` unions below (`StyleDocSchema`'s own input is `unknown`
+ * because it accepts a doc that omits `css`). Lazy because `StyleDocSchema`
+ * is declared at the end of this file.
+ */
+const StoredStyleDocSchema = z.lazy(() => StyleDocSchema) as unknown as z.ZodType<StyleDoc>;
+
 export const CoreEntityKindSchema = z.enum([
   'channel', 'task', 'message', 'member', 'team_member',
   'doc', 'file', 'spell', 'skill', 'pull_request', 'commit',
@@ -684,7 +693,7 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
   // event is how viewers repaint, so it must not need a fetch).
   z.object({
     kind: z.literal('style'),
-    doc: z.lazy(() => StyleDocSchema),
+    doc: StoredStyleDocSchema,
     resolvedHash: z.string().nullable(),
     pushedBy: EntityIdSchema,
     pushedAt: z.string(),
@@ -1106,7 +1115,7 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
   z.object({
     kind: z.literal('style'),
     description: z.string().nullable(),
-    doc: z.lazy(() => StyleDocSchema),
+    doc: StoredStyleDocSchema,
     resolvedHash: z.string().nullable(),
     pushedBy: EntityIdSchema,
     pushedAt: z.string(),
@@ -1635,7 +1644,7 @@ export const WorkspaceEventSchema: z.ZodType<WorkspaceEvent> = z.lazy(() => z.un
     type: z.literal('personal_style.updated'),
     id: z.string().uuid(),
     version: z.number().int().positive(),
-    doc: z.lazy(() => StyleDocSchema).nullable(),
+    doc: StoredStyleDocSchema.nullable(),
     resolvedHash: z.string().nullable(),
     deleted: z.boolean(),
     clientMutationId: z.string().optional(),
@@ -5746,7 +5755,7 @@ export const StyleRemoveInputSchema = z.object({
 }).strict();
 
 export const StylesResolveInputSchema = z.object({
-  doc: z.lazy(() => StyleDocSchema),
+  doc: StoredStyleDocSchema,
 }).strict();
 
 export const StylePrefsSetInputSchema = z.object({
