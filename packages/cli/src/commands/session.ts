@@ -58,7 +58,7 @@ import {
   type SessionTranscriptPage,
 } from '@tm8/contract';
 import type { CommandContext, CommandModule } from '../run.js';
-import { callerMutationId, spawnedWorktreeId, successReceipt } from '../receipt.js';
+import { callerMutationId, spawnPostureText, spawnedWorktreeId, successReceipt } from '../receipt.js';
 import { errorInput, withErrorReceipt } from '../receipt-error.js';
 
 /** §4.13's closed workdir set. Kept as a tuple so the diagnostic renders it. */
@@ -889,7 +889,8 @@ function renderSpawned(dto: unknown): string {
   const entity = (dto as CommandResultish)?.entity;
   if (entity?.id === undefined) return JSON.stringify(dto);
   const status = entity.status === undefined ? '' : ` ${String(entity.status)}`;
-  return `${String(entity.id)}${status}`.trim();
+  const posture = spawnPostureText(dto);
+  return `${String(entity.id)}${status}${posture === '' ? '' : ` ${posture}`}`.trim();
 }
 
 /**

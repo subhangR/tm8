@@ -54,6 +54,7 @@ import {
   resolveCommandNetworkPolicy,
   resolveCoordinatorSessionId,
   resolveLaunchConfig,
+  spawnLaunchFacts,
   resolveSessionTitle,
   resolveWorkdir,
   supportsPositionalPrompt,
@@ -1560,6 +1561,7 @@ export class SpawnService {
         reused: true,
         commandResult,
         ...spawnFacts,
+        launchFacts: spawnLaunchFacts(manifest.launch, launch.accessModeSource, request.parentSessionId ?? null),
       };
     }
 
@@ -1862,7 +1864,10 @@ export class SpawnService {
         this.watchWorkspaceTrust(sessionId, manifestPath, manifest, env);
       }
 
-      return { sessionId, manifestPath, manifest, command, cwd, envVarNames, reused, commandResult, ...spawnFacts };
+      return {
+        sessionId, manifestPath, manifest, command, cwd, envVarNames, reused, commandResult, ...spawnFacts,
+        launchFacts: spawnLaunchFacts(manifest.launch, launch.accessModeSource, request.parentSessionId ?? null),
+      };
     } catch (error) {
       // The row exists and the graph believes a session is spawning. Leaving it
       // there would burn a slot against the concurrency cap forever, so mark it

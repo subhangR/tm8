@@ -5680,6 +5680,44 @@ export const EXECUTION_NEW_TASK_TITLE_MAX = 200;
 export interface ExecutionSpawnResult extends CommandResult {
   /** Present only when the request carried `newTask`. */
   createdTaskId?: EntityId;
+  /**
+   * What the new session actually launched with — the RESOLVED posture, not
+   * an echo of the request, which may name none of it. Absent from a server
+   * that predates it.
+   */
+  launch?: ExecutionSpawnLaunch;
+}
+
+/**
+ * Which link of the launch precedence chain chose the access mode:
+ * `requested` (this request named it), `env` (the node's
+ * `TM8_PERMISSION_MODE`), `inherited` (the parent session's posture),
+ * `persona` (the teammate's default), `default` (built-in) or `dispatcher`
+ * (a dispatcher always runs `fullAccess`).
+ */
+export type SpawnAccessModeSource = 'requested' | 'env' | 'inherited' | 'persona' | 'default' | 'dispatcher';
+
+/** How a space credential was picked: the request's pin, the launcher's own default, or the space default. */
+export type SpawnSpaceCredentialPick = 'pinned' | 'my_default' | 'space_default';
+
+/** One provider's effective credential source. Ids only — never a secret. */
+export interface ExecutionSpawnCredential {
+  provider: CredentialProviderName;
+  source: LaunchCredentialSource;
+  /** The space credential used; present only when `source` is `space`. */
+  spaceCredentialId?: EntityId;
+  /** How that space credential was chosen, when the spawn path recorded it. */
+  spacePick?: SpawnSpaceCredentialPick;
+}
+
+/** The resolved launch facts `execution.spawn` answers with. */
+export interface ExecutionSpawnLaunch {
+  accessMode: LaunchAccessMode;
+  accessModeSource: SpawnAccessModeSource;
+  /** Null for a root spawn. */
+  parentSessionId: EntityId | null;
+  /** One row per provider the launch resolved, ordered by provider. */
+  credentials: ExecutionSpawnCredential[];
 }
 
 /**

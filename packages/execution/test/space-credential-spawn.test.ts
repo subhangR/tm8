@@ -362,8 +362,14 @@ describe('SC-2 spawn/resume ordering around a space credential', () => {
     // Only A is a member: had anything consulted the persona owner (B), the read would miss.
     const port = new FakeSpacePort(events, new Set(['identity-A']));
     spyPty();
-    await service(port).spawn(A, { spaceId: SPACE_ID, teamMemberId: TEAMMATE_OF_B, credentialSources: { anthropic: 'space' } });
+    const root = await service(port).spawn(A, { spaceId: SPACE_ID, teamMemberId: TEAMMATE_OF_B, credentialSources: { anthropic: 'space' } });
     expect(events.filter((e) => e.startsWith('read:'))).toEqual(['read:anthropic:identity-A', 'read:github:identity-A']);
+    // The spawn result names the space credential and how it was picked — never its key.
+    expect(root.launchFacts?.credentials).toContainEqual(
+      { provider: 'anthropic', source: 'space', spaceCredentialId: ANT, spacePick: 'space_default' },
+    );
+    expect(root.launchFacts?.parentSessionId).toBeNull();
+    expect(JSON.stringify(root.launchFacts)).not.toContain(ANT_KEY);
     // An agent-spawned child carries its launcher's claims (A) and the parent's exact id.
     const parent = graph.manifests[0]!.sessionId;
     graph.postures.set(parent, {
@@ -371,9 +377,14 @@ describe('SC-2 spawn/resume ordering around a space credential', () => {
       spaceCredentialIds: { anthropic: ANT },
     } as SessionLaunchPosture);
     events.length = 0;
-    await service(port).spawn(A, { spaceId: SPACE_ID, teamMemberId: TEAMMATE_OF_B, parentSessionId: parent });
+    const child = await service(port).spawn(A, { spaceId: SPACE_ID, teamMemberId: TEAMMATE_OF_B, parentSessionId: parent });
     expect(events).toContain('read:anthropic:identity-A');
     expect(graph.manifests[1]!.manifest.launch.spaceCredentialIds).toEqual({ anthropic: ANT });
+    // The inherited exact id is a pin the parent made, so the child reports it pinned.
+    expect(child.launchFacts?.credentials).toContainEqual(
+      { provider: 'anthropic', source: 'space', spaceCredentialId: ANT, spacePick: 'pinned' },
+    );
+    expect(child.launchFacts?.parentSessionId).toBe(parent);
   });
 
   describe('resume (C3): authorise the resumer, then re-point, then the PTY', () => {
