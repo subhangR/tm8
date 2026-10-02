@@ -1,10 +1,13 @@
 /**
  * THE ATTENTION LIST (Attention v2, chapter 4 "Top bar"): one row per roll-up
- * root, with a `Mine · n` / `All · n` filter on top. The same component is
+ * root, with a `Personal · n` / `Team · n` filter on top (Personal = assigned
+ * to you; Team = everything pending in the space, which everyone can see). The same component is
  * the top-bar popover, the empty right column, and (S5b) the phone sheet,
  * Home NEEDS YOU and the empty centre.
  *
- * - The filter defaults to Mine when anything is mine, else All.
+ * - The filter defaults to Personal when anything is yours, else Team.
+ * - Open goes where the request came from (`openTargetOf`): the raising
+ *   session or chat, or the form / thing a tm8 signal is about.
  * - Order comes from the store: unseen first, then level, points, age. Rows
  *   the viewer has seen are dimmed.
  * - Each row: chip, title, type tag, latest reason, then
@@ -17,14 +20,15 @@ import { useEffect, useRef, useState } from 'react';
 import type { EntityId } from '@tm8/contract';
 import { useAttention } from './attention-store';
 import type { AttentionFilter, AttentionQueueRow } from './attention-selectors';
-import { formatAge } from './attention-selectors';
+import { formatAge, openTargetOf } from './attention-selectors';
 import { AttentionChipView } from './AttentionChipView';
 import './attention-v2.css';
 
 export interface AttentionListProps {
   /** Start on this filter instead of the default (Mine when mine > 0). */
   filter?: AttentionFilter;
-  onOpen(rootId: EntityId): void;
+  /** `targetId` is `openTargetOf(row.latest)`, which may differ from the root. */
+  onOpen(targetId: EntityId, row: AttentionQueueRow): void;
   /** Names the host already holds, consulted before the store's hydration. */
   nameOf?(id: EntityId): { title: string } | undefined;
   /** Heading; defaults to "Needs you". */
@@ -59,7 +63,7 @@ export function AttentionList({ filter: initial, onOpen, nameOf, title = 'Needs 
               data-testid={`attention-filter-${key}`}
               onClick={() => setChosen(key)}
             >
-              {key === 'mine' ? `Mine · ${counts.mine}` : `All · ${counts.all}`}
+              {key === 'mine' ? `Personal · ${counts.mine}` : `Team · ${counts.all}`}
             </button>
           ))}
         </div>
@@ -72,7 +76,7 @@ export function AttentionList({ filter: initial, onOpen, nameOf, title = 'Needs 
         <p className="att-list__empty">Loading…</p>
       ) : rows.length === 0 ? (
         <p className="att-list__empty" data-testid="attention-list-empty">
-          {filter === 'mine' && counts.all > 0 ? 'Nothing assigned to you. Try All.' : 'Nothing needs anyone.'}
+          {filter === 'mine' && counts.all > 0 ? 'Nothing assigned to you. Try Team.' : 'Nothing needs anyone.'}
         </p>
       ) : (
         <ul className="att-list__rows">
@@ -84,7 +88,7 @@ export function AttentionList({ filter: initial, onOpen, nameOf, title = 'Needs 
               title={nameOf?.(row.rootId)?.title ?? row.title}
               onOpen={() => {
                 void api.markSeen(row.rootId);
-                onOpen(row.rootId);
+                onOpen(openTargetOf(row.latest), row);
               }}
               onSeen={() => void api.markSeen(row.rootId)}
               onResolve={(note) => void api.resolve(row.rootId, note)}

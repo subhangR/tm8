@@ -427,6 +427,10 @@
 .cv2-root .hp-root--chat .hp-needs {
   flex: none;
   margin: 5px 7px 0;
+  /* Capped and scrolling: an uncapped queue above a `min-height: 0` chat
+     squeezed the chat to nothing ("attention clobbering the home screen"). */
+  max-height: 30vh;
+  overflow-y: auto;
 }
 .cv2-root .hp-root--chat .hp-note { margin: 4px 7px 0; }
 .cv2-root .hp-chat--full {
