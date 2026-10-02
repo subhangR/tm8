@@ -9,7 +9,7 @@
  * Local UI state only: the view switcher and, when no `hover` is passed, the
  * hovered root. The selection (`selectedId`) is the page's.
  */
-import { useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 
 import { getKind, KindIcon } from '../../domain';
 import { FAMILY_TOKEN, GRAPH_VIEWS, STORY_KIND, VIEW_OF_KIND, type StoryEdgeFamily, type StoryGraphView } from '../model';
@@ -216,6 +216,25 @@ export function StoryGraph({ view, live, hover, selectedId, onPick, onMenu, init
     const scale = el.scrollWidth / layout.width;
     el.scrollLeft = Math.max(0, self.x * scale - el.clientWidth / 2);
   }, [layout]);
+  /* A selection made outside (a card) whose node lies outside the scroller: bring it into view, centred. */
+  useEffect(() => {
+    const fromHere = pickedHere.current === selectedId;
+    pickedHere.current = null;
+    const el = scrollRef.current;
+    if (!selectedId || fromHere || !el) return;
+    const node = Array.from(el.querySelectorAll<SVGGElement>('.stg-n')).find((g) => g.dataset.id === selectedId);
+    if (!node) return;
+    const box = el.getBoundingClientRect();
+    const r = node.getBoundingClientRect();
+    const inside = r.left >= box.left && r.right <= box.right && r.top >= box.top && r.bottom <= box.bottom;
+    if (inside) return;
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    el.scrollTo({
+      left: el.scrollLeft + (r.left + r.width / 2) - (box.left + el.clientWidth / 2),
+      top: el.scrollTop + (r.top + r.height / 2) - (box.top + el.clientHeight / 2),
+      behavior: reduce ? 'auto' : 'smooth',
+    });
+  }, [selectedId]);
   /* A root id from outside that this graph does not draw lights nothing rather than dimming everything. */
   const hoverRoot = wantedRoot && layout.allRootIds.includes(wantedRoot) ? wantedRoot : null;
   const mask = useMemo(() => maskFor(layout, graphView), [layout, graphView]);
@@ -236,7 +255,12 @@ export function StoryGraph({ view, live, hover, selectedId, onPick, onMenu, init
     const r = (el.closest('.stg-n') ?? el).getBoundingClientRect();
     return { entityId: node.id, anchor: { x: r.x, y: r.y, width: r.width, height: r.height } };
   };
-  const pick = (node: GraphNode, el: Element) => onPick?.(pickOf(node, el));
+  /* The id this graph itself just picked: that node is in view already, so its selection never scrolls. */
+  const pickedHere = useRef<string | null>(null);
+  const pick = (node: GraphNode, el: Element) => {
+    pickedHere.current = node.id;
+    onPick?.(pickOf(node, el));
+  };
   const menu = (node: GraphNode, el: Element) => onMenu?.(pickOf(node, el));
 
   const rule = all
