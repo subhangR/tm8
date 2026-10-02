@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The editor's two pure seams: the store's live draft (spec §9.2 "every
  * keystroke → applyDraft") and the file helpers behind Import / Export.
