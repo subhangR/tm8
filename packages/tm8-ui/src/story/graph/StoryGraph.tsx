@@ -6,14 +6,15 @@
  * pairs, edge strokes are `FAMILY_TOKEN`. Kinds are data — the glyph comes
  * from the registry (`getKind(kind).iconArt`), the view from `VIEW_OF_KIND`.
  *
- * Local UI state only: the view switcher, the hovered root (lights its trail)
- * and the picked node (outlined while its popover is open).
+ * Local UI state only: the view switcher and, when no `hover` is passed, the
+ * hovered root. The selection (`selectedId`) is the page's.
  */
 import { useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 
 import { getKind, KindIcon } from '../../domain';
 import { FAMILY_TOKEN, GRAPH_VIEWS, STORY_KIND, VIEW_OF_KIND, type StoryEdgeFamily, type StoryGraphView } from '../model';
 import { layoutStoryGraph, maskFor, trunc, type GraphEdge, type GraphNode } from './layout';
+import type { StoryNodePick } from '../props';
 import type { StoryGraphProps } from './props-graph';
 import './story-graph.css';
 
@@ -24,6 +25,8 @@ const VIEW_ICON: Readonly<Record<StoryGraphView, string>> = Object.fromEntries(
 
 /** The smallest the canvas is drawn at: below it, labels stop being legible, so it scrolls instead. */
 const MIN_SCALE = 0.85;
+/** Full screen may draw it larger than natural, up to this. */
+const MAX_FILL_SCALE = 1.6;
 
 const EDGE_LEGEND: Readonly<Record<StoryEdgeFamily, string>> = {
   parent: 'parent',
@@ -128,6 +131,54 @@ function Disc({ node }: { node: GraphNode }) {
   );
 }
 
+/** Selected = its details are open beside the story: an ink ring outside everything else (root ring, halo, flash). */
+function SelectionRing({ node }: { node: GraphNode }) {
+  if (node.capsule || node.initials !== null) {
+    const pad = 7;
+    return (
+      <rect
+        className="stg-sel"
+        x={node.x - node.w / 2 - pad}
+        y={node.y - node.h / 2 - pad}
+        width={node.w + 2 * pad}
+        height={node.h + 2 * pad}
+        rx={node.capsule ? node.h / 2 + pad : 9}
+      />
+    );
+  }
+  return <circle className="stg-sel" cx={node.x} cy={node.y} r={node.r + 7} />;
+}
+
+/** The secondary affordance: a small "…" at the node's top-right, shown on hover and focus, reachable by Tab. */
+function MoreButton({ node, onPress }: { node: GraphNode; onPress: (el: Element) => void }) {
+  const boxy = !!node.capsule || node.initials !== null;
+  const cx = boxy ? node.x + node.w / 2 - 2 : node.x + node.r * 0.8 + 5;
+  const cy = boxy ? node.y - node.h / 2 - 2 : node.y - node.r * 0.8 - 5;
+  return (
+    <g
+      className="stg-more"
+      role="button"
+      tabIndex={0}
+      aria-label={`Actions for ${node.title}`}
+      onClick={(ev) => {
+        ev.stopPropagation();
+        onPress(ev.currentTarget);
+      }}
+      onKeyDown={(ev) => {
+        if (ev.key !== 'Enter' && ev.key !== ' ') return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        onPress(ev.currentTarget);
+      }}
+    >
+      <circle className="stg-more__bg" cx={cx} cy={cy} r={8} />
+      {[-3.2, 0, 3.2].map((d) => (
+        <circle key={d} className="stg-more__dot" cx={cx + d} cy={cy} r={1.1} />
+      ))}
+    </g>
+  );
+}
+
 function nodeClass(node: GraphNode, extra: string[]): string {
   return [
     'stg-n',
@@ -147,13 +198,12 @@ function nodeTip(node: GraphNode): string {
   return `${node.title} — ${node.capsule.line}`;
 }
 
-export function StoryGraph({ view, live, hover, onPick, initialView }: StoryGraphProps) {
+export function StoryGraph({ view, live, hover, selectedId, onPick, onMenu, initialView, fill }: StoryGraphProps) {
   const [graphView, setGraphView] = useState<StoryGraphView>(initialView ?? 'all');
   /* Root hover is shared with the Roots card through `hover` when the page holds it; local otherwise. */
   const [ownHoverRoot, setOwnHoverRoot] = useState<string | null>(null);
   const setHoverRoot = hover ? hover.setRootId : setOwnHoverRoot;
   const wantedRoot = hover ? hover.rootId : ownHoverRoot;
-  const [picked, setPicked] = useState<string | null>(null);
   const markerId = `stg-arrow-${useId().replace(/:/g, '')}`;
 
   const layout = useMemo(() => layoutStoryGraph(view), [view]);
@@ -182,12 +232,12 @@ export function StoryGraph({ view, live, hover, onPick, initialView }: StoryGrap
     return !all && !(mask.inView.has(e.from) && mask.inView.has(e.to)) ? ' stg-dim' : '';
   };
 
-  const pick = (node: GraphNode, el: Element) => {
-    if (!onPick) return;
-    setPicked(node.id);
-    const r = el.getBoundingClientRect();
-    onPick({ entityId: node.id, anchor: { x: r.x, y: r.y, width: r.width, height: r.height } });
+  const pickOf = (node: GraphNode, el: Element): StoryNodePick => {
+    const r = (el.closest('.stg-n') ?? el).getBoundingClientRect();
+    return { entityId: node.id, anchor: { x: r.x, y: r.y, width: r.width, height: r.height } };
   };
+  const pick = (node: GraphNode, el: Element) => onPick?.(pickOf(node, el));
+  const menu = (node: GraphNode, el: Element) => onMenu?.(pickOf(node, el));
 
   const rule = all
     ? `${layout.nodes.length} nodes · ${layout.edges.length} edges · depth ${view.page.follow.depth}`
@@ -196,7 +246,7 @@ export function StoryGraph({ view, live, hover, onPick, initialView }: StoryGrap
   const empty = layout.allRootIds.length === 0;
 
   return (
-    <section className="stg-card" aria-label="The graph">
+    <section className={fill ? 'stg-card stg-card--fill' : 'stg-card'} aria-label="The graph">
       <div className="stg-head">
         <span className="kit-eyebrow">The graph</span>
         <span className="stg-seg" role="tablist" aria-label="Graph view">
@@ -226,7 +276,7 @@ export function StoryGraph({ view, live, hover, onPick, initialView }: StoryGrap
           className={`stg-svg${hoverRoot ? ' stg-svg--hl' : ''}${graphView === 'team' ? ' stg-svg--team' : ''}`}
           viewBox={`0 0 ${layout.width} ${layout.height}`}
           /* Natural size at most, never below the readable floor; past that the card scrolls sideways. */
-          style={{ maxWidth: layout.width, minWidth: Math.round(layout.width * MIN_SCALE) }}
+          style={{ maxWidth: Math.round(layout.width * (fill ? MAX_FILL_SCALE : 1)), minWidth: Math.round(layout.width * MIN_SCALE) }}
           role="img"
           aria-label={`Story graph: ${rule}`}
         >
@@ -272,7 +322,7 @@ export function StoryGraph({ view, live, hover, onPick, initialView }: StoryGrap
             const cls = nodeClass(node, [
               dim,
               hl,
-              picked === node.id ? 'stg-picked' : '',
+              selectedId === node.id ? 'stg-selected' : '',
               landed?.has(node.id) ? 'stg-flash' : '',
               onPick ? 'stg-n--pickable' : '',
             ]);
@@ -299,11 +349,23 @@ export function StoryGraph({ view, live, hover, onPick, initialView }: StoryGrap
                       },
                     }
                   : {})}
+                {...(onMenu
+                  ? {
+                      onContextMenu: (ev: MouseEvent<SVGGElement>) => {
+                        ev.preventDefault();
+                        ev.stopPropagation();
+                        menu(node, ev.currentTarget);
+                      },
+                    }
+                  : {})}
+                aria-current={selectedId === node.id ? true : undefined}
                 onMouseEnter={isRoot ? () => setHoverRoot(node.id) : undefined}
                 onMouseLeave={isRoot ? () => setHoverRoot(null) : undefined}
               >
                 <title>{nodeTip(node)}</title>
+                {selectedId === node.id && <SelectionRing node={node} />}
                 {node.capsule ? <Capsule node={node} /> : node.initials !== null ? <Teammate node={node} /> : <Disc node={node} />}
+                {onMenu && <MoreButton node={node} onPress={(el) => menu(node, el)} />}
               </g>
             );
           })}

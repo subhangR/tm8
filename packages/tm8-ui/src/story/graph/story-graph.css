@@ -70,6 +70,10 @@
 .stg-seg__b--on:hover { background: var(--pn-ink); color: var(--pn-card); }
 
 .stg-scroll { overflow-x: auto; }
+
+/* Full screen: fill the parent, the canvas takes the rest and scrolls both ways. */
+.stg-card--fill { display: flex; flex-direction: column; height: 100%; margin: 0; }
+.stg-card--fill .stg-scroll { flex: 1; min-height: 0; overflow: auto; }
 .stg-svg { display: block; width: 100%; height: auto; margin: 0 auto; }
 
 /* ---- edges ---- */
@@ -169,9 +173,22 @@
 .stg-n.stg-cap .stg-cap-live { font-family: var(--pn-mono); font-size: var(--pn-fs-tick); font-weight: 600; fill: var(--pn-run); letter-spacing: 0.06em; stroke: none; }
 .stg-n.stg-cap .stg-cap-dot { fill: var(--pn-run); }
 
-/* picked, flashed, filtered, highlighted */
-.stg-picked .stg-body,
-.stg-picked .stg-shell { stroke: var(--pn-brand); stroke-width: 2.2; }
+/* flashed, filtered, highlighted */
+/* Selected (details open beside): an ink ring, apart from the brand root ring, the halo and the flash. */
+.stg-sel { fill: none; stroke: var(--pn-ink); stroke-width: 2; }
+.stg-selected .stg-body,
+.stg-selected .stg-shell,
+.stg-selected .stg-box { stroke-width: 2; }
+
+/* The "…" — hidden until the node is hovered or anything in it has focus. */
+.stg-more { opacity: 0; pointer-events: none; cursor: pointer; transition: opacity 0.12s var(--pn-ease-out); }
+.stg-n:hover .stg-more,
+.stg-n:focus-within .stg-more { opacity: 1; pointer-events: auto; }
+.stg-more:focus { outline: none; }
+.stg-more__bg { fill: var(--pn-card); stroke: var(--pn-line-2); stroke-width: 1; }
+.stg-more:hover .stg-more__bg,
+.stg-more:focus-visible .stg-more__bg { stroke: var(--pn-brand); fill: var(--pn-brand-soft); }
+.stg-n .stg-more__dot { fill: var(--pn-ink-2); stroke: none; }
 .stg-flash .stg-body,
 .stg-flash .stg-shell,
 .stg-flash .stg-box { animation: stg-flash 1.6s var(--pn-ease-out); }
