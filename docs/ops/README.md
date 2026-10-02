@@ -7,6 +7,7 @@ Running tm8: configuring it, starting it, and the runbooks for the parts that bi
 | [`CONFIG.md`](CONFIG.md) | **Start here.** Configuration, environments, and how to start it. Cited directly by `scripts/start.mjs`, `scripts/dev.mjs` and the sidecar source |
 | [`ENVIRONMENTS.md`](ENVIRONMENTS.md) | **PROD and STAGING are two different tm8's.** Read before pointing any CLI anywhere |
 | [`SIDECAR-PACKAGING.md`](SIDECAR-PACKAGING.md) | The Postgres sidecar: packaging and lifecycle. The major version here is pinned against CI |
+| [`ACCOUNTS.md`](ACCOUNTS.md) | Disabling an account or removing a member: use the command, because raw `set_account_disabled` skips containment |
 | [`MESSAGE-DELIVERY-LATENCY.md`](MESSAGE-DELIVERY-LATENCY.md) | Why a message to a running agent takes ~60s to land, and how to tell delivered from lost |
 | [`VOICE-CHANNELS.md`](VOICE-CHANNELS.md) | Voice channels — fresh checkout to two tabs talking |
 | [`VOICE-VERIFICATION-2026-07-31.md`](VOICE-VERIFICATION-2026-07-31.md) | What was actually verified, and what was not |
