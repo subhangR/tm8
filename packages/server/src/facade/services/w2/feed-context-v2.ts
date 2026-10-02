@@ -62,6 +62,7 @@ import {
   type EntityContextMessage,
   type EntityContextNotLoaded,
   type EntityContextOmitted,
+  type EntityContextStory,
   type EntityContextRef,
   type EntityContextV2View,
   type EntityHeaderView,
@@ -69,7 +70,11 @@ import {
 
 import type { Querier } from '../../../db/types.js';
 import { resolveAuthoredHeaderView, resolveHeaderViews } from '../../../headers/resolve.js';
-import { ENTITY_COLUMNS, ENTITY_FROM, MICROS, iso, isoOrNull, titleOf, type EntityRow } from '../../entity-read.js';
+import { ENTITY_COLUMNS, ENTITY_FROM, MICROS, iso, isoOrNull, storySummaryOf, titleOf, type EntityRow } from '../../entity-read.js';
+import { loadStoryPage } from '../../story-page.js';
+
+/** Each list on the story card (282) is capped; a cut list adds an `omitted[]` entry. */
+const STORY_CARD_LIMIT = 50;
 import { taggedQuerier, type ContextLoadTag } from './context-tags.js';
 import { runsOnListedFrom } from './runs-on-visibility.js';
 
@@ -119,6 +124,8 @@ function sectionsFor(kind: string): readonly V2Section[] {
   switch (kind) {
     case 'task': return ['assignment', 'hierarchy', 'blockers', 'connections', 'messages', 'actions'];
     case 'doc': return ['assignment', 'hierarchy', 'connections', 'messages', 'actions'];
+    // 282: the description is the assignment; children are child stories.
+    case 'story': return ['assignment', 'hierarchy', 'connections', 'messages', 'actions'];
     // c761 §3.2: a message is its body and its refs; no thread expansion.
     case 'message': return ['assignment', 'connections', 'actions'];
     default: return ['hierarchy', 'connections', 'messages', 'actions'];
@@ -159,6 +166,8 @@ export interface ContextV2LoadPlan {
   readonly sessionCard: boolean;
   /** message: anchor and parent-message refs, attachment sizes. */
   readonly messageCard: boolean;
+  /** story (282): the page projected small — roots, by kind, blocked, who runs what. */
+  readonly storyCard: boolean;
   readonly messages: MessagePlan | null;
   readonly connections: boolean;
   /** Sections not loaded, each advertised with its expand. */
@@ -173,6 +182,7 @@ export function v2LoadPlan(
   const available = sectionsFor(kind);
   const messagePlan: MessagePlan = kind === 'chat' || kind === 'work_session' ? CORE_MESSAGES : TRIMMABLE_MESSAGES;
   const isTask = kind === 'task';
+  const isStory = kind === 'story';
 
   if (requested === null) {
     // The per-kind default (c761 §3.2): the core, plus the kind's default lists.
@@ -182,6 +192,7 @@ export function v2LoadPlan(
       loaded.add('hierarchy');
       loaded.add('blockers');
     }
+    if (isStory) loaded.add('hierarchy');
     if (kind !== 'message') loaded.add('messages');
     return {
       explicit: false,
@@ -191,9 +202,10 @@ export function v2LoadPlan(
       assignees: isTask,
       gate: isTask,
       blockers: isTask,
-      children: isTask,
+      children: isTask || isStory,
       sessionCard: kind === 'work_session',
       messageCard: kind === 'message',
+      storyCard: isStory,
       messages: loaded.has('messages') ? messagePlan : null,
       connections: false,
       notLoaded: available.filter((section) => !loaded.has(section)),
@@ -213,6 +225,7 @@ export function v2LoadPlan(
     children: has('hierarchy'),
     sessionCard: false,
     messageCard: false,
+    storyCard: false,
     messages: has('messages') ? messagePlan : null,
     connections: has('connections'),
     // `actions` is always notLoaded: v2 never renders the palette itself.
@@ -368,7 +381,7 @@ const REF_COLUMNS = `
   ch.name channel_name, vc.name voice_channel_name,
   mem.display_name member_display_name, tm.name team_member_name,
   col.name collection_name, sk.name skill_name, sp.name spell_name, f.name file_name,
-  lp.title loop_title, gr.title graph_title, drw.title drawing_title, ctr.title ctr_title,
+  lp.title loop_title, gr.title graph_title, drw.title drawing_title, sty.title story_title, ctr.title ctr_title,
   wt.branch wt_branch, art.name artifact_name,
   pr.title pr_title, pr.repo pr_repo, pr.number pr_number, pr.state pr_state,
   cm.sha commit_sha, left(cm.message, 200) commit_message,
@@ -393,6 +406,7 @@ const REF_FROM = `
   left join public.loops lp on lp.entity_id = e.id
   left join public.graphs gr on gr.entity_id = e.id
   left join public.drawings drw on drw.entity_id = e.id
+  left join public.stories sty on sty.entity_id = e.id
   left join public.containers ctr on ctr.entity_id = e.id
   left join public.worktrees wt on wt.entity_id = e.id
   left join public.artifacts art on art.entity_id = e.id
@@ -610,6 +624,7 @@ function bodyOf(row: EntityRow): string {
     case 'task': return row.task_description ?? '';
     case 'doc': return row.doc_body ?? '';
     case 'message': return row.message_redacted_at ? '' : (row.message_body ?? '');
+    case 'story': return row.story_description ?? '';
     default: return '';
   }
 }
@@ -656,6 +671,7 @@ interface Loaded {
   blockers?: EntityContextBlocker[];
   children?: EntityContextRef[];
   teammate?: string | null;
+  story?: EntityContextStory;
   tasks?: EntityContextRef[];
   anchor?: EntityContextRef;
   parentMessage?: EntityContextRef | null;
@@ -903,6 +919,43 @@ async function loadV2(q: Querier, id: string, request: V2Request): Promise<{ loa
       loaded.children = keep(rows, ROW_LIMIT, 'children', loaded,
         pagerOf(id, 'hierarchy', null, rows, (row) => [row.closed ? 1 : 0, row.updated_key, row.id])).map(refOf);
     }
+  }
+
+  if (plan.storyCard) {
+    // 282: the same page assembler the detail read uses, projected small.
+    // Core to a story's context: a failure fails the read.
+    const page = await loadStoryPage(taggedQuerier(q, 'root'), id);
+    const cap = <T>(section: string, rows: T[]): T[] => {
+      if (rows.length <= STORY_CARD_LIMIT) return rows;
+      omitted.push({ section, kept: STORY_CARD_LIMIT, more: true, totalAtLeast: rows.length, reason: 'rowLimit' });
+      return rows.slice(0, STORY_CARD_LIMIT);
+    };
+    const followed = page.nodes.filter((n) => n.depth >= 0);
+    const byKind: Record<string, number> = {};
+    for (const n of followed) byKind[n.kind] = (byKind[n.kind] ?? 0) + 1;
+    loaded.story = {
+      state: storySummaryOf(root.story_summary),
+      roots: cap('story.roots', page.roots.map((r) => ({
+        id: r.id, kind: r.kind, title: r.title, status: r.status, statusCategory: r.statusCategory,
+        blocked: r.blocked, taskProgress: r.taskProgress, progress: r.progress,
+        childCount: r.childIds.length, trailCount: r.trail.length,
+      }))),
+      byKind,
+      blocked: cap('story.blocked', followed.filter((n) => n.blocked)
+        .map((n) => ({ id: n.id, kind: n.kind, title: n.title, status: n.status }))),
+      sessions: cap('story.sessions', page.sessions.map((x) => ({
+        id: x.id, callSign: x.callSign, title: x.title, live: x.live, mode: x.mode,
+        teamMemberId: x.teamMemberId, taskIds: x.taskIds,
+      }))),
+      team: cap('story.team', page.team.map((t) => ({
+        id: t.id, name: t.name, mode: t.mode, parentId: t.parentId, live: t.live, sessionIds: t.sessionIds,
+      }))),
+      childStories: cap('story.childStories', page.childStories.map((c) => ({
+        id: c.id, title: c.title, status: c.status, taskProgress: c.taskProgress, rollup: c.rollup,
+        liveSessionCount: c.liveSessionCount,
+      }))),
+      truncated: page.follow.truncated,
+    };
   }
 
   if (plan.sessionCard) {
@@ -1213,6 +1266,9 @@ function assemble(
       break;
     case 'project':
       Object.assign(kindFields, { projectId: root.ppd_project_id ?? null });
+      break;
+    case 'story':
+      if (loaded.story) Object.assign(kindFields, { story: loaded.story });
       break;
     default:
       break;
