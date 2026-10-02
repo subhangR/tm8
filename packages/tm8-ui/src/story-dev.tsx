@@ -15,7 +15,7 @@ import { GRAPH_VIEWS } from './story/model';
 /**
  * STORY PAGE SCRATCH HARNESS — the story page on fixtures, no server, no auth.
  *
- * Usage: /story-dev.html   (?theme=dark for the dark ground,
+ * Usage: /story-dev.html   (?theme=dark for the dark ground, ?full=1 for the full-view layout,
  *                           ?empty=1     for the empty story,
  *                           ?view=team   etc. is read by the graph block,
  *                           ?readonly=1  for a host that wires no actions)
@@ -68,9 +68,21 @@ function Harness() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
+  /* ?full=1 draws the full-view layout; a press "opens beside" by selecting. */
+  const [selected, setSelected] = useState<string | null>(null);
+  const withSelect = useMemo<StoryActions>(
+    () => (actions.open ? { ...actions, open: (id) => { actions.open?.(id); setSelected(id); } } : actions),
+    [actions],
+  );
   return (
     <div className="cv2-root" data-theme={theme} style={{ minHeight: '100vh', background: 'var(--pn-paper)' }}>
-      <StoryPage view={view} actions={actions} {...(graphView ? { initialGraphView: graphView } : {})} />
+      <StoryPage
+        view={view}
+        actions={withSelect}
+        selectedId={selected}
+        layout={params.get('full') === '1' ? 'full' : 'panel'}
+        {...(graphView ? { initialGraphView: graphView } : {})}
+      />
       {lines.length > 0 && (
         <pre data-testid="story-dev-log" style={{ position: 'fixed', left: 8, bottom: 8, margin: 0, fontSize: 11, opacity: 0.7 }}>
           {lines.join('\n')}
