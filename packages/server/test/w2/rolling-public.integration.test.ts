@@ -869,7 +869,7 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // other container command IS bound, including the ones whose runtime does
     // not exist yet.
     // W4: +1 — auth.sessions.revoke takes its session id from the path; no body.
-    expect(UNBOUND_COMMAND_OPERATIONS).toHaveLength(14 /* +1 auth.launch (plan W2 #847, merge of main 79ca8d50). MEASURED. */); /* +1 auth.launch (plan W2, K4). MEASURED. */
+    expect(UNBOUND_COMMAND_OPERATIONS).toHaveLength(13); /* +1 auth.launch (plan W2, K4). MEASURED. */
     expect(UNBOUND_COMMAND_OPERATIONS).not.toContain('execution.resume');
     for (const operation of [
       'messages.delete',
