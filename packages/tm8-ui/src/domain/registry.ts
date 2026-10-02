@@ -1901,6 +1901,10 @@ const ROWS: readonly KindConfig[] = [
     card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
     list: baseList({
       quickCreate: true,
+      // A child story nests under its parent (#16): `parentId` is the story
+      // hierarchy, so a flat list showed every child beside the roots and
+      // read as "many root stories". Children start collapsed.
+      tree: { by: 'hierarchy', guideLines: true },
       tile: { badges: [{ source: 'messages' }] },
       inlineEdit: { title: true },
     }),

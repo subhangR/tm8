@@ -628,6 +628,25 @@ describe('entity query', () => {
     });
   });
 
+  it('--roots asks for top-level rows only — parentId null', async () => {
+    await drive(['entity', 'query', '--kind', 'story', '--roots']);
+    expect(seen[0]?.body).toEqual({ spaceId: SPACE, kinds: ['story'], parentId: null });
+  });
+
+  it('--parent none is the same question as --roots; --parent <id> is the direct children', async () => {
+    await drive(['entity', 'query', '--kind', 'story', '--parent', 'none']);
+    expect(seen[0]?.body).toEqual({ spaceId: SPACE, kinds: ['story'], parentId: null });
+    await drive(['entity', 'query', '--kind', 'story', '--parent', ENT]);
+    expect(seen[1]?.body).toEqual({ spaceId: SPACE, kinds: ['story'], parentId: ENT });
+  });
+
+  it('refuses --roots alongside a parent id, before any request', async () => {
+    const r = await drive(['entity', 'query', '--roots', '--parent', ENT]);
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain('--roots means --parent none');
+    expect(seen).toHaveLength(0);
+  });
+
   it('omits `filters` entirely when no filter flag is given', async () => {
     await drive(['entity', 'query', '--kind', 'task']);
     expect(seen[0]?.body).toEqual({ spaceId: SPACE, kinds: ['task'] });

@@ -17,6 +17,7 @@ import {
   taskGuideLines,
   taskTombstone,
   taskUuidTitle,
+  storyAsAnEntity,
   teamMemberForge,
   ada,
   noor,
@@ -743,6 +744,41 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     expandTree(view.container);
     const nested = view.getByTestId('list-tile-children');
     expect(nested.textContent).toContain(child.title);
+  });
+
+  it('#16: child stories nest under their parent — only roots sit at the top level', () => {
+    const story = (id: string, title: string, parentId: string | null): EntitySummary => ({
+      ...storyAsAnEntity,
+      id,
+      title,
+      parentId,
+    });
+    const rootA = story('story-root-a', 'Cross-space', null);
+    const rootB = story('story-root-b', 'UI Theme', null);
+    const childA = story('story-child-a', 'Child of cross-space', rootA.id);
+    const childB1 = story('story-child-b1', 'First child of UI theme', rootB.id);
+    const childB2 = story('story-child-b2', 'Second child of UI theme', rootB.id);
+    const view = render(
+      <EntityListPanel
+        kind="story"
+        rowsFor={rowsFor([rootA, childA, rootB, childB1, childB2])}
+        ctx={ctx}
+      />,
+    );
+
+    // Collapsed by default: the two roots are the only rows drawn.
+    const titles = () => view.getAllByTestId('list-tile').map((t) => t.textContent ?? '');
+    expect(titles()).toHaveLength(2);
+    expect(titles().join(' ')).not.toContain('child');
+
+    // Expanding reveals each child INSIDE its parent's group, not beside it.
+    expandTree(view.container);
+    const groups = view.getAllByTestId('list-tile-children');
+    expect(groups).toHaveLength(2);
+    expect(groups[0]!.textContent).toContain(childA.title);
+    expect(groups[1]!.textContent).toContain(childB1.title);
+    expect(groups[1]!.textContent).toContain(childB2.title);
+    expect(groups[1]!.textContent).not.toContain(childA.title);
   });
 
   it('THE GATE: activity on a NON-LIVE row never streams and never pulses', () => {
