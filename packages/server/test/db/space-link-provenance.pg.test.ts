@@ -912,6 +912,16 @@ describe('990 — the remaining credential definers hold a link session to its l
     expect(await outcome(() => expire({ ...h, authKind: 'agent' }))).toBe('ok');
   });
 
+  /** 991 (01a0fb56): a re-point runs only in the resume window — exited, then execution_resume. */
+  async function resumeWindow(ws: string, claims: DbClaims): Promise<void> {
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(`select set_config('tm8.work_session_transition', 'on', true)`);
+      await client.query(`update public.work_sessions set status = 'exited' where entity_id = $1`, [ws]);
+    });
+    await db.rpc(claims, 'execution_resume', [ws, 100_000]);
+  }
+
   it('repoint (both overloads): a session the link did not start is 42501, and nothing is touched', async () => {
     const ws = await workSession(fixture.spaceB, fixture.personaB, fixture.memberHB);
     await recordGithub(ws);
@@ -922,14 +932,17 @@ describe('990 — the remaining credential definers hold a link session to its l
     const [row] = await database.query<{ n: number }>(
       `select count(*)::int as n from public.session_space_credentials where work_session_id = $1`, [ws]);
     expect(row!.n).toBe(1);
-    // Control: H re-points the same session.
-    expect(await outcome(async () => repoint(await humanClaims('H'), ws))).toBe('ok');
+    // Control: H, in the resume window H opened, re-points the same session.
+    const h = await humanClaims('H');
+    await resumeWindow(ws, h);
+    expect(await outcome(() => repoint(h, ws))).toBe('ok');
   });
 
   it('repoint: a session the link started passes the guard (L4 resume)', async () => {
     const child = await mintChild(L.mintClaims);
-    expect(await outcome(() => repoint(L.linkClaims, child.workSessionId))).toBe('ok');
-    // Past the guard the overload's own resume-window check answers.
+    // Past the link guard, each overload's resume-window check answers (991:
+    // the 1-arg form carries the window too), never the guard's 42501.
+    expect(await outcome(() => repoint(L.linkClaims, child.workSessionId))).toBe('55000');
     expect(await outcome(() => repointFor(L.linkClaims, child.workSessionId))).toBe('55000');
   });
 });

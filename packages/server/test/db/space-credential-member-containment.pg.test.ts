@@ -93,6 +93,12 @@ async function setSessionStatus(sessionId: string, status: string): Promise<void
   });
 }
 
+/** 991 (01a0fb56): a re-point runs only in the resume window: the run ended, then execution_resume. */
+async function resumeWindow(sessionId: string, who: DbClaims): Promise<void> {
+  await setSessionStatus(sessionId, 'exited');
+  await db.rpc(who, 'execution_resume', [sessionId, 100_000]);
+}
+
 /** What SpawnService hands record_session_manifest, reduced to what 206 reads. */
 async function launchOn(who: DbClaims, sessionId: string, spaceCredentialIds: Partial<Record<SpaceCredentialProvider, string>>): Promise<void> {
   const credentialSources = Object.fromEntries(Object.keys(spaceCredentialIds).map((p) => [p, 'space']));
@@ -319,9 +325,15 @@ describe('t6-5 / C2 / C3 — the launcher is launcher_account_id, as the last re
   it('C3: after B resumes it, it is B’s — disabling A leaves it running, disabling B kills it', async () => {
     const s = await session('S');
     await launchOn(claims(A), s, { anthropic: ids.KEY_S! });
-    await setSessionStatus(s, 'idle');
+    await resumeWindow(s, claims(B));
     // The resume gate (SC-2): B re-points, then the PTY starts again.
     await store.repointSession(claims(B), s);
+    // 273: the resumed run records its binding before it may run again.
+    await db.rpc(claims(B), 'record_session_credential_binding', [s, JSON.stringify({
+      credentialSources: { anthropic: 'space' },
+      spaceCredentialIds: { anthropic: ids.KEY_S! },
+      effectiveCredentialSources: { anthropic: 'space' },
+    })]);
     await setSessionStatus(s, 'running');
     expect(await launcherOf(s)).toEqual([accounts[B]]);
 
@@ -337,7 +349,7 @@ describe('t6-5 / C2 / C3 — the launcher is launcher_account_id, as the last re
   it("C3 via an agent: B's agent resumes A's session — the launcher is B, the minting human", async () => {
     const s = await session('S');
     await launchOn(claims(A), s, { anthropic: ids.KEY_S! });
-    await setSessionStatus(s, 'idle');
+    await resumeWindow(s, agent(B));
     await store.repointSession(agent(B), s);
     expect(await launcherOf(s)).toEqual([accounts[B]]);
 
@@ -348,7 +360,7 @@ describe('t6-5 / C2 / C3 — the launcher is launcher_account_id, as the last re
   it('S4: a resume that fails AFTER the repoint leaves the launcher on the resumer — disabling the original launcher does not kill it (intended)', async () => {
     const s = await session('S');
     await launchOn(claims(A), s, { anthropic: ids.KEY_S! });
-    await setSessionStatus(s, 'idle');
+    await resumeWindow(s, claims(B));
     // B's resume: the repoint commits, then the PTY spawn (or the M7
     // re-check) fails. Nothing rolls the repoint back; the session stays idle.
     await store.repointSession(claims(B), s);
