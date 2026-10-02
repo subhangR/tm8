@@ -86,6 +86,14 @@ export async function routeThroughSpaceLink(
   if (!needsLink(ctx, home)) return ctx;
   const ref = (ctx.space as { value: string }).value;
 
+  // A reference is made FROM home: `--link` names the linked Space, not `--space`.
+  if (path[0] === 'entity' && path[1] === 'ref' && path[2] === 'add') {
+    throw new CliError(
+      `\`tm8 entity ref add\` runs in this session's Space; --space ${ref} would run it inside the linked Space`,
+      EXIT_USAGE,
+      { hint: `name the linked Space with --link: \`tm8 entity ref add <entity-id> <target-entity-id> --link ${ref}\`` },
+    );
+  }
   const refused = refusedCommand(path);
   if (refused) {
     throw new CliError(

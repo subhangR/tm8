@@ -112,6 +112,7 @@ import {
   type SpaceLinkAuditEntry,
   type SpaceLinkInboundAuditEntry,
   type SpaceLinkInboundView,
+  type CrossSpaceRef,
   type ServerView,
   type ActionRows,
   type ContentionReport,
@@ -1380,6 +1381,8 @@ export function createFixtureSeam(): FixtureSeam {
     if (!link) throw new CollabError('not_found', `space link ${id} not found`);
     return link;
   };
+  /** L3 cross-space references (279). None until an agent adds one through a link. */
+  const crossSpaceRefsState: CrossSpaceRef[] = [];
   /** W8 `server` rows. Empty by default: a node registers none until someone adds one. */
   const serversState: ServerView[] = [];
   const serverById = (id: string): ServerView => {
@@ -5842,6 +5845,17 @@ export function createFixtureSeam(): FixtureSeam {
       },
     },
 
+    crossSpaceRefs: {
+      async list(entityId) {
+        return clone(crossSpaceRefsState.filter((r) => r.entityId === entityId));
+      },
+      async remove(entityId, refId) {
+        const index = crossSpaceRefsState.findIndex((r) => r.entityId === entityId && r.id === refId);
+        if (index < 0) throw new CollabError('not_found', 'reference not found');
+        crossSpaceRefsState.splice(index, 1);
+        return { id: refId, entityId, removed: true as const };
+      },
+    },
     servers: {
       async get(serverId) {
         return clone(serverById(serverId));

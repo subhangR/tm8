@@ -59,6 +59,7 @@ import { WORKTREE_GIT_TIER2_COMMANDS } from './worktree-git-tier2.js';
 import { INTERACTION_PROFILE_COMMANDS } from './interaction-profile.js';
 import { PROFILE_DEFAULT_COMMANDS } from './teammate.js';
 import { ENTITY_COMMANDS } from './entity.js';
+import { ENTITY_REF_COMMANDS } from './entity-ref.js';
 import { ATTENTION_COMMANDS } from './attention.js';
 import { TASK_COMMANDS } from './task.js';
 import { TRACKING_COMMANDS } from './tracking.js';
@@ -139,6 +140,7 @@ export const COMMANDS: CommandModule[] = [
   ...INTERACTION_PROFILE_COMMANDS,
   ...PROFILE_DEFAULT_COMMANDS,
   ...ENTITY_COMMANDS,
+  ...ENTITY_REF_COMMANDS,
   ...ATTENTION_COMMANDS,
   ...TASK_COMMANDS,
   ...TRACKING_COMMANDS,

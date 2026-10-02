@@ -46,6 +46,7 @@ import { changesSurfaceFor } from './changesSurface';
 import { taskGitSectionFor } from './taskGitSection';
 import { graphSurfaceFor } from './graphSurface';
 import { launchContextSurfaceFor } from './launchContextSurface';
+import { crossSpaceRefsSurfaceFor } from './crossSpaceRefsSurface';
 
 /**
  * The ports a host must already own to mount this panel. Every member is
@@ -130,6 +131,7 @@ export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose }: AuxEnt
       graphSurface={graphSurfaceFor(data.seam, entityId, data.livenessOf, (id) =>
         onOpenEntity(id as EntityId),
       )}
+      crossSpaceRefsSurface={crossSpaceRefsSurfaceFor(data.seam, entityId)}
       launchContextSurface={launchContextSurfaceFor(data.seam, entityId, (id) => onOpenEntity(id as EntityId))}
       livenessOf={data.livenessOf}
       attachments={attachments}

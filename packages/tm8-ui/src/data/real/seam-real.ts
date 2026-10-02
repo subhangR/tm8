@@ -590,6 +590,10 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
 
     // -- remote servers (W8) --------------------------------------------------
 
+    crossSpaceRefs: {
+      list: (entityId) => ops.crossSpaceRefsList(entityId),
+      remove: (entityId, refId) => ops.crossSpaceRefsRemove(entityId, refId),
+    },
     servers: {
       get: (serverId) => ops.serversGet(serverId),
       probe: (serverId) => ops.serversProbe(serverId),

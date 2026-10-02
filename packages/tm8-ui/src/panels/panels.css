@@ -25,6 +25,24 @@
   flex-wrap: wrap;
   align-items: center;
 }
+/* Cross-space references (279): a chip plus its remove control, kept together. */
+.cv2-root .pn-xref {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.cv2-root .pn-xref__remove {
+  border: 0;
+  background: none;
+  color: var(--pn-ink-4);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0 2px;
+}
+.cv2-root .pn-xref__remove:hover {
+  color: var(--pn-ink-2, inherit);
+}
 /* Launch provenance: a FACT about the past, styled as caption not control —
    it is immutable, so it must not look editable. */
 .cv2-root .pn-provenance {

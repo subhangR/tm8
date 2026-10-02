@@ -111,6 +111,10 @@ const CREDENTIAL_SEAM = new Set<OperationName>([
   'spaceLinks.inbound.audit',
   'spaceLinks.inbound.revoke',
   'spaceLinks.inbound.restore',
+  // L3 (279): entities.refs.* register inside registerSpaceLinkHandlers, same seam.
+  'entities.refs.list',
+  'entities.refs.add',
+  'entities.refs.remove',
   // W8 (261): servers.* mount in the same registration, on the same node-key
   // root (facade/index.ts), so they share the seam's condition too.
   'servers.list',

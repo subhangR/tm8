@@ -272,6 +272,11 @@ export const SPACE_LINK_REFUSED: readonly SpaceLinkRefusedPrefix[] = [
   { prefix: 'credentials.', kinds: 'all', reason: 'credential_management' },
   { prefix: 'node.credentials.', kinds: 'all', reason: 'credential_management' },
   { prefix: 'spaceLinks.', kinds: 'command', reason: 'link_management' },
+  // L3 (279): `add` itself opens a hop through the caller's OWN link. Through
+  // a link the caller is B's member, so allowing it would let an agent in A
+  // ride B's member's links on into C (transitive link use, D7). list and
+  // remove stay open: they touch B's stored rows only and open nothing.
+  { prefix: 'entities.refs.add', kinds: 'all', reason: 'link_management', exact: true },
   { prefix: 'auth.', kinds: 'all', reason: 'session_minting' },
   { prefix: 'serverConnections.', kinds: 'all', reason: 'credential_management' },
   // 282 path grants: who may browse which node folders. Node-level, never a
