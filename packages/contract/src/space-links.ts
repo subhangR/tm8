@@ -153,7 +153,13 @@ export type SpaceLinkRefusalReason =
  * are listed too: a form response submit (and redeliver) queues a delivery
  * that resumes the requesting session or spawns a new one
  * (form-delivery-spawn.ts). `containers.pools.set` keeps warm containers
- * running. `execution.git*` (reads too) runs git in B's worktree without
+ * running. `chat.setModel` (276) is that same shape and is refused for the same
+ * reason `chat.start` is: it starts nothing when called, but the next claimed
+ * turn CLOSES the live child and re-spawns it on the model the caller named,
+ * and a model carries the PROVIDER that decides which of B's API keys that
+ * child is handed. Passing it would mean a link identity that cannot start a
+ * chat on B could still repoint an existing one onto any catalog model and
+ * spend B's credential running it — the asymmetry is the hole. `execution.git*` (reads too) runs git in B's worktree without
  * `core.hooksPath` or `core.fsmonitor` overridden, so a commit, merge or
  * status there can run a hook or monitor B's worktree configures: a process
  * started in B. It is a prefix, so a future git op is covered. The other
@@ -192,6 +198,7 @@ export const SPACE_LINK_REFUSED: readonly SpaceLinkRefusedPrefix[] = [
   { prefix: 'execution.dispatch', kinds: 'all', reason: 'process_start', exact: true },
   { prefix: 'execution.prompt', kinds: 'all', reason: 'process_start', exact: true },
   { prefix: 'chat.start', kinds: 'all', reason: 'process_start', exact: true },
+  { prefix: 'chat.setModel', kinds: 'all', reason: 'process_start', exact: true },
   { prefix: 'forms.responses.submit', kinds: 'all', reason: 'process_start', exact: true },
   { prefix: 'forms.responses.redeliver', kinds: 'all', reason: 'process_start', exact: true },
   { prefix: 'containers.create', kinds: 'all', reason: 'process_start', exact: true },

@@ -200,6 +200,15 @@ export function noteSpaceSessionsEnforced(serverId: string): void {
   writeRecord(SPACE_SESSIONS_ENFORCED_KEY, { ...all, [key]: true });
 }
 
+/** The server advertised a mode below `enforce`: drop a marker left from before. */
+export function forgetSpaceSessionsEnforced(serverId: string): void {
+  const all = readRecord<boolean>(SPACE_SESSIONS_ENFORCED_KEY);
+  const key = passKeyFor(serverId);
+  if (!(key in all)) return;
+  const { [key]: _dropped, ...rest } = all;
+  writeRecord(SPACE_SESSIONS_ENFORCED_KEY, rest);
+}
+
 /** Test/dev affordance: forget every pass and every known account. */
 export function resetPassStore(): void {
   try {

@@ -420,8 +420,27 @@ export function createChatHomePortFromSeam(
         anchorIds: [input.chatId],
         body: input.body,
         ...(input.attachmentIds?.length ? { attachmentIds: input.attachmentIds } : {}),
+        // Per-turn mode (153/154), and ONLY when the viewer picked one. The
+        // server stamps it on the message, the enqueue trigger copies it to
+        // chat_turns.mode, and the claim reads coalesce(turn.mode,
+        // chat.chat_mode) — so omitting it is how "use the thread's default"
+        // is said, and sending shownMode unconditionally would instead write a
+        // requested_chat_mode onto every turn nobody redirected.
+        ...(input.mode ? { mode: input.mode } : {}),
       });
       return { messageId: messageIdFrom(result) };
+    },
+    async setModel(input) {
+      const result = await seam.commands.setChatModel(input.chatId, { model: input.model });
+      /* THE CACHE FOLLOWS THE WRITE, for the same reason `create` seeds it:
+         `readThread` takes a chat's config from `listCache`, and nothing
+         refreshes it between list reads — so switching model and immediately
+         reopening the chat would draw the OLD model and look like the switch had
+         been dropped. The next list read still overrides this with the server's
+         own answer. */
+      const cached = listCache.get(input.chatId);
+      if (cached) listCache.set(input.chatId, { ...cached, model: result.model });
+      return { model: result.model, provider: result.provider };
     },
     subscribe(listener) {
       return seam.onChatTurn((frame) => {

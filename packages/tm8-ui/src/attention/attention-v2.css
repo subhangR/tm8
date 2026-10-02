@@ -254,6 +254,7 @@
   position: relative;
   display: inline-flex;
   align-items: center;
+  gap: 4px;
   height: 100%;
 }
 
@@ -261,7 +262,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 2px 10px 2px 3px;
+  padding: 2px 3px 2px 10px;
   border: 0;
   border-radius: var(--pn-r-pill);
   font-family: var(--pn-ui);
@@ -269,26 +270,60 @@
   font-weight: 700;
   white-space: nowrap;
   cursor: pointer;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
 }
 
-.att-top__bang {
+.att-top__btn:focus-visible { outline: 2px solid var(--pn-accent, currentColor); outline-offset: 1px; }
+
+.att-top__name { letter-spacing: 0.01em; }
+
+.att-top__bang,
+.att-top__count {
   display: grid;
   place-items: center;
-  width: 18px;
+  min-width: 18px;
   height: 18px;
-  border-radius: 50%;
+  padding: 0 5px;
+  border-radius: var(--pn-r-pill);
   color: var(--pn-paper);
   font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 
-.att-top__btn--wait { background: var(--pn-wait-soft); color: var(--pn-wait); }
-.att-top__btn--wait .att-top__bang { background: var(--pn-wait); }
-.att-top__btn--block { background: var(--pn-block-soft); color: var(--pn-block); }
-.att-top__btn--block .att-top__bang { background: var(--pn-block); }
-.att-top__btn--fyi { background: var(--pn-idle-soft); color: var(--pn-ink-2); }
-.att-top__btn--fyi .att-top__bang { background: var(--pn-idle); }
+.att-top__btn--wait { background: var(--pn-wait-soft); color: var(--pn-wait); --att-glow: var(--pn-wait); }
+.att-top__btn--wait .att-top__count { background: var(--pn-wait); }
+.att-top__btn--block { background: var(--pn-block-soft); color: var(--pn-block); --att-glow: var(--pn-block); }
+.att-top__btn--block .att-top__count { background: var(--pn-block); }
+.att-top__btn--fyi { background: var(--pn-idle-soft); color: var(--pn-ink-2); --att-glow: var(--pn-idle); }
+.att-top__btn--fyi .att-top__bang,
+.att-top__btn--fyi .att-top__count { background: var(--pn-idle); }
+.att-top__btn--team { background: var(--pn-wait-soft); color: var(--pn-ink-2); --att-glow: var(--pn-wait); }
+.att-top__btn--team .att-top__count { background: var(--pn-wait); }
 .att-top__btn--clear { background: transparent; color: var(--pn-ink-3); }
-.att-top__btn--clear .att-top__bang { background: var(--pn-idle-soft); color: var(--pn-ink-3); }
+.att-top__btn--clear .att-top__count { background: var(--pn-idle-soft); color: var(--pn-ink-3); }
+.att-top__btn--clear:hover { background: var(--pn-idle-soft); }
+
+/* Something is waiting: a slow glow, so it reads from the corner of the eye. */
+.att-top__btn--glow {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--att-glow) 45%, transparent),
+    0 0 8px 1px color-mix(in srgb, var(--att-glow) 45%, transparent);
+  animation: att-top-glow 2.4s ease-in-out infinite;
+}
+
+@keyframes att-top-glow {
+  0%, 100% {
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--att-glow) 35%, transparent),
+      0 0 4px 0 color-mix(in srgb, var(--att-glow) 30%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--att-glow) 70%, transparent),
+      0 0 12px 2px color-mix(in srgb, var(--att-glow) 55%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .att-top__btn--glow { animation: none; }
+}
 
 .att-top__pop {
   position: absolute;

@@ -345,10 +345,23 @@ describe('the registry rows carry the block lists these tests assert', () => {
   it('the teammate row draws the agent frame, then the org tree', () => {
     // The oracle frame is intact and CONTIGUOUS; the org tree is appended,
     // which is exactly the claim the registry comment makes.
+    // …except EQUIPPED, which became the editable `skill-equipment` block in
+    // the same slot (task 01a0faff: SKILLS after identity/stats, before memories).
     expect(rowFor('team_member').panel.blocks).toEqual([
-      ...AGENT_BLOCKS,
+      ...AGENT_BLOCKS.map((b) => (b.block === 'items' ? { block: 'skill-equipment' } : b)),
       { block: 'org-tree', label: 'TEAM' },
     ]);
+  });
+
+  it('places the view-supplied skill equipment in its slot, and falls back to the read-only equipped list', () => {
+    const blocks = [{ block: 'live-work', params: { source: 'liveWork' } }, { block: 'skill-equipment' }, { block: 'memory-set', label: 'MEMORIES', params: { edgeType: 'remembers', direction: 'outgoing' } }];
+    const slotted = renderBody(teamMemberForge.id, blocks, { skillEquipment: <p>SLOT</p> });
+    const order = Array.from(slotted.container.querySelectorAll('[data-testid^="block-"]')).map((el) => el.getAttribute('data-testid'));
+    expect(order).toEqual(['block-live-work', 'block-skill-equipment', 'block-memory-set']);
+    expect(slotted.getByTestId('block-skill-equipment').textContent).toBe('SLOT');
+    slotted.unmount();
+    const bare = renderBody(teamMemberForge.id, [{ block: 'skill-equipment' }]);
+    expect(bare.getByTestId('block-skill-equipment').querySelectorAll('.kit-chip').length).toBe(2);
   });
 
   it('teammates can be viewed as a tree, because the hierarchy IS the org tree', () => {

@@ -167,6 +167,8 @@
   min-width: 0;
   min-height: 0;
   background: var(--pn-paper);
+  /* The containing block for `EntityHelpOverlay` (absolute, inset 0). */
+  position: relative;
 }
 
 .tch-conversation__head { padding-inline: var(--pn-space-4); }

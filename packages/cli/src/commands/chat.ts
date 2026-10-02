@@ -26,12 +26,20 @@
  * id like `message send` does, so a chat started FROM a work session records
  * `authored_from` and the chat's self-delivery guard stays keyed on the source.
  *
- * WHAT IS DELIBERATELY ABSENT. There is no `chat stop`, no `chat mode`, no
- * `chat model`: every element of a chat's configuration is pinned for its life
- * (D3), and `runtime_state` is moved by the orchestrator, never by a caller.
- * There is also no `chat delete` — `tm8 entity delete` reaches the same door
- * with the Server's refusals intact, and a friendlier spelling that quietly
- * lost the version guard would be worse than none.
+ * `chat model` IS A SECOND OPERATION, AND IT USED TO BE ABSENT ON PURPOSE. This
+ * header said there was no `chat model` because every element of a chat's
+ * configuration was pinned for its life (D3). Migration 276 made one of them a
+ * setting: a Claude Code session carries turns from several models and
+ * `--resume` keeps the transcript across the switch, so the model was pinned
+ * only because nothing could move it afterwards. The rest of D3 stands — there
+ * is still no `chat mode` and no `chat stop`, the mode decided which tools the
+ * child was given and `runtime_state` is moved by the orchestrator, never by a
+ * caller.
+ *
+ * WHAT IS STILL DELIBERATELY ABSENT. There is no `chat delete` — `tm8 entity
+ * delete` reaches the same door with the Server's refusals intact, and a
+ * friendlier spelling that quietly lost the version guard would be worse than
+ * none.
  */
 import { requireSpace } from '../context.js';
 import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
@@ -171,6 +179,39 @@ function renderStarted(dto: unknown): string {
     // and a result that printed only the chat id would hide the id that read
     // needs.
     `opening message: ${String(result.messageId ?? '(unknown)')}`,
+  ].join('\n');
+}
+
+/**
+ * `tm8 chat model <chat-id> <model>` — move an open chat onto another model (276).
+ *
+ * NO --mutation-id, because there is nothing to replay. The write is a plain
+ * assignment: sending it twice leaves the chat exactly as sending it once did,
+ * so a mutation ledger entry would only record that a caller asked twice.
+ *
+ * NOTHING IS STOPPED. The turn in flight, if there is one, finishes on the model
+ * it was claimed with; the next turn claimed runs on this one. That is worth
+ * saying out loud in the rendered result, because a caller who expected an
+ * immediate change would otherwise read the current answer as proof it failed.
+ */
+async function chatModel(cmd: CommandContext): Promise<ExitCode> {
+  refuseMutationId('chat model', cmd.options.value('mutation-id'));
+  assertKnownOptions(cmd, []);
+  const chatId = requireArg(cmd, 0, '<chat-id>');
+  const model = requireArg(cmd, 1, '<model>');
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'chat.setModel', {
+    params: { id: chatId },
+    body: { model },
+  });
+  cmd.out.data(data, renderModelSet);
+  return EXIT_OK;
+}
+
+function renderModelSet(dto: unknown): string {
+  const result = (dto ?? {}) as { model?: unknown; provider?: unknown };
+  return [
+    `model: ${String(result.model ?? '(unknown)')}   provider: ${String(result.provider ?? '(unknown)')}`,
+    'applies to the next turn claimed; a turn already running finishes on the model it started with',
   ].join('\n');
 }
 
@@ -378,6 +419,7 @@ function renderTurnRows(dto: unknown): string {
 
 export const CHAT_COMMANDS: CommandModule[] = [
   { path: ['chat', 'start'], run: chatStart },
+  { path: ['chat', 'model'], run: chatModel },
   { path: ['chat', 'list'], run: chatList },
   { path: ['chat', 'show'], run: chatShow },
   { path: ['chat', 'send'], run: chatSend },

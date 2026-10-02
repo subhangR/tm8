@@ -45,6 +45,11 @@ export const CORE_KIND_INFO: Readonly<Record<CoreEntityKind, KindInfo>> = {
     summary: 'a curated set of entities',
     createWith: ['entity create collection', 'collection add'],
   },
+  story: {
+    group: 'work',
+    summary: 'one line of work: what you put in, everything that follows from it, and its progress',
+    createWith: ['entity create story', 'collection add'],
+  },
 
   message: {
     group: 'talk',

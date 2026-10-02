@@ -1,16 +1,16 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:be85230eefda1327169810033105a3ce920537605fcb7e909486b9679c3538ab",
+  "catalogDigest": "sha256:5513b56c1694d513b34b1c3435bf51f30d44c15336d87b759924d0bd0d53a09b",
   "catalog": {
-    "total": 287,
-    "v1": 285,
+    "total": 288,
+    "v1": 286,
     "reserved": 2,
-    "http": 285,
+    "http": 286,
     "ws": 1,
-    "registerableV1Http": 283,
+    "registerableV1Http": 284,
     "methods": {
       "GET": 92,
-      "POST": 140,
+      "POST": 141,
       "PATCH": 17,
       "DELETE": 18,
       "PUT": 18,
@@ -18,11 +18,11 @@
     },
     "kinds": {
       "read": 96,
-      "command": 189,
+      "command": 190,
       "stream": 2
     },
-    "uniqueNames": 287,
-    "uniqueBindings": 286
+    "uniqueNames": 288,
+    "uniqueBindings": 287
   },
   "reservedOperations": [
     "search.query",
@@ -960,6 +960,13 @@
         "operation": "chat.start",
         "method": "POST",
         "path": "/v2/chats",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "chat.setModel",
+        "method": "POST",
+        "path": "/v2/chats/:id/model",
         "status": "registered",
         "source": "server-router"
       },
@@ -2413,7 +2420,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 255
+    "unimplementedV1Http": 256
   },
   "schemas": {
     "additive": {
@@ -4395,6 +4402,23 @@
         ],
         "inputSchemaRef": "StartChatInputSchema",
         "resultSchemaRef": "StartChatResultSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "chat.setModel",
+        "noun": "chat",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/chat.setModel",
+        "intentTags": [
+          "chat",
+          "set",
+          "model"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
         "invocationSyntax": null,
         "actionDiscoverable": true,
         "reason": null,
@@ -8388,6 +8412,39 @@
         },
         "migration": {
           "strategy": "space-link-kinds"
+        }
+      },
+      "story": {
+        "kind": "story",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "stories"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "generic",
+          "genericCreate": true,
+          "genericPatch": true,
+          "genericMove": true,
+          "genericHierarchy": true,
+          "genericDeleteRestore": true,
+          "genericPoints": true,
+          "messages": true,
+          "reactions": true,
+          "connections": true,
+          "lifecycleOperations": []
+        },
+        "menu": {
+          "strategy": "registered-not-default"
+        },
+        "migration": {
+          "strategy": "story-detail"
         }
       }
     },

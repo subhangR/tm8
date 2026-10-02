@@ -250,6 +250,48 @@ describe.sequential('W2.G05 collection, graph, and undo PostgreSQL semantics', (
     expect((await search('%', ['task'])).page.items).toEqual([]);
   });
 
+  it('finds an entity when every typed word is in its title or short description (words)', async () => {
+    // A picker query is typed, not copied: "skill creator" must find the
+    // skill NAMED `skill-creator`, which the literal titleContains cannot.
+    const [creatorId, pdfId] = await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      const ids: string[] = [];
+      for (const [name, description] of [
+        ['skill-creator', 'Guide for creating effective skills'],
+        ['pdf', 'Extract text and tables from PDF files'],
+      ] as const) {
+        const id = (await client.query<{ id: string }>('select internal.new_id()::text as id')).rows[0]!.id;
+        await client.query(
+          `insert into public.entities(id, space_id, kind, parent_id, position, created_by)
+           values ($1, $2, 'skill', null, 0, $3)`,
+          [id, fixture.spaceId, fixture.memberId],
+        );
+        await client.query(
+          'insert into public.skills(entity_id, space_id, name, description) values ($1, $2, $3, $4)',
+          [id, fixture.spaceId, name, description],
+        );
+        ids.push(id);
+      }
+      return ids as [string, string];
+    });
+    const search = async (words: string, kinds: string[] = ['skill']) => (await asApp(database, fixture.identityId, (q) => queryCollection(
+      q,
+      { spaceId: fixture.spaceId, kinds: kinds as never, filters: { words } },
+      fixture.identityId,
+    ))).page;
+    for (const typed of ['skill creator', 'Creator Skill', 'skill-creator', 'SKILL_CREATOR', 'creat']) {
+      expect((await search(typed)).items.map((item) => item.id), typed).toEqual([creatorId]);
+    }
+    // The description counts, and every word must land somewhere.
+    expect((await search('tables pdf')).items.map((item) => item.id)).toEqual([pdfId]);
+    expect((await search('skills effective')).items.map((item) => item.id)).toEqual([creatorId]);
+    expect((await search('skill tables')).items).toEqual([]);
+    expect((await search('creator')).total).toBe(1);
+    // Any kind still matches by title; the soft-delete posture still applies.
+    expect((await search('chi', ['task'])).items.map((item) => item.id)).toEqual([fixture.childId]);
+    expect((await search('deleted', ['task'])).items).toEqual([]);
+  });
+
   it('filters and groups tasks by priority (Board tab wave)', async () => {
     // Fixture priorities: Root=medium, Child=high, Sibling=low, Deleted=urgent (soft-deleted).
     const high = await asApp(database, fixture.identityId, (q) => queryCollection(

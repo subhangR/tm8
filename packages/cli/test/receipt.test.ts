@@ -36,6 +36,7 @@ const ME = '01a0cb4c-c0d8-79e7-b63f-edb646e8013c';
 const SESSION = '01a0cf13-2629-7698-8994-0d1b5b7eb513';
 const WORKTREE = '01a0cf13-1625-74a1-9e5c-fa41c8eaf093';
 const PR = '01a0cf19-fd27-7bd6-80fe-bbf517dd7d49';
+const SPACE_CRED = '01a0d001-6a1c-7e2b-9f00-5c1d2b9e0a42';
 const TYPICAL_TITLE = 'THROWAWAY receipt fixture B (delete me)';
 const TITLE_80 = 'An eighty character task title that exercises the worst case receipt budget, ok.';
 const TITLE_95 = `${TITLE_80} and then some more`;
@@ -252,7 +253,10 @@ describe('successReceipt: per op', () => {
       model: 'claude-opus-5[1m]', tasks: ['01a0cf12-955d-77fb-adb0-6334f2d0124b'],
       workdir: { mode: 'worktree', path: WORKTREE_PATH }, branch: `tm8/${WORKTREE}`, titleTruncated: true,
     });
-    expect(r).not.toHaveProperty('accessMode'); // not on the result; phase 2 supplies it
+    // A server that predates `launch` gets no posture rows — never argv's guess.
+    expect(r).not.toHaveProperty('access');
+    expect(r).not.toHaveProperty('parent');
+    expect(r).not.toHaveProperty('credentials');
     // As in §5's spawn example: no version, no refs (tasks/workdir are the rows).
     expect(r).not.toHaveProperty('version');
     expect(r).not.toHaveProperty('refs');
@@ -263,6 +267,55 @@ describe('successReceipt: per op', () => {
     expect(bytes(successReceipt('session.spawn', commandResult(sessionDetail()), { workdirPath: WORKTREE_PATH }))).toBeLessThanOrEqual(640);
     // Without the path it is an ordinary typical fixture.
     expect(bytes(successReceipt('session.spawn', commandResult(sessionDetail())))).toBeLessThanOrEqual(500);
+  });
+
+  it('session.spawn: the RESOLVED posture — access mode and its source, parent, credential per provider', () => {
+    const inherited = successReceipt('session.spawn', commandResult(sessionDetail(), [], {
+      launch: {
+        accessMode: 'fullAccess', accessModeSource: 'inherited', parentSessionId: PARENT,
+        credentials: [
+          { provider: 'anthropic', source: 'space', spaceCredentialId: SPACE_CRED, spacePick: 'pinned' },
+          { provider: 'github', source: 'member' },
+        ],
+      },
+    }));
+    expect(inherited).toMatchObject({
+      access: { mode: 'fullAccess', from: 'inherited' },
+      parent: PARENT,
+      credentials: { anthropic: `space/pinned:${SPACE_CRED}`, github: 'member' },
+    });
+    expect(renderReceiptHuman(inherited)).toContain(`access:fullAccess(inherited) parent:${PARENT}`);
+    expect(renderReceiptHuman(inherited)).toContain(`credentials anthropic=space/pinned:${SPACE_CRED} github=member`);
+
+    const root = successReceipt('session.spawn', commandResult(sessionDetail(), [], {
+      launch: { accessMode: 'plan', accessModeSource: 'requested', parentSessionId: null, credentials: [{ provider: 'anthropic', source: 'node' }] },
+    }));
+    expect(root).toMatchObject({ access: { mode: 'plan', from: 'requested' }, parent: null, credentials: { anthropic: 'node' } });
+    expect(renderReceiptHuman(root)).toContain('access:plan(requested) parent:none');
+
+    // Nothing but ids, sources and picks is copied from a credential row.
+    const leaky = successReceipt('session.spawn', commandResult(sessionDetail(), [], {
+      launch: { accessMode: 'safe', accessModeSource: 'persona', parentSessionId: null,
+        credentials: [{ provider: 'openai', source: 'member', apiKey: 'sk-zzzzzzzz' }] },
+    }));
+    expect(leaky.credentials).toEqual({ openai: 'member' });
+    expectLean(leaky);
+  });
+
+  it('session.spawn worst case with the posture rows stays ≤ 1024 B', () => {
+    // 95-char title (clamped), worktree path, inherited fullAccess, a parent,
+    // and three providers each on a pinned space credential: the largest
+    // posture a spawn can report today. Spawn's budget is 1024 B rather than
+    // 640 B because these rows are required facts (D7.1: never cut one).
+    const r = successReceipt('session.spawn', commandResult(sessionDetail({ title: TITLE_95 }), [], {
+      launch: {
+        accessMode: 'acceptEdits', accessModeSource: 'dispatcher', parentSessionId: PARENT,
+        credentials: ['anthropic', 'github', 'openai'].map((provider) => (
+          { provider, source: 'space', spaceCredentialId: SPACE_CRED, spacePick: 'space_default' })),
+      },
+    }), { workdirPath: WORKTREE_PATH });
+    expectLean(r);
+    expect(bytes(r)).toBeLessThanOrEqual(1024);
   });
 
   it('session.terminate: status.to and ended; never status.from', () => {

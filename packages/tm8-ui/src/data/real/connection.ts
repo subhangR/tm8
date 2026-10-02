@@ -234,6 +234,14 @@ export interface ConnectionManager {
   onSpaceRefused(cb: (spaceId: SpaceId, error: CollabError) => void): Unsubscribe;
   /** Fires each time the socket reaches `live` after having been down (liveness cadence, LLD §9). */
   onReconnect(cb: () => void): Unsubscribe;
+  /**
+   * Replace the socket now, because the credential it upgraded with is no
+   * longer the page's: `auth.space.enter` swapped the session cookie (W3 F1).
+   * A browser WebSocket keeps its upgrade identity for life, so under enforce
+   * the old socket would refuse every space but the one it was pinned to.
+   * No-op when no socket exists; the next `openSpace` connects fresh anyway.
+   */
+  reconnect(): void;
   /** Transport reachability from the HTTP client. See the header note on polling vs offline. */
   noteTransport(reachable: boolean): void;
   /** The recorded refusal for a space, if any — lets `openSpace()` reject rather than hope. */
@@ -852,6 +860,32 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
     onResync(cb) { resyncSubs.add(cb); return () => { resyncSubs.delete(cb); }; },
     onSpaceRefused(cb) { refusedSubs.add(cb); return () => { refusedSubs.delete(cb); }; },
     onReconnect(cb) { reconnectSubs.add(cb); return () => { reconnectSubs.delete(cb); }; },
+
+    reconnect() {
+      if (disposed) return;
+      // Refusals were the OLD identity's answers. The new one may be allowed
+      // what that one was not, and `openSpace` rejects on a recorded refusal.
+      refusals.clear();
+      // A backoff ladder built against the old credential is not this one's.
+      reconnectAttempt = 0;
+      if (reconnectTimer !== null) { timers.clearTimeout(reconnectTimer); reconnectTimer = null; }
+      if (socket !== null) {
+        // `close()` silences the old socket's handlers, so no `handleClose`
+        // runs and no backoff is scheduled for a close this client chose.
+        socket.close();
+        socket = null;
+        connecting = false;
+        stopIdleWatchdog();
+      } else if (open.size === 0) {
+        // Down with nothing open (a switch closed the old space first): the
+        // next `openSpace` connects fresh, with whatever cookie is current.
+        return;
+      }
+      // `handleOpen` re-subscribes every open space and resumes each from its
+      // cursor, so nothing delivered in the gap is lost. From polling or a
+      // pending backoff this is simply the next attempt, made now.
+      connect();
+    },
 
     getConnection() { return phase; },
     noteTransport,

@@ -437,6 +437,151 @@ describe('TM8 Chat durable orchestration', () => {
     });
   });
 
+  /**
+   * 276: A MODEL SWITCH RESTARTS THE CHILD AND KEEPS THE CONVERSATION.
+   *
+   * `chat.setModel` only moves the `chats` row. Nothing is torn down at write
+   * time, so the ONLY place a switch can actually take effect is here, on the
+   * next claimed turn — `--model` is an argv value and argv cannot be changed
+   * on a running process. Before 276 `ensureRuntime` compared authorization
+   * alone, so a stored switch was accepted and then quietly ignored for the rest
+   * of the chat's life.
+   *
+   * THE ASSERTION THAT MATTERS IS `resume`, NOT `closes`. "It restarted" passes
+   * trivially and would still pass if the restart began a FRESH native session,
+   * which is precisely the regression worth fearing: the user asked for a
+   * different model and silently lost the conversation they were having. So this
+   * pins that start #2 resumes NATIVE — same session id, same cwd — and that the
+   * new model is the one the child was spawned with.
+   */
+  it('276: a model change closes the live child and resumes the SAME native session on the new model', async () => {
+    const events: string[] = [];
+    const secondTurn = '10000000-0000-4000-8000-00000000000a';
+    const secondMessage = '10000000-0000-4000-8000-00000000000b';
+    const FIRST_MODEL = 'claude-sonnet-4-5';
+    const SWITCHED_MODEL = 'claude-opus-4-1';
+    // Same chat, same human, same everything EXCEPT the model. Chat v1 runs
+    // claude-code models only, so both sides of the switch are claude and the
+    // agent tool never moves — the one axis `set_chat_model` refuses to cross.
+    const base = {
+      ...claim('cold'),
+      model: FIRST_MODEL,
+      provider: 'anthropic',
+      agentTool: 'claude-code',
+      agentMessageId: AGENT_MESSAGE,
+      requestedByIdentityId: IDENTITY,
+      requestedByAuthKind: 'browser',
+    };
+    const db = new FakeDb([
+      base,
+      {
+        ...base,
+        runtimeState: 'live',
+        turnId: secondTurn,
+        userMessageId: secondMessage,
+        model: SWITCHED_MODEL,
+      },
+    ], events);
+    const runtime = new FakeRuntime([
+      { kind: 'text', text: 'ok' },
+      { kind: 'done', reason: 'success' },
+    ]);
+    const resolvedFor: Array<{ model: string; mode: string }> = [];
+    const orchestrator = new ChatOrchestrator({
+      db,
+      runtime,
+      publisher: new ChatTurnPublisher(new SubscriptionRegistry()),
+      resolveLaunchConfig: async (input) => {
+        resolvedFor.push({ model: input.model, mode: input.mode });
+        return {
+          systemPrompt: '', mcpConfigPath: '/tmp/mcp.json',
+          availableTools: [], allowedTools: ['mcp__tm8__tm8_read'],
+        };
+      },
+    });
+
+    await orchestrator.wake(CHAT, IDENTITY);
+
+    // The launch resolver saw the switch, and saw it as a RESUME.
+    expect(resolvedFor).toEqual([
+      { model: FIRST_MODEL, mode: 'new' },
+      { model: SWITCHED_MODEL, mode: 'resume-after-interrupt' },
+    ]);
+    // The live child was torn down — necessary, but on its own not sufficient.
+    expect(runtime.closes).toEqual([CHAT]);
+    expect(runtime.starts).toHaveLength(2);
+
+    // THE CONVERSATION SURVIVED. Start #2 resumes the native session start #1
+    // created; it did not mint a new one.
+    expect(runtime.starts[1]?.resume).toEqual({
+      nativeSessionId: NATIVE,
+      cwd: '/tmp/tm8-chat-test',
+    });
+    expect(runtime.starts[1]?.nativeSessionId).toBe(NATIVE);
+    expect(runtime.starts[1]?.nativeSessionId).toBe(runtime.starts[0]?.nativeSessionId);
+
+    // AND THE SWITCH TOOK EFFECT: argv carries the new model, not the old one.
+    expect(runtime.starts[0]?.model).toBe(FIRST_MODEL);
+    expect(runtime.starts[1]?.model).toBe(SWITCHED_MODEL);
+
+    // The first start was a genuinely new session, so it carried no resume.
+    expect(runtime.starts[0]?.resume).toBeUndefined();
+
+    // The runtime-state ledger records the teardown before the new child.
+    expect(db.states).toEqual(['live', 'stopped', 'live']);
+  });
+
+  /**
+   * 276, THE OTHER HALF: an UNCHANGED model must still reuse the live child.
+   *
+   * The guard added for the switch is a reuse condition, and a reuse condition
+   * written slightly wrong (comparing the chat's current model instead of the
+   * one the child was spawned on, say) restarts the child on EVERY turn. That
+   * costs a process spawn and a transcript reopen per message and would never
+   * announce itself as a bug — the chat would just feel slow. So the negative
+   * case is pinned next to the positive one.
+   */
+  it('276: an unchanged model reuses the live child — no close, no second start', async () => {
+    const events: string[] = [];
+    const base = {
+      ...claim('cold'),
+      model: 'claude-sonnet-4-5',
+      provider: 'anthropic',
+      agentTool: 'claude-code',
+      agentMessageId: AGENT_MESSAGE,
+      requestedByIdentityId: IDENTITY,
+      requestedByAuthKind: 'browser',
+    };
+    const db = new FakeDb([
+      base,
+      {
+        ...base,
+        runtimeState: 'live',
+        turnId: '10000000-0000-4000-8000-00000000000a',
+        userMessageId: '10000000-0000-4000-8000-00000000000b',
+      },
+    ], events);
+    const runtime = new FakeRuntime([
+      { kind: 'text', text: 'ok' },
+      { kind: 'done', reason: 'success' },
+    ]);
+    const orchestrator = new ChatOrchestrator({
+      db,
+      runtime,
+      publisher: new ChatTurnPublisher(new SubscriptionRegistry()),
+      resolveLaunchConfig: async () => ({
+        systemPrompt: '', mcpConfigPath: '/tmp/mcp.json',
+        availableTools: [], allowedTools: ['mcp__tm8__tm8_read'],
+      }),
+    });
+
+    await orchestrator.wake(CHAT, IDENTITY);
+
+    expect(runtime.turns).toHaveLength(2);
+    expect(runtime.starts).toHaveLength(1);
+    expect(runtime.closes).toEqual([]);
+  });
+
   // A wake that lands while a drain for the same root is exiting must not be
   // lost: the second wake here fires while the first drain's null claim is
   // still in flight, so it coalesces onto the dying promise — the fix records

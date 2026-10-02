@@ -1,0 +1,220 @@
+/*
+ * The story page shell: bar, hero, four stats and the column grid
+ * (artifact 01a0fc3e rev 4, `.bar` / `.hero` / `.stats` / `.cols`).
+ * Atelier tokens only. The page is a container so the grid answers the
+ * PANEL's width, not the window's.
+ */
+.cv2-root .sty-page {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-3);
+  /* The bottom clears the playground's sticky ＋ (≈52px) plus a gap, so the
+     last card can scroll out from under it. */
+  padding: var(--pn-space-3) var(--pn-space-4) 96px;
+  color: var(--pn-ink);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-body);
+  line-height: var(--pn-lh-body);
+  position: relative;
+}
+/* Blocks draw their own cards; an unmounted stub (null) takes no gap. */
+.cv2-root .sty-page > :empty { display: none; }
+
+/* ---- bar ---- */
+.cv2-root .sty-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 24px;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-label);
+}
+.cv2-root .sty-bar__crumb { display: flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: wrap; }
+.cv2-root .sty-bar__crumb b { color: var(--pn-ink); font-weight: 500; }
+.cv2-root .sty-bar__sep { color: var(--pn-ink-4); }
+.cv2-root .sty-bar__link {
+  font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer;
+}
+.cv2-root .sty-bar__link:hover { color: var(--pn-ink); text-decoration: underline; }
+.cv2-root .sty-kindchip {
+  display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px 0 6px;
+  border-radius: var(--pn-r-pill); background: var(--pn-brand-soft); color: var(--pn-brand-2);
+  font-family: var(--pn-mono); font-size: var(--pn-fs-fine); font-weight: 600;
+  letter-spacing: var(--pn-track-mega); text-transform: uppercase;
+}
+
+/* ---- hero: title, two-line description, one meta line (PR 1004) ---- */
+.cv2-root .sty-hero {
+  padding: 14px 18px 12px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-lg);
+  box-shadow: var(--pn-sh-sm);
+  position: relative;
+  overflow: hidden;
+}
+/* The progress hairline across the top edge — the hero's own meter. */
+.cv2-root .sty-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--pn-brand) 0 var(--sty-p, 0%), var(--pn-line) var(--sty-p, 0%) 100%);
+  transition: background var(--pn-dur-slow) var(--pn-ease-out);
+}
+.cv2-root .sty-hero[data-landed='true'] { animation: sty-land 1.2s var(--pn-ease-out); }
+@keyframes sty-land {
+  0% { box-shadow: 0 0 0 2px var(--pn-brand-soft), var(--pn-sh-sm); }
+  100% { box-shadow: var(--pn-sh-sm); }
+}
+.cv2-root .sty-tone--info { color: var(--pn-info); }
+.cv2-root .sty-tone--run { color: var(--pn-run); }
+.cv2-root .sty-tone--idle { color: var(--pn-ink-3); }
+.cv2-root .sty-title {
+  font-family: var(--pn-serif); font-weight: 500; font-size: var(--pn-fs-h2);
+  line-height: var(--pn-lh-tight); letter-spacing: -0.005em; margin: 2px 0 4px;
+}
+.cv2-root .sty-title__btn {
+  font: inherit; letter-spacing: inherit; color: inherit; background: none; border: 0; padding: 0;
+  text-align: left; cursor: text; border-radius: var(--pn-r-sm);
+}
+.cv2-root .sty-title__btn:hover { background: var(--pn-hover); box-shadow: 0 0 0 4px var(--pn-hover); }
+.cv2-root .sty-title__input {
+  font: inherit; letter-spacing: inherit; color: var(--pn-ink); width: 100%;
+  background: var(--pn-surface); border: 1px solid var(--pn-line-2); border-radius: var(--pn-r-sm);
+  padding: 0 6px; outline: none;
+}
+.cv2-root .sty-title__input:focus { border-color: var(--pn-brand); }
+.cv2-root .sty-title__error { font-family: var(--pn-ui); font-size: var(--pn-fs-label); color: var(--pn-block); margin-top: 4px; }
+.cv2-root .sty-ledebox { display: flex; align-items: flex-end; gap: 6px; margin: 0 0 8px; max-width: 900px; }
+.cv2-root .sty-lede {
+  font-family: var(--pn-serif); font-size: var(--pn-fs-title); line-height: var(--pn-lh-snug); color: var(--pn-ink-2);
+  margin: 0; white-space: pre-wrap; min-width: 0; flex: 1 1 auto;
+}
+.cv2-root .sty-lede--clamped { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.cv2-root .sty-lede--empty { color: var(--pn-ink-4); font-style: italic; margin: 0 0 8px; }
+.cv2-root .sty-lede__more {
+  flex: none; font: inherit; font-size: var(--pn-fs-label); color: var(--pn-ink-3); background: none; border: 0;
+  padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 2px;
+}
+.cv2-root .sty-lede__more:hover { color: var(--pn-ink); }
+.cv2-root .sty-herometa {
+  display: flex; align-items: center; gap: 4px 12px; flex-wrap: wrap;
+  color: var(--pn-ink-3); font-size: var(--pn-fs-label); line-height: 20px;
+}
+.cv2-root .sty-herometa__when { color: var(--pn-ink-4); }
+.cv2-root .sty-who { display: inline-flex; align-items: center; gap: 5px; color: var(--pn-ink-2); }
+.cv2-root .sty-stack { display: inline-flex; align-items: center; }
+.cv2-root .sty-stack__more { margin-left: 4px; font-size: var(--pn-fs-micro); color: var(--pn-ink-3); }
+.cv2-root .sty-stack .kit-avatar { box-shadow: 0 0 0 1.5px var(--pn-card); }
+.cv2-root .sty-stack .kit-avatar + .kit-avatar { margin-left: 3px; }
+.cv2-root .sty-stack .sty-av--live { box-shadow: 0 0 0 1.5px var(--pn-card), 0 0 0 3px var(--pn-run); }
+.cv2-root .sty-livepill {
+  display: inline-flex; align-items: center; gap: 5px; height: 18px; padding: 0 7px 0 6px;
+  border: 0; border-radius: var(--pn-r-pill); background: var(--pn-run-soft); color: var(--pn-run);
+  font: inherit; font-size: var(--pn-fs-micro); font-weight: 600; white-space: nowrap; cursor: pointer;
+}
+.cv2-root .sty-livepill i {
+  width: 7px; height: 7px; border-radius: 50%; background: currentColor;
+  animation: sty-pulse 1.6s ease-in-out infinite;
+}
+.cv2-root .sty-livepill--paused { background: var(--pn-idle-soft); color: var(--pn-ink-3); }
+.cv2-root .sty-livepill--paused i { animation: none; background: transparent; border: 1.5px solid currentColor; }
+@keyframes sty-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+/* ---- the four figures: ONE slim strip (PR 1004) ---- */
+.cv2-root .sty-strip {
+  display: grid; grid-template-columns: minmax(0, 1.6fr) repeat(3, minmax(0, 1fr));
+  background: var(--pn-card); border: 1px solid var(--pn-line); border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-sm);
+}
+.cv2-root .sty-strip__cell { padding: 8px 14px 9px; min-width: 0; }
+.cv2-root .sty-strip__cell + .sty-strip__cell { border-left: 1px solid var(--pn-line); }
+.cv2-root .sty-strip__v {
+  display: flex; align-items: baseline; gap: 5px; white-space: nowrap;
+  font-size: var(--pn-fs-label); color: var(--pn-ink-3);
+}
+.cv2-root .sty-strip__v b { font-family: var(--pn-serif); font-size: var(--pn-fs-h3); font-weight: 500; color: var(--pn-ink); line-height: 1.1; }
+.cv2-root .sty-strip__v b.sty-strip__blocked { color: var(--pn-block); }
+.cv2-root .sty-strip__row { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 12px; }
+.cv2-root .sty-strip__pct { margin-left: auto; font-family: var(--pn-mono); font-size: var(--pn-fs-label); color: var(--pn-ink-3); }
+.cv2-root .sty-strip__row .sty-legend { margin-top: 0; }
+.cv2-root .sty-strip__pulse {
+  align-self: center; width: 7px; height: 7px; border-radius: 50%; background: var(--pn-run);
+  animation: sty-pulse 1.6s ease-in-out infinite;
+}
+.cv2-root .sty-strip__sub {
+  margin-top: 2px; font-size: var(--pn-fs-micro); color: var(--pn-ink-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cv2-root .sty-meter {
+  height: 4px; border-radius: var(--pn-r-pill); background: var(--pn-active);
+  overflow: hidden; margin-top: 5px; display: flex;
+}
+.cv2-root .sty-meter b { display: block; height: 100%; transition: width var(--pn-dur-slow) var(--pn-ease-out); }
+.cv2-root .sty-legend {
+  display: flex; gap: 10px; margin-top: 4px; font-size: var(--pn-fs-micro); color: var(--pn-ink-3);
+  white-space: nowrap; overflow: hidden;
+}
+.cv2-root .sty-legend i { width: 7px; height: 7px; border-radius: 2px; display: inline-block; margin-right: 4px; vertical-align: 0; }
+
+/* ---- feed + happening beside the rail ---- */
+.cv2-root .sty-cols { display: grid; grid-template-columns: minmax(0, 1fr) 392px; gap: 14px; align-items: start; }
+.cv2-root .sty-cols__main,
+.cv2-root .sty-cols__rail { display: flex; flex-direction: column; gap: var(--pn-space-3); min-width: 0; }
+
+/* A narrow panel: stats two by two, the rail under the feed. */
+@container (max-width: 900px) {
+  .cv2-root .sty-cols { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ---- host states: reading, failed, stale ---- */
+.cv2-root .sty-state {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
+  margin: var(--pn-space-4); padding: var(--pn-space-4);
+  border: 1px dashed var(--pn-line-2); border-radius: var(--pn-r-md);
+  color: var(--pn-ink-3); font-size: var(--pn-fs-sm);
+}
+.cv2-root .sty-state b { color: var(--pn-ink); font-weight: 600; }
+.cv2-root .sty-state--inline { flex-direction: row; margin: var(--pn-space-3) var(--pn-space-4) 0; padding: 6px 10px; border-style: solid; font-size: var(--pn-fs-label); }
+.cv2-root .sty-state__retry {
+  font: inherit; color: var(--pn-ink); background: var(--pn-card); cursor: pointer;
+  border: 1px solid var(--pn-line-2); border-radius: var(--pn-r-sm); padding: 2px 10px;
+}
+
+/* The entity panel (~560-760px): progress across the top of the strip, the
+   other three figures in one row under it. */
+@container (max-width: 760px) {
+  .cv2-root .sty-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .cv2-root .sty-strip__cell--progress { grid-column: 1 / -1; border-bottom: 1px solid var(--pn-line); }
+  .cv2-root .sty-strip__cell--progress + .sty-strip__cell { border-left: 0; }
+  .cv2-root .sty-strip__cell:not(.sty-strip__cell--progress) { padding: 5px 12px 6px; }
+  .cv2-root .sty-hero { padding: 12px 16px 10px; }
+}
+/* A phone-width panel: one figure per row. */
+@container (max-width: 400px) {
+  .cv2-root .sty-strip { grid-template-columns: minmax(0, 1fr); }
+  .cv2-root .sty-strip__cell + .sty-strip__cell { border-left: 0; border-top: 1px solid var(--pn-line); }
+}
+
+/* ---- the graph filter's quiet note (PR 1004) ---- */
+.cv2-root .sty-hopsnote {
+  margin: -4px 2px 0; font-size: var(--pn-fs-micro); color: var(--pn-ink-3); font-style: italic;
+}
+
+/* ---- full view (Z4, PR 1004): main column + rail, a tall graph ---- */
+.cv2-root .sty-page--full { padding: var(--pn-space-3) var(--pn-space-5) 96px; }
+.cv2-root .sty-full { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 14px; align-items: start; }
+.cv2-root .sty-full__main,
+.cv2-root .sty-full__rail { display: flex; flex-direction: column; gap: var(--pn-space-3); min-width: 0; }
+.cv2-root .sty-full__rail { position: sticky; top: var(--pn-space-3); }
+/* StoryGraph `fill` takes 100% of a parent with a definite height: this box.
+   Tall enough that the graph is the page, short enough that the strip above
+   it stays on screen. */
+.cv2-root .sty-graphbox { height: clamp(420px, calc(100vh - 240px), 1100px); min-height: 0; display: flex; flex-direction: column; }
+.cv2-root .sty-graphbox > * { flex: 1 1 auto; min-height: 0; }
+@container (max-width: 980px) {
+  .cv2-root .sty-full { grid-template-columns: minmax(0, 1fr); }
+  .cv2-root .sty-full__rail { position: static; }
+}

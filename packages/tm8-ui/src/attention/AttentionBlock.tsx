@@ -4,7 +4,8 @@
  *
  * Every open request that counts on this entity, its own and rolled up, with
  * one optional note and one Resolve all. The entity stays usable underneath
- * (Q1): this is a band above the tabs, not a gate. Hidden when nothing is
+ * (Q1): the detail panel mounts it in a zero-height dock, so it floats over
+ * the body (a pill collapsed, a card open) and never pushes the entity down. Hidden when nothing is
  * pending. Settled history has no UI surface yet: R9 sends it to an Activity
  * tab the panel does not have (only the CLI lists it today).
  *

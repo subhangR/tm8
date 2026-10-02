@@ -1,5 +1,6 @@
 import type { EntityBadges, EntityCounters } from '@tm8/contract';
 import { KindIcon, tileCountBadgesOf } from '../../domain';
+import type { TileCountFacet } from '../../domain/tile-counts';
 import { VectorIcon } from '../../kit';
 
 /**
@@ -35,13 +36,13 @@ const PERSON_MARK = [
  * HOST's judgment from registry data (a real collection kind expands; the
  * message tallies stay counts) — this component keeps knowing no kind.
  */
-export function hasTileCounts(counters: EntityCounters): boolean {
+export function hasTileCounts(counters: EntityCounters, visible?: (facet: TileCountFacet) => boolean): boolean {
   // A JSX element is truthy even when it renders null, so mounts ask this
   // before deciding whether the badge SUB-ROW exists at all.
-  return tileCountBadgesOf(counters).length > 0;
+  return tileCountBadgesOf(counters).some((badge) => visible?.(badge.facet) ?? true);
 }
 
-export function TileCountBadges({ counters, humanAuthors, openKind, onToggleKind, expandableKind, controlsId, countOf }: {
+export function TileCountBadges({ counters, humanAuthors, openKind, onToggleKind, expandableKind, controlsId, countOf, visible }: {
   counters: EntityCounters;
   humanAuthors?: EntityBadges['humanMessageAuthors'];
   /** The kind whose relation group is open under this tile, if any. */
@@ -67,8 +68,14 @@ export function TileCountBadges({ counters, humanAuthors, openKind, onToggleKind
    * door onto a group the path has emptied is a door onto a lie.
    */
   countOf?: (kind: string, relation?: { type: string; direction: 'incoming' | 'outgoing' }) => number | undefined;
+  /**
+   * The viewer's row-view choice (`row-view.ts`): a badge whose facet this
+   * answers false for is not drawn. Absent ⇒ every badge shows.
+   */
+  visible?: (facet: TileCountFacet) => boolean;
 }) {
   const badges = tileCountBadgesOf(counters)
+    .filter((badge) => visible?.(badge.facet) ?? true)
     .map((badge) => ({ badge, shown: countOf?.(badge.kind, badge.relation) ?? badge.count }))
     .filter(({ shown }) => shown > 0);
   if (badges.length === 0) return null;
