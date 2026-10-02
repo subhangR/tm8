@@ -24,6 +24,15 @@ import {
   EXECUTION_NEW_TASK_TITLE_MAX,
 } from './contract.js';
 import { ArtifactManifestSchema } from './artifact-manifest.js';
+import { STYLE_MAX_LAYERS, STYLE_SCHEMA_VERSION } from './style.js';
+import type {
+  BuiltinStyle,
+  BuiltinStyleId,
+  StyleDoc,
+  StyleLayer,
+  StyleTokenTable,
+  StyleWarning,
+} from './style.js';
 import { FormQuestionRowSchema, FormSectionRowSchema, FormSettingsSchema, FormStatusSchema } from './forms.js';
 import {
   SELECTION_HEADER_KINDS,
@@ -5515,3 +5524,57 @@ export const ContainersLogsResultSchema: z.ZodType<ContainersLogsResult> = z.obj
 export function envelopeOf<T>(data: z.ZodType<T>) {
   return z.object({ data, requestId: z.string() }).strict();
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STYLE ENTITIES (style.ts §2.3/§2.4). Document-level schemas only.
+//
+// The LAYER-TOKEN schemas are NOT here and that is the one deliberate exception
+// to "every schema lives in schemas.ts": they are fields of `LAYER_TYPES`, the
+// registry that also holds each type's token->property mapping. Splitting a
+// layer type's validation from its mapping across two files is how a type gets
+// added to one and not the other — the registry is the unit, so it stays whole.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const StyleLayerSchema: z.ZodType<StyleLayer> = z.object({
+  type: z.string().min(1).max(64),
+  enabled: z.boolean().optional(),
+  label: z.string().max(120).optional(),
+  tokens: z.record(z.unknown()),
+}).strict();
+
+export const StyleDocSchema: z.ZodType<StyleDoc> = z.object({
+  schemaVersion: z.number().int().positive().max(STYLE_SCHEMA_VERSION),
+  // The `builtin:` prefix IS the composition constraint (§2.5): a foundation
+  // that could name a user style would make the resolver a graph walk with
+  // cycles, and a stranger's edit would reach into your style.
+  foundation: z.string().regex(/^builtin:[a-z0-9-]{1,64}$/) as unknown as z.ZodType<BuiltinStyleId>,
+  layers: z.array(StyleLayerSchema).max(STYLE_MAX_LAYERS),
+}).strict();
+
+export const StyleWarningSchema: z.ZodType<StyleWarning> = z.object({
+  code: z.enum([
+    'unknown-layer-type',
+    'unknown-token',
+    'invalid-token',
+    'clamped',
+    'unresolved-alias',
+    'low-contrast',
+  ]),
+  layer: z.number().int().nonnegative().nullable(),
+  at: z.string(),
+  message: z.string(),
+}).strict();
+
+/* A token table is an open map keyed by custom property name, so the key
+   GRAMMAR is the only thing worth asserting — enumerating 110 keys here would
+   be a third copy of the palette to keep in sync, and the parity test already
+   guards the table's contents against the CSS. */
+const StyleTokenTableSchema = z.record(z.string().regex(/^--pn-[a-z0-9-]+$/), z.string());
+
+export const BuiltinStyleSchema: z.ZodType<BuiltinStyle> = z.object({
+  id: z.string().regex(/^builtin:[a-z0-9-]{1,64}$/) as unknown as z.ZodType<BuiltinStyleId>,
+  title: z.string().min(1).max(120),
+  builtinRevision: z.number().int().positive(),
+  darkSibling: z.string().regex(/^builtin:[a-z0-9-]{1,64}$/) as unknown as z.ZodType<BuiltinStyleId>,
+  tokens: StyleTokenTableSchema as unknown as z.ZodType<StyleTokenTable>,
+}).strict();
