@@ -788,7 +788,7 @@ describe('991 / 01a0fb59-5ec0 — F-R13b: a re-point tombstones the unresolved p
     expect(JSON.stringify(liveOnGone)).not.toContain(s);
   });
 
-  it('posture: the history table matches session_space_credentials — RLS on, member-select policy, no grant to tm8_app or public', async () => {
+  it('posture: the history table has session_space_credentials\' RLS and member-select policy, no table grant beyond its owner, and (stricter) no column grant either', async () => {
     const rows = await asOwner(async (c) => (await c.query<{ rls: boolean; grants: string | null; policy: string }>(
       `select c.relrowsecurity rls,
               (select string_agg(distinct grantee, ',') from information_schema.role_table_grants g
@@ -800,6 +800,10 @@ describe('991 / 01a0fb59-5ec0 — F-R13b: a re-point tombstones the unresolved p
     expect(rows[0]).toEqual(rows[1]);
     expect(rows[0]!.rls).toBe(true);
     expect(rows[0]!.grants).toBeNull();
+    const columnGrants = await asOwner(async (c) => (await c.query(
+      `select 1 from information_schema.column_privileges
+        where table_name = 'session_space_credential_history' and grantee <> 'tm8_graph_owner'`)).rowCount);
+    expect(columnGrants).toBe(0);
   });
 });
 

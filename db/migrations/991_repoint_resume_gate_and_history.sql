@@ -43,10 +43,12 @@
 --                  disable and membership containment, and the runs_on edge.
 --                  Only the two history readers change, and each unions both
 --                  tables: space_credential_usage (rows carry supersededAt)
---                  and space_credential_foreign_launches. The table has
---                  session_space_credentials' posture exactly: owned by
---                  tm8_graph_owner, RLS on with the same member-select policy,
---                  and no grant to tm8_app or public.
+--                  and space_credential_foreign_launches. The table is owned
+--                  by tm8_graph_owner, with RLS on and the same member-select
+--                  policy as session_space_credentials. It is STRICTER on
+--                  grants: no grant to public, and none to tm8_app, whereas
+--                  session_space_credentials grants tm8_app column SELECT.
+--                  Only the two SECURITY DEFINER readers above read it.
 -- =============================================================================
 
 set local lock_timeout = '5s';
