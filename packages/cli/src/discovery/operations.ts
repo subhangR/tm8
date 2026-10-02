@@ -182,6 +182,183 @@ const ROWS: Record<OperationName, Row> = {
       'the global id is a display claim in issuer:subject shape, never an authorization input',
     ],
   },
+  // ── styles (styles spec 01a0fc22 v8 §4-§5, migration 284) ──────────────
+  // PERSONAL styles are the caller's own and edited in place; SPACE styles are
+  // read-only `style` entities born and re-versioned only by `style push`.
+  // References are typed: builtin:<slug>, personal:<uuid>, space:<uuid>.
+  'styles.personal.list': {
+    cmd: ['style', 'list'],
+    syn: 'tm8 style list [--space <space-id>] [--mine | --space-only] [--tag <tag>]',
+    sum: 'List your personal styles and, with a Space in context, the built-ins and that Space\'s styles',
+    authz: 'server',
+    input: 'none',
+    tags: ['theme', 'themes', 'styles', 'palette', 'personal'],
+    notes: [
+      'personal styles are visible to their owner only; nobody else can list them',
+      'without a Space in context only the personal half is listed; --space-only makes the Space required',
+    ],
+    examples: ['tm8 style list --space <space-id>', 'tm8 style list --mine --tag <tag>'],
+  },
+  'styles.personal.create': {
+    cmd: ['style', 'create'],
+    syn: 'tm8 style create <title> --foundation <builtin-ref> [--pn-<name>=<value>]... [--set <name>=<value>]... [--vars <json-source>] [--css <text-source>] [--tag <tag>]... [--description <text>] [--from <ref>] [--mutation-id <id>]',
+    sum: 'Create a personal style: a built-in foundation plus any --pn-* variables, private to you until you push it',
+    authz: 'server',
+    input: 'bound',
+    tags: ['theme', 'new', 'author', 'personal', 'variables'],
+    notes: [
+      'a variable is written `--pn-<name>=<value>` (the `=` is required) or `--set <name>=<value>`; --vars takes a JSON object of the same keys',
+      '--from <ref> copies a built-in or a space style instead (the same copy `style pull` makes); <title> and --foundation are then optional',
+      'the server validates every value against the variable registry and returns warnings; nothing reaches the space until `tm8 style push`',
+    ],
+    examples: ['tm8 style create <title> --foundation <builtin-ref> --pn-brand=<colour>'],
+  },
+  'styles.personal.update': {
+    cmd: ['style', 'update'],
+    syn: 'tm8 style update <personal-ref> --expect-version <n> [--title <title>] [--description <text>|none] [--foundation <builtin-ref>] [--vars <json-source>] [--vars-replace <json-source>] [--css <text-source>|none] [--tag <tag>]... [--mutation-id <id>]',
+    sum: 'Edit a personal style you own in place; --vars is a merge patch where a null value removes the variable',
+    authz: 'server',
+    input: 'bound',
+    ver: 'expectedVersion',
+    tags: ['theme', 'edit', 'variables', 'merge'],
+    notes: [
+      '`tm8 style set` and `tm8 style unset` are the one-variable spellings of this operation',
+      'title, description, foundation, css and tags REPLACE; --vars-replace replaces the whole variable map',
+      'changing --foundation keeps every variable you set; only unset variables fall back differently',
+    ],
+    examples: ['tm8 style update <personal-ref> --expect-version <n> --title <title>'],
+  },
+  'styles.personal.delete': {
+    cmd: ['style', 'delete'],
+    syn: 'tm8 style delete <personal-ref> [--mutation-id <id>]',
+    sum: 'Delete a personal style you own; a space style pushed from it stays',
+    authz: 'server',
+    input: 'bound',
+    tags: ['theme', 'remove'],
+    examples: ['tm8 style delete <personal-ref>'],
+  },
+  'styles.list': {
+    cmd: ['style', 'list'],
+    syn: 'tm8 style list [--space <space-id>] [--mine | --space-only] [--tag <tag>]',
+    sum: 'List the built-ins and a Space\'s styles, with the default, what you use, and the version and pusher of each',
+    authz: 'space',
+    input: 'none',
+    tags: ['theme', 'space', 'shared', 'default'],
+  },
+  'styles.get': {
+    cmd: ['style', 'get'],
+    syn: 'tm8 style get <ref> [--resolved]',
+    sum: 'Read one style — built-in, personal or space — as its document, warnings and hash',
+    authz: 'entity',
+    input: 'none',
+    tags: ['theme', 'show', 'read', 'variables'],
+    notes: [
+      '<ref> is builtin:<slug>, personal:<uuid> or space:<uuid>; a bare uuid is looked up as personal first, then space',
+      '--resolved adds the full resolved table: every --pn-* variable after the foundation fills the gaps',
+    ],
+    examples: ['tm8 style get <ref> --resolved'],
+  },
+  'styles.push': {
+    cmd: ['style', 'push'],
+    syn: 'tm8 style push <personal-ref> [--space <space-id>] [--to <space-ref>] [--expect-version <n>] [--title <title>] [--mutation-id <id>]',
+    sum: 'Publish a personal style to the Space: the first push creates a space style, a later push re-versions it live for everyone on it',
+    authz: 'space',
+    input: 'bound',
+    ver: 'expectedVersion',
+    tags: ['theme', 'publish', 'share', 'version', 'release'],
+    notes: [
+      'without --to, the target is the space style this personal style was last pushed as; a never-pushed style creates a new one',
+      'any active member may push a new version onto any space style; every version records who pushed it and `tm8 style versions` lists them',
+      '--expect-version guards the SPACE style\'s version: a push that raced another fails with version_conflict instead of overwriting it',
+    ],
+    examples: ['tm8 style push <personal-ref> --space <space-id>', 'tm8 style push <personal-ref> --to <space-ref> --expect-version <n>'],
+  },
+  'styles.pull': {
+    cmd: ['style', 'pull'],
+    syn: 'tm8 style pull <space-ref|builtin-ref> [--title <title>] [--mutation-id <id>]',
+    sum: 'Copy a space style or a built-in into a new personal style you can edit',
+    authz: 'entity',
+    input: 'bound',
+    tags: ['theme', 'copy', 'fork', 'duplicate', 'customise'],
+    notes: ['the copy remembers where it came from and at which version, so a newer upstream version can be shown later'],
+    examples: ['tm8 style pull <space-ref> --title <title>'],
+  },
+  'styles.remove': {
+    cmd: ['style', 'remove'],
+    syn: 'tm8 style remove <space-ref> [--expect-version <n>] [--mutation-id <id>]',
+    sum: 'Remove a space style (space admin); members on it keep rendering from their snapshot',
+    authz: 'entity',
+    input: 'bound',
+    ver: 'expectedVersion',
+    tags: ['theme', 'delete', 'admin', 'unpublish'],
+    examples: ['tm8 style remove <space-ref> --expect-version <n>'],
+  },
+  'styles.resolve': {
+    cmd: ['style', 'resolve'],
+    syn: 'tm8 style resolve <ref|json-source> [--strict]',
+    sum: 'Lint or preview a style document without saving it: the resolved table, warnings and clamps',
+    authz: 'server',
+    input: 'bound',
+    tags: ['theme', 'lint', 'validate', 'preview', 'contrast'],
+    notes: [
+      'warnings go to stderr; --strict exits 2 when there is at least one',
+      'a <json-source> is a style document or {"doc": …}; nothing is stored',
+    ],
+    examples: ['tm8 style resolve <ref> --strict'],
+  },
+  'styles.export': {
+    cmd: ['style', 'export'],
+    syn: 'tm8 style export <ref> [--type css|json] [--only set|all]',
+    sum: 'Print a style as a .cv2-root { --pn-*: … } stylesheet or as a .tm8style.json document',
+    authz: 'entity',
+    input: 'none',
+    tags: ['theme', 'download', 'css', 'json', 'backup'],
+    notes: ['--only set prints the variables the style sets; --only all prints the whole resolved table'],
+    examples: ['tm8 style export <ref> --type css'],
+  },
+  'identity.stylePrefs.get': {
+    cmd: ['style', 'use'],
+    syn: 'tm8 style use [<ref>] [--dark <ref>|none] [--follow-os | --no-follow-os] [--trust-css] [--mutation-id <id>]',
+    sum: 'Read your current style choice: current, dark pairing and follow-OS',
+    authz: 'server',
+    input: 'none',
+    tags: ['theme', 'current', 'preference', 'me'],
+  },
+  'identity.stylePrefs.set': {
+    cmd: ['style', 'use'],
+    syn: 'tm8 style use [<ref>] [--dark <ref>|none] [--follow-os | --no-follow-os] [--trust-css] [--mutation-id <id>]',
+    sum: 'Choose the style you see, in every tab and every Space; with no arguments, print your current choice',
+    authz: 'server',
+    input: 'bound',
+    tags: ['theme', 'select', 'switch', 'preference', 'dark-mode'],
+    notes: [
+      'writes only your own preference: nobody can set another person\'s style, and --as is refused',
+      '--trust-css allows the named space style\'s custom css to run for you; variables apply without it',
+      'with no arguments it reads instead (identity.stylePrefs.get)',
+    ],
+    examples: ['tm8 style use <ref> --dark <ref> --follow-os'],
+  },
+  'spaces.styleDefault.get': {
+    cmd: ['style', 'default'],
+    syn: 'tm8 style default [<space-ref|builtin-ref>] [--space <space-id>] [--mutation-id <id>]',
+    sum: 'Read the Space\'s default style — what members who never chose one see',
+    authz: 'space',
+    input: 'none',
+    tags: ['theme', 'default', 'new-members'],
+  },
+  'spaces.styleDefault.set': {
+    cmd: ['style', 'default'],
+    syn: 'tm8 style default [<space-ref|builtin-ref>] [--space <space-id>] [--mutation-id <id>]',
+    sum: 'Read or set the Space\'s default style (setting it is for human space admins)',
+    authz: 'space',
+    input: 'bound',
+    tags: ['theme', 'default', 'admin', 'new-members'],
+    notes: [
+      'only a space style or a built-in can be the default — a personal style is invisible to other members',
+      'agents cannot set it; with no <ref> the command reads the current default',
+    ],
+    examples: ['tm8 style default <space-ref> --space <space-id>'],
+  },
   // ── auth (Identity v2 Stage 1: local accounts) ───────────────────────────
   'auth.signup': {
     cmd: ['auth', 'signup'],
@@ -1359,12 +1536,13 @@ const ROWS: Record<OperationName, Row> = {
     sum: 'Create an entity of any unrestricted kind, optionally with its initial edges',
     authz: 'space',
     input: 'bound',
-    tags: ['new', 'add', 'task', 'doc'],
+    tags: ['new', 'add', 'task', 'doc', 'story'],
     notes: [
       'restricted kinds (project, interaction_profile) refuse generic creation and use their named writers',
       'hierarchy is homogeneous: a parent and its direct children share one kind and one Space',
       'task content shape: {description, acceptanceCriteria: [{id, done, text}], pointsEstimate, axes: {<axis-name>: <value>}} — axis names and values are the Space registry\u2019s (`tm8 space task-axis list`)',
       "doc content shape: {kind: 'doc', body, format: 'markdown'}",
+      "story content shape: {description} (title rides the envelope; status is the ordinary workflow status). --parent <story-id> makes a child story whose progress rolls up into the parent. Put things in with `tm8 collection add <story-id> <entity-id>` — those are the story's roots; everything connected to a root follows at read time. Read it with `tm8 entity context <story-id>` (agents) or `tm8 entity get <story-id>` (the page)",
       '--when-to-use (when a later session should open it, in one sentence: "Open when changing how balances are rounded", not "Rounding policy doc"; shown whole to every later agent) / --summary (what it holds) / --keyword write the selection header in the same call; all optional, guideline limits in `tm8 help entity header set`; change it later with `tm8 entity header set`',
       'a header applies to team_member, doc, artifact, drawing, file, task and collection; on any other kind the entity is still created and the header is skipped with a warning (skills use their description, memories their subject_scope)',
     ],
@@ -1372,6 +1550,7 @@ const ROWS: Record<OperationName, Row> = {
       'tm8 entity create task "<title>" --space <space-id> --parent <entity-id>',
       'tm8 entity create doc "<title>" --content @body.json --when-to-use "<when an agent should load it>" --summary "<what it contains>"',
       'tm8 entity create doc "<title>" --space <space-id> --content \'{"kind":"doc","body":"…","format":"markdown"}\'',
+      'tm8 entity create story "<title>" --content \'{"description":"…"}\' [--parent <story-id>]',
     ],
   },
   'entities.patch': {
@@ -1845,22 +2024,30 @@ const ROWS: Record<OperationName, Row> = {
   'collections.addItem': {
     cmd: ['collection', 'add'],
     syn: 'tm8 collection add <collection-id> <entity-id> [--position <number>] [--mutation-id <id>]',
-    sum: 'Put an entity into a collection — membership is a `contains` edge, appended after the current maximum position when --position is omitted',
+    sum: 'Put an entity into a collection or a story — membership is a `contains` edge, appended after the current maximum position when --position is omitted',
     authz: 'entity',
     input: 'bound',
-    tags: ['membership', 'curate', 'pin', 'list'],
+    tags: ['membership', 'curate', 'pin', 'list', 'story'],
     notes: [
       're-adding an existing member re-positions it rather than duplicating it',
       'list a collection\'s members with `tm8 edge list --source <collection-id> --type contains`',
+      'the container may also be a story: adding puts the entity in BY HAND as one of the story\'s roots (ordered by --position); everything connected to it then follows at read time — see `tm8 entity context <story-id>`',
+    ],
+    examples: [
+      'tm8 collection add <collection-id> <entity-id>',
+      'tm8 collection add <story-id> <task-id>',
     ],
   },
   'collections.removeItem': {
     cmd: ['collection', 'remove'],
     syn: 'tm8 collection remove <collection-id> <entity-id> --yes [--mutation-id <id>]',
-    sum: 'Take an entity out of a collection — deletes the `contains` edge; the entity itself is untouched',
+    sum: 'Take an entity out of a collection or a story — deletes the `contains` edge; the entity itself is untouched',
     authz: 'entity',
     input: 'bound',
-    tags: ['membership', 'curate', 'unpin'],
+    tags: ['membership', 'curate', 'unpin', 'story'],
+    notes: [
+      'the container may also be a story: removing takes a root out of the story; the entity and its own edges are untouched',
+    ],
   },
   'graph.query': {
     cmd: ['graph', 'query'],
@@ -2827,6 +3014,7 @@ const ROWS: Record<OperationName, Row> = {
       'bounded by design: defaults are 16 KiB total and 4 KiB per section (service source); hard caps 32 KiB and 8 KiB (frozen schema)',
       'returned cursors.messages/.activity continue in `entity feed --cursor` (--order newest); cursors.children continues in `entity children --cursor`',
       '--sections summary,actions is a precise pre-mutation capability + version check for a few hundred tokens',
+      'a story prints its description as the body, then overall task progress, its roots with per-root progress, what follows them grouped by kind, who runs what (sessions by call sign, teammates by mode), what is blocked and its child stories with rolled-up progress',
       'header (text: a `header:` line plus an untrusted_data block) is present only when someone authored one: whenToUse says when to open the entity (always whole), summary what it holds; clipped names a field shown cut short; stale means the body changed after it was written (the purpose usually still holds); bytes is the full body size; header.version is what `tm8 entity header set --expect-version` takes',
     ],
     examples: ['tm8 entity context <entity-id> --sections summary,actions'],
@@ -3633,6 +3821,10 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   // generator.ts nounForOperation says the same.
   servers: 'server',
   opRequests: 'request',
+  // Styles (284, styles spec v8 §5). `identity.stylePrefs.*` and
+  // `spaces.styleDefault.*` keep their family nouns; their commands are
+  // `style use` and `style default`. generator.ts nounForOperation says the same.
+  styles: 'style',
 };
 
 function nounFor(operation: OperationName): string {
@@ -3742,7 +3934,9 @@ export const CATALOG_DIGEST =
   // +4 spaceLinks.inbound.list|audit|revoke|restore (278, D2): read from the regenerated conformance manifest.
   // +3 entities.refs.list|add|remove (L3 cross-space refs, 279): read from the regenerated conformance manifest.
   // Re-measured (L5, 280): +5 opRequests.* — read from the regenerated conformance manifest.
-  'sha256:24385b76952b688548f4fbc934089f72d139b56496d48c56a354b6e7d11c1ce1';
+  // Re-measured (styles, 284): +15 styles.*, identity.stylePrefs.get|set, spaces.styleDefault.get|set. RECOMPUTED from JSON.stringify(OPERATIONS).
+  // Re-measured (main sync: cross-space + styles).
+  'sha256:727cfb8df9478dca9c67b97d04448214fbc5f8a55db0955747de95243ef8acf2';
 
 export const GRAMMAR_VERSION = '2';
 
@@ -4175,6 +4369,51 @@ const COMMAND_ALIASES = new Map<string, {
     ],
     examples: ['tm8 form wait <form-id> --timeout 600', 'tm8 form wait <form-id> --since <response-id> --format json'],
   }],
+  // `style set|unset` are the one-variable spellings of styles.personal.update
+  // (spec §5), `style import` is styles.personal.create fed from a file, and
+  // `style versions` is entities.versions on a space style. No catalog rows.
+  ['style set', {
+    path: ['style', 'set'],
+    syntax: 'tm8 style set <personal-ref> --pn-<name>=<value>... [--expect-version <n>] [--mutation-id <id>]',
+    summary: 'Set one or more variables on a personal style you own',
+    notes: [
+      'sugar over styles.personal.update with a merge patch — it adds no catalog operation',
+      'without --expect-version it reads the current version, writes, and retries ONCE on a version conflict; disjoint keys from two sessions both land',
+      'the `=` is required: a bare --pn-<name> is a variable NAME, which is what `style unset` takes',
+    ],
+    examples: ['tm8 style set <personal-ref> --pn-brand=<colour>'],
+  }],
+  ['style unset', {
+    path: ['style', 'unset'],
+    syntax: 'tm8 style unset <personal-ref> --pn-<name>... [--expect-version <n>] [--mutation-id <id>]',
+    summary: 'Remove variables from a personal style, so they fall back to its foundation',
+    notes: [
+      'sugar over styles.personal.update with each named variable set to null — it adds no catalog operation',
+      'without --expect-version it reads, writes and retries once on a version conflict, like `style set`',
+    ],
+    examples: ['tm8 style unset <personal-ref> --pn-paper'],
+  }],
+  ['style import', {
+    path: ['style', 'import'],
+    syntax: 'tm8 style import <file> --title <title> [--foundation <builtin-ref>] [--mutation-id <id>]',
+    summary: 'Create a personal style from a .css file\'s --pn-* declarations or a .tm8style.json document',
+    notes: [
+      'sugar over styles.personal.create — it adds no catalog operation',
+      'from CSS only the --pn-* custom properties are imported; the foundation defaults to builtin:atelier-light',
+      'what `tm8 style export` prints imports back unchanged',
+    ],
+    examples: ['tm8 style import <file> --title <title>'],
+  }],
+  ['style versions', {
+    path: ['style', 'versions'],
+    syntax: 'tm8 style versions <space-ref> [--limit <count>] [--cursor <cursor>]',
+    summary: 'The push history of a space style: one version per push, with who pushed it',
+    notes: [
+      'sugar over entities.versions on the space style — it adds no catalog operation',
+      'to restore an old version, pull the style into a personal copy, set it back, and push',
+    ],
+    examples: ['tm8 style versions <space-ref> --limit <count>'],
+  }],
   ['node mode', {
     path: ['node', 'mode'],
     syntax: 'tm8 node mode',
@@ -4344,6 +4583,21 @@ COMMAND_OPS.set('worktree merge', ['entities.get', 'edges.list', 'messages.post'
 COMMAND_OPS.set('worktree cherry-pick', ['entities.get', 'edges.list', 'messages.post', 'attentionSignals.raise', 'attentionSignals.clear']);
 COMMAND_OPS.set('worktree branch', ['entities.get', 'edges.list', 'messages.post']);
 COMMAND_OPS.set('worktree stash', ['entities.get', 'edges.list', 'messages.post', 'attentionSignals.raise', 'attentionSignals.clear']);
+// The style verbs. `use` and `default` each project a read and a write; the
+// WRITE leads so the help header reports the durable side effect (the read is
+// the no-argument branch). `set`/`unset` follow `update`, `import` follows
+// `create`, and `versions` closes the noun.
+COMMAND_OPS.set('style use', ['identity.stylePrefs.set', 'identity.stylePrefs.get']);
+COMMAND_OPS.set('style default', ['spaces.styleDefault.set', 'spaces.styleDefault.get']);
+COMMAND_OPS.set('style set', ['styles.personal.update', 'styles.get']);
+COMMAND_OPS.set('style unset', ['styles.personal.update', 'styles.get']);
+COMMAND_OPS.set('style import', ['styles.personal.create']);
+COMMAND_OPS.set('style versions', ['entities.versions']);
+const styleUpdateIndex = COMMAND_ORDER.indexOf('style update');
+COMMAND_ORDER.splice(styleUpdateIndex < 0 ? COMMAND_ORDER.length : styleUpdateIndex + 1, 0, 'style set', 'style unset');
+const styleCreateIndex = COMMAND_ORDER.indexOf('style create');
+COMMAND_ORDER.splice(styleCreateIndex < 0 ? COMMAND_ORDER.length : styleCreateIndex + 1, 0, 'style import');
+COMMAND_ORDER.push('style versions');
 COMMAND_ORDER.push('session checkpoint', 'session rollback', 'worktree stage', 'worktree commit', 'worktree merge', 'worktree cherry-pick', 'worktree branch', 'worktree stash');
 // Lane L1 aliases: each is exactly as available as the operation it spells.
 COMMAND_OPS.set('space-link list', ['spaceLinks.list']);
@@ -4477,6 +4731,7 @@ const NOUN_SUMMARY: Record<string, string> = {
   link: 'Space links to other Spaces; act in one with `tm8 --space <alias> <command>`',
   'space-link': 'Alias of `link`: Space links; act in a linked Space with `tm8 --space <alias> <command>`',
   whoami: 'This process\'s session, Space, actor and access mode',
+  style: 'UI styles: personal styles, push/pull to a Space, and the one you use',
 };
 
 /** Family nouns ∪ command nouns, sorted. Both resolve through `tm8 help <noun>`. */

@@ -42,6 +42,7 @@
 import { useAuthActions } from '../auth';
 import { Avatar } from '../kit';
 import type { ActorSummary, SpaceId } from '@tm8/contract';
+import type { ReactNode } from 'react';
 import type { Theme } from '../theme/useTheme';
 import { MobileSheet } from './MobileSheet';
 
@@ -72,6 +73,8 @@ export interface MobileAccountSheetProps {
   /** Absent ⇒ the appearance control is not drawn, for the same reason. */
   readonly theme?: Theme;
   readonly onThemeChange?: (theme: Theme) => void;
+  /** The style picker (styles spec §9.1), drawn under the light/dark toggle. */
+  readonly stylePicker?: ReactNode;
   readonly onDismiss: () => void;
 }
 
@@ -130,6 +133,7 @@ export function MobileAccountSheet(props: MobileAccountSheetProps) {
               </button>
             ))}
           </div>
+          {props.stylePicker ?? null}
         </section>
         ) : null}
 

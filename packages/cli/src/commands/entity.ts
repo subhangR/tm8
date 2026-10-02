@@ -75,6 +75,7 @@ import { errorInput, withErrorReceipt } from '../receipt-error.js';
 import { renderContextBrief, renderHeaderLines } from '../context-brief.js';
 import { isAgentCaller, resolveWireSchema, schemaOption, type WireSchema } from '../wire-schema.js';
 import { boundEntityDetail, isEntityDetail } from '../entity-bounded.js';
+import { renderStoryDetail } from '../story-render.js';
 
 // ── shared local validation, used by every module in this slot ─────────────
 
@@ -310,6 +311,11 @@ function renderAttentionMutation(dto: unknown): string {
 
 function renderEntity(dto: unknown): string {
   const line = summaryLine(dto as SummaryLike);
+  // A story's detail carries its whole computed page: text shows the summary
+  // and the page's counts instead of one bare line (json still has it all).
+  if (line !== '' && (dto as { kind?: unknown }).kind === 'story') {
+    return renderStoryDetail(dto as Record<string, unknown>, line);
+  }
   return line === '' ? JSON.stringify(dto) : line;
 }
 
@@ -858,6 +864,14 @@ async function entityCreate(cmd: CommandContext): Promise<ExitCode> {
     'no-session-link', ...HEADER_TEXT_OPTIONS,
   ]);
   const kind = requireArg(cmd, 0, '<kind>');
+  // A space style is born only by `styles.push` (284): the Server refuses a
+  // generic create, and the refusal is more useful naming the door here than
+  // as an enum mismatch from the wire.
+  if (kind === 'style') {
+    throw new CliError('a space style is created only by publishing a personal style: `tm8 style push <personal-ref>`', EXIT_USAGE, {
+      hint: 'author one first with `tm8 style create <title> --foundation <builtin-ref>`, or copy one with `tm8 style pull <ref>`',
+    });
+  }
   const title = requireArg(cmd, 1, '<title>');
 
   const mutationId = resolveMutationId(cmd.options.value('mutation-id'));

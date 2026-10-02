@@ -56,11 +56,12 @@ import type {
   LiveWork,
   PullState,
   TaskAssignment,
+  StyleDoc,
   Visibility,
   WorkStatus,
 } from '@tm8/contract';
 import { checkGraphCoherence, DEFAULT_FORM_SETTINGS, plainExcerpt, type FormQuestionRow, type FormSectionRow, type FormSettings, type FormStatus } from '@tm8/contract';
-import { SessionTranscriptContextSchema, type SessionTranscriptContext } from '@tm8/contract';
+import { SessionTranscriptContextSchema, StoryStateSchema, type SessionTranscriptContext } from '@tm8/contract';
 import type { Querier } from '../db/types.js';
 import { projectInteractionProfileForBrowser } from '../profiles/browser-projection.js';
 import {
@@ -71,6 +72,7 @@ import {
 import { loadHumanMessageAuthorIds, type HumanMessageAuthorIds } from './message-author-projection.js';
 // The ONE narrowing of the status columns, shared with `events/projector.ts`.
 import { categoryFragment, narrowWorkStatus } from './status.js';
+import { loadStoryPage } from './story-page.js';
 
 // ---------------------------------------------------------------------------
 // Row shape
@@ -163,6 +165,17 @@ export const ENTITY_COLUMNS = `
   drw.title as drawing_title, drw.format as drawing_format,
   drw.elements as drawing_elements, drw.app_state as drawing_app_state,
   drw.files as drawing_files,
+  sty.title as story_title, sty.description as story_description,
+  -- 283: the computed summary, one SQL function the projector twin selects
+  -- too. CASE keeps it off every other kind's row.
+  case when e.kind = 'story' then internal.story_summary(e.id) end as story_summary,
+  -- Space styles (284): the whole document is row facts (spec §4.3) — it is
+  -- what a push repaints from, and it is bounded by the doors.
+  stl.title as sty_title, stl.description as sty_description,
+  stl.schema_version as sty_schema_version, stl.foundation as sty_foundation,
+  stl.vars as sty_vars, stl.css as sty_css, stl.tags as sty_tags,
+  stl.resolved_hash as sty_resolved_hash, stl.pushed_by as sty_pushed_by,
+  stl.pushed_at as sty_pushed_at, stl.source_owner_identity_id as sty_source_owner_identity_id,
   -- Forms (209/211). ROW FACTS ONLY: this column list is shared by every
   -- list read, so a form row carries its question COUNT; the questions and
   -- sections themselves are content and load in hydrateDetail.
@@ -384,6 +397,8 @@ export const ENTITY_FROM = `
   ) chq on cht.entity_id is not null
   left join public.graphs gr             on gr.entity_id = e.id
   left join public.drawings drw           on drw.entity_id = e.id
+  left join public.stories sty            on sty.entity_id = e.id
+  left join public.styles stl             on e.kind = 'style' and stl.entity_id = e.id
   left join public.forms frm              on frm.entity_id = e.id
   left join public.space_credentials scr  on e.kind = 'credential' and scr.id = e.id
   left join public.servers srv            on e.kind = 'server' and srv.entity_id = e.id
@@ -567,6 +582,20 @@ export interface EntityRow {
   drawing_elements: unknown[] | null;
   drawing_app_state: Record<string, unknown> | null;
   drawing_files: Record<string, unknown> | null;
+  story_title?: string | null;
+  story_description?: string | null;
+  story_summary?: unknown;
+  sty_title?: string | null;
+  sty_description?: string | null;
+  sty_schema_version?: number | null;
+  sty_foundation?: string | null;
+  sty_vars?: Record<string, string> | null;
+  sty_css?: string | null;
+  sty_tags?: string[] | null;
+  sty_resolved_hash?: string | null;
+  sty_pushed_by?: string | null;
+  sty_pushed_at?: Date | string | null;
+  sty_source_owner_identity_id?: string | null;
   form_title?: string | null;
   form_status?: string | null;
   form_description?: string | null;
@@ -1512,6 +1541,12 @@ export function titleOf(row: EntityRow): string {
     case 'drawing':
       // Its own detail-row title — MIRRORS the projector twin (same reason).
       return row.drawing_title ?? 'Drawing';
+    case 'story':
+      // Its own detail-row title — MIRRORS the projector twin (same reason).
+      return row.story_title ?? 'Story';
+    case 'style':
+      // Its own detail-row title — MIRRORS the projector twin (same reason).
+      return row.sty_title ?? 'Style';
     case 'form':
       // MIRRORS the projector twin.
       return row.form_title ?? 'Form';
@@ -1610,6 +1645,12 @@ function excerptOf(row: EntityRow): string | undefined {
       // The format is the one row-level fact about a canvas; the picture
       // itself cannot be a text excerpt. MIRRORS the projector twin.
       return excerpt(row.drawing_format);
+    case 'story':
+      // The description says what the story is for. MIRRORS the projector twin.
+      return excerpt(row.story_description ?? null);
+    case 'style':
+      // The description says what the style is for. MIRRORS the projector twin.
+      return excerpt(row.sty_description ?? null);
     case 'form':
       // The description says what is being asked. MIRRORS the projector twin.
       return excerpt(row.form_description ?? null);
@@ -1684,6 +1725,29 @@ function surfaceOf(raw: string | null): { initialContentSurface?: 'terminal' | '
  * which needs a populated `AssemblyContext` — and a test that builds one is
  * testing assembly, not the arm.
  */
+/**
+ * A space style's row facts (284), shared by `stateOf` and `contentOf` so the
+ * two cannot disagree about the document. MIRRORS the projector twin.
+ */
+function styleFacts(row: EntityRow): {
+  doc: StyleDoc; resolvedHash: string | null; pushedBy: string; pushedAt: string;
+  sourceOwnerIdentityId: string; tags: string[];
+} {
+  return {
+    doc: {
+      schemaVersion: row.sty_schema_version ?? 1,
+      foundation: row.sty_foundation ?? 'builtin:atelier-light',
+      vars: row.sty_vars ?? {},
+      css: row.sty_css ?? null,
+    } as StyleDoc,
+    resolvedHash: row.sty_resolved_hash ?? null,
+    pushedBy: row.sty_pushed_by ?? '',
+    pushedAt: row.sty_pushed_at ? iso(row.sty_pushed_at) : '',
+    sourceOwnerIdentityId: row.sty_source_owner_identity_id ?? '',
+    tags: row.sty_tags ?? [],
+  };
+}
+
 export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
   switch (row.kind) {
     case 'skill': return { kind: 'skill', description: row.skill_description ?? undefined, equipped: row.equipped === true, ...skillReferenceOf(row.skill_reference), changedOnDisk: false };
@@ -1913,6 +1977,10 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         format: row.drawing_format ?? 'excalidraw',
         elementCount: Array.isArray(row.drawing_elements) ? row.drawing_elements.length : 0,
       };
+    case 'story':
+      // 283: computed by `internal.story_summary`, which the projector twin
+      // selects too — the mirror is the shared function, not a comment.
+      return storySummaryOf(row.story_summary);
     case 'form':
       // Where it is in its lifecycle, and how long. MIRRORS the projector twin.
       return {
@@ -2022,6 +2090,11 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
     case 'op_request':
       // 280 (L5): which op, and where it is. MIRRORS the projector twin.
       return { kind: 'op_request', op: row.opr_op ?? '', status: (row.opr_status ?? 'pending') as OpRequestStatus };
+    case 'style':
+      // 284: the full document (spec §4.3) — a push's entity.upsert is how
+      // every viewer on the style repaints, with no fetch. MIRRORS the
+      // projector twin field for field.
+      return { kind: 'style', ...styleFacts(row) };
     default:
       // A custom `c:*` kind. Its scalar fields live in `custom_entities` and
       // are out of the G1A slice, so the shape is honest and empty rather than
@@ -2219,8 +2292,9 @@ export function capabilitiesOf(row: EntityRow): EntityCapabilities {
   // Work-session "edit" is likewise exactly one thing: the display title, via
   // rename_work_session (085). Everything else on that row belongs to the
   // execution block, which is why it is still not deletable or hierarchical.
-  const editable = new Set(['task', 'doc', 'channel', 'collection', 'team_member', 'spell', 'skill', 'memory', 'worktree', 'work_session', 'graph', 'drawing']);
-  const hierarchical = new Set(['task', 'doc', 'channel', 'collection']);
+  const editable = new Set(['task', 'doc', 'channel', 'collection', 'team_member', 'spell', 'skill', 'memory', 'worktree', 'work_session', 'graph', 'drawing', 'story']);
+  // A story's children are child stories (same-kind hierarchy, 283).
+  const hierarchical = new Set(['task', 'doc', 'channel', 'collection', 'story']);
   const pullable = new Set(['channel', 'task', 'doc', 'file', 'spell', 'skill', 'collection']);
 
   return {
@@ -2319,6 +2393,12 @@ export function entityCapabilities(row: EntityRow): EntityCapabilities {
   // generic edit, delete and child doors refuse it in SQL, so no surface
   // offers them.
   if (row.kind === 'credential') {
+    return { ...base, canEdit: false, canDelete: false, canAddChild: false, canPull: false, canComplete: false };
+  }
+  // A space style is READ-ONLY (284, spec §3.3): a new version arrives only by
+  // `styles.push`, and removal is `styles.remove` (space admin). The generic
+  // patch and delete doors refuse it, so no surface offers them.
+  if (row.kind === 'style') {
     return { ...base, canEdit: false, canDelete: false, canAddChild: false, canPull: false, canComplete: false };
   }
   // A form's edit doors (211) admit its author or a space admin. The row
@@ -2621,6 +2701,9 @@ export function contentOf(row: EntityRow): EntityContent {
         appState: row.drawing_app_state ?? {},
         files: row.drawing_files ?? {},
       };
+    case 'story':
+      // The prose; `hydrateDetail` adds the computed page on a detail read.
+      return { kind: 'story', description: row.story_description ?? '', page: null };
     case 'form':
       // The row facts; `hydrateDetail` adds the sections and questions in
       // order, so a detail read renders the panel in one call while a list row
@@ -2704,6 +2787,9 @@ export function contentOf(row: EntityRow): EntityContent {
     case 'op_request':
       // 280 (L5): the state's facts; the rest is `opRequests.get`'s.
       return { kind: 'op_request', op: row.opr_op ?? '', status: (row.opr_status ?? 'pending') as OpRequestStatus };
+    case 'style':
+      // 284: the state's facts plus the description.
+      return { kind: 'style', description: row.sty_description ?? null, ...styleFacts(row) };
     default:
       return { kind: row.kind as `c:${string}`, fields: {} };
   }
@@ -2969,6 +3055,22 @@ function credentialFactsOf(row: EntityRow): Extract<EntityState, { kind: 'creden
   };
 }
 
+/**
+ * A story's summary as `internal.story_summary` returned it (283). Shared with
+ * the projector so both twins coerce the same jsonb the same way; a missing
+ * or malformed value reads as an empty story rather than failing the read.
+ */
+export function storySummaryOf(raw: unknown): Extract<EntityState, { kind: 'story' }> {
+  const parsed = StoryStateSchema.safeParse(raw);
+  if (parsed.success) return parsed.data;
+  const zero = { work: 0, done: 0, inProgress: 0, toDo: 0, blocked: 0, cancelled: 0 };
+  return {
+    kind: 'story', rootCount: 0, itemCount: 0, truncated: false,
+    progress: zero, taskProgress: zero, rollup: zero,
+    liveSessionCount: 0, pendingAttentionCount: 0, lastActivityAt: null, childStoryCount: 0,
+  };
+}
+
 /** Detail-only IO, shared by the original and universal entity doors. */
 export async function hydrateDetail(
   q: Querier, row: EntityRow, state: EntityState, content: EntityContent, viewerIdentityId: string,
@@ -2983,6 +3085,11 @@ export async function hydrateDetail(
       state,
       content: { ...content, sections: structure?.sections ?? [], questions: structure?.questions ?? [] },
     };
+  }
+  if (content.kind === 'story') {
+    // 283: the page — roots, trail, graph, team, call signs, activity, feed —
+    // computed now from the same trail the summary counts.
+    return { state, content: { ...content, page: await loadStoryPage(q, row.id) } };
   }
   if (content.kind === 'team_member') {
     const edges = await q.query<{ dst_id: string }>(

@@ -286,11 +286,36 @@ export const KIND_ART = {
   ],
 
   /**
+   * A painter's palette — a `style` is a theme for the whole UI (284). The
+   * thumb hole and three paint wells are what keep it from reading as a
+   * generic blob or as `drawing`'s pencil at 16px.
+   */
+  style: [
+    'M8 2.6c-3 0-5.4 2.2-5.4 5 0 2.8 2.4 5.8 5.4 5.8.9 0 1.4-.6 1.4-1.3 0-.9-.7-1.2-.7-2 0-.7.6-1.2 1.4-1.2h1.5c1.8 0 2.8-1.1 2.8-2.6 0-2-2.2-3.7-4.9-3.7z',
+    'M5.2 7.4a0.8 0.8 0 1 0 0-1.6 0.8 0.8 0 0 0 0 1.6z',
+    'M7.6 5.4a0.8 0.8 0 1 0 0-1.6 0.8 0.8 0 0 0 0 1.6z',
+    'M10.4 6a0.8 0.8 0 1 0 0-1.6 0.8 0.8 0 0 0 0 1.6z',
+  ],
+
+  /**
    * The custom-kind fallback. A plain diamond ON PURPOSE: it is the one mark
    * that must say "this kind has no artwork of its own", so it stays the
    * neutral shape the old set used for exactly that job.
    */
   custom: ['M8 2.6 13.4 8 8 13.4 2.6 8z'],
+
+  /**
+   * An open book (283, the story page artifact 01a0fc3e rev 4's `ART.story`).
+   * The two facing pages with a line on each are what separate it from
+   * `skill`'s bound, closed book: a story is read across, page to page.
+   */
+  story: [
+    'M8 4.2C6.9 3.3 5.5 2.9 3 2.9v8.6c2.5 0 3.9.4 5 1.3',
+    'M8 4.2c1.1-.9 2.5-1.3 5-1.3v8.6c-2.5 0-3.9.4-5 1.3',
+    'M8 4.2v8.6',
+    'M5 6.2h1.4',
+    'M9.6 6.2H11',
+  ],
 } as const satisfies Record<string, KindArt>;
 
 /**

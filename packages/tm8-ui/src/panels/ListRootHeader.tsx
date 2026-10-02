@@ -453,6 +453,19 @@ function RowBirth({
 }
 
 /**
+ * A quick-create icon's accessible name: "New terminal", "New chat", "New
+ * task" — the verb's noun where the kind is born by a verb, so the sessions
+ * icon names what actually opens. Shared with Home's icon rail, which draws
+ * the same three icons (task 01a0fb09).
+ */
+export function quickBirthLabel(kind: string): string {
+  const action = rootBirthAction(kind);
+  return action
+    ? `New ${resolveAction(action).label.toLowerCase()}`
+    : `New ${getKind(kind).label.toLowerCase()}`;
+}
+
+/**
  * One quick-create icon. The icon is the KIND's (a task, a chat, a terminal),
  * not the verb's glyph: three verb glyphs side by side say "three ways to
  * act", three kind icons say "one of these". The accessible name is the verb's
@@ -468,12 +481,7 @@ function QuickBirth({
   refusal: { cause: string; remedy: string } | null;
   onBirth: () => void;
 }) {
-  const action = rootBirthAction(option.kind);
-  /* "New terminal", "New chat", "New task" — the verb's noun where the kind
-     is born by a verb, so the sessions icon names what actually opens. */
-  const label = action
-    ? `New ${resolveAction(action).label.toLowerCase()}`
-    : birthVerbFor(option).label;
+  const label = quickBirthLabel(option.kind);
   return (
     <button
       type="button"

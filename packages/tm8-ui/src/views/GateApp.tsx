@@ -76,6 +76,8 @@ import { useLaunchSheet } from './useLaunchSheet';
 import { REFERENCE_KINDS } from '../domain/launch-selection';
 import { useLaunchPort } from './useLaunchPort';
 import { useTheme } from '../theme/useTheme';
+import { useStyleSync } from '../theme/useStyleSync';
+import { StylePicker } from '../theme/StylePicker';
 import { AccountMenu, AuthFlow, authTokenFor, noteServerOrigin, signOut, useAuthActions } from '../auth';
 import { spaceSessionFor } from '../auth/space-sessions';
 import { WorkspaceView } from './WorkspaceView';
@@ -113,6 +115,7 @@ import {
 } from '../settings-credentials';
 import { SpaceLinksSection, spaceLinksPortFromSeam } from '../settings-space-links';
 import { readLastSpace, readLastTarget, writeLastTarget } from './last-place';
+import { FullViewScreen, hasFullView } from './entity-full/FullViewScreen';
 import {
   NewSpaceProjectDialog,
   ProjectBranchesSection,
@@ -399,6 +402,9 @@ export function GateApp(props: GateAppProps = {}) {
   // unpersisted useState seeded to light, so every reload discarded the
   // viewer's choice. The control's home is still the account menu (D1).
   const { theme, setTheme, toggle: toggleTheme } = useTheme();
+  /* Styles (spec v8 §1.6, §3.6): the viewer's prefs, the space default and the
+     live style events. One owner for both shells, like the theme above. */
+  useStyleSync(data.seam, data.spaceId || null, data.viewerActor?.id ?? null);
   /**
    * THE MENU RAIL STARTS COLLAPSED, and remembers what the viewer did next.
    *
@@ -521,6 +527,9 @@ export function GateApp(props: GateAppProps = {}) {
    * before knowing the kind is the misroute this whole chain was repaired for.
    */
   const landing = useMemo<Landing | null>(() => {
+    /* `?full=1` is the Z4 full view (PR 1004), not the kind screen: it has its
+       own arm below, so no landing resolves for it here. */
+    if (navView.view === 'entity' && navView.full) return null;
     const direct = landingOfRoute(navView);
     if (direct) return direct;
     if (navView.view !== 'entity' || navView.origin) return null;
@@ -542,7 +551,7 @@ export function GateApp(props: GateAppProps = {}) {
    * and the dependency list can stay honest about what wakes it.
    */
   useEffect(() => {
-    if (navView.view !== 'entity' || navView.origin) return;
+    if (navView.view !== 'entity' || (navView.origin && !navView.full)) return;
     if (data.detailOf(navView.entityId)) return;
     data.pull(navView.entityId);
   }, [navView, data]);
@@ -667,6 +676,10 @@ export function GateApp(props: GateAppProps = {}) {
      to the identity of a callback that changes on every render. */
   const noticeSink = useRef(notices.push);
   noticeSink.current = notices.push;
+  /* Same reason: the nav port's promote asks the entity's kind (PR 1004)
+     without re-memoising the port on every data change. */
+  const detailOfRef = useRef(data.detailOf);
+  detailOfRef.current = data.detailOf;
   const routerTarget = props.routerTarget;
   /** The live transport, for the one caller that must write the address from
       outside the sync loop — see `resetAddress`. */
@@ -1341,7 +1354,13 @@ export function GateApp(props: GateAppProps = {}) {
        * the failure mode this codebase keeps removing. It comes back the moment
        * the M1 host exists, and nothing here presumes what that host looks like.
        */
-      promote: (_id) => {
+      promote: (id) => {
+        /* PR 1004: a kind that BUILT its full view promotes for real, to
+           `e/{id}?full=1`. Every other kind keeps the refusal below. */
+        if (hasFullView(detailOfRef.current(id)?.kind)) {
+          navStore.getState().navigate({ view: 'entity', entityId: id, origin: null, full: true });
+          return;
+        }
         noticeSink.current({
           id: 'z4-unbuilt',
           tone: 'warn',
@@ -1895,6 +1914,9 @@ export function GateApp(props: GateAppProps = {}) {
           }}
           theme={theme}
           onThemeChange={setTheme}
+          stylePicker={
+            <StylePicker seam={data.seam} spaceId={data.spaceId || null} members={data.members} variant="sheet" />
+          }
           /*
            * DEF-004 — THE LAUNCH FLOW, HANDED TO THE PHONE.
            *
@@ -2103,6 +2125,9 @@ export function GateApp(props: GateAppProps = {}) {
                 actor={data.viewerActor}
                 theme={theme}
                 onThemeChange={setTheme}
+                stylePicker={
+                  <StylePicker seam={data.seam} spaceId={data.spaceId || null} members={data.members} />
+                }
                 agentToolsNudge={setupNudge}
                 {...(credentialsPort ? { onOpenAgentTools: () => setSetupOpen(true) } : {})}
                 /* R21 — THE UTILITY GROUP, and it is wired ONLY for the current
@@ -2408,6 +2433,34 @@ export function GateApp(props: GateAppProps = {}) {
                 nav.push(id as EntityId);
               }}
             />
+          ) : data.ready &&
+            navView.view === 'entity' &&
+            navView.full &&
+            (!data.detailOf(navView.entityId) || hasFullView(data.detailOf(navView.entityId)?.kind)) ? (
+            /* THE Z4 FULL VIEW, MOUNTED — for the kinds that built one
+               (`panel.fullView`, PR 1004). Until the kind is known the screen
+               draws EntityFullView's own resolving state; a kind that did not
+               opt in falls through to the "full view isn't built yet" card
+               below, exactly as before. */
+            <FullViewScreen
+              key={navView.entityId}
+              data={data}
+              reasons={reasons}
+              entityId={navView.entityId}
+              origin={navView.origin}
+              hops={navView.hops ?? null}
+              kinds={navView.kinds ?? null}
+              serverBaseUrl={activeServer.routeBaseUrl}
+              viewerMemberId={viewerMemberId}
+              onNotice={notices.push}
+              onSpawn={async (input) => {
+                const sessionId = await data.spawn(input);
+                navigateTo(WORKSPACE_TARGET);
+                nav.push(sessionId);
+              }}
+              onLaunchOpen={(id) => launch.open(id)}
+              onChatAbout={openChatAbout}
+            />
           ) : data.ready && activeTarget?.type === 'kind' ? (
             /* D65: a rail KIND row opens its EntityView — wide list, Z3 aside
                on row click, Z4 full on promote. The workspace stays the one
@@ -2558,6 +2611,7 @@ export function GateApp(props: GateAppProps = {}) {
                      a session is created by RUNNING a task, whose Run lives
                      on the hosted tile itself. */
                   renderRootList={regions.renderRootList}
+                  newChatRequest={regions.newChatRequest}
                   root={regions.root}
                   onRoot={regions.onRoot}
                   kindCell={regions.kindCell}

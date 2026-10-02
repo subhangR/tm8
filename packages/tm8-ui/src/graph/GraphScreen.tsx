@@ -36,6 +36,7 @@ import { changesSurfaceFor } from '../views/changesSurface';
 import { mergePrPortFor } from '../views/mergePrPort';
 import { taskGitSectionFor } from '../views/taskGitSection';
 import { graphSurfaceFor } from '../views/graphSurface';
+import { storySurfaceFor } from '../views/storySurface';
 import { launchContextSurfaceFor } from '../views/launchContextSurface';
 import { crossSpaceRefsSurfaceFor } from '../views/crossSpaceRefsSurface';
 import { attachmentsFor } from '../files/port';
@@ -247,6 +248,7 @@ export function GraphScreen(props: GraphScreenProps) {
       )}
       crossSpaceRefsSurface={crossSpaceRefsSurfaceFor(data.seam, selectedId)}
       launchContextSurface={launchContextSurfaceFor(data.seam, selectedId, (id) => setSelectedId(id as EntityId))}
+      storySurface={storySurfaceFor(data.seam, selectedId, (id) => setSelectedId(id as EntityId))}
       attachments={attachments}
       onAttachmentUploaded={() => data.refetchDetail(selectedId)}
       viewerMemberId={props.chat?.viewerMemberId}

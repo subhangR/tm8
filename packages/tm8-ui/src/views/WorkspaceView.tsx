@@ -68,6 +68,7 @@ import { gitSurfaceFor } from './gitSurface';
 import { changesSurfaceFor } from './changesSurface';
 import { taskGitSectionFor } from './taskGitSection';
 import { graphSurfaceFor } from './graphSurface';
+import { storySurfaceFor } from './storySurface';
 import { launchContextSurfaceFor } from './launchContextSurface';
 import { crossSpaceRefsSurfaceFor } from './crossSpaceRefsSurface';
 import { attachmentsFor } from '../files/port';
@@ -514,6 +515,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
                     taskGitSection={taskGitSectionFor(data.seam, detail, openEntity)}
                     graphSurface={graphSurfaceFor(data.seam, id, data.livenessOf, openEntity)}
                     crossSpaceRefsSurface={crossSpaceRefsSurfaceFor(data.seam, id)}
+                    storySurface={storySurfaceFor(data.seam, id, openEntity, data.launch.teammates)}
                     launchContextSurface={launchContextSurfaceFor(data.seam, id, openEntity)}
                     attachments={attachments}
                     onAttachmentUploaded={() => props.data.refetchDetail(id)}

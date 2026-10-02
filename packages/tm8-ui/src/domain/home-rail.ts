@@ -89,31 +89,23 @@ interface HomeRailGroupSpec {
  * missing from this spine still renders, appended under "More" — the spine
  * curates presentation, it never gates membership.
  *
- * THE SPINE IS SEVEN GROUPS, AND THE GROUPING IS THE POINT (reporter ruling,
- * 2026-09-17, task 01a0ada5 "Organizing the icon rail"). Before this it was
- * three — Work / Library / People — and "Work" had swallowed nine kinds
- * spanning three unrelated questions: what is being done (chats, tasks,
- * sessions), what it is being done to (projects, docs), and what the
- * repository recorded afterwards (commits, PRs, worktrees). A nine-row group
- * under one word is an unsorted list wearing a label, which is what the
- * ruling names. Each group below answers ONE question, and its label is that
- * question's short noun:
+ * FIVE GROUPS, EACH COLLAPSIBLE (reporter ruling 2026-10-02, task 01a0fb09
+ * "Icon Rail Collapse"). The eight-group spine of 01a0ada5 answered "what
+ * does each heading mean", but with every group open the rail was 26 rows
+ * tall — "too many entities showing". The ruling consolidated to five and
+ * made each group an accordion section that remembers its own open state
+ * (`homeRailStore`), closed by default except the one holding the list you
+ * are viewing. The rows you reach daily do not depend on a group being open:
+ * the create buttons and the PINNED section sit above every group.
  *
- *   Work       — what is in flight right now.
- *   Agents     — who does the work and what they carry into it.
- *   Content    — what the work produces and reads.
- *   Structure  — how any of it is organised or related.
- *   People     — the humans, and where they talk.
- *   Code       — what the repository recorded.
- *   Setup      — how this space is wired to keys, profiles and elsewhere.
- *   Beta       — shipped, reachable, and not yet settled.
- *
- * THE LABELS ARE LOAD-BEARING, NOT DECORATION. The collapsed rail is the
- * DEFAULT state (72px, `HomeView`), so a label only the expanded rail draws
- * is a label most viewers never see — which would have left this ruling's
- * "give each of them an apt subheading" satisfied in code and unsatisfied on
- * screen. `HomeRail` therefore draws the eyebrow in BOTH widths; that is why
- * every label here is short enough to set at 72px.
+ *   Work            — what is in flight right now.
+ *   Library         — what the work produces and reads, and the arrangements
+ *                     over it (the old Content + Structure).
+ *   Agents & People — who does the work, what it carries into it, and the
+ *                     humans and where they talk (old Agents + People).
+ *   Code            — what the repository recorded.
+ *   Admin           — how this space is wired, plus the kinds whose shape is
+ *                     not settled yet (old Setup + Beta).
  */
 const HOME_RAIL_GROUP_SPINE: readonly HomeRailGroupSpec[] = [
   {
@@ -127,81 +119,49 @@ const HOME_RAIL_GROUP_SPINE: readonly HomeRailGroupSpec[] = [
     //
     // `form` (209) follows `work_session` because a session is what asks one:
     // it is the question an agent is waiting on a human to answer, mid-work.
-    kinds: ['chat', 'task', 'work_session', 'form', 'project'],
+    // `story` (283) sits right above `task`: it is the level work is told at —
+    // one idea, its roots and where it stands — so it reads before the tasks
+    // it gathers rather than among the containers in Structure.
+    kinds: ['chat', 'story', 'task', 'work_session', 'form', 'project'],
   },
   {
-    id: 'agents',
-    label: 'Agents',
-    // A teammate and the two libraries it draws on. `skill` and `memory` sat
-    // in the old "Library" beside files and artifacts, which filed a
-    // teammate's capability and its recall as documents; they are neither.
-    kinds: ['team_member', 'skill', 'memory'],
-  },
-  {
-    id: 'content',
-    label: 'Content',
-    // Authored, produced, uploaded — in that order, which is also the order
-    // of how much of it a space typically has.
-    //
-    // `drawing` sits beside `doc` because it is AUTHORED: someone made it here,
-    // in the app, from nothing. It is deliberately not in `structure` beside
-    // `collection` and `graph` — those are arrangements OVER things work
-    // produced, and a hand-drawn canvas arranges nothing; it IS the thing.
-    kinds: ['doc', 'drawing', 'artifact', 'file'],
-  },
-  {
-    id: 'structure',
-    label: 'Structure',
-    // Neither of these is a thing work produces; both are arrangements OVER
-    // things work produced. A curated set, and an extracted index.
-    kinds: ['collection', 'graph'],
+    id: 'library',
+    label: 'Library',
+    // Authored, produced, uploaded — then the two arrangements OVER those
+    // things: a curated set and an extracted index. `drawing` sits beside
+    // `doc` because it is AUTHORED, not an arrangement.
+    kinds: ['doc', 'drawing', 'artifact', 'file', 'collection', 'graph'],
   },
   {
     id: 'people',
-    label: 'People',
-    // Humans only. `team_member` used to share this group; it moved to
-    // `agents`, where the things that configure it live.
-    kinds: ['member', 'channel'],
+    label: 'Agents & People',
+    // A teammate and the two libraries it draws on, then the humans and the
+    // channels they talk in.
+    kinds: ['team_member', 'skill', 'memory', 'member', 'channel'],
   },
   {
     id: 'code',
     label: 'Code',
-    // The repository's own record, which the old spine had scattered across
-    // the tail of a nine-row "Work". Read in the order a change travels:
-    // commit, then the review it landed through, then the checkout it ran in.
+    // The repository's own record, in the order a change travels: commit,
+    // then the review it landed through, then the checkout it ran in.
     kinds: ['commit', 'pull_request', 'worktree'],
   },
   {
-    id: 'setup',
-    label: 'Setup',
-    // OWNER RULING 2026-09-27: Home lists EVERY kind — nothing hidden. These
-    // four were withheld from every root surface until then
-    // (`HOME_RAIL_WITHHELD_KINDS`, now gone), on the argument that each is a
-    // setting with a home elsewhere rather than a population anybody browses.
-    // The ruling keeps that argument's CONCLUSION about where they are managed
-    // and drops its conclusion about visibility: the list shows them, and a
-    // kind with a Settings home links to it (`KindConfig.settingsHome`) from
-    // the list header and the panel, so the human-only doors stay one click
-    // away instead of being duplicated here. None has a create door on Home —
-    // each is `quickCreate: false`, and the server refuses a generic create.
+    id: 'admin',
+    label: 'Admin',
+    // OWNER RULING 2026-09-27: Home lists EVERY kind — nothing hidden. The
+    // first four are settings with a home elsewhere (`KindConfig.settingsHome`
+    // links there from the list header and the panel); none has a create door
+    // on Home. What a session launches under, the keys it runs with, then the
+    // other spaces and machines this one reaches.
     //
-    // What a session launches under, the keys it runs with, then the other
-    // spaces and machines this one reaches.
-    //
-    // `op_request` (280) closes the group: every op an agent may ask for today
-    // changes one of these (a space link, a gate folder), so the requests sit
-    // beside the things they would change.
-    kinds: ['interaction_profile', 'credential', 'space_link', 'server', 'op_request'],
-  },
-  {
-    id: 'beta',
-    label: 'Beta',
-    // NAMED BY THE RULING, and the name is the content: these three ship and
-    // are reachable, and their shape is not settled. The group exists so a
-    // viewer can tell that from the rail instead of from a release note.
-    // `container` left the Work group for this one — a machine is where work
-    // runs, but the kind itself is still moving.
-    kinds: ['loop', 'spell', 'container'],
+    // The last three were the "Beta" group: shipped and reachable, shape not
+    // settled. They sit last so the settled kinds read first. `style` (284)
+    // follows them: the space's published themes are picked from the
+    // account menu, not created here — the same "listed, managed elsewhere" shape.
+    // `op_request` (280) follows `server`: every op an agent may ask for today
+    // changes one of these (a space link, a gate folder, a path grant).
+    kinds: ['interaction_profile', 'credential', 'space_link', 'server', 'op_request', 'style', 'loop', 'spell', 'container'],
   },
 ];
 
@@ -257,6 +217,22 @@ export function homeColumnRoot(root: HomeRoot): HomeRoot {
 export function homeQuickBirthKinds(): KindConfig[] {
   const byKind = new Map<string, KindConfig>(homeRootKinds().map((config) => [config.kind, config]));
   return HOME_QUICK_BIRTH_KINDS.flatMap((kind) => {
+    const config = byKind.get(kind);
+    return config ? [config] : [];
+  });
+}
+
+/**
+ * The rail's PINNED section on first visit (task 01a0fb09) — the three lists
+ * the ruling named. The viewer pins and unpins from there on; the stored set
+ * replaces this one entirely (`homeRailStore`).
+ */
+export const DEFAULT_HOME_RAIL_PINS: readonly string[] = ['chat', 'task', 'work_session'];
+
+/** Stored pin names → the collection kinds this registry still has, in pin order. */
+export function homeRailPinnedKinds(pins: readonly string[]): KindConfig[] {
+  const byKind = new Map<string, KindConfig>(collectionKinds().map((config) => [config.kind, config]));
+  return [...new Set(pins)].flatMap((kind) => {
     const config = byKind.get(kind);
     return config ? [config] : [];
   });

@@ -21,6 +21,7 @@ import {
   RIGHT_PANEL_MIN,
   type WorkspaceLayout,
 } from './geometry';
+import { useAlwaysDarkTheme } from '../theme/useAlwaysDarkTheme';
 
 export interface WorkspaceGridProps {
   layout: WorkspaceLayout;
@@ -91,6 +92,7 @@ export function WorkspaceGrid({
   const leftResizeMax = layout.left + Math.max(0, layout.center - layout.centerMin);
   const rightResizeMax = layout.right + Math.max(0, layout.center - layout.centerMin);
 
+  const alwaysDarkTheme = useAlwaysDarkTheme();
   return (
     <div
       className={`shell-ws shell-ws--${layout.stackMode}`}
@@ -120,7 +122,8 @@ export function WorkspaceGrid({
           for. Colors always go through tokens (D5). */}
       <main
         className="shell-ws__center"
-        data-theme="dark"
+        data-theme={alwaysDarkTheme}
+        data-always-dark="true"
         ref={centerRef}
         aria-label="Workspace center"
       >

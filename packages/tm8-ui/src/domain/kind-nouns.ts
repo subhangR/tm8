@@ -74,6 +74,9 @@ export const KIND_CLI_VOCABULARY: Readonly<Record<string, KindCliVocabulary>> = 
   artifact: { nouns: ['artifact'], commands: ['project association correct'] },
   file: { nouns: ['file'], commands: ['message attachment add', 'message attachment remove'] },
   collection: { nouns: ['collection'], commands: ['entity query'] },
+  // A story has no catalog noun (283 rides entities.create/patch); its roots go in
+  // and out through the collection verbs, and spawning on it hands the story over.
+  story: { nouns: [], commands: ['collection add', 'collection remove', 'session spawn'] },
   graph: { nouns: ['graph'], commands: ['saved-view list', 'saved-view create'] },
   member: {
     nouns: [],
@@ -115,6 +118,8 @@ export const KIND_CLI_VOCABULARY: Readonly<Record<string, KindCliVocabulary>> = 
   },
   credential: { nouns: ['credential'], commands: ['space credential-readiness get', 'session spawn'] },
   space_link: { nouns: ['space-link'], commands: [] },
+  // 284: a space style is written only by `tm8 style push`; the noun owns it.
+  style: { nouns: ['style'], commands: [] },
   server: { nouns: ['server'], commands: ['identity get', 'node mode'] },
   op_request: { nouns: ['request'], commands: [] },
   loop: { nouns: [], commands: ['entity query', 'session spawn'] },

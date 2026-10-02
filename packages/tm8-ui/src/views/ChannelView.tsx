@@ -30,6 +30,7 @@ import { gitSurfaceFor } from './gitSurface';
 import { changesSurfaceFor } from './changesSurface';
 import { taskGitSectionFor } from './taskGitSection';
 import { graphSurfaceFor } from './graphSurface';
+import { storySurfaceFor } from './storySurface';
 import { launchContextSurfaceFor } from './launchContextSurface';
 import { crossSpaceRefsSurfaceFor } from './crossSpaceRefsSurface';
 import { attachmentsFor } from '../files/port';
@@ -260,6 +261,7 @@ export function ChannelView({
       )}
       crossSpaceRefsSurface={crossSpaceRefsSurfaceFor(data.seam, selectedId)}
       launchContextSurface={launchContextSurfaceFor(data.seam, selectedId, (id) => setSelectedId(id as EntityId))}
+      storySurface={storySurfaceFor(data.seam, selectedId, (id) => setSelectedId(id as EntityId), data.launch.teammates)}
       attachments={attachments}
       onAttachmentUploaded={() => data.refetchDetail(selectedId)}
       livenessOf={data.livenessOf}

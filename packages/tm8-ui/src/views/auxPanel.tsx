@@ -25,10 +25,11 @@
 import { useMemo, useState } from 'react';
 import type { EntityId } from '@tm8/contract';
 import { EntityDetailPanel, type ControlHost, type DetailReasons } from '../panels';
+import type { PanelHost } from '../panels/detail/chrome';
 import type { ContentSurface } from '../routes';
 import { channelFeedPortFromGateData } from './channel-feed-port';
 import { conversationSurfaceFor } from './conversationSurface';
-import type { ActionContext } from '../domain/types';
+import type { ActionContext, ActionRef } from '../domain/types';
 import type { AttachmentsPort } from '../files/port';
 import type { GateData } from './useGateData';
 import type { LaunchPort } from './useLaunchPort';
@@ -45,6 +46,7 @@ import { gitSurfaceFor } from './gitSurface';
 import { changesSurfaceFor } from './changesSurface';
 import { taskGitSectionFor } from './taskGitSection';
 import { graphSurfaceFor } from './graphSurface';
+import { storySurfaceFor } from './storySurface';
 import { launchContextSurfaceFor } from './launchContextSurface';
 import { crossSpaceRefsSurfaceFor } from './crossSpaceRefsSurface';
 
@@ -81,9 +83,27 @@ export interface AuxEntityPanelProps {
   onOpenEntity(id: EntityId): void;
   /** Dismiss the column entirely. The host owns whatever state that clears. */
   onClose(): void;
+  /** Placement (chrome and width only). Default `stack`; the full view passes `z4`. */
+  panelHost?: PanelHost;
+  /** ⤢ — the full view passes its exit, so the same control leaves it. */
+  onPromote?: () => void;
+  /**
+   * The story page's beside port (PR 1004): a press on any entity in the story
+   * opens it in the host's beside slot rather than replacing this column's
+   * subject, and `selectedId` is what is open there. Absent ⇒ drilling
+   * replaces the subject, as before.
+   */
+  story?: { open: (id: EntityId) => void; selectedId: string | null; layout?: 'panel' | 'full' };
+  /**
+   * A further header dispatcher composed after the host's primaries and chat —
+   * the full view passes the edit/add-child verbs (`useEntityVerbs`) here, so
+   * its Edit is live exactly as the kind screen's centre panel's is. Absent ⇒
+   * the aux column's reading-surface header, as before.
+   */
+  extraActions?: { onAction: ((ref: ActionRef) => void) | undefined; wiredActions: readonly ActionRef[] };
 }
 
-export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose }: AuxEntityPanelProps) {
+export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose, panelHost = 'stack', onPromote, story, extraActions }: AuxEntityPanelProps) {
   const { data, attachments } = host;
   const detail = data.detailOf(entityId) ?? null;
   /* The feed port is a STATELESS adapter over the same GateData the host
@@ -101,6 +121,7 @@ export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose }: AuxEnt
     ...(host.chatAbout
       ? [{ onAction: host.chatAbout.forEntity(entityId), wiredActions: host.chatAbout.wiredActions }]
       : []),
+    ...(extraActions ? [extraActions] : []),
   ]);
   const chatCounts = useChatCounts(host.chatAbout ? data.seam : null, entityId);
   return (
@@ -108,7 +129,8 @@ export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose }: AuxEnt
       detail={detail}
       serverBaseUrl={host.serverBaseUrl}
       loading={!detail}
-      host="stack"
+      host={panelHost}
+      {...(onPromote ? { onPromote } : {})}
       reasons={host.reasons}
       ctx={{ ...host.ctx, entityId }}
       controls={host.controls}
@@ -133,6 +155,13 @@ export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose }: AuxEnt
       )}
       crossSpaceRefsSurface={crossSpaceRefsSurfaceFor(data.seam, entityId)}
       launchContextSurface={launchContextSurfaceFor(data.seam, entityId, (id) => onOpenEntity(id as EntityId))}
+      storySurface={storySurfaceFor(
+        data.seam,
+        entityId,
+        (id) => (story ? story.open(id as EntityId) : onOpenEntity(id as EntityId)),
+        data.launch.teammates,
+        story ? { selectedId: story.selectedId, ...(story.layout ? { layout: story.layout } : {}) } : {},
+      )}
       livenessOf={data.livenessOf}
       attachments={attachments}
       onAttachmentUploaded={() => data.refetchDetail(entityId)}

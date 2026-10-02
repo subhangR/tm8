@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { useAlwaysDarkTheme } from '../theme/useAlwaysDarkTheme';
 
 /**
  * ALWAYS-DARK scope.
@@ -18,6 +19,19 @@ import type { ReactNode } from 'react';
  * restating the dark ramp as literals in a component stylesheet would rot
  * silently the first time a token moved.
  *
+ * `data-always-dark="true"` IS NOW THE SWITCH (style design §3.3). The injected
+ * `<style id="tm8-style-active">` (theme/style-store.ts) declares the active
+ * style on the `.cv2-root`s whose theme agrees with it, which in dark includes
+ * this scope; its second rule re-declares the resolved always-dark ramp for
+ * `[data-always-dark="true"]` and wins by source order. `data-theme` is
+ * DERIVED by `useAlwaysDarkTheme`: `"dark"` while `--pn-term-chrome` is
+ * `dark` (every built-in — the attribute today's component rules,
+ * `kit/Mermaid.tsx` and tokens.css's no-JS fallback key on), and the active
+ * style's own theme when it is `follow`, so a light style gets a light
+ * terminal area. Every always-dark scope
+ * (WorkspaceGrid, Z4Host, FilesScreen, NodeRoom, TypedTerminal, the
+ * always-dark EntityDetailPanel) stamps itself through the same hook.
+ *
  * `display: contents` makes this a pure scope with no box of its own, so the
  * wrapped children keep participating in the PARENT's layout (a strip inside
  * a flex column still lays out as that column's child). Custom properties
@@ -25,10 +39,11 @@ import type { ReactNode } from 'react';
  * property being exploited. Style the children, never this element.
  */
 export function AlwaysDark({ children }: { children: ReactNode }) {
+  const alwaysDarkTheme = useAlwaysDarkTheme();
   return (
     <div
       className="cv2-root"
-      data-theme="dark"
+      data-theme={alwaysDarkTheme}
       data-always-dark="true"
       style={{ display: 'contents' }}
     >

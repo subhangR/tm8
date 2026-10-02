@@ -1,0 +1,1101 @@
+{
+  "registryVersion": 1,
+  "entries": [
+    {
+      "key": "--pn-active",
+      "kind": "colour",
+      "group": "surface",
+      "label": "Active",
+      "surface": true
+    },
+    {
+      "key": "--pn-brand",
+      "kind": "colour",
+      "group": "surface",
+      "label": "Brand",
+      "surface": true
+    },
+    {
+      "key": "--pn-brand-2",
+      "kind": "colour",
+      "group": "surface",
+      "label": "Brand 2",
+      "surface": true
+    },
+    {
+      "key": "--pn-brand-rgb",
+      "kind": "derived",
+      "group": "surface",
+      "label": "Brand rgb",
+      "surface": true
+    },
+    {
+      "key": "--pn-brand-soft",
+      "kind": "colour",
+      "group": "surface",
+      "label": "Brand soft",
+      "surface": true
+    },
+    {
+      "key": "--pn-card",
+      "kind": "colour",
+      "group": "surface",
+      "label": "Card",
+      "surface": true
+    },
+    {
+      "key": "--pn-hover",
+      "kind": "colour",
+      "group": "surface",
+      "label": "Hover",
+      "surface": true
+    },
+    {
+      "key": "--pn-ink",
+      "kind": "colour",
+      "group": "surface",
+      "label": "Ink",
+      "surface": true
+    },
+    {
+      "key": "--pn-ink-2",
+      "kind": "colour",
+      "group": "surface",
+      "label": "Ink 2",
+      "surface": true
+    },
+    {
+      "key": "--pn-ink-3",
+      "kind": "colour",
+      "group": "surface",
+      "label": "Ink 3",
+      "surface": true
+    },
+    {
+      "key": "--pn-ink-4",
+      "kind": "colour",
+      "group": "surface",
+      "label": "Ink 4",
+      "surface": true
+    },
+    {
+      "key": "--pn-line",
+      "kind": "colour",
+      "group": "surface",
+      "label": "Line",
+      "surface": true
+    },
+    {
+      "key": "--pn-line-2",
+      "kind": "colour",
+      "group": "surface",
+      "label": "Line 2",
+      "surface": true
+    },
+    {
+      "key": "--pn-paper",
+      "kind": "colour",
+      "group": "surface",
+      "label": "Paper",
+      "surface": true
+    },
+    {
+      "key": "--pn-scrim",
+      "kind": "colour",
+      "group": "surface",
+      "label": "Scrim",
+      "surface": true
+    },
+    {
+      "key": "--pn-surface",
+      "kind": "colour",
+      "group": "surface",
+      "label": "Surface",
+      "surface": true
+    },
+    {
+      "key": "--pn-block",
+      "kind": "colour",
+      "group": "status",
+      "label": "Block",
+      "surface": true
+    },
+    {
+      "key": "--pn-block-soft",
+      "kind": "colour",
+      "group": "status",
+      "label": "Block soft",
+      "surface": true
+    },
+    {
+      "key": "--pn-idle",
+      "kind": "colour",
+      "group": "status",
+      "label": "Idle",
+      "surface": true
+    },
+    {
+      "key": "--pn-idle-soft",
+      "kind": "colour",
+      "group": "status",
+      "label": "Idle soft",
+      "surface": true
+    },
+    {
+      "key": "--pn-info",
+      "kind": "colour",
+      "group": "status",
+      "label": "Info",
+      "surface": true
+    },
+    {
+      "key": "--pn-info-soft",
+      "kind": "colour",
+      "group": "status",
+      "label": "Info soft",
+      "surface": true
+    },
+    {
+      "key": "--pn-pr-merged",
+      "kind": "colour",
+      "group": "status",
+      "label": "PR merged",
+      "surface": true
+    },
+    {
+      "key": "--pn-pr-merged-soft",
+      "kind": "colour",
+      "group": "status",
+      "label": "PR merged soft",
+      "surface": true
+    },
+    {
+      "key": "--pn-run",
+      "kind": "colour",
+      "group": "status",
+      "label": "Run",
+      "surface": true
+    },
+    {
+      "key": "--pn-run-soft",
+      "kind": "colour",
+      "group": "status",
+      "label": "Run soft",
+      "surface": true
+    },
+    {
+      "key": "--pn-wait",
+      "kind": "colour",
+      "group": "status",
+      "label": "Wait",
+      "surface": true
+    },
+    {
+      "key": "--pn-wait-soft",
+      "kind": "colour",
+      "group": "status",
+      "label": "Wait soft",
+      "surface": true
+    },
+    {
+      "key": "--pn-lh-body",
+      "kind": "ratio",
+      "group": "type",
+      "label": "Line height body",
+      "range": {
+        "min": 1,
+        "max": 2.5
+      },
+      "surface": false
+    },
+    {
+      "key": "--pn-lh-snug",
+      "kind": "ratio",
+      "group": "type",
+      "label": "Line height snug",
+      "range": {
+        "min": 1,
+        "max": 2.5
+      },
+      "surface": false
+    },
+    {
+      "key": "--pn-lh-tight",
+      "kind": "ratio",
+      "group": "type",
+      "label": "Line height tight",
+      "range": {
+        "min": 1,
+        "max": 2.5
+      },
+      "surface": false
+    },
+    {
+      "key": "--pn-mono",
+      "kind": "font",
+      "group": "type",
+      "label": "Mono font",
+      "surface": false
+    },
+    {
+      "key": "--pn-serif",
+      "kind": "font",
+      "group": "type",
+      "label": "Serif font",
+      "surface": false
+    },
+    {
+      "key": "--pn-track-label",
+      "kind": "length",
+      "group": "type",
+      "label": "Track label",
+      "unit": "em",
+      "range": {
+        "min": -0.1,
+        "max": 0.5
+      },
+      "surface": false
+    },
+    {
+      "key": "--pn-track-mega",
+      "kind": "length",
+      "group": "type",
+      "label": "Track mega",
+      "unit": "em",
+      "range": {
+        "min": -0.1,
+        "max": 0.5
+      },
+      "surface": false
+    },
+    {
+      "key": "--pn-track-tight",
+      "kind": "length",
+      "group": "type",
+      "label": "Track tight",
+      "unit": "em",
+      "range": {
+        "min": -0.1,
+        "max": 0.5
+      },
+      "surface": false
+    },
+    {
+      "key": "--pn-ui",
+      "kind": "font",
+      "group": "type",
+      "label": "UI font",
+      "surface": false
+    },
+    {
+      "key": "--pn-fs-body",
+      "kind": "length",
+      "group": "type-scale",
+      "label": "Font size body",
+      "unit": "px",
+      "range": {
+        "min": 6,
+        "max": 64
+      },
+      "surface": false
+    },
+    {
+      "key": "--pn-fs-display",
+      "kind": "length",
+      "group": "type-scale",
+      "label": "Font size display",
+      "unit": "px",
+      "range": {
+        "min": 6,
+        "max": 64
+      },
+      "surface": false
+    },
+    {
+      "key": "--pn-fs-fine",
+      "kind": "length",
+      "group": "type-scale",
+      "label": "Font size fine",
+      "unit": "px",
+      "range": {
+        "min": 6,
+        "max": 64
+      },
+      "surface": false
+    },
+    {
+      "key": "--pn-fs-h1",
+      "kind": "length",
+      "group": "type-scale",
+      "label": "Font size h1",
+      "unit": "px",
+      "range": {
+        "min": 6,
+        "max": 64
+      },
+      "surface": false
+    },
+    {
+      "key": "--pn-fs-h2",
+      "kind": "length",
+      "group": "type-scale",
+      "label": "Font size h2",
+      "unit": "px",
+      "range": {
+        "min": 6,
+        "max": 64
+      },
+      "surface": false
+    },
+    {
+      "key": "--pn-fs-h3",
+      "kind": "length",
+      "group": "type-scale",
+      "label": "Font size h3",
+      "unit": "px",
+      "range": {
+        "min": 6,
+        "max": 64
+      },
+      "surface": false
+    },
+    {
+      "key": "--pn-fs-label",
+      "kind": "length",
+      "group": "type-scale",
+      "label": "Font size label",
+      "unit": "px",
+      "range": {
+        "min": 6,
+        "max": 64
+      },
+      "surface": false
+    },
+    {
+      "key": "--pn-fs-micro",
+      "kind": "length",
+      "group": "type-scale",
+      "label": "Font size micro",
+      "unit": "px",
+      "range": {
+        "min": 6,
+        "max": 64
+      },
+      "surface": false
+    },
+    {
+      "key": "--pn-fs-mono",
+      "kind": "length",
+      "group": "type-scale",
+      "label": "Font size Mono font",
+      "unit": "px",
+      "range": {
+        "min": 6,
+        "max": 64
+      },
+      "surface": false
+    },
+    {
+      "key": "--pn-fs-sm",
+      "kind": "length",
+      "group": "type-scale",
+      "label": "Font size sm",
+      "unit": "px",
+      "range": {
+        "min": 6,
+        "max": 64
+      },
+      "surface": false
+    },
+    {
+      "key": "--pn-fs-tick",
+      "kind": "length",
+      "group": "type-scale",
+      "label": "Font size tick",
+      "unit": "px",
+      "range": {
+        "min": 6,
+        "max": 64
+      },
+      "surface": false
+    },
+    {
+      "key": "--pn-fs-title",
+      "kind": "length",
+      "group": "type-scale",
+      "label": "Font size title",
+      "unit": "px",
+      "range": {
+        "min": 6,
+        "max": 64
+      },
+      "surface": false
+    },
+    {
+      "key": "--pn-read-measure",
+      "kind": "length",
+      "group": "spacing",
+      "label": "Read measure",
+      "unit": "px",
+      "range": {
+        "min": 480,
+        "max": 1200
+      },
+      "surface": false
+    },
+    {
+      "key": "--pn-space-1",
+      "kind": "length",
+      "group": "spacing",
+      "label": "Space 1",
+      "unit": "px",
+      "range": {
+        "min": 0,
+        "max": 128
+      },
+      "surface": false
+    },
+    {
+      "key": "--pn-space-2",
+      "kind": "length",
+      "group": "spacing",
+      "label": "Space 2",
+      "unit": "px",
+      "range": {
+        "min": 0,
+        "max": 128
+      },
+      "surface": false
+    },
+    {
+      "key": "--pn-space-3",
+      "kind": "length",
+      "group": "spacing",
+      "label": "Space 3",
+      "unit": "px",
+      "range": {
+        "min": 0,
+        "max": 128
+      },
+      "surface": false
+    },
+    {
+      "key": "--pn-space-4",
+      "kind": "length",
+      "group": "spacing",
+      "label": "Space 4",
+      "unit": "px",
+      "range": {
+        "min": 0,
+        "max": 128
+      },
+      "surface": false
+    },
+    {
+      "key": "--pn-space-5",
+      "kind": "length",
+      "group": "spacing",
+      "label": "Space 5",
+      "unit": "px",
+      "range": {
+        "min": 0,
+        "max": 128
+      },
+      "surface": false
+    },
+    {
+      "key": "--pn-space-6",
+      "kind": "length",
+      "group": "spacing",
+      "label": "Space 6",
+      "unit": "px",
+      "range": {
+        "min": 0,
+        "max": 128
+      },
+      "surface": false
+    },
+    {
+      "key": "--pn-space-8",
+      "kind": "length",
+      "group": "spacing",
+      "label": "Space 8",
+      "unit": "px",
+      "range": {
+        "min": 0,
+        "max": 128
+      },
+      "surface": false
+    },
+    {
+      "key": "--pn-space-10",
+      "kind": "length",
+      "group": "spacing",
+      "label": "Space 10",
+      "unit": "px",
+      "range": {
+        "min": 0,
+        "max": 128
+      },
+      "surface": false
+    },
+    {
+      "key": "--pn-space-12",
+      "kind": "length",
+      "group": "spacing",
+      "label": "Space 12",
+      "unit": "px",
+      "range": {
+        "min": 0,
+        "max": 128
+      },
+      "surface": false
+    },
+    {
+      "key": "--pn-space-16",
+      "kind": "length",
+      "group": "spacing",
+      "label": "Space 16",
+      "unit": "px",
+      "range": {
+        "min": 0,
+        "max": 128
+      },
+      "surface": false
+    },
+    {
+      "key": "--pn-r-lg",
+      "kind": "length",
+      "group": "radius",
+      "label": "Radius lg",
+      "unit": "px",
+      "range": {
+        "min": 0,
+        "max": 64
+      },
+      "surface": false
+    },
+    {
+      "key": "--pn-r-md",
+      "kind": "length",
+      "group": "radius",
+      "label": "Radius md",
+      "unit": "px",
+      "range": {
+        "min": 0,
+        "max": 64
+      },
+      "surface": false
+    },
+    {
+      "key": "--pn-r-pill",
+      "kind": "length",
+      "group": "radius",
+      "label": "Radius pill",
+      "unit": "px",
+      "range": {
+        "min": 0,
+        "max": 999
+      },
+      "surface": false
+    },
+    {
+      "key": "--pn-r-sm",
+      "kind": "length",
+      "group": "radius",
+      "label": "Radius sm",
+      "unit": "px",
+      "range": {
+        "min": 0,
+        "max": 64
+      },
+      "surface": false
+    },
+    {
+      "key": "--pn-r-xs",
+      "kind": "length",
+      "group": "radius",
+      "label": "Radius xs",
+      "unit": "px",
+      "range": {
+        "min": 0,
+        "max": 64
+      },
+      "surface": false
+    },
+    {
+      "key": "--pn-sh-md",
+      "kind": "shadow",
+      "group": "elevation",
+      "label": "Shadow md",
+      "surface": true
+    },
+    {
+      "key": "--pn-sh-pop",
+      "kind": "shadow",
+      "group": "elevation",
+      "label": "Shadow pop",
+      "surface": true
+    },
+    {
+      "key": "--pn-sh-sm",
+      "kind": "shadow",
+      "group": "elevation",
+      "label": "Shadow sm",
+      "surface": true
+    },
+    {
+      "key": "--pn-dur-base",
+      "kind": "duration",
+      "group": "motion",
+      "label": "Duration base",
+      "unit": "ms",
+      "range": {
+        "min": 0,
+        "max": 2000
+      },
+      "surface": false
+    },
+    {
+      "key": "--pn-dur-fast",
+      "kind": "duration",
+      "group": "motion",
+      "label": "Duration fast",
+      "unit": "ms",
+      "range": {
+        "min": 0,
+        "max": 2000
+      },
+      "surface": false
+    },
+    {
+      "key": "--pn-dur-slow",
+      "kind": "duration",
+      "group": "motion",
+      "label": "Duration slow",
+      "unit": "ms",
+      "range": {
+        "min": 0,
+        "max": 2000
+      },
+      "surface": false
+    },
+    {
+      "key": "--pn-ease-out",
+      "kind": "easing",
+      "group": "motion",
+      "label": "Ease out",
+      "surface": false
+    },
+    {
+      "key": "--pn-ease-standard",
+      "kind": "easing",
+      "group": "motion",
+      "label": "Ease standard",
+      "surface": false
+    },
+    {
+      "key": "--pn-x-term-ansi-0",
+      "kind": "colour",
+      "group": "terminal-colour",
+      "label": "Terminal ANSI 0",
+      "surface": false,
+      "xtermSink": "theme.black"
+    },
+    {
+      "key": "--pn-x-term-ansi-1",
+      "kind": "colour",
+      "group": "terminal-colour",
+      "label": "Terminal ANSI 1",
+      "surface": false,
+      "xtermSink": "theme.red"
+    },
+    {
+      "key": "--pn-x-term-ansi-2",
+      "kind": "colour",
+      "group": "terminal-colour",
+      "label": "Terminal ANSI 2",
+      "surface": false,
+      "xtermSink": "theme.green"
+    },
+    {
+      "key": "--pn-x-term-ansi-3",
+      "kind": "colour",
+      "group": "terminal-colour",
+      "label": "Terminal ANSI 3",
+      "surface": false,
+      "xtermSink": "theme.yellow"
+    },
+    {
+      "key": "--pn-x-term-ansi-4",
+      "kind": "colour",
+      "group": "terminal-colour",
+      "label": "Terminal ANSI 4",
+      "surface": false,
+      "xtermSink": "theme.blue"
+    },
+    {
+      "key": "--pn-x-term-ansi-5",
+      "kind": "colour",
+      "group": "terminal-colour",
+      "label": "Terminal ANSI 5",
+      "surface": false,
+      "xtermSink": "theme.magenta"
+    },
+    {
+      "key": "--pn-x-term-ansi-6",
+      "kind": "colour",
+      "group": "terminal-colour",
+      "label": "Terminal ANSI 6",
+      "surface": false,
+      "xtermSink": "theme.cyan"
+    },
+    {
+      "key": "--pn-x-term-ansi-7",
+      "kind": "colour",
+      "group": "terminal-colour",
+      "label": "Terminal ANSI 7",
+      "surface": false,
+      "xtermSink": "theme.white"
+    },
+    {
+      "key": "--pn-x-term-ansi-8",
+      "kind": "colour",
+      "group": "terminal-colour",
+      "label": "Terminal ANSI 8",
+      "surface": false,
+      "xtermSink": "theme.brightBlack"
+    },
+    {
+      "key": "--pn-x-term-ansi-9",
+      "kind": "colour",
+      "group": "terminal-colour",
+      "label": "Terminal ANSI 9",
+      "surface": false,
+      "xtermSink": "theme.brightRed"
+    },
+    {
+      "key": "--pn-x-term-ansi-10",
+      "kind": "colour",
+      "group": "terminal-colour",
+      "label": "Terminal ANSI 10",
+      "surface": false,
+      "xtermSink": "theme.brightGreen"
+    },
+    {
+      "key": "--pn-x-term-ansi-11",
+      "kind": "colour",
+      "group": "terminal-colour",
+      "label": "Terminal ANSI 11",
+      "surface": false,
+      "xtermSink": "theme.brightYellow"
+    },
+    {
+      "key": "--pn-x-term-ansi-12",
+      "kind": "colour",
+      "group": "terminal-colour",
+      "label": "Terminal ANSI 12",
+      "surface": false,
+      "xtermSink": "theme.brightBlue"
+    },
+    {
+      "key": "--pn-x-term-ansi-13",
+      "kind": "colour",
+      "group": "terminal-colour",
+      "label": "Terminal ANSI 13",
+      "surface": false,
+      "xtermSink": "theme.brightMagenta"
+    },
+    {
+      "key": "--pn-x-term-ansi-14",
+      "kind": "colour",
+      "group": "terminal-colour",
+      "label": "Terminal ANSI 14",
+      "surface": false,
+      "xtermSink": "theme.brightCyan"
+    },
+    {
+      "key": "--pn-x-term-ansi-15",
+      "kind": "colour",
+      "group": "terminal-colour",
+      "label": "Terminal ANSI 15",
+      "surface": false,
+      "xtermSink": "theme.brightWhite"
+    },
+    {
+      "key": "--pn-x-term-bg",
+      "kind": "colour",
+      "group": "terminal-colour",
+      "label": "Terminal background",
+      "surface": false
+    },
+    {
+      "key": "--pn-x-term-cursor",
+      "kind": "colour",
+      "group": "terminal-colour",
+      "label": "Terminal cursor",
+      "surface": false,
+      "xtermSink": "theme.cursor"
+    },
+    {
+      "key": "--pn-x-term-cursor-accent",
+      "kind": "colour",
+      "group": "terminal-colour",
+      "label": "Terminal cursor accent",
+      "surface": false,
+      "xtermSink": "theme.cursorAccent"
+    },
+    {
+      "key": "--pn-x-term-fg",
+      "kind": "colour",
+      "group": "terminal-colour",
+      "label": "Terminal foreground",
+      "surface": false,
+      "xtermSink": "theme.foreground"
+    },
+    {
+      "key": "--pn-x-term-ghost",
+      "kind": "colour",
+      "group": "terminal-colour",
+      "label": "Terminal ghost",
+      "surface": false
+    },
+    {
+      "key": "--pn-x-term-live-bg",
+      "kind": "colour",
+      "group": "terminal-colour",
+      "label": "Terminal live background",
+      "surface": false,
+      "xtermSink": "theme.background"
+    },
+    {
+      "key": "--pn-x-term-sel-bg",
+      "kind": "colour",
+      "group": "terminal-colour",
+      "label": "Terminal Selection background",
+      "surface": false,
+      "xtermSink": "theme.selectionBackground"
+    },
+    {
+      "key": "--pn-x-term-sel-fg",
+      "kind": "colour",
+      "group": "terminal-colour",
+      "label": "Terminal Selection foreground",
+      "surface": false,
+      "xtermSink": "theme.selectionForeground"
+    },
+    {
+      "key": "--pn-term-chrome",
+      "kind": "enum",
+      "group": "terminal-option",
+      "label": "Terminal chrome",
+      "values": [
+        "dark",
+        "follow"
+      ],
+      "surface": false
+    },
+    {
+      "key": "--pn-term-cursor-style",
+      "kind": "enum",
+      "group": "terminal-option",
+      "label": "Terminal cursor style",
+      "values": [
+        "block",
+        "underline",
+        "bar"
+      ],
+      "surface": false,
+      "xtermSink": "option.cursorStyle"
+    },
+    {
+      "key": "--pn-term-font",
+      "kind": "font",
+      "group": "terminal-option",
+      "label": "Terminal font",
+      "surface": false,
+      "xtermSink": "option.fontFamily"
+    },
+    {
+      "key": "--pn-term-font-size",
+      "kind": "number",
+      "group": "terminal-option",
+      "label": "Terminal font size",
+      "unit": "px",
+      "range": {
+        "min": 8,
+        "max": 24
+      },
+      "values": [
+        "auto"
+      ],
+      "surface": false,
+      "xtermSink": "option.fontSize"
+    },
+    {
+      "key": "--pn-term-font-weight",
+      "kind": "number",
+      "group": "terminal-option",
+      "label": "Terminal font weight",
+      "range": {
+        "min": 100,
+        "max": 900
+      },
+      "surface": false,
+      "xtermSink": "option.fontWeight"
+    },
+    {
+      "key": "--pn-term-font-weight-bold",
+      "kind": "number",
+      "group": "terminal-option",
+      "label": "Terminal font weight bold",
+      "range": {
+        "min": 100,
+        "max": 900
+      },
+      "surface": false,
+      "xtermSink": "option.fontWeightBold"
+    },
+    {
+      "key": "--pn-term-letter-spacing",
+      "kind": "number",
+      "group": "terminal-option",
+      "label": "Terminal letter spacing",
+      "unit": "px",
+      "range": {
+        "min": -1,
+        "max": 2
+      },
+      "surface": false,
+      "xtermSink": "option.letterSpacing"
+    },
+    {
+      "key": "--pn-term-line-height",
+      "kind": "number",
+      "group": "terminal-option",
+      "label": "Terminal line height",
+      "range": {
+        "min": 1,
+        "max": 1.8
+      },
+      "surface": false,
+      "xtermSink": "option.lineHeight"
+    },
+    {
+      "key": "--pn-term-padding",
+      "kind": "number",
+      "group": "terminal-option",
+      "label": "Terminal padding",
+      "unit": "px",
+      "range": {
+        "min": 0,
+        "max": 24
+      },
+      "surface": false,
+      "xtermSink": "option.padding"
+    },
+    {
+      "key": "--pn-term-scrollback",
+      "kind": "number",
+      "group": "terminal-option",
+      "label": "Terminal scrollback",
+      "range": {
+        "min": 500,
+        "max": 50000
+      },
+      "surface": false,
+      "xtermSink": "option.scrollback"
+    },
+    {
+      "key": "--pn-x-block-hover",
+      "kind": "colour",
+      "group": "extras",
+      "label": "Block hover",
+      "surface": true
+    },
+    {
+      "key": "--pn-x-btn-ink-hover",
+      "kind": "colour",
+      "group": "extras",
+      "label": "Btn ink hover",
+      "surface": true
+    },
+    {
+      "key": "--pn-x-dia-1",
+      "kind": "colour",
+      "group": "extras",
+      "label": "Diagram 1",
+      "surface": true
+    },
+    {
+      "key": "--pn-x-dia-2",
+      "kind": "colour",
+      "group": "extras",
+      "label": "Diagram 2",
+      "surface": true
+    },
+    {
+      "key": "--pn-x-dia-3",
+      "kind": "colour",
+      "group": "extras",
+      "label": "Diagram 3",
+      "surface": true
+    },
+    {
+      "key": "--pn-x-dia-4",
+      "kind": "colour",
+      "group": "extras",
+      "label": "Diagram 4",
+      "surface": true
+    },
+    {
+      "key": "--pn-x-dia-5",
+      "kind": "colour",
+      "group": "extras",
+      "label": "Diagram 5",
+      "surface": true
+    },
+    {
+      "key": "--pn-x-dia-6",
+      "kind": "colour",
+      "group": "extras",
+      "label": "Diagram 6",
+      "surface": true
+    },
+    {
+      "key": "--pn-x-dia-7",
+      "kind": "colour",
+      "group": "extras",
+      "label": "Diagram 7",
+      "surface": true
+    },
+    {
+      "key": "--pn-x-dia-8",
+      "kind": "colour",
+      "group": "extras",
+      "label": "Diagram 8",
+      "surface": true
+    },
+    {
+      "key": "--pn-x-hairline-soft",
+      "kind": "colour",
+      "group": "extras",
+      "label": "Hairline soft",
+      "surface": true
+    },
+    {
+      "key": "--pn-x-prose-ink",
+      "kind": "colour",
+      "group": "extras",
+      "label": "Prose ink",
+      "surface": true
+    },
+    {
+      "key": "--pn-x-warn-fill",
+      "kind": "colour",
+      "group": "extras",
+      "label": "Warn fill",
+      "surface": true
+    }
+  ]
+}

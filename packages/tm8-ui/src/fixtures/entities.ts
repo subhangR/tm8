@@ -14,6 +14,7 @@ import type {
 } from '@tm8/contract';
 import { ada, noor, forge, scout } from './actors';
 import { FORM_FIXTURE_FORMS, FORM_FIXTURE_IDS } from '../forms/fixtures';
+import { STORY_FIXTURE } from '../story/fixture';
 
 /**
  * Contract-shaped fixture dataset (A0). Shaped by EntitySummary/EntityDetail
@@ -1151,6 +1152,47 @@ export const drawingLoginFlow = summary({
 });
 
 /**
+ * Story — everything around one idea, and where it stands (migration 283).
+ * The state and page are the story page's own fixture (`story/fixture.ts`,
+ * artifact 01a0fc3e rev 4 in the published contract shape), so the panel's
+ * `storyline` block draws the same story here as on /story-dev.html.
+ */
+export const storyAsAnEntity = summary({
+  // The page's own id: the page names the story as its depth -1 node, and the
+  // live read finds the story's status there.
+  id: STORY_FIXTURE.id,
+  kind: 'story',
+  title: STORY_FIXTURE.title,
+  excerpt: STORY_FIXTURE.description.slice(0, 120),
+  createdBy: ada,
+  category: 'in_progress',
+  state: STORY_FIXTURE.state,
+});
+
+/**
+ * Style — a published, read-only space style (migration 284). The document is
+ * a built-in foundation with NO vars: a fixture carrying colour values would
+ * put raw colour literals in `src/` (§14), and the row facts this fixture
+ * exists to exercise — title, pusher, version — do not need any.
+ */
+export const styleMidnight = summary({
+  id: 'style-midnight',
+  kind: 'style',
+  title: 'Midnight',
+  excerpt: 'The dark house style',
+  createdBy: ada,
+  state: {
+    kind: 'style',
+    doc: { schemaVersion: 1, foundation: 'builtin:atelier-dark', vars: {}, css: null },
+    resolvedHash: null,
+    pushedBy: ada.id,
+    pushedAt: '2026-10-02T09:00:00.000Z',
+    sourceOwnerIdentityId: 'fixture-identity-ada',
+    tags: ['dark'],
+  },
+});
+
+/**
  * Forms — question sets an agent asked a human (migration 209). The five
  * fixture forms live in `forms/fixtures.ts` with their responses (the forms
  * seam serves those); here they become rows, so every state the questionnaire
@@ -1390,6 +1432,8 @@ export const fixtureSummaries: EntitySummary[] = [
   spellDeploy, skillReview, collectionInbox, collectionEmpty, projectTm8Ui,
   profileHouseStyle, credentialTeamKey, customRitual, artifactPulseBoard, drawingLoginFlow,
   opRequestLinkResearch,
+  storyAsAnEntity,
+  styleMidnight,
   ...formSummaries,
   ...containerFixtures,
 ];
@@ -1906,6 +1950,21 @@ export const fixtureDetails: Record<string, EntityDetail> = {
     content: { kind: 'op_request', op: 'spaceLinks.add', status: 'pending' },
   }),
 
+  [styleMidnight.id]: detail(styleMidnight, {
+    content: {
+      kind: 'style',
+      description: 'The dark house style',
+      doc: { schemaVersion: 1, foundation: 'builtin:atelier-dark', vars: {}, css: null },
+      resolvedHash: null,
+      pushedBy: ada.id,
+      pushedAt: '2026-10-02T09:00:00.000Z',
+      sourceOwnerIdentityId: 'fixture-identity-ada',
+      tags: ['dark'],
+    },
+    // Read-only by construction (284): new versions arrive only by push.
+    capabilities: CAPS_READONLY,
+  }),
+
   [customRitual.id]: detail(customRitual, {
     content: { kind: 'c:ritual', fields: { cadence: 'daily', hour: 9, active: true, notes: null } },
   }),
@@ -1929,6 +1988,9 @@ export const fixtureDetails: Record<string, EntityDetail> = {
     f.id,
     detail(formSummaries.find((s) => s.id === f.id)!, { content: { kind: 'form', ...f.content } }),
   ])),
+  [storyAsAnEntity.id]: detail(storyAsAnEntity, {
+    content: { kind: 'story', description: STORY_FIXTURE.description, page: STORY_FIXTURE.page },
+  }),
   [drawingLoginFlow.id]: detail(drawingLoginFlow, {
     content: {
       kind: 'drawing',

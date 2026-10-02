@@ -74,6 +74,7 @@ import { FORM_COMMANDS } from './form.js';
 import { LINK_COMMANDS } from './link.js';
 import { DISCOVERABILITY_COMMANDS } from './discoverability.js';
 import { REQUEST_COMMANDS } from './request.js';
+import { STYLE_COMMANDS } from './style.js';
 
 /**
  * Root discovery commands (§4.16). Not domain grammar: they take no Space, no
@@ -155,6 +156,7 @@ export const COMMANDS: CommandModule[] = [
   ...LINK_COMMANDS,
   ...DISCOVERABILITY_COMMANDS,
   ...REQUEST_COMMANDS,
+  ...STYLE_COMMANDS,
 ];
 
 const REGISTERED = new Map<string, CommandModule>(COMMANDS.map((c) => [c.path.join(' '), c]));

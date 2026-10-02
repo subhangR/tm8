@@ -279,6 +279,15 @@ import type {
   AuthSessionsRevokeResult,
   ChatDefault,
   ChatDefaultsView,
+  PersonalStylesListResult,
+  PersonalStyleWriteResult,
+  SpaceStyleDefaultView,
+  StyleGetResult,
+  StylePrefsGetResult,
+  StylePrefsSetInput,
+  StylePrefsSetResult,
+  StylePrefsView,
+  StylesListResult,
   SpaceSummary,
   TaskAxis,
   TaskAxisInput,
@@ -410,6 +419,12 @@ export interface IdentityView {
    * Absent from a node that predates the field: unknown, not `agents`.
    */
   spaceSessions?: SpaceSessionsMode;
+  /**
+   * The viewer's style prefs, embedded by `identity.get` (styles spec §4.1).
+   * `null` = no prefs row (the space default applies, §3.6); ABSENT = a node
+   * that predates styles, where the UI keeps its local choice.
+   */
+  stylePrefs?: StylePrefsView | null;
 }
 
 /**
@@ -627,6 +642,23 @@ export interface Seam {
    * admin only; a member's refusal arrives as the server's own `forbidden`.
    */
   setChatDefaults(spaceId: SpaceId, defaults: Record<string, ChatDefault | null>): Promise<ChatDefaultsView>;
+
+  // -- styles (styles spec v8 §4.1). OPTIONAL: fixtures and fakes that do not
+  //    model styles omit them, and the style layer then stays local-only.
+  /** `identity.stylePrefs.get` — self only; `prefs: null` = no row. */
+  stylePrefs?(): Promise<StylePrefsGetResult>;
+  /** `identity.stylePrefs.set` — verifies readability, writes the snapshot, emits per-member. */
+  setStylePrefs?(input: Omit<StylePrefsSetInput, 'clientMutationId'>): Promise<StylePrefsSetResult>;
+  /** `spaces.styleDefault.get` — any member; `revision: 0` = no row. */
+  styleDefault?(spaceId: SpaceId): Promise<SpaceStyleDefaultView>;
+  /** `styles.get` by typed ref; rejects `forbidden`/`not_found` when not readable now. */
+  style?(ref: string): Promise<StyleGetResult>;
+  /** `styles.list` — built-ins first, then the space's styles. */
+  styles?(spaceId: SpaceId): Promise<StylesListResult>;
+  /** `styles.personal.list` — the caller's own. */
+  personalStyles?(): Promise<PersonalStylesListResult>;
+  /** `styles.pull` — a new personal style copied from a space style or built-in. */
+  pullStyle?(ref: string, title?: string): Promise<PersonalStyleWriteResult>;
   /**
    * The category-model workflows (`spaces.workflows.list`, migration 149):
    * the ONE global default (spaceId null) plus this space's own. Distinct

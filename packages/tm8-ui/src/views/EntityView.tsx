@@ -53,6 +53,7 @@ import {
 import { AttentionList, useAttentionOptional } from '../attention';
 import { PanelResizer, useElementWidth, usePanelWidth } from '../kit';
 import { ConnectionsTab } from '../panels/detail/tabs';
+import { facetsForAnatomy } from '../panels/list/row-view';
 import type { ActionContext, ActionRef, CollectionMode, GroupByKey } from '../domain/types';
 import { getKind } from '../domain/registry';
 import { placeholderNameFor } from '../domain/title-grammar';
@@ -70,6 +71,7 @@ import {
 } from '../authoring';
 import { useEntityVerbs } from './useEntityVerbs';
 import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
+import { navStore } from '../stores/navStore';
 import { EntityFab, MobileSheet, useMobileSurface } from '../mobile';
 import type { Notice } from '../shell/notices';
 import type { GateData } from './useGateData';
@@ -95,6 +97,7 @@ import { gitSurfaceFor } from './gitSurface';
 import { changesSurfaceFor } from './changesSurface';
 import { taskGitSectionFor } from './taskGitSection';
 import { graphSurfaceFor } from './graphSurface';
+import { storySurfaceFor } from './storySurface';
 import { launchContextSurfaceFor } from './launchContextSurface';
 import { crossSpaceRefsSurfaceFor } from './crossSpaceRefsSurface';
 import { AuxEntityPanel } from './auxPanel';
@@ -844,6 +847,15 @@ export function EntityView(props: EntityViewProps) {
       gitSurface={detail ? gitSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
       changesSurface={detail ? changesSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
       taskGitSection={taskGitSectionFor(data.seam, detail, (id) => setAux({ sort: 'entity', id: id as EntityId }))}
+      storySurface={
+        detail
+          ? storySurfaceFor(data.seam, selectedId, (id) => setAux({ sort: 'entity', id: id as EntityId }), data.launch.teammates, {
+              /* The aux column IS "beside the story" here; its subject is the
+                 story's selection, so closing the column clears it. */
+              selectedId: aux?.sort === 'entity' ? aux.id : null,
+            })
+          : undefined
+      }
       graphSurface={
         detail
           ? graphSurfaceFor(data.seam, selectedId, data.livenessOf, (id) =>
@@ -888,6 +900,21 @@ export function EntityView(props: EntityViewProps) {
         setSelectedId(null);
         setAux(null);
       }}
+      /* ⤢ OPEN FULL VIEW, only for a kind whose registry row built one
+         (`panel.fullView`, PR 1004): the Z4 route `e/{id}?full=1`, carrying
+         this screen as its origin so ⤡ / Esc come back here with the entity
+         still open. Every other kind passes nothing, as before. */
+      {...(detail && getKind(detail.kind).panel.fullView && selectedId
+        ? {
+            onPromote: () =>
+              navStore.getState().navigate({
+                view: 'entity',
+                entityId: selectedId,
+                origin: config.slug ? { slug: config.slug, mode: props.mode ?? null } : null,
+                full: true,
+              }),
+          }
+        : {})}
     />
   ) : null;
 
@@ -1302,6 +1329,21 @@ export function EntityView(props: EntityViewProps) {
                   }}
                 >
                   {config.list.membership.label.toLowerCase()}
+                </button>
+              ) : null}
+              {/* Not a narrowing, but the same picker register — it opens
+                  the same sheet the desktop's `View ▾` chip hangs. */}
+              {facetsForAnatomy(config.list.tile.anatomy).length > 0 ? (
+                <button
+                  type="button"
+                  className="ev-narrow__item"
+                  data-testid="narrow-view"
+                  onClick={() => {
+                    setPicker('view');
+                    setDialOpen(false);
+                  }}
+                >
+                  view
                 </button>
               ) : null}
               {config.list.sort.length > 0 ? (

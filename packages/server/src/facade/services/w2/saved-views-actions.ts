@@ -285,10 +285,12 @@ function structurallyAvailable(operation: OperationName, row: ActionContextRow):
       // whose only outcome is a 403. `space_link` likewise (W6 review D1):
       // `spaceLinks.remove` is its only delete. `credential` and `server`
       // join for the same reason: `credentials.space.delete` (revoke) and
-      // `servers.remove` are their only deletes.
+      // `servers.remove` are their only deletes. `style` (284): a space style
+      // is removed only by `styles.remove`, which is space-admin only.
       return live && row.kind !== 'member' && row.kind !== 'project'
         && row.kind !== 'interaction_profile' && row.kind !== 'container'
-        && row.kind !== 'space_link' && row.kind !== 'credential' && row.kind !== 'server';
+        && row.kind !== 'space_link' && row.kind !== 'credential' && row.kind !== 'server'
+        && row.kind !== 'style';
     case 'entities.restore':
       return false;
     case 'entities.children':
@@ -398,6 +400,14 @@ function structurallyAvailable(operation: OperationName, row: ActionContextRow):
       return live && row.kind === 'server';
     case 'servers.remove':
       return live && row.kind === 'server' && row.server_can_remove === true;
+    // Space styles (284): read-only entities. Any member may read, export and
+    // pull one; removing it is the space admin's door (spec §7).
+    case 'styles.get':
+    case 'styles.export':
+    case 'styles.pull':
+      return live && row.kind === 'style';
+    case 'styles.remove':
+      return live && row.kind === 'style' && row.is_space_admin;
     default:
       return false;
   }
@@ -621,6 +631,8 @@ function kindRelevance(row: ActionContextRow): readonly OperationName[] {
       ];
     case 'server':
       return ['servers.get', 'servers.probe', 'servers.remove'];
+    case 'style':
+      return ['styles.get', 'styles.pull', 'styles.export', 'styles.remove', 'entities.versions'];
     case 'interaction_profile':
       return [
         'interactionProfiles.updateDraft',

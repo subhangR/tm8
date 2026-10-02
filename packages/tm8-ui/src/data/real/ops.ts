@@ -200,6 +200,14 @@ import {
   type AuthSessionsRevokeResult,
   type ChatDefault,
   type ChatDefaultsView,
+  type PersonalStylesListResult,
+  type PersonalStyleWriteResult,
+  type SpaceStyleDefaultView,
+  type StyleGetResult,
+  type StylePrefsGetResult,
+  type StylePrefsSetInput,
+  type StylePrefsSetResult,
+  type StylesListResult,
   type SpaceSummary,
   type TaskAxis,
   type TaskAxisInput,
@@ -873,6 +881,46 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     chatDefaults(spaceId: SpaceId): Promise<ChatDefaultsView> {
       return http.call<ChatDefaultsView>('spaces.chatDefaults.get', { params: { spaceId } });
+    },
+
+    /** The caller's style prefs (`identity.stylePrefs.get`, styles spec §4.1); `prefs: null` = no row. */
+    stylePrefs(): Promise<StylePrefsGetResult> {
+      return http.call<StylePrefsGetResult>('identity.stylePrefs.get');
+    },
+
+    /** `identity.stylePrefs.set`: self only, `expectedRevision` guarded (0 = no row yet). */
+    setStylePrefs(input: Omit<StylePrefsSetInput, 'clientMutationId'>): Promise<StylePrefsSetResult> {
+      return http.call<StylePrefsSetResult>('identity.stylePrefs.set', {
+        body: { ...input, clientMutationId: newId('styleprefs') },
+      });
+    },
+
+    /** The space's default style (`spaces.styleDefault.get`); `revision: 0` = no row. */
+    styleDefault(spaceId: SpaceId): Promise<SpaceStyleDefaultView> {
+      return http.call<SpaceStyleDefaultView>('spaces.styleDefault.get', { params: { spaceId } });
+    },
+
+    /** One style by typed ref (`styles.get`): `builtin:*`, `space:<id>` or `personal:<id>`. */
+    style(ref: string): Promise<StyleGetResult> {
+      return http.call<StyleGetResult>('styles.get', { params: { ref } });
+    },
+
+    /** Built-ins then the space's styles (`styles.list`). */
+    styles(spaceId: SpaceId): Promise<StylesListResult> {
+      return http.call<StylesListResult>('styles.list', { params: { spaceId } });
+    },
+
+    /** The caller's personal styles (`styles.personal.list`). */
+    personalStyles(): Promise<PersonalStylesListResult> {
+      return http.call<PersonalStylesListResult>('styles.personal.list');
+    },
+
+    /** Copy a space style or built-in into a new personal style (`styles.pull`). */
+    pullStyle(ref: string, title?: string): Promise<PersonalStyleWriteResult> {
+      return http.call<PersonalStyleWriteResult>('styles.pull', {
+        params: { ref },
+        body: { clientMutationId: newId('stylepull'), ...(title ? { title } : {}) },
+      });
     },
 
     authSessions(spaceId: SpaceId | null): Promise<AuthSessionsListResult> {

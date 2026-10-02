@@ -35,6 +35,7 @@ export type CapabilityProfile =
   | 'space-link-lifecycle'
   | 'server-lifecycle'
   | 'op-request-lifecycle'
+  | 'style-lifecycle'
   | 'custom-scalar'
   | 'static-no-authority';
 
@@ -65,6 +66,8 @@ export type MigrationStrategy =
   | 'credential-detail'
   | 'space-link-kinds'
   | 'op-request-detail'
+  | 'story-detail'
+  | 'style-detail'
   | 'custom-registry'
   | 'none';
 
@@ -359,6 +362,32 @@ function capabilities(profile: CapabilityProfile): CapabilityDisposition {
           'spaceLinks.setSpawn',
         ],
       };
+    case 'style-lifecycle':
+      // NOTHING generic to WRITE (284, styles spec §3.3). A space style is
+      // read-only: born and re-versioned only by `styles.push` from a personal
+      // style, removed only by `styles.remove` (space admin). It is still an
+      // ordinary space entity to READ and talk about — messages, reactions and
+      // connections ride the envelope like any other kind.
+      return {
+        profile,
+        genericCreate: false,
+        genericPatch: false,
+        genericMove: false,
+        genericHierarchy: false,
+        genericDeleteRestore: false,
+        genericPoints: false,
+        messages: true,
+        reactions: true,
+        connections: true,
+        lifecycleOperations: [
+          'styles.list',
+          'styles.get',
+          'styles.push',
+          'styles.pull',
+          'styles.remove',
+          'styles.export',
+        ],
+      };
     case 'server-lifecycle':
       // NOTHING generic (W8, 261). A server is born only from `servers.add`
       // or `servers.adopt` (a 044 row, first use), and add/adopt/remove are
@@ -625,6 +654,25 @@ export const CORE_KIND_DISPOSITIONS = {
     collection: typedCollection, projection: universal,
     capabilities: { profile: 'op-request-lifecycle' },
     menu: { strategy: 'not-addressable' }, migration: { strategy: 'op-request-detail' },
+  }),
+  // Stories (migration 283). `drawing`'s disposition, for the same reasons: an
+  // ordinary collection-routed entity created and patched through the generic
+  // envelope (create_story_entity / update_story_entity), zero new catalog
+  // rows. Its roots are `contains` edges written through the existing
+  // collection doors; progress and the page are computed at read time.
+  // `registered-not-default`: the kind registers without rearranging anybody's
+  // default menu.
+  story: core('story', 'stories', {
+    collection: typedCollection, projection: universal, capabilities: generic,
+    menu: { strategy: 'registered-not-default' }, migration: { strategy: 'story-detail' },
+  }),
+  // Space styles (migration 284, styles spec v8). A published, read-only theme:
+  // born only from `styles.push`, so not generically creatable or editable.
+  // Picked from the account menu, never filed into from the generic menu.
+  style: core('style', 'styles', {
+    collection: typedCollection, projection: universal,
+    capabilities: { profile: 'style-lifecycle' },
+    menu: { strategy: 'not-addressable' }, migration: { strategy: 'style-detail' },
   }),
 } as const satisfies Readonly<Record<CoreEntityKind, KindDisposition>>;
 

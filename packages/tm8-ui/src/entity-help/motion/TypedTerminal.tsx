@@ -19,6 +19,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useMotion } from './MotionContext';
+import { useAlwaysDarkTheme } from '../../theme/useAlwaysDarkTheme';
 
 export interface TypedTerminalProps {
   lines: readonly string[];
@@ -65,10 +66,12 @@ export function TypedTerminal({ lines, title, speed = 16, lineGap = 320, delay =
   const shown = script.slice(0, typed).split('\n');
   const complete = script.split('\n');
 
+  const alwaysDarkTheme = useAlwaysDarkTheme();
   return (
     <div
       className="cv2-root eh-term"
-      data-theme="dark"
+      data-theme={alwaysDarkTheme}
+      data-always-dark="true"
       role="group"
       aria-label={title ?? 'Terminal demonstration'}
       data-typed={done ? 'complete' : 'typing'}

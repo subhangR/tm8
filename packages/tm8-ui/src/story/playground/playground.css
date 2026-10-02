@@ -1,0 +1,207 @@
+/* The story playground: the plus, the "Add anything" sheet, the node popover.
+   Artifact 01a0fc3e rev 4 §playground, in Atelier tokens (light and dark). */
+
+/* The dock: a zero-height strip stuck to the bottom of the story's scroll
+   container. The plus and the sheet hang above it, so they stay inside the
+   panel rather than floating over the whole app. */
+.cv2-root .sp-dock {
+  position: sticky;
+  bottom: 0;
+  height: 0;
+  z-index: 30;
+}
+
+.cv2-root .sp-fab {
+  position: absolute;
+  right: 28px;
+  bottom: 28px;
+  width: 48px;
+  height: 48px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--pn-ink);
+  color: var(--pn-paper);
+  font-size: var(--pn-fs-h2);
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--pn-sh-md);
+  cursor: pointer;
+}
+.cv2-root .sp-fab:hover { background: var(--pn-brand-2); }
+.cv2-root .sp-fab:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 3px; }
+.cv2-root .sp-fab__k {
+  position: absolute;
+  right: 56px;
+  top: 14px;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-tick);
+  color: var(--pn-ink-3);
+  white-space: nowrap;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-xs);
+  padding: 2px 6px;
+}
+
+/* ---- the sheet ---- */
+.cv2-root .sp-sheet {
+  position: absolute;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  width: min(780px, calc(100% - 32px));
+  max-height: calc(100vh - 80px);
+  overflow: auto;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-lg);
+  box-shadow: var(--pn-sh-pop);
+}
+.cv2-root .sp-sheet__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--pn-line);
+}
+.cv2-root .sp-sheet__head .t-eyebrow { color: var(--pn-ink-2); }
+.cv2-root .sp-sheet__sub { font-size: var(--pn-fs-micro); color: var(--pn-ink-3); }
+.cv2-root .sp-x {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-sm);
+  cursor: pointer;
+  border-radius: var(--pn-r-xs);
+  padding: 2px 6px;
+}
+.cv2-root .sp-x:hover { background: var(--pn-hover); color: var(--pn-ink); }
+.cv2-root .sp-sheet__in { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px 4px; }
+.cv2-root .sp-sheet__glyph { color: var(--pn-brand); margin-top: 4px; flex: none; }
+.cv2-root .sp-sheet__in textarea {
+  flex: 1;
+  resize: none;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font-family: var(--pn-serif);
+  font-size: var(--pn-fs-h3);
+  line-height: 1.4;
+  color: var(--pn-ink);
+  min-height: 48px;
+}
+.cv2-root .sp-sheet__in textarea::placeholder,
+.cv2-root .sp-pop__text::placeholder { color: var(--pn-ink-4); }
+
+.cv2-root .sp-row { display: flex; align-items: center; gap: 8px; padding: 6px 14px; flex-wrap: wrap; }
+.cv2-root .sp-row__lbl {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-tick);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--pn-ink-4);
+  min-width: 52px;
+}
+
+/* a pickable chip */
+.cv2-root .sp-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 9px 0 7px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-surface);
+  font: inherit;
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cv2-root .sp-opt:hover { background: var(--pn-hover); }
+.cv2-root .sp-opt:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+.cv2-root .sp-opt--on,
+.cv2-root .sp-opt--on:hover { background: var(--pn-ink); color: var(--pn-paper); border-color: var(--pn-ink); }
+.cv2-root .sp-opt__m { font-family: var(--pn-mono); font-size: var(--pn-fs-tick); color: var(--pn-ink-4); }
+.cv2-root .sp-opt--on .sp-opt__m { color: var(--pn-line-2); }
+
+.cv2-root .sp-preview {
+  margin: 6px 14px 0;
+  padding: 8px 10px;
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-surface);
+  border: 1px dashed var(--pn-line-2);
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-2);
+  line-height: 1.5;
+}
+.cv2-root .sp-preview b { color: var(--pn-ink); font-weight: 600; }
+
+.cv2-root .sp-sheet__foot { display: flex; align-items: center; gap: 8px; padding: 10px 14px 12px; }
+.cv2-root .sp-hint { flex: 1; font-size: var(--pn-fs-micro); color: var(--pn-ink-3); min-width: 0; }
+.cv2-root .sp-hint--error { color: var(--pn-block); }
+.cv2-root .sp-keys { display: inline-flex; gap: 2px; }
+
+/* ---- the node popover ---- */
+.cv2-root .sp-pop {
+  position: fixed;
+  z-index: 40;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-pop);
+}
+/* the pointer toward the node: left edge, or right edge when flipped */
+.cv2-root .sp-pop::before {
+  content: '';
+  position: absolute;
+  left: -7px;
+  top: 22px;
+  width: 12px;
+  height: 12px;
+  background: var(--pn-card);
+  border-left: 1px solid var(--pn-line-2);
+  border-bottom: 1px solid var(--pn-line-2);
+  transform: rotate(45deg);
+}
+.cv2-root .sp-pop--flipped::before { left: auto; right: -7px; transform: rotate(-135deg); }
+.cv2-root .sp-pop__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--pn-line);
+  color: var(--pn-ink-2);
+}
+.cv2-root .sp-pop__t {
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  color: var(--pn-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.cv2-root .sp-pop__m { font-family: var(--pn-mono); font-size: var(--pn-fs-tick); color: var(--pn-ink-4); white-space: nowrap; }
+.cv2-root .sp-pop__verbs { display: flex; gap: 4px; padding: 8px 10px 0; flex-wrap: wrap; }
+.cv2-root .sp-pop__verbs .sp-opt { height: 22px; font-size: var(--pn-fs-micro); }
+.cv2-root .sp-pop__text {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  border: 0;
+  outline: 0;
+  resize: none;
+  background: transparent;
+  font: inherit;
+  font-size: var(--pn-fs-sm);
+  line-height: 1.45;
+  padding: 10px 12px 6px;
+  color: var(--pn-ink);
+  min-height: 62px;
+}
+.cv2-root .sp-pop__foot { display: flex; align-items: center; gap: 8px; padding: 6px 10px 10px; }
