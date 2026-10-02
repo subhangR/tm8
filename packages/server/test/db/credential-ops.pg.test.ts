@@ -631,6 +631,178 @@ describe('N13 / F-R13a — the providers overload: resume\'s window, resume\'s a
   });
 });
 
+describe('991 / 01a0fb56 — the 1-arg re-point carries the resume gate too (unreadable-posture path)', () => {
+  const rows = (s: string) => asOwner(async (c) => (await c.query<{ provider: string; launcher: string | null; touched: boolean }>(
+    `select provider, launcher_account_id::text launcher, updated_at <> recorded_at touched
+       from public.session_space_credentials where work_session_id = $1 order by provider`, [s])).rows);
+
+  it('a running or idle session, though resumed once, is refused (55000) and its rows are unchanged', async () => {
+    const cred = await create(A, { visibility: 'public' });
+    for (const status of ['running', 'idle']) {
+      const s = await session(ids[`member:S:${A}`]!);
+      await record(claims(A), s, cred);
+      await resumeWindow(s);
+      await recordResumeBinding(claims(A), s, cred);
+      await setStatus(s, status);
+      const before = await rows(s);
+      expect(await outcome(() => store.repointSession(claims(B), s))).toBe('55000');
+      expect(await rows(s)).toEqual(before);
+    }
+  });
+
+  it('a FRESH spawn (spawning, no resume on record) is refused (55000): B cannot take A\'s launch', async () => {
+    const cred = await create(A, { visibility: 'public' });
+    const s = await session(ids[`member:S:${A}`]!);
+    await record(claims(A), s, cred);
+    const before = await rows(s);
+    expect(before[0]!.launcher).toBe(accounts[A]);
+    expect(await outcome(() => store.repointSession(claims(B), s))).toBe('55000');
+    expect(await rows(s)).toEqual(before);
+  });
+
+  it('in the resume window, a member who cannot act as the persona is refused (42501), rows unchanged; the persona\'s own member re-points', async () => {
+    const cred = await create(A, { visibility: 'public' });
+    const s = await session(ids[`member:S:${A}`]!);
+    await asOwner((c) => c.query(
+      `insert into public.edges(space_id, src_id, dst_id, type, created_by) values ($1, $2, $3, 'relates_to', $3)`,
+      [ids.S, s, ids[`member:S:${A}`]]));
+    await record(claims(A), s, cred);
+    await resumeWindow(s);
+    const before = await rows(s);
+    expect(await outcome(() => store.repointSession(claims(B), s))).toBe('42501');
+    expect(await rows(s)).toEqual(before);
+    expect(await store.repointSession(claims(A), s)).toMatchObject({ launcherAccountId: accounts[A] });
+  });
+
+  it('the legitimate resume path — exited, execution_resume, 1-arg re-point — re-points to the resumer', async () => {
+    const cred = await create(A, { visibility: 'public' });
+    const s = await session(ids[`member:S:${A}`]!);
+    await record(claims(A), s, cred);
+    await setStatus(s, 'exited');
+    await db.rpc(claims(B), 'execution_resume', [s, RESUME_CAP]);
+    expect(await store.repointSession(claims(B), s)).toMatchObject({
+      launcherAccountId: accounts[B], credentials: [{ provider: 'anthropic', spaceCredentialId: cred }],
+    });
+  });
+
+});
+
+
+describe('991 / 01a0fb58 — expire_pending_space_credentials: an identity is required, agents stay admitted, and nothing in SQL calls it', () => {
+  it('no identity in the claims is refused and deletes nothing; browser and agent run it', async () => {
+    // A pending login whose terminal has closed and whose expiry has passed: what the sweep removes.
+    const login = await store.startLogin(claims(A), { spaceId: ids.S!, provider: 'anthropic', label: label('expire'), sessionCap: 100 });
+    const expired = login.credential.id;
+    await asOwner(async (c) => {
+      await c.query('update public.credential_sessions set finished_at = now() where space_credential_id = $1', [expired]);
+      await c.query(`update public.space_credentials set pending_expires_at = now() - interval '1 hour' where id = $1`, [expired]);
+    });
+    const still = async () => (await asOwner((c) => c.query('select 1 from public.space_credentials where id = $1', [expired]))).rowCount;
+    expect(await outcome(() => store.expirePending({ requestId: randomUUID() } as unknown as DbClaims))).not.toBe('ok');
+    expect(await still()).toBe(1);
+    expect(await store.expirePending(agent(A))).toBeGreaterThanOrEqual(1);
+    expect(await still()).toBe(0);
+    expect(await outcome(() => store.expirePending(claims(A)))).toBe('ok');
+  });
+
+  it('caller set, SQL side: no function body calls it (it is a top-level door only)', async () => {
+    const callers = await asOwner(async (c) => (await c.query<{ fn: string }>(
+      `select p.oid::regprocedure::text fn from pg_proc p
+        where p.prosrc ~ 'expire_pending_space_credentials' and p.proname <> 'expire_pending_space_credentials'`)).rows);
+    expect(callers).toEqual([]);
+  });
+});
+
+describe('991 / 01a0fb59-5ec0 — F-R13b: a re-point tombstones the unresolved providers\' rows; history readers keep them, live readers ignore them', () => {
+  const live = (s: string) => asOwner(async (c) => (await c.query(
+    'select provider from public.session_space_credentials where work_session_id = $1', [s])).rows);
+  const history = (s: string) => asOwner(async (c) => (await c.query<{ provider: string; credential: string; superseded_by: string | null }>(
+    `select provider, space_credential_id::text credential, superseded_by_account_id::text superseded_by
+       from public.session_space_credential_history where work_session_id = $1`, [s])).rows);
+
+  const openaiKey = async (): Promise<string> => (await service.create(claims(A), ids.S!, {
+    provider: 'openai', shape: 'api_key', label: label('A openai'), secret: secretFor(A), visibility: 'public',
+  })).id;
+
+  async function privateLoginOfA(stem: string): Promise<string> {
+    const login = await store.startLogin(claims(A), { spaceId: ids.S!, provider: 'anthropic', label: label(stem), sessionCap: 100 });
+    await store.finishLogin(claims(A), login.workSessionId, true);
+    await store.claim(claims(A), login.credential.id);
+    return login.credential.id;
+  }
+
+  it('resume-then-scrub: B\'s untouched run is resumed onto another source before A scrubs — the transcript is still listed, the row is history', async () => {
+    const cred = await privateLoginOfA('tomb-scrub');
+    // Public while B launches; then A makes it private (B's run already ended).
+    await store.setVisibility(claims(A), cred, 'public');
+    const byB = await session(ids[`member:S:${B}`]!);
+    await record(claims(B), byB, cred);
+    await setStatus(byB, 'exited');
+    await store.setVisibility(claims(A), cred, 'private');
+    // B resumes before the scrub; the resume resolves anthropic to a non-space source.
+    await resumeWindow(byB, B);
+    await store.repointSession(claims(B), byB, []);
+    expect(await live(byB)).toEqual([]);
+    expect(await history(byB)).toEqual([{ provider: 'anthropic', credential: cred, superseded_by: accounts[B] }]);
+    await setStatus(byB, 'exited');
+    await expect(store.foreignLaunches(claims(A), cred)).resolves.toEqual([
+      { workSessionId: byB, provider: 'anthropic', nativeSessionId: null },
+    ]);
+  });
+
+  it('usage still lists a re-pointed session\'s OLD credential, marked supersededAt; the kept one is live (supersededAt null)', async () => {
+    const old = await create(A, { visibility: 'public' });
+    const kept = await openaiKey();
+    const s = await session(ids[`member:S:${A}`]!);
+    await record(claims(A), s, old, undefined, 'anthropic');
+    await record(claims(A), s, kept, undefined, 'openai');
+    await resumeWindow(s);
+    await store.repointSession(claims(A), s, ['openai']);
+    type Row = { workSessionId: string; credentialId: string; supersededAt: string | null };
+    const usageOf = async (id: string) =>
+      (await db.rpc<{ sessions: Row[] }>(claims(A), 'space_credential_usage', [id, 100])).sessions.filter((r) => r.workSessionId === s);
+    const oldUsage = await usageOf(old);
+    expect(oldUsage).toHaveLength(1);
+    expect(oldUsage[0]!.supersededAt).not.toBeNull();
+    const keptUsage = await usageOf(kept);
+    expect(keptUsage).toHaveLength(1);
+    expect(keptUsage[0]!.supersededAt).toBeNull();
+  });
+
+  it('live readers ignore a tombstone: the revoke of a superseded credential neither blocks the next re-point nor lists the session, and R8 and live-sessions skip it', async () => {
+    const gone = await create(A, { visibility: 'public' });
+    const kept = await openaiKey();
+    const s = await session(ids[`member:S:${A}`]!);
+    await record(claims(A), s, gone, undefined, 'anthropic');
+    await record(claims(A), s, kept, undefined, 'openai');
+    await resumeWindow(s);
+    await store.repointSession(claims(A), s, ['openai']);
+    // The session is live again ('spawning'); the superseded credential is revoked.
+    await store.revoke(claims(A), gone);
+    // 239's active/usable check counts only live rows: still in the window, the re-point succeeds.
+    expect(await outcome(() => store.repointSession(claims(A), s))).toBe('ok');
+    // The R8 sweep (node admin) and the live-sessions list do not name the session for `gone`.
+    const swept = await db.rpc<Array<{ workSessionId: string }>>(claims(OWN, 'browser', true), 'sweep_unusable_space_credential_sessions', [1000]);
+    expect(swept.map((r) => r.workSessionId)).not.toContain(s);
+    const liveOnGone = await db.rpc<unknown>(claims(A), 'space_credential_live_sessions', [gone]);
+    expect(JSON.stringify(liveOnGone)).not.toContain(s);
+  });
+
+  it('posture: the history table matches session_space_credentials — RLS on, member-select policy, no grant to tm8_app or public', async () => {
+    const rows = await asOwner(async (c) => (await c.query<{ rls: boolean; grants: string | null; policy: string }>(
+      `select c.relrowsecurity rls,
+              (select string_agg(distinct grantee, ',') from information_schema.role_table_grants g
+                where g.table_name = c.relname and grantee <> 'tm8_graph_owner') grants,
+              (select pg_get_expr(polqual, polrelid) from pg_policy where polrelid = c.oid) policy
+         from pg_class c where c.relname in ('session_space_credentials', 'session_space_credential_history')
+        order by c.relname`)).rows);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toEqual(rows[1]);
+    expect(rows[0]!.rls).toBe(true);
+    expect(rows[0]!.grants).toBeNull();
+  });
+});
+
 describe('R8 / N8 — the sweep finds and kills live sessions on a revoked or wrongly-private credential', () => {
   it('the reader: revoked (any launcher) and private-by-non-owner; not the owner\'s, not ended ones; node admin only', async () => {
     const revoked = await create(A, { visibility: 'public' });

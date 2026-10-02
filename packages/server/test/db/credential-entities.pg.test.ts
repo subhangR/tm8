@@ -384,6 +384,8 @@ describe('T35 / R6 / N6 — the recorder and the repoint gate', () => {
     await record(claims(B), s, cred.id);
     await setStatus(s, 'exited');
     await store.setVisibility(claims(A), cred.id, 'private');
+    // 991 (01a0fb56): the 1-arg re-point runs only in the resume window.
+    await db.rpc(claims(B), 'execution_resume', [s, 100_000]);
     expect(await outcome(() => db.rpc(claims(B), 'repoint_session_space_credentials', [s]))).toBe('42501:not_usable');
     expect(await outcome(() => db.rpc(claims(A), 'repoint_session_space_credentials', [s]))).toBe('ok');
   });

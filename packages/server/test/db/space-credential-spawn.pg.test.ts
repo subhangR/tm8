@@ -305,6 +305,8 @@ describe('C3 — resume authorises the resumer, then re-points the launcher to t
     expect((await recorded(sessionId))[0]?.launcher_account_id).toBe(accounts[A]);
     const resumed = await resolve(claims(B), sessionId, launch({}, postureOf(l)), { resume: true });
     expect(resumed.launch.spaceCredentialIds).toEqual({ anthropic: ids.DEFAULT });
+    // 991 (01a0fb56): the re-point runs inside execution_resume's window, as SpawnService's does.
+    await db.rpc(claims(B), 'execution_resume', [sessionId, 100_000]);
     const repoint = await port.repointSession(claims(B), sessionId);
     expect(repoint).toEqual({ ok: true, credentials: [{ provider: 'anthropic', spaceCredentialId: ids.DEFAULT }] });
     expect(await recorded(sessionId)).toEqual([
@@ -332,6 +334,7 @@ describe('C3 — resume authorises the resumer, then re-points the launcher to t
     await store.revoke(claims(A), credential.id);
     const e = await refusal(resolve(claims(B), sessionId, launch({}, postureOf(l)), { resume: true }));
     expect(e.message).toContain('has been deleted');
+    await db.rpc(claims(B), 'execution_resume', [sessionId, 100_000]);
     expect(await port.repointSession(claims(B), sessionId)).toEqual({ ok: false, reason: 'inactive' });
     expect((await recorded(sessionId))[0]?.launcher_account_id).toBe(accounts[A]);
   });

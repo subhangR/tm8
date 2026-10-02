@@ -86,6 +86,12 @@ async function setSessionStatus(sessionId: string, status: string): Promise<void
   });
 }
 
+/** 991 (01a0fb56): a re-point runs only in the resume window: the run ended, then execution_resume. */
+async function resumeWindow(sessionId: string, who: DbClaims): Promise<void> {
+  await setSessionStatus(sessionId, 'exited');
+  await db.rpc(who, 'execution_resume', [sessionId, 100_000]);
+}
+
 function manifest(credentials: Record<string, string>, sources?: Record<string, string>): Record<string, unknown> {
   const credentialSources = sources ?? Object.fromEntries(Object.keys(credentials).map((p) => [p, 'space']));
   return { launch: { credentialSources, spaceCredentialIds: credentials, effectiveCredentialSources: credentialSources } };
@@ -862,14 +868,15 @@ describe('the session record (D8, M7, M9) and containment (M6)', () => {
     const { credential } = await newApiKey(A);
     const s = await session(ids.S!, ids.TB!);
     await recordManifest(agent(A), s, manifest({ anthropic: credential.id }));
-    await setSessionStatus(s, 'idle');
+    await resumeWindow(s, agent(B));
     const repointed = await store.repointSession(agent(B), s);
     expect(repointed).toMatchObject({ launcherAccountId: accounts[B], credentials: [{ provider: 'anthropic', spaceCredentialId: credential.id }] });
     expect((await recorded(s))[0]!.launcher_account_id).toBe(accounts[B]);
     await expect(store.repointSession(claims(OUT), s)).rejects.toThrow();
 
     await store.revoke(claims(A), credential.id);
-    await expect(store.repointSession(agent(A), s)).rejects.toThrow(/no longer active/);
+    // Still in B's resume window; A may not act as B's persona, so B asks again.
+    await expect(store.repointSession(agent(B), s)).rejects.toThrow(/no longer active/);
     expect((await recorded(s))[0]!.launcher_account_id).toBe(accounts[B]);
   });
 
@@ -881,7 +888,7 @@ describe('the session record (D8, M7, M9) and containment (M6)', () => {
     const { credential } = await newApiKey(A);
     const s = await session(ids.S!, ids.TB!);
     await recordManifest(agent(A), s, manifest({ anthropic: credential.id }));
-    await setSessionStatus(s, 'idle');
+    await resumeWindow(s, agent(B));
     let release!: () => void;
     const gate = new Promise<void>((r) => { release = r; });
     let lockedInTx!: () => void;
@@ -911,7 +918,7 @@ describe('the session record (D8, M7, M9) and containment (M6)', () => {
     const { credential } = await newApiKey(A);
     const s = await session(ids.S!, ids.TB!);
     await recordManifest(agent(A), s, manifest({ anthropic: credential.id }));
-    await setSessionStatus(s, 'idle');
+    await resumeWindow(s, agent(B));
     let release!: () => void;
     const gate = new Promise<void>((r) => { release = r; });
     let repointedInTx!: () => void;
