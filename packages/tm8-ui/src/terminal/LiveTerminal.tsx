@@ -27,16 +27,12 @@ import {
 } from './pty/terminalSize.js';
 import {
   TERMINAL_CURSOR_INACTIVE_STYLE,
-  TERMINAL_CURSOR_STYLE,
-  TERMINAL_FONT_SIZE,
-  TERMINAL_FONT_STACK,
-  TERMINAL_FONT_WEIGHT,
-  TERMINAL_FONT_WEIGHT_BOLD,
-  TERMINAL_LETTER_SPACING,
-  TERMINAL_LINE_HEIGHT,
-  TERMINAL_SCROLLBACK,
-  buildTerminalTheme,
+  changedTerminalOptions,
+  terminalStyleOptions,
+  type ResolvedXterm,
+  type TerminalStyleOptions,
 } from './terminalTheme.js';
+import { getStyleState, subscribeStyle } from '../theme/style-store';
 import { TerminalHost } from './TerminalHost';
 
 function describeUploadFailure(error: unknown): string {
@@ -195,6 +191,19 @@ export interface LiveTerminalProps {
 }
 
 /**
+ * `--pn-term-padding` on the `.xterm` element. Not an xterm option: FitAddon
+ * subtracts that element's padding from the host box, so the grid refits
+ * around it. Written only when the value moves, so the default (0) leaves the
+ * element exactly as xterm created it. Returns whether it moved.
+ */
+function applyTerminalPadding(term: Terminal, padding: number, appliedRef: { current: number }): boolean {
+  if (appliedRef.current === padding || !term.element) return false;
+  term.element.style.padding = padding ? `${padding}px` : '';
+  appliedRef.current = padding;
+  return true;
+}
+
+/**
  * THE LIVE TERMINAL — xterm mounted into the reserved TerminalHost box.
  *
  * Ported from packages/ui's SessionTerminal at the transport/render seam
@@ -267,10 +276,14 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       The effect owns the retry/backoff machinery; nothing outside it may
       re-implement that, so it publishes the entry point instead. */
   const scheduleResizeRef = useRef<(() => void) | null>(null);
-  /** The live render size, readable from inside the mount effect without making
+  /** The device font size, readable from inside the mount effect without making
       that effect depend on the prop. See the `fontSize` option below. */
-  const fontSizeRef = useRef(fontSize ?? TERMINAL_FONT_SIZE);
-  fontSizeRef.current = fontSize ?? TERMINAL_FONT_SIZE;
+  const deviceFontSizeRef = useRef(fontSize);
+  deviceFontSizeRef.current = fontSize;
+  /** What the active style last put on THIS terminal, so a style change
+      assigns only the options that moved (see the style effect below). */
+  const appliedStyleRef = useRef<TerminalStyleOptions | null>(null);
+  const appliedPaddingRef = useRef(0);
 
   readOnlyRef.current = !live;
   onResizeRef.current = onResize;
@@ -340,33 +353,33 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
     // it, never to the next one this component is pointed at.
     setRefusal(null);
 
+    /* Theme, font, weights, spacing, scrollback and cursor come from the
+       ACTIVE STYLE's resolved xterm table (spec §1.7), read at mount and then
+       kept current by the style effect below — never by a remount.
+       `deviceFontSizeRef` and not the `fontSize` prop: this effect does not
+       depend on it (a size change must refit, never remount and lose the
+       session's scrollback), so reading the prop here would pin the mount to
+       whatever the first render happened to carry. */
+    const xterm = getStyleState().active.xterm;
+    const styled = terminalStyleOptions(xterm, deviceFontSizeRef.current);
+    appliedStyleRef.current = styled;
+    appliedPaddingRef.current = 0;
     const term = new Terminal({
       allowProposedApi: true,
       // Hard-disabled everywhere (maestro main ef0dcbe) — not a setting.
       cursorBlink: false,
-      cursorStyle: TERMINAL_CURSOR_STYLE,
       cursorInactiveStyle: TERMINAL_CURSOR_INACTIVE_STYLE,
       disableStdin: readOnlyRef.current,
-      fontFamily: TERMINAL_FONT_STACK,
-      /* `fontSizeRef` and not the `fontSize` prop: this effect does not depend
-         on it (a size change must refit, never remount and lose the session's
-         scrollback), so reading the prop here would pin the mount to whatever
-         the first render happened to carry. */
-      fontSize: fontSizeRef.current,
-      fontWeight: TERMINAL_FONT_WEIGHT,
-      fontWeightBold: TERMINAL_FONT_WEIGHT_BOLD,
-      lineHeight: TERMINAL_LINE_HEIGHT,
-      letterSpacing: TERMINAL_LETTER_SPACING,
       // A full-screen agent turns on mouse tracking, which hands every drag to
       // the agent. Shift+drag forces xterm's own selection on Linux/Windows;
       // this makes Option+drag do the same on macOS.
       macOptionClickForcesSelection: true,
-      theme: buildTerminalTheme(container),
-      scrollback: TERMINAL_SCROLLBACK,
+      ...styled,
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(container);
+    applyTerminalPadding(term, xterm.options.padding, appliedPaddingRef);
     patchXtermRenderServiceDimensions(term);
     termRef.current = term;
     fitRef.current = fit;
@@ -568,9 +581,10 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       // Bump-then-restore forces xterm to re-measure its char cell after a
       // web font finishes loading — assigning the same value again is a
       // no-op to xterm's change detection.
-      term.options.fontFamily = TERMINAL_FONT_STACK;
-      term.options.fontSize = fontSizeRef.current + 1;
-      term.options.fontSize = fontSizeRef.current;
+      const { fontFamily, fontSize: size } = appliedStyleRef.current!;
+      term.options.fontFamily = fontFamily;
+      term.options.fontSize = size + 1;
+      term.options.fontSize = size;
       try {
         term.refresh(0, term.rows - 1);
       } catch {
@@ -836,31 +850,49 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
   }, [live]);
 
   /**
-   * FONT SIZE, AS A REFIT AND NOT A REMOUNT.
+   * STYLE AND FONT SIZE, AS A REFIT AND NOT A REMOUNT (spec §1.7).
    *
    * Its own effect, and NOT a dependency of the mount effect above, because a
-   * remount tears down the socket and disposes the terminal: changing the font
-   * would drop the attachment, replay the ring and lose the caret — a visible
-   * flash and a round trip, every time a user taps A+.
+   * remount tears down the socket and disposes the terminal: changing a colour
+   * or the font would drop the attachment, replay the ring and lose the caret —
+   * a visible flash and a round trip, every time a user taps A+ or edits their
+   * style. Only `term.options.*` are assigned; the PTY socket, the buffer and
+   * the scrollback ring are never touched (a smaller `scrollback` applies
+   * going forward, as xterm trims on its own).
    *
-   * The refit that follows RESIZES THE PTY. That is intended and is the whole
-   * point of the control: shrinking the font buys columns, and columns are only
-   * real once the agent on the other end has been told about them. It goes
-   * through `scheduleResize` rather than calling `fit()` directly so it inherits
-   * the readiness gate and the backoff — xterm's cell metrics do not recompute
-   * synchronously when `fontSize` is assigned, so an immediate fit divides by
-   * the OLD cell and lands on a wrong grid.
+   * The style arrives from the store's subscriber list, so a change reaches
+   * every open terminal in the same tick as the UI repaint. Font size: a
+   * style's `auto` defers to the device (`fontSize`, the phone's stored size)
+   * and then 13; a number in the style wins over the device.
+   *
+   * The refit that follows can RESIZE THE PTY. That is intended: a smaller
+   * font buys columns, and columns are only real once the agent on the other
+   * end has been told about them. It goes through `scheduleResize` rather than
+   * calling `fit()` directly so it inherits the readiness gate and the backoff
+   * — xterm's cell metrics do not recompute synchronously when a font option
+   * is assigned, so an immediate fit divides by the OLD cell and lands on a
+   * wrong grid.
    */
   useEffect(() => {
-    const term = termRef.current;
-    if (!term) return;
-    const next = fontSize ?? TERMINAL_FONT_SIZE;
-    if (term.options.fontSize === next) return;
-    term.options.fontSize = next;
-    /* One rAF: the option has been assigned, the renderer re-measures on its
-       next frame, and `sendResize`'s own readiness gate retries if it has not.
-       Same reasoning as the counter-scale re-measure in the mount effect. */
-    requestAnimationFrame(() => scheduleResizeRef.current?.());
+    const apply = (xterm: ResolvedXterm) => {
+      const term = termRef.current;
+      const applied = appliedStyleRef.current;
+      if (!term || !applied) return;
+      const next = terminalStyleOptions(xterm, fontSize);
+      const changed = changedTerminalOptions(applied, next);
+      appliedStyleRef.current = next;
+      const paddingMoved = applyTerminalPadding(term, xterm.options.padding, appliedPaddingRef);
+      const keys = Object.keys(changed) as (keyof TerminalStyleOptions)[];
+      if (keys.length === 0 && !paddingMoved) return;
+      for (const key of keys) (term.options as unknown as Record<string, unknown>)[key] = changed[key];
+      /* One rAF: the options have been assigned, the renderer re-measures on
+         its next frame, and `sendResize`'s own readiness gate retries if it
+         has not. Same reasoning as the counter-scale re-measure in the mount
+         effect. */
+      requestAnimationFrame(() => scheduleResizeRef.current?.());
+    };
+    apply(getStyleState().active.xterm);
+    return subscribeStyle((state) => apply(state.active.xterm));
   }, [fontSize]);
 
   return (

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const xterm = vi.hoisted(() => {
@@ -27,6 +27,8 @@ const xterm = vi.hoisted(() => {
     cols = 80;
     element: HTMLDivElement | null = null;
     options: Record<string, unknown> = {};
+    /** Every option assigned after construction, in order. */
+    assigned: string[] = [];
     _core = {
       _renderService: {
         _renderer: {
@@ -36,7 +38,14 @@ const xterm = vi.hoisted(() => {
     };
 
     constructor(options: Record<string, unknown>) {
-      this.options = options;
+      const assigned = this.assigned;
+      this.options = new Proxy(options, {
+        set(target, key, value) {
+          assigned.push(String(key));
+          target[key as string] = value;
+          return true;
+        },
+      });
       xterm.instances.push(this);
     }
 
@@ -56,6 +65,7 @@ const transport = vi.hoisted(() => ({
     | null,
   mode: 'drive' as 'view' | 'drive' | undefined,
   resize: vi.fn(),
+  closeSession: vi.fn(),
 }));
 const sizes = vi.hoisted(() => ({
   clientFittedSessions: new Set<string>(),
@@ -64,18 +74,6 @@ const sizes = vi.hoisted(() => ({
 
 vi.mock('@xterm/xterm', () => ({ Terminal: xterm.FakeTerminal }));
 vi.mock('@xterm/addon-fit', () => ({ FitAddon: class { fit = vi.fn(); } }));
-vi.mock('./terminalTheme.js', () => ({
-  TERMINAL_CURSOR_INACTIVE_STYLE: 'none',
-  TERMINAL_CURSOR_STYLE: 'block',
-  TERMINAL_FONT_SIZE: 13,
-  TERMINAL_FONT_STACK: 'monospace',
-  TERMINAL_FONT_WEIGHT: 400,
-  TERMINAL_FONT_WEIGHT_BOLD: 600,
-  TERMINAL_LETTER_SPACING: 0,
-  TERMINAL_LINE_HEIGHT: 1,
-  TERMINAL_SCROLLBACK: 100,
-  buildTerminalTheme: () => ({}),
-}));
 vi.mock('./pty/ptyTransport.js', () => ({
   ptyTransport: {
     onSize: (handler: NonNullable<typeof transport.sizeHandler>) => {
@@ -92,7 +90,7 @@ vi.mock('./pty/ptyTransport.js', () => ({
     onAttachRefused: () => () => {},
     onAttachRefusalCleared: () => () => {},
     openSession: vi.fn(),
-    closeSession: vi.fn(),
+    closeSession: transport.closeSession,
     resize: transport.resize,
     write: vi.fn(),
   },
@@ -115,6 +113,8 @@ vi.mock('./pty/terminalSize.js', () => ({
   setLastFittedSize: vi.fn(),
 }));
 
+import type { StyleDoc } from '@tm8/contract';
+import { __resetStyleStoreForTests, getStyleState, selectStyle } from '../theme/style-store';
 import { LiveTerminal } from './LiveTerminal';
 
 class FakeResizeObserver {
@@ -129,6 +129,9 @@ beforeEach(() => {
   transport.sizeHandler = null;
   transport.mode = 'drive';
   transport.resize.mockReset();
+  transport.closeSession.mockReset();
+  localStorage.clear();
+  __resetStyleStoreForTests();
   sizes.clientFittedSessions.clear();
   sizes.serverPtySizes.clear();
   vi.stubGlobal('ResizeObserver', FakeResizeObserver);
@@ -227,5 +230,87 @@ describe('LiveTerminal geometry under a view-only attach', () => {
 
     expect(terminal.resize).toHaveBeenLastCalledWith(111, 33);
     expect(transport.resize).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Spec §1.7: every open terminal takes its theme and options from the store's
+ * resolved xterm table, and a style change assigns only the options that moved
+ * — never a dispose, a remount or a socket teardown.
+ */
+describe('LiveTerminal live style', () => {
+  const frames: FrameRequestCallback[] = [];
+  beforeEach(() => {
+    frames.length = 0;
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      frames.push(cb);
+      return frames.length;
+    });
+    vi.stubGlobal('cancelAnimationFrame', () => {});
+  });
+
+  const personal = 'personal:01a0fc8d-58a1-7c23-b375-144a0c21d460';
+  /* Same foundation as the mounted style, so only `vars` move. */
+  const use = (vars: Record<string, string>) => {
+    const doc: StyleDoc = { schemaVersion: 1, foundation: getStyleState().active.foundation, vars, css: null };
+    act(() => {
+      expect(selectStyle(personal, doc)).toBe(true);
+    });
+  };
+
+  it('mounts with the active style\'s xterm theme and options', () => {
+    render(<LiveTerminal sessionId="styled" live />);
+    const terminal = xterm.instances[0]!;
+    const { theme, options } = getStyleState().active.xterm;
+
+    expect(terminal.options.theme).toEqual(theme);
+    expect(terminal.options.fontFamily).toBe(options.fontFamily);
+    expect(terminal.options.fontWeightBold).toBe(options.fontWeightBold);
+    expect(terminal.options.scrollback).toBe(options.scrollback);
+    expect(terminal.options.fontSize).toBe(13);
+    expect(terminal.element!.style.padding).toBe('');
+  });
+
+  it('a theme change assigns options.theme and never disposes', () => {
+    render(<LiveTerminal sessionId="restyled" live />);
+    const terminal = xterm.instances[0]!;
+    terminal.assigned.length = 0;
+    frames.length = 0;
+
+    use({ '--pn-x-term-fg': 'rgb(18, 52, 86)' });
+
+    expect((terminal.options.theme as { foreground: string }).foreground).toBe('rgb(18, 52, 86)');
+    expect(terminal.assigned).toEqual(['theme']);
+    expect(frames).toHaveLength(1);
+    expect(terminal.dispose).not.toHaveBeenCalled();
+    expect(transport.closeSession).not.toHaveBeenCalled();
+    expect(xterm.instances).toHaveLength(1);
+  });
+
+  it('assigns only the options that moved, and padding on the xterm element', () => {
+    render(<LiveTerminal sessionId="options" live />);
+    const terminal = xterm.instances[0]!;
+    terminal.assigned.length = 0;
+
+    use({ '--pn-term-line-height': '1.4', '--pn-term-cursor-style': 'bar', '--pn-term-padding': '8' });
+
+    expect(terminal.assigned.sort()).toEqual(['cursorStyle', 'lineHeight']);
+    expect(terminal.options.lineHeight).toBe(1.4);
+    expect(terminal.options.cursorStyle).toBe('bar');
+    expect(terminal.element!.style.padding).toBe('8px');
+    expect(terminal.dispose).not.toHaveBeenCalled();
+  });
+
+  it('font size: auto defers to the device size, a number in the style wins', () => {
+    render(<LiveTerminal sessionId="sized" live fontSize={11} />);
+    const terminal = xterm.instances[0]!;
+    expect(terminal.options.fontSize).toBe(11);
+
+    use({ '--pn-term-font-size': '18' });
+    expect(terminal.options.fontSize).toBe(18);
+
+    use({ '--pn-term-font-size': 'auto' });
+    expect(terminal.options.fontSize).toBe(11);
+    expect(terminal.dispose).not.toHaveBeenCalled();
   });
 });
