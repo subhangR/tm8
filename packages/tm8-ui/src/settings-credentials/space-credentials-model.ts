@@ -12,6 +12,7 @@ import type {
   CredentialsSpacePolicyView,
   CredentialsSpaceReadinessView,
   CredentialReadinessLaunchReason,
+  CredentialSeedingProvider,
   SpaceCredentialProviderName,
   SpaceCredentialStoredProviderName,
   SpaceCredentialView,
@@ -452,4 +453,46 @@ export function canPollSentence(view: CredentialsSpaceReadinessView): string {
 export function launchReasonWord(view: CredentialsSpaceReadinessView, provider: SpaceCredentialProviderName): string | null {
   const reason = view.canLaunch.providers[provider]?.reason ?? null;
   return reason ? LAUNCH_REASON_WORD[reason] : null;
+}
+
+// -- seeding (credentials release 1, S7b) ------------------------------------
+//
+// The release-2 gate is per provider the space USES (spec §8.3, S9), and it is
+// the space's answer, not the viewer's: a member's private credential seeds
+// that member only. Used = named by an agent session in the last 30 days, or
+// GitHub for tracking when a project is on github.com.
+
+const SEEDING_REASON_WORD: Record<NonNullable<CredentialSeedingProvider['reason']>, string> = {
+  no_credential: 'no credential in this space',
+  no_default: 'no space default — a credential only its owner launches on',
+  stale: 'its credential has gone stale — log in again or replace the key',
+  policy_excludes_space: 'this space’s policy does not allow space credentials',
+  no_space_owned_credential: 'no GitHub credential this space owns, for tracking',
+};
+
+/** One used provider's seeding reason, or null when it is seeded. */
+export function seedingReasonWord(view: CredentialsSpaceReadinessView, provider: SpaceCredentialProviderName): string | null {
+  const reason = view.seeding.providers[provider]?.reason ?? null;
+  return reason ? SEEDING_REASON_WORD[reason] : null;
+}
+
+/** What a used provider is used for, in words. */
+export function seedingUseWord(view: CredentialsSpaceReadinessView, provider: SpaceCredentialProviderName): string {
+  const needs = view.seeding.providers[provider]?.needs ?? [];
+  if (needs.includes('launch') && needs.includes('poll')) return 'launches and tracking';
+  return needs.includes('poll') ? 'tracking pull requests and CI' : 'launches';
+}
+
+/** The seeding sentence: which providers this space uses, and whether each is seeded. */
+export function seedingSentence(view: CredentialsSpaceReadinessView): string {
+  const s = view.seeding;
+  if (s.state === 'idle') {
+    return `Idle: no agent session in this space in the last ${s.window}, so it does not hold up release 2.`;
+  }
+  if (s.usedProviders.length === 0) {
+    return `Seeded: this space’s sessions in the last ${s.window} named no provider.`;
+  }
+  const uses = `This space uses ${nameList(s.usedProviders)}`;
+  if (s.state === 'green') return `${uses}, and every one has a space credential. Ready for release 2.`;
+  return `${uses}. Not seeded yet: ${nameList(s.missing)}. Connect a space credential under ${CONNECT_WHERE} before release 2 removes personal and node logins.`;
 }

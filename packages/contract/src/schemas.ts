@@ -93,7 +93,7 @@ import type {
   ServiceKeyProviderName, ServiceKeyView,
   CredentialPolicySource, CredentialsSpaceCommandInput, CredentialsSpaceCreateInput,
   CredentialsSpaceDeleteResult, CredentialsSpaceListView, CredentialsSpacePolicySetInput,
-  CredentialsSpacePolicySetResult, CredentialsSpacePolicyView, CredentialsSpaceReadinessView, CredentialsSpaceRekeyInput,
+  CredentialsSpacePolicySetResult, CredentialsSpacePolicyView, CredentialsSpaceReadinessView, CredentialSeedingView, CredentialsSpaceRekeyInput,
   CredentialsSpaceRenameInput, CredentialsSpaceSetVisibilityInput, CredentialsSpaceAddMineInput, CredentialsSpaceDefaultConsentInput,
   NodeCredentialPolicyEntry, NodeCredentialStatusEntry,
   NodeCredentialsPolicySetInput, NodeCredentialsStatusView, NodeMetricsView, SpaceCredentialPolicyEntry,
@@ -2360,6 +2360,32 @@ const CredentialReadinessProviderSchema = z.object({
   reason: z.enum(['no_credential', 'stale', 'policy_excludes_space']).nullable(),
 }).strict();
 
+const CredentialSeedingPollReasonSchema = z.enum(['no_space_owned_credential', 'stale']);
+const CredentialSeedingLaunchReasonSchema = z.enum(['policy_excludes_space', 'stale', 'no_default', 'no_credential']);
+const CredentialSeedingProviderSchema = z.object({
+  ready: z.boolean(),
+  needs: z.array(z.enum(['launch', 'poll'])),
+  launchReason: CredentialSeedingLaunchReasonSchema.nullable(),
+  pollReason: CredentialSeedingPollReasonSchema.nullable(),
+  reason: z.union([CredentialSeedingLaunchReasonSchema, CredentialSeedingPollReasonSchema]).nullable(),
+}).strict();
+
+const CredentialSeedingViewSchema: z.ZodType<CredentialSeedingView> = z.object({
+  window: z.string(),
+  agentSessions: z.number().int().nonnegative(),
+  sessionsWithoutRecord: z.number().int().nonnegative(),
+  githubProjects: z.number().int().nonnegative(),
+  usedProviders: z.array(SpaceCredentialProviderNameSchema),
+  providers: z.object({
+    anthropic: CredentialSeedingProviderSchema.optional(),
+    openai: CredentialSeedingProviderSchema.optional(),
+    github: CredentialSeedingProviderSchema.optional(),
+  }).strict(),
+  missing: z.array(SpaceCredentialProviderNameSchema),
+  state: z.enum(['green', 'red', 'idle']),
+  readyForCut: z.boolean(),
+}).strict();
+
 export const CredentialsSpaceReadinessViewSchema: z.ZodType<CredentialsSpaceReadinessView> = z.object({
   spaceId: z.string(),
   canLaunch: z.object({
@@ -2378,6 +2404,7 @@ export const CredentialsSpaceReadinessViewSchema: z.ZodType<CredentialsSpaceRead
     activeSpaceOwnedCredentials: z.number().int().nonnegative(),
     reason: z.enum(['no_space_owned_credential', 'stale']).nullable(),
   }).strict(),
+  seeding: CredentialSeedingViewSchema,
 }).strict();
 
 export const CredentialsSpacePolicySetInputSchema: z.ZodType<CredentialsSpacePolicySetInput> = z.object({

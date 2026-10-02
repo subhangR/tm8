@@ -53,6 +53,9 @@ import {
   canClaim,
   canLaunchSentence,
   canPollSentence,
+  seedingReasonWord,
+  seedingSentence,
+  seedingUseWord,
   launchReasonWord,
   canManage,
   canMyDefault,
@@ -195,7 +198,9 @@ export function SpaceCredentialsSection({ port, heading = 'Space credentials', s
 }
 
 /**
- * S7 readiness: two thresholds, each with its own sentence. The connect action
+ * S7 readiness: two thresholds, each with its own sentence, plus S7b's seeding
+ * block — the release-2 gate over the providers THIS SPACE uses (a space
+ * answer, not the viewer's). The connect action
  * takes the member to that provider's group, where adding a key or logging in
  * lives. Nothing here disables anything.
  */
@@ -213,11 +218,11 @@ function ReadinessPanel({ readiness, error }: { readiness: CredentialsSpaceReadi
     group?.scrollIntoView?.({ block: 'start' });
     group?.focus();
   };
-  const connect = (provider: SpaceCredentialProviderName) => (
+  const connect = (provider: SpaceCredentialProviderName, testId = `space-cred-readiness-connect-${provider}`) => (
     <button
       type="button"
       className="set-spc__readiness-connect"
-      data-testid={`space-cred-readiness-connect-${provider}`}
+      data-testid={testId}
       onClick={() => goTo(provider)}
     >
       Connect {SPACE_PROVIDER_NAME[provider]}
@@ -254,6 +259,31 @@ function ReadinessPanel({ readiness, error }: { readiness: CredentialsSpaceReadi
             {readiness.canPoll.missing.map((provider) => (
               <li key={provider} data-testid={`space-cred-readiness-missing-poll-${provider}`}>
                 <span>{SPACE_PROVIDER_NAME[provider]}: a credential this space owns, shared with every member</span> {connect(provider)}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+      <div
+        className={`set-spc__threshold ${readiness.seeding.state === 'red' ? 'is-missing' : 'is-ready'}`}
+        data-testid="space-cred-readiness-seeding"
+        data-state={readiness.seeding.state}
+      >
+        <p className="set-spc__threshold-head">Seeding for release 2</p>
+        <p>{seedingSentence(readiness)}</p>
+        {readiness.seeding.state !== 'idle' && readiness.seeding.usedProviders.length > 0 ? (
+          <ul className="set-spc__threshold-missing">
+            {readiness.seeding.usedProviders.map((provider) => (
+              <li
+                key={provider}
+                data-testid={`space-cred-readiness-seeding-${provider}`}
+                data-ready={readiness.seeding.providers[provider]?.ready ? 'true' : 'false'}
+              >
+                <span>
+                  {SPACE_PROVIDER_NAME[provider]} (used for {seedingUseWord(readiness, provider)}):{' '}
+                  {seedingReasonWord(readiness, provider) ?? 'seeded'}
+                </span>
+                {readiness.seeding.providers[provider]?.ready ? null : <> {connect(provider, `space-cred-readiness-seeding-connect-${provider}`)}</>}
               </li>
             ))}
           </ul>

@@ -42,6 +42,7 @@ import {
   canClaim,
   canLaunchSentence,
   canPollSentence,
+  seedingSentence,
   canManage,
   canMyDefault,
   canRevoke,
@@ -115,6 +116,7 @@ function readinessView(opts: {
   launchMissing?: Partial<Record<Provider, 'no_credential' | 'stale' | 'policy_excludes_space'>>;
   poll?: boolean;
   pollReason?: 'no_space_owned_credential' | 'stale';
+  seeding?: CredentialsSpaceReadinessView['seeding'];
 } = {}): CredentialsSpaceReadinessView {
   const missingOf = opts.launchMissing ?? {};
   const entry = (p: Provider) => {
@@ -134,8 +136,23 @@ function readinessView(opts: {
       ready: poll, missing: poll ? [] : ['github'], credentialId: poll ? 'c-gh' : null,
       activeSpaceOwnedCredentials: poll ? 1 : 0, reason: poll ? null : opts.pollReason ?? 'no_space_owned_credential',
     },
+    seeding: opts.seeding ?? {
+      window: '30 days', agentSessions: 0, sessionsWithoutRecord: 0, githubProjects: 0,
+      usedProviders: [], providers: {}, missing: [], state: 'idle', readyForCut: true,
+    },
   };
 }
+
+/** S7b: a claude-with-git space (anthropic + github used, openai never), github also polled. */
+const CLAUDE_SEEDING: CredentialsSpaceReadinessView['seeding'] = {
+  window: '30 days', agentSessions: 7, sessionsWithoutRecord: 0, githubProjects: 1,
+  usedProviders: ['anthropic', 'github'],
+  providers: {
+    anthropic: { ready: true, needs: ['launch'], launchReason: null, pollReason: null, reason: null },
+    github: { ready: false, needs: ['launch', 'poll'], launchReason: null, pollReason: 'no_space_owned_credential', reason: 'no_space_owned_credential' },
+  },
+  missing: ['github'], state: 'red', readyForCut: false,
+};
 
 function fakePort(opts: {
   viewer?: SpaceCredentialsViewer;
@@ -1171,6 +1188,32 @@ describe('S7 readiness — two thresholds, never one tick', () => {
     await mount(fakePort({ readiness: readinessView({ launchMissing: { openai: 'no_credential' } }) }));
     fireEvent.click(await screen.findByTestId('space-cred-readiness-connect-openai'));
     expect(document.activeElement).toBe(screen.getByTestId('space-cred-group-openai'));
+  });
+
+  it('S7b seeding: names the providers THIS space uses and which are missing; openai, never used, is not listed', async () => {
+    await mount(fakePort({ readiness: readinessView({ launchMissing: { openai: 'no_credential' }, poll: false, seeding: CLAUDE_SEEDING }) }));
+    const seeding = await screen.findByTestId('space-cred-readiness-seeding');
+    expect(seeding.getAttribute('data-state')).toBe('red');
+    expect(seeding.textContent).toContain('This space uses Claude (Anthropic) and GitHub');
+    expect(seeding.textContent).toContain('Not seeded yet: GitHub');
+    expect(within(seeding).getByTestId('space-cred-readiness-seeding-anthropic').getAttribute('data-ready')).toBe('true');
+    const github = within(seeding).getByTestId('space-cred-readiness-seeding-github');
+    expect(github.textContent).toContain('used for launches and tracking');
+    expect(github.textContent).toContain('no GitHub credential this space owns');
+    expect(within(seeding).getByTestId('space-cred-readiness-seeding-connect-github')).toBeTruthy();
+    expect(within(seeding).queryByTestId('space-cred-readiness-seeding-openai')).toBeNull();
+    expect(within(seeding).queryByTestId('space-cred-readiness-seeding-connect-anthropic')).toBeNull();
+  });
+
+  it('S7b seeding: green once every used provider is seeded; an idle space says it does not hold up release 2', async () => {
+    const green = { ...CLAUDE_SEEDING, missing: [], state: 'green' as const, readyForCut: true,
+      providers: { ...CLAUDE_SEEDING.providers, github: { ...CLAUDE_SEEDING.providers.github!, ready: true, pollReason: null, reason: null } } };
+    expect(seedingSentence(readinessView({ seeding: green }))).toContain('every one has a space credential. Ready for release 2');
+    expect(seedingSentence(readinessView())).toContain('does not hold up release 2');
+    await mount(fakePort({ readiness: readinessView() }));
+    const seeding = await screen.findByTestId('space-cred-readiness-seeding');
+    expect(seeding.getAttribute('data-state')).toBe('idle');
+    expect(within(seeding).queryAllByRole('listitem')).toHaveLength(0);
   });
 
   it('an unreadable readiness says so and never hides the list', async () => {

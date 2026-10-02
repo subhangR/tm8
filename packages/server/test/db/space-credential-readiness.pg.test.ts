@@ -12,12 +12,14 @@
  * Cast: A and B are members of every space; OUT is a member of none.
  */
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { createDb } from '../../src/db/client.js';
 import type { Db, DbClaims } from '../../src/db/types.js';
-import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from './w1-pg.js';
+import { createW1ScratchDatabase, migrationFiles, REPO_ROOT, type W1ScratchDatabase } from './w1-pg.js';
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 300_000 });
 
@@ -49,6 +51,24 @@ interface Readiness {
     activeSpaceOwnedCredentials: number;
     reason: 'stale' | 'no_space_owned_credential' | null;
   };
+  seeding: Seeding;
+}
+interface Seeding {
+  window: string;
+  agentSessions: number;
+  sessionsWithoutRecord: number;
+  githubProjects: number;
+  usedProviders: Provider[];
+  providers: Partial<Record<Provider, {
+    ready: boolean;
+    needs: ('launch' | 'poll')[];
+    launchReason: string | null;
+    pollReason: string | null;
+    reason: string | null;
+  }>>;
+  missing: Provider[];
+  state: 'green' | 'red' | 'idle';
+  readyForCut: boolean;
 }
 
 let database: W1ScratchDatabase;
@@ -387,5 +407,205 @@ describe('space_credential_readiness — canPoll is its own threshold', () => {
     await credential(s, 'github');
     const def = await credential(s, 'github', { isDefault: true });
     expect((await readiness(A, s)).canPoll).toMatchObject({ credentialId: def, activeSpaceOwnedCredentials: 2 });
+  });
+});
+
+/**
+ * R1/S7b (task 01a0e75e, spec §8.3 / S9): the R2 seeding gate is per provider
+ * the space USES. Used providers are derived from agent sessions in the window
+ * (their manifests' effectiveCredentialSources) plus github-repo projects; the
+ * verdict is the space's (active space default, policy allowing; github
+ * projects also need a space-owned public github), never the caller's.
+ */
+async function session(
+  spaceId: string,
+  sources: Record<string, string | null> | null,
+  opts: { daysAgo?: number; kind?: 'agent' | 'shell'; agentTool?: string; noManifest?: boolean } = {},
+): Promise<void> {
+  const id = randomUUID();
+  await asOwner(async (c) => {
+    await c.query(
+      `insert into public.entities(id, space_id, kind, created_by, visibility) values ($1, $2, 'work_session', $3, 'space')`,
+      [id, spaceId, actorOf[spaceId]]);
+    await c.query(
+      `insert into public.work_sessions(entity_id, session_kind, agent_tool, created_at)
+       values ($1, $2, $3, now() - make_interval(days => $4))`,
+      [id, opts.kind ?? 'agent', opts.agentTool ?? null, opts.daysAgo ?? 1]);
+    if (opts.noManifest) return;
+    const launch = sources === null ? {} : { effectiveCredentialSources: sources };
+    await c.query(`insert into public.session_manifests(work_session_id, manifest) values ($1, $2)`,
+      [id, JSON.stringify({ launch })]);
+  });
+}
+
+async function project(spaceId: string, repoUrl: string | null): Promise<void> {
+  const id = randomUUID();
+  await asOwner(async (c) => {
+    await c.query(`insert into public.projects(id, name, repo_url, working_dir) values ($1, 'S7b', $2, $3)`,
+      [id, repoUrl, `/tmp/s7b-${id}`]);
+    await c.query(`insert into public.space_projects(space_id, project_id) values ($1, $2)`, [spaceId, id]);
+  });
+}
+
+interface GateRow {
+  space_id: string;
+  state: 'green' | 'red' | 'idle';
+  used_providers: string[];
+  missing: string[];
+  agent_sessions: number;
+  sessions_without_record: number;
+  github_projects: number;
+}
+
+async function gate(window = '30 days'): Promise<Map<string, GateRow>> {
+  const rows = await asOwner(async (c) =>
+    (await c.query<GateRow>('select * from internal.credential_seeding_gate($1::interval)', [window])).rows);
+  return new Map(rows.map((r) => [r.space_id, r]));
+}
+
+/** A space whose sessions launched claude with git: anthropic + github used, openai never. */
+async function claudeSpace(): Promise<string> {
+  const s = await space();
+  await session(s, { anthropic: 'member', github: 'member' });
+  await session(s, { anthropic: 'space', github: 'node' }, { daysAgo: 12 });
+  return s;
+}
+
+describe('space_credential_readiness — seeding per used provider (R1/S7b)', () => {
+  it('a claude-only space with an active anthropic + github credential is GREEN; openai, never used, does not block', async () => {
+    const s = await claudeSpace();
+    await credential(s, 'anthropic', { isDefault: true });
+    await credential(s, 'github', { isDefault: true });
+    const r = await readiness(A, s);
+    expect(r.seeding).toMatchObject({
+      state: 'green', readyForCut: true, usedProviders: ['anthropic', 'github'], missing: [],
+      agentSessions: 2, sessionsWithoutRecord: 0, githubProjects: 0, window: '30 days',
+    });
+    expect(r.seeding.providers.openai).toBeUndefined();
+    expect(r.seeding.providers.anthropic).toMatchObject({ ready: true, needs: ['launch'], reason: null });
+    // Existing fields keep their meaning: canLaunch is still all three providers, per caller.
+    expect(r.canLaunch).toMatchObject({ ready: false, missing: ['openai'] });
+    expect((await gate()).get(s)).toMatchObject({ state: 'green', used_providers: ['anthropic', 'github'], missing: [] });
+  });
+
+  it('red names only the used providers that are missing; seeding the missing one turns it green', async () => {
+    const s = await claudeSpace();
+    await credential(s, 'anthropic', { isDefault: true });
+    const red = (await readiness(B, s)).seeding;
+    expect(red).toMatchObject({ state: 'red', readyForCut: false, missing: ['github'] });
+    expect(red.providers.github).toMatchObject({ ready: false, launchReason: 'no_credential', reason: 'no_credential' });
+    expect((await gate()).get(s)).toMatchObject({ state: 'red', missing: ['github'] });
+    await credential(s, 'github', { isDefault: true });
+    expect((await readiness(B, s)).seeding).toMatchObject({ state: 'green', missing: [] });
+  });
+
+  it('an IDLE space (no agent session in the window) is idle, not red, even with nothing seeded and a github project', async () => {
+    const s = await space();
+    await project(s, 'https://github.com/acme/app.git');
+    await session(s, { anthropic: 'member' }, { daysAgo: 45 });
+    await session(s, null, { kind: 'shell' });
+    const r = (await readiness(A, s)).seeding;
+    expect(r).toMatchObject({ state: 'idle', readyForCut: true, agentSessions: 0, githubProjects: 1 });
+    expect((await gate()).get(s)).toMatchObject({ state: 'idle', agent_sessions: 0 });
+    // The window is the operator's parameter: over 60 days the 45-day-old session counts.
+    expect((await gate('60 days')).get(s)).toMatchObject({ state: 'red', used_providers: ['anthropic', 'github'] });
+  });
+
+  it('the verdict is the space\'s: a member\'s private my_default does not seed it (reason no_default)', async () => {
+    const s = await claudeSpace();
+    await credential(s, 'github', { isDefault: true });
+    await credential(s, 'anthropic', { owner: A, visibility: 'private', myDefaultOf: A });
+    const r = await readiness(A, s);
+    expect(r.canLaunch.providers.anthropic.ready).toBe(true); // A can launch...
+    expect(r.seeding.providers.anthropic).toMatchObject({ ready: false, reason: 'no_default' }); // ...B could not.
+    expect(r.seeding.state).toBe('red');
+  });
+
+  it('stale and policy_excludes_space are red with their reason', async () => {
+    const s = await claudeSpace();
+    const id = await credential(s, 'anthropic', { isDefault: true, status: 'stale' });
+    await credential(s, 'github', { isDefault: true });
+    expect((await readiness(A, s)).seeding.providers.anthropic).toMatchObject({ ready: false, reason: 'stale' });
+    await setStatus(id, 'active');
+    expect((await readiness(A, s)).seeding.state).toBe('green');
+    await asOwner((c) => c.query(
+      `insert into public.space_credential_policies(space_id, provider, allowed_sources) values ($1, 'github', array['member'])`, [s]));
+    expect((await readiness(A, s)).seeding.providers.github).toMatchObject({ ready: false, reason: 'policy_excludes_space' });
+  });
+
+  it('a github-repo project makes github used for POLLING: a member-owned github default is not enough', async () => {
+    const s = await space();
+    await session(s, { anthropic: 'space' });
+    await project(s, 'git@github.com:acme/app.git');
+    await project(s, 'https://gitlab.com/acme/other.git');
+    await credential(s, 'anthropic', { isDefault: true });
+    await credential(s, 'github', { owner: A, visibility: 'public', myDefaultOf: A });
+    const red = (await readiness(A, s)).seeding;
+    expect(red).toMatchObject({ state: 'red', usedProviders: ['anthropic', 'github'], missing: ['github'], githubProjects: 1 });
+    expect(red.providers.github).toMatchObject({ needs: ['poll'], launchReason: null, pollReason: 'no_space_owned_credential' });
+    await credential(s, 'github');
+    expect((await readiness(A, s)).seeding).toMatchObject({ state: 'green', missing: [] });
+  });
+
+  it('ruling (A): a session with a manifest but NO map infers anthropic/openai from agent_tool; github never', async () => {
+    const s = await space();
+    await session(s, null, { agentTool: 'claude-code' });
+    await session(s, {}, { agentTool: 'codex' });
+    await session(s, null, { agentTool: 'gemini' });
+    const r = (await readiness(A, s)).seeding;
+    // Not a false green: the pre-map launches still name the providers they used.
+    expect(r).toMatchObject({
+      state: 'red', usedProviders: ['anthropic', 'openai'], missing: ['anthropic', 'openai'], agentSessions: 3, sessionsWithoutRecord: 3,
+    });
+    await credential(s, 'anthropic', { isDefault: true });
+    await credential(s, 'openai', { isDefault: true });
+    expect((await readiness(A, s)).seeding).toMatchObject({ state: 'green', missing: [] });
+  });
+
+  it('ruling (A): a map, when present, wins over agent_tool; a session with NO manifest infers nothing but is counted', async () => {
+    const s = await space();
+    await session(s, { anthropic: 'member' }, { agentTool: 'codex' });
+    await session(s, null, { agentTool: 'codex', noManifest: true });
+    await session(s, null, { agentTool: 'claude', noManifest: true });
+    expect((await readiness(A, s)).seeding).toMatchObject({
+      usedProviders: ['anthropic'], agentSessions: 3, sessionsWithoutRecord: 2,
+    });
+  });
+
+  it('sessions with no effective map and no known tool are counted, not guessed at; a null source names no provider', async () => {
+    const s = await space();
+    await session(s, null);
+    await session(s, { openai: null, anthropic: 'member' });
+    await credential(s, 'anthropic', { isDefault: true });
+    expect((await readiness(A, s)).seeding).toMatchObject({
+      state: 'green', agentSessions: 2, sessionsWithoutRecord: 1, usedProviders: ['anthropic'],
+    });
+  });
+
+  it('the node-wide gate lists EVERY space, agrees with readiness.seeding, and is not callable by the app role', async () => {
+    const spaces = [await claudeSpace(), await space(), await greenSpace()];
+    const rows = await gate();
+    for (const s of spaces) {
+      const seeding = (await readiness(A, s)).seeding;
+      expect(rows.get(s), `gate row for ${s}`).toMatchObject({
+        state: seeding.state, used_providers: seeding.usedProviders, missing: seeding.missing,
+      });
+    }
+    const [spacesTotal] = await asOwner(async (c) => (await c.query<{ n: number }>('select count(*)::int as n from public.spaces')).rows);
+    expect(rows.size).toBe(spacesTotal!.n);
+    // The operator's standalone report (db/reports/credential_seeding_gate.sql) is the same verdict as a
+    // plain query, for a node that has not applied the migration yet: held equal here, space by space.
+    const text = readFileSync(join(REPO_ROOT, 'db', 'reports', 'credential_seeding_gate.sql'), 'utf8');
+    const query = text.slice(text.indexOf('begin read only;') + 'begin read only;'.length, text.lastIndexOf('rollback;'))
+      .replace('(:window)::interval', '($1)::interval').trim().replace(/;$/, '');
+    for (const window of ['30 days', '60 days']) {
+      const report = await asOwner(async (c) => (await c.query<GateRow>(query, [window])).rows);
+      expect(report).toEqual([...(await gate(window)).values()]);
+    }
+    const denied = await database.transaction(async (c) => {
+      await c.query('set local role tm8_app');
+      return c.query('select * from internal.credential_seeding_gate()').then(() => 'ok', (e: { code?: string }) => e.code);
+    });
+    expect(denied).toBe('42501');
   });
 });

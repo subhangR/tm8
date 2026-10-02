@@ -523,6 +523,7 @@ function renderConfigs(dto: unknown): string {
  * `space credential-readiness get` (credentials R1/S7): the two thresholds on
  * separate lines, never one tick. can-launch is per provider for the caller;
  * can-poll is the space-owned public GitHub credential background readers use.
+ * S7b adds the seeding lines: the release-2 gate per provider the space uses.
  */
 function renderCredentialReadiness(dto: unknown): string {
   const sub = (row: unknown, name: string): unknown =>
@@ -538,6 +539,18 @@ function renderCredentialReadiness(dto: unknown): string {
       : `MISSING: ${field(row, 'reason') ?? 'no_credential'}`;
     return `  ${p.padEnd(9)} ${detail}  [active in space: ${field(row, 'activeCredentials') ?? '0'}]`;
   };
+  // S7b: the release-2 seeding gate, over the providers THIS space uses (a space answer).
+  const seeding = sub(dto, 'seeding');
+  const used = (sub(seeding, 'usedProviders') as string[] | undefined) ?? [];
+  const seedingLines = seeding === undefined ? [] : [
+    `seeding (release 2): ${field(seeding, 'state') ?? '?'} — uses ${used.length ? used.join(', ') : 'nothing'}`
+      + ` [${field(seeding, 'agentSessions') ?? '0'} agent sessions in ${field(seeding, 'window') ?? '?'}]`,
+    ...used.map((p) => {
+      const row = sub(sub(seeding, 'providers'), p);
+      const needs = (sub(row, 'needs') as string[] | undefined) ?? [];
+      return `  ${p.padEnd(9)} ${field(row, 'ready') === 'true' ? 'seeded' : `MISSING: ${field(row, 'reason') ?? '?'}`}  [for ${needs.join('+')}]`;
+    }),
+  ];
   return joinLines(
     [
       `space ${field(dto, 'spaceId') ?? '?'}`,
@@ -546,6 +559,7 @@ function renderCredentialReadiness(dto: unknown): string {
       field(poll, 'ready') === 'true'
         ? `can poll/hydrate: yes (space-owned github ${field(poll, 'credentialId') ?? '?'})`
         : `can poll/hydrate: no — ${field(poll, 'reason') ?? 'no_space_owned_credential'} (needs an active space-owned github credential)`,
+      ...seedingLines,
       field(launch, 'ready') === 'true' && field(poll, 'ready') === 'true'
         ? undefined
         : 'fix: connect a credential in this space under Space settings → Credentials',

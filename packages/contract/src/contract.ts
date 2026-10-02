@@ -2939,6 +2939,47 @@ export interface CredentialsSpaceReadinessView {
     activeSpaceOwnedCredentials: number;
     reason: CredentialReadinessPollReason | null;
   };
+  /** R1/S7b: the space's R2 seeding verdict over the providers it USES (migration 995). */
+  seeding: CredentialSeedingView;
+}
+
+/**
+ * R1/S7b (task 01a0e75e, doc 01a0e248 §8.3/S9): the R2 seeding gate, per
+ * provider the space USES — never the caller's answer. Used providers are
+ * derived from agent sessions in the last 30 days (their manifests'
+ * `effectiveCredentialSources`; a session with a manifest but no map infers
+ * anthropic from claude-code/claude and openai from codex); github is also used for polling when the space
+ * has a github.com project. `launch` needs an ACTIVE space default the policy
+ * lets run; `poll` needs an ACTIVE space-owned public github credential. A
+ * space with no agent session in the window is `idle` and never red.
+ */
+export type CredentialSeedingNeed = 'launch' | 'poll';
+export type CredentialSeedingLaunchReason = 'policy_excludes_space' | 'stale' | 'no_default' | 'no_credential';
+export type CredentialSeedingState = 'green' | 'red' | 'idle';
+
+export interface CredentialSeedingProvider {
+  ready: boolean;
+  needs: CredentialSeedingNeed[];
+  launchReason: CredentialSeedingLaunchReason | null;
+  pollReason: CredentialReadinessPollReason | null;
+  /** The first failing need's reason; null when ready. */
+  reason: CredentialSeedingLaunchReason | CredentialReadinessPollReason | null;
+}
+
+export interface CredentialSeedingView {
+  /** The window as Postgres prints an interval, e.g. `30 days`. */
+  window: string;
+  agentSessions: number;
+  /** Agent sessions in the window with no effective-source record: counted, not guessed at. */
+  sessionsWithoutRecord: number;
+  githubProjects: number;
+  usedProviders: SpaceCredentialProviderName[];
+  /** One entry per USED provider only. */
+  providers: Partial<Record<SpaceCredentialProviderName, CredentialSeedingProvider>>;
+  missing: SpaceCredentialProviderName[];
+  state: CredentialSeedingState;
+  /** The R2 gate flag: `state !== 'red'`. */
+  readyForCut: boolean;
 }
 
 /** `credentials.space.policy.set` — space admin. The provider rides the path. */
