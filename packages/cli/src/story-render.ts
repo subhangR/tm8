@@ -124,7 +124,9 @@ export function storyContextLines(story: unknown): string[] {
     out.push(`  ${mode}:`);
     for (const t of members) {
       out.push(`    ${str(t['id'])} ${str(t['name'])}${t['live'] === true ? ' (live)' : ''}`
-        + ` · ${len(t['sessionIds'])} session${len(t['sessionIds']) === 1 ? '' : 's'}`
+        + (t['kind'] === 'member' ? '' : ` · ${len(t['sessionIds'])} session${len(t['sessionIds']) === 1 ? '' : 's'}`)
+        + (len(t['runs']) > 0 ? ` · runs ${len(t['runs'])}` : '')
+        + (len(t['assigned']) > 0 ? ` · assigned ${len(t['assigned'])}` : '')
         + (t['parentId'] != null ? ` · under ${str(t['parentId'])}` : ''));
     }
   }
