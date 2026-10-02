@@ -365,7 +365,8 @@ describe('the CLI command projection', () => {
     expect(NOUNS.length).toBeGreaterThanOrEqual(26);
     for (const noun of NOUNS) {
       const rows = DISCOVERY.filter((d) => d.noun === noun || d.command?.[0] === noun);
-      expect(rows.length, noun).toBeGreaterThan(0);
+      // An alias may own a noun outright (`whoami`): it resolves to its commands.
+      expect(rows.length + commandsForNoun(noun).length, noun).toBeGreaterThan(0);
     }
   });
 
@@ -381,6 +382,7 @@ describe('the CLI command projection', () => {
     expect(commandsForNoun('task').map((c) => c.command).sort()).toEqual([
       'task axis',
       'task complete',
+      'task create',
       'task gate',
       'task import-issue',
       'task link-commit',

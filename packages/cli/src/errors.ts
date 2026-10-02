@@ -247,7 +247,7 @@ export class InterruptedError extends Error {
 }
 
 /**
- * Rejected vocabulary — `whoami`, `report`, `progress`, public `session
+ * Rejected vocabulary — `report`, `progress`, public `session
  * prompt`, and the compatibility aliases. These must FAIL, and they must fail
  * saying where the capability went; silently not existing would leave an agent
  * that learned the old grammar guessing.

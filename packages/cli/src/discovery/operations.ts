@@ -3994,6 +3994,80 @@ const COMMAND_ALIASES = new Map<string, {
     // carry a `<placeholder>` (help.test.ts) — a zero-arg command has none.
     examples: [],
   }],
+  // ── cross-space discoverability (lane L1) ─────────────────────────────────
+  //
+  // Spellings agents reach for, each SUGAR over an operation that already has
+  // a command: no catalog row, no digest change. `space-link` is the `link`
+  // noun under the name the feature is called by; `task create` is
+  // `entity create task`; `teammate list` is the team_member query; `whoami`
+  // is `identity get` plus the session facts the CLI already holds locally.
+  ['space-link list', {
+    path: ['space-link', 'list'],
+    syntax: 'tm8 space-link list',
+    summary: 'List the Spaces this Space links to — alias of `tm8 link list`',
+    notes: [
+      'act in a linked Space with the global flag: `tm8 --space <alias|space-id> <command>`; every call goes through the link and is audited on the home Space',
+      'open to every Member of the home Space, agents included',
+    ],
+    examples: ['tm8 --space <alias> entity query --kind task'],
+  }],
+  ['space-link add', {
+    path: ['space-link', 'add'],
+    syntax: 'tm8 space-link add <target-space-id> [--alias <alias>] [--mutation-id <id>]',
+    summary: 'Link another Space you are a Member of to this one — alias of `tm8 link add`, human sessions only',
+    notes: ['an agent is refused by the Server; it asks its human to run this'],
+    examples: ['tm8 space-link add <target-space-id> --alias <alias>'],
+  }],
+  ['space-link login', {
+    path: ['space-link', 'login'],
+    syntax: 'tm8 space-link login <alias|link-id> [--mutation-id <id>]',
+    summary: 'Sign in to a linked Space — alias of `tm8 link login`, human sessions only',
+    notes: ['an agent is refused by the Server; it asks its human to run this'],
+    examples: ['tm8 space-link login <alias>'],
+  }],
+  ['space-link audit', {
+    path: ['space-link', 'audit'],
+    syntax: 'tm8 space-link audit <alias|link-id> [--limit <count>] [--before <timestamp>]',
+    summary: 'Read the audit of calls made through a space link — alias of `tm8 link audit`',
+    notes: [],
+    examples: ['tm8 space-link audit <alias> --limit <count>'],
+  }],
+  ['task create', {
+    path: ['task', 'create'],
+    syntax: 'tm8 task create <title> [--space <space-id|link-alias>] [--parent <task-id|none>] [--position <n>] [--content <json-source>] [--attach-to <entity-id>...] [--relate-to <entity-id>...] [--connect <edge-type>=<target-entity-id>...] [--when-to-use <text>] [--summary <text>] [--keyword <k>...] [--mutation-id <id>]',
+    summary: 'Create a task — alias of `tm8 entity create task`',
+    notes: [
+      'sugar over entities.create with kind task; every `entity create` flag works unchanged',
+      'task content shape: {description, acceptanceCriteria: [{id, done, text}], pointsEstimate, axes: {<axis-name>: <value>}}',
+      'in a linked Space: `tm8 --space <alias> task create "<title>"`',
+    ],
+    examples: [
+      'tm8 task create "<title>" --parent <task-id>',
+      'tm8 --space <alias> task create "<title>" --content \'{"description":"<text>"}\'',
+    ],
+  }],
+  ['teammate list', {
+    path: ['teammate', 'list'],
+    syntax: 'tm8 teammate list [--space <space-id|link-alias>] [--limit <count>] [--cursor <cursor>]',
+    summary: 'List the Teammates in a Space — sugar over `tm8 entity query --kind team_member`',
+    notes: [
+      'a Teammate id is what `--teammate`, `--as` and `tm8 session spawn` take',
+      'in a linked Space: `tm8 --space <alias> teammate list`',
+    ],
+    examples: ['tm8 --space <alias> teammate list --limit <count>'],
+  }],
+  ['whoami', {
+    path: ['whoami'],
+    syntax: 'tm8 whoami',
+    summary: 'Who and where this process is: session, Space, actor, access mode, and the identity the Server resolved',
+    notes: [
+      'sugar over identity.get plus the session facts this CLI already holds (TM8_* env and the session manifest)',
+      'access mode comes from the session manifest; outside a tm8 session it is absent',
+      'act in another Space with `tm8 --space <alias> <command>`; `tm8 link list` names the aliases',
+    ],
+    // No example: a zero-arg command has no `<placeholder>` (see `node mode`).
+    examples: [],
+  }],
 ]);
 COMMAND_OPS.set('message reply', ['messages.post']);
 const messageSendIndex = COMMAND_ORDER.indexOf('message send');
@@ -4078,6 +4152,29 @@ COMMAND_OPS.set('worktree cherry-pick', ['entities.get', 'edges.list', 'messages
 COMMAND_OPS.set('worktree branch', ['entities.get', 'edges.list', 'messages.post']);
 COMMAND_OPS.set('worktree stash', ['entities.get', 'edges.list', 'messages.post', 'attentionSignals.raise', 'attentionSignals.clear']);
 COMMAND_ORDER.push('session checkpoint', 'session rollback', 'worktree stage', 'worktree commit', 'worktree merge', 'worktree cherry-pick', 'worktree branch', 'worktree stash');
+// Lane L1 aliases: each is exactly as available as the operation it spells.
+COMMAND_OPS.set('space-link list', ['spaceLinks.list']);
+COMMAND_OPS.set('space-link add', ['spaceLinks.add']);
+COMMAND_OPS.set('space-link login', ['spaceLinks.login']);
+COMMAND_OPS.set('space-link audit', ['spaceLinks.audit']);
+const linkAuditIndex = COMMAND_ORDER.indexOf('link audit');
+COMMAND_ORDER.splice(
+  linkAuditIndex < 0 ? COMMAND_ORDER.length : linkAuditIndex + 1,
+  0,
+  'space-link list',
+  'space-link add',
+  'space-link login',
+  'space-link audit',
+);
+COMMAND_OPS.set('task create', ['entities.create']);
+const taskTransitionIndex = COMMAND_ORDER.indexOf('task transition');
+COMMAND_ORDER.splice(taskTransitionIndex < 0 ? COMMAND_ORDER.length : taskTransitionIndex, 0, 'task create');
+COMMAND_OPS.set('teammate list', ['collections.query']);
+const teammateIndex = COMMAND_ORDER.findIndex((k) => k.startsWith('teammate '));
+COMMAND_ORDER.splice(teammateIndex < 0 ? COMMAND_ORDER.length : teammateIndex, 0, 'teammate list');
+COMMAND_OPS.set('whoami', ['identity.get']);
+const identityGetIndex = COMMAND_ORDER.indexOf('identity get');
+COMMAND_ORDER.splice(identityGetIndex < 0 ? COMMAND_ORDER.length : identityGetIndex + 1, 0, 'whoami');
 
 /**
  * A command is as available as its LEAST available stage. `file upload` that
@@ -4179,16 +4276,24 @@ const NOUN_SUMMARY: Record<string, string> = {
   kind: 'The entity-kind registry, core and custom',
   handoff: 'Project a bounded entity snapshot into a work session',
   'interaction-profile': 'Interaction Profile lifecycle and defaults',
-  teammate: 'Teammate-scoped configuration',
+  teammate: 'Teammates: list them, and teammate-scoped configuration',
   voice: 'Mint LiveKit room-join grants for voice channels',
   artifact: 'Versioned, viewable static-web bundles: publish, revisions, preview, export',
   container: 'Machines an agent runs in or drives: create, lifecycle, exec, surfaces, ports',
   form: 'Forms: ask humans structured questions and get the answers back in your session',
+  link: 'Space links to other Spaces; act in one with `tm8 --space <alias> <command>`',
+  'space-link': 'Alias of `link`: Space links; act in a linked Space with `tm8 --space <alias> <command>`',
+  whoami: 'This process\'s session, Space, actor and access mode',
 };
 
 /** Family nouns ∪ command nouns, sorted. Both resolve through `tm8 help <noun>`. */
 export const NOUNS: readonly string[] = [
-  ...new Set([...BASE.map((r) => r.noun), ...BASE.flatMap((r) => (r.command ? [r.command[0] as string] : []))]),
+  ...new Set([
+    ...BASE.map((r) => r.noun),
+    ...BASE.flatMap((r) => (r.command ? [r.command[0] as string] : [])),
+    // An alias may introduce a noun (`space-link`, `whoami`); help must resolve it.
+    ...[...COMMAND_ALIASES.values()].map((a) => a.path[0] as string),
+  ]),
 ].sort();
 
 export function isNoun(noun: string): boolean {
