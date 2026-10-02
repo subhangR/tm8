@@ -1,4 +1,4 @@
-import type { EffectiveSkills } from '@tm8/contract';
+import type { EffectiveSkills, OpRequestStatus } from '@tm8/contract';
 /**
  * Derived truth, assembled ONCE, server-side (L3).
  *
@@ -192,6 +192,8 @@ export const ENTITY_COLUMNS = `
   -- excerpt. servers holds no secret; the gate session is
   -- server_gate_tokens, which this read never names.
   srv.name as srv_name, srv.base_url as srv_base_url,
+  -- Op requests (L5, 280): the title, op and status for a list row.
+  opr.title as opr_title, opr.op as opr_op, opr.status as opr_status,
   wt.project_id as wt_project_id, wt.path as wt_path, wt.branch as wt_branch,
   wt.base_ref as wt_base_ref, wt.base_commit_oid as wt_base_commit_oid,
   wt.status as wt_status, wt.status_changed_at as wt_status_changed_at,
@@ -385,6 +387,7 @@ export const ENTITY_FROM = `
   left join public.forms frm              on frm.entity_id = e.id
   left join public.space_credentials scr  on e.kind = 'credential' and scr.id = e.id
   left join public.servers srv            on e.kind = 'server' and srv.entity_id = e.id
+  left join public.op_requests opr        on e.kind = 'op_request' and opr.entity_id = e.id
   left join public.pull_requests pr      on pr.entity_id = e.id
   left join public.commits cm            on cm.entity_id = e.id
   left join public.artifacts art         on art.entity_id = e.id
@@ -581,6 +584,9 @@ export interface EntityRow {
   cred_owner_account_id?: string | null;
   srv_name?: string | null;
   srv_base_url?: string | null;
+  opr_title?: string | null;
+  opr_op?: string | null;
+  opr_status?: string | null;
   memory_statement: string | null;
   memory_mechanism: string | null;
   memory_subject_scope: string | null;
@@ -1520,6 +1526,9 @@ export function titleOf(row: EntityRow): string {
       // the target see THAT a link exists, not what the target is called.
       // Before this arm the title fell through to the raw kind string.
       return 'Space link';
+    case 'op_request':
+      // Its own title (allow-list label + facts). MIRRORS the projector twin.
+      return row.opr_title ?? 'Op request';
     case 'chat':
       // The chat's own title, which `start_chat` seeds from the opening message.
       // An empty one is legal (the column defaults to '') and must still render
@@ -2010,6 +2019,9 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
       // link, so the shared entity read takes no join for it. MIRRORS the
       // projector twin.
       return { kind: row.kind };
+    case 'op_request':
+      // 280 (L5): which op, and where it is. MIRRORS the projector twin.
+      return { kind: 'op_request', op: row.opr_op ?? '', status: (row.opr_status ?? 'pending') as OpRequestStatus };
     default:
       // A custom `c:*` kind. Its scalar fields live in `custom_entities` and
       // are out of the G1A slice, so the shape is honest and empty rather than
@@ -2689,6 +2701,9 @@ export function contentOf(row: EntityRow): EntityContent {
     case 'server':
       // 250 (W6): a link's content is `spaceLinks.list`'s answer (see stateOf).
       return { kind: row.kind };
+    case 'op_request':
+      // 280 (L5): the state's facts; the rest is `opRequests.get`'s.
+      return { kind: 'op_request', op: row.opr_op ?? '', status: (row.opr_status ?? 'pending') as OpRequestStatus };
     default:
       return { kind: row.kind as `c:${string}`, fields: {} };
   }

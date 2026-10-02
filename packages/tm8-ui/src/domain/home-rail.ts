@@ -187,7 +187,11 @@ const HOME_RAIL_GROUP_SPINE: readonly HomeRailGroupSpec[] = [
     //
     // What a session launches under, the keys it runs with, then the other
     // spaces and machines this one reaches.
-    kinds: ['interaction_profile', 'credential', 'space_link', 'server'],
+    //
+    // `op_request` (280) closes the group: every op an agent may ask for today
+    // changes one of these (a space link, a gate folder), so the requests sit
+    // beside the things they would change.
+    kinds: ['interaction_profile', 'credential', 'space_link', 'server', 'op_request'],
   },
   {
     id: 'beta',

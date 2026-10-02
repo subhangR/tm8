@@ -7,7 +7,7 @@ import type {
   EntityDetail,
   EntitySummary,
 } from '@tm8/contract';
-import type { ArtifactRevisionsList, ArtifactRevisionSummary } from '../../data/seam';
+import type { ArtifactRevisionsList, ArtifactRevisionSummary, OpRequestsOps } from '../../data/seam';
 import type { ContentBlockRef } from '../../domain';
 import { KindIcon, getKind } from '../../domain';
 import { Chip, Eyebrow, Markdown } from '../../kit';
@@ -25,6 +25,7 @@ import { MembershipBlock, type MembershipAuthoring } from './MembershipBlock';
 import { SettingsHomeLink } from '../SettingsHomeLink';
 import type { ManagedPort } from '../../managed/port';
 import { ManagedBlock } from './ManagedBlock';
+import { ApprovalBlock } from './ApprovalBlock';
 import type { EntityListPanelProps } from '../EntityListPanel';
 
 /**
@@ -41,7 +42,7 @@ export interface ArtifactPreviewCommands {
 }
 
 type GenericBodyCommands = Partial<
-  ArtifactPreviewCommands & Pick<AuthoringCommands, 'patchEntity'> & { managed: ManagedPort }
+  ArtifactPreviewCommands & Pick<AuthoringCommands, 'patchEntity'> & { managed: ManagedPort; opRequests: OpRequestsOps }
 >;
 
 /**
@@ -261,6 +262,19 @@ function ContentBlock({
           <ManagedBlock detail={detail} spec={spec} port={commands?.managed} serverBaseUrl={serverBaseUrl} />
         ) : null;
       }
+      /* The approve card (L5): a request for a human-only op, read and decided
+         through `commands.opRequests`. Keyed by entity id, so re-pointing the
+         panel drops a half-typed decision note rather than sending it with
+         another request's approval. */
+      case 'approval':
+        return (
+          <ApprovalBlock
+            key={detail.id}
+            detail={detail}
+            port={commands?.opRequests ?? null}
+            {...(onOpenEntity ? { onOpenEntity } : {})}
+          />
+        );
       default:
         return null;
     }

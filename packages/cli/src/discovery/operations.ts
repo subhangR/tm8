@@ -877,6 +877,56 @@ const ROWS: Record<OperationName, Row> = {
     side: 'durable',
     tags: ['ref', 'reference', 'cross-space'],
   },
+  'opRequests.create': {
+    cmd: ['request', 'create'],
+    syn: "tm8 request create <op> --justification <text> [--params <json>] [--input <json>]",
+    sum: 'Ask a human for an operation you may not do yourself (link a space, set a link\'s spawn switch, register a gate folder, grant a filesystem path); they approve and it runs as them, or deny',
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['request', 'approve', 'human-only', 'link', 'cross-space', 'folder', 'agent'],
+    notes: [
+      '<op> must be on OP_REQUESTABLE in @tm8/contract; --input is the op\'s own body without clientMutationId, --params its path params (spaceId defaults to this Space)',
+      'the request is raised as an approve item; the outcome is messaged back to the session that filed it',
+    ],
+    examples: [
+      'tm8 request create spaceLinks.add --input \'{"targetSpaceId":"<space-id>","alias":"docs"}\' --justification "I need to read tasks in the docs space"',
+    ],
+  },
+  'opRequests.list': {
+    cmd: ['request', 'list'],
+    syn: 'tm8 request list [--status <pending|executing|succeeded|failed|denied>] [--limit <count>]',
+    sum: 'List this Space\'s op requests, newest first',
+    authz: 'space',
+    input: 'none',
+    tags: ['request', 'approve', 'list'],
+  },
+  'opRequests.get': {
+    cmd: ['request', 'get'],
+    syn: 'tm8 request get <request-id>',
+    sum: 'Read one op request: its op, body, justification, status and outcome',
+    authz: 'entity',
+    input: 'none',
+    tags: ['request', 'approve'],
+  },
+  'opRequests.approve': {
+    cmd: ['request', 'approve'],
+    syn: 'tm8 request approve <request-id> [--note <text>]',
+    sum: 'Approve an op request: the Server runs the op as YOU, with your own authority checks, and messages the outcome to the requesting session — human sessions only',
+    authz: 'entity',
+    input: 'bound',
+    side: 'durable',
+    tags: ['request', 'approve', 'human-only'],
+  },
+  'opRequests.deny': {
+    cmd: ['request', 'deny'],
+    syn: 'tm8 request deny <request-id> [--note <text>]',
+    sum: 'Deny an op request: nothing runs, and the requesting session is told — human sessions only',
+    authz: 'entity',
+    input: 'bound',
+    side: 'durable',
+    tags: ['request', 'deny', 'human-only'],
+  },
   'node.credentials.status': {
     cmd: null,
     sum: 'Read the node\'s credential fallback per provider — node admin, human sessions only',
@@ -3582,6 +3632,7 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   // `servers.*` (W8, 261): the same `tm8 server` noun 044's rows used.
   // generator.ts nounForOperation says the same.
   servers: 'server',
+  opRequests: 'request',
 };
 
 function nounFor(operation: OperationName): string {
@@ -3690,7 +3741,8 @@ export const CATALOG_DIGEST =
   // identity.pathGrants.list; path grants) — RECOMPUTED, not adjusted.
   // +4 spaceLinks.inbound.list|audit|revoke|restore (278, D2): read from the regenerated conformance manifest.
   // +3 entities.refs.list|add|remove (L3 cross-space refs, 279): read from the regenerated conformance manifest.
-  'sha256:5a0d78f7d8bba3257b551b014c4dd89e67729c20361cf5686e7680e9f8245645';
+  // Re-measured (L5, 280): +5 opRequests.* — read from the regenerated conformance manifest.
+  'sha256:24385b76952b688548f4fbc934089f72d139b56496d48c56a354b6e7d11c1ce1';
 
 export const GRAMMAR_VERSION = '2';
 

@@ -24,6 +24,7 @@ export * from './chat-defaults.js';
 export * from './membership.js';
 export * from './space-links.js';
 export * from './cross-space-refs.js';
+export * from './op-requests.js';
 export * from './servers.js';
 export * from './forms.js';
 export * from './kind-info.js';

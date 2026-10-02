@@ -109,6 +109,11 @@ export const CORE_KIND_INFO: Readonly<Record<CoreEntityKind, KindInfo>> = {
     createWith: [],
   },
   server: { group: 'runtime', summary: 'a remote tm8 server a space link points at', createWith: [] },
+  op_request: {
+    group: 'runtime',
+    summary: 'an agent\'s request for a human-only operation; a human approves (it runs as them) or denies it',
+    createWith: ['request create'],
+  },
   member: { group: 'people', summary: 'a human in the space', createWith: ['auth signup', 'space invite create'] },
   team_member: {
     group: 'people',

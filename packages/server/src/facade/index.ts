@@ -93,6 +93,7 @@ import {
 } from './handlers/w2/credentials.js';
 import { registerSpaceLinkHandlers, type SpaceLinkHandlerDeps } from './handlers/w2/space-links.js';
 import { registerServerHandlers } from './handlers/w2/servers.js';
+import { registerOpRequestHandlers } from './handlers/w2/op-requests.js';
 import { DisabledRemoteInvokeForwarder } from '../remote/forwarder.js';
 import { registerVoiceHandlers } from './handlers/voice.js';
 import { registerChatHandlers, type ChatHandlerDeps } from '../chat/handlers.js';
@@ -350,4 +351,10 @@ export function registerFacadeHandlers(
   if (spaceLinks) registerSpaceLinkHandlers(registry, facade, spaceLinks);
   // W8 servers: the same node-key root; add/adopt/remove are human-only inside.
   if (spaceLinks) registerServerHandlers(registry, facade, { dataDir: spaceLinks.dataDir });
+
+  // L5 (280) op requests: approve and deny are human-only inside the
+  // registration (and in SQL). Unconditional: an approve dispatches through
+  // this registry at call time, so an op that is not registered fails there
+  // as not_implemented rather than here.
+  registerOpRequestHandlers(registry, facade);
 }

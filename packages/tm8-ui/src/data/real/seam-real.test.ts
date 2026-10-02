@@ -487,6 +487,9 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // space_link, server). Not a new wire call: `managedPortFromSeam`
       // re-exposes existing seam methods keyed by operation name.
       'managed',
+      // L5 (280): the approve card's port. Not a new wire call either: it is
+      // `seam.opRequests` itself, re-exposed where the detail panel reads.
+      'opRequests',
       'prompt', 'react',
       // `resolveAttention` shipped into the seam without this lock being
       // updated, so the guard was red in-tree before the attention inbox

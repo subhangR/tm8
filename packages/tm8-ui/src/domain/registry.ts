@@ -2541,6 +2541,36 @@ const ROWS: readonly KindConfig[] = [
     },
   },
 
+  // -- op_request (280, L5: an agent's request for a human-only op) ---------
+  {
+    kind: 'op_request',
+    label: 'Request',
+    labelPlural: 'Requests',
+    icon: '⛉',
+    iconArt: KIND_ART.op_request,
+    slug: 'requests',
+    strategy: 'collection',
+    defaultMode: 'list',
+    hiddenModes: ['board', 'tree', 'gallery'],
+    chip: { glyph: '⛉', tintBy: 'none' },
+    // The tile's title says what is asked (entity-read `titleOf`), its excerpt
+    // the op; the status word is the request's own (pending → decided).
+    card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
+    // Born only from `opRequests.create` (generic create is refused
+    // server-side): an agent files it, so there is no create door here.
+    list: baseList({
+      quickCreate: false,
+      tile: { badges: [{ source: 'status' }, { source: 'createdBy' }] },
+    }),
+    // The approve card reads the request through `opRequests.get` and decides
+    // it through `opRequests.approve|deny`, both HUMAN-ONLY at the facade; the
+    // view's `canDecide` says whether this viewer may, so nothing here does.
+    panel: {
+      archetype: 'generic',
+      blocks: [{ block: 'approval', label: 'REQUEST' }],
+    },
+  },
+
   // -- the single custom-kind fallback row ----------------------------------
   {
     kind: CUSTOM_KIND_FALLBACK,

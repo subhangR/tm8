@@ -8,6 +8,7 @@ import type {
   EntitySummary,
   Hierarchy,
   Connections,
+  OpRequestView,
   Page,
   StatusCategory,
 } from '@tm8/contract';
@@ -1071,6 +1072,53 @@ export const credentialTeamKey = summary({
   state: { kind: 'credential', provider: 'anthropic', shape: 'api_key', visibility: 'public', status: 'active', ownerAccountId: null },
 });
 
+/**
+ * Op request (280, L5) — forge, an agent, asks its human to link a space it
+ * may not link itself. PENDING and filed by an agent, so the approve card has
+ * both its buttons and its justification to draw. The row carries only the op
+ * and status; params, input and outcome are `opRequests.get`'s
+ * (`fixtureOpRequests` below), exactly as on a node.
+ */
+export const opRequestLinkResearch = summary({
+  id: 'opreq-link-research',
+  kind: 'op_request',
+  title: 'Link a space: Research',
+  excerpt: 'spaceLinks.add',
+  createdBy: forge,
+  state: { kind: 'op_request', op: 'spaceLinks.add', status: 'pending' },
+});
+
+/**
+ * The `opRequests.get` answers behind the op-request rows above, keyed by the
+ * same id. The fixture seam serves these; `canDecide` is the viewer's (Ada,
+ * the human forge acts for), as the server would compute it.
+ */
+export const fixtureOpRequests: OpRequestView[] = [
+  {
+    id: opRequestLinkResearch.id,
+    spaceId: FIXTURE_SPACE_ID,
+    op: 'spaceLinks.add',
+    label: 'Link a space',
+    params: { spaceId: FIXTURE_SPACE_ID },
+    input: { targetSpaceId: '0f1e2d3c-0000-4000-8000-0000000000e2' },
+    justification: 'The migration notes live in the Research space. Linking it lets me read them instead of asking you to paste them.',
+    title: opRequestLinkResearch.title,
+    status: 'pending',
+    approver: 'requester',
+    requestedBy: forge.id,
+    requestingSessionId: sessionLive.id,
+    decidedBy: null,
+    decidedAt: null,
+    decisionNote: null,
+    result: null,
+    error: null,
+    canDecide: true,
+    createdAt: T.morning,
+    updatedAt: T.morning,
+    version: 1,
+  },
+];
+
 /** Custom kind — lands on the generic archetype with zero special-casing. */
 export const customRitual = summary({
   id: 'c-ritual-standup',
@@ -1341,6 +1389,7 @@ export const fixtureSummaries: EntitySummary[] = [
   prTransplant, commitFoundation, fileScreenshot,
   spellDeploy, skillReview, collectionInbox, collectionEmpty, projectTm8Ui,
   profileHouseStyle, credentialTeamKey, customRitual, artifactPulseBoard, drawingLoginFlow,
+  opRequestLinkResearch,
   ...formSummaries,
   ...containerFixtures,
 ];
@@ -1851,6 +1900,10 @@ export const fixtureDetails: Record<string, EntityDetail> = {
 
   [credentialTeamKey.id]: detail(credentialTeamKey, {
     content: { kind: 'credential', provider: 'anthropic', shape: 'api_key', visibility: 'public', status: 'active', ownerAccountId: null },
+  }),
+
+  [opRequestLinkResearch.id]: detail(opRequestLinkResearch, {
+    content: { kind: 'op_request', op: 'spaceLinks.add', status: 'pending' },
   }),
 
   [customRitual.id]: detail(customRitual, {
