@@ -1,6 +1,175 @@
-/* STUB — owned by the cards+rail worker; replace wholesale. Props are the agreed seam. */
-import type { StoryBlockProps, StoryNodePick } from '../props';
+/**
+ * WHAT'S HAPPENING — the story's activity, newest first, in plain words:
+ * "<who> <did> <what>", read straight off each row's verb, entity title and
+ * actor. The live sessions head the list ("Forge · Cedar is running …"), then
+ * the activity groups by day. Items open through the node popover or
+ * `actions.open`; with neither they are inert text.
+ */
+import { useState, type ReactNode } from 'react';
 
-export function WhatsHappening(_props: StoryBlockProps & { onPick?: (pick: StoryNodePick) => void }) {
-  return null;
+import { KindIcon } from '../../domain';
+import { nameOf, nodesById, rootNumber, SESSION_KIND, since, type StoryActivityItem, type StoryView } from '../model';
+import type { StoryBlockProps, StoryNodePick } from '../props';
+import { CardHead, Empty, flashOf, picker } from './shared';
+
+/** The stored verb → the words a person would say. Unknown verbs read as stored. */
+const VERB_WORDS: Readonly<Record<string, string>> = {
+  created: 'made',
+  updated: 'updated',
+  linked: 'linked',
+  unlinked: 'unlinked',
+  completed: 'completed',
+  deleted: 'removed',
+  restored: 'restored',
+  renamed: 'renamed',
+  status_changed: 'moved',
+  commented: 'said something on',
+  assigned: 'assigned',
+  merged: 'merged',
+  opened: 'opened',
+};
+
+/** How many activity rows show before "Show N more". */
+const FIRST_PAGE = 12;
+
+function dayLabelOf(at: string, now: Date): string {
+  const d = new Date(at);
+  const startOf = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const days = Math.round((startOf(now) - startOf(d)) / 86_400_000);
+  if (days <= 0) return 'today';
+  if (days === 1) return 'yesterday';
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+/** "root 3", "story", or nothing for a row outside every root. */
+function whereOf(view: StoryView, entityId: string): string | null {
+  if (entityId === view.id) return 'story';
+  const n = nodesById(view).get(entityId);
+  const root = n?.rootIds[0];
+  if (!root) return null;
+  const k = rootNumber(view, root);
+  return k > 0 ? `root ${k}` : null;
+}
+
+export function WhatsHappening({ view, actions, live, onPick }: StoryBlockProps & { onPick?: (pick: StoryNodePick) => void }) {
+  const [showAll, setShowAll] = useState(false);
+  const pick = picker(onPick, actions.open);
+  const byId = nodesById(view);
+  const running = view.page.sessions.filter((s) => s.live);
+  const activity = showAll ? view.page.activity : view.page.activity.slice(0, FIRST_PAGE);
+  const hidden = view.page.activity.length - activity.length;
+  const now = new Date();
+
+  const obj = (id: string, title: string) =>
+    pick ? (
+      <button type="button" className="stc-obj" onClick={pick(id)}>
+        {title}
+      </button>
+    ) : (
+      <span className="stc-obj">{title}</span>
+    );
+
+  if (!running.length && !view.page.activity.length) {
+    return (
+      <section className="stc-card">
+        <CardHead title="What’s happening" />
+        <Empty>Nothing has happened here yet. Put something in, or spawn on the story, and it shows up here as it happens.</Empty>
+      </section>
+    );
+  }
+
+  let lastDay = '';
+  return (
+    <section className="stc-card">
+      <CardHead title="What’s happening" count="newest first · across everything in the story" />
+      <div className="stc-tl">
+        {running.length ? <div className="stc-tl__sec stc-tl__sec--live">● live</div> : null}
+        {running.map((s) => {
+          const who = nameOf(view, s.teamMemberId);
+          const tasks = s.taskIds.filter((id) => byId.has(id));
+          const where = s.rootIds.length ? s.rootIds.map((r) => `root ${rootNumber(view, r)}`).join(' · ') : 'story';
+          return (
+            <div key={s.id} className={`stc-tl__item${flashOf(live?.landed, s.id)}`}>
+              <span className="stc-tl__o stc-tl__o--live">
+                <KindIcon kind={SESSION_KIND} size={14} />
+              </span>
+              <div>
+                <div className="stc-tl__what">
+                  <b>
+                    {who} · {s.callSign}
+                  </b>{' '}
+                  {tasks.length ? (
+                    <>
+                      is running{' '}
+                      {tasks.map((id, i) => (
+                        <span key={id}>
+                          {i ? (i === tasks.length - 1 ? ' and ' : ', ') : ''}
+                          {obj(id, byId.get(id)!.title)}
+                        </span>
+                      ))}
+                    </>
+                  ) : (
+                    <>is live on the story</>
+                  )}
+                </div>
+                <div className="stc-tl__via">
+                  <em>{where}</em> · <span className="stc-fam-text--runs">runs</span>
+                </div>
+              </div>
+              <span className="stc-tl__when">{since(s.createdAt)}</span>
+            </div>
+          );
+        })}
+        {activity.map((a) => {
+          const day = dayLabelOf(a.at, now);
+          const sec = day !== lastDay ? <div className="stc-tl__sec">{day}</div> : null;
+          lastDay = day;
+          return (
+            <div key={a.id}>
+              {sec}
+              <ActivityRow a={a} view={view} obj={obj} flash={flashOf(live?.landed, a.entityId)} />
+            </div>
+          );
+        })}
+        {hidden > 0 ? (
+          <button type="button" className="stc-more" onClick={() => setShowAll(true)}>
+            Show {hidden} more
+          </button>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function ActivityRow({
+  a,
+  view,
+  obj,
+  flash,
+}: {
+  a: StoryActivityItem;
+  view: StoryView;
+  obj: (id: string, title: string) => ReactNode;
+  flash: string;
+}) {
+  const where = whereOf(view, a.entityId);
+  return (
+    <div className={`stc-tl__item${flash}`}>
+      <span className="stc-tl__o">
+        <KindIcon kind={a.entityKind} size={14} />
+      </span>
+      <div>
+        <div className="stc-tl__what">
+          <b>{nameOf(view, a.actorId, a.actor)}</b> {VERB_WORDS[a.verb] ?? a.verb.replace(/_/g, ' ')}{' '}
+          {a.entityId === view.id ? 'the story' : obj(a.entityId, a.entityTitle)}
+        </div>
+        {where ? (
+          <div className="stc-tl__via">
+            <em>{where}</em>
+          </div>
+        ) : null}
+      </div>
+      <span className="stc-tl__when">{since(a.at)}</span>
+    </div>
+  );
 }
