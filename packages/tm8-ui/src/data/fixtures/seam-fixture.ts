@@ -5671,6 +5671,21 @@ export function createFixtureSeam(): FixtureSeam {
           }
           const pollable = inSpace.filter((c) => c.provider === 'github' && (c.ownerAccountId ?? null) === null && c.visibility !== 'private');
           const poll = pollable.filter((c) => c.status === 'active').sort((a, b) => Number(b.isDefault) - Number(a.isDefault))[0] ?? null;
+          // S7b (migration 995): the fixture has no session manifests, so its spaces
+          // are taken to launch Claude with git (anthropic + github used, openai never).
+          // The seeding verdict is the space default under the policy, as on the server.
+          const usedProviders: SpaceCredentialProviderName[] = ['anthropic', 'github'];
+          const seedingProviders: CredentialsSpaceReadinessView['seeding']['providers'] = {};
+          for (const provider of usedProviders) {
+            const p = providers[provider];
+            const launchReason = p.ready && p.via === 'space_default' ? null
+              : !p.spaceSourceAllowed ? 'policy_excludes_space'
+              : p.reason === 'stale' ? 'stale'
+              : p.activeCredentials > 0 ? 'no_default'
+              : 'no_credential';
+            seedingProviders[provider] = { ready: launchReason === null, needs: ['launch'], launchReason, pollReason: null, reason: launchReason };
+          }
+          const seedingMissing = usedProviders.filter((p) => !seedingProviders[p]!.ready);
           return {
             spaceId,
             canLaunch: { ready: missing.length === 0, missing, providers },
@@ -5680,6 +5695,17 @@ export function createFixtureSeam(): FixtureSeam {
               credentialId: poll?.id ?? null,
               activeSpaceOwnedCredentials: pollable.filter((c) => c.status === 'active').length,
               reason: poll ? null : pollable.some((c) => c.status === 'stale') ? 'stale' : 'no_space_owned_credential',
+            },
+            seeding: {
+              window: '30 days',
+              agentSessions: 3,
+              sessionsWithoutRecord: 0,
+              githubProjects: 0,
+              usedProviders,
+              providers: seedingProviders,
+              missing: seedingMissing,
+              state: seedingMissing.length === 0 ? 'green' : 'red',
+              readyForCut: seedingMissing.length === 0,
             },
           };
         },

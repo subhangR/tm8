@@ -82,6 +82,20 @@ const port: SpaceCredentialsPort = {
       },
     },
     canPoll: { ready: false, missing: ['github'], credentialId: null, activeSpaceOwnedCredentials: 0, reason: 'no_space_owned_credential' },
+    seeding: {
+      window: '30 days',
+      agentSessions: 12,
+      sessionsWithoutRecord: 0,
+      githubProjects: 1,
+      usedProviders: ['anthropic', 'github'],
+      providers: {
+        anthropic: { ready: false, needs: ['launch'], launchReason: 'no_credential', pollReason: null, reason: 'no_credential' },
+        github: { ready: false, needs: ['launch', 'poll'], launchReason: null, pollReason: 'no_space_owned_credential', reason: 'no_space_owned_credential' },
+      },
+      missing: ['anthropic', 'github'],
+      state: 'red',
+      readyForCut: false,
+    },
   }),
   setPolicy: async (provider, allowedSources) => {
     policy = { ...policy, providers: [...policy.providers.filter((p) => p.provider !== provider), { provider, allowedSources }] };
