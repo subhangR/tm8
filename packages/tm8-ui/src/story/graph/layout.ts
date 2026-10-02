@@ -106,7 +106,11 @@ export interface GraphLayout {
 }
 
 /* ---- geometry: the artifact's numbers ---- */
-const BASE_W = 1216;
+/** Canvas margin around the content. */
+const PAD = 24;
+const MAX_FLANK = 3;
+const EMPTY_W = 560;
+const MAX_STORY_TRAIL = 3;
 const COL = 243;
 const STORY_Y = 44;
 const TEAM_Y = 112;
@@ -237,8 +241,8 @@ export function layoutStoryGraph(view: StoryView, now: number = Date.now()): Gra
   const roots = [...page.roots].sort((a, b) => (a.position ?? Infinity) - (b.position ?? Infinity));
   const allRootIds = roots.map((r) => r.id);
   const n = roots.length;
-  const width = Math.max(BASE_W, n * COL);
-  const cx = width / 2;
+  /* Laid out around the story at x = 0, then shifted so the canvas is exactly as wide as what is on it. */
+  const cx = 0;
 
   const nodes = new Map<string, GraphNode>();
   /** A folded id (a session inside a capsule, a session of a flank teammate) → the node drawn for it. */
@@ -332,11 +336,11 @@ export function layoutStoryGraph(view: StoryView, now: number = Date.now()): Gra
     if (flank === 'right') right.push(t);
     else if (flank === 'left' || !capsuleOfMember(t.id)) left.push(t);
   }
-  const placeFlank = (list: StoryTeammate[], xAt: (i: number) => number, fits: (x: number) => boolean, noteX: (i: number) => number) => {
+  const placeFlank = (list: StoryTeammate[], xAt: (i: number) => number, fits: (i: number) => boolean, noteX: (innerX: number) => number) => {
     let i = 0;
     for (; i < list.length; i += 1) {
       const x = xAt(i);
-      if (!fits(x)) break;
+      if (!fits(i)) break;
       const t = list[i]!;
       add({
         id: t.id, kind: TEAMMATE_KIND, title: t.name, role: 'teammate', x, y: TEAM_Y, r: 13,
@@ -346,10 +350,13 @@ export function layoutStoryGraph(view: StoryView, now: number = Date.now()): Gra
       }, byId.get(t.id));
       for (const s of t.sessionIds) if (!live.has(s)) alias.set(s, t.id);
     }
-    if (i < list.length) notes.push({ x: noteX(i), y: TEAM_Y + 4, text: `+${list.length - i} teammates` });
+    if (i < list.length) notes.push({ x: noteX(xAt(i - 1)), y: TEAM_Y + 4, text: `+${list.length - i} teammates` });
   };
-  placeFlank(left, (i) => 178 + i * FLANK_STEP, (x) => x <= cx - 150, (i) => 178 + i * FLANK_STEP - 40);
-  placeFlank(right, (i) => width - 228 - i * FLANK_STEP, (x) => x >= cx + 150, (i) => width - 228 - i * FLANK_STEP + 40);
+  /* Outermost first, as in the artifact (Maestro outside Scout); the inner seat hugs the story. */
+  const flankX = (count: number, inner: number, dir: -1 | 1) => (i: number) => inner + dir * (Math.min(count, MAX_FLANK) - 1 - i) * FLANK_STEP;
+  const rightInner = cx + (n >= 3 ? 380 : 290);
+  placeFlank(left, flankX(left.length, cx - 290, -1), (i) => i < MAX_FLANK, (x) => x + FLANK_STEP);
+  placeFlank(right, flankX(right.length, rightInner, 1), (i) => i < MAX_FLANK, (x) => x - FLANK_STEP);
 
   /* Sessions folded into capsules. */
   for (const t of capsuleTasks) {
@@ -358,7 +365,6 @@ export function layoutStoryGraph(view: StoryView, now: number = Date.now()): Gra
   }
 
   /* ---- roots, children down the left, trails down the right ---- */
-  let maxRows = 0;
   roots.forEach((root, i) => {
     const rx = cx + (i - (n - 1) / 2) * COL;
     const src = byId.get(root.id);
@@ -372,7 +378,6 @@ export function layoutStoryGraph(view: StoryView, now: number = Date.now()): Gra
       },
       src,
     );
-    let rows: number;
     const kidIds = root.childIds.filter((id) => byId.has(id) && !nodes.has(id));
     kidIds.slice(0, MAX_ROWS).forEach((id, j) => {
       const c = byId.get(id)!;
@@ -386,7 +391,6 @@ export function layoutStoryGraph(view: StoryView, now: number = Date.now()): Gra
       );
     });
     if (kidIds.length > MAX_ROWS) notes.push({ x: rx - 60, y: ROW0 + ROW * MAX_ROWS - 8, text: `+${kidIds.length - MAX_ROWS} more` });
-    rows = Math.max(0, Math.min(kidIds.length, MAX_ROWS) + (kidIds.length > MAX_ROWS ? 1 : 0));
     const trail = root.trail.filter((t) => byId.has(t.id) && !nodes.has(t.id) && !alias.has(t.id));
     trail.slice(0, MAX_ROWS).forEach((t, k) => {
       const src = byId.get(t.id)!;
@@ -400,16 +404,15 @@ export function layoutStoryGraph(view: StoryView, now: number = Date.now()): Gra
       );
     });
     if (trail.length > MAX_ROWS) notes.push({ x: rx + 60, y: ROW0 + ROW * MAX_ROWS - 8, text: `+${trail.length - MAX_ROWS} more` });
-    rows = Math.max(rows, Math.min(trail.length, MAX_ROWS) + (trail.length > MAX_ROWS ? 1 : 0));
-    maxRows = Math.max(maxRows, rows);
   });
 
   /* ---- the story's own trail: followed rows reached from no root ---- */
   const storyTrail = page.nodes.filter((x) => x.depth >= 0 && x.rootIds.length === 0 && !nodes.has(x.id) && !alias.has(x.id));
   const slots: number[] = [];
-  const firstRight = Math.max(cx + 520, cx + 140 + Math.min(kids.length, MAX_CHILD_STORIES) * 130);
-  for (let x = firstRight; x <= width - 50; x += 120) slots.push(x);
-  for (let x = cx - 150; x >= 50; x -= 120) slots.push(x);
+  const shownKids = Math.min(kids.length, MAX_CHILD_STORIES);
+  const firstRight = cx + (shownKids ? 140 + shownKids * 130 + 120 : 150);
+  for (let k = 0; k < MAX_STORY_TRAIL; k += 1) slots.push(firstRight + k * 120);
+  for (let k = 0; k < MAX_STORY_TRAIL; k += 1) slots.push(cx - 150 - k * 120);
   storyTrail.slice(0, slots.length).forEach((x, i) => {
     const edge = page.edges.find((e) => (e.fromId === x.id && e.toId === view.id) || (e.toId === x.id && e.fromId === view.id));
     add(
@@ -420,7 +423,38 @@ export function layoutStoryGraph(view: StoryView, now: number = Date.now()): Gra
       x,
     );
   });
-  if (storyTrail.length > slots.length) notes.push({ x: width - 60, y: STORY_Y + 30, text: `+${storyTrail.length - slots.length} more` });
+  if (storyTrail.length > slots.length) {
+    notes.push({ x: firstRight + MAX_STORY_TRAIL * 120 - 40, y: STORY_Y + 4, text: `+${storyTrail.length - slots.length} more` });
+  }
+
+  /* ---- size the canvas to its content ---- */
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let maxY = 0;
+  for (const node of nodes.values()) {
+    const label = Math.max(...node.lines.map((l) => l.length), node.caption?.length ?? 0);
+    const half = node.capsule ? node.w / 2 + 12 : Math.max(node.r + 10, label * (node.role === 'self' ? 3.6 : 3) + 4);
+    minX = Math.min(minX, node.x - half);
+    maxX = Math.max(maxX, node.x + half);
+    const below = node.capsule
+      ? node.h / 2 + 18
+      : node.initials !== null
+        ? 44
+        : node.r + 16 + 11 * (node.lines.length - 1) + (node.caption ? 11 : 0);
+    maxY = Math.max(maxY, node.y + below);
+  }
+  for (const note of notes) {
+    minX = Math.min(minX, note.x - note.text.length * 3);
+    maxX = Math.max(maxX, note.x + note.text.length * 3);
+    maxY = Math.max(maxY, note.y + 8);
+  }
+  /* An empty story still leaves room for its one line of guidance. */
+  const minWidth = n === 0 ? EMPTY_W : 0;
+  const contentW = maxX - minX + 2 * PAD;
+  const dx = PAD - minX + Math.max(0, (minWidth - contentW) / 2);
+  for (const node of nodes.values()) node.x += dx;
+  for (const note of notes) note.x += dx;
+  const width = Math.ceil(Math.max(contentW, minWidth));
 
   /* ---- edges ---- */
   const edges: GraphEdge[] = [];
@@ -482,7 +516,7 @@ export function layoutStoryGraph(view: StoryView, now: number = Date.now()): Gra
     }
   }
 
-  const height = n === 0 ? 150 : ROW0 + ROW * Math.max(maxRows, 1) + 24;
+  const height = Math.ceil(Math.max(maxY + PAD, n === 0 ? 150 : 0));
   return { width, height, nodes: [...nodes.values()], edges, notes, allRootIds };
 }
 

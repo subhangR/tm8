@@ -9,7 +9,7 @@
  * Local UI state only: the view switcher, the hovered root (lights its trail)
  * and the picked node (outlined while its popover is open).
  */
-import { useId, useMemo, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 
 import { getKind, KindIcon } from '../../domain';
 import { FAMILY_TOKEN, GRAPH_VIEWS, STORY_KIND, VIEW_OF_KIND, type StoryEdgeFamily, type StoryGraphView } from '../model';
@@ -21,6 +21,9 @@ import './story-graph.css';
 const VIEW_ICON: Readonly<Record<StoryGraphView, string>> = Object.fromEntries(
   GRAPH_VIEWS.map(({ view }) => [view, Object.keys(VIEW_OF_KIND).find((k) => VIEW_OF_KIND[k] === view) ?? STORY_KIND]),
 ) as Record<StoryGraphView, string>;
+
+/** The smallest the canvas is drawn at: below it, labels stop being legible, so it scrolls instead. */
+const MIN_SCALE = 0.85;
 
 const EDGE_LEGEND: Readonly<Record<StoryEdgeFamily, string>> = {
   parent: 'parent',
@@ -34,7 +37,7 @@ const EDGE_LEGEND: Readonly<Record<StoryEdgeFamily, string>> = {
 
 function Glyph({ kind, x, y }: { kind: string; x: number; y: number }) {
   return (
-    <g className="sg-g" transform={`translate(${x - 8},${y - 8})`}>
+    <g className="stg-g" transform={`translate(${x - 8},${y - 8})`}>
       {getKind(kind).iconArt.map((d) => (
         <path key={d} d={d} />
       ))}
@@ -52,7 +55,7 @@ function NodeText({ node }: { node: GraphNode }) {
         </tspan>
       ))}
       {node.caption && (
-        <tspan className="sg-ed" x={node.x} dy={node.lines.length ? 11 : 0}>
+        <tspan className="stg-ed" x={node.x} dy={node.lines.length ? 11 : 0}>
           {node.caption}
         </tspan>
       )}
@@ -70,21 +73,21 @@ function Capsule({ node }: { node: GraphNode }) {
   const isRoot = node.role === 'root';
   return (
     <>
-      {node.recent && <rect className="sg-halo" x={x0 - 8} y={y0 - 8} width={node.w + 16} height={node.h + 16} rx={node.h / 2 + 8} />}
-      <rect className="sg-pulse" x={x0 - 2} y={y0 - 2} width={node.w + 4} height={node.h + 4} rx={node.h / 2 + 2} />
-      <rect className={`sg-shell sg-shell--${tone}`} x={x0} y={y0} width={node.w} height={node.h} rx={node.h / 2} />
-      {isRoot && <rect className="sg-ring" x={x0 - 4} y={y0 - 4} width={node.w + 8} height={node.h + 8} rx={node.h / 2 + 4} />}
-      <circle className="sg-body" cx={cx} cy={node.y} r={node.h / 2 - 5} />
+      {node.recent && <rect className="stg-halo" x={x0 - 8} y={y0 - 8} width={node.w + 16} height={node.h + 16} rx={node.h / 2 + 8} />}
+      <rect className="stg-pulse" x={x0 - 2} y={y0 - 2} width={node.w + 4} height={node.h + 4} rx={node.h / 2 + 2} />
+      <rect className={`stg-shell stg-shell--${tone}`} x={x0} y={y0} width={node.w} height={node.h} rx={node.h / 2} />
+      {isRoot && <rect className="stg-ring" x={x0 - 4} y={y0 - 4} width={node.w + 8} height={node.h + 8} rx={node.h / 2 + 4} />}
+      <circle className="stg-body" cx={cx} cy={node.y} r={node.h / 2 - 5} />
       <Glyph kind={node.kind} x={cx} y={node.y} />
-      <rect className="sg-avbox" x={ax - 9} y={node.y - 9} width={18} height={18} rx={4} />
-      <text className="sg-avtxt" x={ax} y={node.y + 3.5} textAnchor="middle">
+      <rect className="stg-avbox" x={ax - 9} y={node.y - 9} width={18} height={18} rx={4} />
+      <text className="stg-avtxt" x={ax} y={node.y + 3.5} textAnchor="middle">
         {cap.initials}
       </text>
-      <text className="sg-cap-title" x={x0 + node.h + 2} y={node.y + 4}>
+      <text className="stg-cap-title" x={x0 + node.h + 2} y={node.y + 4}>
         {trunc(node.title, isRoot ? 20 : 15)}
       </text>
-      <text className="sg-cap-live" x={node.x} y={node.y + node.h / 2 + 12} textAnchor="middle">
-        <tspan className="sg-cap-dot">●</tspan> {cap.line}
+      <text className="stg-cap-live" x={node.x} y={node.y + node.h / 2 + 12} textAnchor="middle">
+        <tspan className="stg-cap-dot">●</tspan> {cap.line}
       </text>
     </>
   );
@@ -93,16 +96,16 @@ function Capsule({ node }: { node: GraphNode }) {
 function Teammate({ node }: { node: GraphNode }) {
   return (
     <>
-      <rect className="sg-hit" x={node.x - 40} y={node.y - 15} width={80} height={56} />
-      {node.live && <rect className="sg-pulse" x={node.x - 15} y={node.y - 15} width={30} height={30} rx={8} />}
-      <rect className="sg-box" x={node.x - 13} y={node.y - 13} width={26} height={26} rx={6} />
-      <text className="sg-ini" x={node.x} y={node.y + 4} textAnchor="middle">
+      <rect className="stg-hit" x={node.x - 40} y={node.y - 15} width={80} height={56} />
+      {node.live && <rect className="stg-pulse" x={node.x - 15} y={node.y - 15} width={30} height={30} rx={8} />}
+      <rect className="stg-box" x={node.x - 13} y={node.y - 13} width={26} height={26} rx={6} />
+      <text className="stg-ini" x={node.x} y={node.y + 4} textAnchor="middle">
         {node.initials}
       </text>
-      <text className="sg-lbl" x={node.x} y={node.y + 26} textAnchor="middle">
+      <text className="stg-lbl" x={node.x} y={node.y + 26} textAnchor="middle">
         {node.lines[0]}
         {node.caption && (
-          <tspan className="sg-ed" x={node.x} dy={11}>
+          <tspan className="stg-ed" x={node.x} dy={11}>
             {node.caption}
           </tspan>
         )}
@@ -115,10 +118,10 @@ function Disc({ node }: { node: GraphNode }) {
   return (
     <>
       {/* The hit area: the disc and its label, gap included. */}
-      <rect className="sg-hit" x={node.x - 40} y={node.y - node.r - 9} width={80} height={2 * node.r + 43} />
-      {node.recent && <circle className="sg-halo" cx={node.x} cy={node.y} r={node.r + 9} />}
-      <circle className="sg-body" cx={node.x} cy={node.y} r={node.r} />
-      {node.role === 'root' && <circle className="sg-ring" cx={node.x} cy={node.y} r={node.r + 4} />}
+      <rect className="stg-hit" x={node.x - 40} y={node.y - node.r - 9} width={80} height={2 * node.r + 43} />
+      {node.recent && <circle className="stg-halo" cx={node.x} cy={node.y} r={node.r + 9} />}
+      <circle className="stg-body" cx={node.x} cy={node.y} r={node.r} />
+      {node.role === 'root' && <circle className="stg-ring" cx={node.x} cy={node.y} r={node.r + 4} />}
       <Glyph kind={node.kind} x={node.x} y={node.y} />
       <NodeText node={node} />
     </>
@@ -127,12 +130,12 @@ function Disc({ node }: { node: GraphNode }) {
 
 function nodeClass(node: GraphNode, extra: string[]): string {
   return [
-    'sg-n',
-    `sg-n--${node.role}`,
-    node.tone ? `sg-n--${node.tone}` : '',
-    node.exited ? 'sg-n--exited' : '',
-    node.capsule ? 'sg-cap' : '',
-    node.live ? 'sg-n--live' : '',
+    'stg-n',
+    `stg-n--${node.role}`,
+    node.tone ? `stg-n--${node.tone}` : '',
+    node.exited ? 'stg-n--exited' : '',
+    node.capsule ? 'stg-cap' : '',
+    node.live ? 'stg-n--live' : '',
     ...extra,
   ]
     .filter(Boolean)
@@ -148,21 +151,30 @@ export function StoryGraph({ view, live, onPick, initialView }: StoryGraphProps)
   const [graphView, setGraphView] = useState<StoryGraphView>(initialView ?? 'all');
   const [hoverRoot, setHoverRoot] = useState<string | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
-  const markerId = `sg-arrow-${useId().replace(/:/g, '')}`;
+  const markerId = `stg-arrow-${useId().replace(/:/g, '')}`;
 
   const layout = useMemo(() => layoutStoryGraph(view), [view]);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  /* When the canvas overflows, open it centred on the story rather than on the left flank. */
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    const self = layout.nodes[0];
+    if (!el || !self || el.scrollWidth <= el.clientWidth) return;
+    const scale = el.scrollWidth / layout.width;
+    el.scrollLeft = Math.max(0, self.x * scale - el.clientWidth / 2);
+  }, [layout]);
   const mask = useMemo(() => maskFor(layout, graphView), [layout, graphView]);
   const all = graphView === 'all';
   const landed = live?.landed;
 
   const shown = (id: string) => mask.inView.has(id) || mask.context.has(id);
-  const lit = (rootIds: readonly string[]) => (hoverRoot ? (rootIds.includes(hoverRoot) ? ' sg-on' : ' sg-off-hl') : '');
+  const lit = (rootIds: readonly string[]) => (hoverRoot ? (rootIds.includes(hoverRoot) ? ' stg-on' : ' stg-off-hl') : '');
 
   const edgeState = (e: GraphEdge): string | null => {
     const vis = shown(e.from) && shown(e.to);
     const touches = mask.inView.has(e.from) || mask.inView.has(e.to);
     if (!vis || (!all && !touches && e.from !== view.id)) return null;
-    return !all && !(mask.inView.has(e.from) && mask.inView.has(e.to)) ? ' sg-dim' : '';
+    return !all && !(mask.inView.has(e.from) && mask.inView.has(e.to)) ? ' stg-dim' : '';
   };
 
   const pick = (node: GraphNode, el: Element) => {
@@ -179,17 +191,17 @@ export function StoryGraph({ view, live, onPick, initialView }: StoryGraphProps)
   const empty = layout.allRootIds.length === 0;
 
   return (
-    <section className="sg-card" aria-label="The graph">
-      <div className="sg-head">
+    <section className="stg-card" aria-label="The graph">
+      <div className="stg-head">
         <span className="kit-eyebrow">The graph</span>
-        <span className="sg-seg" role="tablist" aria-label="Graph view">
+        <span className="stg-seg" role="tablist" aria-label="Graph view">
           {GRAPH_VIEWS.map(({ view: v, label }) => (
             <button
               key={v}
               type="button"
               role="tab"
               aria-selected={graphView === v}
-              className={graphView === v ? 'sg-seg__b sg-seg__b--on' : 'sg-seg__b'}
+              className={graphView === v ? 'stg-seg__b stg-seg__b--on' : 'stg-seg__b'}
               onClick={() => setGraphView(v)}
             >
               <KindIcon kind={VIEW_ICON[v]} size={12} />
@@ -197,17 +209,19 @@ export function StoryGraph({ view, live, onPick, initialView }: StoryGraphProps)
             </button>
           ))}
         </span>
-        <span className="sg-grow" />
-        <span className="sg-count">{rule}</span>
-        {truncated && <span className="sg-count sg-count--warn">· trail cut at {view.page.follow.limit} rows</span>}
-        {!empty && <span className="sg-count">· hover a root</span>}
+        <span className="stg-meta">
+          <span className="stg-count">{rule}</span>
+          {truncated && <span className="stg-count stg-count--warn">· trail cut at {view.page.follow.limit} rows</span>}
+          {!empty && <span className="stg-count">· hover a root</span>}
+        </span>
       </div>
 
-      <div className="sg-scroll">
+      <div className="stg-scroll" ref={scrollRef}>
         <svg
-          className={`sg-svg${hoverRoot ? ' sg-svg--hl' : ''}${graphView === 'team' ? ' sg-svg--team' : ''}`}
+          className={`stg-svg${hoverRoot ? ' stg-svg--hl' : ''}${graphView === 'team' ? ' stg-svg--team' : ''}`}
           viewBox={`0 0 ${layout.width} ${layout.height}`}
-          style={{ minWidth: layout.width > 1216 ? layout.width * 0.75 : undefined }}
+          /* Natural size at most, never below the readable floor; past that the card scrolls sideways. */
+          style={{ maxWidth: layout.width, minWidth: Math.round(layout.width * MIN_SCALE) }}
           role="img"
           aria-label={`Story graph: ${rule}`}
         >
@@ -220,7 +234,7 @@ export function StoryGraph({ view, live, onPick, initialView }: StoryGraphProps)
           {layout.edges.map((e) => {
             const st = edgeState(e);
             if (st === null) return null;
-            const cls = `sg-e sg-e--${e.family}${e.cross ? ' sg-e--cross' : ''}${e.exited ? ' sg-e--exited' : ''}${st}${lit(e.rootIds)}`;
+            const cls = `stg-e stg-e--${e.family}${e.cross ? ' stg-e--cross' : ''}${e.exited ? ' stg-e--exited' : ''}${st}${lit(e.rootIds)}`;
             return (
               <g key={e.key}>
                 <path
@@ -233,7 +247,7 @@ export function StoryGraph({ view, live, onPick, initialView }: StoryGraphProps)
                 </path>
                 {e.label && (
                   <text
-                    className={`sg-el sg-el--${e.family}${st}${lit(e.rootIds)}`}
+                    className={`stg-el stg-el--${e.family}${st}${lit(e.rootIds)}`}
                     x={e.label.x}
                     y={e.label.y}
                     textAnchor={e.label.anchor}
@@ -248,14 +262,14 @@ export function StoryGraph({ view, live, onPick, initialView }: StoryGraphProps)
 
           {layout.nodes.map((node) => {
             if (!shown(node.id)) return null;
-            const dim = !all && !mask.inView.has(node.id) ? 'sg-dim' : '';
-            const hl = hoverRoot ? (node.rootIds.includes(hoverRoot) ? 'sg-on' : 'sg-off-hl') : '';
+            const dim = !all && !mask.inView.has(node.id) ? 'stg-dim' : '';
+            const hl = hoverRoot ? (node.rootIds.includes(hoverRoot) ? 'stg-on' : 'stg-off-hl') : '';
             const cls = nodeClass(node, [
               dim,
               hl,
-              picked === node.id ? 'sg-picked' : '',
-              landed?.has(node.id) ? 'sg-flash' : '',
-              onPick ? 'sg-n--pickable' : '',
+              picked === node.id ? 'stg-picked' : '',
+              landed?.has(node.id) ? 'stg-flash' : '',
+              onPick ? 'stg-n--pickable' : '',
             ]);
             const isRoot = node.role === 'root';
             return (
@@ -291,38 +305,38 @@ export function StoryGraph({ view, live, onPick, initialView }: StoryGraphProps)
 
           {all &&
             layout.notes.map((n) => (
-              <text key={`${n.x}-${n.y}`} className="sg-note" x={n.x} y={n.y} textAnchor="middle">
+              <text key={`${n.x}-${n.y}`} className="stg-note" x={n.x} y={n.y} textAnchor="middle">
                 {n.text}
               </text>
             ))}
           {empty && (
-            <text className="sg-note" x={layout.width / 2} y={124} textAnchor="middle">
+            <text className="stg-note" x={layout.width / 2} y={layout.height - 24} textAnchor="middle">
               Nothing is in this story yet. Put a task in and everything connected to it follows.
             </text>
           )}
         </svg>
       </div>
 
-      <div className="sg-legend">
-        <span className="sg-legend__grp">nodes</span>
-        <span><i className="sg-sw sg-sw--root" />root</span>
-        <span><i className="sg-sw sg-sw--done" />done</span>
-        <span><i className="sg-sw sg-sw--working" />working</span>
-        <span><i className="sg-sw sg-sw--blocked" />blocked</span>
-        <span><i className="sg-sw" />to do · other kinds</span>
-        <span><i className="sg-sw sg-sw--cap" />live capsule: task + session + teammate</span>
-        <span><i className="sg-sw sg-sw--halo" />active in the last hour</span>
-        <span><i className="sg-sw sg-sw--tm" />teammate</span>
-        <span><i className="sg-sw sg-sw--child" />child story</span>
-        <span className="sg-legend__sep" />
-        <span className="sg-legend__grp">edges</span>
+      <div className="stg-legend">
+        <span className="stg-legend__grp">nodes</span>
+        <span><i className="stg-sw stg-sw--root" />root</span>
+        <span><i className="stg-sw stg-sw--done" />done</span>
+        <span><i className="stg-sw stg-sw--working" />working</span>
+        <span><i className="stg-sw stg-sw--blocked" />blocked</span>
+        <span><i className="stg-sw" />to do · other kinds</span>
+        <span><i className="stg-sw stg-sw--cap" />live capsule: task + session + teammate</span>
+        <span><i className="stg-sw stg-sw--halo" />active in the last hour</span>
+        <span><i className="stg-sw stg-sw--tm" />teammate</span>
+        <span><i className="stg-sw stg-sw--child" />child story</span>
+        <span className="stg-legend__sep" />
+        <span className="stg-legend__grp">edges</span>
         {(Object.entries(EDGE_LEGEND) as Array<[StoryEdgeFamily, string]>).map(([fam, label]) => (
           <span key={fam}>
-            <i className="sg-ln" style={{ borderTopColor: FAMILY_TOKEN[fam] }} />
+            <i className="stg-ln" style={{ borderTopColor: FAMILY_TOKEN[fam] }} />
             {label}
           </span>
         ))}
-        <span><i className="sg-ln sg-ln--cross" />across roots</span>
+        <span><i className="stg-ln stg-ln--cross" />across roots</span>
       </div>
     </section>
   );
