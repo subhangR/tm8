@@ -62,6 +62,9 @@ describe('catalog humanOnly ⇔ registered through a human guard', () => {
     'packages/server/src/facade/handlers/w2/credentials.ts',
     'packages/server/src/facade/handlers/w2/space-links.ts',
     'packages/server/src/facade/handlers/w2/servers.ts',
+    // 284: only `spaces.styleDefault.set` is human-only; the style reads and
+    // personal writes stay open to agents (spec §7).
+    'packages/server/src/facade/handlers/w2/styles.ts',
   ];
 
   it('matches op by op, not by prefix', () => {
@@ -75,7 +78,7 @@ describe('catalog humanOnly ⇔ registered through a human guard', () => {
     const flagged = new Set(OPERATIONS.filter((op) => op.humanOnly === true).map((op) => op.name));
     expect([...flagged].sort()).toEqual([...wrapped].sort());
     // The reads beside them stay open to agents.
-    for (const op of ['spaceLinks.list', 'spaceLinks.audit', 'spaceLinks.invoke', 'servers.get', 'servers.list', 'servers.probe']) {
+    for (const op of ['spaceLinks.list', 'spaceLinks.audit', 'spaceLinks.invoke', 'servers.get', 'servers.list', 'servers.probe', 'spaces.styleDefault.get', 'styles.push']) {
       expect(flagged.has(op)).toBe(false);
     }
   });
