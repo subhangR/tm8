@@ -72,9 +72,22 @@ function readBody(req: IncomingMessage): Promise<unknown> {
   });
 }
 
+interface CredentialFile {
+  credentials: Record<string, { token: string }>;
+  spaces?: Record<string, string[]>;
+}
+
+function credentialFile(): CredentialFile {
+  return JSON.parse(readFileSync(credPath, 'utf8')) as CredentialFile;
+}
+
 function stored(): Record<string, { token: string }> {
-  return (JSON.parse(readFileSync(credPath, 'utf8')) as { credentials: Record<string, { token: string }> })
-    .credentials;
+  return credentialFile().credentials;
+}
+
+/** The pin keys the store indexes for this origin. */
+function spaceIndex(): string[] {
+  return credentialFile().spaces?.[apiUrl] ?? [];
 }
 
 function seedGate(token = GATE): void {
@@ -195,7 +208,10 @@ describe('tm8 --space under TM8_SPACE_SESSIONS=enforce (a2)', () => {
     expect(stdout).toContain(`tm8 --space ${SPACE_A}`);
     const creds = stored();
     expect(creds[apiUrl]!.token).toBe(GATE);
-    expect(Object.values(creds).map((c) => c.token)).toContain(pinA);
+    // The index lives in its own slot: every credential entry is a real token.
+    expect(spaceIndex()).toHaveLength(1);
+    expect(Object.keys(creds).sort()).toEqual([apiUrl, ...spaceIndex()].sort());
+    expect(creds[spaceIndex()[0]!]!.token).toBe(pinA);
 
     expect(await run(['inbox', 'list', '--space', SPACE_A])).toBe(0);
     expect(seen.at(-1)).toMatchObject({ path: '/v2/inbox', authorization: `Bearer ${pinA}`, status: 200 });
@@ -237,6 +253,67 @@ describe('tm8 --space under TM8_SPACE_SESSIONS=enforce (a2)', () => {
     revoked.add([...pins.keys()].at(-1)!);
     expect(await run(['inbox', 'list', '--space', SPACE_A])).not.toBe(0);
     expect(stderr).toContain(`tm8 auth space enter ${SPACE_A}`);
+  });
+
+  it('a refused pin is forgotten with its index entry; the next command falls back to the gate', async () => {
+    seedGate();
+    expect(await run(['auth', 'space', 'enter', SPACE_A])).toBe(0);
+    expect(await run(['auth', 'space', 'enter', SPACE_B])).toBe(0);
+    const pinA = [...pins].find(([, space]) => space === SPACE_A)![0];
+    const pinB = [...pins].find(([, space]) => space === SPACE_B)![0];
+    const keyB = spaceIndex().find((key) => stored()[key]!.token === pinB)!;
+    revoked.add(pinA);
+
+    expect(await run(['inbox', 'list', '--space', SPACE_A])).not.toBe(0);
+    expect(seen.at(-1)).toMatchObject({ authorization: `Bearer ${pinA}`, status: 401 });
+    expect(stderr).toContain('so it was removed');
+    expect(Object.values(stored()).map((c) => c.token)).not.toContain(pinA);
+    expect(spaceIndex()).toEqual([keyB]);
+    // B's pin and the gate are untouched.
+    expect(stored()[apiUrl]!.token).toBe(GATE);
+    expect(stored()[keyB]!.token).toBe(pinB);
+
+    stderr = '';
+    expect(await run(['inbox', 'list', '--space', SPACE_A])).not.toBe(0);
+    expect(seen.at(-1)).toMatchObject({ authorization: `Bearer ${GATE}`, status: 403 });
+    expect(stderr).toContain(`tm8 auth space enter ${SPACE_A}`);
+  });
+
+  it('a refused gate leaves every pin where it is', async () => {
+    seedGate();
+    expect(await run(['auth', 'space', 'enter', SPACE_A])).toBe(0);
+    const before = credentialFile();
+    revoked.add(GATE);
+
+    // No --space: the request presents the gate, not a pin.
+    expect(await run(['inbox', 'list'])).not.toBe(0);
+    expect(seen.at(-1)).toMatchObject({ authorization: `Bearer ${GATE}`, status: 401 });
+    // A space with no pin presents the gate too.
+    expect(await run(['inbox', 'list', '--space', SPACE_B])).not.toBe(0);
+    expect(seen.at(-1)).toMatchObject({ authorization: `Bearer ${GATE}`, status: 401 });
+    expect(credentialFile()).toEqual(before);
+    expect(spaceIndex()).toHaveLength(1);
+  });
+
+  it('an index left as a `#spaces` credential by an older CLI moves to its slot and still drives logout', async () => {
+    seedGate();
+    expect(await run(['auth', 'space', 'enter', SPACE_A])).toBe(0);
+    const pinA = [...pins.keys()].at(-1)!;
+    const [keyA] = spaceIndex();
+    // Rewrite the file the way the old CLI kept it.
+    const legacy = credentialFile();
+    legacy.credentials[`${apiUrl}#spaces`] = { token: keyA! };
+    delete legacy.spaces;
+    writeFileSync(credPath, JSON.stringify(legacy), { mode: 0o600 });
+
+    expect(await run(['auth', 'space', 'enter', SPACE_B])).toBe(0);
+    expect(stored()).not.toHaveProperty(`${apiUrl}#spaces`);
+    expect(spaceIndex()).toHaveLength(2);
+    expect(spaceIndex()[0]).toBe(keyA);
+
+    expect(await run(['auth', 'logout'])).toBe(0);
+    await vi.waitFor(() => expect(revoked.has(pinA)).toBe(true));
+    expect(stored).toThrow();
   });
 
   it('logout revokes every pinned session with its own token and forgets them', async () => {

@@ -24,6 +24,7 @@ import {
   PROMPT_VERSION_V2,
   utf8Bytes,
   type PromptRuntime,
+  type PromptStoryContext,
 } from '@tm8/prompt';
 
 import { oomKillObserved, readOomKillCount } from './oom-witness.js';
@@ -54,6 +55,7 @@ import {
   resolveCommandNetworkPolicy,
   resolveCoordinatorSessionId,
   resolveLaunchConfig,
+  spawnLaunchFacts,
   resolveSessionTitle,
   resolveWorkdir,
   supportsPositionalPrompt,
@@ -854,7 +856,7 @@ export class SpawnService {
       // a checkout OF something, and without a project there is nothing to
       // check out.
       throw new SpawnError(
-        'workdir.mode "worktree" requires a project',
+        'workdir.mode "worktree" requires a project — pass --launch-project <project-id>',
         'invalid_input',
         { reason: 'worktree_requires_project' },
       );
@@ -1317,6 +1319,36 @@ export class SpawnService {
   }
 
   /**
+   * Spawn-on-story: the story the primary task belongs to, for every frame.
+   * Bounded by the same render timeout as the v2 task context, and fail-soft:
+   * a story that cannot be read costs the prompt its story block, never the
+   * launch.
+   */
+  private async storyContext(
+    auth: GraphAuth,
+    manifest: Tm8Manifest,
+    sessionId: string,
+  ): Promise<PromptStoryContext | null> {
+    const primary = manifest.tasks[0];
+    const load = this.graph.loadStoryContext?.bind(this.graph);
+    if (!primary || !load) return null;
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([
+        load(auth, { taskId: primary.id }),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('story context read timed out')), TASK_CONTEXT_RENDER_TIMEOUT_MS);
+        }),
+      ]);
+    } catch (error) {
+      this.logger?.warn?.('spawn: story context read failed', { sessionId, taskId: primary.id, error: String(error) });
+      return null;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  /**
    * The selection headers `<context_index>` renders, read under the caller's
    * RLS after the context load (so a spawn's refusals keep their order). A
    * graph without the read renders the index from the loader's own rows.
@@ -1425,11 +1457,27 @@ export class SpawnService {
       scratchRoot: join(this.dataDir, 'scratch'),
     });
 
+    const resolvedProfile = await this.graph.resolveInteractionProfile(auth, {
+      spaceId: request.spaceId,
+      teamMemberId: request.teamMemberId,
+      interactionProfileId: request.interactionProfileId ?? null,
+    });
+    // `<context_index>` (design 01a0d348 §2): always on (launch card v3), so
+    // its headers are always read.
+    const indexSwitch = contextIndexSwitch(this.env, resolvedProfile.snapshot);
+    const contextIndex = indexSwitch.on ? { source: indexSwitch.source } : null;
+    applyDispatcherTeammates(context, launch.mode);
+    if (contextIndex) await this.loadIndexHeaders(auth, context, launch.mode, request.jevRunId);
+
     // Worktree mode provisions BEFORE the work_session row exists, because the
     // row must persist the path the PTY will actually use — that is §1.2's
     // shipped scratch defect (a row recording `.../pending`) not being
     // reintroduced. Everything after this point treats the worktree as just
     // another workdir.
+    //
+    // It runs AFTER every read that can refuse the launch, so a refusal there
+    // costs no checkout; the only refusal left after it is the row write
+    // itself, and that one hands the fresh checkout to the reconciler below.
     const worktree =
       workdir.mode === 'worktree'
         ? await this.provisionWorktreeFor(auth, request, context, workdir.baseRef)
@@ -1445,40 +1493,54 @@ export class SpawnService {
         ? await detectCheckoutBranch(workdir.path)
         : null;
 
-    const resolvedProfile = await this.graph.resolveInteractionProfile(auth, {
-      spaceId: request.spaceId,
-      teamMemberId: request.teamMemberId,
-      interactionProfileId: request.interactionProfileId ?? null,
-    });
-    // `<context_index>` (design 01a0d348 §2): always on (launch card v3), so
-    // its headers are always read.
-    const indexSwitch = contextIndexSwitch(this.env, resolvedProfile.snapshot);
-    const contextIndex = indexSwitch.on ? { source: indexSwitch.source } : null;
-    applyDispatcherTeammates(context, launch.mode);
-    if (contextIndex) await this.loadIndexHeaders(auth, context, launch.mode, request.jevRunId);
-
-    const { sessionId, commandResult, replayed, createdTaskId } = await this.graph.createWorkSession(auth, {
-      spaceId: request.spaceId,
-      teamMemberId: request.teamMemberId,
-      parentSessionId: request.parentSessionId ?? null,
-      taskIds,
-      projectId: request.projectId ?? null,
-      workdirMode: workdir.mode,
-      workdirPath: worktree ? worktree.path : workdir.path,
-      // The SYMBOLIC ref the server actually resolved, not the one asked for:
-      // an absent `baseRef` becomes the repository's own HEAD branch, and
-      // recording the request rather than the resolution would make the row a
-      // plausible record instead of a reproducible one (§4.3).
-      baseRef: worktree ? worktree.baseRef : workdir.baseRef,
-      mode: launch.mode,
-      model: launch.model,
-      agentTool: launch.agentTool,
-      title,
-      nodeId: this.nodeId,
-      confirmUntrusted: request.confirmUntrusted ?? false,
-      clientMutationId: request.clientMutationId ?? null,
-      ...(request.newTask ? { newTaskTitle: request.newTask.title } : {}),
-    });
+    let created: Awaited<ReturnType<GraphPort['createWorkSession']>>;
+    try {
+      created = await this.graph.createWorkSession(auth, {
+        spaceId: request.spaceId,
+        teamMemberId: request.teamMemberId,
+        parentSessionId: request.parentSessionId ?? null,
+        taskIds,
+        // The RESOLVED folder id, never the raw request: `loadSpawnContext`
+        // accepts the project entity id or the folder id, but `execution_spawn`
+        // looks the id up in `public.projects` by folder id only, so forwarding
+        // an entity id refused the spawn with a bare not_found — after the
+        // worktree had already been provisioned from the resolved id.
+        projectId: context.project?.id ?? null,
+        workdirMode: workdir.mode,
+        workdirPath: worktree ? worktree.path : workdir.path,
+        // The SYMBOLIC ref the server actually resolved, not the one asked for:
+        // an absent `baseRef` becomes the repository's own HEAD branch, and
+        // recording the request rather than the resolution would make the row a
+        // plausible record instead of a reproducible one (§4.3).
+        baseRef: worktree ? worktree.baseRef : workdir.baseRef,
+        mode: launch.mode,
+        model: launch.model,
+        agentTool: launch.agentTool,
+        title,
+        nodeId: this.nodeId,
+        confirmUntrusted: request.confirmUntrusted ?? false,
+        clientMutationId: request.clientMutationId ?? null,
+        ...(request.newTask ? { newTaskTitle: request.newTask.title } : {}),
+      });
+    } catch (error) {
+      // The row was refused, so nothing references the checkout just created
+      // and nothing ever will: left in `preparing` with its entity committed,
+      // the reconciler would PUBLISH it as ready — a lane with no session.
+      // `cleanup_pending` is the state that tells it to remove the checkout
+      // instead; it holds no work, since no agent ever ran in it.
+      if (worktree) {
+        await this.graph
+          .setWorktreeAllocationState(auth, {
+            worktreeId: worktree.worktreeId,
+            state: 'cleanup_pending',
+            failureCode: 'spawn_refused',
+            failureDetail: { message: error instanceof Error ? error.message : String(error) },
+          })
+          .catch(() => undefined);
+      }
+      throw error;
+    }
+    const { sessionId, commandResult, replayed, createdTaskId } = created;
     // Launch v3 gap 4: the task the RPC just created is known only now. It is
     // new, so it has nothing but its title — the rest is what the row holds.
     if (createdTaskId) {
@@ -1560,6 +1622,7 @@ export class SpawnService {
         reused: true,
         commandResult,
         ...spawnFacts,
+        launchFacts: spawnLaunchFacts(manifest.launch, launch.accessModeSource, request.parentSessionId ?? null),
       };
     }
 
@@ -1667,6 +1730,9 @@ export class SpawnService {
         contextIndex,
         baseUrl: this.baseUrl,
       });
+
+      const story = await this.storyContext(auth, manifest, sessionId);
+      if (story) manifest.story = story;
 
       // Compose the agent's briefing IN-PROCESS and embed it in the command.
       //
@@ -1862,7 +1928,10 @@ export class SpawnService {
         this.watchWorkspaceTrust(sessionId, manifestPath, manifest, env);
       }
 
-      return { sessionId, manifestPath, manifest, command, cwd, envVarNames, reused, commandResult, ...spawnFacts };
+      return {
+        sessionId, manifestPath, manifest, command, cwd, envVarNames, reused, commandResult, ...spawnFacts,
+        launchFacts: spawnLaunchFacts(manifest.launch, launch.accessModeSource, request.parentSessionId ?? null),
+      };
     } catch (error) {
       // The row exists and the graph believes a session is spawning. Leaving it
       // there would burn a slot against the concurrency cap forever, so mark it
@@ -1960,6 +2029,9 @@ export class SpawnService {
 
     const { sessionId, commandResult, replayed } = await this.graph.createShellSession(auth, {
       ...request,
+      // Resolved, for the reason `spawn` gives: `start_shell_session` reads
+      // `public.projects` by folder id, and the request may name the entity.
+      projectId: context.project?.id ?? null,
       nodeId: this.nodeId,
       // Recorded so the row says where the shell actually is. Null for a
       // projectless terminal rather than the `.../pending` placeholder

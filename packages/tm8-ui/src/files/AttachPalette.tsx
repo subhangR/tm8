@@ -6,8 +6,9 @@
  * Artifacts, Skills, Teammates, Sessions.
  *
  * A chip opens a picker for its one kind. The search runs ON THE SERVER, by
- * kind and title (`filters.titleContains`), so an entity older than the
- * latest page can still be found. A pick adds ONE graph edge, the link the
+ * kind and by every typed word in the title or short description
+ * (`filters.words`), so an entity older than the latest page can still be
+ * found, and "skill creator" finds `skill-creator`. A pick adds ONE graph edge, the link the
  * row declares, and nothing else: no tm8:// link is written into the
  * description.
  *
@@ -255,8 +256,8 @@ function PalettePicker({
         type="text"
         className="fn-picker__input"
         data-testid="attach-palette-search"
-        placeholder={`Search ${row.label.toLowerCase()} by title…`}
-        aria-label={`Search ${row.label.toLowerCase()} by title`}
+        placeholder={`Search ${row.label.toLowerCase()}…`}
+        aria-label={`Search ${row.label.toLowerCase()}`}
         aria-controls={listId}
         aria-activedescendant={options[active] ? `${listId}-${options[active]!.id}` : undefined}
         value={text}
@@ -292,7 +293,7 @@ function PalettePicker({
         })}
         {!loading && options.length === 0 && !error ? (
           <p className="fn-picker__empty" data-testid="attach-palette-empty">
-            {text.trim() ? `No ${kindWord} titled “${text.trim()}” to link.` : `No ${kindWord} to link yet.`}
+            {text.trim() ? `No ${kindWord} matching “${text.trim()}” to link.` : `No ${kindWord} to link yet.`}
           </p>
         ) : null}
       </div>

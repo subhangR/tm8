@@ -35,6 +35,7 @@ export {
   echoAgentPath,
   resolveLaunchConfig,
   resolveCommandNetworkPolicy,
+  spawnLaunchFacts,
   resolveWorkdir,
   shellQuote,
   withAgentResume,

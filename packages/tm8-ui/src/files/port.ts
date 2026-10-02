@@ -216,10 +216,14 @@ export interface AttachmentsPort {
    * THE ATTACH PALETTE'S THREE VERBS (task 01a0cfb0). Each is optional, for the
    * reason every verb above is: absent means the control is not drawn.
    *
-   * `search` is the SERVER's title search (`filters.titleContains` on
-   * `collections.query`), narrowed to one kind. It is not one recent page
-   * filtered in the browser, so an old entity is still findable. Empty text
-   * means the most recent items of that kind.
+   * `search` is the SERVER's word search (`filters.words` on
+   * `collections.query`), narrowed to one kind: every typed word must appear
+   * in the title or the short description, so "skill creator" finds
+   * `skill-creator`. It was the literal `titleContains`, which matched the
+   * whole typed text as one substring and so found nothing for any query
+   * spaced or ordered unlike the stored name (task 01a0fb05). It is not one
+   * recent page filtered in the browser, so an old entity is still findable.
+   * Empty text means the most recent items of that kind.
    */
   search?(kind: string, text: string): Promise<EntitySummary[]>;
   /** Writes ONE edge between two existing entities. The server's `validate_edge` is the final check. */
@@ -290,7 +294,7 @@ export function attachmentsPortFromSeam(seam: Seam, spaceId: SpaceId | string): 
       const result = await seam.query({
         spaceId: spaceId as SpaceId,
         kinds: [kind as never],
-        ...(needle ? { filters: { titleContains: needle } } : {}),
+        ...(needle ? { filters: { words: needle } } : {}),
         limit: PALETTE_SEARCH_LIMIT,
       });
       return result.page.items;

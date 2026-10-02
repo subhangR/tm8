@@ -30,6 +30,8 @@ export const CONTENT_STRING_CAP = 1000;
 
 type Rec = Record<string, unknown>;
 
+import { storyPageCounts } from './story-render.js';
+
 function isRecord(v: unknown): v is Rec {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
@@ -73,6 +75,12 @@ function capContent(content: unknown, cuts: BoundedCut[]): unknown {
   if (!isRecord(content)) return content;
   const out: Rec = {};
   for (const [key, value] of Object.entries(content)) {
+    // A story's page is computed and large (up to 500 trail rows plus their
+    // edges): bounded, it is its counts; `--full` has the page itself.
+    if (key === 'page' && content['kind'] === 'story' && isRecord(value)) {
+      out['pageCounts'] = storyPageCounts(value);
+      continue;
+    }
     if (typeof value === 'string' && value.length > CONTENT_STRING_CAP) {
       out[key] = `${value.slice(0, CONTENT_STRING_CAP)}…`;
       cuts.push({ field: `content.${key}`, shownChars: CONTENT_STRING_CAP, totalChars: value.length });
@@ -125,6 +133,7 @@ export function boundEntityDetail(detail: Rec): Rec {
   out['next'] = {
     relationships: `tm8 entity context ${id}`,
     full: `tm8 entity get ${id} --full`,
+    ...(detail['kind'] === 'story' ? { page: `tm8 entity get ${id} --full --format json` } : {}),
   };
   return out;
 }

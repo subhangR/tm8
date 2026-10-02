@@ -1,5 +1,5 @@
 -- =============================================================================
--- 275 (provisional; next free after main b790934d4's 273 and open PRs #930/#942's 274) —
+-- 285 (was provisional 275; renumbered at the refresh onto main 79ca8d50: main holds 275-277 and 283, integration 278-282, #847 takes 284) —
 -- which of these sessions have ended (P7, task 01a0db30-b2f9, lane L2a).
 --
 -- An event socket authenticates once, at upgrade. Before this, nothing looked

@@ -75,6 +75,7 @@ import { errorInput, withErrorReceipt } from '../receipt-error.js';
 import { renderContextBrief, renderHeaderLines } from '../context-brief.js';
 import { isAgentCaller, resolveWireSchema, schemaOption, type WireSchema } from '../wire-schema.js';
 import { boundEntityDetail, isEntityDetail } from '../entity-bounded.js';
+import { renderStoryDetail } from '../story-render.js';
 
 // ── shared local validation, used by every module in this slot ─────────────
 
@@ -310,6 +311,11 @@ function renderAttentionMutation(dto: unknown): string {
 
 function renderEntity(dto: unknown): string {
   const line = summaryLine(dto as SummaryLike);
+  // A story's detail carries its whole computed page: text shows the summary
+  // and the page's counts instead of one bare line (json still has it all).
+  if (line !== '' && (dto as { kind?: unknown }).kind === 'story') {
+    return renderStoryDetail(dto as Record<string, unknown>, line);
+  }
   return line === '' ? JSON.stringify(dto) : line;
 }
 

@@ -23,6 +23,7 @@ import type { FormQuestionRow, FormSectionRow, FormSettings, FormStatus } from '
 import type { RelevanceLevel } from './launch-suggest.js';
 import type { CoherenceFinding } from './orchestration.js';
 import type { EntityHeaderView, HeaderTextInput } from './selection-header.js';
+import type { EntityContextStory, StoryContent, StoryState } from './story.js';
 
 // ===========================================================================
 // §1 — Inherited contract (UI snapshot, near-verbatim)
@@ -82,7 +83,12 @@ export type CoreEntityKind =
   // `spaceLinks.add`.
   | 'space_link'
   // A remote tm8 server a space link points at (W8). Registered with W6's kinds.
-  | 'server';
+  | 'server'
+  // Stories (migration 283, 2026-10-02): a title, a description and a status;
+  // things put in by hand as `contains` edges are its roots, and everything
+  // connected to them follows. Progress and the page are computed at read
+  // time, never stored. See ./story.ts.
+  | 'story';
 
 /** A credential entity's visibility (W10a): who may launch on it. */
 export type CredentialVisibility = 'private' | 'public';
@@ -511,6 +517,12 @@ export type CoreEntityState =
    * scene is the largest payload any kind carries.
    */
   | { kind: 'drawing'; format: string; elementCount: number }
+  /**
+   * A story's computed summary (283): roots, trail size, progress (ruled, by
+   * task, rolled up over child stories), live sessions, pending attention,
+   * last activity. Computed by `internal.story_summary` on BOTH read paths.
+   */
+  | StoryState
   /** A form's row facts (209): where it is in its lifecycle, and how long. */
   | { kind: 'form'; status: FormStatus; questionCount: number }
   /** A space credential's row facts (W10a). Never the secret, hint or login. */
@@ -950,6 +962,8 @@ export type CoreEntityContent =
    */
   | { kind: 'drawing'; format: string; elements: Record<string, unknown>[];
       appState: Record<string, unknown>; files: Record<string, unknown> }
+  /** A story's description, plus the computed page on a detail read (283). */
+  | StoryContent
   /**
    * A form (209), everything its panel needs in one read: settings with
    * defaults applied, and sections and questions in order. Responses are not
@@ -1231,6 +1245,17 @@ export interface CollectionQuery {
      * Trimmed and non-empty: a blank needle matches everything.
      */
     titleContains?: string;
+    /**
+     * Additive (2026-10-02, task 01a0fb05 — the attach palette's search):
+     * entities where EVERY word of this text appears, case-insensitively, in
+     * the title or in a short description (skill, spell, artifact,
+     * collection). Words split on whitespace and on the separators names are
+     * written with (`-` `_` `.` `/` `:`), so "skill creator" finds
+     * `skill-creator` and "creator skill" finds it too — the literal
+     * `titleContains` finds neither. Trimmed and non-empty; a text with no
+     * word in it (only separators) falls back to the literal title match.
+     */
+    words?: string;
   };
   layout?: 'list'|'board'|'tree'|'feed'|'gallery'|'graph';
   /** `priority` added 2026-08-16 (Board tab wave) — same additive posture as the rest of the union. */
@@ -1416,6 +1441,43 @@ export interface StartChatResult {
   chat: EntitySummary;
   /** The opening message, already queued as turn one. */
   messageId: EntityId;
+}
+
+/**
+ * MOVE A RUNNING CHAT ONTO ANOTHER MODEL (276).
+ *
+ * The model used to be a write-once fact for a chat's whole life, so finishing a
+ * conversation on a stronger model meant abandoning the conversation. It does
+ * not any more: a Claude Code session carries turns from different models and
+ * `--resume` keeps the transcript across the switch, so the chat's model is a
+ * setting, and the turn records what actually ran it.
+ *
+ * STICKY, NOT PER-MESSAGE. This moves the chat; every turn claimed after it runs
+ * on the new model until it is moved again. A turn already claimed keeps the
+ * model it was stamped with — the claim is the serialization point, so a switch
+ * can never rewrite a run that is already under way.
+ *
+ * `agentTool` is the one axis that cannot move: chat runs claude-code only, and
+ * a tool change would invalidate the native session the resume depends on. The
+ * server resolves the tool from the launch catalog and the database refuses a
+ * mismatch.
+ */
+export interface SetChatModelInput {
+  /**
+   * A `LAUNCH_MODEL_CATALOG` id whose `agentTool` matches the chat's.
+   *
+   * The chat is addressed by the PATH (`/v2/chats/:id/model`) and so is absent
+   * here, like every other `:id`-addressed command: two places to name the same
+   * chat is two places for them to disagree.
+   */
+  model: string;
+}
+
+export interface SetChatModelResult {
+  chatId: EntityId;
+  model: string;
+  /** Server-resolved from the catalog; decides which API-key backend is used. */
+  provider: string;
 }
 
 export interface ChatTurnDeltaFrame {
@@ -1891,6 +1953,35 @@ export interface IdentityProfileView {
   avatar: string | null;
   email: string | null;
   globalId: string | null;
+}
+
+/**
+ * `TM8_SPACE_SESSIONS` — which sessions this server pins to one space (W3):
+ * `off` pins none, `agents` (the default) pins agent sessions, `enforce` also
+ * requires a human to enter a space (`auth.space.enter`) before acting in it.
+ */
+export type SpaceSessionsMode = 'off' | 'agents' | 'enforce';
+
+/** `identity.get` — who the caller is, and how this server gates spaces. */
+export interface IdentityGetResult {
+  identityId: string;
+  accountId: string;
+  username: string;
+  displayName: string | null;
+  avatar: string | null;
+  email: string | null;
+  globalId: string | null;
+  isNodeAdmin: boolean;
+  isOwner: boolean;
+  status: string;
+  actingAs: string | null;
+  memberships: Array<{ spaceId: string; memberId: string; role: string }>;
+  /**
+   * The node's space-sessions mode, so a client knows up front whether a
+   * space pin is required instead of discovering it from a 403. A node that
+   * predates the field omits it; read absent as "unknown", not `agents`.
+   */
+  spaceSessions?: SpaceSessionsMode;
 }
 
 // ---------------------------------------------------------------------------
@@ -5614,6 +5705,44 @@ export const EXECUTION_NEW_TASK_TITLE_MAX = 200;
 export interface ExecutionSpawnResult extends CommandResult {
   /** Present only when the request carried `newTask`. */
   createdTaskId?: EntityId;
+  /**
+   * What the new session actually launched with — the RESOLVED posture, not
+   * an echo of the request, which may name none of it. Absent from a server
+   * that predates it.
+   */
+  launch?: ExecutionSpawnLaunch;
+}
+
+/**
+ * Which link of the launch precedence chain chose the access mode:
+ * `requested` (this request named it), `env` (the node's
+ * `TM8_PERMISSION_MODE`), `inherited` (the parent session's posture),
+ * `persona` (the teammate's default), `default` (built-in) or `dispatcher`
+ * (a dispatcher always runs `fullAccess`).
+ */
+export type SpawnAccessModeSource = 'requested' | 'env' | 'inherited' | 'persona' | 'default' | 'dispatcher';
+
+/** How a space credential was picked: the request's pin, the launcher's own default, or the space default. */
+export type SpawnSpaceCredentialPick = 'pinned' | 'my_default' | 'space_default';
+
+/** One provider's effective credential source. Ids only — never a secret. */
+export interface ExecutionSpawnCredential {
+  provider: CredentialProviderName;
+  source: LaunchCredentialSource;
+  /** The space credential used; present only when `source` is `space`. */
+  spaceCredentialId?: EntityId;
+  /** How that space credential was chosen, when the spawn path recorded it. */
+  spacePick?: SpawnSpaceCredentialPick;
+}
+
+/** The resolved launch facts `execution.spawn` answers with. */
+export interface ExecutionSpawnLaunch {
+  accessMode: LaunchAccessMode;
+  accessModeSource: SpawnAccessModeSource;
+  /** Null for a root spawn. */
+  parentSessionId: EntityId | null;
+  /** One row per provider the launch resolved, ordered by provider. */
+  credentials: ExecutionSpawnCredential[];
 }
 
 /**
@@ -7389,6 +7518,8 @@ export interface EntityContextV2View {
   mode?: string | null;
   // project
   projectId?: string | null;
+  // story (283): the page projected small for an agent.
+  story?: EntityContextStory;
   // message
   anchor?: EntityContextRef;
   parentMessage?: EntityContextRef | null;

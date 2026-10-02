@@ -114,6 +114,7 @@ import { refuseLinkBearer } from '../identity/link-bearer.js';
 import { LIVE_CHAT_COUNTS_SQL, type LiveChatCountRow } from './live-counts.js';
 import { projectLaunchContext } from './launch-context.js';
 import { loadContextV2 } from './services/w2/feed-context-v2.js';
+import { loadStoryContextForTask, putDerivedTasksInStories } from './spawn-story.js';
 import { toCommandResult, type RpcCommandResult } from './handlers/entities.js';
 import { createLoopbackOwnerResolver, type LoopbackOwner } from '../identity/loopback.js';
 import type { HandlerRegistry } from './registry.js';
@@ -579,7 +580,10 @@ export class DbGraphPort implements GraphPort {
           // Not-linked and not-found are the same answer to a caller who may not
           // be a member of the other space — distinguishing them would leak the
           // existence of projects outside this space.
-          throw fail('not_found', `project ${input.projectId} is not linked to this space`);
+          throw fail('not_found', `project ${input.projectId} is not linked to this space`, {
+            reason: 'project_not_linked',
+            projectId: input.projectId,
+          });
         }
         project = {
           id: row.id,
@@ -1058,7 +1062,10 @@ export class DbGraphPort implements GraphPort {
     );
     const row = rows[0];
     if (!row) {
-      throw fail('not_found', `project ${input.projectId} is not linked to this space`);
+      throw fail('not_found', `project ${input.projectId} is not linked to this space`, {
+        reason: 'project_not_linked',
+        projectId: input.projectId,
+      });
     }
     return {
       project: {
@@ -1168,6 +1175,14 @@ export class DbGraphPort implements GraphPort {
       loadContextV2(q, input.taskId, { sections: null, totalBytes: input.totalBytes }),
     );
     return view as unknown as Record<string, unknown>;
+  }
+
+  /**
+   * Spawn-on-story: the nearest story containing the task, as the spawner.
+   * See spawn-story.ts.
+   */
+  async loadStoryContext(auth: GraphAuth, input: { taskId: string }) {
+    return loadStoryContextForTask(this.db, this.claims(auth), input.taskId);
   }
 
   /**
@@ -2273,6 +2288,8 @@ async function resolveAssignmentAnchors(
   spaceId: string,
   subjectIds: readonly string[],
   forceNewTask = false,
+  /** When given, receives every subject -> task pair, in order (spawn-on-story). */
+  pairs?: Array<{ subjectId: string; taskId: string }>,
 ): Promise<string[]> {
   const anchors: string[] = [];
   for (const subjectId of subjectIds) {
@@ -2295,6 +2312,7 @@ async function resolveAssignmentAnchors(
     // De-duplicate on the ANCHOR, not the subject: two different entities can
     // legitimately resolve to one task, and `execution_spawn` would then try to
     // insert the same `working_on` edge twice.
+    pairs?.push({ subjectId, taskId });
     if (!anchors.includes(taskId)) anchors.push(taskId);
   }
   return anchors;
@@ -3369,13 +3387,29 @@ function registerHandlers(
 
     // Any entity may be launched; the anchor is always a task. See
     // `resolveAssignmentAnchors` — a task passes through untouched.
+    const anchorPairs: Array<{ subjectId: string; taskId: string }> = [];
     const taskIds = input.taskIds?.length
       ? await rethrowing(() =>
           resolveAssignmentAnchors(
-            db, claims, input.spaceId, input.taskIds ?? [], input.forceNewTask ?? false,
+            db, claims, input.spaceId, input.taskIds ?? [], input.forceNewTask ?? false, anchorPairs,
           ),
         )
       : undefined;
+
+    // Spawn-on-story: a launch ON a story runs on the task derived from it.
+    // Put that task in the story (a `contains` root) unless the story's trail
+    // already reaches it, so the session's `working_on` edge shows in the
+    // story and the prompt's story read below finds it. Before the spawn, so
+    // the hand-over sees it; best-effort, so a story never refuses a launch.
+    try {
+      for (const r of await putDerivedTasksInStories(db, claims, anchorPairs)) {
+        if (r.outcome === 'failed') {
+          console.warn(`[tm8:spawn] derived task ${r.taskId} not put in story ${r.storyId}: ${r.error ?? 'unknown'}`);
+        }
+      }
+    } catch (error) {
+      console.warn(`[tm8:spawn] story membership for derived tasks skipped: ${error instanceof Error ? error.message : String(error)}`);
+    }
 
     // 176 — A CHAT IS THE PARENT OF WHAT IT SPAWNS.
     //
@@ -3523,6 +3557,10 @@ function registerHandlers(
     const spawnResult: ExecutionSpawnResult = {
       ...((await assembleCommandResult(db, claims, result.commandResult, owner.identityId)) as CommandResult),
       ...(result.createdTaskId ? { createdTaskId: result.createdTaskId } : {}),
+      // The resolved posture — access mode and where it came from, the
+      // credential each provider ran on, the parent — so the caller's receipt
+      // shows what the child inherited without a second read.
+      ...(result.launchFacts ? { launch: result.launchFacts } : {}),
     };
     return json(spawnResult, { status: 201 });
   };
@@ -3635,6 +3673,19 @@ function registerHandlers(
           db, claims, input.spaceId, [subjectId], input.forceNewTask ?? false,
         ),
       );
+      // Spawn-on-story, as on execution.spawn: a dispatch on a story puts the
+      // derived task in it. Best-effort.
+      if (taskId) {
+        try {
+          for (const r of await putDerivedTasksInStories(db, claims, [{ subjectId, taskId }])) {
+            if (r.outcome === 'failed') {
+              console.warn(`[tm8:dispatch] derived task ${r.taskId} not put in story ${r.storyId}: ${r.error ?? 'unknown'}`);
+            }
+          }
+        } catch (error) {
+          console.warn(`[tm8:dispatch] story membership skipped: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
     }
     if (!taskId) {
       throw fail('upstream_unavailable', `could not derive a task for ${subjectId || 'newTask'}`);

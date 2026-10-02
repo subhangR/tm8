@@ -400,6 +400,97 @@ describe('ClaudeHeadlessAdapter', () => {
     ).resolves.toContainEqual({ kind: 'text', text: 'echo:resumed:1' });
   });
 
+  /**
+   * 276: A MODEL SWITCH IS NOT A RESUME MISMATCH.
+   *
+   * Before 276 the interrupted tombstone carried `model` and the post-interrupt
+   * guard compared it, which made exactly one user path impossible: Stop the
+   * agent, pick another model in the composer, send. The tombstone held the OLD
+   * model, so the very resume that was meant to apply the switch was refused
+   * with `resume_mismatch`.
+   *
+   * This asserts BOTH halves, because either alone is a trap. Dropping the
+   * model clause must let the switch through AND must leave the two clauses
+   * that protect data intact — a guard that accepts everything would pass a
+   * test that only checked the happy path, and would let a resume reopen
+   * somebody else's transcript.
+   *
+   * The refusals run FIRST on purpose: a successful post-interrupt resume
+   * deletes the tombstone, so asserting them afterwards would assert nothing.
+   */
+  it('276: allows a post-interrupt resume onto a DIFFERENT model, still refusing a different session or cwd', async () => {
+    let resolveExit!: (event: AgentThreadExit) => void;
+    const exited = new Promise<AgentThreadExit>((resolve) => (resolveExit = resolve));
+    const runtime = adapter({ onThreadExit: resolveExit });
+    const thread = input({ model: 'claude-sonnet-4-5' });
+    await runtime.startThread(thread);
+
+    // Drive a turn to the slow tool call, then interrupt it — this is what
+    // writes the tombstone, and doing it for real is the point: a hand-seeded
+    // map would not prove what `handleExit` actually stores.
+    const turn = runtime.sendTurn(thread.threadId, { text: 'hang' });
+    const iterator = turn[Symbol.asyncIterator]();
+    await iterator.next();
+    await expect(runtime.interrupt(thread.threadId)).resolves.toBe(true);
+    await collectIterator(iterator);
+    await expect(exited).resolves.toMatchObject({ reason: 'interrupted' });
+    expect(runtime.hasInterruptedThreadHint(thread.threadId)).toBe(true);
+
+    // STILL REFUSED (a): a different native session id. This names a different
+    // conversation, so resuming it would hand the caller a transcript it is not
+    // entitled to. The model is changed here too, to prove the session clause
+    // refuses on its own rather than only when the model happens to match.
+    await expect(
+      runtime.startThread({
+        ...thread,
+        model: 'claude-haiku-4-5-20251001',
+        nativeSessionId: '018f47f2-c091-7b2e-8f8a-202020202020',
+        resume: 'post_interrupt',
+      }),
+    ).rejects.toMatchObject<Partial<AgentRuntimeError>>({ code: 'resume_mismatch' });
+
+    // STILL REFUSED (b): a different working directory.
+    await expect(
+      runtime.startThread({
+        ...thread,
+        model: 'claude-haiku-4-5-20251001',
+        cwd: join(root, 'some-other-cwd'),
+        resume: 'post_interrupt',
+      }),
+    ).rejects.toMatchObject<Partial<AgentRuntimeError>>({ code: 'resume_mismatch' });
+
+    // The refusals must not have consumed the tombstone.
+    expect(runtime.hasInterruptedThreadHint(thread.threadId)).toBe(true);
+
+    // NOW ALLOWED: same conversation, different model.
+    const argvFile = join(root, 'model-switch-argv.json');
+    await runtime.startThread({
+      ...thread,
+      model: 'claude-haiku-4-5-20251001',
+      resume: 'post_interrupt',
+      env: { TM8_FAKE_ARGV_FILE: argvFile, CLAUDE_CONFIG_DIR: await configHomeWithTranscript() },
+    });
+    const recorded = await readRecorded<{ args: string[] }>(argvFile);
+
+    // THE CONVERSATION SURVIVED: `--resume` reopens the existing native
+    // session. `--session-id` would have started a fresh one and silently cost
+    // the user their history, which is the failure this whole path exists to
+    // avoid — so its absence is asserted, not assumed.
+    expect(recorded.args).toContain('--resume');
+    expect(recorded.args).not.toContain('--session-id');
+    expect(recorded.args[recorded.args.indexOf('--resume') + 1]).toBe(NATIVE_SESSION_ID);
+
+    // AND THE NEW MODEL ACTUALLY RAN: the flag is argv, so the only proof that
+    // a switch took effect is the value the child was spawned with.
+    expect(recorded.args[recorded.args.indexOf('--model') + 1]).toBe('claude-haiku-4-5-20251001');
+    expect(recorded.args).not.toContain('claude-sonnet-4-5');
+
+    expect(runtime.hasInterruptedThreadHint(thread.threadId)).toBe(false);
+    await expect(
+      collect(runtime.sendTurn(thread.threadId, { text: 'switched' })),
+    ).resolves.toContainEqual({ kind: 'text', text: 'echo:switched:1' });
+  });
+
   it('honors durable orchestrator resume authority after an adapter restart', async () => {
     const argvFile = join(root, 'restart-resume-argv.json');
     const runtime = adapter();

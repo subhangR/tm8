@@ -42,6 +42,7 @@ import {
   type MembershipEndStatus,
   bindPath,
   CollabError,
+  launchModel,
   FILE_MAX_SIZE_BYTES_DEFAULT,
   WORKSPACE_EVENT_SCHEMA_VERSION,
   type ActivityItem,
@@ -828,6 +829,9 @@ function synthesizeContent(s: EntitySummary): EntityContent {
     case 'credential':
       // W10a: content is the same allow-list as state — no secret, hint or login.
       return { ...state };
+    case 'story':
+      // The page is hydrated on a detail read only; a seam row carries none.
+      return { kind: 'story', description: '', page: null };
     default:
       // pull_request | commit | file | spell | skill — the open content variant
       return { kind: state.kind };
@@ -2412,6 +2416,16 @@ export function createFixtureSeam(): FixtureSeam {
           nodeCount: Array.isArray(c.nodes) ? c.nodes.length : 0,
           edgeCount: Array.isArray(c.edges) ? c.edges.length : 0,
         };
+      // A new story has nothing in it yet: every figure is the empty tally the
+      // server's `internal.story_summary` answers for a story with no roots.
+      case 'story': {
+        const none = { work: 0, done: 0, inProgress: 0, toDo: 0, blocked: 0, cancelled: 0 };
+        return {
+          kind: 'story', rootCount: 0, itemCount: 0, truncated: false,
+          progress: none, taskProgress: none, rollup: none,
+          liveSessionCount: 0, pendingAttentionCount: 0, lastActivityAt: null, childStoryCount: 0,
+        };
+      }
       default:
         throw new CollabError('invalid_input', `kind ${kind} is not client-creatable`);
     }
@@ -4576,6 +4590,34 @@ export function createFixtureSeam(): FixtureSeam {
           },
         });
         return { chat: clone(chat), messageId: message.id };
+      },
+
+      /**
+       * 276: fixture echo of `chat.setModel`.
+       *
+       * It repeats the server's two refusals rather than always succeeding,
+       * because this is the seam UI tests run against: a fixture that happily
+       * moved a chat onto a codex model would let a test prove a switch the real
+       * node refuses, and the composer's disabled-codex rule would look like a
+       * cosmetic choice instead of the constraint it is.
+       */
+      async setChatModel(chatId, input) {
+        const chat = requireSummary(chatId);
+        if (chat.state.kind !== 'chat') {
+          throw new CollabError('invalid_input', `entity ${chatId} is not a chat`);
+        }
+        const picked = launchModel(input.model);
+        if (!picked) throw new CollabError('invalid_input', `unsupported chat model: ${input.model}`);
+        if (picked.agentTool !== chat.state.agentTool) {
+          throw new CollabError(
+            'invalid_input',
+            `chat ${chatId} runs on ${chat.state.agentTool} and cannot switch to a ${picked.agentTool} model`,
+          );
+        }
+        chat.state = { ...chat.state, model: input.model, provider: picked.provider };
+        touch(chat);
+        emit(chat.spaceId, { type: 'entity.upsert', entity: clone(chat) });
+        return { chatId, model: input.model, provider: picked.provider };
       },
 
       async postMessage(input: PostMessageInput): Promise<CommandResult | MessageBatchResult> {

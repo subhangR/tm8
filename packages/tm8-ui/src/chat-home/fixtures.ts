@@ -4,6 +4,7 @@ import type {
   ChatHomePort,
   ChatPostInput,
   ChatCreateInput,
+  ChatSetModelInput,
   ChatThreadConfig,
   ChatThreadDetail,
   ChatThreadSummary,
@@ -314,6 +315,8 @@ export interface ChatHomeFixtureControls {
   /** Every `chat.start` this fixture served, in order. */
   roots: ChatCreateInput[];
   posts: ChatPostInput[];
+  /** Every `chat.setModel` this fixture served, in order (276). */
+  modelSwitches: ChatSetModelInput[];
   interrupts: EntityId[];
   emit(frame: ChatTurnFrame): void;
 }
@@ -336,6 +339,7 @@ export function createChatHomeFixturePort(
   const listeners = new Set<(frame: ChatTurnFrame) => void>();
   const roots: ChatCreateInput[] = [];
   const posts: ChatPostInput[] = [];
+  const modelSwitches: ChatSetModelInput[] = [];
   const interrupts: EntityId[] = [];
   let serial = 100;
 
@@ -442,6 +446,22 @@ export function createChatHomeFixturePort(
       };
       return { messageId };
     },
+    /**
+     * 276. The fixture rewrites `summary.config.model` because that is exactly
+     * what the screen reads back — the switch is only believable if the chip
+     * still shows the new model after a thread switch and a re-read, which is
+     * the failure the real port's cache line exists to prevent.
+     */
+    async setModel(input) {
+      modelSwitches.push(input);
+      const detail = details.get(input.chatId);
+      if (!detail) throw new Error(`Fixture chat ${input.chatId} does not exist.`);
+      detail.summary = {
+        ...detail.summary,
+        config: { ...detail.summary.config, model: input.model, modelLabel: input.model },
+      };
+      return { model: input.model, provider: 'fixture' };
+    },
     async interrupt(chatId) {
       interrupts.push(chatId);
       const detail = details.get(chatId);
@@ -510,6 +530,7 @@ export function createChatHomeFixturePort(
     controls: {
       roots,
       posts,
+      modelSwitches,
       interrupts,
       emit(frame) {
         // Server truth: every part is appended durably BEFORE its frame

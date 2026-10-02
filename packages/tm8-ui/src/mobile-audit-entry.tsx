@@ -41,6 +41,7 @@ import './servers/server.css';
 import './transfer/transfer.css';
 import './join/join.css';
 import { REAL_SEAM_STORAGE_KEY } from './views/realSeamFlag';
+import { installActiveStyle } from './theme/style-store';
 import { GateApp } from './views/GateApp';
 
 /**
@@ -76,4 +77,14 @@ try {
  * a SETTLED screen. Keeping it would trade nothing for a class of timing flake
  * in a tool whose entire value is that its numbers do not move.
  */
+/*
+ * THE TOKEN SHEET, FOR THE SAME REASON THE CSS IMPORT LIST ABOVE IS COPIED.
+ * The injected sheet is now part of how production is styled, so a harness
+ * without it photographs a page production does not have — which this file's
+ * header calls worse than not measuring at all. `mobile-audit-css-parity.test.ts`
+ * only sees `.css` imports, so `theme/style-store.test.ts` ("boot wiring") guards this
+ * line instead: both entries must call it.
+ */
+installActiveStyle();
+
 createRoot(document.getElementById('root')!).render(<GateApp />);

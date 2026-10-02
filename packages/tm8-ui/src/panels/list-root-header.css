@@ -121,6 +121,54 @@
 .tch-rootcell--active .tch-rootcell__label { color: var(--pn-ink); }
 .tch-rootcell__glyph { display: inline-flex; flex: none; }
 
+/* THE (?) MARK (Entity Help). A small ringed glyph beside the kind name: in
+   the cell it is always visible, faint until hovered; on a menu row it
+   reveals with the row exactly as the birth half does, and for the same
+   reason (a tap is not a hover — see `@media (hover: none)` below). */
+.tch-rootcell__help,
+.tch-rootopt__help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: auto 2px;
+  padding: 0;
+  border: 1px solid var(--pn-line-2);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.75;
+}
+.tch-rootcell__help:hover,
+.tch-rootopt__help:hover,
+.tch-rootcell__help:focus-visible,
+.tch-rootopt__help:focus-visible {
+  opacity: 1;
+  color: var(--pn-brand);
+  border-color: var(--pn-brand);
+  background: var(--pn-brand-soft);
+}
+.tch-rootopt__help { opacity: 0; }
+.tch-rootitem:hover .tch-rootopt__help,
+.tch-rootitem:focus-within .tch-rootopt__help { opacity: 0.85; }
+@media (hover: none) {
+  .tch-rootopt__help { opacity: 0.85; }
+}
+.cv2-root[data-shell='mobile'] .tch-rootcell__help,
+.cv2-root[data-shell='mobile'] .tch-rootopt__help {
+  width: 28px;
+  height: 28px;
+  min-inline-size: 28px;
+  opacity: 0.85;
+}
+
 /* The kind menu — a portal-free popover is safe here: the sidebar clips
    nothing (`.tch-sidebar` declares no overflow), unlike the panel tiles.
    The Work tab's column repeats that promise: `.ws-listcol` sets no overflow
