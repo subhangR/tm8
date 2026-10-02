@@ -376,7 +376,10 @@ function fencedUntrusted(content: string): string {
   return [UNTRUSTED_BANNER, fence, content, fence].join('\n');
 }
 
-/** Same env names, same precedence, as the server-side observer (S15: env only). */
+/**
+ * The caller's own shell, not the server: the server reads no GitHub token from
+ * its environment (doc 01a0e248 §10.5, gate 6).
+ */
 function githubToken(env: NodeJS.ProcessEnv = process.env): string | undefined {
   return (
     env.TM8_GITHUB_TOKEN?.trim() || env.GITHUB_TOKEN?.trim() || env.GH_TOKEN?.trim() || undefined

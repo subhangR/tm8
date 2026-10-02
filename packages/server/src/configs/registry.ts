@@ -181,9 +181,6 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'TYPESAFE_API_KEY', group: 'Keys', summary: 'Node key for Jev (TypeSafe), used when a member has none.', default: null, definedIn: MAIN, secret: true },
   { name: 'ANTHROPIC_API_KEY', group: 'Keys', summary: 'Node fallback Anthropic key for launches.', default: null, definedIn: NODE_KEYS, secret: true },
   { name: 'OPENAI_API_KEY', group: 'Keys', summary: 'Node fallback OpenAI key for launches.', default: null, definedIn: NODE_KEYS, secret: true },
-  { name: 'GH_TOKEN', group: 'Keys', summary: 'Node fallback GitHub token (launches and PR tracking).', default: null, definedIn: NODE_KEYS, secret: true },
-  { name: 'GITHUB_TOKEN', group: 'Keys', summary: 'Alternative name for the node GitHub token.', default: null, definedIn: NODE_KEYS, secret: true },
-  { name: 'TM8_GITHUB_TOKEN', group: 'Keys', summary: 'GitHub token PR tracking prefers over GITHUB_TOKEN / GH_TOKEN.', default: null, definedIn: 'packages/server/src/tracking/github.ts', secret: true },
 ];
 
 export const CLI_ENV: readonly EnvKnob[] = [
@@ -193,6 +190,7 @@ export const CLI_ENV: readonly EnvKnob[] = [
   { name: 'TM8_CREDENTIALS_PATH', group: 'CLI', summary: 'CLI credentials file (forces the file store).', default: '$XDG_CONFIG_HOME/tm8/credentials.json', definedIn: 'packages/cli/src/credentials.ts' },
   { name: 'TM8_CREDENTIALS_MODE', group: 'CLI', summary: 'CLI credential store: keychain or file.', default: 'platform default', definedIn: 'packages/cli/src/credentials.ts' },
   { name: 'TM8_NO_CACHE', group: 'CLI', summary: 'Turns off the lane read cache.', default: null, definedIn: 'packages/cli/src/read-cache.ts' },
+  { name: 'TM8_GITHUB_TOKEN', group: 'CLI', summary: 'GitHub token `tm8 task import` uses in your own shell, ahead of GITHUB_TOKEN / GH_TOKEN. The server reads no GitHub token from its environment.', default: null, definedIn: 'packages/cli/src/commands/task.ts', secret: true },
   { name: 'TM8_NO_RECEIPTS', group: 'CLI', summary: 'Turns off write receipts (1).', default: null, definedIn: 'packages/cli/src/receipt.ts' },
   { name: 'TM8_NO_TERSE_DEFAULT', group: 'CLI', summary: 'Full output instead of the terse default (1).', default: null, definedIn: 'packages/cli/src/args.ts' },
   { name: 'TM8_JOURNAL_CLASS', group: 'CLI', summary: 'Overrides the journal\'s agent class.', default: 'detected', definedIn: 'packages/cli/src/journal-stats.ts' },

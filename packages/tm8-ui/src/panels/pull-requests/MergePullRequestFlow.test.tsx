@@ -141,7 +141,7 @@ describe('B10 — every refusal in the vocabulary renders, verbatim', () => {
     ['not_open', 'is closed, not open'],
     ['conflicted', 'observed mergeable_state=dirty'],
     ['ci_red', 'observed ci_status=failing'],
-    ['no_github_credential', 'no GitHub credential stored for this account'],
+    ['no_github_credential', 'no GitHub credential of your own in this space'],
     ['forge_blocked', 'required review is missing'],
     ['head_moved', 'head is no longer the reviewed sha'],
   ];

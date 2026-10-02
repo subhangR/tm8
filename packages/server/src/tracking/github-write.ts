@@ -1,18 +1,19 @@
 /**
  * The forge WRITE client — deliberately a SEPARATE module from the reader.
  *
- * `github.ts` polls facts and can run forever on a node-level token against
- * public repositories. THIS file changes real repositories, and everything
- * about it is scoped down accordingly:
+ * `github.ts` polls facts on the space's own credential, or anonymously
+ * against public repositories. THIS file changes real repositories, and
+ * everything about it is scoped down accordingly:
  *
  *   * ONE VERB. Merge a pull request. No branch deletion, no force paths, no
  *     review submission, no PR creation. Each future write verb is a fresh
  *     decision with its own guards, not a parameter on this one.
  *   * THE TOKEN IS REQUIRED AND PER-MEMBER. The reader degrades to anonymous;
  *     a write never may. Callers hand this client the ACTING member's own
- *     credential (DbGitHubCredentialStore.resolve), so every merge on the
- *     forge is attributable to the human whose credential performed it —
- *     never to a shared node token.
+ *     GitHub credential in the PR's space (`readMemberToken`,
+ *     credentials/space-credential-port.ts; doc 01a0e248 §10.6), so every
+ *     merge on the forge is attributable to the human whose credential
+ *     performed it — never to a space-owned or node token.
  *   * SAME TYPED-OUTCOME HONESTY AS THE READER, plus the write-only answers:
  *     `method_blocked` is GitHub's 405 (branch protection / checks refuse the
  *     merge — the forge said no, and that is a fact, not an error to retry),
@@ -65,7 +66,7 @@ export interface MergeRequest {
   /** `owner/name`, shape-checked here. */
   repo: string;
   number: number;
-  /** The acting member's token — never a node-level fallback. */
+  /** The acting member's own token in the PR's space — never a space-owned or node token. */
   token: string;
   /**
    * When present, GitHub refuses the merge (409) if the branch head moved

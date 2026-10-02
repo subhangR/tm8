@@ -54,6 +54,7 @@ import { createEventSubjectBackfillJob } from './scheduler/jobs/event-subject-ba
 import { createClipboardStore } from './files/clipboard-store.js';
 import { createLoopbackOwnerResolver } from './identity/loopback.js';
 import { sessionIssuedHere } from './identity/pg-auth.js';
+import { serverGithubCredentials } from './credentials/space-credential-port.js';
 import { createTrackingObserverJob } from './tracking/observer.js';
 import { createCommitRecorderJob } from './tracking/commit-recorder.js';
 import { createSessionIdentityResolver, createSocketIdentityResolver } from './http/identity-resolver.js';
@@ -879,9 +880,13 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
           }
         : {},
     );
+    // §10.5: each space's own GitHub credential, else anonymous. One reader
+    // for both pollers; nothing reads the node's environment for a token.
+    const githubCredentials = serverGithubCredentials(db, dataDir);
     scheduler.register(
       createTrackingObserverJob({
         db,
+        githubCredentials,
         claims: async () => {
           // The doors go through `require_space_member`, which has no
           // node-admin bypass, so bare `{ nodeAdmin: true }` would raise 42501
@@ -938,6 +943,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     scheduler.register(
       createForgeWatcherJob({
         db,
+        githubCredentials,
         claims: async () => {
           const o = await owner();
           return {

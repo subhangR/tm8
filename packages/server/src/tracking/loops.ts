@@ -37,7 +37,8 @@
 
 import type { Db, DbClaims } from '../db/types.js';
 import type { JobContext, JobOutcome, ScheduledJob } from '../scheduler/types.js';
-import { GithubClient, resolveGithubToken, type CheckRunFacts, type ReviewThreadFacts } from './github.js';
+import type { ServerGithubCredentialReader } from '../credentials/space-credential-port.js';
+import { GithubClient, SpaceGithubClients, type CheckRunFacts, type ReviewThreadFacts } from './github.js';
 import {
   decideNudges,
   deliverPendingNudges,
@@ -53,6 +54,12 @@ export interface ForgeWatcherOptions {
   db: Db;
   /** Same identity story as 081's observer: the doors have no node-admin bypass. */
   claims: () => Promise<DbClaims>;
+  /**
+   * Where each space's own GitHub credential is read (§10.5), the observer's
+   * rule. Absent, every read is anonymous — never a node token.
+   */
+  githubCredentials?: Pick<ServerGithubCredentialReader, 'readPollToken'>;
+  /** Test seam: one client for every space; no credential is read. */
   client?: GithubClient;
   /** PRs per tick. Small: this is a watcher, not a backfill. */
   targetBudget?: number;
@@ -90,6 +97,8 @@ export interface ForgeWatchTickDetail extends Record<string, unknown> {
   suppressed: number;
   rateLimited: boolean;
   problems: string[];
+  /** Per space: the space credential spent, or why reads were anonymous (§10.5). */
+  github?: Record<string, string>;
 }
 
 /**
@@ -102,8 +111,8 @@ export async function runForgeWatchTick(
   signal?: AbortSignal,
   log?: (message: string) => void,
 ): Promise<JobOutcome> {
-  const client = options.client ?? new GithubClient({ token: resolveGithubToken() });
   const claims = await options.claims();
+  const github = new SpaceGithubClients({ claims, reader: options.githubCredentials, client: options.client });
   const budget = options.targetBudget ?? 25;
 
   const listed = await options.db.rpc<{ targets?: unknown }>(
@@ -133,7 +142,7 @@ export async function runForgeWatchTick(
   for (const target of targets) {
     if (signal?.aborted) break;
     try {
-      const stopped = await watchOne(options, claims, client, target, detail, signal);
+      const stopped = await watchOne(options, claims, await github.forSpace(target.spaceId), target, detail, signal);
       if (stopped === 'rate_limited') {
         detail.rateLimited = true;
         break;
@@ -151,7 +160,7 @@ export async function runForgeWatchTick(
   // earlier tick whose addressee has only just come back — and draining it
   // costs no provider quota unless a CI log is needed.
   try {
-    await drainPendingNudges(options, claims, client, detail, signal);
+    await drainPendingNudges(options, claims, github, detail, signal);
   } catch (error) {
     detail.problems.push(`nudge drain: ${describe(error)}`);
     log?.(`tracking.forge-watcher: nudge drain: ${describe(error)}`);
@@ -160,6 +169,7 @@ export async function runForgeWatchTick(
   // Bounded: this rides in a job outcome that gets logged, and an unbounded
   // list of provider errors is how a log becomes unreadable.
   detail.problems = detail.problems.slice(0, 10);
+  detail.github = github.summary();
   if (targets.length === 0 && detail.pendingDrained === 0) {
     return { skipped: true, reason: 'no watched pull requests and no queued nudges' };
   }
@@ -347,7 +357,7 @@ async function watchOne(
 async function drainPendingNudges(
   options: ForgeWatcherOptions,
   claims: DbClaims,
-  client: GithubClient,
+  github: SpaceGithubClients,
   detail: ForgeWatchTickDetail,
   signal: AbortSignal | undefined,
 ): Promise<void> {
@@ -386,6 +396,7 @@ async function drainPendingNudges(
       if (row.loopKind === 'ci_failure') {
         const jobId = row.payload.externalId;
         if (typeof jobId === 'string' && jobId !== '') {
+          const client = await github.forSpace(row.spaceId);
           const res = await client.jobLogTail(
             row.repo,
             jobId,

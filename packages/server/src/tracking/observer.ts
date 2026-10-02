@@ -22,13 +22,15 @@
  *     request stays claimable and the next tick tries again — because "GitHub
  *     asked us to slow down" is not evidence about a pull request.
  *
- * S15: the credential lives in the environment and never in Postgres. The queue
- * carries intent only, which is exactly what 006's comment said it would.
+ * The queue carries intent only, which is exactly what 006's comment said it
+ * would. The credential is the space-owned GitHub credential of the request's
+ * space, else none (doc 01a0e248 §10.5; `SpaceGithubClients`).
  */
 
 import type { Db, DbClaims } from '../db/types.js';
 import type { JobContext, JobOutcome, ScheduledJob } from '../scheduler/types.js';
-import { GithubClient, resolveGithubToken } from './github.js';
+import type { ServerGithubCredentialReader } from '../credentials/space-credential-port.js';
+import { GithubClient, SpaceGithubClients } from './github.js';
 
 export const TRACKING_OBSERVER_JOB_NAME = 'tracking.observer';
 
@@ -57,6 +59,12 @@ export interface TrackingObserverOptions {
    * their node holding the queue.
    */
   claims: () => Promise<DbClaims>;
+  /**
+   * Where each space's own GitHub credential is read (§10.5). Absent, every
+   * read is anonymous — never a node token.
+   */
+  githubCredentials?: Pick<ServerGithubCredentialReader, 'readPollToken'>;
+  /** Test seam: one client for every space; no credential is read. */
   client?: GithubClient;
   /** Requests per tick. Small on purpose — this is a poller, not a backfill. */
   batchSize?: number;
@@ -86,8 +94,8 @@ export async function runTrackingObserverTick(
   log?: (message: string) => void,
 ): Promise<JobOutcome> {
   const ctxLogger = log;
-  const client = options.client ?? new GithubClient({ token: resolveGithubToken() });
   const claims = await options.claims();
+  const github = new SpaceGithubClients({ claims, reader: options.githubCredentials, client: options.client });
 
   const claimed = await options.db.rpc<{ claimed?: unknown }>(
     claims,
@@ -141,7 +149,7 @@ export async function runTrackingObserverTick(
       // window. One bad row would take the batch down with it, every tick.
       let outcome: string;
       try {
-        outcome = await refreshOne(options.db, claims, client, target, signal);
+        outcome = await refreshOne(options.db, claims, await github.forSpace(request.spaceId), target, signal);
       } catch (error) {
         outcome = `apply failed: ${error instanceof Error ? error.message : String(error)}`;
       }
@@ -203,7 +211,7 @@ export async function runTrackingObserverTick(
       unresolved,
       abandoned,
       rateLimited,
-      authenticated: client.authenticated,
+      github: github.summary(),
     },
   };
 }
