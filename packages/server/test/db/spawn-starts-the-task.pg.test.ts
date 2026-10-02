@@ -201,9 +201,19 @@ beforeAll(async () => {
   // signature back beside it and every positional call would be ambiguous — an
   // artifact of this out-of-order fixture, not of the real chain, where 267
   // runs last. 267 has its own suite (launch-v3-new-task.pg.test.ts).
-  database.apply(files.filter((f) => f !== migration && !f.endsWith(LAUNCH_V3_SUFFIX)));
+  // W11-repoint (286, placeholder 989 on the lane) and later hold back until the migration under
+  // test has applied: 131 re-creates execution_spawn at its own era's body,
+  // which names work_sessions.project_id, and 286 drops that column. 286 then
+  // drops 131's 17-argument function and re-bases execution_spawn onto 267's
+  // body, the latest before it — so the assertions run against the live body.
+  const repoint = files.findIndex((f) => f.endsWith('_w11_repoint_project_entity.sql'));
+  expect(repoint).toBeGreaterThan(-1);
+  database.apply(
+    files.slice(0, repoint).filter((f) => f !== migration && !f.endsWith(LAUNCH_V3_SUFFIX)),
+  );
   fixture = await seedPre131(database);
   database.apply([migration]);
+  database.apply(files.slice(repoint));
 });
 
 afterAll(async () => {

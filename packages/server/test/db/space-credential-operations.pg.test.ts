@@ -93,7 +93,7 @@ async function session(
     const id = await newId(c);
     await c.query(`insert into public.entities(id, space_id, kind, position, created_by) values ($1, $2, 'work_session', 0, $3)`, [id, ids.S, createdBy]);
     await c.query(
-      `insert into public.work_sessions(entity_id, title, status, session_kind, agent_tool) values ($1, 'fixture', $2, $3, $4)`,
+      `insert into public.work_sessions(entity_id, title, status, session_kind, agent_tool, workdir_mode) values ($1, 'fixture', $2, $3, $4, 'scratch')`,
       [id, opts.status ?? 'spawning', opts.kind ?? 'agent', opts.agentTool ?? 'claude-code'],
     );
     return id;
@@ -295,7 +295,7 @@ describe('t3-9: the member Disconnect leaves space-credential work alone (A5)', 
     const memberLogin = await asOwner(async (c) => {
       const id = await newId(c);
       await c.query(`insert into public.entities(id, space_id, kind, position, created_by) values ($1, $2, 'work_session', 0, $3)`, [id, ids.S, ids[`member:${A}`]]);
-      await c.query(`insert into public.work_sessions(entity_id, title, status, session_kind) values ($1, 'login', 'running', 'credential')`, [id]);
+      await c.query(`insert into public.work_sessions(entity_id, title, status, session_kind, workdir_mode) values ($1, 'login', 'running', 'credential', 'scratch')`, [id]);
       await c.query(
         `insert into public.credential_sessions(work_session_id, account_id, provider, expires_at) values ($1, $2, 'anthropic', now() + interval '15 minutes')`,
         [id, accounts[A]],

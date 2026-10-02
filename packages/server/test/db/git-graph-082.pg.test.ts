@@ -66,12 +66,18 @@ async function seed(database: W1ScratchDatabase): Promise<Fixture> {
       [fixture.gatedTaskId, fixture.plainTaskId, fixture.bareGateTaskId],
     );
     await client.query(
-      `insert into public.work_sessions(entity_id,title,status,share_mode) values($1,'T4 run','running','space')`,
+      `insert into public.work_sessions(entity_id,title,status,share_mode,workdir_mode)
+       values($1,'T4 run','running','space','scratch')`,
       [fixture.workSessionId],
     );
     await client.query(
       `insert into public.projects(id,name,working_dir,trust) values($1,'T4 project','/tmp/tm8-t4-proj','trusted')`,
       [fixture.projectId],
+    );
+    // 245: a worktree is keyed on the space's project entity, not the folder.
+    await client.query(
+      `insert into public.space_projects(space_id,project_id,linked_by) values($1,$2,$3)`,
+      [fixture.spaceId, fixture.projectId, fixture.memberId],
     );
     await client.query(
       `insert into public.entities(id,space_id,kind,parent_id,position,created_by)
@@ -79,9 +85,10 @@ async function seed(database: W1ScratchDatabase): Promise<Fixture> {
       [fixture.worktreeId, fixture.spaceId, fixture.memberId],
     );
     await client.query(
-      `insert into public.worktrees(entity_id,project_id,path,branch,base_ref,base_commit_oid,status)
-       values($1,$2,'/tmp/tm8-t4-proj/wt-a','feat/t4-lane','main',repeat('a',40),'active')`,
-      [fixture.worktreeId, fixture.projectId],
+      `insert into public.worktrees(entity_id,space_id,project_entity_id,path,branch,base_ref,base_commit_oid,status)
+       select $1,$2,l.project_entity_id,'/tmp/tm8-t4-proj/wt-a','feat/t4-lane','main',repeat('a',40),'active'
+         from public.project_links l where l.space_id = $2 and l.project_id = $3`,
+      [fixture.worktreeId, fixture.spaceId, fixture.projectId],
     );
     await client.query(
       `select internal.record_initial_version(value,$1) from unnest($2::uuid[]) value`,

@@ -100,7 +100,7 @@ beforeAll(async () => {
       const id = await newId(c);
       await c.query(`insert into public.entities(id, space_id, kind, position, created_by) values ($1, $2, 'work_session', 0, $3)`,
         [id, ids.S, ids.A]);
-      await c.query(`insert into public.work_sessions(entity_id, title, status, session_kind) values ($1, 'run', 'spawning', 'agent')`, [id]);
+      await c.query(`insert into public.work_sessions(entity_id, title, status, session_kind, workdir_mode) values ($1, 'run', 'spawning', 'agent', 'scratch')`, [id]);
       return id;
     });
     const launch = {

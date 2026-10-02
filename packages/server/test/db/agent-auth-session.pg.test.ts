@@ -112,8 +112,8 @@ async function seed(): Promise<Fixture> {
       [ids.personaId, ids.memberA],
     );
     await client.query(
-      `insert into public.work_sessions(entity_id, title, status, share_mode, started_at)
-       values ($1, 'Agent auth session', 'running', 'none', now())`,
+      `insert into public.work_sessions(entity_id, title, status, share_mode, started_at, workdir_mode)
+       values ($1, 'Agent auth session', 'running', 'none', now(), 'scratch')`,
       [ids.workSessionId],
     );
     // 176: the credential binds to a CHAT entity, so the fixture seeds one

@@ -109,9 +109,13 @@ describe.sequential('attention v2 system signals (migration 266)', () => {
       const project = (await c.query<{ id: string }>(
         `insert into public.projects(id,name,working_dir) values(internal.new_id(),'signals','/tmp/signals-repo') returning id::text`,
       )).rows[0]!.id;
+      // W11-repoint: a worktree is keyed on the space's project entity, not the folder.
+      await c.query(`insert into public.space_projects(space_id,project_id,linked_by) values($1,$2,$3)`,
+        [x.spaceId, project, x.memberId]);
       await c.query(
-        `insert into public.worktrees(entity_id,project_id,path,branch,base_ref,base_commit_oid,status)
-         values($1,$2,'/tmp/signals-wt','tm8/signals','main',repeat('a',40),'active')`, [x.worktreeId, project]);
+        `insert into public.worktrees(entity_id,space_id,project_entity_id,path,branch,base_ref,base_commit_oid,status)
+         select $1,$2,l.project_entity_id,'/tmp/signals-wt','tm8/signals','main',repeat('a',40),'active'
+           from public.project_links l where l.space_id = $2 and l.project_id = $3`, [x.worktreeId, x.spaceId, project]);
       return x;
     });
     // The session lives in the worktree and works on the linked task.
@@ -160,7 +164,7 @@ describe.sequential('attention v2 system signals (migration 266)', () => {
         const id = (await c.query<{ id: string }>('select internal.new_id()::text id')).rows[0]!.id;
         await c.query(`insert into public.entities(id,space_id,kind,parent_id,position,created_by)
                        values($1,$2,'work_session',null,0,$3)`, [id, f.spaceId, f.memberId]);
-        await c.query(`insert into public.work_sessions(entity_id,status) values($1,'running')`, [id]);
+        await c.query(`insert into public.work_sessions(entity_id,status,workdir_mode) values($1,'running','scratch')`, [id]);
         return id;
       });
       await edge(session, blocked, 'working_on');

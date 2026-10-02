@@ -187,7 +187,7 @@ describe('server_only_space_credentials widens only the checks that must hold ty
       await c.query(`insert into public.entities(id, space_id, kind, position, created_by) values ($1, $2, 'work_session', 0, $3)`, [
         session, ids.S, ids[`member:${ids.S}:${A}`],
       ]);
-      await c.query(`insert into public.work_sessions(entity_id, title, status, session_kind) values ($1, 'fixture', 'spawning', 'agent')`, [session]);
+      await c.query(`insert into public.work_sessions(entity_id, title, status, session_kind, workdir_mode) values ($1, 'fixture', 'spawning', 'agent', 'scratch')`, [session]);
       const record = (provider: string, credentialId: string) => c.query(
         `insert into public.session_space_credentials(work_session_id, provider, space_credential_id, space_id) values ($1, $2, $3, $4)`,
         [session, provider, credentialId, ids.S],

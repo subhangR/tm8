@@ -291,8 +291,8 @@ async function seed(): Promise<Fixture> {
        values ($1, $2, 'Links G', 'worker', 'persona')`,
       [f.personaA, f.memberHA]);
     await client.query(
-      `insert into public.work_sessions(entity_id, title, status, share_mode, started_at)
-       values ($1, 'Links G run', 'running', 'none', now())`,
+      `insert into public.work_sessions(entity_id, title, status, share_mode, started_at, workdir_mode)
+       values ($1, 'Links G run', 'running', 'none', now(), 'scratch')`,
       [f.workSessionA]);
     await client.query(
       `insert into public.edges(space_id, src_id, dst_id, type, created_by)
@@ -805,7 +805,7 @@ describe('W6 a4 / T17 — an agent of the member who left or was removed is refu
         [ids.persona, ids.workSession, fixture.spaceA, ids.memberA]);
       await client.query(`insert into public.team_members(entity_id, owner_member_id, name, role, identity) values ($1, $2, $3, 'worker', 'persona')`,
         [ids.persona, ids.memberA, `${label} agent`]);
-      await client.query(`insert into public.work_sessions(entity_id, title, status, share_mode, started_at) values ($1, $2, 'running', 'none', now())`,
+      await client.query(`insert into public.work_sessions(entity_id, title, status, share_mode, started_at, workdir_mode) values ($1, $2, 'running', 'none', now(), 'scratch')`,
         [ids.workSession, `${label} run`]);
       await client.query(`insert into public.edges(space_id, src_id, dst_id, type, created_by) values ($1, $2, $3, 'participates_in', $2)`,
         [fixture.spaceA, ids.persona, ids.workSession]);

@@ -66,9 +66,9 @@ async function seed(database: W1ScratchDatabase): Promise<Fixture> {
       [f.taskId, f.otherTaskId],
     );
     await client.query(
-      `insert into public.work_sessions(entity_id, title, status, share_mode, started_at) values
-         ($1,'live a','running','none',now()), ($2,'live b','idle','none',now()),
-         ($3,'ended','exited','none',now()), ($4,'lone','running','none',now())`,
+      `insert into public.work_sessions(entity_id, title, status, share_mode, started_at, workdir_mode) values
+         ($1,'live a','running','none',now(),'scratch'), ($2,'live b','idle','none',now(),'scratch'),
+         ($3,'ended','exited','none',now(),'scratch'), ($4,'lone','running','none',now(),'scratch')`,
       [f.liveA, f.liveB, f.ended, f.lone],
     );
     await client.query(

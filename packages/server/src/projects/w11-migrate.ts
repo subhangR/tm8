@@ -208,6 +208,33 @@ export async function assertUnnarrowedRole(client: Queryable): Promise<void> {
   );
 }
 
+/**
+ * The report groups sessions, chats and worktrees by their folder column
+ * (`project_id`), which the W11-repoint migration drops. After the repoint the
+ * evidence SQL cannot run, and the grants it reports on are already resolved:
+ * the repoint refuses while any folder is granted to more than one space.
+ * $1 = the three tables whose `project_id` the repoint drops.
+ */
+export const PRE_REPOINT_SQL = `
+select count(*)::int present from information_schema.columns
+ where table_schema = 'public' and table_name = any($1::text[]) and column_name = 'project_id'`;
+
+export const REPOINT_DROPPED_TABLES = ['chats', 'work_sessions', 'worktrees'] as const;
+
+export class RepointedSchemaError extends Error {
+  override readonly name = 'RepointedSchemaError';
+}
+
+/** Throws RepointedSchemaError unless chats, work_sessions and worktrees all still carry `project_id`. */
+export async function assertPreRepointSchema(client: Queryable): Promise<void> {
+  const { rows } = await client.query(PRE_REPOINT_SQL, [[...REPOINT_DROPPED_TABLES]]);
+  if (rows[0]?.present === REPOINT_DROPPED_TABLES.length) return;
+  throw new RepointedSchemaError(
+    'run before the W11-repoint; columns already dropped (chats/work_sessions/worktrees.project_id). ' +
+      'This database is past the repoint, so there is no folder grant left for this report to settle.',
+  );
+}
+
 /** The node owner (002's single `is_owner` row): the `createdByOwner` report column. */
 export const NODE_OWNER_SQL = 'select identity_id from public.accounts where is_owner limit 1';
 

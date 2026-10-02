@@ -16,7 +16,9 @@
  *
  * Every read runs in one READ ONLY transaction. The database URL is read from
  * the environment and never printed. The role must see every space: under row
- * level security (the node's app role) the job exits 64 before reading.
+ * level security (the node's app role) the job exits 64 before reading. The job
+ * runs only BEFORE the W11-repoint migration: once it has dropped the
+ * `project_id` columns the job exits 65 before reading.
  */
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
@@ -27,6 +29,8 @@ import pg from 'pg';
 import {
   DEFAULT_WINDOW_DAYS,
   NarrowedRoleError,
+  RepointedSchemaError,
+  assertPreRepointSchema,
   assertUnnarrowedRole,
   buildW11Report,
   formatW11Report,
@@ -85,6 +89,13 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env)
       if (!(err instanceof NarrowedRoleError)) throw err;
       process.stderr.write(`w11-migrate: ${err.message}\n`);
       return 64;
+    }
+    try {
+      await assertPreRepointSchema(client);
+    } catch (err) {
+      if (!(err instanceof RepointedSchemaError)) throw err;
+      process.stderr.write(`w11-migrate: ${err.message}\n`);
+      return 65;
     }
     const evidence = await loadW11Evidence(client, asOf, windowDays);
     const nodeOwnerIdentity = await loadNodeOwnerIdentity(client);

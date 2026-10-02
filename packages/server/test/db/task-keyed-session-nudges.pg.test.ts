@@ -118,8 +118,8 @@ async function seedSession(
       [sessionId, f.spaceId, f.memberId],
     );
     await q(
-      `insert into public.work_sessions(entity_id, title, status, share_mode, session_kind)
-       values ($1,'worker',$2,'space',$3)`,
+      `insert into public.work_sessions(entity_id, title, status, share_mode, session_kind, workdir_mode)
+       values ($1,'worker',$2,'space',$3, 'scratch')`,
       [sessionId, options.status ?? 'running', options.kind ?? 'agent'],
     );
     await q(

@@ -131,8 +131,8 @@ async function newSession(status = 'running'): Promise<string> {
   const id = (await sql(`select internal.new_id()::text id`))[0]!.id as string;
   await sql(`insert into public.entities(id, space_id, kind, visibility, created_by)
              values ($1, $2, 'work_session', 'space', $3)`, [id, w.space, w.teammate]);
-  await sql(`insert into public.work_sessions(entity_id, title, status, share_mode, started_at)
-             values ($1, 'session', $2, 'space', now())`, [id, status]);
+  await sql(`insert into public.work_sessions(entity_id, title, status, share_mode, started_at, workdir_mode)
+             values ($1, 'session', $2, 'space', now(), 'scratch')`, [id, status]);
   await sql(`insert into public.edges(space_id, src_id, dst_id, type, created_by)
              values ($1, $2, $3, 'participates_in', $2)`, [w.space, w.teammate, id]);
   return id;

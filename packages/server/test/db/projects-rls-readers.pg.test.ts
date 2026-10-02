@@ -130,12 +130,14 @@ beforeAll(async () => {
     [ids.worktree, ids.session, ids.space, ids.member],
   );
   await asGraphOwner(
-    `insert into public.worktrees(entity_id, project_id, path, branch, base_ref, base_commit_oid, status)
-     values ($1, $2, $3, 'tm8/r845', 'main', $4, 'active')`,
-    [ids.worktree, ids.folder, root, baseOid],
+    // W11-repoint: a worktree is keyed on the space's project entity, not the folder.
+    `insert into public.worktrees(entity_id, space_id, project_entity_id, path, branch, base_ref, base_commit_oid, status)
+     select $1, $5, l.project_entity_id, $3, 'tm8/r845', 'main', $4, 'active'
+       from public.project_links l where l.space_id = $5 and l.project_id = $2`,
+    [ids.worktree, ids.folder, root, baseOid, ids.space],
   );
   await asGraphOwner(
-    `insert into public.work_sessions(entity_id, title, status, share_mode) values ($1, 'R845 lane', 'running', 'space')`,
+    `insert into public.work_sessions(entity_id, title, status, share_mode, workdir_mode) values ($1, 'R845 lane', 'running', 'space', 'scratch')`,
     [ids.session],
   );
   await asGraphOwner(

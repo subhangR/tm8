@@ -68,8 +68,8 @@ describe.sequential('W3.G13 entities.context statements per read (M2/S2)', () =>
     );
     ids.session = session!.id;
     await harness.rows(
-      `insert into public.work_sessions(entity_id, title, status, share_mode)
-       values ($1, 'G13 session', 'running', 'space')`,
+      `insert into public.work_sessions(entity_id, title, status, share_mode, workdir_mode)
+       values ($1, 'G13 session', 'running', 'space', 'scratch')`,
       [ids.session],
     );
     await harness.rows(

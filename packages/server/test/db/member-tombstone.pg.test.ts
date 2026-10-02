@@ -208,8 +208,8 @@ async function seed(): Promise<Fixture> {
       [ids.personaLB, ids.memberLB],
     );
     await client.query(
-      `insert into public.work_sessions(entity_id, title, status, share_mode, started_at)
-       values ($1, 'L''s run in B', 'running', 'none', now())`,
+      `insert into public.work_sessions(entity_id, title, status, share_mode, started_at, workdir_mode)
+       values ($1, 'L''s run in B', 'running', 'none', now(), 'scratch')`,
       [ids.workSessionLB],
     );
     await client.query(

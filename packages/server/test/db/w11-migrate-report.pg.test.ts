@@ -379,5 +379,25 @@ describe('W11-migrate dry-run report on a two-space node', () => {
       expect(err).toContain('owner step');
       expect(err).not.toContain('REFUSED');
     });
+
+    // Paired positive: every cell above ran on the pre-repoint schema (ceiling 234) and read.
+    it('after the W11-repoint (full chain, project_id dropped) the job refuses before reading (exit 65), dry run or not', async () => {
+      const repointed = await createW1ScratchDatabase('w11_migrate_report_repointed');
+      try {
+        repointed.apply(migrationFiles());
+        const cols = await repointed.transaction(async (client) => (await client.query(
+          `select count(*)::int n from information_schema.columns where table_schema = 'public'
+              and table_name in ('chats','work_sessions','worktrees') and column_name = 'project_id'`)).rows[0]!.n);
+        expect(cols).toBe(0);
+        for (const args of [['--mapping', full(), '--dry-run'], ['--mapping', full()]]) {
+          const refused = await run(args, repointed.url);
+          expect(refused.code).toBe(65);
+          expect(refused.err).toContain('run before the W11-repoint; columns already dropped');
+          expect(refused.out).toBe('');
+        }
+      } finally {
+        await repointed.destroy();
+      }
+    }, 240_000);
   });
 });

@@ -124,7 +124,7 @@ export const ENTITY_COLUMNS = `
   ws.title as ws_title, ws.status as ws_status, ws.agent_tool as ws_agent_tool,
   ws.model as ws_model, ws.share_mode as ws_share_mode,
   ws.drive_mode as ws_drive_mode, ws.sharing_set_at as ws_sharing_set_at, ws.started_at as ws_started_at,
-  ws.exited_at as ws_exited_at, ws.node_id as ws_node_id, ws.project_id as ws_project_id,
+  ws.exited_at as ws_exited_at, ws.node_id as ws_node_id, internal.project_folder_for(e.space_id, ws.project_entity_id) as ws_project_id,
   ws.transcript_doc_id as ws_transcript_doc_id, ws.session_kind as ws_session_kind,
   ws.checkout_branch as ws_checkout_branch, ws.workdir_mode as ws_workdir_mode,
   ws.ended_kind as ws_ended_kind, ws.ended_reason as ws_ended_reason, ws.skills as ws_skills,
@@ -155,7 +155,7 @@ export const ENTITY_COLUMNS = `
   cht.title as chat_title, cht.teammate_id as chat_teammate_id,
   cht.model as chat_model, cht.provider as chat_provider, cht.agent_tool as chat_agent_tool,
   cht.chat_mode as chat_mode, cht.workdir_mode as chat_workdir_mode,
-  cht.project_id as chat_project_id, cht.runtime_state as chat_runtime_state,
+  internal.project_folder_for(e.space_id, cht.project_entity_id) as chat_project_id, cht.runtime_state as chat_runtime_state,
   chq.turn_state as chat_turn_state, chq.turn_count as chat_turn_count,
   chq.last_turn_at as chat_last_turn_at, cht.context as chat_context,
   gr.title as graph_title, gr.graph_type as graph_type,
@@ -197,7 +197,7 @@ export const ENTITY_COLUMNS = `
   -- excerpt. servers holds no secret; the gate session is
   -- server_gate_tokens, which this read never names.
   srv.name as srv_name, srv.base_url as srv_base_url,
-  wt.project_id as wt_project_id, wt.path as wt_path, wt.branch as wt_branch,
+  internal.project_folder_for(e.space_id, wt.project_entity_id) as wt_project_id, wt.path as wt_path, wt.branch as wt_branch,
   wt.base_ref as wt_base_ref, wt.base_commit_oid as wt_base_commit_oid,
   wt.status as wt_status, wt.status_changed_at as wt_status_changed_at,
   ctr.status as ctr_status, ctr.profile as ctr_profile, ctr.provider as ctr_provider,

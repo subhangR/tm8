@@ -524,7 +524,7 @@ describe('083 — D3: a live credential session does not move the spawn cap', ()
       (await client.query<{ result: unknown }>(
         `select public.execution_spawn(
            p_space_id => $1, p_team_member_id => $2, p_session_cap => 1,
-           p_title => 'real agent'
+           p_workdir_mode => 'scratch', p_title => 'real agent'
          ) as result`,
         [fixture.space, fixture.teamMember],
       )).rows[0]!.result,
@@ -602,11 +602,14 @@ describe('083 — existing insert paths are untouched', () => {
       ).rows[0]!.id;
       // EXACTLY the column list 007/043/048's execution_spawn uses — no
       // session_kind anywhere. If this needed editing, the column would not be
-      // additive and the migration would be a breaking change.
+      // additive and the migration would be a breaking change. It did need
+      // editing once, and not for session_kind: 245 (W11-repoint) dropped
+      // project_id and refuses an agent 'project' row with no project entity,
+      // so the legacy null-project row is written as the scratch row it was.
       await client.query(
-        `insert into public.work_sessions(entity_id, title, node_id, project_id, workdir_mode,
+        `insert into public.work_sessions(entity_id, title, node_id, workdir_mode,
                                           workdir_path, base_ref, status, agent_tool, model, mode)
-         values ($1, 'legacy shaped', 'node-1', null, 'project', null, null,
+         values ($1, 'legacy shaped', 'node-1', 'scratch', null, null,
                  'running', 'claude', null, null)`,
         [id],
       );
@@ -686,7 +689,10 @@ describe('083 — a credential_sessions row over an agent work_session is unprod
       () =>
         asOwner((client) =>
           client.query(
-            `update public.work_sessions set session_kind = 'agent' where entity_id = $1`,
+            // workdir_mode 'scratch' too: 260's CHECK (W11-repoint) would otherwise
+            // refuse a project-less agent row first (23514), hiding the FK under test.
+            `update public.work_sessions set session_kind = 'agent', workdir_mode = 'scratch'
+              where entity_id = $1`,
             [credentialSession],
           ),
         ),

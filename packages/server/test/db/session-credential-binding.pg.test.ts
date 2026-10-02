@@ -100,7 +100,7 @@ async function insertSession(c: Client, space: string, createdBy: string, kind: 
     await c.query(`insert into public.work_sessions(entity_id, title, status, session_kind, workdir_mode, workdir_path)
                    values ($1, 'fixture', $2, $3, 'container', '/workspace')`, [id, status, kind]);
   } else {
-    await c.query(`insert into public.work_sessions(entity_id, title, status, session_kind) values ($1, 'fixture', $2, $3)`,
+    await c.query(`insert into public.work_sessions(entity_id, title, status, session_kind, workdir_mode) values ($1, 'fixture', $2, $3, 'scratch')`,
       [id, status, kind]);
   }
   return id;
@@ -212,10 +212,10 @@ describe('gate 1 — the mint records a binding by session kind', () => {
       await c.query(`insert into public.entities(id, space_id, kind, position, created_by) values ($1, $2, 'work_session', 0, $3)`,
         [id, ids.S, ids['member:A']]);
       const agentBound = await failure(c, () => c.query(
-        `insert into public.work_sessions(entity_id, title, session_kind, credential_binding) values ($1, 'x', 'agent', 'bound')`, [id]));
+        `insert into public.work_sessions(entity_id, title, session_kind, credential_binding, workdir_mode) values ($1, 'x', 'agent', 'bound', 'scratch')`, [id]));
       expect(agentBound.code).toBe('23514');
       const shellPending = await failure(c, () => c.query(
-        `insert into public.work_sessions(entity_id, title, session_kind, credential_binding) values ($1, 'x', 'shell', 'pending')`, [id]));
+        `insert into public.work_sessions(entity_id, title, session_kind, credential_binding, workdir_mode) values ($1, 'x', 'shell', 'pending', 'scratch')`, [id]));
       expect(shellPending.code).toBe('23514');
     });
   });

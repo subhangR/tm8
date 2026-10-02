@@ -488,7 +488,7 @@ select
   cht.agent_tool     as chat_agent_tool,
   cht.chat_mode      as chat_mode,
   cht.workdir_mode   as chat_workdir_mode,
-  cht.project_id     as chat_project_id,
+  internal.project_folder_for(e.space_id, cht.project_entity_id) as chat_project_id,
   cht.runtime_state  as chat_runtime_state,
   chq.turn_state     as chat_turn_state,
   chq.turn_count     as chat_turn_count,
@@ -525,7 +525,7 @@ select
   -- row draws. servers holds no secret. MIRRORS entity-read.ts.
   srv.name             as srv_name,
   srv.base_url         as srv_base_url,
-  wt.project_id      as wt_project_id,
+  internal.project_folder_for(e.space_id, wt.project_entity_id) as wt_project_id,
   wt.branch          as wt_branch,
   wt.base_ref        as wt_base_ref,
   wt.base_commit_oid as wt_base_commit_oid,
