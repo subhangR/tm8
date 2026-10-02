@@ -222,11 +222,15 @@
   padding: 6px 8px 6px calc(7px + var(--tt-indent));
   cursor: pointer;
 }
+/* IN FLOW, NOT OVER THE STATUS DOT — the fix `.pn-st__arrow` got first (see
+   `panels.css`). This was absolute at the dot's own origin, so every task WITH
+   subtasks showed a chevron laid across its status circle, and the two marks
+   read as one smudge. The chevron now owns a 16px column; `--empty` keeps that
+   column on leaf rows so titles stay aligned down the list. The `29px` / `30px`
+   / `27px` insets on `__meta` and `__badges` were already measured to the
+   status column as if this were in flow, so they are now simply true. */
 .cv2-root .pn-tt__arrow {
-  position: absolute;
-  top: 6px;
-  left: calc(7px + var(--tt-indent));
-  z-index: 3;
+  flex: 0 0 auto;
   width: 16px;
   height: 16px;
   display: grid;
@@ -243,10 +247,7 @@
 /* Always visible on a row that HAS children, for the reason `.pn-st__arrow`
    records and `.lp__disclosure` now shares: since trees ship collapsed
    (2026-08-17) this chevron is the only thing on screen saying there is more
-   under this task, and hover-to-discover is not discovery. It overlays the
-   status dot exactly as it already does whenever the row is expanded — that
-   trade was made when the chevron was given this slot, and this only makes it
-   symmetric between the two states. */
+   under this task, and hover-to-discover is not discovery. */
 .cv2-root .pn-tt__arrow:not(.pn-tt__arrow--empty) { opacity: 0.55; }
 .cv2-root .pn-tt:hover .pn-tt__arrow:not(.pn-tt__arrow--empty),
 .cv2-root .pn-tt:focus-within .pn-tt__arrow:not(.pn-tt__arrow--empty),
@@ -266,10 +267,9 @@
 }
 .cv2-root .pn-tt__arrow--expanded svg { transform: rotate(90deg); }
 .cv2-root .pn-tt__arrow--empty { color: var(--pn-line); }
-.cv2-root .pn-tt__arrowCount {
-  display: none;
-}
 .cv2-root .pn-tt__status {
+  /* The containing block for the subtask count on its corner (`.lp__kids`). */
+  position: relative;
   width: 16px;
   height: 16px;
   flex: 0 0 auto;
@@ -292,6 +292,18 @@
   border: 0;
   opacity: 1;
   animation: none;
+}
+/* The SAME 16px box for the disabled form. A row whose detail has not been
+   hydrated — most rows of a long list, until opened — draws its mark through
+   `DisabledWithReason` ("Waiting for this entity to load"), and that wrapper's
+   tooltip padding (3px 6px) grew the box to ~31x26 and dropped the dot down
+   and right of the column, under the subtask count on its corner. Geometry
+   only: the dim stays, because "you cannot change this yet" is the message. */
+.cv2-root .pn-tt__status .hon-disabled {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  justify-content: center;
 }
 .cv2-root .pn-tt__status-text {
   position: absolute;
@@ -346,8 +358,9 @@
    and session row-height parity stays untouched. */
 .cv2-root .pn-tt__badges {
   min-width: 0;
-  /* 7px row inset + 16px status mark + 6px gap = title start. */
-  padding: 0 8px 5px 29px;
+  /* Under the TITLE: 7px row inset + 16px chevron + 6px gap + 16px status
+     mark + 6px gap. (29px while the chevron overlaid the status mark.) */
+  padding: 0 8px 5px 51px;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -577,8 +590,8 @@
 }
 .cv2-root .pn-tt__ind--open svg { transform: rotate(180deg); }
 
-/* Expanded facts hang off the STATUS column, not the tile edge: 9px row pad +
-   16px caret + 8px gap. The chips therefore start on the same vertical as the
+/* Expanded facts hang off the STATUS column, not the tile edge: 7px row pad +
+   16px caret + 6px gap. The chips therefore start on the same vertical as the
    dot at every depth and every panel width (the indent and the narrow-container
    overrides move both together). */
 .cv2-root .pn-tt__meta {
@@ -659,8 +672,9 @@
     padding-inline: calc(30px + var(--tt-indent)) 9px;
   }
 
+  /* Under the title: 7 + 16 chevron + 7 + 16 status + 7. */
   .cv2-root .pn-tt__badges {
-    padding-inline: calc(30px + var(--tt-indent)) 9px;
+    padding-inline: calc(53px + var(--tt-indent)) 9px;
   }
 
 }
@@ -669,10 +683,6 @@
   .cv2-root .pn-tt__main {
     gap: 5px;
     padding-inline: calc(6px + var(--tt-indent)) 6px;
-  }
-
-  .cv2-root .pn-tt__arrowCount {
-    display: none;
   }
 
   /* The title does NOT step down again here. A session row keeps 12.5px at
@@ -688,8 +698,9 @@
     padding-inline: calc(27px + var(--tt-indent)) 8px;
   }
 
+  /* Under the title: 6 + 16 chevron + 5 + 16 status + 5. */
   .cv2-root .pn-tt__badges {
-    padding-inline: calc(27px + var(--tt-indent)) 8px;
+    padding-inline: calc(48px + var(--tt-indent)) 8px;
   }
 
   /* Depth costs title width, and at this size the title is all there is. */

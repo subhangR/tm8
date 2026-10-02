@@ -4,6 +4,7 @@ import type { PillTone } from '../../kit';
 import { Avatar } from '../../kit';
 import { actorName } from '../../domain/actors';
 import { useMobileSurface } from '../../mobile/surface';
+import { ChildCountBadge } from './ChildCountBadge';
 import './maestro-task-tile.css';
 
 export interface MaestroTaskTileProps {
@@ -158,14 +159,17 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
             <ChevronRight />
           </span>
         )}
-        {childCount > 0 ? <span className="pn-tt__arrowCount">{childCount}</span> : null}
 
         {/* The visually-hidden word stays in BOTH forms: it is the row's own
             read-out of the fact, and a status a sighted user reads as a dot
             must not become unreadable to a screen reader merely because the
             dot has become pressable. The wrapper's `title` does go when a
             control is present — the control carries its own, and two native
-            tooltips on one 16px target is one too many. */}
+            tooltips on one 16px target is one too many.
+
+            The subtask count rides this icon's corner, as the sub-session
+            count rides the agent icon — it used to sit in a `display: none`
+            node beside a chevron that was drawn OVER this dot. */}
         <span className="pn-tt__status" title={statusControl ? undefined : (status.title ?? status.label)}>
           {statusControl ?? (
             <MaestroStatusGlyph
@@ -175,6 +179,7 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
             />
           )}
           <span className="pn-tt__status-text">{status.label}</span>
+          <ChildCountBadge count={childCount} />
         </span>
 
         <button

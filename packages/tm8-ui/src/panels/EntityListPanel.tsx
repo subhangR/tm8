@@ -89,6 +89,7 @@ import { MobileSheet, useMobileSurface } from '../mobile';
 import { MaestroStatusGlyph, MaestroTaskTile } from './list/MaestroTaskTile';
 import { LinkedPullRequestChips, type LinkedPullRequestFacts } from '../pull-requests';
 import { MaestroSessionTile } from './list/MaestroSessionTile';
+import { ChildCountBadge } from './list/ChildCountBadge';
 import { PendingFormsChip, hasPendingFormsChip } from '../forms/PendingFormsChip';
 import { usePendingForms } from '../forms/pending';
 import { SessionLaneLine, WORKTREE_RELATION, sessionLaneOf } from '../git/SessionLane';
@@ -3905,6 +3906,9 @@ export function Tile({
             ) : (
               <span className="lp__kindmark"><KindIcon kind={config.kind} /></span>
             )}
+            {/* The leading icon carries the sub-entity count on its corner,
+                as the session tile's agent icon carries sub-sessions. */}
+            <ChildCountBadge count={childCount} />
           </span>
 
           {/* 15, not 20 — 17px is the tallest thing a session row contains and
