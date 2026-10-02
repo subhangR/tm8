@@ -9,7 +9,9 @@
   display: flex;
   flex-direction: column;
   gap: var(--pn-space-3);
-  padding: var(--pn-space-3) var(--pn-space-4) 70px;
+  /* The bottom clears the playground's sticky ＋ (≈52px) plus a gap, so the
+     last card can scroll out from under it. */
+  padding: var(--pn-space-3) var(--pn-space-4) 96px;
   color: var(--pn-ink);
   font-family: var(--pn-ui);
   font-size: var(--pn-fs-body);
@@ -103,12 +105,13 @@
 }
 .cv2-root .sty-herometa__when { color: var(--pn-ink-4); }
 .cv2-root .sty-who { display: inline-flex; align-items: center; gap: 5px; color: var(--pn-ink-2); }
-.cv2-root .sty-stack { display: inline-flex; }
+.cv2-root .sty-stack { display: inline-flex; align-items: center; }
+.cv2-root .sty-stack__more { margin-left: 4px; font-size: var(--pn-fs-micro); color: var(--pn-ink-3); }
 .cv2-root .sty-stack .kit-avatar { box-shadow: 0 0 0 1.5px var(--pn-card); }
 .cv2-root .sty-stack .kit-avatar + .kit-avatar { margin-left: 3px; }
 .cv2-root .sty-stack .sty-av--live { box-shadow: 0 0 0 1.5px var(--pn-card), 0 0 0 3px var(--pn-run); }
 .cv2-root .sty-livepill {
-  display: inline-flex; align-items: center; gap: 6px; height: 20px; padding: 0 8px 0 7px;
+  display: inline-flex; align-items: center; gap: 5px; height: 18px; padding: 0 7px 0 6px;
   border: 0; border-radius: var(--pn-r-pill); background: var(--pn-run-soft); color: var(--pn-run);
   font: inherit; font-size: var(--pn-fs-micro); font-weight: 600; white-space: nowrap; cursor: pointer;
 }
@@ -186,6 +189,8 @@
   .cv2-root .sty-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .cv2-root .sty-strip__cell--progress { grid-column: 1 / -1; border-bottom: 1px solid var(--pn-line); }
   .cv2-root .sty-strip__cell--progress + .sty-strip__cell { border-left: 0; }
+  .cv2-root .sty-strip__cell:not(.sty-strip__cell--progress) { padding: 5px 12px 6px; }
+  .cv2-root .sty-hero { padding: 12px 16px 10px; }
 }
 /* A phone-width panel: one figure per row. */
 @container (max-width: 400px) {
@@ -199,7 +204,7 @@
 }
 
 /* ---- full view (Z4, PR 1004): main column + rail, a tall graph ---- */
-.cv2-root .sty-page--full { padding: var(--pn-space-3) var(--pn-space-5) 70px; }
+.cv2-root .sty-page--full { padding: var(--pn-space-3) var(--pn-space-5) 96px; }
 .cv2-root .sty-full { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 14px; align-items: start; }
 .cv2-root .sty-full__main,
 .cv2-root .sty-full__rail { display: flex; flex-direction: column; gap: var(--pn-space-3); min-width: 0; }

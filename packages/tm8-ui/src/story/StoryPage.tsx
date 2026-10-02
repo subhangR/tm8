@@ -277,6 +277,19 @@ function StoryHero({
   const teammates = teammatesOf(page);
   const members = Object.values(view.people).filter((p) => !p.agent);
   const onIt = members.length + teammates.length;
+  const faces = [
+    ...teammates
+      .slice()
+      .sort((x, y) => Number(y.live) - Number(x.live))
+      .map((t) => ({
+        id: t.id,
+        agent: true,
+        live: t.live,
+        label: t.live ? `${t.name} · live` : t.name,
+        initials: view.people[t.id]?.initials,
+      })),
+    ...members.map((m) => ({ id: m.id, agent: false, live: false, label: m.name, initials: m.initials })),
+  ];
 
   return (
     <section
@@ -298,39 +311,42 @@ function StoryHero({
         ) : null}
         <span>{plural(state.rootCount, 'root')}</span>
         {kids > 0 ? <span>{plural(kids, 'child story', 'child stories')}</span> : null}
-        <span>{plural(state.itemCount, 'thing')} in it</span>
+        <span>{plural(state.itemCount, 'thing')}</span>
         {onIt > 0 ? (
-          <span className="sty-who" title={`${teammates.length} teammates · ${members.length} members`}>
+          <span
+            className="sty-who"
+            title={`${plural(teammates.length, 'teammate')} · ${plural(members.length, 'member')}: ${faces.map((f) => f.label).join(', ')}`}
+          >
             <span className="sty-stack">
-              {members.map((m) => (
-                <Avatar key={m.id} actorId={m.id} provenance="human" label={m.name} initials={m.initials} size={15} />
-              ))}
-              {teammates.map((t) => (
+              {/* Three faces at most on the one line; the rest is a count
+                  and every name is in the title. Live teammates first. */}
+              {faces.slice(0, 3).map((f) => (
                 <Avatar
-                  key={t.id}
-                  actorId={t.id}
-                  provenance="agent"
-                  label={t.live ? `${t.name} · live` : t.name}
-                  initials={view.people[t.id]?.initials}
+                  key={f.id}
+                  actorId={f.id}
+                  provenance={f.agent ? 'agent' : 'human'}
+                  label={f.label}
+                  initials={f.initials}
                   size={15}
-                  className={t.live ? 'sty-av--live' : undefined}
+                  className={f.live ? 'sty-av--live' : undefined}
                 />
               ))}
+              {faces.length > 3 ? <span className="sty-stack__more">+{faces.length - 3}</span> : null}
             </span>
             {onIt} on it
           </span>
         ) : null}
         {live ? <LivePill live={live} /> : null}
         {view.feed.length > 0 ? (
-          <span className="sty-who">
+          <span className="sty-who" title={`${view.feed.length}${view.feed.length >= 50 ? '+' : ''} messages across the story`}>
             <VectorIcon paths={KIND_ART.message} size={13} />
             {view.feed.length}
-            {view.feed.length >= 50 ? '+' : ''} messages
+            {view.feed.length >= 50 ? '+' : ''}
           </span>
         ) : null}
         {state.pendingAttentionCount > 0 ? (
-          <Pill tone="wait" dot="solid">
-            {plural(state.pendingAttentionCount, 'attention request')}
+          <Pill tone="wait" dot="solid" title={`${plural(state.pendingAttentionCount, 'attention request')} on the story or something in it`}>
+            {state.pendingAttentionCount} attention
           </Pill>
         ) : null}
         {state.lastActivityAt ? <span className="sty-herometa__when">active {relTime(state.lastActivityAt)}</span> : null}
@@ -447,12 +463,13 @@ function LivePill({ live }: { live: StoryLive }) {
     <button
       type="button"
       className={`sty-livepill${paused || live.status !== 'live' ? ' sty-livepill--paused' : ''}`}
-      title={paused ? 'Resume the live feed' : 'Every change in the story lands here as it happens, over the event feed. Click to pause.'}
+      title={`${text}. ${paused ? 'Click to resume.' : 'Every change in the story lands here as it happens. Click to pause.'}`}
       aria-pressed={paused}
       onClick={() => live.setPaused(!paused)}
     >
       <i />
-      {text}
+      {/* Dot + one word on the line (PR 1004); the sentence is the title. */}
+      {paused ? 'paused' : live.status === 'reconnecting' ? 'reconnecting' : 'live'}
     </button>
   );
 }
