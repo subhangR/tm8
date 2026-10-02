@@ -19,17 +19,21 @@
  * until reloaded. A push that loses a race (someone pushed since this
  * author's `publishedVersion`) offers Compare, Push over it and Pull first.
  *
- * WIDGETS (colour pickers, ANSI grid, font dropdown, xterm sample) are phase
- * 4; here a colour is a text field with a swatch.
+ * WIDGETS (phase 4, `style-widgets.tsx`). Every row edits through its
+ * registry kind's widget; the Variables tab draws the ANSI slots as a grid and
+ * puts "Scale all sizes ×" on the text sizes; the Widgets tab gathers the
+ * contrast strip, an xterm sample, the ANSI grid and the size macro. The
+ * header's "Use when dark" pairs this style with the OS (§3.6).
  */
 import type { ReactNode } from 'react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import {
   BUILTIN_STYLES,
   STYLE_MAX_CSS_BYTES,
   STYLE_REGISTRY,
   STYLE_SCHEMA_VERSION,
+  concreteStyleTable,
   cssNumber,
   resolveStyle,
   sanitizeStyleCss,
@@ -39,15 +43,18 @@ import {
   type StyleDoc,
   type StyleGetResult,
   type StyleRef,
+  type ResolvedStyle,
   type StyleRegistryEntry,
+  type StyleTokenTable,
   type StyleVarGroup,
   type StyleWarning,
 } from '@tm8/contract';
 
 import type { Seam, StyleVersionsPage } from '../data/seam';
 import { relTime } from '../kit/time';
-import { applyDraft } from './style-store';
-import { chooseStyle, knownStylePrefs, setStyleCssTrust, stylePrefsWritable } from './style-sync';
+import { applyDraft, getStyleState, subscribeStyle } from './style-store';
+import { chooseStyle, knownStylePrefs, setStyleCssTrust, setStyleFollowOs, stylePrefsWritable } from './style-sync';
+import { ANSI_KEY, AnsiGrid, ContrastStrip, VarWidget, XtermSample, type SetVar } from './style-widgets';
 import { downloadStyle } from './style-io';
 import './style-editor.css';
 
@@ -88,7 +95,7 @@ interface PushConflict {
   doc: StyleDoc | null;
 }
 
-type Tab = 'basics' | 'variables' | 'advanced' | 'versions';
+type Tab = 'basics' | 'variables' | 'widgets' | 'advanced' | 'versions';
 
 interface Draft {
   title: string;
@@ -130,6 +137,35 @@ const MACROS: { id: string; label: string; keys: string[] }[] = [
   },
   { id: 'radius', label: 'Radius ×', keys: ['--pn-r-xs', '--pn-r-sm', '--pn-r-md', '--pn-r-lg'] },
 ];
+
+const SCALE_ALL = MACROS[0]!;
+
+/** `vars` with `keys` set to their FOUNDATION value × factor; factor 1 clears them. */
+function scaledVars(
+  vars: Record<string, string>,
+  keys: readonly string[],
+  factor: number,
+  foundationTokens: Record<string, string>,
+): Record<string, string> {
+  const out = { ...vars };
+  for (const key of keys) {
+    const base = splitLength(foundationTokens[key]);
+    if (!base) continue;
+    if (factor === 1) delete out[key];
+    else out[key] = `${cssNumber(Math.round(base[0] * factor * 100) / 100)}${base[1]}`;
+  }
+  return out;
+}
+
+/** The factor a macro currently reads as: the first key's set value over its foundation value. */
+function factorOf(vars: Record<string, string>, keys: readonly string[], foundationTokens: Record<string, string>): number {
+  const key = keys[0];
+  if (!key) return 1;
+  const base = splitLength(foundationTokens[key]);
+  const set = splitLength(vars[key]);
+  if (!base || !set || base[0] === 0) return 1;
+  return Math.round((set[0] / base[0]) * 100) / 100;
+}
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -173,10 +209,6 @@ function splitLength(value: string | undefined): [number, string] | null {
   return m ? [Number(m[1]), m[2] ?? ''] : null;
 }
 
-function isHex(value: string | undefined): boolean {
-  return /^#[0-9a-f]{6}$/i.test((value ?? '').trim());
-}
-
 /** A space style's doc out of an `entities.versions` snapshot (the `styles` detail row). */
 function snapshotDoc(snapshot: Record<string, unknown> | null): StyleDoc | null {
   if (!snapshot) return null;
@@ -197,8 +229,7 @@ function snapshotDoc(snapshot: Record<string, unknown> | null): StyleDoc | null 
 }
 
 /** Every local warning for a doc: resolver (contrast, clamped, invalid) + css sanitiser, de-duplicated. */
-function localWarnings(doc: StyleDoc): StyleWarning[] {
-  const resolved = resolveStyle(doc);
+function localWarnings(doc: StyleDoc, resolved: ResolvedStyle = resolveStyle(doc)): StyleWarning[] {
   const seen = new Set<string>();
   const out: StyleWarning[] = [];
   for (const w of [...resolved.warnings, ...sanitizeStyleCss(doc.css).warnings]) {
@@ -309,11 +340,13 @@ function PersonalEditor({
   useEffect(() => {
     if (doc) applyDraft(doc);
   }, [doc]);
+  const resolved = useMemo(() => (doc ? resolveStyle(doc) : null), [doc]);
+  const painted = useMemo(() => (resolved ? concreteStyleTable(resolved.cssVars) : {}), [resolved]);
   const warnings = useMemo(() => {
-    const local = doc ? localWarnings(doc) : [];
+    const local = doc && resolved ? localWarnings(doc, resolved) : [];
     const keys = new Set(local.map((w) => `${w.code}|${w.key}`));
     return [...local, ...serverWarnings.filter((w) => !keys.has(`${w.code}|${w.key}`))];
-  }, [doc, serverWarnings]);
+  }, [doc, resolved, serverWarnings]);
   const foundationTokens = draft ? BUILTIN_STYLES[draft.foundation]?.tokens ?? {} : {};
 
   const run = useCallback(async (key: string, action: () => Promise<void>) => {
@@ -464,6 +497,11 @@ function PersonalEditor({
         <button type="button" className="styleed__btn" disabled={busy !== null} onClick={() => void use()}>
           Use
         </button>
+        <DarkPairToggle
+          styleRef={`personal:${id}`}
+          disabled={busy !== null}
+          onToggle={(on) => run('dark', () => setStyleFollowOs(on, on ? `personal:${id}` : undefined))}
+        />
         {seam.pushStyle && spaceId ? (
           <button
             type="button"
@@ -568,13 +606,28 @@ function PersonalEditor({
         </label>
       </div>
 
-      <Tabs tab={tab} onTab={setTab} tabs={['basics', 'variables', 'advanced']} />
+      <Tabs tab={tab} onTab={setTab} tabs={['basics', 'variables', 'widgets', 'advanced']} />
 
       <div className="styleed__body">
         {tab === 'basics' ? (
-          <Basics draft={draft} foundationTokens={foundationTokens} setVar={setVar} setDraft={setDraft} />
+          <Basics draft={draft} foundationTokens={foundationTokens} painted={painted} setVar={setVar} setDraft={setDraft} />
         ) : tab === 'variables' ? (
-          <VariablesTable vars={draft.vars} foundationTokens={foundationTokens} setVar={setVar} />
+          <VariablesTable
+            vars={draft.vars}
+            foundationTokens={foundationTokens}
+            painted={painted}
+            setVar={setVar}
+            setVars={(vars) => setDraft({ ...draft, vars })}
+          />
+        ) : tab === 'widgets' && resolved ? (
+          <Widgets
+            vars={draft.vars}
+            foundationTokens={foundationTokens}
+            resolved={resolved}
+            painted={painted}
+            setVar={setVar}
+            setVars={(vars) => setDraft({ ...draft, vars })}
+          />
         ) : (
           <Advanced
             draft={draft}
@@ -768,7 +821,12 @@ function SpaceStyleView({
 
       <div className="styleed__body">
         {tab === 'variables' ? (
-          <VariablesTable vars={style.doc.vars} foundationTokens={foundationTokens} readOnly />
+          <VariablesTable
+            vars={style.doc.vars}
+            foundationTokens={foundationTokens}
+            painted={concreteStyleTable(resolveStyle(style.doc).cssVars)}
+            readOnly
+          />
         ) : tab === 'advanced' ? (
           <Advanced doc={style.doc} />
         ) : (
@@ -904,94 +962,188 @@ function VersionsList({
 function Basics({
   draft,
   foundationTokens,
+  painted,
   setVar,
   setDraft,
 }: {
   draft: Draft;
   foundationTokens: Record<string, string>;
-  setVar: (key: string, value: string | null) => void;
+  painted: StyleTokenTable;
+  setVar: SetVar;
   setDraft: (d: Draft) => void;
 }) {
-  const applyMacro = (keys: string[], factor: number) => {
-    const vars = { ...draft.vars };
-    for (const key of keys) {
-      const base = splitLength(foundationTokens[key]);
-      if (!base) continue;
-      if (factor === 1) delete vars[key];
-      else vars[key] = `${cssNumber(Math.round(base[0] * factor * 100) / 100)}${base[1]}`;
-    }
-    setDraft({ ...draft, vars });
-  };
-  /* The factor a macro currently reads as: the first key's set value over its foundation value. */
-  const factorOf = (keys: string[]): number => {
-    const key = keys[0];
-    if (!key) return 1;
-    const base = splitLength(foundationTokens[key]);
-    const set = splitLength(draft.vars[key]);
-    if (!base || !set || base[0] === 0) return 1;
-    return Math.round((set[0] / base[0]) * 100) / 100;
-  };
-
+  const row = (k: string) => (
+    <VarRow
+      key={k}
+      entry={BY_KEY.get(k)}
+      vars={draft.vars}
+      foundationTokens={foundationTokens}
+      painted={painted}
+      setVar={setVar}
+    />
+  );
   return (
     <div className="styleed__basics">
       <section>
         <h4 className="styleed__h">Colours</h4>
-        {BASIC_COLOURS.map((k) => (
-          <VarRow key={k} entry={BY_KEY.get(k)} vars={draft.vars} foundationTokens={foundationTokens} setVar={setVar} />
-        ))}
+        {BASIC_COLOURS.map(row)}
       </section>
       <section>
         <h4 className="styleed__h">Status</h4>
-        {STATUS_COLOURS.map((k) => (
-          <VarRow key={k} entry={BY_KEY.get(k)} vars={draft.vars} foundationTokens={foundationTokens} setVar={setVar} />
-        ))}
+        {STATUS_COLOURS.map(row)}
       </section>
       <section>
         <h4 className="styleed__h">Size</h4>
-        {MACROS.map((m) => {
-          const factor = factorOf(m.keys);
-          return (
-            <label key={m.id} className="styleed__macro">
-              <span>{m.label}</span>
-              <input
-                type="range"
-                min={0.75}
-                max={1.5}
-                step={0.05}
-                value={factor}
-                onChange={(e) => applyMacro(m.keys, Number(e.target.value))}
-              />
-              <output>{factor.toFixed(2)}</output>
-            </label>
-          );
-        })}
+        {MACROS.map((m) => (
+          <MacroSlider
+            key={m.id}
+            label={m.label}
+            keys={m.keys}
+            vars={draft.vars}
+            foundationTokens={foundationTokens}
+            onVars={(vars) => setDraft({ ...draft, vars })}
+          />
+        ))}
       </section>
       <section>
         <h4 className="styleed__h">Terminal</h4>
-        {TERMINAL_BASICS.map((k) => (
-          <VarRow key={k} entry={BY_KEY.get(k)} vars={draft.vars} foundationTokens={foundationTokens} setVar={setVar} />
-        ))}
+        {TERMINAL_BASICS.map(row)}
       </section>
     </div>
+  );
+}
+
+function MacroSlider({
+  label,
+  keys,
+  vars,
+  foundationTokens,
+  onVars,
+}: {
+  label: string;
+  keys: readonly string[];
+  vars: Record<string, string>;
+  foundationTokens: Record<string, string>;
+  onVars: (vars: Record<string, string>) => void;
+}) {
+  const factor = factorOf(vars, keys, foundationTokens);
+  return (
+    <label className="styleed__macro">
+      <span>{label}</span>
+      <input
+        type="range"
+        min={0.75}
+        max={1.5}
+        step={0.05}
+        value={factor}
+        onChange={(e) => onVars(scaledVars(vars, keys, Number(e.target.value), foundationTokens))}
+      />
+      <output>{factor.toFixed(2)}</output>
+    </label>
+  );
+}
+
+/** Phase 4 Widgets tab (§9.2): contrast, the terminal as it will paint, its palette, and the size macro. */
+function Widgets({
+  vars,
+  foundationTokens,
+  resolved,
+  painted,
+  setVar,
+  setVars,
+}: {
+  vars: Record<string, string>;
+  foundationTokens: Record<string, string>;
+  resolved: ResolvedStyle;
+  painted: StyleTokenTable;
+  setVar: SetVar;
+  setVars: (vars: Record<string, string>) => void;
+}) {
+  return (
+    <div className="styleed__widgets">
+      <section>
+        <h4 className="styleed__h">Contrast</h4>
+        <ContrastStrip table={painted} />
+      </section>
+      <section>
+        <h4 className="styleed__h">Terminal</h4>
+        <XtermSample resolved={resolved} />
+        <AnsiGrid
+          entries={ENTRIES}
+          vars={vars}
+          foundationTokens={foundationTokens}
+          painted={concreteStyleTable(resolved.alwaysDarkCssVars ?? resolved.cssVars)}
+          setVar={setVar}
+        />
+      </section>
+      <section>
+        <h4 className="styleed__h">Size</h4>
+        <MacroSlider
+          label="Scale all sizes ×"
+          keys={SCALE_ALL.keys}
+          vars={vars}
+          foundationTokens={foundationTokens}
+          onVars={setVars}
+        />
+      </section>
+    </div>
+  );
+}
+
+/**
+ * "Use when dark" (§3.4 `dark_style` + `follow_os`, written through
+ * `identity.stylePrefs.set`): on pairs this style with the OS's dark mode,
+ * off stops following the OS. Pressed while it is the follow-OS dark half.
+ */
+function DarkPairToggle({
+  styleRef,
+  disabled,
+  onToggle,
+}: {
+  styleRef: string;
+  disabled: boolean;
+  onToggle: (on: boolean) => void;
+}) {
+  const state = useSyncExternalStore(subscribeStyle, getStyleState, getStyleState);
+  const paired = state.followOs && state.dark?.ref === styleRef;
+  return (
+    <button
+      type="button"
+      className="styleed__btn"
+      aria-pressed={paired}
+      disabled={disabled}
+      title={paired ? 'Stop following the OS' : 'Paint this style whenever the OS is in dark mode'}
+      onClick={() => onToggle(!paired)}
+      data-testid="style-dark-pair"
+    >
+      {paired ? 'Used when dark ✓' : 'Use when dark'}
+    </button>
   );
 }
 
 function VariablesTable({
   vars,
   foundationTokens,
+  painted,
   setVar,
+  setVars,
   readOnly,
 }: {
   vars: Record<string, string>;
   foundationTokens: Record<string, string>;
-  setVar?: (key: string, value: string | null) => void;
+  painted: StyleTokenTable;
+  setVar?: SetVar;
+  setVars?: (vars: Record<string, string>) => void;
   readOnly?: boolean;
 }) {
   const [query, setQuery] = useState('');
   const [onlySet, setOnlySet] = useState(!!readOnly);
   const q = query.trim().toLowerCase();
+  const editable = setVar && !readOnly ? setVar : undefined;
   const groups = new Map<StyleVarGroup, StyleRegistryEntry[]>();
   for (const e of ENTRIES) {
+    /* §2: derived keys (brand-rgb) are not settable and not shown. */
+    if (e.kind === 'derived') continue;
     if (onlySet && vars[e.key] === undefined) continue;
     if (q && !e.key.includes(q) && !e.label.toLowerCase().includes(q)) continue;
     const list = groups.get(e.group) ?? [];
@@ -1015,21 +1167,45 @@ function VariablesTable({
           Only set ({setCount})
         </label>
       </div>
-      {[...groups].map(([group, entries]) => (
-        <section key={group}>
-          <h4 className="styleed__h">{GROUP_LABEL[group]}</h4>
-          {entries.map((e) => (
-            <VarRow
-              key={e.key}
-              entry={e}
-              vars={vars}
-              foundationTokens={foundationTokens}
-              {...(setVar && !readOnly ? { setVar } : {})}
-              showKey
-            />
-          ))}
-        </section>
-      ))}
+      {[...groups].map(([group, entries]) => {
+        /* The ANSI slots draw as one 16-cell grid; the rest of the group stays rows. */
+        const ansi = entries.filter((e) => ANSI_KEY.test(e.key));
+        const rows = entries.filter((e) => !ANSI_KEY.test(e.key));
+        return (
+          <section key={group}>
+            <h4 className="styleed__h">{GROUP_LABEL[group]}</h4>
+            {group === 'type-scale' && setVars && !readOnly ? (
+              <MacroSlider
+                label="Scale all sizes ×"
+                keys={SCALE_ALL.keys}
+                vars={vars}
+                foundationTokens={foundationTokens}
+                onVars={setVars}
+              />
+            ) : null}
+            {ansi.length ? (
+              <AnsiGrid
+                entries={ansi}
+                vars={vars}
+                foundationTokens={foundationTokens}
+                painted={painted}
+                {...(editable ? { setVar: editable } : {})}
+              />
+            ) : null}
+            {rows.map((e) => (
+              <VarRow
+                key={e.key}
+                entry={e}
+                vars={vars}
+                foundationTokens={foundationTokens}
+                painted={painted}
+                {...(editable ? { setVar: editable } : {})}
+                showKey
+              />
+            ))}
+          </section>
+        );
+      })}
       {groups.size === 0 ? <p className="styleed__note">No variables match.</p> : null}
     </div>
   );
@@ -1039,13 +1215,15 @@ function VarRow({
   entry,
   vars,
   foundationTokens,
+  painted,
   setVar,
   showKey,
 }: {
   entry: StyleRegistryEntry | undefined;
   vars: Record<string, string>;
   foundationTokens: Record<string, string>;
-  setVar?: (key: string, value: string | null) => void;
+  painted: StyleTokenTable;
+  setVar?: SetVar;
   showKey?: boolean;
 }) {
   if (!entry) return null;
@@ -1053,52 +1231,21 @@ function VarRow({
   const value = vars[key];
   const inherited = foundationTokens[key] ?? '';
   const isSet = value !== undefined;
-  const shown = value ?? inherited;
-  const colour = entry.kind === 'colour';
-  const enumValues = entry.kind === 'enum' ? entry.values ?? [] : null;
   return (
-    <div className={`styleed__var${isSet ? ' styleed__var--set' : ''}`} data-key={key}>
+    <div className={`styleed__var styleed__var--${entry.kind}${isSet ? ' styleed__var--set' : ''}`} data-key={key}>
       <span className="styleed__varlabel">
         {entry.label}
         {showKey ? <code className="styleed__varkey">{key}</code> : null}
       </span>
-      {colour ? <span className="styleed__swatch" style={{ background: shown }} aria-hidden /> : null}
-      {!setVar ? (
-        <code className="styleed__varval">{shown}</code>
-      ) : enumValues ? (
-        <select
-          className="styleed__input"
-          value={shown}
-          aria-label={key}
-          onChange={(e) => setVar(key, e.target.value === inherited ? null : e.target.value)}
-        >
-          {enumValues.map((v) => (
-            <option key={v} value={v}>
-              {v}
-            </option>
-          ))}
-        </select>
-      ) : (
-        <>
-          {colour && isHex(shown) ? (
-            <input
-              type="color"
-              className="styleed__colour"
-              value={shown}
-              aria-label={`${key} picker`}
-              onChange={(e) => setVar(key, e.target.value)}
-            />
-          ) : null}
-          <input
-            className="styleed__input"
-            value={value ?? ''}
-            placeholder={inherited}
-            aria-label={key}
-            spellCheck={false}
-            onChange={(e) => setVar(key, e.target.value === '' ? null : e.target.value)}
-          />
-        </>
-      )}
+      <span className="styleed__varedit">
+        <VarWidget
+          entry={entry}
+          value={value}
+          inherited={inherited}
+          painted={painted[key] ?? value ?? inherited}
+          {...(setVar ? { setVar } : {})}
+        />
+      </span>
       <span className={`styleed__badge${isSet ? ' styleed__badge--set' : ''}`}>{isSet ? 'set' : 'inherited'}</span>
       {setVar && isSet ? (
         <button type="button" className="styleed__link" title="Back to the foundation's value" onClick={() => setVar(key, null)}>
@@ -1232,6 +1379,7 @@ function Header({
 const TAB_LABEL: Record<Tab, string> = {
   basics: 'Basics',
   variables: 'Variables',
+  widgets: 'Widgets',
   advanced: 'Advanced',
   versions: 'Versions',
 };

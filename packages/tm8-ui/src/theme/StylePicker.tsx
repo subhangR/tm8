@@ -14,29 +14,41 @@
  * closing must not close it); Push lives in the editor, next to Save, so a
  * push always sends what the author just looked at. New style… duplicates the
  * built-in the viewer is closest to; Import… reads a `.tm8style.json` or an
- * exported `.css` into a new personal style. No hover preview: the list rows
- * carry no document, and a preview that has to fetch first is not one.
+ * exported `.css` into a new personal style.
+ *
+ * HOVER PREVIEW (phase 4, §9.1). Resting the mouse on a row for 400 ms paints
+ * that style in this tab only (`applyDraft`); leaving the row, closing the
+ * picker or choosing reverts it. Built-ins preview from their bundled table;
+ * a personal or space style is read once (`styles.get`) and cached while the
+ * picker is open. A space style's css previews only where this viewer allowed
+ * it. Mouse only: a tap is a choice, not a hover. Never over an editor draft.
+ *
+ * UPSTREAM BADGE. A pulled personal style whose space style moved on shows
+ * "upstream vN available" (`pulledFrom.upstreamVersion` > `pulledFrom.version`).
  *
  * COLLAPSED BY DEFAULT. The light/dark toggle above it stays exactly where it
  * was; this is one disclosure row beneath it, so the menu a viewer opens
  * looks the way it did until they ask for more.
  */
 import type { ReactNode } from 'react';
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import type { PointerEvent as ReactPointerEvent } from 'react';
 import {
   BUILTIN_STYLES,
   BUILTIN_STYLE_IDS,
   importStyle,
   parseStyleRef,
+  styleDocForBuiltin,
   type ActorSummary,
   type PersonalStyleSummary,
+  type StyleDoc,
   type StyleListRow,
   type StyleRef,
 } from '@tm8/contract';
 
 import type { Seam } from '../data/seam';
 import { relTime } from '../kit/time';
-import { getStyleState, subscribeStyle, type StyleEntry } from './style-store';
+import { applyDraft, getStyleState, hasDraft, subscribeStyle, type StyleEntry } from './style-store';
 import {
   chooseStyle,
   knownSpaceDefault,
@@ -50,7 +62,9 @@ import { openStyleEditor } from './StyleEditorHost';
 import { pickStyleFile, titleFromFileName } from './style-io';
 import './style-picker.css';
 
-export type StylePickerSeam = Partial<Pick<Seam, 'styles' | 'personalStyles' | 'pullStyle' | 'createPersonalStyle'>>;
+export type StylePickerSeam = Partial<
+  Pick<Seam, 'style' | 'styles' | 'personalStyles' | 'pullStyle' | 'createPersonalStyle'>
+>;
 
 export interface StylePickerProps {
   seam: StylePickerSeam | null;
@@ -119,6 +133,98 @@ function useCatalogLists(seam: StylePickerSeam | null, spaceId: string | null, o
   return { lists, error, reload: () => setTick((n) => n + 1) };
 }
 
+/** §9.1: how long the pointer must rest on a row before it previews. */
+export const HOVER_PREVIEW_MS = 400;
+
+export interface HoverPreview {
+  /** Pointer handlers for a row previewing `ref`; `allowCss` = its css may run for this viewer. */
+  bind: (ref: StyleRef, allowCss: boolean) => {
+    onPointerEnter: (e: ReactPointerEvent) => void;
+    onPointerMove: (e: ReactPointerEvent) => void;
+    onPointerLeave: () => void;
+  };
+  /** Drop any pending or painted preview. */
+  revert: () => void;
+}
+
+/**
+ * Hover preview (§9.1): 400 ms after the pointer settles on a row, paint that
+ * row's style through `applyDraft`; leave reverts. Each pointer move before
+ * the preview lands restarts the wait, so sweeping across the list previews
+ * nothing. A preview never replaces an editor's draft.
+ */
+export function useHoverPreview(seam: StylePickerSeam | null, active: boolean): HoverPreview {
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hovering = useRef<StyleRef | null>(null);
+  const painted = useRef(false);
+  const docs = useRef(new Map<string, StyleDoc>());
+
+  const clearTimer = () => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+  };
+  const revert = useCallback(() => {
+    clearTimer();
+    hovering.current = null;
+    if (painted.current) {
+      painted.current = false;
+      applyDraft(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!active) revert();
+    return revert;
+  }, [active, revert]);
+
+  const docFor = async (ref: StyleRef): Promise<StyleDoc | null> => {
+    const parsed = parseStyleRef(ref);
+    if (!parsed) return null;
+    if (parsed.kind === 'builtin') return styleDocForBuiltin(ref as `builtin:${string}`);
+    const cached = docs.current.get(ref);
+    if (cached) return cached;
+    if (!seam?.style) return null;
+    const got = await seam.style(ref);
+    docs.current.set(ref, got.doc);
+    return got.doc;
+  };
+
+  const arm = (ref: StyleRef, allowCss: boolean) => {
+    clearTimer();
+    timer.current = setTimeout(() => {
+      timer.current = null;
+      void docFor(ref).then(
+        (doc) => {
+          if (!doc || hovering.current !== ref) return;
+          /* An editor is previewing its draft: never paint over it. */
+          if (hasDraft() && !painted.current) return;
+          painted.current = true;
+          applyDraft(allowCss ? doc : { ...doc, css: null });
+        },
+        () => {},
+      );
+    }, HOVER_PREVIEW_MS);
+  };
+
+  return {
+    bind: (ref, allowCss) => ({
+      onPointerEnter: (e) => {
+        if (e.pointerType !== 'mouse' || !active) return;
+        hovering.current = ref;
+        arm(ref, allowCss);
+      },
+      onPointerMove: (e) => {
+        if (e.pointerType !== 'mouse' || !active || painted.current || hovering.current !== ref) return;
+        arm(ref, allowCss);
+      },
+      onPointerLeave: () => {
+        if (hovering.current === ref) revert();
+      },
+    }),
+    revert,
+  };
+}
+
 function pusherName(members: readonly ActorSummary[], memberId: string | null): string | null {
   if (!memberId) return null;
   const actor = members.find((m) => m.id === memberId);
@@ -133,6 +239,9 @@ function entryLabel(entry: StyleEntry): string {
 interface RowProps {
   title: string;
   meta?: string | null;
+  /** A highlighted chip after the meta line (the upstream badge). */
+  badge?: string | null;
+  hover?: ReturnType<HoverPreview['bind']>;
   inUse: boolean;
   busy: boolean;
   onUse: () => void;
@@ -140,9 +249,9 @@ interface RowProps {
   testId?: string;
 }
 
-function Row({ title, meta, inUse, busy, onUse, children, testId }: RowProps) {
+function Row({ title, meta, badge, hover, inUse, busy, onUse, children, testId }: RowProps) {
   return (
-    <li className="stylepick__item">
+    <li className="stylepick__item" {...hover}>
       <button
         type="button"
         className="stylepick__use"
@@ -157,6 +266,11 @@ function Row({ title, meta, inUse, busy, onUse, children, testId }: RowProps) {
         <span className="stylepick__text">
           <span className="stylepick__title">{title}</span>
           {meta ? <span className="stylepick__meta">{meta}</span> : null}
+          {badge ? (
+            <span className="stylepick__badge" data-testid="style-upstream-badge">
+              {badge}
+            </span>
+          ) : null}
         </span>
       </button>
       {children}
@@ -183,7 +297,15 @@ export function StylePicker({ seam, spaceId, members, variant = 'menu' }: StyleP
     }
   }, []);
 
-  const use = useCallback((ref: StyleRef) => run(ref, () => chooseStyle(ref)), [run]);
+  const preview = useHoverPreview(seam, open);
+  const revertPreview = preview.revert;
+  const use = useCallback(
+    (ref: StyleRef) => {
+      revertPreview();
+      return run(ref, () => chooseStyle(ref));
+    },
+    [run, revertPreview],
+  );
 
   const prefs = knownStylePrefs();
   const trusted = useMemo(() => new Set(prefs?.trustedCss ?? []), [prefs]);
@@ -231,7 +353,9 @@ export function StylePicker({ seam, spaceId, members, variant = 'menu' }: StyleP
       </button>
 
       {open ? (
-        <div className="stylepick__panel">
+        /* Any press in the panel ends a hover preview first, so an action
+           (Edit opening a draft, Pull, Use) never runs under a preview. */
+        <div className="stylepick__panel" onPointerDownCapture={revertPreview}>
           {actionError || listError ? (
             <p className="stylepick__error" role="alert">
               {actionError ?? listError}
@@ -256,15 +380,18 @@ export function StylePicker({ seam, spaceId, members, variant = 'menu' }: StyleP
                 {lists.mine.map((m) => {
                   const bits = [`edited ${relTime(m.updatedAt, now)}`];
                   if (m.publishedAs) bits.push(m.publishedVersion ? `pushed as v${m.publishedVersion}` : 'pushed to a space');
-                  if (m.pulledFrom?.upstreamVersion && m.pulledFrom.upstreamVersion > m.pulledFrom.version) {
-                    bits.push(`upstream v${m.pulledFrom.upstreamVersion} available`);
-                  }
+                  const upstream =
+                    m.pulledFrom?.upstreamVersion && m.pulledFrom.upstreamVersion > m.pulledFrom.version
+                      ? `upstream v${m.pulledFrom.upstreamVersion} available`
+                      : null;
                   if (inUse(m.ref) && statusNote) bits.push(statusNote);
                   return (
                     <Row
                       key={m.id}
                       title={m.title}
                       meta={bits.join(' · ')}
+                      badge={upstream}
+                      hover={preview.bind(m.ref as StyleRef, true)}
                       inUse={inUse(m.ref)}
                       busy={busy !== null}
                       onUse={() => void use(m.ref as StyleRef)}
@@ -304,6 +431,7 @@ export function StylePicker({ seam, spaceId, members, variant = 'menu' }: StyleP
                       key={s.id}
                       title={s.title}
                       meta={bits.join(' · ')}
+                      hover={preview.bind(s.ref as StyleRef, !cssBlocked)}
                       inUse={inUse(s.ref)}
                       busy={busy !== null}
                       onUse={() => void use(s.ref as StyleRef)}
@@ -363,6 +491,7 @@ export function StylePicker({ seam, spaceId, members, variant = 'menu' }: StyleP
                 <Row
                   key={b.id}
                   title={b.title}
+                  hover={preview.bind(b.id, false)}
                   inUse={inUse(b.id)}
                   busy={busy !== null}
                   onUse={() => void use(b.id)}
