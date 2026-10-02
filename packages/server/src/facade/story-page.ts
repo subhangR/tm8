@@ -1,4 +1,4 @@
-// The story page (migration 282, contract `StoryPage`), assembled on a DETAIL
+// The story page (migration 283, contract `StoryPage`), assembled on a DETAIL
 // read. The trail itself — roots, depth, the edge each row was reached by —
 // comes from `internal.story_trail`, the same function `internal.story_summary`
 // (the twins' `state`) reads, so the page and the summary cannot disagree on
@@ -71,7 +71,7 @@ function teamMode(raw: string | null): TeamMemberMode | null {
   return raw !== null && TEAM_MODES.has(raw as TeamMemberMode) ? (raw as TeamMemberMode) : null;
 }
 
-/** MIRRORS `internal.story_tally` (282): disjoint bands, done + inProgress + toDo + blocked = work. */
+/** MIRRORS `internal.story_tally` (283): disjoint bands, done + inProgress + toDo + blocked = work. */
 export function tallyStory(facts: readonly Pick<FactRow, 'status_category' | 'blocked'>[]): StoryProgress {
   const t: StoryProgress = { work: 0, done: 0, inProgress: 0, toDo: 0, blocked: 0, cancelled: 0 };
   for (const f of facts) {

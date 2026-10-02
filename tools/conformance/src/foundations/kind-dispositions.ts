@@ -595,7 +595,7 @@ export const CORE_KIND_DISPOSITIONS = {
     capabilities: { profile: 'server-lifecycle' },
     menu: { strategy: 'not-addressable' }, migration: { strategy: 'space-link-kinds' },
   }),
-  // Stories (migration 282). `drawing`'s disposition, for the same reasons: an
+  // Stories (migration 283). `drawing`'s disposition, for the same reasons: an
   // ordinary collection-routed entity created and patched through the generic
   // envelope (create_story_entity / update_story_entity), zero new catalog
   // rows. Its roots are `contains` edges written through the existing

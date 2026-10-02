@@ -201,7 +201,7 @@ export const CoreEntityKindSchema = z.enum([
   // is its door. `server` is registered with it and has no door in W6.
   'space_link',
   'server',
-  // Stories (282): roots by `contains`, the rest follows. Creatable through
+  // Stories (283): roots by `contains`, the rest follows. Creatable through
   // the generic envelope.
   'story',
 ]);
@@ -646,7 +646,7 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     format: z.string().min(1),
     elementCount: z.number().int().nonnegative(),
   }).strict(),
-  // 282 — the story's computed summary.
+  // 283 — the story's computed summary.
   StoryStateSchema,
   // 209 — a form's lifecycle status and its question count.
   z.object({
@@ -1052,7 +1052,7 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
     appState: z.record(z.unknown()),
     files: z.record(z.unknown()),
   }).passthrough(),
-  // 282 — the story's description and, on a detail read, its page.
+  // 283 — the story's description and, on a detail read, its page.
   StoryContentSchema,
   // 209 — a form: settings (defaults applied), sections and questions in order.
   z.object({

@@ -1,5 +1,5 @@
 -- =============================================================================
--- 282 — `story`, one line of work as an entity (task 01a0fbf9, "Story as an
+-- 283 — `story`, one line of work as an entity (task 01a0fbf9, "Story as an
 -- Entity", rulings by Subhang 2026-10-02; brief doc 01a0fc6f).
 --
 -- A story is a title, a description and the status every kind already has
@@ -48,8 +48,9 @@
 -- stories is this entity in — for spawn-on-story, walking the same edge set
 -- backwards (child -> parent for hierarchy) under the same bounds.
 --
--- NUMBERED 282, measured 2026-10-02 against every remote ref: main tops at
--- 277, lane branches reach 281 (281_path_grants, 281_space_link_spawn).
+-- NUMBERED 283, measured 2026-10-02 against every remote ref: main tops at
+-- 277, lane branches reach 282 (origin/feat/style-phase2 holds
+-- 282_style_entities; 281_path_grants and 281_space_link_spawn elsewhere).
 -- RE-MEASURE at assembly.
 --
 -- SHARED-OBJECT NOTICE (053/…/250/261): §3 REPLACES `internal.entity_content`.
@@ -164,7 +165,7 @@ begin
       -- W8: the server's metadata. `servers` holds no secret; the sealed
       -- per-member gate session is `server_gate_tokens` and has no arm.
       when 'server' then select to_jsonb(sv) - 'entity_id' into content from public.servers sv where sv.entity_id = target;
-      -- 282: the story's title and description. Its roots are `contains`
+      -- 283: the story's title and description. Its roots are `contains`
       -- edges and its trail is computed (story_trail), never embedded here.
       when 'story' then select to_jsonb(st) - 'entity_id' into content from public.stories st where st.entity_id = target;
       else content := '{}'::jsonb;
@@ -474,7 +475,7 @@ end
 $$;
 
 comment on function internal.story_trail(uuid) is
-  '282: the story''s roots (contains targets) and everything that follows from '
+  '283: the story''s roots (contains targets) and everything that follows from '
   'them — parent->child and the ten followed edge types, depth 3, 500 rows. '
   'Computed at read time, security invoker: RLS decides what a viewer sees.';
 

@@ -1034,7 +1034,7 @@ const PATCH_CONTENT_MEMBERS: Readonly<Record<string, readonly string[]>> = {
   // W10a: no member is patchable. The lifecycle refusal fires first; this is
   // the second lock, so a door that skipped it still forwards nothing.
   credential: [],
-  // 282: the prose; the title rides the envelope's `title`.
+  // 283: the prose; the title rides the envelope's `title`.
   story: ['description'],
 };
 
@@ -1416,7 +1416,7 @@ export class W2EntitiesCommandsTrackingService {
           break;
         }
         case 'story': {
-          // 282: zero new catalog rows, the drawing posture. `parentId` is a
+          // 283: zero new catalog rows, the drawing posture. `parentId` is a
           // parent STORY (same-kind hierarchy = child stories); putting a
           // thing IN a story is `collections.addItem`, never hierarchy.
           const story = storyContent(content);

@@ -1,4 +1,4 @@
-// Story as an Entity (migration 282, task 01a0fbf9, 2026-10-02).
+// Story as an Entity (migration 283, task 01a0fbf9, 2026-10-02).
 //
 // A story is one entity with a title, a description and the status every kind
 // has (152). Things are put in BY HAND as `contains` edges from the story —
