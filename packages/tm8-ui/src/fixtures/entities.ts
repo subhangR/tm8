@@ -1104,7 +1104,7 @@ export const drawingLoginFlow = summary({
 });
 
 /**
- * Story — everything around one idea, and where it stands (migration 282).
+ * Story — everything around one idea, and where it stands (migration 283).
  * The state and page are the story page's own fixture (`story/fixture.ts`,
  * artifact 01a0fc3e rev 4 in the published contract shape), so the panel's
  * `storyline` block draws the same story here as on /story-dev.html.

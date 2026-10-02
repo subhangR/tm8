@@ -1,12 +1,12 @@
 /**
- * STORY — everything around one idea, and where it stands (migration 282).
+ * STORY — everything around one idea, and where it stands (migration 283).
  *
  * The signature moment is the FOLLOW: a second filmstrip inside "Put in by
  * hand, followed by rule" that walks one root out to the page — the root, what
  * follows from it, the tally, the page. It reuses the Story tab's own
  * `eh-film` markup, as the drawing page does.
  *
- * Every fact here was checked against 282_story_kind.sql, the published
+ * Every fact here was checked against 283_story_kind.sql, the published
  * contract (packages/contract/src/story.ts) and the story page artifact
  * 01a0fc3e rev 4.
  */

@@ -1104,7 +1104,7 @@ export type ContentBlockKind =
   // cannot tell apart. The block is also the thing a FUTURE second canvas
   // format would reuse, so naming it after one kind was wrong anyway.
   | 'canvas'
-  // The story page (282): hero, stats, graph, roots, team, feed and rail, one
+  // The story page (283): hero, stats, graph, roots, team, feed and rail, one
   // block because the page IS the body. The live read arrives from the host as
   // `storySurface` (views/storySurface.tsx); without one the block draws the
   // static read of the row. NAMED `storyline`, NOT `story`, for the same

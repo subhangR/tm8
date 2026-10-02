@@ -283,7 +283,7 @@ export const KIND_ART = {
   custom: ['M8 2.6 13.4 8 8 13.4 2.6 8z'],
 
   /**
-   * An open book (282, the story page artifact 01a0fc3e rev 4's `ART.story`).
+   * An open book (283, the story page artifact 01a0fc3e rev 4's `ART.story`).
    * The two facing pages with a line on each are what separate it from
    * `skill`'s bound, closed book: a story is read across, page to page.
    */
