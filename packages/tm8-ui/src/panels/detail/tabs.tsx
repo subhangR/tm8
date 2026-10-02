@@ -417,6 +417,7 @@ export function ConnectionsTab({
   graph,
   launchContext,
   header,
+  crossSpaceRefs,
   onOpenDiscussion,
 }: {
   detail: EntityDetail;
@@ -440,6 +441,12 @@ export function ConnectionsTab({
    * cannot carry an authored header.
    */
   header?: ReactNode;
+  /**
+   * The entity's references into other spaces (279): not edges, so drawn as
+   * their own section after the peers. Host-composed; renders nothing when
+   * there are none.
+   */
+  crossSpaceRefs?: ReactNode;
 }) {
   const [view, setView] = useState<'list' | 'graph'>('list');
   const groups: EdgeGroup[] = [
@@ -617,6 +624,8 @@ export function ConnectionsTab({
           </div>
         </section>
       ) : null}
+
+      {crossSpaceRefs}
     </div>
   );
 }

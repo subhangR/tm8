@@ -105,6 +105,8 @@ import {
   SpaceLinksSetSpawnInputSchema,
   SpaceLinksInboundMutationInputSchema,
   SpaceLinksInvokeInputSchema,
+  CrossSpaceRefAddInputSchema,
+  CrossSpaceRefRemoveInputSchema,
   ServersAddInputSchema,
   ServersAdoptInputSchema,
   ServersMutationInputSchema,
@@ -295,6 +297,9 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'spaceLinks.inbound.restore': SpaceLinksInboundMutationInputSchema,
   // W7: the envelope only; the inner op's own schema runs inside invoke.
   'spaceLinks.invoke': SpaceLinksInvokeInputSchema,
+  // L3 (279): the link and the target; the referencing entity is the path's :id.
+  'entities.refs.add': CrossSpaceRefAddInputSchema,
+  'entities.refs.remove': CrossSpaceRefRemoveInputSchema,
   // W8 (261): add/adopt/remove human-only in SQL; no body carries a secret.
   'servers.add': ServersAddInputSchema,
   'servers.adopt': ServersAdoptInputSchema,

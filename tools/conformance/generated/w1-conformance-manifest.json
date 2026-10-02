@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:3ceaa5ad1e51fc6656fa6217d745a9c7c2c96cb29d60b8bca05036b9c458abe6",
+  "catalogDigest": "sha256:5a0d78f7d8bba3257b551b014c4dd89e67729c20361cf5686e7680e9f8245645",
   "catalog": {
-    "total": 297,
-    "v1": 295,
+    "total": 300,
+    "v1": 298,
     "reserved": 2,
-    "http": 295,
+    "http": 298,
     "ws": 1,
-    "registerableV1Http": 293,
+    "registerableV1Http": 296,
     "methods": {
-      "GET": 97,
-      "POST": 145,
+      "GET": 98,
+      "POST": 146,
       "PATCH": 17,
-      "DELETE": 18,
+      "DELETE": 19,
       "PUT": 18,
       "WS": 2
     },
     "kinds": {
-      "read": 101,
-      "command": 194,
+      "read": 102,
+      "command": 196,
       "stream": 2
     },
-    "uniqueNames": 297,
-    "uniqueBindings": 296
+    "uniqueNames": 300,
+    "uniqueBindings": 299
   },
   "reservedOperations": [
     "search.query",
@@ -533,6 +533,27 @@
         "operation": "spaceLinks.inbound.restore",
         "method": "POST",
         "path": "/v2/spaces/:spaceId/space-links/inbound/:linkId/restore",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "entities.refs.list",
+        "method": "GET",
+        "path": "/v2/entities/:id/refs",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "entities.refs.add",
+        "method": "POST",
+        "path": "/v2/entities/:id/refs",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "entities.refs.remove",
+        "method": "DELETE",
+        "path": "/v2/entities/:id/refs/:refId",
         "status": "registered",
         "source": "server-router"
       },
@@ -2483,7 +2504,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 265
+    "unimplementedV1Http": 268
   },
   "schemas": {
     "additive": {
@@ -3448,6 +3469,57 @@
           "links",
           "inbound",
           "restore"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "entities.refs.list",
+        "noun": "entity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/entities.refs.list",
+        "intentTags": [
+          "entities",
+          "refs",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "entities.refs.add",
+        "noun": "entity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/entities.refs.add",
+        "intentTags": [
+          "entities",
+          "refs",
+          "add"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "entities.refs.remove",
+        "noun": "entity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/entities.refs.remove",
+        "intentTags": [
+          "entities",
+          "refs",
+          "remove"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

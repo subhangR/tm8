@@ -130,6 +130,11 @@ export const OPERATIONS = [
   { name: 'spaceLinks.inbound.audit',   method: 'GET',  path: '/v2/spaces/:spaceId/space-links/inbound/audit',           kind: 'read',    status: 'v1' },
   { name: 'spaceLinks.inbound.revoke',  method: 'POST', path: '/v2/spaces/:spaceId/space-links/inbound/:linkId/revoke',  kind: 'command', status: 'v1', humanOnly: true },
   { name: 'spaceLinks.inbound.restore', method: 'POST', path: '/v2/spaces/:spaceId/space-links/inbound/:linkId/restore', kind: 'command', status: 'v1', humanOnly: true },
+  // L3 (279): an entity's references into linked spaces. Not edges (D3); add
+  // needs the caller's own signed-in link (D7) and reads B through it first.
+  { name: 'entities.refs.list',   method: 'GET',    path: '/v2/entities/:id/refs',             kind: 'read',    status: 'v1' },
+  { name: 'entities.refs.add',    method: 'POST',   path: '/v2/entities/:id/refs',             kind: 'command', status: 'v1' },
+  { name: 'entities.refs.remove', method: 'DELETE', path: '/v2/entities/:id/refs/:refId',      kind: 'command', status: 'v1' },
   // Remote servers (W8, 261): `server` entities over 044's read-only rows.
   // add/adopt/remove are human-only in SQL; no response carries a gate token.
   { name: 'servers.list',   method: 'GET',  path: '/v2/spaces/:spaceId/servers',  kind: 'read',    status: 'v1' },

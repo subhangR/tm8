@@ -133,6 +133,12 @@ describe('spaceLinks.invoke classification — every start, grant and session-bo
     }
   });
 
+  it('entities.refs.add is refused through a link (L3: no transitive link use); list and remove pass', () => {
+    expect(spaceLinkRefusal('entities.refs.add', 'command', {}, true)).toBe('link_management');
+    expect(spaceLinkRefusal('entities.refs.list', 'read', {}, true)).toBeNull();
+    expect(spaceLinkRefusal('entities.refs.remove', 'command', {}, true)).toBeNull();
+  });
+
   it('PASSES holds no op that is refused anyway, and no op missing from the catalog', () => {
     const byName = new Map<string, (typeof OPERATIONS)[number]>(OPERATIONS.map((o) => [o.name, o]));
     const stale = Object.keys(PASSES).filter((name) => !byName.has(name));

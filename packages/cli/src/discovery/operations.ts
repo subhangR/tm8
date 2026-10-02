@@ -844,6 +844,39 @@ const ROWS: Record<OperationName, Row> = {
     tags: ['link', 'inbound', 'restore', 'cross-space', 'admin'],
     notes: ['an agent is refused by the Server; it asks its human to run this'],
   },
+  'entities.refs.add': {
+    cmd: ['entity', 'ref', 'add'],
+    syn: 'tm8 entity ref add <entity-id> <target-entity-id> --link <alias|link-id|space-id> [--mutation-id <id>]',
+    sum: 'Point an entity in this Space at an entity in a linked Space — a cross-space reference, not an edge',
+    authz: 'entity',
+    input: 'bound',
+    side: 'durable',
+    tags: ['ref', 'reference', 'link', 'cross-space', 'relate', 'relates_to', 'chip'],
+    notes: [
+      'an edge never crosses spaces (`edge create` across spaces is an invariant_violation); use this instead',
+      'needs YOUR human\'s space link to the target Space, signed in: no active link, no reference (`tm8 link list` shows them; a human runs `tm8 link add` and `tm8 link login`)',
+      'the target is read through the link first (one audited `entities.get` in `tm8 link audit`), and its kind and title are kept as the snapshot; adding the same target again refreshes it',
+      'name the link with --link, not the global --space: --space would run the whole command inside the linked Space',
+    ],
+    examples: ['tm8 entity ref add <entity-id> <target-entity-id> --link research'],
+  },
+  'entities.refs.list': {
+    cmd: ['entity', 'ref', 'list'],
+    syn: 'tm8 entity ref list <entity-id>',
+    sum: 'List an entity\'s references into linked Spaces — live when you can read the target, the snapshot otherwise',
+    authz: 'entity',
+    input: 'none',
+    tags: ['ref', 'reference', 'link', 'cross-space'],
+  },
+  'entities.refs.remove': {
+    cmd: ['entity', 'ref', 'remove'],
+    syn: 'tm8 entity ref remove <entity-id> <ref-id> [--mutation-id <id>]',
+    sum: 'Remove one cross-space reference from an entity',
+    authz: 'entity',
+    input: 'bound',
+    side: 'durable',
+    tags: ['ref', 'reference', 'cross-space'],
+  },
   'node.credentials.status': {
     cmd: null,
     sum: 'Read the node\'s credential fallback per provider — node admin, human sessions only',
@@ -1613,7 +1646,10 @@ const ROWS: Record<OperationName, Row> = {
     authz: 'entity',
     input: 'bound',
     tags: ['link', 'relate', 'connect'],
-    notes: ['`props.origin` is Server-owned and never accepted from a client'],
+    notes: [
+      '`props.origin` is Server-owned and never accepted from a client',
+      'both ends must be in the same Space; to point at an entity in a linked Space use `tm8 entity ref add <entity-id> <target-entity-id> --link <alias>`',
+    ],
   },
   'edges.patch': {
     cmd: ['edge', 'update'],
@@ -3598,6 +3634,8 @@ function exposureFor(operation: OperationName): Exposure {
 // 2026-08-13 (first-run claim): auth.claim + auth.claim.status take the catalog
 // to 161 rows. RECOMPUTED from `JSON.stringify(OPERATIONS)`, not adjusted.
 export const CATALOG_DIGEST =
+  // Re-measured for L3 (+entities.refs.list|add|remove, cross-space references, 279) — RECOMPUTED from
+  // JSON.stringify(OPERATIONS), not adjusted.
   // Re-measured for 276 (+chat.setModel, chat model switch) — RECOMPUTED from
   // JSON.stringify(OPERATIONS) by test/discovery-operations.test.ts, not adjusted.
   // Re-measured for task 01a0e24d (+humanOnly on 33 rows: 24 credentials.*/node.credentials.*,
@@ -3651,7 +3689,8 @@ export const CATALOG_DIGEST =
   // Re-measured for 282 (+node.pathGrants.list/create/revoke, node.accounts.list,
   // identity.pathGrants.list; path grants) — RECOMPUTED, not adjusted.
   // +4 spaceLinks.inbound.list|audit|revoke|restore (278, D2): read from the regenerated conformance manifest.
-  'sha256:3ceaa5ad1e51fc6656fa6217d745a9c7c2c96cb29d60b8bca05036b9c458abe6';
+  // +3 entities.refs.list|add|remove (L3 cross-space refs, 279): read from the regenerated conformance manifest.
+  'sha256:5a0d78f7d8bba3257b551b014c4dd89e67729c20361cf5686e7680e9f8245645';
 
 export const GRAMMAR_VERSION = '2';
 

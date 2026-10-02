@@ -34,6 +34,7 @@ import type { HandlerRegistry } from '../../registry.js';
 import { claimsFor } from '../../context.js';
 import { DbSpaceLinkStore } from '../../../credentials/space-link-store.js';
 import { createSpaceLinkInvokeHandlers, type SpaceLinkInvokeOptions } from './space-link-invoke.js';
+import { createCrossSpaceRefHandlers } from './cross-space-refs.js';
 
 /** The typed refusal code. Stable, and asserted by test. */
 export const SPACE_LINKS_HUMAN_ONLY = 'space_links_human_only';
@@ -140,6 +141,8 @@ export function registerSpaceLinkHandlers(
   // W7. invoke is NOT human-only: it is the agent's door. Its own guard
   // (space-link-invoke.ts) refuses the refused set before anything is opened.
   const { invoke, audit } = createSpaceLinkInvokeHandlers(registry, deps, store, claimsOf, links.invoke);
+  // L3 (279): references into a linked space, made through the same invoke.
+  const refs = createCrossSpaceRefHandlers(deps, store, claimsOf, invoke);
 
   // Every write is wrapped; `list`, `audit`, `invoke` and the two inbound
   // reads are open (the inbound reads to the target's admins, in SQL).
@@ -151,6 +154,9 @@ export function registerSpaceLinkHandlers(
     'spaceLinks.inbound.revoke': requireHumanLinkSession(inboundWrite(true)),
     'spaceLinks.inbound.restore': requireHumanLinkSession(inboundWrite(false)),
     'spaceLinks.invoke': invoke,
+    'entities.refs.list': refs.list,
+    'entities.refs.add': refs.add,
+    'entities.refs.remove': refs.remove,
     'spaceLinks.add': requireHumanLinkSession(add),
     'spaceLinks.login': requireHumanLinkSession(login(false)),
     'spaceLinks.relogin': requireHumanLinkSession(login(true)),

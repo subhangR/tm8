@@ -40,6 +40,8 @@ import {
   type SpaceLinkAuditEntry,
   type SpaceLinkInboundAuditEntry,
   type SpaceLinkInboundView,
+  type CrossSpaceRef,
+  type CrossSpaceRefRemoved,
   type CreateInviteInput,
   type InvitePreview,
   type InviteRedemption,
@@ -764,6 +766,20 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<SpaceLinkInboundView>(op, {
         params: { spaceId, linkId },
         body: { clientMutationId: newId('splinkin') },
+      });
+    },
+
+    // -- cross-space references (`entities.refs.*`, L3, 279) -------------------
+    // The UI reads and removes; agents add through a link (`tm8 entity ref add`).
+
+    crossSpaceRefsList(entityId: EntityId): Promise<CrossSpaceRef[]> {
+      return http.call<CrossSpaceRef[]>('entities.refs.list', { params: { id: entityId } });
+    },
+
+    crossSpaceRefsRemove(entityId: EntityId, refId: string): Promise<CrossSpaceRefRemoved> {
+      return http.call<CrossSpaceRefRemoved>('entities.refs.remove', {
+        params: { id: entityId, refId },
+        body: { clientMutationId: newId('xsref') },
       });
     },
 

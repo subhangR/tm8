@@ -172,6 +172,8 @@ import type {
   SpaceLinkAuditEntry,
   SpaceLinkInboundAuditEntry,
   SpaceLinkInboundView,
+  CrossSpaceRef,
+  CrossSpaceRefRemoved,
   ServerView,
   ServerProbeView,
   ActionRows,
@@ -1519,6 +1521,20 @@ export interface Seam {
       revoke(spaceId: SpaceId, linkId: EntityId): Promise<SpaceLinkInboundView>;
       restore(spaceId: SpaceId, linkId: EntityId): Promise<SpaceLinkInboundView>;
     };
+  };
+
+  /**
+   * -- cross-space references (`entities.refs.*`, L3, migration 279) ----------
+   *
+   * An entity's pointers into linked spaces. Not edges: edges never cross
+   * spaces (D3). Each carries a kind and title SNAPSHOT; `live` is set only
+   * when the viewer can read the target entity now. Agents add them through
+   * their human's signed-in link (`tm8 entity ref add`); the UI reads and
+   * removes.
+   */
+  crossSpaceRefs: {
+    list(entityId: EntityId): Promise<CrossSpaceRef[]>;
+    remove(entityId: EntityId, refId: string): Promise<CrossSpaceRefRemoved>;
   };
 
   /**
