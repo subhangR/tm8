@@ -292,6 +292,19 @@ export class DbSpaceLinkStore {
     ]);
   }
 
+  /**
+   * W7b (277): record that `workSessionId` in the link's target was started
+   * through this link by `op`, from `sourceSessionId` in the home space.
+   * Called under the LINK session's own claims, after the op returned; SQL
+   * refuses a work session that holds no agent session minted under the link.
+   * True when this call wrote the record (first record wins).
+   */
+  recordSpawn(linkClaims: DbClaims, entry: { workSessionId: string; op: string; sourceSessionId: string | null }): Promise<boolean> {
+    return this.db.rpc<boolean>(linkClaims, 'record_space_link_spawn', [
+      entry.workSessionId, entry.op, entry.sourceSessionId,
+    ]);
+  }
+
   /** W7 `spaceLinks.audit`: own rows, or every row for a home admin (260). */
   listAudit(claims: DbClaims, linkId: string, options: { limit?: number; before?: string | null } = {}): Promise<SpaceLinkAuditEntry[]> {
     return this.db.rpc<SpaceLinkAuditEntry[]>(claims, 'list_cross_space_audit', [

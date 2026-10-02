@@ -716,7 +716,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'spaceLinks.setSpawn': {
     cmd: null,
-    sum: 'Set your own spawn switch and budget on a linked Space — human sessions only. Allow spawn is stored per link; it is enforced when cross-space spawn ships.',
+    sum: 'Set your own spawn switch and budget on a linked Space — human sessions only. With Allow spawn on, agents working for you may spawn, resume or dispatch sessions in the target through the link (no budget is enforced yet); off stops new ones.',
     authz: 'server',
     input: 'bound',
     side: 'durable',

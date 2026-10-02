@@ -12,8 +12,10 @@
  *   · spaceLinks.logout   — revoke it and forget the stored bytes
  *   · spaceLinks.remove   — delete your own row (the link stays for others)
  *   · spaceLinks.setSpawn — your own spawn switch and budget. Allow spawn is
- *                           stored per link; it is enforced when cross-space
- *                           spawn ships.
+ *                           enforced since W7b: on, your agents may spawn,
+ *                           resume or dispatch in the target through the link;
+ *                           the budget is stored but not enforced (owner form
+ *                           response 01a0fbb4).
  *
  * The TARGET side (278, owner decision D2): an admin of the target space sees
  * every link into it (`spaceLinks.inbound.list`), the calls made through them
@@ -122,7 +124,8 @@ export interface SpaceLinksMutationInput {
 }
 
 /**
- * The body of spaceLinks.setSpawn. Allow spawn is stored per link; it is enforced when cross-space spawn ships.
+ * The body of spaceLinks.setSpawn. Allow spawn gates spawn, resume and
+ * dispatch through the link (W7b); `spawnBudget` is stored, not enforced.
  */
 export interface SpaceLinksSetSpawnInput {
   allowSpawn: boolean;
@@ -208,13 +211,26 @@ export type SpaceLinkRefusalReason =
  * Session and process starts (#884, security re-review R-1): an op that starts
  * a session, a shell or a process in B, or resumes or dispatches one, is
  * refused at home. `execution.terminal.start` starts an unbudgeted shell work
- * session that no spawn switch, budget or link gate covers, so through a link
- * it would be a shell in B. `execution.spawn` is refused too, whatever the
- * switch says (lead tightening on #884): allow_spawn defaults on and the spawn
- * budget arrives with W7b, so main must never carry an unbudgeted link spawn.
- * W7b restores it through a budgeted reservation; until then the spawn rule
- * below (switch, explicit credentials) is unreachable, kept for W7b. W7p layer
- * (iii) refuses a link identity's spawn on B as well. The indirect starts
+ * session that no spawn switch or link gate covers, so through a link it
+ * would be a shell in B.
+ *
+ * Cross-space spawn (W7b, lane L4). This DELIBERATELY reverses #884's lead
+ * tightening ("main must never carry an unbudgeted link spawn"). The owner
+ * decided it in form response 01a0fbb4 (decisions D1, D4 and D8 of form
+ * 01a0fb65: "if link is there spawn for now"): with no budget and no
+ * reservation, `execution.spawn`, `execution.resume` and `execution.dispatch`
+ * (SPACE_LINK_SPAWN_OPS) are NOT in this set. They pass only while the
+ * caller's own row has allow_spawn on (`spaceLinkRefusal` below, re-checked
+ * against the row before forwarding). Every other guard stays: no explicit
+ * credential field (spawn_explicit_credentials), the via-chain hop limit, the
+ * per-row rate bucket, and in SQL the child takes B's DEFAULT credential only
+ * and is minted only while the row is signed in with spawning allowed
+ * (256 `live_link_session`, 277). `chat.start` and `chat.setModel` stay
+ * refused: a chat's turns are launched by the chat runtime under the
+ * requesting human's identity with no via_link stamp
+ * (chat/compose.ts `createChatLaunchConfigResolver`), so they would not be
+ * link-bound, would not take B's default credential only, and would outlive
+ * the link (ruling (i)). The indirect starts
  * are listed too: a form response submit (and redeliver) queues a delivery
  * that resumes the requesting session or spawns a new one
  * (form-delivery-spawn.ts). `containers.pools.set` keeps warm containers
@@ -266,10 +282,7 @@ export const SPACE_LINK_REFUSED: readonly SpaceLinkRefusedPrefix[] = [
   { prefix: 'containers.attach', kinds: 'all', reason: 'grant', exact: true },
   { prefix: 'containers.browser.endpoint', kinds: 'all', reason: 'grant', exact: true },
   { prefix: 'containers.expose', kinds: 'all', reason: 'grant', exact: true },
-  { prefix: 'execution.spawn', kinds: 'all', reason: 'process_start', exact: true },
   { prefix: 'execution.terminal.start', kinds: 'all', reason: 'process_start', exact: true },
-  { prefix: 'execution.resume', kinds: 'all', reason: 'process_start', exact: true },
-  { prefix: 'execution.dispatch', kinds: 'all', reason: 'process_start', exact: true },
   { prefix: 'execution.prompt', kinds: 'all', reason: 'process_start', exact: true },
   { prefix: 'chat.start', kinds: 'all', reason: 'process_start', exact: true },
   { prefix: 'chat.setModel', kinds: 'all', reason: 'process_start', exact: true },
@@ -294,6 +307,19 @@ export const SPACE_LINK_REFUSED: readonly SpaceLinkRefusedPrefix[] = [
 /** The spawn op, refused through a link with the switch off or explicit credentials (F9). */
 export const SPACE_LINK_SPAWN_OP = 'execution.spawn';
 
+/**
+ * W7b (L4, form response 01a0fbb4): the ops that start or resume a session in
+ * B through a link. Each passes only while the caller's own row has
+ * allow_spawn on; with it off, or not yet known to be on, they are refused
+ * `spawn_switch_off`. Their child is pinned to B, stamped with the link
+ * (256 via_link_id) and recorded in `space_link_spawns` (277).
+ */
+export const SPACE_LINK_SPAWN_OPS: readonly string[] = Object.freeze([
+  SPACE_LINK_SPAWN_OP,
+  'execution.resume',
+  'execution.dispatch',
+]);
+
 /** Spawn input fields that name a credential source; any one present refuses (K11). */
 export const SPACE_LINK_SPAWN_CREDENTIAL_FIELDS = [
   'credentialSources',
@@ -310,7 +336,9 @@ export const SPACE_LINK_MAX_HOPS = 2;
  * The refused-set rule on a CANONICAL op name (the caller resolves the name
  * against the catalog first; an unknown name never reaches here as passable).
  * `opKind` is the catalog kind. Returns the reason, or null when the op passes
- * as the member. `allowSpawn` is the caller's own row's switch.
+ * as the member. `allowSpawn` is the caller's own row's switch, `undefined`
+ * before the row is read: a spawn op is then not refused by the switch, and
+ * the caller MUST call again with the row's value before forwarding.
  */
 export function spaceLinkRefusal(
   op: string,
@@ -323,13 +351,11 @@ export function spaceLinkRefusal(
     if (hit && (entry.kinds === 'all' || opKind !== 'read')) return entry.reason;
   }
   if (formDeliveryCanStart(op, input)) return 'process_start';
-  if (op === SPACE_LINK_SPAWN_OP) {
+  if (SPACE_LINK_SPAWN_OPS.includes(op)) {
     const body = typeof input === 'object' && input !== null ? input as Record<string, unknown> : {};
     if (SPACE_LINK_SPAWN_CREDENTIAL_FIELDS.some((field) => body[field] !== undefined)) {
       return 'spawn_explicit_credentials';
     }
-    // Unknown (not yet resolved) is not refused here; the handler re-checks
-    // with the row's value before forwarding.
     if (allowSpawn === false) return 'spawn_switch_off';
   }
   return null;
