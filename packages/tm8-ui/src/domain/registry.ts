@@ -1353,7 +1353,9 @@ const ROWS: readonly KindConfig[] = [
           params: { fields: 'model=Model,agentTool=Tool,owner=Owner' },
         },
         { block: 'live-work', params: { source: 'liveWork' } },
-        { block: 'items', label: 'EQUIPPED', params: { source: 'equipped', count: true } },
+        /* No label: the block draws its own `SKILLS · n` head with the
+           `+ Equip skill` verb beside it. */
+        { block: 'skill-equipment' },
         /* The working set that spawn actually injects (`loadSpawnContext`).
            Edge-backed and kind-free: 085 widened `remembers.src_kinds` to the
            wildcard, so this identical row on a task panel needs no new code. */

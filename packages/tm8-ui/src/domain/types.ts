@@ -1149,6 +1149,9 @@ export type ContentBlockKind =
   | 'field-grid'
   | 'live-work'
   | 'session-rows'
+  // The `equips` edge as editable rows + picker (skills/SkillEquipment); the
+  // view supplies it, ProfileBody only places it.
+  | 'skill-equipment'
   // …plus the org tree: a teammate's place in the entity hierarchy, which
   // db/migrations/002_identity.sql:110 rules IS the org tree (leader = parent).
   | 'org-tree'

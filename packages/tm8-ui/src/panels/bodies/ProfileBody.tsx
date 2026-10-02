@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { EdgeView, EntityDetail, EntitySummary } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
 import { KindIcon, getKind } from '../../domain';
@@ -81,6 +82,7 @@ export const PROFILE_BLOCKS = [
   'memory-set',
   'epistemics',
   'peer-rows',
+  'skill-equipment',
 ] as const;
 
 export type ProfileBlockName = (typeof PROFILE_BLOCKS)[number];
@@ -143,6 +145,13 @@ export interface ProfileBodyProps {
    * the view writes the edge. Absent ⇒ the marks render read-only.
    */
   onMarkMemory?: ((mark: MemoryMarkKind) => void) | null;
+  /**
+   * The `skill-equipment` block's content, built by the VIEW — same
+   * intent-raising split as `memoryAuthoring`: the equip/unequip writes live in
+   * `skills/SkillEquipment`, not in this presentation body. Absent ⇒ the block
+   * falls back to the read-only `equipped` list.
+   */
+  skillEquipment?: ReactNode;
 }
 
 
@@ -156,6 +165,7 @@ export function ProfileBody({
   onOpenEntity,
   memoryAuthoring,
   onMarkMemory,
+  skillEquipment,
 }: ProfileBodyProps) {
   if (blocks.length === 0) {
     return (
@@ -195,6 +205,7 @@ export function ProfileBody({
           onOpenEntity={onOpenEntity}
           memoryAuthoring={memoryAuthoring}
           onMarkMemory={onMarkMemory}
+          skillEquipment={skillEquipment}
         />
       ))}
     </div>
@@ -209,6 +220,7 @@ function ProfileBlock({
   onOpenEntity,
   memoryAuthoring,
   onMarkMemory,
+  skillEquipment,
 }: {
   detail: EntityDetail;
   block: ProfileBlockRef;
@@ -217,6 +229,7 @@ function ProfileBlock({
   onOpenEntity?: (id: string) => void;
   memoryAuthoring?: MemoryAuthoring | null;
   onMarkMemory?: ((mark: MemoryMarkKind) => void) | null;
+  skillEquipment?: ReactNode;
 }) {
   const params = block.params ?? {};
   const body = (() => {
@@ -246,6 +259,8 @@ function ProfileBlock({
         );
       case 'epistemics':
         return <EpistemicsBlock detail={detail} onMark={onMarkMemory} />;
+      case 'skill-equipment':
+        return skillEquipment ?? <ItemsBlock detail={detail} params={{ source: 'equipped', ...params }} onOpenEntity={onOpenEntity} />;
       case 'peer-rows':
         return <PeerRowsBlock detail={detail} params={params} onOpenEntity={onOpenEntity} />;
       case 'session-rows':
