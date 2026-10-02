@@ -11,6 +11,15 @@ import type { ITheme } from '@xterm/xterm';
  * never a setting).
  */
 export const TERMINAL_FONT_SIZE = 13;
+/* The pre-style terminal, kept as the record the built-ins are checked
+   against (`styles/builtins-parity.test.ts`): `--pn-term-*` in both built-ins
+   must equal these, so moving LiveTerminal onto the resolved style moved no
+   pixel. Nothing renders from them any more. */
+export const TERMINAL_FONT_STACK =
+  '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
+export const TERMINAL_FONT_WEIGHT = 400;
+export const TERMINAL_SCROLLBACK = 5000;
+export const TERMINAL_CURSOR_STYLE = 'block' as const;
 export const TERMINAL_LINE_HEIGHT = 1.2;
 export const TERMINAL_LETTER_SPACING = 0;
 export const TERMINAL_CURSOR_INACTIVE_STYLE = 'outline' as const;
