@@ -253,6 +253,9 @@ describe('W1 frozen-row schema amendments', () => {
       // everything that follows from them (283). Creatable through the
       // ordinary envelope, like `drawing`.
       'story',
+      // 2026-10-02: `style` — a read-only space style (282, styles spec v8).
+      // Not creatable through entities.create: `styles.push` is its only door.
+      'style',
     ]);
     expect(CoreEntityKindSchema.safeParse('ui_template').success).toBe(false);
   });

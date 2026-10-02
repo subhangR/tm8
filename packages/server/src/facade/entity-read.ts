@@ -56,6 +56,7 @@ import type {
   LiveWork,
   PullState,
   TaskAssignment,
+  StyleDoc,
   Visibility,
   WorkStatus,
 } from '@tm8/contract';
@@ -168,6 +169,13 @@ export const ENTITY_COLUMNS = `
   -- 283: the computed summary, one SQL function the projector twin selects
   -- too. CASE keeps it off every other kind's row.
   case when e.kind = 'story' then internal.story_summary(e.id) end as story_summary,
+  -- Space styles (282): the whole document is row facts (spec §4.3) — it is
+  -- what a push repaints from, and it is bounded by the doors.
+  stl.title as sty_title, stl.description as sty_description,
+  stl.schema_version as sty_schema_version, stl.foundation as sty_foundation,
+  stl.vars as sty_vars, stl.css as sty_css, stl.tags as sty_tags,
+  stl.resolved_hash as sty_resolved_hash, stl.pushed_by as sty_pushed_by,
+  stl.pushed_at as sty_pushed_at, stl.source_owner_identity_id as sty_source_owner_identity_id,
   -- Forms (209/211). ROW FACTS ONLY: this column list is shared by every
   -- list read, so a form row carries its question COUNT; the questions and
   -- sections themselves are content and load in hydrateDetail.
@@ -388,6 +396,7 @@ export const ENTITY_FROM = `
   left join public.graphs gr             on gr.entity_id = e.id
   left join public.drawings drw           on drw.entity_id = e.id
   left join public.stories sty            on sty.entity_id = e.id
+  left join public.styles stl             on e.kind = 'style' and stl.entity_id = e.id
   left join public.forms frm              on frm.entity_id = e.id
   left join public.space_credentials scr  on e.kind = 'credential' and scr.id = e.id
   left join public.servers srv            on e.kind = 'server' and srv.entity_id = e.id
@@ -573,6 +582,17 @@ export interface EntityRow {
   story_title?: string | null;
   story_description?: string | null;
   story_summary?: unknown;
+  sty_title?: string | null;
+  sty_description?: string | null;
+  sty_schema_version?: number | null;
+  sty_foundation?: string | null;
+  sty_vars?: Record<string, string> | null;
+  sty_css?: string | null;
+  sty_tags?: string[] | null;
+  sty_resolved_hash?: string | null;
+  sty_pushed_by?: string | null;
+  sty_pushed_at?: Date | string | null;
+  sty_source_owner_identity_id?: string | null;
   form_title?: string | null;
   form_status?: string | null;
   form_description?: string | null;
@@ -1518,6 +1538,9 @@ export function titleOf(row: EntityRow): string {
     case 'story':
       // Its own detail-row title — MIRRORS the projector twin (same reason).
       return row.story_title ?? 'Story';
+    case 'style':
+      // Its own detail-row title — MIRRORS the projector twin (same reason).
+      return row.sty_title ?? 'Style';
     case 'form':
       // MIRRORS the projector twin.
       return row.form_title ?? 'Form';
@@ -1616,6 +1639,9 @@ function excerptOf(row: EntityRow): string | undefined {
     case 'story':
       // The description says what the story is for. MIRRORS the projector twin.
       return excerpt(row.story_description ?? null);
+    case 'style':
+      // The description says what the style is for. MIRRORS the projector twin.
+      return excerpt(row.sty_description ?? null);
     case 'form':
       // The description says what is being asked. MIRRORS the projector twin.
       return excerpt(row.form_description ?? null);
@@ -1690,6 +1716,29 @@ function surfaceOf(raw: string | null): { initialContentSurface?: 'terminal' | '
  * which needs a populated `AssemblyContext` — and a test that builds one is
  * testing assembly, not the arm.
  */
+/**
+ * A space style's row facts (282), shared by `stateOf` and `contentOf` so the
+ * two cannot disagree about the document. MIRRORS the projector twin.
+ */
+function styleFacts(row: EntityRow): {
+  doc: StyleDoc; resolvedHash: string | null; pushedBy: string; pushedAt: string;
+  sourceOwnerIdentityId: string; tags: string[];
+} {
+  return {
+    doc: {
+      schemaVersion: row.sty_schema_version ?? 1,
+      foundation: row.sty_foundation ?? 'builtin:atelier-light',
+      vars: row.sty_vars ?? {},
+      css: row.sty_css ?? null,
+    } as StyleDoc,
+    resolvedHash: row.sty_resolved_hash ?? null,
+    pushedBy: row.sty_pushed_by ?? '',
+    pushedAt: row.sty_pushed_at ? iso(row.sty_pushed_at) : '',
+    sourceOwnerIdentityId: row.sty_source_owner_identity_id ?? '',
+    tags: row.sty_tags ?? [],
+  };
+}
+
 export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
   switch (row.kind) {
     case 'skill': return { kind: 'skill', description: row.skill_description ?? undefined, equipped: row.equipped === true, ...skillReferenceOf(row.skill_reference), changedOnDisk: false };
@@ -2029,6 +2078,11 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
       // link, so the shared entity read takes no join for it. MIRRORS the
       // projector twin.
       return { kind: row.kind };
+    case 'style':
+      // 282: the full document (spec §4.3) — a push's entity.upsert is how
+      // every viewer on the style repaints, with no fetch. MIRRORS the
+      // projector twin field for field.
+      return { kind: 'style', ...styleFacts(row) };
     default:
       // A custom `c:*` kind. Its scalar fields live in `custom_entities` and
       // are out of the G1A slice, so the shape is honest and empty rather than
@@ -2327,6 +2381,12 @@ export function entityCapabilities(row: EntityRow): EntityCapabilities {
   // generic edit, delete and child doors refuse it in SQL, so no surface
   // offers them.
   if (row.kind === 'credential') {
+    return { ...base, canEdit: false, canDelete: false, canAddChild: false, canPull: false, canComplete: false };
+  }
+  // A space style is READ-ONLY (282, spec §3.3): a new version arrives only by
+  // `styles.push`, and removal is `styles.remove` (space admin). The generic
+  // patch and delete doors refuse it, so no surface offers them.
+  if (row.kind === 'style') {
     return { ...base, canEdit: false, canDelete: false, canAddChild: false, canPull: false, canComplete: false };
   }
   // A form's edit doors (211) admit its author or a space admin. The row
@@ -2712,6 +2772,9 @@ export function contentOf(row: EntityRow): EntityContent {
     case 'server':
       // 250 (W6): a link's content is `spaceLinks.list`'s answer (see stateOf).
       return { kind: row.kind };
+    case 'style':
+      // 282: the state's facts plus the description.
+      return { kind: 'style', description: row.sty_description ?? null, ...styleFacts(row) };
     default:
       return { kind: row.kind as `c:${string}`, fields: {} };
   }

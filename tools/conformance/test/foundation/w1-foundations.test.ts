@@ -267,7 +267,9 @@ describe('W1.C generated catalog and reachability foundations', () => {
     // MEASURED: Object.keys(CORE_KIND_DISPOSITIONS).length = 28.
     // 28 -> 29 (2026-10-02): `story` (migration 283). MEASURED on this tree by
     // counting the `core(` rows in kind-dispositions.ts -> 29.
-    expect(Object.keys(CORE_KIND_DISPOSITIONS)).toHaveLength(29);
+    // 29 -> 30 (2026-10-02): `style` (migration 282, read-only space styles).
+    // MEASURED by counting the `core(` rows in kind-dispositions.ts.
+    expect(Object.keys(CORE_KIND_DISPOSITIONS)).toHaveLength(30);
     expect(CUSTOM_KIND_DISPOSITION.kind).toBe('c:*');
     expect(UI_TEMPLATE_SENTINEL).toMatchObject({
       kind: 'ui_template',
