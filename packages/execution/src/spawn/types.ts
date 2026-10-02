@@ -26,7 +26,7 @@ import type {
   ExecutionSpawnLaunch,
   SpawnAccessModeSource,
 } from '@tm8/contract';
-import type { CoordinatorKind, PromptContextIndex, PromptVersion } from '@tm8/prompt';
+import type { CoordinatorKind, PromptContextIndex, PromptStoryContext, PromptVersion } from '@tm8/prompt';
 import type { WorkSessionUsage, WorkSessionUsageSource } from '../transcript/session-usage.js';
 
 export type { CoordinatorKind, ExecutionSpawnLaunch, SpawnAccessModeSource };
@@ -1070,6 +1070,17 @@ export interface GraphPort {
     input: { sessionId: string; taskId: string; totalBytes: number },
   ): Promise<Record<string, unknown>>;
   /**
+   * Spawn-on-story: the nearest story containing `taskId` (directly, through
+   * an ancestor, or along the story's followed edges), folded into the bounded
+   * prompt shape, with any further stories as refs. `null`: in no story.
+   * Optional; a graph without it renders no story block. A failed detail read
+   * resolves with `snapshot` naming the reason rather than rejecting.
+   */
+  loadStoryContext?(
+    auth: GraphAuth,
+    input: { taskId: string },
+  ): Promise<PromptStoryContext | null>;
+  /**
    * The tasks' version and status as they stand NOW, read after
    * `execution_spawn` has started them. `loadSpawnContext` reads before that
    * transition, so its version is one behind for every task the spawn
@@ -1490,6 +1501,13 @@ export interface Tm8Manifest {
 
   /** Extra prompt context from `ExecutionSpawnInput.promptExtra`. */
   promptExtra: string | null;
+
+  /**
+   * Spawn-on-story: the nearest story containing the primary task, read once
+   * at spawn (`GraphPort.loadStoryContext`). Absent: the task is in no story,
+   * or the graph cannot say.
+   */
+  story?: PromptStoryContext;
 }
 
 // --- SpawnService inputs/outputs ---------------------------------------------
