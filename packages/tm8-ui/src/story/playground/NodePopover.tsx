@@ -82,7 +82,8 @@ function targetOf(view: StoryView, id: string): Target | null {
       messageLabel: `Message ${teammate.name}`,
       workable: false,
       closable: false,
-      teammateId: id,
+      // A dispatcher routes work rather than running it: no "spawn as" for it.
+      teammateId: teammate.mode === 'dispatcher' ? null : id,
     };
   }
   if (!node) return null;
@@ -236,7 +237,10 @@ export function NodePopover({
         <>
           <div className="sp-pop__verbs" role="group" aria-label="What to do">
             {verbs.map((v) => (
-              <Opt key={v.verb} on={v.verb === verb} onClick={() => setVerb(v.verb)}>
+              <Opt key={v.verb} on={v.verb === verb} onClick={() => {
+                setVerb(v.verb);
+                textRef.current?.focus();
+              }}>
                 {v.label}
               </Opt>
             ))}

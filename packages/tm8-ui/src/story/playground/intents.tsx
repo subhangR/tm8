@@ -165,6 +165,8 @@ export function previewSentence(view: StoryView, p: PreviewInput): ReactNode {
   const on = <B>{p.on?.short ?? 'the story'}</B>;
   const sign = storyCallSign(view.page.sessions.length);
   const runner = p.as ? (p.as.isNew ? `a new ${p.as.modeWord}` : p.as.name) : 'a teammate';
+  /* The coordinator sentence names the role itself, so a new runner is just "a new teammate". */
+  const coordinator = p.as && !p.as.isNew ? p.as.name : 'a new teammate';
   const runnerMode = p.as && !p.as.isNew ? ` as ${p.as.modeWord}` : '';
   const dispatcher = view.page.team.find((t) => t.mode === 'dispatcher');
   const tell = p.told.length ? (
@@ -204,7 +206,7 @@ export function previewSentence(view: StoryView, p: PreviewInput): ReactNode {
     ),
     coordinator: (
       <>
-        Spawns <B>{runner}</B> as a coordinator on {on} — call sign <B>{sign}</B> — with this as its brief. It can then split
+        Spawns <B>{coordinator}</B> as a coordinator on {on} — call sign <B>{sign}</B> — with this as its brief. It can then split
         the work and spawn its own workers.
       </>
     ),

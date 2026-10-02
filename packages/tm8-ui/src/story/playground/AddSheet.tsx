@@ -57,7 +57,9 @@ export function AddSheet({
   const [intent, setIntent] = useState<StoryIntent>(draft.intent);
   const [text, setText] = useState(draft.text ?? '');
   const [onId, setOnId] = useState<string>(draft.onId && ons.some((o) => o.id === draft.onId) ? draft.onId : view.id);
-  const [asId, setAsId] = useState<string>(draft.asTeammateId ?? ases[0]?.id ?? NEW);
+  const [asId, setAsId] = useState<string>(
+    draft.asTeammateId ?? (ases.find((a) => a.modeWord === MODE_WORD['coordinated-worker']) ?? ases[0])?.id ?? NEW,
+  );
   const [mode, setMode] = useState<TeamMemberMode | null>(null);
   const [told, setTold] = useState<ReadonlySet<string>>(() => new Set(defaultTell(view)));
 
