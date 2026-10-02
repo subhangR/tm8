@@ -10,7 +10,7 @@ import { useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'r
 
 import { Avatar, Eyebrow, Pill, type PillTone } from '../../kit';
 import { segments, TONE_WORD, type StoryPerson, type StoryProgress, type StoryTone } from '../model';
-import type { StoryNodePick } from '../props';
+import type { StoryBlockProps, StoryNodePick } from '../props';
 import './story-cards.css';
 
 /** Tone → the kit pill tone that draws it. */
@@ -165,32 +165,43 @@ export function InlineEntry({
   );
 }
 
-/** A title that becomes an input on click when `rename` exists; plain text otherwise. */
+/**
+ * A title with an EXPLICIT rename affordance (a small ✎ beside it, drawn only
+ * when `rename` exists). The title text itself is left to the caller's press —
+ * pressing an entity opens its details; renaming is its own act.
+ */
 export function RenamableTitle({
   title,
   className,
   rename,
+  children,
+  menu,
 }: {
   title: string;
   className?: string;
   rename?: (title: string) => Promise<void>;
+  /** What draws the title (a press button, usually). Defaults to the plain text. */
+  children?: ReactNode;
+  /** The entity's "…", drawn beside the ✎ in one actions slot. */
+  menu?: ReactNode;
 }) {
   const [editing, setEditing] = useState(false);
-  if (!rename) return <span className={className}>{title}</span>;
-  if (editing) return <InlineEntry initial={title} onSubmit={rename} onClose={() => setEditing(false)} className="stc-entry--rename" />;
+  if (rename && editing)
+    return <InlineEntry initial={title} onSubmit={rename} onClose={() => setEditing(false)} className="stc-entry--rename" />;
   return (
-    <span
-      className={`${className ?? ''} stc-renamable`}
-      title="click to rename"
-      role="button"
-      tabIndex={0}
-      onClick={() => setEditing(true)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') setEditing(true);
-      }}
-    >
-      {title}
-    </span>
+    <>
+      {children ?? <span className={className}>{title}</span>}
+      {rename || menu ? (
+        <span className="stc-acts">
+          {rename ? (
+            <button type="button" className="stc-rename" title="rename" aria-label={`Rename ${title}`} onClick={() => setEditing(true)}>
+              ✎
+            </button>
+          ) : null}
+          {menu}
+        </span>
+      ) : null}
+    </>
   );
 }
 
@@ -200,18 +211,84 @@ export function flashOf(landed: ReadonlySet<string> | undefined, ...ids: string[
 }
 
 /**
- * Click-an-item: the node popover when the host gave one, else plain
- * navigation, else null (draw the item inert).
+ * PRESS, SELECT, MENU — how every entity on the cards answers the pointer.
+ *
+ * Primary press opens the entity's details beside the story (`onPick`), or
+ * navigates (`actions.open`) on a host that has no side panel, or is inert.
+ * The secondary affordance — a "…" on hover/focus and right-click — opens the
+ * action popover (`onMenu`) and is not drawn without it. `selectedId` marks
+ * the entity whose details are open. The anchor is the nearest element
+ * carrying `data-entity`, so a popover points at the item, not at its "…".
  */
-export function picker(
-  onPick: ((pick: StoryNodePick) => void) | undefined,
-  open: ((entityId: string) => void) | undefined,
-): ((entityId: string) => (e: MouseEvent<HTMLElement>) => void) | null {
-  if (onPick)
-    return (entityId) => (e) => {
-      const r = e.currentTarget.getBoundingClientRect();
-      onPick({ entityId, anchor: { x: r.x, y: r.y, width: r.width, height: r.height } });
-    };
-  if (open) return (entityId) => () => open(entityId);
-  return null;
+export interface Press {
+  pick: ((entityId: string) => (e: MouseEvent<HTMLElement>) => void) | null;
+  menu: ((entityId: string) => (e: MouseEvent<HTMLElement>) => void) | null;
+  /** ' stc-sel' when the entity is the selected one. */
+  sel: (entityId: string) => string;
+}
+
+function anchorOf(e: MouseEvent<HTMLElement>): StoryNodePick['anchor'] {
+  const el = (e.currentTarget.closest('[data-entity]') as HTMLElement | null) ?? e.currentTarget;
+  const r = el.getBoundingClientRect();
+  return { x: r.x, y: r.y, width: r.width, height: r.height };
+}
+
+export function pressOf({
+  onPick,
+  onMenu,
+  selectedId,
+  actions,
+}: Pick<StoryBlockProps, 'onPick' | 'onMenu' | 'selectedId' | 'actions'>): Press {
+  const open = actions.open;
+  return {
+    pick: onPick
+      ? (entityId) => (e) => onPick({ entityId, anchor: anchorOf(e) })
+      : open
+        ? (entityId) => () => open(entityId)
+        : null,
+    menu: onMenu
+      ? (entityId) => (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onMenu({ entityId, anchor: anchorOf(e) });
+        }
+      : null,
+    sel: (entityId) => (selectedId && selectedId === entityId ? ' stc-sel' : ''),
+  };
+}
+
+/** The "…" — drawn only when the host can open the action popover. */
+export function MenuDot({ id, label, press }: { id: string; label: string; press: Press }) {
+  if (!press.menu) return null;
+  return (
+    <button type="button" className="stc-dot" title="actions" aria-label={`Actions for ${label}`} onClick={press.menu(id)}>
+      …
+    </button>
+  );
+}
+
+/**
+ * A row's whole surface as a mouse target for the same press its keyboard
+ * button carries. Ignores presses that land on a control inside the row and
+ * presses that end a text selection.
+ */
+export function rowPress(press: Press, entityId: string): ((e: MouseEvent<HTMLElement>) => void) | undefined {
+  const pick = press.pick;
+  if (!pick) return undefined;
+  return (e) => {
+    if ((e.target as HTMLElement).closest('button, input, select, textarea, a, label')) return;
+    if (window.getSelection()?.toString()) return;
+    pick(entityId)(e);
+  };
+}
+
+/** A pressable entity title: a button when it can be pressed, plain text otherwise. */
+export function PressTitle({ id, title, press, className }: { id: string; title: ReactNode; press: Press; className?: string }) {
+  return press.pick ? (
+    <button type="button" className={`stc-press ${className ?? ''}`} onClick={press.pick(id)}>
+      {title}
+    </button>
+  ) : (
+    <span className={className}>{title}</span>
+  );
 }

@@ -28,8 +28,8 @@ import {
   type StoryNode,
   type StoryView,
 } from '../model';
-import type { StoryBlockProps, StoryNodePick } from '../props';
-import { CardHead, Empty, flashOf, Meter, picker } from './shared';
+import type { StoryBlockProps } from '../props';
+import { CardHead, Empty, flashOf, MenuDot, Meter, PressTitle, pressOf, rowPress, type Press } from './shared';
 
 /**
  * The default workflow's three steps. The status KEY each step sets is the
@@ -46,13 +46,15 @@ const DONE_STATUS = 'done';
 /** Ring geometry: r = 40 → circumference 251.3. */
 const RING_C = 2 * Math.PI * 40;
 
-export function StoryRail({ view, actions, live, onPick }: StoryBlockProps & { onPick?: (pick: StoryNodePick) => void }) {
+export function StoryRail(props: StoryBlockProps) {
+  const { view, actions, live } = props;
+  const press = pressOf(props);
   return (
     <aside className="stc-rail">
       <StatusCard view={view} actions={actions} />
       <ProgressCard view={view} actions={actions} live={live} />
-      <MemoriesCard view={view} actions={actions} live={live} onPick={onPick} />
-      <MembersCard view={view} actions={actions} />
+      <MemoriesCard view={view} actions={actions} live={live} press={press} />
+      <MembersCard view={view} actions={actions} press={press} />
       <FilterCard view={view} actions={actions} />
       <section className="stc-card">
         <CardHead title="For a teammate" />
@@ -221,9 +223,8 @@ function memoryBy(view: StoryView, m: StoryNode): { who: string; whoId: string |
   return { who: s ? nameOf(view, s.teamMemberId) : 'made here', whoId: s?.teamMemberId ?? null, line: bits.filter(Boolean).join(' · ') };
 }
 
-function MemoriesCard({ view, actions, live, onPick }: StoryBlockProps & { onPick?: (pick: StoryNodePick) => void }) {
+function MemoriesCard({ view, live, press }: StoryBlockProps & { press: Press }) {
   const memories = view.page.nodes.filter((n) => VIEW_OF_KIND[n.kind] === 'memories');
-  const pick = picker(onPick, actions.open);
   return (
     <section className="stc-card">
       <CardHead title="Memories" count={memories.length ? `${memories.length} · made along the way` : undefined} />
@@ -233,14 +234,17 @@ function MemoriesCard({ view, actions, live, onPick }: StoryBlockProps & { onPic
           const by = memoryBy(view, m);
           const person = by.whoId ? view.people[by.whoId] ?? null : null;
           return (
-            <div key={m.id} className={`stc-memory${flashOf(live?.landed, m.id)}`}>
-              {pick ? (
-                <button type="button" className="stc-memory__s" onClick={pick(m.id)}>
-                  {m.title}
-                </button>
-              ) : (
-                <div className="stc-memory__s">{m.title}</div>
-              )}
+            <div
+              key={m.id}
+              className={`stc-memory${press.sel(m.id)}${flashOf(live?.landed, m.id)}`}
+              data-entity={m.id}
+              onClick={rowPress(press, m.id)}
+              onContextMenu={press.menu?.(m.id)}
+            >
+              <span className="stc-memory__hd">
+                <PressTitle id={m.id} title={m.title} press={press} className="stc-memory__s" />
+                <MenuDot id={m.id} label={m.title} press={press} />
+              </span>
               <div className="stc-memory__by">
                 {by.whoId ? <Avatar actorId={by.whoId} provenance="agent" label={by.who} initials={person?.initials} size={15} /> : null}
                 {by.whoId ? `${by.who} · ` : ''}
@@ -254,7 +258,7 @@ function MemoriesCard({ view, actions, live, onPick }: StoryBlockProps & { onPic
   );
 }
 
-function MembersCard({ view, actions }: StoryBlockProps) {
+function MembersCard({ view, press }: StoryBlockProps & { press: Press }) {
   const humans = Object.values(view.people).filter((p) => !p.agent);
   return (
     <section className="stc-card">
@@ -274,13 +278,10 @@ function MembersCard({ view, actions }: StoryBlockProps) {
               </span>
             </>
           );
-          return actions.open ? (
-            <button key={h.id} type="button" className="stc-person" onClick={() => actions.open!(h.id)}>
-              {body}
-            </button>
-          ) : (
-            <div key={h.id} className="stc-person">
-              {body}
+          return (
+            <div key={h.id} className={`stc-person${press.sel(h.id)}`} data-entity={h.id} onContextMenu={press.menu?.(h.id)}>
+              <PressTitle id={h.id} title={body} press={press} className="stc-person__press" />
+              <MenuDot id={h.id} label={h.name} press={press} />
             </div>
           );
         })}

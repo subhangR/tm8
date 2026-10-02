@@ -4,9 +4,11 @@
  * by edge family. A root a live session runs carries the run chip and the
  * left rail.
  *
- * Inline adds: "＋ task under this root" rides `actions.createTask`; clicking a
- * title renames it through `actions.rename`. A row the live feed just landed
- * flashes (`live.landed`).
+ * Pressing a root's title, a child or a trail chip opens its details beside
+ * the story (`onPick`); its "…" or a right-click opens the action popover
+ * (`onMenu`); the selected one is drawn highlighted. Inline adds: "＋ task
+ * under this root" rides `actions.createTask`; the ✎ beside a title renames it
+ * through `actions.rename`. A row the live feed just landed flashes.
  *
  * Root hover is shared with the graph (`hover`): entering a row lights that
  * root everywhere, and a root lit from the graph lights its row and its trail
@@ -32,10 +34,12 @@ import {
   type StorySession,
   type StoryView,
 } from '../model';
-import type { StoryBlockProps, StoryNodePick } from '../props';
-import { CardHead, Empty, flashOf, InlineEntry, Meter, PersonAvatar, picker, RenamableTitle, TonePill } from './shared';
+import type { StoryBlockProps } from '../props';
+import { CardHead, Empty, flashOf, InlineEntry, MenuDot, Meter, PersonAvatar, PressTitle, pressOf, RenamableTitle, TonePill, type Press } from './shared';
 
-export function RootsCard({ view, actions, live, hover, onPick }: StoryBlockProps & { onPick?: (pick: StoryNodePick) => void }) {
+export function RootsCard(props: StoryBlockProps) {
+  const { view, actions, live, hover } = props;
+  const press = pressOf(props);
   const roots = view.page.roots;
   const { addRoot, searchRoots } = actions;
   return (
@@ -58,7 +62,7 @@ export function RootsCard({ view, actions, live, hover, onPick }: StoryBlockProp
         <Empty>Nothing has been put in this story yet. Put a task in and it becomes a root: its children, sessions, docs and pull requests follow along.</Empty>
       ) : (
         roots.map((root, i) => (
-          <RootRow key={root.id} root={root} index={i} view={view} actions={actions} live={live} hover={hover} onPick={onPick} />
+          <RootRow key={root.id} root={root} index={i} view={view} actions={actions} live={live} hover={hover} press={press} />
         ))
       )}
     </section>
@@ -76,8 +80,8 @@ function RootRow({
   actions,
   live,
   hover,
-  onPick,
-}: StoryBlockProps & { root: StoryRoot; index: number; onPick?: (pick: StoryNodePick) => void }) {
+  press,
+}: StoryBlockProps & { root: StoryRoot; index: number; press: Press }) {
   const [adding, setAdding] = useState(false);
   const byId = nodesById(view);
   const running = liveOn(view);
@@ -85,7 +89,6 @@ function RootRow({
   const assignee = view.page.team.find((t) => t.assigned.includes(root.id) || t.runs.includes(root.id));
   const p = root.taskProgress;
   const tone = toneOf(root);
-  const pick = picker(onPick, actions.open);
   const rename = actions.rename;
   const createTask = actions.createTask;
   const landed = live?.landed;
@@ -93,7 +96,7 @@ function RootRow({
 
   return (
     <div
-      className={`stc-root${run ? ' stc-root--live' : ''}${lit ? ' stc-root--lit' : ''}${flashOf(landed, root.id)}`}
+      className={`stc-root${run ? ' stc-root--live' : ''}${lit ? ' stc-root--lit' : ''}${press.sel(root.id)}${flashOf(landed, root.id)}`}
       onMouseEnter={hover ? () => hover.setRootId(root.id) : undefined}
       onMouseLeave={hover ? () => hover.setRootId(null) : undefined}
     >
@@ -101,7 +104,15 @@ function RootRow({
         <div className="stc-root__hd">
           <KindIcon kind={root.kind} size={16} />
           <div>
-            <RenamableTitle title={root.title} className="stc-root__title" rename={rename ? (t) => rename(root.id, t) : undefined} />
+            <span className="stc-hit" data-entity={root.id} onContextMenu={press.menu?.(root.id)}>
+              <RenamableTitle
+                title={root.title}
+                rename={rename ? (t) => rename(root.id, t) : undefined}
+                menu={<MenuDot id={root.id} label={root.title} press={press} />}
+              >
+                <PressTitle id={root.id} title={root.title} press={press} className="stc-root__title" />
+              </RenamableTitle>
+            </span>
             <div className="stc-root__sub">
               <TonePill tone={tone} />
               {run ? (
@@ -144,9 +155,20 @@ function RootRow({
           const ct = toneOf(c);
           const l = running.get(id);
           return (
-            <div key={id} className={`stc-tree__c stc-tone--${ct ?? 'cancelled'}${flashOf(landed, id)}`}>
+            <div
+              key={id}
+              className={`stc-tree__c stc-tone--${ct ?? 'cancelled'}${press.sel(id)}${flashOf(landed, id)}`}
+              data-entity={id}
+              onContextMenu={press.menu?.(id)}
+            >
               <i className="stc-tree__dot" aria-hidden />
-              <RenamableTitle title={c.title} className="stc-tree__t" rename={rename ? (t) => rename(id, t) : undefined} />
+              <RenamableTitle
+                title={c.title}
+                rename={rename ? (t) => rename(id, t) : undefined}
+                menu={<MenuDot id={id} label={c.title} press={press} />}
+              >
+                <PressTitle id={id} title={c.title} press={press} className="stc-tree__t" />
+              </RenamableTitle>
               {l ? (
                 <PersonAvatar id={l.teamMemberId} person={l.teamMemberId ? view.people[l.teamMemberId] ?? null : null} agent size={15} live />
               ) : null}
@@ -178,7 +200,7 @@ function RootRow({
           const n = byId.get(x.id);
           const exited = n?.live === false;
           const memory = VIEW_OF_KIND[x.kind] === 'memories';
-          const cls = `stc-chip stc-fam--${x.family}${exited ? ' stc-chip--exited' : ''}${memory ? ' stc-chip--memory' : ''}${lit ? ' stc-chip--lit' : ''}${flashOf(landed, x.id)}`;
+          const cls = `stc-chip stc-fam--${x.family}${exited ? ' stc-chip--exited' : ''}${memory ? ' stc-chip--memory' : ''}${lit ? ' stc-chip--lit' : ''}${press.sel(x.id)}${flashOf(landed, x.id)}`;
           const body = (
             <>
               <KindIcon kind={x.kind} size={14} />
@@ -186,13 +208,10 @@ function RootRow({
               <span className="stc-chip__m">{x.edgeType}</span>
             </>
           );
-          return pick ? (
-            <button key={`${x.id}-${x.viaId}`} type="button" className={cls} title={x.title} onClick={pick(x.id)}>
-              {body}
-            </button>
-          ) : (
-            <span key={`${x.id}-${x.viaId}`} className={cls} title={x.title}>
-              {body}
+          return (
+            <span key={`${x.id}-${x.viaId}`} className={cls} title={x.title} data-entity={x.id} onContextMenu={press.menu?.(x.id)}>
+              <PressTitle id={x.id} title={body} press={press} className="stc-chip__press" />
+              <MenuDot id={x.id} label={x.title} press={press} />
             </span>
           );
         })}
