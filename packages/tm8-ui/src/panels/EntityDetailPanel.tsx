@@ -384,6 +384,12 @@ export interface EntityDetailPanelProps {
   /** The GRAPH surface (what the session is connected to). Same contract as Debug. */
   graphSurface?: ReactNode;
   /**
+   * THE STORY PAGE, live (`views/storySurface.tsx`). Same contract as Debug:
+   * self-fetching, host wires the seam. Drawn by the `storyline` block only;
+   * absent ⇒ that block draws the row's static read.
+   */
+  storySurface?: ReactNode;
+  /**
    * A session's LAUNCH CONTEXT section, drawn at the top of its Connections
    * tab. Same contract as Debug (`views/launchContextSurface.tsx`); rendered
    * for work sessions only.
@@ -1838,6 +1844,7 @@ function PanelBody(
          and a block that gets null renders its controls in place — so this is an
          ARRANGEMENT and never a requirement. */
       barSlot={props.barSlot}
+      storySurface={props.storySurface}
       commands={props.commands}
       onSaved={props.onSaved}
       downloadHref={props.attachments?.downloadHref}

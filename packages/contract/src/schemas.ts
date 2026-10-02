@@ -34,6 +34,7 @@ import type {
   StyleWarning,
 } from './style.js';
 import { FormQuestionRowSchema, FormSectionRowSchema, FormSettingsSchema, FormStatusSchema } from './forms.js';
+import { EntityContextStorySchema, StoryContentSchema, StoryStateSchema } from './story.js';
 import {
   SELECTION_HEADER_KINDS,
   SELECTION_HEADER_SOURCES,
@@ -209,6 +210,9 @@ export const CoreEntityKindSchema = z.enum([
   // is its door. `server` is registered with it and has no door in W6.
   'space_link',
   'server',
+  // Stories (283): roots by `contains`, the rest follows. Creatable through
+  // the generic envelope.
+  'story',
 ]);
 
 export const CustomEntityKindSchema = z.custom<CustomEntityKind>(
@@ -651,6 +655,8 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     format: z.string().min(1),
     elementCount: z.number().int().nonnegative(),
   }).strict(),
+  // 283 — the story's computed summary.
+  StoryStateSchema,
   // 209 — a form's lifecycle status and its question count.
   z.object({
     kind: z.literal('form'),
@@ -1055,6 +1061,8 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
     appState: z.record(z.unknown()),
     files: z.record(z.unknown()),
   }).passthrough(),
+  // 283 — the story's description and, on a detail read, its page.
+  StoryContentSchema,
   // 209 — a form: settings (defaults applied), sections and questions in order.
   z.object({
     kind: z.literal('form'),
@@ -4547,6 +4555,7 @@ export const EntityContextV2ViewSchema: z.ZodType<EntityContextV2View> = z.objec
   lastTurnAt: NullableString,
   mode: NullableString,
   projectId: NullableString,
+  story: EntityContextStorySchema.optional(),
   anchor: ContextRefSchema.optional(),
   parentMessage: ContextRefSchema.nullable().optional(),
   attachments: z.array(z.object({

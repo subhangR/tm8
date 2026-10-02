@@ -428,10 +428,13 @@ const DEFAULT_SORT: readonly SortSpec[] = [BY_ACTIVITY, also(BY_UPDATED), BY_CRE
  * list to one set's members via `filters.edge`).
  */
 const COLLECTION_MEMBERSHIP: MembershipListControl = {
-  label: 'Collections',
-  emptyLabel: 'In no collection',
+  label: 'Collections & stories',
+  emptyLabel: 'In no collection or story',
   edgeType: 'contains',
   setKind: 'collection',
+  // The story filter on every list (282): a story holds its roots through the
+  // same `contains` edge, so it is a lens and a picker target like a collection.
+  alsoSetKinds: ['story'],
 };
 
 /**
@@ -1864,6 +1867,62 @@ const ROWS: readonly KindConfig[] = [
     editFields: [
       { target: 'title', label: 'Title', required: true, placeholder: 'Login wireframe' },
     ],
+  },
+
+  /*
+   * -- story (migration 283: everything around one idea, and where it stands) --
+   *
+   * THE PAGE IS THE BODY (artifact 01a0fc3e rev 4). Things are put in by hand
+   * as `contains` edges — the roots — and everything connected to a root
+   * follows; progress, the graph, the team and what is happening are all
+   * computed by the server at read time. One `storyline` block draws the whole
+   * page: hero, four stats, graph, team, roots, child stories, live feed and
+   * rail. The live read rides the host's `storySurface`; a host without a seam
+   * still gets the static read of the row.
+   *
+   * No FIELDS block and no membership block: the roots card IS the membership
+   * (add a root / take one out), and every scalar a fields dump would show is
+   * in the hero.
+   *
+   * `quickCreate` is on: a title is a legitimate start — the empty page says
+   * what to put in. Description is the one content field, multiline.
+   */
+  {
+    kind: 'story',
+    label: 'Story',
+    labelPlural: 'Stories',
+    icon: '❧',
+    iconArt: KIND_ART.story,
+    slug: 'stories',
+    strategy: 'collection',
+    defaultMode: 'list',
+    hiddenModes: ['board', 'gallery'],
+    chip: { glyph: '❧', tintBy: 'none' },
+    card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
+    list: baseList({
+      quickCreate: true,
+      tile: { badges: [{ source: 'messages' }] },
+      inlineEdit: { title: true },
+    }),
+    panel: {
+      archetype: 'generic',
+      blocks: [{ block: 'storyline' }],
+      primaries: ['edit'],
+      // ⤢ opens the story full screen at `e/{id}` (PR 1004): the graph wants
+      // the width, and the page is a place you stay on.
+      fullView: true,
+    },
+    editFields: [
+      { target: 'title', label: 'Title', required: true, placeholder: 'Story as an Entity' },
+      {
+        target: 'content',
+        source: 'description',
+        label: 'Description',
+        placeholder: 'What is this story about, and what does done look like?',
+        multiline: true,
+      },
+    ],
+    palette: { createLabel: 'New story' },
   },
 
   /*

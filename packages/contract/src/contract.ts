@@ -23,6 +23,7 @@ import type { FormQuestionRow, FormSectionRow, FormSettings, FormStatus } from '
 import type { RelevanceLevel } from './launch-suggest.js';
 import type { CoherenceFinding } from './orchestration.js';
 import type { EntityHeaderView, HeaderTextInput } from './selection-header.js';
+import type { EntityContextStory, StoryContent, StoryState } from './story.js';
 
 // ===========================================================================
 // §1 — Inherited contract (UI snapshot, near-verbatim)
@@ -82,7 +83,12 @@ export type CoreEntityKind =
   // `spaceLinks.add`.
   | 'space_link'
   // A remote tm8 server a space link points at (W8). Registered with W6's kinds.
-  | 'server';
+  | 'server'
+  // Stories (migration 283, 2026-10-02): a title, a description and a status;
+  // things put in by hand as `contains` edges are its roots, and everything
+  // connected to them follows. Progress and the page are computed at read
+  // time, never stored. See ./story.ts.
+  | 'story';
 
 /** A credential entity's visibility (W10a): who may launch on it. */
 export type CredentialVisibility = 'private' | 'public';
@@ -511,6 +517,12 @@ export type CoreEntityState =
    * scene is the largest payload any kind carries.
    */
   | { kind: 'drawing'; format: string; elementCount: number }
+  /**
+   * A story's computed summary (283): roots, trail size, progress (ruled, by
+   * task, rolled up over child stories), live sessions, pending attention,
+   * last activity. Computed by `internal.story_summary` on BOTH read paths.
+   */
+  | StoryState
   /** A form's row facts (209): where it is in its lifecycle, and how long. */
   | { kind: 'form'; status: FormStatus; questionCount: number }
   /** A space credential's row facts (W10a). Never the secret, hint or login. */
@@ -950,6 +962,8 @@ export type CoreEntityContent =
    */
   | { kind: 'drawing'; format: string; elements: Record<string, unknown>[];
       appState: Record<string, unknown>; files: Record<string, unknown> }
+  /** A story's description, plus the computed page on a detail read (283). */
+  | StoryContent
   /**
    * A form (209), everything its panel needs in one read: settings with
    * defaults applied, and sections and questions in order. Responses are not
@@ -7504,6 +7518,8 @@ export interface EntityContextV2View {
   mode?: string | null;
   // project
   projectId?: string | null;
+  // story (283): the page projected small for an agent.
+  story?: EntityContextStory;
   // message
   anchor?: EntityContextRef;
   parentMessage?: EntityContextRef | null;

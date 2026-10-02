@@ -43,9 +43,11 @@ import { CONTAINER_HELP } from './container';
 import { SERVER_HELP } from './server';
 import { LOOP_HELP } from './loop';
 import { SPELL_HELP } from './spell';
+import { STORY_HELP } from './story';
 
 const MODULES: readonly KindHelpModule[] = [
   CHAT_HELP,
+  STORY_HELP,
   TASK_HELP,
   WORK_SESSION_HELP,
   FORM_HELP,

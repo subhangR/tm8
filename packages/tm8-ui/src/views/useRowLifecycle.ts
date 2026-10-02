@@ -607,7 +607,13 @@ export function useRowLifecycle({ data, viewerMemberId, onNotice }: RowLifecycle
    * reserved.
    */
   const setKinds = useMemo(
-    () => [...new Set(allKinds().flatMap((k) => (k.list.membership ? [k.list.membership.setKind] : [])))],
+    () => [
+      ...new Set(
+        allKinds().flatMap((k) =>
+          k.list.membership ? [k.list.membership.setKind, ...(k.list.membership.alsoSetKinds ?? [])] : [],
+        ),
+      ),
+    ],
     [],
   );
   const membershipSets = useMemo(

@@ -111,6 +111,7 @@ import {
 } from '../settings-credentials';
 import { SpaceLinksSection, spaceLinksPortFromSeam } from '../settings-space-links';
 import { readLastSpace, readLastTarget, writeLastTarget } from './last-place';
+import { FullViewScreen, hasFullView } from './entity-full/FullViewScreen';
 import {
   NewSpaceProjectDialog,
   ProjectBranchesSection,
@@ -519,6 +520,9 @@ export function GateApp(props: GateAppProps = {}) {
    * before knowing the kind is the misroute this whole chain was repaired for.
    */
   const landing = useMemo<Landing | null>(() => {
+    /* `?full=1` is the Z4 full view (PR 1004), not the kind screen: it has its
+       own arm below, so no landing resolves for it here. */
+    if (navView.view === 'entity' && navView.full) return null;
     const direct = landingOfRoute(navView);
     if (direct) return direct;
     if (navView.view !== 'entity' || navView.origin) return null;
@@ -540,7 +544,7 @@ export function GateApp(props: GateAppProps = {}) {
    * and the dependency list can stay honest about what wakes it.
    */
   useEffect(() => {
-    if (navView.view !== 'entity' || navView.origin) return;
+    if (navView.view !== 'entity' || (navView.origin && !navView.full)) return;
     if (data.detailOf(navView.entityId)) return;
     data.pull(navView.entityId);
   }, [navView, data]);
@@ -665,6 +669,10 @@ export function GateApp(props: GateAppProps = {}) {
      to the identity of a callback that changes on every render. */
   const noticeSink = useRef(notices.push);
   noticeSink.current = notices.push;
+  /* Same reason: the nav port's promote asks the entity's kind (PR 1004)
+     without re-memoising the port on every data change. */
+  const detailOfRef = useRef(data.detailOf);
+  detailOfRef.current = data.detailOf;
   const routerTarget = props.routerTarget;
   /** The live transport, for the one caller that must write the address from
       outside the sync loop — see `resetAddress`. */
@@ -1339,7 +1347,13 @@ export function GateApp(props: GateAppProps = {}) {
        * the failure mode this codebase keeps removing. It comes back the moment
        * the M1 host exists, and nothing here presumes what that host looks like.
        */
-      promote: (_id) => {
+      promote: (id) => {
+        /* PR 1004: a kind that BUILT its full view promotes for real, to
+           `e/{id}?full=1`. Every other kind keeps the refusal below. */
+        if (hasFullView(detailOfRef.current(id)?.kind)) {
+          navStore.getState().navigate({ view: 'entity', entityId: id, origin: null, full: true });
+          return;
+        }
         noticeSink.current({
           id: 'z4-unbuilt',
           tone: 'warn',
@@ -2403,6 +2417,34 @@ export function GateApp(props: GateAppProps = {}) {
                 navigateTo(WORKSPACE_TARGET);
                 nav.push(id as EntityId);
               }}
+            />
+          ) : data.ready &&
+            navView.view === 'entity' &&
+            navView.full &&
+            (!data.detailOf(navView.entityId) || hasFullView(data.detailOf(navView.entityId)?.kind)) ? (
+            /* THE Z4 FULL VIEW, MOUNTED — for the kinds that built one
+               (`panel.fullView`, PR 1004). Until the kind is known the screen
+               draws EntityFullView's own resolving state; a kind that did not
+               opt in falls through to the "full view isn't built yet" card
+               below, exactly as before. */
+            <FullViewScreen
+              key={navView.entityId}
+              data={data}
+              reasons={reasons}
+              entityId={navView.entityId}
+              origin={navView.origin}
+              hops={navView.hops ?? null}
+              kinds={navView.kinds ?? null}
+              serverBaseUrl={activeServer.routeBaseUrl}
+              viewerMemberId={viewerMemberId}
+              onNotice={notices.push}
+              onSpawn={async (input) => {
+                const sessionId = await data.spawn(input);
+                navigateTo(WORKSPACE_TARGET);
+                nav.push(sessionId);
+              }}
+              onLaunchOpen={(id) => launch.open(id)}
+              onChatAbout={openChatAbout}
             />
           ) : data.ready && activeTarget?.type === 'kind' ? (
             /* D65: a rail KIND row opens its EntityView — wide list, Z3 aside
