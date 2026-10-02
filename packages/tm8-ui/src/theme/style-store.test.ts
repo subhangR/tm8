@@ -11,7 +11,8 @@
  */
 import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, renderHook } from '@testing-library/react';
+import { createElement } from 'react';
+import { act, render, renderHook } from '@testing-library/react';
 import { ATELIER_DARK, ATELIER_LIGHT } from '@tm8/contract';
 
 import {
@@ -25,6 +26,7 @@ import {
   subscribeStyle,
 } from './style-store';
 import { useTheme } from './useTheme';
+import { AlwaysDark } from '../terminal/AlwaysDark';
 
 type MediaListener = () => void;
 
@@ -206,6 +208,64 @@ describe('selectStyle — the "use" operation (spec §1.4)', () => {
     expect(selectStyle('builtin:nope')).toBe(false);
     expect(selectStyle(`personal:${uuid}`)).toBe(false);
     expect(getStyleState()).toBe(before);
+  });
+});
+
+describe('always-dark scopes follow --pn-term-chrome', () => {
+  const uuid = '01a0fc78-3974-73cc-9425-c8741062c673';
+  const followDoc = (foundation: 'builtin:atelier-light' | 'builtin:atelier-dark') => ({
+    schemaVersion: 1 as const,
+    foundation,
+    vars: { '--pn-term-chrome': 'follow' },
+    css: null,
+  });
+  const scope = () => {
+    const { container } = render(createElement(AlwaysDark, null, createElement('span', null, 'term')));
+    return container.querySelector('[data-always-dark="true"]')!;
+  };
+  const mainSelector = () => sheet().slice(0, sheet().indexOf(' {'));
+
+  it('chrome dark (every built-in): the scope is stamped dark and painted by the always-dark rule — unchanged', () => {
+    installActiveStyle();
+    const el = scope();
+    expect(el.getAttribute('data-theme')).toBe('dark');
+    expect(el.matches(mainSelector())).toBe(false);
+    expect(sheet()).toContain('[data-always-dark="true"] .cv2-root {');
+  });
+
+  it('chrome follow under a light style: no dark stamp, the light rule reaches the scope, no always-dark rule', () => {
+    installActiveStyle();
+    act(() => {
+      selectStyle(`personal:${uuid}`, followDoc('builtin:atelier-light'));
+    });
+    const el = scope();
+    expect(el.hasAttribute('data-theme')).toBe(false);
+    expect(el.matches(mainSelector())).toBe(true);
+    expect(sheet()).not.toContain('data-always-dark');
+  });
+
+  it('chrome follow under a dark style: stamped dark by the style, painted by the dark rule', () => {
+    installActiveStyle();
+    act(() => {
+      selectStyle(`personal:${uuid}`, followDoc('builtin:atelier-dark'));
+    });
+    const el = scope();
+    expect(el.getAttribute('data-theme')).toBe('dark');
+    expect(el.matches(mainSelector())).toBe(true);
+  });
+
+  it('re-stamps live when the style changes under a mounted scope', () => {
+    installActiveStyle();
+    const el = scope();
+    expect(el.getAttribute('data-theme')).toBe('dark');
+    act(() => {
+      selectStyle(`personal:${uuid}`, followDoc('builtin:atelier-light'));
+    });
+    expect(el.hasAttribute('data-theme')).toBe(false);
+    act(() => {
+      selectStyle('builtin:atelier-light');
+    });
+    expect(el.getAttribute('data-theme')).toBe('dark');
   });
 });
 

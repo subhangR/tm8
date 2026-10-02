@@ -48,6 +48,7 @@ import {
   UPLOAD_RETRY_UNAVAILABLE,
   UPLOAD_UNAVAILABLE,
 } from './reasons';
+import { useAlwaysDarkTheme } from '../theme/useAlwaysDarkTheme';
 
 /**
  * A resolver, not a URL. The host owns transport; this lane owns the control.
@@ -537,10 +538,11 @@ function PreviewCard({
   const shown = files.slice(0, 2);
   const unpreviewable = files.find((f) => previewKindOf(f.mime) === 'none') ?? null;
 
+  const alwaysDarkTheme = useAlwaysDarkTheme();
   return (
     <section
       className="cv2-root fn-card fn-card--dark"
-      data-theme="dark"
+      data-theme={alwaysDarkTheme}
       data-always-dark="true"
       data-testid="preview-card"
     >
@@ -688,11 +690,12 @@ export function PreviewOverlay({
   const kind = previewKindOf(file.mime);
   const href = downloadHref ? downloadHref(file.fileEntityId) : null;
 
+  const alwaysDarkTheme = useAlwaysDarkTheme();
   return (
     <div className="fn-overlay" data-testid="preview-overlay" role="presentation" onClick={onClose}>
       <div
         className="cv2-root fn-overlay__panel"
-        data-theme="dark"
+        data-theme={alwaysDarkTheme}
         data-always-dark="true"
         role="dialog"
         aria-modal="true"
