@@ -13,7 +13,7 @@
  * tallies. The one thing it counts is the by-kind breakdown under "In the
  * story", which is a label over `page.nodes`, not a progress figure.
  */
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import type { StatusCategory } from '@tm8/contract';
 
 import { Avatar, Pill, VectorIcon, type PillTone } from '../kit';
@@ -34,6 +34,8 @@ import {
   pct,
   segments,
   since,
+  teammatesOf,
+  type StoryGraphView,
   type StoryTone,
   type StoryView,
 } from './model';
@@ -58,8 +60,15 @@ const METER: ReadonlyArray<{ tone: StoryTone; token: string }> = [
 
 const plural = (n: number, one: string, many: string = `${one}s`): string => `${n} ${n === 1 ? one : many}`;
 
-export function StoryPage({ view, actions, live }: StoryBlockProps) {
+export function StoryPage({
+  view,
+  actions,
+  live,
+  initialGraphView,
+}: StoryBlockProps & { initialGraphView?: StoryGraphView }) {
   const [pick, setPick] = useState<StoryNodePick | null>(null);
+  // Stable: the popover's outside-pointerdown listener depends on it.
+  const closePick = useCallback(() => setPick(null), []);
   // A pick names a node of THIS story; a different story drops it.
   useEffect(() => setPick(null), [view.id]);
   const block = { view, actions, live, onPick: setPick };
@@ -69,7 +78,7 @@ export function StoryPage({ view, actions, live }: StoryBlockProps) {
       <StoryBar view={view} open={actions.open} />
       <StoryHero view={view} rename={actions.rename} live={live ?? null} />
       <StoryStats view={view} />
-      <StoryGraph {...block} />
+      <StoryGraph {...block} {...(initialGraphView ? { initialView: initialGraphView } : {})} />
       <TeamCard {...block} />
       <RootsCard {...block} />
       <ChildStoriesCard {...block} />
@@ -82,7 +91,7 @@ export function StoryPage({ view, actions, live }: StoryBlockProps) {
           <StoryRail {...block} />
         </aside>
       </section>
-      <StoryPlayground view={view} actions={actions} live={live} pick={pick} onClosePick={() => setPick(null)} />
+      <StoryPlayground view={view} actions={actions} live={live} pick={pick} onClosePick={closePick} />
     </div>
   );
 }
@@ -137,7 +146,7 @@ function StoryHero({
   // The status key, else its category in words; a read with neither draws none.
   const statusWord = view.status || (view.statusCategory ? view.statusCategory.replace('_', ' ') : '');
 
-  const teammates = page.team;
+  const teammates = teammatesOf(page);
   const members = Object.values(view.people).filter((p) => !p.agent);
   const onIt = members.length + teammates.length;
 

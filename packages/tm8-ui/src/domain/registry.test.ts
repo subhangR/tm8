@@ -60,7 +60,7 @@ describe('totality over the frozen core-kind set (WLT §2.1)', () => {
     // .options.length` here would make the assertion tautological and the row
     // below could silently drift from the contract again.
     // 25 -> 26 (W10a): `credential`; 26 -> 28 (W6): `space_link` + `server`.
-    // 28 -> 29 (282): `story`.
+    // 28 -> 29 (283): `story`.
     // MEASURED: CoreEntityKindSchema.options.length.
     expect(CORE_KINDS.length).toBe(29);
     expect(allKinds()).toHaveLength(CORE_KINDS.length + 1);

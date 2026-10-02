@@ -11,8 +11,8 @@
  * Roots ride `collections.addItem|removeItem` with the story as container
  * (282 accepts a story there), i.e. live `contains` edges with a position.
  *
- * Spawn / dispatch / coordinator are the spawn-on-story lane's door: pass it
- * as `spawn`. Without it those intents reject with a plain reason.
+ * Spawn / dispatch / coordinator ride `story-spawn.ts` (execution.spawn /
+ * execution.dispatch); a host may pass its own `spawn` instead.
  */
 import { useMemo, useRef } from 'react';
 import type { CommandResult, EntityId, MessageBatchResult, SpaceId } from '@tm8/contract';
@@ -22,20 +22,17 @@ import type { StoryActions, StoryAddRequest } from '../actions';
 import type { StoryView } from '../model';
 import { resolveTellTargets, tellAbout, type TellResult } from './tell';
 import { toStoryView } from './toStoryView';
+import { createStorySpawn, type StorySpawned } from './story-spawn';
 
-/** What the spawn door made, so it can be told about. */
-export interface StorySpawned {
-  id: EntityId;
-  kind: string;
-  title: string;
-}
+export type { StorySpawned };
+
 
 export interface UseStoryActionsOptions {
   /** The live view, when the host has it (saves a read for tell targets). */
   view?: StoryView | null;
   /** Navigate to an entity. Absent = no open affordance. */
   open?: (entityId: EntityId) => void;
-  /** Spawn-on-story: spawn / dispatch / coordinator intents. */
+  /** Spawn-on-story: spawn / dispatch / coordinator intents. Default: `createStorySpawn` (execution.spawn / execution.dispatch). */
   spawn?: (req: StoryAddRequest) => Promise<StorySpawned>;
   /** Tell outcomes, per target (failures never undo the create). */
   onTold?: (results: TellResult[]) => void;
@@ -65,6 +62,8 @@ export function createStoryActions(seam: Seam, storyId: EntityId, opts: UseStory
 
   const currentView = async (): Promise<StoryView | null> =>
     opts.view ?? toStoryView({ entity: await seam.entity(storyId) });
+
+  const spawn = opts.spawn ?? createStorySpawn(seam, { storyId, spaceId: space, view: currentView });
 
   const tell = async (made: StorySpawned, tellIds: readonly string[]): Promise<void> => {
     if (tellIds.length === 0) return;
@@ -114,8 +113,7 @@ export function createStoryActions(seam: Seam, storyId: EntityId, opts: UseStory
         case 'spawn':
         case 'dispatch':
         case 'coordinator': {
-          if (!opts.spawn) throw new Error('Starting sessions from the story page is not available here yet.');
-          const made = await opts.spawn(req);
+          const made = await spawn(req);
           await tell(made, req.tellIds);
           return made.id;
         }
@@ -159,17 +157,14 @@ export function useStoryActions(seam: Seam, storyId: EntityId, opts: UseStoryAct
   const latest = useRef(opts);
   latest.current = opts;
   const hasOpen = !!opts.open;
+  const hasSpawn = !!opts.spawn;
   return useMemo(() => {
     const port: UseStoryActionsOptions = {
       get view() { return latest.current.view; },
-      spawn: (req) => {
-        const spawn = latest.current.spawn;
-        if (!spawn) return Promise.reject(new Error('Starting sessions from the story page is not available here yet.'));
-        return spawn(req);
-      },
+      ...(hasSpawn ? { spawn: (req: StoryAddRequest) => latest.current.spawn!(req) } : {}),
       onTold: (results) => latest.current.onTold?.(results),
       ...(hasOpen ? { open: (id: EntityId) => latest.current.open?.(id) } : {}),
     };
     return createStoryActions(seam, storyId, port);
-  }, [seam, storyId, hasOpen]);
+  }, [seam, storyId, hasOpen, hasSpawn]);
 }

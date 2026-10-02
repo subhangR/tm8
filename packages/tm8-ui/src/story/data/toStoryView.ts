@@ -66,8 +66,9 @@ function peopleOf(page: StoryPage, seen: PeopleBook): Record<string, StoryPerson
   for (const m of page.recentMessages) rememberActor(book, m.author);
   for (const a of page.activity) rememberActor(book, a.actor);
   // The page's own names win over a remembered actor: they carry the mode.
+  // A `member` on the team is a human: not an agent, mode null.
   for (const t of page.team) {
-    book.set(t.id, { id: t.id, name: t.name, initials: initials(t.name), agent: true, mode: t.mode });
+    book.set(t.id, { id: t.id, name: t.name, initials: initials(t.name), agent: t.kind !== 'member', mode: t.mode });
   }
   for (const s of page.sessions) {
     const teammate = s.teamMemberId ? book.get(s.teamMemberId) : undefined;

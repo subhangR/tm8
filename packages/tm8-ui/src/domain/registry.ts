@@ -1870,7 +1870,7 @@ const ROWS: readonly KindConfig[] = [
   },
 
   /*
-   * -- story (migration 282: everything around one idea, and where it stands) --
+   * -- story (migration 283: everything around one idea, and where it stands) --
    *
    * THE PAGE IS THE BODY (artifact 01a0fc3e rev 4). Things are put in by hand
    * as `contains` edges — the roots — and everything connected to a root

@@ -84,7 +84,7 @@ export type CoreEntityKind =
   | 'space_link'
   // A remote tm8 server a space link points at (W8). Registered with W6's kinds.
   | 'server'
-  // Stories (migration 282, 2026-10-02): a title, a description and a status;
+  // Stories (migration 283, 2026-10-02): a title, a description and a status;
   // things put in by hand as `contains` edges are its roots, and everything
   // connected to them follows. Progress and the page are computed at read
   // time, never stored. See ./story.ts.
@@ -518,7 +518,7 @@ export type CoreEntityState =
    */
   | { kind: 'drawing'; format: string; elementCount: number }
   /**
-   * A story's computed summary (282): roots, trail size, progress (ruled, by
+   * A story's computed summary (283): roots, trail size, progress (ruled, by
    * task, rolled up over child stories), live sessions, pending attention,
    * last activity. Computed by `internal.story_summary` on BOTH read paths.
    */
@@ -962,7 +962,7 @@ export type CoreEntityContent =
    */
   | { kind: 'drawing'; format: string; elements: Record<string, unknown>[];
       appState: Record<string, unknown>; files: Record<string, unknown> }
-  /** A story's description, plus the computed page on a detail read (282). */
+  /** A story's description, plus the computed page on a detail read (283). */
   | StoryContent
   /**
    * A form (209), everything its panel needs in one read: settings with
@@ -7518,7 +7518,7 @@ export interface EntityContextV2View {
   mode?: string | null;
   // project
   projectId?: string | null;
-  // story (282): the page projected small for an agent.
+  // story (283): the page projected small for an agent.
   story?: EntityContextStory;
   // message
   anchor?: EntityContextRef;

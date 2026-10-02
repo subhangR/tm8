@@ -165,7 +165,7 @@ export const ENTITY_COLUMNS = `
   drw.elements as drawing_elements, drw.app_state as drawing_app_state,
   drw.files as drawing_files,
   sty.title as story_title, sty.description as story_description,
-  -- 282: the computed summary, one SQL function the projector twin selects
+  -- 283: the computed summary, one SQL function the projector twin selects
   -- too. CASE keeps it off every other kind's row.
   case when e.kind = 'story' then internal.story_summary(e.id) end as story_summary,
   -- Forms (209/211). ROW FACTS ONLY: this column list is shared by every
@@ -1920,7 +1920,7 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         elementCount: Array.isArray(row.drawing_elements) ? row.drawing_elements.length : 0,
       };
     case 'story':
-      // 282: computed by `internal.story_summary`, which the projector twin
+      // 283: computed by `internal.story_summary`, which the projector twin
       // selects too — the mirror is the shared function, not a comment.
       return storySummaryOf(row.story_summary);
     case 'form':
@@ -2227,7 +2227,7 @@ export function capabilitiesOf(row: EntityRow): EntityCapabilities {
   // rename_work_session (085). Everything else on that row belongs to the
   // execution block, which is why it is still not deletable or hierarchical.
   const editable = new Set(['task', 'doc', 'channel', 'collection', 'team_member', 'spell', 'skill', 'memory', 'worktree', 'work_session', 'graph', 'drawing', 'story']);
-  // A story's children are child stories (same-kind hierarchy, 282).
+  // A story's children are child stories (same-kind hierarchy, 283).
   const hierarchical = new Set(['task', 'doc', 'channel', 'collection', 'story']);
   const pullable = new Set(['channel', 'task', 'doc', 'file', 'spell', 'skill', 'collection']);
 
@@ -2978,7 +2978,7 @@ function credentialFactsOf(row: EntityRow): Extract<EntityState, { kind: 'creden
 }
 
 /**
- * A story's summary as `internal.story_summary` returned it (282). Shared with
+ * A story's summary as `internal.story_summary` returned it (283). Shared with
  * the projector so both twins coerce the same jsonb the same way; a missing
  * or malformed value reads as an empty story rather than failing the read.
  */
@@ -3009,7 +3009,7 @@ export async function hydrateDetail(
     };
   }
   if (content.kind === 'story') {
-    // 282: the page — roots, trail, graph, team, call signs, activity, feed —
+    // 283: the page — roots, trail, graph, team, call signs, activity, feed —
     // computed now from the same trail the summary counts.
     return { state, content: { ...content, page: await loadStoryPage(q, row.id) } };
   }

@@ -103,7 +103,7 @@
 .cv2-root .sty-who { display: inline-flex; align-items: center; gap: 6px; color: var(--pn-ink-2); }
 .cv2-root .sty-stack { display: inline-flex; }
 .cv2-root .sty-stack .kit-avatar { box-shadow: 0 0 0 2px var(--pn-card); }
-.cv2-root .sty-stack .kit-avatar + .kit-avatar { margin-left: -3px; }
+.cv2-root .sty-stack .kit-avatar + .kit-avatar { margin-left: 5px; }
 .cv2-root .sty-stack .sty-av--live { box-shadow: 0 0 0 2px var(--pn-card), 0 0 0 3.5px var(--pn-run); }
 .cv2-root .sty-livepill {
   display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 9px 0 7px;

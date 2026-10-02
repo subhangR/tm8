@@ -102,7 +102,7 @@ const ROOT_SPECS: RootSpec[] = [
   {
     k: 'r1', title: 'The story kind in the database', tone: 'done',
     children: [
-      ['c11', 'Migration 282: detail row and doors', 'done'],
+      ['c11', 'Migration 283: detail row and doors', 'done'],
       ['c12', 'contains and attached_to accept a story', 'done'],
       ['c13', 'entity_content arm and the db suite', 'done'],
     ],
@@ -119,7 +119,7 @@ const ROOT_SPECS: RootSpec[] = [
     children: [
       ['c21', 'Facade: contains closure and counts', 'done'],
       ['c22', 'Projector mirrors the facade', 'done', 18],
-      ['c23', 'Pinned-era pg fixtures apply 282', 'todo'],
+      ['c23', 'Pinned-era pg fixtures apply 283', 'todo'],
     ],
     trail: [
       ['s2', 'work_session', 'Forge’s session', 'working_on', 'r2', 'in', 1, { live: true, activityAt: ago(1) }],
@@ -245,22 +245,29 @@ for (const s of sessions) {
     n.callSign = s.callSign;
     n.live = s.live;
     n.createdAt = s.createdAt;
+    n.status = s.runtimeStatus;
   }
 }
 
 const team: StoryTeammate[] = [
-  { id: tm('M'), name: 'Maestro', mode: 'coordinator', parentId: null, live: true, sessionIds: [fx('s4')], runs: [], assigned: [], dispatched: [] },
-  { id: tm('C'), name: 'Scout', mode: 'coordinated-coordinator', parentId: tm('M'), live: false, sessionIds: [], runs: [], assigned: [], dispatched: [] },
-  { id: tm('W'), name: 'Worker', mode: 'coordinated-worker', parentId: tm('M'), live: true, sessionIds: [fx('s1'), fx('s3')], runs: [fx('r3'), fx('c33')], assigned: [], dispatched: [] },
-  { id: tm('F'), name: 'Forge', mode: 'coordinated-worker', parentId: tm('C'), live: true, sessionIds: [fx('s2')], runs: [fx('r2')], assigned: [fx('r5')], dispatched: [] },
+  { kind: 'team_member', id: tm('M'), name: 'Maestro', mode: 'coordinator', parentId: null, live: true, sessionIds: [fx('s4')], runs: [], assigned: [], dispatched: [] },
+  { kind: 'team_member', id: tm('C'), name: 'Scout', mode: 'coordinated-coordinator', parentId: tm('M'), live: false, sessionIds: [], runs: [], assigned: [], dispatched: [] },
+  { kind: 'team_member', id: tm('W'), name: 'Worker', mode: 'coordinated-worker', parentId: tm('M'), live: true, sessionIds: [fx('s1'), fx('s3')], runs: [fx('r3'), fx('c33')], assigned: [], dispatched: [] },
+  { kind: 'team_member', id: tm('F'), name: 'Forge', mode: 'coordinated-worker', parentId: tm('C'), live: true, sessionIds: [fx('s2')], runs: [fx('r2')], assigned: [fx('r5')], dispatched: [] },
   {
-    id: tm('D'), name: 'Dreamer', mode: 'dispatcher', parentId: null, live: false, sessionIds: [], runs: [], assigned: [],
+    kind: 'team_member', id: tm('D'), name: 'Dreamer', mode: 'dispatcher', parentId: null, live: false, sessionIds: [], runs: [], assigned: [],
     dispatched: [
       { taskId: fx('c23'), sessionId: fx('s2') },
       { taskId: fx('c41'), sessionId: null },
     ],
   },
 ];
+
+/* Humans who touched the story sit on the team too, as members with no mode (283). */
+team.push(
+  { kind: 'member', id: human('S'), name: 'Subhang', mode: null, parentId: null, live: false, sessionIds: [], runs: [], assigned: [], dispatched: [] },
+  { kind: 'member', id: human('N'), name: 'Noor', mode: null, parentId: null, live: false, sessionIds: [], runs: [], assigned: [], dispatched: [] },
+);
 
 const childStories: StoryChild[] = [
   {
@@ -308,7 +315,7 @@ const recentMessages: StoryFeedMessage[] = [
   msg('f5', tm('F'), 's2', 'Facade and projector agree on the counts for every root; running the pinned-era fixtures now.', 40),
   msg('f4', tm('M'), 'story', 'Roots 2 and 3 are in flight. Scout holds 4 and 5 until the follow-depth ruling.', 120),
   msg('f3', human('S'), 'r1', 'Merged #990. Root 1 is done.', 60 * 21),
-  msg('f2', tm('W'), 'r1', 'Migration 282 applied clean through the full chain on a scratch cluster. Numbered against the union of every remote ref.', 60 * 22),
+  msg('f2', tm('W'), 'r1', 'Migration 283 applied clean through the full chain on a scratch cluster. Numbered against the union of every remote ref.', 60 * 22),
   msg('f1', human('S'), 'story', 'I’m thinking we add a new higher-level entity called a story. A place where we separate different ideas.', 60 * 30),
 ];
 
