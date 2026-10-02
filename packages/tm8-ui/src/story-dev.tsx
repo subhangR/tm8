@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import type { EntitySummary } from '@tm8/contract';
 import { createRoot } from 'react-dom/client';
 import './styles/tokens.css';
 import './styles/canvas-extra.css';
@@ -35,6 +36,15 @@ function fakeActions(log: (line: string) => void): StoryActions {
     markDone: (entityId) => ok(`markDone ${entityId}`).then(() => undefined),
     sendMessage: (anchorId, body) => ok(`sendMessage ${anchorId} ${body}`).then(() => 'fx-new-msg'),
     addRoot: (entityId) => ok(`addRoot ${entityId}`).then(() => undefined),
+    // The membership picker reads only id, kind and title off a candidate, so
+    // the harness hands it fixture rows that are not roots, cast to the shape.
+    searchRoots: (text) =>
+      ok(`searchRoots ${JSON.stringify(text)}`).then(() =>
+        STORY_FIXTURE.page.nodes
+          .filter((n) => n.depth > 0)
+          .slice(0, 8)
+          .map((n) => ({ id: n.id, kind: n.kind, title: n.title }) as unknown as EntitySummary),
+      ),
     removeRoot: (entityId) => ok(`removeRoot ${entityId}`).then(() => undefined),
     setStatus: (status) => ok(`setStatus ${status}`).then(() => undefined),
     open: (entityId) => void log(`open ${entityId}`),

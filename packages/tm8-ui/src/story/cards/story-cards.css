@@ -227,10 +227,12 @@
   transition: background 0.15s;
 }
 .cv2-root .stc-root:last-child { border-bottom: 0; }
+.cv2-root .stc-roots__add { padding: 10px 16px; border-bottom: 1px solid var(--pn-line); }
 @container (min-width: 720px) {
   .cv2-root .stc-root { grid-template-columns: minmax(220px, 300px) minmax(0, 1fr) minmax(220px, 320px); gap: 18px; }
 }
-.cv2-root .stc-root:hover { background: var(--pn-hover); }
+.cv2-root .stc-root:hover,
+.cv2-root .stc-root--lit { background: var(--pn-hover); }
 .cv2-root .stc-root--live::before {
   content: '';
   position: absolute;
@@ -331,6 +333,8 @@ button.stc-chip { cursor: pointer; }
 .cv2-root .stc-chip--exited { border-style: dashed; color: var(--pn-ink-3); }
 .cv2-root .stc-chip--exited .stc-chip__m { color: var(--pn-ink-4); }
 .cv2-root .stc-chip--memory { border-style: dashed; }
+/* A root lit from the graph (or hovered here): its trail chips take the brass ring. */
+.cv2-root .stc-chip--lit { border-color: var(--pn-brand); background: var(--pn-brand-soft); box-shadow: 0 0 0 1px var(--pn-brand); }
 .cv2-root .stc-fam-text--runs { color: var(--pn-run); }
 
 /* --- child stories -------------------------------------------------------- */
