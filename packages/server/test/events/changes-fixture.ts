@@ -184,7 +184,9 @@ export class ChangesFixture {
         [this.spaceId, this.memberId],
       );
       const id = rows[0]!.id;
-      await q.query(`insert into public.work_sessions(entity_id,title,status,workdir_mode) values($1,$2,'spawning','scratch')`, [id, title]);
+      await q.query(`insert into public.work_sessions(entity_id,title,status, workdir_mode) values($1,$2,'spawning', 'scratch')`, [id, title]);
+      // The launcher records the binding before the PTY exists (session_credential_binding).
+      await q.query(`select internal.settle_credential_binding($1, '{"effectiveCredentialSources":{"anthropic":"node"}}'::jsonb)`, [id]);
       return id;
     });
   }

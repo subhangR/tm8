@@ -88,7 +88,7 @@ async function setSessionStatus(sessionId: string, status: string): Promise<void
 
 function manifest(credentials: Record<string, string>, sources?: Record<string, string>): Record<string, unknown> {
   const credentialSources = sources ?? Object.fromEntries(Object.keys(credentials).map((p) => [p, 'space']));
-  return { launch: { credentialSources, spaceCredentialIds: credentials } };
+  return { launch: { credentialSources, spaceCredentialIds: credentials, effectiveCredentialSources: credentialSources } };
 }
 
 async function recordManifest(c: DbClaims, sessionId: string, m: Record<string, unknown>): Promise<unknown> {
@@ -699,7 +699,7 @@ describe('the session record (D8, M7, M9) and containment (M6)', () => {
     await expect(recordManifest(agent(A), s, manifest({ anthropic: credential.id }, { anthropic: 'member' }))).rejects.toThrow(/whose source is not space/);
     expect(await recorded(s)).toEqual([]);
     // Control: a manifest with no space source records nothing and succeeds.
-    await recordManifest(agent(A), s, { launch: { credentialSources: { anthropic: 'member' } } });
+    await recordManifest(agent(A), s, { launch: { credentialSources: { anthropic: 'member' }, effectiveCredentialSources: { anthropic: 'member' } } });
     expect(await recorded(s)).toEqual([]);
   });
 

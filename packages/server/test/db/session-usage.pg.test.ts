@@ -111,6 +111,9 @@ async function createSession(title = 'A run'): Promise<string> {
     );
     const id = created[0]!.id as string;
     await q(`insert into public.work_sessions(entity_id,title,status, workdir_mode) values($1,$2,'spawning', 'scratch')`, [id, title]);
+    // The launcher records the binding before the PTY exists (session_credential_binding);
+    // a node-rung manifest settles it `legacy`, so the row may leave spawning.
+    await q(`select internal.settle_credential_binding($1, '{"effectiveCredentialSources":{"anthropic":"node"}}'::jsonb)`, [id]);
     return created;
   });
   return rows[0]!.id as string;

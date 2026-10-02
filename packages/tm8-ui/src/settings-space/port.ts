@@ -298,6 +298,12 @@ export interface SettingsPort {
   loadSpaceSessions?(): Promise<AuthSessionsListResult>;
   /** `auth.sessions.revoke` — the server decides who may; its refusal is drawn. */
   revokeSession?(sessionId: string): Promise<AuthSessionsRevokeResult>;
+  /**
+   * The host's sign-out, run when a revoke ends THIS browser's own session
+   * (the "sign out here" row): the pass is dead, so the list must not be
+   * re-read with it. Not a seam call — the host passes it in.
+   */
+  signOutHere?(): void;
 
   /**
    * Settings → Chat defaults (`spaces.chatDefaults.get/set`, entity-chat
@@ -359,8 +365,16 @@ function newMutationId(prefix: string): string {
   return `${prefix}_${mutationSeq.toString(36)}_${Date.now().toString(36)}`;
 }
 
-export function settingsPortFromSeam(seam: Seam, spaceId: SpaceId): SettingsPort {
+export interface SettingsPortOptions {
+  /** See `SettingsPort.signOutHere`. The gate host passes its sign-out. */
+  signOut?: () => void;
+}
+
+export function settingsPortFromSeam(seam: Seam, spaceId: SpaceId, opts: SettingsPortOptions = {}): SettingsPort {
+  const { signOut } = opts;
   return {
+    ...(signOut ? { signOutHere: () => signOut() } : {}),
+
     async loadSpace() {
       const all = await seam.spaces();
       return all.find((s) => s.id === spaceId) ?? null;

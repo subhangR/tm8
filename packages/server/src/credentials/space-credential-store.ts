@@ -16,6 +16,8 @@
  */
 import { randomUUID } from 'node:crypto';
 
+import { isServerOnlyCredentialProvider, type CredentialsSpaceReadinessView, type ServerOnlyCredentialProviderName } from '@tm8/contract';
+
 import type { Db, DbClaims } from '../db/types.js';
 import { refuseLinkBearer } from '../identity/link-bearer.js';
 import { loadOrCreateCredentialKey } from './credential-key.js';
@@ -23,6 +25,16 @@ import { openSecret, sealSecret } from './secret-box.js';
 
 export const SPACE_CREDENTIAL_PROVIDERS = ['anthropic', 'openai', 'github'] as const;
 export type SpaceCredentialProvider = (typeof SPACE_CREDENTIAL_PROVIDERS)[number];
+
+/**
+ * server_only_space_credentials: a SERVER-ONLY provider is stored as a space credential and spent by the
+ * server (✦ Ask Jev's `typesafe`), never handed to a session. It is outside
+ * `SpaceCredentialProvider`, so the spawn reader's type refuses it, and
+ * `readForSpawn` refuses it again at runtime, as SQL does (gate 8).
+ */
+export type SpaceCredentialServerOnlyProvider = ServerOnlyCredentialProviderName;
+/** Every provider a stored row can carry. */
+export type SpaceCredentialStoredProvider = SpaceCredentialProvider | SpaceCredentialServerOnlyProvider;
 
 export const SPACE_CREDENTIAL_SHAPES = ['login', 'api_key', 'token'] as const;
 export type SpaceCredentialShape = (typeof SPACE_CREDENTIAL_SHAPES)[number];
@@ -50,7 +62,7 @@ export interface SpaceCredentialKillSession {
 export interface SpaceCredential {
   id: string;
   spaceId: string;
-  provider: SpaceCredentialProvider;
+  provider: SpaceCredentialStoredProvider;
   shape: SpaceCredentialShape;
   label: string;
   isDefault: boolean;
@@ -197,6 +209,33 @@ interface SpawnRow {
   secretNonce: string | null;
 }
 
+interface ServiceKeyRow {
+  credentialId: string;
+  spaceId: string;
+  provider: SpaceCredentialServerOnlyProvider;
+  source: 'my_default' | 'space_default';
+  secretCiphertext: string;
+  secretNonce: string;
+}
+
+/** A server-only key, opened for the server to spend. Never serialised to a client. */
+export interface SpaceServiceKey {
+  credentialId: string;
+  spaceId: string;
+  provider: SpaceCredentialServerOnlyProvider;
+  source: 'my_default' | 'space_default';
+  secret: string;
+}
+
+/** Gate 8, TS half: the spawn reader was asked for a server-only provider. */
+export class ServerOnlyCredentialRefusedError extends Error {
+  readonly reason = 'server_only';
+  constructor(readonly provider: string) {
+    super(`${provider} is a server-only credential and never reaches a session`);
+    this.name = 'ServerOnlyCredentialRefusedError';
+  }
+}
+
 interface MetadataRow {
   space_id: string;
   provider: SpaceCredentialProvider;
@@ -241,7 +280,9 @@ export class DbSpaceCredentialStore {
    */
   async list(claims: DbClaims, spaceId: string, options: { includeRevoked?: boolean } = {}): Promise<SpaceCredential[]> {
     // R3: key_hint and display_login are not granted to tm8_app; the definer
-    // reader masks them per caller.
+    // reader masks them per caller. The tm8-ui fixture seam mirrors this rule
+    // (`maskedCredential`, packages/tm8-ui/src/data/fixtures/seam-fixture.ts):
+    // change both together.
     return this.db.rpc<SpaceCredential[]>(claims, 'list_space_credentials', [
       spaceId,
       options.includeRevoked === true,
@@ -261,7 +302,7 @@ export class DbSpaceCredentialStore {
     claims: DbClaims,
     input: {
       spaceId: string;
-      provider: SpaceCredentialProvider;
+      provider: SpaceCredentialStoredProvider;
       shape: 'api_key' | 'token';
       label: string;
       secret: string;
@@ -410,7 +451,7 @@ export class DbSpaceCredentialStore {
   async clearMyDefault(
     claims: DbClaims,
     spaceId: string,
-    provider: SpaceCredentialProvider,
+    provider: SpaceCredentialStoredProvider,
   ): Promise<SpaceCredentialMyDefault & { cleared: boolean }> {
     return this.db.rpc<SpaceCredentialMyDefault & { cleared: boolean }>(
       claims,
@@ -511,6 +552,11 @@ export class DbSpaceCredentialStore {
     credentialId?: string | null,
   ): Promise<SpaceCredentialForSpawn> {
     refuseLinkBearer(claims);
+    // Gate 8 (server_only_space_credentials): a server-only key never reaches a launch. The type already
+    // excludes it; this holds for a caller that casts, and SQL refuses it too.
+    if (isServerOnlyCredentialProvider(provider)) {
+      throw new ServerOnlyCredentialRefusedError(provider);
+    }
     const row = await this.db.rpc<SpawnRow>(claims, 'read_space_credential_for_spawn', [
       launchSpaceId,
       provider,
@@ -549,6 +595,38 @@ export class DbSpaceCredentialStore {
     }
   }
 
+  /**
+   * server_only_space_credentials: the ONLY opener of a server-only key (✦ Ask Jev's `typesafe`), for
+   * the server to spend on the caller's behalf — never a session, never a
+   * catalog operation. `read_space_service_key` resolves my_default (human
+   * auth kinds only) → the space default → null, under the caller's claims.
+   * Null means this space holds no usable key; the caller decides what next.
+   */
+  async readServiceKey(
+    claims: DbClaims,
+    spaceId: string,
+    provider: SpaceCredentialServerOnlyProvider,
+  ): Promise<SpaceServiceKey | null> {
+    refuseLinkBearer(claims);
+    const row = await this.db.rpc<ServiceKeyRow | null>(claims, 'read_space_service_key', [spaceId, provider]);
+    if (!row) return null;
+    try {
+      const secret = openSecret(
+        await this.key(),
+        { ciphertext: Buffer.from(row.secretCiphertext, 'base64'), nonce: Buffer.from(row.secretNonce, 'base64') },
+        { spaceId: row.spaceId, credentialId: row.credentialId, provider: row.provider },
+      );
+      return { credentialId: row.credentialId, spaceId: row.spaceId, provider: row.provider, source: row.source, secret };
+    } catch (error) {
+      this.logger?.warn?.('space service key could not be decrypted', {
+        credentialId: row.credentialId,
+        provider: row.provider,
+        reason: error instanceof Error ? error.name : 'unknown',
+      });
+      throw new Error('stored space credential is unreadable');
+    }
+  }
+
   /** Resume (C3): the resumer becomes the launcher, if every recorded credential is still active. */
   /**
    * With `providers` (R13), rows for every provider the resume did not resolve
@@ -561,6 +639,11 @@ export class DbSpaceCredentialStore {
   ): Promise<RepointedSessionSpaceCredentials> {
     const args: unknown[] = providers ? [workSessionId, [...providers]] : [workSessionId];
     return this.db.rpc<RepointedSessionSpaceCredentials>(claims, 'repoint_session_space_credentials', args);
+  }
+
+  /** S7 (migration space_credential_readiness): both readiness thresholds for this space. Member-scoped, metadata only. */
+  async readiness(claims: DbClaims, spaceId: string): Promise<CredentialsSpaceReadinessView> {
+    return this.db.rpc<CredentialsSpaceReadinessView>(claims, 'space_credential_readiness', [spaceId]);
   }
 
   async readSpacePolicy(claims: DbClaims, spaceId: string): Promise<SpaceCredentialPolicy> {

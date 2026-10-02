@@ -1,5 +1,5 @@
 -- =============================================================================
--- W11-repoint (placeholder ordinal 989; the owner's merge takes the real one):
+-- W11-repoint (placeholder ordinal 989 on the lane; renumbered to 286 after integration's 278-282 and main's 283):
 -- chats, work_sessions and worktrees point at the space's project ENTITY; the folder column project_id is dropped (plan 01a0d9eb W11).
 --
 -- OWNER STEP. IRREVERSIBLE: the three project_id columns are DROPPED. GATE:
@@ -189,12 +189,26 @@ reset role;
 -- tm8_graph_owner (live catalog); re-created without switching role so they
 -- keep their owner.
 
-create or replace function public.execution_spawn(p_space_id uuid, p_team_member_id uuid, p_task_ids uuid[] DEFAULT '{}'::uuid[], p_project_id uuid DEFAULT NULL::uuid, p_workdir_mode text DEFAULT 'project'::text, p_workdir_path text DEFAULT NULL::text, p_base_ref text DEFAULT NULL::text, p_mode text DEFAULT NULL::text, p_model text DEFAULT NULL::text, p_agent_tool text DEFAULT NULL::text, p_title text DEFAULT NULL::text, p_node_id text DEFAULT NULL::text, p_confirm_untrusted boolean DEFAULT false, p_session_cap integer DEFAULT 8, p_actor_id uuid DEFAULT NULL::uuid, p_client_mutation_id text DEFAULT NULL::text, p_parent_session_id uuid DEFAULT NULL::uuid)
- RETURNS jsonb
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'internal', 'pg_temp'
-AS $function$
+-- execution_spawn is re-based on 267's 18-argument body (launch v3: p_new_task_title,
+-- dispatcher routing) — the latest before this file. The 17-argument signature
+-- 267 dropped is dropped here too (a no-op on the real chain) so an out-of-order
+-- chain never leaves it beside this one, still naming work_sessions.project_id.
+drop function if exists public.execution_spawn(
+  uuid, uuid, uuid[], uuid, text, text, text, text, text, text, text, text,
+  boolean, integer, uuid, text, uuid
+);
+
+create or replace function public.execution_spawn(
+  p_space_id uuid, p_team_member_id uuid, p_task_ids uuid[] default '{}'::uuid[],
+  p_project_id uuid default null, p_workdir_mode text default 'project',
+  p_workdir_path text default null, p_base_ref text default null,
+  p_mode text default null, p_model text default null, p_agent_tool text default null,
+  p_title text default null, p_node_id text default null,
+  p_confirm_untrusted boolean default false, p_session_cap integer default 8,
+  p_actor_id uuid default null, p_client_mutation_id text default null,
+  p_parent_session_id uuid default null,
+  p_new_task_title text default null
+) returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
 declare
   replay jsonb;
   actor uuid;
@@ -205,7 +219,12 @@ declare
   task_id uuid;
   patches uuid[];
   started_status text;
+  created_task_id uuid;
   project_entity uuid;
+  task_ids uuid[];
+  new_title text;
+  projection_id uuid;
+  result jsonb;
 begin
   replay := internal.ledger_replay(p_client_mutation_id, 'execution.spawn');
   if replay is not null then
@@ -277,9 +296,57 @@ begin
           coalesce(p_workdir_mode, 'project'), p_workdir_path, p_base_ref,
           'spawning', p_agent_tool, p_model, p_mode);
 
+  -- ADDED IN 267 (launch v3 gap 4). The task `newTask` names is created HERE,
+  -- inside the spawn's own transaction and after every refusal above, so a
+  -- refused spawn leaves no task and the ledger entry below replays this task
+  -- together with this session.
+  if p_new_task_title is not null then
+    new_title := btrim(p_new_task_title);
+    if char_length(new_title) < 1 or char_length(new_title) > 200 then
+      raise exception 'newTask.title must be 1..200 characters after trimming'
+        using errcode = '22023';
+    end if;
+    created_task_id := internal.create_envelope(p_space_id, 'task', actor, null, null);
+    insert into public.tasks(entity_id, title, description)
+    values (created_task_id, new_title, '');
+    perform internal.record_initial_version(created_task_id, actor);
+    perform internal.record_activity(p_space_id, created_task_id, actor, 'created', null,
+      jsonb_build_object('kind', 'task', 'via', 'spawn', 'workSessionId', session_id::text));
+    -- Filed under the launch project (filing only). The project was checked
+    -- as linked above, so a missing projection is a mapping gap, not a refusal.
+    if p_project_id is not null then
+      select link.project_entity_id into projection_id
+        from public.project_links link
+       where link.space_id = p_space_id and link.project_id = p_project_id;
+      if projection_id is not null then
+        insert into public.edges(space_id, src_id, dst_id, type, created_by)
+        values (p_space_id, created_task_id, projection_id, 'in_project', actor)
+        on conflict (src_id, dst_id, type) do nothing;
+      end if;
+    end if;
+  end if;
+  task_ids := coalesce(p_task_ids, '{}'::uuid[])
+    || case when created_task_id is null then '{}'::uuid[] else array[created_task_id] end;
+
   patches := array[session_id];
-  foreach task_id in array coalesce(p_task_ids, '{}'::uuid[]) loop
+  foreach task_id in array task_ids loop
     perform internal.live_entity(task_id, 'task');
+    -- ADDED IN 267. A dispatcher launched on a task ROUTES it; it does not work
+    -- it. So it is written neither as working on the task nor as its assignee —
+    -- the worker it routes to becomes that — and an existing task is not
+    -- started on its behalf. A task this spawn created is still started, since
+    -- `newTask` is created `working`.
+    if p_mode = 'dispatcher' then
+      if task_id = created_task_id then
+        update public.tasks t
+           set work_status = internal.work_status_for_state(
+                 internal.workflow_state_for_category(t.entity_id, 'in_progress')),
+               updated_at = now()
+         where t.entity_id = task_id;
+      end if;
+      patches := patches || task_id;
+      continue;
+    end if;
     insert into public.edges(space_id, src_id, dst_id, type, created_by)
     values (p_space_id, session_id, task_id, 'working_on', actor)
     on conflict (src_id, dst_id, type) do nothing;
@@ -318,17 +385,32 @@ begin
   values (p_space_id, session_id, p_team_member_id, 'relates_to', actor)
   on conflict (src_id, dst_id, type) do nothing;
 
-  return internal.ledger_record(p_client_mutation_id, 'execution.spawn',
-           internal.command_result(session_id, null,
-             internal.record_activity(p_space_id, session_id, actor, 'created', null,
-               jsonb_build_object(
-                 'kind', 'work_session',
-                 'teamMemberId', p_team_member_id,
-                 'parentSessionId', p_parent_session_id
-               )),
-             patches)) || jsonb_build_object('__tm8_replayed', false);
+  result := internal.command_result(session_id, null,
+    internal.record_activity(p_space_id, session_id, actor, 'created', null,
+      jsonb_build_object(
+        'kind', 'work_session',
+        'teamMemberId', p_team_member_id,
+        'parentSessionId', p_parent_session_id
+      )),
+    patches);
+  -- ADDED IN 267: recorded IN the ledger row, so a replay answers the same task.
+  if created_task_id is not null then
+    result := result || jsonb_build_object('createdTaskId', created_task_id);
+  end if;
+  return internal.ledger_record(p_client_mutation_id, 'execution.spawn', result)
+    || jsonb_build_object('__tm8_replayed', false);
 end
-$function$;
+$$;
+
+revoke all on function public.execution_spawn(
+  uuid, uuid, uuid[], uuid, text, text, text, text, text, text, text, text,
+  boolean, integer, uuid, text, uuid, text
+) from public;
+
+grant execute on function public.execution_spawn(
+  uuid, uuid, uuid[], uuid, text, text, text, text, text, text, text, text,
+  boolean, integer, uuid, text, uuid, text
+) to tm8_app;
 
 create or replace function public.start_shell_session(p_space_id uuid, p_project_id uuid DEFAULT NULL::uuid, p_title text DEFAULT NULL::text, p_node_id text DEFAULT NULL::text, p_workdir_path text DEFAULT NULL::text, p_confirm_untrusted boolean DEFAULT false, p_session_cap integer DEFAULT 4, p_actor_id uuid DEFAULT NULL::uuid, p_client_mutation_id text DEFAULT NULL::text)
  RETURNS jsonb
@@ -1097,6 +1179,19 @@ $function$;
 create trigger work_sessions_launch_project_immutable
 before update of project_entity_id on public.work_sessions
 for each row execute function internal.guard_launch_project();
+
+-- 274's worktree_repo_source (the commit recorder's lane read): the folder is
+-- now reached through the worktree's project entity, in the worktree's space.
+create or replace function public.worktree_repo_source(p_worktree_id uuid)
+returns table (repo_url text, folder_name text)
+language sql stable security definer set search_path = public, internal, pg_temp as $$
+  select folder.repo_url, folder.name
+    from public.worktrees w
+    join public.projects folder
+      on folder.id = internal.project_folder_for(w.space_id, w.project_entity_id)
+   where w.entity_id = p_worktree_id
+     and internal.entity_readable(w.entity_id)
+$$;
 
 -- -----------------------------------------------------------------------------
 -- 4. Constraints.

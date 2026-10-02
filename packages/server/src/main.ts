@@ -48,6 +48,7 @@ import { SpaceLoginHomes } from './credentials/space-credential-home.js';
 import { createW2BlobStore } from './files/w2-blob-store.js';
 import { createDeletedFileBlobPurgeJob, createFileUploadSweepJob } from './scheduler/jobs/file-uploads.js';
 import { createSpaceCredentialSweepJob } from './scheduler/jobs/space-credential-sweep.js';
+import { createCredentialBindingSweepJob } from './scheduler/jobs/credential-binding-sweep.js';
 import { DbSpaceCredentialStore } from './credentials/space-credential-store.js';
 import { createEventSubjectBackfillJob } from './scheduler/jobs/event-subject-backfill.js';
 import { createClipboardStore } from './files/clipboard-store.js';
@@ -432,6 +433,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
 
   if (db) {
     const serviceKeys = new DbServiceKeyStore({ db, dataDir });
+    const spaceServiceKeys = new DbSpaceCredentialStore({ db, dataDir });
     registerFacadeHandlers(registry, {
       db,
       config,
@@ -465,12 +467,15 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
             },
           }
         : {}),
-      // launch.suggest's Jev key, chosen PER REQUEST (Lane K): the caller's own
-      // TypeSafe key from Settings → agent credentials, else this node's
-      // TYPESAFE_API_KEY, else none — and every group answers `no_key`
-      // (design 01a0cb80 §8). The key is used here, server-side, and nowhere
-      // on the spawn path.
+      // launch.suggest's Jev key, chosen PER REQUEST (Lane K; server_only_space_credentials): the
+      // space's `typesafe` credential (my_default for a human, else the space
+      // default), else — release 1 only — the caller's own 203 key from
+      // Settings → agent credentials, else this node's TYPESAFE_API_KEY, else
+      // none — and every group answers `no_key` (design 01a0cb80 §8). The key
+      // is used here, server-side, and nowhere on the spawn path.
       resolveJevAdvisor: createJevAdvisorResolver({
+        readSpaceKey: async (claims, spaceId) =>
+          (await spaceServiceKeys.readServiceKey(claims, spaceId, 'typesafe'))?.secret ?? null,
         readMemberKey: (claims) => serviceKeys.resolve(claims, 'typesafe'),
         nodeKey: process.env.TYPESAFE_API_KEY,
         advisorForKey: jevAdvisorForKey,
@@ -1012,6 +1017,18 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         createDeletedFileBlobPurgeJob({ db, blobStore, claims: sweepClaims('file-blob-purge') }),
       );
     }
+    // R2 gate 2 (session_credential_binding): a session still `pending` past the grace never recorded
+    // the credential it runs on and can never run; ended in SQL. Every other
+    // binding violation is logged, not killed (release 1 is additive).
+    scheduler.register(
+      createCredentialBindingSweepJob({
+        db,
+        claims: async () => {
+          const o = await owner();
+          return { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'credential-binding-sweep' };
+        },
+      }),
+    );
     // W10b (R8 / N8): the backstop for revoke and switch-to-private. It runs
     // once at boot — the post-boot re-check — and then every minute, killing
     // any live session left on a revoked credential, or on a private one its

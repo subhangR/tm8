@@ -13,12 +13,18 @@
  *   <dataDir>/backups/pre-migration/premigrate_<f>-<t>_<stamp>.dump   NEVER pruned
  *   <dataDir>/backups/on-demand/<name>.dump
  *
+ * Permissions: every dump holds the whole database, space_credentials' sealed
+ * secrets, key hints and vendor logins included (the node key that opens them
+ * stays in dataDir and is never dumped). So every backup directory is 0700 and
+ * every artifact 0600, tightened even when the directory or file already
+ * existed looser — mkdir's mode only applies to what it creates.
+ *
  * Retention never drops a file without a log line (the no-silent-truncation
  * rule): a backup that vanished quietly is indistinguishable from one that was
  * never taken.
  */
 
-import { copyFile, mkdir, readdir, rm, stat } from 'node:fs/promises';
+import { chmod, copyFile, mkdir, open, readdir, rm, stat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import { toolPath } from './binaries.js';
@@ -26,6 +32,15 @@ import type { ResolvedSidecarConfig } from './config.js';
 import { SidecarError } from './errors.js';
 import { describeFailure, run } from './exec.js';
 import type { SidecarLogger } from './log.js';
+
+const DIR_MODE = 0o700;
+const FILE_MODE = 0o600;
+
+/** mkdir -p, then tighten: an already-existing directory keeps its old mode otherwise. */
+async function privateDir(dir: string): Promise<void> {
+  await mkdir(dir, { recursive: true, mode: DIR_MODE });
+  await chmod(dir, DIR_MODE);
+}
 
 export type BackupTier = 'daily' | 'weekly' | 'pre-migration' | 'on-demand';
 export type BackupFormat = 'custom' | 'plain';
@@ -80,8 +95,8 @@ export function backupDirs(cfg: Pick<ResolvedSidecarConfig, 'backupsDir'>): Back
 
 export async function ensureBackupDirs(cfg: Pick<ResolvedSidecarConfig, 'backupsDir'>): Promise<BackupDirs> {
   const dirs = backupDirs(cfg);
-  for (const d of [dirs.daily, dirs.weekly, dirs.preMigration, dirs.onDemand]) {
-    await mkdir(d, { recursive: true, mode: 0o700 });
+  for (const d of [dirs.root, join(dirs.root, 'scheduled'), dirs.daily, dirs.weekly, dirs.preMigration, dirs.onDemand]) {
+    await privateDir(d);
   }
   return dirs;
 }
@@ -114,7 +129,14 @@ export interface DumpOptions {
 export async function pgDump(t: DumpTarget, opts: DumpOptions): Promise<BackupResult> {
   const format = opts.format ?? 'custom';
   const startedAt = new Date().toISOString();
-  await mkdir(dirname(opts.outPath), { recursive: true, mode: 0o700 });
+  // New directories are created 0700; an existing parent is NOT re-moded here,
+  // because exportTo() may name any directory. The tier directories are
+  // tightened by ensureBackupDirs().
+  await mkdir(dirname(opts.outPath), { recursive: true, mode: DIR_MODE });
+  // pg_dump would create the file at the process umask (0644 typically).
+  // Create it 0600 first, so the dump is never readable while it is written.
+  await (await open(opts.outPath, 'w', FILE_MODE)).close();
+  await chmod(opts.outPath, FILE_MODE);
 
   const r = await run(
     toolPath(t.binariesDir, 'pg_dump'),
@@ -137,6 +159,7 @@ export async function pgDump(t: DumpTarget, opts: DumpOptions): Promise<BackupRe
     throw new SidecarError(code, `tm8: pg_dump (${opts.tier}) failed`, { detail: describeFailure(r) });
   }
 
+  await chmod(opts.outPath, FILE_MODE);
   const bytes = (await stat(opts.outPath)).size;
   const result: BackupResult = {
     path: opts.outPath,
@@ -201,6 +224,7 @@ export async function promoteWeekly(
 
   const target = join(dirs.weekly, `tm8_${key}_${utcStamp(now)}.dump`);
   await copyFile(dailyPath, target);
+  await chmod(target, FILE_MODE);
   logger?.info(`backup: promoted ${dailyPath} → ${target} (first daily of ${key})`);
   return target;
 }

@@ -10,24 +10,42 @@ import type {
   CredentialPolicySource,
   CredentialsLoginSessionFinishResult,
   CredentialsSpacePolicyView,
+  CredentialsSpaceReadinessView,
+  CredentialReadinessLaunchReason,
   SpaceCredentialProviderName,
+  SpaceCredentialStoredProviderName,
   SpaceCredentialView,
 } from '@tm8/contract';
 import type { SpaceCredentialsViewer } from './space-port';
 
+/** The LAUNCHABLE providers: the ones a policy, a node rung or a launch picker names. */
 export const SPACE_CREDENTIAL_PROVIDERS: readonly SpaceCredentialProviderName[] = ['anthropic', 'openai', 'github'];
 
-export const SPACE_PROVIDER_NAME: Record<SpaceCredentialProviderName, string> = {
+/**
+ * Every provider this page stores and lists (server_only_space_credentials): the launchable ones plus
+ * the SERVER-ONLY `typesafe`, the Ask Jev key. A server-only key is pasted,
+ * rekeyed and deleted here like any other, but no launch ever carries it, so
+ * it has no policy row and no launch picker offers it.
+ */
+export const SPACE_STORED_PROVIDERS: readonly SpaceCredentialStoredProviderName[] = [...SPACE_CREDENTIAL_PROVIDERS, 'typesafe'];
+
+export function isServerOnlyProvider(provider: SpaceCredentialStoredProviderName): provider is 'typesafe' {
+  return provider === 'typesafe';
+}
+
+export const SPACE_PROVIDER_NAME: Record<SpaceCredentialStoredProviderName, string> = {
   anthropic: 'Claude (Anthropic)',
   openai: 'Codex (OpenAI)',
   github: 'GitHub',
+  typesafe: 'TypeSafe (Ask Jev)',
 };
 
 /** What a pasted secret is called for each provider. */
-export const SPACE_SECRET_NOUN: Record<SpaceCredentialProviderName, string> = {
+export const SPACE_SECRET_NOUN: Record<SpaceCredentialStoredProviderName, string> = {
   anthropic: 'API key',
   openai: 'API key',
   github: 'token',
+  typesafe: 'API key',
 };
 
 export const SOURCE_WORD: Record<CredentialPolicySource, string> = {
@@ -36,21 +54,21 @@ export const SOURCE_WORD: Record<CredentialPolicySource, string> = {
   node: 'Node',
 };
 
-/** github takes a token; the model vendors take an API key (the contract's rule). */
-export function pasteShapeOf(provider: SpaceCredentialProviderName): 'api_key' | 'token' {
+/** github takes a token; the model vendors and typesafe take an API key (the contract's rule). */
+export function pasteShapeOf(provider: SpaceCredentialStoredProviderName): 'api_key' | 'token' {
   return provider === 'github' ? 'token' : 'api_key';
 }
 
 /** Rows the list draws, by provider. Revoked rows are gone for good; they never draw. */
 export function groupByProvider(
   rows: readonly SpaceCredentialView[],
-): Record<SpaceCredentialProviderName, SpaceCredentialView[]> {
-  const groups: Record<SpaceCredentialProviderName, SpaceCredentialView[]> = { anthropic: [], openai: [], github: [] };
+): Record<SpaceCredentialStoredProviderName, SpaceCredentialView[]> {
+  const groups: Record<SpaceCredentialStoredProviderName, SpaceCredentialView[]> = { anthropic: [], openai: [], github: [], typesafe: [] };
   for (const row of rows) {
     if (row.status === 'revoked') continue;
     groups[row.provider]?.push(row);
   }
-  for (const provider of SPACE_CREDENTIAL_PROVIDERS) {
+  for (const provider of SPACE_STORED_PROVIDERS) {
     groups[provider].sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || a.label.localeCompare(b.label));
   }
   return groups;
@@ -148,12 +166,15 @@ export function creatorLabel(row: SpaceCredentialView, viewer: SpaceCredentialsV
  * true, not only right after the delete that caused it.
  */
 export function noDefaultNotice(
-  provider: SpaceCredentialProviderName,
+  provider: SpaceCredentialStoredProviderName,
   rows: readonly SpaceCredentialView[],
 ): string | null {
   const usable = rows.filter((r) => r.status === 'active' || r.status === 'stale');
   if (usable.length === 0) return null;
   if (usable.some((r) => r.isDefault)) return null;
+  if (isServerOnlyProvider(provider)) {
+    return `${SPACE_PROVIDER_NAME[provider]} has no space default. Ask Jev uses a member’s own default here; everyone else gets no space key until a default is set.`;
+  }
   return `${SPACE_PROVIDER_NAME[provider]} has no space default. A launch on the space credential must name one until a default is set.`;
 }
 
@@ -173,7 +194,7 @@ export function afterDeleteNotice(deleted: SpaceCredentialView, sessionsEnded: n
  * its label until that login finishes or expires. Explains the clash, or null.
  */
 export function labelTakenReason(
-  provider: SpaceCredentialProviderName,
+  provider: SpaceCredentialStoredProviderName,
   label: string,
   rows: readonly SpaceCredentialView[],
   exceptId?: string,
@@ -366,4 +387,69 @@ export function formatWhen(iso: string | null): string {
   const at = new Date(iso);
   if (Number.isNaN(at.getTime())) return iso;
   return `${at.toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+}
+
+// -- readiness (credentials release 1, S7) -----------------------------------
+//
+// TWO thresholds, never one tick: a space can be ready to launch and still
+// have nothing keeping pull requests and CI tracked. Each sentence names its
+// threshold. In release 1 nothing refuses on either: a launch without a space
+// credential still runs on the member or node rung and is recorded as legacy.
+
+/** Where a member connects one — the words the launch picker points at. */
+export const CONNECT_WHERE = 'Space settings → Credentials';
+
+const LAUNCH_REASON_WORD: Record<CredentialReadinessLaunchReason, string> = {
+  no_credential: 'no credential you can use',
+  stale: 'its credential has gone stale — log in again or replace the key',
+  policy_excludes_space: 'this space’s policy does not allow space credentials',
+};
+
+function nameList(providers: readonly SpaceCredentialProviderName[]): string {
+  const names = providers.map((p) => SPACE_PROVIDER_NAME[p]);
+  if (names.length <= 1) return names.join('');
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
+/**
+ * The providers of `view` that are not ready to launch, narrowed to `only`
+ * when given (the launch picker asks about the providers ITS launch uses).
+ */
+export function launchMissing(
+  view: CredentialsSpaceReadinessView,
+  only?: readonly SpaceCredentialProviderName[],
+): SpaceCredentialProviderName[] {
+  return view.canLaunch.missing.filter((p) => !only || only.includes(p));
+}
+
+/** The can-launch sentence, shared by Space → Credentials and the launch picker. */
+export function canLaunchSentence(
+  view: CredentialsSpaceReadinessView,
+  only?: readonly SpaceCredentialProviderName[],
+): string {
+  const missing = launchMissing(view, only);
+  if (missing.length === 0) {
+    return only
+      ? 'Ready to launch: this space has a credential your launch will use for each provider it needs.'
+      : 'Ready to launch: every provider has a credential in this space that your launches will use.';
+  }
+  return `Not ready to launch with ${nameList(missing)}: connect a credential in this space under ${CONNECT_WHERE}. `
+    + 'Until then a launch still runs on your own or the node’s credential, and is recorded as legacy.';
+}
+
+/** The can-poll sentence. A member's own GitHub credential never makes this green. */
+export function canPollSentence(view: CredentialsSpaceReadinessView): string {
+  if (view.canPoll.ready) {
+    return 'Ready to track: this space’s own GitHub credential keeps pull requests and CI up to date.';
+  }
+  const why = view.canPoll.reason === 'stale'
+    ? 'this space’s own GitHub credential has gone stale'
+    : 'this space has no GitHub credential of its own that every member shares';
+  return `Not ready to track pull requests and CI: ${why}. A member’s private GitHub credential lets that member launch, but does not keep tracking alive.`;
+}
+
+/** One provider's can-launch reason, or null when it is ready. */
+export function launchReasonWord(view: CredentialsSpaceReadinessView, provider: SpaceCredentialProviderName): string | null {
+  const reason = view.canLaunch.providers[provider]?.reason ?? null;
+  return reason ? LAUNCH_REASON_WORD[reason] : null;
 }

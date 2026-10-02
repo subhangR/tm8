@@ -51,7 +51,7 @@ import type { Querier } from '../db/types.js';
 // The ONE unread definition, shared with the facade assembler on purpose — see
 // the `channel` arm of stateOf. `entity-read.ts` imports nothing from `events/`,
 // so this direction adds no cycle.
-import { chatContextOf, isEndedKind, loadChatSubjects, loadUnreadCounts, type ChatSubject } from '../facade/entity-read.js';
+import { chatContextOf, isEndedKind, loadChatSubjects, loadUnreadCounts, storySummaryOf, type ChatSubject } from '../facade/entity-read.js';
 // The ONE narrowing of the status columns, shared with the read path. Both
 // files used to narrow `work_status` on their own and DISAGREED about an
 // unrecognised value; `facade/status.ts` is the fix and its docblock is the
@@ -327,6 +327,9 @@ interface SummaryRow {
   drawing_title: string | null;
   drawing_format: string | null;
   drawing_element_count: number | null;
+  story_title: string | null;
+  story_description: string | null;
+  story_summary: unknown;
   form_title: string | null;
   form_status: string | null;
   form_description: string | null;
@@ -337,6 +340,8 @@ interface SummaryRow {
   cred_visibility: string | null;
   cred_status: string | null;
   cred_owner_account_id: string | null;
+  srv_name: string | null;
+  srv_base_url: string | null;
   memory_statement: string | null;
   memory_mechanism: string | null;
   memory_subject_scope: string | null;
@@ -498,6 +503,11 @@ select
   -- The element COUNT only: a scene is the largest payload any kind carries
   -- and the event path must never move it. The elements are content.
   coalesce(jsonb_array_length(drw.elements), 0) as drawing_element_count,
+  sty.title          as story_title,
+  sty.description    as story_description,
+  -- 283: the SAME function entity-read.ts selects — the twins mirror by
+  -- construction. Computed at projection time, never stored.
+  case when e.kind = 'story' then internal.story_summary(e.id) end as story_summary,
   -- Forms (209/211): status and question COUNT only; the questions are content.
   frm.title          as form_title,
   frm.status         as form_status,
@@ -511,6 +521,10 @@ select
   scr.visibility       as cred_visibility,
   scr.status           as cred_status,
   scr.owner_account_id as cred_owner_account_id,
+  -- Servers (W8): the name and URL only — the title and excerpt a Home list
+  -- row draws. servers holds no secret. MIRRORS entity-read.ts.
+  srv.name             as srv_name,
+  srv.base_url         as srv_base_url,
   internal.project_folder_for(e.space_id, wt.project_entity_id) as wt_project_id,
   wt.branch          as wt_branch,
   wt.base_ref        as wt_base_ref,
@@ -581,8 +595,10 @@ left join lateral (
 ) chq on cht.entity_id is not null
 left join public.graphs gr           on gr.entity_id = e.id
 left join public.drawings drw         on drw.entity_id = e.id
+left join public.stories sty          on sty.entity_id = e.id
 left join public.forms frm            on frm.entity_id = e.id
 left join public.space_credentials scr on e.kind = 'credential' and scr.id = e.id
+left join public.servers srv          on e.kind = 'server' and srv.entity_id = e.id
 left join public.containers ctr      on ctr.entity_id = e.id
 -- No container_runtime_state join, and no runtime_ref / host_spec columns.
 -- Usage is CONTENT, not summary state, and heartbeats deliberately emit no
@@ -1073,6 +1089,9 @@ export class PgEntityProjector implements EntityProjector {
       case 'drawing':
         // Its own detail-row title — MIRRORS entity-read.ts titleOf.
         return r.drawing_title ?? 'Drawing';
+      case 'story':
+        // Its own detail-row title — MIRRORS entity-read.ts titleOf.
+        return r.story_title ?? 'Story';
       case 'form':
         // Its own detail-row title — MIRRORS entity-read.ts titleOf.
         return r.form_title ?? 'Form';
@@ -1092,6 +1111,12 @@ export class PgEntityProjector implements EntityProjector {
       case 'artifact':
         // The artifact's own name — MIRRORS entity-read.ts titleOf.
         return r.artifact_name ?? 'Artifact';
+      case 'server':
+        // Its own name — MIRRORS entity-read.ts titleOf.
+        return r.srv_name ?? 'Server';
+      case 'space_link':
+        // Never the target's name (P8) — MIRRORS entity-read.ts titleOf.
+        return 'Space link';
       default:
         // Custom c:* kinds: no title column exists. `fields.title` is the
         // convention when the kind schema declares one.
@@ -1132,8 +1157,10 @@ export class PgEntityProjector implements EntityProjector {
       : r.kind === 'loop' ? r.loop_schedule
       : r.kind === 'graph' ? r.graph_type
       : r.kind === 'drawing' ? r.drawing_format
+      : r.kind === 'story' ? r.story_description
       : r.kind === 'form' ? r.form_description
       : r.kind === 'credential' ? r.cred_provider
+      : r.kind === 'server' ? r.srv_base_url
       : null;
     if (source === null || source === '') return null;
     // Empty becomes "no excerpt", not an empty one — `entity-read.ts` maps the
@@ -1414,6 +1441,10 @@ export class PgEntityProjector implements EntityProjector {
           format: r.drawing_format ?? 'excalidraw',
           elementCount: r.drawing_element_count ?? 0,
         };
+      case 'story':
+        // MIRRORS entity-read.ts stateOf: the same `internal.story_summary`
+        // jsonb through the same coercion.
+        return storySummaryOf(r.story_summary);
       case 'form':
         // MIRRORS entity-read.ts stateOf: lifecycle status and question count.
         return {

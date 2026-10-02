@@ -237,7 +237,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'auth.space.enter': {
     cmd: ['auth', 'space', 'enter'],
-    syn: 'tm8 auth space enter <space-id> [--label <label>] [--print-token]',
+    syn: 'tm8 auth space enter <space-id> [--label <label>] [--space-password <password>] [--print-token]',
     sum: 'Mint a session pinned to one space from your unpinned (gate) session',
     authz: 'server',
     input: 'bound',
@@ -249,6 +249,7 @@ const ROWS: Record<OperationName, Row> = {
       'under TM8_SPACE_SESSIONS=enforce an unpinned human session can call only spaces.list, auth.* and node administration until it enters a space',
       'with a stored gate credential the pinned token is stored next to it, keyed by space, and `tm8 --space <space-id>` presents it; the gate stays usable for entering other spaces',
       'with --print-token (or in an agent session, or with no stored credential) nothing is stored: export the printed token as TM8_AGENT_TOKEN',
+      'a space that requires a space password (or a locked space login) refuses entry without --space-password; the password is checked for that space only',
     ],
   },
   'auth.sessions.list': {
@@ -291,7 +292,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'auth.invite.signup': {
     cmd: ['auth', 'invite', 'signup'],
-    syn: 'tm8 auth invite signup --code <inv_…> --username <username> --password <password> [--display-name <name>] [--email <email>]',
+    syn: 'tm8 auth invite signup --code <inv_…> --username <username> --password <password> [--space-password <password>] [--display-name <name>] [--email <email>]',
     sum: 'Redeem a space invite that creates your account and signs you in — the operator never learns your password',
     authz: 'server',
     input: 'bound',
@@ -610,6 +611,18 @@ const ROWS: Record<OperationName, Row> = {
     reason: 'human_settings_only',
     notes: [
       'each row names the pick source, owner, root launcher and agent session',
+    ],
+  },
+  'credentials.space.readiness': {
+    cmd: ['space', 'credential-readiness', 'get'],
+    syn: 'tm8 space credential-readiness get [<space-id>]',
+    sum: 'Read a space\'s credential readiness: can-launch per provider for you, and can-poll (a space-owned GitHub credential) — human sessions only',
+    authz: 'server',
+    input: 'none',
+    tags: ['credential', 'space', 'readiness', 'seeding', 'settings'],
+    notes: [
+      'two thresholds, never one: can-launch counts your own default; can-poll needs a space-owned public GitHub credential',
+      'active only: a stale credential is reported, never counted',
     ],
   },
   'credentials.space.policy.get': {
@@ -969,6 +982,39 @@ const ROWS: Record<OperationName, Row> = {
       'in one transaction: your tokens pinned to the Space are revoked, your agent sessions there stop, your personas are deactivated and your assignments cleared',
     ],
   },
+  'spaces.spacePassword.setRequired': {
+    cmd: null,
+    sum: 'Require (or stop requiring) a per-space password to enter this Space — space admins, human sessions only',
+    authz: 'space',
+    input: 'bound',
+    tags: ['space', 'password', 'login', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'turning it on takes your own space password unless you already have one; members without one are refused entry until an admin resets them',
+    ],
+  },
+  'spaces.members.spacePassword.reset': {
+    cmd: null,
+    sum: "Set a new space password for a member and unlock it — space admins, human sessions only",
+    authz: 'space',
+    input: 'bound',
+    tags: ['space', 'password', 'member', 'reset'],
+    reason: 'human_settings_only',
+    notes: [
+      "the member's sessions pinned to this Space are revoked; an admin cannot reset an owner",
+    ],
+  },
+  'spaces.members.spacePassword.lock': {
+    cmd: null,
+    sum: "Lock or unlock a member's space password — a locked login cannot enter the Space",
+    authz: 'space',
+    input: 'bound',
+    tags: ['space', 'password', 'member', 'lock'],
+    reason: 'human_settings_only',
+    notes: [
+      "locking revokes the member's sessions pinned to this Space; you cannot lock yourself or an owner",
+    ],
+  },
   'spaces.invites.list': {
     cmd: ['space', 'invite', 'list'],
     syn: 'tm8 space invite list [<space-id>] [--limit <count>] [--cursor <cursor>]',
@@ -992,7 +1038,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'spaces.invites.redeem': {
     cmd: ['space', 'invite', 'redeem'],
-    syn: 'tm8 space invite redeem <code> [--mutation-id <id>]',
+    syn: 'tm8 space invite redeem <code> [--space-password <password>] [--mutation-id <id>]',
     sum: 'Redeem an invitation code and join its Space',
     authz: 'server',
     input: 'unbound',
@@ -1131,12 +1177,13 @@ const ROWS: Record<OperationName, Row> = {
     sum: 'Create an entity of any unrestricted kind, optionally with its initial edges',
     authz: 'space',
     input: 'bound',
-    tags: ['new', 'add', 'task', 'doc'],
+    tags: ['new', 'add', 'task', 'doc', 'story'],
     notes: [
       'restricted kinds (project, interaction_profile) refuse generic creation and use their named writers',
       'hierarchy is homogeneous: a parent and its direct children share one kind and one Space',
       'task content shape: {description, acceptanceCriteria: [{id, done, text}], pointsEstimate, axes: {<axis-name>: <value>}} — axis names and values are the Space registry\u2019s (`tm8 space task-axis list`)',
       "doc content shape: {kind: 'doc', body, format: 'markdown'}",
+      "story content shape: {description} (title rides the envelope; status is the ordinary workflow status). --parent <story-id> makes a child story whose progress rolls up into the parent. Put things in with `tm8 collection add <story-id> <entity-id>` — those are the story's roots; everything connected to a root follows at read time. Read it with `tm8 entity context <story-id>` (agents) or `tm8 entity get <story-id>` (the page)",
       '--when-to-use (when a later session should open it, in one sentence: "Open when changing how balances are rounded", not "Rounding policy doc"; shown whole to every later agent) / --summary (what it holds) / --keyword write the selection header in the same call; all optional, guideline limits in `tm8 help entity header set`; change it later with `tm8 entity header set`',
       'a header applies to team_member, doc, artifact, drawing, file, task and collection; on any other kind the entity is still created and the header is skipped with a warning (skills use their description, memories their subject_scope)',
     ],
@@ -1144,6 +1191,7 @@ const ROWS: Record<OperationName, Row> = {
       'tm8 entity create task "<title>" --space <space-id> --parent <entity-id>',
       'tm8 entity create doc "<title>" --content @body.json --when-to-use "<when an agent should load it>" --summary "<what it contains>"',
       'tm8 entity create doc "<title>" --space <space-id> --content \'{"kind":"doc","body":"…","format":"markdown"}\'',
+      'tm8 entity create story "<title>" --content \'{"description":"…"}\' [--parent <story-id>]',
     ],
   },
   'entities.patch': {
@@ -1582,6 +1630,24 @@ const ROWS: Record<OperationName, Row> = {
       'tm8 chat start --teammate <team-member-id> --model <model> --mode ask --workdir project --project <project-id> --about <entity-id> -',
     ],
   },
+  'chat.setModel': {
+    cmd: ['chat', 'model'],
+    syn: 'tm8 chat model <chat-id> <model>',
+    sum: 'Move an open chat onto another model — the next turn claimed runs on it',
+    authz: 'entity',
+    input: 'bound',
+    tags: ['chat', 'model', 'switch', 'change', 'upgrade', 'downgrade'],
+    notes: [
+      'the model is the ONE element of a chat\'s configuration that is not pinned for its life (276); the teammate, the mode and the working directory still are',
+      'the conversation survives the switch: the chat keeps its native session and the new model resumes it, so nothing is restarted and no history is lost',
+      'applies to the NEXT turn claimed — a turn already running finishes on the model it was claimed with, and each turn records which model ran it',
+      'names a model and never a provider: the Server resolves provider from the launch catalog, because provider decides which API key the child is given',
+      'refused with `invalid_input` for a model that launches via another agent tool; chat runs claude-code models only, and switching tool would invalidate the session being resumed',
+      'human-authenticated only, exactly like `chat start`: an agent runtime credential is refused',
+      'no --mutation-id: the write is an assignment, so asking twice leaves the chat as asking once did',
+    ],
+    examples: ['tm8 chat model <chat-id> claude-opus-5'],
+  },
 
   // ── collections / graph / placements / undo ──────────────────────────────
   'collections.query': {
@@ -1596,22 +1662,30 @@ const ROWS: Record<OperationName, Row> = {
   'collections.addItem': {
     cmd: ['collection', 'add'],
     syn: 'tm8 collection add <collection-id> <entity-id> [--position <number>] [--mutation-id <id>]',
-    sum: 'Put an entity into a collection — membership is a `contains` edge, appended after the current maximum position when --position is omitted',
+    sum: 'Put an entity into a collection or a story — membership is a `contains` edge, appended after the current maximum position when --position is omitted',
     authz: 'entity',
     input: 'bound',
-    tags: ['membership', 'curate', 'pin', 'list'],
+    tags: ['membership', 'curate', 'pin', 'list', 'story'],
     notes: [
       're-adding an existing member re-positions it rather than duplicating it',
       'list a collection\'s members with `tm8 edge list --source <collection-id> --type contains`',
+      'the container may also be a story: adding puts the entity in BY HAND as one of the story\'s roots (ordered by --position); everything connected to it then follows at read time — see `tm8 entity context <story-id>`',
+    ],
+    examples: [
+      'tm8 collection add <collection-id> <entity-id>',
+      'tm8 collection add <story-id> <task-id>',
     ],
   },
   'collections.removeItem': {
     cmd: ['collection', 'remove'],
     syn: 'tm8 collection remove <collection-id> <entity-id> --yes [--mutation-id <id>]',
-    sum: 'Take an entity out of a collection — deletes the `contains` edge; the entity itself is untouched',
+    sum: 'Take an entity out of a collection or a story — deletes the `contains` edge; the entity itself is untouched',
     authz: 'entity',
     input: 'bound',
-    tags: ['membership', 'curate', 'unpin'],
+    tags: ['membership', 'curate', 'unpin', 'story'],
+    notes: [
+      'the container may also be a story: removing takes a root out of the story; the entity and its own edges are untouched',
+    ],
   },
   'graph.query': {
     cmd: ['graph', 'query'],
@@ -2129,6 +2203,7 @@ const ROWS: Record<OperationName, Row> = {
       'omit `--access-mode` and a session spawned BY a session inherits its spawner’s posture',
       '`--credential-source anthropic=space` launches on the space default; `anthropic=space:<id>` pins one space credential; omit it and a child inherits its spawner’s exact credential',
       'worktree provisions an isolated checkout per session (base ref via --base-ref); merged/abandoned lanes are reconciled server-side',
+      '`--launch-project` accepts the project entity id (`tm8 entity query --kind project`) or its folder/resource id; worktree mode requires it',
     ],
   },
   'execution.terminal.start': {
@@ -2178,6 +2253,18 @@ const ROWS: Record<OperationName, Row> = {
       'if no dispatcher session is alive the Server spawns one first and waits for it to settle, so the first dispatch in a space is the slow one',
       'liveness is probed, never read off `work_sessions.status` — `idle` is a legal live status and a crashed session keeps its last status forever',
       'the request reaches the dispatcher session id as a trusted envelope AND is stored on the task, so a missed delivery is still recoverable',
+    ],
+  },
+  'execution.dispatchers': {
+    cmd: null,
+    sum: 'List a Space’s dispatcher sessions, newest first, with whether each is live',
+    authz: 'space',
+    input: 'none',
+    tags: ['dispatch', 'dispatcher', 'route', 'launch', 'live'],
+    notes: [
+      'Launch-card API (launch v3 gap 5): the dispatch-target drop-up. No CLI — `session dispatch` routes to the newest live dispatcher on its own',
+      'stopped dispatchers are listed with `live: false`; liveness is probed against the node’s PTY map, never read off `work_sessions.status`',
+      '`queuedCount` is null when it is not cheap to compute; `title` and `purpose` are untrusted display text',
     ],
   },
   'execution.prompt': {
@@ -2565,6 +2652,7 @@ const ROWS: Record<OperationName, Row> = {
       'bounded by design: defaults are 16 KiB total and 4 KiB per section (service source); hard caps 32 KiB and 8 KiB (frozen schema)',
       'returned cursors.messages/.activity continue in `entity feed --cursor` (--order newest); cursors.children continues in `entity children --cursor`',
       '--sections summary,actions is a precise pre-mutation capability + version check for a few hundred tokens',
+      'a story prints its description as the body, then overall task progress, its roots with per-root progress, what follows them grouped by kind, who runs what (sessions by call sign, teammates by mode), what is blocked and its child stories with rolled-up progress',
       'header (text: a `header:` line plus an untrusted_data block) is present only when someone authored one: whenToUse says when to open the entity (always whole), summary what it holds; clipped names a field shown cut short; stale means the body changed after it was written (the purpose usually still holds); bytes is the full body size; header.version is what `tm8 entity header set --expect-version` takes',
     ],
     examples: ['tm8 entity context <entity-id> --sections summary,actions'],
@@ -3422,6 +3510,10 @@ function exposureFor(operation: OperationName): Exposure {
 // 2026-08-13 (first-run claim): auth.claim + auth.claim.status take the catalog
 // to 161 rows. RECOMPUTED from `JSON.stringify(OPERATIONS)`, not adjusted.
 export const CATALOG_DIGEST =
+  // Re-measured for 276 (+chat.setModel, chat model switch) — RECOMPUTED from
+  // JSON.stringify(OPERATIONS) by test/discovery-operations.test.ts, not adjusted.
+  // Re-measured for task 01a0e24d (+humanOnly on 33 rows: 24 credentials.*/node.credentials.*,
+  // 6 spaceLinks.* writes, servers.add/adopt/remove) — read from the regenerated conformance manifest. MEASURED.
   // Re-measured for Attention v2 S4 (+attentionRequests.markSeen/unresolve/withdraw).
   // Re-measured for W11 (+spaces.projects.list, +spaces.projects.create at
   // /projects/create, +gate.folders.list/create; projects.link stays, decision 29) — read from the regenerated conformance manifest.
@@ -3466,8 +3558,9 @@ export const CATALOG_DIGEST =
   // +2 attentionSignals.raise|clear (Attention v2 S6, stacked on tm8/attention-v2-integration): read from the regenerated conformance manifest.
   // +3 attentionRequests.markSeen|unresolve|withdraw (Attention v2 S4, stacked on tm8/attention-v2-integration): read from the regenerated conformance manifest.
   // Re-measured (W8, 261, rebuilt on main f01b1566): +6 servers.* and the serverConnections create/delete rows. Read from the regenerated conformance manifest.
+  // Re-measured (W5 #917, merges of main dd1c8215 and 2fa4999f): +3 spaces.spacePassword.* on top of main's servers.*, spaceLinks, attention and launch v3 rows. Read from the regenerated conformance manifest.
   // Re-measured (#915 merge of main 0be3b796): main's servers.* + spaceLinks.invoke/audit and the five attention rows together. Read from the regenerated conformance manifest.
-  'sha256:0cc615d74d968f00e2c8f424368ba0c9cb36bfe69d73b5754c2830e9b6b57b1f';
+  'sha256:5513b56c1694d513b34b1c3435bf51f30d44c15336d87b759924d0bd0d53a09b';
 
 export const GRAMMAR_VERSION = '2';
 

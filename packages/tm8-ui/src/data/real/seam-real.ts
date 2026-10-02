@@ -29,6 +29,7 @@
  *      a liveness cadence trigger (LLD §9).
  *   3. connection `onReconnect` → liveness `noteReconnect` — same.
  */
+import { managedPortFromSeam } from '../../managed/port';
 import {
   type CreateInviteInput,
   type InvitePreview,
@@ -227,6 +228,9 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
   // Wires 2 and 3 (see header).
   connection.onEvent((event) => liveness.noteEvent(event));
   connection.onReconnect(() => liveness.noteReconnect());
+  // W3 F1: a space switch under enforce swaps the session cookie, and the
+  // socket only ever speaks as the cookie it upgraded with.
+  const stopCookieWatch = options.spaceSession?.onCookieChanged?.(() => connection.reconnect());
 
   const seam: RealSeam = {
     // -- lifecycle -----------------------------------------------------------
@@ -301,6 +305,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     },
 
     dispose(): void {
+      stopCookieWatch?.();
       connection.dispose();
       liveness.dispose();
       cursorCache?.dispose();
@@ -327,7 +332,14 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
 
     // -- reads ---------------------------------------------------------------
 
-    identity: (): Promise<IdentityView> => ops.identity(),
+    identity: async (): Promise<IdentityView> => {
+      const view = await ops.identity();
+      // W3: the mode tells the space-session port whether to pin up front.
+      // Only seam.identity() feeds advertised(); an enterSpace before it
+      // resolves falls back to learning enforce from the gate's 403.
+      options.spaceSession?.advertised?.(view.spaceSessions);
+      return view;
+    },
     spaces: (): Promise<SpaceSummary[]> => ops.spaces(),
     spaceSettings: (spaceId: SpaceId): Promise<SpaceSettingsView> => ops.spaceSettings(spaceId),
     spaceConfigs: (spaceId: SpaceId): Promise<SpaceConfigsView> => ops.spaceConfigs(spaceId),
@@ -450,6 +462,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
         ops.removeFromCollection(collectionId, entityId, ctx),
       postMessage: (input) => ops.postMessage(input),
       startChat: (input) => ops.startChat(input),
+      setChatModel: (chatId, input) => ops.setChatModel(chatId, input),
       editMessage: (id, input): Promise<CommandResult> => ops.editMessage(id, input),
       react: (id, input) => ops.react(id, input),
       resolveAttention: (id, input) => ops.resolveAttention(id, input),
@@ -529,6 +542,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
         setDefault: (credentialId) => ops.spaceCredentialsSetDefault(credentialId),
         remove: (credentialId) => ops.spaceCredentialsDelete(credentialId),
         policy: (spaceId) => ops.spaceCredentialsPolicy(spaceId),
+        readiness: (spaceId) => ops.spaceCredentialsReadiness(spaceId),
         setPolicy: (spaceId, provider, allowedSources) =>
           ops.spaceCredentialsSetPolicy(spaceId, provider, allowedSources),
         setVisibility: (credentialId, visibility) => ops.spaceCredentialsSetVisibility(credentialId, visibility),
@@ -555,6 +569,19 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       logout: (linkId) => ops.spaceLinksMutate('spaceLinks.logout', linkId),
       remove: (linkId) => ops.spaceLinksMutate('spaceLinks.remove', linkId),
       setSpawn: (linkId, allowSpawn, spawnBudget) => ops.spaceLinksSetSpawn(linkId, allowSpawn, spawnBudget),
+      audit: (linkId) => ops.spaceLinksAudit(linkId),
+    },
+
+    // -- remote servers (W8) --------------------------------------------------
+
+    servers: {
+      get: (serverId) => ops.serversGet(serverId),
+      probe: (serverId) => ops.serversProbe(serverId),
+      remove: (serverId) => ops.serversRemove(serverId),
+    },
+
+    actions: {
+      list: (contextEntityId) => ops.actionsList(contextEntityId),
     },
 
     // -- liveness ------------------------------------------------------------
@@ -573,5 +600,11 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     },
   };
 
+  // After construction: the port is a view over this seam's own nouns.
+  /* Assigned AFTER construction, not inline with the rest of `commands`:
+     `managedPortFromSeam` wraps this seam's own methods, so it needs the
+     finished object. This therefore REQUIRES an unfrozen seam; freezing
+     `seam` or `seam.commands` would break it here and nowhere else. */
+  seam.commands.managed = managedPortFromSeam(seam);
   return seam;
 }

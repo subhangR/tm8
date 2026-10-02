@@ -9,6 +9,18 @@ import type { EntityId, MenuViewRef, SpaceId } from '@tm8/contract';
 import type { CollectionMode, GroupByKey, QueryFilter, SortKey } from '../domain';
 
 /**
+ * The Settings sections an address can open directly (`/settings/{section}`).
+ * `space-credentials` and `space-links` are the SETTINGS HOMES the registry
+ * names for the `credential` and `space_link` kinds (`KindConfig.settingsHome`):
+ * their Home list and detail panel link here, because the human-only doors
+ * (add, rotate, sign in, remove) live in those sections and nowhere else.
+ */
+export const SETTINGS_ROUTE_SECTIONS = [
+  'projects', 'menu', 'credentials', 'configs', 'space-credentials', 'space-links',
+] as const;
+export type SettingsRouteSection = (typeof SETTINGS_ROUTE_SECTIONS)[number];
+
+/**
  * The three outer panel tabs, fixed order — the vocabulary of `t=`.
  *
  * `activity` was a member until 2026-08-19 and is deliberately NOT given a
@@ -181,10 +193,27 @@ export type NavView =
    * codec reads ONE `origin=` parameter and decides which shape it is from the
    * `v-` prefix, so an address cannot carry both.
    */
-  | { view: 'entity'; entityId: EntityId; origin: Origin | null; originView?: MenuViewRef | null }
+  | {
+      view: 'entity';
+      entityId: EntityId;
+      origin: Origin | null;
+      originView?: MenuViewRef | null;
+      /*
+       * PR 1004 (story page). `full` = the Z4 full view (`?full=1`) — the bare
+       * and origin-bearing forms already mean "the kind screen with this entity
+       * open", so the full view needs its own mark. Drawn only for kinds whose
+       * registry row sets `panel.fullView`. `hops` / `kinds` are the story
+       * graph's view filter (`?hops=2&kinds=task,doc`), carried so a reload
+       * and a shared link keep them. All three are omitted when unset, so
+       * every address that existed before builds the same bytes.
+       */
+      full?: boolean;
+      hops?: 1 | 2 | 3 | null;
+      kinds?: readonly string[] | null;
+    }
   | { view: 'channels' }
   | { view: 'channel'; channelId: EntityId; msg: EntityId | null }
-  | { view: 'settings'; section: 'projects' | 'menu' | 'credentials' | 'configs' | null }
+  | { view: 'settings'; section: SettingsRouteSection | null }
   /*
    * The four screens that rendered from the rail with NO route line, added by
    * the 2026-08-14 amendment to WLT §2.1/§2.2.

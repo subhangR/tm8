@@ -53,6 +53,39 @@ export function splitTaskSkillCollisions<T extends ResolvedSkillRow>(rows: reado
   return { kept, collided };
 }
 
+/**
+ * A LAUNCH SELECTION IS NOT CURATED EITHER. The launch card pre-ticks the
+ * persona's equipment and lets a person tick any space skill beside it, so a
+ * selection can name two different skills that share a name (a space holding a
+ * full skill and a short reference card of it). That is a pick, not a
+ * hierarchy mistake, and it must not fail the launch.
+ *
+ * `picked` holds the ids the person added for THIS launch (not equipped). A
+ * picked skill beats an equipped one of the same identity, since ticking it
+ * was the explicit choice; between two picks the first in order wins. Every
+ * loser is returned for the caller to declare as skipped. Collisions between
+ * equipped rows only are left alone, so the persona path still throws.
+ */
+export function splitSelectionSkillCollisions<T extends ResolvedSkillRow>(
+  rows: readonly T[],
+  picked: ReadonlySet<string>,
+): { kept: T[]; collided: T[] } {
+  const pickedWinner = new Map<string, string>();
+  for (const row of rows) {
+    if (!picked.has(row.entityId)) continue;
+    const key = skillIdentityKey(row);
+    if (!pickedWinner.has(key)) pickedWinner.set(key, row.entityId);
+  }
+  const kept: T[] = [];
+  const collided: T[] = [];
+  for (const row of rows) {
+    const winner = pickedWinner.get(skillIdentityKey(row));
+    if (winner === undefined || winner === row.entityId) kept.push(row);
+    else collided.push(row);
+  }
+  return { kept, collided };
+}
+
 /** Nearest-first equipment. Files have path identity; graph cards have name identity. */
 export function resolveSkills(rows: readonly ResolvedSkillRow[]): SkillResolution {
   const seen = new Set<string>();

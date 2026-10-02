@@ -519,6 +519,41 @@ function renderConfigs(dto: unknown): string {
   );
 }
 
+/**
+ * `space credential-readiness get` (credentials R1/S7): the two thresholds on
+ * separate lines, never one tick. can-launch is per provider for the caller;
+ * can-poll is the space-owned public GitHub credential background readers use.
+ */
+function renderCredentialReadiness(dto: unknown): string {
+  const sub = (row: unknown, name: string): unknown =>
+    row === null || typeof row !== 'object' ? undefined : (row as Record<string, unknown>)[name];
+  const launch = sub(dto, 'canLaunch');
+  const poll = sub(dto, 'canPoll');
+  if (launch === undefined || poll === undefined) return fallback(dto);
+  const providers = sub(launch, 'providers');
+  const providerLine = (p: string): string => {
+    const row = sub(providers, p);
+    const detail = field(row, 'ready') === 'true'
+      ? `ready via ${field(row, 'via') ?? '?'} (${field(row, 'credentialId') ?? '?'})`
+      : `MISSING: ${field(row, 'reason') ?? 'no_credential'}`;
+    return `  ${p.padEnd(9)} ${detail}  [active in space: ${field(row, 'activeCredentials') ?? '0'}]`;
+  };
+  return joinLines(
+    [
+      `space ${field(dto, 'spaceId') ?? '?'}`,
+      `can launch: ${field(launch, 'ready') === 'true' ? 'yes' : 'no'}`,
+      ...['anthropic', 'openai', 'github'].map(providerLine),
+      field(poll, 'ready') === 'true'
+        ? `can poll/hydrate: yes (space-owned github ${field(poll, 'credentialId') ?? '?'})`
+        : `can poll/hydrate: no — ${field(poll, 'reason') ?? 'no_space_owned_credential'} (needs an active space-owned github credential)`,
+      field(launch, 'ready') === 'true' && field(poll, 'ready') === 'true'
+        ? undefined
+        : 'fix: connect a credential in this space under Space settings → Credentials',
+    ],
+    fallback(dto),
+  );
+}
+
 function renderLeaderboard(dto: unknown): string {
   const rows = rowsOf(dto, 'items');
   return joinLines(
@@ -695,7 +730,9 @@ async function spaceUpdate(cmd: CommandContext): Promise<ExitCode> {
 /** The three read-only Space projections, which differ only in row and renderer. */
 function spaceProjection(
   command: string,
-  operation: 'spaces.navigation' | 'spaces.home' | 'spaces.settings' | 'spaces.counts' | 'spaces.configs' | 'spaces.chatDefaults.get',
+  operation:
+    | 'spaces.navigation' | 'spaces.home' | 'spaces.settings' | 'spaces.counts' | 'spaces.configs'
+    | 'spaces.chatDefaults.get' | 'credentials.space.readiness',
   render: (dto: unknown) => string,
 ): (cmd: CommandContext) => Promise<ExitCode> {
   return async (cmd) => {
@@ -893,6 +930,8 @@ async function spaceInviteRedeem(cmd: CommandContext): Promise<ExitCode> {
 
   const body = mutationBody(cmd);
   body.code = code;
+  const spacePassword = cmd.options.value('space-password');
+  if (spacePassword !== undefined) body.spacePassword = spacePassword;
 
   const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'spaces.invites.redeem', { body });
   cmd.out.data(data, fallback);
@@ -1342,4 +1381,8 @@ export const SPACE_COMMANDS: CommandModule[] = [
     run: spaceProjection('space chat-defaults get', 'spaces.chatDefaults.get', renderChatDefaults),
   },
   { path: ['space', 'chat-defaults', 'set'], run: spaceChatDefaultsSet },
+  {
+    path: ['space', 'credential-readiness', 'get'],
+    run: spaceProjection('space credential-readiness get', 'credentials.space.readiness', renderCredentialReadiness),
+  },
 ];

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { CollectionQuery, GraphQuery, OperationName } from '@tm8/contract';
 import type { Db, DbClaims, Querier } from '../../src/db/types.js';
 import type { FacadeDeps } from '../../src/facade/deps.js';
-import { queryCollection } from '../../src/facade/handlers/collections.js';
+import { queryCollection, searchWords } from '../../src/facade/handlers/collections.js';
 import {
   queryGraph,
   registerW2CollectionsGraphUndoHandlers,
@@ -336,6 +336,57 @@ describe('W2.G05 collection, graph, and undo handlers', () => {
       expect(read!.params).toContain('50% Plan');
       expect(read!.sql).not.toContain('50% Plan');
     }
+  });
+
+  it('turns filters.words into an every-word predicate over title and short description, in the total too', async () => {
+    const captured: Array<{ sql: string; params: readonly unknown[] }> = [];
+    const q: Querier = {
+      query: async <R>(sql: string, params: readonly unknown[] = []): Promise<R[]> => {
+        captured.push({ sql, params });
+        return (sql.includes(' as __sort') ? fullPage() : []) as R[];
+      },
+      rpc: async <T>(): Promise<T> => ({}) as T,
+    };
+    await queryCollection(
+      q,
+      { spaceId: SPACE_ID, kinds: ['skill'], filters: { words: '  Skill creator ' }, limit: 1 },
+      'g05-owner',
+    );
+    const pageRead = captured.find((call) => call.sql.includes(' as __sort'));
+    const totalRead = captured.find((call) => call.sql.includes('count(*)::int as total'));
+    for (const read of [pageRead, totalRead]) {
+      expect(read).toBeDefined();
+      expect(read!.sql).toMatch(/not exists \(\s*select 1 from unnest\(\$\d+::text\[\]\) word/);
+      expect(read!.sql).toContain('coalesce(sk.description, sp.description, art.description, col.description');
+      // The words are bound as one array, lowercased — never the raw phrase.
+      expect(read!.params).toContainEqual(['skill', 'creator']);
+      expect(read!.sql).not.toContain('creator');
+    }
+  });
+
+  it('splits a words query on whitespace and name separators, once each, at most eight', () => {
+    expect(searchWords('Skill creator')).toEqual(['skill', 'creator']);
+    expect(searchWords('frontend-design')).toEqual(['frontend', 'design']);
+    expect(searchWords(' a_b.c/d:e  ')).toEqual(['a', 'b', 'c', 'd', 'e']);
+    expect(searchWords('pdf PDF')).toEqual(['pdf']);
+    expect(searchWords('50% plan')).toEqual(['50%', 'plan']);
+    expect(searchWords('---')).toEqual([]);
+    expect(searchWords('1 2 3 4 5 6 7 8 9 10')).toHaveLength(8);
+  });
+
+  it('keeps a separators-only words query a literal title match rather than everything', async () => {
+    const captured: Array<{ sql: string; params: readonly unknown[] }> = [];
+    const q: Querier = {
+      query: async <R>(sql: string, params: readonly unknown[] = []): Promise<R[]> => {
+        captured.push({ sql, params });
+        return (sql.includes(' as __sort') ? fullPage() : []) as R[];
+      },
+      rpc: async <T>(): Promise<T> => ({}) as T,
+    };
+    await queryCollection(q, { spaceId: SPACE_ID, filters: { words: ' -- ' }, limit: 1 }, 'g05-owner');
+    const pageRead = captured.find((call) => call.sql.includes(' as __sort'));
+    expect(pageRead!.sql).toMatch(/position\(lower\(\$\d+::text\) in lower\(coalesce\(t\.title/);
+    expect(pageRead!.params).toContain('--');
   });
 
   it('enriches a pull_request node with the same forge-fact fields as the connections read', async () => {

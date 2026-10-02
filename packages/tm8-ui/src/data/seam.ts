@@ -1,10 +1,11 @@
 import type { FormsPendingForSessionsResult } from '@tm8/contract';
 import type { SkillPort } from '../skills/port';
+import type { ManagedPort } from '../managed/port';
 import type { JevPort } from '../jev/port';
 import type { LaunchDefaultsPort } from '../launch-selection/port';
 import type { FormsOps } from '../forms/ops-port';
 import type { FixtureJevScenario } from './fixtures/jev-fixture';
-import type { LaunchSuggestInput } from '@tm8/contract';
+import type { LaunchSuggestInput, SpaceSessionsMode } from '@tm8/contract';
 /**
  * THE FACADE SEAM — the typed interface the UI consumes for everything between
  * the server's HTTP/WS surface and the UI's stores.
@@ -153,6 +154,7 @@ import type {
   CredentialsSpaceListView,
   CredentialsSpacePolicySetResult,
   CredentialsSpacePolicyView,
+  CredentialsSpaceReadinessView,
   CredentialsSpaceSetVisibilityResult,
   CredentialsSpaceMyDefaultResult,
   CredentialsSpaceUsageView,
@@ -161,8 +163,13 @@ import type {
   NodeCredentialsStatusView,
   NodeMetricsView,
   SpaceCredentialProviderName,
+  SpaceCredentialStoredProviderName,
   SpaceCredentialView,
   SpaceLinkView,
+  SpaceLinkAuditEntry,
+  ServerView,
+  ServerProbeView,
+  ActionRows,
   CredentialsServiceKeysStatusView,
   ServiceKeyProviderName,
   ServiceKeyView,
@@ -251,6 +258,8 @@ import type {
   SessionLaunchRecord,
   SessionTranscriptPage,
   HomeSnapshot,
+  SetChatModelInput,
+  SetChatModelResult,
   StartChatInput,
   StartChatResult,
   SpaceId,
@@ -359,6 +368,11 @@ export interface IdentityView {
   status: string;
   actingAs: string | null;
   memberships: Array<{ spaceId: string; memberId: string; role: string }>;
+  /**
+   * The node's `TM8_SPACE_SESSIONS` mode (contract `IdentityGetResult`).
+   * Absent from a node that predates the field: unknown, not `agents`.
+   */
+  spaceSessions?: SpaceSessionsMode;
 }
 
 /**
@@ -931,6 +945,12 @@ export interface Seam {
      */
     skills?: SkillPort;
     /**
+     * The managed panel's port (task 01a0e24d): credential, space link and
+     * server verbs by OPERATION name, gated by `actions.list`. Optional like
+     * `skills`: a seam without it renders every verb refused-with-reason.
+     */
+    managed?: ManagedPort;
+    /**
      * `launch.suggest` — Ask Jev on LaunchSheet and the Run popup (design
      * 01a0cb80 §5.1). Optional like `skills`: a seam without it renders the
      * button refused-with-reason, never hidden.
@@ -976,6 +996,25 @@ export interface Seam {
      * opening turn in one transaction; there is no root message to post first.
      */
     startChat(input: StartChatInput): Promise<StartChatResult>;
+    /**
+     * `chat.setModel` (276) — move an EXISTING chat onto another model.
+     *
+     * Its sibling above creates a chat with a model; this is the only door that
+     * changes one afterwards, and it exists because the model stopped being a
+     * write-once fact: a Claude Code session carries turns from several models
+     * and `--resume` keeps the transcript, so the chat's model is a setting.
+     *
+     * NAMES A MODEL AND NEVER A PROVIDER. The server resolves provider from the
+     * launch catalog, and that is not a convenience — provider decides which
+     * API key the child is given, so accepting one from a browser would let the
+     * page choose whose credential to spend. The resolved provider comes back in
+     * the result so a caller can show what it actually got.
+     *
+     * Returns as soon as the setting is stored. The live child keeps running on
+     * the old model until the next turn is claimed; nothing here interrupts an
+     * answer in flight to apply a choice about the answer after it.
+     */
+    setChatModel(chatId: EntityId, input: SetChatModelInput): Promise<SetChatModelResult>;
     editMessage(id: EntityId, input: PatchMessageInput): Promise<CommandResult>;
     react(id: EntityId, input: ReactionInput): Promise<CommandResult>;
     resolveAttention(id: EntityId, input: ResolveEntityAttentionInput): Promise<AttentionRequestMutationResult>;
@@ -1384,6 +1423,12 @@ export interface Seam {
       /** Revoke, then kill every live session on it whoever launched it (D7). */
       remove(credentialId: string): Promise<CredentialsSpaceDeleteResult>;
       policy(spaceId: SpaceId): Promise<CredentialsSpacePolicyView>;
+      /**
+       * Credentials release 1, S7: the space's readiness at TWO thresholds —
+       * can-launch (per provider, for the caller) and can-poll (a space-owned
+       * public GitHub credential). Metadata only; member-scoped.
+       */
+      readiness(spaceId: SpaceId): Promise<CredentialsSpaceReadinessView>;
       setPolicy(
         spaceId: SpaceId,
         provider: SpaceCredentialProviderName,
@@ -1399,7 +1444,7 @@ export interface Seam {
       spaceDefaultConsent(credentialId: string, allowed: boolean): Promise<SpaceCredentialView>;
       claim(credentialId: string): Promise<SpaceCredentialView>;
       setMyDefault(credentialId: string): Promise<CredentialsSpaceMyDefaultResult>;
-      clearMyDefault(spaceId: SpaceId, provider: SpaceCredentialProviderName): Promise<CredentialsSpaceMyDefaultResult>;
+      clearMyDefault(spaceId: SpaceId, provider: SpaceCredentialStoredProviderName): Promise<CredentialsSpaceMyDefaultResult>;
       usage(credentialId: string): Promise<CredentialsSpaceUsageView>;
       /** "Add to this space as private" for the caller's own GitHub token (093). The body names no token. */
       addMine(spaceId: SpaceId, provider: 'github', label: string): Promise<SpaceCredentialView>;
@@ -1432,6 +1477,35 @@ export interface Seam {
     remove(linkId: EntityId): Promise<SpaceLinkView>;
     /** `spawnBudget` 0..100; omitted keeps the current budget. */
     setSpawn(linkId: EntityId, allowSpawn: boolean, spawnBudget?: number): Promise<SpaceLinkView>;
+    /**
+     * W7 `spaceLinks.audit`: the cross-space invokes made through this link —
+     * the viewer's own rows, every row for a home admin (260). No token, no
+     * body: op, result, reason and the ids involved.
+     */
+    audit(linkId: EntityId): Promise<SpaceLinkAuditEntry[]>;
+  };
+
+  /**
+   * -- remote servers (`servers.*`, W8, migration 261) ------------------------
+   *
+   * A `server` entity lives in a home space. `get` and `probe` are open to its
+   * home members; `adopt` and `remove` are HUMAN-ONLY in SQL. No answer carries
+   * a gate token — `mine` is the caller's gate-session metadata only.
+   */
+  servers: {
+    get(serverId: EntityId): Promise<ServerView>;
+    /** Reachability through the SSRF-guarded client; the answer is recorded. */
+    probe(serverId: EntityId): Promise<ServerProbeView>;
+    remove(serverId: EntityId): Promise<ServerView>;
+  };
+
+  /**
+   * `actions.list` (tm8.actions.v2) for one context entity: what THIS actor
+   * may do on it right now. The panel's verb bar reads this and nothing else
+   * to decide which verbs are live — never a hardcoded list.
+   */
+  actions: {
+    list(contextEntityId: EntityId): Promise<ActionRows>;
   };
 
   // -- liveness (Delta 2, LLD C-1 / §9) --------------------------------------

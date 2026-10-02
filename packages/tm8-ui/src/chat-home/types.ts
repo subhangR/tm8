@@ -347,6 +347,51 @@ export interface ChatPostInput {
   clientMutationId: string;
   /** Same contract as `ChatCreateInput.attachmentIds` — every turn may carry files. */
   attachmentIds?: EntityId[];
+  /**
+   * THE MODE THIS ONE TURN RUNS UNDER, and the reason it is per-turn rather
+   * than a second `setModel`-style write.
+   *
+   * The server has carried this since 153/154: `messages.requested_chat_mode`
+   * is copied onto `chat_turns.mode` by the enqueue trigger, and the claim
+   * resolves `coalesce(turn.mode, chat.chat_mode)` — so a turn names its own
+   * mode and the chat's default covers the rest. `PostMessageInput.mode`
+   * already accepts it on the wire; nothing in this UI was sending it.
+   *
+   * It needs NO relaunch, which is what separates it from the model: the
+   * system prompt is deliberately mode-independent and carries a guide to
+   * every mode (`chatSystemPrompt`, "input.chatMode is not read here"), each
+   * turn's `[mode: x]` envelope line selects which one applies, and the tool
+   * surface does not vary — `toolPermission` returns 'allow' for every mode,
+   * so `exposedToolNames` is the identity filter. A mode states INTENT, not
+   * permission.
+   *
+   * OMITTED means "the thread's default", and stays omitted unless the viewer
+   * actually picks something, so `requested_chat_mode` stays NULL on a turn
+   * nobody redirected.
+   */
+  mode?: ChatMode;
+}
+
+/**
+ * MOVE AN OPEN CHAT ONTO ANOTHER MODEL (276).
+ *
+ * Deliberately NOT a field on `ChatPostInput`. The model is a property of the
+ * CHAT, not of one message: a per-message field would make every turn a place
+ * the model could silently differ, and would have to be re-sent identically on
+ * every send to mean "no change". Sending the change once, when the human makes
+ * it, is also what lets the rail show the current model without inspecting the
+ * last message.
+ */
+export interface ChatSetModelInput {
+  chatId: EntityId;
+  /** A launch-catalog model id running the same agent tool as the chat. */
+  model: string;
+}
+
+export interface ChatSetModelResult {
+  model: string;
+  /** Server-resolved from the model. Shown nowhere yet; kept so it cannot be invented. */
+  provider: string;
 }
 
 export interface ChatStartResult {
@@ -404,6 +449,16 @@ export interface ChatHomePort {
   };
   /** Every later turn is a messages.post ANCHORED on the chat. */
   postTurn(input: ChatPostInput): Promise<ChatPostResult>;
+  /**
+   * `chat.setModel` (276) — the only door that changes an existing chat's model.
+   *
+   * OPTIONAL for the same reason as `listProjects`: a port without one leaves the
+   * model control locked with the reason it has always shown, which is the truth
+   * on a node whose server has no such operation. The screen must therefore
+   * check for it rather than assume it, and a stale port literal in a test keeps
+   * working instead of crashing on a member it never declared.
+   */
+  setModel?(input: ChatSetModelInput): Promise<ChatSetModelResult>;
   interrupt?(chatId: EntityId): Promise<void>;
   subscribe(listener: (frame: ChatTurnFrame) => void): () => void;
   /**

@@ -45,7 +45,7 @@ describe('totality over the frozen core-kind set (WLT §2.1)', () => {
     for (const kind of CORE_KINDS) expect(rows.has(kind)).toBe(true);
   });
 
-  it('measures 27 core kinds plus exactly one c:* fallback row', () => {
+  it('measures 29 core kinds plus exactly one c:* fallback row', () => {
     // The count is measured from the contract, never asserted from a doc (D11).
     // 15 → 16 on 2026-07-31 when `voice_channel` joined CoreEntityKindSchema;
     // then `memory`, `worktree` and `artifact` landed the same day → 19;
@@ -60,8 +60,9 @@ describe('totality over the frozen core-kind set (WLT §2.1)', () => {
     // .options.length` here would make the assertion tautological and the row
     // below could silently drift from the contract again.
     // 25 -> 26 (W10a): `credential`; 26 -> 28 (W6): `space_link` + `server`.
+    // 28 -> 29 (283): `story`.
     // MEASURED: CoreEntityKindSchema.options.length.
-    expect(CORE_KINDS.length).toBe(28);
+    expect(CORE_KINDS.length).toBe(29);
     expect(allKinds()).toHaveLength(CORE_KINDS.length + 1);
     expect(allKinds().filter((r) => r.kind === CUSTOM_KIND_FALLBACK)).toHaveLength(1);
   });

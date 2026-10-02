@@ -22,6 +22,7 @@ import type {
   StartShellSessionResult,
   SpawnContext,
   Tm8Manifest,
+  CredentialBindingLaunch,
   TransitionInput,
   WorkSessionResumeInfo,
   WorkSessionStatus,
@@ -62,6 +63,8 @@ export class FakeGraph implements GraphPort {
   > = [];
   readonly transitions: TransitionInput[] = [];
   readonly commands: RecordCommandInput[] = [];
+  /** resume's `recordCredentialBinding` calls (session_credential_binding), in order. */
+  readonly credentialBindings: Array<{ sessionId: string; launch: CredentialBindingLaunch }> = [];
   readonly manifests: Array<{
     sessionId: string;
     manifest: Tm8Manifest;
@@ -172,7 +175,15 @@ export class FakeGraph implements GraphPort {
       this.taskState.set(id, task.status === 'open' ? { version: task.version + 1, status: 'working' } : task);
     }
     const sessionId = this.options.sessionId ?? randomUUID();
-    return { sessionId, commandResult: { entityId: sessionId, patches: [sessionId] }, replayed: false };
+    // 267: `newTaskTitle` creates the task inside the spawn, started.
+    const createdTaskId = input.newTaskTitle ? randomUUID() : undefined;
+    if (createdTaskId) this.taskState.set(createdTaskId, { version: 2, status: 'working' });
+    return {
+      sessionId,
+      commandResult: { entityId: sessionId, patches: [sessionId] },
+      replayed: false,
+      ...(createdTaskId ? { createdTaskId } : {}),
+    };
   }
 
   // --- vanilla terminals (101) ------------------------------------------------
@@ -293,6 +304,15 @@ export class FakeGraph implements GraphPort {
   ): Promise<void> {
     this.authSeen.push(auth);
     this.manifests.push({ sessionId, manifest, envVarNames, prompts });
+  }
+
+  async recordCredentialBinding(
+    auth: GraphAuth,
+    sessionId: string,
+    launch: CredentialBindingLaunch,
+  ): Promise<void> {
+    this.authSeen.push(auth);
+    this.credentialBindings.push({ sessionId, launch });
   }
 
   async transition(auth: GraphAuth, input: TransitionInput): Promise<void> {

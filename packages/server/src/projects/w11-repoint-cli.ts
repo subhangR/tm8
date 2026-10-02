@@ -3,7 +3,7 @@
  * against the node database, AFTER W11-migrate's real run and BEFORE the W11-repoint migration:
  *
  *   TM8_DATABASE_URL=postgres://… node packages/server/dist/projects/w11-repoint-cli.js --dry-run
- *     [--migration db/migrations/989_w11_repoint_project_entity.sql]
+ *     [--migration db/migrations/286_w11_repoint_project_entity.sql]
  *     [--confirmed <file.json>] [--format md|json]
  *
  * Applies the W11-repoint migration inside one transaction between two counts and ROLLS BACK. Exit
@@ -24,7 +24,7 @@ import pg from 'pg';
 
 import { dryRunRepoint, formatRepointReport, type W11ConfirmedTable } from './w11-repoint.js';
 
-export const MIGRATION_FILE = '989_w11_repoint_project_entity.sql';
+export const MIGRATION_FILE = '286_w11_repoint_project_entity.sql';
 
 /** packages/server/{src,dist}/projects -> repo root db/migrations. */
 export function defaultMigrationPath(): string {

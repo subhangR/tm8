@@ -14,8 +14,12 @@ import {
   credentialOrigin,
   credentialsPath,
   credentialStoreFor,
+  dropSpaceCredentials,
   isAgentContext,
+  spaceCredentialKey,
+  storeSpaceCredential,
   tokenSessionId,
+  type CredentialStore,
 } from '../src/credentials.js';
 
 const cleanups: Array<() => void> = [];
@@ -145,5 +149,83 @@ describe('the file backend — a 0600 file written atomically', () => {
     expect(s.get(ORIGIN_A)).toBeUndefined();
     s.set(ORIGIN_B, 'tm8s_b.s');
     expect(s.get(ORIGIN_B)).toBe('tm8s_b.s');
+  });
+});
+
+/**
+ * The space index when its slot misbehaves. A keychain index that EXISTS but
+ * cannot be read (locked keychain, denied prompt) throws from getSpaceIndex;
+ * the store must then never write the index back, and a failing index write
+ * must never fail a logout. An in-memory store stands in for the keychain,
+ * which this file never touches (see the header).
+ */
+describe('the space index slot, when it cannot be read or written', () => {
+  const ORIGIN = 'https://node.example';
+  const GATE = 'tm8s_09090909-0000-4000-8000-000000000009.gate';
+  const PIN_A = spaceCredentialKey(ORIGIN, 'space-a', '09090909-0000-4000-8000-000000000009');
+  const PIN_B = spaceCredentialKey(ORIGIN, 'space-b', '09090909-0000-4000-8000-000000000009');
+
+  function memoryStore(opts: { indexRead?: 'ok' | 'throws'; indexWrite?: 'ok' | 'throws' }) {
+    const entries = new Map<string, string>();
+    let index: string[] = [];
+    const writes: string[][] = [];
+    const store: CredentialStore = {
+      kind: 'file',
+      get: (origin) => entries.get(origin),
+      set: (origin, token) => void entries.set(origin, token),
+      delete: (origin) => entries.delete(origin),
+      getSpaceIndex: () => {
+        if (opts.indexRead === 'throws') throw new Error('security find-generic-password failed (51)');
+        return [...index];
+      },
+      setSpaceIndex: (_origin, keys) => {
+        if (opts.indexWrite === 'throws') throw new Error('security add-generic-password failed (51)');
+        writes.push([...keys]);
+        index = [...keys];
+      },
+    } as CredentialStore;
+    return { store, entries, writes, index: () => index };
+  }
+
+  it('an unreadable index is never overwritten by the legacy fold, and logout still revokes the legacy pins', () => {
+    const m = memoryStore({ indexRead: 'throws' });
+    m.entries.set(ORIGIN, GATE);
+    m.entries.set(PIN_A, 'pin-a');
+    m.entries.set(`${ORIGIN}#spaces`, PIN_A);
+
+    expect(dropSpaceCredentials(m.store, ORIGIN)).toEqual(['pin-a']);
+    expect(m.writes).toEqual([]); // neither the fold nor the clear wrote over it
+    expect(m.entries.get(`${ORIGIN}#spaces`)).toBe(PIN_A); // left for a readable retry
+    expect(m.entries.has(PIN_A)).toBe(false);
+  });
+
+  it('an unreadable index is not replaced by a one-key index when a pin is stored', () => {
+    const m = memoryStore({ indexRead: 'throws' });
+    m.entries.set(ORIGIN, GATE);
+    storeSpaceCredential(m.store, ORIGIN, 'space-b', 'pin-b');
+    expect(m.entries.get(PIN_B)).toBe('pin-b');
+    expect(m.writes).toEqual([]);
+  });
+
+  it('a failing index write does not fail logout: the fold keeps the legacy entry, the pins are still returned', () => {
+    const m = memoryStore({ indexWrite: 'throws' });
+    m.entries.set(ORIGIN, GATE);
+    m.entries.set(PIN_A, 'pin-a');
+    m.entries.set(`${ORIGIN}#spaces`, PIN_A);
+
+    expect(() => dropSpaceCredentials(m.store, ORIGIN)).not.toThrow();
+    expect(m.entries.has(PIN_A)).toBe(false);
+    expect(m.entries.get(`${ORIGIN}#spaces`)).toBe(PIN_A);
+  });
+
+  it('the positive control: a readable index folds the legacy entry once and is cleared on logout', () => {
+    const m = memoryStore({});
+    m.entries.set(ORIGIN, GATE);
+    m.entries.set(PIN_A, 'pin-a');
+    m.entries.set(`${ORIGIN}#spaces`, PIN_A);
+
+    expect(dropSpaceCredentials(m.store, ORIGIN)).toEqual(['pin-a']);
+    expect(m.writes).toEqual([[PIN_A], []]);
+    expect(m.entries.has(`${ORIGIN}#spaces`)).toBe(false);
   });
 });

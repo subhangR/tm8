@@ -400,3 +400,48 @@ describe('I8: a roster teammate entry (design 01a0d348 §8 I8)', () => {
     expect(serializeContextIndex(parsed)).toBe(serializeContextIndex(index));
   });
 });
+
+describe('fitContextIndex: minEntries and the cross-group shrink (launch card v3, D7 point 4)', () => {
+  const bare = (i: number): PromptContextEntry => ({ ...ref(i), header: { name: `Doc ${i}`, whenToUse: `when ${i}`, summary: null } });
+  const mem = (i: number): PromptContextEntry => ({
+    id: `mem-${i}`, kind: 'memory', via: 'teammate', load: loadPointerFor('memory', `mem-${i}`), header: { whenToUse: `remember ${i}` },
+  });
+  const candidates = (): PromptContextGroup[] => [
+    group('memories', [0, 1, 2].map(mem)),
+    group('references', [0, 1, 2, 3, 4].map(bare)),
+    group('skills', [0, 1].map(skill)),
+  ];
+  const minEntries = { memories: 1, references: 1, skills: 1, teammates: 0 };
+  const giveWay = ['teammates', 'references', 'skills', 'memories'] as const;
+  /** The index bytes of `candidates` cut to `keep` entries per group, the rest declared omitted. */
+  const target = (keep: Record<string, number>): number => {
+    const groups = candidates().map((g) => ({ ...g, entries: g.entries.slice(0, keep[g.name]), omitted: g.entries.length - keep[g.name]! }));
+    return utf8Bytes(serializeContextIndex({ groups })) + 1;
+  };
+
+  it('shrinks the deepest-ranked entry across groups first, and never takes a group below its minimum', () => {
+    const fit = fitContextIndex({ groups: candidates(), available: target({ memories: 1, references: 1, skills: 1 }), caps: [], minEntries, giveWay: [...giveWay] });
+    expect(fit.index.groups.map((g) => [g.name, g.entries.map((e) => e.id)])).toEqual([
+      ['memories', ['mem-0']],
+      ['references', ['doc-0']],
+      ['skills', ['skill-0']],
+    ]);
+    // References (5) were the deepest, so they gave first; the last drop is a tie broken by give-way order.
+    const entryDrops = fit.drops.filter((d) => d.level === 'entry');
+    expect(entryDrops.slice(0, 2).map((d) => d.id)).toEqual(['doc-4', 'doc-3']);
+    expect(entryDrops).toHaveLength(7);
+  });
+
+  it('when even the minimums do not fit, groups give way lowest tier first: references before skills before memories', () => {
+    const fit = fitContextIndex({ groups: candidates(), available: target({ memories: 1, references: 0, skills: 1 }), caps: [], minEntries, giveWay: [...giveWay] });
+    expect(fit.index.groups.map((g) => [g.name, g.entries.length])).toEqual([['memories', 1], ['references', 0], ['skills', 1]]);
+    const tight = fitContextIndex({ groups: candidates(), available: target({ memories: 1, references: 0, skills: 0 }), caps: [], minEntries, giveWay: [...giveWay] });
+    expect(tight.index.groups.map((g) => [g.name, g.entries.length])).toEqual([['memories', 1], ['references', 0], ['skills', 0]]);
+  });
+
+  it('never refuses: with no room at all everything is a recorded byte-budget drop', () => {
+    const fit = fitContextIndex({ groups: candidates(), available: 10, caps: [], minEntries, giveWay: [...giveWay] });
+    expect(fit.bytes).toBe(0);
+    expect(fit.drops.filter((d) => d.level === 'entry')).toHaveLength(10);
+  });
+});

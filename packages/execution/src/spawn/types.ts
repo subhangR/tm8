@@ -23,11 +23,13 @@ import type {
   SpawnSelection,
   SpawnSelectionDefaultReason,
   SpawnSelectionGroup,
+  ExecutionSpawnLaunch,
+  SpawnAccessModeSource,
 } from '@tm8/contract';
-import type { CoordinatorKind, PromptContextIndex, PromptVersion } from '@tm8/prompt';
+import type { CoordinatorKind, PromptContextIndex, PromptStoryContext, PromptVersion } from '@tm8/prompt';
 import type { WorkSessionUsage, WorkSessionUsageSource } from '../transcript/session-usage.js';
 
-export type { CoordinatorKind };
+export type { CoordinatorKind, ExecutionSpawnLaunch, SpawnAccessModeSource };
 
 /** Agent execution mode — mirrors work_sessions.mode's CHECK constraint. */
 export type AgentMode =
@@ -395,7 +397,7 @@ export interface SessionLaunchPosture {
    */
   skillOverrides?: Record<string, unknown> | null;
   /** `context.index.source`: the launch rendered `<context_index>`; resume renders it too. */
-  contextIndex?: 'env' | 'profile' | null;
+  contextIndex?: 'env' | 'profile' | 'default' | null;
 }
 
 /** A project as the server computed it — `workingDir` is graph truth (S11). */
@@ -539,6 +541,8 @@ export interface SpawnContext {
     title: string | null;
     via: 'selection' | 'linked' | 'attached';
     link?: string;
+    /** A file's declared mime, for its `<attachments>` line (files are never index entries). */
+    mime?: string | null;
   }>;
   /**
    * Selection headers (`GraphPort.loadContextHeaders`, under RLS) for the
@@ -563,6 +567,16 @@ export interface SpawnContext {
    * read are declared, never dropped silently.
    */
   roster?: DispatcherRoster;
+  /**
+   * The EXACT teammates group when the launch selected teammates
+   * (`selection.teammateIds`, launch card v3 Decision 7), in the selected
+   * order, the launch teammate removed; each a live, same-space teammate the
+   * caller can read, with the roster's columns. Rendered as the `teammates`
+   * group of `<context_index>`, replacing the tasks' linked teammates.
+   * Absent when teammates were not selected, and for a dispatcher, which
+   * keeps its roster (`applyDispatcherTeammates` removes the set).
+   */
+  teammates?: DispatcherRoster['members'];
 }
 
 /** The teammates a dispatcher routes to, as `loadDispatcherRoster` read them. */
@@ -579,6 +593,8 @@ export interface SpawnContextAudit {
    * group's edge-driven defaults. A group not listed kept its defaults.
    */
   selectedGroups: ReadonlyArray<SpawnSelectionGroup>;
+  /** `selection.teammateIds` a dispatcher ignored (`applyDispatcherTeammates`). */
+  teammatesIgnored?: number;
   /** One per `teamMember.memoryIds` entry, same order. */
   memoryVia: ContextVia[];
   /** Skills that are in the session only because the selection named them. */
@@ -618,7 +634,13 @@ export interface ContextGroupAudit {
    * validated at the wire, audit-only). `replay-invalid`: a resume found the
    * launch's recorded selection malformed, so it loaded the defaults instead.
    */
-  reason?: 'no-selection' | 'not-selectable' | 'replay-invalid' | SpawnSelectionDefaultReason;
+  reason?: 'no-selection' | 'not-selectable' | 'replay-invalid' | 'dispatcher-roster' | SpawnSelectionDefaultReason;
+  /**
+   * Teammates only, with reason `dispatcher-roster`: how many
+   * `selection.teammateIds` a dispatcher launch ignored (it keeps its full
+   * roster).
+   */
+  ignored?: number;
   /** Linked rows (a dispatcher's teammates: roster rows) beyond the spawn read; declared as `omitted` in the prompt. */
   unread?: number;
   /** See `SpawnContextAudit.legacyMemoriesDropped`. */
@@ -657,6 +679,7 @@ export type ContextDropReason =
   | 'not-selected'
   | 'byte-budget'
   | 'task-name-collision'
+  | 'selection-name-collision'
   | 'native-shadowed'
   | 'count-cap'
   /**
@@ -725,8 +748,8 @@ export interface ContextBudgetsRecord {
 
 /** `manifest.context.index`. */
 export interface ContextIndexRecord {
-  /** `env`: `TM8_CONTEXT_INDEX`; `profile`: the pinned profile's `contextIndex`. */
-  source: 'env' | 'profile';
+  /** `default`: always on (launch card v3); `env` / `profile`: the switch a launch before that recorded. */
+  source: 'env' | 'profile' | 'default';
   /** Rendered bytes of the whole element plus its joining newline. */
   bytes: number;
   /**
@@ -780,6 +803,11 @@ export interface CreateWorkSessionInput {
   nodeId: string | null;
   confirmUntrusted: boolean;
   clientMutationId: string | null;
+  /**
+   * `SpawnRequest.newTask`'s title: the RPC creates that task in the spawn's
+   * own transaction (267). Absent/null creates none.
+   */
+  newTaskTitle?: string | null;
 }
 
 export interface CreateWorkSessionResult {
@@ -788,6 +816,8 @@ export interface CreateWorkSessionResult {
   commandResult: unknown;
   /** True when the command ledger returned an earlier spawn result. */
   replayed: boolean;
+  /** The task `newTaskTitle` created (a replay answers the same one). */
+  createdTaskId?: string;
 }
 
 // --- vanilla terminals (101) -------------------------------------------------
@@ -1040,6 +1070,17 @@ export interface GraphPort {
     input: { sessionId: string; taskId: string; totalBytes: number },
   ): Promise<Record<string, unknown>>;
   /**
+   * Spawn-on-story: the nearest story containing `taskId` (directly, through
+   * an ancestor, or along the story's followed edges), folded into the bounded
+   * prompt shape, with any further stories as refs. `null`: in no story.
+   * Optional; a graph without it renders no story block. A failed detail read
+   * resolves with `snapshot` naming the reason rather than rejecting.
+   */
+  loadStoryContext?(
+    auth: GraphAuth,
+    input: { taskId: string },
+  ): Promise<PromptStoryContext | null>;
+  /**
    * The tasks' version and status as they stand NOW, read after
    * `execution_spawn` has started them. `loadSpawnContext` reads before that
    * transition, so its version is one behind for every task the spawn
@@ -1079,6 +1120,19 @@ export interface GraphPort {
     envVarNames: string[],
     prompts: { system: string; task: string },
     agentConfigDir: string | null,
+  ): Promise<void>;
+  /**
+   * `public.record_session_credential_binding` (session_credential_binding) — resume's half of R2.
+   * Re-entering `spawning` resets an agent session's binding to `pending`, and
+   * a `pending` session cannot go `running`; resume re-points its space
+   * credential rows but does not re-record the manifest row, so it records the
+   * binding here from the re-resolved launch, before the PTY exists. Spawn
+   * needs no call: `recordManifest` settles it in the same transaction.
+   */
+  recordCredentialBinding(
+    auth: GraphAuth,
+    sessionId: string,
+    launch: CredentialBindingLaunch,
   ): Promise<void>;
   /** `public.work_session_transition` — R29's single writer. Never UPDATE directly. */
   transition(auth: GraphAuth, input: TransitionInput): Promise<void>;
@@ -1263,6 +1317,15 @@ export interface GraphPort {
  * The FILE is what the agent reads; the ROW (record_session_manifest) is what
  * the graph knows. Both are written, and neither is derived from the other.
  */
+/**
+ * The three fields of a manifest's `launch` block that session_credential_binding's roll-up reads,
+ * shaped exactly as `composeManifest` writes them (`credentialBindingLaunch`).
+ */
+export type CredentialBindingLaunch = Pick<
+  Tm8Manifest['launch'],
+  'tool' | 'spaceCredentialIds' | 'effectiveCredentialSources'
+>;
+
 export interface Tm8Manifest {
   manifestVersion: '1';
   /**
@@ -1330,7 +1393,7 @@ export interface Tm8Manifest {
      * What each provider this launch authenticates actually ran on (D9): the
      * auto choice resolved, so a node-key launch is visible as one.
      */
-    effectiveCredentialSources?: Partial<Record<SpaceCredentialProvider, CredentialSource>>;
+    effectiveCredentialSources?: Partial<Record<CredentialProvider, CredentialSource>>;
     /** §6c: how each space credential was picked (W10b); absent when none. */
     spaceCredentialPicks?: Partial<Record<SpaceCredentialProvider, SpaceCredentialPick>>;
     /** Effective shell-command networking, independent of filesystem posture. */
@@ -1438,6 +1501,13 @@ export interface Tm8Manifest {
 
   /** Extra prompt context from `ExecutionSpawnInput.promptExtra`. */
   promptExtra: string | null;
+
+  /**
+   * Spawn-on-story: the nearest story containing the primary task, read once
+   * at spawn (`GraphPort.loadStoryContext`). Absent: the task is in no story,
+   * or the graph cannot say.
+   */
+  story?: PromptStoryContext;
 }
 
 // --- SpawnService inputs/outputs ---------------------------------------------
@@ -1449,6 +1519,12 @@ export interface SpawnRequest {
   /** Session that invoked this spawn; null/absent means a human-launched root. */
   parentSessionId?: string | null;
   taskIds?: string[];
+  /**
+   * Create the session's task in the same transaction as the session (launch
+   * v3 gap 4). The caller refuses it beside `taskIds`; see
+   * `ExecutionSpawnInput.newTask`.
+   */
+  newTask?: { title: string };
   projectId?: string | null;
   workdir?: { mode?: WorkdirMode; baseRef?: string | null };
   interactionProfileId?: string | null;
@@ -1530,6 +1606,19 @@ export interface SpawnResult {
   envVarNames: string[];
   reused: boolean;
   commandResult: unknown;
+  /** The task `SpawnRequest.newTask` created. */
+  createdTaskId?: string;
+  /**
+   * A dispatcher launched on tasks ROUTES them (launch v3): these are the tasks
+   * its first turn asked it to route, in order. The caller stores the durable
+   * request on each. Absent for every other mode.
+   */
+  routedTaskIds?: string[];
+  /**
+   * The resolved access mode, credential sources and parent — the spawn
+   * receipt's posture rows (`spawnLaunchFacts`). Ids only, never a secret.
+   */
+  launchFacts?: ExecutionSpawnLaunch;
 }
 
 /** Raised for every spawn-flow failure that has a contract error code. */

@@ -206,3 +206,12 @@ describe('spaceLinksPortFromSeam', () => {
     ]);
   });
 });
+
+describe('Space links — a row opens its own panel (task 01a0e24d)', () => {
+  it('offers Open when the host passes onOpen, and hands it the link id', async () => {
+    const onOpen = vi.fn();
+    render(<SpaceLinksSection port={fakePort([link()])} onOpen={onOpen} />);
+    fireEvent.click(await screen.findByTestId('space-link-open-link-1'));
+    expect(onOpen).toHaveBeenCalledWith('link-1');
+  });
+});

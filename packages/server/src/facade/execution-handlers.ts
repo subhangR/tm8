@@ -1,11 +1,11 @@
 import { resolveHeaders } from '../headers/resolve.js';
 import { loadDispatcherRoster } from '../launch/roster.js';
-import { loadMemoryDefaults, loadReferenceDefaults, loadSkillDefaults } from './spawn-defaults.js';
+import { loadMemoryDefaults, loadReferenceDefaults, loadSkillDefaults, loadTeammateDefaults } from './spawn-defaults.js';
 import { loadMemoriesById, renderMemoryText, type MemoryRow } from './spawn-memories.js';
 import { loadSkillsById } from '../skills/equipment.js';
 import { linkSession } from '../jev/store.js';
 import { CRITICAL_SCORE } from '../jev/groups.js';
-import { computeEffectiveSkills, splitTaskSkillCollisions, type ResolvedSkillRow } from '@tm8/execution';
+import { computeEffectiveSkills, splitSelectionSkillCollisions, splitTaskSkillCollisions, type ResolvedSkillRow } from '@tm8/execution';
 import { scanSpaceSkills } from '../skills/service.js';
 /**
  * The execution.* handler family (R16) — where the graph meets the terminal.
@@ -57,6 +57,7 @@ import {
   type SpawnContext,
   type SpawnRequest,
   type Tm8Manifest,
+  type CredentialBindingLaunch,
   type TransitionInput,
   type WorkdirMode,
   type WorkSessionResumeInfo,
@@ -76,7 +77,11 @@ import type { LoopExecutorPort } from '../scheduler/jobs/loops.js';
 import type { W2MessagesHandoffsServiceOptions } from './services/w2/messages-handoffs.js';
 import type {
   ExecutionDispatchInput,
+  ExecutionDispatchKind,
+  ExecutionDispatchers,
   ExecutionDispatchResult,
+  ExecutionSpawnResult,
+  CommandResult,
   ExecutionLiveness,
   ExecutionResumeInput,
   ExecutionSessionsShareInput,
@@ -103,12 +108,13 @@ import { DbGitHubCredentialStore } from '../credentials/github-credential-store.
 import { spaceCredentialPort } from '../credentials/space-credential-port.js';
 import type { ServerConfig } from '../http/config.js';
 import { fail } from '../http/errors.js';
-import { json } from '../http/types.js';
+import { json, type RequestContext } from '../http/types.js';
 import { claimsFor, commandEnvelope, requireUuidParam } from './context.js';
 import { refuseLinkBearer } from '../identity/link-bearer.js';
 import { LIVE_CHAT_COUNTS_SQL, type LiveChatCountRow } from './live-counts.js';
 import { projectLaunchContext } from './launch-context.js';
 import { loadContextV2 } from './services/w2/feed-context-v2.js';
+import { loadStoryContextForTask, putDerivedTasksInStories } from './spawn-story.js';
 import { toCommandResult, type RpcCommandResult } from './handlers/entities.js';
 import { createLoopbackOwnerResolver, type LoopbackOwner } from '../identity/loopback.js';
 import type { HandlerRegistry } from './registry.js';
@@ -247,27 +253,52 @@ function renderMemories(
 /**
  * `execution.spawn.selection` names only live entities of THIS space that the
  * caller can read (the query runs under the caller's RLS), each of its group's
- * kind (design 01a0d348 §5.1, §8 I6): memories, skills, and references —
- * docs, artifacts, drawings, files and tasks. Anything else is refused with
+ * kind (design 01a0d348 §5.1, §8 I6): memories, skills, references —
+ * docs, artifacts, drawings, files and tasks — and teammates (launch card v3,
+ * Decision 7). Anything else is refused with
  * `invalid_input` NAMING every bad id — a selected entity deleted before
  * launch is surfaced, never silently dropped. An absent group is not checked:
  * it means that group's defaults.
  */
 export async function assertSelectionIds(q: Querier, spaceId: string, selection: SpawnSelection): Promise<void> {
-  const { memoryIds: badMemoryIds, skillIds: badSkillIds, referenceIds: badReferenceIds } =
+  const { memoryIds: badMemoryIds, skillIds: badSkillIds, referenceIds: badReferenceIds, teammateIds: badTeammateIds, kinds } =
     await invalidSelectionIds(q, spaceId, selection);
-  if (badMemoryIds.length === 0 && badSkillIds.length === 0 && badReferenceIds.length === 0) return;
-  const named = [
-    ...(badMemoryIds.length ? [`memoryIds ${badMemoryIds.join(', ')}`] : []),
-    ...(badSkillIds.length ? [`skillIds ${badSkillIds.join(', ')}`] : []),
-    ...(badReferenceIds.length ? [`referenceIds ${badReferenceIds.join(', ')}`] : []),
-  ].join('; ');
-  throw fail(
-    'invalid_input',
-    'selection names entities that are not live memories/skills/references '
-      + `(${SPAWN_SELECTION_REFERENCE_KINDS.join(', ')}) in this space: ${named}`,
-    { invalidMemoryIds: badMemoryIds, invalidSkillIds: badSkillIds, invalidReferenceIds: badReferenceIds },
-  );
+  if (badMemoryIds.length > 0 || badSkillIds.length > 0 || badReferenceIds.length > 0) {
+    const named = [
+      ...(badMemoryIds.length ? [`memoryIds ${badMemoryIds.join(', ')}`] : []),
+      ...(badSkillIds.length ? [`skillIds ${badSkillIds.join(', ')}`] : []),
+      ...(badReferenceIds.length ? [`referenceIds ${badReferenceIds.join(', ')}`] : []),
+    ].join('; ');
+    throw fail(
+      'invalid_input',
+      'selection names entities that are not live memories/skills/references '
+        + `(${SPAWN_SELECTION_REFERENCE_KINDS.join(', ')}) in this space: ${named}`,
+      { invalidMemoryIds: badMemoryIds, invalidSkillIds: badSkillIds, invalidReferenceIds: badReferenceIds },
+    );
+  }
+  assertTeammateIds(badTeammateIds, kinds);
+}
+
+/**
+ * `selection.teammateIds` refusals (ruling 01a0df8e-555c, aligned with the
+ * in-full rule): a readable entity that is not a teammate is `invalid_input`
+ * (`details.reason: 'teammate_kind_not_allowed'`); an id that does not exist
+ * or cannot be read is `not_found` — one answer for both, so existence is not
+ * leaked. Both name every such id in `details.ids`. A resume never refuses:
+ * it leaves them out as `unavailable` (`pruneReplayedSelection`).
+ */
+function assertTeammateIds(bad: readonly string[], kinds: ReadonlyMap<string, string>): void {
+  const wrongKind = bad.filter((id) => kinds.has(id));
+  if (wrongKind.length > 0) {
+    throw fail('invalid_input', `selection.teammateIds names entities that are not teammates: ${wrongKind.join(', ')}`, {
+      reason: 'teammate_kind_not_allowed',
+      ids: wrongKind,
+    });
+  }
+  const missing = bad.filter((id) => !kinds.has(id));
+  if (missing.length > 0) {
+    throw fail('not_found', `selection.teammateIds not found in this space: ${missing.join(', ')}`, { ids: missing });
+  }
 }
 
 /** Per group, the selected ids that are not live, readable entities of that group's kind in this space. */
@@ -275,11 +306,12 @@ async function invalidSelectionIds(
   q: Querier,
   spaceId: string,
   selection: SpawnSelection,
-): Promise<{ memoryIds: string[]; skillIds: string[]; referenceIds: string[]; kinds: ReadonlyMap<string, string> }> {
+): Promise<{ memoryIds: string[]; skillIds: string[]; referenceIds: string[]; teammateIds: string[]; kinds: ReadonlyMap<string, string> }> {
   const memoryIds = selection.memoryIds ?? [];
   const skillIds = selection.skillIds ?? [];
   const referenceIds = selection.referenceIds ?? [];
-  const ids = [...new Set([...memoryIds, ...skillIds, ...referenceIds])];
+  const teammateIds = selection.teammateIds ?? [];
+  const ids = [...new Set([...memoryIds, ...skillIds, ...referenceIds, ...teammateIds])];
   const rows = ids.length === 0 ? [] : await q.query<{ id: string; kind: string }>(
     `select e.id, e.kind from public.entities e
       where e.id = any($1::uuid[]) and e.space_id = $2 and e.deleted_at is null`,
@@ -291,7 +323,8 @@ async function invalidSelectionIds(
   const badMemoryIds = bad(memoryIds, (kind) => kind === 'memory');
   const badSkillIds = bad(skillIds, (kind) => kind === 'skill');
   const badReferenceIds = bad(referenceIds, (kind) => REFERENCE_KINDS.has(kind ?? ''));
-  return { memoryIds: badMemoryIds, skillIds: badSkillIds, referenceIds: badReferenceIds, kinds };
+  const badTeammateIds = bad(teammateIds, (kind) => kind === 'team_member');
+  return { memoryIds: badMemoryIds, skillIds: badSkillIds, referenceIds: badReferenceIds, teammateIds: badTeammateIds, kinds };
 }
 
 /**
@@ -320,17 +353,20 @@ async function pruneReplayedSelection(
     ...bad.memoryIds.map(drop('memories')),
     ...bad.skillIds.map(drop('skills')),
     ...bad.referenceIds.map(drop('references')),
+    ...bad.teammateIds.map(drop('teammates')),
   ];
   const keep = (ids: string[] | undefined, gone: string[]): string[] | undefined =>
     ids === undefined ? undefined : ids.filter((id) => !gone.includes(id));
   const memoryIds = keep(selection.memoryIds, bad.memoryIds);
   const skillIds = keep(selection.skillIds, bad.skillIds);
   const referenceIds = keep(selection.referenceIds, bad.referenceIds);
+  const teammateIds = keep(selection.teammateIds, bad.teammateIds);
   return {
     selection: {
       ...(memoryIds ? { memoryIds } : {}),
       ...(skillIds ? { skillIds } : {}),
       ...(referenceIds ? { referenceIds } : {}),
+      ...(teammateIds ? { teammateIds } : {}),
     },
     dropped,
   };
@@ -544,7 +580,10 @@ export class DbGraphPort implements GraphPort {
           // Not-linked and not-found are the same answer to a caller who may not
           // be a member of the other space — distinguishing them would leak the
           // existence of projects outside this space.
-          throw fail('not_found', `project ${input.projectId} is not linked to this space`);
+          throw fail('not_found', `project ${input.projectId} is not linked to this space`, {
+            reason: 'project_not_linked',
+            projectId: input.projectId,
+          });
         }
         project = {
           id: row.id,
@@ -597,6 +636,24 @@ export class DbGraphPort implements GraphPort {
           ...(row.sourcePath ? { sourcePath: row.sourcePath } : {}),
           reason: 'not-selected',
         }));
+        // A skill picked for this launch beside an equipped one of the same
+        // name (a full skill and its reference card) never fails the spawn:
+        // the pick wins and the equipped row is declared. Equipped-only
+        // collisions still refuse, as the persona path always has.
+        const selectionCollisions = splitSelectionSkillCollisions(skillEquips, new Set(selectionOnlySkillIds));
+        if (selectionCollisions.collided.length > 0) {
+          skillEquips = selectionCollisions.kept;
+          skippedSkills = [
+            ...skippedSkills,
+            ...selectionCollisions.collided.map((row) => ({
+              entityId: row.entityId,
+              name: row.name,
+              ...(row.contentHash ? { hash: row.contentHash } : {}),
+              ...(row.sourcePath ? { sourcePath: row.sourcePath } : {}),
+              reason: 'selection-name-collision',
+            })),
+          ];
+        }
       }
       // Two task skills with one name never fail the spawn: the first in task
       // order (then name, as the loader sorts) wins and the rest are declared.
@@ -712,10 +769,9 @@ export class DbGraphPort implements GraphPort {
       // `selection.referenceIds`: exactly the selected references, in the
       // selected order (design 01a0d348 §5.1). Read here, in this transaction
       // and under the caller's RLS, so the set describes the same instant as
-      // everything else; rendering them is the context index's job, not this
-      // loader's. Every default the set leaves out is recorded `not-selected`.
-      // The assignment snapshot's `linked` / `attachments` are untouched: they
-      // stay the task's own identity list (§2.2). Nothing is written.
+      // everything else; rendering them is the prompt's job (the context index,
+      // and `<attachments>` for files), not this loader's. Every default the
+      // set leaves out is recorded `not-selected`. Nothing is written.
       let references: SpawnContext['references'];
       const referenceDrops: ContextDrop[] = [];
       const selectedReferenceIds = selection?.referenceIds;
@@ -723,9 +779,10 @@ export class DbGraphPort implements GraphPort {
         const defaults = await loadReferenceDefaults(q, input.spaceId, spawnTaskIds);
         const byDefault = new Map(defaults.map((row) => [row.entityId, row]));
         const wanted = [...new Set(selectedReferenceIds)];
-        const found = new Map((await q.query<{ id: string; kind: string; title: string | null }>(
+        const found = new Map((await q.query<{ id: string; kind: string; title: string | null; mime: string | null }>(
           `select e.id, e.kind,
-                  coalesce(d.title, dr.title, ar.name, t.title, f.name) as title
+                  coalesce(d.title, dr.title, ar.name, t.title, f.name) as title,
+                  f.mime_type as mime
              from public.entities e
              left join public.documents d on d.entity_id = e.id
              left join public.drawings dr on dr.entity_id = e.id
@@ -749,12 +806,49 @@ export class DbGraphPort implements GraphPort {
             title: row.title,
             via: dflt ? (dflt.link === 'attached_to' && row.kind === 'file' ? 'attached' : 'linked') : 'selection',
             ...(dflt ? { link: dflt.link } : {}),
+            ...(row.kind === 'file' ? { mime: row.mime } : {}),
           };
         });
         const kept = new Set(wanted);
         for (const row of defaults) {
           if (!kept.has(row.entityId)) {
             referenceDrops.push({ entityId: row.entityId, kind: row.kind, group: 'references', reason: 'not-selected' });
+          }
+        }
+      }
+
+      // `selection.teammateIds` (launch card v3, Decision 7): exactly these
+      // teammates, in the selected order, as the `teammates` group of
+      // `<context_index>` — replacing the tasks' linked teammates (a
+      // dispatcher ignores it: `applyDispatcherTeammates`, once its mode is
+      // known). The launch teammate is removed silently (it is
+      // never in its own group). Validated above; read here under RLS with
+      // the roster's columns, so an entry renders as a roster entry does.
+      let teammates: SpawnContext['teammates'];
+      const teammateDrops: ContextDrop[] = [];
+      const selectedTeammateIds = selection?.teammateIds;
+      if (selectedTeammateIds) {
+        const wanted = [...new Set(selectedTeammateIds)].filter((id) => id !== member.entity_id);
+        const found = new Map((wanted.length === 0 ? [] : await q.query<{ entity_id: string; name: string; mode: string | null; model: string | null }>(
+          `select tm.entity_id, tm.name, tm.mode, tm.model
+             from public.team_members tm
+             join public.entities e on e.id = tm.entity_id
+            where tm.entity_id = any($1::uuid[]) and e.space_id = $2 and e.deleted_at is null`,
+          [wanted, input.spaceId],
+        )).map((row) => [row.entity_id, row]));
+        // Validated above; a teammate deleted since is `not_found`, as there.
+        const missing = wanted.filter((id) => !found.has(id));
+        if (missing.length > 0) {
+          throw fail('not_found', `selection.teammateIds not found in this space: ${missing.join(', ')}`, { ids: missing });
+        }
+        teammates = wanted.map((id) => {
+          const row = found.get(id)!;
+          return { entityId: id, name: row.name, mode: row.mode, model: row.model };
+        });
+        const kept = new Set(wanted);
+        for (const row of await loadTeammateDefaults(q, input.spaceId, spawnTaskIds, member.entity_id)) {
+          if (!kept.has(row.entityId)) {
+            teammateDrops.push({ entityId: row.entityId, kind: row.kind, group: 'teammates', reason: 'not-selected' });
           }
         }
       }
@@ -836,6 +930,7 @@ export class DbGraphPort implements GraphPort {
         skillsScannedAt,
         droppedSkills: [],
         ...(references ? { references } : {}),
+        ...(teammates ? { teammates } : {}),
         contextAudit: {
           selectedGroups: [
             ...(memoriesSelected ? ['memories' as const] : []),
@@ -844,7 +939,7 @@ export class DbGraphPort implements GraphPort {
           ],
           memoryVia: injectedMemories.via,
           ...(selectionOnlySkillIds.length > 0 ? { selectionOnlySkillIds } : {}),
-          dropped: [...unavailableDrops, ...memoryDrops, ...referenceDrops],
+          dropped: [...unavailableDrops, ...memoryDrops, ...referenceDrops, ...teammateDrops],
           // A memory selection replaces the legacy jsonb remainder too; it has no ids.
           ...(memoriesSelected && Array.isArray(member.memories) && member.memories.length > 0
             ? { legacyMemoriesDropped: member.memories.length }
@@ -921,17 +1016,23 @@ export class DbGraphPort implements GraphPort {
         null, // p_actor_id — resolve_actor derives it from the claims
         input.clientMutationId,
         input.parentSessionId,
+        input.newTaskTitle ?? null,
       ],
     );
 
     const replayed = result?.__tm8_replayed === true;
-    const { __tm8_replayed: _replayMarker, ...commandResult } = result ?? {};
+    const { __tm8_replayed: _replayMarker, createdTaskId, ...commandResult } = result ?? {};
     const entity = commandResult.entity as { id?: string } | undefined;
     const sessionId = entity?.id;
     if (typeof sessionId !== 'string') {
       throw fail('upstream_unavailable', 'execution_spawn returned no work_session id');
     }
-    return { sessionId, commandResult, replayed };
+    return {
+      sessionId,
+      commandResult,
+      replayed,
+      ...(typeof createdTaskId === 'string' ? { createdTaskId } : {}),
+    };
   }
 
   /**
@@ -961,7 +1062,10 @@ export class DbGraphPort implements GraphPort {
     );
     const row = rows[0];
     if (!row) {
-      throw fail('not_found', `project ${input.projectId} is not linked to this space`);
+      throw fail('not_found', `project ${input.projectId} is not linked to this space`, {
+        reason: 'project_not_linked',
+        projectId: input.projectId,
+      });
     }
     return {
       project: {
@@ -1074,6 +1178,14 @@ export class DbGraphPort implements GraphPort {
   }
 
   /**
+   * Spawn-on-story: the nearest story containing the task, as the spawner.
+   * See spawn-story.ts.
+   */
+  async loadStoryContext(auth: GraphAuth, input: { taskId: string }) {
+    return loadStoryContextForTask(this.db, this.claims(auth), input.taskId);
+  }
+
+  /**
    * The tasks' version and status as they stand now, read after
    * `execution_spawn` started them. Same caller claims as `loadSpawnContext`.
    */
@@ -1131,6 +1243,17 @@ export class DbGraphPort implements GraphPort {
       prompts.system,
       prompts.task,
       agentConfigDir,
+    ]);
+  }
+
+  async recordCredentialBinding(
+    auth: GraphAuth,
+    sessionId: string,
+    launch: CredentialBindingLaunch,
+  ): Promise<void> {
+    await this.db.rpc(this.claims(auth), 'public.record_session_credential_binding', [
+      sessionId,
+      JSON.stringify(launch),
     ]);
   }
 
@@ -2166,6 +2289,8 @@ async function resolveAssignmentAnchors(
   spaceId: string,
   subjectIds: readonly string[],
   forceNewTask = false,
+  /** When given, receives every subject -> task pair, in order (spawn-on-story). */
+  pairs?: Array<{ subjectId: string; taskId: string }>,
 ): Promise<string[]> {
   const anchors: string[] = [];
   for (const subjectId of subjectIds) {
@@ -2188,6 +2313,7 @@ async function resolveAssignmentAnchors(
     // De-duplicate on the ANCHOR, not the subject: two different entities can
     // legitimately resolve to one task, and `execution_spawn` would then try to
     // insert the same `working_on` edge twice.
+    pairs?.push({ subjectId, taskId });
     if (!anchors.includes(taskId)) anchors.push(taskId);
   }
   return anchors;
@@ -2364,6 +2490,48 @@ async function readSessionJournal(
  * Timing out here costs the caller a `delivery: 'undelivered'`, not the work.
  */
 const DISPATCHER_SETTLE_TIMEOUT_MS = 15_000;
+
+/**
+ * IN-FLIGHT RETRIES SHARE THE ATTEMPT THEY RETRY (launch v3, STATUS-1).
+ *
+ * The command ledger answers a retry of a COMPLETED spawn — `execution_spawn`
+ * records it in the same transaction as the session. It cannot answer a retry
+ * that lands while the first attempt is still running: before the RPC commits
+ * there is no ledger row to find, and a client that timed out (180 s) while the
+ * first attempt was still provisioning or booting re-sent the same
+ * clientMutationId and got a SECOND session, three times over. The ledger is
+ * the durable half; this is the in-flight half. While an attempt with the same
+ * principal + clientMutationId is running on this node, a retry awaits it and
+ * answers its exact result (or its error). Once it settles, the entry is gone
+ * and the ledger takes over. Keyed by principal so one caller can never be
+ * handed another's result — the rule `ledger_replay` enforces in SQL (W2.SEC-1).
+ * Sessions are node-local PTYs, so a per-process map covers the node that owns them.
+ */
+const inFlightCommands = new Map<string, Promise<unknown>>();
+
+function inFlightKey(op: string, ctx: RequestContext, clientMutationId: string | undefined): string | null {
+  if (!clientMutationId) return null;
+  const principal = ctx.identity.kind === 'auto-owner'
+    ? 'auto-owner'
+    : `${ctx.identity.kind}:${ctx.identity.identityId ?? ''}`;
+  return JSON.stringify([op, principal, clientMutationId]);
+}
+
+async function singleFlight<T>(key: string | null, run: () => Promise<T>): Promise<T> {
+  if (key === null) return run();
+  const running = inFlightCommands.get(key);
+  if (running) return running as Promise<T>;
+  const attempt = run();
+  inFlightCommands.set(key, attempt);
+  try {
+    return await attempt;
+  } finally {
+    inFlightCommands.delete(key);
+  }
+}
+
+/** `execution.dispatchers` bound: a drop-up, not a history. */
+const DISPATCHERS_LIST_MAX = 50;
 const DISPATCHER_SETTLE_POLL_MS = 250;
 
 /**
@@ -2371,12 +2539,18 @@ const DISPATCHER_SETTLE_POLL_MS = 250;
  * what the dispatcher re-reads if it wakes without having received the push.
  * Plain prose on purpose: the trusted envelope is the machine-addressed copy.
  */
-function dispatchRequestBody(subjectId: string, taskId: string, note: string | null): string {
+function dispatchRequestBody(
+  subjectId: string,
+  taskId: string,
+  note: string | null,
+  kind: ExecutionDispatchKind | null = null,
+): string {
   const lines = [
     `Dispatch requested for this task (subject \`${subjectId}\`, anchor \`${taskId}\`).`,
     '',
     'Pick the teammate, attach the memories they need to this task, spawn them on it, and reply here with who and why.',
   ];
+  if (kind) lines.push('', `Start them as a ${kind} session (\`execution.spawn\` mode \`${kind}\`).`);
   if (note) lines.push('', `Requester note: ${note}`);
   return lines.join('\n');
 }
@@ -2389,6 +2563,11 @@ export interface DispatchRequestSend {
   subjectId: string;
   dispatcherSessionId: string;
   note: string | null;
+  /**
+   * The session kind the dispatcher should start (`execution.dispatch.kind`,
+   * launch v3 gap 5). Null carries none — the loop executor's requests.
+   */
+  kind?: ExecutionDispatchKind | null;
   requesterActorId: string | null;
   requesterActorKind: string;
   requestId: string;
@@ -2417,7 +2596,7 @@ async function sendDispatchRequest(
   const posted = await db.tx(claims, async (q) =>
     q.rpc<{ messageIds: string[] }>('w2_post_message_batch', [
       [taskId],
-      dispatchRequestBody(subjectId, taskId, note),
+      dispatchRequestBody(subjectId, taskId, note, args.kind ?? null),
       null,
       [],
       [],
@@ -2437,6 +2616,7 @@ async function sendDispatchRequest(
     requesterActorKind: args.requesterActorKind,
     destinationSessionId: dispatcherSessionId,
     note,
+    ...(args.kind ? { kind: args.kind } : {}),
   });
   try {
     const reservation = await seam.reserve({
@@ -2527,6 +2707,34 @@ export interface RegisterHandlersOptions {
 }
 
 /**
+ * `execution.dispatch.dispatcherSessionId` must name a dispatcher session of
+ * THIS space. Read under the caller's claims, so a session the caller cannot
+ * read is refused exactly like one in another space — nothing about it leaks.
+ * Liveness is NOT checked here: a dead target falls back, it is not refused.
+ */
+async function assertDispatcherTarget(
+  db: Db,
+  claims: DbClaims,
+  spaceId: string,
+  sessionId: string,
+): Promise<void> {
+  const rows = await db.query<{ mode: string | null; space_id: string }>(
+    claims,
+    `select ws.mode, e.space_id::text space_id
+       from public.work_sessions ws
+       join public.entities e on e.id = ws.entity_id
+      where ws.entity_id = $1 and e.deleted_at is null`,
+    [sessionId],
+  );
+  const row = rows[0];
+  if (!row || row.mode !== 'dispatcher' || row.space_id !== spaceId) {
+    throw fail('invalid_input', `${sessionId} is not a dispatcher session in this space`, {
+      reason: 'not_a_dispatcher',
+    });
+  }
+}
+
+/**
  * Find the space's live dispatcher session, or spawn one and wait for it.
  *
  * Shared by `execution.dispatch` and the loop executor rather than written
@@ -2541,7 +2749,14 @@ async function resolveDispatcherSession(
   spawnService: SpawnService,
   spaceId: string,
   clientMutationId: string,
+  preferredSessionId: string | null = null,
 ): Promise<{ sessionId: string; spawned: boolean }> {
+  // Launch v3 gap 5: a named dispatcher (already checked by
+  // `assertDispatcherTarget`) wins while it is live. One that died after the
+  // caller's preview falls through to the rule below, and the result says so.
+  if (preferredSessionId && pty.liveSessionIds().includes(preferredSessionId)) {
+    return { sessionId: preferredSessionId, spawned: false };
+  }
   const live = await findLiveDispatcherSession(db, claims, spaceId, pty);
   if (live) return { sessionId: live, spawned: false };
 
@@ -2822,6 +3037,76 @@ function registerHandlers(
     return json(result);
   });
   /**
+   * execution.dispatchers (launch v3 gap 5) — the space's dispatcher sessions
+   * for the launch card's dispatch-target drop-up, newest first. Stopped ones
+   * are listed with `live: false`.
+   *
+   * Membership-gated exactly as `execution.liveness` is: the space is read
+   * under the caller's claims and an unreadable one is `not_found`. Liveness is
+   * the PTY map, never `work_sessions.status` (see `findLiveDispatcherSession`).
+   * `queuedCount` is null: what a dispatcher has not yet routed is not a column
+   * anywhere, and a pending-delivery count would answer a different question.
+   * `title` and `purpose` (the teammate's role) are untrusted display text.
+   */
+  registry.register('execution.dispatchers', async (ctx) => {
+    const owner = await resolveOwner();
+    const claims = claimsFor(owner, ctx);
+    const spaceId = requireUuidParam(ctx, 'spaceId');
+    const spaces = await db.query<{ id: string }>(
+      claims,
+      'select s.id from public.spaces s where s.id = $1',
+      [spaceId],
+    );
+    if (!spaces[0]) throw new CollabError('not_found', `no such space: ${spaceId}`);
+    const rows = await db.query<{
+      session_id: string;
+      team_member_id: string | null;
+      teammate_name: string | null;
+      title: string | null;
+      purpose: string | null;
+    }>(
+      claims,
+      `select ws.entity_id::text session_id,
+              tm.entity_id::text team_member_id,
+              tm.name teammate_name,
+              ws.title,
+              nullif(btrim(tm.role), '') purpose
+         from public.work_sessions ws
+         join public.entities e on e.id = ws.entity_id
+         left join lateral (
+           select m.entity_id, m.name, m.role
+             from public.edges r
+             join public.team_members m on m.entity_id = r.dst_id
+             join public.entities me on me.id = m.entity_id and me.deleted_at is null
+            where r.src_id = ws.entity_id and r.type = 'relates_to'
+            order by r.created_at
+            limit 1
+         ) tm on true
+        where e.space_id = $1 and e.deleted_at is null and ws.mode = 'dispatcher'
+        order by ws.created_at desc, ws.entity_id desc
+        limit ${DISPATCHERS_LIST_MAX}`,
+      [spaceId],
+    );
+    const live = new Set(pty.liveSessionIds());
+    const result: ExecutionDispatchers = {
+      // A session whose teammate is gone (or unreadable) has no one to name.
+      dispatchers: rows.flatMap((row) =>
+        row.team_member_id === null
+          ? []
+          : [{
+              sessionId: row.session_id,
+              teamMemberId: row.team_member_id,
+              teammateName: row.teammate_name ?? '',
+              title: row.title ?? '',
+              purpose: row.purpose,
+              live: live.has(row.session_id),
+              queuedCount: null,
+            }],
+      ),
+    };
+    return json(result);
+  });
+  /**
    * execution.journal — the ONLY path from a teammate's on-disk CLI journal
    * (`<dataDir>/journals/<sessionId>.jsonl`) to a browser. The session id is
    * validated as a uuid and resolved as a `work_session` entity under the
@@ -3070,7 +3355,10 @@ function registerHandlers(
       }),
     );
   });
-  registry.register('execution.spawn', async (ctx) => {
+  registry.register('execution.spawn', (ctx) =>
+    singleFlight(inFlightKey('execution.spawn', ctx, commandEnvelope(ctx).clientMutationId), () =>
+      executionSpawn(ctx)));
+  const executionSpawn = async (ctx: RequestContext) => {
     const input = ctx.body as ExecutionSpawnInput;
 
     const owner = await resolveOwner();
@@ -3079,6 +3367,14 @@ function registerHandlers(
     // 256 (W7p, ruling A'): a link session launches nothing, before anything
     // is read or written. See identity/link-bearer.ts.
     refuseLinkBearer(claims);
+
+    // Launch v3 gap 4: `newTask` IS the session's task, so naming others (or
+    // asking for one to be derived) beside it is refused by name, first.
+    if (input.newTask && ((input.taskIds?.length ?? 0) > 0 || input.forceNewTask === true)) {
+      throw fail('invalid_input', 'newTask cannot be combined with taskIds or forceNewTask', {
+        reason: 'new_task_conflict',
+      });
+    }
 
     // `selection` names exact memories, skills and references (design 01a0d348 §5.1).
     // Refused by name BEFORE anything is written — resolving the anchors
@@ -3092,13 +3388,29 @@ function registerHandlers(
 
     // Any entity may be launched; the anchor is always a task. See
     // `resolveAssignmentAnchors` — a task passes through untouched.
+    const anchorPairs: Array<{ subjectId: string; taskId: string }> = [];
     const taskIds = input.taskIds?.length
       ? await rethrowing(() =>
           resolveAssignmentAnchors(
-            db, claims, input.spaceId, input.taskIds ?? [], input.forceNewTask ?? false,
+            db, claims, input.spaceId, input.taskIds ?? [], input.forceNewTask ?? false, anchorPairs,
           ),
         )
       : undefined;
+
+    // Spawn-on-story: a launch ON a story runs on the task derived from it.
+    // Put that task in the story (a `contains` root) unless the story's trail
+    // already reaches it, so the session's `working_on` edge shows in the
+    // story and the prompt's story read below finds it. Before the spawn, so
+    // the hand-over sees it; best-effort, so a story never refuses a launch.
+    try {
+      for (const r of await putDerivedTasksInStories(db, claims, anchorPairs)) {
+        if (r.outcome === 'failed') {
+          console.warn(`[tm8:spawn] derived task ${r.taskId} not put in story ${r.storyId}: ${r.error ?? 'unknown'}`);
+        }
+      }
+    } catch (error) {
+      console.warn(`[tm8:spawn] story membership for derived tasks skipped: ${error instanceof Error ? error.message : String(error)}`);
+    }
 
     // 176 — A CHAT IS THE PARENT OF WHAT IT SPAWNS.
     //
@@ -3127,6 +3439,7 @@ function registerHandlers(
       teamMemberId: input.teamMemberId,
       parentSessionId,
       ...(taskIds ? { taskIds } : {}),
+      ...(input.newTask ? { newTask: { title: input.newTask.title } } : {}),
       projectId: input.projectId ?? null,
       ...(input.workdir ? { workdir: input.workdir } : {}),
       ...(input.interactionProfileId ? { interactionProfileId: input.interactionProfileId } : {}),
@@ -3218,12 +3531,40 @@ function registerHandlers(
       }
     }
 
+    // A dispatcher launched on tasks was told to route them in its first
+    // turn; the durable request is stored on each task now that the session
+    // exists (store only — the turn already delivered it). Best-effort, like
+    // provenance above: the session is live, and its turn carries the request.
+    for (const routedTaskId of result.routedTaskIds ?? []) {
+      try {
+        await sendDispatchRequest({
+          db,
+          claims,
+          taskId: routedTaskId,
+          subjectId: routedTaskId,
+          dispatcherSessionId: result.sessionId,
+          note: null,
+          requesterActorId: envelope.actorId ?? null,
+          requesterActorKind: ctx.identity.kind === 'bearer' ? 'team_member' : 'member',
+          requestId: ctx.requestId,
+          clientMutationId: `${envelope.clientMutationId ?? result.sessionId}:route:${routedTaskId}`,
+        });
+      } catch (error) {
+        console.warn(`[tm8:dispatch] routing request not stored on ${routedTaskId}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
     // 201: a spawn creates a work_session.
-    return json(
-      await assembleCommandResult(db, claims, result.commandResult, owner.identityId),
-      { status: 201 },
-    );
-  });
+    const spawnResult: ExecutionSpawnResult = {
+      ...((await assembleCommandResult(db, claims, result.commandResult, owner.identityId)) as CommandResult),
+      ...(result.createdTaskId ? { createdTaskId: result.createdTaskId } : {}),
+      // The resolved posture — access mode and where it came from, the
+      // credential each provider ran on, the parent — so the caller's receipt
+      // shows what the child inherited without a second read.
+      ...(result.launchFacts ? { launch: result.launchFacts } : {}),
+    };
+    return json(spawnResult, { status: 201 });
+  };
 
   /**
    * execution.terminal.start (101) — a VANILLA TERMINAL.
@@ -3278,7 +3619,10 @@ function registerHandlers(
    * reads its anchor when it next wakes) while a delivered request with no
    * durable row is not. `delivery` is reported, never thrown on.
    */
-  registry.register('execution.dispatch', async (ctx) => {
+  registry.register('execution.dispatch', (ctx) =>
+    singleFlight(inFlightKey('execution.dispatch', ctx, commandEnvelope(ctx).clientMutationId), () =>
+      executionDispatch(ctx)));
+  const executionDispatch = async (ctx: RequestContext) => {
     const input = ctx.body as ExecutionDispatchInput;
     const owner = await resolveOwner();
     const envelope = commandEnvelope(ctx);
@@ -3289,20 +3633,69 @@ function registerHandlers(
     // identity/link-bearer.ts.
     refuseLinkBearer(claims);
 
-    // Any launchable entity, exactly as execution.spawn treats taskIds — a task
-    // passes through untouched.
-    const [taskId] = await rethrowing(() =>
-      resolveAssignmentAnchors(
-        db, claims, input.spaceId, [input.subjectId], input.forceNewTask ?? false,
-      ),
-    );
+    // Launch v3 gap 4: exactly one of subjectId / newTask. `forceNewTask`
+    // re-derives a subject, so it has no meaning beside a task being created.
+    if ((input.subjectId === undefined) === (input.newTask === undefined)
+        || (input.newTask !== undefined && input.forceNewTask === true)) {
+      throw fail(
+        'invalid_input',
+        'send exactly one of subjectId or newTask (and forceNewTask only with subjectId)',
+        { reason: 'new_task_conflict' },
+      );
+    }
+    const cmid = envelope.clientMutationId ?? input.clientMutationId;
+    // Refused BEFORE anything is written: a wrong target must not leave a task.
+    if (input.dispatcherSessionId) {
+      await assertDispatcherTarget(db, claims, input.spaceId, input.dispatcherSessionId);
+    }
+
+    let taskId: string | undefined;
+    let subjectId: string;
+    if (input.newTask) {
+      // Its own ledger row (`<cmid>:new-task`), so a retried dispatch replays
+      // the same task, and the steps below replay on theirs.
+      const created = await rethrowing(() =>
+        db.rpc<{ taskId?: string } | null>(claims, 'public.execution_dispatch_new_task', [
+          input.spaceId,
+          input.newTask?.title,
+          input.newTask?.projectId ?? null,
+          envelope.actorId ?? null,
+          `${cmid}:new-task`,
+        ]),
+      );
+      taskId = created?.taskId;
+      subjectId = taskId ?? '';
+    } else {
+      // Any launchable entity, exactly as execution.spawn treats taskIds — a
+      // task passes through untouched.
+      subjectId = input.subjectId ?? '';
+      [taskId] = await rethrowing(() =>
+        resolveAssignmentAnchors(
+          db, claims, input.spaceId, [subjectId], input.forceNewTask ?? false,
+        ),
+      );
+      // Spawn-on-story, as on execution.spawn: a dispatch on a story puts the
+      // derived task in it. Best-effort.
+      if (taskId) {
+        try {
+          for (const r of await putDerivedTasksInStories(db, claims, [{ subjectId, taskId }])) {
+            if (r.outcome === 'failed') {
+              console.warn(`[tm8:dispatch] derived task ${r.taskId} not put in story ${r.storyId}: ${r.error ?? 'unknown'}`);
+            }
+          }
+        } catch (error) {
+          console.warn(`[tm8:dispatch] story membership skipped: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+    }
     if (!taskId) {
-      throw fail('upstream_unavailable', `could not derive a task for ${input.subjectId}`);
+      throw fail('upstream_unavailable', `could not derive a task for ${subjectId || 'newTask'}`);
     }
 
     const resolved = await resolveDispatcherSession(
       db, claims, pty, spawnService, input.spaceId,
-      `${envelope.clientMutationId ?? input.clientMutationId}:dispatcher-spawn`,
+      `${cmid}:dispatcher-spawn`,
+      input.dispatcherSessionId ?? null,
     );
     const dispatcherSessionId = resolved.sessionId;
     const dispatcherSpawned = resolved.spawned;
@@ -3312,9 +3705,10 @@ function registerHandlers(
       claims,
       ...(options.dispatchDelivery ? { seam: options.dispatchDelivery } : {}),
       taskId,
-      subjectId: input.subjectId,
+      subjectId,
       dispatcherSessionId,
       note: input.note ?? null,
+      kind: input.kind ?? 'worker',
       // NULL, never the owner's `identityId`. This reaches SQL as
       // `w2_post_message_batch(p_actor_id uuid)`, and an identity id is
       // deliberately NOT a uuid (`identity/ids.ts`: `id_` + random) — the
@@ -3327,18 +3721,19 @@ function registerHandlers(
       requesterActorId: envelope.actorId ?? null,
       requesterActorKind: ctx.identity.kind === 'bearer' ? 'team_member' : 'member',
       requestId: ctx.requestId,
-      clientMutationId: `${envelope.clientMutationId ?? input.clientMutationId}:dispatch-request`,
+      clientMutationId: `${cmid}:dispatch-request`,
     });
 
     const result: ExecutionDispatchResult = {
       taskId,
+      taskCreated: input.newTask !== undefined,
       dispatcherSessionId,
       dispatcherSpawned,
       ...(sent.requestMessageId ? { requestMessageId: sent.requestMessageId } : {}),
       delivery: sent.delivered ? 'delivered' : 'undelivered',
     };
     return json(result, { status: 202 });
-  });
+  };
 
   /**
    * B1 — `execution.prompt` is Server-internal-only, so the PUBLIC route is a
@@ -3552,6 +3947,8 @@ export function sessionLaunchPostureFromRecord(row: {
       ? { skillOverrides: row.skill_overrides as Record<string, unknown> }
       : {}),
     // The launch rendered `<context_index>`; its resume renders it too.
-    ...(row.context_index === 'env' || row.context_index === 'profile' ? { contextIndex: row.context_index } : {}),
+    ...(row.context_index === 'env' || row.context_index === 'profile' || row.context_index === 'default'
+      ? { contextIndex: row.context_index }
+      : {}),
   };
 }

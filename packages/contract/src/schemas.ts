@@ -21,9 +21,20 @@ import {
   PROJECT_FOLDER_UPLOAD_MAX_TOTAL_BYTES,
   SHA256_HEX_RE,
   SPAWN_SELECTION_GROUP_LIMIT,
+  EXECUTION_NEW_TASK_TITLE_MAX,
 } from './contract.js';
 import { ArtifactManifestSchema } from './artifact-manifest.js';
+import { STYLE_MAX_LAYERS, STYLE_SCHEMA_VERSION } from './style.js';
+import type {
+  BuiltinStyle,
+  BuiltinStyleId,
+  StyleDoc,
+  StyleLayer,
+  StyleTokenTable,
+  StyleWarning,
+} from './style.js';
 import { FormQuestionRowSchema, FormSectionRowSchema, FormSettingsSchema, FormStatusSchema } from './forms.js';
+import { EntityContextStorySchema, StoryContentSchema, StoryStateSchema } from './story.js';
 import {
   SELECTION_HEADER_KINDS,
   SELECTION_HEADER_SOURCES,
@@ -48,6 +59,7 @@ import type {
   AuthLogoutResult, AuthPasswordChangeInput, AuthPasswordChangeResult,
   AuthSessionGetResult, AuthSessionListing, AuthSessionsListInput, AuthSessionsListResult,
   AuthSessionsRevokeResult, AuthSessionView, AuthSignupInput, AuthSpaceEnterInput, AuthSpaceEnterResult,
+  SpacePasswordLockInput, SpacePasswordResetInput, SpacePasswordSetRequiredInput,
   AuthSignupResult, ChannelTab, ChatContextFrame, ChatTurnFrame, ChatTurnUsage,
   ClosedPromptPolicy, CollectionAddItemInput, CollectionGroup, CollectionQuery, CollectionResult,
   CommandContext, CommandErrorCode, CommandResult, CompleteTaskInput,
@@ -72,11 +84,12 @@ import type {
   ServiceKeyProviderName, ServiceKeyView,
   CredentialPolicySource, CredentialsSpaceCommandInput, CredentialsSpaceCreateInput,
   CredentialsSpaceDeleteResult, CredentialsSpaceListView, CredentialsSpacePolicySetInput,
-  CredentialsSpacePolicySetResult, CredentialsSpacePolicyView, CredentialsSpaceRekeyInput,
+  CredentialsSpacePolicySetResult, CredentialsSpacePolicyView, CredentialsSpaceReadinessView, CredentialsSpaceRekeyInput,
   CredentialsSpaceRenameInput, CredentialsSpaceSetVisibilityInput, CredentialsSpaceAddMineInput, CredentialsSpaceDefaultConsentInput,
   NodeCredentialPolicyEntry, NodeCredentialStatusEntry,
   NodeCredentialsPolicySetInput, NodeCredentialsStatusView, NodeMetricsView, SpaceCredentialPolicyEntry,
   SpaceCredentialProviderName, SpaceCredentialShape, SpaceCredentialStatus, SpaceCredentialView,
+  ServerOnlyCredentialProviderName, SpaceCredentialStoredProviderName,
   CustomEntityKind, CustomFieldDef, CustomFieldValue, DeleteMessageInput,
   DeliverySummary, EdgeCorrectionResult, EdgeGroup, EdgeView,
   EntityBadges, EntityCapabilities, EntityConnectionsQuery, EntityContent,
@@ -85,6 +98,9 @@ import type {
   EntityFeedPage, EntityFeedQuery, EntityKind, EntityKindCreateInput,
   EntityKindDef, EntityKindUpdateInput, EntityStaleness, EntityState, EntitySummary, ErrorCode,
   ErrorDetails, ExecutionDispatchInput, ExecutionDispatchResult,
+  ExecutionDispatchNewTask, ExecutionNewTask, ExecutionDispatcherRow, ExecutionDispatchers,
+  ExecutionSpawnResult,
+  ExecutionSpawnLaunch,
   ExecutionPromptInput, ExecutionResumeInput, ExecutionSpawnInput, SpawnSelection,
   ExecutionSessionsShareInput,
   ExecutionStreamsAttachInput, ExecutionTerminateInput,
@@ -107,7 +123,8 @@ import type {
   NavChannelNode,
   NotificationItem, Page, PaletteAction, ActionRows, ActionDiscoveryPage, ActionListResult, PatchEdgeInput, PatchEntityInput,
   PatchMessageInput, PatchTaskInput, PlacementInput, PointEventView,
-  PostMessageInput, PostMessageWireInput, PresenceSnapshot, StartChatInput,
+  PostMessageInput, PostMessageWireInput, PresenceSnapshot, SetChatModelInput,
+  SetChatModelResult, StartChatInput,
   StartChatResult,
   PreviewInteractionProfileInput, ProfileValidationIssue, ProfileValidationView,
   CommitSessionAttribution,
@@ -193,6 +210,9 @@ export const CoreEntityKindSchema = z.enum([
   // is its door. `server` is registered with it and has no door in W6.
   'space_link',
   'server',
+  // Stories (283): roots by `contains`, the rest follows. Creatable through
+  // the generic envelope.
+  'story',
 ]);
 
 export const CustomEntityKindSchema = z.custom<CustomEntityKind>(
@@ -635,6 +655,8 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     format: z.string().min(1),
     elementCount: z.number().int().nonnegative(),
   }).strict(),
+  // 283 — the story's computed summary.
+  StoryStateSchema,
   // 209 — a form's lifecycle status and its question count.
   z.object({
     kind: z.literal('form'),
@@ -862,6 +884,7 @@ export const EdgeGroupSchema: z.ZodType<EdgeGroup> = z.lazy(() => z.object({
   label: z.string(),
   edges: z.array(EdgeViewSchema),
   nextCursor: CursorSchema.optional(),
+  summary: z.object({ count: z.number().int().nonnegative(), operation: z.string() }).strict().optional(),
 }).strict());
 
 export const ConnectionsSchema: z.ZodType<Connections> = z.lazy(() => z.object({
@@ -1038,6 +1061,8 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
     appState: z.record(z.unknown()),
     files: z.record(z.unknown()),
   }).passthrough(),
+  // 283 — the story's description and, on a detail read, its page.
+  StoryContentSchema,
   // 209 — a form: settings (defaults applied), sections and questions in order.
   z.object({
     kind: z.literal('form'),
@@ -1186,6 +1211,8 @@ const CollectionFiltersSchema = z.object({
   // Title substring (collections.ts). Trimmed and non-empty for the same
   // reason `terms` is: a blank needle is a substring of every title.
   titleContains: z.string().trim().min(1).max(200).optional(),
+  // Every word, in title or description (collections.ts). Same trim rule.
+  words: z.string().trim().min(1).max(200).optional(),
 }).strict().superRefine((f, ctx) => {
   // A22: refused, not silently empty. The two filters are kind-disjoint (no
   // row is both a task and a work_session), so their conjunction can only
@@ -1385,6 +1412,22 @@ export const StartChatResultSchema: z.ZodType<StartChatResult> = z.lazy(() => z.
   chat: EntitySummarySchema,
   messageId: EntityIdSchema,
 }).strict()) as z.ZodType<StartChatResult>;
+
+/**
+ * 276. `model` is checked against the launch catalog in the handler, not here:
+ * the catalog is data that changes with releases, and a schema that enumerated
+ * it would refuse a model the node can actually run the moment the two drift.
+ * The shape is all this asserts.
+ */
+export const SetChatModelInputSchema: z.ZodType<SetChatModelInput> = z.object({
+  model: z.string().min(1),
+}).strict() as z.ZodType<SetChatModelInput>;
+
+export const SetChatModelResultSchema: z.ZodType<SetChatModelResult> = z.object({
+  chatId: EntityIdSchema,
+  model: z.string().min(1),
+  provider: z.string().min(1),
+}).strict() as z.ZodType<SetChatModelResult>;
 
 export const ChatTurnFrameSchema: z.ZodType<ChatTurnFrame> = z.discriminatedUnion('type', [
   z.object({
@@ -1878,6 +1921,21 @@ export const AuthLoginResultSchema: z.ZodType<AuthLoginResult> = z.object({
 export const AuthSpaceEnterInputSchema: z.ZodType<AuthSpaceEnterInput> = z.object({
   spaceId: z.string().uuid(),
   label: z.string().min(1).max(200).optional(),
+  spacePassword: z.string().min(1).max(1024).optional(),
+}).strict();
+
+/** W5 (K2): the space-password setting and the P5 admin ops. Strict bodies. */
+export const SpacePasswordSetRequiredInputSchema: z.ZodType<SpacePasswordSetRequiredInput> = z.object({
+  required: z.boolean(),
+  password: AuthPasswordSchema.optional(),
+}).strict();
+
+export const SpacePasswordResetInputSchema: z.ZodType<SpacePasswordResetInput> = z.object({
+  password: AuthPasswordSchema,
+}).strict();
+
+export const SpacePasswordLockInputSchema: z.ZodType<SpacePasswordLockInput> = z.object({
+  locked: z.boolean(),
 }).strict();
 
 export const AuthSpaceEnterResultSchema: z.ZodType<AuthSpaceEnterResult> = z.object({
@@ -2001,6 +2059,7 @@ export const AuthInviteSignupInputSchema: z.ZodType<AuthInviteSignupInput> = z.o
   displayName: z.string().min(1).max(200).optional(),
   email: z.string().min(3).max(320).optional(),
   kind: z.enum(['browser', 'cli']).optional(),
+  spacePassword: AuthPasswordSchema.optional(),
 }).strict();
 
 export const AuthInviteSignupResultSchema: z.ZodType<AuthInviteSignupResult> = z.object({
@@ -2148,6 +2207,15 @@ export const CredentialsServiceKeyDeleteResultSchema: z.ZodType<CredentialsServi
 
 export const SpaceCredentialProviderNameSchema: z.ZodType<SpaceCredentialProviderName> =
   z.enum(['anthropic', 'openai', 'github']);
+/** server_only_space_credentials: stored as a space credential, spent server-side, never bound by a session. */
+export const SERVER_ONLY_CREDENTIAL_PROVIDERS: readonly ServerOnlyCredentialProviderName[] = Object.freeze(['typesafe']);
+export const ServerOnlyCredentialProviderNameSchema: z.ZodType<ServerOnlyCredentialProviderName> = z.enum(['typesafe']);
+export const SpaceCredentialStoredProviderNameSchema: z.ZodType<SpaceCredentialStoredProviderName> =
+  z.enum(['anthropic', 'openai', 'github', 'typesafe']);
+/** True for a provider that must never reach a session (gate 8). */
+export function isServerOnlyCredentialProvider(provider: string): provider is ServerOnlyCredentialProviderName {
+  return (SERVER_ONLY_CREDENTIAL_PROVIDERS as readonly string[]).includes(provider);
+}
 export const SpaceCredentialShapeSchema: z.ZodType<SpaceCredentialShape> = z.enum(['login', 'api_key', 'token']);
 export const SpaceCredentialStatusSchema: z.ZodType<SpaceCredentialStatus> =
   z.enum(['pending', 'active', 'stale', 'revoked']);
@@ -2167,7 +2235,7 @@ const SpaceCredentialSecretSchema = z.string().trim().min(8).max(SPACE_CREDENTIA
 export const SpaceCredentialViewSchema: z.ZodType<SpaceCredentialView> = z.object({
   id: z.string(),
   spaceId: z.string(),
-  provider: SpaceCredentialProviderNameSchema,
+  provider: SpaceCredentialStoredProviderNameSchema,
   shape: SpaceCredentialShapeSchema,
   label: z.string(),
   isDefault: z.boolean(),
@@ -2191,7 +2259,7 @@ export const CredentialsSpaceListViewSchema: z.ZodType<CredentialsSpaceListView>
 }).strict();
 
 export const CredentialsSpaceCreateInputSchema: z.ZodType<CredentialsSpaceCreateInput> = z.object({
-  provider: SpaceCredentialProviderNameSchema,
+  provider: SpaceCredentialStoredProviderNameSchema,
   shape: z.enum(['api_key', 'token']),
   label: SpaceCredentialLabelSchema,
   secret: SpaceCredentialSecretSchema,
@@ -2203,7 +2271,7 @@ export const CredentialsSpaceCreateInputSchema: z.ZodType<CredentialsSpaceCreate
   // 206's provider/shape CHECK, stated here so the refusal names the rule
   // instead of arriving as a constraint violation after the vendor probe.
   (input) => (input.provider === 'github') === (input.shape === 'token'),
-  { message: 'github takes a token; anthropic and openai take an api_key', path: ['shape'] },
+  { message: 'github takes a token; anthropic, openai and typesafe take an api_key', path: ['shape'] },
 ).refine(
   // E1, stated before the probe: an owner's visibility or space-owned, not both.
   (input) => !(input.spaceOwned === true && input.visibility !== undefined),
@@ -2270,6 +2338,37 @@ export const CredentialsSpacePolicyViewSchema: z.ZodType<CredentialsSpacePolicyV
   spaceId: z.string(),
   providers: z.array(SpaceCredentialPolicyEntrySchema),
   node: z.array(NodeCredentialPolicyEntrySchema),
+}).strict();
+
+const CredentialReadinessProviderSchema = z.object({
+  ready: z.boolean(),
+  via: z.enum(['my_default', 'space_default']).nullable(),
+  credentialId: z.string().nullable(),
+  myDefaultId: z.string().nullable(),
+  spaceDefaultId: z.string().nullable(),
+  spaceSourceAllowed: z.boolean(),
+  activeCredentials: z.number().int().nonnegative(),
+  reason: z.enum(['no_credential', 'stale', 'policy_excludes_space']).nullable(),
+}).strict();
+
+export const CredentialsSpaceReadinessViewSchema: z.ZodType<CredentialsSpaceReadinessView> = z.object({
+  spaceId: z.string(),
+  canLaunch: z.object({
+    ready: z.boolean(),
+    missing: z.array(SpaceCredentialProviderNameSchema),
+    providers: z.object({
+      anthropic: CredentialReadinessProviderSchema,
+      openai: CredentialReadinessProviderSchema,
+      github: CredentialReadinessProviderSchema,
+    }).strict(),
+  }).strict(),
+  canPoll: z.object({
+    ready: z.boolean(),
+    missing: z.array(SpaceCredentialProviderNameSchema),
+    credentialId: z.string().nullable(),
+    activeSpaceOwnedCredentials: z.number().int().nonnegative(),
+    reason: z.enum(['no_space_owned_credential', 'stale']).nullable(),
+  }).strict(),
 }).strict();
 
 export const CredentialsSpacePolicySetInputSchema: z.ZodType<CredentialsSpacePolicySetInput> = z.object({
@@ -2406,6 +2505,30 @@ export const CommandResultSchema: z.ZodType<CommandResult> = z.lazy(() => z.obje
   patches: z.array(EntitySummarySchema),
   undo: UndoTokenSchema.optional(),
   warnings: z.array(ResultWarningSchema).optional(),
+}).strict());
+
+/** `execution.spawn`'s answer: the command result plus `createdTaskId` (launch v3). */
+export const ExecutionSpawnResultSchema: z.ZodType<ExecutionSpawnResult> = z.lazy(() => z.object({
+  entity: EntityDetailSchema.optional(),
+  edge: EdgeViewSchema.optional(),
+  activity: ActivityItemSchema.optional(),
+  patches: z.array(EntitySummarySchema),
+  undo: UndoTokenSchema.optional(),
+  warnings: z.array(ResultWarningSchema).optional(),
+  createdTaskId: EntityIdSchema.optional(),
+  launch: ExecutionSpawnLaunchSchema.optional(),
+}).strict());
+
+export const ExecutionSpawnLaunchSchema: z.ZodType<ExecutionSpawnLaunch> = z.lazy(() => z.object({
+  accessMode: z.enum(['safe', 'acceptEdits', 'auto', 'plan', 'fullAccess']),
+  accessModeSource: z.enum(['requested', 'env', 'inherited', 'persona', 'default', 'dispatcher']),
+  parentSessionId: EntityIdSchema.nullable(),
+  credentials: z.array(z.object({
+    provider: CredentialProviderNameSchema,
+    source: z.enum(['member', 'space', 'node']),
+    spaceCredentialId: EntityIdSchema.optional(),
+    spacePick: z.enum(['pinned', 'my_default', 'space_default']).optional(),
+  }).strict()).max(16),
 }).strict());
 
 // ---------------------------------------------------------------------------
@@ -3444,7 +3567,7 @@ const SpaceCredentialIdsSchema = z.object({
 const SelectionGroupIdsSchema = z.array(SpawnUuidSchema).max(SPAWN_SELECTION_GROUP_LIMIT);
 
 export const SPAWN_SELECTION_EMPTY_MESSAGE =
-  'selection names no group: send at least one of memoryIds, skillIds, referenceIds, or omit selection for the defaults';
+  'selection names no group: send at least one of memoryIds, skillIds, referenceIds, teammateIds, or omit selection for the defaults';
 
 /**
  * `selection` (design 01a0d348 §5.1): every group optional — absent means
@@ -3455,8 +3578,10 @@ export const SpawnSelectionSchema = z.object({
   memoryIds: SelectionGroupIdsSchema.optional(),
   skillIds: SelectionGroupIdsSchema.optional(),
   referenceIds: SelectionGroupIdsSchema.optional(),
+  teammateIds: SelectionGroupIdsSchema.optional(),
 }).strict().refine(
-  (selection) => selection.memoryIds !== undefined || selection.skillIds !== undefined || selection.referenceIds !== undefined,
+  (selection) => selection.memoryIds !== undefined || selection.skillIds !== undefined || selection.referenceIds !== undefined
+    || selection.teammateIds !== undefined,
   { message: SPAWN_SELECTION_EMPTY_MESSAGE },
 );
 
@@ -3481,6 +3606,23 @@ export const ContextBudgetsSchema = z.object({
   teammates: z.number().int().min(0).max(32_768).optional(),
 }).strict();
 
+/** `newTask.title` on spawn and dispatch: trimmed, then 1..200 chars. */
+const NewTaskTitleSchema = z.string().trim().min(1).max(EXECUTION_NEW_TASK_TITLE_MAX);
+
+/**
+ * `execution.spawn.newTask`. Its exclusivity with `taskIds`/`forceNewTask` is
+ * the HANDLER's refusal, not this schema's: the contract names the reason
+ * (`details.reason = 'new_task_conflict'`) and a zod issue carries none.
+ */
+export const ExecutionNewTaskSchema: z.ZodType<ExecutionNewTask> = z.object({
+  title: NewTaskTitleSchema,
+}).strict();
+
+export const ExecutionDispatchNewTaskSchema: z.ZodType<ExecutionDispatchNewTask> = z.object({
+  title: NewTaskTitleSchema,
+  projectId: SpawnUuidSchema.optional(),
+}).strict();
+
 const executionSpawnInputObject = z.object({
   ...commandContextShape,
   clientMutationId: z.string().min(1),
@@ -3489,6 +3631,7 @@ const executionSpawnInputObject = z.object({
   parentSessionId: SpawnUuidSchema.optional(),
   taskIds: z.array(SpawnUuidSchema).optional(),
   forceNewTask: z.boolean().optional(),
+  newTask: ExecutionNewTaskSchema.optional(),
   projectId: SpawnUuidSchema.nullable().optional(),
   workdir: SpawnWorkdirSchema.optional(),
   confirmUntrusted: z.literal(true).optional(),
@@ -3601,9 +3744,14 @@ export const ExecutionDispatchInputSchema: z.ZodType<ExecutionDispatchInput> = z
   ...commandContextShape,
   clientMutationId: z.string().min(1),
   spaceId: SpawnUuidSchema,
-  subjectId: SpawnUuidSchema,
+  // Exactly one of subjectId / newTask — refused in the handler with
+  // `details.reason = 'new_task_conflict'`, which a zod issue cannot carry.
+  subjectId: SpawnUuidSchema.optional(),
+  newTask: ExecutionDispatchNewTaskSchema.optional(),
   forceNewTask: z.boolean().optional(),
   note: z.string().max(4000).optional(),
+  dispatcherSessionId: SpawnUuidSchema.optional(),
+  kind: z.enum(['worker', 'coordinator', 'dispatcher']).optional(),
 }).strict();
 
 /**
@@ -3613,10 +3761,26 @@ export const ExecutionDispatchInputSchema: z.ZodType<ExecutionDispatchInput> = z
  */
 export const ExecutionDispatchResultSchema: z.ZodType<ExecutionDispatchResult> = z.object({
   taskId: EntityIdSchema,
+  taskCreated: z.boolean(),
   dispatcherSessionId: EntityIdSchema,
   dispatcherSpawned: z.boolean(),
   requestMessageId: EntityIdSchema.optional(),
   delivery: z.enum(['delivered', 'undelivered']),
+}).strict();
+
+/** execution.dispatchers — the space's dispatcher sessions, newest first. */
+export const ExecutionDispatcherRowSchema: z.ZodType<ExecutionDispatcherRow> = z.object({
+  sessionId: EntityIdSchema,
+  teamMemberId: EntityIdSchema,
+  teammateName: z.string(),
+  title: z.string(),
+  purpose: z.string().nullable(),
+  live: z.boolean(),
+  queuedCount: z.number().int().nonnegative().nullable(),
+}).strict();
+
+export const ExecutionDispatchersSchema: z.ZodType<ExecutionDispatchers> = z.object({
+  dispatchers: z.array(ExecutionDispatcherRowSchema),
 }).strict();
 
 export const ExecutionPromptInputSchema: z.ZodType<ExecutionPromptInput> = z.object({
@@ -4391,6 +4555,7 @@ export const EntityContextV2ViewSchema: z.ZodType<EntityContextV2View> = z.objec
   lastTurnAt: NullableString,
   mode: NullableString,
   projectId: NullableString,
+  story: EntityContextStorySchema.optional(),
   anchor: ContextRefSchema.optional(),
   parentMessage: ContextRefSchema.nullable().optional(),
   attachments: z.array(z.object({
@@ -4497,8 +4662,8 @@ export const InteractionProfileDraftSchema: z.ZodType<InteractionProfileDraft> =
      means "defer to the pinned static template" — exactly the behaviour those
      drafts already had. Authors who set it are choosing, not overriding. */
   initialContentSurface: z.enum(['terminal', 'chat']).optional(),
-  /* `<context_index>` on (design 01a0d348 §2). OPTIONAL: absent is off, and
-     every earlier draft stays valid. Shipped dark (§10 Q2). */
+  /* DEPRECATED, accepted and ignored: the index is always on (launch card
+     v3, `index_always`). OPTIONAL so every earlier draft stays valid. */
   contextIndex: z.boolean().optional(),
   /* Per-kind prompt budgets and Jev score floors (design 01a0d348 §10 Q5).
      OPTIONAL, every key too: an absent key takes the node default. A budget
@@ -4881,6 +5046,9 @@ export const ActionDiscoveryResultSchema: z.ZodType<ActionDiscoveryResult> = z.o
   actions: z.array(PaletteActionSchema),
 }).strict();
 
+const ActionAuthzTargetSchema = z.enum(['server', 'space', 'project', 'entity', 'session']);
+const ActionExposureSchema = z.enum(['public', 'composite', 'internal', 'reserved']);
+
 const ActionRowsShape = {
   schema: z.literal('tm8.actions.v2'),
   actorId: EntityIdSchema,
@@ -4890,14 +5058,14 @@ const ActionRowsShape = {
     version: z.number().int().positive(),
   }).strict().optional(),
   capabilityEpoch: z.string().min(1),
+  human: z.boolean(),
   columns: z.tuple([
     z.literal('operation'), z.literal('kind'), z.literal('authzTarget'), z.literal('exposure'),
+    z.literal('refused'),
   ]),
-  rows: z.array(z.tuple([
-    OperationNameSchema,
-    z.string(),
-    z.enum(['server', 'space', 'project', 'entity', 'session']),
-    z.enum(['public', 'composite', 'internal', 'reserved']),
+  rows: z.array(z.union([
+    z.tuple([OperationNameSchema, z.string(), ActionAuthzTargetSchema, ActionExposureSchema]),
+    z.tuple([OperationNameSchema, z.string(), ActionAuthzTargetSchema, ActionExposureSchema, z.literal(true)]),
   ])),
   total: z.number().int().nonnegative(),
 };
@@ -5365,3 +5533,57 @@ export const ContainersLogsResultSchema: z.ZodType<ContainersLogsResult> = z.obj
 export function envelopeOf<T>(data: z.ZodType<T>) {
   return z.object({ data, requestId: z.string() }).strict();
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STYLE ENTITIES (style.ts §2.3/§2.4). Document-level schemas only.
+//
+// The LAYER-TOKEN schemas are NOT here and that is the one deliberate exception
+// to "every schema lives in schemas.ts": they are fields of `LAYER_TYPES`, the
+// registry that also holds each type's token->property mapping. Splitting a
+// layer type's validation from its mapping across two files is how a type gets
+// added to one and not the other — the registry is the unit, so it stays whole.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const StyleLayerSchema: z.ZodType<StyleLayer> = z.object({
+  type: z.string().min(1).max(64),
+  enabled: z.boolean().optional(),
+  label: z.string().max(120).optional(),
+  tokens: z.record(z.unknown()),
+}).strict();
+
+export const StyleDocSchema: z.ZodType<StyleDoc> = z.object({
+  schemaVersion: z.number().int().positive().max(STYLE_SCHEMA_VERSION),
+  // The `builtin:` prefix IS the composition constraint (§2.5): a foundation
+  // that could name a user style would make the resolver a graph walk with
+  // cycles, and a stranger's edit would reach into your style.
+  foundation: z.string().regex(/^builtin:[a-z0-9-]{1,64}$/) as unknown as z.ZodType<BuiltinStyleId>,
+  layers: z.array(StyleLayerSchema).max(STYLE_MAX_LAYERS),
+}).strict();
+
+export const StyleWarningSchema: z.ZodType<StyleWarning> = z.object({
+  code: z.enum([
+    'unknown-layer-type',
+    'unknown-token',
+    'invalid-token',
+    'clamped',
+    'unresolved-alias',
+    'low-contrast',
+  ]),
+  layer: z.number().int().nonnegative().nullable(),
+  at: z.string(),
+  message: z.string(),
+}).strict();
+
+/* A token table is an open map keyed by custom property name, so the key
+   GRAMMAR is the only thing worth asserting — enumerating 110 keys here would
+   be a third copy of the palette to keep in sync, and the parity test already
+   guards the table's contents against the CSS. */
+const StyleTokenTableSchema = z.record(z.string().regex(/^--pn-[a-z0-9-]+$/), z.string());
+
+export const BuiltinStyleSchema: z.ZodType<BuiltinStyle> = z.object({
+  id: z.string().regex(/^builtin:[a-z0-9-]{1,64}$/) as unknown as z.ZodType<BuiltinStyleId>,
+  title: z.string().min(1).max(120),
+  builtinRevision: z.number().int().positive(),
+  darkSibling: z.string().regex(/^builtin:[a-z0-9-]{1,64}$/) as unknown as z.ZodType<BuiltinStyleId>,
+  tokens: StyleTokenTableSchema as unknown as z.ZodType<StyleTokenTable>,
+}).strict();

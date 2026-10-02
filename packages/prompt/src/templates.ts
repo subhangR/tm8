@@ -260,6 +260,11 @@ export interface DispatchRequestFacts {
   destinationSessionId: string;
   /** The requester's free-text steer, already length-bounded by the contract. */
   note?: string | null;
+  /**
+   * The session kind to start for the task (`execution.dispatch.kind`, launch
+   * v3 gap 5) — a closed enum, so a trusted attribute. Absent renders nothing.
+   */
+  kind?: 'worker' | 'coordinator' | 'dispatcher' | null;
 }
 
 /**
@@ -274,8 +279,11 @@ export function dispatchRequestInjection(f: DispatchRequestFacts): string {
     `<trusted_control type="tm8.session-input" version="1" kind="dispatch_request" message_id="${attr(f.messageId)}">`,
     `  <from actor_id="${attr(f.requesterActorId)}" actor_kind="${attr(f.requesterActorKind)}" />`,
     `  <to session_id="${attr(f.destinationSessionId)}" />`,
-    `  <dispatch task_id="${attr(f.taskId)}" subject_id="${attr(f.subjectId)}" />`,
+    f.kind
+      ? `  <dispatch task_id="${attr(f.taskId)}" subject_id="${attr(f.subjectId)}" kind="${attr(f.kind)}" />`
+      : `  <dispatch task_id="${attr(f.taskId)}" subject_id="${attr(f.subjectId)}" />`,
     '  <rule>Route this task: pick the teammate, attach the memories they need to the task, spawn them on it, and report who and why on the task anchor. Do not do the task yourself.</rule>',
+    ...(f.kind ? [`  <rule>Start them as a ${f.kind} session: \`execution.spawn\` with mode \`${f.kind}\`.</rule>`] : []),
     '</trusted_control>',
   ].join('\n');
   if (f.note == null || f.note === '') return control;

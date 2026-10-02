@@ -7,7 +7,7 @@
 // equipped twice, and when there is genuinely nothing to prefer.
 
 import { describe, expect, it } from 'vitest';
-import { resolveSkills, splitTaskSkillCollisions, type ResolvedSkillRow } from '../src/spawn/skills.js';
+import { resolveSkills, splitSelectionSkillCollisions, splitTaskSkillCollisions, type ResolvedSkillRow } from '../src/spawn/skills.js';
 import { composeManifest, resolveLaunchConfig } from '../src/spawn/manifest.js';
 import type { SpawnContext, SpawnRequest } from '../src/spawn/types.js';
 
@@ -163,6 +163,44 @@ describe('composeManifest — skills', () => {
       ...manifestFixtures(),
     });
     expect(manifest.skills).toEqual([]);
+  });
+});
+
+describe('splitSelectionSkillCollisions', () => {
+  it('lets a picked skill beat an equipped one of the same name, so resolve never throws', () => {
+    // The prod shape: the persona equips a reference card, the person ticks the full skill.
+    const rows = [
+      row({ entityId: 'card', name: 'api-design', depth: 0 }),
+      row({ entityId: 'other', name: 'Other', depth: 0 }),
+      row({ entityId: 'full', name: ' API-Design ', depth: 0 }),
+    ];
+    expect(() => resolveSkills(rows)).toThrow(/ambiguous skill/);
+    const { kept, collided } = splitSelectionSkillCollisions(rows, new Set(['full']));
+    expect(kept.map((r) => r.entityId)).toEqual(['other', 'full']);
+    expect(collided.map((r) => r.entityId)).toEqual(['card']);
+    expect(() => resolveSkills(kept)).not.toThrow();
+  });
+
+  it('keeps the first of two picks with one name', () => {
+    const rows = [row({ entityId: 'p1', name: 'Review' }), row({ entityId: 'p2', name: 'review' })];
+    const { kept, collided } = splitSelectionSkillCollisions(rows, new Set(['p1', 'p2']));
+    expect(kept.map((r) => r.entityId)).toEqual(['p1']);
+    expect(collided.map((r) => r.entityId)).toEqual(['p2']);
+  });
+
+  it('leaves equipped-only collisions alone, so the curated persona path still refuses', () => {
+    const rows = [row({ entityId: 'e1', name: 'Review' }), row({ entityId: 'e2', name: 'Review' }), row({ entityId: 'pick', name: 'Deploy' })];
+    const { kept, collided } = splitSelectionSkillCollisions(rows, new Set(['pick']));
+    expect(collided).toEqual([]);
+    expect(() => resolveSkills(kept)).toThrow(/ambiguous skill "Review"/);
+  });
+
+  it('treats a shared file path as one identity even under different names', () => {
+    const rows = [
+      row({ entityId: 'eq', name: 'a', sourcePath: '/s/x/SKILL.md' }),
+      row({ entityId: 'pk', name: 'b', sourcePath: '/s/x/SKILL.md' }),
+    ];
+    expect(splitSelectionSkillCollisions(rows, new Set(['pk'])).collided.map((r) => r.entityId)).toEqual(['eq']);
   });
 });
 

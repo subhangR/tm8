@@ -13,7 +13,7 @@
  * sealed store, and leaves by neither door. Every view is built field by field
  * from metadata; no error or log line here quotes an input.
  */
-import { CollabError } from '@tm8/contract';
+import { CollabError, CredentialsSpaceReadinessViewSchema, isHumanAuthKind } from '@tm8/contract';
 import type {
   CredentialPolicySource,
   CredentialsSpaceDeleteResult,
@@ -23,14 +23,17 @@ import type {
   CredentialsSpaceListView,
   CredentialsSpacePolicySetResult,
   CredentialsSpacePolicyView,
+  CredentialsSpaceReadinessView,
   NodeCredentialPolicyEntry,
   NodeCredentialsStatusView,
   SpaceCredentialProviderName,
+  SpaceCredentialStoredProviderName,
   SpaceCredentialView,
 } from '@tm8/contract';
 
 import type { Db, DbClaims } from '../../../db/types.js';
 import type { SpaceCredentialProbe } from '../../../credentials/space-credential-probe.js';
+import { assertSpaceLoginProvider } from '../../../credentials/space-credential-home.js';
 import {
   SPACE_CREDENTIAL_PROVIDERS,
   type DbSpaceCredentialStore,
@@ -69,6 +72,7 @@ type SpaceCredentialStorePort = Pick<
   | 'liveSessions'
   | 'finishLogin'
   | 'readSpacePolicy'
+  | 'readiness'
   | 'setSpacePolicy'
   | 'readNodePolicy'
   | 'setNodePolicy'
@@ -159,7 +163,7 @@ export class SpaceCredentialCatalogService {
     claims: DbClaims,
     spaceId: string,
     input: {
-      provider: SpaceCredentialProviderName;
+      provider: SpaceCredentialStoredProviderName;
       shape: 'api_key' | 'token';
       label: string;
       secret: string;
@@ -286,7 +290,7 @@ export class SpaceCredentialCatalogService {
   async clearMyDefault(
     claims: DbClaims,
     spaceId: string,
-    provider: SpaceCredentialProviderName,
+    provider: SpaceCredentialStoredProviderName,
   ): Promise<CredentialsSpaceMyDefaultResult> {
     await this.store.clearMyDefault(claims, spaceId, provider);
     return { spaceId, provider, credentialId: null };
@@ -349,6 +353,8 @@ export class SpaceCredentialCatalogService {
     // login and stays (206: a login's secret is a file, never a column).
     if (visibility === 'private' && stored.shape === 'login' && this.scrubForeignLaunches) {
       try {
+        // A login is anthropic or openai by 206's CHECK; this narrows the type.
+        assertSpaceLoginProvider(stored.provider);
         const launches = (await this.store.foreignLaunches(claims, credentialId))
           .filter((launch) => launch.provider === stored.provider);
         if (launches.length > 0) {
@@ -463,6 +469,7 @@ export class SpaceCredentialCatalogService {
     // 5. The file home, last.
     if (revoked.shape === 'login') {
       try {
+        assertSpaceLoginProvider(revoked.provider);
         await this.removeLoginHome({
           spaceId: revoked.spaceId,
           credentialId: revoked.id,
@@ -498,6 +505,11 @@ export class SpaceCredentialCatalogService {
     } catch (error) {
       return `stream_close_failed: ${reasonOf(error)}`;
     }
+  }
+
+  /** `credentials.space.readiness` (S7): the space_credential_readiness read, validated at the boundary. */
+  async readiness(claims: DbClaims, spaceId: string): Promise<CredentialsSpaceReadinessView> {
+    return CredentialsSpaceReadinessViewSchema.parse(await this.store.readiness(claims, spaceId));
   }
 
   async policy(claims: DbClaims, spaceId: string): Promise<CredentialsSpacePolicyView> {
@@ -551,7 +563,7 @@ export class SpaceCredentialCatalogService {
    * vendor both refuse the write; they differ only in what the member does
    * next. Neither message carries the key.
    */
-  private async probeOrRefuse(provider: SpaceCredentialProviderName, secret: string): Promise<string | null> {
+  private async probeOrRefuse(provider: SpaceCredentialStoredProviderName, secret: string): Promise<string | null> {
     const result = await this.probe({ provider, secret });
     if (result.ok) return result.displayLogin;
     if (result.reason === 'rejected') {
@@ -593,15 +605,13 @@ function nodeEntries(node: Partial<Record<SpaceCredentialProviderName, boolean>>
 }
 
 /**
- * The auth kinds `internal.require_human_auth_kind()` accepts, checked here
- * only so that a caller the RPC will refuse never reaches the vendor probe.
- * Fail closed: an absent or unrecognised kind refuses. The facade's
- * `requireHumanSession` is layer 1; the RPC is layer 2; this is not a layer.
+ * The auth kinds `internal.require_human_auth_kind()` accepts (`isHumanAuthKind`),
+ * checked here only so that a caller the RPC will refuse never reaches the
+ * vendor probe. Fail closed: an absent or unrecognised kind refuses. The
+ * facade's `requireHumanSession` is layer 1; the RPC is layer 2; this is not a layer.
  */
-const HUMAN_AUTH_KINDS: readonly string[] = ['browser', 'cli'];
-
 function requireHumanClaims(claims: DbClaims): void {
-  if (claims.authKind === undefined || !HUMAN_AUTH_KINDS.includes(claims.authKind)) {
+  if (!isHumanAuthKind(claims.authKind)) {
     throw new CollabError('forbidden', 'credentials are human-only');
   }
 }

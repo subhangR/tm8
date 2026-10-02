@@ -1,5 +1,5 @@
 /**
- * W11-repoint (placeholder migration 989) on an old-shaped node, the whole chain:
+ * W11-repoint (migration 286, placeholder 989 on the lane) on an old-shaped node, the whole chain:
  *
  *   < 234  seed: folder F granted to A AND B, G to A only; a chat, a work
  *          session and a worktree on F in each space;
@@ -29,7 +29,7 @@ import { createW1ScratchDatabase, migrationFiles, REPO_ROOT, type W1ScratchDatab
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 300_000 });
 
-const REPOINT = '989_w11_repoint_project_entity.sql';
+const REPOINT = '286_w11_repoint_project_entity.sql';
 const ordinal = (file: string): number => Number(file.slice(0, 3));
 const BEFORE = migrationFiles().filter((f) => ordinal(f) < 234);
 const W11_MODEL = migrationFiles().filter((f) => ordinal(f) === 234);

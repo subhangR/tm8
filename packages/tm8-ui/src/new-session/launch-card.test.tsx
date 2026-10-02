@@ -260,6 +260,28 @@ describe('the verb switch', () => {
     expect(names.some((n) => n?.includes('forge'))).toBe(false);
   });
 
+  it('DISPATCH hides the Teammates type from Attach, and the preview says the dispatcher gets the whole roster', async () => {
+    const view = renderPopup({ teammates: WITH_MODES });
+    await view.ready();
+    fireEvent.click(view.getByTestId('lcd-verb'));
+    fireEvent.click(view.getByTestId('lcd-verb-dispatcher'));
+    fireEvent.click(view.getByTestId('lcd3-attach'));
+    fireEvent.click(view.getByTestId('lcd3-attach-type'));
+    expect(view.queryByTestId('lcd3-attach-type-teammate')).toBeNull();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(view.getByTestId('nsx-send').getAttribute('aria-disabled')).toBe('false'));
+    fireEvent.click(view.getByTestId('nsx-send'));
+    expect(view.getByTestId('lcd3-preview-roster').textContent).toContain('whole space’s roster');
+  });
+
+  it('RUN keeps the Teammates type in Attach', async () => {
+    const view = renderPopup({ teammates: WITH_MODES });
+    await view.ready();
+    fireEvent.click(view.getByTestId('lcd3-attach'));
+    fireEvent.click(view.getByTestId('lcd3-attach-type'));
+    expect(view.getByTestId('lcd3-attach-type-teammate')).toBeTruthy();
+  });
+
   it('DISPATCH refuses when the node doesn’t say which teammates can dispatch', () => {
     const view = renderPopup();
     fireEvent.click(view.getByTestId('lcd-verb'));

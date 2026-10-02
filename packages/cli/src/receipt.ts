@@ -214,7 +214,10 @@ function head(op: ReceiptOp, entity: Rec, input: ReceiptInput): Receipt {
   // Session receipts carry no version, as in the spec's spawn/terminate
   // examples (§5): nothing versions a work_session through these commands,
   // and the spawn worst case (80-char title + worktree path) needs the bytes
-  // to stay under the 640 B cap without cutting a required fact (D7.1).
+  // to stay under the 640 B cap without cutting a required fact (D7.1). A
+  // spawn that also reports its resolved posture (access mode, parent,
+  // credential per provider) is budgeted at 1024 B: those rows are required
+  // facts too, and the provider table bounds them.
   if (typeof entity.version === 'number' && !op.startsWith('session.')) {
     receipt.version =
       input.expectedVersion === undefined
@@ -374,9 +377,39 @@ function spawnReceipt(op: ReceiptOp, dto: unknown, input: ReceiptInput): Receipt
   }
   const branch = str(state.checkoutBranch);
   if (branch !== undefined) receipt.branch = branch;
-  // `accessMode` is not on the work_session result; phase 2's server receipt
-  // supplies it. Omitted rather than echoed from argv, which may not name one.
+  // The posture is the server's RESOLVED `launch` block, never argv: argv may
+  // name no access mode (the child then inherits its parent's or takes the
+  // persona's) and never names the credential each provider ran on. A server
+  // that predates `launch` leaves these out rather than have them guessed.
   // No `refs` either (§5's spawn example): `tasks` and `workdir` are the rows.
+  const launch = rec(rec(dto).launch);
+  const accessMode = str(launch.accessMode);
+  if (accessMode !== undefined) {
+    const from = str(launch.accessModeSource);
+    receipt.access = from === undefined ? { mode: accessMode } : { mode: accessMode, from };
+  }
+  if (typeof launch.parentSessionId === 'string' || launch.parentSessionId === null) {
+    receipt.parent = launch.parentSessionId;
+  }
+  if (Array.isArray(launch.credentials)) {
+    const credentials: Rec = {};
+    for (const c of launch.credentials.filter(isRecord).slice(0, ROW_CAP)) {
+      const provider = str(c.provider);
+      const source = str(c.source);
+      if (provider === undefined || source === undefined) continue;
+      const id = str(c.spaceCredentialId);
+      const pick = str(c.spacePick);
+      // `source[/pick][:space-credential-id]`, e.g. `space/pinned:<id>` or
+      // `member`: one string per provider keeps a three-provider worst case
+      // inside the spawn budget. Ids and picks only — the server never sends
+      // a secret, and nothing else from the row is copied, so a future field
+      // cannot leak through.
+      credentials[provider] = source === 'space'
+        ? `${source}${pick === undefined ? '' : `/${pick}`}${id === undefined ? '' : `:${id}`}`
+        : source;
+    }
+    receipt.credentials = credentials;
+  }
   return tail(receipt, dto, input, undefined);
 }
 
@@ -494,6 +527,38 @@ function warningText(w: ReceiptWarning): string {
   return message === undefined ? `WARNING ${code}` : `WARNING ${code}: ${message}`;
 }
 
+/** A spawn receipt's `access:` and `parent:` head facts. */
+function postureHead(receipt: Rec): string[] {
+  const out: string[] = [];
+  const access = rec(receipt.access);
+  if (typeof access.mode === 'string') {
+    out.push(`access:${access.mode}${typeof access.from === 'string' ? `(${access.from})` : ''}`);
+  }
+  if (typeof receipt.parent === 'string') out.push(`parent:${receipt.parent}`);
+  else if (receipt.parent === null) out.push('parent:none');
+  return out;
+}
+
+/** `credentials anthropic=member github=space/pinned:<id>` — ids and picks only. */
+function credentialsClause(receipt: Rec): string | undefined {
+  if (!isRecord(receipt.credentials)) return undefined;
+  const rows = Object.entries(receipt.credentials).map(([provider, c]) => `${provider}=${String(c)}`);
+  return rows.length > 0 ? `credentials ${rows.join(' ')}` : undefined;
+}
+
+/**
+ * The posture a spawn resolved, for the human line of a NON-receipt spawn
+ * (`--full`): the same facts the receipt carries, or '' from a server that
+ * predates them.
+ */
+export function spawnPostureText(dto: unknown): string {
+  const receipt = spawnReceipt('session.spawn', dto, {});
+  const credentials = credentialsClause(receipt);
+  return [postureHead(receipt).join(' '), ...(credentials === undefined ? [] : [credentials])]
+    .filter((part) => part !== '')
+    .join(' · ');
+}
+
 export function renderReceiptHuman(receipt: Receipt): string {
   // Head facts are space-joined, as in §4.4's example; each ref, delivery row
   // and warning is its own ` · ` clause so a reader can split them.
@@ -532,6 +597,9 @@ export function renderReceiptHuman(receipt: Receipt): string {
       head.push(`${workdir.mode}${typeof workdir.path === 'string' ? `:${workdir.path}` : ''}`);
     }
     if (typeof receipt.branch === 'string') head.push(`branch:${receipt.branch}`);
+    head.push(...postureHead(receipt));
+    const credentials = credentialsClause(receipt);
+    if (credentials !== undefined) clauses.push(credentials);
     for (const ref of (receipt.refs as ReceiptRef[] | undefined) ?? []) clauses.push(refText(ref));
     const undo = rec(receipt.undo);
     if (typeof undo.token === 'string') {

@@ -76,7 +76,7 @@ import { useLaunchSheet } from './useLaunchSheet';
 import { REFERENCE_KINDS } from '../domain/launch-selection';
 import { useLaunchPort } from './useLaunchPort';
 import { useTheme } from '../theme/useTheme';
-import { AccountMenu, AuthFlow, authTokenFor, noteServerOrigin, useAuthActions } from '../auth';
+import { AccountMenu, AuthFlow, authTokenFor, noteServerOrigin, signOut, useAuthActions } from '../auth';
 import { spaceSessionFor } from '../auth/space-sessions';
 import { WorkspaceView } from './WorkspaceView';
 import { EntityView } from './EntityView';
@@ -111,6 +111,7 @@ import {
 } from '../settings-credentials';
 import { SpaceLinksSection, spaceLinksPortFromSeam } from '../settings-space-links';
 import { readLastSpace, readLastTarget, writeLastTarget } from './last-place';
+import { FullViewScreen, hasFullView } from './entity-full/FullViewScreen';
 import {
   NewSpaceProjectDialog,
   ProjectBranchesSection,
@@ -317,7 +318,11 @@ export function screenKeyOfTarget(target: MenuTarget | null): ScreenKey | null {
 export function GateApp(props: GateAppProps = {}) {
   // null when this GateApp is not inside an <AuthGate> — the shell tests, and
   // any host that has not mounted the gate.
-  const authAccount = useAuthActions()?.account ?? null;
+  const authActions = useAuthActions();
+  const authAccount = authActions?.account ?? null;
+  // Revoking this browser's own session from Settings → Sessions signs out.
+  // The gate's sign-out when there is a gate; the standalone one otherwise.
+  const signOutHere = authActions?.signOut ?? signOut;
 
   // Boot hydrates the RULED defaults; the viewer's persisted choice is applied
   // after, because the persistence is scoped per (viewer, space) and the space
@@ -515,6 +520,9 @@ export function GateApp(props: GateAppProps = {}) {
    * before knowing the kind is the misroute this whole chain was repaired for.
    */
   const landing = useMemo<Landing | null>(() => {
+    /* `?full=1` is the Z4 full view (PR 1004), not the kind screen: it has its
+       own arm below, so no landing resolves for it here. */
+    if (navView.view === 'entity' && navView.full) return null;
     const direct = landingOfRoute(navView);
     if (direct) return direct;
     if (navView.view !== 'entity' || navView.origin) return null;
@@ -536,7 +544,7 @@ export function GateApp(props: GateAppProps = {}) {
    * and the dependency list can stay honest about what wakes it.
    */
   useEffect(() => {
-    if (navView.view !== 'entity' || navView.origin) return;
+    if (navView.view !== 'entity' || (navView.origin && !navView.full)) return;
     if (data.detailOf(navView.entityId)) return;
     data.pull(navView.entityId);
   }, [navView, data]);
@@ -661,6 +669,10 @@ export function GateApp(props: GateAppProps = {}) {
      to the identity of a callback that changes on every render. */
   const noticeSink = useRef(notices.push);
   noticeSink.current = notices.push;
+  /* Same reason: the nav port's promote asks the entity's kind (PR 1004)
+     without re-memoising the port on every data change. */
+  const detailOfRef = useRef(data.detailOf);
+  detailOfRef.current = data.detailOf;
   const routerTarget = props.routerTarget;
   /** The live transport, for the one caller that must write the address from
       outside the sync loop — see `resetAddress`. */
@@ -1335,7 +1347,13 @@ export function GateApp(props: GateAppProps = {}) {
        * the failure mode this codebase keeps removing. It comes back the moment
        * the M1 host exists, and nothing here presumes what that host looks like.
        */
-      promote: (_id) => {
+      promote: (id) => {
+        /* PR 1004: a kind that BUILT its full view promotes for real, to
+           `e/{id}?full=1`. Every other kind keeps the refusal below. */
+        if (hasFullView(detailOfRef.current(id)?.kind)) {
+          navStore.getState().navigate({ view: 'entity', entityId: id, origin: null, full: true });
+          return;
+        }
         noticeSink.current({
           id: 'z4-unbuilt',
           tone: 'warn',
@@ -1349,6 +1367,14 @@ export function GateApp(props: GateAppProps = {}) {
       setContentSurface: (id, surface) => actions.setContentSurface(id, surface),
     };
   }, [stack, pinned, contentSurface]);
+
+  /* A Settings row (space credential, space link) opens its own managed panel
+     (task 01a0e24d): same handoff as the attention segment, into the
+     workspace. */
+  const openFromSettings = useCallback((id: string) => {
+    navigateTo(WORKSPACE_TARGET);
+    nav.push(id as EntityId);
+  }, [navigateTo, nav]);
 
   /**
    * GAP #0 (Surface Audit final): the palette and the C6 controller were
@@ -1584,8 +1610,8 @@ export function GateApp(props: GateAppProps = {}) {
   );
 
   const settingsPort = useMemo(
-    () => (data.spaceId ? settingsPortFromSeam(data.seam, data.spaceId) : null),
-    [data.seam, data.spaceId],
+    () => (data.spaceId ? settingsPortFromSeam(data.seam, data.spaceId, { signOut: signOutHere }) : null),
+    [data.seam, data.spaceId, signOutHere],
   );
 
   // The credentials section's own adapter, built the same way and on the same
@@ -1938,10 +1964,11 @@ export function GateApp(props: GateAppProps = {}) {
           // and the screen names the missing step instead.
           {...(authAccount
             ? {
-                onRedeem: (code: string) =>
+                onRedeem: (code: string, spacePassword?: string) =>
                   data.seam.commands.redeemInvite({
                     code,
                     clientMutationId: newJoinMutationId(),
+                    ...(spacePassword ? { spacePassword } : {}),
                   }),
               }
             : {})}
@@ -2391,6 +2418,34 @@ export function GateApp(props: GateAppProps = {}) {
                 nav.push(id as EntityId);
               }}
             />
+          ) : data.ready &&
+            navView.view === 'entity' &&
+            navView.full &&
+            (!data.detailOf(navView.entityId) || hasFullView(data.detailOf(navView.entityId)?.kind)) ? (
+            /* THE Z4 FULL VIEW, MOUNTED — for the kinds that built one
+               (`panel.fullView`, PR 1004). Until the kind is known the screen
+               draws EntityFullView's own resolving state; a kind that did not
+               opt in falls through to the "full view isn't built yet" card
+               below, exactly as before. */
+            <FullViewScreen
+              key={navView.entityId}
+              data={data}
+              reasons={reasons}
+              entityId={navView.entityId}
+              origin={navView.origin}
+              hops={navView.hops ?? null}
+              kinds={navView.kinds ?? null}
+              serverBaseUrl={activeServer.routeBaseUrl}
+              viewerMemberId={viewerMemberId}
+              onNotice={notices.push}
+              onSpawn={async (input) => {
+                const sessionId = await data.spawn(input);
+                navigateTo(WORKSPACE_TARGET);
+                nav.push(sessionId);
+              }}
+              onLaunchOpen={(id) => launch.open(id)}
+              onChatAbout={openChatAbout}
+            />
           ) : data.ready && activeTarget?.type === 'kind' ? (
             /* D65: a rail KIND row opens its EntityView — wide list, Z3 aside
                on row click, Z4 full on promote. The workspace stays the one
@@ -2541,6 +2596,7 @@ export function GateApp(props: GateAppProps = {}) {
                      a session is created by RUNNING a task, whose Run lives
                      on the hosted tile itself. */
                   renderRootList={regions.renderRootList}
+                  newChatRequest={regions.newChatRequest}
                   root={regions.root}
                   onRoot={regions.onRoot}
                   kindCell={regions.kindCell}
@@ -2613,11 +2669,11 @@ export function GateApp(props: GateAppProps = {}) {
                 credentialsPort || branchesPort || spaceCredentialsPort || spaceLinksPort
                   ? {
                       ...(spaceLinksPort
-                        ? { 'space-links': <SpaceLinksSection port={spaceLinksPort} /> }
+                        ? { 'space-links': <SpaceLinksSection port={spaceLinksPort} onOpen={openFromSettings} /> }
                         : {}),
                       ...(spaceCredentialsPort
                         ? {
-                            'space-credentials': <SpaceCredentialsSection port={spaceCredentialsPort} serverBaseUrl={activeServer.routeBaseUrl} />,
+                            'space-credentials': <SpaceCredentialsSection port={spaceCredentialsPort} serverBaseUrl={activeServer.routeBaseUrl} onOpen={openFromSettings} />,
                             'node-credentials': <NodeCredentialsSection port={spaceCredentialsPort} />,
                           }
                         : {}),

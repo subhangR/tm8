@@ -3,6 +3,44 @@
    --pn-wait, red --pn-block, FYI the ink greys. */
 
 /* -- Detail block (tab 3, variant A) ------------------------------------- */
+/* THE DOCK IS ZERO-HEIGHT, so the block never pushes the entity down
+   (Subhang, 2026-10-02: "pushing down the entity detail panel is bad UX").
+   It sits right under the tab strip; the block hangs from it as an overlay at
+   the top-right of the body: a pill when collapsed, a card when open. */
+.cv2-root .att-block-dock {
+  position: relative;
+  flex: none;
+  height: 0;
+  z-index: 30;
+}
+
+.cv2-root .att-block-dock > .att-block {
+  position: absolute;
+  top: var(--pn-space-2);
+  right: var(--pn-space-3);
+  width: min(460px, calc(100% - 2 * var(--pn-space-3)));
+  margin: 0;
+  max-height: min(70vh, 560px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--pn-card);
+  box-shadow: 0 14px 32px rgb(0 0 0 / 0.16), 0 0 0 1px color-mix(in srgb, var(--pn-wait) 25%, transparent);
+}
+
+.cv2-root .att-block-dock > .att-block[data-collapsed='true'] {
+  width: auto;
+  max-width: calc(100% - 2 * var(--pn-space-3));
+  border-radius: var(--pn-r-pill);
+  border-left-width: 1px;
+  background: var(--pn-wait-soft);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.12);
+}
+
+.cv2-root .att-block-dock > .att-block[data-collapsed='true'] .att-block__head {
+  padding: 3px var(--pn-space-3) 3px var(--pn-space-2);
+  white-space: nowrap;
+}
+
 .cv2-root .att-block {
   flex: none;
   margin: var(--pn-space-2) var(--pn-space-3) 0;

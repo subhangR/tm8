@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type {
   ArtifactPreviewSession,
@@ -9,7 +9,7 @@ import type {
 } from '@tm8/contract';
 import type { ArtifactRevisionsList, ArtifactRevisionSummary } from '../../data/seam';
 import type { ContentBlockRef } from '../../domain';
-import { KindIcon } from '../../domain';
+import { KindIcon, getKind } from '../../domain';
 import { Chip, Eyebrow, Markdown } from '../../kit';
 import { canThumbnail } from '../../files/AttachmentStrip';
 import type { DownloadHref } from '../../files/FilesScreen';
@@ -18,10 +18,14 @@ import type { AuthoringCommands } from '../../authoring';
 import { LoopControls } from '../../loops/LoopControls';
 import { BlueprintBlock } from './BlueprintBlock';
 import { DrawingBlock } from './DrawingBlock';
+import { StoryStaticHost } from '../../story/StoryHost';
 import { QuestionnaireBlock } from '../../forms/QuestionnaireBlock';
 import { PeerRowsBlock } from './PeerRowsBlock';
 import { edgesOf } from './MemorySetBlock';
 import { MembershipBlock, type MembershipAuthoring } from './MembershipBlock';
+import { SettingsHomeLink } from '../SettingsHomeLink';
+import type { ManagedPort } from '../../managed/port';
+import { ManagedBlock } from './ManagedBlock';
 import type { EntityListPanelProps } from '../EntityListPanel';
 
 /**
@@ -38,7 +42,7 @@ export interface ArtifactPreviewCommands {
 }
 
 type GenericBodyCommands = Partial<
-  ArtifactPreviewCommands & Pick<AuthoringCommands, 'patchEntity'>
+  ArtifactPreviewCommands & Pick<AuthoringCommands, 'patchEntity'> & { managed: ManagedPort }
 >;
 
 /**
@@ -68,9 +72,18 @@ export function GenericBody({
   membership,
   membersHost,
   barSlot,
+  serverBaseUrl,
+  storySurface,
 }: {
   detail: EntityDetail;
   blocks: readonly ContentBlockRef[];
+  /**
+   * The live story page for the `storyline` block, composed by the host
+   * (`storySurfaceFor`). Absent ⇒ the block draws the row's static read.
+   */
+  storySurface?: ReactNode;
+  /** Same-origin route prefix, for the `managed` block's inline login terminal. */
+  serverBaseUrl?: string;
   onOpenEntity?: (id: string) => void;
   commands?: GenericBodyCommands | null;
   onSaved?: (result: CommandResult) => void;
@@ -126,6 +139,8 @@ export function GenericBody({
           membership={membership}
           membersHost={membersHost}
           barSlot={barSlot}
+          serverBaseUrl={serverBaseUrl}
+          storySurface={storySurface}
         />
       ))}
     </div>
@@ -142,9 +157,13 @@ function ContentBlock({
   membership,
   membersHost,
   barSlot,
+  serverBaseUrl,
+  storySurface,
 }: {
   detail: EntityDetail;
   block: ContentBlockRef;
+  storySurface?: ReactNode;
+  serverBaseUrl?: string;
   onOpenEntity?: (id: string) => void;
   commands?: GenericBodyCommands | null;
   onSaved?: (result: CommandResult) => void;
@@ -179,6 +198,10 @@ function ContentBlock({
             onSaved={onSaved}
           />
         );
+      /* The story page. The host's live surface when it wired one, else the
+         static read of the row this panel already holds. */
+      case 'storyline':
+        return storySurface ?? <StoryStaticHost key={detail.id} detail={detail} {...(onOpenEntity ? { open: onOpenEntity } : {})} />;
       /* A form's Fill / Build / Responses. It reads the question set off the
          row and everything else through the forms seam (`src/forms/seam.ts`),
          so it needs nothing from the host. Keyed by entity id: re-pointing the
@@ -237,6 +260,21 @@ function ContentBlock({
         return <LifecycleBlock detail={detail} />;
       case 'notice':
         return <NoticeBlock block={block} />;
+      /* The kind's Settings home, read off its registry row — the same datum
+         the list header links from, so the two can never disagree. */
+      case 'settings-home': {
+        const home = getKind(detail.kind).settingsHome;
+        return home ? <SettingsHomeLink home={home} /> : null;
+      }
+      /* The managed block's spec is registry DATA on the row (verb slots are a
+         list; block params are scalars), read here exactly as `settings-home`
+         reads its home. */
+      case 'managed': {
+        const spec = getKind(detail.kind).panel.managed;
+        return spec ? (
+          <ManagedBlock detail={detail} spec={spec} port={commands?.managed} serverBaseUrl={serverBaseUrl} />
+        ) : null;
+      }
       default:
         return null;
     }

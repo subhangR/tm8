@@ -40,6 +40,7 @@ import {
   assembleSummaries, ENTITY_COLUMNS, ENTITY_FROM, MICROS, type EntityRow,
 } from '../entity-read.js';
 import { toCommandResult, type RpcCommandResult } from './entities.js';
+import { runsOnListedFrom } from '../services/w2/runs-on-visibility.js';
 
 // ---------------------------------------------------------------------------
 // Sorting
@@ -269,6 +270,24 @@ const TITLE_TEXT = `coalesce(t.title, d.title, ws.title, drw.title, sk.name, sp.
   tm.name, mem.display_name, col.name, ch.name, vc.name, f.name, memo.statement,
   art.name, lp.title, gr.title, cht.title, ctr.title, pr.title, ppd.name, '')`;
 
+/**
+ * The short descriptions a picker search may also match (`filters.words`):
+ * the one-line "what is this for" a skill, spell, artifact or collection
+ * carries. Not a task's or doc's body — that is prose, and a word anywhere in
+ * it would bury the title hits under every page that mentions it.
+ */
+const DESCRIPTION_TEXT = `coalesce(sk.description, sp.description, art.description, col.description, '')`;
+
+/**
+ * `filters.words` as the words it requires: lowercased, split on whitespace
+ * and on the separators names are written with, deduplicated, at most 8.
+ * Exported for the unit test; empty when the text holds no word at all.
+ */
+export function searchWords(text: string): string[] {
+  const words = text.toLowerCase().split(/[\s\-_./:]+/).filter((word) => word.length > 0);
+  return [...new Set(words)].slice(0, 8);
+}
+
 function buildWhere(query: CollectionQuery, p: Params): string[] {
   const where: string[] = [`e.space_id = ${p.add(assertUuid(query.spaceId, 'spaceId'))}`];
   const f = query.filters ?? {};
@@ -399,6 +418,24 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
     }
   }
 
+  // Every word, in the title or a short description (the attach palette's
+  // search). A picker query is what a person types — "skill creator" for
+  // `skill-creator` — and `titleContains` matched it as one literal string,
+  // so any query whose spacing or order differed from the stored name found
+  // nothing. Same `position` reasoning as above. A text that is all
+  // separators keeps the literal title match rather than matching everything.
+  if (f.words !== undefined) {
+    const words = searchWords(f.words);
+    if (words.length > 0) {
+      where.push(`not exists (
+        select 1 from unnest(${p.add(words)}::text[]) word
+         where position(word in lower(concat_ws(' ', ${TITLE_TEXT}, ${DESCRIPTION_TEXT}))) = 0
+      )`);
+    } else if (f.words.trim().length > 0) {
+      where.push(`position(lower(${p.add(f.words.trim())}::text) in lower(${TITLE_TEXT})) > 0`);
+    }
+  }
+
   // A CREDENTIAL LOGIN TERMINAL IS NOT WORK (082, architect Ruling 16) and the
   // rule belongs HERE, not only in the client.
   //
@@ -451,10 +488,14 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
     const { type, direction, entityId } = f.edge;
     const self = direction === 'outgoing' ? 'src_id' : 'dst_id';
     const other = direction === 'outgoing' ? 'dst_id' : 'src_id';
+    const anchor = p.add(assertUuid(entityId, 'filters.edge.entityId'));
+    // runs_on counts only when the filter's anchor is the session: listing the
+    // sessions that point at a credential is its gated usage read.
     where.push(`exists (
       select 1 from public.edges g
        where g.${self} = e.id and g.type = ${p.add(type)}
-         and g.${other} = ${p.add(assertUuid(entityId, 'filters.edge.entityId'))}
+         and g.${other} = ${anchor}
+         and ${runsOnListedFrom('g', `${anchor}::uuid`)}
     )`);
   }
 
