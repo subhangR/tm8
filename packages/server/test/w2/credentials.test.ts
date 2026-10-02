@@ -1145,6 +1145,21 @@ describe('W10d — credentials.space.addMine takes no token and no token id, and
     expect((error as CollabError | null)?.details?.['reason']).not.toBe(CREDENTIALS_HUMAN_ONLY);
     expect(db.calls.length).toBeGreaterThan(0);
   });
+  it('#883 F3: a non-member is refused forbidden BEFORE the caller\'s own token is read or opened', async () => {
+    const db = new FakeDb(async (sql) => (sql.includes('is_space_member') ? [{ is_member: false }] : []), serviceRpcs);
+    const ctx = context('credentials.space.addMine', 'browser', { params, body: { provider: 'github', label: 'Mine' } });
+    const error = await invoke(registryFor(db), 'credentials.space.addMine', ctx).then(() => null, (e: unknown) => e);
+    expect(error).toMatchObject({ code: 'forbidden' });
+    expect(db.queryCalls.some((c) => c.sql.includes('is_space_member'))).toBe(true);
+    expect(db.rpcCalls.map((c) => c.fn)).not.toContain('read_account_git_credential');
+  });
+  it('positive (F3) — a member gets past the membership check to the token read', async () => {
+    const db = new FakeDb(async (sql) => (sql.includes('is_space_member') ? [{ is_member: true }] : []), async () => null);
+    const ctx = context('credentials.space.addMine', 'browser', { params, body: { provider: 'github', label: 'Mine' } });
+    const error = await invoke(registryFor(db), 'credentials.space.addMine', ctx).then(() => null, (e: unknown) => e);
+    expect(db.rpcCalls.map((c) => c.fn)).toContain('read_account_git_credential');
+    expect((error as CollabError | null)?.details?.['reason']).toBe('no_personal_credential');
+  });
   for (const extra of [{ tokenId: 'x' }, { secret: 'x' }, { token: 'x' }, { accountId: 'x' }, { actorId: 'x' }]) {
     it(`the strict body refuses ${Object.keys(extra)[0]} — the token is always the caller's own`, () => {
       expect(CredentialsSpaceAddMineInputSchema.safeParse({ provider: 'github', label: 'Mine', ...extra }).success).toBe(false);

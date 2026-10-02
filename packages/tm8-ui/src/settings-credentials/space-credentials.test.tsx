@@ -1069,6 +1069,7 @@ describe('W10d — owner, visibility, claim, my default, usage (doc 13 §7)', ()
     const port = fakePort({ rows: ROWS, viewer: shared });
     await mount(port);
     fireEvent.click(screen.getByRole('button', { name: 'Make public My private' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm make public My private' }));
     await screen.findByText('“My private” is public: every member can launch with it.');
     expect(port.setVisibility).toHaveBeenCalledWith('c-priv', 'public');
     fireEvent.click(screen.getByRole('button', { name: 'Allow as space default My public' }));
@@ -1082,11 +1083,24 @@ describe('W10d — owner, visibility, claim, my default, usage (doc 13 §7)', ()
     expect(port.clearMyDefault).toHaveBeenCalledWith('anthropic');
   });
 
+  it('#883 F4: make public asks first — the first click changes nothing, Keep private cancels', async () => {
+    const port = fakePort({ rows: ROWS, viewer: shared });
+    await mount(port);
+    fireEvent.click(screen.getByRole('button', { name: 'Make public My private' }));
+    const confirm = await screen.findByTestId('space-cred-public-confirm-c-priv');
+    expect(confirm.textContent).toContain('Every member of this space will be able to launch with it');
+    expect(port.setVisibility).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Keep private My private' }));
+    expect(screen.queryByTestId('space-cred-public-confirm-c-priv')).toBeNull();
+    expect(port.setVisibility).not.toHaveBeenCalled();
+  });
+
   it('a refused visibility change shows the server reason', async () => {
     const port = fakePort({ rows: ROWS, viewer: shared });
     port.setVisibility.mockRejectedValueOnce(new CollabError('forbidden', 'only the owner can change who may use this credential'));
     await mount(port);
     fireEvent.click(screen.getByRole('button', { name: 'Make public My private' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm make public My private' }));
     expect((await screen.findByTestId('space-cred-failure-refused')).textContent).toBe('Refused: only the owner can change who may use this credential');
   });
 

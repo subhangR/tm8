@@ -476,7 +476,7 @@ function CredentialRow({
   const claimable = canClaim(row, viewer);
   const mine = canMyDefault(row, viewer);
   const usageAllowed = canSeeUsage(row, viewer);
-  const [mode, setMode] = useState<'idle' | 'rename' | 'rekey' | 'confirm-delete' | 'confirm-private'>('idle');
+  const [mode, setMode] = useState<'idle' | 'rename' | 'rekey' | 'confirm-delete' | 'confirm-private' | 'confirm-public'>('idle');
   const [usage, setUsage] = useState<CredentialsSpaceUsageView | null>(null);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState<null | 'probe' | 'plain'>(null);
@@ -554,7 +554,7 @@ function CredentialRow({
           ) : null}
           {owner && row.visibility === 'private' ? (
             <button type="button" className="cred-action" aria-label={`Make public ${row.label}`} disabled={busy !== null}
-              onClick={() => void run('plain', async () => { await port.setVisibility(row.id, 'public'); return `“${row.label}” is public: every member can launch with it.`; })}>
+              onClick={() => { setFailure(null); setMode(mode === 'confirm-public' ? 'idle' : 'confirm-public'); }}>
               Make public
             </button>
           ) : null}
@@ -603,6 +603,24 @@ function CredentialRow({
               {usage ? 'Hide usage' : 'Usage'}
             </button>
           ) : null}
+        </div>
+      ) : null}
+
+      {/* #883 F4: one click used to expose the owner's login and hint and let
+          every member launch as the owner's identity; it now asks first. */}
+      {owner && mode === 'confirm-public' ? (
+        <div className="set-spc__confirm" data-testid={`space-cred-public-confirm-${row.id}`}>
+          <p className="set-spc__warn">
+            Every member of this space will be able to launch with it{row.displayLogin ? `, signed in as ${row.displayLogin}` : ''}, and will see
+            {row.displayLogin ? ' that login and' : ''} its key hint.
+          </p>
+          <div className="cred-card__actions">
+            <button type="button" className="cred-action cred-action--primary" aria-label={`Confirm make public ${row.label}`} disabled={busy !== null}
+              onClick={() => void run('plain', async () => { await port.setVisibility(row.id, 'public'); return `“${row.label}” is public: every member can launch with it.`; })}>
+              Make public
+            </button>
+            <button type="button" className="cred-action" aria-label={`Keep private ${row.label}`} onClick={() => setMode('idle')}>Keep private</button>
+          </div>
         </div>
       ) : null}
 
