@@ -27,8 +27,12 @@ import { CollabError, isHumanAuthKind } from '@tm8/contract';
 
 import type { RequestIdentity, SpaceSessionsMode } from './types.js';
 
-/** Node-admin operation namespaces a gate session keeps (K6: node admin is gate admin). */
-const GATE_NODE_ADMIN_PREFIXES: readonly string[] = ['node.', 'serverConnections.'];
+/**
+ * Node-admin operation namespaces a gate session keeps (K6: node admin is gate
+ * admin). `gate.*` (`gate.folders.*`) checks `isGateAdmin` — node admin AND
+ * unpinned — so a gate session is the only caller that can ever pass it.
+ */
+const GATE_NODE_ADMIN_PREFIXES: readonly string[] = ['node.', 'serverConnections.', 'gate.'];
 
 /** Non-`auth.*` ops a gate session needs to find, make or join a space. */
 const GATE_SPACE_ENTRY_OPS: ReadonlySet<string> = new Set([

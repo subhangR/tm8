@@ -115,6 +115,7 @@ export type SpaceLinkRefusalReason =
   | 'grant'
   | 'process_start'
   | 'session_body'
+  | 'membership'
   | 'spawn_switch_off'
   | 'spawn_explicit_credentials'
   | 'unknown_op'
@@ -175,8 +176,17 @@ export type SpaceLinkRefusalReason =
  * `execution.transcript` read a session's body, and a journal can hold a live
  * token (the F3 journal-redaction item), so they are refused, reads too.
  *
+ * Membership and role writes (owner decision D6, lane L6): who belongs to B
+ * and with what role is B's humans' call, made in B. Through a link every
+ * `spaces.members.*` and `spaces.invites.*` write (role change, removal, the
+ * member space-password resets, invite create/revoke/redeem) and
+ * `spaces.leave` is refused at home, even for a member who is admin in B;
+ * reads (members and invite lists) pass. A human acting directly in B is
+ * unaffected: this list only gates spaceLinks.invoke.
+ *
  * The reason is the CLASS the refusal error carries: `grant`,
- * `process_start`, `session_body`, and the credential/link/session classes.
+ * `process_start`, `session_body`, `membership`, and the
+ * credential/link/session classes.
  */
 export const SPACE_LINK_REFUSED: readonly SpaceLinkRefusedPrefix[] = [
   { prefix: 'credentials.', kinds: 'all', reason: 'credential_management' },
@@ -212,6 +222,9 @@ export const SPACE_LINK_REFUSED: readonly SpaceLinkRefusedPrefix[] = [
   { prefix: 'execution.git', kinds: 'all', reason: 'process_start' },
   { prefix: 'execution.journal', kinds: 'all', reason: 'session_body', exact: true },
   { prefix: 'execution.transcript', kinds: 'all', reason: 'session_body', exact: true },
+  { prefix: 'spaces.members.', kinds: 'command', reason: 'membership' },
+  { prefix: 'spaces.invites.', kinds: 'command', reason: 'membership' },
+  { prefix: 'spaces.leave', kinds: 'all', reason: 'membership', exact: true },
 ];
 
 /** The spawn op, refused through a link with the switch off or explicit credentials (F9). */
