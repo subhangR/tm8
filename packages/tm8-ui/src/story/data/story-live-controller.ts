@@ -192,9 +192,8 @@ export function createStoryLiveController(opts: StoryLiveOptions): StoryLiveCont
         page = nextPage;
         members = membershipOf(storyId, page);
         feedAnchors = new Set([storyId, ...page.feedAnchorIds]);
-        // The backlog now covers what it covers; keep only newer live rows.
-        const inBacklog = new Set(page.recentMessages.map((m) => m.id));
-        liveFeed = liveFeed.filter((f) => !inBacklog.has(f.id));
+        // Live rows stay (capped) even once the backlog has them: they keep
+        // their `incoming` mark and full body, and toStoryView dedupes.
       }
       error = null;
     } catch (e) {
