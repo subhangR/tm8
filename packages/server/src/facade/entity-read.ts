@@ -60,7 +60,7 @@ import type {
   WorkStatus,
 } from '@tm8/contract';
 import { checkGraphCoherence, DEFAULT_FORM_SETTINGS, plainExcerpt, type FormQuestionRow, type FormSectionRow, type FormSettings, type FormStatus } from '@tm8/contract';
-import { SessionTranscriptContextSchema, type SessionTranscriptContext } from '@tm8/contract';
+import { SessionTranscriptContextSchema, StoryStateSchema, type SessionTranscriptContext } from '@tm8/contract';
 import type { Querier } from '../db/types.js';
 import { projectInteractionProfileForBrowser } from '../profiles/browser-projection.js';
 import {
@@ -71,6 +71,7 @@ import {
 import { loadHumanMessageAuthorIds, type HumanMessageAuthorIds } from './message-author-projection.js';
 // The ONE narrowing of the status columns, shared with `events/projector.ts`.
 import { categoryFragment, narrowWorkStatus } from './status.js';
+import { loadStoryPage } from './story-page.js';
 
 // ---------------------------------------------------------------------------
 // Row shape
@@ -163,6 +164,10 @@ export const ENTITY_COLUMNS = `
   drw.title as drawing_title, drw.format as drawing_format,
   drw.elements as drawing_elements, drw.app_state as drawing_app_state,
   drw.files as drawing_files,
+  sty.title as story_title, sty.description as story_description,
+  -- 282: the computed summary, one SQL function the projector twin selects
+  -- too. CASE keeps it off every other kind's row.
+  case when e.kind = 'story' then internal.story_summary(e.id) end as story_summary,
   -- Forms (209/211). ROW FACTS ONLY: this column list is shared by every
   -- list read, so a form row carries its question COUNT; the questions and
   -- sections themselves are content and load in hydrateDetail.
@@ -382,6 +387,7 @@ export const ENTITY_FROM = `
   ) chq on cht.entity_id is not null
   left join public.graphs gr             on gr.entity_id = e.id
   left join public.drawings drw           on drw.entity_id = e.id
+  left join public.stories sty            on sty.entity_id = e.id
   left join public.forms frm              on frm.entity_id = e.id
   left join public.space_credentials scr  on e.kind = 'credential' and scr.id = e.id
   left join public.servers srv            on e.kind = 'server' and srv.entity_id = e.id
@@ -564,6 +570,9 @@ export interface EntityRow {
   drawing_elements: unknown[] | null;
   drawing_app_state: Record<string, unknown> | null;
   drawing_files: Record<string, unknown> | null;
+  story_title?: string | null;
+  story_description?: string | null;
+  story_summary?: unknown;
   form_title?: string | null;
   form_status?: string | null;
   form_description?: string | null;
@@ -1506,6 +1515,9 @@ export function titleOf(row: EntityRow): string {
     case 'drawing':
       // Its own detail-row title — MIRRORS the projector twin (same reason).
       return row.drawing_title ?? 'Drawing';
+    case 'story':
+      // Its own detail-row title — MIRRORS the projector twin (same reason).
+      return row.story_title ?? 'Story';
     case 'form':
       // MIRRORS the projector twin.
       return row.form_title ?? 'Form';
@@ -1601,6 +1613,9 @@ function excerptOf(row: EntityRow): string | undefined {
       // The format is the one row-level fact about a canvas; the picture
       // itself cannot be a text excerpt. MIRRORS the projector twin.
       return excerpt(row.drawing_format);
+    case 'story':
+      // The description says what the story is for. MIRRORS the projector twin.
+      return excerpt(row.story_description ?? null);
     case 'form':
       // The description says what is being asked. MIRRORS the projector twin.
       return excerpt(row.form_description ?? null);
@@ -1904,6 +1919,10 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         format: row.drawing_format ?? 'excalidraw',
         elementCount: Array.isArray(row.drawing_elements) ? row.drawing_elements.length : 0,
       };
+    case 'story':
+      // 282: computed by `internal.story_summary`, which the projector twin
+      // selects too — the mirror is the shared function, not a comment.
+      return storySummaryOf(row.story_summary);
     case 'form':
       // Where it is in its lifecycle, and how long. MIRRORS the projector twin.
       return {
@@ -2207,8 +2226,9 @@ export function capabilitiesOf(row: EntityRow): EntityCapabilities {
   // Work-session "edit" is likewise exactly one thing: the display title, via
   // rename_work_session (085). Everything else on that row belongs to the
   // execution block, which is why it is still not deletable or hierarchical.
-  const editable = new Set(['task', 'doc', 'channel', 'collection', 'team_member', 'spell', 'skill', 'memory', 'worktree', 'work_session', 'graph', 'drawing']);
-  const hierarchical = new Set(['task', 'doc', 'channel', 'collection']);
+  const editable = new Set(['task', 'doc', 'channel', 'collection', 'team_member', 'spell', 'skill', 'memory', 'worktree', 'work_session', 'graph', 'drawing', 'story']);
+  // A story's children are child stories (same-kind hierarchy, 282).
+  const hierarchical = new Set(['task', 'doc', 'channel', 'collection', 'story']);
   const pullable = new Set(['channel', 'task', 'doc', 'file', 'spell', 'skill', 'collection']);
 
   return {
@@ -2609,6 +2629,9 @@ export function contentOf(row: EntityRow): EntityContent {
         appState: row.drawing_app_state ?? {},
         files: row.drawing_files ?? {},
       };
+    case 'story':
+      // The prose; `hydrateDetail` adds the computed page on a detail read.
+      return { kind: 'story', description: row.story_description ?? '', page: null };
     case 'form':
       // The row facts; `hydrateDetail` adds the sections and questions in
       // order, so a detail read renders the panel in one call while a list row
@@ -2954,6 +2977,22 @@ function credentialFactsOf(row: EntityRow): Extract<EntityState, { kind: 'creden
   };
 }
 
+/**
+ * A story's summary as `internal.story_summary` returned it (282). Shared with
+ * the projector so both twins coerce the same jsonb the same way; a missing
+ * or malformed value reads as an empty story rather than failing the read.
+ */
+export function storySummaryOf(raw: unknown): Extract<EntityState, { kind: 'story' }> {
+  const parsed = StoryStateSchema.safeParse(raw);
+  if (parsed.success) return parsed.data;
+  const zero = { work: 0, done: 0, inProgress: 0, toDo: 0, blocked: 0, cancelled: 0 };
+  return {
+    kind: 'story', rootCount: 0, itemCount: 0, truncated: false,
+    progress: zero, taskProgress: zero, rollup: zero,
+    liveSessionCount: 0, pendingAttentionCount: 0, lastActivityAt: null, childStoryCount: 0,
+  };
+}
+
 /** Detail-only IO, shared by the original and universal entity doors. */
 export async function hydrateDetail(
   q: Querier, row: EntityRow, state: EntityState, content: EntityContent, viewerIdentityId: string,
@@ -2968,6 +3007,11 @@ export async function hydrateDetail(
       state,
       content: { ...content, sections: structure?.sections ?? [], questions: structure?.questions ?? [] },
     };
+  }
+  if (content.kind === 'story') {
+    // 282: the page — roots, trail, graph, team, call signs, activity, feed —
+    // computed now from the same trail the summary counts.
+    return { state, content: { ...content, page: await loadStoryPage(q, row.id, viewerIdentityId) } };
   }
   if (content.kind === 'team_member') {
     const edges = await q.query<{ dst_id: string }>(

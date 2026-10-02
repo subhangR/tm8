@@ -14,8 +14,9 @@
 //                      function, `internal.story_summary(id)`, so the twins
 //                      cannot drift.
 //   * `StoryContent` — the entity's `content` on a DETAIL read (entities.get).
-//                      `page` is filled by the detail hydration from
-//                      `internal.story_page(id)`; it is `null` on every
+//                      `page` is filled by the detail hydration
+//                      (server `loadStoryPage`, over `internal.story_trail`);
+//                      it is `null` on every
 //                      surface that does not hydrate detail (command results,
 //                      version snapshots).
 //   * the live feed  — `page.feedAnchorIds` names every anchor in the story;
