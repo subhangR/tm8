@@ -384,6 +384,29 @@ async function styleCreate(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
+/** The longest a style write waits on a 429 before its one retry (the widest §6.7 window). */
+const RATE_LIMIT_MAX_WAIT_MS = 60_000;
+
+/**
+ * Spec §6.7: a `429 rate_limited` on a style write waits `details.retryAfterMs`
+ * (capped; 1 s when the server sent none) and retries ONCE. The refused call
+ * never reached the handler, so the retry replays the same body, mutation id
+ * included. A second 429 surfaces (exit 7, retryable).
+ */
+async function withRateLimitRetry<T>(write: () => Promise<T>): Promise<T> {
+  try {
+    return await write();
+  } catch (err) {
+    if (!(err instanceof ApiError) || err.code !== 'rate_limited') throw err;
+    const hinted = (err.details as { retryAfterMs?: unknown } | null | undefined)?.retryAfterMs;
+    const waitMs = typeof hinted === 'number' && Number.isFinite(hinted) && hinted >= 0
+      ? Math.min(hinted, RATE_LIMIT_MAX_WAIT_MS)
+      : 1_000;
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
+    return write();
+  }
+}
+
 /**
  * A personal-style patch. With `--expect-version` it is one guarded write.
  * Without, it reads the current version, writes, and on a version conflict
@@ -398,17 +421,20 @@ async function patchPersonal(
   const client = clientFor(cmd.ctx);
   const explicit = cmd.options.integer('expect-version');
   const mutationId = cmd.options.value('mutation-id');
-  const write = (expectedVersion: number, attempt: number) =>
-    observedInvoke<PersonalStyleWriteResult>(client, 'styles.personal.update', {
+  const write = (expectedVersion: number, attempt: number) => {
+    const body = {
+      ...patch,
+      expectedVersion,
+      // A retry is a DIFFERENT write (new expected version), so it must not
+      // replay the first attempt's ledger entry.
+      clientMutationId: attempt === 0 ? resolveMutationId(mutationId) : resolveMutationId(undefined),
+    };
+    // A 429 is the SAME write, refused before it ran: same body, same id.
+    return withRateLimitRetry(() => observedInvoke<PersonalStyleWriteResult>(client, 'styles.personal.update', {
       params: { id },
-      body: {
-        ...patch,
-        expectedVersion,
-        // A retry is a DIFFERENT write (new expected version), so it must not
-        // replay the first attempt's ledger entry.
-        clientMutationId: attempt === 0 ? resolveMutationId(mutationId) : resolveMutationId(undefined),
-      },
-    });
+      body,
+    }));
+  };
   if (explicit !== undefined) return write(explicit, 0);
   const current = await observedInvoke<StyleGetResult>(client, 'styles.get', { params: { ref: `personal:${id}` } });
   try {

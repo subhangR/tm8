@@ -210,6 +210,28 @@ describe('tm8 style set / unset — merge patch with one retry', () => {
     expect(recorded[0]!.body.expectedVersion).toBe(4);
   });
 
+  it('a 429 rate_limited waits retryAfterMs and retries ONCE with the same body and mutation id (§6.7)', async () => {
+    routes[GET_PERSONAL] = () => ok(personalGet(7));
+    let n = 0;
+    routes[PATCH_PERSONAL] = () => {
+      n += 1;
+      return n === 1 ? fail(429, 'rate_limited', 'too many', { retryAfterMs: 5 }) : ok(writeResult(8));
+    };
+    const r = await tm8(['style', 'set', `personal:${PERSONAL}`, '--pn-brand=#4F7DF3', '--format', 'json']);
+    expect(r.code, r.stderr).toBe(0);
+    const patches = recorded.filter((c) => c.method === 'PATCH');
+    expect(patches).toHaveLength(2);
+    expect(patches[1]!.body).toEqual(patches[0]!.body);
+  });
+
+  it('a second 429 surfaces: no third attempt, retryable exit', async () => {
+    routes[GET_PERSONAL] = () => ok(personalGet(7));
+    routes[PATCH_PERSONAL] = () => fail(429, 'rate_limited', 'too many', { retryAfterMs: 5 });
+    const r = await tm8(['style', 'set', `personal:${PERSONAL}`, '--pn-brand=#4F7DF3']);
+    expect(r.code).toBe(7);
+    expect(recorded.filter((c) => c.method === 'PATCH')).toHaveLength(2);
+  });
+
   it('unset sends each named variable as null (the merge patch\'s delete)', async () => {
     routes[GET_PERSONAL] = () => ok(personalGet(2));
     routes[PATCH_PERSONAL] = () => ok(writeResult(3));

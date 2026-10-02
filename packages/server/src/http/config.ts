@@ -16,6 +16,7 @@ import {
   CLIPBOARD_RETENTION_DAYS_DEFAULT,
 } from '../files/clipboard-store.js';
 import { DEFAULT_AUTH_RATE_LIMITS, type AuthRateLimits } from './auth-rate-limit.js';
+import { DEFAULT_STYLE_RATE_LIMITS, type StyleRateLimits } from './style-rate-limit.js';
 import type { SpaceSessionsMode } from './types.js';
 
 export interface ServerConfig {
@@ -95,6 +96,13 @@ export interface ServerConfig {
    * thing anyone needs to set. Setting a limit to 0 disables THAT dimension.
    */
   readonly authRateLimits?: Partial<AuthRateLimits>;
+  /**
+   * Style write limits (styles spec §6.7, `style-rate-limit.ts`). Absent means
+   * the built-in defaults; 0 disables that window. Env: TM8_STYLE_EDIT_MAX,
+   * TM8_STYLE_EDIT_BURST, TM8_STYLE_PUBLISH_MAX, TM8_STYLE_PUBLISH_BURST,
+   * TM8_STYLE_RESOLVE_MAX, TM8_STYLE_PREFS_MAX, TM8_STYLE_DEFAULT_MAX.
+   */
+  readonly styleRateLimits?: Partial<StyleRateLimits>;
   /**
    * How this node admits people (`TM8_NODE_MODE`, design D4). Default `single`.
    *
@@ -614,6 +622,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
         'TM8_AUTH_FAILURE_WINDOW_MS',
         DEFAULT_AUTH_RATE_LIMITS.failureWindowMs,
       ),
+    },
+    // Same rule as the auth limits: non-negative, 0 = that window off.
+    styleRateLimits: {
+      editPerMinute: envNonNegativeInt(env.TM8_STYLE_EDIT_MAX, 'TM8_STYLE_EDIT_MAX', DEFAULT_STYLE_RATE_LIMITS.editPerMinute),
+      editBurst: envNonNegativeInt(env.TM8_STYLE_EDIT_BURST, 'TM8_STYLE_EDIT_BURST', DEFAULT_STYLE_RATE_LIMITS.editBurst),
+      publishPerMinute: envNonNegativeInt(env.TM8_STYLE_PUBLISH_MAX, 'TM8_STYLE_PUBLISH_MAX', DEFAULT_STYLE_RATE_LIMITS.publishPerMinute),
+      publishBurst: envNonNegativeInt(env.TM8_STYLE_PUBLISH_BURST, 'TM8_STYLE_PUBLISH_BURST', DEFAULT_STYLE_RATE_LIMITS.publishBurst),
+      resolvePerMinute: envNonNegativeInt(env.TM8_STYLE_RESOLVE_MAX, 'TM8_STYLE_RESOLVE_MAX', DEFAULT_STYLE_RATE_LIMITS.resolvePerMinute),
+      prefsPerMinute: envNonNegativeInt(env.TM8_STYLE_PREFS_MAX, 'TM8_STYLE_PREFS_MAX', DEFAULT_STYLE_RATE_LIMITS.prefsPerMinute),
+      defaultPerMinute: envNonNegativeInt(env.TM8_STYLE_DEFAULT_MAX, 'TM8_STYLE_DEFAULT_MAX', DEFAULT_STYLE_RATE_LIMITS.defaultPerMinute),
     },
     dbPoolMax,
     dbStatementTimeoutMs,

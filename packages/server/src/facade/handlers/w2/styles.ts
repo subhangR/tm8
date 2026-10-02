@@ -51,6 +51,7 @@ import type { FacadeDeps } from '../../deps.js';
 import type { HandlerRegistry } from '../../registry.js';
 import type { DbClaims } from '../../../db/types.js';
 import { claimsFor, commandEnvelope } from '../../context.js';
+import { StyleRateLimiter } from '../../../http/style-rate-limit.js';
 import { requireHumanSession } from './credentials.js';
 import {
   DEFAULT_STYLE_REF,
@@ -399,24 +400,41 @@ export class W2StylesService {
  * Registration. `spaces.styleDefault.set` is the one human-only door
  * (`humanOnly` in the catalog ⇔ wrapped here); the SQL door repeats the rule
  * with `require_human_space_admin`, so an agent is refused twice.
+ *
+ * Every write and `styles.resolve` spends from the §6.7 limiter BEFORE the
+ * handler runs (so a refused call never reaches the database). The key is the
+ * caller's identity; the space default is keyed by its space. The human guard
+ * stays outermost: an agent is refused as forbidden, not counted.
  */
-export function registerW2StyleHandlers(registry: HandlerRegistry, deps: FacadeDeps): void {
+export function registerW2StyleHandlers(
+  registry: HandlerRegistry,
+  deps: FacadeDeps,
+  limiter: StyleRateLimiter = new StyleRateLimiter(deps.config.styleRateLimits ?? {}),
+): void {
   const service = new W2StylesService(deps);
+  const byIdentity = (op: string, handler: OperationHandler): OperationHandler => async (ctx) => {
+    limiter.check(op, ctx.identity.identityId ?? ctx.identity.kind);
+    return handler(ctx);
+  };
+  const bySpace = (op: string, handler: OperationHandler): OperationHandler => async (ctx) => {
+    limiter.check(op, param(ctx, 'spaceId'));
+    return handler(ctx);
+  };
   registry.registerAll({
     'styles.personal.list': service.personalList,
-    'styles.personal.create': service.personalCreate,
-    'styles.personal.update': service.personalUpdate,
-    'styles.personal.delete': service.personalDelete,
+    'styles.personal.create': byIdentity('styles.personal.create', service.personalCreate),
+    'styles.personal.update': byIdentity('styles.personal.update', service.personalUpdate),
+    'styles.personal.delete': byIdentity('styles.personal.delete', service.personalDelete),
     'styles.list': service.list,
     'styles.get': service.get,
-    'styles.push': service.push,
-    'styles.pull': service.pull,
-    'styles.remove': service.remove,
-    'styles.resolve': service.resolve,
+    'styles.push': byIdentity('styles.push', service.push),
+    'styles.pull': byIdentity('styles.pull', service.pull),
+    'styles.remove': byIdentity('styles.remove', service.remove),
+    'styles.resolve': byIdentity('styles.resolve', service.resolve),
     'styles.export': service.export,
     'identity.stylePrefs.get': service.prefsGet,
-    'identity.stylePrefs.set': service.prefsSet,
+    'identity.stylePrefs.set': byIdentity('identity.stylePrefs.set', service.prefsSet),
     'spaces.styleDefault.get': service.defaultGet,
-    'spaces.styleDefault.set': requireHumanSession(service.defaultSet),
+    'spaces.styleDefault.set': requireHumanSession(bySpace('spaces.styleDefault.set', service.defaultSet)),
   });
 }
