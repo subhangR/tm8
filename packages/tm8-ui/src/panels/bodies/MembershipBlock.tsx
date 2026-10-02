@@ -83,83 +83,21 @@ export function MembershipBlock({
     : 'This view has not wired membership authoring; the panel can show these collections but not change them here.';
   const pending = new Set(authoring?.pending ?? []);
 
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
-  const [options, setOptions] = useState<readonly EntitySummary[]>([]);
-  const searchSeq = useRef(0);
-
   const memberIds = new Set(
     edges.map((edge) => (edge.source.id === detail.id ? edge.target.id : edge.source.id)),
   );
 
-  const runSearch = (text: string) => {
-    setQuery(text);
-    if (!authoring) return;
-    const seq = ++searchSeq.current;
-    void authoring.search(text).then((page) => {
-      if (seq !== searchSeq.current) return; // a newer keystroke owns the list
-      const needle = text.trim().toLowerCase();
-      setOptions(
-        page
-          .filter((option) => option.id !== detail.id && !memberIds.has(option.id))
-          .filter((option) => needle === '' || option.title.toLowerCase().includes(needle))
-          .slice(0, 8),
-      );
-    });
-  };
-
   const addLabel = typeof params.addLabel === 'string' ? params.addLabel : '+ add';
   const add = (
-    <div className="pn-membership__add">
-      <button
-        type="button"
-        className="pn-memory__add"
-        data-testid="membership-add"
-        // L6/D28: refused controls stay FOCUSABLE so the reason is reachable.
-        aria-disabled={refusal ? true : undefined}
-        title={refusal ?? undefined}
-        onClick={(event) => {
-          if (refusal) return event.preventDefault();
-          setOpen((was) => !was);
-          if (!open) runSearch('');
-        }}
-      >
-        {addLabel}
-      </button>
-      {open && !refusal ? (
-        <div className="pn-membership__picker" data-testid="membership-picker">
-          <input
-            type="text"
-            className="pn-membership__input"
-            placeholder="Filter recent by title…"
-            aria-label="Filter candidates by title"
-            value={query}
-            onChange={(event) => runSearch(event.target.value)}
-          />
-          {options.length === 0 ? (
-            <p className="pn-section__empty">No recent match. The list is one recent page, not a full search.</p>
-          ) : (
-            options.map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                className="pn-membership__option"
-                data-testid="membership-option"
-                onClick={() => {
-                  // The picker cannot open unauthored (`open && !refusal`),
-                  // so this only narrows the type, never the behaviour.
-                  authoring?.onAdd(option.id, option.title);
-                  setOpen(false);
-                  setQuery('');
-                }}
-              >
-                <KindIcon kind={option.kind} /> {option.title}
-              </button>
-            ))
-          )}
-        </div>
-      ) : null}
-    </div>
+    <MembershipPicker
+      search={authoring?.search}
+      // The picker cannot open unauthored (an absent `authoring` IS a refusal),
+      // so the `?.` only narrows the type, never the behaviour.
+      onPick={(id, title) => authoring?.onAdd(id, title)}
+      excludeIds={new Set([detail.id, ...memberIds])}
+      addLabel={addLabel}
+      refusal={refusal}
+    />
   );
 
   if (edges.length === 0) {
@@ -265,6 +203,101 @@ export function MembershipBlock({
         })}
       </div>
       {add}
+    </div>
+  );
+}
+
+/**
+ * The "+ add" control and its bounded-recency picker — any entity INTO a
+ * container. Exported so another container surface (the story page's "Add a
+ * root") puts things in through the SAME picker rather than a second one.
+ * `search` absent ⇒ nothing is ever listed; `refusal` set ⇒ the control is
+ * refused-but-focusable (L6/D28).
+ */
+export function MembershipPicker({
+  search,
+  onPick,
+  excludeIds,
+  addLabel,
+  refusal,
+}: {
+  /** One bounded page of candidates; filtered here by title. */
+  search?: (text: string) => Promise<EntitySummary[]>;
+  onPick: (id: string, title: string) => void;
+  /** Never offered: the container itself and what is already in it. */
+  excludeIds: ReadonlySet<string>;
+  addLabel: string;
+  refusal?: string | null;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [options, setOptions] = useState<readonly EntitySummary[]>([]);
+  const searchSeq = useRef(0);
+
+  const runSearch = (text: string) => {
+    setQuery(text);
+    if (!search) return;
+    const seq = ++searchSeq.current;
+    void search(text).then((page) => {
+      if (seq !== searchSeq.current) return; // a newer keystroke owns the list
+      const needle = text.trim().toLowerCase();
+      setOptions(
+        page
+          .filter((option) => !excludeIds.has(option.id))
+          .filter((option) => needle === '' || option.title.toLowerCase().includes(needle))
+          .slice(0, 8),
+      );
+    });
+  };
+
+  return (
+    <div className="pn-membership__add">
+      <button
+        type="button"
+        className="pn-memory__add"
+        data-testid="membership-add"
+        // L6/D28: refused controls stay FOCUSABLE so the reason is reachable.
+        aria-disabled={refusal ? true : undefined}
+        title={refusal ?? undefined}
+        onClick={(event) => {
+          if (refusal) return event.preventDefault();
+          setOpen((was) => !was);
+          if (!open) runSearch('');
+        }}
+      >
+        {addLabel}
+      </button>
+      {open && !refusal ? (
+        <div className="pn-membership__picker" data-testid="membership-picker">
+          <input
+            type="text"
+            className="pn-membership__input"
+            placeholder="Filter recent by title…"
+            aria-label="Filter candidates by title"
+            value={query}
+            onChange={(event) => runSearch(event.target.value)}
+          />
+          {options.length === 0 ? (
+            <p className="pn-section__empty">No recent match. The list is one recent page, not a full search.</p>
+          ) : (
+            options.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                className="pn-membership__option"
+                data-testid="membership-option"
+                onClick={() => {
+                  onPick(option.id, option.title);
+                  setOpen(false);
+                  setQuery('');
+                }}
+              >
+                <KindIcon kind={option.kind} /> {option.title}
+              </button>
+            ))
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }

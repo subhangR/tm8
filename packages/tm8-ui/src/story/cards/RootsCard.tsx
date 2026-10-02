@@ -11,10 +11,15 @@
  * Root hover is shared with the graph (`hover`): entering a row lights that
  * root everywhere, and a root lit from the graph lights its row and its trail
  * chips here.
+ *
+ * "＋ Add a root" is the membership block's own picker (`MembershipPicker`):
+ * one bounded recent page from `actions.searchRoots`, put in through
+ * `actions.addRoot`. Drawn only when both exist.
  */
 import { useState } from 'react';
 
 import { KindIcon } from '../../domain';
+import { MembershipPicker } from '../../panels/bodies/MembershipBlock';
 import {
   liveOn,
   nodesById,
@@ -32,12 +37,23 @@ import { CardHead, Empty, flashOf, InlineEntry, Meter, PersonAvatar, picker, Ren
 
 export function RootsCard({ view, actions, live, hover, onPick }: StoryBlockProps & { onPick?: (pick: StoryNodePick) => void }) {
   const roots = view.page.roots;
+  const { addRoot, searchRoots } = actions;
   return (
     <section className="stc-card">
       <CardHead
         title="Roots"
         count={roots.length ? `${roots.length} · each with its own progress, children and trail · a live root shows who is running it` : undefined}
       />
+      {addRoot && searchRoots ? (
+        <div className="stc-roots__add">
+          <MembershipPicker
+            search={searchRoots}
+            onPick={(id) => void addRoot(id)}
+            excludeIds={new Set([view.id, ...roots.map((r) => r.id)])}
+            addLabel="＋ Add a root"
+          />
+        </div>
+      ) : null}
       {roots.length === 0 ? (
         <Empty>Nothing has been put in this story yet. Put a task in and it becomes a root: its children, sessions, docs and pull requests follow along.</Empty>
       ) : (

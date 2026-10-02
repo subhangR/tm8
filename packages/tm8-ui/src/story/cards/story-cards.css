@@ -227,6 +227,7 @@
   transition: background 0.15s;
 }
 .cv2-root .stc-root:last-child { border-bottom: 0; }
+.cv2-root .stc-roots__add { padding: 10px 16px; border-bottom: 1px solid var(--pn-line); }
 @container (min-width: 720px) {
   .cv2-root .stc-root { grid-template-columns: minmax(220px, 300px) minmax(0, 1fr) minmax(220px, 320px); gap: 18px; }
 }
