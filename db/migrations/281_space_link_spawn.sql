@@ -1,5 +1,5 @@
 -- =============================================================================
--- 277  CROSS-SPACE SPAWN THROUGH A SPACE LINK (W7b, lane L4).
+-- 281  CROSS-SPACE SPAWN THROUGH A SPACE LINK (W7b, lane L4).
 --
 -- THE DECISION. The owner chose, in form response 01a0fbb4 (decisions D1, D4
 -- and D8 of form 01a0fb65): "if link is there spawn for now". While an active
