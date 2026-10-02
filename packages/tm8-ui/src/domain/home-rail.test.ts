@@ -18,11 +18,17 @@
  * Task 01a0e036 (owner ruling 2026-09-27) ended the withholding: Home lists
  * EVERY kind. The four formerly withheld kinds sit in an eighth group, Setup,
  * and the assertions below pin that no kind is gated any more.
+ *
+ * Task 01a0fb09 (2026-10-02) consolidated the spine to five collapsible
+ * groups and added a PINNED section above them; the group cut and the pin
+ * defaults are pinned here, the drawing in `home-rail.test.tsx`.
  */
 import { describe, expect, it } from 'vitest';
 import { collectionKinds } from './registry';
 import {
+  DEFAULT_HOME_RAIL_PINS,
   homeRailGroups,
+  homeRailPinnedKinds,
   homeRootKinds,
   isHomeRootKind,
 } from './home-rail';
@@ -65,28 +71,33 @@ describe('the Home icon rail', () => {
    * `commit` somewhere contains `commit`. The complaint was never about
    * membership — it was that the ORDER and the HEADINGS carried no meaning.
    */
-  it('cuts eight groups, in the ruled order, each under its own heading', () => {
+  it('cuts five groups, in the ruled order, each under its own heading', () => {
+    // Task 01a0fb09 (2026-10-02) consolidated the eight-group spine to five
+    // collapsible ones: Content + Structure → Library, Agents + People →
+    // Agents & People, Setup + Beta → Admin.
     expect(homeRailGroups().map((group) => [group.id, group.label])).toEqual([
       ['work', 'Work'],
-      ['agents', 'Agents'],
-      ['content', 'Content'],
-      ['structure', 'Structure'],
-      ['people', 'People'],
+      ['library', 'Library'],
+      ['people', 'Agents & People'],
       ['code', 'Code'],
-      ['setup', 'Setup'],
-      ['beta', 'Beta'],
+      ['admin', 'Admin'],
     ]);
   });
 
   it('seats each group exactly as ruled', () => {
     expect(kindsOf('work')).toEqual(['chat', 'task', 'work_session', 'form', 'project']);
-    expect(kindsOf('agents')).toEqual(['team_member', 'skill', 'memory']);
-    expect(kindsOf('content')).toEqual(['doc', 'drawing', 'artifact', 'file']);
-    expect(kindsOf('structure')).toEqual(['collection', 'graph']);
-    expect(kindsOf('people')).toEqual(['member', 'channel']);
+    expect(kindsOf('library')).toEqual(['doc', 'drawing', 'artifact', 'file', 'collection', 'graph']);
+    expect(kindsOf('people')).toEqual(['team_member', 'skill', 'memory', 'member', 'channel']);
     expect(kindsOf('code')).toEqual(['commit', 'pull_request', 'worktree']);
-    expect(kindsOf('setup')).toEqual(['interaction_profile', 'credential', 'space_link', 'server']);
-    expect(kindsOf('beta')).toEqual(['loop', 'spell', 'container']);
+    expect(kindsOf('admin')).toEqual([
+      'interaction_profile',
+      'credential',
+      'space_link',
+      'server',
+      'loop',
+      'spell',
+      'container',
+    ]);
   });
 
   it('leaves NOTHING in the catch-all — the spine now names every shipped kind', () => {
@@ -100,14 +111,30 @@ describe('the Home icon rail', () => {
     expect(homeRailGroups().map((group) => group.id)).not.toContain('more');
   });
 
-  it('every group draws a heading, short enough for the 72px collapsed rail', () => {
-    // The rail is collapsed BY DEFAULT, and `HomeRail` draws the eyebrow at
-    // both widths so the headings are not invisible in the state most viewers
-    // see. A label long enough to ellipsise there is a label that failed.
+  it('every group draws a heading short enough to wrap onto two lines of the 72px rail', () => {
+    // The rail is collapsed BY DEFAULT and the header is drawn at both widths.
+    // Collapsed, a header wraps (it never ellipsises), so the bound is a word
+    // length: no single word may outrun one line of the 72px column.
     for (const group of homeRailGroups()) {
       expect(group.label.length).toBeGreaterThan(0);
-      expect(group.label.length).toBeLessThanOrEqual(9);
+      for (const word of group.label.split(' ')) expect(word.length).toBeLessThanOrEqual(9);
     }
+  });
+
+  it('pins Chats, Tasks and Sessions on first visit (task 01a0fb09)', () => {
+    expect(homeRailPinnedKinds(DEFAULT_HOME_RAIL_PINS).map((config) => config.labelPlural)).toEqual([
+      'Chats',
+      'Tasks',
+      'Sessions',
+    ]);
+  });
+
+  it('resolves stored pins in pin order, dropping unknown kinds and repeats', () => {
+    // A stored list can outlive a kind (a custom kind deleted) or be hand-edited.
+    expect(homeRailPinnedKinds(['doc', 'no_such_kind', 'task', 'doc']).map((config) => config.kind)).toEqual([
+      'doc',
+      'task',
+    ]);
   });
 
   /*
