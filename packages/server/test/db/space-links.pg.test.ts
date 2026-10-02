@@ -43,17 +43,19 @@ vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
 
 // ---------------------------------------------------------------------------
 // THE STRICT GATE'S FULL CALLER SET (lead ruling 2026-09-26 02:08Z/02:19Z).
-// Measured on this branch: 28 credential management (21 + W10a's
-// set_space_credential_visibility, 239 + W10b's six, 255) + 6 non-credential
-// + 2 W4 session management (249) + 6 spaceLinks writes + 7 servers (W8) = 49.
+// Measured on main 79efe3fb before 01a0db78: 28 credential management (21 +
+// W10a's set_space_credential_visibility, 239 + W10b's six, 255) + 6
+// non-credential + 2 W4 session management (249) + 6 spaceLinks writes + 3
+// space password (W5, 268) + 7 servers (W8) = 52. 01a0db78 (990) moves
+// start_chat, leave_space and remove_space_member to the permissive variant
+// (PERMISSIVE_GATE_CALLERS below), leaving 3 non-credential here: 49.
 // A caller not on this list fails; a listed caller
 // that stops calling the gate fails. Changing this list is a review event.
 // ---------------------------------------------------------------------------
 const CREDENTIAL_MANAGEMENT = 'credential management: refuses link (E2)';
 const CREDENTIAL_READ = 'credential read, on the gate (refuses link)';
 const IDENTITY_WIDE = 'refused for link (identity-wide act)';
-const AUTH_MINTING = 'refused for link (decision 31, auth minting)';
-const PENDING = 'non-credential, refused pending follow-up 01a0db78-f1ab';
+const OWNER_PENDING = 'refused for link, owner decision pending (01a0db78: runtime mint outlives the link session)';
 const SESSION_MANAGEMENT = 'session listing/revoke, human-only (W4, 249): refuses link';
 const SPACE_LINKS = 'spaceLinks write, human-only by design (W6)';
 const SPACE_PASSWORD = 'space password, human-only (W5, 268): refuses link';
@@ -94,11 +96,10 @@ const STRICT_GATE_CALLERS: Readonly<Record<string, string>> = {
   // public.disable_account wraps it and calls it first, so the gate still runs
   // before anything the wrapper does. The caller is the core.
   'internal.disable_account_core(uuid,text)': IDENTITY_WIDE,
-  'issue_agent_runtime_session(uuid,uuid,text,timestamp with time zone,text)': AUTH_MINTING,
-  'revoke_agent_runtime_session(uuid)': AUTH_MINTING,
-  'leave_space(uuid,text)': PENDING,
-  'remove_space_member(uuid,uuid,text)': PENDING,
-  'start_chat(uuid,uuid,uuid,text,text,text,text,text,uuid,uuid,text,text,text,uuid[],uuid,text)': PENDING,
+  // 01a0db78 kept these on the strict gate until the owner answers; flipping
+  // them is a move to PERMISSIVE_GATE_CALLERS plus one cell.
+  'issue_agent_runtime_session(uuid,uuid,text,timestamp with time zone,text)': OWNER_PENDING,
+  'revoke_agent_runtime_session(uuid)': OWNER_PENDING,
 
   // W4 (#857, 249:213/249:262), joined at the re-stack onto main: a link session
   // neither lists nor ends sessions, the same answer an agent gets.
@@ -127,6 +128,20 @@ const STRICT_GATE_CALLERS: Readonly<Record<string, string>> = {
   'store_server_gate_token(uuid,timestamp with time zone,bytea,bytea,text)': SERVERS,
 };
 
+// ---------------------------------------------------------------------------
+// THE PERMISSIVE VARIANT'S FULL CALLER SET (01a0db78, lead's sanctioned
+// mechanism): internal.require_human_or_link_auth_kind() admits browser, cli
+// and link (decision 31). Never a credential op (E2). Same rules as above: a
+// caller not listed fails, a listed caller that stops calling it fails.
+// ---------------------------------------------------------------------------
+const MEMBER_OP = 'non-credential member op: admits link (decision 31, 01a0db78)';
+
+const PERMISSIVE_GATE_CALLERS: Readonly<Record<string, string>> = {
+  'leave_space(uuid,text)': MEMBER_OP,
+  'remove_space_member(uuid,uuid,text)': MEMBER_OP,
+  'start_chat(uuid,uuid,uuid,text,text,text,text,text,uuid,uuid,text,text,text,uuid[],uuid,text)': MEMBER_OP,
+};
+
 /** Not gate callers: each admits an explicit kind allow-list and 42501s the rest. */
 const EXPLICIT_KIND_ALLOW_LIST: Readonly<Record<string, string>> = {
   'open_space_link_token(uuid)': 'explicit kind allow-list, not a gate caller',
@@ -140,16 +155,18 @@ const EXPLICIT_KIND_ALLOW_LIST: Readonly<Record<string, string>> = {
  * name anywhere in the body. BEGIN ATOMIC bodies have no prosrc to match; they
  * are found through pg_depend on the gate's oid.
  */
-const GATE_CALLERS_SQL = `
-  with gate as (select 'internal.require_human_auth_kind()'::regprocedure::oid as oid)
+const callersOf = (gate: string, name: string): string => `
+  with gate as (select '${gate}'::regprocedure::oid as oid)
   select p.oid::regprocedure::text as signature
     from pg_proc p, gate
    where p.oid <> gate.oid
-     and (p.prosrc ~* '"?require_human_auth_kind"?'
+     and (p.prosrc ~* '"?${name}"?'
           or exists (select 1 from pg_depend d
                       where d.classid = 'pg_proc'::regclass and d.objid = p.oid
                         and d.refclassid = 'pg_proc'::regclass and d.refobjid = gate.oid))
    order by p.oid::regprocedure::text collate "C"`; // byte order, the same order as the JS .sort() it is compared with
+const GATE_CALLERS_SQL = callersOf('internal.require_human_auth_kind()', 'require_human_auth_kind');
+const PERMISSIVE_CALLERS_SQL = callersOf('internal.require_human_or_link_auth_kind()', 'require_human_or_link_auth_kind');
 
 // ---------------------------------------------------------------------------
 // Fixture and credentials.
@@ -340,15 +357,51 @@ describe('W6 pin — the STRICT gate\'s full caller set (lead ruling 02:08Z; fol
     expect(found).toEqual(Object.keys(STRICT_GATE_CALLERS).sort());
   });
 
-  it('the list is 28 credential management + 6 non-credential + 2 session management + 6 spaceLinks writes + 3 space password + 7 servers (W8)', () => {
+  it('the list is 28 credential management + 3 non-credential + 2 session management + 6 spaceLinks writes + 3 space password + 7 servers (W8)', () => {
     const labels = Object.values(STRICT_GATE_CALLERS);
     expect(labels.filter((l) => l === CREDENTIAL_MANAGEMENT || l === CREDENTIAL_READ)).toHaveLength(28);
-    expect(labels.filter((l) => l === IDENTITY_WIDE || l === AUTH_MINTING || l === PENDING)).toHaveLength(6);
+    expect(labels.filter((l) => l === IDENTITY_WIDE || l === OWNER_PENDING)).toHaveLength(3);
     expect(labels.filter((l) => l === SESSION_MANAGEMENT)).toHaveLength(2);
     expect(labels.filter((l) => l === SPACE_LINKS)).toHaveLength(6);
     expect(labels.filter((l) => l === SPACE_PASSWORD)).toHaveLength(3);
     expect(labels.filter((l) => l === SERVERS)).toHaveLength(7);
-    expect(labels).toHaveLength(52);
+    expect(labels).toHaveLength(49);
+  });
+
+  it('01a0db78: the permissive variant admits browser, cli and link only, fail-closed', async () => {
+    const [row] = await database.query<{ src: string }>(
+      `select prosrc as src from pg_proc where oid = 'internal.require_human_or_link_auth_kind()'::regprocedure`);
+    expect(row!.src).toMatch(/kind is null or kind not in \('browser', 'cli', 'link'\)/);
+  });
+
+  it('01a0db78: the permissive variant has the strict gate\'s search_path and security, and no PUBLIC or tm8_app EXECUTE', async () => {
+    const rows = await database.query<{ gate: string; config: string[] | null; secdef: boolean; volatile: string; owner: string; pub: boolean; app: boolean }>(
+      `select p.oid::regprocedure::text as gate, p.proconfig as config, p.prosecdef as secdef,
+              p.provolatile as volatile, pg_get_userbyid(p.proowner) as owner,
+              has_function_privilege('public', p.oid, 'execute') as pub,
+              has_function_privilege('tm8_app', p.oid, 'execute') as app
+         from pg_proc p
+        where p.oid in ('internal.require_human_auth_kind()'::regprocedure,
+                        'internal.require_human_or_link_auth_kind()'::regprocedure)
+        order by 1`);
+    expect(rows).toHaveLength(2);
+    const [strict, permissive] = rows; // byte order: "human_auth" < "human_or_link"
+    expect(permissive!.gate).toBe('internal.require_human_or_link_auth_kind()');
+    expect({ ...permissive, gate: null }).toEqual({ ...strict, gate: null });
+    expect(permissive).toMatchObject({ config: ['search_path=public, internal, pg_temp'], secdef: true, pub: false, app: false });
+  });
+
+  it('01a0db78: every permissive caller is on its labelled list, and every listed function still calls it', async () => {
+    const found = (await database.query<{ signature: string }>(PERMISSIVE_CALLERS_SQL)).map((r) => r.signature);
+    expect(found).toEqual(Object.keys(PERMISSIVE_GATE_CALLERS).sort());
+    expect(Object.keys(PERMISSIVE_GATE_CALLERS)).toHaveLength(3);
+  });
+
+  it('01a0db78: no function is on both gates, and no permissive caller is a credential op', () => {
+    for (const signature of Object.keys(PERMISSIVE_GATE_CALLERS)) {
+      expect(STRICT_GATE_CALLERS[signature]).toBeUndefined();
+      expect(signature).not.toMatch(/credential|service_key|space_link|server|auth_session|runtime_session|disable_account/);
+    }
   });
 
   it('the matcher sees a quoted, mixed-case call and an execute format(...) that names the gate', async () => {
