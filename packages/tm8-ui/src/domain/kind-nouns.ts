@@ -118,6 +118,8 @@ export const KIND_CLI_VOCABULARY: Readonly<Record<string, KindCliVocabulary>> = 
   },
   credential: { nouns: ['credential'], commands: ['space credential-readiness get', 'session spawn'] },
   space_link: { nouns: ['space-link'], commands: [] },
+  // 282: a space style is written only by `tm8 style push`; the noun owns it.
+  style: { nouns: ['style'], commands: [] },
   server: { nouns: ['server'], commands: ['identity get', 'node mode'] },
   loop: { nouns: [], commands: ['entity query', 'session spawn'] },
   spell: { nouns: [], commands: ['skill equip', 'entity query'] },
