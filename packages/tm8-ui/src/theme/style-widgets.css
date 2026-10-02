@@ -1,0 +1,217 @@
+/* The editor's kind widgets (style-widgets.tsx, spec v8 §2, §9.2 phase 4).
+   Colours are tokens throughout; the only literal colours a widget shows are
+   the style's own values, set inline. */
+.cv2-root .styleed__varedit {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+}
+.cv2-root .stylew__colour,
+.cv2-root .stylew__stepper,
+.cv2-root .stylew__font,
+.cv2-root .stylew__shadow,
+.cv2-root .stylew__easing {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+}
+.cv2-root .stylew__swatchbtn {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  cursor: pointer;
+  /* Translucent colours read against a checkerboard. */
+  background-image: linear-gradient(45deg, var(--pn-line) 25%, transparent 25%, transparent 75%, var(--pn-line) 75%),
+    linear-gradient(45deg, var(--pn-line) 25%, transparent 25%, transparent 75%, var(--pn-line) 75%);
+  background-size: 8px 8px;
+  background-position: 0 0, 4px 4px;
+}
+.cv2-root .stylew__swatchbtn:disabled {
+  cursor: default;
+}
+.cv2-root .stylew__popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+  width: 220px;
+  padding: var(--pn-space-2);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-pop);
+}
+.cv2-root .stylew__plane {
+  position: relative;
+  height: 130px;
+  border-radius: var(--pn-r-sm);
+  background-image: linear-gradient(to top, black, transparent), linear-gradient(to right, white, transparent);
+  cursor: crosshair;
+  touch-action: none;
+}
+.cv2-root .stylew__thumb {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border: 2px solid white;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px black;
+  pointer-events: none;
+}
+.cv2-root .stylew__hue,
+.cv2-root .stylew__alpha {
+  width: 100%;
+  height: 12px;
+  margin: 0;
+  appearance: none;
+  border-radius: var(--pn-r-pill);
+}
+.cv2-root .stylew__hue {
+  background: linear-gradient(to right, red, yellow, lime, cyan, blue, magenta, red);
+}
+.cv2-root .stylew__alpha {
+  background: linear-gradient(to right, transparent, var(--stylew-opaque, var(--pn-ink)));
+  border: 1px solid var(--pn-line);
+}
+.cv2-root .stylew__poprow {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+}
+.cv2-root .styleed__var .stylew__hex {
+  width: 90px;
+}
+.cv2-root .stylew__alphaout {
+  font-size: var(--pn-fs-fine);
+  color: var(--pn-ink-3);
+}
+.cv2-root .stylew__step {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-xs);
+  background: var(--pn-surface);
+  color: var(--pn-ink-2);
+  cursor: pointer;
+}
+.cv2-root .stylew__step:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.cv2-root .styleed__var .stylew__num {
+  width: 70px;
+  text-align: right;
+}
+.cv2-root .stylew__unit {
+  min-width: 18px;
+  font-size: var(--pn-fs-fine);
+  color: var(--pn-ink-3);
+}
+.cv2-root .stylew__kw {
+  font-size: var(--pn-fs-fine);
+}
+.cv2-root .styleed__var .stylew__font select,
+.cv2-root .styleed__var .stylew__easing select {
+  width: 130px;
+  font-family: inherit;
+}
+.cv2-root .stylew__shadowcard {
+  width: 28px;
+  height: 20px;
+  flex: none;
+  background: var(--pn-card);
+  border-radius: var(--pn-r-xs);
+  margin: 0 var(--pn-space-1);
+}
+.cv2-root .stylew__curve {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  overflow: visible;
+}
+.cv2-root .stylew__curvebase {
+  stroke: var(--pn-line-2);
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+}
+.cv2-root .stylew__curveline {
+  fill: none;
+  stroke: var(--pn-brand);
+  stroke-width: 2.5;
+}
+.cv2-root .stylew__ansi {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 32px));
+  gap: var(--pn-space-1);
+  margin: var(--pn-space-2) 0;
+}
+.cv2-root .stylew__ansicell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.cv2-root .stylew__ansicell .stylew__swatchbtn {
+  width: 28px;
+  height: 28px;
+}
+.cv2-root .stylew__ansicell--set .stylew__swatchbtn {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 1px;
+}
+.cv2-root .stylew__ansinum {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  color: var(--pn-ink-4);
+}
+.cv2-root .stylew__xterm {
+  margin: var(--pn-space-2) 0;
+  border-radius: var(--pn-r-sm);
+  overflow-x: auto;
+  white-space: pre;
+}
+.cv2-root .stylew__xterm > div {
+  min-height: 1lh;
+}
+.cv2-root .stylew__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pn-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cv2-root .stylew__chip {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding: 2px var(--pn-space-2) 2px 2px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  font-size: var(--pn-fs-fine);
+}
+.cv2-root .stylew__chip--fail {
+  border-color: var(--pn-wait);
+  background: var(--pn-wait-soft);
+}
+.cv2-root .stylew__chipsample {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 26px;
+  border-radius: var(--pn-r-xs);
+  font-weight: 600;
+}
+.cv2-root .stylew__chiptext {
+  display: flex;
+  flex-direction: column;
+}
+.cv2-root .stylew__chipmin {
+  color: var(--pn-ink-3);
+}
