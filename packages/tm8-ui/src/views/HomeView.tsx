@@ -60,16 +60,25 @@ import { chatAboutTarget, composeListActions, useChatAbout } from './useChatAbou
 import { openEntityChat, useChatSlot } from '../entity-chat';
 import { loadHomeRoot, rememberHomeRoot, type HomeRoot } from '../stores/homeRegionStore';
 import {
+  loadRailGroupsOpen,
+  loadRailPins,
+  rememberRailGroupsOpen,
+  rememberRailPins,
+  type RailGroupOpenState,
+} from '../stores/homeRailStore';
+import {
   CHATS_ROOT,
   homeColumnRoot,
+  homeQuickBirthKinds,
   homeRailGroups,
+  homeRailPinnedKinds,
   homeRootKinds,
   isHomeRootKind,
   kindOfSlug,
   slugOfKind,
 } from '../domain';
 import type { CockpitStage, NavView } from '../routes/types';
-import { rootBirthDispatch, type ListRootOption } from '../panels/ListRootHeader';
+import { quickBirthLabel, rootBirthAction, rootBirthDispatch, type ListRootOption } from '../panels/ListRootHeader';
 import { HomeRail } from './HomeRail';
 import { HomeTrail } from './HomeTrail';
 import type { Notice } from '../shell';
@@ -252,6 +261,12 @@ export interface HomeChatRegions {
    * singleton. Returns null for the Chats root (the screen's own list).
    */
   renderRootList?: (root: HomeRoot) => ReactNode;
+  /**
+   * Bumped by the icon rail's New-chat button (task 01a0fb09). A chat is born
+   * by the screen's own composer, which only the screen can reset and focus,
+   * so the rail asks rather than performs; each increment is one request.
+   */
+  newChatRequest?: number;
 }
 
 /** The `NavView` a Home root addresses (the inverse lives in the resolver below). */
@@ -581,6 +596,30 @@ export function HomeView(props: HomeViewProps) {
      `home.list` key with no kind in it. */
   const listPref = usePanelWidth('home.list', HOME_LIST_DEFAULT, HOME_LIST_MIN);
   const [railCollapsed, setRailCollapsed] = usePanelFlag('home-rail-collapsed', true);
+  /* The rail's pins (per space) and its groups' open state (task 01a0fb09) —
+     read once here and handed down, for the collapse flag's reason. */
+  const [railPins, setRailPins] = useState<readonly string[]>(() => loadRailPins(data.spaceId));
+  useEffect(() => setRailPins(loadRailPins(data.spaceId)), [data.spaceId]);
+  const toggleRailPin = useCallback(
+    (kind: string) =>
+      setRailPins((pins) => {
+        const next = pins.includes(kind) ? pins.filter((pinned) => pinned !== kind) : [...pins, kind];
+        rememberRailPins(data.spaceId, next);
+        return next;
+      }),
+    [data.spaceId],
+  );
+  const [railGroupsOpen, setRailGroupsOpen] = useState<RailGroupOpenState>(loadRailGroupsOpen);
+  const toggleRailGroup = useCallback(
+    (groupId: string, open: boolean) =>
+      setRailGroupsOpen((state) => {
+        const next = { ...state, [groupId]: open };
+        rememberRailGroupsOpen(next);
+        return next;
+      }),
+    [],
+  );
+  const [newChatRequest, setNewChatRequest] = useState(0);
   const focus = props.focus ?? false;
 
   /* What the rail and A actually occupy. Focus mode is the ruled "collapse the
@@ -792,6 +831,7 @@ export function HomeView(props: HomeViewProps) {
         },
       }),
     renderRootList,
+    newChatRequest,
   };
 
   /* THE ICON RAIL (R4) — the switcher's twin: same groups, same select, no
@@ -803,6 +843,35 @@ export function HomeView(props: HomeViewProps) {
   const rail = focus ? null : (
     <HomeRail
       groups={homeRailGroups()}
+      pinned={homeRailPinnedKinds(railPins)}
+      /* The list header's quick-create icons, at the top of the rail too
+         (task 01a0fb09). A chat is the screen's composer, never a refusal;
+         the others land the column on the newborn's root (D10), as the
+         header's icons do. */
+      create={homeQuickBirthKinds().map((config) => {
+        const label = quickBirthLabel(config.kind);
+        if (rootBirthAction(config.kind) === 'chat-about') {
+          return {
+            kind: config.kind,
+            label,
+            refusal: null,
+            onCreate: () => setNewChatRequest((n) => n + 1),
+          };
+        }
+        const birth = birthFor(config.kind);
+        return {
+          kind: config.kind,
+          label,
+          refusal: birth.refusal,
+          onCreate: () => {
+            birth.perform();
+            setRoot(config.kind);
+          },
+        };
+      })}
+      onTogglePin={toggleRailPin}
+      openGroups={railGroupsOpen}
+      onToggleGroup={toggleRailGroup}
       activeKind={columnRoot}
       onSelect={setRoot}
       collapsed={railCollapsed}
