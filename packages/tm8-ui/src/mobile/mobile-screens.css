@@ -381,24 +381,25 @@
    is already `opacity: 1` under `(pointer: coarse)` — panels.css fixed the
    VISIBILITY of it for touch and left the 16px box.
 
-   RE-ANCHORED TO THE ROW'S LEADING CORNER rather than grown around its own
-   centre. Growing in place would put the box 8px above and 7px left of the
-   tile, where `.lp__tile { overflow: hidden }` clips it — the same
-   measures-44-draws-16 trap as 7f. Anchored at the corner the whole 44x44 is
-   inside the tile and inside the row's own height, and `place-items: center`
-   re-centres the caret in it: the glyph moves ~7px right and ~8px down and
-   reads as a disclosure gutter, which is what it now is.
-
-   IT OVERLAPS THE ROW'S LEADING MARK, deliberately and knowingly. On the tree
-   rows this control appears on, that mark is the kind glyph — decoration, not a
-   control — so the overlap costs no affordance. It is NOT applied to the task
-   tile, whose leading slot is the live state trigger of 7f; those are different
-   trees and this rule reaches only the one that has a disclosure. */
-.cv2-root[data-shell='mobile'] .lp__disclosure {
-  top: 0;
-  left: 0;
-  inline-size: var(--mobile-touch-min);
+   IN FLOW, as a 24px-wide, 44px-tall gutter — the shape `.pn-st__arrow` has
+   on the phone (see the session rules below). It used to be absolute at the
+   row's leading corner and 44x44, overlapping the kind glyph "deliberately and
+   knowingly"; once the leading icon began carrying the sub-entity count that
+   overlap hid the count, so the chevron took its own column on every anatomy,
+   the task tile's `.pn-tt__arrow` included. In flow, the box grows the row
+   rather than hanging past it, so the measures-44-draws-16 clipping trap of 7f
+   cannot recur here. */
+.cv2-root[data-shell='mobile'] .lp__disclosure,
+.cv2-root[data-shell='mobile'] .pn-tt .pn-tt__arrow {
+  inline-size: 24px;
   block-size: var(--mobile-touch-min);
+  flex: 0 0 24px;
+}
+/* The standard tile's relation band hangs under its title (`panels.css`), and
+   the title moves with the gutter: 7 + 24 + 6 + 16 + 6, less the 3px the band
+   has always led the title by. */
+.cv2-root[data-shell='mobile'] .lp__tile[data-tree='true'] .lp__tile-badges {
+  padding-left: 56px;
 }
 
 /* --- 7h. DEF-019 — kind selector and list actions (20-23px) -------------- */
@@ -658,12 +659,13 @@
 
    Restated from the same parts rather than as a new hard number, so it cannot
    drift from §7f the way the original drifted from the 16px mark: the row
-   inset, the status column and the flex gap, each named where it is defined.
+   inset, the 24px chevron gutter of §7g and its gap, the status column and the
+   flex gap, each named where it is defined.
    `--tt-indent` stays in the sum because a nested row's whole anatomy shifts
    with it and the badge line has to shift too.
    ========================================================================== */
 .cv2-root[data-shell='mobile'] .pn-tt__badges {
-  padding-inline-start: calc(7px + var(--tt-indent, 0px) + var(--mobile-touch-min) + 6px);
+  padding-inline-start: calc(7px + var(--tt-indent, 0px) + 24px + 6px + var(--mobile-touch-min) + 6px);
 }
 
 

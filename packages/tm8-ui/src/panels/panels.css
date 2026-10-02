@@ -2753,7 +2753,12 @@
      colour rule per tool. */
   text-shadow: 0 0 2px var(--pn-card), 0 0 2px var(--pn-card), 0 0 2px var(--pn-card);
 }
-.cv2-root .pn-agent__kids {
+/* `.lp__kids` is the SAME pill on every other tree anatomy (`ChildCountBadge`):
+   the task tile's status dot and the standard tile's status/kind mark. One rule,
+   so a parent row reads the same whatever its kind. Both slots are 16-17px and
+   `position: relative`; the pill stays inside the slot box for the same reason
+   given above. */
+.cv2-root :is(.pn-agent__kids, .lp__kids) {
   position: absolute; right: 0; bottom: 0;
   min-width: 9px; height: 9px; padding: 0 1.5px;
   box-sizing: border-box; border-radius: 999px;
@@ -2764,6 +2769,15 @@
   /* Separates the pill from the face it sits on, in either theme. */
   box-shadow: 0 0 0 1.5px var(--pn-card);
 }
+/* A status DOT is ~8px against a 19px face, so the pill sitting fully inside
+   the slot would cover a third of the very mark it annotates. It hangs a few
+   pixels out instead, into the gap before the title; nothing on this anatomy
+   clips the slot, unlike `.pn-st__title`. Measured from the slot's CENTRE, not
+   its corner, because the phone grows the task status slot to 44px (§7f in
+   `mobile-screens.css`) while the dot stays 8px: a corner anchor would park
+   the count 18px away from the mark it counts. On the 16px desktop slot this
+   is right: -3px; bottom: -2px. */
+.cv2-root .lp__kids { right: calc(50% - 11px); bottom: calc(50% - 10px); }
 /* `.cv2-root .pn-stat` IS DECLARED TWICE — here, and in
    `list/maestro-task-tile.css`, which sets the 16px box and no colour while
    this one sets the colour and no box. Equal specificity, so which wins is
@@ -2922,12 +2936,14 @@
 
 /* The caret overlays the leading status/kind mark on hover, like the Home
    conversation list, rather than reserving an empty column in every row. */
+/* IN FLOW, NOT OVER THE KIND MARK — the same correction `.pn-st__arrow` and
+   `.pn-tt__arrow` carry. This was absolute at the row's leading corner, i.e.
+   exactly on top of `.lp__statusmark`, so a doc or channel WITH children drew
+   its chevron across its own kind glyph. It now owns a 16px column; the
+   `--empty` span keeps that column on leaf rows so titles stay aligned. */
 .cv2-root .lp__disclosure {
   appearance: none;
-  position: absolute;
-  top: 6px;
-  left: 7px;
-  z-index: 3;
+  flex: 0 0 auto;
   width: 16px;
   height: 16px;
   display: grid;
@@ -2978,7 +2994,8 @@
 
    `EntityListPanel` emits this variant when `onToggleChildren` is absent: a
    `<span aria-hidden>`, a decoration and not a control. But `.lp__disclosure`
-   is `position: absolute; top: 6px; left: 7px; z-index: 3`, and the gate's §7g
+   was `position: absolute; top: 6px; left: 7px; z-index: 3` (in flow since the
+   sub-entity count moved onto the leading icon), and the gate's §7g
    grows it to 44x44 on the phone, so on a tree row with no toggle handler it is
    the topmost paintable thing over the row's leading corner and
    `elementFromPoint` at that corner returns THE SPAN. The line above already
@@ -3022,6 +3039,8 @@
    rounded square read as a chip in a list whose sessions carry a bare glyph;
    tone still comes through the dot and the kind mark inside it. */
 .cv2-root .lp__statusmark {
+  /* The containing block for the sub-entity count on its corner (`.lp__kids`). */
+  position: relative;
   flex: none;
   width: 16px;
   height: 16px;
@@ -4944,6 +4963,10 @@
   gap: 4px 8px;
   padding: 0 8px 4px 26px;
 }
+/* A tree kind's row carries the 16px chevron column + 6px gap before its mark,
+   so its title — and this band, which hangs under the title — sits 22px
+   further in. */
+.cv2-root .lp__tile[data-tree='true'] .lp__tile-badges { padding-left: 48px; }
 .cv2-root .lp__related-note {
   margin: 0;
   padding: 2px 0 4px;
