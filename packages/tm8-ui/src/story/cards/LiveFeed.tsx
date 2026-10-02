@@ -7,13 +7,17 @@
  * Pause rides `live.setPaused` and only draws with a live feed. The composer
  * rides `actions.sendMessage` on the anchor picked beside it ("reply" on a row
  * picks that row's anchor); without `sendMessage` there is no composer.
+ *
+ * Pressing a row (or its anchor chip) opens the ANCHOR's details beside the
+ * story (`onPick`); its "…" or a right-click opens the anchor's action popover
+ * (`onMenu`); rows on the selected anchor are highlighted.
  */
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 
 import { KindIcon } from '../../domain';
 import { nodesById, since, STORY_KIND, type StoryFeedRow, type StoryView } from '../model';
-import type { StoryBlockProps, StoryNodePick } from '../props';
-import { CardHead, Empty, flashOf, PersonAvatar } from './shared';
+import type { StoryBlockProps } from '../props';
+import { CardHead, Empty, flashOf, MenuDot, PersonAvatar, PressTitle, pressOf, rowPress, type Press } from './shared';
 
 type Scope = 'all' | 'story';
 
@@ -36,7 +40,9 @@ function anchorsOf(view: StoryView): Anchor[] {
   return out;
 }
 
-export function LiveFeed({ view, actions, live }: StoryBlockProps & { onPick?: (pick: StoryNodePick) => void }) {
+export function LiveFeed(props: StoryBlockProps) {
+  const { view, actions, live } = props;
+  const press = pressOf(props);
   const [scope, setScope] = useState<Scope>('all');
   const rows = useMemo(
     () => [...view.feed].reverse().filter((m) => scope === 'all' || m.anchorId === view.id),
@@ -109,7 +115,7 @@ export function LiveFeed({ view, actions, live }: StoryBlockProps & { onPick?: (
         {rows.length === 0 ? (
           <Empty>{scope === 'story' && view.feed.length ? 'Nothing said on the story itself yet — switch to all anchors.' : 'No messages yet. Anything said on the story, or on anything in it, lands here as it happens.'}</Empty>
         ) : (
-          rows.map((m) => <FeedRow key={m.id} m={m} view={view} open={actions.open} onReply={send ? replyOn : undefined} flash={flashOf(live?.landed, m.id)} />)
+          rows.map((m) => <FeedRow key={m.id} m={m} view={view} press={press} onReply={send ? replyOn : undefined} flash={flashOf(live?.landed, m.id)} />)
         )}
       </div>
       {send ? (
@@ -146,13 +152,13 @@ export function LiveFeed({ view, actions, live }: StoryBlockProps & { onPick?: (
 function FeedRow({
   m,
   view,
-  open,
+  press,
   onReply,
   flash,
 }: {
   m: StoryFeedRow;
   view: StoryView;
-  open?: (id: string) => void;
+  press: Press;
   onReply?: (anchorId: string) => void;
   flash: string;
 }) {
@@ -168,19 +174,20 @@ function FeedRow({
   );
   const anchorCls = onStory ? 'stc-fm__anchor stc-fm__anchor--story' : 'stc-fm__anchor';
   return (
-    <div className={`stc-fm${m.incoming ? ' stc-fm--in' : ''}${flash}`}>
+    <div
+      className={`stc-fm${m.incoming ? ' stc-fm--in' : ''}${press.sel(m.anchorId)}${flash}`}
+      onClick={rowPress(press, m.anchorId)}
+      onContextMenu={press.menu?.(m.anchorId)}
+    >
       <PersonAvatar id={m.authorId} person={person} fallbackName={name} agent={m.author?.isAgent} size={22} live={!!sign} />
       <div>
         <div className="stc-fm__h">
           <b>{name}</b>
           {sign ? <span className="stc-fm__sign">{sign}</span> : null}
-          {open ? (
-            <button type="button" className={anchorCls} title={`open ${m.anchorTitle}`} onClick={() => open(m.anchorId)}>
-              {anchorBody}
-            </button>
-          ) : (
-            <span className={anchorCls}>{anchorBody}</span>
-          )}
+          <span className="stc-hit" data-entity={m.anchorId}>
+            <PressTitle id={m.anchorId} title={anchorBody} press={press} className={anchorCls} />
+            <MenuDot id={m.anchorId} label={onStory ? 'the story' : m.anchorTitle} press={press} />
+          </span>
           <span className="stc-fm__when">{since(m.at)}</span>
         </div>
         <div className="stc-fm__b">{m.excerpt}</div>

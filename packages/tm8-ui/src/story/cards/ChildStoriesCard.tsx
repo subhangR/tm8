@@ -3,7 +3,9 @@
  * Each tile is a whole story: status, how much is in it, what is live, and its
  * own task progress, which the server rolls up into this story's `rollup`.
  *
- * A tile opens the child through `actions.open`; "＋ Child story" rides
+ * Pressing a tile opens the child's details beside the story (`onPick`, or
+ * `actions.open` without a side panel); its "…" or a right-click opens the
+ * action popover (`onMenu`); the selected one is highlighted. "＋ Child story" rides
  * `actions.add` with the `child-story` intent. Absent members, no affordance.
  */
 import { useState } from 'react';
@@ -11,10 +13,12 @@ import { useState } from 'react';
 import { KindIcon } from '../../domain';
 import { Pill } from '../../kit';
 import { childStoryProgress, pct, since, statusWord, STORY_KIND, toneOf, type StoryChild } from '../model';
-import type { StoryBlockProps, StoryNodePick } from '../props';
-import { CardHead, Empty, flashOf, InlineEntry, Meter, TonePill } from './shared';
+import type { StoryBlockProps } from '../props';
+import { CardHead, Empty, flashOf, InlineEntry, MenuDot, Meter, pressOf, TonePill, type Press } from './shared';
 
-export function ChildStoriesCard({ view, actions, live }: StoryBlockProps & { onPick?: (pick: StoryNodePick) => void }) {
+export function ChildStoriesCard(props: StoryBlockProps) {
+  const { view, actions, live } = props;
+  const press = pressOf(props);
   const kids = view.page.childStories;
   const [adding, setAdding] = useState(false);
   const add = actions.add;
@@ -43,7 +47,7 @@ export function ChildStoriesCard({ view, actions, live }: StoryBlockProps & { on
       ) : (
         <div className="stc-kids">
           {kids.map((c) => (
-            <Kid key={c.id} c={c} open={actions.open} flash={flashOf(live?.landed, c.id)} />
+            <Kid key={c.id} c={c} press={press} flash={flashOf(live?.landed, c.id)} />
           ))}
         </div>
       )}
@@ -51,7 +55,7 @@ export function ChildStoriesCard({ view, actions, live }: StoryBlockProps & { on
   );
 }
 
-function Kid({ c, open, flash }: { c: StoryChild; open?: (id: string) => void; flash: string }) {
+function Kid({ c, press, flash }: { c: StoryChild; press: Press; flash: string }) {
   const p = childStoryProgress(c);
   const inner = (
     <>
@@ -85,11 +89,16 @@ function Kid({ c, open, flash }: { c: StoryChild; open?: (id: string) => void; f
       </span>
     </>
   );
-  return open ? (
-    <button type="button" className={`stc-kid${flash}`} title="open this story" onClick={() => open(c.id)}>
-      {inner}
-    </button>
-  ) : (
-    <div className={`stc-kid${flash}`}>{inner}</div>
+  return (
+    <div className={`stc-kid${press.sel(c.id)}${flash}`} data-entity={c.id} onContextMenu={press.menu?.(c.id)}>
+      {press.pick ? (
+        <button type="button" className="stc-kid__press" title="open this story" onClick={press.pick(c.id)}>
+          {inner}
+        </button>
+      ) : (
+        <div className="stc-kid__press">{inner}</div>
+      )}
+      <MenuDot id={c.id} label={c.title} press={press} />
+    </div>
   );
 }

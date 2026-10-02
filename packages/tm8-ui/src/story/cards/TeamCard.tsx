@@ -7,6 +7,10 @@
  * worker on the story; a coordinating row adds a sub-coordinator or a worker
  * under its live session; a dispatcher row dispatches a task as itself. With
  * no `add`, none of those buttons is drawn.
+ *
+ * A teammate's name, a session's call sign and every task named on a row open
+ * that entity's details beside the story (`onPick`); the "…" or a right-click
+ * opens the action popover (`onMenu`); the selected one is highlighted.
  */
 import { useState } from 'react';
 import type { TeamMemberMode } from '@tm8/contract';
@@ -15,8 +19,8 @@ import { KindIcon } from '../../domain';
 import { Pill } from '../../kit';
 import type { StoryIntent } from '../actions';
 import { MODE_WORD, nodesById, SESSION_KIND, TASK_KIND, teammatesOf, type StorySession, type StoryTeammate } from '../model';
-import type { StoryBlockProps, StoryNodePick } from '../props';
-import { CardHead, Empty, flashOf, InlineEntry, PersonAvatar, picker } from './shared';
+import type { StoryBlockProps } from '../props';
+import { CardHead, Empty, flashOf, InlineEntry, MenuDot, PersonAvatar, PressTitle, pressOf, type Press } from './shared';
 
 /** One add button: what it asks for and what it sends. */
 interface AddSpec {
@@ -51,7 +55,9 @@ const ROW_ADDS: Readonly<Partial<Record<TeamMemberMode, readonly AddSpec[]>>> = 
 /** The tfoot's mode words, in tm8's own order. */
 const MODES: readonly TeamMemberMode[] = ['coordinator', 'coordinated-coordinator', 'coordinated-worker', 'worker', 'dispatcher'];
 
-export function TeamCard({ view, actions, live, onPick }: StoryBlockProps & { onPick?: (pick: StoryNodePick) => void }) {
+export function TeamCard(props: StoryBlockProps) {
+  const { view, actions, live } = props;
+  const press = pressOf(props);
   const team = teammatesOf(view.page);
   const [adding, setAdding] = useState<{ spec: AddSpec; onId: string; asId: string | null; tellIds: string[] } | null>(null);
 
@@ -105,7 +111,7 @@ export function TeamCard({ view, actions, live, onPick }: StoryBlockProps & { on
       ) : (
         <div className="stc-team">
           {tops.map((t) => (
-            <TeamRows key={t.id} t={t} depth={0} view={view} actions={actions} live={live} onPick={onPick} onAdd={add ? start : undefined} />
+            <TeamRows key={t.id} t={t} depth={0} view={view} actions={actions} live={live} press={press} onAdd={add ? start : undefined} />
           ))}
         </div>
       )}
@@ -132,12 +138,12 @@ function TeamRows({
   view,
   actions,
   live,
-  onPick,
+  press,
   onAdd,
 }: StoryBlockProps & {
   t: StoryTeammate;
   depth: number;
-  onPick?: (pick: StoryNodePick) => void;
+  press: Press;
   onAdd?: (spec: AddSpec, row: StoryTeammate) => void;
 }) {
   const byId = nodesById(view);
@@ -150,23 +156,23 @@ function TeamRows({
   const reports = teammatesOf(view.page).filter((x) => x.parentId === t.id);
   const adds = (t.mode && ROW_ADDS[t.mode]) || [];
 
-  const pick = picker(onPick, actions.open);
-  const taskRef = (id: string) =>
-    pick ? (
-      <button type="button" className="stc-link" onClick={pick(id)}>
-        {titleOf(id)}
-      </button>
-    ) : (
-      <b>{titleOf(id)}</b>
-    );
+  const taskRef = (id: string) => (
+    <span className={`stc-hit${press.sel(id)}`} data-entity={id} onContextMenu={press.menu?.(id)}>
+      <PressTitle id={id} title={<b>{titleOf(id)}</b>} press={press} className="stc-link" />
+      <MenuDot id={id} label={titleOf(id)} press={press} />
+    </span>
+  );
 
   return (
     <>
-      <div className={`stc-trow${flashOf(live?.landed, t.id)}`} style={{ marginLeft: depth * 28 }}>
+      <div className={`stc-trow${press.sel(t.id)}${flashOf(live?.landed, t.id)}`} style={{ marginLeft: depth * 28 }}>
         {depth ? <span className="stc-trow__guide" aria-hidden /> : null}
         <div className="stc-trow__ident">
           <PersonAvatar id={t.id} person={person} fallbackName={t.name} agent size={22} live={isLive} />
-          <span className="stc-trow__name">{t.name}</span>
+          <span className="stc-hit" data-entity={t.id} onContextMenu={press.menu?.(t.id)}>
+            <PressTitle id={t.id} title={t.name} press={press} className="stc-trow__name" />
+            <MenuDot id={t.id} label={t.name} press={press} />
+          </span>
           {t.mode ? <span className={`stc-mode stc-mode--${t.mode}`}>{t.mode}</span> : null}
         </div>
         <div className="stc-trow__on">
@@ -176,7 +182,11 @@ function TeamRows({
               {sessions.map((s, i) => (
                 <span key={s.id}>
                   {i ? ' · ' : ''}
-                  <b>{s.callSign}</b> · {s.live ? 'live' : 'exited'}
+                  <span className={`stc-hit${press.sel(s.id)}`} data-entity={s.id} onContextMenu={press.menu?.(s.id)}>
+                    <PressTitle id={s.id} title={<b>{s.callSign}</b>} press={press} className="stc-link" />
+                    <MenuDot id={s.id} label={`${s.callSign} · ${s.title}`} press={press} />
+                  </span>{' '}
+                  · {s.live ? 'live' : 'exited'}
                 </span>
               ))}
               <span className="stc-m">{sessions.length === 1 ? 'session' : 'sessions'}</span>
@@ -226,15 +236,15 @@ function TeamRows({
                 </button>
               ))
             : null}
-          {!adds.length && latest && actions.open ? (
-            <button type="button" className="stc-btn stc-btn--ghost stc-btn--sm" onClick={() => actions.open!(latest.id)}>
+          {!adds.length && latest && press.pick ? (
+            <button type="button" className="stc-btn stc-btn--ghost stc-btn--sm" onClick={press.pick(latest.id)}>
               ↗ open session
             </button>
           ) : null}
         </div>
       </div>
       {reports.map((r) => (
-        <TeamRows key={r.id} t={r} depth={depth + 1} view={view} actions={actions} live={live} onPick={onPick} onAdd={onAdd} />
+        <TeamRows key={r.id} t={r} depth={depth + 1} view={view} actions={actions} live={live} press={press} onAdd={onAdd} />
       ))}
     </>
   );

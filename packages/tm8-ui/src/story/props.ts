@@ -41,6 +41,22 @@ export interface StoryRunner {
   mode?: string | null;
 }
 
+/** How far from a root the page shows: 1..3 hops (depth). The server always follows 3. */
+export type StoryHops = 1 | 2 | 3;
+
+/**
+ * The page's graph filter, shared so the graph and the Roots card agree.
+ * Held by StoryPage and persisted in the URL (?hops=2&kinds=task,doc).
+ * VIEW ONLY: headline progress and stats stay the server's story figures.
+ */
+export interface StoryGraphFilter {
+  hops: StoryHops;
+  setHops: (hops: StoryHops) => void;
+  /** Kinds shown in the Everything view; null = every kind present. */
+  kinds: ReadonlySet<string> | null;
+  setKinds: (kinds: ReadonlySet<string> | null) => void;
+}
+
 export interface StoryBlockProps {
   view: StoryView;
   actions: StoryActions;
@@ -67,6 +83,8 @@ export interface StoryBlockProps {
    * done) anchored to the element. Absent = no "…" drawn.
    */
   onMenu?: (pick: StoryNodePick) => void;
+  /** Absent = full depth, every kind (and no controls drawn). */
+  filter?: StoryGraphFilter | null;
 }
 
 /** A node the user clicked, in the graph or a card — opens the node popover. */

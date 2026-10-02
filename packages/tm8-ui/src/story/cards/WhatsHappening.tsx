@@ -2,16 +2,18 @@
  * WHAT'S HAPPENING — the story's activity, newest first, in plain words:
  * "<who> <did> <what>", read straight off each row's verb, entity title and
  * actor. The live sessions head the list ("Forge · Cedar is running …"), then
- * the activity groups by day. Items open through the node popover or
- * `actions.open`; with neither they are inert text.
+ * the activity groups by day. Pressing a row opens its entity's details beside
+ * the story (`onPick`, or `actions.open` without a side panel; with neither it
+ * is inert text); its "…" or a right-click opens the action popover
+ * (`onMenu`); rows on the selected entity are highlighted.
  */
 import { useState, type ReactNode } from 'react';
 
 import { KindIcon } from '../../domain';
 import { shortDate } from '../../kit';
 import { nameOf, nodesById, rootNumber, SESSION_KIND, since, type StoryActivityItem, type StoryView } from '../model';
-import type { StoryBlockProps, StoryNodePick } from '../props';
-import { CardHead, Empty, flashOf, picker } from './shared';
+import type { StoryBlockProps } from '../props';
+import { CardHead, Empty, flashOf, MenuDot, PressTitle, pressOf, rowPress, type Press } from './shared';
 
 /**
  * The stored verb → the words a person would say. `activity.verb` is a CLOSED
@@ -63,23 +65,21 @@ function whereOf(view: StoryView, entityId: string): string | null {
   return k > 0 ? `root ${k}` : null;
 }
 
-export function WhatsHappening({ view, actions, live, onPick }: StoryBlockProps & { onPick?: (pick: StoryNodePick) => void }) {
+export function WhatsHappening(props: StoryBlockProps) {
+  const { view, live } = props;
+  const press = pressOf(props);
   const [showAll, setShowAll] = useState(false);
-  const pick = picker(onPick, actions.open);
   const byId = nodesById(view);
   const running = view.page.sessions.filter((s) => s.live);
   const activity = showAll ? view.page.activity : view.page.activity.slice(0, FIRST_PAGE);
   const hidden = view.page.activity.length - activity.length;
   const now = new Date();
 
-  const obj = (id: string, title: string) =>
-    pick ? (
-      <button type="button" className="stc-obj" onClick={pick(id)}>
-        {title}
-      </button>
-    ) : (
-      <span className="stc-obj">{title}</span>
-    );
+  const obj = (id: string, title: string) => (
+    <span className={`stc-hit${press.sel(id)}`} data-entity={id}>
+      <PressTitle id={id} title={title} press={press} className="stc-obj" />
+    </span>
+  );
 
   if (!running.length && !view.page.activity.length) {
     return (
@@ -101,15 +101,19 @@ export function WhatsHappening({ view, actions, live, onPick }: StoryBlockProps 
           const tasks = s.taskIds.filter((id) => byId.has(id));
           const where = s.rootIds.length ? s.rootIds.map((r) => `root ${rootNumber(view, r)}`).join(' · ') : 'story';
           return (
-            <div key={s.id} className={`stc-tl__item${flashOf(live?.landed, s.id)}`}>
+            <div
+              key={s.id}
+              className={`stc-tl__item${press.sel(s.id)}${flashOf(live?.landed, s.id)}`}
+              data-entity={s.id}
+              onClick={rowPress(press, s.id)}
+              onContextMenu={press.menu?.(s.id)}
+            >
               <span className="stc-tl__o stc-tl__o--live">
                 <KindIcon kind={SESSION_KIND} size={14} />
               </span>
               <div>
                 <div className="stc-tl__what">
-                  <b>
-                    {who} · {s.callSign}
-                  </b>{' '}
+                  <PressTitle id={s.id} title={<b>{`${who} · ${s.callSign}`}</b>} press={press} className="stc-link" />{' '}
                   {tasks.length ? (
                     <>
                       is running{' '}
@@ -128,7 +132,10 @@ export function WhatsHappening({ view, actions, live, onPick }: StoryBlockProps 
                   <em>{where}</em> · <span className="stc-fam-text--runs">runs</span>
                 </div>
               </div>
-              <span className="stc-tl__when">{since(s.createdAt)}</span>
+              <span className="stc-tl__end">
+                <MenuDot id={s.id} label={`${who} · ${s.callSign}`} press={press} />
+                <span className="stc-tl__when">{since(s.createdAt)}</span>
+              </span>
             </div>
           );
         })}
@@ -139,7 +146,7 @@ export function WhatsHappening({ view, actions, live, onPick }: StoryBlockProps 
           return (
             <div key={a.id}>
               {sec}
-              <ActivityRow a={a} view={view} obj={obj} flash={flashOf(live?.landed, a.entityId)} />
+              <ActivityRow a={a} view={view} obj={obj} press={press} flash={flashOf(live?.landed, a.entityId)} />
             </div>
           );
         })}
@@ -157,16 +164,23 @@ function ActivityRow({
   a,
   view,
   obj,
+  press,
   flash,
 }: {
   a: StoryActivityItem;
   view: StoryView;
   obj: (id: string, title: string) => ReactNode;
+  press: Press;
   flash: string;
 }) {
   const where = whereOf(view, a.entityId);
   return (
-    <div className={`stc-tl__item${flash}`}>
+    <div
+      className={`stc-tl__item${press.sel(a.entityId)}${flash}`}
+      data-entity={a.entityId}
+      onClick={rowPress(press, a.entityId)}
+      onContextMenu={press.menu?.(a.entityId)}
+    >
       <span className="stc-tl__o">
         <KindIcon kind={a.entityKind} size={14} />
       </span>
@@ -181,7 +195,10 @@ function ActivityRow({
           </div>
         ) : null}
       </div>
-      <span className="stc-tl__when">{since(a.at)}</span>
+      <span className="stc-tl__end">
+        <MenuDot id={a.entityId} label={a.entityId === view.id ? 'the story' : a.entityTitle} press={press} />
+        <span className="stc-tl__when">{since(a.at)}</span>
+      </span>
     </div>
   );
 }
