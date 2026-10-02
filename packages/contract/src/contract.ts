@@ -90,7 +90,7 @@ export type CoreEntityKind =
   // connected to them follows. Progress and the page are computed at read
   // time, never stored. See ./story.ts.
   | 'story'
-  // Space styles (migration 282, styles spec 01a0fc22 v8 §3.3): a published,
+  // Space styles (migration 284, styles spec 01a0fc22 v8 §3.3): a published,
   // READ-ONLY theme in a space. Born and re-versioned only by `styles.push`;
   // `entities.create`/`entities.patch` refuse it. Personal styles are NOT
   // entities (they live in `personal_styles`, owner-only).
@@ -543,7 +543,7 @@ export type CoreEntityState =
   | { kind: 'space_link' }
   | { kind: 'server' }
   /**
-   * A space style's row facts (282, spec §4.3). The FULL document rides on the
+   * A space style's row facts (284, spec §4.3). The FULL document rides on the
    * state on purpose (sign-off decision): `entity.upsert` after a push is how
    * every viewer on the style repaints, and carrying the doc means no fetch.
    * A doc is bounded (≤ 200 vars of ≤ 512 chars, css ≤ 16 KiB).
@@ -989,7 +989,7 @@ export type CoreEntityContent =
   /** Space links (250, W6): content is `spaceLinks.list`'s; see EntityState. */
   | { kind: 'space_link' }
   | { kind: 'server' }
-  /** A space style (282): the same facts as its state plus the description. */
+  /** A space style (284): the same facts as its state plus the description. */
   | { kind: 'style'; description: string | null; doc: StyleDoc; resolvedHash: string | null;
       pushedBy: EntityId; pushedAt: string; sourceOwnerIdentityId: string; tags: string[] }
   /**
@@ -1612,7 +1612,7 @@ export type WorkspaceEvent = WorkspaceEventEnvelope & (
  | { type: 'menu.updated'; menu: MenuConfig; clientMutationId?: string }
  | { type: 'space.default_channel.updated'; channelId: EntityId | null;
      settingsRevision: number; clientMutationId?: string }
- // Styles (282, spec §4.3). RPC-authored passthrough rows. The first two are
+ // Styles (284, spec §4.3). RPC-authored passthrough rows. The first two are
  // RECIPIENT-TARGETED: one row per active membership of the owner, with
  // `recipient_member_id` set, so a personal style or a preference never reaches
  // another member's socket. `doc` is null on a delete.
@@ -3155,7 +3155,7 @@ export type CreatableEntityKind = Exclude<
   // caller belongs to both spaces; `server` has no door in W6.
   | 'space_link'
   | 'server'
-  // `style` is born ONLY from `styles.push` (282): a space style is read-only
+  // `style` is born ONLY from `styles.push` (284): a space style is read-only
   // and every version is a deliberate publish from a personal style.
   | 'style'
 >;
@@ -7954,7 +7954,7 @@ export interface EventChangesView {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // STYLES — persistence, push / pull / use (styles spec 01a0fc22 v8 §3-§4,
-// migration 282). The DOCUMENT shape and the resolver live in `style.ts`; this
+// migration 284). The DOCUMENT shape and the resolver live in `style.ts`; this
 // section is only the wire shapes of the `styles.*`, `identity.stylePrefs.*`
 // and `spaces.styleDefault.*` operations.
 //

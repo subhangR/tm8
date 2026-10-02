@@ -448,7 +448,7 @@ export const OPERATIONS = [
   // claim. Server-authorized, no space, no actor.
   { name: 'identity.profile.update',                     method: 'POST',   path: '/v2/identity/profile',                                               kind: 'command', status: 'v1' },
 
-  // Styles (styles spec 01a0fc22 v8 §4.1, migration 282). PERSONAL styles are
+  // Styles (styles spec 01a0fc22 v8 §4.1, migration 284). PERSONAL styles are
   // the caller's own (owner-only table, no space); SPACE styles are read-only
   // `style` entities written only by `styles.push`. `styles.resolve` is a read:
   // it lints a document and stores nothing. The space default is human-admin

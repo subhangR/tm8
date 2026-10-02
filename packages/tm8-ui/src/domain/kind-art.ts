@@ -276,7 +276,7 @@ export const KIND_ART = {
   ],
 
   /**
-   * A painter's palette — a `style` is a theme for the whole UI (282). The
+   * A painter's palette — a `style` is a theme for the whole UI (284). The
    * thumb hole and three paint wells are what keep it from reading as a
    * generic blob or as `drawing`'s pencil at 16px.
    */

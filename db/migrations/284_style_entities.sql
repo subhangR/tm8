@@ -1,5 +1,5 @@
 -- =============================================================================
--- 282 — styles: personal styles, read-only space styles, per-identity prefs and
+-- 284 — styles: personal styles, read-only space styles, per-identity prefs and
 -- the space default (styles spec doc 01a0fc22 v8, signed off 2026-10-02;
 -- §3 database, §4 actions, §4.3 events, §7 permissions).
 --
@@ -34,14 +34,16 @@
 -- `space.default_channel.updated` (031:665). All three are RPC-authored
 -- passthrough rows: the payload IS the contract arm, `type` included.
 --
--- NUMBERED 282, MEASURED 2026-10-02 against the union of every remote ref
--- (194's rule): main's tip is 277 and 278..281 exist on unmerged branches
--- (space_link_inbound, cross_space_refs, op_requests, path_grants,
--- space_link_spawn). None of those redefine `internal.entity_content` or
--- `public.delete_entity`, the two shared objects replaced below.
+-- NUMBERED 284, MEASURED 2026-10-02 against the union of every remote ref
+-- (194's rule): main's tip is 283 (story_kind) and 285 exists on an unmerged
+-- branch (auth_session_liveness). First drafted as 282; RENUMBERED after main
+-- landed 283, because 283 also REPLACES `internal.entity_content` and a style
+-- migration ordered before it would have its `style` arm silently dropped on
+-- every fresh chain. 284 applies after 283, so its body below is 283's plus
+-- the `style` arm. 285 redefines neither shared object below.
 --
 -- SHARED-OBJECT NOTICE (same as 194/239/250/261): §8 REPLACES
--- `internal.entity_content` (body copied VERBATIM from 261, the latest in the
+-- `internal.entity_content` (body copied VERBATIM from 283, the latest in the
 -- chain, plus one `style` arm) and §9 REPLACES `public.delete_entity` (body
 -- copied VERBATIM from 261, plus `style` in the command-owned refusal, because
 -- removal is an admin action with its own door).
@@ -501,7 +503,7 @@ $$;
 
 -- -----------------------------------------------------------------------------
 -- 8. Content hydration. SHARED-OBJECT NOTICE above: body copied VERBATIM from
---    261 (the latest definition), plus the `style` arm, so version snapshots
+--    283 (the latest definition), plus the `style` arm, so version snapshots
 --    and generic reads carry the document.
 -- -----------------------------------------------------------------------------
 create or replace function internal.entity_content(target uuid)
@@ -556,7 +558,10 @@ begin
       -- W8: the server's metadata. `servers` holds no secret; the sealed
       -- per-member gate session is `server_gate_tokens` and has no arm.
       when 'server' then select to_jsonb(sv) - 'entity_id' into content from public.servers sv where sv.entity_id = target;
-      -- 282: a space style's detail row. The row holds nothing secret (the
+      -- 283: the story's title and description. Its roots are `contains`
+      -- edges and its trail is computed (story_trail), never embedded here.
+      when 'story' then select to_jsonb(st) - 'entity_id' into content from public.stories st where st.entity_id = target;
+      -- 284: a space style's detail row. The row holds nothing secret (the
       -- document, tags and attribution), so the house form applies; the
       -- contract's camelCase shape is the read facade's job (`contentOf`).
       when 'style' then select to_jsonb(sty) - 'entity_id' into content from public.styles sty where sty.entity_id = target;
@@ -1260,3 +1265,9 @@ revoke all on function internal.personal_style_summary_json(public.personal_styl
 revoke all on function internal.space_style_json(uuid) from public;
 
 reset role;
+
+-- Never-analyzed tables are estimated at 10 pages (225); 229's precedent.
+analyze public.personal_styles;
+analyze public.styles;
+analyze public.identity_style_prefs;
+analyze public.space_style_defaults;

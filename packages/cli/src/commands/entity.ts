@@ -864,7 +864,7 @@ async function entityCreate(cmd: CommandContext): Promise<ExitCode> {
     'no-session-link', ...HEADER_TEXT_OPTIONS,
   ]);
   const kind = requireArg(cmd, 0, '<kind>');
-  // A space style is born only by `styles.push` (282): the Server refuses a
+  // A space style is born only by `styles.push` (284): the Server refuses a
   // generic create, and the refusal is more useful naming the door here than
   // as an enum mismatch from the wire.
   if (kind === 'style') {

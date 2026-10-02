@@ -833,7 +833,7 @@ function synthesizeContent(s: EntitySummary): EntityContent {
       // The page is hydrated on a detail read only; a seam row carries none.
       return { kind: 'story', description: '', page: null };
     case 'style':
-      // 282: a space style's content is its state's facts plus a description.
+      // 284: a space style's content is its state's facts plus a description.
       return { ...state, description: null };
     default:
       // pull_request | commit | file | spell | skill — the open content variant

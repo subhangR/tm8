@@ -312,7 +312,7 @@ export function registerFacadeHandlers(
   registerW2FeedContextHandlers(registry, facade);
   registerW2MenuDefaultChannelHandlers(registry, facade);
   registerW2ConfigsHandlers(registry, facade);
-  // Styles (migration 282, styles spec §4): personal styles, read-only space
+  // Styles (migration 284, styles spec §4): personal styles, read-only space
   // styles, prefs and the space default. The human-only default door is
   // wrapped inside the registration.
   registerW2StyleHandlers(registry, facade);

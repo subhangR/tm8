@@ -62,7 +62,7 @@ describe('totality over the frozen core-kind set (WLT §2.1)', () => {
     // 25 -> 26 (W10a): `credential`; 26 -> 28 (W6): `space_link` + `server`.
     // 28 -> 29 (283): `story`.
     // MEASURED: CoreEntityKindSchema.options.length.
-    // 29 -> 30 (282): `style`, the read-only space style.
+    // 29 -> 30 (284): `style`, the read-only space style.
     expect(CORE_KINDS.length).toBe(30);
     expect(allKinds()).toHaveLength(CORE_KINDS.length + 1);
     expect(allKinds().filter((r) => r.kind === CUSTOM_KIND_FALLBACK)).toHaveLength(1);

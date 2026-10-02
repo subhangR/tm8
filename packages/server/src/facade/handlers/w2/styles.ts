@@ -1,6 +1,6 @@
 /**
  * `styles.*`, `identity.stylePrefs.*`, `spaces.styleDefault.*` — styles spec
- * 01a0fc22 v8 §4 over migration 282.
+ * 01a0fc22 v8 §4 over migration 284.
  *
  * DIVISION OF LABOUR. The database owns WHO and WHEN: ownership, membership,
  * admin rights, readability, versions, caps, history and every event. This

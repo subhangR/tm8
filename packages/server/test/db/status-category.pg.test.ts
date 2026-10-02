@@ -355,6 +355,22 @@ describe.sequential('147 — entities.status_category', () => {
     // story_summary, stories_containing and entity_content ran on a seeded
     // story with a `contains` root.
     database.apply(['283_story_kind.sql']);
+    // 284 (space styles): `entity-read.ts` and the projector left-join
+    // `public.styles stl` for a style's title and document. 284 needs the
+    // chain through 283's neighbours (personal_styles FKs, identity helpers),
+    // so — like the servers shim above — only the column shapes the read
+    // selects and their tm8_app read grant are mirrored (as tm8_graph_owner),
+    // without its FKs, checks, triggers or RPCs. No assertion here reads them.
+    // DELETE this shim if this suite ever applies the chain through 284.
+    await database.query(`set role tm8_graph_owner;
+      create table public.styles (
+        entity_id uuid primary key, title text not null, description text,
+        schema_version integer not null default 1, foundation text not null,
+        vars jsonb not null default '{}'::jsonb, css text, tags text[] not null default '{}',
+        resolved_hash text, pushed_by uuid not null, source_owner_identity_id text not null,
+        pushed_at timestamptz not null default now());
+      grant select on public.styles to tm8_app;
+      reset role;`);
   }, 180_000);
 
   afterAll(async () => {

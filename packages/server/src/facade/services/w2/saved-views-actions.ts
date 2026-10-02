@@ -285,7 +285,7 @@ function structurallyAvailable(operation: OperationName, row: ActionContextRow):
       // whose only outcome is a 403. `space_link` likewise (W6 review D1):
       // `spaceLinks.remove` is its only delete. `credential` and `server`
       // join for the same reason: `credentials.space.delete` (revoke) and
-      // `servers.remove` are their only deletes. `style` (282): a space style
+      // `servers.remove` are their only deletes. `style` (284): a space style
       // is removed only by `styles.remove`, which is space-admin only.
       return live && row.kind !== 'member' && row.kind !== 'project'
         && row.kind !== 'interaction_profile' && row.kind !== 'container'
@@ -400,7 +400,7 @@ function structurallyAvailable(operation: OperationName, row: ActionContextRow):
       return live && row.kind === 'server';
     case 'servers.remove':
       return live && row.kind === 'server' && row.server_can_remove === true;
-    // Space styles (282): read-only entities. Any member may read, export and
+    // Space styles (284): read-only entities. Any member may read, export and
     // pull one; removing it is the space admin's door (spec §7).
     case 'styles.get':
     case 'styles.export':

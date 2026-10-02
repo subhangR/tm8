@@ -169,7 +169,7 @@ export const ENTITY_COLUMNS = `
   -- 283: the computed summary, one SQL function the projector twin selects
   -- too. CASE keeps it off every other kind's row.
   case when e.kind = 'story' then internal.story_summary(e.id) end as story_summary,
-  -- Space styles (282): the whole document is row facts (spec §4.3) — it is
+  -- Space styles (284): the whole document is row facts (spec §4.3) — it is
   -- what a push repaints from, and it is bounded by the doors.
   stl.title as sty_title, stl.description as sty_description,
   stl.schema_version as sty_schema_version, stl.foundation as sty_foundation,
@@ -1717,7 +1717,7 @@ function surfaceOf(raw: string | null): { initialContentSurface?: 'terminal' | '
  * testing assembly, not the arm.
  */
 /**
- * A space style's row facts (282), shared by `stateOf` and `contentOf` so the
+ * A space style's row facts (284), shared by `stateOf` and `contentOf` so the
  * two cannot disagree about the document. MIRRORS the projector twin.
  */
 function styleFacts(row: EntityRow): {
@@ -2079,7 +2079,7 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
       // projector twin.
       return { kind: row.kind };
     case 'style':
-      // 282: the full document (spec §4.3) — a push's entity.upsert is how
+      // 284: the full document (spec §4.3) — a push's entity.upsert is how
       // every viewer on the style repaints, with no fetch. MIRRORS the
       // projector twin field for field.
       return { kind: 'style', ...styleFacts(row) };
@@ -2383,7 +2383,7 @@ export function entityCapabilities(row: EntityRow): EntityCapabilities {
   if (row.kind === 'credential') {
     return { ...base, canEdit: false, canDelete: false, canAddChild: false, canPull: false, canComplete: false };
   }
-  // A space style is READ-ONLY (282, spec §3.3): a new version arrives only by
+  // A space style is READ-ONLY (284, spec §3.3): a new version arrives only by
   // `styles.push`, and removal is `styles.remove` (space admin). The generic
   // patch and delete doors refuse it, so no surface offers them.
   if (row.kind === 'style') {
@@ -2773,7 +2773,7 @@ export function contentOf(row: EntityRow): EntityContent {
       // 250 (W6): a link's content is `spaceLinks.list`'s answer (see stateOf).
       return { kind: row.kind };
     case 'style':
-      // 282: the state's facts plus the description.
+      // 284: the state's facts plus the description.
       return { kind: 'style', description: row.sty_description ?? null, ...styleFacts(row) };
     default:
       return { kind: row.kind as `c:${string}`, fields: {} };

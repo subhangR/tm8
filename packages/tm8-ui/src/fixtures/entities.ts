@@ -1122,7 +1122,7 @@ export const storyAsAnEntity = summary({
 });
 
 /**
- * Style — a published, read-only space style (migration 282). The document is
+ * Style — a published, read-only space style (migration 284). The document is
  * a built-in foundation with NO vars: a fixture carrying colour values would
  * put raw colour literals in `src/` (§14), and the row facts this fixture
  * exists to exercise — title, pusher, version — do not need any.
@@ -1908,7 +1908,7 @@ export const fixtureDetails: Record<string, EntityDetail> = {
       sourceOwnerIdentityId: 'fixture-identity-ada',
       tags: ['dark'],
     },
-    // Read-only by construction (282): new versions arrive only by push.
+    // Read-only by construction (284): new versions arrive only by push.
     capabilities: CAPS_READONLY,
   }),
 

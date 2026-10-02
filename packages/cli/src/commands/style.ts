@@ -1,6 +1,6 @@
 /**
  * `tm8 style` — personal styles, space styles, push / pull / use (styles spec
- * 01a0fc22 v8 §5, migration 282).
+ * 01a0fc22 v8 §5, migration 284).
  *
  * TWO KINDS OF STYLE, ONE NOUN. A PERSONAL style belongs to the caller's
  * identity and is edited in place (`create`, `set`, `unset`, `update`,

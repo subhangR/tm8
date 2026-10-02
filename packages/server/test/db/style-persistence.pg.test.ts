@@ -1,5 +1,5 @@
 /**
- * Migration 282 — styles: personal styles, push / pull / remove, prefs and the
+ * Migration 284 — styles: personal styles, push / pull / remove, prefs and the
  * space default, at the RPC layer under real claims (styles spec 01a0fc22 v8
  * §3, §4, §7, §14 "Server").
  *
@@ -157,7 +157,7 @@ async function eventsOf(type: string): Promise<Array<{ recipient: string | null;
 
 // ---------------------------------------------------------------------------
 
-describe('282 personal styles (a0): owner-only CRUD', () => {
+describe('284 personal styles (a0): owner-only CRUD', () => {
   it('the owner creates, reads and lists; another identity gets not_found, never the row', async () => {
     const mine = await createPersonal(fixture.identityA, 'Midnight (draft)', { '--pn-brand': '#4F7DF3' });
     expect(mine.ref).toBe(`personal:${mine.id}`);
@@ -227,7 +227,7 @@ describe('282 personal styles (a0): owner-only CRUD', () => {
   });
 });
 
-describe('282 space styles (a0): push, pull, remove', () => {
+describe('284 space styles (a0): push, pull, remove', () => {
   let spaceStyleId: string;
 
   it('a first push creates a read-only style entity carrying the document', async () => {
@@ -312,7 +312,7 @@ describe('282 space styles (a0): push, pull, remove', () => {
   });
 });
 
-describe('282 prefs (a1) and the snapshot rules', () => {
+describe('284 prefs (a1) and the snapshot rules', () => {
   let styleId: string;
   let personalId: string;
 
@@ -383,7 +383,7 @@ describe('282 prefs (a1) and the snapshot rules', () => {
   });
 });
 
-describe('282 space default (a2)', () => {
+describe('284 space default (a2)', () => {
   it('no row reads as builtin:atelier-light at revision 0', async () => {
     const d = await as(fixture.identityB, (q) => q.rpc<SpaceStyleDefaultView>('get_space_style_default', [fixture.spaceS]));
     expect(d).toMatchObject({ spaceId: fixture.spaceS, defaultStyle: 'builtin:atelier-light', revision: 0, setBy: null });

@@ -156,7 +156,7 @@ const HOME_RAIL_GROUP_SPINE: readonly HomeRailGroupSpec[] = [
     // other spaces and machines this one reaches.
     //
     // The last three were the "Beta" group: shipped and reachable, shape not
-    // settled. They sit last so the settled kinds read first. `style` (282)
+    // settled. They sit last so the settled kinds read first. `style` (284)
     // follows `server`: the space's published themes are picked from the
     // account menu, not created here — the same "listed, managed elsewhere" shape.
     kinds: ['interaction_profile', 'credential', 'space_link', 'server', 'style', 'loop', 'spell', 'container'],

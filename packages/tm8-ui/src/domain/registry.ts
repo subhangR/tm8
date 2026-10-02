@@ -2601,7 +2601,7 @@ const ROWS: readonly KindConfig[] = [
   },
 
   /*
-   * -- style (migration 282: a published, read-only space style) --
+   * -- style (migration 284: a published, read-only space style) --
    *
    * MINIMAL BY DESIGN: this row registers the kind so lists, panels and the
    * rail can show a space style. Choosing and editing styles happen in the

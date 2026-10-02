@@ -134,6 +134,8 @@ import type {
   PatchMessageInput, PatchTaskInput, PlacementInput, PointEventView,
   PostMessageInput, PostMessageWireInput, PresenceSnapshot, SetChatModelInput,
   SetChatModelResult, StartChatInput,
+  PersonalStyleCreateInput, PersonalStyleUpdateInput, PersonalStyleDeleteInput, StylePushInput,
+  StylePullInput, StyleRemoveInput, StylesResolveInput, StylePrefsSetInput, SpaceStyleDefaultSetInput,
   StartChatResult,
   PreviewInteractionProfileInput, ProfileValidationIssue, ProfileValidationView,
   CommitSessionAttribution,
@@ -193,7 +195,7 @@ function uniqueArray<T extends z.ZodTypeAny>(item: T, minimum = 0, maximum?: num
 }
 
 /**
- * A style document as it sits in a STORED row or an event (282): the same
+ * A style document as it sits in a STORED row or an event (284): the same
  * `StyleDocSchema`, typed input = output so it fits the strict
  * `z.ZodType<T>` unions below (`StyleDocSchema`'s own input is `unknown`
  * because it accepts a doc that omits `css`). Lazy because `StyleDocSchema`
@@ -231,7 +233,7 @@ export const CoreEntityKindSchema = z.enum([
   // Stories (283): roots by `contains`, the rest follows. Creatable through
   // the generic envelope.
   'story',
-  // Space styles (282). Not in `CreatableEntityKind`: `styles.push` is its door.
+  // Space styles (284). Not in `CreatableEntityKind`: `styles.push` is its door.
   'style',
 ]);
 
@@ -689,7 +691,7 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
   // answers for them. `server` has no detail row until W8.
   z.object({ kind: z.literal('space_link') }).strict(),
   z.object({ kind: z.literal('server') }).strict(),
-  // 282 — a space style carries its FULL doc on state (spec §4.3: the push
+  // 284 — a space style carries its FULL doc on state (spec §4.3: the push
   // event is how viewers repaint, so it must not need a fetch).
   z.object({
     kind: z.literal('style'),
@@ -1111,7 +1113,7 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
   // 250 (W6) — a space link's content is `spaceLinks.list`'s answer.
   z.object({ kind: z.literal('space_link') }).strict(),
   z.object({ kind: z.literal('server') }).strict(),
-  // 282 — a space style's content: its state plus the description.
+  // 284 — a space style's content: its state plus the description.
   z.object({
     kind: z.literal('style'),
     description: z.string().nullable(),
@@ -1637,7 +1639,7 @@ export const WorkspaceEventSchema: z.ZodType<WorkspaceEvent> = z.lazy(() => z.un
     settingsRevision: z.number().int().positive(),
     clientMutationId: z.string().optional(),
   }).strict(),
-  // Styles (282, spec §4.3): RPC-authored passthrough, STRICT like every
+  // Styles (284, spec §4.3): RPC-authored passthrough, STRICT like every
   // passthrough arm. The first two are recipient-targeted rows.
   z.object({
     ...workspaceEventEnvelopeShape,
@@ -5703,7 +5705,7 @@ function maxKeys<T extends z.ZodTypeAny>(schema: T, max: number) {
     `at most ${max} variables`);
 }
 
-export const PersonalStyleCreateInputSchema = z.object({
+export const PersonalStyleCreateInputSchema: z.ZodType<PersonalStyleCreateInput> = z.object({
   clientMutationId: z.string().min(1),
   title: StyleTitleSchema.optional(),
   description: StyleDescriptionSchema.optional(),
@@ -5715,7 +5717,7 @@ export const PersonalStyleCreateInputSchema = z.object({
 }).strict().refine((v) => v.from !== undefined || (v.title !== undefined && v.foundation !== undefined),
   'title and foundation are required unless `from` names a style to copy');
 
-export const PersonalStyleUpdateInputSchema = z.object({
+export const PersonalStyleUpdateInputSchema: z.ZodType<PersonalStyleUpdateInput> = z.object({
   clientMutationId: z.string().min(1),
   expectedVersion: z.number().int().positive(),
   title: StyleTitleSchema.optional(),
@@ -5728,12 +5730,12 @@ export const PersonalStyleUpdateInputSchema = z.object({
 }).strict().refine((v) => !(v.vars !== undefined && v.varsReplace !== undefined),
   '`vars` (merge patch) and `varsReplace` are mutually exclusive');
 
-export const PersonalStyleDeleteInputSchema = z.object({
+export const PersonalStyleDeleteInputSchema: z.ZodType<PersonalStyleDeleteInput> = z.object({
   clientMutationId: z.string().min(1),
   expectedVersion: z.number().int().positive().optional(),
 }).strict();
 
-export const StylePushInputSchema = z.object({
+export const StylePushInputSchema: z.ZodType<StylePushInput> = z.object({
   clientMutationId: z.string().min(1),
   personalStyleId: z.string().uuid(),
   spaceId: z.string().uuid(),
@@ -5743,22 +5745,22 @@ export const StylePushInputSchema = z.object({
   actorId: z.string().uuid().optional(),
 }).strict();
 
-export const StylePullInputSchema = z.object({
+export const StylePullInputSchema: z.ZodType<StylePullInput> = z.object({
   clientMutationId: z.string().min(1),
   title: StyleTitleSchema.optional(),
 }).strict();
 
-export const StyleRemoveInputSchema = z.object({
+export const StyleRemoveInputSchema: z.ZodType<StyleRemoveInput> = z.object({
   clientMutationId: z.string().min(1),
   expectedVersion: z.number().int().positive().optional(),
   actorId: z.string().uuid().optional(),
 }).strict();
 
-export const StylesResolveInputSchema = z.object({
+export const StylesResolveInputSchema: z.ZodType<StylesResolveInput> = z.object({
   doc: StoredStyleDocSchema,
 }).strict();
 
-export const StylePrefsSetInputSchema = z.object({
+export const StylePrefsSetInputSchema: z.ZodType<StylePrefsSetInput> = z.object({
   clientMutationId: z.string().min(1),
   expectedRevision: z.number().int().nonnegative().optional(),
   currentStyle: StyleRefStringSchema.optional(),
@@ -5770,7 +5772,7 @@ export const StylePrefsSetInputSchema = z.object({
   }).strict().optional(),
 }).strict();
 
-export const SpaceStyleDefaultSetInputSchema = z.object({
+export const SpaceStyleDefaultSetInputSchema: z.ZodType<SpaceStyleDefaultSetInput> = z.object({
   clientMutationId: z.string().min(1),
   expectedRevision: z.number().int().nonnegative().optional(),
   defaultStyle: SpaceStyleDefaultRefSchema,

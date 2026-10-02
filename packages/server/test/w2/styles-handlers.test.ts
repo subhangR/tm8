@@ -1,6 +1,6 @@
 /**
  * `handlers/w2/styles.ts` — the read-modify-write logic the facade owns on top
- * of migration 282 (styles spec 01a0fc22 v8 §4, §6.4, §6.5).
+ * of migration 284 (styles spec 01a0fc22 v8 §4, §6.4, §6.5).
  *
  * The database decides WHO and WHEN; these cases pin what the handler decides
  * before it ever reaches the database: how a merge patch folds onto the row it

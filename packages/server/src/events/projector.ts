@@ -520,7 +520,7 @@ select
   -- 283: the SAME function entity-read.ts selects — the twins mirror by
   -- construction. Computed at projection time, never stored.
   case when e.kind = 'story' then internal.story_summary(e.id) end as story_summary,
-  -- Space styles (282): the WHOLE document rides the summary on purpose (spec
+  -- Space styles (284): the WHOLE document rides the summary on purpose (spec
   -- §4.3, sign-off): entity.upsert after a push is how every viewer on the
   -- style repaints. Bounded by the doors: ≤ 200 vars of ≤ 512 chars, css ≤ 16 KiB.
   stl.title          as sty_title,
@@ -1563,7 +1563,7 @@ export class PgEntityProjector implements EntityProjector {
         // below raises EntityKindDriftError for every space_link event.
         return { kind: r.kind };
       case 'style':
-        // 282: the full document, so a push repaints every viewer on the style
+        // 284: the full document, so a push repaints every viewer on the style
         // with no fetch (spec §4.3). MIRRORS entity-read.ts stateOf.
         return {
           kind: 'style',

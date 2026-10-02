@@ -182,7 +182,7 @@ const ROWS: Record<OperationName, Row> = {
       'the global id is a display claim in issuer:subject shape, never an authorization input',
     ],
   },
-  // ── styles (styles spec 01a0fc22 v8 §4-§5, migration 282) ──────────────
+  // ── styles (styles spec 01a0fc22 v8 §4-§5, migration 284) ──────────────
   // PERSONAL styles are the caller's own and edited in place; SPACE styles are
   // read-only `style` entities born and re-versioned only by `style push`.
   // References are typed: builtin:<slug>, personal:<uuid>, space:<uuid>.
@@ -3635,7 +3635,7 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   // `servers.*` (W8, 261): the same `tm8 server` noun 044's rows used.
   // generator.ts nounForOperation says the same.
   servers: 'server',
-  // Styles (282, styles spec v8 §5). `identity.stylePrefs.*` and
+  // Styles (284, styles spec v8 §5). `identity.stylePrefs.*` and
   // `spaces.styleDefault.*` keep their family nouns; their commands are
   // `style use` and `style default`. generator.ts nounForOperation says the same.
   styles: 'style',
@@ -3741,7 +3741,7 @@ export const CATALOG_DIGEST =
   // Re-measured (W8, 261, rebuilt on main f01b1566): +6 servers.* and the serverConnections create/delete rows. Read from the regenerated conformance manifest.
   // Re-measured (W5 #917, merges of main dd1c8215 and 2fa4999f): +3 spaces.spacePassword.* on top of main's servers.*, spaceLinks, attention and launch v3 rows. Read from the regenerated conformance manifest.
   // Re-measured (#915 merge of main 0be3b796): main's servers.* + spaceLinks.invoke/audit and the five attention rows together. Read from the regenerated conformance manifest.
-  // Re-measured (styles, 282): +15 styles.*, identity.stylePrefs.get|set, spaces.styleDefault.get|set. RECOMPUTED from JSON.stringify(OPERATIONS).
+  // Re-measured (styles, 284): +15 styles.*, identity.stylePrefs.get|set, spaces.styleDefault.get|set. RECOMPUTED from JSON.stringify(OPERATIONS).
   'sha256:0056a5d86f0341614b6a888ae1b5302074ca357c50e680321d41f83beb324608';
 
 export const GRAMMAR_VERSION = '2';

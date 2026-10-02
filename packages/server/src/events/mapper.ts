@@ -118,11 +118,11 @@ export const WORKSPACE_EVENT_COLUMNS =
 export const RPC_AUTHORED_PASSTHROUGH: ReadonlySet<string> = new Set([
   'menu.updated',
   'space.default_channel.updated',
-  // Styles (282). `space.style_default.updated` is space-wide like the default
-  // channel (author 282 set_space_style_default; table space_style_defaults is
+  // Styles (284). `space.style_default.updated` is space-wide like the default
+  // channel (author 284 set_space_style_default; table space_style_defaults is
   // not trigger-covered). The other two are RECIPIENT-TARGETED: written once
   // per active membership of the owner with recipient_member_id set (author
-  // 282 internal.emit_identity_style_event), so RLS and the pump keep them on
+  // 284 internal.emit_identity_style_event), so RLS and the pump keep them on
   // that person's sockets — passthrough changes projection, never routing.
   // Their tables (personal_styles, identity_style_prefs) are not
   // trigger-covered, so nothing is delivered twice.

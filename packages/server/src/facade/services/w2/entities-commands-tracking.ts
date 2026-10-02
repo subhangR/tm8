@@ -109,15 +109,15 @@ export const RESTRICTED_LIFECYCLE_KINDS = new Set([
   // generic restore would revive a server whose gate rows are gone. SQL refuses
   // the same doors (261 §8b re-creates 251 §10b's trigger with `server` added).
   'server',
-  // `style` (282, styles spec §3.3) is a READ-ONLY space style: born and
+  // `style` (284, styles spec §3.3) is a READ-ONLY space style: born and
   // re-versioned only by `styles.push`, removed only by `styles.remove` (space
-  // admin). There is no update door at all; 282's `delete_entity` refuses the
+  // admin). There is no update door at all; 284's `delete_entity` refuses the
   // kind in SQL too. The refusals name the right door (STYLE_LIFECYCLE_REMEDY).
   'style',
 ]);
 
 /**
- * The style kind's refusals say what to do instead (282). A space style is
+ * The style kind's refusals say what to do instead (284). A space style is
  * read-only BY DESIGN, not by a missing feature, so the error is an
  * `invariant_violation` with the push / remove door named, rather than the
  * generic "owned by the lifecycle" `forbidden`.

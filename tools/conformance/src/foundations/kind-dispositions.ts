@@ -361,7 +361,7 @@ function capabilities(profile: CapabilityProfile): CapabilityDisposition {
         ],
       };
     case 'style-lifecycle':
-      // NOTHING generic to WRITE (282, styles spec §3.3). A space style is
+      // NOTHING generic to WRITE (284, styles spec §3.3). A space style is
       // read-only: born and re-versioned only by `styles.push` from a personal
       // style, removed only by `styles.remove` (space admin). It is still an
       // ordinary space entity to READ and talk about — messages, reactions and
@@ -634,7 +634,7 @@ export const CORE_KIND_DISPOSITIONS = {
     collection: typedCollection, projection: universal, capabilities: generic,
     menu: { strategy: 'registered-not-default' }, migration: { strategy: 'story-detail' },
   }),
-  // Space styles (migration 282, styles spec v8). A published, read-only theme:
+  // Space styles (migration 284, styles spec v8). A published, read-only theme:
   // born only from `styles.push`, so not generically creatable or editable.
   // Picked from the account menu, never filed into from the generic menu.
   style: core('style', 'styles', {

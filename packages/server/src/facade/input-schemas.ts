@@ -219,7 +219,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   // identity (v2 Stage 0). The DTO deliberately has no actorId — strictness
   // refuses an actor on the wire rather than ignoring it.
   'identity.profile.update': IdentityProfileUpdateInputSchema,
-  // Styles (282, styles spec §4.1).
+  // Styles (284, styles spec §4.1).
   'styles.personal.create': PersonalStyleCreateInputSchema,
   'styles.personal.update': PersonalStyleUpdateInputSchema,
   'styles.personal.delete': PersonalStyleDeleteInputSchema,
