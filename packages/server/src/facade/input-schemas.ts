@@ -77,6 +77,8 @@ import {
   CredentialsSpaceRekeyInputSchema,
   CredentialsSpaceRenameInputSchema,
   NodeCredentialsPolicySetInputSchema,
+  PathGrantCreateInputSchema,
+  PathGrantRevokeInputSchema,
   CredentialsLoginSessionStartInputSchema,
   CreateAttentionRequestInputSchema,
   CorrectProjectAssociationInputSchema,
@@ -259,6 +261,8 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'credentials.space.myDefault.clear': CredentialsSpaceCommandInputSchema,
   'credentials.space.policy.set': CredentialsSpacePolicySetInputSchema,
   'node.credentials.policy.set': NodeCredentialsPolicySetInputSchema,
+  'node.pathGrants.create': PathGrantCreateInputSchema,
+  'node.pathGrants.revoke': PathGrantRevokeInputSchema,
 
   // node-local named Server routes
   'serverConnections.create': ServerConnectionCreateInputSchema,

@@ -81,6 +81,7 @@ import {
   type W2ProjectFolderUploadHandlerDeps,
 } from './handlers/w2/project-folder-uploads.js';
 import { registerW2ProjectsAssociationsHandlers } from './handlers/w2/projects-associations.js';
+import { registerPathGrantHandlers } from './handlers/w2/path-grants.js';
 import { registerW2ContainerHandlers } from './handlers/w2/containers.js';
 import { registerW2SavedViewsActionsHandlers } from './handlers/w2/saved-views-actions.js';
 import { registerContentionHandlers } from './services/contention.js';
@@ -225,6 +226,7 @@ export function registerFacadeHandlers(
   registerW2EdgesPlacementsHandlers(registry, facade);
   registerW2CollectionsGraphUndoHandlers(registry, facade);
   registerW2ProjectsAssociationsHandlers(registry, facade);
+  registerPathGrantHandlers(registry, facade);
   // skills.preview also lists the Claude plugins a launch could load (the
   // launch ··· menu's Plugins row); that needs the credential root.
   const credentialRoot = deps.credentials?.dataDir;

@@ -593,6 +593,15 @@ export const OPERATIONS = [
   // The node's own fallback credentials (D5/D9): node admin, and human-only.
   { name: 'node.credentials.status',                     method: 'GET',    path: '/v2/node/credentials',                                               kind: 'read',    status: 'v1', humanOnly: true },
   { name: 'node.credentials.policy.set',                 method: 'PUT',    path: '/v2/node/credential-policy/:provider',                               kind: 'command', status: 'v1', humanOnly: true },
+  // Space-scoped projects L1 (migration 282, doc 01a0fb62 §4): a node admin
+  // grants one account one filesystem root to browse and select under. Gate
+  // admin on the server and in SQL; `identity.pathGrants.list` is the caller's
+  // own live grants, what the Create Project page reads.
+  { name: 'node.pathGrants.list',                        method: 'GET',    path: '/v2/node/path-grants',                                               kind: 'read',    status: 'v1' },
+  { name: 'node.pathGrants.create',                      method: 'POST',   path: '/v2/node/path-grants',                                               kind: 'command', status: 'v1' },
+  { name: 'node.pathGrants.revoke',                      method: 'POST',   path: '/v2/node/path-grants/:grantId/revoke',                               kind: 'command', status: 'v1' },
+  { name: 'node.accounts.list',                          method: 'GET',    path: '/v2/node/accounts',                                                  kind: 'read',    status: 'v1' },
+  { name: 'identity.pathGrants.list',                    method: 'GET',    path: '/v2/identity/path-grants',                                           kind: 'read',    status: 'v1' },
   // Host metrics for the desktop status strip: node admin, human sessions only.
   { name: 'node.metrics.get',                            method: 'GET',    path: '/v2/node/metrics',                                                   kind: 'read',    status: 'v1' },
 

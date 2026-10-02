@@ -161,6 +161,9 @@ import type {
   SpaceCredentialVisibilityName,
   NodeCredentialPolicyEntry,
   NodeCredentialsStatusView,
+  NodeAccountListView,
+  PathGrantListView,
+  PathGrantView,
   NodeMetricsView,
   SpaceCredentialProviderName,
   SpaceCredentialStoredProviderName,
@@ -1456,6 +1459,24 @@ export interface Seam {
       status(): Promise<NodeCredentialsStatusView>;
       setPolicy(provider: SpaceCredentialProviderName, allowNode: boolean | null): Promise<NodeCredentialPolicyEntry>;
     };
+  };
+
+  /**
+   * -- filesystem path grants (282, design doc 01a0fb62 §4) ------------------
+   *
+   * A node admin lets one member browse one folder root and pick projects from
+   * it. Optional like `projectSetup`: a seam with no node behind it has none,
+   * and the section says so instead of drawing an empty list.
+   */
+  pathGrants?: {
+    /** Node admin: every grant; revoked ones when asked. */
+    list(includeRevoked?: boolean): Promise<PathGrantListView>;
+    create(accountId: string, rootPath: string, note?: string): Promise<PathGrantView>;
+    revoke(grantId: string): Promise<PathGrantView>;
+    /** Node admin: who a grant can be addressed to. */
+    accounts(): Promise<NodeAccountListView>;
+    /** Anyone: the caller's own live grants. */
+    mine(): Promise<PathGrantListView>;
   };
 
   /**

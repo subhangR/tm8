@@ -559,6 +559,16 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       },
     },
 
+    // -- filesystem path grants (282) ----------------------------------------
+
+    pathGrants: {
+      list: (includeRevoked) => ops.nodePathGrantsList(includeRevoked),
+      create: (accountId, rootPath, note) => ops.nodePathGrantsCreate(accountId, rootPath, note),
+      revoke: (grantId) => ops.nodePathGrantsRevoke(grantId),
+      accounts: () => ops.nodeAccountsList(),
+      mine: () => ops.myPathGrants(),
+    },
+
     // -- space links (W6) ----------------------------------------------------
 
     spaceLinks: {

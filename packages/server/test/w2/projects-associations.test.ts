@@ -55,9 +55,20 @@ const PROJECT_ROW = {
 
 class FakeDb implements Db {
   readonly calls: Array<{ fn: string; args: readonly unknown[] }> = [];
+  /** What `my_path_grants` (282) answers: the caller's live grants. */
+  pathGrants: Array<{ rootPath: string }> = [];
   queryImpl: <R>(sql: string, params: readonly unknown[]) => Promise<R[]> = async () => [];
   rpcImpl: <T>(fn: string, args: readonly unknown[]) => Promise<T> = async (fn, args) => {
     this.calls.push({ fn, args });
+    if (fn === 'my_path_grants') {
+      return this.pathGrants.map((grant, index) => ({
+        id: `00000000-0000-7000-8000-0000000007${String(index).padStart(2, '0')}`,
+        accountId: OWNER.accountId,
+        mode: 'select',
+        grantedAt: '2026-10-02T08:00:00.000Z',
+        ...grant,
+      })) as T;
+    }
     if (fn === 'correct_project_association') {
       return {
         artifactId: IDS.artifact,
@@ -252,11 +263,11 @@ describe('W2.G06 projects and association correction facade', () => {
     // is not once space roles are writable and invite-bound signup makes
     // ordinary members routine, because the default browse scope is the OS
     // filesystem root and `project-files.ts` shares the same roots to read
-    // file CONTENTS. A non-admin cannot create a project from what they find
-    // (below), so browsing bought them nothing anyway.
+    // file CONTENTS. A non-admin browses only what a node admin granted them
+    // (282), and with no grant that is nothing — refused with the reason.
     await expect(handler(registry, 'projects.directories.list')(
       request('projects.directories.list', { identity }),
-    )).rejects.toMatchObject({ code: 'forbidden' });
+    )).rejects.toMatchObject({ code: 'forbidden', details: { reason: 'path_grant_required' } });
 
     // The node admin still browses, so the picker itself is not broken.
     const listing = await handler(registry, 'projects.directories.list')(
@@ -520,3 +531,114 @@ describe('projects.branches.list — the working directory comes from the ROW', 
     }
   });
 });
+
+describe('projects.directories.list for a path-grant holder (282)', () => {
+  const member = {
+    kind: 'bearer' as const,
+    identityId: 'granted-member',
+    token: 'test-token',
+    nodeAdmin: false,
+  };
+
+  async function withTree<T>(fn: (root: string) => Promise<T>): Promise<T> {
+    const previous = process.env.TM8_PROJECT_ROOTS;
+    const scratch = await realpath(await mkdtemp(join(tmpdir(), 'tm8-path-grants-')));
+    try {
+      await mkdir(join(scratch, 'granted', 'repo-a'), { recursive: true });
+      await mkdir(join(scratch, 'granted', 'repo-b'));
+      await mkdir(join(scratch, 'secret', 'keys'), { recursive: true });
+      await mkdir(join(scratch, 'outside-roots'));
+      // A symlink under the granted root that points OUT of it.
+      await symlink(join(scratch, 'secret'), join(scratch, 'granted', 'escape'));
+      process.env.TM8_PROJECT_ROOTS = scratch;
+      return await fn(scratch);
+    } finally {
+      if (previous === undefined) delete process.env.TM8_PROJECT_ROOTS;
+      else process.env.TM8_PROJECT_ROOTS = previous;
+      await rm(scratch, { recursive: true, force: true });
+    }
+  }
+
+  function list(db: FakeDb, path?: string) {
+    return handler(registered(db), 'projects.directories.list')(
+      request('projects.directories.list', {
+        identity: member,
+        ...(path ? { query: new URLSearchParams({ path }).toString() } : {}),
+      }),
+    );
+  }
+
+  it('browses inside a live grant and offers only the granted roots', async () => {
+    await withTree(async (scratch) => {
+      const db = new FakeDb();
+      db.pathGrants = [{ rootPath: join(scratch, 'granted') }];
+      const listing = ProjectDirectoryListingSchema.parse(await list(db));
+      expect(listing.roots).toEqual([join(scratch, 'granted')]);
+      expect(listing.path).toBe(join(scratch, 'granted'));
+      expect(listing.parentPath).toBeNull();
+      // The symlink row is omitted, exactly as for a node admin.
+      expect(listing.directories.map((d) => d.name)).toEqual(['repo-a', 'repo-b']);
+
+      const child = ProjectDirectoryListingSchema.parse(await list(db, join(scratch, 'granted', 'repo-a')));
+      expect(child.parentPath).toBe(join(scratch, 'granted'));
+    });
+  });
+
+  it('refuses a path outside every grant the same way whether or not it exists', async () => {
+    await withTree(async (scratch) => {
+      const db = new FakeDb();
+      db.pathGrants = [{ rootPath: join(scratch, 'granted') }];
+      for (const path of [join(scratch, 'secret'), join(scratch, 'does-not-exist'), join(scratch, 'granted', '..', 'secret')]) {
+        await expect(list(db, path)).rejects.toMatchObject({
+          code: 'forbidden',
+          message: 'project directory is outside the folders a node admin granted you',
+        });
+      }
+    });
+  });
+
+  it('refuses a symlink under a granted root that escapes it', async () => {
+    await withTree(async (scratch) => {
+      const db = new FakeDb();
+      db.pathGrants = [{ rootPath: join(scratch, 'granted') }];
+      await expect(list(db, join(scratch, 'granted', 'escape'))).rejects.toMatchObject({ code: 'forbidden' });
+      await expect(list(db, join(scratch, 'granted', 'escape', 'keys'))).rejects.toMatchObject({ code: 'forbidden' });
+    });
+  });
+
+  it('confines grants to TM8_PROJECT_ROOTS, collapses nested grants and skips a vanished one', async () => {
+    await withTree(async (scratch) => {
+      const db = new FakeDb();
+      db.pathGrants = [
+        { rootPath: join(scratch, 'granted', 'repo-a') },
+        { rootPath: join(scratch, 'granted') },
+        { rootPath: join(scratch, 'gone') },
+        { rootPath: '/' },
+      ];
+      // Narrow the node's roots to `granted`: the `/` grant is outside them now.
+      process.env.TM8_PROJECT_ROOTS = join(scratch, 'granted');
+      const listing = ProjectDirectoryListingSchema.parse(await list(db));
+      expect(listing.roots).toEqual([join(scratch, 'granted')]);
+
+      // A symlinked GRANT that resolves outside the roots is dropped too.
+      db.pathGrants = [{ rootPath: join(scratch, 'granted', 'escape') }];
+      await expect(list(db)).rejects.toMatchObject({ code: 'forbidden', details: { reason: 'path_grant_required' } });
+    });
+  });
+
+  it('drops a grant whose directory was swapped for a symlink after it was granted', async () => {
+    await withTree(async (scratch) => {
+      const db = new FakeDb();
+      // Granted while it was a real directory...
+      db.pathGrants = [{ rootPath: join(scratch, 'granted', 'repo-b') }];
+      expect(ProjectDirectoryListingSchema.parse(await list(db)).roots).toEqual([join(scratch, 'granted', 'repo-b')]);
+      // ...then replaced by a link to the top of the node's roots. Inside
+      // TM8_PROJECT_ROOTS, so containment alone would have adopted it.
+      await rm(join(scratch, 'granted', 'repo-b'), { recursive: true });
+      await symlink(scratch, join(scratch, 'granted', 'repo-b'));
+      await expect(list(db)).rejects.toMatchObject({ code: 'forbidden', details: { reason: 'path_grant_required' } });
+      await expect(list(db, join(scratch, 'secret'))).rejects.toMatchObject({ code: 'forbidden' });
+    });
+  });
+});
+
