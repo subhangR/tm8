@@ -16,6 +16,7 @@
 import {
   storyCallSign,
   storyEdgeFamily,
+  type ActorSummary,
   type StatusCategory,
   type StoryChild,
   type StoryEdgeFamily,
@@ -157,21 +158,9 @@ export function toneOf(row: { statusCategory: StatusCategory | null; blocked?: b
   return 'todo';
 }
 
-/**
- * A progress tally split into the meter's four disjoint segments. The server's
- * `blocked` overlaps in-progress / to-do; for the meter it is taken out of
- * to-do first, then in-progress, so the segments sum to `work`.
- */
+/** The meter's four segments. The server's bands are disjoint: done + inProgress + toDo + blocked = work. */
 export function segments(p: StoryProgress): Record<StoryTone, number> & { total: number } {
-  const fromTodo = Math.min(p.blocked, p.toDo);
-  const fromWorking = Math.min(p.blocked - fromTodo, p.inProgress);
-  return {
-    done: p.done,
-    working: p.inProgress - fromWorking,
-    blocked: fromTodo + fromWorking,
-    todo: p.toDo - fromTodo,
-    total: p.work,
-  };
+  return { done: p.done, working: p.inProgress, blocked: p.blocked, todo: p.toDo, total: p.work };
 }
 
 export function pct(p: StoryProgress): number {
@@ -212,8 +201,9 @@ export function personOf(view: StoryView, id: string | null | undefined): StoryP
   return id ? view.people[id] ?? null : null;
 }
 
-export function nameOf(view: StoryView, id: string | null | undefined): string {
-  return personOf(view, id)?.name ?? 'someone';
+/** A display name: the people map first, then the actor summary the row carried, then "someone". */
+export function nameOf(view: StoryView, id: string | null | undefined, actor?: ActorSummary | null): string {
+  return personOf(view, id)?.name ?? actor?.displayName ?? 'someone';
 }
 
 /** 1-based root number by `position` order (the page says "root 3"). */

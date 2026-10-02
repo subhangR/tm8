@@ -5,11 +5,12 @@
  * Ids are fixture ids (`fx-…`); times are relative to module load so the
  * "last hour" halos and "2 h" labels behave like the live page. Every tally is
  * COMPUTED from the node rows below with the server's rule (work = category
- * not cancelled, done = category done, blocked overlaps), never typed in, so
+ * not cancelled, done = category done, bands disjoint), never typed in, so
  * the fixture cannot disagree with itself.
  */
 import {
   storyCallSign,
+  type ActorSummary,
   storyEdgeFamily,
   type StatusCategory,
   type StoryActivityItem,
@@ -54,6 +55,11 @@ const PEOPLE_LIST: StoryPerson[] = [
   person('D', 'Dreamer', true, 'dispatcher'),
 ];
 const PEOPLE: Record<string, StoryPerson> = Object.fromEntries(PEOPLE_LIST.map((p) => [p.id, p]));
+/** The ActorSummary the server attaches to a feed / activity row. */
+const actorOf = (id: string): ActorSummary => {
+  const p = PEOPLE[id]!;
+  return { id, kind: p.agent ? 'team_member' : 'member', displayName: p.name, isAgent: p.agent };
+};
 const human = (k: string): string => fx(`member-${k}`);
 const tm = (k: string): string => fx(`tm${k}`);
 
@@ -164,11 +170,9 @@ function tally(rows: StoryNode[]): StoryProgress {
     if (r.statusCategory === 'cancelled') { p.cancelled += 1; continue; }
     p.work += 1;
     if (r.statusCategory === 'done') p.done += 1;
-    else {
-      if (r.statusCategory === 'in_progress') p.inProgress += 1;
-      else p.toDo += 1;
-      if (r.blocked) p.blocked += 1;
-    }
+    else if (r.blocked) p.blocked += 1;
+    else if (r.statusCategory === 'in_progress') p.inProgress += 1;
+    else p.toDo += 1;
   }
   return p;
 }
@@ -286,7 +290,7 @@ const activity: StoryActivityItem[] = (
     ['e7', 60 * 21, 'r1', 'updated', human('S')],
   ] as Array<[string, number, string, string, string]>
 ).map(([k, min, on, verb, actorId]) => ({
-  id: fx(k), at: ago(min), entityId: fx(on), entityKind: kindOf(fx(on)), entityTitle: title(fx(on)), verb, actorId,
+  id: fx(k), at: ago(min), entityId: fx(on), entityKind: kindOf(fx(on)), entityTitle: title(fx(on)), verb, actorId, actor: actorOf(actorId),
 }));
 
 const msg = (k: string, authorId: string, on: string, excerpt: string, min: number): StoryFeedMessage => {
@@ -295,7 +299,7 @@ const msg = (k: string, authorId: string, on: string, excerpt: string, min: numb
   return {
     id: fx(k), at: ago(min), anchorId, anchorKind: kindOf(anchorId),
     anchorTitle: on === 'story' ? 'the story' : s ? `${s.callSign} · ${s.title}` : title(anchorId),
-    authorId, excerpt,
+    authorId, author: actorOf(authorId), excerpt,
   };
 };
 /* Newest first, as the contract orders them. */
