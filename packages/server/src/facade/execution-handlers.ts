@@ -3529,6 +3529,10 @@ function registerHandlers(
     const spawnResult: ExecutionSpawnResult = {
       ...((await assembleCommandResult(db, claims, result.commandResult, owner.identityId)) as CommandResult),
       ...(result.createdTaskId ? { createdTaskId: result.createdTaskId } : {}),
+      // The resolved posture — access mode and where it came from, the
+      // credential each provider ran on, the parent — so the caller's receipt
+      // shows what the child inherited without a second read.
+      ...(result.launchFacts ? { launch: result.launchFacts } : {}),
     };
     return json(spawnResult, { status: 201 });
   };

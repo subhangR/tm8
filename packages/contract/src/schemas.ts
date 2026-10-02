@@ -90,6 +90,7 @@ import type {
   ErrorDetails, ExecutionDispatchInput, ExecutionDispatchResult,
   ExecutionDispatchNewTask, ExecutionNewTask, ExecutionDispatcherRow, ExecutionDispatchers,
   ExecutionSpawnResult,
+  ExecutionSpawnLaunch,
   ExecutionPromptInput, ExecutionResumeInput, ExecutionSpawnInput, SpawnSelection,
   ExecutionSessionsShareInput,
   ExecutionStreamsAttachInput, ExecutionTerminateInput,
@@ -2498,6 +2499,19 @@ export const ExecutionSpawnResultSchema: z.ZodType<ExecutionSpawnResult> = z.laz
   undo: UndoTokenSchema.optional(),
   warnings: z.array(ResultWarningSchema).optional(),
   createdTaskId: EntityIdSchema.optional(),
+  launch: ExecutionSpawnLaunchSchema.optional(),
+}).strict());
+
+export const ExecutionSpawnLaunchSchema: z.ZodType<ExecutionSpawnLaunch> = z.lazy(() => z.object({
+  accessMode: z.enum(['safe', 'acceptEdits', 'auto', 'plan', 'fullAccess']),
+  accessModeSource: z.enum(['requested', 'env', 'inherited', 'persona', 'default', 'dispatcher']),
+  parentSessionId: EntityIdSchema.nullable(),
+  credentials: z.array(z.object({
+    provider: CredentialProviderNameSchema,
+    source: z.enum(['member', 'space', 'node']),
+    spaceCredentialId: EntityIdSchema.optional(),
+    spacePick: z.enum(['pinned', 'my_default', 'space_default']).optional(),
+  }).strict()).max(16),
 }).strict());
 
 // ---------------------------------------------------------------------------

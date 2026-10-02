@@ -59,6 +59,8 @@ import type {
   SpaceCredentialPick,
   SpaceCredentialProvider,
   SpawnRequest,
+  ExecutionSpawnLaunch,
+  SpawnAccessModeSource,
   Tm8Manifest,
   WorkdirMode,
 } from './types.js';
@@ -262,6 +264,12 @@ export interface ResolvedLaunchConfig {
    * `launch.harness.surfaceSource`. Absent means the lane default.
    */
   harnessSurfaceSource?: HarnessSurfaceSource;
+  /**
+   * Which link of the precedence chain chose `accessMode` — reported on the
+   * spawn receipt so an inherited posture is visible as one. Absent on a
+   * hand-built launch.
+   */
+  accessModeSource?: SpawnAccessModeSource;
   /**
    * Plugins a `minimal` lane keeps: `<name>@<marketplace>` or a bare name.
    * Absent means none.
@@ -496,12 +504,14 @@ export function resolveLaunchConfig(
   const inheritedAccessMode =
     asAccessMode(inherited?.accessMode) ??
     (inheritedPermissionMode ? accessModeForPermissionMode(inheritedPermissionMode) : null);
-  const requestedPermissionMode = requestedAccessMode
-    ? permissionModeForAccessMode(requestedAccessMode)
-    : asPermissionMode(env.TM8_PERMISSION_MODE?.trim()) ??
-      (inheritedAccessMode ? permissionModeForAccessMode(inheritedAccessMode) : null) ??
-      asPermissionMode(member.permissionMode) ??
-      DEFAULT_PERMISSION_MODE;
+  const envPermissionMode = asPermissionMode(env.TM8_PERMISSION_MODE?.trim());
+  const personaPermissionMode = asPermissionMode(member.permissionMode);
+  const [requestedPermissionMode, chainSource]: [PermissionMode, SpawnAccessModeSource] = requestedAccessMode
+    ? [permissionModeForAccessMode(requestedAccessMode), 'requested']
+    : envPermissionMode ? [envPermissionMode, 'env']
+      : inheritedAccessMode ? [permissionModeForAccessMode(inheritedAccessMode), 'inherited']
+        : personaPermissionMode ? [personaPermissionMode, 'persona']
+          : [DEFAULT_PERMISSION_MODE, 'default'];
 
   // THE DISPATCHER ALWAYS RUNS UNPROMPTED, and that outranks every link above
   // rather than joining the chain as one more default. The dispatcher is
@@ -518,6 +528,7 @@ export function resolveLaunchConfig(
   const accessMode = dispatcher
     ? 'fullAccess'
     : requestedAccessMode ?? accessModeForPermissionMode(permissionMode);
+  const accessModeSource: SpawnAccessModeSource = dispatcher ? 'dispatcher' : chainSource;
   const reasoningEffort = asReasoningEffort(request.reasoningEffort);
 
   // Each provider resolves independently. New provider keys outrank the
@@ -569,6 +580,7 @@ export function resolveLaunchConfig(
     agentTool,
     permissionMode,
     accessMode,
+    accessModeSource,
     reasoningEffort,
     credentialSource,
     credentialSources,
@@ -582,6 +594,58 @@ export function resolveLaunchConfig(
       ? { mcpServers: preferences.mcpServers }
       : {}),
     readHints,
+  };
+}
+
+/**
+ * The posture a spawn answers with (the receipt's access-mode, credential and
+ * parent rows), read off the manifest's `launch` block — the same record the
+ * session's own `tm8 session launch` reads — so the two cannot disagree.
+ *
+ * Credentials: what each provider actually ran on (`effectiveCredentialSources`,
+ * D9), plus any provider explicitly resolved to a space credential it does not
+ * inject. A replayed spawn composes its manifest before credentials resolve, so
+ * it has no effective map and reports the resolved choices that were stated.
+ * Bounded by the provider table; never a secret — ids and picks only.
+ */
+export function spawnLaunchFacts(
+  launch: Tm8Manifest['launch'],
+  accessModeSource: SpawnAccessModeSource | undefined,
+  parentSessionId: string | null,
+): ExecutionSpawnLaunch {
+  const stated = launch.credentialSources as Partial<Record<CredentialProvider, CredentialSource | null>>;
+  const effective = launch.effectiveCredentialSources;
+  const sources: Partial<Record<CredentialProvider, CredentialSource>> = {};
+  if (effective && Object.keys(effective).length > 0) {
+    Object.assign(sources, effective);
+    for (const [provider, source] of Object.entries(stated) as [CredentialProvider, CredentialSource | null][]) {
+      if (source === 'space' && sources[provider] === undefined) sources[provider] = 'space';
+    }
+  } else {
+    for (const [provider, source] of Object.entries(stated) as [CredentialProvider, CredentialSource | null][]) {
+      if (source) sources[provider] = source;
+    }
+  }
+  const ids = launch.spaceCredentialIds as Partial<Record<string, string>> | undefined;
+  const picks = launch.spaceCredentialPicks as Partial<Record<string, SpaceCredentialPick>> | undefined;
+  const credentials = (Object.entries(sources) as [CredentialProvider, CredentialSource][])
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([provider, source]) => {
+      const id = source === 'space' ? ids?.[provider] : undefined;
+      const pick = source === 'space' ? picks?.[provider] : undefined;
+      return {
+        provider,
+        source,
+        ...(id ? { spaceCredentialId: id } : {}),
+        ...(pick ? { spacePick: pick } : {}),
+      };
+    });
+  return {
+    accessMode: launch.accessMode,
+    // A hand-built launch carries no source; `requested` would be a claim.
+    accessModeSource: accessModeSource ?? 'default',
+    parentSessionId,
+    credentials,
   };
 }
 

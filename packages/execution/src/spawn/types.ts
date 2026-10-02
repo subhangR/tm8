@@ -23,11 +23,13 @@ import type {
   SpawnSelection,
   SpawnSelectionDefaultReason,
   SpawnSelectionGroup,
+  ExecutionSpawnLaunch,
+  SpawnAccessModeSource,
 } from '@tm8/contract';
 import type { CoordinatorKind, PromptContextIndex, PromptVersion } from '@tm8/prompt';
 import type { WorkSessionUsage, WorkSessionUsageSource } from '../transcript/session-usage.js';
 
-export type { CoordinatorKind };
+export type { CoordinatorKind, ExecutionSpawnLaunch, SpawnAccessModeSource };
 
 /** Agent execution mode — mirrors work_sessions.mode's CHECK constraint. */
 export type AgentMode =
@@ -1594,6 +1596,11 @@ export interface SpawnResult {
    * request on each. Absent for every other mode.
    */
   routedTaskIds?: string[];
+  /**
+   * The resolved access mode, credential sources and parent — the spawn
+   * receipt's posture rows (`spawnLaunchFacts`). Ids only, never a secret.
+   */
+  launchFacts?: ExecutionSpawnLaunch;
 }
 
 /** Raised for every spawn-flow failure that has a contract error code. */
