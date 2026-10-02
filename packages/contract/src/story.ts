@@ -14,8 +14,9 @@
 //                      function, `internal.story_summary(id)`, so the twins
 //                      cannot drift.
 //   * `StoryContent` — the entity's `content` on a DETAIL read (entities.get).
-//                      `page` is filled by the detail hydration from
-//                      `internal.story_page(id)`; it is `null` on every
+//                      `page` is filled by the detail hydration
+//                      (server `loadStoryPage`, over `internal.story_trail`);
+//                      it is `null` on every
 //                      surface that does not hydrate detail (command results,
 //                      version snapshots).
 //   * the live feed  — `page.feedAnchorIds` names every anchor in the story;
@@ -349,3 +350,37 @@ export const StoryContentSchema = z.object({
   description: z.string(),
   page: z.record(z.unknown()).nullable(),
 }).passthrough();
+
+/**
+ * The `story` card on `tm8 entity context <story>` (v2 kindFields): the page
+ * projected small for an agent. Every list is capped at 50; a cut list adds
+ * an `omitted[]` entry on the view.
+ */
+export interface EntityContextStory {
+  state: StoryState;
+  roots: Array<{
+    id: string; kind: string; title: string; status: string | null; statusCategory: StatusCategory | null;
+    blocked: boolean; taskProgress: StoryProgress; progress: StoryProgress; childCount: number; trailCount: number;
+  }>;
+  /** Counts over every followed row (depth >= 0), by kind. */
+  byKind: Record<string, number>;
+  blocked: Array<{ id: string; kind: string; title: string; status: string | null }>;
+  sessions: Array<{ id: string; callSign: string; title: string; live: boolean; mode: TeamMemberMode | null;
+    teamMemberId: string | null; taskIds: string[] }>;
+  team: Array<{ id: string; name: string; mode: TeamMemberMode | null; parentId: string | null; live: boolean; sessionIds: string[] }>;
+  childStories: Array<{ id: string; title: string; status: string | null; taskProgress: StoryProgress;
+    rollup: StoryProgress; liveSessionCount: number }>;
+  truncated: boolean;
+}
+
+/** Loose on purpose: server-assembled, typed by `EntityContextStory`. */
+export const EntityContextStorySchema: z.ZodType<EntityContextStory> = z.object({
+  state: StoryStateSchema,
+  roots: z.array(z.record(z.unknown())),
+  byKind: z.record(z.number().int().nonnegative()),
+  blocked: z.array(z.record(z.unknown())),
+  sessions: z.array(z.record(z.unknown())),
+  team: z.array(z.record(z.unknown())),
+  childStories: z.array(z.record(z.unknown())),
+  truncated: z.boolean(),
+}).strict() as unknown as z.ZodType<EntityContextStory>;
