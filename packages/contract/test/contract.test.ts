@@ -555,6 +555,17 @@ describe('launch v3 lane C shapes', () => {
     expect(ExecutionDispatchResultSchema.safeParse({ taskId: id, dispatcherSessionId: id, dispatcherSpawned: false, delivery: 'delivered' }).success).toBe(false);
     expect(ExecutionDispatchResultSchema.safeParse({ taskId: id, taskCreated: true, dispatcherSessionId: id, dispatcherSpawned: false, delivery: 'delivered' }).success).toBe(true);
     expect(ExecutionSpawnResultSchema.safeParse({ patches: [], createdTaskId: id }).success).toBe(true);
+    const launch = {
+      accessMode: 'fullAccess', accessModeSource: 'inherited', parentSessionId: id,
+      credentials: [{ provider: 'anthropic', source: 'space', spaceCredentialId: id, spacePick: 'pinned' }, { provider: 'github', source: 'node' }],
+    };
+    expect(ExecutionSpawnResultSchema.safeParse({ patches: [], launch }).success).toBe(true);
+    expect(ExecutionSpawnResultSchema.safeParse({ patches: [], launch: { ...launch, parentSessionId: null } }).success).toBe(true);
+    // Strict: a credential row carries ids and picks, never anything else (no secret can ride along).
+    expect(ExecutionSpawnResultSchema.safeParse({
+      patches: [], launch: { ...launch, credentials: [{ provider: 'openai', source: 'member', apiKey: 'sk-x' }] },
+    }).success).toBe(false);
+    expect(ExecutionSpawnResultSchema.safeParse({ patches: [], launch: { ...launch, accessModeSource: 'argv' } }).success).toBe(false);
     const row = { sessionId: id, teamMemberId: id, teammateName: 'R', title: '', purpose: null, live: false, queuedCount: null };
     expect(ExecutionDispatchersSchema.safeParse({ dispatchers: [row] }).success).toBe(true);
     expect(ExecutionDispatchersSchema.safeParse({ dispatchers: [{ ...row, queuedCount: -1 }] }).success).toBe(false);

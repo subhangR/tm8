@@ -65,7 +65,7 @@ export function AttentionSheet(props: { onDismiss(): void; onOpenEntity(id: Enti
       <div className="att-phone-sheet">
         <AttentionList
           title={`${all} waiting`}
-          onOpen={(id) => props.onOpenEntity(id, api.queue('all').find((row) => row.rootId === id)?.kind ?? null)}
+          onOpen={(id, row) => props.onOpenEntity(id, id === row.rootId ? row.kind : null)}
         />
       </div>
     </MobileSheet>

@@ -239,6 +239,19 @@ export function requestsRaisedBy(rows: readonly AttentionRequest[], sessionId: E
   return rows.filter((row) => isPending(row) && row.sourceWorkSessionId === sessionId).sort(newestFirst);
 }
 
+/**
+ * Where clicking a request takes you. A tm8 signal is about the thing it is
+ * pinned on (a form opens the form, a conflict its worktree or session);
+ * anything a session or chat raised opens THAT session, wherever the request
+ * is pinned; otherwise the pinned entity.
+ */
+export function openTargetOf(
+  row: Pick<AttentionRequest, 'entityId' | 'origin' | 'sourceWorkSessionId'>,
+): EntityId {
+  if (row.origin === 'system') return row.entityId;
+  return row.sourceWorkSessionId ?? row.entityId;
+}
+
 /** Compact age: `45s`, `12m`, `3h`, `2d`. */
 export function formatAge(fromIso: string, now: number): string {
   const seconds = Math.max(0, Math.floor((now - Date.parse(fromIso)) / 1000));

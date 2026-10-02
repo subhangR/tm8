@@ -220,6 +220,10 @@ export const OPERATIONS = [
   // Every later turn, from a human or from another agent, still travels through
   // messages.post anchored on the chat; there is no second write path.
   { name: 'chat.start',              method: 'POST',   path: '/v2/chats',                                   kind: 'command', status: 'v1' },
+  // 276 — move a running chat onto another model. Sticky: it changes the chat,
+  // and every turn claimed afterwards runs on the new model. A turn already
+  // claimed keeps the model it was stamped with.
+  { name: 'chat.setModel',           method: 'POST',   path: '/v2/chats/:id/model',                         kind: 'command', status: 'v1' },
 
   // collections / graph / placements / undo
   { name: 'collections.query',       method: 'POST',   path: '/v2/collections/query',                       kind: 'read',    status: 'v1' },

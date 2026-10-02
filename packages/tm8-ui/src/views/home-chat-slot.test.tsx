@@ -166,6 +166,8 @@ describe('the slot is PINNED on Home (Q4)', () => {
     navStore.getState().openCenter(other);
     await pinned();
     /* Switching A's root through the rail — a navigation, not a Trail verb. */
+    /* Docs lives in the Library group, closed by default (task 01a0fb09). */
+    fireEvent.click(within(view.getByTestId('home-rail')).getByRole('button', { name: 'Library' }));
     fireEvent.click(within(view.getByTestId('home-rail')).getByRole('button', { name: /^Docs/ }));
     await waitFor(() => expect(target.getHash()).toContain('/home/k/docs'));
     await pinned();

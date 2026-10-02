@@ -5,7 +5,7 @@ import type { JevPort } from '../jev/port';
 import type { LaunchDefaultsPort } from '../launch-selection/port';
 import type { FormsOps } from '../forms/ops-port';
 import type { FixtureJevScenario } from './fixtures/jev-fixture';
-import type { LaunchSuggestInput } from '@tm8/contract';
+import type { LaunchSuggestInput, SpaceSessionsMode } from '@tm8/contract';
 /**
  * THE FACADE SEAM — the typed interface the UI consumes for everything between
  * the server's HTTP/WS surface and the UI's stores.
@@ -258,6 +258,8 @@ import type {
   SessionLaunchRecord,
   SessionTranscriptPage,
   HomeSnapshot,
+  SetChatModelInput,
+  SetChatModelResult,
   StartChatInput,
   StartChatResult,
   SpaceId,
@@ -366,6 +368,11 @@ export interface IdentityView {
   status: string;
   actingAs: string | null;
   memberships: Array<{ spaceId: string; memberId: string; role: string }>;
+  /**
+   * The node's `TM8_SPACE_SESSIONS` mode (contract `IdentityGetResult`).
+   * Absent from a node that predates the field: unknown, not `agents`.
+   */
+  spaceSessions?: SpaceSessionsMode;
 }
 
 /**
@@ -989,6 +996,25 @@ export interface Seam {
      * opening turn in one transaction; there is no root message to post first.
      */
     startChat(input: StartChatInput): Promise<StartChatResult>;
+    /**
+     * `chat.setModel` (276) — move an EXISTING chat onto another model.
+     *
+     * Its sibling above creates a chat with a model; this is the only door that
+     * changes one afterwards, and it exists because the model stopped being a
+     * write-once fact: a Claude Code session carries turns from several models
+     * and `--resume` keeps the transcript, so the chat's model is a setting.
+     *
+     * NAMES A MODEL AND NEVER A PROVIDER. The server resolves provider from the
+     * launch catalog, and that is not a convenience — provider decides which
+     * API key the child is given, so accepting one from a browser would let the
+     * page choose whose credential to spend. The resolved provider comes back in
+     * the result so a caller can show what it actually got.
+     *
+     * Returns as soon as the setting is stored. The live child keeps running on
+     * the old model until the next turn is claimed; nothing here interrupts an
+     * answer in flight to apply a choice about the answer after it.
+     */
+    setChatModel(chatId: EntityId, input: SetChatModelInput): Promise<SetChatModelResult>;
     editMessage(id: EntityId, input: PatchMessageInput): Promise<CommandResult>;
     react(id: EntityId, input: ReactionInput): Promise<CommandResult>;
     resolveAttention(id: EntityId, input: ResolveEntityAttentionInput): Promise<AttentionRequestMutationResult>;

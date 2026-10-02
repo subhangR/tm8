@@ -48,6 +48,30 @@ export type DirectToolName = (typeof DIRECT_TOOL_NAMES)[number];
  * The `operation` argument is retained for interface stability (the router still
  * calls through this one entry point) but no mode narrows anything any more, so
  * every tool in every mode resolves to `allow`.
+ *
+ * ---
+ *
+ * SINCE 276, THIS `allow` IS LOAD-BEARING FOR A SECOND REASON. The composer can
+ * now change a chat's mode MID-CONVERSATION: the pick rides one turn as
+ * `messages.requested_chat_mode` (153) -> `chat_turns.mode` (154) and reaches the
+ * agent as that turn's `[mode: x]` envelope line. Nothing is respawned, and that
+ * is only safe because the mode's two SPAWN-TIME consumers are both mode-blind
+ * today:
+ *
+ *   - `TM8_CHAT_MODE` (compose.ts) is stamped into the child's env at spawn and
+ *     parsed back here by `parseChatMode` (env.ts) — so a running child's MCP
+ *     mode is forever the mode it LAUNCHED with, not the mode of the turn it is
+ *     currently answering.
+ *   - the provider's `--allowedTools` list is computed once, at spawn, from
+ *     `exposedToolNames(launchMode, …)` in `chatProviderToolPolicy`.
+ *
+ * Both reduce to the identity while this function returns `allow` unconditionally,
+ * which is why a per-turn switch is complete without a restart. NARROW A MODE HERE
+ * AND YOU BREAK THAT: the envelope line would tell the agent to `build` while the
+ * env var and the argv still carried `ask`'s tool surface — instructed to do one
+ * job holding another's tools, with no error anywhere. Whoever re-introduces a
+ * per-mode narrowing owns making the switch respawn (as a model change does, via
+ * `ensureRuntime` + resume) or refusing the mid-chat switch for that mode.
  */
 export function toolPermission(_mode: ChatMode, _tool: string, _operation?: string): ToolPermission {
   return 'allow';

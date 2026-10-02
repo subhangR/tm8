@@ -842,6 +842,69 @@ describe('T42 / N11 — the backfill: a same-id entity per 206 row, idempotent',
     });
     expect(await count()).toEqual(first);
   });
+  it('a backfilled legacy row still launches: readiness and the spawn reader admit it for every member; a revoked one is refused', async () => {
+    // The rest of main's chain runs AFTER 239, so the readers are today's
+    // (272 readiness, 271's spawn reader), not 239's.
+    const launch = await createW1ScratchDatabase('credential_entities_backfill_launch');
+    const launchDb = createDb(launch.url);
+    try {
+      const all = migrationFiles();
+      const at = all.indexOf(MIGRATION!);
+      launch.apply(all.slice(0, at));
+      const legacy = await launch.transaction(async (c) => {
+        await c.query('set local role tm8_graph_owner');
+        const id = async () => (await c.query<{ id: string }>('select internal.new_id()::text id')).rows[0]!.id;
+        const space = await id();
+        for (const who of ['bl-owner', 'bl-member']) {
+          await c.query(`insert into public.user_profiles(identity_id, display_name) values ($1, $1)`, [who]);
+          await c.query(`insert into public.accounts(identity_id, username, display_name) values ($1, $1, $1)`, [who]);
+        }
+        await c.query(`insert into public.spaces(id, name, created_by_identity) values ($1, 'BL', 'bl-owner')`, [space]);
+        for (const [who, role] of [['bl-owner', 'owner'], ['bl-member', 'member']] as const) {
+          const member = await id();
+          await c.query(`insert into public.entities(id, space_id, kind, position, created_by) values ($1, $2, 'member', 0, $1)`, [member, space]);
+          await c.query(`insert into public.members(entity_id, space_id, identity_id, role, display_name) values ($1, $2, $3, $4, $3)`, [member, space, who, role]);
+        }
+        const live = await id();
+        const gone = await id();
+        // 206-shaped rows as SC-1 wrote them: the space's default key, and a revoked one (206 clears a revoked row's sealed fields).
+        await c.query(
+          `insert into public.space_credentials(id, space_id, provider, shape, label, is_default, status, key_hint, secret_ciphertext, secret_nonce)
+           values ($1, $3, 'anthropic', 'api_key', 'legacy-live', true, 'active', 'Fk6x', '\\x00112233445566778899aabbccddeeff00'::bytea, '\\x000102030405060708090a0b'::bytea),
+                  ($2, $3, 'openai', 'api_key', 'legacy-gone', false, 'revoked', 'Fk7x', null, null)`,
+          [live, gone, space],
+        );
+        return { space, live, gone };
+      });
+      launch.apply(all.slice(at));
+
+      const [shape] = await launch.query<{ cards: number; space_owned_public: number }>(
+        `select (select count(*)::int from public.entities e join public.space_credentials sc on sc.id = e.id and sc.space_id = e.space_id
+                  where e.kind = 'credential' and e.deleted_at is null) cards,
+                (select count(*)::int from public.space_credentials where owner_account_id is null and visibility = 'public') space_owned_public`);
+      expect(shape).toEqual({ cards: 2, space_owned_public: 2 });
+
+      for (const who of ['bl-owner', 'bl-member']) {
+        const as = claims(who);
+        // Readiness (272): the auto ladder finds the backfilled row as the space default.
+        const ready = await launchDb.rpc<{ canLaunch: { providers: Record<string, { ready: boolean; via: string | null; credentialId: string | null }> } }>(
+          as, 'space_credential_readiness', [legacy.space]);
+        expect(ready.canLaunch.providers['anthropic'], who).toMatchObject({ ready: true, via: 'space_default', credentialId: legacy.live });
+        expect(ready.canLaunch.providers['openai']?.ready, who).toBe(false);
+        // The spawn reader admits it, by default and by id. Only the id is read back — never the sealed fields.
+        const byDefault = await launchDb.rpc<{ credentialId: string }>(as, 'read_space_credential_for_spawn', [legacy.space, 'anthropic', null]);
+        expect(byDefault.credentialId, who).toBe(legacy.live);
+        const byId = await launchDb.rpc<{ credentialId: string }>(as, 'read_space_credential_for_spawn', [legacy.space, 'anthropic', legacy.live]);
+        expect(byId.credentialId, who).toBe(legacy.live);
+        expect(await launchDb.rpc<string[]>(as, 'usable_space_credential_ids', [[legacy.live, legacy.gone]]), who).toEqual([legacy.live]);
+        // Negative, same space and caller: the revoked backfilled row is refused.
+        expect(await outcome(() => launchDb.rpc(as, 'read_space_credential_for_spawn', [legacy.space, 'openai', legacy.gone])), who).toBe('23514:revoked');
+      }
+    } finally {
+      await launchDb.end();
+      await launch.destroy();
+    }
+  });
   it('refuses the migration when a pre-existing entity of another kind shares a 206 row\'s id', async () => {
     // The loop skips a row whose id already names an entity, and the FK checks
     // only that some entity has the id — so without the post-backfill

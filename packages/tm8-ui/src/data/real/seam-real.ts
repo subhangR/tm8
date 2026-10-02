@@ -228,6 +228,9 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
   // Wires 2 and 3 (see header).
   connection.onEvent((event) => liveness.noteEvent(event));
   connection.onReconnect(() => liveness.noteReconnect());
+  // W3 F1: a space switch under enforce swaps the session cookie, and the
+  // socket only ever speaks as the cookie it upgraded with.
+  const stopCookieWatch = options.spaceSession?.onCookieChanged?.(() => connection.reconnect());
 
   const seam: RealSeam = {
     // -- lifecycle -----------------------------------------------------------
@@ -302,6 +305,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     },
 
     dispose(): void {
+      stopCookieWatch?.();
       connection.dispose();
       liveness.dispose();
       cursorCache?.dispose();
@@ -328,7 +332,14 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
 
     // -- reads ---------------------------------------------------------------
 
-    identity: (): Promise<IdentityView> => ops.identity(),
+    identity: async (): Promise<IdentityView> => {
+      const view = await ops.identity();
+      // W3: the mode tells the space-session port whether to pin up front.
+      // Only seam.identity() feeds advertised(); an enterSpace before it
+      // resolves falls back to learning enforce from the gate's 403.
+      options.spaceSession?.advertised?.(view.spaceSessions);
+      return view;
+    },
     spaces: (): Promise<SpaceSummary[]> => ops.spaces(),
     spaceSettings: (spaceId: SpaceId): Promise<SpaceSettingsView> => ops.spaceSettings(spaceId),
     spaceConfigs: (spaceId: SpaceId): Promise<SpaceConfigsView> => ops.spaceConfigs(spaceId),
@@ -451,6 +462,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
         ops.removeFromCollection(collectionId, entityId, ctx),
       postMessage: (input) => ops.postMessage(input),
       startChat: (input) => ops.startChat(input),
+      setChatModel: (chatId, input) => ops.setChatModel(chatId, input),
       editMessage: (id, input): Promise<CommandResult> => ops.editMessage(id, input),
       react: (id, input) => ops.react(id, input),
       resolveAttention: (id, input) => ops.resolveAttention(id, input),
