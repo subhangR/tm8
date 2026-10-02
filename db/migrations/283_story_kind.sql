@@ -1,5 +1,5 @@
 -- =============================================================================
--- 282 — `story`, one line of work as an entity (task 01a0fbf9, "Story as an
+-- 283 — `story`, one line of work as an entity (task 01a0fbf9, "Story as an
 -- Entity", rulings by Subhang 2026-10-02; brief doc 01a0fc6f).
 --
 -- A story is a title, a description and the status every kind already has
@@ -19,6 +19,14 @@
 -- so fan-out cannot explode the way a path-unique recursive CTE does, and
 -- every level is LIMITed by the remaining budget. Materialise later only if
 -- lists get slow.
+--
+-- D1b: HUBS AND STORIES ARE LEAVES (lead ruling 2026-10-02, after a shared
+-- teammate pulled one story's tasks into another). The walk may step INTO a
+-- team_member, member, project, interaction_profile, skill or story — they
+-- show in the trail and the team — but never OUT of one, roots included.
+-- Hierarchy is followed DOWNWARD only (parent -> child), so a root's siblings
+-- are never in the story unless put in by hand. The walking story never
+-- re-enters its own trail. The followed edge list is unchanged.
 --
 -- D2: BOTH READ PATHS READ THE SAME FUNCTION. The facade (`entity-read.ts`)
 -- and the projector (`events/projector.ts`) each select
@@ -40,8 +48,9 @@
 -- stories is this entity in — for spawn-on-story, walking the same edge set
 -- backwards (child -> parent for hierarchy) under the same bounds.
 --
--- NUMBERED 282, measured 2026-10-02 against every remote ref: main tops at
--- 277, lane branches reach 281 (281_path_grants, 281_space_link_spawn).
+-- NUMBERED 283, measured 2026-10-02 against every remote ref: main tops at
+-- 277, lane branches reach 282 (origin/feat/style-phase2 holds
+-- 282_style_entities; 281_path_grants and 281_space_link_spawn elsewhere).
 -- RE-MEASURE at assembly.
 --
 -- SHARED-OBJECT NOTICE (053/…/250/261): §3 REPLACES `internal.entity_content`.
@@ -156,7 +165,7 @@ begin
       -- W8: the server's metadata. `servers` holds no secret; the sealed
       -- per-member gate session is `server_gate_tokens` and has no arm.
       when 'server' then select to_jsonb(sv) - 'entity_id' into content from public.servers sv where sv.entity_id = target;
-      -- 282: the story's title and description. Its roots are `contains`
+      -- 283: the story's title and description. Its roots are `contains`
       -- edges and its trail is computed (story_trail), never embedded here.
       when 'story' then select to_jsonb(st) - 'entity_id' into content from public.stories st where st.entity_id = target;
       else content := '{}'::jsonb;
@@ -371,6 +380,9 @@ $$;
 --    in one. Each level is LIMITed by what is left of the 500-row budget, so
 --    the walk is bounded no matter how wide a level fans out.
 --
+--    Hub kinds and stories are LEAVES (D1b): the frontier never expands out of
+--    one, and hierarchy is followed parent -> child only.
+--
 --    Rows: one per (entity, root). Roots are depth 0 with `via_id` = the story,
 --    `edge_type` = 'contains'. `direction` is 'out' when the edge is stored
 --    via -> entity, 'in' when entity -> via; hierarchy is ('parent', 'out').
@@ -383,6 +395,9 @@ language plpgsql stable set search_path = public, internal, pg_temp as $$
 declare
   followed constant text[] := array['attached_to', 'tracks', 'working_on', 'about', 'created_in',
                                     'assigned_to', 'has_member', 'produces', 'remembers', 'dispatched_by'];
+  -- D1b: a row of one of these kinds is a LEAF — reached, never walked out of.
+  leaf_kinds constant text[] := array['team_member', 'member', 'project', 'interaction_profile',
+                                      'skill', 'story'];
   max_depth constant integer := 3;
   budget integer := 500;
   a_ids uuid[]; a_roots uuid[]; a_depth integer[]; a_via uuid[];
@@ -422,6 +437,7 @@ begin
       from (
         select distinct on (nb.id, f.root) nb.id, f.root, f.via, nb.etype, nb.eid, nb.dir
           from unnest(f_ids, f_roots) as f(via, root)
+          join public.entities fe on fe.id = f.via and not (fe.kind = any(leaf_kinds))
           cross join lateral (
             select ch.id, 'parent'::text as etype, null::uuid as eid, 'out'::text as dir
               from public.entities ch
@@ -459,7 +475,7 @@ end
 $$;
 
 comment on function internal.story_trail(uuid) is
-  '282: the story''s roots (contains targets) and everything that follows from '
+  '283: the story''s roots (contains targets) and everything that follows from '
   'them — parent->child and the ten followed edge types, depth 3, 500 rows. '
   'Computed at read time, security invoker: RLS decides what a viewer sees.';
 
@@ -551,7 +567,9 @@ begin
     'rollup', internal.story_tally(family_task_ids),
     'liveSessionCount', live_sessions,
     'pendingAttentionCount', pending,
-    'lastActivityAt', last_at,
+    -- UTC ISO-8601 with Z, whatever the session TimeZone: both twins pass
+    -- this string through untouched, so it must already be the wire form.
+    'lastActivityAt', to_char(last_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
     'childStoryCount', child_count);
 end
 $$;
@@ -568,6 +586,10 @@ language plpgsql stable set search_path = public, internal, pg_temp as $$
 declare
   followed constant text[] := array['attached_to', 'tracks', 'working_on', 'about', 'created_in',
                                     'assigned_to', 'has_member', 'produces', 'remembers', 'dispatched_by'];
+  -- D1b in reverse: an intermediate row of a leaf kind is never walked
+  -- through (the forward walk could not have left it). The start may be one.
+  leaf_kinds constant text[] := array['team_member', 'member', 'project', 'interaction_profile',
+                                      'skill', 'story'];
   budget integer := 500;
   a_ids uuid[] := array[p_entity_id];
   a_depth integer[] := array[0];
@@ -580,6 +602,7 @@ begin
       from (
         select distinct nb.id
           from unnest(f_ids) as f(id)
+          join public.entities fe on fe.id = f.id and (lvl = 1 or not (fe.kind = any(leaf_kinds)))
           cross join lateral (
             select p.parent_id as id from public.entities p
              where p.id = f.id and p.parent_id is not null

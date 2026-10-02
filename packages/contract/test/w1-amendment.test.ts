@@ -250,7 +250,7 @@ describe('W1 frozen-row schema amendments', () => {
       'space_link',
       'server',
       // 2026-10-02: `story` — one line of work: its roots by `contains`, and
-      // everything that follows from them (282). Creatable through the
+      // everything that follows from them (283). Creatable through the
       // ordinary envelope, like `drawing`.
       'story',
     ]);
