@@ -864,6 +864,14 @@ async function entityCreate(cmd: CommandContext): Promise<ExitCode> {
     'no-session-link', ...HEADER_TEXT_OPTIONS,
   ]);
   const kind = requireArg(cmd, 0, '<kind>');
+  // A space style is born only by `styles.push` (282): the Server refuses a
+  // generic create, and the refusal is more useful naming the door here than
+  // as an enum mismatch from the wire.
+  if (kind === 'style') {
+    throw new CliError('a space style is created only by publishing a personal style: `tm8 style push <personal-ref>`', EXIT_USAGE, {
+      hint: 'author one first with `tm8 style create <title> --foundation <builtin-ref>`, or copy one with `tm8 style pull <ref>`',
+    });
+  }
   const title = requireArg(cmd, 1, '<title>');
 
   const mutationId = resolveMutationId(cmd.options.value('mutation-id'));
