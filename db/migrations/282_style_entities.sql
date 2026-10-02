@@ -1147,7 +1147,10 @@ begin
            'pushedBy', s.pushed_by,
            'pushedAt', s.pushed_at,
            'isDefault', default_ref = 'space:' || e.id,
-           'inUseByMe', prefs.current_style = 'space:' || e.id or prefs.dark_style = 'space:' || e.id,
+           -- coalesce: with no prefs row both comparisons are null, and the
+           -- contract says boolean.
+           'inUseByMe', coalesce(prefs.current_style = 'space:' || e.id
+                                 or prefs.dark_style = 'space:' || e.id, false),
            -- Any active member may push a new version (sign-off decision);
            -- require_space_member above already proved this caller is one.
            'canPush', true)
