@@ -1193,6 +1193,8 @@ const CollectionFiltersSchema = z.object({
   // Title substring (collections.ts). Trimmed and non-empty for the same
   // reason `terms` is: a blank needle is a substring of every title.
   titleContains: z.string().trim().min(1).max(200).optional(),
+  // Every word, in title or description (collections.ts). Same trim rule.
+  words: z.string().trim().min(1).max(200).optional(),
 }).strict().superRefine((f, ctx) => {
   // A22: refused, not silently empty. The two filters are kind-disjoint (no
   // row is both a task and a work_session), so their conjunction can only

@@ -1231,6 +1231,17 @@ export interface CollectionQuery {
      * Trimmed and non-empty: a blank needle matches everything.
      */
     titleContains?: string;
+    /**
+     * Additive (2026-10-02, task 01a0fb05 — the attach palette's search):
+     * entities where EVERY word of this text appears, case-insensitively, in
+     * the title or in a short description (skill, spell, artifact,
+     * collection). Words split on whitespace and on the separators names are
+     * written with (`-` `_` `.` `/` `:`), so "skill creator" finds
+     * `skill-creator` and "creator skill" finds it too — the literal
+     * `titleContains` finds neither. Trimmed and non-empty; a text with no
+     * word in it (only separators) falls back to the literal title match.
+     */
+    words?: string;
   };
   layout?: 'list'|'board'|'tree'|'feed'|'gallery'|'graph';
   /** `priority` added 2026-08-16 (Board tab wave) — same additive posture as the rest of the union. */
