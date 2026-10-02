@@ -1,0 +1,182 @@
+/*
+ * The story page shell: bar, hero, four stats and the column grid
+ * (artifact 01a0fc3e rev 4, `.bar` / `.hero` / `.stats` / `.cols`).
+ * Atelier tokens only. The page is a container so the grid answers the
+ * PANEL's width, not the window's.
+ */
+.cv2-root .sty-page {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-3);
+  padding: var(--pn-space-3) var(--pn-space-4) 70px;
+  color: var(--pn-ink);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-body);
+  line-height: var(--pn-lh-body);
+  position: relative;
+}
+/* Blocks draw their own cards; an unmounted stub (null) takes no gap. */
+.cv2-root .sty-page > :empty { display: none; }
+
+/* ---- bar ---- */
+.cv2-root .sty-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-label);
+}
+.cv2-root .sty-bar__crumb { display: flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: wrap; }
+.cv2-root .sty-bar__crumb b { color: var(--pn-ink); font-weight: 500; }
+.cv2-root .sty-bar__sep { color: var(--pn-ink-4); }
+.cv2-root .sty-bar__link {
+  font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer;
+}
+.cv2-root .sty-bar__link:hover { color: var(--pn-ink); text-decoration: underline; }
+.cv2-root .sty-kindchip {
+  display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px 0 6px;
+  border-radius: var(--pn-r-pill); background: var(--pn-brand-soft); color: var(--pn-brand-2);
+  font-family: var(--pn-mono); font-size: var(--pn-fs-fine); font-weight: 600;
+  letter-spacing: var(--pn-track-mega); text-transform: uppercase;
+}
+
+/* ---- hero ---- */
+.cv2-root .sty-hero {
+  padding: 24px 28px 20px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-lg);
+  box-shadow: var(--pn-sh-md);
+  position: relative;
+  overflow: hidden;
+}
+/* The progress hairline across the top edge — the hero's own meter. */
+.cv2-root .sty-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--pn-brand) 0 var(--sty-p, 0%), var(--pn-line) var(--sty-p, 0%) 100%);
+  transition: background var(--pn-dur-slow) var(--pn-ease-out);
+}
+.cv2-root .sty-hero[data-landed='true'] { animation: sty-land 1.2s var(--pn-ease-out); }
+@keyframes sty-land {
+  0% { box-shadow: 0 0 0 2px var(--pn-brand-soft), var(--pn-sh-md); }
+  100% { box-shadow: var(--pn-sh-md); }
+}
+.cv2-root .sty-eyebrow {
+  font-family: var(--pn-mono); font-size: var(--pn-fs-fine); font-weight: 600;
+  letter-spacing: var(--pn-track-mega); text-transform: uppercase; color: var(--pn-ink-3);
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+}
+.cv2-root .sty-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--pn-ink-4); display: inline-block; }
+.cv2-root .sty-tone--info { color: var(--pn-info); }
+.cv2-root .sty-tone--run { color: var(--pn-run); }
+.cv2-root .sty-tone--idle { color: var(--pn-ink-3); }
+.cv2-root .sty-title {
+  font-family: var(--pn-serif); font-weight: 500; font-size: var(--pn-fs-display);
+  line-height: var(--pn-lh-tight); letter-spacing: -0.005em; margin: 10px 0 8px;
+}
+.cv2-root .sty-title__btn {
+  font: inherit; letter-spacing: inherit; color: inherit; background: none; border: 0; padding: 0;
+  text-align: left; cursor: text; border-radius: var(--pn-r-sm);
+}
+.cv2-root .sty-title__btn:hover { background: var(--pn-hover); box-shadow: 0 0 0 4px var(--pn-hover); }
+.cv2-root .sty-title__input {
+  font: inherit; letter-spacing: inherit; color: var(--pn-ink); width: 100%;
+  background: var(--pn-surface); border: 1px solid var(--pn-line-2); border-radius: var(--pn-r-sm);
+  padding: 0 6px; outline: none;
+}
+.cv2-root .sty-title__input:focus { border-color: var(--pn-brand); }
+.cv2-root .sty-title__error { font-family: var(--pn-ui); font-size: var(--pn-fs-label); color: var(--pn-block); margin-top: 4px; }
+.cv2-root .sty-lede {
+  font-family: var(--pn-serif); font-size: var(--pn-fs-h3); line-height: 1.45; color: var(--pn-ink-2);
+  max-width: 900px; margin: 0 0 16px; white-space: pre-wrap;
+}
+.cv2-root .sty-lede--empty { color: var(--pn-ink-4); font-style: italic; }
+.cv2-root .sty-herometa {
+  display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+  color: var(--pn-ink-3); font-size: var(--pn-fs-label);
+}
+.cv2-root .sty-who { display: inline-flex; align-items: center; gap: 6px; color: var(--pn-ink-2); }
+.cv2-root .sty-stack { display: inline-flex; }
+.cv2-root .sty-stack .kit-avatar { box-shadow: 0 0 0 2px var(--pn-card); }
+.cv2-root .sty-stack .kit-avatar + .kit-avatar { margin-left: 5px; }
+.cv2-root .sty-stack .sty-av--live { box-shadow: 0 0 0 2px var(--pn-card), 0 0 0 3.5px var(--pn-run); }
+.cv2-root .sty-livepill {
+  display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 9px 0 7px;
+  border: 0; border-radius: var(--pn-r-pill); background: var(--pn-run-soft); color: var(--pn-run);
+  font: inherit; font-size: var(--pn-fs-micro); font-weight: 600; white-space: nowrap; cursor: pointer;
+}
+.cv2-root .sty-livepill i {
+  width: 7px; height: 7px; border-radius: 50%; background: currentColor;
+  animation: sty-pulse 1.6s ease-in-out infinite;
+}
+.cv2-root .sty-livepill--paused { background: var(--pn-idle-soft); color: var(--pn-ink-3); }
+.cv2-root .sty-livepill--paused i { animation: none; background: transparent; border: 1.5px solid currentColor; }
+@keyframes sty-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+/* ---- the four stats ---- */
+.cv2-root .sty-stats { display: grid; grid-template-columns: 1.7fr 1fr 1fr 1fr; gap: 10px; }
+.cv2-root .sty-stat {
+  background: var(--pn-card); border: 1px solid var(--pn-line); border-radius: var(--pn-r-md);
+  padding: 12px 14px 11px; box-shadow: var(--pn-sh-sm); min-width: 0;
+}
+.cv2-root .sty-stat__k {
+  font-family: var(--pn-mono); font-size: var(--pn-fs-fine); font-weight: 600;
+  letter-spacing: var(--pn-track-mega); text-transform: uppercase; color: var(--pn-ink-3);
+}
+.cv2-root .sty-stat__v {
+  font-family: var(--pn-serif); font-size: 26px; line-height: 1.1; margin-top: 5px;
+  display: flex; align-items: baseline; gap: 7px;
+}
+.cv2-root .sty-stat__v small { font-family: var(--pn-ui); font-size: var(--pn-fs-label); color: var(--pn-ink-3); }
+.cv2-root .sty-stat__pct { margin-left: auto; font-family: var(--pn-mono); font-size: var(--pn-fs-label); color: var(--pn-ink-3); }
+.cv2-root .sty-stat__sub { font-size: var(--pn-fs-micro); color: var(--pn-ink-3); margin-top: 4px; }
+.cv2-root .sty-meter {
+  height: 6px; border-radius: var(--pn-r-pill); background: var(--pn-active);
+  overflow: hidden; margin-top: 9px; display: flex;
+}
+.cv2-root .sty-meter b { display: block; height: 100%; transition: width var(--pn-dur-slow) var(--pn-ease-out); }
+.cv2-root .sty-legend { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 7px; font-size: var(--pn-fs-micro); color: var(--pn-ink-3); }
+.cv2-root .sty-legend i { width: 7px; height: 7px; border-radius: 2px; display: inline-block; margin-right: 4px; vertical-align: 1px; }
+
+/* ---- feed + happening beside the rail ---- */
+.cv2-root .sty-cols { display: grid; grid-template-columns: minmax(0, 1fr) 392px; gap: 14px; align-items: start; }
+.cv2-root .sty-cols__main,
+.cv2-root .sty-cols__rail { display: flex; flex-direction: column; gap: var(--pn-space-3); min-width: 0; }
+
+/* A narrow panel: stats two by two, the rail under the feed. */
+@container (max-width: 900px) {
+  .cv2-root .sty-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .cv2-root .sty-stat--progress { grid-column: 1 / -1; }
+  .cv2-root .sty-cols { grid-template-columns: minmax(0, 1fr); }
+  .cv2-root .sty-hero { padding: 18px 18px 16px; }
+  .cv2-root .sty-title { font-size: var(--pn-fs-h1); }
+}
+
+/* ---- host states: reading, failed, stale ---- */
+.cv2-root .sty-state {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
+  margin: var(--pn-space-4); padding: var(--pn-space-4);
+  border: 1px dashed var(--pn-line-2); border-radius: var(--pn-r-md);
+  color: var(--pn-ink-3); font-size: var(--pn-fs-sm);
+}
+.cv2-root .sty-state b { color: var(--pn-ink); font-weight: 600; }
+.cv2-root .sty-state--inline { flex-direction: row; margin: var(--pn-space-3) var(--pn-space-4) 0; padding: 6px 10px; border-style: solid; font-size: var(--pn-fs-label); }
+.cv2-root .sty-state__retry {
+  font: inherit; color: var(--pn-ink); background: var(--pn-card); cursor: pointer;
+  border: 1px solid var(--pn-line-2); border-radius: var(--pn-r-sm); padding: 2px 10px;
+}
+
+/* The entity panel (~560-700px): the four stats two by two. */
+@container (max-width: 700px) {
+  .cv2-root .sty-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cv2-root .sty-stat--progress { grid-column: auto; }
+}
+/* A phone-width panel: one stat per row. */
+@container (max-width: 400px) {
+  .cv2-root .sty-stats { grid-template-columns: minmax(0, 1fr); }
+}

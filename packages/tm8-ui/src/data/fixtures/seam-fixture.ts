@@ -829,6 +829,9 @@ function synthesizeContent(s: EntitySummary): EntityContent {
     case 'credential':
       // W10a: content is the same allow-list as state — no secret, hint or login.
       return { ...state };
+    case 'story':
+      // The page is hydrated on a detail read only; a seam row carries none.
+      return { kind: 'story', description: '', page: null };
     default:
       // pull_request | commit | file | spell | skill — the open content variant
       return { kind: state.kind };
@@ -2413,6 +2416,16 @@ export function createFixtureSeam(): FixtureSeam {
           nodeCount: Array.isArray(c.nodes) ? c.nodes.length : 0,
           edgeCount: Array.isArray(c.edges) ? c.edges.length : 0,
         };
+      // A new story has nothing in it yet: every figure is the empty tally the
+      // server's `internal.story_summary` answers for a story with no roots.
+      case 'story': {
+        const none = { work: 0, done: 0, inProgress: 0, toDo: 0, blocked: 0, cancelled: 0 };
+        return {
+          kind: 'story', rootCount: 0, itemCount: 0, truncated: false,
+          progress: none, taskProgress: none, rollup: none,
+          liveSessionCount: 0, pendingAttentionCount: 0, lastActivityAt: null, childStoryCount: 0,
+        };
+      }
       default:
         throw new CollabError('invalid_input', `kind ${kind} is not client-creatable`);
     }

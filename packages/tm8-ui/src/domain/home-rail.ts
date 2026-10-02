@@ -127,7 +127,10 @@ const HOME_RAIL_GROUP_SPINE: readonly HomeRailGroupSpec[] = [
     //
     // `form` (209) follows `work_session` because a session is what asks one:
     // it is the question an agent is waiting on a human to answer, mid-work.
-    kinds: ['chat', 'task', 'work_session', 'form', 'project'],
+    // `story` (283) sits right above `task`: it is the level work is told at —
+    // one idea, its roots and where it stands — so it reads before the tasks
+    // it gathers rather than among the containers in Structure.
+    kinds: ['chat', 'story', 'task', 'work_session', 'form', 'project'],
   },
   {
     id: 'agents',
