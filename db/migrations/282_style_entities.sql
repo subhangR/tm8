@@ -483,8 +483,7 @@ $$;
 
 -- -----------------------------------------------------------------------------
 -- 8. Content hydration. SHARED-OBJECT NOTICE above: body copied VERBATIM from
---    261 (the latest definition), plus the `style` arm. The arm is an
---    allow-list in the contract's camelCase (spec §3.3), so version snapshots
+--    261 (the latest definition), plus the `style` arm, so version snapshots
 --    and generic reads carry the document.
 -- -----------------------------------------------------------------------------
 create or replace function internal.entity_content(target uuid)
@@ -539,19 +538,10 @@ begin
       -- W8: the server's metadata. `servers` holds no secret; the sealed
       -- per-member gate session is `server_gate_tokens` and has no arm.
       when 'server' then select to_jsonb(sv) - 'entity_id' into content from public.servers sv where sv.entity_id = target;
-      -- 282: a space style, as the spec's allow-list (§3.3), camelCase.
-      when 'style' then select jsonb_build_object(
-                                 'title', st.title,
-                                 'description', st.description,
-                                 'foundation', st.foundation,
-                                 'vars', st.vars,
-                                 'css', st.css,
-                                 'tags', to_jsonb(st.tags),
-                                 'resolvedHash', st.resolved_hash,
-                                 'pushedBy', st.pushed_by,
-                                 'pushedAt', st.pushed_at,
-                                 'sourceOwnerIdentityId', st.source_owner_identity_id)
-                          into content from public.styles st where st.entity_id = target;
+      -- 282: a space style's detail row. The row holds nothing secret (the
+      -- document, tags and attribution), so the house form applies; the
+      -- contract's camelCase shape is the read facade's job (`contentOf`).
+      when 'style' then select to_jsonb(sty) - 'entity_id' into content from public.styles sty where sty.entity_id = target;
       else content := '{}'::jsonb;
     end case;
   end if;
