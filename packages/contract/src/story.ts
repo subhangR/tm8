@@ -1,4 +1,4 @@
-// Story as an Entity (migration 282, task 01a0fbf9, 2026-10-02).
+// Story as an Entity (migration 283, task 01a0fbf9, 2026-10-02).
 //
 // A story is one entity with a title, a description and the status every kind
 // has (152). Things are put in BY HAND as `contains` edges from the story —
@@ -31,7 +31,9 @@ import { z } from 'zod';
 /**
  * The edge types a story's trail follows, in both directions, from each root
  * (Subhang, 2026-10-02). `parent` is not an edge row: it is the envelope's
- * `parent_id`, followed parent -> child only. NOT followed, on purpose:
+ * `parent_id`, followed parent -> child only. Rows of a hub kind
+ * (team_member, member, project, interaction_profile, skill) and stories are
+ * LEAVES: reached, never walked out of (lead ruling 2026-10-02). NOT followed, on purpose:
  * `likes`, `stars`, `pulled`, `visible_to` — reactions and access are not
  * part of the work.
  */
@@ -144,7 +146,12 @@ export interface StoryNode {
   id: string;
   kind: string;
   title: string;
-  /** Workflow status key (e.g. `working`), null when the row has none. */
+  /**
+   * The status KEY, the same string `tm8 entity context` puts on a ref: a
+   * task's work status (`open`, `working`, …), a session's runtime status, a
+   * PR's state, a chat's runtime state, else the status category. Every
+   * `status` in this module means this.
+   */
   status: string | null;
   statusCategory: StatusCategory | null;
   /** Holds an unresolved hard `depends_on`. */
@@ -232,6 +239,8 @@ export interface StoryDispatch {
 
 export interface StoryTeammate {
   id: string;
+  /** `member` = a human in the trail: no mode, no hierarchy, no sessions. */
+  kind: 'team_member' | 'member';
   name: string;
   mode: TeamMemberMode | null;
   /** The teammate hierarchy tm8 already has (team_member `parent_id`). */
@@ -367,7 +376,8 @@ export interface EntityContextStory {
   blocked: Array<{ id: string; kind: string; title: string; status: string | null }>;
   sessions: Array<{ id: string; callSign: string; title: string; live: boolean; mode: TeamMemberMode | null;
     teamMemberId: string | null; taskIds: string[] }>;
-  team: Array<{ id: string; name: string; mode: TeamMemberMode | null; parentId: string | null; live: boolean; sessionIds: string[] }>;
+  team: Array<{ id: string; kind: 'team_member' | 'member'; name: string; mode: TeamMemberMode | null;
+    parentId: string | null; live: boolean; sessionIds: string[] }>;
   childStories: Array<{ id: string; title: string; status: string | null; taskProgress: StoryProgress;
     rollup: StoryProgress; liveSessionCount: number }>;
   truncated: boolean;

@@ -505,7 +505,7 @@ select
   coalesce(jsonb_array_length(drw.elements), 0) as drawing_element_count,
   sty.title          as story_title,
   sty.description    as story_description,
-  -- 282: the SAME function entity-read.ts selects — the twins mirror by
+  -- 283: the SAME function entity-read.ts selects — the twins mirror by
   -- construction. Computed at projection time, never stored.
   case when e.kind = 'story' then internal.story_summary(e.id) end as story_summary,
   -- Forms (209/211): status and question COUNT only; the questions are content.
