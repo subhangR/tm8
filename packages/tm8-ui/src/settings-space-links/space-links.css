@@ -112,3 +112,33 @@
   font-size: 11px;
   line-height: 1.45;
 }
+
+/* 278 (D2): links INTO this space, for its admins. */
+.set-spl__inbound {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--pn-line-2);
+}
+
+.set-spl__subhead {
+  margin: 0;
+  color: var(--pn-ink);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.set-spl__calls {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--pn-ink-2);
+  font-size: 10.5px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}

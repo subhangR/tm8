@@ -15,6 +15,12 @@
  *                           stored per link; it is enforced when cross-space
  *                           spawn ships.
  *
+ * The TARGET side (278, owner decision D2): an admin of the target space sees
+ * every link into it (`spaceLinks.inbound.list`), the calls made through them
+ * (`spaceLinks.inbound.audit`), and may revoke or restore a link. A revoked
+ * link refuses every member's sign-in. Owning both spaces is no shortcut
+ * (D7): the admin check holds the session pin, so it is made from the target.
+ *
  * Every write is human-only (browser or cli) in SQL. No response ever carries
  * the stored session.
  */
@@ -45,9 +51,62 @@ export interface SpaceLinkView {
   /** Only when the caller is a member of the target. */
   targetSpaceName: string | null;
   createdAt: string;
+  /**
+   * Set when an admin of the target space revoked the link (278): every
+   * sign-in is refused until they restore it. Absent from a pre-278 server.
+   */
+  targetRevokedAt?: string | null;
   statusSummary: { signedIn: number; signedOut: number; left: number; unreachable: number };
   /** Null when the caller holds no row on this link. */
   mine: SpaceLinkMine | null;
+}
+
+/**
+ * One member's row on an inbound link, as the TARGET's admins see it (278).
+ * The member is named by their own member row in the target, never by a
+ * home-side id. Null when that identity has no member row in the target.
+ */
+export interface SpaceLinkInboundHolder {
+  targetMemberId: EntityId | null;
+  displayName: string | null;
+  status: SpaceLinkStatus;
+  allowSpawn: boolean;
+  spawnBudget: number;
+  expiresAt: string | null;
+  lastUsedAt: string | null;
+}
+
+/** A link INTO a space, for that space's admins (`spaceLinks.inbound.list`). */
+export interface SpaceLinkInboundView {
+  /** The link entity's id (it lives in the home space). */
+  id: EntityId;
+  homeSpaceId: string;
+  homeSpaceName: string | null;
+  targetSpaceId: string;
+  createdAt: string;
+  /** Set while revoked by a target admin; every sign-in is refused. */
+  revokedAt: string | null;
+  revokedByMemberId: EntityId | null;
+  lastCallAt: string | null;
+  holders: SpaceLinkInboundHolder[];
+}
+
+/** One call made into the target through a link (`spaceLinks.inbound.audit`). */
+export interface SpaceLinkInboundAuditEntry {
+  id: string;
+  linkId: EntityId;
+  homeSpaceId: string;
+  targetSpaceId: string;
+  /** The caller's own member row in the target. */
+  targetMemberId: EntityId | null;
+  displayName: string | null;
+  op: string;
+  viaChain: string[];
+  result: 'ok' | 'refused' | 'error';
+  reason: string | null;
+  /** The target-side entity or request id the call produced. */
+  remoteId: string | null;
+  createdAt: string;
 }
 
 /** The body of spaceLinks.add: the home Space is the path's `:spaceId`. */
@@ -83,6 +142,11 @@ export const SpaceLinksAddInputSchema: z.ZodType<SpaceLinksAddInput> = z.object(
 export const SpaceLinksMutationInputSchema: z.ZodType<SpaceLinksMutationInput> = z.object({
   clientMutationId,
 }).strict();
+
+/** The body of spaceLinks.inbound.revoke / restore: the path names the space and the link. */
+export type SpaceLinksInboundMutationInput = SpaceLinksMutationInput;
+
+export const SpaceLinksInboundMutationInputSchema: z.ZodType<SpaceLinksInboundMutationInput> = SpaceLinksMutationInputSchema;
 
 export const SpaceLinksSetSpawnInputSchema: z.ZodType<SpaceLinksSetSpawnInput> = z.object({
   allowSpawn: z.boolean(),

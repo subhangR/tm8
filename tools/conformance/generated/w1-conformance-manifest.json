@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:5513b56c1694d513b34b1c3435bf51f30d44c15336d87b759924d0bd0d53a09b",
+  "catalogDigest": "sha256:60b9a9e508f45de026b136f7f7aa2a8029fd52468402db158a029d4caa84f7e4",
   "catalog": {
-    "total": 288,
-    "v1": 286,
+    "total": 292,
+    "v1": 290,
     "reserved": 2,
-    "http": 286,
+    "http": 290,
     "ws": 1,
-    "registerableV1Http": 284,
+    "registerableV1Http": 288,
     "methods": {
-      "GET": 92,
-      "POST": 141,
+      "GET": 94,
+      "POST": 143,
       "PATCH": 17,
       "DELETE": 18,
       "PUT": 18,
       "WS": 2
     },
     "kinds": {
-      "read": 96,
-      "command": 190,
+      "read": 98,
+      "command": 192,
       "stream": 2
     },
-    "uniqueNames": 288,
-    "uniqueBindings": 287
+    "uniqueNames": 292,
+    "uniqueBindings": 291
   },
   "reservedOperations": [
     "search.query",
@@ -505,6 +505,34 @@
         "operation": "spaceLinks.audit",
         "method": "GET",
         "path": "/v2/space-links/:linkId/audit",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaceLinks.inbound.list",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/space-links/inbound",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaceLinks.inbound.audit",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/space-links/inbound/audit",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaceLinks.inbound.revoke",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/space-links/inbound/:linkId/revoke",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaceLinks.inbound.restore",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/space-links/inbound/:linkId/restore",
         "status": "registered",
         "source": "server-router"
       },
@@ -2420,7 +2448,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 256
+    "unimplementedV1Http": 260
   },
   "schemas": {
     "additive": {
@@ -3313,6 +3341,78 @@
           "space",
           "links",
           "audit"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaceLinks.inbound.list",
+        "noun": "space-link",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaceLinks.inbound.list",
+        "intentTags": [
+          "space",
+          "links",
+          "inbound",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaceLinks.inbound.audit",
+        "noun": "space-link",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaceLinks.inbound.audit",
+        "intentTags": [
+          "space",
+          "links",
+          "inbound",
+          "audit"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaceLinks.inbound.revoke",
+        "noun": "space-link",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaceLinks.inbound.revoke",
+        "intentTags": [
+          "space",
+          "links",
+          "inbound",
+          "revoke"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaceLinks.inbound.restore",
+        "noun": "space-link",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaceLinks.inbound.restore",
+        "intentTags": [
+          "space",
+          "links",
+          "inbound",
+          "restore"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

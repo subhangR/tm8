@@ -570,6 +570,12 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       remove: (linkId) => ops.spaceLinksMutate('spaceLinks.remove', linkId),
       setSpawn: (linkId, allowSpawn, spawnBudget) => ops.spaceLinksSetSpawn(linkId, allowSpawn, spawnBudget),
       audit: (linkId) => ops.spaceLinksAudit(linkId),
+      inbound: {
+        list: (spaceId) => ops.spaceLinksInboundList(spaceId),
+        audit: (spaceId, linkId) => ops.spaceLinksInboundAudit(spaceId, linkId),
+        revoke: (spaceId, linkId) => ops.spaceLinksInboundMutate('spaceLinks.inbound.revoke', spaceId, linkId),
+        restore: (spaceId, linkId) => ops.spaceLinksInboundMutate('spaceLinks.inbound.restore', spaceId, linkId),
+      },
     },
 
     // -- remote servers (W8) --------------------------------------------------

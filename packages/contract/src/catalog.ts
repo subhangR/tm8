@@ -123,6 +123,13 @@ export const OPERATIONS = [
   { name: 'spaceLinks.invoke',   method: 'POST',   path: '/v2/spaces/:spaceId/space-links/:link/invoke', kind: 'command', status: 'v1' },
   // W7: the home-space audit of invokes — the member's own rows, all rows for a home admin.
   { name: 'spaceLinks.audit',    method: 'GET',    path: '/v2/space-links/:linkId/audit',     kind: 'read',    status: 'v1' },
+  // 278 (D2): the TARGET side. An admin of :spaceId sees the links into it and
+  // the calls made through them, and revokes or restores a link. Reads pass a
+  // link; revoke/restore are human-only in SQL and refused through a link.
+  { name: 'spaceLinks.inbound.list',    method: 'GET',  path: '/v2/spaces/:spaceId/space-links/inbound',                 kind: 'read',    status: 'v1' },
+  { name: 'spaceLinks.inbound.audit',   method: 'GET',  path: '/v2/spaces/:spaceId/space-links/inbound/audit',           kind: 'read',    status: 'v1' },
+  { name: 'spaceLinks.inbound.revoke',  method: 'POST', path: '/v2/spaces/:spaceId/space-links/inbound/:linkId/revoke',  kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'spaceLinks.inbound.restore', method: 'POST', path: '/v2/spaces/:spaceId/space-links/inbound/:linkId/restore', kind: 'command', status: 'v1', humanOnly: true },
   // Remote servers (W8, 261): `server` entities over 044's read-only rows.
   // add/adopt/remove are human-only in SQL; no response carries a gate token.
   { name: 'servers.list',   method: 'GET',  path: '/v2/spaces/:spaceId/servers',  kind: 'read',    status: 'v1' },

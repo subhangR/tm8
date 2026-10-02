@@ -38,6 +38,8 @@ import {
   type ServerProbeView,
   type ServerView,
   type SpaceLinkAuditEntry,
+  type SpaceLinkInboundAuditEntry,
+  type SpaceLinkInboundView,
   type CreateInviteInput,
   type InvitePreview,
   type InviteRedemption,
@@ -706,6 +708,29 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
     /** Bare array: own rows, or every row for a home admin (260). */
     spaceLinksAudit(linkId: EntityId): Promise<SpaceLinkAuditEntry[]> {
       return http.call<SpaceLinkAuditEntry[]>('spaceLinks.audit', { params: { linkId } });
+    },
+
+    // 278 (D2): the target side, for an admin of `spaceId`.
+    spaceLinksInboundList(spaceId: SpaceId): Promise<SpaceLinkInboundView[]> {
+      return http.call<SpaceLinkInboundView[]>('spaceLinks.inbound.list', { params: { spaceId } });
+    },
+
+    spaceLinksInboundAudit(spaceId: SpaceId, linkId?: EntityId): Promise<SpaceLinkInboundAuditEntry[]> {
+      return http.call<SpaceLinkInboundAuditEntry[]>('spaceLinks.inbound.audit', {
+        params: { spaceId },
+        ...(linkId === undefined ? {} : { query: { linkId } }),
+      });
+    },
+
+    spaceLinksInboundMutate(
+      op: 'spaceLinks.inbound.revoke' | 'spaceLinks.inbound.restore',
+      spaceId: SpaceId,
+      linkId: EntityId,
+    ): Promise<SpaceLinkInboundView> {
+      return http.call<SpaceLinkInboundView>(op, {
+        params: { spaceId, linkId },
+        body: { clientMutationId: newId('splinkin') },
+      });
     },
 
     // -- remote servers (`servers.*`, W8) -------------------------------------

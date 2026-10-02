@@ -22,6 +22,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import type { SpaceLinkStatus, SpaceLinkView } from '@tm8/contract';
 import { shortDate } from '../kit/time';
 import { SectionAbsent, SectionFrame } from '../settings-space';
+import { InboundLinks } from './InboundLinks';
 import type { SpaceLinkCandidate, SpaceLinksPort } from './port';
 import '../settings-credentials/credentials.css';
 import './space-links.css';
@@ -130,6 +131,7 @@ export function SpaceLinksSection({ port, heading = 'Space links', onOpen }: Spa
           </ul>
         ) : null}
         <AddLink port={port} candidates={open} onChanged={onChanged} />
+        {port.inbound ? <InboundLinks port={port.inbound} /> : null}
       </div>
     </SectionFrame>
   );
@@ -177,6 +179,11 @@ function LinkRow({
             aria-label={`Open ${name}`} onClick={() => onOpen(link.id)}>Open</button>
         ) : null}
       </div>
+      {link.targetRevokedAt ? (
+        <p className="set-spl__fail" data-testid={`space-link-revoked-${link.id}`}>
+          An admin of {name} revoked this link {shortDate(link.targetRevokedAt)}. Signing in is refused until they restore it.
+        </p>
+      ) : null}
       <p className="set-spl__muted">
         {link.statusSummary.signedIn} of this space&apos;s members signed in
         {mine?.expiresAt ? ` · your sign-in expires ${shortDate(mine.expiresAt)}` : ''}

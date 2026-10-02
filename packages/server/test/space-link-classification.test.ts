@@ -51,6 +51,8 @@ const PASSES: Record<string, string> = {
   'messages.attachments.remove': 'unlinks',
   'spaceLinks.list': 'read of the member\'s own links, no token',
   'spaceLinks.audit': 'read of audit rows, no token',
+  'spaceLinks.inbound.list': 'read of the links into B, B admin only in SQL (278); no token',
+  'spaceLinks.inbound.audit': 'read of audit rows scoped to B, B admin only in SQL (278); no token',
   'forms.create': 'refused by INPUT when its delivery can resume or spawn (formDeliveryCanStart)',
   'forms.update': 'refused by INPUT when it sets a delivery that can resume or spawn',
   'forms.responses.save': 'a draft; delivers nothing',
