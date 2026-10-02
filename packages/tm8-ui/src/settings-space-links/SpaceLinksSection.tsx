@@ -5,12 +5,12 @@
  *
  * WHAT A MEMBER MUST BE TOLD (P8), drawn above everything else: the link itself
  * is shared, so every member of this space can see that a link to the target
- * exists; and once cross-space spawn ships, agents working for you in this
- * space will be able to act in the target space as you while you are signed in
- * (future tense: nothing in W6 acts through a link; lead's R4 (ii)). Nothing in W6 reads the Allow spawn switch,
- * so every place that describes it says only: "Allow spawn is stored per link;
- * it is enforced when cross-space spawn ships." (Lead's rule, R3 (ii): every
- * sentence describes only enforcement W6 ships.)
+ * exists; and agents working for you in this space can act in the target
+ * space as you while you are signed in (W7 spaceLinks.invoke). Since W7b
+ * (owner form response 01a0fbb4) the Allow spawn switch is enforced: with it
+ * on, those agents may start, resume or dispatch sessions in the target; off
+ * stops new ones and leaves running ones alone (256). (Lead's rule, R3 (ii):
+ * every sentence describes only enforcement that ships.)
  *
  * Every write is human-only on the server. A refusal it answers (an agent
  * session, a target you are not a member of, anything else) is rendered as a
@@ -110,8 +110,8 @@ export function SpaceLinksSection({ port, heading = 'Space links', onOpen }: Spa
             own sign-in.
           </p>
           <p>
-            Once cross-space spawn ships, agents working for you in this space will be able to act in the target space as you while you are signed in.
-            Allow spawn is stored per link; it is enforced when cross-space spawn ships.
+            Agents working for you in this space can act in the target space as you while you are signed in.
+            Allow spawn lets agents working for you start, resume or dispatch sessions in the target space through this link. Turning it off stops new ones; sessions already running keep running.
           </p>
         </div>
         {notice ? (
@@ -220,14 +220,14 @@ function LinkRow({
                   void run(
                     () => port.setSpawn(link.id, next),
                     next
-                      ? `Allow spawn is on for ${name}. Allow spawn is stored per link; it is enforced when cross-space spawn ships.`
-                      : `Allow spawn is off for ${name}. Allow spawn is stored per link; it is enforced when cross-space spawn ships.`,
+                      ? `Allow spawn is on for ${name}. Allow spawn lets agents working for you start, resume or dispatch sessions in the target space through this link. Turning it off stops new ones; sessions already running keep running.`
+                      : `Allow spawn is off for ${name}. Allow spawn lets agents working for you start, resume or dispatch sessions in the target space through this link. Turning it off stops new ones; sessions already running keep running.`,
                   );
                 }}
               />
               Allow spawn
               <span className="set-spl__spawn-help" id={`set-spl-spawn-help-${link.id}`} data-testid="space-links-spawn-help">
-                Allow spawn is stored per link; it is enforced when cross-space spawn ships.
+                Allow spawn lets agents working for you start, resume or dispatch sessions in the target space through this link. Turning it off stops new ones; sessions already running keep running.
               </span>
             </label>
             <button type="button" className="cred-action" aria-label={`Remove ${name}`} disabled={busy}

@@ -110,7 +110,7 @@ import type { ServerConfig } from '../http/config.js';
 import { fail } from '../http/errors.js';
 import { json, type RequestContext } from '../http/types.js';
 import { claimsFor, commandEnvelope, requireUuidParam } from './context.js';
-import { refuseLinkBearer } from '../identity/link-bearer.js';
+import { refuseLinkBearerSpawn } from '../identity/link-bearer.js';
 import { LIVE_CHAT_COUNTS_SQL, type LiveChatCountRow } from './live-counts.js';
 import { projectLaunchContext } from './launch-context.js';
 import { loadContextV2 } from './services/w2/feed-context-v2.js';
@@ -406,12 +406,12 @@ export class DbGraphPort implements GraphPort {
    * policy follows it rather than the resumer's claims. A token that does not
    * resolve throws, and the launch is refused.
    *
-   * The `authKind === 'link'` half is not live in #898: a link session's
-   * token is refused on every wire (identity-resolver.ts), the registry
-   * refuses a link identity on every operation (its allow-list is empty), and
-   * execution.spawn, execution.resume and execution.dispatch refuse it again
-   * before any launch — see identity/link-bearer.ts. It becomes reachable only
-   * when #884 allow-lists `spaceLinks.invoke`, and fails closed.
+   * The `authKind === 'link'` half is live since W7b: a link session's token
+   * is still refused on every wire (identity-resolver.ts), but
+   * `spaceLinks.invoke` runs execution.spawn, execution.resume and
+   * execution.dispatch in the target as the link session while its row has
+   * allow_spawn on (identity/link-bearer.ts). Its launch is link-bound: B's
+   * default credential only.
    */
   async isLinkBound(auth: GraphAuth, agentToken: string): Promise<boolean> {
     const claims = this.claims(auth);
@@ -3351,9 +3351,10 @@ function registerHandlers(
     const owner = await resolveOwner();
     const envelope = commandEnvelope(ctx);
     const claims = claimsFor(owner, ctx, envelope);
-    // 256 (W7p, ruling A'): a link session launches nothing, before anything
-    // is read or written. See identity/link-bearer.ts.
-    refuseLinkBearer(claims);
+    // 256 (W7p, ruling A') and W7b: a link session launches only through
+    // spaceLinks.invoke under its link (allow_spawn on), before anything is
+    // read or written. See identity/link-bearer.ts.
+    refuseLinkBearerSpawn(ctx, claims);
 
     // Launch v3 gap 4: `newTask` IS the session's task, so naming others (or
     // asking for one to be derived) beside it is refused by name, first.
@@ -3598,11 +3599,12 @@ function registerHandlers(
     const owner = await resolveOwner();
     const envelope = commandEnvelope(ctx);
     const claims = claimsFor(owner, ctx, envelope);
-    // 256 (W7p, ruling A', layer (iii)): nor dispatches — a dispatch derives a
-    // task and may spawn the dispatcher, both before any credential read would
-    // refuse it. Defence in depth behind the wire and registry refusals; see
+    // 256 (W7p, ruling A', layer (iii)) and W7b: nor dispatches, except
+    // through spaceLinks.invoke under its link — a dispatch derives a task and
+    // may spawn the dispatcher, both before any credential read would refuse
+    // it. Defence in depth behind the wire and registry refusals; see
     // identity/link-bearer.ts.
-    refuseLinkBearer(claims);
+    refuseLinkBearerSpawn(ctx, claims);
 
     // Launch v3 gap 4: exactly one of subjectId / newTask. `forceNewTask`
     // re-derives a subject, so it has no meaning beside a task being created.
@@ -3726,8 +3728,9 @@ function registerHandlers(
     const owner = await resolveOwner();
     const envelope = commandEnvelope(ctx);
     const claims = claimsFor(owner, ctx, envelope);
-    // 256 (W7p, ruling A'): nor resumes anything. See identity/link-bearer.ts.
-    refuseLinkBearer(claims);
+    // 256 (W7p, ruling A') and W7b: nor resumes anything, except through
+    // spaceLinks.invoke under its link. See identity/link-bearer.ts.
+    refuseLinkBearerSpawn(ctx, claims);
     const resumeInput = ctx.body as ExecutionResumeInput;
     const result = await rethrowing(() =>
       spawnService.resume(claims, {

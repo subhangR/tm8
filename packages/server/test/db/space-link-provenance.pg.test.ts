@@ -22,9 +22,12 @@ import type { Db, DbClaims, Querier } from '../../src/db/types.js';
 import { claimsFor } from '../../src/facade/context.js';
 import { createSessionIdentityResolver, identityFromSession } from '../../src/http/identity-resolver.js';
 import type { RequestContext } from '../../src/http/types.js';
-import { LINK_BEARER_TRANSPORT_REFUSED } from '../../src/identity/link-bearer.js';
+import { LINK_BEARER_SPAWN_UNADMITTED, LINK_BEARER_TRANSPORT_REFUSED, refuseLinkBearerSpawn } from '../../src/identity/link-bearer.js';
+import type { FacadeDeps } from '../../src/facade/deps.js';
+import { HandlerRegistry } from '../../src/facade/registry.js';
+import { createSpaceLinkInvokeHandlers } from '../../src/facade/handlers/w2/space-link-invoke.js';
 import type { ResolvedAuthSession } from '../../src/identity/pg-auth.js';
-import { formatToken, generateSecret, hashToken } from '../../src/identity/crypto.js';
+import { formatToken, generateSecret, hashToken, parseToken } from '../../src/identity/crypto.js';
 import type { LoopbackOwner } from '../../src/identity/loopback.js';
 import { DbSpaceLinkStore, type SpaceLink } from '../../src/credentials/space-link-store.js';
 import { DbGitHubCredentialStore } from '../../src/credentials/github-credential-store.js';
@@ -308,20 +311,32 @@ describe('W7p the link session and its children carry via_link', () => {
     expect(inProcessClaims(again.session, again.token)).toMatchObject({ authKind: 'link', viaLinkId: L.link.id });
   });
 
-  for (const issuer of ['issue_work_session_agent_session', 'issue_agent_auth_session'] as const) {
-    it(`${issuer} refuses a link session first (SQL backstop); a via_link child mints and stamps the same`, async () => {
-      const count = async () => (await database.query<{ n: number }>(
-        `select count(*)::int as n from public.auth_sessions where parent_session_id = $1`, [L.linkSessionId]))[0]?.n;
-      const before = await count();
-      const error = await mintChild(L.linkClaims, { issuer }).then(() => 'resolved', (err: unknown) => err);
-      expect(await outcome(async () => { if (error !== 'resolved') throw error; })).toBe('42501');
-      expect(String((error as Error).message)).toContain('a space link session cannot mint an agent session');
-      expect(await count()).toBe(before);
-      const child = await childOf(L);
-      const grand = await mintChild(child, { issuer });
-      expect(await sessionRow(grand.id)).toMatchObject({ kind: 'agent', via_link_id: L.link.id, parent_session_id: L.linkSessionId });
-    });
-  }
+  // 277 (W7b, owner form response 01a0fbb4): the SPAWN-path mint admits the
+  // link session itself (its row signed in with spawning allowed — see the
+  // W7b block below); `issue_agent_auth_session`, which no spawn calls, still
+  // refuses it first.
+  it('issue_agent_auth_session refuses a link session first (SQL backstop); a via_link child mints and stamps the same', async () => {
+    const issuer = 'issue_agent_auth_session';
+    const count = async () => (await database.query<{ n: number }>(
+      `select count(*)::int as n from public.auth_sessions where parent_session_id = $1`, [L.linkSessionId]))[0]?.n;
+    const before = await count();
+    const error = await mintChild(L.linkClaims, { issuer }).then(() => 'resolved', (err: unknown) => err);
+    expect(await outcome(async () => { if (error !== 'resolved') throw error; })).toBe('42501');
+    expect(String((error as Error).message)).toContain('a space link session cannot mint an agent session');
+    expect(await count()).toBe(before);
+    const child = await childOf(L);
+    const grand = await mintChild(child, { issuer });
+    expect(await sessionRow(grand.id)).toMatchObject({ kind: 'agent', via_link_id: L.link.id, parent_session_id: L.linkSessionId });
+  });
+
+  it('issue_work_session_agent_session (277): the link session mints a stamped child; a via_link child mints the same', async () => {
+    const issuer = 'issue_work_session_agent_session';
+    const minted = await mintChild(L.linkClaims, { issuer });
+    expect(await sessionRow(minted.id)).toMatchObject({ kind: 'agent', via_link_id: L.link.id, parent_session_id: L.linkSessionId });
+    const child = await childOf(L);
+    const grand = await mintChild(child, { issuer });
+    expect(await sessionRow(grand.id)).toMatchObject({ kind: 'agent', via_link_id: L.link.id, parent_session_id: L.linkSessionId });
+  });
 
   it('a grandchild inherits via_link, parented flat on the link session', async () => {
     const child = await mintChild(L.mintClaims);
@@ -450,11 +465,14 @@ describe('W7p 206 — a link-bound caller gets the target default only, while it
   let child: DbClaims;
   beforeAll(async () => { L = await linked(); child = await childOf(L); });
 
-  // Ruling A': the link session's own claims read no spawn credential at all;
-  // only an agent minted under it takes the link admission.
-  it('link session refused; via_link child (authKind agent) still admitted', async () => {
-    expect(await outcome(() => read206(L.linkClaims))).toBe('42501');
-    expect(await outcome(() => read206(L.linkClaims, null, 'github'))).toBe('42501');
+  // 277 (W7b): the link session's own claims take the same link admission as
+  // an agent minted under it (ruling A' narrowed by owner form response
+  // 01a0fbb4): the target's default only. Without its link claim: 42501.
+  it('link session admitted to the default only (277); without its link claim refused; via_link child admitted', async () => {
+    expect(await read206(L.linkClaims)).toMatchObject({ credentialId: fixture.antDefaultB });
+    expect(await read206(L.linkClaims, null, 'github')).toMatchObject({ credentialId: fixture.ghDefaultB });
+    expect(await outcome(() => read206(L.linkClaims, fixture.antDefaultB))).toBe('42501');
+    expect(await outcome(() => read206({ ...L.linkClaims, viaLinkId: undefined }))).toBe('42501');
     expect(child.authKind).toBe('agent');
     expect(child.viaLinkId).toBe(L.link.id);
     expect(await read206(child)).toMatchObject({ credentialId: fixture.antDefaultB });
@@ -630,8 +648,10 @@ describe("W7p 206 on 239's body — the private-owner gate survives the link adm
       // Two layers: the link guard refuses any pinned id; with it removed, 239's
       // gate refuses the same call ('239 not_usable'); with both removed, 'ok'.
       expect(await refusedBy(() => read206(child, ofH3))).toBe('link guard');
-      // The link session itself stops one step earlier (ruling A').
-      expect(await refusedBy(() => read206(L.linkClaims, ofH3))).toBe('link session');
+      // The link session itself takes the same link guard since 277 (W7b);
+      // without its link claim it stops one step earlier (ruling A').
+      expect(await refusedBy(() => read206(L.linkClaims, ofH3))).toBe('link guard');
+      expect(await refusedBy(() => read206({ ...L.linkClaims, viaLinkId: undefined }, ofH3))).toBe('link session');
     });
   });
 
@@ -861,3 +881,188 @@ async function sessionWs(id: string): Promise<string> {
   const [row] = await database.query<{ ws: string }>(`select work_session_id::text as ws from public.auth_sessions where id = $1`, [id]);
   return row!.ws;
 }
+
+// ---------------------------------------------------------------------------
+// W7b (277, lane L4; owner form response 01a0fbb4, decisions D1/D4/D8): an
+// agent G in A spawns into B through `spaceLinks.invoke` while H's row has
+// allow_spawn on. No budget. The executor, the link store and every SQL hop
+// are the production ones; `execution.spawn` on B is a stand-in that does the
+// spawn path's DB half under the inner (link) claims — the layer (iii)
+// admission, the link-bound credential read, `execution_spawn` and the mint
+// (DbGraphPort) — because this node runs no agent binary.
+// ---------------------------------------------------------------------------
+
+describe.sequential('W7b cross-space spawn through a link (277)', () => {
+  let L: Linked;
+  let sourceSession: string;
+  let gIdentity: RequestContext['identity'];
+  const spawned: Array<{ workSessionId: string; credentialId: string; agentSessionId: string }> = [];
+  const graph = () => new DbGraphPort(db);
+
+  /** B's execution.spawn, minus the PTY: what SpawnService does in SQL, as the inner identity. */
+  function standInSpawn(registry: HandlerRegistry): void {
+    registry.register('execution.spawn', async (ctx) => {
+      const claims = claimsFor(NOT_THE_OWNER, ctx);
+      refuseLinkBearerSpawn(ctx, claims);
+      const credential = await read206(claims) as { credentialId: string };
+      const created = await graph().createWorkSession(claims, {
+        spaceId: fixture.spaceB, teamMemberId: fixture.personaB, parentSessionId: null, taskIds: [],
+        projectId: null, workdirMode: 'scratch', workdirPath: `/tmp/w7b-${randomUUID()}`, baseRef: null,
+        mode: 'worker', model: 'claude-sonnet-5', agentTool: 'claude-code', title: 'w7b child',
+        nodeId: null, confirmUntrusted: false, clientMutationId: `w7b-ws-${randomUUID()}`,
+      });
+      const token = await graph().issueWorkSessionAgentToken(claims, created.sessionId, fixture.personaB);
+      const agentSessionId = parseToken(token)!.sessionId;
+      spawned.push({ workSessionId: created.sessionId, credentialId: credential.credentialId, agentSessionId });
+      return created.commandResult;
+    });
+  }
+
+  function harness() {
+    const registry = new HandlerRegistry();
+    standInSpawn(registry);
+    const facade = { db, config: {}, owner: async () => NOT_THE_OWNER } as unknown as FacadeDeps;
+    const { invoke } = createSpaceLinkInvokeHandlers(registry, facade, store, async (ctx) => claimsFor(NOT_THE_OWNER, ctx));
+    return (input: Record<string, unknown>) => invoke({
+      params: { spaceId: fixture.spaceA, link: L.link.id }, query: new URLSearchParams(), headers: {},
+      body: { op: 'execution.spawn', input: { spaceId: fixture.spaceB, teamMemberId: fixture.personaB, clientMutationId: `w7b-${randomUUID()}`, ...input } },
+      identity: gIdentity, requestId: `w7b-${randomUUID()}`,
+    } as unknown as RequestContext) as Promise<{ linkId: string; auditId: string; result: { entity?: { id: string } } }>;
+  }
+
+  const audits = async () => store.listAudit(L.human, L.link.id, { limit: 200 });
+
+  beforeAll(async () => {
+    L = await linked();
+    // G: H's agent in A, on a work session in A — the caller and the source.
+    sourceSession = await workSession(fixture.spaceA, fixture.personaA, fixture.memberHA);
+    const secret = generateSecret();
+    const row = await db.rpc<{ id: string }>(L.human, 'issue_agent_auth_session', [
+      sourceSession, fixture.personaA, hashToken(secret), new Date(Date.now() + 3_600_000).toISOString(), 'w7b G',
+    ]);
+    const resolve = createSessionIdentityResolver({ db, owner: async () => NOT_THE_OWNER, spaceSessions: 'agents' });
+    gIdentity = await resolve({ authorization: `Bearer ${formatToken(row.id, secret)}` },
+      { remoteAddress: '203.0.113.9', disableAutoOwner: true });
+    expect(gIdentity).toMatchObject({ authKind: 'agent', sessionSpaceId: fixture.spaceA, workSessionId: sourceSession });
+  });
+
+  it('allow_spawn on: G spawns in B — the child is pinned to B, stamped with the link, on B\'s default credential', async () => {
+    const before = spawned.length;
+    const result = await harness()({});
+    expect(spawned.length).toBe(before + 1);
+    const child = spawned.at(-1)!;
+    expect(result).toMatchObject({ linkId: L.link.id, targetSpaceId: fixture.spaceB });
+    expect(result.result.entity?.id).toBe(child.workSessionId);
+    expect(child.credentialId).toBe(fixture.antDefaultB);
+    const [space] = await database.query<{ space_id: string }>(
+      `select space_id::text from public.entities where id = $1`, [child.workSessionId]);
+    expect(space?.space_id).toBe(fixture.spaceB);
+    const [agent] = await database.query<{ kind: string; via_link_id: string; parent_session_id: string; space_id: string }>(
+      `select kind, via_link_id::text, parent_session_id::text, space_id::text from public.auth_sessions
+        where work_session_id = $1 and revoked_at is null`, [child.workSessionId]);
+    expect(agent).toMatchObject({ kind: 'agent', via_link_id: L.link.id, parent_session_id: L.linkSessionId, space_id: fixture.spaceB });
+  });
+
+  it('provenance is recorded on the child in B and in the link audit in A', async () => {
+    const child = spawned.at(-1)!;
+    expect(await db.rpc(L.human, 'space_link_spawn_for', [child.workSessionId])).toMatchObject({
+      workSessionId: child.workSessionId, linkId: L.link.id, targetSpaceId: fixture.spaceB,
+      sourceSpaceId: fixture.spaceA, sourceSessionId: sourceSession, memberId: fixture.memberHB, op: 'execution.spawn',
+    });
+    const row = (await audits()).find((a) => a.remoteId === child.workSessionId);
+    expect(row).toMatchObject({
+      op: 'execution.spawn', result: 'ok', reason: null, linkId: L.link.id,
+      homeSpaceId: fixture.spaceA, targetSpaceId: fixture.spaceB, workSessionId: sourceSession,
+    });
+  });
+
+  it('allow_spawn off: refused at home (spawn_switch_off), audited with the link, B\'s handler never runs', async () => {
+    await store.setSpawn(L.human, { linkId: L.link.id, allowSpawn: false });
+    const before = spawned.length;
+    try {
+      await expect(harness()({})).rejects.toMatchObject({
+        code: 'forbidden', details: { reason: 'space_link_refused', refusal: 'spawn_switch_off' },
+      });
+    } finally {
+      await store.setSpawn(L.human, { linkId: L.link.id, allowSpawn: true });
+    }
+    expect(spawned.length).toBe(before);
+    expect((await audits())[0]).toMatchObject({ op: 'execution.spawn', result: 'refused', reason: 'spawn_switch_off', linkId: L.link.id });
+    // Positive on the same link, switched back on.
+    await harness()({});
+    expect(spawned.length).toBe(before + 1);
+  });
+
+  it('explicit credentials are still refused at home (spawn_explicit_credentials), whatever the switch', async () => {
+    const before = spawned.length;
+    for (const extra of [{ credentialSources: { anthropic: 'space' } }, { spaceCredentialIds: { anthropic: fixture.antDefaultB } }]) {
+      await expect(harness()(extra)).rejects.toMatchObject({ details: { refusal: 'spawn_explicit_credentials' } });
+    }
+    expect(spawned.length).toBe(before);
+  });
+
+  it('SQL backstop with the switch off: the link session mints nothing and reads no credential', async () => {
+    await store.setSpawn(L.human, { linkId: L.link.id, allowSpawn: false });
+    try {
+      expect(await outcome(() => mintChild(L.linkClaims, { issuer: 'issue_work_session_agent_session' }))).toBe('42501');
+      expect(await outcome(() => read206(L.linkClaims))).toBe('42501');
+    } finally {
+      await store.setSpawn(L.human, { linkId: L.link.id, allowSpawn: true });
+    }
+    // A link session without its link claim never mints, switch on or off.
+    expect(await outcome(() => mintChild({ ...L.linkClaims, viaLinkId: undefined }, { issuer: 'issue_work_session_agent_session' })))
+      .toBe('42501');
+  });
+
+  it('layer (iii): B\'s spawn handler refuses a link identity the executor did not admit', async () => {
+    const registry = new HandlerRegistry();
+    standInSpawn(registry);
+    const use = await store.use(L.human, L.link.id);
+    const identity = identityFromSession(use.session, use.token, 'agents');
+    const handler = (registry as unknown as { handlers: Map<string, (ctx: RequestContext) => Promise<unknown>> }).handlers.get('execution.spawn')!;
+    await expect(handler({ opName: 'execution.spawn', identity, body: {}, requestId: `w7b-${randomUUID()}` } as unknown as RequestContext))
+      .rejects.toMatchObject({ code: 'forbidden', message: LINK_BEARER_SPAWN_UNADMITTED });
+  });
+
+  it('record_space_link_spawn: only the link session, only for a session minted under its link; a foreign source is dropped', async () => {
+    const child = spawned[0]!;
+    const childClaims = await claimsForToken((await mintChild(L.mintClaims)).token);
+    // A via_link CHILD is not the link session.
+    expect(await outcome(() => db.rpc(childClaims, 'record_space_link_spawn', [child.workSessionId, 'execution.spawn', null]))).toBe('42501');
+    // A B work session that never ran under the link.
+    const plain = await workSession(fixture.spaceB, fixture.personaB, fixture.memberHB);
+    expect(await outcome(() => db.rpc(L.linkClaims, 'record_space_link_spawn', [plain, 'execution.spawn', sourceSession]))).toBe('42501');
+    // First record wins; a source session outside the home space is dropped, not trusted.
+    expect(await db.rpc(L.linkClaims, 'record_space_link_spawn', [child.workSessionId, 'execution.resume', null])).toBe(false);
+    const minted = await mintChild(L.linkClaims, { issuer: 'issue_work_session_agent_session' });
+    const elsewhere = await workSession(fixture.spaceB, fixture.personaB, fixture.memberHB);
+    expect(await db.rpc(L.linkClaims, 'record_space_link_spawn', [minted.workSessionId, 'execution.spawn', elsewhere])).toBe(true);
+    expect(await db.rpc(L.human, 'space_link_spawn_for', [minted.workSessionId])).toMatchObject({ sourceSessionId: null, sourceSpaceId: fixture.spaceA });
+    // Any member of B reads it (H4 is one); the space pin decides membership.
+    expect(await db.rpc(await humanClaims('H4'), 'space_link_spawn_for', [minted.workSessionId])).toMatchObject({ linkId: L.link.id });
+  });
+
+  // The reply path (D8 brief): the child is an agent pinned to B and
+  // link-bound. 256 refuses a via_link caller's spaceLinks.invoke (no link
+  // chaining, the #884 cell above), and the pin hides A, so a
+  // `message send --to <A-session>` from the child is refused. The defined
+  // path: the child posts on its OWN work session in B, and the parent in A
+  // reads it through its link (`tm8 --space <alias> message list <child>`),
+  // which runs as the link session — a member of B.
+  it('reply path: the child cannot post to the A session; it posts on its own B session and the link session reads it', async () => {
+    const child = spawned[0]!;
+    const minted = await mintChild(L.linkClaims, { issuer: 'issue_work_session_agent_session', workSessionId: child.workSessionId });
+    const childClaims = await claimsForToken(minted.token);
+    expect(childClaims).toMatchObject({ authKind: 'agent', viaLinkId: L.link.id, sessionSpaceId: fixture.spaceB });
+    const post = (anchor: string) => db.tx(childClaims, (q) => q.rpc<{ messageIds: string[] }>('w2_post_message_batch', [
+      [anchor], 'w7b: done', null, [], [], null, null, `w7b-msg-${randomUUID()}`,
+    ]));
+    expect(await outcome(() => post(sourceSession))).not.toBe('ok');
+    expect(await outcome(() => store.resolveInvoke(childClaims, fixture.spaceB, L.link.id))).toBe('42501');
+    const posted = await post(child.workSessionId);
+    const messageId = posted.messageIds[0]!;
+    const seen = await db.query<{ entity_id: string }>(L.linkClaims,
+      `select entity_id::text from public.messages where anchor_id = $1`, [child.workSessionId]);
+    expect(seen.map((r) => r.entity_id)).toContain(messageId);
+  });
+});

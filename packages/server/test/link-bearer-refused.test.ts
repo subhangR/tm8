@@ -8,9 +8,11 @@
  *   independently of layer (i)'s transport refusal
  *   (link-session-transport.test.ts).
  * - Layer (iii), defence in depth: `execution.spawn`, `execution.resume`,
- *   `execution.dispatch` and the spawn-credential read refuse a link bearer
- *   themselves. These cells call the RAW handler, past the registry, so each
- *   refusal is its own red.
+ *   `execution.dispatch` refuse a link bearer themselves unless the
+ *   `spaceLinks.invoke` executor admitted exactly that op on that context
+ *   under its link claim (W7b, owner form response 01a0fbb4), and the
+ *   spawn-credential read refuses one without its link claim. These cells
+ *   call the RAW handler, past the registry, so each refusal is its own red.
  *
  * SQL's refusals (`read_space_credential_for_spawn`, the spawn-path mint) have
  * their cells in db/space-link-provenance.pg.test.ts. Every cell asserts the
@@ -28,7 +30,7 @@ import type { Db, DbClaims, Querier } from '../src/db/types.js';
 import { registerExecutionHandlers } from '../src/facade/execution-handlers.js';
 import { HandlerRegistry } from '../src/facade/registry.js';
 import type { RequestContext, RequestIdentity } from '../src/http/types.js';
-import { admitLinkInvoke, LINK_BEARER_OP_REFUSED, LINK_BEARER_SPAWN_REFUSED } from '../src/identity/link-bearer.js';
+import { admitLinkInvoke, LINK_BEARER_OP_REFUSED, LINK_BEARER_SPAWN_REFUSED, LINK_BEARER_SPAWN_UNADMITTED } from '../src/identity/link-bearer.js';
 
 const SPACE = '019f9896-928d-79b6-ba1c-1cdcc1d30a6f';
 const TEAMMATE = '019f9896-928d-7c09-aac0-021c7d4652c6';
@@ -103,6 +105,11 @@ async function rejection(run: () => unknown): Promise<unknown> {
 function expectOpRefusal(error: unknown): void {
   expect(error).toBeInstanceOf(CollabError);
   expect(error).toMatchObject({ code: 'forbidden', message: LINK_BEARER_OP_REFUSED, details: { sqlstate: '42501' } });
+}
+
+function expectUnadmitted(error: unknown): void {
+  expect(error).toBeInstanceOf(CollabError);
+  expect(error).toMatchObject({ code: 'forbidden', message: LINK_BEARER_SPAWN_UNADMITTED, details: { sqlstate: '42501' } });
 }
 
 function expectLinkRefusal(error: unknown): void {
@@ -311,51 +318,84 @@ describe('#884 layer (ii) — the in-process invoke marker', () => {
   });
 });
 
-describe("W7p layer (iii) ruling A' — a link bearer spawns, resumes and reads a spawn credential nowhere", () => {
-  it('execution.spawn: a link bearer gets 42501 and nothing launches; a via_link agent launches', async () => {
+describe("W7p layer (iii), narrowed by W7b — a link bearer spawns, resumes or dispatches only as the invoke executor's admitted op", () => {
+  // W7b (L4, owner form response 01a0fbb4): spaceLinks.invoke may run these
+  // three as the link session while its row has allow_spawn on. The handler
+  // admits a link identity only on a context `admitLinkInvoke` marked for that
+  // exact op, and only with its link claim; anything else is refused before a
+  // read or a launch.
+  const viaRegistry = (f: ReturnType<typeof fixture>, op: OperationName, ctx: RequestContext) => {
+    admitLinkInvoke(ctx, op);
+    return f.framed(op)(ctx);
+  };
+
+  it('execution.spawn: an unadmitted link bearer gets 42501 and nothing launches; admitted, it launches; a via_link agent launches', async () => {
     const f = fixture();
-    expectLinkRefusal(await rejection(() => f.handler('execution.spawn')(context('execution.spawn', linkBearer, spawnBody))));
+    expectUnadmitted(await rejection(() => f.handler('execution.spawn')(context('execution.spawn', linkBearer, spawnBody))));
     expect(f.spawn).not.toHaveBeenCalled();
-    await f.handler('execution.spawn')(context('execution.spawn', viaLinkAgent, spawnBody));
+    // Admitted for ANOTHER op: still refused.
+    const crossed = context('execution.spawn', linkBearer, spawnBody);
+    admitLinkInvoke(crossed, 'execution.resume');
+    expectUnadmitted(await rejection(() => f.handler('execution.spawn')(crossed)));
+    // Admitted, but the identity lost its link claim: refused.
+    const { viaLinkId: _drop, ...unlinked } = linkBearer;
+    expectUnadmitted(await rejection(() => viaRegistry(f, 'execution.spawn', context('execution.spawn', unlinked, spawnBody))));
+    expect(f.spawn).not.toHaveBeenCalled();
+    await viaRegistry(f, 'execution.spawn', context('execution.spawn', linkBearer, spawnBody));
     expect(f.spawn).toHaveBeenCalledOnce();
-    expect(f.spawn.mock.calls[0]?.[0]).toMatchObject({ authKind: 'agent', viaLinkId: LINK });
+    expect(f.spawn.mock.calls[0]?.[0]).toMatchObject({ authKind: 'link', viaLinkId: LINK });
+    await f.handler('execution.spawn')(context('execution.spawn', viaLinkAgent, spawnBody));
+    expect(f.spawn).toHaveBeenCalledTimes(2);
+    expect(f.spawn.mock.calls[1]?.[0]).toMatchObject({ authKind: 'agent', viaLinkId: LINK });
   });
 
-  it('execution.resume: a link bearer gets 42501 and nothing resumes; a via_link agent resumes', async () => {
+  it('the spawn admission is single-use: a second dispatch on the same context is refused', async () => {
+    const f = fixture();
+    const ctx = context('execution.spawn', linkBearer, spawnBody);
+    await viaRegistry(f, 'execution.spawn', ctx);
+    expectUnadmitted(await rejection(() => f.handler('execution.spawn')(ctx)));
+    expect(f.spawn).toHaveBeenCalledOnce();
+  });
+
+  it('execution.resume: an unadmitted link bearer gets 42501 and nothing resumes; admitted, it resumes; a via_link agent resumes', async () => {
     const f = fixture();
     const body = { clientMutationId: 'mutation-w7p-link-resume' };
-    expectLinkRefusal(await rejection(() =>
+    expectUnadmitted(await rejection(() =>
       f.handler('execution.resume')(context('execution.resume', linkBearer, body, { id: SESSION }))));
     expect(f.resume).not.toHaveBeenCalled();
-    await f.handler('execution.resume')(context('execution.resume', viaLinkAgent, body, { id: SESSION }));
+    await viaRegistry(f, 'execution.resume', context('execution.resume', linkBearer, body, { id: SESSION }));
     expect(f.resume).toHaveBeenCalledOnce();
-    expect(f.resume.mock.calls[0]?.[0]).toMatchObject({ authKind: 'agent', viaLinkId: LINK });
+    await f.handler('execution.resume')(context('execution.resume', viaLinkAgent, body, { id: SESSION }));
+    expect(f.resume).toHaveBeenCalledTimes(2);
+    expect(f.resume.mock.calls[1]?.[0]).toMatchObject({ authKind: 'agent', viaLinkId: LINK });
   });
 
-  it('execution.dispatch: a link bearer gets 42501 before the anchor rpc or any spawn; a via_link agent proceeds', async () => {
+  it('execution.dispatch: an unadmitted link bearer gets 42501 before the anchor rpc or any spawn; admitted, it proceeds', async () => {
     const f = fixture();
     const body = { clientMutationId: 'mutation-w7p-link-dispatch', spaceId: SPACE, subjectId: TEAMMATE };
-    expectLinkRefusal(await rejection(() => f.handler('execution.dispatch')(context('execution.dispatch', linkBearer, body))));
+    expectUnadmitted(await rejection(() => f.handler('execution.dispatch')(context('execution.dispatch', linkBearer, body))));
     expect(f.db.rpc).not.toHaveBeenCalled();
     expect(f.db.tx).not.toHaveBeenCalled();
     expect(f.spawn).not.toHaveBeenCalled();
-    // Control: the same dispatch as a via_link agent reaches the anchor rpc
-    // (the mock answers no task id, so it stops there, past the refusal).
-    expect(await rejection(() => f.handler('execution.dispatch')(context('execution.dispatch', viaLinkAgent, body))))
+    // Admitted: reaches the anchor rpc (the mock answers no task id, so it
+    // stops there, past the refusal) as the link session.
+    expect(await rejection(() => viaRegistry(f, 'execution.dispatch', context('execution.dispatch', linkBearer, body))))
       .toMatchObject({ message: `derive_task_for_entity returned no task id for ${TEAMMATE}` });
-    expect(vi.mocked(f.db.rpc).mock.calls[0]?.[0]).toMatchObject({ authKind: 'agent', viaLinkId: LINK });
+    expect(vi.mocked(f.db.rpc).mock.calls[0]?.[0]).toMatchObject({ authKind: 'link', viaLinkId: LINK });
     expect(vi.mocked(f.db.rpc).mock.calls[0]?.[1]).toBe('public.derive_task_for_entity');
   });
 
-  it('readForSpawn: a link bearer gets 42501 before any database call; a via_link agent reaches 206', async () => {
+  it('readForSpawn: a link bearer without its link claim gets 42501 before any database call; with it (and a via_link agent) reaches 206', async () => {
     const rpc = vi.fn(async (..._args: unknown[]) => { throw new Error('reached read_space_credential_for_spawn'); });
     const store = new DbSpaceCredentialStore({ db: { rpc, query: vi.fn(), tx: vi.fn(), end: vi.fn() } as unknown as Db, dataDir: '/nonexistent' });
-    const claims = (authKind: DbClaims['authKind']): DbClaims =>
-      ({ identityId: 'identity-h', authKind, viaLinkId: LINK, sessionSpaceId: SPACE, requestId: 'request-w7p' }) as DbClaims;
-    expectLinkRefusal(await rejection(() => store.readForSpawn(claims('link'), SPACE, 'anthropic')));
+    const claims = (authKind: DbClaims['authKind'], linked = true): DbClaims =>
+      ({ identityId: 'identity-h', authKind, ...(linked ? { viaLinkId: LINK } : {}), sessionSpaceId: SPACE, requestId: 'request-w7p' }) as DbClaims;
+    expectLinkRefusal(await rejection(() => store.readForSpawn(claims('link', false), SPACE, 'anthropic')));
     expect(rpc).not.toHaveBeenCalled();
-    expect(await rejection(() => store.readForSpawn(claims('agent'), SPACE, 'anthropic')))
-      .toMatchObject({ message: 'reached read_space_credential_for_spawn' });
-    expect(rpc.mock.calls[0]?.[1]).toBe('read_space_credential_for_spawn');
+    for (const kind of ['link', 'agent'] as const) {
+      expect(await rejection(() => store.readForSpawn(claims(kind), SPACE, 'anthropic')))
+        .toMatchObject({ message: 'reached read_space_credential_for_spawn' });
+    }
+    expect(rpc.mock.calls.map((call) => call[1])).toEqual(['read_space_credential_for_spawn', 'read_space_credential_for_spawn']);
   });
 });
