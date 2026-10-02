@@ -249,6 +249,10 @@ describe('W1 frozen-row schema amendments', () => {
       // `server` has none in W6.
       'space_link',
       'server',
+      // 2026-10-02: `story` — one line of work: its roots by `contains`, and
+      // everything that follows from them (282). Creatable through the
+      // ordinary envelope, like `drawing`.
+      'story',
     ]);
     expect(CoreEntityKindSchema.safeParse('ui_template').success).toBe(false);
   });
