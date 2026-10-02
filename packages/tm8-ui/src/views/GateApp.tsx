@@ -2554,6 +2554,7 @@ export function GateApp(props: GateAppProps = {}) {
                      a session is created by RUNNING a task, whose Run lives
                      on the hosted tile itself. */
                   renderRootList={regions.renderRootList}
+                  newChatRequest={regions.newChatRequest}
                   root={regions.root}
                   onRoot={regions.onRoot}
                   kindCell={regions.kindCell}

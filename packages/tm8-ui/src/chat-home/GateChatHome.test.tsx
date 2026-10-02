@@ -59,7 +59,21 @@ describe('dashboard route', () => {
           : (node.parentElement?.className ?? '?'),
     );
     expect(where.every((w) => w === 'list' || w === 'head'), where.join(',')).toBe(true);
-    fireEvent.click(view.getByRole('button', { name: /^New chat$/ }));
+    // The list header's chat icon. The icon rail draws the same button
+    // (task 01a0fb09) — its own case follows.
+    const header = view.container.querySelector<HTMLElement>('.tch-rootbar');
+    expect(header).toBeTruthy();
+    fireEvent.click(within(header!).getByRole('button', { name: /^New chat$/ }));
+    expect(await view.findByText(/New conversation — pick a mode/)).toBeTruthy();
+  });
+
+  it('the icon rail’s New chat opens the same composer — the screen performs it, the rail only asks', async () => {
+    const view = render(<GateApp />);
+    await view.findByTestId('chat-home-screen');
+    await waitFor(() =>
+      expect(view.container.querySelector('.tch-title strong')?.textContent).toBe('Plan the launch sequence'),
+    );
+    fireEvent.click(within(view.getByTestId('home-rail')).getByRole('button', { name: /^New chat$/ }));
     expect(await view.findByText(/New conversation — pick a mode/)).toBeTruthy();
   });
 

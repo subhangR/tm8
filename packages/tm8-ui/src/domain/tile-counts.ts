@@ -37,7 +37,15 @@ export interface TileCountBadge {
   label: string;
   /** Human messages receive the visual attention treatment requested by 112. */
   emphasis?: 'human';
+  /**
+   * The viewer's row-view switch that hides this badge (`panels/list/row-view.ts`).
+   * Data here so the view never maps a badge id to a kind itself. `messages`
+   * is the undivided pre-109 total, which both message switches cover.
+   */
+  facet: TileCountFacet;
 }
+
+export type TileCountFacet = 'docs_memories' | 'human_messages' | 'agent_messages' | 'messages';
 
 export function tileCountBadgesOf(counters: EntityCounters): TileCountBadge[] {
   const badges: TileCountBadge[] = [];
@@ -48,6 +56,7 @@ export function tileCountBadgesOf(counters: EntityCounters): TileCountBadge[] {
       relation: { type: 'attached_to', direction: 'incoming' },
       count: counters.docs,
       label: 'doc',
+      facet: 'docs_memories',
     });
   }
   if (typeof counters.memories === 'number' && counters.memories > 0) {
@@ -57,18 +66,19 @@ export function tileCountBadgesOf(counters: EntityCounters): TileCountBadge[] {
       relation: { type: 'remembers', direction: 'outgoing' },
       count: counters.memories,
       label: 'memory',
+      facet: 'docs_memories',
     });
   }
   if (typeof counters.humanMessages === 'number' && counters.humanMessages > 0) {
-    badges.push({ kind: 'human-message', icon: 'message', count: counters.humanMessages, label: 'human message', emphasis: 'human' });
+    badges.push({ kind: 'human-message', icon: 'message', count: counters.humanMessages, label: 'human message', emphasis: 'human', facet: 'human_messages' });
   }
   if (typeof counters.agentMessages === 'number' && counters.agentMessages > 0) {
-    badges.push({ kind: 'agent-message', icon: 'message', count: counters.agentMessages, label: 'agent message' });
+    badges.push({ kind: 'agent-message', icon: 'message', count: counters.agentMessages, label: 'agent message', facet: 'agent_messages' });
   }
   // Rolling compatibility: an older server cannot truthfully split the total.
   // Preserve its existing neutral badge until its projection includes 109.
   if (counters.humanMessages === undefined && counters.agentMessages === undefined && counters.messages > 0) {
-    badges.push({ kind: 'message', icon: 'message', count: counters.messages, label: 'message' });
+    badges.push({ kind: 'message', icon: 'message', count: counters.messages, label: 'message', facet: 'messages' });
   }
   return badges;
 }
