@@ -201,13 +201,17 @@ describe('the home icon rail', () => {
     await waitFor(() => view.getByTestId('home-page'));
     const rail = view.getByTestId('home-rail');
     /* A fresh profile starts collapsed — which is only a defensible default
-       because the collapsed rail still prints every word under its mark, so
-       the whole map is legible on first paint. */
+       because the collapsed rail still prints every word under its mark, and
+       every closed group still prints its header (task 01a0fb09), so the
+       whole map is legible on first paint. */
     expect(rail.dataset.collapsed).toBe('true');
 
-    const captions = [...rail.querySelectorAll('.hr-rail__label')].map((n) => n.textContent);
-    expect(captions).toContain('Tasks');
-    expect(captions).toContain('Docs');
+    const captions = () => [...rail.querySelectorAll('.hr-rail__label')].map((n) => n.textContent);
+    expect(captions()).toContain('Tasks');
+    /* Docs sits in a closed group — named by its header, one click away. */
+    expect(captions()).not.toContain('Docs');
+    fireEvent.click(within(rail).getByRole('button', { name: 'Library' }));
+    expect(captions()).toContain('Docs');
     expect(within(rail).getByRole('button', { name: /^Tasks/ })).toBeTruthy();
 
     /* A collapsed row still navigates: it switches Home's root list. */
@@ -219,6 +223,32 @@ describe('the home icon rail', () => {
     await waitFor(() => expect(rail.dataset.collapsed).toBe('false'));
 
     view.unmount();
+  });
+
+  it('remembers pins and open groups across a remount, under the create buttons (task 01a0fb09)', async () => {
+    const first = render(<GateApp />);
+    await waitFor(() => first.getByTestId('home-rail'));
+    const rail = first.getByTestId('home-rail');
+    /* The three quick-create buttons lead the rail. */
+    expect(within(rail).getByRole('group', { name: 'Create' })).toBeTruthy();
+    expect(within(rail).getByRole('button', { name: 'New task' })).toBeTruthy();
+    expect(within(rail).getByRole('button', { name: 'New chat' })).toBeTruthy();
+    /* Open Code, pin Docs out of Library, unpin Sessions. */
+    fireEvent.click(within(rail).getByRole('button', { name: 'Code' }));
+    fireEvent.click(within(rail).getByRole('button', { name: 'Library' }));
+    fireEvent.click(within(rail).getByRole('button', { name: 'Pin Docs' }));
+    fireEvent.click(within(rail).getByRole('button', { name: 'Unpin Sessions' }));
+    first.unmount();
+
+    const second = render(<GateApp />);
+    await waitFor(() => second.getByTestId('home-rail'));
+    const again = second.getByTestId('home-rail');
+    const pinned = within(within(again).getByRole('group', { name: 'Pinned' }))
+      .getAllByRole('button', { name: /^(Chats|Tasks|Sessions|Docs)$/ })
+      .map((button) => button.textContent);
+    expect(pinned).toEqual(['Chats', 'Tasks', 'Docs']);
+    expect(within(again).getByRole('button', { name: 'Code' }).getAttribute('aria-expanded')).toBe('true');
+    second.unmount();
   });
 
   it('remembers being EXPANDED — the choice outlives the mount', async () => {

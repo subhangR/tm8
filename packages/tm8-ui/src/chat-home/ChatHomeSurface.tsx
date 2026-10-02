@@ -73,6 +73,7 @@ export interface ChatHomeSurfaceProps {
   onStageChange?: ChatHomeScreenProps['onStageChange'];
   onOpenTranscript?: ChatHomeScreenProps['onOpenTranscript'];
   renderRootList?: ChatHomeScreenProps['renderRootList'];
+  newChatRequest?: ChatHomeScreenProps['newChatRequest'];
   centerOverride?: ChatHomeScreenProps['centerOverride'];
   slots?: ChatHomeScreenProps['slots'];
   viewerName?: ChatHomeScreenProps['viewerName'];

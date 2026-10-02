@@ -239,6 +239,12 @@ export interface ChatHomeScreenProps {
    */
   renderRootList?: ((root: HomeRoot) => ReactNode) | undefined;
   /**
+   * The host's "start a new chat" request counter — the icon rail's New-chat
+   * button (task 01a0fb09). Each increment past the mount value runs the same
+   * reset-and-focus the header's chat icon does.
+   */
+  newChatRequest?: number | undefined;
+  /**
    * The conversation the ADDRESS names (`/home/chat/{id}`, task 01a00932
    * D1). Adopted when it differs from the current selection — back/forward
    * and shared links land on the right thread. `null` means the address is
@@ -408,6 +414,7 @@ export function ChatHomeScreen({
   livenessOf,
   onOpenTranscript,
   renderRootList,
+  newChatRequest,
   centerOverride,
   slots,
   viewerName,
@@ -1660,6 +1667,13 @@ export function ChatHomeScreen({
     onShowChat?.();
     setComposerFocusNonce((n) => n + 1);
   }, [chooseRoot, onShowChat]);
+  /* The value at mount is not a request — only a change after it is. */
+  const seenNewChatRequest = useRef(newChatRequest);
+  useEffect(() => {
+    if (newChatRequest === seenNewChatRequest.current) return;
+    seenNewChatRequest.current = newChatRequest;
+    startNewChat();
+  }, [newChatRequest, startNewChat]);
   useEffect(() => {
     if (composerFocusNonce === 0) return;
     /* After the host's re-render: region B only shows the conversation once
