@@ -2482,13 +2482,10 @@ export function GateApp(props: GateAppProps = {}) {
             />
           ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'dashboard' ? (
             /* THE MERGED SINGLE HOME (task 01a0027d, 2026-08-14): the chat
-               surface stays the hero — solo, thread sidebar hidden — with the
-               NEEDS YOU strip, the glance rails and the presence row beneath.
-               The existing dashboard route stays stable while its centre is
+               surface is the whole canvas — attention rides the tab bar's
+               segment, not a strip on the page (2026-09-27). The existing dashboard route stays stable while its centre is
                replaced wholesale (the same D65 posture as every view swap). */
             <HomeView
-              /* GateData satisfies HomeScreenData structurally — the same
-                 narrow port src/home was built against. */
               data={data}
               reasons={reasons}
               serverBaseUrl={activeServer.routeBaseUrl}
@@ -2507,7 +2504,6 @@ export function GateApp(props: GateAppProps = {}) {
                   .navigate({ view: 'home', root: { type: 'kind', slug: slugOfKind(LIVE_COUNT_KIND) ?? '' } });
                 navStore.getState().openCenter(sessionId as EntityId);
               }}
-              onOpenWorkspace={() => navigateTo(WORKSPACE_TARGET)}
               /* D12: the ONE route out of Home — region C's explicit header
                  action. Chips never navigate; this button does. */
               onOpenInWorkspace={(id) => {

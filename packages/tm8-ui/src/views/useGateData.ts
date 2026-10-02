@@ -2582,7 +2582,7 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
    * `projectRows` builds a new array, and `rowsFor` is called from render — so
    * without this the same key would hand every consumer a fresh identity on
    * every render, and the `useMemo`/`useEffect` deps downstream (WorkspaceView's
-   * roster, GateApp's palette, useHomeData's three lists) would churn without
+   * roster, GateApp's palette) would churn without
    * end. The Map is re-created only when the ids or the entities change, which
    * makes "the data did not change" and "the array is the same array" the same
    * statement. Pinned by a test, because the failure is a render loop nobody

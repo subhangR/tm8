@@ -156,7 +156,6 @@ export interface HomeViewProps {
   onNotice(notice: Notice): void;
   /** Absent ⇒ the panel's Launch renders disabled-with-reason, as everywhere. */
   onSpawn?(input: ExecutionSpawnInput): void | Promise<void>;
-  onOpenWorkspace(): void;
   /** D12: the ONE route out of Home — C's explicit workspace action. */
   onOpenInWorkspace?(id: EntityId): void;
   /** D11/D14 — the GateApp launch-sheet singleton, mounted over this screen
@@ -888,15 +887,10 @@ export function HomeView(props: HomeViewProps) {
       data-chat-open={chatSlotOpen || undefined}
     >
       <HomePage
-        data={data}
         chat={props.chat(openEntity, regions)}
         rail={rail}
         listRail={listRail}
         focus={focus}
-        /* A NEEDS YOU card opens where a chip does. They are the same gesture
-           — "show me that" — from two places on one screen. */
-        onOpenEntity={(id) => openEntity(id as EntityId)}
-        onOpenWorkspace={props.onOpenWorkspace}
       />
       {/* THE CHAT SLOT (entity chat §3.1): a column after the Trail on a wide
           window, an overlay sheet over it below ~1200px (`home-page.css`).
