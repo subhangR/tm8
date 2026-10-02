@@ -23,7 +23,7 @@ import type { FormQuestionRow, FormSectionRow, FormSettings, FormStatus } from '
 import type { RelevanceLevel } from './launch-suggest.js';
 import type { CoherenceFinding } from './orchestration.js';
 import type { EntityHeaderView, HeaderTextInput } from './selection-header.js';
-import type { StoryContent, StoryState } from './story.js';
+import type { EntityContextStory, StoryContent, StoryState } from './story.js';
 
 // ===========================================================================
 // §1 — Inherited contract (UI snapshot, near-verbatim)
@@ -7518,6 +7518,8 @@ export interface EntityContextV2View {
   mode?: string | null;
   // project
   projectId?: string | null;
+  // story (282): the page projected small for an agent.
+  story?: EntityContextStory;
   // message
   anchor?: EntityContextRef;
   parentMessage?: EntityContextRef | null;
