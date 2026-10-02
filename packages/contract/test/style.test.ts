@@ -399,6 +399,22 @@ describe('importStyle', () => {
     ]);
     expect(() => importStyle('')).not.toThrow();
   });
+
+  it('rejects a document from a newer schema', () => {
+    const back = importStyle('{"schemaVersion":2,"foundation":"builtin:atelier-dark","vars":{"--pn-paper":"#101010"}}');
+    expect(back.doc).toEqual(styleDocForBuiltin('builtin:atelier-light'));
+    expect(codes(back)).toEqual(['invalid-value:schemaVersion']);
+  });
+
+  it.each([
+    ['css export', () => exportStyle(stored, { format: 'css', only: 'all' })],
+    ['json export', () => exportStyle(stored, { format: 'json', only: 'set' })],
+    ['bad keys', () => '{"foundation":"builtin:nope","vars":{"--pn-ink":3,"--pn-nope":"x","--pn-paper":"url(x)"}}'],
+    ['hostile css', () => '.cv2-root { --pn-ink: red; }\nbody { color: red }\n.a { position: fixed }'],
+    ['garbage', () => '{not json'],
+  ])('always yields a StyleDocSchema-valid document (%s)', (_name, text) => {
+    expect(StyleDocSchema.safeParse(importStyle(text()).doc).success).toBe(true);
+  });
 });
 
 describe('styleSheetText', () => {

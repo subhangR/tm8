@@ -689,6 +689,16 @@ export function importStyle(text: string): { doc: StyleDoc; warnings: StyleWarni
       warnings.push({ code: 'invalid-value', key: 'import', message: 'file is not valid JSON; nothing imported' });
       return finish(styleDocForBuiltin(fallback));
     }
+    /* §8.1: a document from a NEWER schema is rejected, not guessed at — its
+       keys may mean something this registry cannot know. */
+    if (typeof parsed.schemaVersion === 'number' && parsed.schemaVersion > STYLE_SCHEMA_VERSION) {
+      warnings.push({
+        code: 'invalid-value',
+        key: 'schemaVersion',
+        message: `schemaVersion ${parsed.schemaVersion} is newer than ${STYLE_SCHEMA_VERSION}; nothing imported`,
+      });
+      return finish(styleDocForBuiltin(fallback));
+    }
     const vars: Record<string, string> = {};
     if (parsed.vars && typeof parsed.vars === 'object') {
       for (const [k, v] of Object.entries(parsed.vars as Record<string, unknown>)) {
