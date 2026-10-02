@@ -390,6 +390,16 @@ describe.sequential('task assignment provenance (129)', () => {
         entity_id uuid primary key, name text not null, base_url text not null);
       grant select on public.servers to tm8_app;
       reset role;`);
+    // 283 (story kind), the same recurring shape as 194 above: `entity-read.ts`
+    // and the projector statically left-join `public.stories` and select
+    // `internal.story_summary(e.id)`, so current code refuses this partial
+    // chain without it. It applies cleanly here, LAST, after the servers shim:
+    // its plpgsql bodies (entity_content's credential/space-link/server arms)
+    // resolve tables lazily. MEASURED: this exact sequence + 283 applied to a
+    // scratch PG 18 with psql (-1, ON_ERROR_STOP), and story_trail,
+    // story_summary, stories_containing and entity_content ran on a seeded
+    // story with a `contains` root.
+    database.apply(['283_story_kind.sql']);
   }, 180_000);
 
   afterAll(async () => {
