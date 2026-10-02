@@ -839,6 +839,13 @@ export interface MembershipListControl {
   edgeType: string;
   /** The kind whose rows are the curated sets. Hosts hydrate it as data. */
   setKind: string;
+  /**
+   * Further kinds whose rows are sets under the SAME edge, hydrated alongside
+   * `setKind`. 282: a story's roots are its `contains` targets, so lensing a
+   * list by a story is the collection lens pointed at a story ("Tasks in this
+   * story"), and putting a row in one from the picker adds a root.
+   */
+  alsoSetKinds?: readonly string[];
 }
 
 /** One value in a `ValueControl`'s vocabulary. */

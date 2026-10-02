@@ -428,10 +428,13 @@ const DEFAULT_SORT: readonly SortSpec[] = [BY_ACTIVITY, also(BY_UPDATED), BY_CRE
  * list to one set's members via `filters.edge`).
  */
 const COLLECTION_MEMBERSHIP: MembershipListControl = {
-  label: 'Collections',
-  emptyLabel: 'In no collection',
+  label: 'Collections & stories',
+  emptyLabel: 'In no collection or story',
   edgeType: 'contains',
   setKind: 'collection',
+  // The story filter on every list (282): a story holds its roots through the
+  // same `contains` edge, so it is a lens and a picker target like a collection.
+  alsoSetKinds: ['story'],
 };
 
 /**
