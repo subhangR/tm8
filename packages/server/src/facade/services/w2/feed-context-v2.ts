@@ -73,7 +73,7 @@ import { resolveAuthoredHeaderView, resolveHeaderViews } from '../../../headers/
 import { ENTITY_COLUMNS, ENTITY_FROM, MICROS, iso, isoOrNull, storySummaryOf, titleOf, type EntityRow } from '../../entity-read.js';
 import { loadStoryPage } from '../../story-page.js';
 
-/** Each list on the story card (282) is capped; a cut list adds an `omitted[]` entry. */
+/** Each list on the story card (283) is capped; a cut list adds an `omitted[]` entry. */
 const STORY_CARD_LIMIT = 50;
 import { taggedQuerier, type ContextLoadTag } from './context-tags.js';
 import { runsOnListedFrom } from './runs-on-visibility.js';
@@ -124,7 +124,7 @@ function sectionsFor(kind: string): readonly V2Section[] {
   switch (kind) {
     case 'task': return ['assignment', 'hierarchy', 'blockers', 'connections', 'messages', 'actions'];
     case 'doc': return ['assignment', 'hierarchy', 'connections', 'messages', 'actions'];
-    // 282: the description is the assignment; children are child stories.
+    // 283: the description is the assignment; children are child stories.
     case 'story': return ['assignment', 'hierarchy', 'connections', 'messages', 'actions'];
     // c761 §3.2: a message is its body and its refs; no thread expansion.
     case 'message': return ['assignment', 'connections', 'actions'];
@@ -166,7 +166,7 @@ export interface ContextV2LoadPlan {
   readonly sessionCard: boolean;
   /** message: anchor and parent-message refs, attachment sizes. */
   readonly messageCard: boolean;
-  /** story (282): the page projected small — roots, by kind, blocked, who runs what. */
+  /** story (283): the page projected small — roots, by kind, blocked, who runs what. */
   readonly storyCard: boolean;
   readonly messages: MessagePlan | null;
   readonly connections: boolean;
@@ -922,7 +922,7 @@ async function loadV2(q: Querier, id: string, request: V2Request): Promise<{ loa
   }
 
   if (plan.storyCard) {
-    // 282: the same page assembler the detail read uses, projected small.
+    // 283: the same page assembler the detail read uses, projected small.
     // Core to a story's context: a failure fails the read.
     const page = await loadStoryPage(taggedQuerier(q, 'root'), id);
     const cap = <T>(section: string, rows: T[]): T[] => {
@@ -948,7 +948,7 @@ async function loadV2(q: Querier, id: string, request: V2Request): Promise<{ loa
         teamMemberId: x.teamMemberId, taskIds: x.taskIds,
       }))),
       team: cap('story.team', page.team.map((t) => ({
-        id: t.id, name: t.name, mode: t.mode, parentId: t.parentId, live: t.live, sessionIds: t.sessionIds,
+        id: t.id, kind: t.kind, name: t.name, mode: t.mode, parentId: t.parentId, live: t.live, sessionIds: t.sessionIds,
       }))),
       childStories: cap('story.childStories', page.childStories.map((c) => ({
         id: c.id, title: c.title, status: c.status, taskProgress: c.taskProgress, rollup: c.rollup,
