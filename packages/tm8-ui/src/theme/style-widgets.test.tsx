@@ -283,7 +283,8 @@ describe('picker hover preview (§9.1)', () => {
     const doc: StyleDoc = { ...styleDocForBuiltin('builtin:atelier-light'), css: '.x { color: red }' };
     const style = vi.fn(async () => personal(doc));
     const { result } = renderHook(() => useHoverPreview({ style }, true));
-    const row = result.current.bind('personal:p1', false);
+    /* Personal refs are uuids; parseStyleRef refuses anything else. */
+    const row = result.current.bind('personal:0f0e0d0c-0b0a-4908-8706-050403020100', false);
     row.onPointerEnter({ pointerType: 'touch' } as never);
     await act(async () => {
       vi.advanceTimersByTime(HOVER_PREVIEW_MS + 10);
@@ -332,8 +333,7 @@ describe('picker upstream badge (§9.1)', () => {
     await act(async () => {
       fireEvent.click(screen.getByTestId('style-picker-toggle'));
     });
-    await screen.findByText('Style a');
-    const badges = screen.getAllByTestId('style-upstream-badge');
+    const badges = await screen.findAllByTestId('style-upstream-badge');
     expect(badges).toHaveLength(1);
     expect(badges[0]!.textContent).toBe('upstream v5 available');
   });
