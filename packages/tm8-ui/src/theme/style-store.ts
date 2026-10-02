@@ -404,14 +404,58 @@ export function getStyleState(): StyleState {
 }
 
 /**
+ * ONE APPLY PER ANIMATION FRAME (spec §6.7, viewer side). An editor fires a
+ * draft per keystroke and a slider per pointer move; each is held here and
+ * the frame applies only the last — resolved, painted and announced once.
+ * Nothing is dropped that matters: the last document always wins. A commit
+ * (`setState`) arriving while a draft is pending folds it in, so the frame
+ * still paints once.
+ */
+let pendingDraft: { doc: StyleDoc | null } | null = null;
+let draftFrame: number | null = null;
+
+function scheduleFrame(run: () => void): number {
+  return typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function'
+    ? window.requestAnimationFrame(run)
+    : (setTimeout(run, 0) as unknown as number);
+}
+
+function cancelFrame(id: number): void {
+  if (typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
+    window.cancelAnimationFrame(id);
+  }
+  clearTimeout(id as unknown as ReturnType<typeof setTimeout>);
+}
+
+/** Move a pending draft into `draft` without painting; true when there was one. */
+function takePendingDraft(): boolean {
+  if (draftFrame !== null) cancelFrame(draftFrame);
+  draftFrame = null;
+  const pending = pendingDraft;
+  pendingDraft = null;
+  if (!pending) return false;
+  draft = pending.doc ? { doc: pending.doc, resolved: resolveStyle(pending.doc) } : null;
+  return true;
+}
+
+/**
  * Preview `doc` in this tab only (the owner's own draft, so its css runs), or
- * pass null to drop the preview. Cheap to call per keystroke: an unchanged
- * resolved hash paints nothing.
+ * pass null to drop the preview. Safe to call per keystroke: calls within one
+ * animation frame collapse into one apply of the last document.
  */
 export function applyDraft(doc: StyleDoc | null): void {
-  if (!doc && !draft) return;
-  draft = doc ? { doc, resolved: resolveStyle(doc) } : null;
-  publish();
+  if (!doc && !draft && !pendingDraft) return;
+  pendingDraft = { doc };
+  if (draftFrame === null) {
+    draftFrame = scheduleFrame(() => {
+      if (takePendingDraft()) publish();
+    });
+  }
+}
+
+/** Apply a pending draft now instead of at the next frame (tests; an editor's Save). */
+export function flushStyleDraft(): void {
+  if (takePendingDraft()) publish();
 }
 
 /** Whether an editor draft is being previewed right now. */
@@ -431,6 +475,7 @@ function publish(): void {
 }
 
 function setState(next: StyleState): void {
+  takePendingDraft();
   state = next;
   writeCache(next);
   publish();
@@ -580,6 +625,9 @@ export function __resetStyleStoreForTests(): void {
   themeWriter = null;
   document.getElementById(ACTIVE_STYLE_ELEMENT_ID)?.remove();
   document.getElementById(EXTRA_STYLE_ELEMENT_ID)?.remove();
+  if (draftFrame !== null) cancelFrame(draftFrame);
+  draftFrame = null;
+  pendingDraft = null;
   draft = null;
   state = deriveState(initialSelection());
   viewState = state;
