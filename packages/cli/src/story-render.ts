@@ -24,10 +24,12 @@ const str = (v: unknown): string => (v === null || v === undefined ? '-' : Strin
 const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 const len = (v: unknown): number => (Array.isArray(v) ? v.length : 0);
 
+/** Any ISO instant (a `Z` or a `+05:30` offset) → `2026-10-02T12:10Z`. Anything else unchanged. */
 function minute(at: unknown): string {
   const s = str(at);
-  const m = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})(?::\d{2}(?:\.\d+)?)?Z$/.exec(s);
-  return m ? `${m[1]}Z` : s;
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s)) return s;
+  const ms = Date.parse(s);
+  return Number.isNaN(ms) ? s : `${new Date(ms).toISOString().slice(0, 16)}Z`;
 }
 
 /** `7 of 18 done · 5 in progress · 6 to do · 3 blocked` (zero buckets dropped). */
