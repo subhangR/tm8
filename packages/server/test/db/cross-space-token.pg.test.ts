@@ -4957,22 +4957,41 @@ describe.sequential('W7 spaceLinks.invoke — G runs one op in B as H, audited i
     expect(res.status).toBe(200);
   });
 
-  it('T22 positive — spaces.invites.create in B passes as the member', async () => {
+  // D6 (owner decision, lane L6): membership and role writes are refused at
+  // home through a link, even for a member who is admin in B. H acting in B
+  // directly is unaffected (the T20b SQL cells and the browser positive below).
+  it('D6 refused — spaces.invites.create in B through the link (membership), audited refused', async () => {
     const res = await invoke(gToken, {
       op: 'spaces.invites.create', params: { spaceId: fixture.spaceB },
       input: { maxUses: 1, clientMutationId: cmid('invite') },
     });
-    expect(res.status).toBe(200);
-    expect((await lastAudit('spaces.invites.create')).result).toBe('ok');
+    expect(res.status).toBe(403);
+    expect(refusalOf(res)).toBe('membership');
+    expect(await lastAudit('spaces.invites.create')).toMatchObject({ result: 'refused', reason: 'membership' });
   });
 
-  it('T22 positive — spaces.members.updateRole in B passes as the member', async () => {
+  it('D6 refused — spaces.members.updateRole in B through the link (membership); the role is unchanged', async () => {
     const other = await seedMemberOfAB('w7-role');
     const res = await invoke(gToken, {
       op: 'spaces.members.updateRole', params: { spaceId: fixture.spaceB, memberId: other.memberB },
       input: { role: 'admin', clientMutationId: cmid('role') },
     });
+    expect(res.status).toBe(403);
+    expect(refusalOf(res)).toBe('membership');
+    const role = (await database.query<{ role: string }>(
+      'select role from public.members where entity_id = $1', [other.memberB]))[0]!.role;
+    expect(role).not.toBe('admin');
+  });
+
+  it('D6 positive — a membership READ (spaces.members.list) in B still passes as the member', async () => {
+    const res = await invoke(gToken, { op: 'spaces.members.list', params: { spaceId: fixture.spaceB } });
     expect(res.status).toBe(200);
+  });
+
+  it('D6 positive — H (browser) creates the same invite in B directly', async () => {
+    const res = await call('POST', `/v2/spaces/${fixture.spaceB}/invites`,
+      await mintBrowser(fixture.accountH, fixture.identityH), { maxUses: 1, clientMutationId: cmid('invite-direct') });
+    expect(res.status).toBe(201);
   });
 
   it('T22 positive — entities.delete in B passes as the member', async () => {
