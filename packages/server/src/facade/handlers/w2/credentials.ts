@@ -483,13 +483,17 @@ export function registerCredentialHandlers(
   const spaceAddMine: OperationHandler = async (ctx) => {
     const { provider, label } = CredentialsSpaceAddMineInputSchema.parse(ctx.body);
     const claims = await claimsOf(ctx);
+    const spaceId = pathParam(ctx, 'spaceId');
+    // #883 F3: membership first, then the decrypt — never open the token for
+    // a caller create would refuse anyway.
+    await spaceCatalog.requireCreateAccess(claims, spaceId);
     const mine = await gitHubStore.resolve(claims);
     if (!mine) {
       throw new CollabError('not_found', 'you have no GitHub token connected on this server to add', {
         details: { reason: 'no_personal_credential', provider },
       });
     }
-    return spaceCatalog.create(claims, pathParam(ctx, 'spaceId'), {
+    return spaceCatalog.create(claims, spaceId, {
       provider,
       shape: 'token',
       label,

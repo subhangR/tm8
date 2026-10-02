@@ -155,6 +155,24 @@ export class SpaceCredentialCatalogService {
   }
 
   /**
+   * Who may create in `spaceId`: a human session of a member. `create` asks
+   * it before the probe; `credentials.space.addMine` asks it before it opens
+   * the caller's own token (#883 F3), so a non-member never gets a decrypt.
+   */
+  async requireCreateAccess(claims: DbClaims, spaceId: string): Promise<void> {
+    requireHumanClaims(claims);
+    const [space] = await this.db.query<{ is_member: boolean }>(
+      claims,
+      'select internal.is_space_member($1::uuid) as is_member',
+      [spaceId],
+    );
+    // The same answer create_space_credential's require_space_member gives.
+    if (space?.is_member !== true) {
+      throw new CollabError('forbidden', 'not a member of this space');
+    }
+  }
+
+  /**
    * D1: any member. The vendor is asked first; a refused key is never stored
    * (I6). E1: `visibility` makes the caller its owner; `spaceOwned` makes
    * nobody its owner; neither keeps the pre-W10b space-owned contract.
@@ -175,16 +193,7 @@ export class SpaceCredentialCatalogService {
     // Refuse before the probe, not after it: the probe sends the key to the
     // vendor from this node, so a caller the RPC would refuse must not reach
     // it (an agent, or a non-member testing keys from the node's address).
-    requireHumanClaims(claims);
-    const [space] = await this.db.query<{ is_member: boolean }>(
-      claims,
-      'select internal.is_space_member($1::uuid) as is_member',
-      [spaceId],
-    );
-    // The same answer create_space_credential's require_space_member gives.
-    if (space?.is_member !== true) {
-      throw new CollabError('forbidden', 'not a member of this space');
-    }
+    await this.requireCreateAccess(claims, spaceId);
     const displayLogin = await this.probeOrRefuse(input.provider, input.secret);
     try {
       return spaceCredentialViewOf(await this.store.create(claims, {
