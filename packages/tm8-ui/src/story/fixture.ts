@@ -1,294 +1,377 @@
 /**
- * The story fixture: artifact 01a0fc3e rev 4's data block as a `StoryView`.
+ * The story fixture: artifact 01a0fc3e rev 4's data block, in the PUBLISHED
+ * contract shape (`StoryState` + `StoryPage` from packages/contract/src/story.ts).
  *
- * Ids are fixture ids (`fx-story-…`), times are relative to module load so the
- * "last hour" halos and "2 h" labels behave like the live page. Tallies are
- * COMPUTED from the rows below with the same rule the read paths use, never
- * typed in, so the fixture cannot disagree with itself.
+ * Ids are fixture ids (`fx-…`); times are relative to module load so the
+ * "last hour" halos and "2 h" labels behave like the live page. Every tally is
+ * COMPUTED from the node rows below with the server's rule (work = category
+ * not cancelled, done = category done, blocked overlaps), never typed in, so
+ * the fixture cannot disagree with itself.
  */
 import {
-  addTally,
-  callSign,
-  EMPTY_TALLY,
-  type StoryActivity,
+  storyCallSign,
+  storyEdgeFamily,
+  type StatusCategory,
+  type StoryActivityItem,
   type StoryChild,
-  type StoryFeedItem,
-  type StoryPerson,
+  type StoryFeedMessage,
+  type StoryGraphEdge,
+  type StoryNode,
+  type StoryPage,
+  type StoryProgress,
   type StoryRoot,
   type StorySession,
-  type StoryTally,
-  type StoryTask,
+  type StoryState,
   type StoryTeammate,
-  type StoryTone,
   type StoryTrailItem,
-  type StoryView,
-} from './model';
+  type TeamMemberMode,
+} from '@tm8/contract';
+
+import { EMPTY_PROGRESS, emptyPage, type StoryPerson, type StoryView } from './model';
 
 const NOW = Date.now();
 const ago = (min: number): string => new Date(NOW - min * 60_000).toISOString();
+const OLD = ago(60 * 20);
 
-const P = (id: string, name: string, agent: boolean, mode: StoryPerson['mode'] = null): StoryPerson => ({
-  id: `fx-person-${id}`,
+const fx = (k: string): string => `fx-${k}`;
+const STORY_ID = fx('story');
+
+/* ---- people: two humans (members) and five teammates (team_member ids) ---- */
+const person = (k: string, name: string, agent: boolean, mode: TeamMemberMode | null = null): StoryPerson => ({
+  id: fx(agent ? `tm${k}` : `member-${k}`),
   name,
   initials: name[0]!,
   agent,
   mode,
 });
-
-export const STORY_FIXTURE_PEOPLE: StoryPerson[] = [
-  P('S', 'Subhang', false),
-  P('N', 'Noor', false),
-  P('W', 'Worker', true, 'coordinated-worker'),
-  P('F', 'Forge', true, 'coordinated-worker'),
-  P('M', 'Maestro', true, 'coordinator'),
-  P('C', 'Scout', true, 'coordinated-coordinator'),
-  P('D', 'Dreamer', true, 'dispatcher'),
+const PEOPLE_LIST: StoryPerson[] = [
+  person('S', 'Subhang', false),
+  person('N', 'Noor', false),
+  person('M', 'Maestro', true, 'coordinator'),
+  person('C', 'Scout', true, 'coordinated-coordinator'),
+  person('W', 'Worker', true, 'coordinated-worker'),
+  person('F', 'Forge', true, 'coordinated-worker'),
+  person('D', 'Dreamer', true, 'dispatcher'),
 ];
-const who = (k: string): string => `fx-person-${k}`;
-const id = (k: string): string => `fx-story-${k}`;
+const PEOPLE: Record<string, StoryPerson> = Object.fromEntries(PEOPLE_LIST.map((p) => [p.id, p]));
+const human = (k: string): string => fx(`member-${k}`);
+const tm = (k: string): string => fx(`tm${k}`);
 
-const STATUS_OF: Record<StoryTone, string> = { done: 'done', working: 'working', blocked: 'blocked', todo: 'open' };
-const T = (k: string, title: string, tone: StoryTone, assignee?: string, activityMin?: number): StoryTask => ({
-  id: id(k),
-  kind: 'task',
-  title,
-  tone,
-  status: STATUS_OF[tone],
-  assigneeId: assignee ? who(assignee) : null,
-  activityAt: activityMin === undefined ? ago(60 * 20) : ago(activityMin),
-});
-const tr = (
-  k: string,
-  kind: string,
-  title: string,
-  edge: StoryTrailItem['edge'],
-  to: string,
-  direction: 'in' | 'out',
-  extra: Partial<StoryTrailItem> = {},
-): StoryTrailItem => ({ id: id(k), kind, title, edge, toId: id(to), direction, activityAt: ago(60 * 20), ...extra });
-
-function tally(tasks: StoryTask[]): StoryTally {
-  const t = { ...EMPTY_TALLY };
-  for (const x of tasks) {
-    t[x.tone] += 1;
-    t.total += 1;
-  }
-  return t;
-}
-function root(task: StoryTask, children: StoryTask[], trail: StoryTrailItem[]): StoryRoot {
-  return { ...task, children, trail, progress: tally([task, ...children]) };
-}
-
-const ROOTS: StoryRoot[] = [
-  root(
-    T('r1', 'The story kind in the database', 'done', 'W'),
-    [
-      T('c11', 'Migration 277: detail row and doors', 'done', 'W'),
-      T('c12', 'contains and attached_to accept a story', 'done', 'W'),
-      T('c13', 'entity_content arm and the db suite', 'done', 'W'),
-    ],
-    [
-      tr('s1', 'work_session', 'Ash · Worker', 'working_on', 'r1', 'in', { exited: true }),
-      tr('d1', 'doc', 'How a core kind is added', 'attached_to', 'r1', 'in'),
-      tr('pr1', 'pull_request', '#990 · merged', 'tracks', 'c11', 'out', { status: 'merged' }),
-      tr('cm1', 'commit', '5672919 · wip(story)', 'tracks', 'c11', 'out'),
-      tr('m1', 'memory', 'Migration numbers: the union', 'remembers', 's1', 'in'),
-    ],
-  ),
-  root(
-    T('r2', 'Progress on both read paths', 'working', 'F', 12),
-    [
-      T('c21', 'Facade: contains closure and counts', 'done', 'F'),
-      T('c22', 'Projector mirrors the facade', 'done', 'F', 18),
-      T('c23', 'Pinned-era pg fixtures apply 277', 'todo'),
-    ],
-    [
-      tr('pr2', 'pull_request', '#993 · open', 'tracks', 'r2', 'out', { status: 'open', activityAt: ago(9) }),
-      tr('m2', 'memory', 'Read paths are twins', 'remembers', 'r2', 'in', { activityAt: ago(25) }),
-    ],
-  ),
-  root(
-    T('r3', 'The story page', 'working', 'W', 3),
-    [
-      T('c31', 'Hero, status and progress', 'done', 'S'),
-      T('c32', 'One graph of the story', 'done', 'W', 30),
-      T('c33', 'Roots with their trails', 'working', 'W', 2),
-      T('c34', 'Thread and what’s happening', 'todo'),
-    ],
-    [
-      tr('dr1', 'drawing', 'Story panel sketch', 'attached_to', 'r3', 'in'),
-      tr('a1', 'artifact', 'This page · rev 3', 'produces', 'r3', 'out', { activityAt: ago(40) }),
-      tr('f1', 'file', 'story-glyph.svg', 'attached_to', 'c32', 'in'),
-    ],
-  ),
-  root(
-    T('r4', 'Stories everywhere: filter, Home, tiles', 'todo'),
-    [T('c41', 'Story filter on every list', 'todo'), T('c42', 'Home seat and tiles', 'todo')],
-    [tr('d2', 'doc', 'Home rail seating ruling', 'attached_to', 'r4', 'in')],
-  ),
-  root(
-    T('r5', 'Agents on stories', 'blocked', 'F'),
-    [T('c51', 'entity context for a story', 'blocked'), T('c52', 'Spawn on a story passes the trail', 'blocked')],
-    [
-      tr('at1', 'attention', 'follow depth?', 'blocks', 'c51', 'out', { waiting: true }),
-      tr('m3', 'memory', 'Context stays bounded', 'remembers', 'c51', 'in'),
-    ],
-  ),
-];
-
-const S = (k: string, w: string, live: boolean, createdMin: number, taskKeys: string[], onStory = false): Omit<StorySession, 'sign'> => ({
-  id: id(k),
-  title: `${STORY_FIXTURE_PEOPLE.find((p) => p.id === who(w))!.name}’s session`,
-  personId: who(w),
-  live,
-  exited: !live,
-  createdAt: ago(createdMin),
-  taskIds: taskKeys.map(id),
-  onStory,
-});
-const SESSIONS: StorySession[] = [
-  S('s1', 'W', false, 60 * 26, ['r1']),
-  S('s4', 'M', true, 120, [], true),
-  S('s2', 'F', true, 12, ['r2']),
-  S('s3', 'W', true, 1, ['r3', 'c33']),
-]
-  .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-  .map((s, i) => ({ ...s, sign: callSign(i) }));
-
-const TEAM: StoryTeammate[] = [
-  { id: id('tmM'), personId: who('M'), parentId: null, live: true, note: 'coordinating the story · 3 reports', runs: [], assigned: [], dispatched: [] },
-  { id: id('tmC'), personId: who('C'), parentId: id('tmM'), live: false, note: 'coordinating roots 4 and 5', runs: [], assigned: [], dispatched: [] },
-  { id: id('tmW'), personId: who('W'), parentId: id('tmM'), live: true, runs: [id('r3'), id('c33')], assigned: [], dispatched: [] },
-  { id: id('tmF'), personId: who('F'), parentId: id('tmC'), live: true, runs: [id('r2')], assigned: [id('r5')], dispatched: [] },
-  {
-    id: id('tmD'),
-    personId: who('D'),
-    parentId: null,
-    live: false,
-    runs: [],
-    assigned: [],
-    dispatched: [
-      { taskId: id('c23'), toPersonId: who('F'), state: 'picked up by Forge' },
-      { taskId: id('c41'), toPersonId: null, state: 'waiting for a worker' },
-    ],
-  },
-];
-
-const CHILDREN: StoryChild[] = [
-  {
-    id: id('cs1'),
-    title: 'Story so far: the daily recap',
-    status: 'working',
-    tone: 'working',
-    progress: { done: 2, working: 2, blocked: 0, todo: 1, total: 5 },
-    liveCount: 1,
-    peopleIds: [who('C'), who('W')],
-    lastActivityAt: ago(60),
-    thingCount: 14,
-  },
-  {
-    id: id('cs2'),
-    title: 'Scrub time',
-    status: 'open',
-    tone: 'todo',
-    progress: { done: 0, working: 0, blocked: 0, todo: 4, total: 4 },
-    liveCount: 0,
-    peopleIds: [],
-    lastActivityAt: ago(60 * 30),
-    thingCount: 5,
-  },
-];
-
-const F = (k: string, w: string, on: string, body: string, min: number, system = false): StoryFeedItem => {
-  const anchor =
-    on === 'story'
-      ? { anchorId: id('story'), anchorKind: 'story', anchorTitle: 'the story' }
-      : on.startsWith('s')
-        ? { anchorId: id(on), anchorKind: 'work_session', anchorTitle: `${SESSIONS.find((s) => s.id === id(on))!.sign} · ${SESSIONS.find((s) => s.id === id(on))!.title}` }
-        : { anchorId: id(on), anchorKind: 'task', anchorTitle: ROOTS.find((r) => r.id === id(on))!.title };
-  return { id: id(k), authorId: who(w), ...anchor, body, at: ago(min), system };
+/* ---- nodes ---- */
+type Tone = 'done' | 'working' | 'blocked' | 'todo';
+const CAT: Record<Tone, { status: string; statusCategory: StatusCategory; blocked: boolean }> = {
+  done: { status: 'done', statusCategory: 'done', blocked: false },
+  working: { status: 'working', statusCategory: 'in_progress', blocked: false },
+  blocked: { status: 'open', statusCategory: 'to_do', blocked: true },
+  todo: { status: 'open', statusCategory: 'to_do', blocked: false },
 };
-const FEED: StoryFeedItem[] = [
-  F('f1', 'S', 'story', 'I’m thinking we add a new higher-level entity called a story. A place where we separate different ideas.', 60 * 30),
-  F('f2', 'W', 'r1', 'Migration 277 applied clean through the full chain on a scratch cluster. Numbered against the union of every remote ref.', 60 * 22),
-  F('f3', 'S', 'r1', 'Merged #990. Root 1 is done.', 60 * 21),
-  F('f4', 'M', 'story', 'Roots 2 and 3 are in flight. Scout holds 4 and 5 until the follow-depth ruling.', 120),
-  F('f5', 'F', 's2', 'Facade and projector agree on the counts for every root; running the pinned-era fixtures now.', 40),
-  F('f6', 'S', 'story', 'Live updates on the story items, man. Messages live, messages from all the activity on the story.', 4),
+
+const nodes: StoryNode[] = [];
+const node = (n: Partial<StoryNode> & Pick<StoryNode, 'id' | 'kind' | 'title' | 'depth' | 'rootIds'>): StoryNode => {
+  const full: StoryNode = { status: null, statusCategory: null, blocked: false, activityAt: OLD, createdAt: OLD, ...n };
+  nodes.push(full);
+  return full;
+};
+const task = (k: string, title: string, tone: Tone, root: string, depth: number, activityMin?: number): StoryNode =>
+  node({ id: fx(k), kind: 'task', title, depth, rootIds: [fx(root)], ...CAT[tone], activityAt: activityMin === undefined ? OLD : ago(activityMin) });
+
+node({ id: STORY_ID, kind: 'story', title: 'Story as an Entity', depth: -1, rootIds: [], status: 'working', statusCategory: 'in_progress', activityAt: ago(2) });
+
+const edges: StoryGraphEdge[] = [];
+const edge = (from: string, to: string, type: string, rootIds: string[], cross = false): void => {
+  edges.push({ id: type === 'parent' ? null : fx(`e-${from}-${to}`), fromId: fx(from), toId: fx(to), type, family: storyEdgeFamily(type), cross, rootIds: rootIds.map(fx) });
+};
+
+/* ---- roots, children and trails (the artifact's ROOTS) ---- */
+interface RootSpec {
+  k: string;
+  title: string;
+  tone: Tone;
+  activityMin?: number;
+  children: Array<[k: string, title: string, tone: Tone, activityMin?: number]>;
+  /** [k, kind, title, edgeType, via, direction, depth, extra] */
+  trail: Array<[string, string, string, string, string, 'in' | 'out', number, Partial<StoryNode>?]>;
+}
+const ROOT_SPECS: RootSpec[] = [
+  {
+    k: 'r1', title: 'The story kind in the database', tone: 'done',
+    children: [
+      ['c11', 'Migration 282: detail row and doors', 'done'],
+      ['c12', 'contains and attached_to accept a story', 'done'],
+      ['c13', 'entity_content arm and the db suite', 'done'],
+    ],
+    trail: [
+      ['s1', 'work_session', 'Worker’s session', 'working_on', 'r1', 'in', 1, { live: false }],
+      ['d1', 'doc', 'How a core kind is added', 'attached_to', 'r1', 'in', 1],
+      ['pr1', 'pull_request', '#990 · merged', 'tracks', 'c11', 'out', 2, { status: 'merged' }],
+      ['cm1', 'commit', '5672919 · wip(story)', 'tracks', 'c11', 'out', 2],
+      ['m1', 'memory', 'Migration numbers: the union', 'remembers', 's1', 'in', 2],
+    ],
+  },
+  {
+    k: 'r2', title: 'Progress on both read paths', tone: 'working', activityMin: 12,
+    children: [
+      ['c21', 'Facade: contains closure and counts', 'done'],
+      ['c22', 'Projector mirrors the facade', 'done', 18],
+      ['c23', 'Pinned-era pg fixtures apply 282', 'todo'],
+    ],
+    trail: [
+      ['s2', 'work_session', 'Forge’s session', 'working_on', 'r2', 'in', 1, { live: true, activityAt: ago(1) }],
+      ['pr2', 'pull_request', '#993 · open', 'tracks', 'r2', 'out', 1, { status: 'open', activityAt: ago(9) }],
+      ['m2', 'memory', 'Read paths are twins', 'remembers', 'r2', 'in', 1, { activityAt: ago(25) }],
+    ],
+  },
+  {
+    k: 'r3', title: 'The story page', tone: 'working', activityMin: 3,
+    children: [
+      ['c31', 'Hero, status and progress', 'done'],
+      ['c32', 'One graph of the story', 'done', 30],
+      ['c33', 'Roots with their trails', 'working', 2],
+      ['c34', 'Thread and what’s happening', 'todo'],
+    ],
+    trail: [
+      ['s3', 'work_session', 'Worker’s session', 'working_on', 'r3', 'in', 1, { live: true, activityAt: ago(0) }],
+      ['dr1', 'drawing', 'Story panel sketch', 'attached_to', 'r3', 'in', 1],
+      ['a1', 'artifact', 'This page · rev 3', 'produces', 'r3', 'out', 1, { activityAt: ago(40) }],
+      ['f1', 'file', 'story-glyph.svg', 'attached_to', 'c32', 'in', 2],
+    ],
+  },
+  {
+    k: 'r4', title: 'Stories everywhere: filter, Home, tiles', tone: 'todo',
+    children: [
+      ['c41', 'Story filter on every list', 'todo'],
+      ['c42', 'Home seat and tiles', 'todo'],
+    ],
+    trail: [['d2', 'doc', 'Home rail seating ruling', 'attached_to', 'r4', 'in', 1]],
+  },
+  {
+    k: 'r5', title: 'Agents on stories', tone: 'blocked',
+    children: [
+      ['c51', 'entity context for a story', 'blocked'],
+      ['c52', 'Spawn on a story passes the trail', 'blocked'],
+    ],
+    trail: [
+      ['at1', 'attention', 'follow depth?', 'about', 'c51', 'in', 2, { status: 'pending', statusCategory: 'to_do' }],
+      ['m3', 'memory', 'Context stays bounded', 'remembers', 'c51', 'in', 2],
+    ],
+  },
 ];
 
-const A = (k: string, kind: string, what: string, via: string, min: number, by: string, on?: string): StoryActivity => ({
-  id: id(k),
-  kind,
-  what,
-  via,
-  at: ago(min),
-  byId: who(by),
-  entityId: on ? id(on) : null,
+function tally(rows: StoryNode[]): StoryProgress {
+  const p = { ...EMPTY_PROGRESS };
+  for (const r of rows) {
+    if (!r.statusCategory) continue;
+    if (r.statusCategory === 'cancelled') { p.cancelled += 1; continue; }
+    p.work += 1;
+    if (r.statusCategory === 'done') p.done += 1;
+    else {
+      if (r.statusCategory === 'in_progress') p.inProgress += 1;
+      else p.toDo += 1;
+      if (r.blocked) p.blocked += 1;
+    }
+  }
+  return p;
+}
+const onlyTasks = (rows: StoryNode[]): StoryNode[] => rows.filter((r) => r.kind === 'task');
+
+const roots: StoryRoot[] = ROOT_SPECS.map((spec, i) => {
+  const root = task(spec.k, spec.title, spec.tone, spec.k, 0, spec.activityMin);
+  edge('story', spec.k, 'contains', [spec.k]);
+  const kids = spec.children.map(([k, title, tone, min]) => {
+    edge(spec.k, k, 'parent', [spec.k]);
+    return task(k, title, tone, spec.k, 1, min);
+  });
+  const trail: StoryTrailItem[] = spec.trail.map(([k, kind, title, edgeType, via, direction, depth, extra]) => {
+    node({ id: fx(k), kind, title, depth, rootIds: [fx(spec.k)], ...extra });
+    if (direction === 'out') edge(via, k, edgeType, [spec.k]);
+    else edge(k, via, edgeType, [spec.k]);
+    return { id: fx(k), kind, title, edgeType, family: storyEdgeFamily(edgeType), viaId: fx(via), direction, depth };
+  });
+  const rows = [root, ...kids, ...trail.map((t) => nodes.find((n) => n.id === t.id)!)];
+  return {
+    id: root.id,
+    kind: root.kind,
+    title: root.title,
+    status: root.status,
+    statusCategory: root.statusCategory,
+    blocked: root.blocked,
+    position: i,
+    progress: tally(rows),
+    taskProgress: tally(onlyTasks(rows)),
+    childIds: kids.map((c) => c.id),
+    trail,
+  };
 });
-const ACTIVITY: StoryActivity[] = [
-  A('e1', 'task', 'Worker started Roots with their trails', 'root 3 · working_on', 2, 'W', 'c33'),
-  A('e2', 'pull_request', 'Forge opened #993', 'root 2 · tracks', 9, 'F', 'pr2'),
-  A('e3', 'task', 'Forge marked Projector mirrors the facade done', 'root 2 · parent → child', 18, 'F', 'c22'),
-  A('e4', 'memory', 'Forge remembered Read paths are twins', 'root 2 · remembers', 25, 'F', 'm2'),
-  A('e5', 'artifact', 'Worker published This page · rev 3', 'root 3 · produces', 40, 'W', 'a1'),
-  A('e6', 'attention', 'Scout asked: follow depth?', 'root 5 · blocks', 60 * 3, 'C', 'at1'),
+
+/* The story's own trail and the cross-root links (the artifact's STORY_TRAIL + EXTRA). */
+node({ id: fx('ch1'), kind: 'chat', title: 'Design session', depth: 1, rootIds: [], activityAt: ago(60 * 30) });
+edges.push({ id: fx('e-ch1-story'), fromId: fx('ch1'), toId: STORY_ID, type: 'about', family: 'story', cross: false, rootIds: [] });
+edge('d1', 'c33', 'attached_to', ['r1', 'r3'], true);
+edge('r3', 'm3', 'remembers', ['r3', 'r5'], true);
+edge('r2', 'r5', 'assigned_to', ['r2', 'r5'], true);
+edge('c52', 'c51', 'depends_on', ['r5']);
+/* Both cross-root rows are also reached from root 3. */
+for (const id of ['d1', 'm3']) nodes.find((n) => n.id === fx(id))!.rootIds.push(fx('r3'));
+
+/* ---- sessions, by created_at → call signs ---- */
+const SESSION_SPECS: Array<[k: string, who: string, live: boolean, createdMin: number, tasks: string[], roots: string[]]> = [
+  ['s1', 'W', false, 60 * 26, ['r1'], ['r1']],
+  ['s4', 'M', true, 120, [], []],
+  ['s2', 'F', true, 12, ['r2'], ['r2']],
+  ['s3', 'W', true, 1, ['r3', 'c33'], ['r3']],
+];
+const sessions: StorySession[] = SESSION_SPECS.sort((a, b) => b[3] - a[3]).map(([k, w, live, createdMin, tasks, rs], i) => ({
+  id: fx(k),
+  title: `${PEOPLE[tm(w)]!.name}’s session`,
+  callSign: storyCallSign(i),
+  createdAt: ago(createdMin),
+  live,
+  runtimeStatus: live ? 'running' : 'exited',
+  teamMemberId: tm(w),
+  mode: PEOPLE[tm(w)]!.mode ?? null,
+  taskIds: tasks.map(fx),
+  rootIds: rs.map(fx),
+  dispatchedById: w === 'M' ? null : fx('s4'),
+}));
+/* The coordinator's session sits on the story itself; it is a node too. */
+node({ id: fx('s4'), kind: 'work_session', title: 'Maestro’s session', depth: 1, rootIds: [], live: true, activityAt: ago(5) });
+for (const s of sessions) {
+  const n = nodes.find((x) => x.id === s.id);
+  if (n) {
+    n.callSign = s.callSign;
+    n.live = s.live;
+    n.createdAt = s.createdAt;
+  }
+}
+
+const team: StoryTeammate[] = [
+  { id: tm('M'), name: 'Maestro', mode: 'coordinator', parentId: null, live: true, sessionIds: [fx('s4')], runs: [], assigned: [], dispatched: [] },
+  { id: tm('C'), name: 'Scout', mode: 'coordinated-coordinator', parentId: tm('M'), live: false, sessionIds: [], runs: [], assigned: [], dispatched: [] },
+  { id: tm('W'), name: 'Worker', mode: 'coordinated-worker', parentId: tm('M'), live: true, sessionIds: [fx('s1'), fx('s3')], runs: [fx('r3'), fx('c33')], assigned: [], dispatched: [] },
+  { id: tm('F'), name: 'Forge', mode: 'coordinated-worker', parentId: tm('C'), live: true, sessionIds: [fx('s2')], runs: [fx('r2')], assigned: [fx('r5')], dispatched: [] },
+  {
+    id: tm('D'), name: 'Dreamer', mode: 'dispatcher', parentId: null, live: false, sessionIds: [], runs: [], assigned: [],
+    dispatched: [
+      { taskId: fx('c23'), sessionId: fx('s2') },
+      { taskId: fx('c41'), sessionId: null },
+    ],
+  },
 ];
 
-const progress = ROOTS.reduce((a, r) => addTally(a, r.progress), EMPTY_TALLY);
+const childStories: StoryChild[] = [
+  {
+    id: fx('cs1'), title: 'Story so far: the daily recap', status: 'working', statusCategory: 'in_progress', itemCount: 14,
+    taskProgress: { work: 5, done: 2, inProgress: 2, toDo: 1, blocked: 0, cancelled: 0 },
+    rollup: { work: 5, done: 2, inProgress: 2, toDo: 1, blocked: 0, cancelled: 0 },
+    liveSessionCount: 1, lastActivityAt: ago(60),
+  },
+  {
+    id: fx('cs2'), title: 'Scrub time', status: 'open', statusCategory: 'to_do', itemCount: 5,
+    taskProgress: { work: 4, done: 0, inProgress: 0, toDo: 4, blocked: 0, cancelled: 0 },
+    rollup: { work: 4, done: 0, inProgress: 0, toDo: 4, blocked: 0, cancelled: 0 },
+    liveSessionCount: 0, lastActivityAt: ago(60 * 30),
+  },
+];
+
+const title = (id: string): string => nodes.find((n) => n.id === id)?.title ?? id;
+const kindOf = (id: string): string => nodes.find((n) => n.id === id)?.kind ?? 'task';
+const activity: StoryActivityItem[] = (
+  [
+    ['e1', 2, 'c33', 'updated', tm('W')],
+    ['e2', 9, 'pr2', 'linked', tm('F')],
+    ['e3', 18, 'c22', 'updated', tm('F')],
+    ['e4', 25, 'm2', 'created', tm('F')],
+    ['e5', 40, 'a1', 'created', tm('W')],
+    ['e6', 180, 'at1', 'created', tm('C')],
+    ['e7', 60 * 21, 'r1', 'updated', human('S')],
+  ] as Array<[string, number, string, string, string]>
+).map(([k, min, on, verb, actorId]) => ({
+  id: fx(k), at: ago(min), entityId: fx(on), entityKind: kindOf(fx(on)), entityTitle: title(fx(on)), verb, actorId,
+}));
+
+const msg = (k: string, authorId: string, on: string, excerpt: string, min: number): StoryFeedMessage => {
+  const anchorId = on === 'story' ? STORY_ID : fx(on);
+  const s = sessions.find((x) => x.id === anchorId);
+  return {
+    id: fx(k), at: ago(min), anchorId, anchorKind: kindOf(anchorId),
+    anchorTitle: on === 'story' ? 'the story' : s ? `${s.callSign} · ${s.title}` : title(anchorId),
+    authorId, excerpt,
+  };
+};
+/* Newest first, as the contract orders them. */
+const recentMessages: StoryFeedMessage[] = [
+  msg('f6', human('S'), 'story', 'Live updates on the story items, man. Messages live, messages from all the activity on the story.', 4),
+  msg('f5', tm('F'), 's2', 'Facade and projector agree on the counts for every root; running the pinned-era fixtures now.', 40),
+  msg('f4', tm('M'), 'story', 'Roots 2 and 3 are in flight. Scout holds 4 and 5 until the follow-depth ruling.', 120),
+  msg('f3', human('S'), 'r1', 'Merged #990. Root 1 is done.', 60 * 21),
+  msg('f2', tm('W'), 'r1', 'Migration 282 applied clean through the full chain on a scratch cluster. Numbered against the union of every remote ref.', 60 * 22),
+  msg('f1', human('S'), 'story', 'I’m thinking we add a new higher-level entity called a story. A place where we separate different ideas.', 60 * 30),
+];
+
+const followed = nodes.filter((n) => n.depth >= 0);
+const taskProgress = tally(onlyTasks(followed));
+const add = (a: StoryProgress, b: StoryProgress): StoryProgress => ({
+  work: a.work + b.work, done: a.done + b.done, inProgress: a.inProgress + b.inProgress,
+  toDo: a.toDo + b.toDo, blocked: a.blocked + b.blocked, cancelled: a.cancelled + b.cancelled,
+});
+
+export const STORY_FIXTURE_STATE: StoryState = {
+  kind: 'story',
+  rootCount: roots.length,
+  itemCount: followed.length,
+  truncated: false,
+  progress: tally(followed),
+  taskProgress,
+  rollup: childStories.reduce((a, c) => add(a, c.rollup), taskProgress),
+  liveSessionCount: sessions.filter((s) => s.live).length,
+  pendingAttentionCount: 1,
+  lastActivityAt: ago(0),
+  childStoryCount: childStories.length,
+};
+
+export const STORY_FIXTURE_PAGE: StoryPage = {
+  asOf: ago(0),
+  follow: { depth: 3, limit: 500, truncated: false, edgeTypes: ['parent', 'attached_to', 'tracks', 'working_on', 'about', 'created_in', 'assigned_to', 'has_member', 'produces', 'remembers', 'dispatched_by'] },
+  parent: { id: fx('parent'), title: 'Q4: tm8 as a team space' },
+  roots,
+  nodes,
+  edges,
+  sessions,
+  team,
+  childStories,
+  activity,
+  feedAnchorIds: nodes.map((n) => n.id),
+  recentMessages,
+};
 
 export const STORY_FIXTURE: StoryView = {
-  id: id('story'),
+  id: STORY_ID,
   version: 7,
   title: 'Story as an Entity',
   description:
     'A story is one entity you put things in by hand. Everything connected to what you put in follows along, and the page computes progress, who is on it and what is blocked from what is in it.',
   status: 'working',
-  tone: 'working',
-  parent: { id: id('parent'), title: 'Q4: tm8 as a team space' },
-  progress,
-  rollup: CHILDREN.reduce((a, c) => addTally(a, c.progress), progress),
-  liveSessionCount: SESSIONS.filter((s) => s.live).length,
-  pendingAttentionCount: 1,
-  lastActivityAt: ago(2),
-  people: STORY_FIXTURE_PEOPLE,
-  roots: ROOTS,
-  sessions: SESSIONS,
-  team: TEAM,
-  children: CHILDREN,
-  storyTrail: [{ id: id('ch1'), kind: 'chat', title: 'Design session', edge: 'about', toId: id('story'), direction: 'in', activityAt: ago(60 * 30) }],
-  links: [
-    { fromId: id('d1'), toId: id('c33'), edge: 'attached_to', cross: true },
-    { fromId: id('r3'), toId: id('m3'), edge: 'remembers', cross: true },
-    { fromId: id('r2'), toId: id('r5'), edge: 'assigned_to', cross: true },
-    { fromId: id('c51'), toId: id('c52'), edge: 'depends_on' },
-  ],
-  feed: FEED,
-  activity: ACTIVITY,
-  truncated: false,
+  statusCategory: 'in_progress',
+  state: STORY_FIXTURE_STATE,
+  page: STORY_FIXTURE_PAGE,
+  feed: recentMessages,
+  people: PEOPLE,
 };
 
 /** An empty story: the page's empty states. */
 export const STORY_FIXTURE_EMPTY: StoryView = {
-  ...STORY_FIXTURE,
-  id: id('empty'),
+  id: fx('empty'),
+  version: 1,
   title: 'Untitled story',
   description: '',
   status: 'open',
-  tone: 'todo',
-  parent: null,
-  progress: EMPTY_TALLY,
-  rollup: EMPTY_TALLY,
-  liveSessionCount: 0,
-  pendingAttentionCount: 0,
-  lastActivityAt: null,
-  people: [],
-  roots: [],
-  sessions: [],
-  team: [],
-  children: [],
-  storyTrail: [],
-  links: [],
+  statusCategory: 'to_do',
+  state: {
+    kind: 'story', rootCount: 0, itemCount: 0, truncated: false,
+    progress: EMPTY_PROGRESS, taskProgress: EMPTY_PROGRESS, rollup: EMPTY_PROGRESS,
+    liveSessionCount: 0, pendingAttentionCount: 0, lastActivityAt: null, childStoryCount: 0,
+  },
+  page: emptyPage(ago(0)),
   feed: [],
-  activity: [],
+  people: {},
 };

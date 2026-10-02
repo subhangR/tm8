@@ -829,6 +829,9 @@ function synthesizeContent(s: EntitySummary): EntityContent {
     case 'credential':
       // W10a: content is the same allow-list as state — no secret, hint or login.
       return { ...state };
+    case 'story':
+      // The page is hydrated on a detail read only; a seam row carries none.
+      return { kind: 'story', description: '', page: null };
     default:
       // pull_request | commit | file | spell | skill — the open content variant
       return { kind: state.kind };
