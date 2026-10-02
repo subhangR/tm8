@@ -31,7 +31,9 @@ import { z } from 'zod';
 /**
  * The edge types a story's trail follows, in both directions, from each root
  * (Subhang, 2026-10-02). `parent` is not an edge row: it is the envelope's
- * `parent_id`, followed parent -> child only. NOT followed, on purpose:
+ * `parent_id`, followed parent -> child only. Rows of a hub kind
+ * (team_member, member, project, interaction_profile, skill) and stories are
+ * LEAVES: reached, never walked out of (lead ruling 2026-10-02). NOT followed, on purpose:
  * `likes`, `stars`, `pulled`, `visible_to` — reactions and access are not
  * part of the work.
  */
@@ -144,7 +146,11 @@ export interface StoryNode {
   id: string;
   kind: string;
   title: string;
-  /** Workflow status key (e.g. `working`), null when the row has none. */
+  /**
+   * The workflow state's NAME as a human reads it (e.g. `In Progress`) —
+   * 152's states carry no separate key; `statusCategory` is the machine
+   * value. Null when the row has none. Every `status` in this module means this.
+   */
   status: string | null;
   statusCategory: StatusCategory | null;
   /** Holds an unresolved hard `depends_on`. */
