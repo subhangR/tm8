@@ -73,6 +73,13 @@ export interface RequestIdentity {
    */
   sessionSpaceId?: string;
   /**
+   * The session ROW's space (226 `auth_sessions.space_id`), whatever
+   * `TM8_SPACE_SESSIONS` says. NEVER a claim and never an authorization input:
+   * `sessionSpaceId` is the pin. Read only to know that a socket's credential
+   * dies with that space's membership (P7), which holds under `off` too.
+   */
+  sessionRowSpaceId?: string;
+  /**
    * The space link the session descends from (256 `auth_sessions.via_link_id`),
    * bound as `tm8.via_link`. Off the verified session row, like `authKind`.
    * Every claims builder that forwards `sessionSpaceId` forwards this too.

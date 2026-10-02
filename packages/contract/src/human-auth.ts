@@ -19,3 +19,15 @@ export const HUMAN_AUTH_KINDS: readonly string[] = Object.freeze(['browser', 'cl
 export function isHumanAuthKind(kind: string | null | undefined): boolean {
   return typeof kind === 'string' && HUMAN_AUTH_KINDS.includes(kind);
 }
+
+/**
+ * WebSocket close code: the credential this socket was opened with has ENDED —
+ * revoked (logout, a Sessions-page revoke, a gate's cascade, a link revoke),
+ * expired, its account disabled, or its pinned space membership ended (P7).
+ *
+ * Distinct from 1008 on purpose. Reconnecting with the same credential cannot
+ * succeed, so a client must not retry on this code: it signs in again (or, for
+ * a pinned session, re-enters from its gate). 4000-4999 is the application
+ * range (RFC 6455 §7.4.2); 4401 reads as its HTTP 401 twin.
+ */
+export const WS_CLOSE_SESSION_ENDED = 4401;

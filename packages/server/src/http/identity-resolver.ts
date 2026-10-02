@@ -134,6 +134,8 @@ export function identityFromSession(
     // 226/227. The space the session was minted for, off the same
     // verified row. Every membership helper intersects with it.
     ...(sessionSpaceId ? { sessionSpaceId } : {}),
+    // P7: the row's space, unconditioned by the mode, for socket closes only.
+    ...(session.spaceId ? { sessionRowSpaceId: session.spaceId } : {}),
     // 256 (W7p). Off the same verified row; NOT gated by the spaces mode —
     // it only narrows, and `off` must not un-bind a link.
     ...(session.viaLinkId ? { viaLinkId: session.viaLinkId } : {}),

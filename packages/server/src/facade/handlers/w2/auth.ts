@@ -152,8 +152,11 @@ function authLogin(deps: FacadeDeps): OperationHandler {
  * `auth.logout` — revoke the presented session, or an explicitly named one.
  * `revoke_auth_session` enforces self-or-node-admin in SQL under the caller's
  * claims, so naming someone else's session is a 42501, not a hidden no-op.
+ * After commit the revoked session's open event sockets are closed at once
+ * (P7); the pinned children 249's trigger revoked with it close on the event
+ * pump's next liveness sweep.
  */
-function authLogout(deps: FacadeDeps): OperationHandler {
+function authLogout(deps: FacadeDeps, sockets: SessionSocketPort | undefined): OperationHandler {
   return async (ctx) => {
     const owner = await deps.owner();
     const body = (ctx.body ?? {}) as AuthLogoutInput;
@@ -165,6 +168,8 @@ function authLogout(deps: FacadeDeps): OperationHandler {
       );
     }
     await deps.db.rpc(claimsFor(owner, ctx), 'revoke_auth_session', [sessionId]);
+    closeSessionSockets(sockets, new Set([sessionId]), (message, fields) =>
+      console.warn(`[auth.logout] ${message}`, fields));
     const result: AuthLogoutResult = { sessionId, revoked: true };
     return json(result, {
       headers: {
@@ -759,7 +764,7 @@ export function registerW2AuthHandlers(
   registry.registerAll({
     'auth.signup': authSignup(deps),
     'auth.login': authLogin(deps),
-    'auth.logout': authLogout(deps),
+    'auth.logout': authLogout(deps, auth.sockets),
     'auth.session.get': authSessionGet(deps),
     'auth.space.enter': authSpaceEnter(deps),
     'auth.sessions.list': authSessionsList(deps),

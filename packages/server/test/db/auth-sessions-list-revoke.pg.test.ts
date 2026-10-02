@@ -633,7 +633,7 @@ describe('a1 over HTTP: revoke closes exactly the revoked sessions\' sockets', (
     expect((await call('GET', `/v2/auth/sessions?spaceId=${f.spaceA}`, adm.token)).status).toBe(200);
   });
 
-  it('revoking session X closes X\'s socket (1008) and leaves session Y of the same identity open', async () => {
+  it('revoking session X closes X\'s socket (4401) and leaves session Y of the same identity open', async () => {
     const phone = await mintGate(f.mem, 'cli');
     const tab = await mintGate(f.mem);
     const x = await socket(phone.token);
@@ -643,7 +643,7 @@ describe('a1 over HTTP: revoke closes exactly the revoked sessions\' sockets', (
     expect(status).toBe(200);
     expect(data<AuthSessionsRevokeResult>(body).revokedSessionIds).toEqual([phone.id]);
 
-    expect(await within(x.closed, 10_000)).toEqual({ code: 1008, reason: 'session revoked' });
+    expect(await within(x.closed, 10_000)).toEqual({ code: 4401, reason: 'session revoked' });
     expect(await within(y.closed, 500)).toBe('timeout');
     expect(y.ws.readyState).toBe(WebSocket.OPEN);
 
@@ -663,8 +663,8 @@ describe('a1 over HTTP: revoke closes exactly the revoked sessions\' sockets', (
     expect(status).toBe(200);
     expect(new Set(data<AuthSessionsRevokeResult>(body).revokedSessionIds)).toEqual(new Set([child.parent.id, child.id]));
 
-    expect(await within(gateWs.closed, 10_000)).toMatchObject({ code: 1008 });
-    expect(await within(childWs.closed, 10_000)).toMatchObject({ code: 1008 });
+    expect(await within(gateWs.closed, 10_000)).toMatchObject({ code: 4401 });
+    expect(await within(childWs.closed, 10_000)).toMatchObject({ code: 4401 });
     expect(await within(bystanderWs.closed, 500)).toBe('timeout');
     expect((await call('GET', '/v2/auth/session', child.token)).status).toBe(401);
   });
@@ -674,7 +674,7 @@ describe('a1 over HTTP: revoke closes exactly the revoked sessions\' sockets', (
     const adm = await mintGate(f.adm);
     const memWs = await socket(memA.token);
     expect((await call('POST', `/v2/auth/sessions/${memA.id}/revoke`, adm.token)).status).toBe(200);
-    expect(await within(memWs.closed, 10_000)).toMatchObject({ code: 1008 });
+    expect(await within(memWs.closed, 10_000)).toMatchObject({ code: 4401 });
   });
 
   it('a foreign session answers 404 and its socket stays open', async () => {
