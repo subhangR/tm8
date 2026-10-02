@@ -215,8 +215,37 @@ export const CREDENTIAL_PROVIDER_PRESENTATIONS = {
   },
 } as const satisfies Record<CredentialProviderName, CredentialProviderPresentation>;
 
+function UnknownProviderMark(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...props} {...markProps}>
+      <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="12" cy="12" r="1.6" fill="currentColor" />
+    </svg>
+  );
+}
+
+/**
+ * A provider id this build has no row for. The contract type says it cannot
+ * happen, but the wire can: a server newer than this bundle (a rolling
+ * upgrade, a cached tab) lists a provider the table has never heard of, and a
+ * bare index then hands `undefined` to every caller, which crashed the whole
+ * Agent credentials panel on `.needsGitCredentialStore` (01a0fb54-a2ab). The
+ * fallback names the provider by its id, claims no binary and no legacy
+ * store exception, so the card renders as a plain, honest unknown.
+ */
+function unknownPresentation(provider: string): CredentialProviderPresentation {
+  return {
+    name: provider,
+    binary: null,
+    icon: UnknownProviderMark,
+    needsGitCredentialStore: false,
+  };
+}
+
 export function presentationOf(provider: CredentialProviderName): CredentialProviderPresentation {
-  return CREDENTIAL_PROVIDER_PRESENTATIONS[provider];
+  return Object.prototype.hasOwnProperty.call(CREDENTIAL_PROVIDER_PRESENTATIONS, provider)
+    ? CREDENTIAL_PROVIDER_PRESENTATIONS[provider]
+    : unknownPresentation(String(provider));
 }
 
 /**
@@ -228,5 +257,5 @@ export function presentationOf(provider: CredentialProviderName): CredentialProv
  * key.
  */
 export function providerBinaryLabel(provider: CredentialProviderName): string {
-  return CREDENTIAL_PROVIDER_PRESENTATIONS[provider].binary ?? 'API key';
+  return presentationOf(provider).binary ?? 'API key';
 }
