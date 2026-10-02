@@ -45,6 +45,7 @@ import {
   listProjectDirectories,
   requireAllowed,
 } from './project-directories.js';
+import { PathGrantsService } from './path-grants.js';
 import type { DbClaims } from '../../../db/types.js';
 import { projectForgeFacts } from '../../../tracking/pr-projection.js';
 
@@ -451,29 +452,31 @@ export class W2ProjectsAssociationsService {
   readonly listProjectDirectories = async (ctx: RequestContext) => {
     const owner = await this.deps.owner();
     const claims = claimsFor(owner, ctx);
-    // NODE-ADMIN ONLY, and it is the create rule that decides this rather than
-    // a fresh judgement about listings: `createProject` below refuses every
-    // non-admin on BOTH branches, so a non-admin who browses can never act on
-    // what they find. Browsing was the odd one out — the one filesystem verb
-    // open to any authenticated user — and that was survivable only while a
-    // node had a single account.
+    // A NODE ADMIN browses every TM8_PROJECT_ROOTS entry; NOBODY ELSE browses
+    // anything they were not granted (migration 282, design doc 01a0fb62 §4).
     //
-    // It stopped being survivable once space roles became writable and
-    // invite-bound signup made ordinary members routine and numerous: the
-    // default browse scope is the OS filesystem root (see
-    // `project-directories.ts`), and `project-files.ts` shares the same
-    // `canonicalRoots`/`requireAllowed`, so the scope governs reading file
-    // CONTENTS too. The secret filter there is a denylist, and a denylist over
-    // one home directory is a different proposition from a denylist over the
-    // whole filesystem: it fails open on whatever nobody thought to list.
-    //
-    // What remains for non-admins is unchanged and is the honest surface for
-    // them: the files of a project an admin already linked, read through
-    // `projects.files.list` and scoped to that project's working directory.
-    if (claims.nodeAdmin !== true) {
-      throw new CollabError('forbidden', 'node-admin access is required to browse node directories');
+    // Browsing used to be node-admin only, full stop. The default browse scope
+    // is the OS filesystem root, `project-files.ts` shares the same
+    // `canonicalRoots`/`requireAllowed`, and its secret filter is a denylist —
+    // a denylist over the whole filesystem fails open on whatever nobody
+    // thought to list. That stays true, which is why a member's scope is not
+    // "the roots minus something" but only the roots a node admin named for
+    // them, each realpath'd and confined to the canonical roots on every call
+    // (`grantedBrowseRoots`). A space-pinned session is never a node admin
+    // (K6), so even a node admin browses only their own grants from inside a
+    // space.
+    if (claims.nodeAdmin === true) {
+      return listProjectDirectories(ctx.query.get('path') ?? undefined);
     }
-    return listProjectDirectories(ctx.query.get('path') ?? undefined);
+    const roots = await new PathGrantsService(this.deps).browseRoots(claims);
+    if (roots.length === 0) {
+      throw new CollabError(
+        'forbidden',
+        'no folder on this node is granted to you; ask a node admin to grant you a folder path (Settings -> Node -> Filesystem access)',
+        { details: { reason: 'path_grant_required' } },
+      );
+    }
+    return listProjectDirectories(ctx.query.get('path') ?? undefined, roots, 'grants');
   };
 
   /**

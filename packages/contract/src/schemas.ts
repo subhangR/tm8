@@ -78,6 +78,7 @@ import type {
   CredentialsSpaceRenameInput, CredentialsSpaceSetVisibilityInput, CredentialsSpaceAddMineInput, CredentialsSpaceDefaultConsentInput,
   NodeCredentialPolicyEntry, NodeCredentialStatusEntry,
   NodeCredentialsPolicySetInput, NodeCredentialsStatusView, NodeMetricsView, SpaceCredentialPolicyEntry,
+  NodeAccountListView, NodeAccountView, PathGrantCreateInput, PathGrantListView, PathGrantRevokeInput, PathGrantView,
   SpaceCredentialProviderName, SpaceCredentialShape, SpaceCredentialStatus, SpaceCredentialView,
   ServerOnlyCredentialProviderName, SpaceCredentialStoredProviderName,
   CustomEntityKind, CustomFieldDef, CustomFieldValue, DeleteMessageInput,
@@ -2003,6 +2004,7 @@ export const AuthClaimStatusResultSchema: z.ZodType<AuthClaimStatusResult> = z.o
   claimed: z.boolean(),
   mode: z.enum(['single', 'multi']),
   signupPath: z.enum(['claim', 'invite', 'admin']),
+  projectIsolation: z.enum(['shared', 'isolated']),
 }).strict();
 
 export const AuthClaimReissueResultSchema: z.ZodType<AuthClaimReissueResult> = z.object({
@@ -2399,6 +2401,45 @@ export const NodeMetricsViewSchema: z.ZodType<NodeMetricsView> = z.object({
 
 export const NodeCredentialsPolicySetInputSchema: z.ZodType<NodeCredentialsPolicySetInput> = z.object({
   allowNode: z.boolean().nullable(),
+  clientMutationId: z.string().min(1).optional(),
+}).strict();
+
+export const NodeAccountViewSchema: z.ZodType<NodeAccountView> = z.object({
+  accountId: z.string().min(1),
+  username: z.string().min(1),
+  displayName: z.string().optional(),
+  status: z.enum(['active', 'disabled']),
+  isNodeAdmin: z.boolean().optional(),
+}).strict();
+
+export const NodeAccountListViewSchema: z.ZodType<NodeAccountListView> = z.object({
+  accounts: z.array(NodeAccountViewSchema),
+}).strict();
+
+export const PathGrantViewSchema: z.ZodType<PathGrantView> = z.object({
+  id: z.string().min(1),
+  accountId: z.string().min(1),
+  rootPath: z.string().min(1),
+  mode: z.literal('select'),
+  grantedAt: IsoTimestamp,
+  revokedAt: IsoTimestamp.optional(),
+  note: z.string().optional(),
+  grantee: NodeAccountViewSchema.optional(),
+  grantedBy: z.object({ accountId: z.string().min(1), username: z.string().min(1) }).strict().optional(),
+}).strict();
+
+export const PathGrantListViewSchema: z.ZodType<PathGrantListView> = z.object({
+  grants: z.array(PathGrantViewSchema),
+}).strict();
+
+export const PathGrantRevokeInputSchema: z.ZodType<PathGrantRevokeInput> = z.object({
+  clientMutationId: z.string().min(1).optional(),
+}).strict();
+
+export const PathGrantCreateInputSchema: z.ZodType<PathGrantCreateInput> = z.object({
+  accountId: z.string().uuid(),
+  rootPath: z.string().min(1).max(4096),
+  note: z.string().max(500).optional(),
   clientMutationId: z.string().min(1).optional(),
 }).strict();
 

@@ -46,7 +46,8 @@ vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
 // Measured on this branch: 28 credential management (21 + W10a's
 // set_space_credential_visibility, 239 + W10b's six, 255) + 6 non-credential
 // + 2 W4 session management (249) + 8 spaceLinks writes (6 + 278's revoke and
-// restore) + 7 servers (W8) = 51.
+// restore) + 7 servers (W8) = 51; + 3 space password (268) and + 2 path-grant
+// writes (282) = 56.
 // A caller not on this list fails; a listed caller
 // that stops calling the gate fails. Changing this list is a review event.
 // ---------------------------------------------------------------------------
@@ -59,6 +60,7 @@ const SESSION_MANAGEMENT = 'session listing/revoke, human-only (W4, 249): refuse
 const SPACE_LINKS = 'spaceLinks write, human-only by design (W6)';
 const SPACE_PASSWORD = 'space password, human-only (W5, 268): refuses link';
 const SERVERS = 'servers write or gate-token open, human-only by design (W8)';
+const PATH_GRANTS = 'node path-grant write, human gate admin only (282): refuses link';
 
 const STRICT_GATE_CALLERS: Readonly<Record<string, string>> = {
   'claim_space_credential(uuid)': CREDENTIAL_MANAGEMENT, // W10b (255, #869)
@@ -129,6 +131,10 @@ const STRICT_GATE_CALLERS: Readonly<Record<string, string>> = {
   'server_gate_seal_context(uuid)': SERVERS,
   'sign_out_server(uuid,text)': SERVERS,
   'store_server_gate_token(uuid,timestamp with time zone,bytea,bytea,text)': SERVERS,
+  // 282: the two path-grant writes run require_human_auth_kind then
+  // require_gate_admin (node admin, unpinned) — a link session is neither.
+  'create_path_grant(uuid,text,text)': PATH_GRANTS,
+  'revoke_path_grant(uuid)': PATH_GRANTS,
 };
 
 /** Not gate callers: each admits an explicit kind allow-list and 42501s the rest. */
@@ -344,7 +350,7 @@ describe('W6 pin — the STRICT gate\'s full caller set (lead ruling 02:08Z; fol
     expect(found).toEqual(Object.keys(STRICT_GATE_CALLERS).sort());
   });
 
-  it('the list is 28 credential management + 6 non-credential + 2 session management + 8 spaceLinks writes + 3 space password + 7 servers (W8)', () => {
+  it('the list is 28 credential management + 6 non-credential + 2 session management + 8 spaceLinks writes + 3 space password + 7 servers (W8) + 2 path grants (282)', () => {
     const labels = Object.values(STRICT_GATE_CALLERS);
     expect(labels.filter((l) => l === CREDENTIAL_MANAGEMENT || l === CREDENTIAL_READ)).toHaveLength(28);
     expect(labels.filter((l) => l === IDENTITY_WIDE || l === AUTH_MINTING || l === PENDING)).toHaveLength(6);
@@ -352,7 +358,8 @@ describe('W6 pin — the STRICT gate\'s full caller set (lead ruling 02:08Z; fol
     expect(labels.filter((l) => l === SPACE_LINKS)).toHaveLength(8);
     expect(labels.filter((l) => l === SPACE_PASSWORD)).toHaveLength(3);
     expect(labels.filter((l) => l === SERVERS)).toHaveLength(7);
-    expect(labels).toHaveLength(54);
+    expect(labels.filter((l) => l === PATH_GRANTS)).toHaveLength(2);
+    expect(labels).toHaveLength(56);
   });
 
   it('the matcher sees a quoted, mixed-case call and an execute format(...) that names the gate', async () => {

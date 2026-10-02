@@ -98,10 +98,50 @@ async function defaultStartPath(roots: readonly string[]): Promise<string> {
   return roots[0]!;
 }
 
-export function requireAllowed(path: string, roots: readonly string[]): void {
+export const OUTSIDE_PROJECT_ROOTS = 'project directory is outside TM8_PROJECT_ROOTS';
+export const OUTSIDE_PATH_GRANTS = 'project directory is outside the folders a node admin granted you';
+
+export function requireAllowed(path: string, roots: readonly string[], outside = OUTSIDE_PROJECT_ROOTS): void {
   if (!roots.some((root) => containedBy(root, path))) {
-    throw new CollabError('forbidden', 'project directory is outside TM8_PROJECT_ROOTS');
+    throw new CollabError('forbidden', outside);
   }
+}
+
+/**
+ * The browse roots a path-grant holder gets (migration 282, design doc 01a0fb62
+ * §4): each grant realpath'd, kept only when it lies inside a canonical
+ * `TM8_PROJECT_ROOTS` entry, and collapsed so no root sits inside another.
+ *
+ * Grant ∩ roots, not grant alone: narrowing `TM8_PROJECT_ROOTS` after a grant
+ * was made narrows the grant too. A granted directory that has gone, or that
+ * this process can no longer read, is simply absent — one dead grant must not
+ * take the member's other grants down with it.
+ *
+ * A grant whose realpath is no longer EXACTLY the stored root is dropped, not
+ * followed. The root was canonical when it was granted, so a different answer
+ * now means a component was swapped for a symlink since — `/srv/work/alice`
+ * replaced by a link to `/` would otherwise hand the member the filesystem,
+ * and the containment check alone cannot see it under the default root `/`.
+ */
+export async function grantedBrowseRoots(
+  grantRoots: readonly string[],
+  rawRoots?: readonly string[],
+): Promise<string[]> {
+  const allowed = await canonicalRoots(rawRoots ? [...rawRoots] : undefined);
+  const resolved = await Promise.all(grantRoots.map(async (raw) => {
+    try {
+      const canonical = await canonicalDirectory(raw);
+      if (canonical !== raw) return null;
+      return allowed.some((root) => containedBy(root, canonical)) ? canonical : null;
+    } catch (error) {
+      if (error instanceof CollabError) return null;
+      throw error;
+    }
+  }));
+  const unique = [...new Set(resolved.filter((root): root is string => root !== null))];
+  return unique
+    .filter((root) => !unique.some((other) => other !== root && containedBy(other, root)))
+    .sort((a, b) => a.localeCompare(b));
 }
 
 export async function canonicalDirectory(raw: string): Promise<string> {
@@ -133,10 +173,20 @@ export async function canonicalDirectory(raw: string): Promise<string> {
 export async function listProjectDirectories(
   requestedPath?: string,
   rawRoots?: readonly string[],
+  scope: 'roots' | 'grants' = 'roots',
 ): Promise<ProjectDirectoryListing> {
   const roots = await canonicalRoots(rawRoots ? [...rawRoots] : undefined);
-  const current = await canonicalDirectory(requestedPath?.trim() || await defaultStartPath(roots));
-  requireAllowed(current, roots);
+  const outside = scope === 'grants' ? OUTSIDE_PATH_GRANTS : OUTSIDE_PROJECT_ROOTS;
+  const requested = requestedPath?.trim();
+  // A grant holder is refused BEFORE the realpath when the path is not even
+  // lexically under a grant: otherwise `not_found` versus `forbidden` would
+  // tell a member which paths exist anywhere on the node. The containment
+  // check after the realpath still decides — this one only closes the oracle.
+  if (scope === 'grants' && requested && isAbsolute(requested)) {
+    requireAllowed(resolve(requested), roots, outside);
+  }
+  const current = await canonicalDirectory(requested || await defaultStartPath(roots));
+  requireAllowed(current, roots, outside);
 
   let entries;
   try {

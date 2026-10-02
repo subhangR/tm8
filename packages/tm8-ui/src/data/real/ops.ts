@@ -93,6 +93,9 @@ import {
   type SpaceCredentialVisibilityName,
   type NodeCredentialPolicyEntry,
   type NodeCredentialsStatusView,
+  type NodeAccountListView,
+  type PathGrantListView,
+  type PathGrantView,
   type NodeMetricsView,
   type SpaceCredentialProviderName,
   type SpaceCredentialStoredProviderName,
@@ -678,6 +681,37 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
         params: { provider },
         body: { allowNode, clientMutationId: newId('nodecredpol') },
       });
+    },
+
+    // -- filesystem path grants (282; design doc 01a0fb62 §4) -----------------
+    // `node.*` rides the gate pass under enforce (auth/space-sessions.ts), which
+    // is what `require_gate_admin` needs; the caller's own list rides the pin.
+
+    nodePathGrantsList(includeRevoked = false): Promise<PathGrantListView> {
+      return http.call<PathGrantListView>('node.pathGrants.list', {
+        query: includeRevoked ? { includeRevoked: 'true' } : {},
+      });
+    },
+
+    nodePathGrantsCreate(accountId: string, rootPath: string, note?: string): Promise<PathGrantView> {
+      return http.call<PathGrantView>('node.pathGrants.create', {
+        body: { accountId, rootPath, ...(note ? { note } : {}), clientMutationId: newId('pathgrant') },
+      });
+    },
+
+    nodePathGrantsRevoke(grantId: string): Promise<PathGrantView> {
+      return http.call<PathGrantView>('node.pathGrants.revoke', {
+        params: { grantId },
+        body: { clientMutationId: newId('pathgrantrevoke') },
+      });
+    },
+
+    nodeAccountsList(): Promise<NodeAccountListView> {
+      return http.call<NodeAccountListView>('node.accounts.list');
+    },
+
+    myPathGrants(): Promise<PathGrantListView> {
+      return http.call<PathGrantListView>('identity.pathGrants.list');
     },
 
     // -- space links (`spaceLinks.*`, W6) ------------------------------------

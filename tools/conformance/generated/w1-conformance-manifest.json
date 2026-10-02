@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:60b9a9e508f45de026b136f7f7aa2a8029fd52468402db158a029d4caa84f7e4",
+  "catalogDigest": "sha256:3ceaa5ad1e51fc6656fa6217d745a9c7c2c96cb29d60b8bca05036b9c458abe6",
   "catalog": {
-    "total": 292,
-    "v1": 290,
+    "total": 297,
+    "v1": 295,
     "reserved": 2,
-    "http": 290,
+    "http": 295,
     "ws": 1,
-    "registerableV1Http": 288,
+    "registerableV1Http": 293,
     "methods": {
-      "GET": 94,
-      "POST": 143,
+      "GET": 97,
+      "POST": 145,
       "PATCH": 17,
       "DELETE": 18,
       "PUT": 18,
       "WS": 2
     },
     "kinds": {
-      "read": 98,
-      "command": 192,
+      "read": 101,
+      "command": 194,
       "stream": 2
     },
-    "uniqueNames": 292,
-    "uniqueBindings": 291
+    "uniqueNames": 297,
+    "uniqueBindings": 296
   },
   "reservedOperations": [
     "search.query",
@@ -2042,6 +2042,41 @@
         "source": "server-router"
       },
       {
+        "operation": "node.pathGrants.list",
+        "method": "GET",
+        "path": "/v2/node/path-grants",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "node.pathGrants.create",
+        "method": "POST",
+        "path": "/v2/node/path-grants",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "node.pathGrants.revoke",
+        "method": "POST",
+        "path": "/v2/node/path-grants/:grantId/revoke",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "node.accounts.list",
+        "method": "GET",
+        "path": "/v2/node/accounts",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "identity.pathGrants.list",
+        "method": "GET",
+        "path": "/v2/identity/path-grants",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "node.metrics.get",
         "method": "GET",
         "path": "/v2/node/metrics",
@@ -2448,7 +2483,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 260
+    "unimplementedV1Http": 265
   },
   "schemas": {
     "additive": {
@@ -7050,6 +7085,95 @@
           "credentials",
           "policy",
           "set"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "node.pathGrants.list",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/node.pathGrants.list",
+        "intentTags": [
+          "node",
+          "path",
+          "grants",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "node.pathGrants.create",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/node.pathGrants.create",
+        "intentTags": [
+          "node",
+          "path",
+          "grants",
+          "create"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "node.pathGrants.revoke",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/node.pathGrants.revoke",
+        "intentTags": [
+          "node",
+          "path",
+          "grants",
+          "revoke"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "node.accounts.list",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/node.accounts.list",
+        "intentTags": [
+          "node",
+          "accounts",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "identity.pathGrants.list",
+        "noun": "identity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/identity.pathGrants.list",
+        "intentTags": [
+          "identity",
+          "path",
+          "grants",
+          "list"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

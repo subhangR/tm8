@@ -274,6 +274,11 @@ export const SPACE_LINK_REFUSED: readonly SpaceLinkRefusedPrefix[] = [
   { prefix: 'spaceLinks.', kinds: 'command', reason: 'link_management' },
   { prefix: 'auth.', kinds: 'all', reason: 'session_minting' },
   { prefix: 'serverConnections.', kinds: 'all', reason: 'credential_management' },
+  // 282 path grants: who may browse which node folders. Node-level, never a
+  // cross-space act — a link caller neither administers them nor reads a
+  // member's grants (they name node paths).
+  { prefix: 'node.pathGrants.', kinds: 'all', reason: 'grant' },
+  { prefix: 'identity.pathGrants.list', kinds: 'all', reason: 'grant', exact: true },
   { prefix: 'voice.token.create', kinds: 'all', reason: 'grant', exact: true },
   { prefix: 'execution.streams.', kinds: 'all', reason: 'grant' },
   { prefix: 'files.uploadInit', kinds: 'all', reason: 'grant', exact: true },

@@ -360,6 +360,59 @@ const ROWS: Record<OperationName, Row> = {
       'links to this Server stored elsewhere go stale on their next 401',
     ],
   },
+  // ── filesystem path grants (migration 282, doc 01a0fb62 §4) ──────────────
+  'node.accounts.list': {
+    cmd: ['node', 'account', 'list'],
+    syn: 'tm8 node account list',
+    sum: 'List every account on this Server — who a filesystem path grant can be addressed to',
+    authz: 'server',
+    input: 'none',
+    tags: ['account', 'node', 'admin', 'grant'],
+    notes: ['the caller must be an authenticated human node admin on a session not pinned to a space'],
+  },
+  'node.pathGrants.list': {
+    cmd: ['node', 'path-grant', 'list'],
+    syn: 'tm8 node path-grant list [--include-revoked]',
+    sum: 'List the filesystem roots node admins granted to members for browsing and selecting project folders',
+    authz: 'server',
+    input: 'none',
+    tags: ['path', 'grant', 'folder', 'filesystem', 'node', 'admin', 'permission'],
+    notes: [
+      'node admins hold every TM8_PROJECT_ROOTS entry implicitly; those are never listed',
+      'the caller must be an authenticated human node admin on a session not pinned to a space',
+    ],
+  },
+  'node.pathGrants.create': {
+    cmd: ['node', 'path-grant', 'add'],
+    syn: 'tm8 node path-grant add <account-id|username> <path> [--note <text>] [--mutation-id <id>]',
+    sum: 'Grant one member one filesystem root to browse and select project folders under',
+    authz: 'server',
+    input: 'bound',
+    side: 'durable',
+    tags: ['path', 'grant', 'folder', 'filesystem', 'node', 'admin', 'permission', 'allow'],
+    notes: [
+      'the path is realpath\'d and must lie inside TM8_PROJECT_ROOTS; a symlink cannot widen it',
+      'granting the same root to the same account again re-opens a revoked grant',
+      'a grant lets the member browse and select; nothing reads files through it',
+    ],
+  },
+  'node.pathGrants.revoke': {
+    cmd: ['node', 'path-grant', 'revoke'],
+    syn: 'tm8 node path-grant revoke <grant-id> [--mutation-id <id>]',
+    sum: 'Revoke a filesystem path grant; the row is kept for the audit trail',
+    authz: 'server',
+    input: 'bound',
+    side: 'durable',
+    tags: ['path', 'grant', 'revoke', 'filesystem', 'node', 'admin'],
+  },
+  'identity.pathGrants.list': {
+    cmd: ['node', 'path-grant', 'mine'],
+    syn: 'tm8 node path-grant mine',
+    sum: 'List the filesystem roots a node admin granted you to browse and select project folders under',
+    authz: 'server',
+    input: 'none',
+    tags: ['path', 'grant', 'folder', 'filesystem', 'me'],
+  },
   // ── credentials (Tier B per-member vendor credentials) ───────────────────
   //
   // ALL FOUR HAVE NO CLI COMMAND, AND THE REASON IS NOT THAT THEY ARE FORBIDDEN
@@ -3595,8 +3648,10 @@ export const CATALOG_DIGEST =
   // Re-measured (W8, 261, rebuilt on main f01b1566): +6 servers.* and the serverConnections create/delete rows. Read from the regenerated conformance manifest.
   // Re-measured (W5 #917, merges of main dd1c8215 and 2fa4999f): +3 spaces.spacePassword.* on top of main's servers.*, spaceLinks, attention and launch v3 rows. Read from the regenerated conformance manifest.
   // Re-measured (#915 merge of main 0be3b796): main's servers.* + spaceLinks.invoke/audit and the five attention rows together. Read from the regenerated conformance manifest.
+  // Re-measured for 282 (+node.pathGrants.list/create/revoke, node.accounts.list,
+  // identity.pathGrants.list; path grants) — RECOMPUTED, not adjusted.
   // +4 spaceLinks.inbound.list|audit|revoke|restore (278, D2): read from the regenerated conformance manifest.
-  'sha256:60b9a9e508f45de026b136f7f7aa2a8029fd52468402db158a029d4caa84f7e4';
+  'sha256:3ceaa5ad1e51fc6656fa6217d745a9c7c2c96cb29d60b8bca05036b9c458abe6';
 
 export const GRAMMAR_VERSION = '2';
 
