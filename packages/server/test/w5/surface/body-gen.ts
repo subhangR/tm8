@@ -121,6 +121,10 @@ function matchRegex(regex: RegExp, key: string): string {
   // start `tm8`. The sweep needs a value that satisfies it, or the generated
   // body arrives as a 400 and reads as a handler refusal.
   if (source.includes('tm8c_')) return 'tm8c_w5surface';
+  // 284: style foundations and refs (`builtin:<slug>`, alone or in an
+  // alternation with personal:/space:<uuid>). A REAL built-in, because the
+  // stored-document schema also refuses an unknown built-in id.
+  if (source.includes('builtin:')) return 'builtin:atelier-light';
   return stringFor(key, { _def: { checks: [] } } as unknown as ZodTypeAny);
 }
 
@@ -159,6 +163,23 @@ export function minimalValue(schema: ZodTypeAny, ctx: Ctx = { key: '', depth: 0 
       if (schema.safeParse(inner).success) return inner;
       for (const candidate of CANDIDATES) {
         if (schema.safeParse(candidate).success) return candidate;
+      }
+      // An object refinement that needs one of several OPTIONAL keys (e.g.
+      // `styles.personal.create`: title and foundation unless `from`) cannot
+      // be met by the minimal body. Add the omitted optionals one at a time,
+      // in shape order, and stop at the first body THIS schema accepts. Still
+      // verified, so still a measurement.
+      const objectDef = def(d['schema'] as ZodTypeAny);
+      if (typeName(d['schema'] as ZodTypeAny) === 'ZodObject' && inner !== null && typeof inner === 'object') {
+        const shape = (objectDef['shape'] as () => Record<string, ZodTypeAny>)();
+        const grown: Record<string, unknown> = { ...(inner as Record<string, unknown>) };
+        for (const [key, field] of Object.entries(shape)) {
+          if (key in grown || !isSkippable(field)) continue;
+          const value = minimalValue(field, { key, depth: ctx.depth + 1 });
+          if (value === undefined) continue;
+          grown[key] = value;
+          if (schema.safeParse(grown).success) return grown;
+        }
       }
       return inner;
     }

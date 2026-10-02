@@ -41,6 +41,7 @@ import {
   type EntityKind,
   type FormStatus,
   type CustomEntityState,
+  type StyleDoc,
   type EntityState,
   type EntitySummary,
   type TaskAssignment,
@@ -330,6 +331,17 @@ interface SummaryRow {
   story_title: string | null;
   story_description: string | null;
   story_summary: unknown;
+  sty_title?: string | null;
+  sty_description?: string | null;
+  sty_schema_version?: number | null;
+  sty_foundation?: string | null;
+  sty_vars?: Record<string, string> | null;
+  sty_css?: string | null;
+  sty_tags?: string[] | null;
+  sty_resolved_hash?: string | null;
+  sty_pushed_by?: string | null;
+  sty_pushed_at?: Date | string | null;
+  sty_source_owner_identity_id?: string | null;
   form_title: string | null;
   form_status: string | null;
   form_description: string | null;
@@ -508,6 +520,20 @@ select
   -- 283: the SAME function entity-read.ts selects — the twins mirror by
   -- construction. Computed at projection time, never stored.
   case when e.kind = 'story' then internal.story_summary(e.id) end as story_summary,
+  -- Space styles (284): the WHOLE document rides the summary on purpose (spec
+  -- §4.3, sign-off): entity.upsert after a push is how every viewer on the
+  -- style repaints. Bounded by the doors: ≤ 200 vars of ≤ 512 chars, css ≤ 16 KiB.
+  stl.title          as sty_title,
+  stl.description    as sty_description,
+  stl.schema_version as sty_schema_version,
+  stl.foundation     as sty_foundation,
+  stl.vars           as sty_vars,
+  stl.css            as sty_css,
+  stl.tags           as sty_tags,
+  stl.resolved_hash  as sty_resolved_hash,
+  stl.pushed_by      as sty_pushed_by,
+  stl.pushed_at      as sty_pushed_at,
+  stl.source_owner_identity_id as sty_source_owner_identity_id,
   -- Forms (209/211): status and question COUNT only; the questions are content.
   frm.title          as form_title,
   frm.status         as form_status,
@@ -596,6 +622,7 @@ left join lateral (
 left join public.graphs gr           on gr.entity_id = e.id
 left join public.drawings drw         on drw.entity_id = e.id
 left join public.stories sty          on sty.entity_id = e.id
+left join public.styles stl           on e.kind = 'style' and stl.entity_id = e.id
 left join public.forms frm            on frm.entity_id = e.id
 left join public.space_credentials scr on e.kind = 'credential' and scr.id = e.id
 left join public.servers srv          on e.kind = 'server' and srv.entity_id = e.id
@@ -1092,6 +1119,9 @@ export class PgEntityProjector implements EntityProjector {
       case 'story':
         // Its own detail-row title — MIRRORS entity-read.ts titleOf.
         return r.story_title ?? 'Story';
+      case 'style':
+        // Its own detail-row title — MIRRORS entity-read.ts titleOf.
+        return r.sty_title ?? 'Style';
       case 'form':
         // Its own detail-row title — MIRRORS entity-read.ts titleOf.
         return r.form_title ?? 'Form';
@@ -1158,6 +1188,7 @@ export class PgEntityProjector implements EntityProjector {
       : r.kind === 'graph' ? r.graph_type
       : r.kind === 'drawing' ? r.drawing_format
       : r.kind === 'story' ? r.story_description
+      : r.kind === 'style' ? (r.sty_description ?? null)
       : r.kind === 'form' ? r.form_description
       : r.kind === 'credential' ? r.cred_provider
       : r.kind === 'server' ? r.srv_base_url
@@ -1531,6 +1562,23 @@ export class PgEntityProjector implements EntityProjector {
         // link. MIRRORS entity-read.ts stateOf. Without this arm the default
         // below raises EntityKindDriftError for every space_link event.
         return { kind: r.kind };
+      case 'style':
+        // 284: the full document, so a push repaints every viewer on the style
+        // with no fetch (spec §4.3). MIRRORS entity-read.ts stateOf.
+        return {
+          kind: 'style',
+          doc: {
+            schemaVersion: r.sty_schema_version ?? 1,
+            foundation: r.sty_foundation ?? 'builtin:atelier-light',
+            vars: r.sty_vars ?? {},
+            css: r.sty_css ?? null,
+          } as StyleDoc,
+          resolvedHash: r.sty_resolved_hash ?? null,
+          pushedBy: r.sty_pushed_by ?? '',
+          pushedAt: iso(r.sty_pushed_at) ?? '',
+          sourceOwnerIdentityId: r.sty_source_owner_identity_id ?? '',
+          tags: r.sty_tags ?? [],
+        };
       default: {
         // T-L4: custom c:* kinds carry their schema-validated scalars.
         //

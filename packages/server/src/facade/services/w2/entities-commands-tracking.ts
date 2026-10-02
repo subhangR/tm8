@@ -109,7 +109,24 @@ export const RESTRICTED_LIFECYCLE_KINDS = new Set([
   // generic restore would revive a server whose gate rows are gone. SQL refuses
   // the same doors (261 §8b re-creates 251 §10b's trigger with `server` added).
   'server',
+  // `style` (284, styles spec §3.3) is a READ-ONLY space style: born and
+  // re-versioned only by `styles.push`, removed only by `styles.remove` (space
+  // admin). There is no update door at all; 284's `delete_entity` refuses the
+  // kind in SQL too. The refusals name the right door (STYLE_LIFECYCLE_REMEDY).
+  'style',
 ]);
+
+/**
+ * The style kind's refusals say what to do instead (284). A space style is
+ * read-only BY DESIGN, not by a missing feature, so the error is an
+ * `invariant_violation` with the push / remove door named, rather than the
+ * generic "owned by the lifecycle" `forbidden`.
+ */
+const STYLE_LIFECYCLE_REMEDY: Readonly<Record<string, string>> = {
+  'entities.create': 'space styles are created only by publishing a personal style; use `tm8 style push` (styles.push)',
+  'entities.patch': 'space styles are read-only; push a new version with `tm8 style push` (styles.push)',
+  'entities.delete': 'a space style is removed with `tm8 style remove` (styles.remove, space admin)',
+};
 // `memory` is here to HIDE hierarchy on the read surfaces; the actual refusal
 // of a memory parent lives at the data layer (056's entities trigger), because
 // this set is not checked at create/move time.
@@ -989,6 +1006,9 @@ function normalizeReason(error: unknown): never {
 }
 
 function assertGenericLifecycle(kind: string, operation: string): void {
+  if (kind === 'style' && STYLE_LIFECYCLE_REMEDY[operation]) {
+    throw new CollabError('invariant_violation', STYLE_LIFECYCLE_REMEDY[operation]);
+  }
   if (RESTRICTED_LIFECYCLE_KINDS.has(kind)) {
     throw new CollabError('forbidden', `${operation} is owned by the ${kind} lifecycle`);
   }
@@ -1427,6 +1447,7 @@ export class W2EntitiesCommandsTrackingService {
         }
         default:
           if (!input.kind.startsWith('c:')) {
+            assertGenericLifecycle(input.kind, 'entities.create');
             throw new CollabError('forbidden', `entities.create is owned by the ${input.kind} lifecycle`);
           }
           raw = await q.rpc('create_custom_entity', [input.spaceId, input.kind, input.title,

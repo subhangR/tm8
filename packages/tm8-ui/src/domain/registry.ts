@@ -2600,6 +2600,34 @@ const ROWS: readonly KindConfig[] = [
     },
   },
 
+  /*
+   * -- style (migration 284: a published, read-only space style) --
+   *
+   * MINIMAL BY DESIGN: this row registers the kind so lists, panels and the
+   * rail can show a space style. Choosing and editing styles happen in the
+   * account menu's picker and the style editor, not here. A space style is
+   * READ-ONLY — new versions arrive only by `styles.push` — so there is no
+   * quick create, no edit sheet and no `primaries`.
+   */
+  {
+    kind: 'style',
+    label: 'Style',
+    labelPlural: 'Styles',
+    icon: '◐',
+    iconArt: KIND_ART.style,
+    slug: 'styles',
+    strategy: 'collection',
+    defaultMode: 'list',
+    hiddenModes: ['board', 'tree', 'gallery'],
+    chip: { glyph: '◐', tintBy: 'none' },
+    card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
+    list: baseList({
+      quickCreate: false,
+      tile: { badges: [{ source: 'createdBy' }] },
+    }),
+    panel: { archetype: 'generic', blocks: [{ block: 'fields', label: 'STYLE' }] },
+  },
+
   // -- the single custom-kind fallback row ----------------------------------
   {
     kind: CUSTOM_KIND_FALLBACK,

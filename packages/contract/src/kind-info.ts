@@ -72,6 +72,11 @@ export const CORE_KIND_INFO: Readonly<Record<CoreEntityKind, KindInfo>> = {
   doc: { group: 'knowledge', summary: 'a markdown document', createWith: ['entity create doc'] },
   file: { group: 'knowledge', summary: 'an uploaded file', createWith: ['file upload'] },
   drawing: { group: 'knowledge', summary: 'a hand-drawn canvas', createWith: ['entity create drawing'] },
+  style: {
+    group: 'knowledge',
+    summary: 'a published, read-only UI theme in the space; new versions arrive by push',
+    createWith: ['style push'],
+  },
   graph: { group: 'knowledge', summary: 'a diagram or flow of entities', createWith: ['entity create graph'] },
   memory: {
     group: 'knowledge',
