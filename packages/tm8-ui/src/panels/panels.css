@@ -25,6 +25,24 @@
   flex-wrap: wrap;
   align-items: center;
 }
+/* Cross-space references (279): a chip plus its remove control, kept together. */
+.cv2-root .pn-xref {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.cv2-root .pn-xref__remove {
+  border: 0;
+  background: none;
+  color: var(--pn-ink-4);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0 2px;
+}
+.cv2-root .pn-xref__remove:hover {
+  color: var(--pn-ink-2, inherit);
+}
 /* Launch provenance: a FACT about the past, styled as caption not control —
    it is immutable, so it must not look editable. */
 .cv2-root .pn-provenance {
@@ -1563,6 +1581,43 @@
   font-size: 9.5px;
   color: var(--pn-ink-4);
   line-height: 1.5;
+}
+
+/* --- the approve card (L5, 280: a request for a human-only op) ----------
+   Built from the panel's own parts: the facts are `.pn-fields` rows, the
+   verbs are `.pn-btn`s, the standing sentences are `.pn-notice`. Only the
+   layout between them and the note field are new. */
+.cv2-root .pn-approval { display: flex; flex-direction: column; gap: 8px; }
+.cv2-root .pn-approval__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cv2-root .pn-approval__label {
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  color: var(--pn-ink-3);
+  text-transform: uppercase;
+}
+.cv2-root .pn-approval__title { margin: 0; font-size: 13px; font-weight: 600; color: var(--pn-ink); }
+.cv2-root .pn-approval__why { display: flex; flex-direction: column; gap: 4px; }
+.cv2-root .pn-approval__decide { display: flex; flex-direction: column; gap: 6px; }
+.cv2-root .pn-approval__note { display: flex; flex-direction: column; gap: 4px; }
+.cv2-root .pn-approval__note textarea {
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--pn-ink);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: 6px;
+  padding: 5px 8px;
+  resize: vertical;
+}
+.cv2-root .pn-approval__verbs { display: flex; gap: 6px; }
+.cv2-root .pn-approval__link {
+  padding: 0;
+  font: inherit;
+  color: var(--pn-brand-2);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  text-decoration: underline;
 }
 
 /* --- shared tabs --------------------------------------------------------- */

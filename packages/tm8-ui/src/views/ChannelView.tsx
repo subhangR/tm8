@@ -32,6 +32,7 @@ import { taskGitSectionFor } from './taskGitSection';
 import { graphSurfaceFor } from './graphSurface';
 import { storySurfaceFor } from './storySurface';
 import { launchContextSurfaceFor } from './launchContextSurface';
+import { crossSpaceRefsSurfaceFor } from './crossSpaceRefsSurface';
 import { attachmentsFor } from '../files/port';
 import { useMembershipSurface } from './membershipSurface';
 import { representedThreadMessageCount } from './message-thread';
@@ -258,6 +259,7 @@ export function ChannelView({
       graphSurface={graphSurfaceFor(data.seam, selectedId, data.livenessOf, (id) =>
         setSelectedId(id as EntityId),
       )}
+      crossSpaceRefsSurface={crossSpaceRefsSurfaceFor(data.seam, selectedId)}
       launchContextSurface={launchContextSurfaceFor(data.seam, selectedId, (id) => setSelectedId(id as EntityId))}
       storySurface={storySurfaceFor(data.seam, selectedId, (id) => setSelectedId(id as EntityId), data.launch.teammates)}
       attachments={attachments}

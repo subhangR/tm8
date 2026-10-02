@@ -117,6 +117,7 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   'open',                // form create — start open (agents' default)
   'draft',               // form create — start as a draft (humans' default)
   'first',               // form question add|move — put the question first
+  'include-revoked',     // node path-grant list — add revoked grants (282)
   // Styles (styles spec v8 §5).
   'mine',                // style list — personal styles only
   'space-only',          // style list — space styles only

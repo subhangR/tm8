@@ -86,6 +86,8 @@ import {
   CredentialsSpaceRekeyInputSchema,
   CredentialsSpaceRenameInputSchema,
   NodeCredentialsPolicySetInputSchema,
+  PathGrantCreateInputSchema,
+  PathGrantRevokeInputSchema,
   CredentialsLoginSessionStartInputSchema,
   CreateAttentionRequestInputSchema,
   CorrectProjectAssociationInputSchema,
@@ -110,7 +112,12 @@ import {
   SpaceLinksAddInputSchema,
   SpaceLinksMutationInputSchema,
   SpaceLinksSetSpawnInputSchema,
+  SpaceLinksInboundMutationInputSchema,
   SpaceLinksInvokeInputSchema,
+  CrossSpaceRefAddInputSchema,
+  CrossSpaceRefRemoveInputSchema,
+  OpRequestsCreateInputSchema,
+  OpRequestsDecideInputSchema,
   ServersAddInputSchema,
   ServersAdoptInputSchema,
   ServersMutationInputSchema,
@@ -277,6 +284,8 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'credentials.space.myDefault.clear': CredentialsSpaceCommandInputSchema,
   'credentials.space.policy.set': CredentialsSpacePolicySetInputSchema,
   'node.credentials.policy.set': NodeCredentialsPolicySetInputSchema,
+  'node.pathGrants.create': PathGrantCreateInputSchema,
+  'node.pathGrants.revoke': PathGrantRevokeInputSchema,
 
   // node-local named Server routes
   'serverConnections.create': ServerConnectionCreateInputSchema,
@@ -304,8 +313,19 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'spaceLinks.logout': SpaceLinksMutationInputSchema,
   'spaceLinks.remove': SpaceLinksMutationInputSchema,
   'spaceLinks.setSpawn': SpaceLinksSetSpawnInputSchema,
+  // 278 (D2): the target side's two writes, human-only in SQL.
+  'spaceLinks.inbound.revoke': SpaceLinksInboundMutationInputSchema,
+  'spaceLinks.inbound.restore': SpaceLinksInboundMutationInputSchema,
   // W7: the envelope only; the inner op's own schema runs inside invoke.
   'spaceLinks.invoke': SpaceLinksInvokeInputSchema,
+  // L3 (279): the link and the target; the referencing entity is the path's :id.
+  'entities.refs.add': CrossSpaceRefAddInputSchema,
+  'entities.refs.remove': CrossSpaceRefRemoveInputSchema,
+  // L5 (280): the request envelope; the op's own body is validated against
+  // the op's own schema inside the handler, at create and again at approve.
+  'opRequests.create': OpRequestsCreateInputSchema,
+  'opRequests.approve': OpRequestsDecideInputSchema,
+  'opRequests.deny': OpRequestsDecideInputSchema,
   // W8 (261): add/adopt/remove human-only in SQL; no body carries a secret.
   'servers.add': ServersAddInputSchema,
   'servers.adopt': ServersAdoptInputSchema,

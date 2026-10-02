@@ -18,7 +18,12 @@
 import { randomUUID } from 'node:crypto';
 
 import type { Db, DbClaims } from '../db/types.js';
-import { isCollabError, type SpaceLinkAuditEntry } from '@tm8/contract';
+import {
+  isCollabError,
+  type SpaceLinkAuditEntry,
+  type SpaceLinkInboundAuditEntry,
+  type SpaceLinkInboundView,
+} from '@tm8/contract';
 import { formatToken, generateSecret, hashToken } from '../identity/crypto.js';
 import { isInvalidTokenError, resolveBearerIdentity, type ResolvedAuthSession } from '../identity/pg-auth.js';
 import { DEFAULT_SESSION_TTL_MS } from '../identity/service.js';
@@ -48,6 +53,8 @@ export interface SpaceLink {
   /** Only when the caller is a member of the target (P8). */
   targetSpaceName: string | null;
   createdAt: string;
+  /** Set while an admin of the target space has the link revoked (278). */
+  targetRevokedAt?: string | null;
   statusSummary: { signedIn: number; signedOut: number; left: number; unreachable: number };
   mine: SpaceLinkMine | null;
 }
@@ -285,11 +292,48 @@ export class DbSpaceLinkStore {
     ]);
   }
 
+  /**
+   * W7b (277): record that `workSessionId` in the link's target was started
+   * through this link by `op`, from `sourceSessionId` in the home space.
+   * Called under the LINK session's own claims, after the op returned; SQL
+   * refuses a work session that holds no agent session minted under the link.
+   * True when this call wrote the record (first record wins).
+   */
+  recordSpawn(linkClaims: DbClaims, entry: { workSessionId: string; op: string; sourceSessionId: string | null }): Promise<boolean> {
+    return this.db.rpc<boolean>(linkClaims, 'record_space_link_spawn', [
+      entry.workSessionId, entry.op, entry.sourceSessionId,
+    ]);
+  }
+
   /** W7 `spaceLinks.audit`: own rows, or every row for a home admin (260). */
   listAudit(claims: DbClaims, linkId: string, options: { limit?: number; before?: string | null } = {}): Promise<SpaceLinkAuditEntry[]> {
     return this.db.rpc<SpaceLinkAuditEntry[]>(claims, 'list_cross_space_audit', [
       linkId, options.limit ?? 50, options.before ?? null,
     ]);
+  }
+
+  // -- the TARGET side (278, D2): an admin of `spaceId` only, pin held (D7) --
+
+  listInbound(claims: DbClaims, spaceId: string): Promise<SpaceLinkInboundView[]> {
+    return this.db.rpc<SpaceLinkInboundView[]>(claims, 'list_inbound_space_links', [spaceId]);
+  }
+
+  listInboundAudit(
+    claims: DbClaims,
+    spaceId: string,
+    options: { linkId?: string | null; limit?: number; before?: string | null } = {},
+  ): Promise<SpaceLinkInboundAuditEntry[]> {
+    return this.db.rpc<SpaceLinkInboundAuditEntry[]>(claims, 'list_inbound_space_link_audit', [
+      spaceId, options.linkId ?? null, options.limit ?? 50, options.before ?? null,
+    ]);
+  }
+
+  revokeInbound(claims: DbClaims, spaceId: string, linkId: string, clientMutationId?: string | null): Promise<SpaceLinkInboundView> {
+    return this.db.rpc<SpaceLinkInboundView>(claims, 'revoke_inbound_space_link', [spaceId, linkId, clientMutationId ?? null]);
+  }
+
+  restoreInbound(claims: DbClaims, spaceId: string, linkId: string, clientMutationId?: string | null): Promise<SpaceLinkInboundView> {
+    return this.db.rpc<SpaceLinkInboundView>(claims, 'restore_inbound_space_link', [spaceId, linkId, clientMutationId ?? null]);
   }
 
   private key(): Promise<Buffer> {

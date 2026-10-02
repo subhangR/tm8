@@ -161,12 +161,21 @@ import type {
   SpaceCredentialVisibilityName,
   NodeCredentialPolicyEntry,
   NodeCredentialsStatusView,
+  NodeAccountListView,
+  PathGrantListView,
+  PathGrantView,
   NodeMetricsView,
   SpaceCredentialProviderName,
   SpaceCredentialStoredProviderName,
   SpaceCredentialView,
   SpaceLinkView,
   SpaceLinkAuditEntry,
+  SpaceLinkInboundAuditEntry,
+  SpaceLinkInboundView,
+  CrossSpaceRef,
+  CrossSpaceRefRemoved,
+  OpRequestView,
+  OpRequestStatus,
   ServerView,
   ServerProbeView,
   ActionRows,
@@ -305,6 +314,34 @@ import type {
 import type { ChatContextFrame, ChatTurnFrame } from '../chat-home/types';
 
 export type Unsubscribe = () => void;
+
+/**
+ * `opRequests.approve` / `opRequests.deny`'s answer (L5, 280): the request as
+ * it now stands, and whether the outcome reached the requesting session. A
+ * failed notify is NOT a failed decision: the request is decided either way.
+ */
+export interface OpRequestDecision {
+  request: OpRequestView;
+  notified: boolean;
+  notifyError?: { code: string; message: string };
+  delivery?: unknown[];
+}
+
+/**
+ * The op-request noun (`opRequests.*`, L5, migration 280). An agent files a
+ * typed request for a human-only op; a human approves it (the server runs the
+ * op AS THE APPROVER) or denies it. `create` is the agent's door and has no UI
+ * caller, so it is not here.
+ */
+export interface OpRequestsOps {
+  /** The space's requests, newest first. */
+  list(spaceId: SpaceId, query?: { status?: OpRequestStatus; limit?: number }): Promise<OpRequestView[]>;
+  get(requestId: EntityId): Promise<OpRequestView>;
+  /** HUMAN-ONLY. An agent caller is refused `forbidden`. */
+  approve(requestId: EntityId, note?: string | null): Promise<OpRequestDecision>;
+  /** HUMAN-ONLY. Nothing runs. */
+  deny(requestId: EntityId, note?: string | null): Promise<OpRequestDecision>;
+}
 
 /**
  * Connection honesty states (T4). The UI renders these truthfully and never
@@ -1020,6 +1057,13 @@ export interface Seam {
      */
     managed?: ManagedPort;
     /**
+     * The approve card's port (L5, 280): the same object as `seam.opRequests`,
+     * re-exposed here because every detail-panel host already hands the panel
+     * `seam.commands`. Optional like `managed`: absent, the card says the
+     * decision is not wired here rather than drawing dead buttons.
+     */
+    opRequests?: OpRequestsOps;
+    /**
      * `launch.suggest` — Ask Jev on LaunchSheet and the Run popup (design
      * 01a0cb80 §5.1). Optional like `skills`: a seam without it renders the
      * button refused-with-reason, never hidden.
@@ -1526,6 +1570,24 @@ export interface Seam {
   };
 
   /**
+   * -- filesystem path grants (282, design doc 01a0fb62 §4) ------------------
+   *
+   * A node admin lets one member browse one folder root and pick projects from
+   * it. Optional like `projectSetup`: a seam with no node behind it has none,
+   * and the section says so instead of drawing an empty list.
+   */
+  pathGrants?: {
+    /** Node admin: every grant; revoked ones when asked. */
+    list(includeRevoked?: boolean): Promise<PathGrantListView>;
+    create(accountId: string, rootPath: string, note?: string): Promise<PathGrantView>;
+    revoke(grantId: string): Promise<PathGrantView>;
+    /** Node admin: who a grant can be addressed to. */
+    accounts(): Promise<NodeAccountListView>;
+    /** Anyone: the caller's own live grants. */
+    mine(): Promise<PathGrantListView>;
+  };
+
+  /**
    * -- space links (`spaceLinks.*`, W6, migrations 250/251) -------------------
    *
    * A link from a home space to a target space the viewer is also a member of.
@@ -1552,7 +1614,43 @@ export interface Seam {
      * body: op, result, reason and the ids involved.
      */
     audit(linkId: EntityId): Promise<SpaceLinkAuditEntry[]>;
+    /**
+     * 278 (D2): the TARGET side, for an admin of `spaceId` (anyone else is
+     * refused `forbidden`). The links INTO the space, the calls made through
+     * them (scoped to this space), and revoke/restore — the two writes are
+     * human-only like every link write.
+     */
+    inbound: {
+      list(spaceId: SpaceId): Promise<SpaceLinkInboundView[]>;
+      /** Newest first; `linkId` narrows it to one link. */
+      audit(spaceId: SpaceId, linkId?: EntityId): Promise<SpaceLinkInboundAuditEntry[]>;
+      revoke(spaceId: SpaceId, linkId: EntityId): Promise<SpaceLinkInboundView>;
+      restore(spaceId: SpaceId, linkId: EntityId): Promise<SpaceLinkInboundView>;
+    };
   };
+
+  /**
+   * -- cross-space references (`entities.refs.*`, L3, migration 279) ----------
+   *
+   * An entity's pointers into linked spaces. Not edges: edges never cross
+   * spaces (D3). Each carries a kind and title SNAPSHOT; `live` is set only
+   * when the viewer can read the target entity now. Agents add them through
+   * their human's signed-in link (`tm8 entity ref add`); the UI reads and
+   * removes.
+   */
+  crossSpaceRefs: {
+    list(entityId: EntityId): Promise<CrossSpaceRef[]>;
+    remove(entityId: EntityId, refId: string): Promise<CrossSpaceRefRemoved>;
+  };
+
+  /**
+   * -- op requests (`opRequests.*`, L5, migration 280) -----------------------
+   *
+   * An agent's typed request for an allow-listed human-only op. `approve` and
+   * `deny` are HUMAN-ONLY at the facade; `canDecide` on each view says whether
+   * THIS caller may decide it now.
+   */
+  opRequests: OpRequestsOps;
 
   /**
    * -- remote servers (`servers.*`, W8, migration 261) ------------------------

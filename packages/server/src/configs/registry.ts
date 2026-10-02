@@ -230,6 +230,7 @@ export const NOT_CONFIG_ENV: Readonly<Record<string, string>> = {
   TM8_JOURNAL_PATH: 'set by tm8 on each spawned session',
   TM8_PROJECT_ID: 'set by tm8 on each spawned session',
   TM8_MODEL: 'set by tm8 on each spawned session',
+  TM8_MODE: 'set by tm8 on each spawned session (the session mode; read by tm8 whoami)',
   TM8_GIT_LOGIN: 'set by tm8 on each spawned session',
   TM8_CHAT_MODE: 'set by tm8 on each chat thread',
 };

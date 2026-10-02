@@ -29,6 +29,7 @@ export type SettingsSectionId =
   | 'credentials'
   | 'space-credentials'
   | 'node-credentials'
+  | 'filesystem-access'
   | 'space-links'
   | 'projects'
   | 'menu'
@@ -99,6 +100,10 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
      Both built in `settings-credentials/` and injected through `sections`. */
   { id: 'space-credentials', label: 'Space credentials', heading: 'Space credentials', externallyOwned: true },
   { id: 'node-credentials', label: 'Node credentials', heading: 'Node credentials', externallyOwned: true },
+  /* 282 — which node folders a member may browse and pick a project from.
+     Beside the node's credentials because both are node-level things a node
+     admin hands out; built in `settings-credentials/`. */
+  { id: 'filesystem-access', label: 'Filesystem access', heading: 'Filesystem access', externallyOwned: true },
   /* W6 — links to the viewer's other spaces. After the credentials because a
      link is another sign-in your agents act with; built in
      `settings-space-links/` and injected through `sections`. */

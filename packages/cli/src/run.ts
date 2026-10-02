@@ -21,7 +21,7 @@
  * preserved: both lookups are against CLOSED sets and an unmatched path is
  * still a usage error, never a passthrough.
  *
- * Rejected vocabulary (`whoami`, `report`, `progress`, public `session
+ * Rejected vocabulary (`report`, `progress`, public `session
  * prompt`) does not merely not-exist: it FAILS with a discovery hint. An agent
  * that learned the prototype's grammar must be told where the capability went,
  * not left to infer it from "unknown command".
@@ -86,7 +86,9 @@ export const USAGE = `tm8 — the graph-native CLI for a tm8 Server
 
 global options
   --server <name>           target a named Server registered on the local Server
-  --space <space-id>        the Space this command acts in
+  --space <space-id|alias>  the Space this command acts in; from a session, another Space's
+                            link alias routes the call through that space link
+                            (\`tm8 link list\` names them): tm8 --space <alias> entity query --kind task
   --as <actor-id>           author as an authorized Member or Teammate
   --format human|json|jsonl stdout shape; human renders the same DTO as json
   --timeout <seconds>       per-request timeout, in SECONDS
@@ -120,11 +122,6 @@ interface Retired {
 const DISCOVERY_POINTER = 'or search by intent: `tm8 help --query "<what you were trying to do>"`';
 
 const RETIRED_COMMANDS: readonly Retired[] = [
-  {
-    matches: (p) => p[0] === 'whoami',
-    command: 'whoami',
-    replacement: `read your identity with \`tm8 identity get\` — ${DISCOVERY_POINTER}`,
-  },
   {
     matches: (p) => p[1] === 'report' || p[0] === 'report',
     command: 'report',

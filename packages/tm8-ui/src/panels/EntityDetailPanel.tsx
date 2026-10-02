@@ -13,7 +13,7 @@ import type {
   TrackingPrMergeResult,
   WorkSessionInteractionProfileProjection,
 } from '@tm8/contract';
-import type { SessionLiveness } from '../data/seam';
+import type { OpRequestsOps, SessionLiveness } from '../data/seam';
 import { useMobileSurface } from '../mobile';
 import type { ContentSurface } from '../routes';
 import type { ActionContext, ActionRef, ContentBlockRef, KindConfig } from '../domain';
@@ -397,6 +397,12 @@ export interface EntityDetailPanelProps {
    */
   launchContextSurface?: ReactNode;
   /**
+   * The entity's IN OTHER SPACES chips — its cross-space references (279).
+   * Self-fetching, host wires the seam (`views/crossSpaceRefsSurface.tsx`);
+   * draws nothing while the entity has none.
+   */
+  crossSpaceRefsSurface?: ReactNode;
+  /**
    * THE EXITED SESSION'S POST-MORTEM — tokens, messages, tools, models and the
    * files it touched, read from the agent's own transcript. Same contract as
    * Debug: self-fetching, host wires the seam (`views/sessionStatsSurface.tsx`).
@@ -448,7 +454,7 @@ export interface EntityDetailPanelProps {
    * only the task half gets a reader panel whose `Edit` is
    * disabled-with-reason, which is the honest report of what it wired.
    */
-  commands?: ({ skills?: SkillPort; managed?: ManagedPort } & AuthoringCommands & Partial<DocCommands> & Partial<ArtifactPreviewCommands> & Partial<HeaderCommands>) | null;
+  commands?: ({ skills?: SkillPort; managed?: ManagedPort; opRequests?: OpRequestsOps } & AuthoringCommands & Partial<DocCommands> & Partial<ArtifactPreviewCommands> & Partial<HeaderCommands>) | null;
   /** A save landed. The durable event carries only a summary, so the host
       must receive this result to reconcile heavy detail fields such as the
       task description into its detail cache. */
@@ -1517,6 +1523,7 @@ function PanelBody(
           graph={props.graphSurface}
           /* Only a session has a launch: the terminal archetype, by registry data. */
           launchContext={config.panel.archetype === 'terminal' ? props.launchContextSurface : undefined}
+          crossSpaceRefs={detail.deletedAt ? undefined : props.crossSpaceRefsSurface}
           /* The authored selection header, for the kinds that can carry one —
              asked of the domain, never spelled here (§15.2). A tombstone has
              nothing left to select. */

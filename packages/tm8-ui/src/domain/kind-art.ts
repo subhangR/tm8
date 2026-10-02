@@ -276,6 +276,16 @@ export const KIND_ART = {
   ],
 
   /**
+   * A shield with a check (`shield-check`) — an op request asks a human to
+   * vouch for one operation an agent may not run itself (280). Not a key:
+   * that silhouette is `credential`'s.
+   */
+  op_request: [
+    'M8 2.4 12.8 4.2v3.7c0 2.8-2 4.9-4.8 5.9-2.8-1-4.8-3.1-4.8-5.9V4.2z',
+    'M5.9 8.1 7.3 9.5 10.1 6.6',
+  ],
+
+  /**
    * A painter's palette — a `style` is a theme for the whole UI (284). The
    * thumb hole and three paint wells are what keep it from reading as a
    * generic blob or as `drawing`'s pencil at 16px.

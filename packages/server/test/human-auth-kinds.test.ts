@@ -7,7 +7,8 @@
  *   2. no server source holds a private copy (an array/set literal of the two
  *      kinds, or an `authKind === 'browser' || … 'cli'` chain);
  *   3. a catalog binding is `humanOnly` iff its registration is wrapped in
- *      `requireHumanSession` / `requireHumanLinkSession`, per file.
+ *      `requireHumanSession` / `requireHumanLinkSession` /
+ *      `requireHumanOpRequestSession`, per file.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -62,6 +63,7 @@ describe('catalog humanOnly ⇔ registered through a human guard', () => {
     'packages/server/src/facade/handlers/w2/credentials.ts',
     'packages/server/src/facade/handlers/w2/space-links.ts',
     'packages/server/src/facade/handlers/w2/servers.ts',
+    'packages/server/src/facade/handlers/w2/op-requests.ts',
     // 284: only `spaces.styleDefault.set` is human-only; the style reads and
     // personal writes stay open to agents (spec §7).
     'packages/server/src/facade/handlers/w2/styles.ts',
@@ -71,14 +73,15 @@ describe('catalog humanOnly ⇔ registered through a human guard', () => {
     const wrapped = new Set<string>();
     for (const file of FILES) {
       const text = readFileSync(join(ROOT, file), 'utf8');
-      for (const match of text.matchAll(/'([A-Za-z.]+)':\s*requireHuman(?:Link)?Session\(/g)) {
+      for (const match of text.matchAll(/'([A-Za-z.]+)':\s*requireHuman(?:Link|OpRequest)?Session\(/g)) {
         wrapped.add(match[1]!);
       }
     }
     const flagged = new Set(OPERATIONS.filter((op) => op.humanOnly === true).map((op) => op.name));
     expect([...flagged].sort()).toEqual([...wrapped].sort());
     // The reads beside them stay open to agents.
-    for (const op of ['spaceLinks.list', 'spaceLinks.audit', 'spaceLinks.invoke', 'servers.get', 'servers.list', 'servers.probe', 'spaces.styleDefault.get', 'styles.push']) {
+    for (const op of ['spaceLinks.list', 'spaceLinks.audit', 'spaceLinks.invoke', 'servers.get', 'servers.list', 'servers.probe',
+      'opRequests.create', 'opRequests.list', 'opRequests.get', 'spaces.styleDefault.get', 'styles.push']) {
       expect(flagged.has(op)).toBe(false);
     }
   });

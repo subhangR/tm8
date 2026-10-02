@@ -572,6 +572,16 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       },
     },
 
+    // -- filesystem path grants (282) ----------------------------------------
+
+    pathGrants: {
+      list: (includeRevoked) => ops.nodePathGrantsList(includeRevoked),
+      create: (accountId, rootPath, note) => ops.nodePathGrantsCreate(accountId, rootPath, note),
+      revoke: (grantId) => ops.nodePathGrantsRevoke(grantId),
+      accounts: () => ops.nodeAccountsList(),
+      mine: () => ops.myPathGrants(),
+    },
+
     // -- space links (W6) ----------------------------------------------------
 
     spaceLinks: {
@@ -583,10 +593,29 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       remove: (linkId) => ops.spaceLinksMutate('spaceLinks.remove', linkId),
       setSpawn: (linkId, allowSpawn, spawnBudget) => ops.spaceLinksSetSpawn(linkId, allowSpawn, spawnBudget),
       audit: (linkId) => ops.spaceLinksAudit(linkId),
+      inbound: {
+        list: (spaceId) => ops.spaceLinksInboundList(spaceId),
+        audit: (spaceId, linkId) => ops.spaceLinksInboundAudit(spaceId, linkId),
+        revoke: (spaceId, linkId) => ops.spaceLinksInboundMutate('spaceLinks.inbound.revoke', spaceId, linkId),
+        restore: (spaceId, linkId) => ops.spaceLinksInboundMutate('spaceLinks.inbound.restore', spaceId, linkId),
+      },
+    },
+
+    // -- op requests (L5) -----------------------------------------------------
+
+    opRequests: {
+      list: (spaceId, query) => ops.opRequestsList(spaceId, query),
+      get: (requestId) => ops.opRequestsGet(requestId),
+      approve: (requestId, note) => ops.opRequestsDecide('opRequests.approve', requestId, note),
+      deny: (requestId, note) => ops.opRequestsDecide('opRequests.deny', requestId, note),
     },
 
     // -- remote servers (W8) --------------------------------------------------
 
+    crossSpaceRefs: {
+      list: (entityId) => ops.crossSpaceRefsList(entityId),
+      remove: (entityId, refId) => ops.crossSpaceRefsRemove(entityId, refId),
+    },
     servers: {
       get: (serverId) => ops.serversGet(serverId),
       probe: (serverId) => ops.serversProbe(serverId),
@@ -619,5 +648,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
      finished object. This therefore REQUIRES an unfrozen seam; freezing
      `seam` or `seam.commands` would break it here and nowhere else. */
   seam.commands.managed = managedPortFromSeam(seam);
+  // The approve card's port IS the noun; the panel reaches it through `commands`.
+  seam.commands.opRequests = seam.opRequests;
   return seam;
 }

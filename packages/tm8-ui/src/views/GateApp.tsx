@@ -101,11 +101,13 @@ import { nodeKeyOf } from '../data/launch-cache';
 import {
   CredentialsSection,
   CredentialsSetupDialog,
+  FilesystemAccessSection,
   NodeCredentialsSection,
   SpaceCredentialsSection,
   credentialSetupState,
   credentialsPortFromSeam,
   spaceCredentialsPortFromSeam,
+  filesystemAccessPortFromSeam,
   serviceKeysPortFromSeam,
   readSetupDismissed,
   setupNudgeOf,
@@ -1640,6 +1642,8 @@ export function GateApp(props: GateAppProps = {}) {
       : null),
     [data.seam, data.spaceId],
   );
+  // 282: node folder grants. Node-level, so no space is bound; null off-node.
+  const filesystemAccessPort = useMemo(() => filesystemAccessPortFromSeam(data.seam), [data.seam]);
   // W6: links from this space to the viewer's other spaces, on the same pair.
   const spaceLinksPort = useMemo(
     () => (data.spaceId ? spaceLinksPortFromSeam(data.seam, data.spaceId) : null),
@@ -2688,6 +2692,7 @@ export function GateApp(props: GateAppProps = {}) {
                         ? {
                             'space-credentials': <SpaceCredentialsSection port={spaceCredentialsPort} serverBaseUrl={activeServer.routeBaseUrl} onOpen={openFromSettings} />,
                             'node-credentials': <NodeCredentialsSection port={spaceCredentialsPort} />,
+                            'filesystem-access': <FilesystemAccessSection port={filesystemAccessPort} />,
                           }
                         : {}),
                       ...(branchesPort

@@ -99,6 +99,7 @@ import { taskGitSectionFor } from './taskGitSection';
 import { graphSurfaceFor } from './graphSurface';
 import { storySurfaceFor } from './storySurface';
 import { launchContextSurfaceFor } from './launchContextSurface';
+import { crossSpaceRefsSurfaceFor } from './crossSpaceRefsSurface';
 import { AuxEntityPanel } from './auxPanel';
 import { representedThreadMessageCount } from './message-thread';
 import { useChatCounts } from '../entity-chat';
@@ -862,6 +863,7 @@ export function EntityView(props: EntityViewProps) {
             )
           : undefined
       }
+      crossSpaceRefsSurface={detail ? crossSpaceRefsSurfaceFor(data.seam, selectedId) : undefined}
       launchContextSurface={
         detail
           ? launchContextSurfaceFor(data.seam, selectedId, (id) => setAux({ sort: 'entity', id: id as EntityId }))

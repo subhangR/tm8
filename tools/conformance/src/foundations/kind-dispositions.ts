@@ -34,6 +34,7 @@ export type CapabilityProfile =
   | 'credential-lifecycle'
   | 'space-link-lifecycle'
   | 'server-lifecycle'
+  | 'op-request-lifecycle'
   | 'style-lifecycle'
   | 'custom-scalar'
   | 'static-no-authority';
@@ -64,6 +65,7 @@ export type MigrationStrategy =
   | 'form-detail'
   | 'credential-detail'
   | 'space-link-kinds'
+  | 'op-request-detail'
   | 'story-detail'
   | 'style-detail'
   | 'custom-registry'
@@ -411,6 +413,29 @@ function capabilities(profile: CapabilityProfile): CapabilityDisposition {
           'servers.probe',
         ],
       };
+    case 'op-request-lifecycle':
+      // NOTHING generic but messages (L5, 280). A request is born only from
+      // `opRequests.create`, moved only by its human-only decision doors; the
+      // outcome is posted as a message on it.
+      return {
+        profile,
+        genericCreate: false,
+        genericPatch: false,
+        genericMove: false,
+        genericHierarchy: false,
+        genericDeleteRestore: false,
+        genericPoints: false,
+        messages: true,
+        reactions: false,
+        connections: false,
+        lifecycleOperations: [
+          'opRequests.list',
+          'opRequests.get',
+          'opRequests.create',
+          'opRequests.approve',
+          'opRequests.deny',
+        ],
+      };
     case 'static-no-authority':
       return {
         profile,
@@ -622,6 +647,13 @@ export const CORE_KIND_DISPOSITIONS = {
     collection: typedCollection, projection: universal,
     capabilities: { profile: 'server-lifecycle' },
     menu: { strategy: 'not-addressable' }, migration: { strategy: 'space-link-kinds' },
+  }),
+  // An op request (L5, migration 280). Born only from `opRequests.create`;
+  // decided by a human through `opRequests.approve|deny`; never menu-addressable.
+  op_request: core('op_request', 'op-requests', {
+    collection: typedCollection, projection: universal,
+    capabilities: { profile: 'op-request-lifecycle' },
+    menu: { strategy: 'not-addressable' }, migration: { strategy: 'op-request-detail' },
   }),
   // Stories (migration 283). `drawing`'s disposition, for the same reasons: an
   // ordinary collection-routed entity created and patched through the generic

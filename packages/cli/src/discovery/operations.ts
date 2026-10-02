@@ -537,6 +537,59 @@ const ROWS: Record<OperationName, Row> = {
       'links to this Server stored elsewhere go stale on their next 401',
     ],
   },
+  // ── filesystem path grants (migration 282, doc 01a0fb62 §4) ──────────────
+  'node.accounts.list': {
+    cmd: ['node', 'account', 'list'],
+    syn: 'tm8 node account list',
+    sum: 'List every account on this Server — who a filesystem path grant can be addressed to',
+    authz: 'server',
+    input: 'none',
+    tags: ['account', 'node', 'admin', 'grant'],
+    notes: ['the caller must be an authenticated human node admin on a session not pinned to a space'],
+  },
+  'node.pathGrants.list': {
+    cmd: ['node', 'path-grant', 'list'],
+    syn: 'tm8 node path-grant list [--include-revoked]',
+    sum: 'List the filesystem roots node admins granted to members for browsing and selecting project folders',
+    authz: 'server',
+    input: 'none',
+    tags: ['path', 'grant', 'folder', 'filesystem', 'node', 'admin', 'permission'],
+    notes: [
+      'node admins hold every TM8_PROJECT_ROOTS entry implicitly; those are never listed',
+      'the caller must be an authenticated human node admin on a session not pinned to a space',
+    ],
+  },
+  'node.pathGrants.create': {
+    cmd: ['node', 'path-grant', 'add'],
+    syn: 'tm8 node path-grant add <account-id|username> <path> [--note <text>] [--mutation-id <id>]',
+    sum: 'Grant one member one filesystem root to browse and select project folders under',
+    authz: 'server',
+    input: 'bound',
+    side: 'durable',
+    tags: ['path', 'grant', 'folder', 'filesystem', 'node', 'admin', 'permission', 'allow'],
+    notes: [
+      'the path is realpath\'d and must lie inside TM8_PROJECT_ROOTS; a symlink cannot widen it',
+      'granting the same root to the same account again re-opens a revoked grant',
+      'a grant lets the member browse and select; nothing reads files through it',
+    ],
+  },
+  'node.pathGrants.revoke': {
+    cmd: ['node', 'path-grant', 'revoke'],
+    syn: 'tm8 node path-grant revoke <grant-id> [--mutation-id <id>]',
+    sum: 'Revoke a filesystem path grant; the row is kept for the audit trail',
+    authz: 'server',
+    input: 'bound',
+    side: 'durable',
+    tags: ['path', 'grant', 'revoke', 'filesystem', 'node', 'admin'],
+  },
+  'identity.pathGrants.list': {
+    cmd: ['node', 'path-grant', 'mine'],
+    syn: 'tm8 node path-grant mine',
+    sum: 'List the filesystem roots a node admin granted you to browse and select project folders under',
+    authz: 'server',
+    input: 'none',
+    tags: ['path', 'grant', 'folder', 'filesystem', 'me'],
+  },
   // ── credentials (Tier B per-member vendor credentials) ───────────────────
   //
   // ALL FOUR HAVE NO CLI COMMAND, AND THE REASON IS NOT THAT THEY ARE FORBIDDEN
@@ -893,7 +946,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'spaceLinks.setSpawn': {
     cmd: null,
-    sum: 'Set your own spawn switch and budget on a linked Space — human sessions only. Allow spawn is stored per link; it is enforced when cross-space spawn ships.',
+    sum: 'Set your own spawn switch and budget on a linked Space — human sessions only. With Allow spawn on, agents working for you may spawn, resume or dispatch sessions in the target through the link (no budget is enforced yet); off stops new ones.',
     authz: 'server',
     input: 'bound',
     side: 'durable',
@@ -921,6 +974,135 @@ const ROWS: Record<OperationName, Row> = {
     authz: 'server',
     input: 'none',
     tags: ['link', 'cross-space', 'audit'],
+  },
+  // 278 (D2): the TARGET side. An admin of this Space sees the links INTO it,
+  // the calls made through them, and revokes or restores one. The admin check
+  // holds the session pin (D7): owning the home Space too changes nothing.
+  'spaceLinks.inbound.list': {
+    cmd: ['link', 'inbound'],
+    syn: 'tm8 link inbound',
+    sum: 'List the space links INTO this Space from other Spaces, with each Member who holds one — admins of this Space only',
+    authz: 'space',
+    input: 'none',
+    tags: ['link', 'inbound', 'space', 'cross-space', 'admin', 'settings'],
+    notes: [
+      'creating a link needs no approval here; an admin sees it, reads its calls with `tm8 link inbound-audit`, and revokes it with `tm8 link revoke`',
+    ],
+  },
+  'spaceLinks.inbound.audit': {
+    cmd: ['link', 'inbound-audit'],
+    syn: 'tm8 link inbound-audit [<link-id|home-space-id>] [--limit <count>] [--before <timestamp>]',
+    sum: 'Read the calls other Spaces made INTO this Space through space links, newest first — admins of this Space only',
+    authz: 'space',
+    input: 'none',
+    tags: ['link', 'inbound', 'cross-space', 'audit', 'admin'],
+    notes: ['scoped to this Space: only calls whose target is this Space are returned'],
+  },
+  'spaceLinks.inbound.revoke': {
+    cmd: ['link', 'revoke'],
+    syn: 'tm8 link revoke <link-id|home-space-id> [--mutation-id <id>]',
+    sum: 'Revoke a space link INTO this Space: every Member\'s stored session on it ends and no sign-in works until it is restored — human admins of this Space only',
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['link', 'inbound', 'revoke', 'cross-space', 'admin'],
+    notes: [
+      'an agent is refused by the Server; it asks its human to run this',
+      'owning the linking Space too is no exception: a revoked link refuses its owners\' sign-in as well',
+    ],
+  },
+  'spaceLinks.inbound.restore': {
+    cmd: ['link', 'restore'],
+    syn: 'tm8 link restore <link-id|home-space-id> [--mutation-id <id>]',
+    sum: 'Restore a revoked space link INTO this Space; each Member signs in again for themselves — human admins of this Space only',
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['link', 'inbound', 'restore', 'cross-space', 'admin'],
+    notes: ['an agent is refused by the Server; it asks its human to run this'],
+  },
+  'entities.refs.add': {
+    cmd: ['entity', 'ref', 'add'],
+    syn: 'tm8 entity ref add <entity-id> <target-entity-id> --link <alias|link-id|space-id> [--mutation-id <id>]',
+    sum: 'Point an entity in this Space at an entity in a linked Space — a cross-space reference, not an edge',
+    authz: 'entity',
+    input: 'bound',
+    side: 'durable',
+    tags: ['ref', 'reference', 'link', 'cross-space', 'relate', 'relates_to', 'chip'],
+    notes: [
+      'an edge never crosses spaces (`edge create` across spaces is an invariant_violation); use this instead',
+      'needs YOUR human\'s space link to the target Space, signed in: no active link, no reference (`tm8 link list` shows them; a human runs `tm8 link add` and `tm8 link login`)',
+      'the target is read through the link first (one audited `entities.get` in `tm8 link audit`), and its kind and title are kept as the snapshot; adding the same target again refreshes it',
+      'name the link with --link, not the global --space: --space would run the whole command inside the linked Space',
+    ],
+    examples: ['tm8 entity ref add <entity-id> <target-entity-id> --link research'],
+  },
+  'entities.refs.list': {
+    cmd: ['entity', 'ref', 'list'],
+    syn: 'tm8 entity ref list <entity-id>',
+    sum: 'List an entity\'s references into linked Spaces — live when you can read the target, the snapshot otherwise',
+    authz: 'entity',
+    input: 'none',
+    tags: ['ref', 'reference', 'link', 'cross-space'],
+  },
+  'entities.refs.remove': {
+    cmd: ['entity', 'ref', 'remove'],
+    syn: 'tm8 entity ref remove <entity-id> <ref-id> [--mutation-id <id>]',
+    sum: 'Remove one cross-space reference from an entity',
+    authz: 'entity',
+    input: 'bound',
+    side: 'durable',
+    tags: ['ref', 'reference', 'cross-space'],
+  },
+  'opRequests.create': {
+    cmd: ['request', 'create'],
+    syn: "tm8 request create <op> --justification <text> [--params <json>] [--input <json>]",
+    sum: 'Ask a human for an operation you may not do yourself (link a space, set a link\'s spawn switch, register a gate folder, grant a filesystem path); they approve and it runs as them, or deny',
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['request', 'approve', 'human-only', 'link', 'cross-space', 'folder', 'agent'],
+    notes: [
+      '<op> must be on OP_REQUESTABLE in @tm8/contract; --input is the op\'s own body without clientMutationId, --params its path params (spaceId defaults to this Space)',
+      'the request is raised as an approve item; the outcome is messaged back to the session that filed it',
+    ],
+    examples: [
+      'tm8 request create spaceLinks.add --input \'{"targetSpaceId":"<space-id>","alias":"docs"}\' --justification "I need to read tasks in the docs space"',
+    ],
+  },
+  'opRequests.list': {
+    cmd: ['request', 'list'],
+    syn: 'tm8 request list [--status <pending|executing|succeeded|failed|denied>] [--limit <count>]',
+    sum: 'List this Space\'s op requests, newest first',
+    authz: 'space',
+    input: 'none',
+    tags: ['request', 'approve', 'list'],
+  },
+  'opRequests.get': {
+    cmd: ['request', 'get'],
+    syn: 'tm8 request get <request-id>',
+    sum: 'Read one op request: its op, body, justification, status and outcome',
+    authz: 'entity',
+    input: 'none',
+    tags: ['request', 'approve'],
+  },
+  'opRequests.approve': {
+    cmd: ['request', 'approve'],
+    syn: 'tm8 request approve <request-id> [--note <text>]',
+    sum: 'Approve an op request: the Server runs the op as YOU, with your own authority checks, and messages the outcome to the requesting session — human sessions only',
+    authz: 'entity',
+    input: 'bound',
+    side: 'durable',
+    tags: ['request', 'approve', 'human-only'],
+  },
+  'opRequests.deny': {
+    cmd: ['request', 'deny'],
+    syn: 'tm8 request deny <request-id> [--note <text>]',
+    sum: 'Deny an op request: nothing runs, and the requesting session is told — human sessions only',
+    authz: 'entity',
+    input: 'bound',
+    side: 'durable',
+    tags: ['request', 'deny', 'human-only'],
   },
   'node.credentials.status': {
     cmd: null,
@@ -1693,7 +1875,10 @@ const ROWS: Record<OperationName, Row> = {
     authz: 'entity',
     input: 'bound',
     tags: ['link', 'relate', 'connect'],
-    notes: ['`props.origin` is Server-owned and never accepted from a client'],
+    notes: [
+      '`props.origin` is Server-owned and never accepted from a client',
+      'both ends must be in the same Space; to point at an entity in a linked Space use `tm8 entity ref add <entity-id> <target-entity-id> --link <alias>`',
+    ],
   },
   'edges.patch': {
     cmd: ['edge', 'update'],
@@ -3642,6 +3827,7 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   // `servers.*` (W8, 261): the same `tm8 server` noun 044's rows used.
   // generator.ts nounForOperation says the same.
   servers: 'server',
+  opRequests: 'request',
   // Styles (284, styles spec v8 §5). `identity.stylePrefs.*` and
   // `spaces.styleDefault.*` keep their family nouns; their commands are
   // `style use` and `style default`. generator.ts nounForOperation says the same.
@@ -3698,6 +3884,8 @@ function exposureFor(operation: OperationName): Exposure {
 // 2026-08-13 (first-run claim): auth.claim + auth.claim.status take the catalog
 // to 161 rows. RECOMPUTED from `JSON.stringify(OPERATIONS)`, not adjusted.
 export const CATALOG_DIGEST =
+  // Re-measured for L3 (+entities.refs.list|add|remove, cross-space references, 279) — RECOMPUTED from
+  // JSON.stringify(OPERATIONS), not adjusted.
   // Re-measured for 276 (+chat.setModel, chat model switch) — RECOMPUTED from
   // JSON.stringify(OPERATIONS) by test/discovery-operations.test.ts, not adjusted.
   // Re-measured for task 01a0e24d (+humanOnly on 33 rows: 24 credentials.*/node.credentials.*,
@@ -3748,8 +3936,14 @@ export const CATALOG_DIGEST =
   // Re-measured (W8, 261, rebuilt on main f01b1566): +6 servers.* and the serverConnections create/delete rows. Read from the regenerated conformance manifest.
   // Re-measured (W5 #917, merges of main dd1c8215 and 2fa4999f): +3 spaces.spacePassword.* on top of main's servers.*, spaceLinks, attention and launch v3 rows. Read from the regenerated conformance manifest.
   // Re-measured (#915 merge of main 0be3b796): main's servers.* + spaceLinks.invoke/audit and the five attention rows together. Read from the regenerated conformance manifest.
+  // Re-measured for 282 (+node.pathGrants.list/create/revoke, node.accounts.list,
+  // identity.pathGrants.list; path grants) — RECOMPUTED, not adjusted.
+  // +4 spaceLinks.inbound.list|audit|revoke|restore (278, D2): read from the regenerated conformance manifest.
+  // +3 entities.refs.list|add|remove (L3 cross-space refs, 279): read from the regenerated conformance manifest.
+  // Re-measured (L5, 280): +5 opRequests.* — read from the regenerated conformance manifest.
   // Re-measured (styles, 284): +15 styles.*, identity.stylePrefs.get|set, spaces.styleDefault.get|set. RECOMPUTED from JSON.stringify(OPERATIONS).
-  'sha256:0056a5d86f0341614b6a888ae1b5302074ca357c50e680321d41f83beb324608';
+  // Re-measured (main sync: cross-space + styles).
+  'sha256:727cfb8df9478dca9c67b97d04448214fbc5f8a55db0955747de95243ef8acf2';
 
 export const GRAMMAR_VERSION = '2';
 
@@ -4239,6 +4433,80 @@ const COMMAND_ALIASES = new Map<string, {
     // carry a `<placeholder>` (help.test.ts) — a zero-arg command has none.
     examples: [],
   }],
+  // ── cross-space discoverability (lane L1) ─────────────────────────────────
+  //
+  // Spellings agents reach for, each SUGAR over an operation that already has
+  // a command: no catalog row, no digest change. `space-link` is the `link`
+  // noun under the name the feature is called by; `task create` is
+  // `entity create task`; `teammate list` is the team_member query; `whoami`
+  // is `identity get` plus the session facts the CLI already holds locally.
+  ['space-link list', {
+    path: ['space-link', 'list'],
+    syntax: 'tm8 space-link list',
+    summary: 'List the Spaces this Space links to — alias of `tm8 link list`',
+    notes: [
+      'act in a linked Space with the global flag: `tm8 --space <alias|space-id> <command>`; every call goes through the link and is audited on the home Space',
+      'open to every Member of the home Space, agents included',
+    ],
+    examples: ['tm8 --space <alias> entity query --kind task'],
+  }],
+  ['space-link add', {
+    path: ['space-link', 'add'],
+    syntax: 'tm8 space-link add <target-space-id> [--alias <alias>] [--mutation-id <id>]',
+    summary: 'Link another Space you are a Member of to this one — alias of `tm8 link add`, human sessions only',
+    notes: ['an agent is refused by the Server; it asks its human to run this'],
+    examples: ['tm8 space-link add <target-space-id> --alias <alias>'],
+  }],
+  ['space-link login', {
+    path: ['space-link', 'login'],
+    syntax: 'tm8 space-link login <alias|link-id> [--mutation-id <id>]',
+    summary: 'Sign in to a linked Space — alias of `tm8 link login`, human sessions only',
+    notes: ['an agent is refused by the Server; it asks its human to run this'],
+    examples: ['tm8 space-link login <alias>'],
+  }],
+  ['space-link audit', {
+    path: ['space-link', 'audit'],
+    syntax: 'tm8 space-link audit <alias|link-id> [--limit <count>] [--before <timestamp>]',
+    summary: 'Read the audit of calls made through a space link — alias of `tm8 link audit`',
+    notes: [],
+    examples: ['tm8 space-link audit <alias> --limit <count>'],
+  }],
+  ['task create', {
+    path: ['task', 'create'],
+    syntax: 'tm8 task create <title> [--space <space-id|link-alias>] [--parent <task-id|none>] [--position <n>] [--content <json-source>] [--attach-to <entity-id>...] [--relate-to <entity-id>...] [--connect <edge-type>=<target-entity-id>...] [--when-to-use <text>] [--summary <text>] [--keyword <k>...] [--mutation-id <id>]',
+    summary: 'Create a task — alias of `tm8 entity create task`',
+    notes: [
+      'sugar over entities.create with kind task; every `entity create` flag works unchanged',
+      'task content shape: {description, acceptanceCriteria: [{id, done, text}], pointsEstimate, axes: {<axis-name>: <value>}}',
+      'in a linked Space: `tm8 --space <alias> task create "<title>"`',
+    ],
+    examples: [
+      'tm8 task create "<title>" --parent <task-id>',
+      'tm8 --space <alias> task create "<title>" --content \'{"description":"<text>"}\'',
+    ],
+  }],
+  ['teammate list', {
+    path: ['teammate', 'list'],
+    syntax: 'tm8 teammate list [--space <space-id|link-alias>] [--limit <count>] [--cursor <cursor>]',
+    summary: 'List the Teammates in a Space — sugar over `tm8 entity query --kind team_member`',
+    notes: [
+      'a Teammate id is what `--teammate`, `--as` and `tm8 session spawn` take',
+      'in a linked Space: `tm8 --space <alias> teammate list`',
+    ],
+    examples: ['tm8 --space <alias> teammate list --limit <count>'],
+  }],
+  ['whoami', {
+    path: ['whoami'],
+    syntax: 'tm8 whoami',
+    summary: 'Who and where this process is: session, Space, actor, access mode, and the identity the Server resolved',
+    notes: [
+      'sugar over identity.get plus the session facts this CLI already holds (TM8_* env and the session manifest)',
+      'access mode comes from the session manifest; outside a tm8 session it is absent',
+      'act in another Space with `tm8 --space <alias> <command>`; `tm8 link list` names the aliases',
+    ],
+    // No example: a zero-arg command has no `<placeholder>` (see `node mode`).
+    examples: [],
+  }],
 ]);
 COMMAND_OPS.set('message reply', ['messages.post']);
 const messageSendIndex = COMMAND_ORDER.indexOf('message send');
@@ -4338,6 +4606,29 @@ const styleCreateIndex = COMMAND_ORDER.indexOf('style create');
 COMMAND_ORDER.splice(styleCreateIndex < 0 ? COMMAND_ORDER.length : styleCreateIndex + 1, 0, 'style import');
 COMMAND_ORDER.push('style versions');
 COMMAND_ORDER.push('session checkpoint', 'session rollback', 'worktree stage', 'worktree commit', 'worktree merge', 'worktree cherry-pick', 'worktree branch', 'worktree stash');
+// Lane L1 aliases: each is exactly as available as the operation it spells.
+COMMAND_OPS.set('space-link list', ['spaceLinks.list']);
+COMMAND_OPS.set('space-link add', ['spaceLinks.add']);
+COMMAND_OPS.set('space-link login', ['spaceLinks.login']);
+COMMAND_OPS.set('space-link audit', ['spaceLinks.audit']);
+const linkAuditIndex = COMMAND_ORDER.indexOf('link audit');
+COMMAND_ORDER.splice(
+  linkAuditIndex < 0 ? COMMAND_ORDER.length : linkAuditIndex + 1,
+  0,
+  'space-link list',
+  'space-link add',
+  'space-link login',
+  'space-link audit',
+);
+COMMAND_OPS.set('task create', ['entities.create']);
+const taskTransitionIndex = COMMAND_ORDER.indexOf('task transition');
+COMMAND_ORDER.splice(taskTransitionIndex < 0 ? COMMAND_ORDER.length : taskTransitionIndex, 0, 'task create');
+COMMAND_OPS.set('teammate list', ['collections.query']);
+const teammateIndex = COMMAND_ORDER.findIndex((k) => k.startsWith('teammate '));
+COMMAND_ORDER.splice(teammateIndex < 0 ? COMMAND_ORDER.length : teammateIndex, 0, 'teammate list');
+COMMAND_OPS.set('whoami', ['identity.get']);
+const identityGetIndex = COMMAND_ORDER.indexOf('identity get');
+COMMAND_ORDER.splice(identityGetIndex < 0 ? COMMAND_ORDER.length : identityGetIndex + 1, 0, 'whoami');
 
 /**
  * A command is as available as its LEAST available stage. `file upload` that
@@ -4439,17 +4730,25 @@ const NOUN_SUMMARY: Record<string, string> = {
   kind: 'The entity-kind registry, core and custom',
   handoff: 'Project a bounded entity snapshot into a work session',
   'interaction-profile': 'Interaction Profile lifecycle and defaults',
-  teammate: 'Teammate-scoped configuration',
+  teammate: 'Teammates: list them, and teammate-scoped configuration',
   voice: 'Mint LiveKit room-join grants for voice channels',
   artifact: 'Versioned, viewable static-web bundles: publish, revisions, preview, export',
   container: 'Machines an agent runs in or drives: create, lifecycle, exec, surfaces, ports',
   form: 'Forms: ask humans structured questions and get the answers back in your session',
+  link: 'Space links to other Spaces; act in one with `tm8 --space <alias> <command>`',
+  'space-link': 'Alias of `link`: Space links; act in a linked Space with `tm8 --space <alias> <command>`',
+  whoami: 'This process\'s session, Space, actor and access mode',
   style: 'UI styles: personal styles, push/pull to a Space, and the one you use',
 };
 
 /** Family nouns ∪ command nouns, sorted. Both resolve through `tm8 help <noun>`. */
 export const NOUNS: readonly string[] = [
-  ...new Set([...BASE.map((r) => r.noun), ...BASE.flatMap((r) => (r.command ? [r.command[0] as string] : []))]),
+  ...new Set([
+    ...BASE.map((r) => r.noun),
+    ...BASE.flatMap((r) => (r.command ? [r.command[0] as string] : [])),
+    // An alias may introduce a noun (`space-link`, `whoami`); help must resolve it.
+    ...[...COMMAND_ALIASES.values()].map((a) => a.path[0] as string),
+  ]),
 ].sort();
 
 export function isNoun(noun: string): boolean {

@@ -110,6 +110,10 @@ import {
   type SpaceCredentialView,
   type SpaceLinkView,
   type SpaceLinkAuditEntry,
+  type SpaceLinkInboundAuditEntry,
+  type SpaceLinkInboundView,
+  type CrossSpaceRef,
+  type OpRequestView,
   type ServerView,
   type ActionRows,
   type ContentionReport,
@@ -188,6 +192,7 @@ import {
   ada,
   fixtureDetails,
   fixtureHandoffsBySession,
+  fixtureOpRequests,
   fixtureSummaries,
   memberAda,
   memberNoor,
@@ -829,6 +834,9 @@ function synthesizeContent(s: EntitySummary): EntityContent {
     case 'credential':
       // W10a: content is the same allow-list as state — no secret, hint or login.
       return { ...state };
+    case 'op_request':
+      // 280: the same facts as its state; the rest is `opRequests.get`'s.
+      return { ...state };
     case 'story':
       // The page is hydrated on a detail read only; a seam row carries none.
       return { kind: 'story', description: '', page: null };
@@ -1353,8 +1361,61 @@ export function createFixtureSeam(): FixtureSeam {
       },
     },
   ];
+  /**
+   * Op requests (L5, 280) — the `opRequests.get` answers behind the dataset's
+   * `op_request` rows. Approving RUNS NOTHING here: the fixture records the
+   * decision (succeeded, no result) and says whether a session would be told,
+   * which is the whole of what the approve card reads back.
+   */
+  const opRequestsState: OpRequestView[] = clone(fixtureOpRequests);
+  const opRequestById = (id: string): OpRequestView => {
+    const request = opRequestsState.find((r) => r.id === id);
+    if (!request) throw new CollabError('not_found', `op request ${id} not found`);
+    return request;
+  };
+  const decideOpRequest = (id: string, to: 'succeeded' | 'denied', note?: string | null) => {
+    const request = opRequestById(id);
+    if (request.status !== 'pending') throw new CollabError('conflict', `op request ${id} is already ${request.status}`);
+    const at = tick();
+    Object.assign(request, {
+      status: to, decidedBy: ada.id, decidedAt: at, decisionNote: note ?? null,
+      canDecide: false, updatedAt: at, version: request.version + 1,
+    });
+    return { request: clone(request), notified: request.requestingSessionId !== null };
+  };
   /** W7 audit rows (none until an agent invokes through a link). */
   const spaceLinkAuditState: SpaceLinkAuditEntry[] = [];
+  /**
+   * 278 (D2): one link INTO the fixture space, from a space the viewer is not
+   * in, with one call through it, so the admin's inbound block has a row to
+   * read, audit and revoke without a node.
+   */
+  const spaceLinksInboundState: SpaceLinkInboundView[] = [
+    {
+      id: '0f1e2d3c-0000-4000-8000-000000000d02', homeSpaceId: '0f1e2d3c-0000-4000-8000-0000000000e2',
+      homeSpaceName: 'Ops', targetSpaceId: FIXTURE_SPACE_ID, createdAt: FIXTURE_NOW,
+      revokedAt: null, revokedByMemberId: null, lastCallAt: FIXTURE_NOW,
+      holders: [{
+        targetMemberId: ada.id, displayName: ada.displayName, status: 'signed_in', allowSpawn: false, spawnBudget: 3,
+        expiresAt: null, lastUsedAt: FIXTURE_NOW,
+      }],
+    },
+  ];
+  const spaceLinkInboundAuditState: SpaceLinkInboundAuditEntry[] = [
+    {
+      id: '0f1e2d3c-0000-4000-8000-000000000a01', linkId: '0f1e2d3c-0000-4000-8000-000000000d02',
+      homeSpaceId: '0f1e2d3c-0000-4000-8000-0000000000e2', targetSpaceId: FIXTURE_SPACE_ID,
+      targetMemberId: ada.id, displayName: ada.displayName, op: 'entities.create', viaChain: [],
+      result: 'ok', reason: null, remoteId: null, createdAt: FIXTURE_NOW,
+    },
+  ];
+  const inboundLinkById = (spaceId: string, id: string): SpaceLinkInboundView => {
+    const link = spaceLinksInboundState.find((l) => l.id === id && l.targetSpaceId === spaceId);
+    if (!link) throw new CollabError('not_found', `space link ${id} not found`);
+    return link;
+  };
+  /** L3 cross-space references (279). None until an agent adds one through a link. */
+  const crossSpaceRefsState: CrossSpaceRef[] = [];
   /** W8 `server` rows. Empty by default: a node registers none until someone adds one. */
   const serversState: ServerView[] = [];
   const serverById = (id: string): ServerView => {
@@ -5803,6 +5864,51 @@ export function createFixtureSeam(): FixtureSeam {
         spaceLinkById(linkId);
         return clone(spaceLinkAuditState.filter((a) => a.linkId === linkId));
       },
+      inbound: {
+        async list(spaceId) {
+          return clone(spaceLinksInboundState.filter((l) => l.targetSpaceId === spaceId));
+        },
+        async audit(spaceId, linkId) {
+          return clone(spaceLinkInboundAuditState.filter((a) =>
+            a.targetSpaceId === spaceId && (linkId === undefined || a.linkId === linkId)));
+        },
+        async revoke(spaceId, linkId) {
+          const link = inboundLinkById(spaceId, linkId);
+          link.revokedAt ??= tick();
+          link.revokedByMemberId ??= ada.id;
+          for (const h of link.holders) if (h.status === 'signed_in') h.status = 'signed_out';
+          return clone(link);
+        },
+        async restore(spaceId, linkId) {
+          const link = inboundLinkById(spaceId, linkId);
+          link.revokedAt = null;
+          link.revokedByMemberId = null;
+          return clone(link);
+        },
+      },
+    },
+
+    crossSpaceRefs: {
+      async list(entityId) {
+        return clone(crossSpaceRefsState.filter((r) => r.entityId === entityId));
+      },
+      async remove(entityId, refId) {
+        const index = crossSpaceRefsState.findIndex((r) => r.entityId === entityId && r.id === refId);
+        if (index < 0) throw new CollabError('not_found', 'reference not found');
+        crossSpaceRefsState.splice(index, 1);
+        return { id: refId, entityId, removed: true as const };
+      },
+    },
+    opRequests: {
+      async list(spaceId, query) {
+        const rows = opRequestsState
+          .filter((r) => r.spaceId === spaceId && (query?.status === undefined || r.status === query.status))
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+        return clone(query?.limit === undefined ? rows : rows.slice(0, query.limit));
+      },
+      async get(requestId) { return clone(opRequestById(requestId)); },
+      async approve(requestId, note) { return decideOpRequest(requestId, 'succeeded', note); },
+      async deny(requestId, note) { return decideOpRequest(requestId, 'denied', note); },
     },
 
     servers: {
@@ -5927,5 +6033,7 @@ export function createFixtureSeam(): FixtureSeam {
      finished object. This therefore REQUIRES an unfrozen seam; freezing
      `seam` or `seam.commands` would break it here and nowhere else. */
   seam.commands.managed = managedPortFromSeam(seam);
+  // The approve card's port IS the noun; the panel reaches it through `commands`.
+  seam.commands.opRequests = seam.opRequests;
   return seam;
 }

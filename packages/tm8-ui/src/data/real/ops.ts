@@ -2,6 +2,7 @@ import type { SkillPort } from '../../skills/port';
 import type { JevPort } from '../../jev/port';
 import type { LaunchDefaultsPort } from '../../launch-selection/port';
 import type { FormsOps, FormsRedeliverInput } from '../../forms/ops-port';
+import type { OpRequestDecision } from '../seam';
 /**
  * Typed wrappers for EXACTLY the operations the seam exposes (LLD §5:
  * "one typed function per seam-exposed op. No generic op-name dispatcher, no
@@ -38,6 +39,10 @@ import {
   type ServerProbeView,
   type ServerView,
   type SpaceLinkAuditEntry,
+  type SpaceLinkInboundAuditEntry,
+  type SpaceLinkInboundView,
+  type CrossSpaceRef,
+  type CrossSpaceRefRemoved,
   type CreateInviteInput,
   type InvitePreview,
   type InviteRedemption,
@@ -91,11 +96,16 @@ import {
   type SpaceCredentialVisibilityName,
   type NodeCredentialPolicyEntry,
   type NodeCredentialsStatusView,
+  type NodeAccountListView,
+  type PathGrantListView,
+  type PathGrantView,
   type NodeMetricsView,
   type SpaceCredentialProviderName,
   type SpaceCredentialStoredProviderName,
   type SpaceCredentialView,
   type SpaceLinkView,
+  type OpRequestStatus,
+  type OpRequestView,
   type CredentialsServiceKeysStatusView,
   type ServiceKeyProviderName,
   type ServiceKeyView,
@@ -692,6 +702,37 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       });
     },
 
+    // -- filesystem path grants (282; design doc 01a0fb62 §4) -----------------
+    // `node.*` rides the gate pass under enforce (auth/space-sessions.ts), which
+    // is what `require_gate_admin` needs; the caller's own list rides the pin.
+
+    nodePathGrantsList(includeRevoked = false): Promise<PathGrantListView> {
+      return http.call<PathGrantListView>('node.pathGrants.list', {
+        query: includeRevoked ? { includeRevoked: 'true' } : {},
+      });
+    },
+
+    nodePathGrantsCreate(accountId: string, rootPath: string, note?: string): Promise<PathGrantView> {
+      return http.call<PathGrantView>('node.pathGrants.create', {
+        body: { accountId, rootPath, ...(note ? { note } : {}), clientMutationId: newId('pathgrant') },
+      });
+    },
+
+    nodePathGrantsRevoke(grantId: string): Promise<PathGrantView> {
+      return http.call<PathGrantView>('node.pathGrants.revoke', {
+        params: { grantId },
+        body: { clientMutationId: newId('pathgrantrevoke') },
+      });
+    },
+
+    nodeAccountsList(): Promise<NodeAccountListView> {
+      return http.call<NodeAccountListView>('node.accounts.list');
+    },
+
+    myPathGrants(): Promise<PathGrantListView> {
+      return http.call<PathGrantListView>('identity.pathGrants.list');
+    },
+
     // -- space links (`spaceLinks.*`, W6) ------------------------------------
     // Every write is human-only server-side; no answer carries a stored session.
 
@@ -720,6 +761,72 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
     /** Bare array: own rows, or every row for a home admin (260). */
     spaceLinksAudit(linkId: EntityId): Promise<SpaceLinkAuditEntry[]> {
       return http.call<SpaceLinkAuditEntry[]>('spaceLinks.audit', { params: { linkId } });
+    },
+
+    // 278 (D2): the target side, for an admin of `spaceId`.
+    spaceLinksInboundList(spaceId: SpaceId): Promise<SpaceLinkInboundView[]> {
+      return http.call<SpaceLinkInboundView[]>('spaceLinks.inbound.list', { params: { spaceId } });
+    },
+
+    spaceLinksInboundAudit(spaceId: SpaceId, linkId?: EntityId): Promise<SpaceLinkInboundAuditEntry[]> {
+      return http.call<SpaceLinkInboundAuditEntry[]>('spaceLinks.inbound.audit', {
+        params: { spaceId },
+        ...(linkId === undefined ? {} : { query: { linkId } }),
+      });
+    },
+
+    spaceLinksInboundMutate(
+      op: 'spaceLinks.inbound.revoke' | 'spaceLinks.inbound.restore',
+      spaceId: SpaceId,
+      linkId: EntityId,
+    ): Promise<SpaceLinkInboundView> {
+      return http.call<SpaceLinkInboundView>(op, {
+        params: { spaceId, linkId },
+        body: { clientMutationId: newId('splinkin') },
+      });
+    },
+
+    // -- cross-space references (`entities.refs.*`, L3, 279) -------------------
+    // The UI reads and removes; agents add through a link (`tm8 entity ref add`).
+
+    crossSpaceRefsList(entityId: EntityId): Promise<CrossSpaceRef[]> {
+      return http.call<CrossSpaceRef[]>('entities.refs.list', { params: { id: entityId } });
+    },
+
+    crossSpaceRefsRemove(entityId: EntityId, refId: string): Promise<CrossSpaceRefRemoved> {
+      return http.call<CrossSpaceRefRemoved>('entities.refs.remove', {
+        params: { id: entityId, refId },
+        body: { clientMutationId: newId('xsref') },
+      });
+    },
+
+    // -- op requests (`opRequests.*`, L5, 280) -------------------------------
+    // approve/deny are human-only server-side; the server runs the op as the
+    // approver and reports the outcome to the requesting session.
+
+    /** Bare array, newest first. */
+    opRequestsList(spaceId: SpaceId, query?: { status?: OpRequestStatus; limit?: number }): Promise<OpRequestView[]> {
+      return http.call<OpRequestView[]>('opRequests.list', {
+        params: { spaceId },
+        ...(query?.status !== undefined || query?.limit !== undefined
+          ? { query: { status: query.status, limit: query.limit } }
+          : {}),
+      });
+    },
+
+    opRequestsGet(requestId: EntityId): Promise<OpRequestView> {
+      return http.call<OpRequestView>('opRequests.get', { params: { requestId } });
+    },
+
+    opRequestsDecide(
+      op: 'opRequests.approve' | 'opRequests.deny',
+      requestId: EntityId,
+      note?: string | null,
+    ): Promise<OpRequestDecision> {
+      return http.call<OpRequestDecision>(op, {
+        params: { requestId },
+        body: { ...(note ? { note } : {}), clientMutationId: newId('opreq') },
+      });
     },
 
     // -- remote servers (`servers.*`, W8) -------------------------------------

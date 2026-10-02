@@ -12,8 +12,16 @@
  *   · spaceLinks.logout   — revoke it and forget the stored bytes
  *   · spaceLinks.remove   — delete your own row (the link stays for others)
  *   · spaceLinks.setSpawn — your own spawn switch and budget. Allow spawn is
- *                           stored per link; it is enforced when cross-space
- *                           spawn ships.
+ *                           enforced since W7b: on, your agents may spawn,
+ *                           resume or dispatch in the target through the link;
+ *                           the budget is stored but not enforced (owner form
+ *                           response 01a0fbb4).
+ *
+ * The TARGET side (278, owner decision D2): an admin of the target space sees
+ * every link into it (`spaceLinks.inbound.list`), the calls made through them
+ * (`spaceLinks.inbound.audit`), and may revoke or restore a link. A revoked
+ * link refuses every member's sign-in. Owning both spaces is no shortcut
+ * (D7): the admin check holds the session pin, so it is made from the target.
  *
  * Every write is human-only (browser or cli) in SQL. No response ever carries
  * the stored session.
@@ -45,9 +53,62 @@ export interface SpaceLinkView {
   /** Only when the caller is a member of the target. */
   targetSpaceName: string | null;
   createdAt: string;
+  /**
+   * Set when an admin of the target space revoked the link (278): every
+   * sign-in is refused until they restore it. Absent from a pre-278 server.
+   */
+  targetRevokedAt?: string | null;
   statusSummary: { signedIn: number; signedOut: number; left: number; unreachable: number };
   /** Null when the caller holds no row on this link. */
   mine: SpaceLinkMine | null;
+}
+
+/**
+ * One member's row on an inbound link, as the TARGET's admins see it (278).
+ * The member is named by their own member row in the target, never by a
+ * home-side id. Null when that identity has no member row in the target.
+ */
+export interface SpaceLinkInboundHolder {
+  targetMemberId: EntityId | null;
+  displayName: string | null;
+  status: SpaceLinkStatus;
+  allowSpawn: boolean;
+  spawnBudget: number;
+  expiresAt: string | null;
+  lastUsedAt: string | null;
+}
+
+/** A link INTO a space, for that space's admins (`spaceLinks.inbound.list`). */
+export interface SpaceLinkInboundView {
+  /** The link entity's id (it lives in the home space). */
+  id: EntityId;
+  homeSpaceId: string;
+  homeSpaceName: string | null;
+  targetSpaceId: string;
+  createdAt: string;
+  /** Set while revoked by a target admin; every sign-in is refused. */
+  revokedAt: string | null;
+  revokedByMemberId: EntityId | null;
+  lastCallAt: string | null;
+  holders: SpaceLinkInboundHolder[];
+}
+
+/** One call made into the target through a link (`spaceLinks.inbound.audit`). */
+export interface SpaceLinkInboundAuditEntry {
+  id: string;
+  linkId: EntityId;
+  homeSpaceId: string;
+  targetSpaceId: string;
+  /** The caller's own member row in the target. */
+  targetMemberId: EntityId | null;
+  displayName: string | null;
+  op: string;
+  viaChain: string[];
+  result: 'ok' | 'refused' | 'error';
+  reason: string | null;
+  /** The target-side entity or request id the call produced. */
+  remoteId: string | null;
+  createdAt: string;
 }
 
 /** The body of spaceLinks.add: the home Space is the path's `:spaceId`. */
@@ -63,7 +124,8 @@ export interface SpaceLinksMutationInput {
 }
 
 /**
- * The body of spaceLinks.setSpawn. Allow spawn is stored per link; it is enforced when cross-space spawn ships.
+ * The body of spaceLinks.setSpawn. Allow spawn gates spawn, resume and
+ * dispatch through the link (W7b); `spawnBudget` is stored, not enforced.
  */
 export interface SpaceLinksSetSpawnInput {
   allowSpawn: boolean;
@@ -83,6 +145,11 @@ export const SpaceLinksAddInputSchema: z.ZodType<SpaceLinksAddInput> = z.object(
 export const SpaceLinksMutationInputSchema: z.ZodType<SpaceLinksMutationInput> = z.object({
   clientMutationId,
 }).strict();
+
+/** The body of spaceLinks.inbound.revoke / restore: the path names the space and the link. */
+export type SpaceLinksInboundMutationInput = SpaceLinksMutationInput;
+
+export const SpaceLinksInboundMutationInputSchema: z.ZodType<SpaceLinksInboundMutationInput> = SpaceLinksMutationInputSchema;
 
 export const SpaceLinksSetSpawnInputSchema: z.ZodType<SpaceLinksSetSpawnInput> = z.object({
   allowSpawn: z.boolean(),
@@ -115,6 +182,7 @@ export type SpaceLinkRefusalReason =
   | 'grant'
   | 'process_start'
   | 'session_body'
+  | 'membership'
   | 'spawn_switch_off'
   | 'spawn_explicit_credentials'
   | 'unknown_op'
@@ -143,13 +211,26 @@ export type SpaceLinkRefusalReason =
  * Session and process starts (#884, security re-review R-1): an op that starts
  * a session, a shell or a process in B, or resumes or dispatches one, is
  * refused at home. `execution.terminal.start` starts an unbudgeted shell work
- * session that no spawn switch, budget or link gate covers, so through a link
- * it would be a shell in B. `execution.spawn` is refused too, whatever the
- * switch says (lead tightening on #884): allow_spawn defaults on and the spawn
- * budget arrives with W7b, so main must never carry an unbudgeted link spawn.
- * W7b restores it through a budgeted reservation; until then the spawn rule
- * below (switch, explicit credentials) is unreachable, kept for W7b. W7p layer
- * (iii) refuses a link identity's spawn on B as well. The indirect starts
+ * session that no spawn switch or link gate covers, so through a link it
+ * would be a shell in B.
+ *
+ * Cross-space spawn (W7b, lane L4). This DELIBERATELY reverses #884's lead
+ * tightening ("main must never carry an unbudgeted link spawn"). The owner
+ * decided it in form response 01a0fbb4 (decisions D1, D4 and D8 of form
+ * 01a0fb65: "if link is there spawn for now"): with no budget and no
+ * reservation, `execution.spawn`, `execution.resume` and `execution.dispatch`
+ * (SPACE_LINK_SPAWN_OPS) are NOT in this set. They pass only while the
+ * caller's own row has allow_spawn on (`spaceLinkRefusal` below, re-checked
+ * against the row before forwarding). Every other guard stays: no explicit
+ * credential field (spawn_explicit_credentials), the via-chain hop limit, the
+ * per-row rate bucket, and in SQL the child takes B's DEFAULT credential only
+ * and is minted only while the row is signed in with spawning allowed
+ * (256 `live_link_session`, 277). `chat.start` and `chat.setModel` stay
+ * refused: a chat's turns are launched by the chat runtime under the
+ * requesting human's identity with no via_link stamp
+ * (chat/compose.ts `createChatLaunchConfigResolver`), so they would not be
+ * link-bound, would not take B's default credential only, and would outlive
+ * the link (ruling (i)). The indirect starts
  * are listed too: a form response submit (and redeliver) queues a delivery
  * that resumes the requesting session or spawns a new one
  * (form-delivery-spawn.ts). `containers.pools.set` keeps warm containers
@@ -175,15 +256,34 @@ export type SpaceLinkRefusalReason =
  * `execution.transcript` read a session's body, and a journal can hold a live
  * token (the F3 journal-redaction item), so they are refused, reads too.
  *
+ * Membership and role writes (owner decision D6, lane L6): who belongs to B
+ * and with what role is B's humans' call, made in B. Through a link every
+ * `spaces.members.*` and `spaces.invites.*` write (role change, removal, the
+ * member space-password resets, invite create/revoke/redeem) and
+ * `spaces.leave` is refused at home, even for a member who is admin in B;
+ * reads (members and invite lists) pass. A human acting directly in B is
+ * unaffected: this list only gates spaceLinks.invoke.
+ *
  * The reason is the CLASS the refusal error carries: `grant`,
- * `process_start`, `session_body`, and the credential/link/session classes.
+ * `process_start`, `session_body`, `membership`, and the
+ * credential/link/session classes.
  */
 export const SPACE_LINK_REFUSED: readonly SpaceLinkRefusedPrefix[] = [
   { prefix: 'credentials.', kinds: 'all', reason: 'credential_management' },
   { prefix: 'node.credentials.', kinds: 'all', reason: 'credential_management' },
   { prefix: 'spaceLinks.', kinds: 'command', reason: 'link_management' },
+  // L3 (279): `add` itself opens a hop through the caller's OWN link. Through
+  // a link the caller is B's member, so allowing it would let an agent in A
+  // ride B's member's links on into C (transitive link use, D7). list and
+  // remove stay open: they touch B's stored rows only and open nothing.
+  { prefix: 'entities.refs.add', kinds: 'all', reason: 'link_management', exact: true },
   { prefix: 'auth.', kinds: 'all', reason: 'session_minting' },
   { prefix: 'serverConnections.', kinds: 'all', reason: 'credential_management' },
+  // 282 path grants: who may browse which node folders. Node-level, never a
+  // cross-space act — a link caller neither administers them nor reads a
+  // member's grants (they name node paths).
+  { prefix: 'node.pathGrants.', kinds: 'all', reason: 'grant' },
+  { prefix: 'identity.pathGrants.list', kinds: 'all', reason: 'grant', exact: true },
   { prefix: 'voice.token.create', kinds: 'all', reason: 'grant', exact: true },
   { prefix: 'execution.streams.', kinds: 'all', reason: 'grant' },
   { prefix: 'files.uploadInit', kinds: 'all', reason: 'grant', exact: true },
@@ -192,10 +292,7 @@ export const SPACE_LINK_REFUSED: readonly SpaceLinkRefusedPrefix[] = [
   { prefix: 'containers.attach', kinds: 'all', reason: 'grant', exact: true },
   { prefix: 'containers.browser.endpoint', kinds: 'all', reason: 'grant', exact: true },
   { prefix: 'containers.expose', kinds: 'all', reason: 'grant', exact: true },
-  { prefix: 'execution.spawn', kinds: 'all', reason: 'process_start', exact: true },
   { prefix: 'execution.terminal.start', kinds: 'all', reason: 'process_start', exact: true },
-  { prefix: 'execution.resume', kinds: 'all', reason: 'process_start', exact: true },
-  { prefix: 'execution.dispatch', kinds: 'all', reason: 'process_start', exact: true },
   { prefix: 'execution.prompt', kinds: 'all', reason: 'process_start', exact: true },
   { prefix: 'chat.start', kinds: 'all', reason: 'process_start', exact: true },
   { prefix: 'chat.setModel', kinds: 'all', reason: 'process_start', exact: true },
@@ -212,10 +309,26 @@ export const SPACE_LINK_REFUSED: readonly SpaceLinkRefusedPrefix[] = [
   { prefix: 'execution.git', kinds: 'all', reason: 'process_start' },
   { prefix: 'execution.journal', kinds: 'all', reason: 'session_body', exact: true },
   { prefix: 'execution.transcript', kinds: 'all', reason: 'session_body', exact: true },
+  { prefix: 'spaces.members.', kinds: 'command', reason: 'membership' },
+  { prefix: 'spaces.invites.', kinds: 'command', reason: 'membership' },
+  { prefix: 'spaces.leave', kinds: 'all', reason: 'membership', exact: true },
 ];
 
 /** The spawn op, refused through a link with the switch off or explicit credentials (F9). */
 export const SPACE_LINK_SPAWN_OP = 'execution.spawn';
+
+/**
+ * W7b (L4, form response 01a0fbb4): the ops that start or resume a session in
+ * B through a link. Each passes only while the caller's own row has
+ * allow_spawn on; with it off, or not yet known to be on, they are refused
+ * `spawn_switch_off`. Their child is pinned to B, stamped with the link
+ * (256 via_link_id) and recorded in `space_link_spawns` (277).
+ */
+export const SPACE_LINK_SPAWN_OPS: readonly string[] = Object.freeze([
+  SPACE_LINK_SPAWN_OP,
+  'execution.resume',
+  'execution.dispatch',
+]);
 
 /** Spawn input fields that name a credential source; any one present refuses (K11). */
 export const SPACE_LINK_SPAWN_CREDENTIAL_FIELDS = [
@@ -233,7 +346,9 @@ export const SPACE_LINK_MAX_HOPS = 2;
  * The refused-set rule on a CANONICAL op name (the caller resolves the name
  * against the catalog first; an unknown name never reaches here as passable).
  * `opKind` is the catalog kind. Returns the reason, or null when the op passes
- * as the member. `allowSpawn` is the caller's own row's switch.
+ * as the member. `allowSpawn` is the caller's own row's switch, `undefined`
+ * before the row is read: a spawn op is then not refused by the switch, and
+ * the caller MUST call again with the row's value before forwarding.
  */
 export function spaceLinkRefusal(
   op: string,
@@ -246,13 +361,11 @@ export function spaceLinkRefusal(
     if (hit && (entry.kinds === 'all' || opKind !== 'read')) return entry.reason;
   }
   if (formDeliveryCanStart(op, input)) return 'process_start';
-  if (op === SPACE_LINK_SPAWN_OP) {
+  if (SPACE_LINK_SPAWN_OPS.includes(op)) {
     const body = typeof input === 'object' && input !== null ? input as Record<string, unknown> : {};
     if (SPACE_LINK_SPAWN_CREDENTIAL_FIELDS.some((field) => body[field] !== undefined)) {
       return 'spawn_explicit_credentials';
     }
-    // Unknown (not yet resolved) is not refused here; the handler re-checks
-    // with the row's value before forwarding.
     if (allowSpawn === false) return 'spawn_switch_off';
   }
   return null;

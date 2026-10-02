@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:0056a5d86f0341614b6a888ae1b5302074ca357c50e680321d41f83beb324608",
+  "catalogDigest": "sha256:727cfb8df9478dca9c67b97d04448214fbc5f8a55db0955747de95243ef8acf2",
   "catalog": {
-    "total": 303,
-    "v1": 301,
+    "total": 320,
+    "v1": 318,
     "reserved": 2,
-    "http": 301,
+    "http": 318,
     "ws": 1,
-    "registerableV1Http": 299,
+    "registerableV1Http": 316,
     "methods": {
-      "GET": 98,
-      "POST": 146,
+      "GET": 106,
+      "POST": 154,
       "PATCH": 18,
-      "DELETE": 19,
+      "DELETE": 20,
       "PUT": 20,
       "WS": 2
     },
     "kinds": {
-      "read": 103,
-      "command": 198,
+      "read": 111,
+      "command": 207,
       "stream": 2
     },
-    "uniqueNames": 303,
-    "uniqueBindings": 302
+    "uniqueNames": 320,
+    "uniqueBindings": 319
   },
   "reservedOperations": [
     "search.query",
@@ -505,6 +505,90 @@
         "operation": "spaceLinks.audit",
         "method": "GET",
         "path": "/v2/space-links/:linkId/audit",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaceLinks.inbound.list",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/space-links/inbound",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaceLinks.inbound.audit",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/space-links/inbound/audit",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaceLinks.inbound.revoke",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/space-links/inbound/:linkId/revoke",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaceLinks.inbound.restore",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/space-links/inbound/:linkId/restore",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "entities.refs.list",
+        "method": "GET",
+        "path": "/v2/entities/:id/refs",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "entities.refs.add",
+        "method": "POST",
+        "path": "/v2/entities/:id/refs",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "entities.refs.remove",
+        "method": "DELETE",
+        "path": "/v2/entities/:id/refs/:refId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "opRequests.list",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/op-requests",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "opRequests.create",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/op-requests",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "opRequests.get",
+        "method": "GET",
+        "path": "/v2/op-requests/:requestId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "opRequests.approve",
+        "method": "POST",
+        "path": "/v2/op-requests/:requestId/approve",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "opRequests.deny",
+        "method": "POST",
+        "path": "/v2/op-requests/:requestId/deny",
         "status": "registered",
         "source": "server-router"
       },
@@ -2119,6 +2203,41 @@
         "source": "server-router"
       },
       {
+        "operation": "node.pathGrants.list",
+        "method": "GET",
+        "path": "/v2/node/path-grants",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "node.pathGrants.create",
+        "method": "POST",
+        "path": "/v2/node/path-grants",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "node.pathGrants.revoke",
+        "method": "POST",
+        "path": "/v2/node/path-grants/:grantId/revoke",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "node.accounts.list",
+        "method": "GET",
+        "path": "/v2/node/accounts",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "identity.pathGrants.list",
+        "method": "GET",
+        "path": "/v2/identity/path-grants",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "node.metrics.get",
         "method": "GET",
         "path": "/v2/node/metrics",
@@ -2525,7 +2644,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 271
+    "unimplementedV1Http": 288
   },
   "schemas": {
     "additive": {
@@ -3418,6 +3537,214 @@
           "space",
           "links",
           "audit"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaceLinks.inbound.list",
+        "noun": "space-link",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaceLinks.inbound.list",
+        "intentTags": [
+          "space",
+          "links",
+          "inbound",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaceLinks.inbound.audit",
+        "noun": "space-link",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaceLinks.inbound.audit",
+        "intentTags": [
+          "space",
+          "links",
+          "inbound",
+          "audit"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaceLinks.inbound.revoke",
+        "noun": "space-link",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaceLinks.inbound.revoke",
+        "intentTags": [
+          "space",
+          "links",
+          "inbound",
+          "revoke"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaceLinks.inbound.restore",
+        "noun": "space-link",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaceLinks.inbound.restore",
+        "intentTags": [
+          "space",
+          "links",
+          "inbound",
+          "restore"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "entities.refs.list",
+        "noun": "entity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/entities.refs.list",
+        "intentTags": [
+          "entities",
+          "refs",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "entities.refs.add",
+        "noun": "entity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/entities.refs.add",
+        "intentTags": [
+          "entities",
+          "refs",
+          "add"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "entities.refs.remove",
+        "noun": "entity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/entities.refs.remove",
+        "intentTags": [
+          "entities",
+          "refs",
+          "remove"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "opRequests.list",
+        "noun": "request",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/opRequests.list",
+        "intentTags": [
+          "op",
+          "requests",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "opRequests.create",
+        "noun": "request",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/opRequests.create",
+        "intentTags": [
+          "op",
+          "requests",
+          "create"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "opRequests.get",
+        "noun": "request",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/opRequests.get",
+        "intentTags": [
+          "op",
+          "requests",
+          "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "opRequests.approve",
+        "noun": "request",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/opRequests.approve",
+        "intentTags": [
+          "op",
+          "requests",
+          "approve"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "opRequests.deny",
+        "noun": "request",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/opRequests.deny",
+        "intentTags": [
+          "op",
+          "requests",
+          "deny"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
@@ -7316,6 +7643,95 @@
         "publicComposite": null
       },
       {
+        "operation": "node.pathGrants.list",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/node.pathGrants.list",
+        "intentTags": [
+          "node",
+          "path",
+          "grants",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "node.pathGrants.create",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/node.pathGrants.create",
+        "intentTags": [
+          "node",
+          "path",
+          "grants",
+          "create"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "node.pathGrants.revoke",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/node.pathGrants.revoke",
+        "intentTags": [
+          "node",
+          "path",
+          "grants",
+          "revoke"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "node.accounts.list",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/node.accounts.list",
+        "intentTags": [
+          "node",
+          "accounts",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "identity.pathGrants.list",
+        "noun": "identity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/identity.pathGrants.list",
+        "intentTags": [
+          "identity",
+          "path",
+          "grants",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
         "operation": "node.metrics.get",
         "noun": "credential",
         "exposure": "public",
@@ -8769,6 +9185,45 @@
         },
         "migration": {
           "strategy": "space-link-kinds"
+        }
+      },
+      "op_request": {
+        "kind": "op_request",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "op-requests"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "op-request-lifecycle",
+          "genericCreate": false,
+          "genericPatch": false,
+          "genericMove": false,
+          "genericHierarchy": false,
+          "genericDeleteRestore": false,
+          "genericPoints": false,
+          "messages": true,
+          "reactions": false,
+          "connections": false,
+          "lifecycleOperations": [
+            "opRequests.list",
+            "opRequests.get",
+            "opRequests.create",
+            "opRequests.approve",
+            "opRequests.deny"
+          ]
+        },
+        "menu": {
+          "strategy": "not-addressable"
+        },
+        "migration": {
+          "strategy": "op-request-detail"
         }
       },
       "story": {

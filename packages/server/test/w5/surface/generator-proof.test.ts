@@ -154,6 +154,9 @@ describe('W5.C generator proof', () => {
       // `header_empty`; a bare {} clear is an unguarded clear.
       'entities.header.clear',
       'entities.header.set',
+      // L3 (279): entities.refs.remove carries only clientMutationId; the
+      // entity and the ref id ride the path.
+      'entities.refs.remove',
       'entityKinds.update',
       // 2026-08-12 (Git UI landing): the two git verbs whose bodies are
       // all-optional — a bare {} checkpoint takes the default label; a bare {}
@@ -162,6 +165,8 @@ describe('W5.C generator proof', () => {
       'execution.gitMerge',
       'execution.terminate',
       'files.uploadAbort',
+      // 282: path-grant revoke carries only clientMutationId; the grant id rides the path.
+      'node.pathGrants.revoke',
       'projects.update',
       // 2026-09-23: skills.scan — every field optional; a bare {} scans the
       // Space's authorized roots.
@@ -233,6 +238,6 @@ describe('W5.C generator proof', () => {
     // branch's execution.gitStage BOTH land, so this moves twice. Git merged
     // the number line silently — only the comment beside it conflicted. MEASURED on the merged tree from this assertion's own failing run.
     // 120 -> 125 (2026-09-23): skills.scan + F4's create/edit/equip/unequip. MEASURED.
-    expect(ENTRIES).toHaveLength(190); /* +9 style command input schemas (284). MEASURED: CI 37009211546. */ /* +1 chat.setModel input schema (276, chat model switch). MEASURED. */ /* +3 spaces.spacePassword.setRequired, spaces.members.spacePassword.reset|lock (W5). MEASURED. */ /* +2 attentionSignals.raise|clear (Attention v2 S6; stacked on tm8/attention-v2-integration). MEASURED. */ /* +4 servers.add/adopt/remove/probe (W8, 261). MEASURED. */ /* +1 spaceLinks.invoke input schema (W7, 260). MEASURED. */ /* +1 credentials.space.addMine (W10d). MEASURED. */ /* +6 spaceLinks.* input schemas (W6, 250/251; list takes none). MEASURED. */ /* W11: +2 input schemas, spaces.projects.create and gate.folders.create. MEASURED. */ /* +1 auth.space.enter (W3-server). MEASURED. */ /* +5 W10b credential commands bind. MEASURED. */ /* +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. */ /* +1 spaces.chatDefaults.set (entity chat G). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +10 forms.* command schemas (Forms W1). MEASURED. */ // +7 SC-3 space/node credential command schemas. MEASURED. // +2 service-key put/delete (Jev lane K); +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* -1 containers.attention (Attention v2 S7a). MEASURED. */ /* +3 attentionRequests.markSeen|unresolve|withdraw (Attention v2 S4; stacked on tm8/attention-v2-integration). MEASURED. */
+    expect(ENTRIES).toHaveLength(199 /* +9 style command input schemas (284). MEASURED: CI 37009211546. */ /* +3 opRequests.create|approve|deny input schemas (L5, 280). MEASURED. */ /* +2 entities.refs.add|remove input schemas (L3, 279). MEASURED. */ /* +2 spaceLinks.inbound.* (278, D2). MEASURED. */); /* +2 node.pathGrants.create|revoke input schemas (282, path grants). MEASURED. */ /* +1 chat.setModel input schema (276, chat model switch). MEASURED. */ /* +3 spaces.spacePassword.setRequired, spaces.members.spacePassword.reset|lock (W5). MEASURED. */ /* +2 attentionSignals.raise|clear (Attention v2 S6; stacked on tm8/attention-v2-integration). MEASURED. */ /* +4 servers.add/adopt/remove/probe (W8, 261). MEASURED. */ /* +1 spaceLinks.invoke input schema (W7, 260). MEASURED. */ /* +1 credentials.space.addMine (W10d). MEASURED. */ /* +6 spaceLinks.* input schemas (W6, 250/251; list takes none). MEASURED. */ /* W11: +2 input schemas, spaces.projects.create and gate.folders.create. MEASURED. */ /* +1 auth.space.enter (W3-server). MEASURED. */ /* +5 W10b credential commands bind. MEASURED. */ /* +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. */ /* +1 spaces.chatDefaults.set (entity chat G). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +10 forms.* command schemas (Forms W1). MEASURED. */ // +7 SC-3 space/node credential command schemas. MEASURED. // +2 service-key put/delete (Jev lane K); +1 launch.suggest (Jev lane F, 2026-9-23). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* -1 containers.attention (Attention v2 S7a). MEASURED. */ /* +3 attentionRequests.markSeen|unresolve|withdraw (Attention v2 S4; stacked on tm8/attention-v2-integration). MEASURED. */
   });
 });

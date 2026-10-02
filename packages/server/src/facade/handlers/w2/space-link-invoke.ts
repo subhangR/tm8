@@ -18,7 +18,9 @@
  *      SPACE_LINK_MAX_HOPS hops, never back into a space already in it;
  *   4. the caller's OWN token row (260 resolve, no sealed bytes): an agent
  *      resolves its launching member's row and nobody else's (T18);
- *   5. the target half of the via rule, and the row's spawn switch;
+ *   5. the target half of the via rule, and the row's spawn switch: a spawn
+ *      op (SPACE_LINK_SPAWN_OPS — spawn, resume, dispatch; W7b, owner form
+ *      response 01a0fbb4, no budget) passes only while it is on;
  *   6. a rate bucket per token row.
  *
  * Only then does `DbSpaceLinkStore.use` unseal the stored session in memory
@@ -29,8 +31,13 @@
  * identity is authKind `link`, which the registry (W7p layer (ii)) refuses
  * on every op; the executor marks its one inner context with
  * `admitLinkInvoke` (identity/link-bearer.ts), the only admission there is.
- * Layer (iii) (spawn, resume, dispatch, the spawn credential read and SQL's
- * link refusals) still applies to the inner call unchanged.
+ * Layer (iii) still applies to the inner call: a spawn op passes it only on
+ * the context this executor admitted, under the link claim, and SQL then mints
+ * the child only while the row is signed in with spawning allowed, hands it
+ * B's DEFAULT credential only, stamps it with the link (256) and pins it to
+ * B. After a spawn op the executor records the child's provenance in B
+ * (`space_link_spawns`, 277) under the link session's claims, and the audit
+ * row in A names the child session as its remote id.
  *
  * Every outcome writes one `cross_space_audit` row in A under the caller's
  * own claims. No token is put in a header, an error, a log line, the audit or
@@ -40,6 +47,7 @@ import {
   CollabError,
   ERROR_STATUS,
   SPACE_LINK_MAX_HOPS,
+  SPACE_LINK_SPAWN_OPS,
   SPACE_LINK_VIA_HEADER,
   SpaceLinksInvokeInputSchema,
   getOperation,
@@ -128,6 +136,10 @@ export interface SpaceLinkExecution {
   data: unknown;
   /** B-side request id, the audit's fallback remote id, when B names one. */
   requestId: string | null;
+  /** A spawn op's child work session in B (W7b), the audit's remote id. */
+  spawnedSessionId?: string | null;
+  /** A spawn op whose provenance record in B failed: audited, never thrown. */
+  provenanceUnrecorded?: boolean;
 }
 
 /**
@@ -180,6 +192,20 @@ function validate(opName: OperationName, body: unknown): unknown {
   throw new CollabError('invalid_input', 'request body failed contract validation', {
     details: { issues: parsed.error.issues },
   });
+}
+
+/**
+ * The work session a spawn op started (or resumed) in B: the spawned
+ * entity, the resumed id, or the dispatcher a dispatch had to spawn first.
+ * Null when it started none (a dispatch to a live dispatcher).
+ */
+export function spawnedSessionOf(op: OperationName, params: Readonly<Record<string, string>>, result: unknown): string | null {
+  const record = typeof result === 'object' && result !== null ? result as Record<string, unknown> : {};
+  let id: unknown = null;
+  if (op === 'execution.spawn') id = (record['entity'] as Record<string, unknown> | undefined)?.['id'];
+  else if (op === 'execution.resume') id = params['id'];
+  else if (op === 'execution.dispatch' && record['dispatcherSpawned'] === true) id = record['dispatcherSessionId'];
+  return typeof id === 'string' && UUID_RE.test(id) ? id : null;
 }
 
 /** The inner identity: B's, off the re-resolved session, WITHOUT the raw token. */
@@ -257,14 +283,36 @@ export function createSpaceLinkInvokeHandlers(
     // already run; a nested dispatch from inside the handler finds no marker.
     admitLinkInvoke(inner, op);
     const result = await handler(inner);
+    let data: unknown = result;
     if (isHandlerResult(result)) {
       if (result.kind !== 'json') {
         throw new SpaceLinkExecuteFailure('raw_result',
           new CollabError('invalid_input', `${op} returns bytes and cannot run through a space link`));
       }
-      return { data: result.data, requestId: inner.requestId };
+      data = result.data;
     }
-    return { data: result, requestId: inner.requestId };
+    if (!SPACE_LINK_SPAWN_OPS.includes(op)) return { data, requestId: inner.requestId };
+
+    // W7b: the child's provenance in B, under the link session's own claims.
+    // The child is already running, so a failed record is audited in A
+    // (`provenance_unrecorded`) rather than thrown: the caller must not retry
+    // a spawn that happened. Its auth session carries via_link_id regardless.
+    const spawnedSessionId = spawnedSessionOf(op, request.params, data);
+    let provenanceUnrecorded = false;
+    if (spawnedSessionId) {
+      try {
+        await store.recordSpawn(await claimsOf(inner), {
+          workSessionId: spawnedSessionId, op, sourceSessionId: request.workSessionId,
+        });
+      } catch (error) {
+        provenanceUnrecorded = true;
+        console.warn('[space-link] cross-space spawn provenance was not recorded', {
+          linkId: row.linkId, op, workSessionId: spawnedSessionId,
+          code: isCollabError(error) ? error.code : 'internal',
+        });
+      }
+    }
+    return { data, requestId: inner.requestId, spawnedSessionId, provenanceUnrecorded };
   };
   /**
    * B on another server (W8). The home guards have all run; nothing is
@@ -357,7 +405,7 @@ export function createSpaceLinkInvokeHandlers(
     op = requested;
     const binding = getOperation(requested);
 
-    // 2. The refused set (the spawn switch waits for the row).
+    // 2. The refused set (the spawn switch waits for the row, step 5).
     const early = spaceLinkRefusal(requested, binding.kind, input, undefined);
     if (early) return refuse(refused(early), early);
 
@@ -384,7 +432,8 @@ export function createSpaceLinkInvokeHandlers(
     // 5. The target half of the via rule, then the row's spawn switch.
     const chainLate = spaceLinkViaRefusal(via, homeSpaceId, row.targetSpaceId);
     if (chainLate) return refuse(refused(chainLate), chainLate);
-    const late = spaceLinkRefusal(requested, binding.kind, input, row.allowSpawn);
+    // Fail closed: only a row that says allow_spawn is true lets a spawn op on.
+    const late = spaceLinkRefusal(requested, binding.kind, input, row.allowSpawn === true);
     if (late) return refuse(refused(late), late);
 
     // 6. Rate bucket per token row.
@@ -417,8 +466,13 @@ export function createSpaceLinkInvokeHandlers(
       await audit('error', isCollabError(error) ? error.code : 'internal').catch(() => undefined);
       throw error;
     }
-    const { data, requestId } = outcome;
-    const auditId = await audit('ok', null, remoteIdOf(data) ?? requestId);
+    const { data, requestId, spawnedSessionId, provenanceUnrecorded } = outcome;
+    // A spawn has already happened by now: a failed audit insert must not turn
+    // it into an error the caller retries into a second child (review of #993).
+    // The audit stays best-effort for spawns, like the provenance record.
+    const recorded = audit('ok', provenanceUnrecorded ? 'provenance_unrecorded' : null,
+      spawnedSessionId ?? remoteIdOf(data) ?? requestId);
+    const auditId = spawnedSessionId ? await recorded.catch(() => '') : await recorded;
     return { op: requested, linkId: row.linkId, targetSpaceId: row.targetSpaceId, auditId, result: data };
   };
 

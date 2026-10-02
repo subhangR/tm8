@@ -43,6 +43,7 @@ import { STYLE_MAX_VAR_LENGTH } from './style-registry.js';
 import { STYLE_MAX_CSS_BYTES } from './style-css.js';
 import { BUILTIN_STYLES } from './builtins/index.js';
 import { FormQuestionRowSchema, FormSectionRowSchema, FormSettingsSchema, FormStatusSchema } from './forms.js';
+import { OpRequestEntityFactsSchema } from './op-requests.js';
 import { EntityContextStorySchema, StoryContentSchema, StoryStateSchema } from './story.js';
 import {
   SELECTION_HEADER_KINDS,
@@ -97,6 +98,7 @@ import type {
   CredentialsSpaceRenameInput, CredentialsSpaceSetVisibilityInput, CredentialsSpaceAddMineInput, CredentialsSpaceDefaultConsentInput,
   NodeCredentialPolicyEntry, NodeCredentialStatusEntry,
   NodeCredentialsPolicySetInput, NodeCredentialsStatusView, NodeMetricsView, SpaceCredentialPolicyEntry,
+  NodeAccountListView, NodeAccountView, PathGrantCreateInput, PathGrantListView, PathGrantRevokeInput, PathGrantView,
   SpaceCredentialProviderName, SpaceCredentialShape, SpaceCredentialStatus, SpaceCredentialView,
   ServerOnlyCredentialProviderName, SpaceCredentialStoredProviderName,
   CustomEntityKind, CustomFieldDef, CustomFieldValue, DeleteMessageInput,
@@ -230,6 +232,9 @@ export const CoreEntityKindSchema = z.enum([
   // is its door. `server` is registered with it and has no door in W6.
   'space_link',
   'server',
+  // Op requests (280, L5). Not in `CreatableEntityKind`: `opRequests.create`
+  // is its door.
+  'op_request',
   // Stories (283): roots by `contains`, the rest follows. Creatable through
   // the generic envelope.
   'story',
@@ -691,6 +696,8 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
   // answers for them. `server` has no detail row until W8.
   z.object({ kind: z.literal('space_link') }).strict(),
   z.object({ kind: z.literal('server') }).strict(),
+  // 280 (L5) — an op request's op and status; the rest is `opRequests.get`'s.
+  OpRequestEntityFactsSchema,
   // 284 — a space style carries its FULL doc on state (spec §4.3: the push
   // event is how viewers repaint, so it must not need a fetch).
   z.object({
@@ -1113,6 +1120,9 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
   // 250 (W6) — a space link's content is `spaceLinks.list`'s answer.
   z.object({ kind: z.literal('space_link') }).strict(),
   z.object({ kind: z.literal('server') }).strict(),
+  // 280 (L5) — the same facts as its state; params, input and outcome are
+  // `opRequests.get`'s answer.
+  OpRequestEntityFactsSchema,
   // 284 — a space style's content: its state plus the description.
   z.object({
     kind: z.literal('style'),
@@ -2093,6 +2103,7 @@ export const AuthClaimStatusResultSchema: z.ZodType<AuthClaimStatusResult> = z.o
   claimed: z.boolean(),
   mode: z.enum(['single', 'multi']),
   signupPath: z.enum(['claim', 'invite', 'admin']),
+  projectIsolation: z.enum(['shared', 'isolated']),
 }).strict();
 
 export const AuthClaimReissueResultSchema: z.ZodType<AuthClaimReissueResult> = z.object({
@@ -2492,6 +2503,45 @@ export const NodeCredentialsPolicySetInputSchema: z.ZodType<NodeCredentialsPolic
   clientMutationId: z.string().min(1).optional(),
 }).strict();
 
+export const NodeAccountViewSchema: z.ZodType<NodeAccountView> = z.object({
+  accountId: z.string().min(1),
+  username: z.string().min(1),
+  displayName: z.string().optional(),
+  status: z.enum(['active', 'disabled']),
+  isNodeAdmin: z.boolean().optional(),
+}).strict();
+
+export const NodeAccountListViewSchema: z.ZodType<NodeAccountListView> = z.object({
+  accounts: z.array(NodeAccountViewSchema),
+}).strict();
+
+export const PathGrantViewSchema: z.ZodType<PathGrantView> = z.object({
+  id: z.string().min(1),
+  accountId: z.string().min(1),
+  rootPath: z.string().min(1),
+  mode: z.literal('select'),
+  grantedAt: IsoTimestamp,
+  revokedAt: IsoTimestamp.optional(),
+  note: z.string().optional(),
+  grantee: NodeAccountViewSchema.optional(),
+  grantedBy: z.object({ accountId: z.string().min(1), username: z.string().min(1) }).strict().optional(),
+}).strict();
+
+export const PathGrantListViewSchema: z.ZodType<PathGrantListView> = z.object({
+  grants: z.array(PathGrantViewSchema),
+}).strict();
+
+export const PathGrantRevokeInputSchema: z.ZodType<PathGrantRevokeInput> = z.object({
+  clientMutationId: z.string().min(1).optional(),
+}).strict();
+
+export const PathGrantCreateInputSchema: z.ZodType<PathGrantCreateInput> = z.object({
+  accountId: z.string().uuid(),
+  rootPath: z.string().min(1).max(4096),
+  note: z.string().max(500).optional(),
+  clientMutationId: z.string().min(1).optional(),
+}).strict();
+
 /**
  * One terminal dimension, for every operation that boots a PTY.
  *
@@ -2664,7 +2714,7 @@ export const CreatableEntityKindSchema = z.union([
   // `form` likewise: `forms.create` writes its questions and requesting
   // session in the same call (FORMS-DESIGN §6). `credential` is human-only
   // and born under a SQL guard from credentials.space.* (W10a).
-  CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile', 'worktree', 'artifact', 'chat', 'container', 'form', 'credential', 'space_link', 'server', 'style']),
+  CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile', 'worktree', 'artifact', 'chat', 'container', 'form', 'credential', 'space_link', 'server', 'op_request', 'style']),
   CustomEntityKindSchema,
 ]);
 
