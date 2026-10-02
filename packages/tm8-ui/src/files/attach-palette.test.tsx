@@ -109,6 +109,19 @@ describe('the picker', () => {
     expect(screen.getByTestId('attach-palette-empty').textContent).toContain('design');
   });
 
+  it('shows what the server matched for a multi-word query, never re-filtered by literal title', async () => {
+    // The server matches every word (task 01a0fb05); "skill creator" is not a
+    // substring of `skill-creator`, and the picker must not hide the hit.
+    const search = vi.fn(async (_kind: string, text: string) =>
+      text === 'skill creator' ? [summary('skill-1', 'skill', 'skill-creator')] : []);
+    renderPalette({ search });
+    fireEvent.click(chip('skill'));
+    fireEvent.change(screen.getByTestId('attach-palette-search'), { target: { value: 'skill creator' } });
+    await waitFor(() => expect(screen.getAllByTestId('attach-palette-option')).toHaveLength(1));
+    expect(screen.getByTestId('attach-palette-option').textContent).toContain('skill-creator');
+    expect(search).toHaveBeenLastCalledWith('skill', 'skill creator');
+  });
+
   it('shows only candidates that pass the check: right kind, not the anchor, not linked', async () => {
     const search = vi.fn(async () => [
       summary('doc-1', 'doc', 'Design notes'),
@@ -297,16 +310,19 @@ describe('the strip with a palette', () => {
 });
 
 describe('the port reaches the node through a real seam', () => {
-  it('searches by kind and title on the server, bounded', async () => {
+  it('searches by kind and every typed word on the server, bounded', async () => {
     const seam = createFixtureSeam();
     const seen: CollectionQuery[] = [];
     const spied = { ...seam, query: async (q: CollectionQuery) => { seen.push(q); return seam.query(q); } };
     const port = attachmentsPortFromSeam(spied as never, FIXTURE_SPACE_ID);
-    await port.search!('doc', 'design');
+    await port.search!('skill', '  skill creator ');
     await port.search!('doc', '   ');
-    expect(seen[0]).toMatchObject({ kinds: ['doc'], filters: { titleContains: 'design' }, limit: PALETTE_SEARCH_LIMIT });
+    // Words, not the literal `titleContains`: "skill creator" has to reach
+    // `skill-creator`, and only the server's word match can (task 01a0fb05).
+    expect(seen[0]).toMatchObject({ kinds: ['skill'], filters: { words: 'skill creator' }, limit: PALETTE_SEARCH_LIMIT });
+    expect(seen[0]!.filters?.titleContains).toBeUndefined();
     // Blank text is "most recent", not a filter the server would reject.
-    expect(seen[1]!.filters?.titleContains).toBeUndefined();
+    expect(seen[1]!.filters).toBeUndefined();
   });
 
   it('links with createEdge, and creates-and-attaches in one command', async () => {
