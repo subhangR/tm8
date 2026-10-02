@@ -73,6 +73,8 @@ export interface GraphNode {
   /** Teammates: the avatar text and whether a session of theirs is live. */
   initials: string | null;
   live: boolean;
+  /** The drawn node this one hangs off on its way to a root (and on to the story); null for the story. */
+  up: string | null;
 }
 
 export interface GraphEdge {
@@ -88,6 +90,13 @@ export interface GraphEdge {
   d: string;
   /** Edges with no node to carry their name are labelled on the line. */
   label: { x: number; y: number; text: string; anchor: 'start' | 'middle' } | null;
+}
+
+/** Kinds drawn on the graph (the story itself aside) with their counts, most first: the Everything view's chips. */
+export function kindCounts(layout: GraphLayout): Array<{ kind: string; count: number }> {
+  const counts = new Map<string, number>();
+  for (const n of layout.nodes) if (n.role !== 'self') counts.set(n.kind, (counts.get(n.kind) ?? 0) + 1);
+  return [...counts].map(([kind, count]) => ({ kind, count })).sort((a, b) => b.count - a.count || a.kind.localeCompare(b.kind));
 }
 
 export interface GraphNote {
@@ -234,9 +243,10 @@ function curve(a: Box, b: Box, bulge: boolean, arc: number, arcUp?: boolean): { 
   };
 }
 
-export function layoutStoryGraph(view: StoryView, now: number = Date.now()): GraphLayout {
+export function layoutStoryGraph(view: StoryView, now: number = Date.now(), hops: number = 3): GraphLayout {
   const page = view.page;
-  const byId = new Map(page.nodes.map((n) => [n.id, n]));
+  /* Hops: roots plus followed rows within N of them (depth 0 = a root). The server always follows 3. */
+  const byId = new Map(page.nodes.filter((n) => n.depth <= hops).map((n) => [n.id, n]));
   const live = liveOn(view);
   const roots = [...page.roots].sort((a, b) => (a.position ?? Infinity) - (b.position ?? Infinity));
   const allRootIds = roots.map((r) => r.id);
@@ -286,6 +296,7 @@ export function layoutStoryGraph(view: StoryView, now: number = Date.now()): Gra
       capsule: null,
       initials: null,
       live: false,
+      up: view.id,
       ...row,
     };
     nodes.set(node.id, node);
@@ -296,7 +307,7 @@ export function layoutStoryGraph(view: StoryView, now: number = Date.now()): Gra
   const storyNode = byId.get(view.id);
   add(
     {
-      id: view.id, kind: STORY_KIND, title: view.title, role: 'self', x: cx, y: STORY_Y, r: 20,
+      id: view.id, kind: STORY_KIND, title: view.title, role: 'self', x: cx, y: STORY_Y, r: 20, up: null,
       rootIds: allRootIds, view: 'all', spine: true, lines: [trunc(view.title, 30)], tone: null,
     },
     storyNode,
@@ -385,6 +396,7 @@ export function layoutStoryGraph(view: StoryView, now: number = Date.now()): Gra
       add(
         {
           id, kind: c.kind, title: c.title, role: 'child', x: rx - 60, y: ROW0 + ROW * j, capsule: ccap,
+          up: page.edges.find((e) => e.family === 'parent' && e.toId === id)?.fromId ?? root.id,
           lines: wrap(c.title, 14), ...(ccap ? { w: 150, h: 30 } : {}),
         },
         c,
@@ -397,7 +409,7 @@ export function layoutStoryGraph(view: StoryView, now: number = Date.now()): Gra
       const sign = src.callSign ? `${src.callSign} · ` : '';
       add(
         {
-          id: t.id, kind: t.kind, title: t.title, role: 'trail', x: rx + 60, y: ROW0 + ROW * k,
+          id: t.id, kind: t.kind, title: t.title, role: 'trail', x: rx + 60, y: ROW0 + ROW * k, up: t.viaId,
           lines: wrap(`${sign}${t.title}`, 14), caption: t.edgeType,
         },
         src,
@@ -455,6 +467,13 @@ export function layoutStoryGraph(view: StoryView, now: number = Date.now()): Gra
   for (const node of nodes.values()) node.x += dx;
   for (const note of notes) note.x += dx;
   const width = Math.ceil(Math.max(contentW, minWidth));
+
+  /* Resolve each node's way up onto what is drawn (a folded session -> its capsule; anything missing -> its root, then the story). */
+  for (const node of nodes.values()) {
+    if (node.up === null) continue;
+    const up = at(node.up);
+    node.up = nodes.has(up) && up !== node.id ? up : (node.rootIds.find((r) => nodes.has(r) && r !== node.id) ?? view.id);
+  }
 
   /* ---- edges ---- */
   const edges: GraphEdge[] = [];
@@ -534,10 +553,28 @@ export interface ViewMask {
   context: Set<string>;
 }
 
-/** The artifact's filtered trees: one view at a time over the same graph; the spine always stays, dimmed when it is only context. */
-export function maskFor(layout: GraphLayout, view: StoryGraphView): ViewMask {
+/**
+ * The artifact's filtered trees: one view at a time over the same graph; the
+ * spine always stays, dimmed when it is only context. In Everything, `kinds`
+ * (null = every kind) hides the kinds switched off — but a node that connects
+ * a shown node to its root stays, as context, so the tree never breaks.
+ */
+export function maskFor(layout: GraphLayout, view: StoryGraphView, kinds: ReadonlySet<string> | null = null): ViewMask {
   const inView = new Set<string>();
   const context = new Set<string>();
+  if (view === 'all' && kinds) {
+    const byId = new Map(layout.nodes.map((n) => [n.id, n]));
+    for (const n of layout.nodes) {
+      if (n.role === 'self' || kinds.has(n.kind)) inView.add(n.id);
+      else if (n.spine) context.add(n.id);
+    }
+    for (const id of inView) {
+      for (let up = byId.get(id)?.up ?? null; up && !inView.has(up) && !context.has(up); up = byId.get(up)?.up ?? null) {
+        context.add(up);
+      }
+    }
+    return { inView, context };
+  }
   for (const n of layout.nodes) {
     const match =
       view === 'all' ||

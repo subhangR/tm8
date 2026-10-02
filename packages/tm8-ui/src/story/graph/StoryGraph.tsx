@@ -13,8 +13,8 @@ import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type Keyb
 
 import { getKind, KindIcon } from '../../domain';
 import { FAMILY_TOKEN, GRAPH_VIEWS, STORY_KIND, VIEW_OF_KIND, type StoryEdgeFamily, type StoryGraphView } from '../model';
-import { layoutStoryGraph, maskFor, trunc, type GraphEdge, type GraphNode } from './layout';
-import type { StoryNodePick } from '../props';
+import { kindCounts, layoutStoryGraph, maskFor, trunc, type GraphEdge, type GraphNode } from './layout';
+import type { StoryHops, StoryNodePick } from '../props';
 import type { StoryGraphProps } from './props-graph';
 import './story-graph.css';
 
@@ -22,6 +22,8 @@ import './story-graph.css';
 const VIEW_ICON: Readonly<Record<StoryGraphView, string>> = Object.fromEntries(
   GRAPH_VIEWS.map(({ view }) => [view, Object.keys(VIEW_OF_KIND).find((k) => VIEW_OF_KIND[k] === view) ?? STORY_KIND]),
 ) as Record<StoryGraphView, string>;
+
+const HOP_CHOICES: readonly StoryHops[] = [1, 2, 3];
 
 /** The smallest the canvas is drawn at: below it, labels stop being legible, so it scrolls instead. */
 const MIN_SCALE = 0.85;
@@ -198,7 +200,7 @@ function nodeTip(node: GraphNode): string {
   return `${node.title} — ${node.capsule.line}`;
 }
 
-export function StoryGraph({ view, live, hover, selectedId, onPick, onMenu, initialView, fill }: StoryGraphProps) {
+export function StoryGraph({ view, live, hover, filter, selectedId, onPick, onMenu, initialView, fill }: StoryGraphProps) {
   const [graphView, setGraphView] = useState<StoryGraphView>(initialView ?? 'all');
   /* Root hover is shared with the Roots card through `hover` when the page holds it; local otherwise. */
   const [ownHoverRoot, setOwnHoverRoot] = useState<string | null>(null);
@@ -206,7 +208,9 @@ export function StoryGraph({ view, live, hover, selectedId, onPick, onMenu, init
   const wantedRoot = hover ? hover.rootId : ownHoverRoot;
   const markerId = `stg-arrow-${useId().replace(/:/g, '')}`;
 
-  const layout = useMemo(() => layoutStoryGraph(view), [view]);
+  /* View-only filter held by the page (absent = full depth, every kind, no controls). */
+  const hops = filter?.hops ?? 3;
+  const layout = useMemo(() => layoutStoryGraph(view, Date.now(), hops), [view, hops]);
   const scrollRef = useRef<HTMLDivElement>(null);
   /* When the canvas overflows, open it centred on the story rather than on the left flank. */
   useLayoutEffect(() => {
@@ -237,8 +241,19 @@ export function StoryGraph({ view, live, hover, selectedId, onPick, onMenu, init
   }, [selectedId]);
   /* A root id from outside that this graph does not draw lights nothing rather than dimming everything. */
   const hoverRoot = wantedRoot && layout.allRootIds.includes(wantedRoot) ? wantedRoot : null;
-  const mask = useMemo(() => maskFor(layout, graphView), [layout, graphView]);
-  const all = graphView === 'all';
+  const kinds = filter?.kinds ?? null;
+  const mask = useMemo(() => maskFor(layout, graphView, kinds), [layout, graphView, kinds]);
+  const present = useMemo(() => kindCounts(layout), [layout]);
+  /* `all` = nothing filtered: Everything with every kind on. */
+  const everything = graphView === 'all';
+  const all = everything && !kinds;
+  const toggleKind = (kind: string) => {
+    if (!filter) return;
+    const next = new Set(kinds ?? present.map((k) => k.kind));
+    if (next.has(kind)) next.delete(kind);
+    else next.add(kind);
+    filter.setKinds(present.every((k) => next.has(k.kind)) ? null : next);
+  };
   const landed = live?.landed;
 
   const shown = (id: string) => mask.inView.has(id) || mask.context.has(id);
@@ -288,11 +303,50 @@ export function StoryGraph({ view, live, hover, selectedId, onPick, onMenu, init
             </button>
           ))}
         </span>
+        {filter && (
+          <span className="stg-hops" role="radiogroup" aria-label="Hops from a root">
+            <span className="stg-hops__lbl">hops</span>
+            {HOP_CHOICES.map((h) => (
+              <button
+                key={h}
+                type="button"
+                role="radio"
+                aria-checked={hops === h}
+                className={hops === h ? 'stg-seg__b stg-seg__b--on' : 'stg-seg__b'}
+                onClick={() => filter.setHops(h)}
+              >
+                {h}
+              </button>
+            ))}
+          </span>
+        )}
         <span className="stg-meta">
           <span className="stg-count">{rule}</span>
           {truncated && <span className="stg-count stg-count--warn">· trail cut at {view.page.follow.limit} rows</span>}
+          {hops < 3 && <span className="stg-count stg-count--note">· showing {hops} {hops === 1 ? 'hop' : 'hops'}</span>}
           {!empty && <span className="stg-count">· hover a root</span>}
         </span>
+        {filter && everything && present.length > 0 && (
+          <span className="stg-kinds" role="group" aria-label="Kinds shown">
+            <button type="button" className={`stg-chip${kinds === null ? ' stg-chip--on' : ''}`} aria-pressed={kinds === null} onClick={() => filter.setKinds(null)}>
+              all
+            </button>
+            <button type="button" className={`stg-chip${kinds?.size === 0 ? ' stg-chip--on' : ''}`} aria-pressed={kinds?.size === 0} onClick={() => filter.setKinds(new Set())}>
+              none
+            </button>
+            <span className="stg-kinds__sep" />
+            {present.map(({ kind, count }) => {
+              const on = !kinds || kinds.has(kind);
+              return (
+                <button key={kind} type="button" className={`stg-chip${on ? ' stg-chip--on' : ''}`} aria-pressed={on} onClick={() => toggleKind(kind)}>
+                  <KindIcon kind={kind} size={11} />
+                  {getKind(kind).label}
+                  <span className="stg-chip__n">{count}</span>
+                </button>
+              );
+            })}
+          </span>
+        )}
       </div>
 
       <div className="stg-scroll" ref={scrollRef}>
