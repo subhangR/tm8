@@ -49,8 +49,6 @@
 -- 1. issue_work_session_agent_session — 256's body; a link session mints with
 --    its link claim, in its target space.
 -- -----------------------------------------------------------------------------
-set role tm8_graph_owner;
-
 create or replace function public.issue_work_session_agent_session(
   p_work_session_id uuid,
   p_team_member_id uuid,
@@ -255,6 +253,10 @@ grant execute on function public.read_space_credential_for_spawn(uuid, text, uui
 -- -----------------------------------------------------------------------------
 -- 3. The child's provenance in B.
 -- -----------------------------------------------------------------------------
+
+-- The new objects are owned by tm8_graph_owner (001); the two redefinitions
+-- above keep their existing owner.
+set role tm8_graph_owner;
 
 create table public.space_link_spawns (
   work_session_id    uuid primary key references public.work_sessions(entity_id) on delete cascade,
