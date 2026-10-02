@@ -2444,6 +2444,7 @@ export function GateApp(props: GateAppProps = {}) {
                 nav.push(sessionId);
               }}
               onLaunchOpen={(id) => launch.open(id)}
+              onChatAbout={openChatAbout}
             />
           ) : data.ready && activeTarget?.type === 'kind' ? (
             /* D65: a rail KIND row opens its EntityView — wide list, Z3 aside

@@ -35,6 +35,8 @@ import { useLaunchPort } from '../useLaunchPort';
 import { useMembershipSurface } from '../membershipSurface';
 import { usePanelPrimaries } from '../usePanelPrimaries';
 import { useRowLifecycle } from '../useRowLifecycle';
+import { useEntityVerbs } from '../useEntityVerbs';
+import { useChatAbout } from '../useChatAbout';
 import type { GateData } from '../useGateData';
 import { EntityFullView, companionOf, type EntityArrival } from './EntityFullView';
 import type { EntityFullPort } from './port';
@@ -53,6 +55,8 @@ export interface FullViewScreenProps {
   onNotice(notice: Notice): void;
   onSpawn?(input: ExecutionSpawnInput): void | Promise<void>;
   onLaunchOpen?(id: EntityId): void;
+  /** The header's Chat — the same dispatcher the kind screen is handed. */
+  onChatAbout?(aboutId: EntityId | null): void;
 }
 
 /** Does this kind's registry row build a full view? Registry data, no kind literal. */
@@ -64,6 +68,10 @@ export function FullViewScreen(props: FullViewScreenProps) {
   const { data, onNotice, entityId } = props;
   const detail = data.detailOf(entityId);
   const kind = (detail?.kind ?? null) as EntityKind | null;
+
+  /* The beside slot. A different subject drops it. */
+  const [besideId, setBesideId] = useState<EntityId | null>(null);
+  useEffect(() => setBesideId(null), [entityId]);
 
   /* A cold link: nothing behind us, so the first step out replaces (R15). */
   const [arrival] = useState<EntityArrival>(() =>
@@ -100,6 +108,16 @@ export function FullViewScreen(props: FullViewScreenProps) {
     onNotice,
   });
   const attachments = useMemo(() => attachmentsFor(data.seam, data.spaceId), [data.seam, data.spaceId]);
+  /* The header's Chat and Edit, wired as on the kind screen's centre panel
+     (the aux column is a reading surface and has neither). */
+  const chatAbout = useChatAbout({ open: props.onChatAbout });
+  const verbs = useEntityVerbs({
+    detail,
+    spaceId: data.spaceId,
+    commands: data.seam.commands,
+    onCreated: (id) => setBesideId(id as EntityId),
+    onSaved: (id) => data.refetchDetail(id),
+  });
   const ctx = useMemo(() => ({ spaceId: data.spaceId }), [data.spaceId]);
   const controls = useMemo<ControlHost>(
     () => ({
@@ -130,13 +148,11 @@ export function FullViewScreen(props: FullViewScreenProps) {
     launchPort,
     rowLifecycle,
     attachments,
+    chatAbout,
     serverBaseUrl: props.serverBaseUrl,
     viewerMemberId: props.viewerMemberId,
   };
 
-  /* The beside slot. A different subject drops it. */
-  const [besideId, setBesideId] = useState<EntityId | null>(null);
-  useEffect(() => setBesideId(null), [entityId]);
 
   const port = useMemo<EntityFullPort>(
     () => ({
@@ -182,10 +198,16 @@ export function FullViewScreen(props: FullViewScreenProps) {
     return () => document.removeEventListener('keydown', onKey);
   }, [besideId, leave]);
 
-  /* Only fetched when nothing knows the entity yet (a cold link). */
+  /* Fetch what nothing knows yet: the subject on a cold link, and the entity
+     opened beside it — the aux column's host pulls its subject the same way,
+     and without this the beside panel sat on its skeleton for good. */
   useEffect(() => {
     if (!detail) data.pull?.(entityId);
   }, [detail, data, entityId]);
+  const besideDetail = besideId ? data.detailOf(besideId) : undefined;
+  useEffect(() => {
+    if (besideId && !besideDetail) data.pull?.(besideId);
+  }, [besideId, besideDetail, data]);
 
   const panel = (
     <div className={`fv-split${besideId ? ' fv-split--beside' : ''}`} data-testid="full-view-split">
@@ -198,6 +220,7 @@ export function FullViewScreen(props: FullViewScreenProps) {
           onOpenEntity={(id) => setBesideId(id)}
           onClose={leave}
           story={{ open: (id) => setBesideId(id), selectedId: besideId, layout: 'full' }}
+          extraActions={{ onAction: verbs.onAction, wiredActions: verbs.wiredActions }}
         />
       </div>
       {besideId ? (

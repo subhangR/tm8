@@ -29,7 +29,7 @@ import type { PanelHost } from '../panels/detail/chrome';
 import type { ContentSurface } from '../routes';
 import { channelFeedPortFromGateData } from './channel-feed-port';
 import { conversationSurfaceFor } from './conversationSurface';
-import type { ActionContext } from '../domain/types';
+import type { ActionContext, ActionRef } from '../domain/types';
 import type { AttachmentsPort } from '../files/port';
 import type { GateData } from './useGateData';
 import type { LaunchPort } from './useLaunchPort';
@@ -93,9 +93,16 @@ export interface AuxEntityPanelProps {
    * replaces the subject, as before.
    */
   story?: { open: (id: EntityId) => void; selectedId: string | null; layout?: 'panel' | 'full' };
+  /**
+   * A further header dispatcher composed after the host's primaries and chat —
+   * the full view passes the edit/add-child verbs (`useEntityVerbs`) here, so
+   * its Edit is live exactly as the kind screen's centre panel's is. Absent ⇒
+   * the aux column's reading-surface header, as before.
+   */
+  extraActions?: { onAction: ((ref: ActionRef) => void) | undefined; wiredActions: readonly ActionRef[] };
 }
 
-export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose, panelHost = 'stack', onPromote, story }: AuxEntityPanelProps) {
+export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose, panelHost = 'stack', onPromote, story, extraActions }: AuxEntityPanelProps) {
   const { data, attachments } = host;
   const detail = data.detailOf(entityId) ?? null;
   /* The feed port is a STATELESS adapter over the same GateData the host
@@ -113,6 +120,7 @@ export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose, panelHos
     ...(host.chatAbout
       ? [{ onAction: host.chatAbout.forEntity(entityId), wiredActions: host.chatAbout.wiredActions }]
       : []),
+    ...(extraActions ? [extraActions] : []),
   ]);
   const chatCounts = useChatCounts(host.chatAbout ? data.seam : null, entityId);
   return (
