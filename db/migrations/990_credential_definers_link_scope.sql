@@ -278,3 +278,5 @@ begin
   return jsonb_build_object('expired', removed);
 end
 $$;
+
+reset role;
