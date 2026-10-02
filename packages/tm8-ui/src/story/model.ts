@@ -105,6 +105,8 @@ export const VIEW_OF_KIND: Readonly<Record<string, StoryGraphView>> = {
 export const TASK_KIND = 'task';
 export const SESSION_KIND = 'work_session';
 export const STORY_KIND = 'story';
+export const TEAMMATE_KIND = 'team_member';
+export const MESSAGE_KIND = 'message';
 
 export const GRAPH_VIEWS: ReadonlyArray<{ view: StoryGraphView; label: string }> = [
   { view: 'all', label: 'Everything' },
