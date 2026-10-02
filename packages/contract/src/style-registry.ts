@@ -35,7 +35,7 @@ export type StyleVarGroup =
   | 'surface'
   | 'status'
   | 'type'
-  | 'scale'
+  | 'type-scale'
   | 'spacing'
   | 'radius'
   | 'elevation'

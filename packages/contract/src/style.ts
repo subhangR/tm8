@@ -317,6 +317,21 @@ function sortedTable(table: StyleTokenTable): StyleTokenTable {
   return out;
 }
 
+/**
+ * `table` with every bare `var(--pn-x)` value replaced by x's value, one hop —
+ * what the browser computes for those keys. Used only where a consumer cannot
+ * read `var()`; the sheet itself keeps the references.
+ */
+function concrete(table: StyleTokenTable): StyleTokenTable {
+  const out: StyleTokenTable = { ...table };
+  for (const [key, value] of Object.entries(table) as [StyleCssVar, string][]) {
+    const target = varReference(value);
+    const resolved = target ? table[target as StyleCssVar] : undefined;
+    if (resolved !== undefined && varReference(resolved) === null) out[key] = resolved;
+  }
+  return out;
+}
+
 function numberOf(value: string | undefined, fallback: number): number {
   const n = Number(value);
   return value !== undefined && value.trim() !== '' && Number.isFinite(n) ? n : fallback;
@@ -476,12 +491,17 @@ export function resolveStyle(
     const target = colourKeys.has(key) ? varReference(value) : null;
     if (target) aliases.push([key, target as StyleCssVar]);
   }
-  /* ONE HOP, read against the table as it stood after the overlay and before
-     any substitution, so the result never depends on key order: `a: var(b),
-     b: var(c)` leaves `a` unresolved (warned), it does not chain to c. */
-  const beforeAliases = { ...table };
+  /* ONE HOP, checked against the table as it stood after the overlay, so the
+     verdict never depends on key order: `a: var(b), b: var(c)` refuses `a`
+     (warned, foundation value kept), it does not chain to c. A valid alias
+     stays AS WRITTEN in cssVars — the sheet declares every key on the same
+     element, so the browser resolves it natively, exactly as it already does
+     for the foundation's own `var()` values (dark `--pn-x-hairline-soft`).
+     Only the CONCRETE copy below substitutes, for the consumers that cannot
+     read `var()`: the derived values, xterm's canvas and the contrast lint. */
+  const overlaid = { ...table };
   for (const [key, target] of aliases) {
-    const value = beforeAliases[target];
+    const value = overlaid[target];
     if (value === undefined || varReference(value) !== null) {
       warnings.push({
         code: 'invalid-value',
@@ -489,15 +509,13 @@ export function resolveStyle(
         message: `${key}: var(${target}) does not resolve in one hop; kept the foundation value`,
       });
       table[key] = foundation.tokens[key] ?? '';
-    } else {
-      table[key] = value;
     }
   }
 
   // 5
-  const brand = toRgb(table['--pn-brand']);
+  const brand = toRgb(concrete(table)['--pn-brand']);
   if (brand) table['--pn-brand-rgb'] = `${brand[0]}, ${brand[1]}, ${brand[2]}`;
-  const paper = toRgb(table['--pn-paper']);
+  const paper = toRgb(concrete(table)['--pn-paper']);
   const darkish = paper ? relativeLuminance(paper) < 0.5 : false;
 
   // 6
@@ -514,14 +532,16 @@ export function resolveStyle(
 
   // 7
   const cssVars = sortedTable(table);
-  const xterm = buildXterm(alwaysDarkCssVars ?? cssVars);
+  /* The canvas cannot read var(): xterm gets the table of the scope it
+     renders in (the always-dark ramp when there is one), made concrete. */
+  const xterm = buildXterm(concrete(alwaysDarkCssVars ?? cssVars));
 
   // 8
   const sanitised = sanitizeStyleCss(doc?.css);
   warnings.push(...sanitised.warnings);
 
   // 9
-  lintContrast(cssVars, warnings);
+  lintContrast(concrete(cssVars), warnings);
 
   // 10
   const hash = `sha256:${sha256Hex(

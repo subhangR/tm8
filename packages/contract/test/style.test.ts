@@ -133,10 +133,22 @@ describe('resolveStyle — overlay and per-key validation', () => {
 });
 
 describe('resolveStyle — alias one hop', () => {
-  it('resolves var(--pn-<colour>) against the overlaid table', () => {
-    const r = resolveStyle(doc({ '--pn-brand': '#123456', '--pn-x-term-cursor': 'var(--pn-brand)' }));
-    expect(r.cssVars['--pn-x-term-cursor']).toBe('#123456');
-    expect(r.xterm.theme.cursor).toBe('#123456');
+  it('keeps a valid alias as var() in the sheet and resolves it for xterm', () => {
+    const r = resolveStyle(doc({ '--pn-x-term-fg': '#eeeeee', '--pn-x-term-cursor': 'var(--pn-x-term-fg)' }));
+    expect(r.cssVars['--pn-x-term-cursor']).toBe('var(--pn-x-term-fg)');
+    expect(r.xterm.theme.cursor).toBe('#eeeeee');
+    expect(r.warnings).toEqual([]);
+  });
+
+  it('derives from an aliased brand and paper', () => {
+    const r = resolveStyle(doc({ '--pn-brand': 'var(--pn-x-term-fg)', '--pn-paper': 'var(--pn-x-term-bg)' }));
+    expect(r.cssVars['--pn-brand-rgb']).toBe('217, 210, 196');
+    expect(r.darkish).toBe(true);
+  });
+
+  it('treats the foundation\'s own var() values the same way (dark --pn-x-hairline-soft)', () => {
+    expect(ATELIER_DARK.tokens['--pn-x-hairline-soft']).toBe('var(--pn-hover)');
+    expect(resolveStyle(dark()).cssVars['--pn-x-hairline-soft']).toBe('var(--pn-hover)');
   });
 
   it('does not chain two hops, regardless of key order', () => {
@@ -146,7 +158,7 @@ describe('resolveStyle — alias one hop', () => {
     ]) {
       const r = resolveStyle(doc(vars));
       expect(r.cssVars['--pn-ink']).toBe(ATELIER_LIGHT.tokens['--pn-ink']);
-      expect(r.cssVars['--pn-brand']).toBe(ATELIER_LIGHT.tokens['--pn-run']);
+      expect(r.cssVars['--pn-brand']).toBe('var(--pn-run)');
       expect(codes(r)).toContain('invalid-value:--pn-ink');
     }
   });

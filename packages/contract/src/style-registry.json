@@ -290,7 +290,7 @@
     {
       "key": "--pn-fs-body",
       "kind": "length",
-      "group": "scale",
+      "group": "type-scale",
       "label": "Font size body",
       "unit": "px",
       "range": {
@@ -302,7 +302,7 @@
     {
       "key": "--pn-fs-display",
       "kind": "length",
-      "group": "scale",
+      "group": "type-scale",
       "label": "Font size display",
       "unit": "px",
       "range": {
@@ -314,7 +314,7 @@
     {
       "key": "--pn-fs-fine",
       "kind": "length",
-      "group": "scale",
+      "group": "type-scale",
       "label": "Font size fine",
       "unit": "px",
       "range": {
@@ -326,7 +326,7 @@
     {
       "key": "--pn-fs-h1",
       "kind": "length",
-      "group": "scale",
+      "group": "type-scale",
       "label": "Font size h1",
       "unit": "px",
       "range": {
@@ -338,7 +338,7 @@
     {
       "key": "--pn-fs-h2",
       "kind": "length",
-      "group": "scale",
+      "group": "type-scale",
       "label": "Font size h2",
       "unit": "px",
       "range": {
@@ -350,7 +350,7 @@
     {
       "key": "--pn-fs-h3",
       "kind": "length",
-      "group": "scale",
+      "group": "type-scale",
       "label": "Font size h3",
       "unit": "px",
       "range": {
@@ -362,7 +362,7 @@
     {
       "key": "--pn-fs-label",
       "kind": "length",
-      "group": "scale",
+      "group": "type-scale",
       "label": "Font size label",
       "unit": "px",
       "range": {
@@ -374,7 +374,7 @@
     {
       "key": "--pn-fs-micro",
       "kind": "length",
-      "group": "scale",
+      "group": "type-scale",
       "label": "Font size micro",
       "unit": "px",
       "range": {
@@ -386,7 +386,7 @@
     {
       "key": "--pn-fs-mono",
       "kind": "length",
-      "group": "scale",
+      "group": "type-scale",
       "label": "Font size Mono font",
       "unit": "px",
       "range": {
@@ -398,7 +398,7 @@
     {
       "key": "--pn-fs-sm",
       "kind": "length",
-      "group": "scale",
+      "group": "type-scale",
       "label": "Font size sm",
       "unit": "px",
       "range": {
@@ -410,7 +410,7 @@
     {
       "key": "--pn-fs-tick",
       "kind": "length",
-      "group": "scale",
+      "group": "type-scale",
       "label": "Font size tick",
       "unit": "px",
       "range": {
@@ -422,7 +422,7 @@
     {
       "key": "--pn-fs-title",
       "kind": "length",
-      "group": "scale",
+      "group": "type-scale",
       "label": "Font size title",
       "unit": "px",
       "range": {
