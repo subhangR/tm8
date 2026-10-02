@@ -382,8 +382,41 @@ export function installActiveStyle(): void {
   paint(state.active, state.trustCss);
 }
 
+/**
+ * THE EDITOR'S LIVE DRAFT (spec §9.2 "every keystroke → applyDraft"). While
+ * set, it is what this tab PAINTS and what `getStyleState` reports as
+ * `active` — so `data-theme`, every LiveTerminal and every other subscriber
+ * follow the draft exactly as they follow a real switch — but it is never
+ * written to the cache or the server, and the committed pair underneath keeps
+ * updating from events. `applyDraft(null)` reverts to the committed style.
+ */
+let draft: { doc: StyleDoc; resolved: ResolvedStyle } | null = null;
+
+/** `state` with the draft laid over it; recomputed only when either changes. */
+let viewState: StyleState = state;
+
+function overlay(committed: StyleState): StyleState {
+  return draft ? { ...committed, active: draft.resolved, doc: draft.doc, trustCss: true } : committed;
+}
+
 export function getStyleState(): StyleState {
-  return state;
+  return viewState;
+}
+
+/**
+ * Preview `doc` in this tab only (the owner's own draft, so its css runs), or
+ * pass null to drop the preview. Cheap to call per keystroke: an unchanged
+ * resolved hash paints nothing.
+ */
+export function applyDraft(doc: StyleDoc | null): void {
+  if (!doc && !draft) return;
+  draft = doc ? { doc, resolved: resolveStyle(doc) } : null;
+  publish();
+}
+
+/** Whether an editor draft is being previewed right now. */
+export function hasDraft(): boolean {
+  return draft !== null;
 }
 
 export function subscribeStyle(listener: Listener): () => void {
@@ -391,11 +424,16 @@ export function subscribeStyle(listener: Listener): () => void {
   return () => listeners.delete(listener);
 }
 
+function publish(): void {
+  viewState = overlay(state);
+  paint(viewState.active, viewState.trustCss);
+  for (const listener of [...listeners]) listener(viewState);
+}
+
 function setState(next: StyleState): void {
   state = next;
-  paint(next.active, next.trustCss);
   writeCache(next);
-  for (const listener of [...listeners]) listener(next);
+  publish();
 }
 
 /**
@@ -420,7 +458,7 @@ export function currentSelection(): StyleSelection {
  * keyed on `data-theme` are asking "is the paper dark" and nothing else.
  */
 export function derivedTheme(): Theme {
-  return state.active.darkish ? 'dark' : 'light';
+  return viewState.active.darkish ? 'dark' : 'light';
 }
 
 export interface SelectStyleOptions {
@@ -542,5 +580,7 @@ export function __resetStyleStoreForTests(): void {
   themeWriter = null;
   document.getElementById(ACTIVE_STYLE_ELEMENT_ID)?.remove();
   document.getElementById(EXTRA_STYLE_ELEMENT_ID)?.remove();
+  draft = null;
   state = deriveState(initialSelection());
+  viewState = state;
 }

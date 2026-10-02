@@ -78,6 +78,7 @@ import { useLaunchPort } from './useLaunchPort';
 import { useTheme } from '../theme/useTheme';
 import { useStyleSync } from '../theme/useStyleSync';
 import { StylePicker } from '../theme/StylePicker';
+import { StyleEditorHost } from '../theme/StyleEditorHost';
 import { AccountMenu, AuthFlow, authTokenFor, noteServerOrigin, signOut, useAuthActions } from '../auth';
 import { spaceSessionFor } from '../auth/space-sessions';
 import { WorkspaceView } from './WorkspaceView';
@@ -1948,6 +1949,7 @@ export function GateApp(props: GateAppProps = {}) {
           notices={<NoticeHost notices={notices.notices} onDismiss={notices.dismiss} />}
         />
         <AttentionUndoToast />
+        <StyleEditorHost seam={data.seam} spaceId={data.spaceId || null} members={data.members} />
       </div>
     );
   }
@@ -3013,6 +3015,7 @@ export function GateApp(props: GateAppProps = {}) {
         ) : null}
       </div>
       <AttentionUndoToast />
+      <StyleEditorHost seam={data.seam} spaceId={data.spaceId || null} members={data.members} />
     </div>
   );
 }

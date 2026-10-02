@@ -461,6 +461,11 @@ export function subscribeStyleCatalog(listener: CatalogListener): () => void {
   return () => catalogListeners.delete(listener);
 }
 
+/** A write outside the sync layer (the editor's save, push, pull, delete): lists re-read. */
+export function notifyStyleCatalogChanged(): void {
+  for (const listener of [...catalogListeners]) listener();
+}
+
 // ── writes ──────────────────────────────────────────────────────────────────
 
 /** True when choices are recorded on the server (signed in, styles-aware node). */

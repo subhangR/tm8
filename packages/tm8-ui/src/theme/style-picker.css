@@ -188,3 +188,8 @@
   padding-top: 10px;
   padding-bottom: 10px;
 }
+.cv2-root .stylepick__create {
+  display: flex;
+  gap: 4px;
+  padding: 4px 12px 0;
+}
