@@ -70,6 +70,12 @@ export interface AccountMenuProps {
   theme?: Theme;
   onThemeChange?: (theme: Theme) => void;
   /**
+   * The style picker (styles spec §9.1), hosted: it needs the seam and the
+   * space, which this component does not know. Drawn under the light/dark
+   * toggle; absent ⇒ the toggle alone, as before.
+   */
+  stylePicker?: ReactNode;
+  /**
    * Opens the Inbox screen. Absent, the row still renders — announced,
    * reachable and refused with its reason, exactly as the retired bell did.
    */
@@ -96,6 +102,7 @@ export function AccountMenu({
   agentToolsNudge,
   theme: controlledTheme,
   onThemeChange,
+  stylePicker,
   onOpenInbox,
   onOpenPrompts,
   utilityRows,
@@ -259,6 +266,7 @@ export function AccountMenu({
                 ))}
               </span>
             </div>
+            {stylePicker ?? null}
 
             {onOpenAgentTools ? (
               <button

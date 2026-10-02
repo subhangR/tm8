@@ -347,6 +347,13 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     chatDefaults: (spaceId: SpaceId): Promise<ChatDefaultsView> => ops.chatDefaults(spaceId),
     setChatDefaults: (spaceId: SpaceId, defaults: Record<string, ChatDefault | null>): Promise<ChatDefaultsView> =>
       ops.setChatDefaults(spaceId, defaults),
+    stylePrefs: () => ops.stylePrefs(),
+    setStylePrefs: (input) => ops.setStylePrefs(input),
+    styleDefault: (spaceId: SpaceId) => ops.styleDefault(spaceId),
+    style: (ref: string) => ops.style(ref),
+    styles: (spaceId: SpaceId) => ops.styles(spaceId),
+    personalStyles: () => ops.personalStyles(),
+    pullStyle: (ref: string, title?: string) => ops.pullStyle(ref, title),
     workflows: (spaceId: SpaceId): Promise<Workflow[]> => ops.workflows(spaceId),
     previewInvite: (code: string): Promise<InvitePreview> => ops.previewInvite(code),
     counts: (spaceId: SpaceId): Promise<SpaceKindCounts> => ops.counts(spaceId),

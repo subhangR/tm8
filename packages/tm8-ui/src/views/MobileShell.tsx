@@ -116,6 +116,8 @@ export interface MobileShellProps {
       stamp reads — a second `useTheme()` here would be a second truth. */
   theme?: Theme;
   onThemeChange?: (theme: Theme) => void;
+  /** The style picker (styles spec §9.1), drawn under the appearance toggle. */
+  stylePicker?: ReactNode;
 
   /*
    * DEF-004 — THE LAUNCH FLOW'S INPUTS, AND WHY THEIR ABSENCE WAS THE DEFECT.
@@ -827,6 +829,7 @@ export function MobileShell(props: MobileShellProps) {
               {...(props.theme && props.onThemeChange
                 ? { theme: props.theme, onThemeChange: props.onThemeChange }
                 : {})}
+              {...(props.stylePicker ? { stylePicker: props.stylePicker } : {})}
               onDismiss={() => setAccountOpen(false)}
             />
           ) : null}
