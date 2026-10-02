@@ -7,7 +7,6 @@
  * also kind names) or a kind.
  */
 import type { ReactNode } from 'react';
-import type { TeamMemberMode } from '@tm8/contract';
 
 import type { StoryIntent } from '../actions';
 import {
@@ -37,17 +36,15 @@ export interface IntentSpec {
   needsAs: boolean;
   /** The secondary button: switch to this intent instead. Absent = no button. */
   alt?: { to: StoryIntent; label: string };
-  /** Mode a new teammate gets unless the user picks another. */
-  newMode: TeamMemberMode;
 }
 
 export const INTENTS: readonly IntentSpec[] = [
-  { intent: 'spawn', label: 'Spawn a session', glyph: SESSION_KIND, go: 'Spawn session', needsOn: true, needsAs: true, alt: { to: 'dispatch', label: 'Dispatch instead' }, newMode: 'coordinated-worker' },
-  { intent: 'dispatch', label: 'Dispatch', glyph: TEAMMATE_KIND, go: 'Dispatch', needsOn: true, needsAs: false, alt: { to: 'spawn', label: 'Spawn instead' }, newMode: 'coordinated-worker' },
-  { intent: 'task', label: 'Just a task', glyph: TASK_KIND, go: 'Add task', needsOn: true, needsAs: false, newMode: 'coordinated-worker' },
-  { intent: 'message', label: 'A message', glyph: MESSAGE_KIND, go: 'Send', needsOn: true, needsAs: false, newMode: 'coordinated-worker' },
-  { intent: 'coordinator', label: 'A coordinator', glyph: TEAMMATE_KIND, go: 'Spawn coordinator', needsOn: true, needsAs: true, alt: { to: 'task', label: 'Just add the task' }, newMode: 'coordinator' },
-  { intent: 'child-story', label: 'A child story', glyph: STORY_KIND, go: 'Add child story', needsOn: false, needsAs: false, newMode: 'coordinated-worker' },
+  { intent: 'spawn', label: 'Spawn a session', glyph: SESSION_KIND, go: 'Spawn session', needsOn: true, needsAs: true, alt: { to: 'dispatch', label: 'Dispatch instead' } },
+  { intent: 'dispatch', label: 'Dispatch', glyph: TEAMMATE_KIND, go: 'Dispatch', needsOn: true, needsAs: false, alt: { to: 'spawn', label: 'Spawn instead' } },
+  { intent: 'task', label: 'Just a task', glyph: TASK_KIND, go: 'Add task', needsOn: true, needsAs: false },
+  { intent: 'message', label: 'A message', glyph: MESSAGE_KIND, go: 'Send', needsOn: true, needsAs: false },
+  { intent: 'coordinator', label: 'A coordinator', glyph: TEAMMATE_KIND, go: 'Spawn coordinator', needsOn: true, needsAs: true, alt: { to: 'task', label: 'Just add the task' } },
+  { intent: 'child-story', label: 'A child story', glyph: STORY_KIND, go: 'Add child story', needsOn: false, needsAs: false },
 ];
 
 export const INTENT: Readonly<Record<StoryIntent, IntentSpec>> = Object.fromEntries(
@@ -56,9 +53,6 @@ export const INTENT: Readonly<Record<StoryIntent, IntentSpec>> = Object.fromEntr
 
 /** The plain "just a task" intent, for callers that add one directly. */
 export const TASK_INTENT: StoryIntent = 'task';
-
-/** Modes a new teammate can be made with, in the order the sheet offers them. */
-export const NEW_MODES: readonly TeamMemberMode[] = ['coordinated-worker', 'coordinator', 'coordinated-coordinator', 'dispatcher'];
 
 /* ------------------------------------------------------------------------- */
 /* The sheet's option rows, derived from the view.                           */
@@ -147,8 +141,8 @@ export interface PreviewInput {
   intent: StoryIntent;
   text: string;
   on: OnOption | undefined;
-  /** The "as" pick: a teammate, or a new one with a mode. */
-  as: { name: string; modeWord: string; isNew: boolean } | null;
+  /** The teammate it runs as (spawn / coordinator); null = none picked yet. */
+  as: { name: string; modeWord: string } | null;
   told: string[];
 }
 
@@ -164,10 +158,11 @@ export function previewSentence(view: StoryView, p: PreviewInput): ReactNode {
   const quoted = <B>“{text}”</B>;
   const on = <B>{p.on?.short ?? 'the story'}</B>;
   const sign = storyCallSign(view.page.sessions.length);
-  const runner = p.as ? (p.as.isNew ? `a new ${p.as.modeWord}` : p.as.name) : 'a teammate';
-  /* The coordinator sentence names the role itself, so a new runner is just "a new teammate". */
-  const coordinator = p.as && !p.as.isNew ? p.as.name : 'a new teammate';
-  const runnerMode = p.as && !p.as.isNew ? ` as ${p.as.modeWord}` : '';
+  const runner = p.as?.name ?? 'a teammate';
+  const runnerMode = p.as ? ` as ${p.as.modeWord}` : '';
+  /* A coordinator on a live session is spawned under it: a sub-coordinator. */
+  const onLiveSession = !!p.on && view.page.sessions.some((s) => s.live && s.id === p.on!.id);
+  const role = onLiveSession ? MODE_WORD['coordinated-coordinator'] : MODE_WORD.coordinator;
   const dispatcher = view.page.team.find((t) => t.mode === 'dispatcher');
   const tell = p.told.length ? (
     <> One message goes to {list(p.told)} saying it exists, with the link.</>
@@ -206,8 +201,8 @@ export function previewSentence(view: StoryView, p: PreviewInput): ReactNode {
     ),
     coordinator: (
       <>
-        Spawns <B>{coordinator}</B> as a coordinator on {on} — call sign <B>{sign}</B> — with this as its brief. It can then split
-        the work and spawn its own workers.
+        Spawns <B>{runner}</B> as a {role} on {on}{onLiveSession ? ', under that session' : ''} — call sign <B>{sign}</B> — with
+        this as its brief. It can then split the work and spawn its own workers.
       </>
     ),
     'child-story': (

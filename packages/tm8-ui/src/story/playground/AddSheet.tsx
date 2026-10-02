@@ -4,7 +4,6 @@
  * One submit is one `StoryAddRequest` to `actions.add`.
  */
 import { useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { TeamMemberMode } from '@tm8/contract';
 
 import { Avatar } from '../../kit/Avatar';
 import { Kbd } from '../../kit/Kbd';
@@ -14,7 +13,6 @@ import { MODE_WORD, STORY_KIND, type StoryView } from '../model';
 import {
   INTENT,
   INTENTS,
-  NEW_MODES,
   asOptions,
   defaultTell,
   onOptions,
@@ -31,9 +29,6 @@ export interface SheetDraft {
   onId?: string | null;
   asTeammateId?: string | null;
 }
-
-/** The "as" pick that means "a new teammate". */
-const NEW = '';
 
 export function AddSheet({
   view,
@@ -57,15 +52,20 @@ export function AddSheet({
   const [intent, setIntent] = useState<StoryIntent>(draft.intent);
   const [text, setText] = useState(draft.text ?? '');
   const [onId, setOnId] = useState<string>(draft.onId && ons.some((o) => o.id === draft.onId) ? draft.onId : view.id);
-  const [asId, setAsId] = useState<string>(
-    draft.asTeammateId ?? (ases.find((a) => a.modeWord === MODE_WORD['coordinated-worker']) ?? ases[0])?.id ?? NEW,
+  const [asId, setAsId] = useState<string | null>(
+    draft.asTeammateId ?? (ases.find((a) => a.modeWord === MODE_WORD['coordinated-worker']) ?? ases[0])?.id ?? null,
   );
-  const [mode, setMode] = useState<TeamMemberMode | null>(null);
   const [told, setTold] = useState<ReadonlySet<string>>(() => new Set(defaultTell(view)));
 
   const spec = INTENT[intent];
-  const newMode = mode ?? spec.newMode;
   const asPick = ases.find((a) => a.id === asId);
+  /* Spawn and coordinator run AS a teammate; the spawn door refuses without one. */
+  const needsRunner = spec.needsAs && !asPick;
+  const blocked = needsRunner
+    ? ases.length
+      ? 'Pick a teammate to run it.'
+      : 'This story has no teammate to run it yet — dispatch it, or add a teammate first.'
+    : null;
   const { status, error, run, busy } = useSubmit(onClose);
   const onKeyDown = useFocusTrap(box, onClose);
 
@@ -84,17 +84,14 @@ export function AddSheet({
     });
 
   const submit = () => {
-    if (busy || !text.trim()) return;
+    if (busy || !text.trim() || blocked) return;
     const req: StoryAddRequest = {
       intent,
       text: text.trim(),
       onId: spec.needsOn ? onId : view.id,
       tellIds: [...told],
     };
-    if (spec.needsAs) {
-      req.asTeammateId = asPick ? asPick.id : null;
-      req.mode = asPick ? null : newMode;
-    }
+    if (spec.needsAs && asPick) req.asTeammateId = asPick.id;
     void run(() => add(req));
   };
 
@@ -102,11 +99,7 @@ export function AddSheet({
     intent,
     text,
     on: ons.find((o) => o.id === onId),
-    as: spec.needsAs
-      ? asPick
-        ? { name: asPick.name, modeWord: asPick.modeWord, isNew: false }
-        : { name: '', modeWord: MODE_WORD[newMode], isNew: true }
-      : null,
+    as: spec.needsAs && asPick ? { name: asPick.name, modeWord: asPick.modeWord } : null,
     told: tells.filter((t) => told.has(t.id)).map((t) => t.name),
   });
 
@@ -169,26 +162,13 @@ export function AddSheet({
         </Row>
       )}
 
-      {spec.needsAs && (
+      {spec.needsAs && ases.length > 0 && (
         <Row label="as">
           {ases.map((a) => (
             <Opt key={a.id} on={a.id === asId} onClick={() => setAsId(a.id)}>
               <Avatar actorId={a.id} provenance="agent" label={a.name} initials={a.initials} size={15} />
               {a.name}
               <span className="sp-opt__m">{a.modeWord}</span>
-            </Opt>
-          ))}
-          <Opt on={!asPick} onClick={() => setAsId(NEW)}>
-            ＋ a new teammate
-          </Opt>
-        </Row>
-      )}
-
-      {spec.needsAs && !asPick && (
-        <Row label="mode">
-          {NEW_MODES.map((m) => (
-            <Opt key={m} on={m === newMode} onClick={() => setMode(m)}>
-              {MODE_WORD[m]}
             </Opt>
           ))}
         </Row>
@@ -218,7 +198,9 @@ export function AddSheet({
 
       <div className="sp-sheet__foot">
         <span className={status === 'error' ? 'sp-hint sp-hint--error' : 'sp-hint'} role={status === 'error' ? 'alert' : undefined}>
-          {status === 'pending'
+          {status === 'idle' && blocked
+            ? blocked
+            : status === 'pending'
             ? 'Adding…'
             : status === 'done'
               ? 'Done — the story updates from this.'
@@ -231,7 +213,7 @@ export function AddSheet({
             {spec.alt.label}
           </button>
         )}
-        <button type="button" className="pn-btn pn-btn--primary" disabled={busy || !text.trim()} onClick={submit}>
+        <button type="button" className="pn-btn pn-btn--primary" disabled={busy || !text.trim() || !!blocked} onClick={submit}>
           {status === 'pending' ? 'Adding…' : status === 'done' ? 'Added' : spec.go}
         </button>
         <span className="sp-keys" aria-hidden="true">
