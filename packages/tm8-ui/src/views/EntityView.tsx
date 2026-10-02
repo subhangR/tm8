@@ -53,6 +53,7 @@ import {
 import { AttentionList, useAttentionOptional } from '../attention';
 import { PanelResizer, useElementWidth, usePanelWidth } from '../kit';
 import { ConnectionsTab } from '../panels/detail/tabs';
+import { facetsForAnatomy } from '../panels/list/row-view';
 import type { ActionContext, ActionRef, CollectionMode, GroupByKey } from '../domain/types';
 import { getKind } from '../domain/registry';
 import { placeholderNameFor } from '../domain/title-grammar';
@@ -1326,6 +1327,21 @@ export function EntityView(props: EntityViewProps) {
                   }}
                 >
                   {config.list.membership.label.toLowerCase()}
+                </button>
+              ) : null}
+              {/* Not a narrowing, but the same picker register — it opens
+                  the same sheet the desktop's `View ▾` chip hangs. */}
+              {facetsForAnatomy(config.list.tile.anatomy).length > 0 ? (
+                <button
+                  type="button"
+                  className="ev-narrow__item"
+                  data-testid="narrow-view"
+                  onClick={() => {
+                    setPicker('view');
+                    setDialOpen(false);
+                  }}
+                >
+                  view
                 </button>
               ) : null}
               {config.list.sort.length > 0 ? (
