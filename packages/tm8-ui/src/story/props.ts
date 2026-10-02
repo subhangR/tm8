@@ -29,11 +29,25 @@ export interface StoryRootHover {
   setRootId: (rootId: string | null) => void;
 }
 
+/**
+ * An agent teammate in the SPACE that can run a session: the host's launch
+ * roster (`data.launch.teammates`, recency-ordered, the launch dialog's own
+ * list and default). The playground's "as" picker offers these, so a story
+ * with nobody on it yet can still get its first session.
+ */
+export interface StoryRunner {
+  id: string;
+  name: string;
+  mode?: string | null;
+}
+
 export interface StoryBlockProps {
   view: StoryView;
   actions: StoryActions;
   live?: StoryLive | null;
   hover?: StoryRootHover | null;
+  /** Absent = only the agent teammates already on the story can run a launch. */
+  runners?: readonly StoryRunner[] | null;
 }
 
 /** A node the user clicked, in the graph or a card — opens the node popover. */

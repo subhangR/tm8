@@ -9,11 +9,13 @@ import { Avatar } from '../../kit/Avatar';
 import { Kbd } from '../../kit/Kbd';
 import { KindIcon } from '../../domain/KindIcon';
 import type { StoryAddRequest, StoryIntent } from '../actions';
-import { MODE_WORD, STORY_KIND, type StoryView } from '../model';
+import type { StoryRunner } from '../props';
+import { STORY_KIND, type StoryView } from '../model';
 import {
   INTENT,
   INTENTS,
   asOptions,
+  defaultAs,
   defaultTell,
   onOptions,
   previewSentence,
@@ -35,7 +37,9 @@ export function AddSheet({
   add,
   draft,
   onClose,
+  runners,
 }: {
+  runners?: readonly StoryRunner[] | null;
   view: StoryView;
   add: (req: StoryAddRequest) => Promise<string | void>;
   draft: SheetDraft;
@@ -46,15 +50,16 @@ export function AddSheet({
   const titleId = useId();
 
   const ons = useMemo(() => onOptions(view, draft.onId), [view, draft.onId]);
-  const ases = useMemo(() => asOptions(view), [view]);
+  const ases = useMemo(() => asOptions(view, runners), [view, runners]);
   const tells = useMemo(() => tellOptions(view), [view]);
 
   const [intent, setIntent] = useState<StoryIntent>(draft.intent);
   const [text, setText] = useState(draft.text ?? '');
   const [onId, setOnId] = useState<string>(draft.onId && ons.some((o) => o.id === draft.onId) ? draft.onId : view.id);
-  const [asId, setAsId] = useState<string | null>(
-    draft.asTeammateId ?? (ases.find((a) => a.modeWord === MODE_WORD['coordinated-worker']) ?? ases[0])?.id ?? null,
-  );
+  const [asPicked, setAsPicked] = useState<string | null>(draft.asTeammateId ?? null);
+  // Until the person picks, the runner follows the intent (a coordinator launch prefers a coordinator).
+  const asId = (asPicked && ases.some((a) => a.id === asPicked) ? asPicked : null) ?? defaultAs(ases, runners, intent);
+  const setAsId = setAsPicked;
   const [told, setTold] = useState<ReadonlySet<string>>(() => new Set(defaultTell(view)));
 
   const spec = INTENT[intent];
@@ -64,7 +69,7 @@ export function AddSheet({
   const blocked = needsRunner
     ? ases.length
       ? 'Pick a teammate to run it.'
-      : 'This story has no teammate to run it yet — dispatch it, or add a teammate first.'
+      : 'No agent teammate in this space can run it — dispatch it, or add a teammate first.'
     : null;
   const { status, error, run, busy } = useSubmit(onClose);
   const onKeyDown = useFocusTrap(box, onClose);

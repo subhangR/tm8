@@ -132,7 +132,7 @@ export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose }: AuxEnt
         onOpenEntity(id as EntityId),
       )}
       launchContextSurface={launchContextSurfaceFor(data.seam, entityId, (id) => onOpenEntity(id as EntityId))}
-      storySurface={storySurfaceFor(data.seam, entityId, (id) => onOpenEntity(id as EntityId))}
+      storySurface={storySurfaceFor(data.seam, entityId, (id) => onOpenEntity(id as EntityId), data.launch.teammates)}
       livenessOf={data.livenessOf}
       attachments={attachments}
       onAttachmentUploaded={() => data.refetchDetail(entityId)}

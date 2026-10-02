@@ -17,15 +17,19 @@ import type { Seam } from '../data/seam';
 import { toStoryView, useStoryActions, useStoryLive } from './data';
 import type { StoryActions } from './actions';
 import { StoryPage } from './StoryPage';
+import type { StoryRunner } from './props';
 
 export function StoryLiveHost({
   seam,
   storyId,
   open,
+  runners,
 }: {
   seam: Seam;
   storyId: EntityId;
   open?: (entityId: string) => void;
+  /** The space's launch roster, so the playground can spawn as any agent teammate. */
+  runners?: readonly StoryRunner[] | null;
 }) {
   const { view, live, loading, error, refresh } = useStoryLive(seam, storyId);
   const actions = useStoryActions(seam, storyId, { view, ...(open ? { open } : {}) });
@@ -55,7 +59,7 @@ export function StoryLiveHost({
           Showing the last good read · {error.message}
         </div>
       ) : null}
-      <StoryPage view={view} actions={actions} live={live} />
+      <StoryPage view={view} actions={actions} live={live} runners={runners ?? null} />
     </>
   );
 }

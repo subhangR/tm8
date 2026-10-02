@@ -13,12 +13,23 @@ import type { ReactNode } from 'react';
 import type { EntityId } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 import { StoryLiveHost } from '../story/StoryHost';
+import type { StoryRunner } from '../story/props';
 
 export function storySurfaceFor(
   seam: Seam | undefined,
   entityId: string | null | undefined,
   open?: (entityId: string) => void,
+  /** The host's launch roster (`data.launch.teammates`): who the playground can spawn as. */
+  runners?: readonly StoryRunner[],
 ): ReactNode | undefined {
   if (!seam || !entityId) return undefined;
-  return <StoryLiveHost key={entityId} seam={seam} storyId={entityId as EntityId} {...(open ? { open } : {})} />;
+  return (
+    <StoryLiveHost
+      key={entityId}
+      seam={seam}
+      storyId={entityId as EntityId}
+      {...(open ? { open } : {})}
+      {...(runners ? { runners } : {})}
+    />
+  );
 }

@@ -76,14 +76,15 @@ function targetOf(view: StoryView, id: string): Target | null {
       id,
       kind: TEAMMATE_KIND,
       title: teammate.name,
-      tag: teammate.mode ? MODE_WORD[teammate.mode] : 'teammate',
-      sub: 'teammate · spawn runs a new session as it',
+      tag: teammate.kind === 'member' ? 'member' : teammate.mode ? MODE_WORD[teammate.mode] : 'teammate',
+      sub: teammate.kind === 'member' ? 'member · a message here reaches them' : 'teammate · spawn runs a new session as it',
       messageAnchor: id,
       messageLabel: `Message ${teammate.name}`,
       workable: false,
       closable: false,
-      // A dispatcher routes work rather than running it: no "spawn as" for it.
-      teammateId: teammate.mode === 'dispatcher' ? null : id,
+      // A dispatcher routes work rather than running it, and a human member
+      // never runs a launch: no "spawn as" for either.
+      teammateId: teammate.mode === 'dispatcher' || teammate.kind === 'member' ? null : id,
     };
   }
   if (!node) return null;

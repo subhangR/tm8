@@ -23,7 +23,7 @@ export interface StoryPlaygroundProps extends StoryBlockProps {
 
 const MOD_K = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘K' : 'Ctrl K';
 
-export function StoryPlayground({ view, actions, pick, onClosePick }: StoryPlaygroundProps) {
+export function StoryPlayground({ view, actions, pick, onClosePick, runners }: StoryPlaygroundProps) {
   const host = useRef<HTMLDivElement>(null);
   /** The open sheet's draft; `seq` remounts it so a new opening starts fresh. */
   const [sheet, setSheet] = useState<{ draft: SheetDraft; seq: number } | null>(null);
@@ -54,7 +54,7 @@ export function StoryPlayground({ view, actions, pick, onClosePick }: StoryPlayg
           ＋
         </button>
       )}
-      {add && sheet && <AddSheet key={sheet.seq} view={view} add={add} draft={sheet.draft} onClose={closeSheet} />}
+      {add && sheet && <AddSheet key={sheet.seq} view={view} add={add} draft={sheet.draft} onClose={closeSheet} runners={runners ?? null} />}
       {pick && (
         <NodePopover
           key={pick.entityId}

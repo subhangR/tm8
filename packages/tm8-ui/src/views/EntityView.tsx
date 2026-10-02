@@ -845,7 +845,7 @@ export function EntityView(props: EntityViewProps) {
       changesSurface={detail ? changesSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
       taskGitSection={taskGitSectionFor(data.seam, detail, (id) => setAux({ sort: 'entity', id: id as EntityId }))}
       storySurface={
-        detail ? storySurfaceFor(data.seam, selectedId, (id) => setAux({ sort: 'entity', id: id as EntityId })) : undefined
+        detail ? storySurfaceFor(data.seam, selectedId, (id) => setAux({ sort: 'entity', id: id as EntityId }), data.launch.teammates) : undefined
       }
       graphSurface={
         detail

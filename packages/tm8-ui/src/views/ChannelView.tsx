@@ -259,7 +259,7 @@ export function ChannelView({
         setSelectedId(id as EntityId),
       )}
       launchContextSurface={launchContextSurfaceFor(data.seam, selectedId, (id) => setSelectedId(id as EntityId))}
-      storySurface={storySurfaceFor(data.seam, selectedId, (id) => setSelectedId(id as EntityId))}
+      storySurface={storySurfaceFor(data.seam, selectedId, (id) => setSelectedId(id as EntityId), data.launch.teammates)}
       attachments={attachments}
       onAttachmentUploaded={() => data.refetchDetail(selectedId)}
       livenessOf={data.livenessOf}

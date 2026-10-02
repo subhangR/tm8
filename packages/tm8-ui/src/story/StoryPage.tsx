@@ -64,6 +64,7 @@ export function StoryPage({
   view,
   actions,
   live,
+  runners,
   initialGraphView,
 }: StoryBlockProps & { initialGraphView?: StoryGraphView }) {
   const [pick, setPick] = useState<StoryNodePick | null>(null);
@@ -93,7 +94,7 @@ export function StoryPage({
           <StoryRail {...block} />
         </aside>
       </section>
-      <StoryPlayground view={view} actions={actions} live={live} pick={pick} onClosePick={closePick} />
+      <StoryPlayground view={view} actions={actions} live={live} pick={pick} onClosePick={closePick} runners={runners ?? null} />
     </div>
   );
 }

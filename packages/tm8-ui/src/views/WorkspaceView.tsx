@@ -513,7 +513,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
                     changesSurface={changesSurfaceFor(data.seam, id, data.livenessOf)}
                     taskGitSection={taskGitSectionFor(data.seam, detail, openEntity)}
                     graphSurface={graphSurfaceFor(data.seam, id, data.livenessOf, openEntity)}
-                    storySurface={storySurfaceFor(data.seam, id, openEntity)}
+                    storySurface={storySurfaceFor(data.seam, id, openEntity, data.launch.teammates)}
                     launchContextSurface={launchContextSurfaceFor(data.seam, id, openEntity)}
                     attachments={attachments}
                     onAttachmentUploaded={() => props.data.refetchDetail(id)}

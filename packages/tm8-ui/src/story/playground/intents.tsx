@@ -9,6 +9,7 @@
 import type { ReactNode } from 'react';
 
 import type { StoryIntent } from '../actions';
+import type { StoryRunner } from '../props';
 import {
   MESSAGE_KIND,
   MODE_WORD,
@@ -93,16 +94,53 @@ export interface AsOption {
   modeWord: string;
 }
 
-/** Teammates who can run a session (a dispatcher routes work, it does not run it). */
-export function asOptions(view: StoryView): AsOption[] {
-  return teammatesOf(view.page)
-    .filter((t) => t.mode !== 'dispatcher')
-    .map((t) => ({
-      id: t.id,
-      name: t.name,
-      initials: view.people[t.id]?.initials ?? t.name.charAt(0),
-      modeWord: t.mode ? MODE_WORD[t.mode] : 'teammate',
-    }));
+const DISPATCHER_MODE = 'dispatcher';
+
+function modeWordOf(mode: string | null | undefined): string {
+  return (mode && MODE_WORD[mode as keyof typeof MODE_WORD]) || 'teammate';
+}
+
+/**
+ * Who can run a launch: AGENT teammates only (never a human member), never a
+ * dispatcher (it routes work, it does not run it). The ones already on the
+ * story come first, then the rest of the space's launch roster in its own
+ * order — so a fresh story with nobody on it can still get its first session.
+ */
+export function asOptions(view: StoryView, runners?: readonly StoryRunner[] | null): AsOption[] {
+  const out: AsOption[] = [];
+  const seen = new Set<string>();
+  const push = (id: string, name: string, mode: string | null | undefined) => {
+    if (seen.has(id) || mode === DISPATCHER_MODE) return;
+    seen.add(id);
+    out.push({ id, name, initials: view.people[id]?.initials ?? name.charAt(0), modeWord: modeWordOf(mode) });
+  };
+  const roster = runners ? new Set(runners.map((r) => r.id)) : null;
+  for (const t of teammatesOf(view.page)) {
+    // With a roster, a story teammate that cannot launch (unsupported model) is not offered.
+    if (!roster || roster.has(t.id)) push(t.id, t.name, t.mode);
+  }
+  for (const r of runners ?? []) push(r.id, r.name, r.mode);
+  return out;
+}
+
+/**
+ * The pre-picked runner, by intent: a coordinator launch prefers a
+ * coordinator, any other launch a worker — the story's own first (options
+ * list them first), then the roster's in its order (recently launched first,
+ * then by name). Neither found: the roster's first launchable teammate, the
+ * launch dialog's own default; else the first option.
+ */
+export function defaultAs(
+  options: readonly AsOption[],
+  runners: readonly StoryRunner[] | null | undefined,
+  intent: StoryIntent,
+): string | null {
+  const ids = new Set(options.map((o) => o.id));
+  const want = intent === 'coordinator' ? MODE_WORD.coordinator : MODE_WORD.worker;
+  const byMode = options.find((o) => o.modeWord === want);
+  if (byMode) return byMode.id;
+  const first = (runners ?? []).find((r) => ids.has(r.id));
+  return first?.id ?? options[0]?.id ?? null;
 }
 
 export interface TellOption {
