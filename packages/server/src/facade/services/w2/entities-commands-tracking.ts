@@ -108,6 +108,10 @@ export const RESTRICTED_LIFECYCLE_KINDS = new Set([
   // generic restore would revive a server whose gate rows are gone. SQL refuses
   // the same doors (261 §8b re-creates 251 §10b's trigger with `server` added).
   'server',
+  // `op_request` (L5, 280) is born from `opRequests.create` and moved only by
+  // its decision doors; a generic create would be a request with no row, and
+  // a generic delete would hide a pending approve item from its approver.
+  'op_request',
 ]);
 // `memory` is here to HIDE hierarchy on the read surfaces; the actual refusal
 // of a memory parent lives at the data layer (056's entities trigger), because

@@ -174,6 +174,8 @@ import type {
   SpaceLinkInboundView,
   CrossSpaceRef,
   CrossSpaceRefRemoved,
+  OpRequestView,
+  OpRequestStatus,
   ServerView,
   ServerProbeView,
   ActionRows,
@@ -297,6 +299,34 @@ import type {
 import type { ChatContextFrame, ChatTurnFrame } from '../chat-home/types';
 
 export type Unsubscribe = () => void;
+
+/**
+ * `opRequests.approve` / `opRequests.deny`'s answer (L5, 280): the request as
+ * it now stands, and whether the outcome reached the requesting session. A
+ * failed notify is NOT a failed decision: the request is decided either way.
+ */
+export interface OpRequestDecision {
+  request: OpRequestView;
+  notified: boolean;
+  notifyError?: { code: string; message: string };
+  delivery?: unknown[];
+}
+
+/**
+ * The op-request noun (`opRequests.*`, L5, migration 280). An agent files a
+ * typed request for a human-only op; a human approves it (the server runs the
+ * op AS THE APPROVER) or denies it. `create` is the agent's door and has no UI
+ * caller, so it is not here.
+ */
+export interface OpRequestsOps {
+  /** The space's requests, newest first. */
+  list(spaceId: SpaceId, query?: { status?: OpRequestStatus; limit?: number }): Promise<OpRequestView[]>;
+  get(requestId: EntityId): Promise<OpRequestView>;
+  /** HUMAN-ONLY. An agent caller is refused `forbidden`. */
+  approve(requestId: EntityId, note?: string | null): Promise<OpRequestDecision>;
+  /** HUMAN-ONLY. Nothing runs. */
+  deny(requestId: EntityId, note?: string | null): Promise<OpRequestDecision>;
+}
 
 /**
  * Connection honesty states (T4). The UI renders these truthfully and never
@@ -958,6 +988,13 @@ export interface Seam {
      */
     managed?: ManagedPort;
     /**
+     * The approve card's port (L5, 280): the same object as `seam.opRequests`,
+     * re-exposed here because every detail-panel host already hands the panel
+     * `seam.commands`. Optional like `managed`: absent, the card says the
+     * decision is not wired here rather than drawing dead buttons.
+     */
+    opRequests?: OpRequestsOps;
+    /**
      * `launch.suggest` — Ask Jev on LaunchSheet and the Run popup (design
      * 01a0cb80 §5.1). Optional like `skills`: a seam without it renders the
      * button refused-with-reason, never hidden.
@@ -1536,6 +1573,15 @@ export interface Seam {
     list(entityId: EntityId): Promise<CrossSpaceRef[]>;
     remove(entityId: EntityId, refId: string): Promise<CrossSpaceRefRemoved>;
   };
+
+  /**
+   * -- op requests (`opRequests.*`, L5, migration 280) -----------------------
+   *
+   * An agent's typed request for an allow-listed human-only op. `approve` and
+   * `deny` are HUMAN-ONLY at the facade; `canDecide` on each view says whether
+   * THIS caller may decide it now.
+   */
+  opRequests: OpRequestsOps;
 
   /**
    * -- remote servers (`servers.*`, W8, migration 261) ------------------------

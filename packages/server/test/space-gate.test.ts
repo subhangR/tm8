@@ -36,6 +36,14 @@ describe('gateSessionMayCall', () => {
       expect(gateSessionMayCall(op), op).toBe(false);
     }
   });
+  it('lets a gate admin decide op requests (L5, 280), but not file or list them', () => {
+    for (const op of ['opRequests.get', 'opRequests.approve', 'opRequests.deny']) {
+      expect(gateSessionMayCall(op), op).toBe(true);
+    }
+    for (const op of ['opRequests.create', 'opRequests.list']) {
+      expect(gateSessionMayCall(op), op).toBe(false);
+    }
+  });
 });
 
 describe('isGateSession', () => {

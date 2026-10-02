@@ -111,7 +111,8 @@ function scrubbedError(err: unknown): unknown {
     );
     if (err.hint !== undefined) next.hint = scrubText(err.hint);
     if (refusedAsHumanOnly(err)) {
-      next.hint = 'space link writes are human-only: ask your human to run this `tm8 link` command';
+      next.hint = 'space link writes are human-only: ask your human to run this `tm8 link` command, '
+        + 'or file it for approval with `tm8 request create spaceLinks.add --input \'{"targetSpaceId":"<id>"}\' --justification <why>`';
     }
     return next;
   }

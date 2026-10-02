@@ -85,7 +85,7 @@ describe('the Home icon rail', () => {
     expect(kindsOf('structure')).toEqual(['collection', 'graph']);
     expect(kindsOf('people')).toEqual(['member', 'channel']);
     expect(kindsOf('code')).toEqual(['commit', 'pull_request', 'worktree']);
-    expect(kindsOf('setup')).toEqual(['interaction_profile', 'credential', 'space_link', 'server']);
+    expect(kindsOf('setup')).toEqual(['interaction_profile', 'credential', 'space_link', 'server', 'op_request']);
     expect(kindsOf('beta')).toEqual(['loop', 'spell', 'container']);
   });
 

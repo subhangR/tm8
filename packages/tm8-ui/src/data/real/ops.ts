@@ -2,6 +2,7 @@ import type { SkillPort } from '../../skills/port';
 import type { JevPort } from '../../jev/port';
 import type { LaunchDefaultsPort } from '../../launch-selection/port';
 import type { FormsOps, FormsRedeliverInput } from '../../forms/ops-port';
+import type { OpRequestDecision } from '../seam';
 /**
  * Typed wrappers for EXACTLY the operations the seam exposes (LLD §5:
  * "one typed function per seam-exposed op. No generic op-name dispatcher, no
@@ -103,6 +104,8 @@ import {
   type SpaceCredentialStoredProviderName,
   type SpaceCredentialView,
   type SpaceLinkView,
+  type OpRequestStatus,
+  type OpRequestView,
   type CredentialsServiceKeysStatusView,
   type ServiceKeyProviderName,
   type ServiceKeyView,
@@ -780,6 +783,35 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<CrossSpaceRefRemoved>('entities.refs.remove', {
         params: { id: entityId, refId },
         body: { clientMutationId: newId('xsref') },
+      });
+    },
+
+    // -- op requests (`opRequests.*`, L5, 280) -------------------------------
+    // approve/deny are human-only server-side; the server runs the op as the
+    // approver and reports the outcome to the requesting session.
+
+    /** Bare array, newest first. */
+    opRequestsList(spaceId: SpaceId, query?: { status?: OpRequestStatus; limit?: number }): Promise<OpRequestView[]> {
+      return http.call<OpRequestView[]>('opRequests.list', {
+        params: { spaceId },
+        ...(query?.status !== undefined || query?.limit !== undefined
+          ? { query: { status: query.status, limit: query.limit } }
+          : {}),
+      });
+    },
+
+    opRequestsGet(requestId: EntityId): Promise<OpRequestView> {
+      return http.call<OpRequestView>('opRequests.get', { params: { requestId } });
+    },
+
+    opRequestsDecide(
+      op: 'opRequests.approve' | 'opRequests.deny',
+      requestId: EntityId,
+      note?: string | null,
+    ): Promise<OpRequestDecision> {
+      return http.call<OpRequestDecision>(op, {
+        params: { requestId },
+        body: { ...(note ? { note } : {}), clientMutationId: newId('opreq') },
       });
     },
 

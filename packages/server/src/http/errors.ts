@@ -67,6 +67,8 @@ export const SQLSTATE_TO_ERROR_CODE: Readonly<Record<string, CommandErrorCode>> 
   // Attention v2 (256): an undo past its window, a withdraw of a row that is
   // not an open agent row, a reused batch id; details.reason says which.
   TAC01: 'conflict',
+  // 280 (L5): an op request already decided, or being run by another approver.
+  TOR01: 'conflict',
 };
 
 /** Translate a driver error carrying a SQLSTATE into the taxonomy. */

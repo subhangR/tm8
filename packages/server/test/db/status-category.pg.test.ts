@@ -345,6 +345,16 @@ describe.sequential('147 — entities.status_category', () => {
         entity_id uuid primary key, name text not null, base_url text not null);
       grant select on public.servers to tm8_app;
       reset role;`);
+    // 280 (op requests, L5): `entity-read.ts` and the projector left-join
+    // `public.op_requests opr` for a request's title, op and status. Same shim
+    // shape as `servers` above: only the columns the read selects and their
+    // tm8_app read grant. No assertion here reads them. DELETE this shim if
+    // this suite ever applies the chain through 280.
+    await database.query(`set role tm8_graph_owner;
+      create table public.op_requests (
+        entity_id uuid primary key, title text not null, op text not null, status text not null);
+      grant select on public.op_requests to tm8_app;
+      reset role;`);
   }, 180_000);
 
   afterAll(async () => {

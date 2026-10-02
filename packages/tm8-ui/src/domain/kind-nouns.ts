@@ -116,6 +116,7 @@ export const KIND_CLI_VOCABULARY: Readonly<Record<string, KindCliVocabulary>> = 
   credential: { nouns: ['credential'], commands: ['space credential-readiness get', 'session spawn'] },
   space_link: { nouns: ['space-link'], commands: [] },
   server: { nouns: ['server'], commands: ['identity get', 'node mode'] },
+  op_request: { nouns: ['request'], commands: [] },
   loop: { nouns: [], commands: ['entity query', 'session spawn'] },
   spell: { nouns: [], commands: ['skill equip', 'entity query'] },
   container: { nouns: ['container'], commands: [] },

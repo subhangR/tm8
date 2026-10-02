@@ -20,6 +20,7 @@
 import type { EffectiveSkills, SkillReference } from './skill-reference.js';
 import type { OperationName } from './catalog.js';
 import type { FormQuestionRow, FormSectionRow, FormSettings, FormStatus } from './forms.js';
+import type { OpRequestStatus } from './op-requests.js';
 import type { RelevanceLevel } from './launch-suggest.js';
 import type { CoherenceFinding } from './orchestration.js';
 import type { EntityHeaderView, HeaderTextInput } from './selection-header.js';
@@ -82,7 +83,11 @@ export type CoreEntityKind =
   // `spaceLinks.add`.
   | 'space_link'
   // A remote tm8 server a space link points at (W8). Registered with W6's kinds.
-  | 'server';
+  | 'server'
+  // Op requests (280, L5): an agent's typed request for a human-only op. A
+  // human approves (the server runs the op as the approver) or denies it.
+  // Born only from `opRequests.create`.
+  | 'op_request';
 
 /** A credential entity's visibility (W10a): who may launch on it. */
 export type CredentialVisibility = 'private' | 'public';
@@ -524,6 +529,8 @@ export type CoreEntityState =
    */
   | { kind: 'space_link' }
   | { kind: 'server' }
+  /** An op request's row facts (280): which op, and where it is. */
+  | { kind: 'op_request'; op: string; status: OpRequestStatus }
   /**
    * A chat's row facts (176). Everything here answers a question a list row
    * asks — who is it with, what is it running, is it busy — without a second
@@ -961,6 +968,8 @@ export type CoreEntityContent =
   /** Space links (250, W6): content is `spaceLinks.list`'s; see EntityState. */
   | { kind: 'space_link' }
   | { kind: 'server' }
+  /** An op request (280): its state's facts; the rest is `opRequests.get`'s. */
+  | { kind: 'op_request'; op: string; status: OpRequestStatus }
   /**
    * A space credential (W10a): the same allow-list as its state. The sealed
    * secret, key hint and vendor login never reach an entity read.
@@ -3181,6 +3190,9 @@ export type CreatableEntityKind = Exclude<
   // caller belongs to both spaces; `server` has no door in W6.
   | 'space_link'
   | 'server'
+  // `op_request` is born ONLY from `opRequests.create` (280), which validates
+  // the op against the allow-list and raises the approve item.
+  | 'op_request'
 >;
 
 export interface CreateEntityInput extends CommandContext {

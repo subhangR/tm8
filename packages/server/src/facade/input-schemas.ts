@@ -107,6 +107,8 @@ import {
   SpaceLinksInvokeInputSchema,
   CrossSpaceRefAddInputSchema,
   CrossSpaceRefRemoveInputSchema,
+  OpRequestsCreateInputSchema,
+  OpRequestsDecideInputSchema,
   ServersAddInputSchema,
   ServersAdoptInputSchema,
   ServersMutationInputSchema,
@@ -300,6 +302,11 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   // L3 (279): the link and the target; the referencing entity is the path's :id.
   'entities.refs.add': CrossSpaceRefAddInputSchema,
   'entities.refs.remove': CrossSpaceRefRemoveInputSchema,
+  // L5 (280): the request envelope; the op's own body is validated against
+  // the op's own schema inside the handler, at create and again at approve.
+  'opRequests.create': OpRequestsCreateInputSchema,
+  'opRequests.approve': OpRequestsDecideInputSchema,
+  'opRequests.deny': OpRequestsDecideInputSchema,
   // W8 (261): add/adopt/remove human-only in SQL; no body carries a secret.
   'servers.add': ServersAddInputSchema,
   'servers.adopt': ServersAdoptInputSchema,

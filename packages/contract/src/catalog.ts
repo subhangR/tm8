@@ -135,6 +135,14 @@ export const OPERATIONS = [
   { name: 'entities.refs.list',   method: 'GET',    path: '/v2/entities/:id/refs',             kind: 'read',    status: 'v1' },
   { name: 'entities.refs.add',    method: 'POST',   path: '/v2/entities/:id/refs',             kind: 'command', status: 'v1' },
   { name: 'entities.refs.remove', method: 'DELETE', path: '/v2/entities/:id/refs/:refId',      kind: 'command', status: 'v1' },
+  // Op requests (L5, D5, 280): an agent asks for a human-only op from the
+  // OP_REQUESTABLE allow-list; a human approves and the server runs it as the
+  // approver, or denies it. approve/deny are human-only.
+  { name: 'opRequests.list',    method: 'GET',  path: '/v2/spaces/:spaceId/op-requests',     kind: 'read',    status: 'v1' },
+  { name: 'opRequests.create',  method: 'POST', path: '/v2/spaces/:spaceId/op-requests',     kind: 'command', status: 'v1' },
+  { name: 'opRequests.get',     method: 'GET',  path: '/v2/op-requests/:requestId',          kind: 'read',    status: 'v1' },
+  { name: 'opRequests.approve', method: 'POST', path: '/v2/op-requests/:requestId/approve',  kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'opRequests.deny',    method: 'POST', path: '/v2/op-requests/:requestId/deny',     kind: 'command', status: 'v1', humanOnly: true },
   // Remote servers (W8, 261): `server` entities over 044's read-only rows.
   // add/adopt/remove are human-only in SQL; no response carries a gate token.
   { name: 'servers.list',   method: 'GET',  path: '/v2/spaces/:spaceId/servers',  kind: 'read',    status: 'v1' },
