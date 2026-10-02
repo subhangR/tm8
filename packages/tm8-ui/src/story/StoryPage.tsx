@@ -158,50 +158,26 @@ function StoryHero({
       data-landed={live?.landed.has(view.id) ? 'true' : undefined}
       style={{ ['--sty-p' as string]: `${pct(state.taskProgress)}%` }}
     >
-      <div className="sty-eyebrow">
-        <span>{getKind(STORY_KIND).label}</span>
-        {statusLabel ? (
-          <>
-            <i className="sty-dot" />
-            <span className={`sty-eyebrow__status sty-tone--${tone}`}>{statusLabel}</span>
-          </>
-        ) : null}
-        <i className="sty-dot" />
-        <span>{plural(state.rootCount, 'root')}</span>
-        {kids > 0 ? (
-          <>
-            <i className="sty-dot" />
-            <span>{plural(kids, 'child story', 'child stories')}</span>
-          </>
-        ) : null}
-        <i className="sty-dot" />
-        <span>{plural(state.itemCount, 'thing')} in it</span>
-        {state.lastActivityAt ? (
-          <>
-            <i className="sty-dot" />
-            <span>last activity {relTime(state.lastActivityAt)}</span>
-          </>
-        ) : null}
-      </div>
-
       <StoryTitle id={view.id} title={view.title} rename={rename} />
-      {view.description ? (
-        <p className="sty-lede">{view.description}</p>
-      ) : (
-        <p className="sty-lede sty-lede--empty">No description yet. Put things in and the page fills itself.</p>
-      )}
+      <StoryLede text={view.description} />
 
+      {/* ONE line under the title: what the kicker and the meta row used to
+          say on two (Subhang, PR 1004: the top took ~650px). Wraps on a
+          narrow panel; nothing is dropped, only folded. */}
       <div className="sty-herometa">
         {statusLabel ? (
           <Pill tone={tone} dot="solid">
             {statusLabel}
           </Pill>
         ) : null}
+        <span>{plural(state.rootCount, 'root')}</span>
+        {kids > 0 ? <span>{plural(kids, 'child story', 'child stories')}</span> : null}
+        <span>{plural(state.itemCount, 'thing')} in it</span>
         {onIt > 0 ? (
-          <span className="sty-who">
+          <span className="sty-who" title={`${teammates.length} teammates · ${members.length} members`}>
             <span className="sty-stack">
               {members.map((m) => (
-                <Avatar key={m.id} actorId={m.id} provenance="human" label={m.name} initials={m.initials} size={20} />
+                <Avatar key={m.id} actorId={m.id} provenance="human" label={m.name} initials={m.initials} size={15} />
               ))}
               {teammates.map((t) => (
                 <Avatar
@@ -210,22 +186,20 @@ function StoryHero({
                   provenance="agent"
                   label={t.live ? `${t.name} · live` : t.name}
                   initials={view.people[t.id]?.initials}
-                  size={20}
+                  size={15}
                   className={t.live ? 'sty-av--live' : undefined}
                 />
               ))}
             </span>
             {onIt} on it
-            {teammates.length > 0 ? ` · ${plural(teammates.length, 'teammate')}` : ''}
-            {members.length > 0 ? ` · ${plural(members.length, 'member')}` : ''}
           </span>
         ) : null}
         {live ? <LivePill live={live} /> : null}
         {view.feed.length > 0 ? (
           <span className="sty-who">
-            <VectorIcon paths={KIND_ART.message} size={14} />
+            <VectorIcon paths={KIND_ART.message} size={13} />
             {view.feed.length}
-            {view.feed.length >= 50 ? '+' : ''} messages across the story
+            {view.feed.length >= 50 ? '+' : ''} messages
           </span>
         ) : null}
         {state.pendingAttentionCount > 0 ? (
@@ -233,8 +207,41 @@ function StoryHero({
             {plural(state.pendingAttentionCount, 'attention request')}
           </Pill>
         ) : null}
+        {state.lastActivityAt ? <span className="sty-herometa__when">active {relTime(state.lastActivityAt)}</span> : null}
       </div>
     </section>
+  );
+}
+
+/**
+ * The description, clamped to two lines with a toggle — drawn only when the
+ * clamp actually hides something, so a short description has no dead "more".
+ */
+function StoryLede({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const [clamped, setClamped] = useState(false);
+  const ref = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || open) return;
+    const measure = () => setClamped(el.scrollHeight > el.clientHeight + 1);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [text, open]);
+  if (!text) return <p className="sty-lede sty-lede--empty">No description yet. Put things in and the page fills itself.</p>;
+  return (
+    <div className="sty-ledebox">
+      <p ref={ref} className={`sty-lede${open ? '' : ' sty-lede--clamped'}`}>
+        {text}
+      </p>
+      {clamped || open ? (
+        <button type="button" className="sty-lede__more" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+          {open ? 'less' : 'more'}
+        </button>
+      ) : null}
+    </div>
   );
 }
 
@@ -356,13 +363,30 @@ function StoryStats({ view }: { view: StoryView }) {
     })
     .join(' · ');
 
+  const liveSub =
+    liveSessions.length > 0 ? `${liveSessions.map((s) => s.callSign).join(' · ')} on ${plural(liveTasks, 'task')}` : 'nobody is running on it';
+  const blockedLine = blockedSub.length > 0 ? blockedSub.join(' · ') : 'nothing is blocked';
+  const thingsLine = `${kindLine || 'nothing yet · put a task in to start'}${state.truncated ? ` · first ${page.follow.limit} shown` : ''}`;
+
+  /* ONE slim strip (PR 1004): each figure is number + label inline, its
+     detail one truncated line under it (full text on hover). The progress
+     cell carries a thin meter and its legend on one line. */
   return (
-    <section className="sty-stats" data-testid="story-stats">
-      <div className="sty-stat sty-stat--progress">
-        <div className="sty-stat__k">Progress · all roots</div>
-        <div className="sty-stat__v">
-          {tp.done} <small>of {plural(tp.work, 'task')} done</small>
-          <span className="sty-stat__pct">{pct(tp)}%</span>
+    <section className="sty-strip" data-testid="story-stats">
+      <div className="sty-strip__cell sty-strip__cell--progress">
+        <div className="sty-strip__row">
+          <div className="sty-strip__v">
+            <b>{tp.done}</b> of {plural(tp.work, 'task')} done
+          </div>
+          <div className="sty-legend">
+            {METER.map((m) => (
+              <span key={m.tone}>
+                <i style={{ background: m.token }} />
+                {seg[m.tone]} {TONE_WORD[m.tone]}
+              </span>
+            ))}
+          </div>
+          <span className="sty-strip__pct">{pct(tp)}%</span>
         </div>
         <div className="sty-meter" role="img" aria-label={`${tp.done} of ${tp.work} tasks done`}>
           {seg.total > 0
@@ -371,51 +395,30 @@ function StoryStats({ view }: { view: StoryView }) {
               ))
             : null}
         </div>
-        <div className="sty-legend">
-          {METER.map((m) => (
-            <span key={m.tone}>
-              <i style={{ background: m.token }} />
-              {seg[m.tone]} {TONE_WORD[m.tone]}
-            </span>
-          ))}
+      </div>
+      <div className="sty-strip__cell">
+        <div className="sty-strip__v">
+          {liveSessions.length > 0 ? <i className="sty-strip__pulse" aria-hidden /> : null}
+          <b>{state.liveSessionCount}</b> live {state.liveSessionCount === 1 ? 'session' : 'sessions'}
+        </div>
+        <div className="sty-strip__sub" title={liveSub}>
+          {liveSub}
         </div>
       </div>
-
-      <div className="sty-stat">
-        <div className="sty-stat__k">Live now</div>
-        <div className="sty-stat__v">
-          {state.liveSessionCount} <small>{state.liveSessionCount === 1 ? 'session' : 'sessions'}</small>
+      <div className="sty-strip__cell">
+        <div className="sty-strip__v">
+          <b className={tp.blocked > 0 ? 'sty-strip__blocked' : undefined}>{tp.blocked}</b> blocked
         </div>
-        <div className="sty-stat__sub">
-          {liveSessions.length > 0 ? (
-            <>
-              <Pill tone="run" dot="pulse">
-                {liveSessions.map((s) => s.callSign).join(' · ')}
-              </Pill>{' '}
-              on {plural(liveTasks, 'task')}
-            </>
-          ) : (
-            'nobody is running on it'
-          )}
+        <div className="sty-strip__sub" title={blockedLine}>
+          {blockedLine}
         </div>
       </div>
-
-      <div className="sty-stat">
-        <div className="sty-stat__k">Blocked</div>
-        <div className="sty-stat__v">
-          {tp.blocked} <small>{tp.blocked === 1 ? 'task' : 'tasks'}</small>
+      <div className="sty-strip__cell">
+        <div className="sty-strip__v">
+          <b>{state.itemCount}</b> {state.itemCount === 1 ? 'thing' : 'things'} in it
         </div>
-        <div className="sty-stat__sub">{blockedSub.length > 0 ? blockedSub.join(' · ') : 'nothing is blocked'}</div>
-      </div>
-
-      <div className="sty-stat">
-        <div className="sty-stat__k">In the story</div>
-        <div className="sty-stat__v">
-          {state.itemCount} <small>{state.itemCount === 1 ? 'thing' : 'things'}</small>
-        </div>
-        <div className="sty-stat__sub">
-          {kindLine || 'nothing yet · put a task in to start'}
-          {state.truncated ? ` · first ${page.follow.limit} shown` : ''}
+        <div className="sty-strip__sub" title={thingsLine}>
+          {thingsLine}
         </div>
       </div>
     </section>

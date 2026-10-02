@@ -1908,6 +1908,9 @@ const ROWS: readonly KindConfig[] = [
       archetype: 'generic',
       blocks: [{ block: 'storyline' }],
       primaries: ['edit'],
+      // ⤢ opens the story full screen at `e/{id}` (PR 1004): the graph wants
+      // the width, and the page is a place you stay on.
+      fullView: true,
     },
     editFields: [
       { target: 'title', label: 'Title', required: true, placeholder: 'Story as an Entity' },

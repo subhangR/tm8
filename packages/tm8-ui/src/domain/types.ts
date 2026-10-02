@@ -1331,6 +1331,15 @@ export interface PanelConfig {
    */
   attachPalette?: readonly AttachPaletteRow[];
   z4?: { immersive?: boolean };
+  /**
+   * THE FULL VIEW IS BUILT FOR THIS KIND (PR 1004, coordinator ruling
+   * 2026-10-02). The parked Z4 mechanism — ⤢ promote, the `e/{id}` route,
+   * `EntityFullView` — is mounted ONLY for kinds that set this; every other
+   * kind keeps the "full view isn't built yet" card and the refused promote.
+   * A kind that opts in also gets a stage that FOLLOWS the app theme, which
+   * narrows §12's always-dark Z4 stage to the kinds that did not.
+   */
+  fullView?: boolean;
 }
 
 /** One chip of the attach palette (see `PanelConfig.attachPalette`). */
