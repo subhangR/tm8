@@ -2193,6 +2193,7 @@ const ROWS: Record<OperationName, Row> = {
       'omit `--access-mode` and a session spawned BY a session inherits its spawner’s posture',
       '`--credential-source anthropic=space` launches on the space default; `anthropic=space:<id>` pins one space credential; omit it and a child inherits its spawner’s exact credential',
       'worktree provisions an isolated checkout per session (base ref via --base-ref); merged/abandoned lanes are reconciled server-side',
+      '`--launch-project` accepts the project entity id (`tm8 entity query --kind project`) or its folder/resource id; worktree mode requires it',
     ],
   },
   'execution.terminal.start': {

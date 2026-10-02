@@ -579,7 +579,10 @@ export class DbGraphPort implements GraphPort {
           // Not-linked and not-found are the same answer to a caller who may not
           // be a member of the other space — distinguishing them would leak the
           // existence of projects outside this space.
-          throw fail('not_found', `project ${input.projectId} is not linked to this space`);
+          throw fail('not_found', `project ${input.projectId} is not linked to this space`, {
+            reason: 'project_not_linked',
+            projectId: input.projectId,
+          });
         }
         project = {
           id: row.id,
@@ -1058,7 +1061,10 @@ export class DbGraphPort implements GraphPort {
     );
     const row = rows[0];
     if (!row) {
-      throw fail('not_found', `project ${input.projectId} is not linked to this space`);
+      throw fail('not_found', `project ${input.projectId} is not linked to this space`, {
+        reason: 'project_not_linked',
+        projectId: input.projectId,
+      });
     }
     return {
       project: {
