@@ -62,7 +62,7 @@ import type {
   AcceptanceCriterion, ActionDiscoveryResult, ActivateInteractionProfileInput,
   AmendmentErrorReason,
   ActivityItem, ActorSummary, AddMessageAttachmentsInput,
-  AuthAccountView, AuthClaimInput, AuthClaimReissueResult, AuthClaimResult, AuthClaimStatusResult,
+  AuthAccountView, AuthClaimInput, AuthClaimReissueResult, AuthClaimResult, AuthClaimStatusResult, AuthLaunchResult,
   AuthInviteSignupInput, AuthInviteSignupResult,
   AuthLoginInput, AuthLoginResult, AuthLogoutInput,
   AuthLogoutResult, AuthPasswordChangeInput, AuthPasswordChangeResult,
@@ -2037,6 +2037,11 @@ export const AuthClaimReissueResultSchema: z.ZodType<AuthClaimReissueResult> = z
   tokenPath: z.string().nullable(),
 }).strict();
 
+export const AuthLaunchResultSchema: z.ZodType<AuthLaunchResult> = z.object({
+  url: z.string().min(1),
+  expiresAt: z.string().min(1),
+}).strict();
+
 /**
  * `auth.password.change`. Strict, and both fields required: this is CHANGE, so
  * the current password is not optional. `newPassword` obeys the same 8–1024
@@ -3198,6 +3203,7 @@ export const ProjectCreateInputSchema: z.ZodType<ProjectCreateInput> = z.object(
   trust: ProjectTrustLevelSchema.optional(),
   defaults: ProjectDefaultsSchema.optional(),
   ensureWorkingDir: z.boolean().optional(),
+  spaceId: SpaceIdSchema.optional(),
 }).strict();
 
 const ProjectFolderRelativePathSchema = z.string().min(1).superRefine((value, context) => {

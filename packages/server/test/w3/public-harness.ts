@@ -88,6 +88,11 @@ export async function startW3PublicServer(label: string): Promise<W3PublicServer
       TM8_PORT: '4610',
       TM8_DATABASE_URL: database.url,
       TM8_DATA_DIR: dataDir,
+      // These suites drive the node as its loopback owner with no credential.
+      // Since plan W2 (K4) that arm also needs the launch cookie by default;
+      // the harness opts out so it keeps testing what it was written for. The
+      // cookie gate itself is covered in test/db/cross-space-token.pg.test.ts.
+      TM8_AUTO_OWNER_COOKIE: 'off',
     });
     // `loadConfig` correctly rejects port 0 for operator input. Tests replace
     // the already-validated port afterward so the kernel assigns one isolated

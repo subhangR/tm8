@@ -65,10 +65,11 @@ export function FrameLogin(_props: FrameProps) {
   // oracle's specimen — the pass this mints is per server, and a viewer
   // pointed at a named connection is authenticating THERE.
   const serverId = actions ? readActiveServerId() : null;
-  const mayCreateAccount = Boolean(actions && serverId && canUseLoopbackAutoOwner(
+  const onThisMachine = Boolean(actions && serverId && canUseLoopbackAutoOwner(
     serverId,
     globalThis.location?.hostname ?? '',
   ));
+  const mayCreateAccount = onThisMachine;
 
   return (
     <AuthStage meta={actions ? SERVER.localMeta : SERVER.secureMeta}>
@@ -79,6 +80,15 @@ export function FrameLogin(_props: FrameProps) {
           meta={actions ? SERVER.localEndpoint : SERVER.endpoint}
         />
         <AuthTitle>{LOGIN.title}</AuthTitle>
+        {/* plan W2 L1 (owner form 01a0df1e): a browser on the node's own
+            machine is the owner only with the launch cookie, and `tm8 open`
+            is how it gets one. Said only where it is true (the local node
+            opened on a loopback host); human sign-in stays right below. */}
+        {onThisMachine ? (
+          <AuthFootnote>
+            <span data-testid="auth-open-hint">{LOGIN.openHint}</span>
+          </AuthFootnote>
+        ) : null}
 
         {failure && mode === 'password' ? (
           <AuthFailureBanner>

@@ -24,7 +24,7 @@ import { refuseLinkSessionOnTransport } from '../identity/link-bearer.js';
 import { resolveBearerIdentity, type ResolvedAuthSession } from '../identity/pg-auth.js';
 import { readTm8SessionCookie } from './session-cookie.js';
 import { autoOwnerResolver } from './security.js';
-import type { IdentityResolver, RequestIdentity, SpaceSessionsMode } from './types.js';
+import type { IdentityResolutionContext, IdentityResolver, RequestIdentity, SpaceSessionsMode } from './types.js';
 
 export interface SessionIdentityResolverOptions {
   readonly db: Db;
@@ -87,13 +87,25 @@ export function createSessionIdentityResolver(
     const fallback = await autoOwnerResolver(headers, context);
     if (fallback.kind === 'anonymous') return fallback;
     const resolved = await owner();
-    // The auto-owner is the person at the node's own UI — a browser session
-    // in everything but the token. It is never an agent: an agent always
-    // arrives with a bearer credential on the branch above. The auto-owner
-    // path's own exposure is gated by TM8_DISABLE_AUTO_OWNER; refusing it a
-    // kind here would duplicate that control in the wrong file and break
-    // local development for no gain.
-    return { kind: 'auto-owner', identityId: resolved.identityId, authKind: 'browser' };
+    // The auto-owner is the person at the node's own machine — at its UI, or
+    // at its shell. It is never an agent BY CREDENTIAL: an agent arrives with
+    // a bearer on the branch above. The arm's exposure is gated by
+    // TM8_DISABLE_AUTO_OWNER; refusing it a kind here would duplicate that
+    // control in the wrong file.
+    //
+    // W2 x L1: a BROWSER owner (launch cookie) is pinned to the space its
+    // request PATH names, so under /v2/spaces/:spaceId/... it obeys the same
+    // pinned policies an agent's session does; `claimsFor` binds it and `off`
+    // pins nothing. A LOCAL-process owner (the CLI with no token) is the owner
+    // exactly as before W2: unpinned.
+    const via = fallback.autoOwnerVia ?? 'browser';
+    return {
+      kind: 'auto-owner',
+      identityId: resolved.identityId,
+      authKind: 'browser',
+      autoOwnerVia: via,
+      ...(spaceSessions !== 'off' && via === 'browser' ? { pinToPathSpace: true } : {}),
+    };
   };
 }
 
@@ -149,11 +161,16 @@ export function identityFromSession(
 export function createSocketIdentityResolver(
   resolver: IdentityResolver,
   disableAutoOwner: boolean,
+  // W2: the same launch-cookie rule as the HTTP frame. The default admits no
+  // cookie, so a caller that does not state it fails closed.
+  autoOwnerCookie: IdentityResolutionContext['autoOwnerCookie'] = () => false,
 ): (req: IncomingMessage) => Promise<RequestIdentity> {
   return async (req) => {
     const identity = await resolver(req.headers, {
       remoteAddress: req.socket.remoteAddress,
       disableAutoOwner,
+      autoOwnerCookie,
+      method: req.method,
     });
     if (identity.kind === 'anonymous') {
       throw new CollabError('unauthenticated', 'authentication is required');

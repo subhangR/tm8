@@ -266,24 +266,126 @@ export function hasForwardingEvidence(headers: IncomingHttpHeaders): boolean {
 }
 
 /**
+ * The loopback conditions alone: a loopback TCP peer, no forwarding header,
+ * and no kill switch. Shared by the auto-owner arm and the launch-URL
+ * redemption, which must refuse exactly where the arm itself would.
+ */
+export function loopbackOwnerReachable(
+  headers: IncomingHttpHeaders,
+  context: Pick<IdentityResolutionContext, 'remoteAddress' | 'disableAutoOwner'>,
+): boolean {
+  return !context.disableAutoOwner
+    && isLoopbackPeer(context.remoteAddress)
+    && !hasForwardingEvidence(headers);
+}
+
+/**
+ * Plan W2 x L1 (owner form 01a0df1e): the launch cookie is for BROWSERS only.
+ * A request carrying ANY of these is a browser's, and a browser needs the
+ * cookie. Fail closed: one marker is enough. User-Agent is never read.
+ *
+ * `Sec-Fetch-Mode` is a marker only as `navigate`. Measured 2026-09-26 against
+ * a header-echo server: Node v22.23.2's global `fetch` (the tm8 CLI's
+ * transport) sends `sec-fetch-mode: cors` on EVERY request, and a caller
+ * cannot drop it (a header override is ignored; `mode` only swaps in another
+ * non-navigate value); Node's global WebSocket sends `sec-fetch-mode:
+ * websocket` and no Origin; Bun 1.3.14 sends no `sec-fetch-*` at all. Node
+ * never sends `navigate` (the fetch spec forbids that mode). A browser sends
+ * `Sec-Fetch-Site`/`Sec-Fetch-Dest` to localhost, and always sends `Origin`
+ * on a WebSocket upgrade.
+ */
+export const BROWSER_MARKER_HEADERS: readonly string[] = ['origin', 'sec-fetch-site', 'sec-fetch-dest', 'cookie'];
+
+export function isBrowserRequest(headers: IncomingHttpHeaders): boolean {
+  if (BROWSER_MARKER_HEADERS.some((name) => headers[name] !== undefined)) return true;
+  const mode = headers['sec-fetch-mode'];
+  const modes = Array.isArray(mode) ? mode : [mode];
+  return modes.some((value) => typeof value === 'string' && value.trim().toLowerCase() === 'navigate');
+}
+
+/** The loopback literals a local process's Host may name (L1, DNS rebinding). */
+const LOOPBACK_HOST_LITERALS = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+/**
+ * L1: the cookie-less owner path is a LOCAL PROCESS, so its Host must be a
+ * loopback literal — never a configured hostname, and never absent. A rebinding
+ * page (evil.example resolving to 127.0.0.1) sends its own name.
+ */
+export function hasLoopbackHostLiteral(headers: IncomingHttpHeaders): boolean {
+  const host = headers.host;
+  if (typeof host !== 'string') return false;
+  const hostname = hostnameOfHostHeader(host);
+  return hostname !== null && LOOPBACK_HOST_LITERALS.has(hostname);
+}
+
+/** The media types a browser may send cross-site without a CORS preflight. */
+const CORS_SIMPLE_CONTENT_TYPES = new Set([
+  'text/plain', 'application/x-www-form-urlencoded', 'multipart/form-data',
+]);
+
+/**
+ * L1's CSRF rule (lead default) for a browser too old to send any marker: it
+ * can still send a cross-site "simple" POST, which never preflights and so
+ * never carries Origin. Such a POST carries a CORS-simple content type, or a
+ * body with no content type at all (a Blob body). PUT, PATCH and DELETE are
+ * never simple, so they preflight, and a preflight tm8 does not answer blocks
+ * them. The tm8 CLI sends `application/json` on every body and
+ * `application/octet-stream` on its upload PUT, so this refuses no CLI
+ * request. A POST with no body and no content type is left alone: that is
+ * every bodyless CLI POST, on main and here. An unknown method counts as POST.
+ */
+export function looksLikeSimpleCrossSiteWrite(
+  headers: IncomingHttpHeaders,
+  method: string | undefined,
+): boolean {
+  if (method !== undefined && method.toUpperCase() !== 'POST') return false;
+  const type = headers['content-type'];
+  if (type === undefined) {
+    const length = headers['content-length'];
+    const hasBody = headers['transfer-encoding'] !== undefined
+      || (typeof length === 'string' && length.trim() !== '' && length.trim() !== '0');
+    return hasBody;
+  }
+  const mediaType = String(type).split(';')[0]!.trim().toLowerCase();
+  return mediaType === '' || CORS_SIMPLE_CONTENT_TYPES.has(mediaType);
+}
+
+/**
  * S5 / T-L7 — auto-owner is the degenerate single-machine path, not a
  * property of the server's bind address. A reverse proxy also connects to the
- * loopback socket, so all three conditions are required: the actual TCP peer
- * is loopback, no forwarding header is present, and the operator has not set
- * the kill switch. Any uncertainty narrows to anonymous.
+ * loopback socket, so these are required: the actual TCP peer is loopback, no
+ * forwarding header is present, and the operator has not set the kill switch.
+ * Any uncertainty narrows to anonymous.
+ *
+ * Then L1 (plan W2, owner form 01a0df1e) splits the arm by WHO is asking:
+ *   * a BROWSER (`isBrowserRequest`) also needs the launch cookie unless
+ *     `TM8_AUTO_OWNER_COOKIE=off` (K4), and is pinned to the space its path
+ *     names (`via: 'browser'`);
+ *   * a LOCAL PROCESS (no marker) is the owner exactly as before W2, unpinned
+ *     (`via: 'local'`), provided its Host is a loopback literal and it is not
+ *     shaped like a cross-site simple write.
+ *
+ * An `ssh -R` tunnel delivers a remote request from a loopback peer with no
+ * forwarding header; such nodes must set `TM8_DISABLE_AUTO_OWNER=1` (doc 11
+ * P10).
  */
 export const autoOwnerResolver: IdentityResolver = (
   headers: IncomingHttpHeaders,
   context: IdentityResolutionContext,
 ): RequestIdentity => {
-  if (
-    context.disableAutoOwner
-    || !isLoopbackPeer(context.remoteAddress)
-    || hasForwardingEvidence(headers)
-  ) {
+  if (!loopbackOwnerReachable(headers, context)) return { kind: 'anonymous' };
+  if (!isBrowserRequest(headers)) {
+    if (!hasLoopbackHostLiteral(headers) || looksLikeSimpleCrossSiteWrite(headers, context.method)) {
+      return { kind: 'anonymous' };
+    }
+    return { kind: 'auto-owner', autoOwnerVia: 'local' };
+  }
+  // Fail closed: anything but an explicit 'off' or a passing check refuses.
+  const cookie = context.autoOwnerCookie;
+  if (cookie !== 'off' && (typeof cookie !== 'function' || !cookie(headers))) {
     return { kind: 'anonymous' };
   }
-  return { kind: 'auto-owner' };
+  return { kind: 'auto-owner', autoOwnerVia: 'browser' };
 };
 
 /** Response headers applied to every response the frame writes. */

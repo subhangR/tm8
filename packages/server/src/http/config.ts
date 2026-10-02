@@ -89,6 +89,18 @@ export interface ServerConfig {
    */
   readonly disableAutoOwner?: boolean;
   /**
+   * `TM8_AUTO_OWNER_COOKIE=required|off`, default `required` (plan W2, K4).
+   * `required`: a BROWSER on loopback (any browser marker: Origin,
+   * Sec-Fetch-Site/-Dest, a Cookie, or Sec-Fetch-Mode navigate) is the
+   * auto-owner only with the launch cookie it gets from the one-time URL
+   * `tm8 open` prints. A local PROCESS with no token and no browser marker is
+   * still the owner, exactly as before W2 (plan W2 L1, owner form 01a0df1e).
+   * `off` restores the pre-W2 rule for browsers too: the loopback peer alone.
+   * ABSENT READS AS `required` everywhere it is consulted, so a hand-built
+   * config fails closed.
+   */
+  readonly autoOwnerCookie?: 'required' | 'off';
+  /**
    * Auth rate limits. Absent means the built-in defaults, which are what a
    * node should run — these exist for an operator with an unusual topology
    * (a shared NAT putting a whole office in one client bucket, say), not as a
@@ -516,6 +528,19 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   const spaceSessions: SpaceSessionsMode =
     spaceSessionsRaw === 'off' || spaceSessionsRaw === 'enforce' ? spaceSessionsRaw : 'agents';
 
+  // W2 / K4. Anything but an explicit `off` is `required`; a typo refuses boot
+  // rather than silently choosing either side of a security arm.
+  const autoOwnerCookieRaw = env.TM8_AUTO_OWNER_COOKIE?.trim().toLowerCase();
+  if (
+    autoOwnerCookieRaw !== undefined && autoOwnerCookieRaw !== ''
+    && autoOwnerCookieRaw !== 'required' && autoOwnerCookieRaw !== 'off'
+  ) {
+    throw new ConfigError(
+      `TM8_AUTO_OWNER_COOKIE must be "required" or "off", got ${JSON.stringify(env.TM8_AUTO_OWNER_COOKIE)}`,
+    );
+  }
+  const autoOwnerCookie: 'required' | 'off' = autoOwnerCookieRaw === 'off' ? 'off' : 'required';
+
   // Validated at load rather than at print time: a malformed origin should stop
   // the operator now, not silently produce a broken claim link on the one boot
   // where it matters.
@@ -583,6 +608,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     containers,
     nodeMode,
     spaceSessions,
+    autoOwnerCookie,
     ...(publicOrigin ? { publicOrigin } : {}),
     // `multi` implies the kill switch. The explicit env var still wins when it
     // asks for MORE restriction (a hardened single-player node), and can never

@@ -32,6 +32,7 @@ import {
   useAuthSession,
 } from './index';
 import { defaultSignedOutFrame } from './AuthGate';
+import { canUseLoopbackAutoOwner } from '../servers/server-key';
 import {
   AUTO_OWNER_CACHE_KEY,
   NODE_CLAIM_CACHE_KEY,
@@ -397,6 +398,31 @@ describe('leg 1 — unauthenticated, the app is NOT on screen', () => {
    */
   it('never reads an unanswered node as unclaimed', () => {
     expect(defaultSignedOutFrame(null)).toBe('1d');
+  });
+
+  /**
+   * plan W2 L1 (owner form 01a0df1e, lead ruling (b)): a cookie-less browser on
+   * the node's own machine is told to run `tm8 open`; human sign-in stays on
+   * the same frame. The pairs: a relayed server, and a non-loopback hostname,
+   * never say it.
+   */
+  it('L1: the login frame on a loopback host says to run `tm8 open`, with sign-in still there', () => {
+    expect(globalThis.location.hostname).toBe('localhost');
+    render(<AuthGate initialFrame="1d">{APP}</AuthGate>);
+    expect(screen.getByTestId('auth-open-hint').textContent).toBe('Run `tm8 open` in a terminal on this machine.');
+    expect(screen.getByRole('button', { name: /^sign in$/i })).toBeTruthy();
+  });
+
+  it('L1 pair: the `tm8 open` line is absent on a relayed (non-loopback) server', () => {
+    localStorage.setItem('tm8-ui:active-server', 'staging');
+    render(<AuthGate initialFrame="1d">{APP}</AuthGate>);
+    expect(screen.queryByTestId('auth-open-hint')).toBeNull();
+    expect(screen.getByRole('button', { name: /^sign in$/i })).toBeTruthy();
+  });
+
+  it('L1 pair: the line follows the host — a non-loopback hostname never qualifies', () => {
+    expect(canUseLoopbackAutoOwner('local', 'localhost')).toBe(true);
+    expect(canUseLoopbackAutoOwner('local', 'tm8.example.com')).toBe(false);
   });
 
   it('does not offer create-another-account on a relayed server', () => {
