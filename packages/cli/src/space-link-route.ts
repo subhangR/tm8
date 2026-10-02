@@ -42,6 +42,9 @@ export const LINK_REFUSED_COMMANDS: readonly (readonly string[])[] = [
   ['server'],
   ['doctor'],
   ['link'],
+  ['space-link'],
+  // Describes THIS session; through a link it would print the target Space beside home's session.
+  ['whoami'],
 ];
 
 function refusedCommand(path: readonly string[]): readonly string[] | undefined {
@@ -108,7 +111,13 @@ export async function routeThroughSpaceLink(
     throw new CliError(
       `no space link from this session's Space to ${JSON.stringify(ref)}; ask your human to run \`tm8 link add\``,
       EXIT_NOT_FOUND,
-      { hint: 'a human in this Space runs `tm8 link add <target-space-id>` then `tm8 link login <alias|link-id>`' },
+      {
+        hint:
+          (views && views.length > 0
+            ? `this Space links to: ${views.map((v) => v.mine?.alias ?? v.id).join(', ')} (\`tm8 link list\`); `
+            : 'this Space has no space links yet; ') +
+          'a human in this Space runs `tm8 link add <target-space-id>` then `tm8 link login <alias|link-id>`',
+      },
     );
   }
   const link: SpaceLinkRoute = { homeSpaceId: home, linkId: view.id, targetSpaceId: view.targetSpaceId };

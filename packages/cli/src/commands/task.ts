@@ -2,12 +2,13 @@
  * `tm8 task …` — the closed kind-command namespace for tasks (§4.5).
  *
  * EIGHT commands: `transition`, `complete`, `tick`, `gate`, `axis`, `link-pr`,
- * `link-commit`, `import-issue`. There is deliberately no `task create`,
- * `task get` or
- * `task list`: a task is an entity, so it is created, read and queried through
- * the universal entity commands. A parallel task noun would be a second way to
+ * `link-commit`, `import-issue`. There is deliberately no `task get` or
+ * `task list`: a task is an entity, so it is read and queried through the
+ * universal entity commands. A parallel task noun would be a second way to
  * say the same thing, drifting from the first. (`import-issue` is create-side
- * sugar, not a read path — see its docblock.)
+ * sugar, not a read path — see its docblock. `task create` exists as a pure
+ * alias of `entity create task`, registered in `./discoverability.ts`, because
+ * agents type it and an alias that delegates cannot drift.)
  *
  * WHY `complete` IS NOT A TRANSITION. `entities.commands.complete` is the only
  * operation that may write `done`: it alone checks acceptance criteria, writes

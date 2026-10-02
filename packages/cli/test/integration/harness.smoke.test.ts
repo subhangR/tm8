@@ -28,7 +28,7 @@ it('starts a real Server and reports an un-enveloped /health', async () => {
 it('the built CLI reaches it and honours the frozen exit table', async () => {
   const ok = await cli(['help'], server);
   expect(ok.code).toBe(0);
-  const retired = await cli(['whoami'], server);
+  const retired = await cli(['progress', 'ent_1', 'hi'], server);
   expect(retired.code).toBe(2);
   const reserved = await cli(['search', 'query', 'x'], server);
   expect(reserved.code).toBe(8);
