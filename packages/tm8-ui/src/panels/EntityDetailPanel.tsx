@@ -1766,8 +1766,6 @@ function PanelBody(
   }
   if (config.panel.archetype === 'profile') {
     return (
-      <>
-      <SkillEquipment detail={detail} port={props.commands?.skills} onOpenEntity={onOpenEntity} />
       <ProfileBody
         detail={detail}
         blocks={config.panel.blocks ?? []}
@@ -1775,8 +1773,8 @@ function PanelBody(
         onOpenEntity={onOpenEntity}
         memoryAuthoring={props.memoryAuthoring}
         onMarkMemory={props.onMarkMemory}
+        skillEquipment={<SkillEquipment detail={detail} port={props.commands?.skills} onOpenEntity={onOpenEntity} />}
       />
-      </>
     );
   }
 
