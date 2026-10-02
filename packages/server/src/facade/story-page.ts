@@ -29,7 +29,7 @@ import {
   type TeamMemberMode,
 } from '@tm8/contract';
 import type { Querier } from '../db/types.js';
-import { iso, isoOrNull, loadActors, loadEntitySummariesByIds } from './entity-read.js';
+import { ENTITY_COLUMNS, ENTITY_FROM, iso, isoOrNull, loadActors, titleOf as rowTitleOf, type EntityRow } from './entity-read.js';
 
 const ACTIVITY_LIMIT = 50;
 const MESSAGE_LIMIT = 50;
@@ -92,7 +92,7 @@ function storyStateOf(raw: unknown): StoryState | null {
 
 const EMPTY_PROGRESS: StoryProgress = { work: 0, done: 0, inProgress: 0, toDo: 0, blocked: 0, cancelled: 0 };
 
-export async function loadStoryPage(q: Querier, storyId: string, viewerIdentityId: string): Promise<StoryPage> {
+export async function loadStoryPage(q: Querier, storyId: string): Promise<StoryPage> {
   const trail = await q.query<TrailRow>(
     `select entity_id, root_id, depth, via_id, edge_type, edge_id, direction, root_position
        from internal.story_trail($1)`,
@@ -159,9 +159,10 @@ export async function loadStoryPage(q: Querier, storyId: string, viewerIdentityI
     [allIds, DRAWN_EDGE_TYPES],
   );
 
-  const children = await q.query<{ id: string; title: string; summary: unknown }>(
-    `select c.id, st.title, internal.story_summary(c.id) as summary
+  const children = await q.query<{ id: string; title: string; summary: unknown; status_category: string | null; status_name: string | null }>(
+    `select c.id, st.title, internal.story_summary(c.id) as summary, c.status_category, wst.name as status_name
        from public.entities c join public.stories st on st.entity_id = c.id
+       left join public.workflow_states wst on wst.id = c.status_id
       where c.parent_id = $1 and c.kind = 'story' and c.deleted_at is null
       order by c.position, c.created_at, c.id
       limit ${CHILD_STORY_LIMIT}`,
@@ -197,10 +198,14 @@ export async function loadStoryPage(q: Querier, storyId: string, viewerIdentityI
     [storyId],
   );
 
-  // Titles through the one summary assembler every surface uses (kind-correct,
-  // RLS-filtered), for the nodes and the personas behind the sessions.
-  const summaries = await loadEntitySummariesByIds(q, [...allIds, ...personaIds], viewerIdentityId);
-  const titleOf = new Map(summaries.map((s) => [s.id, s.title]));
+  // Titles through the one title rule every surface uses (`titleOf`, kind-
+  // correct, RLS-filtered), for the nodes and the personas behind the
+  // sessions. Viewer-free, so `entities.context` can render the page too.
+  const titleRows = await q.query<EntityRow>(
+    `select ${ENTITY_COLUMNS} ${ENTITY_FROM} where e.id = any($1::uuid[])`,
+    [[...allIds, ...personaIds]],
+  );
+  const titleOf = new Map(titleRows.map((r) => [r.id, rowTitleOf(r)]));
   const title = (id: string) => titleOf.get(id) ?? 'Untitled';
 
   const actorIds = [
@@ -357,12 +362,11 @@ export async function loadStoryPage(q: Querier, storyId: string, viewerIdentityI
 
   const childStories: StoryChild[] = children.map((c) => {
     const s = storyStateOf(c.summary);
-    const f = factOf.get(c.id);
     return {
       id: c.id,
       title: c.title,
-      status: f?.status_name ?? null,
-      statusCategory: category(f?.status_category ?? null),
+      status: c.status_name,
+      statusCategory: category(c.status_category),
       itemCount: s?.itemCount ?? 0,
       taskProgress: s?.taskProgress ?? EMPTY_PROGRESS,
       rollup: s?.rollup ?? EMPTY_PROGRESS,

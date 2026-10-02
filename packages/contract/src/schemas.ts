@@ -25,7 +25,7 @@ import {
 } from './contract.js';
 import { ArtifactManifestSchema } from './artifact-manifest.js';
 import { FormQuestionRowSchema, FormSectionRowSchema, FormSettingsSchema, FormStatusSchema } from './forms.js';
-import { StoryContentSchema, StoryStateSchema } from './story.js';
+import { EntityContextStorySchema, StoryContentSchema, StoryStateSchema } from './story.js';
 import {
   SELECTION_HEADER_KINDS,
   SELECTION_HEADER_SOURCES,
@@ -4546,6 +4546,7 @@ export const EntityContextV2ViewSchema: z.ZodType<EntityContextV2View> = z.objec
   lastTurnAt: NullableString,
   mode: NullableString,
   projectId: NullableString,
+  story: EntityContextStorySchema.optional(),
   anchor: ContextRefSchema.optional(),
   parentMessage: ContextRefSchema.nullable().optional(),
   attachments: z.array(z.object({

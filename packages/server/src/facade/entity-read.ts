@@ -3011,7 +3011,7 @@ export async function hydrateDetail(
   if (content.kind === 'story') {
     // 282: the page — roots, trail, graph, team, call signs, activity, feed —
     // computed now from the same trail the summary counts.
-    return { state, content: { ...content, page: await loadStoryPage(q, row.id, viewerIdentityId) } };
+    return { state, content: { ...content, page: await loadStoryPage(q, row.id) } };
   }
   if (content.kind === 'team_member') {
     const edges = await q.query<{ dst_id: string }>(
