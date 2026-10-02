@@ -35,7 +35,7 @@ describe.sequential('attention: assign to the session runner (migration 277)', (
       const id = (await c.query<{ id: string }>('select internal.new_id()::text id')).rows[0]!.id;
       await c.query(`insert into public.entities(id,space_id,kind,parent_id,position,created_by)
                      values($1,$2,'work_session',$3,0,$4)`, [id, f.spaceId, parentId, createdBy]);
-      await c.query(`insert into public.work_sessions(entity_id,status) values($1,'running')`, [id]);
+      await c.query(`insert into public.work_sessions(entity_id,status,workdir_mode) values($1,'running','scratch')`, [id]);
       return id;
     });
 

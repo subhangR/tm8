@@ -593,6 +593,7 @@ const INTENDED: Record<string, readonly string[]> = {
     'if new.project_id is not null then', 'where l.space_id = session_space and l.project_id = new.project_id',
   ],
   'internal.capture_git_worktree_status': ["'projectid', new.project_id,"],
+  'public.worktree_repo_source': ['join public.projects folder on folder.id = w.project_id'],
 };
 
 const norm = (line: string): string => line.replace(/--.*$/, '').trim().replace(/\s+/g, ' ').toLowerCase();
@@ -600,7 +601,9 @@ const norm = (line: string): string => line.replace(/--.*$/, '').trim().replace(
 /** Statement lines of the LAST `create or replace function <name>(` body in migrations before 260. */
 function latestBodyBefore260(name: string): { file: string; lines: string[] } {
   const [schema, fn] = name.split('.') as [string, string];
-  const head = new RegExp(`create\\s+or\\s+replace\\s+function\\s+(?:${schema}\\.)${fn}\\s*\\(`, 'gi');
+  // `create function` too: 267 drops execution_spawn's 17-arg signature and
+  // CREATEs the 18-arg one, so its latest body is not an `or replace`.
+  const head = new RegExp(`create\\s+(?:or\\s+replace\\s+)?function\\s+(?:${schema}\\.)${fn}\\s*\\(`, 'gi');
   let found: { file: string; lines: string[] } | null = null;
   for (const file of migrationFiles().filter((f) => ordinal(f) < REPOINT_ORDINAL)) {
     const sql = readFileSync(join(REPO_ROOT, 'db/migrations', file), 'utf8');
