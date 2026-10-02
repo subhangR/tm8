@@ -30,6 +30,7 @@ import type { ControlHost, DetailReasons } from '../../panels';
 import type { Origin } from '../../routes';
 import type { Notice } from '../../shell';
 import { navStore } from '../../stores/navStore';
+import { EditEntityDialog } from '../../authoring';
 import { AuxEntityPanel, type AuxPanelHost } from '../auxPanel';
 import { useLaunchPort } from '../useLaunchPort';
 import { useMembershipSurface } from '../membershipSurface';
@@ -237,14 +238,28 @@ export function FullViewScreen(props: FullViewScreenProps) {
   );
 
   return (
-    <EntityFullView
-      entityId={entityId}
-      origin={props.origin}
-      arrival={arrival}
-      port={port}
-      knownKind={kind}
-      panel={panel}
-      followTheme
-    />
+    <>
+      <EntityFullView
+        entityId={entityId}
+        origin={props.origin}
+        arrival={arrival}
+        port={port}
+        knownKind={kind}
+        panel={panel}
+        followTheme
+      />
+      {/* THE EDIT SHEET. `useEntityVerbs` only drives its flow; the screen
+          mounts it, as EntityView does at its root (fixed over a scrim, so it
+          must not sit inside the panel's overflow). Without this the header's
+          Edit dispatched into a sheet nobody drew. */}
+      <EditEntityDialog
+        flow={verbs.edit}
+        fields={verbs.editFields}
+        title={verbs.editTitle}
+        skillOptions={data.skillOptions}
+        attach={attachments ? (file: File) => attachments.startUpload(file, entityId) : undefined}
+        onAttached={() => data.refetchDetail(entityId)}
+      />
+    </>
   );
 }

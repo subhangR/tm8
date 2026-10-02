@@ -26,3 +26,8 @@
 @media (prefers-reduced-motion: reduce) {
   .cv2-root .fv-split__beside { animation: none; }
 }
+
+/* The chat dock (EntityChatDock, fixed, z 40) shares Z4's z-index and comes
+   earlier in the tree, so the full view would cover the chat its own header
+   opens. Lift it only while a full view is mounted. */
+.cv2-root:has(.shell-z4) .ecp-dock { z-index: 45; }
