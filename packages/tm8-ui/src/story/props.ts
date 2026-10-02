@@ -48,6 +48,25 @@ export interface StoryBlockProps {
   hover?: StoryRootHover | null;
   /** Absent = only the agent teammates already on the story can run a launch. */
   runners?: readonly StoryRunner[] | null;
+  /**
+   * The entity whose detail panel is open beside the story (Subhang,
+   * 2026-10-02: pressing any entity opens its details on the right). Blocks
+   * draw it highlighted. Null/absent = nothing selected.
+   */
+  selectedId?: string | null;
+  /**
+   * PRIMARY press on any entity: the shell opens its detail panel beside the
+   * story and marks it selected. Every clickable entity (graph node or capsule,
+   * root row, child, trail chip, child story, teammate, session, activity row,
+   * feed row -> its anchor) calls this.
+   */
+  onPick?: (pick: StoryNodePick) => void;
+  /**
+   * SECONDARY affordance (a small "…" on hover, or right-click): opens the
+   * action popover (message, new task under, spawn here, dispatch here, mark
+   * done) anchored to the element. Absent = no "…" drawn.
+   */
+  onMenu?: (pick: StoryNodePick) => void;
 }
 
 /** A node the user clicked, in the graph or a card — opens the node popover. */
