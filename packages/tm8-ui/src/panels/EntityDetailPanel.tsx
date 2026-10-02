@@ -88,6 +88,7 @@ import type { TriggerOption } from '../rich-input';
 import { LinkedPullRequestChips, pullRequestFactsOf, type LinkedPullRequestFacts } from '../pull-requests';
 import { TransferControl } from '../transfer';
 import { MergePullRequestFlow } from './pull-requests/MergePullRequestFlow';
+import { useAlwaysDarkTheme } from '../theme/useAlwaysDarkTheme';
 
 /**
  * EntityDetailPanel — one of the two universal primitives (L3).
@@ -546,6 +547,8 @@ export interface EntityDetailPanelProps {
 }
 
 export function EntityDetailPanel(props: EntityDetailPanelProps) {
+  /* Called first, above every early return: a hook must run on every render. */
+  const alwaysDarkTheme = useAlwaysDarkTheme();
   /* DEF-004 — see the `onOpenLaunch` spread on the ActionBar below. Read from
      the host's context and never from the window: `GateApp` has already made
      the shell decision once. `false` on every desktop path by construction. */
@@ -941,7 +944,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
        * one fewer node and no relationship for a sibling's CSS to lose.
        */
       className={`${alwaysDark ? 'cv2-root ' : ''}pn-panel pn-panel--${host}${isTombstone ? ' pn-panel--tombstone' : ''}`}
-      data-theme={alwaysDark ? 'dark' : undefined}
+      data-theme={alwaysDark ? alwaysDarkTheme : undefined}
       data-always-dark={alwaysDark ? 'true' : undefined}
       /* Measured by `barHasRoom` above — a frame body's controls only ride the
          bar where the tabs are not the ones paying for them. */

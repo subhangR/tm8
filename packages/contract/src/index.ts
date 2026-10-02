@@ -32,4 +32,6 @@ export * from './selection-header.js';
 export * from './context-budgets.js';
 export * from './human-auth.js';
 export * from './style.js';
+export * from './style-registry.js';
+export * from './style-css.js';
 export * from './builtins/index.js';
