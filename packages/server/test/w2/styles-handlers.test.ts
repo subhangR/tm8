@@ -21,6 +21,7 @@ import type { Db, DbClaims, Querier } from '../../src/db/types.js';
 import type { FacadeDeps } from '../../src/facade/deps.js';
 import { HandlerRegistry } from '../../src/facade/registry.js';
 import type { RequestContext } from '../../src/http/types.js';
+import { StyleRateLimiter } from '../../src/http/style-rate-limit.js';
 
 vi.mock('../../src/facade/services/w2/style-validation.js', () => {
   const BUILTINS = new Set(['builtin:atelier-light', 'builtin:atelier-dark']);
@@ -125,9 +126,9 @@ function context(
   } as RequestContext;
 }
 
-function handlers(db: FakeDb) {
+function handlers(db: FakeDb, limiter?: StyleRateLimiter) {
   const registry = new HandlerRegistry();
-  registerW2StyleHandlers(registry, deps(db));
+  registerW2StyleHandlers(registry, deps(db), limiter);
   return (name: OperationName) => {
     const handler = registry.get(name);
     if (!handler) throw new Error(`no handler for ${name}`);
@@ -382,5 +383,38 @@ describe('styles.list — built-ins first, flags computed', () => {
       params: { spaceId: SPACE_ID }, query: 'tag=dark',
     })) as { items: Array<Record<string, unknown>> };
     expect(result.items).toEqual([SPACE_ROW]);
+  });
+});
+
+describe('§6.7 rate limits at the handler seam', () => {
+  it('a write over the limit is 429 rate_limited BEFORE the database is asked', async () => {
+    const db = personalDb();
+    const run = handlers(db, new StyleRateLimiter({ editBurst: 1 }));
+    const update = () => run('styles.personal.update')(context('styles.personal.update', {
+      params: { id: PERSONAL_ID },
+      body: { clientMutationId: 'cmid-rl', expectedVersion: 3, vars: { '--pn-brand': '#ABCDEF' } },
+    }));
+    await update();
+    const calls = db.rpcCalls.length;
+    const result = await codeOf(update);
+    expect(result.code).toBe('rate_limited');
+    expect(typeof (result.details as { retryAfterMs?: unknown }).retryAfterMs).toBe('number');
+    expect(db.rpcCalls).toHaveLength(calls);
+  });
+
+  it('the human guard stays outermost: an agent on the space default is forbidden, and spends nothing', async () => {
+    const db = new FakeDb((fn, args) => {
+      if (fn === 'set_space_style_default') {
+        return { spaceId: args[0], defaultStyle: args[1], setBy: null, revision: 1, updatedAt: null };
+      }
+      throw new Error(`unexpected rpc ${fn}`);
+    });
+    const run = handlers(db, new StyleRateLimiter({ defaultPerMinute: 1 }));
+    const call = (authKind: 'agent' | 'browser') => run('spaces.styleDefault.set')(context('spaces.styleDefault.set', {
+      params: { spaceId: SPACE_ID }, body: { clientMutationId: `cmid-${authKind}`, defaultStyle: 'builtin:atelier-dark' }, authKind,
+    }));
+    expect((await codeOf(() => call('agent'))).code).toBe('forbidden');
+    expect((await codeOf(() => call('browser'))).code).toBe('ok');
+    expect((await codeOf(() => call('browser'))).code).toBe('rate_limited');
   });
 });
