@@ -67,6 +67,13 @@ export type CoreEntityKind =
   // later costs no migration (135's R3 lesson). Phase 1 is single-writer and
   // refuses embedded images; both are rulings, not omissions.
   | 'drawing'
+  // Stories (migration 277, 2026-10-02): a narrative container that TRACKS
+  // everything happening in one line of work — tasks, docs, drawings,
+  // artifacts, files, chats, sessions, teammates, members, anything — through
+  // the existing `contains` edge, and reads it back as one thing with a
+  // premise, a stage and a computed progress figure. `stage` is a SLUG whose
+  // vocabulary lives in `STORY_STAGES`, never in a migration (135's R3).
+  | 'story'
   // Forms (migration 209, FORMS-DESIGN v3): a question set an agent asks a
   // human, with validated, revisioned responses delivered back to the
   // requesting session. Born only from `forms.create` (W1).
@@ -89,6 +96,21 @@ export type CredentialVisibility = 'private' | 'public';
 
 /** tm8: runtime-registered custom kinds are namespaced (T-L4). */
 export type CustomEntityKind = `c:${string}`;
+
+/**
+ * The story stage vocabulary (277 D3), in narrative order. The database
+ * accepts any lowercase slug — this list is what the UI draws as a stepper
+ * and what `storyStageIndex` orders by — so a stage a client invents still
+ * round-trips; it simply renders after the known five.
+ *
+ *   idea      — written down, nothing tracked yet
+ *   shaping   — being explored: docs, drawings, conversations
+ *   building  — work is in flight: tasks, sessions, commits
+ *   shipped   — the thing exists; what remains is the record
+ *   parked    — set aside on purpose, not abandoned
+ */
+export const STORY_STAGES = ['idea', 'shaping', 'building', 'shipped', 'parked'] as const;
+export type StoryStage = (typeof STORY_STAGES)[number];
 
 export type EntityKind = CoreEntityKind | CustomEntityKind;
 
@@ -465,6 +487,15 @@ export type CoreEntityState =
        */
       teammate?: ActorSummary | null }
   | { kind: 'collection'; collectionType: string; itemCount: number }
+  /**
+   * A story's row facts and its COMPUTED progress (277 D4). `itemCount` is the
+   * live `contains` count, exactly as a collection's. `workCount` is how many
+   * tracked rows carry a status category other than `cancelled` (147: today
+   * that is every tracked task), `doneCount` how many of those are `done`.
+   * Both are derived at read time on BOTH read paths; nothing stores a
+   * percentage, so progress can never lag a tracked task's move.
+   */
+  | { kind: 'story'; stage: string; itemCount: number; workCount: number; doneCount: number }
   | { kind: 'project'; projectId: ProjectId; materializedVersion: number }
   | { kind: 'interaction_profile'; status: InteractionProfileStatus;
       currentDraftVersion: number; activeVersion: number | null;
@@ -897,6 +928,12 @@ export type CoreEntityContent =
       /** Null means no readable immutable pin, so Terminal is the only surface. */
       interactionProfile?: WorkSessionInteractionProfileProjection | null }
   | { kind: 'collection'; description: string; items: EntitySummary[] }
+  /**
+   * The story's prose and stage (277). Its tracked rows are `contains` edges
+   * and arrive through `connections`, never embedded here — a story that
+   * tracks two hundred things is still one small content object.
+   */
+  | { kind: 'story'; premise: string; stage: string }
   | { kind: 'project'; projectId: ProjectId; repoUrl?: string | null;
       materializedVersion: number }
   | { kind: 'interaction_profile'; status: InteractionProfileStatus;

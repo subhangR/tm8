@@ -192,6 +192,8 @@ export const CoreEntityKindSchema = z.enum([
   'container',
   // Drawings (194): an Excalidraw canvas as an entity.
   'drawing',
+  // Stories (277): a narrative container tracking any entity via `contains`.
+  'story',
   // Forms (209). Not in `CreatableEntityKind`: `forms.create` is its door.
   'form',
   // Space credentials (W10a). Not creatable: credentials.space.* is its door.
@@ -289,6 +291,17 @@ export const DrawingContentInputSchema = z.object({
   appState: z.record(z.unknown()).optional(),
   files: z.record(z.unknown()).optional(),
 }).passthrough();
+
+/**
+ * 277 — the story write door's input. Both members optional because a patch
+ * carries only what changed: the stage stepper sends `stage` alone and `null`
+ * MERGES in the door. The stage is pinned to a slug here so a client gets the
+ * refusal as `invalid_input` rather than as a database error.
+ */
+export const StoryContentInputSchema = z.object({
+  premise: z.string().max(20000).optional(),
+  stage: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,48}$/, 'a lowercase slug').optional(),
+}).strict();
 
 export const WorkStatusSchema = z.enum(['open', 'pulled', 'working', 'in_review', 'done', 'blocked', 'cancelled']);
 /**
@@ -586,6 +599,14 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     kind: z.literal('collection'),
     collectionType: z.string(),
     itemCount: z.number().int().nonnegative(),
+  }).strict(),
+  // 277 — the story's stage and its computed progress facts.
+  z.object({
+    kind: z.literal('story'),
+    stage: z.string().min(1),
+    itemCount: z.number().int().nonnegative(),
+    workCount: z.number().int().nonnegative(),
+    doneCount: z.number().int().nonnegative(),
   }).strict(),
   z.object({
     kind: z.literal('project'),
@@ -973,6 +994,12 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
     kind: z.literal('collection'),
     description: z.string(),
     items: z.array(EntitySummarySchema),
+  }).strict(),
+  // 277 — prose and stage only; the tracked rows ride `connections`.
+  z.object({
+    kind: z.literal('story'),
+    premise: z.string(),
+    stage: z.string().min(1),
   }).strict(),
   z.object({
     kind: z.literal('project'),
