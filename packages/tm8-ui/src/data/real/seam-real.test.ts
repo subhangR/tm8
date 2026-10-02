@@ -483,6 +483,10 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // raw zip bytes. Catalog READS riding the commands group deliberately;
       // the amendment on `listArtifactRevisions` records why.
       'listArtifactRevisions', 'exportArtifactRevision',
+      // Task 01a0e24d (2026-09-27): the managed panels' port (credential,
+      // space_link, server). Not a new wire call: `managedPortFromSeam`
+      // re-exposes existing seam methods keyed by operation name.
+      'managed',
       'prompt', 'react',
       // `resolveAttention` shipped into the seam without this lock being
       // updated, so the guard was red in-tree before the attention inbox
@@ -533,6 +537,13 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // entity and posts its opening turn together. Sorts between spawn and
       // startTerminal, exactly where its predecessor did.
       'startChat',
+      // 276 (chat model switch): `chat.setModel` — the SECOND write on the chat
+      // noun, and the one that makes the composer's model picker do anything on
+      // an open chat. It is sticky on the chat rather than carried per message:
+      // the next turn runs on whatever the chat is set to when that turn is
+      // CLAIMED, so `setChatModel` is a chat-level write and not a field on
+      // `postTurn`. Sorts between revokeInvite and setEntityHeader.
+      'setChatModel',
       // 2026-08-12: `startTerminal` — `execution.terminal.start`, a VANILLA
       // TERMINAL (101). Sorts after `spawn`, which is where it reads like it
       // belongs and is a coincidence worth not relying on.

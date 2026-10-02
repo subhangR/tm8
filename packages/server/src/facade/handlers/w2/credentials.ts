@@ -70,6 +70,8 @@ import {
   NodeCredentialsPolicySetInputSchema,
   ServiceKeyProviderNameSchema,
   SpaceCredentialProviderNameSchema,
+  SpaceCredentialStoredProviderNameSchema,
+  isHumanAuthKind,
 } from '@tm8/contract';
 import type {
   CredentialProviderName,
@@ -79,6 +81,7 @@ import type {
   ServiceKeyProviderName,
   ServiceKeyView,
   SpaceCredentialProviderName,
+  SpaceCredentialStoredProviderName,
 } from '@tm8/contract';
 import { OPERATIONS } from '@tm8/contract';
 import type { OperationName } from '@tm8/contract';
@@ -111,20 +114,17 @@ import {
 } from '../../services/w2/space-credential-catalog.js';
 import { assertSpaceLoginProvider, SpaceLoginHomes } from '../../../credentials/space-credential-home.js';
 
-/**
- * The session kinds that may reach `credentials.*`.
- *
- * `cli` is here on purpose and it is not an oversight: a human at a terminal
- * has exactly the entitlement of a human in the settings screen. What the guard
- * separates is HUMAN from AGENT, not browser from everything else.
- */
-const HUMAN_AUTH_KINDS: readonly string[] = ['browser', 'cli'];
-
 /** The typed refusal code. Stable, and asserted by test. */
 export const CREDENTIALS_HUMAN_ONLY = 'credentials_human_only';
 
 /**
- * Refuse a caller whose auth session kind is not human.
+ * Refuse a caller whose auth session kind is not human: `isHumanAuthKind`,
+ * the shared mirror of 083's `internal.require_human_auth_kind()`.
+ *
+ * `cli` passes on purpose and it is not an oversight: a human at a terminal
+ * has exactly the entitlement of a human in the settings screen. What the guard
+ * separates is HUMAN from AGENT (and from a `link` session), not browser from
+ * everything else.
  *
  * Exported so a registration-shape test can prove that every `credentials.*`
  * handler on the registry is this function's return value, rather than proving
@@ -133,7 +133,7 @@ export const CREDENTIALS_HUMAN_ONLY = 'credentials_human_only';
 export function requireHumanSession(handler: OperationHandler): OperationHandler {
   return async (ctx) => {
     const kind = ctx.identity.authKind;
-    if (kind === undefined || !HUMAN_AUTH_KINDS.includes(kind)) {
+    if (!isHumanAuthKind(kind)) {
       throw new CollabError(
         'forbidden',
         'credential operations are available to human sessions only',
@@ -188,6 +188,23 @@ function providerParam(ctx: RequestContext): CredentialProviderName {
     throw new CollabError(
       'invalid_input',
       `unsupported credential provider: ${String(ctx.params.provider)}`,
+    );
+  }
+  return parsed.data;
+}
+
+/**
+ * `:provider` for clearing MY default only (server_only_space_credentials): any STORED provider, the
+ * server-only `typesafe` included — a my_default is how a member picks their
+ * own Ask Jev key. Every other space and node operation stays on the
+ * launchable set (`spaceProviderParam`).
+ */
+function spaceStoredProviderParam(ctx: RequestContext): SpaceCredentialStoredProviderName {
+  const parsed = SpaceCredentialStoredProviderNameSchema.safeParse(ctx.params.provider);
+  if (!parsed.success) {
+    throw new CollabError(
+      'invalid_input',
+      `unsupported space credential provider: ${String(ctx.params.provider)}`,
     );
   }
   return parsed.data;
@@ -515,10 +532,13 @@ export function registerCredentialHandlers(
     spaceCatalog.setMyDefault(await claimsOf(ctx), pathParam(ctx, 'credentialId'));
 
   const spaceMyDefaultClear: OperationHandler = async (ctx) =>
-    spaceCatalog.clearMyDefault(await claimsOf(ctx), pathParam(ctx, 'spaceId'), spaceProviderParam(ctx));
+    spaceCatalog.clearMyDefault(await claimsOf(ctx), pathParam(ctx, 'spaceId'), spaceStoredProviderParam(ctx));
 
   const spaceUsage: OperationHandler = async (ctx) =>
     spaceCatalog.usage(await claimsOf(ctx), pathParam(ctx, 'credentialId'));
+
+  const spaceReadiness: OperationHandler = async (ctx) =>
+    spaceCatalog.readiness(await claimsOf(ctx), pathParam(ctx, 'spaceId'));
 
   const spacePolicyGet: OperationHandler = async (ctx) =>
     spaceCatalog.policy(await claimsOf(ctx), pathParam(ctx, 'spaceId'));
@@ -572,6 +592,7 @@ export function registerCredentialHandlers(
     'credentials.space.myDefault.set': requireHumanSession(spaceMyDefaultSet),
     'credentials.space.myDefault.clear': requireHumanSession(spaceMyDefaultClear),
     'credentials.space.usage': requireHumanSession(spaceUsage),
+    'credentials.space.readiness': requireHumanSession(spaceReadiness),
     'credentials.space.policy.get': requireHumanSession(spacePolicyGet),
     'credentials.space.policy.set': requireHumanSession(spacePolicySet),
     'node.credentials.status': requireHumanSession(nodeStatus),

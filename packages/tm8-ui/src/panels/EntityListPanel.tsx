@@ -60,6 +60,7 @@ import {
   ancestorPath,
   usePanelChoice,
   useTreeDisclosure,
+  VectorIcon,
   type PillTone,
 } from '../kit';
 import {
@@ -92,6 +93,8 @@ import { PendingFormsChip, hasPendingFormsChip } from '../forms/PendingFormsChip
 import { usePendingForms } from '../forms/pending';
 import { SessionLaneLine, WORKTREE_RELATION, sessionLaneOf } from '../git/SessionLane';
 import { TileCountBadges, hasTileCounts } from './list/TileCountBadges';
+import { countBadgeVisible, facetsForAnatomy, useRowView } from './list/row-view';
+import type { TileCountFacet } from '../domain/tile-counts';
 import {
   routeMessagePulse,
   type PulseSegment,
@@ -111,18 +114,20 @@ import type { LaunchSelectionSources } from '../launch-selection';
 import { newLaunchMutationId, type LoadInstalledPlugins } from '../domain/launch';
 import { AttentionTileSubtitle, attentionTileLine } from '../attention/AttentionTileSubtitle';
 import { isNeedsMeFilter, needsMeCount, needsMeRecheckAt } from '../attention/needs-me';
+import { SettingsHomeLink } from './SettingsHomeLink';
 
 const EMPTY_MEMBERS: readonly ActorSummary[] = Object.freeze([]);
 
 /**
- * The four narrowing controls, named once.
+ * The four narrowing controls, named once — plus `view`, which narrows no
+ * query but shares the one-popover rule (row-view.ts).
  *
  * A UNION AND NOT FOUR BOOLEANS: one popover at a time is the rule the filter
  * bar has always enforced, and four independent flags would let the sort menu
  * and a filter picker sit open over each other. On the phone each of these is a
  * bottom sheet, where two at once is not a cosmetic problem but two scrims.
  */
-export type ListPicker = 'filters' | 'people' | 'sets' | 'sort';
+export type ListPicker = 'filters' | 'people' | 'sets' | 'sort' | 'view';
 
 /**
  * The live-session kind for the tile's LEADING relation chip, selected by
@@ -1371,10 +1376,14 @@ function HeaderActions({
    */
   const showLaunch = Boolean(quickLaunch && dispatcherFor(quickLaunch));
   const showStart = Boolean(!hostOwnsBirth && quickStart && dispatcherFor(quickStart));
-  if (!showCreate && !showLaunch && !showStart) return null;
+  // A kind managed from Settings (credentials, space links) has no create door
+  // here; its header links to the section that holds the human-only verbs.
+  const settingsHome = config.settingsHome;
+  if (!showCreate && !showLaunch && !showStart && !settingsHome) return null;
 
   return (
     <div className="lp__actions">
+      {settingsHome ? <SettingsHomeLink home={settingsHome} compact /> : null}
       {/* Authoring mount 7a: when the host supplies a REAL create flow it
           replaces the bare button — which was INERT when onCreate was absent
           (the audit's '+New inert' row). No slot and no onCreate ⇒ nothing
@@ -1612,6 +1621,12 @@ function CategoryTabs({
   );
 }
 
+/** An open eye on the 16×16 grid — the `View ▾` chip's compact face. */
+const VIEW_MARK = [
+  'M1.5 8C3.2 4.9 5.4 3.5 8 3.5s4.8 1.4 6.5 4.5C12.8 11.1 10.6 12.5 8 12.5S3.2 11.1 1.5 8Z',
+  'M10 8a2 2 0 1 1 -4 0a2 2 0 1 1 4 0Z',
+];
+
 function FilterRow({
   config,
   picker,
@@ -1672,6 +1687,13 @@ function FilterRow({
   useDismissable(!inSheet && picker !== null, barRef, useCallback(() => setPicker(null), [setPicker]));
   const sort = config.list.sort;
   const current = sort.find((s) => s.key === sortKey) ?? sort[0];
+  /* VIEW — which facts each row draws (row-view.ts). Only the facets this
+     kind's anatomy actually renders are offered, and the chip counts the
+     hidden ones among THOSE, so a stale key from another anatomy never
+     reads as "1 hidden" on a list where nothing is. */
+  const view = useRowView(config.kind);
+  const viewFacets = facetsForAnatomy(config.list.tile.anatomy);
+  const hiddenFacetCount = viewFacets.filter((spec) => view.hidden.has(spec.id)).length;
 
   const active = config.list.filters.flatMap((spec) =>
     (selected[spec.id] ?? []).flatMap((optionId) => {
@@ -1828,6 +1850,28 @@ function FilterRow({
             <span className="lp__chip-caret" aria-hidden>▾</span>
           </button>
         )
+      ) : null}
+      {viewFacets.length > 0 ? (
+        <button
+          type="button"
+          className={hiddenFacetCount > 0 ? 'lp__chip lp__chip--active' : 'lp__chip'}
+          onClick={() => setPicker(picker === 'view' ? null : 'view')}
+          aria-expanded={picker === 'view'}
+          aria-haspopup="menu"
+          title={hiddenFacetCount > 0 ? `Row view: ${hiddenFacetCount} hidden` : 'Choose what each row shows'}
+          aria-label={compact ? 'View' : undefined}
+          data-testid="row-view-trigger"
+        >
+          {/* At the floor the chip collapses to its glyph, as sort does: the
+              240px row already clips Collections, and a fourth word would push
+              People under the knife too. */}
+          {compact ? <VectorIcon paths={VIEW_MARK} size={13} /> : 'View'}
+          {hiddenFacetCount > 0 ? (
+            <span className="lp__chip-count">{hiddenFacetCount}</span>
+          ) : (
+            <span className="lp__chip-caret" aria-hidden>▾</span>
+          )}
+        </button>
       ) : null}
 
       <span className="lp__spacer" />
@@ -1993,6 +2037,49 @@ function FilterRow({
           )}
         </>
       )) : null}
+      {narrowing('view', 'View', 'row-view-menu', 'lp__filtermenu lp__filtermenu--withfoot', (
+        <>
+          <div className="lp__filteropts">
+            <div className="lp__filtergroup">SHOW ON EACH ROW</div>
+            {viewFacets.map((spec) => {
+              const on = view.shows(spec.id);
+              return (
+                <button
+                  key={spec.id}
+                  type="button"
+                  role="menuitemcheckbox"
+                  aria-checked={on}
+                  className={on ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
+                  data-facet={spec.id}
+                  onClick={() => view.toggle(spec.id)}
+                >
+                  <span className="lp__optbox" aria-hidden data-on={on ? 'yes' : 'no'} />
+                  <span className="lp__optlabel">{spec.label}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="lp__filterfoot">
+            <button
+              type="button"
+              className="lp__filterclear"
+              data-testid="row-view-reset"
+              disabled={hiddenFacetCount === 0}
+              onClick={view.reset}
+            >
+              Show all
+            </button>
+            <button
+              type="button"
+              className="lp__filterdone"
+              data-testid="row-view-done"
+              onClick={() => setPicker(null)}
+            >
+              Done
+            </button>
+          </div>
+        </>
+      ))}
       {narrowing('people', 'People', 'people-filter-menu', 'lp__filtermenu', (
         <>
           <div className="lp__filtergroup">PEOPLE</div>
@@ -2763,7 +2850,13 @@ function Band({
         ) : (
           <EmptyBody
             glyph={<KindIcon kind={config.kind} size={22} />}
-            sentence={`No ${config.labelPlural.toLowerCase()} here yet — create one, or press / and type a name.`}
+            sentence={
+              config.settingsHome
+                ? `No ${config.labelPlural.toLowerCase()} here yet — add them in Settings.`
+                : !config.list.quickCreate
+                  ? `No ${config.labelPlural.toLowerCase()} here yet.`
+                  : `No ${config.labelPlural.toLowerCase()} here yet — create one, or press / and type a name.`
+            }
           />
         )
       ) : (
@@ -3241,9 +3334,14 @@ export function Tile({
   const list = config.list;
   const controlCard = list.tile.anatomy === 'control-card';
   const sessionTree = list.tile.anatomy === 'session-tree';
+  /* The viewer's `View ▾` choice for THIS row's kind (row-view.ts) — a
+     session nested under a task follows the Sessions list's choice. */
+  const view = useRowView(config.kind);
+  const countVisible = (facet: TileCountFacet): boolean => countBadgeVisible(facet, view.hidden);
   /* Forms this session asked the viewer to answer (decision 11). One batched
      read serves every tile in the list — see `forms/pending.ts`. */
-  const pendingForms = usePendingForms(sessionTree ? row.id : null);
+  const pendingFormsRead = usePendingForms(sessionTree ? row.id : null);
+  const pendingForms = view.shows('forms') ? pendingFormsRead : null;
   const verdict = props.livenessOf?.(row.id);
   /* ATTENTION v2 (F1, tab 4-5): the subtitle under the chip — a session or
      chat's `waiting on you: …`, a roll-up root's `n requests · own, via …`.
@@ -3404,7 +3502,7 @@ export function Tile({
   const controlFacts = controlCard ? factsForControlCard(row) : null;
   // Session tiles carry the same chip slot: the index resolves a session's
   // PRs through its working_on task's tracks edges.
-  const linkedPullRequests = (controlCard || sessionTree) ? (props.linkedPullRequestsOf?.(row.id) ?? []) : [];
+  const linkedPullRequests = (controlCard || sessionTree) && view.shows('prs') ? (props.linkedPullRequestsOf?.(row.id) ?? []) : [];
 
   /**
    * The LEADING sessions chip (user ruling 2026-08-16: "sessions also, at the
@@ -3417,7 +3515,7 @@ export function Tile({
   const sessionsPlural = SESSION_CHIP_KIND
     ? `${sessionRows.length} linked ${getKind(SESSION_CHIP_KIND).label.toLowerCase()}${sessionRows.length === 1 ? '' : 's'}`
     : '';
-  const sessionChip = SESSION_CHIP_KIND && sessionRows.length > 0 ? (
+  const sessionChip = SESSION_CHIP_KIND && sessionRows.length > 0 && view.shows('sessions_chip') ? (
     <button
       type="button"
       className={
@@ -3451,7 +3549,7 @@ export function Tile({
       Clickability requires a wired `connectionsOf`; without the projection
       an opened group could never fill. */
   const tileBadges =
-    sessionChip != null || linkedPullRequests.length > 0 || hasTileCounts(row.counters) || hasPendingFormsChip(pendingForms) ? (
+    sessionChip != null || linkedPullRequests.length > 0 || hasTileCounts(row.counters, countVisible) || hasPendingFormsChip(pendingForms) ? (
       <>
         <PendingFormsChip pending={pendingForms} />
         {sessionChip}
@@ -3466,6 +3564,7 @@ export function Tile({
           expandableKind={isExpandableKind}
           controlsId={relatedGroupId}
           countOf={countedRelationOf}
+          visible={countVisible}
         />
       </>
     ) : undefined;
@@ -3520,8 +3619,8 @@ export function Tile({
     // The persona behind the run, when the server resolved one. Read off the
     // summary rather than the graph so the tile's identity cannot flicker on a
     // page that happened to miss the `participates_in` edge.
-    const teammate = actorSummaryOrNull(state.teammate);
-    const model = typeof state.model === 'string' ? state.model : null;
+    const teammate = view.shows('agent_avatar') ? actorSummaryOrNull(state.teammate) : null;
+    const model = view.shows('model') && typeof state.model === 'string' ? state.model : null;
     const live = verdict === 'live';
     // The lane facts ride the summary state (107) — no edge read needed, so
     // the badge cannot flicker when the bounded graph page misses an edge.
@@ -3549,13 +3648,13 @@ export function Tile({
         /* Path-suppressed: a session expanded UNDER a task must not offer
            that same task as a chip one level down — the loop the ruling
            names (parent → child → parent renders once). */
-        tasks={(props.linkedTasksOf?.(row.id) ?? []).filter((task) => !(path?.has(task.id) ?? false))}
+        tasks={view.shows('linked_tasks') ? (props.linkedTasksOf?.(row.id) ?? []).filter((task) => !(path?.has(task.id) ?? false)) : NO_LINKED}
         /* The list tile's lane is COMPACT (user ruling 2026-09-24): a minted
            `tm8/<uuid>` branch collapses to the worktree mark, and the mark is
            a relation DOOR onto the session's worktree tile — same accordion
            as every other chip. A door needs the connections projection to
            ever fill, exactly like the count badges. */
-        lane={lane !== null ? (
+        lane={lane !== null && view.shows('lane') ? (
           <SessionLaneLine
             lane={lane}
             compact
@@ -3645,8 +3744,8 @@ export function Tile({
             />
           ) : undefined
         }
-        assignees={controlFacts.assignees}
-        creator={controlFacts.creator}
+        assignees={view.shows('avatar') ? controlFacts.assignees : EMPTY_MEMBERS}
+        creator={view.shows('avatar') ? controlFacts.creator : null}
         badges={attentionLine || tileBadges ? (
           <>
             <AttentionTileSubtitle line={attentionLine} />
@@ -3810,7 +3909,7 @@ export function Tile({
 
           {/* 15, not 20 — 17px is the tallest thing a session row contains and
               therefore the height of every row in every list. */}
-          {avatar ? <Avatar actorId={avatar.actorId} provenance={avatar.provenance} label={avatar.label} size={15} src={avatar.src ?? null} /> : null}
+          {avatar && view.shows('avatar') ? <Avatar actorId={avatar.actorId} provenance={avatar.provenance} label={avatar.label} size={15} src={avatar.src ?? null} /> : null}
 
           <button
             type="button"
@@ -3843,12 +3942,12 @@ export function Tile({
               session carries its model inline — they used to be a second line,
               which is what made every non-session row twice a session row's
               height. Both ellipsise before the title gives up any width. */}
-          {metas.length > 0 ? (
+          {metas.length > 0 && view.shows('meta') ? (
             <span className="lp__meta" title={metas.join(' · ')}>
               {metas.join(' · ')}
             </span>
           ) : null}
-          {tag ? (
+          {tag && view.shows('meta') ? (
             <span className={`lp__tag kit-pill--${tag.tone}`}>
               {props.compact ? tag.label.slice(0, 2) : tag.label}
             </span>
@@ -3878,7 +3977,7 @@ export function Tile({
                 <span className="lp__attention-label">Needs attention</span>
               )
             ) : null)}
-            {statusWord ? (
+            {statusWord && view.shows('status_word') ? (
               <span className={`lp__word kit-pill--${statusTone}`} title={statusTitle}>
                 {statusWord}
               </span>

@@ -75,6 +75,12 @@ describe('a spawned session inherits its spawner posture', () => {
       permissionMode: 'bypassPermissions',
       accessMode: 'fullAccess',
     });
+    // The spawn receipt's posture rows: the inherited mode is SAID to be one.
+    expect(result.launchFacts).toMatchObject({
+      accessMode: 'fullAccess',
+      accessModeSource: 'inherited',
+      parentSessionId: PARENT_ID,
+    });
   });
 
   it('asks nothing at all for a root spawn', async () => {
@@ -84,6 +90,13 @@ describe('a spawned session inherits its spawner posture', () => {
     // made — an absent parent must not cost a query.
     expect(graph.postureQueries).toEqual([]);
     expect(result.manifest.launch.permissionMode).toBe('interactive');
+    expect(result.launchFacts).toMatchObject({
+      accessMode: 'safe',
+      accessModeSource: 'persona',
+      parentSessionId: null,
+    });
+    // Every provider the launch ran on, ids and sources only.
+    expect(result.launchFacts?.credentials.map((c) => c.provider)).toContain('github');
   });
 
   it("keeps the child's own posture, and still reads the parent for its credentials", async () => {
@@ -102,6 +115,11 @@ describe('a spawned session inherits its spawner posture', () => {
     expect(result.manifest.launch).toMatchObject({
       permissionMode: 'readOnly',
       accessMode: 'plan',
+    });
+    expect(result.launchFacts).toMatchObject({
+      accessMode: 'plan',
+      accessModeSource: 'requested',
+      parentSessionId: PARENT_ID,
     });
   });
 

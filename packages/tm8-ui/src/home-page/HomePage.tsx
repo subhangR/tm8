@@ -157,13 +157,15 @@ export function HomePage(props: HomePageProps) {
       {props.rail ?? null}
       <div className="hp-page">
         {attention ? (
-          /* ATTENTION v2 NEEDS YOU (chapter 4, tab 8): the attention queue itself.
-             Reviews and @mentions no longer feed it (Q17) — they live in
-             notifications. */
+          /* ATTENTION v2 NEEDS YOU (chapter 4, tab 8): the viewer's PERSONAL
+             queue only, height-capped so it never squeezes the chat; the team
+             queue lives in the top bar. Reviews and @mentions no longer feed
+             it (Q17) — they live in notifications. */
           <AttentionQueueSection
             title="NEEDS YOU"
             className="hp-needs"
             testId="hp-needs-you"
+            filter="mine"
             onOpen={props.onOpenEntity}
           />
         ) : needsYou && needsYou.rows.length > 0 ? (

@@ -70,6 +70,19 @@ const port: SpaceCredentialsPort = {
   setDefault: async (id) => ({ ...rows.find((r) => r.id === id)!, isDefault: true }),
   remove: async (id) => ({ credentialId: id, revoked: true, terminatedLoginSessionIds: [], terminatedAgentSessionIds: [], failures: [] }),
   policy: async () => policy,
+  readiness: async () => ({
+    spaceId: SPACE,
+    canLaunch: {
+      ready: false,
+      missing: ['anthropic', 'openai'],
+      providers: {
+        anthropic: { ready: false, via: null, credentialId: null, myDefaultId: null, spaceDefaultId: null, spaceSourceAllowed: true, activeCredentials: 0, reason: 'no_credential' },
+        openai: { ready: false, via: null, credentialId: null, myDefaultId: null, spaceDefaultId: null, spaceSourceAllowed: true, activeCredentials: 0, reason: 'stale' },
+        github: { ready: true, via: 'space_default', credentialId: 'g-bot', myDefaultId: null, spaceDefaultId: 'g-bot', spaceSourceAllowed: true, activeCredentials: 1, reason: null },
+      },
+    },
+    canPoll: { ready: false, missing: ['github'], credentialId: null, activeSpaceOwnedCredentials: 0, reason: 'no_space_owned_credential' },
+  }),
   setPolicy: async (provider, allowedSources) => {
     policy = { ...policy, providers: [...policy.providers.filter((p) => p.provider !== provider), { provider, allowedSources }] };
     return { spaceId: SPACE, provider, allowedSources };
@@ -130,7 +143,10 @@ const port: SpaceCredentialsPort = {
   finishLogin: async (workSessionId) => {
     const i = rows.findIndex((r) => r.id === openLogin);
     rows[i] = { ...rows[i]!, status: 'active', displayLogin: 'team@example.com' };
-    return { workSessionId, provider: rows[i]!.provider, connected: true, login: 'team@example.com', authMethod: 'oauth', status: 'active', stored: true, terminated: true, spaceCredential: rows[i] };
+    // Only a login provider has a login to finish; a server-only row never gets here.
+    const provider = rows[i]!.provider;
+    if (provider === 'typesafe') throw new Error('typesafe has no login');
+    return { workSessionId, provider, connected: true, login: 'team@example.com', authMethod: 'oauth', status: 'active', stored: true, terminated: true, spaceCredential: rows[i] };
   },
 };
 let reclaimRefusals = 0;

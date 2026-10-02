@@ -25,6 +25,7 @@ import {
   rootBirthDispatch,
   type DetailReasons,
 } from '../panels';
+import { EntityHelpOverlay } from '../entity-help/EntityHelpOverlay';
 import { useRowLifecycle } from './useRowLifecycle';
 import { EntityVerbs } from './EntityVerbs';
 import type { ActionContext, ActionRef, CollectionMode } from '../domain/types';
@@ -67,6 +68,7 @@ import { gitSurfaceFor } from './gitSurface';
 import { changesSurfaceFor } from './changesSurface';
 import { taskGitSectionFor } from './taskGitSection';
 import { graphSurfaceFor } from './graphSurface';
+import { storySurfaceFor } from './storySurface';
 import { launchContextSurfaceFor } from './launchContextSurface';
 import { attachmentsFor } from '../files/port';
 import { useMembershipSurface } from './membershipSurface';
@@ -511,6 +513,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
                     changesSurface={changesSurfaceFor(data.seam, id, data.livenessOf)}
                     taskGitSection={taskGitSectionFor(data.seam, detail, openEntity)}
                     graphSurface={graphSurfaceFor(data.seam, id, data.livenessOf, openEntity)}
+                    storySurface={storySurfaceFor(data.seam, id, openEntity, data.launch.teammates)}
                     launchContextSurface={launchContextSurfaceFor(data.seam, id, openEntity)}
                     attachments={attachments}
                     onAttachmentUploaded={() => props.data.refetchDetail(id)}
@@ -902,6 +905,10 @@ export function WorkspaceView(props: WorkspaceViewProps) {
       }
       center={
         <>
+          {/* ENTITY HELP (form 01a0e7d3): a kind's page over the centre only —
+              `.shell-ws__center` is already `position: relative` — so both
+              column headers' (?) marks open it here and the columns stay live. */}
+          <EntityHelpOverlay />
           {/* USER RULING 2026-07-29 (D64): the live-session bar is UNMOUNTED —
               the strip above the terminal duplicated the panel header one row
               below it and taxed the canvas. Its facts survive elsewhere: the
@@ -942,6 +949,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
               loadCredentialStatus={data.seam.credentials.status}
               loadSpaceCredentials={data.seam.credentials.space.list}
               loadSpacePolicy={data.seam.credentials.space.policy}
+              loadSpaceReadiness={data.seam.credentials.space.readiness}
               onCancel={() => props.onLaunchCancel?.()}
               onLaunch={(config) => props.onLaunchSubmit?.(config)}
               /* Passed straight through, unbound to any sheet state — see the

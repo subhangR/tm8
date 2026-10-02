@@ -116,7 +116,7 @@ async function setStatus(sessionId: string, status: string): Promise<void> {
 async function launchedOn(who: DbClaims, sessionId: string, provider: string, credentialId: string): Promise<void> {
   await db.rpc(who, 'record_session_manifest', [
     sessionId,
-    JSON.stringify({ launch: { credentialSources: { [provider]: 'space' }, spaceCredentialIds: { [provider]: credentialId } } }),
+    JSON.stringify({ launch: { credentialSources: { [provider]: 'space' }, spaceCredentialIds: { [provider]: credentialId }, effectiveCredentialSources: { [provider]: 'space' } } }),
   ]);
   await setStatus(sessionId, 'running');
 }

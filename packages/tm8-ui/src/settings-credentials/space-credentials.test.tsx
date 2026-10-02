@@ -27,6 +27,7 @@ import { CollabError } from '@tm8/contract';
 import type {
   CredentialPolicySource,
   CredentialsSpacePolicyView,
+  CredentialsSpaceReadinessView,
   NodeCredentialsStatusView,
   SpaceCredentialView,
 } from '@tm8/contract';
@@ -36,22 +37,28 @@ import type { SpaceCredentialsPort, SpaceCredentialsViewer, SpaceLoginTarget } f
 import { isSharedServer, isSpaceAdminRole, spaceCredentialsPortFromSeam } from './space-port';
 import {
   SHARED_SERVER_WARNING,
+  SPACE_CREDENTIAL_PROVIDERS,
   afterDeleteNotice,
   canClaim,
+  canLaunchSentence,
+  canPollSentence,
   canManage,
   canMyDefault,
   canRevoke,
   canSeeUsage,
   canSetVisibility,
   failureOf,
+  groupByProvider,
   labelTakenReason,
   loginOpenNoticeOf,
   noDefaultNotice,
+  pasteShapeOf,
   spaceLoginOutcome,
   spaceLoginStartFailureOf,
   toggleSource,
   validateSecret,
 } from './space-credentials-model';
+import { launchableSpaceCredentials } from '../domain/launch-sources';
 
 const KEY = 'sk-ant-api03-SECRETVALUE0123456789abcdWXYZ';
 const ME = 'acct-me';
@@ -101,10 +108,40 @@ const NODE_STATUS: NodeCredentialsStatusView = {
   ],
 };
 
+type Provider = SpaceCredentialView['provider'];
+
+/** A readiness answer: `launchMissing` per provider (with a reason), and whether can-poll is green. */
+function readinessView(opts: {
+  launchMissing?: Partial<Record<Provider, 'no_credential' | 'stale' | 'policy_excludes_space'>>;
+  poll?: boolean;
+  pollReason?: 'no_space_owned_credential' | 'stale';
+} = {}): CredentialsSpaceReadinessView {
+  const missingOf = opts.launchMissing ?? {};
+  const entry = (p: Provider) => {
+    const reason = missingOf[p] ?? null;
+    return {
+      ready: reason === null, via: reason === null ? 'space_default' as const : null,
+      credentialId: reason === null ? `c-${p}` : null, myDefaultId: null, spaceDefaultId: reason === null ? `c-${p}` : null,
+      spaceSourceAllowed: reason !== 'policy_excludes_space', activeCredentials: reason === null ? 1 : 0, reason,
+    };
+  };
+  const missing = (['anthropic', 'openai', 'github'] as const).filter((p) => missingOf[p]);
+  const poll = opts.poll ?? true;
+  return {
+    spaceId: 'space-1',
+    canLaunch: { ready: missing.length === 0, missing, providers: { anthropic: entry('anthropic'), openai: entry('openai'), github: entry('github') } },
+    canPoll: {
+      ready: poll, missing: poll ? [] : ['github'], credentialId: poll ? 'c-gh' : null,
+      activeSpaceOwnedCredentials: poll ? 1 : 0, reason: poll ? null : opts.pollReason ?? 'no_space_owned_credential',
+    },
+  };
+}
+
 function fakePort(opts: {
   viewer?: SpaceCredentialsViewer;
   rows?: SpaceCredentialView[];
   policy?: CredentialsSpacePolicyView;
+  readiness?: CredentialsSpaceReadinessView | Error;
 } = {}) {
   let rows = [...(opts.rows ?? [MINE_DEFAULT, THEIRS, ORPHAN_OPENAI, GITHUB])];
   let policy = structuredClone(opts.policy ?? POLICY);
@@ -142,6 +179,10 @@ function fakePort(opts: {
       return { credentialId: id, revoked: true, terminatedLoginSessionIds: [], terminatedAgentSessionIds: ['s-1', 's-2'], failures: [] };
     }),
     policy: vi.fn(async () => structuredClone(policy)),
+    readiness: vi.fn(async () => {
+      if (opts.readiness instanceof Error) throw opts.readiness;
+      return structuredClone(opts.readiness ?? readinessView());
+    }),
     setPolicy: vi.fn(async (provider: SpaceCredentialView['provider'], allowedSources: CredentialPolicySource[] | null) => {
       policy = { ...policy, providers: policy.providers.map((p) => (p.provider === provider ? { provider, allowedSources } : p)) };
       return { spaceId: 'space-1', provider, allowedSources };
@@ -796,7 +837,7 @@ describe('the seam adapter', () => {
         space: {
           list: vi.fn(async () => ({ spaceId: 'space-1', credentials: [MINE_DEFAULT] })),
           create: record('create'), rekey: record('rekey'), rename: record('rename'), setDefault: record('setDefault'),
-          remove: record('remove'), policy: record('policy'), setPolicy: record('setPolicy'),
+          remove: record('remove'), policy: record('policy'), readiness: record('readiness'), setPolicy: record('setPolicy'),
           setVisibility: record('setVisibility'), spaceDefaultConsent: record('spaceDefaultConsent'), claim: record('claim'),
           setMyDefault: record('setMyDefault'), clearMyDefault: record('clearMyDefault'), usage: record('usage'), addMine: record('addMine'),
         },
@@ -1097,5 +1138,143 @@ describe('W10d — owner, visibility, claim, my default, usage (doc 13 §7)', ()
     expect(isSharedServer('single')).toBe(false);
     expect(isSharedServer('multi')).toBe(true);
     expect(isSharedServer(null)).toBe(true);
+  });
+});
+
+describe('S7 readiness — two thresholds, never one tick', () => {
+  it('draws can-launch and can-poll apart, each naming its threshold, with the missing providers and a connect action', async () => {
+    await mount(fakePort({ readiness: readinessView({ launchMissing: { openai: 'no_credential', anthropic: 'stale' }, poll: false }) }));
+    const launch = await screen.findByTestId('space-cred-readiness-launch');
+    expect(launch.getAttribute('data-ready')).toBe('false');
+    expect(launch.textContent).toContain('Can launch');
+    expect(launch.textContent).toContain('Not ready to launch with Claude (Anthropic) and Codex (OpenAI)');
+    expect(within(launch).getByTestId('space-cred-readiness-missing-launch-anthropic').textContent).toContain('gone stale');
+    expect(within(launch).getByTestId('space-cred-readiness-missing-launch-openai').textContent).toContain('no credential you can use');
+    expect(within(launch).queryByTestId('space-cred-readiness-missing-launch-github')).toBeNull();
+    const poll = screen.getByTestId('space-cred-readiness-poll');
+    expect(poll.getAttribute('data-ready')).toBe('false');
+    expect(poll.textContent).toContain('Can track pull requests and CI');
+    expect(within(poll).getByTestId('space-cred-readiness-missing-poll-github')).toBeTruthy();
+  });
+
+  it('a member-owned GitHub credential alone: can-launch green, can-poll red — and the page says so', async () => {
+    await mount(fakePort({ readiness: readinessView({ poll: false }) }));
+    const launch = await screen.findByTestId('space-cred-readiness-launch');
+    expect(launch.getAttribute('data-ready')).toBe('true');
+    expect(launch.textContent).toContain('Ready to launch');
+    const poll = screen.getByTestId('space-cred-readiness-poll');
+    expect(poll.getAttribute('data-ready')).toBe('false');
+    expect(poll.textContent).toContain('A member’s private GitHub credential lets that member launch, but does not keep tracking alive.');
+  });
+
+  it('the connect action takes the member to that provider’s group', async () => {
+    await mount(fakePort({ readiness: readinessView({ launchMissing: { openai: 'no_credential' } }) }));
+    fireEvent.click(await screen.findByTestId('space-cred-readiness-connect-openai'));
+    expect(document.activeElement).toBe(screen.getByTestId('space-cred-group-openai'));
+  });
+
+  it('an unreadable readiness says so and never hides the list', async () => {
+    await mount(fakePort({ readiness: new CollabError('forbidden', 'not a member of this space') }));
+    expect((await screen.findByTestId('space-cred-readiness-error')).textContent).toContain('Readiness could not be read');
+    expect(screen.getByTestId('space-cred-group-anthropic')).toBeTruthy();
+  });
+
+  it('re-reads readiness after a change', async () => {
+    const port = fakePort({ viewer: { accountId: ME, isSpaceAdmin: true, isNodeAdmin: false, sharedServer: false } });
+    await mount(port);
+    await screen.findByTestId('space-cred-readiness');
+    const before = port.readiness.mock.calls.length;
+    const row = screen.getByTestId('space-cred-row-c-openai');
+    fireEvent.click(within(row).getByRole('button', { name: /make default|set default/i }));
+    await waitFor(() => expect(port.readiness.mock.calls.length).toBeGreaterThan(before));
+  });
+
+  it('the sentences: stale can-poll says stale; a narrowed can-launch ignores providers it was not asked about', () => {
+    expect(canPollSentence(readinessView({ poll: false, pollReason: 'stale' }))).toContain('has gone stale');
+    const view = readinessView({ launchMissing: { openai: 'no_credential' } });
+    expect(canLaunchSentence(view)).toContain('Not ready to launch with Codex (OpenAI)');
+    expect(canLaunchSentence(view, ['anthropic', 'github'])).toContain('Ready to launch');
+  });
+});
+
+describe('S6 (server_only_space_credentials) — typesafe, the server-only Ask Jev key', () => {
+  const TS_KEY = 'ts_live_TYPESAFESECRET0123456789abcdQRST';
+  const JEV = row({ id: 'c-jev', provider: 'typesafe', shape: 'api_key', label: 'Team Jev', isDefault: true, keyHint: 'jEv9' });
+
+  it('draws its own group with the masked hint, a server-only note and no policy row', async () => {
+    await mount(fakePort({ rows: [MINE_DEFAULT, GITHUB, JEV] }));
+    const group = screen.getByTestId('space-cred-group-typesafe');
+    expect(within(group).getByText('TypeSafe (Ask Jev)')).toBeTruthy();
+    expect(within(group).getByTestId('space-cred-row-c-jev').textContent).toContain('ends …jEv9');
+    expect(within(group).getByTestId('space-cred-server-only-typesafe').textContent).toMatch(/no session ever receives it/);
+    // Control: a launchable group still has its policy row; typesafe has none.
+    expect(screen.getByTestId('space-cred-policy-anthropic')).toBeTruthy();
+    expect(screen.queryByTestId('space-cred-policy-typesafe')).toBeNull();
+  });
+
+  it('adds by paste as an api_key; the key appears nowhere and the field is emptied', async () => {
+    const port = fakePort({ rows: [MINE_DEFAULT] });
+    await mount(port);
+    expect(screen.getByTestId('space-cred-empty-typesafe')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Add TypeSafe (Ask Jev) API key' }));
+    fireEvent.change(screen.getByLabelText('Label for the new TypeSafe (Ask Jev) API key'), { target: { value: 'Jev shared' } });
+    const field = screen.getByLabelText('TypeSafe (Ask Jev) API key') as HTMLInputElement;
+    expect(field.type).toBe('password');
+    fireEvent.change(field, { target: { value: TS_KEY } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save new TypeSafe (Ask Jev) API key' }));
+    await screen.findByText('Added “Jev shared”.');
+    expect(port.create).toHaveBeenCalledWith({ provider: 'typesafe', shape: 'api_key', label: 'Jev shared', secret: TS_KEY });
+    expect(document.body.innerHTML).not.toContain('TYPESAFESECRET');
+    expect(within(screen.getByTestId('space-cred-group-typesafe')).getByText('Jev shared')).toBeTruthy();
+  });
+
+  it('rekeys write-only and deletes', async () => {
+    const port = fakePort({ rows: [MINE_DEFAULT, JEV] });
+    await mount(port);
+    fireEvent.click(screen.getByRole('button', { name: 'Replace API key Team Jev' }));
+    fireEvent.change(screen.getByLabelText('New API key for Team Jev'), { target: { value: TS_KEY } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save API key Team Jev' }));
+    await screen.findByText(/Replaced the API key on “Team Jev”/);
+    expect(port.rekey).toHaveBeenCalledWith('c-jev', TS_KEY);
+    expect(document.body.innerHTML).not.toContain('TYPESAFESECRET');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Team Jev' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm delete Team Jev' }));
+    await screen.findByTestId('space-cred-notice');
+    expect(port.remove).toHaveBeenCalledWith('c-jev');
+    expect(await screen.findByTestId('space-cred-empty-typesafe')).toBeTruthy();
+  });
+
+  it('the model: api_key paste shape, its own group, and a no-default sentence about Ask Jev, not launches', () => {
+    expect(pasteShapeOf('typesafe')).toBe('api_key');
+    expect(groupByProvider([JEV, MINE_DEFAULT]).typesafe.map((r) => r.id)).toEqual(['c-jev']);
+    expect(noDefaultNotice('typesafe', [{ ...JEV, isDefault: false }])).toMatch(/Ask Jev/);
+    expect(noDefaultNotice('typesafe', [{ ...JEV, isDefault: false }])).not.toMatch(/launch/);
+    // The launchable list and the policy/node editors never name it.
+    expect(SPACE_CREDENTIAL_PROVIDERS).not.toContain('typesafe');
+  });
+
+  it('no launch picker offers it, even as the only default in the space', () => {
+    for (const provider of SPACE_CREDENTIAL_PROVIDERS) {
+      expect(launchableSpaceCredentials(provider, [JEV]).map((r) => r.id)).toEqual([]);
+    }
+    // Control: the same filter does offer a launchable row.
+    expect(launchableSpaceCredentials('anthropic', [JEV, MINE_DEFAULT]).map((r) => r.id)).toEqual(['c-mine']);
+  });
+});
+
+describe('Space credentials — a row opens its own panel (task 01a0e24d)', () => {
+  it('offers Open on each row when the host passes onOpen, and hands it the credential id', async () => {
+    const onOpen = vi.fn();
+    render(<SpaceCredentialsSection port={fakePort()} onOpen={onOpen} />);
+    await screen.findByTestId('space-cred-group-anthropic');
+    await act(async () => {});
+    fireEvent.click(screen.getByTestId('space-cred-open-c-mine'));
+    expect(onOpen).toHaveBeenCalledWith('c-mine');
+  });
+
+  it('offers no Open without a host to open into', async () => {
+    await mount(fakePort());
+    expect(screen.queryByTestId('space-cred-open-c-mine')).toBeNull();
   });
 });

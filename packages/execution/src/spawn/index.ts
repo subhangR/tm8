@@ -35,6 +35,7 @@ export {
   echoAgentPath,
   resolveLaunchConfig,
   resolveCommandNetworkPolicy,
+  spawnLaunchFacts,
   resolveWorkdir,
   shellQuote,
   withAgentResume,
@@ -66,6 +67,7 @@ export {
 export {
   resolveSkills,
   skillIdentityKey,
+  splitSelectionSkillCollisions,
   splitTaskSkillCollisions,
   type ResolvedSkillRow,
   type SkillResolution,
@@ -162,6 +164,7 @@ export type {
   TaskContext,
   TeamMemberContext,
   Tm8Manifest,
+  CredentialBindingLaunch,
   TransitionInput,
   WorkdirMode,
   WorkSessionResumeInfo,

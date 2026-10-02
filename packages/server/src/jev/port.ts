@@ -74,6 +74,10 @@ export interface JevAdvisorPort {
 
 /**
  * The advisor for ONE `launch.suggest` request, chosen from the caller's
- * claims (`advisor.ts`): their own key, else the node's, else null → `no_key`.
+ * claims and the request's space (`advisor.ts`): the space's key, else
+ * [release 1] their own 203 key, else the node's, else null → `no_key`.
  */
-export type JevAdvisorResolver = (claims: DbClaims) => Promise<JevAdvisorPort | null>;
+export type JevAdvisorResolver = (
+  claims: DbClaims,
+  request?: { spaceId: string },
+) => Promise<JevAdvisorPort | null>;

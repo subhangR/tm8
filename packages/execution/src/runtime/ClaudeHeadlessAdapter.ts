@@ -112,10 +112,16 @@ interface ThreadState {
   sample: SessionTranscriptContext | null;
 }
 
+/**
+ * A tombstone for a thread whose child was SIGINT'd, recording what the next
+ * resume must match. It holds the two values that identify the conversation and
+ * deliberately not `model`: 276 made mid-chat model switching a supported
+ * operation, so the model a resume arrives with is expected to differ and is
+ * not a mismatch. Re-adding it here would re-break Stop-then-switch.
+ */
 interface InterruptedThread {
   readonly nativeSessionId: string;
   readonly cwd: string;
-  readonly model: string;
 }
 
 export interface ClaudeHeadlessAdapterOptions {
@@ -202,11 +208,25 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
     }
     const interrupted = this.interruptedThreads.get(input.threadId);
     if (input.resume === 'post_interrupt') {
+      // WHICH CONVERSATION, not how to run it.
+      //
+      // `nativeSessionId` and `cwd` identify the transcript this resume is
+      // entitled to reopen, so a mismatch there means the caller is resuming
+      // the wrong thing and must be refused. `model` was checked alongside them
+      // until 276 and no longer is: switching model mid-chat is now a supported
+      // operation, and `claude --resume <sid> --model <other>` is how it is
+      // performed — measured on this host, the conversation is preserved and
+      // the new model answers. Keeping the clause made exactly one user path
+      // fail: Stop the agent, pick another model, send. That wrote an
+      // interrupted tombstone carrying the OLD model, and the very resume that
+      // was supposed to apply the switch threw `resume_mismatch` instead.
+      //
+      // The two clauses that remain are the ones that protect data. Do not add
+      // a third for a value the vendor CLI accepts per invocation.
       if (
         interrupted &&
         (interrupted.nativeSessionId !== input.nativeSessionId ||
-          interrupted.cwd !== input.cwd ||
-          interrupted.model !== input.model)
+          interrupted.cwd !== input.cwd)
       ) {
         throw new AgentRuntimeError(
           `agent thread '${input.threadId}' resume config does not match its interrupted runtime`,
@@ -869,7 +889,6 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
       this.interruptedThreads.set(state.input.threadId, {
         nativeSessionId: state.input.nativeSessionId,
         cwd: state.input.cwd,
-        model: state.input.model,
       });
     }
     if (state.active) {

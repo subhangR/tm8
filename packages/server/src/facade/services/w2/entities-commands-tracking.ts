@@ -6,6 +6,7 @@ import {
   applyGraphLinks,
   graphNodeKey,
   DrawingContentInputSchema,
+  StoryContentInputSchema,
   decodeCursor,
   encodeCursor,
   isCollabError,
@@ -16,6 +17,7 @@ import {
   type CommandResult,
   type CreateEntityInput,
   type CustomFieldValue,
+  type EdgeGroup,
   type EdgeView,
   type EntityCapabilities,
   type EntityContent,
@@ -64,6 +66,7 @@ import {
 } from '../../entity-read.js';
 import type { RpcCommandResult } from '../../handlers/entities.js';
 import { buildReceipt, receiptSnapshot, wantsReceipt, type ServerReceipt } from '../../receipt.js';
+import { RUNS_ON, RUNS_ON_USAGE_OPERATION, runsOnListedFrom } from './runs-on-visibility.js';
 import { projectForgeFacts } from '../../../tracking/pr-projection.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -549,6 +552,7 @@ async function queryConnections(
     : query.direction === 'incoming'
       ? `g.dst_id = ${anchor}`
       : `(g.src_id = ${anchor} or g.dst_id = ${anchor})`];
+  where.push(runsOnListedFrom('g', anchor));
   if (query.types.length > 0) where.push(`g.type = any(${params.add(query.types)}::text[])`);
   if (query.peerIds.length > 0) {
     where.push(`(case when g.src_id = ${anchor} then g.dst_id else g.src_id end) = any(${params.add(query.peerIds)}::uuid[])`);
@@ -790,6 +794,12 @@ async function buildUniversalDetail(
     connectionItems.push(...page.items);
     connectionCursor = page.nextCursor;
   } while (connectionCursor !== null);
+  // A credential's sessions are counted here, never listed (runs-on-visibility.ts).
+  const runsOnCount = row.kind === 'credential'
+    ? Number((await q.query<{ n: string }>(
+      `select count(*) n from public.edges g where g.dst_id = $1 and g.type = '${RUNS_ON}'`, [id],
+    ))[0]?.n ?? 0)
+    : 0;
   const byType = (direction: 'incoming' | 'outgoing') => {
     const grouped = new Map<string, EdgeView[]>();
     for (const edge of connectionItems) {
@@ -798,12 +808,22 @@ async function buildUniversalDetail(
       const list = grouped.get(edge.type);
       if (list) list.push(edge); else grouped.set(edge.type, [edge]);
     }
-    return [...grouped].map(([type, edges]) => ({
+    const groups: EdgeGroup[] = [...grouped].map(([type, edges]) => ({
       type,
       direction,
       label: direction === 'outgoing' ? type : `${type} (incoming)`,
       edges,
     }));
+    if (direction === 'incoming' && runsOnCount > 0) {
+      groups.push({
+        type: RUNS_ON,
+        direction,
+        label: `${RUNS_ON} (incoming)`,
+        edges: [],
+        summary: { count: runsOnCount, operation: RUNS_ON_USAGE_OPERATION },
+      });
+    }
+    return groups;
   };
   const unresolvedHardDependencyCount = connectionItems.filter((edge) =>
     edge.source.id === id && edge.type === 'depends_on' && edge.hard !== false && edge.resolved === false,
@@ -1014,6 +1034,8 @@ const PATCH_CONTENT_MEMBERS: Readonly<Record<string, readonly string[]>> = {
   // W10a: no member is patchable. The lifecycle refusal fires first; this is
   // the second lock, so a door that skipped it still forwards nothing.
   credential: [],
+  // 283: the prose; the title rides the envelope's `title`.
+  story: ['description'],
 };
 
 function assertPatchContentMembers(
@@ -1126,6 +1148,16 @@ async function storedGraphNodes(q: Querier, id: string, expectedVersion: number)
       { details: { entityId: id, currentVersion: row.version } });
   }
   return Array.isArray(row.nodes) ? row.nodes : [];
+}
+
+function storyContent(content: Record<string, unknown>) {
+  const parsed = StoryContentInputSchema.safeParse(content);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    throw new CollabError('invalid_input',
+      `story content: ${issue ? `${issue.path.join('.')}: ${issue.message}` : 'malformed'}`);
+  }
+  return parsed.data;
 }
 
 function softDrawingContent(content: Record<string, unknown>) {
@@ -1383,6 +1415,16 @@ export class W2EntitiesCommandsTrackingService {
             input.parentId ?? null, input.position ?? null, envelope.clientMutationId ?? null]);
           break;
         }
+        case 'story': {
+          // 283: zero new catalog rows, the drawing posture. `parentId` is a
+          // parent STORY (same-kind hierarchy = child stories); putting a
+          // thing IN a story is `collections.addItem`, never hierarchy.
+          const story = storyContent(content);
+          raw = await q.rpc('create_story_entity', [input.spaceId, input.title, envelope.actorId ?? null,
+            story.description ?? '',
+            input.parentId ?? null, input.position ?? null, envelope.clientMutationId ?? null]);
+          break;
+        }
         default:
           if (!input.kind.startsWith('c:')) {
             throw new CollabError('forbidden', `entities.create is owned by the ${input.kind} lifecycle`);
@@ -1552,6 +1594,15 @@ export class W2EntitiesCommandsTrackingService {
               drawing.elements === undefined ? null : JSON.stringify(drawing.elements),
               drawing.appState === undefined ? null : JSON.stringify(drawing.appState),
               drawing.files === undefined ? null : JSON.stringify(drawing.files),
+              envelope.clientMutationId ?? null]);
+            break;
+          }
+          case 'story': {
+            // `null` MERGES: a rename sends only the title, and must not wipe
+            // the description it did not restate.
+            const story = storyContent(content);
+            raw = await q.rpc('update_story_entity', [id, input.expectedVersion, envelope.actorId ?? null,
+              input.title ?? null, story.description ?? null,
               envelope.clientMutationId ?? null]);
             break;
           }

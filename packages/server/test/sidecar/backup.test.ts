@@ -6,7 +6,7 @@
  * `pre-migration/`.
  */
 
-import { mkdtempSync, rmSync, writeFileSync, readdirSync, mkdirSync } from 'node:fs';
+import { chmodSync, mkdtempSync, rmSync, writeFileSync, readdirSync, readFileSync, mkdirSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -17,11 +17,13 @@ import {
   backupDirs,
   ensureBackupDirs,
   isoWeekKey,
+  pgDump,
   promoteWeekly,
   pruneTier,
   utcStamp,
 } from '../../src/sidecar/backup.js';
 import { silentLogger } from '../../src/sidecar/log.js';
+import { CREDENTIAL_KEY_FILE } from '../../src/credentials/credential-key.js';
 
 const scratch: string[] = [];
 function tempDataDir(): string {
@@ -128,5 +130,84 @@ describe('pre-migration exemption', () => {
     await pruneTier(dirs.daily, DAILY_RETENTION, silentLogger);
     await pruneTier(dirs.weekly, WEEKLY_RETENTION, silentLogger);
     expect(readdirSync(dirs.preMigration)).toHaveLength(20);
+  });
+});
+
+/**
+ * A dump holds space_credentials' sealed secrets, key hints and vendor logins
+ * (W10d a4, ruled (B) on 2026-09-28, task 01a0e743): so the artifact is 0600
+ * in a 0700 directory, pg_dump is asked for the whole database, and the node
+ * key file is never an input. A recording shim stands in for pg_dump; it
+ * writes under umask 022, as a real pg_dump would, so an untightened file
+ * would come out 0644.
+ */
+describe('permissions and inputs (W10d a4 / 01a0e743)', () => {
+  const modeOf = (p: string): number => statSync(p).mode & 0o777;
+
+  function shimBinaries(): { binariesDir: string; argsFile: string } {
+    const binariesDir = mkdtempSync(join(tmpdir(), 'tm8-backup-bin-'));
+    scratch.push(binariesDir);
+    const argsFile = join(binariesDir, 'args.txt');
+    writeFileSync(
+      join(binariesDir, 'pg_dump'),
+      [
+        '#!/usr/bin/env bash',
+        'umask 022',
+        `printf '%s\\n' "$@" > '${argsFile}'`,
+        'out=""; while [ $# -gt 0 ]; do if [ "$1" = "-f" ]; then out="$2"; shift; fi; shift; done',
+        'printf PGDMP > "$out"',
+      ].join('\n'),
+      { mode: 0o755 },
+    );
+    return { binariesDir, argsFile };
+  }
+
+  it('tightens pre-existing backup directories from 0755 to 0700', async () => {
+    const dataDir = tempDataDir();
+    const cfg = { backupsDir: join(dataDir, 'backups') };
+    const dirs = backupDirs(cfg);
+    for (const d of [dirs.root, join(dirs.root, 'scheduled'), dirs.daily, dirs.weekly, dirs.preMigration, dirs.onDemand]) {
+      mkdirSync(d, { recursive: true });
+      chmodSync(d, 0o755);
+    }
+    await ensureBackupDirs(cfg);
+    for (const d of [dirs.root, join(dirs.root, 'scheduled'), dirs.daily, dirs.weekly, dirs.preMigration, dirs.onDemand]) {
+      expect(modeOf(d).toString(8), d).toBe('700');
+    }
+  });
+
+  it('writes the artifact 0600 — fresh, and over a pre-existing 0644 file — and asks pg_dump for the whole database', async () => {
+    const dataDir = tempDataDir();
+    const dirs = await ensureBackupDirs({ backupsDir: join(dataDir, 'backups') });
+    const { binariesDir, argsFile } = shimBinaries();
+    const target = { binariesDir, socketDir: '/tmp/sock', pgPort: 5999, database: 'tm8_x', superuser: 'tm8' };
+
+    const fresh = join(dirs.daily, `tm8_${utcStamp()}.dump`);
+    const made = await pgDump(target, { outPath: fresh, tier: 'daily', logger: silentLogger });
+    expect(made.bytes).toBe(5);
+    expect(modeOf(fresh).toString(8)).toBe('600');
+
+    const stale = join(dirs.onDemand, 'named.dump');
+    writeFileSync(stale, 'old', { mode: 0o644 });
+    chmodSync(stale, 0o644);
+    await pgDump(target, { outPath: stale, tier: 'on-demand', logger: silentLogger });
+    expect(modeOf(stale).toString(8)).toBe('600');
+
+    // Whole database, custom format, no table left out — and nothing from dataDir.
+    const args = readFileSync(argsFile, 'utf8').trim().split('\n');
+    expect(args).toEqual(['-h', '/tmp/sock', '-p', '5999', '-U', 'tm8', '-d', 'tm8_x', '-Fc', '-f', stale]);
+    expect(args.some((a) => a.startsWith('--exclude') || a === '-T' || a === '-t')).toBe(false);
+    expect(args.some((a) => a.includes(CREDENTIAL_KEY_FILE) || a.startsWith(dataDir + '/.'))).toBe(false);
+  });
+
+  it('promotes a weekly copy at 0600 even when the daily is looser', async () => {
+    const dataDir = tempDataDir();
+    const dirs = await ensureBackupDirs({ backupsDir: join(dataDir, 'backups') });
+    const daily = join(dirs.daily, 'tm8_20260928T000000Z.dump');
+    writeFileSync(daily, 'PGDMP');
+    chmodSync(daily, 0o644);
+    const weekly = await promoteWeekly(dirs, daily, new Date('2026-09-28T00:00:00Z'), silentLogger);
+    expect(weekly).not.toBeNull();
+    expect(modeOf(weekly!).toString(8)).toBe('600');
   });
 });

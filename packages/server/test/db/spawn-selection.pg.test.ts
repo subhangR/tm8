@@ -158,6 +158,9 @@ beforeAll(async () => {
     ids.sTwinB = await skill(c, s, 'twin-skill');
     await edge(c, s, ids.twinTask, ids.sTwinA, 'equips');
     await edge(c, s, ids.twinTask, ids.sTwinB, 'equips');
+    // A second, UNEQUIPPED skill named like the persona's equipped one: the
+    // full skill beside its reference card (prod had ~40 such pairs).
+    ids.sEquippedTwin = await skill(c, s, 'deploy-runbook');
   });
 }, 300_000);
 
@@ -436,6 +439,25 @@ describe('a task dressed by the attach palette', () => {
     expect(selected.skippedSkills?.filter((row) => twins.has(row.entityId)))
       .toEqual([expect.objectContaining({ entityId: ids.sTwinB, reason: 'task-name-collision' })]);
     expect(() => manifestOf(selected)).not.toThrow();
+  });
+
+  it('a skill picked beside an equipped one of the same name still spawns: the pick wins, the equipped row is declared', async () => {
+    // The launch card pre-ticks the persona's `deploy-runbook` and the person
+    // ticks the other `deploy-runbook` from the space. Before, resolveSkills
+    // threw "ambiguous skill" at depth 0 and execution.spawn answered 503.
+    const context = await load({ selection: { memoryIds: [], skillIds: [ids.sEquipped, ids.sEquippedTwin] } });
+    expect(context.skillEquips?.map((row) => row.entityId)).toEqual([ids.sEquippedTwin]);
+    expect(context.skippedSkills).toContainEqual(expect.objectContaining({
+      entityId: ids.sEquipped, name: 'deploy-runbook', reason: 'selection-name-collision',
+    }));
+    const manifest = manifestOf(context);
+    expect(manifest.skills.map((row) => row.entityId)).toEqual([ids.sEquippedTwin]);
+    expect(manifest.effectiveSkills!.skipped).toContainEqual(expect.objectContaining({
+      entityId: ids.sEquipped, reason: 'selection-name-collision',
+    }));
+    expect(manifest.context?.dropped).toContainEqual(expect.objectContaining({
+      entityId: ids.sEquipped, group: 'skills', reason: 'selection-name-collision',
+    }));
   });
 });
 

@@ -428,10 +428,13 @@ const DEFAULT_SORT: readonly SortSpec[] = [BY_ACTIVITY, also(BY_UPDATED), BY_CRE
  * list to one set's members via `filters.edge`).
  */
 const COLLECTION_MEMBERSHIP: MembershipListControl = {
-  label: 'Collections',
-  emptyLabel: 'In no collection',
+  label: 'Collections & stories',
+  emptyLabel: 'In no collection or story',
   edgeType: 'contains',
   setKind: 'collection',
+  // The story filter on every list (282): a story holds its roots through the
+  // same `contains` edge, so it is a lens and a picker target like a collection.
+  alsoSetKinds: ['story'],
 };
 
 /**
@@ -1353,7 +1356,9 @@ const ROWS: readonly KindConfig[] = [
           params: { fields: 'model=Model,agentTool=Tool,owner=Owner' },
         },
         { block: 'live-work', params: { source: 'liveWork' } },
-        { block: 'items', label: 'EQUIPPED', params: { source: 'equipped', count: true } },
+        /* No label: the block draws its own `SKILLS · n` head with the
+           `+ Equip skill` verb beside it. */
+        { block: 'skill-equipment' },
         /* The working set that spawn actually injects (`loadSpawnContext`).
            Edge-backed and kind-free: 085 widened `remembers.src_kinds` to the
            wildcard, so this identical row on a task panel needs no new code. */
@@ -1865,6 +1870,62 @@ const ROWS: readonly KindConfig[] = [
   },
 
   /*
+   * -- story (migration 283: everything around one idea, and where it stands) --
+   *
+   * THE PAGE IS THE BODY (artifact 01a0fc3e rev 4). Things are put in by hand
+   * as `contains` edges — the roots — and everything connected to a root
+   * follows; progress, the graph, the team and what is happening are all
+   * computed by the server at read time. One `storyline` block draws the whole
+   * page: hero, four stats, graph, team, roots, child stories, live feed and
+   * rail. The live read rides the host's `storySurface`; a host without a seam
+   * still gets the static read of the row.
+   *
+   * No FIELDS block and no membership block: the roots card IS the membership
+   * (add a root / take one out), and every scalar a fields dump would show is
+   * in the hero.
+   *
+   * `quickCreate` is on: a title is a legitimate start — the empty page says
+   * what to put in. Description is the one content field, multiline.
+   */
+  {
+    kind: 'story',
+    label: 'Story',
+    labelPlural: 'Stories',
+    icon: '❧',
+    iconArt: KIND_ART.story,
+    slug: 'stories',
+    strategy: 'collection',
+    defaultMode: 'list',
+    hiddenModes: ['board', 'gallery'],
+    chip: { glyph: '❧', tintBy: 'none' },
+    card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
+    list: baseList({
+      quickCreate: true,
+      tile: { badges: [{ source: 'messages' }] },
+      inlineEdit: { title: true },
+    }),
+    panel: {
+      archetype: 'generic',
+      blocks: [{ block: 'storyline' }],
+      primaries: ['edit'],
+      // ⤢ opens the story full screen at `e/{id}` (PR 1004): the graph wants
+      // the width, and the page is a place you stay on.
+      fullView: true,
+    },
+    editFields: [
+      { target: 'title', label: 'Title', required: true, placeholder: 'Story as an Entity' },
+      {
+        target: 'content',
+        source: 'description',
+        label: 'Description',
+        placeholder: 'What is this story about, and what does done look like?',
+        multiline: true,
+      },
+    ],
+    palette: { createLabel: 'New story' },
+  },
+
+  /*
    * -- form (migration 209: a question set an agent asks a human) --
    *
    * THE QUESTIONNAIRE IS THE BODY (Forms W1, FORMS-DESIGN §10). One block
@@ -1912,6 +1973,12 @@ const ROWS: readonly KindConfig[] = [
    * settings → Credentials (human-only doors); this row only lets an entity
    * read of one render as a named thing. `quickCreate` is off — no generic
    * door can create one, and the SQL guard refuses it anyway.
+   *
+   * A HOME ROOT since 2026-09-27 (owner ruling: Home lists every kind). The
+   * tile and the panel draw ONLY the envelope's allow-list — provider and
+   * visibility off `state`, whose server arm (`credentialFactsOf`) never
+   * reads the secret, the key hint or the vendor login. `settingsHome` is
+   * the door back to where a credential is actually added and rotated.
    */
   {
     kind: 'credential',
@@ -1925,10 +1992,67 @@ const ROWS: readonly KindConfig[] = [
     hiddenModes: ['board', 'tree', 'gallery'],
     chip: { glyph: '⚿', tintBy: 'none' },
     card: { fields: ['excerpt', 'activityAt'] },
-    list: baseList({ quickCreate: false, tile: { badges: [] } }),
+    settingsHome: { section: 'space-credentials', label: 'Manage in Space credentials' },
+    list: baseList({ quickCreate: false, tile: { badges: [{ source: 'provider' }, { source: 'visibility' }] } }),
+    /*
+     * THE MANAGED PANEL (task 01a0e24d). Per-item verbs live here; Settings
+     * keeps create, add and policy, and its rows open this panel. The facts
+     * are `list_space_credentials`' own, masked by the server (a private
+     * credential's key hint and login are its owner's alone), so a null fact
+     * is simply absent. Copy never says "node" or "member" (doc 01a0e248 §6).
+     */
     panel: {
       archetype: 'generic',
-      blocks: [COLLECTIONS_BLOCK],
+      blocks: [{ block: 'managed', label: 'CREDENTIAL' }, { block: 'settings-home' }, COLLECTIONS_BLOCK],
+      managed: {
+        source: 'spaceCredentials',
+        owner: { key: 'ownerAccountId', mine: 'You', other: 'Owned by someone else', none: 'This space' },
+        facts: [
+          { key: 'label', label: 'Name' },
+          { key: 'provider', label: 'Provider', words: { anthropic: 'Anthropic', openai: 'OpenAI', github: 'GitHub' } },
+          { key: 'shape', label: 'Kind', words: { login: 'Subscription login', api_key: 'API key', token: 'Token' } },
+          { key: 'status', label: 'Status', words: { active: 'Active', stale: 'Needs attention', revoked: 'Revoked' } },
+          { key: 'visibility', label: 'Who may use it', words: { public: 'Everyone in this space', private: 'Only its owner' } },
+          { key: 'isDefault', label: 'Space default', words: { true: 'Yes', false: 'No' } },
+          { key: 'keyHint', label: 'Key ends in' },
+          { key: 'displayLogin', label: 'Signed in as' },
+          { key: 'lastUsedAt', label: 'Last used' },
+        ],
+        verbs: [
+          { operation: 'credentials.space.rename', label: 'Rename', input: { key: 'label', label: 'Name' },
+            reason: 'Only its owner can rename it: for a credential this space owns, its creator or a space admin' },
+          { operation: 'credentials.space.myDefault.set', label: 'Use as my default',
+            reason: 'Only its owner can make it their default, and only while it is active' },
+          { operation: 'credentials.space.setDefault', label: 'Make the space default',
+            reason: 'Only its manager can make it the space default: its owner, or for a credential this space owns, its creator or a space admin' },
+          { operation: 'credentials.space.setVisibility', label: 'Change who may use it',
+            flip: { key: 'visibility', values: ['private', 'public'], labels: ['Make private', 'Make public'] },
+            reason: 'Only its owner can change who may use it' },
+          { operation: 'credentials.space.spaceDefaultConsent', label: 'Space default consent',
+            flip: { key: 'mayBeSpaceDefault', values: [false, true], labels: ['Stop allowing as the space default', 'Allow as the space default'] },
+            reason: 'Only its owner can allow it to be the space default' },
+          { operation: 'credentials.space.claim', label: 'Claim as mine',
+            reason: 'Only its creator can claim a credential nobody owns yet' },
+          { operation: 'credentials.space.rekey', label: 'Replace the key in Space credentials', settingsHome: true,
+            reason: 'Only its owner can replace the key: for a credential this space owns, its creator or a space admin' },
+          { operation: 'credentials.space.delete', label: 'Revoke', confirm: 'Revoking stops every session using it.',
+            reason: 'Only its owner or a space admin can revoke it' },
+        ],
+        loginTerminal: {
+          operation: 'credentials.loginSessions.start', label: 'Log in again', providerKey: 'provider',
+          when: { key: 'shape', values: ['login'] },
+          reason: 'Only its owner can log it in again: for a credential this space owns, its creator or a space admin',
+        },
+        reads: [{
+          operation: 'credentials.space.usage', label: 'USAGE', rowsAt: 'sessions', empty: 'No session has used it yet.',
+          columns: [
+            { key: 'workSessionId', label: 'Session' },
+            { key: 'source', label: 'Picked as', words: { pinned: 'Pinned', my_default: 'Their default', space_default: 'Space default' } },
+            { key: 'status', label: 'Status' },
+            { key: 'recordedAt', label: 'When' },
+          ],
+        }],
+      },
     },
   },
 
@@ -2382,14 +2506,50 @@ const ROWS: readonly KindConfig[] = [
     chip: { glyph: '⛓', tintBy: 'none' },
     card: { fields: ['activityAt', 'createdBy'] },
     // Born only from `spaceLinks.add` (generic create is refused server-side);
-    // the Space settings section is where a link is signed in, out or removed.
+    // the Space settings section is where a link is signed in, out or removed,
+    // and where the P8 warning lives — so Home's list and panel link there.
+    settingsHome: { section: 'space-links', label: 'Manage in Space links' },
     list: baseList({
       quickCreate: false,
-      tile: { badges: [] },
+      tile: { badges: [{ source: 'createdBy' }] },
     }),
+    // The managed panel (task 01a0e24d): every link verb acts on the caller's
+    // OWN sign-in row (251/256), so the labels say "your"/"me".
     panel: {
       archetype: 'generic',
-      blocks: [{ block: 'fields', label: 'LINK' }],
+      blocks: [{ block: 'managed', label: 'LINK' }, { block: 'settings-home' }],
+      managed: {
+        source: 'spaceLinks',
+        facts: [
+          { key: 'targetSpaceName', label: 'Links to' },
+          { key: 'mine.status', label: 'Your sign-in',
+            words: { signed_in: 'Signed in', signed_out: 'Signed out', left: 'You left that space', unreachable: 'Unreachable' } },
+          { key: 'mine.allowSpawn', label: 'Agents may start sessions there', words: { true: 'Yes', false: 'No' } },
+          { key: 'mine.lastUsedAt', label: 'Last used' },
+          { key: 'statusSummary.signedIn', label: 'Signed in, everyone' },
+          { key: 'createdAt', label: 'Created' },
+        ],
+        verbs: [
+          { operation: 'spaceLinks.login', label: 'Sign in', reason: 'Only someone in this space can sign in on its links' },
+          { operation: 'spaceLinks.relogin', label: 'Sign in again', reason: 'You have not signed in on this link before: sign in first' },
+          { operation: 'spaceLinks.logout', label: 'Sign out', reason: 'You are not signed in on this link' },
+          { operation: 'spaceLinks.setSpawn', label: 'Agent sessions',
+            flip: { key: 'mine.allowSpawn', values: [true, false], labels: ['Let agents start sessions there', 'Stop agents starting sessions there'] },
+            reason: 'Only someone in this space can change their own link settings' },
+          { operation: 'spaceLinks.remove', label: 'Remove me from this link',
+            confirm: 'This deletes your sign-in on this link. Everyone else keeps theirs.',
+            reason: 'Only someone in this space can remove themselves from its links' },
+        ],
+        reads: [{
+          operation: 'spaceLinks.audit', label: 'AGENT USE', empty: 'No agent has acted through this link.',
+          columns: [
+            { key: 'op', label: 'Operation' },
+            { key: 'result', label: 'Result' },
+            { key: 'reason', label: 'Why' },
+            { key: 'workSessionId', label: 'Session' },
+          ],
+        }],
+      },
     },
   },
 
@@ -2405,14 +2565,38 @@ const ROWS: readonly KindConfig[] = [
     defaultMode: 'list',
     hiddenModes: ['board', 'tree', 'gallery'],
     chip: { glyph: '◎', tintBy: 'none' },
-    card: { fields: ['activityAt', 'createdBy'] },
+    // The tile's title is the server's own name and its excerpt the base URL
+    // (entity-read `titleOf`/`excerptOf`); no Settings home yet.
+    card: { fields: ['excerpt', 'activityAt'] },
     list: baseList({
       quickCreate: false,
-      tile: { badges: [] },
+      tile: { badges: [{ source: 'createdBy' }] },
     }),
+    // The managed panel (task 01a0e24d). The notice is server truth no verb
+    // can change: `DisabledRemoteInvokeForwarder` refuses every remote invoke
+    // with `remote_links_disabled`, and there is no runtime switch (ac_7).
     panel: {
       archetype: 'generic',
-      blocks: [{ block: 'fields', label: 'SERVER' }],
+      blocks: [{ block: 'managed', label: 'SERVER' }],
+      managed: {
+        source: 'servers',
+        notices: [
+          'Remote forwarding is off: agents here cannot act on this server through a link. This build refuses every remote call (remote_links_disabled), and turning it on is a code change, not a setting.',
+        ],
+        facts: [
+          { key: 'name', label: 'Name' },
+          { key: 'baseUrl', label: 'Address' },
+          { key: 'username', label: 'Account' },
+          { key: 'reachStatus', label: 'Reachable',
+            words: { unknown: 'Not checked yet', reachable: 'Reachable', unreachable: 'Unreachable', offline: 'Offline' } },
+          { key: 'reachCheckedAt', label: 'Last checked' },
+        ],
+        verbs: [
+          { operation: 'servers.probe', label: 'Check reachability', reason: 'Only someone in this space can check its servers' },
+          { operation: 'servers.remove', label: 'Remove server', confirm: 'Removing it drops it from this space.',
+            reason: 'Only whoever added it or a space admin can remove it' },
+        ],
+      },
     },
   },
 

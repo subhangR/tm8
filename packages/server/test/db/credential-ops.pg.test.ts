@@ -134,8 +134,25 @@ function record(
       launch: {
         credentialSources: { [provider]: 'space' },
         spaceCredentialIds: { [provider]: credentialId },
+        effectiveCredentialSources: { [provider]: 'space' },
         ...(pick ? { spaceCredentialPicks: { [provider]: pick } } : {}),
       },
+    }),
+  ]);
+}
+
+/**
+ * Resume's half of R2 (session_credential_binding): execution_resume resets the binding
+ * to `pending`, and the product records this run's binding (SpawnService, after the
+ * re-point, before a PTY) before the session may run again.
+ */
+function recordResumeBinding(who: DbClaims, sessionId: string, credentialId: string, provider = 'anthropic'): Promise<unknown> {
+  return db.rpc(who, 'record_session_credential_binding', [
+    sessionId,
+    JSON.stringify({
+      credentialSources: { [provider]: 'space' },
+      spaceCredentialIds: { [provider]: credentialId },
+      effectiveCredentialSources: { [provider]: 'space' },
     }),
   ]);
 }
@@ -397,6 +414,23 @@ describe('a5 — audit columns on every launch; usage for the owner (admins: pub
     })]);
     expect(await outcome(() => store.usage(claims(ADM), shared))).toBe('ok');
   });
+
+  it('270: an OWNERLESS credential\'s usage is the admins\' alone; an admin keeps public owned ones', async () => {
+    // The fix: 255 compared owner = me unguarded, so on an ownerless row a
+    // non-admin member's check was `not NULL` and passed.
+    const shared = await create(A, { spaceOwned: true });
+    const legacy = await create(A, {});
+    for (const cred of [shared, legacy]) {
+      expect(await outcome(() => store.usage(claims(B), cred)), 'another member').toBe('42501');
+      expect(await outcome(() => store.usage(claims(A), cred)), 'its creator').toBe('42501');
+      expect(await outcome(() => store.usage(claims(ADM), cred)), 'an admin').toBe('ok');
+    }
+    // The other direction: NOT can_manage. An admin still reads a public
+    // credential someone else owns, which can_manage would have refused.
+    const pub = await create(A, { visibility: 'public' });
+    expect(await outcome(() => store.rename(claims(ADM), pub, 'not mine'))).toBe('42501');
+    expect(await outcome(() => store.usage(claims(ADM), pub))).toBe('ok');
+  });
 });
 
 describe('a4 / D7 — switch to private: row first, then kill; a session B resumed counts as B\'s', () => {
@@ -411,6 +445,7 @@ describe('a4 / D7 — switch to private: row first, then kill; a session B resum
     // Re-pointed in the resume window (F-R13a), then running idle.
     await resumeWindow(resumed, B);
     await store.repointSession(claims(B), resumed, ['anthropic']);
+    await recordResumeBinding(claims(B), resumed, cred);
     await setStatus(resumed, 'idle');
     const byA = await session(ids[`member:S:${A}`]!);
     await record(claims(A), byA, cred);
@@ -469,9 +504,15 @@ describe('N13 / F-R13a — the providers overload: resume\'s window, resume\'s a
             updated_at <> recorded_at touched
        from public.session_space_credentials where work_session_id = $1 order by provider`, [s])).rows);
   /** A row no writer records: a credential of space T on a session of S (the FK admits it only under T's space_id). */
-  const recordForeign = (s: string, credential: string, provider: string) => asOwner((c) => c.query(
-    `insert into public.session_space_credentials(work_session_id, provider, space_credential_id, space_id, launcher_account_id)
-     values ($1, $2, $3, $4, $5)`, [s, provider, credential, ids.T, accounts[A]]));
+  // A forged cross-space row, as a corrupt legacy row would be. The runs_on
+  // projection (session_credential_binding) refuses one at insert, since an edge
+  // cannot cross spaces, so the forgery bypasses every trigger, as that row did.
+  const recordForeign = (s: string, credential: string, provider: string) => database.transaction(async (c) => {
+    await c.query('set local session_replication_role = replica');
+    await c.query(
+      `insert into public.session_space_credentials(work_session_id, provider, space_credential_id, space_id, launcher_account_id)
+       values ($1, $2, $3, $4, $5)`, [s, provider, credential, ids.T, accounts[A]]);
+  });
 
   // Every refusal is asked with ['openai'] on a session recorded on anthropic
   // unless it says otherwise: had the R13 delete run, the anthropic row would be gone.
@@ -526,6 +567,7 @@ describe('N13 / F-R13a — the providers overload: resume\'s window, resume\'s a
       const s = await session(ids[`member:S:${A}`]!);
       await record(claims(A), s, cred);
       await resumeWindow(s);
+      await recordResumeBinding(claims(A), s, cred);
       await setStatus(s, status);
       const before = await recorded(s);
       expect(await outcome(() => store.repointSession(claims(B), s, ['openai']))).toBe('55000');
@@ -540,6 +582,7 @@ describe('N13 / F-R13a — the providers overload: resume\'s window, resume\'s a
       await record(claims(A), s, cred);
       // An earlier resume is on record; this run ended and nobody resumed it.
       await resumeWindow(s);
+      await recordResumeBinding(claims(A), s, cred);
       await setStatus(s, 'running');
       await setStatus(s, status);
       const before = await recorded(s);
@@ -769,6 +812,7 @@ describe('R1/R17 narrow scrub — a private login credential loses only its non-
     // Re-pointed in the resume window (F-R13a), then running idle.
     await resumeWindow(resumed, B);
     await store.repointSession(claims(B), resumed, ['anthropic']);
+    await recordResumeBinding(claims(B), resumed, cred);
     await setStatus(resumed, 'idle');
     await setStatus(resumed, 'exited');
     const project = join(configDir, 'projects', '-work');

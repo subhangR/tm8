@@ -362,8 +362,14 @@ describe('SC-2 spawn/resume ordering around a space credential', () => {
     // Only A is a member: had anything consulted the persona owner (B), the read would miss.
     const port = new FakeSpacePort(events, new Set(['identity-A']));
     spyPty();
-    await service(port).spawn(A, { spaceId: SPACE_ID, teamMemberId: TEAMMATE_OF_B, credentialSources: { anthropic: 'space' } });
+    const root = await service(port).spawn(A, { spaceId: SPACE_ID, teamMemberId: TEAMMATE_OF_B, credentialSources: { anthropic: 'space' } });
     expect(events.filter((e) => e.startsWith('read:'))).toEqual(['read:anthropic:identity-A', 'read:github:identity-A']);
+    // The spawn result names the space credential and how it was picked — never its key.
+    expect(root.launchFacts?.credentials).toContainEqual(
+      { provider: 'anthropic', source: 'space', spaceCredentialId: ANT, spacePick: 'space_default' },
+    );
+    expect(root.launchFacts?.parentSessionId).toBeNull();
+    expect(JSON.stringify(root.launchFacts)).not.toContain(ANT_KEY);
     // An agent-spawned child carries its launcher's claims (A) and the parent's exact id.
     const parent = graph.manifests[0]!.sessionId;
     graph.postures.set(parent, {
@@ -371,9 +377,14 @@ describe('SC-2 spawn/resume ordering around a space credential', () => {
       spaceCredentialIds: { anthropic: ANT },
     } as SessionLaunchPosture);
     events.length = 0;
-    await service(port).spawn(A, { spaceId: SPACE_ID, teamMemberId: TEAMMATE_OF_B, parentSessionId: parent });
+    const child = await service(port).spawn(A, { spaceId: SPACE_ID, teamMemberId: TEAMMATE_OF_B, parentSessionId: parent });
     expect(events).toContain('read:anthropic:identity-A');
     expect(graph.manifests[1]!.manifest.launch.spaceCredentialIds).toEqual({ anthropic: ANT });
+    // The inherited exact id is a pin the parent made, so the child reports it pinned.
+    expect(child.launchFacts?.credentials).toContainEqual(
+      { provider: 'anthropic', source: 'space', spaceCredentialId: ANT, spacePick: 'pinned' },
+    );
+    expect(child.launchFacts?.parentSessionId).toBe(parent);
   });
 
   describe('resume (C3): authorise the resumer, then re-point, then the PTY', () => {
@@ -428,6 +439,57 @@ describe('SC-2 spawn/resume ordering around a space credential', () => {
       expect(env.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
       // Resume does not re-record the manifest row.
       expect(events).not.toContain('recordManifest');
+    });
+
+    it('R2 (session_credential_binding): resume records the binding from THIS run, after the repoint and before the PTY and `running` — every provider on space', async () => {
+      const port = new FakeSpacePort(events, new Set(['identity-A', 'identity-B']));
+      port.githubToken = { id: GH, token: GH_TOKEN, login: 'space-bot' };
+      port.active.add(GH);
+      graph.resumeInfo = { ...INFO };
+      graph.postures.set(SESSION_ID, {
+        credentialSources: { anthropic: 'space', github: 'space' },
+        spaceCredentialIds: { anthropic: ANT, github: GH },
+      } as SessionLaunchPosture);
+      port.recorded.set(SESSION_ID, [
+        { provider: 'anthropic', spaceCredentialId: ANT },
+        { provider: 'github', spaceCredentialId: GH },
+      ]);
+      port.launcher.set(SESSION_ID, 'identity-B');
+      const bind = graph.recordCredentialBinding.bind(graph);
+      graph.recordCredentialBinding = async (...args) => {
+        events.push('recordCredentialBinding');
+        return bind(...args);
+      };
+      const transition = graph.transition.bind(graph);
+      graph.transition = async (auth, input) => {
+        events.push(`transition:${input.status}`);
+        return transition(auth, input);
+      };
+      spyPty();
+      await service(port).resume(A, { sessionId: SESSION_ID });
+
+      // session_credential_binding resets the binding to `pending` on re-entry to spawning and
+      // refuses `running` while pending: exactly one record, from this run.
+      expect(graph.credentialBindings).toEqual([{
+        sessionId: SESSION_ID,
+        launch: {
+          tool: 'claude-code',
+          spaceCredentialIds: { anthropic: ANT, github: GH },
+          effectiveCredentialSources: { anthropic: 'space', github: 'space' },
+        },
+      }]);
+      const recorded = events.indexOf('recordCredentialBinding');
+      expect(recorded).toBeGreaterThan(events.indexOf('repoint:identity-A'));
+      expect(recorded).toBeLessThan(events.indexOf('spawnIfAbsent'));
+      expect(events.indexOf('transition:running')).toBeGreaterThan(recorded);
+    });
+
+    it('R2 (session_credential_binding): a refused resumer records no binding', async () => {
+      const port = new FakeSpacePort(events, new Set(['identity-B']));
+      launchedByB(port);
+      spyPty();
+      await expect(service(port).resume(A, { sessionId: SESSION_ID })).rejects.toThrow();
+      expect(graph.credentialBindings).toEqual([]);
     });
 
     it('t2-2: a non-member resumer is refused, and NO repoint happens', async () => {

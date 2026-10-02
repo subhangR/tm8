@@ -628,6 +628,18 @@ const ROWS: Record<OperationName, Row> = {
       'each row names the pick source, owner, root launcher and agent session',
     ],
   },
+  'credentials.space.readiness': {
+    cmd: ['space', 'credential-readiness', 'get'],
+    syn: 'tm8 space credential-readiness get [<space-id>]',
+    sum: 'Read a space\'s credential readiness: can-launch per provider for you, and can-poll (a space-owned GitHub credential) — human sessions only',
+    authz: 'server',
+    input: 'none',
+    tags: ['credential', 'space', 'readiness', 'seeding', 'settings'],
+    notes: [
+      'two thresholds, never one: can-launch counts your own default; can-poll needs a space-owned public GitHub credential',
+      'active only: a stale credential is reported, never counted',
+    ],
+  },
   'credentials.space.policy.get': {
     cmd: null,
     sum: 'Read a space\'s credential source policy and the node\'s — human sessions only',
@@ -1180,12 +1192,13 @@ const ROWS: Record<OperationName, Row> = {
     sum: 'Create an entity of any unrestricted kind, optionally with its initial edges',
     authz: 'space',
     input: 'bound',
-    tags: ['new', 'add', 'task', 'doc'],
+    tags: ['new', 'add', 'task', 'doc', 'story'],
     notes: [
       'restricted kinds (project, interaction_profile) refuse generic creation and use their named writers',
       'hierarchy is homogeneous: a parent and its direct children share one kind and one Space',
       'task content shape: {description, acceptanceCriteria: [{id, done, text}], pointsEstimate, axes: {<axis-name>: <value>}} — axis names and values are the Space registry\u2019s (`tm8 space task-axis list`)',
       "doc content shape: {kind: 'doc', body, format: 'markdown'}",
+      "story content shape: {description} (title rides the envelope; status is the ordinary workflow status). --parent <story-id> makes a child story whose progress rolls up into the parent. Put things in with `tm8 collection add <story-id> <entity-id>` — those are the story's roots; everything connected to a root follows at read time. Read it with `tm8 entity context <story-id>` (agents) or `tm8 entity get <story-id>` (the page)",
       '--when-to-use (when a later session should open it, in one sentence: "Open when changing how balances are rounded", not "Rounding policy doc"; shown whole to every later agent) / --summary (what it holds) / --keyword write the selection header in the same call; all optional, guideline limits in `tm8 help entity header set`; change it later with `tm8 entity header set`',
       'a header applies to team_member, doc, artifact, drawing, file, task and collection; on any other kind the entity is still created and the header is skipped with a warning (skills use their description, memories their subject_scope)',
     ],
@@ -1193,6 +1206,7 @@ const ROWS: Record<OperationName, Row> = {
       'tm8 entity create task "<title>" --space <space-id> --parent <entity-id>',
       'tm8 entity create doc "<title>" --content @body.json --when-to-use "<when an agent should load it>" --summary "<what it contains>"',
       'tm8 entity create doc "<title>" --space <space-id> --content \'{"kind":"doc","body":"…","format":"markdown"}\'',
+      'tm8 entity create story "<title>" --content \'{"description":"…"}\' [--parent <story-id>]',
     ],
   },
   'entities.patch': {
@@ -1631,6 +1645,24 @@ const ROWS: Record<OperationName, Row> = {
       'tm8 chat start --teammate <team-member-id> --model <model> --mode ask --workdir project --project <project-id> --about <entity-id> -',
     ],
   },
+  'chat.setModel': {
+    cmd: ['chat', 'model'],
+    syn: 'tm8 chat model <chat-id> <model>',
+    sum: 'Move an open chat onto another model — the next turn claimed runs on it',
+    authz: 'entity',
+    input: 'bound',
+    tags: ['chat', 'model', 'switch', 'change', 'upgrade', 'downgrade'],
+    notes: [
+      'the model is the ONE element of a chat\'s configuration that is not pinned for its life (276); the teammate, the mode and the working directory still are',
+      'the conversation survives the switch: the chat keeps its native session and the new model resumes it, so nothing is restarted and no history is lost',
+      'applies to the NEXT turn claimed — a turn already running finishes on the model it was claimed with, and each turn records which model ran it',
+      'names a model and never a provider: the Server resolves provider from the launch catalog, because provider decides which API key the child is given',
+      'refused with `invalid_input` for a model that launches via another agent tool; chat runs claude-code models only, and switching tool would invalidate the session being resumed',
+      'human-authenticated only, exactly like `chat start`: an agent runtime credential is refused',
+      'no --mutation-id: the write is an assignment, so asking twice leaves the chat as asking once did',
+    ],
+    examples: ['tm8 chat model <chat-id> claude-opus-5'],
+  },
 
   // ── collections / graph / placements / undo ──────────────────────────────
   'collections.query': {
@@ -1645,22 +1677,30 @@ const ROWS: Record<OperationName, Row> = {
   'collections.addItem': {
     cmd: ['collection', 'add'],
     syn: 'tm8 collection add <collection-id> <entity-id> [--position <number>] [--mutation-id <id>]',
-    sum: 'Put an entity into a collection — membership is a `contains` edge, appended after the current maximum position when --position is omitted',
+    sum: 'Put an entity into a collection or a story — membership is a `contains` edge, appended after the current maximum position when --position is omitted',
     authz: 'entity',
     input: 'bound',
-    tags: ['membership', 'curate', 'pin', 'list'],
+    tags: ['membership', 'curate', 'pin', 'list', 'story'],
     notes: [
       're-adding an existing member re-positions it rather than duplicating it',
       'list a collection\'s members with `tm8 edge list --source <collection-id> --type contains`',
+      'the container may also be a story: adding puts the entity in BY HAND as one of the story\'s roots (ordered by --position); everything connected to it then follows at read time — see `tm8 entity context <story-id>`',
+    ],
+    examples: [
+      'tm8 collection add <collection-id> <entity-id>',
+      'tm8 collection add <story-id> <task-id>',
     ],
   },
   'collections.removeItem': {
     cmd: ['collection', 'remove'],
     syn: 'tm8 collection remove <collection-id> <entity-id> --yes [--mutation-id <id>]',
-    sum: 'Take an entity out of a collection — deletes the `contains` edge; the entity itself is untouched',
+    sum: 'Take an entity out of a collection or a story — deletes the `contains` edge; the entity itself is untouched',
     authz: 'entity',
     input: 'bound',
-    tags: ['membership', 'curate', 'unpin'],
+    tags: ['membership', 'curate', 'unpin', 'story'],
+    notes: [
+      'the container may also be a story: removing takes a root out of the story; the entity and its own edges are untouched',
+    ],
   },
   'graph.query': {
     cmd: ['graph', 'query'],
@@ -2178,6 +2218,7 @@ const ROWS: Record<OperationName, Row> = {
       'omit `--access-mode` and a session spawned BY a session inherits its spawner’s posture',
       '`--credential-source anthropic=space` launches on the space default; `anthropic=space:<id>` pins one space credential; omit it and a child inherits its spawner’s exact credential',
       'worktree provisions an isolated checkout per session (base ref via --base-ref); merged/abandoned lanes are reconciled server-side',
+      '`--launch-project` accepts the project entity id (`tm8 entity query --kind project`) or its folder/resource id; worktree mode requires it',
     ],
   },
   'execution.terminal.start': {
@@ -2626,6 +2667,7 @@ const ROWS: Record<OperationName, Row> = {
       'bounded by design: defaults are 16 KiB total and 4 KiB per section (service source); hard caps 32 KiB and 8 KiB (frozen schema)',
       'returned cursors.messages/.activity continue in `entity feed --cursor` (--order newest); cursors.children continues in `entity children --cursor`',
       '--sections summary,actions is a precise pre-mutation capability + version check for a few hundred tokens',
+      'a story prints its description as the body, then overall task progress, its roots with per-root progress, what follows them grouped by kind, who runs what (sessions by call sign, teammates by mode), what is blocked and its child stories with rolled-up progress',
       'header (text: a `header:` line plus an untrusted_data block) is present only when someone authored one: whenToUse says when to open the entity (always whole), summary what it holds; clipped names a field shown cut short; stale means the body changed after it was written (the purpose usually still holds); bytes is the full body size; header.version is what `tm8 entity header set --expect-version` takes',
     ],
     examples: ['tm8 entity context <entity-id> --sections summary,actions'],
@@ -3483,6 +3525,10 @@ function exposureFor(operation: OperationName): Exposure {
 // 2026-08-13 (first-run claim): auth.claim + auth.claim.status take the catalog
 // to 161 rows. RECOMPUTED from `JSON.stringify(OPERATIONS)`, not adjusted.
 export const CATALOG_DIGEST =
+  // Re-measured for 276 (+chat.setModel, chat model switch) — RECOMPUTED from
+  // JSON.stringify(OPERATIONS) by test/discovery-operations.test.ts, not adjusted.
+  // Re-measured for task 01a0e24d (+humanOnly on 33 rows: 24 credentials.*/node.credentials.*,
+  // 6 spaceLinks.* writes, servers.add/adopt/remove) — read from the regenerated conformance manifest. MEASURED.
   // Re-measured for Attention v2 S4 (+attentionRequests.markSeen/unresolve/withdraw).
   // Re-measured for W11 (+spaces.projects.list, +spaces.projects.create at
   // /projects/create, +gate.folders.list/create; projects.link stays, decision 29) — read from the regenerated conformance manifest.
@@ -3528,11 +3574,12 @@ export const CATALOG_DIGEST =
   // +2 attentionSignals.raise|clear (Attention v2 S6, stacked on tm8/attention-v2-integration): read from the regenerated conformance manifest.
   // +3 attentionRequests.markSeen|unresolve|withdraw (Attention v2 S4, stacked on tm8/attention-v2-integration): read from the regenerated conformance manifest.
   // Re-measured (W8, 261, rebuilt on main f01b1566): +6 servers.* and the serverConnections create/delete rows. Read from the regenerated conformance manifest.
+  // Re-measured (plan W2 #847, merge of main 79ca8d50): + auth.launch on top of main's chat.setModel, credentials.space.readiness and story rows. Read from the regenerated conformance manifest.
   // Re-measured (plan W2 #847, merge of main a61f0350): + auth.launch on top of W5 #917's spaces.spacePassword.* and main's rows. Read from the regenerated conformance manifest.
   // Re-measured (plan W2, merged with main c2e82970): + auth.launch on top of W8. Read from the regenerated conformance manifest.
   // Re-measured (W5 #917, merges of main dd1c8215 and 2fa4999f): +3 spaces.spacePassword.* on top of main's servers.*, spaceLinks, attention and launch v3 rows. Read from the regenerated conformance manifest.
   // Re-measured (#915 merge of main 0be3b796): main's servers.* + spaceLinks.invoke/audit and the five attention rows together. Read from the regenerated conformance manifest.
-  'sha256:d43033dcc7c75810b26fe8b6e3f39db8a98e479a377c39bace66ff9e931c3b9f';
+  'sha256:436c4a014a231b7db683f3bc3e45164de7139eef1c6441446aa8b0adbcdcdd2f';
 
 export const GRAMMAR_VERSION = '2';
 

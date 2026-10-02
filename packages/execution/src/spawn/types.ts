@@ -23,11 +23,13 @@ import type {
   SpawnSelection,
   SpawnSelectionDefaultReason,
   SpawnSelectionGroup,
+  ExecutionSpawnLaunch,
+  SpawnAccessModeSource,
 } from '@tm8/contract';
-import type { CoordinatorKind, PromptContextIndex, PromptVersion } from '@tm8/prompt';
+import type { CoordinatorKind, PromptContextIndex, PromptStoryContext, PromptVersion } from '@tm8/prompt';
 import type { WorkSessionUsage, WorkSessionUsageSource } from '../transcript/session-usage.js';
 
-export type { CoordinatorKind };
+export type { CoordinatorKind, ExecutionSpawnLaunch, SpawnAccessModeSource };
 
 /** Agent execution mode — mirrors work_sessions.mode's CHECK constraint. */
 export type AgentMode =
@@ -677,6 +679,7 @@ export type ContextDropReason =
   | 'not-selected'
   | 'byte-budget'
   | 'task-name-collision'
+  | 'selection-name-collision'
   | 'native-shadowed'
   | 'count-cap'
   /**
@@ -1067,6 +1070,17 @@ export interface GraphPort {
     input: { sessionId: string; taskId: string; totalBytes: number },
   ): Promise<Record<string, unknown>>;
   /**
+   * Spawn-on-story: the nearest story containing `taskId` (directly, through
+   * an ancestor, or along the story's followed edges), folded into the bounded
+   * prompt shape, with any further stories as refs. `null`: in no story.
+   * Optional; a graph without it renders no story block. A failed detail read
+   * resolves with `snapshot` naming the reason rather than rejecting.
+   */
+  loadStoryContext?(
+    auth: GraphAuth,
+    input: { taskId: string },
+  ): Promise<PromptStoryContext | null>;
+  /**
    * The tasks' version and status as they stand NOW, read after
    * `execution_spawn` has started them. `loadSpawnContext` reads before that
    * transition, so its version is one behind for every task the spawn
@@ -1106,6 +1120,19 @@ export interface GraphPort {
     envVarNames: string[],
     prompts: { system: string; task: string },
     agentConfigDir: string | null,
+  ): Promise<void>;
+  /**
+   * `public.record_session_credential_binding` (session_credential_binding) — resume's half of R2.
+   * Re-entering `spawning` resets an agent session's binding to `pending`, and
+   * a `pending` session cannot go `running`; resume re-points its space
+   * credential rows but does not re-record the manifest row, so it records the
+   * binding here from the re-resolved launch, before the PTY exists. Spawn
+   * needs no call: `recordManifest` settles it in the same transaction.
+   */
+  recordCredentialBinding(
+    auth: GraphAuth,
+    sessionId: string,
+    launch: CredentialBindingLaunch,
   ): Promise<void>;
   /** `public.work_session_transition` — R29's single writer. Never UPDATE directly. */
   transition(auth: GraphAuth, input: TransitionInput): Promise<void>;
@@ -1290,6 +1317,15 @@ export interface GraphPort {
  * The FILE is what the agent reads; the ROW (record_session_manifest) is what
  * the graph knows. Both are written, and neither is derived from the other.
  */
+/**
+ * The three fields of a manifest's `launch` block that session_credential_binding's roll-up reads,
+ * shaped exactly as `composeManifest` writes them (`credentialBindingLaunch`).
+ */
+export type CredentialBindingLaunch = Pick<
+  Tm8Manifest['launch'],
+  'tool' | 'spaceCredentialIds' | 'effectiveCredentialSources'
+>;
+
 export interface Tm8Manifest {
   manifestVersion: '1';
   /**
@@ -1357,7 +1393,7 @@ export interface Tm8Manifest {
      * What each provider this launch authenticates actually ran on (D9): the
      * auto choice resolved, so a node-key launch is visible as one.
      */
-    effectiveCredentialSources?: Partial<Record<SpaceCredentialProvider, CredentialSource>>;
+    effectiveCredentialSources?: Partial<Record<CredentialProvider, CredentialSource>>;
     /** §6c: how each space credential was picked (W10b); absent when none. */
     spaceCredentialPicks?: Partial<Record<SpaceCredentialProvider, SpaceCredentialPick>>;
     /** Effective shell-command networking, independent of filesystem posture. */
@@ -1465,6 +1501,13 @@ export interface Tm8Manifest {
 
   /** Extra prompt context from `ExecutionSpawnInput.promptExtra`. */
   promptExtra: string | null;
+
+  /**
+   * Spawn-on-story: the nearest story containing the primary task, read once
+   * at spawn (`GraphPort.loadStoryContext`). Absent: the task is in no story,
+   * or the graph cannot say.
+   */
+  story?: PromptStoryContext;
 }
 
 // --- SpawnService inputs/outputs ---------------------------------------------
@@ -1571,6 +1614,11 @@ export interface SpawnResult {
    * request on each. Absent for every other mode.
    */
   routedTaskIds?: string[];
+  /**
+   * The resolved access mode, credential sources and parent — the spawn
+   * receipt's posture rows (`spawnLaunchFacts`). Ids only, never a secret.
+   */
+  launchFacts?: ExecutionSpawnLaunch;
 }
 
 /** Raised for every spawn-flow failure that has a contract error code. */

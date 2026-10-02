@@ -80,6 +80,17 @@
   cursor: pointer;
 }
 
+/* Armed: the first click of the two-click revoke. The second click revokes. */
+.set-sessions__act--armed {
+  border-color: var(--pn-block);
+  color: var(--pn-block);
+}
+
+.set-sessions__act--quiet {
+  margin-right: 6px;
+  border-color: transparent;
+}
+
 .set-sessions__act:disabled {
   cursor: default;
   opacity: 0.5;

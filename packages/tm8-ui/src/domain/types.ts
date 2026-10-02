@@ -136,6 +136,9 @@ export type TileBadgeSource =
   | 'profile'
   | 'provider'
   | 'isolation'
+  // credential (W10a): who can use it — `public` or `private`. Off the
+  // state's allow-list; the row carries no secret, hint or login to read.
+  | 'visibility'
   // counters, present on every summary
   | 'points'
   | 'messages';
@@ -836,6 +839,13 @@ export interface MembershipListControl {
   edgeType: string;
   /** The kind whose rows are the curated sets. Hosts hydrate it as data. */
   setKind: string;
+  /**
+   * Further kinds whose rows are sets under the SAME edge, hydrated alongside
+   * `setKind`. 282: a story's roots are its `contains` targets, so lensing a
+   * list by a story is the collection lens pointed at a story ("Tasks in this
+   * story"), and putting a row in one from the picker adds a root.
+   */
+  alsoSetKinds?: readonly string[];
 }
 
 /** One value in a `ValueControl`'s vocabulary. */
@@ -1101,6 +1111,12 @@ export type ContentBlockKind =
   // cannot tell apart. The block is also the thing a FUTURE second canvas
   // format would reuse, so naming it after one kind was wrong anyway.
   | 'canvas'
+  // The story page (283): hero, stats, graph, roots, team, feed and rail, one
+  // block because the page IS the body. The live read arrives from the host as
+  // `storySurface` (views/storySurface.tsx); without one the block draws the
+  // static read of the row. NAMED `storyline`, NOT `story`, for the same
+  // §15.2 reason `canvas` is not `drawing`.
+  | 'storyline'
   // Artifact viewer: the artifact kind's rendered bundle, in-block. The iframe
   // SHIPS here and autoruns when the detail opens (owner ruling 2026-08-16,
   // superseding the earlier click-gate); the sandbox posture is unchanged —
@@ -1129,6 +1145,10 @@ export type ContentBlockKind =
   // Responses over the forms seam (`src/forms`). Named for what it draws, not
   // for the kind, for the same §15.2 reason `canvas` is.
   | 'questionnaire'
+  // The kind's Settings home (`KindConfig.settingsHome`) as a link out of the
+  // panel. Reads the registry row, not params, so the list header and the
+  // panel can never name two different sections for one kind.
+  | 'settings-home'
   // Collection membership over the `contains` edge, both directions: a
   // collection's ITEMS (outgoing) and an entity's COLLECTIONS (incoming).
   // Edge-typed like `memory-set`; which side it is on is registry params.
@@ -1142,6 +1162,9 @@ export type ContentBlockKind =
   | 'field-grid'
   | 'live-work'
   | 'session-rows'
+  // The `equips` edge as editable rows + picker (skills/SkillEquipment); the
+  // view supplies it, ProfileBody only places it.
+  | 'skill-equipment'
   // …plus the org tree: a teammate's place in the entity hierarchy, which
   // db/migrations/002_identity.sql:110 rules IS the org tree (leader = parent).
   | 'org-tree'
@@ -1156,7 +1179,12 @@ export type ContentBlockKind =
   // …and the plainest edge block there is: the peers on the other end of a
   // named edge type, each labelled with its KIND. Needed because 085 made
   // `remembers` a mixed-kind list, where the kind is the only distinguisher.
-  | 'peer-rows';
+  | 'peer-rows'
+  // …and the MANAGED block (task 01a0e24d): a record read through a seam noun,
+  // its facts, and the per-item verbs `actions.list` says are live. The spec is
+  // `PanelConfig.managed`, because verb slots are a list and block params are
+  // scalars.
+  | 'managed';
 
 export interface ContentBlockRef {
   block: ContentBlockKind;
@@ -1166,8 +1194,78 @@ export interface ContentBlockRef {
   params?: Readonly<Record<string, string | number | boolean>>;
 }
 
+/**
+ * WHERE A MANAGED PANEL READS ITS RECORD: a seam NOUN, never a kind (§15.2).
+ * Each read is one the server already masks (the credential's own visibility
+ * rule for the key hint and the vendor login); the panel invents no read.
+ */
+export type ManagedSource = 'spaceCredentials' | 'spaceLinks' | 'servers';
+
+/** One fact row. `key` is a dotted path into the record; `words` maps a raw value to prose. */
+export interface ManagedFact {
+  key: string;
+  label: string;
+  words?: Readonly<Record<string, string>>;
+}
+
+/**
+ * ONE VERB SLOT. The registry names WHICH operations a panel offers and in what
+ * order: presentation data, like `rowActions`. Whether each is live comes only
+ * from `actions.list`: listed → live; listed but refused (the trailing `true`)
+ * → "only a person can do this"; unlisted → `reason`.
+ */
+export interface ManagedVerb {
+  operation: string;
+  label: string;
+  /** Why it is off when discovery does not list it. The server's word is final; this is the sentence. */
+  reason: string;
+  /** Destructive: asks once before it runs. */
+  confirm?: string;
+  /** Takes one line of text (a new label), prefilled from `input.key` on the record. */
+  input?: { key: string; label: string };
+  /** Sends the OTHER value of a two-valued fact (a visibility, a boolean). */
+  flip?: { key: string; values: readonly [string | boolean, string | boolean]; labels?: readonly [string, string] };
+  /** Not run here: the verb's form lives on the kind's Settings home (a secret is never typed into a panel). */
+  settingsHome?: true;
+}
+
+/** A read the panel shows as a list, only while its operation is listed. */
+export interface ManagedRead {
+  operation: string;
+  label: string;
+  /** Dotted path to the row array in the result; absent → the result is the array. */
+  rowsAt?: string;
+  columns: readonly ManagedFact[];
+  empty: string;
+}
+
+export interface ManagedPanelSpec {
+  source: ManagedSource;
+  facts: readonly ManagedFact[];
+  /** Whose it is, from an account-id fact. Never names another person. */
+  owner?: { key: string; mine: string; other: string; none: string };
+  verbs: readonly ManagedVerb[];
+  reads?: readonly ManagedRead[];
+  /**
+   * The inline login terminal (ac_8). Drawn only for a record whose `when.key`
+   * is one of `when.values` (a login-shaped credential); live only while
+   * `operation` is listed. `providerKey` names the fact the terminal logs into.
+   */
+  loginTerminal?: {
+    operation: string;
+    label: string;
+    reason: string;
+    providerKey: string;
+    when: { key: string; values: readonly string[] };
+  };
+  /** Standing statements about the kind: server truth that no verb can change (e.g. remote forwarding is off). */
+  notices?: readonly string[];
+}
+
 export interface PanelConfig {
   archetype: BodyArchetype;
+  /** The `managed` block's spec (verb slots, facts, reads). */
+  managed?: ManagedPanelSpec;
   /** generic archetype: ordered blocks (§2.4). */
   blocks?: readonly ContentBlockRef[];
   primaries?: readonly ActionRef[];
@@ -1233,6 +1331,15 @@ export interface PanelConfig {
    */
   attachPalette?: readonly AttachPaletteRow[];
   z4?: { immersive?: boolean };
+  /**
+   * THE FULL VIEW IS BUILT FOR THIS KIND (PR 1004, coordinator ruling
+   * 2026-10-02). The parked Z4 mechanism — ⤢ promote, the `e/{id}` route,
+   * `EntityFullView` — is mounted ONLY for kinds that set this; every other
+   * kind keeps the "full view isn't built yet" card and the refused promote.
+   * A kind that opts in also gets a stage that FOLLOWS the app theme, which
+   * narrows §12's always-dark Z4 stage to the kinds that did not.
+   */
+  fullView?: boolean;
 }
 
 /** One chip of the attach palette (see `PanelConfig.attachPalette`). */
@@ -1347,6 +1454,12 @@ export interface EditFieldSpec {
   valueType?: 'text' | 'nullable-text' | 'json-object' | 'schedule' | 'date';
 }
 
+/** A kind's Settings home: the section that manages it, and the link's words. */
+export interface SettingsHome {
+  section: 'space-credentials' | 'space-links';
+  label: string;
+}
+
 export interface KindConfig {
   kind: CoreEntityKind | CustomKindFallback;
   label: string;
@@ -1398,6 +1511,15 @@ export interface KindConfig {
    * opens onto nothing.
    */
   editFields?: readonly EditFieldSpec[];
+  /**
+   * Where a human MANAGES this kind, when that is a Settings section rather
+   * than the entity itself. Home lists every kind (owner ruling 2026-09-27),
+   * including ones whose doors are human-only and live in Settings — a
+   * credential is added and rotated in Space credentials, a link is signed in
+   * and removed in Space links. The Home list header and the `settings-home`
+   * panel block both link here, so the list is never a door-less dead end.
+   */
+  settingsHome?: SettingsHome;
   /**
    * A kind whose required create payload cannot be produced by the immediate
    * placeholder flow. Presence selects the staged, scheduler-aware form while

@@ -422,6 +422,8 @@ export function renderBadge(source: TileBadgeSource, row: EntitySummary): TileSl
       return meta(str(field(row, 'provider')));
     case 'isolation':
       return meta(str(field(row, 'isolation')));
+    case 'visibility':
+      return meta(str(field(row, 'visibility')));
     case 'customFields': {
       const f = field(row, 'fields');
       const n = f && typeof f === 'object' ? Object.keys(f as object).length : 0;
@@ -450,5 +452,5 @@ export const HANDLED_SOURCES: ReadonlySet<TileBadgeSource> = new Set<TileBadgeSo
   'chatMode', 'chatTurnState', 'chatLastTurnAt',
   // container (migration 177) — a source listed here and nowhere else would
   // still be dead data; each of these four has a `renderBadge` arm above.
-  'containerStatus', 'profile', 'provider', 'isolation',
+  'containerStatus', 'profile', 'provider', 'isolation', 'visibility',
 ]);

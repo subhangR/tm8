@@ -379,6 +379,27 @@ describe.sequential('task assignment provenance (129)', () => {
     await database.query('grant select (owner_account_id, visibility) on public.space_credentials to tm8_app');
     // 252: `entity-read.ts` and the projector call `public.attention_badges`.
     database.apply(['252_attention_badges.sql']);
+    // 261 (remote servers): `entity-read.ts` and the projector left-join
+    // `public.servers srv` for a server's name and base URL. 261 itself cannot
+    // apply on this partial chain, so — like the credential shim above — only
+    // the column shapes the read selects and their tm8_app read grant are
+    // mirrored (as tm8_graph_owner, like 261), without its FKs, checks or RPCs. No assertion here reads
+    // them. DELETE this shim if this suite ever applies the chain through 261.
+    await database.query(`set role tm8_graph_owner;
+      create table public.servers (
+        entity_id uuid primary key, name text not null, base_url text not null);
+      grant select on public.servers to tm8_app;
+      reset role;`);
+    // 283 (story kind), the same recurring shape as 194 above: `entity-read.ts`
+    // and the projector statically left-join `public.stories` and select
+    // `internal.story_summary(e.id)`, so current code refuses this partial
+    // chain without it. It applies cleanly here, LAST, after the servers shim:
+    // its plpgsql bodies (entity_content's credential/space-link/server arms)
+    // resolve tables lazily. MEASURED: this exact sequence + 283 applied to a
+    // scratch PG 18 with psql (-1, ON_ERROR_STOP), and story_trail,
+    // story_summary, stories_containing and entity_content ran on a seeded
+    // story with a `contains` root.
+    database.apply(['283_story_kind.sql']);
   }, 180_000);
 
   afterAll(async () => {

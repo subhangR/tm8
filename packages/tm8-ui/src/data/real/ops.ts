@@ -34,6 +34,10 @@ import type { FormsOps, FormsRedeliverInput } from '../../forms/ops-port';
 import {
   isOperationName,
   type OperationName,
+  type ActionRows,
+  type ServerProbeView,
+  type ServerView,
+  type SpaceLinkAuditEntry,
   type CreateInviteInput,
   type InvitePreview,
   type InviteRedemption,
@@ -80,6 +84,7 @@ import {
   type CredentialsSpaceListView,
   type CredentialsSpacePolicySetResult,
   type CredentialsSpacePolicyView,
+  type CredentialsSpaceReadinessView,
   type CredentialsSpaceSetVisibilityResult,
   type CredentialsSpaceMyDefaultResult,
   type CredentialsSpaceUsageView,
@@ -88,6 +93,7 @@ import {
   type NodeCredentialsStatusView,
   type NodeMetricsView,
   type SpaceCredentialProviderName,
+  type SpaceCredentialStoredProviderName,
   type SpaceCredentialView,
   type SpaceLinkView,
   type CredentialsServiceKeysStatusView,
@@ -173,6 +179,8 @@ import {
   type SessionTranscriptPage,
   type SpaceId,
   type HomeSnapshot,
+  type SetChatModelInput,
+  type SetChatModelResult,
   type StartChatInput,
   type StartChatResult,
   type SpaceKindCounts,
@@ -589,6 +597,10 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<CredentialsSpacePolicyView>('credentials.space.policy.get', { params: { spaceId } });
     },
 
+    spaceCredentialsReadiness(spaceId: SpaceId): Promise<CredentialsSpaceReadinessView> {
+      return http.call<CredentialsSpaceReadinessView>('credentials.space.readiness', { params: { spaceId } });
+    },
+
     spaceCredentialsSetPolicy(
       spaceId: SpaceId,
       provider: SpaceCredentialProviderName,
@@ -630,7 +642,7 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       });
     },
 
-    spaceCredentialsClearMyDefault(spaceId: SpaceId, provider: SpaceCredentialProviderName): Promise<CredentialsSpaceMyDefaultResult> {
+    spaceCredentialsClearMyDefault(spaceId: SpaceId, provider: SpaceCredentialStoredProviderName): Promise<CredentialsSpaceMyDefaultResult> {
       return http.call<CredentialsSpaceMyDefaultResult>('credentials.space.myDefault.clear', {
         params: { spaceId, provider },
         body: { clientMutationId: newId('spcredunmine') },
@@ -688,6 +700,39 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<SpaceLinkView>(op, {
         params: { linkId },
         body: { clientMutationId: newId('splinkop') },
+      });
+    },
+
+    /** Bare array: own rows, or every row for a home admin (260). */
+    spaceLinksAudit(linkId: EntityId): Promise<SpaceLinkAuditEntry[]> {
+      return http.call<SpaceLinkAuditEntry[]>('spaceLinks.audit', { params: { linkId } });
+    },
+
+    // -- remote servers (`servers.*`, W8) -------------------------------------
+    // remove is human-only server-side; no answer carries a gate token.
+
+    serversGet(serverId: EntityId): Promise<ServerView> {
+      return http.call<ServerView>('servers.get', { params: { serverId } });
+    },
+
+    serversProbe(serverId: EntityId): Promise<ServerProbeView> {
+      return http.call<ServerProbeView>('servers.probe', {
+        params: { serverId },
+        body: { clientMutationId: newId('srvprobe') },
+      });
+    },
+
+    serversRemove(serverId: EntityId): Promise<ServerView> {
+      return http.call<ServerView>('servers.remove', {
+        params: { serverId },
+        body: { clientMutationId: newId('srvremove') },
+      });
+    },
+
+    /** One context entity's contextual actions, factored (tm8.actions.v2). */
+    actionsList(contextEntityId: EntityId): Promise<ActionRows> {
+      return http.call<ActionRows>('actions.list', {
+        query: { contextEntityId, schema: 'v2', limit: '100' },
       });
     },
 
@@ -1366,6 +1411,11 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
     /** 176: `chat.start` — creates the chat entity and posts its opening turn. */
     startChat(input: StartChatInput): Promise<StartChatResult> {
       return http.call<StartChatResult>('chat.start', { body: input });
+    },
+
+    /** 276: `chat.setModel` — the chat is in the path, the model in the body. */
+    setChatModel(chatId: EntityId, input: SetChatModelInput): Promise<SetChatModelResult> {
+      return http.call<SetChatModelResult>('chat.setModel', { params: { id: chatId }, body: input });
     },
 
     /** Note 2: bare `MessageView` lifted into the seam's `CommandResult`. */

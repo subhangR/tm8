@@ -941,7 +941,7 @@ describe('W10c (T38) a session on a PRIVATE credential in A is its owner\'s alon
     }
     await asIdentity(fixture.identityH, (q) => q.rpc('record_session_manifest', [
       sessionId,
-      JSON.stringify({ launch: { credentialSources: { anthropic: 'space' }, spaceCredentialIds: { anthropic: credentialId } } }),
+      JSON.stringify({ launch: { credentialSources: { anthropic: 'space' }, spaceCredentialIds: { anthropic: credentialId }, effectiveCredentialSources: { anthropic: 'space' } } }),
     ]), 'agent');
     return sessionId;
   };
@@ -5708,7 +5708,7 @@ async function seedOutsider(): Promise<string> {
 
 // A3 (ii) and L1 run LAST: they create spaces as H, and every describe above
 // asserts H's exact space set.
-describe('A3 (ii) the browser owner, by launch cookie, connects a folder into a new space (269)', () => {
+describe('A3 (ii) the browser owner, by launch cookie, connects a folder into a new space (284)', () => {
   // The NewSpaceProjectDialog path, over HTTP, as the launch-cookie owner:
   // spaces.create, projects.create with spaceId, the (now idempotent)
   // projects.link, then the pinned list. Under the plan W2 path pin the link

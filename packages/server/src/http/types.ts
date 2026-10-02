@@ -101,7 +101,7 @@ export interface RequestIdentity {
  * (http/space-gate.ts): a human session with no space may call only
  * `spaces.list`, `auth.*` and node administration.
  */
-export type SpaceSessionsMode = 'off' | 'agents' | 'enforce';
+export type { SpaceSessionsMode } from '@tm8/contract';
 
 /** Everything a handler is allowed to know about one request. */
 export interface RequestContext {

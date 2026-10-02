@@ -1,5 +1,5 @@
 -- =============================================================================
--- 269 (set at the merge position after #917's 268; 262 stays a hole; was placeholder 980) — plan W2
+-- 284 (was placeholder 980, then 269; renumbered to 284 at the merge with main 79ca8d50 — main took 269 for entity_action_facts, and 278-282 belong to the cross-space integration lane) — plan W2
 -- x A3: `projects.create` may link the project it creates into one space, in
 -- the SAME transaction.
 --
@@ -52,7 +52,7 @@ revoke all on function public.create_project_in_space(uuid, text, text, text, te
 grant execute on function public.create_project_in_space(uuid, text, text, text, text, jsonb, text) to tm8_app;
 
 comment on function public.create_project_in_space(uuid, text, text, text, text, jsonb, text) is
-  '`projects.create` with `spaceId` (269, plan W2 x A3): create_project plus link_project_w2 '
+  '`projects.create` with `spaceId` (284, plan W2 x A3): create_project plus link_project_w2 '
   'in one transaction, after require_space_admin. Node admin only, like create_project.';
 
 reset role;

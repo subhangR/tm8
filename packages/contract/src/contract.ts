@@ -23,6 +23,7 @@ import type { FormQuestionRow, FormSectionRow, FormSettings, FormStatus } from '
 import type { RelevanceLevel } from './launch-suggest.js';
 import type { CoherenceFinding } from './orchestration.js';
 import type { EntityHeaderView, HeaderTextInput } from './selection-header.js';
+import type { EntityContextStory, StoryContent, StoryState } from './story.js';
 
 // ===========================================================================
 // §1 — Inherited contract (UI snapshot, near-verbatim)
@@ -82,7 +83,12 @@ export type CoreEntityKind =
   // `spaceLinks.add`.
   | 'space_link'
   // A remote tm8 server a space link points at (W8). Registered with W6's kinds.
-  | 'server';
+  | 'server'
+  // Stories (migration 283, 2026-10-02): a title, a description and a status;
+  // things put in by hand as `contains` edges are its roots, and everything
+  // connected to them follows. Progress and the page are computed at read
+  // time, never stored. See ./story.ts.
+  | 'story';
 
 /** A credential entity's visibility (W10a): who may launch on it. */
 export type CredentialVisibility = 'private' | 'public';
@@ -511,6 +517,12 @@ export type CoreEntityState =
    * scene is the largest payload any kind carries.
    */
   | { kind: 'drawing'; format: string; elementCount: number }
+  /**
+   * A story's computed summary (283): roots, trail size, progress (ruled, by
+   * task, rolled up over child stories), live sessions, pending attention,
+   * last activity. Computed by `internal.story_summary` on BOTH read paths.
+   */
+  | StoryState
   /** A form's row facts (209): where it is in its lifecycle, and how long. */
   | { kind: 'form'; status: FormStatus; questionCount: number }
   /** A space credential's row facts (W10a). Never the secret, hint or login. */
@@ -950,6 +962,8 @@ export type CoreEntityContent =
    */
   | { kind: 'drawing'; format: string; elements: Record<string, unknown>[];
       appState: Record<string, unknown>; files: Record<string, unknown> }
+  /** A story's description, plus the computed page on a detail read (283). */
+  | StoryContent
   /**
    * A form (209), everything its panel needs in one read: settings with
    * defaults applied, and sections and questions in order. Responses are not
@@ -1010,7 +1024,13 @@ export interface Connections {
   unresolvedHardDependencyCount: number;
 }
 
-export interface EdgeGroup { type: string; direction: 'outgoing'|'incoming'; label: string; edges: EdgeView[]; nextCursor?: Cursor }
+/**
+ * `summary` replaces `edges` for a group that is counted, not listed: a
+ * credential's incoming `runs_on` (the sessions that ran on it) is listed only
+ * by `operation`, which applies its own gate.
+ */
+export interface EdgeGroupSummary { count: number; operation: string }
+export interface EdgeGroup { type: string; direction: 'outgoing'|'incoming'; label: string; edges: EdgeView[]; nextCursor?: Cursor; summary?: EdgeGroupSummary }
 
 export interface EdgeView { id: string; type: string; source: EntitySummary; target: EntitySummary; props: Record<string, unknown>;
   createdBy: ActorSummary; createdAt: string; updatedAt: string; resolved?: boolean; hard?: boolean }
@@ -1225,6 +1245,17 @@ export interface CollectionQuery {
      * Trimmed and non-empty: a blank needle matches everything.
      */
     titleContains?: string;
+    /**
+     * Additive (2026-10-02, task 01a0fb05 — the attach palette's search):
+     * entities where EVERY word of this text appears, case-insensitively, in
+     * the title or in a short description (skill, spell, artifact,
+     * collection). Words split on whitespace and on the separators names are
+     * written with (`-` `_` `.` `/` `:`), so "skill creator" finds
+     * `skill-creator` and "creator skill" finds it too — the literal
+     * `titleContains` finds neither. Trimmed and non-empty; a text with no
+     * word in it (only separators) falls back to the literal title match.
+     */
+    words?: string;
   };
   layout?: 'list'|'board'|'tree'|'feed'|'gallery'|'graph';
   /** `priority` added 2026-08-16 (Board tab wave) — same additive posture as the rest of the union. */
@@ -1410,6 +1441,43 @@ export interface StartChatResult {
   chat: EntitySummary;
   /** The opening message, already queued as turn one. */
   messageId: EntityId;
+}
+
+/**
+ * MOVE A RUNNING CHAT ONTO ANOTHER MODEL (276).
+ *
+ * The model used to be a write-once fact for a chat's whole life, so finishing a
+ * conversation on a stronger model meant abandoning the conversation. It does
+ * not any more: a Claude Code session carries turns from different models and
+ * `--resume` keeps the transcript across the switch, so the chat's model is a
+ * setting, and the turn records what actually ran it.
+ *
+ * STICKY, NOT PER-MESSAGE. This moves the chat; every turn claimed after it runs
+ * on the new model until it is moved again. A turn already claimed keeps the
+ * model it was stamped with — the claim is the serialization point, so a switch
+ * can never rewrite a run that is already under way.
+ *
+ * `agentTool` is the one axis that cannot move: chat runs claude-code only, and
+ * a tool change would invalidate the native session the resume depends on. The
+ * server resolves the tool from the launch catalog and the database refuses a
+ * mismatch.
+ */
+export interface SetChatModelInput {
+  /**
+   * A `LAUNCH_MODEL_CATALOG` id whose `agentTool` matches the chat's.
+   *
+   * The chat is addressed by the PATH (`/v2/chats/:id/model`) and so is absent
+   * here, like every other `:id`-addressed command: two places to name the same
+   * chat is two places for them to disagree.
+   */
+  model: string;
+}
+
+export interface SetChatModelResult {
+  chatId: EntityId;
+  model: string;
+  /** Server-resolved from the catalog; decides which API-key backend is used. */
+  provider: string;
 }
 
 export interface ChatTurnDeltaFrame {
@@ -1885,6 +1953,35 @@ export interface IdentityProfileView {
   avatar: string | null;
   email: string | null;
   globalId: string | null;
+}
+
+/**
+ * `TM8_SPACE_SESSIONS` — which sessions this server pins to one space (W3):
+ * `off` pins none, `agents` (the default) pins agent sessions, `enforce` also
+ * requires a human to enter a space (`auth.space.enter`) before acting in it.
+ */
+export type SpaceSessionsMode = 'off' | 'agents' | 'enforce';
+
+/** `identity.get` — who the caller is, and how this server gates spaces. */
+export interface IdentityGetResult {
+  identityId: string;
+  accountId: string;
+  username: string;
+  displayName: string | null;
+  avatar: string | null;
+  email: string | null;
+  globalId: string | null;
+  isNodeAdmin: boolean;
+  isOwner: boolean;
+  status: string;
+  actingAs: string | null;
+  memberships: Array<{ spaceId: string; memberId: string; role: string }>;
+  /**
+   * The node's space-sessions mode, so a client knows up front whether a
+   * space pin is required instead of discovering it from a 403. A node that
+   * predates the field omits it; read absent as "unknown", not `agents`.
+   */
+  spaceSessions?: SpaceSessionsMode;
 }
 
 // ---------------------------------------------------------------------------
@@ -2603,8 +2700,22 @@ export interface CredentialsServiceKeyDeleteResult {
 // Space credentials (206, design 01a0cfa8) — `credentials.space.*`, `node.credentials.*`
 // ---------------------------------------------------------------------------
 
-/** The providers a space may own a credential for (D2, D10). */
+/**
+ * The providers a space may own a credential for AND a launch may bind (D2,
+ * D10). Policies, sessions and the spawn reader speak only this set.
+ */
 export type SpaceCredentialProviderName = 'anthropic' | 'openai' | 'github';
+
+/**
+ * SERVER-ONLY providers (server_only_space_credentials, spec 01a0e248 decision 10): stored as a space
+ * credential, spent by the server on a member's behalf (`typesafe` is ✦ Ask
+ * Jev's key), and never handed to a session — the spawn reader refuses them
+ * in SQL and in TS, and `session_space_credentials` cannot hold one.
+ */
+export type ServerOnlyCredentialProviderName = 'typesafe';
+
+/** Every provider a space credential row can carry: launchable or server-only. */
+export type SpaceCredentialStoredProviderName = SpaceCredentialProviderName | ServerOnlyCredentialProviderName;
 
 /** `login` is a vendor CLI login in a space home; the other two are pasted strings. */
 export type SpaceCredentialShape = 'login' | 'api_key' | 'token';
@@ -2623,7 +2734,7 @@ export type CredentialPolicySource = 'member' | 'space' | 'node';
 export interface SpaceCredentialView {
   id: string;
   spaceId: string;
-  provider: SpaceCredentialProviderName;
+  provider: SpaceCredentialStoredProviderName;
   shape: SpaceCredentialShape;
   label: string;
   isDefault: boolean;
@@ -2663,7 +2774,7 @@ export interface CredentialsSpaceListView {
  * refuses is never written. A login-shaped credential starts elsewhere.
  */
 export interface CredentialsSpaceCreateInput {
-  provider: SpaceCredentialProviderName;
+  provider: SpaceCredentialStoredProviderName;
   shape: 'api_key' | 'token';
   label: string;
   secret: string;
@@ -2725,7 +2836,8 @@ export interface CredentialsSpaceAddMineInput {
 /** `credentials.space.myDefault.set|clear` — the caller's own default, per space and provider. */
 export interface CredentialsSpaceMyDefaultResult {
   spaceId: string;
-  provider: SpaceCredentialProviderName;
+  /** server_only_space_credentials: `typesafe` too — a member may pick their own Ask Jev key. */
+  provider: SpaceCredentialStoredProviderName;
   credentialId: string | null;
 }
 
@@ -2804,6 +2916,46 @@ export interface CredentialsSpacePolicyView {
   spaceId: string;
   providers: SpaceCredentialPolicyEntry[];
   node: NodeCredentialPolicyEntry[];
+}
+
+/**
+ * `credentials.space.readiness` (credentials R1/S7, doc 01a0e248 §10.4, §8.3 Q1)
+ * — TWO thresholds, never one tick. `canLaunch`: per provider, the caller's auto
+ * ladder finds an ACTIVE credential (their own my_default, else the space
+ * default) and the space policy allows the `space` source. `canPoll`: an ACTIVE,
+ * SPACE-OWNED, PUBLIC github credential exists — background readers never use a
+ * member's credential (§10.5). `stale` never counts in either. Metadata only.
+ * In release 1 nothing refuses on it; the launch picker only warns.
+ */
+export type CredentialReadinessLaunchReason = 'no_credential' | 'stale' | 'policy_excludes_space';
+export type CredentialReadinessPollReason = 'no_space_owned_credential' | 'stale';
+
+export interface CredentialReadinessProvider {
+  ready: boolean;
+  via: 'my_default' | 'space_default' | null;
+  credentialId: string | null;
+  myDefaultId: string | null;
+  spaceDefaultId: string | null;
+  spaceSourceAllowed: boolean;
+  /** Every active credential of this provider in the space, whoever owns it — §8.3 Q1's predicate. */
+  activeCredentials: number;
+  reason: CredentialReadinessLaunchReason | null;
+}
+
+export interface CredentialsSpaceReadinessView {
+  spaceId: string;
+  canLaunch: {
+    ready: boolean;
+    missing: SpaceCredentialProviderName[];
+    providers: Record<SpaceCredentialProviderName, CredentialReadinessProvider>;
+  };
+  canPoll: {
+    ready: boolean;
+    missing: SpaceCredentialProviderName[];
+    credentialId: string | null;
+    activeSpaceOwnedCredentials: number;
+    reason: CredentialReadinessPollReason | null;
+  };
 }
 
 /** `credentials.space.policy.set` — space admin. The provider rides the path. */
@@ -4199,22 +4351,49 @@ export interface ActionDiscoveryResult {
  * Every `PaletteAction` repeats the target, its version and the epoch, and
  * carries `id`, `label` and `helpRef`, which are pure functions of `operation`
  * and the target. Here each is stated once and a row carries only what varies:
- * `[operation, kind, authzTarget, exposure]`, in `columns` order. The shape is
- * reversible — `expandActionRows` (./actions.ts) rebuilds every original
- * `PaletteAction` exactly — so nothing is lost, only no longer repeated.
+ * `[operation, kind, authzTarget, exposure]`, plus a trailing `true` (`refused`)
+ * on a row the door will refuse this caller, in `columns` order.
+ * The shape is reversible for every v1 field — `expandActionRows`
+ * (./actions.ts) rebuilds every original `PaletteAction` exactly — so nothing
+ * is lost, only no longer repeated. `refused` and the header's `human` are
+ * v2-only and are dropped by the expansion.
+ *
+ * `refused` is the conclusion `binding.humanOnly && !human`, joined once on
+ * the server so no consumer repeats it: the op is listed because its refusal
+ * has a remedy (ask a person to do it), and an agent reading the rows
+ * naively still learns not to invoke it. It is not a reason vocabulary.
  *
  * Requested with `schema=v2` on `actions.list` (`actionsSchema=v2` on
  * `entities.context`). Only v2 pages: `limit` (default 20, max 100) and a
  * keyset `cursor` bound to the `capabilityEpoch` it was issued under.
  */
-export const ACTION_ROW_COLUMNS = ['operation', 'kind', 'authzTarget', 'exposure'] as const;
+export const ACTION_ROW_COLUMNS = ['operation', 'kind', 'authzTarget', 'exposure', 'refused'] as const;
 
-export type ActionRow = [
-  operation: OperationName,
-  kind: PaletteAction['kind'],
-  authzTarget: PaletteAction['authzTarget'],
-  exposure: PaletteAction['exposure'],
-];
+/**
+ * `refused` is present, as `true`, only on a row the door will refuse THIS
+ * caller (the op is human-only and the session is not human); a row that
+ * will not be refused ends after `exposure`. Absent-when-false keeps a
+ * human's page byte-identical to before and an agent's within its size gate.
+ */
+export type ActionRow =
+  | [
+    operation: OperationName,
+    kind: PaletteAction['kind'],
+    authzTarget: PaletteAction['authzTarget'],
+    exposure: PaletteAction['exposure'],
+  ]
+  | [
+    operation: OperationName,
+    kind: PaletteAction['kind'],
+    authzTarget: PaletteAction['authzTarget'],
+    exposure: PaletteAction['exposure'],
+    refused: true,
+  ];
+
+/** The row's `refused` column: true only when the door will refuse this caller. */
+export function isRefusedActionRow(row: ActionRow): boolean {
+  return row[4] === true;
+}
 
 export interface ActionRows {
   schema: 'tm8.actions.v2';
@@ -4222,6 +4401,12 @@ export interface ActionRows {
   /** Absent in global discovery (no context entity), exactly as in v1. */
   target?: { id: EntityId; kind: string; version: number };
   capabilityEpoch: string;
+  /**
+   * Mirrors `internal.require_human_auth_kind()`: true iff the session's auth
+   * kind is in `HUMAN_AUTH_KINDS` (`browser` | `cli`). Fails closed. It is not
+   * "is this a person": a `link` session is `false`.
+   */
+  human: boolean;
   columns: typeof ACTION_ROW_COLUMNS;
   rows: ActionRow[];
   /** Rows in the requested scope before paging or byte caps. */
@@ -5543,6 +5728,44 @@ export const EXECUTION_NEW_TASK_TITLE_MAX = 200;
 export interface ExecutionSpawnResult extends CommandResult {
   /** Present only when the request carried `newTask`. */
   createdTaskId?: EntityId;
+  /**
+   * What the new session actually launched with — the RESOLVED posture, not
+   * an echo of the request, which may name none of it. Absent from a server
+   * that predates it.
+   */
+  launch?: ExecutionSpawnLaunch;
+}
+
+/**
+ * Which link of the launch precedence chain chose the access mode:
+ * `requested` (this request named it), `env` (the node's
+ * `TM8_PERMISSION_MODE`), `inherited` (the parent session's posture),
+ * `persona` (the teammate's default), `default` (built-in) or `dispatcher`
+ * (a dispatcher always runs `fullAccess`).
+ */
+export type SpawnAccessModeSource = 'requested' | 'env' | 'inherited' | 'persona' | 'default' | 'dispatcher';
+
+/** How a space credential was picked: the request's pin, the launcher's own default, or the space default. */
+export type SpawnSpaceCredentialPick = 'pinned' | 'my_default' | 'space_default';
+
+/** One provider's effective credential source. Ids only — never a secret. */
+export interface ExecutionSpawnCredential {
+  provider: CredentialProviderName;
+  source: LaunchCredentialSource;
+  /** The space credential used; present only when `source` is `space`. */
+  spaceCredentialId?: EntityId;
+  /** How that space credential was chosen, when the spawn path recorded it. */
+  spacePick?: SpawnSpaceCredentialPick;
+}
+
+/** The resolved launch facts `execution.spawn` answers with. */
+export interface ExecutionSpawnLaunch {
+  accessMode: LaunchAccessMode;
+  accessModeSource: SpawnAccessModeSource;
+  /** Null for a root spawn. */
+  parentSessionId: EntityId | null;
+  /** One row per provider the launch resolved, ordered by provider. */
+  credentials: ExecutionSpawnCredential[];
 }
 
 /**
@@ -7318,6 +7541,8 @@ export interface EntityContextV2View {
   mode?: string | null;
   // project
   projectId?: string | null;
+  // story (283): the page projected small for an agent.
+  story?: EntityContextStory;
   // message
   anchor?: EntityContextRef;
   parentMessage?: EntityContextRef | null;

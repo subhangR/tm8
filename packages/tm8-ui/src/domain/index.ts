@@ -33,6 +33,7 @@ export type {
   Hash,
   IconRef,
   KindConfig,
+  SettingsHome,
   StatusCategoryTab,
   ListConfig,
   ListPageState,
@@ -40,6 +41,11 @@ export type {
   ListSection,
   LiveTreatment,
   MembershipListControl,
+  ManagedFact,
+  ManagedPanelSpec,
+  ManagedRead,
+  ManagedSource,
+  ManagedVerb,
   PanelConfig,
   PulseBinding,
   QueryFilter,
@@ -197,12 +203,13 @@ export {
   CHATS_ROOT,
   CHATS_ROOT_LIST_KIND,
   DEFAULT_HOME_KIND,
+  DEFAULT_HOME_RAIL_PINS,
   HOME_QUICK_BIRTH_KINDS,
-  HOME_RAIL_WITHHELD_KINDS,
   LEGACY_HOME_TAB_KINDS,
   homeColumnRoot,
   homeQuickBirthKinds,
   homeRailGroups,
+  homeRailPinnedKinds,
   homeRootKinds,
   isHomeRootKind,
   type HomeRailGroup,
@@ -233,6 +240,10 @@ export type { LaunchSourceChoice, LaunchSourceOption, LaunchSourceOptionsInput }
    the open entity's side, plus which edges are messages rather than links. */
 export { CONVERSATION_KIND, EDGE_VERBS, edgeVerb, edgeVerbBoth, isConversationEdge } from './edge-verbs';
 export type { EdgeDirection, EdgeVerb } from './edge-verbs';
+export { EDGE_KINDS, relationsOf } from './edge-kinds';
+export type { EdgeKinds, KindRelation, RelationDirection } from './edge-kinds';
+export { GENERIC_ENTITY_COMMANDS, KIND_CLI_VOCABULARY, kindCliVocabulary } from './kind-nouns';
+export type { KindCliVocabulary } from './kind-nouns';
 
 /* I9a: the authored selection header — which kinds carry one, and the
    editor's draft ↔ `HeaderTextInput` crossing. */

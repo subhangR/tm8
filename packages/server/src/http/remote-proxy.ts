@@ -2,7 +2,7 @@ import { request as httpRequest, type IncomingHttpHeaders, type IncomingMessage,
 import { request as httpsRequest } from 'node:https';
 import type { Duplex } from 'node:stream';
 
-import { CollabError } from '@tm8/contract';
+import { CollabError, isHumanAuthKind } from '@tm8/contract';
 
 import { readTm8SessionCookie } from './session-cookie.js';
 import type { IdentityResolutionContext, IdentityResolver, RequestIdentity } from './types.js';
@@ -36,8 +36,6 @@ export interface RemoteServerProxy {
   handleHttp(req: IncomingMessage, res: ServerResponse, caller: RelayCaller): Promise<void>;
   handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer, caller: RelayCaller): Promise<void>;
 }
-
-const HUMAN_AUTH_KINDS: ReadonlySet<string> = new Set(['browser', 'cli']);
 
 function isUnauthenticated(error: unknown): boolean {
   return error instanceof CollabError && error.code === 'unauthenticated';
@@ -129,7 +127,7 @@ export async function resolveRelayCaller(
   if (caller.identity.kind === 'anonymous') {
     throw new CollabError('unauthenticated', 'the named Server relay requires a signed-in session');
   }
-  if (!caller.identity.authKind || !HUMAN_AUTH_KINDS.has(caller.identity.authKind)) {
+  if (!isHumanAuthKind(caller.identity.authKind)) {
     throw new CollabError('forbidden', 'the named Server relay is for browser and cli sessions only');
   }
   return caller;

@@ -95,7 +95,7 @@ async function session(createdBy: string): Promise<string> {
 function record(who: DbClaims, sessionId: string, credentialId: string): Promise<unknown> {
   return db.rpc(who, 'record_session_manifest', [
     sessionId,
-    JSON.stringify({ launch: { credentialSources: { anthropic: 'space' }, spaceCredentialIds: { anthropic: credentialId } } }),
+    JSON.stringify({ launch: { credentialSources: { anthropic: 'space' }, spaceCredentialIds: { anthropic: credentialId }, effectiveCredentialSources: { anthropic: 'space' } } }),
   ]);
 }
 
