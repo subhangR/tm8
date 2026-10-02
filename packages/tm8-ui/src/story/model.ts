@@ -227,6 +227,14 @@ export function childStoryProgress(c: StoryChild): StoryProgress {
   return c.taskProgress;
 }
 
+/**
+ * A status KEY (283: the page and context card carry keys — `to_do`,
+ * `in_review`, `running`, `merged`) as words for display: "to do", "in review".
+ */
+export function statusWord(status: string | null | undefined): string {
+  return status ? status.replace(/_/g, ' ') : '';
+}
+
 /** Within the last hour — draws an activity halo. */
 export function isRecent(at: string | null | undefined, now: number = Date.now()): boolean {
   return !!at && now - Date.parse(at) < 3_600_000;
