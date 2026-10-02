@@ -127,6 +127,15 @@
   font-size: var(--pn-fs-fine);
   color: var(--pn-ink-3);
 }
+.cv2-root .stylepick__badge {
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 0 6px;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-info-soft);
+  color: var(--pn-info);
+  font-size: var(--pn-fs-fine);
+}
 .cv2-root .stylepick__actions {
   display: flex;
   gap: 4px;
@@ -187,4 +196,9 @@
 .cv2-root .stylepick--sheet .stylepick__use {
   padding-top: 10px;
   padding-bottom: 10px;
+}
+.cv2-root .stylepick__create {
+  display: flex;
+  gap: 4px;
+  padding: 4px 12px 0;
 }

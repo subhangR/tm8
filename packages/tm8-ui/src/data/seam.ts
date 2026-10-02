@@ -279,9 +279,15 @@ import type {
   AuthSessionsRevokeResult,
   ChatDefault,
   ChatDefaultsView,
+  PersonalStyleCreateInput,
+  PersonalStyleUpdateInput,
   PersonalStylesListResult,
   PersonalStyleWriteResult,
   SpaceStyleDefaultView,
+  SpaceStyleWriteResult,
+  StyleDoc,
+  StylePushInput,
+  StylesResolveResult,
   StyleGetResult,
   StylePrefsGetResult,
   StylePrefsSetInput,
@@ -395,6 +401,22 @@ export interface LivenessSnapshot {
  * do not exist here yet — if the UI needs them, FE + bridge escalate JOINTLY
  * to master before inventing a shape (R4). Do not add fields speculatively.
  */
+/**
+ * One page of a space style's push history (`entities.versions`, newest
+ * first). `snapshot` is the `styles` detail row as it stood at that version
+ * (title, foundation, vars, css, pushed_by); the editor reads it defensively.
+ */
+export interface StyleVersionsPage {
+  items: {
+    entityId: string;
+    version: number;
+    snapshot: Record<string, unknown> | null;
+    changedBy: { id: string; displayName: string; isAgent?: boolean } | null;
+    changedAt: string;
+  }[];
+  nextCursor: string | null;
+}
+
 export interface IdentityView {
   identityId: string;
   accountId: string;
@@ -659,6 +681,21 @@ export interface Seam {
   personalStyles?(): Promise<PersonalStylesListResult>;
   /** `styles.pull` — a new personal style copied from a space style or built-in. */
   pullStyle?(ref: string, title?: string): Promise<PersonalStyleWriteResult>;
+  /** `styles.personal.create` — a doc, or `from` a built-in / space style. */
+  createPersonalStyle?(input: Omit<PersonalStyleCreateInput, 'clientMutationId'>): Promise<PersonalStyleWriteResult>;
+  /** `styles.personal.update` — owner; `expectedVersion` guarded, `vars` is a merge patch. */
+  updatePersonalStyle?(
+    id: string,
+    input: Omit<PersonalStyleUpdateInput, 'clientMutationId'>,
+  ): Promise<PersonalStyleWriteResult>;
+  /** `styles.personal.delete` — owner; a pushed space style stays. */
+  deletePersonalStyle?(id: string, expectedVersion?: number): Promise<void>;
+  /** `styles.push` — create or re-version a space style from a personal one. */
+  pushStyle?(input: Omit<StylePushInput, 'clientMutationId'>): Promise<SpaceStyleWriteResult>;
+  /** `styles.resolve` — lint a doc; nothing stored. */
+  resolveStyleDoc?(doc: StyleDoc): Promise<StylesResolveResult>;
+  /** `entities.versions` on a space style — its push history, newest first. */
+  styleVersions?(entityId: string, cursor?: string | null): Promise<StyleVersionsPage>;
   /**
    * The category-model workflows (`spaces.workflows.list`, migration 149):
    * the ONE global default (spaceId null) plus this space's own. Distinct

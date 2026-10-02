@@ -200,9 +200,15 @@ import {
   type AuthSessionsRevokeResult,
   type ChatDefault,
   type ChatDefaultsView,
+  type PersonalStyleCreateInput,
+  type PersonalStyleUpdateInput,
   type PersonalStylesListResult,
   type PersonalStyleWriteResult,
   type SpaceStyleDefaultView,
+  type SpaceStyleWriteResult,
+  type StyleDoc,
+  type StylePushInput,
+  type StylesResolveResult,
   type StyleGetResult,
   type StylePrefsGetResult,
   type StylePrefsSetInput,
@@ -228,7 +234,7 @@ import {
 import { measureSpawnTerminalSize } from '../../terminal/pty/terminalSize.js';
 
 import type { HttpClient, QueryParams } from './http';
-import type { AttentionV2Ops } from '../seam';
+import type { AttentionV2Ops, StyleVersionsPage } from '../seam';
 import type { ArtifactRevisionsList, BranchTopologyOpts, ConnectionOpts, FeedOpts, FileBlameOpts, FileHistoryOpts, GitDiffOpts, IdentityView, JournalOpts, LivenessSnapshot, MessageListOpts, PageOpts, TranscriptOpts } from '../seam';
 
 /**
@@ -920,6 +926,52 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<PersonalStyleWriteResult>('styles.pull', {
         params: { ref },
         body: { clientMutationId: newId('stylepull'), ...(title ? { title } : {}) },
+      });
+    },
+
+    /** `styles.personal.create`: a new personal style from a doc or `from` a ref. */
+    createPersonalStyle(input: Omit<PersonalStyleCreateInput, 'clientMutationId'>): Promise<PersonalStyleWriteResult> {
+      return http.call<PersonalStyleWriteResult>('styles.personal.create', {
+        body: { ...input, clientMutationId: newId('stylecreate') },
+      });
+    },
+
+    /** `styles.personal.update`: owner only, `expectedVersion` guarded. */
+    updatePersonalStyle(
+      id: string,
+      input: Omit<PersonalStyleUpdateInput, 'clientMutationId'>,
+    ): Promise<PersonalStyleWriteResult> {
+      return http.call<PersonalStyleWriteResult>('styles.personal.update', {
+        params: { id },
+        body: { ...input, clientMutationId: newId('styleupdate') },
+      });
+    },
+
+    /** `styles.personal.delete`: owner only. */
+    async deletePersonalStyle(id: string, expectedVersion?: number): Promise<void> {
+      await http.call<unknown>('styles.personal.delete', {
+        params: { id },
+        body: { clientMutationId: newId('styledelete'), ...(expectedVersion ? { expectedVersion } : {}) },
+      });
+    },
+
+    /** `styles.push`: first push creates the space style, later pushes re-version it. */
+    pushStyle(input: Omit<StylePushInput, 'clientMutationId'>): Promise<SpaceStyleWriteResult> {
+      return http.call<SpaceStyleWriteResult>('styles.push', {
+        body: { ...input, clientMutationId: newId('stylepush') },
+      });
+    },
+
+    /** `styles.resolve`: lint only, nothing stored. */
+    resolveStyleDoc(doc: StyleDoc): Promise<StylesResolveResult> {
+      return http.call<StylesResolveResult>('styles.resolve', { body: { doc } });
+    },
+
+    /** `entities.versions` on a space style: the push history, newest first. */
+    styleVersions(entityId: string, cursor?: string | null): Promise<StyleVersionsPage> {
+      return http.call<StyleVersionsPage>('entities.versions', {
+        params: { id: entityId },
+        query: { limit: '20', ...(cursor ? { cursor } : {}) },
       });
     },
 
