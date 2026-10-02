@@ -1,106 +1,142 @@
 /**
- * STYLE ENTITIES — the document, the layer registry and the pure resolver.
+ * STYLES — the document, typed references and the pure resolver.
  *
- * Design: doc "Style entities — design" §2.3 (document shape), §2.4
- * (versioning), §2.5 (composition constraints), §3 (resolution algorithm).
+ * Spec: doc "Styles as Entities — full design" v8 (01a0fc22): §1.3 (the three
+ * parts), §1.5 (resolution), §1.7 (terminal), §2 (registry), §8 (validation),
+ * §10.3 (what changed from Phase 1).
  *
- * WHY THIS LIVES IN @tm8/contract AND NOT IN THE UI. Three callers have to
- * agree on what a style resolves to or the feature is a lie: the UI (which
- * paints it), the server (which validates it on write and stamps a
- * `resolved_hash`) and the CLI (`style resolve`). A resolver that lived in the
- * UI would make the server's validation a second implementation, and two
- * implementations of a token cascade diverge on the first clamp nobody
- * transcribed.
+ * WHY THIS LIVES IN @tm8/contract. The UI paints a style, the server
+ * validates it on write and stamps `resolved_hash`, the CLI resolves it for
+ * `tm8 style resolve`. Three callers, one implementation, or the hash the
+ * server stores is not the hash the client computes.
  *
- * THE OUTPUT IS A FULL TOKEN TABLE, NOT A DIFF (§3 step 7). The renderer sets
- * every variable it knows about, so switching from style A to style B can never
- * leave one of A's values behind — there is no "unset" path to get wrong, and
- * CSS `var()` fall-through is never load-bearing.
+ * A STYLE IS `foundation` + `vars` + `css`. `vars` is literally the key-value
+ * content of `tokens.css` + `canvas-extra.css` (plus the `--pn-term-*`
+ * terminal options): any subset of the registry's keys, overlaid on the
+ * foundation built-in, which supplies everything the style does not set. The
+ * layout CSS changes with every release; the variables are the contract
+ * between it and the theme, so a style that only sets variables keeps working.
  *
- * THE KEYSPACE, stated once because two namings meet here:
- *   - A BUILT-IN's `tokens` is keyed by CSS CUSTOM PROPERTY NAME (`--pn-paper`).
- *     It is literally the table `styles/tokens.css` + `styles/canvas-extra.css`
- *     declare, extracted mechanically (§11), so `resolveStyle` on a built-in
- *     with no layers is the IDENTITY — which is what makes the parity test in
- *     `packages/tm8-ui/src/styles/builtins-parity.test.ts` able to prove the
- *     resolver has no accidental opinion of its own.
- *   - A LAYER's `tokens` is keyed by FRIENDLY NAME (`paper`, `lineHeight`).
- *     The mapping friendly -> custom property is DATA in `LAYER_TYPES` below,
- *     never a `switch`: adding a token is a row, per the no-branching law.
+ * Phase 1 shipped a `layers` document. None was ever persisted, so
+ * `schemaVersion: 1` is REDEFINED as this shape (§10.3) and there is nothing
+ * to migrate.
  */
-import { z } from 'zod';
 import { sha256Hex } from './artifact-manifest.js';
+import { sanitizeStyleCss } from './style-css.js';
+import {
+  STYLE_REGISTRY,
+  registryByKey,
+  validateStyleVar,
+  varReference,
+  type StyleRegistry,
+} from './style-registry.js';
+import { BUILTIN_STYLES } from './builtins/index.js';
 
 const UTF8 = new TextEncoder();
 
-/** Bumped only when the on-disk document shape changes; see `migrateStyleDoc`. */
+/** Bumped only when the document shape changes; see `migrateStyleDoc`. */
 export const STYLE_SCHEMA_VERSION = 1;
 
-/** A built-in is addressed by a reserved id prefix, never by a row id (§2.2). */
+/** §8.1 limits, exported so the server, CLI and editor share one number. */
+export const STYLE_MAX_VARS = 200;
+export const STYLE_MAX_DOC_BYTES = 64 * 1024;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// References (§1.2)
+// ─────────────────────────────────────────────────────────────────────────────
+
 export type BuiltinStyleId = `builtin:${string}`;
+export type PersonalStyleRef = `personal:${string}`;
+export type SpaceStyleRef = `space:${string}`;
+
+/** The one way any surface names a style: a built-in, a personal style, a space style. */
+export type StyleRef = BuiltinStyleId | PersonalStyleRef | SpaceStyleRef;
+
+/** `id` is the part after the colon: a built-in's slug, or a personal/space uuid. */
+export interface ParsedStyleRef {
+  kind: 'builtin' | 'personal' | 'space';
+  id: string;
+}
+
+const SLUG = /^[a-z0-9-]{1,64}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** `builtin:<slug>`, `personal:<uuid>` or `space:<uuid>`; anything else is null. */
+export function parseStyleRef(input: string): ParsedStyleRef | null {
+  const m = /^(builtin|personal|space):(.+)$/.exec(input.trim());
+  if (!m?.[1] || !m[2]) return null;
+  const rest = m[2];
+  if (m[1] === 'builtin') return SLUG.test(rest) ? { kind: 'builtin', id: rest } : null;
+  const id = rest.toLowerCase();
+  if (!UUID.test(id)) return null;
+  return { kind: m[1] as 'personal' | 'space', id };
+}
+
+export function formatStyleRef(ref: ParsedStyleRef): StyleRef {
+  return `${ref.kind}:${ref.id}` as StyleRef;
+}
+
+export function isStyleRef(input: string): input is StyleRef {
+  return parseStyleRef(input) !== null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Document (§1.3, §8.1)
+// ─────────────────────────────────────────────────────────────────────────────
 
 /** A CSS custom property this system is allowed to set. */
 export type StyleCssVar = `--pn-${string}`;
 
-/** The flat, complete token table a foundation defines and a resolve returns. */
+/** A flat token table: a built-in's complete set, or a resolve's full output. */
 export type StyleTokenTable = Record<StyleCssVar, string>;
 
-export interface StyleLayer {
-  /** Open set; `LAYER_TYPES` holds the ones v1 knows. Unknown = skipped + warned. */
-  type: string;
-  /** Default true. A disabled layer stays in the document so toggling is lossless. */
-  enabled?: boolean;
-  /** Editor affordance only; never read by the resolver. */
-  label?: string;
-  /** Partial override, validated by the layer type's schema. */
-  tokens: Record<string, unknown>;
-}
-
 export interface StyleDoc {
-  schemaVersion: number;
-  /** Always a built-in. Never another user style — see §2.5 for why. */
+  schemaVersion: 1;
+  /** Always a built-in. Supplies every variable `vars` does not set. */
   foundation: BuiltinStyleId;
-  /** Applied in order; later wins. */
-  layers: StyleLayer[];
+  /** Any subset of the registry's keys. Unknown keys are dropped (with a warning) at resolve. */
+  vars: Record<string, string>;
+  /** Extra CSS, sanitised and re-scoped under `.cv2-root` (§8.3); null when none. */
+  css: string | null;
 }
 
 /**
- * A shipped foundation. `builtinRevision` exists so a client holding a cached
- * resolved style can tell that a DEPLOY changed Atelier underneath it (§2.4) —
- * the document did not change, so document versioning cannot carry that fact.
+ * A shipped foundation: code-shipped JSON, never a row. `builtinRevision`
+ * bumps when a deploy changes a built-in's values, so a cached resolved style
+ * knows to re-resolve (§10.4).
  */
 export interface BuiltinStyle {
   id: BuiltinStyleId;
   title: string;
   builtinRevision: number;
-  /**
-   * The foundation used for ALWAYS-DARK scopes when `terminal.chrome` is
-   * `'dark'` (§3.3). Atelier Light points at Atelier Dark; a dark built-in
-   * points at itself.
-   */
+  /** The built-in whose surface keys paint always-dark scopes (§1.5 step 6). */
   darkSibling: BuiltinStyleId;
+  /** Every registry key, complete by definition. */
   tokens: StyleTokenTable;
 }
 
-export type StyleWarningCode =
-  | 'unknown-layer-type'
-  | 'unknown-token'
-  | 'invalid-token'
-  | 'clamped'
-  | 'unresolved-alias'
-  | 'low-contrast';
+export type StyleWarningCode = 'unknown-key' | 'invalid-value' | 'clamped' | 'low-contrast' | 'css-dropped';
 
 export interface StyleWarning {
   code: StyleWarningCode;
-  /** Layer index the warning came from, or null for document-level findings. */
-  layer: number | null;
-  /** Friendly token key, custom property name, or layer type — whatever applies. */
-  at: string;
+  /** The `--pn-*` key, `'css'`, `'foundation'`, or a contrast pair. */
+  key: string | null;
   message: string;
 }
 
-/** The subset of xterm's `ITheme` this system drives. Shape-compatible by design. */
-export interface ResolvedXtermTheme {
+/** One clamped value: what was given and what is used/stored (§8.2 "flag on write"). */
+export interface StyleClamp {
+  key: string;
+  from: string;
+  to: string;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Resolved output (§1.5, §1.7)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** The xterm `ITheme` subset a style drives. Shape-compatible with ITheme. */
+export interface XtermTheme {
   background: string;
   foreground: string;
   cursor: string;
@@ -125,626 +161,70 @@ export interface ResolvedXtermTheme {
   brightWhite: string;
 }
 
-/**
- * The xterm options a style drives. `fontSize` is DELIBERATELY OPTIONAL and
- * absent by default: §15.4 rules the PER-DEVICE setting
- * (`localStorage['tm8.terminal-font-size']`) the default, with a style allowed
- * to override it. `undefined` therefore means "the device decides" and is not
- * the same as any number — a resolver that defaulted it to 13 would silently
- * take the device setting away from every user.
- */
-export interface ResolvedXtermOptions {
+export interface XtermOptions {
   fontFamily: string;
-  fontSize?: number;
+  /**
+   * `'auto'` = the device decides (`tm8.terminal-font-size` ?? 13); a number
+   * = the style wins (§1.7, sign-off §15.4). Never defaulted to 13 here, or
+   * every user would silently lose their device setting.
+   */
+  fontSize: number | 'auto';
   fontWeight: number;
   fontWeightBold: number;
   lineHeight: number;
   letterSpacing: number;
   scrollback: number;
   cursorStyle: 'block' | 'underline' | 'bar';
-  /** Terminal host padding, in px. Not an xterm option — the host box reads it. */
+  /** Host padding in px. Not an xterm option; the terminal host box reads it. */
   padding: number;
 }
 
 export interface ResolvedStyle {
-  /** The foundation this resolved from, for cache invalidation (§2.4). */
+  /** The foundation this resolved from, for cache invalidation. */
   foundation: BuiltinStyleId;
   builtinRevision: number;
-  /** Every token `tokens.css` + `canvas-extra.css` declares. */
+  /** ALL registry keys, sorted: a full table, never a diff. */
   cssVars: StyleTokenTable;
-  /**
-   * The ramp for `[data-always-dark="true"]` scopes (§3.3), or `null` when
-   * `terminal.chrome === 'follow'` — in which case the chrome takes the main
-   * ramp and the caller emits no second rule.
-   */
+  /** Ramp for `[data-always-dark]` scopes; null when `--pn-term-chrome` is `follow`. */
   alwaysDarkCssVars: StyleTokenTable | null;
-  /** True when the main ramp's paper is dark; drives the derived `data-theme` (§3.2). */
+  /** `luminance(paper) < 0.5`; drives the derived `data-theme` attribute. */
   darkish: boolean;
-  xterm: { theme: ResolvedXtermTheme; options: ResolvedXtermOptions };
-  terminalChrome: 'dark' | 'follow';
+  xterm: { theme: XtermTheme; options: XtermOptions };
+  /** Sanitised, scoped extra CSS; null when absent or fully rejected. */
+  css: string | null;
   warnings: StyleWarning[];
-  /** sha256 of the resolved output. Cheap equality for "did anything change". */
+  /** Every value that was clamped; each also has a `clamped` warning. */
+  clamped: StyleClamp[];
+  /** `sha256:<hex>` over cssVars + alwaysDark + xterm + css + builtinRevision. */
   hash: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// The layer-type registry (§2.3). DATA, not control flow.
+// Migration (§10.4)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * A colour token accepts any CSS `<color>` the browser parses, so this schema
- * is deliberately a LOOSE string here and a conservative grammar at SAVE time
- * (§2.3) — clamping the render path to a grammar would make a perfectly good
- * `oklch()` render as nothing. It also accepts `"@otherToken"`, the one-hop
- * alias form resolved in step 3.
- */
-const ColourValue = z.string().min(1).max(256);
-
-/** A numeric token with its render-time clamp. Both halves live in one place. */
-interface NumberSpec {
-  min: number;
-  max: number;
-}
-
-/**
- * How a friendly layer token reaches the output.
- *
- *  - `var`: writes one custom property verbatim.
- *  - `vars`: writes an indexed family (`ansi` -> `--pn-x-term-ansi-0..15`).
- *  - `derive`: feeds a DERIVED quantity (§3 step 5) rather than a property —
- *    `scale.factor` multiplies twelve font sizes, it is not a token.
- *  - `xterm`: drives an xterm option, which is not CSS at all.
- */
-type TokenSink =
-  | { sink: 'var'; cssVar: StyleCssVar; kind: 'colour' | 'text' }
-  | { sink: 'var'; cssVar: StyleCssVar; kind: 'number'; unit: string; range: NumberSpec }
-  | { sink: 'vars'; cssVars: readonly StyleCssVar[]; kind: 'colour' }
-  | { sink: 'derive'; derived: DerivedKnob; range: NumberSpec }
-  | { sink: 'xterm'; option: keyof ResolvedXtermOptions; kind: 'colour' | 'text' }
-  | { sink: 'xterm'; option: keyof ResolvedXtermOptions; kind: 'number'; range: NumberSpec }
-  | { sink: 'chrome' };
-
-type DerivedKnob = 'scaleFactor' | 'spacingUnit' | 'radiusFactor' | 'durationFactor';
-
-export interface LayerTypeSpec {
-  /** Validates and strips a layer's `tokens`; unknown keys are dropped + warned. */
-  schema: z.ZodTypeAny;
-  /** Friendly key -> where it lands. */
-  tokens: Readonly<Record<string, TokenSink>>;
-  /**
-   * True for layer types that recolour the surface. Always-dark scopes skip
-   * these when `chrome === 'dark'` (§3.3: the chrome takes the dark SIBLING's
-   * colours, which is what keeps today's pixels) but still take the type,
-   * spacing and motion layers, so a user's scale slider reaches the terminal
-   * strip like it reaches everything else.
-   */
-  recolours: boolean;
-}
-
-const COLOUR_VARS: Readonly<Record<string, StyleCssVar>> = {
-  paper: '--pn-paper',
-  surface: '--pn-surface',
-  card: '--pn-card',
-  hover: '--pn-hover',
-  active: '--pn-active',
-  line: '--pn-line',
-  line2: '--pn-line-2',
-  ink: '--pn-ink',
-  ink2: '--pn-ink-2',
-  ink3: '--pn-ink-3',
-  ink4: '--pn-ink-4',
-  brand: '--pn-brand',
-  brand2: '--pn-brand-2',
-  brandSoft: '--pn-brand-soft',
-  run: '--pn-run',
-  runSoft: '--pn-run-soft',
-  wait: '--pn-wait',
-  waitSoft: '--pn-wait-soft',
-  block: '--pn-block',
-  blockSoft: '--pn-block-soft',
-  info: '--pn-info',
-  infoSoft: '--pn-info-soft',
-  idle: '--pn-idle',
-  idleSoft: '--pn-idle-soft',
-  prMerged: '--pn-pr-merged',
-  prMergedSoft: '--pn-pr-merged-soft',
-  scrim: '--pn-scrim',
-  shSm: '--pn-sh-sm',
-  shMd: '--pn-sh-md',
-  shPop: '--pn-sh-pop',
-};
-
-const ANSI_VARS: readonly StyleCssVar[] = [
-  '--pn-x-term-ansi-0', '--pn-x-term-ansi-1', '--pn-x-term-ansi-2', '--pn-x-term-ansi-3',
-  '--pn-x-term-ansi-4', '--pn-x-term-ansi-5', '--pn-x-term-ansi-6', '--pn-x-term-ansi-7',
-  '--pn-x-term-ansi-8', '--pn-x-term-ansi-9', '--pn-x-term-ansi-10', '--pn-x-term-ansi-11',
-  '--pn-x-term-ansi-12', '--pn-x-term-ansi-13', '--pn-x-term-ansi-14', '--pn-x-term-ansi-15',
-];
-
-const DIA_VARS: readonly StyleCssVar[] = [
-  '--pn-x-dia-1', '--pn-x-dia-2', '--pn-x-dia-3', '--pn-x-dia-4',
-  '--pn-x-dia-5', '--pn-x-dia-6', '--pn-x-dia-7', '--pn-x-dia-8',
-];
-
-/** ANSI slot -> xterm `ITheme` key, in standard ANSI order. */
-const ANSI_THEME_SLOTS: readonly (keyof ResolvedXtermTheme)[] = [
-  'black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white',
-  'brightBlack', 'brightRed', 'brightGreen', 'brightYellow',
-  'brightBlue', 'brightMagenta', 'brightCyan', 'brightWhite',
-];
-
-/** The twelve `--pn-fs-*` the type scale multiplies, longest name first is irrelevant. */
-const FS_VARS: readonly StyleCssVar[] = [
-  '--pn-fs-display', '--pn-fs-h1', '--pn-fs-h2', '--pn-fs-h3', '--pn-fs-title',
-  '--pn-fs-body', '--pn-fs-sm', '--pn-fs-label', '--pn-fs-micro', '--pn-fs-fine',
-  '--pn-fs-tick', '--pn-fs-mono',
-];
-
-/** `--pn-space-N` where N is the step. Every step is N x the spacing unit. */
-const SPACE_STEPS: readonly number[] = [1, 2, 3, 4, 5, 6, 8, 10, 12, 16];
-
-/**
- * Radii the radius factor scales. `--pn-r-pill` is EXCLUDED on purpose: 999px
- * is a "fully round" sentinel, not a measurement, and multiplying it by 0.5
- * would still be fully round while multiplying it by 2 overflows nothing — the
- * token means "pill", so scaling it is meaningless rather than wrong.
- */
-const RADIUS_VARS: readonly StyleCssVar[] = ['--pn-r-xs', '--pn-r-sm', '--pn-r-md', '--pn-r-lg'];
-
-const DURATION_VARS: readonly StyleCssVar[] = ['--pn-dur-fast', '--pn-dur-base', '--pn-dur-slow'];
-
-const colourLayerTokens: Record<string, TokenSink> = {};
-for (const [key, cssVar] of Object.entries(COLOUR_VARS)) {
-  colourLayerTokens[key] = { sink: 'var', cssVar, kind: 'colour' };
-}
-
-export const LAYER_TYPES: Readonly<Record<string, LayerTypeSpec>> = {
-  colour: {
-    recolours: true,
-    tokens: colourLayerTokens,
-    schema: z
-      .object(Object.fromEntries(Object.keys(COLOUR_VARS).map((k) => [k, ColourValue.optional()])))
-      .partial()
-      .strip(),
-  },
-  typography: {
-    recolours: false,
-    tokens: {
-      fontUi: { sink: 'var', cssVar: '--pn-ui', kind: 'text' },
-      fontSerif: { sink: 'var', cssVar: '--pn-serif', kind: 'text' },
-      fontMono: { sink: 'var', cssVar: '--pn-mono', kind: 'text' },
-      lhTight: { sink: 'var', cssVar: '--pn-lh-tight', kind: 'number', unit: '', range: { min: 1, max: 2.5 } },
-      lhSnug: { sink: 'var', cssVar: '--pn-lh-snug', kind: 'number', unit: '', range: { min: 1, max: 2.5 } },
-      lhBody: { sink: 'var', cssVar: '--pn-lh-body', kind: 'number', unit: '', range: { min: 1, max: 2.5 } },
-      trackMega: { sink: 'var', cssVar: '--pn-track-mega', kind: 'number', unit: 'em', range: { min: -0.1, max: 0.5 } },
-      trackLabel: { sink: 'var', cssVar: '--pn-track-label', kind: 'number', unit: 'em', range: { min: -0.1, max: 0.5 } },
-      trackTight: { sink: 'var', cssVar: '--pn-track-tight', kind: 'number', unit: 'em', range: { min: -0.1, max: 0.5 } },
-    },
-    schema: z
-      .object({
-        fontUi: z.string().min(1).max(512).optional(),
-        fontSerif: z.string().min(1).max(512).optional(),
-        fontMono: z.string().min(1).max(512).optional(),
-        lhTight: z.number().finite().optional(),
-        lhSnug: z.number().finite().optional(),
-        lhBody: z.number().finite().optional(),
-        trackMega: z.number().finite().optional(),
-        trackLabel: z.number().finite().optional(),
-        trackTight: z.number().finite().optional(),
-      })
-      .strip(),
-  },
-  /**
-   * ONE SLIDER, NOT TWELVE FIELDS. The ratios between the twelve sizes ARE the
-   * type scale; exposing each size separately would let a user flatten it into
-   * twelve equal numbers, and `type-scale-ban.test.ts` exists because that is
-   * the failure the package already paid for once.
-   */
-  scale: {
-    recolours: false,
-    tokens: { factor: { sink: 'derive', derived: 'scaleFactor', range: { min: 0.8, max: 1.4 } } },
-    schema: z.object({ factor: z.number().finite().optional() }).strip(),
-  },
-  spacing: {
-    recolours: false,
-    tokens: {
-      unit: { sink: 'derive', derived: 'spacingUnit', range: { min: 3, max: 6 } },
-      radiusFactor: { sink: 'derive', derived: 'radiusFactor', range: { min: 0, max: 2 } },
-      readMeasure: { sink: 'var', cssVar: '--pn-read-measure', kind: 'number', unit: 'px', range: { min: 560, max: 960 } },
-    },
-    schema: z
-      .object({
-        unit: z.number().finite().optional(),
-        radiusFactor: z.number().finite().optional(),
-        readMeasure: z.number().finite().optional(),
-      })
-      .strip(),
-  },
-  motion: {
-    recolours: false,
-    tokens: {
-      durationFactor: { sink: 'derive', derived: 'durationFactor', range: { min: 0, max: 2 } },
-      easeOut: { sink: 'var', cssVar: '--pn-ease-out', kind: 'text' },
-      easeStandard: { sink: 'var', cssVar: '--pn-ease-standard', kind: 'text' },
-    },
-    schema: z
-      .object({
-        durationFactor: z.number().finite().optional(),
-        easeOut: z.string().min(1).max(128).optional(),
-        easeStandard: z.string().min(1).max(128).optional(),
-      })
-      .strip(),
-  },
-  terminal: {
-    recolours: true,
-    tokens: {
-      background: { sink: 'var', cssVar: '--pn-x-term-bg', kind: 'colour' },
-      liveBackground: { sink: 'var', cssVar: '--pn-x-term-live-bg', kind: 'colour' },
-      foreground: { sink: 'var', cssVar: '--pn-x-term-fg', kind: 'colour' },
-      cursor: { sink: 'var', cssVar: '--pn-x-term-cursor', kind: 'colour' },
-      cursorAccent: { sink: 'var', cssVar: '--pn-x-term-cursor-accent', kind: 'colour' },
-      selectionBackground: { sink: 'var', cssVar: '--pn-x-term-sel-bg', kind: 'colour' },
-      selectionForeground: { sink: 'var', cssVar: '--pn-x-term-sel-fg', kind: 'colour' },
-      ansi: { sink: 'vars', cssVars: ANSI_VARS, kind: 'colour' },
-      fontFamily: { sink: 'xterm', option: 'fontFamily', kind: 'text' },
-      fontSize: { sink: 'xterm', option: 'fontSize', kind: 'number', range: { min: 8, max: 24 } },
-      fontWeight: { sink: 'xterm', option: 'fontWeight', kind: 'number', range: { min: 100, max: 900 } },
-      fontWeightBold: { sink: 'xterm', option: 'fontWeightBold', kind: 'number', range: { min: 100, max: 900 } },
-      lineHeight: { sink: 'xterm', option: 'lineHeight', kind: 'number', range: { min: 1, max: 1.8 } },
-      letterSpacing: { sink: 'xterm', option: 'letterSpacing', kind: 'number', range: { min: -1, max: 2 } },
-      scrollback: { sink: 'xterm', option: 'scrollback', kind: 'number', range: { min: 500, max: 50_000 } },
-      cursorStyle: { sink: 'xterm', option: 'cursorStyle', kind: 'text' },
-      padding: { sink: 'xterm', option: 'padding', kind: 'number', range: { min: 0, max: 24 } },
-      chrome: { sink: 'chrome' },
-    },
-    schema: z
-      .object({
-        background: ColourValue.optional(),
-        liveBackground: ColourValue.optional(),
-        foreground: ColourValue.optional(),
-        cursor: ColourValue.optional(),
-        cursorAccent: ColourValue.optional(),
-        selectionBackground: ColourValue.optional(),
-        selectionForeground: ColourValue.optional(),
-        ansi: z.array(ColourValue).length(16).optional(),
-        fontFamily: z.string().min(1).max(512).optional(),
-        fontSize: z.number().finite().optional(),
-        fontWeight: z.number().finite().optional(),
-        fontWeightBold: z.number().finite().optional(),
-        lineHeight: z.number().finite().optional(),
-        letterSpacing: z.number().finite().optional(),
-        scrollback: z.number().finite().optional(),
-        cursorStyle: z.enum(['block', 'underline', 'bar']).optional(),
-        padding: z.number().finite().optional(),
-        chrome: z.enum(['dark', 'follow']).optional(),
-      })
-      .strip(),
-  },
-  extras: {
-    recolours: true,
-    tokens: {
-      warnFill: { sink: 'var', cssVar: '--pn-x-warn-fill', kind: 'colour' },
-      hairlineSoft: { sink: 'var', cssVar: '--pn-x-hairline-soft', kind: 'colour' },
-      blockHover: { sink: 'var', cssVar: '--pn-x-block-hover', kind: 'colour' },
-      proseInk: { sink: 'var', cssVar: '--pn-x-prose-ink', kind: 'colour' },
-      btnInkHover: { sink: 'var', cssVar: '--pn-x-btn-ink-hover', kind: 'colour' },
-      termGhost: { sink: 'var', cssVar: '--pn-x-term-ghost', kind: 'colour' },
-      dia: { sink: 'vars', cssVars: DIA_VARS, kind: 'colour' },
-    },
-    schema: z
-      .object({
-        warnFill: ColourValue.optional(),
-        hairlineSoft: ColourValue.optional(),
-        blockHover: ColourValue.optional(),
-        proseInk: ColourValue.optional(),
-        btnInkHover: ColourValue.optional(),
-        termGhost: ColourValue.optional(),
-        dia: z.array(ColourValue).length(8).optional(),
-      })
-      .strip(),
-  },
-};
-
-/** §2.5 server checks, exported so the server and the editor use one number. */
-export const STYLE_MAX_LAYERS = 32;
-export const STYLE_MAX_DOC_BYTES = 64 * 1024;
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Migration (§2.4)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * One step per version, applied in order, pure and total.
- *
- * STUB BY CONSTRUCTION, NOT BY OMISSION. v1 is the first shape, so there is
- * nothing to migrate FROM and the only honest body is the identity. It exists
- * now rather than later because the call site (server read path, editor
- * "upgrade and save") is the thing that must not be retrofitted — a migration
- * added after the read path shipped has to find every caller.
+ * One step per version, applied in order, pure. v1 is the first shape that
+ * was ever persisted, so the body is the identity; it exists now so the server
+ * read path and the editor's "upgrade and save" call it from day one.
  */
 export function migrateStyleDoc(doc: StyleDoc): StyleDoc {
-  if (doc.schemaVersion >= STYLE_SCHEMA_VERSION) return doc;
-  // No v0 ever shipped; a document claiming one is corrupt, not old. Re-stamping
-  // it would launder the corruption, so the shape is returned untouched with
-  // only the version normalised and validation left to say no.
-  return { ...doc, schemaVersion: STYLE_SCHEMA_VERSION };
+  return doc;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Resolution (§3)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/** Default document for a foundation: no layers, so resolve is the identity. */
+/** The document for a built-in: no vars, no css — resolve is the identity. */
 export function styleDocForBuiltin(id: BuiltinStyleId): StyleDoc {
-  return { schemaVersion: STYLE_SCHEMA_VERSION, foundation: id, layers: [] };
-}
-
-interface DerivedKnobs {
-  scaleFactor: number;
-  spacingUnit: number;
-  radiusFactor: number;
-  durationFactor: number;
-}
-
-const DEFAULT_KNOBS: DerivedKnobs = {
-  scaleFactor: 1,
-  spacingUnit: 4,
-  radiusFactor: 1,
-  durationFactor: 1,
-};
-
-function clampNumber(
-  value: number,
-  range: NumberSpec,
-  at: string,
-  layer: number | null,
-  warnings: StyleWarning[],
-): number {
-  if (value < range.min || value > range.max) {
-    const clamped = Math.min(range.max, Math.max(range.min, value));
-    warnings.push({
-      code: 'clamped',
-      layer,
-      at,
-      message: `${at} ${value} is outside [${range.min}, ${range.max}]; using ${clamped}`,
-    });
-    return clamped;
-  }
-  return value;
-}
-
-/**
- * Numbers in CSS must not arrive as `4.000000000000001`. Six decimals is far
- * beyond any token's meaningful precision and kills float noise from the
- * multiplications in step 5 — without it, `1 * 12.5` can print differently from
- * `12.5` on some paths and the parity test would fail for a reason that is not
- * about styling at all.
- */
-function cssNumber(n: number): string {
-  const r = Math.round(n * 1e6) / 1e6;
-  return String(r);
-}
-
-/** A px size rounded to the nearest half pixel (§3 step 5). */
-function halfPixel(n: number): number {
-  return Math.round(n * 2) / 2;
-}
-
-/** Parses the numeric prefix of a token value like `40px` or `120ms`. */
-function numericPrefix(value: string | undefined): number | null {
-  if (value === undefined) return null;
-  const m = /^\s*(-?\d*\.?\d+)/.exec(value);
-  if (!m?.[1]) return null;
-  const n = Number(m[1]);
-  return Number.isFinite(n) ? n : null;
-}
-
-interface LayerPass {
-  table: StyleTokenTable;
-  knobs: DerivedKnobs;
-  xtermOverrides: Partial<ResolvedXtermOptions>;
-  chrome: 'dark' | 'follow';
-}
-
-/**
- * Steps 1-2 and 4 for ONE base table. Called twice per resolve — once for the
- * main ramp and once for the always-dark ramp — rather than recursing, so
- * there is no cycle to detect and the two passes provably share one code path.
- *
- * `recolourFilter` is how §3.3's "the chrome takes the dark sibling's colours"
- * is expressed without a second resolver: the always-dark pass runs the same
- * layers with the recolouring types dropped.
- */
-function applyLayers(
-  base: StyleTokenTable,
-  layers: readonly StyleLayer[],
-  warnings: StyleWarning[],
-  opts: { skipRecolouring: boolean; collectWarnings: boolean },
-): LayerPass {
-  const table: StyleTokenTable = { ...base };
-  const knobs: DerivedKnobs = { ...DEFAULT_KNOBS };
-  const xtermOverrides: Partial<ResolvedXtermOptions> = {};
-  let chrome: 'dark' | 'follow' = 'dark';
-
-  const warn = (w: StyleWarning): void => {
-    if (opts.collectWarnings) warnings.push(w);
-  };
-  const sink = opts.collectWarnings ? warnings : [];
-
-  layers.forEach((layer, index) => {
-    if (layer.enabled === false) return;
-    const spec = LAYER_TYPES[layer.type];
-    if (!spec) {
-      warn({
-        code: 'unknown-layer-type',
-        layer: index,
-        at: layer.type,
-        message: `unknown layer type "${layer.type}"; skipped`,
-      });
-      return;
-    }
-    if (opts.skipRecolouring && spec.recolours) return;
-
-    const parsed = spec.schema.safeParse(layer.tokens ?? {});
-    if (!parsed.success) {
-      warn({
-        code: 'invalid-token',
-        layer: index,
-        at: layer.type,
-        message: `layer ${index} (${layer.type}) failed validation: ${parsed.error.issues
-          .map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`)
-          .join('; ')}`,
-      });
-      return;
-    }
-
-    /* Unknown keys are reported from the RAW tokens against the registry, not
-       from zod: `.strip()` removes them silently, which is the behaviour we
-       want for rendering and exactly the wrong behaviour for telling the author
-       they typed `papper`. */
-    for (const key of Object.keys(layer.tokens ?? {})) {
-      if (!spec.tokens[key]) {
-        warn({
-          code: 'unknown-token',
-          layer: index,
-          at: `${layer.type}.${key}`,
-          message: `unknown token "${key}" on a ${layer.type} layer; dropped`,
-        });
-      }
-    }
-
-    for (const [key, raw] of Object.entries(parsed.data as Record<string, unknown>)) {
-      if (raw === undefined) continue;
-      const target = spec.tokens[key];
-      if (!target) continue;
-      const at = `${layer.type}.${key}`;
-
-      if (target.sink === 'chrome') {
-        chrome = raw === 'follow' ? 'follow' : 'dark';
-        continue;
-      }
-      if (target.sink === 'derive') {
-        knobs[target.derived] = clampNumber(raw as number, target.range, at, index, sink);
-        continue;
-      }
-      if (target.sink === 'vars') {
-        (raw as string[]).forEach((v, i) => {
-          const cssVar = target.cssVars[i];
-          if (cssVar) table[cssVar] = v;
-        });
-        continue;
-      }
-      if (target.sink === 'xterm') {
-        if (target.kind === 'number') {
-          const n = clampNumber(raw as number, target.range, at, index, sink);
-          (xtermOverrides as Record<string, unknown>)[target.option] = n;
-        } else {
-          (xtermOverrides as Record<string, unknown>)[target.option] = raw;
-        }
-        continue;
-      }
-      // sink === 'var'
-      if (target.kind === 'number') {
-        const n = clampNumber(raw as number, target.range, at, index, sink);
-        table[target.cssVar] = `${cssNumber(n)}${target.unit}`;
-      } else {
-        table[target.cssVar] = String(raw);
-      }
-    }
-  });
-
-  return { table, knobs, xtermOverrides, chrome };
-}
-
-/**
- * Step 3: `"@otherToken"` resolves against the table, ONE HOP ONLY.
- *
- * One hop is a design constraint and not a shortcut: a chain needs cycle
- * detection, cycle detection needs an error path, and an error path in a
- * renderer that runs before first paint is a blank screen. One hop cannot
- * cycle, so the resolver has no failure mode here — an alias that does not
- * resolve warns and keeps the foundation's value.
- */
-function resolveAliases(
-  table: StyleTokenTable,
-  warnings: StyleWarning[],
-  base: StyleTokenTable,
-): void {
-  /* SNAPSHOT FIRST. Substituting in place would make the hop count depend on
-     key ITERATION ORDER: `cursor: "@brand", brand: "@ink"` would chain to ink
-     if `brand` happened to be visited first and stop at `"@ink"` if it did not.
-     Reading every alias against the pre-substitution table makes one hop one
-     hop regardless of insertion order. */
-  const before: StyleTokenTable = { ...table };
-  for (const [cssVar, value] of Object.entries(before) as [StyleCssVar, string][]) {
-    if (typeof value !== 'string' || !value.startsWith('@')) continue;
-    const friendly = value.slice(1);
-    const targetVar = COLOUR_VARS[friendly] ?? (`--pn-${friendly}` as StyleCssVar);
-    const resolved = before[targetVar];
-    /* The TARGET is read before aliases are substituted, so `a: "@b", b: "@c"`
-       leaves `a` holding `"@c"` — which is not a colour. That is the one-hop
-       rule made observable rather than silently chained. */
-    if (resolved === undefined || resolved.startsWith('@')) {
-      warnings.push({
-        code: 'unresolved-alias',
-        layer: null,
-        at: cssVar,
-        message: `alias "${value}" on ${cssVar} does not resolve in one hop; kept the foundation value`,
-      });
-      table[cssVar] = base[cssVar] ?? '';
-      continue;
-    }
-    table[cssVar] = resolved;
-  }
-}
-
-/** Step 5's derived families, applied to a table in place. */
-function applyDerived(table: StyleTokenTable, base: StyleTokenTable, knobs: DerivedKnobs): void {
-  // --pn-brand-rgb is DERIVED from --pn-brand and never authored: a layer that
-  // could set them independently could set them inconsistently, and every
-  // `rgba(var(--pn-brand-rgb), a)` in the package would then disagree with
-  // `var(--pn-brand)` by a hue nobody chose.
-  const brandRgb = toRgb(table['--pn-brand']);
-  if (brandRgb) table['--pn-brand-rgb'] = `${brandRgb[0]}, ${brandRgb[1]}, ${brandRgb[2]}`;
-
-  if (knobs.scaleFactor !== 1) {
-    for (const cssVar of FS_VARS) {
-      const n = numericPrefix(base[cssVar]);
-      if (n !== null) table[cssVar] = `${cssNumber(halfPixel(n * knobs.scaleFactor))}px`;
-    }
-  }
-  if (knobs.spacingUnit !== DEFAULT_KNOBS.spacingUnit) {
-    for (const step of SPACE_STEPS) {
-      table[`--pn-space-${step}`] = `${cssNumber(step * knobs.spacingUnit)}px`;
-    }
-  }
-  if (knobs.radiusFactor !== 1) {
-    for (const cssVar of RADIUS_VARS) {
-      const n = numericPrefix(base[cssVar]);
-      if (n !== null) table[cssVar] = `${cssNumber(Math.round(n * knobs.radiusFactor))}px`;
-    }
-  }
-  if (knobs.durationFactor !== 1) {
-    for (const cssVar of DURATION_VARS) {
-      const n = numericPrefix(base[cssVar]);
-      if (n !== null) table[cssVar] = `${cssNumber(Math.round(n * knobs.durationFactor))}ms`;
-    }
-  }
+  return { schemaVersion: STYLE_SCHEMA_VERSION, foundation: id, vars: {}, css: null };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Colour maths for the contrast lint (§3 step 6)
+// Colour maths for the contrast lint and `darkish`
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * sRGB triple from the colour forms a TOKEN TABLE actually carries: `#rgb`,
- * `#rrggbb`, `rgb()`/`rgba()`. Everything else — `color-mix()`, `var()`,
- * `oklch()` — returns null and is SKIPPED rather than guessed.
- *
- * WHY SKIPPING IS CORRECT HERE and would be wrong in a validator: this is a
- * LINT that only ever produces warnings. A `color-mix()` we cannot evaluate
- * without a layout engine yields "no finding", which is honest. Guessing at it
- * would produce a contrast number about a colour nobody is going to see.
+ * sRGB triple from `#rgb`, `#rrggbb`, `rgb()`/`rgba()`. Everything else
+ * (`color-mix()`, `oklch()`, named colours) is null and SKIPPED by the lint:
+ * it only warns, so "no finding" about a colour it cannot evaluate is honest.
  */
 export function toRgb(value: string | undefined): [number, number, number] | null {
   if (!value) return null;
@@ -752,18 +232,8 @@ export function toRgb(value: string | undefined): [number, number, number] | nul
   const hex = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.exec(v);
   if (hex?.[1]) {
     const h = hex[1];
-    if (h.length === 3) {
-      return [
-        parseInt(h[0]! + h[0]!, 16),
-        parseInt(h[1]! + h[1]!, 16),
-        parseInt(h[2]! + h[2]!, 16),
-      ];
-    }
-    return [
-      parseInt(h.slice(0, 2), 16),
-      parseInt(h.slice(2, 4), 16),
-      parseInt(h.slice(4, 6), 16),
-    ];
+    const pair = (i: number) => (h.length === 3 ? h[i]! + h[i]! : h.slice(i * 2, i * 2 + 2));
+    return [parseInt(pair(0), 16), parseInt(pair(1), 16), parseInt(pair(2), 16)];
   }
   const rgb = /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/.exec(v);
   if (rgb) {
@@ -784,7 +254,7 @@ export function relativeLuminance(rgb: [number, number, number]): number {
   return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
 }
 
-/** WCAG 2.x contrast ratio, 1..21. */
+/** WCAG 2.x contrast ratio, 1..21, or null when either colour cannot be evaluated. */
 export function contrastRatio(a: string | undefined, b: string | undefined): number | null {
   const ra = toRgb(a);
   const rb = toRgb(b);
@@ -794,7 +264,13 @@ export function contrastRatio(a: string | undefined, b: string | undefined): num
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
 }
 
-/** The pairs §3 step 6 lints, with their floors. */
+const ANSI_SLOTS: readonly (keyof XtermTheme)[] = [
+  'black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white',
+  'brightBlack', 'brightRed', 'brightGreen', 'brightYellow',
+  'brightBlue', 'brightMagenta', 'brightCyan', 'brightWhite',
+];
+const ansiVar = (i: number): StyleCssVar => `--pn-x-term-ansi-${i}`;
+
 const CONTRAST_RULES: readonly { fg: StyleCssVar; bg: StyleCssVar; min: number }[] = [
   { fg: '--pn-ink', bg: '--pn-paper', min: 4.5 },
   { fg: '--pn-ink-3', bg: '--pn-paper', min: 3 },
@@ -802,169 +278,263 @@ const CONTRAST_RULES: readonly { fg: StyleCssVar; bg: StyleCssVar; min: number }
 ];
 
 function lintContrast(table: StyleTokenTable, warnings: StyleWarning[]): void {
-  for (const rule of CONTRAST_RULES) {
-    const ratio = contrastRatio(table[rule.fg], table[rule.bg]);
-    if (ratio !== null && ratio < rule.min) {
+  const check = (fg: StyleCssVar, bg: StyleCssVar, min: number) => {
+    const ratio = contrastRatio(table[fg], table[bg]);
+    if (ratio !== null && ratio < min) {
       warnings.push({
         code: 'low-contrast',
-        layer: null,
-        at: `${rule.fg} on ${rule.bg}`,
-        message: `contrast ${ratio.toFixed(2)}:1 is below ${rule.min}:1`,
+        key: `${fg} on ${bg}`,
+        message: `contrast ${ratio.toFixed(2)}:1 is below ${min}:1`,
       });
     }
-  }
-  /**
-   * ANSI SLOT 0 IS EXCLUDED, and this is a correction to §3 step 6 rather than
-   * an omission. Slot 0 is the terminal's own "black": every palette worth
-   * shipping places it within a few units of the background, because that is
-   * what the slot MEANS. Atelier's own #322D24 on #131009 is 1.39:1 — so a
-   * literal 16-slot floor makes the SHIPPED DEFAULT carry a permanent warning,
-   * and a warning that is always on is a warning nobody reads. Slots 1-15 are
-   * foreground colours and are linted.
-   */
-  for (const ansiVar of ANSI_VARS.slice(1)) {
-    const ratio = contrastRatio(table[ansiVar], table['--pn-x-term-live-bg']);
-    if (ratio !== null && ratio < 2) {
-      warnings.push({
-        code: 'low-contrast',
-        layer: null,
-        at: `${ansiVar} on --pn-x-term-live-bg`,
-        message: `contrast ${ratio.toFixed(2)}:1 is below 2:1`,
-      });
-    }
-  }
-}
-
-function buildXtermTheme(table: StyleTokenTable): ResolvedXtermTheme {
-  const background = table['--pn-x-term-live-bg'] ?? '';
-  const theme: ResolvedXtermTheme = {
-    background,
-    foreground: table['--pn-x-term-fg'] ?? '',
-    cursor: table['--pn-x-term-cursor'] ?? '',
-    // §3 step 5: `cursorAccent ??= background`. A cursor with no accent paints
-    // the glyph under a block cursor in the default colour, which on a block
-    // cursor is the cursor's own fill — i.e. an invisible character.
-    cursorAccent: table['--pn-x-term-cursor-accent'] ?? background,
-    selectionBackground: table['--pn-x-term-sel-bg'] ?? '',
-    selectionForeground: table['--pn-x-term-sel-fg'] ?? '',
-    black: '', red: '', green: '', yellow: '', blue: '', magenta: '', cyan: '', white: '',
-    brightBlack: '', brightRed: '', brightGreen: '', brightYellow: '',
-    brightBlue: '', brightMagenta: '', brightCyan: '', brightWhite: '',
   };
-  ANSI_THEME_SLOTS.forEach((slot, i) => {
-    theme[slot] = table[ANSI_VARS[i]!] ?? '';
-  });
-  return theme;
+  for (const rule of CONTRAST_RULES) check(rule.fg, rule.bg, rule.min);
+  /* ANSI slot 0 is excluded: it is the terminal's own black and sits next to
+     the background in every palette worth shipping (Atelier's is 1.39:1), so
+     a floor on it would make the shipped default warn forever. Slots 1-15 are
+     foreground colours and are linted at 2:1. */
+  for (let i = 1; i < 16; i++) check(ansiVar(i), '--pn-x-term-live-bg', 2);
 }
 
-/**
- * xterm option defaults. These are the CONSTANTS the terminal already shipped
- * (`terminal/terminalTheme.ts:12-21`), restated here as the foundation's own
- * answer so a style that sets none of them lands on today's terminal exactly.
- * `fontSize` is absent on purpose — see `ResolvedXtermOptions`.
- */
-const DEFAULT_XTERM_OPTIONS: ResolvedXtermOptions = {
-  fontFamily:
-    '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-  fontWeight: 400,
-  fontWeightBold: 700,
-  lineHeight: 1.2,
-  letterSpacing: 0,
-  scrollback: 5000,
-  cursorStyle: 'block',
-  padding: 0,
-};
+// ─────────────────────────────────────────────────────────────────────────────
+// Resolution (§1.5)
+// ─────────────────────────────────────────────────────────────────────────────
 
-/** Stable (key-sorted) JSON, so the hash is a function of the VALUES only. */
+/** Stable (key-sorted) JSON, so the hash is a function of the values only. */
 function stableStringify(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
   const rec = value as Record<string, unknown>;
-  const keys = Object.keys(rec).sort();
-  return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(rec[k])}`).join(',')}}`;
+  return `{${Object.keys(rec)
+    .sort()
+    .map((k) => `${JSON.stringify(k)}:${stableStringify(rec[k])}`)
+    .join(',')}}`;
 }
 
-/** Key-sorted copy, so a resolved table serialises identically however it was built. */
 function sortedTable(table: StyleTokenTable): StyleTokenTable {
   const out: StyleTokenTable = {};
   for (const key of (Object.keys(table) as StyleCssVar[]).sort()) out[key] = table[key]!;
   return out;
 }
 
+function numberOf(value: string | undefined, fallback: number): number {
+  const n = Number(value);
+  return value !== undefined && value.trim() !== '' && Number.isFinite(n) ? n : fallback;
+}
+
+function buildXterm(table: StyleTokenTable): { theme: XtermTheme; options: XtermOptions } {
+  const background = table['--pn-x-term-live-bg'] ?? '';
+  const theme = {
+    background,
+    foreground: table['--pn-x-term-fg'] ?? '',
+    cursor: table['--pn-x-term-cursor'] ?? '',
+    /* An accent-less block cursor paints the glyph under it in the cursor's
+       own fill — an invisible character — so it defaults to the background. */
+    cursorAccent: table['--pn-x-term-cursor-accent'] ?? background,
+    selectionBackground: table['--pn-x-term-sel-bg'] ?? '',
+    selectionForeground: table['--pn-x-term-sel-fg'] ?? '',
+  } as XtermTheme;
+  ANSI_SLOTS.forEach((slot, i) => {
+    theme[slot] = table[ansiVar(i)] ?? '';
+  });
+
+  const size = table['--pn-term-font-size'];
+  const cursor = table['--pn-term-cursor-style'];
+  const options: XtermOptions = {
+    fontFamily: table['--pn-term-font'] ?? 'monospace',
+    fontSize: size === undefined || size === 'auto' ? 'auto' : numberOf(size, 13),
+    fontWeight: numberOf(table['--pn-term-font-weight'], 400),
+    fontWeightBold: numberOf(table['--pn-term-font-weight-bold'], 600),
+    lineHeight: numberOf(table['--pn-term-line-height'], 1.2),
+    letterSpacing: numberOf(table['--pn-term-letter-spacing'], 0),
+    scrollback: numberOf(table['--pn-term-scrollback'], 5000),
+    cursorStyle: cursor === 'underline' || cursor === 'bar' ? cursor : 'block',
+    padding: numberOf(table['--pn-term-padding'], 0),
+  };
+  return { theme, options };
+}
+
+interface CheckedVars {
+  /** Accepted key -> validated (and clamped) value, in input order. */
+  accepted: Record<StyleCssVar, string>;
+  warnings: StyleWarning[];
+  clamped: StyleClamp[];
+}
+
 /**
- * THE RESOLVER (§3). Pure, synchronous, total — it has no failure mode. Every
- * problem it can find is a WARNING, because the one caller that matters runs it
- * before first paint and a throw there is a white screen.
+ * Validate a `vars` map against the registry (§1.5 step 4, §8.2): unknown key
+ * dropped, invalid value dropped, out-of-range value clamped. Shared by
+ * `resolveStyle` (read) and `normalizeStyleDoc` (write) so both apply one
+ * grammar. `invalidSuffix` is what the warning says happens to the value.
+ */
+function checkVars(vars: unknown, registry: StyleRegistry, invalidSuffix: string): CheckedVars {
+  const entries = registryByKey(registry);
+  const colourKeys = new Set<string>(registry.entries.filter((e) => e.kind === 'colour').map((e) => e.key));
+  const out: CheckedVars = { accepted: {}, warnings: [], clamped: [] };
+  const map: Record<string, unknown> = vars && typeof vars === 'object' ? (vars as Record<string, unknown>) : {};
+  for (const [key, raw] of Object.entries(map)) {
+    const entry = entries.get(key);
+    if (!entry) {
+      out.warnings.push({ code: 'unknown-key', key, message: `unknown variable ${key}; dropped` });
+      continue;
+    }
+    const check = validateStyleVar(entry, raw, colourKeys);
+    if (!check.ok) {
+      out.warnings.push({ code: 'invalid-value', key, message: `${key}: ${check.reason}; ${invalidSuffix}` });
+      continue;
+    }
+    if ('clamped' in check) {
+      out.clamped.push({ key, from: check.clamped.from, to: check.clamped.to });
+      out.warnings.push({
+        code: 'clamped',
+        key,
+        message: `${key} ${check.clamped.from} is out of range; using ${check.clamped.to}`,
+      });
+    }
+    out.accepted[entry.key] = check.value;
+  }
+  return out;
+}
+
+/**
+ * THE WRITE-TIME FORM (§8.2 "clamp on read AND flag on write"): what the
+ * server stores. Unknown keys and invalid values are dropped, out-of-range
+ * values are stored CLAMPED, and `css` is replaced by its sanitised text (null
+ * when nothing survives), so a stored document is always valid. A key that a
+ * LATER release removes survives in documents already stored and is dropped
+ * only by `resolveStyle` (§10.4).
+ */
+export function normalizeStyleDoc(
+  doc: StyleDoc,
+  registry: StyleRegistry = STYLE_REGISTRY,
+): { doc: StyleDoc; warnings: StyleWarning[]; clamped: StyleClamp[] } {
+  const checked = checkVars(doc.vars, registry, 'dropped');
+  const css = sanitizeStyleCss(doc.css);
+  return {
+    doc: {
+      schemaVersion: STYLE_SCHEMA_VERSION,
+      foundation: doc.foundation,
+      vars: checked.accepted,
+      css: css.css,
+    },
+    warnings: [...checked.warnings, ...css.warnings],
+    clamped: checked.clamped,
+  };
+}
+
+/**
+ * THE RESOLVER (§1.5). Pure, synchronous, never throws on user data: the one
+ * caller that matters runs it before first paint, where a throw is a white
+ * screen. Every problem it finds is a warning.
  *
- * `builtins` is passed in rather than imported so a test can resolve against a
- * two-token fixture and a future preset catalogue needs no change here.
+ *  1 shape: unknown foundation → first registered built-in + warning
+ *  2 table = foundation tokens (complete by definition)
+ *  3+4 overlay `vars`, each key validated by its registry kind: unknown key
+ *      dropped, invalid value keeps the foundation's, out of range clamped,
+ *      a bare `var(--pn-<colour>)` resolved ONE hop against the overlaid table
+ *  5 derive `--pn-brand-rgb` from `--pn-brand`; `darkish` from paper
+ *  6 always-dark ramp when `--pn-term-chrome` is `dark`: the dark sibling's
+ *    SURFACE keys over this style's table
+ *  7 xterm theme + options from the table (always-dark ramp when present)
+ *  8 css → sanitised, scoped text or null
+ *  9 contrast lint → warnings
+ * 10 hash
+ *
+ * Foundation values are NOT re-validated: they are the extracted CSS, and the
+ * parity test proves a built-in resolves to itself with no warnings.
  */
 export function resolveStyle(
   doc: StyleDoc,
-  builtins: Readonly<Record<string, BuiltinStyle>>,
+  builtins: Readonly<Record<string, BuiltinStyle>> = BUILTIN_STYLES,
+  registry: StyleRegistry = STYLE_REGISTRY,
 ): ResolvedStyle {
   const warnings: StyleWarning[] = [];
-  const foundation = builtins[doc.foundation];
+
+  // 1
+  let foundation = builtins[doc?.foundation];
   if (!foundation) {
-    /* An unknown foundation is the one input that leaves nothing to resolve.
-       It still must not throw, so it falls back to the first registered
-       built-in and says so — a named wrong palette is debuggable; a blank
-       screen is not. */
     const fallbackId = Object.keys(builtins)[0];
-    const fallback = fallbackId ? builtins[fallbackId] : undefined;
-    if (!fallback) {
-      throw new Error('resolveStyle: no built-in styles registered');
-    }
+    foundation = fallbackId ? builtins[fallbackId] : undefined;
+    if (!foundation) throw new Error('resolveStyle: no built-in styles registered'); // a deploy bug, not user data
     warnings.push({
-      code: 'invalid-token',
-      layer: null,
-      at: 'foundation',
-      message: `unknown foundation "${doc.foundation}"; fell back to ${fallback.id}`,
+      code: 'invalid-value',
+      key: 'foundation',
+      message: `unknown foundation "${String(doc?.foundation)}"; fell back to ${foundation.id}`,
     });
-    const resolved = resolveStyle({ ...doc, foundation: fallback.id }, builtins);
-    return { ...resolved, warnings: [...warnings, ...resolved.warnings] };
   }
 
-  const layers = doc.layers ?? [];
-  const main = applyLayers(foundation.tokens, layers, warnings, {
-    skipRecolouring: false,
-    collectWarnings: true,
-  });
-  resolveAliases(main.table, warnings, foundation.tokens);
-  applyDerived(main.table, foundation.tokens, main.knobs);
-  lintContrast(main.table, warnings);
+  // 2
+  const table: StyleTokenTable = { ...foundation.tokens };
 
-  /* The always-dark pass. Warnings are NOT collected twice — they would be the
-     same findings from the same layers, reported against a table the author
-     never edited, and a warnings strip that says everything twice is a strip
-     nobody reads. */
+  // 3 + 4
+  const checked = checkVars(doc?.vars, registry, 'kept the foundation value');
+  warnings.push(...checked.warnings);
+  const aliases: [StyleCssVar, StyleCssVar][] = [];
+  const colourKeys = new Set<string>(registry.entries.filter((e) => e.kind === 'colour').map((e) => e.key));
+  for (const [key, value] of Object.entries(checked.accepted) as [StyleCssVar, string][]) {
+    table[key] = value;
+    const target = colourKeys.has(key) ? varReference(value) : null;
+    if (target) aliases.push([key, target as StyleCssVar]);
+  }
+  /* ONE HOP, read against the table as it stood after the overlay and before
+     any substitution, so the result never depends on key order: `a: var(b),
+     b: var(c)` leaves `a` unresolved (warned), it does not chain to c. */
+  const beforeAliases = { ...table };
+  for (const [key, target] of aliases) {
+    const value = beforeAliases[target];
+    if (value === undefined || varReference(value) !== null) {
+      warnings.push({
+        code: 'invalid-value',
+        key,
+        message: `${key}: var(${target}) does not resolve in one hop; kept the foundation value`,
+      });
+      table[key] = foundation.tokens[key] ?? '';
+    } else {
+      table[key] = value;
+    }
+  }
+
+  // 5
+  const brand = toRgb(table['--pn-brand']);
+  if (brand) table['--pn-brand-rgb'] = `${brand[0]}, ${brand[1]}, ${brand[2]}`;
+  const paper = toRgb(table['--pn-paper']);
+  const darkish = paper ? relativeLuminance(paper) < 0.5 : false;
+
+  // 6
   let alwaysDarkCssVars: StyleTokenTable | null = null;
-  if (main.chrome === 'dark') {
-    const darkBase = builtins[foundation.darkSibling]?.tokens ?? foundation.tokens;
-    const chromePass = applyLayers(darkBase, layers, warnings, {
-      skipRecolouring: true,
-      collectWarnings: false,
-    });
-    resolveAliases(chromePass.table, [], darkBase);
-    applyDerived(chromePass.table, darkBase, chromePass.knobs);
-    alwaysDarkCssVars = sortedTable(chromePass.table);
+  if (table['--pn-term-chrome'] !== 'follow') {
+    const sibling = builtins[foundation.darkSibling] ?? foundation;
+    const ramp: StyleTokenTable = { ...table };
+    for (const entry of registry.entries) {
+      const v = sibling.tokens[entry.key];
+      if (entry.surface && v !== undefined) ramp[entry.key] = v;
+    }
+    alwaysDarkCssVars = sortedTable(ramp);
   }
 
-  const cssVars = sortedTable(main.table);
-  const xterm = {
-    /* The xterm canvas lives inside the always-dark scope, so its colours come
-       from THAT table when one exists — reading them off the main ramp would
-       paint a light terminal inside a dark box the moment a light style shipped. */
-    theme: buildXtermTheme(alwaysDarkCssVars ?? cssVars),
-    options: { ...DEFAULT_XTERM_OPTIONS, ...main.xtermOverrides },
-  };
+  // 7
+  const cssVars = sortedTable(table);
+  const xterm = buildXterm(alwaysDarkCssVars ?? cssVars);
 
-  const paperRgb = toRgb(cssVars['--pn-paper']);
-  const darkish = paperRgb ? relativeLuminance(paperRgb) < 0.5 : false;
+  // 8
+  const sanitised = sanitizeStyleCss(doc?.css);
+  warnings.push(...sanitised.warnings);
 
-  const hash = sha256Hex(
-    UTF8.encode(stableStringify({ cssVars, alwaysDarkCssVars, xterm, chrome: main.chrome })),
-  );
+  // 9
+  lintContrast(cssVars, warnings);
+
+  // 10
+  const hash = `sha256:${sha256Hex(
+    UTF8.encode(
+      stableStringify({
+        cssVars,
+        alwaysDarkCssVars,
+        xterm,
+        css: sanitised.css,
+        builtinRevision: foundation.builtinRevision,
+      }),
+    ),
+  )}`;
 
   return {
     foundation: foundation.id,
@@ -973,36 +543,37 @@ export function resolveStyle(
     alwaysDarkCssVars,
     darkish,
     xterm,
-    terminalChrome: main.chrome,
+    css: sanitised.css,
     warnings,
+    clamped: checked.clamped,
     hash,
   };
 }
 
 /**
- * The injected stylesheet's text (§3.1). Here rather than in the UI because the
- * CLI's `style resolve --css` and any future SSR path need the same bytes, and
- * two emitters of one cascade is the bug class §3 exists to close.
+ * The injected variables sheet (§1.6). Here rather than in the UI because the
+ * CLI and any future SSR path need the same bytes.
  *
  * THE ACTIVE RULE CLAIMS ONLY THE ROOTS WHOSE THEME AGREES WITH THE STYLE.
  * tokens.css decides a root's ramp like this: dark if the root, or ANY
- * ancestor, carries `data-theme="dark"`; light otherwise (`data-theme="light"`
- * forces nothing). Product roots take `data-theme` from the store (§3.2), so
- * they always agree with it. Review boards and dev harnesses stamp their own
- * theme, though — `SettingsBoard`'s light/dark pair side by side — and a rule on
- * every `.cv2-root` would paint both halves in one ramp. So the active rule
- * selects exactly the roots tokens.css would put in the derived theme, and a
- * root explicitly in the other theme falls through to tokens.css unchanged:
+ * ancestor, carries `data-theme="dark"`; light otherwise. Product roots take
+ * `data-theme` from the store, so they always agree with it; review boards
+ * and dev harnesses stamp their own theme (`SettingsBoard`'s light/dark pair),
+ * and a root explicitly in the other theme must fall through to tokens.css
+ * unchanged:
  *
- *   derived dark : `.cv2-root[data-theme="dark"]`, `[data-theme="dark"] .cv2-root`
- *                  — tokens.css's own dark selector, (0,2,0), later in head.
- *   derived light: `.cv2-root:not([data-theme="dark"]):not([data-theme="dark"] *)`
- *                  — every root tokens.css leaves light, (0,3,0).
+ *   darkish : `.cv2-root[data-theme="dark"]`, `[data-theme="dark"] .cv2-root`
+ *             — tokens.css's own dark selector, (0,2,0), later in head.
+ *   light   : `.cv2-root:not([data-theme="dark"]):not([data-theme="dark"] *)`
+ *             — every root tokens.css leaves light, (0,3,0).
  *
  * The always-dark rule comes second. Every always-dark scope also carries
- * `data-theme="dark"`, so the light rule never matches inside one; in the dark
- * case both rules are (0,2,0) and SOURCE ORDER decides — swap them and every
- * terminal takes the active ramp.
+ * `data-theme="dark"`, so the light rule never matches inside one; in the
+ * dark case both rules are (0,2,0) and SOURCE ORDER decides — swap them and
+ * every terminal takes the active ramp.
+ *
+ * The style's `css` is NOT in this sheet: it goes in its own element after
+ * this one (§1.6), so a style's rules can never be out-ordered by its vars.
  */
 export function styleSheetText(resolved: ResolvedStyle): string {
   const decls = (table: StyleTokenTable): string =>
@@ -1019,4 +590,39 @@ export function styleSheetText(resolved: ResolvedStyle): string {
     resolved.alwaysDarkCssVars,
   )}\n}`;
   return `${main}\n${dark}\n`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Export (§5 `tm8 style export`, §9.2 "export")
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface ExportStyleOptions {
+  /** `css`: a `.cv2-root { --pn-*: … }` block plus the style's css. `json`: the StyleDoc. */
+  format: 'css' | 'json';
+  /** `set`: only the vars the style sets. `all`: the full resolved table (all registry keys). */
+  only: 'set' | 'all';
+}
+
+/** The header line an exported CSS file carries, so an import can recover the foundation. */
+export const STYLE_EXPORT_FOUNDATION_MARKER = 'tm8-style foundation:';
+
+/**
+ * Serialise a style for a file. Pure. `only: 'all'` resolves first, so the
+ * output is exactly what the style paints (clamped, aliases resolved, unknown
+ * keys gone); `only: 'set'` writes the document's own vars as stored.
+ */
+export function exportStyle(doc: StyleDoc, options: ExportStyleOptions): string {
+  const resolved = options.only === 'all' ? resolveStyle(doc) : null;
+  const vars: Record<string, string> = resolved ? { ...resolved.cssVars } : { ...doc.vars };
+  const css = resolved ? resolved.css : doc.css;
+  if (options.format === 'json') {
+    const out: StyleDoc = { schemaVersion: STYLE_SCHEMA_VERSION, foundation: doc.foundation, vars, css: css ?? null };
+    return `${JSON.stringify(out, null, 2)}\n`;
+  }
+  const decls = Object.keys(vars)
+    .sort()
+    .map((k) => `  ${k}: ${vars[k]};`)
+    .join('\n');
+  const head = `/* ${STYLE_EXPORT_FOUNDATION_MARKER} ${doc.foundation} */\n.cv2-root {\n${decls}\n}\n`;
+  return css ? `${head}\n${css.endsWith('\n') ? css : `${css}\n`}` : head;
 }

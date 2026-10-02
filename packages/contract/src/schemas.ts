@@ -24,15 +24,24 @@ import {
   EXECUTION_NEW_TASK_TITLE_MAX,
 } from './contract.js';
 import { ArtifactManifestSchema } from './artifact-manifest.js';
-import { STYLE_MAX_LAYERS, STYLE_SCHEMA_VERSION } from './style.js';
+import {
+  STYLE_MAX_DOC_BYTES,
+  STYLE_MAX_VARS,
+  STYLE_SCHEMA_VERSION,
+  formatStyleRef,
+  parseStyleRef,
+} from './style.js';
 import type {
   BuiltinStyle,
   BuiltinStyleId,
   StyleDoc,
-  StyleLayer,
+  StyleRef,
   StyleTokenTable,
   StyleWarning,
 } from './style.js';
+import { STYLE_MAX_VAR_LENGTH } from './style-registry.js';
+import { STYLE_MAX_CSS_BYTES } from './style-css.js';
+import { BUILTIN_STYLES } from './builtins/index.js';
 import { FormQuestionRowSchema, FormSectionRowSchema, FormSettingsSchema, FormStatusSchema } from './forms.js';
 import { EntityContextStorySchema, StoryContentSchema, StoryStateSchema } from './story.js';
 import {
@@ -5535,55 +5544,66 @@ export function envelopeOf<T>(data: z.ZodType<T>) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// STYLE ENTITIES (style.ts §2.3/§2.4). Document-level schemas only.
-//
-// The LAYER-TOKEN schemas are NOT here and that is the one deliberate exception
-// to "every schema lives in schemas.ts": they are fields of `LAYER_TYPES`, the
-// registry that also holds each type's token->property mapping. Splitting a
-// layer type's validation from its mapping across two files is how a type gets
-// added to one and not the other — the registry is the unit, so it stays whole.
+// STYLES (spec v8 §8.1). The document, references and warnings. Per-key value
+// grammar is NOT zod: it is `validateStyleVar` in style-registry.ts, because
+// an invalid value is a warning that keeps the foundation's value, never a 400
+// (§1.5 step 4), and the registry drives it per key.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const StyleLayerSchema: z.ZodType<StyleLayer> = z.object({
-  type: z.string().min(1).max(64),
-  enabled: z.boolean().optional(),
-  label: z.string().max(120).optional(),
-  tokens: z.record(z.unknown()),
-}).strict();
+const BuiltinStyleIdSchema = z
+  .string()
+  .regex(/^builtin:[a-z0-9-]{1,64}$/) as unknown as z.ZodType<BuiltinStyleId>;
 
-export const StyleDocSchema: z.ZodType<StyleDoc> = z.object({
-  schemaVersion: z.number().int().positive().max(STYLE_SCHEMA_VERSION),
-  // The `builtin:` prefix IS the composition constraint (§2.5): a foundation
-  // that could name a user style would make the resolver a graph walk with
-  // cycles, and a stranger's edit would reach into your style.
-  foundation: z.string().regex(/^builtin:[a-z0-9-]{1,64}$/) as unknown as z.ZodType<BuiltinStyleId>,
-  layers: z.array(StyleLayerSchema).max(STYLE_MAX_LAYERS),
-}).strict();
+export const StyleRefSchema: z.ZodType<StyleRef> = z
+  .string()
+  .refine((v) => parseStyleRef(v) !== null, { message: 'expected builtin:<slug>, personal:<uuid> or space:<uuid>' })
+  .transform((v) => formatStyleRef(parseStyleRef(v)!)) as unknown as z.ZodType<StyleRef>;
 
-export const StyleWarningSchema: z.ZodType<StyleWarning> = z.object({
-  code: z.enum([
-    'unknown-layer-type',
-    'unknown-token',
-    'invalid-token',
-    'clamped',
-    'unresolved-alias',
-    'low-contrast',
-  ]),
-  layer: z.number().int().nonnegative().nullable(),
-  at: z.string(),
-  message: z.string(),
-}).strict();
+/* Input may omit `css` (spec §8.1 `css?`); the parsed document always has it
+   (null when absent), which is the shape every caller handles. */
+export const StyleDocSchema: z.ZodType<StyleDoc, z.ZodTypeDef, unknown> = z
+  .object({
+    schemaVersion: z.literal(STYLE_SCHEMA_VERSION),
+    /* Only a SHIPPED built-in: a foundation naming a user style would make the
+       resolver a graph walk with cycles, and a stranger's edit would reach
+       into your style. */
+    foundation: BuiltinStyleIdSchema.refine((id) => id in BUILTIN_STYLES, { message: 'unknown built-in style' }),
+    /* Keys are grammar-checked only; unknown-but-well-formed keys are dropped
+       with a warning by resolve, not rejected (§8.1), so a document written
+       against a newer registry still loads. */
+    vars: z
+      .record(z.string().regex(/^--pn-[a-z0-9-]{1,64}$/), z.string().max(STYLE_MAX_VAR_LENGTH))
+      .refine((v) => Object.keys(v).length <= STYLE_MAX_VARS, { message: `at most ${STYLE_MAX_VARS} vars` }),
+    css: z.string().max(STYLE_MAX_CSS_BYTES).nullable().default(null),
+  })
+  .strict()
+  .refine((d) => new TextEncoder().encode(JSON.stringify(d)).length <= STYLE_MAX_DOC_BYTES, {
+    message: `document is larger than ${STYLE_MAX_DOC_BYTES} bytes`,
+  });
 
-/* A token table is an open map keyed by custom property name, so the key
-   GRAMMAR is the only thing worth asserting — enumerating 110 keys here would
-   be a third copy of the palette to keep in sync, and the parity test already
-   guards the table's contents against the CSS. */
-const StyleTokenTableSchema = z.record(z.string().regex(/^--pn-[a-z0-9-]+$/), z.string());
+export const StyleWarningSchema: z.ZodType<StyleWarning> = z
+  .object({
+    code: z.enum(['unknown-key', 'invalid-value', 'clamped', 'low-contrast', 'css-dropped']),
+    key: z.string().nullable(),
+    message: z.string(),
+    from: z.string().optional(),
+    to: z.string().optional(),
+  })
+  .strict();
 
-export const BuiltinStyleSchema: z.ZodType<BuiltinStyle> = z.object({
-  id: z.string().regex(/^builtin:[a-z0-9-]{1,64}$/) as unknown as z.ZodType<BuiltinStyleId>,
-  title: z.string().min(1).max(120),
-  builtinRevision: z.number().int().positive(),
-  darkSibling: z.string().regex(/^builtin:[a-z0-9-]{1,64}$/) as unknown as z.ZodType<BuiltinStyleId>,
-  tokens: StyleTokenTableSchema as unknown as z.ZodType<StyleTokenTable>,
-}).strict();
+/* A token table is an open map keyed by custom property name; the registry
+   and the parity test guard its contents, so only the key grammar is here. */
+const StyleTokenTableSchema = z.record(
+  z.string().regex(/^--pn-[a-z0-9-]+$/),
+  z.string(),
+) as unknown as z.ZodType<StyleTokenTable>;
+
+export const BuiltinStyleSchema: z.ZodType<BuiltinStyle> = z
+  .object({
+    id: BuiltinStyleIdSchema,
+    title: z.string().min(1).max(120),
+    builtinRevision: z.number().int().positive(),
+    darkSibling: BuiltinStyleIdSchema,
+    tokens: StyleTokenTableSchema,
+  })
+  .strict();
