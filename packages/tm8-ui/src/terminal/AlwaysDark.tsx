@@ -20,8 +20,8 @@ import type { ReactNode } from 'react';
  *
  * `data-always-dark="true"` IS NOW THE SWITCH (style design §3.3). The injected
  * `<style id="tm8-style-active">` (theme/style-store.ts) declares the active
- * style on every `.cv2-root`, which would otherwise repaint this scope with the
- * active ramp; its second rule re-declares the resolved always-dark ramp for
+ * style on the `.cv2-root`s whose theme agrees with it, which in dark includes
+ * this scope; its second rule re-declares the resolved always-dark ramp for
  * `[data-always-dark="true"]` and wins by source order. `data-theme="dark"`
  * stays for the component rules and `kit/Mermaid.tsx` that still key on it,
  * and for tokens.css as the no-JS fallback. Every hard-coded dark scope

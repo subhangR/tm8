@@ -984,19 +984,25 @@ export function resolveStyle(
  * CLI's `style resolve --css` and any future SSR path need the same bytes, and
  * two emitters of one cascade is the bug class §3 exists to close.
  *
- * SELECTOR SPECIFICITY IS THE WHOLE DESIGN OF THIS STRING, so it is stated
- * rather than left to be rediscovered:
+ * THE ACTIVE RULE CLAIMS ONLY THE ROOTS WHOSE THEME AGREES WITH THE STYLE.
+ * tokens.css decides a root's ramp like this: dark if the root, or ANY
+ * ancestor, carries `data-theme="dark"`; light otherwise (`data-theme="light"`
+ * forces nothing). Product roots take `data-theme` from the store (§3.2), so
+ * they always agree with it. Review boards and dev harnesses stamp their own
+ * theme, though — `SettingsBoard`'s light/dark pair side by side — and a rule on
+ * every `.cv2-root` would paint both halves in one ramp. So the active rule
+ * selects exactly the roots tokens.css would put in the derived theme, and a
+ * root explicitly in the other theme falls through to tokens.css unchanged:
  *
- *   tokens.css declares light at `.cv2-root` (0,1,0) and dark at
- *   `.cv2-root[data-theme="dark"], [data-theme="dark"] .cv2-root` (0,2,0).
- *   This sheet is injected AFTER both files, so to win over the dark block on
- *   every root it must also reach (0,2,0) — hence the second and third
- *   selectors in rule 1, which are not redundancy but the only reason a dark
- *   root takes the active ramp at all.
+ *   derived dark : `.cv2-root[data-theme="dark"]`, `[data-theme="dark"] .cv2-root`
+ *                  — tokens.css's own dark selector, (0,2,0), later in head.
+ *   derived light: `.cv2-root:not([data-theme="dark"]):not([data-theme="dark"] *)`
+ *                  — every root tokens.css leaves light, (0,3,0).
  *
- *   Rule 2 matches at the same (0,2,0) and is LATER IN THE SAME SHEET, which is
- *   what makes an always-dark scope beat the active ramp inside it. Source
- *   order is load-bearing: swap these two rules and every terminal goes light.
+ * The always-dark rule comes second. Every always-dark scope also carries
+ * `data-theme="dark"`, so the light rule never matches inside one; in the dark
+ * case both rules are (0,2,0) and SOURCE ORDER decides — swap them and every
+ * terminal takes the active ramp.
  */
 export function styleSheetText(resolved: ResolvedStyle): string {
   const decls = (table: StyleTokenTable): string =>
@@ -1004,7 +1010,10 @@ export function styleSheetText(resolved: ResolvedStyle): string {
       .map(([k, v]) => `  ${k}: ${v};`)
       .join('\n');
 
-  const main = `.cv2-root,\n.cv2-root[data-theme],\n[data-theme] .cv2-root {\n${decls(resolved.cssVars)}\n}`;
+  const selector = resolved.darkish
+    ? '.cv2-root[data-theme="dark"],\n[data-theme="dark"] .cv2-root'
+    : '.cv2-root:not([data-theme="dark"]):not([data-theme="dark"] *)';
+  const main = `${selector} {\n${decls(resolved.cssVars)}\n}`;
   if (!resolved.alwaysDarkCssVars) return `${main}\n`;
   const dark = `.cv2-root[data-always-dark="true"],\n[data-always-dark="true"] .cv2-root {\n${decls(
     resolved.alwaysDarkCssVars,

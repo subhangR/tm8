@@ -349,17 +349,19 @@ describe('resolveStyle — hash', () => {
 describe('styleSheetText (§3.1)', () => {
   const sheet = styleSheetText(resolve(doc()));
 
-  it('reaches a bare root, a themed root and a nested root', () => {
-    expect(sheet).toContain('.cv2-root,');
-    expect(sheet).toContain('.cv2-root[data-theme],');
-    expect(sheet).toContain('[data-theme] .cv2-root {');
+  it('claims, in light, every root tokens.css leaves light and no root it makes dark', () => {
+    expect(sheet.startsWith('.cv2-root:not([data-theme="dark"]):not([data-theme="dark"] *) {')).toBe(true);
+  });
+
+  it('claims, in dark, exactly tokens.css\'s dark selector — an explicit light root falls through', () => {
+    const darkSheet = styleSheetText(resolve({ ...doc(), foundation: FIXTURE_DARK.id }));
+    expect(darkSheet.startsWith('.cv2-root[data-theme="dark"],\n[data-theme="dark"] .cv2-root {')).toBe(true);
+    expect(darkSheet).not.toContain(':not(');
   });
 
   it('puts the always-dark rule AFTER the active rule, because source order decides', () => {
-    const active = sheet.indexOf('[data-theme] .cv2-root {');
     const chrome = sheet.indexOf('[data-always-dark="true"] .cv2-root {');
-    expect(active).toBeGreaterThan(-1);
-    expect(chrome).toBeGreaterThan(active);
+    expect(chrome).toBeGreaterThan(sheet.indexOf('{'));
   });
 
   it('declares every resolved token', () => {

@@ -102,6 +102,52 @@ describe('style store — first paint', () => {
   });
 });
 
+describe('an explicit data-theme that disagrees with the active style keeps its tokens.css ramp', () => {
+  /* The review boards (`SettingsBoard`'s `Both`, GalleryPage, FilesNodeBoard)
+     stamp light and dark side by side. The sheet's ACTIVE rule may only claim
+     roots tokens.css already puts in the active theme; everything else must
+     fall through to tokens.css untouched. Asserted with the sheet's REAL
+     selector, so a selector edit that re-widens it fails here. */
+  const activeSelector = () => sheet().slice(0, sheet().indexOf(' {'));
+
+  function board() {
+    document.body.innerHTML = `
+      <div class="cv2-root" data-theme="light" id="light"><div class="cv2-root" id="light-nested"></div></div>
+      <div class="cv2-root" data-theme="dark" id="dark"><div class="cv2-root" id="dark-nested"></div></div>
+      <div class="cv2-root" id="bare"></div>`;
+    const el = (id: string) => document.getElementById(id)!;
+    return { light: el('light'), lightNested: el('light-nested'), dark: el('dark'), darkNested: el('dark-nested'), bare: el('bare') };
+  }
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('active dark: the dark half takes the style, the light half and a bare root keep tokens.css light', () => {
+    localStorage.setItem('tm8ui.theme', 'dark');
+    __resetStyleStoreForTests();
+    installActiveStyle();
+    const b = board();
+    const sel = activeSelector();
+    expect(b.dark.matches(sel)).toBe(true);
+    expect(b.darkNested.matches(sel)).toBe(true);
+    expect(b.light.matches(sel)).toBe(false);
+    expect(b.lightNested.matches(sel)).toBe(false);
+    expect(b.bare.matches(sel)).toBe(false);
+  });
+
+  it('active light: the light half and a bare root take the style, the dark half keeps tokens.css dark', () => {
+    installActiveStyle();
+    const b = board();
+    const sel = activeSelector();
+    expect(b.light.matches(sel)).toBe(true);
+    expect(b.lightNested.matches(sel)).toBe(true);
+    expect(b.bare.matches(sel)).toBe(true);
+    expect(b.dark.matches(sel)).toBe(false);
+    expect(b.darkNested.matches(sel)).toBe(false);
+  });
+});
+
 describe('useTheme shim — same API, same behaviour', () => {
   it('reports the store theme and the system-default flag', () => {
     const { result } = renderHook(() => useTheme());
