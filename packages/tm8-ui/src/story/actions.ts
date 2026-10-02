@@ -11,7 +11,7 @@
  * Every member resolves with the id of what it created (or void) and rejects
  * with an Error whose message is shown to the user as-is.
  */
-import type { TeamMemberMode } from '@tm8/contract';
+import type { EntitySummary, TeamMemberMode } from '@tm8/contract';
 
 /** What the "Add anything" sheet / a node popover can make. */
 export type StoryIntent = 'spawn' | 'dispatch' | 'task' | 'message' | 'coordinator' | 'child-story';
@@ -44,6 +44,8 @@ export interface StoryActions {
   /** Put an existing entity into the story as a root / take one out. */
   addRoot?: (entityId: string) => Promise<void>;
   removeRoot?: (entityId: string) => Promise<void>;
+  /** One bounded recent page of candidates to put in as a root (the membership picker's search). */
+  searchRoots?: (text: string) => Promise<EntitySummary[]>;
   /** Change the story's own status. */
   setStatus?: (status: string) => Promise<void>;
   /** Navigate to any entity. */
