@@ -2009,6 +2009,12 @@ export interface IdentityGetResult {
    * predates the field omits it; read absent as "unknown", not `agents`.
    */
   spaceSessions?: SpaceSessionsMode;
+  /**
+   * The caller's style preference (styles spec §4.1), embedded so the shell
+   * learns it in the round trip it already makes. `null` = never chosen: the
+   * viewer gets the space default. Absent on a node that predates styles.
+   */
+  stylePrefs?: StylePrefsView | null;
 }
 
 // ---------------------------------------------------------------------------

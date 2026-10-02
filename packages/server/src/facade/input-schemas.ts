@@ -21,6 +21,15 @@ import { SkillScanInputSchema } from '../skills/handlers.js';
  * or declare it body-less; an omission here is a to-do, not a decision.
  */
 import {
+  PersonalStyleCreateInputSchema,
+  PersonalStyleDeleteInputSchema,
+  PersonalStyleUpdateInputSchema,
+  SpaceStyleDefaultSetInputSchema,
+  StylePrefsSetInputSchema,
+  StylePullInputSchema,
+  StylePushInputSchema,
+  StyleRemoveInputSchema,
+  StylesResolveInputSchema,
   ContainersAttachInputSchema,
   ContainersBrowserEndpointInputSchema,
   ContainersComputerInputSchema,
@@ -210,6 +219,16 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   // identity (v2 Stage 0). The DTO deliberately has no actorId — strictness
   // refuses an actor on the wire rather than ignoring it.
   'identity.profile.update': IdentityProfileUpdateInputSchema,
+  // Styles (282, styles spec §4.1).
+  'styles.personal.create': PersonalStyleCreateInputSchema,
+  'styles.personal.update': PersonalStyleUpdateInputSchema,
+  'styles.personal.delete': PersonalStyleDeleteInputSchema,
+  'styles.push': StylePushInputSchema,
+  'styles.pull': StylePullInputSchema,
+  'styles.remove': StyleRemoveInputSchema,
+  'styles.resolve': StylesResolveInputSchema,
+  'identity.stylePrefs.set': StylePrefsSetInputSchema,
+  'spaces.styleDefault.set': SpaceStyleDefaultSetInputSchema,
 
   // auth (v2 Stage 1). No actorId and no clientMutationId on any of these —
   // authentication has no authoring persona and no idempotency ledger entry.

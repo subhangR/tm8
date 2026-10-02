@@ -71,6 +71,7 @@ import { registerW2IdentitySpacesHandlers } from './handlers/w2/identity-spaces.
 import { registerW2InboxReadMarksHandlers } from './handlers/w2/inbox-read-marks.js';
 import { registerW2MenuDefaultChannelHandlers } from './handlers/w2/menu-default-channel.js';
 import { registerW2ConfigsHandlers } from './handlers/w2/configs.js';
+import { registerW2StyleHandlers } from './handlers/w2/styles.js';
 import {
   registerW2MessagesHandoffsHandlers,
   type W2MessagesHandoffsServiceOptions,
@@ -311,6 +312,10 @@ export function registerFacadeHandlers(
   registerW2FeedContextHandlers(registry, facade);
   registerW2MenuDefaultChannelHandlers(registry, facade);
   registerW2ConfigsHandlers(registry, facade);
+  // Styles (migration 282, styles spec §4): personal styles, read-only space
+  // styles, prefs and the space default. The human-only default door is
+  // wrapped inside the registration.
+  registerW2StyleHandlers(registry, facade);
 
   /**
    * Containers (177). REGISTERED UNCONDITIONALLY, unlike `files` or the

@@ -42,6 +42,12 @@ export const EVENT_SUBJECT_KEYS: Readonly<Record<string, readonly string[]>> = O
 export const SUBJECTLESS_EVENT_TYPES: readonly string[] = Object.freeze([
   'menu.updated',
   'space.default_channel.updated',
+  // Styles (282). A personal style is not an entity and a preference or a
+  // default is about no entity, so all three index as '{}' — the SQL twin's
+  // `else array[]` arm already says so with no change.
+  'space.style_default.updated',
+  'personal_style.updated',
+  'identity.style_prefs.updated',
 ]);
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
