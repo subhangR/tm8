@@ -330,3 +330,18 @@
     width: 130px;
   }
 }
+.cv2-root .styleed__banner--block {
+  flex-wrap: wrap;
+  background: var(--pn-block-soft);
+}
+.cv2-root .styleed__diff {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--pn-fs-label);
+}
+.cv2-root .styleed__diff th,
+.cv2-root .styleed__diff td {
+  text-align: left;
+  padding: 2px 6px;
+  border-bottom: 1px solid var(--pn-line);
+}

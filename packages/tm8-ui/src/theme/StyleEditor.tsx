@@ -16,8 +16,8 @@
  * CONFLICTS. A `personal_style.updated` for the open style from another tab
  * reloads silently when this one is clean; with unsaved edits it shows
  * "Updated elsewhere" and keeps the draft, and Save answers `version_conflict`
- * until reloaded. A push that loses a race shows the server's conflict and
- * keeps everything as it was.
+ * until reloaded. A push that loses a race (someone pushed since this
+ * author's `publishedVersion`) offers Compare, Push over it and Pull first.
  *
  * WIDGETS (colour pickers, ANSI grid, font dropdown, xterm sample) are phase
  * 4; here a colour is a text field with a swatch.
@@ -170,6 +170,16 @@ function isHex(value: string | undefined): boolean {
   return /^#[0-9a-f]{6}$/i.test((value ?? '').trim());
 }
 
+/**
+ * The space-style version this author last pushed (`publishedVersion`, added
+ * to `PersonalStyleView` by #1002 for §9.2), or null on a first push / a node
+ * that predates the field.
+ */
+function publishedVersionOf(view: PersonalStyleView): number | null {
+  const v = (view as PersonalStyleView & { publishedVersion?: number | null }).publishedVersion;
+  return typeof v === 'number' && v > 0 ? v : null;
+}
+
 /** A space style's doc out of an `entities.versions` snapshot (the `styles` detail row). */
 function snapshotDoc(snapshot: Record<string, unknown> | null): StyleDoc | null {
   if (!snapshot) return null;
@@ -244,9 +254,11 @@ function PersonalEditor({
   seam,
   id,
   spaceId,
+  members,
   initialWarnings,
   onClose,
   onChanged,
+  onOpen,
 }: StyleEditorProps & { id: string }) {
   const [saved, setSaved] = useState<PersonalStyleView | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -257,6 +269,9 @@ function PersonalEditor({
   const [serverWarnings, setServerWarnings] = useState<StyleWarning[]>(initialWarnings ?? []);
   const [elsewhere, setElsewhere] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  /* §9.2: a push that lost the race — the space style as it stands now. */
+  const [pushConflict, setPushConflict] = useState<StyleGetResult | null>(null);
+  const [comparing, setComparing] = useState(false);
 
   const load = useCallback(async () => {
     if (!seam.style) throw new Error('This server cannot read styles.');
@@ -353,28 +368,50 @@ function PersonalEditor({
       }
     });
 
-  const push = () =>
-    run('push', async () => {
-      if (!saved || !seam.pushStyle || !spaceId) return;
-      if (dirty) throw new Error('Save first: Push sends the saved version.');
-      try {
-        const res = await seam.pushStyle({
-          personalStyleId: saved.id,
-          spaceId,
-          ...(saved.publishedAs ? { targetStyleId: saved.publishedAs } : {}),
-        });
-        setServerWarnings(res.warnings);
-        setNotice(`Pushed as ${res.style.title} v${res.style.version}. Everyone using it sees this now.`);
-        await load();
-        onChanged?.();
-      } catch (e) {
-        if (errorCode(e) === 'version_conflict') {
-          throw new Error(
-            'Someone pushed a newer version since your last push: open it from the picker to compare, then push again or pull first.',
-          );
-        }
-        throw e;
+  /**
+   * PUSH (§1.4, §9.2). Re-pushing guards on the version this author last
+   * pushed (`publishedVersion`), so a member who pushed in between is not
+   * silently overwritten: the server answers `version_conflict` and the
+   * editor offers Compare, Push over it, or Pull first. `overVersion` is the
+   * explicit "push over it" — the version the author has now seen.
+   */
+  const pushTo = async (overVersion?: number) => {
+    if (!saved || !seam.pushStyle || !spaceId) return;
+    if (dirty) throw new Error('Save first: Push sends the saved version.');
+    const lastPushed = publishedVersionOf(saved);
+    const expectedVersion = overVersion ?? lastPushed ?? undefined;
+    try {
+      const res = await seam.pushStyle({
+        personalStyleId: saved.id,
+        spaceId,
+        ...(saved.publishedAs ? { targetStyleId: saved.publishedAs } : {}),
+        ...(saved.publishedAs && expectedVersion !== undefined ? { expectedVersion } : {}),
+      });
+      setPushConflict(null);
+      setComparing(false);
+      setServerWarnings(res.warnings);
+      setNotice(`Pushed as ${res.style.title} v${res.style.version}. Everyone using it sees this now.`);
+      await load();
+      onChanged?.();
+    } catch (e) {
+      if (errorCode(e) === 'version_conflict' && saved.publishedAs && seam.style) {
+        setPushConflict(await seam.style(`space:${saved.publishedAs}`));
+        return;
       }
+      throw e;
+    }
+  };
+
+  const push = () => run('push', () => pushTo());
+  const pushOver = () => run('push', () => pushTo(pushConflict?.version));
+  const pullFirst = () =>
+    run('pull', async () => {
+      if (!saved?.publishedAs || !seam.pullStyle) return;
+      const res = await seam.pullStyle(`space:${saved.publishedAs}`);
+      setPushConflict(null);
+      onChanged?.();
+      if (onOpen) onOpen({ kind: 'personal', id: res.style.id });
+      else setNotice(`Pulled into “${res.style.title}”.`);
     });
 
   const use = () =>
@@ -466,6 +503,29 @@ function PersonalEditor({
         </p>
       ) : null}
       {notice ? <p className="styleed__note">{notice}</p> : null}
+      {pushConflict ? (
+        <div className="styleed__banner styleed__banner--block" role="alert" data-testid="style-push-conflict">
+          <span>
+            v{pushConflict.version} was pushed by{' '}
+            {memberName(members, pushConflict.space?.pushedBy) ?? 'another member'} since your last push: compare,
+            then push over it or pull first.
+          </span>
+          <span className="styleed__actions">
+            <button type="button" className="styleed__btn" aria-pressed={comparing} onClick={() => setComparing((v) => !v)}>
+              Compare
+            </button>
+            <button type="button" className="styleed__btn" disabled={busy !== null} onClick={() => void pushOver()}>
+              Push over it
+            </button>
+            {seam.pullStyle ? (
+              <button type="button" className="styleed__btn" disabled={busy !== null} onClick={() => void pullFirst()}>
+                Pull first
+              </button>
+            ) : null}
+          </span>
+          {comparing ? <StyleDiff mine={doc} theirs={pushConflict.doc} theirLabel={`v${pushConflict.version}`} /> : null}
+        </div>
+      ) : null}
 
       <div className="styleed__meta">
         <label className="styleed__field">
@@ -1085,6 +1145,50 @@ function Advanced({
       <h4 className="styleed__h">Document (JSON)</h4>
       <pre className="styleed__code">{JSON.stringify(doc, null, 2)}</pre>
     </div>
+  );
+}
+
+/** Key-by-key difference between two docs (foundation, vars, css): the §9.2 Compare. */
+function StyleDiff({ mine, theirs, theirLabel }: { mine: StyleDoc; theirs: StyleDoc; theirLabel: string }) {
+  const rows: { key: string; mine: string; theirs: string }[] = [];
+  if (mine.foundation !== theirs.foundation) {
+    rows.push({ key: 'foundation', mine: mine.foundation, theirs: theirs.foundation });
+  }
+  const keys = [...new Set([...Object.keys(mine.vars), ...Object.keys(theirs.vars)])].sort();
+  for (const key of keys) {
+    const a = mine.vars[key];
+    const b = theirs.vars[key];
+    if (a !== b) rows.push({ key, mine: a ?? '(inherited)', theirs: b ?? '(inherited)' });
+  }
+  if ((mine.css ?? '') !== (theirs.css ?? '')) {
+    rows.push({ key: 'css', mine: mine.css ? `${mine.css.length} chars` : '(none)', theirs: theirs.css ? `${theirs.css.length} chars` : '(none)' });
+  }
+  if (rows.length === 0) return <p className="styleed__note">No differences: pushing over it changes nothing.</p>;
+  return (
+    <table className="styleed__diff" data-testid="style-diff">
+      <thead>
+        <tr>
+          <th>Key</th>
+          <th>Yours</th>
+          <th>{theirLabel}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr key={r.key}>
+            <td>
+              <code>{r.key}</code>
+            </td>
+            <td>
+              <code>{r.mine}</code>
+            </td>
+            <td>
+              <code>{r.theirs}</code>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
