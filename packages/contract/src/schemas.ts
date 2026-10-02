@@ -222,6 +222,8 @@ export const CoreEntityKindSchema = z.enum([
   // Stories (283): roots by `contains`, the rest follows. Creatable through
   // the generic envelope.
   'story',
+  // Space styles (282). Not in `CreatableEntityKind`: `styles.push` is its door.
+  'style',
 ]);
 
 export const CustomEntityKindSchema = z.custom<CustomEntityKind>(
@@ -678,6 +680,17 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
   // answers for them. `server` has no detail row until W8.
   z.object({ kind: z.literal('space_link') }).strict(),
   z.object({ kind: z.literal('server') }).strict(),
+  // 282 — a space style carries its FULL doc on state (spec §4.3: the push
+  // event is how viewers repaint, so it must not need a fetch).
+  z.object({
+    kind: z.literal('style'),
+    doc: z.lazy(() => StyleDocSchema),
+    resolvedHash: z.string().nullable(),
+    pushedBy: EntityIdSchema,
+    pushedAt: z.string(),
+    sourceOwnerIdentityId: z.string(),
+    tags: z.array(z.string()),
+  }).strict(),
   // 176 — the chat row's facts. `runtimeState` is the durable claim about the
   // headless child; `turnState` is the queue. They are independent: a chat can
   // be 'stopped' with a turn 'queued', which is what "the node restarted, your
@@ -1089,6 +1102,17 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
   // 250 (W6) — a space link's content is `spaceLinks.list`'s answer.
   z.object({ kind: z.literal('space_link') }).strict(),
   z.object({ kind: z.literal('server') }).strict(),
+  // 282 — a space style's content: its state plus the description.
+  z.object({
+    kind: z.literal('style'),
+    description: z.string().nullable(),
+    doc: z.lazy(() => StyleDocSchema),
+    resolvedHash: z.string().nullable(),
+    pushedBy: EntityIdSchema,
+    pushedAt: z.string(),
+    sourceOwnerIdentityId: z.string(),
+    tags: z.array(z.string()),
+  }).strict(),
   // A chat has no content beyond its summary (R5): the working directory and
   // the native session id are the two facts that stay server-side.
   z.object({ kind: z.literal('chat') }).strict(),
@@ -1602,6 +1626,35 @@ export const WorkspaceEventSchema: z.ZodType<WorkspaceEvent> = z.lazy(() => z.un
     type: z.literal('space.default_channel.updated'),
     channelId: EntityIdSchema.nullable(),
     settingsRevision: z.number().int().positive(),
+    clientMutationId: z.string().optional(),
+  }).strict(),
+  // Styles (282, spec §4.3): RPC-authored passthrough, STRICT like every
+  // passthrough arm. The first two are recipient-targeted rows.
+  z.object({
+    ...workspaceEventEnvelopeShape,
+    type: z.literal('personal_style.updated'),
+    id: z.string().uuid(),
+    version: z.number().int().positive(),
+    doc: z.lazy(() => StyleDocSchema).nullable(),
+    resolvedHash: z.string().nullable(),
+    deleted: z.boolean(),
+    clientMutationId: z.string().optional(),
+  }).strict(),
+  z.object({
+    ...workspaceEventEnvelopeShape,
+    type: z.literal('identity.style_prefs.updated'),
+    currentStyle: z.string(),
+    darkStyle: z.string().nullable(),
+    followOs: z.boolean(),
+    revision: z.number().int().positive(),
+    currentHash: z.string().nullable(),
+    clientMutationId: z.string().optional(),
+  }).strict(),
+  z.object({
+    ...workspaceEventEnvelopeShape,
+    type: z.literal('space.style_default.updated'),
+    defaultStyle: z.string(),
+    revision: z.number().int().positive(),
     clientMutationId: z.string().optional(),
   }).strict(),
   // Git facts (Tier 4 git×graph): RPC-authored passthrough — SQL authors in
@@ -2600,7 +2653,7 @@ export const CreatableEntityKindSchema = z.union([
   // `form` likewise: `forms.create` writes its questions and requesting
   // session in the same call (FORMS-DESIGN §6). `credential` is human-only
   // and born under a SQL guard from credentials.space.* (W10a).
-  CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile', 'worktree', 'artifact', 'chat', 'container', 'form', 'credential', 'space_link', 'server']),
+  CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile', 'worktree', 'artifact', 'chat', 'container', 'form', 'credential', 'space_link', 'server', 'style']),
   CustomEntityKindSchema,
 ]);
 
@@ -5607,3 +5660,109 @@ export const BuiltinStyleSchema: z.ZodType<BuiltinStyle> = z
     tokens: StyleTokenTableSchema,
   })
   .strict();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STYLES — operation inputs (styles spec 01a0fc22 v8 §4, §8.1). The document's
+// per-key grammar and the css sanitiser are the resolver's job (one
+// implementation for server, CLI and UI); these schemas pin only the wire
+// shape and the hard caps the database also enforces.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** `builtin:<slug>`, `personal:<uuid>` or `space:<uuid>`. */
+export const StyleRefStringSchema = z.string().regex(
+  /^(builtin:[a-z0-9-]{1,64}|(personal|space):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/,
+  'a style reference is builtin:<slug>, personal:<uuid> or space:<uuid>',
+);
+
+/** A ref a space DEFAULT may hold: never a personal style (invisible to others). */
+export const SpaceStyleDefaultRefSchema = z.string().regex(
+  /^(builtin:[a-z0-9-]{1,64}|space:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/,
+  'a space default is builtin:<slug> or space:<uuid> (a personal style is invisible to other members)',
+);
+
+const StyleVarKeySchema = z.string().regex(/^--pn-[a-z0-9-]{1,64}$/);
+const StyleVarValueSchema = z.string().max(512);
+const StyleTitleSchema = z.string().refine((v) => v.trim().length >= 1 && v.trim().length <= 200,
+  'title must be 1..200 characters after trimming');
+const StyleDescriptionSchema = z.string().max(2000).nullable();
+const StyleTagsSchema = z.array(z.string().min(1).max(32)).max(16);
+const StyleCssSchema = z.string().max(16 * 1024).nullable();
+const StyleFoundationSchema = z.string().regex(/^builtin:[a-z0-9-]{1,64}$/);
+
+function maxKeys<T extends z.ZodTypeAny>(schema: T, max: number) {
+  return schema.refine((v: Record<string, unknown>) => Object.keys(v).length <= max,
+    `at most ${max} variables`);
+}
+
+export const PersonalStyleCreateInputSchema = z.object({
+  clientMutationId: z.string().min(1),
+  title: StyleTitleSchema.optional(),
+  description: StyleDescriptionSchema.optional(),
+  foundation: StyleFoundationSchema.optional(),
+  vars: maxKeys(z.record(StyleVarKeySchema, StyleVarValueSchema), 200).optional(),
+  css: StyleCssSchema.optional(),
+  tags: StyleTagsSchema.optional(),
+  from: StyleRefStringSchema.optional(),
+}).strict().refine((v) => v.from !== undefined || (v.title !== undefined && v.foundation !== undefined),
+  'title and foundation are required unless `from` names a style to copy');
+
+export const PersonalStyleUpdateInputSchema = z.object({
+  clientMutationId: z.string().min(1),
+  expectedVersion: z.number().int().positive(),
+  title: StyleTitleSchema.optional(),
+  description: StyleDescriptionSchema.optional(),
+  foundation: StyleFoundationSchema.optional(),
+  vars: maxKeys(z.record(StyleVarKeySchema, StyleVarValueSchema.nullable()), 200).optional(),
+  varsReplace: maxKeys(z.record(StyleVarKeySchema, StyleVarValueSchema), 200).optional(),
+  css: StyleCssSchema.optional(),
+  tags: StyleTagsSchema.optional(),
+}).strict().refine((v) => !(v.vars !== undefined && v.varsReplace !== undefined),
+  '`vars` (merge patch) and `varsReplace` are mutually exclusive');
+
+export const PersonalStyleDeleteInputSchema = z.object({
+  clientMutationId: z.string().min(1),
+  expectedVersion: z.number().int().positive().optional(),
+}).strict();
+
+export const StylePushInputSchema = z.object({
+  clientMutationId: z.string().min(1),
+  personalStyleId: z.string().uuid(),
+  spaceId: z.string().uuid(),
+  targetStyleId: z.string().uuid().optional(),
+  expectedVersion: z.number().int().positive().optional(),
+  title: StyleTitleSchema.optional(),
+  actorId: z.string().uuid().optional(),
+}).strict();
+
+export const StylePullInputSchema = z.object({
+  clientMutationId: z.string().min(1),
+  title: StyleTitleSchema.optional(),
+}).strict();
+
+export const StyleRemoveInputSchema = z.object({
+  clientMutationId: z.string().min(1),
+  expectedVersion: z.number().int().positive().optional(),
+  actorId: z.string().uuid().optional(),
+}).strict();
+
+export const StylesResolveInputSchema = z.object({
+  doc: z.lazy(() => StyleDocSchema),
+}).strict();
+
+export const StylePrefsSetInputSchema = z.object({
+  clientMutationId: z.string().min(1),
+  expectedRevision: z.number().int().nonnegative().optional(),
+  currentStyle: StyleRefStringSchema.optional(),
+  darkStyle: StyleRefStringSchema.nullable().optional(),
+  followOs: z.boolean().optional(),
+  trustedCss: z.object({
+    add: z.array(z.string().uuid()).max(100).optional(),
+    remove: z.array(z.string().uuid()).max(100).optional(),
+  }).strict().optional(),
+}).strict();
+
+export const SpaceStyleDefaultSetInputSchema = z.object({
+  clientMutationId: z.string().min(1),
+  expectedRevision: z.number().int().nonnegative().optional(),
+  defaultStyle: SpaceStyleDefaultRefSchema,
+}).strict();
