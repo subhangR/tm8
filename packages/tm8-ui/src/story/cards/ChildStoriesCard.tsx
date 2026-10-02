@@ -10,7 +10,7 @@ import { useState } from 'react';
 
 import { KindIcon } from '../../domain';
 import { Pill } from '../../kit';
-import { childStoryProgress, pct, since, STORY_KIND, toneOf, type StoryChild } from '../model';
+import { childStoryProgress, pct, since, statusWord, STORY_KIND, toneOf, type StoryChild } from '../model';
 import type { StoryBlockProps, StoryNodePick } from '../props';
 import { CardHead, Empty, flashOf, InlineEntry, Meter, TonePill } from './shared';
 
@@ -62,7 +62,7 @@ function Kid({ c, open, flash }: { c: StoryChild; open?: (id: string) => void; f
       <span className="stc-kid__main">
         <span className="stc-kid__t">{c.title}</span>
         <span className="stc-kid__meta">
-          <TonePill tone={toneOf(c)} label={c.status ?? undefined} />
+          <TonePill tone={toneOf(c)} label={c.status ? statusWord(c.status) : undefined} />
           <span>
             {c.itemCount} {c.itemCount === 1 ? 'thing' : 'things'}
           </span>

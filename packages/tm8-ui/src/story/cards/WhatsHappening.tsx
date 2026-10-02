@@ -12,22 +12,33 @@ import { nameOf, nodesById, rootNumber, SESSION_KIND, since, type StoryActivityI
 import type { StoryBlockProps, StoryNodePick } from '../props';
 import { CardHead, Empty, flashOf, picker } from './shared';
 
-/** The stored verb → the words a person would say. Unknown verbs read as stored. */
+/**
+ * The stored verb → the words a person would say. `activity.verb` is a CLOSED
+ * set (activity_verb_check, last widened by migration 123); every member is
+ * here. Anything else falls back to `humanVerb`, never the dotted key.
+ */
 const VERB_WORDS: Readonly<Record<string, string>> = {
   created: 'made',
   updated: 'updated',
-  linked: 'linked',
-  unlinked: 'unlinked',
-  completed: 'completed',
+  moved: 'moved',
   deleted: 'removed',
   restored: 'restored',
-  renamed: 'renamed',
-  status_changed: 'moved',
-  commented: 'said something on',
-  assigned: 'assigned',
-  merged: 'merged',
-  opened: 'opened',
+  linked: 'linked',
+  unlinked: 'unlinked',
+  reacted: 'reacted to',
+  awarded: 'awarded',
+  completed: 'completed',
+  joined: 'joined',
+  pulled: 'pulled',
+  'work.changed': 'moved',
+  'pr.linked': 'linked a pull request to',
+  unblocked: 'unblocked',
+  'chat.tool_called': 'ran a tool on',
 };
+
+function humanVerb(verb: string): string {
+  return VERB_WORDS[verb] ?? verb.replace(/[._]+/g, ' ').trim();
+}
 
 /** How many activity rows show before "Show N more". */
 const FIRST_PAGE = 12;
@@ -160,7 +171,7 @@ function ActivityRow({
       </span>
       <div>
         <div className="stc-tl__what">
-          <b>{nameOf(view, a.actorId, a.actor)}</b> {VERB_WORDS[a.verb] ?? a.verb.replace(/_/g, ' ')}{' '}
+          <b>{nameOf(view, a.actorId, a.actor)}</b> {humanVerb(a.verb)}{' '}
           {a.entityId === view.id ? 'the story' : obj(a.entityId, a.entityTitle)}
         </div>
         {where ? (

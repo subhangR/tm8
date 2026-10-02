@@ -22,6 +22,7 @@ import {
   segments,
   SESSION_KIND,
   since,
+  statusWord,
   TASK_KIND,
   VIEW_OF_KIND,
   type StoryNode,
@@ -81,7 +82,7 @@ function StatusCard({ view, actions }: StoryBlockProps) {
         : 'Nothing in it to finish yet.';
   return (
     <section className="stc-card">
-      <CardHead title="Status" count={view.status} />
+      <CardHead title="Status" count={statusWord(view.status)} />
       <div className="stc-body">
         <div className="stc-steps">
           {STATUS_STEPS.map((s, i) => {
