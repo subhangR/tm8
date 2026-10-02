@@ -147,9 +147,10 @@ export interface StoryNode {
   kind: string;
   title: string;
   /**
-   * The workflow state's NAME as a human reads it (e.g. `In Progress`) —
-   * 152's states carry no separate key; `statusCategory` is the machine
-   * value. Null when the row has none. Every `status` in this module means this.
+   * The status KEY, the same string `tm8 entity context` puts on a ref: a
+   * task's work status (`open`, `working`, …), a session's runtime status, a
+   * PR's state, a chat's runtime state, else the status category. Every
+   * `status` in this module means this.
    */
   status: string | null;
   statusCategory: StatusCategory | null;
@@ -238,6 +239,8 @@ export interface StoryDispatch {
 
 export interface StoryTeammate {
   id: string;
+  /** `member` = a human in the trail: no mode, no hierarchy, no sessions. */
+  kind: 'team_member' | 'member';
   name: string;
   mode: TeamMemberMode | null;
   /** The teammate hierarchy tm8 already has (team_member `parent_id`). */
@@ -373,7 +376,8 @@ export interface EntityContextStory {
   blocked: Array<{ id: string; kind: string; title: string; status: string | null }>;
   sessions: Array<{ id: string; callSign: string; title: string; live: boolean; mode: TeamMemberMode | null;
     teamMemberId: string | null; taskIds: string[] }>;
-  team: Array<{ id: string; name: string; mode: TeamMemberMode | null; parentId: string | null; live: boolean; sessionIds: string[] }>;
+  team: Array<{ id: string; kind: 'team_member' | 'member'; name: string; mode: TeamMemberMode | null;
+    parentId: string | null; live: boolean; sessionIds: string[] }>;
   childStories: Array<{ id: string; title: string; status: string | null; taskProgress: StoryProgress;
     rollup: StoryProgress; liveSessionCount: number }>;
   truncated: boolean;

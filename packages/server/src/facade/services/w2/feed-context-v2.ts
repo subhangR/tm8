@@ -948,7 +948,7 @@ async function loadV2(q: Querier, id: string, request: V2Request): Promise<{ loa
         teamMemberId: x.teamMemberId, taskIds: x.taskIds,
       }))),
       team: cap('story.team', page.team.map((t) => ({
-        id: t.id, name: t.name, mode: t.mode, parentId: t.parentId, live: t.live, sessionIds: t.sessionIds,
+        id: t.id, kind: t.kind, name: t.name, mode: t.mode, parentId: t.parentId, live: t.live, sessionIds: t.sessionIds,
       }))),
       childStories: cap('story.childStories', page.childStories.map((c) => ({
         id: c.id, title: c.title, status: c.status, taskProgress: c.taskProgress, rollup: c.rollup,

@@ -90,6 +90,23 @@ function storyStateOf(raw: unknown): StoryState | null {
   return raw && typeof raw === 'object' && (raw as { kind?: unknown }).kind === 'story' ? (raw as StoryState) : null;
 }
 
+/**
+ * The status KEY every context ref carries — MIRRORS `statusOf` in
+ * services/w2/feed-context-v2.ts, so a root's `status` on the page and the
+ * same row's `status` in `tm8 entity context` are one string.
+ */
+const STATUS_KEY_SQL = `case e.kind
+    when 'task' then coalesce(t.work_status, 'open')
+    when 'work_session' then coalesce(ws.status, 'spawning')
+    when 'pull_request' then coalesce(pr.state, 'unknown')
+    when 'chat' then coalesce(cht.runtime_state, 'cold')
+    else coalesce(e.status_category, 'none') end`;
+const STATUS_KEY_FROM = `
+       left join public.tasks t on t.entity_id = e.id
+       left join public.work_sessions ws on ws.entity_id = e.id
+       left join public.pull_requests pr on pr.entity_id = e.id
+       left join public.chats cht on cht.entity_id = e.id`;
+
 const EMPTY_PROGRESS: StoryProgress = { work: 0, done: 0, inProgress: 0, toDo: 0, blocked: 0, cancelled: 0 };
 
 export async function loadStoryPage(q: Querier, storyId: string): Promise<StoryPage> {
@@ -102,7 +119,7 @@ export async function loadStoryPage(q: Querier, storyId: string): Promise<StoryP
   const allIds = [storyId, ...itemIds];
 
   const facts = await q.query<FactRow>(
-    `select e.id, e.kind, e.parent_id, e.status_category, wst.name as status_name,
+    `select e.id, e.kind, e.parent_id, e.status_category, ${STATUS_KEY_SQL} as status_name,
             e.activity_at, e.created_at, ws.status as ws_status, tm.mode as tm_mode,
             exists (
               select 1 from public.edges dep
@@ -110,9 +127,7 @@ export async function loadStoryPage(q: Querier, storyId: string): Promise<StoryP
                  and coalesce((dep.props ->> 'hard')::boolean, true)
                  and not internal.is_resolved(dep.dst_id)
             ) as blocked
-       from public.entities e
-       left join public.workflow_states wst on wst.id = e.status_id
-       left join public.work_sessions ws on ws.entity_id = e.id
+       from public.entities e${STATUS_KEY_FROM}
        left join public.team_members tm on tm.entity_id = e.id
       where e.id = any($1::uuid[]) and e.deleted_at is null`,
     [allIds],
@@ -160,9 +175,9 @@ export async function loadStoryPage(q: Querier, storyId: string): Promise<StoryP
   );
 
   const children = await q.query<{ id: string; title: string; summary: unknown; status_category: string | null; status_name: string | null }>(
-    `select c.id, st.title, internal.story_summary(c.id) as summary, c.status_category, wst.name as status_name
+    `select c.id, st.title, internal.story_summary(c.id) as summary, c.status_category,
+            coalesce(c.status_category, 'none') as status_name
        from public.entities c join public.stories st on st.entity_id = c.id
-       left join public.workflow_states wst on wst.id = c.status_id
       where c.parent_id = $1 and c.kind = 'story' and c.deleted_at is null
       order by c.position, c.created_at, c.id
       limit ${CHILD_STORY_LIMIT}`,
@@ -346,6 +361,7 @@ export async function loadStoryPage(q: Querier, storyId: string): Promise<StoryP
     const mySessionIds = new Set(mine.map((s) => s.id));
     return {
       id,
+      kind: 'team_member' as const,
       name: title(id),
       mode: teamMode(tf.mode),
       parentId: tf.parent_id,
@@ -359,6 +375,23 @@ export async function loadStoryPage(q: Querier, storyId: string): Promise<StoryP
         .filter((d): d is { taskId: string; sessionId: string } => d.taskId !== null),
     };
   });
+
+  // The humans in the trail (a member reached by working_on / assigned_to):
+  // on the team with no mode, no hierarchy and no sessions of their own.
+  for (const f of facts.filter((x) => x.kind === 'member')) {
+    team.push({
+      id: f.id,
+      kind: 'member',
+      name: title(f.id),
+      mode: null,
+      parentId: null,
+      live: false,
+      sessionIds: [],
+      runs: edgeRows.filter((g) => g.type === 'working_on' && g.src_id === f.id).map((g) => g.dst_id),
+      assigned: assignedTo.filter((g) => g.dst_id === f.id).map((g) => g.src_id),
+      dispatched: [],
+    });
+  }
 
   const childStories: StoryChild[] = children.map((c) => {
     const s = storyStateOf(c.summary);
