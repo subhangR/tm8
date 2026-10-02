@@ -233,7 +233,7 @@ export function StoryGraph({ view, live, hover, filter, selectedId, onPick, onMe
     const inside = r.left >= box.left && r.right <= box.right && r.top >= box.top && r.bottom <= box.bottom;
     if (inside) return;
     const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    el.scrollTo({
+    el.scrollTo?.({
       left: el.scrollLeft + (r.left + r.width / 2) - (box.left + el.clientWidth / 2),
       top: el.scrollTop + (r.top + r.height / 2) - (box.top + el.clientHeight / 2),
       behavior: reduce ? 'auto' : 'smooth',
