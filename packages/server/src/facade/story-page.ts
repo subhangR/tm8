@@ -59,6 +59,7 @@ interface FactRow {
   activity_at: Date | string | null;
   created_at: Date | string;
   ws_status: string | null;
+  ws_mode: string | null;
   tm_mode: string | null;
   blocked: boolean;
 }
@@ -120,7 +121,7 @@ export async function loadStoryPage(q: Querier, storyId: string): Promise<StoryP
 
   const facts = await q.query<FactRow>(
     `select e.id, e.kind, e.parent_id, e.status_category, ${STATUS_KEY_SQL} as status_name,
-            e.activity_at, e.created_at, ws.status as ws_status, tm.mode as tm_mode,
+            e.activity_at, e.created_at, ws.status as ws_status, ws.mode as ws_mode, tm.mode as tm_mode,
             exists (
               select 1 from public.edges dep
                where dep.src_id = e.id and dep.type = 'depends_on'
@@ -329,7 +330,10 @@ export async function loadStoryPage(q: Querier, storyId: string): Promise<StoryP
 
   const sessions: StorySession[] = orderedSessions.map((f) => {
     const persona = personaOf.get(f.id) ?? null;
-    const personaMode = persona ? teamMode(factOf.get(persona)?.tm_mode ?? personaFacts.find((p) => p.id === persona)?.mode ?? null) : null;
+    // The session's OWN mode (work_sessions.mode, set at spawn); the persona's
+    // default only when the session row carries none.
+    const personaMode = teamMode(f.ws_mode)
+      ?? (persona ? teamMode(factOf.get(persona)?.tm_mode ?? personaFacts.find((p) => p.id === persona)?.mode ?? null) : null);
     const taskIds = workingOn.get(f.id) ?? [];
     return {
       id: f.id,
