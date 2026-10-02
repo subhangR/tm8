@@ -11,7 +11,7 @@
  * Every member resolves with the id of what it created (or void) and rejects
  * with an Error whose message is shown to the user as-is.
  */
-import type { StoryMode } from './model';
+import type { TeamMemberMode } from '@tm8/contract';
 
 /** What the "Add anything" sheet / a node popover can make. */
 export type StoryIntent = 'spawn' | 'dispatch' | 'task' | 'message' | 'coordinator' | 'child-story';
@@ -25,7 +25,7 @@ export interface StoryAddRequest {
   /** Which teammate it runs as (spawn/dispatch/coordinator); null = a new teammate. */
   asTeammateId?: string | null;
   /** Mode for a new teammate. */
-  mode?: StoryMode | null;
+  mode?: TeamMemberMode | null;
   /** Who gets ONE message that the new thing exists (teammate or person ids). */
   tellIds: string[];
 }
