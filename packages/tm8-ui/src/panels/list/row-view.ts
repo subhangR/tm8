@@ -27,6 +27,7 @@ export type RowFacet =
   | 'avatar'
   | 'meta'
   | 'status_word'
+  | 'progress'
   | 'prs'
   | 'sessions_chip'
   | 'docs_memories'
@@ -58,6 +59,8 @@ export const ROW_FACETS: readonly RowFacetSpec[] = [
   /* Standard rows only: the task tile's status word is already screen-reader
      text behind its dot, and a session's status is its glyph. */
   { id: 'status_word', label: 'Status label', anatomies: ['standard'] },
+  /* Only kinds whose registry row declares `tile.progress` draw it (story). */
+  { id: 'progress', label: 'Progress', anatomies: ['standard'] },
   { id: 'lane', label: 'Branch / worktree', anatomies: ['session-tree'] },
   { id: 'linked_tasks', label: 'Linked tasks', anatomies: ['session-tree'] },
   { id: 'forms', label: 'Pending forms', anatomies: ['session-tree'] },

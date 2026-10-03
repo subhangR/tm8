@@ -18,6 +18,7 @@ import type {
   EntityCapabilities,
   EntityId,
   EntityKind,
+  EntitySummary,
   SpaceId,
   StatusCategory,
 } from '@tm8/contract';
@@ -142,6 +143,19 @@ export type TileBadgeSource =
   // counters, present on every summary
   | 'points'
   | 'messages';
+
+/**
+ * One row's progress as `tile.progress` reports it. The bands follow
+ * `StoryProgress`: disjoint, and `done + inProgress + blocked <= work`.
+ * `noun` names what is counted, for the tooltip ("3 of 8 tasks done").
+ */
+export interface TileProgress {
+  done: number;
+  work: number;
+  inProgress?: number;
+  blocked?: number;
+  noun?: string;
+}
 
 export interface TileBadgeSpec {
   source: TileBadgeSource;
@@ -705,6 +719,13 @@ export interface ListConfig {
     anatomy?: 'standard' | 'control-card' | 'session-tree';
     /** The two-source law: pool activity signal, gated on a `live` verdict (F1). */
     pulse?: PulseBinding;
+    /**
+     * A done-of-total figure drawn as a small bar at the row's right edge
+     * (standard anatomy). A projection of what the row already carries — the
+     * tile never fetches for it — and `null` means "no figure for this row",
+     * which draws nothing rather than an empty bar.
+     */
+    progress?: (row: EntitySummary) => TileProgress | null;
   };
   /** '● N live'. The count is rows ∩ the seam liveness snapshot, never a derivation. */
   liveCount?: { filter: QueryFilter; label: (n: number) => string };

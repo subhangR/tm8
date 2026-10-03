@@ -1905,7 +1905,22 @@ const ROWS: readonly KindConfig[] = [
       // hierarchy, so a flat list showed every child beside the roots and
       // read as "many root stories". Children start collapsed.
       tree: { by: 'hierarchy', guideLines: true },
-      tile: { badges: [{ source: 'messages' }] },
+      tile: {
+        badges: [{ source: 'messages' }],
+        // Tasks done of tasks in play, at the row's right edge — the same
+        // `taskProgress` the story page's hero reads as "N of M tasks done".
+        // Child stories carry their own bar on their own rows.
+        progress: (row) =>
+          row.state.kind === 'story'
+            ? {
+                done: row.state.taskProgress.done,
+                work: row.state.taskProgress.work,
+                inProgress: row.state.taskProgress.inProgress,
+                blocked: row.state.taskProgress.blocked,
+                noun: 'tasks',
+              }
+            : null,
+      },
       inlineEdit: { title: true },
     }),
     panel: {
