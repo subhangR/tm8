@@ -13,6 +13,7 @@ import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type Keyb
 
 import { getKind, KindIcon } from '../../domain';
 import { FAMILY_TOKEN, GRAPH_VIEWS, STORY_KIND, VIEW_OF_KIND, type StoryEdgeFamily, type StoryGraphView } from '../model';
+import { edgeTypeCounts, useEdgeTypes } from './edge-filter';
 import { kindCounts, layoutStoryGraph, maskFor, trunc, type GraphEdge, type GraphNode } from './layout';
 import type { StoryHops, StoryNodePick } from '../props';
 import type { StoryGraphProps } from './props-graph';
@@ -254,12 +255,16 @@ export function StoryGraph({ view, live, hover, filter, selectedId, onPick, onMe
     else next.add(kind);
     filter.setKinds(present.every((k) => next.has(k.kind)) ? null : next);
   };
+  /* Edge types drawn: none until the user turns one on (issue #35); shared across stories. */
+  const edgeTypes = useEdgeTypes();
+  const presentTypes = useMemo(() => edgeTypeCounts(layout.edges), [layout]);
   const landed = live?.landed;
 
   const shown = (id: string) => mask.inView.has(id) || mask.context.has(id);
   const lit = (rootIds: readonly string[]) => (hoverRoot ? (rootIds.includes(hoverRoot) ? ' stg-on' : ' stg-off-hl') : '');
 
   const edgeState = (e: GraphEdge): string | null => {
+    if (!edgeTypes.types.has(e.type)) return null;
     const vis = shown(e.from) && shown(e.to);
     const touches = mask.inView.has(e.from) || mask.inView.has(e.to);
     if (!vis || (!all && !touches && e.from !== view.id)) return null;
@@ -279,7 +284,7 @@ export function StoryGraph({ view, live, hover, filter, selectedId, onPick, onMe
   const menu = (node: GraphNode, el: Element) => onMenu?.(pickOf(node, el));
 
   const rule = all
-    ? `${layout.nodes.length} nodes · ${layout.edges.length} edges · depth ${view.page.follow.depth}`
+    ? `${layout.nodes.length} nodes · ${layout.edges.filter((e) => edgeTypes.types.has(e.type)).length} of ${layout.edges.length} edges · depth ${view.page.follow.depth}`
     : `${mask.inView.size} in view · the rest stays as context`;
   const truncated = view.state.truncated || view.page.follow.truncated;
   const empty = layout.allRootIds.length === 0;
@@ -341,6 +346,35 @@ export function StoryGraph({ view, live, hover, filter, selectedId, onPick, onMe
                 <button key={kind} type="button" className={`stg-chip${on ? ' stg-chip--on' : ''}`} aria-pressed={on} onClick={() => toggleKind(kind)}>
                   <KindIcon kind={kind} size={11} />
                   {getKind(kind).label}
+                  <span className="stg-chip__n">{count}</span>
+                </button>
+              );
+            })}
+          </span>
+        )}
+        {presentTypes.length > 0 && (
+          <span className="stg-kinds stg-edges" role="group" aria-label="Edge types shown">
+            <span className="stg-hops__lbl">edges</span>
+            <button
+              type="button"
+              className={`stg-chip${presentTypes.every((t) => edgeTypes.types.has(t.type)) ? ' stg-chip--on' : ''}`}
+              onClick={() => edgeTypes.set(new Set([...edgeTypes.types, ...presentTypes.map((t) => t.type)]))}
+            >
+              all
+            </button>
+            <button
+              type="button"
+              className={`stg-chip${presentTypes.every((t) => !edgeTypes.types.has(t.type)) ? ' stg-chip--on' : ''}`}
+              onClick={() => edgeTypes.set(new Set([...edgeTypes.types].filter((t) => !presentTypes.some((p) => p.type === t))))}
+            >
+              none
+            </button>
+            <span className="stg-kinds__sep" />
+            {presentTypes.map(({ type, count }) => {
+              const on = edgeTypes.types.has(type);
+              return (
+                <button key={type} type="button" className={`stg-chip${on ? ' stg-chip--on' : ''}`} aria-pressed={on} onClick={() => edgeTypes.toggle(type)}>
+                  {type.replace(/_/g, ' ')}
                   <span className="stg-chip__n">{count}</span>
                 </button>
               );
