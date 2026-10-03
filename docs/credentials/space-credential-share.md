@@ -5,7 +5,7 @@ active member of S. The grantee may LAUNCH on it (pinned `space:<id>`, or as the
 `my_default`); the secret, key hint and vendor login stay masked for the grantee.
 Public / space-owned credentials need no share (every member may already use them).
 
-## SQL (migration `992_space_credential_shares.sql`, placeholder number)
+## SQL (migration `290_space_credential_shares.sql`, placeholder number)
 
 Table `public.space_credential_shares`
 `(credential_id, space_id, grantee_account_id, granted_by_account_id, created_at)`,

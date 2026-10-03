@@ -1,8 +1,9 @@
 -- =============================================================================
--- 992 (PLACEHOLDER NUMBER) — share a private space credential with one member
--- of the same space (task 01a10201, story Space credentials 01a0fe4b; interface
--- docs/credentials/space-credential-share.md). The merge coordinator assigns
--- the real number at its train position.
+-- 290 — share a private space credential with one member of the same space
+-- (task 01a10201, story Space credentials 01a0fe4b; interface
+-- docs/credentials/space-credential-share.md). Merged in #1024 under the
+-- placeholder name 992_space_credential_shares.sql, then renamed to its train
+-- number; the body is unchanged.
 --
 -- Builds on 239 (owner + visibility, the usability gate), 255 (writers, the R8
 -- sweep, repoint with providers) and 281 (the spawn reader's current body).
