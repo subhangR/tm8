@@ -3,9 +3,9 @@
  *
  * #3: team_members, docs and forms carry status_category to_do, so a story
  * whose tasks were all done read 2/40. 289's `story_work` counts tasks and
- * stories only; this pins that for roots AND hierarchy children of every
- * non-work kind, in progress, taskProgress, rollup and the page's per-root
- * tallies.
+ * stories only; this pins that for roots of every non-work kind AND their
+ * (same-kind, per 001) hierarchy children, in progress, taskProgress, rollup
+ * and the page's per-root tallies.
  *
  * #15: a crashed session (status failed, ended_kind crashed) keeps
  * status_category in_progress — 174's board ruling, so Resume is offered —
@@ -110,14 +110,11 @@ describe('story progress counts only work-bearing kinds', () => {
       await task('anchor', 'open');
       await story('story');
       await story('child', 'story');
-      // Root t1 (open) holds a done subtask and, as hierarchy children, a doc,
-      // a form and a crashed session — none of which is work.
+      // Root t1 (open) holds a done subtask.
       await task('t1', 'open');
       await task('t2', 'done', 't1');
-      await doc('d1', 't1');
-      await form('f1', 't1');
-      await crashed('ws1', 't1');
-      // Non-work roots: a teammate, a doc, a form, a crashed session.
+      // Non-work roots: a teammate, a doc, a form, a crashed session. Hierarchy
+      // is same-kind (001), so their children (d1, f1, ws1) are non-work too.
       await entity('tm', 'team_member');
       await c.query(
         `insert into public.team_members(entity_id, owner_member_id, name, role, identity)
@@ -125,8 +122,11 @@ describe('story progress counts only work-bearing kinds', () => {
         [id['tm'], id['member']],
       );
       await doc('d2');
+      await doc('d1', 'd2');
       await form('f2');
+      await form('f1', 'f2');
       await crashed('ws2');
+      await crashed('ws1', 'ws2');
       // The child story: one working task, a doc and a crashed session.
       await task('t3', 'working');
       await doc('d3');
