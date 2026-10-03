@@ -117,7 +117,60 @@
 
 /* Full screen: fill the parent, the canvas takes the rest and scrolls both ways. */
 .stg-card--fill { display: flex; flex-direction: column; height: 100%; margin: 0; }
+.stg-card--fill .stg-stage { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .stg-card--fill .stg-scroll { flex: 1; min-height: 0; overflow: auto; }
+
+/* The canvas and its view controls (zoom, fit, full screen) pinned over its top-right corner. */
+.stg-stage { position: relative; }
+.stg-scroll { outline-offset: -2px; }
+.stg-card--fill .stg-scroll { overscroll-behavior: contain; }
+/* Zoomed inline: a bounded canvas that scrolls both ways, so a zoom holds the
+   point under the pointer instead of growing the card down the page. */
+.stg-card:not(.stg-card--fill) .stg-scroll--zoomed { overflow: auto; max-height: max(420px, 75vh); }
+.stg-scroll:focus-visible { outline: 1px solid var(--pn-brand); }
+.stg-scroll--panning { cursor: grabbing; user-select: none; }
+.stg-view {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 2px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  box-shadow: var(--pn-sh-sm);
+}
+.stg-view__pct {
+  min-width: 42px;
+  height: 22px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--pn-r-xs);
+  background: transparent;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-tick);
+  cursor: pointer;
+}
+.stg-view__pct:hover:not(:disabled) { background: var(--pn-hover); color: var(--pn-ink); }
+.stg-view__pct:disabled { cursor: default; }
+
+/* Full screen is a CSS state on this same card (the artifact viewer's, `ZoomableFigure`'s):
+   pinned over the app, Escape exits. Doubled class so it outranks the card's frame by arithmetic. */
+.stg-card.stg-card--max {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  height: auto;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+/* The node popover is the page's, fixed at z 40: lift it over the full-screen card. */
+.cv2-root:has(.stg-card--max) .sp-pop { z-index: 61; }
 .stg-svg { display: block; width: 100%; height: auto; margin: 0 auto; }
 
 /* ---- edges ---- */
