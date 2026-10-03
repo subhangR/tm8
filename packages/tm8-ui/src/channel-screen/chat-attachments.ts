@@ -18,11 +18,9 @@ import {
   createFileUploadTask,
   UploadCancelledError,
   type FileUploadTask,
-  type UploadedFile,
 } from '../files/upload';
 import { uuidV7 } from './chat-mutations';
 
-export type UploadedChatAttachment = UploadedFile;
 export type ChatAttachmentUploadTask = FileUploadTask;
 export const ChatUploadCancelledError = UploadCancelledError;
 export { safeUploadReason, sha256Hex } from '../files/upload';

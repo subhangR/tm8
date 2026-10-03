@@ -342,10 +342,6 @@ export const CONVERSATIONS_UNRESOLVED_NOTE = 'Loading conversations…';
 export const SEARCH_DISABLED_REASON =
   'Search across all messages is not built yet — the server has no message-search operation, so a box here could only filter the messages already loaded.';
 
-/** The composer's honest note when the anchor is a running agent session. */
-export const SESSION_DELIVERY_NOTE =
-  'Messages to a session are typed into the agent’s terminal — a busy agent can take up to a minute to see this.';
-
 /** Relative time, minute-grained. Pure so the screen stays deterministic. */
 export function relativeTime(iso: string, now: Date): string {
   const then = new Date(iso).getTime();

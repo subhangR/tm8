@@ -34,15 +34,6 @@ export type KeyLayer =
   /** 6. Global chrome. */
   | 'global';
 
-export const LAYER_ORDER: readonly KeyLayer[] = [
-  'browser',
-  'modal',
-  'terminal',
-  'text-entry',
-  'focus',
-  'global',
-];
-
 /**
  * Commands the controller EMITS. The keyboard module never navigates or acts
  * itself — the shell maps these to view/registry refs, so a menu edit can

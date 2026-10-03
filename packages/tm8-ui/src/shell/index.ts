@@ -103,7 +103,6 @@ export {
   type ContentSurface,
   type NavPanelState,
   type NavPort,
-  type PanelHost,
   type PanelTab,
   type PinOutcome,
 } from './nav-port';
