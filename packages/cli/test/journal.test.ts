@@ -365,6 +365,16 @@ describe('the spend line (F8 visible spend)', () => {
     }
   });
 
+  it('--quiet suppresses the line but still writes the record', () => {
+    const path = tempJournal();
+    const j = createJournal({ ...envFor(path), TM8_JOURNAL_CLASS: 'agent' });
+    j.wrapStreams(sink).stdout('{}');
+    const argv = ['entity', 'get', 'x', '--format', 'json', '--quiet'];
+    const text = stderrDuring(() => j.finish({ path: ['entity', 'get'], argv, exitCode: 0, quiet: true }));
+    expect(text).toBe('');
+    expect(readRecords(path)).toHaveLength(1);
+  });
+
   it('a harness invocation prints NOTHING — fixtures must stay byte-deterministic', () => {
     const path = tempJournal();
     const j = createJournal({ ...envFor(path), TM8_JOURNAL_CLASS: 'harness' });
