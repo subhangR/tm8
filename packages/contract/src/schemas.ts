@@ -4457,8 +4457,14 @@ export const EntityFeedPageSchema: z.ZodType<EntityFeedPage> = z.lazy(() => z.ob
 }).strict());
 
 const ENTITY_CONTEXT_V1_SECTIONS = ['summary', 'hierarchy', 'connections', 'messages', 'activity', 'actions'] as const;
-const ENTITY_CONTEXT_V2_SECTIONS = ['assignment', 'summary', 'hierarchy', 'blockers', 'connections', 'messages', 'actions'] as const;
-const ENTITY_CONTEXT_V2_PAGED: readonly string[] = ['hierarchy', 'blockers', 'connections', 'messages'];
+// The lists, then every core field a default v2 read returns (#12, #33);
+// `summary`, `children`, `parent`, `acceptanceWrite` and `parentMessage` are
+// aliases the server reads as the section that carries them.
+const ENTITY_CONTEXT_V2_SECTIONS = [
+  'assignment', 'summary', 'hierarchy', 'blockers', 'connections', 'messages', 'actions',
+  'acceptance', 'acceptanceWrite', 'header', 'assignees', 'gate', 'children', 'parent', 'story', 'tasks', 'anchor', 'parentMessage', 'attachments',
+] as const;
+const ENTITY_CONTEXT_V2_PAGED: readonly string[] = ['hierarchy', 'children', 'blockers', 'connections', 'messages'];
 
 export const ENTITY_HEADER_READ_MODES = ['authored', 'resolved'] as const satisfies readonly EntityHeaderReadMode[];
 
@@ -4492,6 +4498,7 @@ export const EntityContextQuerySchema: z.ZodType<EntityContextQuery> = z.object(
   schema: z.enum(['v1', 'v2']).optional(),
   sections: uniqueArray(z.enum([
     'summary', 'hierarchy', 'connections', 'messages', 'activity', 'actions', 'assignment', 'blockers',
+    'acceptance', 'acceptanceWrite', 'header', 'assignees', 'gate', 'children', 'parent', 'story', 'tasks', 'anchor', 'parentMessage', 'attachments',
   ])).optional(),
   totalBytes: z.number().int().min(1024).max(32_768).optional(),
   sectionBytes: z.number().int().min(512).max(8192).optional(),
