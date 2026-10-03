@@ -35,6 +35,7 @@ const ACTIVITY_LIMIT = 50;
 const MESSAGE_LIMIT = 50;
 const CHILD_STORY_LIMIT = 50;
 const LIVE_SESSION_STATUSES = new Set(['spawning', 'running', 'idle']);
+const ENDED_SESSION_STATUSES = new Set(['exited', 'failed']);
 const TEAM_MODES = new Set<TeamMemberMode>(['worker', 'coordinator', 'coordinated-worker', 'coordinated-coordinator', 'dispatcher']);
 /** Edge types drawn between nodes: the followed set plus membership and blocking. */
 const DRAWN_EDGE_TYPES = [...STORY_FOLLOWED_EDGE_TYPES.filter((t) => t !== 'parent'), 'contains', 'depends_on'];
@@ -74,6 +75,17 @@ interface FactRow {
 
 function category(raw: string | null): StatusCategory | null {
   return raw === 'to_do' || raw === 'in_progress' || raw === 'done' || raw === 'cancelled' ? raw : null;
+}
+
+/**
+ * A row's category ON THE STORY. 174 files a crashed / restarted / OOM-killed
+ * session under in_progress so the board offers Resume; on a story that reads
+ * as work happening while liveSessionCount says 0 (#15). Here a session whose
+ * runtime has ended is terminal: in_progress means a live runtime.
+ */
+function storyCategory(f: { kind: string; status_category: string | null; ws_status: string | null }): StatusCategory | null {
+  if (f.kind === 'work_session' && ENDED_SESSION_STATUSES.has(f.ws_status ?? '')) return 'done';
+  return category(f.status_category);
 }
 
 function teamMode(raw: string | null): TeamMemberMode | null {
@@ -262,7 +274,7 @@ export async function loadStoryPage(q: Querier, storyId: string): Promise<StoryP
     kind: f.kind,
     title: title(f.id),
     status: f.status_name,
-    statusCategory: category(f.status_category),
+    statusCategory: storyCategory(f),
     blocked: f.blocked,
     depth,
     rootIds,
@@ -308,7 +320,7 @@ export async function loadStoryPage(q: Querier, storyId: string): Promise<StoryP
       kind: f.kind,
       title: title(r.entity_id),
       status: f.status_name,
-      statusCategory: category(f.status_category),
+      statusCategory: storyCategory(f),
       blocked: f.blocked,
       position: r.root_position,
       progress: work?.progress ?? EMPTY_PROGRESS,
