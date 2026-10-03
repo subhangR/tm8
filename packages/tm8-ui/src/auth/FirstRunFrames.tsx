@@ -81,6 +81,38 @@ function readClaimTokenFromUrl(): string {
 }
 
 /**
+ * ONCE PER PAGE LOAD, not once per mount — and that distinction is the whole
+ * reason this exists.
+ *
+ * `readClaimTokenFromUrl` is not pure: reading the fragment SCRUBS it. Calling
+ * an impure function from a `useState` initializer means the second caller sees
+ * a URL the first one already emptied, and under `<React.StrictMode>` — which
+ * `main.tsx` wraps the app in — there is always a second caller. Strict mode
+ * double-invokes the render and then deliberately unmounts and remounts, and a
+ * remount re-runs the initializer against fresh hook state. So:
+ *
+ *   mount   → reads `tok`, scrubs the fragment
+ *   remount → reads the scrubbed fragment, gets `''`
+ *
+ * and the field the printed link exists to fill arrives EMPTY. The operator
+ * clicks the one-time setup link the server told them to click, lands on a card
+ * whose own copy says "open that link and the code below fills itself in", and
+ * the code is not there — with `Create account` disabled underneath and no way
+ * to tell whether the link, the token or the server is at fault. Measured in a
+ * real browser against a dev node on 2026-08-22.
+ *
+ * Memoising the READ, rather than making it pure and scrubbing in an effect,
+ * is what actually fixes it: an effect scrub still leaves the remount's
+ * initializer reading an emptied fragment. The capture is keyed to the document,
+ * which is exactly the lifetime the fragment has.
+ */
+let capturedClaimToken: string | undefined;
+function claimTokenOnce(): string {
+  capturedClaimToken ??= readClaimTokenFromUrl();
+  return capturedClaimToken;
+}
+
+/**
  * 1a — Claim, step 1 · you. Oracle L33–L47.
  *
  * INSIDE THE GATE this is a REAL act: it creates the account ON THE SERVER
@@ -118,7 +150,7 @@ export function FrameClaim(props: FrameProps) {
   // EDITABLE field rather than a hidden value: an operator who copied the
   // token out of `<dataDir>/setup-token` has no link to click, and a hidden
   // field would leave them with a card they cannot complete.
-  const [token, setToken] = useState(() => readClaimTokenFromUrl());
+  const [token, setToken] = useState(claimTokenOnce);
   const handle = handleFrom(name);
   const failure = actions?.failure;
   // "Another" is a different moment from "first run", and the card says so:
