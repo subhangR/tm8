@@ -3581,7 +3581,14 @@ export interface CompleteTaskInput extends CommandContext {
 }
 
 export interface PullInput extends CommandContext { localId?: string | null; pinnedVersion: number }
-export interface WorkInput extends CommandContext { status: WorkStatus; startedAt?: string; note?: string | null }
+/**
+ * A status transition writes the status and nothing else. `claim: true` also
+ * records the caller as `working_on` the task (with `startedAt`/`note` on that
+ * edge); without it no edge is created — an auditor moving a task to
+ * `in_review` is not its worker (#32). An edge the caller already holds
+ * follows the transition either way.
+ */
+export interface WorkInput extends CommandContext { status: WorkStatus; startedAt?: string; note?: string | null; claim?: boolean }
 
 export interface TrackingRefreshInput extends CommandContext { entityIds?: EntityId[] }
 

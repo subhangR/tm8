@@ -3040,6 +3040,7 @@ export const WorkInputSchema: z.ZodType<WorkInput> = z.object({
   status: WorkStatusSchema,
   startedAt: IsoTimestamp.optional(),
   note: z.string().nullable().optional(),
+  claim: z.boolean().optional(),
 }).strict();
 
 export const TrackingRefreshInputSchema: z.ZodType<TrackingRefreshInput> = z.object({
