@@ -938,7 +938,7 @@ async function loadV2(q: Querier, id: string, request: V2Request): Promise<{ loa
       roots: cap('story.roots', page.roots.map((r) => ({
         id: r.id, kind: r.kind, title: r.title, status: r.status, statusCategory: r.statusCategory,
         blocked: r.blocked, taskProgress: r.taskProgress, progress: r.progress,
-        childCount: r.childIds.length, trailCount: r.trail.length,
+        childCount: r.descendantCount, trailCount: r.trail.length,
       }))),
       byKind,
       blocked: cap('story.blocked', followed.filter((n) => n.blocked)

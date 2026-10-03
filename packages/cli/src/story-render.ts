@@ -57,7 +57,7 @@ export function storyStateLines(state: unknown): string[] {
     out.push(`with child stories (${num(state['childStoryCount'])}): ${progressText(state['rollup'], 'tasks')}`);
   }
   out.push(`trail: ${num(state['itemCount'])} things from ${num(state['rootCount'])} roots`
-    + ` · every kind ${progressText(state['progress'])}`
+    + ` · tasks and stories ${progressText(state['progress'])}`
     + (state['truncated'] === true ? ' · TRUNCATED at the follow limit' : ''));
   out.push(`live sessions ${num(state['liveSessionCount'])}`
     + ` · pending attention ${num(state['pendingAttentionCount'])}`
@@ -88,7 +88,8 @@ function rootLine(r: Row, index: number): string {
   const tp = r['taskProgress'];
   const tasks = isRow(tp) && num(tp['work']) > 0 ? ` · ${num(tp['done'])}/${num(tp['work'])} tasks` : '';
   const all = isRow(r['progress']) ? ` · ${num(r['progress']['done'])}/${num(r['progress']['work'])} all` : '';
-  const children = r['childCount'] !== undefined ? num(r['childCount']) : len(r['childIds']);
+  const children = r['childCount'] !== undefined ? num(r['childCount'])
+    : r['descendantCount'] !== undefined ? num(r['descendantCount']) : len(r['childIds']);
   const trail = r['trailCount'] !== undefined ? num(r['trailCount']) : len(r['trail']);
   return `  ${index + 1}. ${str(r['id'])} ${str(r['kind'])}${statusTag(r['status'], r['statusCategory'])} ${str(r['title'])}`
     + (r['blocked'] === true ? ' (blocked)' : '')

@@ -50,6 +50,14 @@ interface TrailRow {
   root_position: number | null;
 }
 
+/** 289: one root's tallies over what it CONTAINS (`internal.story_work`). */
+interface RootWorkRow {
+  root_id: string;
+  progress: StoryProgress;
+  task_progress: StoryProgress;
+  descendant_count: number;
+}
+
 interface FactRow {
   id: string;
   kind: string;
@@ -70,21 +78,6 @@ function category(raw: string | null): StatusCategory | null {
 
 function teamMode(raw: string | null): TeamMemberMode | null {
   return raw !== null && TEAM_MODES.has(raw as TeamMemberMode) ? (raw as TeamMemberMode) : null;
-}
-
-/** MIRRORS `internal.story_tally` (283): disjoint bands, done + inProgress + toDo + blocked = work. */
-export function tallyStory(facts: readonly Pick<FactRow, 'status_category' | 'blocked'>[]): StoryProgress {
-  const t: StoryProgress = { work: 0, done: 0, inProgress: 0, toDo: 0, blocked: 0, cancelled: 0 };
-  for (const f of facts) {
-    switch (f.status_category) {
-      case 'cancelled': t.cancelled++; break;
-      case 'done': t.work++; t.done++; break;
-      case 'in_progress': t.work++; if (f.blocked) t.blocked++; else t.inProgress++; break;
-      case 'to_do': t.work++; if (f.blocked) t.blocked++; else t.toDo++; break;
-      default: break;
-    }
-  }
-  return t;
 }
 
 function storyStateOf(raw: unknown): StoryState | null {
@@ -117,6 +110,21 @@ export async function loadStoryPage(q: Querier, storyId: string): Promise<StoryP
     [storyId],
   );
   const itemIds = [...new Set(trail.map((r) => r.entity_id))];
+
+  // 289: a root's progress counts what it CONTAINS — itself and its hierarchy
+  // descendants, the rows `entity query --subtree` returns — never what the
+  // trail reaches sideways (a session's coordinator's tasks in other stories).
+  const rootWork = await q.query<RootWorkRow>(
+    `select w.root_id,
+            internal.story_tally(array_agg(distinct w.entity_id) filter (where w.kind in ('task', 'story'))) as progress,
+            internal.story_tally(array_agg(distinct w.entity_id) filter (where w.kind = 'task')) as task_progress,
+            (count(distinct w.entity_id) filter (where w.depth > 0))::int as descendant_count
+       from internal.story_work($1) w
+      where w.root_id is not null
+      group by w.root_id`,
+    [storyId],
+  );
+  const workOf = new Map(rootWork.map((w) => [w.root_id, w]));
   const allIds = [storyId, ...itemIds];
 
   const facts = await q.query<FactRow>(
@@ -274,7 +282,7 @@ export async function loadStoryPage(q: Querier, storyId: string): Promise<StoryP
   const rootsOut: StoryRoot[] = roots.map((r) => {
     const f = factOf.get(r.entity_id)!;
     const mine = visibleTrail.filter((t) => t.root_id === r.entity_id);
-    const mineFacts = [...new Set(mine.map((t) => t.entity_id))].map((id) => factOf.get(id)!).filter(Boolean);
+    const work = workOf.get(r.entity_id);
     const hierarchy = new Set<string>([r.entity_id]);
     const childIds: string[] = [];
     const trailItems: StoryTrailItem[] = [];
@@ -303,8 +311,9 @@ export async function loadStoryPage(q: Querier, storyId: string): Promise<StoryP
       statusCategory: category(f.status_category),
       blocked: f.blocked,
       position: r.root_position,
-      progress: tallyStory(mineFacts),
-      taskProgress: tallyStory(mineFacts.filter((x) => x.kind === 'task')),
+      progress: work?.progress ?? EMPTY_PROGRESS,
+      taskProgress: work?.task_progress ?? EMPTY_PROGRESS,
+      descendantCount: work?.descendant_count ?? 0,
       childIds,
       trail: trailItems,
     };
