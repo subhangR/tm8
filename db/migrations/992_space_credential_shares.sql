@@ -326,6 +326,13 @@ begin
     raise exception 'a space credential is recorded only while a session is spawning'
       using errcode = '23514';
   end if;
+  -- 992: the insert's own (newer) snapshot no longer saw a share the lock
+  -- statement did — it was withdrawn while this launch waited.
+  if v_credential.status = 'active' then
+    raise exception 'space credential "%" is private to its owner', v_credential.label
+      using errcode = '42501',
+            detail = jsonb_build_object('reason', 'not_usable', 'provider', p_provider)::text;
+  end if;
   raise exception 'space credential is %', v_credential.status using errcode = '23514';
 end
 $$;
@@ -353,13 +360,9 @@ begin
 
   select count(*) into v_recorded from public.session_space_credentials
    where work_session_id = p_work_session_id;
-  select count(*),
-         count(*) filter (where locked.visibility = 'public' or locked.owner_account_id is null
-                                or locked.owner_account_id = v_launcher
-                                or internal.space_credential_shared_with(locked.id, v_launcher))
-    into v_active, v_usable
+  select count(*) into v_active
     from (
-    select sc.id, sc.visibility, sc.owner_account_id from public.space_credentials sc
+    select sc.id from public.space_credentials sc
       join public.session_space_credentials ssc on ssc.space_credential_id = sc.id
      where ssc.work_session_id = p_work_session_id
        and sc.status = 'active'
@@ -367,6 +370,19 @@ begin
      order by sc.id
        for share of sc
   ) locked;
+  -- 992: usability is read in a NEW statement, after the FOR SHARE locks are
+  -- held. unshare takes FOR UPDATE on the credential but rewrites no tuple,
+  -- so a statement that waited behind it would still see the withdrawn share
+  -- in its own snapshot; this one starts after that commit.
+  select count(*) into v_usable
+    from public.space_credentials sc
+    join public.session_space_credentials ssc on ssc.space_credential_id = sc.id
+   where ssc.work_session_id = p_work_session_id
+     and sc.status = 'active'
+     and sc.space_id = e.space_id
+     and (sc.visibility = 'public' or sc.owner_account_id is null
+          or sc.owner_account_id = v_launcher
+          or internal.space_credential_shared_with(sc.id, v_launcher));
   if v_active <> v_recorded then
     raise exception 'a space credential this session launched on is no longer active'
       using errcode = '23514';
@@ -665,6 +681,7 @@ returns jsonb
 language plpgsql stable security definer set search_path = public, internal, pg_temp as $$
 declare stored public.space_credentials; v_account_id uuid; rows jsonb; v_all boolean;
 begin
+  perform internal.require_human_auth_kind();
   v_account_id := internal.current_account_id();
   select * into stored from public.space_credentials where id = p_credential_id;
   if stored.id is null or not internal.is_space_member(stored.space_id) then

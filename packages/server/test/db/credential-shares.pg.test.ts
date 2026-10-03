@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
+import { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { resetCredentialKeyCache } from '../../src/credentials/credential-key.js';
@@ -216,6 +217,12 @@ describe('a1 — the owner shares a private credential with one member of its sp
     expect((await shares(claims(B), cred)).map((s) => s.granteeAccountId)).toEqual([accounts[B]]);
     expect(await shares(claims(C), cred)).toEqual([]);
     expect(await outcome(() => shares(claims(OUT), cred))).toBe('P0002');
+    // Human-only, like share and unshare: no agent and no link session.
+    for (const kind of ['agent', 'link']) {
+      expect(await outcome(() => shares(claims(A, kind), cred)), kind).toMatch(/^42501/);
+      expect(await outcome(() => unshare(claims(A, kind), cred, accounts[B]!)), kind).toMatch(/^42501/);
+      expect(await outcome(() => share(claims(A, kind), cred, accounts[C]!)), kind).toMatch(/^42501/);
+    }
   });
 });
 
@@ -327,6 +334,54 @@ describe('a3 — withdrawing the share stops new launches and lists the grantee\
     await setStatus(run, 'exited');
     await db.rpc(claims(B), 'execution_resume', [run, 100_000]);
     expect(await outcome(() => store.repointSession(claims(B), run, ['anthropic']))).toBe('42501:not_usable');
+  });
+
+  it('race: a resume and a launch that waited behind an unshare are refused once it commits', async () => {
+    const cred = await create(A);
+    await share(claims(A), cred, accounts[B]!);
+    const resumed = await launched(B, cred);
+    await setStatus(resumed, 'exited');
+    await db.rpc(claims(B), 'execution_resume', [resumed, 100_000]);
+    const fresh = await session(ids[`member:S:${B}`]!);
+
+    const pool = new Pool({ connectionString: database.url, max: 3 });
+    const bind = async (c: import('pg').PoolClient, identity: string) => {
+      await c.query('begin');
+      await c.query(
+        `select set_config('tm8.identity_id', $1, true), set_config('tm8.node_admin', 'false', true),
+                set_config('tm8.request_id', $2, true), set_config('tm8.auth_kind', 'browser', true),
+                set_config('role', 'tm8_app', true)`,
+        [identity, randomUUID()],
+      );
+    };
+    const owner = await pool.connect();
+    const resumer = await pool.connect();
+    const launcher = await pool.connect();
+    try {
+      await bind(owner, A);
+      await owner.query('select public.unshare_space_credential($1, $2)', [cred, accounts[B]]);
+      // Both now block on the owner's FOR UPDATE of the credential.
+      await bind(resumer, B);
+      const repoint = outcome(() => resumer.query('select public.repoint_session_space_credentials($1, $2)', [resumed, ['anthropic']]));
+      await bind(launcher, B);
+      const recording = outcome(() => launcher.query('select public.record_session_manifest($1, $2)', [fresh, JSON.stringify({
+        launch: {
+          credentialSources: { anthropic: 'space' }, spaceCredentialIds: { anthropic: cred },
+          effectiveCredentialSources: { anthropic: 'space' }, spaceCredentialPicks: { anthropic: 'pinned' },
+        },
+      })]));
+      await new Promise((r) => setTimeout(r, 300));
+      await owner.query('commit');
+      const [r1, r2] = await Promise.all([repoint, recording]);
+      expect(r1).toMatch(/^42501/);
+      expect(r2).toMatch(/^42501/);
+    } finally {
+      for (const c of [owner, resumer, launcher]) {
+        await c.query('rollback').catch(() => undefined);
+        c.release();
+      }
+      await pool.end();
+    }
   });
 
   it('a grantee who leaves the space loses the share; re-joining does not bring it back', async () => {
