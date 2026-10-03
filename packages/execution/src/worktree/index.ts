@@ -12,10 +12,13 @@ export {
   type WorktreePreflight,
 } from './WorktreeManager.js';
 export {
+  GIT_ENV_KEYS,
+  GIT_NO_HOOKS_ARGS,
   WorktreeError,
   assertCommitOid,
   assertSafeBranchName,
   assertSafeRefName,
+  gitChildEnv,
   runGit,
   type GitResult,
   type GitRunOptions,
