@@ -729,7 +729,7 @@ describe('task transition wipes fields it has no flag for', () => {
     const posted = await fetch(new URL(`/v2/entities/${id}/commands/work`, server.baseUrl), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ status: 'working', note: 'handover: waiting on review', clientMutationId: `g3-note-${id}` }),
+      body: JSON.stringify({ status: 'working', claim: true, note: 'handover: waiting on review', clientMutationId: `g3-note-${id}` }),
     });
     expect(posted.status).toBeLessThan(400);
 
@@ -770,7 +770,7 @@ describe('task transition wipes fields it has no flag for', () => {
       return r.data?.badges?.workingActors?.[0]?.startedAt;
     };
 
-    await run(['task', 'transition', id, 'working']);
+    await run(['task', 'transition', id, 'working', '--claim']);
     const first = await startedAtOf();
     await new Promise((resolve) => setTimeout(resolve, 1_100));
     await run(['task', 'transition', id, 'blocked']);
