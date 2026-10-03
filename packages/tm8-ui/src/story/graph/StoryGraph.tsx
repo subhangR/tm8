@@ -12,11 +12,14 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 
 import { getKind, KindIcon } from '../../domain';
+import { IconBtn } from '../../kit/IconBtn';
+import { VectorIcon } from '../../kit/VectorIcon';
 import { FAMILY_TOKEN, GRAPH_VIEWS, STORY_KIND, VIEW_OF_KIND, type StoryEdgeFamily, type StoryGraphView } from '../model';
 import { edgeTypeCounts, useEdgeTypes } from './edge-filter';
 import { kindCounts, layoutStoryGraph, maskFor, trunc, type GraphEdge, type GraphNode } from './layout';
 import type { StoryHops, StoryNodePick } from '../props';
 import type { StoryGraphProps } from './props-graph';
+import { useGraphZoom } from './useGraphZoom';
 import './story-graph.css';
 
 /** The kind whose glyph stands for a view on the switcher: the first kind the table files under it. */
@@ -30,6 +33,13 @@ const HOP_CHOICES: readonly StoryHops[] = [1, 2, 3];
 const MIN_SCALE = 0.85;
 /** Full screen may draw it larger than natural, up to this. */
 const MAX_FILL_SCALE = 1.6;
+
+/* 16×16 view-control glyphs, `kit/ZoomableFigure`'s. */
+const ICON_ZOOM_IN = ['M8 3.5 V12.5', 'M3.5 8 H12.5'];
+const ICON_ZOOM_OUT = ['M3.5 8 H12.5'];
+const ICON_FIT = ['M2.5 2.5 H13.5 V13.5 H2.5 Z', 'M6 6 H10 V10 H6 Z'];
+const ICON_EXPAND = ['M9.5 2.5 H13.5 V6.5', 'M13.5 2.5 L9.5 6.5', 'M6.5 13.5 H2.5 V9.5', 'M2.5 13.5 L6.5 9.5'];
+const ICON_COLLAPSE = ['M13.5 6.5 H9.5 V2.5', 'M9.5 6.5 L13.5 2.5', 'M2.5 9.5 H6.5 V13.5', 'M6.5 9.5 L2.5 13.5'];
 
 const EDGE_LEGEND: Readonly<Record<StoryEdgeFamily, string>> = {
   parent: 'parent',
@@ -213,6 +223,9 @@ export function StoryGraph({ view, live, hover, filter, selectedId, onPick, onMe
   const hops = filter?.hops ?? 3;
   const layout = useMemo(() => layoutStoryGraph(view, Date.now(), hops), [view, hops]);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const zoom = useGraphZoom(scrollRef, layout.width, layout.height, !!fill);
+  /* Full screen draws like the full view: a definite box the canvas fills. */
+  const tall = fill || zoom.maximised;
   /* When the canvas overflows, open it centred on the story rather than on the left flank. */
   useLayoutEffect(() => {
     const el = scrollRef.current;
@@ -300,7 +313,10 @@ export function StoryGraph({ view, live, hover, filter, selectedId, onPick, onMe
   const empty = layout.allRootIds.length === 0;
 
   return (
-    <section className={fill ? 'stg-card stg-card--fill' : 'stg-card'} aria-label="The graph">
+    <section
+      className={`stg-card${tall ? ' stg-card--fill' : ''}${zoom.maximised ? ' stg-card--max' : ''}`}
+      aria-label="The graph"
+    >
       <div className="stg-head">
         <span className="kit-eyebrow">The graph</span>
         <span className="stg-seg" role="tablist" aria-label="Graph view">
@@ -397,12 +413,25 @@ export function StoryGraph({ view, live, hover, filter, selectedId, onPick, onMe
         )}
       </div>
 
-      <div className="stg-scroll" ref={scrollRef}>
+      <div className="stg-stage">
+      <div
+        className={zoom.zoom === null ? 'stg-scroll' : 'stg-scroll stg-scroll--zoomed'}
+        ref={scrollRef}
+        tabIndex={0}
+        role="group"
+        aria-label={`Graph canvas. Plus and minus zoom, zero resets${zoom.maximised ? ', Escape exits full screen' : ''}.`}
+        {...zoom.scrollerProps}
+      >
         <svg
           className={`stg-svg${hoverRoot ? ' stg-svg--hl' : ''}${graphView === 'team' ? ' stg-svg--team' : ''}`}
           viewBox={`0 0 ${layout.width} ${layout.height}`}
           /* Natural size at most, never below the readable floor; past that the card scrolls sideways. */
-          style={{ maxWidth: Math.round(layout.width * (fill ? MAX_FILL_SCALE : 1)), minWidth: Math.round(layout.width * MIN_SCALE) }}
+          style={
+            zoom.zoom === null
+              ? { maxWidth: Math.round(layout.width * (tall ? MAX_FILL_SCALE : 1)), minWidth: Math.round(layout.width * MIN_SCALE) }
+              : /* Zoomed: exactly this size, scrolling both ways past the box. */
+                { width: Math.round(layout.width * zoom.zoom), maxWidth: 'none', minWidth: 0 }
+          }
           role="img"
           aria-label={`Story graph: ${rule}`}
         >
@@ -508,6 +537,31 @@ export function StoryGraph({ view, live, hover, filter, selectedId, onPick, onMe
             </text>
           )}
         </svg>
+      </div>
+      <div className="stg-view" role="group" aria-label="Graph view controls">
+        <IconBtn label="Zoom out" onClick={() => zoom.zoomBy(0.8)}>
+          <VectorIcon paths={ICON_ZOOM_OUT} size={13} />
+        </IconBtn>
+        <button
+          type="button"
+          className="stg-view__pct"
+          title="Reset zoom"
+          aria-label={`Zoom ${Math.round(zoom.shown * 100)}%, reset`}
+          disabled={zoom.zoom === null}
+          onClick={zoom.reset}
+        >
+          {Math.round(zoom.shown * 100)}%
+        </button>
+        <IconBtn label="Zoom in" onClick={() => zoom.zoomBy(1.25)}>
+          <VectorIcon paths={ICON_ZOOM_IN} size={13} />
+        </IconBtn>
+        <IconBtn label="Fit to view" onClick={zoom.fit}>
+          <VectorIcon paths={ICON_FIT} size={13} />
+        </IconBtn>
+        <IconBtn label={zoom.maximised ? 'Exit full screen' : 'Full screen'} pressed={zoom.maximised} onClick={zoom.toggleMax}>
+          <VectorIcon paths={zoom.maximised ? ICON_COLLAPSE : ICON_EXPAND} size={13} />
+        </IconBtn>
+      </div>
       </div>
 
       <div className="stg-legend">
