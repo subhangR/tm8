@@ -124,9 +124,31 @@ export function canClaim(row: SpaceCredentialView, viewer: SpaceCredentialsViewe
   return row.status !== 'revoked' && row.createdByAccountId === viewer.accountId;
 }
 
-/** "My default" is an owner's pick among their own active credentials. */
+/** 992: the owner shared this PRIVATE credential with the viewer. */
+export function isSharedWithMe(row: SpaceCredentialView, viewer: SpaceCredentialsViewer | null): boolean {
+  return row.sharedWithMe === true && !isOwner(row, viewer);
+}
+
+/**
+ * "My default" is a pick among active credentials the viewer may launch on as
+ * their own: those they own, and (992) those shared with them.
+ */
 export function canMyDefault(row: SpaceCredentialView, viewer: SpaceCredentialsViewer | null): boolean {
-  return isOwner(row, viewer) && row.status === 'active';
+  return (isOwner(row, viewer) || isSharedWithMe(row, viewer)) && row.status === 'active';
+}
+
+/**
+ * 992: "Share with member" — the owner, on their own PRIVATE active credential.
+ * A public or space-owned one needs no share; SQL refuses pending/stale/revoked.
+ */
+export function canShare(row: SpaceCredentialView, viewer: SpaceCredentialsViewer | null): boolean {
+  return isOwner(row, viewer) && row.visibility === 'private' && row.status === 'active';
+}
+
+/** 992: who it is shared with, and Revoke — its owner, or a space admin. */
+export function canSeeShares(row: SpaceCredentialView, viewer: SpaceCredentialsViewer | null): boolean {
+  if (!viewer || !row.ownerAccountId || row.visibility !== 'private' || row.status === 'revoked') return false;
+  return isOwner(row, viewer) || viewer.isSpaceAdmin;
 }
 
 /** Usage: the owner; a space admin too for a public or space-owned row. */

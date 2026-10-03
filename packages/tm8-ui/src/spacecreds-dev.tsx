@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { CollabError } from '@tm8/contract';
 import type {
+  SpaceCredentialShareView,
   CredentialsSpacePolicyView,
   EntityId,
   SessionJournalPage,
@@ -47,6 +48,9 @@ function row(over: Partial<SpaceCredentialView> & Pick<SpaceCredentialView, 'id'
     createdAt: at, updatedAt: at, lastUsedAt: null, lastProbeAt: at, ...over,
   } as SpaceCredentialView;
 }
+const shares = new Map<string, SpaceCredentialShareView[]>();
+const members = [{ memberId: "m-rakesh", name: "Rakesh" }, { memberId: "m-harish", name: "Harish" }];
+
 const rows: SpaceCredentialView[] = [
   row({ id: 'c-team', provider: 'anthropic', label: 'Team Claude', isDefault: true, lastUsedAt: '2026-09-23T21:04:00.000Z', ownerAccountId: null, visibility: 'public' }),
   row({ id: 'c-batch', provider: 'anthropic', label: 'Batch Claude', createdByAccountId: 'acct-other', lastUsedAt: '2026-09-22T16:40:00.000Z', ownerAccountId: 'acct-other', visibility: 'public', mayBeSpaceDefault: true }),
@@ -135,6 +139,20 @@ const port: SpaceCredentialsPort = {
       { workSessionId: 'ws-b', provider: 'anthropic', source: 'space_default', credentialId: id, ownerAccountId: 'acct-me', launcherAccountId: 'acct-other', agentSessionId: 'ag-2', status: 'ended', recordedAt: '2026-09-24T14:10:00.000Z', updatedAt: '2026-09-24T15:00:00.000Z' },
     ],
   }),
+  share: async (id, memberId) => {
+    const list = shares.get(id) ?? [];
+    const exists = list.some((s) => s.granteeMemberId === memberId);
+    const name = members.find((m) => m.memberId === memberId)?.name ?? null;
+    if (!exists) shares.set(id, [...list, { granteeAccountId: `acct-${memberId}`, granteeMemberId: memberId, granteeDisplayName: name, grantedByAccountId: 'acct-me', createdAt: '2026-10-03T10:00:00.000Z' }]);
+    return { credentialId: id, spaceId: SPACE, granteeAccountId: `acct-${memberId}`, grantedByAccountId: 'acct-me', createdAt: '2026-10-03T10:00:00.000Z', shared: !exists };
+  },
+  unshare: async (id, granteeAccountId) => {
+    const list = shares.get(id) ?? [];
+    shares.set(id, list.filter((s) => s.granteeAccountId !== granteeAccountId));
+    return { credentialId: id, granteeAccountId, unshared: true, terminatedAgentSessionIds: ['s-grantee'], failures: [] };
+  },
+  shares: async (id) => ({ credentialId: id, shares: shares.get(id) ?? [] }),
+  shareCandidates: async () => members,
   addMine: async (provider, label) => {
     const cred = row({ id: `m-${rows.length}`, provider, label, ownerAccountId: 'acct-me', visibility: 'private', keyHint: 'mIn3' });
     rows.push(cred);

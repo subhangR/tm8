@@ -40,10 +40,11 @@ function renderShare(dto: unknown): string {
 
 function renderUnshare(dto: unknown): string {
   const who = String(field(dto, 'granteeAccountId') ?? '?');
-  if (field(dto, 'unshared') === false) return `was not shared with ${who}`;
+  // A retry after a failed kill finds no share row but still contains the
+  // grantee's sessions, so the kill report is shown either way.
   const killed = field(dto, 'terminatedAgentSessionIds');
   const failures = field(dto, 'failures');
-  const lines = [`no longer shared with ${who}`];
+  const lines = [field(dto, 'unshared') === false ? `was not shared with ${who}` : `no longer shared with ${who}`];
   if (Array.isArray(killed) && killed.length > 0) lines.push(`stopped ${String(killed.length)} of their session(s)`);
   if (Array.isArray(failures) && failures.length > 0) lines.push(`${String(failures.length)} session(s) could not be stopped`);
   return lines.join('\n');
