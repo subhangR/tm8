@@ -8,6 +8,8 @@ import {
   type Page,
 } from '@tm8/contract';
 import { PgDb } from '../../src/db/client.js';
+import type { DbClaims } from '../../src/db/types.js';
+import { PgEntityProjector } from '../../src/events/projector.js';
 import type { RequestContext } from '../../src/http/types.js';
 import { messagesList } from '../../src/facade/handlers/messages.js';
 import { loadEntitySummariesByIds } from '../../src/facade/entity-read.js';
@@ -528,8 +530,9 @@ describe.sequential('TM8 Chat storage and door rules', () => {
       // `about` — the chat's subject (entity chat §3.6), so the Chats list can
       // draw it without a read per row. This chat was started about the channel.
       // `context` — the latest context reading (231), null until measured.
-      'about', 'agentTool', 'context', 'kind', 'lastTurnAt', 'mode', 'model', 'projectId', 'provider',
-      'runtimeState', 'teammateId', 'turnCount', 'turnState', 'workdirMode',
+      // `canSetModel` — whether THIS viewer may switch the model (276's rule).
+      'about', 'agentTool', 'canSetModel', 'context', 'kind', 'lastTurnAt', 'mode', 'model', 'projectId',
+      'provider', 'runtimeState', 'teammateId', 'turnCount', 'turnState', 'workdirMode',
     ]);
     expect(summary?.state).toMatchObject({
       kind: 'chat',
@@ -547,9 +550,84 @@ describe.sequential('TM8 Chat storage and door rules', () => {
       runtimeState: 'cold',
       turnState: 'queued',
       about: { id: fixture.channelId, kind: 'channel', title: 'chat-test' },
+      // A started the chat, so A is its configurer.
+      canSetModel: true,
     });
     // R5, from the read side.
     expect(JSON.stringify(summary)).not.toContain('/tmp/tm8-chat');
+  });
+
+  /**
+   * 01a0f49e. The composer locks the model chip for a viewer who cannot switch
+   * it, and it must learn that from the server rather than guess: 276 refuses a
+   * non-configurer with the same P0002 as a missing chat, so a refusal says
+   * nothing a client can tell apart. The read answers it per viewer, under the
+   * viewer's claims, from the same two conjuncts the door refuses on.
+   *
+   * B is an ordinary member of the space: B can read this chat and post in it
+   * (chats are multi-participant), and B still cannot switch its model. The
+   * event projector must answer each viewer exactly as the read does, because
+   * a tile hydrated from the socket and one fetched over entities.get must not
+   * disagree; it can, because the pump polls per connection under that
+   * connection's own claims.
+   */
+  it('answers canSetModel per viewer, on the read and the event projector alike, as the door does', async () => {
+    const readAs = (claims: DbClaims) => facadeDb.tx(claims, async (q) => {
+      const [summary] = await loadEntitySummariesByIds(q, [chatId], claims.identityId!);
+      return summary?.state?.kind === 'chat' ? summary.state.canSetModel : 'no row';
+    });
+    const projectAs = (claims: DbClaims) => facadeDb.tx(claims, async (q) => {
+      const summary = (await new PgEntityProjector().entitySummaries(q, [chatId])).get(chatId);
+      return summary?.state?.kind === 'chat' ? summary.state.canSetModel : 'no row';
+    });
+    // The door itself. Re-sending the chat's current model is a no-op switch,
+    // which 276 accepts, so a success leaves the chat as the next test finds it.
+    const doorAs = (identityId: string, pin: string | null) => asIdentity(identityId, 'browser', async (client) => {
+      if (pin !== null) await client.query(`select set_config('tm8.session_space_id',$1,true)`, [pin]);
+      return (await client.query(
+        `select public.set_chat_model($1,'gpt-5.6-sol','openai','codex') result`, [chatId],
+      )).rows[0]!;
+    }).then(() => 'ok', (error: { code?: string }) => error.code ?? String(error));
+
+    const elsewhere = randomUUID();
+    // Each viewer carries BOTH claims, as a signed-in browser does, and the two
+    // differ: an identity is TEXT ('chat-owner-a'), an actor a member UUID.
+    // A rule that compared the configurer to the ACTOR would never match and
+    // would lock every configurer out of their own chat; with one shared
+    // fixture string it would pass. Distinct values make it fail here.
+    const configurer = { identityId: fixture.identityA, actorId: fixture.memberA };
+    const viewers: ReadonlyArray<{ name: string; claims: DbClaims; read: boolean | 'no row'; door: string }> = [
+      { name: 'the configurer', claims: configurer, read: true, door: 'ok' },
+      {
+        name: 'another member',
+        claims: { identityId: fixture.identityB, actorId: fixture.memberB },
+        read: false,
+        door: 'P0002',
+      },
+      // A session pinned to the chat's own space is unchanged (227).
+      {
+        name: 'the configurer, pinned here',
+        claims: { ...configurer, sessionSpaceId: fixture.spaceId },
+        read: true,
+        door: 'ok',
+      },
+      // Pinned elsewhere, the chat is not even listed: membership narrows to the
+      // pinned space, so the read and the door agree by both saying "not here".
+      {
+        name: 'the configurer, pinned elsewhere',
+        claims: { ...configurer, sessionSpaceId: elsewhere },
+        read: 'no row',
+        door: 'P0002',
+      },
+    ];
+    for (const viewer of viewers) {
+      const pin = viewer.claims.sessionSpaceId ?? null;
+      expect({ viewer: viewer.name, read: await readAs(viewer.claims) }).toEqual({ viewer: viewer.name, read: viewer.read });
+      expect({ viewer: viewer.name, projected: await projectAs(viewer.claims) })
+        .toEqual({ viewer: viewer.name, projected: viewer.read });
+      expect({ viewer: viewer.name, door: await doorAs(viewer.claims.identityId!, pin) })
+        .toEqual({ viewer: viewer.name, door: viewer.door });
+    }
   });
 
   it('records each sender auth kind, mints against the CHAT, and fails closed without it', async () => {
