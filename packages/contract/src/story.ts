@@ -114,11 +114,22 @@ export interface StoryProgress {
 /**
  * The story's summary, carried as `state` on both read paths.
  *
- * `progress` is the ruled figure over EVERY followed row (all kinds carry a
- * status since 152). `taskProgress` is the same tally restricted to tasks —
- * what the page labels "N of M tasks done". `rollup` is `taskProgress` plus
- * every descendant story's `taskProgress` (child stories via same-kind
- * `parent_id`).
+ * The three tallies count what the story CONTAINS (migration 289), never the
+ * trail: its roots, each root's hierarchy descendants (parent -> child only —
+ * the rows `entity query --subtree <root>` returns), and its direct child
+ * stories. A story is one item; its own tasks reach a parent only through
+ * `rollup`. Rows the trail reaches sideways (sessions, their coordinators,
+ * the coordinators' tasks in other stories) are shown but never counted.
+ *
+ * - `progress`: tasks AND stories the story contains (no docs, forms,
+ *   sessions, team members, PRs).
+ * - `taskProgress`: tasks the story contains — "N of M tasks done".
+ * - `rollup`: `taskProgress` over this story's tasks united with every
+ *   descendant story's (same-kind `parent_id`), each task once.
+ *
+ * `work` excludes cancelled rows, so `work + cancelled` is the row count.
+ * `itemCount`, `liveSessionCount`, `pendingAttentionCount` and
+ * `lastActivityAt` still read the whole trail.
  */
 export interface StoryState {
   kind: 'story';
@@ -205,9 +216,18 @@ export interface StoryRoot {
   blocked: boolean;
   /** The `contains` edge position, which orders the roots. */
   position: number | null;
-  /** The root plus its followed rows. */
+  /**
+   * The root plus its hierarchy descendants, tasks and stories only (289) —
+   * never rows the trail reached sideways. `taskProgress.work + cancelled` =
+   * (root is a task ? 1 : 0) + `entity query --kind task --subtree <root>`.
+   */
   progress: StoryProgress;
   taskProgress: StoryProgress;
+  /**
+   * Every hierarchy descendant of the root, any kind, unbounded by the
+   * trail's depth — the count `entity query --subtree <root>` returns.
+   */
+  descendantCount: number;
   /** Descendants by hierarchy (`parent` edges) in the trail, nearest first. */
   childIds: string[];
   /** Everything else followed from this root (non-`parent` edges). */
@@ -375,7 +395,11 @@ export interface EntityContextStory {
   state: StoryState;
   roots: Array<{
     id: string; kind: string; title: string; status: string | null; statusCategory: StatusCategory | null;
-    blocked: boolean; taskProgress: StoryProgress; progress: StoryProgress; childCount: number; trailCount: number;
+    blocked: boolean; taskProgress: StoryProgress; progress: StoryProgress;
+    /** `StoryRoot.descendantCount`: matches `entity query --subtree <root>`. */
+    childCount: number;
+    /** Rows followed from the root by non-`parent` edges (shown, not counted). */
+    trailCount: number;
   }>;
   /** Counts over every followed row (depth >= 0), by kind. */
   byKind: Record<string, number>;

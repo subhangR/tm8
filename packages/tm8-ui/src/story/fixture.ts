@@ -191,7 +191,6 @@ const roots: StoryRoot[] = ROOT_SPECS.map((spec, i) => {
     else edge(k, via, edgeType, [spec.k]);
     return { id: fx(k), kind, title, edgeType, family: storyEdgeFamily(edgeType), viaId: fx(via), direction, depth };
   });
-  const rows = [root, ...kids, ...trail.map((t) => nodes.find((n) => n.id === t.id)!)];
   return {
     id: root.id,
     kind: root.kind,
@@ -200,8 +199,10 @@ const roots: StoryRoot[] = ROOT_SPECS.map((spec, i) => {
     statusCategory: root.statusCategory,
     blocked: root.blocked,
     position: i,
-    progress: tally(rows),
-    taskProgress: tally(onlyTasks(rows)),
+    // 289: a root counts what it contains (itself + hierarchy), not its trail.
+    progress: tally([root, ...kids].filter((n) => n.kind === 'task' || n.kind === 'story')),
+    taskProgress: tally(onlyTasks([root, ...kids])),
+    descendantCount: kids.length,
     childIds: kids.map((c) => c.id),
     trail,
   };
@@ -320,7 +321,10 @@ const recentMessages: StoryFeedMessage[] = [
 ];
 
 const followed = nodes.filter((n) => n.depth >= 0);
-const taskProgress = tally(onlyTasks(followed));
+// 289: the story counts what it contains — roots and their hierarchy — not its trail.
+const containedIds = new Set(roots.flatMap((r) => [r.id, ...r.childIds]));
+const contained = followed.filter((n) => containedIds.has(n.id));
+const taskProgress = tally(onlyTasks(contained));
 const add = (a: StoryProgress, b: StoryProgress): StoryProgress => ({
   work: a.work + b.work, done: a.done + b.done, inProgress: a.inProgress + b.inProgress,
   toDo: a.toDo + b.toDo, blocked: a.blocked + b.blocked, cancelled: a.cancelled + b.cancelled,
@@ -331,7 +335,7 @@ export const STORY_FIXTURE_STATE: StoryState = {
   rootCount: roots.length,
   itemCount: followed.length,
   truncated: false,
-  progress: tally(followed),
+  progress: tally(contained.filter((n) => n.kind === 'task' || n.kind === 'story')),
   taskProgress,
   rollup: childStories.reduce((a, c) => add(a, c.rollup), taskProgress),
   liveSessionCount: sessions.filter((s) => s.live).length,
