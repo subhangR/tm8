@@ -843,7 +843,6 @@ export function EntityListPanel(props: EntityListPanelProps) {
            read one of them — the tab row is `CategoryTabs`, a separate
            component one element up, and has been since tabs got their own
            row. Four props that compute a count nobody renders. */
-        compact={props.compact}
         people={members.length > 1 ? members : []}
         selectedPeople={selectedPeople}
         onTogglePerson={(actorId) =>
@@ -1623,11 +1622,31 @@ function CategoryTabs({
   );
 }
 
-/** An open eye on the 16×16 grid — the `View ▾` chip's compact face. */
+/*
+ * THE FILTER ROW IS ICONS, NOT WORDS. Each trigger is a glyph on the 16×16
+ * grid with its name in `aria-label` and `title`, so the row fits at every
+ * width without clipping its last chip, and a screen reader still hears the
+ * word. The count badge stays: it is state, not a label.
+ */
+/** A funnel — the same shape as the phone's narrowing cluster (`NarrowGlyph`). */
+const FILTER_MARK = ['M2.5 3.5H13.5L9.25 8.5V13L6.75 11.5V8.5Z'];
+/** A head and shoulders. */
+const PEOPLE_MARK = [
+  'M10.4 5.4a2.4 2.4 0 1 1 -4.8 0a2.4 2.4 0 1 1 4.8 0Z',
+  'M3 13.5c.6-2.6 2.6-4 5-4s4.4 1.4 5 4',
+];
+/** Stacked sets — a collection is a curated set of rows. */
+const SETS_MARK = [
+  'M2.5 5.5h8.5v8H2.5z',
+  'M5 3h8.5v8',
+];
+/** An open eye — which facts each row shows. */
 const VIEW_MARK = [
   'M1.5 8C3.2 4.9 5.4 3.5 8 3.5s4.8 1.4 6.5 4.5C12.8 11.1 10.6 12.5 8 12.5S3.2 11.1 1.5 8Z',
   'M10 8a2 2 0 1 1 -4 0a2 2 0 1 1 4 0Z',
 ];
+/** A descending arrow beside shortening bars — the order rows arrive in. */
+const SORT_MARK = ['M4.5 2.5v11', 'M2 11l2.5 2.5L7 11', 'M9 4h5', 'M9 8h3.5', 'M9 12h2'];
 
 function FilterRow({
   config,
@@ -1637,7 +1656,6 @@ function FilterRow({
   onToggleOption,
   sortKey,
   onSort,
-  compact,
   people,
   selectedPeople,
   onTogglePerson,
@@ -1655,7 +1673,6 @@ function FilterRow({
   onToggleOption: (specId: string, optionId: string, multi: boolean) => void;
   sortKey: SortKey | undefined;
   onSort: (key: SortKey) => void;
-  compact?: boolean;
   people: readonly ActorSummary[];
   selectedPeople: readonly string[];
   onTogglePerson: (actorId: string) => void;
@@ -1792,35 +1809,39 @@ function FilterRow({
       {config.list.filters.length > 0 ? (
         <button
           type="button"
-          className="lp__chip"
+          className="lp__chip lp__chip--icon"
           onClick={() => setPicker(picker === 'filters' ? null : 'filters')}
           aria-expanded={picker === 'filters'}
           aria-haspopup="menu"
+          aria-label="Filter"
+          title="Filter"
           data-testid="filter-trigger"
         >
-          Filter
+          <VectorIcon paths={FILTER_MARK} size={15} />
           {activeFilterCount > 0 ? (
             <span className="lp__chip-count">{activeFilterCount}</span>
-          ) : (
-            <span className="lp__chip-caret" aria-hidden>▾</span>
-          )}
+          ) : null}
         </button>
       ) : null}
       {people.length > 1 ? (
         <button
           type="button"
-          className={selectedPeople.length > 0 ? 'lp__chip lp__chip--active' : 'lp__chip'}
+          className={
+            selectedPeople.length > 0
+              ? 'lp__chip lp__chip--icon lp__chip--active'
+              : 'lp__chip lp__chip--icon'
+          }
           onClick={() => setPicker(picker === 'people' ? null : 'people')}
           aria-expanded={picker === 'people'}
           aria-haspopup="menu"
+          aria-label="People"
+          title="People"
           data-testid="people-filter-trigger"
         >
-          People
+          <VectorIcon paths={PEOPLE_MARK} size={15} />
           {selectedPeople.length > 0 ? (
             <span className="lp__chip-count">{selectedPeople.length}</span>
-          ) : (
-            <span className="lp__chip-caret" aria-hidden>▾</span>
-          )}
+          ) : null}
         </button>
       ) : null}
       {/* The collection lens trigger. Rendered exactly when the registry
@@ -1842,37 +1863,37 @@ function FilterRow({
         ) : (
           <button
             type="button"
-            className="lp__chip"
+            className="lp__chip lp__chip--icon"
             onClick={() => setPicker(picker === 'sets' ? null : 'sets')}
             aria-expanded={picker === 'sets'}
             aria-haspopup="menu"
+            aria-label={membership.label}
+            title={membership.label}
             data-testid="collection-lens-trigger"
           >
-            {membership.label}
-            <span className="lp__chip-caret" aria-hidden>▾</span>
+            <VectorIcon paths={SETS_MARK} size={15} />
           </button>
         )
       ) : null}
       {viewFacets.length > 0 ? (
         <button
           type="button"
-          className={hiddenFacetCount > 0 ? 'lp__chip lp__chip--active' : 'lp__chip'}
+          className={
+            hiddenFacetCount > 0
+              ? 'lp__chip lp__chip--icon lp__chip--active'
+              : 'lp__chip lp__chip--icon'
+          }
           onClick={() => setPicker(picker === 'view' ? null : 'view')}
           aria-expanded={picker === 'view'}
           aria-haspopup="menu"
           title={hiddenFacetCount > 0 ? `Row view: ${hiddenFacetCount} hidden` : 'Choose what each row shows'}
-          aria-label={compact ? 'View' : undefined}
+          aria-label="View"
           data-testid="row-view-trigger"
         >
-          {/* At the floor the chip collapses to its glyph, as sort does: the
-              240px row already clips Collections, and a fourth word would push
-              People under the knife too. */}
-          {compact ? <VectorIcon paths={VIEW_MARK} size={13} /> : 'View'}
+          <VectorIcon paths={VIEW_MARK} size={15} />
           {hiddenFacetCount > 0 ? (
             <span className="lp__chip-count">{hiddenFacetCount}</span>
-          ) : (
-            <span className="lp__chip-caret" aria-hidden>▾</span>
-          )}
+          ) : null}
         </button>
       ) : null}
 
@@ -1886,16 +1907,17 @@ function FilterRow({
       {current ? (
         <button
           type="button"
-          className="lp__chip"
+          className="lp__chip lp__chip--icon"
           onClick={() => setPicker(picker === 'sort' ? null : 'sort')}
           aria-expanded={picker === 'sort'}
           aria-haspopup="menu"
+          aria-label={`Sort: ${current.label}`}
           title={`Sorted by ${current.label}`}
           data-testid="sort-trigger"
         >
-          {/* At the floor the sort chip collapses to its glyph — T0-3 frame 4
-              draws exactly `↓`. The chip never disappears. */}
-          {compact ? '↓' : `↓ ${current.label}`}
+          {/* The current order is named in the title and the open menu's ✓;
+              the chip itself is only the glyph. */}
+          <VectorIcon paths={SORT_MARK} size={15} />
         </button>
       ) : null}
 

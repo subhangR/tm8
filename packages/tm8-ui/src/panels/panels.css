@@ -2152,6 +2152,15 @@
   font-variant-numeric: tabular-nums;
 }
 .cv2-root .lp__chip-word { overflow: hidden; text-overflow: ellipsis; }
+/* An icon-only trigger: a square at the control height, widening only for its
+   count badge. `flex: none` because a glyph that shrinks is a clipped glyph. */
+.cv2-root .lp__chip--icon {
+  flex: none;
+  min-width: 28px;
+  padding: 0 5px;
+  justify-content: center;
+  gap: 4px;
+}
 .cv2-root .lp__chip--person {
   display: inline-flex;
   align-items: center;
