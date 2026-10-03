@@ -58,6 +58,34 @@ async function stageLogin(k: SpaceLoginHomeKey, ws: string, token: string): Prom
 }
 
 describe('t4-2 — the home path is allowlisted, and every level is 0700', () => {
+  it.each(['anthropic', 'openai'] as const)('Share to: a fresh %s login never copies or changes personal or other space logins', async (provider) => {
+    const filename = provider === 'anthropic' ? '.credentials.json' : 'auth.json';
+    const personalDir = join(credentialHomeDir(dataDir, 'personal-owner'), provider);
+    await mkdir(personalDir, { recursive: true, mode: 0o700 });
+    const personalPath = join(personalDir, filename);
+    await writeFile(personalPath, 'personal-refresh-token-canary', { mode: 0o600 });
+    const before = await stat(personalPath);
+    const original = key(provider);
+    const originalWs = randomUUID();
+    await stageLogin(original, originalWs, 'existing-space-login');
+    await homes.promote(original, originalWs, async () => true);
+    const originalPath = join(spaceLoginConfigDir(dataDir, original), filename);
+    const originalBytes = await readFile(originalPath);
+
+    const added = key(provider);
+    const addedWs = randomUUID();
+    await homes.ensureStaging(added, addedWs);
+    expect(await homes.stagingHasLogin(added, addedWs)).toBe(false);
+    await stageLogin(added, addedWs, 'new-independent-login');
+    await homes.promote(added, addedWs, async () => true);
+    await homes.remove(added);
+
+    expect(await readFile(personalPath, 'utf8')).toBe('personal-refresh-token-canary');
+    const after = await stat(personalPath);
+    expect([after.mtimeMs, after.ctimeMs, after.mode]).toEqual([before.mtimeMs, before.ctimeMs, before.mode]);
+    expect(await readFile(originalPath)).toEqual(originalBytes);
+  });
+
   it('lays out <dataDir>/credentials/spaces/<space>/<credential>/<provider>', () => {
     const k = key();
     expect(spaceLoginConfigDir(dataDir, k)).toBe(

@@ -36,3 +36,33 @@ RPCs (all human-only, tm8_app execute):
   any other member sees only their own row.
 - Card json (`space_credential_json`) gains `sharedWithMe: boolean`.
 - Going private->public keeps share rows (harmless); revoke (delete) keeps them as tombstone.
+
+## Agent Credentials: Share to
+
+Connected provider rows offer **Share to** in Settings. The picker defaults to
+the current space and optionally selects active members of that space. It
+creates a separate private credential owned by the caller, then grants the
+selected members; an empty selection keeps it private to the caller. No default
+is changed. Member entity ids are resolved to accounts by the share RPC.
+
+- GitHub uses `credentials.space.addMine`: read the caller's sealed token,
+  probe it, and reseal it under the new space credential's AAD. The personal
+  source is unchanged.
+- Anthropic and OpenAI use a **fresh space sign-in**. Personal OAuth homes
+  cannot be copied: refresh-token rotation could invalidate the original.
+  The new pending credential is claimed and made private before its terminal
+  is shown. Grants wait until the space credential is active. A failed privacy
+  setup removes only that new pending credential.
+- `addMine` remains GitHub-only. There is no defined personal API-key source
+  for the native Anthropic/OpenAI connections; this flow does not guess vendor
+  file formats. Pasting their API keys remains available in Space credentials.
+  Other provider rows explain that sharing is not supported yet.
+- Partial grant failures keep the saved credential and successful grants.
+  Retry applies only the failed grants to that same credential.
+
+Regression coverage: `settings-credentials/share-to.test.tsx`,
+`test/db/credential-add-mine.pg.test.ts`, and the fresh-login cases in
+`test/credentials/space-credential-home.test.ts`. The sharing pg suite also
+covers the revoke-versus-resume lock race: usability must be checked in a new
+statement after acquiring the credential lock, because unshare deletes a grant
+without rewriting the credential tuple.
