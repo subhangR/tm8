@@ -7438,11 +7438,16 @@ export interface EntityFeedPage {
 export type EntityContextSection = 'summary' | 'hierarchy' | 'connections' | 'messages' | 'activity' | 'actions';
 
 /**
- * The v2 section names (c904 §2.10). `summary` is accepted as an alias of
- * `assignment`; `activity` is not a v2 section. v1 keeps `EntityContextSection`.
+ * The v2 section names (c904 §2.10), then every core field a default v2 read
+ * returns (#12, #33). `summary` is accepted as an alias of `assignment`,
+ * `children`/`parent` of `hierarchy`, `acceptanceWrite` of `acceptance` and
+ * `parentMessage` of `anchor`; `activity` is not a v2 section. v1 keeps
+ * `EntityContextSection`.
  */
 export type EntityContextV2Section =
-  | 'assignment' | 'summary' | 'hierarchy' | 'blockers' | 'connections' | 'messages' | 'actions';
+  | 'assignment' | 'summary' | 'hierarchy' | 'blockers' | 'connections' | 'messages' | 'actions'
+  | 'acceptance' | 'acceptanceWrite' | 'header' | 'assignees' | 'gate' | 'children' | 'parent'
+  | 'story' | 'tasks' | 'anchor' | 'parentMessage' | 'attachments';
 
 export interface EntityContextQuery {
   /**

@@ -110,13 +110,33 @@ export const ADVERTISE_ACTIONS_EXPAND = true;
 
 const HEADER_KINDS: ReadonlySet<string> = new Set(SELECTION_HEADER_KINDS);
 
-/** The v2 section names; `summary` is accepted as an alias of `assignment`. */
-export type V2Section = 'assignment' | 'hierarchy' | 'blockers' | 'connections' | 'messages' | 'actions';
+/**
+ * The v2 section names. The first six are the expandable lists `notLoaded[]`
+ * advertises; the rest are the core fields the per-kind default read carries
+ * (#12, #33): every key a default read returns can be asked for by name, so a
+ * caller that wants only a task's acceptance need not pay for its body.
+ */
+export type V2Section =
+  | 'assignment' | 'hierarchy' | 'blockers' | 'connections' | 'messages' | 'actions'
+  | 'acceptance' | 'header' | 'assignees' | 'gate' | 'story' | 'tasks' | 'anchor' | 'attachments';
+
+/**
+ * Names accepted for the section that carries them: `summary` is the body,
+ * `children` and `parent` are the hierarchy, `acceptanceWrite` rides
+ * `acceptance` and `parentMessage` rides `anchor`.
+ */
+const V2_SECTION_ALIASES: Readonly<Record<string, V2Section>> = {
+  summary: 'assignment',
+  children: 'hierarchy',
+  parent: 'hierarchy',
+  acceptanceWrite: 'acceptance',
+  parentMessage: 'anchor',
+};
 
 /** `null` = the per-kind default read; a set = exactly those sections (c904 §2.10). */
 export function parseV2Sections(raw: readonly string[] | undefined): Set<V2Section> | null {
   if (raw === undefined) return null;
-  return new Set(raw.map((section) => (section === 'summary' ? 'assignment' : section) as V2Section));
+  return new Set(raw.map((section) => V2_SECTION_ALIASES[section] ?? section as V2Section));
 }
 
 /** Which v2 sections exist for a kind, in the order `notLoaded[]` lists them. */
@@ -129,6 +149,21 @@ function sectionsFor(kind: string): readonly V2Section[] {
     // c761 §3.2: a message is its body and its refs; no thread expansion.
     case 'message': return ['assignment', 'connections', 'actions'];
     default: return ['hierarchy', 'connections', 'messages', 'actions'];
+  }
+}
+
+/**
+ * The core sections a kind's default read carries, requestable by name but
+ * never advertised in `notLoaded[]` (the default read already has them).
+ */
+function coreSectionsFor(kind: string): readonly V2Section[] {
+  const header: V2Section[] = HEADER_KINDS.has(kind) ? ['header'] : [];
+  switch (kind) {
+    case 'task': return [...header, 'acceptance', 'assignees', 'gate'];
+    case 'story': return [...header, 'story'];
+    case 'work_session': return [...header, 'tasks'];
+    case 'message': return [...header, 'anchor', 'attachments'];
+    default: return header;
   }
 }
 
@@ -150,6 +185,8 @@ export interface ContextV2LoadPlan {
   readonly explicit: boolean;
   /** Body + acceptance (+ outline). No statement of its own: it rides the root row. */
   readonly assignment: boolean;
+  /** A task's acceptance (+ its write) without the body, when asked for by name. */
+  readonly acceptance: boolean;
   /**
    * The selection header, on the default read of a kind that resolves one
    * (`SELECTION_HEADER_KINDS`), shown when authored. Core: it is how a reader
@@ -166,6 +203,9 @@ export interface ContextV2LoadPlan {
   readonly sessionCard: boolean;
   /** message: anchor and parent-message refs, attachment sizes. */
   readonly messageCard: boolean;
+  /** Which halves of the message card the view shows: anchor + parentMessage, attachments. */
+  readonly anchor: boolean;
+  readonly attachments: boolean;
   /** story (283): the page projected small — roots, by kind, blocked, who runs what. */
   readonly storyCard: boolean;
   readonly messages: MessagePlan | null;
@@ -197,6 +237,7 @@ export function v2LoadPlan(
     return {
       explicit: false,
       assignment: loaded.has('assignment'),
+      acceptance: false,
       header: HEADER_KINDS.has(kind),
       parent: kind !== 'message',
       assignees: isTask,
@@ -205,6 +246,8 @@ export function v2LoadPlan(
       children: isTask || isStory,
       sessionCard: kind === 'work_session',
       messageCard: kind === 'message',
+      anchor: kind === 'message',
+      attachments: kind === 'message',
       storyCard: isStory,
       messages: loaded.has('messages') ? messagePlan : null,
       connections: false,
@@ -212,20 +255,26 @@ export function v2LoadPlan(
     };
   }
 
-  const has = (section: V2Section): boolean => requested.has(section) && available.includes(section);
+  const core = coreSectionsFor(kind);
+  const has = (section: V2Section): boolean => requested.has(section)
+    && (available.includes(section) || core.includes(section));
   return {
     explicit: true,
     assignment: has('assignment'),
-    header: false,
+    // The body's head read already carries acceptance.
+    acceptance: has('acceptance') && !has('assignment'),
+    header: has('header'),
     // A `--cursor` page is the section's rows only (c761 §3.5): no parent ref.
     parent: has('hierarchy') && after === null,
-    assignees: false,
-    gate: false,
+    assignees: has('assignees'),
+    gate: has('gate'),
     blockers: has('blockers'),
     children: has('hierarchy'),
-    sessionCard: false,
-    messageCard: false,
-    storyCard: false,
+    sessionCard: has('tasks'),
+    messageCard: has('anchor') || has('attachments'),
+    anchor: has('anchor'),
+    attachments: has('attachments'),
+    storyCard: has('story'),
     messages: has('messages') ? messagePlan : null,
     connections: has('connections'),
     // `actions` is always notLoaded: v2 never renders the palette itself.
@@ -1207,7 +1256,9 @@ function assemble(
     budget: { requested: 0, used: 0 },
   };
 
-  const assignmentFields = plan.assignment ? assignmentOf(root, offset) : {};
+  const assignmentFields = plan.assignment
+    ? assignmentOf(root, offset)
+    : plan.acceptance ? acceptanceFields(root) : {};
 
   if (plan.explicit) {
     // c904 §2.10: the header, the requested sections, notLoaded, errors, budget.
@@ -1218,9 +1269,17 @@ function assemble(
       ...(plan.parent ? { parent: loaded.parent ?? null } : {}),
       // Only ever loaded here when `header=resolved` asked for it by name.
       ...(loaded.header ? { header: loaded.header } : {}),
+      ...(loaded.gate !== undefined ? { gate: loaded.gate } : {}),
+      ...(loaded.assignees ? { assignees: loaded.assignees } : {}),
+      ...(loaded.story ? { story: loaded.story } : {}),
+      ...(plan.anchor
+        ? { ...(loaded.anchor ? { anchor: loaded.anchor } : {}), parentMessage: loaded.parentMessage ?? null }
+        : {}),
+      ...(plan.attachments ? { attachments: loaded.attachments ?? [] } : {}),
       ...assignmentFields,
       ...(loaded.blockers ? { blockers: loaded.blockers } : {}),
       ...(loaded.children ? { children: loaded.children } : {}),
+      ...(loaded.tasks ? { tasks: loaded.tasks } : {}),
       ...(loaded.connections ? { connections: loaded.connections } : {}),
       ...(loaded.messages ? { messages: loaded.messages } : {}),
       ...tail,

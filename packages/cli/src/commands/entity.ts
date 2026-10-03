@@ -467,8 +467,15 @@ async function entityFeed(cmd: CommandContext): Promise<ExitCode> {
 
 /** The closed section set — `EntityContextQuery.sections`, spelled once. */
 const CONTEXT_SECTIONS = ['summary', 'hierarchy', 'connections', 'messages', 'activity', 'actions'] as const;
-/** The v2 section set (c904 §2.10): `summary` aliases `assignment`, `activity` is gone. */
-const CONTEXT_V2_SECTIONS = ['assignment', 'summary', 'hierarchy', 'blockers', 'connections', 'messages', 'actions'] as const;
+/**
+ * The v2 section set (c904 §2.10): the lists, then every core field a default
+ * v2 read returns (#12, #33). `summary` aliases `assignment`, `children` and
+ * `parent` alias `hierarchy`; `activity` is gone.
+ */
+const CONTEXT_V2_SECTIONS = [
+  'assignment', 'summary', 'hierarchy', 'blockers', 'connections', 'messages', 'actions',
+  'acceptance', 'acceptanceWrite', 'header', 'assignees', 'gate', 'children', 'parent', 'story', 'tasks', 'anchor', 'parentMessage', 'attachments',
+] as const;
 
 /**
  * A byte-budget option, range-checked locally: the schema bounds are frozen
@@ -513,7 +520,8 @@ function contextSchema(cmd: CommandContext, defaultV2: boolean): WireSchema {
     return 'v1';
   }
   const v2Only = ['offset', 'cursor', 'edge-type'].some((flag) => cmd.options.value(flag) !== undefined)
-    || sections.includes('assignment') || sections.includes('blockers');
+    || sections.some((s) => (CONTEXT_V2_SECTIONS as readonly string[]).includes(s)
+      && !(CONTEXT_SECTIONS as readonly string[]).includes(s));
   if (v2Only) return 'v2';
   if (!defaultV2) return 'v1';
   return resolveWireSchema(cmd, {
@@ -580,7 +588,7 @@ export function contextQuery(cmd: CommandContext, rollout: { defaultV2?: boolean
   const edgeType = cmd.options.value('edge-type');
   const only = sections !== undefined && !sections.includes(',') ? sections : undefined;
   if (cursor !== undefined
-    && !(schema === 'v2' && only !== undefined && ['hierarchy', 'blockers', 'connections', 'messages'].includes(only))) {
+    && !(schema === 'v2' && only !== undefined && ['hierarchy', 'children', 'blockers', 'connections', 'messages'].includes(only))) {
     throw new CliError('--cursor continues exactly one v2 section: --schema v2 --sections hierarchy|blockers|connections|messages', EXIT_USAGE);
   }
   if (edgeType !== undefined && !(schema === 'v2' && only === 'connections')) {
