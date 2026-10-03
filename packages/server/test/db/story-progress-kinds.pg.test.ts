@@ -157,8 +157,8 @@ describe('story progress counts only work-bearing kinds', () => {
   it('progress counts the tasks and child story only', async () => {
     const s = await summary(id['story']!);
     // t1 open, t2 done, child story (to_do at birth). No doc, form, teammate or session.
-    expect(s['progress']).toEqual({ work: 3, done: 1, inProgress: 0, toDo: 2, blocked: 0, cancelled: 0 });
-    expect(s['taskProgress']).toEqual({ work: 2, done: 1, inProgress: 0, toDo: 1, blocked: 0, cancelled: 0 });
+    expect(s['progress']).toEqual({ work: 3, done: 1, inProgress: 0, toDo: 2, blocked: 0, cancelled: 0, staleInProgress: 0 });
+    expect(s['taskProgress']).toEqual({ work: 2, done: 1, inProgress: 0, toDo: 1, blocked: 0, cancelled: 0, staleInProgress: 0 });
   });
 
   it('a crashed session never inflates inProgress in progress or rollup', async () => {
@@ -166,17 +166,17 @@ describe('story progress counts only work-bearing kinds', () => {
     expect(s['liveSessionCount']).toBe(0);
     expect(s['progress']['inProgress']).toBe(0);
     // rollup: t1, t2 and the child's t3 (working) — the child's crashed ws3 is not counted.
-    expect(s['rollup']).toEqual({ work: 3, done: 1, inProgress: 1, toDo: 1, blocked: 0, cancelled: 0 });
+    expect(s['rollup']).toEqual({ work: 3, done: 1, inProgress: 1, toDo: 1, blocked: 0, cancelled: 0, staleInProgress: 1 });
     const child = await summary(id['child']!);
     expect(child['liveSessionCount']).toBe(0);
-    expect(child['progress']).toEqual({ work: 1, done: 0, inProgress: 1, toDo: 0, blocked: 0, cancelled: 0 });
+    expect(child['progress']).toEqual({ work: 1, done: 0, inProgress: 1, toDo: 0, blocked: 0, cancelled: 0, staleInProgress: 1 });
   });
 
   it('the page tallies no non-work root and shows a crashed session as terminal', async () => {
     const page = await asOwner(async (c) => loadStoryPage(querierOf(c), id['story']!));
     const root = (key: string) => page.roots.find((r) => r.id === id[key])!;
 
-    expect(root('t1').progress).toEqual({ work: 2, done: 1, inProgress: 0, toDo: 1, blocked: 0, cancelled: 0 });
+    expect(root('t1').progress).toEqual({ work: 2, done: 1, inProgress: 0, toDo: 1, blocked: 0, cancelled: 0, staleInProgress: 0 });
     for (const key of ['tm', 'd2', 'f2', 'ws2']) {
       expect(root(key).progress.work).toBe(0);
       expect(root(key).taskProgress.work).toBe(0);
