@@ -3,9 +3,9 @@
 // A story is one entity with a title, a description and the status every kind
 // has (152). Things are put in BY HAND as `contains` edges from the story —
 // those are its ROOTS — and everything connected to a root FOLLOWS along a
-// fixed set of edge types, to a fixed depth, under a fixed row bound. Progress,
-// the graph, the team, call signs and what is happening are all COMPUTED at
-// read time from that trail; nothing here is ever stored.
+// fixed set of edge types, to a fixed depth, under a fixed row bound. The
+// graph, team, call signs and activity are computed from that trail. Progress
+// is computed from contained work (see StoryState); story status is manual.
 //
 // Where each piece is read from (no new catalog rows):
 //   * `StoryState`   — the entity's `state` on BOTH read paths (entities.get /
@@ -96,9 +96,9 @@ export function storyCallSign(index: number): string {
 }
 
 /**
- * A progress tally over a set of followed rows. `work` = rows whose status
- * category is not `cancelled`; `done` = rows at category `done`. `blocked` =
- * work rows not done that hold an unresolved hard `depends_on`. The bands are
+ * A progress tally over contained work. `work` = rows whose status category
+ * is to_do, in_progress or done; `done` = rows at category `done`. `blocked` =
+ * unfinished rows explicitly blocked or holding an unresolved hard `depends_on`. The bands are
  * DISJOINT: `inProgress` and `toDo` exclude blocked rows, so
  * done + inProgress + toDo + blocked = work.
  */
@@ -109,6 +109,13 @@ export interface StoryProgress {
   toDo: number;
   blocked: number;
   cancelled: number;
+  /**
+   * Subset of inProgress: tasks without a directly linked, nondeleted
+   * spawning/running/idle work session (`working_on`, session -> task).
+   * This is a visibility-scoped signal, not a status change or an age test.
+   * Optional for older stored summaries; absence means unavailable, not zero.
+   */
+  staleInProgress?: number;
 }
 
 /**
@@ -165,7 +172,7 @@ export interface StoryNode {
    */
   status: string | null;
   statusCategory: StatusCategory | null;
-  /** Holds an unresolved hard `depends_on`. */
+  /** Explicitly blocked or holds an unresolved hard `depends_on`. */
   blocked: boolean;
   /** 0 for a root, 1..STORY_FOLLOW_DEPTH for followed rows; -1 for the story. */
   depth: number;
@@ -363,6 +370,7 @@ const StoryProgressSchema = z.object({
   toDo: z.number().int().nonnegative(),
   blocked: z.number().int().nonnegative(),
   cancelled: z.number().int().nonnegative(),
+  staleInProgress: z.number().int().nonnegative().optional(),
 }).strict();
 
 export const StoryStateSchema = z.object({

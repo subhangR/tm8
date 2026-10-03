@@ -113,7 +113,7 @@ const STATUS_KEY_FROM = `
        left join public.pull_requests pr on pr.entity_id = e.id
        left join public.chats cht on cht.entity_id = e.id`;
 
-const EMPTY_PROGRESS: StoryProgress = { work: 0, done: 0, inProgress: 0, toDo: 0, blocked: 0, cancelled: 0 };
+const EMPTY_PROGRESS: StoryProgress = { work: 0, done: 0, inProgress: 0, toDo: 0, blocked: 0, cancelled: 0, staleInProgress: 0 };
 
 export async function loadStoryPage(q: Querier, storyId: string): Promise<StoryPage> {
   const trail = await q.query<TrailRow>(
@@ -142,12 +142,12 @@ export async function loadStoryPage(q: Querier, storyId: string): Promise<StoryP
   const facts = await q.query<FactRow>(
     `select e.id, e.kind, e.parent_id, e.status_category, ${STATUS_KEY_SQL} as status_name,
             e.activity_at, e.created_at, ws.status as ws_status, ws.mode as ws_mode, tm.mode as tm_mode,
-            exists (
+            (coalesce(t.work_status = 'blocked', false) or exists (
               select 1 from public.edges dep
                where dep.src_id = e.id and dep.type = 'depends_on'
                  and coalesce((dep.props ->> 'hard')::boolean, true)
                  and not internal.is_resolved(dep.dst_id)
-            ) as blocked
+            )) as blocked
        from public.entities e${STATUS_KEY_FROM}
        left join public.team_members tm on tm.entity_id = e.id
       where e.id = any($1::uuid[]) and e.deleted_at is null`,
