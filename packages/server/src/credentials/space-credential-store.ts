@@ -80,6 +80,35 @@ export interface SpaceCredential {
   updatedAt: string;
   lastUsedAt: string | null;
   lastProbeAt: string | null;
+  /**
+   * 992 (task 01a10201): the caller is a grantee of this PRIVATE credential —
+   * they may launch on it, while its login and key hint stay masked.
+   */
+  sharedWithMe: boolean;
+}
+
+/** One grantee of a private credential (992). */
+export interface SpaceCredentialShare {
+  granteeAccountId: string;
+  grantedByAccountId: string;
+  createdAt: string;
+  granteeMemberId?: string | null;
+  granteeDisplayName?: string | null;
+}
+
+/** `share_space_credential`: `shared` false = it already was (idempotent). */
+export interface SpaceCredentialShareResult extends SpaceCredentialShare {
+  credentialId: string;
+  spaceId: string;
+  shared: boolean;
+}
+
+/** `unshare_space_credential`: the grantee's live sessions on it are the caller's to kill. */
+export interface SpaceCredentialUnshareResult {
+  credentialId: string;
+  granteeAccountId: string;
+  unshared: boolean;
+  killSessions: SpaceCredentialKillSession[];
 }
 
 export interface SpaceCredentialLogin {
@@ -512,6 +541,29 @@ export class DbSpaceCredentialStore {
       'set_space_credential_visibility',
       [credentialId, visibility],
     );
+  }
+
+  /**
+   * 992: the OWNER shares their private credential with one active member of
+   * its space. Refused for a public, space-owned or revoked credential, for
+   * the owner themself, and (`not_member`) for anyone not an active member.
+   */
+  async share(claims: DbClaims, credentialId: string, granteeAccountId: string): Promise<SpaceCredentialShareResult> {
+    return this.db.rpc<SpaceCredentialShareResult>(claims, 'share_space_credential', [credentialId, granteeAccountId]);
+  }
+
+  /**
+   * 992: the owner or a space admin withdraws a share. Clears the grantee's
+   * own default on it and returns `killSessions`: the grantee's live sessions
+   * on it. Killing them is the caller's, as for `setVisibility`.
+   */
+  async unshare(claims: DbClaims, credentialId: string, granteeAccountId: string): Promise<SpaceCredentialUnshareResult> {
+    return this.db.rpc<SpaceCredentialUnshareResult>(claims, 'unshare_space_credential', [credentialId, granteeAccountId]);
+  }
+
+  /** 992: every grantee to the owner or a space admin; any other member sees only their own row. */
+  async listShares(claims: DbClaims, credentialId: string): Promise<SpaceCredentialShare[]> {
+    return this.db.rpc<SpaceCredentialShare[]>(claims, 'list_space_credential_shares', [credentialId]);
   }
 
   /**

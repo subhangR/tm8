@@ -612,6 +612,11 @@ export const OPERATIONS = [
   { name: 'credentials.space.rename',                    method: 'PATCH',  path: '/v2/space-credentials/:credentialId',                                kind: 'command', status: 'v1', humanOnly: true },
   { name: 'credentials.space.delete',                    method: 'DELETE', path: '/v2/space-credentials/:credentialId',                                kind: 'command', status: 'v1', humanOnly: true },
   { name: 'credentials.space.setVisibility',             method: 'PUT',    path: '/v2/space-credentials/:credentialId/visibility',                     kind: 'command', status: 'v1', humanOnly: true },
+  // 992 (task 01a10201): the owner shares a PRIVATE credential with one member;
+  // the owner or a space admin withdraws it (killing the grantee's sessions).
+  { name: 'credentials.space.share',                     method: 'POST',   path: '/v2/space-credentials/:credentialId/shares',                         kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'credentials.space.unshare',                   method: 'DELETE', path: '/v2/space-credentials/:credentialId/shares/:granteeAccountId',       kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'credentials.space.shares',                    method: 'GET',    path: '/v2/space-credentials/:credentialId/shares',                         kind: 'read',    status: 'v1', humanOnly: true },
   { name: 'credentials.space.spaceDefaultConsent',       method: 'PUT',    path: '/v2/space-credentials/:credentialId/space-default-consent',          kind: 'command', status: 'v1', humanOnly: true },
   // W10d (doc 13 §7 step 2): add your own server-level GitHub token to this
   // space as a PRIVATE credential — read, probed and re-sealed in TS server-side;

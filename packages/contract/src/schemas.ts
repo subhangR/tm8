@@ -95,7 +95,7 @@ import type {
   CredentialPolicySource, CredentialsSpaceCommandInput, CredentialsSpaceCreateInput,
   CredentialsSpaceDeleteResult, CredentialsSpaceListView, CredentialsSpacePolicySetInput,
   CredentialsSpacePolicySetResult, CredentialsSpacePolicyView, CredentialsSpaceReadinessView, CredentialsSpaceRekeyInput,
-  CredentialsSpaceRenameInput, CredentialsSpaceSetVisibilityInput, CredentialsSpaceAddMineInput, CredentialsSpaceDefaultConsentInput,
+  CredentialsSpaceRenameInput, CredentialsSpaceSetVisibilityInput, CredentialsSpaceShareInput, CredentialsSpaceAddMineInput, CredentialsSpaceDefaultConsentInput,
   NodeCredentialPolicyEntry, NodeCredentialStatusEntry,
   NodeCredentialsPolicySetInput, NodeCredentialsStatusView, NodeMetricsView, SpaceCredentialPolicyEntry,
   NodeAccountListView, NodeAccountView, PathGrantCreateInput, PathGrantListView, PathGrantRevokeInput, PathGrantView,
@@ -2335,6 +2335,7 @@ export const SpaceCredentialViewSchema: z.ZodType<SpaceCredentialView> = z.objec
   ownerAccountId: z.string().nullable().optional(),
   visibility: z.enum(['private', 'public']).optional(),
   mayBeSpaceDefault: z.boolean().optional(),
+  sharedWithMe: z.boolean().optional(),
 }).strict();
 
 export const CredentialsSpaceListViewSchema: z.ZodType<CredentialsSpaceListView> = z.object({
@@ -2367,6 +2368,12 @@ export const CredentialsSpaceCreateInputSchema: z.ZodType<CredentialsSpaceCreate
 
 export const CredentialsSpaceSetVisibilityInputSchema: z.ZodType<CredentialsSpaceSetVisibilityInput> = z.object({
   visibility: z.enum(['private', 'public']),
+  clientMutationId: z.string().min(1).optional(),
+}).strict();
+
+/** 992: the grantee only — the owner is always the caller (I1). */
+export const CredentialsSpaceShareInputSchema: z.ZodType<CredentialsSpaceShareInput> = z.object({
+  granteeAccountId: z.string().min(1),
   clientMutationId: z.string().min(1).optional(),
 }).strict();
 

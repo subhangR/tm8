@@ -2798,6 +2798,12 @@ export interface SpaceCredentialView {
   visibility?: SpaceCredentialVisibilityName;
   /** An owned public credential's consent to be the space default. */
   mayBeSpaceDefault?: boolean;
+  /**
+   * 992 (task 01a10201): the caller is a grantee of this PRIVATE credential —
+   * they may launch on it; its login and key hint stay masked. Optional for
+   * the same reason as the three above.
+   */
+  sharedWithMe?: boolean;
 }
 
 /** Who may launch on a space credential (doc 13 §3a). */
@@ -2846,6 +2852,54 @@ export interface CredentialsSpaceSetVisibilityResult {
   credential: SpaceCredentialView;
   terminatedAgentSessionIds: string[];
   failures: Array<{ sessionId: string; reason: string }>;
+}
+
+/**
+ * `credentials.space.share` (992) — the OWNER shares their PRIVATE credential
+ * with one active member of its space, who may then launch on it (pinned or as
+ * their own default). The secret, key hint and vendor login stay masked for
+ * the grantee. A public or space-owned credential needs no share.
+ */
+export interface CredentialsSpaceShareInput {
+  /** The grantee's account id, or their member entity id in the credential's space. */
+  granteeAccountId: string;
+  clientMutationId?: string;
+}
+
+/** One grantee of a private space credential. */
+export interface SpaceCredentialShareView {
+  granteeAccountId: string;
+  grantedByAccountId: string;
+  createdAt: string;
+  /** The grantee's member entity in the credential's space; null once they left. Absent on an older server. */
+  granteeMemberId?: string | null;
+  granteeDisplayName?: string | null;
+}
+
+export interface CredentialsSpaceShareResult extends SpaceCredentialShareView {
+  credentialId: string;
+  spaceId: string;
+  /** False when it was already shared with this member (idempotent). */
+  shared: boolean;
+}
+
+/**
+ * `credentials.space.unshare` — the owner or a space admin. Clears the
+ * grantee's own default on it and kills the grantee's live sessions on it.
+ */
+export interface CredentialsSpaceUnshareResult {
+  credentialId: string;
+  granteeAccountId: string;
+  /** False when there was no share to withdraw. */
+  unshared: boolean;
+  terminatedAgentSessionIds: string[];
+  failures: Array<{ sessionId: string; reason: string }>;
+}
+
+/** `credentials.space.shares` — every grantee to the owner or an admin; a member sees only their own row. */
+export interface CredentialsSpaceSharesView {
+  credentialId: string;
+  shares: SpaceCredentialShareView[];
 }
 
 /**

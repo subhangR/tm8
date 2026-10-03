@@ -67,6 +67,7 @@ import {
   CredentialsSpaceRekeyInputSchema,
   CredentialsSpaceRenameInputSchema,
   CredentialsSpaceSetVisibilityInputSchema,
+  CredentialsSpaceShareInputSchema,
   NodeCredentialsPolicySetInputSchema,
   ServiceKeyProviderNameSchema,
   SpaceCredentialProviderNameSchema,
@@ -223,7 +224,7 @@ function spaceProviderParam(ctx: RequestContext): SpaceCredentialProviderName {
 }
 
 /** A required path id. Its shape is the RPC's to refuse (22023). */
-function pathParam(ctx: RequestContext, name: 'spaceId' | 'credentialId'): string {
+function pathParam(ctx: RequestContext, name: 'spaceId' | 'credentialId' | 'granteeAccountId'): string {
   const value = ctx.params[name];
   if (!value) throw new CollabError('invalid_input', `${name} is required`);
   return value;
@@ -520,6 +521,18 @@ export function registerCredentialHandlers(
     return spaceCatalog.setVisibility(await claimsOf(ctx), pathParam(ctx, 'credentialId'), visibility);
   };
 
+  // -- 992: share a private credential with one member. Every rule is in SQL.
+  const spaceShare: OperationHandler = async (ctx) => {
+    const { granteeAccountId } = CredentialsSpaceShareInputSchema.parse(ctx.body);
+    return spaceCatalog.share(await claimsOf(ctx), pathParam(ctx, 'credentialId'), granteeAccountId);
+  };
+
+  const spaceUnshare: OperationHandler = async (ctx) =>
+    spaceCatalog.unshare(await claimsOf(ctx), pathParam(ctx, 'credentialId'), pathParam(ctx, 'granteeAccountId'));
+
+  const spaceShares: OperationHandler = async (ctx) =>
+    spaceCatalog.shares(await claimsOf(ctx), pathParam(ctx, 'credentialId'));
+
   const spaceDefaultConsent: OperationHandler = async (ctx) => {
     const { allowed } = CredentialsSpaceDefaultConsentInputSchema.parse(ctx.body);
     return spaceCatalog.setSpaceDefaultConsent(await claimsOf(ctx), pathParam(ctx, 'credentialId'), allowed);
@@ -586,6 +599,9 @@ export function registerCredentialHandlers(
     'credentials.space.rename': requireHumanSession(spaceRename),
     'credentials.space.delete': requireHumanSession(spaceDelete),
     'credentials.space.setVisibility': requireHumanSession(spaceSetVisibility),
+    'credentials.space.share': requireHumanSession(spaceShare),
+    'credentials.space.unshare': requireHumanSession(spaceUnshare),
+    'credentials.space.shares': requireHumanSession(spaceShares),
     'credentials.space.spaceDefaultConsent': requireHumanSession(spaceDefaultConsent),
     'credentials.space.addMine': requireHumanSession(spaceAddMine),
     'credentials.space.claim': requireHumanSession(spaceClaim),

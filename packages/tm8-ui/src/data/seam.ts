@@ -156,6 +156,9 @@ import type {
   CredentialsSpacePolicyView,
   CredentialsSpaceReadinessView,
   CredentialsSpaceSetVisibilityResult,
+  CredentialsSpaceShareResult,
+  CredentialsSpaceSharesView,
+  CredentialsSpaceUnshareResult,
   CredentialsSpaceMyDefaultResult,
   CredentialsSpaceUsageView,
   SpaceCredentialVisibilityName,
@@ -1554,6 +1557,15 @@ export interface Seam {
        * a refusal is rendered with the server's reason text.
        */
       setVisibility(credentialId: string, visibility: SpaceCredentialVisibilityName): Promise<CredentialsSpaceSetVisibilityResult>;
+      /**
+       * 992: the owner shares a PRIVATE credential with one member. The grantee is
+       * their account id OR their member entity id in the credential's space.
+       */
+      share(credentialId: string, granteeAccountId: string): Promise<CredentialsSpaceShareResult>;
+      /** 992: the owner or a space admin withdraws a share; the grantee's sessions on it stop. */
+      unshare(credentialId: string, granteeAccountId: string): Promise<CredentialsSpaceUnshareResult>;
+      /** 992: every grantee to the owner or an admin; any other member sees only their own row. */
+      shares(credentialId: string): Promise<CredentialsSpaceSharesView>;
       spaceDefaultConsent(credentialId: string, allowed: boolean): Promise<SpaceCredentialView>;
       claim(credentialId: string): Promise<SpaceCredentialView>;
       setMyDefault(credentialId: string): Promise<CredentialsSpaceMyDefaultResult>;
