@@ -525,6 +525,17 @@ begin
   if stored.id is null or not internal.is_space_member(stored.space_id) then
     raise exception 'space credential not found' using errcode = 'P0002';
   end if;
+  -- 992: FOR SHARE on the caller's own member row, as share_space_credential
+  -- does for the grantee's: a membership end waits for this default to commit
+  -- and its trigger then deletes it; one that committed first is seen here,
+  -- and the share check below (a new statement) no longer finds the share.
+  perform 1 from public.accounts a
+    join public.members m on m.identity_id = a.identity_id
+   where a.id = v_account_id and m.space_id = stored.space_id and m.status = 'active'
+     for share of m;
+  if not found then
+    raise exception 'space credential not found' using errcode = 'P0002';
+  end if;
   if v_account_id is null
      or not (stored.owner_account_id is not distinct from v_account_id
              or internal.space_credential_shared_with(stored.id, v_account_id)) then

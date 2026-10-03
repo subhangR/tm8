@@ -902,6 +902,28 @@ describe('the seam adapter', () => {
   });
 });
 
+describe('the seam adapter — share candidates', () => {
+  it('reads every page, skips departed members and the caller', async () => {
+    const pages: Record<string, { items: unknown[]; nextCursor: string | null }> = {
+      first: { items: [
+        { id: 'm1', title: 'Me' },
+        { id: 'm-left', title: 'Gone', state: { memberStatus: 'left' } },
+        { id: 'm-a', title: 'Alice' },
+      ], nextCursor: 'c2' },
+      c2: { items: [{ id: 'm-b', title: 'Bob' }, { id: 'm-removed', title: 'Out', state: { memberStatus: 'removed' } }], nextCursor: null },
+    };
+    const query = vi.fn(async (q: { cursor?: string }) => ({ page: pages[q.cursor ?? 'first'] }));
+    const seam = {
+      identity: async () => ({ accountId: ME, isNodeAdmin: false, memberships: [{ spaceId: 'space-1', memberId: 'm1', role: 'member' }] }),
+      query,
+      credentials: { space: {}, node: {} },
+    } as unknown as Parameters<typeof spaceCredentialsPortFromSeam>[0];
+    const port = spaceCredentialsPortFromSeam(seam, 'space-1' as never, 'owner');
+    expect(await port.shareCandidates()).toEqual([{ memberId: 'm-a', name: 'Alice' }, { memberId: 'm-b', name: 'Bob' }]);
+    expect(query).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('W10d — owner, visibility, claim, my default, usage (doc 13 §7)', () => {
   const MY_PUBLIC = row({ id: 'c-own', label: 'My public', ownerAccountId: ME, visibility: 'public', mayBeSpaceDefault: false });
   const MY_PRIVATE = row({ id: 'c-priv', label: 'My private', ownerAccountId: ME, visibility: 'private' });
@@ -1344,6 +1366,26 @@ describe('992 — share a private credential with one member', () => {
     await screen.findByText('“My private” is no longer shared with Rakesh. 1 session they launched with it ended.');
     expect(port.unshare).toHaveBeenCalledWith('c-priv', 'acct-m-rakesh');
     await screen.findByTestId('space-cred-shares-empty-c-priv');
+  });
+
+  it('a revoke whose session kill failed says so and offers a retry, which calls unshare again', async () => {
+    const port = fakePort({ rows: [MY_PRIVATE], grants: [RAKESH_GRANT] });
+    vi.mocked(port.unshare).mockImplementationOnce(async (id: string, granteeAccountId: string) => ({
+      credentialId: id, granteeAccountId, unshared: true, terminatedAgentSessionIds: [],
+      failures: [{ sessionId: 's-stuck', reason: 'pty host unreachable' }],
+    }));
+    await mount(port);
+    fireEvent.click(screen.getByRole('button', { name: 'Share with member My private' }));
+    await screen.findByTestId('space-cred-share-c-priv-acct-m-rakesh');
+    fireEvent.click(screen.getByRole('button', { name: 'Revoke Rakesh My private' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm revoke Rakesh My private' }));
+    await screen.findByText('“My private” is no longer shared with Rakesh, but 1 session they launched with it could not be stopped yet.');
+    expect(screen.getByTestId('space-cred-unstopped-c-priv').textContent).toContain('could not be stopped');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry stopping Rakesh sessions My private' }));
+    await screen.findByText('“My private” is no longer shared with Rakesh. 1 session they launched with it ended.');
+    expect(port.unshare).toHaveBeenCalledTimes(2);
+    expect(port.unshare).toHaveBeenLastCalledWith('c-priv', 'acct-m-rakesh');
+    expect(screen.queryByTestId('space-cred-unstopped-c-priv')).toBeNull();
   });
 
   it('a space admin sees the grantees and can revoke, but cannot share someone else\'s credential', async () => {

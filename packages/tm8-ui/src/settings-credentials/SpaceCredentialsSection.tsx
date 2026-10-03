@@ -775,6 +775,8 @@ function SharesPanel({ row, port, canAdd, onChanged }: {
   const [confirming, setConfirming] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<SpaceCredentialFailure | null>(null);
+  /** A revoke whose grant is gone but some of the grantee's sessions did not stop. */
+  const [unstopped, setUnstopped] = useState<{ accountId: string; name: string; count: number } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -790,6 +792,24 @@ function SharesPanel({ row, port, canAdd, onChanged }: {
   }, [port, row.id, canAdd]);
 
   useEffect(() => { void load(); }, [load]);
+
+  /**
+   * Withdraw the share, then say what happened to the grantee's sessions. The
+   * grant is gone even when a kill failed; that case stays on screen with a
+   * retry (unshare re-lists the grantee's live sessions on every call), since
+   * the background sweep is a backstop, not proof the session stopped.
+   */
+  async function revoke(accountId: string, name: string): Promise<string> {
+    const result = await port.unshare(row.id, accountId);
+    const ended = result.terminatedAgentSessionIds.length;
+    const stuck = result.failures.filter((f) => f.sessionId !== row.id).length;
+    setUnstopped(stuck > 0 ? { accountId, name, count: stuck } : null);
+    const endedText = ended ? ` ${ended} session${ended === 1 ? '' : 's'} they launched with it ended.` : '';
+    if (stuck > 0) {
+      return `“${row.label}” is no longer shared with ${name}, but ${stuck} session${stuck === 1 ? '' : 's'} they launched with it could not be stopped yet.${endedText}`;
+    }
+    return `“${row.label}” is no longer shared with ${name}.${endedText}`;
+  }
 
   async function act(work: () => Promise<string>) {
     setBusy(true);
@@ -827,11 +847,7 @@ function SharesPanel({ row, port, canAdd, onChanged }: {
                 <>
                   <button type="button" className="cred-action set-spc__danger" disabled={busy}
                     aria-label={`Confirm revoke ${nameOf(share)} ${row.label}`}
-                    onClick={() => void act(async () => {
-                      const result = await port.unshare(row.id, share.granteeAccountId);
-                      const ended = result.terminatedAgentSessionIds.length;
-                      return `“${row.label}” is no longer shared with ${nameOf(share)}.${ended ? ` ${ended} session${ended === 1 ? '' : 's'} they launched with it ended.` : ''}`;
-                    })}>
+                    onClick={() => void act(() => revoke(share.granteeAccountId, nameOf(share)))}>
                     Revoke, and end their sessions on it
                   </button>
                   <button type="button" className="cred-action" aria-label={`Keep sharing ${nameOf(share)} ${row.label}`}
@@ -847,6 +863,16 @@ function SharesPanel({ row, port, canAdd, onChanged }: {
             </li>
           ))}
         </ul>
+      ) : null}
+      {unstopped ? (
+        <div className="set-spc__muted" role="alert" data-testid={`space-cred-unstopped-${row.id}`}>
+          {unstopped.count} session{unstopped.count === 1 ? '' : 's'} {unstopped.name} launched with “{row.label}” could not be stopped. They can no longer start new ones.
+          {' '}<button type="button" className="cred-action" disabled={busy}
+            aria-label={`Retry stopping ${unstopped.name} sessions ${row.label}`}
+            onClick={() => void act(() => revoke(unstopped.accountId, unstopped.name))}>
+            Retry stopping their sessions
+          </button>
+        </div>
       ) : null}
       {canAdd ? (
         <form className="set-spc__form" onSubmit={(e: FormEvent) => {

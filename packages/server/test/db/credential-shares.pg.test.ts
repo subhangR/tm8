@@ -448,6 +448,42 @@ describe('a3 — withdrawing the share stops new launches and lists the grantee\
     }
   });
 
+  it('race: a my_default set while the member is leaving does not survive into a rejoin', async () => {
+    const cred = await create(A);
+    await share(claims(A), cred, accounts[BT]!);
+    const pool = new Pool({ connectionString: database.url, max: 2 });
+    const setter = await pool.connect();
+    const ender = await pool.connect();
+    try {
+      await setter.query('begin');
+      await setter.query(
+        `select set_config('tm8.identity_id', $1, true), set_config('tm8.node_admin', 'false', true),
+                set_config('tm8.request_id', $2, true), set_config('tm8.auth_kind', 'browser', true),
+                set_config('role', 'tm8_app', true)`,
+        [BT, randomUUID()],
+      );
+      await setter.query('select public.set_my_space_credential_default($1)', [cred]);
+      await ender.query('begin');
+      await ender.query('set local role tm8_graph_owner');
+      // Blocks on the setter's FOR SHARE of BT's member row.
+      const ending = ender.query(`update public.members set status = 'left', left_at = now() where entity_id = $1`, [ids[`member:S:${BT}`]]);
+      await new Promise((r) => setTimeout(r, 300));
+      await setter.query('commit');
+      await ending;
+      await ender.query('commit');
+    } finally {
+      for (const c of [setter, ender]) {
+        await c.query('rollback').catch(() => undefined);
+        c.release();
+      }
+      await pool.end();
+      await asOwner(async (c) => {
+        await c.query(`update public.members set status = 'active', left_at = null where entity_id = $1`, [ids[`member:S:${BT}`]]);
+      });
+    }
+    expect(await store.myDefaultId(claims(BT), ids.S!, 'anthropic')).toBeNull();
+  });
+
   it('owner revokes the credential: every grantee session is swept as revoked', async () => {
     const cred = await create(A);
     await share(claims(A), cred, accounts[B]!);

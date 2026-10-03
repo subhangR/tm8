@@ -172,14 +172,21 @@ export function spaceCredentialsPortFromSeam(
     unshare: (credentialId, granteeAccountId) => seam.credentials.space.unshare(credentialId, granteeAccountId),
     shares: (credentialId) => seam.credentials.space.shares(credentialId),
     shareCandidates: async () => {
-      const [identity, members] = await Promise.all([
-        seam.identity(),
-        seam.query({ spaceId, kinds: [memberKindRef() as never] }),
-      ]);
+      // Every page, active members only, never the caller: a departed member
+      // is still a member entity, and SQL would refuse sharing with them.
+      const identity = await seam.identity();
       const mine = new Set(identity.memberships.filter((m) => m.spaceId === spaceId).map((m) => m.memberId));
-      return members.page.items
-        .filter((m) => !mine.has(m.id))
-        .map((m) => ({ memberId: m.id, name: m.title }));
+      const out: Array<{ memberId: string; name: string }> = [];
+      let cursor: Parameters<Seam['query']>[0]['cursor'];
+      do {
+        const result = await seam.query({ spaceId, kinds: [memberKindRef() as never], limit: 100, ...(cursor ? { cursor } : {}) });
+        for (const m of result.page.items) {
+          const ended = m.state && 'memberStatus' in m.state && m.state.memberStatus;
+          if (!mine.has(m.id) && !ended) out.push({ memberId: m.id, name: m.title });
+        }
+        cursor = result.page.nextCursor ?? undefined;
+      } while (cursor);
+      return out;
     },
   };
 }
