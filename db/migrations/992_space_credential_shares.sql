@@ -739,4 +739,7 @@ grant execute on function public.share_space_credential(uuid, uuid) to tm8_app;
 grant execute on function public.unshare_space_credential(uuid, uuid) to tm8_app;
 grant execute on function public.list_space_credential_shares(uuid) to tm8_app;
 
+-- A new table is analyzed at birth (never-analyzed-tables.pg.test.ts).
+analyze public.space_credential_shares;
+
 reset role;
