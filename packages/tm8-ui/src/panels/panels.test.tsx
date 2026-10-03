@@ -112,7 +112,13 @@ describe('EntityDetailPanel — the fixed anatomy', () => {
     expect(kindsWithFixtures.length).toBeGreaterThan(10);
   });
 
-  it.each(kindsWithFixtures.map((r) => [r.config.kind, r.detail] as const))(
+  /* A `composition: 'canvas'` kind (the story, task 01a101c5) draws no tab row
+     at all — its body is the only tab; `detail/panel-canvas.test.tsx` pins it. */
+  it.each(
+    kindsWithFixtures
+      .filter((r) => r.config.panel.composition !== 'canvas')
+      .map((r) => [r.config.kind, r.detail] as const),
+  )(
     '%s renders THREE tabs in fixed order — the first names the KIND (user ruling 2026-07-29)',
     (kind, detail) => {
       const { getByTestId } = render(

@@ -1,10 +1,11 @@
 /**
  * THE STORY PAGE — the shell every story block mounts in (artifact 01a0fc3e
- * rev 4, top to bottom): the compact HEADER (crumb, title, status, key
- * figures; the description, meta line and FOUR STATS fold behind its
- * "details"), the graph in a viewport-tall box, the team, the roots, the
- * child stories, then the live feed and what's happening beside the rail, and
- * the playground floating over all of it.
+ * rev 4, reshaped by task 01a101c5): the GRAPH first, from the panel's top
+ * edge and as tall as the panel less a peek, with the compact HEADER (crumb,
+ * title, status, key figures; the description, meta line and FOUR STATS fold
+ * behind its "details") floating over its top-left corner; then the team, the
+ * roots, the child stories, the live feed, the story's messages and what's
+ * happening beside the rail, and the playground floating over all of it.
  *
  * The shell owns exactly one piece of shared state: the node PICK. Any block
  * that draws a node reports a click through `onPick`; the playground renders
@@ -14,7 +15,7 @@
  * tallies. The one thing it counts is the by-kind breakdown under "In the
  * story", which is a label over `page.nodes`, not a progress figure.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import type { StatusCategory } from '@tm8/contract';
 
 import { Avatar, Pill, VectorIcon, relTime, type PillTone } from '../kit';
@@ -28,6 +29,7 @@ import { TeamCard } from './cards/TeamCard';
 import { WhatsHappening } from './cards/WhatsHappening';
 import { StoryGraph } from './graph/StoryGraph';
 import { StoryPlayground } from './playground/StoryPlayground';
+import { StoryMessagesSlot } from './messages-slot';
 import {
   STORY_KIND,
   TONE_WORD,
@@ -125,15 +127,50 @@ export function StoryPage({
     ...(open ? { onPick } : {}),
   };
   const full = layout === 'full';
-  /* GRAPH FIRST (#36, #37): the page opens on the graph. The description,
-     the meta row and the stat strip fold behind the header's "details"; the
-     graph takes a viewport-tall box in both layouts. */
+  /* GRAPH FIRST, FROM THE TOP EDGE (task 01a101c5): the graph is the first
+     thing on the page and fills the panel's height less a peek of what
+     follows. The header is not a row above it any more — it floats over the
+     canvas's top-left corner as the graph's `lead`, with the description, the
+     meta row and the stat strip still folded behind its "details". */
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const graph = (
-    <div className="sty-graphbox">
-      <StoryGraph {...block} {...(initialGraphView ? { initialView: initialGraphView } : {})} fill />
+  const lead = (
+    <div className="sty-lead">
+      <StoryHero
+        view={view}
+        rename={actions.rename}
+        open={actions.open}
+        live={live ?? null}
+        expanded={detailsOpen}
+        onToggle={() => setDetailsOpen((o) => !o)}
+        extra={
+          <>
+            <StoryStats view={view} />
+            {filter.hops < 3 ? (
+              <p className="sty-hopsnote" role="status">
+                showing {plural(filter.hops, 'hop')} from the roots · the figures above are the whole story
+              </p>
+            ) : null}
+          </>
+        }
+      />
     </div>
   );
+  const graph = (
+    <div className="sty-graphbox">
+      <StoryGraph {...block} {...(initialGraphView ? { initialView: initialGraphView } : {})} fill lead={lead} />
+    </div>
+  );
+  /* The story's messages: the panel's own conversation surface, as a section
+     beside the live feed rather than a tab (absent outside a panel). */
+  const messagesSurface = useContext(StoryMessagesSlot);
+  const messages = messagesSurface ? (
+    <section className="stc-card sty-messages" aria-label="Messages" data-testid="story-messages">
+      <div className="stc-head">
+        <span className="kit-eyebrow">Messages</span>
+      </div>
+      <div className="sty-messages__body">{messagesSurface}</div>
+    </section>
+  ) : null;
 
   return (
     <div
@@ -142,53 +179,41 @@ export function StoryPage({
       data-story-root=""
       data-story-id={view.id}
     >
-      <StoryHero
-        view={view}
-        rename={actions.rename}
-        open={actions.open}
-        live={live ?? null}
-        expanded={detailsOpen}
-        onToggle={() => setDetailsOpen((o) => !o)}
-      />
-      {detailsOpen ? <StoryStats view={view} /> : null}
-      {detailsOpen && filter.hops < 3 ? (
-        <p className="sty-hopsnote" role="status">
-          showing {plural(filter.hops, 'hop')} from the roots · the figures above are the whole story
-        </p>
-      ) : null}
-      {full ? (
-        /* FULL VIEW: the rail beside the main column, the graph in a tall
-           definite box so `fill` can grow it. */
-        <section className="sty-full">
-          <div className="sty-full__main">
-            {graph}
-            <TeamCard {...block} />
-            <RootsCard {...block} />
-            <ChildStoriesCard {...block} />
-            <LiveFeed {...block} />
-            <WhatsHappening {...block} />
-          </div>
-          <aside className="sty-full__rail">
-            <StoryRail {...block} />
-          </aside>
-        </section>
-      ) : (
-        <>
-          {graph}
-          <TeamCard {...block} />
-          <RootsCard {...block} />
-          <ChildStoriesCard {...block} />
-          <section className="sty-cols">
-            <div className="sty-cols__main">
+      {graph}
+      <div className="sty-sections">
+        {full ? (
+          /* FULL VIEW: the rail beside the main column. */
+          <section className="sty-full">
+            <div className="sty-full__main">
+              <TeamCard {...block} />
+              <RootsCard {...block} />
+              <ChildStoriesCard {...block} />
               <LiveFeed {...block} />
+              {messages}
               <WhatsHappening {...block} />
             </div>
-            <aside className="sty-cols__rail">
+            <aside className="sty-full__rail">
               <StoryRail {...block} />
             </aside>
           </section>
-        </>
-      )}
+        ) : (
+          <>
+            <TeamCard {...block} />
+            <RootsCard {...block} />
+            <ChildStoriesCard {...block} />
+            <section className="sty-cols">
+              <div className="sty-cols__main">
+                <LiveFeed {...block} />
+                {messages}
+                <WhatsHappening {...block} />
+              </div>
+              <aside className="sty-cols__rail">
+                <StoryRail {...block} />
+              </aside>
+            </section>
+          </>
+        )}
+      </div>
       <StoryPlayground
         view={view}
         actions={actions}
@@ -277,6 +302,7 @@ function StoryHero({
   live,
   expanded,
   onToggle,
+  extra,
 }: {
   view: StoryView;
   rename?: (entityId: string, title: string) => Promise<void>;
@@ -284,6 +310,8 @@ function StoryHero({
   live: StoryLive | null;
   expanded: boolean;
   onToggle: () => void;
+  /** More of the fold: the page's stat strip and hops note, drawn under the meta line. */
+  extra?: ReactNode;
 }) {
   const { state, page } = view;
   const tp = state.taskProgress;
@@ -401,6 +429,7 @@ function StoryHero({
             ) : null}
             {state.lastActivityAt ? <span className="sty-herometa__when">active {relTime(state.lastActivityAt)}</span> : null}
           </div>
+          {extra}
         </div>
       ) : null}
     </section>

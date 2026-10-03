@@ -591,7 +591,11 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
    * showing the same connections. The clamp reads the arrangement, so no host
    * has to remember it.
    */
-  const tab: PanelTab = oneSurface ? 'content' : (activeTab ?? uncontrolledTab);
+  /* A `composition: 'canvas'` body is the ONLY tab on every shell: there is no
+     tab row to select another, and its messages ride the body (task 01a101c5).
+     Read off the DETAIL because `config` resolves below the early returns. */
+  const canvas = detail ? getKind(detail.kind).panel.composition === 'canvas' : false;
+  const tab: PanelTab = oneSurface || canvas ? 'content' : (activeTab ?? uncontrolledTab);
 
   /**
    * USER RULING 2026-07-31 — the [ TERMINAL | CHAT ] switch belongs on the top
@@ -666,6 +670,29 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
     ro.observe(panelEl);
     return () => ro.disconnect();
   }, [framed, panelEl]);
+
+  /*
+   * THE CANVAS BAR'S FOOTPRINT, published to the body as two custom
+   * properties on the panel (task 01a101c5). The verbs float over the body's
+   * top-right corner, and the body's own floating chrome (the story graph's
+   * header chip and view row) has to stop short of them — by the bar's REAL
+   * width, which varies with the verbs the kind and the host wire. `offset*`
+   * rather than a rect: the lengths are consumed inside the same `.cv2-root`
+   * zoom scope, where a rect would arrive pre-multiplied. No observer (jsdom)
+   * ⇒ the properties stay unset and the CSS fallbacks hold.
+   */
+  const [canvasBarEl, setCanvasBarEl] = useState<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (canvasBarEl === null || panelEl === null || typeof ResizeObserver === 'undefined') return;
+    const publish = () => {
+      panelEl.style.setProperty('--pn-canvas-bar-w', `${canvasBarEl.offsetWidth}px`);
+      panelEl.style.setProperty('--pn-canvas-bar-h', `${canvasBarEl.offsetHeight}px`);
+    };
+    publish();
+    const ro = new ResizeObserver(publish);
+    ro.observe(canvasBarEl);
+    return () => ro.disconnect();
+  }, [canvasBarEl, panelEl]);
 
   /**
    * D44 — which flow verb's config is expanded on the action bar, if any.
@@ -930,6 +957,229 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
       />
     ) : null;
 
+  /** The panel bar's end cluster: the tab row's right edge, or — on a canvas — the floating bar. */
+  const barEnd = (
+    /*
+     * THE PHONE'S END CLUSTER IS THE SAVE AFFORDANCE AND TRANSFER, and
+     * everything else in it has moved into the floating action menu —
+     * user ruling 2026-08-20. `TabStrip` renders no strip at all on this
+     * shell (see its `oneSurface` branch), so what is passed here is the
+     * whole of the region.
+     *
+     * SAVECONTROLS STAY INLINE, DELIBERATELY. A pending unsaved title
+     * edit hidden inside a closed menu is a data-loss shape, not a layout
+     * choice: the user cannot see that there is something to save, and
+     * the two verbs that answer it are two taps away behind a control
+     * that gives no sign it is holding them.
+     *
+     * TRANSFER STAYS INLINE TOO, and it is the ONE verb that could not
+     * follow the others. `TransferControl` renders NOTHING unless a
+     * remote server is registered and the kind is transferable — its
+     * docblock argues at length that this is the deliberate exception to
+     * disabled-with-reason, because on a single-server node "transfer to
+     * another server" is not a deferred feature but a concept that does
+     * not apply. A menu row obeys the opposite rule: present, dimmed,
+     * carrying its reason. Moving it would either overrule that decision
+     * or force this file to re-implement an async, kind-aware gate that
+     * `src/transfer` owns (§15.2). It self-gates to null, so where it
+     * does not apply the row collapses with it.
+     *
+     * BOTH ARMS OMIT THE SURFACE SLOT. `WorkSessionContent` declines the
+     * slot on a phone anyway (`ridesPanelBar`), so passing one here has
+     * had no effect on this shell since `099c3a03`; not passing it is the
+     * same fact said in the direction that cannot rot.
+     */
+    oneSurface ? (
+      <>
+        {editsPossible && (config.list.inlineEdit?.title || config.list.inlineEdit?.status) ? (
+          <SaveControls save={save} />
+        ) : null}
+        <TransferControl detail={detail} />
+      </>
+    ) : (
+    <>
+      {isTerminal && props.sessionContextSurface ? props.sessionContextSurface : null}
+      {controlsRideBar ? (
+        <div
+          className="pn-panelbar__surface"
+          ref={setSurfaceSlot}
+          data-testid="panel-surface-slot"
+        />
+      ) : null}
+      {/* THE SESSION'S SHARING SLOT — the row cluster's picker, mounted
+          again rather than copied, so a session opened from its row keeps
+          the control it had there. Declared by the kind's `rowActions`
+          (registry data, never a kind literal) and drawn only where the
+          host can perform it: a panel whose host wired no sharing gets no
+          refused icon in a bar that has no room for one. Desktop arm only;
+          the phone arm is `oneSurface`, where anchored popovers are ruled
+          out (CONTRACT.md §4). */}
+      {config.list.rowActions?.includes(SHARING_CONTROL.private) && controlHost.onShareSession ? (
+        <RowSharingControl
+          ref_={sharingControlFor(SHARING_CONTROL.private, sessionSharingOf(detail.state, detail.createdBy)?.watch)}
+          row={subjectOf(detail)}
+          props={controlHost}
+        />
+      ) : null}
+      <ActionBar
+        barRef={actionBarRef}
+        config={config}
+        /* The terminal archetype is the only bar that ALSO carries the
+           five surface chips, so it is the only one whose primaries have
+           to give up their words. Registry data, never a kind literal. */
+        markPrimaries={isTerminal}
+        /* Filled from the detail — see `panelActionContext`, which is
+           also what the phone's action menu asks, so the bar and the menu
+           cannot form different opinions about the same verb. */
+        ctx={panelActionContext(detail, ctx, props.liveness)}
+        onAction={props.onAction}
+        wiredActions={props.wiredActions}
+        primaryCounts={props.primaryCounts}
+        openFlow={flowRef}
+        /* Only when the host actually has launch sources. Without them
+           the expand would render an empty teammate select over an
+           un-committable Launch — a config that cannot configure is a
+           worse answer than the honest "not wired here" refusal. */
+        /* Wired when the host can serve AT LEAST ONE flow. Without any,
+           the expand would open an empty card — and a config that cannot
+           configure is a worse answer than the honest "not wired here"
+           refusal. Which surface opens is decided below, by the verb. */
+        onFlow={props.launch || mergePr ? setFlowRef : undefined}
+        /*
+         * DEF-004 — RUN OPENS THE FULL SHEET WHERE THE HOST MOUNTS ONE.
+         *
+         * The list row has had this precedence since D44 ("the sheet
+         * OUTRANKS the inline expand"); the detail panel did not, so the
+         * SAME VERB on the SAME ENTITY behaved differently depending on
+         * which surface you pressed it from.
+         *
+         * It matters most on a phone, and that is why it arrives now. The
+         * inline expand is `.pn-actions__flow` — absolute, 300px wide,
+         * anchored to a 30px bar — and CONTRACT.md §4 rules that anchored
+         * popovers "do not survive the trip to a 390px header". The full
+         * sheet now HAS a phone arrangement; the quick config does not.
+         * On a phone the detail panel is also the surface where Run is
+         * reliably reachable at all: the list row's cluster is
+         * hover-revealed.
+         *
+         * Spread, never defaulted: absent leaves the expand exactly as it
+         * was for every host without a sheet.
+         *
+         * GATED ON `oneSurface`, AND THAT IS A SCOPE DECISION RATHER THAN
+         * A TECHNICAL ONE — stated because the unconditional version is
+         * arguably the better product and I am deliberately not shipping
+         * it here. Applying this precedence everywhere would make the
+         * desktop detail panel agree with the desktop LIST ROW, which has
+         * had the rule since D44; today they disagree, and that
+         * inconsistency is real. But it is a DESKTOP behaviour change, in
+         * a shell that is in daily use, with no row behind it, no
+         * evidence, and nobody having asked — in a program scoped to
+         * coarse-pointer phones. Widening it is a separate decision for
+         * whoever owns the desktop; it is filed as an observation, not
+         * smuggled in under a phone fix.
+         */
+        {...(oneSurface && props.launch?.onFullOptions
+          ? { onOpenLaunch: props.launch.onFullOptions, launchSubjectId: detail.id }
+          : {})}
+        flowSurface={
+          flowRef && resolveAction(flowRef).flow === 'merge-pr' && mergePr && mergeSubject ? (
+            <MergePullRequestFlow
+              key={flowRef}
+              pr={mergeSubject}
+              headSha={mergePr.headShaFor?.(detail.id) ?? null}
+              githubLogin={mergePr.githubLogin ?? null}
+              onMerge={(input) => mergePr.onMerge(detail.id, input)}
+              onDismiss={() => setFlowRef(null)}
+              boundsRef={actionBarRef}
+            />
+          ) : flowRef && resolveAction(flowRef).flow === 'launch' && props.launch ? (
+            <LaunchComposerPopup
+              subject={detail}
+              /* The mode is the VERB's, read off the registry — so
+                 Coordinate commits a coordinator and not Run's worker,
+                 and no component here has to name either verb. */
+              /* THE CARD BELONGS TO ONE VERB, SO THE VERB IS ITS IDENTITY.
+                 `mode` and `verbLabel` are props, but parts of the config
+                 are STATE seeded once. Without this key, pressing
+                 Coordinate then Run could reuse the instance over stale
+                 refusal/pending state; the popup ALSO treats the verb's
+                 mode as prop-authoritative, so the payload follows the
+                 pressed button either way. Belt and key. */
+              key={flowRef}
+              verbLabel={resolveAction(flowRef).label}
+              {...(resolveAction(flowRef).launchMode
+                ? { mode: resolveAction(flowRef).launchMode }
+                : {})}
+              spaceId={props.launch.spaceId || ctx.spaceId}
+              teammates={props.launch.teammates}
+              projects={props.launch.projects}
+              capacity={props.launch.capacity}
+              jev={props.launch.jev}
+              loadInstalledPlugins={props.launch.loadInstalledPlugins}
+              selection={props.launch.selection}
+              profileFor={props.launch.profileFor}
+              upload={props.launch.upload}
+              onDispatch={props.launch.dispatch ? (note, key) => props.launch!.dispatch!(detail.id, note, key) : undefined}
+              jevKeyStatus={props.launch.jevKeyStatus}
+              sessionsSince={props.launch.sessionsSince}
+              onSpawn={props.launch.onSpawn}
+              loadDescription={
+                props.launch.descriptionOf
+                  ? () => props.launch!.descriptionOf!(detail.id)
+                  : undefined
+              }
+              canEditSubject={Boolean(props.launch.onUpdateEntity)}
+              onDismiss={() => setFlowRef(null)}
+              newClientMutationId={() =>
+                props.launch?.mutationId(detail.id) ?? newLaunchMutationId()
+              }
+            />
+          ) : null
+        }
+      />
+      {editsPossible && (config.list.inlineEdit?.title || config.list.inlineEdit?.status) ? (
+        <SaveControls save={save} />
+      ) : null}
+      {/* Cross-server transfer (user ruling 2026-08-18: panel, not tile).
+          Self-gating: renders nothing unless a remote server connection
+          is registered, so the single-server case never sees it. Kind
+          awareness lives in src/transfer, not here (§15.2). */}
+      <TransferControl detail={detail} />
+      {/* THE TOMBSTONE VERB, ONE CLICK BACK. It used to ride the control
+          strip as the last chip and, being the widest item there, was the
+          one flex-wrap ejected — onto its own line, directly under `✕`. A
+          destructive verb should not be a same-size neighbour of the
+          control you press when you are done looking. The control itself
+          is unchanged: same `RowAction`, same host, same `onArchive`,
+          same refusal vocabulary. */}
+      {strip !== null ? (
+        <PanelOverflow>
+          {/* The id and the link the metadata row used to spend a
+              measured 41.8px stating on every task. */}
+          <PanelIdentityItems entityId={detail.id} spaceId={props.ctx.spaceId} />
+          <span className="pn-overflow__rule" />
+          <RowAction
+            ref_={detail.deletedAt != null ? 'restore' : 'archive'}
+            row={subjectOf(detail)}
+            props={controlHost}
+            onRun={controlHost.onArchive}
+            variant="wide"
+            glyph={detail.deletedAt != null ? <RestoreIcon /> : <BinIcon />}
+          />
+        </PanelOverflow>
+      ) : null}
+      <PanelWindowControls
+        onPromote={props.onPromote}
+        onClose={onClose}
+        /* Same crowding, same gate: the surface-chip bar gives up ⤢ on a
+           desktop. The control itself refuses this on a phone, where ✕
+           is already gone — see `promoteHidden`. */
+        promoteHidden={isTerminal}
+      />
+    </>
+    )
+  );
+
   return (
     <section
       /*
@@ -949,7 +1199,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
        * putting both on this element opens exactly the same token scope with
        * one fewer node and no relationship for a sibling's CSS to lose.
        */
-      className={`${alwaysDark ? 'cv2-root ' : ''}pn-panel pn-panel--${host}${isTombstone ? ' pn-panel--tombstone' : ''}`}
+      className={`${alwaysDark ? 'cv2-root ' : ''}pn-panel pn-panel--${host}${canvas ? ' pn-panel--canvas' : ''}${isTombstone ? ' pn-panel--tombstone' : ''}`}
       data-theme={alwaysDark ? alwaysDarkTheme : undefined}
       data-always-dark={alwaysDark ? 'true' : undefined}
       /* Measured by `barHasRoom` above — a frame body's controls only ride the
@@ -971,7 +1221,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
          moving between three pinned columns needs them named. */
       aria-label={`${config.label}: ${detail.title}`}
     >
-      <PanelHeader
+      {canvas ? null : <PanelHeader
         detail={detail}
         config={config}
         breadcrumb={breadcrumb}
@@ -996,7 +1246,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
           ) : undefined
         }
         onCommitTitle={(title) => void save.commitNow({ title })}
-      />
+      />}
 
       {stalePin ? (
         <StalePinBanner pinnedVersion={stalePin.pinnedVersion} liveVersion={stalePin.liveVersion} />
@@ -1013,236 +1263,27 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         />
       ) : null}
 
-      <TabStrip
-        active={tab}
-        contentLabel={config.label}
-        counts={{
-          discussion: countMessages(detail, props.messages),
-          connections: countConnections(detail, props.connections),
-        }}
-        end={
-          /*
-           * THE PHONE'S END CLUSTER IS THE SAVE AFFORDANCE AND TRANSFER, and
-           * everything else in it has moved into the floating action menu —
-           * user ruling 2026-08-20. `TabStrip` renders no strip at all on this
-           * shell (see its `oneSurface` branch), so what is passed here is the
-           * whole of the region.
-           *
-           * SAVECONTROLS STAY INLINE, DELIBERATELY. A pending unsaved title
-           * edit hidden inside a closed menu is a data-loss shape, not a layout
-           * choice: the user cannot see that there is something to save, and
-           * the two verbs that answer it are two taps away behind a control
-           * that gives no sign it is holding them.
-           *
-           * TRANSFER STAYS INLINE TOO, and it is the ONE verb that could not
-           * follow the others. `TransferControl` renders NOTHING unless a
-           * remote server is registered and the kind is transferable — its
-           * docblock argues at length that this is the deliberate exception to
-           * disabled-with-reason, because on a single-server node "transfer to
-           * another server" is not a deferred feature but a concept that does
-           * not apply. A menu row obeys the opposite rule: present, dimmed,
-           * carrying its reason. Moving it would either overrule that decision
-           * or force this file to re-implement an async, kind-aware gate that
-           * `src/transfer` owns (§15.2). It self-gates to null, so where it
-           * does not apply the row collapses with it.
-           *
-           * BOTH ARMS OMIT THE SURFACE SLOT. `WorkSessionContent` declines the
-           * slot on a phone anyway (`ridesPanelBar`), so passing one here has
-           * had no effect on this shell since `099c3a03`; not passing it is the
-           * same fact said in the direction that cannot rot.
-           */
-          oneSurface ? (
-            <>
-              {editsPossible && (config.list.inlineEdit?.title || config.list.inlineEdit?.status) ? (
-                <SaveControls save={save} />
-              ) : null}
-              <TransferControl detail={detail} />
-            </>
-          ) : (
-          <>
-            {isTerminal && props.sessionContextSurface ? props.sessionContextSurface : null}
-            {controlsRideBar ? (
-              <div
-                className="pn-panelbar__surface"
-                ref={setSurfaceSlot}
-                data-testid="panel-surface-slot"
-              />
-            ) : null}
-            {/* THE SESSION'S SHARING SLOT — the row cluster's picker, mounted
-                again rather than copied, so a session opened from its row keeps
-                the control it had there. Declared by the kind's `rowActions`
-                (registry data, never a kind literal) and drawn only where the
-                host can perform it: a panel whose host wired no sharing gets no
-                refused icon in a bar that has no room for one. Desktop arm only;
-                the phone arm is `oneSurface`, where anchored popovers are ruled
-                out (CONTRACT.md §4). */}
-            {config.list.rowActions?.includes(SHARING_CONTROL.private) && controlHost.onShareSession ? (
-              <RowSharingControl
-                ref_={sharingControlFor(SHARING_CONTROL.private, sessionSharingOf(detail.state, detail.createdBy)?.watch)}
-                row={subjectOf(detail)}
-                props={controlHost}
-              />
-            ) : null}
-            <ActionBar
-              barRef={actionBarRef}
-              config={config}
-              /* The terminal archetype is the only bar that ALSO carries the
-                 five surface chips, so it is the only one whose primaries have
-                 to give up their words. Registry data, never a kind literal. */
-              markPrimaries={isTerminal}
-              /* Filled from the detail — see `panelActionContext`, which is
-                 also what the phone's action menu asks, so the bar and the menu
-                 cannot form different opinions about the same verb. */
-              ctx={panelActionContext(detail, ctx, props.liveness)}
-              onAction={props.onAction}
-              wiredActions={props.wiredActions}
-              primaryCounts={props.primaryCounts}
-              openFlow={flowRef}
-              /* Only when the host actually has launch sources. Without them
-                 the expand would render an empty teammate select over an
-                 un-committable Launch — a config that cannot configure is a
-                 worse answer than the honest "not wired here" refusal. */
-              /* Wired when the host can serve AT LEAST ONE flow. Without any,
-                 the expand would open an empty card — and a config that cannot
-                 configure is a worse answer than the honest "not wired here"
-                 refusal. Which surface opens is decided below, by the verb. */
-              onFlow={props.launch || mergePr ? setFlowRef : undefined}
-              /*
-               * DEF-004 — RUN OPENS THE FULL SHEET WHERE THE HOST MOUNTS ONE.
-               *
-               * The list row has had this precedence since D44 ("the sheet
-               * OUTRANKS the inline expand"); the detail panel did not, so the
-               * SAME VERB on the SAME ENTITY behaved differently depending on
-               * which surface you pressed it from.
-               *
-               * It matters most on a phone, and that is why it arrives now. The
-               * inline expand is `.pn-actions__flow` — absolute, 300px wide,
-               * anchored to a 30px bar — and CONTRACT.md §4 rules that anchored
-               * popovers "do not survive the trip to a 390px header". The full
-               * sheet now HAS a phone arrangement; the quick config does not.
-               * On a phone the detail panel is also the surface where Run is
-               * reliably reachable at all: the list row's cluster is
-               * hover-revealed.
-               *
-               * Spread, never defaulted: absent leaves the expand exactly as it
-               * was for every host without a sheet.
-               *
-               * GATED ON `oneSurface`, AND THAT IS A SCOPE DECISION RATHER THAN
-               * A TECHNICAL ONE — stated because the unconditional version is
-               * arguably the better product and I am deliberately not shipping
-               * it here. Applying this precedence everywhere would make the
-               * desktop detail panel agree with the desktop LIST ROW, which has
-               * had the rule since D44; today they disagree, and that
-               * inconsistency is real. But it is a DESKTOP behaviour change, in
-               * a shell that is in daily use, with no row behind it, no
-               * evidence, and nobody having asked — in a program scoped to
-               * coarse-pointer phones. Widening it is a separate decision for
-               * whoever owns the desktop; it is filed as an observation, not
-               * smuggled in under a phone fix.
-               */
-              {...(oneSurface && props.launch?.onFullOptions
-                ? { onOpenLaunch: props.launch.onFullOptions, launchSubjectId: detail.id }
-                : {})}
-              flowSurface={
-                flowRef && resolveAction(flowRef).flow === 'merge-pr' && mergePr && mergeSubject ? (
-                  <MergePullRequestFlow
-                    key={flowRef}
-                    pr={mergeSubject}
-                    headSha={mergePr.headShaFor?.(detail.id) ?? null}
-                    githubLogin={mergePr.githubLogin ?? null}
-                    onMerge={(input) => mergePr.onMerge(detail.id, input)}
-                    onDismiss={() => setFlowRef(null)}
-                    boundsRef={actionBarRef}
-                  />
-                ) : flowRef && resolveAction(flowRef).flow === 'launch' && props.launch ? (
-                  <LaunchComposerPopup
-                    subject={detail}
-                    /* The mode is the VERB's, read off the registry — so
-                       Coordinate commits a coordinator and not Run's worker,
-                       and no component here has to name either verb. */
-                    /* THE CARD BELONGS TO ONE VERB, SO THE VERB IS ITS IDENTITY.
-                       `mode` and `verbLabel` are props, but parts of the config
-                       are STATE seeded once. Without this key, pressing
-                       Coordinate then Run could reuse the instance over stale
-                       refusal/pending state; the popup ALSO treats the verb's
-                       mode as prop-authoritative, so the payload follows the
-                       pressed button either way. Belt and key. */
-                    key={flowRef}
-                    verbLabel={resolveAction(flowRef).label}
-                    {...(resolveAction(flowRef).launchMode
-                      ? { mode: resolveAction(flowRef).launchMode }
-                      : {})}
-                    spaceId={props.launch.spaceId || ctx.spaceId}
-                    teammates={props.launch.teammates}
-                    projects={props.launch.projects}
-                    capacity={props.launch.capacity}
-                    jev={props.launch.jev}
-                    loadInstalledPlugins={props.launch.loadInstalledPlugins}
-                    selection={props.launch.selection}
-                    profileFor={props.launch.profileFor}
-                    upload={props.launch.upload}
-                    onDispatch={props.launch.dispatch ? (note, key) => props.launch!.dispatch!(detail.id, note, key) : undefined}
-                    jevKeyStatus={props.launch.jevKeyStatus}
-                    sessionsSince={props.launch.sessionsSince}
-                    onSpawn={props.launch.onSpawn}
-                    loadDescription={
-                      props.launch.descriptionOf
-                        ? () => props.launch!.descriptionOf!(detail.id)
-                        : undefined
-                    }
-                    canEditSubject={Boolean(props.launch.onUpdateEntity)}
-                    onDismiss={() => setFlowRef(null)}
-                    newClientMutationId={() =>
-                      props.launch?.mutationId(detail.id) ?? newLaunchMutationId()
-                    }
-                  />
-                ) : null
-              }
-            />
-            {editsPossible && (config.list.inlineEdit?.title || config.list.inlineEdit?.status) ? (
-              <SaveControls save={save} />
-            ) : null}
-            {/* Cross-server transfer (user ruling 2026-08-18: panel, not tile).
-                Self-gating: renders nothing unless a remote server connection
-                is registered, so the single-server case never sees it. Kind
-                awareness lives in src/transfer, not here (§15.2). */}
-            <TransferControl detail={detail} />
-            {/* THE TOMBSTONE VERB, ONE CLICK BACK. It used to ride the control
-                strip as the last chip and, being the widest item there, was the
-                one flex-wrap ejected — onto its own line, directly under `✕`. A
-                destructive verb should not be a same-size neighbour of the
-                control you press when you are done looking. The control itself
-                is unchanged: same `RowAction`, same host, same `onArchive`,
-                same refusal vocabulary. */}
-            {strip !== null ? (
-              <PanelOverflow>
-                {/* The id and the link the metadata row used to spend a
-                    measured 41.8px stating on every task. */}
-                <PanelIdentityItems entityId={detail.id} spaceId={props.ctx.spaceId} />
-                <span className="pn-overflow__rule" />
-                <RowAction
-                  ref_={detail.deletedAt != null ? 'restore' : 'archive'}
-                  row={subjectOf(detail)}
-                  props={controlHost}
-                  onRun={controlHost.onArchive}
-                  variant="wide"
-                  glyph={detail.deletedAt != null ? <RestoreIcon /> : <BinIcon />}
-                />
-              </PanelOverflow>
-            ) : null}
-            <PanelWindowControls
-              onPromote={props.onPromote}
-              onClose={onClose}
-              /* Same crowding, same gate: the surface-chip bar gives up ⤢ on a
-                 desktop. The control itself refuses this on a phone, where ✕
-                 is already gone — see `promoteHidden`. */
-              promoteHidden={isTerminal}
-            />
-          </>
-          )
-        }
-        onSelect={selectTab}
-      />
+      {/* THE CANVAS HAS NO TAB ROW (task 01a101c5): the same end cluster floats
+          over the body's top-right corner instead, so Run, Chat, Edit, ⤢ and ✕
+          keep their one implementation. The phone keeps `TabStrip`, which on
+          that shell is already only the save affordance — the verbs live in the
+          floating action menu there. */}
+      {canvas && !oneSurface ? (
+        <div className="pn-canvas-bar" data-testid="panel-canvas-bar" ref={setCanvasBarEl}>
+          {barEnd}
+        </div>
+      ) : (
+        <TabStrip
+          active={tab}
+          contentLabel={config.label}
+          counts={{
+            discussion: countMessages(detail, props.messages),
+            connections: countConnections(detail, props.connections),
+          }}
+          end={barEnd}
+          onSelect={selectTab}
+        />
+      )}
 
       {/* ATTENTION v2 — the requests on this entity, for every kind (chapter 4,
           tab 3). It FLOATS: a zero-height dock under the tabs holds a pill at the
@@ -1855,6 +1896,9 @@ function PanelBody(
          ARRANGEMENT and never a requirement. */
       barSlot={props.barSlot}
       storySurface={props.storySurface}
+      /* The canvas body's messages section — the Messages tab it no longer
+         has, mounted as the SAME host-composed surface (task 01a101c5). */
+      messagesSurface={config.panel.composition === 'canvas' ? props.discussionSurface : undefined}
       commands={props.commands}
       onSaved={props.onSaved}
       downloadHref={props.attachments?.downloadHref}

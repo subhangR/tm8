@@ -1217,7 +1217,10 @@ describe('panel archetypes are total over the kind set (LLD §2.3)', () => {
     //   · 'frame' — the artifact panel IS the viewer (owner ruling 2026-08-20).
     //     A strip and a footer stapled under a viewport were most of the ~320px
     //     of chrome that ruling removed.
-    const expected: Record<string, 'chat' | 'frame' | undefined> = {
+    //   · 'canvas' — the story page IS the panel from its top edge down, with
+    //     its messages as a section (task 01a101c5): no title row, no tabs, no
+    //     strip, no footer.
+    const expected: Record<string, 'chat' | 'frame' | 'canvas' | undefined> = {
       channel: 'chat',
       work_session: 'chat',
       artifact: 'frame',
@@ -1230,6 +1233,7 @@ describe('panel archetypes are total over the kind set (LLD §2.3)', () => {
       // edge for the artifact's reason: a strip and a footer stapled under a
       // frame are chrome the panel exists to get out of the way of.
       container: 'frame',
+      story: 'canvas',
     };
     for (const row of allKinds()) {
       expect(row.panel.composition, String(row.kind)).toBe(expected[row.kind]);

@@ -971,7 +971,10 @@ export interface PanelMenuInput {
 export function panelMenuItems(input: PanelMenuInput): PanelMenuItem[] {
   const { config, ctx, counts, onSelectTab, onAction, wiredActions } = input;
 
-  const tabs: PanelMenuItem[] = PANEL_TABS.filter((t) => t.id !== 'content').map(({ id, label }) => {
+  /* A `composition: 'canvas'` body has no other tab to open: its connections
+     are the graph it draws and its messages are a section of it (task
+     01a101c5). Registry data, never a kind literal. */
+  const tabs: PanelMenuItem[] = (config.panel.composition === 'canvas' ? [] : PANEL_TABS.filter((t) => t.id !== 'content')).map(({ id, label }) => {
     const count = counts?.[id];
     return {
       id,

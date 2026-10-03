@@ -1321,12 +1321,16 @@ export interface PanelConfig {
    *     exists to show it (owner ruling 2026-08-20, the artifact screen). Its
    *     controls ride the panel bar instead of a row of their own, and it takes
    *     every pixel between that bar and the panel edge.
+   *   · 'canvas' — the body IS the whole panel, from the top edge down (task
+   *     01a101c5, the story view). No title row, no tab row: the panel's verbs
+   *     float over the body's top-right corner, the body is the only tab, and
+   *     the kind's messages ride the body as a section of their own.
    *
    * Absent ⇒ the ordinary stacked body, which keeps all three. The gates read
    * PRESENCE rather than each value, so a third composition cannot arrive and
    * silently inherit a footer nobody chose for it.
    */
-  composition?: 'chat' | 'frame';
+  composition?: 'chat' | 'frame' | 'canvas';
   /**
    * The kind's conversation surface, when it is not the archetype's default.
    *

@@ -8,10 +8,11 @@
   container-type: inline-size;
   display: flex;
   flex-direction: column;
-  gap: var(--pn-space-3);
-  /* The bottom clears the playground's sticky ＋ (≈52px) plus a gap, so the
-     last card can scroll out from under it. */
-  padding: var(--pn-space-3) var(--pn-space-4) 96px;
+  /* The graph is flush with the panel's top and sides (task 01a101c5); the
+     sections under it carry their own gutter (`.sty-sections`). The bottom
+     clears the playground's sticky ＋ (≈52px) plus a gap, so the last card can
+     scroll out from under it. */
+  padding: 0 0 96px;
   color: var(--pn-ink);
   font-family: var(--pn-ui);
   font-size: var(--pn-fs-body);
@@ -19,7 +20,14 @@
   position: relative;
 }
 /* Blocks draw their own cards; an unmounted stub (null) takes no gap. */
-.cv2-root .sty-page > :empty { display: none; }
+.cv2-root .sty-page > :empty,
+.cv2-root .sty-sections > :empty { display: none; }
+.cv2-root .sty-sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-3);
+  padding: var(--pn-space-1) var(--pn-space-4) 0;
+}
 
 /* ---- bar ---- */
 .cv2-root .sty-bar {
@@ -230,18 +238,72 @@
 }
 
 /* ---- full view (Z4, PR 1004): main column + rail, a tall graph ---- */
-.cv2-root .sty-page--full { padding: var(--pn-space-3) var(--pn-space-5) 96px; }
+.cv2-root .sty-page--full .sty-sections { padding-inline: var(--pn-space-5); }
 .cv2-root .sty-full { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 14px; align-items: start; }
 .cv2-root .sty-full__main,
 .cv2-root .sty-full__rail { display: flex; flex-direction: column; gap: var(--pn-space-3); min-width: 0; }
 .cv2-root .sty-full__rail { position: sticky; top: var(--pn-space-3); }
 /* StoryGraph `fill` takes 100% of a parent with a definite height: this box,
-   in both layouts (#36: the page opens on the graph). Tall enough that the
-   graph is the page, short enough that the one-row header above it stays on
-   screen. */
-.cv2-root .sty-graphbox { height: clamp(360px, calc(100vh - 150px), 1400px); min-height: 0; display: flex; flex-direction: column; flex: none; }
+   in both layouts. THE GRAPH IS THE PANEL (task 01a101c5): its height is the
+   canvas panel's (`cqh` — `.pn-panel--canvas` is a size container) less a
+   peek of the first section, so the page reads as "there is more below".
+   Outside a size container `cqh` falls back to the small viewport, which is
+   the same answer for a full-height host. */
+.cv2-root .sty-graphbox {
+  --sty-peek: 48px;
+  height: clamp(360px, calc(100cqh - var(--sty-peek)), 2000px);
+  min-height: 0; display: flex; flex-direction: column; flex: none;
+}
 .cv2-root .sty-graphbox > * { flex: 1 1 auto; min-height: 0; }
 @container (max-width: 980px) {
   .cv2-root .sty-full { grid-template-columns: minmax(0, 1fr); }
   .cv2-root .sty-full__rail { position: static; }
 }
+
+/* ---- the header, floating over the graph (task 01a101c5) ---- */
+.cv2-root .sty-lead {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
+  max-width: 100%; min-width: 0;
+  /* Above the view row that follows it: the chip's backdrop blur is its own
+     stacking context, so the fold's z-index alone cannot lift it. */
+  position: relative; z-index: 3;
+}
+.cv2-root .sty-lead > * { pointer-events: auto; max-width: 100%; }
+.cv2-root .sty-lead .sty-hero {
+  background: color-mix(in srgb, var(--pn-card) 88%, transparent);
+  backdrop-filter: blur(8px);
+  border-radius: var(--pn-r-md);
+}
+/* "details" opens as a POPOVER under the chip, never pushing the graph's
+   view row down over the nodes: the fold is out of flow, so the chip keeps
+   its one-row height. The chip stops clipping so the fold can hang below it;
+   the hairline is inset to stay inside the rounded corners. */
+.cv2-root .sty-lead .sty-hero { position: relative; overflow: visible; }
+.cv2-root .sty-lead .sty-hero::before { left: var(--pn-r-md); right: var(--pn-r-md); }
+.cv2-root .sty-lead .sty-hero--open { padding-bottom: 6px; }
+.cv2-root .sty-lead .sty-details {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 4;
+  width: min(720px, calc(100cqw - 2 * var(--pn-space-3)));
+  margin: 0;
+  padding: 10px 12px 12px;
+  display: flex; flex-direction: column; gap: 8px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-md);
+}
+.cv2-root .sty-lead .sty-details .sty-strip { box-shadow: none; }
+.cv2-root .sty-lead .sty-hopsnote { margin: 0; }
+
+/* ---- messages: the panel's conversation surface as a section ---- */
+.cv2-root .sty-messages { display: flex; flex-direction: column; margin: 0; overflow: hidden; }
+/* A conversation surface fills its box and scrolls inside it, so the box is
+   definite: tall enough to read a thread, never taller than the panel. */
+.cv2-root .sty-messages__body {
+  display: flex; flex-direction: column;
+  height: clamp(320px, 70cqh, 640px); min-height: 0;
+}
+.cv2-root .sty-messages__body > * { flex: 1 1 auto; min-height: 0; }
