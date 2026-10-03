@@ -34,7 +34,8 @@ export type SelectionHeaderKind =
   | 'drawing'
   | 'file'
   | 'task'
-  | 'collection';
+  | 'collection'
+  | 'story';
 
 export const SELECTION_HEADER_KINDS = [
   'skill',
@@ -46,6 +47,7 @@ export const SELECTION_HEADER_KINDS = [
   'file',
   'task',
   'collection',
+  'story',
 ] as const satisfies readonly SelectionHeaderKind[];
 
 /**

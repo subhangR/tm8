@@ -218,6 +218,10 @@ beforeAll(async () => {
     );
   });
   database.apply(files.filter((file) => file >= LENIENT));
+  await asOwner(async (c) => {
+    ids.story = await entity(c, ids.space!, 'story');
+    await c.query(`insert into public.stories(entity_id, title, description) values ($1, 'Story header', 'Story description')`, [ids.story]);
+  });
 }, 300_000);
 
 afterAll(async () => {
@@ -242,6 +246,14 @@ describe('migration 223 over 216', () => {
 });
 
 describe('set_entity_header / clear_entity_header', () => {
+  it('authors, resolves and clears a story header with a description fallback', async () => {
+    expect((await resolve([ids.story!])).get(ids.story!)).toMatchObject({ kind: 'story', name: 'Story header', summary: 'Story description', source: 'derived' });
+    await setHeader(ids.story!, { expected: 0, whenToUse: 'Open when planning the story', summary: 'Authored summary' });
+    expect((await resolve([ids.story!])).get(ids.story!)).toMatchObject({ kind: 'story', whenToUse: 'Open when planning the story', summary: 'Authored summary', source: 'authored', stale: false });
+    await clearHeader(ids.story!, 1);
+    expect((await resolve([ids.story!])).get(ids.story!)).toMatchObject({ summary: 'Story description', source: 'derived' });
+  });
+
   it('writes a header without touching the entity version, and records an activity instead of an entity.upsert', async () => {
     const before = await entityVersion(ids.doc!);
     const seqBefore = (await ownerSql(`select coalesce(max(seq), 0)::bigint s from public.workspace_events where space_id = $1`, [ids.space]))[0]!.s;
