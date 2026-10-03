@@ -339,8 +339,6 @@ function defaultMutationId(prefix: string): string {
   return `${prefix}_${mutationSeq.toString(36)}_${entropy}`;
 }
 
-export type Ops = ReturnType<typeof createOps>;
-
 /** Not in every build's catalog yet (agent-guidance PR); feature-detected by name. */
 const REDELIVER_OP = 'forms.responses.redeliver';
 /** Attention v2 verbs (chapter 5), feature-detected until S4 adds their rows. */

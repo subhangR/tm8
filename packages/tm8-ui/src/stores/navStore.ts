@@ -41,9 +41,6 @@ import { reconcileScreenStacks } from './backContract';
 /** WLT §5.2 / SPEC-FINAL: three pins, no more. */
 export const MAX_PINNED = 3;
 
-/** Which chrome a panel instance renders in. Anatomy never varies (LLD §3.2). */
-export type PanelHost = 'stack' | 'pinned' | 'peek' | 'z4';
-
 export interface NavState {
   spaceId: SpaceId;
   view: NavView;
