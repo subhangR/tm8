@@ -13,6 +13,7 @@ vi.setConfig({ testTimeout: 120_000, hookTimeout: 300_000 });
 
 
 const IDS = ['a1234567-0000-7000-8000-000000000001', 'a1234567-1000-7000-8000-000000000002'];
+const HIDDEN = 'a1234567-0000-7000-8000-000000000000';
 let database: W1ScratchDatabase;
 let db: Db;
 let registry: HandlerRegistry;
@@ -27,6 +28,11 @@ beforeAll(async () => {
       await c.query(`insert into public.stories(entity_id, title) values ($1, 'Prefix story')`, [id]);
     }
     await c.query(`insert into public.entities(id, space_id, kind, created_by, deleted_at) values ('a1234567-0000-7000-8000-000000000003', $1, 'story', $2, now())`, [F.space, F.member]);
+    // This unreadable row sorts before the visible collision. RLS must filter
+    // before LIMIT 2, or a unique readable prefix will become ambiguous.
+    await c.query(`insert into public.entities(id, space_id, kind, created_by, visibility)
+      values ($1, $2, 'story', $3, 'restricted')`, [HIDDEN, F.space, F.member]);
+    await c.query(`insert into public.stories(entity_id, title) values ($1, 'Hidden collision')`, [HIDDEN]);
   });
   db = createDb(database.url);
   registry = new HandlerRegistry();
@@ -52,6 +58,14 @@ for (const op of ['entities.get', 'entities.context'] as const) {
     await expect(call(op, 'a1234567')).rejects.toMatchObject({ code: 'invalid_input', message: expect.stringContaining(IDS[0]!), details: { candidates: IDS } });
     for (const id of ['ffffffff', 'a123', 'a1234567%']) await expect(call(op, id)).rejects.toMatchObject({ code: 'not_found' });
     await expect(call(op, 'a1234567-0000', 'no-access')).rejects.toMatchObject({ code: 'not_found' });
+  });
+  it(`${op} resolves a readable prefix despite a hidden collision and never lists the hidden candidate`, async () => {
+    expect(await call(op, 'a1234567-0000')).toMatchObject({ id: IDS[0] });
+    await expect(call(op, HIDDEN)).rejects.toMatchObject({ code: 'not_found' });
+    await expect(call(op, 'a1234567')).rejects.toMatchObject({
+      code: 'invalid_input', details: { candidates: IDS },
+      message: expect.not.stringContaining(HIDDEN),
+    });
   });
 }
 it('mutation path still refuses a unique short id', async () => {

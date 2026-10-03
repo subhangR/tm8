@@ -71,10 +71,10 @@ import {
 import type { Querier } from '../../../db/types.js';
 import { resolveAuthoredHeaderView, resolveHeaderViews } from '../../../headers/resolve.js';
 import { ENTITY_COLUMNS, ENTITY_FROM, MICROS, iso, isoOrNull, storySummaryOf, titleOf, type EntityRow } from '../../entity-read.js';
-import { loadStoryPage } from '../../story-page.js';
+import { loadStoryChildren, loadStoryPage } from '../../story-page.js';
 
 /**
- * The story card (283) is never-drop core, so every list on it is bounded
+ * The story card's state (283) is never-drop core; every list on it is bounded
  * (#25): a cut list adds an `omitted[]` entry whose `--sections story
  * --cursor` expand pages that one list. Roots are what a story is, so they get
  * the larger page; the id lists on a session or team row are cut to a few,
@@ -331,8 +331,8 @@ function sectionFingerprint(entityId: string, section: V2PagedSection, filter: s
 export type ContextV2After =
   | { section: 'hierarchy'; closed: boolean; at: string; id: string }
   | { section: 'blockers' | 'connections' | 'messages'; at: string; id: string }
-  /** One story-card list (#25), resumed after the row with this id. */
-  | { section: 'story'; list: StoryCardList; id: string };
+  /** One story-card list (#25); null starts that list without loading its peers. */
+  | { section: 'story'; list: StoryCardList; id: string | null };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MICROS_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/;
@@ -360,13 +360,13 @@ export function decodeV2Cursor(input: {
   const section = only as V2PagedSection;
   const { k } = decodeCursor(input.cursor);
   if (section === 'story') {
-    // [fingerprint(list), list, row id]: the list is the fingerprint's filter.
+    // [fingerprint(list), list, row id | null]: null starts only this list.
     const list = k[1] as StoryCardList;
     if (k.length !== 3 || !STORY_CARD_LISTS.includes(list) || k[0] !== sectionFingerprint(input.id, section, list)) {
       throw new CollabError('invalid_cursor', 'cursor does not continue a story list of this entity');
     }
-    const rowId = String(k[2]);
-    if (!UUID_RE.test(rowId)) throw new CollabError('invalid_cursor', 'cursor keys are malformed');
+    const rowId = k[2] === null ? null : String(k[2]);
+    if (rowId !== null && !UUID_RE.test(rowId)) throw new CollabError('invalid_cursor', 'cursor keys are malformed');
     return { section, list, id: rowId };
   }
   const filter = section === 'connections' ? (input.edgeType ?? null) : null;
@@ -389,7 +389,7 @@ function pageExpand(
   id: string,
   section: V2PagedSection,
   filter: string | null,
-  keys: Array<string | number> | null,
+  keys: Array<string | number | null> | null,
 ): { expand: string; expandOp: EntityContextExpandOp } {
   const cursor = keys === null ? null : encodeCursor([sectionFingerprint(id, section, filter), ...keys]);
   // A story list's filter rides inside the cursor; only connections take --edge-type.
@@ -1000,7 +1000,7 @@ async function loadV2(q: Querier, id: string, request: V2Request): Promise<{ loa
   if (plan.storyCard) {
     // 283: the same page assembler the detail read uses, projected small.
     // Core to a story's context: a failure fails the read.
-    const page = await loadStoryPage(taggedQuerier(q, 'root'), id);
+    const page = await loadStoryPage(taggedQuerier(q, 'root'), id, { childStories: false });
     // #25: every list is a page, so the never-drop core is bounded whatever
     // the story's size. A `--cursor` page carries only the list it continues.
     const resume = after?.section === 'story' ? after : null;
@@ -1008,10 +1008,10 @@ async function loadV2(q: Querier, id: string, request: V2Request): Promise<{ loa
     const ids = (values: string[], countKey: string): Record<string, unknown> => (values.length <= STORY_IDS_LIMIT
       ? {}
       : { [countKey]: values.length });
-    const pageOf = <T extends { id: string }>(list: StoryCardList, rows: T[]): T[] | undefined => {
+    const pageOf = <T extends { id: string }>(list: StoryCardList, rows: T[], continued = false): T[] | undefined => {
       if (resume !== null && resume.list !== list) return undefined;
       let start = 0;
-      if (resume !== null) {
+      if (resume?.id != null && !continued) {
         const at = rows.findIndex((row) => row.id === resume.id);
         if (at < 0) {
           throw new CollabError('invalid_cursor', `the ${list} row this cursor resumes after is no longer on the story; re-read it`);
@@ -1021,10 +1021,13 @@ async function loadV2(q: Querier, id: string, request: V2Request): Promise<{ loa
       const limit = list === 'roots' ? STORY_ROOTS_LIMIT : STORY_LIST_LIMIT;
       const rest = rows.slice(start);
       const section = `story.${list}`;
-      const pager = pagerOf(id, 'story', list, rest, (row) => [list, row.id]);
+      // A zero-row trim must retain both the list and its incoming position.
+      // Without a list-specific cursor, retrying loads the same mixed card.
+      const pager: Pager = (kept) => pageExpand(id, 'story', list,
+        [list, kept === 0 ? resume?.id ?? null : rest[kept - 1]!.id]);
       const kept = keep(rest, limit, section, loaded, pager);
       const entry = omitted.find((o) => o.section === section);
-      if (entry) entry.totalAtLeast = rows.length;
+      if (entry && !continued) entry.totalAtLeast = rows.length;
       return kept;
     };
     const followed = page.nodes.filter((n) => n.depth >= 0);
@@ -1045,10 +1048,17 @@ async function loadV2(q: Querier, id: string, request: V2Request): Promise<{ loa
       id: t.id, kind: t.kind, name: title(t.name), mode: t.mode, parentId: t.parentId, live: t.live,
       sessionIds: t.sessionIds.slice(0, STORY_IDS_LIMIT), ...ids(t.sessionIds, 'sessionCount'),
     })));
-    const childStories = pageOf('childStories', page.childStories.map((c) => ({
+    // Child stories are independent of the browser's 50-row preview. Fetch one
+    // row beyond this context page, using the same RLS-bound order each time.
+    const children = resume === null || resume.list === 'childStories'
+      ? await loadStoryChildren(taggedQuerier(q, 'root'), id, {
+        limit: STORY_LIST_LIMIT + 1, afterId: resume?.id ?? null,
+      })
+      : [];
+    const childStories = pageOf('childStories', children.map((c) => ({
       id: c.id, title: title(c.title), status: c.status, taskProgress: c.taskProgress, rollup: c.rollup,
       liveSessionCount: c.liveSessionCount,
-    })));
+    })), true);
     loaded.story = {
       state: storySummaryOf(root.story_summary),
       ...(roots ? { roots } : {}),
@@ -1221,6 +1231,15 @@ function droppableLists(messagesAreCore: boolean): Array<'connections' | 'childr
   return messagesAreCore ? ['connections', 'children'] : ['connections', 'children', 'messages'];
 }
 
+/** Preserve roots longest; each trimmed story list has its own continuation. */
+function storyLists(view: View): Array<{ section: string; rows: unknown[] }> {
+  const lists: StoryCardList[] = ['team', 'sessions', 'blocked', 'childStories', 'roots'];
+  return lists.flatMap((list) => {
+    const rows = view.story?.[list];
+    return Array.isArray(rows) ? [{ section: `story.${list}`, rows }] : [];
+  });
+}
+
 /**
  * The core envelope the body ceiling is measured against (c904 §2.4): the
  * whole DTO — the body's own marker (`offset`, `expand`, `expandOp`) and a
@@ -1243,6 +1262,10 @@ function envelopeBytes(view: View, messagesAreCore: boolean, pagers: ReadonlyMap
     if (!Array.isArray(rows)) continue;
     if (rows.length > 0) trimmed(clone, key, rows.length, pagers);
     clone[key] = [];
+  }
+  for (const { section, rows } of storyLists(clone)) {
+    if (rows.length > 0) trimmed(clone, section, 0, pagers);
+    rows.length = 0;
   }
   return jsonBytes(clone);
 }
@@ -1580,6 +1603,13 @@ function fit(
       if (key === 'messages') rows.shift();
       else rows.pop();
       trimmed(view, key, rows.length, pagers);
+      used = settle(view, requested);
+    }
+  }
+  for (const { section, rows } of storyLists(view)) {
+    while (used > requested && rows.length > 0) {
+      rows.pop();
+      trimmed(view, section, rows.length, pagers);
       used = settle(view, requested);
     }
   }
