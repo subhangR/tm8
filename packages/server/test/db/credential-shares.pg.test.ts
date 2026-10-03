@@ -400,6 +400,54 @@ describe('a3 — withdrawing the share stops new launches and lists the grantee\
     await setStatus(run, 'exited');
   });
 
+  it('leaving clears a my_default that pointed at a share, so a rejoined member falls back to space_default', async () => {
+    const cred = await create(A);
+    await share(claims(A), cred, accounts[BT]!);
+    await store.setMyDefault(claims(BT), cred);
+    const leave = (status: string) => asOwner(async (c) => {
+      await c.query(`update public.members set status = $2, left_at = case when $2 = 'active' then null else now() end where entity_id = $1`,
+        [ids[`member:S:${BT}`], status]);
+    });
+    await leave('left');
+    await leave('active');
+    expect(await store.myDefaultId(claims(BT), ids.S!, 'anthropic')).toBeNull();
+  });
+
+  it('race: a membership that ends while a share is in flight still drops the share', async () => {
+    const cred = await create(A);
+    const pool = new Pool({ connectionString: database.url, max: 2 });
+    const sharer = await pool.connect();
+    const ender = await pool.connect();
+    try {
+      await sharer.query('begin');
+      await sharer.query(
+        `select set_config('tm8.identity_id', $1, true), set_config('tm8.node_admin', 'false', true),
+                set_config('tm8.request_id', $2, true), set_config('tm8.auth_kind', 'browser', true),
+                set_config('role', 'tm8_app', true)`,
+        [A, randomUUID()],
+      );
+      await sharer.query('select public.share_space_credential($1, $2)', [cred, accounts[BT]]);
+      await ender.query('begin');
+      await ender.query('set local role tm8_graph_owner');
+      // Blocks on the sharer's FOR SHARE of BT's member row.
+      const ending = ender.query(`update public.members set status = 'left', left_at = now() where entity_id = $1`, [ids[`member:S:${BT}`]]);
+      await new Promise((r) => setTimeout(r, 300));
+      await sharer.query('commit');
+      await ending;
+      await ender.query('commit');
+      expect(await shares(claims(A), cred)).toEqual([]);
+    } finally {
+      for (const c of [sharer, ender]) {
+        await c.query('rollback').catch(() => undefined);
+        c.release();
+      }
+      await pool.end();
+      await asOwner(async (c) => {
+        await c.query(`update public.members set status = 'active', left_at = null where entity_id = $1`, [ids[`member:S:${BT}`]]);
+      });
+    }
+  });
+
   it('owner revokes the credential: every grantee session is swept as revoked', async () => {
     const cred = await create(A);
     await share(claims(A), cred, accounts[B]!);

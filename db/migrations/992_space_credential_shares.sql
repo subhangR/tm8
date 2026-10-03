@@ -32,7 +32,8 @@
 --      set_space_credential_visibility, and the R8 sweep is the backstop.
 --   6. The card JSON gains `sharedWithMe`. The hint and the vendor login stay
 --      masked for a grantee (may_see_space_credential_detail is unchanged).
---   7. A membership that ends deletes that account's shares in that space.
+--   7. A membership that ends deletes that account's shares in that space,
+--      and its my_default on any credential it does not own there.
 --
 -- WHAT DOES NOT CHANGE. The stream attach gate (257) stays OWNER-only: a
 -- grantee's agent runs on the credential, but the grantee cannot attach a
@@ -593,12 +594,15 @@ begin
     raise exception 'share with another member of this space' using errcode = '22023',
       detail = jsonb_build_object('reason', 'self')::text;
   end if;
-  if not exists (
-    select 1 from public.accounts a
-      join public.members m on m.identity_id = a.identity_id
-     where a.id = p_grantee_account_id and a.status = 'active'
-       and m.space_id = stored.space_id and m.status = 'active'
-  ) then
+  -- FOR SHARE on the grantee's member row: a membership end (an UPDATE of
+  -- that row) waits for this share to commit and its trigger then deletes it;
+  -- one that committed first makes this lock re-read the row, now inactive.
+  perform 1 from public.accounts a
+    join public.members m on m.identity_id = a.identity_id
+   where a.id = p_grantee_account_id and a.status = 'active'
+     and m.space_id = stored.space_id and m.status = 'active'
+     for share of m;
+  if not found then
     raise exception 'a credential is shared only with an active member of its space' using errcode = '42501',
       detail = jsonb_build_object('reason', 'not_member')::text;
   end if;
@@ -718,6 +722,16 @@ begin
      where a.identity_id = new.identity_id
        and s.grantee_account_id = a.id
        and s.space_id = new.space_id;
+    -- And the member's default on any credential they do not own in this
+    -- space: it could only have been a share, and a stale one would make a
+    -- rejoined member's auto launch refuse instead of reaching space_default.
+    delete from public.member_defaults md
+     using public.accounts a, public.space_credentials sc
+     where a.identity_id = new.identity_id
+       and md.account_id = a.id
+       and md.space_id = new.space_id
+       and sc.id = md.credential_id
+       and sc.owner_account_id is distinct from a.id;
   end if;
   return new;
 end
