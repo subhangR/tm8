@@ -316,12 +316,18 @@ describe('the four states, counted and filtered', () => {
     expect(shownPaths()).toEqual(['src/a.ts', 'src/b.ts']);
   });
 
-  it('says what porcelain actually measured when the worktree is clean', async () => {
-    mount(harness([]));
-    const empty = await screen.findByTestId('session-changes-empty');
-    // NOT "nothing has changed since the lane branched" — status is porcelain,
-    // and a lane with ten commits and a clean tree would read that as loss.
-    expect(empty.textContent).toBe('No uncommitted changes in this worktree.');
+  it('keeps the session diff visible after the agent commits and the worktree becomes clean', async () => {
+    const h = harness([]);
+    mount(h);
+
+    const history = await screen.findByTestId('session-changes-history');
+    await waitFor(() => expect(history.textContent).toContain('Committed session changes'));
+    // This is a base-to-worktree comparison, not porcelain. A commit therefore
+    // clears the staging list without making the code the session produced
+    // disappear from review.
+    expect(h.diffCalls).toEqual([{ path: '', scope: 'session' }]);
+    expect(screen.queryByTestId('session-changes-bar')).toBeNull();
+    expect(screen.queryByTestId('session-changes-filter-all')).toBeNull();
   });
 
   /**

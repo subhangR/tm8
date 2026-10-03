@@ -97,6 +97,31 @@
   color: var(--pn-ink-2);
 }
 
+/* -- clean worktree: retain the review, drop the inert staging controls ---- */
+
+.cv2-root .pn-chg__history {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-3);
+  padding-top: var(--pn-space-2);
+  border-top: 1px solid var(--pn-line);
+}
+
+.cv2-root .pn-chg__history-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--pn-space-2);
+}
+
+.cv2-root .pn-chg__history-title {
+  color: var(--pn-ink);
+  font-weight: 600;
+}
+
 /* -- the two panes: list on the left, one file's diff on the right -------- */
 
 .cv2-root .pn-chg__split {
