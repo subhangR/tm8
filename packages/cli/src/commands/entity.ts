@@ -588,8 +588,8 @@ export function contextQuery(cmd: CommandContext, rollout: { defaultV2?: boolean
   const edgeType = cmd.options.value('edge-type');
   const only = sections !== undefined && !sections.includes(',') ? sections : undefined;
   if (cursor !== undefined
-    && !(schema === 'v2' && only !== undefined && ['hierarchy', 'children', 'blockers', 'connections', 'messages'].includes(only))) {
-    throw new CliError('--cursor continues exactly one v2 section: --schema v2 --sections hierarchy|blockers|connections|messages', EXIT_USAGE);
+    && !(schema === 'v2' && only !== undefined && ['hierarchy', 'children', 'blockers', 'connections', 'messages', 'story'].includes(only))) {
+    throw new CliError('--cursor continues exactly one v2 section: --schema v2 --sections hierarchy|blockers|connections|messages|story', EXIT_USAGE);
   }
   if (edgeType !== undefined && !(schema === 'v2' && only === 'connections')) {
     throw new CliError('--edge-type filters the v2 connections section: --schema v2 --sections connections', EXIT_USAGE);

@@ -104,7 +104,9 @@ function byKindText(byKind: unknown): string {
 
 /**
  * The v2 context `story` section as lines. Lists print whole (the server
- * capped them and says so in `omitted[]`, which the brief prints).
+ * capped them and says so in `omitted[]`, which the brief prints). A
+ * `--cursor` page carries only the list it continues: an absent list is not
+ * printed, so it never reads as "none".
  */
 export function storyContextLines(story: unknown, status?: unknown, id?: unknown): string[] {
   if (!isRow(story)) return [];
@@ -115,25 +117,47 @@ export function storyContextLines(story: unknown, status?: unknown, id?: unknown
   }
   out.push(`by kind: ${byKindText(story['byKind'])}`);
 
-  const roots = rows(story['roots']);
-  out.push(`roots (${roots.length}):`);
-  roots.forEach((r, i) => out.push(rootLine(r, i)));
-
-  const blocked = rows(story['blocked']);
-  out.push(`blocked (${blocked.length})${blocked.length === 0 ? ': none' : ':'}`);
-  for (const b of blocked) out.push(`  ${str(b['id'])} ${str(b['kind'])}${statusTag(b['status'], b['statusCategory'])} ${str(b['title'])}`);
-
-  const sessions = rows(story['sessions']);
-  out.push(`sessions (${sessions.length}):`);
-  for (const s of sessions) {
-    const tasks = Array.isArray(s['taskIds']) ? s['taskIds'].map(String) : [];
-    out.push(`  ${str(s['callSign'])} ${str(s['id'])} ${s['live'] === true ? 'live' : 'idle'}`
-      + (s['mode'] != null ? ` · ${str(s['mode'])}` : '')
-      + ` · ${str(s['title'])}`
-      + (tasks.length > 0 ? ` · on ${tasks.join(', ')}` : ''));
+  if (story['roots'] !== undefined) {
+    const roots = rows(story['roots']);
+    out.push(`roots (${roots.length}):`);
+    roots.forEach((r, i) => out.push(rootLine(r, i)));
   }
 
-  const team = rows(story['team']);
+  if (story['blocked'] !== undefined) {
+    const blocked = rows(story['blocked']);
+    out.push(`blocked (${blocked.length})${blocked.length === 0 ? ': none' : ':'}`);
+    for (const b of blocked) out.push(`  ${str(b['id'])} ${str(b['kind'])}${statusTag(b['status'], b['statusCategory'])} ${str(b['title'])}`);
+  }
+
+  if (story['sessions'] !== undefined) {
+    const sessions = rows(story['sessions']);
+    out.push(`sessions (${sessions.length}):`);
+    for (const s of sessions) {
+      const tasks = Array.isArray(s['taskIds']) ? s['taskIds'].map(String) : [];
+      // `taskCount` rides only when the server cut `taskIds`.
+      const more = num(s['taskCount']) - tasks.length;
+      out.push(`  ${str(s['callSign'])} ${str(s['id'])} ${s['live'] === true ? 'live' : 'idle'}`
+        + (s['mode'] != null ? ` · ${str(s['mode'])}` : '')
+        + ` · ${str(s['title'])}`
+        + (tasks.length > 0 ? ` · on ${tasks.join(', ')}${more > 0 ? ` +${more} more` : ''}` : ''));
+    }
+  }
+
+  if (story['team'] !== undefined) teamLines(rows(story['team']), out);
+
+  if (story['childStories'] !== undefined) {
+    const children = rows(story['childStories']);
+    out.push(`child stories (${children.length})${children.length === 0 ? ': none' : ':'}`);
+    for (const c of children) {
+      out.push(`  ${str(c['id'])}${statusTag(c['status'], c['statusCategory'])} ${str(c['title'])}`
+        + ` · ${progressText(c['rollup'] ?? c['taskProgress'], 'tasks')}`
+        + (num(c['liveSessionCount']) > 0 ? ` · ${num(c['liveSessionCount'])} live` : ''));
+    }
+  }
+  return out;
+}
+
+function teamLines(team: Row[], out: string[]): void {
   out.push(`team (${team.length}):`);
   const modes = new Map<string, Row[]>();
   for (const t of team) {
@@ -144,22 +168,15 @@ export function storyContextLines(story: unknown, status?: unknown, id?: unknown
   for (const [mode, members] of modes) {
     out.push(`  ${mode}:`);
     for (const t of members) {
+      // `sessionCount` rides only when the server cut `sessionIds`.
+      const sessionCount = t['sessionCount'] !== undefined ? num(t['sessionCount']) : len(t['sessionIds']);
       out.push(`    ${str(t['id'])} ${str(t['name'])}${t['live'] === true ? ' (live)' : ''}`
-        + (t['kind'] === 'member' ? '' : ` · ${len(t['sessionIds'])} session${len(t['sessionIds']) === 1 ? '' : 's'}`)
+        + (t['kind'] === 'member' ? '' : ` · ${sessionCount} session${sessionCount === 1 ? '' : 's'}`)
         + (len(t['runs']) > 0 ? ` · runs ${len(t['runs'])}` : '')
         + (len(t['assigned']) > 0 ? ` · assigned ${len(t['assigned'])}` : '')
         + (t['parentId'] != null ? ` · under ${str(t['parentId'])}` : ''));
     }
   }
-
-  const children = rows(story['childStories']);
-  out.push(`child stories (${children.length})${children.length === 0 ? ': none' : ':'}`);
-  for (const c of children) {
-    out.push(`  ${str(c['id'])}${statusTag(c['status'], c['statusCategory'])} ${str(c['title'])}`
-      + ` · ${progressText(c['rollup'] ?? c['taskProgress'], 'tasks')}`
-      + (num(c['liveSessionCount']) > 0 ? ` · ${num(c['liveSessionCount'])} live` : ''));
-  }
-  return out;
 }
 
 /** The first line of a description, cut at `max` characters. */
