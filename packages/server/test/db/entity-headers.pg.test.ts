@@ -248,8 +248,8 @@ describe('migration 223 over 216', () => {
 describe('set_entity_header / clear_entity_header', () => {
   it('authors, resolves and clears a story header with a description fallback', async () => {
     expect((await resolve([ids.story!])).get(ids.story!)).toMatchObject({ kind: 'story', name: 'Story header', summary: 'Story description', source: 'derived' });
-    await setHeader(ids.story!, { expected: 0, whenToUse: 'Open when planning the story', summary: 'Authored summary' });
-    expect((await resolve([ids.story!])).get(ids.story!)).toMatchObject({ kind: 'story', whenToUse: 'Open when planning the story', summary: 'Authored summary', source: 'authored', stale: false });
+    await setHeader(ids.story!, { expected: 0, whenToUse: 'Open when planning the story', summary: 'Authored summary', keywords: ['planning'] });
+    expect((await resolve([ids.story!])).get(ids.story!)).toMatchObject({ kind: 'story', whenToUse: 'Open when planning the story', summary: 'Authored summary', keywords: ['planning'], source: 'authored', stale: false });
     await clearHeader(ids.story!, 1);
     expect((await resolve([ids.story!])).get(ids.story!)).toMatchObject({ summary: 'Story description', source: 'derived' });
   });
