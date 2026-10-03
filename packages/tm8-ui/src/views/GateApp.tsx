@@ -106,6 +106,7 @@ import {
   SpaceCredentialsSection,
   credentialSetupState,
   credentialsPortFromSeam,
+  credentialsSharePortFromSeam,
   spaceCredentialsPortFromSeam,
   filesystemAccessPortFromSeam,
   serviceKeysPortFromSeam,
@@ -1631,6 +1632,10 @@ export function GateApp(props: GateAppProps = {}) {
     () => (data.spaceId ? credentialsPortFromSeam(data.seam, data.spaceId) : null),
     [data.seam, data.spaceId],
   );
+  const credentialsSharePort = useMemo(
+    () => data.spaceId ? credentialsSharePortFromSeam(data.seam, data.spaceId) : undefined,
+    [data.seam, data.spaceId],
+  );
   // Service keys (TypeSafe, for ✦ Ask Jev) ride the same section; account-
   // scoped, so no space is bound.
   const serviceKeysPort = useMemo(() => serviceKeysPortFromSeam(data.seam), [data.seam]);
@@ -2703,6 +2708,7 @@ export function GateApp(props: GateAppProps = {}) {
                             credentials: (
                               <CredentialsSection
                                 port={credentialsPort}
+                                sharePort={credentialsSharePort}
                                 serviceKeysPort={serviceKeysPort}
                                 serverBaseUrl={activeServer.routeBaseUrl}
                                 /* Settings is the OTHER reader of the same
