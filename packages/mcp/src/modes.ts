@@ -51,27 +51,32 @@ export type DirectToolName = (typeof DIRECT_TOOL_NAMES)[number];
  *
  * ---
  *
- * SINCE 276, THIS `allow` IS LOAD-BEARING FOR A SECOND REASON. The composer can
- * now change a chat's mode MID-CONVERSATION: the pick rides one turn as
+ * THIS `allow` IS WHAT LETS A MID-CHAT MODE SWITCH KEEP THE RUNNING CHILD. The
+ * composer changes a chat's mode per turn: the pick rides one turn as
  * `messages.requested_chat_mode` (153) -> `chat_turns.mode` (154) and reaches the
- * agent as that turn's `[mode: x]` envelope line. Nothing is respawned, and that
- * is only safe because the mode's two SPAWN-TIME consumers are both mode-blind
- * today:
+ * agent as that turn's `[mode: x]` envelope line. The child is not restarted for
+ * it — `ensureRuntime` leaves the mode off its reuse rule on purpose, because a
+ * mode picked per turn would otherwise cost a restart per turn. That is correct
+ * only while nothing the child was LAUNCHED with depends on the mode, and the
+ * mode does have spawn-time consumers:
  *
- *   - `TM8_CHAT_MODE` (compose.ts) is stamped into the child's env at spawn and
- *     parsed back here by `parseChatMode` (env.ts) — so a running child's MCP
- *     mode is forever the mode it LAUNCHED with, not the mode of the turn it is
- *     currently answering.
- *   - the provider's `--allowedTools` list is computed once, at spawn, from
+ *   - `TM8_CHAT_MODE` (compose.ts), stamped into the MCP server's env and parsed
+ *     back by `parseChatMode` (env.ts) — so the router's mode is forever the mode
+ *     the chat launched in. It feeds only this function now; `tm8_overview` used
+ *     to echo it as `mode`, and so contradicted the envelope after every switch.
+ *   - the provider's `--allowedTools`, computed once, at spawn, from
  *     `exposedToolNames(launchMode, …)` in `chatProviderToolPolicy`.
  *
- * Both reduce to the identity while this function returns `allow` unconditionally,
- * which is why a per-turn switch is complete without a restart. NARROW A MODE HERE
- * AND YOU BREAK THAT: the envelope line would tell the agent to `build` while the
- * env var and the argv still carried `ask`'s tool surface — instructed to do one
- * job holding another's tools, with no error anywhere. Whoever re-introduces a
- * per-mode narrowing owns making the switch respawn (as a model change does, via
- * `ensureRuntime` + resume) or refusing the mid-chat switch for that mode.
+ * Both reduce to the identity while this function returns `allow`
+ * unconditionally. NARROW A MODE HERE AND THAT STOPS: the envelope would tell
+ * the agent to `build` while the child still held `ask`'s surface — with no
+ * error anywhere. The server's orchestrator.test.ts ("the spawn surface is
+ * mode-independent") fails the day that happens. Making it pass again is a
+ * choice between three designs, and a test edit is not one of them: restart the
+ * child on a mode change (the model's path, `ensureRuntime` close + resume),
+ * refuse a narrowing switch where the composer can show why, or keep the spawn
+ * surface the union and enforce the narrowing per call against the running
+ * turn's mode — which only the server knows, not this process.
  */
 export function toolPermission(_mode: ChatMode, _tool: string, _operation?: string): ToolPermission {
   return 'allow';

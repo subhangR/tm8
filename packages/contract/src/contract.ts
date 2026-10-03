@@ -1336,6 +1336,19 @@ export interface MessageView extends EntitySummary {
    * everywhere else.
    */
   turnInFlight?: boolean;
+  /**
+   * What this answer ran under: the model, provider and mode on the
+   * `chat_turns` row whose agent message this is. Server-set on a chat turn's
+   * agent message only, and absent everywhere else. Absent means "no record
+   * to show", never "the chat's default".
+   *
+   * A chat's config describes its NEXT turn. The mode is picked per turn
+   * (154) and the model can change mid-chat (276), so only the turn row
+   * knows what one answer ran under. `model`/`provider` are the row's
+   * claim-time stamp (276). An older row falls back to its queue-time pricing
+   * stamp, which is exact there because the model could not change before 276.
+   */
+  ranUnder?: { model: string; provider: string; mode: ChatMode };
 }
 
 // ---------------------------------------------------------------------------

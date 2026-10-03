@@ -1516,6 +1516,11 @@ export const MessageViewSchema: z.ZodType<MessageView> = z.lazy(() => z.object({
   replyParticipants: z.array(ActorSummarySchema).optional(),
   parts: z.array(MessagePartSchema).optional(),
   turnInFlight: z.boolean().optional(),
+  ranUnder: z.object({
+    model: z.string().min(1),
+    provider: z.string().min(1),
+    mode: z.enum(['ask', 'explain', 'plan', 'build', 'orchestrate', 'craft']),
+  }).strict().optional(),
 }).strict());
 
 export const MessageDeliveryDispositionSchema: z.ZodType<MessageDeliveryDisposition> = z.lazy(() =>

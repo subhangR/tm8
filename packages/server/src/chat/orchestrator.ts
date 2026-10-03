@@ -616,6 +616,19 @@ export class ChatOrchestrator {
     // stored, and then quietly ignored for the rest of the chat's life — the
     // exact failure the composer's "the model is fixed when a thread starts"
     // copy was describing.
+    //
+    // The chat MODE is left off on purpose, although it feeds the launch config
+    // too: `TM8_CHAT_MODE` in the MCP server's env and the provider's
+    // `--allowedTools` are both computed from it at spawn. A mode is picked PER
+    // TURN (154) and can change between any two, so comparing it here would
+    // make every mode switch a restart: a cold start on a click the composer
+    // presents as free, and the end of whatever the child still had running.
+    // Leaving it off is right only while nothing the child keeps depends on
+    // the mode — every mode carries the full tool surface (`toolPermission`,
+    // mcp/src/modes.ts), and the mode reaches the agent as the turn's own
+    // `[mode: …]` line (`promptFor`), never through the launch. The test "the
+    // spawn surface is mode-independent" (orchestrator.test.ts) fails the day
+    // that stops holding; read it before narrowing a mode or adding one here.
     if (
       live?.authorizationIdentityId === authorizationIdentityId
       && live.authorizationAuthKind === authorizationAuthKind
