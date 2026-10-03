@@ -73,8 +73,19 @@ import { resolveAuthoredHeaderView, resolveHeaderViews } from '../../../headers/
 import { ENTITY_COLUMNS, ENTITY_FROM, MICROS, iso, isoOrNull, storySummaryOf, titleOf, type EntityRow } from '../../entity-read.js';
 import { loadStoryPage } from '../../story-page.js';
 
-/** Each list on the story card (283) is capped; a cut list adds an `omitted[]` entry. */
-const STORY_CARD_LIMIT = 50;
+/**
+ * The story card (283) is never-drop core, so every list on it is bounded
+ * (#25): a cut list adds an `omitted[]` entry whose `--sections story
+ * --cursor` expand pages that one list. Roots are what a story is, so they get
+ * the larger page; the id lists on a session or team row are cut to a few,
+ * with the full count beside them.
+ */
+const STORY_ROOTS_LIMIT = 10;
+const STORY_LIST_LIMIT = 5;
+const STORY_IDS_LIMIT = 5;
+/** The story card's paged lists, each its own cursor (the fingerprint's filter). */
+export type StoryCardList = 'roots' | 'blocked' | 'sessions' | 'team' | 'childStories';
+const STORY_CARD_LISTS: readonly StoryCardList[] = ['roots', 'blocked', 'sessions', 'team', 'childStories'];
 import { taggedQuerier, type ContextLoadTag } from './context-tags.js';
 import { runsOnListedFrom } from './runs-on-visibility.js';
 
@@ -287,8 +298,8 @@ export function v2LoadPlan(
 // ---------------------------------------------------------------------------
 
 /** The sections a `--cursor` continues. */
-export type V2PagedSection = 'hierarchy' | 'blockers' | 'connections' | 'messages';
-const PAGED: readonly V2PagedSection[] = ['hierarchy', 'blockers', 'connections', 'messages'];
+export type V2PagedSection = 'hierarchy' | 'blockers' | 'connections' | 'messages' | 'story';
+const PAGED: readonly V2PagedSection[] = ['hierarchy', 'blockers', 'connections', 'messages', 'story'];
 
 /**
  * Each paged section's order, exactly as its loader sorts. It is part of the
@@ -300,6 +311,8 @@ const ORDERS: Record<V2PagedSection, string> = {
   blockers: 'edge created_at asc, edge id asc',
   connections: 'edge created_at desc, edge id desc',
   messages: 'created_at desc, id desc',
+  // The story page assembler's own order for each list (loadStoryPage).
+  story: 'story page order, after row id',
 };
 
 /**
@@ -317,7 +330,9 @@ function sectionFingerprint(entityId: string, section: V2PagedSection, filter: s
 /** The keyset a page resumes after: the last row of the previous page. */
 export type ContextV2After =
   | { section: 'hierarchy'; closed: boolean; at: string; id: string }
-  | { section: 'blockers' | 'connections' | 'messages'; at: string; id: string };
+  | { section: 'blockers' | 'connections' | 'messages'; at: string; id: string }
+  /** One story-card list (#25), resumed after the row with this id. */
+  | { section: 'story'; list: StoryCardList; id: string };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MICROS_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/;
@@ -339,12 +354,22 @@ export function decodeV2Cursor(input: {
   if (!only || !PAGED.includes(only as V2PagedSection)) {
     throw new CollabError(
       'invalid_input',
-      'a context cursor continues exactly one paged section (hierarchy, blockers, connections or messages)',
+      'a context cursor continues exactly one paged section (hierarchy, blockers, connections, messages or story)',
     );
   }
   const section = only as V2PagedSection;
-  const filter = section === 'connections' ? (input.edgeType ?? null) : null;
   const { k } = decodeCursor(input.cursor);
+  if (section === 'story') {
+    // [fingerprint(list), list, row id]: the list is the fingerprint's filter.
+    const list = k[1] as StoryCardList;
+    if (k.length !== 3 || !STORY_CARD_LISTS.includes(list) || k[0] !== sectionFingerprint(input.id, section, list)) {
+      throw new CollabError('invalid_cursor', 'cursor does not continue a story list of this entity');
+    }
+    const rowId = String(k[2]);
+    if (!UUID_RE.test(rowId)) throw new CollabError('invalid_cursor', 'cursor keys are malformed');
+    return { section, list, id: rowId };
+  }
+  const filter = section === 'connections' ? (input.edgeType ?? null) : null;
   const arity = section === 'hierarchy' ? 3 : 2;
   if (k.length !== arity + 1 || k[0] !== sectionFingerprint(input.id, section, filter)) {
     throw new CollabError('invalid_cursor', `cursor does not continue ${section} of this entity with this filter`);
@@ -367,16 +392,18 @@ function pageExpand(
   keys: Array<string | number> | null,
 ): { expand: string; expandOp: EntityContextExpandOp } {
   const cursor = keys === null ? null : encodeCursor([sectionFingerprint(id, section, filter), ...keys]);
+  // A story list's filter rides inside the cursor; only connections take --edge-type.
+  const edgeType = section === 'connections' ? filter : null;
   return {
     expand: `tm8 entity context ${id} --sections ${section}`
-      + (filter === null ? '' : ` --edge-type ${filter}`)
+      + (edgeType === null ? '' : ` --edge-type ${edgeType}`)
       + (cursor === null ? '' : ` --cursor ${cursor}`),
     expandOp: {
       operation: 'entities.context',
       params: {
         id,
         sections: [section],
-        ...(filter === null ? {} : { edgeType: filter }),
+        ...(edgeType === null ? {} : { edgeType }),
         ...(cursor === null ? {} : { cursor }),
       },
     },
@@ -974,37 +1001,64 @@ async function loadV2(q: Querier, id: string, request: V2Request): Promise<{ loa
     // 283: the same page assembler the detail read uses, projected small.
     // Core to a story's context: a failure fails the read.
     const page = await loadStoryPage(taggedQuerier(q, 'root'), id);
-    const cap = <T>(section: string, rows: T[]): T[] => {
-      if (rows.length <= STORY_CARD_LIMIT) return rows;
-      omitted.push({ section, kept: STORY_CARD_LIMIT, more: true, totalAtLeast: rows.length, reason: 'rowLimit' });
-      return rows.slice(0, STORY_CARD_LIMIT);
+    // #25: every list is a page, so the never-drop core is bounded whatever
+    // the story's size. A `--cursor` page carries only the list it continues.
+    const resume = after?.section === 'story' ? after : null;
+    const title = (value: string): string => capChars(value, TITLE_CAP).text;
+    const ids = (values: string[], countKey: string): Record<string, unknown> => (values.length <= STORY_IDS_LIMIT
+      ? {}
+      : { [countKey]: values.length });
+    const pageOf = <T extends { id: string }>(list: StoryCardList, rows: T[]): T[] | undefined => {
+      if (resume !== null && resume.list !== list) return undefined;
+      let start = 0;
+      if (resume !== null) {
+        const at = rows.findIndex((row) => row.id === resume.id);
+        if (at < 0) {
+          throw new CollabError('invalid_cursor', `the ${list} row this cursor resumes after is no longer on the story; re-read it`);
+        }
+        start = at + 1;
+      }
+      const limit = list === 'roots' ? STORY_ROOTS_LIMIT : STORY_LIST_LIMIT;
+      const rest = rows.slice(start);
+      const section = `story.${list}`;
+      const pager = pagerOf(id, 'story', list, rest, (row) => [list, row.id]);
+      const kept = keep(rest, limit, section, loaded, pager);
+      const entry = omitted.find((o) => o.section === section);
+      if (entry) entry.totalAtLeast = rows.length;
+      return kept;
     };
     const followed = page.nodes.filter((n) => n.depth >= 0);
     const byKind: Record<string, number> = {};
     for (const n of followed) byKind[n.kind] = (byKind[n.kind] ?? 0) + 1;
+    const roots = pageOf('roots', page.roots.map((r) => ({
+      id: r.id, kind: r.kind, title: title(r.title), status: r.status, statusCategory: r.statusCategory,
+      blocked: r.blocked, taskProgress: r.taskProgress, progress: r.progress,
+      childCount: r.descendantCount, trailCount: r.trail.length,
+    })));
+    const blocked = pageOf('blocked', followed.filter((n) => n.blocked)
+      .map((n) => ({ id: n.id, kind: n.kind, title: title(n.title), status: n.status })));
+    const sessions = pageOf('sessions', page.sessions.map((x) => ({
+      id: x.id, callSign: x.callSign, title: title(x.title), live: x.live, mode: x.mode,
+      teamMemberId: x.teamMemberId, taskIds: x.taskIds.slice(0, STORY_IDS_LIMIT), ...ids(x.taskIds, 'taskCount'),
+    })));
+    const team = pageOf('team', page.team.map((t) => ({
+      id: t.id, kind: t.kind, name: title(t.name), mode: t.mode, parentId: t.parentId, live: t.live,
+      sessionIds: t.sessionIds.slice(0, STORY_IDS_LIMIT), ...ids(t.sessionIds, 'sessionCount'),
+    })));
+    const childStories = pageOf('childStories', page.childStories.map((c) => ({
+      id: c.id, title: title(c.title), status: c.status, taskProgress: c.taskProgress, rollup: c.rollup,
+      liveSessionCount: c.liveSessionCount,
+    })));
     loaded.story = {
       state: storySummaryOf(root.story_summary),
-      roots: cap('story.roots', page.roots.map((r) => ({
-        id: r.id, kind: r.kind, title: r.title, status: r.status, statusCategory: r.statusCategory,
-        blocked: r.blocked, taskProgress: r.taskProgress, progress: r.progress,
-        childCount: r.descendantCount, trailCount: r.trail.length,
-      }))),
+      ...(roots ? { roots } : {}),
       byKind,
-      blocked: cap('story.blocked', followed.filter((n) => n.blocked)
-        .map((n) => ({ id: n.id, kind: n.kind, title: n.title, status: n.status }))),
-      sessions: cap('story.sessions', page.sessions.map((x) => ({
-        id: x.id, callSign: x.callSign, title: x.title, live: x.live, mode: x.mode,
-        teamMemberId: x.teamMemberId, taskIds: x.taskIds,
-      }))),
-      team: cap('story.team', page.team.map((t) => ({
-        id: t.id, kind: t.kind, name: t.name, mode: t.mode, parentId: t.parentId, live: t.live, sessionIds: t.sessionIds,
-      }))),
-      childStories: cap('story.childStories', page.childStories.map((c) => ({
-        id: c.id, title: c.title, status: c.status, taskProgress: c.taskProgress, rollup: c.rollup,
-        liveSessionCount: c.liveSessionCount,
-      }))),
+      ...(blocked ? { blocked } : {}),
+      ...(sessions ? { sessions } : {}),
+      ...(team ? { team } : {}),
+      ...(childStories ? { childStories } : {}),
       truncated: page.follow.truncated,
-    };
+    } as EntityContextStory;
   }
 
   if (plan.sessionCard) {

@@ -7477,8 +7477,9 @@ export interface EntityContextQuery {
   actionsSchema?: 'v1' | 'v2';
   /**
    * v2 only: continues the ONE paged section in `sections` (hierarchy,
-   * blockers, connections or messages). Context-owned: the token binds entity,
-   * section, edge-type filter and order, and is never an `entities.children`
+   * blockers, connections, messages or story — a story cursor continues one
+   * list of the story card). Context-owned: the token binds entity,
+   * section, edge-type filter (or story list) and order, and is never an `entities.children`
    * or `entities.connections` cursor.
    */
   cursor?: string;

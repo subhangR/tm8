@@ -4465,7 +4465,7 @@ const ENTITY_CONTEXT_V2_SECTIONS = [
   'assignment', 'summary', 'hierarchy', 'blockers', 'connections', 'messages', 'actions',
   'acceptance', 'acceptanceWrite', 'header', 'assignees', 'gate', 'children', 'parent', 'story', 'tasks', 'anchor', 'parentMessage', 'attachments',
 ] as const;
-const ENTITY_CONTEXT_V2_PAGED: readonly string[] = ['hierarchy', 'children', 'blockers', 'connections', 'messages'];
+const ENTITY_CONTEXT_V2_PAGED: readonly string[] = ['hierarchy', 'children', 'blockers', 'connections', 'messages', 'story'];
 
 export const ENTITY_HEADER_READ_MODES = ['authored', 'resolved'] as const satisfies readonly EntityHeaderReadMode[];
 
@@ -4517,7 +4517,7 @@ export const EntityContextQuerySchema: z.ZodType<EntityContextQuery> = z.object(
     issues.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['cursor'],
-      message: 'a context cursor continues exactly one paged v2 section (hierarchy, blockers, connections or messages)',
+      message: 'a context cursor continues exactly one paged v2 section (hierarchy, blockers, connections, messages or story)',
     });
   }
   if (query.edgeType !== undefined && !(v2 && only === 'connections')) {

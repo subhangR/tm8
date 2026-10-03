@@ -391,9 +391,15 @@ export const StoryContentSchema = z.object({
  * projected small for an agent. Every list is capped at 50; a cut list adds
  * an `omitted[]` entry on the view.
  */
+/**
+ * The story card on `entity context` (283). Never-drop core, so every list is
+ * one bounded page (#25): a cut list has an `omitted[]` entry (`story.roots`,
+ * `story.sessions`, …) whose `--sections story --cursor` expand continues it.
+ * A cursor page carries only the list it continues; the others are absent.
+ */
 export interface EntityContextStory {
   state: StoryState;
-  roots: Array<{
+  roots?: Array<{
     id: string; kind: string; title: string; status: string | null; statusCategory: StatusCategory | null;
     blocked: boolean; taskProgress: StoryProgress; progress: StoryProgress;
     /** `StoryRoot.descendantCount`: matches `entity query --subtree <root>`. */
@@ -403,12 +409,14 @@ export interface EntityContextStory {
   }>;
   /** Counts over every followed row (depth >= 0), by kind. */
   byKind: Record<string, number>;
-  blocked: Array<{ id: string; kind: string; title: string; status: string | null }>;
-  sessions: Array<{ id: string; callSign: string; title: string; live: boolean; mode: TeamMemberMode | null;
-    teamMemberId: string | null; taskIds: string[] }>;
-  team: Array<{ id: string; kind: 'team_member' | 'member'; name: string; mode: TeamMemberMode | null;
-    parentId: string | null; live: boolean; sessionIds: string[] }>;
-  childStories: Array<{ id: string; title: string; status: string | null; taskProgress: StoryProgress;
+  blocked?: Array<{ id: string; kind: string; title: string; status: string | null }>;
+  /** `taskIds` is cut to the first few; `taskCount` is the full count, present only when cut. */
+  sessions?: Array<{ id: string; callSign: string; title: string; live: boolean; mode: TeamMemberMode | null;
+    teamMemberId: string | null; taskIds: string[]; taskCount?: number }>;
+  /** `sessionIds` is cut to the first few; `sessionCount` is the full count, present only when cut. */
+  team?: Array<{ id: string; kind: 'team_member' | 'member'; name: string; mode: TeamMemberMode | null;
+    parentId: string | null; live: boolean; sessionIds: string[]; sessionCount?: number }>;
+  childStories?: Array<{ id: string; title: string; status: string | null; taskProgress: StoryProgress;
     rollup: StoryProgress; liveSessionCount: number }>;
   truncated: boolean;
 }
@@ -416,11 +424,11 @@ export interface EntityContextStory {
 /** Loose on purpose: server-assembled, typed by `EntityContextStory`. */
 export const EntityContextStorySchema: z.ZodType<EntityContextStory> = z.object({
   state: StoryStateSchema,
-  roots: z.array(z.record(z.unknown())),
+  roots: z.array(z.record(z.unknown())).optional(),
   byKind: z.record(z.number().int().nonnegative()),
-  blocked: z.array(z.record(z.unknown())),
-  sessions: z.array(z.record(z.unknown())),
-  team: z.array(z.record(z.unknown())),
-  childStories: z.array(z.record(z.unknown())),
+  blocked: z.array(z.record(z.unknown())).optional(),
+  sessions: z.array(z.record(z.unknown())).optional(),
+  team: z.array(z.record(z.unknown())).optional(),
+  childStories: z.array(z.record(z.unknown())).optional(),
   truncated: z.boolean(),
 }).strict() as unknown as z.ZodType<EntityContextStory>;
