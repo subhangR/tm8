@@ -1200,7 +1200,7 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
       order.push(`${name}:${db.inTx}`);
       if (name === 'w2_prepare_handoff') {
         expect(args).toEqual([
-          IDS.handoff, IDS.source, IDS.targetSession, null, null, 'epoch-7',
+          IDS.handoff, IDS.source, IDS.targetSession, null, null, 'epoch-7', null,
         ]);
         return { handoff: HANDOFF, dispatch: {
           handoffId: IDS.handoff,
@@ -1245,6 +1245,44 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
       'proc.write:false',
       'w2_settle_handoff:false',
     ]);
+  });
+
+  it('passes only the verified bearer session to handoff authorization', async () => {
+    const db = new FakeDb();
+    const sources: unknown[] = [];
+    db.rpcImpl = async <T>(name, args) => {
+      expect(name).toBe('w2_prepare_handoff');
+      sources.push(args[6]);
+      return { handoff: HANDOFF, dispatch: null } as T;
+    };
+    const registry = new HandlerRegistry();
+    registerW2MessagesHandoffsHandlers(registry, deps(db));
+    const spoofed = { clientMutationId: IDS.handoff, sourceEntityId: IDS.source,
+      workSessionId: IDS.targetSession, sourceWorkSessionId: IDS.targetSession };
+    await handler(registry, 'handoffs.send')(request('handoffs.send', {
+      params: { workSessionId: IDS.targetSession }, body: spoofed,
+      identity: { kind: 'bearer', identityId: OWNER.identityId, workSessionId: IDS.sourceSession },
+    }));
+    await handler(registry, 'handoffs.send')(request('handoffs.send', {
+      params: { workSessionId: IDS.targetSession }, body: spoofed,
+    }));
+    expect(sources).toEqual([IDS.sourceSession, null]);
+  });
+
+  it.each([
+    'handoff_target_not_live', 'handoff_parent_session_required',
+    'handoff_parent_actor_mismatch', 'handoff_target_not_own_child',
+  ])('exposes the handoff denial rule %s', async reason => {
+    const db = new FakeDb();
+    db.rpcImpl = async () => {
+      throw new CollabError('forbidden', 'handoff refused', { details: { detail: reason } });
+    };
+    const registry = new HandlerRegistry();
+    registerW2MessagesHandoffsHandlers(registry, deps(db));
+    await expect(handler(registry, 'handoffs.send')(request('handoffs.send', {
+      params: { workSessionId: IDS.targetSession },
+      body: { clientMutationId: IDS.handoff, sourceEntityId: IDS.source },
+    }))).rejects.toMatchObject({ code: 'forbidden', details: { reason } });
   });
 
   it('joins a pending same-handoff dispatch and performs exactly one PTY write', async () => {

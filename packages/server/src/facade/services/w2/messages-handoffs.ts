@@ -273,7 +273,8 @@ function normalizeG04Reason(error: unknown): never {
   if (isCollabError(error)) {
     const details = error.details as Record<string, unknown> | undefined;
     const reason = typeof details?.detail === 'string' ? details.detail : undefined;
-    if (reason && ['message_batch_identity_mismatch', 'handoff_forbidden'].includes(reason)) {
+    if (reason && ['message_batch_identity_mismatch', 'handoff_forbidden', 'handoff_target_not_live',
+      'handoff_parent_session_required', 'handoff_parent_actor_mismatch', 'handoff_target_not_own_child'].includes(reason)) {
       const { detail: _detail, ...rest } = details ?? {};
       throw new CollabError(error.code, error.message, {
         details: { ...rest, reason },
@@ -718,6 +719,7 @@ export class W2MessagesHandoffsService {
         null, // expectedContentVersion-as-submitted: v1 DTO has no such field.
         null,
         sessionEpoch,
+        ctx.identity.kind === 'bearer' ? ctx.identity.workSessionId ?? null : null,
       ])));
     if (!prepared.dispatch || !this.options.handoffDelivery) return prepared.handoff;
     return this.dispatchHandoff(claims, prepared.dispatch);
