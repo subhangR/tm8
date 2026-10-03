@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { CredentialProviderName } from '@tm8/contract';
+import { SPACE_CREDENTIAL_LABEL_MAX_LENGTH } from '@tm8/contract';
 import type { CredentialsSharePort } from './port';
 import { LoginTerminalPanel, type PendingLogin } from './CredentialsProviderBlock';
 import { presentationOf } from './provider-presentation';
@@ -102,7 +103,15 @@ export function ShareCredentialPanel({ provider, port, serverBaseUrl, onClose }:
         return;
       }
       await grant(credentialId);
-    } catch (err) { setError(messageOf(err)); }
+    } catch (err) {
+      if ((err as { code?: string })?.code === 'not_found') {
+        setPending(null);
+        setComplete(true);
+        setError('That space login has expired or closed. Open Space credentials to reconnect it.');
+      } else {
+        setError(messageOf(err));
+      }
+    }
     finally { setBusy(false); }
   }
 
@@ -122,7 +131,7 @@ export function ShareCredentialPanel({ provider, port, serverBaseUrl, onClose }:
         </label>
         {spaces?.length === 0 ? <p>No spaces are available.</p> : null}
         <label>Credential name
-          <input value={label} maxLength={120} disabled={locked} onChange={(event) => setLabel(event.target.value)} />
+          <input value={label} maxLength={SPACE_CREDENTIAL_LABEL_MAX_LENGTH} disabled={locked} onChange={(event) => setLabel(event.target.value)} />
         </label>
         <fieldset disabled={locked}>
           <legend>Members (optional)</legend>

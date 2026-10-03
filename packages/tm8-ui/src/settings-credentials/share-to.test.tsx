@@ -122,6 +122,17 @@ describe('Share to from connected Agent Credentials', () => {
     expect(share.share).not.toHaveBeenCalled();
     expect(screen.queryByRole('button', { name: 'Retry sharing' })).toBeNull();
   });
+
+  it('lets the user close an expired login without attempting any grants', async () => {
+    const { share } = await open('anthropic');
+    vi.mocked(share.finishLogin).mockRejectedValueOnce(Object.assign(new Error('gone'), { code: 'not_found' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in to share' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'I’ve finished signing in' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('expired or closed');
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    expect(screen.queryByTestId('share-terminal')).toBeNull();
+    expect(share.share).not.toHaveBeenCalled();
+  });
 });
 
 describe('Share-to adapter', () => {
