@@ -90,6 +90,7 @@ import { MaestroStatusGlyph, MaestroTaskTile } from './list/MaestroTaskTile';
 import { LinkedPullRequestChips, type LinkedPullRequestFacts } from '../pull-requests';
 import { MaestroSessionTile } from './list/MaestroSessionTile';
 import { ChildCountBadge } from './list/ChildCountBadge';
+import { TileProgressBar } from './list/TileProgressBar';
 import { PendingFormsChip, hasPendingFormsChip } from '../forms/PendingFormsChip';
 import { usePendingForms } from '../forms/pending';
 import { SessionLaneLine, WORKTREE_RELATION, sessionLaneOf } from '../git/SessionLane';
@@ -3333,6 +3334,8 @@ export function Tile({
   const flagged = attentionApi ? chip != null || (attention && !row.badges.attention) : attention;
   const chipView = chip ? <AttentionChipView chip={chip} /> : null;
   const list = config.list;
+  /* The kind's own done-of-total figure, if it declares one (story: tasks). */
+  const progress = list.tile.progress?.(row) ?? null;
   const controlCard = list.tile.anatomy === 'control-card';
   const sessionTree = list.tile.anatomy === 'session-tree';
   /* The viewer's `View ▾` choice for THIS row's kind (row-view.ts) — a
@@ -3981,6 +3984,7 @@ export function Tile({
                 <span className="lp__attention-label">Needs attention</span>
               )
             ) : null)}
+            {progress && view.shows('progress') ? <TileProgressBar progress={progress} /> : null}
             {statusWord && view.shows('status_word') ? (
               <span className={`lp__word kit-pill--${statusTone}`} title={statusTitle}>
                 {statusWord}

@@ -3148,6 +3148,25 @@
   padding: 1px 6px;
   white-space: nowrap;
 }
+/* `TileProgressBar`: a story's tasks done, at the row's right edge. The fill
+   is the story hero's brand bar in miniature; in progress and blocked follow
+   it as their own tones, so a stalled story reads differently from an unstarted
+   one. Fixed width so the bars line up down the column and compare. */
+.cv2-root .lp__progress {
+  flex: none; display: inline-flex; align-items: center; gap: 4px;
+  font-family: var(--pn-mono); font-size: 9px; color: var(--pn-ink-3);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.cv2-root .lp__progress-track {
+  display: flex; width: 36px; height: 4px; overflow: hidden;
+  border-radius: var(--pn-r-pill); background: var(--pn-line);
+}
+.cv2-root .lp__progress-seg { height: 100%; flex: none; }
+.cv2-root .lp__progress-seg--done { background: var(--pn-brand); }
+.cv2-root .lp__progress-seg--active { background: var(--pn-run); opacity: 0.55; }
+.cv2-root .lp__progress-seg--blocked { background: var(--pn-block); }
+.cv2-root .lp__progress--done .lp__progress-seg--done { background: var(--pn-run); }
+.cv2-root .lp__progress--done .lp__progress-figure { color: var(--pn-run); }
 
 /* `pn-st__actions`, rule for rule: the cluster floats over the row's right edge
    on its own backing rather than living in the flow. The old version swapped
