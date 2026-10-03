@@ -78,6 +78,7 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   'all',                 // skill scan --all
   'off',                 // entity react --off
   'ready',               // entity query --ready
+  'story-page',          // entity get: explicit full story page
   'roots',               // entity query --roots — top-level rows only (= --parent none)
   'unread',              // inbox list --unread
   'until-match',         // event watch --until-match

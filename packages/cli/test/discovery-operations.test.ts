@@ -18,6 +18,7 @@
  * is drift protection across waves: that file is READ, never written.
  */
 import { describe, expect, it } from 'vitest';
+import { nounHelp } from '../src/discovery/help.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
@@ -361,12 +362,12 @@ describe('the CLI command projection', () => {
     expect(upload?.operations).toEqual(['files.uploadInit', 'files.uploadComplete']);
   });
 
-  it('every noun in the index resolves to at least one command or operation', () => {
+  it('every noun in the index resolves to a command, operation or guide', () => {
     expect(NOUNS.length).toBeGreaterThanOrEqual(26);
     for (const noun of NOUNS) {
       const rows = DISCOVERY.filter((d) => d.noun === noun || d.command?.[0] === noun);
       // An alias may own a noun outright (`whoami`): it resolves to its commands.
-      expect(rows.length + commandsForNoun(noun).length, noun).toBeGreaterThan(0);
+      expect(rows.length + commandsForNoun(noun).length + (nounHelp(noun)?.guide?.length ?? 0), noun).toBeGreaterThan(0);
     }
   });
 

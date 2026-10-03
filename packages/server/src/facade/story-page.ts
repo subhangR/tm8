@@ -7,6 +7,7 @@
 //
 // Queries run SEQUENTIALLY: a `Querier` wraps one pooled client.
 import {
+  CollabError,
   STORY_FOLLOWED_EDGE_TYPES,
   STORY_FOLLOW_DEPTH,
   STORY_FOLLOW_LIMIT,
@@ -115,7 +116,55 @@ const STATUS_KEY_FROM = `
 
 const EMPTY_PROGRESS: StoryProgress = { work: 0, done: 0, inProgress: 0, toDo: 0, blocked: 0, cancelled: 0, staleInProgress: 0 };
 
-export async function loadStoryPage(q: Querier, storyId: string): Promise<StoryPage> {
+/** Child-story pages share the browser's order but can continue beyond its preview. */
+export async function loadStoryChildren(
+  q: Querier,
+  storyId: string,
+  { limit = CHILD_STORY_LIMIT, afterId = null }: { limit?: number; afterId?: string | null } = {},
+): Promise<StoryChild[]> {
+  if (afterId !== null) {
+    const after = await q.query<{ id: string }>(
+      `select id from public.entities
+        where id = $2 and parent_id = $1 and kind = 'story' and deleted_at is null`,
+      [storyId, afterId],
+    );
+    if (after.length === 0) {
+      throw new CollabError('invalid_cursor', 'the childStories row this cursor resumes after is no longer on the story; re-read it');
+    }
+  }
+  const children = await q.query<{ id: string; title: string; summary: unknown; status_category: string | null; status_name: string | null }>(
+    `select c.id, st.title, internal.story_summary(c.id) as summary, c.status_category,
+            coalesce(c.status_category, 'none') as status_name
+       from public.entities c join public.stories st on st.entity_id = c.id
+      where c.parent_id = $1 and c.kind = 'story' and c.deleted_at is null
+        ${afterId === null ? '' : `and (c.position, c.created_at, c.id) > (
+          select position, created_at, id from public.entities where id = $3
+        )`}
+      order by c.position, c.created_at, c.id
+      limit $2`,
+    afterId === null ? [storyId, limit] : [storyId, limit, afterId],
+  );
+  return children.map((c) => {
+    const s = storyStateOf(c.summary);
+    return {
+      id: c.id,
+      title: c.title,
+      status: c.status_name,
+      statusCategory: category(c.status_category),
+      itemCount: s?.itemCount ?? 0,
+      taskProgress: s?.taskProgress ?? EMPTY_PROGRESS,
+      rollup: s?.rollup ?? EMPTY_PROGRESS,
+      liveSessionCount: s?.liveSessionCount ?? 0,
+      lastActivityAt: s?.lastActivityAt ?? null,
+    };
+  });
+}
+
+export async function loadStoryPage(
+  q: Querier,
+  storyId: string,
+  { childStories = true }: { childStories?: boolean } = {},
+): Promise<StoryPage> {
   const trail = await q.query<TrailRow>(
     `select entity_id, root_id, depth, via_id, edge_type, edge_id, direction, root_position
        from internal.story_trail($1)`,
@@ -195,15 +244,7 @@ export async function loadStoryPage(q: Querier, storyId: string): Promise<StoryP
     [allIds, DRAWN_EDGE_TYPES],
   );
 
-  const children = await q.query<{ id: string; title: string; summary: unknown; status_category: string | null; status_name: string | null }>(
-    `select c.id, st.title, internal.story_summary(c.id) as summary, c.status_category,
-            coalesce(c.status_category, 'none') as status_name
-       from public.entities c join public.stories st on st.entity_id = c.id
-      where c.parent_id = $1 and c.kind = 'story' and c.deleted_at is null
-      order by c.position, c.created_at, c.id
-      limit ${CHILD_STORY_LIMIT}`,
-    [storyId],
-  );
+  const children = childStories ? await loadStoryChildren(q, storyId) : [];
 
   const activityRows = await q.query<{ id: string; created_at: Date | string; entity_id: string; verb: string; actor_id: string | null }>(
     `select a.id, a.created_at, a.entity_id, a.verb, a.actor_id
@@ -418,21 +459,6 @@ export async function loadStoryPage(q: Querier, storyId: string): Promise<StoryP
     });
   }
 
-  const childStories: StoryChild[] = children.map((c) => {
-    const s = storyStateOf(c.summary);
-    return {
-      id: c.id,
-      title: c.title,
-      status: c.status_name,
-      statusCategory: category(c.status_category),
-      itemCount: s?.itemCount ?? 0,
-      taskProgress: s?.taskProgress ?? EMPTY_PROGRESS,
-      rollup: s?.rollup ?? EMPTY_PROGRESS,
-      liveSessionCount: s?.liveSessionCount ?? 0,
-      lastActivityAt: s?.lastActivityAt ?? null,
-    };
-  });
-
   const activity: StoryActivityItem[] = activityRows.map((a) => ({
     id: a.id,
     at: iso(a.created_at),
@@ -469,7 +495,7 @@ export async function loadStoryPage(q: Querier, storyId: string): Promise<StoryP
     edges,
     sessions,
     team,
-    childStories,
+    childStories: children,
     activity,
     feedAnchorIds,
     recentMessages,
