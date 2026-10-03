@@ -232,8 +232,10 @@ describe('what the phone action menu contains is derived, not typed out', () => 
         onAction: () => {},
       });
       const declared = (config.panel.primaries ?? []).length;
-      expect(items.length, `${config.kind}: ${aux} tabs + ${declared} primaries`).toBe(
-        aux + declared,
+      // A canvas body has no other tab to open (task 01a101c5).
+      const tabs = config.panel.composition === 'canvas' ? 0 : aux;
+      expect(items.length, `${config.kind}: ${tabs} tabs + ${declared} primaries`).toBe(
+        tabs + declared,
       );
     }
   });

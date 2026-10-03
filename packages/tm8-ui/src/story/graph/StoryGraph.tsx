@@ -9,7 +9,7 @@
  * Local UI state only: the view switcher and, when no `hover` is passed, the
  * hovered root. The selection (`selectedId`) is the page's.
  */
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
 
 import { getKind, KindIcon } from '../../domain';
 import { IconBtn } from '../../kit/IconBtn';
@@ -40,6 +40,7 @@ const ICON_ZOOM_OUT = ['M3.5 8 H12.5'];
 const ICON_FIT = ['M2.5 2.5 H13.5 V13.5 H2.5 Z', 'M6 6 H10 V10 H6 Z'];
 const ICON_EXPAND = ['M9.5 2.5 H13.5 V6.5', 'M13.5 2.5 L9.5 6.5', 'M6.5 13.5 H2.5 V9.5', 'M2.5 13.5 L6.5 9.5'];
 const ICON_COLLAPSE = ['M13.5 6.5 H9.5 V2.5', 'M9.5 6.5 L13.5 2.5', 'M2.5 9.5 H6.5 V13.5', 'M6.5 9.5 L2.5 13.5'];
+const ICON_FILTER = ['M2.5 4 H13.5', 'M4.5 8 H11.5', 'M6.5 12 H9.5'];
 
 const EDGE_LEGEND: Readonly<Record<StoryEdgeFamily, string>> = {
   parent: 'parent',
@@ -211,7 +212,8 @@ function nodeTip(node: GraphNode): string {
   return `${node.title} — ${node.capsule.line}`;
 }
 
-export function StoryGraph({ view, live, hover, filter, selectedId, onPick, onMenu, initialView, fill }: StoryGraphProps) {
+export function StoryGraph({ view, live, hover, filter, selectedId, onPick, onMenu, initialView, fill, lead }: StoryGraphProps) {
+  const floating = lead !== undefined;
   const [graphView, setGraphView] = useState<StoryGraphView>(initialView ?? 'all');
   /* Root hover is shared with the Roots card through `hover` when the page holds it; local otherwise. */
   const [ownHoverRoot, setOwnHoverRoot] = useState<string | null>(null);
@@ -223,6 +225,21 @@ export function StoryGraph({ view, live, hover, filter, selectedId, onPick, onMe
   const hops = filter?.hops ?? 3;
   const layout = useMemo(() => layoutStoryGraph(view, Date.now(), hops), [view, hops]);
   const scrollRef = useRef<HTMLDivElement>(null);
+  /* The floating chrome's real height, published as `--stg-float-h` so the
+     canvas starts under it at every width — it wraps to three rows on a phone
+     and sits in one on a wide panel. `offsetHeight`, not a rect: the length is
+     consumed inside the same zoom scope. No observer (jsdom) ⇒ the CSS
+     fallback holds. */
+  const [floatEl, setFloatEl] = useState<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const card = floatEl?.parentElement?.parentElement;
+    if (!floatEl || !card || typeof ResizeObserver === 'undefined') return;
+    const publish = () => card.style.setProperty('--stg-float-h', `${floatEl.offsetHeight + floatEl.offsetTop}px`);
+    publish();
+    const ro = new ResizeObserver(publish);
+    ro.observe(floatEl);
+    return () => ro.disconnect();
+  }, [floatEl]);
   const zoom = useGraphZoom(scrollRef, layout.width, layout.height, !!fill);
   /* Full screen draws like the full view: a definite box the canvas fills. */
   const tall = fill || zoom.maximised;
@@ -312,106 +329,143 @@ export function StoryGraph({ view, live, hover, filter, selectedId, onPick, onMe
       : null;
   const empty = layout.allRootIds.length === 0;
 
+  /* The header's pieces, drawn as the stacked rows or — with a `lead` — as
+     one floating row plus a Filters popover (task 01a101c5). */
+  const viewSeg = (
+    <span className="stg-seg" role="tablist" aria-label="Graph view">
+      {GRAPH_VIEWS.map(({ view: v, label }) => (
+        <button
+          key={v}
+          type="button"
+          role="tab"
+          aria-selected={graphView === v}
+          className={graphView === v ? 'stg-seg__b stg-seg__b--on' : 'stg-seg__b'}
+          onClick={() => setGraphView(v)}
+        >
+          <KindIcon kind={VIEW_ICON[v]} size={12} />
+          {label}
+        </button>
+      ))}
+    </span>
+  );
+  const hopsSeg = filter && (
+    <span className="stg-hops" role="radiogroup" aria-label="Hops from a root">
+      <span className="stg-hops__lbl">hops</span>
+      {HOP_CHOICES.map((h) => (
+        <button
+          key={h}
+          type="button"
+          role="radio"
+          aria-checked={hops === h}
+          className={hops === h ? 'stg-seg__b stg-seg__b--on' : 'stg-seg__b'}
+          onClick={() => filter.setHops(h)}
+        >
+          {h}
+        </button>
+      ))}
+    </span>
+  );
+  const metaLine = (
+    <span className="stg-meta">
+      <span className="stg-count">{rule}</span>
+      {cutNote && (
+        <span className="stg-count stg-count--warn" title="The story's trail is bounded; the rows past the bound are not read.">
+          · {cutNote}
+        </span>
+      )}
+      {hops < 3 && <span className="stg-count stg-count--note">· showing {hops} {hops === 1 ? 'hop' : 'hops'}</span>}
+      {!empty && <span className="stg-count">· hover a root</span>}
+    </span>
+  );
+  const kindChips = filter && everything && present.length > 0 && (
+    <span className="stg-kinds" role="group" aria-label="Kinds shown">
+      <button type="button" className={`stg-chip${kinds === null ? ' stg-chip--on' : ''}`} aria-pressed={kinds === null} onClick={() => filter.setKinds(null)}>
+        all
+      </button>
+      <button type="button" className={`stg-chip${kinds?.size === 0 ? ' stg-chip--on' : ''}`} aria-pressed={kinds?.size === 0} onClick={() => filter.setKinds(new Set())}>
+        none
+      </button>
+      <span className="stg-kinds__sep" />
+      {present.map(({ kind, count }) => {
+        const on = !kinds || kinds.has(kind);
+        return (
+          <button key={kind} type="button" className={`stg-chip${on ? ' stg-chip--on' : ''}`} aria-pressed={on} onClick={() => toggleKind(kind)}>
+            <KindIcon kind={kind} size={11} />
+            {getKind(kind).label}
+            <span className="stg-chip__n">{count}</span>
+          </button>
+        );
+      })}
+    </span>
+  );
+  const legend = (
+    <div className="stg-legend">
+      <span className="stg-legend__grp">nodes</span>
+      <span><i className="stg-sw stg-sw--root" />root</span>
+      <span><i className="stg-sw stg-sw--done" />done</span>
+      <span><i className="stg-sw stg-sw--working" />working</span>
+      <span><i className="stg-sw stg-sw--blocked" />blocked</span>
+      <span><i className="stg-sw" />to do · other kinds</span>
+      <span><i className="stg-sw stg-sw--cap" />live capsule: task + session + teammate</span>
+      <span><i className="stg-sw stg-sw--halo" />active in the last hour</span>
+      <span><i className="stg-sw stg-sw--tm" />teammate</span>
+      <span><i className="stg-sw stg-sw--child" />child story</span>
+      <span className="stg-legend__sep" />
+      <span className="stg-legend__grp">edges</span>
+      {(Object.entries(EDGE_LEGEND) as Array<[StoryEdgeFamily, string]>).map(([fam, label]) => (
+        <span key={fam}>
+          <i className="stg-ln" style={{ borderTopColor: FAMILY_TOKEN[fam] }} />
+          {label}
+        </span>
+      ))}
+      <span><i className="stg-ln stg-ln--cross" />across roots</span>
+    </div>
+  );
+  const edgeChips = presentTypes.length > 0 && (
+    <span className="stg-kinds stg-edges" role="group" aria-label="Edge types shown">
+      <span className="stg-hops__lbl">edges</span>
+      <button
+        type="button"
+        className={`stg-chip${presentTypes.every((t) => edgeTypes.types.has(t.type)) ? ' stg-chip--on' : ''}`}
+        onClick={() => edgeTypes.set(new Set([...edgeTypes.types, ...presentTypes.map((t) => t.type)]))}
+      >
+        all
+      </button>
+      <button
+        type="button"
+        className={`stg-chip${presentTypes.every((t) => !edgeTypes.types.has(t.type)) ? ' stg-chip--on' : ''}`}
+        onClick={() => edgeTypes.set(new Set([...edgeTypes.types].filter((t) => !presentTypes.some((p) => p.type === t))))}
+      >
+        none
+      </button>
+      <span className="stg-kinds__sep" />
+      {presentTypes.map(({ type, count }) => {
+        const on = edgeTypes.types.has(type);
+        return (
+          <button key={type} type="button" className={`stg-chip${on ? ' stg-chip--on' : ''}`} aria-pressed={on} onClick={() => edgeTypes.toggle(type)}>
+            {type.replace(/_/g, ' ')}
+            <span className="stg-chip__n">{count}</span>
+          </button>
+        );
+      })}
+    </span>
+  );
+
   return (
     <section
-      className={`stg-card${tall ? ' stg-card--fill' : ''}${zoom.maximised ? ' stg-card--max' : ''}`}
+      className={`stg-card${tall ? ' stg-card--fill' : ''}${floating ? ' stg-card--float' : ''}${zoom.maximised ? ' stg-card--max' : ''}`}
       aria-label="The graph"
     >
-      <div className="stg-head">
-        <span className="kit-eyebrow">The graph</span>
-        <span className="stg-seg" role="tablist" aria-label="Graph view">
-          {GRAPH_VIEWS.map(({ view: v, label }) => (
-            <button
-              key={v}
-              type="button"
-              role="tab"
-              aria-selected={graphView === v}
-              className={graphView === v ? 'stg-seg__b stg-seg__b--on' : 'stg-seg__b'}
-              onClick={() => setGraphView(v)}
-            >
-              <KindIcon kind={VIEW_ICON[v]} size={12} />
-              {label}
-            </button>
-          ))}
-        </span>
-        {filter && (
-          <span className="stg-hops" role="radiogroup" aria-label="Hops from a root">
-            <span className="stg-hops__lbl">hops</span>
-            {HOP_CHOICES.map((h) => (
-              <button
-                key={h}
-                type="button"
-                role="radio"
-                aria-checked={hops === h}
-                className={hops === h ? 'stg-seg__b stg-seg__b--on' : 'stg-seg__b'}
-                onClick={() => filter.setHops(h)}
-              >
-                {h}
-              </button>
-            ))}
-          </span>
-        )}
-        <span className="stg-meta">
-          <span className="stg-count">{rule}</span>
-          {cutNote && (
-            <span className="stg-count stg-count--warn" title="The story's trail is bounded; the rows past the bound are not read.">
-              · {cutNote}
-            </span>
-          )}
-          {hops < 3 && <span className="stg-count stg-count--note">· showing {hops} {hops === 1 ? 'hop' : 'hops'}</span>}
-          {!empty && <span className="stg-count">· hover a root</span>}
-        </span>
-        {filter && everything && present.length > 0 && (
-          <span className="stg-kinds" role="group" aria-label="Kinds shown">
-            <button type="button" className={`stg-chip${kinds === null ? ' stg-chip--on' : ''}`} aria-pressed={kinds === null} onClick={() => filter.setKinds(null)}>
-              all
-            </button>
-            <button type="button" className={`stg-chip${kinds?.size === 0 ? ' stg-chip--on' : ''}`} aria-pressed={kinds?.size === 0} onClick={() => filter.setKinds(new Set())}>
-              none
-            </button>
-            <span className="stg-kinds__sep" />
-            {present.map(({ kind, count }) => {
-              const on = !kinds || kinds.has(kind);
-              return (
-                <button key={kind} type="button" className={`stg-chip${on ? ' stg-chip--on' : ''}`} aria-pressed={on} onClick={() => toggleKind(kind)}>
-                  <KindIcon kind={kind} size={11} />
-                  {getKind(kind).label}
-                  <span className="stg-chip__n">{count}</span>
-                </button>
-              );
-            })}
-          </span>
-        )}
-        {presentTypes.length > 0 && (
-          <span className="stg-kinds stg-edges" role="group" aria-label="Edge types shown">
-            <span className="stg-hops__lbl">edges</span>
-            <button
-              type="button"
-              className={`stg-chip${presentTypes.every((t) => edgeTypes.types.has(t.type)) ? ' stg-chip--on' : ''}`}
-              onClick={() => edgeTypes.set(new Set([...edgeTypes.types, ...presentTypes.map((t) => t.type)]))}
-            >
-              all
-            </button>
-            <button
-              type="button"
-              className={`stg-chip${presentTypes.every((t) => !edgeTypes.types.has(t.type)) ? ' stg-chip--on' : ''}`}
-              onClick={() => edgeTypes.set(new Set([...edgeTypes.types].filter((t) => !presentTypes.some((p) => p.type === t))))}
-            >
-              none
-            </button>
-            <span className="stg-kinds__sep" />
-            {presentTypes.map(({ type, count }) => {
-              const on = edgeTypes.types.has(type);
-              return (
-                <button key={type} type="button" className={`stg-chip${on ? ' stg-chip--on' : ''}`} aria-pressed={on} onClick={() => edgeTypes.toggle(type)}>
-                  {type.replace(/_/g, ' ')}
-                  <span className="stg-chip__n">{count}</span>
-                </button>
-              );
-            })}
-          </span>
-        )}
-      </div>
+      {floating ? null : (
+        <div className="stg-head">
+          <span className="kit-eyebrow">The graph</span>
+          {viewSeg}
+          {hopsSeg}
+          {metaLine}
+          {kindChips}
+          {edgeChips}
+        </div>
+      )}
 
       <div className="stg-stage">
       <div
@@ -538,6 +592,26 @@ export function StoryGraph({ view, live, hover, filter, selectedId, onPick, onMe
           )}
         </svg>
       </div>
+      {floating ? (
+        <div className="stg-float" data-testid="story-graph-float" ref={setFloatEl}>
+          {lead}
+          <div className="stg-float__bar">
+            {viewSeg}
+            {hopsSeg}
+            <GraphFilters active={kinds !== null || hops < 3}>
+              {metaLine}
+              {kindChips}
+              {edgeChips}
+              {legend}
+            </GraphFilters>
+            {cutNote && (
+              <span className="stg-count stg-count--warn stg-float__warn" title="The story's trail is bounded; the rows past the bound are not read.">
+                {cutNote}
+              </span>
+            )}
+          </div>
+        </div>
+      ) : null}
       <div className="stg-view" role="group" aria-label="Graph view controls">
         <IconBtn label="Zoom out" onClick={() => zoom.zoomBy(0.8)}>
           <VectorIcon paths={ICON_ZOOM_OUT} size={13} />
@@ -564,27 +638,55 @@ export function StoryGraph({ view, live, hover, filter, selectedId, onPick, onMe
       </div>
       </div>
 
-      <div className="stg-legend">
-        <span className="stg-legend__grp">nodes</span>
-        <span><i className="stg-sw stg-sw--root" />root</span>
-        <span><i className="stg-sw stg-sw--done" />done</span>
-        <span><i className="stg-sw stg-sw--working" />working</span>
-        <span><i className="stg-sw stg-sw--blocked" />blocked</span>
-        <span><i className="stg-sw" />to do · other kinds</span>
-        <span><i className="stg-sw stg-sw--cap" />live capsule: task + session + teammate</span>
-        <span><i className="stg-sw stg-sw--halo" />active in the last hour</span>
-        <span><i className="stg-sw stg-sw--tm" />teammate</span>
-        <span><i className="stg-sw stg-sw--child" />child story</span>
-        <span className="stg-legend__sep" />
-        <span className="stg-legend__grp">edges</span>
-        {(Object.entries(EDGE_LEGEND) as Array<[StoryEdgeFamily, string]>).map(([fam, label]) => (
-          <span key={fam}>
-            <i className="stg-ln" style={{ borderTopColor: FAMILY_TOKEN[fam] }} />
-            {label}
-          </span>
-        ))}
-        <span><i className="stg-ln stg-ln--cross" />across roots</span>
-      </div>
+      {floating ? null : legend}
     </section>
+  );
+}
+
+/**
+ * THE FILTERS POPOVER — what the stacked header spent three rows on (kind
+ * chips, edge chips, counts, the legend), one press away from the floating
+ * row. A dot marks a narrowed view so a filtered graph never passes for the
+ * whole story. Closes on Escape and on a press outside it.
+ */
+function GraphFilters({ active, children }: { active: boolean; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const boxRef = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      setOpen(false);
+    };
+    document.addEventListener('pointerdown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+  return (
+    <span className="stg-filters" ref={boxRef}>
+      <button
+        type="button"
+        className={`stg-filters__btn${open ? ' stg-filters__btn--on' : ''}`}
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        onClick={() => setOpen((o) => !o)}
+      >
+        <VectorIcon paths={ICON_FILTER} size={12} />
+        Filters
+        {active ? <i className="stg-filters__dot" aria-label="narrowed" /> : null}
+      </button>
+      {open ? (
+        <div className="stg-filters__pop" role="dialog" aria-label="Graph filters">
+          {children}
+        </div>
+      ) : null}
+    </span>
   );
 }

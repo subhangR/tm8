@@ -5137,3 +5137,44 @@
 /* A primary's COUNT beside its word — the Chat button's `❝ Chat · 3`
    (entity chat design 01a0da4e §3.2). Detail header only. */
 .cv2-root .pn-btn__count { margin-left: 4px; opacity: 0.7; font-variant-numeric: tabular-nums; }
+
+/* THE CANVAS PANEL — `composition: 'canvas'` (task 01a101c5, the story view).
+   No title row and no tab row: the body starts at the panel's top edge and
+   the verbs (Run · Chat · Edit · ⤢ · ✕) float over its top-right corner.
+
+   A SIZE container, not only inline-size, so a body can size its first block
+   off the panel's height (`cqh`) — the story graph fills it less a peek. It
+   keeps the `panel` name every width query inside asks for. Safe here because
+   the panel's height always comes from its host's flex column, never from its
+   content; the inline axis was already contained. */
+.cv2-root .pn-panel--canvas {
+  position: relative;
+  container-type: size;
+}
+.cv2-root .pn-panel--canvas > .pn-body { padding: 0; gap: 0; }
+.cv2-root .pn-canvas-bar {
+  position: absolute;
+  top: var(--pn-space-2);
+  right: var(--pn-space-2);
+  z-index: 31;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 4px 0 8px;
+  /* Opaque, and NO backdrop-filter: a filter makes this bar the containing
+     block for its fixed descendants, and Run's launch card hangs off it —
+     measured, the card was boxed into the bar's own 265×32px. */
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-sm);
+}
+/* The flow card (Run's quick config) anchors to this bar now, not to a
+   panel-wide row, so `100%` would be the bar: clamp to the PANEL instead
+   (`cqw` — the canvas panel is the nearest container). */
+.cv2-root .pn-canvas-bar .pn-actions__flow { max-width: calc(100cqw - var(--pn-space-4)); }
+/* The attention pill hangs under the bar instead of under it-and-the-tabs. */
+.cv2-root .pn-panel--canvas > .att-block-dock > .att-block {
+  top: calc(var(--pn-canvas-bar-h, 32px) + 2 * var(--pn-space-2));
+}

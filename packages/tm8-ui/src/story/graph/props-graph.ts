@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { StoryGraphView } from '../model';
 import type { StoryBlockProps } from '../props';
 
@@ -15,4 +16,12 @@ export interface StoryGraphProps extends StoryBlockProps {
    * ways, and the drawing may grow past its natural size. Absent = inline.
    */
   fill?: boolean;
+  /**
+   * FLOATING CHROME (task 01a101c5): when present, the card drops its header
+   * rows and draws this node (the story's header chip) over the canvas's
+   * top-left corner, with the view switch, hops and a Filters popover — the
+   * kind chips, the edge chips, the counts and the legend — in one row under
+   * it. Absent ⇒ the stacked header, as before.
+   */
+  lead?: ReactNode;
 }

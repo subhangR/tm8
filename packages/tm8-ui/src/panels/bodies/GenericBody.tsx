@@ -19,6 +19,7 @@ import { LoopControls } from '../../loops/LoopControls';
 import { BlueprintBlock } from './BlueprintBlock';
 import { DrawingBlock } from './DrawingBlock';
 import { StoryStaticHost } from '../../story/StoryHost';
+import { StoryMessagesSlot } from '../../story/messages-slot';
 import { QuestionnaireBlock } from '../../forms/QuestionnaireBlock';
 import { PeerRowsBlock } from './PeerRowsBlock';
 import { edgesOf } from './MemorySetBlock';
@@ -75,6 +76,7 @@ export function GenericBody({
   barSlot,
   serverBaseUrl,
   storySurface,
+  messagesSurface,
 }: {
   detail: EntityDetail;
   blocks: readonly ContentBlockRef[];
@@ -83,6 +85,12 @@ export function GenericBody({
    * (`storySurfaceFor`). Absent ⇒ the block draws the row's static read.
    */
   storySurface?: ReactNode;
+  /**
+   * The panel's messages surface, for a `composition: 'canvas'` kind whose
+   * page draws its messages as a section rather than a tab (the story page,
+   * through `StoryMessagesSlot`). Absent ⇒ no section.
+   */
+  messagesSurface?: ReactNode;
   /** Same-origin route prefix, for the `managed` block's inline login terminal. */
   serverBaseUrl?: string;
   onOpenEntity?: (id: string) => void;
@@ -128,6 +136,7 @@ export function GenericBody({
   }
   return (
     <div className="pn-body" id="tabpanel-content" role="tabpanel" aria-labelledby="tab-content">
+      <StoryMessagesSlot.Provider value={messagesSurface ?? null}>
       {blocks.map((block, i) => (
         <ContentBlock
           key={`${block.block}:${i}`}
@@ -144,6 +153,7 @@ export function GenericBody({
           storySurface={storySurface}
         />
       ))}
+      </StoryMessagesSlot.Provider>
     </div>
   );
 }

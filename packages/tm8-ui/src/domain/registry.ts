@@ -1930,6 +1930,9 @@ const ROWS: readonly KindConfig[] = [
       // ⤢ opens the story full screen at `e/{id}` (PR 1004): the graph wants
       // the width, and the page is a place you stay on.
       fullView: true,
+      // The graph starts at the panel's top edge: no title row, no tabs, no
+      // attach strip; messages are a section under the story (task 01a101c5).
+      composition: 'canvas',
     },
     editFields: [
       { target: 'title', label: 'Title', required: true, placeholder: 'Story as an Entity' },

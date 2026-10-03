@@ -11,6 +11,13 @@
   z-index: 30;
 }
 
+/* THE PHONE'S ACTION BUTTON OWNS THE BOTTOM-RIGHT CORNER. With the story
+   panel's attach strip and footer gone (task 01a101c5) the story scrolls to
+   the panel's bottom edge, and the plus sank onto the shell's 56px menu
+   button — measured, the two circles overlapped. The dock rises by the
+   shell's own reserve, so the plus, its hint and its sheet move together. */
+.cv2-root[data-shell='mobile'] .sp-dock { bottom: var(--mobile-fab-reserve, 72px); }
+
 .cv2-root .sp-fab {
   position: absolute;
   right: 28px;
