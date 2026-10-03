@@ -1017,6 +1017,8 @@ export class DbGraphPort implements GraphPort {
         input.clientMutationId,
         input.parentSessionId,
         input.newTaskTitle ?? null,
+        input.storyId ?? null,
+        input.sourceWorkSessionId ?? null,
       ],
     );
 
@@ -1178,11 +1180,11 @@ export class DbGraphPort implements GraphPort {
   }
 
   /**
-   * Spawn-on-story: the nearest story containing the task, as the spawner.
+   * The direct session story or nearest task story, read as the spawner.
    * See spawn-story.ts.
    */
-  async loadStoryContext(auth: GraphAuth, input: { taskId: string }) {
-    return loadStoryContextForTask(this.db, this.claims(auth), input.taskId);
+  async loadStoryContext(auth: GraphAuth, input: { taskId?: string; sessionId?: string }) {
+    return loadStoryContextForTask(this.db, this.claims(auth), input.taskId, input.sessionId);
   }
 
   /**
@@ -3368,6 +3370,9 @@ function registerHandlers(
     // read or written. See identity/link-bearer.ts.
     refuseLinkBearerSpawn(ctx, claims);
 
+    if (input.storyId !== undefined && (input.taskIds !== undefined || input.newTask !== undefined || input.forceNewTask !== undefined)) {
+      throw fail('invalid_input', 'storyId cannot be combined with taskIds, newTask or forceNewTask', { reason: 'story_spawn_conflict' });
+    }
     // Launch v3 gap 4: `newTask` IS the session's task, so naming others (or
     // asking for one to be derived) beside it is refused by name, first.
     if (input.newTask && ((input.taskIds?.length ?? 0) > 0 || input.forceNewTask === true)) {
@@ -3386,8 +3391,8 @@ function registerHandlers(
       await db.tx(claims, (q) => assertSelectionIds(q, input.spaceId, selection));
     }
 
-    // Any entity may be launched; the anchor is always a task. See
-    // `resolveAssignmentAnchors` — a task passes through untouched.
+    // taskIds accepts any entity and resolves it to a task assignment.
+    // Direct storyId bypasses derivation and is persisted by execution_spawn.
     const anchorPairs: Array<{ subjectId: string; taskId: string }> = [];
     const taskIds = input.taskIds?.length
       ? await rethrowing(() =>
@@ -3433,12 +3438,15 @@ function registerHandlers(
      * default expression here plus a guard beside it is two statements about
      * one question that can disagree.
      */
-    const parentSessionId = resolveSpawnParentId(ctx, input.parentSessionId);
+    const sourceWorkSessionId = ctx.identity.kind === 'bearer' ? ctx.identity.workSessionId : undefined;
+    const parentSessionId = resolveSpawnParentId(ctx, input.parentSessionId ?? sourceWorkSessionId);
     const request: SpawnRequest = {
       spaceId: input.spaceId,
       teamMemberId: input.teamMemberId,
       parentSessionId,
       ...(taskIds ? { taskIds } : {}),
+      ...(input.storyId ? { storyId: input.storyId } : {}),
+      ...(sourceWorkSessionId ? { sourceWorkSessionId } : {}),
       ...(input.newTask ? { newTask: { title: input.newTask.title } } : {}),
       projectId: input.projectId ?? null,
       ...(input.workdir ? { workdir: input.workdir } : {}),

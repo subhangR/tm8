@@ -787,6 +787,8 @@ export interface LaunchHarnessRecord {
 }
 
 export interface CreateWorkSessionInput {
+  storyId?: string;
+  sourceWorkSessionId?: string;
   spaceId: string;
   teamMemberId: string;
   parentSessionId: string | null;
@@ -1078,7 +1080,7 @@ export interface GraphPort {
    */
   loadStoryContext?(
     auth: GraphAuth,
-    input: { taskId: string },
+    input: { taskId?: string; sessionId?: string },
   ): Promise<PromptStoryContext | null>;
   /**
    * The tasks' version and status as they stand NOW, read after
@@ -1514,6 +1516,9 @@ export interface Tm8Manifest {
 
 /** `ExecutionSpawnInput` plus the things only the server knows. */
 export interface SpawnRequest {
+  storyId?: string;
+  /** Server verified bearer provenance; never populated from request body. */
+  sourceWorkSessionId?: string;
   spaceId: string;
   teamMemberId: string;
   /** Session that invoked this spawn; null/absent means a human-launched root. */

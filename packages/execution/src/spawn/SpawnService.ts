@@ -1328,7 +1328,7 @@ export class SpawnService {
   }
 
   /**
-   * Spawn-on-story: the story the primary task belongs to, for every frame.
+   * The session story anchor or primary task story, for every prompt frame.
    * Bounded by the same render timeout as the v2 task context, and fail-soft:
    * a story that cannot be read costs the prompt its story block, never the
    * launch.
@@ -1340,17 +1340,17 @@ export class SpawnService {
   ): Promise<PromptStoryContext | null> {
     const primary = manifest.tasks[0];
     const load = this.graph.loadStoryContext?.bind(this.graph);
-    if (!primary || !load) return null;
+    if (!load) return null;
     let timer: NodeJS.Timeout | undefined;
     try {
       return await Promise.race([
-        load(auth, { taskId: primary.id }),
+        load(auth, { ...(primary ? { taskId: primary.id } : {}), sessionId }),
         new Promise<never>((_, reject) => {
           timer = setTimeout(() => reject(new Error('story context read timed out')), TASK_CONTEXT_RENDER_TIMEOUT_MS);
         }),
       ]);
     } catch (error) {
-      this.logger?.warn?.('spawn: story context read failed', { sessionId, taskId: primary.id, error: String(error) });
+      this.logger?.warn?.('spawn: story context read failed', { sessionId, taskId: primary?.id, error: String(error) });
       return null;
     } finally {
       if (timer) clearTimeout(timer);
@@ -1530,6 +1530,8 @@ export class SpawnService {
         confirmUntrusted: request.confirmUntrusted ?? false,
         clientMutationId: request.clientMutationId ?? null,
         ...(request.newTask ? { newTaskTitle: request.newTask.title } : {}),
+        ...(request.storyId ? { storyId: request.storyId } : {}),
+        ...(request.sourceWorkSessionId ? { sourceWorkSessionId: request.sourceWorkSessionId } : {}),
       });
     } catch (error) {
       // The row was refused, so nothing references the checkout just created

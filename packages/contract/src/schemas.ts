@@ -3761,6 +3761,7 @@ const executionSpawnInputObject = z.object({
   teamMemberId: SpawnUuidSchema,
   parentSessionId: SpawnUuidSchema.optional(),
   taskIds: z.array(SpawnUuidSchema).optional(),
+  storyId: SpawnUuidSchema.optional(),
   forceNewTask: z.boolean().optional(),
   newTask: ExecutionNewTaskSchema.optional(),
   projectId: SpawnUuidSchema.nullable().optional(),
@@ -3795,6 +3796,9 @@ export const SPAWN_SELECTION_WITH_MEMORY_IDS_MESSAGE =
 
 export const ExecutionSpawnInputSchema: z.ZodType<ExecutionSpawnInput> = executionSpawnInputObject.superRefine(
   (input, ctx) => {
+    if (input.storyId !== undefined && (input.taskIds !== undefined || input.newTask !== undefined || input.forceNewTask !== undefined)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['storyId'], message: 'storyId cannot be combined with taskIds, newTask or forceNewTask' });
+    }
     if (input.selection && input.memoryIds !== undefined) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
