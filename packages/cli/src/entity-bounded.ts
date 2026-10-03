@@ -133,7 +133,7 @@ export function boundEntityDetail(detail: Rec): Rec {
   out['next'] = {
     relationships: `tm8 entity context ${id}`,
     full: `tm8 entity get ${id} --full`,
-    ...(detail['kind'] === 'story' ? { page: `tm8 entity get ${id} --full --format json` } : {}),
+    ...(detail['kind'] === 'story' ? { page: `tm8 entity get ${id} --story-page --full --format json` } : {}),
   };
   return out;
 }

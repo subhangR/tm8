@@ -88,3 +88,26 @@ it('reads 120 roots within the default budget and pages every root exactly once'
   expect(new Set(seen).size).toBe(120);
   expect([...seen].sort()).toEqual([...ROOTS].sort());
 });
+
+
+it('CLI story detail carries a bounded context page and usable continuation instead of the full graph', async () => {
+  const op = getOperation('entities.get');
+  const detail = await registry.get('entities.get')!({
+    op, opName: 'entities.get', params: { id: STORY }, query: new URLSearchParams('story=context'), body: undefined,
+    requestId: 'story-detail-budget', identity: { kind: 'auto-owner', identityId: IDENTITY },
+    headers: {}, method: op.method, path: op.path,
+  } satisfies RequestContext) as { content: { page: unknown; description: string; context: EntityContextV2View } };
+  expect(detail.content.page).toBeNull();
+  expect(typeof detail.content.description).toBe('string');
+  const context = EntityContextV2ViewSchema.parse(detail.content.context);
+  expect(context.story?.state.rootCount).toBe(120);
+  expect(Buffer.byteLength(JSON.stringify(context))).toBeLessThanOrEqual(16_384);
+  const omitted = context.omitted.find(row => row.section === 'story.roots')!;
+  expect(omitted.expand).toContain('entity context');
+  const cursor = omitted.expandOp?.params['cursor'];
+  expect(typeof cursor).toBe('string');
+  const next = await read(new URLSearchParams({ schema: 'v2', sections: 'story', cursor: cursor as string }));
+  expect(next.story?.roots?.length).toBeGreaterThan(0);
+  const shown = new Set(context.story?.roots?.map(root => root.id));
+  expect(next.story?.roots?.every(root => !shown.has(root.id))).toBe(true);
+});

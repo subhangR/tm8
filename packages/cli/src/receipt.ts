@@ -58,6 +58,8 @@ export const RECEIPT_OPS = [
   'message.reply',
   'session.spawn',
   'session.terminate',
+  'collection.add',
+  'collection.remove',
 ] as const;
 export type ReceiptOp = (typeof RECEIPT_OPS)[number];
 
@@ -129,6 +131,8 @@ export interface Receipt {
 
 /** What the command knows that the result does not: argv, and follow-up writes. */
 export interface ReceiptInput {
+  collectionId?: string;
+  entityId?: string;
   /** `--expect-version`, when the caller passed one. The only source of `version.from`. */
   expectedVersion?: number;
   /** Rows a chained CLI request created after the main write (e.g. `created_in`). */
@@ -492,6 +496,15 @@ function projectSuccess(op: ReceiptOp, dto: unknown, input: ReceiptInput): Recei
       return spawnReceipt(op, dto, input);
     case 'session.terminate':
       return terminateReceipt(op, dto, input);
+    case 'collection.add':
+    case 'collection.remove': {
+      const edge = rec(rec(dto).edge);
+      const receipt = head(op, {}, input);
+      receipt.id = input.collectionId ?? str(rec(edge.source).id);
+      receipt.entityId = input.entityId ?? str(rec(edge.target).id);
+      const edgeId = str(edge.id);
+      return tail(receipt, dto, input, edgeId ? [{ kind: 'edge', id: edgeId, type: 'contains', to: receipt.entityId as string }] : []);
+    }
     default:
       return entityReceipt(op, dto, input);
   }

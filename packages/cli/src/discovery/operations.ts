@@ -1556,13 +1556,15 @@ const ROWS: Record<OperationName, Row> = {
   // ── universal entities ───────────────────────────────────────────────────
   'entities.get': {
     cmd: ['entity', 'get'],
-    syn: 'tm8 entity get <entity-id>',
+    syn: 'tm8 entity get <entity-id> [--story-page]',
     sum: 'Read one entity of any kind, with its current version',
     authz: 'entity',
     input: 'none',
     tags: ['read', 'show', 'task', 'doc', 'session'],
     notes: [
       'json is BOUNDED by default: identity, version, state, content (long strings capped at 1000 chars, named in `truncated`), and edge/child COUNTS instead of connections and hierarchy; `--full` returns the old unbounded envelope',
+      'story reads include a bounded context trail with cursor continuation commands even with --full; --story-page explicitly loads the complete browser page',
+      'entity get and entity context accept a unique readable id prefix (at least 8 hex digits, with canonical hyphens or without); mutations still require full ids',
       'for relationships, messages, and acceptance ids read `tm8 entity context <entity-id>` (bounded, cursors) — a closeout never needs entity get',
     ],
     examples: ['tm8 entity get <entity-id> --format json', 'tm8 entity get <entity-id> --format json --full'],
@@ -2061,12 +2063,13 @@ const ROWS: Record<OperationName, Row> = {
   // ── collections / graph / placements / undo ──────────────────────────────
   'collections.query': {
     cmd: ['entity', 'query'],
-    syn: 'tm8 entity query [--space <space-id>] [--kind <kind>...] [--subtree <entity-id>] [--parent <entity-id|none>] [--roots] [--status <status>...] [--assignee <actor-id>...] [--ready] [--limit <count>] [--cursor <cursor>]',
+    syn: 'tm8 entity query [--space <space-id>] [--kind <kind>...] [--subtree <entity-id>] [--parent <entity-id|none>] [--roots] [--status <status>...] [--assignee <actor-id>...] [--ready] [--title-contains <text>] [--words <text>] [--limit <count>] [--cursor <cursor>]',
     sum: 'Query entities across a Space by kind, hierarchy, status, axis, assignee, or edge',
     authz: 'space',
     input: 'bound',
     tags: ['search', 'find', 'list', 'filter', 'tasks', 'my-work'],
     notes: [
+      '--title-contains matches a literal substring of the title; --words requires each word across title and short descriptions (including stories), ignoring case and separators; these are bounded collection queries, not full-text search',
       '--subtree = every descendant of the entity; --parent = its direct children only, and --parent none = top-level rows only; --roots is shorthand for --parent none',
     ],
     examples: [
@@ -2077,12 +2080,14 @@ const ROWS: Record<OperationName, Row> = {
   },
   'collections.addItem': {
     cmd: ['collection', 'add'],
-    syn: 'tm8 collection add <collection-id> <entity-id> [--position <number>] [--mutation-id <id>]',
+    syn: 'tm8 collection add <collection-id> <entity-id>... [--from-file <path|->] [--position <number>] [--mutation-id <id>]',
     sum: 'Put an entity into a collection or a story — membership is a `contains` edge, appended after the current maximum position when --position is omitted',
     authz: 'entity',
     input: 'bound',
     tags: ['membership', 'curate', 'pin', 'list', 'story'],
     notes: [
+      'multiple ids or --from-file (whitespace-separated ids, - for stdin) run one membership write per id and return one receipt with per-id results; partial failures return a nonzero exit code, and the reported batch mutationId makes retries safe',
+      '--position is only valid for a single entity; bulk adds append in input order and deduplicate repeated ids',
       're-adding an existing member re-positions it rather than duplicating it',
       'list a collection\'s members with `tm8 edge list --source <collection-id> --type contains`',
       'the container may also be a story: adding puts the entity in BY HAND as one of the story\'s roots (ordered by --position); everything connected to it then follows at read time — see `tm8 entity context <story-id>`',
@@ -2100,6 +2105,7 @@ const ROWS: Record<OperationName, Row> = {
     input: 'bound',
     tags: ['membership', 'curate', 'unpin', 'story'],
     notes: [
+      'add and remove use tm8.receipt.v1 for agent callers; --full preserves the full result',
       'the container may also be a story: removing takes a root out of the story; the entity and its own edges are untouched',
     ],
   },
@@ -2605,7 +2611,7 @@ const ROWS: Record<OperationName, Row> = {
   // ── execution ────────────────────────────────────────────────────────────
   'execution.spawn': {
     cmd: ['session', 'spawn'],
-    syn: 'tm8 session spawn [--space <space-id>] --teammate <team-member-id> [--task <task-id>...] [--memory <memory-id>...] [--launch-project <project-resource-id>] [--workdir project|scratch|worktree] [--base-ref <ref>] [--mode worker|coordinator|coordinated-worker|coordinated-coordinator|dispatcher] [--access-mode safe|acceptEdits|auto|plan|fullAccess] [--reasoning-effort low|medium|high|xhigh|max|ultra] [--credential-source <provider=member|space|node[:<space-credential-id>]>...] [--interaction-profile <active-profile-id>] [--context <text-source>] [--confirm-untrusted] [--force-new-task] [--mutation-id <id>]',
+    syn: 'tm8 session spawn [--space <space-id>] --teammate <team-member-id> [--task <task-id>... | --story <story-id>] [--memory <memory-id>...] [--launch-project <project-resource-id>] [--workdir project|scratch|worktree] [--base-ref <ref>] [--mode worker|coordinator|coordinated-worker|coordinated-coordinator|dispatcher] [--access-mode safe|acceptEdits|auto|plan|fullAccess] [--reasoning-effort low|medium|high|xhigh|max|ultra] [--credential-source <provider=member|space|node[:<space-credential-id>]>...] [--interaction-profile <active-profile-id>] [--context <text-source>] [--confirm-untrusted] [--force-new-task] [--mutation-id <id>]',
     sum: 'Start a server-hosted work session for a Teammate',
     authz: 'space',
     input: 'bound',
@@ -2613,6 +2619,7 @@ const ROWS: Record<OperationName, Row> = {
     tags: ['launch', 'start', 'agent', 'delegate', 'pty', 'terminal'],
     notes: [
       'the server-hosted PTY is the only spawn path; cwd is always Server-computed',
+      '--story anchors a session directly to a story without making a task; exclusive with --task and --force-new-task (the API also excludes newTask). The story context is injected and inherited by authenticated children',
       '`--context` is launch-manifest context, NOT a runtime prompt',
       '`--memory` appends memory entities to the persona’s injected working set for THIS session only; nothing is written to the graph',
       'memories a `--task` task `remembers` are auto-injected after the persona’s working set (D9)',
@@ -4758,6 +4765,7 @@ const NOUN_SUMMARY: Record<string, string> = {
   tracking: 'Refresh external pull-request and commit tracking state',
   edge: 'Typed relationships between entities, and the edge-type registry',
   'edge-type': 'The registered edge types and their endpoint rules',
+  story: 'Stories: create, curate roots, read bounded context, and set status',
   collection: 'Curated-set membership (add/remove), plus the Space-wide entity query (invoked as `entity query`)',
   chat: 'Chats with a teammate: start one, list them, read one, post a turn, and see its turn state',
   message: 'Durable messages — the only public communication action for text',
@@ -4792,6 +4800,7 @@ const NOUN_SUMMARY: Record<string, string> = {
 /** Family nouns ∪ command nouns, sorted. Both resolve through `tm8 help <noun>`. */
 export const NOUNS: readonly string[] = [
   ...new Set([
+    'story', // Guide-only topic: stories use universal entity and collection commands.
     ...BASE.map((r) => r.noun),
     ...BASE.flatMap((r) => (r.command ? [r.command[0] as string] : [])),
     // An alias may introduce a noun (`space-link`, `whoami`); help must resolve it.
@@ -4829,5 +4838,5 @@ export function commandlessForNoun(noun: string, from?: AvailabilityLedger): rea
 
 /** Nouns a caller can type at the top level, in root-help order. */
 export const PUBLIC_NOUNS: readonly string[] = NOUNS.filter(
-  (n) => commandsForNoun(n).length > 0 || commandlessForNoun(n).length > 0,
+  (n) => n === 'story' || commandsForNoun(n).length > 0 || commandlessForNoun(n).length > 0,
 );

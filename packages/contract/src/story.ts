@@ -25,7 +25,7 @@
 //                      `page.recentMessages`.
 //   * agents         — `tm8 entity context <story>` renders the same page as
 //                      a bounded text section.
-import type { ActorSummary, StatusCategory, TeamMemberMode } from './contract.js';
+import type { ActorSummary, EntityContextV2View, StatusCategory, TeamMemberMode } from './contract.js';
 import { z } from 'zod';
 
 /**
@@ -346,6 +346,8 @@ export interface StoryContent {
   kind: 'story';
   description: string;
   page: StoryPage | null;
+  /** Bounded reader context with continuation pointers; absent on browser page reads. */
+  context?: EntityContextV2View;
 }
 
 /**
@@ -392,6 +394,7 @@ export const StoryContentSchema = z.object({
   kind: z.literal('story'),
   description: z.string(),
   page: z.record(z.unknown()).nullable(),
+  context: z.record(z.unknown()).optional(),
 }).passthrough();
 
 /**

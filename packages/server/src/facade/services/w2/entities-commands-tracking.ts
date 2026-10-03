@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 
+import { loadContextV2 } from './feed-context-v2.js';
 import {
   CollabError,
   GraphContentInputSchema,
@@ -47,7 +48,8 @@ import {
   type HeaderRpcResult,
 } from '../../../headers/write.js';
 import type { RequestContext } from '../../../http/types.js';
-import { claimsFor, commandEnvelope, limitOf, requireUuidParam } from '../../context.js';
+import { claimsFor, commandEnvelope, limitOf, requireParam, requireUuidParam } from '../../context.js';
+import { resolveEntityReadId } from '../../entity-read-id.js';
 import type { FacadeDeps } from '../../deps.js';
 import {
   MICROS,
@@ -795,6 +797,7 @@ async function buildUniversalDetail(
   q: Querier,
   id: string,
   viewerIdentityId: string,
+  storyPage = true,
 ): Promise<EntityDetail> {
   const row = await liveRow(q, id);
   const summary = (await loadUniversalSummaries(q, [row], viewerIdentityId))[0];
@@ -849,7 +852,10 @@ async function buildUniversalDetail(
   const unresolvedHardDependencyCount = connectionItems.filter((edge) =>
     edge.source.id === id && edge.type === 'depends_on' && edge.hard !== false && edge.resolved === false,
   ).length;
-  const hydrated = await hydrateDetail(q, row, summary.state, detailContent(row, enrichment), viewerIdentityId);
+  const detail = detailContent(row, enrichment);
+  const hydrated = !storyPage && detail.kind === 'story'
+    ? { state: summary.state, content: detail }
+    : await hydrateDetail(q, row, summary.state, detail, viewerIdentityId);
   const content = hydrated.content;
   return {
     ...summary,
@@ -1306,12 +1312,24 @@ export class W2EntitiesCommandsTrackingService {
 
   readonly getEntity = async (ctx: RequestContext): Promise<EntityDetail> => {
     const owner = await this.deps.owner();
-    const id = requireUuidParam(ctx, 'id');
-    // Only `header` is read: the route took no query before, and it still
-    // ignores every other key. An unknown mode reads as the default and says
-    // so in `warnings` (instruct, don't refuse).
+    const reference = requireParam(ctx, 'id');
+    // Header projection and story reader mode are independent. Unknown header
+    // modes fall back to the default and report a warning.
     const { mode, warning } = headerReadMode(ctx.query.get('header'));
-    const detail = await this.deps.db.tx(claimsFor(owner, ctx), async (q) => withHeader(q, await buildUniversalDetail(q, id, owner.identityId), mode));
+    const detail = await this.deps.db.tx(claimsFor(owner, ctx), async (q) => {
+      const id = await resolveEntityReadId(q, reference);
+      const storyMode = ctx.query.get('story');
+      const detail = await buildUniversalDetail(q, id, owner.identityId, storyMode !== 'summary' && storyMode !== 'context');
+      if (storyMode === 'context' && detail.content.kind === 'story') {
+        const context = await loadContextV2(q, id, { sections: new Set(['story']), totalBytes: 16_384 });
+        // StoryContentSchema permits computed reader fields. The normal browser
+        // detail remains unchanged; CLI reads carry the budgeted context and its
+        // exact continuation commands instead of the hydrated 500-node page.
+        const content = { ...detail.content, context };
+        return withHeader(q, { ...detail, content }, mode);
+      }
+      return withHeader(q, detail, mode);
+    });
     return warning ? { ...detail, warnings: [warning] } : detail;
   };
 

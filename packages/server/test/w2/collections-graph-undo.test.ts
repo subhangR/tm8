@@ -330,7 +330,7 @@ describe('W2.G05 collection, graph, and undo handlers', () => {
     const totalRead = captured.find((call) => call.sql.includes('count(*)::int as total'));
     for (const read of [pageRead, totalRead]) {
       expect(read).toBeDefined();
-      expect(read!.sql).toMatch(/position\(lower\(\$\d+::text\) in lower\(coalesce\(t\.title, d\.title,[^)]*\)\)\) > 0/);
+      expect(read!.sql).toMatch(/position\(lower\(\$\d+::text\) in lower\(coalesce\(t\.title, sty\.title, d\.title,[^)]*\)\)\) > 0/);
       expect(read!.sql).toMatch(/e\.kind = any\(\$\d+::text\[\]\)/);
       // Trimmed, bound, never concatenated — and `%` stays a literal character.
       expect(read!.params).toContain('50% Plan');
