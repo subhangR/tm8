@@ -59,6 +59,14 @@ server {
 
 server {
   # Utho currently ships nginx before the standalone `http2 on` directive.
+  #
+  # These MUST stay identical to sites-available/tm8-sh. `nginx -t` warns
+  # "protocol options redefined for [::]:443" because two server blocks name
+  # the same listen socket, and the warning is cosmetic ONLY while the options
+  # match. Do not silence it by dropping `http2` here: listen options come from
+  # whichever block nginx reads FIRST, sites-enabled is read alphabetically,
+  # and `artifacts-tm8-sh` sorts before `tm8-sh` — so removing it here turns
+  # HTTP/2 off for tm8.sh as well, with no error and no test failure.
   listen 443 ssl http2;
   listen [::]:443 ssl http2;
   server_name artifacts.tm8.sh;
