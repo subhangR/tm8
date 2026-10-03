@@ -1,5 +1,5 @@
 -- =============================================================================
--- 989 (placeholder; renumber to the train on merge) — a status transition
+-- 291 — a status transition
 -- records only the status. Task 01a0fe67, issue #32.
 --
 -- THE DEFECT. `set_work_state` upserted `working_on <actor> -> task` for every
@@ -76,7 +76,7 @@ begin
       using errcode = '23514', detail = '{"reason":"use_complete_command"}';
   end if;
 
-  -- 989: without a claim, only an edge the caller already holds is touched.
+  -- 291: without a claim, only an edge the caller already holds is touched.
   holds_edge := coalesce(p_claim, false) or exists (
     select 1 from public.edges
      where src_id = actor and dst_id = p_task_id and type = 'working_on');
@@ -126,6 +126,6 @@ grant execute on function public.set_work_state(uuid, text, uuid, timestamptz, t
 
 comment on function public.set_work_state(uuid, text, uuid, timestamptz, text, text, boolean, boolean) is
   'Task work-state transition. Writes the status; records the caller as working_on '
-  'only when p_claim is true (989). An edge the caller already holds follows the transition.';
+  'only when p_claim is true (291). An edge the caller already holds follows the transition.';
 
 reset role;

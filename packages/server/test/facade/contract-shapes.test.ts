@@ -437,7 +437,7 @@ describeDb('responses satisfy the frozen contract schemas', () => {
     // A shape test alone would miss it wherever the field is a plain string.
     const worked = await call<{
       entity: { badges: { workingActors?: Array<{ startedAt: string }> } };
-    }>('POST', `/v2/entities/${w.t103}/commands/work`, { status: 'working' });
+    }>('POST', `/v2/entities/${w.t103}/commands/work`, { status: 'working', claim: true });
 
     const started = worked.entity.badges.workingActors?.[0]?.startedAt;
     expect(started, 'no workingActors badge to check').toBeDefined();

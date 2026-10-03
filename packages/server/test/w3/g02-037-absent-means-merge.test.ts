@@ -94,6 +94,7 @@ describe.sequential('W3 037 absent-means-merge at the public boundary', () => {
     const res = await harness.request('POST', `/v2/entities/${taskId}/commands/work`, {
       clientMutationId: 'w3-037-set-note',
       status: 'working',
+      claim: true,
       note: STORED_NOTE,
     });
     expect(res.status, JSON.stringify(res.body)).toBe(200);
