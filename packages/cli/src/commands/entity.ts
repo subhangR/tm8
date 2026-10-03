@@ -921,7 +921,7 @@ async function entityCreate(cmd: CommandContext): Promise<ExitCode> {
 }
 
 async function entityUpdate(cmd: CommandContext): Promise<ExitCode> {
-  assertKnownOptions(cmd, ['expect-version', 'title', 'content', 'mutation-id']);
+  assertKnownOptions(cmd, ['expect-version', 'title', 'content', 'status', 'mutation-id']);
   const id = requireArg(cmd, 0, '<entity-id>');
   const expectedVersion = cmd.options.integer('expect-version');
   if (expectedVersion === undefined) {
@@ -936,10 +936,16 @@ async function entityUpdate(cmd: CommandContext): Promise<ExitCode> {
   if (title !== undefined) body.title = title;
   const content = cmd.options.value('content');
   if (content !== undefined) body.content = await readContent(content);
+  // `--status` is sugar for `content.status` — a story's status door (288).
+  // The Server answers for kinds whose patch takes no status.
+  const status = cmd.options.value('status');
+  if (status !== undefined) {
+    body.content = { ...(body.content as Record<string, unknown> | undefined), status };
+  }
 
-  if (title === undefined && content === undefined) {
+  if (title === undefined && content === undefined && status === undefined) {
     throw new CliError('`tm8 entity update` needs something to change', EXIT_USAGE, {
-      hint: 'pass --title or --content',
+      hint: 'pass --title, --content or --status',
     });
   }
 

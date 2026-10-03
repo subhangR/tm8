@@ -225,7 +225,9 @@ const ADMIN_SPACE_OPERATIONS = new Set<OperationName>([
 // refuses the kind outright (it is in RESTRICTED_LIFECYCLE_KINDS), so listing
 // it here would advertise an action the only door for it refuses. A container
 // is renamed through `containers.update`.
-const EDITABLE_KINDS = new Set(['task', 'doc', 'channel', 'collection', 'team_member', 'spell', 'skill']);
+// `story` is editable: title, description and — its only status door (288) —
+// `content.status`, so a story's action list must offer `entities.patch`.
+const EDITABLE_KINDS = new Set(['task', 'doc', 'channel', 'collection', 'team_member', 'spell', 'skill', 'story']);
 // READING structure vs CHANGING it — one set could not answer both once
 // `container` arrived, and conflating them is how an action list comes to
 // advertise a verb the door refuses.

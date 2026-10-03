@@ -324,10 +324,16 @@ export interface StoryContent {
 /**
  * The create/patch door's input. A patch carries only what changed; `null`
  * MERGES in the door. Title rides the envelope's `title`.
+ *
+ * `status` is PATCH-ONLY (migration 288): a workflow category (to_do |
+ * in_progress | done | cancelled) or a state name of the story's workflow.
+ * A story's status is MANUAL — never derived from its trail; `progress` /
+ * `taskProgress` are the derived signal.
  */
 export const StoryContentInputSchema = z.object({
   kind: z.literal('story').optional(),
   description: z.string().max(20000).optional(),
+  status: z.string().trim().min(1).max(100).optional(),
 }).strict();
 
 const StoryProgressSchema = z.object({

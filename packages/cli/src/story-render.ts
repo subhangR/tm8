@@ -65,6 +65,25 @@ export function storyStateLines(state: unknown): string[] {
   return out;
 }
 
+/**
+ * A story's status is MANUAL (migration 288): nothing derives it from the
+ * trail. When the task progress plainly disagrees with it, say so and name
+ * the setter — a hint, never a write. Empty when they agree.
+ */
+export function storyStatusHint(status: unknown, state: unknown, id: unknown): string[] {
+  if (typeof status !== 'string' || !isRow(state) || !isRow(state['taskProgress'])) return [];
+  const tp = state['taskProgress'];
+  const work = num(tp['work']);
+  const done = num(tp['done']);
+  const cancelled = num(tp['cancelled']);
+  let suggest: string | null = null;
+  if (work > 0 && done + cancelled === work && done > 0 && status !== 'done' && status !== 'cancelled') suggest = 'done';
+  else if (status === 'to_do' && (num(tp['inProgress']) > 0 || done > 0)) suggest = 'in_progress';
+  if (suggest === null) return [];
+  return [`status hint: status is ${status} but tasks are ${progressText(tp)} — status is set by hand:`
+    + ` tm8 entity update ${str(id)} --expect-version <n> --status ${suggest}`];
+}
+
 function rootLine(r: Row, index: number): string {
   const tp = r['taskProgress'];
   const tasks = isRow(tp) && num(tp['work']) > 0 ? ` · ${num(tp['done'])}/${num(tp['work'])} tasks` : '';
@@ -86,9 +105,10 @@ function byKindText(byKind: unknown): string {
  * The v2 context `story` section as lines. Lists print whole (the server
  * capped them and says so in `omitted[]`, which the brief prints).
  */
-export function storyContextLines(story: unknown): string[] {
+export function storyContextLines(story: unknown, status?: unknown, id?: unknown): string[] {
   if (!isRow(story)) return [];
   const out = storyStateLines(story['state']);
+  out.push(...storyStatusHint(status, story['state'], id));
   if (story['truncated'] === true && !(isRow(story['state']) && story['state']['truncated'] === true)) {
     out.push('trail: TRUNCATED at the follow limit');
   }
@@ -185,6 +205,7 @@ export function renderStoryDetail(detail: Row, head: string): string {
     + (parent ? ` · parent story ${str(parent['id'])} ${str(parent['title'])}` : ''));
   out.push(`description: ${lede(content['description'])}`);
   out.push(...storyStateLines(detail['state']));
+  out.push(...storyStatusHint(detail['status'], detail['state'], detail['id']));
   if (page) {
     const counts = storyPageCounts(page)!;
     out.push(`by kind: ${byKindText(counts['byKind'])}`);

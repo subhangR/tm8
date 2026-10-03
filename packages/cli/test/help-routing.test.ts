@@ -194,6 +194,9 @@ describe('help --query routes closeout intents to the exact command, first', () 
     ['update task content', ['entity update']],
     ['post result', ['message send']],
     ['report a blocker to the coordinator', ['message send']],
+    ['set status of story', ['entity update']],
+    ['mark a story done', ['entity update']],
+    ['change story state to in progress', ['entity update']],
   ];
   for (const [q, allowed] of CASES) {
     it(`"${q}"`, () => {
@@ -212,6 +215,14 @@ describe('help --query routes closeout intents to the exact command, first', () 
     expect(top?.command).toBe(expected);
     // The fallback names the fact that bites: the array is replaced wholesale.
     expect(tick?.candidates[1]?.example).toContain('REPLACED');
+  });
+
+  it('the story-status route names --status and says status is manual', () => {
+    const route = matchIntent('set status of story');
+    expect(route?.intent).toBe('set the status of a story');
+    expect(route?.candidates[0]?.example).toContain('--status');
+    expect(route?.candidates[0]?.example).toContain('never derived');
+    expect(matchIntent('report story status to the coordinator')?.intent).toBe('post a result or blocker');
   });
 
   it('never routes an unrelated query, and never duplicates the routed row', () => {

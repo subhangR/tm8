@@ -456,6 +456,14 @@ describe('entity update', () => {
     expect((seen[0]?.body as { expectedVersion?: unknown }).expectedVersion).toBe(3);
   });
 
+  it('--status sends content.status (a story\'s status door, 288), merged over --content', async () => {
+    const r = await drive(['entity', 'update', ENT, '--expect-version', '3', '--status', 'in_progress']);
+    expect(r.code).toBe(0);
+    expect((seen[0]?.body as { content?: unknown }).content).toEqual({ status: 'in_progress' });
+    await drive(['entity', 'update', ENT, '--expect-version', '4', '--content', '{"description":"d"}', '--status', 'done']);
+    expect((seen[1]?.body as { content?: unknown }).content).toEqual({ description: 'd', status: 'done' });
+  });
+
   // The Server re-reads the row on a stale write and ships it under
   // `details.current` (plus the RPC's `currentVersion`). Both used to be
   // dropped, so every conflict cost the caller a re-read to learn the version.
