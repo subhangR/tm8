@@ -260,6 +260,19 @@ describe('session spawn', () => {
     );
   });
 
+  it('spawns directly on a story without task derivation', async () => {
+    const r = await drive(['session','spawn','--space',SPACE,'--teammate',TEAMMATE,'--story',SESSION]);
+    expect(r.code).toBe(0);
+    expect(body().storyId).toBe(SESSION);
+    expect(body().taskIds).toBeUndefined();
+  });
+
+  it.each([['--task',SESSION],['--force-new-task']])('rejects conflicting story assignment %s before sending', async (...extra) => {
+    const r = await drive(['session','spawn','--space',SPACE,'--teammate',TEAMMATE,'--story',SESSION,...extra]);
+    expect(r.code).not.toBe(0);
+    expect(seen).toHaveLength(0);
+  });
+
   it('binds execution.spawn and carries the frozen body', async () => {
     const r = await drive([
       'session', 'spawn',

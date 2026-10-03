@@ -465,6 +465,10 @@ async function sessionSpawn(cmd: CommandContext): Promise<ExitCode> {
     REASONING_EFFORTS,
   );
   const taskIds = cmd.options.values('task');
+  const storyId = cmd.options.value('story');
+  if (storyId !== undefined && (taskIds.length > 0 || cmd.options.bool('force-new-task'))) {
+    throw new CliError('--story cannot be combined with --task or --force-new-task', EXIT_USAGE);
+  }
   const projectId = cmd.options.value('launch-project');
   const profileId = cmd.options.value('interaction-profile');
   const model = cmd.options.value('model');
@@ -483,6 +487,7 @@ async function sessionSpawn(cmd: CommandContext): Promise<ExitCode> {
   // the spawner; an ordinary human shell has no session id and stays a root.
   if (cmd.ctx.sessionId) body.parentSessionId = cmd.ctx.sessionId;
   if (taskIds.length > 0) body.taskIds = taskIds;
+  if (storyId !== undefined) body.storyId = storyId;
   if (projectId !== undefined) body.projectId = projectId;
   // `SpawnWorkdir` is a discriminated union, not a bare string.
   //

@@ -275,6 +275,37 @@ describe('execution.spawn — the parent a chat runtime cannot name (176)', () =
     expect(spawn?.args[PARENT_ARG_INDEX]).toBe(CHAT);
   });
 
+  it('derives story inheritance provenance only from the bearer session', async () => {
+    const db = await runSpawn(
+      { kind: 'bearer', identityId: 'owner-identity', workSessionId: PARENT_SESSION },
+      { storyId: CHAT, sourceWorkSessionId: SESSION },
+      'work_session',
+    );
+    const spawn = db.rpcCalls.find(({ fn }) => fn === 'public.execution_spawn');
+    expect(spawn?.args[PARENT_ARG_INDEX]).toBe(PARENT_SESSION);
+    expect(spawn?.args[18]).toBe(CHAT);
+    expect(spawn?.args[19]).toBe(PARENT_SESSION);
+  });
+
+  it('does not treat a human request body as authenticated session provenance', async () => {
+    const db = await runSpawn(
+      { kind: 'auto-owner', identityId: 'owner-identity' },
+      { parentSessionId: PARENT_SESSION, sourceWorkSessionId: PARENT_SESSION },
+      'work_session',
+    );
+    const spawn = db.rpcCalls.find(({ fn }) => fn === 'public.execution_spawn');
+    expect(spawn?.args[PARENT_ARG_INDEX]).toBe(PARENT_SESSION);
+    expect(spawn?.args[19]).toBeNull();
+  });
+
+  it.each([{ taskIds: [] }, { newTask: { title: 'Work' } }, { forceNewTask: false }])(
+    'refuses explicit story/task conflicts before launch: %j', async conflict => {
+      await expect(runSpawn({ kind: 'auto-owner', identityId: 'owner-identity' }, {
+        storyId: CHAT, ...conflict,
+      })).rejects.toMatchObject({ code: 'invalid_input', details: { reason: 'story_spawn_conflict' } });
+    },
+  );
+
   it('parents nothing for a non-bearer caller, which has no runtime chat at all', async () => {
     // `coordinated-worker` needs a return address, so a root spawn from the
     // owner UI is refused rather than launched parentless — the refusal IS the

@@ -5744,6 +5744,8 @@ export interface ExecutionSpawnInput extends CommandContext {
   parentSessionId?: EntityId;
   /** Tasks the session works on — become `working_on` edges. */
   taskIds?: EntityId[];
+  /** Direct story anchor, exclusive with taskIds, newTask and forceNewTask. Creates no task. */
+  storyId?: EntityId;
   /**
    * When a `taskIds` entry is a non-task entity, mint a NEW derived task for
    * it even when an open one exists — the "start a different piece of work
