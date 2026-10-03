@@ -207,7 +207,8 @@ export const INTENT_ROUTES: readonly IntentRoute[] = [
   {
     intent: 'complete a task',
     all: [['complete', 'completed', 'completing', 'finish', 'finished', 'done', 'closeout']],
-    none: CRITERIA_WORDS,
+    // A story is not completed; its status is set (the route below).
+    none: [...CRITERIA_WORDS, 'story', 'stories', 'chapter'],
     candidates: [{ path: ['task', 'complete'], example: 'tm8 task complete <task-id> --expect-version <n> --by <actor-id>' }],
   },
   {
@@ -228,6 +229,20 @@ export const INTENT_ROUTES: readonly IntentRoute[] = [
       {
         path: ['entity', 'update'],
         example: 'tm8 entity update <entity-id> --expect-version <n> --content \'{"description":"<text>"}\'  (top-level content keys merge; --title <title> renames)',
+      },
+    ],
+  },
+  {
+    intent: 'set the status of a story',
+    all: [
+      ['set', 'change', 'update', 'move', 'mark', 'transition', 'close', 'reopen', 'start'],
+      ['story', 'stories', 'chapter'],
+      ['status', 'state', 'done', 'cancelled', 'progress', 'started', 'finished'],
+    ],
+    candidates: [
+      {
+        path: ['entity', 'update'],
+        example: 'tm8 entity update <story-id> --expect-version <n> --status in_progress  (to_do|in_progress|done|cancelled or a workflow state name; manual, never derived from the story\'s contents)',
       },
     ],
   },

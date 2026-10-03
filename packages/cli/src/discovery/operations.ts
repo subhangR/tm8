@@ -1542,7 +1542,7 @@ const ROWS: Record<OperationName, Row> = {
       'hierarchy is homogeneous: a parent and its direct children share one kind and one Space',
       'task content shape: {description, acceptanceCriteria: [{id, done, text}], pointsEstimate, axes: {<axis-name>: <value>}} — axis names and values are the Space registry\u2019s (`tm8 space task-axis list`)',
       "doc content shape: {kind: 'doc', body, format: 'markdown'}",
-      "story content shape: {description} (title rides the envelope; status is the ordinary workflow status). --parent <story-id> makes a child story whose progress rolls up into the parent. Put things in with `tm8 collection add <story-id> <entity-id>` — those are the story's roots; everything connected to a root follows at read time. Read it with `tm8 entity context <story-id>` (agents) or `tm8 entity get <story-id>` (the page)",
+      "story content shape: {description} (title rides the envelope; status is the ordinary workflow status, born to_do and set by hand with `tm8 entity update <story-id> --status <status>` — never derived from contents). --parent <story-id> makes a child story whose progress rolls up into the parent. Put things in with `tm8 collection add <story-id> <entity-id>` — those are the story's roots; everything connected to a root follows at read time. Read it with `tm8 entity context <story-id>` (agents) or `tm8 entity get <story-id>` (the page)",
       '--when-to-use (when a later session should open it, in one sentence: "Open when changing how balances are rounded", not "Rounding policy doc"; shown whole to every later agent) / --summary (what it holds) / --keyword write the selection header in the same call; all optional, guideline limits in `tm8 help entity header set`; change it later with `tm8 entity header set`',
       'a header applies to team_member, doc, artifact, drawing, file, task and collection; on any other kind the entity is still created and the header is skipped with a warning (skills use their description, memories their subject_scope)',
     ],
@@ -1555,12 +1555,21 @@ const ROWS: Record<OperationName, Row> = {
   },
   'entities.patch': {
     cmd: ['entity', 'update'],
-    syn: 'tm8 entity update <entity-id> --expect-version <n> [--title <title>] [--content <json-source>] [--mutation-id <id>]',
-    sum: 'Change an entity title or content under an optimistic version guard',
+    syn: 'tm8 entity update <entity-id> --expect-version <n> [--title <title>] [--content <json-source>] [--status <status>] [--mutation-id <id>]',
+    sum: 'Change an entity title, content or a story\'s status under an optimistic version guard',
     authz: 'entity',
     input: 'bound',
     ver: 'expectedVersion',
-    tags: ['edit', 'rename', 'patch'],
+    tags: ['edit', 'rename', 'patch', 'status', 'story', 'transition'],
+    notes: [
+      '--status <status> sets content.status. On a STORY it is the status door: to_do | in_progress | done | cancelled, or a state name of the story\'s workflow. The ruled workflow moves apply (to_do ⇄ in_progress → done, to_do → done, any → cancelled, done/cancelled → to_do; done → in_progress is refused, reopen through to_do); a refused move answers transition_not_allowed',
+      'a story\'s status is MANUAL: it is never derived from its contents. Its progress / taskProgress (in `tm8 entity context <story-id>`) are the derived signal, and the context points at this command when they disagree with the status',
+      'a task moves through `tm8 task transition` / `tm8 task complete`, not --status',
+    ],
+    examples: [
+      'tm8 entity update <story-id> --expect-version <n> --status in_progress',
+      'tm8 entity update <entity-id> --expect-version <n> --title "<title>"',
+    ],
   },
   'entities.header.set': {
     cmd: ['entity', 'header', 'set'],

@@ -1058,8 +1058,9 @@ const PATCH_CONTENT_MEMBERS: Readonly<Record<string, readonly string[]>> = {
   // W10a: no member is patchable. The lifecycle refusal fires first; this is
   // the second lock, so a door that skipped it still forwards nothing.
   credential: [],
-  // 283: the prose; the title rides the envelope's `title`.
-  story: ['description'],
+  // 283: the prose; the title rides the envelope's `title`. 288: `status`, the
+  // story's only status door (a category or a state name; manual, never derived).
+  story: ['description', 'status'],
 };
 
 function assertPatchContentMembers(
@@ -1444,6 +1445,10 @@ export class W2EntitiesCommandsTrackingService {
           // parent STORY (same-kind hierarchy = child stories); putting a
           // thing IN a story is `collections.addItem`, never hierarchy.
           const story = storyContent(content);
+          if (story.status !== undefined) {
+            throw new CollabError('invalid_input',
+              'a story is born to_do; set its status after creation with `tm8 entity update <story-id> --status <status>`');
+          }
           raw = await q.rpc('create_story_entity', [input.spaceId, input.title, envelope.actorId ?? null,
             story.description ?? '',
             input.parentId ?? null, input.position ?? null, envelope.clientMutationId ?? null]);
@@ -1624,11 +1629,13 @@ export class W2EntitiesCommandsTrackingService {
           }
           case 'story': {
             // `null` MERGES: a rename sends only the title, and must not wipe
-            // the description it did not restate.
+            // the description it did not restate. `status` (288) is a
+            // category or a state name; the door resolves it and the status
+            // trigger rules the move. Manual, never derived from the trail.
             const story = storyContent(content);
             raw = await q.rpc('update_story_entity', [id, input.expectedVersion, envelope.actorId ?? null,
               input.title ?? null, story.description ?? null,
-              envelope.clientMutationId ?? null]);
+              envelope.clientMutationId ?? null, story.status ?? null]);
             break;
           }
           case 'worktree': {

@@ -150,7 +150,7 @@ export function renderContextBrief(view: Row): string {
   }
   // A story (283): progress, roots, kinds, blocked, sessions, team, child
   // stories — the server's bounded projection of the page; cuts are omitted[].
-  if (isRow(view['story'])) out.push(...storyContextLines(view['story']));
+  if (isRow(view['story'])) out.push(...storyContextLines(view['story'], view['status'], view['id']));
   for (const [key, label] of [['tasks', 'tasks'], ['children', 'children']] as const) {
     if (view[key] === undefined) continue;
     const list = rows(view[key]);
