@@ -61,6 +61,8 @@ export function commandsWork(deps: FacadeDeps): OperationHandler {
         input.note ?? null,
         envelope.clientMutationId ?? null,
         input.note === null,
+        // 989: a transition records the caller as working_on ONLY when asked.
+        input.claim === true,
       ]);
       const receipt = before ? await buildReceipt(q, 'task.transition', raw, { before }) : undefined;
       return receipt ?? toCommandResult(q, raw, owner.identityId);

@@ -1844,7 +1844,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'entities.commands.work': {
     cmd: ['task', 'transition'],
-    syn: 'tm8 task transition <task-id> open|pulled|working|in_review|blocked|cancelled [--mutation-id <id>]',
+    syn: 'tm8 task transition <task-id> open|pulled|working|in_review|blocked|cancelled [--claim] [--mutation-id <id>]',
     sum: 'Move a task through its work lifecycle, short of completion',
     authz: 'entity',
     input: 'bound',
@@ -1852,6 +1852,7 @@ const ROWS: Record<OperationName, Row> = {
     notes: [
       'enum values use their exact contract spelling, including `in_review`',
       'transition time is Server-owned; a client cannot backdate lifecycle history',
+      'changes only the status: the caller is recorded as working_on the task only with --claim (an edge the caller already holds follows the transition)',
     ],
   },
   'entities.commands.pull': {

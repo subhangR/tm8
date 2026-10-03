@@ -64,7 +64,7 @@ const TRANSITIONABLE = ['open', 'pulled', 'working', 'in_review', 'blocked', 'ca
 const WORK_STATUSES = [...TRANSITIONABLE, 'done'] as const;
 
 async function taskTransition(cmd: CommandContext): Promise<ExitCode> {
-  assertKnownOptions(cmd, ['mutation-id']);
+  assertKnownOptions(cmd, ['mutation-id', 'claim']);
   const id = requireArg(cmd, 0, '<task-id>');
   const status = requireArg(cmd, 1, `<status> (${TRANSITIONABLE.join('|')})`);
   if (!(WORK_STATUSES as readonly string[]).includes(status)) {
@@ -78,7 +78,9 @@ async function taskTransition(cmd: CommandContext): Promise<ExitCode> {
     observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.commands.work', {
       params: { id },
       query: receiptQuery('task.transition', cmd.out.receipts),
-      body: withActor(cmd, { clientMutationId: mutationId, status }),
+      // Only `--claim` records the caller as working_on; a bare transition is
+      // a status change, so an auditor does not become the task's worker (#32).
+      body: withActor(cmd, { clientMutationId: mutationId, status, ...(cmd.options.bool('claim') ? { claim: true } : {}) }),
     }));
   cmd.out.mutation('task.transition', data, renderCommandResult, () =>
     successReceipt('task.transition', data, callerMutationId(cmd.options)));
