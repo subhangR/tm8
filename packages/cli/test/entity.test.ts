@@ -1056,10 +1056,10 @@ describe('entity header set / clear, and header flags on create', () => {
     }
   });
 
-  it('create carries the header flags as `header` in the one create call', async () => {
-    const r = await drive(['entity', 'create', 'doc', 'Notes', '--summary', 'What the notes hold', '--when-to-use', 'Load for notes']);
+  it.each(['doc', 'story'])('create %s carries all header flags in the one create call', async (kind) => {
+    const r = await drive(['entity', 'create', kind, 'Notes', '--summary', 'What the notes hold', '--when-to-use', 'Load for notes', '--keyword', 'planning']);
     expect(r.code).toBe(0);
-    expect(seen[0]!.body).toMatchObject({ kind: 'doc', header: { summary: 'What the notes hold', whenToUse: 'Load for notes' } });
+    expect(seen[0]!.body).toMatchObject({ kind, header: { summary: 'What the notes hold', whenToUse: 'Load for notes', keywords: ['planning'] } });
   });
 
   it('create without header flags sends no header member', async () => {

@@ -1581,7 +1581,7 @@ const ROWS: Record<OperationName, Row> = {
       "doc content shape: {kind: 'doc', body, format: 'markdown'}",
       "story content shape: {description} (title rides the envelope; status is the ordinary workflow status, born to_do and set by hand with `tm8 entity update <story-id> --status <status>` — never derived from contents). --parent <story-id> makes a child story whose progress rolls up into the parent. Put things in with `tm8 collection add <story-id> <entity-id>` — those are the story's roots; everything connected to a root follows at read time. Read it with `tm8 entity context <story-id>` (agents) or `tm8 entity get <story-id>` (the page)",
       '--when-to-use (when a later session should open it, in one sentence: "Open when changing how balances are rounded", not "Rounding policy doc"; shown whole to every later agent) / --summary (what it holds) / --keyword write the selection header in the same call; all optional, guideline limits in `tm8 help entity header set`; change it later with `tm8 entity header set`',
-      'a header applies to team_member, doc, artifact, drawing, file, task and collection; on any other kind the entity is still created and the header is skipped with a warning (skills use their description, memories their subject_scope)',
+      'a header applies to team_member, doc, artifact, drawing, file, task, collection and story; on any other kind the entity is still created and the header is skipped with a warning (skills use their description, memories their subject_scope)',
     ],
     examples: [
       'tm8 entity create task "<title>" --space <space-id> --parent <entity-id>',
@@ -1620,7 +1620,7 @@ const ROWS: Record<OperationName, Row> = {
       'the WHOLE header is written: a field left out is removed, so pass every field you want to keep; every field is optional and nothing is refused for length — aim for --when-to-use ≤ 400 chars, --summary ≤ 600, --keyword ≤ 12 × ≤ 40; blank text is dropped',
       '--when-to-use is routing text, shown WHOLE to every later agent (never cut; past 400 chars the write warns header_long): the situation in which to open this, in one sentence — good: "Open when changing how balances are rounded"; bad: "Rounding policy doc" (restates the title) or "Always read first" (claims every step). --summary is what it holds, so a reader can skip it; it is cut at 600 and is the first thing a tight prompt leaves out',
       '--expect-version is the HEADER\'s version (`header.version` in `tm8 entity context <entity-id>`; none there means 0), never the entity\'s; omit it for last-writer-wins; a header write never moves the entity version',
-      'kinds: team_member (its owner or a space admin), doc, artifact, drawing, file, task, collection; on a skill, memory, session, chat or message it stores nothing and warns (skills use their description, memories their subject_scope)',
+      'kinds: team_member (its owner or a space admin), doc, artifact, drawing, file, task, collection, story; on a skill, memory, session, chat or message it stores nothing and warns (skills use their description, memories their subject_scope)',
       're-saving unchanged text re-pins a stale header to the current body ("mark current")',
     ],
     examples: [
