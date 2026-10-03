@@ -11,6 +11,7 @@ export function storyGuide(): GuideSection[] {
       'tm8 collection add <story-id> <entity-id>...',
       'tm8 collection remove <story-id> <entity-id> --yes',
       'Roots are put in by hand. The story follows their connected work at read time; removing a root leaves the entity intact.',
+      'Bulk receipts include a batch mutationId and next command to replay the whole batch. To retry one failed item, use its own next command and derived mutationId; never use the batch ID for a one-item subset.',
     ] },
     { title: 'Read and page', lines: [
       'tm8 entity context <story-id> --format json',
@@ -26,6 +27,8 @@ export function storyGuide(): GuideSection[] {
       '--story anchors work directly to the story without creating a task; exclusive with --task and --force-new-task.',
       'tm8 session spawn --task <task-id> --teammate <teammate-id>',
       'Use tm8 help session spawn for the available launch options. A session working on a root task appears in the story trail.',
+      'The launch manifest snapshots the direct --story anchor, or the nearest readable story containing the primary task (fewest traversal hops; ties by story ID). A task that is a root has depth 0; a task reached through a root has a positive depth.',
+      'The selected story supplies bounded description, task progress, roots, live sessions and blocked work. A containing child story can be selected instead of its top-level parent; other containing stories are refs only, not full parent or sibling context. Read those stories separately with entity context.',
     ] },
     { title: 'Understand progress', lines: [
       "progress counts contained tasks and stories; taskProgress counts only this story's contained tasks. rollup is the union of own and descendant-story tasks, deduplicated by entity ID.",

@@ -26,11 +26,11 @@
  * may contain, so nothing here checks the container's kind.
  */
 import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
-import { readTextSource } from '../args.js';
-import { ApiError, TransportError, exitCodeFor } from '../errors.js';
+import { parseInvocation, readTextSource } from '../args.js';
+import { exitCodeFor } from '../errors.js';
 import { assertKnownOptions } from './entity.js';
 import { callerMutationId, SCHEMA_VERSION, successReceipt } from '../receipt.js';
-import { errorInput, withErrorReceipt } from '../receipt-error.js';
+import { errorInput, errorReceipt, isAmbiguous, replayCommand, withErrorReceipt } from '../receipt-error.js';
 import { deriveMutationId, resolveMutationId } from '../mutation.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
 import type { CommandContext, CommandModule } from '../run.js';
@@ -58,6 +58,17 @@ function envelope(cmd: CommandContext): Record<string, unknown> {
   };
   if (cmd.ctx.actor) out.actorId = cmd.ctx.actor.value;
   return out;
+}
+
+/** Materialize file/stdin ids for replay and preserve the invocation's route and actor. */
+function addArgv(cmd: CommandContext, collectionId: string, entityIds: readonly string[]): string[] {
+  const globals = cmd.argv === undefined ? undefined : parseInvocation(cmd.argv).globals;
+  return [
+    ...(globals?.server === undefined ? [] : ['--server', globals.server]),
+    ...(globals?.space === undefined ? [] : ['--space', globals.space]),
+    ...(cmd.ctx.actor === undefined ? [] : ['--as', cmd.ctx.actor.value]),
+    'collection', 'add', collectionId, ...entityIds,
+  ];
 }
 
 async function collectionAdd(cmd: CommandContext): Promise<ExitCode> {
@@ -91,7 +102,9 @@ async function collectionAdd(cmd: CommandContext): Promise<ExitCode> {
     return EXIT_OK;
   }
   // The existing membership door is atomic per id. Derive stable identities so
-  // replaying the batch after a partial failure safely replays every member.
+  // replaying the whole batch after a partial failure safely replays every member.
+  // A one-item retry must use that member's derived id, not the batch id: the
+  // established single-add door passes --mutation-id through unchanged.
   const results: Record<string, unknown>[] = [];
   let exitCode: ExitCode = EXIT_OK;
   for (const entityId of entityIds) {
@@ -104,16 +117,29 @@ async function collectionAdd(cmd: CommandContext): Promise<ExitCode> {
         ...(cmd.out.receipts === 'full' ? { data } : {}) });
     } catch (error) {
       if (exitCode === EXIT_OK) exitCode = exitCodeFor(error);
-      results.push({ entityId, ok: false, mutationId,
-        error: { code: error instanceof ApiError ? error.code : 'transport_error', message: error instanceof Error ? error.message : String(error) },
-        ...(error instanceof TransportError || (error instanceof ApiError && error.status >= 500) ? { outcome: 'unknown' } : {}),
+      const argv = addArgv(cmd, collectionId, [entityId]);
+      const failure = errorReceipt(error, {
+        ...errorInput(cmd, 'collection.add', { id: collectionId, mutationId }), argv,
+      });
+      results.push({ ...failure, entityId, ok: false, mutationId,
+        error: failure?.error ?? { code: 'client_error', message: error instanceof Error ? error.message : String(error) },
+        ...(isAmbiguous(error) ? { outcome: 'unknown' } : {}),
+        next: replayCommand(argv, mutationId),
       });
     }
   }
   const receipt = { schemaVersion: SCHEMA_VERSION, op: 'collection.add', ok: exitCode === EXIT_OK, id: collectionId,
-    mutationId: base.clientMutationId, results };
-  cmd.out.data(receipt, () => `collection.add ${collectionId} · ${results.filter(r => r.ok === true).length}/${results.length} added` +
-    results.filter(r => r.ok === false).map(r => `\n${r.entityId}: ${JSON.stringify(r.error)}`).join(''), { raw: true, minify: true });
+    mutationId: base.clientMutationId, results,
+    next: replayCommand(addArgv(cmd, collectionId, entityIds), base.clientMutationId as string) };
+  cmd.out.data(receipt, () => [
+    `collection.add ${collectionId} · ${results.filter(r => r.ok === true).length}/${results.length} added`,
+    `batch mutationId: ${receipt.mutationId}`,
+    `replay whole batch: ${receipt.next}`,
+    ...results.filter(r => r.ok === false).flatMap(r => [
+      `${r.entityId}${r.outcome === 'unknown' ? ' · outcome: unknown' : ''}: ${JSON.stringify(r.error)}`,
+      `retry this item: ${r.next}`,
+    ]),
+  ].join('\n'), { raw: true, minify: true });
   return exitCode;
 }
 

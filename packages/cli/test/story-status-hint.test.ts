@@ -23,6 +23,17 @@ describe('storyStatusHint', () => {
     expect(line).toContain('--status done');
   });
 
+  it.each(['toDo', 'inProgress', 'blocked'])('cancelled tasks cannot complete remaining %s work', bucket => {
+    const tp = { work: 2, done: 1, cancelled: 1, [bucket]: 1 };
+    expect(storyStatusHint('in_progress', state(tp), ID)).toEqual([]);
+    expect(storyStatusHint('to_do', state(tp), ID).join('\n')).not.toContain('--status done');
+  });
+
+  it('suggests done when all noncancelled work is complete', () => {
+    expect(storyStatusHint('in_progress', state({ work: 2, done: 2, cancelled: 1 }), ID)[0]).toContain('--status done');
+    expect(storyStatusHint('to_do', state({ work: 0, cancelled: 3 }), ID)).toEqual([]);
+  });
+
   it('is silent when status and progress agree, or there is no work', () => {
     expect(storyStatusHint('to_do', state({ work: 3, toDo: 3 }), ID)).toEqual([]);
     expect(storyStatusHint('in_progress', state({ work: 3, inProgress: 1, toDo: 2 }), ID)).toEqual([]);

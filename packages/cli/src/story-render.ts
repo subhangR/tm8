@@ -6,9 +6,9 @@
  *     projection of the page (state, roots, counts by kind, blocked rows,
  *     sessions with call signs, team by mode, child stories). The description
  *     is the `assignment` body and prints there.
- *   - `tm8 entity get <story>`: the detail, whose `content.page` is the whole
- *     computed page. Human text is a summary plus the page's COUNTS, never the
- *     page itself; `--format json` has it.
+ *   - `tm8 entity get <story>`: the detail with bounded `content.context`.
+ *     `--story-page --full --format json` opts into the computed browser page.
+ *     Human text is a summary plus the page's counts when it was requested.
  *
  * Both read only what the server computed. Nothing here re-derives progress:
  * the figures are `StoryState` / `StoryProgress` as sent (packages/contract
@@ -75,9 +75,9 @@ export function storyStatusHint(status: unknown, state: unknown, id: unknown): s
   const tp = state['taskProgress'];
   const work = num(tp['work']);
   const done = num(tp['done']);
-  const cancelled = num(tp['cancelled']);
   let suggest: string | null = null;
-  if (work > 0 && done + cancelled === work && done > 0 && status !== 'done' && status !== 'cancelled') suggest = 'done';
+  // Cancelled tasks are outside work; they cannot complete unfinished tasks.
+  if (work > 0 && done === work && status !== 'done' && status !== 'cancelled') suggest = 'done';
   else if (status === 'to_do' && (num(tp['inProgress']) > 0 || done > 0)) suggest = 'in_progress';
   if (suggest === null) return [];
   return [`status hint: status is ${status} but tasks are ${progressText(tp)} — status is set by hand:`
@@ -237,6 +237,6 @@ export function renderStoryDetail(detail: Row, head: string): string {
     out.push('page: not hydrated on this read');
   }
   const id = str(detail['id']);
-  out.push(`next: tm8 entity context ${id} (roots, sessions, team, blocked, child stories) · tm8 entity get ${id} --full --format json (the whole page)`);
+  out.push(`next: tm8 entity context ${id} (roots, sessions, team, blocked, child stories) · tm8 entity get ${id} --story-page --full --format json (the whole page)`);
   return out.join('\n');
 }
