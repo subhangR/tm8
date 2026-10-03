@@ -286,7 +286,17 @@ export function StoryGraph({ view, live, hover, filter, selectedId, onPick, onMe
   const rule = all
     ? `${layout.nodes.length} nodes · ${layout.edges.filter((e) => edgeTypes.types.has(e.type)).length} of ${layout.edges.length} edges · depth ${view.page.follow.depth}`
     : `${mask.inView.size} in view · the rest stays as context`;
-  const truncated = view.state.truncated || view.page.follow.truncated;
+  /* The trail spends its row budget level by level, so a cut lands on the
+     deepest level it reached (or the one after it): every level above that is
+     whole. Warn only when the hops on show reach that level, and say so. */
+  const cutDepth = useMemo(() => {
+    if (!view.state.truncated && !view.page.follow.truncated) return null;
+    return view.page.nodes.reduce((d, n) => Math.max(d, n.depth), 0);
+  }, [view]);
+  const cutNote =
+    cutDepth !== null && hops >= Math.max(cutDepth, 1)
+      ? `trail cut at ${view.page.follow.limit} rows: some things ${cutDepth === 0 ? 'in the story' : `${cutDepth}${cutDepth < view.page.follow.depth ? '+' : ''} ${cutDepth === 1 ? 'hop' : 'hops'} from a root`} are not drawn`
+      : null;
   const empty = layout.allRootIds.length === 0;
 
   return (
@@ -327,7 +337,11 @@ export function StoryGraph({ view, live, hover, filter, selectedId, onPick, onMe
         )}
         <span className="stg-meta">
           <span className="stg-count">{rule}</span>
-          {truncated && <span className="stg-count stg-count--warn">· trail cut at {view.page.follow.limit} rows</span>}
+          {cutNote && (
+            <span className="stg-count stg-count--warn" title="The story's trail is bounded; the rows past the bound are not read.">
+              · {cutNote}
+            </span>
+          )}
           {hops < 3 && <span className="stg-count stg-count--note">· showing {hops} {hops === 1 ? 'hop' : 'hops'}</span>}
           {!empty && <span className="stg-count">· hover a root</span>}
         </span>

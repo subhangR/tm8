@@ -123,6 +123,32 @@
 .cv2-root .sty-livepill--paused i { animation: none; background: transparent; border: 1.5px solid currentColor; }
 @keyframes sty-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 
+/* ---- compact header (#36): one row; the rest folds behind "details" ---- */
+.cv2-root .sty-hero--compact { padding: 7px 12px 6px; }
+.cv2-root .sty-hero--open { padding-bottom: 10px; }
+.cv2-root .sty-headrow {
+  display: flex; align-items: center; gap: 4px 10px; flex-wrap: wrap; min-width: 0;
+  color: var(--pn-ink-3); font-size: var(--pn-fs-label); line-height: 20px;
+}
+.cv2-root .sty-headrow .sty-bar__crumb { flex-wrap: nowrap; color: var(--pn-ink-3); }
+.cv2-root .sty-hero--compact .sty-title {
+  font-size: var(--pn-fs-title); margin: 0; min-width: 0; flex: 0 1 auto;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--pn-ink);
+}
+.cv2-root .sty-hero--compact .sty-title__btn { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cv2-root .sty-hero--compact .sty-title--editing { flex: 1 1 240px; }
+.cv2-root .sty-headrow__figs { display: inline-flex; align-items: center; gap: 10px; white-space: nowrap; }
+.cv2-root .sty-headrow__figs b { color: var(--pn-ink); font-weight: 600; }
+.cv2-root .sty-headrow__blocked b { color: var(--pn-block); }
+.cv2-root .sty-headrow__toggle {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px;
+  font: inherit; color: var(--pn-ink-2); background: none; border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-pill); cursor: pointer;
+}
+.cv2-root .sty-headrow__toggle:hover { background: var(--pn-hover); color: var(--pn-ink); }
+.cv2-root .sty-headrow__chev { font-size: 10px; }
+.cv2-root .sty-details { margin-top: 8px; }
+
 /* ---- the four figures: ONE slim strip (PR 1004) ---- */
 .cv2-root .sty-strip {
   display: grid; grid-template-columns: minmax(0, 1.6fr) repeat(3, minmax(0, 1fr));
@@ -209,10 +235,11 @@
 .cv2-root .sty-full__main,
 .cv2-root .sty-full__rail { display: flex; flex-direction: column; gap: var(--pn-space-3); min-width: 0; }
 .cv2-root .sty-full__rail { position: sticky; top: var(--pn-space-3); }
-/* StoryGraph `fill` takes 100% of a parent with a definite height: this box.
-   Tall enough that the graph is the page, short enough that the strip above
-   it stays on screen. */
-.cv2-root .sty-graphbox { height: clamp(420px, calc(100vh - 240px), 1100px); min-height: 0; display: flex; flex-direction: column; }
+/* StoryGraph `fill` takes 100% of a parent with a definite height: this box,
+   in both layouts (#36: the page opens on the graph). Tall enough that the
+   graph is the page, short enough that the one-row header above it stays on
+   screen. */
+.cv2-root .sty-graphbox { height: clamp(360px, calc(100vh - 150px), 1400px); min-height: 0; display: flex; flex-direction: column; flex: none; }
 .cv2-root .sty-graphbox > * { flex: 1 1 auto; min-height: 0; }
 @container (max-width: 980px) {
   .cv2-root .sty-full { grid-template-columns: minmax(0, 1fr); }
