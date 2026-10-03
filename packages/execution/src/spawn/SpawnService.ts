@@ -136,12 +136,15 @@ import { ContextBudgetsSchema, SpawnSelectionReasonsSchema, SpawnSelectionSchema
  *   - `space_credential_deleted`: SC-3 — a space credential was deleted.
  *   - `space_credential_made_private`: W10a — its owner made it private, and
  *     this session's launcher is not the owner.
+ *   - `space_credential_unshared`: 992 — its owner (or a space admin) withdrew
+ *     the share this session's launcher held on a private credential.
  *   - `member_credential_disconnected`: the member Disconnect of their own credential.
  *   - `member_removed`: SC-6 — the launching member was removed or disabled.
  */
 export type CredentialContainmentCause =
   | 'space_credential_deleted'
   | 'space_credential_made_private'
+  | 'space_credential_unshared'
   | 'member_credential_disconnected'
   | 'member_removed';
 
@@ -176,6 +179,12 @@ const CREDENTIAL_CONTAINMENT_ENDINGS: Record<
     endedReason: 'Stopped because the space credential it was running on was made private by its owner.',
     error:
       'credential containment: the space credential this session launched on was made private — ' +
+      'PTY killed, exit code not observed',
+  },
+  space_credential_unshared: {
+    endedReason: 'Stopped because the space credential it was running on is no longer shared with its launcher.',
+    error:
+      'credential containment: the share of the space credential this session launched on was withdrawn — ' +
       'PTY killed, exit code not observed',
   },
   member_credential_disconnected: {

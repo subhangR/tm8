@@ -28,6 +28,9 @@ import type {
   CredentialsSpaceDeleteResult,
   CredentialsSpaceMyDefaultResult,
   CredentialsSpaceSetVisibilityResult,
+  CredentialsSpaceShareResult,
+  CredentialsSpaceSharesView,
+  CredentialsSpaceUnshareResult,
   CredentialsSpaceUsageView,
   SpaceCredentialVisibilityName,
   CredentialsSpacePolicySetResult,
@@ -42,6 +45,7 @@ import type {
   SpaceId,
 } from '@tm8/contract';
 import type { Seam } from '../data/seam';
+import { memberKindRef } from '../settings-space/port';
 
 /** The two vendors a login terminal runs (206); GitHub is token-only. */
 export type SpaceLoginProvider = 'anthropic' | 'openai';
@@ -91,6 +95,20 @@ export interface SpaceCredentialsPort {
   usage(credentialId: string): Promise<CredentialsSpaceUsageView>;
   /** "Add to this space as private" for my own server-level GitHub token — no secret leaves the client. */
   addMine(provider: 'github', label: string): Promise<SpaceCredentialView>;
+  // 992: share a PRIVATE credential with one member. The grantee is named by
+  // their member entity id; the server resolves it to their account.
+  share(credentialId: string, granteeMemberId: string): Promise<CredentialsSpaceShareResult>;
+  /** Owner or space admin. `grantee` is the account id a `shares` row names. */
+  unshare(credentialId: string, granteeAccountId: string): Promise<CredentialsSpaceUnshareResult>;
+  shares(credentialId: string): Promise<CredentialsSpaceSharesView>;
+  /** The space's members other than the viewer: whom the owner may share with. */
+  shareCandidates(): Promise<SpaceShareCandidate[]>;
+}
+
+/** One member the owner may pick in "Share with member". */
+export interface SpaceShareCandidate {
+  memberId: string;
+  name: string;
 }
 
 /**
@@ -114,7 +132,7 @@ export function isSharedServer(mode: 'single' | 'multi' | null | undefined): boo
 }
 
 export function spaceCredentialsPortFromSeam(
-  seam: Pick<Seam, 'credentials' | 'identity'>,
+  seam: Pick<Seam, 'credentials' | 'identity' | 'query'>,
   spaceId: SpaceId,
   ownerWord: string | null,
   nodeMode: () => Promise<'single' | 'multi' | null> = async () => null,
@@ -150,5 +168,25 @@ export function spaceCredentialsPortFromSeam(
     clearMyDefault: (provider) => seam.credentials.space.clearMyDefault(spaceId, provider),
     usage: (credentialId) => seam.credentials.space.usage(credentialId),
     addMine: (provider, label) => seam.credentials.space.addMine(spaceId, provider, label),
+    share: (credentialId, granteeMemberId) => seam.credentials.space.share(credentialId, granteeMemberId),
+    unshare: (credentialId, granteeAccountId) => seam.credentials.space.unshare(credentialId, granteeAccountId),
+    shares: (credentialId) => seam.credentials.space.shares(credentialId),
+    shareCandidates: async () => {
+      // Every page, active members only, never the caller: a departed member
+      // is still a member entity, and SQL would refuse sharing with them.
+      const identity = await seam.identity();
+      const mine = new Set(identity.memberships.filter((m) => m.spaceId === spaceId).map((m) => m.memberId));
+      const out: Array<{ memberId: string; name: string }> = [];
+      let cursor: Parameters<Seam['query']>[0]['cursor'];
+      do {
+        const result = await seam.query({ spaceId, kinds: [memberKindRef() as never], limit: 100, ...(cursor ? { cursor } : {}) });
+        for (const m of result.page.items) {
+          const ended = m.state && 'memberStatus' in m.state && m.state.memberStatus;
+          if (!mine.has(m.id) && !ended) out.push({ memberId: m.id, name: m.title });
+        }
+        cursor = result.page.nextCursor ?? undefined;
+      } while (cursor);
+      return out;
+    },
   };
 }

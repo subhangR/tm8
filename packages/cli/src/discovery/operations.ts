@@ -777,6 +777,43 @@ const ROWS: Record<OperationName, Row> = {
       'private clears both default flags and kills every live session its owner did not launch',
     ],
   },
+  // 992 (task 01a10201): the first `credentials.*` rows with a command. Nothing
+  // in the security model changed to allow it — see the note above
+  // `credentials.status`: the Server admits a `cli` human and refuses an agent.
+  'credentials.space.share': {
+    cmd: ['credential', 'share'],
+    syn: 'tm8 credential share <space-credential-id> --member <account-or-member-id> [--mutation-id <id>]',
+    sum: 'Share a private space credential you own with one member of its space — human sessions only',
+    authz: 'server',
+    input: 'bound',
+    tags: ['credential', 'space', 'share', 'grant', 'member', 'settings'],
+    notes: [
+      'the member may then launch on it, pinned or as their own default; the stored key, its hint and the vendor login stay hidden from them',
+      'refused for a public or space-owned credential (every member may already use it), for yourself, and for anyone not an active member of the space',
+      'idempotent: sharing again answers `shared: false`',
+    ],
+  },
+  'credentials.space.unshare': {
+    cmd: ['credential', 'unshare'],
+    syn: 'tm8 credential unshare <space-credential-id> --member <account-or-member-id> --yes [--mutation-id <id>]',
+    sum: 'Stop sharing a private space credential with a member and stop their sessions on it — its owner or a space admin, human sessions only',
+    authz: 'server',
+    input: 'bound',
+    side: 'durable',
+    tags: ['credential', 'space', 'share', 'revoke', 'member', 'settings'],
+    notes: [
+      'clears their own default on it; every live session they launched on it is stopped',
+      'the credential itself, its visibility, defaults and everyone else\'s sessions are untouched',
+    ],
+  },
+  'credentials.space.shares': {
+    cmd: ['credential', 'shares'],
+    syn: 'tm8 credential shares <space-credential-id>',
+    sum: 'List who a private space credential is shared with — every grantee to its owner or an admin, else only your own row',
+    authz: 'server',
+    input: 'none',
+    tags: ['credential', 'space', 'share', 'member', 'audit', 'settings'],
+  },
   'credentials.space.spaceDefaultConsent': {
     cmd: null,
     sum: 'Let (or stop) a public credential you own serving as the space default — its owner, human sessions only',
@@ -3893,6 +3930,7 @@ function exposureFor(operation: OperationName): Exposure {
 // 2026-08-13 (first-run claim): auth.claim + auth.claim.status take the catalog
 // to 161 rows. RECOMPUTED from `JSON.stringify(OPERATIONS)`, not adjusted.
 export const CATALOG_DIGEST =
+  // Re-measured for 992 (+credentials.space.share|unshare|shares) — RECOMPUTED, not adjusted.
   // Re-measured for L3 (+entities.refs.list|add|remove, cross-space references, 279) — RECOMPUTED from
   // JSON.stringify(OPERATIONS), not adjusted.
   // Re-measured for 276 (+chat.setModel, chat model switch) — RECOMPUTED from
@@ -3952,7 +3990,7 @@ export const CATALOG_DIGEST =
   // Re-measured (L5, 280): +5 opRequests.* — read from the regenerated conformance manifest.
   // Re-measured (styles, 284): +15 styles.*, identity.stylePrefs.get|set, spaces.styleDefault.get|set. RECOMPUTED from JSON.stringify(OPERATIONS).
   // Re-measured (main sync: cross-space + styles).
-  'sha256:727cfb8df9478dca9c67b97d04448214fbc5f8a55db0955747de95243ef8acf2';
+  'sha256:83275d2cf3687639d5705038b160c4f48dd85732692167dbd8f96bea941f0a67';
 
 export const GRAMMAR_VERSION = '2';
 

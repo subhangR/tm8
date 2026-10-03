@@ -84,6 +84,10 @@ const CREDENTIAL_SEAM = new Set<OperationName>([
   'credentials.space.policy.set',
   // W10b: the ownership, visibility, my-default and usage ops, same registration.
   'credentials.space.setVisibility',
+  // 992: share a private credential with one member, same registration.
+  'credentials.space.share',
+  'credentials.space.unshare',
+  'credentials.space.shares',
   'credentials.space.spaceDefaultConsent',
   'credentials.space.claim',
   // W10d: add your own token as private, same registration.

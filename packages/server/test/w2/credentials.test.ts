@@ -36,6 +36,7 @@ import {
   CredentialsLoginSessionStartInputSchema,
   CredentialsLoginSessionStartResultSchema,
   CredentialsSpaceAddMineInputSchema,
+  CredentialsSpaceShareInputSchema,
   CredentialsStatusViewSchema,
   OPERATIONS,
 } from '@tm8/contract';
@@ -59,6 +60,7 @@ const SPACE_ID = '00000000-0000-7000-8000-000000000001';
 const SESSION_ID = '00000000-0000-7000-8000-0000000000a1';
 const AGENT_SESSION_ID = '00000000-0000-7000-8000-0000000000b1';
 const SPACE_CREDENTIAL_ID = '00000000-0000-7000-8000-0000000000c1';
+const GRANTEE_ACCOUNT_ID = '00000000-0000-7000-8000-0000000000d1';
 
 // Handler composition intentionally uses the process environment, just like
 // production. Give every existing status/start positive control an executable
@@ -267,6 +269,8 @@ function bodyFor(opName: OperationName): unknown {
   if (opName === 'credentials.space.spaceDefaultConsent') return { allowed: true };
   // W10d: add-mine names only a provider and a label — never a token or its id.
   if (opName === 'credentials.space.addMine') return { provider: 'github', label: 'My GitHub' };
+  // 992: share names the grantee and nothing else.
+  if (opName === 'credentials.space.share') return { granteeAccountId: GRANTEE_ACCOUNT_ID };
   if (opName === 'node.credentials.policy.set') return { allowNode: false };
   return {};
 }
@@ -280,6 +284,9 @@ function paramsFor(opName: OperationName): Record<string, string> {
   }
   if (opName === 'credentials.space.myDefault.clear') return { spaceId: SPACE_ID, provider: 'anthropic' };
   if (opName === 'credentials.space.addMine') return { spaceId: SPACE_ID };
+  if (opName === 'credentials.space.unshare') {
+    return { credentialId: SPACE_CREDENTIAL_ID, granteeAccountId: GRANTEE_ACCOUNT_ID };
+  }
   if (opName.startsWith('credentials.space.')) {
     return { spaceId: SPACE_ID, credentialId: SPACE_CREDENTIAL_ID };
   }
@@ -313,6 +320,10 @@ describe('the four credential operations exist in the contract', () => {
       'DELETE /v2/space-credentials/:credentialId',
       // W10b: ownership, visibility, per-member default and usage.
       'PUT /v2/space-credentials/:credentialId/visibility',
+      // 992: share a private credential with one member.
+      'POST /v2/space-credentials/:credentialId/shares',
+      'DELETE /v2/space-credentials/:credentialId/shares/:granteeAccountId',
+      'GET /v2/space-credentials/:credentialId/shares',
       'PUT /v2/space-credentials/:credentialId/space-default-consent',
       // W10d: add my own GitHub token to this space as private (doc 13 §7 step 2).
       'POST /v2/spaces/:spaceId/credentials/from-mine',
@@ -1155,5 +1166,153 @@ describe('W10d — credentials.space.addMine takes no token and no token id, and
     for (const provider of ['anthropic', 'openai', 'kimi', 'groq']) {
       expect(CredentialsSpaceAddMineInputSchema.safeParse({ provider, label: 'Mine' }).success).toBe(false);
     }
+  });
+});
+
+describe('992 — share a private space credential with one member', () => {
+  const credentialParams = { credentialId: SPACE_CREDENTIAL_ID };
+  const shareRow = {
+    credentialId: SPACE_CREDENTIAL_ID,
+    spaceId: SPACE_ID,
+    granteeAccountId: GRANTEE_ACCOUNT_ID,
+    grantedByAccountId: '00000000-0000-7000-8000-000000000099',
+    createdAt: '2026-10-03T00:00:00.000Z',
+    shared: true,
+  };
+
+  it('share calls share_space_credential with the credential and grantee, and stops no session', async () => {
+    const sink: string[] = [];
+    const terminals = new FakeTerminals(sink);
+    const db = new FakeDb(async () => [], async (fn) => (fn === 'share_space_credential' ? shareRow : {}));
+    const ctx = context('credentials.space.share', 'browser', {
+      params: credentialParams,
+      body: { granteeAccountId: GRANTEE_ACCOUNT_ID },
+    });
+    const result = await invoke(registryFor(db, terminals), 'credentials.space.share', ctx);
+    expect(result).toEqual(shareRow);
+    expect(db.rpcCalls).toEqual([{ fn: 'share_space_credential', args: [SPACE_CREDENTIAL_ID, GRANTEE_ACCOUNT_ID] }]);
+    // Additive: sharing touches no running session, the owner's or anyone's.
+    expect(terminals.terminated).toEqual([]);
+  });
+
+  it('not_member (42501) becomes a forbidden that tells a person what to do', async () => {
+    const db = new FakeDb(async () => [], async () => {
+      throw new CollabError('forbidden', 'raw sql text', { details: { sqlstate: '42501', reason: 'not_member' } });
+    });
+    const ctx = context('credentials.space.share', 'browser', {
+      params: credentialParams,
+      body: { granteeAccountId: GRANTEE_ACCOUNT_ID },
+    });
+    const error = await invoke(registryFor(db), 'credentials.space.share', ctx).then(() => null, (e: unknown) => e);
+    expect(error).toBeInstanceOf(CollabError);
+    expect(error).toMatchObject({
+      code: 'forbidden',
+      details: { reason: 'not_member', granteeAccountId: GRANTEE_ACCOUNT_ID },
+    });
+    expect((error as CollabError).message).toMatch(/not an active member of this space/);
+  });
+
+  it('positive — any other 42501 (not the owner) passes through untouched', async () => {
+    const original = new CollabError('forbidden', 'not the owner', { details: { sqlstate: '42501', reason: 'not_owner' } });
+    const db = new FakeDb(async () => [], async () => { throw original; });
+    const ctx = context('credentials.space.share', 'browser', {
+      params: credentialParams,
+      body: { granteeAccountId: GRANTEE_ACCOUNT_ID },
+    });
+    const error = await invoke(registryFor(db), 'credentials.space.share', ctx).then(() => null, (e: unknown) => e);
+    expect(error).toBe(original);
+  });
+
+  it('unshare stops exactly the grantee sessions SQL names, and calls no other mutating RPC', async () => {
+    const sink: string[] = [];
+    const terminals = new FakeTerminals(sink, (id) => (id === 'ws-grantee-2' ? 'error' : 'killed'));
+    const db = new FakeDb(async () => [], async (fn) => fn === 'unshare_space_credential'
+      ? {
+          credentialId: SPACE_CREDENTIAL_ID,
+          granteeAccountId: GRANTEE_ACCOUNT_ID,
+          unshared: true,
+          killSessions: [
+            { workSessionId: 'ws-grantee-1', provider: 'anthropic', launcherAccountId: GRANTEE_ACCOUNT_ID, status: 'running' },
+            { workSessionId: 'ws-grantee-2', provider: 'anthropic', launcherAccountId: GRANTEE_ACCOUNT_ID, status: 'idle' },
+          ],
+        }
+      : {});
+    const ctx = context('credentials.space.unshare', 'browser', {
+      params: { credentialId: SPACE_CREDENTIAL_ID, granteeAccountId: GRANTEE_ACCOUNT_ID },
+      body: {},
+    });
+    const result = await invoke(registryFor(db, terminals), 'credentials.space.unshare', ctx);
+    expect(result).toEqual({
+      credentialId: SPACE_CREDENTIAL_ID,
+      granteeAccountId: GRANTEE_ACCOUNT_ID,
+      unshared: true,
+      terminatedAgentSessionIds: ['ws-grantee-1'],
+      failures: [{ sessionId: 'ws-grantee-2', reason: 'the PTY host could not kill this agent session' }],
+    });
+    expect(terminals.causes).toEqual([
+      'ws-grantee-1:space_credential_unshared',
+      'ws-grantee-2:space_credential_unshared',
+    ]);
+    // Regression (owner constraint): the credential, its visibility, defaults and
+    // every other session are untouched — the one write is the unshare itself.
+    expect(db.rpcCalls.map((c) => c.fn)).toEqual(['unshare_space_credential']);
+    expect(db.rpcCalls[0]!.args).toEqual([SPACE_CREDENTIAL_ID, GRANTEE_ACCOUNT_ID]);
+  });
+
+  it('an unshare of nothing stops nothing', async () => {
+    const terminals = new FakeTerminals([]);
+    const db = new FakeDb(async () => [], async () => ({
+      credentialId: SPACE_CREDENTIAL_ID, granteeAccountId: GRANTEE_ACCOUNT_ID, unshared: false, killSessions: [],
+    }));
+    const ctx = context('credentials.space.unshare', 'browser', {
+      params: { credentialId: SPACE_CREDENTIAL_ID, granteeAccountId: GRANTEE_ACCOUNT_ID },
+      body: {},
+    });
+    const result = await invoke(registryFor(db, terminals), 'credentials.space.unshare', ctx);
+    expect(result).toMatchObject({ unshared: false, terminatedAgentSessionIds: [], failures: [] });
+    expect(terminals.terminated).toEqual([]);
+  });
+
+  it('shares lists grantees, defaulting the member fields an older server omits', async () => {
+    const db = new FakeDb(async () => [], async () => [
+      { granteeAccountId: GRANTEE_ACCOUNT_ID, grantedByAccountId: 'owner', createdAt: 't1', granteeMemberId: 'm-1', granteeDisplayName: 'Rakesh' },
+      { granteeAccountId: 'other', grantedByAccountId: 'owner', createdAt: 't2' },
+    ]);
+    const ctx = context('credentials.space.shares', 'browser', { params: credentialParams });
+    const result = await invoke(registryFor(db), 'credentials.space.shares', ctx);
+    expect(result).toEqual({
+      credentialId: SPACE_CREDENTIAL_ID,
+      shares: [
+        { granteeAccountId: GRANTEE_ACCOUNT_ID, grantedByAccountId: 'owner', createdAt: 't1', granteeMemberId: 'm-1', granteeDisplayName: 'Rakesh' },
+        { granteeAccountId: 'other', grantedByAccountId: 'owner', createdAt: 't2', granteeMemberId: null, granteeDisplayName: null },
+      ],
+    });
+    expect(db.rpcCalls).toEqual([{ fn: 'list_space_credential_shares', args: [SPACE_CREDENTIAL_ID] }]);
+  });
+
+  for (const op of ['credentials.space.share', 'credentials.space.unshare', 'credentials.space.shares'] as const) {
+    it(`${op} is refused to an agent session before any database call`, async () => {
+      const db = new FakeDb();
+      const ctx = context(op, 'agent', { params: paramsFor(op), body: bodyFor(op) });
+      const error = await invoke(registryFor(db), op, ctx).then(() => null, (e: unknown) => e);
+      expect((error as CollabError).details?.['reason']).toBe(CREDENTIALS_HUMAN_ONLY);
+      expect(db.calls).toEqual([]);
+    });
+  }
+
+  for (const extra of [{ actorId: 'x' }, { ownerAccountId: 'x' }, { secret: 'x' }]) {
+    it(`the strict share body refuses ${Object.keys(extra)[0]!}`, () => {
+      expect(CredentialsSpaceShareInputSchema.safeParse({ granteeAccountId: GRANTEE_ACCOUNT_ID, ...extra }).success).toBe(false);
+    });
+  }
+
+  it('the card carries sharedWithMe, false unless SQL says true', () => {
+    const row = {
+      id: SPACE_CREDENTIAL_ID, spaceId: SPACE_ID, provider: 'anthropic', shape: 'api_key', label: 'k', isDefault: false,
+      status: 'active', createdByAccountId: null, ownerAccountId: 'owner', visibility: 'private', mayBeSpaceDefault: false,
+      displayLogin: null, keyHint: null, pendingExpiresAt: null, createdAt: 't', updatedAt: 't', lastUsedAt: null, lastProbeAt: null,
+    } as const;
+    expect(spaceCredentialViewOf({ ...row, sharedWithMe: true }).sharedWithMe).toBe(true);
+    expect(spaceCredentialViewOf(row as never).sharedWithMe).toBe(false);
   });
 });

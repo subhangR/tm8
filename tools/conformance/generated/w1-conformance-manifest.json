@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:727cfb8df9478dca9c67b97d04448214fbc5f8a55db0955747de95243ef8acf2",
+  "catalogDigest": "sha256:83275d2cf3687639d5705038b160c4f48dd85732692167dbd8f96bea941f0a67",
   "catalog": {
-    "total": 320,
-    "v1": 318,
+    "total": 323,
+    "v1": 321,
     "reserved": 2,
-    "http": 318,
+    "http": 321,
     "ws": 1,
-    "registerableV1Http": 316,
+    "registerableV1Http": 319,
     "methods": {
-      "GET": 106,
-      "POST": 154,
+      "GET": 107,
+      "POST": 155,
       "PATCH": 18,
-      "DELETE": 20,
+      "DELETE": 21,
       "PUT": 20,
       "WS": 2
     },
     "kinds": {
-      "read": 111,
-      "command": 207,
+      "read": 112,
+      "command": 209,
       "stream": 2
     },
-    "uniqueNames": 320,
-    "uniqueBindings": 319
+    "uniqueNames": 323,
+    "uniqueBindings": 322
   },
   "reservedOperations": [
     "search.query",
@@ -2126,6 +2126,27 @@
         "source": "server-router"
       },
       {
+        "operation": "credentials.space.share",
+        "method": "POST",
+        "path": "/v2/space-credentials/:credentialId/shares",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "credentials.space.unshare",
+        "method": "DELETE",
+        "path": "/v2/space-credentials/:credentialId/shares/:granteeAccountId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "credentials.space.shares",
+        "method": "GET",
+        "path": "/v2/space-credentials/:credentialId/shares",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "credentials.space.spaceDefaultConsent",
         "method": "PUT",
         "path": "/v2/space-credentials/:credentialId/space-default-consent",
@@ -2644,7 +2665,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 288
+    "unimplementedV1Http": 291
   },
   "schemas": {
     "additive": {
@@ -7438,6 +7459,57 @@
           "space",
           "set",
           "visibility"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "credentials.space.share",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/credentials.space.share",
+        "intentTags": [
+          "credentials",
+          "space",
+          "share"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "credentials.space.unshare",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/credentials.space.unshare",
+        "intentTags": [
+          "credentials",
+          "space",
+          "unshare"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "credentials.space.shares",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/credentials.space.shares",
+        "intentTags": [
+          "credentials",
+          "space",
+          "shares"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

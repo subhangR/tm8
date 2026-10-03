@@ -89,6 +89,9 @@ const STRICT_GATE_CALLERS: Readonly<Record<string, string>> = {
   'set_space_credential_policy(uuid,text,text[])': CREDENTIAL_MANAGEMENT,
   'set_space_credential_visibility(uuid,text)': CREDENTIAL_MANAGEMENT, // W10a (239, #863)
   'space_credential_foreign_launches(uuid,integer)': CREDENTIAL_READ, // W10b (255, #869)
+  'share_space_credential(uuid,uuid)': CREDENTIAL_MANAGEMENT, // 992 (task 01a10201, #1024)
+  'unshare_space_credential(uuid,uuid)': CREDENTIAL_MANAGEMENT, // 992 (task 01a10201, #1024)
+  'list_space_credential_shares(uuid)': CREDENTIAL_READ, // 992 (task 01a10201, #1024)
   'space_credential_live_sessions(uuid)': CREDENTIAL_MANAGEMENT,
   'space_credential_usage(uuid,integer)': CREDENTIAL_READ, // W10b (255, #869)
   'start_credential_session(uuid,text,integer,integer)': CREDENTIAL_MANAGEMENT,
@@ -354,9 +357,9 @@ describe('W6 pin — the STRICT gate\'s full caller set (lead ruling 02:08Z; fol
     expect(found).toEqual(Object.keys(STRICT_GATE_CALLERS).sort());
   });
 
-  it('the list is 28 credential management + 6 non-credential + 2 session management + 8 spaceLinks writes + 3 space password + 7 servers (W8) + 2 path grants (282) + 1 op request decision (L5, 280)', () => {
+  it('the list is 31 credential management + 6 non-credential + 2 session management + 8 spaceLinks writes + 3 space password + 7 servers (W8) + 2 path grants (282) + 1 op request decision (L5, 280)', () => {
     const labels = Object.values(STRICT_GATE_CALLERS);
-    expect(labels.filter((l) => l === CREDENTIAL_MANAGEMENT || l === CREDENTIAL_READ)).toHaveLength(28);
+    expect(labels.filter((l) => l === CREDENTIAL_MANAGEMENT || l === CREDENTIAL_READ)).toHaveLength(31); // +3 share/unshare/list (992)
     expect(labels.filter((l) => l === IDENTITY_WIDE || l === AUTH_MINTING || l === PENDING)).toHaveLength(6);
     expect(labels.filter((l) => l === SESSION_MANAGEMENT)).toHaveLength(2);
     expect(labels.filter((l) => l === SPACE_LINKS)).toHaveLength(8);
@@ -364,7 +367,7 @@ describe('W6 pin — the STRICT gate\'s full caller set (lead ruling 02:08Z; fol
     expect(labels.filter((l) => l === SERVERS)).toHaveLength(7);
     expect(labels.filter((l) => l === PATH_GRANTS)).toHaveLength(2);
     expect(labels.filter((l) => l === OP_REQUESTS)).toHaveLength(1);
-    expect(labels).toHaveLength(57);
+    expect(labels).toHaveLength(60); // +3 (992)
   });
 
   it('the matcher sees a quoted, mixed-case call and an execute format(...) that names the gate', async () => {

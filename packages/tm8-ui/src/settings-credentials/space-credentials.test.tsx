@@ -25,6 +25,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CollabError } from '@tm8/contract';
 import type {
+  SpaceCredentialShareView,
   CredentialPolicySource,
   CredentialsSpacePolicyView,
   CredentialsSpaceReadinessView,
@@ -63,6 +64,8 @@ import { launchableSpaceCredentials } from '../domain/launch-sources';
 const KEY = 'sk-ant-api03-SECRETVALUE0123456789abcdWXYZ';
 const ME = 'acct-me';
 const OTHER = 'acct-other';
+/** 992: the members the owner may share with (the viewer excluded by the port). */
+const CANDIDATES = [{ memberId: 'm-rakesh', name: 'Rakesh' }, { memberId: 'm-harish', name: 'Harish' }];
 
 function row(over: Partial<SpaceCredentialView>): SpaceCredentialView {
   return {
@@ -142,8 +145,10 @@ function fakePort(opts: {
   rows?: SpaceCredentialView[];
   policy?: CredentialsSpacePolicyView;
   readiness?: CredentialsSpaceReadinessView | Error;
+  grants?: SpaceCredentialShareView[];
 } = {}) {
   let rows = [...(opts.rows ?? [MINE_DEFAULT, THEIRS, ORPHAN_OPENAI, GITHUB])];
+  let grants = structuredClone(opts.grants ?? []);
   let policy = structuredClone(opts.policy ?? POLICY);
   const viewer = opts.viewer ?? { accountId: ME, isSpaceAdmin: false, isNodeAdmin: false, sharedServer: false };
   const patch = (id: string, over: Partial<SpaceCredentialView>) => {
@@ -221,6 +226,18 @@ function fakePort(opts: {
       rows = [...rows, created];
       return created;
     }),
+    share: vi.fn(async (id: string, memberId: string) => {
+      const name = CANDIDATES.find((c) => c.memberId === memberId)?.name ?? null;
+      const already = grants.some((g) => g.granteeMemberId === memberId);
+      if (!already) grants = [...grants, { granteeAccountId: `acct-${memberId}`, granteeMemberId: memberId, granteeDisplayName: name, grantedByAccountId: ME, createdAt: '2026-10-03T10:00:00.000Z' }];
+      return { credentialId: id, spaceId: 'space-1', granteeAccountId: `acct-${memberId}`, grantedByAccountId: ME, createdAt: '2026-10-03T10:00:00.000Z', shared: !already };
+    }),
+    unshare: vi.fn(async (id: string, granteeAccountId: string) => {
+      grants = grants.filter((g) => g.granteeAccountId !== granteeAccountId);
+      return { credentialId: id, granteeAccountId, unshared: true, terminatedAgentSessionIds: ['s-grantee'], failures: [] };
+    }),
+    shares: vi.fn(async (id: string) => ({ credentialId: id, shares: structuredClone(grants) })),
+    shareCandidates: vi.fn(async () => structuredClone(CANDIDATES)),
     finishLogin: vi.fn(async (workSessionId: string) => {
       rows = rows.map((r) => (r.id === openLogin ? { ...r, status: 'active' as const, displayLogin: 'team@example.com' } : r));
       const cred = rows.find((r) => r.id === openLogin)!;
@@ -885,6 +902,28 @@ describe('the seam adapter', () => {
   });
 });
 
+describe('the seam adapter — share candidates', () => {
+  it('reads every page, skips departed members and the caller', async () => {
+    const pages: Record<string, { items: unknown[]; nextCursor: string | null }> = {
+      first: { items: [
+        { id: 'm1', title: 'Me' },
+        { id: 'm-left', title: 'Gone', state: { memberStatus: 'left' } },
+        { id: 'm-a', title: 'Alice' },
+      ], nextCursor: 'c2' },
+      c2: { items: [{ id: 'm-b', title: 'Bob' }, { id: 'm-removed', title: 'Out', state: { memberStatus: 'removed' } }], nextCursor: null },
+    };
+    const query = vi.fn(async (q: { cursor?: string }) => ({ page: pages[q.cursor ?? 'first'] }));
+    const seam = {
+      identity: async () => ({ accountId: ME, isNodeAdmin: false, memberships: [{ spaceId: 'space-1', memberId: 'm1', role: 'member' }] }),
+      query,
+      credentials: { space: {}, node: {} },
+    } as unknown as Parameters<typeof spaceCredentialsPortFromSeam>[0];
+    const port = spaceCredentialsPortFromSeam(seam, 'space-1' as never, 'owner');
+    expect(await port.shareCandidates()).toEqual([{ memberId: 'm-a', name: 'Alice' }, { memberId: 'm-b', name: 'Bob' }]);
+    expect(query).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('W10d — owner, visibility, claim, my default, usage (doc 13 §7)', () => {
   const MY_PUBLIC = row({ id: 'c-own', label: 'My public', ownerAccountId: ME, visibility: 'public', mayBeSpaceDefault: false });
   const MY_PRIVATE = row({ id: 'c-priv', label: 'My private', ownerAccountId: ME, visibility: 'private' });
@@ -1276,5 +1315,121 @@ describe('Space credentials — a row opens its own panel (task 01a0e24d)', () =
   it('offers no Open without a host to open into', async () => {
     await mount(fakePort());
     expect(screen.queryByTestId('space-cred-open-c-mine')).toBeNull();
+  });
+});
+
+describe('992 — share a private credential with one member', () => {
+  const MY_PRIVATE = row({ id: 'c-priv', label: 'My private', ownerAccountId: ME, visibility: 'private' });
+  const MY_PUBLIC = row({ id: 'c-own', label: 'My public', ownerAccountId: ME, visibility: 'public' });
+  const SHARED_TO_ME = row({
+    id: 'c-shared', label: 'Their private', createdByAccountId: OTHER, ownerAccountId: OTHER, visibility: 'private',
+    sharedWithMe: true, keyHint: null, displayLogin: null,
+  });
+  const THEIR_PRIVATE = row({ id: 'c-their', label: 'Not mine', createdByAccountId: OTHER, ownerAccountId: OTHER, visibility: 'private', keyHint: null });
+  const RAKESH_GRANT = {
+    granteeAccountId: 'acct-m-rakesh', granteeMemberId: 'm-rakesh', granteeDisplayName: 'Rakesh',
+    grantedByAccountId: ME, createdAt: '2026-10-03T10:00:00.000Z',
+  };
+
+  it('the owner shares a private credential with a picked member, by member id', async () => {
+    const port = fakePort({ rows: [MY_PRIVATE, MY_PUBLIC] });
+    await mount(port);
+    fireEvent.click(screen.getByRole('button', { name: 'Share with member My private' }));
+    await screen.findByTestId('space-cred-shares-empty-c-priv');
+    fireEvent.change(screen.getByLabelText('Member to share My private with'), { target: { value: 'm-rakesh' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Share My private' }));
+    await screen.findByText('“My private” is shared with Rakesh. They can launch with it; its key stays hidden and they cannot open its terminals.');
+    expect(port.share).toHaveBeenCalledWith('c-priv', 'm-rakesh');
+    await screen.findByTestId('space-cred-share-c-priv-acct-m-rakesh');
+    // A member already shared with is no longer offered.
+    const options = within(screen.getByLabelText('Member to share My private with')).getAllByRole('option').map((o) => o.textContent);
+    expect(options).toEqual(['Choose a member…', 'Harish']);
+    // Additive: nothing else about the credential was asked to change.
+    expect(port.setVisibility).not.toHaveBeenCalled();
+    expect(port.setDefault).not.toHaveBeenCalled();
+    expect(port.unshare).not.toHaveBeenCalled();
+  });
+
+  it('a public credential offers no share — every member may already use it', async () => {
+    await mount(fakePort({ rows: [MY_PUBLIC] }));
+    expect(screen.queryByRole('button', { name: 'Share with member My public' })).toBeNull();
+  });
+
+  it('revoke is confirmed first and names the sessions it ended', async () => {
+    const port = fakePort({ rows: [MY_PRIVATE], grants: [RAKESH_GRANT] });
+    await mount(port);
+    fireEvent.click(screen.getByRole('button', { name: 'Share with member My private' }));
+    await screen.findByTestId('space-cred-share-c-priv-acct-m-rakesh');
+    fireEvent.click(screen.getByRole('button', { name: 'Revoke Rakesh My private' }));
+    expect(port.unshare).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm revoke Rakesh My private' }));
+    await screen.findByText('“My private” is no longer shared with Rakesh. 1 session they launched with it ended.');
+    expect(port.unshare).toHaveBeenCalledWith('c-priv', 'acct-m-rakesh');
+    await screen.findByTestId('space-cred-shares-empty-c-priv');
+  });
+
+  it('a revoke whose session kill failed says so and offers a retry, which calls unshare again', async () => {
+    const port = fakePort({ rows: [MY_PRIVATE], grants: [RAKESH_GRANT] });
+    vi.mocked(port.unshare).mockImplementationOnce(async (id: string, granteeAccountId: string) => ({
+      credentialId: id, granteeAccountId, unshared: true, terminatedAgentSessionIds: [],
+      failures: [{ sessionId: 's-stuck', reason: 'pty host unreachable' }],
+    }));
+    await mount(port);
+    fireEvent.click(screen.getByRole('button', { name: 'Share with member My private' }));
+    await screen.findByTestId('space-cred-share-c-priv-acct-m-rakesh');
+    fireEvent.click(screen.getByRole('button', { name: 'Revoke Rakesh My private' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm revoke Rakesh My private' }));
+    await screen.findByText('“My private” is no longer shared with Rakesh, but 1 session they launched with it could not be stopped yet.');
+    expect(screen.getByTestId('space-cred-unstopped-c-priv').textContent).toContain('could not be stopped');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry stopping Rakesh sessions My private' }));
+    await screen.findByText('“My private” is no longer shared with Rakesh. 1 session they launched with it ended.');
+    expect(port.unshare).toHaveBeenCalledTimes(2);
+    expect(port.unshare).toHaveBeenLastCalledWith('c-priv', 'acct-m-rakesh');
+    expect(screen.queryByTestId('space-cred-unstopped-c-priv')).toBeNull();
+  });
+
+  it('a space admin sees the grantees and can revoke, but cannot share someone else\'s credential', async () => {
+    const port = fakePort({
+      rows: [THEIR_PRIVATE], grants: [RAKESH_GRANT],
+      viewer: { accountId: ME, isSpaceAdmin: true, isNodeAdmin: false, sharedServer: false },
+    });
+    await mount(port);
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with Not mine' }));
+    await screen.findByTestId('space-cred-share-c-their-acct-m-rakesh');
+    expect(screen.getByRole('button', { name: 'Revoke Rakesh Not mine' })).toBeTruthy();
+    expect(screen.queryByLabelText('Member to share Not mine with')).toBeNull();
+    expect(port.shareCandidates).not.toHaveBeenCalled();
+  });
+
+  it('a grantee sees "shared with you", can make it their default, and is offered no sharing controls', async () => {
+    const port = fakePort({ rows: [SHARED_TO_ME] });
+    await mount(port);
+    expect(screen.getByTestId('space-cred-shared-with-me-c-shared').textContent).toBe('shared with you');
+    expect(screen.getByTestId('space-cred-readonly-c-shared').textContent).toContain('Shared with you by its owner');
+    expect(screen.queryByTestId('space-cred-hint-c-shared')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Share with member|Shared with/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Make my default Their private' }));
+    await waitFor(() => expect(port.setMyDefault).toHaveBeenCalledWith('c-shared'));
+  });
+
+  it('another member\'s private credential NOT shared with me stays plain read-only', async () => {
+    await mount(fakePort({ rows: [THEIR_PRIVATE] }));
+    expect(screen.queryByTestId('space-cred-shared-with-me-c-their')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Make my default Not mine' })).toBeNull();
+    expect(screen.getByTestId('space-cred-readonly-c-their').textContent).toContain('Private to another member');
+  });
+
+  it('a refused share renders the server\'s reason', async () => {
+    const port = fakePort({ rows: [MY_PRIVATE] });
+    port.share.mockRejectedValueOnce(new CollabError(
+      'forbidden',
+      'that account is not an active member of this space, so the credential cannot be shared with it — add them to the space first',
+    ));
+    await mount(port);
+    fireEvent.click(screen.getByRole('button', { name: 'Share with member My private' }));
+    await screen.findByTestId('space-cred-shares-empty-c-priv');
+    fireEvent.change(screen.getByLabelText('Member to share My private with'), { target: { value: 'm-harish' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Share My private' }));
+    await screen.findByText(/not an active member of this space/);
   });
 });

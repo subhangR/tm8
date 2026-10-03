@@ -91,6 +91,9 @@ import {
   type CredentialsSpacePolicyView,
   type CredentialsSpaceReadinessView,
   type CredentialsSpaceSetVisibilityResult,
+  type CredentialsSpaceShareResult,
+  type CredentialsSpaceSharesView,
+  type CredentialsSpaceUnshareResult,
   type CredentialsSpaceMyDefaultResult,
   type CredentialsSpaceUsageView,
   type SpaceCredentialVisibilityName,
@@ -643,6 +646,24 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
         params: { credentialId },
         body: { visibility, clientMutationId: newId('spcredvis') },
       });
+    },
+
+    spaceCredentialsShare(credentialId: string, granteeAccountId: string): Promise<CredentialsSpaceShareResult> {
+      return http.call<CredentialsSpaceShareResult>('credentials.space.share', {
+        params: { credentialId },
+        body: { granteeAccountId, clientMutationId: newId('spcredshare') },
+      });
+    },
+
+    spaceCredentialsUnshare(credentialId: string, granteeAccountId: string): Promise<CredentialsSpaceUnshareResult> {
+      return http.call<CredentialsSpaceUnshareResult>('credentials.space.unshare', {
+        params: { credentialId, granteeAccountId },
+        body: { clientMutationId: newId('spcredunshare') },
+      });
+    },
+
+    spaceCredentialsShares(credentialId: string): Promise<CredentialsSpaceSharesView> {
+      return http.call<CredentialsSpaceSharesView>('credentials.space.shares', { params: { credentialId } });
     },
 
     spaceCredentialsDefaultConsent(credentialId: string, allowed: boolean): Promise<SpaceCredentialView> {

@@ -108,6 +108,7 @@ import {
   type SpaceCredentialProviderName,
   type NodeCredentialsStatusView,
   type SpaceCredentialView,
+  type SpaceCredentialShareView,
   type SpaceLinkView,
   type SpaceLinkAuditEntry,
   type SpaceLinkInboundAuditEntry,
@@ -1339,6 +1340,8 @@ export function createFixtureSeam(): FixtureSeam {
       { provider: 'github', allowNode: false, envKeyPresent: true },
     ],
   };
+  /** 992: in-memory grants per credential id. */
+  const spaceCredentialShares = new Map<string, SpaceCredentialShareView[]>();
   const spaceCredentialById = (id: string): SpaceCredentialView => {
     const row = spaceCredentialsState.find((c) => c.id === id);
     if (!row) throw new CollabError('not_found', `space credential ${id} not found`);
@@ -5762,6 +5765,54 @@ export function createFixtureSeam(): FixtureSeam {
           if (visibility === 'private') { row.isDefault = false; row.mayBeSpaceDefault = false; }
           row.updatedAt = tick();
           return { credential: clone(row), terminatedAgentSessionIds: [], failures: [] };
+        },
+        // 992 — the fixture keeps grants in memory; the owner shares, the owner unshares.
+        async share(credentialId, granteeAccountId) {
+          const row = spaceCredentialById(credentialId);
+          if (row.ownerAccountId !== 'acct-ada') {
+            throw new CollabError('forbidden', 'only the owner can share this credential');
+          }
+          if (row.visibility !== 'private') {
+            throw new CollabError('invariant_violation', 'a public credential needs no share');
+          }
+          const list = spaceCredentialShares.get(credentialId) ?? [];
+          const existing = list.find((s) => s.granteeAccountId === granteeAccountId || s.granteeMemberId === granteeAccountId);
+          const share = existing ?? {
+            granteeAccountId,
+            grantedByAccountId: 'acct-ada',
+            createdAt: tick(),
+            granteeMemberId: granteeAccountId,
+            granteeDisplayName: null,
+          };
+          if (!existing) spaceCredentialShares.set(credentialId, [...list, share]);
+          return {
+            credentialId,
+            spaceId: row.spaceId,
+            granteeAccountId: share.granteeAccountId,
+            grantedByAccountId: share.grantedByAccountId,
+            createdAt: share.createdAt,
+            shared: !existing,
+          };
+        },
+        async unshare(credentialId, granteeAccountId) {
+          const row = spaceCredentialById(credentialId);
+          if (row.ownerAccountId !== 'acct-ada') {
+            throw new CollabError('forbidden', 'only the owner or a space admin can stop sharing this credential');
+          }
+          const list = spaceCredentialShares.get(credentialId) ?? [];
+          const kept = list.filter((s) => s.granteeAccountId !== granteeAccountId && s.granteeMemberId !== granteeAccountId);
+          spaceCredentialShares.set(credentialId, kept);
+          return {
+            credentialId,
+            granteeAccountId,
+            unshared: kept.length !== list.length,
+            terminatedAgentSessionIds: [],
+            failures: [],
+          };
+        },
+        async shares(credentialId) {
+          spaceCredentialById(credentialId);
+          return { credentialId, shares: (spaceCredentialShares.get(credentialId) ?? []).map((s) => ({ ...s })) };
         },
         async spaceDefaultConsent(credentialId, allowed) {
           const row = spaceCredentialById(credentialId);
