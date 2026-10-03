@@ -80,6 +80,7 @@ describe.sequential('the runner analyzes what a migration leaves never-analyzed'
     root = mkdtempSync(join(tmpdir(), 'tm8-analyze-runner-'));
     mkdirSync(join(root, 'db', 'migrations'), { recursive: true });
     cpSync(join(REPO_ROOT, 'db', 'migrate.mjs'), join(root, 'db', 'migrate.mjs'));
+    cpSync(join(REPO_ROOT, 'db', 'target.mjs'), join(root, 'db', 'target.mjs')); // migrate.mjs imports it
     const files = migrationFiles();
     const chain = [...files.slice(0, files.indexOf('015_w1_foundations.sql') + 1), MIGRATION];
     expect(chain).toHaveLength(16);

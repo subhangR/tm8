@@ -44,6 +44,9 @@ export const MIGRATE_RUNNER_RELPATH = join('db', 'migrate.mjs');
  */
 export const MIGRATE_APPLY_ARGS = ['up'] as const;
 
+/** db/migrate.mjs's explicit opt-in to target port 5442 (db/target.mjs I_MEAN_PROD). */
+export const MIGRATE_I_MEAN_PROD = '--i-mean-prod';
+
 export interface MigrationOutcome {
   readonly ran: boolean;
   /** Present when `ran` is false — why nothing was applied. */
@@ -94,7 +97,10 @@ export async function runSchemaMigrations(
   }
 
   const url = socketConnectionUrl(cfg, cfg.superuser);
-  const args = [runner, ...(opts.args ?? MIGRATE_APPLY_ARGS)];
+  // db/migrate.mjs refuses port 5442 without --i-mean-prod (db/target.mjs:
+  // on the tm8 host 5442 is the PROD cluster). The sidecar's target is its OWN
+  // cluster over its own socket, and 5442 is its default port, so it says so.
+  const args = [runner, ...(opts.args ?? MIGRATE_APPLY_ARGS), ...(cfg.pgPort === 5442 ? [MIGRATE_I_MEAN_PROD] : [])];
   opts.logger?.info(`migrations: applying db/migrations via ${runner} ${args.slice(1).join(' ')}`);
 
   const r = await run(opts.nodePath ?? process.execPath, args, {

@@ -10,11 +10,14 @@
 //   $TM8_DATABASE_URL (must carry an explicit port that is not 5442)
 //     → postgres://$TM8_PG_USER@$TM8_PG_HOST:$TM8_PG_PORT/<database>
 //
-// db/migrate.mjs keeps its own 5442 default: that is the product sidecar, and
-// run.mjs always hands it an explicit TM8_DATABASE_URL.
+// db/migrate.mjs has no default either (db/target.mjs, which this file shares
+// PROD_PG_PORT and the GitHub-runner rule with); run.mjs hands it an explicit
+// TM8_DATABASE_URL.
 // =============================================================================
 
-export const PROD_PG_PORT = '5442';
+import { PROD_PG_PORT, onGithubRunner } from '../target.mjs';
+
+export { PROD_PG_PORT };
 export const TEST_PG_PORT = '5443';
 
 export class TestPgPortRefusal extends Error {
@@ -24,11 +27,9 @@ export class TestPgPortRefusal extends Error {
   }
 }
 
-// The one exception: on a GitHub Actions runner 5442 is the job's own throwaway
-// postgres container, not the tm8 host's prod cluster. Unset is refused there too.
-function onGithubRunner(env) {
-  return env.GITHUB_ACTIONS === 'true';
-}
+// The one exception (onGithubRunner, db/target.mjs): on a GitHub Actions runner
+// 5442 is the job's own throwaway postgres container, not the tm8 host's prod
+// cluster. Unset is refused there too.
 
 function refuse(found, fix) {
   throw new TestPgPortRefusal(

@@ -7,6 +7,7 @@
 //   node db/migrate.mjs up --dry-run      print the plan, touch nothing
 //   node db/migrate.mjs create-db         create the target database if absent
 //   node db/migrate.mjs reset --force     DROP and recreate the database, then up
+//   ... --i-mean-prod                     required to target port 5442 (see below)
 //
 // Properties that matter:
 //   * lexical order — `NNN_name.sql`, sorted by filename, no other ordering input
@@ -16,9 +17,13 @@
 //   * ZERO npm dependencies: it drives `psql`, which the sidecar already ships.
 //     (Same discipline as tools/rigs — no lockfile churn for a dev tool.)
 //
-// Connection resolution (first that answers):
-//   $TM8_DATABASE_URL → $DATABASE_URL → postgres://$USER@127.0.0.1:$TM8_PG_PORT/$TM8_DB
-// with TM8_PG_PORT defaulting to 5442 and TM8_DB to tm8_dev.
+// Target (db/target.mjs): $TM8_DATABASE_URL → $DATABASE_URL →
+//   postgres://$TM8_PG_USER@$TM8_PG_HOST:$TM8_PG_PORT/$TM8_DB with BOTH set.
+// There is NO default: with none of those set the runner refuses before it
+// looks for psql or connects. Port 5442 (the PROD cluster on the tm8 host) is
+// refused without --i-mean-prod, except on a GitHub Actions runner. Only
+// host:port/db is ever printed. This is a guard against a mistyped or missing
+// target — it is not an access boundary (the cluster's own auth is).
 // =============================================================================
 
 import { createHash } from 'node:crypto';
@@ -26,6 +31,8 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { I_MEAN_PROD, MigrateTargetRefusal, describeTarget, resolveMigrateTarget } from './target.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = join(HERE, 'migrations');
@@ -72,16 +79,6 @@ function findPsql() {
 }
 
 // --- connection -------------------------------------------------------------
-function databaseUrl() {
-  if (process.env.TM8_DATABASE_URL) return process.env.TM8_DATABASE_URL;
-  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
-  const user = process.env.TM8_PG_USER || process.env.USER || 'postgres';
-  const port = process.env.TM8_PG_PORT || '5442';
-  const host = process.env.TM8_PG_HOST || '127.0.0.1';
-  const db = process.env.TM8_DB || 'tm8_dev';
-  return `postgres://${user}@${host}:${port}/${db}`;
-}
-
 /** Same URL with the database swapped — used to create/drop the target. */
 function urlWithDatabase(url, database) {
   const parsed = new URL(url);
@@ -96,9 +93,12 @@ function databaseNameOf(url) {
 }
 
 // --- psql plumbing ----------------------------------------------------------
-const PSQL = findPsql();
+// Found on first use, AFTER the target is resolved: a refused target exits
+// before any psql is looked for or run.
+let PSQL = null;
 
 function psql(url, args, { capture = true, quiet = false } = {}) {
+  PSQL ??= findPsql();
   const baseArgs = ['--no-psqlrc', '-v', 'ON_ERROR_STOP=1', url, ...args];
   const result = spawnSync(PSQL, baseArgs, {
     encoding: 'utf8',
@@ -185,7 +185,6 @@ function cmdStatus(url) {
   ensureLedger(url);
   const applied = appliedMap(url);
   const files = migrationFiles();
-  console.log(`target: ${redact(url)}`);
   let pending = 0;
   let drifted = 0;
   for (const { file, checksum } of files) {
@@ -327,14 +326,9 @@ function quoteIdent(name) {
   return `"${name}"`;
 }
 
+/** host:port/db only — no user, no password (db/target.mjs). */
 function redact(url) {
-  try {
-    const parsed = new URL(url);
-    if (parsed.password) parsed.password = '***';
-    return parsed.toString();
-  } catch {
-    return url;
-  }
+  return describeTarget(url);
 }
 
 function fail(message) {
@@ -346,7 +340,17 @@ function fail(message) {
 const args = process.argv.slice(2);
 const command = args.find((a) => !a.startsWith('-')) || 'status';
 const flags = new Set(args.filter((a) => a.startsWith('-')));
-const url = databaseUrl();
+const isHelp = ['help', '--help', '-h'].includes(command) || flags.has('--help') || flags.has('-h');
+let url = '';
+if (!isHelp) {
+  try {
+    url = resolveMigrateTarget(process.env, { iMeanProd: flags.has(I_MEAN_PROD) }).url;
+  } catch (error) {
+    if (error instanceof MigrateTargetRefusal) fail(`refusing to run: ${error.message}`);
+    throw error;
+  }
+  console.log(`target: ${describeTarget(url)}`);
+}
 
 switch (command) {
   case 'status':
@@ -364,7 +368,7 @@ switch (command) {
   case 'help':
   case '--help':
   case '-h':
-    console.log(readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(2, 24).join('\n').replace(/^\/\/ ?/gm, ''));
+    console.log(readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(2, 26).join('\n').replace(/^\/\/ ?/gm, ''));
     break;
   default:
     fail(`unknown command: ${command} (try: status | up | create-db | reset | help)`);
