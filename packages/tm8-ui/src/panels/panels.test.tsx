@@ -1032,10 +1032,10 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     // Nothing selected: exactly the trigger, the View chip and the sort chip.
     expect(chips).toHaveLength(3);
     expect(chips.length).toBeLessThan(optionCount);
-    /* Sentence case, and the caret is its own muted glyph rather than an
-       ASCII character inside the label. The BOUND is what this test holds:
-       one trigger, never one chip per option. */
-    expect(getByTestId('filter-trigger').textContent).toBe('Filter▾');
+    /* Icon only: the word lives in the accessible name, not the face. The
+       BOUND is what this test holds: one trigger, never one chip per option. */
+    expect(getByTestId('filter-trigger').textContent).toBe('');
+    expect(getByTestId('filter-trigger').getAttribute('aria-label')).toBe('Filter');
   });
 
   it('people filtering is membership-conditional and uses createdByIds', () => {
@@ -1148,12 +1148,23 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     expect(union, `no query carried the unioned filter; saw ${JSON.stringify(seen)}`).toBeTruthy();
   });
 
-  it('at the floor the sort chip collapses to its glyph and never disappears', () => {
-    const { container } = render(
-      <EntityListPanel kind="task" rowsFor={rowsFor([])} ctx={ctx} compact />,
-    );
-    const chips = [...container.querySelectorAll('.lp__filters .lp__chip')];
-    expect(chips.map((c) => c.textContent)).toContain('↓');
+  it('the filter row is icons only, each named for assistive tech', () => {
+    for (const compact of [false, true]) {
+      const { getByTestId, unmount } = render(
+        <EntityListPanel kind="task" rowsFor={rowsFor([])} ctx={ctx} compact={compact} />,
+      );
+      for (const [testId, name] of [
+        ['filter-trigger', 'Filter'],
+        ['row-view-trigger', 'View'],
+        ['sort-trigger', 'Sort: Recent activity'],
+      ] as const) {
+        const chip = getByTestId(testId);
+        expect(chip.textContent).toBe('');
+        expect(chip.querySelector('svg')).toBeTruthy();
+        expect(chip.getAttribute('aria-label')).toBe(name);
+      }
+      unmount();
+    }
   });
 
   it('both popovers dismiss on Escape and on an outside click', () => {

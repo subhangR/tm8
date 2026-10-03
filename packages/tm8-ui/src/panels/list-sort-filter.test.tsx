@@ -116,7 +116,8 @@ describe('the sort chip reaches the seam', () => {
     );
     fireEvent.click(getByTestId('sort-trigger'));
     fireEvent.click(getByRole('menuitemradio', { name: /Manual order/ }));
-    expect(getByTestId('sort-trigger').textContent).toContain('Manual order');
+    expect(getByTestId('sort-trigger').getAttribute('aria-label')).toBe('Sort: Manual order');
+    expect(getByTestId('sort-trigger').getAttribute('title')).toBe('Sorted by Manual order');
   });
 });
 
