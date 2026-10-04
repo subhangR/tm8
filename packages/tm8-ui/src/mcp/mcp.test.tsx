@@ -90,3 +90,61 @@ describe('native MCP management', () => {
     expect((screen.getByRole('checkbox', { name: 'Calendar' }) as HTMLInputElement).checked).toBe(false);
   });
 });
+
+describe('MCP readiness and recovery', () => {
+  it('blocks a revoked explicitly selected default account', async () => {
+    const data = catalog(); data.defaults = [{serverId:'server',credentialId:'account'}];
+    data.servers[0]!.accounts[0]!.status='revoked'; data.servers[0]!.accounts[0]!.canUse=false;
+    const onReady=vi.fn(); render(<Picker port={fixture(data)} onReady={onReady}/>);
+    await screen.findByRole('alert'); expect(onReady).toHaveBeenLastCalledWith(false);
+    expect(screen.queryByRole('option',{name:'Work account'})).toBeNull();
+  });
+  it('preserves sharing selection and offers the named member after loading', async () => {
+    const port=fixture(); render(<McpProvider port={port}><McpSettings/></McpProvider>);
+    fireEvent.click(await screen.findByRole('button',{name:'Manage Calendar'}));
+    fireEvent.change(screen.getByRole('combobox',{name:'Account sharing'}),{target:{value:'members'}});
+    fireEvent.click(await screen.findByRole('checkbox',{name:'Ada'}));
+    fireEvent.click(screen.getByRole('button',{name:'Save sharing'}));
+    await waitFor(()=>expect(port.share).toHaveBeenCalledWith('server','account','members',['member']));
+  });
+  it('offers recovery when a previously ready account expires during testing', async () => {
+    const port=fixture(); port.test=vi.fn(async()=>({ok:false,message:'credential_expired',tools:[]}));
+    render(<McpProvider port={port}><McpSettings/></McpProvider>);
+    fireEvent.click(await screen.findByRole('button',{name:'Manage Calendar'}));
+    fireEvent.change(screen.getByRole('combobox',{name:'Test with account'}),{target:{value:'account'}});
+    fireEvent.click(screen.getByRole('button',{name:'Test and discover tools'}));
+    expect((await screen.findByRole('alert')).textContent).toContain('Reconnect an account');
+    expect(screen.queryByText('Connection tested.')).toBeNull();
+  });
+});
+
+it('refreshes a mounted launch picker immediately after revocation elsewhere in the provider', async () => {
+  const data=catalog(); data.defaults=[{serverId:'server',credentialId:'account'}];
+  const port=fixture(data); port.revoke=vi.fn(async()=>{data.servers[0]!.accounts[0]!.canUse=false;data.servers[0]!.accounts[0]!.status='revoked';});
+  const onReady=vi.fn();
+  render(<McpProvider port={port}><McpSettings/><McpPicker value={undefined} onChange={()=>{}} onReady={onReady}/></McpProvider>);
+  fireEvent.click(await screen.findByRole('button',{name:'Manage Calendar'}));
+  await waitFor(()=>expect(onReady).toHaveBeenLastCalledWith(true));
+  fireEvent.click(screen.getByRole('button',{name:'Revoke account'}));
+  fireEvent.click(screen.getByRole('button',{name:'Confirm revoke'}));
+  await waitFor(()=>expect(onReady).toHaveBeenLastCalledWith(false));
+  await screen.findByRole('link',{name:'Connect Calendar'});
+});
+it('loads already shared member names when an account is reopened', async()=>{
+  const data=catalog(); data.servers[0]!.accounts[0]!.sharing='members'; data.servers[0]!.accounts[0]!.memberIds=['member'];
+  render(<McpProvider port={fixture(data)}><McpSettings/></McpProvider>);
+  fireEvent.click(await screen.findByRole('button',{name:'Manage Calendar'}));
+  expect((await screen.findByRole('checkbox',{name:'Ada'}) as HTMLInputElement).checked).toBe(true);
+  fireEvent.click(screen.getByRole('button',{name:'All connectors'}));
+  fireEvent.click(screen.getByRole('button',{name:'Manage Calendar'}));
+  expect((await screen.findByRole('checkbox',{name:'Ada'}) as HTMLInputElement).checked).toBe(true);
+});
+it('shows owner and use-only access without management controls',async()=>{
+  const data=catalog(); data.servers[0]!.accounts[0]!.canManage=false; data.servers[0]!.accounts[0]!.ownerId='owner'; data.servers[0]!.accounts[0]!.ownerLabel='Pat';
+  render(<McpProvider port={fixture(data)}><McpSettings/></McpProvider>);
+  fireEvent.click(await screen.findByRole('button',{name:'Manage Calendar'}));
+  expect(screen.getByText('Owner: Pat')).toBeTruthy();
+  expect(screen.getByText(/Its owner manages sharing/)).toBeTruthy();
+  expect(screen.queryByRole('button',{name:'Revoke account'})).toBeNull();
+  expect(screen.queryByRole('button',{name:'Rotate key'})).toBeNull();
+});

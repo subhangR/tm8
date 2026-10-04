@@ -11,9 +11,9 @@ export function McpEquipment({ targetId }: { targetId: string }) {
   async function change(serverId: string, attached: boolean) {
     if (!port || pending) return;
     setPending(true); setFailure(null);
-    try { if (attached) await port.detach(targetId, serverId); else await port.attach(targetId, serverId); refresh(); }
+    try { if (attached) await port.detach(targetId, serverId); else await port.attach(targetId, serverId); }
     catch { setFailure('Connector attachment could not be saved. Try again.'); }
-    finally { setPending(false); }
+    finally { refresh(); setPending(false); }
   }
   return <section className="mcp-equipment" aria-label="Task and teammate connectors">
     <h3>Connectors</h3><p>Attach tools here. Choose an authorized account when starting a session.</p>

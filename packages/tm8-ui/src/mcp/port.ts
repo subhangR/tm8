@@ -2,7 +2,7 @@ import type { McpServerDefinition, McpTestResult } from '@tm8/contract';
 /** UI-only values. Account metadata never contains provider credentials. */
 export interface McpSelection { serverId: string; credentialId?: string }
 export interface McpAccount {
-  id: string; label: string; canUse: boolean; canManage: boolean;
+  id: string; label: string; ownerId?: string; ownerLabel?: string; canUse: boolean; canManage: boolean;
   status: string; sharing: 'private' | 'members' | 'space'; memberIds?: string[];
 }
 export interface McpServer {

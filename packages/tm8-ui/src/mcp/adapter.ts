@@ -1,3 +1,5 @@
+import { rememberMcpOAuth } from './oauth-callback';
+import { McpUiError } from './errors';
 import { McpServerDefinitionSchema, type McpCredentialView, type McpResolveResult, type McpServerDefinition, type McpServerListResult, type McpServerView, type McpTestResult, type Cursor } from '@tm8/contract';
 import type { HttpClient } from '../data/real/http';
 import type { Seam } from '../data/seam';
@@ -30,24 +32,25 @@ export function viewOf(server: McpServerView, accounts: McpCredentialView[]): Mc
     transport: d.transport, url: d.url, command: d.command, args: d.args, auth: d.auth.type === 'oauth2' ? 'oauth' : d.auth.type,
     approved: d.approved, enabled: d.enabled !== false, canApprove: server.allowed.approve,
     canManage: server.allowed.manage, canAttach: server.allowed.attach, health: server.health,
-    accounts: accounts.map(a => ({ id: a.id, label: a.label, canUse: a.usable, canManage: a.manageable,
+    accounts: accounts.map(a => ({ id: a.id, label: a.label, ownerId: a.ownerId, ownerLabel: "ownerLabel" in a && typeof a.ownerLabel === "string" ? a.ownerLabel : a.manageable ? "You" : "Another member", canUse: a.usable, canManage: a.manageable,
       status: a.revoked ? 'revoked' : a.usable && a.reason === 'ready' ? 'connected' : a.reason,
       sharing: a.visibility === 'selected' ? 'members' : a.visibility, memberIds: a.sharedMemberIds })),
   };
 }
 /** Import metadata only. Reject unknown secret-bearing env/header fields instead of silently importing them. */
 export function importDefinitions(json: string, trustedCode: boolean): McpServerDefinition[] {
-  const parsed: unknown = JSON.parse(json);
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Expected an MCP configuration object.');
+  let parsed: unknown;
+  try { parsed = JSON.parse(json); } catch { throw new McpUiError('Enter valid JSON before importing.'); }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new McpUiError('Expected an MCP configuration object.');
   const config = parsed as Record<string, unknown>;
   const rows = config.mcpServers;
-  if (!rows || typeof rows !== 'object' || Array.isArray(rows) || Object.keys(config).some(k => k !== 'mcpServers')) throw new Error('Expected mcpServers metadata.');
+  if (!rows || typeof rows !== 'object' || Array.isArray(rows) || Object.keys(config).some(k => k !== 'mcpServers')) throw new McpUiError('Expected mcpServers metadata.');
   return Object.entries(rows).map(([name, raw]) => {
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Invalid server metadata.');
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new McpUiError('Invalid server metadata.');
     const r = raw as Record<string, unknown>;
-    if (Object.keys(r).some(key => !['url', 'command', 'args', 'transport', 'auth', 'envKeys', 'headerKeys', 'provenance'].includes(key))) throw new Error('Remove secrets and unsupported fields before importing.');
+    if (Object.keys(r).some(key => !['url', 'command', 'args', 'transport', 'auth', 'envKeys', 'headerKeys', 'provenance'].includes(key))) throw new McpUiError('Remove secrets and unsupported fields before importing.');
     const transport = r.transport ?? (r.url ? 'http' : 'stdio');
-    if (transport === 'stdio' && !trustedCode) throw new Error('Local commands need explicit code trust.');
+    if (transport === 'stdio' && !trustedCode) throw new McpUiError('Local commands need explicit code trust.');
     return McpServerDefinitionSchema.parse({ ...r, name, transport, auth: r.auth ?? { type: 'none' }, envKeys: r.envKeys ?? [], headerKeys: r.headerKeys ?? [], approved: false, enabled: true, ...(transport === 'stdio' ? { stdioTrusted: true } : {}) });
   });
 }
@@ -91,13 +94,13 @@ export function createMcpPort(http: HttpClient, seam: Pick<Seam, 'query' | 'conn
     async test(selection) { const result = await http.call<McpTestResult>('mcp.servers.test', { params: { serverId: selection.serverId }, body: { ...command(), ...selection } }); return { ok: result.ready, message: result.reason, tools: result.tools }; },
     async createKey(serverId, label, secret) { await http.call('mcp.credentials.create', { params: { serverId }, body: { ...command(), serverId, label, secret } }); },
     async rotateKey(_serverId, credentialId, secret) { await http.call('mcp.credentials.rotate', { params: { credentialId }, body: { ...command(), credentialId, secret } }); },
-    startOAuth(serverId, label) { return http.call('mcp.oauth.begin', { params: { serverId }, body: { ...command(), serverId, label } }); },
+    async startOAuth(serverId, label) { const result = await http.call<{authorizationUrl:string}>('mcp.oauth.begin', { params: { serverId }, body: { ...command(), serverId, label } }); rememberMcpOAuth(result.authorizationUrl, spaceId); return result; },
     async share(_serverId, credentialId, sharing, memberIds) { await http.call('mcp.credentials.share', { params: { credentialId }, body: { ...command(), credentialId, visibility: sharing === 'members' ? 'selected' : sharing, memberIds } }); },
     async revoke(_serverId, credentialId) { await http.call('mcp.credentials.revoke', { params: { credentialId }, body: { ...command(), credentialId } }); },
     async members() {
       const members: { id: string; label: string }[] = [];
       let cursor: Cursor | undefined;
-      do { const result = await seam.query({ spaceId, kinds: ['member'], limit: 100, cursor }); members.push(...result.page.items.map(m => ({ id: m.id, label: m.title }))); cursor = result.page.nextCursor ?? undefined; } while (cursor);
+      do { const result = await seam.query({ spaceId, kinds: ['member'], limit: 100, cursor }); members.push(...result.page.items.filter(m => m.state?.kind !== 'member' || !m.state.memberStatus).map(m => ({ id: m.id, label: m.title }))); cursor = result.page.nextCursor ?? undefined; } while (cursor);
       return members;
     },
   };

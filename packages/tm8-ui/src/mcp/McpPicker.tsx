@@ -1,5 +1,5 @@
 import { ConnectorsLink } from './ConnectorsLink';
-import { useEffect, useId } from 'react';
+import { useLayoutEffect, useId } from 'react';
 import { useMcpCatalog } from './context';
 import type { McpCatalog, McpSelection, McpServer } from './port';
 import './mcp.css';
@@ -29,7 +29,7 @@ export function McpPicker({ targetId, teamMemberId, value, onChange, onReady, di
   const { catalog, error, loading, port, refresh } = useMcpCatalog(targetId, teamMemberId);
   const id = useId();
   const problem = catalog ? selectionProblem(catalog, value) : null;
-  useEffect(() => { onReady?.(!port || (!!catalog && !loading && !problem)); }, [port, catalog, loading, problem, onReady]);
+  useLayoutEffect(() => { onReady?.(!port || (!!catalog && !loading && !problem)); }, [port, catalog, loading, problem, onReady]);
   if (!port) return null;
   if (error) return <p className="mcp-error" role="alert">{error} <button type="button" onClick={refresh}>Retry connectors</button></p>;
   if (loading) return <p role="status">Checking connectors…</p>;

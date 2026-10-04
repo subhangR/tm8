@@ -1,4 +1,5 @@
-import { useState, type FormEvent } from 'react';
+import { McpUiError, testFailure } from './errors';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useMcpCatalog } from './context';
 import { readiness } from './McpPicker';
 import type { McpAccount, McpDefinition, McpPort, McpServer } from './port';
@@ -25,7 +26,7 @@ function DefinitionForm({ server, busy, onSave }: { server?: McpServer; busy: bo
     });
   }
   return <form className="mcp-form" onSubmit={e => { void submit(e); }}>
-    <label>Name<input name="title" required maxLength={80} pattern="[A-Za-z][A-Za-z0-9_-]*" title="Start with a letter; use letters, numbers, hyphens and underscores." defaultValue={server?.title} /></label>
+    <label>Name<input name="title" required maxLength={80} pattern="[A-Za-z]([A-Za-z0-9_]|-)*" title="Start with a letter; use letters, numbers, hyphens and underscores." defaultValue={server?.title} /></label>
     <label>Source or notes<textarea name="description" defaultValue={server?.description} /></label>
     <label>Connection<select value={transport} onChange={e => { setTransport(e.target.value as 'http' | 'stdio'); if (e.target.value === 'stdio' && auth === 'oauth') setAuth('none'); }}><option value="http">Remote URL</option><option value="stdio">Local command (stdio)</option></select></label>
     {transport === 'http' ? <label>Server URL<input name="url" type="url" required placeholder="https://example.com/mcp" defaultValue={server?.url} /></label> : <>
@@ -49,13 +50,23 @@ function AccountCard({ account, server, port, run, busy }: { account: McpAccount
   const [members, setMembers] = useState<{ id: string; label: string }[]>([]);
   const [memberIds, setMemberIds] = useState<string[]>(account.memberIds ?? []);
   const [revoke, setRevoke] = useState(false);
+  const [memberError, setMemberError] = useState(false);
+  useEffect(() => {
+    let active = true;
+    if (sharing === 'members') void port.members().then(rows => { if (active) { setMembers(rows); setMemberError(false); } }, () => { if (active) setMemberError(true); });
+    return () => { active = false; };
+  }, [port, sharing]);
   return <div className="mcp-account-card">
-    <strong>{account.label}</strong><p>{account.status} · {account.sharing === 'private' ? 'Private' : account.sharing === 'space' ? 'Shared with space' : 'Shared with selected members'}{account.canUse ? ' · Available to you' : ''}</p>
+    <strong>{account.label}</strong>
+    <p>Owner: {account.ownerLabel ?? (account.canManage ? "You" : "Another member")}</p>
+    {!account.canManage && <p>{account.canUse ? "You can use this account. Its owner manages sharing, rotation and revocation." : "This account is unavailable to you. Ask its owner for access."}</p>}
+    <p>{account.status} · {account.sharing === 'private' ? 'Private' : account.sharing === 'space' ? 'Shared with space' : 'Shared with selected members'}{account.canUse ? ' · Available to you' : ''}</p>
     {account.canManage && <>
       <div className="mcp-form">
-        <label>Account sharing<select value={sharing} onChange={e => { const next = e.target.value as McpAccount['sharing']; setSharing(next); if (next === 'members') void run(async () => setMembers(await port.members()), 'Members loaded.'); }}>
+        <label>Account sharing<select value={sharing} onChange={e => { const next = e.target.value as McpAccount['sharing']; setSharing(next);  }}>
           <option value="private">Only me</option><option value="members">Selected members</option><option value="space">Everyone in this space</option>
         </select></label>
+        {memberError && <p role="alert">Members could not be loaded. Reopen this account to retry.</p>}
         {sharing === 'members' && <fieldset><legend>Members who may use this account</legend>{members.map(m => <label key={m.id}><span><input type="checkbox" checked={memberIds.includes(m.id)} onChange={e => setMemberIds(e.target.checked ? [...memberIds, m.id] : memberIds.filter(id => id !== m.id))} /> {m.label}</span></label>)}</fieldset>}
         <button type="button" disabled={busy} onClick={() => void run(() => port.share(server.id, account.id, sharing, sharing === 'members' ? memberIds : []), 'Account sharing updated.')}>Save sharing</button>
       </div>
@@ -83,9 +94,9 @@ export function McpSettings() {
   async function run(action: () => Promise<unknown>, success: string) {
     if (busy) return;
     setBusy(true); setFailure(null); setMessage(null);
-    try { await action(); setMessage(success); refresh(); }
-    catch { setFailure('The request could not be completed. Check your permissions and connection, then try again.'); }
-    finally { setBusy(false); }
+    try { await action(); setMessage(success); }
+    catch (error) { setFailure(error instanceof McpUiError ? error.message : 'The request could not be completed. Check your permissions and connection, then try again.'); }
+    finally { refresh(); setBusy(false); }
   }
   if (!port) return <p role="status">Connectors are unavailable on this connection.</p>;
   const server = catalog?.servers.find(s => s.id === active);
@@ -117,16 +128,16 @@ export function McpSettings() {
       {server.canManage && <div className="mcp-actions">{removing ? <><p>Remove this connector from the catalog?</p><button disabled={busy} onClick={() => void run(async () => { await port.remove(server); setActive(null); }, 'Connector removed.')}>Confirm removal</button><button onClick={() => setRemoving(false)}>Cancel</button></> : <button onClick={() => setRemoving(true)}>Remove connector</button>}</div>}
       <h4>Test connection and tools</h4>
       {server.auth !== 'none' && <label className="mcp-account">Test with account<select value={credentialId} onChange={e => { setCredentialId(e.target.value); setTools(null); }}><option value="">Choose an account</option>{server.accounts.filter(a => a.canUse && a.status === 'connected').map(a => <option key={a.id} value={a.id}>{a.label}</option>)}</select></label>}
-      <button disabled={busy || !!readiness({ ...server, canAttach: true }, { serverId: server.id, ...(credentialId ? { credentialId } : {}) })} onClick={() => void run(async () => { const result = await port.test({ serverId: server.id, ...(credentialId ? { credentialId } : {}) }); if (!result.ok) throw new Error(); setTools(result.tools); }, 'Connection tested.')}>Test and discover tools</button>
+      <button disabled={busy || !!readiness({ ...server, canAttach: true }, { serverId: server.id, ...(credentialId ? { credentialId } : {}) })} onClick={() => void run(async () => { const result = await port.test({ serverId: server.id, ...(credentialId ? { credentialId } : {}) }); if (!result.ok) { setTools(null); throw new McpUiError(testFailure(result.message)); } setTools(result.tools); }, 'Connection tested.')}>Test and discover tools</button>
       {tools && <><p>{tools.length} tools available</p><ul className="mcp-tools">{tools.map(tool => <li key={tool.name}><strong>{tool.name}</strong>{tool.description && <p>{tool.description}</p>}</li>)}</ul></>}
       {server.auth !== 'none' && <><h4>Accounts</h4><p>New accounts are private. Sharing a connector does not share an account.</p>
         {server.accounts.map(a => <AccountCard key={a.id} account={a} server={server} port={port} run={run} busy={busy} />)}
         <form className="mcp-form" onSubmit={e => { e.preventDefault(); const form = e.currentTarget; const data = new FormData(form); const label = String(data.get('label')); const secret = String(data.get('secret') ?? ''); form.reset(); void run(async () => { if (server.auth === 'api_key') await port.createKey(server.id, label, secret); else { const response = await port.startOAuth(server.id, label); const url = new URL(response.authorizationUrl); if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new Error(); setOauthUrl(url.href); } }, server.auth === 'api_key' ? 'Private account added.' : 'Authorization is ready.'); }}>
           <label>Account label<input name="label" required autoComplete="off" /></label>
           {server.auth === 'api_key' && <label>API key<input name="secret" type="password" required autoComplete="off" /></label>}
-          <button disabled={busy}>{server.auth === 'api_key' ? 'Add private account' : 'Connect with OAuth'}</button>
+          <button disabled={busy || !server.approved || !server.enabled}>{server.auth === 'api_key' ? 'Add private account' : 'Connect with OAuth'}</button>
         </form>
-        {oauthUrl && <div className="mcp-actions"><a href={oauthUrl} target="_blank" rel="noopener noreferrer">Continue authorization</a><button onClick={refresh}>Refresh account status</button></div>}
+        {oauthUrl && <div className="mcp-actions"><a href={oauthUrl} rel="noreferrer">Continue authorization</a><button onClick={refresh}>Refresh account status</button></div>}
       </>}
     </article>}
   </section>;
