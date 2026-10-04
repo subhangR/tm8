@@ -58,6 +58,8 @@ describe('via_link claim forwarding (256, W7p)', () => {
       'http/support-claims.ts',
       'identity/claims.ts',
       'main.ts',
+      // MCP rejects link-bound callers before deriving the durable human launcher.
+      'mcp/session-bindings.ts',
       'pty/attach-authz.ts',
     ]);
   });

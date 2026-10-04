@@ -360,7 +360,7 @@ describe('SpawnService.resume — guards and orchestration', () => {
     expect(result.manifest.launch.harness?.skillOverrides).toEqual(recorded);
   });
 
-  it('TM8_HARNESS_SURFACE=inherit resumes on the bare command: no trim, no --no-chrome, no record', async () => {
+  it('TM8_HARNESS_SURFACE=inherit keeps MCP isolated while omitting skill/plugin trim on resume', async () => {
     const configDir = join(dataDir, 'claude-home');
     await mkdir(join(configDir, 'skills', 'astro'), { recursive: true });
     await writeFile(join(configDir, 'skills', 'astro', 'SKILL.md'), '---\nname: astro\n---\n');
@@ -385,7 +385,8 @@ describe('SpawnService.resume — guards and orchestration', () => {
     }).resume(AUTH, { sessionId: SESSION_ID });
 
     expect(command).toContain("--resume 'pre-minted-claude-uuid'");
-    expect(command).not.toMatch(/--no-chrome|skillOverrides|--strict-mcp-config|enabledPlugins/);
+    expect(command).not.toMatch(/--no-chrome|skillOverrides|enabledPlugins/);
+    expect(command).toContain(`--strict-mcp-config --mcp-config '{"mcpServers":{}}'`);
     expect(result.manifest.launch.harness).toEqual({ surface: 'inherit', surfaceSource: 'env' });
   });
 

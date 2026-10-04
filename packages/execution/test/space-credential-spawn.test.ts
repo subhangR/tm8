@@ -19,7 +19,8 @@
 
 import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
+import { parse } from '@iarna/toml';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -254,8 +255,13 @@ describe('SC-2 spawn/resume ordering around a space credential', () => {
     });
     const env = spawnIfAbsent.mock.calls[0]![0].env as Record<string, string>;
     expect(env.OPENAI_API_KEY).toBe(OAI_KEY);
-    const home = join(dataDir, 'credentials', 'sessions', result.sessionId, 'openai');
+    const sourceHome = join(dataDir, 'credentials', 'sessions', result.sessionId, 'openai');
+    const home = join(dirname(result.manifestPath), 'mcp-homes', basename(result.manifestPath, '.json'), 'codex');
     expect(env.CODEX_HOME).toBe(home);
+    expect(home).not.toBe(sourceHome);
+    // Preserve the selected model login through MCP isolation, never ambient connectors.
+    expect(await readFile(join(home, 'auth.json'), 'utf8')).toBe(await readFile(join(sourceHome, 'auth.json'), 'utf8'));
+    expect(parse(await readFile(join(home, 'config.toml'), 'utf8')).mcp_servers).toEqual({});
     // A10: the per-session dir, never the space's login home.
     expect(home).not.toContain(join('credentials', 'spaces'));
     expect((await stat(home)).mode & 0o777).toBe(0o700);
