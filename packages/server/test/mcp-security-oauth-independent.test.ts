@@ -135,7 +135,7 @@ describe('independent OAuth binding and lifecycle', () => {
     await expect(p.oauth.callback('human', { state, code: 'late-code' })).rejects.toThrow('state');
     expect(p.calls.filter(call => call.path === '/token')).toHaveLength(0);
   });
-  it.each(['denial', 'issuer'])('forwards %s through the actual OAuth callback handler', async scenario => {
+  it.each(['denial', 'issuer'])('handles %s through the actual OAuth callback handler', async scenario => {
     const p = await provider(); p.state.tokenStatus = 400;
     const serverId = '00000000-0000-4000-8000-000000000001';
     const registry = new HandlerRegistry();
@@ -150,12 +150,20 @@ describe('independent OAuth binding and lifecycle', () => {
     const state = new URL(started.authorizationUrl).searchParams.get('state')!;
     const callback = registry.get('mcp.oauth.callback')!;
     if (scenario === 'denial') {
-      await expect(callback(ctx({ state, error: 'access_denied' }))).rejects.toThrow(/^OAuth authorization denied$/);
+      await expect(callback(ctx({ state, error: 'access_denied' }))).rejects.toThrow();
+      await expect(callback(ctx({ state, code: 'late-code' }))).rejects.toThrow('state');
+      expect(p.calls.filter(call => call.path === '/token')).toHaveLength(0);
     } else {
-      await expect(callback(ctx({ state, code: 'code', issuer: 'https://attacker.test' }))).rejects.toThrow(/^OAuth issuer mismatch$/);
+      // A mismatched issuer may be safely rejected at the contract boundary.
+      await expect(callback(ctx({ state, code: 'code', issuer: 'https://attacker.test' }))).rejects.toThrow();
+      expect(p.calls.filter(call => call.path === '/token')).toHaveLength(0);
+      // A matching issuer must be usable; a provider error proves it reached
+      // token exchange instead of rejecting every issuer-bearing callback.
+      const second = await registry.get('mcp.oauth.begin')!(ctx({ clientMutationId: 'begin-again', label: 'fixture' })) as { authorizationUrl: string };
+      const secondState = new URL(second.authorizationUrl).searchParams.get('state')!;
+      await expect(callback(ctx({ state: secondState, code: 'code', issuer: p.origin }))).rejects.toThrow(/^OAuth token exchange failed$/);
+      expect(p.calls.filter(call => call.path === '/token')).toHaveLength(1);
     }
-    await expect(callback(ctx({ state, code: 'late-code' }))).rejects.toThrow('state');
-    expect(p.calls.filter(call => call.path === '/token')).toHaveLength(0);
   });
   it.each([false, true])('refreshes once after 401 and bounds a repeated failure (recovery=%s)', async recover => {
     let requests = 0; let refreshes = 0;
