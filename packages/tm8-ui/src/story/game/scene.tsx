@@ -11,6 +11,7 @@ import { SceneryBatch } from './scene-batch';
 import { Island, Atmosphere, GroundShadows } from './scene-nature';
 import { Character, type CharacterMotion } from './scene-character';
 import { DioramaFinish } from './scene-effects';
+import { RoadLabels } from './scene-road-labels';
 import { routeRoad, pathLength, type Point } from './roads';
 
 export interface SceneProps {
@@ -49,6 +50,7 @@ export default function StoryGameScene(props: SceneProps) {
     <Atmosphere world={props.world} palette={props.palette} reduced={props.reduced} />
     <PlaceEffects {...props} />
     <Labels control={props.control} world={props.world} revealed={props.revealed} visited={props.visited} playerPos={playerPos} hidden={!!props.duel} nodes={labelNodes} />
+    <RoadLabels world={props.world} control={props.control} playerPos={playerPos} hidden={!!props.duel} reduced={props.reduced} />
     <Player {...props} playerPos={playerPos} alertNode={alertNode} />
     {props.duel && <DuelStage key={props.duel.encounter.id} place={props.world.byId.get(props.duel.placeId)!} encounter={props.duel.encounter} palette={props.palette} reduced={props.reduced} />}
     <FrameBudget />
