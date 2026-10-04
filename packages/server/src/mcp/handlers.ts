@@ -24,7 +24,7 @@ export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeD
  const credentials=new McpCredentialStore(deps.db,options.dataDir);
  const store=new DbSpaceCredentialStore({db:deps.db,dataDir:options.dataDir});
  const oauth=new McpOAuth(options.callbackUrl);
- const definition=async(claims:DbClaims,id:string)=>{const view=await options.definition(claims,id);return {id:view.id,spaceId:view.spaceId,...view.definition};};
+ const definition=async(claims:DbClaims,id:string)=>{const view=await options.definition(claims,id);return {id:view.id,spaceId:view.spaceId,version:view.version,...view.definition};};
  const proxy=new McpProxy({credentials,authorize:options.authorize,definition});
  const claims=async(ctx:RequestContext)=>claimsFor(await deps.owner(),ctx);
  const path=(ctx:RequestContext,name:string)=>{const value=ctx.params[name];if(!value)throw new CollabError('invalid_input',`${name} required`);return value;};

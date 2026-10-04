@@ -10,7 +10,7 @@ export interface McpOAuthSecret {
   issuer: string; tokenEndpoint: string; revocationEndpoint?:string; resource: string; clientId: string;
 }
 export type McpSecret = { kind: 'api_key'; value: string } | McpOAuthSecret;
-interface SealedRow { credentialId: string; spaceId: string; serverId: string; ciphertext: string; nonce: string }
+interface SealedRow { credentialId: string; spaceId: string; serverId: string; definitionVersion?: number; ciphertext: string; nonce: string }
 
 /** Server-only opener. Never return its values from a facade handler. */
 export class McpCredentialStore {
@@ -38,13 +38,13 @@ export class McpCredentialStore {
     const sealed=sealSecret(await loadOrCreateCredentialKey(this.dataDir),JSON.stringify({kind:'api_key',value}),{spaceId:binding.spaceId,credentialId:binding.credentialId,provider:'mcp'});
     await this.db.rpc(claims,'rekey_space_credential',[binding.credentialId,'mcp',sealed.ciphertext,sealed.nonce,null]);
   }
-  async read(claims: DbClaims, binding: McpCredentialBinding): Promise<{secret: McpSecret; nonce: string}> {
+  async read(claims: DbClaims, binding: McpCredentialBinding): Promise<{secret: McpSecret; nonce: string; definitionVersion?: number}> {
     if (!binding.credentialId || claims.viaLinkId) throw new Error('MCP credential unavailable');
     const row = await this.db.rpc<SealedRow>(claims,'read_mcp_credential',[binding.spaceId,binding.serverId,binding.credentialId]);
     if (row.spaceId !== binding.spaceId || row.serverId !== binding.serverId || row.credentialId !== binding.credentialId) throw new Error('MCP credential unavailable');
     try {
       const value = openSecret(await loadOrCreateCredentialKey(this.dataDir),{ciphertext:Buffer.from(row.ciphertext,'base64'),nonce:Buffer.from(row.nonce,'base64')},{spaceId:row.spaceId,credentialId:row.credentialId,provider:'mcp'});
-      return {secret:JSON.parse(value) as McpSecret,nonce:row.nonce};
+      return {secret:JSON.parse(value) as McpSecret,nonce:row.nonce,definitionVersion:row.definitionVersion};
     } catch { throw new Error('MCP credential unavailable'); }
   }
   async replace(claims: DbClaims,binding: McpCredentialBinding,nonce: string,secret: McpSecret): Promise<void> {

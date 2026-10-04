@@ -5,7 +5,7 @@ import { mcpStdio } from './stdio.js';
 import { mcpHttp } from './transport.js';
 
 export interface McpProxyDefinition {
-  id:string;spaceId:string;approved:boolean;enabled?:boolean;transport:'http'|'stdio';url?:string;allowPrivateNetwork?:boolean;
+  id:string;spaceId:string;version?:number;approved:boolean;enabled?:boolean;transport:'http'|'stdio';url?:string;allowPrivateNetwork?:boolean;
   command?:string;args?:string[];stdioTrusted?:boolean;
   auth:{type:'none'|'api_key'|'oauth2';headerName?:string;envKey?:string;prefix?:'Bearer'|'none'};
 }
@@ -41,6 +41,7 @@ export class McpProxy {
         if(definition.auth.type==='api_key') {
           if(!grant.credentialId || !definition.auth.envKey || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(definition.auth.envKey))throw new Error('Select an MCP account before launch');
           const opened=await this.ports.credentials.read(credentialClaims,{spaceId:grant.spaceId,serverId,credentialId:grant.credentialId});
+          if(definition.version !== undefined && opened.definitionVersion !== definition.version)throw new Error('MCP connector definition changed; reconnect required');
           if(opened.secret.kind!=='api_key')throw new Error('MCP account binding mismatch');
           if(secretValue && secretValue!==opened.secret.value)throw new Error('MCP credential changed');
           secretValue=opened.secret.value;env[definition.auth.envKey]=secretValue;
@@ -72,6 +73,7 @@ export class McpProxy {
         await credentialLock(JSON.stringify(binding),async()=>{
           const run=async(store:Pick<McpCredentialStore,'read'|'replace'>)=>{
           const opened=await store.read(credentialClaims,binding);
+          if(definition.version !== undefined && opened.definitionVersion !== definition.version)throw new Error('MCP connector definition changed; reconnect required');
           let secret=opened.secret;
           if(secret.kind==='oauth') {
             if(definition.auth.type!=='oauth2' || secret.resource!==definition.url)throw new Error('MCP account binding mismatch');
@@ -105,7 +107,10 @@ export class McpProxy {
         if(JSON.stringify(live)!==JSON.stringify(grant))throw new Error('MCP session changed');
         const liveDefinition=await this.ports.definition(credentialClaims,serverId);
         if(JSON.stringify(liveDefinition)!==JSON.stringify(definition))throw new Error('MCP connector unavailable; definition changed');
-        if(grant.credentialId)await this.ports.credentials.read(credentialClaims,{spaceId:grant.spaceId,serverId,credentialId:grant.credentialId});
+        if(grant.credentialId) {
+          const bound=await this.ports.credentials.read(credentialClaims,{spaceId:grant.spaceId,serverId,credentialId:grant.credentialId});
+          if(definition.version !== undefined && bound.definitionVersion !== definition.version)throw new Error('MCP connector definition changed; reconnect required');
+        }
         if(connection.upstreamSession)headers['mcp-session-id']=connection.upstreamSession;
         if(connection.protocolVersion)headers['mcp-protocol-version']=connection.protocolVersion;
         const refreshed=await loadAuthorization();
