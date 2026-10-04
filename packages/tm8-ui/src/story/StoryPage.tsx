@@ -27,6 +27,9 @@ import { RootsCard } from './cards/RootsCard';
 import { StoryRail } from './cards/StoryRail';
 import { TeamCard } from './cards/TeamCard';
 import { WhatsHappening } from './cards/WhatsHappening';
+import { StoryGame } from './game/StoryGame';
+import { ModeSwitch } from './game/ModeSwitch';
+import { storyGameStore, useStoryViewMode } from './game/store';
 import { StoryGraph } from './graph/StoryGraph';
 import { StoryPlayground } from './playground/StoryPlayground';
 import { StoryMessagesSlot } from './messages-slot';
@@ -133,8 +136,14 @@ export function StoryPage({
      canvas's top-left corner as the graph's `lead`, with the description, the
      meta row and the stat strip still folded behind its "details". */
   const [detailsOpen, setDetailsOpen] = useState(false);
+  /* THE GAME IS ANOTHER VIEW (task 01a107e7): [Story | Game] in the lead. In
+     Game mode the world takes the graph's box, full height, and the sections
+     and playground are not mounted at all — the two views stay isolated. */
+  const mode = useStoryViewMode(view.id);
+  const setMode = useCallback((m: 'story' | 'game') => storyGameStore.getState().setMode(view.id, m), [view.id]);
   const lead = (
     <div className="sty-lead">
+      <ModeSwitch mode={mode} onChange={setMode} />
       <StoryHero
         view={view}
         rename={actions.rename}
@@ -155,11 +164,16 @@ export function StoryPage({
       />
     </div>
   );
-  const graph = (
-    <div className="sty-graphbox">
-      <StoryGraph {...block} {...(initialGraphView ? { initialView: initialGraphView } : {})} fill lead={lead} />
-    </div>
-  );
+  const graph =
+    mode === 'game' ? (
+      <div className="sty-graphbox sty-graphbox--game">
+        <StoryGame view={view} live={live ?? null} open={open} mode={mode} onMode={setMode} />
+      </div>
+    ) : (
+      <div className="sty-graphbox">
+        <StoryGraph {...block} {...(initialGraphView ? { initialView: initialGraphView } : {})} fill lead={lead} />
+      </div>
+    );
   /* The story's messages: the panel's own conversation surface, as a section
      beside the live feed rather than a tab (absent outside a panel). */
   const messagesSurface = useContext(StoryMessagesSlot);
@@ -180,6 +194,7 @@ export function StoryPage({
       data-story-id={view.id}
     >
       {graph}
+      {mode === 'game' ? null : (
       <div className="sty-sections">
         {full ? (
           /* FULL VIEW: the rail beside the main column. */
@@ -214,14 +229,17 @@ export function StoryPage({
           </>
         )}
       </div>
-      <StoryPlayground
-        view={view}
-        actions={actions}
-        live={live}
-        pick={menuPick}
-        onClosePick={closeMenu}
-        runners={runners ?? null}
-      />
+      )}
+      {mode === 'game' ? null : (
+        <StoryPlayground
+          view={view}
+          actions={actions}
+          live={live}
+          pick={menuPick}
+          onClosePick={closeMenu}
+          runners={runners ?? null}
+        />
+      )}
     </div>
   );
 }

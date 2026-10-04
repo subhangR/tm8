@@ -10,13 +10,20 @@
  * The delay rides a custom property rather than an inline `animation-delay`
  * so the reduced-motion rule can zero it in one place.
  */
-import { Children, type CSSProperties, type ElementType, type ReactNode } from 'react';
+import { Children, type CSSProperties, type ReactNode } from 'react';
 import { useMotion } from './MotionContext';
+
+/**
+ * A DOM tag. Narrower than `ElementType` on purpose: with react-three-fiber
+ * in the bundle `ElementType` also spans the scene-graph elements, whose props
+ * share nothing with a block's, and the dynamic `<Tag>` stops type-checking.
+ */
+export type RevealTag = keyof HTMLElementTagNameMap;
 
 export interface RevealProps {
   /** Milliseconds before the block starts arriving. */
   delay?: number | undefined;
-  as?: ElementType | undefined;
+  as?: RevealTag | undefined;
   className?: string | undefined;
   children: ReactNode;
   /** Forwarded unchanged: an `id`, a role, a data attribute. */
@@ -39,8 +46,8 @@ export interface StaggerProps {
   step?: number | undefined;
   /** Milliseconds before the first child. */
   start?: number | undefined;
-  as?: ElementType | undefined;
-  itemAs?: ElementType | undefined;
+  as?: RevealTag | undefined;
+  itemAs?: RevealTag | undefined;
   className?: string | undefined;
   itemClassName?: string | undefined;
   children: ReactNode;
