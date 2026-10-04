@@ -2,6 +2,25 @@
 set role tm8_graph_owner;
 create or replace function internal.is_server_only_credential_provider(p_provider text)
 returns boolean language sql immutable as $$ select coalesce(p_provider in ('typesafe', 'mcp'), false) $$;
+-- Compatibility fixtures can apply this migration without the historical W2
+-- tranche that normally defines w2_sha256. Keep the canonical hash available
+-- in that ordering while reusing the existing definition when it is present.
+do $$
+begin
+  if not exists (
+    select 1 from pg_proc p
+    join pg_namespace n on n.oid=p.pronamespace
+    where n.nspname='internal' and p.proname='w2_sha256' and p.pronargs=1
+  ) then
+    execute $fn$
+      create function internal.w2_sha256(value jsonb) returns text
+      language sql immutable parallel safe as $$
+        select encode(sha256(convert_to(value::text,'UTF8')),'hex')
+      $$
+    $fn$;
+  end if;
+end
+$$;
 alter table public.space_credentials
   drop constraint space_credentials_provider_check,
   add constraint space_credentials_provider_check check (provider in ('anthropic','openai','github','typesafe','mcp')),

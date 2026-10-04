@@ -10,7 +10,7 @@ function fixture(lineage:Lineage[],edges:Edge[],readable=true){
   if(sql.includes('as allowed'))return[{allowed:readable}];
   if(sql.includes('with recursive lineage'))return lineage;
   if(sql.includes('g.dst_id as server_id'))return edges.filter(e=>(params[0] as string[]).includes(e.source_id));
-  if(sql.startsWith('select e.id'))return[{id:params[0],space_id:spaceId,version:1,admin:false,definition:{name:edges.find(e=>e.server_id===params[0])?.name??'explicit',transport:'http',url:'https://example.test/mcp',auth:{type:'none'},envKeys:[],headerKeys:[],approved:true}}];
+  if(sql.startsWith('select e.id'))return[{id:params[0],space_id:spaceId,version:1,security_revision:1,admin:false,definition:{name:edges.find(e=>e.server_id===params[0])?.name??'explicit',transport:'http',url:'https://example.test/mcp',auth:{type:'none'},envKeys:[],headerKeys:[],approved:true}}];
   throw new Error('Unexpected query');
  });return{q:{query,rpc:vi.fn()} as unknown as Querier,query};
 }
