@@ -5,12 +5,13 @@ import * as THREE from 'three';
 import type { GameControl, WalkOrder } from './control';
 import { keyDirection } from './control';
 import type { Palette } from './palette';
-import { nearestPlace, roadPath, type Place, type World, type WorldEncounter } from './world';
-import { landscapeColors, makeScenery, placeColor, seedOf } from './scenery';
+import { nearestPlace, roadPath, doorstep, roadObstacles, type Place, type World, type WorldEncounter } from './world';
+import { daylightColor, landscapeColors, makeScenery, placeColor, seedOf } from './scenery';
 import { SceneryBatch } from './scene-batch';
 import { Island, Atmosphere, GroundShadows } from './scene-nature';
 import { Character, type CharacterMotion } from './scene-character';
 import { DioramaFinish } from './scene-effects';
+import { routeRoad, pathLength, type Point } from './roads';
 
 export interface SceneProps {
   world: World; palette: Palette; control: GameControl;
@@ -22,12 +23,11 @@ export interface SceneProps {
   onArrive: (placeId: string, open: boolean) => void; onPosition: (x: number, z: number) => void;
   onGround: (x: number, z: number) => void; onPlaceClick: (placeId: string, open: boolean) => void;
 }
-export const REVEAL_RADIUS = 5.2;
-export const NEAR_RADIUS = 2.1;
-const LABEL_RADIUS = 8;
-const WALK_SPEED = 6;
+export const REVEAL_RADIUS = 12;
+export const NEAR_RADIUS = 3.4;
+const LABEL_RADIUS = 14;
+const WALK_SPEED = 9;
 const ARRIVE_EPS = .18;
-const DOORSTEP = 1.65;
 const CAMERA_OFFSET = new THREE.Vector3(24, 23, 24);
 
 export default function StoryGameScene(props: SceneProps) {
@@ -36,10 +36,10 @@ export default function StoryGameScene(props: SceneProps) {
   const alertNode = useRef<HTMLSpanElement>(null);
   const parts = useMemo(() => makeScenery(props.world, props.palette), [props.world, props.palette]);
   const colors = useMemo(() => landscapeColors(props.palette), [props.palette]);
-  return <><Canvas shadows orthographic camera={{ position: [22, 26, 22], zoom: 26, near: .1, far: 450 }} dpr={[1, 1.5]}
+  return <><Canvas shadows orthographic camera={{ position: [22, 26, 22], zoom: 26, near: .1, far: Math.max(450, props.world.extent * 8) }} dpr={[1, 1.5]}
     gl={{ antialias: false, alpha: false, powerPreference: 'low-power' }}>
     <color attach="background" args={[colors.sea]} />
-    <hemisphereLight args={[props.palette.card, props.palette.info, 1.35]} />
+    <hemisphereLight args={[daylightColor(props.palette), props.palette.info, 1.35]} />
     <Sun world={props.world} palette={props.palette} />
     <ShadowCache world={props.world} revealed={props.revealed} />
     <directionalLight position={[10, 5, -10]} color={props.palette.wait} intensity={.7} />
@@ -48,7 +48,7 @@ export default function StoryGameScene(props: SceneProps) {
     <SceneryBatch parts={parts} revealed={props.revealed} palette={props.palette} reduced={props.reduced} onPlaceClick={props.onPlaceClick} />
     <Atmosphere world={props.world} palette={props.palette} reduced={props.reduced} />
     <PlaceEffects {...props} />
-    <Labels world={props.world} revealed={props.revealed} visited={props.visited} playerPos={playerPos} hidden={!!props.duel} nodes={labelNodes} />
+    <Labels control={props.control} world={props.world} revealed={props.revealed} visited={props.visited} playerPos={playerPos} hidden={!!props.duel} nodes={labelNodes} />
     <Player {...props} playerPos={playerPos} alertNode={alertNode} />
     {props.duel && <DuelStage key={props.duel.encounter.id} place={props.world.byId.get(props.duel.placeId)!} encounter={props.duel.encounter} palette={props.palette} reduced={props.reduced} />}
     <FrameBudget />
@@ -64,18 +64,23 @@ export default function StoryGameScene(props: SceneProps) {
   </>;
 }
 
-function Labels({ world, revealed, playerPos, hidden, nodes }: { world: World; revealed: ReadonlySet<string>; visited: ReadonlySet<string>; playerPos: MutableRefObject<THREE.Vector3>; hidden: boolean; nodes: MutableRefObject<Map<string, HTMLDivElement>> }) {
+function Labels({ control, world, revealed, playerPos, hidden, nodes }: { control: GameControl; world: World; revealed: ReadonlySet<string>; visited: ReadonlySet<string>; playerPos: MutableRefObject<THREE.Vector3>; hidden: boolean; nodes: MutableRefObject<Map<string, HTMLDivElement>> }) {
   const projected = useRef(new THREE.Vector3());
   const { camera, gl } = useThree();
+  const ordered = useMemo(() => [...world.places].sort((a, b) => a.ring - b.ring), [world]);
   useFrame(() => {
+    const occupied: Array<{ x: number; y: number }> = [];
     const width = gl.domElement.clientWidth, height = gl.domElement.clientHeight;
-    for (const p of world.places) {
+    for (const p of ordered) {
       const node = nodes.current.get(p.id);
       if (!node) continue;
-      const show = !hidden && revealed.has(p.id) && Math.hypot(p.x - playerPos.current.x, p.z - playerPos.current.z) < LABEL_RADIUS;
+      const show = !hidden && (control.overview ? p.ring <= 1 : revealed.has(p.id) && Math.hypot(p.x - playerPos.current.x, p.z - playerPos.current.z) < LABEL_RADIUS);
       node.style.display = show ? 'block' : 'none';
       if (!show) continue;
       projected.current.set(p.x, p.shape === 'hub' ? 4.5 : p.root ? 3.4 : 2.7, p.z).project(camera);
+      const x = (projected.current.x * .5 + .5) * width, y = (-projected.current.y * .5 + .5) * height;
+      if (control.overview && occupied.some((q) => Math.abs(q.x - x) < 175 && Math.abs(q.y - y) < 30)) { node.style.display = 'none'; continue; }
+      occupied.push({ x, y });
       node.style.transform = `translate(${(projected.current.x * .5 + .5) * width}px, ${(-projected.current.y * .5 + .5) * height}px) translate(-50%, -100%)`;
     }
   });
@@ -121,7 +126,7 @@ function Discovery({ place, palette, revealed, visited, landed, reduced }: { pla
 function Sun({ world, palette }: { world: World; palette: Palette }) {
   const sun = useRef<THREE.DirectionalLight>(null);
   useEffect(() => { const light = sun.current; return () => { light?.shadow.dispose(); }; }, []);
-  return <directionalLight ref={sun} position={[-12, 24, 10]} color={palette.card} intensity={2.8} castShadow shadow-mapSize={[1024, 1024]} shadow-camera-left={-world.extent - 5} shadow-camera-right={world.extent + 5} shadow-camera-top={world.extent + 5} shadow-camera-bottom={-world.extent - 5} shadow-camera-near={1} shadow-camera-far={100} shadow-bias={-.0005} shadow-normalBias={.025} />;
+  return <directionalLight ref={sun} position={[-world.extent * .7, world.extent * 1.5, world.extent * .6]} color={daylightColor(palette)} intensity={2.8} castShadow shadow-mapSize={[1024, 1024]} shadow-camera-left={-world.extent - 5} shadow-camera-right={world.extent + 5} shadow-camera-top={world.extent + 5} shadow-camera-bottom={-world.extent - 5} shadow-camera-near={1} shadow-camera-far={world.extent * 4 + 30} shadow-bias={-.0005} shadow-normalBias={.025} />;
 }
 /** Lower pixel cost on constrained devices; geometry, motion and interaction stay intact. */
 function FrameBudget() {
@@ -191,12 +196,14 @@ function Player({ world, palette, control, revealed, playerPos, onReveal, onNear
   const alertPosition = useRef(new THREE.Vector3());
   const dust = useRef<THREE.Mesh>(null), dustAt = useRef(-100), dustPos = useRef(new THREE.Vector3());
   useEffect(() => {
-    const wheel = (event: WheelEvent) => { event.preventDefault(); zoom.current = Math.max(.65, Math.min(1.7, zoom.current * Math.exp(-event.deltaY * .001))); };
+    const wheel = (event: WheelEvent) => { event.preventDefault(); zoom.current = Math.max(.2, Math.min(1.7, zoom.current * Math.exp(-event.deltaY * .001))); };
     gl.domElement.addEventListener('wheel', wheel, { passive: false });
     return () => gl.domElement.removeEventListener('wheel', wheel);
   }, [gl]);
   const follow = useRef(playerPos.current.clone());
-  const waypoints = useRef<Array<{ x: number; z: number }>>([]);
+  const waypoints = useRef<Point[]>([]);
+  const travelSpeed = useRef(WALK_SPEED);
+  const obstacles = useMemo(() => roadObstacles(world.places), [world]);
   const arrive = useRef<{ placeId: string | null; open: boolean } | null>(null);
   const seenOrder = useRef<WalkOrder | null>(null);
   const known = useRef(new Set<string>());
@@ -218,36 +225,39 @@ function Player({ world, palette, control, revealed, playerPos, onReveal, onNear
     const pos = playerPos.current;
     const target = order.placeId ? world.byId.get(order.placeId) ?? null : nearestPlace(world, order.x, order.z, 1.4);
     arrive.current = target ? { placeId: target.id, open: order.open } : { placeId: null, open: false };
-    const from = nearestPlace(world, pos.x, pos.z, 3.2);
+    const from = nearestPlace(world, pos.x, pos.z, 4);
     const path = target && from ? roadPath(world, from.id, target.id) : null;
+    const pts: Point[] = [];
     if (target && path && path.length > 1) {
-      const pts = path.map((id) => world.byId.get(id)!).map((p) => ({ x: p.x, z: p.z }));
-      // Skip the first node when we already stand past it on the way.
-      const head = pts[0]!;
-      const next = pts[1]!;
-      const toHead = Math.hypot(head.x - pos.x, head.z - pos.z);
-      const toNext = Math.hypot(next.x - pos.x, next.z - pos.z);
-      const headToNext = Math.hypot(next.x - head.x, next.z - head.z);
-      waypoints.current = toNext < headToNext && toHead < 2.5 ? pts.slice(1) : pts;
-    } else {
-      waypoints.current = [target ? { x: target.x, z: target.z } : { x: order.x, z: order.z }];
+      for (let i = 1; i < path.length; i++) {
+        const a = path[i - 1]!, b = path[i]!;
+        const road = world.roads.find((r) => r.fromId === a && r.toId === b || r.fromId === b && r.toId === a)!;
+        const segment = road.fromId === a ? road.points : [...road.points].reverse();
+        pts.push(...(i === 1 ? segment : segment.slice(1)));
+      }
+    } else if (target) pts.push(doorstep(target));
+    else {
+      // A ground click stays within the safe coast and outside occupied buildings.
+      const r = Math.hypot(order.x, order.z), scale = Math.min(1, (world.extent * .959 - 1) / (r || 1));
+      const point = { x: order.x * scale, z: order.z * scale };
+      for (const o of obstacles) { const d = Math.hypot(point.x - o.x, point.z - o.z); if (d < o.radius + .1) { point.x = o.x; point.z = o.z + o.radius + .2; } }
+      pts.push(point);
     }
-    if (target && waypoints.current.length) {
-      // The last step ends at the doorstep, pulled back toward where we come from.
-      const last = waypoints.current[waypoints.current.length - 1]!;
-      const before = waypoints.current.length > 1 ? waypoints.current[waypoints.current.length - 2]! : { x: pos.x, z: pos.z };
-      const dx = before.x - last.x;
-      const dz = before.z - last.z;
-      const d = Math.hypot(dx, dz);
-      if (d > DOORSTEP) waypoints.current[waypoints.current.length - 1] = { x: last.x + (dx / d) * DOORSTEP, z: last.z + (dz / d) * DOORSTEP };
-    }
+    // Old saves and keyboard walking can start inside a footprint; leave that
+    // footprint first, while all other occupied land still constrains the route.
+    const start = { x: pos.x, z: pos.z };
+    const clear = obstacles.filter((o) => Math.hypot(start.x - o.x, start.z - o.z) >= o.radius);
+    waypoints.current = [...routeRoad(start, pts[0]!, clear).slice(1), ...pts.slice(1)];
+    // A selected destination takes at most about eight seconds of travel.
+    travelSpeed.current = Math.max(WALK_SPEED, pathLength([start, ...waypoints.current]) / 8);
+
   };
 
   useFrame((state, delta) => {
     const pos = playerPos.current;
     const m = mesh.current;
     if (!m) return;
-    const dt = Math.min(delta, 0.05);
+    const dt = Math.min(delta, .25);
 
     if (control.order !== seenOrder.current) {
       seenOrder.current = control.order;
@@ -265,33 +275,28 @@ function Player({ world, palette, control, revealed, playerPos, onReveal, onNear
       heading.current = Math.atan2(dir[0], dir[1]);
       moving = true;
     } else if (waypoints.current.length) {
-      const w = waypoints.current[0]!;
-      const dx = w.x - pos.x;
-      const dz = w.z - pos.z;
-      const d = Math.hypot(dx, dz);
-      const step = WALK_SPEED * dt;
-      if (d <= Math.max(step, ARRIVE_EPS)) {
-        pos.x = w.x;
-        pos.z = w.z;
-        waypoints.current.shift();
-        if (!waypoints.current.length && arrive.current?.placeId) {
-          const a = arrive.current;
-          arrive.current = null;
-          motion.current.arrival = state.clock.elapsedTime;
-          onArrive(a.placeId!, a.open);
+      let remaining = travelSpeed.current * Math.min(delta, 1);
+      while (remaining > 0 && waypoints.current.length) {
+        const w = waypoints.current[0]!, dx = w.x - pos.x, dz = w.z - pos.z, d = Math.hypot(dx, dz);
+        if (d > 1e-6) heading.current = Math.atan2(dx, dz);
+        if (d <= Math.max(remaining, ARRIVE_EPS)) {
+          pos.x = w.x; pos.z = w.z; remaining -= d;
+          waypoints.current.shift();
+          if (!waypoints.current.length && arrive.current?.placeId) {
+            const a = arrive.current; arrive.current = null;
+            motion.current.arrival = state.clock.elapsedTime; onArrive(a.placeId!, a.open);
+          }
+        } else {
+          pos.x += dx / d * remaining; pos.z += dz / d * remaining; remaining = 0;
         }
-      } else {
-        pos.x += (dx / d) * step;
-        pos.z += (dz / d) * step;
-        heading.current = Math.atan2(dx, dz);
       }
       moving = true;
     }
     // Stay on the island.
     const r = Math.hypot(pos.x, pos.z);
-    if (r > world.extent - 0.6) {
-      pos.x *= (world.extent - 0.6) / r;
-      pos.z *= (world.extent - 0.6) / r;
+    if (r > world.extent * .959 - 0.6) {
+      pos.x *= (world.extent * .959 - 0.6) / r;
+      pos.z *= (world.extent * .959 - 0.6) / r;
     }
 
     m.position.set(pos.x, 0, pos.z);
@@ -312,18 +317,22 @@ function Player({ world, palette, control, revealed, playerPos, onReveal, onNear
     const entering = reduced ? 0 : Math.max(0, 1 - intro.current / 2.8);
     target.current.copy(pos);
     if (moving) { target.current.x += Math.sin(heading.current) * 1.1; target.current.z += Math.cos(heading.current) * 1.1; }
+    const overview = control.overview && !duel;
+    if (overview) target.current.set(0, 0, 0);
     const arena = duel ? world.byId.get(duel.placeId) : null;
     if (arena) target.current.set(arena.x, 5.2, arena.z);
-    follow.current.lerp(target.current, 1 - Math.exp(-3.5 * dt));
-    target.current.copy(follow.current).add(CAMERA_OFFSET);
+    if (reduced) follow.current.copy(target.current);
+    else follow.current.lerp(target.current, 1 - Math.exp(-3.5 * dt));
+    target.current.copy(follow.current).addScaledVector(CAMERA_OFFSET, overview ? Math.max(1, world.extent / 20) : 1);
     target.current.y += entering * entering * 35;
     if (arena) { target.current.x += 8; target.current.y -= 10; target.current.z -= 9; }
     camera.position.lerp(target.current, reduced ? 1 : 1 - Math.exp(-3.5 * dt));
     look.current.copy(follow.current); look.current.y = arena ? 5.8 : .3;
     camera.lookAt(look.current);
-    const baseZoom = Math.max(24, Math.min(53, viewportSize.height / 13));
-    const desired = baseZoom * zoom.current * (arena ? 1.55 : nearId.current && nearId.current !== world.hubId ? 1.09 : 1) * (1 - entering * .35);
-    camera.zoom = THREE.MathUtils.damp(camera.zoom, desired, reduced ? 12 : 3, dt); camera.updateProjectionMatrix();
+    const baseZoom = Math.max(22, Math.min(43, viewportSize.height / 18));
+    const overviewZoom = Math.min(viewportSize.width, viewportSize.height) / (world.extent * 2.5);
+    const desired = overview ? overviewZoom : baseZoom * zoom.current * (arena ? 1.55 : nearId.current && nearId.current !== world.hubId ? 1.09 : 1) * (1 - entering * .35);
+    camera.zoom = reduced ? desired : THREE.MathUtils.damp(camera.zoom, desired, 3, dt); camera.updateProjectionMatrix();
 
     // Reveal what is within reach (a few times a second, not every frame).
     revealTick.current += dt;

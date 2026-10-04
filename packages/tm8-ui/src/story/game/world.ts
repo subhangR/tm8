@@ -1,23 +1,9 @@
-/**
- * THE STORY AS A WORLD — the pure, deterministic layout the game walks on.
- *
- * `buildWorld(view)` turns the server's StoryPage into PLACES (one per node
- * on the page: the story as the HUB at the origin, the roots on a ring around
- * it, every trail node clustered behind the root it hangs off, the child
- * stories as PORTAL islands on the outer ring) and ROADS (every page edge
- * between two placed nodes, plus the hub's road to each root). The layout is
- * a function of the story's STRUCTURE only — not of timestamps, not of random
- * numbers — so a live update that changes a status or adds a trail node moves
- * nothing that was already standing: places light up in place and new ones
- * rise beside their anchor, which is what "the world renders as we explore"
- * needs.
- *
- * Kinds are DATA here (model.ts §15.2): a place's SHAPE comes from the
- * graph view its kind belongs to, never from a `case 'task':`.
- */
+/** Deterministic graph-to-world layout. Structure and creation time determine land;
+ * status, activity and encounter feeds only change its appearance. */
 import { VIEW_OF_KIND, STORY_KIND, toneOf, type StoryGraphView, type StoryTone, type StoryView } from '../model';
 import type { StatusCategory } from '@tm8/contract';
 import type { StoryEdgeFamily } from '../model';
+import { routeRoad, pathLength, ROAD_WIDTH, ROAD_SHOULDER, type Point } from './roads';
 
 /* ------------------------------------------------------------------------- */
 /* THE GENERIC SOURCE. The layout knows nothing of stories: it is handed a    */
@@ -98,6 +84,8 @@ export interface Place {
   kind: string;
   title: string;
   shape: PlaceShape;
+  /** Conservative occupied radius, including steps, lanterns and progress stones. */
+  footprint: number;
   /** World position on the ground plane. */
   x: number;
   z: number;
@@ -120,6 +108,8 @@ export interface Place {
 }
 
 export interface Road {
+  points: Point[];
+  length: number;
   id: string;
   fromId: string;
   toId: string;
@@ -141,20 +131,19 @@ export interface World {
 }
 
 /* ---- the lay of the land ---- */
-const ROOT_RING_BASE = 9;
-const ROOT_RING_PER_ROOT = 0.9;
-const PORTAL_RING_GAP = 8;
-const COMMONS_RADIUS = 4.6;
-/** Distance from a place to the children laid out around it, by the child's ring. */
-const FAN_RADIUS: Readonly<Record<number, number>> = { 2: 3.6, 3: 2.7, 4: 2.2 };
-const FAN_SPREAD = Math.PI * 1.15;
-export const MIN_DISTANCE = 2.1;
-/** Siblings fan out between these multiples of the ring's radius: newest nearest, oldest farthest. */
-const AGE_NEAR = 0.85;
-const AGE_FAR = 1.35;
+/** Six world units of meadow between occupied landmark footprints. */
+export const LANDMARK_GAP = 6;
+export const MIN_DISTANCE = 9;
+const ROOT_RING_BASE = 17;
 const RECENT_MS = 3_600_000;
-const RELAX_ITERATIONS = 80;
-const ISLAND_MARGIN = 5;
+const ISLAND_MARGIN = 9;
+
+export function footprintOf(shape: PlaceShape, root = false): number {
+  return shape === 'hub' ? 2.05 : root ? 1.65 : 1.5;
+}
+/** Roads meet a shared apron on the entrance side, outside the occupied footprint. */
+export const doorstep = (p: Place): Point => ({ x: p.x, z: p.z + p.footprint + 1.1 });
+export const roadObstacles = (places: readonly Place[]) => places.map((p) => ({ x: p.x, z: p.z, radius: p.footprint + ROAD_WIDTH / 2 + ROAD_SHOULDER + .1 }));
 
 const TAU = Math.PI * 2;
 
@@ -183,11 +172,13 @@ function byTitle<T extends { title: string; id: string }>(a: T, b: T): number {
 }
 
 function placeOf(n: WorldNode, x: number, z: number, ring: number, anchorId: string | null, root: boolean, portal: boolean, now: number): Place {
+  const shape = ring === 0 ? 'hub' : portal ? 'portal' : root ? 'building' : shapeOf(n.kind);
   return {
+    footprint: footprintOf(shape, root),
     id: n.id,
     kind: n.kind,
     title: n.title,
-    shape: ring === 0 ? 'hub' : portal ? 'portal' : root ? 'building' : shapeOf(n.kind),
+    shape,
     x,
     z,
     ring,
@@ -282,6 +273,10 @@ export function storySource(view: StoryView): WorldSource {
   );
   for (const node of [hub, ...landmarks, ...rest, ...portals]) attachEncounters(node);
   const edges: WorldEdge[] = page.edges.map((e) => ({ fromId: e.fromId, toId: e.toId, type: e.type, family: e.family, cross: e.cross }));
+  // Root membership and child-story containment are actual source relationships.
+  // Layout anchor hints alone never manufacture an edge in the generic world.
+  for (const n of [...landmarks, ...portals]) if (!edges.some((e) => e.fromId === view.id && e.toId === n.id))
+    edges.push({ fromId: view.id, toId: n.id, type: 'contains', family: 'story', cross: false });
   return { id: view.id, hub, landmarks, nodes: rest, portals, edges };
 }
 
@@ -302,7 +297,7 @@ export function layoutWorld(src: WorldSource, now: number = Date.now()): World {
 
   /* THE LANDMARKS: a ring, in the source's order, the first at the top. */
   const landmarks = src.landmarks.filter((l) => !placed.has(l.id));
-  const rootRadius = ROOT_RING_BASE + ROOT_RING_PER_ROOT * Math.max(0, landmarks.length - 3);
+  const rootRadius = Math.max(ROOT_RING_BASE, landmarks.length * (MIN_DISTANCE + 2) / TAU);
   const rootAngle = new Map<string, number>();
   landmarks.forEach((l, i) => {
     const a = -Math.PI / 2 + (TAU * i) / Math.max(1, landmarks.length);
@@ -344,71 +339,60 @@ export function layoutWorld(src: WorldSource, now: number = Date.now()): World {
   }
   for (const list of childrenOf.values()) list.sort(byAge);
 
-  /* FAN OUT, breadth-first from the hub and the landmarks. A child sits on an
-     arc around its anchor, facing AWAY from the anchor's own anchor, so each
-     land grows outward and never back over the hub. TIME IS DISTANCE: the
-     newest sibling stands nearest, the oldest farthest out along the arc. */
-  const queue: string[] = [src.id, ...landmarks.map((l) => l.id)];
-  const seen = new Set(queue);
-  while (queue.length) {
-    const aid = queue.shift()!;
-    const anchor = placed.get(aid);
-    if (!anchor) continue;
-    const kids = (childrenOf.get(aid) ?? []).filter((k) => !placed.has(k.id));
-    if (!kids.length) continue;
-    const ring = anchor.ring + 1;
-    const ageStep = (i: number): number => (kids.length === 1 ? 1 : AGE_NEAR + ((AGE_FAR - AGE_NEAR) * i) / (kids.length - 1));
-    if (aid === src.id) {
-      // The commons: a ring of the hub's own direct neighbours, offset half a step from the landmarks.
-      kids.forEach((k, i) => {
-        const a = -Math.PI / 2 + Math.PI / Math.max(1, kids.length) + (TAU * i) / Math.max(1, kids.length);
-        const rr = COMMONS_RADIUS * ageStep(i);
-        const p = put(placeOf(k, Math.cos(a) * rr, Math.sin(a) * rr, 2, aid, false, false, now));
-        if (!seen.has(p.id)) { seen.add(p.id); queue.push(p.id); }
-      });
-      continue;
+  /* Allocate unoccupied land outward from each anchor. Newer siblings claim
+     nearer land first. Sampling expands until footprint clearance is satisfied,
+     rather than squeezing more entities into a fixed fan or relaxing neighbours. */
+  const allocate = (node: WorldNode, anchor: Place, ring: number, preferred: number, minimum: number, spread: number, portal = false, sector = preferred): Place => {
+    const p = placeOf(node, 0, 0, ring, anchor.id, false, portal, now);
+    for (let radius = minimum; ; radius += 1.25) {
+      const samples = Math.max(12, Math.ceil(radius * spread / 2));
+      for (let slot = 0; slot < samples; slot++) {
+        const offset = slot === 0 ? 0 : Math.ceil(slot / 2) * (slot % 2 ? 1 : -1) * spread / samples;
+        const angle = preferred + offset;
+        if (spread < TAU && Math.abs(angle - sector) > spread / 2) continue;
+        p.x = anchor.x + Math.cos(angle) * radius; p.z = anchor.z + Math.sin(angle) * radius;
+        if (places.every((q) => Math.hypot(q.x - p.x, q.z - p.z) >= p.footprint + q.footprint + LANDMARK_GAP)) return put(p);
+      }
     }
+  };
+  const queue: string[] = [src.hub.id, ...landmarks.map((l) => l.id)];
+  while (queue.length) {
+    const anchor = placed.get(queue.shift()!)!;
+    const kids = (childrenOf.get(anchor.id) ?? []).filter((k) => !placed.has(k.id));
     const parent = anchor.anchorId ? placed.get(anchor.anchorId) : null;
-    const outward = parent ? Math.atan2(anchor.z - parent.z, anchor.x - parent.x) : rootAngle.get(aid) ?? 0;
-    const radius = FAN_RADIUS[Math.min(ring, 4)] ?? 2;
-    const spread = kids.length === 1 ? 0 : FAN_SPREAD;
+    const outward = rootAngle.get(anchor.id) ?? (parent ? Math.atan2(anchor.z - parent.z, anchor.x - parent.x) : -Math.PI / 2);
+    let previousRadius = 0;
     kids.forEach((k, i) => {
-      // Alternate sides so the newest sits in the middle of the arc, the oldest at its ends.
-      const slot = i % 2 === 0 ? Math.floor(kids.length / 2) + Math.floor(i / 2) : Math.floor(kids.length / 2) - Math.ceil(i / 2);
-      const t = kids.length === 1 ? 0.5 : slot / (kids.length - 1);
-      const a = outward + (t - 0.5) * spread;
-      const rr = radius * ageStep(i);
-      const p = put(placeOf(k, anchor.x + Math.cos(a) * rr, anchor.z + Math.sin(a) * rr, ring, aid, false, false, now));
-      if (!seen.has(p.id)) { seen.add(p.id); queue.push(p.id); }
+      const spread = anchor.ring === 0 ? TAU : TAU / Math.max(3, landmarks.length) * .9;
+      const angle = outward + ((i * .61803398875) % 1 - .5) * spread;
+      const minimum = Math.max(10 + Math.sqrt(i) * 2, previousRadius + .1);
+      const p = allocate(k, anchor, Math.max(2, anchor.ring + 1), angle, minimum, spread, false, outward);
+      if (anchor.ring > 0) rootAngle.set(p.id, outward);
+      previousRadius = Math.hypot(p.x - anchor.x, p.z - anchor.z);
+      queue.push(p.id);
     });
   }
 
-  /* THE PORTALS on the rim, between the landmarks' lands. */
+  // Portals live beyond the occupied land, with the same clearance guarantee.
   const portals = src.portals.filter((c) => !placed.has(c.id));
-  const portalRadius = rootRadius + PORTAL_RING_GAP;
-  portals.forEach((c, i) => {
-    const a = -Math.PI / 2 + Math.PI / Math.max(1, portals.length) + (TAU * i) / Math.max(1, portals.length);
-    put(placeOf(c, Math.cos(a) * portalRadius, Math.sin(a) * portalRadius, 1, src.id, false, true, now));
-  });
+  const portalRadius = Math.max(rootRadius, ...places.map((p) => Math.hypot(p.x, p.z))) + 10;
+  portals.forEach((c, i) => allocate(c, places[0]!, 1, -Math.PI / 2 + TAU * (i + .5) / portals.length, portalRadius, TAU, true));
 
-  relax(places);
-
-  /* ROADS: the hub to each root and each portal, then every page edge whose
-     two ends stand in the world, deduplicated by unordered pair. */
   const roads: Road[] = [];
-  const pair = new Set<string>();
-  const addRoad = (fromId: string, toId: string, family: StoryEdgeFamily, type: string, cross: boolean): void => {
-    if (fromId === toId || !placed.has(fromId) || !placed.has(toId)) return;
-    const key = fromId < toId ? `${fromId}|${toId}` : `${toId}|${fromId}`;
-    if (pair.has(key)) return;
-    pair.add(key);
-    roads.push({ id: key, fromId, toId, family, type, cross });
-  };
-  for (const l of landmarks) addRoad(src.id, l.id, 'story', 'contains', false);
-  for (const c of portals) addRoad(src.id, c.id, 'story', 'contains', false);
-  for (const e of src.edges) addRoad(e.fromId, e.toId, e.family, e.type, e.cross);
-  // A place the edges never reached still gets the road it was laid out along.
-  for (const p of places) if (p.anchorId) addRoad(p.anchorId, p.id, p.portal ? 'story' : 'parent', 'contains', false);
+  const pair = new Set<string>(), obstacles = roadObstacles(places);
+  const routes = new Map<string, Point[]>();
+  // Preserve distinct relationship types, including a dependency parallel to containment.
+  for (const e of src.edges) {
+    const a = placed.get(e.fromId), b = placed.get(e.toId);
+    if (!a || !b || a === b) continue;
+    const id = `${e.fromId}|${e.toId}|${e.type}`;
+    if (pair.has(id)) continue;
+    pair.add(id);
+    const routeKey = `${e.fromId}|${e.toId}`;
+    const points = routes.get(routeKey) ?? routeRoad(doorstep(a), doorstep(b), obstacles);
+    routes.set(routeKey, points);
+    roads.push({ ...e, id, points, length: pathLength(points) });
+  }
 
   const adjacency = new Map<string, string[]>();
   for (const r of roads) {
@@ -418,38 +402,7 @@ export function layoutWorld(src: WorldSource, now: number = Date.now()): World {
 
   let far = 0;
   for (const p of places) far = Math.max(far, Math.hypot(p.x, p.z));
-  return { storyId: src.id, hubId: src.id, places, byId: placed, roads, adjacency, extent: far + ISLAND_MARGIN };
-}
-
-/**
- * Push apart any two places closer than MIN_DISTANCE. Deterministic (fixed
- * order, fixed iteration count) and local: the hub never moves, roots move
- * only along their ring, everything else by small steps.
- */
-function relax(places: Place[]): void {
-  for (let it = 0; it < RELAX_ITERATIONS; it++) {
-    let moved = false;
-    for (let i = 0; i < places.length; i++) {
-      for (let j = i + 1; j < places.length; j++) {
-        const a = places[i]!;
-        const b = places[j]!;
-        let dx = b.x - a.x;
-        let dz = b.z - a.z;
-        let d = Math.hypot(dx, dz);
-        if (d >= MIN_DISTANCE) continue;
-        if (d < 1e-6) { dx = 1; dz = 0; d = 1; }
-        const push = (MIN_DISTANCE - d) / 2;
-        const ux = dx / d;
-        const uz = dz / d;
-        const wa = a.ring === 0 ? 0 : a.root || a.portal ? 0.35 : 1;
-        const wb = b.ring === 0 ? 0 : b.root || b.portal ? 0.35 : 1;
-        a.x -= ux * push * wa; a.z -= uz * push * wa;
-        b.x += ux * push * wb; b.z += uz * push * wb;
-        moved = true;
-      }
-    }
-    if (!moved) break;
-  }
+  return { storyId: src.id, hubId: src.id, places, byId: placed, roads, adjacency, extent: Math.max(far + ISLAND_MARGIN, Math.sqrt(places.length) * 5.6 + ISLAND_MARGIN) / .959 };
 }
 
 /** Shortest road walk between two places (BFS; roads are unweighted). Null when unconnected. */

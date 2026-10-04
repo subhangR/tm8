@@ -42,8 +42,8 @@ describe('buildWorld', () => {
     expect(moved.byId.get(first.id)?.tone).toBe('done');
   });
 
-  it('roads reach every place from the hub', () => {
-    for (const p of world.places) {
+  it('roads reach source-connected places from the hub', () => {
+    for (const p of world.places.filter((p) => world.roads.some((r) => r.fromId === p.id || r.toId === p.id))) {
       const path = roadPath(world, world.hubId, p.id);
       expect(path, p.title).not.toBeNull();
       expect(path![0]).toBe(world.hubId);
@@ -80,7 +80,7 @@ describe('layoutWorld (generic)', () => {
       node('loose', '2026-03-05T00:00:00Z', null),
     ],
     portals: [node('other-world', '2026-01-01T00:00:00Z', 'hub')],
-    edges: [{ fromId: 'loose', toId: 'L2', type: 'about', family: 'story', cross: false }],
+    edges: [{ fromId: 'loose', toId: 'L2', type: 'about', family: 'story', cross: false }, { fromId: 'hub', toId: 'L2', type: 'contains', family: 'story', cross: false }],
   };
   const world = layoutWorld(src, Date.parse('2026-03-06T00:00:00Z'));
 

@@ -5,6 +5,8 @@ import { type Part, type Solid } from './scenery';
 import type { Palette } from './palette';
 
 const geometries: Record<Solid, () => THREE.BufferGeometry> = {
+  paving: () => new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2),
+  disc: () => new THREE.CircleGeometry(1, 12).rotateX(-Math.PI / 2),
   box: () => new THREE.BoxGeometry(), cone: () => new THREE.ConeGeometry(1, 1, 4),
   cylinder: () => new THREE.CylinderGeometry(1, 1, 1, 12), orb: () => new THREE.IcosahedronGeometry(1, 1),
   gem: () => new THREE.OctahedronGeometry(1), ring: () => new THREE.TorusGeometry(1, .055, 5, 32),

@@ -1,9 +1,10 @@
 /** Procedural toy architecture. Deterministic parts, instanced by geometry in scene-batch. */
 import { Color } from 'three';
 import type { Palette } from './palette';
-import type { Place, World } from './world';
+import { doorstep, type Place, type World } from './world';
+import { ROAD_WIDTH, ROAD_SHOULDER, segmentDistance, distance } from './roads';
 
-export type Solid = 'box' | 'cone' | 'cylinder' | 'orb' | 'gem' | 'ring';
+export type Solid = 'box' | 'cone' | 'cylinder' | 'orb' | 'gem' | 'ring' | 'paving' | 'disc';
 export interface Part {
   geo: Solid; x: number; y: number; z: number; sx: number; sy: number; sz: number;
   color: string; ry: number; rz: number; rx: number; motion: number; placeId: string | null;
@@ -14,12 +15,14 @@ export function seedOf(id: string): number {
   return (h >>> 0) / 4294967296;
 }
 export const tint = (a: string, b: string, amount: number): string => new Color(a).lerp(new Color(b), amount).getStyle();
+export const daylightColor = (p: Palette): string => new Color(p.card).getHSL({ h: 0, s: 0, l: 0 }).l > .5 ? p.card : p.ink;
 export function landscapeColors(p: Palette) {
+  const light = daylightColor(p);
   return {
-    grass: tint(p.run, p.wait, .27), leaf: tint(p.run, p.info, .28), leafLight: tint(p.run, p.card, .23),
+    grass: tint(p.run, p.wait, .27), leaf: tint(p.run, p.info, .28), leafLight: tint(p.run, light, .23),
     sea: tint(p.info, p.run, .22), shallows: tint(p.info, p.card, .4),
-    sand: tint(p.wait, p.card, .62), stone: tint(p.brand, p.card, .64),
-    wood: tint(p.brand, p.ink, .35), cream: tint(p.card, p.wait, .12),
+    sand: tint(p.wait, light, .62), stone: tint(p.brand, light, .64),
+    wood: tint(p.brand, p.ink, .35), cream: tint(light, p.wait, .12),
     roof: tint(p.info, p.run, .35), gold: tint(p.wait, p.card, .13),
   };
 }
@@ -41,29 +44,52 @@ export function makeScenery(world: World, p: Palette): Part[] {
     part('box', x, 1.17, z, .24, .29, .24, color, 0, 3);
     part('cone', x, 1.39, z, .24, .16, .24, c.wood);
   };
-  // Roads are cobbles; dependency edges get arched decks, posts and continuous ropes.
+  // Continuous pale lanes with stone shoulders; dependency edges become timber
+  // bridges. Geometry follows the same clear route that the player walks.
+  let lamps = 0, cobbles = 0;
+  const shoulder = tint(c.sand, c.wood, .36), lane = tint(c.sand, c.wood, .12);
   for (const road of world.roads) {
-    const a = world.byId.get(road.fromId), b = world.byId.get(road.toId);
-    if (!a || !b) continue;
-    const dx = b.x - a.x, dz = b.z - a.z, len = Math.hypot(dx, dz), yaw = Math.atan2(dx, dz);
-    const bridge = road.family === 'blocks', steps = Math.ceil(len / (bridge ? .32 : .48));
+    const a = world.byId.get(road.fromId)!, b = world.byId.get(road.toId)!;
+    const bridge = road.family === 'blocks';
     const status = a.tone === 'blocked' || b.tone === 'blocked' ? p.block : c.wood;
-    for (let i = 1; i < steps; i++) {
-      const t = i / steps, x = a.x + dx * t, z = a.z + dz * t;
-      const height = bridge ? .16 + Math.sin(t * Math.PI) * .35 : .025;
-      part('box', x, height, z, bridge ? .92 : .58 + .13 * Math.sin(i), bridge ? .13 : .07, bridge ? .25 : .4, bridge ? c.wood : tint(c.sand, p.card, (i % 3) * .12), yaw);
-      if (bridge && i % 5 === 0) {
-        for (const side of [-1, 1]) {
-          const px = x + Math.cos(yaw) * .54 * side, pz = z - Math.sin(yaw) * .54 * side;
-          part('cylinder', px, height + .4, pz, .06, .9, .06, status);
-          part('orb', px, height + .88, pz, .1, .1, .1, c.gold);
+    let travelled = 0;
+    for (let j = 1; j < road.points.length; j++) {
+      const from = road.points[j - 1]!, to = road.points[j]!;
+      const len = distance(from, to), yaw = Math.atan2(to.x - from.x, to.z - from.z);
+      const steps = bridge ? Math.max(1, Math.ceil(len / Math.max(.8, road.length / 28))) : 1;
+      for (let i = 0; i < steps; i++) {
+        const t = (i + .5) / steps, x = from.x + (to.x - from.x) * t, z = from.z + (to.z - from.z) * t;
+        const height = bridge ? .1 + Math.sin((travelled + t * len) / road.length * Math.PI) * .32 : .045;
+        const span = len / steps + .045;
+        part(bridge ? 'box' : 'paving', x, height, z, ROAD_WIDTH + ROAD_SHOULDER * 2, .085, span, bridge ? c.wood : shoulder, yaw);
+        part(bridge ? 'box' : 'paving', x, height + .049, z, ROAD_WIDTH, .035, span, bridge ? tint(c.wood, c.sand, .28 + (i % 2) * .08) : lane, yaw);
+        if (bridge) for (const side of [-1, 1]) {
+          const px = x + Math.cos(yaw) * .83 * side, pz = z - Math.sin(yaw) * .83 * side;
+          part('box', px, height + .55, pz, .065, .065, span, status, yaw);
+          if (i % 3 === 0) part('cylinder', px, height + .28, pz, .055, .76, .055, status);
         }
       }
-      if (bridge && i < steps - 1) for (const side of [-1, 1]) {
-        part('box', x + Math.cos(yaw) * .54 * side, height + .65, z - Math.sin(yaw) * .54 * side, .045, .045, len / steps * 1.07, status, yaw);
+      if (!bridge && j < road.points.length - 1) for (const point of [to]) {
+        part('disc', point.x, .045, point.z, ROAD_WIDTH / 2 + ROAD_SHOULDER, .085, ROAD_WIDTH / 2 + ROAD_SHOULDER, shoulder);
+        part('disc', point.x, .094, point.z, ROAD_WIDTH / 2, .035, ROAD_WIDTH / 2, lane);
       }
-      if (i % 15 === 0) lantern(x + Math.cos(yaw) * .75, z - Math.sin(yaw) * .75);
+      // Sparse inset stones and lanterns have a world-wide decoration budget.
+      const stones = Math.min(18, Math.floor(len / 1.8));
+      for (let i = 1; i <= stones && cobbles < 1800; i++, cobbles++) {
+        const t = i / (stones + 1), x = from.x + (to.x - from.x) * t, z = from.z + (to.z - from.z) * t;
+        if (!bridge) part('box', x, .118, z, .39, .018, .27, tint(lane, c.cream, .15 + i % 3 * .08), yaw + .12 * Math.sin(i));
+        const lx = x + Math.cos(yaw) * 1.14, lz = z - Math.sin(yaw) * 1.14;
+        if (i % 8 === 0 && lamps < 120 && world.places.every((q) => Math.hypot(q.x - lx, q.z - lz) > q.footprint + .4)) { lantern(lx, lz); lamps++; }
+      }
+      travelled += len;
     }
+  }
+  // Shared entrance aprons make branching graph edges meet visibly at each place.
+  for (const place of world.places) {
+    const end = doorstep(place);
+    part('cylinder', end.x, .06, end.z, 1.05, .1, 1.05, shoulder);
+    part('cylinder', end.x, .12, end.z, .88, .04, .88, lane);
+    part('box', place.x, .065, place.z + place.footprint, .85, .1, 1.8, lane);
   }
   for (const place of world.places) {
     ox = place.x; oz = place.z; size = place.root ? 1.18 : 1; placeId = place.id;
@@ -174,17 +200,14 @@ export function makeScenery(world: World, p: Palette): Part[] {
   // Scatter derives from IDs, never runtime/status; roads and doorways stay clear.
   placeId = null; size = 1; ox = 0; oz = 0;
   const clear = (x: number, z: number): boolean => {
-    if (world.places.some((q) => Math.hypot(x - q.x, z - q.z) < 1.9)) return false;
-    return !world.roads.some((road) => {
-      const a = world.byId.get(road.fromId)!, b = world.byId.get(road.toId)!;
-      const dx = b.x - a.x, dz = b.z - a.z;
-      const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / (dx * dx + dz * dz || 1)));
-      return Math.hypot(x - a.x - dx * t, z - a.z - dz * t) < .8;
-    });
+    if (world.places.some((q) => Math.hypot(x - q.x, z - q.z) < q.footprint + 1.6 || Math.hypot(x - doorstep(q).x, z - doorstep(q).z) < 2)) return false;
+    return !world.roads.some((road) => road.points.slice(1).some((b, i) => segmentDistance({ x, z }, road.points[i]!, b) < ROAD_WIDTH / 2 + 1.4));
   };
-  for (const place of world.places) for (let i = 0; i < 10; i++) {
+  // At most 900 scatter candidates, spread over all entities (never per square metre).
+  for (let candidate = 0; candidate < Math.min(900, world.places.length * 10); candidate++) {
+    const place = world.places[candidate % world.places.length]!, i = Math.floor(candidate / world.places.length);
     const seed = seedOf(`${place.id}/${i}`), a = seed * Math.PI * 2;
-    const d = 2 + seedOf(`${i}/${place.id}`) * 3.5;
+    const d = 3.5 + seedOf(`${i}/${place.id}`) * 3.5;
     const x = place.x + Math.cos(a) * d, z = place.z + Math.sin(a) * d;
     if (Math.hypot(x, z) > world.extent - 1 || !clear(x, z)) continue;
     if (i < 3) {

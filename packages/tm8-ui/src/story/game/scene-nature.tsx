@@ -3,7 +3,7 @@ import { useFrame, type ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { Palette } from './palette';
 import type { World } from './world';
-import { landscapeColors, seedOf, tint, type Part } from './scenery';
+import { daylightColor, landscapeColors, seedOf, tint, type Part } from './scenery';
 
 const coast = (a: number) => 1 + .023 * Math.sin(a * 5) + .018 * Math.cos(a * 9);
 export function Island({ world, palette, onGround, reduced }: { world: World; palette: Palette; reduced: boolean; onGround: (x: number, z: number) => void }) {
@@ -76,7 +76,7 @@ export function GroundShadows({ parts, palette }: { parts: Part[]; palette: Pale
     });
     if (ref.current) { ref.current.instanceMatrix.needsUpdate = true; ref.current.computeBoundingSphere(); }
   }, [shadows]);
-  const uniforms = useMemo(() => ({ color: { value: new THREE.Color(palette.ink) } }), [palette.ink]);
+  const uniforms = useMemo(() => ({ color: { value: new THREE.Color(daylightColor(palette) === palette.card ? palette.ink : palette.card) } }), [palette]);
   return <instancedMesh ref={ref} args={[undefined, undefined, shadows.length]} renderOrder={1}>
     <planeGeometry args={[2, 2]} />
     <shaderMaterial transparent depthWrite={false} uniforms={uniforms}
@@ -112,7 +112,7 @@ export function Atmosphere({ world, palette, reduced }: { world: World; palette:
     <group ref={cloud}>
       {[0, 1, 2, 3, 4].map((i) => <group key={i} position={[Math.cos(i * 1.7) * world.extent * .83, 5.8 + i % 2, Math.sin(i * 1.7) * world.extent * .83]}>
         {[0, 1, 2].map((j) => <mesh key={j} position={[j * 1.05, Math.sin(j) * .35, 0]} scale={[1.8, .5 + j % 2 * .24, .8]}>
-          <icosahedronGeometry args={[1, 1]} /><meshBasicMaterial color={palette.card} transparent opacity={.23} depthWrite={false} />
+          <icosahedronGeometry args={[1, 1]} /><meshBasicMaterial color={daylightColor(palette)} transparent opacity={.23} depthWrite={false} />
         </mesh>)}
       </group>)}
     </group>
