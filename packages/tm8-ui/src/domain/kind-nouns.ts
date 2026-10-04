@@ -121,6 +121,18 @@ export const KIND_CLI_VOCABULARY: Readonly<Record<string, KindCliVocabulary>> = 
   // 284: a space style is written only by `tm8 style push`; the noun owns it.
   style: { nouns: ['style'], commands: [] },
   server: { nouns: ['server'], commands: ['identity get', 'node mode'] },
+  mcp_server: {
+    nouns: [],
+    commands: [
+      'mcp server list',
+      'mcp server get',
+      'mcp server create',
+      'mcp server update',
+      'mcp server delete',
+      'mcp server import',
+      'mcp server test',
+    ],
+  },
   op_request: { nouns: ['request'], commands: [] },
   loop: { nouns: [], commands: ['entity query', 'session spawn'] },
   spell: { nouns: [], commands: ['skill equip', 'entity query'] },
