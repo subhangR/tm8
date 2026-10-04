@@ -8,6 +8,7 @@ import {
   graphNodeKey,
   DrawingContentInputSchema,
   StoryContentInputSchema,
+  McpServerDefinitionSchema,
   decodeCursor,
   encodeCursor,
   isCollabError,
@@ -1067,6 +1068,7 @@ const PATCH_CONTENT_MEMBERS: Readonly<Record<string, readonly string[]>> = {
   // 283: the prose; the title rides the envelope's `title`. 288: `status`, the
   // story's only status door (a category or a state name; manual, never derived).
   story: ['description', 'status'],
+  mcp_server: ['definition'],
 };
 
 function assertPatchContentMembers(
@@ -1458,6 +1460,11 @@ export class W2EntitiesCommandsTrackingService {
             input.parentId ?? null, input.position ?? null, envelope.clientMutationId ?? null]);
           break;
         }
+        case 'mcp_server': {
+          const definition = McpServerDefinitionSchema.parse(content.definition ?? { ...content, name: input.title });
+          raw = await q.rpc('create_mcp_server_entity', [input.spaceId, JSON.stringify(definition), envelope.actorId ?? null, envelope.clientMutationId ?? null]);
+          break;
+        }
         case 'story': {
           // 283: zero new catalog rows, the drawing posture. `parentId` is a
           // parent STORY (same-kind hierarchy = child stories); putting a
@@ -1643,6 +1650,11 @@ export class W2EntitiesCommandsTrackingService {
               drawing.appState === undefined ? null : JSON.stringify(drawing.appState),
               drawing.files === undefined ? null : JSON.stringify(drawing.files),
               envelope.clientMutationId ?? null]);
+            break;
+          }
+          case 'mcp_server': {
+            const definition = McpServerDefinitionSchema.parse(content.definition);
+            raw = await q.rpc('update_mcp_server_entity', [id, input.expectedVersion, JSON.stringify(definition), envelope.actorId ?? null, envelope.clientMutationId ?? null]);
             break;
           }
           case 'story': {

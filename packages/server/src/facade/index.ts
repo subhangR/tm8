@@ -1,3 +1,4 @@
+import { registerMcpDefinitionHandlers } from '../mcp/definitions.js';
 import { installedPluginsFor, registerSkillHandlers } from '../skills/handlers.js';
 import { registerSkillMutations } from '../skills/mutations.js';
 import { registerJevHandlers } from '../jev/handlers.js';
@@ -219,6 +220,7 @@ export function registerFacadeHandlers(
    * `entities.get` and `entities.children` disagree about the same row.
    */
   registerW2EntitiesCommandsTrackingHandlers(registry, facade);
+  registerMcpDefinitionHandlers(registry, facade);
   // Attention v2: the one attention module owns every attentionRequests.* op.
   registerAttentionHandlers(registry, facade);
   registerW2IdentitySpacesHandlers(registry, facade);

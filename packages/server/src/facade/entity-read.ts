@@ -1,3 +1,4 @@
+import { McpServerDefinitionSchema } from '@tm8/contract';
 import type { EffectiveSkills, OpRequestStatus } from '@tm8/contract';
 /**
  * Derived truth, assembled ONCE, server-side (L3).
@@ -165,6 +166,8 @@ export const ENTITY_COLUMNS = `
   drw.title as drawing_title, drw.format as drawing_format,
   drw.elements as drawing_elements, drw.app_state as drawing_app_state,
   drw.files as drawing_files,
+  mcp.definition as mcp_definition,
+  case when e.kind='mcp_server' then internal.is_space_admin(e.space_id) else false end as mcp_manage,
   sty.title as story_title, sty.description as story_description,
   -- 283: the computed summary, one SQL function the projector twin selects
   -- too. CASE keeps it off every other kind's row.
@@ -398,6 +401,7 @@ export const ENTITY_FROM = `
   left join public.graphs gr             on gr.entity_id = e.id
   left join public.drawings drw           on drw.entity_id = e.id
   left join public.stories sty            on sty.entity_id = e.id
+  left join public.mcp_servers mcp on e.kind='mcp_server' and mcp.entity_id=e.id
   left join public.styles stl             on e.kind = 'style' and stl.entity_id = e.id
   left join public.forms frm              on frm.entity_id = e.id
   left join public.space_credentials scr  on e.kind = 'credential' and scr.id = e.id
@@ -582,6 +586,8 @@ export interface EntityRow {
   drawing_elements: unknown[] | null;
   drawing_app_state: Record<string, unknown> | null;
   drawing_files: Record<string, unknown> | null;
+  mcp_definition?: unknown;
+  mcp_manage?: boolean;
   story_title?: string | null;
   story_description?: string | null;
   story_summary?: unknown;
@@ -1541,6 +1547,7 @@ export function titleOf(row: EntityRow): string {
     case 'drawing':
       // Its own detail-row title — MIRRORS the projector twin (same reason).
       return row.drawing_title ?? 'Drawing';
+    case 'mcp_server': return McpServerDefinitionSchema.parse(row.mcp_definition).name;
     case 'story':
       // Its own detail-row title — MIRRORS the projector twin (same reason).
       return row.story_title ?? 'Story';
@@ -1977,6 +1984,7 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         format: row.drawing_format ?? 'excalidraw',
         elementCount: Array.isArray(row.drawing_elements) ? row.drawing_elements.length : 0,
       };
+    case 'mcp_server': return { kind: 'mcp_server', definition: McpServerDefinitionSchema.parse(row.mcp_definition) };
     case 'story':
       // 283: computed by `internal.story_summary`, which the projector twin
       // selects too — the mirror is the shared function, not a comment.
@@ -2374,6 +2382,7 @@ export function capabilitiesOf(row: EntityRow): EntityCapabilities {
 export function entityCapabilities(row: EntityRow): EntityCapabilities {
   const base = capabilitiesOf(row);
   const live = row.deleted_at === null;
+  if (row.kind === 'mcp_server') return { ...base, canEdit: live && row.mcp_manage === true, canDelete: live && row.mcp_manage === true, canAddChild: false, canPull: false, canComplete: false };
   if (row.kind === 'project' || row.kind === 'interaction_profile') {
     return {
       canEdit: false,
@@ -2701,6 +2710,7 @@ export function contentOf(row: EntityRow): EntityContent {
         appState: row.drawing_app_state ?? {},
         files: row.drawing_files ?? {},
       };
+    case 'mcp_server': return { kind: 'mcp_server', definition: McpServerDefinitionSchema.parse(row.mcp_definition) };
     case 'story':
       // The prose; `hydrateDetail` adds the computed page on a detail read.
       return { kind: 'story', description: row.story_description ?? '', page: null };
