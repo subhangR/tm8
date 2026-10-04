@@ -25,6 +25,10 @@ function view(row: DefinitionRow, attach: boolean): McpServerView & {securityRev
   return { id:row.id, spaceId:row.space_id, version:row.version, ...(row.security_revision !== undefined ? {securityRevision:Number(row.security_revision)} : {}), definition, ...(row.health ? {health:McpTestResultSchema.parse(row.health)} : {}),
     allowed:{register:row.admin,approve:row.admin,manage:row.admin,attach:attach && definition.approved && definition.enabled !== false} };
 }
+function publicView(server: McpServerView & {securityRevision?:number}): McpServerView {
+  const {securityRevision: _securityRevision, ...publicServer}=server;
+  return publicServer;
+}
 export async function loadMcpServer(q: Querier, serverId: string, targetId?: string): Promise<McpServerView & {securityRevision:number}> {
   const [row]=await q.query<DefinitionRow>(`${SELECT} and e.id=$1`,[serverId]);
   if (!row) throw new CollabError('not_found','MCP connector is unavailable');
@@ -104,10 +108,10 @@ export function registerMcpDefinitionHandlers(registry:HandlerRegistry,deps:Faca
       const attach=await canAttachMcp(q,spaceId,ctx.query.get('targetId')??undefined);
       const rows=await q.query<DefinitionRow>(`${SELECT} and e.space_id=$1 and ($2::uuid is null or e.id>$2::uuid) order by e.id limit $3`,[spaceId,after,limit+1]);
       const page=rows.slice(0,limit);
-      return {items:page.map(row=>view(row,attach)),allowed:{register:permission?.admin??false,attach},nextCursor:rows.length>limit?encodeCursor([spaceId,page.at(-1)!.id]):null};
+      return {items:page.map(row=>publicView(view(row,attach))),allowed:{register:permission?.admin??false,attach},nextCursor:rows.length>limit?encodeCursor([spaceId,page.at(-1)!.id]):null};
     });
   });
-  registry.register('mcp.servers.get',async ctx=>deps.db.tx(claimsFor(await deps.owner(),ctx),q=>loadMcpServer(q,requireUuidParam(ctx,'serverId'),ctx.query.get('targetId')??undefined)));
+  registry.register('mcp.servers.get',async ctx=>deps.db.tx(claimsFor(await deps.owner(),ctx),async q=>publicView(await loadMcpServer(q,requireUuidParam(ctx,'serverId'),ctx.query.get('targetId')??undefined))));
   registry.register('mcp.resolve',async ctx=>{
     const input=McpResolveInputSchema.parse({...(ctx.body as Record<string, unknown>),spaceId:requireUuidParam(ctx,'spaceId')});
     return deps.db.tx(claimsFor(await deps.owner(),ctx),q=>resolveMcpSelections(q,input));
@@ -116,14 +120,14 @@ export function registerMcpDefinitionHandlers(registry:HandlerRegistry,deps:Faca
     const input=McpServerCreateInputSchema.parse({...(ctx.body as Record<string, unknown>),spaceId:requireUuidParam(ctx,'spaceId')});
     return deps.db.tx(claimsFor(await deps.owner(),ctx,commandEnvelope(ctx)),async q=>{
       const raw=await q.rpc<{entity:{id:string}}>('create_mcp_server_entity',[input.spaceId,JSON.stringify(input.definition),input.actorId??null,input.clientMutationId]);
-      return loadMcpServer(q,raw.entity.id);
+      return publicView(await loadMcpServer(q,raw.entity.id));
     });
   });
   registry.register('mcp.servers.update',async ctx=>{
     const input=McpServerUpdateInputSchema.parse({...(ctx.body as Record<string, unknown>),serverId:requireUuidParam(ctx,'serverId')});
     return deps.db.tx(claimsFor(await deps.owner(),ctx,commandEnvelope(ctx)),async q=>{
       await q.rpc('update_mcp_server_entity',[input.serverId,input.expectedVersion,JSON.stringify(input.definition),input.actorId??null,input.clientMutationId]);
-      return loadMcpServer(q,input.serverId);
+      return publicView(await loadMcpServer(q,input.serverId));
     });
   });
   registry.register('mcp.servers.delete',async ctx=>{
@@ -144,7 +148,7 @@ export function registerMcpDefinitionHandlers(registry:HandlerRegistry,deps:Faca
       const items=[];
       for(const [index,definition] of input.definitions.entries()){
         const raw=await q.rpc<{entity:{id:string}}>('create_mcp_server_entity',[input.spaceId,JSON.stringify(definition),input.actorId??null,`${input.clientMutationId}:${index}`]);
-        items.push(await loadMcpServer(q,raw.entity.id));
+        items.push(publicView(await loadMcpServer(q,raw.entity.id)));
       }
       return {items};
     });
