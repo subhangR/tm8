@@ -303,6 +303,39 @@ describe('chat launch composition', () => {
     expect(chatModeLine('craft')).toBe('[mode: craft]');
   });
 
+  it('passes selected connector bridges and their tool allowlist to the chat provider', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'tm8-chat-connectors-'));
+    const serverId = '019f0000-0000-7000-8000-000000000404';
+    const credentialId = '019f0000-0000-7000-8000-000000000405';
+    const name = `connector_${serverId.replaceAll('-', '')}`;
+    let bound: unknown;
+    const resolve = createChatLaunchConfigResolver({
+      mcpBindings: { bind: async (claims, input) => {
+        bound = { claims, input };
+        return [{ serverId, credentialId }];
+      } },
+      db: fakeDb(), dataDir, baseUrl: 'http://127.0.0.1:4610', mcpCliPath: '/tmp/tm8-mcp.js',
+    });
+    const resolved = await resolve(launch('ask'));
+    const config = JSON.parse(await readFile(resolved.mcpConfigPath, 'utf8'));
+    expect(bound).toMatchObject({
+      claims: { identityId: 'identity-a', authKind: 'browser' },
+      input: { sessionId: CHAT, spaceId: SPACE, teamMemberId: TEAMMATE, resume: true },
+    });
+    expect(Object.keys(config.mcpServers).sort()).toEqual([name, 'tm8'].sort());
+    expect(config.mcpServers[name]).toEqual({
+      command: process.execPath, args: ['/tmp/tm8-mcp.js', '--connector', serverId],
+      env: { TM8_BASE_URL: 'http://127.0.0.1:4610', TM8_CHAT_ID: CHAT,
+        TM8_AGENT_RUNTIME_TOKEN: config.mcpServers.tm8.env.TM8_AGENT_RUNTIME_TOKEN },
+    });
+    expect(config.mcpServers[name].env.TM8_AGENT_RUNTIME_TOKEN).toMatch(/^tm8s_/);
+    expect(resolved.allowedTools).toContain(`mcp__${name}__*`);
+    expect(resolved.allowedTools).toEqual(expect.arrayContaining(chatAllowedTools('ask')));
+    // Account selection stays server-side; the bridge receives only its connector reference.
+    expect(JSON.stringify(config)).not.toContain(credentialId);
+    expect((await stat(resolved.mcpConfigPath)).mode & 0o777).toBe(0o600);
+  });
+
   it('works in the directory the thread was bound to, and provisions nothing', async () => {
     // REPLACES four tests at once: the clone-provisioning test and the three
     // "runs project-less when ..." tests. All four described the same vanished
