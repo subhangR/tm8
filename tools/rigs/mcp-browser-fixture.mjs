@@ -98,9 +98,9 @@ if(i!==-1){
  const {bootstrap}=await import(pathToFileURL(join(root,'packages/server/dist/main.js')));
  const config=loadConfig({TM8_BIND:'127.0.0.1',TM8_PORT:String(port),TM8_DATABASE_URL:databaseUrl,TM8_DATA_DIR:dataDir,
   TM8_LAUNCH_BOOTSTRAP:'0',TM8_PROJECT_DIR:dataDir,TM8_UI_DIR:process.env.MCP_FIXTURE_UI_DIR,
-  TM8_ALLOWED_ORIGINS:process.env.MCP_FIXTURE_ALLOWED_ORIGINS??`http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:${port}`,TM8_SPACE_SESSIONS:'off'});
+  TM8_ALLOWED_ORIGINS:process.env.MCP_FIXTURE_ALLOWED_ORIGINS??`http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:4691,http://localhost:4691,http://127.0.0.1:${port}`,TM8_SPACE_SESSIONS:'off'});
  boot=await bootstrap({config,startBackgroundJobs:false});
- const fixture={ready:true,url:boot.url,baseUrl:boot.url,databaseUrl,dataDir,evidencePath,spaceId,
+ const fixture={token:'',ready:true,url:boot.url,baseUrl:boot.url,databaseUrl,dataDir,evidencePath,spaceId,
   model:'claude-sonnet-4-5',agentTool:'claude-code',
   teammateId:teammate.entity?.id,teamMemberId:teammate.entity?.id,taskId:task.entity?.id,
   fixtureUrl:`http://127.0.0.1:${upstream.address().port}`,
