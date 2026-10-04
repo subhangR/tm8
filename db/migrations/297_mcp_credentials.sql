@@ -11,10 +11,13 @@ alter table public.space_credentials
     (provider in ('anthropic','openai') and shape in ('login','api_key')) or
     (provider = 'typesafe' and shape = 'api_key') or
     (provider = 'mcp' and shape in ('api_key','token'))),
-  add column mcp_server_id uuid;
+  add column mcp_server_id uuid,
+  add column mcp_expires_at timestamptz,
+  add column mcp_refreshable boolean not null default false;
 -- No cascading definition FK: credential removal never removes a connector.
 create function public.create_mcp_credential(p_id uuid, p_space uuid, p_server uuid,
-  p_label text, p_ciphertext bytea, p_nonce bytea, p_shape text default 'api_key')
+  p_label text, p_ciphertext bytea, p_nonce bytea, p_shape text default 'api_key',
+  p_expires_at timestamptz default null,p_refreshable boolean default false)
 returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
 declare result jsonb;
 begin
@@ -24,7 +27,7 @@ begin
     raise exception 'MCP server not found' using errcode='P0002';
   end if;
   result := public.create_space_credential(p_id,p_space,'mcp',p_shape,p_label,'mcp',p_ciphertext,p_nonce,null,'private',false,false);
-  update public.space_credentials set mcp_server_id=p_server where id=p_id;
+  update public.space_credentials set mcp_server_id=p_server,mcp_expires_at=p_expires_at,mcp_refreshable=p_refreshable where id=p_id;
   return result || jsonb_build_object('serverId',p_server);
 end $$;
 -- Explicit id ONLY. Never consult member_defaults or the space default.
@@ -47,20 +50,20 @@ begin
     'ciphertext',encode(c.secret_ciphertext,'base64'),'nonce',encode(c.secret_nonce,'base64'));
 end $$;
 -- Refresh uses compare-and-swap so a concurrent revoke or rotation wins.
-create function public.refresh_mcp_credential(p_space uuid,p_server uuid,p_id uuid,p_old_nonce bytea,p_ciphertext bytea,p_nonce bytea)
+create function public.refresh_mcp_credential(p_space uuid,p_server uuid,p_id uuid,p_old_nonce bytea,p_ciphertext bytea,p_nonce bytea,p_expires_at timestamptz default null,p_refreshable boolean default false)
 returns boolean language plpgsql security definer set search_path = public, internal, pg_temp as $$
 begin
   perform public.read_mcp_credential(p_space,p_server,p_id);
-  update public.space_credentials set secret_ciphertext=p_ciphertext,secret_nonce=p_nonce
+  update public.space_credentials set secret_ciphertext=p_ciphertext,secret_nonce=p_nonce,mcp_expires_at=p_expires_at,mcp_refreshable=p_refreshable
     where id=p_id and status='active' and secret_nonce=p_old_nonce;
   return found;
 end $$;
-revoke all on function public.create_mcp_credential(uuid,uuid,uuid,text,bytea,bytea,text) from public;
+revoke all on function public.create_mcp_credential(uuid,uuid,uuid,text,bytea,bytea,text,timestamptz,boolean) from public;
 revoke all on function public.read_mcp_credential(uuid,uuid,uuid) from public;
-revoke all on function public.refresh_mcp_credential(uuid,uuid,uuid,bytea,bytea,bytea) from public;
-grant execute on function public.create_mcp_credential(uuid,uuid,uuid,text,bytea,bytea,text) to tm8_app;
+revoke all on function public.refresh_mcp_credential(uuid,uuid,uuid,bytea,bytea,bytea,timestamptz,boolean) from public;
+grant execute on function public.create_mcp_credential(uuid,uuid,uuid,text,bytea,bytea,text,timestamptz,boolean) to tm8_app;
 grant execute on function public.read_mcp_credential(uuid,uuid,uuid) to tm8_app;
-grant execute on function public.refresh_mcp_credential(uuid,uuid,uuid,bytea,bytea,bytea) to tm8_app;
+grant execute on function public.refresh_mcp_credential(uuid,uuid,uuid,bytea,bytea,bytea,timestamptz,boolean) to tm8_app;
 -- Metadata only, evaluated against current membership/sharing.
 create function public.list_mcp_credentials(p_server uuid,p_id uuid default null)
 returns jsonb language plpgsql stable security definer set search_path=public,internal,pg_temp as $$
@@ -71,10 +74,10 @@ begin
   'authType',case when c.shape='token' then 'oauth2' else 'api_key' end,
   'visibility',case when c.visibility='public' then 'space' when exists(select 1 from public.space_credential_shares s where s.credential_id=c.id) then 'selected' else 'private' end,
   'ownerId',c.owner_account_id,'sharedMemberIds',coalesce((select jsonb_agg(m.entity_id) from public.space_credential_shares s join public.accounts a on a.id=s.grantee_account_id join public.members m on m.identity_id=a.identity_id and m.space_id=c.space_id where s.credential_id=c.id and (c.owner_account_id=internal.current_account_id() or s.grantee_account_id=internal.current_account_id())),'[]'::jsonb),
-  'usable',c.status='active' and (c.visibility='public' or c.owner_account_id=internal.current_account_id() or internal.space_credential_shared_with(c.id,internal.current_account_id())),
+  'usable',c.status='active' and (c.mcp_expires_at is null or c.mcp_expires_at>now() or c.mcp_refreshable) and (c.visibility='public' or c.owner_account_id=internal.current_account_id() or internal.space_credential_shared_with(c.id,internal.current_account_id())),
   'manageable',c.owner_account_id=internal.current_account_id(),
   'revoked',c.status='revoked',
-  'reason',case when c.status='revoked' then 'credential_revoked' when c.status<>'active' then 'credential_unavailable' when c.visibility='public' or c.owner_account_id=internal.current_account_id() or internal.space_credential_shared_with(c.id,internal.current_account_id()) then 'ready' else 'access_denied' end
+  'reason',case when c.status='revoked' then 'credential_revoked' when c.status<>'active' then 'credential_unavailable' when c.mcp_expires_at<=now() and not c.mcp_refreshable then 'credential_expired' when c.visibility='public' or c.owner_account_id=internal.current_account_id() or internal.space_credential_shared_with(c.id,internal.current_account_id()) then 'ready' else 'access_denied' end
  ) order by c.created_at),'[]'::jsonb) into result
  from public.space_credentials c where c.provider='mcp' and c.mcp_server_id is not null
  and (p_server is null or c.mcp_server_id=p_server) and (p_id is null or c.id=p_id)
@@ -91,6 +94,7 @@ begin
  select * into c from public.space_credentials where id=p_id and provider='mcp' and mcp_server_id=p_server;
  if c.id is null or not internal.is_space_member(c.space_id) then return jsonb_build_object('ready',false,'reason','credential_unavailable'); end if;
  if c.status='revoked' then return jsonb_build_object('ready',false,'reason','credential_revoked'); end if;
+ if c.mcp_expires_at<=now() and not c.mcp_refreshable then return jsonb_build_object('ready',false,'reason','credential_expired'); end if;
  begin
   perform public.read_mcp_credential(c.space_id,p_server,p_id);
  exception when others then return jsonb_build_object('ready',false,'reason','credential_unavailable'); end;
@@ -146,4 +150,26 @@ begin
   );
 end
 $$;
+-- Tool audit contains references and outcomes only: no request/response JSON or tokens.
+create table public.mcp_call_audit (
+ id bigint generated always as identity primary key,
+ space_id uuid not null references public.spaces(id),
+ session_id uuid not null, server_id uuid not null, credential_id uuid,
+ method text not null check(method in ('tools/list','tools/call')),
+ outcome text not null check(outcome in ('started','succeeded','failed')),
+ occurred_at timestamptz not null default now()
+);
+alter table public.mcp_call_audit enable row level security;
+create policy mcp_call_audit_read on public.mcp_call_audit for select to tm8_app using(internal.is_space_admin(space_id));
+grant select on public.mcp_call_audit to tm8_app;
+create function public.record_mcp_call(p_space uuid,p_session uuid,p_server uuid,p_credential uuid,p_method text,p_outcome text)
+returns void language plpgsql security definer set search_path=public,internal,pg_temp as $$
+begin
+ perform internal.require_space_member(p_space);
+ insert into public.mcp_call_audit(space_id,session_id,server_id,credential_id,method,outcome)
+ values(p_space,p_session,p_server,p_credential,p_method,p_outcome);
+end $$;
+revoke all on function public.record_mcp_call(uuid,uuid,uuid,uuid,text,text) from public;
+grant execute on function public.record_mcp_call(uuid,uuid,uuid,uuid,text,text) to tm8_app;
+analyze public.mcp_call_audit;
 reset role;

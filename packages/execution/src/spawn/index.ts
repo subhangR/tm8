@@ -27,6 +27,7 @@ export {
   agentToolForModel,
   buildAgentCommand,
   buildCodexArgs,
+  connectorBridgeConfig,
   codexLoopbackConfigArgs,
   composeEnv,
   composeManifest,

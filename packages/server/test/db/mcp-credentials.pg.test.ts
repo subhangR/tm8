@@ -51,3 +51,9 @@ it('keeps both TS and SQL human-only write gates and fails closed on cross-space
  await expect(store.read({...auth(),sessionSpaceId:randomUUID()},{spaceId:space,serverId:server,credentialId:created.id})).rejects.toThrow();
  await expect(store.read({...auth(),viaLinkId:randomUUID()},{spaceId:space,serverId:server,credentialId:created.id})).rejects.toThrow();
 });
+it('reports expired non-refreshable OAuth accounts and retains only references in audit',async()=>{
+ const created=await store.create(auth(),{spaceId:space,serverId:server,label:'Expired fixture',secret:{kind:'oauth',accessToken:'expired-canary',expiresAt:Date.now()-1000,issuer:'https://example.test',tokenEndpoint:'https://example.test/token',resource:'https://example.test/mcp',clientId:'fixture'}}) as {id:string};
+ expect(await db.rpc(auth(),'mcp_credential_readiness',[server,created.id])).toEqual({ready:false,reason:'credential_expired'});
+ const session=randomUUID();await db.rpc(auth(),'record_mcp_call',[space,session,server,created.id,'tools/call','failed']);
+ const rows=await db.query(auth(),'select * from public.mcp_call_audit where session_id=$1',[session]);expect(rows).toHaveLength(1);expect(JSON.stringify(rows)).not.toContain('expired-canary');
+});

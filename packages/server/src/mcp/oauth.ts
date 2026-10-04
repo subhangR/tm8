@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { mcpHttp } from './transport.js';
 import type { McpOAuthSecret } from './credential-store.js';
 
-interface Metadata { issuer: string; authorization_endpoint: string; token_endpoint: string; code_challenge_methods_supported?: string[]; response_types_supported?: string[]; registration_endpoint?: string }
+interface Metadata { issuer: string; authorization_endpoint: string; token_endpoint: string; code_challenge_methods_supported?: string[]; response_types_supported?: string[]; registration_endpoint?: string; revocation_endpoint?:string }
 interface Pending { identityId: string; spaceId: string; serverId: string; verifier: string; redirectUri: string; clientId: string; resource: string; metadata: Metadata; expires: number; privateNetwork: boolean; label:string }
 export class McpOAuth {
   private readonly pending = new Map<string,Pending>();
@@ -31,7 +31,7 @@ export class McpOAuth {
     try {metadata=JSON.parse(response.body) as Metadata;}catch{throw new Error('OAuth discovery failed');}
     if(metadata.issuer!==issuerText || !metadata.code_challenge_methods_supported?.includes('S256'))throw new Error('OAuth issuer or PKCE unsupported');
     // Cross-origin authorization servers must be separately registered; no arbitrary token destination.
-    for(const endpoint of [metadata.authorization_endpoint,metadata.token_endpoint]) {
+    for(const endpoint of [metadata.authorization_endpoint,metadata.token_endpoint,...(metadata.revocation_endpoint?[metadata.revocation_endpoint]:[])]) {
       const parsed=new URL(endpoint);
       if(parsed.origin!==issuer.origin || parsed.username || parsed.password || parsed.hash)throw new Error('OAuth endpoint refused');
     }
@@ -62,7 +62,7 @@ export class McpOAuth {
     if(input.error || !input.code)throw new Error('OAuth authorization denied');
     if(input.issuer!==undefined && input.issuer!==pending.metadata.issuer)throw new Error('OAuth issuer mismatch');
     const secret=await tokenRequest(pending.metadata.token_endpoint,new URLSearchParams({grant_type:'authorization_code',code:input.code,code_verifier:pending.verifier,redirect_uri:pending.redirectUri,client_id:pending.clientId,resource:pending.resource}),pending.privateNetwork);
-    return {spaceId:pending.spaceId,serverId:pending.serverId,label:pending.label,secret:{kind:'oauth',...secret,issuer:pending.metadata.issuer,tokenEndpoint:pending.metadata.token_endpoint,resource:pending.resource,clientId:pending.clientId}};
+    return {spaceId:pending.spaceId,serverId:pending.serverId,label:pending.label,secret:{kind:'oauth',...secret,issuer:pending.metadata.issuer,tokenEndpoint:pending.metadata.token_endpoint,resource:pending.resource,clientId:pending.clientId,...(pending.metadata.revocation_endpoint?{revocationEndpoint:pending.metadata.revocation_endpoint}:{})}};
   }
 }
 async function tokenRequest(url:string,body:URLSearchParams,privateNetwork:boolean):Promise<{accessToken:string;refreshToken?:string;expiresAt?:number}> {
@@ -77,4 +77,15 @@ export async function refreshOAuth(secret:McpOAuthSecret,privateNetwork:boolean)
   if(!secret.refreshToken)throw new Error('MCP OAuth account requires reconnect');
   const token=await tokenRequest(secret.tokenEndpoint,new URLSearchParams({grant_type:'refresh_token',refresh_token:secret.refreshToken,client_id:secret.clientId,resource:secret.resource}),privateNetwork);
   return {...secret,...token};
+}
+
+/** Local revocation must commit before calling this best-effort provider cleanup. */
+export async function revokeOAuth(secret:McpOAuthSecret,privateNetwork:boolean):Promise<boolean> {
+ if(!secret.revocationEndpoint)return false;
+ for(const [token,hint] of [[secret.refreshToken,'refresh_token'],[secret.accessToken,'access_token']] as const) {
+  if(!token)continue;
+  const response=await mcpHttp({url:secret.revocationEndpoint,method:'POST',headers:{'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({token,token_type_hint:hint,client_id:secret.clientId}).toString()},privateNetwork);
+  if(response.status!==200)return false;
+ }
+ return true;
 }

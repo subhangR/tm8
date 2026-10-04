@@ -7,10 +7,10 @@ import { connectorBridgeConfig } from '../src/spawn/manifest.js';
 let dir:string|undefined;
 afterEach(async()=>{if(dir)await rm(dir,{recursive:true,force:true});});
 it('isolates Codex connector config per session and re-clears it on resume',async()=>{
- dir=await mkdtemp(join(tmpdir(),'mcp-home-'));const source=join(dir,'source');await mkdir(source);await writeFile(join(source,'auth.json'),'{"fixture":"login"}');await writeFile(join(source,'config.toml'),'[mcp_servers.ambient]\ncommand="untrusted"');
+ dir=await mkdtemp(join(tmpdir(),'mcp-home-'));const source=join(dir,'source');await mkdir(source);await writeFile(join(source,'auth.json'),'{"fixture":"login"}');await writeFile(join(source,'config.toml'),'model="fixture-model"\n[model_providers.fixture]\nname="Fixture"\n[mcp_servers.ambient]\ncommand="untrusted"');
  const first={CODEX_HOME:source};const second={CODEX_HOME:source};
  await isolateCodexMcpHome(join(dir,'first.json'),first);await isolateCodexMcpHome(join(dir,'second.json'),second);
- expect(first.CODEX_HOME).not.toBe(second.CODEX_HOME);expect(await readFile(join(first.CODEX_HOME,'config.toml'),'utf8')).not.toContain('ambient');
+ expect(first.CODEX_HOME).not.toBe(second.CODEX_HOME);expect(await readFile(join(first.CODEX_HOME,'config.toml'),'utf8')).toContain('fixture-model');expect(await readFile(join(first.CODEX_HOME,'config.toml'),'utf8')).not.toContain('ambient');
  expect(await readFile(join(source,'config.toml'),'utf8')).toContain('ambient');
  await writeFile(join(first.CODEX_HOME,'config.toml'),'[mcp_servers.injected]');await isolateCodexMcpHome(join(dir,'first.json'),first);
  expect(await readFile(join(first.CODEX_HOME,'config.toml'),'utf8')).not.toContain('injected');

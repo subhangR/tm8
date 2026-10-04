@@ -68,3 +68,20 @@ it('discovers resource and authorization server and registers a public client',a
  const oauth=new McpOAuth('https://tm8.test/callback');const result=await oauth.begin({identityId:'h',spaceId:'p',serverId:'s',resource:origin+'/mcp',allowPrivateNetwork:true});expect(new URL(result.authorizationUrl).searchParams.get('client_id')).toBe('registered');expect(registered).toBe(1);
  const state=new URL(result.authorizationUrl).searchParams.get('state')!;await expect(oauth.callback('h',{state,error:'access_denied'})).rejects.toThrow('denied');await expect(oauth.callback('h',{state,code:'late'})).rejects.toThrow('state');
 });
+it('honors negotiated protocol headers and decodes actual SSE tool results',async()=>{
+ let initialized=false;
+ const url=await fixture(async(req,res)=>{const chunks:Buffer[]=[];for await(const chunk of req)chunks.push(chunk as Buffer);const msg=JSON.parse(Buffer.concat(chunks).toString());
+  if(msg.method==='initialize'){res.setHeader('content-type','application/json');res.end(JSON.stringify({jsonrpc:'2.0',id:1,result:{protocolVersion:'2025-06-18'}}));initialized=true;return;}
+  expect(initialized).toBe(true);expect(req.headers['mcp-protocol-version']).toBe('2025-06-18');
+  if(msg.id===undefined){res.writeHead(202);res.end();return;}
+  res.setHeader('content-type','text/event-stream');res.end('event: message\ndata: '+JSON.stringify({jsonrpc:'2.0',id:1,result:{tools:[{name:'sse_tool',inputSchema:{type:'object'}}]}})+'\n\n');
+ });
+ const proxy=new McpProxy({authorize:async()=>({sessionId:'s',identityId:'h',spaceId:'p',serverId:'m'}),definition:async()=>({id:'m',spaceId:'p',approved:true,transport:'http',url,allowPrivateNetwork:true,auth:{type:'none'}}),credentials:{read:async()=>{throw new Error();},replace:async()=>{}}});
+ expect(await proxy.request({identityId:'h'},'s','m','tools/list')).toEqual({tools:[{name:'sse_tool',inputSchema:{type:'object'}}]});
+});
+it('sends provider revocation only to the discovered endpoint',async()=>{
+ const {revokeOAuth}=await import('../../src/mcp/oauth.js');const seen:string[]=[];
+ const origin=await fixture(async(req,res)=>{const chunks:Buffer[]=[];for await(const chunk of req)chunks.push(chunk as Buffer);const form=new URLSearchParams(Buffer.concat(chunks).toString());seen.push(form.get('token_type_hint')??'');res.end();});
+ expect(await revokeOAuth({kind:'oauth',accessToken:'access-canary',refreshToken:'refresh-canary',issuer:origin,tokenEndpoint:origin+'/token',revocationEndpoint:origin+'/revoke',resource:origin+'/mcp',clientId:'client'},true)).toBe(true);
+ expect(seen).toEqual(['refresh_token','access_token']);
+});

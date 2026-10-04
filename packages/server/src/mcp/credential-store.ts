@@ -7,7 +7,7 @@ import { openSecret, sealSecret } from '../credentials/secret-box.js';
 export interface McpCredentialBinding { spaceId: string; serverId: string; credentialId: string }
 export interface McpOAuthSecret {
   kind: 'oauth'; accessToken: string; refreshToken?: string; expiresAt?: number;
-  issuer: string; tokenEndpoint: string; resource: string; clientId: string;
+  issuer: string; tokenEndpoint: string; revocationEndpoint?:string; resource: string; clientId: string;
 }
 export type McpSecret = { kind: 'api_key'; value: string } | McpOAuthSecret;
 interface SealedRow { credentialId: string; spaceId: string; serverId: string; ciphertext: string; nonce: string }
@@ -30,7 +30,7 @@ export class McpCredentialStore {
     const credentialId = randomUUID();
     const spaceId = input.spaceId.toLowerCase();
     const sealed = sealSecret(await loadOrCreateCredentialKey(this.dataDir), JSON.stringify(input.secret), {spaceId, credentialId, provider:'mcp'});
-    return this.db.rpc(claims, 'create_mcp_credential', [credentialId,spaceId,input.serverId,input.label,sealed.ciphertext,sealed.nonce,input.secret.kind==='oauth'?'token':'api_key']);
+    return this.db.rpc(claims, 'create_mcp_credential', [credentialId,spaceId,input.serverId,input.label,sealed.ciphertext,sealed.nonce,input.secret.kind==='oauth'?'token':'api_key',input.secret.kind==='oauth' && input.secret.expiresAt!==undefined?new Date(input.secret.expiresAt).toISOString():null,input.secret.kind==='oauth' && Boolean(input.secret.refreshToken)]);
   }
   async rotate(claims:DbClaims,binding:McpCredentialBinding,value:string):Promise<void> {
     if(!isHumanAuthKind(claims.authKind) || claims.viaLinkId)throw new Error('MCP credential writes require a human session');
@@ -49,7 +49,7 @@ export class McpCredentialStore {
   }
   async replace(claims: DbClaims,binding: McpCredentialBinding,nonce: string,secret: McpSecret): Promise<void> {
     const sealed = sealSecret(await loadOrCreateCredentialKey(this.dataDir),JSON.stringify(secret),{spaceId:binding.spaceId,credentialId:binding.credentialId,provider:'mcp'});
-    const ok = await this.db.rpc<boolean>(claims,'refresh_mcp_credential',[binding.spaceId,binding.serverId,binding.credentialId,Buffer.from(nonce,'base64'),sealed.ciphertext,sealed.nonce]);
+    const ok = await this.db.rpc<boolean>(claims,'refresh_mcp_credential',[binding.spaceId,binding.serverId,binding.credentialId,Buffer.from(nonce,'base64'),sealed.ciphertext,sealed.nonce,secret.kind==='oauth' && secret.expiresAt!==undefined?new Date(secret.expiresAt).toISOString():null,secret.kind==='oauth' && Boolean(secret.refreshToken)]);
     if (!ok) throw new Error('MCP credential changed; reconnect');
   }
 }

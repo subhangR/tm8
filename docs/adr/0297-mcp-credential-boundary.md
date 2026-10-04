@@ -11,3 +11,5 @@ HTTP uses pinned DNS, bounded responses, a timeout, no redirects, and HTTPS. An 
 Stdio execution requires explicit administrative code trust. Local subprocesses necessarily see any injected credential; remote credentials must not be injected into model subprocesses. Codex chat remains unsupported until a real adapter exists.
 
 Protocol reference: https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization
+
+Revocation commits locally first: subsequent proxy calls fail even if the provider is unavailable. If discovery advertised a same-issuer revocation endpoint, tm8 then attempts to revoke refresh and access tokens server-side. Providers without revocation support (or a failed provider request) require account-side cleanup; the UI revoked flag describes tm8 access, not a provider guarantee. Tool audit stores session/server/credential references, method and started/succeeded/failed outcomes only, never tool arguments or results.

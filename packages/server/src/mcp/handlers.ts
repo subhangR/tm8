@@ -11,7 +11,7 @@ import { requireHumanSession } from '../facade/handlers/w2/credentials.js';
 import { DbSpaceCredentialStore } from '../credentials/space-credential-store.js';
 import { McpCredentialStore } from './credential-store.js';
 import { McpProxy, type McpProxyPorts } from './proxy.js';
-import { McpOAuth } from './oauth.js';
+import { McpOAuth, revokeOAuth } from './oauth.js';
 import type { DbClaims } from '../db/types.js';
 
 export interface McpRuntimeHandlerOptions {
@@ -44,7 +44,11 @@ export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeD
   }),
   'mcp.credentials.list':async ctx=>{const auth=await claims(ctx);const id=path(ctx,'serverId');await options.definition(auth,id);return views(auth,id);},
   'mcp.credentials.readiness':async ctx=>view(await claims(ctx),path(ctx,'credentialId')),
-  'mcp.credentials.revoke':requireHumanSession(async ctx=>{const input=McpCredentialCommandInputSchema.parse({...ctx.body as object,credentialId:path(ctx,'credentialId')});const auth=await claims(ctx);await view(auth,input.credentialId);await store.revoke(auth,input.credentialId);return view(auth,input.credentialId);}),
+  'mcp.credentials.revoke':requireHumanSession(async ctx=>{const input=McpCredentialCommandInputSchema.parse({...ctx.body as object,credentialId:path(ctx,'credentialId')});const auth=await claims(ctx);const current=await view(auth,input.credentialId);const server=await options.definition(auth,current.serverId);
+   const opened=await credentials.read(auth,{spaceId:server.spaceId,serverId:server.id,credentialId:current.id}).catch(()=>null);
+   await store.revoke(auth,input.credentialId);
+   if(opened?.secret.kind==='oauth')await revokeOAuth(opened.secret,server.definition.allowPrivateNetwork===true).catch(()=>false);
+   return view(auth,input.credentialId);}),
   'mcp.credentials.share':requireHumanSession(async ctx=>{
    const input=McpCredentialShareInputSchema.parse({...ctx.body as object,credentialId:path(ctx,'credentialId')});const auth=await claims(ctx);const current=await view(auth,input.credentialId);
    if(!current.manageable)throw new CollabError('forbidden','Only the account owner can share');
@@ -63,13 +67,19 @@ export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeD
   'mcp.oauth.begin':requireHumanSession(async ctx=>{
    const input=McpOAuthBeginInputSchema.parse({...ctx.body as object,serverId:path(ctx,'serverId')});const auth=await claims(ctx);const server=await approved(auth,input.serverId);const config=server.definition.auth;
    if(config.type!=='oauth2' || !server.definition.url || !auth.identityId)throw new CollabError('invalid_input','OAuth connector required');
-   return oauth.begin({identityId:auth.identityId,spaceId:server.spaceId,serverId:server.id,resource:server.definition.url,...(config.authorizationUrl?{issuer:new URL(config.authorizationUrl).origin}:{}),...(config.clientId?{clientId:config.clientId}:{}),label:input.label,...(config.scopes?{scopes:config.scopes}:{}),allowPrivateNetwork:server.definition.allowPrivateNetwork===true});
+   return oauth.begin({identityId:auth.identityId,spaceId:server.spaceId,serverId:server.id,resource:server.definition.url,...(config.issuer?{issuer:config.issuer}:config.authorizationUrl?{issuer:new URL(config.authorizationUrl).origin}:{}),...(config.clientId?{clientId:config.clientId}:{}),label:input.label,...(config.scopes?{scopes:config.scopes}:{}),allowPrivateNetwork:server.definition.allowPrivateNetwork===true});
   }),
   'mcp.oauth.callback':requireHumanSession(async ctx=>{const input=McpOAuthCallbackInputSchema.parse(ctx.body);const auth=await claims(ctx);if(!auth.identityId)throw new CollabError('unauthenticated','Human session required');const result=await oauth.callback(auth.identityId,input);await approved(auth,result.serverId);const created=await credentials.create(auth,{...result}) as {id:string};return view(auth,created.id);}),
   'mcp.servers.test':requireHumanSession(async ctx=>{
    const input=McpServerTestInputSchema.parse({...ctx.body as object,serverId:path(ctx,'serverId')});const auth=await claims(ctx);const server=await approved(auth,input.serverId);
    const test=new McpProxy({credentials,definition,authorize:async()=>({sessionId:'test',identityId:auth.identityId!,spaceId:server.spaceId,serverId:server.id,...(input.credentialId?{credentialId:input.credentialId}:{})})});
-   let result;try{const listed=await test.request(auth,'test',server.id,'tools/list') as {tools:unknown[]};result={ready:true,reason:'ready',tools:listed.tools,checkedAt:new Date().toISOString()};}catch{result={ready:false,reason:'server_unavailable',tools:[],checkedAt:new Date().toISOString()};}
+   let readiness='ready';
+   if(server.definition.enabled===false)readiness='disabled';
+   else if(server.definition.transport==='stdio' && !server.definition.stdioTrusted)readiness='stdio_not_trusted';
+   else if(server.definition.auth.type!=='none')readiness=input.credentialId?(await deps.db.rpc<{reason:string}>(auth,'mcp_credential_readiness',[server.id,input.credentialId])).reason:'credential_required';
+   let result;
+   if(readiness!=='ready')result={ready:false,reason:readiness,tools:[],checkedAt:new Date().toISOString()};
+   else try{const listed=await test.request(auth,'test',server.id,'tools/list') as {tools:unknown[]};result={ready:true,reason:'ready',tools:listed.tools,checkedAt:new Date().toISOString()};}catch{result={ready:false,reason:'server_unavailable',tools:[],checkedAt:new Date().toISOString()};}
    if(options.recordTest)await options.recordTest(auth,server.id,result);
    else await deps.db.rpc(auth,'record_mcp_server_health',[server.id,result]);return result;
   }),
@@ -79,7 +89,13 @@ export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeD
    const params=input.message.params;if(params!==undefined && (!params || typeof params!=='object' || Array.isArray(params)))throw new CollabError('invalid_input','Invalid MCP params');
    const runtimeId=ctx.identity.workSessionId??ctx.identity.runtimeChatId;
    if(!ctx.identity.sessionId || runtimeId!==input.sessionId || !['agent','agent_runtime'].includes(ctx.identity.authKind??''))throw new CollabError('forbidden','MCP session bearer mismatch');
-   return proxy.request({...await claims(ctx),authSessionId:ctx.identity.sessionId},input.sessionId,input.serverId,method,(params??{}) as Record<string,unknown>);
+   const runtimeClaims={...await claims(ctx),authSessionId:ctx.identity.sessionId};
+   const grant=await options.authorize(runtimeClaims,input.sessionId,input.serverId);
+   const auditClaims={...runtimeClaims,identityId:grant.launcherIdentityId??grant.identityId,actorId:undefined,nodeAdmin:false};
+   const audit=(outcome:string)=>deps.db.rpc(auditClaims,'record_mcp_call',[grant.spaceId,grant.sessionId,grant.serverId,grant.credentialId??null,method,outcome]);
+   await audit('started');
+   try {const result=await proxy.request(runtimeClaims,input.sessionId,input.serverId,method,(params??{}) as Record<string,unknown>);await audit('succeeded');return result;}
+   catch(error){await audit('failed');throw error;}
   },
  });
 }
