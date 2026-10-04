@@ -184,7 +184,39 @@ export interface StoryNode {
   live?: boolean;
   /** Work sessions only: the session's call sign. */
   callSign?: string;
+  /**
+   * Per-node tallies, set on every node of a page a server that computes
+   * them returns; absent from pages older servers (and fixtures) hand out, so
+   * readers treat `undefined` as "not known", never as 0.
+   */
+  counts?: StoryNodeCounts;
 }
+
+/**
+ * What a node carries that the graph alone cannot show: its mailbox and
+ * whether it is asking for a human. Both are computed at read time, set-based
+ * over the page's node ids, never per node.
+ */
+export interface StoryNodeCounts {
+  /**
+   * Messages anchored on the node (`messages.anchor_id`), excluding redacted
+   * messages and messages whose entity row is deleted — the same filter the
+   * page's `recentMessages` window applies, with no window: the whole mailbox.
+   */
+  messages: number;
+  /**
+   * Unresolved attention requests whose target (`attention_requests.entity_id`)
+   * is the node: status `open` or `acknowledged`, the ONE definition behind
+   * `StoryState.pendingAttentionCount` (`internal.story_summary`, migration 289),
+   * so the page's nodes sum to what the summary says.
+   */
+  pendingAttention: number;
+}
+
+export const StoryNodeCountsSchema: z.ZodType<StoryNodeCounts> = z.object({
+  messages: z.number().int().nonnegative(),
+  pendingAttention: z.number().int().nonnegative(),
+}).strict();
 
 /** One edge of the story graph, exactly as stored (or `parent` for hierarchy). */
 export interface StoryGraphEdge {
