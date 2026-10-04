@@ -64,8 +64,9 @@ export class McpProxy {
       if(JSON.stringify(current)!==JSON.stringify(grant))throw new Error('MCP session changed');
       const headers:Record<string,string>={'content-type':'application/json',accept:'application/json, text/event-stream','mcp-protocol-version':'2025-03-26'};
       const redactions:string[]=[];
-      const loadAuthorization=async(forceToken?:string)=>{
-        if(definition.auth.type==='none')return;
+      const loadAuthorization=async(forceToken?:string):Promise<boolean>=>{
+        if(definition.auth.type==='none')return false;
+        let refreshed=false;
         if(!grant.credentialId)throw new Error('Select an MCP account before launch');
         const binding:McpCredentialBinding={spaceId:grant.spaceId,serverId,credentialId:grant.credentialId};
         await credentialLock(JSON.stringify(binding),async()=>{
@@ -79,6 +80,7 @@ export class McpProxy {
               secret=await refreshOAuth(secret,definition.allowPrivateNetwork===true);
               await store.replace(credentialClaims,binding,opened.nonce,secret);
               await store.read(credentialClaims,binding);
+              refreshed=true;
             }
             headers.authorization=`Bearer ${secret.accessToken}`;
             redactions.push(secret.accessToken,...(secret.refreshToken?[secret.refreshToken]:[]));
@@ -93,6 +95,7 @@ export class McpProxy {
           if(this.ports.credentials.withRefreshLock)await this.ports.credentials.withRefreshLock(credentialClaims,binding,run);
           else await run(this.ports.credentials);
         });
+        return refreshed;
       };
       await loadAuthorization();
       const connection=this.connections.get(key)??{initialized:false};
@@ -105,13 +108,21 @@ export class McpProxy {
         if(grant.credentialId)await this.ports.credentials.read(credentialClaims,{spaceId:grant.spaceId,serverId,credentialId:grant.credentialId});
         if(connection.upstreamSession)headers['mcp-session-id']=connection.upstreamSession;
         if(connection.protocolVersion)headers['mcp-protocol-version']=connection.protocolVersion;
-        await loadAuthorization();
+        const refreshed=await loadAuthorization();
+        if(refreshed) {
+          const refreshedGrant=await this.ports.authorize(claims,sessionId,serverId);
+          if(JSON.stringify(refreshedGrant)!==JSON.stringify(grant))throw new Error('MCP session changed');
+          const refreshedDefinition=await this.ports.definition(credentialClaims,serverId);
+          if(JSON.stringify(refreshedDefinition)!==JSON.stringify(definition) || !refreshedDefinition.approved || refreshedDefinition.enabled===false)throw new Error('MCP connector unavailable; definition changed');
+        }
         const send=()=>mcpHttp({url:definition.url!,method:'POST',headers,body:JSON.stringify({jsonrpc:'2.0',...(notification?{}:{id:1}),method:rpcMethod,params:rpcParams})},definition.allowPrivateNetwork===true);
         let response=await send();
         if(response.status===401 && definition.auth.type==='oauth2') {
           await loadAuthorization(headers.authorization?.slice(7));
           const retryGrant=await this.ports.authorize(claims,sessionId,serverId);
           if(JSON.stringify(retryGrant)!==JSON.stringify(grant))throw new Error('MCP session changed');
+          const retryDefinition=await this.ports.definition(credentialClaims,serverId);
+          if(JSON.stringify(retryDefinition)!==JSON.stringify(definition) || !retryDefinition.approved || retryDefinition.enabled===false)throw new Error('MCP connector unavailable; definition changed');
           response=await send(); // exactly one recovery; never retry a failed tool result
         }
         if(response.status<200 || response.status>=300)throw new Error('MCP upstream request failed');

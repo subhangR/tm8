@@ -19,7 +19,9 @@ export class McpOAuth {
       if(advertised)metadataUrl=advertised;
       const resourceResponse=await mcpHttp({url:metadataUrl,method:'GET'},input.allowPrivateNetwork);
       if(resourceResponse.status!==200)throw new Error('OAuth resource discovery failed');
-      const metadata=JSON.parse(resourceResponse.body) as {resource?:string;authorization_servers?:unknown[]};
+      let metadata:{resource?:string;authorization_servers?:unknown[]};
+      try { metadata=JSON.parse(resourceResponse.body) as typeof metadata; }
+      catch { throw new Error('OAuth resource discovery failed'); }
       if(metadata.resource!==input.resource || !Array.isArray(metadata.authorization_servers) || typeof metadata.authorization_servers[0]!=='string')throw new Error('OAuth resource binding mismatch');
       issuerText=metadata.authorization_servers[0];
     }
@@ -42,7 +44,9 @@ export class McpOAuth {
       if(endpoint.origin!==issuer.origin)throw new Error('OAuth registration endpoint refused');
       const registered=await mcpHttp({url:endpoint.href,method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({client_name:'tm8',redirect_uris:[this.callbackUrl],grant_types:['authorization_code','refresh_token'],response_types:['code'],token_endpoint_auth_method:'none'})},input.allowPrivateNetwork);
       if(registered.status!==200 && registered.status!==201)throw new Error('OAuth client registration failed');
-      const value=JSON.parse(registered.body) as {client_id?:unknown;token_endpoint_auth_method?:unknown;client_secret?:unknown};
+      let value:{client_id?:unknown;token_endpoint_auth_method?:unknown;client_secret?:unknown};
+      try { value=JSON.parse(registered.body) as typeof value; }
+      catch { throw new Error('OAuth client registration failed'); }
       if(typeof value.client_id!=='string' || !value.client_id || value.client_secret || (value.token_endpoint_auth_method!==undefined && value.token_endpoint_auth_method!=='none'))throw new Error('OAuth public client registration unsupported');
       clientId=value.client_id;
     }
