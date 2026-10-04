@@ -57,3 +57,24 @@ it('reports expired non-refreshable OAuth accounts and retains only references i
  const session=randomUUID();await db.rpc(auth(),'record_mcp_call',[space,session,server,created.id,'tools/call','failed']);
  const rows=await db.query(auth(),'select * from public.mcp_call_audit where session_id=$1',[session]);expect(rows).toHaveLength(1);expect(JSON.stringify(rows)).not.toContain('expired-canary');
 });
+it('serializes refreshes across independent database clients',async()=>{
+ const created=await store.create(auth(),{spaceId:space,serverId:server,label:'Lock fixture',secret:{kind:'api_key',value:'lock-old'}}) as {id:string};
+ const binding={spaceId:space,serverId:server,credentialId:created.id};
+ const db2=createDb(database.url);const store2=new McpCredentialStore(db2,dir);
+ let firstRunning=false;let secondEntered=false;
+ const first=store.withRefreshLock(auth(),binding,async locked=>{
+   firstRunning=true;const opened=await locked.read(auth(),binding);
+   await new Promise<void>(resolve=>setTimeout(resolve,100));
+   await locked.replace(auth(),binding,opened.nonce,{kind:'api_key',value:'lock-new'});
+ });
+ await new Promise<void>(resolve=>setTimeout(resolve,25));
+ const second=store2.withRefreshLock(auth(),binding,async locked=>{
+   secondEntered=true;const opened=await locked.read(auth(),binding);
+   expect(opened.secret).toEqual({kind:'api_key',value:'lock-new'});
+ });
+ await new Promise<void>(resolve=>setTimeout(resolve,25));
+ expect(firstRunning).toBe(true);expect(secondEntered).toBe(false);
+ await Promise.all([first,second]);
+ expect(secondEntered).toBe(true);
+ await db2.end();
+});
