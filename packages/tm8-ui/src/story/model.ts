@@ -110,6 +110,16 @@ export const SESSION_KIND = 'work_session';
 export const STORY_KIND = 'story';
 export const TEAMMATE_KIND = 'team_member';
 export const MESSAGE_KIND = 'message';
+export const ATTENTION_KIND = 'attention';
+export const ARTIFACT_KIND = 'artifact';
+export const DRAWING_KIND = 'drawing';
+export const FILE_KIND = 'file';
+export const MEMORY_KIND = 'memory';
+export const PULL_REQUEST_KIND = 'pull_request';
+export const COMMIT_KIND = 'commit';
+export const WORKTREE_KIND = 'worktree';
+/** Kinds with no settled map asset yet: the game draws its unknown-kind cairn for them. */
+export const UNMAPPED_ASSET_KINDS: readonly string[] = ['member', 'skill', 'spell', 'form', 'project', 'collection', 'channel', 'loop'];
 
 export const GRAPH_VIEWS: ReadonlyArray<{ view: StoryGraphView; label: string }> = [
   { view: 'all', label: 'Everything' },
