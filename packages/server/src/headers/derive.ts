@@ -65,6 +65,7 @@ export type HeaderFacts =
   | { kind: 'artifact'; description: string | null; bytes: number | null }
   | { kind: 'drawing'; text: string | null; bytes: number | null }
   | { kind: 'file'; name: string; mime: string | null; bytes: number | null }
+  | { kind: 'story'; description: string | null; bytes: number | null }
   | { kind: 'task'; description: string | null; bytes: number | null }
   | { kind: 'collection'; description: Backstopped; members: Record<string, number> };
 
@@ -150,6 +151,7 @@ function kindFields(facts: HeaderFacts): Fields {
         native: false,
         bytes: facts.bytes,
       };
+    case 'story':
     case 'task':
       return { whenToUse: null, whenCut: false, summary: blankToNull(facts.description) ? clip(facts.description) : null, native: false, bytes: facts.bytes };
     case 'collection': {

@@ -3312,7 +3312,7 @@ export interface CreateEntityInput extends CommandContext {
   /**
    * An authored selection header, written in the same transaction as the
    * entity (`entities.header.set` semantics). Only kinds that can carry one
-   * (team_member, doc, artifact, drawing, file, task, collection) accept it.
+   * (team_member, doc, artifact, drawing, file, task, collection, story) accept it.
    */
   header?: HeaderTextInput;
 }
@@ -3581,7 +3581,14 @@ export interface CompleteTaskInput extends CommandContext {
 }
 
 export interface PullInput extends CommandContext { localId?: string | null; pinnedVersion: number }
-export interface WorkInput extends CommandContext { status: WorkStatus; startedAt?: string; note?: string | null }
+/**
+ * A status transition writes the status and nothing else. `claim: true` also
+ * records the caller as `working_on` the task (with `startedAt`/`note` on that
+ * edge); without it no edge is created — an auditor moving a task to
+ * `in_review` is not its worker (#32). An edge the caller already holds
+ * follows the transition either way.
+ */
+export interface WorkInput extends CommandContext { status: WorkStatus; startedAt?: string; note?: string | null; claim?: boolean }
 
 export interface TrackingRefreshInput extends CommandContext { entityIds?: EntityId[] }
 
@@ -5737,6 +5744,8 @@ export interface ExecutionSpawnInput extends CommandContext {
   parentSessionId?: EntityId;
   /** Tasks the session works on — become `working_on` edges. */
   taskIds?: EntityId[];
+  /** Direct story anchor, exclusive with taskIds, newTask and forceNewTask. Creates no task. */
+  storyId?: EntityId;
   /**
    * When a `taskIds` entry is a non-task entity, mint a NEW derived task for
    * it even when an open one exists — the "start a different piece of work
@@ -7470,8 +7479,9 @@ export interface EntityContextQuery {
   actionsSchema?: 'v1' | 'v2';
   /**
    * v2 only: continues the ONE paged section in `sections` (hierarchy,
-   * blockers, connections or messages). Context-owned: the token binds entity,
-   * section, edge-type filter and order, and is never an `entities.children`
+   * blockers, connections, messages or story — a story cursor continues one
+   * list of the story card). Context-owned: the token binds entity,
+   * section, edge-type filter (or story list) and order, and is never an `entities.children`
    * or `entities.connections` cursor.
    */
   cursor?: string;

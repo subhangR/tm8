@@ -1556,13 +1556,15 @@ const ROWS: Record<OperationName, Row> = {
   // ── universal entities ───────────────────────────────────────────────────
   'entities.get': {
     cmd: ['entity', 'get'],
-    syn: 'tm8 entity get <entity-id>',
+    syn: 'tm8 entity get <entity-id> [--story-page]',
     sum: 'Read one entity of any kind, with its current version',
     authz: 'entity',
     input: 'none',
     tags: ['read', 'show', 'task', 'doc', 'session'],
     notes: [
       'json is BOUNDED by default: identity, version, state, content (long strings capped at 1000 chars, named in `truncated`), and edge/child COUNTS instead of connections and hierarchy; `--full` returns the old unbounded envelope',
+      'story reads include a bounded context trail with cursor continuation commands even with --full; --story-page explicitly loads the complete browser page',
+      'entity get and entity context accept a unique readable id prefix (at least 8 hex digits, with canonical hyphens or without); mutations still require full ids',
       'for relationships, messages, and acceptance ids read `tm8 entity context <entity-id>` (bounded, cursors) — a closeout never needs entity get',
     ],
     examples: ['tm8 entity get <entity-id> --format json', 'tm8 entity get <entity-id> --format json --full'],
@@ -1581,7 +1583,7 @@ const ROWS: Record<OperationName, Row> = {
       "doc content shape: {kind: 'doc', body, format: 'markdown'}",
       "story content shape: {description} (title rides the envelope; status is the ordinary workflow status, born to_do and set by hand with `tm8 entity update <story-id> --status <status>` — never derived from contents). --parent <story-id> makes a child story whose progress rolls up into the parent. Put things in with `tm8 collection add <story-id> <entity-id>` — those are the story's roots; everything connected to a root follows at read time. Read it with `tm8 entity context <story-id>` (agents) or `tm8 entity get <story-id>` (the page)",
       '--when-to-use (when a later session should open it, in one sentence: "Open when changing how balances are rounded", not "Rounding policy doc"; shown whole to every later agent) / --summary (what it holds) / --keyword write the selection header in the same call; all optional, guideline limits in `tm8 help entity header set`; change it later with `tm8 entity header set`',
-      'a header applies to team_member, doc, artifact, drawing, file, task and collection; on any other kind the entity is still created and the header is skipped with a warning (skills use their description, memories their subject_scope)',
+      'a header applies to team_member, doc, artifact, drawing, file, task, collection and story; on any other kind the entity is still created and the header is skipped with a warning (skills use their description, memories their subject_scope)',
     ],
     examples: [
       'tm8 entity create task "<title>" --space <space-id> --parent <entity-id>',
@@ -1620,7 +1622,7 @@ const ROWS: Record<OperationName, Row> = {
       'the WHOLE header is written: a field left out is removed, so pass every field you want to keep; every field is optional and nothing is refused for length — aim for --when-to-use ≤ 400 chars, --summary ≤ 600, --keyword ≤ 12 × ≤ 40; blank text is dropped',
       '--when-to-use is routing text, shown WHOLE to every later agent (never cut; past 400 chars the write warns header_long): the situation in which to open this, in one sentence — good: "Open when changing how balances are rounded"; bad: "Rounding policy doc" (restates the title) or "Always read first" (claims every step). --summary is what it holds, so a reader can skip it; it is cut at 600 and is the first thing a tight prompt leaves out',
       '--expect-version is the HEADER\'s version (`header.version` in `tm8 entity context <entity-id>`; none there means 0), never the entity\'s; omit it for last-writer-wins; a header write never moves the entity version',
-      'kinds: team_member (its owner or a space admin), doc, artifact, drawing, file, task, collection; on a skill, memory, session, chat or message it stores nothing and warns (skills use their description, memories their subject_scope)',
+      'kinds: team_member (its owner or a space admin), doc, artifact, drawing, file, task, collection, story; on a skill, memory, session, chat or message it stores nothing and warns (skills use their description, memories their subject_scope)',
       're-saving unchanged text re-pins a stale header to the current body ("mark current")',
     ],
     examples: [
@@ -1844,7 +1846,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'entities.commands.work': {
     cmd: ['task', 'transition'],
-    syn: 'tm8 task transition <task-id> open|pulled|working|in_review|blocked|cancelled [--mutation-id <id>]',
+    syn: 'tm8 task transition <task-id> open|pulled|working|in_review|blocked|cancelled [--claim] [--mutation-id <id>]',
     sum: 'Move a task through its work lifecycle, short of completion',
     authz: 'entity',
     input: 'bound',
@@ -1852,6 +1854,7 @@ const ROWS: Record<OperationName, Row> = {
     notes: [
       'enum values use their exact contract spelling, including `in_review`',
       'transition time is Server-owned; a client cannot backdate lifecycle history',
+      'changes only the status: the caller is recorded as working_on the task only with --claim (an edge the caller already holds follows the transition)',
     ],
   },
   'entities.commands.pull': {
@@ -2060,12 +2063,13 @@ const ROWS: Record<OperationName, Row> = {
   // ── collections / graph / placements / undo ──────────────────────────────
   'collections.query': {
     cmd: ['entity', 'query'],
-    syn: 'tm8 entity query [--space <space-id>] [--kind <kind>...] [--subtree <entity-id>] [--parent <entity-id|none>] [--roots] [--status <status>...] [--assignee <actor-id>...] [--ready] [--limit <count>] [--cursor <cursor>]',
+    syn: 'tm8 entity query [--space <space-id>] [--kind <kind>...] [--subtree <entity-id>] [--parent <entity-id|none>] [--roots] [--status <status>...] [--assignee <actor-id>...] [--ready] [--title-contains <text>] [--words <text>] [--limit <count>] [--cursor <cursor>]',
     sum: 'Query entities across a Space by kind, hierarchy, status, axis, assignee, or edge',
     authz: 'space',
     input: 'bound',
     tags: ['search', 'find', 'list', 'filter', 'tasks', 'my-work'],
     notes: [
+      '--title-contains matches a literal substring of the title; --words requires each word across title and short descriptions (including stories), ignoring case and separators; these are bounded collection queries, not full-text search',
       '--subtree = every descendant of the entity; --parent = its direct children only, and --parent none = top-level rows only; --roots is shorthand for --parent none',
     ],
     examples: [
@@ -2076,12 +2080,14 @@ const ROWS: Record<OperationName, Row> = {
   },
   'collections.addItem': {
     cmd: ['collection', 'add'],
-    syn: 'tm8 collection add <collection-id> <entity-id> [--position <number>] [--mutation-id <id>]',
+    syn: 'tm8 collection add <collection-id> <entity-id>... [--from-file <path|->] [--position <number>] [--mutation-id <id>]',
     sum: 'Put an entity into a collection or a story — membership is a `contains` edge, appended after the current maximum position when --position is omitted',
     authz: 'entity',
     input: 'bound',
     tags: ['membership', 'curate', 'pin', 'list', 'story'],
     notes: [
+      'multiple ids or --from-file (whitespace-separated ids, - for stdin) run one membership write per id and return one receipt with per-id results; partial failures return a nonzero exit code, and the reported batch mutationId makes retries safe',
+      '--position is only valid for a single entity; bulk adds append in input order and deduplicate repeated ids',
       're-adding an existing member re-positions it rather than duplicating it',
       'list a collection\'s members with `tm8 edge list --source <collection-id> --type contains`',
       'the container may also be a story: adding puts the entity in BY HAND as one of the story\'s roots (ordered by --position); everything connected to it then follows at read time — see `tm8 entity context <story-id>`',
@@ -2099,6 +2105,7 @@ const ROWS: Record<OperationName, Row> = {
     input: 'bound',
     tags: ['membership', 'curate', 'unpin', 'story'],
     notes: [
+      'add and remove use tm8.receipt.v1 for agent callers; --full preserves the full result',
       'the container may also be a story: removing takes a root out of the story; the entity and its own edges are untouched',
     ],
   },
@@ -2604,7 +2611,7 @@ const ROWS: Record<OperationName, Row> = {
   // ── execution ────────────────────────────────────────────────────────────
   'execution.spawn': {
     cmd: ['session', 'spawn'],
-    syn: 'tm8 session spawn [--space <space-id>] --teammate <team-member-id> [--task <task-id>...] [--memory <memory-id>...] [--launch-project <project-resource-id>] [--workdir project|scratch|worktree] [--base-ref <ref>] [--mode worker|coordinator|coordinated-worker|coordinated-coordinator|dispatcher] [--access-mode safe|acceptEdits|auto|plan|fullAccess] [--reasoning-effort low|medium|high|xhigh|max|ultra] [--credential-source <provider=member|space|node[:<space-credential-id>]>...] [--interaction-profile <active-profile-id>] [--context <text-source>] [--confirm-untrusted] [--force-new-task] [--mutation-id <id>]',
+    syn: 'tm8 session spawn [--space <space-id>] --teammate <team-member-id> [--task <task-id>... | --story <story-id>] [--memory <memory-id>...] [--launch-project <project-resource-id>] [--workdir project|scratch|worktree] [--base-ref <ref>] [--mode worker|coordinator|coordinated-worker|coordinated-coordinator|dispatcher] [--access-mode safe|acceptEdits|auto|plan|fullAccess] [--reasoning-effort low|medium|high|xhigh|max|ultra] [--credential-source <provider=member|space|node[:<space-credential-id>]>...] [--interaction-profile <active-profile-id>] [--context <text-source>] [--confirm-untrusted] [--force-new-task] [--mutation-id <id>]',
     sum: 'Start a server-hosted work session for a Teammate',
     authz: 'space',
     input: 'bound',
@@ -2612,6 +2619,7 @@ const ROWS: Record<OperationName, Row> = {
     tags: ['launch', 'start', 'agent', 'delegate', 'pty', 'terminal'],
     notes: [
       'the server-hosted PTY is the only spawn path; cwd is always Server-computed',
+      '--story anchors a session directly to a story without making a task; exclusive with --task and --force-new-task (the API also excludes newTask). The story context is injected and inherited by authenticated children',
       '`--context` is launch-manifest context, NOT a runtime prompt',
       '`--memory` appends memory entities to the persona’s injected working set for THIS session only; nothing is written to the graph',
       'memories a `--task` task `remembers` are auto-injected after the persona’s working set (D9)',
@@ -3062,7 +3070,7 @@ const ROWS: Record<OperationName, Row> = {
       'exactly eight flags bind — --schema, --sections, --total-bytes, --section-bytes, --offset, --actions-schema, --cursor, --edge-type (EntityContextQuery); --depth/--messages/--children never bound and are gone',
       'v2 only: --cursor continues ONE paged section (--sections hierarchy|blockers|connections|messages) and is copied verbatim from an omitted[] expand; --edge-type filters --sections connections to one edge type',
       'actions under v2 (agent default) are tm8.actions.v2 rows; cursors.actions continues in `tm8 action list --for <id> --cursor <c>`',
-      '--schema v2 returns tm8.entity-context.v2 (compact rows, full acceptance text, omitted[]/notLoaded[]/errors[] with runnable expands); v2 sections are assignment (alias summary), hierarchy (aliases children, parent), blockers, connections, messages, actions, plus every core field the default read returns: acceptance (with acceptanceWrite, no body), header, assignees, gate, story, tasks, anchor (with parentMessage), attachments; v2 refuses --section-bytes. Without --schema the read is v2 (text, and agent-class --format json); --section-bytes or --sections activity alone select v1 (no body) with a stderr note; an unknown --edge-type is invalid_input listing the valid types',
+      '--schema v2 returns tm8.entity-context.v2 (compact rows, full acceptance text, omitted[]/notLoaded[]/errors[] with runnable expands); v2 sections are assignment (alias summary), hierarchy (aliases children, parent), blockers, connections, messages, actions, plus every core field the default read returns: acceptance (with acceptanceWrite, no body), header, assignees, gate, story, tasks, anchor (with parentMessage), attachments; the story card is never-drop but every list on it is one page (roots 10, the rest 5): each cut list has an omitted[] entry (story.roots, story.sessions, …) whose `--sections story --cursor` expand continues that list alone; v2 refuses --section-bytes. Without --schema the read is v2 (text, and agent-class --format json); --section-bytes or --sections activity alone select v1 (no body) with a stderr note; an unknown --edge-type is invalid_input listing the valid types',
       'v2 body ceiling: a body over ~15 KB arrives complete:false with an expand `--sections assignment --offset <N>` (UTF-8 bytes, server-filled; run it verbatim). A --total-bytes under the never-drop core is 422 context_budget_too_small (exit 2) and prints `next`, the retry rounded up to the KB',
       'bounded by design: defaults are 16 KiB total and 4 KiB per section (service source); hard caps 32 KiB and 8 KiB (frozen schema)',
       'returned cursors.messages/.activity continue in `entity feed --cursor` (--order newest); cursors.children continues in `entity children --cursor`',
@@ -4757,6 +4765,7 @@ const NOUN_SUMMARY: Record<string, string> = {
   tracking: 'Refresh external pull-request and commit tracking state',
   edge: 'Typed relationships between entities, and the edge-type registry',
   'edge-type': 'The registered edge types and their endpoint rules',
+  story: 'Stories: create, curate roots, read bounded context, and set status',
   collection: 'Curated-set membership (add/remove), plus the Space-wide entity query (invoked as `entity query`)',
   chat: 'Chats with a teammate: start one, list them, read one, post a turn, and see its turn state',
   message: 'Durable messages — the only public communication action for text',
@@ -4791,6 +4800,7 @@ const NOUN_SUMMARY: Record<string, string> = {
 /** Family nouns ∪ command nouns, sorted. Both resolve through `tm8 help <noun>`. */
 export const NOUNS: readonly string[] = [
   ...new Set([
+    'story', // Guide-only topic: stories use universal entity and collection commands.
     ...BASE.map((r) => r.noun),
     ...BASE.flatMap((r) => (r.command ? [r.command[0] as string] : [])),
     // An alias may introduce a noun (`space-link`, `whoami`); help must resolve it.
@@ -4828,5 +4838,5 @@ export function commandlessForNoun(noun: string, from?: AvailabilityLedger): rea
 
 /** Nouns a caller can type at the top level, in root-help order. */
 export const PUBLIC_NOUNS: readonly string[] = NOUNS.filter(
-  (n) => commandsForNoun(n).length > 0 || commandlessForNoun(n).length > 0,
+  (n) => n === 'story' || commandsForNoun(n).length > 0 || commandlessForNoun(n).length > 0,
 );

@@ -3040,6 +3040,7 @@ export const WorkInputSchema: z.ZodType<WorkInput> = z.object({
   status: WorkStatusSchema,
   startedAt: IsoTimestamp.optional(),
   note: z.string().nullable().optional(),
+  claim: z.boolean().optional(),
 }).strict();
 
 export const TrackingRefreshInputSchema: z.ZodType<TrackingRefreshInput> = z.object({
@@ -3760,6 +3761,7 @@ const executionSpawnInputObject = z.object({
   teamMemberId: SpawnUuidSchema,
   parentSessionId: SpawnUuidSchema.optional(),
   taskIds: z.array(SpawnUuidSchema).optional(),
+  storyId: SpawnUuidSchema.optional(),
   forceNewTask: z.boolean().optional(),
   newTask: ExecutionNewTaskSchema.optional(),
   projectId: SpawnUuidSchema.nullable().optional(),
@@ -3794,6 +3796,9 @@ export const SPAWN_SELECTION_WITH_MEMORY_IDS_MESSAGE =
 
 export const ExecutionSpawnInputSchema: z.ZodType<ExecutionSpawnInput> = executionSpawnInputObject.superRefine(
   (input, ctx) => {
+    if (input.storyId !== undefined && (input.taskIds !== undefined || input.newTask !== undefined || input.forceNewTask !== undefined)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['storyId'], message: 'storyId cannot be combined with taskIds, newTask or forceNewTask' });
+    }
     if (input.selection && input.memoryIds !== undefined) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -4464,7 +4469,7 @@ const ENTITY_CONTEXT_V2_SECTIONS = [
   'assignment', 'summary', 'hierarchy', 'blockers', 'connections', 'messages', 'actions',
   'acceptance', 'acceptanceWrite', 'header', 'assignees', 'gate', 'children', 'parent', 'story', 'tasks', 'anchor', 'parentMessage', 'attachments',
 ] as const;
-const ENTITY_CONTEXT_V2_PAGED: readonly string[] = ['hierarchy', 'children', 'blockers', 'connections', 'messages'];
+const ENTITY_CONTEXT_V2_PAGED: readonly string[] = ['hierarchy', 'children', 'blockers', 'connections', 'messages', 'story'];
 
 export const ENTITY_HEADER_READ_MODES = ['authored', 'resolved'] as const satisfies readonly EntityHeaderReadMode[];
 
@@ -4516,7 +4521,7 @@ export const EntityContextQuerySchema: z.ZodType<EntityContextQuery> = z.object(
     issues.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['cursor'],
-      message: 'a context cursor continues exactly one paged v2 section (hierarchy, blockers, connections or messages)',
+      message: 'a context cursor continues exactly one paged v2 section (hierarchy, blockers, connections, messages or story)',
     });
   }
   if (query.edgeType !== undefined && !(v2 && only === 'connections')) {

@@ -266,7 +266,7 @@ const UNBLOCKED_PREDICATE = `not exists (
  * A memory's title is derived from its statement, so the statement is what
  * is searched. Kinds without an arm here never match a title search.
  */
-const TITLE_TEXT = `coalesce(t.title, d.title, ws.title, drw.title, sk.name, sp.name,
+const TITLE_TEXT = `coalesce(t.title, sty.title, d.title, ws.title, drw.title, sk.name, sp.name,
   tm.name, mem.display_name, col.name, ch.name, vc.name, f.name, memo.statement,
   art.name, lp.title, gr.title, cht.title, ctr.title, pr.title, ppd.name, '')`;
 
@@ -276,7 +276,7 @@ const TITLE_TEXT = `coalesce(t.title, d.title, ws.title, drw.title, sk.name, sp.
  * carries. Not a task's or doc's body — that is prose, and a word anywhere in
  * it would bury the title hits under every page that mentions it.
  */
-const DESCRIPTION_TEXT = `coalesce(sk.description, sp.description, art.description, col.description, '')`;
+const DESCRIPTION_TEXT = `coalesce(sk.description, sp.description, art.description, col.description, sty.description, '')`;
 
 /**
  * `filters.words` as the words it requires: lowercased, split on whitespace

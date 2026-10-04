@@ -446,7 +446,7 @@ export function composePromptV2(
   // Spawn-on-story: the story the primary task is part of, after the
   // assignment. It never displaces the task's own context: past the combined
   // cap it shrinks to its ref.
-  const story = primary && manifest.story?.taskId === primary.id ? manifest.story : null;
+  const story = manifest.story && (manifest.story.taskId === null || manifest.story.taskId === primary?.id) ? manifest.story : null;
   if (story) {
     const draft = `${s.join('\n')}\n\n${[...t, renderStoryContext(story, true, facts.sessionId), '</tm8_task_prompt>'].join('\n')}`;
     t.push(renderStoryContext(story, utf8Bytes(draft) <= BYTE_BUDGETS.combinedInitialInjection, facts.sessionId));

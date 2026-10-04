@@ -124,7 +124,7 @@ describe('289 story rollup scope', () => {
   it('taskProgress counts only the root and its hierarchy, at any depth', async () => {
     const s = await summary(id['storyA']!);
     // a1..a5 work (a1 working, a2 done, a3-a5 open), aX cancelled; b1/b2/c1 never.
-    expect(s['taskProgress']).toEqual({ work: 5, done: 1, inProgress: 1, toDo: 3, blocked: 0, cancelled: 1 });
+    expect(s['taskProgress']).toEqual({ work: 5, done: 1, inProgress: 1, toDo: 3, blocked: 0, cancelled: 1, staleInProgress: 1 });
   });
 
   it('progress counts tasks and child stories, never the hub doc', async () => {

@@ -150,8 +150,8 @@ const ACT_GUIDES = [
   guide('entities.points.add', 'Grant or award points with an audit reason.', {
     params: { id: '<entity-id>' }, body: { amount: 1, reason: 'grant' },
   }),
-  guide('entities.commands.work', 'Move a task to an allowed work status.', {
-    params: { id: '<task-id>' }, body: { status: 'working', note: '<optional-note>' },
+  guide('entities.commands.work', 'Move a task to an allowed work status. Changes only the status; claim: true also records you as working_on it (note/startedAt need the claim).', {
+    params: { id: '<task-id>' }, body: { status: 'working', claim: true, note: '<optional-note>' },
   }),
   guide('entities.commands.complete', 'Complete a task at its current version; unticked acceptance criteria refuse it (tick them with entities.commands.tick).', {
     params: { id: '<task-id>' }, body: { expectedVersion: 1, completerIds: ['<actor-id>'] },

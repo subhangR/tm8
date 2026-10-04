@@ -7,6 +7,7 @@
 //
 // Queries run SEQUENTIALLY: a `Querier` wraps one pooled client.
 import {
+  CollabError,
   STORY_FOLLOWED_EDGE_TYPES,
   STORY_FOLLOW_DEPTH,
   STORY_FOLLOW_LIMIT,
@@ -35,6 +36,7 @@ const ACTIVITY_LIMIT = 50;
 const MESSAGE_LIMIT = 50;
 const CHILD_STORY_LIMIT = 50;
 const LIVE_SESSION_STATUSES = new Set(['spawning', 'running', 'idle']);
+const ENDED_SESSION_STATUSES = new Set(['exited', 'failed']);
 const TEAM_MODES = new Set<TeamMemberMode>(['worker', 'coordinator', 'coordinated-worker', 'coordinated-coordinator', 'dispatcher']);
 /** Edge types drawn between nodes: the followed set plus membership and blocking. */
 const DRAWN_EDGE_TYPES = [...STORY_FOLLOWED_EDGE_TYPES.filter((t) => t !== 'parent'), 'contains', 'depends_on'];
@@ -77,6 +79,17 @@ function category(raw: string | null): StatusCategory | null {
   return raw === 'to_do' || raw === 'in_progress' || raw === 'done' || raw === 'cancelled' ? raw : null;
 }
 
+/**
+ * A row's category ON THE STORY. 174 files a crashed / restarted / OOM-killed
+ * session under in_progress so the board offers Resume; on a story that reads
+ * as work happening while liveSessionCount says 0 (#15). Here a session whose
+ * runtime has ended is terminal: in_progress means a live runtime.
+ */
+function storyCategory(f: { kind: string; status_category: string | null; ws_status: string | null }): StatusCategory | null {
+  if (f.kind === 'work_session' && ENDED_SESSION_STATUSES.has(f.ws_status ?? '')) return 'done';
+  return category(f.status_category);
+}
+
 function teamMode(raw: string | null): TeamMemberMode | null {
   return raw !== null && TEAM_MODES.has(raw as TeamMemberMode) ? (raw as TeamMemberMode) : null;
 }
@@ -102,9 +115,57 @@ const STATUS_KEY_FROM = `
        left join public.pull_requests pr on pr.entity_id = e.id
        left join public.chats cht on cht.entity_id = e.id`;
 
-const EMPTY_PROGRESS: StoryProgress = { work: 0, done: 0, inProgress: 0, toDo: 0, blocked: 0, cancelled: 0 };
+const EMPTY_PROGRESS: StoryProgress = { work: 0, done: 0, inProgress: 0, toDo: 0, blocked: 0, cancelled: 0, staleInProgress: 0 };
 
-export async function loadStoryPage(q: Querier, storyId: string): Promise<StoryPage> {
+/** Child-story pages share the browser's order but can continue beyond its preview. */
+export async function loadStoryChildren(
+  q: Querier,
+  storyId: string,
+  { limit = CHILD_STORY_LIMIT, afterId = null }: { limit?: number; afterId?: string | null } = {},
+): Promise<StoryChild[]> {
+  if (afterId !== null) {
+    const after = await q.query<{ id: string }>(
+      `select id from public.entities
+        where id = $2 and parent_id = $1 and kind = 'story' and deleted_at is null`,
+      [storyId, afterId],
+    );
+    if (after.length === 0) {
+      throw new CollabError('invalid_cursor', 'the childStories row this cursor resumes after is no longer on the story; re-read it');
+    }
+  }
+  const children = await q.query<{ id: string; title: string; summary: unknown; status_category: string | null; status_name: string | null }>(
+    `select c.id, st.title, internal.story_summary(c.id) as summary, c.status_category,
+            coalesce(c.status_category, 'none') as status_name
+       from public.entities c join public.stories st on st.entity_id = c.id
+      where c.parent_id = $1 and c.kind = 'story' and c.deleted_at is null
+        ${afterId === null ? '' : `and (c.position, c.created_at, c.id) > (
+          select position, created_at, id from public.entities where id = $3
+        )`}
+      order by c.position, c.created_at, c.id
+      limit $2`,
+    afterId === null ? [storyId, limit] : [storyId, limit, afterId],
+  );
+  return children.map((c) => {
+    const s = storyStateOf(c.summary);
+    return {
+      id: c.id,
+      title: c.title,
+      status: c.status_name,
+      statusCategory: category(c.status_category),
+      itemCount: s?.itemCount ?? 0,
+      taskProgress: s?.taskProgress ?? EMPTY_PROGRESS,
+      rollup: s?.rollup ?? EMPTY_PROGRESS,
+      liveSessionCount: s?.liveSessionCount ?? 0,
+      lastActivityAt: s?.lastActivityAt ?? null,
+    };
+  });
+}
+
+export async function loadStoryPage(
+  q: Querier,
+  storyId: string,
+  { childStories = true }: { childStories?: boolean } = {},
+): Promise<StoryPage> {
   const trail = await q.query<TrailRow>(
     `select entity_id, root_id, depth, via_id, edge_type, edge_id, direction, root_position
        from internal.story_trail($1)`,
@@ -131,12 +192,12 @@ export async function loadStoryPage(q: Querier, storyId: string): Promise<StoryP
   const facts = await q.query<FactRow>(
     `select e.id, e.kind, e.parent_id, e.status_category, ${STATUS_KEY_SQL} as status_name,
             e.activity_at, e.created_at, ws.status as ws_status, ws.model as ws_model, ws.mode as ws_mode, tm.mode as tm_mode,
-            exists (
+            (coalesce(t.work_status = 'blocked', false) or exists (
               select 1 from public.edges dep
                where dep.src_id = e.id and dep.type = 'depends_on'
                  and coalesce((dep.props ->> 'hard')::boolean, true)
                  and not internal.is_resolved(dep.dst_id)
-            ) as blocked
+            )) as blocked
        from public.entities e${STATUS_KEY_FROM}
        left join public.team_members tm on tm.entity_id = e.id
       where e.id = any($1::uuid[]) and e.deleted_at is null`,
@@ -184,15 +245,7 @@ export async function loadStoryPage(q: Querier, storyId: string): Promise<StoryP
     [allIds, DRAWN_EDGE_TYPES],
   );
 
-  const children = await q.query<{ id: string; title: string; summary: unknown; status_category: string | null; status_name: string | null }>(
-    `select c.id, st.title, internal.story_summary(c.id) as summary, c.status_category,
-            coalesce(c.status_category, 'none') as status_name
-       from public.entities c join public.stories st on st.entity_id = c.id
-      where c.parent_id = $1 and c.kind = 'story' and c.deleted_at is null
-      order by c.position, c.created_at, c.id
-      limit ${CHILD_STORY_LIMIT}`,
-    [storyId],
-  );
+  const children = childStories ? await loadStoryChildren(q, storyId) : [];
 
   const activityRows = await q.query<{ id: string; created_at: Date | string; entity_id: string; verb: string; actor_id: string | null }>(
     `select a.id, a.created_at, a.entity_id, a.verb, a.actor_id
@@ -263,7 +316,7 @@ export async function loadStoryPage(q: Querier, storyId: string): Promise<StoryP
     kind: f.kind,
     title: title(f.id),
     status: f.status_name,
-    statusCategory: category(f.status_category),
+    statusCategory: storyCategory(f),
     blocked: f.blocked,
     depth,
     rootIds,
@@ -309,7 +362,7 @@ export async function loadStoryPage(q: Querier, storyId: string): Promise<StoryP
       kind: f.kind,
       title: title(r.entity_id),
       status: f.status_name,
-      statusCategory: category(f.status_category),
+      statusCategory: storyCategory(f),
       blocked: f.blocked,
       position: r.root_position,
       progress: work?.progress ?? EMPTY_PROGRESS,
@@ -408,21 +461,6 @@ export async function loadStoryPage(q: Querier, storyId: string): Promise<StoryP
     });
   }
 
-  const childStories: StoryChild[] = children.map((c) => {
-    const s = storyStateOf(c.summary);
-    return {
-      id: c.id,
-      title: c.title,
-      status: c.status_name,
-      statusCategory: category(c.status_category),
-      itemCount: s?.itemCount ?? 0,
-      taskProgress: s?.taskProgress ?? EMPTY_PROGRESS,
-      rollup: s?.rollup ?? EMPTY_PROGRESS,
-      liveSessionCount: s?.liveSessionCount ?? 0,
-      lastActivityAt: s?.lastActivityAt ?? null,
-    };
-  });
-
   const activity: StoryActivityItem[] = activityRows.map((a) => ({
     id: a.id,
     at: iso(a.created_at),
@@ -459,7 +497,7 @@ export async function loadStoryPage(q: Querier, storyId: string): Promise<StoryP
     edges,
     sessions,
     team,
-    childStories,
+    childStories: children,
     activity,
     feedAnchorIds,
     recentMessages,

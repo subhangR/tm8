@@ -201,7 +201,10 @@ beforeAll(async () => {
   // signature back beside it and every positional call would be ambiguous — an
   // artifact of this out-of-order fixture, not of the real chain, where 267
   // runs last. 267 has its own suite (launch-v3-new-task.pg.test.ts).
-  database.apply(files.filter((f) => f !== migration && !f.endsWith(LAUNCH_V3_SUFFIX)));
+  // Direct story spawn extends that signature again; it belongs to the
+  // current-chain suites, not this intentionally pre-267 fixture.
+  database.apply(files.filter((f) => f !== migration && !f.endsWith(LAUNCH_V3_SUFFIX)
+    && !f.endsWith('_direct_story_spawn.sql')));
   fixture = await seedPre131(database);
   database.apply([migration]);
 });

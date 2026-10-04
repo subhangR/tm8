@@ -3,9 +3,9 @@
 // A story is one entity with a title, a description and the status every kind
 // has (152). Things are put in BY HAND as `contains` edges from the story —
 // those are its ROOTS — and everything connected to a root FOLLOWS along a
-// fixed set of edge types, to a fixed depth, under a fixed row bound. Progress,
-// the graph, the team, call signs and what is happening are all COMPUTED at
-// read time from that trail; nothing here is ever stored.
+// fixed set of edge types, to a fixed depth, under a fixed row bound. The
+// graph, team, call signs and activity are computed from that trail. Progress
+// is computed from contained work (see StoryState); story status is manual.
 //
 // Where each piece is read from (no new catalog rows):
 //   * `StoryState`   — the entity's `state` on BOTH read paths (entities.get /
@@ -25,7 +25,7 @@
 //                      `page.recentMessages`.
 //   * agents         — `tm8 entity context <story>` renders the same page as
 //                      a bounded text section.
-import type { ActorSummary, StatusCategory, TeamMemberMode } from './contract.js';
+import type { ActorSummary, EntityContextV2View, StatusCategory, TeamMemberMode } from './contract.js';
 import { z } from 'zod';
 
 /**
@@ -96,9 +96,9 @@ export function storyCallSign(index: number): string {
 }
 
 /**
- * A progress tally over a set of followed rows. `work` = rows whose status
- * category is not `cancelled`; `done` = rows at category `done`. `blocked` =
- * work rows not done that hold an unresolved hard `depends_on`. The bands are
+ * A progress tally over contained work. `work` = rows whose status category
+ * is to_do, in_progress or done; `done` = rows at category `done`. `blocked` =
+ * unfinished rows explicitly blocked or holding an unresolved hard `depends_on`. The bands are
  * DISJOINT: `inProgress` and `toDo` exclude blocked rows, so
  * done + inProgress + toDo + blocked = work.
  */
@@ -109,6 +109,13 @@ export interface StoryProgress {
   toDo: number;
   blocked: number;
   cancelled: number;
+  /**
+   * Subset of inProgress: tasks without a directly linked, nondeleted
+   * spawning/running/idle work session (`working_on`, session -> task).
+   * This is a visibility-scoped signal, not a status change or an age test.
+   * Optional for older stored summaries; absence means unavailable, not zero.
+   */
+  staleInProgress?: number;
 }
 
 /**
@@ -165,7 +172,7 @@ export interface StoryNode {
    */
   status: string | null;
   statusCategory: StatusCategory | null;
-  /** Holds an unresolved hard `depends_on`. */
+  /** Explicitly blocked or holds an unresolved hard `depends_on`. */
   blocked: boolean;
   /** 0 for a root, 1..STORY_FOLLOW_DEPTH for followed rows; -1 for the story. */
   depth: number;
@@ -341,6 +348,8 @@ export interface StoryContent {
   kind: 'story';
   description: string;
   page: StoryPage | null;
+  /** Bounded reader context with continuation pointers; absent on browser page reads. */
+  context?: EntityContextV2View;
 }
 
 /**
@@ -365,6 +374,7 @@ const StoryProgressSchema = z.object({
   toDo: z.number().int().nonnegative(),
   blocked: z.number().int().nonnegative(),
   cancelled: z.number().int().nonnegative(),
+  staleInProgress: z.number().int().nonnegative().optional(),
 }).strict();
 
 export const StoryStateSchema = z.object({
@@ -386,6 +396,7 @@ export const StoryContentSchema = z.object({
   kind: z.literal('story'),
   description: z.string(),
   page: z.record(z.unknown()).nullable(),
+  context: z.record(z.unknown()).optional(),
 }).passthrough();
 
 /**
@@ -393,9 +404,15 @@ export const StoryContentSchema = z.object({
  * projected small for an agent. Every list is capped at 50; a cut list adds
  * an `omitted[]` entry on the view.
  */
+/**
+ * The story card on `entity context` (283). Never-drop core, so every list is
+ * one bounded page (#25): a cut list has an `omitted[]` entry (`story.roots`,
+ * `story.sessions`, …) whose `--sections story --cursor` expand continues it.
+ * A cursor page carries only the list it continues; the others are absent.
+ */
 export interface EntityContextStory {
   state: StoryState;
-  roots: Array<{
+  roots?: Array<{
     id: string; kind: string; title: string; status: string | null; statusCategory: StatusCategory | null;
     blocked: boolean; taskProgress: StoryProgress; progress: StoryProgress;
     /** `StoryRoot.descendantCount`: matches `entity query --subtree <root>`. */
@@ -405,12 +422,14 @@ export interface EntityContextStory {
   }>;
   /** Counts over every followed row (depth >= 0), by kind. */
   byKind: Record<string, number>;
-  blocked: Array<{ id: string; kind: string; title: string; status: string | null }>;
-  sessions: Array<{ id: string; callSign: string; title: string; live: boolean; mode: TeamMemberMode | null;
-    teamMemberId: string | null; taskIds: string[] }>;
-  team: Array<{ id: string; kind: 'team_member' | 'member'; name: string; mode: TeamMemberMode | null;
-    parentId: string | null; live: boolean; sessionIds: string[] }>;
-  childStories: Array<{ id: string; title: string; status: string | null; taskProgress: StoryProgress;
+  blocked?: Array<{ id: string; kind: string; title: string; status: string | null }>;
+  /** `taskIds` is cut to the first few; `taskCount` is the full count, present only when cut. */
+  sessions?: Array<{ id: string; callSign: string; title: string; live: boolean; mode: TeamMemberMode | null;
+    teamMemberId: string | null; taskIds: string[]; taskCount?: number }>;
+  /** `sessionIds` is cut to the first few; `sessionCount` is the full count, present only when cut. */
+  team?: Array<{ id: string; kind: 'team_member' | 'member'; name: string; mode: TeamMemberMode | null;
+    parentId: string | null; live: boolean; sessionIds: string[]; sessionCount?: number }>;
+  childStories?: Array<{ id: string; title: string; status: string | null; taskProgress: StoryProgress;
     rollup: StoryProgress; liveSessionCount: number }>;
   truncated: boolean;
 }
@@ -418,11 +437,11 @@ export interface EntityContextStory {
 /** Loose on purpose: server-assembled, typed by `EntityContextStory`. */
 export const EntityContextStorySchema: z.ZodType<EntityContextStory> = z.object({
   state: StoryStateSchema,
-  roots: z.array(z.record(z.unknown())),
+  roots: z.array(z.record(z.unknown())).optional(),
   byKind: z.record(z.number().int().nonnegative()),
-  blocked: z.array(z.record(z.unknown())),
-  sessions: z.array(z.record(z.unknown())),
-  team: z.array(z.record(z.unknown())),
-  childStories: z.array(z.record(z.unknown())),
+  blocked: z.array(z.record(z.unknown())).optional(),
+  sessions: z.array(z.record(z.unknown())).optional(),
+  team: z.array(z.record(z.unknown())).optional(),
+  childStories: z.array(z.record(z.unknown())).optional(),
   truncated: z.boolean(),
 }).strict() as unknown as z.ZodType<EntityContextStory>;

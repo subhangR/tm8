@@ -78,6 +78,7 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   'all',                 // skill scan --all
   'off',                 // entity react --off
   'ready',               // entity query --ready
+  'story-page',          // entity get: explicit full story page
   'roots',               // entity query --roots — top-level rows only (= --parent none)
   'unread',              // inbox list --unread
   'until-match',         // event watch --until-match
@@ -93,6 +94,7 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   'no-session-link',     // entity create — suppress the automatic created_in edge
   'clear',               // task axis --clear
   'untick',              // task tick --untick
+  'claim',               // task transition --claim — also record the caller as working_on
   'node-admin',          // auth signup --node-admin
   'print-token',         // auth login — print instead of storing per-server
   'show',                // auth claim --show — reprint the on-box claim token

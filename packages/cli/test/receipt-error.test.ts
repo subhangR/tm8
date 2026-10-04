@@ -260,6 +260,23 @@ describe('ambiguous outcome (§9.8, D4.7)', () => {
     expect(r.mutationId).toBe(MID);
   });
 
+  it.each([200, 201, 204])('a malformed successful HTTP %i may have committed and preserves replay identity', status => {
+    const err = new ProtocolError('unparseable success response', status);
+    expect(isAmbiguous(err)).toBe(true);
+    const r = inBudget(errorReceipt(err, input({ argv })));
+    expect(r.error).toMatchObject({ code: 'protocol', status, outcome: 'unknown', retryable: true });
+    expect(r.mutationId).toBe(MID);
+    expect(r.next).toBe(`tm8 ${argv.join(' ')} --mutation-id ${MID}`);
+  });
+
+  it.each([400, 403, 429])('a malformed HTTP %i refusal is not classified as a committed success', status => {
+    const err = new ProtocolError('malformed refusal', status);
+    expect(isAmbiguous(err)).toBe(false);
+    const r = inBudget(errorReceipt(err, input()));
+    expect(r.error).toMatchObject({ code: 'protocol', status, retryable: false });
+    expect(r.error).not.toHaveProperty('outcome');
+  });
+
   it('a refusal the Server stated never echoes a generated mutationId', () => {
     const r = errorReceipt(new ApiError(400, 'invalid_input', 'bad', 'req', false, {}), input())!;
     expect(r.mutationId).toBeUndefined();

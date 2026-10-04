@@ -520,7 +520,7 @@ describe.sequential('W2.G02 entities, commands, and tracking PostgreSQL semantic
     await expect(asApp(database, fixture.identityId, (q) => q.rpc('set_work_state',
       [fixture.taskId, 'done', null, null, null, 'g02-work-done']))).rejects.toMatchObject({ code: '23514' });
     await asApp(database, fixture.identityId, (q) => q.rpc('set_work_state',
-      [fixture.taskId, 'working', null, null, 'active', 'g02-work']));
+      [fixture.taskId, 'working', null, null, 'active', 'g02-work', false, true]));
     const version = (await database.query<{ version: number }>(
       `select version from public.entities where id=$1`, [fixture.taskId],
     ))[0]!.version;

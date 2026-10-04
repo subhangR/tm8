@@ -377,9 +377,11 @@ function renderContext(dto: unknown): string {
 
 async function entityGet(cmd: CommandContext): Promise<ExitCode> {
   refuseMutationId('entity get', cmd.options.value('mutation-id'));
-  assertKnownOptions(cmd, []);
+  assertKnownOptions(cmd, ['story-page']);
   const id = requireArg(cmd, 0, '<entity-id>');
-  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.get', { params: { id } });
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.get', {
+    params: { id }, query: cmd.options.bool('story-page') ? {} : { story: 'context' },
+  });
   // Bounded by default (see ../entity-bounded.ts): `--full` is the only thing
   // that sets receipts to 'full', so it doubles as the explicit escape hatch.
   // The human render reads one summary line either way.
@@ -588,8 +590,8 @@ export function contextQuery(cmd: CommandContext, rollout: { defaultV2?: boolean
   const edgeType = cmd.options.value('edge-type');
   const only = sections !== undefined && !sections.includes(',') ? sections : undefined;
   if (cursor !== undefined
-    && !(schema === 'v2' && only !== undefined && ['hierarchy', 'children', 'blockers', 'connections', 'messages'].includes(only))) {
-    throw new CliError('--cursor continues exactly one v2 section: --schema v2 --sections hierarchy|blockers|connections|messages', EXIT_USAGE);
+    && !(schema === 'v2' && only !== undefined && ['hierarchy', 'children', 'blockers', 'connections', 'messages', 'story'].includes(only))) {
+    throw new CliError('--cursor continues exactly one v2 section: --schema v2 --sections hierarchy|blockers|connections|messages|story', EXIT_USAGE);
   }
   if (edgeType !== undefined && !(schema === 'v2' && only === 'connections')) {
     throw new CliError('--edge-type filters the v2 connections section: --schema v2 --sections connections', EXIT_USAGE);
@@ -654,7 +656,7 @@ function contextSchemaVersion(data: unknown): string | null {
  */
 async function entityQuery(cmd: CommandContext): Promise<ExitCode> {
   refuseMutationId('entity query', cmd.options.value('mutation-id'));
-  assertKnownOptions(cmd, ['kind', 'subtree', 'parent', 'roots', 'status', 'assignee', 'ready', 'limit', 'cursor']);
+  assertKnownOptions(cmd, ['kind', 'subtree', 'parent', 'roots', 'status', 'assignee', 'ready', 'title-contains', 'words', 'limit', 'cursor']);
 
   const kinds = cmd.options.values('kind');
   const subtreeOf = cmd.options.value('subtree');
@@ -681,6 +683,10 @@ async function entityQuery(cmd: CommandContext): Promise<ExitCode> {
   if (status.length > 0) filters.status = status;
   if (assigneeIds.length > 0) filters.assigneeIds = assigneeIds;
   if (ready) filters.readyToPull = true;
+  const titleContains = cmd.options.value('title-contains');
+  const words = cmd.options.value('words');
+  if (titleContains !== undefined) filters.titleContains = titleContains;
+  if (words !== undefined) filters.words = words;
 
   const body: Record<string, unknown> = { spaceId: requireSpace(cmd.ctx) };
   if (kinds.length > 0) body.kinds = kinds;
