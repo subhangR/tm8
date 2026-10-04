@@ -1,0 +1,14 @@
+/*
+ * THE DRILL-IN SPLIT (task 01a1090f): an aggregate place's members under the
+ * approach card, each with its own Inspect, and the verb on a flat-world row.
+ */
+.cv2-root .sgm-approach:has(.sgm-approach__members) { flex-wrap: wrap; }
+.cv2-root .sgm-approach__members {
+  flex: 1 0 100%; list-style: none; margin: 0; padding: 6px 0 0;
+  border-top: 1px solid var(--pn-line); display: grid; gap: 4px;
+  font-size: var(--pn-fs-micro); color: var(--pn-ink-2);
+}
+.cv2-root .sgm-approach__members li { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.cv2-root .sgm-approach__members li > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cv2-root .sgm-flat__verb { margin-left: 4px; font-size: var(--pn-fs-micro); color: var(--pn-brand); }
+.cv2-root .sgm-flat__land .sgm-flat__members { flex-basis: 100%; margin: 4px 0 0 12px; }
