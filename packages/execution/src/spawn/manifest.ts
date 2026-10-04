@@ -576,6 +576,7 @@ export function resolveLaunchConfig(
     (asReadHints(env.TM8_READ_HINTS) ?? preferences.readHints ?? false);
 
   return {
+    ...(request.mcpSelections !== undefined ? {mcpSelections:request.mcpSelections} : {}),
     mode,
     model,
     agentTool,
@@ -1112,6 +1113,7 @@ export function buildCodexArgs(
   for (const [name, config] of Object.entries(connectorBridgeConfig(launch.mcpSelections))) {
     args.push('-c', `mcp_servers.${name}.command=${JSON.stringify(config.command)}`);
     args.push('-c', `mcp_servers.${name}.args=${JSON.stringify(config.args)}`);
+    args.push('-c', `mcp_servers.${name}.env_vars=["TM8_AGENT_TOKEN","TM8_SESSION_ID","TM8_BASE_URL"]`);
   }
   if (launch.model) args.push('--model', launch.model);
 
@@ -2268,7 +2270,7 @@ export function connectorBridgeConfig(selections: ResolvedLaunchConfig['mcpSelec
   const result: Record<string,{command:string;args:string[]}> = {};
   for (const selection of selections ?? []) {
     if (!/^[0-9a-f-]{36}$/i.test(selection.serverId)) throw new Error('Invalid MCP connector reference');
-    result[`connector_${selection.serverId.replaceAll('-', '')}`] = {command:'tm8-mcp',args:['--connector',selection.serverId]};
+    result[`connector_${selection.serverId.replaceAll('-', '')}`] = {command:process.execPath,args:[fileURLToPath(new URL('../../../mcp/dist/cli.js', import.meta.url)),'--connector',selection.serverId]};
   }
   return result;
 }

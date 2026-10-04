@@ -511,7 +511,8 @@ describe('buildAgentCommand', () => {
   it('uses Codex developer_instructions and leaves complete operator wrappers unchanged', () => {
     const codexLaunch = { ...launch, agentTool: 'codex', model: 'gpt-5-codex' };
     const codex = buildAgentCommand(codexLaunch, {});
-    expect(codex).toContain("codex --model 'gpt-5-codex'");
+    expect(codex).toContain("--model 'gpt-5-codex'");
+    expect(codex).toContain("mcp_servers={}");
     expect(
       withAgentPrompt(codex, { system: 'PROMPT', task: '' }, codexLaunch, {}),
     ).toContain('developer_instructions=');
@@ -609,6 +610,7 @@ describe('buildAgentCommand', () => {
     ]);
     const loopback = CODEX_LOOPBACK_CONFIG_OVERRIDES.flatMap((value) => ['-c', value]);
     const expected = (approval: 'never' | 'untrusted') => [
+      '-c', 'mcp_servers={}',
       '--model',
       'gpt-5.6-sol',
       '--ask-for-approval',
@@ -632,6 +634,7 @@ describe('buildAgentCommand', () => {
       expected('untrusted'),
     );
     expect(buildCodexArgs({ ...codexLaunch, permissionMode: 'bypassPermissions' })).toEqual([
+      '-c', 'mcp_servers={}',
       '--model',
       'gpt-5.6-sol',
       '--dangerously-bypass-approvals-and-sandbox',

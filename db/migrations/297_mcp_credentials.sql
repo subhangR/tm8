@@ -20,7 +20,7 @@ declare result jsonb;
 begin
   perform internal.require_human_auth_kind();
   perform internal.require_space_member(p_space);
-  if p_server is null or not exists (select 1 from public.entities where id=p_server and space_id=p_space and deleted_at is null) then
+  if p_server is null or not exists (select 1 from public.entities where id=p_server and space_id=p_space and kind='mcp_server' and deleted_at is null) then
     raise exception 'MCP server not found' using errcode='P0002';
   end if;
   result := public.create_space_credential(p_id,p_space,'mcp',p_shape,p_label,null,p_ciphertext,p_nonce,null,'private',false,false);
@@ -83,4 +83,90 @@ begin
 end $$;
 revoke all on function public.list_mcp_credentials(uuid,uuid) from public;
 grant execute on function public.list_mcp_credentials(uuid,uuid) to tm8_app;
+create table public.mcp_server_health (
+ server_id uuid primary key references public.entities(id) on delete cascade,
+ space_id uuid not null references public.spaces(id),
+ result jsonb not null,
+ checked_at timestamptz not null default now()
+);
+alter table public.mcp_server_health enable row level security;
+create policy mcp_server_health_read on public.mcp_server_health for select to tm8_app using (internal.is_space_member(space_id));
+grant select on public.mcp_server_health to tm8_app;
+create function public.record_mcp_server_health(p_server uuid,p_result jsonb) returns void
+language plpgsql security definer set search_path=public,internal,pg_temp as $$
+declare sid uuid;
+begin
+ select space_id into sid from public.entities where id=p_server and deleted_at is null;
+ perform internal.require_space_member(sid);
+ if p_result->>'reason' not in ('ready','not_approved','stdio_not_trusted','credential_required','credential_unavailable','credential_revoked','credential_expired','server_unavailable','access_denied')
+ or jsonb_typeof(p_result->'tools') <> 'array' then raise exception 'invalid MCP health' using errcode='22023'; end if;
+ insert into public.mcp_server_health(server_id,space_id,result) values(p_server,sid,p_result)
+ on conflict(server_id) do update set result=excluded.result,checked_at=now();
+end $$;
+revoke all on function public.record_mcp_server_health(uuid,jsonb) from public;
+grant execute on function public.record_mcp_server_health(uuid,jsonb) to tm8_app;
+analyze public.mcp_server_health;
+create function public.mcp_credential_readiness(p_server uuid,p_id uuid)
+returns jsonb language plpgsql stable security definer set search_path=public,internal,pg_temp as $$
+declare c public.space_credentials;
+begin
+ if p_id is null then return jsonb_build_object('ready',false,'reason','credential_required'); end if;
+ select * into c from public.space_credentials where id=p_id and provider='mcp' and mcp_server_id=p_server;
+ if c.id is null or not internal.is_space_member(c.space_id) then return jsonb_build_object('ready',false,'reason','credential_unavailable'); end if;
+ if c.status='revoked' then return jsonb_build_object('ready',false,'reason','credential_revoked'); end if;
+ begin
+  perform public.read_mcp_credential(c.space_id,p_server,p_id);
+ exception when others then return jsonb_build_object('ready',false,'reason','credential_unavailable'); end;
+ return jsonb_build_object('ready',true,'reason','ready');
+end $$;
+revoke all on function public.mcp_credential_readiness(uuid,uuid) from public;
+grant execute on function public.mcp_credential_readiness(uuid,uuid) to tm8_app;
+create or replace function public.read_space_service_key(p_space_id uuid, p_provider text)
+returns jsonb
+language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare stored public.space_credentials; v_account uuid; v_source text;
+begin
+  if p_provider='mcp' then raise exception 'MCP requires an explicit server and account' using errcode='42501'; end if;
+  if not internal.is_server_only_credential_provider(p_provider) then
+    raise exception '% is not a server-only credential; a launch reads it with read_space_credential_for_spawn', p_provider
+      using errcode = '42501',
+      detail = jsonb_build_object('reason', 'not_server_only', 'provider', p_provider)::text;
+  end if;
+  if coalesce(internal.claim_text('tm8.auth_kind'), '') = 'link' then
+    raise exception 'a space link session cannot read a service key' using errcode = '42501';
+  end if;
+  perform internal.require_space_member(p_space_id);
+
+  if coalesce(internal.claim_text('tm8.auth_kind'), '') in ('browser', 'cli') then
+    v_account := internal.current_account_id();
+    select sc.* into stored
+      from public.member_defaults md
+      join public.space_credentials sc on sc.id = md.credential_id and sc.space_id = md.space_id
+     where md.space_id = p_space_id and md.account_id = v_account
+       and md.provider = p_provider and sc.provider = p_provider
+       and sc.status = 'active' and sc.owner_account_id = v_account;
+    if stored.id is not null then v_source := 'my_default'; end if;
+  end if;
+
+  if stored.id is null then
+    select * into stored from public.space_credentials
+     where space_id = p_space_id and provider = p_provider
+       and is_default and status = 'active';
+    if stored.id is null then return null; end if;
+    v_source := 'space_default';
+  end if;
+
+  update public.space_credentials set last_used_at = now()
+   where id = stored.id;
+
+  return jsonb_build_object(
+    'credentialId', stored.id,
+    'spaceId', stored.space_id,
+    'provider', stored.provider,
+    'source', v_source,
+    'secretCiphertext', encode(stored.secret_ciphertext, 'base64'),
+    'secretNonce', encode(stored.secret_nonce, 'base64')
+  );
+end
+$$;
 reset role;

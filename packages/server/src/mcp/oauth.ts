@@ -55,10 +55,11 @@ export class McpOAuth {
     for(const [key,value] of Object.entries(params)) url.searchParams.set(key,value);
     return {authorizationUrl:url.href,expiresAt:new Date(expires).toISOString()};
   }
-  async callback(identityId: string,input:{state:string;code:string;issuer?:string}):Promise<{spaceId:string;serverId:string;label:string;secret:McpOAuthSecret}> {
+  async callback(identityId: string,input:{state:string;code?:string;issuer?:string;error?:string}):Promise<{spaceId:string;serverId:string;label:string;secret:McpOAuthSecret}> {
     const pending=this.pending.get(input.state);
     if(!pending || pending.identityId!==identityId || pending.expires<Date.now())throw new Error('OAuth state invalid or expired');
     this.pending.delete(input.state); // one use even on provider failure
+    if(input.error || !input.code)throw new Error('OAuth authorization denied');
     if(input.issuer!==undefined && input.issuer!==pending.metadata.issuer)throw new Error('OAuth issuer mismatch');
     const secret=await tokenRequest(pending.metadata.token_endpoint,new URLSearchParams({grant_type:'authorization_code',code:input.code,code_verifier:pending.verifier,redirect_uri:pending.redirectUri,client_id:pending.clientId,resource:pending.resource}),pending.privateNetwork);
     return {spaceId:pending.spaceId,serverId:pending.serverId,label:pending.label,secret:{kind:'oauth',...secret,issuer:pending.metadata.issuer,tokenEndpoint:pending.metadata.token_endpoint,resource:pending.resource,clientId:pending.clientId}};

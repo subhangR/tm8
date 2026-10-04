@@ -15,12 +15,28 @@ interface SealedRow { credentialId: string; spaceId: string; serverId: string; c
 /** Server-only opener. Never return its values from a facade handler. */
 export class McpCredentialStore {
   constructor(private readonly db: Db, private readonly dataDir: string) {}
+  async withRefreshLock<T>(claims:DbClaims,binding:McpCredentialBinding,run:(store:Pick<McpCredentialStore,'read'|'replace'>)=>Promise<T>):Promise<T> {
+    return this.db.tx(claims,async q=>{
+      await q.query('select pg_advisory_xact_lock(hashtextextended($1, 0))',[JSON.stringify(binding)]);
+      const boundDb:Db={
+        tx:async (_claims,work)=>work(q),rpc:async (_claims,fn,args)=>q.rpc(fn,args),
+        query:async (_claims,sql,args)=>q.query(sql,args),end:async()=>{},
+      };
+      return run(new McpCredentialStore(boundDb,this.dataDir));
+    });
+  }
   async create(claims: DbClaims, input: {spaceId: string; serverId: string; label: string; secret: McpSecret}): Promise<unknown> {
     if (!isHumanAuthKind(claims.authKind) || claims.viaLinkId) throw new Error('MCP credential writes require a human session');
     const credentialId = randomUUID();
     const spaceId = input.spaceId.toLowerCase();
     const sealed = sealSecret(await loadOrCreateCredentialKey(this.dataDir), JSON.stringify(input.secret), {spaceId, credentialId, provider:'mcp'});
     return this.db.rpc(claims, 'create_mcp_credential', [credentialId,spaceId,input.serverId,input.label,sealed.ciphertext,sealed.nonce,input.secret.kind==='oauth'?'token':'api_key']);
+  }
+  async rotate(claims:DbClaims,binding:McpCredentialBinding,value:string):Promise<void> {
+    if(!isHumanAuthKind(claims.authKind) || claims.viaLinkId)throw new Error('MCP credential writes require a human session');
+    await this.read(claims,binding);
+    const sealed=sealSecret(await loadOrCreateCredentialKey(this.dataDir),JSON.stringify({kind:'api_key',value}),{spaceId:binding.spaceId,credentialId:binding.credentialId,provider:'mcp'});
+    await this.db.rpc(claims,'rekey_space_credential',[binding.credentialId,null,sealed.ciphertext,sealed.nonce,null]);
   }
   async read(claims: DbClaims, binding: McpCredentialBinding): Promise<{secret: McpSecret; nonce: string}> {
     if (!binding.credentialId || claims.viaLinkId) throw new Error('MCP credential unavailable');

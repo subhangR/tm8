@@ -6,6 +6,8 @@ New MCP credentials are private. Owners can explicitly share through existing cr
 
 The proxy binds the live session, launching identity, space, connector and explicit credential. Its authorization port must consult durable live state each time. Vendor tokens remain server-side, including refresh tokens. Refresh is serialized per connection and writes compare-and-swap against ciphertext nonce; revoke or rotation wins. Definitions, manifests and subprocess arguments must contain only connector/account references. Legacy raw MCP configuration is refused.
 
-HTTP uses pinned DNS, bounded responses, a timeout, no redirects, and HTTPS. An administrator-approved private-network definition may use HTTP or private addresses; client request input cannot grant that exception. OAuth uses discovery, exact issuer verification, S256 PKCE, expiring one-use state tied to the human identity, resource binding, and server-side exchange. Only explicitly registered clients are supported; dynamic registration is not implicit.
+HTTP uses pinned DNS, bounded responses, a timeout, no redirects, and HTTPS. An administrator-approved private-network definition may use HTTP or private addresses; client request input cannot grant that exception. OAuth uses discovery, exact issuer verification, S256 PKCE, expiring one-use state tied to the human identity, resource binding, and server-side exchange. Resource metadata discovers the issuer; public-client dynamic registration is used when no preregistered client id is supplied and the issuer advertises support.
 
 Stdio execution requires explicit administrative code trust. Local subprocesses necessarily see any injected credential; remote credentials must not be injected into model subprocesses. Codex chat remains unsupported until a real adapter exists.
+
+Protocol reference: https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization

@@ -934,7 +934,7 @@ for (const operation of MCP_MAPPED_OPERATIONS) getOperation(operation);
 // The explicit inverse proof: neither credential nor auth operation is in a
 // resident or next-level graph tool.
 for (const operation of MCP_MAPPED_OPERATIONS) {
-  if (operation.startsWith('credentials.') || operation.startsWith('auth.')) {
+  if (operation.startsWith('credentials.') || operation.startsWith('mcp.credentials.') || operation.startsWith('mcp.oauth.') || operation.startsWith('auth.')) {
     throw new Error(`credential/auth operation leaked into MCP curation: ${operation}`);
   }
 }
