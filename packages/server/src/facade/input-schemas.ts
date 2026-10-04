@@ -1,3 +1,4 @@
+import { McpCredentialCommandInputSchema, McpCredentialCreateInputSchema, McpCredentialRotateInputSchema, McpCredentialShareInputSchema, McpOAuthBeginInputSchema, McpOAuthCallbackInputSchema, McpProxyRequestInputSchema, McpResolveInputSchema, McpServerCreateInputSchema, McpServerDeleteInputSchema, McpServerImportInputSchema, McpServerTestInputSchema, McpServerUpdateInputSchema } from '@tm8/contract';
 import { SkillCreateInputSchema, SkillEditInputSchema, SkillEquipInputSchema } from '../skills/mutations.js';
 import { SkillScanInputSchema } from '../skills/handlers.js';
 /**
@@ -224,6 +225,21 @@ const UndoCommandInputSchema = z.object({
 }).strict();
 
 export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
+  'mcp.servers.create': McpServerCreateInputSchema,
+  'mcp.servers.update': McpServerUpdateInputSchema,
+  'mcp.servers.delete': McpServerDeleteInputSchema,
+  'mcp.servers.import': McpServerImportInputSchema,
+  'mcp.servers.test': McpServerTestInputSchema,
+  'mcp.resolve': McpResolveInputSchema,
+  'mcp.credentials.create': McpCredentialCreateInputSchema,
+  'mcp.credentials.rotate': McpCredentialRotateInputSchema,
+  'mcp.credentials.revoke': McpCredentialCommandInputSchema,
+  'mcp.credentials.share': McpCredentialShareInputSchema,
+  'mcp.credentials.unshare': McpCredentialCommandInputSchema,
+  'mcp.oauth.begin': McpOAuthBeginInputSchema,
+  'mcp.oauth.callback': McpOAuthCallbackInputSchema,
+  'mcp.proxy.request': McpProxyRequestInputSchema,
+
   // identity (v2 Stage 0). The DTO deliberately has no actorId — strictness
   // refuses an actor on the wire rather than ignoring it.
   'identity.profile.update': IdentityProfileUpdateInputSchema,

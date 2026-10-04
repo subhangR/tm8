@@ -1,3 +1,4 @@
+import { mcpSelectionFlag } from './mcp.js';
 /**
  * `tm8 chat start|list|show|send|turns` — the chat noun (spec §6, L2-cli).
  *
@@ -107,7 +108,7 @@ function requireFlag(cmd: CommandContext, flag: string, placeholder: string, why
 async function chatStart(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, [
     'teammate', 'model', 'mode', 'workdir', 'project', 'about', 'title',
-    'body', 'attach', 'mutation-id',
+    'body', 'attach', 'mutation-id', 'mcp-selections',
   ]);
 
   const teammateId = requireFlag(
@@ -164,6 +165,8 @@ async function chatStart(cmd: CommandContext): Promise<ExitCode> {
   const attachmentIds = uniqueInOrder(cmd.options.values('attach'));
   if (attachmentIds.length > 0) request.attachmentIds = attachmentIds;
 
+  const mcpSelections = await mcpSelectionFlag(cmd);
+  if (mcpSelections !== undefined) request.mcpSelections = mcpSelections;
   const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'chat.start', { body: request });
   cmd.out.data(data, renderStarted);
   return EXIT_OK;

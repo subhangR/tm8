@@ -67,6 +67,7 @@ describe('catalog humanOnly ⇔ registered through a human guard', () => {
     // 284: only `spaces.styleDefault.set` is human-only; the style reads and
     // personal writes stay open to agents (spec §7).
     'packages/server/src/facade/handlers/w2/styles.ts',
+    'packages/server/src/mcp/handlers.ts',
   ];
 
   it('matches op by op, not by prefix', () => {

@@ -161,7 +161,7 @@ const HOME_RAIL_GROUP_SPINE: readonly HomeRailGroupSpec[] = [
     // account menu, not created here — the same "listed, managed elsewhere" shape.
     // `op_request` (280) follows `server`: every op an agent may ask for today
     // changes one of these (a space link, a gate folder, a path grant).
-    kinds: ['interaction_profile', 'credential', 'space_link', 'server', 'op_request', 'style', 'loop', 'spell', 'container'],
+    kinds: ['interaction_profile', 'credential', 'space_link', 'server', 'mcp_server', 'op_request', 'style', 'loop', 'spell', 'container'],
   },
 ];
 

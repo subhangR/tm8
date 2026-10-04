@@ -382,6 +382,7 @@ export function createChatHomePortFromSeam(
           workdirMode: input.workdirMode ?? 'scratch',
           ...(input.workdirMode === 'project' && input.projectId ? { projectId: input.projectId } : {}),
           body: input.body,
+          ...(input.mcpSelections !== undefined ? { mcpSelections: input.mcpSelections } : {}),
           ...(input.title ? { title: input.title } : {}),
           ...(input.aboutId ? { aboutId: input.aboutId } : {}),
           /* Omitted rather than sent empty: the server validates the array when

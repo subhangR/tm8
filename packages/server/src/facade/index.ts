@@ -1,3 +1,5 @@
+import { registerMcpRuntimeHandlers, type McpRuntimeHandlerOptions } from '../mcp/handlers.js';
+import { registerMcpDefinitionHandlers } from '../mcp/definitions.js';
 import { installedPluginsFor, registerSkillHandlers } from '../skills/handlers.js';
 import { registerSkillMutations } from '../skills/mutations.js';
 import { registerJevHandlers } from '../jev/handlers.js';
@@ -100,6 +102,7 @@ import { registerVoiceHandlers } from './handlers/voice.js';
 import { registerChatHandlers, type ChatHandlerDeps } from '../chat/handlers.js';
 
 export interface RegisterFacadeHandlersDeps {
+  readonly mcp?: McpRuntimeHandlerOptions;
   readonly db: Db;
   readonly config: ServerConfig;
   readonly owner?: FacadeDeps['owner'];
@@ -219,6 +222,8 @@ export function registerFacadeHandlers(
    * `entities.get` and `entities.children` disagree about the same row.
    */
   registerW2EntitiesCommandsTrackingHandlers(registry, facade);
+  registerMcpDefinitionHandlers(registry, facade);
+  if (deps.mcp) registerMcpRuntimeHandlers(registry, facade, deps.mcp);
   // Attention v2: the one attention module owns every attentionRequests.* op.
   registerAttentionHandlers(registry, facade);
   registerW2IdentitySpacesHandlers(registry, facade);

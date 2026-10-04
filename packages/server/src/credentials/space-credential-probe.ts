@@ -47,7 +47,7 @@ interface VendorRequest {
   headers(secret: string): Record<string, string>;
 }
 
-const VENDORS: Record<Exclude<SpaceCredentialStoredProvider, 'typesafe'>, VendorRequest> = {
+const VENDORS: Record<Exclude<SpaceCredentialStoredProvider, 'typesafe' | 'mcp'>, VendorRequest> = {
   anthropic: {
     url: 'https://api.anthropic.com/v1/models?limit=1',
     headers: (secret) => ({ 'x-api-key': secret, 'anthropic-version': '2023-06-01' }),

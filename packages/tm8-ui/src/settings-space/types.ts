@@ -26,6 +26,7 @@ export type SettingsSectionId =
   | 'workflows'
   | 'models'
   | 'chat-defaults'
+  | 'connectors'
   | 'credentials'
   | 'space-credentials'
   | 'node-credentials'
@@ -93,6 +94,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
      launch. Like `projects` and `kinds` it is externally owned, so an
      unsupplied section renders the shell's honest not-mounted state rather
      than a blank pane. */
+  { id: 'connectors', label: 'Connectors', heading: 'Connectors', externallyOwned: true },
   { id: 'credentials', label: 'Agent credentials', heading: 'Agent credentials', externallyOwned: true },
   /* SC-5 — the credentials the SPACE owns (D1–D11), then the node's own keys
      and their fallback policy (D9). Directly after the viewer's own logins

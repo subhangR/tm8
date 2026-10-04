@@ -29,8 +29,8 @@ export const SPACE_CREDENTIAL_PROVIDERS: readonly SpaceCredentialProviderName[] 
  */
 export const SPACE_STORED_PROVIDERS: readonly SpaceCredentialStoredProviderName[] = [...SPACE_CREDENTIAL_PROVIDERS, 'typesafe'];
 
-export function isServerOnlyProvider(provider: SpaceCredentialStoredProviderName): provider is 'typesafe' {
-  return provider === 'typesafe';
+export function isServerOnlyProvider(provider: SpaceCredentialStoredProviderName): provider is 'typesafe' | 'mcp' {
+  return provider === 'typesafe' || provider === 'mcp';
 }
 
 export const SPACE_PROVIDER_NAME: Record<SpaceCredentialStoredProviderName, string> = {
@@ -38,6 +38,7 @@ export const SPACE_PROVIDER_NAME: Record<SpaceCredentialStoredProviderName, stri
   openai: 'Codex (OpenAI)',
   github: 'GitHub',
   typesafe: 'TypeSafe (Ask Jev)',
+  mcp: 'MCP connector',
 };
 
 /** What a pasted secret is called for each provider. */
@@ -46,6 +47,7 @@ export const SPACE_SECRET_NOUN: Record<SpaceCredentialStoredProviderName, string
   openai: 'API key',
   github: 'token',
   typesafe: 'API key',
+  mcp: 'API key',
 };
 
 export const SOURCE_WORD: Record<CredentialPolicySource, string> = {
@@ -63,7 +65,7 @@ export function pasteShapeOf(provider: SpaceCredentialStoredProviderName): 'api_
 export function groupByProvider(
   rows: readonly SpaceCredentialView[],
 ): Record<SpaceCredentialStoredProviderName, SpaceCredentialView[]> {
-  const groups: Record<SpaceCredentialStoredProviderName, SpaceCredentialView[]> = { anthropic: [], openai: [], github: [], typesafe: [] };
+  const groups: Record<SpaceCredentialStoredProviderName, SpaceCredentialView[]> = { anthropic: [], openai: [], github: [], typesafe: [], mcp: [] };
   for (const row of rows) {
     if (row.status === 'revoked') continue;
     groups[row.provider]?.push(row);

@@ -33,6 +33,7 @@ export const KIND_GROUPS: ReadonlyArray<{ group: KindGroup; title: string }> = [
 ];
 
 export const CORE_KIND_INFO: Readonly<Record<CoreEntityKind, KindInfo>> = {
+  mcp_server: { group: 'runtime', summary: 'an approved external tool connector; credentials are separate', createWith: ['mcp server create'] },
   task: {
     group: 'work',
     summary: 'work with a status, assignees, acceptance criteria and an optional gate',

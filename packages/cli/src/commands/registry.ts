@@ -1,3 +1,4 @@
+import { MCP_COMMANDS } from './mcp.js';
 /**
  * THE COMMAND REGISTRY — the one composition point.
  *
@@ -119,6 +120,7 @@ export const COMMANDS: CommandModule[] = [
   ...SERVER_COMMANDS,
   ...KIND_COMMANDS,
   ...SKILL_COMMANDS,
+  ...MCP_COMMANDS,
   ...SPACE_COMMANDS,
   ...IDENTITY_COMMANDS,
   ...AUTH_COMMANDS,

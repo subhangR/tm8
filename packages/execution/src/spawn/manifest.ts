@@ -11,7 +11,6 @@ import {
   laneSkillOverrides,
   laneSkillPlan,
   pluginDecisions,
-  minimalMcpConfig,
   pluginSettings,
   readHintHookSettings,
   type ConfigHomeSkill,
@@ -227,6 +226,8 @@ function asAgentMode(value: string | null | undefined): AgentMode | null {
 
 /** The resolved launch posture — one persona, one request, three links. */
 export interface ResolvedLaunchConfig {
+  /** Authorized references only; provider secrets never enter this object. */
+  mcpSelections?: Array<{serverId: string; credentialId?: string}>;
   mode: AgentMode;
   model: string | null;
   agentTool: string;
@@ -575,6 +576,7 @@ export function resolveLaunchConfig(
     (asReadHints(env.TM8_READ_HINTS) ?? preferences.readHints ?? false);
 
   return {
+    ...(request.mcpSelections !== undefined ? {mcpSelections:request.mcpSelections} : {}),
     mode,
     model,
     agentTool,
@@ -1072,10 +1074,11 @@ export function buildAgentCommand(
   // ONE flag-level settings object for everything tm8 layers onto a lane
   // (Claude Code takes a single `--settings`); each feature adds its own key.
   const settings: Record<string, unknown> = {};
+  asMcpServers(launch.mcpServers);
+  args.push('--strict-mcp-config', '--mcp-config', shellQuote(JSON.stringify({mcpServers: connectorBridgeConfig(launch.mcpSelections)})));
   if (launch.harnessSurface !== 'inherit') {
     // The Artifact half is env, not argv: see `harnessSurfaceEnv`. Resume
     // builds on this same base command, so these flags survive `--resume`.
-    args.push('--strict-mcp-config', '--mcp-config', shellQuote(minimalMcpConfig(launch.mcpServers)));
     // Drops the ~4.1k-char Claude in Chrome prompt block for this lane only;
     // the operator's own Chrome setting is untouched.
     if (opts.noChrome !== false) args.push('--no-chrome');
@@ -1105,6 +1108,13 @@ export function buildCodexArgs(
   opts: { sandboxUnavailable?: boolean } = {},
 ): string[] {
   const args: string[] = [];
+  asMcpServers(launch.mcpServers);
+  args.push('-c', 'mcp_servers={}');
+  for (const [name, config] of Object.entries(connectorBridgeConfig(launch.mcpSelections))) {
+    args.push('-c', `mcp_servers.${name}.command=${JSON.stringify(config.command)}`);
+    args.push('-c', `mcp_servers.${name}.args=${JSON.stringify(config.args)}`);
+    args.push('-c', `mcp_servers.${name}.env_vars=["TM8_AGENT_TOKEN","TM8_SESSION_ID","TM8_BASE_URL"]`);
+  }
   if (launch.model) args.push('--model', launch.model);
 
   // Codex's approval prompts are the SAME unattended-hang hazard the Claude
@@ -2253,4 +2263,14 @@ export function resolveSessionTitle(
   const first = context.tasks[0];
   if (first) return first.title;
   return `${context.teamMember.name} session`;
+}
+
+/** Internal bridge configs contain UUIDs only, never raw definitions or credential material. */
+export function connectorBridgeConfig(selections: ResolvedLaunchConfig['mcpSelections']): Record<string,{command:string;args:string[]}> {
+  const result: Record<string,{command:string;args:string[]}> = {};
+  for (const selection of selections ?? []) {
+    if (!/^[0-9a-f-]{36}$/i.test(selection.serverId)) throw new Error('Invalid MCP connector reference');
+    result[`connector_${selection.serverId.replaceAll('-', '')}`] = {command:process.execPath,args:[fileURLToPath(new URL('../../../mcp/dist/cli.js', import.meta.url)),'--connector',selection.serverId]};
+  }
+  return result;
 }

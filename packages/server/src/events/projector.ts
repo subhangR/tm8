@@ -1,3 +1,4 @@
+import { McpServerDefinitionSchema } from '@tm8/contract';
 import type { EffectiveSkills, OpRequestStatus } from '@tm8/contract';
 /**
  * Entity hydration for the event stream — the `EntityProjector` seam.
@@ -328,6 +329,7 @@ interface SummaryRow {
   drawing_title: string | null;
   drawing_format: string | null;
   drawing_element_count: number | null;
+  mcp_definition?: unknown;
   story_title: string | null;
   story_description: string | null;
   story_summary: unknown;
@@ -518,6 +520,7 @@ select
   -- The element COUNT only: a scene is the largest payload any kind carries
   -- and the event path must never move it. The elements are content.
   coalesce(jsonb_array_length(drw.elements), 0) as drawing_element_count,
+  mcp.definition as mcp_definition,
   sty.title          as story_title,
   sty.description    as story_description,
   -- 283: the SAME function entity-read.ts selects — the twins mirror by
@@ -629,6 +632,7 @@ left join lateral (
 left join public.graphs gr           on gr.entity_id = e.id
 left join public.drawings drw         on drw.entity_id = e.id
 left join public.stories sty          on sty.entity_id = e.id
+left join public.mcp_servers mcp on e.kind='mcp_server' and mcp.entity_id=e.id
 left join public.styles stl           on e.kind = 'style' and stl.entity_id = e.id
 left join public.forms frm            on frm.entity_id = e.id
 left join public.space_credentials scr on e.kind = 'credential' and scr.id = e.id
@@ -1124,6 +1128,7 @@ export class PgEntityProjector implements EntityProjector {
       case 'drawing':
         // Its own detail-row title — MIRRORS entity-read.ts titleOf.
         return r.drawing_title ?? 'Drawing';
+      case 'mcp_server': return McpServerDefinitionSchema.parse(r.mcp_definition).name;
       case 'story':
         // Its own detail-row title — MIRRORS entity-read.ts titleOf.
         return r.story_title ?? 'Story';
@@ -1483,6 +1488,7 @@ export class PgEntityProjector implements EntityProjector {
           format: r.drawing_format ?? 'excalidraw',
           elementCount: r.drawing_element_count ?? 0,
         };
+      case 'mcp_server': return { kind: 'mcp_server', definition: McpServerDefinitionSchema.parse(r.mcp_definition) };
       case 'story':
         // MIRRORS entity-read.ts stateOf: the same `internal.story_summary`
         // jsonb through the same coercion.

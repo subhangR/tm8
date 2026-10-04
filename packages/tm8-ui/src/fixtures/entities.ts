@@ -1066,6 +1066,16 @@ export const profileHouseStyle = summary({
  * hint and the vendor login never reach an entity, so there is nothing else
  * a fixture could honestly carry.
  */
+const fixtureMcpDefinition = {
+  name: 'fixture_calendar', transport: 'http' as const, url: 'https://mcp.example.test/calendar',
+  envKeys: [], headerKeys: [], auth: { type: 'none' as const }, approved: true, enabled: true,
+};
+export const mcpCalendar = summary({
+  id: 'mcp-calendar', kind: 'mcp_server', title: 'Fixture calendar',
+  excerpt: 'Shared calendar tools; credentials are selected separately.',
+  state: { kind: 'mcp_server', definition: fixtureMcpDefinition },
+});
+
 export const credentialTeamKey = summary({
   id: 'cred-team-anthropic',
   kind: 'credential',
@@ -1430,7 +1440,7 @@ export const fixtureSummaries: EntitySummary[] = [
   chatLaunchPlan, chatStoppedWithWork,
   prTransplant, commitFoundation, fileScreenshot,
   spellDeploy, skillReview, collectionInbox, collectionEmpty, projectTm8Ui,
-  profileHouseStyle, credentialTeamKey, customRitual, artifactPulseBoard, drawingLoginFlow,
+  profileHouseStyle, credentialTeamKey, mcpCalendar, customRitual, artifactPulseBoard, drawingLoginFlow,
   opRequestLinkResearch,
   storyAsAnEntity,
   styleMidnight,
@@ -1940,6 +1950,11 @@ export const fixtureDetails: Record<string, EntityDetail> = {
       resolvedHash: 'sha256:2f7c1a9e',
       generatedByTeamMemberId: teamMemberForge.id,
     },
+  }),
+
+  [mcpCalendar.id]: detail(mcpCalendar, {
+    content: { kind: 'mcp_server', definition: fixtureMcpDefinition },
+    capabilities: CAPS_READONLY,
   }),
 
   [credentialTeamKey.id]: detail(credentialTeamKey, {

@@ -24,7 +24,8 @@
     "@tm8/prompt": "workspace:*",
     "@xterm/addon-serialize": "^0.14.0",
     "@xterm/headless": "^6.0.0",
-    "node-pty": "^1.0.0"
+    "node-pty": "^1.0.0",
+    "@iarna/toml": "^2.2.5"
   },
   "devDependencies": {
     "typescript": "^5.5.0",

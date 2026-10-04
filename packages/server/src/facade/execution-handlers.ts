@@ -1,3 +1,4 @@
+import { McpSessionBindings, type McpBindingClaims } from '../mcp/session-bindings.js';
 import { resolveHeaders } from '../headers/resolve.js';
 import { loadDispatcherRoster } from '../launch/roster.js';
 import { loadMemoryDefaults, loadReferenceDefaults, loadSkillDefaults, loadTeammateDefaults } from './spawn-defaults.js';
@@ -1925,7 +1926,9 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
   // quietly handing back the shared project directory.
   const worktrees = resolveWorktreeManager(deps.dataDir);
 
+  const mcpBindings = new McpSessionBindings(deps.db);
   spawnService = new SpawnService({
+    mcpBindings: { bind: (auth, input) => mcpBindings.bind(auth as McpBindingClaims, input) },
     graph,
     pty,
     promptSettlement,
@@ -2098,7 +2101,9 @@ export function registerExecutionHandlers(
 ): ExecutionRuntime {
   const graph = new DbGraphPort(deps.db);
   const worktrees = resolveWorktreeManager(deps.dataDir);
+  const mcpBindings = new McpSessionBindings(deps.db);
   const spawnService = new SpawnService({
+    mcpBindings: { bind: (auth, input) => mcpBindings.bind(auth as McpBindingClaims, input) },
     graph,
     pty: deps.pty,
     baseUrl: `http://${deps.config.host}:${deps.config.port}`,
@@ -3466,6 +3471,7 @@ function registerHandlers(
       promptExtra: input.promptExtra ?? null,
       ...(input.memoryIds?.length ? { memoryIds: input.memoryIds } : {}),
       ...(input.selection ? { selection: input.selection } : {}),
+      ...(input.mcpSelections !== undefined ? { mcpSelections: input.mcpSelections } : {}),
       ...(input.selectionReasons ? { selectionReasons: input.selectionReasons } : {}),
       ...(input.contextBudgets ? { contextBudgets: input.contextBudgets } : {}),
       ...(input.jevRunId ? { jevRunId: input.jevRunId } : {}),
@@ -3481,7 +3487,10 @@ function registerHandlers(
       clientMutationId: envelope.clientMutationId ?? null,
     };
 
-    const result = await rethrowing(() => spawnService.spawn(claims, request));
+    const result = await rethrowing(() => spawnService.spawn({ ...claims, mcpSource: {
+      authSessionId: ctx.identity.sessionId,
+      sessionId: ctx.identity.workSessionId ?? ctx.identity.runtimeChatId,
+    } }, request));
 
     // The Ask Jev run this launch came from (§6: per-launch cost). Only after
     // a SUCCESSFUL spawn, and never at its expense: the session is live, so a
@@ -3782,7 +3791,10 @@ function registerHandlers(
     refuseLinkBearerSpawn(ctx, claims);
     const resumeInput = ctx.body as ExecutionResumeInput;
     const result = await rethrowing(() =>
-      spawnService.resume(claims, {
+      spawnService.resume({ ...claims, mcpSource: {
+        authSessionId: ctx.identity.sessionId,
+        sessionId: ctx.identity.workSessionId ?? ctx.identity.runtimeChatId,
+      } }, {
         sessionId: requireUuidParam(ctx, 'id'),
         clientMutationId: envelope.clientMutationId ?? null,
         // A resume re-spawns the PTY, so it needs the browser's geometry for

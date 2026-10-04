@@ -272,3 +272,10 @@ require_identity public.sweep_file_upload_slots(p_limit integer)
 require_identity public.update_identity_profile(p_display_name text, p_avatar text, p_email text, p_global_id text, p_client_mutation_id text)
 require_identity public.upsert_user_profile(p_display_name text, p_avatar text, p_email text)
 # ---- end GRANDFATHERED ----
+
+current_account_id public.list_mcp_credentials(p_server uuid, p_id uuid)  # PIN-HELPER: is_space_member(c.space_id) pins every metadata row; account only narrows usable/manageable.
+current_account_id public.read_mcp_credential(p_space uuid, p_server uuid, p_id uuid)  # PIN-HELPER: require_space_member(p_space), then exact space/server/id and owner/public/share narrowing.
+
+identity_id public.save_chat_mcp_selections(p_chat uuid, p_selections jsonb)  # PIN-HELPER: human-only and chat creator match; chat space membership rechecked.
+identity_id public.bind_mcp_session(p_session uuid, p_token_hash text, p_selections jsonb)  # PIN-HELPER: bearer hash proves runtime binding; pinned membership and entity readability.
+identity_id public.read_mcp_session_binding(p_session uuid, p_auth_session uuid)  # PIN-HELPER: runtime identity and exact token binding plus pinned live membership.

@@ -1,3 +1,6 @@
+import { McpSessionBindings } from './mcp/session-bindings.js';
+import { loadMcpServer } from './mcp/definitions.js';
+import { McpTestResultSchema } from '@tm8/contract';
 /**
  * Bootstrap — assembles the frame and starts listening.
  *
@@ -432,9 +435,20 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   if (formDelivery) execution?.spawnService.onSessionLive((sessionId) => formDelivery.onSessionLive(sessionId));
 
   if (db) {
+    const mcpBindings = new McpSessionBindings(db);
     const serviceKeys = new DbServiceKeyStore({ db, dataDir });
     const spaceServiceKeys = new DbSpaceCredentialStore({ db, dataDir });
     registerFacadeHandlers(registry, {
+      mcp: {
+        dataDir,
+        callbackUrl: `${config.publicOrigin ?? `http://${config.host}:${config.port}`}/mcp/oauth/callback`,
+        definition: (claims, serverId) => db.tx(claims, q => loadMcpServer(q, serverId)),
+        authorize: (claims, sessionId, serverId) => mcpBindings.authorize(claims, sessionId, serverId),
+        recordTest: async (claims, serverId, result) => {
+          const health = McpTestResultSchema.parse(result);
+          await db.rpc(claims, 'record_mcp_server_health', [serverId, JSON.stringify(health)]);
+        },
+      },
       db,
       config,
       owner,

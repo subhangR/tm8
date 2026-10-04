@@ -93,6 +93,9 @@ function startChat(facade: FacadeDeps, chat?: ChatHandlerDeps): OperationHandler
         input.aboutId ?? null,
         input.clientMutationId,
       ]);
+      if (input.mcpSelections !== undefined) {
+        await q.rpc('save_chat_mcp_selections', [stored.chatId, JSON.stringify(input.mcpSelections)]);
+      }
       // The RPC returns IDS. An `EntitySummary` is assembled here, from the
       // same read path `entities.get` uses, so a chat looks identical whether
       // the client just created it or listed it a minute later — the exact

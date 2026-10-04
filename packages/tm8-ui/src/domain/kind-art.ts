@@ -221,6 +221,9 @@ export const KIND_ART = {
    * A key (`key-round`, 999/W10a): a round bow and a toothed shaft. A space
    * credential is what a session is let in with.
    */
+  /** A plug: a connector links an external tool service. */
+  mcp_server: ['M5.5 2.5v3M10.5 2.5v3', 'M4 5.5h8v2a4 4 0 0 1-8 0z', 'M8 11.5v2'],
+
   credential: [
     'M5.6 4a2.8 2.8 0 1 0 0 5.6 2.8 2.8 0 1 0 0-5.6z',
     'M8.2 7.8l5 5',

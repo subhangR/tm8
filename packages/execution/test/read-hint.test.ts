@@ -196,7 +196,7 @@ describe('read-hint spawn settings', () => {
       installedClaudePlugins: ['sales@synced'],
     });
     expect(settingsOf(inherit)).toEqual({ hooks: HOOKS });
-    expect(inherit).not.toContain('--strict-mcp-config');
+    expect(inherit).toContain(`--strict-mcp-config --mcp-config '{"mcpServers":{}}'`);
     expect(buildAgentCommand({ ...LAUNCH, harnessSurface: 'inherit', readHints: false })).not.toContain('--settings');
   });
 

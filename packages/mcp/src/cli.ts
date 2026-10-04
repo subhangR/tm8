@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { serveConnectorBridge } from './connector-bridge.js';
 import { HttpCatalogClient } from './catalog-client.js';
 import { Tm8McpServer, serveStdio } from './server.js';
 import { Tm8ToolRouter } from './tools.js';
@@ -7,7 +8,10 @@ import { routerOptionsFromEnv } from './env.js';
 const baseUrl = process.env.TM8_BASE_URL?.trim() || 'http://127.0.0.1:4610';
 const token = process.env.TM8_AGENT_RUNTIME_TOKEN?.trim();
 
-if (!token) {
+const connectorIndex = process.argv.indexOf('--connector');
+if (connectorIndex !== -1) {
+  serveConnectorBridge(process.argv[connectorIndex + 1] ?? '');
+} else if (!token) {
   process.stderr.write('tm8-mcp: TM8_AGENT_RUNTIME_TOKEN is required\n');
   process.exitCode = 2;
 } else {

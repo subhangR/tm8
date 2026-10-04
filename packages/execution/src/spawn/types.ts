@@ -1516,6 +1516,7 @@ export interface Tm8Manifest {
 
 /** `ExecutionSpawnInput` plus the things only the server knows. */
 export interface SpawnRequest {
+  mcpSelections?: Array<{ serverId: string; credentialId?: string }>;
   storyId?: string;
   /** Server verified bearer provenance; never populated from request body. */
   sourceWorkSessionId?: string;

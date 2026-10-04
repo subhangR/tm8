@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:83275d2cf3687639d5705038b160c4f48dd85732692167dbd8f96bea941f0a67",
+  "catalogDigest": "sha256:cfa2803c0e73daf34df20824350b68be45dba26d2e8dbadfdb61a35b08076bc5",
   "catalog": {
-    "total": 323,
-    "v1": 321,
+    "total": 341,
+    "v1": 339,
     "reserved": 2,
-    "http": 321,
+    "http": 339,
     "ws": 1,
-    "registerableV1Http": 319,
+    "registerableV1Http": 337,
     "methods": {
-      "GET": 107,
-      "POST": 155,
-      "PATCH": 18,
-      "DELETE": 21,
+      "GET": 111,
+      "POST": 167,
+      "PATCH": 19,
+      "DELETE": 22,
       "PUT": 20,
       "WS": 2
     },
     "kinds": {
-      "read": 112,
-      "command": 209,
+      "read": 117,
+      "command": 222,
       "stream": 2
     },
-    "uniqueNames": 323,
-    "uniqueBindings": 322
+    "uniqueNames": 341,
+    "uniqueBindings": 340
   },
   "reservedOperations": [
     "search.query",
@@ -200,6 +200,132 @@
   ],
   "routes": {
     "http": [
+      {
+        "operation": "mcp.credentials.rotate",
+        "method": "POST",
+        "path": "/v2/mcp/credentials/:credentialId/rotate",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "mcp.servers.list",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/mcp/servers",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "mcp.servers.get",
+        "method": "GET",
+        "path": "/v2/mcp/servers/:serverId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "mcp.servers.create",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/mcp/servers",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "mcp.servers.update",
+        "method": "PATCH",
+        "path": "/v2/mcp/servers/:serverId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "mcp.servers.delete",
+        "method": "DELETE",
+        "path": "/v2/mcp/servers/:serverId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "mcp.servers.import",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/mcp/servers/import",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "mcp.servers.test",
+        "method": "POST",
+        "path": "/v2/mcp/servers/:serverId/test",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "mcp.resolve",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/mcp/resolve",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "mcp.credentials.create",
+        "method": "POST",
+        "path": "/v2/mcp/servers/:serverId/credentials",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "mcp.credentials.list",
+        "method": "GET",
+        "path": "/v2/mcp/servers/:serverId/credentials",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "mcp.credentials.readiness",
+        "method": "GET",
+        "path": "/v2/mcp/credentials/:credentialId/readiness",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "mcp.credentials.revoke",
+        "method": "POST",
+        "path": "/v2/mcp/credentials/:credentialId/revoke",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "mcp.credentials.share",
+        "method": "POST",
+        "path": "/v2/mcp/credentials/:credentialId/share",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "mcp.credentials.unshare",
+        "method": "POST",
+        "path": "/v2/mcp/credentials/:credentialId/unshare",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "mcp.oauth.begin",
+        "method": "POST",
+        "path": "/v2/mcp/servers/:serverId/oauth/begin",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "mcp.oauth.callback",
+        "method": "POST",
+        "path": "/v2/mcp/oauth/callback",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "mcp.proxy.request",
+        "method": "POST",
+        "path": "/v2/mcp/sessions/:sessionId/servers/:serverId",
+        "status": "registered",
+        "source": "server-router"
+      },
       {
         "operation": "skills.roots",
         "method": "GET",
@@ -2665,7 +2791,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 291
+    "unimplementedV1Http": 309
   },
   "schemas": {
     "additive": {
@@ -2831,6 +2957,311 @@
   },
   "help": {
     "operations": [
+      {
+        "operation": "mcp.credentials.rotate",
+        "noun": "mcp",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/mcp.credentials.rotate",
+        "intentTags": [
+          "mcp",
+          "credentials",
+          "rotate"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "mcp.servers.list",
+        "noun": "mcp",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/mcp.servers.list",
+        "intentTags": [
+          "mcp",
+          "servers",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "mcp.servers.get",
+        "noun": "mcp",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/mcp.servers.get",
+        "intentTags": [
+          "mcp",
+          "servers",
+          "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "mcp.servers.create",
+        "noun": "mcp",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/mcp.servers.create",
+        "intentTags": [
+          "mcp",
+          "servers",
+          "create"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "mcp.servers.update",
+        "noun": "mcp",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/mcp.servers.update",
+        "intentTags": [
+          "mcp",
+          "servers",
+          "update"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "mcp.servers.delete",
+        "noun": "mcp",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/mcp.servers.delete",
+        "intentTags": [
+          "mcp",
+          "servers",
+          "delete"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "mcp.servers.import",
+        "noun": "mcp",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/mcp.servers.import",
+        "intentTags": [
+          "mcp",
+          "servers",
+          "import"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "mcp.servers.test",
+        "noun": "mcp",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/mcp.servers.test",
+        "intentTags": [
+          "mcp",
+          "servers",
+          "test"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "mcp.resolve",
+        "noun": "mcp",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/mcp.resolve",
+        "intentTags": [
+          "mcp",
+          "resolve"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "mcp.credentials.create",
+        "noun": "mcp",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/mcp.credentials.create",
+        "intentTags": [
+          "mcp",
+          "credentials",
+          "create"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "mcp.credentials.list",
+        "noun": "mcp",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/mcp.credentials.list",
+        "intentTags": [
+          "mcp",
+          "credentials",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "mcp.credentials.readiness",
+        "noun": "mcp",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/mcp.credentials.readiness",
+        "intentTags": [
+          "mcp",
+          "credentials",
+          "readiness"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "mcp.credentials.revoke",
+        "noun": "mcp",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/mcp.credentials.revoke",
+        "intentTags": [
+          "mcp",
+          "credentials",
+          "revoke"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "mcp.credentials.share",
+        "noun": "mcp",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/mcp.credentials.share",
+        "intentTags": [
+          "mcp",
+          "credentials",
+          "share"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "mcp.credentials.unshare",
+        "noun": "mcp",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/mcp.credentials.unshare",
+        "intentTags": [
+          "mcp",
+          "credentials",
+          "unshare"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "mcp.oauth.begin",
+        "noun": "mcp",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/mcp.oauth.begin",
+        "intentTags": [
+          "mcp",
+          "oauth",
+          "begin"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "mcp.oauth.callback",
+        "noun": "mcp",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/mcp.oauth.callback",
+        "intentTags": [
+          "mcp",
+          "oauth",
+          "callback"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "mcp.proxy.request",
+        "noun": "mcp",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/mcp.proxy.request",
+        "intentTags": [
+          "mcp",
+          "proxy",
+          "request"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
       {
         "operation": "skills.roots",
         "noun": "skill",
@@ -9296,6 +9727,39 @@
         },
         "migration": {
           "strategy": "op-request-detail"
+        }
+      },
+      "mcp_server": {
+        "kind": "mcp_server",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "mcp_servers"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "generic",
+          "genericCreate": true,
+          "genericPatch": true,
+          "genericMove": true,
+          "genericHierarchy": true,
+          "genericDeleteRestore": true,
+          "genericPoints": true,
+          "messages": true,
+          "reactions": true,
+          "connections": true,
+          "lifecycleOperations": []
+        },
+        "menu": {
+          "strategy": "registered-not-default"
+        },
+        "migration": {
+          "strategy": "mcp-server-detail"
         }
       },
       "story": {

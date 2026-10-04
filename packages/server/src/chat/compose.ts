@@ -15,12 +15,14 @@ import { dirname, join } from 'node:path';
 import { BLUEPRINT_NODE_URI, CollabError, confirmOnlyNodeKinds, type ChatMode } from '@tm8/contract';
 import {
   ClaudeHeadlessAdapter,
+  connectorBridgeConfig,
   type AgentRuntime as ExecutionAgentRuntime,
 } from '@tm8/execution';
 import { MCP_TOOL_NAMES, exposedToolNames } from '@tm8/mcp';
 
 import type { Db, DbClaims } from '../db/types.js';
 import { issueAgentRuntimeSession } from '../identity/pg-auth.js';
+import { McpSessionBindings } from '../mcp/session-bindings.js';
 import type {
   AgentRuntime,
   ChatLaunchConfig,
@@ -125,6 +127,7 @@ export function wrapExecutionAgentRuntime(runtime: ExecutionAgentRuntime): Agent
 
 export interface ChatLaunchComposition {
   readonly db: Db;
+  readonly mcpBindings?: Pick<McpSessionBindings, 'bind'>;
   /** Node state root; per-thread MCP configs land under `<dataDir>/chat/`. */
   readonly dataDir: string;
   /** Loopback origin of THIS node — the stdio MCP server calls back into it. */
@@ -262,11 +265,23 @@ export function createChatLaunchConfigResolver(
       chatId: input.chatId,
       teamMemberId: input.teammateId,
     });
+    const selections = await (options.mcpBindings ?? new McpSessionBindings(options.db)).bind(mintClaims, {
+      sessionId: input.chatId, spaceId: input.spaceId, teamMemberId: input.teammateId,
+      agentToken: minted.token, resume: true,
+    });
+    const connectors = connectorBridgeConfig(selections);
+    const connectorEnv = {
+      TM8_BASE_URL: options.baseUrl, TM8_AGENT_RUNTIME_TOKEN: minted.token,
+      TM8_CHAT_ID: input.chatId,
+    };
     const configDir = join(options.dataDir, 'chat');
     await mkdir(configDir, { recursive: true, mode: 0o700 });
     const mcpConfigPath = join(configDir, `${input.chatId}.mcp.json`);
     const config = {
       mcpServers: {
+        ...Object.fromEntries(Object.entries(connectors).map(([name, config]) => [name, {
+          ...config, command: process.execPath, args: [cliPath, ...config.args.slice(-2)], env: connectorEnv,
+        }])),
         tm8: {
           command: process.execPath,
           args: [cliPath],
@@ -304,7 +319,7 @@ export function createChatLaunchConfigResolver(
       systemPrompt: chatSystemPrompt(input),
       mcpConfigPath,
       availableTools: tools.availableTools,
-      allowedTools: tools.allowedTools,
+      allowedTools: [...tools.allowedTools, ...Object.keys(connectors).map(name => `mcp__${name}__*`)],
     };
   };
 }

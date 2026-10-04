@@ -48,6 +48,7 @@
       "name": "@tm8/execution",
       "version": "0.1.0",
       "dependencies": {
+        "@iarna/toml": "^2.2.5",
         "@tm8/contract": "workspace:*",
         "@tm8/prompt": "workspace:*",
         "@xterm/addon-serialize": "^0.14.0",

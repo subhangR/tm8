@@ -1,3 +1,5 @@
+import { captureMcpCallback } from './mcp/oauth-callback';
+import { McpOAuthCallback } from './mcp/McpOAuthCallback';
 import { useState } from 'react';
 import { AuthGate } from './auth';
 import { JoinBanner, capturePendingJoin } from './join';
@@ -26,6 +28,8 @@ import { useServerRegistry } from './servers';
  * it properly means lifting the seam above this component, which is a shell
  * change and not mine to make.
  */
+const pendingMcpCallback = typeof window === 'undefined' ? null : captureMcpCallback();
+
 export function App() {
   /**
    * THE JOIN LINK IS CAPTURED HERE, above the gate, and once.
@@ -48,7 +52,7 @@ export function App() {
 
   return (
     <AuthGate signedOutBanner={<JoinBanner pending={pendingJoin !== null} />}>
-      <ConnectedGateApp pendingJoin={pendingJoin} />
+      {pendingMcpCallback ? <McpOAuthCallback callback={pendingMcpCallback} /> : <ConnectedGateApp pendingJoin={pendingJoin} />}
     </AuthGate>
   );
 }

@@ -18,7 +18,11 @@ class SpawnDb implements Db {
 
   async tx<T>(_claims: DbClaims, run: (q: Querier) => Promise<T>): Promise<T> {
     const q: Querier = {
-      query: async <R>(sql: string): Promise<R[]> => {
+      query: async <R>(sql: string, params: readonly unknown[] = []): Promise<R[]> => {
+        // This fixture has a visible teammate and no equipped MCP connectors.
+        if (sql.includes('internal.is_space_member($2::uuid)') && sql.includes('as allowed')) {
+          return [{ allowed: params[0] === TEAMMATE && params[1] === SPACE }] as R[];
+        }
         if (sql.includes('from public.team_members')) {
           return [{
             entity_id: TEAMMATE, name: 'GPT 5.6 Teammate', role: 'Launch persona',
@@ -57,7 +61,7 @@ class SpawnDb implements Db {
     if (fn === 'resolve_auth_session') {
       // 256 (W7p): the spawn port re-resolves the minted token to read its
       // via_link stamp. The real mint always resolves; no link here.
-      return { sessionId: AUTH_SESSION, viaLinkId: null } as T;
+      return { sessionId: AUTH_SESSION, identityId: 'owner-identity', kind: 'agent', spaceId: SPACE, workSessionId: SESSION, viaLinkId: null } as T;
     }
     if (fn === 'public.issue_work_session_agent_session') {
       // The real function returns the inserted auth_sessions row as jsonb minus
@@ -202,7 +206,7 @@ describe('server spawn integration with a stub PTY', () => {
       // below so the wildcard cannot swallow their disappearance; their contents
       // are owned by test/codex-loopback.integration.test.ts in packages/execution.
       command: expect.stringMatching(
-        /^codex --model 'gpt-5\.6-sol' --ask-for-approval never --sandbox workspace-write .*--no-alt-screen -c /,
+        /^codex -c 'mcp_servers=\{\}' --model 'gpt-5\.6-sol' --ask-for-approval never --sandbox workspace-write .*--no-alt-screen -c /,
       ),
       env: expect.objectContaining({
         TM8_MODEL: 'gpt-5.6-sol',

@@ -18,6 +18,7 @@
  */
 
 import type { EffectiveSkills, SkillReference } from './skill-reference.js';
+import type { McpSelection, McpServerEntity } from './mcp.js';
 import type { OperationName } from './catalog.js';
 import type { FormQuestionRow, FormSectionRow, FormSettings, FormStatus } from './forms.js';
 import type { OpRequestStatus } from './op-requests.js';
@@ -99,7 +100,7 @@ export type CoreEntityKind =
   // READ-ONLY theme in a space. Born and re-versioned only by `styles.push`;
   // `entities.create`/`entities.patch` refuse it. Personal styles are NOT
   // entities (they live in `personal_styles`, owner-only).
-  | 'style';
+  | 'style' | 'mcp_server';
 
 /** A credential entity's visibility (W10a): who may launch on it. */
 export type CredentialVisibility = 'private' | 'public';
@@ -281,6 +282,7 @@ export interface TaskAssignment {
 }
 
 export type CoreEntityState =
+  | McpServerEntity
   | { kind: 'task'; status: WorkStatus; priority: 'low'|'medium'|'high'|'urgent';
       axes: Record<string, string>; dueDate?: string | null; startDate?: string | null;
       assignees: ActorSummary[];
@@ -913,6 +915,7 @@ export interface GraphNode {
 export interface GraphEdgeSpec { src?: string; dst?: string; type?: string; note?: string; [extra: string]: unknown }
 
 export type CoreEntityContent =
+  | McpServerEntity
   | { kind: 'task'; description: string; acceptanceCriteria: AcceptanceCriterion[];
       pointsEstimate?: number | null }
   | { kind: 'channel'; topic: string; pinned: EntitySummary[]; autoTabs: ChannelTab[] }
@@ -1442,6 +1445,7 @@ export type ChatWorkdirMode = 'project' | 'scratch';
  * a human can see and correct, rather than a hidden binding column.
  */
 export interface StartChatInput {
+  mcpSelections?: McpSelection[];
   spaceId: SpaceId;
   teammateId: EntityId;
   model: string;
@@ -2753,7 +2757,7 @@ export type SpaceCredentialProviderName = 'anthropic' | 'openai' | 'github';
  * Jev's key), and never handed to a session — the spawn reader refuses them
  * in SQL and in TS, and `session_space_credentials` cannot hold one.
  */
-export type ServerOnlyCredentialProviderName = 'typesafe';
+export type ServerOnlyCredentialProviderName = 'typesafe' | 'mcp';
 
 /** Every provider a space credential row can carry: launchable or server-only. */
 export type SpaceCredentialStoredProviderName = SpaceCredentialProviderName | ServerOnlyCredentialProviderName;
@@ -5732,6 +5736,7 @@ export interface SpawnSelection {
 export type LaunchHarnessSurface = 'minimal' | 'inherit';
 
 export interface ExecutionSpawnInput extends CommandContext {
+  mcpSelections?: McpSelection[];
   clientMutationId: string;
   spaceId: SpaceId;
   /** The persona to run; authorization resolves through its owner (T-L7). */

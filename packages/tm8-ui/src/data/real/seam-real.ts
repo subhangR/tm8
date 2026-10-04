@@ -1,3 +1,4 @@
+import { createMcpPort } from '../../mcp/adapter';
 /**
  * `createRealSeam()` — the HTTP + WS implementation of the co-owned Facade seam
  * (LLD §5–§6, §9). Drop-in interchangeable with `createFixtureSeam()`: both are
@@ -233,6 +234,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
   const stopCookieWatch = options.spaceSession?.onCookieChanged?.(() => connection.reconnect());
 
   const seam: RealSeam = {
+    mcp: (spaceId) => createMcpPort(http, seam, spaceId),
     // -- lifecycle -----------------------------------------------------------
 
     /**

@@ -665,18 +665,21 @@ export class ChatOrchestrator {
         ? { resume: { nativeSessionId: turn.nativeSessionId, cwd: runtimeCwd } }
         : {}),
     };
-    const started = await this.options.runtime.startThread(input);
+    // A provider can list MCP tools during startThread. Publish the authorized
+    // starting runtime before entering it, and fail closed if startup fails.
+    await this.options.db.rpc(claims(turn.requesterIdentityId), 'mark_chat_runtime_state', [turn.chatId, 'live']);
+    let started;
+    try { started = await this.options.runtime.startThread(input); }
+    catch (error) {
+      await this.options.db.rpc(claims(turn.requesterIdentityId), 'mark_chat_runtime_state', [turn.chatId, 'stopped']);
+      throw error;
+    }
     this.liveChats.set(turn.chatId, {
       threadId: started.threadId,
       authorizationIdentityId,
       authorizationAuthKind,
       model: turn.model,
     });
-    await this.options.db.rpc(
-      claims(turn.requesterIdentityId),
-      'mark_chat_runtime_state',
-      [turn.chatId, 'live'],
-    );
     return started.threadId;
   }
 }

@@ -1,3 +1,4 @@
+import { McpServerEntitySchema, McpSelectionsSchema } from './mcp.js';
 /**
  * Zod schemas for every contract shape — the single validation source
  * (server input validation, CLI `--json`, conformance response assertions,
@@ -237,7 +238,7 @@ export const CoreEntityKindSchema = z.enum([
   'op_request',
   // Stories (283): roots by `contains`, the rest follows. Creatable through
   // the generic envelope.
-  'story',
+  'story', 'mcp_server',
   // Space styles (284). Not in `CreatableEntityKind`: `styles.push` is its door.
   'style',
 ]);
@@ -684,6 +685,7 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
   }).strict(),
   // 283 — the story's computed summary.
   StoryStateSchema,
+  McpServerEntitySchema,
   // 209 — a form's lifecycle status and its question count.
   z.object({
     kind: z.literal('form'),
@@ -1103,6 +1105,7 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
   }).passthrough(),
   // 283 — the story's description and, on a detail read, its page.
   StoryContentSchema,
+  McpServerEntitySchema,
   // 209 — a form: settings (defaults applied), sections and questions in order.
   z.object({
     kind: z.literal('form'),
@@ -1439,6 +1442,7 @@ export const MessagePartSchema: z.ZodType<MessagePart> = z.discriminatedUnion('k
 ]);
 
 export const StartChatInputSchema: z.ZodType<StartChatInput> = z.object({
+  mcpSelections: McpSelectionsSchema.optional(),
   spaceId: SpaceIdSchema,
   teammateId: EntityIdSchema,
   model: z.string().min(1),
@@ -2292,10 +2296,10 @@ export const CredentialsServiceKeyDeleteResultSchema: z.ZodType<CredentialsServi
 export const SpaceCredentialProviderNameSchema: z.ZodType<SpaceCredentialProviderName> =
   z.enum(['anthropic', 'openai', 'github']);
 /** server_only_space_credentials: stored as a space credential, spent server-side, never bound by a session. */
-export const SERVER_ONLY_CREDENTIAL_PROVIDERS: readonly ServerOnlyCredentialProviderName[] = Object.freeze(['typesafe']);
-export const ServerOnlyCredentialProviderNameSchema: z.ZodType<ServerOnlyCredentialProviderName> = z.enum(['typesafe']);
+export const SERVER_ONLY_CREDENTIAL_PROVIDERS: readonly ServerOnlyCredentialProviderName[] = Object.freeze(['typesafe', 'mcp']);
+export const ServerOnlyCredentialProviderNameSchema: z.ZodType<ServerOnlyCredentialProviderName> = z.enum(['typesafe', 'mcp']);
 export const SpaceCredentialStoredProviderNameSchema: z.ZodType<SpaceCredentialStoredProviderName> =
-  z.enum(['anthropic', 'openai', 'github', 'typesafe']);
+  z.enum(['anthropic', 'openai', 'github', 'typesafe', 'mcp']);
 /** True for a provider that must never reach a session (gate 8). */
 export function isServerOnlyCredentialProvider(provider: string): provider is ServerOnlyCredentialProviderName {
   return (SERVER_ONLY_CREDENTIAL_PROVIDERS as readonly string[]).includes(provider);
@@ -3773,6 +3777,7 @@ const executionSpawnInputObject = z.object({
   agentTool: z.string().nullable().optional(),
   reasoningEffort: z.enum(['low', 'medium', 'high', 'xhigh', 'max', 'ultra']).optional(),
   accessMode: z.enum(['safe', 'acceptEdits', 'auto', 'plan', 'fullAccess']).optional(),
+  mcpSelections: McpSelectionsSchema.optional(),
   credentialSources: CredentialSourcesSchema.optional(),
   // Deprecated compatibility carrier. Provider-specific keys above win.
   credentialSource: CredentialSourceSchema.optional(),

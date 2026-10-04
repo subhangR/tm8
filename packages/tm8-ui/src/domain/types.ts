@@ -1485,11 +1485,13 @@ export interface EditFieldSpec {
 
 /** A kind's Settings home: the section that manages it, and the link's words. */
 export interface SettingsHome {
-  section: 'space-credentials' | 'space-links';
+  section: 'space-credentials' | 'space-links' | 'connectors';
   label: string;
 }
 
 export interface KindConfig {
+  /** This kind supports direct MCP catalog equipment editing. Server permissions still decide access. */
+  mcpEquipment?: boolean;
   kind: CoreEntityKind | CustomKindFallback;
   label: string;
   labelPlural: string;

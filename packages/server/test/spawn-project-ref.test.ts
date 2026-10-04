@@ -32,6 +32,10 @@ class SpawnDb implements Db {
   private querier(claims: DbClaims): Querier {
     return {
       query: async <R>(sql: string, params: readonly unknown[] = []): Promise<R[]> => {
+        // This fixture has a visible teammate and no equipped MCP connectors.
+        if (sql.includes('internal.is_space_member($2::uuid)') && sql.includes('as allowed')) {
+          return [{ allowed: params[0] === TEAMMATE && params[1] === SPACE }] as R[];
+        }
         if (sql.includes('from public.team_members')) {
           return [{
             entity_id: TEAMMATE, name: 'GPT 5.6 Teammate', role: 'Launch persona',
@@ -65,7 +69,7 @@ class SpawnDb implements Db {
         resolvedHash: 'core-hash', source: 'core_default', snapshot: { profile: { source: 'core_default' } },
       } as T;
     }
-    if (fn === 'resolve_auth_session') return { sessionId: AUTH_SESSION, viaLinkId: null } as T;
+    if (fn === 'resolve_auth_session') return { sessionId: AUTH_SESSION, identityId: 'owner-identity', kind: 'agent', spaceId: SPACE, workSessionId: SESSION, viaLinkId: null } as T;
     if (fn === 'public.issue_work_session_agent_session') return { id: AUTH_SESSION } as T;
     if (fn === 'internal.w2_record_interaction_profile_pin') {
       return {

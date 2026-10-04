@@ -110,6 +110,10 @@ export function CredentialsSetupDialog({
   const [status, setStatus] = useState<CredentialsStatusView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [stage, setStage] = useState<Stage>({ kind: 'intro' });
+  // The DOM can show a live terminal before passive listeners are replaced.
+  // Read the current stage at key time so Escape never closes that interval.
+  const currentStage = useRef(stage);
+  currentStage.current = stage;
   const [busy, setBusy] = useState(false);
   const [stepError, setStepError] = useState<string | null>(null);
   const [lastResult, setLastResult] = useState<CredentialsLoginSessionFinishResult | null>(null);
@@ -149,12 +153,12 @@ export function CredentialsSetupDialog({
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
-      if (stage.kind === 'connecting') return;
+      if (currentStage.current.kind === 'connecting') return;
       onClose();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [open, stage.kind, onClose]);
+  }, [open, onClose]);
 
   useEffect(() => {
     if (open) cardRef.current?.focus();

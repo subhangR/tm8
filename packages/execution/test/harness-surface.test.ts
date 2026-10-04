@@ -88,10 +88,7 @@ describe('resolveLaunchConfig harness surface', () => {
     expect(launch.harnessSurface).toBe('inherit');
     expect(launch.plugins).toEqual(['sales', 'x@y']);
     expect(launch.mcpServers).toBeUndefined();
-    expect(
-      resolveLaunchConfig(REQUEST, context({ launch: { mcpServers: { l: { type: 'http', url: 'u' }, bad: 3 } } }), {})
-        .mcpServers,
-    ).toEqual({ l: { type: 'http', url: 'u' } });
+    expect(() => resolveLaunchConfig(REQUEST, context({ launch: { mcpServers: { l: { type: 'http', url: 'u' } } } }), {})).toThrow('Legacy raw MCP');
     expect(
       resolveLaunchConfig(REQUEST, context({ launch: { harnessSurface: 'everything' } }), {})
         .harnessSurface,
@@ -202,15 +199,8 @@ describe('buildAgentCommand harness surface', () => {
     expect(cmd).toContain('"marketing@synced":false');
   });
 
-  it('emits opted-in MCP servers as the strict --mcp-config', () => {
-    const cmd = buildAgentCommand(
-      { ...LAUNCH, mcpServers: { linear: { type: 'http', url: 'https://mcp.linear.app/mcp' } } },
-      {},
-      {},
-    );
-    expect(cmd).toContain(
-      `--strict-mcp-config --mcp-config '{"mcpServers":{"linear":{"type":"http","url":"https://mcp.linear.app/mcp"}}}'`,
-    );
+  it('refuses raw MCP configs before they reach command arguments', () => {
+    expect(() => buildAgentCommand({ ...LAUNCH, mcpServers: { linear: { type:'http',url:'https://example.test',headers:{Authorization:'canary'} } } }, {})).toThrow('Legacy raw MCP');
   });
 
   it('inherit leaves the argv exactly as the bare command', () => {
@@ -222,7 +212,7 @@ describe('buildAgentCommand harness surface', () => {
         // Even a skill plan handed in is ignored: inherit restores everything.
         skillOverrides: { astro: 'off', graphify: 'name-only' },
       }),
-    ).toBe(BARE);
+    ).toBe(`${BARE} --strict-mcp-config --mcp-config '{"mcpServers":{}}'`);
   });
 
   it('touches neither codex nor an operator wrapper', () => {
@@ -299,9 +289,10 @@ describe('equippedClaudePlugins', () => {
 });
 
 describe('asMcpServers', () => {
-  it('keeps object-valued entries only', () => {
-    expect(asMcpServers({ a: { command: 'x' }, b: 'nope', ' ': {}, c: [1] })).toEqual({ a: { command: 'x' } });
-    expect(asMcpServers(['x'])).toBeNull();
+  it('rejects all legacy raw configuration', () => {
+    expect(() => asMcpServers({a:{command:'x'}})).toThrow('Legacy raw MCP');
+    expect(() => asMcpServers(['x'])).toThrow('Legacy raw MCP');
+    expect(asMcpServers(undefined)).toBeNull();
   });
 });
 

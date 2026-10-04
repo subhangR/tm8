@@ -668,6 +668,7 @@ const ROWS: readonly KindConfig[] = [
   // -- task -----------------------------------------------------------------
   {
     kind: 'task',
+    mcpEquipment: true,
     label: 'Task',
     labelPlural: 'Tasks',
     icon: '◻',
@@ -1317,6 +1318,7 @@ const ROWS: readonly KindConfig[] = [
   // -- team_member ----------------------------------------------------------
   {
     kind: 'team_member',
+    mcpEquipment: true,
     label: 'Teammate',
     labelPlural: 'Teammates',
     icon: '◆',
@@ -1985,6 +1987,24 @@ const ROWS: readonly KindConfig[] = [
       archetype: 'generic',
       blocks: [{ block: 'questionnaire' }, COLLECTIONS_BLOCK],
     },
+  },
+
+  // Catalog definitions are managed separately from their private accounts.
+  {
+    kind: 'mcp_server',
+    label: 'Connector',
+    labelPlural: 'Connectors',
+    icon: '⚿',
+    iconArt: KIND_ART.mcp_server,
+    slug: 'connectors',
+    strategy: 'collection',
+    defaultMode: 'list',
+    hiddenModes: ['board', 'tree', 'gallery'],
+    chip: { glyph: '⚿', tintBy: 'none' },
+    card: { fields: ['excerpt', 'activityAt'] },
+    settingsHome: { section: 'connectors', label: 'Manage connectors and accounts' },
+    list: baseList({ quickCreate: false, tile: { badges: [] } }),
+    panel: { archetype: 'generic', blocks: [{ block: 'settings-home' }, COLLECTIONS_BLOCK] },
   },
 
   /*

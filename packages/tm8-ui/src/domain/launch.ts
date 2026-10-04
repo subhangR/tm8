@@ -608,6 +608,7 @@ export interface LaunchConfig {
    * `buildSpawnInput` then drops `memoryIds`, since the contract refuses the
    * pair.
    */
+  mcpSelections?: import("../mcp/port").McpSelection[];
   selection?: {
     readonly memoryIds?: readonly EntityId[];
     readonly skillIds?: readonly EntityId[];
@@ -1054,6 +1055,7 @@ export function buildSpawnInput(args: {
   const selection = routed?.skillIds
     ? { ...config.selection, skillIds: routed.skillIds }
     : config.selection;
+  if (config.mcpSelections !== undefined) input.mcpSelections = config.mcpSelections;
   if (selection) {
     /* EXACT, and alone: `selection` IS the working set and `memoryIds` ADDS to
        it, so the node refuses both together. Copied, never sliced — a
