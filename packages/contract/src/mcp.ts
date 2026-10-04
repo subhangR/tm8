@@ -14,7 +14,7 @@ export const McpAuthSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('none') }).strict(),
   z.object({ type: z.literal('api_key'), headerName: HeaderKey.optional(), envKey: EnvKey.optional(),
     prefix: z.enum(['Bearer', 'none']).optional() }).strict(),
-  z.object({ type: z.literal('oauth2'), authorizationUrl: PublicUrl.optional(), tokenUrl: PublicUrl.optional(),
+  z.object({ type: z.literal('oauth2'), issuer: PublicUrl.optional(), authorizationUrl: PublicUrl.optional(), tokenUrl: PublicUrl.optional(),
     clientId: z.string().min(1).max(512).optional(), scopes: z.array(z.string().min(1).max(256)).max(32).optional() }).strict(),
 ]);
 
@@ -90,7 +90,7 @@ export const McpCredentialCreateInputSchema = z.object({ ...Command, serverId: I
 export const McpCredentialCommandInputSchema = z.object({ ...Command, credentialId: Id }).strict();
 export const McpCredentialShareInputSchema = z.object({ ...Command, credentialId: Id, visibility: z.enum(['private', 'selected', 'space']), memberIds: z.array(Id).max(100) }).strict();
 export const McpOAuthBeginInputSchema = z.object({ ...Command, serverId: Id, label: z.string().min(1).max(120) }).strict();
-export const McpOAuthCallbackInputSchema = z.object({ state: z.string().min(1), code: z.string().min(1) }).strict();
+export const McpOAuthCallbackInputSchema = z.object({ state: z.string().min(1).max(2048), code: z.string().min(1).max(8192).optional(), error: z.string().min(1).max(128).optional(), issuer: PublicUrl.optional() }).strict().refine(value => Boolean(value.code) !== Boolean(value.error), 'OAuth callback requires exactly one of code or error');
 export const McpProxyRequestInputSchema = z.object({ sessionId: Id, serverId: Id, message: z.record(z.unknown()) }).strict();
 
 export const McpServerListResultSchema = z.object({ items: z.array(McpServerViewSchema), nextCursor: z.string().nullable(), allowed: z.object({ register: z.boolean(), attach: z.boolean() }).strict() }).strict();

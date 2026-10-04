@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { McpServerDefinitionSchema, McpSelectionsSchema } from '../src/mcp.js';
+import { McpServerDefinitionSchema, McpSelectionsSchema, McpOAuthCallbackInputSchema } from '../src/mcp.js';
 import { EntityStateSchema, ServerOnlyCredentialProviderNameSchema, SpaceCredentialProviderNameSchema } from '../src/schemas.js';
 const definition = { name: 'fixture', transport: 'http', url: 'https://example.test/mcp', envKeys: [], headerKeys: [], auth: { type: 'none' }, approved: false };
 describe('MCP metadata boundary', () => {
@@ -25,4 +25,11 @@ describe('MCP metadata boundary', () => {
     const selection={serverId:'00000000-0000-4000-8000-000000000001'};
     expect(McpSelectionsSchema.safeParse([selection,selection]).success).toBe(false);
   });
+});
+
+it('validates OAuth denial and issuer-bound success callbacks', () => {
+  expect(McpOAuthCallbackInputSchema.safeParse({state:'state',code:'code',issuer:'https://issuer.test/tenant'}).success).toBe(true);
+  expect(McpOAuthCallbackInputSchema.safeParse({state:'state',error:'access_denied'}).success).toBe(true);
+  expect(McpOAuthCallbackInputSchema.safeParse({state:'state'}).success).toBe(false);
+  expect(McpOAuthCallbackInputSchema.safeParse({state:'state',code:'code',error:'access_denied'}).success).toBe(false);
 });
