@@ -3,6 +3,10 @@ import { createServer, type Server } from 'node:http';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { McpOAuth, refreshOAuth } from '../src/mcp/oauth.js';
 import { McpProxy } from '../src/mcp/proxy.js';
+import { HandlerRegistry } from '../src/facade/registry.js';
+import { registerMcpRuntimeHandlers } from '../src/mcp/handlers.js';
+import type { FacadeDeps } from '../src/facade/deps.js';
+import type { RequestContext } from '../src/http/types.js';
 
 // Independent fixtures exercise the actual OAuth, proxy and HTTP transport.
 // Private-network policy is explicit so these tests never contact live vendors.
@@ -125,15 +129,75 @@ describe('independent OAuth binding and lifecycle', () => {
     expect(Object.fromEntries(body)).toEqual({ grant_type: 'refresh_token', refresh_token: 'refresh-secret', client_id: 'client', resource: p.input.resource });
     expect(refreshed).toMatchObject({ accessToken: 'rotated-access', refreshToken: 'rotated-refresh', issuer: secret.issuer, tokenEndpoint: secret.tokenEndpoint, clientId: secret.clientId, resource: secret.resource });
   });
-  it('bounds repeated upstream 401 responses without disclosing secrets', async () => {
+  it('consumes provider-denied authorization without exchanging a code', async () => {
+    const p = await provider(); const auth = await p.begin(); const state = auth.searchParams.get('state')!;
+    await expect(p.oauth.callback('human', { state, error: 'access_denied' })).rejects.toThrow(/^OAuth authorization denied$/);
+    await expect(p.oauth.callback('human', { state, code: 'late-code' })).rejects.toThrow('state');
+    expect(p.calls.filter(call => call.path === '/token')).toHaveLength(0);
+  });
+  it.each(['denial', 'issuer'])('forwards %s through the actual OAuth callback handler', async scenario => {
+    const p = await provider(); p.state.tokenStatus = 400;
+    const serverId = '00000000-0000-4000-8000-000000000001';
+    const registry = new HandlerRegistry();
+    const deps = { db: {}, owner: async () => ({ identityId: 'human', isNodeAdmin: false }) } as unknown as FacadeDeps;
+    registerMcpRuntimeHandlers(registry, deps, {
+      dataDir: '/unused-independent-oauth-fixture', callbackUrl: 'https://tm8.test/callback',
+      definition: async () => ({ id: serverId, spaceId: 'space', definition: { approved: true, transport: 'http', url: p.input.resource, allowPrivateNetwork: true, auth: { type: 'oauth2', authorizationUrl: `${p.origin}/authorize`, clientId: 'client' } } }) as never,
+      authorize: async () => { throw new Error('unused'); },
+    });
+    const ctx = (body: unknown) => ({ body, params: { serverId }, identity: { kind: 'bearer', identityId: 'human', authKind: 'browser' }, requestId: 'fixture' }) as RequestContext;
+    const started = await registry.get('mcp.oauth.begin')!(ctx({ clientMutationId: 'begin', label: 'fixture' })) as { authorizationUrl: string };
+    const state = new URL(started.authorizationUrl).searchParams.get('state')!;
+    const callback = registry.get('mcp.oauth.callback')!;
+    if (scenario === 'denial') {
+      await expect(callback(ctx({ state, error: 'access_denied' }))).rejects.toThrow(/^OAuth authorization denied$/);
+    } else {
+      await expect(callback(ctx({ state, code: 'code', issuer: 'https://attacker.test' }))).rejects.toThrow(/^OAuth issuer mismatch$/);
+    }
+    await expect(callback(ctx({ state, code: 'late-code' }))).rejects.toThrow('state');
+    expect(p.calls.filter(call => call.path === '/token')).toHaveLength(0);
+  });
+  it.each([false, true])('refreshes once after 401 and bounds a repeated failure (recovery=%s)', async recover => {
     let requests = 0; let refreshes = 0;
-    const url = await fixture((req, res) => { if (req.url === '/token') refreshes++; else requests++; res.writeHead(401); res.end('access-secret refresh-secret'); });
+    const seenTokens: (string | undefined)[] = [];
+    const url = await fixture((req, res) => {
+      if (req.url === '/token') { refreshes++; res.end(JSON.stringify({ access_token: 'rotated-access', refresh_token: 'rotated-refresh', token_type: 'Bearer', expires_in: 3600 })); return; }
+      requests++; seenTokens.push(req.headers.authorization);
+      if (req.headers.authorization === 'Bearer access-secret' || !recover) { res.writeHead(401); res.end('access-secret refresh-secret'); return; }
+      res.end(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { echoed: ['access-secret', 'refresh-secret', 'rotated-access', 'rotated-refresh'] } }));
+    });
+    let secret = { kind: 'oauth' as const, accessToken: 'access-secret', refreshToken: 'refresh-secret', issuer: url, tokenEndpoint: `${url}/token`, clientId: 'client', resource: url, expiresAt: Date.now() + 3_600_000 };
     const proxy = new McpProxy({
       authorize: async () => ({ sessionId: 'session', identityId: 'human', spaceId: 'space', serverId: 'server', credentialId: 'account' }),
       definition: async () => ({ id: 'server', spaceId: 'space', approved: true, transport: 'http', url, allowPrivateNetwork: true, auth: { type: 'oauth2' } }),
-      credentials: { read: async () => ({ nonce: 'n', secret: { kind: 'oauth', accessToken: 'access-secret', refreshToken: 'refresh-secret', issuer: url, tokenEndpoint: `${url}/token`, clientId: 'client', resource: url, expiresAt: Date.now() + 3_600_000 } }), replace: async () => {} },
+      credentials: { read: async () => ({ nonce: 'n', secret }), replace: async (_claims, _binding, _nonce, updated) => { secret = updated as typeof secret; } },
     });
-    await expect(proxy.request({ identityId: 'human' }, 'session', 'server', 'tools/list')).rejects.toThrow(/^MCP upstream request failed$/);
-    expect(requests).toBe(1); expect(refreshes).toBe(0);
+    const request = proxy.request({ identityId: 'human' }, 'session', 'server', 'tools/list');
+    if (recover) await expect(request).resolves.toEqual({ echoed: Array(4).fill('[redacted]') });
+    else await expect(request).rejects.toThrow(/^MCP upstream request failed$/);
+    expect(requests).toBe(recover ? 4 : 2); expect(refreshes).toBe(1);
+    expect(seenTokens[0]).toBe('Bearer access-secret');
+    expect(seenTokens.slice(1).every(token => token === 'Bearer rotated-access')).toBe(true);
+  });
+  it('does not retry an OAuth request after connector approval is revoked during refresh', async () => {
+    let approved = true; let requests = 0; let refreshes = 0;
+    const url = await fixture((req, res) => {
+      if (req.url === '/token') {
+        refreshes++; approved = false;
+        res.end(JSON.stringify({ access_token: 'rotated', token_type: 'Bearer', expires_in: 3600 })); return;
+      }
+      requests++;
+      if (requests === 1) { res.writeHead(401); res.end(); return; }
+      res.end(JSON.stringify({ jsonrpc: '2.0', id: 1, result: {} }));
+    });
+    let secret = { kind: 'oauth' as const, accessToken: 'original', refreshToken: 'refresh', issuer: url, tokenEndpoint: `${url}/token`, clientId: 'client', resource: url, expiresAt: Date.now() + 3_600_000 };
+    const proxy = new McpProxy({
+      authorize: async () => ({ sessionId: 'session', identityId: 'human', spaceId: 'space', serverId: 'server', credentialId: 'account' }),
+      definition: async () => ({ id: 'server', spaceId: 'space', approved, transport: 'http', url, allowPrivateNetwork: true, auth: { type: 'oauth2' } }),
+      credentials: { read: async () => ({ nonce: 'n', secret }), replace: async (_claims, _binding, _nonce, updated) => { secret = updated as typeof secret; } },
+    });
+    await expect(proxy.request({ identityId: 'human' }, 'session', 'server', 'tools/list')).rejects.toThrow('unavailable');
+    expect(refreshes).toBe(1);
+    expect(requests).toBe(1);
   });
 });
