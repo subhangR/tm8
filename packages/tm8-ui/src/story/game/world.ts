@@ -342,13 +342,14 @@ export function layoutWorld(src: WorldSource, now: number = Date.now()): World {
   /* Allocate unoccupied land outward from each anchor. Newer siblings claim
      nearer land first. Sampling expands until footprint clearance is satisfied,
      rather than squeezing more entities into a fixed fan or relaxing neighbours. */
-  const allocate = (node: WorldNode, anchor: Place, ring: number, preferred: number, minimum: number, spread: number, portal = false): Place => {
+  const allocate = (node: WorldNode, anchor: Place, ring: number, preferred: number, minimum: number, spread: number, portal = false, sector = preferred): Place => {
     const p = placeOf(node, 0, 0, ring, anchor.id, false, portal, now);
     for (let radius = minimum; ; radius += 1.25) {
       const samples = Math.max(12, Math.ceil(radius * spread / 2));
       for (let slot = 0; slot < samples; slot++) {
         const offset = slot === 0 ? 0 : Math.ceil(slot / 2) * (slot % 2 ? 1 : -1) * spread / samples;
         const angle = preferred + offset;
+        if (spread < TAU && Math.abs(angle - sector) > spread / 2) continue;
         p.x = anchor.x + Math.cos(angle) * radius; p.z = anchor.z + Math.sin(angle) * radius;
         if (places.every((q) => Math.hypot(q.x - p.x, q.z - p.z) >= p.footprint + q.footprint + LANDMARK_GAP)) return put(p);
       }
@@ -359,13 +360,14 @@ export function layoutWorld(src: WorldSource, now: number = Date.now()): World {
     const anchor = placed.get(queue.shift()!)!;
     const kids = (childrenOf.get(anchor.id) ?? []).filter((k) => !placed.has(k.id));
     const parent = anchor.anchorId ? placed.get(anchor.anchorId) : null;
-    const outward = parent ? Math.atan2(anchor.z - parent.z, anchor.x - parent.x) : -Math.PI / 2;
+    const outward = rootAngle.get(anchor.id) ?? (parent ? Math.atan2(anchor.z - parent.z, anchor.x - parent.x) : -Math.PI / 2);
     let previousRadius = 0;
     kids.forEach((k, i) => {
-      const spread = anchor.ring === 0 ? TAU : Math.PI * 1.4;
+      const spread = anchor.ring === 0 ? TAU : TAU / Math.max(3, landmarks.length) * .9;
       const angle = outward + ((i * .61803398875) % 1 - .5) * spread;
       const minimum = Math.max(10 + Math.sqrt(i) * 2, previousRadius + .1);
-      const p = allocate(k, anchor, Math.max(2, anchor.ring + 1), angle, minimum, spread);
+      const p = allocate(k, anchor, Math.max(2, anchor.ring + 1), angle, minimum, spread, false, outward);
+      if (anchor.ring > 0) rootAngle.set(p.id, outward);
       previousRadius = Math.hypot(p.x - anchor.x, p.z - anchor.z);
       queue.push(p.id);
     });

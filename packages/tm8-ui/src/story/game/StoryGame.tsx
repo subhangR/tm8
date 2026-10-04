@@ -60,6 +60,8 @@ export function StoryGame({ view, live, open, mode, onMode, showModeSwitch = tru
   const [palette, setPalette] = useState<Palette | null>(null);
   const [webgl, setWebgl] = useState(hasWebGL);
   const unavailable = useCallback(() => setWebgl(false), []);
+  const [overview, setOverview] = useState(false);
+  const toggleOverview = () => { const next = !control.overview; control.overview = next; setOverview(next); host.current?.focus({ preventScroll: true }); };
   const [nearId, setNearId] = useState<string | null>(null);
   const [reduced, setReduced] = useState(() => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches);
   const [dismissed, setDismissed] = useState<string | null>(null);
@@ -100,10 +102,10 @@ export function StoryGame({ view, live, open, mode, onMode, showModeSwitch = tru
   );
   const arrive = useCallback((placeId: string, doOpen: boolean) => { if (doOpen) openPlace(placeId); }, [openPlace]);
   const goTo = useCallback(
-    (place: Place, doOpen = false) => { walkTo(control, place.x, place.z, place.id, doOpen); host.current?.focus({ preventScroll: true }); },
+    (place: Place, doOpen = false) => { setOverview(false); walkTo(control, place.x, place.z, place.id, doOpen); host.current?.focus({ preventScroll: true }); },
     [control],
   );
-  const onGround = useCallback((x: number, z: number) => walkTo(control, x, z, null, false), [control]);
+  const onGround = useCallback((x: number, z: number) => { setOverview(false); walkTo(control, x, z, null, false); }, [control]);
   const onPlaceClick = useCallback(
     (placeId: string, doOpen: boolean) => {
       const p = world.byId.get(placeId);
@@ -125,7 +127,9 @@ export function StoryGame({ view, live, open, mode, onMode, showModeSwitch = tru
     if (e.key === 'Escape' && duel) { leaveDuel(); e.preventDefault(); return; }
     if (e.target instanceof HTMLElement && e.target.closest('button, input, textarea, select, [contenteditable="true"]')) return;
     const k = e.key.toLowerCase();
+    if (k === 'm' && !duel) { toggleOverview(); e.preventDefault(); return; }
     if (WALK_KEYS.has(k)) {
+      control.overview = false; setOverview(false);
       control.keys.add(k);
       e.preventDefault();
     } else if (OPEN_KEYS.has(k)) {
@@ -229,15 +233,18 @@ export function StoryGame({ view, live, open, mode, onMode, showModeSwitch = tru
           </div>
         ) : null}
 
+        {webgl && <button type="button" className="sgm-btn sgm-map-toggle" aria-pressed={overview} onClick={toggleOverview} disabled={!!duel}>
+          {overview ? 'Back to explorer' : 'Map overview'} <kbd>M</kbd>
+        </button>}
         <div className="sgm-compass" aria-hidden><span>N</span><i>✧</i><small>EXPLORE</small></div>
         <div className="sgm-hint">
           <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span>
-          <span>click to travel · scroll to zoom</span>
+          <span>click to travel · scroll to zoom · M for map</span>
           <span><kbd>E</kbd> opens what you stand at</span>
           <button
             type="button"
             className="sgm-btn"
-            onClick={() => { storyGameStore.getState().reset(storyId); walkTo(control, HOME.x, HOME.z, null, false); }}
+            onClick={() => { setOverview(false); storyGameStore.getState().reset(storyId); walkTo(control, HOME.x, HOME.z, null, false); }}
             title="Forget what you explored and walk back to the hub"
           >
             Start over

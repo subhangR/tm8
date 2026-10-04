@@ -15,15 +15,17 @@ export interface WalkOrder {
 
 export interface GameControl {
   keys: Set<string>;
+  overview: boolean;
   order: WalkOrder | null;
 }
 
 export function createControl(): GameControl {
-  return { keys: new Set(), order: null };
+  return { keys: new Set(), order: null, overview: false };
 }
 
 let orderVersion = 0;
 export function walkTo(control: GameControl, x: number, z: number, placeId: string | null, open = false): void {
+  control.overview = false;
   control.order = { x, z, placeId, open, version: ++orderVersion };
 }
 
