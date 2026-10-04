@@ -43,7 +43,7 @@ describe('tool curation', () => {
       expect(catalogNames.has(operation), operation).toBe(true);
       expect(getOperation(operation).name).toBe(operation);
     }
-    expect(OPERATIONS.some((operation) => operation.name.startsWith('mcp.'))).toBe(false);
+    expect(OPERATIONS.some((operation) => operation.name === 'mcp.servers.list')).toBe(true);
   });
 
   it('has no credential or authentication operation in any group', () => {
