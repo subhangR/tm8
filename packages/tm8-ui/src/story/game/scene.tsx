@@ -13,8 +13,12 @@ import { Character, type CharacterMotion } from './scene-character';
 import { DioramaFinish } from './scene-effects';
 import { RoadLabels } from './scene-road-labels';
 import { routeRoad, pathLength, type Point } from './roads';
+import { Robots } from './scene-robots';
+import type { StoryView } from '../model';
 
 export interface SceneProps {
+  /** The page the world was built from; the robots read sessions and attention off it. */
+  view: StoryView;
   world: World; palette: Palette; control: GameControl;
   revealed: ReadonlySet<string>; visited: ReadonlySet<string>; landed: ReadonlySet<string>;
   start: { x: number; z: number }; reduced: boolean;
@@ -49,6 +53,7 @@ export default function StoryGameScene(props: SceneProps) {
     <SceneryBatch parts={parts} revealed={props.revealed} palette={props.palette} reduced={props.reduced} onPlaceClick={props.onPlaceClick} />
     <Atmosphere world={props.world} palette={props.palette} reduced={props.reduced} />
     <PlaceEffects {...props} />
+    <Robots view={props.view} world={props.world} palette={props.palette} reduced={props.reduced} hidden={!!props.duel} onPlaceClick={props.onPlaceClick} />
     <Labels control={props.control} world={props.world} revealed={props.revealed} visited={props.visited} playerPos={playerPos} hidden={!!props.duel} nodes={labelNodes} />
     <RoadLabels world={props.world} control={props.control} playerPos={playerPos} hidden={!!props.duel} reduced={props.reduced} />
     <Player {...props} playerPos={playerPos} alertNode={alertNode} />
