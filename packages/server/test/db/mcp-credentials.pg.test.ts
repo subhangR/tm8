@@ -86,6 +86,8 @@ it('invalidates API keys when security-relevant definition fields change',async(
  await database.transaction(async c=>{await c.query('set local role tm8_graph_owner');await c.query("select set_config('tm8.identity_id','mcp-owner',true)");await c.query("update public.mcp_servers set definition=jsonb_set(definition,'{url}','\"https://changed.example.test/mcp\"') where entity_id=$1",[server]);});
  await expect(store.read(auth(),binding)).rejects.toThrow('unavailable');
  expect(await db.rpc(auth(),'mcp_credential_readiness',[server,created.id])).toEqual({ready:false,reason:'credential_definition_changed'});
+ await database.transaction(async c=>{await c.query('set local role tm8_graph_owner');await c.query("select set_config('tm8.identity_id','mcp-owner',true)");await c.query("update public.mcp_servers set definition=jsonb_set(definition,'{url}','\"https://example.test/mcp\"') where entity_id=$1",[server]);});
+ await expect(store.read(auth(),binding)).rejects.toThrow('unavailable');
  const reconnected=await store.create(auth(),{spaceId:space,serverId:server,label:'Reconnected',secret:{kind:'api_key',value:'new-definition-secret'}}) as {id:string};
  expect((await store.read(auth(),{spaceId:space,serverId:server,credentialId:reconnected.id})).secret).toEqual({kind:'api_key',value:'new-definition-secret'});
 });
