@@ -1,0 +1,140 @@
+{
+  "results": [
+    {
+      "name": "types",
+      "frames": 11,
+      "fps": 4.2,
+      "calls": 21,
+      "triangles": 17856,
+      "zoom": "38.9",
+      "gameplayZoom": "43.0"
+    },
+    {
+      "name": "types-dark",
+      "frames": 12,
+      "fps": 4.4,
+      "calls": 21,
+      "triangles": 17856,
+      "zoom": "38.9",
+      "gameplayZoom": "43.0"
+    },
+    {
+      "name": "types-silhouette",
+      "frames": 7,
+      "fps": 2.5,
+      "calls": 21,
+      "triangles": 17856,
+      "zoom": "38.9",
+      "gameplayZoom": "43.0"
+    },
+    {
+      "name": "states",
+      "frames": 1,
+      "fps": 0,
+      "calls": 21,
+      "triangles": 41064,
+      "zoom": "26.1",
+      "gameplayZoom": "43.0"
+    },
+    {
+      "name": "states-dark",
+      "frames": 5,
+      "fps": 1.9,
+      "calls": 21,
+      "triangles": 41064,
+      "zoom": "26.1",
+      "gameplayZoom": "43.0"
+    },
+    {
+      "name": "states-silhouette",
+      "frames": 3,
+      "fps": 0.9,
+      "calls": 21,
+      "triangles": 41064,
+      "zoom": "26.1",
+      "gameplayZoom": "43.0"
+    },
+    {
+      "name": "containers",
+      "frames": 5,
+      "fps": 1.6,
+      "calls": 21,
+      "triangles": 29056,
+      "zoom": "38.9",
+      "gameplayZoom": "43.0"
+    },
+    {
+      "name": "containers-dark",
+      "frames": 6,
+      "fps": 2.6,
+      "calls": 21,
+      "triangles": 29056,
+      "zoom": "38.9",
+      "gameplayZoom": "43.0"
+    },
+    {
+      "name": "plot",
+      "frames": 9,
+      "fps": 3.3,
+      "calls": 23,
+      "triangles": 31992,
+      "zoom": "43.0",
+      "gameplayZoom": "43.0"
+    },
+    {
+      "name": "plot-dark",
+      "frames": 9,
+      "fps": 3.5,
+      "calls": 23,
+      "triangles": 31992,
+      "zoom": "43.0",
+      "gameplayZoom": "43.0"
+    },
+    {
+      "name": "plot-sockets",
+      "frames": 7,
+      "fps": 2.4,
+      "calls": 78,
+      "triangles": 32432,
+      "zoom": "43.0",
+      "gameplayZoom": "43.0"
+    },
+    {
+      "name": "kit",
+      "frames": 4,
+      "fps": 1.5,
+      "calls": 19,
+      "triangles": 14072,
+      "zoom": "43.0",
+      "gameplayZoom": "43.0"
+    },
+    {
+      "name": "overview",
+      "frames": 8,
+      "fps": 3.3,
+      "calls": 23,
+      "triangles": 62720,
+      "zoom": "10.1",
+      "gameplayZoom": "43.0"
+    },
+    {
+      "name": "overview-dark",
+      "frames": 7,
+      "fps": 2.5,
+      "calls": 23,
+      "triangles": 62720,
+      "zoom": "10.1",
+      "gameplayZoom": "43.0"
+    },
+    {
+      "name": "overview-silhouette",
+      "frames": 7,
+      "fps": 2.7,
+      "calls": 23,
+      "triangles": 62720,
+      "zoom": "10.1",
+      "gameplayZoom": "43.0"
+    }
+  ],
+  "errors": []
+}
