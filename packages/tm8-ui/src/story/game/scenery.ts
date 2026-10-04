@@ -181,6 +181,7 @@ export function makeScenery(world: World, p: Palette): Part[] {
         part('gem', .6, .65, .4, .17, .34, .17, c.gold, 0, 3);
         flag(.55, 1.2, -.5);
         break;
+      case 'factory': // PLACEHOLDER (story map W1): the Code Factory wears the signpost until the asset lane registers its look.
       case 'signpost':
         part('cylinder', 0, 1.12, 0, .09, 1.65, .09, c.wood);
         part('box', .12, 1.68, 0, 1.1, .32, .14, p.info, 0, 0, -.1);

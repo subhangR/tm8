@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { useEffect } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
 import { StoryGame } from './StoryGame';
 import { STORY_FIXTURE } from '../fixture';
 import { storyGameStore } from './store';
@@ -17,6 +17,8 @@ describe('encounter keyboard and focus', () => {
   it('escapes from a focused duel control and restores map focus; hidden quests are inert', async () => {
     const { findByTestId, getByRole, getByTestId, queryByTestId } = render(<StoryGame view={STORY_FIXTURE} mode="game" onMode={vi.fn()} open={vi.fn()} />);
     await findByTestId('story-game-duel');
+    // The lazy scene reports the encounter outside act; settle its passive effects before pressing keys.
+    await act(async () => {});
     expect(getByRole('complementary', { name: 'Quest log', hidden: true }).hasAttribute('inert')).toBe(true);
     const open = getByRole('button', { name: /Open session/ }); open.focus();
     fireEvent.keyDown(open, { key: 'Escape' });
