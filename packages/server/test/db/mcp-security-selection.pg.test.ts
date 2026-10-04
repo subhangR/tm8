@@ -58,6 +58,8 @@ describe('MCP selection authorization', () => {
   it('does not make a reader ready with the owner private credential', async () => {
     const connector = await server(ownerIdentity, space, 'private', { type: 'api_key', headerName: 'Authorization' });
     const cred = await privateCredential(connector.entity.id);
+    await expect(store.read({ identityId: ownerIdentity, authKind: 'browser', requestId: randomUUID(), sessionSpaceId: space }, { spaceId: space, serverId: connector.entity.id, credentialId: cred })).resolves.toMatchObject({ secret: { kind: 'api_key', value: 'selection-secret' } });
+    await expect(store.read({ identityId: readerIdentity, authKind: 'browser', requestId: randomUUID(), sessionSpaceId: space }, { spaceId: space, serverId: connector.entity.id, credentialId: cred })).rejects.toThrow(/unavailable/i);
     const result = await as(readerIdentity, q => resolveMcpSelections(q, { spaceId: space, mcpSelections: [{ serverId: connector.entity.id, credentialId: cred }] }));
     expect(result.selections[0]).toMatchObject({ ready: false }); expect(result.selections[0]?.reason).toMatch(/credential_(unavailable|required)/);
   });
