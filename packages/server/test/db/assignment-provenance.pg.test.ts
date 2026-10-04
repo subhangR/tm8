@@ -426,6 +426,14 @@ describe.sequential('task assignment provenance (129)', () => {
         pushed_at timestamptz not null default now());
       grant select on public.styles to tm8_app;
       reset role;`);
+    // 296 (MCP connectors): entity reads join the definition table even in
+    // this intentionally partial assignment fixture. Mirror only the read
+    // columns; the full MCP migration is covered by its dedicated fixtures.
+    await database.query(`set role tm8_graph_owner;
+      create table public.mcp_servers (
+        entity_id uuid primary key, space_id uuid not null, definition jsonb not null);
+      grant select on public.mcp_servers to tm8_app;
+      reset role;`);
   }, 180_000);
 
   afterAll(async () => {
