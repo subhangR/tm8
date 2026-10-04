@@ -3466,6 +3466,7 @@ function registerHandlers(
       promptExtra: input.promptExtra ?? null,
       ...(input.memoryIds?.length ? { memoryIds: input.memoryIds } : {}),
       ...(input.selection ? { selection: input.selection } : {}),
+      ...(input.mcpSelections !== undefined ? { mcpSelections: input.mcpSelections } : {}),
       ...(input.selectionReasons ? { selectionReasons: input.selectionReasons } : {}),
       ...(input.contextBudgets ? { contextBudgets: input.contextBudgets } : {}),
       ...(input.jevRunId ? { jevRunId: input.jevRunId } : {}),
@@ -3481,7 +3482,10 @@ function registerHandlers(
       clientMutationId: envelope.clientMutationId ?? null,
     };
 
-    const result = await rethrowing(() => spawnService.spawn(claims, request));
+    const result = await rethrowing(() => spawnService.spawn({ ...claims, mcpSource: {
+      authSessionId: ctx.identity.sessionId,
+      sessionId: ctx.identity.workSessionId ?? ctx.identity.runtimeChatId,
+    } }, request));
 
     // The Ask Jev run this launch came from (§6: per-launch cost). Only after
     // a SUCCESSFUL spawn, and never at its expense: the session is live, so a
@@ -3782,7 +3786,10 @@ function registerHandlers(
     refuseLinkBearerSpawn(ctx, claims);
     const resumeInput = ctx.body as ExecutionResumeInput;
     const result = await rethrowing(() =>
-      spawnService.resume(claims, {
+      spawnService.resume({ ...claims, mcpSource: {
+        authSessionId: ctx.identity.sessionId,
+        sessionId: ctx.identity.workSessionId ?? ctx.identity.runtimeChatId,
+      } }, {
         sessionId: requireUuidParam(ctx, 'id'),
         clientMutationId: envelope.clientMutationId ?? null,
         // A resume re-spawns the PTY, so it needs the browser's geometry for

@@ -314,6 +314,7 @@ describe('chat launch composition', () => {
     const bound = await mkdtemp(join(tmpdir(), 'tm8-chat-bound-'));
     await writeFile(join(bound, 'README.md'), 'bound\n', 'utf8');
     const resolver = createChatLaunchConfigResolver({
+      mcpBindings: { bind: async () => [] },
       db: fakeDb(), dataDir, baseUrl: 'http://127.0.0.1:4610', mcpCliPath: '/tmp/tm8-mcp.js',
     });
     const resolved = await resolver({ ...launch('build'), cwd: bound });
@@ -370,6 +371,7 @@ describe('chat launch composition', () => {
       query: async (_claims: unknown, sql: string) => { queries.push(sql); return []; },
     } as unknown as Db;
     const resolver = createChatLaunchConfigResolver({
+      mcpBindings: { bind: async () => [] },
       db, dataDir, baseUrl: 'http://127.0.0.1:4610', mcpCliPath: '/tmp/tm8-mcp.js',
     });
     await resolver(launch('ask'));
@@ -380,6 +382,7 @@ describe('chat launch composition', () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'tm8-chat-data-'));
     const bound = await mkdtemp(join(tmpdir(), 'tm8-chat-bound-'));
     const resolver = createChatLaunchConfigResolver({
+      mcpBindings: { bind: async () => [] },
       db: fakeDb(), dataDir, baseUrl: 'http://127.0.0.1:4610', mcpCliPath: '/tmp/tm8-mcp.js',
     });
     const first = await resolver({ ...launch('build'), cwd: bound });

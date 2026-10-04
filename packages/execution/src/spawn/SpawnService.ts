@@ -208,6 +208,8 @@ export type SessionLiveCause = 'spawn' | 'resume' | 'running' | 'idle';
 export type SessionLiveListener = (sessionId: string, cause: SessionLiveCause) => void | Promise<void>;
 
 export interface SpawnServiceOptions {
+  /** Resolves and durably authorizes exact connector references after runtime token mint. */
+  mcpBindings?: { bind(auth: GraphAuth, input: { sessionId: string; spaceId: string; teamMemberId: string; targetIds?: string[]; mcpSelections?: Array<{serverId: string; credentialId?: string}>; agentToken: string; resume?: boolean }): Promise<Array<{serverId: string; credentialId?: string}>> };
   graph: GraphPort;
   pty: PtyHostService;
   /** Where the agent reports back — becomes TM8_BASE_URL. */
@@ -564,7 +566,10 @@ export class SpawnService {
   /** Drain-on-live listeners (Forms W2, 214). See `onSessionLive`. */
   private readonly sessionLiveListeners = new Set<SessionLiveListener>();
 
+  private readonly mcpBindings: SpawnServiceOptions['mcpBindings'];
+
   constructor(options: SpawnServiceOptions) {
+    this.mcpBindings = options.mcpBindings;
     this.graph = options.graph;
     this.pty = options.pty;
     this.baseUrl = options.baseUrl;
@@ -1688,6 +1693,12 @@ export class SpawnService {
         request.teamMemberId,
       );
       agentTokenIssued = true;
+      if (this.mcpBindings) launch.mcpSelections = await this.mcpBindings.bind(auth, {
+        sessionId, spaceId: request.spaceId, teamMemberId: request.teamMemberId,
+        targetIds: context.tasks.map(task => task.id), agentToken,
+        ...(request.mcpSelections !== undefined ? { mcpSelections: request.mcpSelections } : {}),
+      });
+      else if (request.mcpSelections?.length) throw new Error('MCP launch bindings are unavailable');
       // The base command is built FIRST and recorded in the manifest; the system
       // prompt is then derived FROM that manifest and appended to produce the
       // line the PTY actually runs. See `withAgentPrompt` for why this is two
@@ -2502,6 +2513,10 @@ export class SpawnService {
         info.teamMemberId,
       );
       agentTokenIssued = true;
+      if (this.mcpBindings) launch.mcpSelections = await this.mcpBindings.bind(auth, {
+        sessionId, spaceId: info.spaceId, teamMemberId: info.teamMemberId,
+        targetIds: context.tasks.map(task => task.id), agentToken, resume: true,
+      });
 
       // NO --session-id on a resume invocation: the id is already Claude's, and
       // naming it twice (`--session-id` + `--resume`) is two flags to disagree.
