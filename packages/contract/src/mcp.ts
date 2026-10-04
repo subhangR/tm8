@@ -59,7 +59,7 @@ export const McpReadinessReasonSchema = z.enum(['ready', 'not_approved', 'stdio_
 export type McpReadinessReason = z.infer<typeof McpReadinessReasonSchema>;
 export const McpCredentialViewSchema = z.object({
   id: Id, serverId: Id, label: z.string(), authType: z.enum(['api_key', 'oauth2']),
-  visibility: z.enum(['private', 'selected', 'space']), ownerId: Id, sharedMemberIds: z.array(Id),
+  visibility: z.enum(['private', 'selected', 'space']), ownerId: Id, ownerLabel: z.string().max(200).optional(), sharedMemberIds: z.array(Id),
   usable: z.boolean(), manageable: z.boolean(), revoked: z.boolean(), reason: McpReadinessReasonSchema,
 }).strict();
 export type McpCredentialView = z.infer<typeof McpCredentialViewSchema>;

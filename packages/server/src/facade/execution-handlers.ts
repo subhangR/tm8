@@ -1,3 +1,4 @@
+import { McpSessionBindings, type McpBindingClaims } from '../mcp/session-bindings.js';
 import { resolveHeaders } from '../headers/resolve.js';
 import { loadDispatcherRoster } from '../launch/roster.js';
 import { loadMemoryDefaults, loadReferenceDefaults, loadSkillDefaults, loadTeammateDefaults } from './spawn-defaults.js';
@@ -1925,7 +1926,9 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
   // quietly handing back the shared project directory.
   const worktrees = resolveWorktreeManager(deps.dataDir);
 
+  const mcpBindings = new McpSessionBindings(deps.db);
   spawnService = new SpawnService({
+    mcpBindings: { bind: (auth, input) => mcpBindings.bind(auth as McpBindingClaims, input) },
     graph,
     pty,
     promptSettlement,
@@ -2098,7 +2101,9 @@ export function registerExecutionHandlers(
 ): ExecutionRuntime {
   const graph = new DbGraphPort(deps.db);
   const worktrees = resolveWorktreeManager(deps.dataDir);
+  const mcpBindings = new McpSessionBindings(deps.db);
   const spawnService = new SpawnService({
+    mcpBindings: { bind: (auth, input) => mcpBindings.bind(auth as McpBindingClaims, input) },
     graph,
     pty: deps.pty,
     baseUrl: `http://${deps.config.host}:${deps.config.port}`,
