@@ -16,6 +16,7 @@ import { Component, Suspense, lazy, useCallback, useEffect, useMemo, useRef, use
 import { KindIcon } from '../../domain';
 import { getKind } from '../../domain/registry';
 import { DuelPanel } from './DuelPanel';
+import { Minimap } from './Minimap';
 import { TONE_WORD, statusWord, type StoryView } from '../model';
 import type { StoryLive } from '../props';
 import { ModeSwitch } from './ModeSwitch';
@@ -62,6 +63,9 @@ export function StoryGame({ view, live, open, mode, onMode, showModeSwitch = tru
   const unavailable = useCallback(() => setWebgl(false), []);
   const [overview, setOverview] = useState(false);
   const toggleOverview = () => { const next = !control.overview; control.overview = next; setOverview(next); host.current?.focus({ preventScroll: true }); };
+  const [minimap, setMinimap] = useState(true);
+  const toggleMinimap = () => { setMinimap((v) => !v); host.current?.focus({ preventScroll: true }); };
+  const minimapTravel = useCallback(() => { setOverview(false); host.current?.focus({ preventScroll: true }); }, []);
   const [nearId, setNearId] = useState<string | null>(null);
   const [reduced, setReduced] = useState(() => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches);
   const [dismissed, setDismissed] = useState<string | null>(null);
@@ -128,6 +132,7 @@ export function StoryGame({ view, live, open, mode, onMode, showModeSwitch = tru
     if (e.target instanceof HTMLElement && e.target.closest('button, input, textarea, select, [contenteditable="true"]')) return;
     const k = e.key.toLowerCase();
     if (k === 'm' && !duel) { toggleOverview(); e.preventDefault(); return; }
+    if (k === 'n' && !duel && webgl) { toggleMinimap(); e.preventDefault(); return; }
     if (WALK_KEYS.has(k)) {
       control.overview = false; setOverview(false);
       control.keys.add(k);
@@ -152,6 +157,7 @@ export function StoryGame({ view, live, open, mode, onMode, showModeSwitch = tru
       ref={host}
       className={`sgm${webgl ? '' : ' sgm--flat'}${duel ? ' sgm--duel' : ''}`}
       data-testid="story-game"
+      data-minimap={webgl && minimap ? 'shown' : 'hidden'}
       tabIndex={0}
       role="application"
       aria-label={`${view.title} as a game`}
@@ -236,10 +242,11 @@ export function StoryGame({ view, live, open, mode, onMode, showModeSwitch = tru
         {webgl && <button type="button" className="sgm-btn sgm-map-toggle" aria-pressed={overview} onClick={toggleOverview} disabled={!!duel}>
           {overview ? 'Back to explorer' : 'Map overview'} <kbd>M</kbd>
         </button>}
+        {webgl && <Minimap world={world} storyId={storyId} revealed={revealed} palette={palette} control={control} open={minimap} onToggle={toggleMinimap} onTravel={minimapTravel} />}
         <div className="sgm-compass" aria-hidden><span>N</span><i>✧</i><small>EXPLORE</small></div>
         <div className="sgm-hint">
           <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span>
-          <span>click to travel · scroll to zoom · M for map</span>
+          <span>click to travel · scroll to zoom · M for map · N minimap</span>
           <span><kbd>E</kbd> opens what you stand at</span>
           <button
             type="button"
