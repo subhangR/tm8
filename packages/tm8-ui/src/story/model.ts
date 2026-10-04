@@ -105,6 +105,7 @@ export const VIEW_OF_KIND: Readonly<Record<string, StoryGraphView>> = {
 
 /** Kind names the page needs as values (capsule, anchors), kept here so components hold no kind literal. */
 export const TASK_KIND = 'task';
+export const DOCUMENT_KIND = 'doc';
 export const SESSION_KIND = 'work_session';
 export const STORY_KIND = 'story';
 export const TEAMMATE_KIND = 'team_member';
