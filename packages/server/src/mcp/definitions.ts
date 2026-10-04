@@ -25,10 +25,12 @@ function view(row: DefinitionRow, attach: boolean): McpServerView & {securityRev
   return { id:row.id, spaceId:row.space_id, version:row.version, ...(row.security_revision !== undefined ? {securityRevision:Number(row.security_revision)} : {}), definition, ...(row.health ? {health:McpTestResultSchema.parse(row.health)} : {}),
     allowed:{register:row.admin,approve:row.admin,manage:row.admin,attach:attach && definition.approved && definition.enabled !== false} };
 }
-export async function loadMcpServer(q: Querier, serverId: string, targetId?: string): Promise<McpServerView> {
+export async function loadMcpServer(q: Querier, serverId: string, targetId?: string): Promise<McpServerView & {securityRevision:number}> {
   const [row]=await q.query<DefinitionRow>(`${SELECT} and e.id=$1`,[serverId]);
   if (!row) throw new CollabError('not_found','MCP connector is unavailable');
-  return view(row,await canAttachMcp(q,row.space_id,targetId));
+  const loaded=view(row,await canAttachMcp(q,row.space_id,targetId));
+  if (loaded.securityRevision === undefined) throw new CollabError('upstream_unavailable','MCP security revision unavailable');
+  return loaded as McpServerView & {securityRevision:number};
 }
 export type McpCredentialReadiness = (selection:McpSelection,server:McpServerView)=>Promise<McpReadinessReason>;
 /** Uses only caller-readable same-space attachments; never infers an account. */

@@ -48,7 +48,7 @@ create trigger mcp_definition_credential_lock before update on public.mcp_server
 for each row execute function internal.mcp_definition_lock();
 create function public.create_mcp_credential(p_id uuid, p_space uuid, p_server uuid,
   p_label text, p_ciphertext bytea, p_nonce bytea, p_shape text default 'api_key',
-  p_expires_at timestamptz default null,p_refreshable boolean default false)
+  p_expires_at timestamptz default null,p_refreshable boolean default false,p_expected_revision integer default null)
 returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
 declare result jsonb;
 begin
@@ -57,7 +57,7 @@ begin
   -- Serialize consent stamping with definition edits using the same transaction
   -- advisory lock acquired by the definition update trigger.
   perform pg_advisory_xact_lock(hashtextextended(p_server::text,297));
-  if p_server is null or not exists (select 1 from public.entities e join public.mcp_servers s on s.entity_id=e.id where e.id=p_server and e.space_id=p_space and e.kind='mcp_server' and e.deleted_at is null and s.definition->>'approved'='true' and coalesce(s.definition->>'enabled','true')='true') then
+  if p_server is null or p_expected_revision is null or not exists (select 1 from public.entities e join public.mcp_servers s on s.entity_id=e.id where e.id=p_server and e.space_id=p_space and e.kind='mcp_server' and e.deleted_at is null and s.definition->>'approved'='true' and coalesce(s.definition->>'enabled','true')='true' and s.mcp_security_revision=p_expected_revision) then
     raise exception 'MCP server not found' using errcode='P0002';
   end if;
   result := public.create_space_credential(p_id,p_space,'mcp',p_shape,p_label,'mcp',p_ciphertext,p_nonce,null,'private',false,false);
@@ -94,10 +94,10 @@ begin
     where id=p_id and status='active' and secret_nonce=p_old_nonce;
   return found;
 end $$;
-revoke all on function public.create_mcp_credential(uuid,uuid,uuid,text,bytea,bytea,text,timestamptz,boolean) from public;
+revoke all on function public.create_mcp_credential(uuid,uuid,uuid,text,bytea,bytea,text,timestamptz,boolean,integer) from public;
 revoke all on function public.read_mcp_credential(uuid,uuid,uuid) from public;
 revoke all on function public.refresh_mcp_credential(uuid,uuid,uuid,bytea,bytea,bytea,timestamptz,boolean) from public;
-grant execute on function public.create_mcp_credential(uuid,uuid,uuid,text,bytea,bytea,text,timestamptz,boolean) to tm8_app;
+grant execute on function public.create_mcp_credential(uuid,uuid,uuid,text,bytea,bytea,text,timestamptz,boolean,integer) to tm8_app;
 grant execute on function public.read_mcp_credential(uuid,uuid,uuid) to tm8_app;
 grant execute on function public.refresh_mcp_credential(uuid,uuid,uuid,bytea,bytea,bytea,timestamptz,boolean) to tm8_app;
 -- Metadata only, evaluated against current membership/sharing.

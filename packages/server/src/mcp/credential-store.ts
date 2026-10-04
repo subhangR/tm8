@@ -25,12 +25,13 @@ export class McpCredentialStore {
       return run(new McpCredentialStore(boundDb,this.dataDir));
     });
   }
-  async create(claims: DbClaims, input: {spaceId: string; serverId: string; label: string; secret: McpSecret}): Promise<unknown> {
+  async create(claims: DbClaims, input: {spaceId: string; serverId: string; label: string; secret: McpSecret; expectedRevision?:number}): Promise<unknown> {
     if (!isHumanAuthKind(claims.authKind) || claims.viaLinkId) throw new Error('MCP credential writes require a human session');
     const credentialId = randomUUID();
     const spaceId = input.spaceId.toLowerCase();
     const sealed = sealSecret(await loadOrCreateCredentialKey(this.dataDir), JSON.stringify(input.secret), {spaceId, credentialId, provider:'mcp'});
-    return this.db.rpc(claims, 'create_mcp_credential', [credentialId,spaceId,input.serverId,input.label,sealed.ciphertext,sealed.nonce,input.secret.kind==='oauth'?'token':'api_key',input.secret.kind==='oauth' && input.secret.expiresAt!==undefined?new Date(input.secret.expiresAt).toISOString():null,input.secret.kind==='oauth' && Boolean(input.secret.refreshToken)]);
+    const expected=input.expectedRevision ?? Number((await this.db.query<{mcp_security_revision:number}>(claims,'select mcp_security_revision from public.mcp_servers where entity_id=$1',[input.serverId]))[0]?.mcp_security_revision);
+    return this.db.rpc(claims, 'create_mcp_credential', [credentialId,spaceId,input.serverId,input.label,sealed.ciphertext,sealed.nonce,input.secret.kind==='oauth'?'token':'api_key',input.secret.kind==='oauth' && input.secret.expiresAt!==undefined?new Date(input.secret.expiresAt).toISOString():null,input.secret.kind==='oauth' && Boolean(input.secret.refreshToken),expected]);
   }
   async rotate(claims:DbClaims,binding:McpCredentialBinding,value:string):Promise<void> {
     if(!isHumanAuthKind(claims.authKind) || claims.viaLinkId)throw new Error('MCP credential writes require a human session');
