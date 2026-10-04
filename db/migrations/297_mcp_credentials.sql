@@ -14,9 +14,9 @@ begin
   ) then
     execute $fn$
       create function internal.w2_sha256(value jsonb) returns text
-      language sql immutable parallel safe as $$
+      language sql immutable parallel safe as $w2$
         select encode(sha256(convert_to(value::text,'UTF8')),'hex')
-      $$
+      $w2$
     $fn$;
   end if;
 end
