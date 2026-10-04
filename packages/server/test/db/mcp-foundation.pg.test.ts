@@ -29,9 +29,11 @@ it('round trips generic entity create/read/update and SQL content',async()=>{
  const deps={db,owner:async()=>({identityId:ownerIdentity,memberId:owner,spaceId}),config:{}} as unknown as FacadeDeps;
  const svc=new W2EntitiesCommandsTrackingService(deps);
  const ctx=(body:unknown,params:Record<string,string>={})=>({body,params,query:new URLSearchParams(),requestId:randomUUID(),headers:{},identity:{identityId:ownerIdentity,authKind:'browser'}} as unknown as RequestContext);
+ await expect(svc.createEntity(ctx({spaceId,kind:'mcp_server',title:'wrapped',content:{definition:definition('wrapped'),env:{TOKEN:'fixture-secret'}},clientMutationId:randomUUID()}))).rejects.toBeTruthy();
  const created=await svc.createEntity(ctx({spaceId,kind:'mcp_server',title:'generic',content:{definition:definition('generic')},clientMutationId:randomUUID()}));
  const entity=(created as {entity:{id:string;version:number;state:{definition:unknown}}}).entity;
  expect(entity.state.definition).toEqual(definition('generic'));
+ await expect(svc.patchEntity(ctx({expectedVersion:entity.version,content:{env:{TOKEN:'fixture-secret'}},clientMutationId:randomUUID()},{id:entity.id}))).rejects.toBeTruthy();
  const patched=await svc.patchEntity(ctx({expectedVersion:entity.version,content:{definition:{...definition('generic'),approved:false}},clientMutationId:randomUUID()},{id:entity.id}));
  expect((patched as {entity:{state:{definition:{approved:boolean}}}}).entity.state.definition.approved).toBe(false);
  const rows=await scratch.query<{content:{definition:{name:string}}}>('select internal.entity_content($1) as content',[entity.id]);
@@ -45,7 +47,7 @@ it('requires admin for create, update and generic delete; ordinary members can r
  expect((await as(memberIdentity,q=>loadMcpServer(q,id))).allowed.manage).toBe(false);
 });
 it('SQL rejects secret maps, reserved/colliding names, unknown auth and transport mismatch',async()=>{
- for(const patch of [{env:{KEY:'fixture-secret'}},{headers:{Authorization:'fixture-secret'}},{name:'tm8'},{auth:{type:'none',secret:'fixture-secret'}},{command:'bash'},{headerKeys:['X-Key']},{url:'https://u:p@example.test/mcp'}]) {
+ for(const patch of [{name:null},{auth:{type:'api_key',headerName:null},headerKeys:['Authorization']},{env:{KEY:'fixture-secret'}},{headers:{Authorization:'fixture-secret'}},{name:'tm8'},{auth:{type:'none',secret:'fixture-secret'}},{command:'bash'},{headerKeys:['X-Key']},{url:'https://u:p@example.test/mcp'}]) {
   await expect(create('reject-'+randomUUID(),patch)).rejects.toBeTruthy();
  }
  await create('collision');await expect(create('COLLISION')).rejects.toBeTruthy();
@@ -69,4 +71,13 @@ it('caches health only for the testing member and current definition version',as
  expect((await as(memberIdentity,q=>loadMcpServer(q,c.entity.id))).health).toBeUndefined();
  await as(ownerIdentity,q=>q.rpc('update_mcp_server_entity',[c.entity.id,c.entity.version,JSON.stringify({...definition('health'),approved:false}),null,randomUUID()]));
  expect((await as(ownerIdentity,q=>loadMcpServer(q,c.entity.id))).health).toBeUndefined();
+});
+
+it('inherits real ancestor equipment without duplicating the same server',async()=>{
+ const c=await create('ancestor');
+ const root=await as(ownerIdentity,q=>q.rpc<{entity:{id:string}}>('create_task',[spaceId,'Parent']));
+ const child=await as(ownerIdentity,q=>q.rpc<{entity:{id:string}}>('create_task',[spaceId,'Child',null,'','{}',root.entity.id]));
+ for(const id of [root.entity.id,child.entity.id])await as(memberIdentity,q=>q.rpc('write_edge',[id,c.entity.id,'equips','{}',null,randomUUID()]));
+ const resolved=await as(memberIdentity,q=>resolveMcpSelections(q,{spaceId,targetIds:[child.entity.id]}));
+ expect(resolved.selections.map(s=>s.server.id)).toEqual([c.entity.id]);
 });

@@ -1,3 +1,4 @@
+import { loadMcpServer } from '../../../mcp/definitions.js';
 import { createHash } from 'node:crypto';
 
 import { loadContextV2 } from './feed-context-v2.js';
@@ -1461,7 +1462,9 @@ export class W2EntitiesCommandsTrackingService {
           break;
         }
         case 'mcp_server': {
+          if ('definition' in content && Object.keys(content).some(key => key !== 'definition')) throw new CollabError('invalid_input', 'MCP content only accepts definition metadata');
           const definition = McpServerDefinitionSchema.parse(content.definition ?? { ...content, name: input.title });
+          if (definition.name !== input.title) throw new CollabError('invalid_input', 'MCP entity title must match its definition name');
           raw = await q.rpc('create_mcp_server_entity', [input.spaceId, JSON.stringify(definition), envelope.actorId ?? null, envelope.clientMutationId ?? null]);
           break;
         }
@@ -1653,7 +1656,9 @@ export class W2EntitiesCommandsTrackingService {
             break;
           }
           case 'mcp_server': {
-            const definition = McpServerDefinitionSchema.parse(content.definition);
+            if (Object.keys(content).some(key => key !== 'definition')) throw new CollabError('invalid_input', 'MCP content only accepts definition metadata');
+            const current = content.definition ?? (await loadMcpServer(q, id)).definition;
+            const definition = McpServerDefinitionSchema.parse(input.title ? { ...(current as object), name: input.title } : current);
             raw = await q.rpc('update_mcp_server_entity', [id, input.expectedVersion, JSON.stringify(definition), envelope.actorId ?? null, envelope.clientMutationId ?? null]);
             break;
           }

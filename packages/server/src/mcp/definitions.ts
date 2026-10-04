@@ -16,7 +16,7 @@ const SELECT = `select e.id,e.space_id,e.version,m.definition,internal.is_space_
 
 export async function canAttachMcp(q: Querier, spaceId: string, targetId?: string): Promise<boolean> {
   if (!targetId) return false;
-  const rows = await q.query<{ allowed: boolean }>(`select exists(select 1 from public.entities where id=$1 and space_id=$2
+  const rows = await q.query<{ allowed: boolean }>(`select internal.is_space_member($2::uuid) and exists(select 1 from public.entities where id=$1 and space_id=$2
     and kind in ('task','team_member','work_session') and deleted_at is null) as allowed`, [targetId,spaceId]);
   return rows[0]?.allowed === true;
 }
@@ -39,12 +39,32 @@ export async function resolveMcpSelections(q:Querier,input:McpResolveInput,crede
     const sources=[...new Set([...(checked.targetIds??[]),...(checked.teamMemberId?[checked.teamMemberId]:[])])];
     // Validate every supplied target rather than silently resolving a partial set.
     for (const id of sources) if (!await canAttachMcp(q,checked.spaceId,id)) throw new CollabError('forbidden','MCP defaults target is unavailable');
-    const rows=await q.query<{server_id:string}>(`select distinct g.dst_id as server_id from public.edges g
-      join public.entities s on s.id=g.src_id join public.entities d on d.id=g.dst_id
+    const lineage=await q.query<{id:string;parent_id:string|null;depth:number;path:string[]}>(`with recursive lineage as (
+      select e.id,e.parent_id,0 as depth,array[e.id] as path from public.entities e
+      where e.id=any($1::uuid[]) and e.space_id=$2 and e.deleted_at is null
+      union all
+      select p.id,p.parent_id,l.depth+1,l.path||p.id from lineage l join public.entities p on p.id=l.parent_id
+      where p.space_id=$2 and p.deleted_at is null and l.depth<16 and not p.id=any(l.path)
+    ) select id,parent_id,depth,path from lineage limit 1025`,[sources,checked.spaceId]);
+    if(lineage.length>1024 || lineage.some(row=>row.parent_id && (row.path.includes(row.parent_id) || row.depth===16))) {
+      throw new CollabError('invalid_input','MCP default ancestry exceeds the depth or cycle bound');
+    }
+    const depths=new Map<string,number>();
+    for(const row of lineage)depths.set(row.id,Math.min(depths.get(row.id)??Infinity,row.depth));
+    const rows=await q.query<{server_id:string;source_id:string;name:string}>(`select g.dst_id as server_id,g.src_id as source_id,m.definition->>'name' as name
+      from public.edges g join public.entities d on d.id=g.dst_id join public.mcp_servers m on m.entity_id=d.id
       where g.type='equips' and g.src_id=any($1::uuid[]) and g.space_id=$2 and d.kind='mcp_server'
-      and s.deleted_at is null and d.deleted_at is null order by g.dst_id limit 33`,[sources,checked.spaceId]);
-    if(rows.length>32) throw new CollabError('invalid_input','Too many default MCP connectors');
-    selections=rows.map(row=>({serverId:row.server_id}));
+      and d.deleted_at is null order by g.dst_id,g.src_id limit 1025`,[[...depths.keys()],checked.spaceId]);
+    if(rows.length>1024)throw new CollabError('invalid_input','Too many MCP default attachments');
+    const nearest=new Map<string,{serverId:string;depth:number}>();
+    for(const row of rows){
+      const depth=depths.get(row.source_id);if(depth===undefined)continue;
+      const name=row.name.toLowerCase(),previous=nearest.get(name);
+      if(previous && previous.depth===depth && previous.serverId!==row.server_id)throw new CollabError('invalid_input','MCP connector name collision at the same attachment depth');
+      if(!previous||depth<previous.depth)nearest.set(name,{serverId:row.server_id,depth});
+    }
+    if(nearest.size>32)throw new CollabError('invalid_input','Too many default MCP connectors');
+    selections=[...nearest.values()].map(({serverId})=>({serverId}));
   }
   const resolved=[];
   const names=new Set<string>();
@@ -63,7 +83,7 @@ export async function resolveMcpSelections(q:Querier,input:McpResolveInput,crede
       else if(credentialReady) reason=await credentialReady(selection,server);
       else {
         const result=await q.rpc<{ready:boolean;reason:McpReadinessReason}>('mcp_credential_readiness',[server.id,selection.credentialId]);
-        reason=result.ready?'ready':result.reason;
+        reason=result.ready === true ? 'ready' : result.reason;
       }
     } else if(selection.credentialId) reason='credential_unavailable';
     resolved.push({server,...(selection.credentialId?{credentialId:selection.credentialId}:{}),ready:reason==='ready',reason});
@@ -107,6 +127,7 @@ export function registerMcpDefinitionHandlers(registry:HandlerRegistry,deps:Faca
   registry.register('mcp.servers.delete',async ctx=>{
     const input=McpServerDeleteInputSchema.parse({...(ctx.body as Record<string, unknown>),serverId:requireUuidParam(ctx,'serverId')});
     return deps.db.tx(claimsFor(await deps.owner(),ctx,commandEnvelope(ctx)),async q=>{
+      await q.query('select id from public.entities where id=$1 for update',[input.serverId]);
       const server=await loadMcpServer(q,input.serverId);
       if(!server.allowed.manage) throw new CollabError('forbidden','Only administrators can delete MCP connectors');
       if(server.version!==input.expectedVersion) throw new CollabError('version_conflict','MCP connector changed');
