@@ -1,0 +1,5 @@
+/* Robots' pending-attention pip, in the scene's label layer. Owned by the robots lane. */
+.cv2-root .sgm-robot-pips { position: absolute; inset: 0; pointer-events: none; }
+.cv2-root .sgm-robot-pip { display: grid; place-items: center; width: 18px; height: 20px; border-radius: 10px 10px 10px 2px; background: var(--pn-wait); color: var(--pn-card); font-size: 11px; font-weight: 800; line-height: 1; box-shadow: 0 2px 8px color-mix(in srgb, var(--pn-ink) 25%, transparent); animation: sgm-robot-pulse 1.6s ease-in-out infinite; }
+@keyframes sgm-robot-pulse { 50% { box-shadow: 0 2px 8px color-mix(in srgb, var(--pn-ink) 25%, transparent), 0 0 0 6px color-mix(in srgb, var(--pn-wait) 30%, transparent); } }
+.cv2-root .sgm-robot-pips--still .sgm-robot-pip { animation: none; }

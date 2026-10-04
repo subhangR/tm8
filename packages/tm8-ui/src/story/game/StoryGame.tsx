@@ -166,6 +166,7 @@ export function StoryGame({ view, live, open, mode, onMode, showModeSwitch = tru
               onUnavailable={unavailable}
               reduced={reduced}
               duel={duel}
+              view={view}
               world={world}
               palette={palette}
               control={control}
