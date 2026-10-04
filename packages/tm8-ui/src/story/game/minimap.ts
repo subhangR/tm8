@@ -69,7 +69,7 @@ export function dotColor(place: { tone: StoryTone | null; live: boolean; shape: 
 export type Glyph = 'hub' | 'square' | 'triangle' | 'diamond' | 'ring' | 'circle';
 export const GLYPH_OF_SHAPE: Readonly<Record<PlaceShape, Glyph>> = {
   hub: 'hub', building: 'square', library: 'square', tent: 'triangle', camp: 'triangle',
-  signpost: 'diamond', crystal: 'diamond', portal: 'ring', stone: 'circle',
+  signpost: 'diamond', crystal: 'diamond', portal: 'ring', stone: 'circle', factory: 'diamond',
 };
 
 export interface MinimapDot {
@@ -158,7 +158,7 @@ const TURN = Math.PI / 4;
  * hub with a status category. Unknown fields are skipped, never guessed.
  */
 export function readDistricts(world: World, extent: number, size: number, pad: number = MINIMAP_PAD): MinimapDistrict[] {
-  const raw = (world as World & { districts?: unknown }).districts;
+  const raw: unknown = (world as World & { districts?: unknown }).districts;
   const list = Array.isArray(raw) ? raw : raw instanceof Map ? [...raw.values()] : [];
   const s = scaleOf(extent, size, pad);
   const out: MinimapDistrict[] = [];

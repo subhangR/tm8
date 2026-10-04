@@ -130,7 +130,7 @@ describe('pickTarget', () => {
 
 describe('readDistricts', () => {
   it('is empty when the world has none', () => {
-    expect(readDistricts(world, world.extent, MINIMAP_SIZE)).toEqual([]);
+    expect(readDistricts({ ...world, districts: [] }, world.extent, MINIMAP_SIZE)).toEqual([]);
   });
 
   it('reads sectors defensively and skips malformed ones', () => {

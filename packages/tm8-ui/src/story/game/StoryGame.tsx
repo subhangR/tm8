@@ -3,9 +3,11 @@
  * story is the hub, its roots are landmarks on a ring, every trail node a
  * place behind its root, the child stories portals on the rim; the edges are
  * roads. A player walks it (WASD / arrows, or click to go), places rise out
- * of the fog as they come within reach, and opening one hands the entity to
+ * of the fog as they come within reach, and INSPECTING one hands the entity to
  * the page's own `open` port — the detail panel beside the story shows it,
- * and the world stays where it was (the save lives in store.ts).
+ * and the world stays where it was (the save lives in store.ts). A portal is
+ * not inspected: it is ENTERED — the child story's own map (enter.ts), and
+ * Esc climbs back out to this one.
  *
  * This file is the DOM half: the HUD (switch, quest log, approach card, the
  * hint line) and the keyboard. The 3D half (`scene.tsx`, three.js) is loaded
@@ -21,10 +23,12 @@ import { TONE_WORD, statusWord, type StoryView } from '../model';
 import type { StoryLive } from '../props';
 import { ModeSwitch } from './ModeSwitch';
 import { createControl, WALK_KEYS, walkTo } from './control';
+import { enterStory, isRoutedStory, leaveStory } from './enter';
 import { hasWebGL, readPalette, type Palette } from './palette';
 import { HOME, storyGameStore, useStoryGameSave, type StoryViewMode } from './store';
 import { buildWorld, type Place, type World } from './world';
 import './story-game.css';
+import './story-game-drill.css';
 
 class SceneBoundary extends Component<{ children: ReactNode; onUnavailable: () => void }, { failed: boolean }> {
   state = { failed: false };
@@ -46,6 +50,26 @@ export interface StoryGameProps {
 
 const EMPTY: ReadonlySet<string> = new Set();
 const OPEN_KEYS: ReadonlySet<string> = new Set(['e', 'enter', ' ']);
+const MEMBER_LIMIT = 6;
+
+/**
+ * One thing an aggregate place holds (the Library's docs, the Code Factory's
+ * PRs). Read defensively: the field arrives with the aggregate places and is
+ * absent on a world built without them.
+ */
+interface PlaceMember { id: string; kind: string; title: string }
+function membersOf(place: Place): readonly PlaceMember[] {
+  const members = (place as Place & { members?: readonly PlaceMember[] }).members;
+  return Array.isArray(members) ? members : [];
+}
+
+/** What acting on a place does: a portal is entered, the hub is where you are, the rest are inspected. */
+type PlaceAction = 'enter' | 'inspect' | null;
+function actionOf(place: Place, storyId: string): PlaceAction {
+  if (place.id === storyId) return null;
+  return place.portal ? 'enter' : 'inspect';
+}
+const ACTION_LABEL = { enter: 'Enter', inspect: 'Inspect' } as const;
 
 export function StoryGame({ view, live, open, mode, onMode, showModeSwitch = true }: StoryGameProps) {
   const storyId = view.id;
@@ -96,13 +120,24 @@ export function StoryGame({ view, live, open, mode, onMode, showModeSwitch = tru
 
   const reveal = useCallback((ids: string[]) => storyGameStore.getState().reveal(storyId, ids), [storyId]);
   const position = useCallback((x: number, z: number) => storyGameStore.getState().savePosition(storyId, x, z), [storyId]);
-  const openPlace = useCallback(
+  /* Inspect: the entity goes to the page's `open` port, beside the map. */
+  const inspect = useCallback(
     (placeId: string) => {
       if (placeId === storyId) return;
       storyGameStore.getState().visit(storyId, placeId);
       open?.(placeId);
     },
     [open, storyId],
+  );
+  /* Act on a place: Enter a portal, Inspect anything else, nothing at the hub. */
+  const openPlace = useCallback(
+    (placeId: string) => {
+      const place = world.byId.get(placeId);
+      if (!place || actionOf(place, storyId) !== 'enter') { inspect(placeId); return; }
+      storyGameStore.getState().visit(storyId, placeId);
+      enterStory(storyId, placeId);
+    },
+    [world, storyId, inspect],
   );
   const arrive = useCallback((placeId: string, doOpen: boolean) => { if (doOpen) openPlace(placeId); }, [openPlace]);
   const goTo = useCallback(
@@ -121,14 +156,24 @@ export function StoryGame({ view, live, open, mode, onMode, showModeSwitch = tru
   );
 
   const near = nearId ? world.byId.get(nearId) ?? null : null;
+  const nearAction = near ? actionOf(near, storyId) : null;
+  const nearMembers = near ? membersOf(near) : [];
 
   const encounter = near && dismissed !== near.id ? near.encounters.find((s) => s.id === encounterId) ?? near.encounters[0] ?? null : null;
   const duel = near && encounter ? { placeId: near.id, encounter } : null;
 
   const leaveDuel = useCallback(() => { if (nearId) setDismissed(nearId); host.current?.focus({ preventScroll: true }); }, [nearId]);
 
+  const parentId = view.page.parent?.id ?? null;
   const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>): void => {
     if (e.key === 'Escape' && duel) { leaveDuel(); e.preventDefault(); return; }
+    /* Esc out of a child story's map climbs to its parent's — only on the page
+       that routes to this story; anywhere else the host's own Esc keeps it. */
+    if (e.key === 'Escape' && parentId && !e.defaultPrevented && isRoutedStory(storyId)) {
+      leaveStory(storyId, parentId);
+      e.preventDefault();
+      return;
+    }
     if (e.target instanceof HTMLElement && e.target.closest('button, input, textarea, select, [contenteditable="true"]')) return;
     const k = e.key.toLowerCase();
     if (k === 'm' && !duel) { toggleOverview(); e.preventDefault(); return; }
@@ -138,7 +183,7 @@ export function StoryGame({ view, live, open, mode, onMode, showModeSwitch = tru
       control.keys.add(k);
       e.preventDefault();
     } else if (OPEN_KEYS.has(k)) {
-      if (encounter) { openPlace(encounter.id); e.preventDefault(); }
+      if (encounter) { inspect(encounter.id); e.preventDefault(); }
       else if (near && near.id !== storyId) { openPlace(near.id); e.preventDefault(); }
     }
   };
@@ -189,7 +234,7 @@ export function StoryGame({ view, live, open, mode, onMode, showModeSwitch = tru
             />
           </Suspense></SceneBoundary>
         ) : webgl ? null : (
-          <FlatWorld world={world} revealed={revealed} visited={visited} onOpen={openPlace} />
+          <FlatWorld world={world} storyId={storyId} revealed={revealed} visited={visited} onAct={openPlace} onInspect={inspect} />
         )}
       </div>
 
@@ -220,7 +265,7 @@ export function StoryGame({ view, live, open, mode, onMode, showModeSwitch = tru
           </ul>
         </aside>
 
-        {duel ? <DuelPanel encounter={duel.encounter} encounters={near!.encounters} onSelect={setEncounterId} onOpen={openPlace} onLeave={leaveDuel} /> : null}
+        {duel ? <DuelPanel encounter={duel.encounter} encounters={near!.encounters} onSelect={setEncounterId} onOpen={inspect} onLeave={leaveDuel} /> : null}
 
         {near && !duel ? (
           <div key={near.id} className="sgm-approach" data-testid="story-game-approach">
@@ -232,10 +277,21 @@ export function StoryGame({ view, live, open, mode, onMode, showModeSwitch = tru
               </div>
             </div>
             {near.encounters.length ? <button type="button" className="sgm-btn" onClick={() => setDismissed(null)}>Meet trainer</button> : null}
-            {near.id !== storyId ? (
-              <button type="button" className="sgm-btn sgm-btn--primary" onClick={() => openPlace(near.id)}>
-                {near.portal ? 'Enter' : 'Open'} <kbd>E</kbd>
+            {nearAction ? (
+              <button type="button" className="sgm-btn sgm-btn--primary" data-action={nearAction} onClick={() => openPlace(near.id)}>
+                {ACTION_LABEL[nearAction]} <kbd>E</kbd>
               </button>
+            ) : null}
+            {nearMembers.length ? (
+              <ul className="sgm-approach__members" aria-label={`In ${near.title}`}>
+                {nearMembers.slice(0, MEMBER_LIMIT).map((m) => (
+                  <li key={m.id}>
+                    <KindIcon kind={m.kind} size={12} /> <span>{m.title}</span>
+                    <button type="button" className="sgm-btn" aria-label={`Inspect ${m.title}`} onClick={() => inspect(m.id)}>Inspect</button>
+                  </li>
+                ))}
+                {nearMembers.length > MEMBER_LIMIT ? <li>and {nearMembers.length - MEMBER_LIMIT} more</li> : null}
+              </ul>
             ) : null}
           </div>
         ) : null}
@@ -248,7 +304,8 @@ export function StoryGame({ view, live, open, mode, onMode, showModeSwitch = tru
         <div className="sgm-hint">
           <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span>
           <span>click to travel · scroll to zoom · M for map · N minimap</span>
-          <span><kbd>E</kbd> opens what you stand at</span>
+          <span><kbd>E</kbd> enter / inspect</span>
+          {parentId ? <span title={`Back to ${view.page.parent?.title ?? 'the parent story'}`}><kbd>Esc</kbd> up a story</span> : null}
           <button
             type="button"
             className="sgm-btn"
@@ -290,9 +347,17 @@ function QuestRow({ place, seen, done, onGo }: { place: Place; seen: boolean; do
 
 /**
  * The world without WebGL: every place as a row under its root, revealed
- * places first. Same open loop, same save.
+ * places first. Same loop, same save, same split: a portal row Enters the
+ * child story, every other row Inspects, an aggregate lists its members.
  */
-function FlatWorld({ world, revealed, visited, onOpen }: { world: World; revealed: ReadonlySet<string>; visited: ReadonlySet<string>; onOpen: (id: string) => void }) {
+function FlatWorld({ world, storyId, revealed, visited, onAct, onInspect }: {
+  world: World;
+  storyId: string;
+  revealed: ReadonlySet<string>;
+  visited: ReadonlySet<string>;
+  onAct: (id: string) => void;
+  onInspect: (id: string) => void;
+}) {
   const groups = useMemo(() => {
     const byAnchor = new Map<string, Place[]>();
     for (const p of world.places) {
@@ -304,18 +369,34 @@ function FlatWorld({ world, revealed, visited, onOpen }: { world: World; reveale
   }, [world]);
   return (
     <div className="sgm-flat" data-testid="story-game-flat">
-      <p className="sgm-flat__note">No 3D here — the world as a list. Open a place to mark it visited.</p>
+      <p className="sgm-flat__note">No 3D here — the world as a list. Inspect a place to mark it visited; Enter a story to walk its map.</p>
       {[...groups.entries()].map(([key, places]) => (
         <section key={key} className="sgm-flat__land">
           <h4>{world.byId.get(key)?.title ?? 'The commons'}</h4>
           <ul>
-            {places.map((p) => (
-              <li key={p.id} className={visited.has(p.id) ? 'sgm-flat__row--done' : revealed.has(p.id) ? 'sgm-flat__row--seen' : ''}>
-                <button type="button" className="sgm-flat__open" onClick={() => onOpen(p.id)}>
-                  <KindIcon kind={p.kind} size={14} /> <span>{p.title}</span>
-                </button>
-              </li>
-            ))}
+            {places.map((p) => {
+              const action = actionOf(p, storyId);
+              const members = membersOf(p);
+              return (
+                <li key={p.id} className={visited.has(p.id) ? 'sgm-flat__row--done' : revealed.has(p.id) ? 'sgm-flat__row--seen' : ''}>
+                  <button type="button" className="sgm-flat__open" data-action={action ?? undefined} onClick={() => onAct(p.id)}>
+                    <KindIcon kind={p.kind} size={14} /> <span>{p.title}</span>
+                    {action ? <span className="sgm-flat__verb">{ACTION_LABEL[action]}</span> : null}
+                  </button>
+                  {members.length ? (
+                    <ul className="sgm-flat__members" aria-label={`In ${p.title}`}>
+                      {members.slice(0, MEMBER_LIMIT).map((m) => (
+                        <li key={m.id}>
+                          <button type="button" className="sgm-flat__open" aria-label={`Inspect ${m.title}`} onClick={() => onInspect(m.id)}>
+                            <KindIcon kind={m.kind} size={12} /> <span>{m.title}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </li>
+              );
+            })}
           </ul>
         </section>
       ))}
