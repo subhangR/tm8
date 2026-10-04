@@ -43,7 +43,7 @@ function Journey() {
     } catch { setError(true); }
     finally { setPending(false); }
   }
-  return <main style={{maxWidth:960,margin:'0 auto',padding:20}}><h1>MCP real backend journey</h1><McpProvider port={port}>
+  return <main className="cv2-root" style={{maxWidth:960,margin:'0 auto',padding:20}}><h1>MCP real backend journey</h1><McpProvider port={port}>
     <McpSettings/><McpEquipment targetId={setup!.taskId}/>
     <section aria-label="Launch"><McpPicker targetId={setup!.taskId} teamMemberId={setup!.teamMemberId} value={selections} onChange={setSelections} onReady={setReady} disabled={pending}/>
       <button disabled={!ready || pending} onClick={()=>void launch()}>Launch fixture session</button>

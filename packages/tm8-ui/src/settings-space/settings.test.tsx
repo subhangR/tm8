@@ -171,6 +171,8 @@ const LIVE_VERBS = [
   // shell shows its honest not-mounted state here and this sweep sees no
   // control from it.
   /^Agent credentials$/,
+  // The native MCP section is injected by GateApp; this shell owns its nav row.
+  /^Connectors$/,
   /^Danger zone$/,
   /^＋ Invite$/,
   /^discard$/,

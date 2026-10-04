@@ -19,6 +19,7 @@
  *
  * Snapshot: `tm8 edge type list --format json`, 2026-09-28, 46 types; plus
  * 283 (2026-10-02), which appends `story` to `contains` and `attached_to` sources.
+ * Migration 296 adds catalog MCP servers as equips destinations.
  * A `*` endpoint admits any kind.
  *
  * Kind literals are legal here: `src/domain/` is one of the two directories
@@ -166,7 +167,7 @@ export const EDGE_KINDS: Readonly<Record<string, EdgeKinds>> = {
   },
   equips: {
     src: ['task', 'team_member', 'work_session'],
-    dst: ['spell', 'skill'],
+    dst: ['spell', 'skill', 'mcp_server'],
     description: 'Capability selection feeding manifests',
     acyclic: false,
   },

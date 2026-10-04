@@ -60,8 +60,9 @@ function AccountCard({ account, server, port, run, busy }: { account: McpAccount
     <strong>{account.label}</strong>
     <p>Owner: {account.ownerLabel ?? (account.canManage ? "You" : "Another member")}</p>
     {!account.canManage && <p>{account.canUse ? "You can use this account. Its owner manages sharing, rotation and revocation." : "This account is unavailable to you. Ask its owner for access."}</p>}
-    <p>{account.status} · {account.sharing === 'private' ? 'Private' : account.sharing === 'space' ? 'Shared with space' : 'Shared with selected members'}{account.canUse ? ' · Available to you' : ''}</p>
-    {account.canManage && <>
+    <p>{account.status === 'credential_definition_changed' ? 'Connector changed; reconnect account' : account.status} · {account.sharing === 'private' ? 'Private' : account.sharing === 'space' ? 'Shared with space' : 'Shared with selected members'}{account.canUse ? ' · Available to you' : ''}</p>
+    {(account.status === 'revoked' || account.status === 'credential_definition_changed') && <p>Add a new private account below to reconnect.</p>}
+    {account.canManage && account.status !== 'revoked' && <>
       <div className="mcp-form">
         <label>Account sharing<select value={sharing} onChange={e => { const next = e.target.value as McpAccount['sharing']; setSharing(next);  }}>
           <option value="private">Only me</option><option value="members">Selected members</option><option value="space">Everyone in this space</option>
@@ -70,11 +71,11 @@ function AccountCard({ account, server, port, run, busy }: { account: McpAccount
         {sharing === 'members' && <fieldset><legend>Members who may use this account</legend>{members.map(m => <label key={m.id}><span><input type="checkbox" checked={memberIds.includes(m.id)} onChange={e => setMemberIds(e.target.checked ? [...memberIds, m.id] : memberIds.filter(id => id !== m.id))} /> {m.label}</span></label>)}</fieldset>}
         <button type="button" disabled={busy} onClick={() => void run(() => port.share(server.id, account.id, sharing, sharing === 'members' ? memberIds : []), 'Account sharing updated.')}>Save sharing</button>
       </div>
-      {server.auth === 'api_key' && <form className="mcp-form" onSubmit={e => { e.preventDefault(); const form = e.currentTarget; const secret = String(new FormData(form).get('secret') ?? ''); form.reset(); void run(() => port.rotateKey(server.id, account.id, secret), 'Key rotated.'); }}>
+      {server.auth === 'api_key' && account.status !== 'credential_definition_changed' && <form className="mcp-form" onSubmit={e => { e.preventDefault(); const form = e.currentTarget; const secret = String(new FormData(form).get('secret') ?? ''); form.reset(); void run(() => port.rotateKey(server.id, account.id, secret), 'Key rotated.'); }}>
         <label>Replacement API key<input name="secret" type="password" required autoComplete="off" /></label>
         <button disabled={busy}>Rotate key</button>
       </form>}
-      {revoke ? <div className="mcp-card"><p>Revoke {account.label}? Sessions using this account will lose access on their next tool call.</p><div className="mcp-actions"><button disabled={busy} onClick={() => void run(() => port.revoke(server.id, account.id), 'Account revoked.')}>Confirm revoke</button><button onClick={() => setRevoke(false)}>Cancel</button></div></div> : <button onClick={() => setRevoke(true)}>Revoke account</button>}
+      {revoke ? <div className="mcp-card"><p>Revoke {account.label}? Sessions using this account will lose access on their next tool call.</p><div className="mcp-actions"><button disabled={busy} onClick={() => void run(async () => { await port.revoke(server.id, account.id); setRevoke(false); }, 'Account revoked.')}>Confirm revoke</button><button onClick={() => setRevoke(false)}>Cancel</button></div></div> : <button onClick={() => setRevoke(true)}>Revoke account</button>}
     </>}
   </div>;
 }

@@ -68,13 +68,19 @@ try {
   await page.getByRole('button', { name: 'Confirm revoke', exact: true }).click();
   await picker.getByRole('link', { name: `Connect ${serverName}`, exact: true }).waitFor();
   await expect(page.getByRole('button', { name: 'Launch fixture session', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Confirm revoke', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Rotate key', exact: true })).toHaveCount(0);
+  await page.getByText('Add a new private account below to reconnect.', { exact: true }).waitFor();
   await expect.poll(async () => (await bridgeResults()).some(row => row.at >= revokedAfter && (row.result?.error || row.result?.result?.isError)), { timeout: 30000 }).toBe(true);
   record('revoke invalidates browser readiness and denies running child tool calls');
   const bridge = await bridgeResults();
   if (JSON.stringify(bridge).includes(setup.fixtureKey ?? 'fixture-mcp-key')) throw new Error('Synthetic key appeared in child output');
   if (errors.length) throw new Error('Browser runtime errors');
   await page.screenshot({ path: `${output}/complete.png`, fullPage: true });
-  await writeFile(`${output}/results.json`, JSON.stringify({ passed: true, checks, sessionId, bridge, requests, errors }, null, 2));
+  await writeFile(`${output}/results.json`, JSON.stringify({ passed: true,
+    backendRevision: process.env.MCP_BACKEND_REVISION ?? null, uiRevision: process.env.MCP_UI_REVISION ?? null,
+    provider: 'Synthetic vendor executable using production MCP config and connector bridge; no vendor model execution',
+    checks, sessionId, bridge, requests, errors }, null, 2));
   console.log(JSON.stringify({ passed: true, checks, evidence: output }));
 } catch (error) {
   await page.screenshot({ path: `${output}/failure.png`, fullPage: true });

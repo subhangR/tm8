@@ -129,6 +129,9 @@ it('refreshes a mounted launch picker immediately after revocation elsewhere in 
   fireEvent.click(screen.getByRole('button',{name:'Confirm revoke'}));
   await waitFor(()=>expect(onReady).toHaveBeenLastCalledWith(false));
   await screen.findByRole('link',{name:'Connect Calendar'});
+  expect(screen.queryByRole('button',{name:'Confirm revoke'})).toBeNull();
+  expect(screen.queryByRole('button',{name:'Rotate key'})).toBeNull();
+  expect(screen.getByText('Add a new private account below to reconnect.')).toBeTruthy();
 });
 it('loads already shared member names when an account is reopened', async()=>{
   const data=catalog(); data.servers[0]!.accounts[0]!.sharing='members'; data.servers[0]!.accounts[0]!.memberIds=['member'];
@@ -154,4 +157,18 @@ it('allows removing a disabled connector from task defaults',async()=>{
   const port=fixture(data);render(<McpProvider port={port}><McpEquipment targetId="task"/></McpProvider>);
   fireEvent.click(await screen.findByRole('checkbox',{name:'Calendar · Disabled'}));
   await waitFor(()=>expect(port.detach).toHaveBeenCalledWith('task','server'));
+});
+
+it('blocks a changed connector account and offers reconnect without key rotation', async () => {
+  const data=catalog(); data.defaults=[{serverId:'server',credentialId:'account'}];
+  data.servers[0]!.accounts[0]!.status='credential_definition_changed';
+  data.servers[0]!.accounts[0]!.canUse=false;
+  const onReady=vi.fn();
+  render(<McpProvider port={fixture(data)}><McpSettings/><McpPicker value={undefined} onChange={()=>{}} onReady={onReady}/></McpProvider>);
+  fireEvent.click(await screen.findByRole('button',{name:'Manage Calendar'}));
+  expect(screen.getByText(/Connector changed; reconnect account/)).toBeTruthy();
+  expect(screen.queryByRole('button',{name:'Rotate key'})).toBeNull();
+  expect(screen.getByRole('button',{name:'Add private account'}).hasAttribute('disabled')).toBe(false);
+  await waitFor(()=>expect(onReady).toHaveBeenLastCalledWith(false));
+  expect(screen.getByRole('link',{name:'Connect Calendar'})).toBeTruthy();
 });

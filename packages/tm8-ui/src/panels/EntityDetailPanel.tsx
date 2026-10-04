@@ -1336,7 +1336,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
               at all while the save is clean, so this costs the body no height
               in the ordinary case. */}
           <AuthoringHost save={save}>
-            {tab === "content" && !isTombstone && (detail.kind === "task" || detail.kind === "team_member") && <McpEquipment key={detail.id} targetId={detail.id} />}
+            {tab === "content" && !isTombstone && config.mcpEquipment && <McpEquipment key={detail.id} targetId={detail.id} />}
             {/*
               ATTACHMENTS RIDE IN THE CONTENT BODY — not in a fifth tab. D3
               fixes the panel at four tabs for every kind (user ruling

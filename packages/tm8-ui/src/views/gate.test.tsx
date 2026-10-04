@@ -378,6 +378,9 @@ describe('THE GATE — composed T0-1 master screen', () => {
     } as typeof ResizeObserver;
     const view = renderGate();
     try {
+      // The bar mounts before startup restores the saved workspace route.
+      // Wait for that restoration before exercising a user navigation.
+      await waitFor(() => view.getByTestId('workspace-grid'));
       const select = await waitFor(() => view.getByTestId('top-view-switcher-select') as HTMLSelectElement);
       expect([...select.options].filter((o) => !o.disabled).map((o) => o.textContent))
         .toEqual(['Home', 'Work', 'Board', 'Graph']);
