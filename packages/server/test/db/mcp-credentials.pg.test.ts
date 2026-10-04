@@ -78,3 +78,14 @@ it('serializes refreshes across independent database clients',async()=>{
  expect(secondEntered).toBe(true);
  await db2.end();
 });
+it('invalidates API keys when security-relevant definition fields change',async()=>{
+ const created=await store.create(auth(),{spaceId:space,serverId:server,label:'Fingerprint fixture',secret:{kind:'api_key',value:'fingerprint-secret'}}) as {id:string};
+ const binding={spaceId:space,serverId:server,credentialId:created.id};
+ await database.transaction(async c=>{await c.query('set local role tm8_graph_owner');await c.query("select set_config('tm8.identity_id','mcp-owner',true)");await c.query("update public.mcp_servers set title='Display edit' where entity_id=$1",[server]);});
+ expect((await store.read(auth(),binding)).secret).toEqual({kind:'api_key',value:'fingerprint-secret'});
+ await database.transaction(async c=>{await c.query('set local role tm8_graph_owner');await c.query("select set_config('tm8.identity_id','mcp-owner',true)");await c.query("update public.mcp_servers set definition=jsonb_set(definition,'{url}','\"https://changed.example.test/mcp\"') where entity_id=$1",[server]);});
+ await expect(store.read(auth(),binding)).rejects.toThrow('unavailable');
+ expect(await db.rpc(auth(),'mcp_credential_readiness',[server,created.id])).toEqual({ready:false,reason:'credential_definition_changed'});
+ const reconnected=await store.create(auth(),{spaceId:space,serverId:server,label:'Reconnected',secret:{kind:'api_key',value:'new-definition-secret'}}) as {id:string};
+ expect((await store.read(auth(),{spaceId:space,serverId:server,credentialId:reconnected.id})).secret).toEqual({kind:'api_key',value:'new-definition-secret'});
+});

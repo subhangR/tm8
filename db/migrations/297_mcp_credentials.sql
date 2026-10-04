@@ -12,9 +12,20 @@ alter table public.space_credentials
     (provider = 'typesafe' and shape = 'api_key') or
     (provider = 'mcp' and shape in ('api_key','token'))),
   add column mcp_server_id uuid,
+  add column mcp_definition_fingerprint text,
   add column mcp_expires_at timestamptz,
   add column mcp_refreshable boolean not null default false;
 -- No cascading definition FK: credential removal never removes a connector.
+create or replace function internal.mcp_security_fingerprint(p_server uuid) returns text
+language sql stable security definer set search_path=public,internal,pg_temp as $$
+ select internal.w2_sha256(jsonb_build_object(
+   'transport',s.definition->'transport','url',s.definition->'url',
+   'command',s.definition->'command','args',s.definition->'args',
+   'envKeys',s.definition->'envKeys','headerKeys',s.definition->'headerKeys',
+   'auth',s.definition->'auth','stdioTrusted',s.definition->'stdioTrusted',
+   'allowPrivateNetwork',s.definition->'allowPrivateNetwork'))
+ from public.mcp_servers s where s.entity_id=p_server;
+$$;
 create function public.create_mcp_credential(p_id uuid, p_space uuid, p_server uuid,
   p_label text, p_ciphertext bytea, p_nonce bytea, p_shape text default 'api_key',
   p_expires_at timestamptz default null,p_refreshable boolean default false)
@@ -27,7 +38,7 @@ begin
     raise exception 'MCP server not found' using errcode='P0002';
   end if;
   result := public.create_space_credential(p_id,p_space,'mcp',p_shape,p_label,'mcp',p_ciphertext,p_nonce,null,'private',false,false);
-  update public.space_credentials set mcp_server_id=p_server,mcp_expires_at=p_expires_at,mcp_refreshable=p_refreshable where id=p_id;
+  update public.space_credentials set mcp_server_id=p_server,mcp_definition_fingerprint=internal.mcp_security_fingerprint(p_server),mcp_expires_at=p_expires_at,mcp_refreshable=p_refreshable where id=p_id;
   return result || jsonb_build_object('serverId',p_server);
 end $$;
 -- Explicit id ONLY. Never consult member_defaults or the space default.
@@ -41,7 +52,8 @@ begin
     raise exception 'linked MCP credentials are unavailable' using errcode='42501';
   end if;
   a := internal.current_account_id();
-  select * into c from public.space_credentials where id=p_id and space_id=p_space and provider='mcp' and mcp_server_id=p_server;
+  select * into c from public.space_credentials where id=p_id and space_id=p_space and provider='mcp' and mcp_server_id=p_server
+    and mcp_definition_fingerprint=internal.mcp_security_fingerprint(p_server);
   if c.id is null or c.status <> 'active' or a is null or not (
     c.owner_account_id=a or c.visibility='public' or internal.space_credential_shared_with(c.id,a)) then
     raise exception 'MCP credential unavailable' using errcode='42501';
@@ -74,10 +86,10 @@ begin
   'authType',case when c.shape='token' then 'oauth2' else 'api_key' end,
   'visibility',case when c.visibility='public' then 'space' when exists(select 1 from public.space_credential_shares s where s.credential_id=c.id) then 'selected' else 'private' end,
   'ownerId',c.owner_account_id,'sharedMemberIds',coalesce((select jsonb_agg(m.entity_id) from public.space_credential_shares s join public.accounts a on a.id=s.grantee_account_id join public.members m on m.identity_id=a.identity_id and m.space_id=c.space_id where s.credential_id=c.id and (c.owner_account_id=internal.current_account_id() or s.grantee_account_id=internal.current_account_id())),'[]'::jsonb),
-  'usable',c.status='active' and (c.mcp_expires_at is null or c.mcp_expires_at>now() or c.mcp_refreshable) and (c.visibility='public' or c.owner_account_id=internal.current_account_id() or internal.space_credential_shared_with(c.id,internal.current_account_id())),
+  'usable',c.status='active' and c.mcp_definition_fingerprint=internal.mcp_security_fingerprint(c.mcp_server_id) and (c.mcp_expires_at is null or c.mcp_expires_at>now() or c.mcp_refreshable) and (c.visibility='public' or c.owner_account_id=internal.current_account_id() or internal.space_credential_shared_with(c.id,internal.current_account_id())),
   'manageable',c.owner_account_id=internal.current_account_id(),
   'revoked',c.status='revoked',
-  'reason',case when c.status='revoked' then 'credential_revoked' when c.status<>'active' then 'credential_unavailable' when c.mcp_expires_at<=now() and not c.mcp_refreshable then 'credential_expired' when c.visibility='public' or c.owner_account_id=internal.current_account_id() or internal.space_credential_shared_with(c.id,internal.current_account_id()) then 'ready' else 'access_denied' end
+  'reason',case when c.status='revoked' then 'credential_revoked' when c.status<>'active' then 'credential_unavailable' when c.mcp_definition_fingerprint<>internal.mcp_security_fingerprint(c.mcp_server_id) then 'credential_definition_changed' when c.mcp_expires_at<=now() and not c.mcp_refreshable then 'credential_expired' when c.visibility='public' or c.owner_account_id=internal.current_account_id() or internal.space_credential_shared_with(c.id,internal.current_account_id()) then 'ready' else 'access_denied' end
  ) order by c.created_at),'[]'::jsonb) into result
  from public.space_credentials c where c.provider='mcp' and c.mcp_server_id is not null
  and (p_server is null or c.mcp_server_id=p_server) and (p_id is null or c.id=p_id)
@@ -94,6 +106,7 @@ begin
  select * into c from public.space_credentials where id=p_id and provider='mcp' and mcp_server_id=p_server;
  if c.id is null or not internal.is_space_member(c.space_id) then return jsonb_build_object('ready',false,'reason','credential_unavailable'); end if;
  if c.status='revoked' then return jsonb_build_object('ready',false,'reason','credential_revoked'); end if;
+ if c.mcp_definition_fingerprint<>internal.mcp_security_fingerprint(p_server) then return jsonb_build_object('ready',false,'reason','credential_definition_changed'); end if;
  if c.mcp_expires_at<=now() and not c.mcp_refreshable then return jsonb_build_object('ready',false,'reason','credential_expired'); end if;
  begin
   perform public.read_mcp_credential(c.space_id,p_server,p_id);
