@@ -39,6 +39,9 @@ export function readPalette(host: HTMLElement): Palette {
   const probe = host.ownerDocument.createElement('span');
   probe.style.position = 'absolute';
   probe.style.visibility = 'hidden';
+  // Theme/reduced-motion rules can otherwise interpolate every read from inherited ink.
+  probe.style.setProperty('transition', 'none', 'important');
+  probe.style.setProperty('animation', 'none', 'important');
   host.appendChild(probe);
   const out = {} as Record<keyof Palette, string>;
   try {

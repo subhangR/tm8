@@ -214,7 +214,7 @@
   .cv2-root .sgm-duel__log { height: 62px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .cv2-root .sgm *, .cv2-root .sgm *::before { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+  .cv2-root .sgm *, .cv2-root .sgm *::before { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition: none !important; }
 }
 
 .cv2-root .sgm-labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 2; }

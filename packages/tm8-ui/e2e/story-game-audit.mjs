@@ -76,7 +76,11 @@ try {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('tab', { name: 'Game', exact: true }).first().click();
-  await page.waitForTimeout(2000);
+  await page.waitForTimeout(4000);
+  report.reducedPaletteDistinct = await page.evaluate(async () => {
+    const { readPalette } = await import('/src/story/game/palette.ts');
+    return new Set(Object.values(readPalette(document.querySelector('.sgm')))).size > 6;
+  });
   await page.screenshot({ path: `${dir}/mobile-reduced.png` });
   report.mobileOverflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1);
   // Lose an existing context: the persistent map must degrade to its native list.
@@ -88,5 +92,5 @@ try {
   report.errors = errors;
   await writeFile(`${dir}/report.json`, JSON.stringify(report, null, 2));
   console.log(JSON.stringify(report, null, 2));
-  if (!report.walkingPersisted || report.mobileOverflow || errors.length) process.exitCode = 1;
+  if (!report.walkingPersisted || !report.reducedPaletteDistinct || report.mobileOverflow || errors.length) process.exitCode = 1;
 } finally { await browser.close(); }
