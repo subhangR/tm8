@@ -208,6 +208,25 @@ export function spawnedSessionOf(op: OperationName, params: Readonly<Record<stri
   return typeof id === 'string' && UUID_RE.test(id) ? id : null;
 }
 
+/**
+ * The input without the caller's HOME actor. A session's CLI stamps its own
+ * actor (`TM8_ACTOR_ID`, a team member of A) on every write as `actorId`; in B
+ * that id is nobody the link session can act as, so B's `resolve_actor`
+ * refused every write with "not permitted to act as this actor". Through a
+ * link the agent acts as the launching member, so its home actor is dropped
+ * and B resolves the actor from the link session itself. Any other actorId is
+ * left for B to authorize.
+ */
+export function withoutHomeActor(input: unknown, homeActorId: string | undefined): unknown {
+  if (!homeActorId || typeof input !== 'object' || input === null || Array.isArray(input)) return input;
+  const record = input as Record<string, unknown>;
+  if (typeof record['actorId'] !== 'string' || record['actorId'].toLowerCase() !== homeActorId.toLowerCase()) {
+    return input;
+  }
+  const { actorId: _home, ...rest } = record;
+  return rest;
+}
+
 /** The inner identity: B's, off the re-resolved session, WITHOUT the raw token. */
 function innerIdentity(identity: RequestIdentity): RequestIdentity {
   const { token: _token, ...rest } = identity;
@@ -457,7 +476,7 @@ export function createSpaceLinkInvokeHandlers(
     let outcome: SpaceLinkExecution;
     try {
       outcome = await execute({ claims, row, op: requested, binding, params: params ?? {}, query: query ?? {},
-        input, via, homeSpaceId, workSessionId });
+        input: withoutHomeActor(input, ctx.identity.actorId), via, homeSpaceId, workSessionId });
     } catch (error) {
       if (error instanceof SpaceLinkExecuteFailure) {
         await audit('error', error.reason).catch(() => undefined);
