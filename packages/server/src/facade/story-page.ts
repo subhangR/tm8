@@ -20,6 +20,7 @@ import {
   type StoryFeedMessage,
   type StoryGraphEdge,
   type StoryNode,
+  type StoryNodeCounts,
   type StoryPage,
   type StoryProgress,
   type StoryRoot,
@@ -267,6 +268,36 @@ export async function loadStoryPage(
     [feedAnchorIds],
   );
 
+  // Per-node counts (`StoryNode.counts`): two set-based queries over the
+  // page's ids — one `group by anchor_id`, one `group by entity_id` — never a
+  // query per node. The message predicate is the recentMessages window's
+  // (non-redacted, message row not deleted) with no limit, so a node's
+  // mailbox is whole even when the 50-row window shows none of it. The
+  // attention predicate is `internal.story_summary`'s (289) `pending` — open or
+  // acknowledged, target = the node — so the nodes sum to the summary's
+  // pendingAttentionCount.
+  const messageCountRows = feedAnchorIds.length === 0 ? [] : await q.query<{ anchor_id: string; n: number }>(
+    `select m.anchor_id, count(*)::int as n
+       from public.messages m
+       join public.entities me on me.id = m.entity_id and me.deleted_at is null
+      where m.anchor_id = any($1::uuid[]) and m.redacted_at is null
+      group by m.anchor_id`,
+    [feedAnchorIds],
+  );
+  const attentionCountRows = await q.query<{ entity_id: string; n: number }>(
+    `select ar.entity_id, count(*)::int as n
+       from public.attention_requests ar
+      where ar.entity_id = any($1::uuid[]) and ar.status in ('open', 'acknowledged')
+      group by ar.entity_id`,
+    [allIds],
+  );
+  const messageCountOf = new Map(messageCountRows.map((r) => [r.anchor_id, r.n]));
+  const attentionCountOf = new Map(attentionCountRows.map((r) => [r.entity_id, r.n]));
+  const countsOf = (id: string): StoryNodeCounts => ({
+    messages: messageCountOf.get(id) ?? 0,
+    pendingAttention: attentionCountOf.get(id) ?? 0,
+  });
+
   const parentRows = await q.query<{ id: string; title: string }>(
     `select p.id, st.title
        from public.entities s
@@ -322,6 +353,7 @@ export async function loadStoryPage(
     rootIds,
     activityAt: isoOrNull(f.activity_at),
     createdAt: iso(f.created_at),
+    counts: countsOf(f.id),
     ...(f.kind === 'work_session' ? { live: isLive(f), callSign: signOf.get(f.id) ?? storyCallSign(0) } : {}),
   });
 
