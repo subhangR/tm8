@@ -77,7 +77,9 @@ export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeD
    const input=McpProxyRequestInputSchema.parse({...ctx.body as object,sessionId:path(ctx,'sessionId'),serverId:path(ctx,'serverId')});const method=input.message.method;
    if(method!=='tools/list' && method!=='tools/call')throw new CollabError('invalid_input','Unsupported MCP method');
    const params=input.message.params;if(params!==undefined && (!params || typeof params!=='object' || Array.isArray(params)))throw new CollabError('invalid_input','Invalid MCP params');
-   return proxy.request(await claims(ctx),input.sessionId,input.serverId,method,(params??{}) as Record<string,unknown>);
+   const runtimeId=ctx.identity.workSessionId??ctx.identity.runtimeChatId;
+   if(!ctx.identity.sessionId || runtimeId!==input.sessionId || !['agent','agent_runtime'].includes(ctx.identity.authKind??''))throw new CollabError('forbidden','MCP session bearer mismatch');
+   return proxy.request({...await claims(ctx),authSessionId:ctx.identity.sessionId},input.sessionId,input.serverId,method,(params??{}) as Record<string,unknown>);
   },
  });
 }

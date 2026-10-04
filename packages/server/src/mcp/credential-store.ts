@@ -36,7 +36,7 @@ export class McpCredentialStore {
     if(!isHumanAuthKind(claims.authKind) || claims.viaLinkId)throw new Error('MCP credential writes require a human session');
     await this.read(claims,binding);
     const sealed=sealSecret(await loadOrCreateCredentialKey(this.dataDir),JSON.stringify({kind:'api_key',value}),{spaceId:binding.spaceId,credentialId:binding.credentialId,provider:'mcp'});
-    await this.db.rpc(claims,'rekey_space_credential',[binding.credentialId,null,sealed.ciphertext,sealed.nonce,null]);
+    await this.db.rpc(claims,'rekey_space_credential',[binding.credentialId,'mcp',sealed.ciphertext,sealed.nonce,null]);
   }
   async read(claims: DbClaims, binding: McpCredentialBinding): Promise<{secret: McpSecret; nonce: string}> {
     if (!binding.credentialId || claims.viaLinkId) throw new Error('MCP credential unavailable');

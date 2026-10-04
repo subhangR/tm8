@@ -9,24 +9,26 @@ export interface McpProxyDefinition {
   command?:string;args?:string[];stdioTrusted?:boolean;
   auth:{type:'none'|'api_key'|'oauth2';headerName?:string;envKey?:string;prefix?:'Bearer'|'none'};
 }
-export interface McpProxyGrant { sessionId:string;identityId:string;spaceId:string;serverId:string;credentialId?:string }
+export interface McpRuntimeClaims extends DbClaims { authSessionId?:string }
+export interface McpProxyGrant { sessionId:string;identityId:string;launcherIdentityId?:string;spaceId:string;serverId:string;credentialId?:string }
 export interface McpProxyPorts {
   credentials: Pick<McpCredentialStore,'read'|'replace'> & Partial<Pick<McpCredentialStore,'withRefreshLock'>>;
   /** Must read live session, launcher, selected connector/account and current membership from DB. */
-  authorize(claims:DbClaims,sessionId:string,serverId:string):Promise<McpProxyGrant>;
+  authorize(claims:McpRuntimeClaims,sessionId:string,serverId:string):Promise<McpProxyGrant>;
   definition(claims:DbClaims,serverId:string):Promise<McpProxyDefinition>;
 }
-interface Connection { upstreamSession?:string; initialized:boolean }
+interface Connection { upstreamSession?:string; initialized:boolean; protocolVersion?:string }
 /** No vendor credential leaves this service. A runtime bearer cannot pick another account. */
 export class McpProxy {
   private readonly connections=new Map<string,Connection>();
   private readonly locks=new Map<string,Promise<void>>();
   constructor(private readonly ports:McpProxyPorts) {}
-  async request(claims:DbClaims,sessionId:string,serverId:string,method:'tools/list'|'tools/call',params:Record<string,unknown>={}):Promise<unknown> {
+  async request(claims:McpRuntimeClaims,sessionId:string,serverId:string,method:'tools/list'|'tools/call',params:Record<string,unknown>={}):Promise<unknown> {
     if(!['tools/list','tools/call'].includes(method))throw new Error('MCP method refused');
     const grant=await this.ports.authorize(claims,sessionId,serverId);
     if(grant.sessionId!==sessionId || grant.serverId!==serverId || grant.identityId!==claims.identityId || claims.viaLinkId)throw new Error('MCP session unavailable');
-    const definition=await this.ports.definition(claims,serverId);
+    const credentialClaims:DbClaims={...claims,identityId:grant.launcherIdentityId??grant.identityId,actorId:undefined,nodeAdmin:false};
+    const definition=await this.ports.definition(credentialClaims,serverId);
     if(!definition.approved || definition.enabled===false || definition.spaceId!==grant.spaceId)throw new Error('MCP connector unavailable');
     if(definition.transport==='stdio') {
       if(!definition.stdioTrusted || !definition.command || definition.auth.type==='oauth2')throw new Error('MCP executable is not trusted');
@@ -34,11 +36,11 @@ export class McpProxy {
       const check=async()=>{
         const live=await this.ports.authorize(claims,sessionId,serverId);
         if(JSON.stringify(live)!==JSON.stringify(grant))throw new Error('MCP session changed');
-        const current=await this.ports.definition(claims,serverId);
+        const current=await this.ports.definition(credentialClaims,serverId);
         if(JSON.stringify(current)!==JSON.stringify(definition))throw new Error('MCP connector unavailable; definition changed');
         if(definition.auth.type==='api_key') {
           if(!grant.credentialId || !definition.auth.envKey || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(definition.auth.envKey))throw new Error('Select an MCP account before launch');
-          const opened=await this.ports.credentials.read(claims,{spaceId:grant.spaceId,serverId,credentialId:grant.credentialId});
+          const opened=await this.ports.credentials.read(credentialClaims,{spaceId:grant.spaceId,serverId,credentialId:grant.credentialId});
           if(opened.secret.kind!=='api_key')throw new Error('MCP account binding mismatch');
           if(secretValue && secretValue!==opened.secret.value)throw new Error('MCP credential changed');
           secretValue=opened.secret.value;env[definition.auth.envKey]=secretValue;
@@ -68,15 +70,15 @@ export class McpProxy {
         const binding:McpCredentialBinding={spaceId:grant.spaceId,serverId,credentialId:grant.credentialId};
         await credentialLock(JSON.stringify(binding),async()=>{
           const run=async(store:Pick<McpCredentialStore,'read'|'replace'>)=>{
-          const opened=await store.read(claims,binding);
+          const opened=await store.read(credentialClaims,binding);
           let secret=opened.secret;
           if(secret.kind==='oauth') {
             if(definition.auth.type!=='oauth2' || secret.resource!==definition.url)throw new Error('MCP account binding mismatch');
             redactions.push(secret.accessToken,...(secret.refreshToken?[secret.refreshToken]:[]));
             if((forceToken!==undefined && secret.accessToken===forceToken) || (secret.expiresAt!==undefined && secret.expiresAt<Date.now()+30000)) {
               secret=await refreshOAuth(secret,definition.allowPrivateNetwork===true);
-              await store.replace(claims,binding,opened.nonce,secret);
-              await store.read(claims,binding);
+              await store.replace(credentialClaims,binding,opened.nonce,secret);
+              await store.read(credentialClaims,binding);
             }
             headers.authorization=`Bearer ${secret.accessToken}`;
             redactions.push(secret.accessToken,...(secret.refreshToken?[secret.refreshToken]:[]));
@@ -88,7 +90,7 @@ export class McpProxy {
             redactions.push(secret.value);
           }
           };
-          if(this.ports.credentials.withRefreshLock)await this.ports.credentials.withRefreshLock(claims,binding,run);
+          if(this.ports.credentials.withRefreshLock)await this.ports.credentials.withRefreshLock(credentialClaims,binding,run);
           else await run(this.ports.credentials);
         });
       };
@@ -98,10 +100,11 @@ export class McpProxy {
         // Recheck selected grants and credential sharing immediately before every send.
         const live=await this.ports.authorize(claims,sessionId,serverId);
         if(JSON.stringify(live)!==JSON.stringify(grant))throw new Error('MCP session changed');
-        const liveDefinition=await this.ports.definition(claims,serverId);
+        const liveDefinition=await this.ports.definition(credentialClaims,serverId);
         if(JSON.stringify(liveDefinition)!==JSON.stringify(definition))throw new Error('MCP connector unavailable; definition changed');
-        if(grant.credentialId)await this.ports.credentials.read(claims,{spaceId:grant.spaceId,serverId,credentialId:grant.credentialId});
+        if(grant.credentialId)await this.ports.credentials.read(credentialClaims,{spaceId:grant.spaceId,serverId,credentialId:grant.credentialId});
         if(connection.upstreamSession)headers['mcp-session-id']=connection.upstreamSession;
+        if(connection.protocolVersion)headers['mcp-protocol-version']=connection.protocolVersion;
         await loadAuthorization();
         const send=()=>mcpHttp({url:definition.url!,method:'POST',headers,body:JSON.stringify({jsonrpc:'2.0',...(notification?{}:{id:1}),method:rpcMethod,params:rpcParams})},definition.allowPrivateNetwork===true);
         let response=await send();
@@ -125,7 +128,9 @@ export class McpProxy {
         return redactMcpResult(value.result,redactions);
       };
       if(!connection.initialized) {
-        await rpc('initialize',{protocolVersion:'2025-03-26',capabilities:{},clientInfo:{name:'tm8',version:'1'}});
+        const initialization=await rpc('initialize',{protocolVersion:'2025-03-26',capabilities:{},clientInfo:{name:'tm8',version:'1'}}) as {protocolVersion?:string};
+        if(initialization.protocolVersion && !['2024-11-05','2025-03-26','2025-06-18'].includes(initialization.protocolVersion))throw new Error('MCP protocol version unsupported');
+        connection.protocolVersion=initialization.protocolVersion??'2025-03-26';
         await rpc('notifications/initialized',{},true);
         connection.initialized=true;this.connections.set(key,connection);
       }

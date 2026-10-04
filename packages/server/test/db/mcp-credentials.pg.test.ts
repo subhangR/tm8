@@ -21,9 +21,11 @@ beforeAll(async()=>{
   for(const [id,identity,role] of [[ownerMember,'mcp-owner','owner'],[peerMember,'mcp-peer','member']]){
    await c.query("insert into public.entities(id,space_id,kind,position,created_by) values($1,$2,'member',0,$1)",[id,space]);await c.query('insert into public.members(entity_id,space_id,identity_id,role,display_name) values($1,$2,$3,$4,$3)',[id,space,identity,role]);
   }
+  await c.query("select set_config('tm8.identity_id','mcp-owner',true),set_config('tm8.auth_kind','browser',true)");
   // Definition registration uses the actual core kind and its approved metadata.
   for(const id of [server,otherServer]){
    await c.query("insert into public.entities(id,space_id,kind,position,created_by) values($1,$2,'mcp_server',0,$3)",[id,space,ownerMember]);
+   await c.query('insert into public.mcp_servers(entity_id,space_id,title,definition) values($1,$2,$3,$4)',[id,space,'Fixture',JSON.stringify({name:'fixture_'+id,transport:'http',url:'https://example.test/mcp',envKeys:[],headerKeys:['Authorization'],auth:{type:'api_key',headerName:'Authorization'},approved:true})]);
   }
  });
 });

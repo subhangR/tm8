@@ -20,10 +20,10 @@ declare result jsonb;
 begin
   perform internal.require_human_auth_kind();
   perform internal.require_space_member(p_space);
-  if p_server is null or not exists (select 1 from public.entities where id=p_server and space_id=p_space and kind='mcp_server' and deleted_at is null) then
+  if p_server is null or not exists (select 1 from public.entities e join public.mcp_servers s on s.entity_id=e.id where e.id=p_server and e.space_id=p_space and e.kind='mcp_server' and e.deleted_at is null and s.definition->>'approved'='true' and coalesce(s.definition->>'enabled','true')='true') then
     raise exception 'MCP server not found' using errcode='P0002';
   end if;
-  result := public.create_space_credential(p_id,p_space,'mcp',p_shape,p_label,null,p_ciphertext,p_nonce,null,'private',false,false);
+  result := public.create_space_credential(p_id,p_space,'mcp',p_shape,p_label,'mcp',p_ciphertext,p_nonce,null,'private',false,false);
   update public.space_credentials set mcp_server_id=p_server where id=p_id;
   return result || jsonb_build_object('serverId',p_server);
 end $$;
@@ -83,29 +83,6 @@ begin
 end $$;
 revoke all on function public.list_mcp_credentials(uuid,uuid) from public;
 grant execute on function public.list_mcp_credentials(uuid,uuid) to tm8_app;
-create table public.mcp_server_health (
- server_id uuid primary key references public.entities(id) on delete cascade,
- space_id uuid not null references public.spaces(id),
- result jsonb not null,
- checked_at timestamptz not null default now()
-);
-alter table public.mcp_server_health enable row level security;
-create policy mcp_server_health_read on public.mcp_server_health for select to tm8_app using (internal.is_space_member(space_id));
-grant select on public.mcp_server_health to tm8_app;
-create function public.record_mcp_server_health(p_server uuid,p_result jsonb) returns void
-language plpgsql security definer set search_path=public,internal,pg_temp as $$
-declare sid uuid;
-begin
- select space_id into sid from public.entities where id=p_server and deleted_at is null;
- perform internal.require_space_member(sid);
- if p_result->>'reason' not in ('ready','not_approved','stdio_not_trusted','credential_required','credential_unavailable','credential_revoked','credential_expired','server_unavailable','access_denied')
- or jsonb_typeof(p_result->'tools') <> 'array' then raise exception 'invalid MCP health' using errcode='22023'; end if;
- insert into public.mcp_server_health(server_id,space_id,result) values(p_server,sid,p_result)
- on conflict(server_id) do update set result=excluded.result,checked_at=now();
-end $$;
-revoke all on function public.record_mcp_server_health(uuid,jsonb) from public;
-grant execute on function public.record_mcp_server_health(uuid,jsonb) to tm8_app;
-analyze public.mcp_server_health;
 create function public.mcp_credential_readiness(p_server uuid,p_id uuid)
 returns jsonb language plpgsql stable security definer set search_path=public,internal,pg_temp as $$
 declare c public.space_credentials;
