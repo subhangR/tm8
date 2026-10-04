@@ -14,7 +14,7 @@ describe('instanced scenery', () => {
     expect(foliage(before).length).toBeGreaterThan(100);
   });
   it('uses at most eight geometry batches (including flat road surfaces) for the complete 50+ place fixture', () => {
-    const page = { ...STORY_FIXTURE.page, nodes: [...STORY_FIXTURE.page.nodes, ...Array.from({ length: 15 }, (_, i) => ({ ...STORY_FIXTURE.page.nodes[1]!, id: `stress-${i}`, title: `Place ${i}` }))] };
+    const page = { ...STORY_FIXTURE.page, nodes: [...STORY_FIXTURE.page.nodes, ...Array.from({ length: 25 }, (_, i) => ({ ...STORY_FIXTURE.page.nodes[1]!, id: `stress-${i}`, title: `Place ${i}` }))] };
     const world = buildWorld({ ...STORY_FIXTURE, page }), parts = makeScenery(world, palette);
     expect(world.places.length).toBeGreaterThanOrEqual(50);
     expect(new Set(parts.map((p) => p.geo)).size).toBeLessThanOrEqual(8);
