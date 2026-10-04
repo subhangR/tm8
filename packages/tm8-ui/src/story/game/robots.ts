@@ -15,7 +15,7 @@
  * labelled PROVISIONAL below, both in the returned `reason` and in comments.
  */
 import type { StoryPage, StorySession, StoryView, StoryNode } from '../model';
-import { TASK_KIND, VIEW_OF_KIND } from '../model';
+import { ATTENTION_KIND } from '../model';
 import { doorstep, type Place, type World } from './world';
 
 /** Why the robot stands where it does. `task` is the only non-provisional reason. */
@@ -128,10 +128,6 @@ export function robotStand(session: StorySession, world: World, now: number = Da
   return { x, z, facing: heading(x, z, hx, hz), placeId: null, reason: 'depot' };
 }
 
-/** The kinds that share the tasks view with a task — the attention request kind(s). No literal here. */
-const ATTENTION_KINDS: ReadonlySet<string> = new Set(
-  Object.keys(VIEW_OF_KIND).filter((kind) => VIEW_OF_KIND[kind] === VIEW_OF_KIND[TASK_KIND] && kind !== TASK_KIND),
-);
 
 /**
  * The node's own pending-attention count (`StoryNode.counts`, PR 1040). The
@@ -158,7 +154,7 @@ export function robotAttention(view: StoryView, stand: RobotStand, world: World,
   const neighbours = world.adjacency.get(stand.placeId) ?? [];
   return neighbours.some((id) => {
     const kind = nodes.get(id)?.kind ?? world.byId.get(id)?.kind;
-    return kind !== undefined && ATTENTION_KINDS.has(kind);
+    return kind === ATTENTION_KIND;
   });
 }
 
