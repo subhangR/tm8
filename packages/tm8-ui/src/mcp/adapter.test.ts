@@ -50,3 +50,9 @@ describe('MCP real operation adapter', () => {
     expect(importDefinitions(JSON.stringify({ mcpServers: { fixture: { url: 'https://fixture.example/mcp' } } }), false)[0]).toMatchObject({ approved: false, transport: 'http' });
   });
 });
+
+it('preserves the OAuth issuer trust binding during unrelated configuration updates', () => {
+  const prior: McpServerDefinition = { ...definition, headerKeys: [], auth: { type: 'oauth2', issuer: 'https://identity.example', clientId: 'fixture-client', scopes: ['read'] } };
+  const next = definitionFor({ title: 'calendar', description: '', transport: 'http', url: definition.url, auth: 'oauth', approved: false }, prior);
+  expect(next.auth).toEqual(prior.auth);
+});

@@ -17,9 +17,9 @@ export function McpEquipment({ targetId }: { targetId: string }) {
   }
   return <section className="mcp-equipment" aria-label="Task and teammate connectors">
     <h3>Connectors</h3><p>Attach tools here. Choose an authorized account when starting a session.</p>
-    {catalog.servers.filter(s => s.canAttach && s.approved && s.enabled).map(server => {
+    {catalog.servers.filter(s => (catalog.attachedServerIds ?? []).includes(s.id) || (s.canAttach && s.approved && s.enabled)).map(server => {
       const attached = (catalog.attachedServerIds ?? []).includes(server.id);
-      return <label className="mcp-row" key={server.id}><span><input type="checkbox" checked={attached} disabled={pending} onChange={() => void change(server.id, attached)} /> {server.title}</span></label>;
+      return <label className="mcp-row" key={server.id}><span><input type="checkbox" checked={attached} disabled={pending} onChange={() => void change(server.id, attached)} /> {server.title}{!server.enabled ? " · Disabled" : !server.approved ? " · Awaiting approval" : ""}</span></label>;
     })}
     {failure && <p role="alert" className="mcp-error">{failure}</p>}
     <ConnectorsLink>Manage connectors and accounts</ConnectorsLink>

@@ -8,6 +8,7 @@ import type { McpDefinition, McpPort, McpServer } from './port';
 export function definitionFor(input: McpDefinition, previous?: McpServerDefinition): McpServerDefinition {
   const priorAuth = previous?.auth;
   const oauth = priorAuth?.type === 'oauth2' ? priorAuth : undefined;
+  const issuer = input.issuer ?? oauth?.issuer;
   const authorizationUrl = input.authorizationUrl ?? oauth?.authorizationUrl;
   const tokenUrl = input.tokenUrl ?? oauth?.tokenUrl;
   const clientId = input.clientId ?? oauth?.clientId;
@@ -22,7 +23,7 @@ export function definitionFor(input: McpDefinition, previous?: McpServerDefiniti
     headerKeys: input.auth === 'api_key' && input.transport === 'http' ? [slot] : [],
     auth: input.auth === 'none' ? { type: 'none' } : input.auth === 'api_key'
       ? { type: 'api_key', ...(input.transport === 'http' ? { headerName: slot, prefix: input.prefix ?? (priorAuth?.type === 'api_key' ? priorAuth.prefix : undefined) ?? 'Bearer' } : { envKey: slot }) }
-      : { type: 'oauth2', ...(authorizationUrl ? { authorizationUrl } : {}), ...(tokenUrl ? { tokenUrl } : {}), ...(clientId ? { clientId } : {}), scopes: input.scopes ?? oauth?.scopes ?? [] },
+      : { type: 'oauth2', ...(issuer ? { issuer } : {}), ...(authorizationUrl ? { authorizationUrl } : {}), ...(tokenUrl ? { tokenUrl } : {}), ...(clientId ? { clientId } : {}), scopes: input.scopes ?? oauth?.scopes ?? [] },
   };
   return McpServerDefinitionSchema.parse(definition);
 }

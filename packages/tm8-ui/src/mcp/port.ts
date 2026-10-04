@@ -22,7 +22,7 @@ export interface McpDefinition {
   url?: string; command?: string; args?: string[]; auth: 'none' | 'api_key' | 'oauth';
   trustedCode?: boolean; approved?: boolean; allowPrivateNetwork?: boolean;
   secretSlot?: string; prefix?: 'Bearer' | 'none';
-  authorizationUrl?: string; tokenUrl?: string; clientId?: string; scopes?: string[];
+  issuer?: string; authorizationUrl?: string; tokenUrl?: string; clientId?: string; scopes?: string[];
 }
 export interface McpPort {
   catalog(targetId?: string, teamMemberId?: string): Promise<McpCatalog>;

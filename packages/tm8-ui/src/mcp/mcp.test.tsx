@@ -148,3 +148,10 @@ it('shows owner and use-only access without management controls',async()=>{
   expect(screen.queryByRole('button',{name:'Revoke account'})).toBeNull();
   expect(screen.queryByRole('button',{name:'Rotate key'})).toBeNull();
 });
+
+it('allows removing a disabled connector from task defaults',async()=>{
+  const data=catalog();data.attachedServerIds=['server'];data.servers[0]!.enabled=false;data.servers[0]!.canAttach=false;
+  const port=fixture(data);render(<McpProvider port={port}><McpEquipment targetId="task"/></McpProvider>);
+  fireEvent.click(await screen.findByRole('checkbox',{name:'Calendar · Disabled'}));
+  await waitFor(()=>expect(port.detach).toHaveBeenCalledWith('task','server'));
+});
