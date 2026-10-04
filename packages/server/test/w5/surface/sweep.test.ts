@@ -1331,6 +1331,10 @@ const EXPECTED_HANDLER_501: readonly string[] = [
  * regression would first appear as a shift rather than as a failure.
  */
 const HANDLER_AUTHORED_400: readonly string[] = [
+  // MCP callback/proxy request validation is handler-authored after the
+  // request schema admits the sweep body.
+  'mcp.oauth.callback',
+  'mcp.proxy.request',
   // 2026-07-31: artifacts.export refuses its own unimplemented format choice
   // in-handler, and attentionRequests.list validates its query in-handler —
   // both handler-reached 400s, recorded when the wave landed them.
