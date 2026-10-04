@@ -287,6 +287,20 @@ const NO_CONTRACT_TYPE_TO_COMPARE: readonly string[] = [
   'spaces.taskAxes.delete',
   'spaces.taskWorkflows.delete',
   'spaces.workflows.delete',
+  'mcp.credentials.create',
+  'mcp.credentials.revoke',
+  'mcp.credentials.rotate',
+  'mcp.credentials.share',
+  'mcp.credentials.unshare',
+  'mcp.oauth.begin',
+  'mcp.oauth.callback',
+  'mcp.proxy.request',
+  'mcp.resolve',
+  'mcp.servers.create',
+  'mcp.servers.delete',
+  'mcp.servers.import',
+  'mcp.servers.test',
+  'mcp.servers.update',
 ];
 
 /** Contract-owned schemas whose runtime identity is checked below. */
