@@ -1,3 +1,4 @@
+import { mcpSelectionFlag } from './mcp.js';
 /**
  * `tm8 session liveness|spawn|terminate|attach` — the work-session lifecycle
  * (§4.13), projecting `execution.liveness`, `execution.spawn`,
@@ -528,6 +529,8 @@ async function sessionSpawn(cmd: CommandContext): Promise<ExitCode> {
   if (reasoningEffort !== undefined) body.reasoningEffort = reasoningEffort;
   // Sent ONLY when named, like `accessMode`: an absent source is what lets a
   // child inherit its spawner's exact credential rather than re-resolving.
+  const mcpSelections = await mcpSelectionFlag(cmd);
+  if (mcpSelections !== undefined) body.mcpSelections = mcpSelections;
   const credentials = parseCredentialSourceFlags(cmd.options.values('credential-source'));
   if (credentials.credentialSource !== undefined) body.credentialSource = credentials.credentialSource;
   if (credentials.credentialSources !== undefined) body.credentialSources = credentials.credentialSources;

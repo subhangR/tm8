@@ -66,7 +66,7 @@ export const OPERATIONS = [
   { name: 'mcp.servers.update', method: 'PATCH', path: '/v2/mcp/servers/:serverId', kind: 'command', status: 'v1' },
   { name: 'mcp.servers.delete', method: 'DELETE', path: '/v2/mcp/servers/:serverId', kind: 'command', status: 'v1' },
   { name: 'mcp.servers.import', method: 'POST', path: '/v2/spaces/:spaceId/mcp/servers/import', kind: 'command', status: 'v1' },
-  { name: 'mcp.servers.test', method: 'POST', path: '/v2/mcp/servers/:serverId/test', kind: 'command', status: 'v1' },
+  { name: 'mcp.servers.test', method: 'POST', path: '/v2/mcp/servers/:serverId/test', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'mcp.resolve', method: 'POST', path: '/v2/spaces/:spaceId/mcp/resolve', kind: 'read', status: 'v1' },
   { name: 'mcp.credentials.create', method: 'POST', path: '/v2/mcp/servers/:serverId/credentials', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'mcp.credentials.list', method: 'GET', path: '/v2/mcp/servers/:serverId/credentials', kind: 'read', status: 'v1' },

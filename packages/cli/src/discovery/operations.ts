@@ -161,6 +161,24 @@ export const UNBOUND_NOTE =
  * target, and a `server`-targeted one is about the caller themself.
  */
 const ROWS: Record<OperationName, Row> = {
+  'mcp.servers.list': {cmd: ['mcp','server','list'], syn: 'tm8 mcp server list [--target <id>] [--limit <count>] [--cursor <cursor>]', sum: 'List MCP server', authz: 'space', input: 'none'},
+  'mcp.servers.get': {cmd: ['mcp','server','get'], syn: 'tm8 mcp server get [<id>]', sum: 'Get MCP server', authz: 'entity', input: 'none'},
+  'mcp.servers.create': {cmd: ['mcp','server','create'], syn: 'tm8 mcp server create [<id>] --input <@file|->', sum: 'Create MCP server', authz: 'space', input: 'bound'},
+  'mcp.servers.update': {cmd: ['mcp','server','update'], syn: 'tm8 mcp server update <server-id> --expected-version <version> --input <@file|->', sum: 'Update MCP server', authz: 'entity', input: 'bound', ver: 'expectedVersion'},
+  'mcp.servers.delete': {cmd: ['mcp','server','delete'], syn: 'tm8 mcp server delete <server-id> --expected-version <version> [--input <@file|->]', sum: 'Delete MCP server', authz: 'entity', input: 'bound', ver: 'expectedVersion'},
+  'mcp.servers.import': {cmd: ['mcp','server','import'], syn: 'tm8 mcp server import [<id>] --input <@file|->', sum: 'Import MCP server', authz: 'space', input: 'bound'},
+  'mcp.servers.test': {cmd: ['mcp','server','test'], syn: 'tm8 mcp server test [<id>] --input <@file|->', sum: 'Test MCP server', authz: 'entity', input: 'bound'},
+  'mcp.credentials.list': {cmd: ['mcp','credential','list'], syn: 'tm8 mcp credential list [--target <id>] [--limit <count>] [--cursor <cursor>]', sum: 'List MCP credential', authz: 'entity', input: 'none'},
+  'mcp.credentials.readiness': {cmd: ['mcp','credential','readiness'], syn: 'tm8 mcp credential readiness [<id>]', sum: 'Readiness MCP credential', authz: 'entity', input: 'none'},
+  'mcp.credentials.create': {cmd: ['mcp','credential','create'], syn: 'tm8 mcp credential create [<id>] --input <@file|->', sum: 'Create MCP credential', authz: 'entity', input: 'bound'},
+  'mcp.credentials.rotate': {cmd: ['mcp','credential','rotate'], syn: 'tm8 mcp credential rotate [<id>] --input <@file|->', sum: 'Rotate MCP credential', authz: 'entity', input: 'bound'},
+  'mcp.credentials.revoke': {cmd: ['mcp','credential','revoke'], syn: 'tm8 mcp credential revoke [<id>] --input <@file|->', sum: 'Revoke MCP credential', authz: 'entity', input: 'bound'},
+  'mcp.credentials.share': {cmd: ['mcp','credential','share'], syn: 'tm8 mcp credential share [<id>] --input <@file|->', sum: 'Share MCP credential', authz: 'entity', input: 'bound'},
+  'mcp.credentials.unshare': {cmd: ['mcp','credential','unshare'], syn: 'tm8 mcp credential unshare [<id>] --input <@file|->', sum: 'Unshare MCP credential', authz: 'entity', input: 'bound'},
+  'mcp.oauth.begin': {cmd: ['mcp','oauth','begin'], syn: 'tm8 mcp oauth begin [<id>] --input <@file|->', sum: 'Begin MCP oauth', authz: 'entity', input: 'bound'},
+  'mcp.oauth.callback': {cmd: ['mcp','oauth','callback'], syn: 'tm8 mcp oauth callback [<id>] --input <@file|->', sum: 'Callback MCP oauth', authz: 'entity', input: 'bound'},
+  'mcp.resolve': {cmd:['mcp','resolve'], syn:'tm8 mcp resolve --input <json-source>',sum:'Resolve explicit MCP connector readiness',authz:'space',input:'bound'},
+  'mcp.proxy.request': {cmd:null,sum:'Invoke MCP through the authorized session bridge',authz:'session',input:'bound',reason:'internal_session_bridge'},
   // ── identity & spaces ────────────────────────────────────────────────────
   'identity.get': {
     cmd: ['identity', 'get'],
@@ -3817,6 +3835,7 @@ const ROWS: Record<OperationName, Row> = {
  * collection` and `tm8 help task` both resolve.
  */
 const NOUN_BY_FAMILY: Record<string, string> = {
+  mcp: 'mcp',
   identity: 'identity',
   auth: 'auth',
   serverConnections: 'server',
@@ -3998,7 +4017,7 @@ export const CATALOG_DIGEST =
   // Re-measured (L5, 280): +5 opRequests.* — read from the regenerated conformance manifest.
   // Re-measured (styles, 284): +15 styles.*, identity.stylePrefs.get|set, spaces.styleDefault.get|set. RECOMPUTED from JSON.stringify(OPERATIONS).
   // Re-measured (main sync: cross-space + styles).
-  'sha256:83275d2cf3687639d5705038b160c4f48dd85732692167dbd8f96bea941f0a67';
+  'sha256:cfa2803c0e73daf34df20824350b68be45dba26d2e8dbadfdb61a35b08076bc5';
 
 export const GRAMMAR_VERSION = '2';
 
