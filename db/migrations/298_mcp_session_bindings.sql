@@ -20,11 +20,15 @@ revoke all on internal.mcp_launch_selections, internal.mcp_session_bindings from
 -- Called only by the chat creation handler in the same transaction as start_chat.
 create function public.save_chat_mcp_selections(p_chat uuid,p_selections jsonb)
 returns void language plpgsql security definer set search_path=public,internal,pg_temp as $$
+declare target_space uuid;
 begin
   perform internal.require_human_auth_kind();
-  if not exists(select 1 from public.chats c where c.entity_id=p_chat and c.configured_by_identity_id=internal.identity_id()) then
+  select c.space_id into target_space from public.chats c join public.entities e on e.id=c.entity_id
+    where c.entity_id=p_chat and c.configured_by_identity_id=internal.identity_id() and e.deleted_at is null;
+  if target_space is null then
     raise exception 'MCP chat unavailable' using errcode='42501';
   end if;
+  perform internal.require_space_member(target_space);
   if jsonb_typeof(p_selections) <> 'array' or jsonb_array_length(p_selections)>32 then
     raise exception 'Invalid MCP selections' using errcode='22023';
   end if;

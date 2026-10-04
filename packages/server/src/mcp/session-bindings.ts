@@ -1,4 +1,4 @@
-import { CollabError, McpSelectionsSchema, type McpSelection } from '@tm8/contract';
+import { CollabError, McpSelectionsSchema, isHumanAuthKind, type McpSelection } from '@tm8/contract';
 import type { Db, DbClaims } from '../db/types.js';
 import { resolveBearerIdentity } from '../identity/pg-auth.js';
 import { hashToken, parseToken } from '../identity/crypto.js';
@@ -39,6 +39,7 @@ export class McpSessionBindings {
       if (source?.sessionId && source.authSessionId) {
         try {
           const binding = await this.db.rpc<Binding>(claims, 'read_mcp_session_binding', [source.sessionId, source.authSessionId]);
+          if (!isHumanAuthKind(binding.launcherAuthKind)) throw new CollabError('forbidden', 'MCP launcher unavailable');
           launcher = { identityId: binding.launcherIdentityId, authKind: binding.launcherAuthKind, sessionSpaceId: input.spaceId };
         } catch { sourceUnavailable = true; }
       } else sourceUnavailable = true;
@@ -47,9 +48,20 @@ export class McpSessionBindings {
       const stored = input.resume
         ? await q.rpc<unknown>('read_mcp_launch_selections', [input.sessionId]) : null;
       const picks = stored == null ? input.mcpSelections : McpSelectionsSchema.parse(stored);
+      let targetIds = input.targetIds;
+      if (picks === undefined && targetIds === undefined && runtime.runtimeChatId === input.sessionId) {
+        // A chat may be about a task. Use only currently readable, same-space
+        // attachment targets, under this launcher's claims; arbitrary readers
+        // never lend the chat creator's credential authority.
+        const about = await q.query<{ id: string }>(`select distinct e.dst_id as id from public.edges e
+          join public.entities t on t.id=e.dst_id
+          where e.src_id=$1 and e.type='about' and e.space_id=$2 and t.deleted_at is null
+            and t.kind in ('task','team_member','work_session') order by e.dst_id limit 33`, [input.sessionId, input.spaceId]);
+        targetIds = about.map(row => row.id);
+      }
       const resolved = await resolveMcpSelections(q, {
         spaceId: input.spaceId, teamMemberId: input.teamMemberId,
-        ...(input.targetIds ? { targetIds: input.targetIds } : {}),
+        ...(targetIds ? { targetIds } : {}),
         ...(picks !== undefined ? { mcpSelections: picks } : {}),
       }, async (selection, server) => {
         await q.rpc('read_mcp_credential', [server.spaceId, server.id, selection.credentialId]);
