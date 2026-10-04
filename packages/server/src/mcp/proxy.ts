@@ -1,11 +1,13 @@
 import type { DbClaims } from '../db/types.js';
 import type { McpCredentialBinding, McpCredentialStore } from './credential-store.js';
 import { refreshOAuth } from './oauth.js';
+import { mcpStdio } from './stdio.js';
 import { mcpHttp } from './transport.js';
 
 export interface McpProxyDefinition {
   id:string;spaceId:string;approved:boolean;transport:'http'|'stdio';url?:string;allowPrivateNetwork?:boolean;
-  auth:{type:'none'|'api_key'|'oauth2';headerName?:string};
+  command?:string;args?:string[];stdioTrusted?:boolean;
+  auth:{type:'none'|'api_key'|'oauth2';headerName?:string;envKey?:string;prefix?:'Bearer'|'none'};
 }
 export interface McpProxyGrant { sessionId:string;identityId:string;spaceId:string;serverId:string;credentialId?:string }
 export interface McpProxyPorts {
@@ -25,7 +27,28 @@ export class McpProxy {
     const grant=await this.ports.authorize(claims,sessionId,serverId);
     if(grant.sessionId!==sessionId || grant.serverId!==serverId || grant.identityId!==claims.identityId || claims.viaLinkId)throw new Error('MCP session unavailable');
     const definition=await this.ports.definition(claims,serverId);
-    if(!definition.approved || definition.spaceId!==grant.spaceId || definition.transport!=='http' || !definition.url)throw new Error('MCP connector unavailable');
+    if(!definition.approved || definition.spaceId!==grant.spaceId)throw new Error('MCP connector unavailable');
+    if(definition.transport==='stdio') {
+      if(!definition.stdioTrusted || !definition.command || definition.auth.type==='oauth2')throw new Error('MCP executable is not trusted');
+      const env:Record<string,string>={};let secretValue='';
+      const check=async()=>{
+        const live=await this.ports.authorize(claims,sessionId,serverId);
+        if(JSON.stringify(live)!==JSON.stringify(grant))throw new Error('MCP session changed');
+        const current=await this.ports.definition(claims,serverId);
+        if(JSON.stringify(current)!==JSON.stringify(definition))throw new Error('MCP definition changed');
+        if(definition.auth.type==='api_key') {
+          if(!grant.credentialId || !definition.auth.envKey || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(definition.auth.envKey))throw new Error('Select an MCP account before launch');
+          const opened=await this.ports.credentials.read(claims,{spaceId:grant.spaceId,serverId,credentialId:grant.credentialId});
+          if(opened.secret.kind!=='api_key')throw new Error('MCP account binding mismatch');
+          if(secretValue && secretValue!==opened.secret.value)throw new Error('MCP credential changed');
+          secretValue=opened.secret.value;env[definition.auth.envKey]=secretValue;
+        }
+      };
+      await check();
+      const result=await mcpStdio({command:definition.command,args:definition.args??[],env,method,params,beforeSend:check});
+      return secretValue?JSON.parse(JSON.stringify(result).split(secretValue).join('[redacted]')):result;
+    }
+    if(!definition.url)throw new Error('MCP connector unavailable');
     const key=JSON.stringify([sessionId,grant.identityId,grant.spaceId,serverId,grant.credentialId]);
     // Serialize each connection, including initialize and concurrent refresh attempts.
     const previous=this.locks.get(key)??Promise.resolve();
@@ -57,7 +80,7 @@ export class McpProxy {
           if(definition.auth.type!=='api_key')throw new Error('MCP account binding mismatch');
           const name=definition.auth.headerName??'Authorization';
           if(!/^[A-Za-z][A-Za-z0-9-]*$/.test(name) || ['host','cookie','connection','content-length','transfer-encoding','proxy-authorization'].includes(name.toLowerCase()))throw new Error('MCP authorization header refused');
-          headers[name]=name.toLowerCase()==='authorization'?`Bearer ${secret.value}`:secret.value;
+          headers[name]=definition.auth.prefix==='none'?secret.value: name.toLowerCase()==='authorization'?`Bearer ${secret.value}`:secret.value;
           redactions=[secret.value];
         }
       }
@@ -66,6 +89,8 @@ export class McpProxy {
         // Recheck selected grants and credential sharing immediately before every send.
         const live=await this.ports.authorize(claims,sessionId,serverId);
         if(JSON.stringify(live)!==JSON.stringify(grant))throw new Error('MCP session changed');
+        const liveDefinition=await this.ports.definition(claims,serverId);
+        if(JSON.stringify(liveDefinition)!==JSON.stringify(definition))throw new Error('MCP definition changed');
         if(grant.credentialId)await this.ports.credentials.read(claims,{spaceId:grant.spaceId,serverId,credentialId:grant.credentialId});
         if(connection.upstreamSession)headers['mcp-session-id']=connection.upstreamSession;
         const response=await mcpHttp({url:definition.url!,method:'POST',headers,body:JSON.stringify({jsonrpc:'2.0',...(notification?{}:{id:1}),method:rpcMethod,params:rpcParams})},definition.allowPrivateNetwork===true);

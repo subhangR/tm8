@@ -61,4 +61,26 @@ revoke all on function public.refresh_mcp_credential(uuid,uuid,uuid,bytea,bytea,
 grant execute on function public.create_mcp_credential(uuid,uuid,uuid,text,bytea,bytea,text) to tm8_app;
 grant execute on function public.read_mcp_credential(uuid,uuid,uuid) to tm8_app;
 grant execute on function public.refresh_mcp_credential(uuid,uuid,uuid,bytea,bytea,bytea) to tm8_app;
+-- Metadata only, evaluated against current membership/sharing.
+create function public.list_mcp_credentials(p_server uuid,p_id uuid default null)
+returns jsonb language plpgsql stable security definer set search_path=public,internal,pg_temp as $$
+declare result jsonb;
+begin
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',c.id,'serverId',c.mcp_server_id,'label',c.label,
+  'authType',case when c.shape='token' then 'oauth2' else 'api_key' end,
+  'visibility',case when c.visibility='public' then 'space' when exists(select 1 from public.space_credential_shares s where s.credential_id=c.id) then 'selected' else 'private' end,
+  'ownerId',c.owner_account_id,'sharedMemberIds',coalesce((select jsonb_agg(m.entity_id) from public.space_credential_shares s join public.accounts a on a.id=s.grantee_account_id join public.members m on m.identity_id=a.identity_id and m.space_id=c.space_id where s.credential_id=c.id and (c.owner_account_id=internal.current_account_id() or s.grantee_account_id=internal.current_account_id())),'[]'::jsonb),
+  'usable',c.status='active' and (c.visibility='public' or c.owner_account_id=internal.current_account_id() or internal.space_credential_shared_with(c.id,internal.current_account_id())),
+  'manageable',c.owner_account_id=internal.current_account_id(),
+  'revoked',c.status='revoked',
+  'reason',case when c.status='revoked' then 'credential_revoked' when c.status<>'active' then 'credential_unavailable' when c.visibility='public' or c.owner_account_id=internal.current_account_id() or internal.space_credential_shared_with(c.id,internal.current_account_id()) then 'ready' else 'access_denied' end
+ ) order by c.created_at),'[]'::jsonb) into result
+ from public.space_credentials c where c.provider='mcp' and c.mcp_server_id is not null
+ and (p_server is null or c.mcp_server_id=p_server) and (p_id is null or c.id=p_id)
+ and internal.is_space_member(c.space_id);
+ return result;
+end $$;
+revoke all on function public.list_mcp_credentials(uuid,uuid) from public;
+grant execute on function public.list_mcp_credentials(uuid,uuid) to tm8_app;
 reset role;

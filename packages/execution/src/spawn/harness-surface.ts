@@ -526,19 +526,15 @@ export function laneHarnessRecord(
  * the same `{ name: serverConfig }` shape as a `.mcp.json` `mcpServers` block).
  */
 export function minimalMcpConfig(servers: Record<string, unknown> | undefined): string {
-  return servers && Object.keys(servers).length > 0
-    ? JSON.stringify({ mcpServers: servers })
-    : MINIMAL_MCP_CONFIG;
+  asMcpServers(servers);
+  return MINIMAL_MCP_CONFIG;
 }
 
-/** Narrow a stored `mcpServers` bag: keep only object-valued entries. */
+/** Raw executable/header/env bags can contain credentials and are no longer launchable. */
 export function asMcpServers(value: unknown): Record<string, Record<string, unknown>> | null {
-  if (!isRecord(value)) return null;
-  const out: Record<string, Record<string, unknown>> = {};
-  for (const [name, config] of Object.entries(value)) {
-    if (name.trim() !== '' && isRecord(config)) out[name.trim()] = config;
-  }
-  return out;
+  if (value === undefined || value === null) return null;
+  if (isRecord(value) && Object.keys(value).length === 0) return {};
+  throw new Error('Legacy raw MCP configuration is disabled; register a connector and select its account');
 }
 
 function readJson(path: string): unknown {

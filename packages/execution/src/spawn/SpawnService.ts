@@ -1,3 +1,4 @@
+import { isolateCodexMcpHome } from './mcp-home.js';
 // @tm8/execution — SpawnService: the G1A loop's engine.
 //
 // Owns the four verbs the loop is made of — spawn, prompt, terminate, and the
@@ -1856,7 +1857,10 @@ export class SpawnService {
       if (launch.agentTool === 'claude-code') {
         await this.seedClaudeTrust(sessionId, cwd, workdir.mode, manifest.project, env);
       }
-      if (launch.agentTool === 'codex') await trustCodexWorkspace(cwd, env);
+      if (launch.agentTool === 'codex') {
+        await isolateCodexMcpHome(manifestPath, env);
+        await trustCodexWorkspace(cwd, env);
+      }
 
       // R1 (W10a): the manifest was recorded under the recorder's lock, but a
       // credential can be revoked or switched to private between that commit
@@ -2598,7 +2602,10 @@ export class SpawnService {
       if (launch.agentTool === 'claude-code') {
         await this.seedClaudeTrust(sessionId, cwd, info.workdirMode, manifest.project, env);
       }
-      if (launch.agentTool === 'codex') await trustCodexWorkspace(cwd, env);
+      if (launch.agentTool === 'codex') {
+        await isolateCodexMcpHome(manifestPath, env);
+        await trustCodexWorkspace(cwd, env);
+      }
 
       // R1 (W10a): the manifest was recorded under the recorder's lock, but a
       // credential can be revoked or switched to private between that commit
