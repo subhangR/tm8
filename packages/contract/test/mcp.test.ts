@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { McpServerDefinitionSchema, McpSelectionsSchema, McpOAuthCallbackInputSchema } from '../src/mcp.js';
+import { McpServerDefinitionSchema, McpSelectionsSchema, McpOAuthCallbackInputSchema, McpCredentialViewSchema, McpReadinessReasonSchema } from '../src/mcp.js';
 import { EntityStateSchema, ServerOnlyCredentialProviderNameSchema, SpaceCredentialProviderNameSchema } from '../src/schemas.js';
 const definition = { name: 'fixture', transport: 'http', url: 'https://example.test/mcp', envKeys: [], headerKeys: [], auth: { type: 'none' }, approved: false };
 describe('MCP metadata boundary', () => {
@@ -24,6 +24,11 @@ describe('MCP metadata boundary', () => {
     expect(McpSelectionsSchema.parse([])).toEqual([]);
     const selection={serverId:'00000000-0000-4000-8000-000000000001'};
     expect(McpSelectionsSchema.safeParse([selection,selection]).success).toBe(false);
+  });
+  it('round-trips definition-change readiness as a public status', () => {
+    expect(McpReadinessReasonSchema.parse('credential_definition_changed')).toBe('credential_definition_changed');
+    const id = '00000000-0000-4000-8000-000000000001';
+    expect(McpCredentialViewSchema.parse({ id, serverId:id, label:'x', authType:'api_key', visibility:'private', ownerId:id, sharedMemberIds:[], usable:false, manageable:true, revoked:false, reason:'credential_definition_changed' }).reason).toBe('credential_definition_changed');
   });
 });
 

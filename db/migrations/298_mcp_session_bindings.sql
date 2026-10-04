@@ -103,4 +103,5 @@ begin
 end $$;
 revoke all on function public.save_chat_mcp_selections(uuid,jsonb),public.read_mcp_launch_selections(uuid),public.bind_mcp_session(uuid,text,jsonb),public.read_mcp_session_binding(uuid,uuid) from public;
 grant execute on function public.save_chat_mcp_selections(uuid,jsonb),public.read_mcp_launch_selections(uuid),public.bind_mcp_session(uuid,text,jsonb),public.read_mcp_session_binding(uuid,uuid) to tm8_app;
+analyze internal.mcp_launch_selections, internal.mcp_session_bindings;
 reset role;

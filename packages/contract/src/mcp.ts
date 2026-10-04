@@ -55,7 +55,7 @@ export type McpSelection = z.infer<typeof McpSelectionSchema>;
 export const McpSelectionsSchema = z.array(McpSelectionSchema).max(32).refine(
   selections => new Set(selections.map(s => s.serverId)).size === selections.length, 'duplicate server selection');
 export const McpReadinessReasonSchema = z.enum(['ready', 'not_approved', 'stdio_not_trusted', 'credential_required',
-  'credential_unavailable', 'credential_revoked', 'credential_expired', 'server_unavailable', 'access_denied', 'disabled']);
+  'credential_unavailable', 'credential_revoked', 'credential_expired', 'credential_definition_changed', 'server_unavailable', 'access_denied', 'disabled']);
 export type McpReadinessReason = z.infer<typeof McpReadinessReasonSchema>;
 export const McpCredentialViewSchema = z.object({
   id: Id, serverId: Id, label: z.string(), authType: z.enum(['api_key', 'oauth2']),

@@ -262,4 +262,5 @@ begin
 end $$;
 revoke all on function public.record_mcp_server_health(uuid,jsonb) from public;
 grant execute on function public.record_mcp_server_health(uuid,jsonb) to tm8_app;
+analyze public.mcp_servers, public.mcp_server_health;
 reset role;
