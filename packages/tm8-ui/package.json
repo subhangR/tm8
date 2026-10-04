@@ -16,6 +16,8 @@
   "dependencies": {
     "@excalidraw/excalidraw": "0.18.1",
     "@maestro/pty-protocol": "workspace:*",
+    "@react-three/drei": "^10.7.0",
+    "@react-three/fiber": "^9.3.0",
     "@tm8/cli": "workspace:*",
     "@tm8/contract": "workspace:*",
     "@tm8/prompt": "workspace:*",
@@ -26,13 +28,15 @@
     "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
+    "three": "^0.180.0",
     "zustand": "^5.0.11"
   },
   "devDependencies": {
-    "@testing-library/react": "^16.3.2",
     "@playwright/test": "1.58.2",
+    "@testing-library/react": "^16.3.2",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/three": "^0.180.0",
     "@vitejs/plugin-react": "^4.3.1",
     "axe-core": "^4.12.1",
     "jsdom": "^28.1.0",
