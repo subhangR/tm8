@@ -16,7 +16,7 @@ import type { DbClaims } from '../db/types.js';
 
 export interface McpRuntimeHandlerOptions {
  dataDir:string; callbackUrl:string;
- definition(claims:DbClaims,serverId:string):Promise<McpServerView>;
+ definition(claims:DbClaims,serverId:string):Promise<McpServerView & {securityRevision?:number}>;
  authorize:McpProxyPorts['authorize'];
  recordTest?:(claims:DbClaims,serverId:string,result:unknown)=>Promise<void>;
 }
@@ -24,7 +24,7 @@ export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeD
  const credentials=new McpCredentialStore(deps.db,options.dataDir);
  const store=new DbSpaceCredentialStore({db:deps.db,dataDir:options.dataDir});
  const oauth=new McpOAuth(options.callbackUrl);
- const definition=async(claims:DbClaims,id:string)=>{const view=await options.definition(claims,id);return {id:view.id,spaceId:view.spaceId,version:view.version,...view.definition};};
+ const definition=async(claims:DbClaims,id:string)=>{const view=await options.definition(claims,id);return {id:view.id,spaceId:view.spaceId,version:view.securityRevision ?? view.version,...view.definition};};
  const proxy=new McpProxy({credentials,authorize:options.authorize,definition});
  const claims=async(ctx:RequestContext)=>claimsFor(await deps.owner(),ctx);
  const path=(ctx:RequestContext,name:string)=>{const value=ctx.params[name];if(!value)throw new CollabError('invalid_input',`${name} required`);return value;};
@@ -67,9 +67,9 @@ export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeD
   'mcp.oauth.begin':requireHumanSession(async ctx=>{
    const input=McpOAuthBeginInputSchema.parse({...ctx.body as object,serverId:path(ctx,'serverId')});const auth=await claims(ctx);const server=await approved(auth,input.serverId);const config=server.definition.auth;
    if(config.type!=='oauth2' || !server.definition.url || !auth.identityId)throw new CollabError('invalid_input','OAuth connector required');
-   return oauth.begin({identityId:auth.identityId,spaceId:server.spaceId,serverId:server.id,resource:server.definition.url,...(config.issuer?{issuer:config.issuer}:config.authorizationUrl?{issuer:new URL(config.authorizationUrl).origin}:{}),...(config.clientId?{clientId:config.clientId}:{}),label:input.label,...(config.scopes?{scopes:config.scopes}:{}),allowPrivateNetwork:server.definition.allowPrivateNetwork===true});
+   return oauth.begin({identityId:auth.identityId,spaceId:server.spaceId,serverId:server.id,definitionVersion:server.securityRevision ?? server.version,resource:server.definition.url,...(config.issuer?{issuer:config.issuer}:config.authorizationUrl?{issuer:new URL(config.authorizationUrl).origin}:{}),...(config.clientId?{clientId:config.clientId}:{}),label:input.label,...(config.scopes?{scopes:config.scopes}:{}),allowPrivateNetwork:server.definition.allowPrivateNetwork===true});
   }),
-  'mcp.oauth.callback':requireHumanSession(async ctx=>{const input=McpOAuthCallbackInputSchema.parse(ctx.body);const auth=await claims(ctx);if(!auth.identityId)throw new CollabError('unauthenticated','Human session required');const result=await oauth.callback(auth.identityId,input);await approved(auth,result.serverId);const created=await credentials.create(auth,{...result}) as {id:string};return view(auth,created.id);}),
+  'mcp.oauth.callback':requireHumanSession(async ctx=>{const input=McpOAuthCallbackInputSchema.parse(ctx.body);const auth=await claims(ctx);if(!auth.identityId)throw new CollabError('unauthenticated','Human session required');const pending=oauth.pendingFor(auth.identityId,input.state);if(!pending)throw new CollabError('invalid_input','OAuth state invalid or expired');const current=await options.definition(auth,pending.serverId);if(pending.definitionVersion!==undefined && (current.securityRevision ?? current.version)!==pending.definitionVersion)throw new CollabError('conflict','MCP connector changed; restart authorization');const result=await oauth.callback(auth.identityId,input);await approved(auth,result.serverId);const created=await credentials.create(auth,{...result}) as {id:string};return view(auth,created.id);}),
   'mcp.servers.test':requireHumanSession(async ctx=>{
    const input=McpServerTestInputSchema.parse({...ctx.body as object,serverId:path(ctx,'serverId')});const auth=await claims(ctx);const server=await approved(auth,input.serverId);
    const test=new McpProxy({credentials,definition,authorize:async()=>({sessionId:'test',identityId:auth.identityId!,spaceId:server.spaceId,serverId:server.id,...(input.credentialId?{credentialId:input.credentialId}:{})})});

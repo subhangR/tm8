@@ -3,11 +3,11 @@ import { mcpHttp } from './transport.js';
 import type { McpOAuthSecret } from './credential-store.js';
 
 interface Metadata { issuer: string; authorization_endpoint: string; token_endpoint: string; code_challenge_methods_supported?: string[]; response_types_supported?: string[]; registration_endpoint?: string; revocation_endpoint?:string }
-interface Pending { identityId: string; spaceId: string; serverId: string; verifier: string; redirectUri: string; clientId: string; resource: string; metadata: Metadata; expires: number; privateNetwork: boolean; label:string }
+interface Pending { identityId: string; spaceId: string; serverId: string; definitionVersion?:number; verifier: string; redirectUri: string; clientId: string; resource: string; metadata: Metadata; expires: number; privateNetwork: boolean; label:string }
 export class McpOAuth {
   private readonly pending = new Map<string,Pending>();
   constructor(private readonly callbackUrl: string) {}
-  async begin(input: {identityId:string;spaceId:string;serverId:string;resource:string;issuer?:string;clientId?:string;label?:string;scopes?:string[];allowPrivateNetwork:boolean}): Promise<{authorizationUrl:string;expiresAt:string}> {
+  async begin(input: {identityId:string;spaceId:string;serverId:string;definitionVersion?:number;resource:string;issuer?:string;clientId?:string;label?:string;scopes?:string[];allowPrivateNetwork:boolean}): Promise<{authorizationUrl:string;expiresAt:string}> {
     for(const [key,value] of this.pending) if(value.expires<Date.now())this.pending.delete(key);
     if(this.pending.size>=1000) throw new Error('Too many pending MCP connections');
     let issuerText=input.issuer;
@@ -53,11 +53,16 @@ export class McpOAuth {
     const state=randomBytes(32).toString('base64url');
     const verifier=randomBytes(48).toString('base64url');
     const expires=Date.now()+10*60*1000;
-    this.pending.set(state,{identityId:input.identityId,spaceId:input.spaceId,serverId:input.serverId,resource:input.resource,clientId,metadata,verifier,redirectUri:this.callbackUrl,expires,privateNetwork:input.allowPrivateNetwork,label:input.label??'OAuth account'});
+    this.pending.set(state,{identityId:input.identityId,spaceId:input.spaceId,serverId:input.serverId,definitionVersion:input.definitionVersion,resource:input.resource,clientId,metadata,verifier,redirectUri:this.callbackUrl,expires,privateNetwork:input.allowPrivateNetwork,label:input.label??'OAuth account'});
     const url=new URL(metadata.authorization_endpoint);
     const params={response_type:'code',client_id:clientId,redirect_uri:this.callbackUrl,state,code_challenge:createHash('sha256').update(verifier).digest('base64url'),code_challenge_method:'S256',resource:input.resource,scope:(input.scopes??[]).join(' ')};
     for(const [key,value] of Object.entries(params)) url.searchParams.set(key,value);
     return {authorizationUrl:url.href,expiresAt:new Date(expires).toISOString()};
+  }
+  pendingFor(identityId:string,state:string):{serverId:string;definitionVersion?:number}|null {
+    const pending=this.pending.get(state);
+    if(!pending || pending.identityId!==identityId || pending.expires<Date.now())return null;
+    return {serverId:pending.serverId,definitionVersion:pending.definitionVersion};
   }
   async callback(identityId: string,input:{state:string;code?:string;issuer?:string;error?:string}):Promise<{spaceId:string;serverId:string;label:string;secret:McpOAuthSecret}> {
     const pending=this.pending.get(input.state);
