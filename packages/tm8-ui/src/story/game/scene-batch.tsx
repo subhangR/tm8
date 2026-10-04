@@ -3,20 +3,16 @@ import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
 import { type Part, type Solid } from './scenery';
 import type { Palette } from './palette';
+import { KIT_GEOMETRIES } from './assets/geometry';
 
-const geometries: Record<Solid, () => THREE.BufferGeometry> = {
-  paving: () => new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2),
-  disc: () => new THREE.CircleGeometry(1, 12).rotateX(-Math.PI / 2),
-  box: () => new THREE.BoxGeometry(), cone: () => new THREE.ConeGeometry(1, 1, 4),
-  cylinder: () => new THREE.CylinderGeometry(1, 1, 1, 12), orb: () => new THREE.IcosahedronGeometry(1, 1),
-  gem: () => new THREE.OctahedronGeometry(1), ring: () => new THREE.TorusGeometry(1, .055, 5, 32),
-};
+/** The kit's twelve unit solids; one instanced batch each. */
+const geometries = KIT_GEOMETRIES;
 interface Props {
   parts: Part[]; revealed: ReadonlySet<string>; palette: Palette; reduced: boolean;
   onPlaceClick: (id: string, open: boolean) => void;
 }
 export function SceneryBatch(props: Props) {
-  const buckets = useMemo(() => Object.keys(geometries).map((geo) => ({ geo: geo as Solid, parts: props.parts.filter((p) => p.geo === geo) })), [props.parts]);
+  const buckets = useMemo(() => Object.keys(geometries).map((geo) => ({ geo: geo as Solid, parts: props.parts.filter((p) => p.geo === geo) })).filter((b) => b.parts.length > 0), [props.parts]);
   return <group>{buckets.map((b) => <Batch key={b.geo} {...props} {...b} />)}</group>;
 }
 function Batch({ geo, parts, palette, revealed, reduced, onPlaceClick }: Props & { geo: Solid }) {

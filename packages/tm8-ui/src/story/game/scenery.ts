@@ -1,10 +1,12 @@
 /** Procedural toy architecture. Deterministic parts, instanced by geometry in scene-batch. */
 import { Color } from 'three';
 import type { Palette } from './palette';
+import type { KitSolid } from './assets/geometry';
 import { doorstep, type Place, type World } from './world';
 import { ROAD_WIDTH, ROAD_SHOULDER, segmentDistance, distance } from './roads';
 
-export type Solid = 'box' | 'cone' | 'cylinder' | 'orb' | 'gem' | 'ring' | 'paving' | 'disc';
+/** The geometry vocabulary lives with the asset kit (assets/geometry.ts). */
+export type Solid = KitSolid;
 export interface Part {
   geo: Solid; x: number; y: number; z: number; sx: number; sy: number; sz: number;
   color: string; ry: number; rz: number; rx: number; motion: number; placeId: string | null;
