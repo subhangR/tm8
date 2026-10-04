@@ -132,3 +132,91 @@
 .cv2-root .sgm-flat__row--seen .sgm-flat__open { color: var(--pn-ink); }
 .cv2-root .sgm-flat__row--done .sgm-flat__open { border-color: var(--pn-brand); color: var(--pn-ink); }
 .cv2-root .sgm--flat .sgm-quest { display: none; }
+
+/* A field journal over a miniature world. All glass, ink and light are tokens. */
+.cv2-root .sgm { min-height: 510px; isolation: isolate; }
+.cv2-root .sgm::after { content: ''; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 90px color-mix(in srgb, var(--pn-info) 16%, transparent); }
+.cv2-root .sgm-hud { z-index: 25; }
+.cv2-root .sgm-hud__lead { top: 22px; left: 24px; gap: 10px; }
+.cv2-root .sgm-eyebrow { font-size: 9px; font-weight: 700; letter-spacing: .17em; color: var(--pn-ink-3); }
+.cv2-root .sgm-chapter { color: var(--pn-card); text-shadow: 0 1px 8px var(--pn-ink); padding-top: 7px; }
+.cv2-root .sgm-title { border-radius: 6px 15px 15px 6px; padding: 8px 12px; box-shadow: 0 5px 24px color-mix(in srgb, var(--pn-ink) 10%, transparent); }
+.cv2-root .sgm-progress { flex: none; position: relative; overflow: hidden; border-radius: 20px; padding: 4px 8px; font-family: var(--pn-mono); font-size: 10px; background: color-mix(in srgb, var(--pn-run) 12%, var(--pn-card)); }
+.cv2-root .sgm-progress::before { content: ''; position: absolute; inset: 0 auto 0 0; width: var(--sgm-progress); background: color-mix(in srgb, var(--pn-run) 28%, transparent); border-radius: 0 30% 30% 0; transition: width 900ms ease; animation: sgm-liquid 4s ease-in-out infinite; }
+.cv2-root .sgm-progress > span { position: relative; }
+@keyframes sgm-liquid { 50% { border-radius: 0 70% 45% 0; opacity: .65; } }
+.cv2-root .sgm-quest { top: 24px; right: 24px; width: min(265px, 32%); padding: 14px; background: color-mix(in srgb, var(--pn-card) 90%, transparent); border-radius: 4px 16px 16px 16px; border-top: 3px solid var(--pn-brand); box-shadow: 0 8px 32px color-mix(in srgb, var(--pn-ink) 12%, transparent); }
+.cv2-root .sgm-quest__head { margin-bottom: 10px; }
+.cv2-root .sgm-quest__go { padding: 7px 3px; font-size: 11px; }
+.cv2-root .sgm-quest__row { border-bottom: 1px solid color-mix(in srgb, var(--pn-line) 70%, transparent); }
+.cv2-root .sgm-quest__row--seen { animation: sgm-found 600ms cubic-bezier(.2, 1.5, .4, 1); }
+@keyframes sgm-found { from { transform: translateX(8px); background: color-mix(in srgb, var(--pn-wait) 25%, transparent); } to { transform: translateX(0); } }
+.cv2-root .sgm-tag { padding: 4px 10px; font-size: 10px; box-shadow: 0 3px 10px color-mix(in srgb, var(--pn-ink) 12%, transparent); border: 0; }
+.cv2-root .sgm-tag i { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--pn-run); margin-right: 5px; }
+.cv2-root .sgm-alert { display: grid; place-items: center; width: 22px; height: 26px; border-radius: 12px 12px 12px 2px; background: var(--pn-card); color: var(--pn-brand); font-weight: 800; box-shadow: 0 3px 9px color-mix(in srgb, var(--pn-ink) 20%, transparent); animation: sgm-bubble 2s ease-in-out infinite; }
+@keyframes sgm-bubble { 50% { transform: translateY(-3px); } }
+.cv2-root .sgm-approach { bottom: 68px; border-radius: 16px; padding: 14px 18px; animation: sgm-rise 450ms cubic-bezier(.2, 1.4, .3, 1); }
+.cv2-root .sgm-hint { left: 24px; right: 24px; bottom: 18px; color: var(--pn-ink); background: color-mix(in srgb, var(--pn-card) 87%, transparent); border: 1px solid color-mix(in srgb, var(--pn-card) 40%, transparent); border-radius: 12px; padding: 7px 10px; backdrop-filter: blur(12px); font-size: 10px; }
+.cv2-root .sgm-compass { position: absolute; bottom: 89px; left: 30px; width: 56px; display: flex; flex-direction: column; align-items: center; color: var(--pn-card); text-shadow: 0 1px 8px var(--pn-ink); pointer-events: none; }
+.cv2-root .sgm-compass span { font-family: var(--pn-mono); font-size: 10px; }
+.cv2-root .sgm-compass i { font-style: normal; font-size: 44px; line-height: 1; }
+.cv2-root .sgm-compass small { font-size: 7px; letter-spacing: .18em; }
+.cv2-root .sgm-btn:focus-visible, .cv2-root .sgm-quest__go:focus-visible, .cv2-root .sgm-flat__open:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 3px; }
+
+/* An encounter keeps the map alive behind a trainer plate and a battle-text box. */
+.cv2-root .sgm--duel .sgm-quest, .cv2-root .sgm--duel .sgm-compass { opacity: 0; pointer-events: none; }
+.cv2-root .sgm-duel { position: absolute; inset: 0; pointer-events: none; }
+.cv2-root .sgm-hud > .sgm-duel { pointer-events: none; }
+.cv2-root .sgm-duel::before, .cv2-root .sgm-duel::after { content: ''; position: absolute; left: 0; right: 0; height: 9px; background: color-mix(in srgb, var(--pn-ink) 85%, transparent); }
+.cv2-root .sgm-duel::before { top: 0; }
+.cv2-root .sgm-duel::after { bottom: 0; }
+.cv2-root .sgm-duel__opponent { pointer-events: auto; position: absolute; top: 28px; right: 25px; width: min(360px, 43%); display: grid; grid-template-columns: 42px 1fr; gap: 10px; padding: 16px 20px; border: 1px solid var(--pn-line); border-left: 4px solid var(--pn-run); border-radius: 5px 18px 5px 18px; background: color-mix(in srgb, var(--pn-card) 95%, transparent); box-shadow: 0 10px 35px color-mix(in srgb, var(--pn-ink) 20%, transparent); animation: sgm-opponent 500ms cubic-bezier(.2, 1.3, .4, 1); }
+@keyframes sgm-opponent { from { opacity: 0; transform: translateX(60px); } to { opacity: 1; transform: translateX(0); } }
+.cv2-root .sgm-duel__badge { width: 40px; height: 40px; display: grid; place-items: center; font-size: 24px; color: var(--pn-brand); background: color-mix(in srgb, var(--pn-wait) 18%, var(--pn-card)); border-radius: 50%; }
+.cv2-root .sgm-duel__identity { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.cv2-root .sgm-duel__identity strong { font-size: 22px; line-height: 1; color: var(--pn-ink); }
+.cv2-root .sgm-duel__identity > span:last-child { font-family: var(--pn-mono); font-size: 10px; color: var(--pn-ink-3); overflow-wrap: anywhere; }
+.cv2-root .sgm-duel__phase { grid-column: 1 / -1; color: var(--pn-run); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
+.cv2-root .sgm-duel__vital { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; font-size: 8px; font-weight: 700; color: var(--pn-ink-3); }
+.cv2-root .sgm-duel__vital > span { width: 42px; }
+.cv2-root .sgm-duel__vital small { font-family: var(--pn-mono); white-space: nowrap; font-size: 9px; }
+.cv2-root .sgm-duel__energy, .cv2-root .sgm-duel progress { appearance: none; flex: 1; height: 8px; border: 0; overflow: hidden; border-radius: 10px; background: var(--pn-line); }
+.cv2-root .sgm-duel__energy i { display: block; width: 100%; height: 100%; background: var(--pn-ink-3); opacity: .3; }
+.cv2-root .sgm-duel__energy--live i { background: linear-gradient(90deg, var(--pn-run), var(--pn-wait), var(--pn-run)); background-size: 200% 100%; opacity: 1; animation: sgm-energy 2.5s linear infinite; }
+@keyframes sgm-energy { to { background-position: 200% 0; } }
+.cv2-root .sgm-duel progress::-webkit-progress-bar { background: var(--pn-line); border-radius: 10px; }
+.cv2-root .sgm-duel progress::-webkit-progress-value { background: var(--pn-wait); border-radius: 10px; }
+.cv2-root .sgm-duel progress::-moz-progress-bar { background: var(--pn-wait); border-radius: 10px; }
+.cv2-root .sgm-duel--victory .sgm-duel__opponent { border-left-color: var(--pn-wait); }
+.cv2-root .sgm-duel--fainted .sgm-duel__opponent { border-left-color: var(--pn-block); }
+.cv2-root .sgm-duel--fainted .sgm-duel__phase { color: var(--pn-block); }
+.cv2-root .sgm-duel__dialogue { pointer-events: auto; position: absolute; left: 50%; bottom: 74px; width: min(720px, calc(100% - 52px)); transform: translateX(-50%); padding: 16px 20px; background: color-mix(in srgb, var(--pn-card) 96%, transparent); border: 2px solid var(--pn-line-2); outline: 4px solid color-mix(in srgb, var(--pn-card) 30%, transparent); border-radius: 16px 4px 16px 4px; box-shadow: 0 12px 40px color-mix(in srgb, var(--pn-ink) 22%, transparent); animation: sgm-rise 450ms cubic-bezier(.2, 1.4, .3, 1); }
+.cv2-root .sgm-duel__log { height: 70px; overflow: auto; color: var(--pn-ink); scrollbar-width: thin; }
+.cv2-root .sgm-duel__log p { margin: 0 0 12px; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.cv2-root .sgm-duel__log p > span { display: block; font-size: 9px; color: var(--pn-brand); font-weight: 700; letter-spacing: .05em; }
+.cv2-root .sgm-duel__actions { margin-top: 12px; border-top: 1px solid var(--pn-line); padding-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+.cv2-root .sgm-duel__actions select { min-width: 0; max-width: 100%; color: var(--pn-ink); background: var(--pn-card); border: 1px solid var(--pn-line); border-radius: 6px; font: inherit; font-size: 11px; }
+.cv2-root .sgm--flat .sgm-flat { padding-top: 150px; }
+.cv2-root .sgm--flat .sgm-compass { display: none; }
+@container (max-width: 700px) {
+  .cv2-root .sgm { min-height: 580px; }
+  .cv2-root .sgm-hud__lead { left: 12px; top: 12px; max-width: calc(100% - 24px); }
+  .cv2-root .sgm-quest { top: 124px; right: 12px; width: 185px; max-height: 170px; padding: 10px; }
+  .cv2-root .sgm-title { font-size: 11px; }
+  .cv2-root .sgm-hint { left: 12px; right: 12px; bottom: 12px; }
+  .cv2-root .sgm-hint > span:nth-child(2), .cv2-root .sgm-hint > span:nth-child(3) { display: none; }
+  .cv2-root .sgm-approach { width: calc(100% - 28px); max-width: none; box-sizing: border-box; padding: 10px; gap: 6px; }
+  .cv2-root .sgm-approach__text { flex: 1; }
+  .cv2-root .sgm-compass { left: 15px; }
+  .cv2-root .sgm-duel__opponent { top: 120px; right: 12px; width: 230px; padding: 10px; }
+  .cv2-root .sgm-duel__identity strong { font-size: 18px; }
+  .cv2-root .sgm-duel__dialogue { padding: 12px; width: calc(100% - 48px); bottom: 68px; }
+  .cv2-root .sgm-duel__log { height: 62px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .sgm *, .cv2-root .sgm *::before { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+
+.cv2-root .sgm-labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 2; }
+.cv2-root .sgm-world-label { position: absolute; left: 0; top: 0; will-change: transform; }
+.cv2-root .sgm-alert.sgm-world-label { animation: none; }

@@ -246,10 +246,10 @@ export function storySource(view: StoryView): WorldSource {
     const victory = !session.live && !failed && ((attached.length > 0 && completed === session.taskIds.length) || nodes.get(session.id)?.statusCategory === 'done');
     const relevant = new Set([session.id, ...session.taskIds]);
     const messages = view.feed.filter((m) => relevant.has(m.anchorId)).map((m) => ({
-      id: m.id, at: m.at, text: m.excerpt, author: m.author?.name ?? (m.authorId ? view.people[m.authorId]?.name ?? null : null),
+      id: m.id, at: m.at, text: m.excerpt, author: m.author?.displayName ?? (m.authorId ? view.people[m.authorId]?.name ?? null : null),
     }));
     const activity = page.activity.filter((a) => relevant.has(a.entityId)).map((a) => ({
-      id: a.id, at: a.at, text: `${a.entityTitle} · ${a.verb}`, author: a.actor?.name ?? null,
+      id: a.id, at: a.at, text: `${a.entityTitle} · ${a.verb}`, author: a.actor?.displayName ?? null,
     }));
     return {
       id: session.id,

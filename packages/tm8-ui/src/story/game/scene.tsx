@@ -1,442 +1,169 @@
-/**
- * THE 3D SCENE — low-poly isometric, drawn with react-three-fiber. Loaded
- * lazily by StoryGame (three.js is ~600 kB; a story that never opens the game
- * never pays for it).
- *
- * The world is a disc. The PLAYER walks it (keys, or a walk order from a
- * click or the quest log — along the roads when both ends are places). The
- * camera is a fixed isometric offset that follows the player. Every place is
- * one of three things: UNSEEN (nothing, or a flat silhouette once it is near
- * or a landmark), REVEALED (it RISES out of the ground the moment the player
- * walks within reach, and stands dimmed until opened), or VISITED (full
- * colour). Live sessions breathe; a landed update bumps; progress is a glow
- * and an arc on the hub, the roots and the portals; a place active in the last
- * hour raises a beacon so "what is happening now" reads from across the map.
- *
- * All colour comes from `Palette` (tokens read at runtime — §14), all shape
- * from `Place.shape` (model.ts tables — §15.2).
- */
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
-import { Html } from '@react-three/drei';
+/** Lazy-loaded diorama. Palette-only colour; graph-kind decisions stay in world.ts. */
+import { useEffect, useMemo, useRef, type MutableRefObject } from 'react';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { GameControl, WalkOrder } from './control';
 import { keyDirection } from './control';
 import type { Palette } from './palette';
-import { nearestPlace, roadPath, type Place, type PlaceShape, type Road, type World } from './world';
+import { nearestPlace, roadPath, type Place, type World, type WorldEncounter } from './world';
+import { landscapeColors, makeScenery, placeColor, seedOf } from './scenery';
+import { SceneryBatch } from './scene-batch';
+import { Island, Atmosphere, GroundShadows } from './scene-nature';
+import { Character, type CharacterMotion } from './scene-character';
+import { DioramaFinish } from './scene-effects';
 
 export interface SceneProps {
-  world: World;
-  palette: Palette;
-  control: GameControl;
-  revealed: ReadonlySet<string>;
-  visited: ReadonlySet<string>;
-  landed: ReadonlySet<string>;
-  start: { x: number; z: number };
-  onReveal: (ids: string[]) => void;
-  onNear: (placeId: string | null) => void;
-  onArrive: (placeId: string, open: boolean) => void;
-  onPosition: (x: number, z: number) => void;
-  onGround: (x: number, z: number) => void;
-  onPlaceClick: (placeId: string, open: boolean) => void;
+  world: World; palette: Palette; control: GameControl;
+  revealed: ReadonlySet<string>; visited: ReadonlySet<string>; landed: ReadonlySet<string>;
+  start: { x: number; z: number }; reduced: boolean;
+  duel: { placeId: string; encounter: WorldEncounter } | null;
+  onUnavailable: () => void;
+  onReveal: (ids: string[]) => void; onNear: (placeId: string | null) => void;
+  onArrive: (placeId: string, open: boolean) => void; onPosition: (x: number, z: number) => void;
+  onGround: (x: number, z: number) => void; onPlaceClick: (placeId: string, open: boolean) => void;
 }
-
-/* ---- the rules of the land ---- */
-export const REVEAL_RADIUS = 4.2;
+export const REVEAL_RADIUS = 5.2;
 export const NEAR_RADIUS = 2.1;
-const SILHOUETTE_RADIUS = 10;
-const LABEL_RADIUS = 9;
-const WALK_SPEED = 7;
-const ARRIVE_EPS = 0.18;
-/** Stop this short of a place, on the near side, so the player stands at its door. */
-const DOORSTEP = 1.35;
-const CAMERA_OFFSET = new THREE.Vector3(22, 26, 22);
-const TAU = Math.PI * 2;
-
-/* Geometry is shared across every place of a shape. */
-const GEO = {
-  box: new THREE.BoxGeometry(1, 1, 1),
-  roof: new THREE.ConeGeometry(0.8, 0.6, 4),
-  cone: new THREE.ConeGeometry(0.75, 1.2, 4),
-  cyl: new THREE.CylinderGeometry(1, 1, 1, 12),
-  pole: new THREE.CylinderGeometry(0.07, 0.07, 1.5, 6),
-  octa: new THREE.OctahedronGeometry(0.55),
-  dodeca: new THREE.DodecahedronGeometry(0.45),
-  torus: new THREE.TorusGeometry(0.95, 0.13, 8, 24),
-  capsule: new THREE.CapsuleGeometry(0.32, 0.55, 4, 8),
-  disc: new THREE.CircleGeometry(1, 28),
-  pad: new THREE.CircleGeometry(0.9, 20),
-};
-
-const ease = (t: number): number => 1 - Math.pow(1 - t, 3);
-
-function colourOf(place: Place, palette: Palette): string {
-  if (place.shape === 'hub' || place.shape === 'portal') return palette.brand;
-  if (place.shape === 'building') {
-    switch (place.tone) {
-      case 'done': return palette.run;
-      case 'working': return palette.info;
-      case 'blocked': return palette.block;
-      case 'todo': return palette.line2;
-      default: return palette.ink3;
-    }
-  }
-  if (place.shape === 'tent') return place.live ? palette.run : palette.wait;
-  if (place.shape === 'library') return palette.merged;
-  if (place.shape === 'signpost') return palette.info;
-  if (place.shape === 'crystal') return palette.brand;
-  if (place.shape === 'camp') return palette.wait;
-  return palette.line2;
-}
-
-function roadColour(road: Road, palette: Palette): string {
-  switch (road.family) {
-    case 'blocks': return palette.block;
-    case 'story': return palette.brand;
-    case 'runs': return palette.run;
-    case 'made': return palette.merged;
-    case 'code': return palette.info;
-    case 'team': return palette.wait;
-    default: return palette.line2;
-  }
-}
-
-/* ------------------------------------------------------------------------- */
+const LABEL_RADIUS = 8;
+const WALK_SPEED = 6;
+const ARRIVE_EPS = .18;
+const DOORSTEP = 1.65;
+const CAMERA_OFFSET = new THREE.Vector3(24, 23, 24);
 
 export default function StoryGameScene(props: SceneProps) {
   const playerPos = useRef(new THREE.Vector3(props.start.x, 0, props.start.z));
-  return (
-    <Canvas
-      orthographic
-      camera={{ position: [CAMERA_OFFSET.x + props.start.x, CAMERA_OFFSET.y, CAMERA_OFFSET.z + props.start.z], zoom: 30, near: 0.1, far: 400 }}
-      dpr={[1, 2]}
-      gl={{ antialias: true, alpha: true, powerPreference: 'low-power' }}
-      frameloop="always"
-      style={{ background: 'transparent' }}
-    >
-      <ambientLight intensity={1.7} />
-      <directionalLight position={[10, 18, 6]} intensity={2.2} />
-      <directionalLight position={[-8, 10, -10]} intensity={0.6} />
-      <Island world={props.world} palette={props.palette} onGround={props.onGround} />
-      <Roads world={props.world} palette={props.palette} revealed={props.revealed} />
-      {props.world.places.map((p) => (
-        <PlaceMesh
-          key={p.id}
-          place={p}
-          palette={props.palette}
-          revealed={props.revealed.has(p.id)}
-          visited={props.visited.has(p.id)}
-          landed={props.landed.has(p.id)}
-          playerPos={playerPos}
-          onClick={props.onPlaceClick}
-        />
-      ))}
-      <Labels world={props.world} revealed={props.revealed} visited={props.visited} playerPos={playerPos} />
-      <Player
-        world={props.world}
-        palette={props.palette}
-        control={props.control}
-        revealed={props.revealed}
-        playerPos={playerPos}
-        onReveal={props.onReveal}
-        onNear={props.onNear}
-        onArrive={props.onArrive}
-        onPosition={props.onPosition}
-      />
-    </Canvas>
-  );
+  const labelNodes = useRef(new Map<string, HTMLDivElement>());
+  const alertNode = useRef<HTMLSpanElement>(null);
+  const parts = useMemo(() => makeScenery(props.world, props.palette), [props.world, props.palette]);
+  const colors = useMemo(() => landscapeColors(props.palette), [props.palette]);
+  return <><Canvas shadows orthographic camera={{ position: [22, 26, 22], zoom: 26, near: .1, far: 450 }} dpr={[1, 1.5]}
+    gl={{ antialias: false, alpha: false, powerPreference: 'low-power' }}>
+    <color attach="background" args={[colors.sea]} />
+    <hemisphereLight args={[props.palette.card, props.palette.info, 1.35]} />
+    <Sun world={props.world} palette={props.palette} />
+    <ShadowCache world={props.world} revealed={props.revealed} />
+    <directionalLight position={[10, 5, -10]} color={props.palette.wait} intensity={.7} />
+    <Island world={props.world} palette={props.palette} reduced={props.reduced} onGround={props.onGround} />
+    <GroundShadows parts={parts} palette={props.palette} />
+    <SceneryBatch parts={parts} revealed={props.revealed} palette={props.palette} reduced={props.reduced} onPlaceClick={props.onPlaceClick} />
+    <Atmosphere world={props.world} palette={props.palette} reduced={props.reduced} />
+    <PlaceEffects {...props} />
+    <Labels world={props.world} revealed={props.revealed} visited={props.visited} playerPos={playerPos} hidden={!!props.duel} nodes={labelNodes} />
+    <Player {...props} playerPos={playerPos} alertNode={alertNode} />
+    {props.duel && <DuelStage key={props.duel.encounter.id} place={props.world.byId.get(props.duel.placeId)!} encounter={props.duel.encounter} palette={props.palette} reduced={props.reduced} />}
+    <FrameBudget />
+    <ContextGuard onUnavailable={props.onUnavailable} />
+    <DioramaFinish />
+  </Canvas>
+    <div className="sgm-labels" aria-hidden>
+      {props.world.places.map((p) => <div key={p.id} ref={(node) => { if (node) labelNodes.current.set(p.id, node); else labelNodes.current.delete(p.id); }} className="sgm-world-label" style={{ display: 'none' }}>
+        <div className={`sgm-tag${props.visited.has(p.id) ? ' sgm-tag--seen' : ''}${p.ring <= 1 ? ' sgm-tag--big' : ''}`}>{p.live && <i />}{p.title}</div>
+      </div>)}
+      <span ref={alertNode} className="sgm-alert sgm-world-label" style={{ display: 'none' }}>!</span>
+    </div>
+  </>;
 }
 
-/* ---- the ground ---- */
-function Island({ world, palette, onGround }: { world: World; palette: Palette; onGround: (x: number, z: number) => void }) {
-  const r = world.extent;
-  const onClick = (e: ThreeEvent<MouseEvent>): void => {
-    e.stopPropagation();
-    onGround(e.point.x, e.point.z);
-  };
-  return (
-    <group>
-      <mesh rotation-x={-Math.PI / 2} position-y={-0.3} scale={[r + 0.8, r + 0.8, 1]}>
-        <primitive object={GEO.disc} attach="geometry" />
-        <meshStandardMaterial color={palette.line2} roughness={1} />
-      </mesh>
-      <mesh rotation-x={-Math.PI / 2} position-y={-0.02} scale={[r, r, 1]} onClick={onClick}>
-        <primitive object={GEO.disc} attach="geometry" />
-        <meshStandardMaterial color={palette.card} roughness={1} />
-      </mesh>
-    </group>
-  );
-}
-
-/* ---- the roads ---- */
-function Roads({ world, palette, revealed }: { world: World; palette: Palette; revealed: ReadonlySet<string> }) {
-  return (
-    <group>
-      {world.roads.map((road) => {
-        const a = world.byId.get(road.fromId);
-        const b = world.byId.get(road.toId);
-        if (!a || !b) return null;
-        const ends = (revealed.has(a.id) ? 1 : 0) + (revealed.has(b.id) ? 1 : 0);
-        if (ends === 0 && !(a.ring <= 1 && b.ring <= 1)) return null;
-        const dx = b.x - a.x;
-        const dz = b.z - a.z;
-        const len = Math.hypot(dx, dz);
-        const bridge = road.family === 'blocks';
-        return (
-          <mesh
-            key={road.id}
-            position={[(a.x + b.x) / 2, bridge ? 0.08 : 0.01, (a.z + b.z) / 2]}
-            rotation-y={-Math.atan2(dz, dx)}
-            scale={[len, bridge ? 0.16 : 0.04, bridge ? 0.5 : 0.3]}
-          >
-            <primitive object={GEO.box} attach="geometry" />
-            <meshStandardMaterial
-              color={roadColour(road, palette)}
-              roughness={1}
-              transparent
-              opacity={ends === 2 ? (bridge ? 0.95 : 0.8) : 0.3}
-            />
-          </mesh>
-        );
-      })}
-    </group>
-  );
-}
-
-/* ---- a place ---- */
-interface PlaceMeshProps {
-  place: Place;
-  palette: Palette;
-  revealed: boolean;
-  visited: boolean;
-  landed: boolean;
-  playerPos: React.MutableRefObject<THREE.Vector3>;
-  onClick: (placeId: string, open: boolean) => void;
-}
-
-function PlaceMesh({ place, palette, revealed, visited, landed, playerPos, onClick }: PlaceMeshProps) {
-  const group = useRef<THREE.Group>(null);
-  const body = useRef<THREE.Group>(null);
-  const silhouette = useRef<THREE.Mesh>(null);
-  const rise = useRef(revealed ? 1 : 0);
-  const landedAt = useRef<number | null>(null);
-  useEffect(() => { if (landed) landedAt.current = performance.now(); }, [landed]);
-  const landmark = place.ring <= 1;
-
-  useFrame((state, delta) => {
-    const g = group.current;
-    const b = body.current;
-    const s = silhouette.current;
-    if (!g || !b || !s) return;
-    const d = Math.hypot(place.x - playerPos.current.x, place.z - playerPos.current.z);
-    if (revealed) {
-      rise.current = Math.min(1, rise.current + delta / 0.7);
-      const t = ease(rise.current);
-      b.visible = true;
-      s.visible = false;
-      let bump = 1;
-      if (landedAt.current !== null) {
-        const age = (performance.now() - landedAt.current) / 1000;
-        if (age < 1.2) bump = 1 + Math.sin(age * Math.PI * 3) * 0.12 * (1 - age / 1.2);
-        else landedAt.current = null;
-      }
-      const breathe = place.live ? 1 + Math.sin(state.clock.elapsedTime * 3) * 0.03 : 1;
-      b.scale.set(bump * breathe, t * bump * breathe, bump * breathe);
-      b.position.y = (t - 1) * 0.6;
-      if (place.shape === 'crystal' || place.shape === 'hub') b.rotation.y = state.clock.elapsedTime * 0.4;
-      if (place.shape === 'portal') b.rotation.y = -Math.atan2(place.z, place.x) + Math.PI / 2;
-    } else {
-      b.visible = false;
-      s.visible = landmark || d < SILHOUETTE_RADIUS;
-    }
-  });
-
-  const colour = colourOf(place, palette);
-  const dim = revealed && !visited;
-  const mat = useMemo(() => ({ color: colour, roughness: 0.85, flatShading: true, transparent: true, opacity: dim ? 0.72 : 1 }), [colour, dim]);
-  const glow = place.progress !== null ? place.progress : 0;
-  const stop = (e: ThreeEvent<MouseEvent>): void => { e.stopPropagation(); onClick(place.id, false); };
-  const stopOpen = (e: ThreeEvent<MouseEvent>): void => { e.stopPropagation(); onClick(place.id, true); };
-  const size = place.root ? 1.45 : 1;
-
-  return (
-    <group ref={group} position={[place.x, 0, place.z]}>
-      <mesh ref={silhouette} rotation-x={-Math.PI / 2} position-y={0.005} scale={place.root || place.portal ? 1.3 : 0.8} onClick={stop}>
-        <primitive object={GEO.pad} attach="geometry" />
-        <meshStandardMaterial color={palette.ink3} transparent opacity={0.22} roughness={1} />
-      </mesh>
-      <group ref={body} onClick={stop} onDoubleClick={stopOpen}>
-        <mesh rotation-x={-Math.PI / 2} position-y={0.01} scale={size}>
-          <primitive object={GEO.pad} attach="geometry" />
-          <meshStandardMaterial color={visited ? colour : palette.line} transparent opacity={visited ? 0.35 : 0.5} roughness={1} />
-        </mesh>
-        <Shape shape={place.shape} size={size} mat={mat} glow={glow} palette={palette} live={place.live} />
-        {place.progress !== null ? (
-          <mesh rotation-x={-Math.PI / 2} position-y={0.03}>
-            <ringGeometry args={[size * 1.05, size * 1.25, 48, 1, Math.PI / 2, -Math.max(0.001, glow * TAU)]} />
-            <meshStandardMaterial color={palette.run} transparent opacity={0.9} roughness={1} side={THREE.DoubleSide} />
-          </mesh>
-        ) : null}
-        {place.recent ? (
-          <mesh position-y={2.2 * size + 1.4} scale={[0.05, 2.8, 0.05]}>
-            <primitive object={GEO.cyl} attach="geometry" />
-            <meshStandardMaterial color={palette.brand} emissive={palette.brand} emissiveIntensity={1.2} transparent opacity={0.55} />
-          </mesh>
-        ) : null}
-        {visited ? (
-          <mesh position={[size * 0.75, 1.9 * size, -size * 0.6]} scale={0.16}>
-            <primitive object={GEO.octa} attach="geometry" />
-            <meshStandardMaterial color={palette.brand} emissive={palette.brand} emissiveIntensity={0.6} />
-          </mesh>
-        ) : null}
-      </group>
-    </group>
-  );
-}
-
-interface ShapeProps {
-  shape: PlaceShape;
-  size: number;
-  mat: { color: string; roughness: number; flatShading: boolean; transparent: boolean; opacity: number };
-  glow: number;
-  palette: Palette;
-  live: boolean;
-}
-
-function Shape({ shape, size, mat, glow, palette, live }: ShapeProps) {
-  const emissive = live ? mat.color : palette.brand;
-  switch (shape) {
-    case 'hub':
-      return (
-        <group>
-          <mesh position-y={0.25} scale={[1.7, 0.5, 1.7]}>
-            <primitive object={GEO.cyl} attach="geometry" />
-            <meshStandardMaterial color={palette.line2} roughness={1} flatShading />
-          </mesh>
-          <mesh position-y={1.35} scale={1.3}>
-            <primitive object={GEO.octa} attach="geometry" />
-            <meshStandardMaterial color={mat.color} emissive={mat.color} emissiveIntensity={0.25 + glow * 1.1} roughness={0.4} flatShading />
-          </mesh>
-        </group>
-      );
-    case 'building':
-      return (
-        <group scale={size}>
-          <mesh position-y={0.5} scale={[1, 1, 1]}>
-            <primitive object={GEO.box} attach="geometry" />
-            <meshStandardMaterial {...mat} emissive={emissive} emissiveIntensity={live ? 0.35 : glow * 0.8} />
-          </mesh>
-          <mesh position-y={1.3} rotation-y={Math.PI / 4}>
-            <primitive object={GEO.roof} attach="geometry" />
-            <meshStandardMaterial color={palette.ink} roughness={1} flatShading transparent opacity={mat.opacity} />
-          </mesh>
-        </group>
-      );
-    case 'tent':
-      return (
-        <mesh position-y={0.6} rotation-y={Math.PI / 4}>
-          <primitive object={GEO.cone} attach="geometry" />
-          <meshStandardMaterial {...mat} emissive={emissive} emissiveIntensity={live ? 0.5 : 0} />
-        </mesh>
-      );
-    case 'library':
-      return (
-        <group>
-          <mesh position-y={0.35} scale={[1.3, 0.7, 0.9]}>
-            <primitive object={GEO.box} attach="geometry" />
-            <meshStandardMaterial {...mat} />
-          </mesh>
-          <mesh position-y={0.78} scale={[1.45, 0.14, 1.05]}>
-            <primitive object={GEO.box} attach="geometry" />
-            <meshStandardMaterial color={palette.ink} roughness={1} flatShading transparent opacity={mat.opacity} />
-          </mesh>
-        </group>
-      );
-    case 'signpost':
-      return (
-        <group>
-          <mesh position-y={0.75}>
-            <primitive object={GEO.pole} attach="geometry" />
-            <meshStandardMaterial color={palette.ink3} roughness={1} transparent opacity={mat.opacity} />
-          </mesh>
-          <mesh position={[0.25, 1.2, 0]} scale={[0.95, 0.42, 0.1]}>
-            <primitive object={GEO.box} attach="geometry" />
-            <meshStandardMaterial {...mat} />
-          </mesh>
-        </group>
-      );
-    case 'crystal':
-      return (
-        <mesh position-y={0.8}>
-          <primitive object={GEO.octa} attach="geometry" />
-          <meshStandardMaterial {...mat} emissive={mat.color} emissiveIntensity={0.45} roughness={0.3} />
-        </mesh>
-      );
-    case 'camp':
-      return (
-        <group>
-          <mesh position-y={0.7}>
-            <primitive object={GEO.capsule} attach="geometry" />
-            <meshStandardMaterial {...mat} emissive={emissive} emissiveIntensity={live ? 0.4 : 0} />
-          </mesh>
-          <mesh position-y={0.08} scale={[0.75, 0.16, 0.75]}>
-            <primitive object={GEO.cyl} attach="geometry" />
-            <meshStandardMaterial color={palette.line2} roughness={1} />
-          </mesh>
-        </group>
-      );
-    case 'portal':
-      return (
-        <group>
-          <mesh position-y={1.15}>
-            <primitive object={GEO.torus} attach="geometry" />
-            <meshStandardMaterial {...mat} emissive={mat.color} emissiveIntensity={0.3 + glow} roughness={0.5} />
-          </mesh>
-          <mesh position-y={0.1} scale={[1.2, 0.2, 1.2]}>
-            <primitive object={GEO.cyl} attach="geometry" />
-            <meshStandardMaterial color={palette.line2} roughness={1} />
-          </mesh>
-        </group>
-      );
-    default:
-      return (
-        <mesh position-y={0.4}>
-          <primitive object={GEO.dodeca} attach="geometry" />
-          <meshStandardMaterial {...mat} />
-        </mesh>
-      );
-  }
-}
-
-/* ---- the names over the near places ---- */
-function Labels({ world, revealed, visited, playerPos }: { world: World; revealed: ReadonlySet<string>; visited: ReadonlySet<string>; playerPos: React.MutableRefObject<THREE.Vector3> }) {
-  const [near, setNear] = useState<string[]>([]);
-  const tick = useRef(0);
-  useFrame((_, delta) => {
-    tick.current += delta;
-    if (tick.current < 0.25) return;
-    tick.current = 0;
-    const ids: string[] = [];
+function Labels({ world, revealed, playerPos, hidden, nodes }: { world: World; revealed: ReadonlySet<string>; visited: ReadonlySet<string>; playerPos: MutableRefObject<THREE.Vector3>; hidden: boolean; nodes: MutableRefObject<Map<string, HTMLDivElement>> }) {
+  const projected = useRef(new THREE.Vector3());
+  const { camera, gl } = useThree();
+  useFrame(() => {
+    const width = gl.domElement.clientWidth, height = gl.domElement.clientHeight;
     for (const p of world.places) {
-      if (!revealed.has(p.id)) continue;
-      if (Math.hypot(p.x - playerPos.current.x, p.z - playerPos.current.z) < LABEL_RADIUS) ids.push(p.id);
+      const node = nodes.current.get(p.id);
+      if (!node) continue;
+      const show = !hidden && revealed.has(p.id) && Math.hypot(p.x - playerPos.current.x, p.z - playerPos.current.z) < LABEL_RADIUS;
+      node.style.display = show ? 'block' : 'none';
+      if (!show) continue;
+      projected.current.set(p.x, p.shape === 'hub' ? 4.5 : p.root ? 3.4 : 2.7, p.z).project(camera);
+      node.style.transform = `translate(${(projected.current.x * .5 + .5) * width}px, ${(-projected.current.y * .5 + .5) * height}px) translate(-50%, -100%)`;
     }
-    setNear((cur) => (cur.length === ids.length && cur.every((id, i) => id === ids[i]) ? cur : ids));
   });
-  return (
-    <group>
-      {near.map((id) => {
-        const p = world.byId.get(id);
-        if (!p) return null;
-        const h = p.shape === 'hub' ? 2.6 : p.root ? 2.6 : p.shape === 'portal' ? 2.4 : 1.8;
-        return (
-          <Html key={id} position={[p.x, h, p.z]} center zIndexRange={[20, 0]} style={{ pointerEvents: 'none' }}>
-            <div className={`sgm-tag${visited.has(id) ? ' sgm-tag--seen' : ''}${p.ring <= 1 ? ' sgm-tag--big' : ''}`}>{p.title}</div>
-          </Html>
-        );
-      })}
-    </group>
-  );
+  return null;
+}
+
+function PlaceEffects(props: SceneProps) {
+  return <group>{props.world.places.map((p) => <Discovery key={p.id} place={p} palette={props.palette} revealed={props.revealed.has(p.id)} visited={props.visited.has(p.id)} landed={props.landed.has(p.id)} reduced={props.reduced} />)}</group>;
+}
+function Discovery({ place, palette, revealed, visited, landed, reduced }: { place: Place; palette: Palette; revealed: boolean; visited: boolean; landed: boolean; reduced: boolean }) {
+  const ring = useRef<THREE.Mesh>(null), spark = useRef<THREE.Points>(null), beam = useRef<THREE.Mesh>(null);
+  const revealAt = useRef(-100), visitAt = useRef(-100), was = useRef({ revealed, visited, landed });
+  const pending = useRef({ reveal: false, visit: false });
+  useEffect(() => {
+    if (revealed && !was.current.revealed) pending.current.reveal = true;
+    if ((visited && !was.current.visited) || (landed && !was.current.landed)) pending.current.visit = true;
+    was.current = { revealed, visited, landed };
+  }, [revealed, visited, landed]);
+  const vertices = useMemo(() => {
+    const array = new Float32Array(18 * 3);
+    for (let i = 0; i < 18; i++) { const a = i * 2.4; array[i * 3] = Math.cos(a); array[i * 3 + 1] = seedOf(`${place.id}/${i}`) * 1.2; array[i * 3 + 2] = Math.sin(a); }
+    return array;
+  }, [place.id]);
+  useFrame((s) => {
+    const t = s.clock.elapsedTime;
+    if (pending.current.reveal) { revealAt.current = t; pending.current.reveal = false; }
+    if (pending.current.visit) { visitAt.current = t; pending.current.visit = false; }
+    const r = t - revealAt.current, v = t - visitAt.current;
+    if (ring.current) {
+      ring.current.visible = r < 1.5;
+      ring.current.scale.setScalar(1 + r * (reduced ? .6 : 2.7));
+      (ring.current.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 1 - r / 1.5) * .65;
+    }
+    if (spark.current) { spark.current.visible = v < 1.7; spark.current.position.y = .7 + v * .65; spark.current.scale.setScalar(1 + v * (reduced ? .2 : .8)); (spark.current.material as THREE.PointsMaterial).opacity = Math.max(0, 1 - v / 1.7); }
+    if (beam.current) { beam.current.visible = revealed && place.recent; (beam.current.material as THREE.MeshBasicMaterial).opacity = .045 + Math.sin(t * (reduced ? .3 : 1.4)) * .018; }
+  });
+  return <group position={[place.x, 0, place.z]}>
+    <mesh ref={ring} visible={false} rotation-x={-Math.PI / 2} position-y={.07}><ringGeometry args={[.92, 1, 40]} /><meshBasicMaterial color={palette.card} transparent depthWrite={false} /></mesh>
+    <points ref={spark} visible={false}><bufferGeometry><bufferAttribute attach="attributes-position" args={[vertices, 3]} /></bufferGeometry><pointsMaterial color={placeColor(place, palette)} size={.09} transparent depthWrite={false} /></points>
+    {place.recent && <mesh ref={beam} position-y={5.2}><cylinderGeometry args={[.11, .5, 8, 10, 1, true]} /><meshBasicMaterial color={palette.wait} transparent opacity={.055} side={THREE.DoubleSide} depthWrite={false} /></mesh>}
+  </group>;
+}
+function Sun({ world, palette }: { world: World; palette: Palette }) {
+  const sun = useRef<THREE.DirectionalLight>(null);
+  useEffect(() => { const light = sun.current; return () => { light?.shadow.dispose(); }; }, []);
+  return <directionalLight ref={sun} position={[-12, 24, 10]} color={palette.card} intensity={2.8} castShadow shadow-mapSize={[1024, 1024]} shadow-camera-left={-world.extent - 5} shadow-camera-right={world.extent + 5} shadow-camera-top={world.extent + 5} shadow-camera-bottom={-world.extent - 5} shadow-camera-near={1} shadow-camera-far={100} shadow-bias={-.0005} shadow-normalBias={.025} />;
+}
+/** Lower pixel cost on constrained devices; geometry, motion and interaction stay intact. */
+function FrameBudget() {
+  const elapsed = useRef(0), frames = useRef(0);
+  const { setDpr, viewport } = useThree();
+  useFrame((_, delta) => {
+    elapsed.current += delta; frames.current++;
+    if (elapsed.current < 3 || frames.current < 8) return;
+    const fps = frames.current / elapsed.current;
+    if (fps < 40 && viewport.dpr > .7) setDpr(Math.max(.7, viewport.dpr * .8));
+    elapsed.current = 0; frames.current = 0;
+  });
+  return null;
+}
+function ContextGuard({ onUnavailable }: { onUnavailable: () => void }) {
+  const gl = useThree((s) => s.gl);
+  useEffect(() => {
+    const lost = (event: Event) => { event.preventDefault(); onUnavailable(); };
+    gl.domElement.addEventListener('webglcontextlost', lost);
+    return () => gl.domElement.removeEventListener('webglcontextlost', lost);
+  }, [gl, onUnavailable]);
+  return null;
+}
+function ShadowCache({ world, revealed }: { world: World; revealed: ReadonlySet<string> }) {
+  const gl = useThree((s) => s.gl);
+  useEffect(() => { gl.shadowMap.autoUpdate = false; gl.shadowMap.needsUpdate = true; }, [gl, world, revealed]);
+  return null;
+}
+function DuelStage({ place, encounter, palette, reduced }: { place: Place; encounter: WorldEncounter; palette: Palette; reduced: boolean }) {
+  const stage = useRef<THREE.Group>(null), full = useRef(new THREE.Vector3(1, 1, 1));
+  useFrame((_, dt) => { if (stage.current) { if (reduced) stage.current.scale.copy(full.current); else stage.current.scale.lerp(full.current, 1 - Math.exp(-8 * dt)); } });
+  return <group ref={stage} position={[place.x, 5.2, place.z]} scale={reduced ? 1 : .1}>
+    <mesh position-y={-.2}><cylinderGeometry args={[4.1, 3.6, .35, 48]} /><meshToonMaterial color={palette.line2} /></mesh>
+    <mesh position-y={.01} rotation-x={-Math.PI / 2}><circleGeometry args={[3.94, 48]} /><meshToonMaterial color={palette.surface} /></mesh>
+    <mesh position-y={.03} rotation-x={-Math.PI / 2}><ringGeometry args={[3.75, 3.82, 48]} /><meshBasicMaterial color={palette.wait} /></mesh>
+    {[[-1.65, -1.05], [1.65, 1.05]].map(([x, z], i) => <group key={i} position={[x!, .06, z!]}>
+      <mesh><cylinderGeometry args={[1.13, 1.27, .12, 32]} /><meshToonMaterial color={i ? palette.info : palette.merged} /></mesh>
+      <mesh rotation-x={-Math.PI / 2} position-y={.075}><ringGeometry args={[.93, 1, 32]} /><meshBasicMaterial color={palette.card} /></mesh>
+      <group position-y={.1} scale={1.35} rotation-y={i ? Math.PI : 0}><Character palette={palette} reduced={reduced} trainer={!i} phase={i ? 'active' : encounter.phase} /></group>
+    </group>)}
+    {[-1, 1].map((side) => <mesh key={side} position={[side * 2.8, .4, -side * 1.65]}><octahedronGeometry args={[.22]} /><meshStandardMaterial color={palette.wait} emissive={palette.wait} emissiveIntensity={.7} /></mesh>)}
+  </group>;
 }
 
 /* ---- the player, the camera and the walk ---- */
@@ -450,11 +177,24 @@ interface PlayerProps {
   onNear: (placeId: string | null) => void;
   onArrive: (placeId: string, open: boolean) => void;
   onPosition: (x: number, z: number) => void;
+  reduced: boolean;
+  duel: SceneProps['duel'];
+  alertNode: React.RefObject<HTMLSpanElement | null>;
 }
 
-function Player({ world, palette, control, revealed, playerPos, onReveal, onNear, onArrive, onPosition }: PlayerProps) {
+function Player({ world, palette, control, revealed, playerPos, onReveal, onNear, onArrive, onPosition, reduced, duel, alertNode }: PlayerProps) {
   const mesh = useRef<THREE.Group>(null);
-  const camera = useThree((s) => s.camera);
+  const camera = useThree((s) => s.camera) as THREE.OrthographicCamera;
+  const { gl, size: viewportSize } = useThree();
+  const motion = useRef<CharacterMotion>({ moving: false, heading: 0, arrival: -100 });
+  const zoom = useRef(1), intro = useRef(0), target = useRef(new THREE.Vector3()), look = useRef(new THREE.Vector3());
+  const alertPosition = useRef(new THREE.Vector3());
+  const dust = useRef<THREE.Mesh>(null), dustAt = useRef(-100), dustPos = useRef(new THREE.Vector3());
+  useEffect(() => {
+    const wheel = (event: WheelEvent) => { event.preventDefault(); zoom.current = Math.max(.65, Math.min(1.7, zoom.current * Math.exp(-event.deltaY * .001))); };
+    gl.domElement.addEventListener('wheel', wheel, { passive: false });
+    return () => gl.domElement.removeEventListener('wheel', wheel);
+  }, [gl]);
   const follow = useRef(playerPos.current.clone());
   const waypoints = useRef<Array<{ x: number; z: number }>>([]);
   const arrive = useRef<{ placeId: string | null; open: boolean } | null>(null);
@@ -464,13 +204,15 @@ function Player({ world, palette, control, revealed, playerPos, onReveal, onNear
   const saveTick = useRef(0);
   const revealTick = useRef(0);
   const heading = useRef(0);
+  const direction = useRef<[number, number]>([0, 0]);
 
-  useEffect(() => { for (const id of revealed) known.current.add(id); }, [revealed]);
+  useEffect(() => { known.current = new Set(revealed); }, [revealed]);
 
   useEffect(() => {
     camera.position.copy(playerPos.current).add(CAMERA_OFFSET);
+    if (!reduced) camera.position.y += 35;
     camera.lookAt(playerPos.current);
-  }, [camera, playerPos]);
+  }, [camera, playerPos, reduced]);
 
   const plan = (order: WalkOrder): void => {
     const pos = playerPos.current;
@@ -512,9 +254,10 @@ function Player({ world, palette, control, revealed, playerPos, onReveal, onNear
       if (control.order) plan(control.order);
     }
 
-    const dir = keyDirection(control.keys);
+    const dir = keyDirection(control.keys, direction.current);
     let moving = false;
     if (dir) {
+      control.order = null; seenOrder.current = null;
       waypoints.current = [];
       arrive.current = null;
       pos.x += dir[0] * WALK_SPEED * dt;
@@ -534,6 +277,7 @@ function Player({ world, palette, control, revealed, playerPos, onReveal, onNear
         if (!waypoints.current.length && arrive.current?.placeId) {
           const a = arrive.current;
           arrive.current = null;
+          motion.current.arrival = state.clock.elapsedTime;
           onArrive(a.placeId!, a.open);
         }
       } else {
@@ -551,13 +295,35 @@ function Player({ world, palette, control, revealed, playerPos, onReveal, onNear
     }
 
     m.position.set(pos.x, 0, pos.z);
-    m.rotation.y = heading.current;
-    const bob = moving ? Math.abs(Math.sin(state.clock.elapsedTime * 12)) * 0.12 : 0;
-    m.children[0]!.position.y = 0.75 + bob;
-
-    follow.current.lerp(pos, 1 - Math.pow(0.001, dt));
-    camera.position.copy(follow.current).add(CAMERA_OFFSET);
-    camera.lookAt(follow.current);
+    if (moving && (!motion.current.moving || state.clock.elapsedTime - dustAt.current > .34)) { dustAt.current = state.clock.elapsedTime; dustPos.current.copy(pos); }
+    motion.current.moving = moving; motion.current.heading = heading.current;
+    if (dust.current) {
+      const age = state.clock.elapsedTime - dustAt.current;
+      dust.current.visible = age < .6; dust.current.position.set(dustPos.current.x, .04, dustPos.current.z);
+      dust.current.scale.setScalar(.16 + age * (reduced ? .2 : .8));
+      (dust.current.material as THREE.MeshBasicMaterial).opacity = Math.max(0, .3 - age * .5);
+    }
+    if (alertNode.current) {
+      alertNode.current.style.display = nearId.current && nearId.current !== world.hubId && !duel ? 'grid' : 'none';
+      alertPosition.current.set(pos.x, 2.1, pos.z).project(camera);
+      alertNode.current.style.transform = `translate(${(alertPosition.current.x * .5 + .5) * gl.domElement.clientWidth}px, ${(-alertPosition.current.y * .5 + .5) * gl.domElement.clientHeight}px) translate(-50%, -100%)`;
+    }
+    intro.current += dt;
+    const entering = reduced ? 0 : Math.max(0, 1 - intro.current / 2.8);
+    target.current.copy(pos);
+    if (moving) { target.current.x += Math.sin(heading.current) * 1.1; target.current.z += Math.cos(heading.current) * 1.1; }
+    const arena = duel ? world.byId.get(duel.placeId) : null;
+    if (arena) target.current.set(arena.x, 5.2, arena.z);
+    follow.current.lerp(target.current, 1 - Math.exp(-3.5 * dt));
+    target.current.copy(follow.current).add(CAMERA_OFFSET);
+    target.current.y += entering * entering * 35;
+    if (arena) { target.current.x += 8; target.current.y -= 10; target.current.z -= 9; }
+    camera.position.lerp(target.current, reduced ? 1 : 1 - Math.exp(-3.5 * dt));
+    look.current.copy(follow.current); look.current.y = arena ? 5.8 : .3;
+    camera.lookAt(look.current);
+    const baseZoom = Math.max(24, Math.min(53, viewportSize.height / 13));
+    const desired = baseZoom * zoom.current * (arena ? 1.55 : nearId.current && nearId.current !== world.hubId ? 1.09 : 1) * (1 - entering * .35);
+    camera.zoom = THREE.MathUtils.damp(camera.zoom, desired, reduced ? 12 : 3, dt); camera.updateProjectionMatrix();
 
     // Reveal what is within reach (a few times a second, not every frame).
     revealTick.current += dt;
@@ -569,28 +335,20 @@ function Player({ world, palette, control, revealed, playerPos, onReveal, onNear
         if (Math.hypot(p.x - pos.x, p.z - pos.z) <= REVEAL_RADIUS) { known.current.add(p.id); fresh.push(p.id); }
       }
       if (fresh.length) onReveal(fresh);
-      const near = nearestPlace(world, pos.x, pos.z, NEAR_RADIUS);
+      const ordered = control.order?.placeId ? world.byId.get(control.order.placeId) : null;
+      const near = waypoints.current.length ? null : ordered && Math.hypot(ordered.x - pos.x, ordered.z - pos.z) <= NEAR_RADIUS ? ordered : nearestPlace(world, pos.x, pos.z, NEAR_RADIUS);
       const id = near?.id ?? null;
       if (id !== nearId.current) { nearId.current = id; onNear(id); }
     }
-    saveTick.current += dt;
+    saveTick.current += delta;
     if (saveTick.current > 1) { saveTick.current = 0; onPosition(pos.x, pos.z); }
   });
 
-  return (
-    <group ref={mesh} position={[playerPos.current.x, 0, playerPos.current.z]}>
-      <mesh position-y={0.75}>
-        <primitive object={GEO.capsule} attach="geometry" />
-        <meshStandardMaterial color={palette.ink} roughness={0.6} flatShading />
-      </mesh>
-      <mesh position={[0, 1.05, 0.28]} scale={[0.26, 0.12, 0.1]}>
-        <primitive object={GEO.box} attach="geometry" />
-        <meshStandardMaterial color={palette.card} />
-      </mesh>
-      <mesh rotation-x={-Math.PI / 2} position-y={0.02} scale={0.45}>
-        <primitive object={GEO.disc} attach="geometry" />
-        <meshStandardMaterial color={palette.ink} transparent opacity={0.25} />
-      </mesh>
+  return <group>
+    <group ref={mesh} visible={!duel} position={[playerPos.current.x, 0, playerPos.current.z]}>
+      <Character palette={palette} motion={motion} reduced={reduced} />
+
     </group>
-  );
+    <mesh ref={dust} rotation-x={-Math.PI / 2} visible={false}><ringGeometry args={[.66, 1, 16]} /><meshBasicMaterial color={palette.card} transparent depthWrite={false} /></mesh>
+  </group>;
 }

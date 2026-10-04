@@ -38,7 +38,7 @@ const KEY_DIR: Readonly<Record<string, [x: number, z: number]>> = {
 export const WALK_KEYS: ReadonlySet<string> = new Set(Object.keys(KEY_DIR));
 
 /** Summed, normalised walk direction from the keys down; null when none. */
-export function keyDirection(keys: ReadonlySet<string>): [x: number, z: number] | null {
+export function keyDirection(keys: ReadonlySet<string>, out: [number, number] = [0, 0]): [x: number, z: number] | null {
   let x = 0;
   let z = 0;
   for (const k of keys) {
@@ -46,5 +46,7 @@ export function keyDirection(keys: ReadonlySet<string>): [x: number, z: number] 
     if (d) { x += d[0]; z += d[1]; }
   }
   const len = Math.hypot(x, z);
-  return len < 1e-6 ? null : [x / len, z / len];
+  if (len < 1e-6) return null;
+  out[0] = x / len; out[1] = z / len;
+  return out;
 }

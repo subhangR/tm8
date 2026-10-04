@@ -256,7 +256,7 @@
 }
 .cv2-root .sty-graphbox > * { flex: 1 1 auto; min-height: 0; }
 /* THE GAME VIEW takes the whole panel: nothing follows it to peek at. */
-.cv2-root .sty-graphbox--game { --sty-peek: 0px; height: clamp(360px, 100cqh, 2000px); }
+.cv2-root .sty-graphbox--game { --sty-peek: 0px; height: clamp(360px, min(100cqh, calc(100dvh / 1.1)), 2000px); }
 .cv2-root .sty-page:has(.sty-graphbox--game) { padding-bottom: 0; }
 @container (max-width: 980px) {
   .cv2-root .sty-full { grid-template-columns: minmax(0, 1fr); }

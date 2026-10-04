@@ -12,10 +12,10 @@
  * lazily; without WebGL the same world is drawn as a list of places, so the
  * walk-and-open loop still works and tests can drive it.
  */
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { Component, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { KindIcon } from '../../domain';
 import { getKind } from '../../domain/registry';
-import { Pill } from '../../kit';
+import { DuelPanel } from './DuelPanel';
 import { TONE_WORD, statusWord, type StoryView } from '../model';
 import type { StoryLive } from '../props';
 import { ModeSwitch } from './ModeSwitch';
@@ -24,6 +24,13 @@ import { hasWebGL, readPalette, type Palette } from './palette';
 import { HOME, storyGameStore, useStoryGameSave, type StoryViewMode } from './store';
 import { buildWorld, type Place, type World } from './world';
 import './story-game.css';
+
+class SceneBoundary extends Component<{ children: ReactNode; onUnavailable: () => void }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  componentDidCatch() { this.props.onUnavailable(); }
+  render() { return this.state.failed ? null : this.props.children; }
+}
 
 const Scene = lazy(() => import('./scene'));
 
@@ -50,12 +57,31 @@ export function StoryGame({ view, live, open, mode, onMode }: StoryGameProps) {
   const control = useRef(createControl()).current;
   const host = useRef<HTMLDivElement>(null);
   const [palette, setPalette] = useState<Palette | null>(null);
-  const [webgl] = useState(hasWebGL);
+  const [webgl, setWebgl] = useState(hasWebGL);
+  const unavailable = useCallback(() => setWebgl(false), []);
   const [nearId, setNearId] = useState<string | null>(null);
+  const [reduced, setReduced] = useState(() => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches);
+  const [dismissed, setDismissed] = useState<string | null>(null);
+  const [encounterId, setEncounterId] = useState<string | null>(null);
+  useEffect(() => {
+    if (typeof matchMedia !== 'function') return;
+    const query = matchMedia('(prefers-reduced-motion: reduce)');
+    const change = () => setReduced(query.matches);
+    query.addEventListener('change', change);
+    return () => query.removeEventListener('change', change);
+  }, []);
+  useEffect(() => { setDismissed(null); setEncounterId(null); }, [nearId]);
   const [startAt] = useState(() => ({ x: save.x, z: save.z }));
 
   useEffect(() => {
-    if (host.current) setPalette(readPalette(host.current));
+    const node = host.current;
+    if (!node) return;
+    const refresh = () => setPalette(readPalette(node));
+    refresh();
+    const root = node.closest('.cv2-root');
+    const observer = new MutationObserver(refresh);
+    if (root) observer.observe(root, { attributes: true, attributeFilter: ['data-theme', 'class', 'style'] });
+    return () => observer.disconnect();
   }, []);
   useEffect(() => {
     host.current?.focus({ preventScroll: true });
@@ -73,7 +99,7 @@ export function StoryGame({ view, live, open, mode, onMode }: StoryGameProps) {
   );
   const arrive = useCallback((placeId: string, doOpen: boolean) => { if (doOpen) openPlace(placeId); }, [openPlace]);
   const goTo = useCallback(
-    (place: Place, doOpen = false) => walkTo(control, place.x, place.z, place.id, doOpen),
+    (place: Place, doOpen = false) => { walkTo(control, place.x, place.z, place.id, doOpen); host.current?.focus({ preventScroll: true }); },
     [control],
   );
   const onGround = useCallback((x: number, z: number) => walkTo(control, x, z, null, false), [control]);
@@ -89,13 +115,21 @@ export function StoryGame({ view, live, open, mode, onMode }: StoryGameProps) {
 
   const near = nearId ? world.byId.get(nearId) ?? null : null;
 
+  const encounter = near && dismissed !== near.id ? near.encounters.find((s) => s.id === encounterId) ?? near.encounters[0] ?? null : null;
+  const duel = near && encounter ? { placeId: near.id, encounter } : null;
+
+  const leaveDuel = useCallback(() => { if (nearId) setDismissed(nearId); host.current?.focus({ preventScroll: true }); }, [nearId]);
+
   const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>): void => {
+    if (e.key === 'Escape' && duel) { leaveDuel(); e.preventDefault(); return; }
+    if (e.target instanceof HTMLElement && e.target.closest('button, input, textarea, select, [contenteditable="true"]')) return;
     const k = e.key.toLowerCase();
     if (WALK_KEYS.has(k)) {
       control.keys.add(k);
       e.preventDefault();
     } else if (OPEN_KEYS.has(k)) {
-      if (near && near.id !== storyId) { openPlace(near.id); e.preventDefault(); }
+      if (encounter) { openPlace(encounter.id); e.preventDefault(); }
+      else if (near && near.id !== storyId) { openPlace(near.id); e.preventDefault(); }
     }
   };
   const onKeyUp = (e: ReactKeyboardEvent<HTMLDivElement>): void => {
@@ -111,7 +145,7 @@ export function StoryGame({ view, live, open, mode, onMode }: StoryGameProps) {
   return (
     <div
       ref={host}
-      className={`sgm${webgl ? '' : ' sgm--flat'}`}
+      className={`sgm${webgl ? '' : ' sgm--flat'}${duel ? ' sgm--duel' : ''}`}
       data-testid="story-game"
       tabIndex={0}
       role="application"
@@ -122,8 +156,11 @@ export function StoryGame({ view, live, open, mode, onMode }: StoryGameProps) {
     >
       <div className="sgm-stage">
         {webgl && palette ? (
-          <Suspense fallback={<div className="sgm-loading">Raising the world…</div>}>
+          <SceneBoundary onUnavailable={unavailable}><Suspense fallback={<div className="sgm-loading">Raising the world…</div>}>
             <Scene
+              onUnavailable={unavailable}
+              reduced={reduced}
+              duel={duel}
               world={world}
               palette={palette}
               control={control}
@@ -138,7 +175,7 @@ export function StoryGame({ view, live, open, mode, onMode }: StoryGameProps) {
               onGround={onGround}
               onPlaceClick={onPlaceClick}
             />
-          </Suspense>
+          </Suspense></SceneBoundary>
         ) : webgl ? null : (
           <FlatWorld world={world} revealed={revealed} visited={visited} onOpen={openPlace} />
         )}
@@ -147,16 +184,17 @@ export function StoryGame({ view, live, open, mode, onMode }: StoryGameProps) {
       <div className="sgm-hud">
         <div className="sgm-hud__lead">
           <ModeSwitch mode={mode} onChange={onMode} />
+          <span className="sgm-eyebrow sgm-chapter">THE LIVING ATLAS</span>
           <div className="sgm-title" title={view.title}>
             <KindIcon kind={world.byId.get(world.hubId)?.kind ?? ''} size={14} />
             <span className="sgm-title__text">{view.title}</span>
-            <Pill tone={progress === 100 ? 'run' : 'info'}>{progress}% done</Pill>
+            <span className="sgm-progress" style={{ '--sgm-progress': `${progress}%` } as CSSProperties}><span>{progress}% done</span></span>
           </div>
         </div>
 
-        <aside className="sgm-quest" aria-label="Quest log">
+        <aside className="sgm-quest" aria-label="Quest log" inert={!!duel}>
           <div className="sgm-quest__head">
-            <span className="kit-eyebrow">Quests</span>
+            <span className="sgm-eyebrow">FIELD NOTES</span>
             <span className="sgm-quest__count">{explored} / {world.places.length} found</span>
           </div>
           <ul className="sgm-quest__list">
@@ -170,8 +208,10 @@ export function StoryGame({ view, live, open, mode, onMode }: StoryGameProps) {
           </ul>
         </aside>
 
-        {near ? (
-          <div className="sgm-approach" data-testid="story-game-approach">
+        {duel ? <DuelPanel encounter={duel.encounter} encounters={near!.encounters} onSelect={setEncounterId} onOpen={openPlace} onLeave={leaveDuel} /> : null}
+
+        {near && !duel ? (
+          <div key={near.id} className="sgm-approach" data-testid="story-game-approach">
             <KindIcon kind={near.kind} size={16} />
             <div className="sgm-approach__text">
               <div className="sgm-approach__title">{near.title}</div>
@@ -179,6 +219,7 @@ export function StoryGame({ view, live, open, mode, onMode }: StoryGameProps) {
                 {near.id === storyId ? `You are here · ${explored} of ${world.places.length} places found` : describe(near)}
               </div>
             </div>
+            {near.encounters.length ? <button type="button" className="sgm-btn" onClick={() => setDismissed(null)}>Meet trainer</button> : null}
             {near.id !== storyId ? (
               <button type="button" className="sgm-btn sgm-btn--primary" onClick={() => openPlace(near.id)}>
                 {near.portal ? 'Enter' : 'Open'} <kbd>E</kbd>
@@ -187,9 +228,10 @@ export function StoryGame({ view, live, open, mode, onMode }: StoryGameProps) {
           </div>
         ) : null}
 
+        <div className="sgm-compass" aria-hidden><span>N</span><i>✧</i><small>EXPLORE</small></div>
         <div className="sgm-hint">
           <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span>
-          <span>click a place to go · double-click to go and open</span>
+          <span>click to travel · scroll to zoom</span>
           <span><kbd>E</kbd> opens what you stand at</span>
           <button
             type="button"
