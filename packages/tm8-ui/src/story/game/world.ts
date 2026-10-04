@@ -26,6 +26,20 @@ import type { StoryEdgeFamily } from '../model';
 /* EDGES. `storySource(view)` is the first adapter; the whole graph is the    */
 /* next one (task 01a107e7: "the bigger picture is the full map").           */
 /* ------------------------------------------------------------------------- */
+/** Optional encounters are source data: the renderer never fetches or guesses entities. */
+export interface WorldEncounter {
+  id: string;
+  name: string;
+  callSign: string;
+  model: string | null;
+  status: string | null;
+  phase: 'active' | 'victory' | 'fainted' | 'resting';
+  /** Actual completed attached tasks, not invented session health. */
+  completed: number;
+  total: number;
+  activity: Array<{ id: string; at: string; text: string; author: string | null }>;
+}
+
 export interface WorldNode {
   id: string;
   kind: string;
@@ -44,6 +58,7 @@ export interface WorldNode {
   anchorId: string | null;
   /** The landmarks' territory this node stands in. */
   rootIds: string[];
+  encounters?: WorldEncounter[];
 }
 
 export interface WorldEdge {
@@ -101,6 +116,7 @@ export interface Place {
   rootIds: string[];
   root: boolean;
   portal: boolean;
+  encounters: WorldEncounter[];
 }
 
 export interface Road {
@@ -184,6 +200,7 @@ function placeOf(n: WorldNode, x: number, z: number, ring: number, anchorId: str
     rootIds: n.rootIds,
     root,
     portal,
+    encounters: n.encounters ?? [],
   };
 }
 
@@ -222,6 +239,32 @@ export function storySource(view: StoryView): WorldSource {
     live: !!n.live, createdAt: n.createdAt ?? null, activityAt: n.activityAt ?? null, progress, anchorId, rootIds: n.rootIds ?? [],
   });
 
+  const encounters = page.sessions.map((session): WorldEncounter => {
+    const attached = session.taskIds.map((id) => nodes.get(id)).filter((n) => n !== undefined);
+    const completed = attached.filter((n) => n.statusCategory === 'done').length;
+    const failed = session.runtimeStatus === 'failed';
+    const victory = !session.live && !failed && ((attached.length > 0 && completed === session.taskIds.length) || nodes.get(session.id)?.statusCategory === 'done');
+    const relevant = new Set([session.id, ...session.taskIds]);
+    const messages = view.feed.filter((m) => relevant.has(m.anchorId)).map((m) => ({
+      id: m.id, at: m.at, text: m.excerpt, author: m.author?.name ?? (m.authorId ? view.people[m.authorId]?.name ?? null : null),
+    }));
+    const activity = page.activity.filter((a) => relevant.has(a.entityId)).map((a) => ({
+      id: a.id, at: a.at, text: `${a.entityTitle} · ${a.verb}`, author: a.actor?.name ?? null,
+    }));
+    return {
+      id: session.id,
+      name: (session.teamMemberId ? view.people[session.teamMemberId]?.name ?? page.team.find((t) => t.id === session.teamMemberId)?.name : null) ?? session.title,
+      callSign: session.callSign, model: session.model ?? null, status: session.runtimeStatus,
+      phase: session.live ? 'active' : failed ? 'fainted' : victory ? 'victory' : 'resting',
+      completed, total: session.taskIds.length,
+      activity: [...messages, ...activity].sort((a, b) => b.at.localeCompare(a.at) || a.id.localeCompare(b.id)).slice(0, 8).reverse(),
+    };
+  });
+  const attachEncounters = (node: WorldNode): void => {
+    node.encounters = encounters.filter((e) => e.id === node.id || page.sessions.find((s) => s.id === e.id)?.taskIds.includes(node.id))
+      .sort((a, b) => Number(b.phase === 'active') - Number(a.phase === 'active') || a.id.localeCompare(b.id));
+  };
+
   const hubNode = nodes.get(view.id);
   const hub = wn(
     { id: view.id, kind: STORY_KIND, title: view.title, status: view.status, statusCategory: view.statusCategory, blocked: false,
@@ -237,6 +280,7 @@ export function storySource(view: StoryView): WorldSource {
     wn({ id: c.id, kind: STORY_KIND, title: c.title, status: c.status, statusCategory: c.statusCategory, blocked: false,
          live: c.liveSessionCount > 0, activityAt: c.lastActivityAt }, pctOf(c.taskProgress), view.id),
   );
+  for (const node of [hub, ...landmarks, ...rest, ...portals]) attachEncounters(node);
   const edges: WorldEdge[] = page.edges.map((e) => ({ fromId: e.fromId, toId: e.toId, type: e.type, family: e.family, cross: e.cross }));
   return { id: view.id, hub, landmarks, nodes: rest, portals, edges };
 }

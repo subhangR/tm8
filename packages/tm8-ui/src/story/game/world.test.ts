@@ -108,3 +108,35 @@ describe('layoutWorld (generic)', () => {
     expect(world.byId.get('new')?.recent).toBe(false);
   });
 });
+
+describe('graph-driven encounters', () => {
+  it('attaches the same live trainer to its session and tasks, with model and relevant messages', () => {
+    const session = STORY_FIXTURE.page.sessions.find((s) => s.live && s.taskIds.length)!;
+    const view = { ...STORY_FIXTURE, page: { ...STORY_FIXTURE.page, sessions: [{ ...session, model: 'test-model' }] } };
+    const world = buildWorld(view);
+    const encounter = world.byId.get(session.id)!.encounters[0]!;
+    expect(encounter.name).toBe(STORY_FIXTURE.people[session.teamMemberId!]!.name);
+    expect(encounter.model).toBe('test-model');
+    expect(encounter.phase).toBe('active');
+    expect(encounter.total).toBe(session.taskIds.length);
+    for (const id of session.taskIds) expect(world.byId.get(id)!.encounters).toContainEqual(encounter);
+    for (const row of encounter.activity) {
+      const message = view.feed.find((m) => m.id === row.id);
+      if (message) expect([session.id, ...session.taskIds]).toContain(message.anchorId);
+    }
+  });
+
+  it('shows failed and completed work honestly and keeps location fixed across runtime updates', () => {
+    const session = STORY_FIXTURE.page.sessions.find((s) => s.taskIds.length)!;
+    const make = (failed: boolean) => buildWorld({ ...STORY_FIXTURE, page: {
+      ...STORY_FIXTURE.page,
+      sessions: [{ ...session, live: false, runtimeStatus: failed ? 'failed' : 'exited' }],
+      nodes: STORY_FIXTURE.page.nodes.map((n) => session.taskIds.includes(n.id) ? { ...n, statusCategory: 'done' as const } : n),
+    } });
+    const failed = make(true), done = make(false);
+    expect(failed.byId.get(session.id)!.encounters[0]!.phase).toBe('fainted');
+    expect(done.byId.get(session.id)!.encounters[0]!.phase).toBe('victory');
+    expect(done.byId.get(session.id)!.encounters[0]!.completed).toBe(session.taskIds.length);
+    expect(done.places.map((p) => [p.id, p.x, p.z])).toEqual(failed.places.map((p) => [p.id, p.x, p.z]));
+  });
+});

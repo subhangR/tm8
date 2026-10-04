@@ -67,6 +67,7 @@ interface FactRow {
   activity_at: Date | string | null;
   created_at: Date | string;
   ws_status: string | null;
+  ws_model: string | null;
   ws_mode: string | null;
   tm_mode: string | null;
   blocked: boolean;
@@ -129,7 +130,7 @@ export async function loadStoryPage(q: Querier, storyId: string): Promise<StoryP
 
   const facts = await q.query<FactRow>(
     `select e.id, e.kind, e.parent_id, e.status_category, ${STATUS_KEY_SQL} as status_name,
-            e.activity_at, e.created_at, ws.status as ws_status, ws.mode as ws_mode, tm.mode as tm_mode,
+            e.activity_at, e.created_at, ws.status as ws_status, ws.model as ws_model, ws.mode as ws_mode, tm.mode as tm_mode,
             exists (
               select 1 from public.edges dep
                where dep.src_id = e.id and dep.type = 'depends_on'
@@ -351,6 +352,7 @@ export async function loadStoryPage(q: Querier, storyId: string): Promise<StoryP
       createdAt: iso(f.created_at),
       live: isLive(f),
       runtimeStatus: f.ws_status,
+      model: f.ws_model ?? null,
       teamMemberId: persona,
       mode: personaMode,
       taskIds,

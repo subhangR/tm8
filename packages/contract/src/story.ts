@@ -242,6 +242,8 @@ export interface StorySession {
   live: boolean;
   /** The work session's runtime status as stored. */
   runtimeStatus: string | null;
+  /** Model selected for this session; absent on older servers. */
+  model?: string | null;
   teamMemberId: string | null;
   mode: TeamMemberMode | null;
   /** Tasks it is `working_on` that are in the story. */
