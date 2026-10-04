@@ -309,6 +309,7 @@ export interface ChatThreadDetail {
  * message existed that was not yet a chat) has nothing left to express.
  */
 export interface ChatCreateInput {
+  mcpSelections?: import("../mcp/port").McpSelection[];
   spaceId: SpaceId | string;
   /**
    * The entity this chat is ABOUT — the Craft blueprint, the task, whatever the

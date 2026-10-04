@@ -1,3 +1,5 @@
+import { McpPicker } from '../mcp/McpPicker';
+import type { McpSelection } from '../mcp/port';
 import { EntityAttentionChip } from '../attention';
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { CollabError } from '@tm8/contract';
@@ -484,6 +486,8 @@ export function ChatHomeScreen({
      the drafts, it shows beside the draft that survived and nowhere else, and
      — D26 — survives navigation and sends in other threads: nothing the
      viewer typed, or was told, vanishes because they moved. */
+  const [mcpSelections, setMcpSelections] = useState<McpSelection[] | undefined>();
+  const [mcpReady, setMcpReady] = useState(true);
   const [submitFailures, setSubmitFailures] = useState<Readonly<Record<string, string>>>({});
   const submitError = submitFailures[draftKey] ?? null;
   const fileSubmitFailure = useCallback((key: string, message: string | null) => {
@@ -1332,7 +1336,7 @@ export function ChatHomeScreen({
         : !selectedModel
           ? 'No model is available from the launch catalog.'
           : null;
-  const refusal = startUnavailable ?? selectionUnavailable;
+  const refusal = startUnavailable ?? selectionUnavailable ?? (newThread && !mcpReady ? "Choose a connected account for each connector." : null);
 
   /**
    * THE THREAD'S THREE WRITE-ONCE FACTS, as the composer's drop-ups read them.
@@ -2001,6 +2005,7 @@ export function ChatHomeScreen({
         turns: [echo],
       });
       const created = await port.startThread.create({
+        ...(mcpSelections !== undefined ? { mcpSelections } : {}),
         spaceId,
         // `aboutId` replaces the anchor. Bare Home passes none; a contextual
         // host (Craft) passes the entity the chat is about, and the server
@@ -2107,6 +2112,7 @@ export function ChatHomeScreen({
     teammateId,
     newThread, chatMode, crew, teammates, models, permission, modeOptions, projectBinding.workdirMode, projectBinding.projectId, pinnedMode,
     modeOverrides,
+    mcpSelections,
   ]);
 
   const interrupt = useCallback(async () => {
@@ -2675,6 +2681,7 @@ export function ChatHomeScreen({
                 ) : null}
               </>
             ) : null}
+            {newThread && <McpPicker teamMemberId={teammateId ?? undefined} targetId={aboutId ?? undefined} value={mcpSelections} onChange={setMcpSelections} onReady={setMcpReady} disabled={busy} />}
             {submitError ? <p className="tch-submit-error" role="alert">{submitError}</p> : null}
             {refusal ? <p className="tch-refusal" id="tch-compose-refusal">{refusal}</p> : null}
             {phase === 'stopped-continuable' ? (

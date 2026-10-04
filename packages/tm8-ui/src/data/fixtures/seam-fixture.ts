@@ -841,6 +841,8 @@ function synthesizeContent(s: EntitySummary): EntityContent {
     case 'story':
       // The page is hydrated on a detail read only; a seam row carries none.
       return { kind: 'story', description: '', page: null };
+    case 'mcp_server':
+      return { kind: 'mcp_server', definition: { name: 'fixture', transport: 'http', url: 'https://fixture.example/mcp', envKeys: [], headerKeys: [], auth: { type: 'none' }, approved: false } };
     case 'style':
       // 284: a space style's content is its state's facts plus a description.
       return { ...state, description: null };
@@ -5843,7 +5845,7 @@ export function createFixtureSeam(): FixtureSeam {
           return {
             credentialId,
             // A server-only key (typesafe) never reaches a session: no usage rows.
-            sessions: row.lastUsedAt === null || row.provider === 'typesafe' ? [] : [{
+            sessions: row.lastUsedAt === null || row.provider === 'typesafe' || row.provider === 'mcp' ? [] : [{
               workSessionId: 'ws-fixture-usage', provider: row.provider, source: 'space_default',
               credentialId, ownerAccountId: row.ownerAccountId ?? null, launcherAccountId: 'acct-ada',
               agentSessionId: null, status: 'ended', recordedAt: FIXTURE_NOW, updatedAt: FIXTURE_NOW,

@@ -16,7 +16,7 @@ import type { CollectionMode, GroupByKey, QueryFilter, SortKey } from '../domain
  * (add, rotate, sign in, remove) live in those sections and nowhere else.
  */
 export const SETTINGS_ROUTE_SECTIONS = [
-  'projects', 'menu', 'credentials', 'configs', 'space-credentials', 'space-links',
+  'projects', 'menu', 'connectors', 'credentials', 'configs', 'space-credentials', 'space-links',
 ] as const;
 export type SettingsRouteSection = (typeof SETTINGS_ROUTE_SECTIONS)[number];
 

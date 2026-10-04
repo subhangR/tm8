@@ -613,6 +613,7 @@ export interface AttentionV2Ops {
 }
 
 export interface Seam {
+  mcp?: (spaceId: string) => import("../mcp/port").McpPort;
   // -- lifecycle -------------------------------------------------------------
   /** Subscribe the space's event stream and start the liveness cadence. Idempotent. */
   openSpace(spaceId: SpaceId): Promise<void>;

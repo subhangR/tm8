@@ -9,6 +9,8 @@
  * The three lanes keep their authority: geometry sizes, navStore owns panel
  * state and the URL, the panels own anatomy. This file is composition only.
  */
+import { McpProvider } from '../mcp/context';
+import { McpSettings } from '../mcp/McpSettings';
 import { PendingFormsProvider, usePendingFormsStoreFor } from '../forms/pending';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { ChatMode, EntityId, EntitySummary, ProjectTrustLevel, SpaceId } from '@tm8/contract';
@@ -361,10 +363,11 @@ export function GateApp(props: GateAppProps = {}) {
   /* Attention v2 (chapter 5): ONE attention store per shell, above both the
      desktop and the phone trees, so every chip, count and list reads the same
      rows and a Resolve anywhere settles everywhere. */
+  const mcpPort = useMemo(() => data.spaceId ? data.seam.mcp?.(data.spaceId) ?? null : null, [data.seam, data.spaceId]);
   const withPendingForms = (node: ReactNode) => (
     <PendingFormsProvider store={pendingFormsStore}>
       <AttentionProvider seam={data.seam} spaceId={data.spaceId} viewerId={data.viewerActor?.id ?? null}>
-        {node}
+        <McpProvider key={data.spaceId} port={mcpPort}>{node}</McpProvider>
       </AttentionProvider>
     </PendingFormsProvider>
   );
@@ -2690,6 +2693,7 @@ export function GateApp(props: GateAppProps = {}) {
               sections={
                 credentialsPort || branchesPort || spaceCredentialsPort || spaceLinksPort
                   ? {
+                      connectors: <McpSettings />,
                       ...(spaceLinksPort
                         ? { 'space-links': <SpaceLinksSection port={spaceLinksPort} onOpen={openFromSettings} /> }
                         : {}),

@@ -1,3 +1,5 @@
+import { McpPicker } from '../mcp/McpPicker';
+import type { McpSelection } from '../mcp/port';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   ContextBudgets,
@@ -423,6 +425,8 @@ export function LaunchComposerPopup({
   const [timedOut, setTimedOut] = useState<null | 'checking' | 'found' | 'none' | 'unknown'>(null);
   const openedAt = useRef(new Date().toISOString());
 
+  const [mcpSelections, setMcpSelections] = useState<McpSelection[] | undefined>();
+  const [mcpReady, setMcpReady] = useState(true);
   const spawnKey = useRef(keyLedger(() => newClientMutationId?.() ?? clientMutationId ?? newLaunchMutationId()));
   const dispatchKey = useRef(keyLedger(newLaunchMutationId));
 
@@ -437,7 +441,7 @@ export function LaunchComposerPopup({
     : !verdict.ok ? verdict.reason
       /* An edited group's defaults are re-reading: wait, or that group would
          launch on its defaults and drop the person's removals. */
-      : selection.launchBlock
+      : (!mcpReady ? "Choose a connected account for each connector." : null) ?? selection.launchBlock
         ?? (uploading > 0 ? `Waiting for ${String(uploading)} upload${uploading === 1 ? '' : 's'} to finish before launching.` : null);
 
   /* DRAFT: kept while the card is open, cleared by a successful commit. */
@@ -513,7 +517,7 @@ export function LaunchComposerPopup({
     const inputWith = (id: string) => buildSpawnInput({
       clientMutationId: id,
       spaceId,
-      config: { ...config, ...launchFields },
+      config: { ...config, ...launchFields, mcpSelections },
       // Still named `taskIds` on the wire; the server maps a non-task
       // subject through `derive_task_for_entity` (064).
       taskIds: subjectTaskIds,
@@ -877,6 +881,7 @@ export function LaunchComposerPopup({
       {/* The scrim IS the outside: any click on it is a click away. */}
       <div className="nsx-popup__scrim" onClick={onDismiss} aria-hidden="true" />
       <LaunchCardV3
+        connectors={<McpPicker teamMemberId={config.teamMemberId ?? undefined} targetId={subject.id} value={mcpSelections} onChange={setMcpSelections} onReady={setMcpReady} disabled={pending} />}
         verbLabel={verbLabel ?? 'Run'}
         verb={verb}
         onVerbChange={(next) => bind.onModeChange(next)}

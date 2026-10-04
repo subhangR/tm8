@@ -1,3 +1,6 @@
+import { McpPicker } from '../mcp/McpPicker';
+import { useMcpPort } from '../mcp/context';
+import type { McpSelection } from '../mcp/port';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { getKind } from '../domain';
@@ -118,6 +121,9 @@ export function NewSessionScreen({
   attach,
 }: NewSessionScreenProps) {
   const [draft, setDraft] = useState('');
+  const [mcpSelections, setMcpSelections] = useState<McpSelection[] | undefined>();
+  const [mcpReady, setMcpReady] = useState(true);
+  const mcp = useMcpPort();
   const [phase, setPhase] = useState<NewSessionPhase>('idle');
   const [sessionId, setSessionId] = useState<EntityId | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -161,7 +167,7 @@ export function NewSessionScreen({
      commits is never a surprise. */
   const derived = deriveTitle(draft);
   const title = customTitle.trim() !== '' ? customTitle.trim() : derived;
-  const ready = canDeriveTitle(draft) && refusal === null && commands !== null;
+  const ready = canDeriveTitle(draft) && refusal === null && commands !== null && mcpReady;
 
   /* The slow notice is time-based BECAUSE it is a statement about elapsed
      time — it never advances the phase, it only admits the wait. */
@@ -197,13 +203,16 @@ export function NewSessionScreen({
 
       /* STEP 2 — the host is mounted by this render, before the spawn below.
          See the docblock: the paint must happen first. */
+      if (mcp && mcpSelections) {
+        for (const selected of mcpSelections) await mcp.attach(taskId, selected.serverId);
+      }
       setPhase('spawning');
       await new Promise<void>((resolve) => { requestAnimationFrame(() => requestAnimationFrame(() => resolve())); });
 
       const id = await spawn(buildSpawnInput({
         clientMutationId: `ns-${taskId}`,
         spaceId,
-        config,
+        config: { ...config, mcpSelections },
         taskIds: [taskId],
         title,
       }));
@@ -222,7 +231,7 @@ export function NewSessionScreen({
     } finally {
       inFlight.current = false;
     }
-  }, [ready, commands, spaceId, title, draft, config, spawn]);
+  }, [ready, commands, spaceId, title, draft, config, spawn, mcp, mcpSelections]);
 
   /* The hand-off. Deliberately NOT inside the spawn promise: the screen owns
      its own transition to `live`, and the host decides when the URL follows. */
@@ -248,13 +257,14 @@ export function NewSessionScreen({
             Describe what you want done. Enter creates the task and starts an agent on it.
           </p>
         </div>
+      <McpPicker teamMemberId={config.teamMemberId ?? undefined} value={mcpSelections} onChange={setMcpSelections} onReady={setMcpReady} disabled={transitioning} />
         <NewSessionComposer
           {...bind}
           draft={draft}
           onDraftChange={setDraft}
           onSubmit={() => { void start(); }}
           busy={transitioning}
-          refusal={error ?? refusal}
+          refusal={error ?? refusal ?? (!mcpReady ? "Choose a connected account for each connector." : null)}
           derivedTitle={derived}
           title={customTitle}
           onTitleChange={setCustomTitle}
