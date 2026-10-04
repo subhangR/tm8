@@ -81,8 +81,9 @@ export function onOptions(view: StoryView, extraId?: string | null): OnOption[] 
   if (extraId && !out.some((o) => o.id === extraId)) {
     const n = view.page.nodes.find((x) => x.id === extraId);
     const t = view.page.team.find((x) => x.id === extraId);
-    const title = n?.title ?? t?.name;
-    if (title) out.push({ id: extraId, label: title, short: title, glyph: n?.kind ?? TEAMMATE_KIND });
+    const childStory = view.page.childStories.find(c => c.id === extraId);
+    const title = n?.title ?? t?.name ?? childStory?.title ?? extraId;
+    out.push({ id: extraId, label: title, short: title, glyph: n?.kind ?? (childStory ? STORY_KIND : t ? TEAMMATE_KIND : 'entity') });
   }
   return out;
 }

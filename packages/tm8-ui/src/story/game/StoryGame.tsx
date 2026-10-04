@@ -38,6 +38,7 @@ export interface StoryGameProps {
   view: StoryView;
   live?: StoryLive | null;
   open?: ((entityId: string) => void) | undefined;
+  showModeSwitch?: boolean;
   mode: StoryViewMode;
   onMode: (mode: StoryViewMode) => void;
 }
@@ -45,7 +46,7 @@ export interface StoryGameProps {
 const EMPTY: ReadonlySet<string> = new Set();
 const OPEN_KEYS: ReadonlySet<string> = new Set(['e', 'enter', ' ']);
 
-export function StoryGame({ view, live, open, mode, onMode }: StoryGameProps) {
+export function StoryGame({ view, live, open, mode, onMode, showModeSwitch = true }: StoryGameProps) {
   const storyId = view.id;
   const world = useMemo(() => buildWorld(view), [view]);
   const save = useStoryGameSave(storyId);
@@ -84,7 +85,7 @@ export function StoryGame({ view, live, open, mode, onMode }: StoryGameProps) {
     return () => observer.disconnect();
   }, []);
   useEffect(() => {
-    host.current?.focus({ preventScroll: true });
+    if (!document.activeElement?.closest('[data-testid="story-mode-switch"]')) host.current?.focus({ preventScroll: true });
   }, []);
 
   const reveal = useCallback((ids: string[]) => storyGameStore.getState().reveal(storyId, ids), [storyId]);
@@ -183,7 +184,7 @@ export function StoryGame({ view, live, open, mode, onMode }: StoryGameProps) {
 
       <div className="sgm-hud">
         <div className="sgm-hud__lead">
-          <ModeSwitch mode={mode} onChange={onMode} />
+          {showModeSwitch && <ModeSwitch mode={mode} onChange={onMode} />}
           <span className="sgm-eyebrow sgm-chapter">THE LIVING ATLAS</span>
           <div className="sgm-title" title={view.title}>
             <KindIcon kind={world.byId.get(world.hubId)?.kind ?? ''} size={14} />

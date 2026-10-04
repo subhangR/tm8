@@ -68,7 +68,7 @@ export function StoryRail(props: StoryBlockProps) {
   );
 }
 
-function StatusCard({ view, actions }: StoryBlockProps) {
+export function StatusCard({ view, actions }: StoryBlockProps) {
   const at = STATUS_STEPS.findIndex((s) => s.category === view.statusCategory);
   const p = view.state.taskProgress;
   const open = p.work - p.done;

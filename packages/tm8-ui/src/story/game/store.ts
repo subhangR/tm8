@@ -8,7 +8,8 @@
  */
 import { createStore, useStore } from 'zustand';
 
-export type StoryViewMode = 'story' | 'game';
+// 'story' remains the persisted key for the Graph tab.
+export type StoryViewMode = 'story' | 'tree' | 'game';
 
 export interface StoryGameSave {
   x: number;

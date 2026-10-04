@@ -15,7 +15,7 @@
  * tallies. The one thing it counts is the by-kind breakdown under "In the
  * story", which is a label over `page.nodes`, not a progress figure.
  */
-import { useCallback, useContext, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import type { StatusCategory } from '@tm8/contract';
 
 import { Avatar, Pill, VectorIcon, relTime, type PillTone } from '../kit';
@@ -24,12 +24,13 @@ import { getKind } from '../domain/registry';
 import { ChildStoriesCard } from './cards/ChildStoriesCard';
 import { LiveFeed } from './cards/LiveFeed';
 import { RootsCard } from './cards/RootsCard';
-import { StoryRail } from './cards/StoryRail';
+import { StoryRail, StatusCard } from './cards/StoryRail';
+import { StoryTree } from './tree/StoryTree';
 import { TeamCard } from './cards/TeamCard';
 import { WhatsHappening } from './cards/WhatsHappening';
 import { StoryGame } from './game/StoryGame';
 import { ModeSwitch } from './game/ModeSwitch';
-import { storyGameStore, useStoryViewMode } from './game/store';
+import { storyGameStore, useStoryViewMode, type StoryViewMode } from './game/store';
 import { StoryGraph } from './graph/StoryGraph';
 import { StoryPlayground } from './playground/StoryPlayground';
 import { StoryMessagesSlot } from './messages-slot';
@@ -103,10 +104,13 @@ export function StoryPage({
      the action popover's anchor; the popover closing never touches the
      selection, and a right-click never drops it. */
   const [menuPick, setMenuPick] = useState<StoryNodePick | null>(null);
+  const [launchTarget, setLaunchTarget] = useState<{ id: string; storyId: string; seq: number } | null>(null);
+  const launch = (id: string) => setLaunchTarget(old => ({ id, storyId: view.id, seq: (old?.seq ?? 0) + 1 }));
+  const viewId = useId();
   // Stable: the popover's outside-pointerdown listener depends on it.
   const closeMenu = useCallback(() => setMenuPick(null), []);
   // A pick names a node of THIS story; a different story drops it.
-  useEffect(() => setMenuPick(null), [view.id]);
+  useEffect(() => { setMenuPick(null); setLaunchTarget(null); }, [view.id]);
   const [hoverRootId, setHoverRootId] = useState<string | null>(null);
   const hover = useMemo(() => ({ rootId: hoverRootId, setRootId: setHoverRootId }), [hoverRootId]);
 
@@ -136,14 +140,15 @@ export function StoryPage({
      canvas's top-left corner as the graph's `lead`, with the description, the
      meta row and the stat strip still folded behind its "details". */
   const [detailsOpen, setDetailsOpen] = useState(false);
-  /* THE GAME IS ANOTHER VIEW (task 01a107e7): [Story | Game] in the lead. In
-     Game mode the world takes the graph's box, full height, and the sections
-     and playground are not mounted at all — the two views stay isolated. */
+  // Keep the stored 'story' value as Graph for existing per-story preferences.
   const mode = useStoryViewMode(view.id);
-  const setMode = useCallback((m: 'story' | 'game') => storyGameStore.getState().setMode(view.id, m), [view.id]);
+  const setMode = useCallback((next: StoryViewMode) => {
+    setMenuPick(null);
+    setLaunchTarget(null);
+    storyGameStore.getState().setMode(view.id, next);
+  }, [view.id]);
   const lead = (
     <div className="sty-lead">
-      <ModeSwitch mode={mode} onChange={setMode} />
       <StoryHero
         view={view}
         rename={actions.rename}
@@ -167,7 +172,7 @@ export function StoryPage({
   const graph =
     mode === 'game' ? (
       <div className="sty-graphbox sty-graphbox--game">
-        <StoryGame view={view} live={live ?? null} open={open} mode={mode} onMode={setMode} />
+        <StoryGame view={view} live={live ?? null} open={open} mode={mode} onMode={setMode} showModeSwitch={false} />
       </div>
     ) : (
       <div className="sty-graphbox">
@@ -188,13 +193,35 @@ export function StoryPage({
 
   return (
     <div
-      className={`sty-page${full ? ' sty-page--full' : ''}`}
+      className={`sty-page${full ? ' sty-page--full' : ''}${mode === 'tree' ? ' syt-page' : ''}`}
       data-testid="story-page"
       data-story-root=""
       data-story-id={view.id}
     >
-      {graph}
-      {mode === 'game' ? null : (
+      <div className="sty-viewbar">
+        <ModeSwitch mode={mode} onChange={setMode} idPrefix={viewId} panelId={`${viewId}-panel`} />
+      </div>
+      <div id={`${viewId}-panel`} role="tabpanel" aria-labelledby={`${viewId}-${mode}`} className="sty-viewpanel">
+      {mode === 'tree' ? (
+        <>
+          <div className="syt-hero">
+            <StoryHero compact view={view} rename={actions.rename} open={open} live={live ?? null}
+              expanded={detailsOpen} onToggle={() => setDetailsOpen(o => !o)}
+              extra={<><StoryStats view={view} /><StatusCard view={view} actions={actions} /></>} />
+            {actions.add && <button type="button" className="stc-btn syt-launch" title="Launch on story" onClick={() => launch(view.id)}>▷ Launch on story</button>}
+          </div>
+          <div className="syt-layout">
+            <StoryTree key={view.id} {...block} onLaunch={launch}
+              {...(filterRoute ? { onFilterKinds: (kinds: string[] | null) => filterRoute.set(null, kinds) } : {})} />
+            <aside className="syt-rail" aria-label="Story activity">
+              <LiveFeed {...block} />
+              {messages}
+              <WhatsHappening {...block} />
+            </aside>
+          </div>
+        </>
+      ) : graph}
+      {mode !== 'story' ? null : (
       <div className="sty-sections">
         {full ? (
           /* FULL VIEW: the rail beside the main column. */
@@ -230,8 +257,11 @@ export function StoryPage({
         )}
       </div>
       )}
+      </div>
       {mode === 'game' ? null : (
         <StoryPlayground
+          key={`${view.id}-${mode}`}
+          launchTarget={launchTarget?.storyId === view.id ? launchTarget : null}
           view={view}
           actions={actions}
           live={live}
@@ -321,7 +351,9 @@ function StoryHero({
   expanded,
   onToggle,
   extra,
+  compact = false,
 }: {
+  compact?: boolean;
   view: StoryView;
   rename?: (entityId: string, title: string) => Promise<void>;
   open?: (id: string) => void;
@@ -364,7 +396,7 @@ function StoryHero({
       style={{ ['--sty-p' as string]: `${pct(tp)}%` }}
     >
       <div className="sty-headrow">
-        <StoryCrumb view={view} open={open} />
+        {!compact && <StoryCrumb view={view} open={open} />}
         <StoryTitle id={view.id} title={view.title} rename={rename} />
         {statusLabel ? (
           <Pill tone={tone} dot="solid">
@@ -411,6 +443,7 @@ function StoryHero({
         <div id={detailsId} className="sty-details">
           <StoryLede text={view.description} />
           <div className="sty-herometa">
+            {compact && <StoryCrumb view={view} open={open} />}
             <span>{plural(state.rootCount, 'root')}</span>
             {kids > 0 ? <span>{plural(kids, 'child story', 'child stories')}</span> : null}
             <span>{plural(state.itemCount, 'thing')}</span>

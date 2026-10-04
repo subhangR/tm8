@@ -25,7 +25,7 @@ describe('StoryPage game view', () => {
     expect(getByTestId('story-page').querySelector('.sty-sections')).toBeNull();
     expect(storyGameStore.getState().mode[STORY_FIXTURE.id]).toBe('game');
 
-    fireEvent.click(within(getByTestId('story-game')).getByRole('tab', { name: 'Story' }));
+    fireEvent.click(getAllByRole('tab', { name: 'Graph' })[0]!);
     expect(queryByTestId('story-game')).toBeNull();
     expect(getByTestId('story-header')).toBeTruthy();
   });

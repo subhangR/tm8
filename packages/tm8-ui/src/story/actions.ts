@@ -35,6 +35,8 @@ export interface StoryActions {
   add?: (req: StoryAddRequest) => Promise<string | void>;
   /** Inline "+ task under this root". */
   createTask?: (parentId: string, title: string) => Promise<string | void>;
+  /** Create a markdown document under an entity, or as a story root. */
+  createDocument?: (parentId: string, title: string) => Promise<string | void>;
   /** Click-to-rename on any task title (and the story title). */
   rename?: (entityId: string, title: string) => Promise<void>;
   /** Mark a task done (popover). */

@@ -70,7 +70,7 @@ try {
   await page.keyboard.down('d'); await page.waitForTimeout(1100); await page.keyboard.up('d'); await page.waitForTimeout(1200);
   const after = await page.evaluate(() => JSON.parse(localStorage.getItem('tm8.story-game.v1')));
   report.walkingPersisted = JSON.stringify(before.saves) !== JSON.stringify(after.saves);
-  await page.getByRole('tab', { name: 'Story', exact: true }).first().click();
+  await page.getByRole('tab', { name: 'Graph', exact: true }).first().click();
   await page.waitForTimeout(700);
   report.afterUnmount = await page.evaluate(() => ({ ...window.__auditRenderer.info.memory }));
   await page.emulateMedia({ reducedMotion: 'reduce' });

@@ -310,3 +310,11 @@
   height: clamp(320px, 70cqh, 640px); min-height: 0;
 }
 .cv2-root .sty-messages__body > * { flex: 1 1 auto; min-height: 0; }
+
+/* One stable tab strip retains keyboard focus while the active view changes. */
+.cv2-root .sty-viewbar { padding: 8px 14px; }
+.cv2-root .sty-viewbar .stg-seg { width: fit-content; }
+.cv2-root .sty-viewbar .stg-seg__b:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: -2px; }
+.cv2-root .sty-viewpanel { min-width: 0; }
+.cv2-root .syt-page .sty-viewbar { padding: 0; }
+.cv2-root .syt-page .sty-viewpanel { display: flex; flex-direction: column; gap: 12px; }
