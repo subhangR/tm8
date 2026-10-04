@@ -52,6 +52,10 @@ class SpawnDb implements Db {
   async tx<T>(claims: DbClaims, run: (q: Querier) => Promise<T>): Promise<T> {
     const q: Querier = {
       query: async <R>(sql: string, args: readonly unknown[] = []): Promise<R[]> => {
+        // Visible teammate, with no equipped connectors in this parentage fixture.
+        if (sql.includes('internal.is_space_member($2::uuid)') && sql.includes('as allowed')) {
+          return [{ allowed: args[0] === TEAMMATE && args[1] === SPACE }] as R[];
+        }
         if (sql.includes('from public.team_members')) {
           return [{
             entity_id: TEAMMATE, name: 'Draco', role: 'PTY engineer',
@@ -87,7 +91,7 @@ class SpawnDb implements Db {
     }
     // 256 (W7p): the spawn port re-resolves the minted token to read its
     // via_link stamp. The real mint always resolves; no link here.
-    if (fn === 'resolve_auth_session') return { sessionId: AUTH_SESSION, viaLinkId: null } as T;
+    if (fn === 'resolve_auth_session') return { sessionId: AUTH_SESSION, identityId: 'owner-identity', kind: 'agent', spaceId: SPACE, workSessionId: SESSION, viaLinkId: null } as T;
     if (fn === 'public.issue_work_session_agent_session') return { id: AUTH_SESSION } as T;
     if (fn === 'internal.w2_record_interaction_profile_pin') {
       return {
