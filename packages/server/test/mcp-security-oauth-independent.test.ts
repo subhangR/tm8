@@ -1,0 +1,139 @@
+import { createHash } from 'node:crypto';
+import { createServer, type Server } from 'node:http';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { McpOAuth, refreshOAuth } from '../src/mcp/oauth.js';
+import { McpProxy } from '../src/mcp/proxy.js';
+
+// Independent fixtures exercise the actual OAuth, proxy and HTTP transport.
+// Private-network policy is explicit so these tests never contact live vendors.
+const servers: Server[] = [];
+afterEach(async () => {
+  vi.restoreAllMocks();
+  await Promise.all(servers.splice(0).map(server => new Promise<void>(resolve => server.close(() => resolve()))));
+});
+async function fixture(handler: Parameters<typeof createServer>[0]) {
+  const server = createServer(handler); servers.push(server);
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  return `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+}
+async function provider() {
+  const calls: { path: string; body: string; authorization?: string }[] = [];
+  let origin = '';
+  const state = {
+    metadata: {} as Record<string, unknown>, resource: {} as Record<string, unknown>,
+    registration: { client_id: 'registered-client', token_endpoint_auth_method: 'none' } as Record<string, unknown>,
+    token: { access_token: 'access-secret', refresh_token: 'refresh-secret', token_type: 'Bearer', expires_in: 3600 } as Record<string, unknown>,
+    tokenStatus: 200, rawResource: undefined as string | undefined, rawRegistration: undefined as string | undefined,
+  };
+  origin = await fixture(async (req, res) => {
+    const chunks: Buffer[] = []; for await (const chunk of req) chunks.push(chunk as Buffer);
+    calls.push({ path: req.url!, body: Buffer.concat(chunks).toString(), authorization: req.headers.authorization });
+    res.setHeader('content-type', 'application/json');
+    if (req.url === '/mcp') { res.writeHead(401, { 'www-authenticate': `Bearer resource_metadata="${origin}/resource"` }); res.end(); }
+    else if (req.url === '/resource') res.end(state.rawResource ?? JSON.stringify(state.resource));
+    else if (req.url?.startsWith('/.well-known/')) res.end(JSON.stringify(state.metadata));
+    else if (req.url === '/register') res.end(state.rawRegistration ?? JSON.stringify(state.registration));
+    else { res.statusCode = state.tokenStatus; res.end(JSON.stringify(state.token)); }
+  });
+  state.metadata = { issuer: origin, authorization_endpoint: `${origin}/authorize`, token_endpoint: `${origin}/token`, registration_endpoint: `${origin}/register`, code_challenge_methods_supported: ['S256'] };
+  state.resource = { resource: `${origin}/mcp`, authorization_servers: [origin] };
+  const oauth = new McpOAuth('https://tm8.test/callback');
+  const input = { identityId: 'human', spaceId: 'space', serverId: 'server', resource: `${origin}/mcp`, issuer: origin, clientId: 'client', allowPrivateNetwork: true };
+  const begin = async (overrides: Partial<typeof input> = {}) => new URL((await oauth.begin({ ...input, ...overrides })).authorizationUrl);
+  return { state, calls, origin, oauth, input, begin };
+}
+
+describe('independent OAuth binding and lifecycle', () => {
+  it('proves PKCE hash and exact redirect/client/resource binding through token exchange', async () => {
+    const p = await provider(); const auth = await p.begin();
+    const result = await p.oauth.callback('human', { state: auth.searchParams.get('state')!, code: 'code', issuer: p.origin });
+    const body = new URLSearchParams(p.calls.find(call => call.path === '/token')!.body);
+    expect(createHash('sha256').update(body.get('code_verifier')!).digest('base64url')).toBe(auth.searchParams.get('code_challenge'));
+    expect(auth.searchParams.get('code_challenge_method')).toBe('S256');
+    for (const name of ['redirect_uri', 'client_id', 'resource']) expect(body.get(name)).toBe(auth.searchParams.get(name));
+    expect(body.get('grant_type')).toBe('authorization_code');
+    expect(result).toMatchObject({ spaceId: 'space', serverId: 'server', secret: { issuer: p.origin, clientId: 'client', resource: p.input.resource } });
+  });
+  it('rejects wrong callback identity, allows owner, and rejects concurrent replay', async () => {
+    const p = await provider(); const auth = await p.begin(); const input = { state: auth.searchParams.get('state')!, code: 'code' };
+    await expect(p.oauth.callback('other', input)).rejects.toThrow('state');
+    expect(p.calls.filter(call => call.path === '/token')).toHaveLength(0);
+    const result = await Promise.allSettled([p.oauth.callback('human', input), p.oauth.callback('human', input)]);
+    expect(result.map(item => item.status).sort()).toEqual(['fulfilled', 'rejected']);
+    expect(p.calls.filter(call => call.path === '/token')).toHaveLength(1);
+  });
+  it('rejects expired state before token exchange', async () => {
+    const p = await provider(); const auth = await p.begin();
+    const now = Date.now(); vi.spyOn(Date, 'now').mockReturnValue(now + 601_000);
+    await expect(p.oauth.callback('human', { state: auth.searchParams.get('state')!, code: 'code' })).rejects.toThrow('expired');
+    expect(p.calls.filter(call => call.path === '/token')).toHaveLength(0);
+  });
+  it('rejects issuer mix-up and consumes that state', async () => {
+    const p = await provider(); const auth = await p.begin(); const input = { state: auth.searchParams.get('state')!, code: 'code' };
+    await expect(p.oauth.callback('human', { ...input, issuer: 'https://other.test' })).rejects.toThrow('issuer');
+    await expect(p.oauth.callback('human', input)).rejects.toThrow('state');
+    expect(p.calls.filter(call => call.path === '/token')).toHaveLength(0);
+  });
+  it.each(['issuer', 'pkce', 'token-origin', 'authorization-origin'])('rejects malicious %s discovery metadata', async attack => {
+    const p = await provider();
+    if (attack === 'issuer') p.state.metadata.issuer = 'https://other.test';
+    if (attack === 'pkce') p.state.metadata.code_challenge_methods_supported = ['plain'];
+    if (attack === 'token-origin') p.state.metadata.token_endpoint = 'http://127.0.0.1:1/token';
+    if (attack === 'authorization-origin') p.state.metadata.authorization_endpoint = 'http://127.0.0.1:1/authorize';
+    await expect(p.begin()).rejects.toThrow();
+    expect(p.calls).toHaveLength(1);
+  });
+  it('discovers protected resource and refuses a substituted resource binding', async () => {
+    const p = await provider();
+    const auth = await p.begin({ issuer: undefined }); expect(auth.searchParams.get('resource')).toBe(p.input.resource);
+    p.calls.length = 0; p.state.resource.resource = `${p.origin}/other`;
+    await expect(p.begin({ issuer: undefined })).rejects.toThrow('resource binding');
+    expect(p.calls.map(call => call.path)).toEqual(['/mcp', '/resource']);
+  });
+  it('registers a public client with exact callback and uses returned client identity', async () => {
+    const p = await provider(); const auth = await p.begin({ clientId: undefined });
+    expect(JSON.parse(p.calls.find(call => call.path === '/register')!.body)).toMatchObject({ redirect_uris: ['https://tm8.test/callback'], token_endpoint_auth_method: 'none' });
+    expect(auth.searchParams.get('client_id')).toBe('registered-client');
+    await p.oauth.callback('human', { state: auth.searchParams.get('state')!, code: 'code' });
+    expect(new URLSearchParams(p.calls.find(call => call.path === '/token')!.body).get('client_id')).toBe('registered-client');
+  });
+  it('refuses confidential dynamic registration without exposing provider secret', async () => {
+    const p = await provider(); p.state.registration.client_secret = 'provider-confidential-secret';
+    await expect(p.begin({ clientId: undefined })).rejects.toThrow('public client');
+  });
+  it('consumes state on denied token exchange and redacts provider error body', async () => {
+    const p = await provider(); p.state.tokenStatus = 400; p.state.token = { error: 'access_denied', error_description: 'secret-from-provider' };
+    const auth = await p.begin(); const input = { state: auth.searchParams.get('state')!, code: 'code' };
+    await expect(p.oauth.callback('human', input)).rejects.toThrow(/^OAuth token exchange failed$/);
+    await expect(p.oauth.callback('human', input)).rejects.toThrow('state');
+    expect(p.calls.filter(call => call.path === '/token')).toHaveLength(1);
+  });
+  it.each(['resource', 'registration'])('does not expose a malformed %s response in errors', async stage => {
+    const p = await provider();
+    if (stage === 'resource') p.state.rawResource = 'S3CRET invalid JSON';
+    else p.state.rawRegistration = 'S3CRET invalid JSON';
+    const error = await p.begin(stage === 'resource' ? { issuer: undefined } : { clientId: undefined }).catch(error => error);
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).not.toContain('S3CRET');
+  });
+  it('keeps resource/client binding and rotates refresh credentials', async () => {
+    const p = await provider(); const auth = await p.begin();
+    const { secret } = await p.oauth.callback('human', { state: auth.searchParams.get('state')!, code: 'code' });
+    p.state.token = { access_token: 'rotated-access', refresh_token: 'rotated-refresh', token_type: 'Bearer', expires_in: 60 };
+    const refreshed = await refreshOAuth(secret, true);
+    const body = new URLSearchParams(p.calls.at(-1)!.body);
+    expect(Object.fromEntries(body)).toEqual({ grant_type: 'refresh_token', refresh_token: 'refresh-secret', client_id: 'client', resource: p.input.resource });
+    expect(refreshed).toMatchObject({ accessToken: 'rotated-access', refreshToken: 'rotated-refresh', issuer: secret.issuer, tokenEndpoint: secret.tokenEndpoint, clientId: secret.clientId, resource: secret.resource });
+  });
+  it('bounds repeated upstream 401 responses without disclosing secrets', async () => {
+    let requests = 0; let refreshes = 0;
+    const url = await fixture((req, res) => { if (req.url === '/token') refreshes++; else requests++; res.writeHead(401); res.end('access-secret refresh-secret'); });
+    const proxy = new McpProxy({
+      authorize: async () => ({ sessionId: 'session', identityId: 'human', spaceId: 'space', serverId: 'server', credentialId: 'account' }),
+      definition: async () => ({ id: 'server', spaceId: 'space', approved: true, transport: 'http', url, allowPrivateNetwork: true, auth: { type: 'oauth2' } }),
+      credentials: { read: async () => ({ nonce: 'n', secret: { kind: 'oauth', accessToken: 'access-secret', refreshToken: 'refresh-secret', issuer: url, tokenEndpoint: `${url}/token`, clientId: 'client', resource: url, expiresAt: Date.now() + 3_600_000 } }), replace: async () => {} },
+    });
+    await expect(proxy.request({ identityId: 'human' }, 'session', 'server', 'tools/list')).rejects.toThrow(/^MCP upstream request failed$/);
+    expect(requests).toBe(1); expect(refreshes).toBe(0);
+  });
+});
