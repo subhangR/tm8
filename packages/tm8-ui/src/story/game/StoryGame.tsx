@@ -63,10 +63,16 @@ function membersOf(place: Place): readonly PlaceMember[] {
   return Array.isArray(members) ? members : [];
 }
 
-/** What acting on a place does: a portal is entered, the hub is where you are, the rest are inspected. */
+/**
+ * What acting on a place does: a portal is entered, the hub is where you are,
+ * the rest are inspected. An aggregate (the Library, the Code factory) has no
+ * entity of its own — its id is a landmark id, not an entity id — so it offers
+ * no action; its members carry their own Inspect.
+ */
 type PlaceAction = 'enter' | 'inspect' | null;
 function actionOf(place: Place, storyId: string): PlaceAction {
   if (place.id === storyId) return null;
+  if (membersOf(place).length > 0) return null;
   return place.portal ? 'enter' : 'inspect';
 }
 const ACTION_LABEL = { enter: 'Enter', inspect: 'Inspect' } as const;
@@ -125,9 +131,12 @@ export function StoryGame({ view, live, open, mode, onMode, showModeSwitch = tru
     (placeId: string) => {
       if (placeId === storyId) return;
       storyGameStore.getState().visit(storyId, placeId);
+      // A landmark id names no entity: visiting counts, opening does not.
+      const place = world.byId.get(placeId);
+      if (place && membersOf(place).length > 0) return;
       open?.(placeId);
     },
-    [open, storyId],
+    [open, storyId, world],
   );
   /* Act on a place: Enter a portal, Inspect anything else, nothing at the hub. */
   const openPlace = useCallback(

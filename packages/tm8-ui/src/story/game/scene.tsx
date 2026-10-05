@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, type MutableRefObject } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { GameControl, WalkOrder } from './control';
-import { keyDirection } from './control';
+import { keyDirection, REVEAL_RADIUS } from './control';
 import type { Palette } from './palette';
 import { nearestPlace, roadPath, doorstep, roadObstacles, type Place, type World, type WorldEncounter } from './world';
 import { daylightColor, landscapeColors, makeScenery, placeColor, seedOf } from './scenery';
@@ -14,6 +14,7 @@ import { DioramaFinish } from './scene-effects';
 import { RoadLabels } from './scene-road-labels';
 import { routeRoad, pathLength, type Point } from './roads';
 import { Robots } from './scene-robots';
+import { Badges } from './badges';
 import type { StoryView } from '../model';
 
 export interface SceneProps {
@@ -28,9 +29,11 @@ export interface SceneProps {
   onArrive: (placeId: string, open: boolean) => void; onPosition: (x: number, z: number) => void;
   onGround: (x: number, z: number) => void; onPlaceClick: (placeId: string, open: boolean) => void;
 }
-export const REVEAL_RADIUS = 12;
+/** The reveal radius lives in control.ts (pure) so the minimap shares it; re-exported for callers of the scene. */
+export { REVEAL_RADIUS };
 export const NEAR_RADIUS = 3.4;
-const LABEL_RADIUS = 14;
+/** Place names and count badges show within this walking distance. */
+export const LABEL_RADIUS = 14;
 const WALK_SPEED = 9;
 const ARRIVE_EPS = .18;
 const CAMERA_OFFSET = new THREE.Vector3(24, 23, 24);
@@ -55,6 +58,7 @@ export default function StoryGameScene(props: SceneProps) {
     <PlaceEffects {...props} />
     <Robots view={props.view} world={props.world} palette={props.palette} reduced={props.reduced} hidden={!!props.duel} onPlaceClick={props.onPlaceClick} />
     <Labels control={props.control} world={props.world} revealed={props.revealed} visited={props.visited} playerPos={playerPos} hidden={!!props.duel} nodes={labelNodes} />
+    <Badges control={props.control} world={props.world} revealed={props.revealed} playerPos={playerPos} hidden={!!props.duel} labelRadius={LABEL_RADIUS} reduced={props.reduced} />
     <RoadLabels world={props.world} control={props.control} playerPos={playerPos} hidden={!!props.duel} reduced={props.reduced} />
     <Player {...props} playerPos={playerPos} alertNode={alertNode} />
     {props.duel && <DuelStage key={props.duel.encounter.id} place={props.world.byId.get(props.duel.placeId)!} encounter={props.duel.encounter} palette={props.palette} reduced={props.reduced} />}
@@ -356,6 +360,9 @@ function Player({ world, palette, control, revealed, playerPos, onReveal, onNear
       const id = near?.id ?? null;
       if (id !== nearId.current) { nearId.current = id; onNear(id); }
     }
+    // Live pose for samplers outside the canvas (the minimap): mutated in place, no per-frame allocation.
+    const live = control.player ?? (control.player = { x: pos.x, z: pos.z, heading: heading.current });
+    live.x = pos.x; live.z = pos.z; live.heading = heading.current;
     saveTick.current += delta;
     if (saveTick.current > 1) { saveTick.current = 0; onPosition(pos.x, pos.z); }
   });
