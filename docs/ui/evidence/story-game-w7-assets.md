@@ -2,7 +2,7 @@
 
 Open this evidence when reviewing the W7 PR or changing how a laid-out `Place` becomes a kit asset (`place-asset.ts`), the DOM count badges (`badges.tsx`), or the kit robots in `scene-robots.tsx`. It records what the scene now draws per place, the coverage limit of the registry, the owner decisions still pending, and the draw-call / triangle cost measured against `story-spacious-map.md`.
 
-Task: `01a1090f-f31a-7d07-b58f-3f9651441de9`. Base: `origin/main` after PR 1043 (asset kit), 1044 (minimap), 1045 (W1 world), 1046 (W2 robots), 1047 and 1042. Branch: `feat/story-map-w7-assets-integration`.
+Task: `01a1090f-f31a-7d07-b58f-3f9651441de9`. PR: <https://github.com/subhangR/tm8/pull/1049>. Base: `origin/main` after PR 1043 (asset kit), 1044 (minimap), 1045 (W1 world), 1046 (W2 robots), 1047 and 1042. Branch: `feat/story-map-w7-assets-integration`.
 
 ## Behaviour
 
