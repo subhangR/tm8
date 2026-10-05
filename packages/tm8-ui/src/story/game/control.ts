@@ -13,14 +13,22 @@ export interface WalkOrder {
   version: number;
 }
 
+/** Places within this walking distance of the player are revealed. Shared by the scene and the minimap. */
+export const REVEAL_RADIUS = 12;
+
+/** The player's live pose, written by the scene every frame; samplers (the minimap) read it at their own rate. */
+export interface PlayerPose { x: number; z: number; heading: number }
+
 export interface GameControl {
   keys: Set<string>;
   overview: boolean;
   order: WalkOrder | null;
+  /** Null until the scene has drawn a frame. */
+  player: PlayerPose | null;
 }
 
 export function createControl(): GameControl {
-  return { keys: new Set(), order: null, overview: false };
+  return { keys: new Set(), order: null, overview: false, player: null };
 }
 
 let orderVersion = 0;

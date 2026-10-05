@@ -134,6 +134,20 @@ describe('the approach card', () => {
     expect(open).toHaveBeenCalledWith('m3');
     expect(open).not.toHaveBeenCalledWith(id);
   });
+
+  it('an aggregate place offers no action of its own: its id is a landmark, not an entity', async () => {
+    let id = '';
+    scene.near = (places) => (id = plain(places).id);
+    members.on = plain;
+    members.list = [{ id: 'm0', kind: root.kind, title: 'Member 0' }];
+    const open = vi.fn();
+    const { findByTestId, getByTestId } = render(<StoryGame view={story} mode="game" onMode={vi.fn()} open={open} />);
+    const card = await findByTestId('story-game-approach');
+    expect(within(card).queryByRole('button', { name: /^(Enter|Inspect|Open)$/ })).toBeNull();
+    fireEvent.keyDown(getByTestId('story-game'), { key: 'e' });
+    expect(open).not.toHaveBeenCalled();
+    expect(storyGameStore.getState().saves[story.id]!.visited).toContain(id);
+  });
 });
 
 describe('Esc climbs out of a child story', () => {

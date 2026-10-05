@@ -5,7 +5,8 @@ import {
   ASSET_OF_KIND, ASSET_SPECS, ENTITY_ASSET_TYPES, CONTAINER_ASSET_TYPES, assetStateOf, assetTypeOf, stateFor, type AssetType,
 } from './registry';
 import { ASSET_BUILDERS, KIT_BLOCKS, assetMetrics, buildAsset, buildBlock } from './prototypes';
-import { KIT_SOLIDS } from './geometry';
+import { KIT_GEOMETRIES, KIT_SOLIDS } from './geometry';
+import { STORY_FIXTURE } from '../../fixture';
 
 const palette: Palette = { ink: 'rgb(20,20,20)', ink3: 'rgb(100,100,100)', surface: 'rgb(240,240,230)', card: 'rgb(255,255,255)', line: 'rgb(200,200,200)', line2: 'rgb(180,180,180)', brand: 'rgb(160,90,40)', run: 'rgb(50,140,80)', info: 'rgb(50,100,160)', block: 'rgb(180,70,60)', wait: 'rgb(180,150,40)', merged: 'rgb(120,80,160)' };
 const ALL = Object.keys(ASSET_SPECS) as AssetType[];
@@ -15,6 +16,9 @@ const coreSignature = (type: AssetType, state: Parameters<typeof buildAsset>[2] 
 };
 
 describe('kind → asset type registry', () => {
+  it('lists every fixture kind as either mapped or explicitly unresolved', () => {
+    for (const { kind } of STORY_FIXTURE.page.nodes) expect(kind in ASSET_OF_KIND || UNMAPPED_ASSET_KINDS.includes(kind), kind).toBe(true);
+  });
   it('maps every kind the story map renders, plus stories, to an explicit type', () => {
     for (const kind of [...Object.keys(VIEW_OF_KIND), STORY_KIND]) expect(ASSET_OF_KIND[kind], kind).toBeDefined();
   });
@@ -102,5 +106,13 @@ describe('asset builders', () => {
   });
   it('draws every kit block', () => {
     KIT_BLOCKS.forEach((_, i) => expect(buildBlock(i, palette, 0, 0).length).toBeGreaterThan(0));
+  });
+  it('keeps the per-place triangle budget: tiny round details use gems, not orbs', () => {
+    const tris = Object.fromEntries(KIT_SOLIDS.map((g) => { const geo = KIT_GEOMETRIES[g](); return [g, (geo.index ? geo.index.count : geo.attributes.position!.count) / 3]; }));
+    const cost = (type: AssetType, state?: Parameters<typeof buildAsset>[2] extends infer O ? O extends { state?: infer S } ? S : never : never) =>
+      buildAsset(type, palette, { state, count: 4 }).parts.reduce((n, p) => n + tris[p.geo]!, 0);
+    for (const state of ASSET_SPECS['task-workshop'].states) expect(cost('task-workshop', state), state).toBeLessThanOrEqual(820);
+    expect(cost('task-library')).toBeLessThanOrEqual(500);
+    expect(cost('task-mailbox')).toBeLessThanOrEqual(500);
   });
 });

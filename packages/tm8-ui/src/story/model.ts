@@ -119,7 +119,7 @@ export const PULL_REQUEST_KIND = 'pull_request';
 export const COMMIT_KIND = 'commit';
 export const WORKTREE_KIND = 'worktree';
 /** Kinds with no settled map asset yet: the game draws its unknown-kind cairn for them. */
-export const UNMAPPED_ASSET_KINDS: readonly string[] = ['member', 'skill', 'spell', 'form', 'project', 'collection', 'channel', 'loop'];
+export const UNMAPPED_ASSET_KINDS: readonly string[] = ['member', 'skill', 'spell', 'form', 'project', 'collection', 'channel', 'loop', 'chat'];
 
 export const GRAPH_VIEWS: ReadonlyArray<{ view: StoryGraphView; label: string }> = [
   { view: 'all', label: 'Everything' },

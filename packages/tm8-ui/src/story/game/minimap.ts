@@ -10,7 +10,8 @@ import type { Palette } from './palette';
 import type { PlaceShape, World } from './world';
 
 /** How far from a place the walk reveals it (mirrors scene.tsx REVEAL_RADIUS; scene.tsx is not imported to keep three.js out of the HUD). */
-export const REVEAL_RADIUS = 12;
+export { REVEAL_RADIUS } from './control';
+import { REVEAL_RADIUS } from './control';
 /** CSS pixel side of the minimap canvas. */
 export const MINIMAP_SIZE = 180;
 /** CSS pixels kept clear inside the canvas edge. */
@@ -168,7 +169,8 @@ export function readDistricts(world: World, extent: number, size: number, pad: n
     const start = num(o, 'startAngle', 'from', 'start', 'a0');
     const end = num(o, 'endAngle', 'to', 'end', 'a1');
     if (start === null || end === null) return;
-    const key = str(o, 'statusCategory', 'category', 'status', 'key') ?? '';
+    // W1 names each sector by its district id ('to_do', 'in_progress', 'blocked', 'done'); older shapes carried a category field.
+    const key = str(o, 'statusCategory', 'category', 'status', 'key', 'id') ?? '';
     out.push({
       id: str(o, 'id', 'key') ?? `district-${i}`,
       color: DISTRICT_COLOR[key] ?? 'ink3',

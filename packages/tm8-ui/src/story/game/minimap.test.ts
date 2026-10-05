@@ -139,9 +139,12 @@ describe('readDistricts', () => {
       { category: 'mystery', from: 1, to: 2 },
       { id: 'bad', statusCategory: 'done' },
       null,
+      // W1's shape: the sector id IS the district.
+      { id: 'to_do', from: 2, to: 3 },
+      { id: 'in_progress', from: 3, to: 4 },
     ] } as World;
     const got = readDistricts(withDistricts, 50, 200, 10);
-    expect(got.map((d) => [d.id, d.color])).toEqual([['d1', 'block'], ['district-1', 'ink3']]);
+    expect(got.map((d) => [d.id, d.color])).toEqual([['d1', 'block'], ['district-1', 'ink3'], ['to_do', 'info'], ['in_progress', 'run']]);
     expect(got[0]!.inner).toBeCloseTo(18, 9);
     expect(got[0]!.outer).toBeCloseTo(54, 9);
     expect(got[1]!.outer).toBeCloseTo(90, 9);
