@@ -2,7 +2,7 @@
 
 Open this evidence when reviewing the W7 PR or changing how a laid-out `Place` becomes a kit asset (`place-asset.ts`), the DOM count badges (`badges.tsx`), or the kit robots in `scene-robots.tsx`. It records what the scene now draws per place, the coverage limit of the registry, the owner decisions still pending, and the draw-call / triangle cost measured against `story-spacious-map.md`.
 
-Task: `01a1090f-f31a-7d07-b58f-3f9651441de9`. PR: <https://github.com/subhangR/tm8/pull/1049>. Base: `origin/main` after PR 1043 (asset kit), 1044 (minimap), 1045 (W1 world), 1046 (W2 robots), 1047 and 1042. Branch: `feat/story-map-w7-assets-integration`.
+Task: `01a1090f-f31a-7d07-b58f-3f9651441de9`. PR: <https://github.com/subhangR/tm8/pull/1049>. Base: `origin/main` after PR 1043 (asset kit), 1044 (minimap), 1045 (W1 world), 1046 (W2 robots), 1047 and 1042, plus the asset lane's PR 1050 (`story-assets-budget`, `2d584de3`: low-poly kit details and `chat` listed as unresolved) merged into this branch until it lands on main. Branch: `feat/story-map-w7-assets-integration`.
 
 ## Behaviour
 
@@ -26,7 +26,7 @@ Task: `01a1090f-f31a-7d07-b58f-3f9651441de9`. PR: <https://github.com/subhangR/t
 
 The registry's `UNRESOLVED_KINDS` (eight kinds) have no asset yet and render the `unknown-cairn`: **member, skill, spell, form, project, collection, channel, loop**. The scene cannot change that; `place-asset.ts` only forwards the registry's answer.
 
-One more gap, reported to the registry owner: the fixture's `chat` kind is neither in `ASSET_OF_KIND` nor in `UNRESOLVED_KINDS`, so it also draws the cairn without being listed as unresolved. The scenery test accepts the cairn only when the kind is absent from `ASSET_OF_KIND`, so an entry added to either table flips the test to the right expectation.
+A ninth, the fixture's `chat` kind, was in neither `ASSET_OF_KIND` nor `UNRESOLVED_KINDS` when this lane started; the asset lane's PR 1050 lists it as unresolved, so it still draws the cairn but is now declared. The scenery test accepts the cairn only when the kind is absent from `ASSET_OF_KIND`, so mapping it later flips the test to the right expectation.
 
 ## Matched evidence
 
@@ -42,10 +42,12 @@ Audit output (identical in both themes, zero page errors):
 
 | Scenario | Places | Types | Cairn kinds | Badges built | Badges visible (ground / overview) | Robots | Instanced meshes | Draw calls (max) | Triangles (max) | fps (SwiftShader) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| fixture light | 33 | keep 1, workshop 19, robot 3, stele 1, library 1, code factory 1, gate 2, memory 3, belfry 1, cairn 1 | chat 1 | library 5, mailbox 1, members 2 | 1 (`members 5`) / 4 | 3 | 19 | 89 | 92,550 | 5.5 |
-| fixture dark | 33 | same | chat 1 | same | 1 / 4 | 3 | 19 | 89 | 92,550 | 5.4 |
-| robots7 attention light | 34 | + belfry 1 | chat 1 | same | 1 / 4, pip 1 / 1 | 7 | 19 | 89 | 99,478 | 5.4 |
-| robots7 attention dark | 34 | same | chat 1 | same | 1 / 4, pip 1 / 1 | 7 | 19 | 89 | 99,478 | 4.0 |
+| fixture light | 33 | keep 1, workshop 19, robot 3, stele 1, library 1, code factory 1, gate 2, memory 3, belfry 1, cairn 1 | chat 1 | library 5, mailbox 1, members 2 | 1 (`members 5`) / 4 | 3 | 19 | 89 | 83,462 | 5.2 |
+| fixture dark | 33 | same | chat 1 | same | 1 / 4 | 3 | 19 | 89 | 83,462 | 4.8 |
+| robots7 attention light | 34 | + belfry 1 | chat 1 | same | 1 / 4, pip 1 / 1 | 7 | 19 | 89 | 90,390 | 4.3 |
+| robots7 attention dark | 34 | same | chat 1 | same | 1 / 4, pip 1 / 1 | 7 | 19 | 89 | 90,390 | 4.6 |
+
+Before PR 1050's low-poly kit details the same scenarios measured 92,550 / 99,478 triangles at the same 89 calls; the captures above are from that run and are visually identical at map scale.
 
 Notes: the ground view hides every badge beyond 14 units, so from the hub only the Library's member count is in range; the overview shows the root tasks' Library / Mailbox counts and hides children, exactly like the name labels. The fixture carries no `pendingAttention` counts and no `approx` mailbox, so neither badge form appears in the captures; both are covered by `place-asset.test.ts` and `badges.test.ts`. The 19 instanced meshes are the 12 kit solids plus the scatter / road batches that were already there; the batch count is constant in the place count.
 
@@ -55,13 +57,13 @@ Same script and fixtures as `story-spacious-map.md` (`e2e/story-spacious-audit.m
 
 | Fixture | Places laid out | Draw calls, baseline → now | Triangles, baseline → now | Layout build | fps (SwiftShader) |
 | --- | --- | --- | --- | --- | --- |
-| 12 | 11 | 59 → 63 (+6.8%) | 30,836 → 38,774 (**+25.7%**) | 12.4 ms | 7.5 |
-| 50 | 44 | 77 → 87 (+13.0%) | 103,224 → 125,990 (+22.1%) | 16.5 ms | 5.1 |
-| 125 | 119 | 77 → 87 (+13.0%) | 206,904 → 305,754 (**+47.8%**) | 133.3 ms | 2.6 |
+| 12 | 11 | 59 → 63 (+6.8%) | 30,836 → 34,086 (+10.5%) | 14.5 ms | 6.9 |
+| 50 | 44 | 77 → 87 (+13.0%) | 103,224 → 108,406 (+5.0%) | 15.7 ms | 4.3 |
+| 125 | 119 | 77 → 87 (+13.0%) | 206,904 → 244,970 (+18.4%) | 143.9 ms | 2.6 |
 
-**Draw calls are within the +25% budget at every size** (the kit's 12 solids are 12 instanced batches; empty batches create no mesh). **Triangles are within budget at 50 places, at the line at 12 (+25.7%) and over it at 125 (+47.8%).** Where the triangles come from, measured in vitest on the 125 fixture after the trims: the scatter, roads, lanterns and coast are unchanged from the baseline (~145k); the places cost ~165k, of which 109 task workshops are ~144k at ~1,319 triangles each (41 parts — 24 boxes, 5 cylinders, 8 orbs, prism, arch, gem, cone). The eight orbs alone are 640 of those triangles (the kit's orb is an icosahedron of 80 triangles, the same solid the pre-kit scene used). The scene-side trims already applied: the Mailbox and Library annex are built only for non-zero counts, the progress ring only on roots, and the place lantern is the road lantern (68 triangles) rather than the kit's.
+**Draw calls and triangles are both within the +25% budget at every size** (the kit's 12 solids are 12 instanced batches; empty batches create no mesh). This is the measurement with PR 1050 merged in. Before it, the same run measured 38,774 / 125,990 / 305,754 triangles (+25.7% / +22.1% / **+47.8%**) at the same draw calls. Where those triangles came from, measured in vitest on the 125 fixture after the scene-side trims: the scatter, roads, lanterns and coast are unchanged from the baseline (~145k); the places cost ~165k, of which 109 task workshops are ~144k at ~1,319 triangles each (41 parts — 24 boxes, 5 cylinders, 8 orbs, prism, arch, gem, cone). The eight orbs alone are 640 of those triangles (the kit's orb is an icosahedron of 80 triangles, the same solid the pre-kit scene used). The scene-side trims already applied: the Mailbox and Library annex are built only for non-zero counts, the progress ring only on roots, and the place lantern is the road lantern (68 triangles) rather than the kit's.
 
-The remaining overshoot is the workshop's own part count, which is asset-lane geometry under `assets/**` and not this lane's to change. Reported to the registry owner (session 01a10908-4153) with the two cheapest options: a lower-segment orb for the small decorative orbs, or fewer orbs in the workshop's `working` cue. Either brings the 125 fixture under +25% without touching the scene.
+That overshoot was the workshop's own part count, asset-lane geometry under `assets/**` and not this lane's to change. Reported to the registry owner (session 01a10908-4153); their PR 1050 moved the tiny round details (door knob, finial, blooms, badge pips) from the 80-triangle orb to the 8-triangle gem and the badge rim from the torus to a cylinder, with no new solid and no new batch. Re-measured here with that branch merged in: 125 places lands at +18.4%.
 
 Captures from that run: ![12 ground](images/story-w7-spacious-12-ground.png) ![125 overview](images/story-w7-spacious-125-overview.png)
 
@@ -84,7 +86,7 @@ SPACIOUS_BROWSER=$W7_BROWSER SPACIOUS_URL='http://127.0.0.1:4699/story-dev.html?
 
 ## Open points
 
-- Triangle budget at 125 places (+47.8%) needs an asset-lane change (orb LOD or fewer cue orbs); draw calls are within budget.
+- The triangle budget depends on PR 1050 landing: without it the 125 fixture is at +47.8%; with it, +18.4%. This branch carries 1050 merged in until then.
 - Half-built variant OFF until the owner decides; completed-session steles / clusters not shown until the owner confirms.
-- `chat` kind is unmapped and unlisted in the registry.
+- `chat` kind is declared unresolved (PR 1050) but still has no asset.
 - The catalog's Library wording, stele placement / retention, Code Shed and mailbox categories are not treated as product decisions anywhere in this lane.
