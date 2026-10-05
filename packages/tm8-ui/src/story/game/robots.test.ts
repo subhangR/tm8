@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { STORY_FIXTURE, STORY_FIXTURE_EMPTY } from '../fixture';
-import { TASK_KIND, VIEW_OF_KIND, type StoryNode, type StorySession, type StoryView } from '../model';
+import { ATTENTION_KIND, TASK_KIND, type StoryNode, type StorySession, type StoryView } from '../model';
 import { buildWorld, doorstep } from './world';
 import { latestTaskSignal, robotAttention, robotStand, robotsFor } from './robots';
 
@@ -10,7 +10,7 @@ const session = (id: string, taskIds: string[], extra: Partial<StorySession> = {
   runtimeStatus: 'running', model: null, teamMemberId: null, mode: 'worker', taskIds, rootIds: [], dispatchedById: null, ...extra,
 });
 const withSessions = (base: StoryView, sessions: StorySession[]): StoryView => ({ ...base, page: { ...base.page, sessions } });
-const attentionKind = Object.keys(VIEW_OF_KIND).find((k) => k !== TASK_KIND && VIEW_OF_KIND[k] === VIEW_OF_KIND[TASK_KIND])!;
+const attentionKind = ATTENTION_KIND;
 
 describe('robotStand', () => {
   const world = buildWorld(STORY_FIXTURE, NOW);

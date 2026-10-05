@@ -1,7 +1,7 @@
 /** Robot evidence fixtures: the same story graph with a chosen number of live sessions and one attention request beside a live task. No server writes. */
 import { STORY_FIXTURE } from '../src/story/fixture';
 import type { StorySession, StoryNode } from '../src/story/model';
-import { TASK_KIND, VIEW_OF_KIND } from '../src/story/model';
+import { ATTENTION_KIND, TASK_KIND } from '../src/story/model';
 
 /** `live` live sessions (0 keeps only the finished ones); `attention` adds a pending request on the first live session's task. */
 export function robotsFixture(live: number, attention: boolean) {
@@ -18,7 +18,7 @@ export function robotsFixture(live: number, attention: boolean) {
   view.state.liveSessionCount = liveSessions.length;
   if (attention) {
     const target = liveSessions.map((s) => s.taskIds[0]).find((id): id is string => !!id && view.page.nodes.some((n) => n.id === id));
-    const kind = Object.keys(VIEW_OF_KIND).find((k) => k !== TASK_KIND && VIEW_OF_KIND[k] === VIEW_OF_KIND[TASK_KIND])!;
+    const kind = ATTENTION_KIND;
     if (target) {
       const task = view.page.nodes.find((n) => n.id === target)!;
       const node: StoryNode = { id: 'robot-attention', kind, title: 'approve the plan?', status: 'pending', statusCategory: 'to_do', blocked: false, depth: task.depth + 1, rootIds: task.rootIds, activityAt: null, createdAt: task.createdAt };
