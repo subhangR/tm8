@@ -122,7 +122,7 @@ export function shedRoof(k: Kit, color: string, w: number, d: number, tilt = .3)
 /** Door with knob and a small arch over it. `z` is the wall face. */
 export function door(k: Kit, m: Materials, z: number, w = .32, h = .56, color = m.wood): void {
   k.part('box', 0, h / 2, z + .02, w, h, .06, color)
-    .part('orb', w * .28, h * .48, z + .06, .03, .03, .02, m.gold)
+    .part('gem', w * .28, h * .48, z + .06, .03, .03, .02, m.gold)
     .part('arch', 0, h, z + .02, w * .56, w * .5, .5, m.timber);
 }
 /** Window pane; glows when lit. */
@@ -168,7 +168,7 @@ export function checkboxSign(k: Kit, m: Materials, tone: string, checked: boolea
 }
 /** Pole with a rectangular flag (or a long swallowtail pennant). */
 export function flag(k: Kit, m: Materials, color: string, h = 1, swallow = false, furled = false): void {
-  k.part('cylinder', 0, h / 2, 0, .03, h, .03, m.timber).part('orb', 0, h + .03, 0, .05, .05, .05, m.gold);
+  k.part('cylinder', 0, h / 2, 0, .03, h, .03, m.timber).part('gem', 0, h + .03, 0, .05, .05, .05, m.gold);
   if (furled) { k.part('cylinder', .03, h - .3, 0, .05, .4, .05, color); return; }
   if (!swallow) { k.part('box', .2, h - .17, 0, .38, .24, .03, color, { motion: MOTION.sway }); return; }
   k.part('box', .3, h - .12, 0, .58, .13, .03, color, { motion: MOTION.sway })
@@ -179,13 +179,14 @@ export function flag(k: Kit, m: Materials, color: string, h = 1, swallow = false
  * The exact number is an HTML label at the `badge` socket; the pips make
  * "none / a few / many" readable at overview scale without text.
  */
+// Tiny round details use the 8-tri gem, not the 80-tri orb: at map scale they read the same (triangle budget).
 export function countBadge(k: Kit, m: Materials, count: number, tone: string): void {
   if (count <= 0) return;
-  k.part('cylinder', 0, 0, 0, .19, .05, .19, m.paper, { rx: Math.PI / 2 }).part('ring', 0, 0, .03, .19, .19, .5, tone);
+  k.part('cylinder', 0, 0, -.01, .21, .04, .21, tone, { rx: Math.PI / 2 }).part('cylinder', 0, 0, 0, .17, .05, .17, m.paper, { rx: Math.PI / 2 });
   const pips = Math.min(5, count);
   for (let i = 0; i < pips; i++) {
     const a = (i - (pips - 1) / 2) * .55;
-    k.part('orb', Math.sin(a) * .09, Math.cos(a) * .09 - .04, .04, .035, .035, .02, tone);
+    k.part('gem', Math.sin(a) * .09, Math.cos(a) * .09 - .04, .04, .035, .035, .02, tone);
   }
   if (count > 5) k.part('gem', 0, .27, 0, .09, .11, .05, m.gold, { motion: MOTION.bob });
 }
@@ -236,7 +237,7 @@ export function crate(k: Kit, m: Materials, s = .4, color = m.wood): void {
 }
 export function flowerBox(k: Kit, m: Materials, w = .3): void {
   k.part('box', 0, 0, 0, w, .08, .1, m.wood);
-  for (let i = 0; i < 3; i++) k.part('orb', (i - 1) * w * .3, .07, 0, .05, .05, .05, i % 2 ? m.brand : m.wait);
+  for (let i = 0; i < 3; i++) k.part('gem', (i - 1) * w * .3, .07, 0, .05, .05, .05, i % 2 ? m.brand : m.wait);
 }
 
 /* ------------------------------------------------------------------------- */

@@ -43,7 +43,7 @@ KIT_BLOCKS / buildBlock(i, palette, x, z)                               // the r
   constant batches and never per place.
 * **Additive `story/model.ts` constants:** `ATTENTION_KIND`, `ARTIFACT_KIND`, `DRAWING_KIND`, `FILE_KIND`,
   `MEMORY_KIND`, `PULL_REQUEST_KIND`, `COMMIT_KIND`, `WORKTREE_KIND`, and the list `UNMAPPED_ASSET_KINDS`
-  (`member, skill, spell, form, project, collection, channel, loop`). These deliberately fall back to the cairn
+  (`member, skill, spell, form, project, collection, channel, loop, chat`). These deliberately fall back to the cairn
   until someone decides on them.
 
 ## Decision legend
@@ -52,7 +52,7 @@ KIT_BLOCKS / buildBlock(i, palette, x, z)                               // the r
 **PROPOSAL**: shown for review only, not a product rule. **open** lists the unresolved rule for that type.
 
 Unresolved rules, collected:
-- Kinds with no asset yet: `member, skill, spell, form, project, collection, channel, loop` (they render as the
+- Kinds with no asset yet: `member, skill, spell, form, project, collection, channel, loop, chat` (they render as the
   unknown-kind cairn).
 - Whether attention items stand alone (belfry) or hang on their task as a bell.
 - Ended sessions of a story with no task: cluster at the keep, or hide after a retention window.
