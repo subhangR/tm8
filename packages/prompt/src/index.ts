@@ -33,6 +33,7 @@ export { serializeMemoryEntry, serializeSkillIndex, serializeSkillIndexEntry, ty
 import { assertWithinBudget, BYTE_BUDGETS, utf8Bytes } from './budgets.js';
 import { untrustedData } from './escape.js';
 import { renderStoryContext, type PromptStoryContext } from './story-context.js';
+import { renderDesignContext, type PromptDesignContext } from './design-context.js';
 import { composeKernel } from './kernel.js';
 import {
   acceptanceCriteriaOf,
@@ -56,6 +57,7 @@ export * from './budgets.js';
 export * from './context-index.js';
 export * from './escape.js';
 export * from './story-context.js';
+export * from './design-context.js';
 export * from './kernel.js';
 export * from './prompt-version.js';
 export * from './templates.js';
@@ -178,6 +180,11 @@ export interface PromptManifest {
    * read once at spawn. Rendered after the assignment on every frame.
    */
   story?: PromptStoryContext | null | undefined;
+  /**
+   * Run on a design (302): the design the primary task was derived from, its
+   * ordered pages and the standing Run instruction. Rendered after the story.
+   */
+  design?: PromptDesignContext | null | undefined;
 }
 
 export interface PromptRuntime {
@@ -1052,6 +1059,9 @@ export function composePrompt(
   // budget check below can swap the full block for the compact one.
   const story = manifest.story && (manifest.story.taskId === null || manifest.story.taskId === tasks[0]?.id) ? manifest.story : null;
   const storySlot = story ? t.push(renderStoryContext(story, true, sessionId)) - 1 : -1;
+  // The design the primary task was derived from (Run on a design).
+  const design = manifest.design && (manifest.design.taskId === null || manifest.design.taskId === tasks[0]?.id) ? manifest.design : null;
+  const designSlot = design ? t.push(renderDesignContext(design, true)) - 1 : -1;
   const directive = manifest.directive;
   if (directive?.message) {
     // A coordinator directive is another AGENT's prose. Subject and originating
@@ -1077,6 +1087,14 @@ export function composePrompt(
     && utf8Bytes(`${system}\n\n${t.join('\n')}`) > BYTE_BUDGETS.combinedInitialInjection
   ) {
     t[storySlot] = renderStoryContext(story, false);
+  }
+  // Then the design's page list shrinks to its ref; its instruction stays.
+  if (
+    design
+    && designSlot >= 0
+    && utf8Bytes(`${system}\n\n${t.join('\n')}`) > BYTE_BUDGETS.combinedInitialInjection
+  ) {
+    t[designSlot] = renderDesignContext(design, false);
   }
   const inlineTask = t.join('\n');
   let task = inlineTask;
@@ -1106,6 +1124,7 @@ export function composePrompt(
     }
     referenced.push(`  <note>${esc(TASK_BODIES_ELSEWHERE_NOTE)}</note>`);
     if (story) referenced.push(renderStoryContext(story, false));
+    if (design) referenced.push(renderDesignContext(design, false));
     if (directive?.message) {
       referenced.push(untrustedData({
         type: 'coordinator-directive',

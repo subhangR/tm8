@@ -25,6 +25,7 @@ import { PROMPT_VERSION_V2 } from './prompt-version.js';
 import { serializeMemoryEntry } from './skill-index.js';
 import { serializeLaunchIndex } from './context-index.js';
 import { renderStoryContext } from './story-context.js';
+import { renderDesignContext } from './design-context.js';
 import { acceptanceCriteriaOf, coordinatorKindOf } from './templates.js';
 import type { AgentMode, PromptEnvelope, PromptManifest, PromptRuntime } from './index.js';
 
@@ -450,6 +451,13 @@ export function composePromptV2(
   if (story) {
     const draft = `${s.join('\n')}\n\n${[...t, renderStoryContext(story, true, facts.sessionId), '</tm8_task_prompt>'].join('\n')}`;
     t.push(renderStoryContext(story, utf8Bytes(draft) <= BYTE_BUDGETS.combinedInitialInjection, facts.sessionId));
+  }
+  // Run on a design (302): the design the primary task was derived from, after
+  // the story, under the same rule — past the cap its pages shrink to a ref.
+  const design = manifest.design && (manifest.design.taskId === null || manifest.design.taskId === primary?.id) ? manifest.design : null;
+  if (design) {
+    const draft = `${s.join('\n')}\n\n${[...t, renderDesignContext(design, true), '</tm8_task_prompt>'].join('\n')}`;
+    t.push(renderDesignContext(design, utf8Bytes(draft) <= BYTE_BUDGETS.combinedInitialInjection));
   }
   t.push('</tm8_task_prompt>');
 

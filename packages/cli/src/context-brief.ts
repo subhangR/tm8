@@ -21,6 +21,7 @@
 
 import { escapeXml } from '@tm8/prompt';
 import { storyContextLines } from './story-render.js';
+import { designContextLines } from './design-render.js';
 
 type Row = Record<string, unknown>;
 
@@ -102,7 +103,7 @@ const KNOWN = new Set([
   'schemaVersion', 'id', 'kind', 'title', 'version', 'status', 'asOfSeq', 'priority', 'gate', 'assignees',
   'header', 'parent', 'assignment', 'acceptance', 'acceptanceWrite', 'blockers', 'children', 'outline', 'outlineTruncated', 'tasks',
   'anchor', 'parentMessage', 'attachments', 'connections', 'messages', 'omitted', 'notLoaded', 'errors', 'warnings', 'budget',
-  'story',
+  'story', 'pages',
 ]);
 
 export function renderContextBrief(view: Row): string {
@@ -151,6 +152,8 @@ export function renderContextBrief(view: Row): string {
   // A story (283): progress, roots, kinds, blocked, sessions, team, child
   // stories — the server's bounded projection of the page; cuts are omitted[].
   if (isRow(view['story'])) out.push(...storyContextLines(view['story'], view['status'], view['id']));
+  // A design (302): its pages in page order — position, kind, title, id.
+  if (view['pages'] !== undefined) out.push(...designContextLines(view['pages']));
   for (const [key, label] of [['tasks', 'tasks'], ['children', 'children']] as const) {
     if (view[key] === undefined) continue;
     const list = rows(view[key]);

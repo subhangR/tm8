@@ -57,6 +57,8 @@ export async function projectLaunchContext(
                 when 'channel' then ch.name
                 when 'collection' then col.name
                 when 'story' then st.title
+                when 'design' then dsg.title
+                when 'graph' then gr.title
               end, e.kind) as title,
               exists (select 1 from public.edges r
                        where r.type = 'remembers' and r.src_id = $2 and r.dst_id = e.id) as teammate_remembers,
@@ -76,6 +78,8 @@ export async function projectLaunchContext(
          left join public.channels ch on ch.entity_id = e.id
          left join public.collections col on col.entity_id = e.id
          left join public.stories st on st.entity_id = e.id
+         left join public.designs dsg on dsg.entity_id = e.id
+         left join public.graphs gr on gr.entity_id = e.id
         where e.id = any($1::uuid[]) and e.deleted_at is null`,
       [ids, teamMemberId, taskIds],
     ),
@@ -152,7 +156,7 @@ function arrayOf(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
-/** In display order: teammate, tasks, memories, skills, then what the tasks carried, then the coordinator. */
+/** In display order: teammate, tasks, memories, skills, then what the tasks carried, the design and its pages, then the coordinator. */
 function collectCandidates(manifest: Record<string, unknown>): {
   candidates: Candidate[];
   unlinkedSkillCount: number;
@@ -211,6 +215,14 @@ function collectCandidates(manifest: Record<string, unknown>): {
     for (const value of arrayOf(task.attachments)) {
       add(recordOf(value)?.fileEntityId, 'attachment', 'task', taskId);
     }
+  }
+  // Run on a design (302): the design the task was derived from, then its
+  // pages in page order — what the session was told to create from.
+  const design = recordOf(manifest.design);
+  if (design) {
+    const viaTaskId = isId(design.taskId) ? design.taskId : null;
+    add(design.id, 'reference', 'task', viaTaskId);
+    for (const value of arrayOf(design.pages)) add(recordOf(value)?.id, 'reference', 'task', viaTaskId);
   }
   add(recordOf(manifest.coordinator)?.sessionId, 'coordinator', 'launch');
   return { candidates: out, unlinkedSkillCount };

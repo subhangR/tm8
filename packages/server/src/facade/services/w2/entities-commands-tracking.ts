@@ -9,6 +9,7 @@ import {
   graphNodeKey,
   DrawingContentInputSchema,
   StoryContentInputSchema,
+  DesignContentInputSchema,
   McpServerDefinitionSchema,
   decodeCursor,
   encodeCursor,
@@ -1194,6 +1195,17 @@ function storyContent(content: Record<string, unknown>) {
   return parsed.data;
 }
 
+function designContent(content: Record<string, unknown>) {
+  const parsed = DesignContentInputSchema.safeParse(content);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    throw new CollabError('invalid_input',
+      `design content: ${issue ? `${issue.path.join('.')}: ${issue.message}` : 'malformed'}`
+        + ' (pages are not content: add one with `tm8 collection add <design-id> <entity-id>`)');
+  }
+  return parsed.data;
+}
+
 function softDrawingContent(content: Record<string, unknown>) {
   const parsed = DrawingContentInputSchema.safeParse(content);
   if (!parsed.success) {
@@ -1482,6 +1494,16 @@ export class W2EntitiesCommandsTrackingService {
             input.parentId ?? null, input.position ?? null, envelope.clientMutationId ?? null]);
           break;
         }
+        case 'design': {
+          // 302: zero new catalog rows, the story posture. A design is born
+          // empty; its PAGES are `contains` edges put in through
+          // `collections.addItem`, never content and never hierarchy.
+          const design = designContent(content);
+          raw = await q.rpc('create_design_entity', [input.spaceId, input.title, envelope.actorId ?? null,
+            design.description ?? '',
+            input.parentId ?? null, input.position ?? null, envelope.clientMutationId ?? null]);
+          break;
+        }
         default:
           if (!input.kind.startsWith('c:')) {
             assertGenericLifecycle(input.kind, 'entities.create');
@@ -1671,6 +1693,15 @@ export class W2EntitiesCommandsTrackingService {
             raw = await q.rpc('update_story_entity', [id, input.expectedVersion, envelope.actorId ?? null,
               input.title ?? null, story.description ?? null,
               envelope.clientMutationId ?? null, story.status ?? null]);
+            break;
+          }
+          case 'design': {
+            // `null` MERGES: a rename sends only the title. Pages move through
+            // `collections.addItem` (re-adding re-positions), not here.
+            const design = designContent(content);
+            raw = await q.rpc('update_design_entity', [id, input.expectedVersion, envelope.actorId ?? null,
+              input.title ?? null, design.description ?? null,
+              envelope.clientMutationId ?? null]);
             break;
           }
           case 'worktree': {

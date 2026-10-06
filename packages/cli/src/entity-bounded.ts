@@ -31,6 +31,7 @@ export const CONTENT_STRING_CAP = 1000;
 type Rec = Record<string, unknown>;
 
 import { storyPageCounts } from './story-render.js';
+import { designPageRows } from './design-render.js';
 
 function isRecord(v: unknown): v is Rec {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -79,6 +80,12 @@ function capContent(content: unknown, cuts: BoundedCut[]): unknown {
     // edges): bounded, it is its counts; `--full` has the page itself.
     if (key === 'page' && content['kind'] === 'story' && isRecord(value)) {
       out['pageCounts'] = storyPageCounts(value);
+      continue;
+    }
+    // A design's pages are whole entity summaries: bounded, each is its
+    // position, kind, title and id; `--full` has the summaries.
+    if (key === 'pages' && content['kind'] === 'design' && Array.isArray(value)) {
+      out['pages'] = designPageRows(value);
       continue;
     }
     if (typeof value === 'string' && value.length > CONTENT_STRING_CAP) {

@@ -9820,6 +9820,39 @@
           "strategy": "story-detail"
         }
       },
+      "design": {
+        "kind": "design",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "designs"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "generic",
+          "genericCreate": true,
+          "genericPatch": true,
+          "genericMove": true,
+          "genericHierarchy": true,
+          "genericDeleteRestore": true,
+          "genericPoints": true,
+          "messages": true,
+          "reactions": true,
+          "connections": true,
+          "lifecycleOperations": []
+        },
+        "menu": {
+          "strategy": "registered-not-default"
+        },
+        "migration": {
+          "strategy": "design-detail"
+        }
+      },
       "style": {
         "kind": "style",
         "entityKind": true,
