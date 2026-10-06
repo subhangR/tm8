@@ -64,6 +64,7 @@ import {
   SPACE_LINK_REFUSED_CODE,
   SpaceLinkExecuteFailure,
   createLinkDispatcher,
+  deferredToTarget,
   parseVia,
   remoteIdOf,
 } from './space-link-invoke.js';
@@ -224,8 +225,10 @@ export function createRemoteSpaceLinkRoute(
     op = requested;
     const binding = getOperation(requested);
     // THIS server's refused set and THIS row's spawn switch: the home's are not trusted.
+    // An own-spawn session body (#1053) is decided by the dispatcher, from THIS
+    // server's spawn provenance under the link session, exactly as for a local link.
     const refusal = spaceLinkRefusal(requested, binding.kind, input, row.allowSpawn === true);
-    if (refusal) return refuse(refusedErr(refusal), refusal);
+    if (refusal && !deferredToTarget(requested, refusal)) return refuse(refusedErr(refusal), refusal);
 
     try {
       via = parseVia(req.headers[SPACE_LINK_VIA_HEADER]);
@@ -254,6 +257,8 @@ export function createRemoteSpaceLinkRoute(
       outcome = await dispatch({
         identity, linkId: row.linkId, targetSpaceId: row.targetSpaceId, op: requested, binding,
         params: params ?? {}, query: query ?? {}, input, via, sourceWorkSessionId: null,
+        // The home's ids are unknown here: completers are authorized by B as named.
+        homeIds: [], link: { linkId: row.linkId, targetSpaceId: row.targetSpaceId },
       });
     } catch (error) {
       if (error instanceof SpaceLinkExecuteFailure) {

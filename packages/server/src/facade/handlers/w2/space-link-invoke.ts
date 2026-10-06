@@ -192,7 +192,7 @@ export function isOwnSpawnOp(op: string): boolean {
 }
 
 /** A home-side refusal that is not final: an own-spawn op's `session_body` waits for B. */
-function deferredToTarget(op: string, reason: SpaceLinkRefusalReason): boolean {
+export function deferredToTarget(op: string, reason: SpaceLinkRefusalReason): boolean {
   return reason === 'session_body' && isOwnSpawnOp(op);
 }
 
@@ -310,6 +310,14 @@ export interface LinkDispatchRequest {
   readonly via: readonly string[];
   /** The calling work session ON THE HOME SERVER, when it is this one; else null. */
   readonly sourceWorkSessionId: string | null;
+  /**
+   * HOME ids a completer may name (#1054: the caller's actor and its member
+   * row in A), re-credited to the member in B. Empty when B cannot know them
+   * (a remote home, W9c): B then authorizes completers as it always did.
+   */
+  readonly homeIds: ReadonlyArray<string | null | undefined>;
+  /** The link and target an actor refusal names (#1054). */
+  readonly link: Pick<SpaceLinkInvokeRow, 'linkId' | 'targetSpaceId'>;
 }
 
 /**
@@ -381,9 +389,9 @@ export function createLinkDispatcher(
     // already run; a nested dispatch from inside the handler finds no marker.
     // A completer named from home (`task complete --by <home id>`) is nobody
     // in B: credit the member the link acts as there instead.
-    const completerIds = await homeCompletersInB(op, inner.body, [request.claims.actorId, request.row.memberId], async () =>
+    const completerIds = await homeCompletersInB(op, inner.body, request.homeIds, async () =>
       (await deps.db.query<{ id: string | null }>(await claimsOf(inner),
-        'select internal.current_member_id($1)::text as id', [request.row.targetSpaceId]))[0]?.id ?? null);
+        'select internal.current_member_id($1)::text as id', [request.targetSpaceId]))[0]?.id ?? null);
     if (completerIds) inner = { ...inner, body: { ...(inner.body as Record<string, unknown>), completerIds } };
 
     admitLinkInvoke(inner, op);
@@ -392,7 +400,7 @@ export function createLinkDispatcher(
       result = await handler(inner);
     } catch (error) {
       // An actor B refused (300) is one the caller named itself: say what to do.
-      const refusal = actorRefusalThroughLink(error, request.row);
+      const refusal = actorRefusalThroughLink(error, request.link);
       if (refusal) throw new SpaceLinkExecuteFailure(auditReasonOf(refusal), refusal);
       throw error;
     }
@@ -467,6 +475,7 @@ export function createSpaceLinkInvokeHandlers(
       identity, linkId: row.linkId, targetSpaceId: row.targetSpaceId, op, binding: request.binding,
       params: request.params, query: request.query, input: request.input,
       via: [...request.via, request.homeSpaceId], sourceWorkSessionId: request.workSessionId,
+      homeIds: [claims.actorId, row.memberId], link: row,
     });
   };
   /**
@@ -720,7 +729,10 @@ export function auditReasonOf(error: unknown): string {
  * with what to do, since the bare "not permitted to act as this actor" sent
  * agents guessing. Anything else: null, B's error stands.
  */
-export function actorRefusalThroughLink(error: unknown, row: SpaceLinkInvokeRow | null): CollabError | null {
+export function actorRefusalThroughLink(
+  error: unknown,
+  row: Pick<SpaceLinkInvokeRow, 'linkId' | 'targetSpaceId'> | null,
+): CollabError | null {
   if (!row || !isCollabError(error) || error.code !== 'forbidden' || error.details?.['reason'] !== 'actor_not_permitted') {
     return null;
   }
