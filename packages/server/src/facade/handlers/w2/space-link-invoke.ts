@@ -173,12 +173,18 @@ function refused(reason: SpaceLinkRefusalReason, message?: string): CollabError 
   });
 }
 
-/** The target-side id worth keeping in the audit: an entity or message id, never a body. */
-function remoteIdOf(result: unknown): string | null {
+/**
+ * The target-side id worth keeping in the audit: an entity, message or
+ * attention request id, never a body. A posted batch keeps its first message;
+ * an attention mutation keeps its request before the entity it is on.
+ */
+export function remoteIdOf(result: unknown): string | null {
   if (typeof result !== 'object' || result === null) return null;
   const record = result as Record<string, unknown>;
-  for (const candidate of [record['id'], (record['entity'] as Record<string, unknown> | undefined)?.['id'],
-    (record['message'] as Record<string, unknown> | undefined)?.['id']]) {
+  const idOf = (value: unknown): unknown => (value as Record<string, unknown> | null | undefined)?.['id'];
+  const messages = record['messages'];
+  for (const candidate of [record['id'], idOf(record['request']), idOf(record['entity']), idOf(record['message']),
+    Array.isArray(messages) ? idOf(messages[0]) : undefined]) {
     if (typeof candidate === 'string' && UUID_RE.test(candidate)) return candidate;
   }
   return null;
@@ -209,22 +215,35 @@ export function spawnedSessionOf(op: OperationName, params: Readonly<Record<stri
 }
 
 /**
- * The input without the caller's HOME actor. A session's CLI stamps its own
- * actor (`TM8_ACTOR_ID`, a team member of A) on every write as `actorId`; in B
- * that id is nobody the link session can act as, so B's `resolve_actor`
- * refused every write with "not permitted to act as this actor". Through a
- * link the agent acts as the launching member, so its home actor is dropped
- * and B resolves the actor from the link session itself. Any other actorId is
- * left for B to authorize.
+ * The input without the caller's HOME envelope. A session's CLI stamps its own
+ * actor (`TM8_ACTOR_ID`, a team member of A) on every write as `actorId`, and
+ * `message send` also stamps its own work session (in A) as `workSessionId`.
+ * In B neither is anything the link session can claim: `resolve_actor`
+ * refused every write with "not permitted to act as this actor", and
+ * `w2_post_message_batch` refused every message with "authored_from
+ * provenance does not match the resolved author session" (a session of
+ * another space). Through a link the agent acts as the launching member, so
+ * both are dropped: B resolves the actor from the link session itself and the
+ * message carries no authored_from in B. The source session is kept where it
+ * belongs, on the audit row in A. Any other actorId or workSessionId is left
+ * for B to authorize.
  */
-export function withoutHomeActor(input: unknown, homeActorId: string | undefined): unknown {
-  if (!homeActorId || typeof input !== 'object' || input === null || Array.isArray(input)) return input;
-  const record = input as Record<string, unknown>;
-  if (typeof record['actorId'] !== 'string' || record['actorId'].toLowerCase() !== homeActorId.toLowerCase()) {
-    return input;
+export function withoutHomeEnvelope(
+  input: unknown,
+  home: { actorId?: string | undefined; workSessionId?: string | null | undefined },
+): unknown {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) return input;
+  const rest = { ...(input as Record<string, unknown>) };
+  let dropped = false;
+  for (const key of ['actorId', 'workSessionId'] as const) {
+    const homeId = home[key];
+    const value = rest[key];
+    if (homeId && typeof value === 'string' && value.toLowerCase() === homeId.toLowerCase()) {
+      delete rest[key];
+      dropped = true;
+    }
   }
-  const { actorId: _home, ...rest } = record;
-  return rest;
+  return dropped ? rest : input;
 }
 
 /** The inner identity: B's, off the re-resolved session, WITHOUT the raw token. */
@@ -476,7 +495,7 @@ export function createSpaceLinkInvokeHandlers(
     let outcome: SpaceLinkExecution;
     try {
       outcome = await execute({ claims, row, op: requested, binding, params: params ?? {}, query: query ?? {},
-        input: withoutHomeActor(input, ctx.identity.actorId), via, homeSpaceId, workSessionId });
+        input: withoutHomeEnvelope(input, { actorId: ctx.identity.actorId, workSessionId }), via, homeSpaceId, workSessionId });
     } catch (error) {
       if (error instanceof SpaceLinkExecuteFailure) {
         await audit('error', error.reason).catch(() => undefined);

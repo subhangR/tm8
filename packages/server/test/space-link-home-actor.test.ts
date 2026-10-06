@@ -8,7 +8,8 @@
  * permitted to act as this actor" (audit: entities.create, error, forbidden,
  * no remote id). The executor drops the home actor; B resolves the actor
  * from the link session, i.e. the launching member. Any other actorId still
- * reaches B, which authorizes it as before.
+ * reaches B, which authorizes it as before. The same holds for the caller's
+ * home work session, which `message send` stamps as `workSessionId`.
  *
  * No database: the store is a stub whose `use` hands back a link session.
  */
@@ -17,7 +18,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { DbClaims } from '../src/db/types.js';
 import type { FacadeDeps } from '../src/facade/deps.js';
 import { HandlerRegistry } from '../src/facade/registry.js';
-import { createSpaceLinkInvokeHandlers, withoutHomeActor } from '../src/facade/handlers/w2/space-link-invoke.js';
+import { createSpaceLinkInvokeHandlers, remoteIdOf, withoutHomeEnvelope } from '../src/facade/handlers/w2/space-link-invoke.js';
 import type { DbSpaceLinkStore, SpaceLinkAuditInput, SpaceLinkInvokeRow } from '../src/credentials/space-link-store.js';
 import type { RequestContext } from '../src/http/types.js';
 
@@ -27,6 +28,7 @@ const LINK = '33333333-3333-4333-8333-333333333333';
 const HOME_ACTOR = '44444444-4444-4444-8444-444444444444';
 const OTHER_ACTOR = '55555555-5555-4555-8555-555555555555';
 const CREATED = '66666666-6666-4666-8666-666666666666';
+const HOME_SESSION = '77777777-7777-4777-8777-777777777777';
 
 function harness() {
   const audits: SpaceLinkAuditInput[] = [];
@@ -92,10 +94,87 @@ describe('spaceLinks.invoke — the home actor stays home', () => {
     expect(h.innerBody()).not.toHaveProperty('actorId');
   });
 
-  it('withoutHomeActor leaves non-objects and callers without an actor alone', () => {
-    expect(withoutHomeActor(undefined, HOME_ACTOR)).toBeUndefined();
-    expect(withoutHomeActor([HOME_ACTOR], HOME_ACTOR)).toEqual([HOME_ACTOR]);
-    expect(withoutHomeActor({ actorId: HOME_ACTOR }, undefined)).toEqual({ actorId: HOME_ACTOR });
-    expect(withoutHomeActor({ actorId: HOME_ACTOR.toUpperCase(), a: 1 }, HOME_ACTOR)).toEqual({ a: 1 });
+  it('withoutHomeEnvelope leaves non-objects and callers without an actor alone', () => {
+    expect(withoutHomeEnvelope(undefined, { actorId: HOME_ACTOR })).toBeUndefined();
+    expect(withoutHomeEnvelope([HOME_ACTOR], { actorId: HOME_ACTOR })).toEqual([HOME_ACTOR]);
+    expect(withoutHomeEnvelope({ actorId: HOME_ACTOR }, {})).toEqual({ actorId: HOME_ACTOR });
+    expect(withoutHomeEnvelope({ actorId: HOME_ACTOR.toUpperCase(), a: 1 }, { actorId: HOME_ACTOR })).toEqual({ a: 1 });
+  });
+
+  it('withoutHomeEnvelope drops the caller\'s own work session, and only that one', () => {
+    const home = { actorId: HOME_ACTOR, workSessionId: HOME_SESSION };
+    expect(withoutHomeEnvelope({ actorId: HOME_ACTOR, workSessionId: HOME_SESSION, body: 'x' }, home)).toEqual({ body: 'x' });
+    expect(withoutHomeEnvelope({ workSessionId: OTHER_ACTOR, body: 'x' }, home)).toEqual({ workSessionId: OTHER_ACTOR, body: 'x' });
+    expect(withoutHomeEnvelope({ workSessionId: HOME_SESSION }, { actorId: HOME_ACTOR, workSessionId: null }))
+      .toEqual({ workSessionId: HOME_SESSION });
+  });
+
+  it('remoteIdOf keeps a posted message, and an attention request before its entity', () => {
+    expect(remoteIdOf({ messages: [{ id: CREATED }, { id: OTHER_ACTOR }] })).toBe(CREATED);
+    expect(remoteIdOf({ request: { id: CREATED }, entity: { id: OTHER_ACTOR } })).toBe(CREATED);
+    expect(remoteIdOf({ request: null, entity: { id: OTHER_ACTOR } })).toBe(OTHER_ACTOR);
+    expect(remoteIdOf({ messages: [] })).toBeNull();
+  });
+});
+
+describe('spaceLinks.invoke — messages.post and attentionRequests.create run in B as the member', () => {
+  function messaging() {
+    const audits: SpaceLinkAuditInput[] = [];
+    const store = {
+      resolveInvoke: async () => ({
+        linkId: LINK, tokenRowId: 'row-1', memberId: 'member-h', homeSpaceId: HOME, targetSpaceId: TARGET,
+        targetServerId: null, status: 'signed_in', allowSpawn: false, spawnBudget: 3,
+      }),
+      recordAudit: async (_claims: DbClaims, entry: SpaceLinkAuditInput) => { audits.push(entry); return `audit-${audits.length}`; },
+      use: async () => ({
+        token: 'link-token',
+        session: {
+          sessionId: 'link-session', accountId: 'account-b', identityId: 'identity-b', username: 'h', displayName: null,
+          isNodeAdmin: false, isOwner: false, kind: 'link', actingAsTeamMemberId: null, workSessionId: null,
+          runtimeMemberId: null, runtimeThreadRootId: null, runtimeChatId: null, spaceId: TARGET, viaLinkId: LINK,
+          expiresAt: '2027-01-01T00:00:00Z', label: null,
+        },
+      }),
+    } as unknown as DbSpaceLinkStore;
+    const registry = new HandlerRegistry();
+    const seen: RequestContext[] = [];
+    registry.register('messages.post', vi.fn(async (ctx: RequestContext) => { seen.push(ctx); return { messages: [{ id: CREATED }] }; }));
+    registry.register('attentionRequests.create', vi.fn(async (ctx: RequestContext) => {
+      seen.push(ctx); return { request: { id: CREATED }, entity: { id: OTHER_ACTOR }, affectedCount: 1 };
+    }));
+    const { invoke } = createSpaceLinkInvokeHandlers(
+      registry, { config: {} } as unknown as FacadeDeps, store, async () => ({ identityId: 'identity-g' }) as DbClaims,
+    );
+    const run = (op: string, input: Record<string, unknown>, params?: Record<string, string>) => invoke({
+      params: { spaceId: HOME, link: 'b' },
+      body: { op, input, ...(params ? { params } : {}) },
+      headers: {}, query: new URLSearchParams(),
+      identity: { kind: 'bearer', authKind: 'agent', actorId: HOME_ACTOR, workSessionId: HOME_SESSION },
+    } as unknown as RequestContext);
+    return { run, audits, seen };
+  }
+
+  it('message send\'s home actor and home work session stay home; B sees the link identity; the audit keeps the message id', async () => {
+    const h = messaging();
+    await h.run('messages.post', {
+      anchorIds: [OTHER_ACTOR], body: 'hello', clientMutationId: 'cm-m', actorId: HOME_ACTOR, workSessionId: HOME_SESSION,
+    });
+    const inner = h.seen.at(-1)!;
+    expect(inner.body).not.toHaveProperty('actorId');
+    expect(inner.body).not.toHaveProperty('workSessionId');
+    expect(inner.identity).toMatchObject({ authKind: 'link', viaLinkId: LINK, sessionSpaceId: TARGET });
+    expect(h.audits.at(-1)).toMatchObject({
+      op: 'messages.post', result: 'ok', remoteId: CREATED, workSessionId: HOME_SESSION, linkId: LINK,
+    });
+  });
+
+  it('entity attention\'s home actor stays home; the audit keeps the attention request id', async () => {
+    const h = messaging();
+    await h.run('attentionRequests.create', { reason: 'look', clientMutationId: 'cm-a', actorId: HOME_ACTOR }, { entityId: OTHER_ACTOR });
+    const inner = h.seen.at(-1)!;
+    expect(inner.body).not.toHaveProperty('actorId');
+    expect(inner.params).toMatchObject({ entityId: OTHER_ACTOR });
+    expect(inner.identity).toMatchObject({ authKind: 'link', viaLinkId: LINK });
+    expect(h.audits.at(-1)).toMatchObject({ op: 'attentionRequests.create', result: 'ok', remoteId: CREATED, workSessionId: HOME_SESSION });
   });
 });
