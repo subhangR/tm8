@@ -72,7 +72,7 @@ import type { LaunchSuggestInput, SpaceSessionsMode } from '@tm8/contract';
  * `projects.file.blame` (GET /v2/projects/:projectId/file-history|blame,
  * catalog v1). READS over one path in a linked project's working directory:
  * revisions (rename-following, optional selected-revision patch via
- * `diffOid`) and working-tree blame hunks, each joined to the `created_in`
+ * `diffOid`) and working-tree blame hunks, each joined to the `authored_from`
  * session provenance — `session: null` means NO tm8 session recorded, and the
  * UI must say so rather than guess. Contract-shaped and additive, zero caller
  * churn. Filed by the tier1-file-history-blame lane for dual re-consensus
@@ -785,7 +785,7 @@ export interface Seam {
   /**
    * The revisions of one path in a linked project's working directory
    * (Amendment 8) — argv-only git server-side, rename-following, each
-   * revision carrying its `created_in` session attribution or null. The same
+   * revision carrying its `authored_from` session attribution or null. The same
    * `invalid_input`-is-a-project-fact rule as `projectBranches` applies.
    */
   projectFileHistory(projectId: string, path: string, opts?: FileHistoryOpts): Promise<ProjectFileHistory>;

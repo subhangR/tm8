@@ -68,7 +68,9 @@ describe('story stale work signal and blocked bands', () => {
       await edge(c, 'dead', 'task', 'working_on');
       await edge(c, 'deleted', 'task', 'working_on');
       await edge(c, 'session', 'foreign', 'working_on');
-      await edge(c, 'task', 'session', 'created_in'); // sideways live evidence is insufficient
+      await c.query(`select internal.w1_set_writer('entity_recorder')`);
+      await edge(c, 'task', 'session', 'authored_from'); // sideways live evidence is insufficient
+      await c.query(`select internal.w1_set_writer(null)`);
       await edge(c, 'hard', 'open', 'depends_on');
       await edge(c, 'soft', 'open', 'depends_on', { hard: false });
       await edge(c, 'resolved', 'done', 'depends_on');

@@ -570,11 +570,12 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
          and (w.src_id = ${actor} or wtm.owner_member_id = ${actor}
               -- 299: a claim made inside an agent session is the SESSION's;
               -- it is in flight for whoever its persona belongs to.
+              -- 309: its teammate is participates_in (teammate -> session).
               or exists (
                 select 1 from public.edges r
-                  join public.team_members rtm on rtm.entity_id = r.dst_id
-                 where r.src_id = w.src_id and r.type = 'relates_to'
-                   and (r.dst_id = ${actor} or rtm.owner_member_id = ${actor})))
+                  join public.team_members rtm on rtm.entity_id = r.src_id
+                 where r.dst_id = w.src_id and r.type = 'participates_in'
+                   and (r.src_id = ${actor} or rtm.owner_member_id = ${actor})))
     )`);
   }
 

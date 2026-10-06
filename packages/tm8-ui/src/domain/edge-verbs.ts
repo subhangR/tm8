@@ -8,7 +8,7 @@
  * leaked the id — and the arrow left the reader to work out which end was
  * which. Here each (type, direction) pair is ONE verb phrase written from the
  * open entity's side: an outgoing `working_on` reads "Working on", an incoming
- * `created_in` reads "Created here". Direction is inside the words, so no
+ * `authored_from` reads "Made here". Direction is inside the words, so no
  * arrow is needed.
  *
  * EVERY REGISTERED TYPE HAS A ROW. `edge-verbs.test.ts` reads the edge types
@@ -51,14 +51,15 @@ export const EDGE_VERBS: Readonly<Record<string, EdgeVerb>> = {
   approved_by: { out: 'Approved by', in: 'Approved' },
   assigned_to: { out: 'Assigned to', in: 'Assigned' },
   attached_to: { out: 'Attached to', in: 'Attached here' },
-  authored_from: { out: 'Authored in', in: 'Authored here', conversationFrom: MESSAGE_KINDS },
+  authored_from: { out: 'Made during', in: 'Made here', conversationFrom: MESSAGE_KINDS },
   based_on: { out: 'Based on', in: 'Basis for' },
   completed_by: { out: 'Completed by', in: 'Completed' },
   contains: { out: 'Contains', in: 'In collection' },
   controls: { out: 'Controls', in: 'Controlled by' },
   consumes: { out: 'Consumes', in: 'Consumed by' },
   copy_of: { out: 'Copy of', in: 'Copied as' },
-  created_in: { out: 'Created in', in: 'Created here' },
+  // Deprecated: replaced by authored_from. Kept while the type stays registered.
+  created_in: { out: 'Made during (unverified, legacy)', in: 'Made here (legacy)' },
   defaults_to_profile: { out: 'Defaults to', in: 'Default for' },
   depends_on: { out: 'Depends on', in: 'Needed by' },
   derived_from: { out: 'Launches', in: 'Launched by' },

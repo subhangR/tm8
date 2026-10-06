@@ -73,7 +73,7 @@ function detail(): Record<string, unknown> {
         { type: 'assigned_to', direction: 'outgoing', label: 'assigned_to', edges: [edge('assigned_to', 1)] },
         { type: 'relates_to', direction: 'outgoing', label: 'relates_to', edges: Array.from({ length: 20 }, (_, i) => edge('relates_to', i)) },
       ],
-      incoming: [{ type: 'created_in', direction: 'incoming', label: 'created_in', edges: [edge('created_in', 99)] }],
+      incoming: [{ type: 'authored_from', direction: 'incoming', label: 'authored_from', edges: [edge('authored_from', 99)] }],
       unresolvedHardDependencyCount: 0,
     },
   };
@@ -143,7 +143,7 @@ describe('entity get is bounded by default', () => {
     expect(b.hierarchy).toEqual({ parent: { id: 'p1', kind: 'task', title: 'Parent' }, depth: 2, children: 12, moreChildren: true });
     expect(b.edgeCounts).toEqual({
       outgoing: { assigned_to: 1, relates_to: 20 },
-      incoming: { created_in: 1 },
+      incoming: { authored_from: 1 },
       unresolvedHardDependencyCount: 0,
     });
     expect(b.next).toEqual({ relationships: `tm8 entity context ${ID}`, full: `tm8 entity get ${ID} --full` });

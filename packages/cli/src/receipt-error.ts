@@ -12,7 +12,7 @@
  *
  * WHAT IT COVERS. A refusal or a lost answer from the ONE write a command
  * exists to make. Local usage errors never reach a server and print nothing
- * here, and the best-effort chained writes (`created_in` claims) already
+ * here, and the best-effort chained writes (none since 308: `created_in` is retired) already
  * surface as success-receipt warnings.
  *
  * THE SHAPES:

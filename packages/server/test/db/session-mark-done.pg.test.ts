@@ -181,7 +181,7 @@ afterAll(async () => {
 async function closeOut(sessionId: string, body = 'Close-out: done.'): Promise<string> {
   // The session's teammate writes it, as an agent's own close-out would: a
   // message author is always a member or teammate, and the receipt rule reads
-  // the session's teammate through its `relates_to` edge.
+  // the session's teammate through its `participates_in` edge (309).
   return asOwner(async (q) => {
     const tm = await q(
       `insert into public.entities(space_id,kind,parent_id,position,created_by)
@@ -195,8 +195,8 @@ async function closeOut(sessionId: string, body = 'Close-out: done.'): Promise<s
       [teammate, fixture.memberId],
     );
     await q(
-      `insert into public.edges(space_id,src_id,dst_id,type,created_by) values($1,$2,$3,'relates_to',$4)`,
-      [fixture.spaceId, sessionId, teammate, fixture.memberId],
+      `insert into public.edges(space_id,src_id,dst_id,type,created_by) values($1,$2,$3,'participates_in',$4)`,
+      [fixture.spaceId, teammate, sessionId, fixture.memberId],
     );
     const m = await q(
       `insert into public.entities(space_id,kind,parent_id,position,created_by)

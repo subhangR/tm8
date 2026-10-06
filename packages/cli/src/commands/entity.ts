@@ -731,31 +731,9 @@ function initialConnections(cmd: CommandContext): Array<{ type: string; targetId
     tuples.push({ type: raw.slice(0, eq), targetId: raw.slice(eq + 1) });
   }
 
-  // A session's own output is the thing its connection surface most obviously
-  // ought to show, and it did not: measured on prod before migration 066, 59
-  // docs existed, exactly ONE was linked to any session, and 45 had no edges at
-  // all. Sessions produce docs all day and the graph could not answer "what did
-  // this session make?" for any kind. So when this process IS a work session,
-  // everything it creates claims that session as its birthplace.
-  //
-  // THIS IS A CLAIM, NOT A FACT. Nothing verifies that the caller really is the
-  // session it names, which is why `created_in` stamps `props.origin =
-  // 'client_claim'` instead of the usual 'user' (066 §1) — a later reader must
-  // not mistake an assertion for something the Server recorded. The verified
-  // form is `authored_from`, and it needs the Server to DERIVE the session from
-  // a session-scoped token rather than be told; that is why it cannot be written
-  // from here. Until that lands this is the honest approximation.
-  //
-  // Skipped when the caller named `created_in` themselves: one entity has one
-  // birth session (`edges_created_in_source_idx`), so a second claim at a
-  // different target is refused by the database rather than silently preferred.
-  // An explicit flag beats an inferred one, and `--no-session-link` opts out
-  // entirely for an entity that should not be attributed to this session.
-  //
-  // NOTE: the automatic `created_in` link is deliberately NOT added here — see
-  // `linkCreatedInSession` below for why it cannot ride inside the create
-  // request. An EXPLICIT `--connect created_in=<id>` still travels here, which is
-  // why that function stands down when the caller named one.
+  // A session's own output is recorded by the SERVER as `authored_from`
+  // (entity -> work_session, 308), derived from the session-scoped token, so the
+  // client adds nothing here; `created_in` is deprecated and refuses new rows.
   const seen = new Set<string>();
   return tuples.filter((t) => {
     const key = `${t.type}\u0000${t.targetId}`;
@@ -765,99 +743,6 @@ function initialConnections(cmd: CommandContext): Array<{ type: string; targetId
   });
 }
 
-/**
- * Claim this session as the birthplace of a just-created entity — BEST EFFORT,
- * as a SEPARATE request, and never fatal.
- *
- * WHY IT CANNOT RIDE INSIDE THE CREATE. It was written that way first, and it is
- * wrong: a connection in the create body is validated with the create, so an
- * unresolvable session does not degrade to a missing edge, it fails the WHOLE
- * CREATE. That broke 22 CLI integration tests with `not_found: entity <session>
- * not found` — the suites boot their own Server and database, `cli()` passes
- * `{...process.env}`, so `TM8_SESSION_ID` and `TM8_SPACE_ID` leak in from
- * whatever agent is running the suite while the target database has never heard
- * of that session. Guarding on `ctx.space.source === 'session'` did NOT fix it,
- * because the leaked value arrives as env and therefore reads as 'session' too.
- *
- * The same failure has a worse shape in production: `tm8 --server staging entity
- * create` run from a prod session is the Staging Steward's entire job, and its
- * session exists only on prod.
- *
- * So the rule the 065/066 database triggers already follow applies to the client
- * too: A DERIVED EDGE MUST NEVER TAKE DOWN THE OPERATION THAT CAUSED IT. The
- * entity is created first and committed; the claim is attempted after and its
- * failure is reported on stderr, not raised. A create that succeeded must not
- * report failure because a nicety did not land.
- *
- * The failure is WARNED rather than swallowed on purpose — silent absence is the
- * failure mode this whole change exists to remove, so trading a broken create
- * for an invisible one would be no progress at all.
- */
-async function linkCreatedInSession(
-  cmd: CommandContext,
-  created: unknown,
-  explicitConnections: ReadonlyArray<{ type: string; targetId: string }>,
-): Promise<{ ref?: ReceiptRef; warning?: ReceiptWarning }> {
-  const sessionId = cmd.ctx.sessionId;
-  if (sessionId === undefined) return {};
-  if (cmd.options.bool('no-session-link')) return {};
-  // One entity has one birth session (`edges_created_in_source_idx`), so an
-  // explicit claim wins outright rather than racing the inferred one.
-  if (explicitConnections.some((c) => c.type === 'created_in')) return {};
-
-  // A server receipt names the new row as `id`; the full result as `entity.id`.
-  const entityId = isServerReceipt(created)
-    ? created.id
-    : (created as { entity?: { id?: unknown } } | null)?.entity?.id;
-  if (typeof entityId !== 'string' || entityId === '') return {};
-  if (entityId === sessionId) return {}; // nothing is born in itself
-
-  // A session id that is not a UUID can never be the benign cross-database
-  // answer the catch below swallows — it is a misconfigured TM8_SESSION_ID.
-  // The server reports it with the same not_found the benign case returns
-  // (22P02 maps to 404), so without this check the misconfiguration is
-  // indistinguishable from the harness leak and stays invisible forever.
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId)) {
-    const message =
-      `TM8_SESSION_ID ${JSON.stringify(sessionId)} is not a UUID, so the ` +
-      'created_in session link was not attempted. The entity was created.';
-    cmd.out.warn(`note: ${message}`);
-    return { warning: { code: 'session_link_skipped', message } };
-  }
-
-  try {
-    const edge = await clientFor(cmd.ctx).invoke<unknown>('edges.create', {
-      body: {
-        srcId: entityId,
-        dstId: sessionId,
-        type: 'created_in',
-        clientMutationId: resolveMutationId(undefined),
-      },
-    });
-    // The receipt's `refs` is where a chained caller finds this edge (D2.4).
-    const edgeId = (edge as { edge?: { id?: unknown } } | null)?.edge?.id;
-    return typeof edgeId === 'string' ? { ref: { kind: 'edge', type: 'created_in', id: edgeId } } : {};
-  } catch (err) {
-    // `not_found` on the session is not a failure — it is the answer to a
-    // question we were right to ask. It means this invocation is not operating
-    // in its own session's world: the Space belongs to another database (the
-    // integration harness leaks TM8_SESSION_ID into suites that boot their own
-    // Server), or `--server` sent us to a node where the session does not exist.
-    // In that case NO edge is the correct outcome and there is nothing to report,
-    // which is also why a suite asserting `stderr: ''` on a clean create stays
-    // green.
-    //
-    // Anything else — forbidden, invalid_input, a transport failure, a 500 — is a
-    // claim we SHOULD have been able to record and could not, so it is surfaced.
-    // Silent absence is the exact failure mode this change exists to remove.
-    if (err instanceof ApiError && err.code === 'not_found') return {};
-    const message =
-      `could not record this entity as created in session ${sessionId} ` +
-      `(${err instanceof Error ? err.message : String(err)}). The entity was created.`;
-    cmd.out.warn(`note: ${message}`);
-    return { warning: { code: 'session_link_failed', message } };
-  }
-}
 
 /** `--content <json-source>` is `Record<string, unknown>` — an array is a misread flag. */
 async function readContent(raw: string): Promise<Record<string, unknown>> {
@@ -975,14 +860,10 @@ async function entityCreate(cmd: CommandContext): Promise<ExitCode> {
       query: receiptQuery('entity.create', cmd.out.receipts),
       body: withActor(cmd, body),
     }));
-  // After the create has landed, never before it — see linkCreatedInSession.
-  const claim = await linkCreatedInSession(cmd, data, connections);
+  // "Made during this session" is recorded by the SERVER as `authored_from`
+  // from the session-scoped token (308); the client no longer claims it.
   cmd.out.mutation('entity.create', data, renderCommandResult, () =>
-    successReceipt('entity.create', data, {
-      ...callerMutationId(cmd.options),
-      ...(claim.ref ? { refs: [claim.ref] } : {}),
-      ...(claim.warning ? { warnings: [claim.warning] } : {}),
-    }));
+    successReceipt('entity.create', data, callerMutationId(cmd.options)));
   return EXIT_OK;
 }
 

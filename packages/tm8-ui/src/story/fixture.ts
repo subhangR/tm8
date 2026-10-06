@@ -346,7 +346,7 @@ export const STORY_FIXTURE_STATE: StoryState = {
 
 export const STORY_FIXTURE_PAGE: StoryPage = {
   asOf: minsBack(0),
-  follow: { depth: 3, limit: 500, truncated: false, edgeTypes: ['parent', 'attached_to', 'tracks', 'working_on', 'about', 'created_in', 'assigned_to', 'has_member', 'produces', 'remembers', 'dispatched_by'] },
+  follow: { depth: 3, limit: 500, truncated: false, edgeTypes: ['parent', 'attached_to', 'tracks', 'working_on', 'about', 'authored_from', 'assigned_to', 'has_member', 'produces', 'remembers', 'dispatched_by'] },
   parent: { id: fx('parent'), title: 'Q4: tm8 as a team space' },
   roots,
   nodes,
