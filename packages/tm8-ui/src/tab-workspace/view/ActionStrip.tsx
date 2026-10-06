@@ -30,7 +30,7 @@ export interface ActionStripProps {
   tab: EntityTabRecord;
 }
 
-/** `#/s/{space}/tabs?tab=<id>` as an absolute URL (Spec A §12). */
+/** `#/s/{space}/work?tab=<id>` as an absolute URL (Spec A §12; D31). */
 export function tabLinkUrl(spaceId: string, entityId: string): string {
   const { hash } = build(
     normalize({ spaceId: spaceId as SpaceId, target: { view: 'tabs', tab: entityId as EntityId }, panels: emptyPanels() }),

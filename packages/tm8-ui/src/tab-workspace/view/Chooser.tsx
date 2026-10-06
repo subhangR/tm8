@@ -23,6 +23,8 @@ export interface ChooserProps {
   variant: 'tab' | 'start';
   /** Start surface only: rendered above the search (W2-I's restore offer). */
   restoreSlot?: ReactNode;
+  /** Start surface only: rendered under Recent (D31: Active sessions). */
+  afterRecent?: ReactNode;
 }
 
 const RECENT_LIMIT = 8;
@@ -45,7 +47,7 @@ function openScopePicker(): void {
   document.querySelector<HTMLElement>('[data-testid="tws-scope"]')?.click();
 }
 
-export function Chooser({ tabId, variant, restoreSlot }: ChooserProps) {
+export function Chooser({ tabId, variant, restoreSlot, afterRecent }: ChooserProps) {
   const { dispatch, gate } = useWorkspace();
   const scope = useWorkspaceState((s) => s.scope);
   const key = scopeKey(scope);
@@ -162,6 +164,7 @@ export function Chooser({ tabId, variant, restoreSlot }: ChooserProps) {
           </ul>
         )}
       </section>
+      {afterRecent}
       {creatable.length > 0 ? (
         <section className="tws-pick-section" aria-label="Create">
           <span className="t-eyebrow">Create</span>

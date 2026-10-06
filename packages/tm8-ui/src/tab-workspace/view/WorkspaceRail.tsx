@@ -5,7 +5,8 @@
  *   [Pinned kinds]  ── hairline
  *   [Work ▸] [Library ▸] [Agents & People ▸] [Code ▸]   (collapsible sections)
  *   ── hairline
- *   ⌘K · Craft · Settings · Help · account · » (expand)
+ *   Needs you · Status  ⌘K · Design · Settings · Help  account · »
+ *   (three clusters, 12px apart, no dividers — Design Advisor R39)
  *
  * THE SECTIONS ARE THE HOME RAIL'S POPULATION, NOT ITS COMPONENT:
  * `homeRailGroups()` restricted to the Workspace kinds (D7). Pins, open
@@ -37,6 +38,7 @@ import { getRailStore } from '../runtime/railStore';
 import { isWorkspaceKind } from '../runtime/types';
 import { useWorkspace, useWorkspaceState } from './context';
 import { RAIL_COLLAPSE_ART, RAIL_EXPAND_ART, RAIL_SECTION_ART } from './railArt';
+import { RailAttention, RailStatus } from './RailStatus';
 
 const BOTTOM_GROUP_IDS = ['craft', 'settings', 'help'] as const;
 const BOTTOM_ART: Record<(typeof BOTTOM_GROUP_IDS)[number], readonly string[]> = {
@@ -124,7 +126,7 @@ export function WorkspaceRail() {
   return (
     <nav
       className="tws-rail"
-      aria-label="Workspace rail"
+      aria-label="Work rail"
       data-testid="tws-rail"
       data-rail-expanded={expanded || undefined}
     >
@@ -184,7 +186,12 @@ export function WorkspaceRail() {
         })}
       </div>
       <hr className="tws-rail-rule" />
-      <div className="tws-rail-bottom" role="group" aria-label="Workspace tools">
+      <div className="tws-rail-bottom" role="group" aria-label="Work tools">
+        <div className="tws-rail-cluster" data-cluster="status">
+          <RailAttention expanded={expanded} />
+          <RailStatus expanded={expanded} />
+        </div>
+        <div className="tws-rail-cluster" data-cluster="tools">
         <RailTip label={expanded ? null : 'Command palette'} shortcut="⌘K">
           <button
             type="button"
@@ -217,6 +224,8 @@ export function WorkspaceRail() {
             </button>
           </RailTip>
         ))}
+        </div>
+        <div className="tws-rail-cluster" data-cluster="account">
         {gate.accountSlot ? (
           <RailTip label={expanded ? null : 'Account'}>
             <div className="tws-rail-account">
@@ -243,6 +252,7 @@ export function WorkspaceRail() {
             {expanded ? <span className="tws-rail-label">{expandLabel}</span> : null}
           </button>
         </RailTip>
+        </div>
       </div>
       <span className="tws-sr-only" aria-live="polite" data-testid="tws-rail-live">
         {announcement}

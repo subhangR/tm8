@@ -30,6 +30,10 @@ import { GateApp } from './GateApp';
 import { resetNav } from '../stores/navStore';
 import { screenStackStore } from '../stores/screenStackStore';
 
+/* D31: this suite drives a retired desktop view (Home, the old Work or
+   Board), which only the legacy desktop still reaches (stage (c) deletes it). */
+vi.mock('../shell/desktop-modes', () => ({ desktopModes: () => 'legacy' }));
+
 /**
  * jsdom's own localStorage persists for the whole FILE and `.clear()` throws
  * under this runner — the same problem `last-place-gate.test.tsx` documents, so

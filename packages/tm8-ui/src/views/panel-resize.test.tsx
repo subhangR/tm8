@@ -16,7 +16,7 @@
  * what makes the PERSISTENCE assertions here readable, since the widths are
  * written through exactly this object.
  */
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, waitFor, within } from '@testing-library/react';
 import { GateApp } from './GateApp';
 import { resetNav } from '../stores/navStore';
@@ -36,6 +36,10 @@ import {
   HOME_LIST_MIN,
   HOME_RAIL_COLLAPSED,
 } from './HomeView';
+
+/* D31: this suite drives a retired desktop view (Home, the old Work or
+   Board), which only the legacy desktop still reaches (stage (c) deletes it). */
+vi.mock('../shell/desktop-modes', () => ({ desktopModes: () => 'legacy' }));
 
 beforeEach(() => {
   const map = new Map<string, string>();

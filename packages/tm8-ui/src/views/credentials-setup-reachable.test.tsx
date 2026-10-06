@@ -93,7 +93,7 @@ describe('the credential setup flow reaches a signed-in member', () => {
 
     // A fresh boot as the SAME account: still dismissed.
     const again = renderSignedInKeepingStorage('dismissive');
-    await waitFor(() => expect(again.getByTestId('workspace-grid')).toBeTruthy());
+    await waitFor(() => expect(again.getByTestId('tab-workspace')).toBeTruthy());
     expect(again.queryByTestId('credentials-setup-dialog')).toBeNull();
     again.unmount();
 
