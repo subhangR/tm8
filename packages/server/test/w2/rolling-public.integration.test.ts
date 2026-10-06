@@ -573,6 +573,8 @@ const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
   ...OP_REQUEST_NET_NEW_OPERATIONS,
   ...STYLES_NET_NEW_OPERATIONS,
   ...MCP_NET_NEW_OPERATIONS,
+  // Spec D1 (301): `tm8 task release` joins the entities-commands module.
+  'entities.commands.release',
 ].sort();
 
 /** Substituted for every `:param` so one probe covers any catalog path shape. */
@@ -722,7 +724,8 @@ describe('W2.I02 tranche-v2 public composition', () => {
     ).length;
     // The frozen tranche baseline is 253. MCP handlers add only when the
     // runtime bridge is mounted in this fixture.
-    expect(registry.size).toBe(253 + mountedMcpOperations);
+    // Spec D1 (301): +1 entities.commands.release. MEASURED.
+    expect(registry.size).toBe(254 + mountedMcpOperations);
     expect(registry.has('search.query')).toBe(false);
     expect(registry.has('bridge.fetchBlob')).toBe(false);
   });
