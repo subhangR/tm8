@@ -3296,6 +3296,7 @@ export const UpdateSpaceInputSchema: z.ZodType<UpdateSpaceInput> = z.object({
   // two postures, and the RPC validates the vocabulary again on its side.
   sessionShareDefault: z.enum(['none', 'space']).optional(),
   sessionDriveDefault: WorkSessionDriveModeSchema.optional(),
+  sessionAutoCloseMinutes: z.number().int().min(0).max(10080).optional(),
 }).strict();
 
 /** The role vocabulary, in one place, so the wire and the check constraint agree. */
@@ -5150,6 +5151,7 @@ export const SpaceSummarySchema: z.ZodType<SpaceSummary> = z.object({
   // `stored Space settings violate the frozen contract` for the whole space.
   sessionShareDefault: z.enum(['none', 'space']).optional(),
   sessionDriveDefault: WorkSessionDriveModeSchema.optional(),
+  sessionAutoCloseMinutes: z.number().int().min(0).max(10080).optional(),
   createdAt: IsoTimestamp,
 }).strict();
 

@@ -478,8 +478,10 @@ export type CoreEntityState =
        * deliberately separate from `status`, which only says whether the
        * PROCESS is alive. `open` until `session complete` (with a receipt) or an
        * operator's Stop settles it; no process event — exit, crash, restart,
-       * reaper, terminate — ever writes it. `completed` and `stopped` return
-       * to `open` only through an explicit, logged resume (owner ruling Q2 = B).
+       * reaper, terminate — ever writes it. `completed` is a STATUS MARKER,
+       * not a gate (owner ruling, 6 Oct): the session may keep messaging and
+       * working, and resume or claiming a new task reopens it (logged,
+       * `outcomeSource` names who reopened it). `stopped` reopens through resume.
        *
        * Additive: absent = a node that predates 299 (treat as `open`).
        */
@@ -3924,6 +3926,12 @@ export interface UpdateSpaceInput extends CommandContext {
    */
   sessionShareDefault?: 'none' | 'space';
   sessionDriveDefault?: WorkSessionDriveMode;
+  /**
+   * 301 (Spec D1, owner ruling Q3): minutes a COMPLETED session's process may
+   * stay idle before the node closes it (recorded `exited_clean`). 0 = never.
+   * Default 30. Writable through `spaces.update` by a space admin.
+   */
+  sessionAutoCloseMinutes?: number;
 }
 
 /**
@@ -4459,6 +4467,12 @@ export interface SpaceSummary {
    */
   sessionShareDefault?: 'none' | 'space';
   sessionDriveDefault?: WorkSessionDriveMode;
+  /**
+   * 301 (Spec D1, owner ruling Q3): minutes a COMPLETED session's process may
+   * stay idle before the node closes it (recorded `exited_clean`). 0 = never.
+   * Default 30. Writable through `spaces.update` by a space admin.
+   */
+  sessionAutoCloseMinutes?: number;
 }
 
 /** GET /v2/spaces/:spaceId/navigation */
@@ -6317,6 +6331,8 @@ export interface ExecutionTerminateInput extends CommandContext {
  * ends with `session_completed`. The process is untouched unless
  * `closeProcess`, which then terminates it as `exited_clean`. Idempotent on an
  * already-completed session; refused on a stopped one (`session_stopped`).
+ * Completion is a status marker: the session keeps working, and a later claim
+ * reopens it.
  */
 export interface ExecutionCompleteInput extends CommandContext {
   receiptMessageId?: string;

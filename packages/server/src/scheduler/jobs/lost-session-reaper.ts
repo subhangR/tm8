@@ -60,3 +60,35 @@ export function createLostSessionReaperJob(options: LostSessionReaperOptions): S
     },
   };
 }
+
+export const COMPLETED_AUTO_CLOSE_JOB_NAME = 'execution.completed-auto-close';
+
+/**
+ * Spec D1, owner ruling Q3: close a COMPLETED session's process once it has
+ * been idle for its space's `session_autoclose_minutes` (default 30, 0 =
+ * never). Lives beside the reaper: both are the node tidying processes whose
+ * work no longer needs them, and both only ever write process facts.
+ */
+export function createCompletedAutoCloseJob(options: {
+  close(): Promise<{ closed: number; errors: Array<{ message: string }> }>;
+  intervalMs?: number;
+}): ScheduledJob {
+  return {
+    name: COMPLETED_AUTO_CLOSE_JOB_NAME,
+    intervalMs: options.intervalMs ?? 60_000,
+    jitterRatio: 0.1,
+    runOnStart: false,
+    timeoutMs: 2 * 60_000,
+    async run(ctx: JobContext): Promise<JobOutcome> {
+      const { closed, errors } = await options.close();
+      if (errors.length > 0) {
+        ctx.logger.warn(`${COMPLETED_AUTO_CLOSE_JOB_NAME}: ${errors.length} problem(s): ${
+          errors.slice(0, 5).map((e) => e.message).join('; ')}`);
+      }
+      if (closed === 0 && errors.length === 0) {
+        return { skipped: true, reason: 'no completed session idle past its window' };
+      }
+      return { affected: closed, detail: { closed, failed: errors.length } };
+    },
+  };
+}
