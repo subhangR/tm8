@@ -9,6 +9,7 @@ import { creatableKind } from '../../authoring';
 import { getKind, type KindArt } from '../../domain';
 import { WORKSPACE_KINDS, type KindId } from '../runtime/types';
 import { draftBodyFor, type DraftHostProps } from './draft';
+import { FormDraftBody } from './FormDraftBody';
 
 export interface KindAdapter {
   kind: KindId;
@@ -29,11 +30,11 @@ export interface KindAdapter {
 
 /**
  * Kinds with no generic create that still have their own creation door,
- * hosted in a draft tab (Spec A §9): the launch sheet and the chat start.
- * `form` is NOT here: `forms.create` has no client door yet (the seam and
- * `FormsOps` only edit existing forms), so + New is disabled with the reason.
+ * hosted in a draft tab (Spec A §9): the launch sheet, the chat start and the
+ * form builder (`forms.create`, `FormDraftBody`; a node without the op says
+ * so in the draft body).
  */
-const OWN_DOOR_KINDS: ReadonlySet<KindId> = new Set(['work_session', 'chat']);
+const OWN_DOOR_KINDS: ReadonlySet<KindId> = new Set(['work_session', 'chat', 'form']);
 
 function creatabilityOf(kind: KindId, nounPlural: string): KindAdapter['creatable'] {
   if (creatableKind(kind as EntityKind) || OWN_DOOR_KINDS.has(kind)) return true;
@@ -53,7 +54,7 @@ export function getKindAdapter(kind: KindId): KindAdapter {
     icon: config.iconArt,
     body: config.panel.fullView ? 'fullView' : 'panel',
     creatable: creatabilityOf(kind, config.labelPlural),
-    draftBody: draftBodyFor(kind),
+    draftBody: kind === 'form' ? FormDraftBody : draftBodyFor(kind),
     supportsChat: kind !== 'chat' && kind !== 'channel',
     supportsRun: config.launchable === true,
   };

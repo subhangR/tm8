@@ -1550,6 +1550,7 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
      * catalog carries `forms.responses.redeliver`.
      */
     forms: {
+      create(input) { return http.call('forms.create', { body: { ...input, clientMutationId: newId('form') } }); },
       update(formId, input) { return http.call('forms.update', { params: { formId }, body: { ...input, clientMutationId: newId('form') } }); },
       questionsAdd(formId, input) { return http.call('forms.questions.add', { params: { formId }, body: { ...input, clientMutationId: newId('form') } }); },
       questionsUpdate(formId, questionKey, input) { return http.call('forms.questions.update', { params: { formId, questionKey }, body: { ...input, clientMutationId: newId('form') } }); },

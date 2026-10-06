@@ -8,8 +8,9 @@
  *   The scope is held at Mixed and this asks the person to pick kinds or keep
  *   Mixed, so Mixed is never chosen silently. Any scope commit clears it.
  *
- * Mounted by `TabWorkspaceView` in the content grid area (W1-F's start
- * surface has no slot on this base).
+ * The offer renders inline in the start surface's `restoreSlot` (above the
+ * search). Scope repair stays an overlay in the content grid area, mounted by
+ * `TabWorkspaceView`, because it can be needed whatever the content shows.
  */
 import { useState, useSyncExternalStore } from 'react';
 import { workspaceKindAdapters } from '../adapters/registry';
@@ -32,10 +33,10 @@ export function RestoreOffer() {
   const onStart = useWorkspaceState((s) => s.presentation.surface === 'start' && s.orderedTabIds.length === 0);
   const repairing = useWorkspaceState((s) => s.scopeRepair !== undefined);
 
-  if (repairing) return <ScopeRepair />;
-  if (count === 0 || !onStart) return null;
+  // Repair outranks the offer: one question at a time.
+  if (repairing || count === 0 || !onStart) return null;
   return (
-    <div className="tws-banner" role="status" data-testid="tws-restore-offer">
+    <div className="tws-banner tws-banner--inline" role="status" data-testid="tws-restore-offer">
       <span className="tws-banner-text">Restore {count === 1 ? '1 tab' : `${count} tabs`} from your last session?</span>
       <button type="button" className="tws-quiet-btn tws-banner-primary" onClick={() => acceptRestoreOffer(runtime)}>
         Restore
@@ -45,6 +46,12 @@ export function RestoreOffer() {
       </button>
     </div>
   );
+}
+
+/** The scope-repair overlay; renders nothing unless a repair is pending. */
+export function ScopeRepairBanner() {
+  const repairing = useWorkspaceState((s) => s.scopeRepair !== undefined);
+  return repairing ? <ScopeRepair /> : null;
 }
 
 function ScopeRepair() {

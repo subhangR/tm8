@@ -18,7 +18,7 @@ import { ContentHost } from './ContentHost';
 import { useWorkspaceStore } from '../runtime/store';
 import { WorkspaceProvider, useWorkspace, type WorkspaceContextValue, type WorkspaceGateHandles } from './context';
 import { LeftHeader, ViewSelector } from './LeftHeader';
-import { RestoreOffer } from './RestoreOffer';
+import { ScopeRepairBanner } from './RestoreOffer';
 import { RevealPrompt } from './RevealPrompt';
 import { TabStrip } from './TabStrip';
 import { WorkspaceRail } from './WorkspaceRail';
@@ -109,7 +109,7 @@ export function TabWorkspaceView({ viewerId, spaceId, routeTab, gate }: TabWorks
           </div>
         )}
         <ContentHost />
-        <RestoreOffer />
+        <ScopeRepairBanner />
         <RevealPrompt />
       </div>
     </WorkspaceProvider>

@@ -11,6 +11,7 @@ import type {
   CommandResult,
   FormResponsePage,
   FormResponseView,
+  FormsCreateInput,
   FormsQuestionsAddInput,
   FormsQuestionsMoveInput,
   FormsQuestionsUpdateInput,
@@ -39,6 +40,12 @@ export interface FormsListQuery {
 export type FormsRedeliverInput = Cmd<FormsResponsesRedeliverInput>;
 
 export interface FormsOps {
+  /**
+   * `forms.create` — the full spec in one call (the workspace's + New form
+   * door). Optional so a transport that only edits existing forms (the test
+   * fakes) still satisfies the port; absent ⇒ forms aren't creatable.
+   */
+  create?(input: Cmd<FormsCreateInput>): Promise<CommandResult>;
   update(formId: string, input: Cmd<FormsUpdateInput>): Promise<CommandResult>;
   questionsAdd(formId: string, input: Cmd<FormsQuestionsAddInput>): Promise<CommandResult>;
   questionsUpdate(formId: string, key: string, input: Cmd<FormsQuestionsUpdateInput>): Promise<CommandResult>;
