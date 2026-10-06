@@ -27,10 +27,22 @@
  * charter and must not import views' data type. It names exactly what a
  * terminate needs, so that screen passes its own `seam` unchanged.
  */
-import { useCallback, useMemo, useState } from 'react';
-import type { CommandResult, EntityId } from '@tm8/contract';
-import type { ActionRef } from '../domain';
+import { createElement, useCallback, useMemo, useState, type ReactNode } from 'react';
+import type { CommandResult, EntityId, EntityState, MessageBatchResult } from '@tm8/contract';
+import {
+  claimsFromEdges,
+  isSessionState,
+  sessionOutcomeOf,
+  type ActionRef,
+  type GroupBulk,
+} from '../domain';
 import type { SessionSharingPatch } from '../panels/controls/EntityControls';
+import {
+  SessionCompleteDialog,
+  SessionReopenDialog,
+  SessionTerminateDialog,
+  type SessionOutcomeFacts,
+} from '../panels/session/SessionOutcomeDialogs';
 import type { Seam } from '../data/seam';
 
 /**
@@ -41,6 +53,11 @@ import type { Seam } from '../data/seam';
 export const PANEL_PRIMARY_ACTIONS: readonly ActionRef[] = [
   'terminate',
   'resume',
+  // Spec D1 §5: the outcome verbs that need no dialog. `complete-session` is
+  // added per host, only where the host renders `dialog` (see `stateOf`).
+  'close-process',
+  'dismiss-session',
+  'mark-lost',
   // Containers P0 (migration 177). `container-screen` is deliberately ABSENT:
   // it is deferred-with-reason in `domain/actions.ts`, so it refuses on its own
   // and must not be claimed here — a dispatcher entry for a verb that cannot
@@ -79,6 +96,16 @@ export interface PanelPrimariesHost {
    * Absent ⇒ the exec session is still created; it simply is not navigated to.
    */
   onOpenEntity?: (entityId: string) => void;
+  /**
+   * SPEC D1 §5.4 / §5.5 — THE OPT-IN TO THE OUTCOME DIALOGS. A host that
+   * passes this RENDERS `primaries.dialog`, and in return Terminate on an OPEN
+   * session opens "This session hasn't completed" instead of firing, and
+   * `complete-session` opens the Complete dialog. Answer from what the host
+   * already holds (`detailOf(id)?.state`); `undefined` means "read it"
+   * (`seam.entity`). A host without it keeps the old one-click terminate, which
+   * the node now refuses on an open session with `outcome_required`, verbatim.
+   */
+  stateOf?: (entityId: string) => EntityState | undefined;
 }
 
 export interface PanelPrimaries {
@@ -121,18 +148,53 @@ export interface PanelPrimaries {
    * not exist — the enabled-inert shape the constant exists to prevent.
    */
   shareSession: (entityId: string, patch: SessionSharingPatch) => void;
+  /**
+   * Spec D1 §5.5 — open the Complete dialog for a session (the row tick, the
+   * panel's Complete). Unwrapped for the same reason `terminate` is.
+   */
+  completeSession: (entityId: string) => void;
+  /** The session outcome verbs, by ref — the list's `onSessionVerb`. */
+  sessionVerb: (ref: ActionRef, entityId: string) => void;
+  /** §5.3 group bulk verbs — Complete all, Resume all, Stop all finished. */
+  sessionBulk: (bulk: GroupBulk, entityIds: readonly string[]) => void;
+  /**
+   * The open outcome dialog, or null. A host that passed `stateOf` MUST render
+   * this, or the dialogs open nowhere.
+   */
+  dialog: ReactNode;
+}
+
+/** The dialog the hook is showing, if any. */
+type OutcomeDialog =
+  | { kind: 'terminate'; sessionId: string }
+  | { kind: 'complete'; sessionId: string; closeForced: boolean }
+  /* Q2 = B: reopening a completed session is a confirmed, logged resume. */
+  | { kind: 'reopen'; sessionId: string };
+
+/** The new message's id from a post's answer — either shape the seam returns. */
+function postedMessageId(result: CommandResult | MessageBatchResult): string | undefined {
+  if ('messages' in result) return result.messages[0]?.id;
+  return result.entity?.id ?? result.patches[0]?.id;
 }
 
 export function usePanelPrimaries(host: PanelPrimariesHost): PanelPrimaries {
-  const { seam, reconcileCommand, onError, versionOf, onOpenEntity } = host;
+  const { seam, reconcileCommand, onError, versionOf, onOpenEntity, stateOf } = host;
   const commands = seam?.commands;
+  /* The two reads the dialogs make. Optional on the port: the narrow hosts
+     (GraphScreen) and the unit tests hand only `commands`. */
+  const reads = seam as Partial<Pick<Seam, 'entity' | 'messages'>> | undefined;
+  const dialogsOn = stateOf !== undefined;
+  const [dialog, setDialog] = useState<OutcomeDialog | null>(null);
 
   /**
-   * TERMINATE FIRES ON CLICK, with no confirm step (user ruling 2026-08-07).
-   * It matches the session tile's ✕ exactly — same command, same immediacy —
-   * because the two controls kill the same session and a header button that
-   * asked first would make them read as different acts. A terminated session
-   * is resumable, so this is not the irreversible direction.
+   * TERMINATE — ONE EXECUTOR FOR THE ROW AND THE PANEL, and since Spec D1 §5.4
+   * it ASKS on an open session. The 2026-08-07 ruling (fire on click, no
+   * confirm) is REPLACED for open sessions: terminating unfinished work has to
+   * say which ending is meant — Mark complete & close, or Stop without
+   * completing — and the node now refuses an open-session terminate without
+   * one (`outcome_required`). On a completed or stopped session it still fires
+   * on click: it only closes the process (§5.4, "Close process, no dialog").
+   * The row and the panel still share this function, so they cannot differ.
    */
   const terminate = useCallback(
     (entityId: string) => {
@@ -151,14 +213,33 @@ export function usePanelPrimaries(host: PanelPrimariesHost): PanelPrimaries {
             + 'Gate the affordance on `forEntity(...) != null`, which returns undefined precisely so this cannot happen.',
         );
       }
-      void commands
-        .terminate(entityId as EntityId, {
-          clientMutationId: `terminate:${entityId}:${Date.now()}`,
-        })
-        .then((result) => reconcileCommand?.(result))
-        .catch((error: unknown) => onError?.('terminate', entityId, error));
+      const send = () =>
+        void commands
+          .terminate(entityId as EntityId, {
+            clientMutationId: `terminate:${entityId}:${Date.now()}`,
+          })
+          .then((result) => reconcileCommand?.(result))
+          .catch((error: unknown) => onError?.('terminate', entityId, error));
+      /* SPEC D1 §5.4: an OPEN session asks which ending is meant. A completed
+         or stopped one only closes its process — no dialog, no outcome. */
+      const decide = (state: EntityState | undefined) => {
+        if (dialogsOn && state !== undefined && isSessionState(state) && sessionOutcomeOf(state) === 'open') {
+          setDialog({ kind: 'terminate', sessionId: entityId });
+          return;
+        }
+        send();
+      };
+      const known = stateOf?.(entityId);
+      if (known === undefined && dialogsOn && reads?.entity) {
+        void reads
+          .entity(entityId as EntityId)
+          .then((detail) => decide(detail.state))
+          .catch((error: unknown) => onError?.('terminate', entityId, error));
+        return;
+      }
+      decide(known);
     },
-    [commands, reconcileCommand, onError],
+    [commands, reconcileCommand, onError, dialogsOn, stateOf, reads],
   );
 
   /**
@@ -300,6 +381,92 @@ export function usePanelPrimaries(host: PanelPrimariesHost): PanelPrimaries {
     [commands, reconcileCommand, onError, versionOf, onOpenEntity],
   );
 
+  /**
+   * SPEC D1 — the outcome commands. Each reconciles like terminate and hands
+   * a refusal to `onError` verbatim under its own verb.
+   */
+  const terminateWith = useCallback(
+    (ref: ActionRef, entityId: string, input: Omit<Parameters<Pick<Seam, 'commands'>['commands']['terminate']>[1], 'clientMutationId'>) => {
+      if (!commands) return Promise.reject(new Error('no seam'));
+      return commands
+        .terminate(entityId as EntityId, { ...input, clientMutationId: `${ref}:${entityId}:${Date.now()}` })
+        .then((result) => { reconcileCommand?.(result); return result; });
+    },
+    [commands, reconcileCommand],
+  );
+
+  const completeSession = useCallback(
+    (entityId: string) => {
+      if (!commands) {
+        throw new Error(
+          'usePanelPrimaries.completeSession was called with no seam: the host rendered a control it cannot perform.',
+        );
+      }
+      setDialog({ kind: 'complete', sessionId: entityId, closeForced: false });
+    },
+    [commands],
+  );
+
+  const sessionVerb = useCallback(
+    (ref: ActionRef, entityId: string) => {
+      const fail = (error: unknown) => onError?.(ref, entityId, error);
+      switch (ref) {
+        case 'complete-session':
+          completeSession(entityId);
+          return;
+        case 'terminate':
+          terminate(entityId);
+          return;
+        case 'resume':
+          resume(entityId);
+          return;
+        case 'reopen-session':
+          setDialog({ kind: 'reopen', sessionId: entityId });
+          return;
+        // §5.2: Stop on a ✓ row closes the process only — no outcome, no dialog.
+        case 'close-process':
+          void terminateWith(ref, entityId, {}).catch(fail);
+          return;
+        // §5.3 Interrupted "Dismiss": outcome → stopped; the row moves to Stopped.
+        case 'dismiss-session':
+          void terminateWith(ref, entityId, { outcome: 'stop', note: 'Dismissed from Interrupted.' }).catch(fail);
+          return;
+        // §5.6 Stale "Mark lost": the reaper, now (a process fact only).
+        case 'mark-lost':
+          void terminateWith(ref, entityId, { markLost: true }).catch(fail);
+          return;
+        default:
+          return;
+      }
+    },
+    [completeSession, terminate, resume, terminateWith, onError],
+  );
+
+  /**
+   * §5.3.1 cases 3, 4 and the Running divider: one command per row, each
+   * reconciled and reported on its own so one refusal does not hide the rest.
+   * "Complete all" uses each session's latest close-out message as its receipt
+   * (the server's default), which is what "Finished, not closed out" means.
+   */
+  const sessionBulk = useCallback(
+    (bulk: GroupBulk, entityIds: readonly string[]) => {
+      if (!commands) return;
+      for (const id of entityIds) {
+        if (bulk === 'complete-all') {
+          void commands
+            .completeSession(id as EntityId, { clientMutationId: `complete-session:${id}:${Date.now()}` })
+            .then((result) => reconcileCommand?.(result))
+            .catch((error: unknown) => onError?.('complete-session', id, error));
+        } else if (bulk === 'resume-all' || bulk === 'reconnect-resume-all') {
+          resume(id);
+        } else if (bulk === 'stop-all-finished') {
+          void terminateWith('close-process', id, {}).catch((error: unknown) => onError?.('close-process', id, error));
+        }
+      }
+    },
+    [commands, reconcileCommand, onError, resume, terminateWith],
+  );
+
   const forEntity = useCallback(
     (entityId: string) => {
       if (!commands) return undefined;
@@ -317,6 +484,13 @@ export function usePanelPrimaries(host: PanelPrimariesHost): PanelPrimaries {
           case 'resume':
             resume(entityId);
             return;
+          case 'complete-session':
+          case 'reopen-session':
+          case 'close-process':
+          case 'dismiss-session':
+          case 'mark-lost':
+            sessionVerb(ref, entityId);
+            return;
           case 'container-start':
           case 'container-stop':
           case 'container-destroy':
@@ -328,12 +502,102 @@ export function usePanelPrimaries(host: PanelPrimariesHost): PanelPrimaries {
         }
       };
     },
-    [commands, terminate, resume, containerCommand],
+    [commands, terminate, resume, containerCommand, sessionVerb],
+  );
+
+  /** The facts both dialogs read once on open: title, claims, latest message. */
+  const loadFacts = useCallback(
+    async (sessionId: string): Promise<SessionOutcomeFacts> => {
+      const detail = reads?.entity ? await reads.entity(sessionId as EntityId) : undefined;
+      const edges = detail ? [...detail.connections.outgoing, ...detail.connections.incoming].flatMap((g) => g.edges) : [];
+      const page = reads?.messages ? await reads.messages(sessionId as EntityId).catch(() => undefined) : undefined;
+      const latest = [...(page?.items ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+      return {
+        title: detail?.title ?? '',
+        claims: claimsFromEdges(sessionId, edges),
+        latestMessage: latest
+          ? { id: latest.id, body: latest.content.body, author: latest.state.author?.displayName ?? null, createdAt: latest.createdAt }
+          : null,
+      };
+    },
+    [reads],
+  );
+
+  const close = useCallback(() => setDialog(null), []);
+  const dialogNode = useMemo<ReactNode>(() => {
+    if (!dialog || !commands) return null;
+    const id = dialog.sessionId;
+    if (dialog.kind === 'reopen') {
+      return createElement(SessionReopenDialog, {
+        key: `reopen:${id}`,
+        onCancel: close,
+        onReopen: () =>
+          commands
+            .resume(id as EntityId, { clientMutationId: `resume:${id}:${Date.now()}` })
+            .then((result) => { reconcileCommand?.(result); close(); }),
+      });
+    }
+    if (dialog.kind === 'terminate') {
+      return createElement(SessionTerminateDialog, {
+        key: `terminate:${id}`,
+        load: () => loadFacts(id),
+        onCancel: close,
+        onCompleteAndClose: () => setDialog({ kind: 'complete', sessionId: id, closeForced: true }),
+        onStop: () => terminateWith('terminate', id, { outcome: 'stop' }).then(close),
+      });
+    }
+    return createElement(SessionCompleteDialog, {
+      key: `complete:${id}`,
+      load: () => loadFacts(id),
+      closeForced: dialog.closeForced,
+      onCancel: close,
+      ...(onOpenEntity ? { onOpenTask: (taskId: string) => { close(); onOpenEntity(taskId); } } : {}),
+      onHandOff: (taskId: string, note: string) =>
+        commands
+          .releaseClaim(taskId as EntityId, { note, clientMutationId: `release:${taskId}:${Date.now()}` })
+          .then((result) => reconcileCommand?.(result)),
+      onComplete: async ({ receiptMessageId, receiptText, closeProcess }) => {
+        let receipt = receiptMessageId;
+        if (receiptText) {
+          // Spec D1 §4.1: the operator's receipt is a message on the session's
+          // anchor, posted first; its id is what `complete` records.
+          const posted = await commands.postMessage({
+            clientMutationId: `receipt:${id}:${Date.now()}`,
+            anchorIds: [id as EntityId],
+            body: receiptText,
+          });
+          receipt = postedMessageId(posted);
+        }
+        const result = await commands.completeSession(id as EntityId, {
+          clientMutationId: `complete-session:${id}:${Date.now()}`,
+          ...(receipt ? { receiptMessageId: receipt } : {}),
+          closeProcess,
+        });
+        reconcileCommand?.(result);
+        close();
+      },
+    });
+  }, [dialog, commands, loadFacts, close, terminateWith, onOpenEntity, reconcileCommand]);
+
+  const wiredActions = useMemo<readonly ActionRef[]>(
+    () => (dialogsOn ? [...PANEL_PRIMARY_ACTIONS, 'complete-session', 'reopen-session'] : PANEL_PRIMARY_ACTIONS),
+    [dialogsOn],
   );
 
   return useMemo(
-    () => ({ forEntity, wiredActions: PANEL_PRIMARY_ACTIONS, terminate, resume, resumingId, shareSession }),
-    [forEntity, terminate, resume, resumingId, shareSession],
+    () => ({
+      forEntity,
+      wiredActions,
+      terminate,
+      resume,
+      resumingId,
+      shareSession,
+      completeSession,
+      sessionVerb,
+      sessionBulk,
+      dialog: dialogNode,
+    }),
+    [forEntity, wiredActions, terminate, resume, resumingId, shareSession, completeSession, sessionVerb, sessionBulk, dialogNode],
   );
 }
 

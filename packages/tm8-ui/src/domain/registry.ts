@@ -48,6 +48,7 @@ import { DESIGN_KIND } from './design';
    a button refuses with and the sentence this row declares are one string. */
 import { CONTAINER_CAPABILITY_REASONS } from './actions';
 import type { SessionLiveness } from '../data/seam';
+import { SESSION_TABS, sessionNeedsAttentionOf } from './session-outcome';
 
 /** WLT §2.1 reserved words — never a kind slug. */
 export const RESERVED_SLUGS: readonly string[] = [
@@ -292,34 +293,33 @@ const SESSION_STATE_CONTROL: StateControl = {
   filterKey: 'sessionStatus',
   label: 'State',
   command: 'set-state',
-  /* A session's OBSERVED lifecycle, bucketed. `failed` is `done` and not
-     `cancelled`: under this model failure is a RUNTIME FACT that gets a badge
-     (design invariant 4), and the run itself did reach its end — nobody
-     cancelled it. `idle` is in_progress: an idle session is still alive.
+  /* A session's OBSERVED lifecycle, bucketed — for an OPEN session.
 
-     THIS TABLE IS A MIRROR, as of migration 155. The WRITER is
-     `internal.session_status_category`, and the server's own copy is
-     `SESSION_STATUS_CATEGORY` (packages/server/src/facade/status.ts) — the same
-     three-artifact arrangement 147 made for `work_status`. Nothing here
-     computes a row's tab; `EntitySummary.category` arrives with the row. These
-     categories only narrow the STATUS FILTER CHIP to the open tab, so a copy
-     that disagreed would offer `exited` as a filter under In Progress.
+     SPEC D1 §3.2: the category now comes from the OUTCOME first —
+     completed → done, stopped → cancelled — and only an open session's comes
+     from its process: spawning → to_do, everything else (running, idle,
+     exited, failed) → in_progress. An open session whose process ended is
+     unfinished: someone has to resume, complete or stop it, so it is NOT done.
+     That is why `exited` and `failed` moved here from `done` (they were done
+     under 155, when a crash filed itself as finished).
 
-     `spawning` MOVED from `in_progress` to `to_do` with 155, and it is not a
-     taste call. `public.execution_resume` returns an exited session to
-     `spawning`; under `to_do` that is the ruled `done -> to_do` REOPEN, and
-     under `in_progress` it is `done -> in_progress`, which
-     `internal.category_transition_allowed` refuses outright — the bridge would
-     have made every resume in the product a 23514. It is also 147's own
-     `pulled -> to_do` ruling ("claimed is not started") applied to the same
-     shape of fact: a spawning session has been ASKED for, and some have been
-     asking for days. */
+     THIS TABLE IS A MIRROR. The WRITER is `internal.session_category`
+     (db/migrations/301_session_outcome_and_claims.sql), the server's own copy
+     is `sessionCategory` (packages/server/src/facade/status.ts), and the
+     outcome-aware version on this side is `sessionCategoryOf`
+     (domain/session-outcome.ts). Nothing here computes a row's tab;
+     `EntitySummary.category` arrives with the row. These categories only
+     narrow the STATUS FILTER CHIP, and the session list no longer shows the
+     category tabs at all (it has Running · Interrupted · Completed · Stopped).
+
+     `spawning` stays `to_do` (155): `public.execution_resume` returns an
+     ended session to `spawning`, and under `to_do` that is the ruled reopen. */
   options: [
     { id: 'spawning', category: 'to_do' },
     { id: 'running', category: 'in_progress' },
     { id: 'idle', category: 'in_progress' },
-    { id: 'exited', category: 'done' },
-    { id: 'failed', category: 'done' },
+    { id: 'exited', category: 'in_progress' },
+    { id: 'failed', category: 'in_progress' },
   ],
   readOnlyReason:
     'A session’s state is observed, not chosen — the node reports it from the process. Use Terminate to stop a live session.',
@@ -639,27 +639,22 @@ const sessionLiveTreatment = (live: SessionLiveness): LiveTreatment => {
 };
 
 /**
- * 'NEEDS YOU' grouping — designed-but-dormant per R8.
+ * 'NEEDS YOU' grouping — the server fact plus ONE derived one (Spec D1 §5.1).
  *
- * This was written as `live === 'live' && row.status === 'idle'`, and it stayed
- * quiet for the wrong reason: `statusOf` used to answer 'not-running' for every
- * idle session, so the conjunction was UNREACHABLE. Dormancy was an accident of
- * a defect, not a property of the predicate. The moment idle was correctly
- * admitted to the live side, this fired on every quiet session at once — the
- * whole list banded as NEEDS ATTENTION, and because the attention band renders
- * flat, the session hierarchy disappeared with it.
+ * It stays dormant for LIVE sessions, deliberately: 'idle' means the PTY
+ * produced no output recently, which is QUIET, not BLOCKED, and the one time
+ * this fired on idle the whole list banded as NEEDS ATTENTION. The server's
+ * `summary.badges.attention` (which the call site ORs in) is still the only
+ * thing that can raise a live row.
  *
- * 'idle' means the PTY produced no output recently. That is QUIET, not BLOCKED.
- * An autonomous worker between turns is idle and wants nothing; an agent
- * genuinely waiting on a human is idle too, and nothing on this row tells the
- * two apart. A badge that fires on both is not a signal.
- *
- * So the grouping stays dormant DELIBERATELY now, and the only thing that can
- * raise it is an explicit server-side fact — `summary.badges.attention`, which
- * the call site already ORs in. When a real detector ships, give it a field on
- * ListRowFacts and test THAT here; do not re-derive attention from liveness.
+ * What D1 adds is a RECORDED fact, not a liveness inference: an OPEN session
+ * whose process has ENDED — crashed, lost, credential disconnected, ended
+ * without completing, failed to start. Its work is unfinished and nobody is
+ * running it, so someone has to resume, complete or stop it (§5.1 rows 7-11).
+ * A completed session's crash is a grey fact and never fires (scenario 3).
  */
-const sessionNeedsAttention = (_row: ListRowFacts, _live: SessionLiveness): boolean => false;
+const sessionNeedsAttention = (row: ListRowFacts, _live: SessionLiveness): boolean =>
+  row.sessionState !== undefined && sessionNeedsAttentionOf(row.sessionState);
 
 // ---------------------------------------------------------------------------
 // The rows
@@ -927,16 +922,20 @@ const ROWS: readonly KindConfig[] = [
        * on the launch node, To Do 0 / In Progress 6 / Done 471 — which is
        * exactly the report: "doesn't show me live sessions."
        *
-       * In Progress rather than Done, though Done is where 471 of the 477 are:
-       * the question this list opens on is "what is running", not "what has
-       * ever run". Done is one click away and remembered per kind once picked.
-       *
-       * NOT A NEW FILTER, and deliberately so. `filters.sessionStatus` already
-       * exists and already works (contract A22, server `ws.status = any(...)`);
-       * what was broken was never the vocabulary's ability to say `running`,
-       * only which band this panel opened on. See the PR body.
+       * SPEC D1 §5.3 keeps the answer and changes the tab it names: the list
+       * opens on RUNNING (process alive or not yet verified dead), which is
+       * the question "what is running" asked directly rather than through
+       * the category.
        */
-      defaultCategory: 'in_progress',
+      defaultCategory: 'running',
+      /* SPEC D1 §5.3 (owner decision, 6 Oct): sessions get their OWN tab row,
+         Running · Interrupted · Completed · Stopped, in place of the shared
+         four — split first on "is the process alive", then on the outcome.
+         The four partition every session (stale rows are recorded live, so
+         they stay in Running), so the counts still add up to the kind total.
+         The shared category stays underneath for story progress and the
+         cross-kind views. */
+      categories: SESSION_TABS,
       tree: { by: 'hierarchy', guideLines: true, messagePulse: true },
       tile: {
         anatomy: 'session-tree',
@@ -951,7 +950,14 @@ const ROWS: readonly KindConfig[] = [
         ],
         pulse: { signal: 'terminal-activity', gate: 'live' },
       },
-      liveCount: { filter: NOT_DELETED, label: (n) => `● ${n} live` },
+      /* §5.3 header: "● N running" IS the Running tab's count, and
+         "⚠ M interrupted" links to the Interrupted tab. */
+      liveCount: {
+        filter: NOT_DELETED,
+        label: (n) => `● ${n} running`,
+        tab: 'running',
+        alertTab: { tab: 'interrupted', label: (n) => `⚠ ${n} interrupted` },
+      },
       // Sessions are LAUNCHED, not created: `quickLaunch` below is the real
       // affordance, so the inherited quickCreate:true only mounted a Create
       // control that refuses. Same defect class as the rowActions note below —
@@ -998,34 +1004,20 @@ const ROWS: readonly KindConfig[] = [
        * complete` build it, so the ruling that removed it ("a refused control
        * is not a control") no longer applies: it is not refused.
        *
-       * WHAT IT MEANS HERE, and why it is not Terminate wearing a tick. The two
-       * verbs answer different questions and now sit side by side saying so:
+       * SPEC D1 REPLACES THE 2026-08-19 TOGGLE. The tick now means "the WORK
+       * is finished" — `session complete`, with a receipt and the claim check
+       * (§4.1, §5.5) — and it is one-way: a completed row shows a fixed check
+       * that cannot be unticked. Reopening is a separate, logged act — Resume on
+       * a completed session whose process has closed (Q2 = B, owner 6 Oct) —
+       * never an untick. It still does not close the process; the Complete
+       * dialog's "Also close the process" does that.
        *
-       *   terminate  ends the PROCESS. Destructive, irreversible, and the row
-       *              lands in Done because it genuinely finished.
-       *   complete   ends the ROW'S CLAIM ON YOUR ATTENTION. The process keeps
-       *              running, the terminal keeps streaming, and the session
-       *              files itself under Done so you can come back to it.
-       *
-       * A session's STATUS remains observed — `SESSION_STATE_CONTROL.
-       * readOnlyReason` still holds and this writes nothing to it. What the
-       * tick authors is the ENVELOPE's category, which is a different column
-       * and a different question: the node says what the process is doing, the
-       * user says whether they are done with it.
-       *
-       * IT IS A TOGGLE (ruled 2026-08-19 over the one-way alternative): ticking
-       * a done session reopens it and the category goes back to following the
-       * process. `expectedVersion` is what makes a toggling command safe — a
-       * double submit is a version conflict, not a silent flip back.
-       *
-       * AND ON A FINISHED RUN IT IS NOT DRAWN AT ALL (ruled 2026-08-19, with
-       * the process control below). Both verbs above are declared for the row
-       * a session spends its ACTIVE life as; once the run has ended the tick
-       * has no subject — "is this row's claim on my attention over?" is
-       * structurally, permanently yes — so `RowActionCluster` drops it and
-       * swaps Terminate for Resume, leaving ONE control rather than two with
-       * one greyed. Measured before that: `exited` drew a refused Terminate
-       * beside a tick that dispatched, wrote, and moved nothing.
+       * PER-ROW VERBS. These three slots are what the kind HAS; which verbs a
+       * given row offers is its outcome × process (§5.2), resolved by
+       * `sessionControlsFor` (domain/actions.ts): Complete · Terminate while
+       * working, Stop on a ✓ row whose process is open, Follow-up once it has
+       * closed, Resume on a stopped one, and Resume · Complete · Dismiss on an
+       * interrupted one. Terminate on an OPEN session opens the §5.4 dialog.
        *
        * `resume` IS NOT IN THIS ARRAY, and that is a decision rather than an
        * omission. `rowActions` is STATIC per-kind data and `ActionAvailability`
@@ -1061,6 +1053,10 @@ const ROWS: readonly KindConfig[] = [
       // verb for the same reason `rowActions` omits `resume`: this array is
       // static per-kind and listing both would put a permanently refused
       // control beside the live one.
+      //
+      // SPEC D1 §5.6: the slot now expands to the row's outcome verbs
+      // (`sessionControlsFor`) — Complete · Terminate while working, Close
+      // process on a ✓ session, Resume · Complete · Dismiss when interrupted.
       primaries: ['terminate'],
       statusPill: {
         source: 'sessionStatus',

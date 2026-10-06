@@ -126,6 +126,8 @@ export function ChannelView({
       : {}),
     /* The version the viewer is LOOKING AT — see `versionOf` on the hook. */
     versionOf: (id) => data.detailOf(id)?.version,
+    /* Spec D1 §5.4/§5.5: opts in to the outcome dialogs, rendered below. */
+    stateOf: (id) => data.detailOf(id)?.state,
   });
   /*
    * Per-CHANNEL stack (user ruling 2026-07-31): each channel keeps its own
@@ -235,6 +237,8 @@ export function ChannelView({
   )) data.pull?.(selectedId);
 
   const entityPanel = selectedId ? (
+    <>
+    {primaries.dialog}
     <EntityDetailPanel
       detail={selectedDetail ?? null}
       serverBaseUrl={serverBaseUrl}
@@ -313,6 +317,7 @@ export function ChannelView({
         setDetailMode('aside');
       }}
     />
+    </>
   ) : null;
 
   if (selectedId && detailMode === 'full') {

@@ -100,6 +100,8 @@ export function FullViewScreen(props: FullViewScreenProps) {
     reconcileCommand: data.reconcileCommand,
     onError: notifyActionFailed,
     versionOf: (id) => data.detailOf(id)?.version,
+    /* Spec D1 §5.4/§5.5: opts in to the outcome dialogs, rendered below. */
+    stateOf: (id) => data.detailOf(id)?.state,
   });
   const rowLifecycle = useRowLifecycle({ data, viewerMemberId: props.viewerMemberId, onNotice });
   const membership = useMembershipSurface({
@@ -239,6 +241,8 @@ export function FullViewScreen(props: FullViewScreenProps) {
 
   return (
     <>
+      {/* Spec D1 §5.4/§5.5 — the session outcome dialogs (fixed-position). */}
+      {primaries.dialog}
       <EntityFullView
         entityId={entityId}
         origin={props.origin}

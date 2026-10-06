@@ -222,15 +222,19 @@ describe('THE GATE — composed T0-1 master screen', () => {
     const names = [...empty.querySelectorAll('.shell-empty__name')].map((n) => n.textContent);
     const words = [...empty.querySelectorAll('.shell-empty__word')].map((n) => n.textContent);
     expect(names).toContain('forge');
-    expect(words).toContain('running');
-    // …and the stale one honestly labelled, never as live (D6).
-    expect(words).toContain('stale — node restarted');
+    // Spec D1 §5.7: the roster speaks the shared row word. A live session
+    // reads Working; the stale one is honestly labelled, never as live (D6);
+    // and the fixture's EXITED session with no outcome is unfinished work —
+    // "ended, not completed", in the attention group, not Recently completed.
+    expect(words).toContain('working');
+    expect(words).toContain('stale');
+    expect(words).toContain('ended, not completed');
     // Attention v2 (G1, tab 8): session health is status, not "needs you" —
     // with the attention module mounted the group is relabelled, and "Needs
     // attention" is the attention queue (empty in this fixture).
-    within(empty).getByRole('heading', { name: 'Stale or failed, 2' });
+    within(empty).getByRole('heading', { name: 'Stale or failed, 3' });
     within(empty).getByRole('heading', { name: 'Running, 1' });
-    within(empty).getByRole('heading', { name: 'Recently completed, 1' });
+    expect(within(empty).queryByRole('heading', { name: /Recently completed/ })).toBeNull();
 
     // The grammar lesson.
     getByText('Click any task or session to open it here.');
@@ -245,10 +249,11 @@ describe('THE GATE — composed T0-1 master screen', () => {
     const groups = [...empty.querySelectorAll('.shell-empty__group')].map((group) =>
       group.getAttribute('data-testid'),
     );
+    // Spec D1: "Recently completed" is outcome = completed; the fixture has
+    // none (its exited session's work is still open, so it needs attention).
     expect(groups).toEqual([
       'empty-session-group-attention',
       'empty-session-group-running',
-      'empty-session-group-completed',
     ]);
     const running = getByTestId('empty-session-group-running');
     expect(running.querySelector('.shell-empty__name')?.textContent).toBe('forge');

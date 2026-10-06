@@ -9,6 +9,7 @@ import {
   canLaunch,
   defaultConfigFor,
   defaultLaunchTarget,
+  capRefusalHint,
   describeCapacity,
   describeProfile,
   describeTeammateLoad,
@@ -348,6 +349,10 @@ export function LaunchQuickConfig({
         <p className="lq__refusal" role="alert" data-testid="launch-refusal">
           <span className="lq__refusal-label">Launch refused</span>
           {` — ${nodeRefusal}`}
+          {/* Spec D1 §5.3.1 case 10: the cap refusal names its remedy. */}
+          {capRefusalHint(nodeRefusal) ? (
+            <span className="lq__refusal-hint" data-testid="launch-cap-hint">{` ${capRefusalHint(nodeRefusal)}`}</span>
+          ) : null}
         </p>
       ) : null}
 

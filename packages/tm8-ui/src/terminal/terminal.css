@@ -310,6 +310,25 @@
   font-size: 10.5px;
   color: var(--pn-ink-3);
 }
+/* Spec D1 §5.6 — the ended canvas names the reason in the tone of the row
+   word (red for crashed/lost/credential, amber for ended without completing),
+   and a completed session's receipt sits on a quiet card. */
+.cv2-root .term-fallback__reason {
+  font-size: 11px;
+  line-height: 1.45;
+  text-align: center;
+  color: var(--pn-ink-2);
+}
+.cv2-root .term-fallback__reason--block { color: var(--pn-block); }
+.cv2-root .term-fallback__reason--wait { color: var(--pn-wait); }
+.cv2-root .term-fallback__receipt {
+  font-size: 11px;
+  padding: 6px 10px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+}
 .cv2-root .term-fallback__caption {
   font-size: 11px;
   line-height: 1.5;

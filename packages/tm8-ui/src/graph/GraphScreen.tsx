@@ -193,6 +193,8 @@ export function GraphScreen(props: GraphScreenProps) {
       : {}),
     /* The version the viewer is LOOKING AT — see `versionOf` on the hook. */
     versionOf: (id) => data.detailOf(id)?.version,
+    /* Spec D1 §5.4/§5.5: opts in to the outcome dialogs, rendered below. */
+    stateOf: (id) => data.detailOf(id)?.state,
   });
 
   // Esc walks DOWN one level per press (EntityView's ladder, same reasons):
@@ -217,6 +219,8 @@ export function GraphScreen(props: GraphScreenProps) {
   )) data.pull?.(selectedId);
 
   const detailPanel = selectedId ? (
+    <>
+    {primaries.dialog}
     <EntityDetailPanel
       detail={detail ?? null}
       serverBaseUrl={props.serverBaseUrl}
@@ -305,6 +309,7 @@ export function GraphScreen(props: GraphScreenProps) {
         setMode('aside');
       }}
     />
+    </>
   ) : null;
 
   const graph = (

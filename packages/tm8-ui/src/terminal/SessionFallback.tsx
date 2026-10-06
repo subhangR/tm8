@@ -16,8 +16,16 @@
  *     which cannot work.
  */
 import type { ReactNode } from 'react';
-import { useNow } from '../kit/time';
+import { ageAgo, ageLabel, useNow } from '../kit/time';
 import { exitFactsLine, outcomeTitle } from '../transcript/session-stats';
+import {
+  endedPhraseOf,
+  sessionHeadline,
+  sessionLineTwo,
+  sessionRecordOf,
+  sessionRowWord,
+  type ActionRef,
+} from '../domain';
 
 export function ExitedFallback({
   /**
@@ -63,7 +71,24 @@ export function ExitedFallback({
    * Absent, the canvas keeps exactly the shape it had.
    */
   stats,
+  /**
+   * SPEC D1 §5.6 — the session's own state, so the canvas can say which
+   * ENDING this is for the WORK, not only for the process:
+   *   Completed  — receipt, "completed Y ago · process closed Z ago", Follow-up;
+   *                a crash after completion is one grey line, never an alert.
+   *   Stopped    — "Stopped by <actor> <time>", Resume.
+   *   Crashed / Lost / Credential / Ended — the reason in red or amber,
+   *                Resume · Complete · Stop for good.
+   * Absent ⇒ the pre-D1 canvas, unchanged.
+   */
+  sessionState,
+  /** Complete / Stop for good, by verb. Absent ⇒ those render refused. */
+  onSessionVerb,
+  actorName,
 }: {
+  sessionState?: unknown;
+  onSessionVerb?: (ref: ActionRef) => void;
+  actorName?: (actorId: string) => string | undefined;
   outcome?: 'exited' | 'failed';
   startedAt?: string | null;
   exitedAt?: string | null;
@@ -91,6 +116,31 @@ export function ExitedFallback({
       ? null
       : exitFactsLine({ startedAt, exitedAt, now });
 
+  const record = sessionRecordOf(sessionState);
+  if (record && record.outcome !== 'open') {
+    return (
+      <SettledFallback
+        state={sessionState}
+        startedAt={startedAt}
+        exitedAt={exitedAt}
+        now={now}
+        meta={meta}
+        onOpenTranscript={onOpenTranscript}
+        onResume={onResume}
+        resuming={resuming}
+        resumeDisabledReason={resumeDisabledReason}
+        actorName={actorName}
+        onSessionVerb={onSessionVerb}
+        stats={stats}
+      />
+    );
+  }
+  /* Open + ended (§5.6 "Crashed / lost / credential / ended without
+     completing"): the word and the reason, then Resume · Complete · Stop for good. */
+  const word = record ? sessionRowWord(sessionState, 'not-running') : null;
+  const headline = record ? sessionHeadline(sessionState, 'not-running') : null;
+  const why = record ? (record.endedReason ?? endedPhraseOf(record)) : null;
+
   return (
     <div
       className={`term-fallback${stats ? ' term-fallback--stats' : ''}`}
@@ -99,7 +149,15 @@ export function ExitedFallback({
     >
       <div className="term-fallback__inner">
         <span className="term-fallback__ring" aria-hidden />
-        <span className="term-fallback__title">{outcomeTitle(outcome)}</span>
+        <span className="term-fallback__title" data-testid="session-ended-title">{headline ?? outcomeTitle(outcome)}</span>
+        {word && why ? (
+          <span
+            className={`term-fallback__reason term-fallback__reason--${word.tone}`}
+            data-testid="session-ended-reason"
+          >
+            {why}
+          </span>
+        ) : null}
         {meta ? (
           <span className="term-fallback__meta" data-testid="session-exit-facts">
             {meta}
@@ -136,6 +194,30 @@ export function ExitedFallback({
           >
             View transcript ↗
           </button>
+          {record ? (
+            <>
+              <button
+                type="button"
+                className="term-fallback__chip"
+                data-testid="session-ended-complete"
+                onClick={() => onSessionVerb?.('complete-session')}
+                disabled={!onSessionVerb}
+                {...(onSessionVerb ? {} : { title: 'Completing is not wired on this view.' })}
+              >
+                Complete
+              </button>
+              <button
+                type="button"
+                className="term-fallback__chip"
+                data-testid="session-ended-stop"
+                onClick={() => onSessionVerb?.('dismiss-session')}
+                disabled={!onSessionVerb}
+                {...(onSessionVerb ? {} : { title: 'Stopping is not wired on this view.' })}
+              >
+                Stop for good
+              </button>
+            </>
+          ) : null}
         </div>
         {/* The record-survival sentence stays; "Read-only" does NOT. A session
             that can be resumed is not read-only, and keeping that word next to
@@ -160,6 +242,140 @@ export function ExitedFallback({
         {/* BELOW the verdict and the controls, deliberately. Resume is the
             highest-value thing on this screen and a wall of figures above it
             would push it under the fold on a short panel. */}
+        {stats ?? null}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * SPEC D1 §5.6 — an ended session whose WORK is settled: Completed (receipt,
+ * the ages, Follow-up) or Stopped (who and when, Resume). A completed
+ * session's later crash is one grey line here and nothing else (scenario 3).
+ */
+function SettledFallback({
+  state,
+  startedAt,
+  exitedAt,
+  now,
+  meta,
+  onOpenTranscript,
+  onResume,
+  resuming,
+  resumeDisabledReason,
+  actorName,
+  onSessionVerb,
+  stats,
+}: {
+  onSessionVerb?: (ref: ActionRef) => void;
+  state: unknown;
+  startedAt?: string | null;
+  exitedAt?: string | null;
+  now: number;
+  meta: string | null;
+  onOpenTranscript?: () => void;
+  onResume?: () => void;
+  resuming?: boolean;
+  resumeDisabledReason?: string;
+  actorName?: (actorId: string) => string | undefined;
+  stats?: ReactNode;
+}) {
+  const record = sessionRecordOf(state)!;
+  const completed = record.outcome === 'completed';
+  const age = (iso: string | null | undefined) => {
+    const a = ageLabel(iso ?? null, now);
+    return a ? ageAgo(a) : null;
+  };
+  // "ran 41m" — the first clause of the shared exit-facts line.
+  const ran = startedAt && exitedAt ? (exitFactsLine({ startedAt, exitedAt, now }).split(' · ')[0] ?? null) : null;
+  const crashedAfter = completed && record.status === 'failed';
+  const resumeDisabled = !onResume || Boolean(resumeDisabledReason) || Boolean(resuming);
+  return (
+    <div
+      className={`term-fallback${stats ? ' term-fallback--stats' : ''}`}
+      data-testid="session-exited-fallback"
+      data-outcome={record.outcome}
+    >
+      <div className="term-fallback__inner">
+        <span className="term-fallback__ring" aria-hidden />
+        <span className="term-fallback__title" data-testid="session-ended-title">{completed ? 'Completed' : 'Stopped'}</span>
+        {completed ? (
+          <>
+            <span className="term-fallback__receipt" data-testid="session-receipt-card">
+              {record.receiptMessageId ? 'Receipt recorded — the close-out message on this session.' : 'Completed without a recorded receipt (backfill).'}
+            </span>
+            <span className="term-fallback__meta" data-testid="session-exit-facts">
+              {[
+                ran,
+                record.outcomeAt ? `completed ${age(record.outcomeAt) ?? ''}`.trim() : null,
+                exitedAt ? `process closed ${age(exitedAt) ?? ''}`.trim() : null,
+              ].filter(Boolean).join(' · ') || meta}
+            </span>
+            {crashedAfter ? (
+              <span className="term-fallback__meta" data-testid="session-crash-after-completion">
+                The process {endedPhraseOf(record) ?? 'ended'} after the work completed — nothing to do.
+              </span>
+            ) : null}
+          </>
+        ) : (
+          <span className="term-fallback__meta" data-testid="session-exit-facts">
+            {sessionLineTwo(state, 'not-running', { now, ...(actorName ? { actorName } : {}) })}
+          </span>
+        )}
+        <div className="term-fallback__actions">
+          {completed ? (
+            <>
+            {/* Q2 = B: a completed session whose process has closed can be
+                REOPENED: a confirmed, logged resume; the receipt stays. */}
+            <button
+              type="button"
+              className="term-fallback__action"
+              data-testid="session-reopen"
+              onClick={() => onSessionVerb?.('reopen-session')}
+              disabled={!onSessionVerb}
+              aria-disabled={!onSessionVerb}
+              title={onSessionVerb
+                ? 'Reopens this completed session; its receipt stays in history.'
+                : 'Reopening is not wired on this view.'}
+            >
+              Reopen (resume)
+            </button>
+            <button
+              type="button"
+              className="term-fallback__chip"
+              data-testid="session-follow-up"
+              disabled
+              aria-disabled
+              title="Follow-up sessions are coming with D4. Start a new session on the same tasks for now."
+            >
+              Start follow-up session
+            </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              className="term-fallback__action"
+              data-testid="session-resume"
+              onClick={onResume}
+              disabled={resumeDisabled}
+              aria-disabled={resumeDisabled}
+              {...(!onResume ? { title: 'Resume is not wired on this surface yet.' } : resumeDisabledReason ? { title: resumeDisabledReason } : {})}
+            >
+              {resuming ? 'Resuming…' : 'Resume session'}
+            </button>
+          )}
+          <button
+            type="button"
+            className="term-fallback__chip"
+            data-testid="session-open-transcript"
+            onClick={onOpenTranscript}
+            disabled={!onOpenTranscript}
+            aria-disabled={!onOpenTranscript}
+            {...(onOpenTranscript ? {} : { title: 'The transcript surface is not wired on this view.' })}
+          >
+            View transcript ↗
+          </button>
+        </div>
         {stats ?? null}
       </div>
     </div>
@@ -214,14 +430,17 @@ export function StaleFallback({
           onClick={onMarkExited}
           disabled={markDisabled}
           {...(markDisabled
-            ? { title: 'Marking exited is not wired on this surface yet.' }
-            : {})}
+            ? { title: 'Marking lost is not wired on this surface yet.' }
+            : { title: 'Record the process as lost now — the ghost reaper, for this session. The work stays open: resume, complete or stop it.' })}
         >
-          mark exited
+          {/* Spec D1 §5.6: "mark exited" became MARK LOST — a process fact
+              (`failed / lost`), never an outcome, so the session moves to
+              Interrupted and its claims are kept. */}
+          Mark lost
         </button>
         {markDisabled ? (
           <span className="term-fallback__meta" data-testid="session-stale-mark-unwired">
-            Marking exited is not wired on this surface yet.
+            Marking lost is not wired on this surface yet.
           </span>
         ) : null}
       </div>

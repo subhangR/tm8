@@ -356,17 +356,21 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     expect(getKind('task').panel.primaries).toEqual(['run', 'chat-about', 'edit']);
   });
 
-  it('5. PHASE 7 — a session partitions by CATEGORY, like every other kind', () => {
-    // The session tabs used to be keyed on `sessionStatus` literals, which is
-    // how a session that CRASHED came to be filed under "Done". Its states now
-    // declare their own categories (registry data) and its TABS are the same
-    // four every kind draws — one partition, one vocabulary, no kind-specific
-    // tab row left in this file.
-    const tabs = getKind('work_session').list.categories;
-    expect(tabs?.map((t) => t.id)).toEqual(['to_do', 'in_progress', 'done', 'cancelled']);
-    for (const tab of tabs ?? []) {
-      expect(tab.filter).toEqual({ category: [tab.id], deleted: 'exclude' });
-    }
+  it('5. SPEC D1 §5.3 — a session tabs by process liveness, then outcome (its own row)', () => {
+    // Was: the shared four, by category. The owner's 6 Oct decision gives
+    // sessions Running · Interrupted · Completed · Stopped, and the shared
+    // category stays underneath for story progress and cross-kind views.
+    const list = getKind('work_session').list;
+    expect(list.categories?.map((t) => t.id)).toEqual(['running', 'interrupted', 'completed', 'stopped']);
+    expect(list.categories?.map((t) => t.filter)).toEqual([
+      { sessionStatus: ['spawning', 'running', 'idle'], sessionOutcome: ['open', 'completed'], deleted: 'exclude' },
+      { sessionStatus: ['exited', 'failed'], sessionOutcome: ['open'], deleted: 'exclude' },
+      { sessionStatus: ['exited', 'failed'], sessionOutcome: ['completed'], deleted: 'exclude' },
+      { sessionOutcome: ['stopped'], deleted: 'exclude' },
+    ]);
+    expect(list.defaultCategory).toBe('running');
+    // They PARTITION (stale rows are recorded live), so no total tab.
+    expect(list.tabTotal).toBeUndefined();
   });
 
   it('5b. PHASE 7 — the session state options carry the ruled categories', () => {
@@ -382,10 +386,12 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
       ['spawning', 'to_do'],
       ['running', 'in_progress'],
       ['idle', 'in_progress'],
-      // `failed` is `done`, NOT `cancelled`: failure is a runtime fact that
-      // gets a badge, and the run did reach its end — nobody cancelled it.
-      ['exited', 'done'],
-      ['failed', 'done'],
+      // SPEC D1 §3.2: for an OPEN session an ended process is unfinished
+      // work, `in_progress` — completed → done and stopped → cancelled come
+      // from the OUTCOME, which this status-keyed table cannot see
+      // (`sessionCategoryOf` in domain/session-outcome.ts can).
+      ['exited', 'in_progress'],
+      ['failed', 'in_progress'],
     ]);
   });
 
@@ -427,7 +433,8 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
    * tabs by whether anyone equips it and whether its files are still there.
    * Listed literally, like FACT_KINDS, so adding a kind is a deliberate edit.
    */
-  const OWN_TAB_KINDS = ['skill'];
+  // Spec D1 §5.3: sessions joined, with Running · Interrupted · Completed · Stopped.
+  const OWN_TAB_KINDS = ['skill', 'work_session'];
 
   it('skill tabs by its own facts: All · Equipped · Not equipped · Missing files', () => {
     const list = getKind('skill').list;
@@ -443,7 +450,7 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     expect(list.filters.some((f) => f.id === 'missing')).toBe(false);
     // Only kinds whose tabs overlap name a total tab.
     for (const row of allKinds()) {
-      if (!OWN_TAB_KINDS.includes(row.kind)) expect(row.list.tabTotal, row.kind).toBeUndefined();
+      if (row.kind !== 'skill') expect(row.list.tabTotal, row.kind).toBeUndefined();
     }
   });
 
@@ -560,8 +567,13 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
   });
 
   it('6. live count → list.liveCount', () => {
+    // Spec D1 §5.3: "● N running" is the Running tab's count, and
+    // "⚠ M interrupted" links to the Interrupted tab.
     const liveCount = getKind('work_session').list.liveCount;
-    expect(liveCount?.label(3)).toBe('● 3 live');
+    expect(liveCount?.label(3)).toBe('● 3 running');
+    expect(liveCount?.tab).toBe('running');
+    expect(liveCount?.alertTab?.tab).toBe('interrupted');
+    expect(liveCount?.alertTab?.label(2)).toBe('⚠ 2 interrupted');
   });
 
   it('7. quick launch → list.quickLaunch', () => {

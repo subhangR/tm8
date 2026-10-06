@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import type { AcceptanceCriterion, EntityDetail, EntitySummary } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
 import type { ContentBlockRef, KindConfig, StatusSource } from '../../domain';
-import { KindIcon, getKind } from '../../domain';
+import { KindIcon, getKind, isProcessRecordedLive, sessionRecordOf, sessionRowWord } from '../../domain';
 import { Avatar, Chip, Eyebrow, Markdown } from '../../kit';
 import type { FileUploadTask } from '../../files/upload';
 import { ProseField, type TriggerOption } from '../../rich-input';
@@ -974,10 +974,19 @@ function RunsStrip({
   const overflow = sorted.length - shown.length;
   const liveShown = shown.filter((run) => verdictOf(run) === 'live');
   const restShown = shown.filter((run) => verdictOf(run) !== 'live');
+  /* §5.7: a crashed or lost run still holding this task's claim asks for a
+     decision — the work is open and nobody is running it. */
+  const crashed = runs.some((run) => {
+    const w = sessionRowWord(run.state, verdictOf(run));
+    return w !== null && w.tone === 'block' && w.attention;
+  });
 
   return (
     <section className="sb-section sb-runs" data-testid="runs-section">
       <Eyebrow faint>{count}</Eyebrow>
+      {crashed ? (
+        <p className="sb-runs__alert" data-testid="runs-crashed-hint">Session crashed, resume?</p>
+      ) : null}
       {runs.length === 0 ? (
         <p className="pn-section__empty">No runs recorded against this.</p>
       ) : (
@@ -1021,7 +1030,23 @@ function RunChip({
   onOpenEntity?: (id: string) => void;
 }) {
   const config = getKind(run.kind);
-  const treatment = verdict != null ? config.list.liveTreatment?.(verdict) : undefined;
+  /* SPEC D1 §5.7: the run's ROW WORD — Working, Completed · receipt, Stopped,
+     Crashed, Lost — from the derivation the session list uses. A live-recorded
+     run with no verdict in hand still says "unverified" rather than Working:
+     the word would claim a measurement nobody took. */
+  const session = sessionRecordOf(run.state);
+  const sessionWord = session && (verdict != null || !isProcessRecordedLive(session.status))
+    ? sessionRowWord(run.state, verdict)
+    : null;
+  const outcomeTreatment = sessionWord
+    ? {
+        tone: sessionWord.tone === 'done' ? 'run' : sessionWord.tone,
+        label: sessionWord.case === 'completed' && session?.receiptMessageId ? 'Completed · receipt' : sessionWord.word,
+        shortLabel: undefined,
+        reason: sessionWord.reason ?? undefined,
+      }
+    : undefined;
+  const treatment = outcomeTreatment ?? (verdict != null ? config.list.liveTreatment?.(verdict) : undefined);
   const state = run.state as unknown as Record<string, unknown>;
   const model = typeof state.model === 'string' ? state.model : null;
   const live = verdict === 'live';
@@ -1033,7 +1058,8 @@ function RunChip({
   return (
     <button
       type="button"
-      className={live ? 'sb-runchip sb-runchip--live' : 'sb-runchip'}
+      className={live ? 'sb-runchip sb-runchip--live' : sessionWord?.tone === 'block' ? 'sb-runchip sb-runchip--block' : 'sb-runchip'}
+      data-session-case={sessionWord?.case}
       data-testid={live ? 'live-session-card' : 'run-row'}
       title={name}
       aria-label={name}

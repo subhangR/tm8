@@ -72,7 +72,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, within } from '@testing-library/react';
 import type { ActorSummary, EntityDetail, EntityId } from '@tm8/contract';
-import { REASONS as DOMAIN_REASONS, getKind, type ActionContext } from '../../domain';
+import { REASONS as DOMAIN_REASONS, getKind, sessionHeadline, type ActionContext } from '../../domain';
 import {
   FIXTURE_SPACE_ID,
   fixtureDetails,
@@ -448,7 +448,12 @@ describe('the strip is ONE ROW, and it sits UNDER THE TABS', () => {
     if (!status) throw new Error('the work_session fixture must carry a status');
 
     const { getByTestId } = panel(session, host({ kind: 'work_session' }));
-    expect(getByTestId('panel-header').textContent).toContain(status.replace(/_/g, ' '));
+    // Spec D1 §5.6: the pill is the session's row WORD (Working, Completed,
+    // Crashed: …) — the process folded into the outcome, from the same
+    // derivation as the list row.
+    expect(getByTestId('session-panel-pill').textContent).toBe(
+      sessionHeadline(session.state, undefined) ?? '',
+    );
   });
 });
 

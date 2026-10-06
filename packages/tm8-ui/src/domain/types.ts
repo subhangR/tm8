@@ -391,6 +391,20 @@ export type ActionRef =
   // between and the verb commits directly.
   | 'start-terminal'
   | 'terminate'
+  // SPEC D1 §5 — the session OUTCOME verbs. `complete-session` opens the
+  // Complete dialog (receipt + claim check), not the task tick; `close-process`
+  // is Terminate on a session whose work is already settled (no dialog);
+  // `follow-up` starts a follow-up session for a completed one (§4.5, D4);
+  // `dismiss-session` sets outcome `stopped` on an Interrupted row; `mark-lost`
+  // records a stale session's process as lost (§5.6); `reopen-session` is the
+  // logged resume of a COMPLETED session (Q2 = B), confirmed first. `sessionVerbsOf` in
+  // `domain/session-outcome.ts` picks which of them a row offers.
+  | 'complete-session'
+  | 'close-process'
+  | 'follow-up'
+  | 'reopen-session'
+  | 'dismiss-session'
+  | 'mark-lost'
   // THE OTHER HALF OF THE PROCESS CONTROL. Terminate ends a run; this brings
   // an ended one back with the agent's own conversation restored
   // (`execution.resume`, a v1 catalog operation since the contract was
@@ -528,6 +542,12 @@ export interface ActionContext {
    */
   category?: StatusCategory;
   /**
+   * Spec D1: the work_session's own state arm (outcome + process), when the
+   * target is one. The process control and the outcome verbs read it through
+   * `domain/session-outcome.ts`; absent ⇒ the category/liveness rule above.
+   */
+  sessionState?: unknown;
+  /**
    * WHO IS LOOKING — the viewer's own actor id in this space, resolved by the
    * shell from the identity read.
    *
@@ -644,6 +664,11 @@ export interface StatusCategoryTab {
   id: StatusCategory | (string & {});
   label: string;
   filter: QueryFilter;
+  /**
+   * Spec D1 §5.3: a tab whose count is a call to act (sessions' Interrupted).
+   * Its count renders as a red badge whenever it is above zero.
+   */
+  alert?: boolean;
 }
 
 export interface ListConfig {
@@ -699,7 +724,7 @@ export interface ListConfig {
    * this kind does not declare falls back to the first, so the panel cannot be
    * pointed at a band it has no button for.
    */
-  defaultCategory?: StatusCategory;
+  defaultCategory?: StatusCategory | (string & {});
   /** task subtree; session coordinator→worker. */
   /**
    * `messagePulse` binds the tree's hairlines to live message provenance: a
@@ -728,7 +753,21 @@ export interface ListConfig {
     progress?: (row: EntitySummary) => TileProgress | null;
   };
   /** '● N live'. The count is rows ∩ the seam liveness snapshot, never a derivation. */
-  liveCount?: { filter: QueryFilter; label: (n: number) => string };
+  liveCount?: {
+    filter: QueryFilter;
+    label: (n: number) => string;
+    /**
+     * Spec D1 §5.3: "● N running equals the Running tab count". When set, the
+     * header number IS that tab's own count (its server total), whichever tab
+     * is open — not rows ∩ the live set of the open tab.
+     */
+    tab?: string;
+    /**
+     * A second header chip naming an alerting tab's count ("⚠ M interrupted"),
+     * which switches to that tab when pressed. Rendered only above zero.
+     */
+    alertTab?: { tab: string; label: (n: number) => string };
+  };
   quickCreate: boolean;
   quickLaunch?: ActionRef;
   /**
@@ -1042,6 +1081,11 @@ export interface ListRowFacts {
   status: string | null;
   /** Unresolved hard-dependency count off `EntityBadges.blocked`. */
   blockedCount: number;
+  /**
+   * The work_session's whole state arm, when the row is one (Spec D1): the
+   * attention predicate needs the outcome and the ending, not only `status`.
+   */
+  sessionState?: unknown;
 }
 
 // ---------------------------------------------------------------------------

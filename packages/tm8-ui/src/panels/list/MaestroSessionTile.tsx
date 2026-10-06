@@ -5,6 +5,7 @@ import { RowLead, leadTooltip } from './RowLead';
 import { Avatar } from '../../kit/Avatar';
 import { copyToClipboard } from '../../terminal/domUtils';
 import { useFreshGlow } from '../../domain/useFreshGlow';
+import type { SessionIcon, SessionWord } from '../../domain';
 
 /**
  * Maestro's session-row anatomy, fed exclusively by tm8 contract data.
@@ -29,6 +30,9 @@ export function MaestroSessionTile({
   streaming,
   statusTone,
   statusTitle,
+  word,
+  lineTwo,
+  crumb,
   tasks,
   lane,
   badges,
@@ -83,6 +87,17 @@ export function MaestroSessionTile({
   streaming: boolean;
   statusTone: string;
   statusTitle?: string;
+  /**
+   * SPEC D1 §5.2 — THE ROW WORD AS VISIBLE TEXT, not only a tooltip: Working,
+   * Waiting for you, Ready to complete, Finished still open, Completed,
+   * Stopped, Crashed, Lost, … (§5.1). It also picks the status glyph and the
+   * avatar's process dot. Absent ⇒ the pre-D1 rendering (record status only).
+   */
+  word?: SessionWord | null;
+  /** §5.2 line 2: "Completed 12m ago · receipt", "Crashed 5m ago: out of memory". */
+  lineTwo?: string | null;
+  /** §5.3.1 case 7: "↳ under Coordinator X (Completed)". */
+  crumb?: string | null;
   tasks: readonly EntitySummary[];
   /**
    * The ONE lane line (107): `⎇ branch · [worktree|shared|scratch]`, from the
@@ -190,7 +205,8 @@ export function MaestroSessionTile({
             childCount={childCount}
             live={!archived && live}
             streaming={!archived && live && streaming}
-            title={statusTitle ?? status}
+            title={word ? `${word.word}${word.reason ? ` — ${word.reason}` : ''}` : (statusTitle ?? status)}
+            processDot={archived ? null : (word?.dot ?? null)}
           />
           <span className="pn-st__titleText">{title}</span>
               {glow.srSuffix ? <span className="sr-only">{glow.srSuffix}</span> : null}
@@ -204,7 +220,19 @@ export function MaestroSessionTile({
         {attention && !archived
           ? attentionChip ?? <span className="pn-st__tag pn-st__tag--attention">needs attention</span>
           : null}
-        {!archived && completed ? <span className="pn-st__tag pn-st__tag--done">done</span> : null}
+        {/* Spec D1: the word says Completed itself; the old `done` tag only
+            survives for a row with no session word to show. */}
+        {!archived && completed && !word ? <span className="pn-st__tag pn-st__tag--done">done</span> : null}
+        {!archived && word ? (
+          <span
+            className={`pn-st__word pn-st__word--${word.tone}`}
+            data-testid="session-row-word"
+            data-session-case={word.case}
+            title={word.reason ?? word.word}
+          >
+            {word.word}
+          </span>
+        ) : null}
 
         {leadMode ? null : (
           <span className={`pn-st__statusglyph lp__statusmark--${statusTone}`} title={statusTitle ?? status}>
@@ -255,6 +283,16 @@ export function MaestroSessionTile({
         </span>
       </div>
 
+      {crumb ? <div className="pn-st__crumb" data-testid="session-row-crumb">{crumb}</div> : null}
+      {lineTwo && !archived ? (
+        <div
+          className={`pn-st__line2${word?.tone === 'block' ? ' pn-st__line2--block' : ''}`}
+          data-testid="session-row-line2"
+          title={lineTwo}
+        >
+          {lineTwo}
+        </div>
+      ) : null}
       {lane || badges ? (
         <div className="pn-st__badges">
           {lane}
@@ -300,7 +338,7 @@ export function MaestroSessionTile({
  * team_member participates in) has no face to badge, so its tool mark stays
  * centred exactly as before and only the count rides the corner.
  */
-function AgentTile({ tool, shell, teammate, childCount, live, streaming, title }: { tool: string | null; shell?: boolean; teammate: ActorSummary | null; childCount: number; live: boolean; streaming: boolean; title: string }) {
+function AgentTile({ tool, shell, teammate, childCount, live, streaming, title, processDot = null }: { tool: string | null; shell?: boolean; teammate: ActorSummary | null; childCount: number; live: boolean; streaming: boolean; title: string; processDot?: SessionWord['dot'] }) {
   // A vanilla terminal is not an agent whose tool we failed to record, and the
   // fallback below would have called it one — `(tool || 'agent')`, glyph and
   // aria-label alike. It gets its own mark instead.
@@ -357,9 +395,25 @@ function AgentTile({ tool, shell, teammate, childCount, live, streaming, title }
       {childCount > 0 ? (
         <span className="pn-agent__kids" aria-hidden>{childCount}</span>
       ) : null}
+      {/* Spec D1 §5.1 — THE PROCESS DOT: green live, amber waiting, hollow
+          amber stale, red crashed/lost/credential, grey "process open" on a
+          completed session, nothing once the process has ended. */}
+      {processDot ? (
+        <span className={`pn-agent__pdot pn-agent__pdot--${processDot}`} data-testid="session-process-dot" data-dot={processDot} aria-hidden />
+      ) : null}
     </span>
   );
 }
+
+/** §5.1's icon column onto this tile's existing glyph vocabulary. */
+const GLYPH_OF: Readonly<Record<SessionIcon, string>> = {
+  spinner: 'spawning',
+  'ring-dot': 'running',
+  check: 'done',
+  square: 'archived',
+  'ring-x': 'failed',
+  ring: 'ring',
+};
 
 function SessionIcon({ name, size = 13, flipped = false }: { name: 'chevron' | 'check' | 'close' | 'copy' | 'expand'; size?: number; flipped?: boolean }) {
   const d = name === 'check'

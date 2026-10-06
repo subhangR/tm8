@@ -114,6 +114,7 @@ function session(
   title: string,
   status: string,
   category: StatusCategory,
+  extra: Record<string, unknown> = {},
 ): EntitySummary {
   return {
     ...SESSION,
@@ -122,7 +123,7 @@ function session(
     parentId: null,
     deletedAt: null,
     category,
-    state: { ...SESSION.state, status } as EntitySummary['state'],
+    state: { ...SESSION.state, status, ...extra } as EntitySummary['state'],
   };
 }
 
@@ -147,6 +148,10 @@ function rowsForOf(rows: readonly EntitySummary[]) {
       if (deleted === 'exclude' && row.deletedAt !== null) return false;
       if (deleted === 'only' && row.deletedAt === null) return false;
       if (filter.category && !filter.category.includes(row.category as StatusCategory)) return false;
+      // Spec D1: the session tabs' two axes, as the server runs them.
+      const state = row.state as { status?: string; outcome?: string };
+      if (filter.sessionStatus && !filter.sessionStatus.includes(state.status as never)) return false;
+      if (filter.sessionOutcome && !filter.sessionOutcome.includes((state.outcome ?? 'open') as never)) return false;
       return true;
     });
 }
@@ -363,31 +368,33 @@ describe('C3 — ONE definition of completed, for every kind', () => {
     expect(isStruck(cancelled)).toBe(false);
   });
 
-  it('a FAILED session is completed — the session tile no longer excludes it', () => {
+  it('SPEC D1: a crashed session is NOT completed; a completed one says so in words', () => {
     /**
-     * The other half of C3, and the reason `completed` is still computed at
-     * all. The session tile read `completed={recordedStatus === 'exited'}`, so
-     * a crashed run rendered as unfinished — while the Done tab 36 lines up the
-     * file counted it as done. Under the model `failed` is a runtime FACT that
-     * gets a badge, and the run's category is `done`: it ended. The tile says
-     * so with a `done` TAG, which is a word and not a line through a title.
+     * The other half of C3 — REVERSED by Spec D1 §3.2. Under 155 a crashed run
+     * filed itself as `done` ("it ended"), and the tile wore a `done` tag. D1
+     * separates the work from the process: a crash is a process fact, the
+     * outcome stays open, the category stays `in_progress`, and the row sits
+     * in Interrupted saying "Crashed". Only `session complete` makes it done,
+     * and then the row WORD says Completed — still a word, never a line
+     * through a title.
      */
     const rows = [
-      session('ws-failed', 'The run that crashed', 'failed', 'done'),
-      session('ws-running', 'The run still going', 'running', 'in_progress'),
+      session('ws-failed', 'The run that crashed', 'failed', 'in_progress', { endedKind: 'crashed' }),
+      session('ws-completed', 'The run that finished', 'exited', 'done', { outcome: 'completed', endedKind: 'exited_clean' }),
     ];
     const view = render(
       <EntityListPanel kind="work_session" rowsFor={rowsForOf(rows)} ctx={ctx} />,
     );
 
-    tab(view, 'Done');
+    tab(view, 'Interrupted');
     const failed = tileOf(view.container, 'The run that crashed');
-    expect(failed.querySelector('.pn-st__tag--done'), 'a crashed run ended').not.toBeNull();
-    expect(isStruck(failed)).toBe(false);
+    expect(failed.querySelector('[data-testid="session-row-word"]')?.textContent).toBe('Crashed');
+    expect(failed.querySelector('.pn-st__tag--done'), 'a crash is not completion').toBeNull();
 
-    tab(view, 'In Progress');
-    const running = tileOf(view.container, 'The run still going');
-    expect(running.querySelector('.pn-st__tag--done'), 'a live run has not ended').toBeNull();
+    tab(view, 'Completed');
+    const done = tileOf(view.container, 'The run that finished');
+    expect(done.querySelector('[data-testid="session-row-word"]')?.textContent).toBe('Completed');
+    expect(isStruck(done)).toBe(false);
   });
 
   it('a row with NO category is not completed — absence is not a verdict', () => {
