@@ -434,6 +434,12 @@ describe.sequential('task assignment provenance (129)', () => {
         entity_id uuid primary key, space_id uuid not null, definition jsonb not null);
       grant select on public.mcp_servers to tm8_app;
       reset role;`);
+    // 302 (Spec D1): entity reads select the session OUTCOME columns. Same
+    // shape as the shims above — only the read columns, none of 302's rules.
+    await database.query(`alter table public.work_sessions
+      add column outcome text not null default 'open', add column outcome_at timestamptz,
+      add column outcome_by uuid, add column receipt_message_id uuid,
+      add column outcome_source text, add column outcome_note text`);
   }, 180_000);
 
   afterAll(async () => {
