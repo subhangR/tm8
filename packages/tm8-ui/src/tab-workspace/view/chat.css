@@ -21,6 +21,7 @@
 .cv2-root .tws-chat > .ecp {
   flex: 1;
   height: auto;
+  background: var(--pn-surface);
 }
 
 /* The resizer: the same 8px hit zone as the browser's, centred on the
@@ -61,9 +62,11 @@
   background: var(--pn-card);
 }
 
-/* --- Header: the panel's own, with a 36×36 close, 12px inset --- */
+/* --- Header: the panel's own, with a 36×36 close, 12px inset. No hairline
+   under it in either mode; spacing separates it from the body (R25). --- */
 .cv2-root .tws-chat .ecp__head {
   padding-right: var(--pn-space-3);
+  border-bottom: 0;
 }
 .cv2-root .tws-chat .ecp__close {
   width: 36px;
