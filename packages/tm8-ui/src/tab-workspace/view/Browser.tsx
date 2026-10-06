@@ -11,7 +11,7 @@
  * Every write goes through `workspace.browser.set`; nothing here touches tabs
  * or scope except a row click (`tabs.open`) and + New (`drafts.open`).
  */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { useAttentionOptional } from '../../attention';
 import { needsMeListSource } from '../../attention/needs-me';
 import type { EntityId } from '@tm8/contract';
@@ -47,6 +47,58 @@ const SCROLL_RESTORE_MS = 5_000;
 function optionOf(kind: KindId): ListRootOption {
   const config = getKind(kind);
   return { kind, label: config.labelPlural, single: config.label };
+}
+
+/**
+ * The dotted new box: a bold + that creates the browser's current kind, and
+ * that kind's icon + ▾ opening the kind menu. Each click on + fires a one-shot
+ * ripple; the key remounts it so rapid clicks each get their own.
+ */
+export function NewBox({
+  noun,
+  disabledReason,
+  onCreate,
+  header,
+}: {
+  noun: string;
+  disabledReason: string | null;
+  onCreate: () => void;
+  header: ReactNode;
+}) {
+  const [pulse, setPulse] = useState(0);
+  return (
+    <div
+      className="tws-browser-new"
+      role="group"
+      aria-label={`New ${noun}`}
+      data-testid="tws-browser-newbox"
+      data-disabled={disabledReason !== null || undefined}
+    >
+      <button
+        type="button"
+        className="tws-browser-new__plus"
+        aria-label={`Create ${noun}`}
+        aria-disabled={disabledReason !== null || undefined}
+        title={disabledReason ?? `New ${noun}`}
+        data-testid="tws-browser-new"
+        onClick={(event) => {
+          if (disabledReason !== null) {
+            event.preventDefault();
+            return;
+          }
+          setPulse((n) => n + 1);
+          onCreate();
+        }}
+      >
+        <svg className="tws-browser-new__glyph" viewBox="0 0 12 12" width="12" height="12" aria-hidden>
+          <path d="M6 1.5v9M1.5 6h9" />
+        </svg>
+      </button>
+      <span className="tws-browser-new__rule" aria-hidden />
+      {header}
+      {pulse > 0 ? <span key={pulse} className="tws-browser-new__ripple" aria-hidden /> : null}
+    </div>
+  );
 }
 
 export function Browser() {
@@ -155,39 +207,35 @@ export function Browser() {
         <EntityListPanel
           key={`${kind}:${generation}`}
           kind={kind}
-          /* Row 1 below draws the kind control and + New. */
+          /* The new box below draws the kind control and + New. */
           selectorSlot="host"
           mode="list"
           chrome="toolbar"
           rowLead="icon"
-          /* Row 1: the kind icon and + New, around the panel's own search. */
-          toolbarStart={
-            <ListRootHeader
-              rootsLabel="Work browser"
-              kindMenuLabel={`${cell.label} — change kind`}
-              kindMenuIconOnly
-              cell={cell}
-              cellActive
-              onSelectCell={() => undefined}
-              options={options}
-              currentKind={kind}
-              onPickKind={(next) => {
-                if (next !== kind) set({ kind: next });
-              }}
-            />
-          }
+          /* Row 1: the panel's own search, then the dotted new box —
+             [+ | kind icon ▾]: the + creates the current kind, the icon
+             half is the kind menu. */
           toolbarEnd={
-            <button
-              type="button"
-              className="tws-browser-new"
-              aria-label={`Create ${noun}`}
-              aria-disabled={disabledReason !== null || undefined}
-              title={disabledReason ?? `Create ${noun}`}
-              data-testid="tws-browser-new"
-              onClick={disabledReason === null ? createDraft : (event) => event.preventDefault()}
-            >
-              {narrow ? <span aria-hidden>+</span> : <span aria-hidden>+ New</span>}
-            </button>
+            <NewBox
+              noun={noun}
+              disabledReason={disabledReason}
+              onCreate={createDraft}
+              header={
+                <ListRootHeader
+                  rootsLabel="Work browser"
+                  kindMenuLabel={`${cell.label} — change kind`}
+                  kindMenuIconOnly
+                  cell={cell}
+                  cellActive
+                  onSelectCell={() => undefined}
+                  options={options}
+                  currentKind={kind}
+                  onPickKind={(next) => {
+                    if (next !== kind) set({ kind: next });
+                  }}
+                />
+              }
+            />
           }
           {...source}
           members={data.members}
