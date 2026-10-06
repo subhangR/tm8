@@ -1,0 +1,90 @@
+/* Workspace per-tab chat: docked column or overlay (Spec A §10; design log
+   §12). Workstream G. Tokens only, 4/8 grid. */
+
+/* The overlay's containing block. */
+.tws-entity-row {
+  position: relative;
+}
+
+/* --- Docked: right of the content plane, full remaining height --- */
+.cv2-root .tws-chat {
+  position: relative;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  width: var(--tws-chat-w, 380px);
+  min-width: 0;
+  min-height: 0;
+  background: var(--pn-surface);
+  border-left: 1px solid var(--pn-line);
+}
+.cv2-root .tws-chat > .ecp {
+  flex: 1;
+  height: auto;
+}
+
+/* The resizer: the same 8px hit zone as the browser's, centred on the
+   chat's left hairline, which turns --pn-line-2 on hover or drag. */
+.tws-chat-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -5px;
+  z-index: 3;
+  display: flex;
+}
+.cv2-root .tws-chat-resizer .kit-resizer__line {
+  background: transparent;
+}
+.cv2-root .tws-chat-resizer .kit-resizer:hover .kit-resizer__line,
+.cv2-root .tws-chat-resizer .kit-resizer:focus-visible .kit-resizer__line,
+.cv2-root .tws-chat-resizer .kit-resizer[data-resizing] .kit-resizer__line {
+  width: 1px;
+  background: var(--pn-line-2);
+}
+
+/* --- Overlay: under the floating group, never over it; no scrim --- */
+.cv2-root .tws-chat.tws-chat--overlay {
+  position: absolute;
+  top: calc(var(--tws-chat-top, 56px) + var(--pn-space-3));
+  right: var(--pn-space-3);
+  bottom: var(--pn-space-3);
+  z-index: 1;
+  width: min(380px, calc(100% - 2 * var(--pn-space-3)));
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-pop);
+  overflow: hidden;
+}
+.cv2-root .tws-chat--overlay > .ecp {
+  background: var(--pn-card);
+}
+
+/* --- Header: the panel's own, with a 36×36 close, 12px inset --- */
+.cv2-root .tws-chat .ecp__head {
+  padding-right: var(--pn-space-3);
+}
+.cv2-root .tws-chat .ecp__close {
+  width: 36px;
+  height: 36px;
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink-3);
+}
+.cv2-root .tws-chat .ecp__close:hover {
+  color: var(--pn-ink);
+  background: var(--pn-hover);
+}
+.cv2-root .tws-chat .ecp__close:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+
+/* Waiting on the first read of the chats about the entity. */
+.tws-chat-wait {
+  flex: 1;
+}

@@ -55,7 +55,10 @@ export function getKindAdapter(kind: KindId): KindAdapter {
     body: config.panel.fullView ? 'fullView' : 'panel',
     creatable: creatabilityOf(kind, config.labelPlural),
     draftBody: kind === 'form' ? FormDraftBody : draftBodyFor(kind),
-    supportsChat: kind !== 'chat' && kind !== 'channel',
+    /* The entity chat's own answer (domain registry `applyChatAbout`): every
+       kind whose panel carries the `chat-about` verb — all but chat and
+       message. A channel is a legal `about` subject, so it chats too. */
+    supportsChat: (config.panel.primaries ?? []).includes('chat-about'),
     supportsRun: config.launchable === true,
   };
   cache.set(kind, adapter);
