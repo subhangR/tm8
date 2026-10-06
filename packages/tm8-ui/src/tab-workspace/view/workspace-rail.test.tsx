@@ -1,14 +1,16 @@
 // @vitest-environment jsdom
 /**
  * The Workspace icon rail (task 01a1112a-c568): hold-to-pin vs click, pinned
- * kinds drawn twice, the section default-open rule, the persisted expanded
+ * kinds drawn twice, the flat kind list (no groups), the persisted expanded
  * flag, and the separation from Home's pins.
  */
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { homeRootKinds } from '../../domain';
 import { loadRailPins } from '../../stores/homeRailStore';
 import { getRailStore, RAIL_EXPANDED_KEY, railPinsKey, resetRailStores } from '../runtime/railStore';
 import { createWorkspaceStore } from '../runtime/store';
+import { isWorkspaceKind } from '../runtime/types';
 import { WorkspaceProvider, type WorkspaceContextValue, type WorkspaceGateHandles } from './context';
 import { HOLD_MS, WorkspaceRail } from './WorkspaceRail';
 
@@ -104,13 +106,12 @@ describe('hold to pin', () => {
 });
 
 describe('pinned section', () => {
-  it('a pinned kind appears in Pinned and in its section, both current', () => {
+  it('a pinned kind appears in Pinned and in the list, both current', () => {
     mount();
     const pinned = within(screen.getByTestId('tws-rail-pinned'));
     expect(pinned.getByRole('button', { name: 'Tasks' })).toBeTruthy();
-    /* The browser starts on tasks, so Work is open by default. */
     const tasks = kindButtons('task');
-    expect(tasks.map((b) => b.dataset.placement).sort()).toEqual(['pinned', 'section']);
+    expect(tasks.map((b) => b.dataset.placement).sort()).toEqual(['list', 'pinned']);
     expect(tasks.every((b) => b.getAttribute('aria-current') === 'true')).toBe(true);
   });
 
@@ -121,20 +122,17 @@ describe('pinned section', () => {
   });
 });
 
-describe('sections', () => {
-  it('opens the section holding the browser kind; the rest stay closed; toggles persist', () => {
+describe('the kind list', () => {
+  it('draws every kind flat, in the Home rail order — no group headings, nothing to expand', () => {
     mount();
-    const work = screen.getByRole('button', { name: 'Work' });
-    const library = screen.getByRole('button', { name: 'Library' });
-    expect(work.getAttribute('aria-expanded')).toBe('true');
-    expect(library.getAttribute('aria-expanded')).toBe('false');
-    expect(kindButtons('doc')).toHaveLength(0);
-    fireEvent.click(library);
-    expect(library.getAttribute('aria-expanded')).toBe('true');
-    expect(kindButtons('doc')).toHaveLength(1);
-    fireEvent.click(work);
-    expect(work.getAttribute('aria-expanded')).toBe('false');
-    expect(JSON.parse(window.localStorage.getItem('tm8.workspace.rail-open')!)).toEqual({ library: true, work: false });
+    const list = screen.getByTestId('tws-rail-kinds');
+    const kinds = Array.from(list.querySelectorAll<HTMLElement>('[data-kind]')).map((b) => b.dataset.kind);
+    expect(kinds).toEqual(homeRootKinds().map((config) => config.kind).filter(isWorkspaceKind));
+    expect(kinds).toContain('doc');
+    for (const label of ['Work', 'Library', 'Agents & People', 'Code']) {
+      expect(screen.queryByRole('button', { name: label })).toBeNull();
+    }
+    expect(screen.getByTestId('tws-rail').querySelector('[aria-expanded]')).toBeNull();
   });
 });
 

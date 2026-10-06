@@ -244,7 +244,6 @@
   display: none;
 }
 .tws-rail-group,
-.tws-rail-section-body,
 .tws-rail-bottom {
   display: flex;
   flex-direction: column;
@@ -342,13 +341,6 @@
 .tws-rail-btn[aria-current='true'] .tws-rail-label {
   color: var(--pn-ink);
 }
-.tws-rail-chevron {
-  display: inline-block;
-  width: 12px;
-  margin-right: var(--pn-space-1);
-  color: var(--pn-ink-3);
-  font-size: var(--pn-fs-label);
-}
 /* R42 live counts (Tasks, Stories, Sessions, Chats only). Collapsed: the §4
    badge geometry pinned 2px outside the button's top-right, run-tinted (brand
    stays attention's). Expanded: a plain run number right-aligned in the row. */
@@ -378,18 +370,6 @@
   font-family: var(--pn-mono);
   font-size: var(--pn-fs-label);
   font-variant-numeric: tabular-nums;
-}
-/* A closed section holding a live count: a 6px run dot with its halo. */
-.tws-rail-live-dot {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--pn-run);
-  box-shadow: 0 0 0 2px var(--pn-run-soft);
-  pointer-events: none;
 }
 @keyframes tws-label-in {
   from {

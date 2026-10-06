@@ -52,14 +52,6 @@ export const RAIL_COUNT_PHRASE: Record<RailCountKind, string> = {
   chat: 'running (top-level)',
 };
 
-/** The section tooltip's noun pair (R42): "4 tasks in progress". */
-const SECTION_NOUN: Record<RailCountKind, [one: string, many: string, verb: string]> = {
-  task: ['task', 'tasks', 'in progress'],
-  story: ['story', 'stories', 'in progress'],
-  work_session: ['session', 'sessions', 'running'],
-  chat: ['chat', 'chats', 'running'],
-};
-
 /** Hidden at 0 (null), `99+` above 99. */
 export function railCountLabel(n: number | undefined): string | null {
   if (n === undefined || n <= 0) return null;
@@ -70,18 +62,6 @@ export function railCountLabel(n: number | undefined): string | null {
 export function railKindLabel(kind: string, labelPlural: string, n: number | undefined): string {
   const label = railCountLabel(n);
   return label && isRailCountKind(kind) ? `${labelPlural} · ${label} ${RAIL_COUNT_PHRASE[kind]}` : labelPlural;
-}
-
-/** "Work · 4 tasks in progress · 2 sessions running", or the plain label. */
-export function railSectionLabel(label: string, kinds: readonly string[], counts: RailCounts): string {
-  const parts = kinds.filter(isRailCountKind).flatMap((kind) => {
-    const n = counts[kind];
-    const shown = railCountLabel(n);
-    if (!shown) return [];
-    const [one, many, verb] = SECTION_NOUN[kind];
-    return [`${shown} ${n === 1 ? one : many} ${verb}`];
-  });
-  return parts.length > 0 ? `${label} · ${parts.join(' · ')}` : label;
 }
 
 /** The kind's own In Progress tab filter, so the rail and the tab agree. */

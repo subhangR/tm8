@@ -6,7 +6,7 @@
  * live by events and liveness pushes, hidden at 0, `99+` above 99, a corner
  * badge collapsed and a row number expanded, and the words in tooltip + aria.
  */
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CollectionQuery, EntitySummary } from '@tm8/contract';
 import type { LivenessSnapshot, Seam } from '../../data/seam';
@@ -14,7 +14,7 @@ import { getRailStore, resetRailStores } from '../runtime/railStore';
 import { createWorkspaceStore } from '../runtime/store';
 import { WorkspaceProvider, type WorkspaceContextValue, type WorkspaceGateHandles } from './context';
 import { WorkspaceRail } from './WorkspaceRail';
-import { inProgressFilter, readRailCounts, railCountLabel, railKindLabel, railSectionLabel, sessionCountOf } from './useRailCounts';
+import { inProgressFilter, readRailCounts, railCountLabel, railKindLabel, sessionCountOf } from './useRailCounts';
 
 const SPACE = 'space-rail-counts';
 
@@ -166,14 +166,11 @@ describe('labels', () => {
     expect(railKindLabel('chat', 'Chats', 1)).toBe('Chats · 1 running (top-level)');
     expect(railKindLabel('task', 'Tasks', 0)).toBe('Tasks');
     expect(railKindLabel('doc', 'Docs', 4)).toBe('Docs');
-    expect(railSectionLabel('Work', ['chat', 'task', 'work_session', 'doc'], { task: 4, work_session: 1, chat: 0 })).toBe(
-      'Work · 4 tasks in progress · 1 session running',
-    );
   });
 });
 
 describe('the rail', () => {
-  it('badges the four kinds in both the Pinned and section copies, and no other kind', async () => {
+  it('badges the four kinds in both the Pinned and list copies, and no other kind', async () => {
     const fake = fakeSeam(FIXTURE, { liveEntityIds: ['w1', 'w2', 'w3'], liveSessionCount: 3 });
     mount(fake.seam);
     await waitFor(() => expect(kindButtons('task').map(countOf)).toEqual(['2', '2']));
@@ -230,21 +227,6 @@ describe('the rail', () => {
     await waitFor(() => expect(countOf(kindButtons('task')[0]!)).toBe('3'), { timeout: 3000 });
     act(() => fake.pushLiveness({ liveEntityIds: ['w1', 'w2', 'w9'], liveSessionCount: 3 }));
     expect(countOf(kindButtons('work_session')[0]!)).toBe('3');
-  });
-
-  it('a closed section holding a count shows a run dot and says the counts, never a sum', async () => {
-    const fake = fakeSeam(FIXTURE, { liveEntityIds: ['w1'], liveSessionCount: 1 });
-    mount(fake.seam);
-    await waitFor(() => expect(countOf(kindButtons('task')[0]!)).toBe('2'));
-    expect(document.querySelector('[data-testid="tws-rail-live-dot"]')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Work' }));
-    const work = document.querySelector<HTMLButtonElement>('[data-section="work"] .tws-rail-section')!;
-    expect(work.getAttribute('aria-expanded')).toBe('false');
-    expect(work.querySelector('[data-testid="tws-rail-live-dot"]')).not.toBeNull();
-    expect(work.getAttribute('aria-label')).toMatch(/^Work · /);
-    expect(work.getAttribute('aria-label')).toContain('2 tasks in progress');
-    expect(work.getAttribute('aria-label')).toContain('1 session running');
-    expect(work.querySelector('[data-testid="tws-rail-count"]')).toBeNull();
   });
 
   it('draws nothing without a seam', () => {
