@@ -53,7 +53,7 @@ describe('containCredentialSession', () => {
       expect(pty.hasSession(id)).toBe(false);
       const writes = graph.transitions.filter((t) => t.sessionId === id);
       expect(writes).toHaveLength(1);
-      expect(writes[0]).toMatchObject({ status: 'exited', endedKind: 'stopped_by_operator' });
+      expect(writes[0]).toMatchObject({ status: 'failed', endedKind: 'credential_revoked' }); // Spec D1 (301)
       reasons.add(writes[0]!.endedReason!);
     }
     // Three causes, three sentences — and none of them is terminate's.
