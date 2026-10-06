@@ -1,7 +1,6 @@
 import { McpSessionBindings } from './mcp/session-bindings.js';
 import { loadMcpServer } from './mcp/definitions.js';
 import { WorkspaceBridge } from './workspace/bridge.js';
-import { registerWorkspaceHandlers } from './workspace/handlers.js';
 import { McpTestResultSchema } from '@tm8/contract';
 /**
  * Bootstrap — assembles the frame and starts listening.
@@ -515,8 +514,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         return pinned ?? claimed;
       },
     });
-    registerEventHandlers(registry, { db, config, presence });
-    registerWorkspaceHandlers(registry, { db, bridge: workspaceBridge });
+    registerEventHandlers(registry, { db, config, presence, workspace: workspaceBridge });
     // The delivery seam again, and narrow for the same reason it is narrow
     // above: `execution.dispatch` pushes a trusted envelope at a dispatcher's
     // terminal, which only the delivery role may do. Absent, a dispatch still

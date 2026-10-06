@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:cfa2803c0e73daf34df20824350b68be45dba26d2e8dbadfdb61a35b08076bc5",
+  "catalogDigest": "sha256:0ef9136fefe7fe6ae8405f31d02abf202c8e0c018fe84d38dc915b2b927c10d3",
   "catalog": {
-    "total": 341,
-    "v1": 339,
+    "total": 344,
+    "v1": 342,
     "reserved": 2,
-    "http": 339,
+    "http": 342,
     "ws": 1,
-    "registerableV1Http": 337,
+    "registerableV1Http": 340,
     "methods": {
-      "GET": 111,
-      "POST": 167,
+      "GET": 113,
+      "POST": 168,
       "PATCH": 19,
       "DELETE": 22,
       "PUT": 20,
       "WS": 2
     },
     "kinds": {
-      "read": 117,
-      "command": 222,
+      "read": 119,
+      "command": 223,
       "stream": 2
     },
-    "uniqueNames": 341,
-    "uniqueBindings": 340
+    "uniqueNames": 344,
+    "uniqueBindings": 343
   },
   "reservedOperations": [
     "search.query",
@@ -1496,6 +1496,27 @@
         "source": "server-router"
       },
       {
+        "operation": "workspace.instances.list",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/workspace/instances",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "workspace.inspect",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/workspace/inspect",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "workspace.command",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/workspace/commands",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "execution.spawn",
         "method": "POST",
         "path": "/v2/execution/spawn",
@@ -2791,7 +2812,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 309
+    "unimplementedV1Http": 312
   },
   "schemas": {
     "additive": {
@@ -6066,6 +6087,55 @@
         "intentTags": [
           "presence",
           "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspace.instances.list",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspace.instances.list",
+        "intentTags": [
+          "workspace",
+          "instances",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspace.inspect",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspace.inspect",
+        "intentTags": [
+          "workspace",
+          "inspect"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspace.command",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspace.command",
+        "intentTags": [
+          "workspace",
+          "command"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

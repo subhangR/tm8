@@ -11,8 +11,7 @@ import { CollabError, type WorkspaceCommandInput } from '@tm8/contract';
 
 import type { Db, DbClaims } from '../db/types.js';
 import { claimsFor } from '../facade/context.js';
-import type { HandlerRegistry } from '../facade/index.js';
-import { json, type RequestContext } from '../http/types.js';
+import { json, type OperationHandler, type RequestContext } from '../http/types.js';
 import { createLoopbackOwnerResolver, type LoopbackOwner } from '../identity/loopback.js';
 import type { WorkspaceBridge } from './bridge.js';
 
@@ -31,7 +30,18 @@ interface Caller {
   actorName?: string;
 }
 
-export function registerWorkspaceHandlers(registry: HandlerRegistry, deps: WorkspaceHandlerDeps): void {
+export interface WorkspaceHandlers {
+  readonly list: OperationHandler;
+  readonly inspect: OperationHandler;
+  readonly command: OperationHandler;
+}
+
+/**
+ * The three handlers. They are MOUNTED by `registerEventHandlers` (beside
+ * `presence.get`, the other in-memory live-socket read), so the registration
+ * stays a literal the conformance inventory can audit.
+ */
+export function workspaceHandlers(deps: WorkspaceHandlerDeps): WorkspaceHandlers {
   const owner = deps.owner ?? createLoopbackOwnerResolver(deps.db);
 
   /**
@@ -74,12 +84,12 @@ export function registerWorkspaceHandlers(registry: HandlerRegistry, deps: Works
     };
   }
 
-  registry.register('workspace.instances.list', async (ctx) => {
+  const list: OperationHandler = async (ctx) => {
     const who = await caller(ctx);
     return json({ items: deps.bridge.list(who.identityId, who.spaceId) });
-  });
+  };
 
-  registry.register('workspace.inspect', async (ctx) => {
+  const inspect: OperationHandler = async (ctx) => {
     const who = await caller(ctx);
     const instanceId = ctx.query.get('instanceId') ?? undefined;
     if (instanceId !== undefined && (instanceId === '' || instanceId.length > 128)) {
@@ -94,9 +104,9 @@ export function registerWorkspaceHandlers(registry: HandlerRegistry, deps: Works
       ...(instanceId ? { instanceId } : {}),
       ...(who.actorName ? { actorName: who.actorName } : {}),
     }));
-  });
+  };
 
-  registry.register('workspace.command', async (ctx) => {
+  const command: OperationHandler = async (ctx) => {
     const who = await caller(ctx);
     const input = ctx.body as WorkspaceCommandInput;
     return json(await deps.bridge.run({
@@ -111,5 +121,7 @@ export function registerWorkspaceHandlers(registry: HandlerRegistry, deps: Works
       ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }),
       ...(who.actorName ? { actorName: who.actorName } : {}),
     }));
-  });
+  };
+
+  return { list, inspect, command };
 }

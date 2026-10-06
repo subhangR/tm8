@@ -343,7 +343,7 @@ import { getOperation, type OperationName } from '@tm8/contract';
 import type { Db } from '../../src/db/types.js';
 import { HandlerRegistry } from '../../src/facade/registry.js';
 import type { RequestContext } from '../../src/http/types.js';
-import { registerWorkspaceHandlers } from '../../src/workspace/handlers.js';
+import { registerEventHandlers } from '../../src/events/handlers.js';
 
 describe('workspace.* handlers', () => {
   const OWNER = { identityId: HUMAN, accountId: 'a', username: 'owner', isNodeAdmin: false, isOwner: true };
@@ -364,7 +364,7 @@ describe('workspace.* handlers', () => {
         });
       },
     } as unknown as Db;
-    registerWorkspaceHandlers(registry, { db, bridge, owner: () => Promise.resolve(OWNER) });
+    registerEventHandlers(registry, { db, config: {} as never, workspace: bridge, owner: () => Promise.resolve(OWNER) });
     // `async` so the registry's synchronous link-bearer refusal arrives as a rejection.
     const call = async (op: OperationName, identity: RequestContext['identity'], body?: unknown, query = '') =>
       registry.get(op)!({
