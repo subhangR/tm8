@@ -5012,22 +5012,15 @@ export function createFixtureSeam(): FixtureSeam {
       async terminate(id, input: ExecutionTerminateInput) {
         const s = requireSummary(id);
         if (s.state.kind !== 'work_session') throw new CollabError('invariant_violation', `${id} is not a work_session`);
-        /* Spec D1 §4.2, mirrored: an OPEN session must say what happens to its
-           work. `markLost` is a process fact only. */
+        /* Spec D1 §4.2, mirrored: an OPEN session terminated without an
+           outcome is stopped. `markLost` is a process fact only. */
         const outcome = s.state.outcome ?? 'open';
         if (input.markLost === true) {
           s.state.status = 'failed';
           s.state.endedKind = 'lost';
           s.state.endedReason = 'Marked lost: no live process.';
         } else {
-          if (outcome === 'open' && input.outcome === undefined) {
-            throw new CollabError(
-              'invariant_violation',
-              'this session has not completed: say what happens to its work — stop (end it without completing) or complete',
-              { details: { reason: 'outcome_required', sessionId: id } },
-            );
-          }
-          if (outcome === 'open' && input.outcome === 'stop') {
+          if (outcome === 'open' && input.outcome !== 'complete') {
             s.state.outcome = 'stopped';
             s.state.outcomeAt = tick();
             s.state.outcomeSource = 'operator';

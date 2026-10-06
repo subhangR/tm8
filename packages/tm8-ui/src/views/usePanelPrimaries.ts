@@ -103,7 +103,7 @@ export interface PanelPrimariesHost {
    * `complete-session` opens the Complete dialog. Answer from what the host
    * already holds (`detailOf(id)?.state`); `undefined` means "read it"
    * (`seam.entity`). A host without it keeps the old one-click terminate, which
-   * the node now refuses on an open session with `outcome_required`, verbatim.
+   * the node treats as Stop on an open session.
    */
   stateOf?: (entityId: string) => EntityState | undefined;
 }
@@ -191,8 +191,7 @@ export function usePanelPrimaries(host: PanelPrimariesHost): PanelPrimaries {
    * it ASKS on an open session. The 2026-08-07 ruling (fire on click, no
    * confirm) is REPLACED for open sessions: terminating unfinished work has to
    * say which ending is meant — Mark complete & close, or Stop without
-   * completing — and the node now refuses an open-session terminate without
-   * one (`outcome_required`). On a completed or stopped session it still fires
+   * completing — rather than letting the node default it to Stop. On a completed or stopped session it still fires
    * on click: it only closes the process (§5.4, "Close process, no dialog").
    * The row and the panel still share this function, so they cannot differ.
    */

@@ -2,9 +2,9 @@
  * Spec D1 §4.1/§4.2 (migration 301) at the handler layer: what the HTTP doors
  * ask of the database, in which order, for each stored outcome.
  *
- *   execution.terminate on an OPEN session refuses `outcome_required` before
- *     anything is killed; `stop` runs stop_work_session first, `complete` runs
- *     complete_work_session first and closes the process as exited_clean.
+ *   execution.terminate on an OPEN session: `stop` (or no outcome) runs
+ *     stop_work_session first, `complete` runs complete_work_session first and
+ *     closes the process as exited_clean.
  *   execution.terminate on a COMPLETED session only closes the process.
  *   execution.complete calls complete_work_session; `closeProcess` closes a
  *     live process afterwards, and is a no-op on an ended one.
@@ -113,14 +113,13 @@ const transitionOf = (h: ReturnType<typeof harness>) =>
   h.db.rpcs.find((r) => /work_session_transition/.test(r.fn))?.args;
 
 describe('execution.terminate — the work is the caller’s choice while it is open (§4.2)', () => {
-  it('S7 precondition: an open session without an outcome is refused outcome_required, and nothing is killed', async () => {
+  it('an open session without an outcome is stopped: stop_work_session BEFORE the kill', async () => {
     const h = harness({ outcome: 'open', status: 'running' });
-    await expect(call(h, 'execution.terminate', {})).rejects.toMatchObject({
-      code: 'invariant_violation',
-      details: { reason: 'outcome_required' },
-    });
-    expect(h.pty.kills).toBe(0);
-    expect(fns(h)).toEqual([]);
+    await call(h, 'execution.terminate', {});
+    expect(fns(h)[0]).toBe('stop_work_session');
+    expect(h.db.rpcs[0]!.args.slice(0, 2)).toEqual([SESSION, null]);
+    expect(h.pty.kills).toBe(1);
+    expect(transitionOf(h)).toContain('stopped_by_operator');
   });
 
   it('S6: outcome stop runs stop_work_session BEFORE the kill', async () => {

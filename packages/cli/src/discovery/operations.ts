@@ -2856,13 +2856,13 @@ const ROWS: Record<OperationName, Row> = {
   'execution.terminate': {
     cmd: ['session', 'terminate'],
     syn: 'tm8 session terminate <work-session-id> [--stop [--note <text>] | --complete [--receipt <message-id>] | --mark-lost] [--force] --yes [--mutation-id <id>]',
-    sum: 'Close a work session\'s process; while its work is open, say whether to --stop it or --complete it',
+    sum: 'Close a work session\'s process; while its work is open it is stopped unless you pass --complete',
     authz: 'session',
     input: 'bound',
     side: 'execution',
     tags: ['kill', 'stop', 'end', 'close'],
     notes: [
-      'on an OPEN session one of --stop / --complete is required (invariant_violation / outcome_required otherwise)',
+      'on an OPEN session with neither --stop nor --complete the work is stopped, as with --stop',
       '--stop: outcome stopped, claims released (session_stopped), the session can be resumed later',
       '--complete: runs `session complete` first (claim check + receipt), then closes the process as exited_clean',
       'on a completed session terminate only closes the process; the outcome stays completed',

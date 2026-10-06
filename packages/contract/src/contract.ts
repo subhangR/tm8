@@ -6347,12 +6347,11 @@ export interface ExecutionPromptInput extends CommandContext {
 export interface ExecutionTerminateInput extends CommandContext {
   force?: boolean;
   /**
-   * Spec D1 §4.2. Terminating an OPEN session must say what happens to the
-   * work: `stop` (end it without completing: claims released, outcome
-   * `stopped`) or `complete` (run `execution.complete` first, then close). A
-   * completed or stopped session needs neither — terminate then only closes
-   * the process. Omitted on an open session → `invariant_violation` /
-   * `outcome_required`.
+   * Spec D1 §4.2. What terminating an OPEN session does to the work: `stop`
+   * (end it without completing: claims released, outcome `stopped`) or
+   * `complete` (run `execution.complete` first, then close). Omitted on an
+   * open session → `stop`. A completed or stopped session needs neither —
+   * terminate then only closes the process.
    */
   outcome?: 'stop' | 'complete';
   /** With `outcome: 'complete'`: the close-out message (else the latest on the anchor). */
