@@ -3,15 +3,17 @@
  * Workstream A.
  *
  *   [Pinned kinds]  ── hairline
- *   [Work ▸] [Library ▸] [Agents & People ▸] [Code ▸]   (collapsible sections)
+ *   [every kind, one flat list]
  *   ── hairline
  *   Needs you · Status  ⌘K · Design · Settings · Help  account · »
  *   (three clusters, 12px apart, no dividers — Design Advisor R39)
  *
- * THE SECTIONS ARE THE HOME RAIL'S POPULATION, NOT ITS COMPONENT:
- * `homeRailGroups()` restricted to the Workspace kinds (D7). Pins, open
- * sections and the expanded flag are the Workspace's own (`railStore`), never
- * Home's. A pinned kind ALSO stays in its section; both copies show current.
+ * THE LIST IS THE HOME RAIL'S POPULATION, NOT ITS COMPONENT: `homeRootKinds()`
+ * (the Home rail's groups, flattened in order) restricted to the Workspace
+ * kinds (D7). NO GROUPS (task 01a11230): the Work / Library / Agents & People /
+ * Code accordions are gone — every kind sits in one list, no headings, no
+ * dividers. Pins and the expanded flag are the Workspace's own (`railStore`),
+ * never Home's. A pinned kind ALSO stays in the list; both copies show current.
  *
  * A kind button IS the browser's kind control (click ⇒ `browsers.main.kind`);
  * a 500ms hold — pointer or Enter/Space — toggles its pin instead, and the
@@ -19,8 +21,7 @@
  *
  * LIVE COUNTS (task 01a111a2-f9ad, design log R42) on four kinds only — Tasks,
  * Stories, Sessions, Chats (`useRailCounts`). Collapsed: a run-tinted corner
- * badge. Expanded: the number right-aligned in the row. A closed section whose
- * kinds hold a count shows a run dot, never a sum (the units differ).
+ * badge. Expanded: the number right-aligned in the row.
  */
 import {
   cloneElement,
@@ -37,13 +38,13 @@ import {
   type ReactNode,
 } from 'react';
 import { useStore } from 'zustand';
-import { KindIcon, VIEW_ART, homeRailGroups, homeRailPinnedKinds, type KindConfig } from '../../domain';
+import { KindIcon, VIEW_ART, homeRailPinnedKinds, homeRootKinds, type KindConfig } from '../../domain';
 import { VectorIcon } from '../../kit/VectorIcon';
 import { getRailStore } from '../runtime/railStore';
 import { isWorkspaceKind } from '../runtime/types';
 import { useWorkspace, useWorkspaceState } from './context';
-import { railCountLabel, railKindLabel, railSectionLabel, isRailCountKind, useRailCounts, type RailCounts } from './useRailCounts';
-import { RAIL_COLLAPSE_ART, RAIL_EXPAND_ART, RAIL_SECTION_ART } from './railArt';
+import { railCountLabel, railKindLabel, isRailCountKind, useRailCounts, type RailCounts } from './useRailCounts';
+import { RAIL_COLLAPSE_ART, RAIL_EXPAND_ART } from './railArt';
 import { RailAttention, RailStatus } from './RailStatus';
 
 const BOTTOM_GROUP_IDS = ['craft', 'settings', 'help'] as const;
@@ -68,19 +69,12 @@ export function WorkspaceRail() {
   const { gate, dispatch, spaceId } = useWorkspace();
   const railStore = useMemo(() => getRailStore(spaceId), [spaceId]);
   const pins = useStore(railStore, (s) => s.pins);
-  const openChoices = useStore(railStore, (s) => s.open);
   const expanded = useStore(railStore, (s) => s.expanded);
   const browserKind = useWorkspaceState((s) => s.browsers.main.kind);
   const [announcement, setAnnouncement] = useState('');
   const counts: RailCounts = useRailCounts();
 
-  const sections = useMemo(
-    () =>
-      homeRailGroups()
-        .map((group) => ({ ...group, kinds: group.kinds.filter((config) => isWorkspaceKind(config.kind)) }))
-        .filter((group) => group.kinds.length > 0),
-    [],
-  );
+  const kinds = useMemo(() => homeRootKinds().filter((config) => isWorkspaceKind(config.kind)), []);
   const pinned = useMemo(() => homeRailPinnedKinds(pins).filter((config) => isWorkspaceKind(config.kind)), [pins]);
   const bottom = BOTTOM_GROUP_IDS.flatMap((id) => {
     const tab = gate.shellTabs.find((t) => t.id === id);
@@ -116,7 +110,7 @@ export function WorkspaceRail() {
     return () => window.removeEventListener('keydown', onKey, true);
   }, [toggleExpanded]);
 
-  const kindButton = (config: KindConfig, placement: 'pinned' | 'section') => (
+  const kindButton = (config: KindConfig, placement: 'pinned' | 'list') => (
     <KindButton
       key={`${placement}:${config.kind}`}
       config={config}
@@ -147,56 +141,9 @@ export function WorkspaceRail() {
             <hr className="tws-rail-rule" />
           </>
         ) : null}
-        {sections.map((section) => {
-          const holdsCurrent = section.kinds.some((config) => config.kind === browserKind);
-          const open = openChoices[section.id] ?? holdsCurrent;
-          const bodyId = `tws-rail-section-${section.id}`;
-          const sectionKinds = section.kinds.map((config) => config.kind);
-          const sectionLabel = railSectionLabel(section.label, sectionKinds, counts);
-          /* R42: a dot, not a sum — only while closed, when no kind badge shows. */
-          const sectionLive = !open && sectionLabel !== section.label;
-          return (
-            <div
-              key={section.id}
-              className="tws-rail-group"
-              role="group"
-              aria-label={section.label}
-              data-section={section.id}
-            >
-              <RailTip label={expanded ? null : sectionLive ? sectionLabel : section.label}>
-                <button
-                  type="button"
-                  className="tws-rail-btn tws-rail-section"
-                  aria-label={sectionLive ? sectionLabel : section.label}
-                  aria-expanded={open}
-                  aria-controls={open ? bodyId : undefined}
-                  /* A closed section holding the browser's kind keeps the bar,
-                     so the selection is never invisible. */
-                  aria-current={!open && holdsCurrent ? 'true' : undefined}
-                  onClick={() => railStore.getState().setOpen(section.id, !open)}
-                >
-                  <span className="tws-rail-icon">
-                    <VectorIcon paths={RAIL_SECTION_ART[section.id] ?? VIEW_ART.workspace} size={18} />
-                    {sectionLive ? <span className="tws-rail-live-dot" data-testid="tws-rail-live-dot" aria-hidden /> : null}
-                  </span>
-                  {expanded ? (
-                    <span className="tws-rail-label">
-                      <span className="tws-rail-chevron" aria-hidden>
-                        {open ? '▾' : '▸'}
-                      </span>
-                      {section.label}
-                    </span>
-                  ) : null}
-                </button>
-              </RailTip>
-              {open ? (
-                <div id={bodyId} className="tws-rail-section-body">
-                  {section.kinds.map((config) => kindButton(config, 'section'))}
-                </div>
-              ) : null}
-            </div>
-          );
-        })}
+        <div className="tws-rail-group" role="group" aria-label="Kinds" data-testid="tws-rail-kinds">
+          {kinds.map((config) => kindButton(config, 'list'))}
+        </div>
       </div>
       <hr className="tws-rail-rule" />
       <div className="tws-rail-bottom" role="group" aria-label="Work tools">
@@ -276,8 +223,8 @@ export function WorkspaceRail() {
 
 interface KindButtonProps {
   config: KindConfig;
-  placement: 'pinned' | 'section';
-  /** The Pinned copy always unpins; a section copy pins or unpins. */
+  placement: 'pinned' | 'list';
+  /** The Pinned copy always unpins; a list copy pins or unpins. */
   isPinned: boolean;
   current: boolean;
   expanded: boolean;
