@@ -31,8 +31,9 @@ import { useRowLifecycle } from '../../views/useRowLifecycle';
 import { useEntityVerbs } from '../../views/useEntityVerbs';
 import type { GateData } from '../../views/useGateData';
 import type { WorkspaceRuntime } from '../runtime/dispatch';
-import { isWorkspaceKind, type EntityTabRecord, type TabId, type TabRecord, type TabSubview, type TabUi } from '../runtime/types';
+import { type EntityTabRecord, type TabId, type TabRecord, type TabSubview, type TabUi } from '../runtime/types';
 import { useWorkspace } from '../view/context';
+import { useLinkedOpen } from '../view/LinkedTrail';
 import type { KindAdapter } from './registry';
 
 export interface EntityAdapterHandle {
@@ -419,51 +420,10 @@ export function EntityTabBody({ tab, adapter, onHandle }: EntityTabBodyProps) {
   const data = gate.data as PullableData;
   const chrome = useEntityChrome();
   const { availability, retry } = useAvailability(data, tab.entityId);
-  const detail = data.detailOf(tab.entityId);
 
   /* Drilling from the body opens (or focuses) the target's own tab, carrying
-     this tab on the trail (Spec A §11). A target whose kind is not known yet
-     is pulled first and opened when it lands. */
-  const [pendingOpen, setPendingOpen] = useState<string | null>(null);
-  const openTab = useCallback(
-    (kind: string, entityId: string, withTrail = false) => {
-      if (!isWorkspaceKind(kind)) {
-        gate.navigateView({ view: 'entity', entityId: entityId as EntityId, origin: null });
-        return;
-      }
-      const trail = withTrail
-        ? [...(tab.ui.trail ?? []), { entityId: tab.entityId, kind: tab.kind, title: detail?.title ?? '' }]
-        : undefined;
-      dispatch({
-        command: 'workspace.tabs.open',
-        args: { kind, entityId, ...(trail ? { trail } : {}) },
-        source: 'click',
-      });
-    },
-    [dispatch, gate, tab, detail?.title],
-  );
-  const kindOf = useCallback(
-    (id: string): string | null =>
-      data.detailOf(id)?.kind ?? data.domain.store.getState().entities[id as EntityId]?.kind ?? null,
-    [data],
-  );
-  const onOpenEntity = useCallback(
-    (id: string) => {
-      const kind = kindOf(id);
-      if (kind) openTab(kind, id, true);
-      else {
-        data.pull?.(id);
-        setPendingOpen(id);
-      }
-    },
-    [kindOf, openTab, data],
-  );
-  const pendingKind = pendingOpen ? kindOf(pendingOpen) : null;
-  useEffect(() => {
-    if (!pendingOpen || !pendingKind) return;
-    setPendingOpen(null);
-    openTab(pendingKind, pendingOpen, true);
-  }, [pendingOpen, pendingKind, openTab]);
+     this tab on the trail (Spec A §11; `useLinkedOpen` in view/LinkedTrail). */
+  const { openLinked: onOpenEntity, openTab } = useLinkedOpen(tab);
 
   const openPlain = useCallback((kind: string, id: string) => openTab(kind, id), [openTab]);
   const { host, verbs } = useWorkspacePanelHost(data, tab.entityId, openPlain);
