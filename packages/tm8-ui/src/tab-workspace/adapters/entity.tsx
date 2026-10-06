@@ -46,6 +46,13 @@ export interface EntityTabBodyProps {
   adapter: KindAdapter;
   /** Registers the mounted body's capture/restore handle; null on unmount. */
   onHandle?: (handle: EntityAdapterHandle | null) => void;
+  /**
+   * OPT-IN host verbs (Craft → Designs): a host that is not the tab strip —
+   * a design's page — says where a drilled entity opens and what "close"
+   * means. Absent ⇒ the Workspace's own: a linked tab, and closing the tab.
+   */
+  onOpenEntity?: (entityId: string) => void;
+  onClose?: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -428,7 +435,7 @@ function UnavailableBody({
     document, the body for a kind that owns its height (see content.css). */
 const SCROLL_SELECTOR = ".pn-panel[data-embedded-flow='document'], .pn-panel[data-embedded-flow='fill'] .pn-body";
 
-export function EntityTabBody({ tab, adapter, onHandle }: EntityTabBodyProps) {
+export function EntityTabBody({ tab, adapter, onHandle, onOpenEntity: hostOpen, onClose: hostClose }: EntityTabBodyProps) {
   const { gate, dispatch, runtime } = useWorkspace();
   const data = gate.data as PullableData;
   const chrome = useEntityChrome();
@@ -436,14 +443,18 @@ export function EntityTabBody({ tab, adapter, onHandle }: EntityTabBodyProps) {
 
   /* Drilling from the body opens (or focuses) the target's own tab, carrying
      this tab on the trail (Spec A §11; `useLinkedOpen` in view/LinkedTrail). */
-  const { openLinked: onOpenEntity, openTab } = useLinkedOpen(tab);
+  const { openLinked, openTab } = useLinkedOpen(tab);
+  const onOpenEntity = hostOpen ?? openLinked;
 
-  const openPlain = useCallback((kind: string, id: string) => openTab(kind, id), [openTab]);
+  const openPlain = useCallback(
+    (kind: string, id: string) => (hostOpen ? hostOpen(id) : openTab(kind, id)),
+    [hostOpen, openTab],
+  );
   const { host, verbs } = useWorkspacePanelHost(data, tab.entityId, openPlain);
 
   const closeTab = useCallback(
-    () => dispatch({ command: 'workspace.tabs.close', args: { tabId: tab.id }, source: 'click' }),
-    [dispatch, tab.id],
+    () => (hostClose ? hostClose() : dispatch({ command: 'workspace.tabs.close', args: { tabId: tab.id }, source: 'click' })),
+    [hostClose, dispatch, tab.id],
   );
   const onTabChange = useCallback(
     (next: PanelTab) =>

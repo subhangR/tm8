@@ -36,6 +36,7 @@ import {
   resolveProfileChain,
 } from './index';
 import type { ListConfig } from './types';
+import { DESIGN_KIND } from './design';
 
 const CORE_KINDS = CoreEntityKindSchema.options;
 

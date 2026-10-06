@@ -321,14 +321,15 @@ export const KIND_ART = {
   ],
 
   /**
-   * Stacked pages (304): a design is an ordered set of pages. Provisional —
-   * the Craft → Designs UI lane owns the final mark.
+   * Two sheets, one behind the other, the front one with a tab line across
+   * its top (Craft → Designs): a design is an ordered set of pages, and its
+   * page row is the first thing its screen draws. Distinct from `doc`'s single
+   * folded sheet and `artifact`'s frame.
    */
   design: [
-    'M5 5h8v8H5z',
-    'M3 11V3h8',
-    'M7 8h4',
-    'M7 10h2.5',
+    'M5.4 2.6h6.8a1 1 0 0 1 1 1v6.8',
+    'M3.4 4.8h6.8a1 1 0 0 1 1 1v6.6a1 1 0 0 1-1 1H3.4a1 1 0 0 1-1-1V5.8a1 1 0 0 1 1-1z',
+    'M2.4 7.4h8.8',
   ],
 } as const satisfies Record<string, KindArt>;
 

@@ -247,6 +247,28 @@ function parseQ(raw: string | null, onDrop: () => void): QValue | null {
  * param: anything unparseable is discarded ATOMICALLY and the canonical
  * default renders in its place.
  */
+type CraftView = Extract<NavView, { view: 'craft' }>;
+
+/** `/craft/…` segments → the craft view; ids only, cut at the first non-id. */
+function craftOf(segments: readonly string[]): CraftView {
+  const keys = ['designId', 'pageId', 'nestedPageId'] as const;
+  const view: CraftView = { view: 'craft' };
+  for (const [index, key] of keys.entries()) {
+    const segment = segments[index];
+    if (!segment || !ID_LIKE.test(segment)) break;
+    view[key] = segment as EntityId;
+  }
+  return view;
+}
+
+/** The craft view → its path after `/craft`, each id only under the one before it. */
+function craftPath(view: CraftView): string {
+  if (!view.designId) return '';
+  if (!view.pageId) return `/${enc(view.designId)}`;
+  if (!view.nestedPageId) return `/${enc(view.designId)}/${enc(view.pageId)}`;
+  return `/${enc(view.designId)}/${enc(view.pageId)}/${enc(view.nestedPageId)}`;
+}
+
 export function parse(hash: string): ParseOutcome {
   const dropped: DropClass[] = [];
   const drop = (cls: DropClass) => () => {
@@ -439,8 +461,11 @@ function parseTarget(
       /* The task Board (2026-08-16) — same flat whole-centre posture. */
       return { view: 'board' };
     case 'craft':
-      /* The Craft studio (2026-08-16) — same flat whole-centre posture. */
-      return { view: 'craft' };
+      /* Craft (2026-08-16) — bare, the Designs home; then up to three ids
+         (design, page, nested page). Lossy-tolerant like `?about=`: the path
+         is cut at the first segment that is not plausibly an id, so a
+         mangled page still lands on its design. */
+      return craftOf(rest.slice(1));
     case 'help': {
       /* The Help shelf (2026-08-19), with an optional open plate (2026-08-20)
          in the `settings/{section}` shape. The slug is NOT checked against the
@@ -574,7 +599,7 @@ function pathOf(route: Route): string {
     case 'board':
       return `${base}/board`;
     case 'craft':
-      return `${base}/craft`;
+      return `${base}/craft${craftPath(t)}`;
     case 'help':
       return t.plate ? `${base}/help/${enc(t.plate)}` : `${base}/help`;
     case 'boardV2':
