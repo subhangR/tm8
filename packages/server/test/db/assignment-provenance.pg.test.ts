@@ -439,6 +439,12 @@ describe.sequential('task assignment provenance (129)', () => {
     // shape again. It applies cleanly LAST, after the styles/mcp shims: its
     // plpgsql bodies resolve tables lazily and its backfill finds no graphs.
     database.apply(['304_design_kind.sql']);
+    // 302 (Spec D1): entity reads select the session OUTCOME columns. Same
+    // shape as the shims above — only the read columns, none of 302's rules.
+    await database.query(`alter table public.work_sessions
+      add column outcome text not null default 'open', add column outcome_at timestamptz,
+      add column outcome_by uuid, add column receipt_message_id uuid,
+      add column outcome_source text, add column outcome_note text`);
   }, 180_000);
 
   afterAll(async () => {
