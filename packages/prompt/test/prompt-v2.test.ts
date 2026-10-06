@@ -258,11 +258,11 @@ describe('v2 sizes, measured on doc 01a0d456\'s own fixture', () => {
     // then +24 B for rule 4's good/bad example (task 01a0da5a, doc 01a0da65 D6).
     // Spec D1 §7 (301): +99 B worker / +94 B coordinator for the `tm8 session complete`
     // close-out line; ceilings re-set to the measured size + 9 B. MEASURED.
-    // P0g (task 01a111b2-aaf2): +771 B worker for the task routine's short forms
+    // P0g (task 01a111b2-aaf2): +780 B worker for the task routine's short forms
     // (it replaces the finish and session-complete rules), +125 B coordinator for
     // its keep-status line; ceilings re-set to the measured size + 9 B. MEASURED.
-    worker: { bytes: 3861, ceiling: 3870, graph: true },
-    'coordinated-worker': { bytes: 4203, ceiling: 4212, graph: true },
+    worker: { bytes: 3870, ceiling: 3879, graph: true },
+    'coordinated-worker': { bytes: 4212, ceiling: 4221, graph: true },
     coordinator: { bytes: 4118, ceiling: 4127, graph: true },
     'coordinated-coordinator': { bytes: 4460, ceiling: 4469, graph: true },
     dispatcher: { bytes: 3195, ceiling: 3200, graph: false },

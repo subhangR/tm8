@@ -59,7 +59,7 @@ export const WORKER_ROUTINE_STEPS: readonly WorkerRoutineStep[] = [
   },
   {
     name: 'Put what you create in its place',
-    short: 'by what it is about: under the same-kind entity it is part of (`--parent`), else a root; across kinds an edge',
+    short: 'place it by what it is about, under the same-kind entity it is part of (`--parent`), else a root; across kinds an edge',
     // The wording of P0f's PLACEMENT_RULE (PR #1065, owner-reviewed 6 Oct). When
     // #1065 lands, this becomes `rule: PLACEMENT_RULE` and v1 drops its copy.
     rule:
