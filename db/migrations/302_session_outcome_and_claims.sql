@@ -986,7 +986,8 @@ begin
      and me.deleted_at is null and m.redacted_at is null
      and m.created_at >= born
      and (m.author_id = p_session_id or m.author_id in (
-           select r.dst_id from public.edges r where r.src_id = p_session_id and r.type = 'relates_to'))
+           -- P0b (canonical edges): the teammate is the participates_in source.
+           select r.src_id from public.edges r where r.dst_id = p_session_id and r.type = 'participates_in'))
    order by m.created_at desc, m.entity_id desc
    limit 1;
   if found is null then
@@ -1350,9 +1351,11 @@ begin
   actor := internal.resolve_actor(p_actor_id, e.space_id);
   perform internal.bind_actor(actor);
 
-  select dst_id into member_id
+  -- P0b (canonical edges): the session's teammate is its participates_in
+  -- source (team_member -> work_session), one row by guard_w1_edge.
+  select src_id into member_id
     from public.edges
-   where src_id = p_session_id and type = 'relates_to'
+   where dst_id = p_session_id and type = 'participates_in'
    limit 1;
   if member_id is not null and not internal.can_act_as(member_id, e.space_id) then
     raise exception 'not permitted to resume this persona' using errcode = '42501';
@@ -1433,8 +1436,8 @@ begin
       if r.status_category = 'done' then v_outcome := 'completed'; end if;
     elsif r.ended_kind in ('stopped_by_operator', 'exited_clean') then
       anchors := internal.session_anchor_ids(r.entity_id);
-      select dst_id into member from public.edges
-       where src_id = r.entity_id and type = 'relates_to' limit 1;
+      select src_id into member from public.edges
+       where dst_id = r.entity_id and type = 'participates_in' limit 1;
       select exists (
         select 1 from public.messages m
          where m.anchor_id = any(anchors)

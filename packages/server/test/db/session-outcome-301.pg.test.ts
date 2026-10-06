@@ -14,6 +14,8 @@
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import type { Querier } from '../../src/db/types.js';
+import { loadEntitySummariesByIds } from '../../src/facade/entity-read.js';
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from './w1-pg.js';
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 180_000 });
@@ -744,6 +746,59 @@ describe('301 — completed_sessions_to_close (Q3)', () => {
     const child = await spawn([await createTask('ac-child')]);
     await database.query(`update public.entities set parent_id = $2 where id = $1`, [child, parent]);
     expect(await due()).not.toContain(parent);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Spec D1 R1 / scenario 16 — OFFERED tasks on the session summary
+// ---------------------------------------------------------------------------
+
+describe('302 — offeredTaskIds: handed to the session, not claimed (scenario 16)', () => {
+  async function handoff(taskId: string, sessionId: string, withdrawn = false): Promise<void> {
+    await database.transaction(async (c) => {
+      await c.query('set local role tm8_graph_owner');
+      await c.query(
+        `insert into public.session_handoffs(handoff_id, source_entity_id, target_work_session_id,
+           delivery_status, record_status, request_hash, source_snapshot, envelope_hash,
+           identity_id, request_id, author_id, source_space_id, resolved_content_version,
+           withdrawn_at, withdraw_reason, withdrawn_by)
+         values ($1, $2, $3, 'delivered', $4, 'h', '{}'::jsonb, 'e', $5, 'req', $6, $7, 1,
+                 case when $8 then now() end, case when $8 then 'not needed' end,
+                 case when $8 then $6::uuid end)`,
+        [cmid('handoff'), taskId, sessionId, withdrawn ? 'withdrawn' : 'recorded',
+         fixture.identityId, fixture.memberId, fixture.spaceId, withdrawn],
+      );
+    });
+  }
+  async function offered(sessionId: string): Promise<string[] | undefined> {
+    return database.transaction(async (c) => {
+      await c.query('set local role tm8_graph_owner');
+      const q: Querier = {
+        query: async <R>(sql: string, params: readonly unknown[] = []) => (await c.query(sql, [...params])).rows as R[],
+        rpc: async () => { throw new Error('read only'); },
+      };
+      const [summary] = await loadEntitySummariesByIds(q, [sessionId], fixture.identityId);
+      return (summary!.state as { offeredTaskIds?: string[] }).offeredTaskIds;
+    });
+  }
+
+  it('a handed-off task is offered — not a claim, no working_on — until the session claims it', async () => {
+    const own = await createTask('offer-own');
+    const extra = await createTask('offer-extra');
+    const s = await running([own]);
+    await handoff(extra, s);
+    expect(await offered(s)).toEqual([extra]);
+    expect(active(await claims({ src: s })).map((c) => c.dst_id)).toEqual([own]);
+
+    await setWork(extra, 'working', { claim: true, asSession: s });
+    expect(await offered(s)).toEqual([]);
+  });
+
+  it('a withdrawn handoff offers nothing', async () => {
+    const t = await createTask('offer-withdrawn');
+    const s = await running([]);
+    await handoff(t, s, true);
+    expect(await offered(s)).toEqual([]);
   });
 });
 
