@@ -535,6 +535,15 @@ const ORDERINGS: Record<
     },
     dir: 1,
   },
+  /** 307: `coalesce(<weighted percent>, 101)` — a task's `progress`, a story's `weighted`. */
+  progress: {
+    of: (r) => {
+      const s = r.state;
+      const percent = s.kind === 'task' ? s.progress?.percent : s.kind === 'story' ? s.weighted?.percent : undefined;
+      return typeof percent === 'number' ? percent : 101;
+    },
+    dir: 1,
+  },
 };
 
 /**

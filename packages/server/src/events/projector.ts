@@ -53,7 +53,7 @@ import type { Querier } from '../db/types.js';
 // The ONE unread definition, shared with the facade assembler on purpose — see
 // the `channel` arm of stateOf. `entity-read.ts` imports nothing from `events/`,
 // so this direction adds no cycle.
-import { chatContextOf, isEndedKind, outcomeFacts, loadChatSubjects, loadUnreadCounts, storySummaryOf, designSummaryOf, type ChatSubject } from '../facade/entity-read.js';
+import { chatContextOf, isEndedKind, outcomeFacts, loadChatSubjects, loadUnreadCounts, storySummaryOf, designSummaryOf, taskProgressOf, type ChatSubject } from '../facade/entity-read.js';
 // The ONE narrowing of the status columns, shared with the read path. Both
 // files used to narrow `work_status` on their own and DISAGREED about an
 // unrecognised value; `facade/status.ts` is the fix and its docblock is the
@@ -68,6 +68,7 @@ import { loadHumanMessageAuthorIds, type HumanMessageAuthorIds } from '../facade
 import {
   loadLinkedPullRequestBadges,
   projectForgeFacts,
+  projectTrackingFreshness,
   type LinkedPullRequestBadges,
 } from '../tracking/pr-projection.js';
 import { loadTaskLiveSessionBadges } from '../tracking/live-session-projection.js';
@@ -289,6 +290,7 @@ interface SummaryRow {
   pr_head_ref: string | null;
   pr_url: string | null;
   pr_fetched_at: Date | string | null;
+  pr_last_polled_at: Date | string | null;
   commit_repo: string | null;
   commit_sha: string | null;
   commit_message: string | null;
@@ -344,6 +346,7 @@ interface SummaryRow {
   design_title?: string | null;
   design_description?: string | null;
   design_summary?: unknown;
+  task_progress?: unknown;
   sty_title?: string | null;
   sty_description?: string | null;
   sty_schema_version?: number | null;
@@ -487,6 +490,9 @@ select
   pr.head_ref        as pr_head_ref,
   pr.url             as pr_url,
   pr.fetched_at      as pr_fetched_at,
+  -- 306's column, read through the row so position-pinned suites that stop
+  -- the chain before 306 still run this shared SQL.
+  (to_jsonb(pr) ->> 'last_polled_at') as pr_last_polled_at,
   cm.repo            as commit_repo,
   cm.sha             as commit_sha,
   cm.message         as commit_message,
@@ -554,6 +560,8 @@ select
   dsg.title          as design_title,
   dsg.description    as design_description,
   case when e.kind = 'design' then internal.design_summary(e.id) end as design_summary,
+  -- 307: likewise the SAME function entity-read.ts selects.
+  case when e.kind = 'task' then internal.task_progress(e.id) end as task_progress,
   -- Space styles (284): the WHOLE document rides the summary on purpose (spec
   -- §4.3, sign-off): entity.upsert after a push is how every viewer on the
   -- style repaints. Bounded by the doors: ≤ 200 vars of ≤ 512 chars, css ≤ 16 KiB.
@@ -1300,6 +1308,8 @@ export class PgEntityProjector implements EntityProjector {
             assignedAt: assignment.assignedAt,
           })),
           acceptance: { total: criteria.length, completed },
+          // MIRRORS entity-read.ts stateOf: the same `internal.task_progress`.
+          ...taskProgressOf(r.task_progress),
           completionGate: r.completion_gate === 'pr_merged' ? 'pr_merged' : 'none',
         };
       }
@@ -1430,10 +1440,8 @@ export class PgEntityProjector implements EntityProjector {
           repository: r.pr_repo ?? '',
           number: r.pr_number ?? 0,
           state: r.pr_state ?? 'open',
-          fetchedAt: iso(r.pr_fetched_at),
-          // `stale` is "the mirror is older than the upstream", which needs a
-          // tracking comparison. Never fetched ⇒ definitionally stale.
-          stale: r.pr_fetched_at === null,
+          // 306: never polled, or open and unpolled past the threshold.
+          ...projectTrackingFreshness(r.pr_state, r.pr_fetched_at, r.pr_last_polled_at),
           ...projectForgeFacts(r.pr_ci_status, r.pr_mergeable_state, r.pr_head_ref),
         };
         return r.pr_url === null ? base : { ...base, url: r.pr_url };

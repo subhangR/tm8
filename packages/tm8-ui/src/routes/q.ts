@@ -29,7 +29,7 @@
 import type { QValue } from './types';
 
 const SORT_KEYS = new Set([
-  'activityAt_desc', 'createdAt_desc', 'position', 'dueDate', 'startDate', 'priority',
+  'activityAt_desc', 'createdAt_desc', 'position', 'dueDate', 'startDate', 'priority', 'progress',
 ]);
 
 /** The pre-phase-9 spelling of `filters.status` / `groupBy: 'status'`. */

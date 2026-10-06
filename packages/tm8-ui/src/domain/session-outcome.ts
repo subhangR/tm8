@@ -66,6 +66,13 @@ export interface SessionClaim {
   endReason?: string | null;
 }
 
+/**
+ * The ended reason a resume that failed at spawn writes — the server's
+ * `RESUME_FAILED_PREFIX` (packages/execution SpawnService.ts). Spec D1 §9
+ * scenario 29.
+ */
+export const RESUME_FAILED_PREFIX = 'Failed to resume: ';
+
 const str = (v: unknown): string | null => (typeof v === 'string' && v.length > 0 ? v : null);
 
 /** Is this state the work_session arm? The one kind check session code needs. */
@@ -362,11 +369,13 @@ export function sessionRowWord(
 
   // -- open, process ended: Interrupted -------------------------------------
   const reason = rec.endedReason;
+  // Before the ended kind: resume keeps the PREVIOUS run's kind on the row, so
+  // a failed resume would otherwise read as the old crash (scenario 29).
+  if (rec.status === 'failed' && (ctx.resumeFailed === true || reason?.startsWith(RESUME_FAILED_PREFIX))) {
+    return word('failed_resume', 'Failed to resume', 'block', 'ring-x', 'red', true, reason);
+  }
   if (rec.status === 'failed' && rec.endedKind === null) {
-    const resumed = ctx.resumeFailed === true || /resum/i.test(reason ?? '');
-    return resumed
-      ? word('failed_resume', 'Failed to resume', 'block', 'ring-x', 'red', true, reason)
-      : word('failed_start', 'Failed to start', 'block', 'ring-x', 'red', true, reason);
+    return word('failed_start', 'Failed to start', 'block', 'ring-x', 'red', true, reason);
   }
   if (rec.endedKind === 'credential_revoked') {
     return word('credential', 'Credential disconnected', 'block', 'ring-x', 'red', true, reason);
@@ -722,14 +731,15 @@ export function claimsFromEdges(
 
 /**
  * §5.3.1 case 10: a spawn refused with `session concurrency cap reached`
- * names its cause and the remedy. Completed sessions no longer count toward
- * the limit server-side, so the remaining ✓ rows are spare capacity the
- * operator reclaims with Stop all finished (Running tab). Null for any other
- * refusal. "N of N" is quoted only when the node's message carries the numbers.
+ * names its cause and the remedy. Completed (✓) sessions never count toward
+ * the limit (`internal.live_work_session_count`), so the slots are all held
+ * by OPEN sessions and stopping ✓ rows frees none — the hint must not offer
+ * that. Null for any other refusal. "N of N" is quoted only when the node's
+ * message carries the numbers.
  */
 export function capRefusalHint(message: string | null | undefined): string | null {
   if (!message || !/concurrency cap/i.test(message)) return null;
   const nums = message.match(/(\d+)\s*(?:of|\/)\s*(\d+)/);
   const used = nums ? `${nums[1]} of ${nums[2]} slots used. ` : 'Every session slot is in use. ';
-  return `${used}Finished sessions whose process is still open hold a slot until it closes — Stop all finished from the Sessions list (Running tab), then launch again.`;
+  return `${used}Only open sessions count; completed (✓) ones do not. Complete or stop a session that is done (Sessions list, Running tab), then launch again.`;
 }

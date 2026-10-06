@@ -257,6 +257,9 @@ export function attribute(row: ExaminedRow, ctx: AttributionContext): Attributio
     case 'entity.deleted': {
       const entity = e['entity'] as EntitySummary;
       if (entity.kind === 'message') return [];
+      // 307: a progress re-emit (a descendant moved) is not a change to this
+      // entity; live clients get it as an upsert, the change feed skips it.
+      if (p['derived'] !== undefined) return [];
       // The class of an upsert is decided per entity once all its spine rows
       // are known (`spineChanges`); here it only marks the entity touched.
       return [{ entityId: entity.id, via: 'self', change: row.type === 'entity.deleted' ? 'deleted' : null, actor: null }];

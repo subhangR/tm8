@@ -49,6 +49,7 @@ import { DESIGN_KIND } from './design';
 import { CONTAINER_CAPABILITY_REASONS } from './actions';
 import type { SessionLiveness } from '../data/seam';
 import { SESSION_TABS, sessionNeedsAttentionOf } from './session-outcome';
+import { storyTileProgress, taskTileProgress } from './progress';
 
 /** WLT §2.1 reserved words — never a kind slug. */
 export const RESERVED_SLUGS: readonly string[] = [
@@ -399,6 +400,8 @@ const BY_POSITION: SortSpec = { key: 'position', label: 'Manual order' };
 const BY_DUE: SortSpec = { key: 'dueDate', label: 'Due date' };
 const BY_START: SortSpec = { key: 'startDate', label: 'Start date' };
 const BY_PRIORITY: SortSpec = { key: 'priority', label: 'Priority' };
+/* 307: least progress first (points-weighted; rows without a figure last). */
+const BY_PROGRESS: SortSpec = { key: 'progress', label: 'Progress' };
 
 /**
  * Offering a sort BESIDE the default one. Exactly one entry per kind may carry
@@ -768,13 +771,14 @@ const ROWS: readonly KindConfig[] = [
           { source: 'pulls' },
           { source: 'workingActors' },
         ],
+        progress: taskTileProgress,
       },
       primaryActions: ['run', 'coordinate'],
       filters: [assigneeFilter, taskAttentionFilter, statusFilter, readyToPullFilter],
       /* `BY_START` beside `BY_DUE`, in the order the two dates read: a task
          starts and then it is due. Both are offered because the task kind is
          the one that HAS them — the opt-in the `DEFAULT_SORT` note describes. */
-      sort: [...DEFAULT_SORT, BY_START, BY_DUE, BY_PRIORITY],
+      sort: [...DEFAULT_SORT, BY_START, BY_DUE, BY_PRIORITY, BY_PROGRESS],
       inlineEdit: { status: true, title: true },
       stateControl: TASK_STATE_CONTROL,
       valueControls: [TASK_PRIORITY_CONTROL],
@@ -1906,20 +1910,12 @@ const ROWS: readonly KindConfig[] = [
       tree: { by: 'hierarchy', guideLines: true },
       tile: {
         badges: [{ source: 'messages' }],
-        // Tasks done of tasks in play, at the row's right edge — the same
-        // `taskProgress` the story page's hero reads as "N of M tasks done".
+        // 307: the points-weighted percent and done/total points at the
+        // row's right edge — the same `weighted` the story page's ring reads.
         // Child stories carry their own bar on their own rows.
-        progress: (row) =>
-          row.state.kind === 'story'
-            ? {
-                done: row.state.taskProgress.done,
-                work: row.state.taskProgress.work,
-                inProgress: row.state.taskProgress.inProgress,
-                blocked: row.state.taskProgress.blocked,
-                noun: 'tasks',
-              }
-            : null,
+        progress: storyTileProgress,
       },
+      sort: [...DEFAULT_SORT, BY_PROGRESS],
       inlineEdit: { title: true },
     }),
     panel: {

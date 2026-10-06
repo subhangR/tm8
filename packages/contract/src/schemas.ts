@@ -47,6 +47,7 @@ import { FormQuestionRowSchema, FormSectionRowSchema, FormSettingsSchema, FormSt
 import { OpRequestEntityFactsSchema } from './op-requests.js';
 import { EntityContextStorySchema, StoryContentSchema, StoryStateSchema } from './story.js';
 import { DesignContentSchema, DesignStateSchema, EntityContextDesignPageSchema } from './design.js';
+import { TaskProgressSchema } from './progress.js';
 import {
   SELECTION_HEADER_KINDS,
   SELECTION_HEADER_SOURCES,
@@ -475,6 +476,8 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
       assignedAt: IsoTimestamp,
     }).strict()).optional(),
     acceptance: z.object({ total: z.number().int().nonnegative(), completed: z.number().int().nonnegative() }).strict(),
+    // 307: points-weighted subtree progress, additive + optional.
+    progress: TaskProgressSchema.optional(),
     // 082's opt-in completion gate, additive + optional (Git UI wave).
     completionGate: z.enum(['none', 'pr_merged']).optional(),
   }).strict(),
@@ -527,6 +530,7 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     state: z.string(),
     url: z.string().optional(),
     fetchedAt: z.string().nullable().optional(),
+    lastPolledAt: z.string().nullable().optional(),
     stale: z.boolean(),
     // Nullable-and-optional is deliberate honesty (forge observer): null
     // node has no verdict — either nothing has observed the PR yet or the
@@ -1337,7 +1341,7 @@ function collectionQueryShape() {
     filters: CollectionFiltersSchema.optional(),
     layout: z.enum(['list', 'board', 'tree', 'feed', 'gallery', 'graph']).optional(),
     groupBy: GroupBySchema.optional(),
-    sort: z.enum(['activityAt_desc', 'updatedAt_desc', 'createdAt_desc', 'position', 'dueDate', 'startDate', 'priority']).optional(),
+    sort: z.enum(['activityAt_desc', 'updatedAt_desc', 'createdAt_desc', 'position', 'dueDate', 'startDate', 'priority', 'progress']).optional(),
     cursor: CursorSchema.optional(),
     limit: z.number().int().positive().optional(),
   };

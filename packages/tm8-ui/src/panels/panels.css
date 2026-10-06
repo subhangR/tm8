@@ -3176,6 +3176,12 @@
 .cv2-root .lp__progress-seg--blocked { background: var(--pn-block); }
 .cv2-root .lp__progress--done .lp__progress-seg--done { background: var(--pn-run); }
 .cv2-root .lp__progress--done .lp__progress-figure { color: var(--pn-run); }
+/* 307: a done task whose subtree is not — the status says done, this says why
+   the bar is short. */
+.cv2-root .lp__progress-marker {
+  padding: 0 4px; border-radius: var(--pn-r-pill);
+  background: var(--pn-line); color: var(--pn-ink-2);
+}
 
 /* `pn-st__actions`, rule for rule: the cluster floats over the row's right edge
    on its own backing rather than living in the flow. The old version swapped

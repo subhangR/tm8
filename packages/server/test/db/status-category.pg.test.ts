@@ -386,6 +386,17 @@ describe.sequential('147 — entities.status_category', () => {
     // shape again. It applies cleanly LAST, after the styles/mcp shims: its
     // plpgsql bodies resolve tables lazily and its backfill finds no graphs.
     database.apply(['304_design_kind.sql']);
+    // 307 (task progress): `entity-read.ts` and the projector select
+    // `internal.task_progress(e.id)` on task rows. 307 itself rewrites
+    // story_summary over 289/295 and adds triggers this partial chain does not
+    // need, so — like the styles/mcp shims — only the read's signature is
+    // mirrored: a stub returning NULL, which the readers treat as "no figure".
+    // DELETE this shim if this suite ever applies the chain through 307.
+    await database.query(`set role tm8_graph_owner;
+      create or replace function internal.task_progress(p_task_id uuid) returns jsonb
+        language sql stable as 'select null::jsonb';
+      grant execute on function internal.task_progress(uuid) to tm8_app;
+      reset role;`);
   }, 180_000);
 
   afterAll(async () => {

@@ -13,6 +13,7 @@ import type { TileProgress } from '../../domain/types';
  * Nothing to count draws NOTHING — `work === 0` is "no work yet", not 0%.
  */
 export function TileProgressBar({ progress }: { progress: TileProgress }) {
+  if (progress.percent !== undefined) return <WeightedProgressBar progress={progress} percent={progress.percent} />;
   const { done, work } = progress;
   if (work <= 0) return null;
   const share = (n: number | undefined): number => Math.max(0, Math.min(100, (100 * (n ?? 0)) / work));
@@ -44,6 +45,37 @@ export function TileProgressBar({ progress }: { progress: TileProgress }) {
       <span className="lp__progress-figure" aria-hidden>
         {done}/{work}
       </span>
+    </span>
+  );
+}
+
+/**
+ * 307: the points-weighted variant — one fill to the floored percent, `N%`,
+ * then the row's detail (own criteria, or weighted points) and its marker.
+ * Full only at 100%, which the floor keeps for truly complete work.
+ */
+function WeightedProgressBar({ progress, percent }: { progress: TileProgress; percent: number }) {
+  const label = progress.label ?? `${percent}%`;
+  const fill = Math.max(0, Math.min(100, percent));
+  return (
+    <span
+      className={percent >= 100 ? 'lp__progress lp__progress--done' : 'lp__progress'}
+      role="img"
+      aria-label={label}
+      title={label}
+      data-testid="tile-progress"
+    >
+      <span className="lp__progress-track" aria-hidden>
+        <span className="lp__progress-seg lp__progress-seg--done" style={{ width: `${fill}%` }} />
+      </span>
+      <span className="lp__progress-figure" aria-hidden>
+        {percent}%{progress.detail ? ` · ${progress.detail}` : ''}
+      </span>
+      {progress.marker ? (
+        <span className="lp__progress-marker" aria-hidden>
+          {progress.marker}
+        </span>
+      ) : null}
     </span>
   );
 }

@@ -1,5 +1,5 @@
 import { ConnectorsLink } from './ConnectorsLink';
-import { useLayoutEffect, useId } from 'react';
+import { useLayoutEffect, useId, useRef } from 'react';
 import { useMcpCatalog } from './context';
 import type { McpCatalog, McpSelection, McpServer } from './port';
 import './mcp.css';
@@ -21,30 +21,48 @@ export function selectionProblem(catalog: McpCatalog, value: McpSelection[] | un
   return null;
 }
 
-/** Undefined inherits defaults, [] deliberately disables all optional connectors. */
+/** Defaults the launch can actually use: a default with no connected account is left off rather than blocking the launch. */
+export function usableDefaults(catalog: McpCatalog): McpSelection[] {
+  return catalog.defaults.filter(selected => !readiness(catalog.servers.find(s => s.id === selected.serverId), selected));
+}
+
+/**
+ * Undefined inherits defaults, [] deliberately disables all optional connectors.
+ * Renders nothing unless there is a connector to choose or a problem to fix, and only
+ * blocks the launch for a selection that cannot work; loading, refreshing and an
+ * unreadable catalog never block it, because the server resolves defaults itself.
+ */
 export function McpPicker({ targetId, teamMemberId, value, onChange, onReady, disabled = false }: {
   targetId?: string; teamMemberId?: string; value: McpSelection[] | undefined;
   onChange(value: McpSelection[] | undefined): void; onReady?(ready: boolean): void; disabled?: boolean;
 }) {
   const { catalog, error, loading, port, refresh } = useMcpCatalog(targetId, teamMemberId);
   const id = useId();
+  const trimmed = useRef<McpSelection[] | undefined>(undefined);
   const problem = catalog ? selectionProblem(catalog, value) : null;
-  useLayoutEffect(() => { onReady?.(!port || (!!catalog && !loading && !problem)); }, [port, catalog, loading, problem, onReady]);
+  const unusableDefaults = value === undefined && !!catalog && !loading && !!problem;
+  useLayoutEffect(() => {
+    if (!unusableDefaults || !catalog) return;
+    trimmed.current = usableDefaults(catalog);
+    onChange(trimmed.current);
+  }, [unusableDefaults, catalog, onChange]);
+  useLayoutEffect(() => { onReady?.(!port || !!error || (!!catalog && !problem)); }, [port, catalog, error, problem, onReady]);
   if (!port) return null;
-  if (error) return <p className="mcp-error" role="alert">{error} <button type="button" onClick={refresh}>Retry connectors</button></p>;
-  if (loading) return <p role="status">Checking connectors…</p>;
-  if (!catalog?.canAttach) return null;
+  if (!catalog) return error ? <p className="mcp-error" role="alert">{error} <button type="button" onClick={refresh}>Retry connectors</button></p> : null;
+  if (!catalog.canAttach) return null;
+  const attachable = catalog.servers.filter(server => server.canAttach);
+  if (attachable.length === 0 && !problem) return null;
   const selected = value ?? catalog.defaults;
+  const usingDefaults = value === undefined || (value === trimmed.current);
   return <fieldset className="mcp-picker" disabled={disabled} aria-describedby={`${id}-help`}>
     <legend>Connectors</legend>
     <p id={`${id}-help`}>Choose the tools and account for this session.</p>
     <div className="mcp-actions">
-      <button type="button" onClick={() => onChange(undefined)} aria-pressed={value === undefined}>Use defaults</button>
-      <button type="button" onClick={() => onChange([])} aria-pressed={value?.length === 0}>None</button>
+      <button type="button" onClick={() => onChange(undefined)} aria-pressed={usingDefaults}>Use defaults</button>
+      <button type="button" onClick={() => onChange([])} aria-pressed={value?.length === 0 && !usingDefaults}>None</button>
       <ConnectorsLink>Manage connectors</ConnectorsLink>
     </div>
-    {catalog.servers.length === 0 && <p>No connectors have been registered.</p>}
-    {catalog.servers.filter(server => server.canAttach).map(server => {
+    {attachable.map(server => {
       const pick = selected.find(s => s.serverId === server.id);
       const accounts = server.accounts.filter(a => a.canUse && a.status === 'connected');
       const unavailable = !server.approved || !server.enabled || (server.auth !== 'none' && accounts.length === 0);

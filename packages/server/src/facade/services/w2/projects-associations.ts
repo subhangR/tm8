@@ -47,7 +47,7 @@ import {
 } from './project-directories.js';
 import { PathGrantsService } from './path-grants.js';
 import type { DbClaims } from '../../../db/types.js';
-import { projectForgeFacts } from '../../../tracking/pr-projection.js';
+import { projectForgeFacts, projectTrackingFreshness } from '../../../tracking/pr-projection.js';
 
 /** `?staleAfterDays=` — absent means "use the module's own default". */
 function positiveInt(raw: string | null, field: string): number | undefined {
@@ -219,6 +219,7 @@ interface CorrectionEdgeRow {
   pr_head_ref: string | null;
   pr_url: string | null;
   pr_fetched_at: Date | string | null;
+  pr_last_polled_at: Date | string | null;
   commit_repo: string | null;
   commit_sha: string | null;
   commit_message: string | null;
@@ -326,8 +327,7 @@ function artifactSummary(row: CorrectionEdgeRow, createdBy: ActorSummary): Entit
         number: Number(row.pr_number ?? 0),
         state: row.pr_state ?? 'open',
         ...(row.pr_url ? { url: row.pr_url } : {}),
-        fetchedAt: isoOrNull(row.pr_fetched_at),
-        stale: row.pr_fetched_at === null,
+        ...projectTrackingFreshness(row.pr_state, row.pr_fetched_at, row.pr_last_polled_at),
         ...projectForgeFacts(row.pr_ci_status, row.pr_mergeable_state, row.pr_head_ref),
       },
     };
@@ -380,7 +380,7 @@ async function loadCorrectionEdge(
             case artifact_reaction.type when 'likes' then 'like'
                  when 'dislikes' then 'dislike' when 'stars' then 'star' end artifact_viewer_reaction,
             pr.title pr_title, pr.repo pr_repo, pr.number pr_number, pr.state pr_state,
-            pr.url pr_url, pr.fetched_at pr_fetched_at,
+            pr.url pr_url, pr.fetched_at pr_fetched_at, (to_jsonb(pr) ->> 'last_polled_at') pr_last_polled_at,
             pr.ci_status pr_ci_status, pr.mergeable_state pr_mergeable_state,
             pr.head_ref pr_head_ref,
             commit_row.repo commit_repo, commit_row.sha commit_sha,

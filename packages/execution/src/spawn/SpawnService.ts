@@ -162,6 +162,9 @@ export interface CredentialContainmentResult {
   reason?: string;
 }
 
+/** The ended reason a failed resume writes (Spec D1 §9 scenario 29). */
+export const RESUME_FAILED_PREFIX = 'Failed to resume: ';
+
 /**
  * The ending each containment records. `endedReason` is read by a person (one
  * plain sentence, per 171); `error` stays technical. Fixed strings: nothing
@@ -2695,7 +2698,7 @@ export class SpawnService {
       }
       return { sessionId, manifestPath, manifest, command, cwd, envVarNames, reused, commandResult };
     } catch (error) {
-      await this.failSession(auth, sessionId, error, bootExit);
+      await this.failSession(auth, sessionId, error, bootExit, 'resume');
       if (launchedPty) this.pty.kill(sessionId);
       // A PTY this resume merely FOUND is healthy and still reads its key.
       if (!this.pty.hasSession(sessionId)) {
@@ -2892,21 +2895,28 @@ export class SpawnService {
     sessionId: string,
     error: unknown,
     exitInfo?: PtyExitInfo,
+    phase: 'spawn' | 'resume' = 'spawn',
   ): Promise<void> {
     const message = error instanceof Error ? error.message : String(error);
+    // A NAMED unknown, never blank: an Error with an empty message would
+    // otherwise write error = '' — a value that PASSES a `NOT NULL`-style
+    // honesty check while saying nothing, which is the exact failure this
+    // whole fix exists to close.
+    const detail = exitInfo
+      ? describePtyExit(exitInfo)
+      : message.trim() !== ''
+        ? message
+        : 'spawn failed for an unspecified reason';
     const transition: TransitionInput = {
       sessionId,
       status: 'failed',
       ...(exitInfo ? { exitCode: exitInfo.exitCode } : {}),
-      // A NAMED unknown, never blank: an Error with an empty message would
-      // otherwise write error = '' — a value that PASSES a `NOT NULL`-style
-      // honesty check while saying nothing, which is the exact failure this
-      // whole fix exists to close.
-      error: exitInfo
-        ? describePtyExit(exitInfo)
-        : message.trim() !== ''
-          ? message
-          : 'spawn failed for an unspecified reason',
+      error: detail,
+      /* SPEC D1 §9 scenario 29: a resume that fails at spawn says so. Resume
+         does not clear the PREVIOUS run's ended kind and reason, so without
+         its own reason the row would repeat the old crash. The UI reads this
+         prefix (`RESUME_FAILED_PREFIX` in tm8-ui session-outcome.ts). */
+      ...(phase === 'resume' ? { endedReason: `${RESUME_FAILED_PREFIX}${detail}` } : {}),
     };
     if (await this.persistFailedTransition(auth, transition, message)) return;
     this.scheduleFailedTransitionRetry(auth, transition, message, 1);

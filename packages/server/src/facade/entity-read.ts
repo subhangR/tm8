@@ -64,13 +64,14 @@ import type {
   WorkStatus,
 } from '@tm8/contract';
 import { checkGraphCoherence, DEFAULT_FORM_SETTINGS, plainExcerpt, type FormQuestionRow, type FormSectionRow, type FormSettings, type FormStatus } from '@tm8/contract';
-import { SessionTranscriptContextSchema, StoryStateSchema, type SessionTranscriptContext } from '@tm8/contract';
+import { SessionTranscriptContextSchema, StoryStateSchema, TaskProgressSchema, type SessionTranscriptContext, type TaskProgress } from '@tm8/contract';
 import { DesignStateSchema, type DesignPage } from '@tm8/contract';
 import type { Querier } from '../db/types.js';
 import { projectInteractionProfileForBrowser } from '../profiles/browser-projection.js';
 import {
   loadLinkedPullRequestBadges,
   projectForgeFacts,
+  projectTrackingFreshness,
   type LinkedPullRequestBadges,
 } from '../tracking/pr-projection.js';
 import { loadTaskLiveSessionBadges } from '../tracking/live-session-projection.js';
@@ -191,6 +192,9 @@ export const ENTITY_COLUMNS = `
   -- in order) — one SQL function the projector twin selects too.
   dsg.title as design_title, dsg.description as design_description,
   case when e.kind = 'design' then internal.design_summary(e.id) end as design_summary,
+  -- 307: points-weighted subtree progress, the same function the projector
+  -- twin selects. Computed on read, never stored.
+  case when e.kind = 'task' then internal.task_progress(e.id) end as task_progress,
   -- Space styles (284): the whole document is row facts (spec §4.3) — it is
   -- what a push repaints from, and it is bounded by the doors.
   stl.title as sty_title, stl.description as sty_description,
@@ -242,6 +246,9 @@ export const ENTITY_COLUMNS = `
   pr.state as pr_state, pr.ci_status as pr_ci_status,
   pr.mergeable_state as pr_mergeable_state, pr.head_ref as pr_head_ref,
   pr.url as pr_url, pr.fetched_at as pr_fetched_at,
+  -- 306's column, read through the row: position-pinned suites stop the
+  -- chain before 306 and still run this shared SQL.
+  (to_jsonb(pr) ->> 'last_polled_at') as pr_last_polled_at,
   cm.repo as commit_repo, cm.sha as commit_sha,
   cm.message as commit_message, cm.committed_at as commit_committed_at,
   cm.url as commit_url, cm.author as commit_author,
@@ -622,6 +629,7 @@ export interface EntityRow {
   design_title?: string | null;
   design_description?: string | null;
   design_summary?: unknown;
+  task_progress?: unknown;
   sty_title?: string | null;
   sty_description?: string | null;
   sty_schema_version?: number | null;
@@ -693,6 +701,7 @@ export interface EntityRow {
   pr_head_ref?: string | null;
   pr_url?: string | null;
   pr_fetched_at?: Date | string | null;
+  pr_last_polled_at?: Date | string | null;
   /** commits mirror columns; optional for the same reason the pr_* ones are. */
   commit_repo?: string | null;
   commit_sha?: string | null;
@@ -1861,6 +1870,7 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
           assignedAt: assignment.assignedAt,
         })),
         acceptance: acceptanceOf(row),
+        ...taskProgressOf(row.task_progress),
         completionGate: row.completion_gate === 'pr_merged' ? 'pr_merged' : 'none',
       };
     case 'channel':
@@ -2154,10 +2164,9 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         number: Number(row.pr_number ?? 0),
         state: row.pr_state ?? 'open',
         ...(row.pr_url ? { url: row.pr_url } : {}),
-        fetchedAt: isoOrNull(fetched),
-        // `stale` is "the mirror is older than the upstream". Never fetched ⇒
-        // definitionally stale — same ruling as the projector twin.
-        stale: fetched === null,
+        // 306: never polled, or open and unpolled past the threshold — same
+        // ruling as the projector twin, through the same helper.
+        ...projectTrackingFreshness(row.pr_state, fetched, row.pr_last_polled_at),
         ...projectForgeFacts(row.pr_ci_status, row.pr_mergeable_state, row.pr_head_ref),
       };
     }
@@ -2879,8 +2888,7 @@ export function contentOf(row: EntityRow): EntityContent {
         number: Number(row.pr_number ?? 0),
         state: row.pr_state ?? 'open',
         ...(row.pr_url ? { url: row.pr_url } : {}),
-        fetchedAt: isoOrNull(fetched),
-        stale: fetched === null,
+        ...projectTrackingFreshness(row.pr_state, fetched, row.pr_last_polled_at),
         ...projectForgeFacts(row.pr_ci_status, row.pr_mergeable_state, row.pr_head_ref),
       };
     }
@@ -3159,6 +3167,16 @@ function credentialFactsOf(row: EntityRow): Extract<EntityState, { kind: 'creden
     status: row.cred_status ?? 'unknown',
     ownerAccountId: row.cred_owner_account_id ?? null,
   };
+}
+
+/**
+ * A task's progress as `internal.task_progress` returned it (307), as the
+ * spread for its state. Shared with the projector; a missing or malformed
+ * value leaves `progress` off rather than failing the read.
+ */
+export function taskProgressOf(raw: unknown): { progress?: TaskProgress } {
+  const parsed = TaskProgressSchema.safeParse(raw);
+  return parsed.success ? { progress: parsed.data } : {};
 }
 
 /**

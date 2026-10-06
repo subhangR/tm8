@@ -74,7 +74,7 @@ import type { RpcCommandResult } from '../../handlers/entities.js';
 import { buildReceipt, receiptSnapshot, wantsReceipt, type ServerReceipt } from '../../receipt.js';
 import { parentKindRefusal } from '../../placement-guidance.js';
 import { RUNS_ON, RUNS_ON_USAGE_OPERATION, runsOnListedFrom } from './runs-on-visibility.js';
-import { projectForgeFacts } from '../../../tracking/pr-projection.js';
+import { projectForgeFacts, projectTrackingFreshness } from '../../../tracking/pr-projection.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const REACTION_TYPES = new Set(['likes', 'dislikes', 'stars']);
@@ -286,8 +286,8 @@ function enrichSummaryFields(summary: EntitySummary, row: EnrichmentRow): Entity
           number: contentNumber(content, 'number') ?? 0,
           state: contentString(content, 'state') ?? 'open',
           url: contentString(content, 'url') ?? undefined,
-          fetchedAt,
-          stale: fetchedAt === null,
+          ...projectTrackingFreshness(
+            contentString(content, 'state'), fetchedAt, contentString(content, 'last_polled_at', 'lastPolledAt')),
           // 103: entity_content carries the whole pull_requests row, so the two
           // forge facts arrive here with no query change.
           ...projectForgeFacts(content.ci_status, content.mergeable_state, content.head_ref),
