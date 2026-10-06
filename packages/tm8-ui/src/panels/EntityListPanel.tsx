@@ -131,6 +131,43 @@ const EMPTY_MEMBERS: readonly ActorSummary[] = Object.freeze([]);
  */
 export type ListPicker = 'filters' | 'people' | 'sets' | 'sort' | 'view';
 
+/** The narrowing a host may remember for one kind (`initialFilters` / `onFiltersChange`). */
+export interface ListFilterState {
+  selected: Readonly<Record<string, readonly string[]>>;
+  selectedPeople: readonly string[];
+  sortKey: SortKey | undefined;
+  lensId: string | null;
+}
+
+/** Which body `renderEmpty` is asked for: still reading, nothing at all, or nothing matching. */
+export type ListEmptyState = { reason: 'loading' } | { reason: 'empty' } | { reason: 'search'; query: string };
+
+/**
+ * A remembered filter state, kept only where it still names this kind's
+ * filters, options and sorts — a stale seed degrades to the default.
+ */
+function seedFilters(config: KindConfig, seed: unknown): ListFilterState | null {
+  if (typeof seed !== 'object' || seed === null) return null;
+  const raw = seed as Partial<Record<keyof ListFilterState, unknown>>;
+  const selected: Record<string, readonly string[]> = {};
+  if (typeof raw.selected === 'object' && raw.selected !== null) {
+    for (const spec of config.list.filters) {
+      const ids = (raw.selected as Record<string, unknown>)[spec.id];
+      if (!Array.isArray(ids)) continue;
+      const kept = ids.filter(
+        (id): id is string => typeof id === 'string' && spec.options.some((o) => o.id === id),
+      );
+      if (kept.length > 0) selected[spec.id] = spec.multi ? kept : kept.slice(0, 1);
+    }
+  }
+  const selectedPeople = Array.isArray(raw.selectedPeople)
+    ? raw.selectedPeople.filter((id): id is string => typeof id === 'string')
+    : [];
+  const sortKey = config.list.sort.find((s) => s.key === raw.sortKey)?.key;
+  const lensId = config.list.membership && typeof raw.lensId === 'string' ? raw.lensId : null;
+  return { selected, selectedPeople, sortKey, lensId };
+}
+
 /**
  * The live-session kind for the tile's LEADING relation chip, selected by
  * CAPABILITY (the one kind with a `liveTreatment`), never by name — the same
@@ -329,6 +366,24 @@ export interface EntityListPanelProps {
    * DOM — the shell calls this on the FOCUSED panel.
    */
   searchInputRef?: React.Ref<HTMLInputElement>;
+  /**
+   * HOST-REMEMBERED SEARCH AND FILTERS (Workspace browser, Spec A §5). The
+   * panel still owns the live state; these SEED it at mount and REPORT every
+   * change, so a host that remounts the panel per kind restores that kind's
+   * state. A seed that names options this kind no longer has is dropped, never
+   * applied. Absent ⇒ the panel starts empty and reports nothing (Home, Work).
+   */
+  initialQuery?: string;
+  onQueryChange?: (query: string) => void;
+  initialFilters?: unknown;
+  onFiltersChange?: (filters: ListFilterState) => void;
+  /** The scroll box (`.lp__body`), for a host that remembers scroll. */
+  bodyRef?: React.Ref<HTMLDivElement>;
+  /**
+   * The host's own empty, no-match and loading body for an unfiltered band.
+   * Absent ⇒ the panel's own sentences (and no loading state).
+   */
+  renderEmpty?: (state: ListEmptyState) => ReactNode;
   onSelect?: (id: string) => void;
   onAction?: (ref: ActionRef, entityId: string) => void;
   /**
@@ -661,10 +716,14 @@ export function EntityListPanel(props: EntityListPanelProps) {
    * `multi`, so several of its options can be active at once, while a
    * non-multi spec holds at most one.
    */
-  const [selected, setSelected] = useState<Readonly<Record<string, readonly string[]>>>({});
-  const [selectedPeople, setSelectedPeople] = useState<readonly string[]>([]);
-  const [sortKey, setSortKey] = useState(list.sort.find((s) => s.default)?.key ?? list.sort[0]?.key);
-  const [query, setQuery] = useState('');
+  /* Read once: a host-remembered seed (`initialFilters`) for the state below. */
+  const [seed] = useState(() => seedFilters(config, props.initialFilters));
+  const [selected, setSelected] = useState<Readonly<Record<string, readonly string[]>>>(seed?.selected ?? {});
+  const [selectedPeople, setSelectedPeople] = useState<readonly string[]>(seed?.selectedPeople ?? []);
+  const [sortKey, setSortKey] = useState(
+    seed?.sortKey ?? list.sort.find((s) => s.default)?.key ?? list.sort[0]?.key,
+  );
+  const [query, setQuery] = useState(props.initialQuery ?? '');
   // §1.1: route-held when the host passes it. `props.mode` null-ish means "the
   // route says nothing", which reads the registry default. There is no local
   // state behind it any more — with the switcher gone nothing inside the panel
@@ -713,7 +772,30 @@ export function EntityListPanel(props: EntityListPanelProps) {
    * page (deleted, renamed out of the recency window) deactivates the lens
    * rather than filtering by an id the menu can no longer explain.
    */
-  const [lensId, setLensId] = useState<string | null>(null);
+  const [lensId, setLensId] = useState<string | null>(seed?.lensId ?? null);
+  /* REPORTED, not owned: the host remembers, the panel stays the writer. The
+     mount's own values are not reported back — they are the seed. */
+  const { onQueryChange, onFiltersChange } = props;
+  const reportedQuery = useRef(query);
+  useEffect(() => {
+    if (reportedQuery.current === query) return;
+    reportedQuery.current = query;
+    onQueryChange?.(query);
+  }, [query, onQueryChange]);
+  const reportedFilters = useRef<ListFilterState>({ selected, selectedPeople, sortKey, lensId });
+  useEffect(() => {
+    const prev = reportedFilters.current;
+    if (
+      prev.selected === selected &&
+      prev.selectedPeople === selectedPeople &&
+      prev.sortKey === sortKey &&
+      prev.lensId === lensId
+    ) {
+      return;
+    }
+    reportedFilters.current = { selected, selectedPeople, sortKey, lensId };
+    onFiltersChange?.(reportedFilters.current);
+  }, [selected, selectedPeople, sortKey, lensId, onFiltersChange]);
   const lensSet =
     list.membership && lensId
       ? ((props.membershipSets ?? []).find((set) => set.id === lensId) ?? null)
@@ -868,7 +950,7 @@ export function EntityListPanel(props: EntityListPanelProps) {
         <LensNote set={lensSet} filter={lensFilter} props={props} config={config} />
       ) : null}
 
-      <div className="lp__body" onPointerOver={placeHoverBar}>
+      <div className="lp__body" ref={props.bodyRef} onPointerOver={placeHoverBar}>
         {needsMeActive ? (
           /* ATTENTION v2 — "Needs me" is the attention QUEUE, one flat list in
              queue order (needs-me.ts). Tabs, sections, people chips and the
@@ -2866,6 +2948,14 @@ function Band({
                   : 'Nothing needs you.'
             }
           />
+        ) : props.renderEmpty ? (
+          props.renderEmpty(
+            query && query.trim().length > 0
+              ? { reason: 'search', query: query.trim() }
+              : page?.loading
+                ? { reason: 'loading' }
+                : { reason: 'empty' },
+          )
         ) : query && query.trim().length > 0 ? (
           <EmptyBody
             glyph={<KindIcon kind={config.kind} size={22} />}

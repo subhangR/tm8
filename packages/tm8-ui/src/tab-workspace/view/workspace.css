@@ -19,6 +19,7 @@
   color: var(--pn-ink);
   font-size: var(--pn-fs-sm);
   overflow: hidden;
+  position: relative;
 }
 .tws-root[data-expanded] {
   grid-template-columns: minmax(0, 1fr);
@@ -31,23 +32,51 @@
   grid-area: header;
   display: flex;
   align-items: center;
-  gap: var(--pn-space-2);
   padding-right: var(--pn-space-3);
   border-bottom: 1px solid var(--pn-line);
   background: var(--pn-surface);
   min-width: 0;
 }
-.tws-mark {
+/* The mark centres over the 48px rail (design log §2). */
+.tws-mark-cell {
+  flex: none;
+  display: flex;
+  justify-content: center;
   width: var(--tws-rail-w);
-  font-weight: 600;
+}
+.tws-mark {
+  color: var(--pn-ink);
+}
+/* The selector's left edge sits on the browser's 12px inset (x = 60). */
+.tws-left-header .tws-view-select {
+  margin-left: var(--pn-space-3);
 }
 .tws-view-select {
   position: relative;
+  flex: none;
+}
+.tws-chevron {
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-label);
 }
 .tws-space-slot {
+  display: flex;
+  justify-content: flex-end;
   margin-left: auto;
+  padding-left: var(--pn-space-2);
   min-width: 0;
   max-width: 140px;
+  overflow: hidden;
+}
+
+/* Expanded (Spec A §14): Restore · ⋯ at the strip's far left; the tabs
+   start 12px after it (the strip's 8px gap + 4px). */
+.tws-restore {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  flex: none;
+  margin-right: var(--pn-space-1);
 }
 
 .tws-strip {
@@ -116,14 +145,33 @@
 
 .tws-rail {
   grid-area: rail;
+  position: relative;
+  z-index: 4;
   display: flex;
   flex-direction: column;
+  gap: var(--pn-space-3);
   padding: var(--pn-space-2) 0 var(--pn-space-3);
   border-right: 1px solid var(--pn-line);
   background: var(--pn-surface);
   min-height: 0;
 }
-.tws-rail-top,
+/* The rail never scrolls with the browser list; only a top group taller than
+   the window scrolls, inside itself, and the bottom group stays put. */
+.tws-rail-top {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--pn-space-3);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+.tws-rail-top::-webkit-scrollbar {
+  display: none;
+}
+.tws-rail-group,
 .tws-rail-bottom {
   display: flex;
   flex-direction: column;
@@ -131,7 +179,115 @@
   gap: var(--pn-space-1);
 }
 .tws-rail-bottom {
+  flex: none;
   margin-top: auto;
+}
+.tws-rail-btn {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink-3);
+  font: inherit;
+  cursor: pointer;
+}
+.tws-rail-btn:hover {
+  background: var(--pn-hover);
+  color: var(--pn-ink-2);
+}
+.tws-rail-btn[aria-current='true'] {
+  background: var(--pn-active);
+  color: var(--pn-ink);
+}
+.tws-rail-kbd {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-label);
+}
+
+/* The account avatar: the existing AccountMenu, its trigger reduced to a
+   28px avatar in a 36×36 box; the name stays as the accessible name. */
+.tws-rail-account .auth-accountmenu__trigger {
+  width: 36px;
+  height: 36px;
+  max-width: none;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+}
+.tws-rail-account .auth-accountmenu__trigger .auth-avatar {
+  width: 28px;
+  height: 28px;
+}
+.tws-rail-account .auth-accountmenu__name {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.tws-rail-account .auth-accountmenu__caret {
+  display: none;
+}
+/* Opens up and to the right of the rail, bottom-aligned with the avatar. */
+.tws-rail-account .auth-menu--anchored {
+  top: auto;
+  right: auto;
+  bottom: 0;
+  left: calc(100% + var(--pn-space-2));
+}
+
+.tws-tip-anchor {
+  display: flex;
+}
+.tws-tip {
+  position: fixed;
+  z-index: 30;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-1) var(--pn-space-2);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  box-shadow: var(--pn-sh-pop);
+  color: var(--pn-ink);
+  font-size: var(--pn-fs-label);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.tws-tip-kbd {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+}
+
+/* The browser resizer (kit PanelResizer): an 8px hit zone centred on the
+   browser|content hairline, which turns --pn-line-2 on hover or drag. */
+.tws-resizer {
+  grid-area: browser;
+  justify-self: end;
+  position: relative;
+  z-index: 3;
+  display: flex;
+  margin-right: -4px;
+}
+.tws-root .tws-resizer .kit-resizer__line {
+  background: transparent;
+}
+.tws-root .tws-resizer .kit-resizer:hover .kit-resizer__line,
+.tws-root .tws-resizer .kit-resizer:focus-visible .kit-resizer__line,
+.tws-root .tws-resizer .kit-resizer[data-resizing] .kit-resizer__line {
+  width: 1px;
+  background: var(--pn-line-2);
 }
 
 .tws-browser {
@@ -286,6 +442,7 @@
 .tws-menu {
   position: absolute;
   top: 100%;
+  animation: tws-pop-in var(--pn-dur-fast) var(--pn-ease-out);
   left: 0;
   z-index: 10;
   display: flex;
@@ -294,6 +451,10 @@
   padding: var(--pn-space-1);
 }
 .tws-menu-row {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  flex: none;
   height: 36px;
   padding: 0 var(--pn-space-2);
   background: none;
@@ -326,6 +487,13 @@
   border-radius: var(--pn-r-sm);
   color: var(--pn-ink);
   font: inherit;
+}
+
+@keyframes tws-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

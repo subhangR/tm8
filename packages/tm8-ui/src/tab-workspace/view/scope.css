@@ -1,0 +1,279 @@
+/* Tab scope control, scope popover and reveal prompt (Spec A §7; design log §5, §8, §9). Workstream D. */
+
+.tws-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --- Control (§5) ------------------------------------------------------- */
+
+.tws-scope {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+}
+.tws-scope-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  height: 36px;
+  padding: 0 var(--pn-space-2);
+  background: none;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink-2);
+  font: inherit;
+  font-size: var(--pn-fs-label);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tws-scope-btn:hover {
+  background: var(--pn-hover);
+}
+.tws-scope-btn[data-mode='byType'] {
+  background: var(--pn-brand-soft);
+  color: var(--pn-brand-2);
+}
+.tws-scope-btn[aria-expanded='true'] {
+  background: var(--pn-active);
+}
+.tws-scope-btn[data-mode='byType'][aria-expanded='true'] {
+  background: var(--pn-brand-soft);
+}
+.tws-scope-chevron {
+  width: 12px;
+  text-align: center;
+  color: var(--pn-ink-3);
+}
+.tws-scope-btn[data-mode='byType'] .tws-scope-chevron {
+  color: inherit;
+}
+
+/* --- Shared raised plane ------------------------------------------------- */
+
+.tws-scope-pop,
+.tws-reveal {
+  position: fixed;
+  z-index: 30;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-pop);
+  color: var(--pn-ink);
+  font-size: var(--pn-fs-sm);
+  animation: tws-pop-in var(--pn-dur-fast) var(--pn-ease-out);
+}
+@keyframes tws-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+.tws-scope-pop :focus-visible,
+.tws-reveal :focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+
+/* --- Scope popover (§8) -------------------------------------------------- */
+
+.tws-scope-pop {
+  width: 288px;
+  padding: var(--pn-space-4);
+}
+.tws-scope-pop fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.tws-scope-mode,
+.tws-scope-kind {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  height: 36px;
+  cursor: pointer;
+}
+.tws-scope-mode input,
+.tws-scope-kind input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex: none;
+  accent-color: var(--pn-brand);
+}
+.tws-scope-mode {
+  font-weight: 500;
+}
+.tws-scope-hint {
+  font-weight: 400;
+  color: var(--pn-ink-3);
+}
+.tws-scope-pop fieldset.tws-scope-kinds {
+  margin-top: var(--pn-space-3);
+}
+.tws-scope-kinds:disabled {
+  opacity: 0.5;
+}
+.tws-scope-kinds:disabled .tws-scope-kind {
+  cursor: default;
+}
+.tws-scope-filter {
+  width: 100%;
+  height: 32px;
+  margin-bottom: var(--pn-space-1);
+  padding: 0 var(--pn-space-2);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink);
+  font: inherit;
+}
+.tws-scope-filter::placeholder {
+  color: var(--pn-ink-3);
+}
+.tws-scope-filter:focus {
+  border-color: var(--pn-line-2);
+}
+.tws-scope-list {
+  max-height: 288px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.tws-scope-kind {
+  color: var(--pn-ink);
+}
+.tws-scope-kind svg {
+  flex: none;
+  color: var(--pn-ink-3);
+}
+.tws-scope-empty {
+  margin: 0;
+  padding: var(--pn-space-2) 0;
+  color: var(--pn-ink-3);
+}
+.tws-scope-status {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  margin: var(--pn-space-3) 0 0;
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-3);
+}
+.tws-scope-status[data-invalid] {
+  color: var(--pn-block);
+}
+.tws-scope-alert {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  border: 1px solid currentColor;
+  border-radius: var(--pn-r-pill);
+  font-size: var(--pn-fs-fine);
+  font-weight: 700;
+  line-height: 1;
+}
+.tws-scope-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--pn-space-2);
+  margin-top: var(--pn-space-4);
+}
+
+/* --- Buttons: 36 hit box, 32 visible fill ------------------------------- */
+
+.tws-scope-cancel,
+.tws-scope-apply,
+.tws-reveal-btn {
+  position: relative;
+  height: 36px;
+  padding: 0 var(--pn-space-3);
+  background: none;
+  border: 0;
+  color: var(--pn-ink-2);
+  font: inherit;
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  z-index: 0;
+}
+.tws-scope-cancel::before,
+.tws-scope-apply::before,
+.tws-reveal-btn::before {
+  content: '';
+  position: absolute;
+  inset: 2px 0;
+  z-index: -1;
+  border: 1px solid transparent;
+  border-radius: var(--pn-r-sm);
+}
+.tws-scope-cancel:hover::before,
+.tws-reveal-btn[data-choice='cancel']:hover::before,
+.tws-reveal-btn[data-choice='useMixed']:hover::before {
+  background: var(--pn-hover);
+}
+.tws-reveal-btn[data-choice='useMixed']::before {
+  border-color: var(--pn-line-2);
+}
+.tws-scope-apply,
+.tws-reveal-btn[data-choice='addType'] {
+  color: var(--pn-brand-2);
+}
+.tws-scope-apply::before,
+.tws-reveal-btn[data-choice='addType']::before {
+  background: var(--pn-brand-soft);
+  border-color: rgba(var(--pn-brand-rgb), 0.35);
+}
+.tws-scope-apply:hover:not(:disabled)::before,
+.tws-reveal-btn[data-choice='addType']:hover::before {
+  background: rgba(var(--pn-brand-rgb), 0.2);
+}
+[data-theme='dark'] .tws-scope-apply,
+[data-theme='dark'] .tws-reveal-btn[data-choice='addType'] {
+  color: var(--pn-brand);
+}
+.tws-scope-apply:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* --- Reveal prompt (§9) -------------------------------------------------- */
+
+.tws-reveal {
+  max-width: 320px;
+  padding: var(--pn-space-3);
+}
+.tws-reveal-text {
+  margin: 0;
+  color: var(--pn-ink-2);
+}
+.tws-reveal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pn-space-2);
+  margin-top: var(--pn-space-3);
+}
+/* When the row cannot fit, the buttons stack full width. */
+.tws-reveal-btn {
+  flex: 1 0 auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tws-scope-pop,
+  .tws-reveal {
+    animation: none;
+  }
+}
