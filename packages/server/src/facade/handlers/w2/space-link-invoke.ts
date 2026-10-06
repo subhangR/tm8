@@ -167,40 +167,6 @@ export function parseVia(header: string | string[] | undefined): string[] {
   return parts.map((part) => part.toLowerCase());
 }
 
-/** The audit column's own shape (260): a closed reason, never text. */
-const AUDIT_REASON_RE = /^[a-z0-9_.]{1,80}$/;
-
-/**
- * The audit reason for an error B raised: B's closed `details.reason` when it
- * names one (`actor_not_permitted`, `cross_space_edge`), for every error, so a
- * refusal can be told apart from any other after the fact; else its code.
- * Never B's text.
- */
-export function auditReasonOf(error: unknown): string {
-  if (!isCollabError(error)) return 'internal';
-  const reason = error.details?.['reason'];
-  return typeof reason === 'string' && AUDIT_REASON_RE.test(reason) ? reason : error.code;
-}
-
-/**
- * B refused the actor a write named (resolve_actor, 300: `actor_not_permitted`).
- * Through a link that is an actor the caller set itself (`--as`, or an
- * `actorId` other than its home actor, which is already dropped): re-typed
- * with what to do, since the bare "not permitted to act as this actor" sent
- * agents guessing. Anything else: null, B's error stands.
- */
-export function actorRefusalThroughLink(error: unknown, row: SpaceLinkInvokeRow | null): CollabError | null {
-  if (!row || !isCollabError(error) || error.code !== 'forbidden' || error.details?.['reason'] !== 'actor_not_permitted') {
-    return null;
-  }
-  const actorId = typeof error.details['actorId'] === 'string' ? error.details['actorId'] : 'the requested actor';
-  return new CollabError('forbidden',
-    `through space link ${row.linkId} you act in space ${row.targetSpaceId} as the member who made the link, `
-      + `and ${actorId} is not an actor that member can act as there (an id from your own space never is): `
-      + 'drop --as (and any actorId) and the link acts as that member, or pass --as with an actor of the linked space',
-    { details: { ...error.details, linkId: row.linkId, targetSpaceId: row.targetSpaceId } });
-}
-
 function refused(reason: SpaceLinkRefusalReason, message?: string): CollabError {
   return new CollabError('forbidden', message ?? `refused through a space link: ${reason}`, {
     details: { reason: SPACE_LINK_REFUSED_CODE, refusal: reason },
@@ -259,40 +225,6 @@ export function withoutHomeActor(input: unknown, homeActorId: string | undefined
   }
   const { actorId: _home, ...rest } = record;
   return rest;
-}
-
-/**
- * `entities.commands.complete` through a link: the completer ids with every
- * HOME id (the caller's own actor, or the launching member's row in A) put
- * back as the member the link acts as in B. A session's CLI suggests its own
- * team member for `--by`, and B's complete_task refused any id outside B as
- * "invalid completer". Null when nothing names home (B authorizes the rest
- * as before). Refused, with what to do, when B has no member to credit.
- */
-export async function homeCompletersInB(
-  op: OperationName,
-  body: unknown,
-  homeIds: ReadonlyArray<string | null | undefined>,
-  memberInB: () => Promise<string | null>,
-): Promise<string[] | null> {
-  if (op !== 'entities.commands.complete' || typeof body !== 'object' || body === null) return null;
-  const ids = (body as Record<string, unknown>)['completerIds'];
-  if (!Array.isArray(ids)) return null;
-  const home = new Set(homeIds.filter((id): id is string => typeof id === 'string').map((id) => id.toLowerCase()));
-  if (!ids.some((id) => typeof id === 'string' && home.has(id.toLowerCase()))) return null;
-  const member = await memberInB();
-  if (!member) {
-    throw new CollabError('invalid_input',
-      'a completer from your own space is nobody in the linked space, and the link has no member there to credit: '
-        + 'pass --by with a member or teammate id of the linked space',
-      { details: { reason: 'home_completer' } });
-  }
-  const out: string[] = [];
-  for (const id of ids as unknown[]) {
-    const next = typeof id === 'string' && home.has(id.toLowerCase()) ? member : id;
-    if (typeof next === 'string' && !out.includes(next)) out.push(next);
-  }
-  return out;
 }
 
 /** The inner identity: B's, off the re-resolved session, WITHOUT the raw token. */
@@ -589,4 +521,72 @@ export function createSpaceLinkInvokeHandlers(
   };
 
   return { invoke, audit };
+}
+
+/** The audit column's own shape (260): a closed reason, never text. */
+const AUDIT_REASON_RE = /^[a-z0-9_.]{1,80}$/;
+
+/**
+ * The audit reason for an error B raised: B's closed `details.reason` when it
+ * names one (`actor_not_permitted`, `cross_space_edge`), for every error, so a
+ * refusal can be told apart from any other after the fact; else its code.
+ * Never B's text.
+ */
+export function auditReasonOf(error: unknown): string {
+  if (!isCollabError(error)) return 'internal';
+  const reason = error.details?.['reason'];
+  return typeof reason === 'string' && AUDIT_REASON_RE.test(reason) ? reason : error.code;
+}
+
+/**
+ * B refused the actor a write named (resolve_actor, 300: `actor_not_permitted`).
+ * Through a link that is an actor the caller set itself (`--as`, or an
+ * `actorId` other than its home actor, which is already dropped): re-typed
+ * with what to do, since the bare "not permitted to act as this actor" sent
+ * agents guessing. Anything else: null, B's error stands.
+ */
+export function actorRefusalThroughLink(error: unknown, row: SpaceLinkInvokeRow | null): CollabError | null {
+  if (!row || !isCollabError(error) || error.code !== 'forbidden' || error.details?.['reason'] !== 'actor_not_permitted') {
+    return null;
+  }
+  const actorId = typeof error.details['actorId'] === 'string' ? error.details['actorId'] : 'the requested actor';
+  return new CollabError('forbidden',
+    `through space link ${row.linkId} you act in space ${row.targetSpaceId} as the member who made the link, `
+      + `and ${actorId} is not an actor that member can act as there (an id from your own space never is): `
+      + 'drop --as (and any actorId) and the link acts as that member, or pass --as with an actor of the linked space',
+    { details: { ...error.details, linkId: row.linkId, targetSpaceId: row.targetSpaceId } });
+}
+
+/**
+ * `entities.commands.complete` through a link: the completer ids with every
+ * HOME id (the caller's own actor, or the launching member's row in A) put
+ * back as the member the link acts as in B. A session's CLI suggests its own
+ * team member for `--by`, and B's complete_task refused any id outside B as
+ * "invalid completer". Null when nothing names home (B authorizes the rest
+ * as before). Refused, with what to do, when B has no member to credit.
+ */
+export async function homeCompletersInB(
+  op: OperationName,
+  body: unknown,
+  homeIds: ReadonlyArray<string | null | undefined>,
+  memberInB: () => Promise<string | null>,
+): Promise<string[] | null> {
+  if (op !== 'entities.commands.complete' || typeof body !== 'object' || body === null) return null;
+  const ids = (body as Record<string, unknown>)['completerIds'];
+  if (!Array.isArray(ids)) return null;
+  const home = new Set(homeIds.filter((id): id is string => typeof id === 'string').map((id) => id.toLowerCase()));
+  if (!ids.some((id) => typeof id === 'string' && home.has(id.toLowerCase()))) return null;
+  const member = await memberInB();
+  if (!member) {
+    throw new CollabError('invalid_input',
+      'a completer from your own space is nobody in the linked space, and the link has no member there to credit: '
+        + 'pass --by with a member or teammate id of the linked space',
+      { details: { reason: 'home_completer' } });
+  }
+  const out: string[] = [];
+  for (const id of ids as unknown[]) {
+    const next = typeof id === 'string' && home.has(id.toLowerCase()) ? member : id;
+    if (typeof next === 'string' && !out.includes(next)) out.push(next);
+  }
+  return out;
 }
