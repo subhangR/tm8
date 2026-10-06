@@ -352,11 +352,30 @@ export function createControlChannel(deps: ControlChannelDeps): ControlChannel {
           return;
         }
         if (frame.type === 'workspace.apply') {
-          await service.apply(claims, frame.spaceId, {
-            env: frame.env as never,
-            ids: frame.ids,
-            requestId: frame.requestId,
-            origin: { kind: 'window', instanceId: frame.instanceId },
+          // Through the request-id record: a window resends what it could not
+          // see confirmed after a reconnect, and a resend must not apply twice.
+          const identityId = claims.identityId;
+          await workspace.bridge.recorded(
+            identityId,
+            `window:${frame.requestId}`,
+            { spaceId: frame.spaceId, env: frame.env, ids: frame.ids },
+            30_000,
+            async () => {
+              const result = await service.apply(claims, frame.spaceId, {
+                env: frame.env as never,
+                ids: frame.ids,
+                requestId: frame.requestId,
+                origin: { kind: 'window', instanceId: frame.instanceId },
+              });
+              return { ...result, requestId: frame.requestId, instanceId: frame.instanceId } as never;
+            },
+          ).then((result) => {
+            // A replayed record still owes this window its answer.
+            if (result && (result as { status?: string }).status !== undefined) {
+              workspace.bridge.push(identityId, frame.spaceId, {
+                type: 'workspace.applied', spaceId: frame.spaceId, requestId: frame.requestId, result,
+              }, frame.instanceId);
+            }
           }).catch((error: unknown) => {
             // A failure is still an answer: the window rolls the command back.
             try {

@@ -63,7 +63,49 @@ export function loadWorkspaceRailExpanded(): boolean {
   return read(RAIL_EXPANDED_KEY) === true;
 }
 
+/**
+ * Spec D: once the node keeps this space's workspace, a rail change is a
+ * `workspace.rail.set` command (it persists with the workspace and syncs to
+ * every window) instead of a localStorage write.
+ */
+export interface RailWriter {
+  write(patch: { pins?: string[]; open?: Record<string, boolean>; expanded?: boolean }): void;
+}
+const writers = new Map<string, RailWriter>();
+
+/** Attach (or, with null, detach) the workspace as this space's rail writer. */
+export function attachRailWriter(spaceId: string, writer: RailWriter | null): void {
+  if (writer) writers.set(spaceId, writer);
+  else writers.delete(spaceId);
+}
+
+/** Lay the workspace's stored rail prefs over the store (no write back). */
+export function applyStoredRail(spaceId: string, rail: { pins: readonly string[]; open: Record<string, boolean>; expanded: boolean }): void {
+  const store = getRailStore(spaceId);
+  const now = store.getState();
+  if (
+    now.expanded === rail.expanded &&
+    now.pins.join('\u0000') === rail.pins.join('\u0000') &&
+    JSON.stringify(now.open) === JSON.stringify(rail.open)
+  ) {
+    return;
+  }
+  store.setState({ pins: [...rail.pins], open: { ...rail.open }, expanded: rail.expanded });
+}
+
+/** The legacy (localStorage) rail prefs, for the one-time import; null when none were ever stored. */
+export function legacyRail(spaceId: string): { pins: string[]; open: Record<string, boolean>; expanded: boolean } | null {
+  const stored = read(railPinsKey(spaceId)) !== undefined || read(RAIL_OPEN_KEY) !== undefined || read(RAIL_EXPANDED_KEY) !== undefined;
+  if (!stored) return null;
+  return { pins: [...loadWorkspaceRailPins(spaceId)], open: loadWorkspaceRailOpen(), expanded: loadWorkspaceRailExpanded() };
+}
+
 export function createRailStore(spaceId: string): RailStore {
+  const persist = (patch: { pins?: string[]; open?: Record<string, boolean>; expanded?: boolean }, legacy: () => void) => {
+    const writer = writers.get(spaceId);
+    if (writer) writer.write(patch);
+    else legacy();
+  };
   return createStore<RailState>()((set, get) => ({
     pins: loadWorkspaceRailPins(spaceId),
     open: loadWorkspaceRailOpen(),
@@ -72,17 +114,17 @@ export function createRailStore(spaceId: string): RailStore {
     togglePin(kind) {
       const pins = get().pins;
       const next = pins.includes(kind) ? pins.filter((k) => k !== kind) : [...pins, kind];
-      write(railPinsKey(spaceId), next);
+      persist({ pins: next }, () => write(railPinsKey(spaceId), next));
       set({ pins: next });
       return next.includes(kind);
     },
     setOpen(sectionId, open) {
       const next = { ...get().open, [sectionId]: open };
-      write(RAIL_OPEN_KEY, next);
+      persist({ open: { [sectionId]: open } }, () => write(RAIL_OPEN_KEY, next));
       set({ open: next });
     },
     setExpanded(expanded) {
-      write(RAIL_EXPANDED_KEY, expanded);
+      persist({ expanded }, () => write(RAIL_EXPANDED_KEY, expanded));
       set({ expanded });
     },
   }));

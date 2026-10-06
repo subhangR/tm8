@@ -354,6 +354,38 @@ export function dismissRestoreOffer(runtime: WorkspaceRuntime): void {
 // ---------------------------------------------------------------------------
 
 const loaded = new WeakSet<WorkspaceRuntime>();
+/** Runtimes whose workspace now lives on the node (Spec D): no storage writes, no offer. */
+const serverMode = new WeakSet<WorkspaceRuntime>();
+
+/**
+ * Spec D §6: the node holds this workspace now. Browser storage is no longer
+ * written; what it holds stays readable (the import read it, and it is the
+ * read-only fallback when the node cannot be reached at boot).
+ */
+export function enterServerMode(runtime: WorkspaceRuntime): void {
+  serverMode.add(runtime);
+  loaded.add(runtime);
+  setOffer(runtime, null);
+}
+
+/**
+ * The browser's legacy Workspace state for (viewer, space), read without
+ * touching any store: this window's tabs (or, for a new window, the last
+ * session's), the prefs, the browser state. Null when storage holds nothing.
+ */
+export function legacySnapshot(ctx: WorkspaceInitContext): Partial<WorkspaceState> | null {
+  const patch: Partial<WorkspaceState> = {};
+  const prefs = validPrefs(readJson('local', persistKey('prefs', ctx)));
+  if (prefs.scope) patch.scope = prefs.scope;
+  if (prefs.layout) patch.layout = prefs.layout;
+  const browser = validBrowser(readJson('local', persistKey('browser', ctx)));
+  if (browser) patch.browsers = { main: browser };
+  const tabs =
+    validTabsSnapshot(readJson('session', persistKey('tabs', ctx))) ??
+    validTabsSnapshot(readJson('local', persistKey('last', ctx)));
+  if (tabs) Object.assign(patch, tabs);
+  return Object.keys(patch).length > 0 ? patch : null;
+}
 
 function load(runtime: WorkspaceRuntime, ctx: WorkspaceInitContext): void {
   if (loaded.has(runtime)) return;
@@ -385,6 +417,7 @@ function load(runtime: WorkspaceRuntime, ctx: WorkspaceInitContext): void {
 const contexts = new WeakMap<WorkspaceRuntime, WorkspaceInitContext>();
 
 function saveNow(runtime: WorkspaceRuntime): void {
+  if (serverMode.has(runtime)) return;
   const ctx = contexts.get(runtime) ?? { viewerId: runtime.viewerId, spaceId: runtime.spaceId };
   const state = runtime.store.getState();
   const snapshot = tabsSnapshotOf(state);

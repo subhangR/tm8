@@ -1756,4 +1756,8 @@ export interface WorkspaceBridgePort {
   onCommand(cb: (frame: import('@tm8/contract').WorkspaceBridgeCommandFrame) => void): Unsubscribe;
   /** The socket opened (first time and every reconnect): register again. */
   onOpen(cb: () => void): Unsubscribe;
+  /** Spec D: the stored workspace (state / applied / draft) for this identity's windows. */
+  onSync?(cb: (frame: import('./real/socket').WorkspaceSyncFrame) => void): Unsubscribe;
+  /** True while the socket is open (the sync is online). */
+  isOpen?(): boolean;
 }

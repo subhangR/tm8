@@ -21,7 +21,7 @@
  * `artifact` and `project` have no create door in this client, so the
  * registry marks them not creatable.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType, type FormEvent } from 'react';
 import type { EntityId, SpaceId } from '@tm8/contract';
 import {
   classifyFailure,
@@ -33,6 +33,7 @@ import {
   type RefusedFailure,
 } from '../../authoring';
 import { ChatHomeSurface } from '../../chat-home/ChatHomeSurface';
+import { subscribeDrafts } from '../runtime/draftStore';
 import { nodeKeyOf } from '../../data/launch-cache';
 import { EMPTY_HEADER_DRAFT, getKind, headerDraftHasText, headerInputOf, type HeaderDraft } from '../../domain';
 import { pickFiles } from '../../files/pick';
@@ -72,8 +73,14 @@ export interface DraftHostProps {
 export function DraftHost({ tab }: { tab: DraftTabRecord }) {
   const { runtime } = useWorkspace();
   const adapter = getKindAdapter(tab.kind);
-  // Values are read once per mount: a remount (tab switch, reload) restores them.
-  const values = useMemo(() => runtime.drafts.get(tab.draftId), [runtime, tab.draftId]);
+  // Values are read once per mount: a remount (tab switch, reload) restores
+  // them, and so does a change the node pushed from another window or an
+  // agent (Spec D §3) — its remote version is part of the read's key.
+  const remoteVersion = useSyncExternalStore(
+    subscribeDrafts,
+    () => runtime.drafts.remoteVersionOf(tab.draftId),
+  );
+  const values = useMemo(() => runtime.drafts.get(tab.draftId), [runtime, tab.draftId, remoteVersion]);
   const live = useRef(true);
   useEffect(() => {
     live.current = true;
@@ -166,6 +173,7 @@ export function DraftHost({ tab }: { tab: DraftTabRecord }) {
   return (
     <div ref={hostRef} className="tws-draft" data-testid="tws-draft-host" data-kind={kind}>
       <Body
+        key={remoteVersion}
         tab={tab}
         values={values}
         onValues={onValues}

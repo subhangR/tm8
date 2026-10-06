@@ -23,6 +23,9 @@ import type { WorkspaceBridgePort } from '../../data/seam';
 import type { WorkspaceBridgeFrame } from '../../data/real/socket';
 import { NOTICE_TTL_MS, type Notice } from '../../shell';
 import { getWorkspaceRuntime } from '../runtime/dispatch';
+import { enterServerMode, legacySnapshot } from '../runtime/persistence';
+import { applyStoredRail, attachRailWriter, legacyRail } from '../runtime/railStore';
+import { WorkspaceSync } from './sync';
 import { newUuid, WINDOW_ID } from '../runtime/store';
 import type {
   CommandEnvelope,
@@ -292,7 +295,42 @@ export function useWorkspaceBridge(options: WorkspaceBridgeOptions): void {
     };
 
     const offCommand = port.onCommand((frame) => void onCommand(frame));
-    const offOpen = port.onOpen(register);
+
+    // Spec D: the stored workspace. The node sends this window the state right
+    // after it registers; from then on the window's commits go to the node and
+    // every commit anywhere comes back as a push.
+    const viewerId = runtime.viewerId;
+    const sync = port.onSync
+      ? new WorkspaceSync(runtime, spaceId, instanceId, {
+          send: (frame) => port.send(frame),
+          notify: (title) => latest.current.notify({ id: `tws-sync-${Date.now()}`, tone: 'info', title, body: '', ttlMs: NOTICE_TTL_MS }),
+          onServerMode: () => {
+            enterServerMode(runtime);
+            attachRailWriter(spaceId, {
+              write: (patch) => void runtime.dispatch({ command: 'workspace.rail.set', args: patch, source: 'click' }),
+            });
+          },
+          notifyDraft: (draftId) => {
+            const state = runtime.store.getState();
+            const active = state.presentation.surface === 'tab' ? state.tabs[state.presentation.tabId] : undefined;
+            if (active?.type === 'draft' && active.draftId === draftId) {
+              latest.current.notify({ id: `tws-draft-${draftId}`, tone: 'info', title: 'Updated in another window', body: '', ttlMs: NOTICE_TTL_MS });
+            }
+          },
+          legacy: () => ({ state: legacySnapshot({ viewerId, spaceId }), rail: legacyRail(spaceId) }),
+        })
+      : null;
+    const offSync = sync && port.onSync ? port.onSync((frame) => sync.onFrame(frame)) : () => {};
+    let lastRail: unknown = runtime.store.getState().rail;
+    const offRail = runtime.store.subscribe((state) => {
+      if (state.rail === lastRail) return;
+      lastRail = state.rail;
+      if (state.rail) applyStoredRail(spaceId, state.rail);
+    });
+    const offOpen = port.onOpen(() => {
+      register();
+      sync?.reconnected();
+    });
     register();
 
     const heartbeat = setInterval(register, HEARTBEAT_MS);
@@ -314,6 +352,10 @@ export function useWorkspaceBridge(options: WorkspaceBridgeOptions): void {
     return () => {
       offCommand();
       offOpen();
+      offSync();
+      offRail();
+      sync?.dispose();
+      attachRailWriter(spaceId, null);
       offStore();
       clearInterval(heartbeat);
       if (revisionTimer) clearTimeout(revisionTimer);

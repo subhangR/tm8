@@ -332,6 +332,8 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       send: (frame) => connection.sendWorkspace(frame),
       onCommand: (cb) => connection.onWorkspaceCommand(cb),
       onOpen: (cb) => connection.onSocketOpen(cb),
+      onSync: (cb) => connection.onWorkspaceSync(cb),
+      isOpen: () => connection.getConnection().phase === 'live',
     },
     onConnection: (cb) => connection.onConnection(cb),
     getConnection: () => connection.getConnection(),

@@ -33,8 +33,11 @@ import {
   MAX_CONTROL_FRAME_SPACES,
   type DurableWorkspaceEvent,
   type SpaceId,
+  type WorkspaceAppliedFrame,
   type WorkspaceBridgeCommandFrame,
   type WorkspaceControlAck,
+  type WorkspaceDraftFrame,
+  type WorkspaceStateFrame,
   type WorkspaceControlFrame,
 } from '@tm8/contract';
 import {
@@ -69,9 +72,14 @@ export type WebSocketFactory = (url: string) => WebSocketLike;
 /** The client→server frames of the Workspace remote bridge (Spec C), and nothing else. */
 export type WorkspaceBridgeFrame = Extract<
   WorkspaceControlFrame,
-  { type: 'workspace.register' | 'workspace.unregister' | 'workspace.result' }
+  { type: 'workspace.register' | 'workspace.unregister' | 'workspace.result' | 'workspace.apply' | 'workspace.import' | 'workspace.draft.patch' }
 >;
-const BRIDGE_FRAME_TYPES: ReadonlySet<string> = new Set(['workspace.register', 'workspace.unregister', 'workspace.result']);
+const BRIDGE_FRAME_TYPES: ReadonlySet<string> = new Set([
+  'workspace.register', 'workspace.unregister', 'workspace.result',
+  'workspace.apply', 'workspace.import', 'workspace.draft.patch',
+]);
+/** Spec D, node → window: the stored workspace and its drafts. */
+export type WorkspaceSyncFrame = WorkspaceStateFrame | WorkspaceAppliedFrame | WorkspaceDraftFrame;
 
 /** `WebSocket.OPEN`. Named rather than inlined so the fake reads the same. */
 export const WS_OPEN = 1;
@@ -89,6 +97,8 @@ export interface SocketHandlers {
   onRefused(ack: WorkspaceControlAck): void;
   /** Spec C: the node forwards a Workspace command to THIS window. */
   onWorkspaceCommand?(frame: WorkspaceBridgeCommandFrame): void;
+  /** Spec D: the stored workspace (state / applied / draft) for this identity's windows. */
+  onWorkspaceSync?(frame: WorkspaceSyncFrame): void;
   /** Socket closed or errored. Fires at most once per socket. */
   onClose(): void;
   /**
@@ -145,6 +155,7 @@ export type ParsedFrame =
   | { kind: 'chat-context'; frame: ChatContextFrame }
   | { kind: 'refused'; ack: WorkspaceControlAck }
   | { kind: 'workspace-command'; frame: WorkspaceBridgeCommandFrame }
+  | { kind: 'workspace-sync'; frame: WorkspaceSyncFrame }
   | { kind: 'presence' }
   | { kind: 'malformed'; reason: string };
 
@@ -174,6 +185,12 @@ export function parseFrame(raw: unknown): ParsedFrame {
       return { kind: 'malformed', reason: 'workspace.command missing requestId/instanceId/command' };
     }
     return { kind: 'workspace-command', frame: raw as unknown as WorkspaceBridgeCommandFrame };
+  }
+
+  // Spec D: the stored workspace, sent to this identity's own windows only.
+  if (type === 'workspace.state' || type === 'workspace.applied' || type === 'workspace.draft') {
+    if (typeof raw.spaceId !== 'string') return { kind: 'malformed', reason: `${type} has no spaceId` };
+    return { kind: 'workspace-sync', frame: raw as unknown as WorkspaceSyncFrame };
   }
 
   // R8: dropped here so no consumer downstream can ever observe one. The
@@ -226,6 +243,7 @@ export function openSocket(
       case 'chat-context': handlers.onChatContext?.(frame.frame); return;
       case 'refused': handlers.onRefused(frame.ack); return;
       case 'workspace-command': handlers.onWorkspaceCommand?.(frame.frame); return;
+      case 'workspace-sync': handlers.onWorkspaceSync?.(frame.frame); return;
       case 'presence': return;
       case 'malformed': handlers.onMalformed?.(parsed, frame.reason); return;
     }

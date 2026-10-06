@@ -57,7 +57,7 @@ import {
 import type { ConnectionState, Unsubscribe } from '../seam';
 import type { ChatContextFrame, ChatTurnFrame } from '../../chat-home/types';
 import type { DurableEventPage } from './ops';
-import { openSocket, type SocketHandle, type WebSocketFactory, type WorkspaceBridgeFrame } from './socket';
+import { openSocket, type SocketHandle, type WebSocketFactory, type WorkspaceBridgeFrame, type WorkspaceSyncFrame } from './socket';
 
 /** Injectable timers. The handle is opaque so a fake may return anything. */
 export interface Timers {
@@ -247,6 +247,8 @@ export interface ConnectionManager {
   sendWorkspace(frame: WorkspaceBridgeFrame): boolean;
   onWorkspaceCommand(cb: (frame: WorkspaceBridgeCommandFrame) => void): Unsubscribe;
   onSocketOpen(cb: () => void): Unsubscribe;
+  /** Spec D: the stored workspace frames for this page's identity. */
+  onWorkspaceSync(cb: (frame: WorkspaceSyncFrame) => void): Unsubscribe;
   /**
    * Replace the socket now, because the credential it upgraded with is no
    * longer the page's: `auth.space.enter` swapped the session cookie (W3 F1).
@@ -310,6 +312,7 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
   const reconnectSubs = new Set<() => void>();
   const socketOpenSubs = new Set<() => void>();
   const workspaceCommandSubs = new Set<(frame: WorkspaceBridgeCommandFrame) => void>();
+  const workspaceSyncSubs = new Set<(frame: WorkspaceSyncFrame) => void>();
 
   let socket: SocketHandle | null = null;
   let phase: ConnectionState = { phase: 'connecting' };
@@ -582,6 +585,11 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
           if (disposed) return;
           lastInboundAtMs = now();
           fanout(workspaceCommandSubs, frame);
+        },
+        onWorkspaceSync: (frame) => {
+          if (disposed) return;
+          lastInboundAtMs = now();
+          fanout(workspaceSyncSubs, frame);
         },
         onRefused: handleRefused,
         onClose: handleClose,
@@ -884,6 +892,7 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
     sendWorkspace(frame) { return socket?.sendWorkspace(frame) ?? false; },
     onWorkspaceCommand(cb) { workspaceCommandSubs.add(cb); return () => { workspaceCommandSubs.delete(cb); }; },
     onSocketOpen(cb) { socketOpenSubs.add(cb); return () => { socketOpenSubs.delete(cb); }; },
+    onWorkspaceSync(cb) { workspaceSyncSubs.add(cb); return () => { workspaceSyncSubs.delete(cb); }; },
 
     reconnect() {
       if (disposed) return;
