@@ -371,7 +371,7 @@ describe('the ruled work_session category (Spec D1 §3.2, migration 299)', () =>
   /** `internal.session_category`'s CASE arms, read out of 299. */
   function sessionArmsFromMigration(): { outcome: Record<string, string>; status: Record<string, string> } {
     const path = fileURLToPath(
-      new URL('../../../../db/migrations/299_session_outcome_and_claims.sql', import.meta.url),
+      new URL('../../../../db/migrations/301_session_outcome_and_claims.sql', import.meta.url),
     );
     const sql = readFileSync(path, 'utf8');
     const start = sql.indexOf('function internal.session_category');
