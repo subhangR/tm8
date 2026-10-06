@@ -31,7 +31,9 @@
 .tws-left-header {
   grid-area: header;
   display: flex;
-  align-items: center;
+  /* R3: every control in the 44px band is a 36px box bottom-aligned like a
+     tab (8px top inset), so every label and icon shares the tabs' centre. */
+  align-items: flex-end;
   padding-right: var(--pn-space-3);
   border-bottom: 1px solid var(--pn-line);
   background: var(--pn-surface);
@@ -43,6 +45,7 @@
   display: flex;
   justify-content: center;
   width: var(--tws-rail-w);
+  height: 36px;
 }
 .tws-mark {
   color: var(--pn-ink);
@@ -53,7 +56,9 @@
 }
 .tws-view-select {
   position: relative;
+  display: flex;
   flex: none;
+  height: 36px;
 }
 .tws-chevron {
   color: var(--pn-ink-3);
@@ -65,15 +70,61 @@
   margin-left: auto;
   padding-left: var(--pn-space-2);
   min-width: 0;
+  height: 36px;
+}
+/* R4: the space switcher as a single-line quiet button; the server line is
+   in its tooltip. Max 140px with an ellipsis. */
+.tws-root .tws-space-slot .shell-switcher {
+  display: flex;
+  min-width: 0;
+  padding: 0;
+}
+.tws-root .tws-space-slot .shell-switcher__trigger--quiet {
+  width: auto;
   max-width: 140px;
-  overflow: hidden;
+  min-width: 36px;
+  height: 36px;
+  justify-content: center;
+  gap: var(--pn-space-1);
+  padding: 0 var(--pn-space-2);
+  background: none;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+}
+.tws-root .tws-space-slot .shell-switcher__trigger--quiet:hover {
+  background: var(--pn-hover);
+}
+.tws-root .tws-space-slot .shell-switcher__trigger--quiet .shell-switcher__space {
+  min-width: 0;
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+}
+.tws-root .tws-space-slot .shell-switcher__trigger--quiet .shell-switcher__caret {
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-label);
+}
+/* Below a 300px browser: the space initial in a 28px tile. */
+.tws-root .tws-space-slot .shell-switcher__trigger--quiet .shell-switcher__monogram {
+  width: 28px;
+  height: 28px;
+  font-size: var(--pn-fs-sm);
+}
+.tws-root .tws-space-slot .shell-switcher__pop {
+  top: calc(100% + var(--pn-space-1));
+  right: 0;
+  left: auto;
 }
 
 /* Expanded (Spec A §14): Restore · ⋯ at the strip's far left; the tabs
    start 12px after it (the strip's 8px gap + 4px). */
 .tws-restore {
   display: flex;
-  align-items: center;
+  align-self: stretch;
+  align-items: flex-end;
   gap: var(--pn-space-1);
   flex: none;
   margin-right: var(--pn-space-1);
@@ -221,20 +272,13 @@
   border: 0;
   border-radius: var(--pn-r-sm);
 }
-.tws-rail-account .auth-accountmenu__trigger .auth-avatar {
-  width: 28px;
-  height: 28px;
+.tws-rail-account .auth-accountmenu__trigger:hover {
+  border: 0;
 }
-.tws-rail-account .auth-accountmenu__name {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-.tws-rail-account .auth-accountmenu__caret {
-  display: none;
+/* R12: the compact trigger's 32px avatar drawn at 28px, initial or picture. */
+.tws-rail-account .auth-avatar--compact {
+  flex: none;
+  transform: scale(0.875);
 }
 /* Opens up and to the right of the rail, bottom-aligned with the avatar. */
 .tws-rail-account .auth-menu--anchored {
