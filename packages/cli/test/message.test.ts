@@ -378,6 +378,17 @@ describe('message send', () => {
     expect(seen).toHaveLength(0);
   });
 
+  it('D2: a message to a CLOSED session prints a visible notice, and the send still succeeds (stored)', async () => {
+    const detail = `session ${ANCHOR} is closed (completed, process exited); not delivered live — the message is stored on its anchor`;
+    reply = () => envelope({
+      ...(batch([MESSAGE]) as object),
+      delivery: [{ targetMessageId: MESSAGE, targetWorkSessionId: ANCHOR, status: 'undelivered', reason: 'recipient_session_closed', detail }],
+    });
+    const r = await dispatch(['message', 'send', '--to', ANCHOR, 'child result', '--mutation-id', 'mut-1']);
+    expect(r.code).toBe(0);
+    expect(r.stderr).toContain(`notice: ${detail}`);
+  });
+
   it('sends anchorIds, body, mentions and attachments in the frozen shape', async () => {
     reply = () => envelope(batch([MESSAGE]));
     const r = await dispatch([

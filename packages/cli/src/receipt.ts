@@ -347,6 +347,7 @@ function messageReceipt(op: ReceiptOp, dto: unknown, input: ReceiptInput): Recei
       session: d.targetWorkSessionId,
       status: d.status,
       ...(typeof d.reason === 'string' ? { reason: d.reason } : {}),
+      ...(typeof d.detail === 'string' ? { detail: d.detail } : {}),
     }));
   }
   receipt.warnings = warningsOf(dto, input);

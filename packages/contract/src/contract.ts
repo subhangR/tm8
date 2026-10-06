@@ -3596,6 +3596,12 @@ export interface MessageDeliveryDisposition {
   reason?: string;
   /** Present on `accepted`, to follow the row to its settlement. */
   deliveryId?: string;
+  /**
+   * D2 (301/302): one plain sentence for the sender when there is something to
+   * say beyond the slug — e.g. `recipient_session_closed`: "session <id> is
+   * closed (completed, process exited); not delivered live".
+   */
+  detail?: string;
 }
 
 export interface MessageBatchResult {
