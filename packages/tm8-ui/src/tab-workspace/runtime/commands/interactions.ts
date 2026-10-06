@@ -28,8 +28,10 @@ export const resolve: Planner = ({ state, env, hooks }) => {
 
     case 'addType':
     case 'useMixed': {
+      // Under Mixed (the scope changed while the prompt was up) the union with
+      // the current set is already everything, so addType keeps Mixed.
       const plan =
-        choice === 'useMixed'
+        choice === 'useMixed' || cleared.scope.mode === 'mixed'
           ? applyScope(cleared, { mode: 'mixed' }, hooks)
           : applyScope(
               cleared,
