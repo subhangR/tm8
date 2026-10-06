@@ -121,11 +121,11 @@ describe('THE GATE — composed T0-1 master screen', () => {
     // The View switcher (task 01a0dc6d, 2026-09-26): the four VIEWS lead the
     // row inside one pill, and Craft/Settings/Help follow as plain tabs.
     expect(labels).toEqual([
-      'Home', 'Work', 'Board', 'Graph', 'Craft', 'Settings', 'Help',
+      'Home', 'Workspace', 'Work', 'Board', 'Graph', 'Craft', 'Settings', 'Help',
     ]);
     const pill = within(tabs).getByTestId('top-view-switcher');
     expect([...pill.querySelectorAll('[role="tab"]')].map((n) => n.textContent?.trim()))
-      .toEqual(['Home', 'Work', 'Board', 'Graph']);
+      .toEqual(['Home', 'Workspace', 'Work', 'Board', 'Graph']);
 
     // The rail is absent as a matter of design, so none of its furniture is
     // half-rendered either — a stray group or divider would mean a rail came
@@ -383,7 +383,7 @@ describe('THE GATE — composed T0-1 master screen', () => {
       await waitFor(() => view.getByTestId('workspace-grid'));
       const select = await waitFor(() => view.getByTestId('top-view-switcher-select') as HTMLSelectElement);
       expect([...select.options].filter((o) => !o.disabled).map((o) => o.textContent))
-        .toEqual(['Home', 'Work', 'Board', 'Graph']);
+        .toEqual(['Home', 'Workspace', 'Work', 'Board', 'Graph']);
 
       fireEvent.change(select, { target: { value: 'graph' } });
       await waitFor(() => view.getByTestId('graph-screen'));

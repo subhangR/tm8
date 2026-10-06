@@ -357,6 +357,18 @@ const DRAWER_CREATE_KIND: EntityKind = 'task';
 export function MobileShell(props: MobileShellProps) {
   const { data, activeTarget, navigateTo, spaceId } = props;
 
+  /* THE WORKSPACE (tabs) VIEW IS DESKTOP-ONLY (Spec A §2): the phone does not
+     list it, and a `#/…/tabs` link opened here falls back to Home — replace,
+     so Back does not return to an address this shell cannot draw. */
+  useEffect(() => {
+    const fallBack = (state: ReturnType<typeof navStore.getState>) => {
+      if (state.view.view !== 'tabs') return;
+      navStore.setState((s) => ({ view: { view: 'home' }, history: 'replace', revision: s.revision + 1 }));
+    };
+    fallBack(navStore.getState());
+    return navStore.subscribe(fallBack);
+  }, []);
+
   /*
    * THE UP AFFORDANCE, on the store's blessed seam and nothing else.
    *
