@@ -256,10 +256,12 @@ describe('v2 sizes, measured on doc 01a0d456\'s own fixture', () => {
   const sizes: Record<AgentMode, { bytes: number; ceiling: number; graph: boolean }> = {
     // Doc 01a0d708 §3: each is doc 01a0d456's size plus base rule 4 (+243 B),
     // then +24 B for rule 4's good/bad example (task 01a0da5a, doc 01a0da65 D6).
-    worker: { bytes: 2991, ceiling: 3000, graph: true },
-    'coordinated-worker': { bytes: 3333, ceiling: 3350, graph: true },
-    coordinator: { bytes: 3899, ceiling: 4000, graph: true },
-    'coordinated-coordinator': { bytes: 4241, ceiling: 4250, graph: true },
+    // Spec D1 §7 (301): +99 B worker / +94 B coordinator for the `tm8 session complete`
+    // close-out line; ceilings re-set to the measured size + 9 B. MEASURED.
+    worker: { bytes: 3090, ceiling: 3099, graph: true },
+    'coordinated-worker': { bytes: 3432, ceiling: 3441, graph: true },
+    coordinator: { bytes: 3993, ceiling: 4002, graph: true },
+    'coordinated-coordinator': { bytes: 4335, ceiling: 4344, graph: true },
     dispatcher: { bytes: 3195, ceiling: 3200, graph: false },
   };
 

@@ -705,14 +705,18 @@ $$;
 -- 8. Complete / stop / release
 -- ---------------------------------------------------------------------------
 
--- Where a session's close-out may live: the session itself and every task it
--- has claimed (active or ended).
+-- Where a session's close-out may live: the session itself, its parent
+-- session (a coordinated worker reports to its coordinator's session), and
+-- every task it has claimed (active or ended).
 create or replace function internal.session_anchor_ids(p_session_id uuid)
 returns uuid[] language sql stable
 set search_path = public, internal, pg_temp as $$
-  select array[p_session_id] || coalesce(array_agg(distinct ed.dst_id), '{}')
-    from public.edges ed
-   where ed.src_id = p_session_id and ed.type = 'working_on'
+  select array[p_session_id]
+         || coalesce((select array[pe.id] from public.entities se
+                        join public.entities pe on pe.id = se.parent_id and pe.kind = 'work_session'
+                       where se.id = p_session_id), '{}')
+         || coalesce((select array_agg(distinct ed.dst_id) from public.edges ed
+                       where ed.src_id = p_session_id and ed.type = 'working_on'), '{}')
 $$;
 
 -- EVERYTHING `session complete` refuses on, as one list (spec §6.3 R6). D2 adds
