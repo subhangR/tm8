@@ -33,13 +33,20 @@ const OWNER: LoopbackOwner = {
 /** Answers the session's stored outcome/status; records every RPC with its args. */
 class ScriptedDb implements Db {
   readonly rpcs: Array<{ fn: string; args: readonly unknown[] }> = [];
+  /** RPCs that raise, as the DB does on a refusal (e.g. the claim check). */
+  readonly refuse = new Map<string, Error>();
   constructor(private readonly row: { outcome: string; status: string }) {}
+  private record(fn: string, args: readonly unknown[]): void {
+    this.rpcs.push({ fn, args });
+    const refusal = this.refuse.get(fn.replace(/^public\./, ''));
+    if (refusal) throw refusal;
+  }
 
   private querier(): Querier {
     return {
       query: async <R>(sql: string) => this.answer(sql) as R[],
       rpc: async <T>(fn: string, args: readonly unknown[] = []) => {
-        this.rpcs.push({ fn, args });
+        this.record(fn, args);
         return {} as T;
       },
     };
@@ -53,7 +60,7 @@ class ScriptedDb implements Db {
     return fn(this.querier());
   }
   async rpc<T = unknown>(_claims: DbClaims, fn: string, args: readonly unknown[] = []): Promise<T> {
-    this.rpcs.push({ fn, args });
+    this.record(fn, args);
     return { outcome: { outcome: 'completed' } } as T;
   }
   async query<R = Record<string, unknown>>(_claims: DbClaims, sql: string): Promise<R[]> {
@@ -138,6 +145,20 @@ describe('execution.terminate — the work is the caller’s choice while it is 
     expect(fns(h)[0]).toBe('complete_work_session');
     expect(h.db.rpcs[0]!.args[1]).toBe('33333333-3333-4333-8333-333333333333');
     expect(transitionOf(h)).toContain('exited_clean');
+  });
+
+  it('S7: "Mark complete & close" with an open claim is refused by the claim check, and nothing is killed', async () => {
+    const h = harness({ outcome: 'open', status: 'running' });
+    h.db.refuse.set(
+      'complete_work_session',
+      Object.assign(new Error('session has open claims: claims_open'), { code: 'P0001' }),
+    );
+    await expect(
+      call(h, 'execution.terminate', { outcome: 'complete', receiptMessageId: '33333333-3333-4333-8333-333333333333' }),
+    ).rejects.toBeTruthy();
+    expect(fns(h)).toEqual(['complete_work_session']);
+    expect(h.pty.kills).toBe(0);
+    expect(transitionOf(h)).toBeUndefined();
   });
 
   it('S2: on a completed session it only closes the process (exited_clean), no outcome write', async () => {

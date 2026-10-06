@@ -731,14 +731,15 @@ export function claimsFromEdges(
 
 /**
  * §5.3.1 case 10: a spawn refused with `session concurrency cap reached`
- * names its cause and the remedy. Completed sessions no longer count toward
- * the limit server-side, so the remaining ✓ rows are spare capacity the
- * operator reclaims with Stop all finished (Running tab). Null for any other
- * refusal. "N of N" is quoted only when the node's message carries the numbers.
+ * names its cause and the remedy. Completed (✓) sessions never count toward
+ * the limit (`internal.live_work_session_count`), so the slots are all held
+ * by OPEN sessions and stopping ✓ rows frees none — the hint must not offer
+ * that. Null for any other refusal. "N of N" is quoted only when the node's
+ * message carries the numbers.
  */
 export function capRefusalHint(message: string | null | undefined): string | null {
   if (!message || !/concurrency cap/i.test(message)) return null;
   const nums = message.match(/(\d+)\s*(?:of|\/)\s*(\d+)/);
   const used = nums ? `${nums[1]} of ${nums[2]} slots used. ` : 'Every session slot is in use. ';
-  return `${used}Finished sessions whose process is still open hold a slot until it closes — Stop all finished from the Sessions list (Running tab), then launch again.`;
+  return `${used}Only open sessions count; completed (✓) ones do not. Complete or stop a session that is done (Sessions list, Running tab), then launch again.`;
 }

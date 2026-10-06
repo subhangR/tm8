@@ -225,6 +225,16 @@ describe('§6.8 line 2 for multiple tasks', () => {
     expect(sessionLineTwo(session(), 'live', { ...ctx, claims, offered: 1 })).toBe('Working · 2 tasks · 1 done · 1 offered');
   });
 
+  it('scenario 15 — claims A and B, A completed: only B is current, "Working · 1 task · 1 done"', () => {
+    const claims = [
+      claim({ taskId: 'a', endedAt: ago(MIN), endReason: 'task_done' }),
+      claim({ taskId: 'b' }),
+    ];
+    const w = sessionRowWord(session(), 'live', { ...ctx, claims })!;
+    expect(w.word).toBe('Working');
+    expect(sessionLineTwo(session(), 'live', { ...ctx, claims })).toBe('Working · 1 task · 1 done');
+  });
+
   it('Ready to complete: every active claim in review or blocked, at least one ever', () => {
     const claims = [claim({ status: 'in_review' }), claim({ taskId: 't2', status: 'blocked' })];
     const w = sessionRowWord(session(), 'live', { ...ctx, claims })!;
@@ -339,11 +349,14 @@ describe('§5.3.1 awkward cases', () => {
     ]);
   });
 
-  it('case 10 (refusal) — "session concurrency cap reached" names the slots and offers Stop all finished (scenario 28)', () => {
+  it('case 10 (refusal) — "session concurrency cap reached" names the slots and a remedy that frees one (scenario 28)', () => {
+    // ✓ sessions never count toward the cap (S28 in session-outcome-301.pg),
+    // so the hint must not send the operator to stop them.
     expect(capRefusalHint('session concurrency cap reached (8/8)')).toBe(
-      '8 of 8 slots used. Finished sessions whose process is still open hold a slot until it closes — Stop all finished from the Sessions list (Running tab), then launch again.',
+      '8 of 8 slots used. Only open sessions count; completed (✓) ones do not. Complete or stop a session that is done (Sessions list, Running tab), then launch again.',
     );
-    expect(capRefusalHint('session concurrency cap reached')).toMatch(/^Every session slot is in use\. .*Stop all finished/);
+    expect(capRefusalHint('session concurrency cap reached')).toMatch(/^Every session slot is in use\. Only open sessions count/);
+    expect(capRefusalHint('session concurrency cap reached')).not.toMatch(/Stop all finished/);
     expect(capRefusalHint('entity not found')).toBeNull();
   });
 

@@ -307,6 +307,34 @@ describe('299 — outcome and process are separate fields', () => {
     expect((await session(s)).outcome).toBe('completed');
   });
 
+  it('S2/S4: after completion, closing the process moves only the process fields; the task gets no event', async () => {
+    const t = await createTask('s2');
+    const s = await running([t]);
+    await setWork(t, 'in_review', { asSession: s });
+    await post(t, 'Close-out: done, in review.', s);
+    await complete(s, null, s);
+    const aboutTask = async () =>
+      Number(
+        (await database.query<{ n: number }>(
+          `select count(*)::int n from public.workspace_events where payload::text like '%' || $1 || '%'`,
+          [t],
+        ))[0]!.n,
+      );
+    const before = await aboutTask();
+    // Stop on the ✓ row (§13.7: a terminate after completion records exited_clean),
+    // or the same process exit arriving late.
+    await transition(s, 'exited', 'exited_clean');
+    expect(await session(s)).toMatchObject({
+      outcome: 'completed',
+      status: 'exited',
+      ended_kind: 'exited_clean',
+      category: 'done',
+    });
+    expect(await events('session.outcome_changed', s)).toHaveLength(1);
+    expect(await aboutTask()).toBe(before);
+    expect(await taskStatus(t)).toBe('in_review');
+  });
+
   it('the outcome has a single writer: a direct update is refused', async () => {
     const s = await running([await createTask('guard')]);
     const r = await refusal(
