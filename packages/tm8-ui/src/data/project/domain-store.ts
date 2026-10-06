@@ -408,7 +408,7 @@ export function createDomainStore(
 export type Membership = 'in' | 'out' | 'unknown';
 
 /** The filter clauses this module can decide. Everything else ⇒ 'unknown'. */
-const DECIDABLE_CLAUSES = new Set(['deleted', 'status', 'sessionStatus', 'category']);
+const DECIDABLE_CLAUSES = new Set(['deleted', 'status', 'sessionStatus', 'sessionOutcome', 'category']);
 
 export function membershipOf(filter: unknown, summary: EntitySummary): Membership {
   const clauses: Record<string, unknown> =
@@ -428,6 +428,9 @@ export function membershipOf(filter: unknown, summary: EntitySummary): Membershi
   const state = summary.state as unknown as Record<string, unknown>;
   if (!matchesAxis(clauses.status, state.status)) return 'out';
   if (!matchesAxis(clauses.sessionStatus, state.status)) return 'out';
+  // 301 (Spec D1): a session from a pre-301 node carries no outcome; it is open.
+  if (!matchesAxis(clauses.sessionOutcome,
+    summary.kind === 'work_session' ? (state.outcome ?? 'open') : undefined)) return 'out';
   /* Phase 1's envelope fact (PR #353): `category` rides the SUMMARY, so the
      clause is decidable here exactly like the status axes — an absent
      category never matches a present clause (`NULL = any(...)` semantics). */
