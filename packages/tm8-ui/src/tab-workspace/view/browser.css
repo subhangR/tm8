@@ -410,6 +410,16 @@
   }
 }
 
+/* R43: the hover bar takes the trailing slot the criteria count holds, so the
+   count steps out of it in place — hidden, not removed, so the title never
+   shifts or re-truncates on hover. */
+@media (hover: hover) and (pointer: fine) {
+  .cv2-root:not([data-shell='mobile']) .tws-browser .lp__tree
+    .pn-tt:is(:hover, :focus-within) > .pn-tt__main .pn-tt__progress {
+    visibility: hidden;
+  }
+}
+
 /* ---- R24: fill on :hover and :active only; focus shows only the ring ---- */
 .tws-browser-new:focus:not(:hover):not(:active) {
   background: transparent;

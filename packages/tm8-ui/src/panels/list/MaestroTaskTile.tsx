@@ -8,6 +8,11 @@ import { ChildCountBadge } from './ChildCountBadge';
 import { useFreshGlow } from '../../domain/useFreshGlow';
 import './maestro-task-tile.css';
 
+export interface TaskTileProgress {
+  done: number;
+  total: number;
+}
+
 export interface MaestroTaskTileProps {
   /* React 19 widened `useRef<T>(null)` to `RefObject<T | null>`; a prop typed
      `RefObject<T>` can no longer receive one. The null is real — the ref is
@@ -63,6 +68,13 @@ export interface MaestroTaskTileProps {
    * it); the visually-hidden status word stays. Absent ⇒ as before.
    */
   lead?: ReactNode;
+  /**
+   * Acceptance criteria done of total, drawn as a trailing `3/8` on the
+   * collapsed row. The lead mode drops the status mark, so without this the
+   * Work browser's task rows said nothing about how far along a task is.
+   * Absent, or `total === 0`, draws nothing: no criteria is not 0%.
+   */
+  progress?: TaskTileProgress | null;
   assignees: readonly ActorSummary[];
   /**
    * Provenance, shown only when nobody is assigned. Almost every task in a
@@ -106,6 +118,7 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
     status,
     statusControl,
     lead,
+    progress,
     assignees,
     creator,
     badges,
@@ -215,6 +228,8 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
           {glow.srSuffix ? <span className="sr-only">{glow.srSuffix}</span> : null}
         </button>
 
+        <TaskProgressFigure progress={progress} />
+
         {assignees.length > 0 ? (
           <div className="pn-tt__inline">
             <span
@@ -284,6 +299,26 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** The row's `done/total` criteria figure; nothing when there are no criteria. */
+export function TaskProgressFigure({ progress }: { progress?: TaskTileProgress | null }) {
+  if (!progress || progress.total <= 0) return null;
+  const done = Math.max(0, Math.min(progress.done, progress.total));
+  const complete = done >= progress.total;
+  const label = `${done} of ${progress.total} acceptance criteria done`;
+  return (
+    <span
+      className={complete ? 'pn-tt__progress pn-tt__progress--done' : 'pn-tt__progress'}
+      role="img"
+      aria-label={label}
+      title={label}
+      data-testid="task-progress"
+      data-complete={complete ? 'true' : 'false'}
+    >
+      {done}/{progress.total}
+    </span>
   );
 }
 
