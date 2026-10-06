@@ -106,7 +106,7 @@ export const EDGE_KINDS: Readonly<Record<string, EdgeKinds>> = {
     // 304 appends `design`: a design's pages are its `contains` targets.
     src: ['collection', 'story', 'design'],
     dst: ['*'],
-    description: 'Story root or collection item: this story or collection holds that entity directly. props.position orders it.',
+    description: 'Story root or collection item: this story, collection or design holds that entity directly. props.position orders it.',
     acyclic: false,
   },
   controls: {
