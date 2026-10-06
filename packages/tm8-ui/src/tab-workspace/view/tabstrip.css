@@ -4,6 +4,9 @@
  * everything here is scoped under `.tws-ts`.
  */
 .tws-strip.tws-ts {
+  /* Subhang feedback 6: the band sits one surface step darker (--pn-paper) so
+     the --pn-card active tab stands out; the left header matches. */
+  background: var(--pn-paper);
   /* R27 (overrides R3's 8px inset): a 40px band. Tabs run its full height,
      edge to edge; every other control is a 36px box 2px from the top and the
      bottom edge, so all labels share the left header's centre (y = 20). */
@@ -68,13 +71,14 @@
   padding-left: var(--pn-space-3);
   /* R27: a full-height tab has no free corner to round. */
   border-radius: 0;
-  color: var(--pn-ink-3);
+  color: var(--pn-ink-2);
   user-select: none;
 }
 .tws-ts-tab:hover {
-  /* Stop 1px short so an inactive tab's hover never paints over the hairline. */
-  background: linear-gradient(var(--pn-hover), var(--pn-hover)) top / 100% calc(100% - 1px) no-repeat;
-  color: var(--pn-ink-2);
+  /* One step darker than the --pn-paper band; stops 1px short so an inactive
+     tab's hover never paints over the hairline. */
+  background: linear-gradient(var(--pn-active), var(--pn-active)) top / 100% calc(100% - 1px) no-repeat;
+  color: var(--pn-ink);
 }
 .tws-ts-tab[data-active] {
   background: var(--pn-card);
@@ -110,10 +114,10 @@
 .tws-ts-icon {
   display: inline-flex;
   flex: none;
-  color: var(--pn-ink-4);
+  color: var(--pn-ink-2);
 }
 .tws-ts-tab[data-active] .tws-ts-icon {
-  color: var(--pn-ink-2);
+  color: var(--pn-ink);
 }
 
 .tws-ts-title {
@@ -178,7 +182,7 @@
   background: none;
   border: 0;
   border-radius: var(--pn-r-xs);
-  color: var(--pn-ink-3);
+  color: var(--pn-ink-2);
   cursor: pointer;
 }
 /* Keep the 36×36 hit box while the visible fill stays 20×20. */
@@ -188,7 +192,8 @@
   inset: -8px;
 }
 .tws-ts-close:hover {
-  background: var(--pn-hover);
+  /* Darker than the hovered tab under it. */
+  background: var(--pn-line);
   color: var(--pn-ink);
 }
 /* Shown on hover or focus inside the tab; always focusable (Spec A §16). */
@@ -234,7 +239,7 @@
   background: none;
   border: 0;
   border-radius: var(--pn-r-sm);
-  color: var(--pn-ink-3);
+  color: var(--pn-ink-2);
   cursor: pointer;
 }
 /* R24: a fill only while hovered or pressed, never left behind by a click or
@@ -242,12 +247,12 @@
 @media (hover: hover) {
   .tws-ts-btn:hover {
     /* Same 1px stop as a tab: the box sits on the hairline row. */
-    background: linear-gradient(var(--pn-hover), var(--pn-hover)) top / 100% calc(100% - 1px) no-repeat;
+    background: linear-gradient(var(--pn-active), var(--pn-active)) top / 100% calc(100% - 1px) no-repeat;
     color: var(--pn-ink);
   }
 }
 .tws-ts-btn:active {
-  background: linear-gradient(var(--pn-active), var(--pn-active)) top / 100% calc(100% - 1px) no-repeat;
+  background: linear-gradient(var(--pn-line), var(--pn-line)) top / 100% calc(100% - 1px) no-repeat;
   color: var(--pn-ink);
 }
 .tws-ts-btn:focus-visible {

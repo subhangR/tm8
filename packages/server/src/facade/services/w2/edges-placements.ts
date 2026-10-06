@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto';
 
 import {
+  CROSS_SPACE_EDGE,
   CollabError,
+  crossSpaceRefCommand,
   decodeCursor,
   encodeCursor,
   isCollabError,
@@ -13,9 +15,9 @@ import {
   type PlacementInput,
 } from '@tm8/contract';
 
-import type { Querier } from '../../../db/types.js';
+import type { Db, DbClaims, Querier } from '../../../db/types.js';
 import type { RequestContext } from '../../../http/types.js';
-import { claimsFor, commandEnvelope, limitOf, optionalUuid, requireUuidParam } from '../../context.js';
+import { claimsFor, commandEnvelope, isUuid, limitOf, optionalUuid, requireUuidParam } from '../../context.js';
 import type { FacadeDeps } from '../../deps.js';
 import {
   MICROS,
@@ -299,6 +301,56 @@ function normalizeFrozenReason(error: unknown): never {
   throw error;
 }
 
+/** `write_edge`'s frozen text for the D3 refusal (007, 018, 056, 129). */
+const CROSS_SPACE_EDGE_SQL = 'edge endpoints must be in the same space';
+
+/**
+ * A non-uuid endpoint reaches `write_edge` as 22P02 and came back a bare
+ * not_found naming nothing. Agents pass short id prefixes; say which one.
+ */
+function requireEndpointId(value: string, field: 'srcId' | 'dstId'): void {
+  if (!isUuid(value)) {
+    throw new CollabError('not_found',
+      `no such entity: ${value} (${field}); edge endpoints are full entity ids, a short id prefix or a title is not resolved`,
+      { details: { reason: 'edge_endpoint_not_uuid', field } });
+  }
+}
+
+function isCrossSpaceEdgeRefusal(error: unknown): boolean {
+  return isCollabError(error) && error.details?.['sqlstate'] === '23514'
+    && error.details?.['detail'] === undefined && error.message === CROSS_SPACE_EDGE_SQL;
+}
+
+/**
+ * D3: an edge never crosses spaces, so no retry of this request succeeds.
+ * Say so, and name the reference to make instead, from what the CALLER can
+ * read: a pinned session sees only its own space, so the endpoint it cannot
+ * see is the one in the other space and the visible one holds the reference.
+ */
+async function crossSpaceEdgeError(db: Db, claims: DbClaims, input: CreateEdgeInput): Promise<CollabError> {
+  let rows: Array<{ id: string; space_id: string }> = [];
+  try {
+    rows = await db.query<{ id: string; space_id: string }>(claims,
+      'select id, space_id from public.entities where id = any($1::uuid[]) and deleted_at is null',
+      [[input.srcId, input.dstId]]);
+  } catch {
+    // Best effort: the refusal below still names the command.
+  }
+  const src = rows.find((r) => r.id === input.srcId);
+  const dst = rows.find((r) => r.id === input.dstId);
+  const flip = !src && dst !== undefined;
+  const holderId = flip ? input.dstId : input.srcId;
+  const targetId = flip ? input.srcId : input.dstId;
+  // Both visible (an unpinned caller): the link is named by its target space.
+  const targetSpaceId = src && dst ? dst.space_id : undefined;
+  const next = crossSpaceRefCommand(holderId, targetId, targetSpaceId);
+  return new CollabError('invariant_violation',
+    `an edge cannot cross spaces: ${targetId} is not in the space of ${holderId}, so no retry succeeds; ` +
+    `point at it with a cross-space reference instead: ${next}` +
+    (targetSpaceId ? '' : ' (`tm8 link list` shows this space\'s links; a human adds one with `tm8 link add`)'),
+    { details: { sqlstate: '23514', reason: CROSS_SPACE_EDGE, holderId, targetId, ...(targetSpaceId ? { targetSpaceId } : {}), next } });
+}
+
 export class W2EdgesPlacementsService {
   constructor(private readonly deps: FacadeDeps) {}
 
@@ -317,8 +369,11 @@ export class W2EdgesPlacementsService {
     const input = ctx.body as CreateEdgeInput;
     const envelope = commandEnvelope(ctx);
     rejectClientOrigin(input.props ?? {});
+    requireEndpointId(input.srcId, 'srcId');
+    requireEndpointId(input.dstId, 'dstId');
+    const claims = claimsFor(owner, ctx, envelope);
     try {
-      return await this.deps.db.tx(claimsFor(owner, ctx, envelope), async (q) => {
+      return await this.deps.db.tx(claims, async (q) => {
         const raw = await q.rpc<RpcCommandResult>('write_edge', [
           input.srcId,
           input.dstId,
@@ -330,6 +385,7 @@ export class W2EdgesPlacementsService {
         return withDerivedEdgeFields(await toCommandResult(q, raw, owner.identityId));
       });
     } catch (error) {
+      if (isCrossSpaceEdgeRefusal(error)) throw await crossSpaceEdgeError(this.deps.db, claims, input);
       normalizeFrozenReason(error);
     }
   };

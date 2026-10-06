@@ -2,8 +2,10 @@
  * `tm8 link add|login|list|audit` — space links from the HOME Space (W6/W7).
  *
  *   link list                      spaceLinks.list  (every Member, agents too)
- *   link add <target-space-id>     spaceLinks.add   (human sessions only)
- *   link login <alias|link-id>     spaceLinks.login (human sessions only)
+ *   link add <target-space-id> [--target-server <server-id|name>]
+ *                                  spaceLinks.add   (human sessions only)
+ *   link login <alias|link-id> [--pairing-code <code>]
+ *                                  spaceLinks.login (human sessions only)
  *   link audit <alias|link-id>     spaceLinks.audit (own rows; every row for a home admin)
  *
  * And from the TARGET Space (278, D2), for its admins:
@@ -13,7 +15,17 @@
  *   link revoke <ref>              spaceLinks.inbound.revoke  (human sessions only)
  *   link restore <ref>             spaceLinks.inbound.restore (human sessions only)
  *
+ *   link grant <home-space-id> [--label <name>] [--allow-spawn]
+ *                                  spaceLinks.inbound.grant (human sessions only;
+ *                                  W9c, the target server must have
+ *                                  TM8_REMOTE_SPACE_LINKS on)
+ *
  * An inbound <ref> is the link id or the linking (home) Space's id.
+ *
+ * ACROSS SERVERS (W9c): on the target server, `link grant` prints a one-time
+ * pairing code; on the home server, `link add --target-server` then
+ * `link login --pairing-code` claims it. The pairing code is the ONE secret
+ * this file prints on purpose, and only from `link grant`.
  *
  * The writes are refused to agents by the Server (the handler guard and the
  * SQL gate); this file adds no check and no bypass, and renders the refusal
@@ -31,6 +43,7 @@ import {
   type SpaceLinkInboundAuditEntry,
   type SpaceLinkInboundView,
   type SpaceLinkView,
+  type SpaceLinksInboundGrantResult,
 } from '@tm8/contract';
 import { requireSpace } from '../context.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
@@ -98,6 +111,10 @@ export function scrubSecrets<T>(value: T): T {
  * alias for `link login` is not a human-only refusal and gets no such hint.
  */
 function refusedAsHumanOnly(err: ApiError): boolean {
+  // A refusal that names another reason (a revoked link, the remote-links
+  // switch) is not about the session kind: no human-only hint for it.
+  const reason = (err.details as Record<string, unknown> | undefined)?.['reason'];
+  if (typeof reason === 'string' && reason !== 'space_links_human_only') return false;
   return err.code === 'forbidden' && err.operation !== undefined
     && isOperationName(err.operation) && getOperation(err.operation).humanOnly === true;
 }
@@ -180,33 +197,84 @@ async function linkList(cmd: CommandContext): Promise<ExitCode> {
   });
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** `--target-server`: a server entity id, or a server's name in this Space. */
+async function serverIdFor(cmd: CommandContext, ref: string): Promise<string> {
+  if (UUID_RE.test(ref)) return ref.toLowerCase();
+  const servers = (await observedInvoke<Array<{ id: string; name: string }>>(clientFor(cmd.ctx), 'servers.list', {
+    params: { spaceId: requireSpace(cmd.ctx) },
+  })) ?? [];
+  const hit = servers.filter((s) => s.name.toLowerCase() === ref.toLowerCase());
+  if (hit.length === 1) return hit[0]!.id;
+  throw new CliError(`no server ${JSON.stringify(ref)} in this Space`, EXIT_USAGE, {
+    hint: 'register the other server first with `tm8 server add <name> --url <https-url>`',
+  });
+}
+
 async function linkAdd(cmd: CommandContext): Promise<ExitCode> {
-  assertKnownOptions(cmd, ['alias', 'mutation-id']);
+  assertKnownOptions(cmd, ['alias', 'target-server', 'mutation-id']);
   const targetSpaceId = requireArg(cmd.args[0], 'link add', 'the <target-space-id> to link');
   return scrubbed(async () => {
     const alias = cmd.options.value('alias');
+    const server = cmd.options.value('target-server');
+    const targetServerId = server === undefined ? undefined : await serverIdFor(cmd, server);
     const view = await observedInvoke<SpaceLinkView>(clientFor(cmd.ctx), 'spaceLinks.add', {
       params: { spaceId: requireSpace(cmd.ctx) },
       body: {
         targetSpaceId,
+        ...(targetServerId === undefined ? {} : { targetServerId }),
         ...(alias === undefined ? {} : { alias }),
         clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
       },
     });
-    cmd.out.data(scrubSecrets(view), (dto) => `linked: ${renderLink(dto)}\nsign in with \`tm8 link login ${dto.mine?.alias ?? dto.id}\``);
+    const ref = view?.mine?.alias ?? view?.id;
+    cmd.out.data(scrubSecrets(view), (dto) => `linked: ${renderLink(dto)}\n${targetServerId
+      ? `on the other server, a Member of the target runs \`tm8 link grant ${requireSpace(cmd.ctx)}\`; then sign in with \`tm8 link login ${ref} --pairing-code <code>\``
+      : `sign in with \`tm8 link login ${ref}\``}`);
     return EXIT_OK;
   });
 }
 
 async function linkLogin(cmd: CommandContext): Promise<ExitCode> {
-  assertKnownOptions(cmd, ['mutation-id']);
+  assertKnownOptions(cmd, ['pairing-code', 'mutation-id']);
   const ref = requireArg(cmd.args[0], 'link login', 'the <alias|link-id> to sign in to');
   return scrubbed(async () => {
+    const pairingCode = cmd.options.value('pairing-code');
     const view = await observedInvoke<SpaceLinkView>(clientFor(cmd.ctx), 'spaceLinks.login', {
       params: { linkId: await linkIdFor(cmd, ref) },
-      body: { clientMutationId: resolveMutationId(cmd.options.value('mutation-id')) },
+      body: {
+        ...(pairingCode === undefined ? {} : { pairingCode }),
+        clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
+      },
     });
     cmd.out.data(scrubSecrets(view), (dto) => `signed in: ${renderLink(dto)}`);
+    return EXIT_OK;
+  });
+}
+
+/**
+ * W9c, on the TARGET server: let a Space on another server act here as you.
+ * Prints the pairing code — deliberately unscrubbed, it is the point of the
+ * command. It is single use, expires in minutes, and only its hash is stored.
+ */
+async function linkGrant(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['label', 'allow-spawn', 'mutation-id']);
+  const homeSpaceId = requireArg(cmd.args[0], 'link grant', 'the <home-space-id> on the other server');
+  return scrubbed(async () => {
+    const label = cmd.options.value('label');
+    const granted = await observedInvoke<SpaceLinksInboundGrantResult>(clientFor(cmd.ctx), 'spaceLinks.inbound.grant', {
+      params: { spaceId: requireSpace(cmd.ctx) },
+      body: {
+        homeSpaceId,
+        ...(label === undefined ? {} : { homeLabel: label }),
+        ...(cmd.options.bool('allow-spawn') ? { allowSpawn: true } : {}),
+        clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
+      },
+    });
+    cmd.out.data(granted, (dto) => `granted: ${scrubText(renderInbound(dto.link))}\n`
+      + `pairing code (single use, until ${dto.pairingExpiresAt}): ${dto.pairingCode}\n`
+      + `on the home server: \`tm8 link login <alias|link-id> --pairing-code <code>\``);
     return EXIT_OK;
   });
 }
@@ -322,4 +390,5 @@ export const LINK_COMMANDS: CommandModule[] = [
   { path: ['link', 'inbound-audit'], run: linkInboundAudit },
   { path: ['link', 'revoke'], run: linkInboundWrite(true) },
   { path: ['link', 'restore'], run: linkInboundWrite(false) },
+  { path: ['link', 'grant'], run: linkGrant },
 ];

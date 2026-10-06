@@ -53,6 +53,8 @@ describe('via_link claim forwarding (256, W7p)', () => {
       // #884: the invoke executor pins the inner link identity to the link's
       // target in every mode, beside the viaLinkId it already sets.
       'facade/handlers/w2/space-link-invoke.ts',
+      // W9c: the target's inbound route pins the remote link session to B, beside its viaLinkId.
+      'facade/handlers/w2/space-link-remote-route.ts',
       'http/artifact-preview.ts',
       'http/identity-resolver.ts',
       'http/support-claims.ts',

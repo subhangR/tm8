@@ -41,7 +41,10 @@
   cursor: pointer;
 }
 .tws-scope-btn:hover {
-  background: var(--pn-hover);
+  background: var(--pn-active);
+}
+.tws-scope-btn:active {
+  background: var(--pn-line);
 }
 .tws-scope-btn[data-mode='byType'] {
   background: var(--pn-brand-soft);

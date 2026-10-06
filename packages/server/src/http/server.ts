@@ -59,6 +59,7 @@ import {
 } from './remote-proxy.js';
 import type { W2FileUploadRoute } from './w2-file-upload.js';
 import { CLIPBOARD_UPLOAD_PATH, type ClipboardUploadRoute } from './clipboard-upload.js';
+import type { RemoteSpaceLinkRoute } from '../facade/handlers/w2/space-link-remote-route.js';
 import { VOICE_WEBHOOK_PATH, type VoiceWebhookRoute } from './voice-webhook.js';
 import type { ReadAdmission } from './read-admission.js';
 import { assertSpaceGate } from './space-gate.js';
@@ -90,6 +91,13 @@ export interface FacadeServerOptions {
   readonly staticHandler?: StaticHandler;
   /** Non-catalog support transport: FileUploadGrant raw-byte PUT. */
   readonly fileUploadRoute?: W2FileUploadRoute;
+  /**
+   * W9c: the target side of remote space links (`/link/v1/*`), POST only.
+   * Authenticates itself (pairing code or a remote link session), so it is
+   * dispatched before identity resolution, like the voice webhook. Answers
+   * nothing while `TM8_REMOTE_SPACE_LINKS` is off.
+   */
+  readonly remoteSpaceLinkRoute?: RemoteSpaceLinkRoute;
   /**
    * Non-catalog support transport: clipboard image paste, raw bytes POST.
    * Dispatched before `readJsonBody` for the same reason as the upload PUT —
@@ -383,6 +391,12 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
       // authenticates it by signature instead. Before readJsonBody, deliberately.
       if (method === 'POST' && pathname === VOICE_WEBHOOK_PATH && opts.voiceWebhookRoute) {
         if (await opts.voiceWebhookRoute(req, res, { requestId })) return;
+      }
+
+      // W9c: no transport identity either: the route resolves its own bearer
+      // (a link session, accepted on this route only) or takes a pairing code.
+      if (method === 'POST' && pathname.startsWith('/link/v1/') && opts.remoteSpaceLinkRoute) {
+        if (await opts.remoteSpaceLinkRoute(req, res, { requestId })) return;
       }
 
       const { value: body } = await readJsonBody(req, config.maxBodyBytes);

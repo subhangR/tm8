@@ -87,9 +87,12 @@
   padding: 0 var(--pn-space-1);
 }
 
-/* The attention pill keeps its own top-right corner of the body, under the
-   title bar. */
+/* The attention pill keeps its own top-right corner of the body (under the
+   title bar where the bar overlays a fill body). */
 .cv2-root .tws-panel > .pn-panel > .att-block-dock > .att-block {
+  top: var(--pn-space-3);
+}
+.cv2-root .tws-panel > .pn-panel[data-embedded-flow='fill'] > .att-block-dock > .att-block {
   top: calc(36px + var(--pn-space-3));
 }
 
@@ -504,40 +507,54 @@
 }
 
 /* --- The title bar (Subhang, round 5): under the tab strip / trail, on the
-   active tab's plane, the title only. It overlays the content's top; a
-   document reserves its 36px at the top of its own scroll, so hiding it on
-   scroll moves nothing. --- */
+   active tab's plane, the title only.
+   - Documents: the bar is IN the flow above the body and hides by collapsing
+     36 -> 0 (container, fill and hairline all go), so the content takes the
+     height back. There is no other reserve anywhere above the body.
+   - Bodies that own their height (terminal, chat, frame): the bar OVERLAYS
+     the body's top and hides by sliding out of view, so a terminal is never
+     resized (its PTY never refits) and nothing is left behind. --- */
 .tws-entity-main.tws-entity-host {
   position: relative;
   container-type: inline-size;
 }
 .tws-titlebar {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
+  position: relative;
   z-index: 5;
+  flex: none;
   height: 36px;
   box-sizing: border-box;
+  overflow: hidden;
   display: flex;
   align-items: center;
   /* The left edge is the body's measure edge. */
   padding: 0 var(--pn-space-3) 0 max(var(--pn-space-3), (100cqw - var(--pn-read-measure)) / 2);
   background: var(--pn-card);
   border-bottom: 1px solid var(--pn-line);
-  transition: transform var(--pn-dur-fast) var(--pn-ease-out);
+  transition:
+    height var(--pn-dur-fast) var(--pn-ease-out),
+    transform var(--pn-dur-fast) var(--pn-ease-out);
 }
 .tws-titlebar[data-hidden] {
-  transform: translateY(-100%);
+  height: 0;
+  border-bottom-width: 0;
   pointer-events: none;
+}
+.tws-entity-host:has(.pn-panel[data-embedded-flow='fill']) > .tws-titlebar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding-left: var(--pn-space-3);
+}
+.tws-entity-host:has(.pn-panel[data-embedded-flow='fill']) > .tws-titlebar[data-hidden] {
+  height: 36px;
+  transform: translateY(-100%);
 }
 @media (prefers-reduced-motion: reduce) {
   .tws-titlebar {
     transition: none;
   }
-}
-.tws-entity-host:has(.pn-panel[data-embedded-flow='fill']) > .tws-titlebar {
-  padding-left: var(--pn-space-3);
 }
 .tws-entity-host:has(.pn-panel[data-archetype='terminal']) > .tws-titlebar {
   background: var(--pn-x-term-bg);
@@ -567,9 +584,6 @@
   border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-xs);
   background: var(--pn-card);
-}
-.cv2-root .tws-panel > .pn-panel[data-embedded-flow='document'] {
-  padding-top: 36px;
 }
 
 /* R32.1: a reader's body sits in the reading measure; its outline lives in the

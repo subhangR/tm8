@@ -24,7 +24,18 @@ export class McpSessionBindings {
   constructor(private readonly db: Db) {}
 
   async bind(claims: McpBindingClaims, input: McpBindInput): Promise<McpSelection[]> {
-    if (!claims.identityId || claims.viaLinkId) throw new CollabError('forbidden', 'MCP launch unavailable');
+    if (!claims.identityId) throw new CollabError('forbidden', 'MCP launch unavailable');
+    if (claims.viaLinkId) {
+      // A session started through a space link (W7b) launches with NO MCP
+      // servers: `authorize` refuses every link-bound caller anyway, so
+      // nothing is bound and nothing is lent. Asking for one is refused;
+      // asking for none must not refuse the spawn itself (it did, for every
+      // link spawn, local and remote alike).
+      if (input.mcpSelections?.length) {
+        throw new CollabError('forbidden', 'MCP servers are not available to a session started through a space link');
+      }
+      return [];
+    }
     const runtime = await resolveBearerIdentity(this.db, input.agentToken);
     if (runtime.viaLinkId || runtime.spaceId !== input.spaceId ||
         (runtime.workSessionId !== input.sessionId && runtime.runtimeChatId !== input.sessionId)) {

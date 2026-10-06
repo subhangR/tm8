@@ -24,7 +24,7 @@
  */
 import { useMemo, useState } from 'react';
 import type { EntityId } from '@tm8/contract';
-import { EntityDetailPanel, type ControlHost, type DetailReasons, type EntityDetailPanelProps } from '../panels';
+import { EntityDetailPanel, type ControlHost, type DetailReasons, type EntityDetailPanelProps as DetailPanelProps } from '../panels';
 import type { PanelHost } from '../panels/detail/chrome';
 import type { ContentSurface } from '../routes';
 import { channelFeedPortFromGateData } from './channel-feed-port';
@@ -105,7 +105,7 @@ export interface AuxEntityPanelProps {
    * The Workspace tab host's opt-ins (controlled section, embedded chrome).
    * Absent ⇒ every existing mount, unchanged.
    */
-  panelProps?: Pick<EntityDetailPanelProps, 'activeTab' | 'onTabChange' | 'embeddedChrome'>;
+  panelProps?: Pick<DetailPanelProps, 'activeTab' | 'onTabChange' | 'embeddedChrome'>;
 }
 
 export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose, panelHost = 'stack', onPromote, story, extraActions, panelProps }: AuxEntityPanelProps) {

@@ -55,6 +55,8 @@ export interface AccountMenuProps {
    * name. Default false keeps the named trigger.
    */
   compact?: boolean;
+  /** With `compact`: also draw the name beside the avatar (the expanded Workspace rail). */
+  compactName?: boolean;
   /** Open the full T3-3 screen. Omitted ⇒ the row is not offered. */
   onOpenAccountScreen?: () => void;
   /**
@@ -104,6 +106,7 @@ export interface AccountMenuProps {
 export function AccountMenu({
   actor,
   compact = false,
+  compactName = false,
   onOpenAccountScreen,
   onOpenAgentTools,
   agentToolsNudge,
@@ -171,7 +174,9 @@ export function AccountMenu({
           src={actor.avatar ?? null}
           className={compact ? 'auth-avatar auth-avatar--compact' : 'auth-avatar auth-avatar--sm'}
         />
-        {compact ? null : (
+        {compact ? (
+          compactName ? <span className="auth-accountmenu__name">{name}</span> : null
+        ) : (
           <>
             <span className="auth-accountmenu__name">{name}</span>
             <span className="auth-accountmenu__caret" aria-hidden>

@@ -116,6 +116,8 @@ const CREDENTIAL_SEAM = new Set<OperationName>([
   'spaceLinks.inbound.audit',
   'spaceLinks.inbound.revoke',
   'spaceLinks.inbound.restore',
+  // W9c (301): the target-side grant, same seam.
+  'spaceLinks.inbound.grant',
   // L3 (279): entities.refs.* register inside registerSpaceLinkHandlers, same seam.
   'entities.refs.list',
   'entities.refs.add',
