@@ -116,7 +116,7 @@ import type {
   ExecutionSpawnLaunch,
   ExecutionPromptInput, ExecutionResumeInput, ExecutionSpawnInput, SpawnSelection,
   ExecutionSessionsShareInput,
-  ExecutionStreamsAttachInput, ExecutionTerminateInput,
+  ExecutionStreamsAttachInput, ExecutionTerminateInput, ExecutionCompleteInput, ReleaseInput,
   ExecutionGitCheckpointInput, ExecutionGitRollbackInput, ExecutionGitCommitInput, ExecutionGitMergeInput,
   ExecutionGitCherryPickInput, ExecutionGitBranchInput, ExecutionGitStashInput,
   ExecutionGitStageInput,
@@ -175,7 +175,7 @@ import type {
   ResultWarning, UndoToken, UpdateInteractionProfileDraftInput, UpdateMemberRoleInput, UpdateMenuInput,
   UpdateSpaceInput, ValidateInteractionProfileInput, VoiceParticipant, VoiceTokenGrant, WithdrawHandoffInput,
   ExecutionTerminalStartInput,
-  WorkInput, WorkSessionDriveMode, WorkSessionEndedKind, WorkSessionKind, WorkSessionShareMode, WorkSessionStatus, WorkSessionWorkdirMode, WorktreeStatus, WorkspaceControlAck, WorkspaceControlFrame,
+  WorkInput, WorkSessionDriveMode, WorkSessionEndedKind, WorkSessionOutcome, WorkSessionOutcomeSource, ClaimEndReason, WorkSessionKind, WorkSessionShareMode, WorkSessionStatus, WorkSessionWorkdirMode, WorktreeStatus, WorkspaceControlAck, WorkspaceControlFrame,
   WorkspaceEvent,
 } from './contract.js';
 import type { WireErrorBody } from './envelope.js';
@@ -365,16 +365,28 @@ export const WorkSessionKindSchema: z.ZodType<WorkSessionKind> =
 /** Mirrors `work_sessions.workdir_mode`'s CHECK exactly — 001, widened by 015. */
 export const WorkSessionWorkdirModeSchema: z.ZodType<WorkSessionWorkdirMode> =
   z.enum(['project', 'worktree', 'scratch']);
-/** Mirrors `work_sessions.ended_kind`'s CHECK exactly — 171. */
+/** Mirrors `work_sessions.ended_kind`'s CHECK exactly — 171, widened by 177 and 299. */
 export const WorkSessionEndedKindSchema: z.ZodType<WorkSessionEndedKind> =
   z.enum([
-    'completed',
+    'exited_clean',
     'stopped_by_operator',
     'server_restart',
     'out_of_memory',
     'crashed',
+    'container_stopped',
+    'runtime_lost',
+    'lost',
+    'credential_revoked',
     'unknown',
   ]);
+/** Mirrors `work_sessions.outcome`'s CHECK exactly — 299. */
+export const WorkSessionOutcomeSchema: z.ZodType<WorkSessionOutcome> =
+  z.enum(['open', 'completed', 'stopped']);
+export const WorkSessionOutcomeSourceSchema: z.ZodType<WorkSessionOutcomeSource> =
+  z.enum(['self', 'operator', 'backfill']);
+export const ClaimEndReasonSchema: z.ZodType<ClaimEndReason> = z.enum([
+  'task_done', 'task_cancelled', 'released', 'session_completed', 'session_stopped', 'task_reset', 'backfill',
+]);
 export const WorktreeStatusSchema: z.ZodType<WorktreeStatus> =
   z.enum(['active', 'merged', 'abandoned', 'deleted']);
 
@@ -606,6 +618,13 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     // `out_of_memory` — the one legitimate involuntary death — recognisable.
     endedKind: WorkSessionEndedKindSchema.nullable().optional(),
     endedReason: z.string().nullable().optional(),
+    // 299 (Spec D1): the outcome of the WORK, separate from the process status.
+    outcome: WorkSessionOutcomeSchema.optional(),
+    outcomeAt: z.string().nullable().optional(),
+    outcomeBy: z.string().nullable().optional(),
+    receiptMessageId: z.string().nullable().optional(),
+    outcomeSource: WorkSessionOutcomeSourceSchema.nullable().optional(),
+    outcomeNote: z.string().nullable().optional(),
     // The persona this run acts as, from its latest `participates_in` edge.
     // Absent = a node that predates the field; explicit null = a run with no
     // persona, which renders the tool alone. See the DTO note in contract.ts.
@@ -1617,6 +1636,39 @@ export const WorkspaceEventSchema: z.ZodType<WorkspaceEvent> = z.lazy(() => z.un
     ...workspaceEventEnvelopeShape,
     type: z.enum(['edge.upsert', 'edge.deleted']),
     edge: EdgeViewSchema,
+    clientMutationId: z.string().optional(),
+  }).strict(),
+  // Spec D1 §4.6 (299).
+  z.object({
+    ...workspaceEventEnvelopeShape,
+    type: z.literal('session.outcome_changed'),
+    sessionId: EntityIdSchema,
+    from: WorkSessionOutcomeSchema,
+    to: WorkSessionOutcomeSchema,
+    outcomeBy: EntityIdSchema.nullable(),
+    receiptMessageId: EntityIdSchema.nullable(),
+    outcomeSource: WorkSessionOutcomeSourceSchema.nullable(),
+    clientMutationId: z.string().optional(),
+  }).strict(),
+  z.object({
+    ...workspaceEventEnvelopeShape,
+    type: z.literal('session.process_changed'),
+    sessionId: EntityIdSchema,
+    from: WorkSessionStatusSchema,
+    to: WorkSessionStatusSchema,
+    endedKind: WorkSessionEndedKindSchema.nullable(),
+    endedReason: z.string().nullable(),
+    clientMutationId: z.string().optional(),
+  }).strict(),
+  z.object({
+    ...workspaceEventEnvelopeShape,
+    type: z.literal('edge.ended'),
+    edgeId: z.string(),
+    edgeType: z.literal('working_on'),
+    sourceId: EntityIdSchema,
+    targetId: EntityIdSchema,
+    endReason: ClaimEndReasonSchema,
+    endedAt: IsoTimestamp,
     clientMutationId: z.string().optional(),
   }).strict(),
   z.object({
@@ -3992,6 +4044,21 @@ export const ExecutionPromptInputSchema: z.ZodType<ExecutionPromptInput> = z.obj
 export const ExecutionTerminateInputSchema: z.ZodType<ExecutionTerminateInput> = z.object({
   ...commandContextShape,
   force: z.boolean().optional(),
+  outcome: z.enum(['stop', 'complete']).optional(),
+  receiptMessageId: z.string().uuid().optional(),
+  note: z.string().max(2000).optional(),
+  markLost: z.boolean().optional(),
+}).strict();
+
+export const ExecutionCompleteInputSchema: z.ZodType<ExecutionCompleteInput> = z.object({
+  ...commandContextShape,
+  receiptMessageId: z.string().uuid().optional(),
+  closeProcess: z.boolean().optional(),
+}).strict();
+
+export const ReleaseInputSchema: z.ZodType<ReleaseInput> = z.object({
+  ...commandContextShape,
+  note: z.string().trim().min(1).max(2000),
 }).strict();
 
 export const ExecutionResumeInputSchema: z.ZodType<ExecutionResumeInput> = z.object({
@@ -4756,6 +4823,8 @@ export const EntityContextV2ViewSchema: z.ZodType<EntityContextV2View> = z.objec
   exitedAt: NullableString,
   endedKind: NullableString,
   endedReason: NullableString,
+  outcome: NullableString,
+  receiptMessageId: NullableString,
   tasks: z.array(ContextRefSchema).optional(),
   runtimeState: NullableString,
   turnState: NullableString,

@@ -53,6 +53,11 @@ export interface ClaimBinding {
  * via_link_id` is written once by the issuing RPC and no verb updates it. It
  * only NARROWS — a link-bound caller is refused credential reads — so a stale
  * value can refuse, never admit.
+ *
+ * `workSessionId` is the eighth (299, Spec D1), on the same test:
+ * `auth_sessions.work_session_id` is written once by the issuing RPC. It names
+ * WHICH session a claim belongs to; it grants nothing, since every RPC that
+ * reads it has already authorised the caller as the teammate.
  */
 export const CLAIM_NAMES = {
   identityId: 'tm8.identity_id',
@@ -62,6 +67,7 @@ export const CLAIM_NAMES = {
   authKind: 'tm8.auth_kind',
   sessionSpaceId: 'tm8.session_space_id',
   viaLinkId: 'tm8.via_link',
+  workSessionId: 'tm8.work_session_id',
 } as const;
 
 /**

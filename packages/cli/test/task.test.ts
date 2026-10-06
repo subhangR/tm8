@@ -177,7 +177,7 @@ async function drive(argv: readonly string[]): Promise<Ran> {
 describe('the eight rows this slot owns here', () => {
   it('task.ts registers exactly the eight task commands', async () => {
     const paths = (await taskCommands()).map((m) => m.path.join(' ')).sort();
-    expect(paths).toEqual(['task axis', 'task complete', 'task gate', 'task import-issue', 'task link-commit', 'task link-pr', 'task tick', 'task transition']);
+    expect(paths).toEqual(['task axis', 'task complete', 'task gate', 'task import-issue', 'task link-commit', 'task link-pr', 'task release', 'task tick', 'task transition']);
   });
 
   it('tracking.ts registers exactly `tracking refresh` and `pr merge`', async () => {

@@ -389,6 +389,7 @@ describe('the CLI command projection', () => {
       'task import-issue',
       'task link-commit',
       'task link-pr',
+      'task release',
       'task tick',
       'task transition',
     ]);

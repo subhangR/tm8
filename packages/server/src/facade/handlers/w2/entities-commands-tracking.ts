@@ -3,7 +3,7 @@ import type { FacadeDeps } from '../../deps.js';
 import {
   commandsComplete,
   commandsGate,
-  commandsWork,
+  commandsWork, commandsRelease,
   entitiesPointsAdd,
 } from '../commands.js';
 import type { HandlerRegistry } from '../../registry.js';
@@ -34,6 +34,7 @@ export function registerW2EntitiesCommandsTrackingHandlers(
     'entities.points.add': entitiesPointsAdd(deps),
     'entities.commands.complete': commandsComplete(deps),
     'entities.commands.work': commandsWork(deps),
+    'entities.commands.release': commandsRelease(deps),
     'entities.commands.gate': commandsGate(deps),
     'entities.commands.tick': service.tickCriteria,
     'entities.commands.pull': service.pull,

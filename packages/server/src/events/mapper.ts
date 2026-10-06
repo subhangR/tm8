@@ -142,6 +142,9 @@ export const RPC_AUTHORED_PASSTHROUGH: ReadonlySet<string> = new Set([
 export const CAPTURED_EVENT_TYPES: readonly string[] = Object.freeze([
   'entity.upsert', 'entity.deleted', 'entity.activity_touched',
   'edge.upsert', 'edge.deleted',
+  // 299 (Spec D1 §4.6). Not the capture trigger's, but bespoke arms below like
+  // its types: the payload is hydrated, so RLS decides who sees them.
+  'session.outcome_changed', 'session.process_changed', 'edge.ended',
   'message.created', 'message.updated', 'message.deleted',
   'counter.changed',
   'activity.created',
@@ -221,7 +224,11 @@ function referencedEntityIds(row: WorkspaceEventRow): string[] {
     // read is batched per page, so requiring it costs nothing on a page that
     // already contains any event for the same entity.
     case 'entity.activity_touched':
+    case 'session.outcome_changed':
+    case 'session.process_changed':
       return [str(p['id'])].filter((v): v is string => v !== null);
+    case 'edge.ended':
+      return [str(p['src_id']), str(p['dst_id'])].filter((v): v is string => v !== null);
     case 'edge.upsert':
     case 'edge.deleted':
       // `created_by` MUST be here. It is required by the projection below, and
@@ -561,6 +568,48 @@ export class WorkspaceEventMapper {
           throw new UnprojectableEventError(seq, 'activity_at is missing from the captured payload');
         }
         return { type: row.event_type, id: summary.id, kind: summary.kind, activityAt };
+      }
+
+      // Spec D1 §4.6 (299). `need` is the readability check, as for the touch.
+      case 'session.outcome_changed': {
+        const session = this.need(entities, str(p['id']), seq, 'session');
+        return {
+          type: row.event_type,
+          sessionId: session.id,
+          from: str(p['from']) ?? 'open',
+          to: str(p['to']) ?? 'open',
+          outcomeBy: str(p['outcomeBy']),
+          receiptMessageId: str(p['receiptMessageId']),
+          outcomeSource: str(p['outcomeSource']),
+        };
+      }
+      case 'session.process_changed': {
+        const session = this.need(entities, str(p['id']), seq, 'session');
+        return {
+          type: row.event_type,
+          sessionId: session.id,
+          from: str(p['from']),
+          to: str(p['to']),
+          endedKind: str(p['endedKind']),
+          endedReason: str(p['endedReason']),
+        };
+      }
+      case 'edge.ended': {
+        const source = this.need(entities, str(p['src_id']), seq, 'claim source');
+        const target = this.need(entities, str(p['dst_id']), seq, 'claim target');
+        const endedAt = iso(p['endedAt']);
+        if (endedAt === null) {
+          throw new UnprojectableEventError(seq, 'endedAt is missing from the edge.ended payload');
+        }
+        return {
+          type: row.event_type,
+          edgeId: str(p['id']) ?? '',
+          edgeType: 'working_on',
+          sourceId: source.id,
+          targetId: target.id,
+          endReason: str(p['endReason']),
+          endedAt,
+        };
       }
 
       case 'edge.upsert':

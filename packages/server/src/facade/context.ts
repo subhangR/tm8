@@ -100,6 +100,9 @@ export function claimsFor(
     ...(sessionSpaceId ? { sessionSpaceId } : {}),
     // 256 (W7p). Forwarded exactly like sessionSpaceId; dropping it fails open.
     ...(ctx.identity?.viaLinkId ? { viaLinkId: ctx.identity.viaLinkId } : {}),
+    // 299 (Spec D1). Only from a verified bearer: the body's `workSessionId`
+    // is a routing hint and never names the claimant.
+    ...(bearer?.workSessionId ? { workSessionId: bearer.workSessionId } : {}),
   };
 }
 

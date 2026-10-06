@@ -30,6 +30,8 @@ import type { EffectiveSkills, OpRequestStatus } from '@tm8/contract';
 import { SKILL_REFERENCE_SQL, skillReferenceOf, readSkillDetail } from '../skills/reference.js';
 import type {
   WorkSessionEndedKind,
+  WorkSessionOutcome,
+  WorkSessionOutcomeSource,
   WorkSessionKind,
   AcceptanceCriterion,
   ContainerIsolationClass,
@@ -131,6 +133,9 @@ export const ENTITY_COLUMNS = `
   ws.transcript_doc_id as ws_transcript_doc_id, ws.session_kind as ws_session_kind,
   ws.checkout_branch as ws_checkout_branch, ws.workdir_mode as ws_workdir_mode,
   ws.ended_kind as ws_ended_kind, ws.ended_reason as ws_ended_reason, ws.skills as ws_skills,
+  ws.outcome as ws_outcome, ws.outcome_at as ws_outcome_at, ws.outcome_by as ws_outcome_by,
+  ws.receipt_message_id as ws_receipt_message_id, ws.outcome_source as ws_outcome_source,
+  ws.outcome_note as ws_outcome_note,
   wsp.pin_revision as ws_pin_revision, wsp.template_key as ws_pin_template_key,
   wsp.template_version as ws_pin_template_version,
   wsp.resolved_snapshot as ws_pin_resolved_snapshot,
@@ -531,6 +536,13 @@ export interface EntityRow {
   ws_ended_kind?: string | null;
   ws_skills?: EffectiveSkills | null;
   ws_ended_reason?: string | null;
+  /** Outcome facts (299); optional for the same fixture-compatibility reason. */
+  ws_outcome?: string | null;
+  ws_outcome_at?: Date | string | null;
+  ws_outcome_by?: string | null;
+  ws_receipt_message_id?: string | null;
+  ws_outcome_source?: string | null;
+  ws_outcome_note?: string | null;
   ws_pin_revision: number | null;
   ws_pin_template_key: string | null;
   ws_pin_template_version: number | null;
@@ -741,14 +753,52 @@ export function isoOrNull(value: Date | string | null): string | null {
  * one column must not make a session unreadable.
  */
 export function isEndedKind(value: string | null | undefined): value is WorkSessionEndedKind {
-  return (
-    value === 'completed' ||
-    value === 'stopped_by_operator' ||
-    value === 'server_restart' ||
-    value === 'out_of_memory' ||
-    value === 'crashed' ||
-    value === 'unknown'
-  );
+  return value !== null && value !== undefined && ENDED_KINDS.has(value);
+}
+
+/** `work_sessions.ended_kind`'s CHECK verbatim — 171, widened by 177 and 299. */
+const ENDED_KINDS: ReadonlySet<string> = new Set<WorkSessionEndedKind>([
+  'exited_clean', 'stopped_by_operator', 'server_restart', 'out_of_memory', 'crashed',
+  'container_stopped', 'runtime_lost', 'lost', 'credential_revoked', 'unknown',
+]);
+
+/** True when a `working_on` claim has ended (299: `props.endedAt` is set). */
+export function isEndedClaim(props: Record<string, unknown> | null | undefined): boolean {
+  const endedAt = props?.['endedAt'];
+  return typeof endedAt === 'string' && endedAt !== '';
+}
+
+/** The outcome half of a session's state (299, Spec D1 §3), from a projected row. */
+export function outcomeFacts(row: {
+  ws_outcome?: string | null;
+  ws_outcome_at?: Date | string | null;
+  ws_outcome_by?: string | null;
+  ws_receipt_message_id?: string | null;
+  ws_outcome_source?: string | null;
+  ws_outcome_note?: string | null;
+}): {
+  outcome?: WorkSessionOutcome;
+  outcomeAt?: string | null;
+  outcomeBy?: string | null;
+  receiptMessageId?: string | null;
+  outcomeSource?: WorkSessionOutcomeSource | null;
+  outcomeNote?: string | null;
+} {
+  // Absent column (a fixture, or a pre-299 node) projects nothing at all.
+  if (row.ws_outcome === undefined) return {};
+  const outcome: WorkSessionOutcome =
+    row.ws_outcome === 'completed' || row.ws_outcome === 'stopped' ? row.ws_outcome : 'open';
+  const at = row.ws_outcome_at instanceof Date ? row.ws_outcome_at.toISOString()
+    : typeof row.ws_outcome_at === 'string' ? new Date(row.ws_outcome_at).toISOString() : null;
+  const source = row.ws_outcome_source;
+  return {
+    outcome,
+    outcomeAt: at,
+    outcomeBy: row.ws_outcome_by ?? null,
+    receiptMessageId: row.ws_receipt_message_id ?? null,
+    outcomeSource: source === 'self' || source === 'operator' || source === 'backfill' ? source : null,
+    outcomeNote: row.ws_outcome_note ?? null,
+  };
 }
 
 /** `date` columns must not acquire a timezone on the way out. */
@@ -1282,38 +1332,40 @@ export async function loadRelations(q: Querier, ids: readonly string[]): Promise
     }
   }
 
-  // The tense rule (doc 06 §2.3): `workingActors` means "working NOW", but
-  // `working_on` cannot express an ending — its propsSchema has no `endedAt`,
-  // so edges accumulate forever. Liveness is therefore DERIVED, never stored:
-  // a session-sourced edge counts only while its work_session is in a live
-  // status. `work_sessions.status` is trustworthy for this — it has an
-  // enforced single writer (001:727-746). Person-sourced edges pass through
-  // (a person has no status row); a source row this querier cannot see proves
-  // nothing, so it does not get the badge. The terminal-task half of the rule
-  // lives in badgesOf, where the row is at hand.
+  // The tense rule (doc 06 §2.3): `workingActors` means "working NOW". Since
+  // 299 (Spec D1 §6.9) a `working_on` claim CAN express its ending — it keeps
+  // its row with `props.endedAt` — so "now" is the claim's own fact: an ended
+  // claim never counts. A session-sourced claim also needs its session's
+  // outcome to be `open` (spec §5.7), NOT a live process: a crashed session
+  // still holds its claims (its robot is fallen, not gone) until someone
+  // resumes or stops it. Person-sourced edges pass through; a source row this
+  // querier cannot see proves nothing, so it does not get the badge. The
+  // terminal-task half of the rule lives in badgesOf, where the row is at hand.
+  if (relations.workingOn.size > 0) {
+    for (const [id, list] of relations.workingOn) {
+      const active = list.filter((w) => !isEndedClaim(w.props));
+      if (active.length === list.length) continue;
+      if (active.length === 0) relations.workingOn.delete(id);
+      else relations.workingOn.set(id, active);
+    }
+  }
   if (relations.workingOn.size > 0) {
     const sourceIds = [
       ...new Set([...relations.workingOn.values()].flat().map((w) => w.actorId)),
     ];
-    const sourceRows = await q.query<{ id: string; kind: string; status: string | null }>(
-      `select e.id, e.kind, ws.status
+    const sourceRows = await q.query<{ id: string; kind: string; outcome: string | null }>(
+      `select e.id, e.kind, ws.outcome
          from public.entities e
          left join public.work_sessions ws on ws.entity_id = e.id
         where e.id = any($1::uuid[])
           and e.deleted_at is null`,
       [sourceIds],
     );
-    const liveSource = new Map(
-      sourceRows.map((r) => [
-        r.id,
-        r.kind !== 'work_session' ||
-          r.status === 'spawning' ||
-          r.status === 'running' ||
-          r.status === 'idle',
-      ]),
+    const workingSource = new Map(
+      sourceRows.map((r) => [r.id, r.kind !== 'work_session' || (r.outcome ?? 'open') === 'open']),
     );
     for (const [id, list] of relations.workingOn) {
-      const live = list.filter((w) => liveSource.get(w.actorId) === true);
+      const live = list.filter((w) => workingSource.get(w.actorId) === true);
       if (live.length === list.length) continue;
       if (live.length === 0) relations.workingOn.delete(id);
       else relations.workingOn.set(id, live);
@@ -1914,6 +1966,8 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         // and a row carrying something else is a bug to surface, not to render.
         endedKind: isEndedKind(row.ws_ended_kind) ? row.ws_ended_kind : null,
         endedReason: row.ws_ended_reason ?? null,
+        // 299 (Spec D1 §3): the outcome of the WORK, beside the process facts.
+        ...outcomeFacts(row),
         // The persona, via the SAME resolver that attributes this session's
         // messages — `loadActors` keyed by the session's own id already does
         // the `participates_in` hop. A session with no persona resolves to a

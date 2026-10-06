@@ -54,6 +54,7 @@ import { SpaceLoginHomes } from './credentials/space-credential-home.js';
 import { createW2BlobStore } from './files/w2-blob-store.js';
 import { createDeletedFileBlobPurgeJob, createFileUploadSweepJob } from './scheduler/jobs/file-uploads.js';
 import { createSpaceCredentialSweepJob } from './scheduler/jobs/space-credential-sweep.js';
+import { createLostSessionReaperJob, lostAfterMsFromEnv } from './scheduler/jobs/lost-session-reaper.js';
 import { createCredentialBindingSweepJob } from './scheduler/jobs/credential-binding-sweep.js';
 import { DbSpaceCredentialStore } from './credentials/space-credential-store.js';
 import { createEventSubjectBackfillJob } from './scheduler/jobs/event-subject-backfill.js';
@@ -1086,6 +1087,16 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         },
       }),
     );
+    // Spec D1 §4.4 (299): the ghost reaper. A session recorded live with no
+    // process on this node for N minutes (TM8_LOST_SESSION_AFTER_MIN, default
+    // 10) becomes `failed / lost` — a process fact; its work stays open.
+    if (execution) {
+      const runtime = execution;
+      scheduler.register(createLostSessionReaperJob({
+        reap: (staleAfterMs) => runtime.reapLost(staleAfterMs),
+        staleAfterMs: lostAfterMsFromEnv(),
+      }));
+    }
     // W10b (R8 / N8): the backstop for revoke and switch-to-private. It runs
     // once at boot — the post-boot re-check — and then every minute, killing
     // any live session left on a revoked credential, or on a private one its

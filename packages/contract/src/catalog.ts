@@ -231,6 +231,8 @@ export const OPERATIONS = [
   // entities — closed kind-command namespace (02 §3.2)
   { name: 'entities.commands.complete',   method: 'POST', path: '/v2/entities/:id/commands/complete',       kind: 'command', status: 'v1' },
   { name: 'entities.commands.work',       method: 'POST', path: '/v2/entities/:id/commands/work',           kind: 'command', status: 'v1' },
+  // 299 (Spec D1 R4): end the caller's claim on a task with a hand-off note.
+  { name: 'entities.commands.release',    method: 'POST', path: '/v2/entities/:id/commands/release',        kind: 'command', status: 'v1' },
   { name: 'entities.commands.pull',       method: 'POST', path: '/v2/entities/:id/commands/pull',           kind: 'command', status: 'v1' },
   { name: 'entities.commands.linkPr',     method: 'POST', path: '/v2/entities/:id/commands/link-pr',        kind: 'command', status: 'v1' },
   { name: 'entities.commands.linkCommit', method: 'POST', path: '/v2/entities/:id/commands/link-commit',    kind: 'command', status: 'v1' },
@@ -382,6 +384,10 @@ export const OPERATIONS = [
   { name: 'execution.terminate',      method: 'POST',  path: '/v2/entities/:id/commands/terminate',         kind: 'command', status: 'v1' },
   { name: 'execution.streams.attach', method: 'POST',  path: '/v2/entities/:id/commands/streams-attach',    kind: 'command', status: 'v1' },
   { name: 'execution.resume',         method: 'POST',  path: '/v2/entities/:id/commands/resume',            kind: 'command', status: 'v1' },
+  // 299 (Spec D1 §4.1): settle the session's OUTCOME as completed — receipt +
+  // claim check. A separate door from `entities.commands.complete` so it can
+  // name a receipt and close the process; the row tick routes to the same SQL.
+  { name: 'execution.complete',       method: 'POST',  path: '/v2/entities/:id/commands/complete-session',  kind: 'command', status: 'v1' },
   // 187 — the session's own sharing dials. A command on the session entity
   // rather than a field on `entities.patch`, because the guard is not "may you
   // edit this row" but "may you widen who sees its BYTES", and only the owner
