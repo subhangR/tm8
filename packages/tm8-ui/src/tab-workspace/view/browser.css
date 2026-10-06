@@ -328,3 +328,43 @@
 .cv2-root .tws-browser .lp__hoverbar {
   display: none !important;
 }
+
+/* ---- R22: the funnel popover's inner rhythm ------------------------------ */
+.cv2-root .tws-browser .lp__filtermenu--merged .lp__filtergroup {
+  padding: var(--pn-space-2) var(--pn-space-2) var(--pn-space-1);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  font-weight: 500;
+  letter-spacing: normal;
+  color: var(--pn-ink-3);
+}
+.cv2-root .tws-browser .lp__filtermenu--merged .lp__kindopt {
+  box-sizing: border-box;
+  height: 36px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.cv2-root .tws-browser .lp__filtermenu--merged .lp__filterclear {
+  height: 36px;
+  padding: 0 var(--pn-space-2);
+  color: var(--pn-ink-3);
+}
+.cv2-root .tws-browser .lp__filtermenu--merged .lp__filterdone {
+  height: 32px;
+  padding: 0 var(--pn-space-3);
+  border: 1px solid rgba(var(--pn-brand-rgb), 0.35);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-brand-soft);
+  color: var(--pn-brand-2);
+}
+
+/* ---- R24: fill on :hover and :active only; focus shows only the ring ---- */
+.tws-browser-new:focus:not(:hover):not(:active) {
+  background: transparent;
+}
+.tws-browser-new:active {
+  background: var(--pn-active);
+}
+.tws-browser-new[aria-disabled='true']:active {
+  background: transparent;
+}

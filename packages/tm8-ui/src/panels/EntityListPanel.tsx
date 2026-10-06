@@ -1700,7 +1700,8 @@ function SearchRow({
         className="lp__searchinput"
         type="search"
         value={query}
-        placeholder={`Search ${config.labelPlural.toLowerCase()}`}
+        /* The toolbar's row above already names the kind, and the noun clips. */
+        placeholder={hint ? `Search ${config.labelPlural.toLowerCase()}` : 'Search'}
         aria-label={`Search ${config.labelPlural.toLowerCase()}`}
         onChange={(e) => onQuery(e.target.value)}
         data-testid="list-search"
@@ -2004,7 +2005,7 @@ function FilterRow({
     <>
           {config.list.filters.map((spec) => (
             <div key={spec.id}>
-              <div className="lp__filtergroup">{spec.label.toUpperCase()}</div>
+              <div className="lp__filtergroup">{merged ? spec.label : spec.label.toUpperCase()}</div>
               {spec.options.map((option) => {
                 const on = (selected[spec.id] ?? []).includes(option.id);
                 // OFFERED AND REFUSED, never offered and inert. An option
@@ -2196,8 +2197,8 @@ function FilterRow({
                 </section>
               ) : null}
               {viewFacets.length > 0 ? (
-                <section className="lp__funnelsection" aria-label="Row view">
-                  <div className="t-eyebrow">Row view</div>
+                <section className="lp__funnelsection" aria-label="View">
+                  <div className="t-eyebrow">View</div>
                   {viewOptions}
                 </section>
               ) : null}
