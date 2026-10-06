@@ -22,6 +22,7 @@ import { KindIcon } from '../../domain';
 import { NOTICE_TTL_MS } from '../../shell';
 import { build, defaultRoute } from '../../routes';
 import type { SpaceId } from '@tm8/contract';
+import { useTabLiveStatus } from '../adapters/entity';
 import { draftTitle, getKindAdapter } from '../adapters/registry';
 import { activeTabId, visibleTabs } from '../runtime/selectors';
 import type { Source, TabId, TabRecord } from '../runtime/types';
@@ -43,49 +44,90 @@ export function tabTitle(tab: TabRecord, entityTitle?: string | null): string {
   return entityTitle?.trim() || getKindAdapter(tab.kind).noun;
 }
 
-export type TabState = 'unsaved' | 'running' | 'error' | null;
+export type TabState = 'unsaved' | 'running' | 'error' | 'deleted' | 'unavailable' | null;
 
 const STATE_LABEL: Record<Exclude<TabState, null>, string> = {
   unsaved: 'Unsaved changes',
   running: 'Running',
   error: 'Error',
+  deleted: 'Deleted',
+  unavailable: 'Unavailable',
 };
+
+/**
+ * Last title seen per entity, for the page's lifetime: a tab whose entity
+ * drops out of the store (evicted, or deleted before this client connected)
+ * keeps the name it was showing instead of falling back to the kind noun.
+ */
+const lastKnownTitles = new Map<string, string>();
+/** Entities the node answered not_found / forbidden for, probed by the strip. */
+const probed = new Map<string, 'deleted' | 'unavailable'>();
+const PROBE_AFTER_MS = 1_500;
 
 /** The live facts a tab's label needs: title, kind noun and state indicator. */
 export function useTabFacts(tab: TabRecord): { title: string; noun: string | null; state: TabState } {
   const { gate } = useWorkspace();
-  const data = gate.data;
+  const data = gate.data as typeof gate.data & { pull?: (id: string) => void };
   const entityId = tab.type === 'entity' ? tab.entityId : null;
-  const { title, status } = useStore(
+  const { title, deleted, known } = useStore(
     data.domain.store,
     useShallow((s) => {
-      if (!entityId) return { title: null, status: null };
+      if (!entityId) return { title: null, deleted: false, known: false };
       const row = s.entities[entityId] ?? s.details[entityId];
-      const state = row?.state as { status?: unknown } | undefined;
-      return {
-        title: row?.title ?? null,
-        status: typeof state?.status === 'string' ? state.status : null,
-      };
+      return { title: row?.title ?? null, deleted: Boolean(row?.deletedAt), known: row !== undefined };
     }),
   );
-  // Inactive restored tabs may name an entity no list page has loaded yet.
-  useEffect(() => {
-    if (!entityId || title !== null) return;
-    (data as { pull?: (id: string) => void }).pull?.(entityId);
-  }, [data, entityId, title]);
+  if (entityId && title) lastKnownTitles.set(entityId, title);
+  const live = useTabLiveStatus(tab);
+  const [probe, setProbe] = useState(() => (entityId ? probed.get(entityId) : undefined));
 
+  // A tab may name an entity no list page has loaded (restored, or deleted
+  // before this client connected): ask the data layer, then ask the node why.
+  const dataRef = useRef(data);
+  dataRef.current = data;
+  useEffect(() => {
+    if (!entityId || known) return;
+    const d = dataRef.current;
+    d.pull?.(entityId);
+    let alive = true;
+    const timer = setTimeout(() => {
+      if (!alive || probed.has(entityId)) return void setProbe(probed.get(entityId));
+      d.seam.entity(entityId as never).then(
+        () => {
+          if (alive) dataRef.current.refetchDetail(entityId);
+        },
+        (error: unknown) => {
+          const code = (error as { code?: unknown } | null)?.code;
+          const verdict = code === 'not_found' ? 'deleted' : code === 'forbidden' ? 'unavailable' : undefined;
+          if (!verdict) return;
+          probed.set(entityId, verdict);
+          if (alive) setProbe(verdict);
+        },
+      );
+    }, PROBE_AFTER_MS);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [entityId, known]);
+
+  const noun = tab.type === 'chooser' ? null : getKindAdapter(tab.kind).noun;
   let state: TabState = null;
+  let shownTitle = tabTitle(tab, title);
   if (tab.type === 'draft') {
     state = tab.dirty ? 'unsaved' : null;
-  } else if (tab.type === 'entity' && tab.kind === 'work_session') {
-    if (status === 'failed') state = 'error';
-    else if (data.livenessOf(tab.entityId) === 'live') state = 'running';
+  } else if (entityId) {
+    const gone = deleted ? 'deleted' : known ? undefined : probe;
+    if (gone) {
+      state = gone;
+      const remembered = title ?? lastKnownTitles.get(entityId);
+      shownTitle = remembered ?? `${gone === 'deleted' ? 'Deleted' : 'Unavailable'} ${noun!.toLowerCase()}`;
+    } else {
+      state = live;
+      if (!title) shownTitle = lastKnownTitles.get(entityId) ?? shownTitle;
+    }
   }
-  return {
-    title: tabTitle(tab, title),
-    noun: tab.type === 'chooser' ? null : getKindAdapter(tab.kind).noun,
-    state,
-  };
+  return { title: shownTitle, noun, state };
 }
 
 export function accessibleTabName(title: string, noun: string | null): string {
@@ -159,7 +201,7 @@ export function TabStateGlyph({ state, id }: { state: TabState; id?: string }) {
   if (!state) return null;
   return (
     <span id={id} className="tws-ts-state" data-state={state} role="img" aria-label={STATE_LABEL[state]}>
-      {state === 'error' ? <AlertGlyph /> : null}
+      {state === 'error' || state === 'deleted' || state === 'unavailable' ? <AlertGlyph /> : null}
     </span>
   );
 }
@@ -365,7 +407,8 @@ function Tab(props: TabProps) {
         <button
           type="button"
           className="tws-ts-close"
-          tabIndex={-1}
+          // The focused tab's × follows it in the Tab order; the rest stay out (roving).
+          tabIndex={props.focusable ? 0 : -1}
           aria-label={`Close ${title}`}
           onClick={(event) => {
             event.stopPropagation();

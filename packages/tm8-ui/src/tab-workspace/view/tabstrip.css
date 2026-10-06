@@ -4,9 +4,11 @@
  * everything here is scoped under `.tws-ts`.
  */
 .tws-strip.tws-ts {
-  align-items: stretch;
+  /* R3: every control is a 36px box, 8px top inset, bottom-aligned over the
+     hairline, so labels share the left header's centre line (y = 26px). */
+  align-items: flex-start;
   gap: 0;
-  padding: 0 var(--pn-space-3) 0 var(--pn-space-2);
+  padding: var(--pn-space-2) var(--pn-space-3) 0 var(--pn-space-2);
   overflow: visible;
 }
 .tws-strip.tws-ts[data-has-leading] {
@@ -18,6 +20,7 @@
   align-items: center;
   gap: var(--pn-space-1);
   flex: none;
+  height: 36px;
   margin-right: var(--pn-space-2);
 }
 
@@ -30,9 +33,9 @@
   gap: var(--pn-space-1);
   flex: 1 1 auto;
   min-width: 0;
-  /* Reach 1px over the strip's bottom hairline so the active tab joins the content plane. */
-  height: calc(100% + 1px);
-  margin-bottom: -1px;
+  /* 36px from the 8px inset to the strip's bottom edge: the last pixel row is
+     the hairline, which the active tab covers to join the content plane. */
+  height: 36px;
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
@@ -60,19 +63,17 @@
   min-width: 120px;
   max-width: 220px;
   height: 36px;
-  margin-bottom: 1px;
   padding-left: var(--pn-space-3);
   border-radius: var(--pn-r-sm) var(--pn-r-sm) 0 0;
   color: var(--pn-ink-3);
   user-select: none;
 }
 .tws-ts-tab:hover {
-  background: var(--pn-hover);
+  /* Stop 1px short so an inactive tab's hover never paints over the hairline. */
+  background: linear-gradient(var(--pn-hover), var(--pn-hover)) top / 100% calc(100% - 1px) no-repeat;
   color: var(--pn-ink-2);
 }
 .tws-ts-tab[data-active] {
-  height: 37px;
-  margin-bottom: 0;
   background: var(--pn-card);
   color: var(--pn-ink);
 }
@@ -151,7 +152,9 @@
   border-radius: 50%;
   background: var(--pn-run);
 }
-.tws-ts-state[data-state='error'] {
+.tws-ts-state[data-state='error'],
+.tws-ts-state[data-state='deleted'],
+.tws-ts-state[data-state='unavailable'] {
   color: var(--pn-block);
 }
 
@@ -159,7 +162,9 @@
   position: absolute;
   inset: 0;
   margin: auto;
-  display: none;
+  display: inline-flex;
+  opacity: 0;
+  pointer-events: none;
   align-items: center;
   justify-content: center;
   width: 20px;
@@ -181,9 +186,11 @@
   background: var(--pn-hover);
   color: var(--pn-ink);
 }
+/* Shown on hover or focus inside the tab; always focusable (Spec A §16). */
 .tws-ts-tab:hover .tws-ts-close,
 .tws-ts-tab:focus-within .tws-ts-close {
-  display: inline-flex;
+  opacity: 1;
+  pointer-events: auto;
 }
 .tws-ts-tab:hover .tws-ts-state,
 .tws-ts-tab:focus-within .tws-ts-state {
@@ -193,7 +200,7 @@
 /* ---- drag insertion marker: 2×24 brand bar, centred in the gap ---- */
 .tws-ts-marker {
   position: absolute;
-  bottom: 7px;
+  bottom: 6px;
   width: 2px;
   height: 24px;
   border-radius: 1px;
@@ -205,6 +212,7 @@
 .tws-ts-pinned {
   display: flex;
   align-items: center;
+  height: 36px;
   gap: var(--pn-space-2);
   flex: none;
   margin-left: var(--pn-space-2);
@@ -225,7 +233,8 @@
 }
 .tws-ts-btn:hover,
 .tws-ts-btn[aria-expanded='true'] {
-  background: var(--pn-hover);
+  /* Same 1px stop as a tab: the box sits on the hairline row. */
+  background: linear-gradient(var(--pn-hover), var(--pn-hover)) top / 100% calc(100% - 1px) no-repeat;
   color: var(--pn-ink);
 }
 .tws-ts-btn:focus-visible {
