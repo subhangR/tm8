@@ -2401,6 +2401,7 @@ export function GateApp(props: GateAppProps = {}) {
     viewTabs,
     shellTabs,
     activeViewTabId: activeGroupId,
+    activeScreenRef: activeTarget?.type === 'view' ? activeTarget.ref : null,
     onSelectViewTab: openTab,
     switcherSlot: switcherEl,
     accountSlot: accountEl,

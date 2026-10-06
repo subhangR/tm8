@@ -304,10 +304,12 @@
 }
 /* R36 §4: current = a 3×20 brand bar flush to the rail's left edge plus a
    --pn-ink glyph, and NO fill (fills mean hover and pressed only). */
-.tws-rail-btn[aria-current='true'] {
+.tws-rail-btn[aria-current='true'],
+.tws-rail-btn[aria-current='page'] {
   color: var(--pn-ink);
 }
-.tws-rail-btn[aria-current='true']::before {
+.tws-rail-btn[aria-current='true']::before,
+.tws-rail-btn[aria-current='page']::before {
   content: '';
   position: absolute;
   left: -6px;
@@ -338,7 +340,8 @@
   /* Labels fade in once the width has settled. */
   animation: tws-label-in var(--pn-dur-fast) var(--pn-ease-out) var(--pn-dur-base) backwards;
 }
-.tws-rail-btn[aria-current='true'] .tws-rail-label {
+.tws-rail-btn[aria-current='true'] .tws-rail-label,
+.tws-rail-btn[aria-current='page'] .tws-rail-label {
   color: var(--pn-ink);
 }
 /* R42 live counts (Tasks, Stories, Sessions, Chats only). Collapsed: the §4

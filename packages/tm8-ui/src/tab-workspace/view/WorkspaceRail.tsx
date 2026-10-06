@@ -181,6 +181,7 @@ export function WorkspaceRail() {
                 type="button"
                 className="tws-rail-btn"
                 aria-label={screen.label}
+                aria-current={gate.activeScreenRef === screen.ref ? 'page' : undefined}
                 data-rail-tool={screen.ref}
                 onClick={() => gate.navigateTo({ type: 'view', ref: screen.ref })}
               >
@@ -197,6 +198,7 @@ export function WorkspaceRail() {
               type="button"
               className="tws-rail-btn"
               aria-label={tab.label}
+              aria-current={gate.activeViewTabId === tab.id || gate.activeScreenRef === tab.id ? 'page' : undefined}
               data-rail-tool={tab.id}
               onClick={() => gate.onSelectViewTab(tab.id)}
             >
@@ -440,6 +442,9 @@ const TIP_WARM_MS = 300;
 const TIP_OFFSET_PX = 8;
 let tipShownAt = 0;
 let tipHiddenAt = 0;
+/* One tip at a time: a layout change under a still pointer (expand/collapse)
+   can skip the old anchor's pointer-leave, so opening a tip closes the last. */
+let closeOpenTip: (() => void) | null = null;
 
 function RailTip({
   label,
@@ -456,12 +461,24 @@ function RailTip({
   const [flashPos, setFlashPos] = useState<{ left: number; top: number } | null>(null);
   const timer = useRef<number | null>(null);
   const anchor = useRef<HTMLDivElement>(null);
+  const closeSelf = useRef(() => setPos(null));
 
   const place = () => {
     const rect = anchor.current?.getBoundingClientRect();
     return rect ? { left: rect.right + TIP_OFFSET_PX, top: rect.top + rect.height / 2 } : null;
   };
   useEffect(() => setFlashPos(flash ? place() : null), [flash]);
+  /* A label that goes away (the rail expanded) takes its open tip with it. */
+  useEffect(() => {
+    if (!label) setPos(null);
+  }, [label]);
+  useEffect(
+    () => () => {
+      if (timer.current) window.clearTimeout(timer.current);
+      if (closeOpenTip === closeSelf.current) closeOpenTip = null;
+    },
+    [],
+  );
 
   const show = () => {
     if (!label) return;
@@ -469,6 +486,8 @@ function RailTip({
     const open = () => {
       const next = place();
       if (!next) return;
+      if (closeOpenTip && closeOpenTip !== closeSelf.current) closeOpenTip();
+      closeOpenTip = closeSelf.current;
       tipShownAt = Date.now();
       setPos(next);
     };
@@ -480,6 +499,7 @@ function RailTip({
     if (timer.current) window.clearTimeout(timer.current);
     timer.current = null;
     if (pos) tipHiddenAt = Date.now();
+    if (closeOpenTip === closeSelf.current) closeOpenTip = null;
     setPos(null);
   };
 
@@ -494,7 +514,15 @@ function RailTip({
     );
   }
   return (
-    <div ref={anchor} className="tws-tip-anchor" onPointerEnter={show} onPointerLeave={hide} onFocus={show} onBlur={hide}>
+    <div
+      ref={anchor}
+      className="tws-tip-anchor"
+      onPointerEnter={show}
+      onPointerLeave={hide}
+      onPointerDown={hide}
+      onFocus={show}
+      onBlur={hide}
+    >
       {children}
       {tip}
     </div>

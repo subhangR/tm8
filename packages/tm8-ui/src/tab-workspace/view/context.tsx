@@ -33,6 +33,8 @@ export interface WorkspaceGateHandles {
   viewTabs: ShellTab[];
   shellTabs: ShellTab[];
   activeViewTabId: string | null;
+  /** The view the shell shows (`inbox`, `settings`, `files`…), or null on an entity: the rail's screens read current off it. */
+  activeScreenRef?: string | null | undefined;
   onSelectViewTab(id: string): void;
   /** The existing SpaceSwitcher element, ready to mount. */
   switcherSlot: ReactNode;
