@@ -26,6 +26,7 @@ import {
   utf8Bytes,
   type PromptRuntime,
   type PromptStoryContext,
+  type PromptDesignContext,
 } from '@tm8/prompt';
 
 import { oomKillObserved, readOomKillCount } from './oom-witness.js';
@@ -1364,6 +1365,36 @@ export class SpawnService {
   }
 
   /**
+   * The design the primary task was derived from (Run on a design, 304), for
+   * every prompt frame. Same timeout and fail-soft rule as the story: a
+   * design that cannot be read costs the prompt its design block, never the
+   * launch.
+   */
+  private async designContext(
+    auth: GraphAuth,
+    manifest: Tm8Manifest,
+    sessionId: string,
+  ): Promise<PromptDesignContext | null> {
+    const primary = manifest.tasks[0];
+    const load = this.graph.loadDesignContext?.bind(this.graph);
+    if (!load || !primary) return null;
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([
+        load(auth, { taskId: primary.id }),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('design context read timed out')), TASK_CONTEXT_RENDER_TIMEOUT_MS);
+        }),
+      ]);
+    } catch (error) {
+      this.logger?.warn?.('spawn: design context read failed', { sessionId, taskId: primary.id, error: String(error) });
+      return null;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  /**
    * The selection headers `<context_index>` renders, read under the caller's
    * RLS after the context load (so a spawn's refusals keep their order). A
    * graph without the read renders the index from the loader's own rows.
@@ -1756,6 +1787,8 @@ export class SpawnService {
 
       const story = await this.storyContext(auth, manifest, sessionId);
       if (story) manifest.story = story;
+      const design = await this.designContext(auth, manifest, sessionId);
+      if (design) manifest.design = design;
 
       // Compose the agent's briefing IN-PROCESS and embed it in the command.
       //

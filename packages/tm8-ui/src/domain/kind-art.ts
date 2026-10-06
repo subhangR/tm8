@@ -319,6 +319,17 @@ export const KIND_ART = {
     'M5 6.2h1.4',
     'M9.6 6.2H11',
   ],
+
+  /**
+   * Stacked pages (304): a design is an ordered set of pages. Provisional —
+   * the Craft → Designs UI lane owns the final mark.
+   */
+  design: [
+    'M5 5h8v8H5z',
+    'M3 11V3h8',
+    'M7 8h4',
+    'M7 10h2.5',
+  ],
 } as const satisfies Record<string, KindArt>;
 
 /**

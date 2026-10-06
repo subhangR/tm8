@@ -63,6 +63,7 @@ import type {
 } from '@tm8/contract';
 import { checkGraphCoherence, DEFAULT_FORM_SETTINGS, plainExcerpt, type FormQuestionRow, type FormSectionRow, type FormSettings, type FormStatus } from '@tm8/contract';
 import { SessionTranscriptContextSchema, StoryStateSchema, type SessionTranscriptContext } from '@tm8/contract';
+import { DesignStateSchema, type DesignPage } from '@tm8/contract';
 import type { Querier } from '../db/types.js';
 import { projectInteractionProfileForBrowser } from '../profiles/browser-projection.js';
 import {
@@ -172,6 +173,10 @@ export const ENTITY_COLUMNS = `
   -- 283: the computed summary, one SQL function the projector twin selects
   -- too. CASE keeps it off every other kind's row.
   case when e.kind = 'story' then internal.story_summary(e.id) end as story_summary,
+  -- 304: a design's title, description and summary (page count, page kinds
+  -- in order) — one SQL function the projector twin selects too.
+  dsg.title as design_title, dsg.description as design_description,
+  case when e.kind = 'design' then internal.design_summary(e.id) end as design_summary,
   -- Space styles (284): the whole document is row facts (spec §4.3) — it is
   -- what a push repaints from, and it is bounded by the doors.
   stl.title as sty_title, stl.description as sty_description,
@@ -401,6 +406,7 @@ export const ENTITY_FROM = `
   left join public.graphs gr             on gr.entity_id = e.id
   left join public.drawings drw           on drw.entity_id = e.id
   left join public.stories sty            on sty.entity_id = e.id
+  left join public.designs dsg            on e.kind = 'design' and dsg.entity_id = e.id
   left join public.mcp_servers mcp on e.kind='mcp_server' and mcp.entity_id=e.id
   left join public.styles stl             on e.kind = 'style' and stl.entity_id = e.id
   left join public.forms frm              on frm.entity_id = e.id
@@ -591,6 +597,9 @@ export interface EntityRow {
   story_title?: string | null;
   story_description?: string | null;
   story_summary?: unknown;
+  design_title?: string | null;
+  design_description?: string | null;
+  design_summary?: unknown;
   sty_title?: string | null;
   sty_description?: string | null;
   sty_schema_version?: number | null;
@@ -1551,6 +1560,9 @@ export function titleOf(row: EntityRow): string {
     case 'story':
       // Its own detail-row title — MIRRORS the projector twin (same reason).
       return row.story_title ?? 'Story';
+    case 'design':
+      // Its own detail-row title — MIRRORS the projector twin (same reason).
+      return row.design_title ?? 'Design';
     case 'style':
       // Its own detail-row title — MIRRORS the projector twin (same reason).
       return row.sty_title ?? 'Style';
@@ -1655,6 +1667,9 @@ function excerptOf(row: EntityRow): string | undefined {
     case 'story':
       // The description says what the story is for. MIRRORS the projector twin.
       return excerpt(row.story_description ?? null);
+    case 'design':
+      // The description says what the design is for. MIRRORS the projector twin.
+      return excerpt(row.design_description ?? null);
     case 'style':
       // The description says what the style is for. MIRRORS the projector twin.
       return excerpt(row.sty_description ?? null);
@@ -1989,6 +2004,10 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
       // 283: computed by `internal.story_summary`, which the projector twin
       // selects too — the mirror is the shared function, not a comment.
       return storySummaryOf(row.story_summary);
+    case 'design':
+      // 304: `internal.design_summary`, which the projector twin selects
+      // too — the mirror is the shared function.
+      return designSummaryOf(row.design_summary);
     case 'form':
       // Where it is in its lifecycle, and how long. MIRRORS the projector twin.
       return {
@@ -2300,7 +2319,7 @@ export function capabilitiesOf(row: EntityRow): EntityCapabilities {
   // Work-session "edit" is likewise exactly one thing: the display title, via
   // rename_work_session (085). Everything else on that row belongs to the
   // execution block, which is why it is still not deletable or hierarchical.
-  const editable = new Set(['task', 'doc', 'channel', 'collection', 'team_member', 'spell', 'skill', 'memory', 'worktree', 'work_session', 'graph', 'drawing', 'story']);
+  const editable = new Set(['task', 'doc', 'channel', 'collection', 'team_member', 'spell', 'skill', 'memory', 'worktree', 'work_session', 'graph', 'drawing', 'story', 'design']);
   // A story's children are child stories (same-kind hierarchy, 283).
   const hierarchical = new Set(['task', 'doc', 'channel', 'collection', 'story']);
   const pullable = new Set(['channel', 'task', 'doc', 'file', 'spell', 'skill', 'collection']);
@@ -2714,6 +2733,9 @@ export function contentOf(row: EntityRow): EntityContent {
     case 'story':
       // The prose; `hydrateDetail` adds the computed page on a detail read.
       return { kind: 'story', description: row.story_description ?? '', page: null };
+    case 'design':
+      // The prose; `hydrateDetail` adds the ordered pages on a detail read.
+      return { kind: 'design', description: row.design_description ?? '', pages: null };
     case 'form':
       // The row facts; `hydrateDetail` adds the sections and questions in
       // order, so a detail read renders the panel in one call while a list row
@@ -3081,6 +3103,41 @@ export function storySummaryOf(raw: unknown): Extract<EntityState, { kind: 'stor
   };
 }
 
+/**
+ * A design's pages (304): its live `contains` targets in page order
+ * (`props.position`, then when they were added), each the page entity's
+ * ordinary summary plus `pagePosition`. Read under the viewer's claims: a page
+ * the viewer cannot read is not listed (its summary does not load).
+ */
+export async function loadDesignPages(q: Querier, designId: string, viewerIdentityId: string): Promise<DesignPage[]> {
+  const edges = await q.query<{ dst_id: string; pos: number | null }>(
+    `select c.dst_id,
+            case when jsonb_typeof(c.props -> 'position') = 'number'
+                 then (c.props ->> 'position')::double precision end as pos
+       from public.edges c
+      where c.src_id = $1 and c.type = 'contains'
+      order by pos nulls last, c.created_at, c.id`,
+    [designId],
+  );
+  const summaries = await loadEntitySummariesByIds(q, edges.map((edge) => edge.dst_id), viewerIdentityId);
+  const byId = new Map(summaries.map((summary) => [summary.id, summary]));
+  return edges.flatMap((edge) => {
+    const summary = byId.get(edge.dst_id);
+    return summary && summary.deletedAt === null
+      ? [{ ...summary, pagePosition: edge.pos === null ? null : Number(edge.pos) }]
+      : [];
+  });
+}
+
+/**
+ * A design's summary as `internal.design_summary` returned it (304). Shared
+ * with the projector; a missing or malformed value reads as an empty design.
+ */
+export function designSummaryOf(raw: unknown): Extract<EntityState, { kind: 'design' }> {
+  const parsed = DesignStateSchema.safeParse(raw);
+  return parsed.success ? parsed.data : { kind: 'design', pageCount: 0, pageKinds: [] };
+}
+
 /** Detail-only IO, shared by the original and universal entity doors. */
 export async function hydrateDetail(
   q: Querier, row: EntityRow, state: EntityState, content: EntityContent, viewerIdentityId: string,
@@ -3100,6 +3157,10 @@ export async function hydrateDetail(
     // 283: the page — roots, trail, graph, team, call signs, activity, feed —
     // computed now from the same trail the summary counts.
     return { state, content: { ...content, page: await loadStoryPage(q, row.id) } };
+  }
+  if (content.kind === 'design') {
+    // 304: the pages, in page order, as the viewer may read them.
+    return { state, content: { ...content, pages: await loadDesignPages(q, row.id, viewerIdentityId) } };
   }
   if (content.kind === 'team_member') {
     const edges = await q.query<{ dst_id: string }>(

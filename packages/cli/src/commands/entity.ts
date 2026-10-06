@@ -76,6 +76,7 @@ import { renderContextBrief, renderHeaderLines } from '../context-brief.js';
 import { isAgentCaller, resolveWireSchema, schemaOption, type WireSchema } from '../wire-schema.js';
 import { boundEntityDetail, isEntityDetail } from '../entity-bounded.js';
 import { renderStoryDetail } from '../story-render.js';
+import { renderDesignDetail } from '../design-render.js';
 
 // ── shared local validation, used by every module in this slot ─────────────
 
@@ -316,6 +317,11 @@ function renderEntity(dto: unknown): string {
   if (line !== '' && (dto as { kind?: unknown }).kind === 'story') {
     return renderStoryDetail(dto as Record<string, unknown>, line);
   }
+  // A design's detail carries its ordered pages: text lists them after the
+  // summary (position, kind, title, id).
+  if (line !== '' && (dto as { kind?: unknown }).kind === 'design') {
+    return renderDesignDetail(dto as Record<string, unknown>, line);
+  }
   return line === '' ? JSON.stringify(dto) : line;
 }
 
@@ -476,7 +482,7 @@ const CONTEXT_SECTIONS = ['summary', 'hierarchy', 'connections', 'messages', 'ac
  */
 const CONTEXT_V2_SECTIONS = [
   'assignment', 'summary', 'hierarchy', 'blockers', 'connections', 'messages', 'actions',
-  'acceptance', 'acceptanceWrite', 'header', 'assignees', 'gate', 'children', 'parent', 'story', 'tasks', 'anchor', 'parentMessage', 'attachments',
+  'acceptance', 'acceptanceWrite', 'header', 'assignees', 'gate', 'children', 'parent', 'story', 'tasks', 'anchor', 'parentMessage', 'attachments', 'pages',
 ] as const;
 
 /**

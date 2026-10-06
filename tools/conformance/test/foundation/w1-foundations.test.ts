@@ -270,7 +270,9 @@ describe('W1.C generated catalog and reachability foundations', () => {
     // counting the `core(` rows in kind-dispositions.ts -> 29.
     // 29 -> 30 (2026-10-02): `style` (migration 284, read-only space styles).
     // MEASURED by counting the `core(` rows in kind-dispositions.ts.
-    expect(Object.keys(CORE_KIND_DISPOSITIONS)).toHaveLength(32);
+    // 32 -> 33 (2026-10-06): `design` (migration 304, Craft → Designs).
+    // MEASURED by counting the `core(` rows in kind-dispositions.ts.
+    expect(Object.keys(CORE_KIND_DISPOSITIONS)).toHaveLength(33);
     expect(CUSTOM_KIND_DISPOSITION.kind).toBe('c:*');
     expect(UI_TEMPLATE_SENTINEL).toMatchObject({
       kind: 'ui_template',

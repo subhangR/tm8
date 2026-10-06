@@ -159,8 +159,8 @@ describe('chat launch composition', () => {
     expect(base).toContain('Approve → dispatch');
     expect(base).toContain('edits are real writes');
     expect(base).toContain('ORCHESTRATE coordinates');
-    expect(base).toContain('CRAFT designs an orchestration plan');
-    expect(base).toContain('Materialize nothing until approval lands in this thread');
+    expect(base).toContain('CRAFT designs with the human');
+    expect(base).toContain('Nothing is materialized while crafting');
     expect(base).toContain('One guarded patch per turn');
     // No variant denies a capability the mode now has.
     expect(/it may not|it has no|Do not mutate anything/.test(base)).toBe(false);
@@ -197,22 +197,33 @@ describe('chat launch composition', () => {
     expect(craft).toContain('every task has exactly one assigned_to owner');
     expect(craft).toContain('ref what exists instead of duplicating it');
     expect(craft).toContain('list the Space’s existing ones of that kind (tm8_read collections.query by kinds)');
-    expect(craft).toContain('says it is pending');
     expect(craft).toContain('Example, “add CSV export”');
     expect(craft).toContain('the first patch sketches the skeleton');
     expect(craft).toContain('One guarded patch per turn');
     expect(craft).toContain('`content.findings`');
     expect(craft).toContain('ask one or two sharp questions instead of inventing structure');
-    // Materialize: approval-gated, 1:1 edges, mapping via content.link, ready frontier.
-    expect(craft).toContain('Materialize nothing until approval lands in this thread');
+    // Craft → Designs (304): craft edits a DESIGN of ordered pages through the
+    // membership doors, and never materializes — Run on the design does
+    // (its steps live in @tm8/prompt design-context.ts), and Run does not
+    // dispatch.
+    expect(craft).toContain('`design` entity holding ordered PAGES');
+    expect(craft).toContain('collections.addItem {id: <design-id>, entityId, position?}');
+    expect(craft).toContain('collections.removeItem takes a page out without deleting it');
+    expect(craft).toContain('A design cannot contain itself or a design above it');
+    expect(craft).toContain('A graph page is a PLAN');
+    expect(craft).toContain('Nothing is materialized while crafting, approved or not');
     expect(craft).toContain('same type, same direction');
     expect(craft).toContain('`content.link` {nodeId: createdId}');
-    expect(craft).toContain('Dispatch only the ready frontier');
     expect(craft).toContain('node → entity map');
+    expect(craft).not.toContain('Dispatch only the ready frontier');
+    expect(craft).not.toContain('Materialize nothing until approval');
     // Orchestrate carries the blueprint forward as the progress map.
     expect(base).toContain('keeps the blueprint row as its progress map');
     // Budget: the craft guide rides in every chat's system prompt. ~1.2k tokens.
-    expect(craft.length).toBeLessThanOrEqual(4800);
+    // 4800 -> 4900 (2026-10-06, Craft → Designs): the design contract (pages,
+    // membership doors, Run) replaced the materialize steps, which moved to the
+    // Run prompt. MEASURED 4839 on this tree.
+    expect(craft.length).toBeLessThanOrEqual(4900);
   });
 
   /**
