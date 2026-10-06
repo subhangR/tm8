@@ -1525,6 +1525,18 @@ export class DbGraphPort implements GraphPort {
     return rows.map((r) => ({ sessionId: r.entity_id, status: r.status as WorkSessionStatus }));
   }
 
+  async listCompletedSessionsToClose(
+    auth: GraphAuth,
+    nodeId: string,
+  ): Promise<Array<{ sessionId: string; minutes: number }>> {
+    const rows = await this.db.query<{ session_id: string; minutes: number }>(
+      this.claims(auth),
+      `select session_id, minutes from public.completed_sessions_to_close($1)`,
+      [nodeId],
+    );
+    return rows.map((r) => ({ sessionId: r.session_id, minutes: Number(r.minutes) }));
+  }
+
   // --- worktree provisioning (design §4) --------------------------------------
   //
   // Six writes and two reads, one door call each. They are separate for the
@@ -1882,6 +1894,8 @@ export interface ExecutionRuntime {
    * sessions that have had no process for `staleAfterMs`. Never rejects.
    */
   reapLost(staleAfterMs: number): Promise<{ reaped: number; errors: Array<{ message: string }> }>;
+  /** Spec D1 Q3 — close completed sessions idle past their space's window. Never rejects. */
+  closeIdleCompleted(): Promise<{ closed: number; errors: Array<{ message: string }> }>;
 }
 
 /**
@@ -2009,6 +2023,16 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
         const message = error instanceof Error ? error.message : String(error);
         deps.logger?.warn?.('execution: ghost reconciliation skipped', { error: message });
         return { retired: 0, errors: [{ message }] };
+      }
+    },
+    closeIdleCompleted: async () => {
+      try {
+        const o = await owner();
+        return await spawnService.closeIdleCompletedSessions(
+          { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'completed-auto-close' },
+        );
+      } catch (error) {
+        return { closed: 0, errors: [{ message: error instanceof Error ? error.message : String(error) }] };
       }
     },
     reapLost: async (staleAfterMs: number) => {
@@ -2184,6 +2208,16 @@ export function registerExecutionHandlers(
           retired: 0,
           errors: [{ message: error instanceof Error ? error.message : String(error) }],
         };
+      }
+    },
+    closeIdleCompleted: async () => {
+      try {
+        const o = await owner();
+        return await spawnService.closeIdleCompletedSessions(
+          { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'completed-auto-close' },
+        );
+      } catch (error) {
+        return { closed: 0, errors: [{ message: error instanceof Error ? error.message : String(error) }] };
       }
     },
     reapLost: async (staleAfterMs: number) => {

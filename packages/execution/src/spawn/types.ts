@@ -1223,6 +1223,16 @@ export interface GraphPort {
     auth: GraphAuth,
     nodeId: string,
   ): Promise<Array<{ sessionId: string; status: WorkSessionStatus }>>;
+  /**
+   * Spec D1 Q3 (301): this node's COMPLETED sessions whose process is still
+   * recorded live and has been idle past its space's auto-close window
+   * (`public.completed_sessions_to_close`). Optional: a port without it never
+   * auto-closes anything.
+   */
+  listCompletedSessionsToClose?(
+    auth: GraphAuth,
+    nodeId: string,
+  ): Promise<Array<{ sessionId: string; minutes: number }>>;
 
   // --- worktree provisioning (design §4) --------------------------------------
   //

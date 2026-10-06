@@ -422,17 +422,24 @@ describe('299 — session complete', () => {
 // Completed sessions: no new work, no resume (ac2, Q2)
 // ---------------------------------------------------------------------------
 
-describe('299 — a completed session is final', () => {
-  it('S5: --claim from a completed session is refused with session_completed', async () => {
+describe('301 — completion is a status marker (owner ruling 6 Oct)', () => {
+  it('S5 (owner ruling 6 Oct): --claim from a completed session REOPENS it — completion is a marker, not a gate', async () => {
     const t = await createTask('s5');
     const other = await createTask('s5-other');
     const s = await running([t]);
     await setWork(t, 'in_review', { asSession: s });
-    await post(t, 'close-out', s);
+    const receipt = await post(t, 'close-out', s);
     await complete(s, null, s);
-    const r = await refusal(setWork(other, 'working', { claim: true, asSession: s }));
-    expect(r.reason).toBe('session_completed');
-    expect(active(await claims({ dst: other }))).toHaveLength(0);
+    await setWork(other, 'working', { claim: true, asSession: s });
+    expect(await session(s)).toMatchObject({ outcome: 'open', outcome_source: 'self', receipt_message_id: null, category: 'in_progress' });
+    expect(active(await claims({ src: s })).map((c) => c.dst_id)).toEqual([other]);
+    const logged = await database.query<{ summary: Record<string, unknown> }>(
+      `select summary from public.activity where entity_id=$1 and summary->>'action'='reopened'`,
+      [s],
+    );
+    expect(logged[0]!.summary).toMatchObject({ cause: 'claimed_task', fromOutcome: 'completed', priorReceiptMessageId: receipt, subjectId: other });
+    const ev = await events('session.outcome_changed', s);
+    expect(ev.at(-1)).toMatchObject({ from: 'completed', to: 'open', outcomeSource: 'self' });
   });
 
   it('Q2 = B: resume reopens a completed session — open again, logged with the receipt it had', async () => {
@@ -690,3 +697,53 @@ describe('299 — events and the concurrency limit', () => {
     expect(Number(rows[0]!.n)).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Auto-close (owner ruling Q3) — which completed sessions the node closes
+// ---------------------------------------------------------------------------
+
+describe('301 — completed_sessions_to_close (Q3)', () => {
+  async function completedAgo(label: string, minutes: number): Promise<string> {
+    const t = await createTask(label);
+    const s = await running([t]);
+    await setWork(t, 'in_review', { asSession: s });
+    await post(t, 'close-out', s);
+    await complete(s, null, s);
+    await database.transaction(async (c) => {
+      await c.query(`select set_config('tm8.work_session_outcome','on',true)`);
+      await c.query(`update public.work_sessions set outcome_at = now() - make_interval(mins => $2) where entity_id = $1`, [s, minutes]);
+      await c.query(`update public.entities set activity_at = now() - make_interval(mins => $2) where id = $1`, [s, minutes]);
+    });
+    return s;
+  }
+  const due = async (): Promise<string[]> =>
+    (await asApp((q) => q(`select session_id from public.completed_sessions_to_close('node-local')`))).map(
+      (r) => r.session_id as string,
+    );
+  const setWindow = (minutes: number) =>
+    database.query(`update public.spaces set session_autoclose_minutes = $2 where id = $1`, [fixture.spaceId, minutes]);
+
+  it('lists a completed live session idle past the 30-minute default, not one inside it', async () => {
+    await setWindow(30);
+    const old = await completedAgo('ac-old', 45);
+    const fresh = await completedAgo('ac-fresh', 5);
+    const listed = await due();
+    expect(listed).toContain(old);
+    expect(listed).not.toContain(fresh);
+  });
+
+  it('0 means never', async () => {
+    const s = await completedAgo('ac-never', 120);
+    await setWindow(0);
+    expect(await due()).not.toContain(s);
+    await setWindow(30);
+  });
+
+  it('never closes a session that still has running children (D2 follow-on)', async () => {
+    const parent = await completedAgo('ac-parent', 60);
+    const child = await spawn([await createTask('ac-child')]);
+    await database.query(`update public.entities set parent_id = $2 where id = $1`, [child, parent]);
+    expect(await due()).not.toContain(parent);
+  });
+});
+

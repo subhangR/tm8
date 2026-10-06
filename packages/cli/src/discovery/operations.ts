@@ -1890,7 +1890,7 @@ const ROWS: Record<OperationName, Row> = {
       'enum values use their exact contract spelling, including `in_review`',
       'transition time is Server-owned; a client cannot backdate lifecycle history',
       'changes only the status: the caller is recorded as working_on the task only with --claim (an edge the caller already holds follows the transition)',
-      'inside a tm8 session --claim is the SESSION\'s claim; a completed session is refused with session_completed',
+      'inside a tm8 session --claim is the SESSION\'s claim; claiming from a completed session reopens it (logged)',
       'open and cancelled end every claim on the task (task_reset / task_cancelled); to hand off without changing the status, use `tm8 task release`',
     ],
   },
@@ -2800,7 +2800,7 @@ const ROWS: Record<OperationName, Row> = {
       'every claim must be done, in_review, blocked, or released with `tm8 task release --note`; otherwise invariant_violation / claims_open lists them',
       'the receipt is --receipt, or the latest message the session wrote on its anchor; none → receipt_required',
       'remaining in_review/blocked claims end with session_completed and the receipt as their hand-off',
-      'a completed session cannot claim new work (session_completed); `tm8 session resume` reopens it (logged), or start a follow-up session',
+      'completion is a status marker: the session may keep messaging and working; claiming a new task (or `tm8 session resume`) reopens it, logged',
       'the process keeps running unless --close-process',
     ],
     examples: [

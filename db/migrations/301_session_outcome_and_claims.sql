@@ -16,8 +16,10 @@
 --
 --   outcome  open -> completed | stopped, set by `session complete` (with a
 --            receipt and the claim check) or by an operator's Stop. Once
---            completed it is final except through an explicit, logged
---            resume (owner ruling Q2 = B); stopped -> open also only through resume.
+--            completed is a STATUS MARKER, not a gate (owner ruling 6 Oct): a
+--            completed session keeps messaging and working; resume or claiming a
+--            task reopens it (internal.reopen_session, logged). stopped -> open
+--            through resume.
 --            SINGLE WRITER: the functions in this file (tm8.work_session_outcome).
 --   process  `status` + `ended_kind`, unchanged in meaning, still written only by
 --            `work_session_transition` / `execution_resume`. NO process event
@@ -72,10 +74,11 @@ alter table public.work_sessions
     check (outcome in ('open', 'completed', 'stopped')),
   add constraint work_sessions_outcome_source_check
     check (outcome_source is null or outcome_source in ('self', 'operator', 'backfill')),
-  -- An open session has no outcome facts; a settled one always has its time and source.
+  -- A settled session always has its time and source. An open one has no time;
+  -- its source, when set, names who REOPENED it (self: it claimed new work).
   add constraint work_sessions_outcome_together_check
     check ((outcome = 'open') = (outcome_at is null)
-       and (outcome = 'open') = (outcome_source is null)),
+       and (outcome = 'open' or outcome_source is not null)),
   add constraint work_sessions_receipt_completed_check
     check (receipt_message_id is null or outcome = 'completed');
 
@@ -190,8 +193,41 @@ end
 $$;
 
 -- A new claim row: `status` and `startedAt` always present (spawn inserts
--- bare props), and a completed session can never become a claimant (spec §3
--- rule 5) — the backstop under set_work_state's own named refusal.
+-- bare props). Owner ruling (6 Oct, supersedes spec §3 rule 5 / R8): completion
+-- is a status marker, not a gate — a COMPLETED session that claims work is
+-- reopened here, for every claim path, through internal.reopen_session.
+-- THE ONE PLACE a settled session goes back to open (owner rulings 6 Oct:
+-- resume reopens; a completed session claiming work reopens). Clears the
+-- outcome facts, records who reopened it, and logs the reopen with the
+-- outcome and receipt it had. Changing the reopen rule means changing this.
+create or replace function internal.reopen_session(
+  p_session_id uuid, p_source text, p_cause text, p_subject_id uuid default null)
+returns text language plpgsql security definer
+set search_path = public, internal, pg_temp as $$
+declare
+  ws public.work_sessions;
+  e public.entities;
+begin
+  select * into ws from public.work_sessions where entity_id = p_session_id for update;
+  if ws.outcome is null or ws.outcome = 'open' then return 'open'; end if;
+  select * into e from public.entities where id = p_session_id;
+  perform set_config('tm8.work_session_outcome', 'on', true);
+  perform set_config('tm8.work_session_reopen', 'on', true);
+  update public.work_sessions
+     set outcome = 'open', outcome_at = null, outcome_by = null,
+         receipt_message_id = null, outcome_source = p_source, outcome_note = null
+   where entity_id = p_session_id;
+  perform set_config('tm8.work_session_reopen', 'off', true);
+  perform set_config('tm8.work_session_outcome', 'off', true);
+  perform internal.record_activity(e.space_id, p_session_id,
+    coalesce(internal.actor_id(), ws.outcome_by, e.created_by), 'updated', null,
+    jsonb_build_object('kind', 'work_session', 'action', 'reopened', 'cause', p_cause,
+                       'fromOutcome', ws.outcome, 'priorReceiptMessageId', ws.receipt_message_id,
+                       'subjectId', p_subject_id, 'outcomeSource', p_source));
+  return ws.outcome;
+end
+$$;
+
 create or replace function internal.working_on_claim_defaults()
 returns trigger language plpgsql
 set search_path = public, internal, pg_temp as $$
@@ -205,8 +241,7 @@ begin
   if v_reopening then
     select ws.outcome into v_outcome from public.work_sessions ws where ws.entity_id = new.src_id;
     if v_outcome = 'completed' then
-      raise exception 'a completed session cannot claim work'
-        using errcode = '23514', detail = '{"reason":"session_completed"}';
+      perform internal.reopen_session(new.src_id, 'self', 'claimed_task', new.dst_id);
     end if;
   end if;
   if not (new.props ? 'status') then
@@ -528,6 +563,19 @@ declare
 begin
   select e.status_category into current_cat from public.entities e where e.id = new.entity_id;
 
+  -- A move the workflow forbids directly may still be ruled through to_do —
+  -- the REOPEN (done -> to_do) then the start (to_do -> in_progress). That is
+  -- a reopened session whose process is still running (internal.reopen_session).
+  if category is not null and current_cat is not null
+     and not internal.category_transition_allowed(current_cat, category)
+     and internal.category_transition_allowed(current_cat, 'to_do')
+     and internal.category_transition_allowed('to_do', category) then
+    update public.entities
+       set status_id = internal.workflow_state_for_category(new.entity_id, 'to_do')
+     where id = new.entity_id;
+    current_cat := 'to_do';
+  end if;
+
   -- A move the workflow forbids is declined rather than raised: the process
   -- writer must never fail because of where the row is filed.
   if category is not null and current_cat is not null
@@ -707,6 +755,163 @@ set search_path = public, internal, pg_temp as $$
      and e.deleted_at is null
      and (target_space is null or e.space_id = target_space)
 $$;
+
+-- ---------------------------------------------------------------------------
+-- 7b. Auto-close (owner ruling Q3): a completed session's process closes after
+--     this many idle minutes; 0 = never. Per space, default 30.
+-- ---------------------------------------------------------------------------
+
+alter table public.spaces
+  add column session_autoclose_minutes integer not null default 30
+    check (session_autoclose_minutes between 0 and 10080);
+
+comment on column public.spaces.session_autoclose_minutes is
+  'Spec D1 Q3: minutes a COMPLETED session''s process may stay idle before it is closed (exited_clean). 0 = never.';
+
+-- Completed sessions on this node whose process is still recorded live and has
+-- been idle (no activity) for the space's auto-close window since completion.
+create or replace function public.completed_sessions_to_close(p_node_id text)
+returns table(session_id uuid, minutes integer) language sql stable security definer
+set search_path = public, internal, pg_temp as $$
+  select ws.entity_id, sp.session_autoclose_minutes
+    from public.work_sessions ws
+    join public.entities e on e.id = ws.entity_id and e.deleted_at is null
+    join public.spaces sp on sp.id = e.space_id
+   where ws.node_id = p_node_id
+     and ws.outcome = 'completed'
+     and ws.status in ('spawning', 'running', 'idle')
+     and sp.session_autoclose_minutes > 0
+     and greatest(ws.outcome_at, e.activity_at) < now() - make_interval(mins => sp.session_autoclose_minutes)
+     -- D2 follow-on (6 Oct): never close a session that still has running children.
+     and not exists (
+       select 1 from public.entities ce join public.work_sessions cws on cws.entity_id = ce.id
+        where ce.parent_id = ws.entity_id and ce.deleted_at is null
+          and cws.status in ('spawning', 'running', 'idle'))
+     and internal.is_space_member(e.space_id)
+$$;
+revoke all on function public.completed_sessions_to_close(text) from public;
+grant execute on function public.completed_sessions_to_close(text) to tm8_app;
+
+create or replace function public.w2_update_space(p_space_id uuid, p_patch jsonb, p_client_mutation_id text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'internal', 'pg_temp'
+AS $function$
+declare
+  replay jsonb;
+  space_row public.spaces;
+  result jsonb;
+begin
+  perform internal.require_replay_principal(p_client_mutation_id);
+  replay := internal.ledger_replay(p_client_mutation_id, 'spaces.update');
+  if replay is not null then
+    -- THE SECURITY BOUNDARY. internal.ledger_replay takes
+    -- pg_advisory_xact_lock on the cmid and only then selects, so this call
+    -- runs with that lock HELD and the recorded row guaranteed visible. The
+    -- identical call before ledger_replay is a fast path, NOT the boundary:
+    -- it runs unlocked and reads "not found" against a victim's still
+    -- uncommitted row. See the TOCTOU note in 031's header.
+    perform internal.require_replay_principal(p_client_mutation_id);
+    perform internal.require_replay_subject(
+      replay #>> '{space,id}', p_space_id::text, 'space');
+    return replay;
+  end if;
+
+  if p_patch is null or jsonb_typeof(p_patch) <> 'object' or p_patch = '{}'::jsonb then
+    raise exception 'Space metadata patch must be a non-empty object'
+      using errcode = '22023';
+  end if;
+  if exists (
+    select 1 from jsonb_object_keys(p_patch) patch_key
+     where patch_key not in ('name', 'description', 'githubRepo',
+                             'sessionShareDefault', 'sessionDriveDefault',
+                             'sessionAutoCloseMinutes')
+  ) then
+    raise exception 'Space metadata patch contains an unknown field'
+      using errcode = '22023';
+  end if;
+  if p_patch ? 'name' and (
+       jsonb_typeof(p_patch -> 'name') <> 'string'
+       or char_length(btrim(p_patch ->> 'name')) not between 1 and 200
+  ) then
+    raise exception 'Space name must contain 1 to 200 characters'
+      using errcode = '22023';
+  end if;
+  if p_patch ? 'description' and jsonb_typeof(p_patch -> 'description') <> 'string' then
+    raise exception 'Space description must be a string'
+      using errcode = '22023';
+  end if;
+  if p_patch ? 'githubRepo'
+     and jsonb_typeof(p_patch -> 'githubRepo') not in ('string', 'null') then
+    raise exception 'githubRepo must be a string or null'
+      using errcode = '22023';
+  end if;
+  -- Checked here rather than left to the column CHECK so a bad value is a 400
+  -- naming the field, not a 500 naming a constraint.
+  if p_patch ? 'sessionShareDefault'
+     and (jsonb_typeof(p_patch -> 'sessionShareDefault') <> 'string'
+          or p_patch ->> 'sessionShareDefault' not in ('none','space')) then
+    raise exception 'sessionShareDefault must be "none" or "space"'
+      using errcode = '22023';
+  end if;
+  if p_patch ? 'sessionDriveDefault'
+     and (jsonb_typeof(p_patch -> 'sessionDriveDefault') <> 'string'
+          or p_patch ->> 'sessionDriveDefault' not in ('owner','space')) then
+    raise exception 'sessionDriveDefault must be "owner" or "space"'
+      using errcode = '22023';
+  end if;
+
+  -- 301 (Spec D1 Q3): minutes a completed session's process may stay idle
+  -- before it is closed; 0 = never.
+  if p_patch ? 'sessionAutoCloseMinutes'
+     and (jsonb_typeof(p_patch -> 'sessionAutoCloseMinutes') <> 'number'
+          or (p_patch ->> 'sessionAutoCloseMinutes')::numeric <> trunc((p_patch ->> 'sessionAutoCloseMinutes')::numeric)
+          or (p_patch ->> 'sessionAutoCloseMinutes')::numeric not between 0 and 10080) then
+    raise exception 'sessionAutoCloseMinutes must be a whole number of minutes from 0 (never) to 10080'
+      using errcode = '22023';
+  end if;
+
+  perform internal.require_space_admin(p_space_id);
+  perform internal.resolve_actor(internal.actor_id(), p_space_id);
+  update public.spaces
+     set name = case when p_patch ? 'name' then p_patch ->> 'name' else name end,
+         description = case
+           when p_patch ? 'description' then p_patch ->> 'description'
+           else description
+         end,
+         github_repo = case
+           when p_patch ? 'githubRepo' then p_patch ->> 'githubRepo'
+           else github_repo
+         end,
+         session_share_default = case
+           when p_patch ? 'sessionShareDefault' then p_patch ->> 'sessionShareDefault'
+           else session_share_default
+         end,
+         session_drive_default = case
+           when p_patch ? 'sessionDriveDefault' then p_patch ->> 'sessionDriveDefault'
+           else session_drive_default
+         end,
+         session_autoclose_minutes = case
+           when p_patch ? 'sessionAutoCloseMinutes' then (p_patch ->> 'sessionAutoCloseMinutes')::integer
+           else session_autoclose_minutes
+         end
+   where id = p_space_id
+   returning * into space_row;
+  if space_row.id is null then
+    raise exception 'space not found' using errcode = 'P0002';
+  end if;
+
+  result := jsonb_build_object(
+    'space', to_jsonb(space_row) || jsonb_build_object(
+      'member_count', (select count(*) from public.members where space_id = p_space_id)
+      -- no 'unread_total' — see 161's header
+    ),
+    'patches', '[]'::jsonb
+  );
+  return internal.ledger_record(p_client_mutation_id, 'spaces.update', result);
+end
+$function$;
 
 -- ---------------------------------------------------------------------------
 -- 8. Complete / stop / release
@@ -1061,13 +1266,7 @@ begin
   -- 299: inside an agent session the claim is the SESSION's.
   claimant := coalesce(internal.caller_work_session(e.space_id), actor);
 
-  if coalesce(p_claim, false) then
-    select ws.outcome into v_outcome from public.work_sessions ws where ws.entity_id = claimant;
-    if v_outcome = 'completed' then
-      raise exception 'a completed session cannot claim work; start a follow-up session'
-        using errcode = '23514', detail = '{"reason":"session_completed"}';
-    end if;
-  end if;
+  -- A completed claimant is reopened by the claim trigger (internal.reopen_session).
 
   holds_edge := coalesce(p_claim, false) or exists (
     select 1 from public.edges
@@ -1171,14 +1370,8 @@ begin
   -- work too — an explicit, logged reopen. The activity row below records the
   -- outcome it reopened from and the receipt that completion had recorded.
   if current_outcome in ('stopped', 'completed') then
-    perform set_config('tm8.work_session_outcome', 'on', true);
-    perform set_config('tm8.work_session_reopen', 'on', true);
-    update public.work_sessions
-       set outcome = 'open', outcome_at = null, outcome_by = null,
-           receipt_message_id = null, outcome_source = null, outcome_note = null
-     where entity_id = p_session_id;
-    perform set_config('tm8.work_session_reopen', 'off', true);
-    perform set_config('tm8.work_session_outcome', 'off', true);
+    perform internal.reopen_session(p_session_id,
+      internal.outcome_source_for(p_session_id, e.space_id), 'resumed');
   end if;
 
   perform set_config('tm8.work_session_transition', 'on', true);

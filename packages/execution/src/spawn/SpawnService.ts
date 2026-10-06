@@ -3586,6 +3586,41 @@ export class SpawnService {
     });
   }
 
+  /**
+   * AUTO-CLOSE (Spec D1, owner ruling Q3). A COMPLETED session's process left
+   * open idles away a slot nobody uses; after its space's window (default 30
+   * min, 0 = never) since completion with no activity, close it. The work is
+   * already done, so the ending is `exited_clean` and the outcome is
+   * untouched. NEVER THROWS.
+   */
+  async closeIdleCompletedSessions(
+    auth: GraphAuth,
+  ): Promise<{ closed: number; errors: Array<{ message: string }> }> {
+    if (!this.nodeId || !this.graph.listCompletedSessionsToClose) return { closed: 0, errors: [] };
+    let due: Array<{ sessionId: string; minutes: number }>;
+    try {
+      due = await this.graph.listCompletedSessionsToClose(auth, this.nodeId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { closed: 0, errors: [{ message: `could not list completed sessions to close: ${message}` }] };
+    }
+    let closed = 0;
+    const errors: Array<{ message: string }> = [];
+    for (const { sessionId, minutes } of due) {
+      try {
+        await this.terminate(auth, sessionId, {
+          reason: `auto-closed: completed and idle for ${String(minutes)} min (space setting)`,
+          endedKind: 'exited_clean',
+          endedReason: `Closed automatically: the work was completed and the session sat idle for ${String(minutes)} minutes.`,
+        });
+        closed += 1;
+      } catch (error) {
+        errors.push({ message: `session ${sessionId}: ${error instanceof Error ? error.message : String(error)}` });
+      }
+    }
+    return { closed, errors };
+  }
+
   /** First time the reaper saw each live-recorded session with no PTY here. */
   private readonly ghostFirstSeen = new Map<string, number>();
 

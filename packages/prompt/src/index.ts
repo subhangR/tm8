@@ -303,8 +303,8 @@ const SESSION_CLOSE_OUT_RULE =
   '"<hand-off>"`; (2) post the close-out message; (3) run `tm8 session complete` — ' +
   'it refuses with `claims_open` while a claim is still working, and takes your ' +
   'latest message on the anchor as the receipt (or pass `--receipt <message-id>`). ' +
-  'After completing you may still answer messages, but you cannot claim new work: ' +
-  'if more is asked of you, say so and suggest a follow-up session. Never run ' +
+  'Completing is a status marker, not an exit: you may still answer messages and ' +
+  'keep working, and claiming a new task reopens the session. Never run ' +
   '`tm8 session terminate` on yourself to finish — terminate is for operators.';
 
 const WORKER_IDENTITY_INSTRUCTION =
