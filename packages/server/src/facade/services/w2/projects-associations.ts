@@ -677,8 +677,8 @@ export class W2ProjectsAssociationsService {
          left join lateral (
            select t.entity_id, t.name
              from public.edges ed
-             join public.team_members t on t.entity_id = ed.dst_id
-            where ed.src_id = ws.entity_id and ed.type = 'relates_to'
+             join public.team_members t on t.entity_id = ed.src_id
+            where ed.dst_id = ws.entity_id and ed.type = 'participates_in'
             order by ed.created_at desc
             limit 1
          ) tm on true

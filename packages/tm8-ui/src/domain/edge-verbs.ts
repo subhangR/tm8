@@ -67,6 +67,7 @@ export const EDGE_VERBS: Readonly<Record<string, EdgeVerb>> = {
   disputes: { out: 'Disputes', in: 'Disputed by' },
   drives: { out: 'Drives', in: 'Driven by' },
   equips: { out: 'Equips', in: 'Equipped by' },
+  follows_up: { out: 'Follows up', in: 'Followed up by' },
   has_member: { out: 'Has member', in: 'Member of' },
   in_project: { out: 'In project', in: 'In this project' },
   in_worktree: { out: 'In worktree', in: 'In this worktree' },
