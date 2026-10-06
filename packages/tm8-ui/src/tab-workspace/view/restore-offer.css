@@ -1,4 +1,5 @@
-/* Persistence banners (RestoreOffer.tsx): raised plane, top-centre of the content area. */
+/* Persistence banners (RestoreOffer.tsx): raised plane, top-centre of the content
+   area; the restore offer sits inline in the start surface (--inline). */
 .tws-banner {
   grid-area: content;
   align-self: start;
@@ -15,6 +16,15 @@
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-md);
   box-shadow: var(--pn-sh-sm);
+}
+.tws-banner--inline {
+  grid-area: auto;
+  align-self: stretch;
+  justify-self: stretch;
+  z-index: auto;
+  margin-top: var(--pn-space-4);
+  max-width: none;
+  box-shadow: none;
 }
 .tws-banner-text {
   flex: 1 1 auto;

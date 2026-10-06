@@ -17,7 +17,8 @@
  *  - `skill`: `SkillCreateControl` (the skill-file door);
  *  - `work_session`: the launch sheet (`NewSessionScreen`);
  *  - `chat`: the chat-start flow (`ChatHomeSurface` in its solo composer).
- * `form`, `artifact` and `project` have no create door in this client, so the
+ * `form` is the form builder (`FormDraftBody`, wired in the registry).
+ * `artifact` and `project` have no create door in this client, so the
  * registry marks them not creatable.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type FormEvent } from 'react';

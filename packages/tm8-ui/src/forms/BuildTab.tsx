@@ -35,7 +35,7 @@ import { Notice, QuestionField, QuestionFields } from './parts';
 import { FormsPortError, FormsStructureSaveError, type FormState } from './seam';
 import { errorText, type Questionnaire } from './useQuestionnaire';
 
-interface Draft {
+export interface Draft {
   sections: FormSectionRow[];
   questions: FormQuestionRow[];
   settings: FormSettings;
@@ -72,7 +72,7 @@ function draftOf(form: FormState): Draft {
 
 const renumber = <T extends { position: number }>(rows: T[]): T[] => rows.map((r, position) => ({ ...r, position }));
 
-function uniqueKey(base: string, taken: Set<string>): string {
+export function uniqueKey(base: string, taken: Set<string>): string {
   for (let n = 1; ; n++) {
     const key = `${base}_${n}`;
     if (!taken.has(key)) return key;
@@ -80,7 +80,7 @@ function uniqueKey(base: string, taken: Set<string>): string {
 }
 
 /** The contract's own spec check, over the working copy. */
-function specIssues(title: string, d: Draft): string[] {
+export function specIssues(title: string, d: Draft): string[] {
   const parsed = FormSpecSchema.safeParse({
     title,
     sections: d.sections.map(({ position: _p, ...s }) => s),
@@ -314,7 +314,7 @@ function Preview({ draft }: { draft: Draft }) {
   );
 }
 
-function QuestionEditor({
+export function QuestionEditor({
   question, sections, locked, taken, onChange,
 }: {
   question: FormQuestionRow;
