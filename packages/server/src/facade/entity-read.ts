@@ -1,5 +1,5 @@
 import { McpServerDefinitionSchema } from '@tm8/contract';
-import type { EffectiveSkills, OpRequestStatus } from '@tm8/contract';
+import type { EffectiveSkills, OpRequestStatus, TaskLiveSession } from '@tm8/contract';
 /**
  * Derived truth, assembled ONCE, server-side (L3).
  *
@@ -73,6 +73,7 @@ import {
   projectForgeFacts,
   type LinkedPullRequestBadges,
 } from '../tracking/pr-projection.js';
+import { loadTaskLiveSessionBadges } from '../tracking/live-session-projection.js';
 import { loadHumanMessageAuthorIds, type HumanMessageAuthorIds } from './message-author-projection.js';
 // The ONE narrowing of the status columns, shared with `events/projector.ts`.
 import { categoryFragment, narrowWorkStatus } from './status.js';
@@ -1771,6 +1772,8 @@ export interface AssemblyContext {
    * those must not recurse into a second round of badge material.
    */
   pullRequests?: Map<string, LinkedPullRequestBadges>;
+  /** Per working/blocked task, `badges.liveSession` (P0g); optional like `pullRequests`. */
+  liveSessions?: Map<string, TaskLiveSession>;
   /** Summaries of related entities (dependency targets, working-on tasks). */
   related?: Map<string, EntitySummary>;
   /**
@@ -2264,6 +2267,11 @@ function badgesOf(row: EntityRow, ctx: AssemblyContext): EntityBadges {
       );
     }
   }
+
+  // P0g: is anyone really on this working/blocked task? Emitted whenever the
+  // loader answered, including `live`, so a client never infers it from absence.
+  const liveSession = ctx.liveSessions?.get(row.id);
+  if (liveSession) badges.liveSession = liveSession;
 
   // The PRs this task tracks, carried ON THE ROW. Unlike every other badge
   // here, this one does not summarize the entity's own state — it projects a
@@ -2979,6 +2987,8 @@ export async function assembleSummaries(
   // THE SAME loader the events projector calls — see its header for why this
   // is one function and not two twins.
   const pullRequests = await loadLinkedPullRequestBadges(q, rows);
+  // Same loader as the projector, for the reason `pullRequests` is shared.
+  const liveSessions = await loadTaskLiveSessionBadges(q, rows);
   const humanMessageAuthors = await loadHumanMessageAuthorIds(q, ids);
   const chatSubjects = await loadChatSubjects(q, rows);
 
@@ -3036,7 +3046,7 @@ export async function assembleSummaries(
   // Pass 2: the real thing, with relations and the summaries the badges need.
   const ctx: AssemblyContext = {
     actors, relations, viewerReactions, unreadCounts, related, pullRequests, humanMessageAuthors,
-    chatSubjects,
+    chatSubjects, liveSessions,
   };
   return rows.map((r) => toEntitySummary(r, ctx));
 }

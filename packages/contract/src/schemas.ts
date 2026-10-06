@@ -129,7 +129,7 @@ import type {
   InboxListQuery, InboxMarkReadInput, InboxRecipient,
   InteractionProfileDraft, InteractionProfilePinView, InteractionProfilePreview,
   InteractionProfileView, LeaderboardRow, LinkCommitInput, LinkedPullRequestBadge, LinkPrInput,
-  LiveWork, MenuConfig, MenuConfigPayload, MenuGroup, MenuItem, MenuLeaf,
+  LiveWork, TaskLiveSession, MenuConfig, MenuConfigPayload, MenuGroup, MenuItem, MenuLeaf,
   Mention, MessageBatchResult, MessageDeliveryDisposition,
   MessageDeliveryQuery, MessageDeliveryRecord,
   MessageChatTurnRecord, MessageDeliveryView, MessagePart, MessageView, MoveEntityInput,
@@ -784,6 +784,12 @@ export const PullStateSchema: z.ZodType<PullState> = z.lazy(() => z.object({
   pulledAt: IsoTimestamp,
 }).strict());
 
+export const TaskLiveSessionSchema: z.ZodType<TaskLiveSession> = z.object({
+  state: z.enum(['live', 'session_down', 'person', 'person_idle', 'no_session']),
+  since: IsoTimestamp.nullable(),
+  sessionId: z.string().uuid().nullable(),
+}).strict();
+
 export const LiveWorkSchema: z.ZodType<LiveWork> = z.lazy(() => z.object({
   actor: ActorSummarySchema,
   task: EntitySummarySchema,
@@ -829,6 +835,7 @@ export const EntityBadgesSchema: z.ZodType<EntityBadges> = z.lazy(() => z.object
   }).strict().optional(),
   pulls: z.array(PullStateSchema).optional(),
   workingActors: z.array(LiveWorkSchema).optional(),
+  liveSession: TaskLiveSessionSchema.optional(),
   pullRequests: z.array(LinkedPullRequestBadgeSchema).optional(),
   pullRequestsTruncated: z.boolean().optional(),
   completedBy: z.object({ actor: ActorSummarySchema, at: z.string() }).strict().optional(),

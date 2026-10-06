@@ -1,5 +1,5 @@
 import { McpServerDefinitionSchema } from '@tm8/contract';
-import type { EffectiveSkills, OpRequestStatus } from '@tm8/contract';
+import type { EffectiveSkills, OpRequestStatus, TaskLiveSession } from '@tm8/contract';
 /**
  * Entity hydration for the event stream — the `EntityProjector` seam.
  *
@@ -70,6 +70,7 @@ import {
   projectForgeFacts,
   type LinkedPullRequestBadges,
 } from '../tracking/pr-projection.js';
+import { loadTaskLiveSessionBadges } from '../tracking/live-session-projection.js';
 
 /**
  * Thrown when the database holds an entity kind the FROZEN contract does not
@@ -891,6 +892,9 @@ export class PgEntityProjector implements EntityProjector {
     // being unlinked. Same loader as the facade assembler, so the two answers
     // cannot drift. Skipped entirely when no task is in the batch.
     const pullRequests = await loadLinkedPullRequestBadges(q, rows);
+    // `badges.liveSession` (P0g): the same loader as the facade assembler, for
+    // the pull-request reason above. Skipped entirely when no task is in the batch.
+    const liveSessions = await loadTaskLiveSessionBadges(q, rows);
     // Each chat's `about` subject — the SAME loader as the facade assembler, for
     // the pull-request reason above: a subject chip that rendered on load and
     // vanished on the next `entity.upsert` would read as the link being removed.
@@ -903,7 +907,8 @@ export class PgEntityProjector implements EntityProjector {
         this.summaryOf(r, actors, assigneeIds.get(r.id) ?? [], assignments.get(r.id) ?? [],
           memberIds.get(r.id) ?? [],
           viewerReactions.get(r.id) ?? null, attention.get(r.id), unreadCounts, containsCounts,
-          pullRequests.get(r.id), humanMessageAuthors.get(r.id), chatSubjects),
+          pullRequests.get(r.id), humanMessageAuthors.get(r.id), chatSubjects,
+          liveSessions.get(r.id)),
       );
     }
     return out;
@@ -983,6 +988,7 @@ export class PgEntityProjector implements EntityProjector {
     pullRequests: LinkedPullRequestBadges | undefined,
     humanMessageAuthors: HumanMessageAuthorIds | undefined,
     chatSubjects: ReadonlyMap<string, ChatSubject>,
+    liveSession?: TaskLiveSession,
   ): EntitySummary {
     const counters: EntityCounters = {
       likes: r.likes ?? 0,
@@ -1046,6 +1052,8 @@ export class PgEntityProjector implements EntityProjector {
               ...(pullRequests.truncated ? { pullRequestsTruncated: true } : {}),
             }
           : {}),
+        // MIRRORS badgesOf: emitted whenever the loader answered.
+        ...(liveSession ? { liveSession } : {}),
       },
     };
 
