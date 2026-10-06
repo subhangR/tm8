@@ -60,6 +60,7 @@ export interface EntityTabBodyProps {
 export interface EntityChromeSlots {
   verbsSlot: HTMLElement | null;
   menuSlot: HTMLElement | null;
+  secondarySlot: HTMLElement | null;
   dangerSlot: HTMLElement | null;
   menuOpen: boolean;
   setMenuOpen(open: boolean): void;
@@ -70,6 +71,7 @@ export interface EntityChromeSlots {
 export interface EntityChromeContextValue extends EntityChromeSlots {
   setVerbsSlot(el: HTMLElement | null): void;
   setMenuSlot(el: HTMLElement | null): void;
+  setSecondarySlot(el: HTMLElement | null): void;
   setDangerSlot(el: HTMLElement | null): void;
 }
 
@@ -412,8 +414,9 @@ function UnavailableBody({
 // The tab body
 // ---------------------------------------------------------------------------
 
-/** The scroll container inside the reused panel. */
-const SCROLL_SELECTOR = '.pn-body';
+/** The scroll container inside the reused panel: the whole column for a
+    document, the body for a kind that owns its height (see content.css). */
+const SCROLL_SELECTOR = ".pn-panel[data-embedded-flow='document'], .pn-panel[data-embedded-flow='fill'] .pn-body";
 
 export function EntityTabBody({ tab, adapter, onHandle }: EntityTabBodyProps) {
   const { gate, dispatch, runtime } = useWorkspace();
@@ -519,6 +522,7 @@ export function EntityTabBody({ tab, adapter, onHandle }: EntityTabBodyProps) {
   const embeddedChrome: EmbeddedChrome = {
     verbsSlot: chrome?.verbsSlot ?? null,
     menuSlot: chrome?.menuSlot ?? null,
+    secondarySlot: chrome?.secondarySlot ?? null,
     dangerSlot: chrome?.dangerSlot ?? null,
     omitActions: WORKSPACE_OWN_ACTIONS,
     onMenuDone: () => chrome?.setMenuOpen(false),

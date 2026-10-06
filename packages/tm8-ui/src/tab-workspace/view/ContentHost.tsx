@@ -67,6 +67,7 @@ function EntityTab({
 }) {
   const [verbsSlot, setVerbsSlot] = useState<HTMLElement | null>(null);
   const [menuSlot, setMenuSlot] = useState<HTMLElement | null>(null);
+  const [secondarySlot, setSecondarySlot] = useState<HTMLElement | null>(null);
   const [dangerSlot, setDangerSlot] = useState<HTMLElement | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -88,15 +89,17 @@ function EntityTab({
     () => ({
       verbsSlot,
       menuSlot,
+      secondarySlot,
       dangerSlot,
       menuOpen,
       setMenuOpen,
       contentWidth,
       setVerbsSlot,
       setMenuSlot,
+      setSecondarySlot,
       setDangerSlot,
     }),
-    [verbsSlot, menuSlot, dangerSlot, menuOpen, contentWidth],
+    [verbsSlot, menuSlot, secondarySlot, dangerSlot, menuOpen, contentWidth],
   );
 
   const tabId = tab.id;
