@@ -1614,6 +1614,7 @@ const ROWS: Record<OperationName, Row> = {
     notes: [
       'restricted kinds (project, interaction_profile) refuse generic creation and use their named writers',
       'hierarchy is homogeneous: a parent and its direct children share one kind and one Space',
+      'where it belongs (Design Rules §2.4) is decided by what the entity is about, not by the task you happen to be on: (1) part of an existing entity of the SAME kind → --parent <that-id>: a subtask under the task it breaks down, a sub-doc under the doc it details, a child story, a sub-session (find it with `tm8 entity query --kind <kind> --words "<terms>"` or the hierarchy in `tm8 entity context`); (2) part of nothing → a root (--parent none); (3) an umbrella for existing entities → create it, then `tm8 entity move <child-id> --parent <new-id> --position <n> --expect-version <n>` for each; (4) a cross-kind link is an edge, never a parent — a deliverable of a task gets `tm8 edge create <task-id> produces <new-id>`, an input or reference `--attach-to <task-id>`; (5) follow-up work is a root linked to its origin, not a subtask; (6) only roots go into a story (`tm8 collection add <story-id> <root-id>`), their children follow through the parent',
       'task content shape: {description, acceptanceCriteria: [{id, done, text}], pointsEstimate, axes: {<axis-name>: <value>}} — axis names and values are the Space registry\u2019s (`tm8 space task-axis list`)',
       'task sugar: --criterion <text> (repeatable) writes acceptanceCriteria with ids ac1, ac2… in flag order; --estimate <n> writes pointsEstimate, a whole number 1-100. Both are optional: add criteria when they help, and tick each one as it is met with `tm8 task tick`. Using a flag and the same field in --content is refused',
       "doc content shape: {kind: 'doc', body, format: 'markdown'}",
@@ -1625,6 +1626,7 @@ const ROWS: Record<OperationName, Row> = {
     examples: [
       'tm8 entity create task "<title>" --space <space-id> --parent <entity-id>',
       'tm8 entity create task "<title>" --criterion "<testable outcome>" --criterion "<another>" --estimate 3',
+      'tm8 entity create doc "<title>" --content @body.json && tm8 edge create <task-id> produces <new-doc-id>',
       'tm8 entity create doc "<title>" --content @body.json --when-to-use "<when an agent should load it>" --summary "<what it contains>"',
       'tm8 entity create doc "<title>" --space <space-id> --content \'{"kind":"doc","body":"…","format":"markdown"}\'',
       'tm8 entity create story "<title>" --content \'{"description":"…"}\' [--parent <story-id>]',
@@ -2132,6 +2134,7 @@ const ROWS: Record<OperationName, Row> = {
       're-adding an existing member re-positions it rather than duplicating it',
       'list a collection\'s members with `tm8 edge list --source <collection-id> --type contains`',
       'the container may also be a story: adding puts the entity in BY HAND as one of the story\'s roots (ordered by --position); everything connected to it then follows at read time — see `tm8 entity context <story-id>`',
+      'only roots belong in a story: add the top of a family, never a child (it follows through its parent) and never something whose ancestor is already a root of the story',
       'the container may also be a design: adding makes the entity a PAGE, in --position order; re-adding an existing page with a new --position moves it; a design cannot contain itself or a design it is inside — see `tm8 entity context <design-id>`',
     ],
     examples: [
