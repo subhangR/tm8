@@ -343,6 +343,48 @@
   color: var(--pn-ink-3);
   font-size: var(--pn-fs-label);
 }
+/* R42 live counts (Tasks, Stories, Sessions, Chats only). Collapsed: the §4
+   badge geometry pinned 2px outside the button's top-right, run-tinted (brand
+   stays attention's). Expanded: a plain run number right-aligned in the row. */
+.tws-rail-count-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  box-sizing: border-box;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-run-soft);
+  color: var(--pn-run);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  font-variant-numeric: tabular-nums;
+  line-height: 14px;
+  text-align: center;
+  pointer-events: none;
+}
+.tws-rail-count {
+  flex: none;
+  margin-left: auto;
+  padding-right: var(--pn-space-3);
+  color: var(--pn-run);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-label);
+  font-variant-numeric: tabular-nums;
+}
+/* A closed section holding a live count: a 6px run dot with its halo. */
+.tws-rail-live-dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--pn-run);
+  box-shadow: 0 0 0 2px var(--pn-run-soft);
+  pointer-events: none;
+}
 @keyframes tws-label-in {
   from {
     opacity: 0;
