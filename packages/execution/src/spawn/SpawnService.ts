@@ -1365,7 +1365,7 @@ export class SpawnService {
   }
 
   /**
-   * The design the primary task was derived from (Run on a design, 302), for
+   * The design the primary task was derived from (Run on a design, 304), for
    * every prompt frame. Same timeout and fail-soft rule as the story: a
    * design that cannot be read costs the prompt its design block, never the
    * launch.

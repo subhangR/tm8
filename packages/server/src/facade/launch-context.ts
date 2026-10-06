@@ -216,7 +216,7 @@ function collectCandidates(manifest: Record<string, unknown>): {
       add(recordOf(value)?.fileEntityId, 'attachment', 'task', taskId);
     }
   }
-  // Run on a design (302): the design the task was derived from, then its
+  // Run on a design (304): the design the task was derived from, then its
   // pages in page order — what the session was told to create from.
   const design = recordOf(manifest.design);
   if (design) {

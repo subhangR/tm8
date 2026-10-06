@@ -65,7 +65,7 @@ describe('totality over the frozen core-kind set (WLT §2.1)', () => {
     // MEASURED: CoreEntityKindSchema.options.length.
     // 28 -> 29 (280): `op_request`. 29 -> 31 (283, 284): `story`, `style`.
     // 31 -> 32 (296): metadata-only MCP catalog definitions.
-    // 32 -> 33 (302): `design`, an ordered set of pages (Craft → Designs).
+    // 32 -> 33 (304): `design`, an ordered set of pages (Craft → Designs).
     expect(CORE_KINDS.length).toBe(33);
     expect(allKinds()).toHaveLength(CORE_KINDS.length + 1);
     expect(allKinds().filter((r) => r.kind === CUSTOM_KIND_FALLBACK)).toHaveLength(1);

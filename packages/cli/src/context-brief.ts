@@ -152,7 +152,7 @@ export function renderContextBrief(view: Row): string {
   // A story (283): progress, roots, kinds, blocked, sessions, team, child
   // stories — the server's bounded projection of the page; cuts are omitted[].
   if (isRow(view['story'])) out.push(...storyContextLines(view['story'], view['status'], view['id']));
-  // A design (302): its pages in page order — position, kind, title, id.
+  // A design (304): its pages in page order — position, kind, title, id.
   if (view['pages'] !== undefined) out.push(...designContextLines(view['pages']));
   for (const [key, label] of [['tasks', 'tasks'], ['children', 'children']] as const) {
     if (view[key] === undefined) continue;

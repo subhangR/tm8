@@ -1,5 +1,5 @@
 /**
- * Text for a design (migration 302, Craft → Designs) — the two places a design
+ * Text for a design (migration 304, Craft → Designs) — the two places a design
  * is read from the CLI, both listing its PAGES in page order:
  *
  *   - `tm8 entity context <design>`: the server's v2 `pages` field (id, kind,

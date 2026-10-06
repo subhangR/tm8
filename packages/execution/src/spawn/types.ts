@@ -1083,7 +1083,7 @@ export interface GraphPort {
     input: { taskId?: string; sessionId?: string },
   ): Promise<PromptStoryContext | null>;
   /**
-   * Run on a design (302): the design `taskId` was derived from (Run → the
+   * Run on a design (304): the design `taskId` was derived from (Run → the
    * launch sheet on a design derives the session's task from it), with its
    * ordered pages, folded into the bounded prompt shape. `null`: the task was
    * not launched from a design. Optional; a graph without it renders no
@@ -1523,7 +1523,7 @@ export interface Tm8Manifest {
    */
   story?: PromptStoryContext;
   /**
-   * Run on a design (302): the design the primary task was derived from, its
+   * Run on a design (304): the design the primary task was derived from, its
    * ordered pages, read once at spawn (`GraphPort.loadDesignContext`).
    * Absent: the task was not launched from a design, or the graph cannot say.
    */

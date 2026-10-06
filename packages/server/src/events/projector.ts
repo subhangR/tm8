@@ -529,7 +529,7 @@ select
   -- 283: the SAME function entity-read.ts selects — the twins mirror by
   -- construction. Computed at projection time, never stored.
   case when e.kind = 'story' then internal.story_summary(e.id) end as story_summary,
-  -- 302: the SAME summary function entity-read.ts selects.
+  -- 304: the SAME summary function entity-read.ts selects.
   dsg.title          as design_title,
   dsg.description    as design_description,
   case when e.kind = 'design' then internal.design_summary(e.id) end as design_summary,

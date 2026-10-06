@@ -1,5 +1,5 @@
 /**
- * Run on a design (Craft → Designs, migration 302; change list items 5-6): the
+ * Run on a design (Craft → Designs, migration 304; change list items 5-6): the
  * design a launch was started on, carried on the manifest so EVERY frame (the
  * default v1 frame, v2, `tm8 worker init`, resume) renders the same hand-over.
  *

@@ -452,7 +452,7 @@ export function composePromptV2(
     const draft = `${s.join('\n')}\n\n${[...t, renderStoryContext(story, true, facts.sessionId), '</tm8_task_prompt>'].join('\n')}`;
     t.push(renderStoryContext(story, utf8Bytes(draft) <= BYTE_BUDGETS.combinedInitialInjection, facts.sessionId));
   }
-  // Run on a design (302): the design the primary task was derived from, after
+  // Run on a design (304): the design the primary task was derived from, after
   // the story, under the same rule — past the cap its pages shrink to a ref.
   const design = manifest.design && (manifest.design.taskId === null || manifest.design.taskId === primary?.id) ? manifest.design : null;
   if (design) {

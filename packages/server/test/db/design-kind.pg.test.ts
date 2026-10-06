@@ -1,5 +1,5 @@
 /**
- * 302 against a real Postgres: `design`, an ordered set of PAGES (Craft →
+ * 304 against a real Postgres: `design`, an ordered set of PAGES (Craft →
  * Designs, change list items 1, 6 and 15).
  *
  * Pinned here:
@@ -46,7 +46,7 @@ let backfilled: { live: string; deleted: string; alreadyPaged: string };
 let unique = 0;
 function cmid(label: string): string {
   unique += 1;
-  return `design-302-${label}-${unique}`;
+  return `design-304-${label}-${unique}`;
 }
 
 type Q = (sql: string, params?: unknown[]) => Promise<Record<string, unknown>[]>;
@@ -56,7 +56,7 @@ async function asApp<T>(fn: (q: Q) => Promise<T>): Promise<T> {
     await client.query('set local role tm8_app');
     await client.query(
       `select set_config('tm8.identity_id',$1,true),set_config('tm8.actor_id','',true),
-              set_config('tm8.node_admin','false',true),set_config('tm8.request_id','req-302',true)`,
+              set_config('tm8.node_admin','false',true),set_config('tm8.request_id','req-304',true)`,
       [fixture.identityId],
     );
     return fn(async (sql, params = []) => (await client.query(sql, params)).rows as Record<string, unknown>[]);
@@ -68,7 +68,7 @@ async function seed(db: W1ScratchDatabase): Promise<Fixture> {
     await client.query('set local role tm8_graph_owner');
     const f = (
       await client.query<Fixture>(
-        `select 'design-302-owner'::text "identityId",
+        `select 'design-304-owner'::text "identityId",
                 internal.new_id()::text "spaceId",
                 internal.new_id()::text "memberId"`,
       )
@@ -154,12 +154,12 @@ async function refusal(fn: () => Promise<unknown>): Promise<{ code?: string; mes
 }
 
 beforeAll(async () => {
-  database = await createW1ScratchDatabase('design-302');
+  database = await createW1ScratchDatabase('design-304');
   const files = migrationFiles();
   const migration = files.find((file) => file.endsWith('_design_kind.sql'))!;
   database.apply(files.filter((file) => file < migration));
   fixture = await seed(database);
-  // Three graphs exist before 302: one live, one deleted, and one that some
+  // Three graphs exist before 304: one live, one deleted, and one that some
   // older build already made a page — a collection holds it, which is NOT a
   // design, so it still gets its own design.
   const live = await createGraph('Checkout blueprint');
@@ -189,7 +189,7 @@ afterAll(async () => {
   await database?.destroy();
 }, 30_000);
 
-describe('302: the registry and the contains edge type', () => {
+describe('304: the registry and the contains edge type', () => {
   it('registers design as a core kind and APPENDS it to contains sources', async () => {
     const [kind] = await database.query(`select origin from public.entity_kinds where kind = 'design' and space_id is null`);
     expect(kind).toEqual({ origin: 'core' });
@@ -199,7 +199,7 @@ describe('302: the registry and the contains edge type', () => {
   });
 });
 
-describe('302 §9: the backfill gives every orphan graph a design', () => {
+describe('304 §9: the backfill gives every orphan graph a design', () => {
   it('made one design per live graph, same title, the graph its only page at position 1', async () => {
     for (const [graph, title] of [[backfilled.live, 'Checkout blueprint'], [backfilled.alreadyPaged, 'Filed blueprint']] as const) {
       const rows = await database.query<{ design: string; title: string; pos: string; deleted_at: string | null }>(
@@ -230,7 +230,7 @@ describe('302 §9: the backfill gives every orphan graph a design', () => {
   });
 });
 
-describe('302: the doors and entity_content', () => {
+describe('304: the doors and entity_content', () => {
   it('creates and renames a design; entity_content carries its title and description', async () => {
     const id = await createDesign('Onboarding', 'Everything for the new signup flow');
     const [before] = await database.query<{ version: number }>(`select version from public.entities where id = $1`, [id]);
@@ -247,7 +247,7 @@ describe('302: the doors and entity_content', () => {
   });
 });
 
-describe('302: pages ride the membership doors', () => {
+describe('304: pages ride the membership doors', () => {
   it('appends, positions explicitly, re-positions on re-add, and removes without deleting', async () => {
     const design = await createDesign('Pages');
     const graph = await createGraph('Plan');
@@ -291,7 +291,7 @@ describe('302: pages ride the membership doors', () => {
   });
 });
 
-describe('302 D2: the cycle guard', () => {
+describe('304 D2: the cycle guard', () => {
   it('refuses a design containing itself', async () => {
     const a = await createDesign('Self');
     const error = await refusal(() => add(a, a));
@@ -331,7 +331,7 @@ describe('302 D2: the cycle guard', () => {
   });
 });
 
-describe('302: Run on a design — the launch context', () => {
+describe('304: Run on a design — the launch context', () => {
   it('names the design the task was derived from, and its pages in order with nested pages under their design', async () => {
     const design = await createDesign('Launchable', 'Build the export');
     const graph = await createGraph('Export plan');
@@ -387,7 +387,7 @@ describe('302: Run on a design — the launch context', () => {
   });
 });
 
-describe('302: the read paths', () => {
+describe('304: the read paths', () => {
   const caller = <T>(fn: (q: Querier) => Promise<T>): Promise<T> => facadeDb.tx({ identityId: fixture.identityId }, fn);
 
   it('the facade and the projector agree on title, excerpt and state (pageCount, pageKinds in order)', async () => {

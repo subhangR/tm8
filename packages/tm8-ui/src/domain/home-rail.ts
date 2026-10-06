@@ -130,7 +130,7 @@ const HOME_RAIL_GROUP_SPINE: readonly HomeRailGroupSpec[] = [
     // Authored, produced, uploaded — then the two arrangements OVER those
     // things: a curated set and an extracted index. `drawing` sits beside
     // `doc` because it is AUTHORED, not an arrangement.
-    // `design` (302) sits after `graph`: its pages are these kinds.
+    // `design` (304) sits after `graph`: its pages are these kinds.
     kinds: ['doc', 'drawing', 'artifact', 'file', 'collection', 'graph', 'design'],
   },
   {

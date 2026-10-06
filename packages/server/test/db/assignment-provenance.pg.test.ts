@@ -434,11 +434,11 @@ describe.sequential('task assignment provenance (129)', () => {
         entity_id uuid primary key, space_id uuid not null, definition jsonb not null);
       grant select on public.mcp_servers to tm8_app;
       reset role;`);
-    // 302 (design kind): `entity-read.ts` and the projector left-join
+    // 304 (design kind): `entity-read.ts` and the projector left-join
     // `public.designs` and select `internal.design_summary(e.id)`, the 283
     // shape again. It applies cleanly LAST, after the styles/mcp shims: its
     // plpgsql bodies resolve tables lazily and its backfill finds no graphs.
-    database.apply(['302_design_kind.sql']);
+    database.apply(['304_design_kind.sql']);
   }, 180_000);
 
   afterAll(async () => {

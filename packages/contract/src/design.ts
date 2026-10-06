@@ -1,4 +1,4 @@
-// Design as an Entity (migration 302, Craft → Designs, task 01a1118f;
+// Design as an Entity (migration 304, Craft → Designs, task 01a1118f;
 // change list items 1-2, Subhang 2026-10-06).
 //
 // A design is a title and a description holding an ordered set of PAGES. A

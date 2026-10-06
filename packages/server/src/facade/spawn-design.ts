@@ -1,5 +1,5 @@
 /**
- * Run on a design (Craft → Designs, migration 302; change list item 6): the
+ * Run on a design (Craft → Designs, migration 304; change list item 6): the
  * design side of a launch.
  *
  * Run on a design is the ordinary launch sheet on the design entity: the
@@ -97,7 +97,7 @@ export async function loadDesignContextForTask(
   try {
     await db.tx(claims, async (q) => {
       // Pre-order: a nested design's pages follow it directly. `seen` makes a
-      // loop an older build let in (the 302 guard refuses new ones) harmless.
+      // loop an older build let in (the 304 guard refuses new ones) harmless.
       const seen = new Set<string>([head.id]);
       const walk = async (designId: string, depth: number): Promise<void> => {
         const rows = await pagesOf(q, designId);

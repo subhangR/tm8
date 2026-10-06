@@ -99,7 +99,7 @@ const PATCH_DOORS = [
   'update_collection',
   'update_commit_entity',
   'update_custom_entity',
-  // 2026-10-06: migration 302 (design) added `update_design_entity`, bound
+  // 2026-10-06: migration 304 (design) added `update_design_entity`, bound
   // from birth — `internal.ledger_replay(p_client_mutation_id, 'entities.patch')`
   // and `internal.require_replay_subject`, 283's door copied. Eighteen ->
   // nineteen. MEASURED: this file's independent enumeration named it locally.
@@ -203,7 +203,7 @@ describe.sequential('W5 Duo A — 038: the eleven entities.patch doors keep thei
   // test green. Two pins, one migration — the length and the Set size both
   // freeze the same number, so both move together or the second hides.
   // 2026-10-02: eighteen — 283's update_story_entity (story kind), bound from birth.
-  // 2026-10-06: nineteen — 302's update_design_entity (design kind), bound from birth.
+  // 2026-10-06: nineteen — 304's update_design_entity (design kind), bound from birth.
   it('the frozen list is exactly nineteen and every one exists in the catalog', () => {
     expect(PATCH_DOORS).toHaveLength(19);
     expect(new Set(PATCH_DOORS).size).toBe(19);

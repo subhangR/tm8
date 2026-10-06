@@ -321,7 +321,7 @@ export const KIND_ART = {
   ],
 
   /**
-   * Stacked pages (302): a design is an ordered set of pages. Provisional —
+   * Stacked pages (304): a design is an ordered set of pages. Provisional —
    * the Craft → Designs UI lane owns the final mark.
    */
   design: [

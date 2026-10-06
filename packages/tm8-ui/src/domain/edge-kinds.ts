@@ -19,7 +19,7 @@
  *
  * Snapshot: `tm8 edge type list --format json`, 2026-09-28, 46 types; plus
  * 283 (2026-10-02), which appends `story` to `contains` and `attached_to` sources,
- * and 302 (2026-10-06), which appends `design` to `contains` sources.
+ * and 304 (2026-10-06), which appends `design` to `contains` sources.
  * Migration 296 adds catalog MCP servers as equips destinations.
  * A `*` endpoint admits any kind.
  *
@@ -101,7 +101,7 @@ export const EDGE_KINDS: Readonly<Record<string, EdgeKinds>> = {
   },
   contains: {
     // 283 appends `story`: a story's roots are its `contains` targets.
-    // 302 appends `design`: a design's pages are its `contains` targets.
+    // 304 appends `design`: a design's pages are its `contains` targets.
     src: ['collection', 'story', 'design'],
     dst: ['*'],
     description: 'Curated membership; props.position orders it',

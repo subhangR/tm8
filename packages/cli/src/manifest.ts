@@ -137,7 +137,7 @@ export interface Tm8Manifest {
   promptExtra?: string | null;
   /** Spawn-on-story: the story the primary task is part of. */
   story?: PromptStoryContext;
-  /** Run on a design (302): the design the primary task was derived from, and its pages. */
+  /** Run on a design (304): the design the primary task was derived from, and its pages. */
   design?: PromptDesignContext;
 }
 

@@ -260,7 +260,7 @@ describe('W1 frozen-row schema amendments', () => {
       // Not creatable through entities.create: `styles.push` is its only door.
       'style',
       // 2026-10-06: `design` — an ordered set of pages held as `contains`
-      // edges (302, Craft → Designs). Creatable through the ordinary envelope.
+      // edges (304, Craft → Designs). Creatable through the ordinary envelope.
       'design',
     ]);
     expect(CoreEntityKindSchema.safeParse('ui_template').success).toBe(false);

@@ -173,7 +173,7 @@ export const ENTITY_COLUMNS = `
   -- 283: the computed summary, one SQL function the projector twin selects
   -- too. CASE keeps it off every other kind's row.
   case when e.kind = 'story' then internal.story_summary(e.id) end as story_summary,
-  -- 302: a design's title, description and summary (page count, page kinds
+  -- 304: a design's title, description and summary (page count, page kinds
   -- in order) — one SQL function the projector twin selects too.
   dsg.title as design_title, dsg.description as design_description,
   case when e.kind = 'design' then internal.design_summary(e.id) end as design_summary,
@@ -2005,7 +2005,7 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
       // selects too — the mirror is the shared function, not a comment.
       return storySummaryOf(row.story_summary);
     case 'design':
-      // 302: `internal.design_summary`, which the projector twin selects
+      // 304: `internal.design_summary`, which the projector twin selects
       // too — the mirror is the shared function.
       return designSummaryOf(row.design_summary);
     case 'form':
@@ -3104,7 +3104,7 @@ export function storySummaryOf(raw: unknown): Extract<EntityState, { kind: 'stor
 }
 
 /**
- * A design's pages (302): its live `contains` targets in page order
+ * A design's pages (304): its live `contains` targets in page order
  * (`props.position`, then when they were added), each the page entity's
  * ordinary summary plus `pagePosition`. Read under the viewer's claims: a page
  * the viewer cannot read is not listed (its summary does not load).
@@ -3130,7 +3130,7 @@ export async function loadDesignPages(q: Querier, designId: string, viewerIdenti
 }
 
 /**
- * A design's summary as `internal.design_summary` returned it (302). Shared
+ * A design's summary as `internal.design_summary` returned it (304). Shared
  * with the projector; a missing or malformed value reads as an empty design.
  */
 export function designSummaryOf(raw: unknown): Extract<EntityState, { kind: 'design' }> {
@@ -3159,7 +3159,7 @@ export async function hydrateDetail(
     return { state, content: { ...content, page: await loadStoryPage(q, row.id) } };
   }
   if (content.kind === 'design') {
-    // 302: the pages, in page order, as the viewer may read them.
+    // 304: the pages, in page order, as the viewer may read them.
     return { state, content: { ...content, pages: await loadDesignPages(q, row.id, viewerIdentityId) } };
   }
   if (content.kind === 'team_member') {

@@ -1076,7 +1076,7 @@ export const mcpCalendar = summary({
   state: { kind: 'mcp_server', definition: fixtureMcpDefinition },
 });
 
-/** Design (302) — an ordered set of pages; its pages are `contains` edges. */
+/** Design (304) — an ordered set of pages; its pages are `contains` edges. */
 export const designCheckout = summary({
   id: 'design-checkout', kind: 'design', title: 'Checkout redesign',
   excerpt: 'The new checkout, page by page.',

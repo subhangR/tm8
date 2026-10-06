@@ -1950,7 +1950,7 @@ const ROWS: readonly KindConfig[] = [
   },
 
   /*
-   * -- design (migration 302: an ordered set of pages, Craft → Designs) --
+   * -- design (migration 304: an ordered set of pages, Craft → Designs) --
    *
    * THE HONEST MINIMUM, added with the backend (lane A) so the registry stays
    * total over `CoreEntityKindSchema`. The Craft → Designs UI lane replaces

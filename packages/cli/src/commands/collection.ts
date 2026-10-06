@@ -22,7 +22,7 @@
  * `tm8 edge list --source <collection-id> --type contains` pages the edges.
  *
  * The container may also be a story (migration 283): the same `contains` edge
- * is how a story's roots are put in by hand. Or a design (migration 302):
+ * is how a story's roots are put in by hand. Or a design (migration 304):
  * there the edge is a PAGE, `--position` orders the pages, and re-adding a
  * page with a new `--position` is how a page is moved. The Server decides
  * which kinds may contain (and refuses a design loop), so nothing here checks

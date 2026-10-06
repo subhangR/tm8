@@ -77,7 +77,7 @@ export const KIND_CLI_VOCABULARY: Readonly<Record<string, KindCliVocabulary>> = 
   // A story has no catalog noun (283 rides entities.create/patch); its roots go in
   // and out through the collection verbs, and spawning on it hands the story over.
   story: { nouns: [], commands: ['collection add', 'collection remove', 'session spawn'] },
-  // A design (302) has no catalog noun either: its pages go in, move and come
+  // A design (304) has no catalog noun either: its pages go in, move and come
   // out through the collection verbs, and Run is an ordinary spawn on it.
   design: { nouns: [], commands: ['collection add', 'collection remove', 'session spawn'] },
   graph: { nouns: ['graph'], commands: ['saved-view list', 'saved-view create'] },

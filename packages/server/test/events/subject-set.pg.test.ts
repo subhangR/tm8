@@ -173,11 +173,11 @@ describe.sequential('the canonical subject set — SQL side and 208 (real Postgr
         pushed_at timestamptz not null default now());
       grant select on public.styles to tm8_app;
       reset role;`);
-    // 302 (design kind): `entity-read.ts` and the projector left-join
+    // 304 (design kind): `entity-read.ts` and the projector left-join
     // `public.designs` and select `internal.design_summary(e.id)`, the 283
     // shape again. It applies cleanly LAST, after the styles/mcp shims: its
     // plpgsql bodies resolve tables lazily and its backfill finds no graphs.
-    database.apply(['302_design_kind.sql']);
+    database.apply(['304_design_kind.sql']);
   }, 300_000);
 
   afterAll(async () => {

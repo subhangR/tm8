@@ -202,7 +202,7 @@ describe('chat launch composition', () => {
     expect(craft).toContain('One guarded patch per turn');
     expect(craft).toContain('`content.findings`');
     expect(craft).toContain('ask one or two sharp questions instead of inventing structure');
-    // Craft → Designs (302): craft edits a DESIGN of ordered pages through the
+    // Craft → Designs (304): craft edits a DESIGN of ordered pages through the
     // membership doors, and never materializes — Run on the design does
     // (its steps live in @tm8/prompt design-context.ts), and Run does not
     // dispatch.

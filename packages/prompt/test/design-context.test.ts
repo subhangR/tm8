@@ -1,5 +1,5 @@
 /**
- * Run on a design (302): the `<design>` hand-over every frame renders for a
+ * Run on a design (304): the `<design>` hand-over every frame renders for a
  * session whose primary task was derived from a design — the trusted
  * instruction (create only what the graph pages describe, do not dispatch),
  * and the ordered pages as untrusted data.

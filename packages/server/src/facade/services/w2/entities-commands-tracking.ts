@@ -1495,7 +1495,7 @@ export class W2EntitiesCommandsTrackingService {
           break;
         }
         case 'design': {
-          // 302: zero new catalog rows, the story posture. A design is born
+          // 304: zero new catalog rows, the story posture. A design is born
           // empty; its PAGES are `contains` edges put in through
           // `collections.addItem`, never content and never hierarchy.
           const design = designContent(content);

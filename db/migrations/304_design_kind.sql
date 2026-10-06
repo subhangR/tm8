@@ -1,5 +1,5 @@
 -- =============================================================================
--- 302 — `design`, an ordered set of PAGES (Craft → Designs, change list items
+-- 304 — `design`, an ordered set of PAGES (Craft → Designs, change list items
 -- 1 and 15; task 01a1118f, discussion 01a1115b, Subhang 2026-10-06).
 --
 -- A design is a title and a description. Its PAGES are any entities — a
@@ -36,8 +36,10 @@
 -- Authored by the graph's own creator; no activity row (a migration is not
 -- an actor's act), so it does not show in anyone's feed as news.
 --
--- NUMBERED 302, measured 2026-10-06 against every remote ref: main tops at
--- 301, no lane branch holds 302+. RE-MEASURE at assembly.
+-- NUMBERED 304, measured 2026-10-06 against every remote ref: main tops at
+-- 301; origin/feat/workspace-remote-bridge holds 302_workspaces and
+-- origin/p0a-session-outcome holds 302_session_outcome_and_claims, so one of
+-- those lands on 303 and this file skips both. RE-MEASURE at assembly.
 --
 -- SHARED-OBJECT NOTICE (053/…/261/283/284/287/296): §3 REPLACES
 -- `internal.entity_content`. Its body is 296's VERBATIM plus one `design`
@@ -157,7 +159,7 @@ begin
       when 'op_request' then select to_jsonb(opr) - 'entity_id' - 'requester_identity_id' - 'decided_identity_id'
         into content from public.op_requests opr where opr.entity_id = target;
       when 'mcp_server' then select to_jsonb(m) - 'entity_id' into content from public.mcp_servers m where m.entity_id=target;
-      -- 302: the design's title and description. Its pages are `contains`
+      -- 304: the design's title and description. Its pages are `contains`
       -- edges ordered by props.position, never embedded here.
       when 'design' then select to_jsonb(dsg) - 'entity_id' into content from public.designs dsg where dsg.entity_id = target;
       else content := '{}'::jsonb;
@@ -399,7 +401,7 @@ begin
   actor := internal.resolve_actor(p_actor_id, collection.space_id);
   perform internal.bind_actor(actor);
   perform internal.live_entity(p_entity_id);
-  -- 302 (D2): a design may not hold itself or a design above it.
+  -- 304 (D2): a design may not hold itself or a design above it.
   if collection.kind = 'design' then
     perform internal.assert_design_acyclic(p_collection_id, p_entity_id);
   end if;

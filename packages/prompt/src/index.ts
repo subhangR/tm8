@@ -181,7 +181,7 @@ export interface PromptManifest {
    */
   story?: PromptStoryContext | null | undefined;
   /**
-   * Run on a design (302): the design the primary task was derived from, its
+   * Run on a design (304): the design the primary task was derived from, its
    * ordered pages and the standing Run instruction. Rendered after the story.
    */
   design?: PromptDesignContext | null | undefined;

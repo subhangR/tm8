@@ -1,5 +1,5 @@
 /**
- * A design (302) read from the CLI lists its PAGES in page order — position,
+ * A design (304) read from the CLI lists its PAGES in page order — position,
  * kind, title, id — on `entity context` (the v2 `pages` field), on `entity
  * get` text, and as one small row per page in the bounded json projection.
  */

@@ -158,7 +158,7 @@ function sectionsFor(kind: string): readonly V2Section[] {
     case 'doc': return ['assignment', 'hierarchy', 'connections', 'messages', 'actions'];
     // 283: the description is the assignment; children are child stories.
     case 'story': return ['assignment', 'hierarchy', 'connections', 'messages', 'actions'];
-    // 302: the description is the assignment; the pages are a core field.
+    // 304: the description is the assignment; the pages are a core field.
     case 'design': return ['assignment', 'hierarchy', 'connections', 'messages', 'actions'];
     // c761 §3.2: a message is its body and its refs; no thread expansion.
     case 'message': return ['assignment', 'connections', 'actions'];
@@ -223,7 +223,7 @@ export interface ContextV2LoadPlan {
   readonly attachments: boolean;
   /** story (283): the page projected small — roots, by kind, blocked, who runs what. */
   readonly storyCard: boolean;
-  /** design (302): its pages in page order — kind, title, id, position. */
+  /** design (304): its pages in page order — kind, title, id, position. */
   readonly designPages: boolean;
   readonly messages: MessagePlan | null;
   readonly connections: boolean;
@@ -1112,7 +1112,7 @@ async function loadV2(q: Querier, id: string, request: V2Request): Promise<{ loa
   }
 
   if (plan.designPages) {
-    // 302: the design's pages, one indexed read of its `contains` edges in
+    // 304: the design's pages, one indexed read of its `contains` edges in
     // page order. A page the viewer cannot read is not listed (RLS on the
     // join); a failure is reported under `connections`, whose
     // `--edge-type contains` expand lists the same edges.

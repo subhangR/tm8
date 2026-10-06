@@ -1190,7 +1190,7 @@ export class DbGraphPort implements GraphPort {
   }
 
   /**
-   * The design the primary task was derived from (Run on a design, 302), read
+   * The design the primary task was derived from (Run on a design, 304), read
    * as the spawner. See spawn-design.ts.
    */
   async loadDesignContext(auth: GraphAuth, input: { taskId: string }) {

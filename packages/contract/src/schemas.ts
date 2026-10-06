@@ -242,7 +242,7 @@ export const CoreEntityKindSchema = z.enum([
   'story', 'mcp_server',
   // Space styles (284). Not in `CreatableEntityKind`: `styles.push` is its door.
   'style',
-  // Designs (302): ordered pages by `contains`. Creatable through the generic
+  // Designs (304): ordered pages by `contains`. Creatable through the generic
   // envelope.
   'design',
 ]);
@@ -689,7 +689,7 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
   }).strict(),
   // 283 — the story's computed summary.
   StoryStateSchema,
-  // 302 — the design's page count.
+  // 304 — the design's page count.
   DesignStateSchema,
   McpServerEntitySchema,
   // 209 — a form's lifecycle status and its question count.
@@ -1111,7 +1111,7 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
   }).passthrough(),
   // 283 — the story's description and, on a detail read, its page.
   StoryContentSchema,
-  // 302 — the design's description and, on a detail read, its ordered pages.
+  // 304 — the design's description and, on a detail read, its ordered pages.
   DesignContentSchema,
   McpServerEntitySchema,
   // 209 — a form: settings (defaults applied), sections and questions in order.

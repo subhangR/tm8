@@ -227,7 +227,7 @@ const ADMIN_SPACE_OPERATIONS = new Set<OperationName>([
 // is renamed through `containers.update`.
 // `story` is editable: title, description and — its only status door (288) —
 // `content.status`, so a story's action list must offer `entities.patch`.
-// `design` (302) is editable: title and description.
+// `design` (304) is editable: title and description.
 const EDITABLE_KINDS = new Set(['task', 'doc', 'channel', 'collection', 'team_member', 'spell', 'skill', 'story', 'design']);
 // READING structure vs CHANGING it — one set could not answer both once
 // `container` arrived, and conflating them is how an action list comes to
