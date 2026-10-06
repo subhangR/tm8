@@ -2,7 +2,7 @@
  * The SERVER store (W8, migration 261): typed wrappers for the servers.* RPCs
  * and the reachability probe.
  *
- * W9c (299) RETIRED the member's stored gate session (`server_gate_tokens`,
+ * W9c (301) RETIRED the member's stored gate session (`server_gate_tokens`,
  * finding S4: a retained human session for the remote would bypass its link
  * and agent policy). `signIn`/`openGate` are gone, the stored rows were
  * deleted and the two RPCs refuse. Signing in to a space on another server is

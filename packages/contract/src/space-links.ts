@@ -23,7 +23,7 @@
  * link refuses every member's sign-in. Owning both spaces is no shortcut
  * (D7): the admin check holds the session pin, so it is made from the target.
  *
- * ACROSS SERVERS (W9c, migration 299; ships dark behind TM8_REMOTE_SPACE_LINKS).
+ * ACROSS SERVERS (W9c, migration 301; ships dark behind TM8_REMOTE_SPACE_LINKS).
  * The target may live on another server (`targetServerId`, a `server` entity
  * of the home space). On the TARGET server a member of B grants the remote
  * home (`spaceLinks.inbound.grant`) and gets a one-time pairing code; on the
@@ -100,9 +100,9 @@ export interface SpaceLinkInboundView {
   revokedByMemberId: EntityId | null;
   lastCallAt: string | null;
   /**
-   * W9c (299): set when the link's home is a space on ANOTHER server. Then
+   * W9c (301): set when the link's home is a space on ANOTHER server. Then
    * `homeSpaceId` is that remote space's id and `homeSpaceName` its label.
-   * Absent from a pre-299 server.
+   * Absent from a pre-301 server.
    */
   remoteHome?: SpaceLinkRemoteHome | null;
   holders: SpaceLinkInboundHolder[];

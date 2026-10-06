@@ -148,7 +148,7 @@ export const OPERATIONS = [
   { name: 'spaceLinks.inbound.audit',   method: 'GET',  path: '/v2/spaces/:spaceId/space-links/inbound/audit',           kind: 'read',    status: 'v1' },
   { name: 'spaceLinks.inbound.revoke',  method: 'POST', path: '/v2/spaces/:spaceId/space-links/inbound/:linkId/revoke',  kind: 'command', status: 'v1', humanOnly: true },
   { name: 'spaceLinks.inbound.restore', method: 'POST', path: '/v2/spaces/:spaceId/space-links/inbound/:linkId/restore', kind: 'command', status: 'v1', humanOnly: true },
-  // W9c (299): a member of :spaceId lets a space on ANOTHER server act here as
+  // W9c (301): a member of :spaceId lets a space on ANOTHER server act here as
   // them; returns a one-time pairing code for that server's spaceLinks.login.
   { name: 'spaceLinks.inbound.grant',   method: 'POST', path: '/v2/spaces/:spaceId/space-links/inbound/grant',           kind: 'command', status: 'v1', humanOnly: true },
   // L3 (279): an entity's references into linked spaces. Not edges (D3); add

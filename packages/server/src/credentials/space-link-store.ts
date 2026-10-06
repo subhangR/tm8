@@ -381,7 +381,7 @@ export class DbSpaceLinkStore {
     return this.db.rpc<SpaceLinkInboundView>(claims, 'restore_inbound_space_link', [spaceId, linkId, clientMutationId ?? null]);
   }
 
-  // -- W9c (299): links across servers ------------------------------------
+  // -- W9c (301): links across servers ------------------------------------
 
   /** HOME: a link to `targetSpaceId` on the server entity `serverId` (signed out until login). */
   addRemote(

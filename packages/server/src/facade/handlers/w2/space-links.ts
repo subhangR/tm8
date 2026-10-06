@@ -18,7 +18,7 @@
  * No handler returns the stored session. `use` is not an operation: W7's
  * `spaceLinks.invoke` calls it server-side and never returns the bytes.
  *
- * ACROSS SERVERS (W9c, 299), only while `TM8_REMOTE_SPACE_LINKS` is on:
+ * ACROSS SERVERS (W9c, 301), only while `TM8_REMOTE_SPACE_LINKS` is on:
  * `add` takes a `targetServerId`; `login`/`relogin` take the `pairingCode` the
  * target's `spaceLinks.inbound.grant` returned and claim it server-to-server;
  * `logout`/`remove` first tell the target to end its session (best effort,

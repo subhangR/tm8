@@ -1,5 +1,5 @@
 -- =============================================================================
--- 299 — W9c: space links across servers (task 01a1108a; design note on it).
+-- 301 — W9c: space links across servers (task 01a1108a; design note on it).
 --
 -- S1 is the HOME server (space A, where the agent runs); S2 is the TARGET
 -- server (space B). M is the human, with an account on both.
@@ -63,7 +63,7 @@ alter table public.space_links
     or (home_space_id = target_space_id and target_server_id is null));
 
 comment on column public.space_links.remote_home_space_id is
-  'W9c (299): set on S2 only. The link is INBOUND from space A on another server; '
+  'W9c (301): set on S2 only. The link is INBOUND from space A on another server; '
   'the row is anchored in B (home = target = B).';
 
 drop index public.space_links_one_per_target;

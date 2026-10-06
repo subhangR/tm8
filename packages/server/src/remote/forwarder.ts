@@ -11,7 +11,7 @@
  * S2 never exists, so it would mark every remote link `signed_out`. The
  * forwarder opens the sealed link session itself and never resolves it here.
  *
- * W9c (migration 299) enables it BEHIND A SWITCH (`TM8_REMOTE_SPACE_LINKS`,
+ * W9c (migration 301) enables it BEHIND A SWITCH (`TM8_REMOTE_SPACE_LINKS`,
  * default off). Off, the composition root wires `DisabledRemoteInvokeForwarder`
  * exactly as W8 did, so a remote link refuses at once with
  * `space_link_remote_disabled`. On, it wires `HttpsRemoteInvokeForwarder`

@@ -1077,7 +1077,7 @@ const ROWS: Record<OperationName, Row> = {
     tags: ['link', 'inbound', 'restore', 'cross-space', 'admin'],
     notes: ['an agent is refused by the Server; it asks its human to run this'],
   },
-  // W9c (299): the target side of a link from ANOTHER server.
+  // W9c (301): the target side of a link from ANOTHER server.
   'spaceLinks.inbound.grant': {
     cmd: ['link', 'grant'],
     syn: 'tm8 link grant <home-space-id> [--label <name>] [--allow-spawn] [--mutation-id <id>]',
@@ -4033,7 +4033,8 @@ export const CATALOG_DIGEST =
   // Re-measured (L5, 280): +5 opRequests.* — read from the regenerated conformance manifest.
   // Re-measured (styles, 284): +15 styles.*, identity.stylePrefs.get|set, spaces.styleDefault.get|set. RECOMPUTED from JSON.stringify(OPERATIONS).
   // Re-measured (main sync: cross-space + styles).
-  'sha256:cfa2803c0e73daf34df20824350b68be45dba26d2e8dbadfdb61a35b08076bc5';
+  // +1 spaceLinks.inbound.grant (W9c, 301): read from the regenerated conformance manifest.
+  'sha256:a7f5666db1b7986c492ab05e55f4242a1bcc1316e90898f2fa9a90b4080b5154';
 
 export const GRAMMAR_VERSION = '2';
 

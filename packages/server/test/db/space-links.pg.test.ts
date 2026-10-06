@@ -121,6 +121,11 @@ const STRICT_GATE_CALLERS: Readonly<Record<string, string>> = {
   'set_space_link_spawn(uuid,boolean,integer,text)': SPACE_LINKS,
   'space_link_seal_context(uuid)': SPACE_LINKS,
   'store_space_link_session(uuid,uuid,text,timestamp with time zone,bytea,bytea,text,text)': SPACE_LINKS,
+  // W9c (301): the remote link's writes (home: add, context, store; target: grant), human-only.
+  'add_remote_space_link(uuid,uuid,uuid,text,text)': SPACE_LINKS,
+  'grant_remote_space_link(uuid,uuid,text,boolean,text,timestamp with time zone)': SPACE_LINKS,
+  'remote_space_link_context(uuid)': SPACE_LINKS,
+  'store_remote_space_link_session(uuid,uuid,timestamp with time zone,bytea,bytea,text,text)': SPACE_LINKS,
 
   // W5 (268): the admin toggle/reset/lock all run this helper first; redeem
   // gates only its space-password branch; the enter lookup is a gate-session read.
@@ -130,11 +135,10 @@ const STRICT_GATE_CALLERS: Readonly<Record<string, string>> = {
 
   'add_server(uuid,text,text,text,text)': SERVERS,
   'adopt_server_connection(uuid,text,text)': SERVERS,
-  'open_server_gate_token(uuid)': SERVERS,
   'remove_server(uuid,text)': SERVERS,
   'server_gate_seal_context(uuid)': SERVERS,
   'sign_out_server(uuid,text)': SERVERS,
-  'store_server_gate_token(uuid,timestamp with time zone,bytea,bytea,text)': SERVERS,
+  // W9c (301): store/open_server_gate_token now refuse outright (0A000) and call no gate.
   // 282: the two path-grant writes run require_human_auth_kind then
   // require_gate_admin (node admin, unpinned) — a link session is neither.
   'create_path_grant(uuid,text,text)': PATH_GRANTS,
