@@ -5,6 +5,7 @@ import { SkillBody } from '../skills/SkillBody';
 import { SkillEquipment } from '../skills/SkillEquipment';
 import type { SkillPort } from '../skills/port';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import type {
   CommandResult,
   Connections,
@@ -551,6 +552,29 @@ export interface EntityDetailPanelProps {
   mergePr?: MergePrSources | null;
   onOpenEntity?: (id: string) => void;
   onRetry?: () => void;
+  /**
+   * EMBEDDED CHROME — the Workspace tab host (Spec A §8). Present ⇒ the panel
+   * draws no `PanelHeader` title row and no tab row / canvas bar: the tab and
+   * the host's floating group own those jobs. The bar's verbs portal into
+   * `verbsSlot` and the overflow's Rename and destructive items into
+   * `menuSlot`, so every verb keeps its one implementation, permissions and
+   * confirmations. The section is the controlled `activeTab`.
+   * Absent ⇒ every existing host, unchanged.
+   */
+  embeddedChrome?: EmbeddedChrome | null;
+}
+
+export interface EmbeddedChrome {
+  /** Where the bar's verbs render. Null ⇒ not mounted yet; nothing is drawn. */
+  verbsSlot: HTMLElement | null;
+  /** The top of the host's open ⋯ menu (Rename). Null ⇒ closed. */
+  menuSlot: HTMLElement | null;
+  /** The end of the host's open ⋯ menu, after its own items (destructive verbs). */
+  dangerSlot: HTMLElement | null;
+  /** Primaries the host draws itself (Workspace's own Chat toggle). */
+  omitActions?: readonly ActionRef[];
+  /** Called after a Rename commits, so the host can close its menu. */
+  onMenuDone?: () => void;
 }
 
 export function EntityDetailPanel(props: EntityDetailPanelProps) {
@@ -958,6 +982,30 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
       />
     ) : null;
 
+  /*
+   * EMBEDDED: SUPPORTED VERBS ONLY (Spec A §8). The floating group has no room
+   * for a refused verb that no host can ever perform here, so a primary is
+   * kept only where this host's dispatcher, or a flow it can expand, performs
+   * it. Registry refusals (wrong state) still render disabled-with-reason.
+   */
+  const embedded = props.embeddedChrome ?? null;
+  const barConfig: KindConfig = embedded
+    ? {
+        ...config,
+        panel: {
+          ...config.panel,
+          primaries: (config.panel.primaries ?? []).filter((ref) => {
+            if (embedded.omitActions?.includes(ref)) return false;
+            const flow = resolveAction(ref).flow;
+            if (flow === 'launch' && props.launch) return true;
+            if (flow === 'merge-pr' && mergePr) return true;
+            if (!props.onAction) return false;
+            return props.wiredActions ? props.wiredActions.includes(ref) : true;
+          }),
+        },
+      }
+    : config;
+
   /** The panel bar's end cluster: the tab row's right edge, or — on a canvas — the floating bar. */
   const barEnd = (
     /*
@@ -1024,7 +1072,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
       ) : null}
       <ActionBar
         barRef={actionBarRef}
-        config={config}
+        config={barConfig}
         /* The terminal archetype is the only bar that ALSO carries the
            five surface chips, so it is the only one whose primaries have
            to give up their words. Registry data, never a kind literal. */
@@ -1153,7 +1201,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
           control you press when you are done looking. The control itself
           is unchanged: same `RowAction`, same host, same `onArchive`,
           same refusal vocabulary. */}
-      {strip !== null ? (
+      {strip !== null && !embedded ? (
         <PanelOverflow>
           {/* The id and the link the metadata row used to spend a
               measured 41.8px stating on every task. */}
@@ -1169,16 +1217,54 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
           />
         </PanelOverflow>
       ) : null}
-      <PanelWindowControls
-        onPromote={props.onPromote}
-        onClose={onClose}
-        /* Same crowding, same gate: the surface-chip bar gives up ⤢ on a
-           desktop. The control itself refuses this on a phone, where ✕
-           is already gone — see `promoteHidden`. */
-        promoteHidden={isTerminal}
-      />
+      {embedded ? null : (
+        <PanelWindowControls
+          onPromote={props.onPromote}
+          onClose={onClose}
+          /* Same crowding, same gate: the surface-chip bar gives up ⤢ on a
+             desktop. The control itself refuses this on a phone, where ✕
+             is already gone — see `promoteHidden`. */
+          promoteHidden={isTerminal}
+        />
+      )}
     </>
     )
+  );
+
+  /* EMBEDDED ⋯ ITEMS: Rename rides the same save flow as the header's title
+     editor; the destructive verb is the overflow's own `RowAction`. */
+  const titleEditable = (config.list.inlineEdit?.title ?? false) && save.unavailable === null;
+  const embeddedMenu = (
+    <>
+      {embedded?.menuSlot && titleEditable
+        ? createPortal(
+            <EmbeddedRenameItem
+              title={detail.title}
+              onCommit={async (title) => {
+                await save.commitNow({ title });
+                embedded.onMenuDone?.();
+              }}
+            />,
+            embedded.menuSlot,
+          )
+        : null}
+      {embedded?.dangerSlot && strip !== null
+        ? createPortal(
+            <>
+              <span className="pn-overflow__rule" />
+              <RowAction
+                ref_={detail.deletedAt != null ? 'restore' : 'archive'}
+                row={subjectOf(detail)}
+                props={controlHost}
+                onRun={controlHost.onArchive}
+                variant="wide"
+                glyph={detail.deletedAt != null ? <RestoreIcon /> : <BinIcon />}
+              />
+            </>,
+            embedded.dangerSlot,
+          )
+        : null}
+    </>
   );
 
   return (
@@ -1222,7 +1308,9 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
          moving between three pinned columns needs them named. */
       aria-label={`${config.label}: ${detail.title}`}
     >
-      {canvas ? null : <PanelHeader
+      {embeddedMenu}
+      {embedded?.verbsSlot && !oneSurface ? createPortal(barEnd, embedded.verbsSlot) : null}
+      {canvas || embedded ? null : <PanelHeader
         detail={detail}
         config={config}
         breadcrumb={breadcrumb}
@@ -1235,7 +1323,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         /* THE TITLE is editable only where registry data and the seam both
            permit it. The visual treatment stays plain by user direction; the
            actual click/keyboard editor is still mounted only when writable. */
-        titleEditable={(config.list.inlineEdit?.title ?? false) && save.unavailable === null}
+        titleEditable={titleEditable}
         titleLockReason={editsPossible && config.list.inlineEdit?.title ? saveRefusal : undefined}
         autoFocusTitle={props.justCreated}
         supplemental={
@@ -1269,7 +1357,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
           keep their one implementation. The phone keeps `TabStrip`, which on
           that shell is already only the save affordance — the verbs live in the
           floating action menu there. */}
-      {canvas && !oneSurface ? (
+      {embedded && !oneSurface ? null : canvas && !oneSurface ? (
         <div className="pn-canvas-bar" data-testid="panel-canvas-bar" ref={setCanvasBarEl}>
           {barEnd}
         </div>
@@ -1491,6 +1579,63 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
     </section>
   );
 
+}
+
+/**
+ * Rename in an embedded host's ⋯ menu: a row that turns into a title input.
+ * Enter commits through the panel's save flow; Escape cancels.
+ */
+function EmbeddedRenameItem({ title, onCommit }: { title: string; onCommit: (title: string) => Promise<void> }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  /* Enter commits and unmounts the input, which can also fire blur: one commit. */
+  const committing = useRef(false);
+  if (draft === null) {
+    return (
+      <button
+        type="button"
+        className="pn-overflow__item"
+        role="menuitem"
+        data-testid="panel-rename"
+        onClick={() => setDraft(title)}
+      >
+        Rename
+      </button>
+    );
+  }
+  const commit = () => {
+    if (committing.current) return;
+    const next = draft.trim();
+    if (next === '' || next === title) {
+      setDraft(null);
+      return;
+    }
+    committing.current = true;
+    void onCommit(next).finally(() => {
+      committing.current = false;
+      setDraft(null);
+    });
+  };
+  return (
+    <input
+      className="pn-overflow__rename"
+      aria-label="Rename"
+      data-testid="panel-rename-input"
+      autoFocus
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          commit();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          setDraft(null);
+        }
+      }}
+      onBlur={commit}
+    />
+  );
 }
 
 /**

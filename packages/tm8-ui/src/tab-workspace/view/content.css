@@ -1,0 +1,216 @@
+/* Workspace content area: tab body, floating group, in-tab states (Spec A §8,
+   §13; design log §7, §11). Workstream E. Tokens only, 4/8 grid. */
+
+/* --- The entity content container: the body scrolls inside, the group does not --- */
+.tws-entity-main.tws-entity-host {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.tws-body {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* --- The reused detail panel, as a tab body: no card, no second border --- */
+.cv2-root .tws-panel > .pn-panel {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: var(--pn-card);
+}
+
+/* Reserve the floating group's footprint only (design log §7). The panel body
+   is a flex column, so text cannot float around a spacer; the group's height
+   is reserved at the top of the body instead, or beside the control band when
+   one leads the body. Canvases keep their own chrome out of it through
+   --pn-canvas-bar-w/-h, published by the group. */
+.cv2-root .tws-panel > .pn-panel:not(.pn-panel--canvas):not(:has(> .pn-controls)) > .pn-body {
+  padding-top: calc(var(--tws-fg-h, 44px) + 2 * var(--pn-space-3));
+}
+.cv2-root .tws-panel > .pn-panel > .pn-controls {
+  min-height: calc(var(--tws-fg-h, 44px) + 2 * var(--pn-space-3));
+  padding-right: calc(var(--tws-fg-w, 0px) + 2 * var(--pn-space-3));
+  box-sizing: border-box;
+}
+/* The attention pill hangs under the group, never under it. */
+.cv2-root .tws-panel > .pn-panel > .att-block-dock > .att-block {
+  top: calc(var(--tws-fg-h, 44px) + 2 * var(--pn-space-3));
+}
+
+/* --- Floating group: raised plane, clusters 12px apart, 4px inside --- */
+.tws-floating.tws-fg {
+  align-items: center;
+  gap: var(--pn-space-3);
+  padding: var(--pn-space-1);
+  border-radius: var(--pn-r-md);
+  max-width: calc(100% - 2 * var(--pn-space-3));
+  box-sizing: border-box;
+}
+.tws-fg-cluster {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+}
+.tws-fg-verbs {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+}
+.tws-fg-verbs:empty {
+  display: none;
+}
+
+/* Section switcher */
+.tws-fg-seg {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+}
+.tws-fg-seg-btn {
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  padding: 0 var(--pn-space-3);
+  background: none;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink-3);
+  font: inherit;
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tws-fg-seg-btn:hover {
+  color: var(--pn-ink-2);
+  background: var(--pn-hover);
+}
+.tws-fg-seg-btn[aria-pressed='true'] {
+  color: var(--pn-ink);
+  background: var(--pn-active);
+}
+.tws-fg-count {
+  font-size: var(--pn-fs-label);
+  font-weight: 400;
+  color: var(--pn-ink-4);
+  font-variant-numeric: tabular-nums;
+}
+.tws-fg-select {
+  height: 36px;
+  padding: 0 var(--pn-space-2);
+  background: none;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink-2);
+  font: inherit;
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+  cursor: pointer;
+}
+.tws-fg-select:hover {
+  background: var(--pn-hover);
+}
+
+/* Chat toggle */
+.tws-fg-chat[aria-pressed='true'] {
+  color: var(--pn-ink);
+  background: var(--pn-active);
+}
+
+/* ⋯ menu */
+.cv2-root .tws-fg-menu {
+  min-width: 192px;
+  box-shadow: var(--pn-sh-pop);
+}
+.tws-fg-slot {
+  display: contents;
+}
+.cv2-root .tws-fg-danger .lp__rowaction {
+  color: var(--pn-block);
+}
+.cv2-root .tws-fg-menu .pn-overflow__rename {
+  height: 32px;
+  margin: 0 0 var(--pn-space-1);
+  padding: 0 var(--pn-space-2);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-xs);
+  background: var(--pn-card);
+  color: var(--pn-ink);
+  font: inherit;
+  font-size: var(--pn-fs-label);
+}
+
+/* --- In-tab states (design log §11) --- */
+.tws-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  max-width: 400px;
+  margin: 0 auto;
+  padding: var(--pn-space-16) var(--pn-space-6) 0;
+}
+.tws-state-icon {
+  color: var(--pn-ink-4);
+  margin-bottom: var(--pn-space-3);
+}
+.tws-state-title {
+  margin: 0;
+  font-size: var(--pn-fs-title);
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+.tws-state-line {
+  margin: var(--pn-space-1) 0 0;
+  max-width: 100%;
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tws-state-actions {
+  display: flex;
+  gap: var(--pn-space-2);
+  margin-top: var(--pn-space-4);
+}
+.tws-state-btn {
+  height: 36px;
+  padding: 0 var(--pn-space-3);
+  background: none;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink-2);
+  font: inherit;
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  cursor: pointer;
+}
+.tws-state-btn:hover {
+  background: var(--pn-hover);
+}
+.tws-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-3);
+  max-width: var(--pn-read-measure, 720px);
+  width: 100%;
+  margin: 0 auto;
+  padding: calc(var(--tws-fg-h, 44px) + 2 * var(--pn-space-3)) var(--pn-space-6) 0;
+  box-sizing: border-box;
+}
+.tws-skeleton-bar {
+  display: block;
+  height: 12px;
+  border-radius: var(--pn-r-xs);
+  background: var(--pn-hover);
+}
