@@ -1,0 +1,112 @@
+/* Linked trail (Spec A §11; design log §6). Scoped under .tws-entity so it
+   wins over the workspace.css placeholder regardless of import order. */
+.tws-entity .tws-trail {
+  flex: none;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--pn-space-6);
+  background: var(--pn-card);
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-label);
+  min-width: 0;
+}
+.tws-trail-list {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tws-trail-item {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.tws-trail-link,
+.tws-trail-current {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tws-trail-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--pn-ink-3);
+  cursor: pointer;
+}
+.tws-trail-link:hover {
+  color: var(--pn-ink);
+  text-decoration: underline;
+}
+.tws-trail-link:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+.tws-trail-current {
+  color: var(--pn-ink-2);
+}
+.tws-trail-sep {
+  margin: 0 var(--pn-space-2);
+  color: var(--pn-ink-4);
+}
+.tws-trail-more {
+  position: relative;
+  display: flex;
+}
+.tws-trail-menu {
+  position: absolute;
+  top: calc(100% + var(--pn-space-1));
+  left: 0;
+  z-index: 5;
+  min-width: 160px;
+  max-width: 320px;
+  margin: 0;
+  padding: var(--pn-space-1);
+  list-style: none;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-pop);
+  animation: tws-trail-menu-in var(--pn-dur-fast) var(--pn-ease-out);
+}
+.tws-trail-menu-item {
+  display: block;
+  width: 100%;
+  height: 36px;
+  padding: 0 var(--pn-space-2);
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  background: none;
+  font: inherit;
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-2);
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tws-trail-menu-item:hover {
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+}
+.tws-trail-menu-item:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+@keyframes tws-trail-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tws-trail-menu {
+    animation: none;
+  }
+}

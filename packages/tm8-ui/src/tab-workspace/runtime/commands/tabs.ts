@@ -4,7 +4,7 @@
  */
 import { findEntityTab, isEligible, kindInScope, visibleTabIds } from '../selectors';
 import { isWorkspaceKind, TAB_SUBVIEWS, UI_SOURCES } from '../types';
-import type { EntityTabRecord, TabId, TabUi, TrailCrumb } from '../types';
+import type { EntityTabRecord, Source, TabId, TabUi, TrailCrumb } from '../types';
 import {
   activate,
   isFiniteNumber,
@@ -43,6 +43,13 @@ function isUiPatch(value: unknown): value is Partial<TabUi> {
   return true;
 }
 
+/**
+ * ADDITIVE (W2-H). Opens that, without a `trail`, hide an existing tab's trail
+ * (Spec A §11: list, chooser, palette, deep link). History, restore and system
+ * re-activations keep it.
+ */
+const DIRECT_OPEN_SOURCES: readonly Source[] = ['click', 'keyboard', 'palette', 'deeplink'];
+
 /** §5.1 Open an entity. */
 export const open: Planner = ({ state, env, hooks }) => {
   const args = env.args;
@@ -58,6 +65,8 @@ export const open: Planner = ({ state, env, hooks }) => {
   const entityId = args.entityId;
   const shouldActivate = args.activate !== false;
   const trail = args.trail as TrailCrumb[] | undefined;
+  /* An empty trail and a direct open both mean "no trail". */
+  const clearTrail = trail !== undefined ? trail.length === 0 : DIRECT_OPEN_SOURCES.includes(env.source);
   const subview = args.subview as TabUi['subview'] | undefined;
 
   // Step 3 first only in effect: an ineligible existing tab and an ineligible
@@ -72,11 +81,13 @@ export const open: Planner = ({ state, env, hooks }) => {
   const existing = findEntityTab(state, kind, entityId);
   if (existing && existing.type === 'entity' && isEligible(state.scope, existing)) {
     let next = state;
-    if (trail !== undefined || subview !== undefined) {
+    const dropTrail = clearTrail && existing.ui.trail !== undefined;
+    if ((trail !== undefined && !clearTrail) || subview !== undefined || dropTrail) {
+      const { trail: _prevTrail, ...kept } = existing.ui;
       const ui: TabUi = {
-        ...existing.ui,
+        ...(clearTrail ? kept : existing.ui),
         ...(subview !== undefined ? { subview } : {}),
-        ...(trail !== undefined ? { trail } : {}),
+        ...(trail !== undefined && !clearTrail ? { trail } : {}),
       };
       next = { ...next, tabs: { ...next.tabs, [existing.id]: { ...existing, ui } } };
     }
@@ -94,7 +105,7 @@ export const open: Planner = ({ state, env, hooks }) => {
     type: 'entity',
     kind,
     entityId,
-    ui: { subview: subview ?? 'entity', ...(trail !== undefined ? { trail } : {}) },
+    ui: { subview: subview ?? 'entity', ...(trail !== undefined && !clearTrail ? { trail } : {}) },
   };
   let next = {
     ...state,
