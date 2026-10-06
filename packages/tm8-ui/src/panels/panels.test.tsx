@@ -1725,9 +1725,15 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     fireEvent.click(within(getByTestId('panel-action-bar')).getByRole('button', { name: /run/i }));
     const slot = getByTestId('panel-action-flow');
     expect(slot.className).toContain('pn-actions__flow');
-    expect(within(slot).getByTestId('launch-quick-config')).toBeTruthy();
-    // And it lives inside the bar, so the bar is still the only row.
+    // And the slot lives inside the bar, so the bar is still the only row.
     expect(getByTestId('panel-action-bar').contains(slot)).toBe(true);
+    // #1070: the popup PORTALS out of the slot to the outermost `.cv2-root`
+    // (body here), because the slot's stacking context trapped its scrim
+    // under the shell chrome. Out of the bar entirely is still no new row.
+    const config = getByTestId('launch-quick-config');
+    expect(slot.contains(config)).toBe(false);
+    expect(getByTestId('panel-action-bar').contains(config)).toBe(false);
+    expect(document.body.contains(config)).toBe(true);
   });
 
   it('Run with NO launch sources keeps its refusal rather than opening an empty config', () => {
