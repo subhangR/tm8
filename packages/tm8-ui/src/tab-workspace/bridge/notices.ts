@@ -110,4 +110,16 @@ export class RemoteNoticeCoalescer {
     bucket.lastAt = at;
     return { id: `tws-remote-${actor}`, title: noticeLine(actor, bucket.changes) };
   }
+
+  /**
+   * Name a change that went out untitled because its entity had not loaded
+   * yet. Returns the corrected line, or null when that change is no longer
+   * the actor's latest (a newer line already replaced it).
+   */
+  retitle(actor: string, change: RemoteChange, title: string): { id: string; title: string } | null {
+    const bucket = this.buckets.get(actor);
+    if (!bucket || change.verb !== 'opened' || bucket.changes[bucket.changes.length - 1] !== change) return null;
+    change.title = title;
+    return { id: `tws-remote-${actor}`, title: noticeLine(actor, bucket.changes) };
+  }
 }

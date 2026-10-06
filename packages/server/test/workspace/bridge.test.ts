@@ -358,7 +358,10 @@ describe('workspace.* handlers', () => {
         return fn({
           query: async (sql: string) => {
             if (sql.includes('from public.spaces')) return readable ? [{ '?column?': 1 }] : [];
-            if (sql.includes('from public.entities')) return [{ title: 'Worker' }];
+            // loadActors' row for the agent's teammate.
+            if (sql.includes('team_member_name')) {
+              return [{ id: 'teammate', kind: 'team_member', space_id: SPACE, team_member_name: 'Worker' }];
+            }
             return [];
           },
         });

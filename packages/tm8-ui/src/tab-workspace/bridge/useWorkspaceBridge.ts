@@ -275,8 +275,19 @@ export function useWorkspaceBridge(options: WorkspaceBridgeOptions): void {
 
       const change = changeOf(env, result, prev, runtime.store.getState(), latest.current.titleOf);
       if (change) {
-        const { id, title } = coalescer.add(actorLabel(frame.actorClass, frame.actorName), change);
+        const actor = actorLabel(frame.actorClass, frame.actorName);
+        const { id, title } = coalescer.add(actor, change);
         latest.current.notify({ id, tone: 'info', title, body: '', ttlMs: NOTICE_TTL_MS });
+        // A freshly opened entity's title usually lands a moment after the
+        // open; name it then, if this change is still the actor's latest.
+        const entityId = (env.args as { entityId?: unknown } | undefined)?.entityId;
+        if (env.command === 'workspace.tabs.open' && typeof entityId === 'string' && !('title' in change && change.title)) {
+          setTimeout(() => {
+            const late = latest.current.titleOf(entityId);
+            const fixed = late ? coalescer.retitle(actor, change, late) : null;
+            if (fixed) latest.current.notify({ ...fixed, tone: 'info', body: '', ttlMs: NOTICE_TTL_MS });
+          }, 1000);
+        }
       }
     };
 

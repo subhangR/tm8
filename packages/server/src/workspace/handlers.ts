@@ -11,6 +11,7 @@ import { CollabError, type WorkspaceCommandInput } from '@tm8/contract';
 
 import type { Db, DbClaims } from '../db/types.js';
 import { claimsFor } from '../facade/context.js';
+import { loadActors } from '../facade/entity-read.js';
 import { json, type OperationHandler, type RequestContext } from '../http/types.js';
 import { createLoopbackOwnerResolver, type LoopbackOwner } from '../identity/loopback.js';
 import type { WorkspaceBridge } from './bridge.js';
@@ -64,14 +65,11 @@ export function workspaceHandlers(deps: WorkspaceHandlerDeps): WorkspaceHandlers
     const { readable, actorName } = await deps.db.tx(claims, async (q) => {
       await q.query('set local role tm8_app');
       const space = await q.query('select 1 from public.spaces where id = $1', [spaceId]);
+      // The calling actor's display name (an agent's teammate), for the
+      // window's "<name> opened …" notice. Same resolver every byline uses.
       const actorId = claims.actorId;
-      const actor = actorId
-        ? await q.query<{ title: string | null }>(
-            'select title from public.entities where id = $1 and deleted_at is null',
-            [actorId],
-          )
-        : [];
-      return { readable: space.length > 0, actorName: actor[0]?.title ?? undefined };
+      const actor = actorId ? (await loadActors(q, [actorId])).get(actorId) : undefined;
+      return { readable: space.length > 0, actorName: actor?.displayName };
     });
     if (!readable) throw new CollabError('not_found', `no space ${spaceId}`);
 
