@@ -366,6 +366,10 @@ export const OPERATIONS = [
   { name: 'workspace.instances.list', method: 'GET',   path: '/v2/spaces/:spaceId/workspace/instances',     kind: 'read',    status: 'v1' },
   { name: 'workspace.inspect',       method: 'GET',    path: '/v2/spaces/:spaceId/workspace/inspect',       kind: 'read',    status: 'v1' },
   { name: 'workspace.command',       method: 'POST',   path: '/v2/spaces/:spaceId/workspace/commands',      kind: 'command', status: 'v1' },
+  // Spec D (doc 01a11171-3aba): the caller's STORED workspace, readable and
+  // writable with no window open.
+  { name: 'workspace.get',           method: 'GET',    path: '/v2/spaces/:spaceId/workspace',               kind: 'read',    status: 'v1' },
+  { name: 'workspace.drafts.patch',  method: 'POST',   path: '/v2/spaces/:spaceId/workspace/drafts/:draftId', kind: 'command', status: 'v1' },
 
   // execution.* family (R16) — server-hosted PTY is the only spawn path (AM-1)
   { name: 'execution.spawn',          method: 'POST',  path: '/v2/execution/spawn',                         kind: 'command', status: 'v1' },

@@ -259,35 +259,55 @@ export class WorkspaceBridge {
       const requestId = randomUUID();
       return this.wait(this.forward({ ...input, requestId }), timeoutMs);
     }
-
-    const hash = createHash('sha256')
-      .update(stable({
+    const requestId = input.requestId;
+    return this.recorded(
+      input.identityId,
+      requestId,
+      {
         spaceId: input.spaceId,
         instanceId: input.instanceId ?? null,
         command: input.command,
         args: input.args ?? null,
         expectedRevision: input.expectedRevision ?? null,
-      }))
-      .digest('hex');
-    const records = this.recordsFor(input.identityId);
-    const prior = records.get(input.requestId);
+      },
+      timeoutMs,
+      () => this.forward({ ...input, requestId }),
+    );
+  }
+
+  /**
+   * The request-id retry record around any outcome (Spec C §2, Spec D §2).
+   *
+   * The same id and payload returns the recorded (or still in-flight) outcome
+   * without starting again; the same id with a different payload is refused.
+   * The record is consulted before anything else, so a retry recovers even
+   * when the workspace or its window has since moved on. A refusal that never
+   * reached anything (`delivered: false`) is not remembered: a retry should run.
+   */
+  recorded(
+    identityId: string,
+    requestId: string,
+    payload: unknown,
+    timeoutMs: number,
+    start: () => Promise<WorkspaceRemoteResult>,
+  ): Promise<WorkspaceRemoteResult> {
+    const hash = createHash('sha256').update(stable(payload)).digest('hex');
+    const records = this.recordsFor(identityId);
+    const prior = records.get(requestId);
     if (prior) {
       if (prior.hash !== hash) {
-        throw new CollabError('conflict', 'this request id was already used with different arguments', {
+        return Promise.reject(new CollabError('conflict', 'this request id was already used with different arguments', {
           details: { reason: 'request_id_reused' },
-        });
+        }));
       }
       return this.wait(prior.outcome, timeoutMs);
     }
 
-    const outcome = this.forward({ ...input, requestId: input.requestId });
-    // A forward that fails after its caller stopped waiting must not surface
+    const outcome = start();
+    // An outcome that fails after its caller stopped waiting must not surface
     // as an unhandled rejection; the record still carries the failure.
     outcome.catch(() => undefined);
-    records.set(input.requestId, { hash, at: this.now(), outcome });
-    // A refusal that never reached a window is not worth remembering: a retry
-    // once the window is back should run, not replay "nobody was there".
-    const requestId = input.requestId;
+    records.set(requestId, { hash, at: this.now(), outcome });
     outcome.catch((error: unknown) => {
       if (error instanceof CollabError && error.details?.['delivered'] === false) {
         if (records.get(requestId)?.outcome === outcome) records.delete(requestId);
@@ -295,6 +315,35 @@ export class WorkspaceBridge {
     });
     this.evict(records);
     return this.wait(outcome, timeoutMs);
+  }
+
+  /** The id of the window a call would target, or null when none is unambiguous (no throw). */
+  targetOf(identityId: string, spaceId: string, instanceId?: string): string | null {
+    try {
+      return this.pick(identityId, spaceId, instanceId).instanceId;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Spec D §3: send one frame to EVERY live window of this identity in this
+   * space — never to anyone else's, never through the space fan-out. Returns
+   * how many sockets took it.
+   */
+  push(identityId: string, spaceId: string, frame: object, only?: string): number {
+    const text = JSON.stringify(frame);
+    let sent = 0;
+    for (const record of this.candidates(identityId, spaceId)) {
+      if (only !== undefined && record.instanceId !== only) continue;
+      try {
+        record.sink.send(text);
+        sent += 1;
+      } catch {
+        // The socket's close path drops the instance.
+      }
+    }
+    return sent;
   }
 
   /** Live instances, for tests and diagnostics. */

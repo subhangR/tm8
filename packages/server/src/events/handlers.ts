@@ -25,6 +25,7 @@ import { DEFAULT_POLL_LIMIT, PgDurableEventLog, type DurableEventLog } from './p
 import { emptyPresence, type PresenceStore } from './presence.js';
 import type { WorkspaceBridge } from '../workspace/bridge.js';
 import { workspaceHandlers } from '../workspace/handlers.js';
+import type { WorkspaceService } from '../workspace/service.js';
 
 export interface EventHandlerDeps {
   readonly db: Db;
@@ -43,8 +44,10 @@ export interface EventHandlerDeps {
    * MOUNTED, and the router keeps answering 501 — see the registration below.
    */
   readonly presence?: PresenceStore;
-  /** The Workspace remote bridge (Spec C); its three ops mount only with it. */
+  /** The Workspace remote bridge (Spec C); its ops mount only with it. */
   readonly workspace?: WorkspaceBridge;
+  /** Spec D: the stored workspaces behind it. */
+  readonly workspaceService?: WorkspaceService;
 }
 
 /**
@@ -163,10 +166,17 @@ export function registerEventHandlers(registry: HandlerRegistry, deps: EventHand
   // The Workspace remote bridge (Spec C): like presence, an in-memory view of
   // live sockets, mounted only when the composition supplies one.
   if (deps.workspace !== undefined) {
-    const workspace = workspaceHandlers({ db: deps.db, bridge: deps.workspace, owner });
+    const workspace = workspaceHandlers({
+      db: deps.db,
+      bridge: deps.workspace,
+      owner,
+      ...(deps.workspaceService ? { service: deps.workspaceService } : {}),
+    });
     registry.register('workspace.instances.list', workspace.list);
     registry.register('workspace.inspect', workspace.inspect);
     registry.register('workspace.command', workspace.command);
+    registry.register('workspace.get', workspace.get);
+    registry.register('workspace.drafts.patch', workspace.patchDraft);
   }
 }
 

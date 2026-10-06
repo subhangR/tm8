@@ -4,5 +4,6 @@ export * as external from './external.js';
 export * as interactions from './interactions.js';
 export * as layout from './layout.js';
 export * as panels from './panels.js';
+export * as rail from './rail.js';
 export * as scope from './scope.js';
 export * as tabs from './tabs.js';

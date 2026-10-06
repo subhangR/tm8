@@ -45,6 +45,7 @@ import { MAX_POLL_LIMIT, type DurableEventLog } from './poll.js';
 import type { PresenceStore } from './presence.js';
 import type { SubscriptionRegistry } from './subscriptions.js';
 import type { WorkspaceBridge } from '../workspace/bridge.js';
+import type { WorkspaceService } from '../workspace/service.js';
 import type { EventSink } from './ws-connection.js';
 
 /**
@@ -161,6 +162,8 @@ export interface ControlChannelDeps {
      * never names its own member; this is the only source of it.
      */
     readonly memberFor: (identity: RequestIdentity, spaceId: string) => Promise<string | null>;
+    /** Spec D: the stored workspace. Absent = windows get no state and cannot write. */
+    readonly service?: WorkspaceService;
   };
 }
 
@@ -312,9 +315,65 @@ export function createControlChannel(deps: ControlChannelDeps): ControlChannel {
         if (!(await authorized(sink, 'workspace.register', frame.spaceId))) return;
         const claims = await claimsFor(sink.identity);
         const memberId = claims.identityId ? await workspace.memberFor(sink.identity, frame.spaceId) : null;
+        const known = claims.identityId ? workspace.bridge.list(claims.identityId, frame.spaceId).some((i) => i.instanceId === frame.instanceId) : false;
         if (!claims.identityId || memberId === null
           || !workspace.bridge.register(sink, claims.identityId, memberId, frame)) {
           refuse(sink, { type: 'control.refused', frame: 'workspace.register', spaceId: frame.spaceId, reason: 'forbidden' });
+          return;
+        }
+        // Spec D §3: a window that just (re)registered gets the stored
+        // workspace and its drafts — this socket only. A heartbeat does not.
+        if (!known && workspace.service) {
+          await workspace.service.snapshot(claims, frame.spaceId, (out) => {
+            try {
+              sink.send(JSON.stringify(out));
+            } catch {
+              // The close path drops the instance.
+            }
+          });
+        }
+        return;
+      }
+
+      case 'workspace.apply':
+      case 'workspace.import':
+      case 'workspace.draft.patch': {
+        const workspace = deps.workspace;
+        const service = workspace?.service;
+        // Only a registered window on a HUMAN socket writes this way; agents
+        // and the CLI use HTTP (source 'remote'), so they can never pose as
+        // the human's own clicks — the gate for interactions.resolve.
+        const human = sink.identity.kind === 'auto-owner' || sink.identity.authKind === 'browser';
+        const claims = await claimsFor(sink.identity);
+        const owns = workspace && claims.identityId
+          && workspace.bridge.list(claims.identityId, frame.spaceId).some((i) => i.instanceId === frame.instanceId);
+        if (!service || !human || !owns || !claims.identityId) {
+          refuse(sink, { type: 'control.refused', frame: frame.type, spaceId: frame.spaceId, reason: 'forbidden' });
+          return;
+        }
+        if (frame.type === 'workspace.apply') {
+          await service.apply(claims, frame.spaceId, {
+            env: frame.env as never,
+            ids: frame.ids,
+            requestId: frame.requestId,
+            origin: { kind: 'window', instanceId: frame.instanceId },
+          }).catch((error: unknown) => {
+            // A failure is still an answer: the window rolls the command back.
+            try {
+              sink.send(JSON.stringify({
+                type: 'workspace.applied',
+                spaceId: frame.spaceId,
+                requestId: frame.requestId,
+                result: { status: 'rejected', revision: 0, reason: error instanceof Error && 'code' in error ? String((error as { code: unknown }).code) : 'failed' },
+              }));
+            } catch {
+              // ignore
+            }
+          });
+        } else if (frame.type === 'workspace.import') {
+          await service.importLegacy(claims, frame.spaceId, frame.state, frame.drafts);
+        } else {
+          await service.patchDraft(claims, frame.spaceId, frame.draftId, frame.fields, { kind: 'window', instanceId: frame.instanceId });
         }
         return;
       }
@@ -373,6 +432,7 @@ export function createControlChannel(deps: ControlChannelDeps): ControlChannel {
 const FRAME_TYPES = new Set<string>([
   'subscribe', 'unsubscribe', 'presence', 'resume', 'presence.set',
   'workspace.register', 'workspace.unregister', 'workspace.result',
+  'workspace.apply', 'workspace.import', 'workspace.draft.patch',
 ]);
 
 function isFrameType(value: string): value is WorkspaceControlFrame['type'] {

@@ -140,7 +140,19 @@ export type WorkspaceState = {
    * `tabScope.set` commit clears it. Never set by a command.
    */
   scopeRepair?: { droppedKinds: KindId[] };
+  /**
+   * ADDITIVE (Spec D §1). The Workspace icon rail's preferences, per space:
+   * pinned kinds (a stored list REPLACES the default), explicit section
+   * open/close choices, and the expanded flag. Absent = the defaults.
+   */
+  rail?: RailPrefs;
 };
+
+export interface RailPrefs {
+  pins: string[];
+  open: Record<string, boolean>;
+  expanded: boolean;
+}
 
 export const LAYOUT_BOUNDS = {
   browserWidth: { min: 280, max: 480, initial: 320 },
@@ -192,6 +204,8 @@ export const COMMAND_NAMES = [
   'workspace.dialogs.open',
   'workspace.dialogs.close',
   'workspace.view.set',
+  // ADDITIVE (Spec D): the rail preferences, so they persist with the workspace.
+  'workspace.rail.set',
 ] as const;
 export type CommandName = (typeof COMMAND_NAMES)[number];
 
@@ -243,6 +257,8 @@ export const DIALOG_IDS = ['palette', 'prompts', 'agentTools', 'newSpace', 'addS
 export type DialogId = (typeof DIALOG_IDS)[number];
 export type DialogsOpenArgs = { dialogId: DialogId };
 export type DialogsCloseArgs = { dialogId: DialogId };
+/** ADDITIVE (Spec D): patch the rail prefs; `open` merges per section. */
+export type RailSetArgs = { pins?: string[]; open?: Record<string, boolean>; expanded?: boolean };
 /** The Workspace route is the only target (coordinator ruling Q1). */
 export type ViewSetArgs = { view: 'tabs' };
 
@@ -265,6 +281,7 @@ export interface CommandArgsMap {
   'workspace.dialogs.open': DialogsOpenArgs;
   'workspace.dialogs.close': DialogsCloseArgs;
   'workspace.view.set': ViewSetArgs;
+  'workspace.rail.set': RailSetArgs;
 }
 
 export type CommandEnvelope = {
@@ -294,7 +311,9 @@ export type ResultReason =
   | 'view_unavailable'
   | 'unsupported_dialog'
   | 'dialog_unavailable'
-  | 'not_rendered';
+  | 'not_rendered'
+  // ADDITIVE (Spec D §7): the node's hard tab limit.
+  | 'tab_limit';
 
 export type Result = {
   status: ResultStatus;

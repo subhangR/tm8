@@ -7,24 +7,34 @@
  * owner's identity), and the bridge is keyed by it; there is no parameter that
  * names whose windows to look at.
  */
-import { CollabError, type WorkspaceCommandInput } from '@tm8/contract';
+import {
+  CollabError,
+  type WorkspaceCommandInput,
+  type WorkspaceDraftPatchInput,
+  type WorkspaceRemoteResult,
+} from '@tm8/contract';
+import { WINDOW_ONLY_COMMANDS, type CommandName } from '@tm8/contract/workspace';
 
 import type { Db, DbClaims } from '../db/types.js';
 import { claimsFor } from '../facade/context.js';
 import { loadActors } from '../facade/entity-read.js';
 import { json, type OperationHandler, type RequestContext } from '../http/types.js';
 import { createLoopbackOwnerResolver, type LoopbackOwner } from '../identity/loopback.js';
-import type { WorkspaceBridge } from './bridge.js';
+import { clampTimeout, type WorkspaceBridge } from './bridge.js';
+import type { WorkspaceService } from './service.js';
 
 export interface WorkspaceHandlerDeps {
   readonly db: Db;
   readonly bridge: WorkspaceBridge;
+  /** Spec D: the stored workspace. Absent = Spec C behaviour (every command needs a window). */
+  readonly service?: WorkspaceService;
   readonly owner?: () => Promise<LoopbackOwner>;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface Caller {
+  claims: DbClaims;
   identityId: string;
   spaceId: string;
   actorClass: 'human' | 'agent';
@@ -35,6 +45,8 @@ export interface WorkspaceHandlers {
   readonly list: OperationHandler;
   readonly inspect: OperationHandler;
   readonly command: OperationHandler;
+  readonly get: OperationHandler;
+  readonly patchDraft: OperationHandler;
 }
 
 /**
@@ -75,6 +87,7 @@ export function workspaceHandlers(deps: WorkspaceHandlerDeps): WorkspaceHandlers
 
     const agent = ctx.identity.authKind === 'agent' || ctx.identity.authKind === 'agent_runtime';
     return {
+      claims,
       identityId: claims.identityId,
       spaceId,
       actorClass: agent ? 'agent' : 'human',
@@ -93,6 +106,11 @@ export function workspaceHandlers(deps: WorkspaceHandlerDeps): WorkspaceHandlers
     if (instanceId !== undefined && (instanceId === '' || instanceId.length > 128)) {
       throw new CollabError('invalid_input', 'instanceId must be a Workspace instance id');
     }
+    // Spec D: with no live window, the stored workspace answers.
+    if (deps.service && instanceId === undefined && deps.bridge.list(who.identityId, who.spaceId).length === 0) {
+      const stored = await deps.service.inspectStored(who.claims, who.spaceId);
+      return json({ ...stored, requestId: `stored-${Date.now()}`, instanceId: '' });
+    }
     // A read: never recorded, so every inspect is a fresh snapshot.
     return json(await deps.bridge.run({
       identityId: who.identityId,
@@ -107,21 +125,87 @@ export function workspaceHandlers(deps: WorkspaceHandlerDeps): WorkspaceHandlers
   const command: OperationHandler = async (ctx) => {
     const who = await caller(ctx);
     const input = ctx.body as WorkspaceCommandInput;
-    return json(await deps.bridge.run({
-      identityId: who.identityId,
+    const service = deps.service;
+    // Spec D §4: dialogs, the route, focus and the human's answer need a live
+    // window; everything else applies to the stored workspace.
+    if (!service || WINDOW_ONLY_COMMANDS.has(input.command as CommandName)) {
+      return json(await deps.bridge.run({
+        identityId: who.identityId,
+        spaceId: who.spaceId,
+        requestId: input.requestId,
+        command: input.command,
+        actorClass: who.actorClass,
+        ...(input.args === undefined ? {} : { args: input.args }),
+        ...(input.instanceId ? { instanceId: input.instanceId } : {}),
+        ...(input.expectedRevision === undefined ? {} : { expectedRevision: input.expectedRevision }),
+        ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }),
+        ...(who.actorName ? { actorName: who.actorName } : {}),
+      }));
+    }
+    const payload = {
+      stored: true,
       spaceId: who.spaceId,
-      requestId: input.requestId,
+      instanceId: input.instanceId ?? null,
       command: input.command,
-      actorClass: who.actorClass,
-      ...(input.args === undefined ? {} : { args: input.args }),
-      ...(input.instanceId ? { instanceId: input.instanceId } : {}),
-      ...(input.expectedRevision === undefined ? {} : { expectedRevision: input.expectedRevision }),
-      ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }),
-      ...(who.actorName ? { actorName: who.actorName } : {}),
+      args: input.args ?? null,
+      expectedRevision: input.expectedRevision ?? null,
+    };
+    return json(await deps.bridge.recorded(who.identityId, input.requestId, payload, clampTimeout(input.timeoutMs), async () => {
+      const result = await service.apply(who.claims, who.spaceId, {
+        env: {
+          command: input.command as CommandName,
+          args: input.args,
+          source: 'remote',
+          ...(input.expectedRevision === undefined ? {} : { expectedRevision: input.expectedRevision }),
+        },
+        requestId: input.requestId,
+        origin: { kind: 'http' },
+      });
+      const out: WorkspaceRemoteResult = { ...(result as unknown as WorkspaceRemoteResult), requestId: input.requestId, instanceId: '' };
+      if (input.command !== 'workspace.tabs.open' || result.status !== 'applied' || !result.tabId) return out;
+      if ((input.args as { activate?: unknown } | undefined)?.activate === false) return { ...out, activation: 'not_requested' };
+      // The stored workspace has it; a live window ALSO brings it to the front,
+      // under the window's own typing rule.
+      const target = deps.bridge.targetOf(who.identityId, who.spaceId, input.instanceId);
+      if (target === null) return { ...out, activation: 'no_window' };
+      try {
+        const shown = await deps.bridge.run({
+          identityId: who.identityId,
+          spaceId: who.spaceId,
+          instanceId: target,
+          command: 'workspace.tabs.activate',
+          args: { tabId: result.tabId },
+          actorClass: who.actorClass,
+          timeoutMs: 3000,
+          ...(who.actorName ? { actorName: who.actorName } : {}),
+        });
+        const activation = shown.status === 'applied' || shown.status === 'no_op'
+          ? 'activated'
+          : shown.reason === 'user_typing' ? 'user_typing' : 'no_window';
+        return { ...out, instanceId: target, activation };
+      } catch {
+        return { ...out, activation: 'no_window' };
+      }
     }));
   };
 
-  return { list, inspect, command };
+  const get: OperationHandler = async (ctx) => {
+    const who = await caller(ctx);
+    if (!deps.service) throw new CollabError('not_implemented', 'this node keeps no stored workspaces');
+    return json(await deps.service.get(who.claims, who.spaceId));
+  };
+
+  const patchDraft: OperationHandler = async (ctx) => {
+    const who = await caller(ctx);
+    if (!deps.service) throw new CollabError('not_implemented', 'this node keeps no stored workspaces');
+    const draftId = ctx.params['draftId'] ?? '';
+    if (!UUID_RE.test(draftId)) throw new CollabError('invalid_input', 'draftId must be a draft id (uuid)');
+    const input = ctx.body as WorkspaceDraftPatchInput;
+    if (Object.keys(input.fields).length === 0) throw new CollabError('invalid_input', 'name at least one field');
+    return json(await deps.service.patchDraft(who.claims, who.spaceId, draftId, input.fields, { kind: 'http' }));
+  };
+
+  return { list, inspect, command, get, patchDraft };
 }
 
 /**

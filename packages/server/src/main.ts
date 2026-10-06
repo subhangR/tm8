@@ -1,6 +1,7 @@
 import { McpSessionBindings } from './mcp/session-bindings.js';
 import { loadMcpServer } from './mcp/definitions.js';
 import { WorkspaceBridge } from './workspace/bridge.js';
+import { WorkspaceService } from './workspace/service.js';
 import { memberForClaims } from './workspace/handlers.js';
 import { McpTestResultSchema } from '@tm8/contract';
 /**
@@ -332,6 +333,9 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   // The Workspace remote bridge (Spec C): live windows and in-flight forwards,
   // in memory like presence, shared by the socket and the HTTP handlers.
   const workspaceBridge = new WorkspaceBridge();
+  // Spec D: the stored workspaces, written through the shared reducer and
+  // pushed to the owner's own windows over that bridge.
+  const workspaceService = db ? new WorkspaceService({ db, bridge: workspaceBridge }) : undefined;
   const subscriptions = new SubscriptionRegistry();
   // Factory callers get the composed context; block callers pass through
   // unchanged (every test harness injects the block form directly).
@@ -536,7 +540,13 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         return pinned ?? claimed;
       },
     });
-    registerEventHandlers(registry, { db, config, presence, workspace: workspaceBridge });
+    registerEventHandlers(registry, {
+      db,
+      config,
+      presence,
+      workspace: workspaceBridge,
+      ...(workspaceService ? { workspaceService } : {}),
+    });
     // The delivery seam again, and narrow for the same reason it is narrow
     // above: `execution.dispatch` pushes a trusted envelope at a dispatcher's
     // terminal, which only the delivery role may do. Absent, a dispatch still
@@ -614,6 +624,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         workspace: {
           bridge: workspaceBridge,
           memberFor: async (identity, spaceId) => memberForClaims(db, await wsClaimsFor(identity), spaceId),
+          ...(workspaceService ? { service: workspaceService } : {}),
         },
         ...(pump ? { cursors: pump } : {}),
         ...(highWaterMark ? { highWaterMark } : {}),

@@ -12,7 +12,7 @@
  * `hooks.newId`: a window records the ids it consumed and sends them, so the
  * node mints the same ones.
  */
-import { browser, drafts, external, interactions, layout, panels, scope, tabs } from './commands/index.js';
+import { browser, drafts, external, interactions, layout, panels, rail, scope, tabs } from './commands/index.js';
 import type { Plan, Planner } from './commands/shared.js';
 import { inspect } from './selectors.js';
 import { ACCEPTED_SOURCES, COMMAND_NAMES, UI_SOURCES } from './types.js';
@@ -37,6 +37,7 @@ export const PLANNERS: Record<CommandName, Planner> = {
   'workspace.dialogs.open': external.openDialog,
   'workspace.dialogs.close': external.closeDialog,
   'workspace.view.set': external.setView,
+  'workspace.rail.set': rail.setRail,
 };
 
 /**

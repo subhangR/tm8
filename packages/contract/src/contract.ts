@@ -1796,7 +1796,64 @@ export type WorkspaceControlFrame =
    * The window's answer to a forwarded `workspace.command`. Honoured only on
    * the connection that owns `instanceId`.
    */
-  | { type: 'workspace.result'; instanceId: string; requestId: string; result: Record<string, unknown> };
+  | { type: 'workspace.result'; instanceId: string; requestId: string; result: Record<string, unknown> }
+  /**
+   * Spec D §3: a command this window committed locally, for the node to apply
+   * to the stored workspace. `ids` are the ids its reducer minted, in order, so
+   * the node's reduce produces the identical result. Accepted only from a
+   * registered window on a human (browser / auto-owner) socket.
+   */
+  | { type: 'workspace.apply'; spaceId: SpaceId; instanceId: string; requestId: string; env: Record<string, unknown>; ids: string[] }
+  /** Spec D §6: the one-time import of this browser's legacy workspace state. */
+  | {
+      type: 'workspace.import';
+      spaceId: SpaceId;
+      instanceId: string;
+      state: Record<string, unknown>;
+      drafts: { draftId: string; kind: string; values: Record<string, unknown> }[];
+    }
+  /** Spec D §3: a debounced draft write (per-field, last writer wins). */
+  | {
+      type: 'workspace.draft.patch';
+      spaceId: SpaceId;
+      instanceId: string;
+      draftId: string;
+      kind: string;
+      fields: Record<string, { v?: unknown; base: number }>;
+    };
+
+/** Spec D §3, node → the identity's windows only: the stored workspace after a commit. */
+export interface WorkspaceStateFrame {
+  type: 'workspace.state';
+  spaceId: SpaceId;
+  revision: number;
+  /** Null when this identity has no workspace row in the space yet. */
+  state: Record<string, unknown> | null;
+  /** The window command this commit answers, when one caused it. */
+  cause?: { instanceId: string; requestId: string; result: Record<string, unknown> };
+}
+
+/** Spec D §3, node → the sending window only: a command it sent that did not commit. */
+export interface WorkspaceAppliedFrame {
+  type: 'workspace.applied';
+  spaceId: SpaceId;
+  requestId: string;
+  result: Record<string, unknown>;
+}
+
+/** Spec D §3, node → the identity's windows: one draft's values after a write. */
+export interface WorkspaceDraftFrame {
+  type: 'workspace.draft';
+  spaceId: SpaceId;
+  draftId: string;
+  kind?: string;
+  revision: number;
+  /** `{name: {v, r}}` — each field's value and revision. Absent when deleted. */
+  fields?: Record<string, { v: unknown; r: number }>;
+  deleted?: boolean;
+  /** The window whose write this was (it already shows the values). */
+  sourceInstanceId?: string;
+}
 
 /**
  * Server → ONE client: run a Workspace command in that window (Spec C §1).

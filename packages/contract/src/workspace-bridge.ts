@@ -89,6 +89,43 @@ export interface WorkspaceRemoteResult {
   inspection?: Record<string, unknown>;
   dialogId?: string;
   dialogState?: 'open' | 'closed';
+  /**
+   * Spec D §4: an agent `tabs.open` applies to the stored workspace; this says
+   * whether a live window also brought it to the front.
+   */
+  activation?: 'activated' | 'no_window' | 'user_typing' | 'not_requested';
+}
+
+/** `workspace.get` (Spec D §2): the caller's stored workspace. */
+export interface WorkspaceGetResult {
+  /** 0 when the caller has no workspace row in this space yet. */
+  revision: number;
+  /** The shared state; tabs whose entity the caller can no longer read carry `unavailable: true`. */
+  state: Record<string, unknown>;
+  drafts: { draftId: string; kind: string; revision: number; fields: Record<string, { v: unknown; r: number }> }[];
+  /** Live windows of this identity in the space. */
+  windows: number;
+}
+
+/** `workspace.drafts.patch` body: per-field values with the revision each was based on. */
+export interface WorkspaceDraftPatchInput {
+  fields: Record<string, { v?: unknown; base?: number }>;
+  clientMutationId?: string;
+}
+
+export const WorkspaceDraftPatchInputSchema: z.ZodType<WorkspaceDraftPatchInput> = z
+  .object({
+    fields: z.record(z.object({ v: z.unknown(), base: z.number().int().nonnegative().optional() }).strict()),
+    clientMutationId: z.string().min(1).optional(),
+  })
+  .strict();
+
+export interface WorkspaceDraftPatchResult {
+  draftId: string;
+  revision: number;
+  fields: Record<string, { v: unknown; r: number }>;
+  /** Fields this write overwrote after someone else had changed them (LWW). */
+  overwrote: string[];
 }
 
 /** The `workspace.command` body; the space comes from the path. */
