@@ -89,3 +89,14 @@ describe('story rows', () => {
     expect(container.querySelector('.lp__progress--done')).not.toBeNull();
   });
 });
+
+describe('the task list draws it (control card)', () => {
+  it('E2 (D3): the bar, 11% and the marker on the row', async () => {
+    const { EntityListPanel } = await import('../panels/index');
+    const { FIXTURE_SPACE_ID } = await import('../fixtures');
+    const row = { ...task({ percent: 11, earned: 1, total: 9, own: 1, openSubtasks: 1 }, { done: true }), id: 'd3', title: 'D3 root' };
+    const { container } = render(<EntityListPanel kind="task" rowsFor={() => [row]} ctx={{ spaceId: FIXTURE_SPACE_ID }} />);
+    const bar = container.querySelector('[data-testid="tile-progress"]');
+    expect(bar?.textContent).toBe('11%subtasks open');
+  });
+});
