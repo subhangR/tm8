@@ -2,18 +2,26 @@
  * Icon rail (Spec A §4, design log §3 + R36, task 01a1112a-c568).
  * Workstream A.
  *
- *   [Pinned kinds]  ── hairline
- *   [every kind, one flat list]
- *   ── hairline
- *   Needs you · Status  ⌘K · Design · Settings · Help  account · »
- *   (three clusters, 12px apart, no dividers — Design Advisor R39)
+ *   kinds face (default)            tools face (--pn-paper band)
+ *   [Pinned kinds]  ── hairline      Needs you · Status
+ *   [every kind, one flat list]      ⌘K · Inbox · Messages · Files · Git
+ *                                    Design · Settings · Help
+ *                                    account · »
+ *   ── hairline                      ── hairline
+ *   [⚙ Settings & tools]             [▦ Back to kinds]
+ *
+ * ONE SWITCH (Subhang, 2026-10-07): the bottom button swaps the column
+ * between the two faces. The tools face keeps R39's three clusters, 12px
+ * apart. Closed, the switch carries a dot while something needs you and the
+ * current bar while the shell shows one of the tools.
  *
  * THE LIST IS THE HOME RAIL'S POPULATION, NOT ITS COMPONENT: `homeRootKinds()`
  * (the Home rail's groups, flattened in order) restricted to the Workspace
  * kinds (D7). NO GROUPS (task 01a11230): the Work / Library / Agents & People /
  * Code accordions are gone — every kind sits in one list, no headings, no
  * dividers. Pins and the expanded flag are the Workspace's own (`railStore`),
- * never Home's. A pinned kind ALSO stays in the list; both copies show current.
+ * never Home's. A pinned kind moves up to Pinned and leaves the list; an
+ * unpinned kind returns at the top of the list (`lifted`, newest first).
  *
  * A kind button IS the browser's kind control (click ⇒ `browsers.main.kind`);
  * a 500ms hold — pointer or Enter/Space — toggles its pin instead, and the
@@ -44,7 +52,8 @@ import { getRailStore } from '../runtime/railStore';
 import { isWorkspaceKind } from '../runtime/types';
 import { useShellFrame } from './context';
 import { railCountLabel, railKindLabel, isRailCountKind, useRailCounts, type RailCounts } from './useRailCounts';
-import { RAIL_COLLAPSE_ART, RAIL_EXPAND_ART } from './railArt';
+import { RAIL_COLLAPSE_ART, RAIL_EXPAND_ART, RAIL_KINDS_ART } from './railArt';
+import { useAttentionOptional } from '../../attention';
 import { RailAttention, RailStatus } from './RailStatus';
 
 const BOTTOM_GROUP_IDS = ['craft', 'settings', 'help'] as const;
@@ -81,12 +90,28 @@ export function WorkspaceRail() {
   const { gate, spaceId, currentKind: browserKind, selectKind } = useShellFrame();
   const railStore = useMemo(() => getRailStore(spaceId), [spaceId]);
   const pins = useStore(railStore, (s) => s.pins);
+  const lifted = useStore(railStore, (s) => s.lifted);
   const expanded = useStore(railStore, (s) => s.expanded);
   const [announcement, setAnnouncement] = useState('');
+  /* Two faces (Subhang, 2026-10-07): the kinds by default; the bottom
+     switch swaps in the settings and tools, on a darker band. */
+  const [tools, setTools] = useState(false);
   const counts: RailCounts = useRailCounts();
+  const attention = useAttentionOptional();
+  const needsYou = attention && attention.status === 'ready' ? attention.counts().mine : 0;
 
-  const kinds = useMemo(() => homeRootKinds().filter((config) => isWorkspaceKind(config.kind)), []);
   const pinned = useMemo(() => homeRailPinnedKinds(pins).filter((config) => isWorkspaceKind(config.kind)), [pins]);
+  /* A pinned kind MOVES to Pinned and leaves the list; an unpinned one comes
+     back at the TOP of the list, most recent first (Subhang, 2026-10-07). */
+  const kinds = useMemo(() => {
+    const rest = homeRootKinds().filter((config) => isWorkspaceKind(config.kind) && !pinned.some((p) => p.kind === config.kind));
+    const rank = (kind: string) => {
+      const i = lifted.indexOf(kind);
+      return i < 0 ? lifted.length : i;
+    };
+    return rest.map((config, i) => ({ config, i })).sort((a, b) => rank(a.config.kind) - rank(b.config.kind) || a.i - b.i).map((x) => x.config);
+  }, [pinned, lifted]);
+  const railRef = useRef<HTMLElement>(null);
   const bottom = BOTTOM_GROUP_IDS.flatMap((id) => {
     const tab = gate.shellTabs.find((t) => t.id === id);
     return tab ? [{ id, label: tab.label }] : [];
@@ -94,8 +119,14 @@ export function WorkspaceRail() {
 
   const togglePin = useCallback(
     (config: KindConfig): boolean => {
+      const rail = railRef.current;
+      const hadFocus = !!rail && rail.contains(document.activeElement);
       const nowPinned = railStore.getState().togglePin(config.kind);
       setAnnouncement(`${nowPinned ? 'Pinned' : 'Unpinned'} ${config.labelPlural}`);
+      /* The button moved sections and remounted: keyboard focus follows it. */
+      if (hadFocus) {
+        window.setTimeout(() => rail?.querySelector<HTMLElement>(`button[data-kind="${config.kind}"]`)?.focus(), 0);
+      }
       return nowPinned;
     },
     [railStore],
@@ -121,7 +152,7 @@ export function WorkspaceRail() {
       key={`${placement}:${config.kind}`}
       config={config}
       placement={placement}
-      isPinned={placement === 'pinned' || pins.includes(config.kind)}
+      isPinned={placement === 'pinned'}
       current={config.kind === browserKind}
       expanded={expanded}
       count={isRailCountKind(config.kind) ? counts[config.kind] : undefined}
@@ -131,113 +162,128 @@ export function WorkspaceRail() {
   );
 
   const expandLabel = expanded ? 'Collapse sidebar' : 'Expand sidebar';
+  const screenCurrent = (ref: string) => gate.activeScreenRef === ref;
+  const toolCurrent = (id: string) => gate.activeViewTabId === id || gate.activeScreenRef === id;
+  const onToolScreen = SCREEN_VIEWS.some((s) => screenCurrent(s.ref)) || bottom.some((t) => toolCurrent(t.id));
+  const switchLabel = tools ? 'Back to kinds' : 'Settings & tools';
   return (
     <nav
+      ref={railRef}
       className="tws-rail"
       aria-label="Work rail"
       data-testid="tws-rail"
       data-rail-expanded={expanded || undefined}
+      data-rail-mode={tools ? 'tools' : 'kinds'}
     >
-      <div className="tws-rail-top">
-        {pinned.length > 0 ? (
-          <>
-            <div className="tws-rail-group" role="group" aria-label="Pinned" data-testid="tws-rail-pinned">
-              {pinned.map((config) => kindButton(config, 'pinned'))}
-            </div>
-            <hr className="tws-rail-rule" />
-          </>
-        ) : null}
-        <div className="tws-rail-group" role="group" aria-label="Kinds" data-testid="tws-rail-kinds">
-          {kinds.map((config) => kindButton(config, 'list'))}
-        </div>
-      </div>
-      <hr className="tws-rail-rule" />
-      <div className="tws-rail-bottom" role="group" aria-label="Work tools">
-        <div className="tws-rail-cluster" data-cluster="status">
-          <RailAttention expanded={expanded} />
-          <RailStatus expanded={expanded} />
-        </div>
-        <div className="tws-rail-cluster" data-cluster="tools">
-        <RailTip label={expanded ? null : 'Command palette'} shortcut="⌘K">
-          <button
-            type="button"
-            className="tws-rail-btn"
-            aria-label="Command palette"
-            aria-keyshortcuts="Meta+K"
-            onClick={gate.openPalette}
-          >
-            <span className="tws-rail-icon">
-              <span className="tws-rail-kbd" aria-hidden>
-                ⌘K
-              </span>
-            </span>
-            {expanded ? <span className="tws-rail-label">Command palette</span> : null}
-          </button>
-        </RailTip>
-        {expanded
-          ? SCREEN_VIEWS.map((screen) => (
+      {tools ? (
+        <div className="tws-rail-top tws-rail-tools" role="group" aria-label="Settings and tools" data-testid="tws-rail-tools">
+          <div className="tws-rail-cluster" data-cluster="status">
+            <RailAttention expanded={expanded} />
+            <RailStatus expanded={expanded} />
+          </div>
+          <div className="tws-rail-cluster" data-cluster="tools">
+            <RailTip label={expanded ? null : 'Command palette'} shortcut="⌘K">
               <button
-                key={screen.ref}
                 type="button"
                 className="tws-rail-btn"
-                aria-label={screen.label}
-                aria-current={gate.activeScreenRef === screen.ref ? 'page' : undefined}
-                data-rail-tool={screen.ref}
-                onClick={() => gate.navigateTo({ type: 'view', ref: screen.ref })}
+                aria-label="Command palette"
+                aria-keyshortcuts="Meta+K"
+                onClick={gate.openPalette}
               >
                 <span className="tws-rail-icon">
-                  <VectorIcon paths={screen.art} size={18} />
+                  <span className="tws-rail-kbd" aria-hidden>
+                    ⌘K
+                  </span>
                 </span>
-                <span className="tws-rail-label">{screen.label}</span>
+                {expanded ? <span className="tws-rail-label">Command palette</span> : null}
               </button>
-            ))
-          : null}
-        {bottom.map((tab) => (
-          <RailTip key={tab.id} label={expanded ? null : tab.label}>
-            <button
-              type="button"
-              className="tws-rail-btn"
-              aria-label={tab.label}
-              aria-current={gate.activeViewTabId === tab.id || gate.activeScreenRef === tab.id ? 'page' : undefined}
-              data-rail-tool={tab.id}
-              onClick={() => gate.onSelectViewTab(tab.id)}
-            >
-              <span className="tws-rail-icon">
-                <VectorIcon paths={BOTTOM_ART[tab.id]} size={18} />
-              </span>
-              {expanded ? <span className="tws-rail-label">{tab.label}</span> : null}
-            </button>
-          </RailTip>
-        ))}
+            </RailTip>
+            {SCREEN_VIEWS.map((screen) => (
+              <ToolButton
+                key={screen.ref}
+                id={screen.ref}
+                label={screen.label}
+                art={screen.art}
+                current={screenCurrent(screen.ref)}
+                expanded={expanded}
+                onClick={() => gate.navigateTo({ type: 'view', ref: screen.ref })}
+              />
+            ))}
+            {bottom.map((tab) => (
+              <ToolButton
+                key={tab.id}
+                id={tab.id}
+                label={tab.label}
+                art={BOTTOM_ART[tab.id]}
+                current={toolCurrent(tab.id)}
+                expanded={expanded}
+                onClick={() => gate.onSelectViewTab(tab.id)}
+              />
+            ))}
+          </div>
+          <div className="tws-rail-cluster" data-cluster="account">
+            {gate.accountSlot ? (
+              <RailTip label={expanded ? null : 'Account'}>
+                <div className="tws-rail-account">
+                  {/* R12: the avatar-only trigger with its own accessible name;
+                      the expanded rail adds the name beside it. */}
+                  {isValidElement<{ compact?: boolean; compactName?: boolean }>(gate.accountSlot)
+                    ? cloneElement(gate.accountSlot, { compact: true, compactName: expanded })
+                    : gate.accountSlot}
+                </div>
+              </RailTip>
+            ) : null}
+            <RailTip label={expanded ? null : expandLabel} shortcut="⌘\">
+              <button
+                type="button"
+                className="tws-rail-btn tws-rail-expand"
+                aria-label={expandLabel}
+                aria-keyshortcuts="Meta+\"
+                data-testid="tws-rail-expand"
+                onClick={toggleExpanded}
+              >
+                <span className="tws-rail-icon">
+                  <VectorIcon paths={expanded ? RAIL_COLLAPSE_ART : RAIL_EXPAND_ART} size={18} />
+                </span>
+                {expanded ? <span className="tws-rail-label">{expandLabel}</span> : null}
+              </button>
+            </RailTip>
+          </div>
         </div>
-        <div className="tws-rail-cluster" data-cluster="account">
-        {gate.accountSlot ? (
-          <RailTip label={expanded ? null : 'Account'}>
-            <div className="tws-rail-account">
-              {/* R12: the avatar-only trigger with its own accessible name;
-                  the expanded rail adds the name beside it. */}
-              {isValidElement<{ compact?: boolean; compactName?: boolean }>(gate.accountSlot)
-                ? cloneElement(gate.accountSlot, { compact: true, compactName: expanded })
-                : gate.accountSlot}
-            </div>
-          </RailTip>
-        ) : null}
-        <RailTip label={expanded ? null : expandLabel} shortcut="⌘\">
+      ) : (
+        <div className="tws-rail-top">
+          {pinned.length > 0 ? (
+            <>
+              <div className="tws-rail-group" role="group" aria-label="Pinned" data-testid="tws-rail-pinned">
+                {pinned.map((config) => kindButton(config, 'pinned'))}
+              </div>
+              <hr className="tws-rail-rule" />
+            </>
+          ) : null}
+          <div className="tws-rail-group" role="group" aria-label="Kinds" data-testid="tws-rail-kinds">
+            {kinds.map((config) => kindButton(config, 'list'))}
+          </div>
+        </div>
+      )}
+      <hr className="tws-rail-rule" />
+      <div className="tws-rail-bottom">
+        <RailTip label={expanded ? null : switchLabel}>
           <button
             type="button"
-            className="tws-rail-btn tws-rail-expand"
-            aria-label={expandLabel}
-            aria-keyshortcuts="Meta+\"
-            data-testid="tws-rail-expand"
-            onClick={toggleExpanded}
+            className="tws-rail-btn tws-rail-switch"
+            aria-label={switchLabel}
+            aria-pressed={tools}
+            aria-current={!tools && onToolScreen ? 'page' : undefined}
+            data-testid="tws-rail-switch"
+            onClick={() => setTools((t) => !t)}
           >
             <span className="tws-rail-icon">
-              <VectorIcon paths={expanded ? RAIL_COLLAPSE_ART : RAIL_EXPAND_ART} size={18} />
+              <VectorIcon paths={tools ? RAIL_KINDS_ART : VIEW_ART.settings} size={18} />
+              {!tools && needsYou > 0 ? <span className="tws-rail-switch-dot" data-testid="tws-rail-switch-dot" aria-hidden /> : null}
             </span>
-            {expanded ? <span className="tws-rail-label">{expandLabel}</span> : null}
+            {expanded ? <span className="tws-rail-label">{switchLabel}</span> : null}
           </button>
         </RailTip>
-        </div>
       </div>
       <span className="tws-sr-only" aria-live="polite" data-testid="tws-rail-live">
         {announcement}
@@ -246,10 +292,45 @@ export function WorkspaceRail() {
   );
 }
 
+/** A screen or shell tab in the tools rail: current while the shell shows it. */
+function ToolButton({
+  id,
+  label,
+  art,
+  current,
+  expanded,
+  onClick,
+}: {
+  id: string;
+  label: string;
+  art: readonly string[];
+  current: boolean;
+  expanded: boolean;
+  onClick(): void;
+}) {
+  return (
+    <RailTip label={expanded ? null : label}>
+      <button
+        type="button"
+        className="tws-rail-btn"
+        aria-label={label}
+        aria-current={current ? 'page' : undefined}
+        data-rail-tool={id}
+        onClick={onClick}
+      >
+        <span className="tws-rail-icon">
+          <VectorIcon paths={art} size={18} />
+        </span>
+        {expanded ? <span className="tws-rail-label">{label}</span> : null}
+      </button>
+    </RailTip>
+  );
+}
+
 interface KindButtonProps {
   config: KindConfig;
   placement: 'pinned' | 'list';
-  /** The Pinned copy always unpins; a list copy pins or unpins. */
+  /** The Pinned copy unpins; a list copy pins. */
   isPinned: boolean;
   current: boolean;
   expanded: boolean;

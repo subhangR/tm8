@@ -258,6 +258,31 @@
 .tws-rail-bottom {
   flex: none;
 }
+/* The tools face (Subhang, 2026-10-07): the same column on the darker
+   --pn-paper band, so the swap reads at a glance; R34's paper-band hovers. */
+.tws-rail[data-rail-mode='tools'] {
+  background: var(--pn-paper);
+}
+.tws-rail[data-rail-mode='tools'] .tws-rail-btn:hover {
+  background: var(--pn-active);
+}
+.tws-rail[data-rail-mode='tools'] .tws-rail-btn:active {
+  background: var(--pn-line);
+}
+.tws-rail-switch[aria-pressed='true'] {
+  color: var(--pn-ink);
+}
+/* Something needs you while the bell is out of sight: a brand dot on the switch. */
+.tws-rail-switch-dot {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--pn-brand);
+  box-shadow: 0 0 0 2px var(--pn-surface);
+}
 /* Hairlines: below Pinned and above the bottom group, 20px, centred on the
    icon column. */
 .tws-rail-rule {

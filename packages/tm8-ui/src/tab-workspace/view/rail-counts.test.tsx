@@ -170,12 +170,12 @@ describe('labels', () => {
 });
 
 describe('the rail', () => {
-  it('badges the four kinds in both the Pinned and list copies, and no other kind', async () => {
+  it('badges the four kinds (pinned or listed), and no other kind', async () => {
     const fake = fakeSeam(FIXTURE, { liveEntityIds: ['w1', 'w2', 'w3'], liveSessionCount: 3 });
     mount(fake.seam);
-    await waitFor(() => expect(kindButtons('task').map(countOf)).toEqual(['2', '2']));
-    expect(kindButtons('work_session').map(countOf)).toEqual(['3', '3']);
-    expect(kindButtons('chat').map(countOf)).toEqual(['1', '1']);
+    await waitFor(() => expect(kindButtons('task').map(countOf)).toEqual(['2']));
+    expect(kindButtons('work_session').map(countOf)).toEqual(['3']);
+    expect(kindButtons('chat').map(countOf)).toEqual(['1']);
     expect(kindButtons('story').map(countOf)).toEqual(['1']);
     const others = Array.from(document.querySelectorAll<HTMLButtonElement>('button[data-kind]')).filter(
       (b) => !['task', 'story', 'work_session', 'chat'].includes(b.dataset.kind!),
@@ -209,8 +209,8 @@ describe('the rail', () => {
     );
     mount(fake.seam);
     await waitFor(() => expect(countOf(kindButtons('task')[0]!)).toBe('99+'));
-    expect(kindButtons('work_session').map(countOf)).toEqual([null, null]);
-    expect(kindButtons('chat').map(countOf)).toEqual([null, null]);
+    expect(kindButtons('work_session').map(countOf)).toEqual([null]);
+    expect(kindButtons('chat').map(countOf)).toEqual([null]);
     expect(kindButtons('work_session')[0]!.getAttribute('aria-label')).toBe('Sessions');
   });
 
