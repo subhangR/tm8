@@ -15,6 +15,7 @@
  * runs against rows 205's trigger actually wrote.
  */
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
