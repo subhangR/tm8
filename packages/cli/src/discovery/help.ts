@@ -259,7 +259,7 @@ function fit<T extends { truncated?: Truncation }, I>(
  */
 const GLOBAL_OPTIONS: { option: string; summary: string }[] = [
   { option: '--server <name>', summary: 'target a named Server registered on the local Server' },
-  { option: '--space <space-id|alias>', summary: 'the Space this command acts in; from a session, a linked Space\'s alias (see `tm8 link list`) routes through that link: `tm8 --space <alias> entity query --kind task`' },
+  { option: '--space <space-id|alias>', summary: 'the Space this command acts in; from a session, a linked Space\'s alias (see `tm8 link list`) routes through that link: `tm8 --space <alias> entity query --kind task`. An edge never crosses spaces; link an entity here to one there with `tm8 entity ref add <entity-id> <target-entity-id> --link <alias>`' },
   { option: '--as <actor-id>', summary: 'author as an authorized Member or Teammate' },
   { option: '--format human|json|jsonl', summary: 'stdout shape; human renders the same DTO as json' },
   { option: '--timeout <seconds>', summary: 'per-request timeout, in SECONDS' },

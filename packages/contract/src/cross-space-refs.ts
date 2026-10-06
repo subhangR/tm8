@@ -93,3 +93,21 @@ export const CrossSpaceRefRemoveInputSchema: z.ZodType<CrossSpaceRefRemoveInput>
 /** Typed `details.reason` values a refused add carries. */
 export const CROSS_SPACE_REF_NO_LINK = 'cross_space_ref_no_link';
 export const CROSS_SPACE_REF_LINK_INACTIVE = 'cross_space_ref_link_inactive';
+
+/**
+ * `details.reason` on an `edges.create` whose endpoints are in two spaces.
+ * An edge never crosses spaces (D3), so no retry succeeds: the refusal names
+ * the reference to make instead, as `details.next` (the CLI prints it).
+ */
+export const CROSS_SPACE_EDGE = 'cross_space_edge';
+
+/** Placeholder for `--link` when the refusal cannot tell which link to use. */
+export const CROSS_SPACE_REF_LINK_PLACEHOLDER = '<alias|link-id|space-id>';
+
+/**
+ * The one command that replaces a cross-space edge. `holderId` is the entity
+ * in the caller's own space; `targetId` is the one in the linked space.
+ */
+export function crossSpaceRefCommand(holderId: string, targetId: string, link?: string): string {
+  return `tm8 entity ref add ${holderId} ${targetId} --link ${link ?? CROSS_SPACE_REF_LINK_PLACEHOLDER}`;
+}

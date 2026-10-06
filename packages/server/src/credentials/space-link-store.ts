@@ -350,6 +350,15 @@ export class DbSpaceLinkStore {
     ]);
   }
 
+  /**
+   * 299: true when `workSessionId` was started through the caller's own link
+   * as the caller's own member (`space_link_spawns`). Called under the LINK
+   * session's claims; false for anything else, never an error.
+   */
+  spawnOwned(linkClaims: DbClaims, workSessionId: string): Promise<boolean> {
+    return this.db.rpc<boolean>(linkClaims, 'space_link_spawn_owned', [workSessionId]);
+  }
+
   /** W7 `spaceLinks.audit`: own rows, or every row for a home admin (260). */
   listAudit(claims: DbClaims, linkId: string, options: { limit?: number; before?: string | null } = {}): Promise<SpaceLinkAuditEntry[]> {
     return this.db.rpc<SpaceLinkAuditEntry[]>(claims, 'list_cross_space_audit', [

@@ -331,6 +331,9 @@ export type SpaceLinkRefusalReason =
  * Session bodies (W9 v4 alignment): `execution.journal` and
  * `execution.transcript` read a session's body, and a journal can hold a live
  * token (the F3 journal-redaction item), so they are refused, reads too.
+ * ONE exception (299, SPACE_LINK_OWN_SPAWN_OPS): the body of a session the
+ * caller's own link started as the caller's own member, which B confirms from
+ * `space_link_spawns` under the link session before its handler runs.
  *
  * Membership and role writes (owner decision D6, lane L6): who belongs to B
  * and with what role is B's humans' call, made in B. Through a link every
@@ -406,6 +409,19 @@ export const SPACE_LINK_SPAWN_OPS: readonly string[] = Object.freeze([
   'execution.dispatch',
 ]);
 
+/**
+ * 299: the `session_body` ops that pass for a session the caller's own link
+ * spawned (`space_link_spawns`: this link, this member), keyed to the path
+ * param naming that session. The home server cannot see B's provenance, so
+ * for these ops `spaceLinkRefusal` refuses `session_body` until the target
+ * has confirmed it (`ownSpawn` true); every other session's body stays
+ * refused. A spawner that can only see liveness cannot follow its child.
+ */
+export const SPACE_LINK_OWN_SPAWN_OPS: Readonly<Record<string, string>> = Object.freeze({
+  'execution.journal': 'workSessionId',
+  'execution.transcript': 'workSessionId',
+});
+
 /** Spawn input fields that name a credential source; any one present refuses (K11). */
 export const SPACE_LINK_SPAWN_CREDENTIAL_FIELDS = [
   'credentialSources',
@@ -425,16 +441,22 @@ export const SPACE_LINK_MAX_HOPS = 2;
  * as the member. `allowSpawn` is the caller's own row's switch, `undefined`
  * before the row is read: a spawn op is then not refused by the switch, and
  * the caller MUST call again with the row's value before forwarding.
+ * `ownSpawn` is true only once the target has confirmed the session an
+ * SPACE_LINK_OWN_SPAWN_OPS op names was started by the caller's own link as
+ * its own member (299); anything else keeps that op refused `session_body`.
  */
 export function spaceLinkRefusal(
   op: string,
   opKind: 'read' | 'command' | 'stream',
   input: unknown,
   allowSpawn: boolean | undefined,
+  ownSpawn = false,
 ): SpaceLinkRefusalReason | null {
   for (const entry of SPACE_LINK_REFUSED) {
     const hit = entry.exact ? op === entry.prefix : op.startsWith(entry.prefix);
-    if (hit && (entry.kinds === 'all' || opKind !== 'read')) return entry.reason;
+    if (!hit || (entry.kinds !== 'all' && opKind === 'read')) continue;
+    if (entry.reason === 'session_body' && ownSpawn && op in SPACE_LINK_OWN_SPAWN_OPS) continue;
+    return entry.reason;
   }
   if (formDeliveryCanStart(op, input)) return 'process_start';
   if (SPACE_LINK_SPAWN_OPS.includes(op)) {

@@ -18,7 +18,7 @@
  * `auth_sessions` row and `SET LOCAL` drops the pin, not only if the SQL does.
  */
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { createServer, type IncomingHttpHeaders, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -4685,6 +4685,78 @@ describe.sequential('W7 spaceLinks.invoke — G runs one op in B as H, audited i
     });
   });
 
+  // ---- the actor a write carries through the link (task 01a1108a) ---------
+  // Prod 2026-09-28..10-04: every first `tm8 --space <B> entity create` an
+  // agent ran through a link was refused 403 "not permitted to act as this
+  // actor" (audit: error, forbidden). The session CLI stamps its own actor
+  // (TM8_ACTOR_ID, G's persona in A) as `actorId`, and B's resolve_actor
+  // cannot authorize an A actor. Agents got through by retrying with
+  // `--as <H's B member>`, read off `action list`.
+
+  it('actor — the CLI\'s stamp (actorId = G\'s home persona) does not reach B: the create passes as H\'s B member', async () => {
+    const res = await invoke(gToken, {
+      op: 'entities.create',
+      input: { spaceId: fixture.spaceB, kind: 'doc', title: 'W7 actor stamp', clientMutationId: cmid('stamp'), actorId: fixture.personaA },
+    });
+    expect(res.body.error).toBeUndefined();
+    expect(res.status).toBe(200);
+    const result = res.body.data!.result as { id?: string; entity?: { id: string } };
+    const [row] = await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      return (await client.query<{ created_by: string }>(
+        'select created_by::text from public.entities where id = $1', [(result.entity?.id ?? result.id)!])).rows;
+    });
+    expect(row).toEqual({ created_by: fixture.memberHB });
+  });
+
+  it('actor — an explicit home actor (--as H\'s A member) is refused with a typed reason that says what to do, audited actor_not_permitted', async () => {
+    const res = await invoke(gToken, {
+      op: 'entities.create',
+      input: { spaceId: fixture.spaceB, kind: 'doc', title: 'W7 actor home', clientMutationId: cmid('home'), actorId: fixture.memberHA },
+    });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatchObject({
+      code: 'forbidden',
+      details: { sqlstate: '42501', reason: 'actor_not_permitted', actorId: fixture.memberHA, linkId: hLink.id, targetSpaceId: fixture.spaceB },
+    });
+    expect(res.body.error!.message).toContain('drop --as');
+    expect(res.body.error!.message).toContain(fixture.spaceB);
+    expect(await lastAudit('entities.create')).toMatchObject({ result: 'error', reason: 'actor_not_permitted' });
+  });
+
+  it('actor positive — an explicit B actor H may act as (--as H\'s B member) passes', async () => {
+    const res = await invoke(gToken, {
+      op: 'entities.create',
+      input: { spaceId: fixture.spaceB, kind: 'doc', title: 'W7 actor B', clientMutationId: cmid('b'), actorId: fixture.memberHB },
+    });
+    expect(res.body.error).toBeUndefined();
+    expect(res.status).toBe(200);
+  });
+
+  it('completer — task complete --by <G\'s home persona> through the link credits H\'s B member; positive: --by H\'s B member', async () => {
+    for (const by of [fixture.personaA, fixture.memberHB]) {
+      const created = await invoke(gToken, {
+        op: 'entities.create',
+        input: { spaceId: fixture.spaceB, kind: 'task', title: `W7 complete by ${by}`, clientMutationId: cmid('task') },
+      });
+      expect(created.status).toBe(200);
+      const made = created.body.data!.result as { id?: string; entity?: { id: string; version?: number }; version?: number };
+      const taskId = (made.entity?.id ?? made.id)!;
+      const res = await invoke(gToken, {
+        op: 'entities.commands.complete', params: { id: taskId },
+        input: { expectedVersion: made.entity?.version ?? made.version ?? 1, completerIds: [by], clientMutationId: cmid('complete') },
+      });
+      expect(res.body.error).toBeUndefined();
+      expect(res.status).toBe(200);
+      const edges = await database.transaction(async (client) => {
+        await client.query('set local role tm8_graph_owner');
+        return (await client.query<{ dst_id: string }>(
+          "select dst_id::text from public.edges where src_id = $1 and type = 'completed_by'", [taskId])).rows;
+      });
+      expect(edges).toEqual([{ dst_id: fixture.memberHB }]);
+    }
+  });
+
   it('T21 — the forwarded session is kind link pinned to B: G cannot reach A\'s doc through it', async () => {
     const res = await invoke(gToken, { op: 'entities.get', params: { id: fixture.docA } });
     expect(res.status).toBe(404);
@@ -4915,8 +4987,13 @@ describe.sequential('W7 spaceLinks.invoke — G runs one op in B as H, audited i
     await refusedAtHome({ op: 'forms.create', input: { spaceId: fixture.spaceB, title: 'r1', questions: [], clientMutationId: cmid('form') } }, 'process_start');
   });
 
-  it('W9 v4 refused (session_body) — execution.journal via invoke', async () => {
-    await refusedAtHome({ op: 'execution.journal', params: { workSessionId: fixture.workSessionA } }, 'session_body');
+  // 299: a session body is decided in B (only the link's own spawn passes; the
+  // 299 cells below), so the refusal comes after the row, audited with the link.
+  it('W9 v4 refused (session_body) — execution.journal via invoke of a session the link did not spawn', async () => {
+    const res = await invoke(gToken, { op: 'execution.journal', params: { workSessionId: fixture.workSessionA } });
+    expect(res.status, JSON.stringify(res.body)).toBe(403);
+    expect(res.body.error).toMatchObject({ code: 'forbidden', details: { reason: 'space_link_refused', refusal: 'session_body' } });
+    expect(await lastAudit('execution.journal')).toMatchObject({ result: 'refused', reason: 'session_body', link_id: hLink.id });
   });
 
   it('R-1 / W9 v4 positive — entities.get via invoke passes on the same link', async () => {
@@ -5289,6 +5366,162 @@ describe.sequential('W7 spaceLinks.invoke — G runs one op in B as H, audited i
     }) as unknown as RequestContext;
     await expect(handler(ctx())).resolves.toMatchObject({ op: 'entities.get' });
     await expect(handler(ctx())).rejects.toMatchObject({ code: 'rate_limited' });
+  });
+
+  // ---- 299: G observes and messages a session its link spawned in B --------
+  //
+  // execution.journal / execution.transcript stay refused (session_body) for
+  // every B session EXCEPT one this link started as H's member, which B
+  // confirms from space_link_spawns under the link session. `ownWs` is minted
+  // and recorded exactly as the executor does after a real spawn; `nativeWs`
+  // is B's own session; `foreignWs` carries provenance for another member and
+  // `otherLinkWs` for another link.
+  describe.sequential('299 own link spawn — observable by its spawner, nothing else', () => {
+    const personaB = randomUUID();
+    let ownWs: string;
+    let nativeWs: string;
+    let foreignWs: string;
+    let otherLinkWs: string;
+    const leaked = `${'tm8s_'}${randomUUID()}_secretpart`;
+
+    async function workSessionInB(title: string): Promise<string> {
+      const id = randomUUID();
+      await database.transaction(async (client) => {
+        await client.query('set local role tm8_graph_owner');
+        await client.query(
+          `insert into public.entities(id, space_id, kind, created_by, visibility) values ($1, $2, 'work_session', $3, 'space')`,
+          [id, fixture.spaceB, fixture.memberHB]);
+        await client.query(
+          `insert into public.work_sessions(entity_id, title, status, share_mode, started_at)
+           values ($1, $2, 'running', 'none', now())`, [id, title]);
+        await client.query(
+          `insert into public.edges(space_id, src_id, dst_id, type, created_by)
+           values ($1, $2, $3, 'participates_in', $2), ($1, $3, $2, 'relates_to', $2)`, [fixture.spaceB, personaB, id]);
+      });
+      return id;
+    }
+
+    /** A provenance row written as the graph owner, for the deny cells. */
+    async function provenance(workSessionId: string, linkId: string, memberId: string): Promise<void> {
+      await database.transaction(async (client) => {
+        await client.query('set local role tm8_graph_owner');
+        await client.query(
+          `insert into public.space_link_spawns(work_session_id, link_id, target_space_id, source_space_id, member_id, op)
+           values ($1, $2, $3, $4, $5, 'execution.spawn')`,
+          [workSessionId, linkId, fixture.spaceB, fixture.spaceA, memberId]);
+      });
+    }
+
+    beforeAll(async () => {
+      await database.transaction(async (client) => {
+        await client.query('set local role tm8_graph_owner');
+        await client.query(
+          `insert into public.entities(id, space_id, kind, created_by, visibility) values ($1, $2, 'team_member', $3, 'space')`,
+          [personaB, fixture.spaceB, fixture.memberHB]);
+        await client.query(
+          `insert into public.team_members(entity_id, owner_member_id, name, role, identity)
+           values ($1, $2, '299 child', 'worker', 'persona')`, [personaB, fixture.memberHB]);
+      });
+      ownWs = await workSessionInB('299 own spawn');
+      nativeWs = await workSessionInB('299 B native');
+      foreignWs = await workSessionInB('299 another member');
+      otherLinkWs = await workSessionInB('299 another link');
+
+      // The spawn path: the link session mints the child's agent session (281),
+      // then the executor records its provenance under the same claims.
+      const linkClaims = await claimsForToken(hLinkToken);
+      const secret = generateSecret();
+      await db.rpc(linkClaims, 'issue_work_session_agent_session', [
+        ownWs, personaB, hashToken(secret), new Date(Date.now() + 3_600_000).toISOString(), '299 child',
+      ]);
+      expect(await linkStore.recordSpawn(linkClaims, {
+        workSessionId: ownWs, op: 'execution.spawn', sourceSessionId: fixture.workSessionA,
+      })).toBe(true);
+      await provenance(foreignWs, hLink.id, fixture.memberH2A);
+      await provenance(otherLinkWs, randomUUID(), fixture.memberHB);
+
+      // A journal for the own spawn and for B's own session, each carrying a token.
+      await mkdir(join(linkDataDir, 'journals'), { recursive: true });
+      for (const id of [ownWs, nativeWs]) {
+        await writeFile(join(linkDataDir, 'journals', `${id}.jsonl`), `${JSON.stringify({
+          v: 1, seq: 0, sessionId: id, spaceId: fixture.spaceB, teamMemberId: personaB, pid: 1,
+          startedAt: new Date().toISOString(), durationMs: 1,
+          command: { path: ['auth', 'whoami'], argv: ['tm8', 'auth', 'whoami'], cwd: '/w' },
+          input: { stdinChars: 0 },
+          output: { stdoutChars: 10, stderrChars: 0, stdoutSample: `token ${leaked} done`, stderrSample: '', truncated: false },
+          calls: [], result: { exitCode: 0, error: null },
+          tokens: { estimator: 'chars/4', agentToCli: 1, cliToAgent: 1 },
+        })}\n`);
+      }
+    });
+
+    it('allow — G reads the journal of the session its link spawned; minted tokens are redacted; audited ok with the session', async () => {
+      const res = await invoke(gToken, { op: 'execution.journal', params: { workSessionId: ownWs } });
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      const page = res.body.data!.result as { available: boolean; records: Array<{ output: { stdoutSample: string } }> };
+      expect(page).toMatchObject({ available: true });
+      expect(page.records[0]!.output.stdoutSample).toBe('token tm8s_<redacted> done');
+      expect(JSON.stringify(res.body)).not.toContain('secretpart');
+      expect(await lastAudit('execution.journal')).toMatchObject({ result: 'ok', link_id: hLink.id });
+    });
+
+    it('allow — G reads the transcript of the same session (past the link, to B\'s handler)', async () => {
+      const res = await invoke(gToken, { op: 'execution.transcript', params: { workSessionId: ownWs } });
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      expect(res.body.data).toMatchObject({ linkId: hLink.id, targetSpaceId: fixture.spaceB });
+      expect(await lastAudit('execution.transcript')).toMatchObject({ result: 'ok', link_id: hLink.id });
+    });
+
+    it.each([
+      ['B\'s own session', () => nativeWs],
+      ['another member\'s link spawn', () => foreignWs],
+      ['another link\'s spawn', () => otherLinkWs],
+      ['a session in A', () => fixture.workSessionA],
+      ['a malformed id', () => 'not-a-uuid'],
+    ])('deny — %s: journal and transcript refused session_body, no body returned, audited refused', async (_label, id) => {
+      for (const op of ['execution.journal', 'execution.transcript']) {
+        const res = await invoke(gToken, { op, params: { workSessionId: id() } });
+        expect(res.status, JSON.stringify(res.body)).toBe(403);
+        expect(res.body.error).toMatchObject({ details: { reason: 'space_link_refused', refusal: 'session_body' } });
+        // B's own session has a journal holding the token: its body never reached G.
+        expect(JSON.stringify(res.body)).not.toContain('secretpart');
+        expect(await lastAudit(op)).toMatchObject({ result: 'refused', reason: 'session_body', link_id: hLink.id });
+      }
+    });
+
+    it('299 SQL — space_link_spawn_owned answers true only for the link session on its own spawn; H himself, unlinked, gets false', async () => {
+      const linkClaims = await claimsForToken(hLinkToken);
+      expect(await db.rpc(linkClaims, 'space_link_spawn_owned', [ownWs])).toBe(true);
+      for (const id of [nativeWs, foreignWs, otherLinkWs]) {
+        expect(await db.rpc(linkClaims, 'space_link_spawn_owned', [id])).toBe(false);
+      }
+      const hBrowser = await claimsForToken(await mintBrowser(fixture.accountH, fixture.identityH));
+      expect(await db.rpc(hBrowser, 'space_link_spawn_owned', [ownWs])).toBe(false);
+    });
+
+    it('deny — H2\'s agent (no row on H\'s link) cannot read H\'s own spawn: not_found before B', async () => {
+      const h2Agent = await seedAgentFor(fixture.identityH2, fixture.memberH2A);
+      const res = await invoke(h2Agent, { op: 'execution.journal', params: { workSessionId: ownWs } });
+      expect(res.status).toBe(404);
+      expect(JSON.stringify(res.body)).not.toContain('secretpart');
+    });
+
+    it('allow — G messages the session its link spawned (messages.post anchored on it), and the message lands in B', async () => {
+      const res = await invoke(gToken, {
+        op: 'messages.post',
+        input: { anchorIds: [ownWs], body: '299 hello child', clientMutationId: cmid('msg') },
+      });
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      const [row] = await database.transaction(async (client) => {
+        await client.query('set local role tm8_graph_owner');
+        return (await client.query<{ space_id: string }>(
+          `select e.space_id::text from public.entities e
+             join public.messages m on m.entity_id = e.id
+            where m.anchor_id = $1`, [ownWs])).rows;
+      });
+      expect(row).toEqual({ space_id: fixture.spaceB });
+      expect(await lastAudit('messages.post')).toMatchObject({ result: 'ok', link_id: hLink.id });
+    });
   });
 
   // ---- a6: a revoked link session fails at resolveBearerIdentity (F6) ------

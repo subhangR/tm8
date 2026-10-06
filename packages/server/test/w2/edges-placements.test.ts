@@ -1,4 +1,6 @@
 import {
+  CROSS_SPACE_EDGE,
+  CollabError,
   EdgeViewSchema,
   getOperation,
   type CommandResult,
@@ -398,5 +400,67 @@ describe('W2.G03 edges, edge types, and placements handlers', () => {
       props: { hard: true },
       hard: true,
     });
+  });
+});
+
+describe('edges.create across spaces (D3): the refusal names the reference to make', () => {
+  const OTHER_SPACE = '00000000-0000-7000-8000-000000000390';
+  const crossSpace = () => new CollabError('invariant_violation', 'edge endpoints must be in the same space', {
+    details: { sqlstate: '23514' },
+  });
+  const create = (db: FakeDb, body: Record<string, unknown>) =>
+    handler(registered(db), 'edges.create')(request('edges.create', { body: { type: 'relates_to', ...body } }));
+
+  it('a pinned caller sees only its own endpoint: that one holds the reference, the other is its target', async () => {
+    const db = new FakeDb();
+    db.rpcImpl = async () => { throw crossSpace(); };
+    db.queryImpl = async <R>() => [{ id: IDS.source, space_id: IDS.space }] as R[];
+    const error = await create(db, { srcId: IDS.source, dstId: IDS.target }).catch((e: unknown) => e) as CollabError;
+    expect(error).toMatchObject({ code: 'invariant_violation' });
+    const next = `tm8 entity ref add ${IDS.source} ${IDS.target} --link <alias|link-id|space-id>`;
+    expect(error.details).toMatchObject({ reason: CROSS_SPACE_EDGE, holderId: IDS.source, targetId: IDS.target, next });
+    expect(error.message).toContain(next);
+    expect(error.message).toContain('no retry succeeds');
+  });
+
+  it('only the target end visible: the reference is held by the target end', async () => {
+    const db = new FakeDb();
+    db.rpcImpl = async () => { throw crossSpace(); };
+    db.queryImpl = async <R>() => [{ id: IDS.target, space_id: IDS.space }] as R[];
+    const error = await create(db, { srcId: IDS.source, dstId: IDS.target }).catch((e: unknown) => e) as CollabError;
+    expect(error.details).toMatchObject({ holderId: IDS.target, targetId: IDS.source });
+  });
+
+  it('both ends visible (an unpinned caller): --link names the target space', async () => {
+    const db = new FakeDb();
+    db.rpcImpl = async () => { throw crossSpace(); };
+    db.queryImpl = async <R>() => [
+      { id: IDS.source, space_id: IDS.space }, { id: IDS.target, space_id: OTHER_SPACE },
+    ] as R[];
+    const error = await create(db, { srcId: IDS.source, dstId: IDS.target }).catch((e: unknown) => e) as CollabError;
+    expect(error.details).toMatchObject({
+      targetSpaceId: OTHER_SPACE, next: `tm8 entity ref add ${IDS.source} ${IDS.target} --link ${OTHER_SPACE}`,
+    });
+  });
+
+  it('any other 23514 is not a cross-space refusal', async () => {
+    const db = new FakeDb();
+    db.rpcImpl = async () => {
+      throw new CollabError('invariant_violation', 'Project is not actively linked to this Space', {
+        details: { sqlstate: '23514', detail: 'project_not_linked' },
+      });
+    };
+    await expect(create(db, { srcId: IDS.source, dstId: IDS.target })).rejects.toMatchObject({
+      code: 'invariant_violation', details: { reason: 'project_not_linked' },
+    });
+  });
+
+  it('a short id prefix is refused by name before SQL, not as a bare not_found', async () => {
+    const db = new FakeDb();
+    await expect(create(db, { srcId: IDS.source, dstId: '01a0fb3d' })).rejects.toMatchObject({
+      code: 'not_found', details: { reason: 'edge_endpoint_not_uuid', field: 'dstId' },
+      message: expect.stringContaining('01a0fb3d'),
+    });
+    expect(db.calls).toEqual([]);
   });
 });
