@@ -162,7 +162,7 @@ update public.edge_types t
     ('depends_on',       'Prerequisite: this task cannot be finished before that one.'),
     ('follows_up',       'Follow-up: this task (or session) continues the work of that earlier task (or session).'),
     ('completed_by',     'Completed by: that member or teammate completed this task.'),
-    ('contains',         'Story root or collection item: this story or collection holds that entity directly. props.position orders it.'),
+    ('contains',         'Story root or collection item: this story, collection or design holds that entity directly. props.position orders it.'),
     ('relates_to',       'See also: a deliberately vague link. Story walks and maps ignore it; prefer a specific edge.'),
     ('derived_from',     'Launch task: the system created this task to launch or continue that entity (a story or session).'),
     ('created_in',       'Made during (unverified): a client claimed this entity was made in that work session. authored_from is the verified, canonical form.'),
