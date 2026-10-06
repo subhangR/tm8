@@ -272,8 +272,46 @@
   background: var(--pn-line);
 }
 .tws-rail-switch[aria-pressed='true'] {
-  background: var(--pn-active);
   color: var(--pn-ink);
+}
+/* THE THREE wear discs (Subhang, 2026-10-07), so the bottom never reads as
+   more kinds: Needs you on the attention yellow, the viewer's avatar in a
+   ring, expand on a quiet hairline circle. 28px, centred in the 36px cell. */
+.tws-rail-disc {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--pn-line);
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+}
+.tws-rail-disc[data-disc='attention'] {
+  border-color: color-mix(in srgb, var(--pn-wait) 55%, transparent);
+  background: var(--pn-wait-soft);
+  color: var(--pn-wait);
+}
+.tws-rail-disc[data-disc='user'] {
+  overflow: hidden;
+  border: 0;
+  box-shadow: 0 0 0 2px var(--pn-surface), 0 0 0 3px var(--pn-line-2);
+}
+.tws-rail-disc[data-disc='user'] > :not(svg) {
+  /* The 32px avatar drawn at 28, as R12 draws the account trigger's. */
+  flex: none;
+  transform: scale(0.875);
+}
+.tws-rail-switch[aria-pressed='true'] .tws-rail-disc[data-disc='user'] {
+  box-shadow: 0 0 0 2px var(--pn-surface), 0 0 0 3px var(--pn-brand);
+}
+.tws-rail-bottom .tws-rail-btn:hover .tws-rail-disc {
+  border-color: var(--pn-line-2);
+}
+.tws-rail-bottom .tws-rail-btn:hover .tws-rail-disc[data-disc='attention'] {
+  border-color: var(--pn-wait);
 }
 /* Overflow hints: a list taller than the column fades the edge that has more. */
 .tws-rail-top[data-more-below] {

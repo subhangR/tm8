@@ -46,6 +46,7 @@ import {
 } from 'react';
 import { useStore } from 'zustand';
 import { KindIcon, VIEW_ART, homeRailPinnedKinds, homeRootKinds, type KindConfig } from '../../domain';
+import { Avatar } from '../../kit/Avatar';
 import { VectorIcon } from '../../kit/VectorIcon';
 import { getRailStore } from '../runtime/railStore';
 import { isWorkspaceKind } from '../runtime/types';
@@ -96,6 +97,7 @@ export function WorkspaceRail() {
   const [tools, setTools] = useState(false);
   const counts: RailCounts = useRailCounts();
   const topRef = useRef<HTMLDivElement>(null);
+  const viewer = gate.data?.viewerActor ?? null;
   const more = useScrollHints(topRef, tools);
 
   const pinned = useMemo(() => homeRailPinnedKinds(pins).filter((config) => isWorkspaceKind(config.kind)), [pins]);
@@ -276,7 +278,20 @@ export function WorkspaceRail() {
             onClick={() => setTools((t) => !t)}
           >
             <span className="tws-rail-icon">
-              <VectorIcon paths={RAIL_USER_ART} size={18} />
+              {/* The viewer's own avatar in a ring, as the account trigger draws it. */}
+              <span className="tws-rail-disc" data-disc="user">
+                {viewer ? (
+                  <Avatar
+                    actorId={viewer.id}
+                    provenance={viewer.isAgent ? 'agent' : 'human'}
+                    label={viewer.displayName}
+                    size={32}
+                    src={viewer.avatar ?? null}
+                  />
+                ) : (
+                  <VectorIcon paths={RAIL_USER_ART} size={16} />
+                )}
+              </span>
             </span>
             {expanded ? <span className="tws-rail-label">{switchLabel}</span> : null}
           </button>
@@ -291,7 +306,9 @@ export function WorkspaceRail() {
             onClick={toggleExpanded}
           >
             <span className="tws-rail-icon">
-              <VectorIcon paths={expanded ? RAIL_COLLAPSE_ART : RAIL_EXPAND_ART} size={18} />
+              <span className="tws-rail-disc" data-disc="expand">
+                <VectorIcon paths={expanded ? RAIL_COLLAPSE_ART : RAIL_EXPAND_ART} size={16} />
+              </span>
             </span>
             {expanded ? <span className="tws-rail-label">{expandLabel}</span> : null}
           </button>
