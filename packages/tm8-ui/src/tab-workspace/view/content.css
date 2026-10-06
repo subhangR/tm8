@@ -87,9 +87,10 @@
   padding: 0 var(--pn-space-1);
 }
 
-/* The attention pill keeps its own top-right corner of the body. */
+/* The attention pill keeps its own top-right corner of the body, under the
+   title bar. */
 .cv2-root .tws-panel > .pn-panel > .att-block-dock > .att-block {
-  top: var(--pn-space-3);
+  top: calc(36px + var(--pn-space-3));
 }
 
 /* Attachments (Subhang, round 2): the idle "Attach / or drop / paste" zone is
@@ -306,7 +307,9 @@
 .cv2-root .tws-astrip .pf-chip__pop,
 .cv2-root .tws-astrip-menu {
   position: absolute;
-  right: calc(100% + var(--pn-space-2));
+  /* 8px from the strip's edge: the control's cluster is centred in the 40px
+     strip, 6px in from its edge (R32.5). */
+  right: calc(100% + var(--pn-space-2) + 6px);
   left: auto;
   top: 0;
   bottom: auto;
@@ -498,4 +501,124 @@
   font-family: var(--pn-mono);
   font-size: var(--pn-fs-fine);
   cursor: pointer;
+}
+
+/* --- The title bar (Subhang, round 5): under the tab strip / trail, on the
+   active tab's plane, the title only. It overlays the content's top; a
+   document reserves its 36px at the top of its own scroll, so hiding it on
+   scroll moves nothing. --- */
+.tws-entity-main.tws-entity-host {
+  position: relative;
+  container-type: inline-size;
+}
+.tws-titlebar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  height: 36px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  /* The left edge is the body's measure edge. */
+  padding: 0 var(--pn-space-3) 0 max(var(--pn-space-3), (100cqw - var(--pn-read-measure)) / 2);
+  background: var(--pn-card);
+  border-bottom: 1px solid var(--pn-line);
+  transition: transform var(--pn-dur-fast) var(--pn-ease-out);
+}
+.tws-titlebar[data-hidden] {
+  transform: translateY(-100%);
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tws-titlebar {
+    transition: none;
+  }
+}
+.tws-entity-host:has(.pn-panel[data-embedded-flow='fill']) > .tws-titlebar {
+  padding-left: var(--pn-space-3);
+}
+.tws-entity-host:has(.pn-panel[data-archetype='terminal']) > .tws-titlebar {
+  background: var(--pn-x-term-bg);
+}
+.tws-titlebar__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+.cv2-root .pn-embedded-title {
+  flex: 1;
+  min-width: 0;
+  display: block;
+  margin: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-title);
+  font-weight: 600;
+  color: var(--pn-ink);
+  cursor: default;
+}
+.cv2-root .pn-embedded-title--editing {
+  height: 28px;
+  padding: 0 var(--pn-space-2);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-xs);
+  background: var(--pn-card);
+}
+.cv2-root .tws-panel > .pn-panel[data-embedded-flow='document'] {
+  padding-top: 36px;
+}
+
+/* R32.1: a reader's body sits in the reading measure; its outline lives in the
+   strip's Outline popover. */
+.cv2-root .tws-panel [data-testid='reader-body'] {
+  width: 100%;
+  max-width: var(--pn-read-measure);
+  margin-inline: auto;
+  box-sizing: border-box;
+}
+.tws-astrip-outline:not(:has(.tws-astrip-outline-pop > *)) {
+  display: none;
+}
+.tws-astrip-outline-pop {
+  display: none;
+}
+.cv2-root .tws-astrip-outline[data-open] > .tws-astrip-outline-pop {
+  display: block;
+  position: absolute;
+  top: 0;
+  right: calc(100% + var(--pn-space-2) + 6px);
+  z-index: 40;
+  width: 320px;
+  max-height: 70vh;
+  overflow: auto;
+  padding: var(--pn-space-3);
+  box-sizing: border-box;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-pop);
+}
+
+/* R32.3: the "N empty sections" row and its hairline span the measure; the
+   footer's text starts at the measure's left edge. */
+.cv2-root .tws-panel .pn-emptytoggle {
+  align-self: center;
+  width: calc(100% - 2 * var(--pn-space-3));
+  max-width: var(--pn-read-measure);
+  margin-inline: auto;
+  box-sizing: border-box;
+}
+.cv2-root .tws-panel .pn-foot {
+  padding-left: max(var(--pn-space-3), (100cqw - var(--pn-read-measure)) / 2);
+}
+.cv2-root .tws-astrip-menu .pn-overflow__meta {
+  padding: var(--pn-space-1) var(--pn-space-2) var(--pn-space-2);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-3);
+  white-space: nowrap;
 }

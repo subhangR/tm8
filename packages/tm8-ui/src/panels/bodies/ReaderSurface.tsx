@@ -61,6 +61,8 @@ export interface ReaderSurfaceProps {
    * null ⇒ the host's slot is not mounted yet, so nothing is drawn.
    */
   toolbarSlot?: HTMLElement | null;
+  /** Where the reader's outline renders (see `ReaderBody.outlineSlot`). */
+  outlineSlot?: HTMLElement | null;
   detail: EntityDetail;
   blocks: readonly ContentBlockRef[];
   historyUnavailableReason: string;
@@ -257,6 +259,7 @@ export function ReaderSurface(props: ReaderSurfaceProps) {
           historyUnavailableReason={props.historyUnavailableReason}
           onOpenEntity={onOpenEntity}
           fileHref={props.fileHref}
+          {...(props.outlineSlot !== undefined ? { outlineSlot: props.outlineSlot } : {})}
         />
       </div>
     </div>

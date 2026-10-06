@@ -575,6 +575,12 @@ export interface EmbeddedChrome {
   commonVerbsSlot: HTMLElement | null;
   /** A session's live context reading, for the host to read as text. */
   statsSlot: HTMLElement | null;
+  /** Where a reader's outline renders (the host's Outline popover). */
+  outlineSlot?: HTMLElement | null;
+  /** The host's title bar: the entity title, double-click to rename. */
+  titleSlot?: HTMLElement | null;
+  /** No presence / author / version footer row (the host shows the byline). */
+  omitFooter?: boolean;
   /** Primaries drawn in `commonVerbsSlot` rather than `verbsSlot`. */
   commonActions?: readonly ActionRef[];
   /** The top of the host's open ⋯ menu (Rename). Null ⇒ closed. */
@@ -1280,8 +1286,18 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
   /* EMBEDDED ⋯ ITEMS: Rename rides the same save flow as the header's title
      editor; the destructive verb is the overflow's own `RowAction`. */
   const titleEditable = (config.list.inlineEdit?.title ?? false) && save.unavailable === null;
+  /* The footer's facts, kept when the host drops the footer row. */
+  const byline = `by ${detail.createdBy.displayName} · v${detail.version}`;
   const embeddedMenu = (
     <>
+      {embedded?.menuSlot && embedded.omitFooter
+        ? createPortal(
+            <div className="pn-overflow__meta" role="none" data-testid="panel-byline">
+              {byline}
+            </div>,
+            embedded.menuSlot,
+          )
+        : null}
       {embedded?.menuSlot && titleEditable
         ? createPortal(
             <EmbeddedRenameItem
@@ -1361,6 +1377,19 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
     >
       {embeddedMenu}
       {commonBar}
+      {embedded?.titleSlot && !oneSurface
+        ? createPortal(
+            <EmbeddedTitle
+              title={detail.title}
+              byline={byline}
+              editable={titleEditable}
+              onCommit={async (title) => {
+                await save.commitNow({ title });
+              }}
+            />,
+            embedded.titleSlot,
+          )
+        : null}
       {embedded?.verbsSlot && !oneSurface ? createPortal(barEnd, embedded.verbsSlot) : null}
       {canvas || embedded ? null : <PanelHeader
         detail={detail}
@@ -1649,7 +1678,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
           A declared `composition` joins the exclusion for the same structural
           reason: a conversation ends at its composer and an artifact frame ends
           at the panel edge, not at a chrome strip below either. */}
-      {bodyOwnsBottom ? null : (
+      {bodyOwnsBottom || embedded?.omitFooter ? null : (
         <PanelFooter
           detail={detail}
           presenceHollowReason={reasons.presenceHollow}
@@ -1659,6 +1688,72 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
     </section>
   );
 
+}
+
+/**
+ * The embedded host's title bar text (Subhang, round 5): one line, the full
+ * title in its tooltip; double-click renames inline through the panel's save
+ * flow — the same path as ⋯ Rename. Enter saves, Escape cancels.
+ */
+function EmbeddedTitle({
+  title,
+  byline,
+  editable,
+  onCommit,
+}: {
+  title: string;
+  byline: string;
+  editable: boolean;
+  onCommit: (title: string) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const committing = useRef(false);
+  if (draft === null) {
+    return (
+      <span
+        className="pn-embedded-title"
+        title={`${title}\n${byline}${editable ? '\nDouble-click to rename' : ''}`}
+        data-testid="panel-embedded-title"
+        onDoubleClick={editable ? () => setDraft(title) : undefined}
+      >
+        {title}
+      </span>
+    );
+  }
+  const commit = () => {
+    if (committing.current) return;
+    const next = draft.trim();
+    if (next === '' || next === title) {
+      setDraft(null);
+      return;
+    }
+    committing.current = true;
+    void onCommit(next).finally(() => {
+      committing.current = false;
+      setDraft(null);
+    });
+  };
+  return (
+    <input
+      className="pn-embedded-title pn-embedded-title--editing"
+      aria-label="Rename"
+      data-testid="panel-embedded-title-input"
+      autoFocus
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          commit();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          setDraft(null);
+        }
+      }}
+      onBlur={commit}
+    />
+  );
 }
 
 /**
@@ -1983,7 +2078,9 @@ function PanelBody(
         skillOptions={props.skillOptions}
         /* Embedded (Workspace): the reader's Edit / Download ride the host's
            action strip instead of a toolbar row above the document. */
-        {...(props.embeddedChrome ? { toolbarSlot: props.embeddedChrome.kindSlot } : {})}
+        {...(props.embeddedChrome
+          ? { toolbarSlot: props.embeddedChrome.kindSlot, outlineSlot: props.embeddedChrome.outlineSlot ?? null }
+          : {})}
       />
     );
   }

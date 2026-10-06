@@ -62,6 +62,8 @@ export interface EntityChromeSlots {
   kindSlot: HTMLElement | null;
   commonVerbsSlot: HTMLElement | null;
   statsSlot: HTMLElement | null;
+  outlineSlot: HTMLElement | null;
+  titleSlot: HTMLElement | null;
   menuSlot: HTMLElement | null;
   dangerSlot: HTMLElement | null;
   menuOpen: boolean;
@@ -75,6 +77,8 @@ export interface EntityChromeContextValue extends EntityChromeSlots {
   setKindSlot(el: HTMLElement | null): void;
   setCommonVerbsSlot(el: HTMLElement | null): void;
   setStatsSlot(el: HTMLElement | null): void;
+  setOutlineSlot(el: HTMLElement | null): void;
+  setTitleSlot(el: HTMLElement | null): void;
   setMenuSlot(el: HTMLElement | null): void;
   setDangerSlot(el: HTMLElement | null): void;
 }
@@ -530,11 +534,14 @@ export function EntityTabBody({ tab, adapter, onHandle }: EntityTabBodyProps) {
     kindSlot: chrome?.kindSlot ?? null,
     commonVerbsSlot: chrome?.commonVerbsSlot ?? null,
     statsSlot: chrome?.statsSlot ?? null,
+    outlineSlot: chrome?.outlineSlot ?? null,
+    titleSlot: chrome?.titleSlot ?? null,
     commonActions: WORKSPACE_COMMON_ACTIONS,
     menuSlot: chrome?.menuSlot ?? null,
     dangerSlot: chrome?.dangerSlot ?? null,
     omitActions: WORKSPACE_OWN_ACTIONS,
     omitConnectors: true,
+    omitFooter: true,
     onMenuDone: () => chrome?.setMenuOpen(false),
   };
   const fullView = adapter.body === 'fullView';
