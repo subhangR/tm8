@@ -7,7 +7,7 @@
  * palette, deep link) clears it in the runtime. Crumbs only, no actions, and
  * Home's navStore breadcrumb is never touched.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { EntityId } from '@tm8/contract';
 import { useDismissable } from '../../panels/useDismissable';
 import { getKindAdapter } from '../adapters/registry';
@@ -122,7 +122,44 @@ export function LinkedTrail({ tab }: LinkedTrailProps) {
     return { head: all.slice(0, 1), hidden: all.slice(1, all.length - keepTail + 1), tail: all.slice(all.length - keepTail + 1) };
   }, [trail]);
 
-  if (!trail || trail.length === 0) return null;
+  /* R18: the crumbs sit in the head's measure. The head lives in the entity's
+     main column (not under a docked chat) and inside the body's scroller (less
+     its scrollbar), so the trail insets itself to the head's box: the
+     embedded head once mounted, the main column while the body loads. */
+  const navRef = useRef<HTMLElement | null>(null);
+  const [inset, setInset] = useState<{ left: number; right: number } | null>(null);
+  const hasTrail = !!trail && trail.length > 0;
+  useLayoutEffect(() => {
+    const nav = navRef.current;
+    const main = nav?.parentElement?.querySelector<HTMLElement>('.tws-entity-main');
+    if (!nav || !main) return;
+    let head: HTMLElement | null = null;
+    const read = () => {
+      const box = (head ?? main).getBoundingClientRect();
+      const own = nav.getBoundingClientRect();
+      const next = { left: Math.max(0, box.left - own.left), right: Math.max(0, own.right - box.right) };
+      setInset((prev) => (prev && prev.left === next.left && prev.right === next.right ? prev : next));
+    };
+    const sizes = new ResizeObserver(read);
+    sizes.observe(main);
+    sizes.observe(nav);
+    const findHead = () => {
+      if (head?.isConnected) return;
+      if (head) sizes.unobserve(head);
+      head = main.querySelector<HTMLElement>('.pn-embedded-head');
+      if (head) sizes.observe(head);
+      read();
+    };
+    findHead();
+    const mounts = new MutationObserver(findHead);
+    mounts.observe(main, { childList: true, subtree: true });
+    return () => {
+      sizes.disconnect();
+      mounts.disconnect();
+    };
+  }, [hasTrail]);
+
+  if (!hasTrail) return null;
 
   const crumbButton = ({ crumb, index }: { crumb: TrailCrumb; index: number }) => (
     <li key={`${index}-${crumb.entityId}`} className="tws-trail-item">
@@ -140,7 +177,15 @@ export function LinkedTrail({ tab }: LinkedTrailProps) {
   );
 
   return (
-    <nav className="tws-trail" aria-label="Linked trail" data-testid="tws-trail">
+    <nav
+      ref={navRef}
+      className="tws-trail"
+      aria-label="Linked trail"
+      data-testid="tws-trail"
+      style={
+        inset ? ({ '--tws-trail-l': `${inset.left}px`, '--tws-trail-r': `${inset.right}px` } as CSSProperties) : undefined
+      }
+    >
       <ol className="tws-trail-list">
         {shown.head.map(crumbButton)}
         {shown.hidden.length > 0 ? (
