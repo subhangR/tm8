@@ -150,6 +150,9 @@ function EntityTab({
 
 /** Scrolling down past this hides the title bar; any scroll up shows it. */
 const TITLE_HIDE_AFTER_PX = 8;
+/** The bar's height, and how long its collapse is left to settle. */
+const TITLE_BAR_PX = 36;
+const TITLE_SETTLE_MS = 250;
 /** On a body that owns its height, a pointer this close to the top reveals it. */
 const TITLE_REVEAL_EDGE_PX = 8;
 
@@ -183,37 +186,48 @@ function TitleBar({
     /* Per scroller: the panel column, or a body that scrolls inside it. */
     const lastOf = new WeakMap<HTMLElement, number>();
     let down = 0;
+    let isHidden = false;
+    /* Collapsing the bar changes the scroller's height, which can itself fire
+       a scroll (a clamped scrollTop); those are not the reader's. */
+    let settleUntil = 0;
+    const set = (next: boolean) => {
+      if (next === isHidden) return;
+      isHidden = next;
+      settleUntil = performance.now() + TITLE_SETTLE_MS;
+      setHidden(next);
+    };
     const onScroll = (e: Event) => {
       const t = e.target as HTMLElement | null;
       if (!(t instanceof HTMLElement) || flowOf() !== 'document') return;
-      if (t.scrollHeight <= t.clientHeight) return;
+      const range = t.scrollHeight - t.clientHeight;
+      if (range <= 0) return;
       const last = lastOf.get(t) ?? 0;
       const y = t.scrollTop;
-      if (y <= 0) {
+      lastOf.set(t, y);
+      if (performance.now() < settleUntil) return;
+      if (y <= 0 || y < last) {
         down = 0;
-        setHidden(false);
-      } else if (y < last) {
-        down = 0;
-        setHidden(false);
+        set(false);
       } else {
         down += y - last;
-        if (down > TITLE_HIDE_AFTER_PX) setHidden(true);
+        /* Only a page with room to spare hides it, or the 36px it gives back
+           would end the scroll and bounce the bar straight back. */
+        if (down > TITLE_HIDE_AFTER_PX && range > TITLE_BAR_PX + TITLE_HIDE_AFTER_PX) set(true);
       }
-      lastOf.set(t, y);
     };
     const inBody = (n: EventTarget | null) =>
       n instanceof Node && !barRef.current?.contains(n) && !!host.querySelector('.tws-panel')?.contains(n);
     const onFocusIn = (e: FocusEvent) => {
-      if (flowOf() === 'fill' && inBody(e.target)) setHidden(true);
+      if (flowOf() === 'fill' && inBody(e.target)) set(true);
     };
     const onFocusOut = (e: FocusEvent) => {
-      if (flowOf() === 'fill' && !inBody(e.relatedTarget)) setHidden(false);
+      if (flowOf() === 'fill' && !inBody(e.relatedTarget)) set(false);
     };
     const onMove = (e: PointerEvent) => {
       if (flowOf() !== 'fill') return;
       const top = host.getBoundingClientRect().top;
       const zoom = host.offsetHeight > 0 ? host.getBoundingClientRect().height / host.offsetHeight : 1;
-      if (e.clientY - top <= TITLE_REVEAL_EDGE_PX * zoom) setHidden(false);
+      if (e.clientY - top <= TITLE_REVEAL_EDGE_PX * zoom) set(false);
     };
     host.addEventListener('scroll', onScroll, true);
     host.addEventListener('focusin', onFocusIn);
@@ -234,7 +248,6 @@ function TitleBar({
       data-theme={darkBody ? darkTheme : undefined}
       data-hidden={hidden || undefined}
       data-testid="tws-titlebar"
-      onFocus={() => setHidden(false)}
     >
       <div ref={setSlot} className="tws-titlebar__text" />
     </div>
