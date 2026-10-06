@@ -101,14 +101,17 @@ need "$(cli "$P1" link login b --pairing-code "$CODE" --space "$A" 2>&1 || true)
 ok "the code is single use"
 
 echo "2. invoke: query, create, patch, refused"
-need "$(invoke "{\"op\":\"spaces.get\",\"params\":{\"spaceId\":\"$B\"}}")" '"name":"Target B"' "query"
+R=$(invoke "{\"op\":\"spaces.get\",\"params\":{\"spaceId\":\"$B\"}}")
+need "$R" '"name":"Target B"' "query"
 ok "query"
 CREATED=$(invoke "{\"op\":\"entities.create\",\"input\":{\"spaceId\":\"$B\",\"kind\":\"task\",\"title\":\"from S1\",\"clientMutationId\":\"e2e-create-$$\"}}")
 E=$(json "d['data']['result']['entity']['id']" <<<"$CREATED") || fail "create: $CREATED"
 ok "create (entity $E in B)"
-need "$(invoke "{\"op\":\"entities.patch\",\"params\":{\"id\":\"$E\"},\"input\":{\"expectedVersion\":1,\"title\":\"patched from S1\",\"clientMutationId\":\"e2e-patch-$$\"}}")" '"title":"patched from S1"' "patch"
+R=$(invoke "{\"op\":\"entities.patch\",\"params\":{\"id\":\"$E\"},\"input\":{\"expectedVersion\":1,\"title\":\"patched from S1\",\"clientMutationId\":\"e2e-patch-$$\"}}")
+need "$R" '"title":"patched from S1"' "patch"
 ok "patch"
-need "$(invoke "{\"op\":\"credentials.space.list\",\"params\":{\"spaceId\":\"$B\"}}")" "credential_management" "refused set"
+R=$(invoke "{\"op\":\"credentials.space.list\",\"params\":{\"spaceId\":\"$B\"}}")
+need "$R" "credential_management" "refused set"
 ok "refused set holds (credentials.*)"
 
 echo "3. spawn"
@@ -135,7 +138,8 @@ ok "S1 and S2 both audit every call; B's admins read them"
 echo "5. S2 admin revoke -> 401 -> S1 signed_out"
 L2=$(q2 "select link_id from space_link_tokens where remote_inbound")
 cli "$P2" link revoke "$L2" --space "$B" >/dev/null
-need "$(invoke "{\"op\":\"spaces.get\",\"params\":{\"spaceId\":\"$B\"}}")" "space_link_signed_out" "after revoke"
+R=$(invoke "{\"op\":\"spaces.get\",\"params\":{\"spaceId\":\"$B\"}}")
+need "$R" "space_link_signed_out" "after revoke"
 need "$(cli "$P1" link list --space "$A")" "signed_out" "S1 marked stale"
 ok "revoked on S2; S1 marked the link signed_out"
 
@@ -152,13 +156,15 @@ echo "7. S2 switch off -> unsupported, not signed_out"
 CODE=$(cli "$P2" link grant "$A" --space "$B" | grep -o 'tm8pair_[A-Za-z0-9_-]*')
 cli "$P1" link login b --pairing-code "$CODE" --space "$A" >/dev/null
 stop "$P2"; start s2 "$P2" "$DB2" off "$SERVER_JS"
-need "$(invoke "{\"op\":\"spaces.get\",\"params\":{\"spaceId\":\"$B\"}}")" "does not support remote space links" "unsupported"
+R=$(invoke "{\"op\":\"spaces.get\",\"params\":{\"spaceId\":\"$B\"}}")
+need "$R" "does not support remote space links" "unsupported"
 need "$(cli "$P1" link list --space "$A")" "signed_in" "row untouched"
 ok "an S2 without the switch reads as unsupported; the S1 row stays signed in"
 
 echo "8. S1 switch off -> today's behaviour"
 stop "$P1"; start s1 "$P1" "$DB1" off "$SERVER_JS"
-need "$(invoke "{\"op\":\"spaces.get\",\"params\":{\"spaceId\":\"$B\"}}")" "space_link_remote_disabled" "S1 off invoke"
+R=$(invoke "{\"op\":\"spaces.get\",\"params\":{\"spaceId\":\"$B\"}}")
+need "$R" "space_link_remote_disabled" "S1 off invoke"
 need "$(cli "$P1" link add "$B" --target-server s2 --space "$A" 2>&1 || true)" "space_link_remote_disabled" "S1 off add"
 ok "switch off: remote links refuse exactly as before W9c"
 
