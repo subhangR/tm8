@@ -123,3 +123,20 @@ export function workspaceHandlers(deps: WorkspaceHandlerDeps): WorkspaceHandlers
 
   return { list, inspect, command };
 }
+
+/**
+ * The caller's ACTIVE member in a space, read as the caller (Spec C §1). The
+ * window never names its own member; `workspace.register` takes it from here.
+ */
+export async function memberForClaims(db: Pick<Db, 'tx'>, claims: DbClaims, spaceId: string): Promise<string | null> {
+  if (!claims.identityId) return null;
+  const rows = await db.tx(claims, async (q) => {
+    await q.query('set local role tm8_app');
+    return q.query<{ entity_id: string }>(
+      `select entity_id from public.members
+        where space_id = $1 and identity_id = $2 and status = 'active'`,
+      [spaceId, claims.identityId],
+    );
+  });
+  return rows[0]?.entity_id ?? null;
+}

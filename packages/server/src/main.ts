@@ -1,6 +1,7 @@
 import { McpSessionBindings } from './mcp/session-bindings.js';
 import { loadMcpServer } from './mcp/definitions.js';
 import { WorkspaceBridge } from './workspace/bridge.js';
+import { memberForClaims } from './workspace/handlers.js';
 import { McpTestResultSchema } from '@tm8/contract';
 /**
  * Bootstrap — assembles the frame and starts listening.
@@ -591,18 +592,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         presence,
         workspace: {
           bridge: workspaceBridge,
-          memberFor: async (identity, spaceId) => {
-            const claims = await wsClaimsFor(identity);
-            const rows = await db.tx(claims, async (q) => {
-              await q.query('set local role tm8_app');
-              return q.query<{ entity_id: string }>(
-                `select entity_id from public.members
-                  where space_id = $1 and identity_id = $2 and status = 'active'`,
-                [spaceId, claims.identityId],
-              );
-            });
-            return rows[0]?.entity_id ?? null;
-          },
+          memberFor: async (identity, spaceId) => memberForClaims(db, await wsClaimsFor(identity), spaceId),
         },
         ...(pump ? { cursors: pump } : {}),
         ...(highWaterMark ? { highWaterMark } : {}),
