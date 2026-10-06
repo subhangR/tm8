@@ -94,7 +94,9 @@
   margin-right: var(--pn-space-1);
   cursor: pointer;
   border-radius: var(--pn-r-xs);
-  font-size: var(--pn-fs-sm);
+  /* Subhang feedback 2: one step down from the chrome label size; 500 for
+     every tab (active included, so its width never jumps). */
+  font-size: var(--pn-fs-label);
   font-weight: 500;
 }
 .tws-ts-tab-main:focus {
