@@ -19,7 +19,7 @@
 --      The story subgraph cannot change (neither type is walked); checked.
 -- =============================================================================
 
-create temp table p0b_309_before on commit drop as
+create temp table p0b_309_before as
   select s.id as story_id, t.entity_id, t.root_id
     from public.entities s
     cross join lateral internal.story_trail(s.id) t
@@ -360,3 +360,7 @@ begin
   end if;
 end
 $$;
+
+-- Plain temp tables (not ON COMMIT DROP): a runner that applies this file
+-- statement by statement must still see them; dropped here.
+drop table if exists p0b_309_before;

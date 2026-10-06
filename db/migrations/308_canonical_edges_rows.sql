@@ -34,7 +34,7 @@
 -- -----------------------------------------------------------------------------
 -- 0. Before anything changes: every live story's subgraph, as walked today.
 -- -----------------------------------------------------------------------------
-create temp table p0b_308_before on commit drop as
+create temp table p0b_308_before as
   select s.id as story_id, t.entity_id, t.root_id
     from public.entities s
     cross join lateral internal.story_trail(s.id) t
@@ -901,7 +901,7 @@ update public.edge_types
 -- -----------------------------------------------------------------------------
 -- 4. The real-data check: nothing leaves any story.
 -- -----------------------------------------------------------------------------
-create temp table p0b_308_after on commit drop as
+create temp table p0b_308_after as
   select s.id as story_id, t.entity_id, t.root_id
     from public.entities s
     cross join lateral internal.story_trail(s.id) t
@@ -931,3 +931,7 @@ begin
     (select count(*) from internal.edge_migration_story_diff where batch = 'p0b-308');
 end
 $$;
+
+-- Plain temp tables (not ON COMMIT DROP): a runner that applies this file
+-- statement by statement must still see them; dropped here.
+drop table if exists p0b_308_before, p0b_308_after;
