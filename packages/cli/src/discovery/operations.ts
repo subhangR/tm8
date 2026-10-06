@@ -1934,6 +1934,15 @@ const ROWS: Record<OperationName, Row> = {
     tags: ['sync', 'github', 'poll'],
   },
 
+  'tracking.health': {
+    cmd: ['tracking', 'health'],
+    syn: 'tm8 tracking health [--stale-after <seconds>]',
+    sum: 'Is PR/commit tracking running? Per space: open, never-polled and stale rows, last poll, and whether it polls with a GitHub token',
+    authz: 'space',
+    input: 'none',
+    tags: ['sync', 'github', 'poll', 'stale', 'health'],
+  },
+
   'tracking.pr.merge': {
     cmd: ['pr', 'merge'],
     syn: 'tm8 pr merge <pull-request-entity-id> [--head <sha>] [--title <text>] [--mutation-id <id>]',

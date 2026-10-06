@@ -915,20 +915,35 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
           }
         : {},
     );
+    // 304 (P0e): the tracking jobs span EVERY space. They run as the node's
+    // owner, who is a member of its own spaces only, so before 304 every PR
+    // linked anywhere else was never polled. `backgroundJob` is the claim the
+    // tracking doors accept instead of membership; only these two jobs bind it,
+    // and nodeAdmin is deliberately NOT what opens them.
+    const trackingCredentials = new DbSpaceCredentialStore({ db, dataDir });
+    const trackingClaims = (job: 'tracking.observer' | 'tracking.forge-watcher', requestId: string) =>
+      async () => {
+        const o = await owner();
+        return {
+          identityId: o.identityId,
+          nodeAdmin: o.isNodeAdmin,
+          requestId,
+          backgroundJob: job,
+        };
+      };
+    // Each space's own GitHub token credential reads that space's PRs only;
+    // a space without one falls back to the env token, else unauthenticated.
+    const trackingToken = (job: 'tracking.observer' | 'tracking.forge-watcher') =>
+      async (spaceId: string): Promise<string | undefined> => {
+        const token = await trackingCredentials.readTrackingToken(
+          await trackingClaims(job, `${job}:credential`)(), spaceId);
+        return token ?? undefined;
+      };
     scheduler.register(
       createTrackingObserverJob({
         db,
-        claims: async () => {
-          // The doors go through `require_space_member`, which has no
-          // node-admin bypass, so bare `{ nodeAdmin: true }` would raise 42501
-          // on every write. The node's own owner is the honest actor here.
-          const o = await owner();
-          return {
-            identityId: o.identityId,
-            nodeAdmin: o.isNodeAdmin,
-            requestId: 'tracking-observer',
-          };
-        },
+        claims: trackingClaims('tracking.observer', 'tracking-observer'),
+        resolveToken: trackingToken('tracking.observer'),
       }),
     );
     // Tier 4 git×graph: session→commit provenance from local worktrees, same
@@ -974,14 +989,8 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     scheduler.register(
       createForgeWatcherJob({
         db,
-        claims: async () => {
-          const o = await owner();
-          return {
-            identityId: o.identityId,
-            nodeAdmin: o.isNodeAdmin,
-            requestId: 'forge-watcher',
-          };
-        },
+        claims: trackingClaims('tracking.forge-watcher', 'forge-watcher'),
+        resolveToken: trackingToken('tracking.forge-watcher'),
         // The same delivery machinery the `messages.post` request path uses, so
         // a nudge reaches an agent's terminal by exactly the route a human's
         // message does. Absent when there is no execution runtime: the nudge is

@@ -511,6 +511,7 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     state: z.string(),
     url: z.string().optional(),
     fetchedAt: z.string().nullable().optional(),
+    lastPolledAt: z.string().nullable().optional(),
     stale: z.boolean(),
     // Nullable-and-optional is deliberate honesty (forge observer): null
     // node has no verdict — either nothing has observed the PR yet or the

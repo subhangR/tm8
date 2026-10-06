@@ -30,7 +30,7 @@
  */
 import pg from 'pg';
 import { CollabError } from '@tm8/contract';
-import type { Db, DbClaims, Querier } from './types.js';
+import { BACKGROUND_JOB_CLAIMS, type Db, type DbClaims, type Querier } from './types.js';
 import { translateDbError } from './errors.js';
 
 /**
@@ -70,6 +70,11 @@ function nodeAdminClaim(value: boolean | undefined): string {
  */
 function claimValue(value: string | undefined): string {
   return value === undefined || value === null ? '' : String(value);
+}
+
+/** `tm8.background_job`: one of the closed list, or `''`. */
+function backgroundJobClaim(value: string | undefined): string {
+  return value !== undefined && (BACKGROUND_JOB_CLAIMS as readonly string[]).includes(value) ? value : '';
 }
 
 /**
@@ -131,7 +136,8 @@ const BIND_CLAIMS_SQL = `select
   set_config('tm8.auth_kind',   $5, true),
   set_config('tm8.session_space_id', $6, true),
   set_config('tm8.via_link',    $7, true),
-  set_config('role',            $8, true)`;
+  set_config('tm8.background_job', $8, true),
+  set_config('role',            $9, true)`;
 
 /**
  * An RPC name must be a bare (optionally schema-qualified) identifier. `fn` is
@@ -432,6 +438,10 @@ export class PgDb implements Db {
         claimValue(claims.sessionSpaceId),
         // 256 (W7p). Absent binds as `''`: not link-bound.
         claimValue(claims.viaLinkId),
+        // 304 (P0e). Absent binds as `''`: not a background job. A pinned
+        // session never binds it, whatever built `claims`, and neither does a
+        // value outside the closed list.
+        backgroundJobClaim(claims.sessionSpaceId ? undefined : claims.backgroundJob),
         this.role,
       ]);
 

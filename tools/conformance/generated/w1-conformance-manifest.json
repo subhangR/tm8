@@ -1,15 +1,15 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:a7f5666db1b7986c492ab05e55f4242a1bcc1316e90898f2fa9a90b4080b5154",
+  "catalogDigest": "sha256:6b42a2c5fcb32ee3d8e831e0a069fc04f99b8299fd26f543debbefdfdfb7e672",
   "catalog": {
-    "total": 342,
-    "v1": 340,
+    "total": 343,
+    "v1": 341,
     "reserved": 2,
-    "http": 340,
+    "http": 341,
     "ws": 1,
-    "registerableV1Http": 338,
+    "registerableV1Http": 339,
     "methods": {
-      "GET": 111,
+      "GET": 112,
       "POST": 168,
       "PATCH": 19,
       "DELETE": 22,
@@ -17,12 +17,12 @@
       "WS": 2
     },
     "kinds": {
-      "read": 117,
+      "read": 118,
       "command": 223,
       "stream": 2
     },
-    "uniqueNames": 342,
-    "uniqueBindings": 341
+    "uniqueNames": 343,
+    "uniqueBindings": 342
   },
   "reservedOperations": [
     "search.query",
@@ -1100,6 +1100,13 @@
         "operation": "tracking.refresh",
         "method": "POST",
         "path": "/v2/tracking/refresh",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "tracking.health",
+        "method": "GET",
+        "path": "/v2/tracking/health",
         "status": "registered",
         "source": "server-router"
       },
@@ -2798,7 +2805,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 310
+    "unimplementedV1Http": 311
   },
   "schemas": {
     "additive": {
@@ -5132,6 +5139,22 @@
           "refresh"
         ],
         "inputSchemaRef": "TrackingRefreshInputSchema",
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "tracking.health",
+        "noun": "tracking",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/tracking.health",
+        "intentTags": [
+          "tracking",
+          "health"
+        ],
+        "inputSchemaRef": null,
         "resultSchemaRef": null,
         "invocationSyntax": null,
         "actionDiscoverable": true,

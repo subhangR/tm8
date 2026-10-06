@@ -54,6 +54,35 @@ async function trackingRefresh(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
+/** 304 (P0e): one line per space, then the warnings. */
+function renderHealth(dto: unknown): string {
+  const h = (dto ?? {}) as {
+    status?: unknown;
+    spaces?: Array<Record<string, unknown>>;
+    warnings?: unknown[];
+  };
+  const lines = [`tracking: ${String(h.status ?? 'unknown')}`];
+  for (const s of h.spaces ?? []) {
+    lines.push(
+      `  ${String(s.spaceId)}  ${String(s.status)}  open ${String(s.trackedOpen)}  ` +
+        `never-polled ${String(s.neverPolled)}  stale ${String(s.stale)}  ` +
+        `last-polled ${String(s.lastPolledAt ?? 'never')}  ${s.authenticated === true ? 'token' : 'NO TOKEN'}`,
+    );
+  }
+  for (const w of h.warnings ?? []) lines.push(`! ${String(w)}`);
+  return lines.join('\n');
+}
+
+async function trackingHealth(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['stale-after']);
+  const staleAfter = cmd.options.value('stale-after');
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'tracking.health', {
+    ...(staleAfter !== undefined ? { query: { staleAfterSeconds: staleAfter } } : {}),
+  });
+  cmd.out.data(data, renderHealth);
+  return EXIT_OK;
+}
+
 /**
  * `tm8 pr merge <pull-request-entity-id>` — the forge write door. The server
  * owns every guard (open + mergeable + CI not red per OBSERVED facts, the
@@ -90,5 +119,6 @@ async function prMerge(cmd: CommandContext): Promise<ExitCode> {
 
 export const TRACKING_COMMANDS: CommandModule[] = [
   { path: ['tracking', 'refresh'], run: trackingRefresh },
+  { path: ['tracking', 'health'], run: trackingHealth },
   { path: ['pr', 'merge'], run: prMerge },
 ];

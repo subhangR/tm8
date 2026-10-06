@@ -338,6 +338,12 @@ export type CoreEntityState =
   // said it was still computing the merge. Absence is not a verdict.
   | { kind: 'pull_request'; repository: string; number: number; state: string;
       url?: string; fetchedAt?: string | null; stale: boolean;
+      /**
+       * 304 (P0e): when tracking last ASKED the provider about this PR, whatever
+       * it answered. `fetchedAt` is when facts last changed. `stale` is true
+       * when it was never polled, or is open and unpolled for over an hour.
+       */
+      lastPolledAt?: string | null;
       ciStatus?: 'passing' | 'failing' | 'pending' | null;
       mergeState?: 'clean' | 'conflicted' | 'unknown' | null;
       /**

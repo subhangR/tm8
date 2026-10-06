@@ -68,6 +68,7 @@ import { projectInteractionProfileForBrowser } from '../profiles/browser-project
 import {
   loadLinkedPullRequestBadges,
   projectForgeFacts,
+  projectTrackingFreshness,
   type LinkedPullRequestBadges,
 } from '../tracking/pr-projection.js';
 import { loadHumanMessageAuthorIds, type HumanMessageAuthorIds } from './message-author-projection.js';
@@ -222,7 +223,7 @@ export const ENTITY_COLUMNS = `
   pr.title as pr_title, pr.repo as pr_repo, pr.number as pr_number,
   pr.state as pr_state, pr.ci_status as pr_ci_status,
   pr.mergeable_state as pr_mergeable_state, pr.head_ref as pr_head_ref,
-  pr.url as pr_url, pr.fetched_at as pr_fetched_at,
+  pr.url as pr_url, pr.fetched_at as pr_fetched_at, pr.last_polled_at as pr_last_polled_at,
   cm.repo as commit_repo, cm.sha as commit_sha,
   cm.message as commit_message, cm.committed_at as commit_committed_at,
   cm.url as commit_url, cm.author as commit_author,
@@ -662,6 +663,7 @@ export interface EntityRow {
   pr_head_ref?: string | null;
   pr_url?: string | null;
   pr_fetched_at?: Date | string | null;
+  pr_last_polled_at?: Date | string | null;
   /** commits mirror columns; optional for the same reason the pr_* ones are. */
   commit_repo?: string | null;
   commit_sha?: string | null;
@@ -2068,10 +2070,9 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         number: Number(row.pr_number ?? 0),
         state: row.pr_state ?? 'open',
         ...(row.pr_url ? { url: row.pr_url } : {}),
-        fetchedAt: isoOrNull(fetched),
-        // `stale` is "the mirror is older than the upstream". Never fetched ⇒
-        // definitionally stale — same ruling as the projector twin.
-        stale: fetched === null,
+        // 304: never polled, or open and unpolled past the threshold — same
+        // ruling as the projector twin, through the same helper.
+        ...projectTrackingFreshness(row.pr_state, fetched, row.pr_last_polled_at),
         ...projectForgeFacts(row.pr_ci_status, row.pr_mergeable_state, row.pr_head_ref),
       };
     }
@@ -2785,8 +2786,7 @@ export function contentOf(row: EntityRow): EntityContent {
         number: Number(row.pr_number ?? 0),
         state: row.pr_state ?? 'open',
         ...(row.pr_url ? { url: row.pr_url } : {}),
-        fetchedAt: isoOrNull(fetched),
-        stale: fetched === null,
+        ...projectTrackingFreshness(row.pr_state, fetched, row.pr_last_polled_at),
         ...projectForgeFacts(row.pr_ci_status, row.pr_mergeable_state, row.pr_head_ref),
       };
     }

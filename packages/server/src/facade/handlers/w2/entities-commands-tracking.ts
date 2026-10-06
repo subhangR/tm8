@@ -40,6 +40,7 @@ export function registerW2EntitiesCommandsTrackingHandlers(
     'entities.commands.linkPr': service.linkPr,
     'entities.commands.linkCommit': service.linkCommit,
     'tracking.refresh': async (ctx) => json(await service.refreshTracking(ctx), { status: 202 }),
+    'tracking.health': service.trackingHealth,
     // The forge write door — guards + member credential live in the service.
     'tracking.pr.merge': new W2TrackingWriteService(deps).mergePr,
   });

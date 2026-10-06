@@ -42,7 +42,13 @@ const REPO_RE = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
 export type GithubOutcome<T> =
   | { ok: true; value: T; etag: string | null; notModified?: false }
   | { ok: true; value: null; etag: string | null; notModified: true }
-  | { ok: false; reason: 'not_found' | 'unauthorized' | 'rate_limited' | 'unavailable'; detail: string };
+  | {
+      ok: false;
+      reason: 'not_found' | 'unauthorized' | 'rate_limited' | 'unavailable';
+      detail: string;
+      /** On `rate_limited`: when the provider said to come back (epoch ms), if it said. */
+      retryAtMs?: number;
+    };
 
 export interface PullRequestFacts {
   title: string;
@@ -591,12 +597,19 @@ function classifyFailure<T>(response: Response): Extract<GithubOutcome<T>, { ok:
     const remaining = response.headers.get('x-ratelimit-remaining');
     const retryAfter = response.headers.get('retry-after');
     if (response.status === 429 || remaining === '0' || retryAfter !== null) {
+      const reset = response.headers.get('x-ratelimit-reset');
+      const retryAtMs = retryAfter !== null && Number.isFinite(Number(retryAfter))
+        ? Date.now() + Number(retryAfter) * 1000
+        : reset !== null && Number.isFinite(Number(reset))
+          ? Number(reset) * 1000
+          : undefined;
       return {
         ok: false,
         reason: 'rate_limited',
         detail: retryAfter !== null
           ? `retry after ${retryAfter}s`
-          : `reset at ${response.headers.get('x-ratelimit-reset') ?? 'unknown'}`,
+          : `reset at ${reset ?? 'unknown'}`,
+        ...(retryAtMs !== undefined ? { retryAtMs } : {}),
       };
     }
     return { ok: false, reason: 'unauthorized', detail: '403' };

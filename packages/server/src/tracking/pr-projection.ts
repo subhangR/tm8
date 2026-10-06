@@ -91,6 +91,41 @@ export function projectForgeFacts(
   };
 }
 
+/** 304 (P0e): an open PR not polled for this long is stale. */
+export const TRACKING_STALE_AFTER_MS = 60 * 60_000;
+
+function isoOrNullOf(value: unknown): string | null {
+  if (value === null || value === undefined || value === '') return null;
+  const date = value instanceof Date ? value : new Date(String(value));
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+/**
+ * The freshness half of a `pull_request` EntityState, shared by every door
+ * that serves one.
+ *
+ * `fetchedAt` is when facts were last WRITTEN; `lastPolledAt` (304) is when
+ * tracking last ASKED, whatever it was told. `stale` used to be "never
+ * fetched", which read false forever once a PR had been fetched once — the
+ * exact blind spot that let six spaces' tracking stop unnoticed. It now means:
+ * never polled, or an OPEN/draft PR whose last poll is older than the
+ * threshold. A merged or closed PR is final and is not re-polled, so its age
+ * is not staleness.
+ */
+export function projectTrackingFreshness(
+  state: unknown,
+  fetchedAt: unknown,
+  lastPolledAt: unknown,
+  now: number = Date.now(),
+): Pick<PullRequestState, 'fetchedAt' | 'lastPolledAt' | 'stale'> {
+  const fetched = isoOrNullOf(fetchedAt);
+  const polled = isoOrNullOf(lastPolledAt);
+  const seen = polled ?? fetched;
+  const open = state === 'open' || state === 'draft' || state === undefined || state === null;
+  const stale = seen === null || (open && now - Date.parse(seen) > TRACKING_STALE_AFTER_MS);
+  return { fetchedAt: fetched, lastPolledAt: polled, stale };
+}
+
 /**
  * How many linked PRs a task summary carries. A cap rather than a page,
  * because this rides on EVERY loaded task row: it is a badge, not a list

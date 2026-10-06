@@ -79,7 +79,24 @@ export interface DbClaims {
    * (`test/via-link-claim-forwarding.test.ts`): dropping it fails OPEN.
    */
   readonly viaLinkId?: string | undefined;
+  /**
+   * → `SET LOCAL tm8.background_job`. The eighth claim (304, P0e): the name of
+   * the IN-PROCESS scheduler job this transaction runs for. Only the tracking
+   * jobs built in main.ts set it; no HTTP, CLI or MCP claims builder does, and
+   * `identity/claims.ts` never binds it. `internal.is_tracking_worker()` reads it
+   * to let the tracking doors span spaces — and nothing else does. A name
+   * outside `BACKGROUND_JOB_CLAIMS` binds as `''`.
+   */
+  readonly backgroundJob?: BackgroundJobClaim | undefined;
 }
+
+/**
+ * The only values `tm8.background_job` may carry. Closed on purpose: the claim
+ * widens what a tracking door accepts, so the set of callers that can hold it
+ * is a list a reviewer can read.
+ */
+export const BACKGROUND_JOB_CLAIMS = ['tracking.observer', 'tracking.forge-watcher'] as const;
+export type BackgroundJobClaim = (typeof BACKGROUND_JOB_CLAIMS)[number];
 
 /** A handle to one open transaction. Valid only inside `Db.tx`'s callback. */
 export interface Querier {

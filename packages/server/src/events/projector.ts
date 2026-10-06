@@ -68,6 +68,7 @@ import { loadHumanMessageAuthorIds, type HumanMessageAuthorIds } from '../facade
 import {
   loadLinkedPullRequestBadges,
   projectForgeFacts,
+  projectTrackingFreshness,
   type LinkedPullRequestBadges,
 } from '../tracking/pr-projection.js';
 
@@ -281,6 +282,7 @@ interface SummaryRow {
   pr_head_ref: string | null;
   pr_url: string | null;
   pr_fetched_at: Date | string | null;
+  pr_last_polled_at: Date | string | null;
   commit_repo: string | null;
   commit_sha: string | null;
   commit_message: string | null;
@@ -463,6 +465,7 @@ select
   pr.head_ref        as pr_head_ref,
   pr.url             as pr_url,
   pr.fetched_at      as pr_fetched_at,
+  pr.last_polled_at  as pr_last_polled_at,
   cm.repo            as commit_repo,
   cm.sha             as commit_sha,
   cm.message         as commit_message,
@@ -1387,10 +1390,8 @@ export class PgEntityProjector implements EntityProjector {
           repository: r.pr_repo ?? '',
           number: r.pr_number ?? 0,
           state: r.pr_state ?? 'open',
-          fetchedAt: iso(r.pr_fetched_at),
-          // `stale` is "the mirror is older than the upstream", which needs a
-          // tracking comparison. Never fetched ⇒ definitionally stale.
-          stale: r.pr_fetched_at === null,
+          // 304: never polled, or open and unpolled past the threshold.
+          ...projectTrackingFreshness(r.pr_state, r.pr_fetched_at, r.pr_last_polled_at),
           ...projectForgeFacts(r.pr_ci_status, r.pr_mergeable_state, r.pr_head_ref),
         };
         return r.pr_url === null ? base : { ...base, url: r.pr_url };

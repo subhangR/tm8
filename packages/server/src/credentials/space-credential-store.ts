@@ -681,6 +681,36 @@ export class DbSpaceCredentialStore {
     }
   }
 
+  /**
+   * 304 (P0e): the space's default GitHub token, for the TRACKING WORKER to read
+   * that space's own pull requests — never another space's, never a session.
+   * SQL refuses any caller without the in-process `tm8.background_job` claim.
+   * Null when the space holds no eligible credential: the poller falls back.
+   */
+  async readTrackingToken(claims: DbClaims, spaceId: string): Promise<string | null> {
+    const row = await this.db.rpc<{
+      credentialId: string;
+      spaceId: string;
+      provider: string;
+      secretCiphertext: string;
+      secretNonce: string;
+    } | null>(claims, 'read_space_tracking_token', [spaceId]);
+    if (!row) return null;
+    try {
+      return openSecret(
+        await this.key(),
+        { ciphertext: Buffer.from(row.secretCiphertext, 'base64'), nonce: Buffer.from(row.secretNonce, 'base64') },
+        { spaceId: row.spaceId, credentialId: row.credentialId, provider: row.provider },
+      );
+    } catch (error) {
+      this.logger?.warn?.('space tracking token could not be decrypted', {
+        credentialId: row.credentialId,
+        reason: error instanceof Error ? error.name : 'unknown',
+      });
+      throw new Error('stored space credential is unreadable');
+    }
+  }
+
   /** Resume (C3): the resumer becomes the launcher, if every recorded credential is still active. */
   /**
    * With `providers` (R13), rows for every provider the resume did not resolve
