@@ -4287,10 +4287,12 @@ export function Tile({
             } : undefined}
           />
         ) : undefined}
-        badges={attentionLine || tileBadges ? (
+        badges={attentionLine || tileBadges || (progress && view.shows('progress')) ? (
           <>
             <AttentionTileSubtitle line={attentionLine} />
             {tileBadges}
+            {/* 307: the task's weighted progress, as the standard tile draws it. */}
+            {progress && view.shows('progress') ? <TileProgressBar progress={progress} /> : null}
           </>
         ) : null}
         childCount={childCount}

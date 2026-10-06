@@ -127,6 +127,11 @@ function ProgressCard({ view, live }: StoryBlockProps) {
   const withAgent = liveOn(view).size;
   const roll = view.state.rollup;
   const parent = view.page.parent;
+  // 307: the ring is the points-weighted percent the story list shows (its
+  // tasks and its child stories', each once). An older summary without it
+  // keeps the task count.
+  const weighted = view.state.weighted;
+  const ringPct = weighted && weighted.percent !== null ? weighted.percent : pct(p);
   return (
     <section className={`stc-card${flashOf(live?.landed, view.id)}`}>
       <CardHead title="Progress" count="computed · never stored" />
@@ -142,11 +147,11 @@ function ProgressCard({ view, live }: StoryBlockProps) {
                 cx="48"
                 cy="48"
                 r="40"
-                strokeDasharray={`${((RING_C * p.done) / p.work).toFixed(1)} ${RING_C.toFixed(1)}`}
+                strokeDasharray={`${((RING_C * ringPct) / 100).toFixed(1)} ${RING_C.toFixed(1)}`}
                 transform="rotate(-90 48 48)"
               />
               <text className="stc-ring__pct" x="48" y="54" textAnchor="middle">
-                {pct(p)}%
+                {ringPct}%
               </text>
             </svg>
             <div>
@@ -154,6 +159,12 @@ function ProgressCard({ view, live }: StoryBlockProps) {
                 {p.done}
                 <small>of {p.work} tasks done</small>
               </div>
+              {weighted && weighted.percent !== null ? (
+                <div className="stc-ring__pts" title="Points-weighted: estimates as weights (missing → 1), criteria ticked, child stories included">
+                  {Math.floor(weighted.earned)}/{weighted.total} pts weighted
+                  {weighted.tents > 0 ? ` · ${weighted.tents} without an estimate` : ''}
+                </div>
+              ) : null}
               <ul className="stc-legend">
                 <li>
                   <i className="stc-tone--done" />
@@ -185,6 +196,7 @@ function ProgressCard({ view, live }: StoryBlockProps) {
                 </span>
                 <Meter progress={r.taskProgress} thin />
                 <span className="stc-perroot__p">
+                  {r.weighted && r.weighted.percent !== null ? `${r.weighted.percent}% · ` : ''}
                   {r.taskProgress.done}/{r.taskProgress.work}
                 </span>
               </div>

@@ -77,6 +77,11 @@ interface SortSpec {
  * "nulls last" as a simple row comparison, and getting that subtly wrong loses
  * rows at a page boundary. A sentinel makes the column total-ordered.
  */
+const PROGRESS_SORT_SQL = `coalesce(case e.kind
+    when 'task' then (internal.task_progress(e.id) ->> 'percent')::int
+    when 'story' then (internal.story_summary(e.id) -> 'weighted' ->> 'percent')::int
+  end, 101)`;
+
 const SORTS: Record<SortName, SortSpec> = {
   activityAt_desc: {
     expr: 'e.activity_at', dir: 'desc', cast: 'timestamptz', cursorExpr: MICROS('e.activity_at'),
@@ -110,6 +115,15 @@ const SORTS: Record<SortName, SortSpec> = {
     dir: 'asc',
     cast: 'integer',
     cursorExpr: "case t.priority when 'urgent' then 0 when 'high' then 1 when 'medium' then 2 else 3 end",
+  },
+  // 307: least progress first — the weighted percent a task or story row
+  // carries. No figure (no countable work, or another kind) sorts last on the
+  // sentinel 101, for the same keyset reason as `dueDate`.
+  progress: {
+    expr: PROGRESS_SORT_SQL,
+    dir: 'asc',
+    cast: 'integer',
+    cursorExpr: PROGRESS_SORT_SQL,
   },
 };
 

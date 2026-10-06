@@ -27,6 +27,7 @@ import type { CoherenceFinding } from './orchestration.js';
 import type { EntityHeaderView, HeaderTextInput } from './selection-header.js';
 import type { EntityContextStory, StoryContent, StoryState } from './story.js';
 import type { DesignContent, DesignState, EntityContextDesignPage } from './design.js';
+import type { TaskProgress } from './progress.js';
 import type { ResolvedStyle, StyleClamp, StyleDoc, StyleWarning } from './style.js';
 
 // ===========================================================================
@@ -293,6 +294,8 @@ export type CoreEntityState =
       /** Additive: absent on payloads produced before assignment provenance shipped. */
       assignments?: TaskAssignment[];
       acceptance: { total: number; completed: number };
+      /** 307: points-weighted subtree progress; additive, absent on older payloads. */
+      progress?: TaskProgress;
       /**
        * 082's opt-in completion gate, ADDITIVE and OPTIONAL. 'pr_merged'
        * means `complete` will REFUSE while a tracked PR is unmerged or
@@ -1367,7 +1370,7 @@ export interface CollectionQuery {
   layout?: 'list'|'board'|'tree'|'feed'|'gallery'|'graph';
   /** `priority` added 2026-08-16 (Board tab wave) — same additive posture as the rest of the union. */
   groupBy?: 'status'|'assignee'|'priority'|`axis:${string}`;
-  sort?: 'activityAt_desc'|'updatedAt_desc'|'createdAt_desc'|'position'|'dueDate'|'startDate'|'priority';
+  sort?: 'activityAt_desc'|'updatedAt_desc'|'createdAt_desc'|'position'|'dueDate'|'startDate'|'priority'|'progress';
   cursor?: Cursor; limit?: number;
 }
 

@@ -603,6 +603,7 @@ button.stc-step { cursor: pointer; }
 .cv2-root .stc-ring__pct { font-family: var(--pn-serif); font-size: var(--pn-fs-h2); fill: var(--pn-ink); }
 .cv2-root .stc-ring__big { font-family: var(--pn-serif); font-size: var(--pn-fs-h1); line-height: 1; }
 .cv2-root .stc-ring__big small { font-family: var(--pn-ui); font-size: var(--pn-fs-label); color: var(--pn-ink-3); margin-left: 4px; }
+.cv2-root .stc-ring__pts { margin-top: 4px; font-family: var(--pn-mono); font-size: var(--pn-fs-label); color: var(--pn-ink-3); }
 .cv2-root .stc-legend { list-style: none; margin: 8px 0 0; padding: 0; font-size: var(--pn-fs-label); color: var(--pn-ink-2); display: grid; gap: 3px; }
 .cv2-root .stc-legend i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; margin-right: 6px; background: var(--stc-tone); }
 .cv2-root .stc-perroot { margin-top: 12px; border-top: 1px solid var(--pn-line); padding-top: 10px; display: grid; gap: 6px; }
