@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { stillWorkingWarnings } from '../../../tracking/status-nudge.js';
 
 import {
   CollabError,
@@ -550,7 +551,11 @@ export class W2MessagesHandoffsService {
             and ws.status not in ('spawning', 'running', 'idle')`,
         [sessionTargets],
       );
-      return { result, messages, routes, parentsById, closed };
+      // P0g ac4: a session posting on a task it still holds in `working`.
+      const statusNudges = sourceWorkSessionId
+        ? await stillWorkingWarnings(q, anchorIds, sourceWorkSessionId)
+        : [];
+      return { result, messages, routes, parentsById, closed, statusNudges };
     }));
 
     // Per-target delivery outcomes, reported on the result below. Declared out
@@ -624,6 +629,8 @@ export class W2MessagesHandoffsService {
       // target, because one post can name several sessions and they can
       // disagree.
       ...(dispositions.length > 0 ? { delivery: dispositions } : {}),
+      // Absent unless the sender holds an anchored task still `working` (P0g).
+      ...(stored.statusNudges.length > 0 ? { warnings: stored.statusNudges } : {}),
     };
   };
 

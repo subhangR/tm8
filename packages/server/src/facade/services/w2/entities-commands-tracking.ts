@@ -1,4 +1,5 @@
 import { loadMcpServer } from '../../../mcp/definitions.js';
+import { stillWorkingWarnings, withWarnings } from '../../../tracking/status-nudge.js';
 import { createHash } from 'node:crypto';
 
 import { loadContextV2 } from './feed-context-v2.js';
@@ -2084,7 +2085,9 @@ export class W2EntitiesCommandsTrackingService {
           parsed.provider, parsed.repo, Number(parsed.identifier), input.projectId ?? null,
           envelope.actorId ?? null, envelope.clientMutationId ?? null]);
         const receipt = before ? await buildReceipt(q, 'task.link-pr', raw, { before }) : undefined;
-        return receipt ?? commandResult(q, raw, owner.identityId);
+        // P0g ac4: code linked on a task the calling session still holds in `working`.
+        const nudges = await stillWorkingWarnings(q, [id]);
+        return withWarnings(receipt ?? await commandResult(q, raw, owner.identityId), nudges);
       });
     } catch (error) {
       normalizeReason(error);
@@ -2104,7 +2107,9 @@ export class W2EntitiesCommandsTrackingService {
           parsed.provider, parsed.repo, parsed.identifier, input.projectId ?? null,
           envelope.actorId ?? null, envelope.clientMutationId ?? null]);
         const receipt = before ? await buildReceipt(q, 'task.link-commit', raw, { before }) : undefined;
-        return receipt ?? commandResult(q, raw, owner.identityId);
+        // P0g ac4: code linked on a task the calling session still holds in `working`.
+        const nudges = await stillWorkingWarnings(q, [id]);
+        return withWarnings(receipt ?? await commandResult(q, raw, owner.identityId), nudges);
       });
     } catch (error) {
       normalizeReason(error);

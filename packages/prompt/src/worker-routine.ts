@@ -54,21 +54,25 @@ export const WORKER_ROUTINE_STEPS: readonly WorkerRoutineStep[] = [
     rule:
       'When a task has acceptance criteria, tick each one the moment it is met, not in a ' +
       'batch at the end: `tm8 task tick <task-id> <criterion-id> --expect-version <n>`. Add ' +
-      'criteria and a pointsEstimate (1-100) when they help: `tm8 task create ' +
+      'criteria and a pointsEstimate (1-100) when they help: `tm8 entity create task ' +
       '"<title>" --content \'{"acceptanceCriteria":[{"id":"ac1","done":false,"text":"…"}],"pointsEstimate":3}\'`.',
   },
   {
     name: 'Put what you create in its place',
-    short: 'same kind under `--parent`, other kinds by an edge; only roots go into a story',
+    short: 'by what it is about: under the same-kind entity it is part of (`--parent`), else a root; across kinds an edge',
+    // The wording of P0f's PLACEMENT_RULE (PR #1065, owner-reviewed 6 Oct). When
+    // #1065 lands, this becomes `rule: PLACEMENT_RULE` and v1 drops its copy.
     rule:
-      'In the same create call. A sub-item of the same kind takes `--parent`: a subtask ' +
-      'under the task you are working on (`tm8 entity create task "<title>" --parent <task-id>`), ' +
-      'a sub-doc under its head doc, a child story, a sub-session. Never parent across ' +
-      'kinds; a doc, artifact or file you made for a task stays a root (or goes under a ' +
-      'doc) and gets an edge from the task. Only roots go into a story ' +
-      '(`tm8 collection add <story-id> <root-id>`); children follow their parent. If create ' +
-      'warns about placement, fix it before moving on: ' +
-      '`tm8 entity move <id> --parent <id> --position <n> --expect-version <n>`, or add the edge.',
+      'Before you create an entity, decide where it belongs from what it is about, not from the ' +
+      'task you happen to be on. If it is part of an existing entity of the same kind, create it ' +
+      'under that one with --parent: a subtask under the task it breaks down, a sub-doc under the ' +
+      'doc it details, a child story, a sub-session (find the parent with `tm8 entity query --kind ' +
+      "<kind> --words '<terms>'` or the hierarchy in `tm8 entity context`). If it is part of " +
+      'nothing, make it a root. If it gathers existing entities, move them under it with ' +
+      '`tm8 entity move`. Never parent across kinds; link instead: a deliverable with ' +
+      '`tm8 edge create <task-id> produces <new-id>`, an input with --attach-to <task-id>. ' +
+      'Follow-up work is a root linked to its origin. Only roots go into a story ' +
+      '(`tm8 collection add <story-id> <root-id>`).',
   },
   {
     name: 'Link your work',
@@ -76,7 +80,7 @@ export const WORKER_ROUTINE_STEPS: readonly WorkerRoutineStep[] = [
     rule:
       'Link a PR or commit the moment it exists: `tm8 task link-pr|link-commit <task-id> <url>` ' +
       '(it records the code; it never decides when the task is done). ' +
-      'Across kinds use an edge, never a parent: a deliverable is ' +
+      'Pick the edge by meaning: a deliverable is ' +
       '`task produces <doc|artifact|file|drawing>`, an input or reference is ' +
       '`<entity> attached_to task`, follow-up work is `<new task> follows_up <origin task>`, ' +
       'a prerequisite is `task depends_on task`. `relates_to` is only a vague see-also. ' +

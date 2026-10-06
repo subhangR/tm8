@@ -3643,6 +3643,11 @@ export interface MessageBatchResult {
    * the batch owed nobody a live copy — not that delivery failed.
    */
   delivery?: MessageDeliveryDisposition[];
+  /**
+   * Advisories on a stored batch, e.g. `task_still_working` (P0g): the sending
+   * session holds an anchored task that is still `working`. Absent when none.
+   */
+  warnings?: ResultWarning[];
 }
 
 export interface PatchMessageInput extends CommandContext {
