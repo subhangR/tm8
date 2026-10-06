@@ -3223,10 +3223,13 @@ function Band({
     const timer = setTimeout(() => wake((n) => n + 1), Math.max(0, due - Date.now()) + 50);
     return () => clearTimeout(timer);
   }, [needsMeLoadingNow, rows]);
-  /* §5.3.1 case 12: a row that just left Running lingers ~10 s. */
-  const sessionRows = rows.length > 0 && rows.every((r) => isSessionState(r.state));
-  const graced = useRunningGrace(rows, sessionRows && tabId === 'running');
+  /* §5.3.1 case 12: a row that just left Running lingers ~10 s. Gated on the
+     tab alone ('running' is a session tab id only), not on the rows: gating on
+     "every row is a session" switched grace off exactly when the last running
+     row left, so that row vanished at once. */
+  const graced = useRunningGrace(rows, tabId === 'running');
   const visible = matching(graced, query ?? '');
+  const sessionRows = visible.length > 0 && visible.every((r) => isSessionState(r.state));
   const attentionIds = attentionIdsOf(visible, props, config);
   const groups = sessionRows
     ? groupSessionRows(tabId, visible, (r) => r.state, (r) => ({ claims: props.linkedClaimsOf?.(r.id) }))

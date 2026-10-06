@@ -10,6 +10,10 @@
  *
  * Keyed by row id. `enabled` false (any other tab) is a pass-through and drops
  * whatever was lingering, so switching tabs never carries a ghost across.
+ * Turning `enabled` ON is a fresh start, not a diff: the rows seen while it
+ * was off are another tab's (Interrupted's, say), and none of them ever left
+ * Running — treating them as leavers put every interrupted session in the
+ * Running tab for 10 s after each switch back.
  * The pure half is `withGrace` (domain/session-outcome.ts).
  */
 import { useEffect, useRef, useState } from 'react';
@@ -22,9 +26,10 @@ export function useRunningGrace<R extends { id: string }>(
 ): readonly R[] {
   const previous = useRef<readonly R[]>(rows);
   const lingering = useRef(new Map<string, { row: R; leftAt: number }>());
+  const wasEnabled = useRef(enabled);
   const [, wake] = useState(0);
 
-  if (!enabled) {
+  if (!enabled || !wasEnabled.current) {
     lingering.current.clear();
     previous.current = rows;
   } else if (previous.current !== rows) {
@@ -40,6 +45,7 @@ export function useRunningGrace<R extends { id: string }>(
     }
     previous.current = rows;
   }
+  wasEnabled.current = enabled;
 
   const now = Date.now();
   for (const [id, l] of lingering.current) {
