@@ -20,6 +20,7 @@ import { createOutput, type OutputFormat } from '../src/output.js';
 import {
   clampTitle,
   deprecationNotice,
+  nextAfterTick,
   renderReceiptHuman,
   resolveReceiptMode,
   successReceipt,
@@ -334,6 +335,70 @@ describe('successReceipt: per op', () => {
     expect(r.titleTruncated).toBe(true);
     expect(Array.from(String(r.title))).toHaveLength(80);
     expect(bytes(r)).toBeLessThanOrEqual(640);
+  });
+});
+
+// P0h: a tick that leaves nothing open names the step after it (Spec D1 §6.3 R3).
+function tickedTask(done: boolean[], opts: { status?: string; gate?: string; version?: number } = {}) {
+  const base = taskDetail({ status: opts.status ?? 'working', version: opts.version ?? 7 });
+  return {
+    ...base,
+    state: { ...(base.state as Record<string, unknown>), completionGate: opts.gate ?? 'none' },
+    content: {
+      kind: 'task',
+      description: '',
+      acceptanceCriteria: done.map((d, i) => ({ id: `ac${i + 1}`, done: d, text: `criterion ${i + 1}` })),
+    },
+  };
+}
+
+describe('task.tick: done/total, open ids and next (P0h)', () => {
+  it('a partial tick reports done/total and the open ids, and no next', () => {
+    const r = successReceipt('task.tick', commandResult(tickedTask([true, false, false])), { expectedVersion: 6 });
+    expect(r.acceptance).toEqual({ done: 1, total: 3 });
+    expect(r.open).toEqual(['ac2', 'ac3']);
+    expect(r).not.toHaveProperty('next');
+    expect(renderReceiptHuman(r)).toContain('acceptance:1/3');
+    expect(renderReceiptHuman(r)).toContain('open ac2 ac3');
+    expect(renderReceiptHuman(r)).not.toContain('next:');
+  });
+
+  it('the last tick names task complete at the new version', () => {
+    const r = successReceipt('task.tick', commandResult(tickedTask([true, true])), { expectedVersion: 6 });
+    expect(r.acceptance).toEqual({ done: 2, total: 2 });
+    expect(r.open).toEqual([]);
+    expect(r.next).toBe(`tm8 task complete ${TASK} --expect-version 7`);
+    const line = renderReceiptHuman(r);
+    expect(line).not.toContain('\n');
+    expect(line).toContain('acceptance:2/2');
+    expect(line).toContain(`next: tm8 task complete ${TASK} --expect-version 7`);
+    expect(bytes(r)).toBeLessThanOrEqual(500);
+  });
+
+  it('a task with the opt-in pr_merged gate is moved to in_review instead', () => {
+    const r = successReceipt('task.tick', commandResult(tickedTask([true], { gate: 'pr_merged' })));
+    expect(r.next).toBe(`tm8 task transition ${TASK} in_review`);
+  });
+
+  it('a Server-built receipt keeps the Server\'s next and renders it', () => {
+    const server = {
+      schemaVersion: 'tm8.receipt.v1', ok: true, op: 'task.tick', id: TASK, kind: 'task',
+      version: { from: 6, to: 7 }, acceptance: { done: 2, total: 2 }, open: [],
+      next: `tm8 task complete ${TASK} --expect-version 7`, refs: [], warnings: [],
+    };
+    const r = successReceipt('task.tick', server);
+    expect(r.next).toBe(`tm8 task complete ${TASK} --expect-version 7`);
+    expect(renderReceiptHuman(r)).toContain(`next: tm8 task complete ${TASK} --expect-version 7`);
+  });
+
+  it('nextAfterTick: nothing while criteria are open, on an untick, or once the task is past the step', () => {
+    expect(nextAfterTick(TASK, 'working', 'none', 4, 1, 3)).toBeUndefined();
+    expect(nextAfterTick(TASK, 'working', 'none', 4, 0, 0)).toBeUndefined();
+    expect(nextAfterTick(TASK, 'done', 'none', 4, 0, 2)).toBeUndefined();
+    expect(nextAfterTick(TASK, 'cancelled', 'none', 4, 0, 2)).toBeUndefined();
+    expect(nextAfterTick(TASK, 'in_review', 'pr_merged', 4, 0, 2)).toBeUndefined();
+    expect(nextAfterTick(TASK, 'in_review', 'none', 4, 0, 2)).toBe(`tm8 task complete ${TASK} --expect-version 4`);
+    expect(nextAfterTick(TASK, 'open', undefined, 4, 0, 2)).toBe(`tm8 task complete ${TASK} --expect-version 4`);
   });
 });
 

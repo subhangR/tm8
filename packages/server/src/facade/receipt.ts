@@ -262,6 +262,8 @@ export async function buildReceipt(
     const open = criteria.filter((c) => c?.done !== true).map((c) => String(c?.id ?? ''));
     receipt.acceptance = { done: criteria.length - open.length, total: criteria.length };
     receipt.open = capped(open, 'open', receipt);
+    const next = nextAfterTick(id, after.status, after.gate, after.version, open.length, criteria.length);
+    if (next !== undefined) receipt.next = next;
   }
 
   const refs: Record<string, unknown>[] = [];
@@ -304,6 +306,30 @@ export async function buildReceipt(
   }
   receipt.warnings = warnings;
   return receipt;
+}
+
+/**
+ * The step a tick that leaves nothing open hands the holder (Spec D1 §6.3 R3,
+ * P0h): complete the task, or, under the `pr_merged` gate, move it to
+ * `in_review` so the merge can carry it the rest of the way. `undefined` while
+ * criteria are open, and once the task is already where the step would put it.
+ * Kept in step with the CLI's projection of the same receipt
+ * (packages/cli/src/receipt.ts), which serves older servers.
+ */
+export function nextAfterTick(
+  id: string,
+  status: string | null,
+  gate: string | null,
+  version: number,
+  open: number,
+  total: number,
+): string | undefined {
+  if (total === 0 || open > 0) return undefined;
+  if (status === 'done' || status === 'cancelled') return undefined;
+  if (gate === 'pr_merged') {
+    return status === 'in_review' ? undefined : `tm8 task transition ${id} in_review`;
+  }
+  return `tm8 task complete ${id} --expect-version ${version}`;
 }
 
 function capped<T>(rows: T[], field: string, receipt: Record<string, unknown>): T[] {

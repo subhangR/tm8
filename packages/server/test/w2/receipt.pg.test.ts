@@ -170,6 +170,7 @@ describe('?return=receipt (server receipts, phase 2)', () => {
     expect(r.changed).toEqual(['content.acceptanceCriteria']);
     expect(r.acceptance).toMatchObject({ total: 4 });
     expect(r.open).not.toContain('a1');
+    expect(r.next).toBeUndefined(); // criteria still open: no step yet (P0h)
     fitsCap(r);
   });
 
@@ -188,8 +189,13 @@ describe('?return=receipt (server receipts, phase 2)', () => {
 
   it('complete carries status, the gate and the completed_by edge to the completer', async () => {
     const tickV = await version(F.T);
-    await call('entities.commands.tick', { id: F.T }, { expectedVersion: tickV, criterionIds: ['a1', 'a2', 'a3', 'a4'] });
+    const last = await call<Receipt>('entities.commands.tick', { id: F.T },
+      { expectedVersion: tickV, criterionIds: ['a1', 'a2', 'a3', 'a4'] });
     const v = await version(F.T);
+    // P0h: the tick that leaves nothing open names the step, at the version it left.
+    expect(last.acceptance).toEqual({ done: 4, total: 4 });
+    expect(last.next).toBe(`tm8 task complete ${F.T} --expect-version ${v}`);
+    fitsCap(last);
     const r = await call<Receipt>('entities.commands.complete', { id: F.T },
       { expectedVersion: v, completerIds: [F.member] });
     expect(r.op).toBe('task.complete');

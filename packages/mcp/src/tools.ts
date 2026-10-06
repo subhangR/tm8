@@ -162,7 +162,7 @@ const ACT_GUIDES = [
   guide('entities.header.clear', 'Remove an entity\'s authored selection header at its header version; it falls back to the derived one. expectedVersion is optional.', {
     params: { id: '<entity-id>' }, body: {},
   }),
-  guide('entities.commands.tick', 'Tick (done:false unticks) acceptance criteria by id; the Server merges them into the stored list.', {
+  guide('entities.commands.tick', 'Tick (done:false unticks) acceptance criteria by id, each as it is met; the Server merges them into the stored list. When none are left open the receipt\'s `next` names the step (complete the task).', {
     params: { id: '<task-id>' }, body: { expectedVersion: 1, criterionIds: ['<criterion-id>'] },
   }),
   guide('entities.commands.pull', 'Pull a task under a pinned-version guard.', {
