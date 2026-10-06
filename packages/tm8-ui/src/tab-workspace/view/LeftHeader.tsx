@@ -1,46 +1,147 @@
-/** Left header (Spec A §3, design log §2): tm8 mark · view selector · space switcher. Workstream A. */
-import { useState } from 'react';
-import { useWorkspace } from './context';
+/**
+ * Left header (Spec A §3, design log §2): tm8 mark · view selector · space
+ * switcher, spanning the rail and the browser. Workstream A.
+ *
+ * `ViewSelector` is also mounted by the Restore cluster's ⋯ while the
+ * navigation is expanded away (Spec A §14), so both doors open one menu.
+ */
+import { cloneElement, isValidElement, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { BrandMark } from '../../kit/BrandMark';
+import { useWorkspace, useWorkspaceState } from './context';
+
+/** Below this browser width the space switcher draws its monogram only (design log §2, §4). */
+const NARROW_BROWSER_W = 300;
 
 export function LeftHeader() {
   const { gate } = useWorkspace();
-  const [open, setOpen] = useState(false);
+  const browserWidth = useWorkspaceState((s) => s.layout.browserWidth);
+  const narrow = browserWidth < NARROW_BROWSER_W;
+  const switcher =
+    narrow && isValidElement<{ collapsed?: boolean }>(gate.switcherSlot)
+      ? cloneElement(gate.switcherSlot, { collapsed: true })
+      : gate.switcherSlot;
   return (
     <header className="tws-left-header" data-testid="tws-left-header">
-      <button type="button" className="tws-icon-btn tws-mark" aria-label="Home" title="Home" onClick={gate.goHome}>
-        tm8
-      </button>
-      <div className="tws-view-select">
-        <button
-          type="button"
-          className="tws-quiet-btn"
-          aria-haspopup="menu"
-          aria-expanded={open}
-          onClick={() => setOpen((o) => !o)}
-        >
-          Workspace ▾
+      <div className="tws-mark-cell">
+        <button type="button" className="tws-icon-btn tws-mark" aria-label="Home" title="Home" onClick={gate.goHome}>
+          <BrandMark />
         </button>
-        {open ? (
-          <div role="menu" className="tws-menu">
-            {gate.viewTabs.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                role="menuitemradio"
-                aria-checked={tab.id === gate.activeViewTabId}
-                className="tws-menu-row"
-                onClick={() => {
-                  setOpen(false);
-                  gate.onSelectViewTab(tab.id);
-                }}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        ) : null}
       </div>
-      <div className="tws-space-slot">{gate.switcherSlot}</div>
+      <ViewSelector variant="label" />
+      <div className="tws-space-slot" data-narrow={narrow || undefined}>
+        {switcher}
+      </div>
     </header>
   );
+}
+
+export interface ViewSelectorProps {
+  /** `label` draws `Workspace ▾`; `more` draws the Restore cluster's ⋯. */
+  variant: 'label' | 'more';
+}
+
+/** The view selector: a menu of every view, the current one checked. */
+export function ViewSelector({ variant }: ViewSelectorProps) {
+  const { gate } = useWorkspace();
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const current = gate.viewTabs.find((tab) => tab.id === gate.activeViewTabId);
+
+  const close = (refocus: boolean) => {
+    setOpen(false);
+    if (refocus) triggerRef.current?.focus();
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const rows = rowsOf(menuRef.current);
+    (rows.find((row) => row.getAttribute('aria-checked') === 'true') ?? rows[0])?.focus();
+    const onPointerDown = (event: PointerEvent) => {
+      if (!wrapRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [open]);
+
+  /* Arrow keys move, Tab cycles inside (the popover traps focus, Spec A §16),
+     Escape closes back to the trigger. */
+  const onMenuKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const rows = rowsOf(menuRef.current);
+    const at = rows.indexOf(document.activeElement as HTMLButtonElement);
+    const move = (delta: number) => {
+      event.preventDefault();
+      rows[(at + delta + rows.length) % rows.length]?.focus();
+    };
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      close(true);
+    } else if (event.key === 'ArrowDown') move(1);
+    else if (event.key === 'ArrowUp') move(-1);
+    else if (event.key === 'Tab') move(event.shiftKey ? -1 : 1);
+    else if (event.key === 'Home') move(-at);
+    else if (event.key === 'End') move(rows.length - 1 - at);
+  };
+
+  const label = current?.label ?? 'Workspace';
+  const trigger: ReactNode =
+    variant === 'label' ? (
+      <>
+        <span>{label}</span>
+        <span className="tws-chevron" aria-hidden>
+          ▾
+        </span>
+      </>
+    ) : (
+      <span aria-hidden>⋯</span>
+    );
+
+  return (
+    <div className="tws-view-select" ref={wrapRef} data-variant={variant}>
+      <button
+        ref={triggerRef}
+        type="button"
+        className={variant === 'label' ? 'tws-quiet-btn' : 'tws-icon-btn'}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`View: ${label}`}
+        title="Switch view"
+        data-testid={variant === 'label' ? 'tws-view-select' : 'tws-view-select-more'}
+        onClick={() => setOpen((o) => !o)}
+      >
+        {trigger}
+      </button>
+      {open ? (
+        <div ref={menuRef} role="menu" aria-label="Views" className="tws-menu" onKeyDown={onMenuKeyDown}>
+          {gate.viewTabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="menuitemradio"
+              aria-checked={tab.id === gate.activeViewTabId}
+              tabIndex={-1}
+              className="tws-menu-row"
+              onClick={() => {
+                close(true);
+                if (tab.id !== gate.activeViewTabId) gate.onSelectViewTab(tab.id);
+              }}
+            >
+              {tab.glyph ? (
+                <span className="tws-menu-glyph" aria-hidden>
+                  {tab.glyph}
+                </span>
+              ) : null}
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function rowsOf(menu: HTMLElement | null): HTMLButtonElement[] {
+  return menu ? Array.from(menu.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')) : [];
 }
