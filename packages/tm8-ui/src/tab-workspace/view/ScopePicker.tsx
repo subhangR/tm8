@@ -185,12 +185,13 @@ function ScopePopover({
   const toggle = (kind: KindId) =>
     setIds((prev) => (prev.includes(kind) ? prev.filter((id) => id !== kind) : [...prev, kind].sort()));
 
+  // R11: Apply is enabled only once the staged state differs from the applied one.
+  const sorted = [...ids].sort();
+  const unchanged =
+    mode === scope.mode && (mode === 'mixed' || (scope.mode === 'byType' && sameIds(sorted, scope.selectedTypeIds)));
+
   const apply = (source: ApplyRequest['source']) => {
-    if (invalid) return;
-    const sorted = [...ids].sort();
-    const unchanged =
-      mode === scope.mode && (mode === 'mixed' || (scope.mode === 'byType' && sameIds(sorted, scope.selectedTypeIds)));
-    if (unchanged) return onDismiss(true);
+    if (invalid || unchanged) return;
     onApply({ args: mode === 'mixed' ? { mode: 'mixed' } : { mode: 'byType', selectedTypeIds: sorted }, source });
   };
 
@@ -234,14 +235,15 @@ function ScopePopover({
       <fieldset className="tws-scope-kinds" disabled={inMixed} aria-describedby={statusId}>
         <legend className="tws-sr-only">Entity types</legend>
         {adapters.length > SEARCH_THRESHOLD ? (
-          <input
-            type="search"
-            className="tws-scope-filter"
-            placeholder="Filter types"
-            aria-label="Filter types"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
+          <div className="tws-scope-filter">
+            <input
+              type="search"
+              placeholder="Filter types"
+              aria-label="Filter types"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </div>
         ) : null}
         <div className="tws-scope-list">
           {shown.map((adapter) => (
@@ -255,7 +257,8 @@ function ScopePopover({
         </div>
       </fieldset>
 
-      <p id={statusId} className="tws-scope-status" data-invalid={invalid || undefined} aria-live="polite">
+      {/* R11: no count line while Mixed is staged. */}
+      <p id={statusId} className="tws-scope-status" data-invalid={invalid || undefined} hidden={inMixed} aria-live="polite">
         {invalid ? (
           <>
             <span className="tws-scope-alert" aria-hidden="true">
@@ -275,7 +278,7 @@ function ScopePopover({
         <button
           type="button"
           className="tws-scope-apply"
-          disabled={invalid}
+          disabled={invalid || unchanged}
           onClick={(event) => apply(event.detail === 0 ? 'keyboard' : 'click')}
         >
           Apply
