@@ -514,22 +514,22 @@
   .cv2-root .tws-browser .lp-lead__kind[data-streaming] { animation: none; }
 }
 
-/* The child count subscript (Subhang, overriding R37.2's size): a 16×16
-   minimum that grows for two digits (99+ above 99), the 12px label size at
-   600 with tabular numerals, anchored at the 18px icon's bottom-right,
-   offset -6/-5 so it reads as a subscript without hiding the glyph. */
+/* The child count subscript (Subhang, overriding R37.2's size, then "a
+   little smaller"): a 14×14 minimum that grows for two digits (99+ above
+   99), the 11px micro size at 600 with tabular numerals, anchored at the
+   18px icon's bottom-right so it reads as a subscript without hiding it. */
 .cv2-root .tws-browser .lp-lead :is(.lp__kids, .pn-agent__kids) {
-  right: -3px;
-  bottom: calc(50% - 14px);
-  min-width: 16px;
-  height: 16px;
+  right: -2px;
+  bottom: calc(50% - 13px);
+  min-width: 14px;
+  height: 14px;
   padding: 0 3px;
   box-sizing: border-box;
   border-radius: var(--pn-r-pill);
   font-family: var(--pn-ui);
-  font-size: var(--pn-fs-label);
+  font-size: var(--pn-fs-micro);
   font-weight: 600;
-  line-height: 16px;
+  line-height: 14px;
   font-variant-numeric: tabular-nums;
   box-shadow: none;
   background: var(--pn-ink-2);
