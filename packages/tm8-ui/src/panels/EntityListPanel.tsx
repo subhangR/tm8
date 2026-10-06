@@ -90,7 +90,7 @@ import { MaestroStatusGlyph, MaestroTaskTile } from './list/MaestroTaskTile';
 import { LinkedPullRequestChips, type LinkedPullRequestFacts } from '../pull-requests';
 import { MaestroSessionTile } from './list/MaestroSessionTile';
 import { ChildCountBadge } from './list/ChildCountBadge';
-import { RowLead, ToneKindIcon } from './list/RowLead';
+import { RowLead, ToneKindIcon, leadTooltip } from './list/RowLead';
 import { TileProgressBar } from './list/TileProgressBar';
 import { PendingFormsChip, hasPendingFormsChip } from '../forms/PendingFormsChip';
 import { usePendingForms } from '../forms/pending';
@@ -884,6 +884,7 @@ export function EntityListPanel(props: EntityListPanelProps) {
   const singleTier =
     tabCounts.length > 0 &&
     tabCounts.every((c) => c.exact && (c.tab.id === activeTab?.id || c.n === 0));
+  const tierRow = toolbar && mode !== 'board' && (list.categories?.length ?? 0) > 0 && !singleTier;
   /* The selector total's `+` — carried only when a tab's number is still the
      loaded length rather than the server's. Once every tab reports an exact
      total the sum IS exact, and the hedge disappears on its own. */
@@ -896,6 +897,46 @@ export function EntityListPanel(props: EntityListPanelProps) {
     : list.categories
       ? `${tabCounts.reduce((n, c) => n + c.n, 0)}${anyTabTruncated ? '+' : ''}`
       : undefined;
+
+  /* chrome="toolbar": every narrowing in ONE funnel popover, pinned at the
+     end of the tier row (or of row 1 when the kind has no tiers). */
+  const funnel = toolbar ? (
+    <FilterRow
+      config={config}
+      picker={picker}
+      onPicker={setPicker}
+      selected={selected}
+      onToggleOption={(specId, optionId, multi) =>
+        setSelected((prev) => {
+          const current = prev[specId] ?? [];
+          const on = current.includes(optionId);
+          const next = on
+            ? current.filter((id) => id !== optionId)
+            : multi
+              ? [...current, optionId]
+              : [optionId];
+          return { ...prev, [specId]: next };
+        })
+      }
+      sortKey={sortKey}
+      onSort={setSortKey}
+      viewerActorId={props.ctx.viewerActorId}
+      people={members.length > 1 ? members : []}
+      selectedPeople={selectedPeople}
+      onTogglePerson={(actorId) =>
+        setSelectedPeople((current) =>
+          current.includes(actorId)
+            ? current.filter((id) => id !== actorId)
+            : [...current, actorId],
+        )
+      }
+      membership={list.membership}
+      membershipSets={props.membershipSets}
+      lensSet={lensSet}
+      onLens={setLensId}
+      merged
+    />
+  ) : null;
 
   return (
     <section
@@ -939,58 +980,23 @@ export function EntityListPanel(props: EntityListPanelProps) {
               hint={false}
             />
             {props.toolbarEnd}
+            {tierRow ? null : funnel}
           </div>
-          {mode !== 'board' && !singleTier ? (
-            <div className="lp__tierscroll">
-              <CategoryTabs
-                tabs={list.categories}
-                activeTabId={categoryTabId}
-                onTab={setCategoryTabId}
-                tabLabel={(tab: StatusCategoryTab) =>
-                  tabCounts.find((c) => c.tab.id === tab.id)?.label ?? '0'
-                }
-              />
+          {tierRow ? (
+            <div className="lp__tierline">
+              <div className="lp__tierscroll">
+                <CategoryTabs
+                  tabs={list.categories}
+                  activeTabId={categoryTabId}
+                  onTab={setCategoryTabId}
+                  tabLabel={(tab: StatusCategoryTab) =>
+                    tabCounts.find((c) => c.tab.id === tab.id)?.label ?? '0'
+                  }
+                />
+              </div>
+              {funnel}
             </div>
           ) : null}
-          <FilterRow
-            config={config}
-            picker={picker}
-            onPicker={setPicker}
-            selected={selected}
-            onToggleOption={(specId, optionId, multi) =>
-              setSelected((prev) => {
-                const current = prev[specId] ?? [];
-                const on = current.includes(optionId);
-                const next = on
-                  ? current.filter((id) => id !== optionId)
-                  : multi
-                    ? [...current, optionId]
-                    : [optionId];
-                return { ...prev, [specId]: next };
-              })
-            }
-            sortKey={sortKey}
-            onSort={setSortKey}
-            viewerActorId={props.ctx.viewerActorId}
-            /* THE FOUR TAB PROPS ARE GONE (sub-doc 6, "dead wiring"). `FilterRow`
-               was handed `tabs` / `activeTabId` / `onTab` / `tabLabel` and never
-               read one of them — the tab row is `CategoryTabs`, a separate
-               component one element up, and has been since tabs got their own
-               row. Four props that compute a count nobody renders. */
-            people={members.length > 1 ? members : []}
-            selectedPeople={selectedPeople}
-            onTogglePerson={(actorId) =>
-              setSelectedPeople((current) =>
-                current.includes(actorId)
-                  ? current.filter((id) => id !== actorId)
-                  : [...current, actorId],
-              )
-            }
-            membership={list.membership}
-            membershipSets={props.membershipSets}
-            lensSet={lensSet}
-            onLens={setLensId}
-          />
         </>
       ) : (
         <>
@@ -1866,6 +1872,7 @@ function FilterRow({
   membershipSets,
   lensSet,
   onLens,
+  merged = false,
 }: {
   config: KindConfig;
   /** Which of the four is open. Held by the panel — see `ListPicker`. */
@@ -1887,6 +1894,8 @@ function FilterRow({
   /** The active lens, resolved to its summary (title for the chip). */
   lensSet: EntitySummary | null;
   onLens: (setId: string | null) => void;
+  /** One funnel and one popover with every axis (`chrome="toolbar"`). */
+  merged?: boolean;
 }) {
   const setPicker = onPicker;
   const barRef = useRef<HTMLDivElement>(null);
@@ -1972,7 +1981,7 @@ function FilterRow({
     <>
           {config.list.filters.map((spec) => (
             <div key={spec.id}>
-              <div className="lp__filtergroup">{spec.label.toUpperCase()}</div>
+              <div className="lp__filtergroup">{merged ? spec.label : spec.label.toUpperCase()}</div>
               {spec.options.map((option) => {
                 const on = (selected[spec.id] ?? []).includes(option.id);
                 // OFFERED AND REFUSED, never offered and inert. An option
@@ -2034,7 +2043,7 @@ function FilterRow({
                   data-testid="collection-lens-option"
                   onClick={() => {
                     onLens(on ? null : set.id);
-                    setPicker(null);
+                    if (!merged) setPicker(null);
                   }}
                 >
                   <KindIcon kind={set.kind} />
@@ -2107,7 +2116,7 @@ function FilterRow({
               }
               onClick={() => {
                 onSort(spec.key);
-                setPicker(null);
+                if (!merged) setPicker(null);
               }}
             >
               {spec.label}
@@ -2116,6 +2125,96 @@ function FilterRow({
           ))}
     </>
   );
+
+  if (merged) {
+    const defaultSort = sort.find((s) => s.default)?.key ?? sort[0]?.key;
+    /* THE BADGE COUNTS WHAT IS NOT DEFAULT, across all four sections. */
+    const changed =
+      activeFilterCount +
+      selectedPeople.length +
+      (lensSet ? 1 : 0) +
+      hiddenFacetCount +
+      (current && current.key !== defaultSort ? 1 : 0);
+    const open = picker === 'filters';
+    return (
+      <div className="lp__filterbar lp__filterbar--merged" ref={barRef}>
+        <button
+          type="button"
+          className="lp__chip lp__chip--icon lp__funnel"
+          onClick={() => setPicker(open ? null : 'filters')}
+          aria-expanded={open}
+          aria-haspopup="menu"
+          aria-label={changed > 0 ? `Filters, ${changed} changed` : 'Filters'}
+          title="Filters"
+          data-testid="filter-trigger"
+        >
+          <VectorIcon paths={FILTER_MARK} size={16} />
+          {changed > 0 ? <span className="lp__chip-count">{changed}</span> : null}
+        </button>
+        {narrowing('filters', 'Filters', 'filter-menu', 'lp__filtermenu lp__filtermenu--merged lp__filtermenu--withfoot', (
+          <>
+            <div className="lp__filteropts">
+              {config.list.filters.length > 0 ? (
+                <section className="lp__funnelsection" aria-label="Filter">
+                  <div className="t-eyebrow">Filter</div>
+                  {filterOptions}
+                </section>
+              ) : null}
+              {people.length > 1 ? (
+                <section className="lp__funnelsection" aria-label="People">
+                  <div className="t-eyebrow">People</div>
+                  {peopleOptions}
+                </section>
+              ) : null}
+              {membership && membershipSets !== undefined ? (
+                <section className="lp__funnelsection" aria-label={membership.label}>
+                  <div className="t-eyebrow">{membership.label}</div>
+                  {setsOptions}
+                </section>
+              ) : null}
+              {viewFacets.length > 0 ? (
+                <section className="lp__funnelsection" aria-label="View">
+                  <div className="t-eyebrow">View</div>
+                  {viewOptions}
+                </section>
+              ) : null}
+              {current ? (
+                <section className="lp__funnelsection" aria-label="Sort">
+                  <div className="t-eyebrow">Sort</div>
+                  {sortOptions}
+                </section>
+              ) : null}
+            </div>
+            <div className="lp__filterfoot">
+              <button
+                type="button"
+                className="lp__filterclear"
+                data-testid="filter-clear-all"
+                disabled={changed === 0}
+                onClick={() => {
+                  for (const { spec, option } of active) onToggleOption(spec.id, option.id, spec.multi ?? false);
+                  for (const actorId of selectedPeople) onTogglePerson(actorId);
+                  if (lensSet) onLens(null);
+                  if (hiddenFacetCount > 0) view.reset();
+                  if (defaultSort && current && current.key !== defaultSort) onSort(defaultSort);
+                }}
+              >
+                Reset
+              </button>
+              <button
+                type="button"
+                className="lp__filterdone"
+                data-testid="filter-done"
+                onClick={() => setPicker(null)}
+              >
+                Done
+              </button>
+            </div>
+          </>
+        ))}
+      </div>
+    );
+  }
 
   return (
     <div className="lp__filterbar" ref={barRef}>
@@ -2265,6 +2364,7 @@ function FilterRow({
           aria-haspopup="menu"
           aria-label={`Sort: ${current.label}`}
           title={`Sorted by ${current.label}`}
+          data-changed={current.key !== (sort.find((s) => s.default)?.key ?? sort[0]?.key) ? 'true' : undefined}
           data-testid="sort-trigger"
         >
           {/* The current order is named in the title and the open menu's ✓;
@@ -3915,7 +4015,7 @@ export function Tile({
         />
       }
       rowTitle={row.title}
-      tooltip={statusTitle}
+      tooltip={leadTooltip(statusTitle, getKind(row.kind).label)}
       childCount={childCount}
       expanded={expanded}
       onToggle={onToggleChildren}

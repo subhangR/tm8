@@ -25,7 +25,7 @@ export function RowLead({
 }: {
   icon: ReactNode;
   rowTitle: string;
-  /** The status title, which used to be the status mark's tooltip. */
+  /** Names the status and the kind ("In progress · Task"), the old status mark's tooltip. */
   tooltip?: string | undefined;
   childCount: number;
   expanded: boolean;
@@ -50,7 +50,7 @@ export function RowLead({
       data-lead-toggle
       aria-label={`${expanded ? 'Collapse' : 'Expand'} ${rowTitle}, ${childCount} ${childCount === 1 ? 'child' : 'children'}`}
       aria-expanded={expanded}
-      title={tooltip}
+      title={`${expanded ? 'Hide' : 'Show'} ${childCount} ${childCount === 1 ? 'child' : 'children'}${tooltip ? ` · ${tooltip}` : ''}`}
       onClick={(event) => {
         event.stopPropagation();
         onToggle();
@@ -84,4 +84,11 @@ export function ToneKindIcon({
       <KindIcon kind={kind} size={18} />
     </span>
   );
+}
+
+/** The lead icon's tooltip: the status, then the kind ("In progress · Task"). */
+export function leadTooltip(status: string | null | undefined, noun: string): string {
+  if (!status) return noun;
+  const word = status.replace(/_/g, ' ');
+  return `${word.charAt(0).toUpperCase()}${word.slice(1)} · ${noun}`;
 }

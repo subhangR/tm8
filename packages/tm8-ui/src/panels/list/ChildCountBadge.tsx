@@ -22,7 +22,8 @@ export function ChildCountBadge({ count, expanded }: { count: number; expanded?:
          outline when shut. Absent ⇒ no attribute, the pill as before. */
       data-expanded={expanded === undefined ? undefined : expanded ? 'true' : 'false'}
     >
-      {count}
+      {/* The lead-icon subscript (R37) caps at 99+; the classic pill is unchanged. */}
+      {expanded !== undefined && count > 99 ? '99+' : count}
     </span>
   );
 }
