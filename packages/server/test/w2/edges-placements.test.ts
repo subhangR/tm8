@@ -278,6 +278,15 @@ describe('W2.G03 edges, edge types, and placements handlers', () => {
         description: 'Dependency',
         props_schema: { type: 'object', properties: { hard: { type: 'boolean' } } },
         acyclic: true,
+        replaced_by: null,
+      }, {
+        type: 'dispatched_by',
+        src_kinds: ['work_session'],
+        dst_kinds: ['work_session'],
+        description: 'Deprecated: a spawned session\'s parentId names the session that spawned it.',
+        props_schema: null,
+        acyclic: false,
+        replaced_by: 'parentId',
       }] as R[];
     };
     const result = await handler(registered(db), 'edgeTypes.list')(request('edgeTypes.list'));
@@ -289,6 +298,16 @@ describe('W2.G03 edges, edge types, and placements handlers', () => {
       description: 'Dependency',
       propsSchema: { type: 'object', properties: { hard: { type: 'boolean' } } },
       acyclic: true,
+      replacedBy: null,
+    }, {
+      type: 'dispatched_by',
+      sourceKinds: ['work_session'],
+      destinationKinds: ['work_session'],
+      direction: 'directed',
+      description: 'Deprecated: a spawned session\'s parentId names the session that spawned it.',
+      propsSchema: { type: 'object' },
+      acyclic: false,
+      replacedBy: 'parentId',
     }]);
   });
 

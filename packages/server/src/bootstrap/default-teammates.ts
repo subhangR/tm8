@@ -146,7 +146,7 @@ const RETIRED_MODEL_TEAMMATE_ROLE = 'Launch persona';
  * skipped, because spawn and resume both resolve the persona as a LIVE entity
  * and deleting it under a working agent would strand that agent. The next boot
  * tries again, so each one goes once its sessions have exited. A session names
- * its teammate by a `relates_to` edge (every `spawn_work_session` since 048).
+ * its teammate by a `participates_in` edge (written by spawn itself since 303).
  *
  * Soft-delete only — `entities.restore` brings one back, and the sessions,
  * messages and memories that point at it keep their history.
@@ -163,10 +163,10 @@ async function retireModelTeammates(q: Querier, spaceId: string): Promise<number
         and not exists (
           select 1
             from public.edges edge
-            join public.entities session_row on session_row.id = edge.src_id
+            join public.entities session_row on session_row.id = edge.dst_id
             join public.work_sessions session on session.entity_id = session_row.id
-           where edge.dst_id = entity_row.id
-             and edge.type = 'relates_to'
+           where edge.src_id = entity_row.id
+             and edge.type = 'participates_in'
              and session_row.deleted_at is null
              and session.status in ('spawning', 'running', 'idle'))
       order by 1`,
