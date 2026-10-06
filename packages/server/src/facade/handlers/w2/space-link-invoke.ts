@@ -39,6 +39,14 @@
  * (`space_link_spawns`, 277) under the link session's claims, and the audit
  * row in A names the child session as its remote id.
  *
+ * A session's body (`execution.journal`, `execution.transcript`) is refused
+ * at home except for SPACE_LINK_OWN_SPAWN_OPS, whose decision waits for B:
+ * after the re-resolve the executor asks B (299 `space_link_spawn_owned`,
+ * under the link session) whether that session was started by this link as
+ * this member. Yes runs B's handler with every minted token in the result
+ * redacted; no is the same `session_body` refusal, audited `refused`. A
+ * remote target has no such check yet, so there it stays refused.
+ *
  * Every outcome writes one `cross_space_audit` row in A under the caller's
  * own claims. No token is put in a header, an error, a log line, the audit or
  * the inner request context (`identity.token` is dropped).
@@ -47,6 +55,7 @@ import {
   CollabError,
   ERROR_STATUS,
   SPACE_LINK_MAX_HOPS,
+  SPACE_LINK_OWN_SPAWN_OPS,
   SPACE_LINK_SPAWN_OPS,
   SPACE_LINK_VIA_HEADER,
   SpaceLinksInvokeInputSchema,
@@ -67,7 +76,10 @@ import type { DbClaims } from '../../../db/types.js';
 import { FixedWindowLimiter } from '../../../http/fixed-window.js';
 import { normalizeCommandInputForIdempotencyMode } from '../../../http/idempotency.js';
 import { identityFromSession } from '../../../http/identity-resolver.js';
+import { TOKEN_PREFIX } from '../../../identity/crypto.js';
+import { CLAIM_TOKEN_PREFIX } from '../../../identity/pg-auth.js';
 import { admitLinkInvoke } from '../../../identity/link-bearer.js';
+import { PTY_GRANT_PREFIX } from '../../../pty/grant-token.js';
 import { nextRequestId } from '../../../http/request-id.js';
 import type { OperationHandler, RequestContext, RequestIdentity } from '../../../http/types.js';
 import { isHandlerResult } from '../../../http/types.js';
@@ -151,7 +163,8 @@ export type SpaceLinkExecutor = (request: SpaceLinkExecuteRequest) => Promise<Sp
 
 /** An executor failure with the closed audit reason it should be recorded under. */
 export class SpaceLinkExecuteFailure extends Error {
-  constructor(readonly reason: string, readonly error: unknown) {
+  /** `refused`: a link refusal decided on B (audited `refused`), not a failed run. */
+  constructor(readonly reason: string, readonly error: unknown, readonly refused = false) {
     super(reason);
     this.name = 'SpaceLinkExecuteFailure';
   }
@@ -167,18 +180,48 @@ export function parseVia(header: string | string[] | undefined): string[] {
   return parts.map((part) => part.toLowerCase());
 }
 
+/** True for a session-body op that may pass for the caller's own link spawn (299). */
+export function isOwnSpawnOp(op: string): boolean {
+  return Object.hasOwn(SPACE_LINK_OWN_SPAWN_OPS, op);
+}
+
+/** A home-side refusal that is not final: an own-spawn op's `session_body` waits for B. */
+function deferredToTarget(op: string, reason: SpaceLinkRefusalReason): boolean {
+  return reason === 'session_body' && isOwnSpawnOp(op);
+}
+
+// Every bearer a tm8 node mints (identity/crypto.ts, identity/pg-auth.ts,
+// pty/grant-token.ts). The CLI journal redacts them at write time; a
+// transcript is the agent tool's own file, so a session body that crosses a
+// link has them dropped here, keeping only the prefix.
+const MINTED_TOKEN_RE = new RegExp(`(${[TOKEN_PREFIX, CLAIM_TOKEN_PREFIX, PTY_GRANT_PREFIX].join('|')})[^\\s"'\`\\\\]+`, 'g');
+
+/** `data` with every minted token in any string replaced by its prefix and `<redacted>`. */
+export function withoutMintedTokens(data: unknown): unknown {
+  if (data === undefined) return data;
+  const text = JSON.stringify(data);
+  const redacted = text.replace(MINTED_TOKEN_RE, '$1<redacted>');
+  return redacted === text ? data : JSON.parse(redacted) as unknown;
+}
+
 function refused(reason: SpaceLinkRefusalReason, message?: string): CollabError {
   return new CollabError('forbidden', message ?? `refused through a space link: ${reason}`, {
     details: { reason: SPACE_LINK_REFUSED_CODE, refusal: reason },
   });
 }
 
-/** The target-side id worth keeping in the audit: an entity or message id, never a body. */
-function remoteIdOf(result: unknown): string | null {
+/**
+ * The target-side id worth keeping in the audit: an entity, message or
+ * attention request id, never a body. A posted batch keeps its first message;
+ * an attention mutation keeps its request before the entity it is on.
+ */
+export function remoteIdOf(result: unknown): string | null {
   if (typeof result !== 'object' || result === null) return null;
   const record = result as Record<string, unknown>;
-  for (const candidate of [record['id'], (record['entity'] as Record<string, unknown> | undefined)?.['id'],
-    (record['message'] as Record<string, unknown> | undefined)?.['id']]) {
+  const idOf = (value: unknown): unknown => (value as Record<string, unknown> | null | undefined)?.['id'];
+  const messages = record['messages'];
+  for (const candidate of [record['id'], idOf(record['request']), idOf(record['entity']), idOf(record['message']),
+    Array.isArray(messages) ? idOf(messages[0]) : undefined]) {
     if (typeof candidate === 'string' && UUID_RE.test(candidate)) return candidate;
   }
   return null;
@@ -209,22 +252,35 @@ export function spawnedSessionOf(op: OperationName, params: Readonly<Record<stri
 }
 
 /**
- * The input without the caller's HOME actor. A session's CLI stamps its own
- * actor (`TM8_ACTOR_ID`, a team member of A) on every write as `actorId`; in B
- * that id is nobody the link session can act as, so B's `resolve_actor`
- * refused every write with "not permitted to act as this actor". Through a
- * link the agent acts as the launching member, so its home actor is dropped
- * and B resolves the actor from the link session itself. Any other actorId is
- * left for B to authorize.
+ * The input without the caller's HOME envelope. A session's CLI stamps its own
+ * actor (`TM8_ACTOR_ID`, a team member of A) on every write as `actorId`, and
+ * `message send` also stamps its own work session (in A) as `workSessionId`.
+ * In B neither is anything the link session can claim: `resolve_actor`
+ * refused every write with "not permitted to act as this actor", and
+ * `w2_post_message_batch` refused every message with "authored_from
+ * provenance does not match the resolved author session" (a session of
+ * another space). Through a link the agent acts as the launching member, so
+ * both are dropped: B resolves the actor from the link session itself and the
+ * message carries no authored_from in B. The source session is kept where it
+ * belongs, on the audit row in A. Any other actorId or workSessionId is left
+ * for B to authorize.
  */
-export function withoutHomeActor(input: unknown, homeActorId: string | undefined): unknown {
-  if (!homeActorId || typeof input !== 'object' || input === null || Array.isArray(input)) return input;
-  const record = input as Record<string, unknown>;
-  if (typeof record['actorId'] !== 'string' || record['actorId'].toLowerCase() !== homeActorId.toLowerCase()) {
-    return input;
+export function withoutHomeEnvelope(
+  input: unknown,
+  home: { actorId?: string | undefined; workSessionId?: string | null | undefined },
+): unknown {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) return input;
+  const rest = { ...(input as Record<string, unknown>) };
+  let dropped = false;
+  for (const key of ['actorId', 'workSessionId'] as const) {
+    const homeId = home[key];
+    const value = rest[key];
+    if (homeId && typeof value === 'string' && value.toLowerCase() === homeId.toLowerCase()) {
+      delete rest[key];
+      dropped = true;
+    }
   }
-  const { actorId: _home, ...rest } = record;
-  return rest;
+  return dropped ? rest : input;
 }
 
 /** The inner identity: B's, off the re-resolved session, WITHOUT the raw token. */
@@ -297,6 +353,19 @@ export function createSpaceLinkInvokeHandlers(
       path: binding.path,
     };
 
+    // 299: a session body passes only for a session this link started as this
+    // member. B answers from its own provenance, under the link session.
+    const ownSpawn = isOwnSpawnOp(op);
+    if (ownSpawn) {
+      const sessionId = request.params[SPACE_LINK_OWN_SPAWN_OPS[op]!] ?? '';
+      const owned = UUID_RE.test(sessionId) && await store.spawnOwned(await claimsOf(inner), sessionId);
+      const refusal = spaceLinkRefusal(op, binding.kind, request.input, true, owned);
+      if (refusal) {
+        throw new SpaceLinkExecuteFailure(refusal, refused(refusal,
+          `refused through a space link: ${refusal} (only a session this link started as you is readable)`), true);
+      }
+    }
+
     // Layer (ii)'s one admission of a link identity (lead ruling (a)): this
     // context object, this op, one dispatch. Every home-side refusal above has
     // already run; a nested dispatch from inside the handler finds no marker.
@@ -325,6 +394,7 @@ export function createSpaceLinkInvokeHandlers(
       }
       data = result.data;
     }
+    if (ownSpawn) return { data: withoutMintedTokens(data), requestId: inner.requestId };
     if (!SPACE_LINK_SPAWN_OPS.includes(op)) return { data, requestId: inner.requestId };
 
     // W7b: the child's provenance in B, under the link session's own claims.
@@ -357,6 +427,10 @@ export function createSpaceLinkInvokeHandlers(
    */
   const remote: SpaceLinkExecutor = async (request) => {
     const serverId = request.row.targetServerId;
+    // No B-side provenance check exists on a remote link yet: fail closed.
+    if (isOwnSpawnOp(request.op)) {
+      throw new SpaceLinkExecuteFailure('session_body', refused('session_body'), true);
+    }
     const forwarder = options.forwarder ?? deps.remoteInvokeForwarder;
     if (!forwarder || !serverId) {
       throw new SpaceLinkExecuteFailure('remote_not_wired',
@@ -440,8 +514,9 @@ export function createSpaceLinkInvokeHandlers(
     const binding = getOperation(requested);
 
     // 2. The refused set (the spawn switch waits for the row, step 5).
+    // An own-spawn session body is decided on B (the executor), not here.
     const early = spaceLinkRefusal(requested, binding.kind, input, undefined);
-    if (early) return refuse(refused(early), early);
+    if (early && !deferredToTarget(requested, early)) return refuse(refused(early), early);
 
     // 3. The via chain, before the target is known.
     try {
@@ -468,7 +543,7 @@ export function createSpaceLinkInvokeHandlers(
     if (chainLate) return refuse(refused(chainLate), chainLate);
     // Fail closed: only a row that says allow_spawn is true lets a spawn op on.
     const late = spaceLinkRefusal(requested, binding.kind, input, row.allowSpawn === true);
-    if (late) return refuse(refused(late), late);
+    if (late && !deferredToTarget(requested, late)) return refuse(refused(late), late);
 
     // 6. Rate bucket per token row.
     const verdict = limiter.hit(row.tokenRowId);
@@ -491,10 +566,10 @@ export function createSpaceLinkInvokeHandlers(
     let outcome: SpaceLinkExecution;
     try {
       outcome = await execute({ claims, row, op: requested, binding, params: params ?? {}, query: query ?? {},
-        input: withoutHomeActor(input, ctx.identity.actorId), via, homeSpaceId, workSessionId });
+        input: withoutHomeEnvelope(input, { actorId: ctx.identity.actorId, workSessionId }), via, homeSpaceId, workSessionId });
     } catch (error) {
       if (error instanceof SpaceLinkExecuteFailure) {
-        await audit('error', error.reason).catch(() => undefined);
+        await audit(error.refused ? 'refused' : 'error', error.reason).catch(() => undefined);
         throw error.error;
       }
       await audit('error', auditReasonOf(error)).catch(() => undefined);
