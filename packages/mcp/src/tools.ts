@@ -126,7 +126,7 @@ const ACT_GUIDES = [
      Hierarchy is homogeneous — a parent and its direct children share one kind
      and one Space — so the summary says so rather than letting a model discover
      it by rejection. */
-  guide('entities.create', 'Create a graph entity (including a task). Pass parentId to nest it under an existing entity of the SAME kind (a subtask under the task you are working on, a sub-doc, a child story) — a parent and its direct children share one kind and one Space. A cross-kind link is an edge, never a parent: a doc made for a task stays a root and the task gets a `produces` edge. Add header {whenToUse: when a later session should open it, not its title; summary: what it holds} to a doc, artifact, drawing, task or collection someone may need later.', {
+  guide('entities.create', 'Create a graph entity (including a task). Choose parentId from what the entity is about: an existing entity of the SAME kind it is part of (a subtask under the task it breaks down, a sub-doc under the doc it details, a child story), or none when it is part of nothing — a parent and its direct children share one kind and one Space. A cross-kind link is an edge, never a parent: a doc made for a task stays a root and the task gets a `produces` edge. Add header {whenToUse: when a later session should open it, not its title; summary: what it holds} to a doc, artifact, drawing, task or collection someone may need later.', {
     body: {
       spaceId: '<space-id>', kind: 'task', title: '<title>', parentId: '<optional-parent-id>', content: {},
       header: { whenToUse: '<when a later session should open it>', summary: '<what it holds>' },
