@@ -1711,8 +1711,12 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     // functionality should be added". The expand therefore hangs off the bar
     // out of flow; a card that occupied layout height would push the terminal
     // canvas down on every press of Run, which is the relayout the ruling
-    // exists to prevent. Structural: the card must be INSIDE the absolute
-    // slot, not a sibling of the bar.
+    // exists to prevent. The bar's absolute slot is still where the expand
+    // hangs, but since #1070 (05b7199f7, "launch popup scrim covers the icon
+    // rail and tab title") the popup itself is PORTALLED out of that slot: the
+    // slot's `z-index: 40` stacking context capped the scrim, so the rail and
+    // the title painted through it. A portalled fixed overlay takes no row
+    // either — it is outside the panel's layout entirely.
     const detail = fixtureDetails[taskUuidTitle.id]!;
     const { getByTestId } = render(
       <EntityDetailPanel
@@ -1725,9 +1729,14 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     fireEvent.click(within(getByTestId('panel-action-bar')).getByRole('button', { name: /run/i }));
     const slot = getByTestId('panel-action-flow');
     expect(slot.className).toContain('pn-actions__flow');
-    expect(within(slot).getByTestId('launch-quick-config')).toBeTruthy();
-    // And it lives inside the bar, so the bar is still the only row.
+    // The slot lives inside the bar, so the bar is still the only row.
     expect(getByTestId('panel-action-bar').contains(slot)).toBe(true);
+    // The config is open, a modal overlay, and NOT in the bar's subtree —
+    // nothing was added to the panel's flow.
+    const config = getByTestId('launch-quick-config');
+    expect(config.getAttribute('aria-modal')).toBe('true');
+    expect(config.className).toContain('nsx-popup');
+    expect(getByTestId('panel-action-bar').contains(config)).toBe(false);
   });
 
   it('Run with NO launch sources keeps its refusal rather than opening an empty config', () => {

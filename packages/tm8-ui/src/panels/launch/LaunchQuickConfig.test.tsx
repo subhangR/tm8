@@ -114,10 +114,13 @@ describe('the Run verb opens a flow instead of dispatching', () => {
 
     const config = getByTestId('launch-quick-config');
     expect(config).toBeTruthy();
-    // The Maestro layout is one component: launch controls live in the same
-    // expanded card region as the row facts, never in a detached popover.
-    expect(config.closest('.pn-tt__meta')).not.toBeNull();
-    expect(config.closest('[data-anatomy="control-card"]')).toBe(getAllByTestId('list-tile')[0]);
+    // The config is a full-page modal over the shell, PORTALLED out of the
+    // row since #1070 (05b7199f7): rendered in place, the row's stacking
+    // context capped the scrim and the icon rail painted through it. So it is
+    // a modal dialog and not inside the tile that opened it.
+    expect(config.getAttribute('role')).toBe('dialog');
+    expect(config.getAttribute('aria-modal')).toBe('true');
+    expect(getAllByTestId('list-tile')[0].contains(config)).toBe(false);
     // The whole point: opening a configuration is not launching.
     expect(onAction).not.toHaveBeenCalled();
   });
