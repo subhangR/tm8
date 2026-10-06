@@ -1,6 +1,7 @@
 /**
- * Left header (Spec A §3, design log §2): tm8 mark · view selector · space
- * switcher, spanning the rail and the browser. Workstream A.
+ * Left header (Spec A §3, design log §2): tm8 mark · space switcher … view
+ * selector (right-aligned; Subhang round 2 item 7), spanning the rail and
+ * the browser. Workstream A.
  *
  * `ViewSelector` is also mounted by the Restore cluster's ⋯ while the
  * navigation is expanded away (Spec A §14), so both doors open one menu.
@@ -27,10 +28,10 @@ export function LeftHeader() {
           <BrandMark />
         </button>
       </div>
-      <ViewSelector variant="label" />
       <div className="tws-space-slot" data-narrow={narrow || undefined}>
         {switcher}
       </div>
+      <ViewSelector variant="label" />
     </header>
   );
 }
