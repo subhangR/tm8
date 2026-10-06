@@ -78,6 +78,8 @@ export interface EdgeTypeView {
   description: string;
   propsSchema: Record<string, unknown>;
   acyclic: boolean;
+  /** 303: set on a deprecated type — what replaces it (a canonical type, or `parentId`). */
+  replacedBy: string | null;
 }
 
 interface EdgeTypeRow {
@@ -87,6 +89,7 @@ interface EdgeTypeRow {
   description: string;
   props_schema: Record<string, unknown> | null;
   acyclic: boolean;
+  replaced_by: string | null;
 }
 
 interface NormalizedEdgeQuery {
@@ -249,7 +252,7 @@ export async function queryEdges(
 
 export async function listEdgeTypes(q: Querier): Promise<EdgeTypeView[]> {
   const rows = await q.query<EdgeTypeRow>(
-    `select type, src_kinds, dst_kinds, description, props_schema, acyclic
+    `select type, src_kinds, dst_kinds, description, props_schema, acyclic, replaced_by
        from public.edge_types
       order by type`,
   );
@@ -261,6 +264,7 @@ export async function listEdgeTypes(q: Querier): Promise<EdgeTypeView[]> {
     description: row.description,
     propsSchema: row.props_schema ?? { type: 'object' },
     acyclic: row.acyclic,
+    replacedBy: row.replaced_by ?? null,
   }));
 }
 

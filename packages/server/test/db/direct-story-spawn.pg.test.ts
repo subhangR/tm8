@@ -24,7 +24,10 @@ describe('direct story spawn on the current migration chain', () => {
     db = await createW1ScratchDatabase('story_spawn');
     const files = migrationFiles();
     const migration = files.find(file => file.endsWith('_direct_story_spawn.sql'))!;
-    db.apply(files.filter(file => file !== migration));
+    // 303 re-creates the spawn 294 introduces; replaying 294 after it would
+    // collide, so this out-of-order fixture leaves 303 out (its own suite is
+    // canonical-edges.pg.test.ts).
+    db.apply(files.filter(file => file !== migration && !file.endsWith('_canonical_edges.sql')));
     previousOwner = (await db.query(`select pg_get_userbyid(proowner) owner from pg_proc
       where oid='public.execution_spawn(uuid,uuid,uuid[],uuid,text,text,text,text,text,text,text,text,boolean,integer,uuid,text,uuid,text)'::regprocedure`))[0]!.owner;
     db.apply([migration]);

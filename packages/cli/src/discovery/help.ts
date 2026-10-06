@@ -57,6 +57,7 @@ import { matchIntent, matchReason, rank } from './search.js';
 import { storyGuide } from './story-guide.js';
 import { routineGuide } from './routine-guide.js';
 import { formGuide, type GuideSection } from './form-guide.js';
+import { edgeTypeGuide } from './edge-guide.js';
 
 export const CLI_VERSION = '0.1.0';
 
@@ -160,6 +161,7 @@ const NOUN_GUIDES: Readonly<Record<string, () => GuideSection[]>> = {
   form: formGuide,
   story: storyGuide,
   routine: routineGuide,
+  'edge-type': edgeTypeGuide,
 };
 
 export interface CommandHelp {

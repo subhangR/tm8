@@ -2011,6 +2011,10 @@ const ROWS: Record<OperationName, Row> = {
     authz: 'server',
     input: 'none',
     tags: ['schema', 'registry', 'relationships'],
+    notes: [
+      'each type prints its one-line meaning; a deprecated type names its replacement and refuses new rows',
+      '`tm8 help edge-type` says which edge each meaning uses and which ones the server records for you',
+    ],
   },
 
   // ── messages ─────────────────────────────────────────────────────────────

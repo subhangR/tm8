@@ -1321,9 +1321,10 @@ export class DbGraphPort implements GraphPort {
       const row = rows[0];
       if (!row) throw fail('not_found', `work session ${sessionId} not found`);
 
+      // The session's teammate: `participates_in`, teammate -> session (303).
       const members = await q.query<{ dst_id: string }>(
-        `select dst_id from public.edges
-          where src_id = $1 and type = 'relates_to' limit 1`,
+        `select src_id as dst_id from public.edges
+          where dst_id = $1 and type = 'participates_in' limit 1`,
         [sessionId],
       );
       const tasks = await q.query<{ dst_id: string }>(
@@ -3164,9 +3165,9 @@ function registerHandlers(
          left join lateral (
            select m.entity_id, m.name, m.role
              from public.edges r
-             join public.team_members m on m.entity_id = r.dst_id
+             join public.team_members m on m.entity_id = r.src_id
              join public.entities me on me.id = m.entity_id and me.deleted_at is null
-            where r.src_id = ws.entity_id and r.type = 'relates_to'
+            where r.dst_id = ws.entity_id and r.type = 'participates_in'
             order by r.created_at
             limit 1
          ) tm on true
@@ -3590,45 +3591,9 @@ function registerHandlers(
       }
     }
 
-    /**
-     * `dispatched_by` provenance (§4.3), written by the SERVER rather than
-     * asked of the dispatcher.
-     *
-     * The dispatcher spawning this session is, at this moment, the one actor
-     * guaranteed to be busy doing something else — and a provenance edge an
-     * agent must remember to write is an edge that is missing precisely when
-     * the routing went wrong and you want to know who chose. The spawner's
-     * session id is server-authoritative (it comes off the pinned credential,
-     * never the body), so no caller can forge itself a dispatcher lineage.
-     *
-     * Best-effort on purpose: the session is already spawned and running by
-     * here. A failed edge write must not turn a live spawn into a 5xx.
-     */
-    const spawnerSessionId =
-      ctx.identity.kind === 'bearer' ? ctx.identity.workSessionId ?? null : null;
-    if (spawnerSessionId) {
-      try {
-        const spawner = await db.query<{ mode: string | null }>(
-          claims,
-          'select mode from public.work_sessions where entity_id = $1',
-          [spawnerSessionId],
-        );
-        if (spawner[0]?.mode === 'dispatcher') {
-          await db.tx(claims, async (q) => {
-            await q.rpc('write_edge', [
-              result.sessionId,
-              spawnerSessionId,
-              'dispatched_by',
-              JSON.stringify({}),
-              envelope.actorId ?? null,
-              `${envelope.clientMutationId ?? result.sessionId}:dispatched-by`,
-            ]);
-          });
-        }
-      } catch {
-        // Provenance is worth attempting, never worth failing a live spawn for.
-      }
-    }
+    // Spawned-by is the new session's parent_id (resolved above; it defaults
+    // to the calling session). 303 deprecated the `dispatched_by` edge that
+    // used to repeat it for dispatcher-mode spawners (Design Rules §2.3).
 
     // A dispatcher launched on tasks was told to route them in its first
     // turn; the durable request is stored on each task now that the session
@@ -3669,8 +3634,8 @@ function registerHandlers(
    * execution.terminal.start (101) — a VANILLA TERMINAL.
    *
    * Compare this handler with `execution.spawn` above. Spawn resolves
-   * assignment anchors, threads twelve launch fields into a `SpawnRequest`, and
-   * writes `dispatched_by` provenance afterwards. None of that has a meaning
+   * assignment anchors and threads twelve launch fields into a `SpawnRequest`,
+   * with the calling session as the parent. None of that has a meaning
    * here: there is no persona, no launch configuration, and no dispatcher
    * lineage, because a human pressed a button.
    *

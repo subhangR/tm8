@@ -215,26 +215,24 @@ export async function loadStoryPage(
   );
   const factOf = new Map(facts.map((f) => [f.id, f]));
 
-  // Session -> persona (`participates_in`, team_member -> session), dispatch
-  // provenance (`dispatched_by`, session -> dispatcher session) and what each
-  // session is `working_on`. Read for every session in the trail even when the
-  // edge itself was not walked: the team layer is about the sessions.
+  // Session -> persona (`participates_in`, team_member -> session) and what
+  // each session is `working_on`. Spawned-by is the session's parent_id
+  // (Design Rules §2.3; `dispatched_by` is deprecated by 303). Read for every
+  // session in the trail even when the edge itself was not walked: the team
+  // layer is about the sessions.
   const sessionIds = facts.filter((f) => f.kind === 'work_session').map((f) => f.id);
   const sessionEdges = sessionIds.length === 0 ? [] : await q.query<{ src_id: string; dst_id: string; type: string }>(
     `select g.src_id, g.dst_id, g.type
        from public.edges g
       where (g.type = 'participates_in' and g.dst_id = any($1::uuid[]))
-         or (g.type = 'dispatched_by' and g.src_id = any($1::uuid[]))
          -- 299: only ACTIVE claims put a session at a task (one robot per claim).
          or (g.type = 'working_on' and g.src_id = any($1::uuid[]) and (g.props->>'endedAt') is null)`,
     [sessionIds],
   );
   const personaOf = new Map<string, string>();
-  const dispatchedByOf = new Map<string, string>();
   const workingOn = new Map<string, string[]>();
   for (const g of sessionEdges) {
     if (g.type === 'participates_in') personaOf.set(g.dst_id, g.src_id);
-    else if (g.type === 'dispatched_by') dispatchedByOf.set(g.src_id, g.dst_id);
     else if (factOf.has(g.dst_id)) workingOn.set(g.src_id, [...(workingOn.get(g.src_id) ?? []), g.dst_id]);
   }
 
@@ -457,7 +455,7 @@ export async function loadStoryPage(
       mode: personaMode,
       taskIds,
       rootIds: rootIdsOf.get(f.id) ?? [],
-      dispatchedById: dispatchedByOf.get(f.id) ?? null,
+      dispatchedById: f.parent_id && factOf.get(f.parent_id)?.kind === 'work_session' ? f.parent_id : null,
     };
   });
 

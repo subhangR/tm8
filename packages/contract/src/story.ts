@@ -35,11 +35,14 @@ import { z } from 'zod';
  * (team_member, member, project, interaction_profile, skill) and stories are
  * LEAVES: reached, never walked out of (lead ruling 2026-10-02). NOT followed, on purpose:
  * `likes`, `stars`, `pulled`, `visible_to` — reactions and access are not
- * part of the work.
+ * part of the work; `relates_to`, `depends_on`, `participates_in`,
+ * `authored_from` and `follows_up` (Design Rules §2.3, P0b). `dispatched_by` is
+ * deprecated (303). The SQL twin is `internal.story_followed_edge_types()`;
+ * db/test/canonical_edges.test.mjs asserts the two agree.
  */
 export const STORY_FOLLOWED_EDGE_TYPES = [
   'parent', 'attached_to', 'tracks', 'working_on', 'about', 'created_in',
-  'assigned_to', 'has_member', 'produces', 'remembers', 'dispatched_by',
+  'assigned_to', 'has_member', 'produces', 'remembers',
 ] as const;
 export type StoryFollowedEdgeType = (typeof STORY_FOLLOWED_EDGE_TYPES)[number];
 
@@ -288,7 +291,7 @@ export interface StorySession {
   /** Tasks it is `working_on` that are in the story. */
   taskIds: string[];
   rootIds: string[];
-  /** The session that dispatched or spawned it, when known. */
+  /** The session that spawned it: its parent session, when that is in the story (303: no longer `dispatched_by`). */
   dispatchedById: string | null;
 }
 
