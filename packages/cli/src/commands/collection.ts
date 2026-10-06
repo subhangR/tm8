@@ -138,6 +138,8 @@ async function collectionAdd(cmd: CommandContext): Promise<ExitCode> {
     `collection.add ${collectionId} · ${results.filter(r => r.ok === true).length}/${results.length} added`,
     `batch mutationId: ${receipt.mutationId}`,
     `replay whole batch: ${receipt.next}`,
+    ...results.flatMap(r => (Array.isArray(r.warnings) ? r.warnings as Array<{ code?: string; message?: string }> : [])
+      .filter(w => w.message).map(w => `WARNING ${String(r.entityId)} ${w.code}: ${w.message}`)),
     ...results.filter(r => r.ok === false).flatMap(r => [
       `${r.entityId}${r.outcome === 'unknown' ? ' · outcome: unknown' : ''}: ${JSON.stringify(r.error)}`,
       `retry this item: ${r.next}`,
