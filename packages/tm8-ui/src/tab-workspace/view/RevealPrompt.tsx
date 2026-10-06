@@ -15,7 +15,8 @@ export function RevealPrompt() {
   const pending = useWorkspaceState((s) => s.pending);
   // Always on: the press that triggers a prompt happens before it mounts.
   useRecordPresses();
-  if (!pending) return null;
+  // unsaved_changes is ConfirmDiscard's (workstream C).
+  if (!pending || pending.reason === 'unsaved_changes') return null;
   if (pending.reason === 'scope_choice_required') return <ScopeReveal key={pending.id} pending={pending} />;
   const plural = pending.targetKind ? getKindAdapter(pending.targetKind).nounPlural : '';
   const label: Record<InteractionChoice, string> = {
@@ -27,7 +28,6 @@ export function RevealPrompt() {
   };
   return (
     <div className="tws-prompt" role="dialog" aria-modal="false" data-testid="tws-prompt" data-reason={pending.reason}>
-      {pending.reason === 'unsaved_changes' ? <p>Discard draft?</p> : null}
       {pending.choices.map((choice) => (
         <button
           key={choice}
