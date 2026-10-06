@@ -114,3 +114,9 @@ canonical (ruled 2026-08-12) and now lives in exactly one place.
   `scripts/lib/ui.mjs`.
 - **`bun run build` is `tsc -b` ONLY.** The UI needs its own `vite build`. Skipping
   it ships a stale UI against a new server, with no error anywhere.
+
+## License
+
+tm8 is dual-licensed: open source under the GNU Affero General Public License v3.0
+only ([`LICENSE`](LICENSE)), with a commercial licence available from the copyright
+holders ([`COMMERCIAL-LICENSE.md`](COMMERCIAL-LICENSE.md)).
