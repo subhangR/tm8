@@ -450,6 +450,12 @@ function parseTarget(
       const plate = rest[1];
       return { view: 'help', plate: plate && plate.length > 0 ? plate : null };
     }
+    case 'tabs': {
+      /* The Workspace tabs view (Spec B §7): `?tab=` names the active entity
+         tab. Lossy-tolerant like `?about=`: a non-id value is not carried. */
+      const tab = query.get('tab');
+      return tab && ID_LIKE.test(tab) ? { view: 'tabs', tab: tab as EntityId } : { view: 'tabs' };
+    }
     case 'board-v2':
       /* Board v2 (2026-08-18) — hyphenated segment, camel member, exactly the
          `new-session` precedent. */
@@ -570,6 +576,8 @@ function pathOf(route: Route): string {
       return t.plate ? `${base}/help/${enc(t.plate)}` : `${base}/help`;
     case 'boardV2':
       return `${base}/board-v2`;
+    case 'tabs':
+      return `${base}/tabs`;
     case 'newSession':
       return `${base}/new-session`;
     case 'voice':
@@ -633,6 +641,8 @@ export function build(route: Route): BuildOutcome {
     if (t.kinds) viewParams.push(['kinds', t.kinds.map(enc).join(',')]);
   } else if (t.view === 'channel') {
     if (t.msg) viewParams.push(['msg', enc(t.msg)]);
+  } else if (t.view === 'tabs') {
+    if (t.tab) viewParams.push(['tab', enc(t.tab)]);
   }
   if (route.panels.session) viewParams.push(['session', enc(route.panels.session)]);
   /* The chat slot rides with the VIEW params, outside every drop tier: it is
