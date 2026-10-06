@@ -42,6 +42,8 @@ interface ChatListItem {
   state: ChatThreadSummary['state'];
   runtimeState: NonNullable<ChatThreadSummary['runtimeState']>;
   context: SessionTranscriptContext | null;
+  /** The server's per-viewer answer (`state.canSetModel`); absent when it gave none. */
+  canSetModel?: boolean;
 }
 
 /**
@@ -80,6 +82,9 @@ function itemFromSummary(summary: EntitySummary, aboutId: EntityId | null): Chat
       : state.runtimeState === 'stopped' ? 'stopped-continuable' : 'idle',
     runtimeState: state.runtimeState,
     context: state.context ?? null,
+    /* Copied only when the server answered. An absent answer stays absent all
+       the way to the chip, which reads it as unknown and does not lock. */
+    ...(state.canSetModel !== undefined ? { canSetModel: state.canSetModel } : {}),
   };
 }
 
@@ -275,6 +280,7 @@ export function createChatHomePortFromSeam(
         mode: item.mode,
         workdirMode: item.workdirMode,
         projectId: item.projectId,
+        ...(item.canSetModel !== undefined ? { canSetModel: item.canSetModel } : {}),
       },
       state: item.state,
       runtimeState: item.runtimeState,
@@ -355,6 +361,7 @@ export function createChatHomePortFromSeam(
             mode: item.mode,
             workdirMode: item.workdirMode,
             projectId: item.projectId,
+            ...(item.canSetModel !== undefined ? { canSetModel: item.canSetModel } : {}),
           },
           /* THIS READ'S OWN EVIDENCE BEATS THE CACHE. A claimed turn's marker is
              the server saying, as of this read, that a turn is running — the

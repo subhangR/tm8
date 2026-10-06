@@ -322,6 +322,8 @@ interface SummaryRow {
   chat_turn_count: number | null;
   chat_last_turn_at: Date | string | null;
   chat_context: unknown;
+  /** Per viewer: this read runs under the POLLER's claims. Null off a chat row. */
+  chat_can_set_model?: boolean | null;
   graph_title: string | null;
   graph_type: string | null;
   graph_node_count: number | null;
@@ -511,6 +513,14 @@ select
   chq.turn_count     as chat_turn_count,
   chq.last_turn_at   as chat_last_turn_at,
   cht.context        as chat_context,
+  -- MIRRORS entity-read.ts's chat_can_set_model (276:119-125's two conjuncts).
+  -- Per viewer, and that is safe here: the pump polls PER CONNECTION under that
+  -- connection's own claims (pump.ts), so no one viewer's answer is fanned out.
+  case when cht.entity_id is not null then
+    coalesce(cht.configured_by_identity_id = internal.identity_id(), false)
+    and (nullif(current_setting('tm8.session_space_id', true), '')::uuid is null
+         or cht.space_id = nullif(current_setting('tm8.session_space_id', true), '')::uuid)
+  end                as chat_can_set_model,
   gr.title           as graph_title,
   gr.graph_type      as graph_type,
   coalesce(jsonb_array_length(gr.nodes), 0) as graph_node_count,
@@ -1530,6 +1540,7 @@ export class PgEntityProjector implements EntityProjector {
           lastTurnAt: iso(r.chat_last_turn_at),
           context: chatContextOf(r.chat_context),
           about: chatSubjects.get(r.id) ?? null,
+          ...(typeof r.chat_can_set_model === 'boolean' ? { canSetModel: r.chat_can_set_model } : {}),
         };
       case 'container': {
         // MIRRORS entity-read.ts stateOf. The two must agree exactly: a field

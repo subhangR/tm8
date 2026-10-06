@@ -300,6 +300,35 @@ describe('real chat-home seam adapter', () => {
     });
   });
 
+  /**
+   * 01a0f49e — THE PER-VIEWER ANSWER REACHES THE SCREEN AS THE SERVER GAVE IT,
+   * on the list row AND on the opened chat (they are built in two places), and
+   * an absent answer stays ABSENT. Absent is a node older than the field, and
+   * the screen reads it as unknown; an adapter that defaulted it to `false`
+   * would lock every chat on such a node, and one that defaulted it to `true`
+   * would erase the server's refusal.
+   */
+  it('carries canSetModel through exactly as the server answered it, absence included', async () => {
+    const theirs = '019f0000-0000-7000-8000-000000000221' as EntityId;
+    const unknown = '019f0000-0000-7000-8000-000000000222' as EntityId;
+    const { seam } = seamStub([
+      chatSummary({ state: { ...chatSummary().state, canSetModel: true } }),
+      chatSummary({ id: theirs, state: { ...chatSummary().state, canSetModel: false } }),
+      chatSummary({ id: unknown }),
+    ]);
+    (seam as { messages?: unknown }).messages = vi.fn(async () => ({ items: [] }));
+    const port = createChatHomePortFromSeam(seam);
+    const rows = new Map((await port.listThreads('space-1')).map((row) => [row.rootId, row.config]));
+    expect(rows.get(CHAT)?.canSetModel).toBe(true);
+    expect(rows.get(theirs)?.canSetModel).toBe(false);
+    expect(rows.get(unknown)).toBeDefined();
+    expect(rows.get(unknown)).not.toHaveProperty('canSetModel');
+
+    expect((await port.readThread(CHAT)).summary.config.canSetModel).toBe(true);
+    expect((await port.readThread(theirs)).summary.config.canSetModel).toBe(false);
+    expect((await port.readThread(unknown)).summary.config).not.toHaveProperty('canSetModel');
+  });
+
   it('folds the two server state axes into the one word a row draws', async () => {
     // `runtimeState` is the headless child, `turnState` is the queue. A chat
     // whose node restarted with work waiting is 'stopped' AND 'queued', and the

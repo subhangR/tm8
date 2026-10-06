@@ -168,6 +168,32 @@ describe('TM8 Chat v1 contract', () => {
     expect(state).not.toHaveProperty('nativeSessionId');
   });
 
+  it('carries canSetModel as a per-viewer boolean or not at all, never an id or a null', () => {
+    // 01a0f49e. The browser holds an ACTOR id and 276 compares an IDENTITY, so
+    // an id here would invite a client-side comparison that never matches and
+    // locks every configurer out of their own chat. A null would invite reading
+    // "not computed" as a refusal. Absent is the only way to say "unknown".
+    const row = {
+      kind: 'chat',
+      teammateId: TEAMMATE,
+      model: 'gpt-5.6-sol',
+      provider: 'anthropic',
+      agentTool: 'claude-code',
+      mode: 'build',
+      workdirMode: 'scratch',
+      projectId: null,
+      runtimeState: 'cold',
+      turnState: 'idle',
+      turnCount: 0,
+      lastTurnAt: null,
+    } as const;
+    expect(EntityStateSchema.parse(row)).not.toHaveProperty('canSetModel');
+    expect(EntityStateSchema.parse({ ...row, canSetModel: true })).toMatchObject({ canSetModel: true });
+    expect(EntityStateSchema.parse({ ...row, canSetModel: false })).toMatchObject({ canSetModel: false });
+    expect(EntityStateSchema.safeParse({ ...row, canSetModel: null }).success).toBe(false);
+    expect(EntityStateSchema.safeParse({ ...row, canSetModel: 'chat-owner-a' }).success).toBe(false);
+  });
+
   it('accepts exactly the seven ordered C1 message-part kinds', () => {
     const base = { seq: 0, createdAt: '2026-08-13T00:00:00.000Z' };
     const parts = [

@@ -20,7 +20,7 @@ import { CollabError } from '@tm8/contract';
 import type { EntityId } from '@tm8/contract';
 import { ChatHomeScreen } from './ChatHomeScreen';
 import { CHAT_HOME_FIXTURE_THREAD, createChatHomeFixturePort } from './fixtures';
-import type { ChatHomePort, ChatModelOption } from './types';
+import type { ChatHomePort, ChatModelOption, ChatThreadDetail } from './types';
 
 const SPACE_ID = '019f0000-0000-7000-8000-000000000090';
 const FIXTURE_CHAT = CHAT_HOME_FIXTURE_THREAD.summary.rootId;
@@ -36,8 +36,11 @@ const MODELS: ChatModelOption[] = [
 afterEach(cleanup);
 
 /** Mount with the fixture chat already open, so the chip is on a PINNED chat. */
-async function openChat(overrides: Partial<ChatHomePort> = {}) {
-  const { port, controls } = createChatHomeFixturePort();
+async function openChat(
+  overrides: Partial<ChatHomePort> = {},
+  threads: readonly ChatThreadDetail[] = [CHAT_HOME_FIXTURE_THREAD],
+) {
+  const { port, controls } = createChatHomeFixturePort(threads);
   const view = render(
     <ChatHomeScreen
       port={{ ...port, ...overrides }}
@@ -232,5 +235,133 @@ describe('276: changing an open chat’s model from the composer', () => {
     await waitFor(() => expect(view.getByRole('alert').textContent).toContain('chat not found'));
     expect(view.getByTestId('tch-model').hasAttribute('disabled')).toBe(false);
     expect(view.getByRole('alert').textContent).not.toContain('needs an update');
+  });
+});
+
+/** A chat as THIS viewer is served it: `canSetModel` as given, ABSENT when undefined. */
+function servedAs(
+  canSetModel: boolean | undefined,
+  base: ChatThreadDetail = CHAT_HOME_FIXTURE_THREAD,
+): ChatThreadDetail {
+  return {
+    ...base,
+    summary: {
+      ...base.summary,
+      config: { ...base.summary.config, ...(canSetModel === undefined ? {} : { canSetModel }) },
+    },
+  };
+}
+
+/**
+ * 01a0f49e — A VIEWER WHO DID NOT START THE CHAT CANNOT CHANGE ITS MODEL, AND
+ * THE CHIP SAYS SO BEFORE ANYTHING IS SENT.
+ *
+ * Chats are multi-participant, and 276's door refuses `chat.setModel` from
+ * anyone but the configurer. The server answers that per viewer as one boolean
+ * (`state.canSetModel`, computed in SQL from the viewer's IDENTITY) and the
+ * screen obeys it. The browser never compares ids itself: the id it holds is
+ * an ACTOR id, which never equals the configurer's identity, so a client-side
+ * comparison would lock everyone, the configurer included.
+ */
+describe('01a0f49e: the chip is locked for a viewer who did not start the chat', () => {
+  const REASON = 'only the person who started this chat can change its model';
+
+  it('canSetModel false: the chip is locked, says why, and nothing is sent', async () => {
+    const { view, controls } = await openChat({}, [servedAs(false)]);
+    const chip = view.getByTestId('tch-model');
+    expect(chip.hasAttribute('disabled')).toBe(true);
+    expect(chip.getAttribute('title')).toContain(REASON);
+    // The node is fine; the chat is not theirs. Blaming the node is #979's bug.
+    expect(chip.getAttribute('title')).not.toContain('this node cannot');
+
+    fireEvent.click(view.getByLabelText('Chat model'));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(view.queryByTestId('tch-model-claude-opus-4-1')).toBeNull();
+    expect(controls.modelSwitches).toEqual([]);
+  });
+
+  it('a lock that lands while the menu is open still gates its rows', async () => {
+    /* The list row has no answer yet (unknown: not locked), so the menu opens;
+       then the chat's own read arrives saying "not yours" while it is open. A
+       pick from that menu must send nothing, and the rows must LOOK locked. */
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const { view, controls } = await openChat({
+      readThread: async () => {
+        await held;
+        return structuredClone(servedAs(false));
+      },
+    });
+    fireEvent.click(view.getByLabelText('Chat model'));
+    expect(view.getByTestId('tch-model-claude-opus-4-1').getAttribute('aria-disabled')).not.toBe('true');
+
+    release();
+    await waitFor(() => expect(view.getByTestId('tch-model').hasAttribute('disabled')).toBe(true));
+    const row = view.getByTestId('tch-model-claude-opus-4-1');
+    expect(row.getAttribute('aria-disabled')).toBe('true');
+    expect(row.getAttribute('title')).toContain(REASON);
+    fireEvent.click(row);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(controls.modelSwitches).toEqual([]);
+  });
+
+  it('canSetModel true: the configurer\u2019s chip is unchanged, and the switch goes through', async () => {
+    const { view, controls } = await openChat({}, [servedAs(true)]);
+    const chip = view.getByTestId('tch-model');
+    expect(chip.hasAttribute('disabled')).toBe(false);
+    expect(chip.getAttribute('title') ?? '').not.toContain(REASON);
+    fireEvent.click(view.getByLabelText('Chat model'));
+    fireEvent.click(view.getByTestId('tch-model-claude-opus-4-1'));
+    await waitFor(() => expect(controls.modelSwitches).toEqual([
+      { chatId: FIXTURE_CHAT, model: 'claude-opus-4-1' },
+    ]));
+  });
+
+  it('canSetModel ABSENT is unknown, not "someone else\u2019s": the chip stays live', async () => {
+    /* G4 wearing a new hat: reading absence as refusal would lock every chat on
+       a node older than the field, the configurer's own included. */
+    const { view, controls } = await openChat({}, [servedAs(undefined)]);
+    expect(view.getByTestId('tch-model').hasAttribute('disabled')).toBe(false);
+    fireEvent.click(view.getByLabelText('Chat model'));
+    fireEvent.click(view.getByTestId('tch-model-claude-opus-4-1'));
+    await waitFor(() => expect(controls.modelSwitches).toHaveLength(1));
+  });
+
+  it('with canSetModel absent, the missing-route latch is still the backstop', async () => {
+    /* Absent is what an older node sends. If it also lacks the route, unknown
+       does not lock, so the first click finds out and #979's latch takes over.
+       (If it has the route, 276 refuses a non-configurer with a P0002 that
+       carries a sqlstate, which the latch ignores: see the test above.) */
+    const { view } = await openChat({
+      setModel: async () => {
+        throw new CollabError('not_found', 'no operation bound to POST /v2/chats/x/model');
+      },
+    }, [servedAs(undefined)]);
+    fireEvent.click(view.getByLabelText('Chat model'));
+    fireEvent.click(view.getByTestId('tch-model-claude-opus-4-1'));
+    await waitFor(() => expect(view.getByTestId('tch-model').hasAttribute('disabled')).toBe(true));
+    expect(view.getByTestId('tch-model').getAttribute('title')).toContain('cannot change');
+    expect(view.getByTestId('tch-model').getAttribute('title')).not.toContain(REASON);
+  });
+
+  it('the lock is per chat: the viewer\u2019s own chat still switches, with no reload', async () => {
+    const MINE = '019f0000-0000-7000-8000-0000000000a1' as EntityId;
+    const mine = servedAs(true, {
+      ...CHAT_HOME_FIXTURE_THREAD,
+      summary: { ...CHAT_HOME_FIXTURE_THREAD.summary, rootId: MINE, title: 'My own chat' },
+    });
+    const { view, controls } = await openChat({}, [servedAs(false), mine]);
+    expect(view.getByTestId('tch-model').getAttribute('title')).toContain(REASON);
+
+    fireEvent.click(view.getByRole('button', { name: /My own chat/ }));
+    await waitFor(() => expect(view.getByTestId('tch-model').hasAttribute('disabled')).toBe(false));
+    fireEvent.click(view.getByLabelText('Chat model'));
+    fireEvent.click(view.getByTestId('tch-model-claude-opus-4-1'));
+    await waitFor(() => expect(controls.modelSwitches).toEqual([{ chatId: MINE, model: 'claude-opus-4-1' }]));
+
+    // And back: someone else's chat is still theirs to configure, not ours.
+    fireEvent.click(view.getByRole('button', { name: /Plan the launch sequence/ }));
+    await waitFor(() => expect(view.getByTestId('tch-model').getAttribute('title')).toContain(REASON));
+    expect(view.getByTestId('tch-model').hasAttribute('disabled')).toBe(true);
   });
 });

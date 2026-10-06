@@ -1378,11 +1378,19 @@ export function ChatHomeScreen({
    * the transcript, so switching costs the conversation nothing and `chat.start`
    * was pinning it only because nothing could move it afterwards.
    *
-   * Three things can still lock the chip, and each says which:
+   * Four things can still lock the chip, and each says which:
    *  - a node with no `chat.setModel` route, which is learned from the 404 its
    *    first use comes back with, NOT from `port.setModel` being absent: the
    *    real port always defines it, so that arm only ever catches a fixture,
    *  - a chat still being born, which has no id to address yet,
+   *  - a viewer who did not start the chat. Only the configurer may switch
+   *    (276), and everyone else is refused with the same P0002 a missing chat
+   *    gets, so a refusal cannot say why. The chat read says it instead, per
+   *    viewer (`canSetModel`), and the chip locks before anything is sent.
+   *    ONLY `false` locks. Absent is a node older than the field, and reading
+   *    absence as "someone else's chat" would be the hole the latch's sqlstate
+   *    test closed, in a new place: a member locked out of their own chat, on
+   *    every such node. There the latch is still what catches a missing route,
    *  - nothing else. A running turn does NOT lock it: the switch applies to the
    *    next turn claimed, so there is no reason to make the viewer wait for an
    *    answer to choose who writes the one after it.
@@ -1397,7 +1405,9 @@ export function ChatHomeScreen({
       ? 'this node cannot change a chat\u2019s model'
       : selectedRootId === null
         ? 'this chat is still starting'
-        : null;
+        : activeConfig?.canSetModel === false
+          ? 'only the person who started this chat can change its model'
+          : null;
   /**
    * THE MODE IS NOT WRITE-ONCE EITHER, and it never needed a relaunch to change.
    *
