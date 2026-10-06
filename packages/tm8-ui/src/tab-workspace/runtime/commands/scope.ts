@@ -35,8 +35,10 @@ export function applyScope(
     if (!ids.every(isWorkspaceKind)) return reject('unsupported_kind');
     scope = { mode: 'byType', selectedTypeIds: normalizeKinds(ids) };
   }
-  if (sameScope(scope, state.scope)) return { type: 'commit', next: state };
-  return { type: 'commit', next: resolveAfterScopeChange({ ...state, scope }, hooks) };
+  // Any explicit scope choice answers a pending scope repair (persistence.ts).
+  const { scopeRepair, ...base } = state;
+  if (sameScope(scope, state.scope)) return { type: 'commit', next: scopeRepair ? base : state };
+  return { type: 'commit', next: resolveAfterScopeChange({ ...base, scope }, hooks) };
 }
 
 export const setScope: Planner = ({ state, env, hooks }) => {

@@ -133,6 +133,13 @@ export type WorkspaceState = {
   browsers: { main: BrowserState };
   /** At most one blocking interaction. */
   pending?: PendingInteraction;
+  /**
+   * ADDITIVE (Spec B §8 "Unknown kinds"): set by persistence when a restored
+   * By type selection lost every kind. The scope is held at Mixed while it is
+   * set and a banner asks the person to pick kinds or keep Mixed; any
+   * `tabScope.set` commit clears it. Never set by a command.
+   */
+  scopeRepair?: { droppedKinds: KindId[] };
 };
 
 export const LAYOUT_BOUNDS = {

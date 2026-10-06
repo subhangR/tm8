@@ -10,6 +10,14 @@ export {
 } from './store';
 export { createWorkspaceRuntime, getWorkspaceRuntime, registerEffect, type WorkspaceRuntime } from './dispatch';
 export { draftKey, draftStoreFor, flushDraftValues, type DraftStore } from './draftStore';
-export { initPersistence, type WorkspaceInitContext } from './persistence';
-export { initUrlSync, type UrlSyncContext } from './url';
+export {
+  acceptRestoreOffer,
+  dismissRestoreOffer,
+  initPersistence,
+  persistKey,
+  restoreOfferOf,
+  subscribeRestoreOffer,
+  type WorkspaceInitContext,
+} from './persistence';
+export { initUrlSync, workspaceTabUrl, workspaceTabView, type UrlSyncContext } from './url';
 export { installDevHook } from './devHook';

@@ -1,0 +1,47 @@
+/* Persistence banners (RestoreOffer.tsx): raised plane, top-centre of the content area. */
+.tws-banner {
+  grid-area: content;
+  align-self: start;
+  justify-self: center;
+  z-index: 10;
+  margin-top: var(--pn-space-3);
+  max-width: min(560px, calc(100% - 2 * var(--pn-space-6)));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-2) var(--pn-space-3);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-sm);
+}
+.tws-banner-text {
+  flex: 1 1 auto;
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-2);
+}
+.tws-banner-primary {
+  color: var(--pn-brand-2);
+}
+.tws-banner-kinds,
+.tws-banner-actions {
+  flex: 1 0 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pn-space-2);
+}
+.tws-banner-kind {
+  font-size: var(--pn-fs-label);
+  font-weight: 500;
+  color: var(--pn-ink-2);
+  border: 1px solid var(--pn-line-2);
+}
+.tws-banner-kind[aria-pressed='true'] {
+  background: var(--pn-active);
+  color: var(--pn-ink);
+}
+.tws-banner .tws-quiet-btn:disabled {
+  color: var(--pn-ink-4);
+  cursor: default;
+}
