@@ -105,6 +105,12 @@
 
 /* ---- Three rows of chrome (list-panel change list round 2, item 8) ------ */
 
+/* ONE LEFT EDGE (list-panel round 3, item 10): the kind button in row 1 and
+   every row's leading icon start this far from the panel edge. */
+.cv2-root .tws-browser {
+  --tws-browser-inset: 16px;
+}
+
 /* No box of its own: the list sits flush on the browser's surface. */
 .cv2-root .tws-browser .lp {
   min-width: 0;
@@ -122,7 +128,7 @@
   gap: var(--pn-space-2);
   box-sizing: border-box;
   height: 36px;
-  padding: var(--pn-space-1) var(--pn-space-2) 0;
+  padding: var(--pn-space-1) var(--pn-space-2) 0 var(--tws-browser-inset);
 }
 .cv2-root .tws-browser .tch-rootbar {
   flex: none;
@@ -414,17 +420,23 @@
 
 /* ---- Row lead (rowLead="icon"): the kind icon IS the disclosure ---------- */
 
-/* Geometry: body 4 + row 4 ⇒ the 18px icon sits 8px from the panel edge;
-   icon + 6px gap ⇒ the title starts at 32px. Children step in 14px a level
-   (13px margin + the 1px guide; see TREE EDGES below). */
+/* Geometry: body (inset − 4) + row 4 ⇒ the 18px icon sits at the inset (16),
+   on the kind button's left edge; icon + 8px gap ⇒ the title starts at 42px.
+   The inset is on the body, not the row, so the tree keeps its own step:
+   children sit 14px a level deeper (13px margin + the 1px guide; see TREE
+   EDGES below), icon at 16 + 14 × depth. The right edge stays at 4. */
 .cv2-root .tws-browser .lp__body {
-  padding-inline: var(--pn-space-1);
+  padding-inline: calc(var(--tws-browser-inset) - var(--pn-space-1)) var(--pn-space-1);
 }
 .cv2-root .tws-browser .lp__tile-main,
 .cv2-root .tws-browser .pn-tt .pn-tt__main,
 .cv2-root .tws-browser .pn-st__main {
   padding-inline-start: var(--pn-space-1);
-  gap: 6px;
+  gap: var(--pn-space-2);
+}
+/* The generic tile's lead and title share row 1, not the main box. */
+.cv2-root .tws-browser .lp__tile-main > .lp__row1 {
+  gap: var(--pn-space-2);
 }
 .cv2-root .tws-browser .pn-tt[data-depth] {
   --tt-indent: 0px;
@@ -441,7 +453,7 @@
 
 /* The lead (R37.4): a 24-wide hit box, the title line's height (min 28), the
    18px icon centred. Negative margins keep its layout footprint at 18×18, so
-   it grows into the leading gutter and the 6px gap, never into the title. */
+   it grows 3px into the leading gutter and the 8px gap, never into the title. */
 .cv2-root .tws-browser .lp-lead {
   position: relative;
   isolation: isolate;
@@ -544,7 +556,8 @@
 }
 
 /* TREE EDGES ON THE LEAD GEOMETRY. The guide drops from the centre of the
-   parent's icon (x = 8 + 9 + 14 × depth from the panel edge): the children
+   parent's icon (x = inset + 9 + 14 × depth = 25 + 14 × depth from the panel
+   edge; the branch box starts at inset − 4, so 13px into it): the children
    group's hairline sits on that x, a connector carries it up to just under
    the icon, and an elbow at each child's title line meets the child's icon. */
 .cv2-root .tws-browser .lp__children {
