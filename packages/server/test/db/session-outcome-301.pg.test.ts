@@ -1,5 +1,5 @@
 /**
- * 299 against a real Postgres: a session's OUTCOME is separate from its
+ * 301 against a real Postgres: a session's OUTCOME is separate from its
  * PROCESS, and a `working_on` claim has a lifetime (Spec D1, doc 01a110ab).
  *
  * Each `it` names the spec §9 scenario it covers (S1..S29) where one applies.
@@ -261,7 +261,7 @@ async function taskStatus(id: string): Promise<string> {
 }
 
 beforeAll(async () => {
-  database = await createW1ScratchDatabase('session-outcome-299');
+  database = await createW1ScratchDatabase('session-outcome-301');
   database.apply(migrationFiles());
   fixture = await seed(database);
 });
