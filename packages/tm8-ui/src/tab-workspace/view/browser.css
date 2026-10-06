@@ -1,0 +1,167 @@
+/* Entity browser (Spec A §5, design log §4 and §11). Workstream B.
+   Scoped under `.tws-browser` so the reused list header and list panel keep
+   their Home look everywhere else. */
+
+/* Row 1: [◫ Kind ▾] … [+ New], 40px, 0 12px (workspace.css sets the box). */
+.tws-browser .tws-browser-toolbar {
+  gap: var(--pn-space-2);
+}
+.tws-browser .tch-rootbar {
+  flex: 1;
+  margin: 0;
+}
+
+/* The kind control: a quiet 36px button, KindIcon 16, plural label, chevron. */
+.tws-browser .tch-rootcell--menu {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.tws-browser .tch-rootcell--menu .tch-rootcell__label {
+  height: 36px;
+  gap: var(--pn-space-2);
+  padding: 0 var(--pn-space-2);
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+}
+.tws-browser .tch-rootcell--menu .tch-rootcell__label:hover,
+.tws-browser .tch-rootcell--menu .tch-rootcell__label[aria-expanded='true'] {
+  background: var(--pn-hover);
+}
+.tws-browser .tch-rootcell--menu .tch-rootcell__glyph svg {
+  width: 16px;
+  height: 16px;
+}
+.tws-browser .tch-rootcell__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tws-browser .tch-rootcell__chevron {
+  flex: none;
+  margin-left: calc(var(--pn-space-1) - var(--pn-space-2));
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-label);
+}
+/* The menu hangs from the control's left edge, on the raised plane. */
+.tws-browser .tch-rootcell--menu .tch-rootmenu {
+  left: 0;
+  right: auto;
+  border-color: var(--pn-line);
+  background: var(--pn-card);
+  box-shadow: var(--pn-sh-pop);
+}
+
+/* + New: bordered, 32px visible inside a 36px hit box. */
+.tws-browser-new {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  margin: 2px 0;
+  padding: 0 10px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  color: var(--pn-ink-2);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tws-browser-new::before {
+  /* The 36px hit box around the 32px fill. */
+  content: '';
+  position: absolute;
+  inset: -2px;
+}
+.tws-browser-new:hover {
+  background: var(--pn-hover);
+}
+.tws-browser-new[aria-disabled='true'] {
+  border-color: var(--pn-line);
+  color: var(--pn-ink-4);
+  cursor: not-allowed;
+}
+.tws-browser-new[aria-disabled='true']:hover {
+  background: transparent;
+}
+/* Narrow (< 300px): icon-only 36×36; the kind label stays. */
+.tws-browser[data-narrow] .tws-browser-new {
+  width: 36px;
+  height: 36px;
+  margin: 0;
+  padding: 0;
+}
+.tws-browser[data-narrow] .tws-browser-new::before {
+  inset: 0;
+}
+
+.tws-browser .tch-rootcell__label:focus-visible,
+.tws-browser-new:focus-visible,
+.tws-browser-state__action:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+
+/* The list host: the reused panel fills it and `.lp__body` is the scroll box. */
+.tws-browser .tws-browser-list {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.tws-browser .tws-browser-list > .lp {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+/* A hairline under the toolbar only while the list is scrolled off the top. */
+.tws-browser[data-scrolled] .lp__body {
+  box-shadow: inset 0 1px 0 var(--pn-line);
+}
+
+/* List states (design log §11): 32px top, one line, a text action. */
+.tws-browser-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--pn-space-1);
+  padding: var(--pn-space-8) var(--pn-space-3) 0;
+}
+.tws-browser-state__text {
+  margin: 0;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-sm);
+}
+.tws-browser-state__action {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--pn-brand-2);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  cursor: pointer;
+}
+.tws-browser-state__action:hover {
+  text-decoration: underline;
+}
+
+/* Loading: three skeleton bars, 60/80/40%. */
+.tws-browser-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-8) var(--pn-space-3) 0;
+}
+.tws-browser-skeleton__bar {
+  height: 12px;
+  border-radius: var(--pn-r-xs);
+  background: var(--pn-hover);
+}
+.tws-browser-skeleton__bar:nth-child(1) { width: 60%; }
+.tws-browser-skeleton__bar:nth-child(2) { width: 80%; }
+.tws-browser-skeleton__bar:nth-child(3) { width: 40%; }
