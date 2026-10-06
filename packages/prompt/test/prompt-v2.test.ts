@@ -21,6 +21,7 @@ import {
   type PromptManifest,
   type PromptRuntime,
 } from '../src/index.js';
+import { WORKER_ROUTINE_V1 } from '../src/worker-routine.js';
 
 // Ids shaped like the real ones, so the size ceilings below are measured on
 // realistic bytes rather than on `task-1`.
@@ -331,9 +332,16 @@ describe('placement rule (Design Rules 01a10c5d §2.4, P0f)', () => {
     }
   });
 
-  it('is on every v1 mode instruction, just before the header rule', () => {
+  it('appears exactly once in every v1 mode instruction: as routine step 4, or beside the header rule', () => {
     for (const mode of AGENT_MODES) {
-      expect(instructionFor(mode).endsWith(` ${PLACEMENT_RULE} ${HEADER_AUTHORING_RULE}`), mode).toBe(true);
+      const text = instructionFor(mode);
+      expect(count(text, 'decide where it belongs from what it is about'), mode).toBe(1);
+      // A mode without the worker routine (P0g) keeps it just before the header rule.
+      if (!text.includes(WORKER_ROUTINE_V1)) {
+        expect(text.endsWith(` ${PLACEMENT_RULE} ${HEADER_AUTHORING_RULE}`), mode).toBe(true);
+      } else {
+        expect(text).toContain(`(4) Put what you create in its place: ${PLACEMENT_RULE}`);
+      }
     }
   });
 

@@ -13,10 +13,12 @@
  * text from sibling tasks lands in its step here, never in a copy:
  * - P0a (Spec D1 §7, migration 301): claims, `task release`, `session complete`;
  * - P0b (canonical edges): step 5's edge list;
- * - P0f (hierarchy): step 4; P0h (criteria): steps 3 and 6.
+ * - P0f (placement): step 4 is PLACEMENT_RULE itself; P0h (criteria): steps 3 and 6.
  * Owner ruling (6 Oct, form 01a111f3-b612): criteria are optional, and a PR
  * never decides task completion, so no step ties completing to a merge.
  */
+
+import { PLACEMENT_RULE } from './placement-rule.js';
 
 /**
  * One step: its name, the full rule (v1 prompt and `tm8 help routine`), and a
@@ -53,26 +55,15 @@ export const WORKER_ROUTINE_STEPS: readonly WorkerRoutineStep[] = [
     short: 'when a task has criteria, `tm8 task tick <task-id> <criterion-id>... --expect-version <n>` as each is met, not at the end',
     rule:
       'When a task has acceptance criteria, tick each one the moment it is met, not in a ' +
-      'batch at the end: `tm8 task tick <task-id> <criterion-id> --expect-version <n>`. Add ' +
-      'criteria and a pointsEstimate (1-100) when they help: `tm8 entity create task ' +
-      '"<title>" --content \'{"acceptanceCriteria":[{"id":"ac1","done":false,"text":"…"}],"pointsEstimate":3}\'`.',
+      'batch at the end: `tm8 task tick <task-id> <criterion-id> --expect-version <n>`. When ' +
+      'the last one is ticked, the tick receipt\'s `next` names the step. Add criteria and an ' +
+      'estimate when they help: `tm8 entity create task "<title>" --criterion "<testable outcome>" ' +
+      '--estimate 3`.',
   },
   {
     name: 'Put what you create in its place',
     short: 'place it by what it is about, under the same-kind entity it is part of (`--parent`), else a root; across kinds an edge',
-    // The wording of P0f's PLACEMENT_RULE (PR #1065, owner-reviewed 6 Oct). When
-    // #1065 lands, this becomes `rule: PLACEMENT_RULE` and v1 drops its copy.
-    rule:
-      'Before you create an entity, decide where it belongs from what it is about, not from the ' +
-      'task you happen to be on. If it is part of an existing entity of the same kind, create it ' +
-      'under that one with --parent: a subtask under the task it breaks down, a sub-doc under the ' +
-      'doc it details, a child story, a sub-session (find the parent with `tm8 entity query --kind ' +
-      "<kind> --words '<terms>'` or the hierarchy in `tm8 entity context`). If it is part of " +
-      'nothing, make it a root. If it gathers existing entities, move them under it with ' +
-      '`tm8 entity move`. Never parent across kinds; link instead: a deliverable with ' +
-      '`tm8 edge create <task-id> produces <new-id>`, an input with --attach-to <task-id>. ' +
-      'Follow-up work is a root linked to its origin. Only roots go into a story ' +
-      '(`tm8 collection add <story-id> <root-id>`).',
+    rule: PLACEMENT_RULE,
   },
   {
     name: 'Link your work',
