@@ -2134,8 +2134,8 @@ const ROWS: Record<OperationName, Row> = {
       're-adding an existing member re-positions it rather than duplicating it',
       'list a collection\'s members with `tm8 edge list --source <collection-id> --type contains`',
       'the container may also be a story: adding puts the entity in BY HAND as one of the story\'s roots (ordered by --position); everything connected to it then follows at read time — see `tm8 entity context <story-id>`',
-      'the container may also be a design: adding makes the entity a PAGE, in --position order; re-adding an existing page with a new --position moves it; a design cannot contain itself or a design it is inside — see `tm8 entity context <design-id>`',
       'only roots belong in a story: add the top of a family, never a child (it follows through its parent) and never something whose ancestor is already a root of the story',
+      'the container may also be a design: adding makes the entity a PAGE, in --position order; re-adding an existing page with a new --position moves it; a design cannot contain itself or a design it is inside — see `tm8 entity context <design-id>`',
     ],
     examples: [
       'tm8 collection add <collection-id> <entity-id>',
