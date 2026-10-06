@@ -231,10 +231,17 @@
   color: var(--pn-ink-3);
   cursor: pointer;
 }
-.tws-ts-btn:hover,
-.tws-ts-btn[aria-expanded='true'] {
-  /* Same 1px stop as a tab: the box sits on the hairline row. */
-  background: linear-gradient(var(--pn-hover), var(--pn-hover)) top / 100% calc(100% - 1px) no-repeat;
+/* R24: a fill only while hovered or pressed, never left behind by a click or
+   by focus (focus shows the ring alone). Touch has no real hover. */
+@media (hover: hover) {
+  .tws-ts-btn:hover {
+    /* Same 1px stop as a tab: the box sits on the hairline row. */
+    background: linear-gradient(var(--pn-hover), var(--pn-hover)) top / 100% calc(100% - 1px) no-repeat;
+    color: var(--pn-ink);
+  }
+}
+.tws-ts-btn:active {
+  background: linear-gradient(var(--pn-active), var(--pn-active)) top / 100% calc(100% - 1px) no-repeat;
   color: var(--pn-ink);
 }
 .tws-ts-btn:focus-visible {
