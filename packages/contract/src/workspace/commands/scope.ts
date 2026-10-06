@@ -1,7 +1,7 @@
 /** `workspace.tabScope.set` — atomic scope change, then §5.3 resolution. */
-import { isWorkspaceKind } from '../types';
-import type { KindId, TabScope, WorkspaceHooks, WorkspaceState } from '../types';
-import { isRecord, reject, resolveAfterScopeChange, type Plan, type Planner } from './shared';
+import { isWorkspaceKind } from '../types.js';
+import type { KindId, TabScope, WorkspaceHooks, WorkspaceState } from '../types.js';
+import { isRecord, reject, resolveAfterScopeChange, type Plan, type Planner } from './shared.js';
 
 function sameScope(a: TabScope, b: TabScope): boolean {
   if (a.mode !== b.mode) return false;

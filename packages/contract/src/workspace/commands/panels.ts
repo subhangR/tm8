@@ -1,6 +1,6 @@
 /** `workspace.chooser.open` and the read-only `workspace.inspect`. */
-import type { ChooserTabRecord } from '../types';
-import { activate, toFront, type Planner } from './shared';
+import type { ChooserTabRecord } from '../types.js';
+import { activate, toFront, type Planner } from './shared.js';
 
 /** Reuse or create the one chooser, move it to index 0, activate it. */
 export const openChooser: Planner = ({ state, hooks }) => {

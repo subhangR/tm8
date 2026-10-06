@@ -6,7 +6,7 @@
  * side effects as `after` thunks, which the dispatcher runs only once the
  * commit has landed.
  */
-import { isEligible, scopeKey } from '../selectors';
+import { isEligible, scopeKey } from '../selectors.js';
 import type {
   CommandEnvelope,
   PendingInteraction,
@@ -16,7 +16,7 @@ import type {
   TabRecord,
   WorkspaceHooks,
   WorkspaceState,
-} from '../types';
+} from '../types.js';
 
 export interface PlanContext {
   state: WorkspaceState;

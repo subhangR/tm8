@@ -5,8 +5,8 @@
  * run through `dispatch()`, so the source and typing policy apply to them as
  * to every other command.
  */
-import { DIALOG_IDS, type DialogId } from '../types';
-import { isRecord, reject, type Planner } from './shared';
+import { DIALOG_IDS, type DialogId } from '../types.js';
+import { isRecord, reject, type Planner } from './shared.js';
 
 function dialogIdOf(args: unknown): DialogId | null {
   if (!isRecord(args) || Object.keys(args).some((key) => key !== 'dialogId')) return null;
