@@ -36,13 +36,13 @@ export function RestoreOffer() {
   // Repair outranks the offer: one question at a time.
   if (repairing || count === 0 || !onStart) return null;
   return (
-    <div className="tws-restore" role="status" data-testid="tws-restore-offer">
-      <span className="tws-restore-text">Restore {count === 1 ? '1 tab' : `${count} tabs`} from your last session?</span>
-      <span className="tws-restore-actions">
-        <button type="button" className="tws-restore-primary" onClick={() => acceptRestoreOffer(runtime)}>
+    <div className="tws-restore-offer" role="status" data-testid="tws-restore-offer">
+      <span className="tws-restore-offer-text">Restore {count === 1 ? '1 tab' : `${count} tabs`} from your last session?</span>
+      <span className="tws-restore-offer-actions">
+        <button type="button" className="tws-restore-offer-primary" onClick={() => acceptRestoreOffer(runtime)}>
           Restore
         </button>
-        <button type="button" className="tws-restore-later" onClick={() => dismissRestoreOffer(runtime)}>
+        <button type="button" className="tws-restore-offer-later" onClick={() => dismissRestoreOffer(runtime)}>
           Not now
         </button>
       </span>
