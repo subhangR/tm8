@@ -10,10 +10,5 @@ export const RAIL_BELL_ART: readonly string[] = [
   'M6.6 13.6a1.5 1.5 0 0 0 2.8 0',
 ];
 
-/** A 2×2 grid: the switch back from the tools rail to the kinds. */
-export const RAIL_KINDS_ART: readonly string[] = [
-  'M3 3h4v4H3z',
-  'M9 3h4v4H9z',
-  'M3 9h4v4H3z',
-  'M9 9h4v4H9z',
-];
+/** A back arrow: the switch from the tools face back to the kinds (the 2×2 grid is Collections'). */
+export const RAIL_KINDS_ART: readonly string[] = ['M13 8H3.5', 'M7.2 4.3 3.5 8l3.7 3.7'];

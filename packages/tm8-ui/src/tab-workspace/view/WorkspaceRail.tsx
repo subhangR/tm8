@@ -8,7 +8,7 @@
  *                                    Design · Settings · Help
  *                                    account · »
  *   ── hairline                      ── hairline
- *   [⚙ Settings & tools]             [▦ Back to kinds]
+ *   [⚙ Settings & tools]             [← Back to kinds]
  *
  * ONE SWITCH (Subhang, 2026-10-07): the bottom button swaps the column
  * between the two faces. The tools face keeps R39's three clusters, 12px
