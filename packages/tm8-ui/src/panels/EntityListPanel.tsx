@@ -140,7 +140,11 @@ export interface ListFilterState {
 }
 
 /** Which body `renderEmpty` is asked for: still reading, nothing at all, or nothing matching. */
-export type ListEmptyState = { reason: 'loading' } | { reason: 'empty' } | { reason: 'search'; query: string };
+export type ListEmptyState =
+  | { reason: 'loading' }
+  /** `tier` names the open lifecycle tier when IT is empty but the kind is not known to be. */
+  | { reason: 'empty'; tier?: string }
+  | { reason: 'search'; query: string };
 
 /**
  * A remembered filter state, kept only where it still names this kind's
@@ -847,6 +851,18 @@ export function EntityListPanel(props: EntityListPanelProps) {
     ...tabCount(props, config, tab),
   }));
   const toolbar = props.chrome === 'toolbar';
+  /* An empty band under a tier says which tier is empty; "none yet" is only
+     for a kind every tier's exact count says has no rows at all. */
+  const kindEmpty = tabCounts.every((c) => c.exact && c.n === 0);
+  const hostEmpty = props.renderEmpty;
+  const bandProps: EntityListPanelProps =
+    hostEmpty && activeTab && !kindEmpty
+      ? {
+          ...props,
+          renderEmpty: (state) =>
+            hostEmpty(state.reason === 'empty' ? { reason: 'empty', tier: activeTab.label } : state),
+        }
+      : props;
   /* NO LIFECYCLE TO SLICE: every count is exact and every row sits in the
      open tier (a teammate list reads 14 / 0 / 0 / 0). Hiding then strands
      nothing, because the other tiers are known to be empty. */
@@ -1099,7 +1115,7 @@ export function EntityListPanel(props: EntityListPanelProps) {
                   return next;
                 })
               }
-              props={props}
+              props={bandProps}
               config={config}
               query={query}
             />
@@ -1117,7 +1133,7 @@ export function EntityListPanel(props: EntityListPanelProps) {
               lensFilter,
             )}
             sort={sortKey}
-            props={props}
+            props={bandProps}
             config={config}
             query={query}
           />

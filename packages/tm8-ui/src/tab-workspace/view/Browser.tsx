@@ -114,6 +114,7 @@ export function Browser() {
           />
         );
       }
+      if (state.tier) return <ListState text={`No ${state.tier.toLowerCase()} ${nounPlural}`} />;
       return (
         <ListState
           text={`No ${nounPlural} yet`}
