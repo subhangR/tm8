@@ -1,0 +1,108 @@
+/*
+ * The app frame (AppFrame.tsx): Work's grid, with a top band where Work has its
+ * tab strip, an optional panel where Work has its browser, and an optional
+ * right action strip. Header, rail and resizer styles are Work's own
+ * (workspace.css); only the frame's own regions are drawn here.
+ */
+.tws-root.app-frame {
+  grid-template-columns: var(--tws-rail-w) var(--tws-browser-w, 320px) minmax(0, 1fr) auto;
+  grid-template-areas:
+    'header header top top'
+    'rail browser content strip';
+}
+.tws-root.app-frame[data-panel='none'] {
+  grid-template-areas:
+    'header header top top'
+    'rail content content strip';
+}
+.tws-root.app-frame[data-expanded] {
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'top top'
+    'content strip';
+}
+
+/* The top band: Work's tab-strip band, holding the screen's own items (Observe's counts). */
+.app-frame-top {
+  grid-area: top;
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-3);
+  min-width: 0;
+  padding: 0 var(--pn-space-3);
+  border-bottom: 1px solid var(--pn-line);
+  border-left: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+}
+.tws-root.app-frame[data-expanded] .app-frame-top {
+  border-left: 0;
+}
+.app-frame-top-host {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  overflow: hidden;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-xs, 12px);
+}
+
+/* The panel beside the rail: Work's browser column. */
+.app-frame-panel {
+  grid-area: browser;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  background: var(--pn-surface);
+  border-right: 1px solid var(--pn-line);
+}
+/* A group's MenuRail fills the panel instead of drawing its own column. */
+.app-frame-panel:not([data-host]) > * {
+  flex: 1;
+  min-height: 0;
+  width: auto;
+  max-width: none;
+  border-right: 0;
+}
+
+.app-frame-content {
+  grid-area: content;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--pn-card);
+}
+
+/* The right action strip: Work's ~40px entity strip, two sections. */
+.app-frame-strip {
+  grid-area: strip;
+  width: 40px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--pn-space-2) 0;
+  border-left: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+}
+.app-frame-strip-top,
+.app-frame-strip-bottom {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--pn-space-1);
+}
+.app-frame-strip-btn,
+.app-frame-strip-top button {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}

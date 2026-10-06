@@ -34,7 +34,7 @@ import {
   createCoalescedTrigger,
 } from '../../views/event-refresh';
 import type { LivenessSnapshot, Seam } from '../../data/seam';
-import { useWorkspace } from './context';
+import { useShellFrame } from './context';
 
 export const RAIL_COUNT_KINDS = ['task', 'story', 'work_session', 'chat'] as const;
 export type RailCountKind = (typeof RAIL_COUNT_KINDS)[number];
@@ -123,7 +123,7 @@ export function sessionCountOf(snapshot: LivenessSnapshot): number {
 }
 
 export function useRailCounts(): RailCounts {
-  const { gate } = useWorkspace();
+  const { gate } = useShellFrame();
   const data = (gate as { data?: { seam?: Seam; spaceId?: string } } | undefined)?.data;
   const seam = data?.seam;
   const spaceId = data?.spaceId;

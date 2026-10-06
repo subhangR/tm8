@@ -12,7 +12,7 @@
 import { McpProvider } from '../mcp/context';
 import { McpSettings } from '../mcp/McpSettings';
 import { PendingFormsProvider, usePendingFormsStoreFor } from '../forms/pending';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import type { ChatMode, EntityId, EntitySummary, ProjectTrustLevel, SpaceId } from '@tm8/contract';
 import { startFolderImport } from '../files-explorer/folder-import';
 import {
@@ -130,6 +130,7 @@ import {
 import { SpaceLinksSection, spaceLinksPortFromSeam } from '../settings-space-links';
 import { readLastSpace, readLastTarget, WORK_PLACE, writeLastTarget } from './last-place';
 import { desktopModes } from '../shell/desktop-modes';
+import { AppFrame, useFrameSlots, type AppFrameProps } from '../shell/AppFrame';
 import { FullViewScreen, hasFullView } from './entity-full/FullViewScreen';
 import {
   NewSpaceProjectDialog,
@@ -211,6 +212,39 @@ const VIEW_GROUP_ART: Record<string, readonly string[]> = {
   craft: VIEW_ART.craft,
   graph: VIEW_ART.graph,
 };
+/** The frame's top-band title for a screen no menu group claims (Inbox, Messages…). */
+const FRAME_VIEW_TITLE: Partial<Record<string, string>> = {
+  inbox: 'Inbox',
+  messages: 'Messages',
+  files: 'Files',
+  git: 'Git',
+  settings: 'Settings',
+  help: 'Help',
+  channels: 'Channels',
+  feed: 'Feed',
+};
+
+/** Observe inside the app frame: its controls, counts and actions portal into the frame's hosts. */
+function FramedGraphScreen(props: ComponentProps<typeof GraphScreen>) {
+  const slots = useFrameSlots();
+  return <GraphScreen {...props} hosts={slots.panel || slots.top || slots.strip ? slots : undefined} />;
+}
+
+/** The shell body inside the app frame on the three-mode desktop; bare otherwise. */
+function FramedBody({
+  framed,
+  spaceId,
+  children,
+  ...frame
+}: Omit<AppFrameProps, 'spaceId'> & { framed: boolean; spaceId: string | null | undefined }) {
+  if (!framed || !spaceId) return <>{children}</>;
+  return (
+    <AppFrame {...frame} spaceId={spaceId}>
+      {children}
+    </AppFrame>
+  );
+}
+
 /**
  * Groups RETIRED from the desktop (D31): Home (`chats`), the old Work
  * (`work`) and the legacy Board (`board`). Hidden client-side, so no menu
@@ -2327,6 +2361,32 @@ export function GateApp(props: GateAppProps = {}) {
       />
     ) : undefined;
 
+  /* THE APP FRAME (chat + Observe shell alignment): on the three-mode
+     desktop every screen that is not Work renders inside Work's chrome — the
+     left header and icon rail — and the top bar is not drawn. The legacy bar
+     (the rollback) and a boot that never became ready keep the top bar. */
+  const framed = threeModes && !LEGACY_BAR && data.ready && !!data.spaceId;
+  const observing = activeTarget?.type === 'view' && activeTarget.ref === 'graph' && navView.view !== 'newSession' && navView.view !== 'boardV2';
+  const frameTitle =
+    (activeGroupId ? VIEW_GROUP_LABEL[activeGroupId] ?? activeGroup?.label : undefined) ??
+    (activeTarget?.type === 'view' ? FRAME_VIEW_TITLE[activeTarget.ref] : undefined) ??
+    (navView.view === 'newSession' ? 'New session' : navView.view === 'boardV2' ? 'Board' : 'tm8');
+  const goToWork = () => navStore.getState().navigate(WORK_VIEW);
+  const menuRailEl = railConfig ? (
+    <MenuRail
+      config={railConfig}
+      /* In the frame's panel the column IS the panel: never folded to icons. */
+      collapsed={framed ? false : menuCollapsed}
+      onToggle={() => setMenuCollapsed((c) => !c)}
+      activeTarget={activeTarget}
+      onNavigate={navigateTo}
+      presentKind={presentKind}
+      /* Live voice rooms hang beneath the conversation cluster —
+         `channels` since 125, `chats` in pre-125 hand-edited menus. */
+      dynamicGroups={{ channels: voiceGroup, chats: voiceGroup }}
+    />
+  ) : null;
+
   const workspaceGate: WorkspaceGateHandles = {
     data,
     reasons,
@@ -2387,7 +2447,7 @@ export function GateApp(props: GateAppProps = {}) {
         {/* D31: Work is the landing, so a boot that fails (sign-in, a refused
             Space, an unreachable node) on the Work route lands here, where
             the honest boot cards are. */}
-        <TopBar
+        {framed ? null : <TopBar
           /* ONE ROW (owner, 2026-09-26): on the current bar the status strip
              is the right zone's lead, and the tabs move left beside the
              switcher. The legacy bar ignores the slot. */
@@ -2448,11 +2508,21 @@ export function GateApp(props: GateAppProps = {}) {
             ) : undefined
           }
           accountSlot={accountEl}
-        />
+        />}
 
         {/* The legacy bar has no seat for the strip, so it keeps its own row. */}
         {LEGACY_BAR ? statusStrip('row') : null}
 
+        <FramedBody
+          framed={framed}
+          gate={workspaceGate}
+          spaceId={data.spaceId}
+          viewerId={viewerMemberId}
+          title={frameTitle}
+          panel={railConfig ? menuRailEl : observing ? 'host' : null}
+          strip={observing}
+          goToWork={goToWork}
+        >
         <div className="shell-body">
           {/* THE CHAT SLOT's interim host (entity chat §3.1): a sheet from the
               right over any surface that does not host the slot in its own
@@ -2465,19 +2535,7 @@ export function GateApp(props: GateAppProps = {}) {
               group-spine listing. Null when the active group is its own one
               screen (Graph / Settings / Files) or nothing claims the target.
               The identity block left the rail head for the top row (R1). */}
-          {railConfig ? (
-            <MenuRail
-              config={railConfig}
-              collapsed={menuCollapsed}
-              onToggle={() => setMenuCollapsed((c) => !c)}
-              activeTarget={activeTarget}
-              onNavigate={navigateTo}
-              presentKind={presentKind}
-              /* Live voice rooms hang beneath the conversation cluster —
-                 `channels` since 125, `chats` in pre-125 hand-edited menus. */
-              dynamicGroups={{ channels: voiceGroup, chats: voiceGroup }}
-            />
-          ) : null}
+          {railConfig && !framed ? menuRailEl : null}
 
           {/* The REAL error boundary wraps the whole view region: a crashed
               screen renders the designed error state with retry; the rail and
@@ -2571,8 +2629,14 @@ export function GateApp(props: GateAppProps = {}) {
                width, no side lists; node C1 clicks open the Z3 aside inside
                the screen. Its initial lens comes from graph.query; durable
                entity/edge events keep the projected nodes current. */
-            <GraphScreen
+            <FramedGraphScreen
               data={data}
+              /* The peek aside's door into Work: the entity opens as a tab. */
+              onOpenInWork={(id) =>
+                isWorkspaceKind(data.detailOf(id)?.kind)
+                  ? navStore.getState().navigate({ view: 'tabs', tab: id })
+                  : nav.push(id)
+              }
               serverBaseUrl={activeServer.routeBaseUrl}
               reasons={reasons}
               nodes={data.graph.nodes}
@@ -3242,6 +3306,7 @@ export function GateApp(props: GateAppProps = {}) {
           )}
           </CatchBoundary>
         </div>
+        </FramedBody>
         </>
         )}
 

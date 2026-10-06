@@ -3,7 +3,7 @@
  * so Wave 1/2 workers never change props across files): the runtime
  * (store + dispatch), the viewer and space, and the GateApp handles.
  */
-import { createContext, useContext, type ReactNode } from 'react';
+import { createContext, useContext, useMemo, type ReactNode } from 'react';
 import type { MenuTarget, Notice, ShellTab } from '../../shell';
 import type { DetailReasons } from '../../panels';
 import type { NavView } from '../../routes/types';
@@ -36,6 +36,8 @@ export interface WorkspaceGateHandles {
   onSelectViewTab(id: string): void;
   /** The existing SpaceSwitcher element, ready to mount. */
   switcherSlot: ReactNode;
+  /** The screen's name when it is not one of the three modes (Inbox, Messages…): the view selector's label. */
+  screenLabel?: string | undefined;
   /** The existing AccountMenu element (with Inbox and Copy link rows), or undefined without an account. */
   accountSlot: ReactNode;
 }
@@ -52,7 +54,53 @@ export interface WorkspaceContextValue {
 export const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
 
 export function WorkspaceProvider({ value, children }: { value: WorkspaceContextValue; children: ReactNode }) {
-  return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
+  return (
+    <WorkspaceContext.Provider value={value}>
+      <WorkspaceFrame value={value}>{children}</WorkspaceFrame>
+    </WorkspaceContext.Provider>
+  );
+}
+
+/**
+ * THE SHARED FRAME (chat + Observe shell alignment, 2026-10-06): the left
+ * header, the icon rail and its status cluster read THIS, not the Work store,
+ * so every desktop screen mounts the same chrome. Work provides it from its
+ * store (below); every other screen gets it from `AppFrame` (shell/).
+ */
+export interface ShellFrameValue {
+  gate: WorkspaceGateHandles;
+  spaceId: string;
+  /** The kind Work's browser shows; null outside Work (no rail kind reads current). */
+  currentKind: string | null;
+  /** A rail kind press: Work swaps its browser; elsewhere it goes to Work with that browser. */
+  selectKind(kind: string): void;
+  /** Width of the column beside the rail (Work's browser, a screen's panel). */
+  panelWidth: number;
+}
+
+export const ShellFrameContext = createContext<ShellFrameValue | null>(null);
+
+export function useShellFrame(): ShellFrameValue {
+  const value = useContext(ShellFrameContext);
+  if (!value) throw new Error('useShellFrame must be used inside TabWorkspaceView or AppFrame');
+  return value;
+}
+
+function WorkspaceFrame({ value, children }: { value: WorkspaceContextValue; children: ReactNode }) {
+  const currentKind = useWorkspaceStore(value.store, (s) => s.browsers.main.kind);
+  const panelWidth = useWorkspaceStore(value.store, (s) => s.layout.browserWidth);
+  const { dispatch, gate, spaceId } = value;
+  const frame = useMemo<ShellFrameValue>(
+    () => ({
+      gate,
+      spaceId,
+      currentKind,
+      panelWidth,
+      selectKind: (kind) => dispatch({ command: 'workspace.browser.set', args: { browserId: 'main', kind }, source: 'click' }),
+    }),
+    [gate, spaceId, currentKind, panelWidth, dispatch],
+  );
+  return <ShellFrameContext.Provider value={frame}>{children}</ShellFrameContext.Provider>;
 }
 
 export function useWorkspace(): WorkspaceContextValue {

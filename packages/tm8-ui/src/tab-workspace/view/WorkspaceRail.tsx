@@ -42,7 +42,7 @@ import { KindIcon, VIEW_ART, homeRailPinnedKinds, homeRootKinds, type KindConfig
 import { VectorIcon } from '../../kit/VectorIcon';
 import { getRailStore } from '../runtime/railStore';
 import { isWorkspaceKind } from '../runtime/types';
-import { useWorkspace, useWorkspaceState } from './context';
+import { useShellFrame } from './context';
 import { railCountLabel, railKindLabel, isRailCountKind, useRailCounts, type RailCounts } from './useRailCounts';
 import { RAIL_COLLAPSE_ART, RAIL_EXPAND_ART } from './railArt';
 import { RailAttention, RailStatus } from './RailStatus';
@@ -53,6 +53,18 @@ const BOTTOM_ART: Record<(typeof BOTTOM_GROUP_IDS)[number], readonly string[]> =
   settings: VIEW_ART.settings,
   help: VIEW_ART.help,
 };
+
+/**
+ * THE SCREENS (Subhang, shell-alignment round 2): the desktop's other screens
+ * live in the rail's bottom group, drawn while the rail is expanded. Their old
+ * door, the top bar, is gone on the three-mode desktop.
+ */
+const SCREEN_VIEWS = [
+  { ref: 'inbox', label: 'Inbox', art: VIEW_ART.inbox },
+  { ref: 'messages', label: 'Messages', art: VIEW_ART.messages },
+  { ref: 'files', label: 'Files', art: VIEW_ART.files },
+  { ref: 'git', label: 'Git', art: VIEW_ART.git },
+] as const;
 
 /** How long a press must be held to toggle a pin, and how far it may drift. */
 export const HOLD_MS = 500;
@@ -66,11 +78,10 @@ function prefersReducedMotion(): boolean {
 }
 
 export function WorkspaceRail() {
-  const { gate, dispatch, spaceId } = useWorkspace();
+  const { gate, spaceId, currentKind: browserKind, selectKind } = useShellFrame();
   const railStore = useMemo(() => getRailStore(spaceId), [spaceId]);
   const pins = useStore(railStore, (s) => s.pins);
   const expanded = useStore(railStore, (s) => s.expanded);
-  const browserKind = useWorkspaceState((s) => s.browsers.main.kind);
   const [announcement, setAnnouncement] = useState('');
   const counts: RailCounts = useRailCounts();
 
@@ -81,11 +92,6 @@ export function WorkspaceRail() {
     return tab ? [{ id, label: tab.label }] : [];
   });
 
-  const selectKind = useCallback(
-    (kind: string) =>
-      dispatch({ command: 'workspace.browser.set', args: { browserId: 'main', kind }, source: 'click' }),
-    [dispatch],
-  );
   const togglePin = useCallback(
     (config: KindConfig): boolean => {
       const nowPinned = railStore.getState().togglePin(config.kind);
@@ -168,6 +174,23 @@ export function WorkspaceRail() {
             {expanded ? <span className="tws-rail-label">Command palette</span> : null}
           </button>
         </RailTip>
+        {expanded
+          ? SCREEN_VIEWS.map((screen) => (
+              <button
+                key={screen.ref}
+                type="button"
+                className="tws-rail-btn"
+                aria-label={screen.label}
+                data-rail-tool={screen.ref}
+                onClick={() => gate.navigateTo({ type: 'view', ref: screen.ref })}
+              >
+                <span className="tws-rail-icon">
+                  <VectorIcon paths={screen.art} size={18} />
+                </span>
+                <span className="tws-rail-label">{screen.label}</span>
+              </button>
+            ))
+          : null}
         {bottom.map((tab) => (
           <RailTip key={tab.id} label={expanded ? null : tab.label}>
             <button

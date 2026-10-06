@@ -27,7 +27,7 @@ import type { ActionContext, ActionRef } from '../domain/types';
 import type { Notice } from '../shell/notices';
 import { usePanelPrimaries } from '../views/usePanelPrimaries';
 import type { Seam, SessionLiveness } from '../data/seam';
-import { GraphView, type GraphTimelineStep } from './GraphView';
+import { GraphView, type GraphFrameHosts, type GraphTimelineStep } from './GraphView';
 import { debugSurfaceFor } from '../views/debugSurface';
 import { sessionStatsSurfaceFor } from '../views/sessionStatsSurface';
 import { sessionContextSurfaceFor } from '../views/sessionContextSurface';
@@ -89,6 +89,10 @@ export interface GraphScreenData {
 }
 
 export interface GraphScreenProps {
+  /** App-frame hosts (Observe in the Work shell): controls, counts and graph actions render there. */
+  hosts?: GraphFrameHosts | undefined;
+  /** The peek aside's "Open in Work": opens the selected entity as a Work tab. */
+  onOpenInWork?: ((id: EntityId) => void) | undefined;
   data: GraphScreenData;
   serverBaseUrl?: string;
   reasons: DetailReasons;
@@ -314,6 +318,7 @@ export function GraphScreen(props: GraphScreenProps) {
 
   const graph = (
     <GraphView
+      hosts={props.hosts}
       nodes={props.nodes}
       edges={props.edges}
       timeline={props.timeline}
@@ -383,6 +388,20 @@ export function GraphScreen(props: GraphScreenProps) {
         </section>
         {selectedId ? (
           <aside className="gv-screen__aside" aria-label="Entity details" data-testid="graph-screen-aside">
+            {props.onOpenInWork ? (
+              <div className="gv-screen__peek-bar">
+                <span className="gv-screen__crumb">peek</span>
+                <span className="gv-screen__spacer" />
+                <button
+                  type="button"
+                  className="gv-filter gv-filter--action"
+                  data-testid="graph-open-in-work"
+                  onClick={() => props.onOpenInWork?.(selectedId)}
+                >
+                  Open in Work ↗
+                </button>
+              </div>
+            ) : null}
             {detailPanel}
           </aside>
         ) : null}

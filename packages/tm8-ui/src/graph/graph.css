@@ -1025,3 +1025,34 @@
     animation: none;
   }
 }
+
+/* OBSERVE IN THE APP FRAME (shell alignment, 2026-10-06): the controls stack
+   in the panel beside the rail, the counts sit in the top band, zoom/fit in
+   the right action strip. */
+.gv-toolbar--panel {
+  flex-direction: column;
+  align-items: stretch;
+  flex-wrap: nowrap;
+  gap: var(--pn-space-3);
+  padding: var(--pn-space-3);
+  border-bottom: 0;
+}
+.gv-toolbar--panel .gv-toolbar__spacer { display: none; }
+.gv-toolbar--panel .gv-lens { flex-wrap: wrap; align-self: flex-start; }
+.gv-toolbar--panel > * { max-width: 100%; }
+.app-frame-panel .gv-banner {
+  margin: 0 var(--pn-space-3) var(--pn-space-3);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-radius-2, 6px);
+  font-size: var(--pn-fs-xs, 12px);
+}
+.app-frame-top-host .gv-toolbar__count { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gv-toolbar__zoom--strip { flex-direction: column; gap: var(--pn-space-1); }
+.gv-screen__peek-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-1) var(--pn-space-3);
+  border-bottom: 1px solid var(--pn-line);
+  flex: none;
+}
