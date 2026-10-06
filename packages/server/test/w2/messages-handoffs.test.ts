@@ -490,6 +490,48 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
       });
     });
 
+    it('D2: a child messaging its CLOSED parent session is told it was not delivered live', async () => {
+      // Owner ruling (6 Oct): a parent may complete and close while its child
+      // keeps working. The child's report to the parent is stored on the
+      // parent's anchor, and the send result says plainly that no live copy
+      // exists — never a silent non-delivery.
+      const parent = IDS.targetSession;
+      const db = new FakeDb();
+      db.rpcImpl = async <T>(name: string) => (name === 'w2_post_message_batch'
+        ? { messageBatchId: 'batch-1', messageIds: [IDS.message] } as T
+        : [] as T);
+      const base = db.queryImpl;
+      db.queryImpl = async <R>(sql: string, params: readonly unknown[]) => {
+        if (sql.includes("ws.status not in ('spawning', 'running', 'idle')")) {
+          expect(params[0]).toEqual([parent]);
+          return [{ entity_id: parent, status: 'exited', outcome: 'completed' }] as R[];
+        }
+        return base<R>(sql, params);
+      };
+      const registry = new HandlerRegistry();
+      registerW2MessagesHandoffsHandlers(registry, deps(db), {
+        resolveAuthoredFromWorkSessionId: async () => IDS.sourceSession,
+        messageDelivery: {
+          reserve: async () => { throw new Error('never reached: a closed session has no route'); },
+          principalFor: () => ({}),
+          adapter: { dispatch: async () => ({ outcome: 'delivered' }) },
+        },
+      });
+
+      const result = await handler(registry, 'messages.post')(request('messages.post', {
+        body: { clientMutationId: 'batch-1', actorId: IDS.author, anchorIds: [parent], body: 'child result' },
+      }));
+      expect(result).toMatchObject({
+        delivery: [{
+          targetWorkSessionId: parent,
+          status: 'undelivered',
+          reason: 'recipient_session_closed',
+          detail: `session ${parent} is closed (completed, process exited); not delivered live — the message is stored on its anchor`,
+        }],
+      });
+      expect(MessageBatchResultSchema.safeParse(result).success).toBe(true);
+    });
+
     it('omits the field entirely when the batch named no session', async () => {
       // An unrouted post owes nobody a live copy. Absent must not read as
       // failure, which is why this is optional rather than an empty array.

@@ -145,6 +145,8 @@ export interface DeliveryDisposition {
   readonly reason?: string;
   /** Present on `accepted`, so a caller can follow the row to its settlement. */
   readonly deliveryId?: string;
+  /** D2: one plain sentence for the sender (e.g. on `recipient_session_closed`). */
+  readonly detail?: string;
 }
 
 const PREVIEW_DELIVERY_ID = '00000000-0000-4000-8000-000000000000';

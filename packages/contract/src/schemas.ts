@@ -1558,6 +1558,7 @@ export const MessageDeliveryDispositionSchema: z.ZodType<MessageDeliveryDisposit
     status: z.enum(['accepted', 'skipped', 'undelivered']),
     reason: z.string().min(1).optional(),
     deliveryId: z.string().min(1).optional(),
+    detail: z.string().min(1).optional(),
   }).strict());
 
 export const MessageBatchResultSchema: z.ZodType<MessageBatchResult> = z.lazy(() => z.object({
