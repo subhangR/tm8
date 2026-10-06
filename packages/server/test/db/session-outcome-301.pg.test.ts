@@ -628,7 +628,7 @@ describe('299 — claims follow their task', () => {
     expect((await claims({ src: fixture.teamMemberId })).length).toBe(0);
   });
 
-  it('S19: a gated task merged after its session completed: done, and no claim is touched', async () => {
+  it('S19: a task left in_review by a completed session, completed later by someone else: done, no claim touched', async () => {
     const t = await createTask('s19');
     const s = await running([t]);
     await setWork(t, 'in_review', { asSession: s });
