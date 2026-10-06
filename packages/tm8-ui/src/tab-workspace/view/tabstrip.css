@@ -301,16 +301,19 @@
   margin-left: auto;
 }
 
-/* ---- unsaved-changes confirmation: raised plane, centred, modal ---- */
+/* ---- unsaved-changes confirmation (design log R1): centred modal ---- */
 .tws-ts-confirm {
-  width: min(360px, calc(100vw - 32px));
-  padding: var(--pn-space-4);
+  width: min(400px, calc(100vw - 32px));
+  padding: var(--pn-space-6);
   background: var(--pn-card);
   color: var(--pn-ink);
   border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-sm);
+  border-radius: var(--pn-r-md);
   box-shadow: var(--pn-sh-pop);
   animation: tws-ts-pop var(--pn-dur-fast) var(--pn-ease-out);
+}
+.tws-ts-confirm::backdrop {
+  background: var(--pn-scrim);
 }
 .tws-ts-confirm-title {
   margin: 0;
@@ -318,27 +321,25 @@
   font-weight: 600;
 }
 .tws-ts-confirm-body {
-  margin-top: var(--pn-space-2);
+  margin: var(--pn-space-2) 0 0;
   font-size: var(--pn-fs-sm);
   color: var(--pn-ink-2);
 }
-.tws-ts-confirm-body p {
-  margin: 0;
-}
 .tws-ts-confirm-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--pn-space-1);
-  margin: var(--pn-space-2) 0 0;
+  max-height: 192px;
+  overflow-y: auto;
+  margin: var(--pn-space-3) 0 0;
   padding: 0;
   list-style: none;
-  color: var(--pn-ink);
 }
 .tws-ts-confirm-item {
   display: flex;
   align-items: center;
   gap: var(--pn-space-2);
+  height: 32px;
   min-width: 0;
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink);
 }
 .tws-ts-confirm-item .tws-ts-icon {
   color: var(--pn-ink-3);
@@ -348,24 +349,25 @@
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--pn-space-2);
-  margin-top: var(--pn-space-4);
+  margin-top: var(--pn-space-6);
 }
 .tws-ts-confirm-btn {
-  min-height: 36px;
+  height: 36px;
   padding: 0 var(--pn-space-3);
   background: none;
   border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-sm);
   color: var(--pn-ink);
   font: inherit;
-  font-size: var(--pn-fs-sm);
-  font-weight: 500;
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
   cursor: pointer;
 }
 .tws-ts-confirm-btn:hover {
   background: var(--pn-hover);
 }
 .tws-ts-confirm-btn[data-tone='danger'] {
+  background: transparent;
   border-color: var(--pn-block);
   color: var(--pn-block);
 }
