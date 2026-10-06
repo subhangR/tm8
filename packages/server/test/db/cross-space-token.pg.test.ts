@@ -4685,6 +4685,54 @@ describe.sequential('W7 spaceLinks.invoke — G runs one op in B as H, audited i
     });
   });
 
+  // ---- the actor a write carries through the link (task 01a1108a) ---------
+  // Prod 2026-09-28..10-04: every first `tm8 --space <B> entity create` an
+  // agent ran through a link was refused 403 "not permitted to act as this
+  // actor" (audit: error, forbidden). The session CLI stamps its own actor
+  // (TM8_ACTOR_ID, G's persona in A) as `actorId`, and B's resolve_actor
+  // cannot authorize an A actor. Agents got through by retrying with
+  // `--as <H's B member>`, read off `action list`.
+
+  it('actor — the CLI\'s stamp (actorId = G\'s home persona) does not reach B: the create passes as H\'s B member', async () => {
+    const res = await invoke(gToken, {
+      op: 'entities.create',
+      input: { spaceId: fixture.spaceB, kind: 'doc', title: 'W7 actor stamp', clientMutationId: cmid('stamp'), actorId: fixture.personaA },
+    });
+    expect(res.body.error).toBeUndefined();
+    expect(res.status).toBe(200);
+    const result = res.body.data!.result as { id?: string; entity?: { id: string } };
+    const [row] = await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      return (await client.query<{ created_by: string }>(
+        'select created_by::text from public.entities where id = $1', [(result.entity?.id ?? result.id)!])).rows;
+    });
+    expect(row).toEqual({ created_by: fixture.memberHB });
+  });
+
+  it('actor — an explicit home actor (--as H\'s A member) is refused with a typed reason that says what to do, audited forbidden.actor_not_permitted', async () => {
+    const res = await invoke(gToken, {
+      op: 'entities.create',
+      input: { spaceId: fixture.spaceB, kind: 'doc', title: 'W7 actor home', clientMutationId: cmid('home'), actorId: fixture.memberHA },
+    });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatchObject({
+      code: 'forbidden',
+      details: { sqlstate: '42501', reason: 'actor_not_permitted', actorId: fixture.memberHA, linkId: hLink.id, targetSpaceId: fixture.spaceB },
+    });
+    expect(res.body.error!.message).toContain('drop --as');
+    expect(res.body.error!.message).toContain(fixture.spaceB);
+    expect(await lastAudit('entities.create')).toMatchObject({ result: 'error', reason: 'forbidden.actor_not_permitted' });
+  });
+
+  it('actor positive — an explicit B actor H may act as (--as H\'s B member) passes', async () => {
+    const res = await invoke(gToken, {
+      op: 'entities.create',
+      input: { spaceId: fixture.spaceB, kind: 'doc', title: 'W7 actor B', clientMutationId: cmid('b'), actorId: fixture.memberHB },
+    });
+    expect(res.body.error).toBeUndefined();
+    expect(res.status).toBe(200);
+  });
+
   it('T21 — the forwarded session is kind link pinned to B: G cannot reach A\'s doc through it', async () => {
     const res = await invoke(gToken, { op: 'entities.get', params: { id: fixture.docA } });
     expect(res.status).toBe(404);

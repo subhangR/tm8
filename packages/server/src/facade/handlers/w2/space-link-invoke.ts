@@ -227,6 +227,38 @@ export function withoutHomeActor(input: unknown, homeActorId: string | undefined
   return rest;
 }
 
+const AUDIT_SUB_REASON_RE = /^[a-z0-9_]{1,60}$/;
+
+/**
+ * The audit reason for an error B raised: its code, plus B's closed
+ * `details.reason` when it names one (`forbidden.actor_not_permitted`), so a
+ * refusal can be told apart from any other after the fact. Never B's text.
+ */
+export function auditReasonOf(error: unknown): string {
+  if (!isCollabError(error)) return 'internal';
+  const reason = error.details?.['reason'];
+  return typeof reason === 'string' && AUDIT_SUB_REASON_RE.test(reason) ? `${error.code}.${reason}` : error.code;
+}
+
+/**
+ * B refused the actor a write named (resolve_actor, 299: `actor_not_permitted`).
+ * Through a link that is an actor the caller set itself (`--as`, or an
+ * `actorId` other than its home actor, which is already dropped): re-typed
+ * with what to do, since the bare "not permitted to act as this actor" sent
+ * agents guessing. Anything else: null, B's error stands.
+ */
+export function actorRefusalThroughLink(error: unknown, row: SpaceLinkInvokeRow | null): CollabError | null {
+  if (!row || !isCollabError(error) || error.code !== 'forbidden' || error.details?.['reason'] !== 'actor_not_permitted') {
+    return null;
+  }
+  const actorId = typeof error.details['actorId'] === 'string' ? error.details['actorId'] : 'the requested actor';
+  return new CollabError('forbidden',
+    `through space link ${row.linkId} you act in space ${row.targetSpaceId} as the member who made the link, `
+      + `and ${actorId} is not an actor that member can act as there (an id from your own space never is): `
+      + 'drop --as (and any actorId) and the link acts as that member, or pass --as with an actor of the linked space',
+    { details: { ...error.details, linkId: row.linkId, targetSpaceId: row.targetSpaceId } });
+}
+
 /** The inner identity: B's, off the re-resolved session, WITHOUT the raw token. */
 function innerIdentity(identity: RequestIdentity): RequestIdentity {
   const { token: _token, ...rest } = identity;
@@ -482,8 +514,9 @@ export function createSpaceLinkInvokeHandlers(
         await audit('error', error.reason).catch(() => undefined);
         throw error.error;
       }
-      await audit('error', isCollabError(error) ? error.code : 'internal').catch(() => undefined);
-      throw error;
+      const refusal = actorRefusalThroughLink(error, row);
+      await audit('error', auditReasonOf(refusal ?? error)).catch(() => undefined);
+      throw refusal ?? error;
     }
     const { data, requestId, spawnedSessionId, provenanceUnrecorded } = outcome;
     // A spawn has already happened by now: a failed audit insert must not turn
