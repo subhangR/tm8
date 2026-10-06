@@ -6,7 +6,8 @@
  *    sections, its Run slot and its chat toggle in the BOTTOM;
  *  · with `owner` the TOP takes the page's own Run slot, and the BOTTOM's
  *    sections, Run slot and ⋯ belong to the owner — the section buttons
- *    write the OWNER's record, and there is no per-tab chat toggle;
+ *    write the OWNER's record; the chat toggle is the PAGE's, up top (the
+ *    owner's chat is the host's pane, so a strip with no page has none);
  *  · the private host runtime (`embed.tsx`) never touches the viewer's real
  *    Workspace store.
  */
@@ -33,12 +34,12 @@ const gate = {
   },
 } as unknown as WorkspaceGateHandles;
 
-function Split({ owner }: { owner: boolean }) {
+function Split({ owner, noPage = false }: { owner: boolean; noPage?: boolean }) {
   const runtime = useEmbeddedRuntime(VIEWER, SPACE);
   const pageChrome = useEntityChromeValue(null);
   const ownerChrome = useEntityChromeValue(null);
-  const page = embeddedTab(runtime, owner ? 'page-1' : 'task-1', owner ? 'doc' : 'task');
   const design = embeddedTab(runtime, 'design-1', 'design');
+  const page = noPage ? design : embeddedTab(runtime, owner ? 'page-1' : 'task-1', owner ? 'doc' : 'task');
   return (
     <EmbeddedWorkspace runtime={runtime} gate={gate}>
       <EntityChromeContext.Provider value={pageChrome}>
@@ -64,15 +65,20 @@ describe('ActionStrip owner split', () => {
     /* The page's own Run slot sits in the kind (TOP) section. */
     const top = strip.querySelector('.tws-astrip-section--kind')!;
     expect(within(top as HTMLElement).getByTestId('tws-astrip-page-common')).toBeTruthy();
-    /* The owner has no per-tab chat dock: its chat is the host's pane. */
-    expect(view.queryByTestId('tws-chat-toggle')).toBeNull();
+    /* The chat toggle is the PAGE's, up top (task 01a11330). */
+    expect(within(top as HTMLElement).getByTestId('tws-chat-toggle')).toBeTruthy();
     /* The sections are the OWNER's: its noun, its message count. */
     const sections = within(strip).getByRole('radiogroup', { name: 'Section' });
     expect(within(sections).getByTestId('tws-section-messages').getAttribute('aria-label')).toBe('Messages, 3');
     expect(within(sections).getByTestId('tws-section-entity').getAttribute('data-tip')).toBe('Design');
   });
 
-  it('a section press writes the owner’s record, in the private store only', () => {
+  it('with no page, the strip is the owner’s and has no chat toggle: its chat is the host’s pane', () => {
+    const view = render(<Split owner noPage />);
+    expect(view.queryByTestId('tws-chat-toggle')).toBeNull();
+  });
+
+  it('a section press writes the owner’s record and the chat toggle the page’s, in the private store only', () => {
     let runtimeStore: ReturnType<typeof getWorkspaceStore> | null = null;
     function Probe() {
       const runtime = useEmbeddedRuntime(VIEWER, SPACE);
@@ -98,5 +104,13 @@ describe('ActionStrip owner split', () => {
     expect(page?.type === 'entity' && page.ui.subview).toBe('entity');
     /* The viewer's real Workspace never saw any of it. */
     expect(getWorkspaceStore(VIEWER, SPACE).getState().orderedTabIds).toEqual([]);
+
+    /* The chat toggle up top opens the PAGE's chat, never the owner's. */
+    fireEvent.click(view.getByTestId('tws-chat-toggle'));
+    const after = runtimeStore!.getState();
+    const chatPage = after.tabs['page-1'];
+    expect(chatPage?.type === 'entity' && chatPage.ui.chat?.open).toBe(true);
+    const chatDesign = after.tabs['design-1'];
+    expect(chatDesign?.type === 'entity' && chatDesign.ui.chat?.open).toBeFalsy();
   });
 });

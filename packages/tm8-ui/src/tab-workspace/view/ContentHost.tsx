@@ -85,8 +85,8 @@ function EntityTab({
       <div className="tws-entity">
         <LinkedTrail tab={tab} />
         <div className="tws-entity-band">
-          {/* The chat dock / overlay lives in this row, so it opens between the
-              content and the strip and an overlay never covers the strip. */}
+          {/* The chat dock lives in this row, so it opens as a column between
+              the content and the strip. */}
           <div className="tws-entity-row">
             <div ref={setMainEl} className="tws-entity-main tws-entity-host">
               <TitleBar tab={tab} host={mainEl} setSlot={chrome.setTitleSlot} />

@@ -107,8 +107,7 @@ describe('Work: the chat replaces the centre panel stack (§3.1, Q5)', () => {
     act(() => navStore.getState().openChat({ about: id, thread: 'new' }));
 
     /* Lane C's gate reaches this host with no prop: the fixture space has no
-       chat default, so the settings card comes first (§3.4). */
-    fireEvent.click(await view.findByTestId('new-chat-start'));
+       chat default, so the composer opens at once, pre-filled (§3.4, task 01a11330). */
     const body = await view.findByTestId('stub-chat-surface');
     expect(body.textContent).toBe('composer');
     expect(body.getAttribute('data-about')).toBe(id);
@@ -220,8 +219,7 @@ describe('Phone: the slot is a full-screen sheet (§3.1)', () => {
     /* In the FRAME's sheet region — the layer that covers header and screen. */
     expect(sheet.closest('.mobile-frame__sheet')).not.toBeNull();
     expect(sheet.getAttribute('role')).toBe('dialog');
-    /* The settings card (§3.4) is in the sheet first; Start chat hands over. */
-    fireEvent.click(await within(sheet).findByTestId('new-chat-start'));
+    /* No default: the composer opens in the sheet at once (§3.4, task 01a11330). */
     expect((await within(sheet).findByTestId('stub-chat-surface')).textContent).toBe('composer');
 
     fireEvent.click(within(sheet).getByTestId('entity-chat-close'));

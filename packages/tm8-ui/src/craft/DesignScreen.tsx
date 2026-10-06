@@ -32,6 +32,7 @@ import { build, emptyPanels, normalize } from '../routes';
 import type { WorkspaceGateHandles } from '../tab-workspace';
 import {
   ActionStrip,
+  ChatDock,
   EmbeddedWorkspace,
   EntityChromeContext,
   EntityTabBody,
@@ -309,6 +310,9 @@ export function DesignScreen(props: DesignScreenProps) {
             </aside>
           ) : null}
         </div>
+        {/* The active PAGE's chat (task 01a11330): a column beside the page, as
+            in the Workspace; the design's own chat stays the left pane. */}
+        {gate && pageTab ? <ChatDock tab={pageTab} onOpenEntity={(id) => openEntity(id as EntityId)} /> : null}
         {gate && pageTab && ownerTab ? (
           <EntityChromeContext.Provider value={pageChrome}>
             <ActionStrip
