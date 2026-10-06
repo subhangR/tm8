@@ -41,8 +41,19 @@
    the part of it that overlaps the measure is reserved. */
 .cv2-root .tws-panel .pn-embedded-head__spacer {
   float: right;
-  width: max(0px, calc(var(--tws-fg-w, 0px) + 2 * var(--pn-space-3) - (100cqw - 100%) / 2));
+  --tws-overlap: calc(var(--tws-fg-w, 0px) + 2 * var(--pn-space-3) - (100cqw - 100%) / 2);
+  /* When less than 240px would remain beside the group (chat open, a narrow
+     window), the spacer takes the whole row and the head starts under the
+     group's bottom + 12px, full measure. Branch-free: the third term is 100%
+     exactly when 100% - overlap < 240px, and negative otherwise. */
+  width: max(0px, var(--tws-overlap), min(100%, calc((var(--tws-overlap) - 100% + 240px) * 1000)));
   height: calc(var(--tws-fg-h, 44px) + var(--pn-space-3));
+}
+.cv2-root .tws-panel .pn-embedded-head__title,
+.cv2-root .tws-panel .pn-embedded-head__pills {
+  /* Both establish their own formatting context, so beside the float they
+     shrink rather than wrap; a floor makes them drop under it instead. */
+  min-width: min(240px, 100%);
 }
 .cv2-root .tws-panel .pn-embedded-head__title {
   display: -webkit-box;
@@ -96,8 +107,11 @@
   display: block;
   height: var(--tws-fg-h, 44px);
   line-height: var(--tws-fg-h, 44px);
-  /* Up to 16px before the group (group sits 12px from the edge; we pad 24). */
-  padding-right: calc(var(--tws-fg-w, 0px) + var(--pn-space-1));
+  /* Up to 16px before the group (group sits 12px from the edge; we pad 24).
+     Under 240px beside the group, the title row drops below it, full width. */
+  --tws-room: calc(100% - var(--tws-fg-w, 0px) - var(--pn-space-1) - 240px);
+  padding-right: min(calc(var(--tws-fg-w, 0px) + var(--pn-space-1)), max(0px, calc(var(--tws-room) * 1000)));
+  margin-top: min(calc(var(--tws-fg-h, 44px) + var(--pn-space-3)), max(0px, calc(var(--tws-room) * -1000)));
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
