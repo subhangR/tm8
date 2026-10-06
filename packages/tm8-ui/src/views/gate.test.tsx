@@ -14,10 +14,16 @@
  * failure that makes a screenshot impossible in the first place (a boot order
  * that throws, a missing export, a prop contract that drifted between lanes).
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, waitFor, within } from '@testing-library/react';
 import { GateApp } from './GateApp';
 import { navStore, resetNav } from '../stores/navStore';
+
+/* D31: this suite pins the pre-D31 desktop composition (Home, the old Work,
+   Board), which only the legacy desktop still reaches until stage (c) deletes
+   it. The three-mode selector, landing and redirects are pinned in
+   `three-modes.test.tsx`. */
+vi.mock('../shell/desktop-modes', () => ({ desktopModes: () => 'legacy' }));
 
 const renderGate = () => {
   resetNav();

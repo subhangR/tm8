@@ -82,7 +82,7 @@ const VERDICT_TONE: Record<SessionLiveness, RosterTone> = {
 
 type RosterGroupId = 'attention' | 'running' | 'starting' | 'completed';
 
-interface ImportantSession {
+export interface ImportantSession {
   row: SessionRow;
   verdict: SessionLiveness;
   attention: boolean;
@@ -135,6 +135,62 @@ function presentationOf(session: ImportantSession): { word: string; tone: Roster
   if (row.recordedStatus === 'spawning') return { word: 'starting', tone: 'wait' };
   if (row.recordedStatus === 'exited') return { word: 'completed', tone: 'idle' };
   return { word: VERDICT_WORD[verdict], tone: VERDICT_TONE[verdict] };
+}
+
+/**
+ * The ACTIVE roster — needs attention, running, starting, in that order —
+ * for a summary outside this screen (D31: Work's start surface, "Active
+ * sessions"). Same grouping and verdicts as the roster below.
+ */
+export function activeSessionsOf(
+  rows: readonly SessionRow[],
+  livenessOf: (id: string) => SessionLiveness,
+): ImportantSession[] {
+  const order: RosterGroupId[] = ['attention', 'running', 'starting'];
+  const sessions = rows.map((row) => ({ row, verdict: livenessOf(row.id), attention: false }));
+  return order.flatMap((group) => sessions.filter((session) => groupOf(session) === group));
+}
+
+/** One roster row: verdict dot, actor, name, word, meta. Shared with Work's start surface. */
+export function SessionRosterRow({ session, onOpen }: { session: ImportantSession; onOpen?: (id: string) => void }) {
+  const { row, verdict } = session;
+  const presentation = presentationOf(session);
+  const meta = row.meta ?? row.provider;
+  return (
+    <button
+      type="button"
+      className="shell-empty__row"
+      onClick={() => onOpen?.(row.id)}
+      aria-label={[row.name, presentation.word, meta].filter(Boolean).join(', ')}
+    >
+      {/* Solid, never pulsing: this dot presents a liveness
+          verdict, never terminal byte activity (D31). */}
+      <span
+        className={`shell-empty__dot shell-empty__dot--${presentation.tone}`}
+        aria-hidden="true"
+      />
+      {row.actor ? (
+        <Avatar
+          actorId={row.actor.id}
+          provenance={row.actor.isAgent ? 'agent' : 'human'}
+          label={row.actor.displayName}
+          size={20}
+          src={row.actor.avatar ?? null}
+        />
+      ) : null}
+      <span className="shell-empty__name">{row.name}</span>
+      <span className={`shell-empty__word shell-empty__word--${presentation.tone}`}>
+        {presentation.word}
+      </span>
+      {meta && <span className="shell-empty__meta">{meta}</span>}
+      {/* Preserve the two-source truth only where it adds
+          information: a running record whose liveness is
+          stale or unverified. */}
+      {(verdict === 'stale' || verdict === 'unknown') && row.recordedStatus && (
+        <span className="shell-empty__record">record: {row.recordedStatus}</span>
+      )}
+    </button>
+  );
 }
 
 export function EmptyCenter(props: EmptyCenterProps) {
@@ -239,48 +295,11 @@ export function EmptyCenter(props: EmptyCenterProps) {
                     <span className="shell-empty__group-count">{sessions.length}</span>
                   </h2>
                   <ul className="shell-empty__roster">
-                    {visible.map((session) => {
-                      const { row, verdict } = session;
-                      const presentation = presentationOf(session);
-                      const meta = row.meta ?? row.provider;
-                      return (
-                        <li key={row.id}>
-                          <button
-                            type="button"
-                            className="shell-empty__row"
-                            onClick={() => props.onFocusSession?.(row.id)}
-                            aria-label={[row.name, presentation.word, meta].filter(Boolean).join(', ')}
-                          >
-                            {/* Solid, never pulsing: this dot presents a liveness
-                                verdict, never terminal byte activity (D31). */}
-                            <span
-                              className={`shell-empty__dot shell-empty__dot--${presentation.tone}`}
-                              aria-hidden="true"
-                            />
-                            {row.actor ? (
-                              <Avatar
-                                actorId={row.actor.id}
-                                provenance={row.actor.isAgent ? 'agent' : 'human'}
-                                label={row.actor.displayName}
-                                size={20}
-                                src={row.actor.avatar ?? null}
-                              />
-                            ) : null}
-                            <span className="shell-empty__name">{row.name}</span>
-                            <span className={`shell-empty__word shell-empty__word--${presentation.tone}`}>
-                              {presentation.word}
-                            </span>
-                            {meta && <span className="shell-empty__meta">{meta}</span>}
-                            {/* Preserve the two-source truth only where it adds
-                                information: a running record whose liveness is
-                                stale or unverified. */}
-                            {(verdict === 'stale' || verdict === 'unknown') && row.recordedStatus && (
-                              <span className="shell-empty__record">record: {row.recordedStatus}</span>
-                            )}
-                          </button>
-                        </li>
-                      );
-                    })}
+                    {visible.map((session) => (
+                      <li key={session.row.id}>
+                        <SessionRosterRow session={session} onOpen={props.onFocusSession} />
+                      </li>
+                    ))}
                   </ul>
                   {hiddenCount > 0 ? (
                     <div className="shell-empty__more">

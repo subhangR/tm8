@@ -30,7 +30,8 @@ export {
   emptyPanels,
 } from './types';
 
-export { build, defaultRoute, normalize, parse } from './codec';
+export { build, defaultRoute, normalize, parse, workRedirectOf } from './codec';
+export type { WorkRedirect } from './codec';
 export { decodeQ, encodeQ } from './q';
 export { redirect } from './redirects';
 export type { DeferredFeature, RedirectOutcome } from './redirects';

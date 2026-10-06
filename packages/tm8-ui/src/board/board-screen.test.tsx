@@ -20,13 +20,17 @@
  *   'Session tree guide lines'               working   / medium
  *   'Wire palette to real command registry'  blocked   / high
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, waitFor, within, type RenderResult } from '@testing-library/react';
 import { GateApp } from '../views/GateApp';
 import { resetNav } from '../stores/navStore';
 import { screenStackStore } from '../stores/screenStackStore';
 import { createMemoryTarget } from '../routes';
 import { FIXTURE_SPACE_ID } from '../fixtures';
+
+/* D31: this suite drives a retired desktop view (Home, the old Work or
+   Board), which only the legacy desktop still reaches (stage (c) deletes it). */
+vi.mock('../shell/desktop-modes', () => ({ desktopModes: () => 'legacy' }));
 
 const SPACE = FIXTURE_SPACE_ID;
 const GUIDE = 'Session tree guide lines';

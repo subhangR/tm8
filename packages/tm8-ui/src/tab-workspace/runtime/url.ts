@@ -1,8 +1,9 @@
 /**
  * Active tab ↔ URL sync (Spec B §7 "Router", Spec A §12).
  *
- * The address is `#/s/{space}/tabs?tab=<entityId>` while an entity tab is
- * active, and the bare `#/s/{space}/tabs` for a draft, the chooser or no tab.
+ * The address is `#/s/{space}/work?tab=<entityId>` while an entity tab is
+ * active, and the bare `#/s/{space}/work` for a draft, the chooser or no tab
+ * (D31: `work` is canonical; `tabs` still decodes, as a permanent alias).
  * It is written through the router's own store (`navStore`), never through
  * `location.hash`: `attachRouter` builds the hash with the codec and owns
  * push vs replaceState.

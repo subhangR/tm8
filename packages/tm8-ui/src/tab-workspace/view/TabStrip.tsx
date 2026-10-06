@@ -632,7 +632,9 @@ export function TabStrip({ leading }: TabStripProps = {}) {
   useLayoutEffect(() => {
     const el = scrollerRef.current;
     if (!el || !active) return;
-    const tab = el.querySelector<HTMLElement>(`[data-tab-id="${CSS.escape(active)}"]`);
+    /* Tab ids are generated tokens; `CSS.escape` is absent in jsdom. */
+    const id = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(active) : active;
+    const tab = el.querySelector<HTMLElement>(`[data-tab-id="${id}"]`);
     if (!tab) return;
     // The scroller is the tab's offsetParent (position: relative).
     const left = tab.offsetLeft;
