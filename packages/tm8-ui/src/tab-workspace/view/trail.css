@@ -5,7 +5,9 @@
   height: 28px;
   display: flex;
   align-items: center;
-  padding: 0 var(--pn-space-6);
+  /* R18: the head's geometry (content.css) — 12px sides, then the centred
+     read measure — over the head's own box (--tws-trail-l/-r, LinkedTrail). */
+  padding: 0 calc(var(--tws-trail-r, 0px) + var(--pn-space-3)) 0 calc(var(--tws-trail-l, 0px) + var(--pn-space-3));
   background: var(--pn-card);
   color: var(--pn-ink-3);
   font-size: var(--pn-fs-label);
@@ -14,10 +16,21 @@
 .tws-trail-list {
   display: flex;
   align-items: center;
+  flex: 1 1 auto;
   min-width: 0;
-  margin: 0;
+  max-width: var(--pn-read-measure);
+  margin: 0 auto;
   padding: 0;
   list-style: none;
+}
+/* Bodies that own their height have a full-width head with 24px sides (R14). */
+.tws-entity:has(.tws-panel > .pn-panel[data-embedded-flow='fill']) .tws-trail {
+  padding-left: calc(var(--tws-trail-l, 0px) + var(--pn-space-6));
+  padding-right: calc(var(--tws-trail-r, 0px) + var(--pn-space-6));
+}
+.tws-entity:has(.tws-panel > .pn-panel[data-embedded-flow='fill']) .tws-trail-list {
+  max-width: none;
+  margin: 0;
 }
 .tws-trail-item {
   display: flex;
