@@ -4,6 +4,7 @@
 import { findEntityTab, kindInScope } from '../selectors';
 import { isWorkspaceKind } from '../types';
 import type { DraftTabRecord, EntityTabRecord, TabId, TabRecord, WorkspaceState } from '../types';
+import { requestDraftFocus } from '../draftFocus';
 import { activate, isNonEmptyString, isRecord, reject, replaceChooser, toFront, type Planner } from './shared';
 
 /** §5.2 Open a draft: reuse the untouched one of that kind, else create at index 0. */
@@ -29,7 +30,12 @@ export const openDraft: Planner = ({ state, env, hooks }) => {
     if (next.orderedTabIds.every((id, i) => id === state.orderedTabIds[i])) next = state;
     next = activate(next, untouched.id, hooks);
     next = replaceChooser(next, args.replaceTabId, untouched.id, true, hooks);
-    return { type: 'commit', next, result: { tabId: untouched.id, outcome: 'reused' } };
+    return {
+      type: 'commit',
+      next,
+      result: { tabId: untouched.id, outcome: 'reused' },
+      after: [() => requestDraftFocus(untouched.id)],
+    };
   }
   const record: DraftTabRecord = {
     id: hooks.newId(),

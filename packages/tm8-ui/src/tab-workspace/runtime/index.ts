@@ -9,6 +9,7 @@ export {
   type WorkspaceStore,
 } from './store';
 export { createWorkspaceRuntime, getWorkspaceRuntime, registerEffect, type WorkspaceRuntime } from './dispatch';
+export { onDraftFocusRequest, requestDraftFocus } from './draftFocus';
 export { draftKey, draftStoreFor, flushDraftValues, type DraftStore } from './draftStore';
 export {
   acceptRestoreOffer,
