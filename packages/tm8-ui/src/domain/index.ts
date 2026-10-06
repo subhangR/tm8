@@ -125,6 +125,7 @@ export {
   blockingClaims,
   capRefusalHint,
   claimTally,
+  offeredCountOf,
   claimsFromEdges,
   crossTabBreadcrumb,
   endedPhraseOf,

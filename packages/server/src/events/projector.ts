@@ -275,6 +275,7 @@ interface SummaryRow {
   ws_receipt_message_id?: string | null;
   ws_outcome_source?: string | null;
   ws_outcome_note?: string | null;
+  ws_offered_task_ids?: string[] | null;
   file_name: string | null;
   file_mime_type: string | null;
   file_size_bytes: string | number | null;
@@ -465,6 +466,13 @@ select
   ws.receipt_message_id as ws_receipt_message_id,
   ws.outcome_source  as ws_outcome_source,
   ws.outcome_note    as ws_outcome_note,
+  case when ws.entity_id is null then null else (select coalesce(array_agg(distinct sh.source_entity_id::text), '{}')
+     from public.session_handoffs sh
+     join public.entities ot on ot.id = sh.source_entity_id and ot.kind = 'task' and ot.deleted_at is null
+    where sh.target_work_session_id = ws.entity_id and sh.withdrawn_at is null
+      and not exists (select 1 from public.edges oc
+                       where oc.src_id = ws.entity_id and oc.dst_id = sh.source_entity_id
+                         and oc.type = 'working_on')) end as ws_offered_task_ids,
   ws.skills as ws_skills,
   f.name             as file_name,
   f.mime_type        as file_mime_type,
@@ -1399,6 +1407,7 @@ export class PgEntityProjector implements EntityProjector {
           endedReason: r.ws_ended_reason ?? null,
           // 299 — the outcome facts, the same helper as entity-read.
           ...outcomeFacts(r),
+          ...(Array.isArray(r.ws_offered_task_ids) ? { offeredTaskIds: r.ws_offered_task_ids } : {}),
         };
       case 'file':
         return {

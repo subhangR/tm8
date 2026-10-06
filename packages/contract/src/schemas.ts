@@ -625,6 +625,7 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     receiptMessageId: z.string().nullable().optional(),
     outcomeSource: WorkSessionOutcomeSourceSchema.nullable().optional(),
     outcomeNote: z.string().nullable().optional(),
+    offeredTaskIds: z.array(z.string()).optional(),
     // The persona this run acts as, from its latest `participates_in` edge.
     // Absent = a node that predates the field; explicit null = a run with no
     // persona, which renders the tool alone. See the DTO note in contract.ts.

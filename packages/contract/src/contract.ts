@@ -495,6 +495,12 @@ export type CoreEntityState =
       /** The operator's note when stopping ("Not needed any more"). */
       outcomeNote?: string | null;
       /**
+       * Spec D1 R1 (301): tasks OFFERED to this session — handed to it and not
+       * withdrawn — that it has never claimed. Not claims: no robot, no
+       * `working_on`, until the session runs `task transition --claim`.
+       */
+      offeredTaskIds?: string[];
+      /**
        * WHO IS RUNNING THIS SESSION — the persona resolved through the
        * session's most recent `participates_in` edge, the SAME hop
        * `loadActors` attributes messages by. Carried on the summary so a
