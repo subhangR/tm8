@@ -11,7 +11,7 @@
  * slots here, so permissions, confirmations and flows are unchanged. One
  * component for every kind. Workstream E.
  */
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { EntityId, SpaceId } from '@tm8/contract';
 import { getKind, KindIcon } from '../../domain';
 import { McpEquipment } from '../../mcp/McpEquipment';
@@ -69,6 +69,7 @@ interface Tip {
   detail?: string;
   right: number;
   top: number;
+  zoom: number;
 }
 
 function useStripTips(stats: string) {
@@ -88,6 +89,11 @@ function useStripTips(stats: string) {
   const show = (target: EventTarget | null, strip: HTMLElement) => {
     const el = (target as HTMLElement | null)?.closest?.<HTMLElement>('[title], [aria-label], [data-tip]');
     if (!el || !strip.contains(el) || el === strip || el.closest('[role="menu"], [role="dialog"]')) return;
+    /* A control whose popover is open needs no tooltip over it. */
+    if (el.getAttribute('aria-expanded') === 'true') {
+      hide();
+      return;
+    }
     const title = el.getAttribute('title');
     const text = el.getAttribute('data-tip') || title || el.getAttribute('aria-label') || el.textContent?.trim() || '';
     if (!text) return;
@@ -97,12 +103,17 @@ function useStripTips(stats: string) {
       el.removeAttribute('title');
     }
     const open = () => {
+      /* `position: fixed` inside the app's `zoom` scope takes UNZOOMED px while
+         a rect reports zoomed ones; divide by the measured scale, or the tip
+         drifts further from its button the lower it sits (R32.2). */
       const rect = el.getBoundingClientRect();
+      const zoom = strip.offsetWidth > 0 ? strip.getBoundingClientRect().width / strip.offsetWidth : 1;
       setTip({
         text,
         ...(el.hasAttribute('data-tip-stats') && stats ? { detail: stats } : {}),
-        right: window.innerWidth - rect.left + TIP_OFFSET_PX,
-        top: rect.top + rect.height / 2,
+        right: (window.innerWidth - rect.left) / zoom + TIP_OFFSET_PX,
+        top: (rect.top + rect.height / 2) / zoom,
+        zoom,
       });
     };
     if (timer.current) window.clearTimeout(timer.current);
@@ -110,8 +121,26 @@ function useStripTips(stats: string) {
     else timer.current = window.setTimeout(open, TIP_DELAY_MS);
   };
   useEffect(() => () => restore(), []);
+  /* Centred on its button, clamped 8px inside the viewport. */
+  const tipRef = useRef<HTMLSpanElement>(null);
+  const [clampedTop, setClampedTop] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const el = tipRef.current;
+    if (!tip || !el) {
+      setClampedTop(null);
+      return;
+    }
+    const half = el.offsetHeight / 2;
+    const viewport = window.innerHeight / tip.zoom;
+    setClampedTop(Math.min(Math.max(tip.top, TIP_OFFSET_PX + half), viewport - TIP_OFFSET_PX - half));
+  }, [tip]);
   const node = tip ? (
-    <span className="tws-tip tws-astrip-tip" role="tooltip" style={{ right: tip.right, top: tip.top }}>
+    <span
+      ref={tipRef}
+      className="tws-tip tws-astrip-tip"
+      role="tooltip"
+      style={{ right: tip.right, top: clampedTop ?? tip.top }}
+    >
       <span>{tip.text}</span>
       {tip.detail ? <span className="tws-astrip-tip-stats">{tip.detail}</span> : null}
     </span>
@@ -149,6 +178,26 @@ export function ActionStrip({ tab }: ActionStripProps) {
     return () => mo.disconnect();
   }, [statsEl]);
   const tips = useStripTips(stats);
+
+  const outlineRef = useRef<HTMLDivElement>(null);
+  const [outlineOpen, setOutlineOpen] = useState(false);
+  useEffect(() => {
+    if (!outlineOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (outlineRef.current && !outlineRef.current.contains(e.target as Node)) setOutlineOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      setOutlineOpen(false);
+      outlineRef.current?.querySelector<HTMLButtonElement>('[data-testid="tws-outline"]')?.focus();
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [outlineOpen]);
 
   /* The ⋯ menu dismisses on outside press and Escape, returning focus to its trigger. */
   const menuOpen = chrome?.menuOpen ?? false;
@@ -190,6 +239,7 @@ export function ActionStrip({ tab }: ActionStripProps) {
   };
 
   return (
+    <>
     <div
       ref={stripRef}
       className={`${darkBody ? 'cv2-root ' : ''}tws-astrip`}
@@ -210,6 +260,36 @@ export function ActionStrip({ tab }: ActionStripProps) {
       {/* TOP — the kind's own actions. */}
       <div className="tws-astrip-section tws-astrip-section--kind">
         <div ref={chrome?.setKindSlot} className="tws-astrip-cluster tws-astrip-kind" data-testid="tws-astrip-kind" />
+        {/* A reader's outline (R32.1): shown only when the body put one in the
+            slot; it opens to the left as a popover. */}
+        <div className="tws-astrip-cluster tws-astrip-outline" ref={outlineRef} data-open={outlineOpen || undefined}>
+          <button
+            type="button"
+            className="tws-astrip-btn"
+            aria-label="Outline"
+            aria-haspopup="dialog"
+            aria-expanded={outlineOpen}
+            data-testid="tws-outline"
+            onClick={() => setOutlineOpen((was) => !was)}
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M5.5 4h8M5.5 8h8M5.5 12h8" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+              <circle cx="2.75" cy="4" r="0.9" fill="currentColor" />
+              <circle cx="2.75" cy="8" r="0.9" fill="currentColor" />
+              <circle cx="2.75" cy="12" r="0.9" fill="currentColor" />
+            </svg>
+          </button>
+          <div
+            ref={chrome?.setOutlineSlot}
+            className="tws-astrip-outline-pop"
+            role="dialog"
+            aria-label="Outline"
+            data-testid="tws-outline-popover"
+            onClick={(e) => {
+              if ((e.target as HTMLElement).closest('a, button')) setOutlineOpen(false);
+            }}
+          />
+        </div>
         <div ref={chrome?.setVerbsSlot} className="tws-astrip-cluster tws-astrip-verbs" data-testid="tws-astrip-verbs" />
         {kindConfig.mcpEquipment && detail && detail.deletedAt == null ? (
           <div className="tws-astrip-cluster">
@@ -221,8 +301,6 @@ export function ActionStrip({ tab }: ActionStripProps) {
             <AttachButton entityId={tab.entityId} />
           </div>
         ) : null}
-        {/* The session's live reading, read as text for the tooltip and ⋯. */}
-        <div ref={chrome?.setStatsSlot} className="tws-astrip-stats-source" aria-hidden="true" />
       </div>
 
       {/* BOTTOM — the actions every kind shares. */}
@@ -359,6 +437,11 @@ export function ActionStrip({ tab }: ActionStripProps) {
       </div>
       {tips.node}
     </div>
+    {/* The session's live reading, read as text for the Session tooltip and ⋯
+        (R32.4): outside the toolbar, hidden and inert, so nothing invisible
+        is focusable or announced. */}
+    <div ref={chrome?.setStatsSlot} className="tws-astrip-stats-source" hidden inert aria-hidden="true" />
+    </>
   );
 }
 

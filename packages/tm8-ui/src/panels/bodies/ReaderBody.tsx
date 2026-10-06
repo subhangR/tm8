@@ -1,4 +1,5 @@
 import { useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import type { EntityDetail, EntitySummary } from '@tm8/contract';
 import type { ContentBlockRef } from '../../domain';
 import { KindIcon, getKind } from '../../domain';
@@ -84,9 +85,15 @@ export interface ReaderBodyProps {
    * `img` override, which never guesses a transport path.
    */
   fileHref?: MarkdownFileHref;
+  /**
+   * Where the outline renders instead of above the document (the Workspace
+   * action strip's Outline popover). Absent ⇒ in the flow, unchanged; null ⇒
+   * the host's slot is not mounted, so the outline is not drawn.
+   */
+  outlineSlot?: HTMLElement | null;
 }
 
-export function ReaderBody({ detail, blocks, historyUnavailableReason, onOpenEntity, fileHref }: ReaderBodyProps) {
+export function ReaderBody({ detail, blocks, historyUnavailableReason, onOpenEntity, fileHref, outlineSlot }: ReaderBodyProps) {
   /**
    * The search scope for an outline jump, and the reason it is a ref rather
    * than `document`. This body mounts more than once — two panels split on the
@@ -181,12 +188,18 @@ export function ReaderBody({ detail, blocks, historyUnavailableReason, onOpenEnt
       data-testid="reader-body"
       ref={rootRef}
     >
-      <Outline
-        entries={outline}
-        chapterCount={chapterCount}
-        onOpenEntity={onOpenEntity}
-        onJumpToHeading={onJumpToHeading}
-      />
+      {(() => {
+        const nav = (
+          <Outline
+            entries={outline}
+            chapterCount={chapterCount}
+            onOpenEntity={onOpenEntity}
+            onJumpToHeading={onJumpToHeading}
+          />
+        );
+        if (outlineSlot === undefined) return nav;
+        return outlineSlot ? createPortal(nav, outlineSlot) : null;
+      })()}
 
       {/* THE DOCUMENT, RENDERED (user ruling 2026-07-31). This used to be a
           flat run of <p>/<blockquote> from a four-shape hand parser, which
