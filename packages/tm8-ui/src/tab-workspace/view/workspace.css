@@ -97,7 +97,7 @@
   font-weight: 500;
 }
 .tws-root .tws-space-slot .shell-switcher__trigger--quiet:hover {
-  background: var(--pn-hover);
+  background: var(--pn-active);
 }
 .tws-root .tws-space-slot .shell-switcher__trigger--quiet .shell-switcher__space {
   min-width: 0;
@@ -547,4 +547,14 @@
     transition: none !important;
     animation: none !important;
   }
+}
+
+/* R34: controls on the darker --pn-paper band (left header, expanded-mode Restore cluster). */
+.tws-left-header button:hover,
+.tws-ts-leading button:hover {
+  background: var(--pn-active);
+}
+.tws-left-header button:active,
+.tws-ts-leading button:active {
+  background: var(--pn-line);
 }
