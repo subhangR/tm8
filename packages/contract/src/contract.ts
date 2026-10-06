@@ -1238,6 +1238,15 @@ export interface CollectionQuery {
      */
     sessionStatus?: WorkSessionStatus[];
     /**
+     * 301 (Spec D1 §5.3): work_sessions whose OUTCOME is one of these. Same
+     * kind-narrowing as `sessionStatus` (NULL for every non-session row). The
+     * session tabs are this crossed with `sessionStatus`: Running = any
+     * outcome but stopped with a live-recorded process; Interrupted = open
+     * with an ended process; Completed = completed with an ended process;
+     * Stopped = stopped.
+     */
+    sessionOutcome?: WorkSessionOutcome[];
+    /**
      * Additive: entities whose `activityAt` is at or after this instant — a
      * TIME WINDOW, expressed as an absolute ISO timestamp rather than a
      * duration so the server never has to agree with the caller about "now".

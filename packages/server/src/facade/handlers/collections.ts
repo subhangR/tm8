@@ -389,6 +389,10 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
   if (f.sessionStatus && f.sessionStatus.length > 0) {
     where.push(`ws.status = any(${p.add(f.sessionStatus)}::text[])`);
   }
+  // 301 (Spec D1 §5.3): the outcome axis, same kind-narrowing.
+  if (f.sessionOutcome && f.sessionOutcome.length > 0) {
+    where.push(`ws.outcome = any(${p.add(f.sessionOutcome)}::text[])`);
+  }
 
   // Memory text (the MCP `memory_search` tool): rows whose statement,
   // mechanism, subject scope or does-not-establish text contains ANY of the
