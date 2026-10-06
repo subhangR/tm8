@@ -1082,7 +1082,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
            five surface chips, so it is the only one whose primaries have
            to give up their words. Registry data, never a kind literal. */
         markPrimaries={isTerminal}
-        leadLabelOnly={embedded !== null}
+        iconVerbs={embedded !== null}
         /* Filled from the detail — see `panelActionContext`, which is
            also what the phone's action menu asks, so the bar and the menu
            cannot form different opinions about the same verb. */
@@ -1433,18 +1433,13 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
           declares none) would otherwise draw an empty padded row with a
           hairline under the tabs. No archetype gate — see `strip` above. */}
       {embedded ? (
-        /* THE EMBEDDED HEAD: title (unless the body draws its own — the full
-           view, a canvas), then the property pills, inside the body's measure.
-           The spacer reserves the host's floating group so neither sits
-           under it (design log R2, R13). */
+        /* THE EMBEDDED HEAD: the property pills (or, on a body that owns its
+           height, its tools row), inside the body's measure. No title — the
+           tab shows it (Subhang, feedback round 1). The spacer reserves the
+           host's floating group on this same first row. */
         <div className="pn-embedded-head" data-testid="panel-embedded-head">
           <div className="pn-embedded-head__measure">
             <span className="pn-embedded-head__spacer" aria-hidden="true" />
-            {host !== 'z4' && !canvas ? (
-              <h1 className="pn-embedded-head__title" title={detail.title}>
-                {detail.title}
-              </h1>
-            ) : null}
             {/* Row B (R14): the body's own surface switch and the live reading.
                 The chips switch the body, so they belong to the body. */}
             {controlsRideBar && tab === 'content' ? (

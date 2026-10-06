@@ -36,47 +36,25 @@
   max-width: var(--pn-read-measure);
   margin: 0 auto var(--pn-space-3);
 }
-/* The floating group's footprint, intersected with the measure: the group sits
-   12px in from the content's top-right corner (100cqw = the panel), so only
-   the part of it that overlaps the measure is reserved. */
+/* No title in the body: the tab shows it (Subhang, feedback round 1). The
+   property pills are the first row, and the floating group floats at the top
+   right ON that row. The spacer is the group's height and as wide as the part
+   of the group (plus a 16px gap) that overlaps the measure: the group sits
+   12px in from the content's top-right corner (100cqw = the panel). The pills
+   (a flex row, its own formatting context) narrow beside it and wrap there. */
 .cv2-root .tws-panel .pn-embedded-head__spacer {
   float: right;
-  --tws-overlap: calc(var(--tws-fg-w, 0px) + 2 * var(--pn-space-3) - (100cqw - 100%) / 2);
-  /* R20: when less than 480px would remain beside the group (chat open, the
-     browser open at 1440, a narrow window), the spacer takes the whole row and
-     the head starts under the group's bottom + 12px, full measure.
-     Branch-free: the third term is 100% exactly when 100% - overlap < 480px,
-     and negative otherwise. */
-  width: max(0px, var(--tws-overlap), min(100%, calc((var(--tws-overlap) - 100% + 480px) * 1000)));
-  height: calc(var(--tws-fg-h, 44px) + var(--pn-space-3));
-}
-.cv2-root .tws-panel .pn-embedded-head__title,
-.cv2-root .tws-panel .pn-embedded-head__pills {
-  /* Both establish their own formatting context, so beside the float they
-     shrink rather than wrap; a floor makes them drop under it instead. */
-  min-width: min(480px, 100%);
-}
-.cv2-root .tws-panel .pn-embedded-head__title {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  overflow: hidden;
-  margin: 0;
-  font-size: var(--pn-fs-h2);
-  font-weight: 600;
-  letter-spacing: var(--pn-track-tight);
-  line-height: var(--pn-lh-snug);
-  color: var(--pn-ink);
-  overflow-wrap: anywhere;
+  width: max(0px, calc(var(--tws-fg-w, 0px) + var(--pn-space-3) + var(--pn-space-4) - (100cqw - 100%) / 2));
+  height: var(--tws-fg-h, 32px);
 }
 .cv2-root .tws-panel .pn-embedded-head__pills {
-  margin-top: var(--pn-space-3);
+  min-height: var(--tws-fg-h, 32px);
+  display: flex;
+  align-items: center;
 }
-.cv2-root .tws-panel .pn-embedded-head__title + .pn-embedded-head__pills {
-  margin-top: var(--pn-space-3);
-}
-.cv2-root .tws-panel .pn-embedded-head__spacer + .pn-embedded-head__pills {
-  margin-top: 0;
+.cv2-root .tws-panel .pn-embedded-head__pills > * {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 /* A document scrolls as ONE column: head, body and footer on one card plane. */
@@ -108,9 +86,9 @@
 }
 
 /* A body that owns its height (terminal, chat, frame) keeps its own scroll
-   under a fixed head (R14): row A is the title on one line, centred on the
-   group (12 + group + 12 = 68px); row B is the body's own tools (36px); then
-   12px and the body. Full width, 24px sides, no measure, no spacer. */
+   under a fixed head: its tools row (surface chips, forms chip, stats) is the
+   first and only row, with the group on it; then 12px and the body. Full
+   width, 24px sides, no measure, no spacer. */
 .cv2-root .tws-panel > .pn-panel[data-embedded-flow='fill'] .pn-embedded-head {
   padding: var(--pn-space-3) var(--pn-space-6);
 }
@@ -121,206 +99,123 @@
 .cv2-root .tws-panel > .pn-panel[data-embedded-flow='fill'] .pn-embedded-head__spacer {
   display: none;
 }
-.cv2-root .tws-panel > .pn-panel[data-embedded-flow='fill'] .pn-embedded-head__title {
-  display: block;
-  height: var(--tws-fg-h, 44px);
-  line-height: var(--tws-fg-h, 44px);
-  /* Up to 16px before the group (group sits 12px from the edge; we pad 24).
-     Under 240px beside the group, the title row drops below it, full width. */
-  --tws-room: calc(100% - var(--tws-fg-w, 0px) - var(--pn-space-1) - 240px);
-  padding-right: min(calc(var(--tws-fg-w, 0px) + var(--pn-space-1)), max(0px, calc(var(--tws-room) * 1000)));
-  margin-top: min(calc(var(--tws-fg-h, 44px) + var(--pn-space-3)), max(0px, calc(var(--tws-room) * -1000)));
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 .cv2-root .tws-panel .pn-embedded-head__tools {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--pn-space-3);
   height: 36px;
-  margin-top: var(--pn-space-3);
+  margin-top: var(--pn-space-2);
 }
-.cv2-root .tws-panel > .pn-panel[data-embedded-flow='fill'] .pn-embedded-head__spacer + .pn-embedded-head__tools {
-  /* No title (canvas): the tools row takes row A's place beside the group. */
+.cv2-root .tws-panel > .pn-panel[data-embedded-flow='fill'] .pn-embedded-head__measure {
+  /* At least the group's row, so a body with no tools row (chat, frame)
+     still starts below the group, never under it. */
+  min-height: var(--tws-fg-h, 32px);
+}
+.cv2-root .tws-panel > .pn-panel[data-embedded-flow='fill'] .pn-embedded-head__tools {
+  /* Row B is the first row: the group sits top right on it, and the stats
+     end 16px before the group (it sits 12px in; the head pads 24). */
   margin-top: 0;
-  height: var(--tws-fg-h, 44px);
+  height: max(36px, var(--tws-fg-h, 32px));
   padding-right: calc(var(--tws-fg-w, 0px) + var(--pn-space-1));
 }
-.cv2-root .tws-panel .pn-embedded-head__surface {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: var(--pn-space-1);
-}
-.cv2-root .tws-panel .pn-embedded-head__surface .pn-surface-switch {
-  display: flex;
-  gap: var(--pn-space-1);
-  padding: 0;
-  border: 0;
-  background: none;
-}
-.cv2-root .tws-panel .pn-embedded-head__surface .pn-surface-switch__tab {
-  width: 36px;
-  height: 36px;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  border-radius: var(--pn-r-sm);
-  background: none;
-  color: var(--pn-ink-3);
-}
-.cv2-root .tws-panel .pn-embedded-head__surface .pn-surface-switch__tab svg {
-  width: 16px;
-  height: 16px;
-}
-.cv2-root .tws-panel .pn-embedded-head__surface .pn-surface-switch__tab:hover {
-  background: var(--pn-hover);
-}
-.cv2-root .tws-panel .pn-embedded-head__surface .pn-surface-switch__tab[aria-selected='true'] {
-  background: var(--pn-active);
-  color: var(--pn-ink);
-  box-shadow: none;
-}
-.cv2-root .tws-panel .pn-embedded-head__status {
-  display: flex;
-  align-items: center;
-  gap: var(--pn-space-2);
-  min-width: 0;
-}
-.cv2-root .tws-panel .pf-chip {
-  position: relative;
-  flex: none;
-}
-.cv2-root .tws-panel .pf-chip__trigger {
-  border: 0;
-  cursor: pointer;
-}
-.cv2-root .tws-panel .pf-chip__pop {
-  position: absolute;
-  top: calc(100% + var(--pn-space-1));
-  right: 0;
-  z-index: 40;
-  width: 400px;
-  max-width: calc(100cqw - 2 * var(--pn-space-6));
-  max-height: 60vh;
-  overflow: auto;
-  padding: var(--pn-space-4);
-  background: var(--pn-card);
-  border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-md);
-  box-shadow: var(--pn-sh-pop);
-  box-sizing: border-box;
-}
-.cv2-root .tws-panel .pf-chip__pop .pf-banner {
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background: none;
-}
-.cv2-root .tws-panel .pn-embedded-head__reading {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  font-family: var(--pn-mono);
-  font-size: var(--pn-fs-label);
-  font-variant-numeric: tabular-nums;
-  color: var(--pn-ink-3);
-}
-.cv2-root .tws-panel .pn-embedded-head__reading * {
-  font: inherit;
-  color: inherit;
-}
-
-/* The attention pill hangs under the group, never under it. */
 .cv2-root .tws-panel > .pn-panel > .att-block-dock > .att-block {
-  top: calc(var(--tws-fg-h, 44px) + 2 * var(--pn-space-3));
+  top: calc(var(--tws-fg-h, 32px) + 2 * var(--pn-space-3));
 }
 
-/* --- Floating group: raised plane, clusters 12px apart, 4px inside --- */
+/* --- Floating group (R27): one compact component for every kind. 32px tall,
+   2px padding, 28px buttons, 14px icons; 2px gaps within a cluster, 8px
+   between clusters. The hairline is a shadow ring so the box stays 32px. --- */
 .tws-floating.tws-fg {
   align-items: center;
-  gap: var(--pn-space-3);
-  padding: var(--pn-space-1);
+  gap: var(--pn-space-2);
+  height: 32px;
+  padding: 2px;
+  border: 0;
   border-radius: var(--pn-r-md);
+  box-shadow: 0 0 0 1px var(--pn-line), var(--pn-sh-sm);
   max-width: calc(100% - 2 * var(--pn-space-3));
   box-sizing: border-box;
 }
-.tws-fg-cluster {
+.tws-fg-cluster,
+.tws-fg-verbs,
+.tws-fg-seg,
+.cv2-root .tws-fg-verbs .pn-actions {
   position: relative;
   display: flex;
   align-items: center;
-  gap: var(--pn-space-1);
-}
-.tws-fg-verbs {
-  display: flex;
-  align-items: center;
-  gap: var(--pn-space-1);
+  gap: 2px;
 }
 .tws-fg-verbs:empty {
   display: none;
 }
-
-/* Section switcher */
-.tws-fg-seg {
-  display: flex;
-  align-items: center;
-  gap: var(--pn-space-1);
-}
-.tws-fg-seg-btn {
-  height: 36px;
+.tws-fg-btn,
+.cv2-root .tws-fg-verbs .pn-btn.pn-btn--primary,
+.cv2-root .tws-fg-verbs .kit-iconbtn {
+  position: relative;
+  flex: none;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
   display: inline-flex;
   align-items: center;
-  gap: var(--pn-space-1);
-  padding: 0 var(--pn-space-3);
+  justify-content: center;
+  padding: 0;
   background: none;
   border: 0;
   border-radius: var(--pn-r-sm);
+  box-shadow: none;
+  color: var(--pn-ink-2);
+  font: inherit;
+  font-size: var(--pn-fs-sm);
+  line-height: 1;
+  cursor: pointer;
+}
+.tws-fg-btn svg {
+  width: 14px;
+  height: 14px;
+}
+.tws-fg-btn:hover,
+.cv2-root .tws-fg-verbs .pn-btn.pn-btn--primary:hover,
+.cv2-root .tws-fg-verbs .kit-iconbtn:hover {
+  background: var(--pn-hover);
+}
+/* Section switcher: three icon segments, radio semantics. */
+.tws-fg-seg-btn {
   color: var(--pn-ink-3);
-  font: inherit;
-  font-size: var(--pn-fs-label);
-  font-weight: 600;
-  white-space: nowrap;
-  cursor: pointer;
 }
-.tws-fg-seg-btn:hover {
-  color: var(--pn-ink-2);
-  background: var(--pn-hover);
-}
-.tws-fg-seg-btn[aria-pressed='true'] {
+.tws-fg-seg-btn[aria-checked='true'],
+.tws-fg-chat[aria-pressed='true'],
+.tws-fg-connectors[aria-expanded='true'] {
   color: var(--pn-ink);
   background: var(--pn-active);
 }
-.tws-fg-count {
-  font-size: var(--pn-fs-label);
-  font-weight: 400;
-  color: var(--pn-ink-4);
+/* The §4 badge: Messages count, attached connectors. */
+.tws-fg-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-brand-soft);
+  color: var(--pn-brand-2);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
   font-variant-numeric: tabular-nums;
+  pointer-events: none;
 }
-.tws-fg-select {
-  height: 36px;
-  padding: 0 var(--pn-space-2);
-  background: none;
-  border: 0;
-  border-radius: var(--pn-r-sm);
-  color: var(--pn-ink-2);
-  font: inherit;
-  font-size: var(--pn-fs-label);
-  font-weight: 600;
-  cursor: pointer;
+/* Run: the lead verb, a ▶ icon in the brand colour. */
+.cv2-root .tws-fg-verbs .pn-btn.pn-btn--lead {
+  color: var(--pn-brand-2);
 }
-.tws-fg-select:hover {
-  background: var(--pn-hover);
-}
-
-/* Chat toggle */
-.tws-fg-chat[aria-pressed='true'] {
-  color: var(--pn-ink);
-  background: var(--pn-active);
+.cv2-root .tws-fg-verbs .pn-btn.pn-btn--lead:hover {
+  background: var(--pn-brand-soft);
 }
 
 /* ⋯ menu */
@@ -402,7 +297,7 @@
   max-width: var(--pn-read-measure, 720px);
   width: 100%;
   margin: 0 auto;
-  padding: calc(var(--tws-fg-h, 44px) + 2 * var(--pn-space-3)) var(--pn-space-6) 0;
+  padding: calc(var(--tws-fg-h, 32px) + 2 * var(--pn-space-3)) var(--pn-space-6) 0;
   box-sizing: border-box;
 }
 .tws-skeleton-bar {
@@ -412,58 +307,11 @@
   background: var(--pn-hover);
 }
 
-/* --- Verbs (design log R6): one labelled verb, the rest 36x36 icons --- */
-.cv2-root .tws-fg-verbs .pn-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--pn-space-1);
-}
-.cv2-root .tws-fg-verbs .pn-btn.pn-btn--primary {
-  height: 36px;
-  min-width: 36px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--pn-space-2);
-  padding: 0;
-  background: none;
-  border: 0;
-  border-radius: var(--pn-r-sm);
-  box-shadow: none;
-  color: var(--pn-ink-2);
-  font-size: var(--pn-fs-label);
-  font-weight: 600;
-}
-.cv2-root .tws-fg-verbs .pn-btn.pn-btn--primary:hover {
-  background: var(--pn-hover);
-}
-.cv2-root .tws-fg-verbs .pn-btn.pn-btn--lead {
-  padding: 0 var(--pn-space-3);
-  color: var(--pn-brand-2);
-}
-.cv2-root .tws-fg-verbs .pn-btn.pn-btn--lead:hover {
-  background: var(--pn-brand-soft);
-}
-.cv2-root .tws-fg-verbs .pn-btn.pn-btn--mark {
-  width: 36px;
-}
-
-
 /* Connectors (round 3): a plug button with the attached count, opening the
    task's McpEquipment block in an anchored popover. */
 .tws-fg-pop-anchor {
   position: relative;
   display: flex;
-}
-.tws-icon-btn.tws-fg-connectors {
-  width: auto;
-  min-width: 36px;
-  gap: var(--pn-space-1);
-  padding: 0 var(--pn-space-2);
-}
-.tws-fg-connectors[aria-expanded='true'] {
-  color: var(--pn-ink);
-  background: var(--pn-active);
 }
 .cv2-root .tws-fg-popover {
   width: 320px;
@@ -495,6 +343,4 @@
 .cv2-root .tws-fg-popover .mcp-equipment a:focus-visible {
   text-decoration: underline;
 }
-.tws-icon-btn.tws-fg-connectors {
-  color: var(--pn-ink-2);
-}
+

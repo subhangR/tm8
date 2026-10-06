@@ -8,7 +8,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import type { EntityId, SpaceId } from '@tm8/contract';
-import { getKind } from '../../domain';
+import { getKind, KindIcon } from '../../domain';
 import { McpEquipment } from '../../mcp/McpEquipment';
 import { useMcpCatalog } from '../../mcp/context';
 import { countMessages } from '../../panels';
@@ -22,9 +22,6 @@ import './content.css';
 export interface FloatingGroupProps {
   tab: EntityTabRecord;
 }
-
-/** Below this content width the switcher collapses to one quiet dropdown (design log §7). */
-const NARROW_SWITCHER_PX = 520;
 
 /** `#/s/{space}/tabs?tab=<id>` as an absolute URL (Spec A §12). */
 export function tabLinkUrl(spaceId: string, entityId: string): string {
@@ -97,7 +94,6 @@ export function FloatingGroup({ tab }: FloatingGroupProps) {
     dispatch({ command: 'workspace.tabs.setUi', args: { tabId: tab.id, patch: { subview } }, source: 'click' });
   const chatOpen = tab.ui.chat?.open ?? false;
   const messages = detail ? countMessages(detail, gate.data.messagesOf(tab.entityId)) : 0;
-  const narrow = (chrome?.contentWidth ?? Infinity) < NARROW_SWITCHER_PX;
 
   const copyLink = () => {
     const clip = typeof navigator !== 'undefined' ? navigator.clipboard : undefined;
@@ -115,41 +111,55 @@ export function FloatingGroup({ tab }: FloatingGroupProps) {
   return (
     <div ref={groupRef} className="tws-floating tws-fg" data-testid="tws-floating" data-tab={tab.id}>
       {detail && !canvas ? (
-        narrow ? (
-          <select
-            className="tws-fg-select"
-            aria-label="Section"
-            value={tab.ui.subview}
-            onChange={(e) => setSubview(e.target.value as TabSubview)}
-          >
-            {TAB_SUBVIEWS.map((subview) => (
-              <option key={subview} value={subview}>
-                {sectionLabel(subview, adapter.noun)}
-                {subview === 'messages' && messages > 0 ? ` ${messages}` : ''}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <div className="tws-fg-seg" role="group" aria-label="Section">
-            {TAB_SUBVIEWS.map((subview) => (
+        <div className="tws-fg-seg" role="radiogroup" aria-label="Section">
+          {TAB_SUBVIEWS.map((subview) => {
+            const label = sectionLabel(subview, adapter.noun);
+            const selected = tab.ui.subview === subview;
+            return (
               <button
                 key={subview}
                 type="button"
-                className="tws-fg-seg-btn"
-                aria-pressed={tab.ui.subview === subview}
+                role="radio"
+                className="tws-fg-btn tws-fg-seg-btn"
+                aria-checked={selected}
+                aria-label={subview === 'messages' && messages > 0 ? `${label}, ${messages}` : label}
+                title={label}
                 data-testid={`tws-section-${subview}`}
                 onClick={() => setSubview(subview)}
               >
-                {sectionLabel(subview, adapter.noun)}
+                {subview === 'entity' ? (
+                  <KindIcon kind={tab.kind} size={16} />
+                ) : subview === 'connections' ? (
+                  <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+                    <path
+                      d="M6.5 9.5l3-3M7 4.5l1.2-1.2a2.6 2.6 0 0 1 3.7 3.7L10.7 8.2M9 11.5l-1.2 1.2a2.6 2.6 0 0 1-3.7-3.7L5.3 7.8"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.3"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                ) : (
+                  <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+                    <path
+                      d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z M5 6h6M5 8h4"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.3"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                )}
                 {subview === 'messages' && messages > 0 ? (
-                  <span className="tws-fg-count" aria-label={`${messages} messages`}>
-                    {messages}
+                  <span className="tws-fg-badge" aria-hidden="true">
+                    {messages > 99 ? '99+' : messages}
                   </span>
                 ) : null}
               </button>
-            ))}
-          </div>
-        )
+            );
+          })}
+        </div>
       ) : null}
 
       <div className="tws-fg-cluster">
@@ -161,7 +171,7 @@ export function FloatingGroup({ tab }: FloatingGroupProps) {
         {adapter.supportsChat ? (
           <button
             type="button"
-            className="tws-icon-btn tws-fg-chat"
+            className="tws-fg-btn tws-fg-chat"
             aria-label="Chat"
             title="Chat"
             aria-pressed={chatOpen}
@@ -190,7 +200,7 @@ export function FloatingGroup({ tab }: FloatingGroupProps) {
       <div className="tws-fg-cluster" ref={menuRef}>
         <button
           type="button"
-          className="tws-icon-btn"
+          className="tws-fg-btn"
           aria-label={expanded ? 'Restore navigation' : 'Expand'}
           title={expanded ? 'Restore navigation' : 'Expand'}
           aria-pressed={expanded}
@@ -209,7 +219,7 @@ export function FloatingGroup({ tab }: FloatingGroupProps) {
         </button>
         <button
           type="button"
-          className="tws-icon-btn tws-fg-more"
+          className="tws-fg-btn tws-fg-more"
           aria-label="More actions"
           title="More actions"
           aria-haspopup="menu"
@@ -274,7 +284,7 @@ function ConnectorsButton({ entityId }: { entityId: string }) {
     <div className="tws-fg-pop-anchor" ref={ref}>
       <button
         type="button"
-        className="tws-icon-btn tws-fg-connectors"
+        className="tws-fg-btn tws-fg-connectors"
         aria-label={attached > 0 ? `Connectors, ${attached} attached` : 'Connectors'}
         title="Connectors"
         aria-haspopup="dialog"
@@ -293,7 +303,7 @@ function ConnectorsButton({ entityId }: { entityId: string }) {
           />
         </svg>
         {attached > 0 ? (
-          <span className="tws-fg-count" aria-hidden="true">
+          <span className="tws-fg-badge" aria-hidden="true">
             {attached}
           </span>
         ) : null}
