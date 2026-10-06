@@ -1606,7 +1606,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'entities.create': {
     cmd: ['entity', 'create'],
-    syn: 'tm8 entity create <kind> <title> [--space <space-id>] [--parent <entity-id|none>] [--position <n>] [--content <json-source>] [--attach-to <entity-id>...] [--relate-to <entity-id>...] [--connect <edge-type>=<target-entity-id>...] [--when-to-use <text>] [--summary <text>] [--keyword <k>...] [--mutation-id <id>]',
+    syn: 'tm8 entity create <kind> <title> [--space <space-id>] [--parent <entity-id|none>] [--position <n>] [--content <json-source>] [--criterion <text>...] [--estimate <n>] [--attach-to <entity-id>...] [--relate-to <entity-id>...] [--connect <edge-type>=<target-entity-id>...] [--when-to-use <text>] [--summary <text>] [--keyword <k>...] [--mutation-id <id>]',
     sum: 'Create an entity of any unrestricted kind, optionally with its initial edges',
     authz: 'space',
     input: 'bound',
@@ -1615,6 +1615,7 @@ const ROWS: Record<OperationName, Row> = {
       'restricted kinds (project, interaction_profile) refuse generic creation and use their named writers',
       'hierarchy is homogeneous: a parent and its direct children share one kind and one Space',
       'task content shape: {description, acceptanceCriteria: [{id, done, text}], pointsEstimate, axes: {<axis-name>: <value>}} — axis names and values are the Space registry\u2019s (`tm8 space task-axis list`)',
+      'task sugar: --criterion <text> (repeatable) writes acceptanceCriteria with ids ac1, ac2… in flag order; --estimate <n> writes pointsEstimate, a whole number 1-100. Both are optional: add criteria when they help, and tick each one as it is met with `tm8 task tick`. Using a flag and the same field in --content is refused',
       "doc content shape: {kind: 'doc', body, format: 'markdown'}",
       "story content shape: {description} (title rides the envelope; status is the ordinary workflow status, born to_do and set by hand with `tm8 entity update <story-id> --status <status>` — never derived from contents). --parent <story-id> makes a child story whose progress rolls up into the parent. Put things in with `tm8 collection add <story-id> <entity-id>` — those are the story's roots; everything connected to a root follows at read time. Read it with `tm8 entity context <story-id>` (agents) or `tm8 entity get <story-id>` (the page)",
       "design content shape: {description} (title rides the envelope). A design is an ordered set of PAGES — any entity (graph, doc, artifact, drawing, another design): create the page, then `tm8 collection add <design-id> <entity-id> [--position <n>]`; re-adding with a new --position moves it, `tm8 collection remove` takes it out without deleting it. A design never contains itself or a design above it. Read the pages with `tm8 entity context <design-id>`",
@@ -1623,6 +1624,7 @@ const ROWS: Record<OperationName, Row> = {
     ],
     examples: [
       'tm8 entity create task "<title>" --space <space-id> --parent <entity-id>',
+      'tm8 entity create task "<title>" --criterion "<testable outcome>" --criterion "<another>" --estimate 3',
       'tm8 entity create doc "<title>" --content @body.json --when-to-use "<when an agent should load it>" --summary "<what it contains>"',
       'tm8 entity create doc "<title>" --space <space-id> --content \'{"kind":"doc","body":"…","format":"markdown"}\'',
       'tm8 entity create story "<title>" --content \'{"description":"…"}\' [--parent <story-id>]',
@@ -1875,6 +1877,8 @@ const ROWS: Record<OperationName, Row> = {
       'merges by criterion id on the Server: criteria not named are left as stored, so the whole acceptanceCriteria list is never restated',
       'an id the task does not carry is refused with the ids it does carry',
       'ids and the version are in `tm8 entity context <task-id>` (acceptance, acceptanceWrite)',
+      'tick each criterion the moment it is met, not all at the end: the receipt shows acceptance done/total and the ids still open',
+      'when the tick leaves nothing open, the receipt\'s `next` is the step to run: `tm8 task complete <task-id> --expect-version <n>`, or `tm8 task transition <task-id> in_review` on a task that carries the opt-in pr_merged gate',
     ],
     examples: [
       'tm8 task tick <task-id> f1 f2 --expect-version <n>',
@@ -4572,15 +4576,17 @@ const COMMAND_ALIASES = new Map<string, {
   }],
   ['task create', {
     path: ['task', 'create'],
-    syntax: 'tm8 task create <title> [--space <space-id|link-alias>] [--parent <task-id|none>] [--position <n>] [--content <json-source>] [--attach-to <entity-id>...] [--relate-to <entity-id>...] [--connect <edge-type>=<target-entity-id>...] [--when-to-use <text>] [--summary <text>] [--keyword <k>...] [--mutation-id <id>]',
+    syntax: 'tm8 task create <title> [--space <space-id|link-alias>] [--parent <task-id|none>] [--position <n>] [--content <json-source>] [--criterion <text>...] [--estimate <n>] [--attach-to <entity-id>...] [--relate-to <entity-id>...] [--connect <edge-type>=<target-entity-id>...] [--when-to-use <text>] [--summary <text>] [--keyword <k>...] [--mutation-id <id>]',
     summary: 'Create a task — alias of `tm8 entity create task`',
     notes: [
       'sugar over entities.create with kind task; every `entity create` flag works unchanged',
       'task content shape: {description, acceptanceCriteria: [{id, done, text}], pointsEstimate, axes: {<axis-name>: <value>}}',
+      '--criterion <text> (repeatable, ids ac1, ac2… in order) and --estimate <n> (1-100) are optional sugar for acceptanceCriteria and pointsEstimate; tick each criterion as it is met with `tm8 task tick`',
       'in a linked Space: `tm8 --space <alias> task create "<title>"`',
     ],
     examples: [
       'tm8 task create "<title>" --parent <task-id>',
+      'tm8 task create "<title>" --criterion "<testable outcome>" --estimate 3',
       'tm8 --space <alias> task create "<title>" --content \'{"description":"<text>"}\'',
     ],
   }],
