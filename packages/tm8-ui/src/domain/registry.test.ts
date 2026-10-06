@@ -45,7 +45,7 @@ describe('totality over the frozen core-kind set (WLT §2.1)', () => {
     for (const kind of CORE_KINDS) expect(rows.has(kind)).toBe(true);
   });
 
-  it('measures 32 core kinds plus exactly one c:* fallback row', () => {
+  it('measures 33 core kinds plus exactly one c:* fallback row', () => {
     // The count is measured from the contract, never asserted from a doc (D11).
     // 15 → 16 on 2026-07-31 when `voice_channel` joined CoreEntityKindSchema;
     // then `memory`, `worktree` and `artifact` landed the same day → 19;
@@ -65,7 +65,8 @@ describe('totality over the frozen core-kind set (WLT §2.1)', () => {
     // MEASURED: CoreEntityKindSchema.options.length.
     // 28 -> 29 (280): `op_request`. 29 -> 31 (283, 284): `story`, `style`.
     // 31 -> 32 (296): metadata-only MCP catalog definitions.
-    expect(CORE_KINDS.length).toBe(32);
+    // 32 -> 33 (302): `design`, an ordered set of pages (Craft → Designs).
+    expect(CORE_KINDS.length).toBe(33);
     expect(allKinds()).toHaveLength(CORE_KINDS.length + 1);
     expect(allKinds().filter((r) => r.kind === CUSTOM_KIND_FALLBACK)).toHaveLength(1);
   });

@@ -1076,6 +1076,13 @@ export const mcpCalendar = summary({
   state: { kind: 'mcp_server', definition: fixtureMcpDefinition },
 });
 
+/** Design (302) — an ordered set of pages; its pages are `contains` edges. */
+export const designCheckout = summary({
+  id: 'design-checkout', kind: 'design', title: 'Checkout redesign',
+  excerpt: 'The new checkout, page by page.',
+  state: { kind: 'design', pageCount: 0, pageKinds: [] },
+});
+
 export const credentialTeamKey = summary({
   id: 'cred-team-anthropic',
   kind: 'credential',
@@ -1440,7 +1447,7 @@ export const fixtureSummaries: EntitySummary[] = [
   chatLaunchPlan, chatStoppedWithWork,
   prTransplant, commitFoundation, fileScreenshot,
   spellDeploy, skillReview, collectionInbox, collectionEmpty, projectTm8Ui,
-  profileHouseStyle, credentialTeamKey, mcpCalendar, customRitual, artifactPulseBoard, drawingLoginFlow,
+  profileHouseStyle, credentialTeamKey, mcpCalendar, designCheckout, customRitual, artifactPulseBoard, drawingLoginFlow,
   opRequestLinkResearch,
   storyAsAnEntity,
   styleMidnight,
@@ -1955,6 +1962,10 @@ export const fixtureDetails: Record<string, EntityDetail> = {
   [mcpCalendar.id]: detail(mcpCalendar, {
     content: { kind: 'mcp_server', definition: fixtureMcpDefinition },
     capabilities: CAPS_READONLY,
+  }),
+
+  [designCheckout.id]: detail(designCheckout, {
+    content: { kind: 'design', description: 'The new checkout, page by page.', pages: [] },
   }),
 
   [credentialTeamKey.id]: detail(credentialTeamKey, {

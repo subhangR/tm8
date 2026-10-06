@@ -1950,6 +1950,34 @@ const ROWS: readonly KindConfig[] = [
   },
 
   /*
+   * -- design (migration 302: an ordered set of pages, Craft → Designs) --
+   *
+   * THE HONEST MINIMUM, added with the backend (lane A) so the registry stays
+   * total over `CoreEntityKindSchema`. The Craft → Designs UI lane replaces
+   * this row with the real one (kind art, Designs home, design screen).
+   */
+  {
+    kind: 'design',
+    label: 'Design',
+    labelPlural: 'Designs',
+    icon: '▦',
+    iconArt: KIND_ART.design,
+    slug: 'designs',
+    strategy: 'collection',
+    defaultMode: 'list',
+    hiddenModes: ['board', 'tree', 'gallery'],
+    chip: { glyph: '▦', tintBy: 'none' },
+    card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
+    list: baseList({ quickCreate: true, tile: { badges: [{ source: 'messages' }] }, inlineEdit: { title: true } }),
+    panel: { archetype: 'generic', blocks: [COLLECTIONS_BLOCK], primaries: ['edit'] },
+    editFields: [
+      { target: 'title', label: 'Title', required: true, placeholder: 'Checkout redesign' },
+      { target: 'content', source: 'description', label: 'Description', placeholder: 'What is this design for?', multiline: true },
+    ],
+    palette: { createLabel: 'New design' },
+  },
+
+  /*
    * -- form (migration 209: a question set an agent asks a human) --
    *
    * THE QUESTIONNAIRE IS THE BODY (Forms W1, FORMS-DESIGN §10). One block
