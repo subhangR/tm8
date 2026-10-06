@@ -12,6 +12,7 @@ import {
   isRecord,
   reject,
   removeTabs,
+  replaceChooser,
   type Planner,
 } from './shared';
 
@@ -52,6 +53,7 @@ export const open: Planner = ({ state, env, hooks }) => {
   if (args.activate !== undefined && typeof args.activate !== 'boolean') return reject('invalid_arguments');
   if (args.trail !== undefined && !isTrail(args.trail)) return reject('invalid_arguments');
   if (args.subview !== undefined && !isSubview(args.subview)) return reject('invalid_arguments');
+  if (args.replaceTabId !== undefined && !isNonEmptyString(args.replaceTabId)) return reject('invalid_arguments');
   const kind = args.kind;
   const entityId = args.entityId;
   const shouldActivate = args.activate !== false;
@@ -79,6 +81,7 @@ export const open: Planner = ({ state, env, hooks }) => {
       next = { ...next, tabs: { ...next.tabs, [existing.id]: { ...existing, ui } } };
     }
     if (shouldActivate) next = activate(next, existing.id, hooks);
+    next = replaceChooser(next, args.replaceTabId, existing.id, false, hooks);
     return {
       type: 'commit',
       next,
@@ -100,6 +103,7 @@ export const open: Planner = ({ state, env, hooks }) => {
     recency: shouldActivate ? state.recency : [...state.recency, record.id],
   };
   if (shouldActivate) next = activate(next, record.id, hooks);
+  next = replaceChooser(next, args.replaceTabId, record.id, true, hooks);
   return { type: 'commit', next, result: { tabId: record.id, outcome: 'created' } };
 };
 

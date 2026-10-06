@@ -8,7 +8,7 @@ import type { EntityKind } from '@tm8/contract';
 import { creatableKind } from '../../authoring';
 import { getKind, type KindArt } from '../../domain';
 import { WORKSPACE_KINDS, type KindId } from '../runtime/types';
-import type { DraftHostProps } from './draft';
+import { draftBodyFor, type DraftHostProps } from './draft';
 
 export interface KindAdapter {
   kind: KindId;
@@ -29,10 +29,11 @@ export interface KindAdapter {
 
 /**
  * Kinds with no generic create that still have their own creation door,
- * hosted in a draft tab (Spec A §9): launch sheet, chat start, form authoring.
- * Their draft bodies are filled in by the Creation workstream.
+ * hosted in a draft tab (Spec A §9): the launch sheet and the chat start.
+ * `form` is NOT here: `forms.create` has no client door yet (the seam and
+ * `FormsOps` only edit existing forms), so + New is disabled with the reason.
  */
-const OWN_DOOR_KINDS: ReadonlySet<KindId> = new Set(['work_session', 'chat', 'form']);
+const OWN_DOOR_KINDS: ReadonlySet<KindId> = new Set(['work_session', 'chat']);
 
 function creatabilityOf(kind: KindId, nounPlural: string): KindAdapter['creatable'] {
   if (creatableKind(kind as EntityKind) || OWN_DOOR_KINDS.has(kind)) return true;
@@ -52,6 +53,7 @@ export function getKindAdapter(kind: KindId): KindAdapter {
     icon: config.iconArt,
     body: config.panel.fullView ? 'fullView' : 'panel',
     creatable: creatabilityOf(kind, config.labelPlural),
+    draftBody: draftBodyFor(kind),
     supportsChat: kind !== 'chat' && kind !== 'channel',
     supportsRun: config.launchable === true,
   };
