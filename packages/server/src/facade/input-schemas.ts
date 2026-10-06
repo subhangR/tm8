@@ -115,7 +115,9 @@ import {
   SpaceLinksMutationInputSchema,
   SpaceLinksSetSpawnInputSchema,
   SpaceLinksInboundMutationInputSchema,
+  SpaceLinksInboundGrantInputSchema,
   SpaceLinksInvokeInputSchema,
+  SpaceLinksLoginInputSchema,
   CrossSpaceRefAddInputSchema,
   CrossSpaceRefRemoveInputSchema,
   OpRequestsCreateInputSchema,
@@ -327,14 +329,15 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'accounts.disable': AccountsDisableInputSchema,
   // W6 (250/251): human-only in SQL; the body never carries a secret.
   'spaceLinks.add': SpaceLinksAddInputSchema,
-  'spaceLinks.login': SpaceLinksMutationInputSchema,
-  'spaceLinks.relogin': SpaceLinksMutationInputSchema,
+  'spaceLinks.login': SpaceLinksLoginInputSchema,
+  'spaceLinks.relogin': SpaceLinksLoginInputSchema,
   'spaceLinks.logout': SpaceLinksMutationInputSchema,
   'spaceLinks.remove': SpaceLinksMutationInputSchema,
   'spaceLinks.setSpawn': SpaceLinksSetSpawnInputSchema,
   // 278 (D2): the target side's two writes, human-only in SQL.
   'spaceLinks.inbound.revoke': SpaceLinksInboundMutationInputSchema,
   'spaceLinks.inbound.restore': SpaceLinksInboundMutationInputSchema,
+  'spaceLinks.inbound.grant': SpaceLinksInboundGrantInputSchema,
   // W7: the envelope only; the inner op's own schema runs inside invoke.
   'spaceLinks.invoke': SpaceLinksInvokeInputSchema,
   // L3 (279): the link and the target; the referencing entity is the path's :id.

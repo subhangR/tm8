@@ -15,7 +15,7 @@
  * server-side caller that forwards it (W7). Management is human-only in SQL
  * (the strict `internal.require_human_auth_kind`).
  */
-import { randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
 import type { Db, DbClaims } from '../db/types.js';
 import {
@@ -141,6 +141,51 @@ export interface DbSpaceLinkStoreOptions {
    */
   onStale?: (notice: SpaceLinkStaleNotice) => Promise<void> | void;
   now?: () => number;
+}
+
+/** W9c: what `remote_space_link_context` returns. No sealed bytes. */
+export interface RemoteSpaceLinkContext {
+  linkId: string;
+  homeSpaceId: string;
+  memberId: string;
+  targetSpaceId: string;
+  status: SpaceLinkStatus;
+  /** Null: the target is on this server. */
+  targetServerId: string | null;
+  baseUrl: string | null;
+}
+
+/** W9c: the target's inbound row for a resolved remote link session. */
+export interface RemoteInboundRow {
+  linkId: string;
+  tokenRowId: string;
+  memberId: string;
+  targetSpaceId: string;
+  allowSpawn: boolean;
+  remoteHomeSpaceId: string;
+}
+
+interface ClaimRow {
+  ok: boolean;
+  reason?: string;
+  linkId?: string;
+  targetSpaceId?: string;
+  sessionId?: string;
+  expiresAt?: string;
+  allowSpawn?: boolean;
+}
+
+export type RemoteClaimOutcome =
+  | { ok: true; token: string; sessionId: string; expiresAt: string; targetSpaceId: string; remoteLinkId: string }
+  | { ok: false; reason: string };
+
+export const PAIRING_CODE_PREFIX = 'tm8pair_';
+/** How long a pairing code from `spaceLinks.inbound.grant` lives (SQL caps it at 30 min). */
+export const PAIRING_CODE_TTL_MS = 10 * 60_000;
+
+/** sha256 hex of the whole code: the only form of it the target stores. */
+export function pairingCodeHash(code: string): string {
+  return createHash('sha256').update(code.trim(), 'utf8').digest('hex');
 }
 
 export class DbSpaceLinkStore {
@@ -334,6 +379,124 @@ export class DbSpaceLinkStore {
 
   restoreInbound(claims: DbClaims, spaceId: string, linkId: string, clientMutationId?: string | null): Promise<SpaceLinkInboundView> {
     return this.db.rpc<SpaceLinkInboundView>(claims, 'restore_inbound_space_link', [spaceId, linkId, clientMutationId ?? null]);
+  }
+
+  // -- W9c (299): links across servers ------------------------------------
+
+  /** HOME: a link to `targetSpaceId` on the server entity `serverId` (signed out until login). */
+  addRemote(
+    claims: DbClaims,
+    input: { spaceId: string; serverId: string; targetSpaceId: string; alias?: string | null; clientMutationId?: string | null },
+  ): Promise<SpaceLink> {
+    return this.db.rpc<SpaceLink>(claims, 'add_remote_space_link', [
+      input.spaceId, input.serverId, input.targetSpaceId, input.alias ?? null, input.clientMutationId ?? null,
+    ]);
+  }
+
+  /** HOME, human: the caller's own row on a link and where its target server is (null server = local). */
+  remoteContext(claims: DbClaims, linkId: string): Promise<RemoteSpaceLinkContext> {
+    return this.db.rpc<RemoteSpaceLinkContext>(claims, 'remote_space_link_context', [linkId]);
+  }
+
+  /**
+   * HOME, human: seal the session the target minted and store it on the
+   * caller's row, bound exactly like a local link session (251's AAD). The
+   * token is never logged and never returned.
+   */
+  async storeRemoteSession(
+    claims: DbClaims,
+    linkId: string,
+    session: { token: string; remoteSessionId: string; expiresAt: string },
+    options: { relogin?: boolean; clientMutationId?: string | null } = {},
+  ): Promise<SpaceLink> {
+    const binding = await this.db.rpc<SpaceLinkSecretBinding>(claims, 'space_link_seal_context', [linkId]);
+    const sealed = sealSecret(await this.key(), session.token, binding);
+    return this.db.rpc<SpaceLink>(claims, 'store_remote_space_link_session', [
+      linkId, session.remoteSessionId, session.expiresAt, sealed.ciphertext, sealed.nonce,
+      options.relogin ? 'spaceLinks.relogin' : 'spaceLinks.login', options.clientMutationId ?? null,
+    ]);
+  }
+
+  /**
+   * HOME: the caller's stored session for a REMOTE link, opened in memory
+   * WITHOUT resolving it here (it lives on the target; `use()` would wrongly
+   * find it dead). For the forwarder only. Never log it.
+   */
+  async openRemote(claims: DbClaims, linkId: string): Promise<string> {
+    let row: OpenedRow;
+    try {
+      row = await this.db.rpc<OpenedRow>(claims, 'open_space_link_token', [linkId]);
+    } catch (error) {
+      const status = statusOf(error);
+      if (status) throw new SpaceLinkUnusable(linkId, status);
+      throw error;
+    }
+    try {
+      return openSecret(
+        await this.key(),
+        { ciphertext: Buffer.from(row.ciphertext, 'base64'), nonce: Buffer.from(row.nonce, 'base64') },
+        { homeSpaceId: row.homeSpaceId, linkId: row.linkId, memberId: row.memberId, targetSpaceId: row.targetSpaceId },
+      );
+    } catch (error) {
+      this.logger?.warn?.('space link session could not be decrypted', {
+        linkId,
+        reason: error instanceof Error ? error.name : 'unknown',
+      });
+      throw new SpaceLinkUnusable(linkId, 'unreadable');
+    }
+  }
+
+  /**
+   * TARGET, human: let `homeSpaceId` on another server act in `spaceId` as the
+   * caller. Returns the one-time pairing code; only its sha256 is stored.
+   */
+  async grantInbound(
+    claims: DbClaims,
+    input: { spaceId: string; homeSpaceId: string; homeLabel?: string | null; allowSpawn?: boolean | null },
+  ): Promise<{ link: SpaceLinkInboundView; pairingCode: string; pairingExpiresAt: string }> {
+    const pairingCode = `${PAIRING_CODE_PREFIX}${randomBytes(24).toString('base64url')}`;
+    const pairingExpiresAt = new Date(this.now() + PAIRING_CODE_TTL_MS).toISOString();
+    const link = await this.db.rpc<SpaceLinkInboundView>(claims, 'grant_remote_space_link', [
+      input.spaceId, input.homeSpaceId, input.homeLabel ?? null, input.allowSpawn ?? false,
+      pairingCodeHash(pairingCode), pairingExpiresAt,
+    ]);
+    return { link, pairingCode, pairingExpiresAt };
+  }
+
+  /**
+   * TARGET, server-to-server (no caller claims; the code is the credential):
+   * consume the pairing code and mint the member's `link` session. Only the
+   * hash reaches SQL; the token is returned once, to the claiming server.
+   */
+  async claimInbound(input: {
+    pairingCode: string; homeSpaceId: string; homeServerId: string; homeBaseUrl: string | null;
+  }): Promise<RemoteClaimOutcome> {
+    const sessionId = randomUUID();
+    const secret = generateSecret();
+    const expiresAt = new Date(this.now() + DEFAULT_SESSION_TTL_MS.link).toISOString();
+    const result = await this.db.rpc<ClaimRow>({}, 'claim_remote_space_link', [
+      pairingCodeHash(input.pairingCode), input.homeSpaceId, input.homeServerId, input.homeBaseUrl,
+      sessionId, hashToken(secret), expiresAt,
+    ]);
+    if (!result.ok) return { ok: false, reason: result.reason ?? 'pairing_invalid' };
+    return {
+      ok: true,
+      token: formatToken(sessionId, secret),
+      sessionId,
+      expiresAt: result.expiresAt ?? expiresAt,
+      targetSpaceId: result.targetSpaceId!,
+      remoteLinkId: result.linkId!,
+    };
+  }
+
+  /** TARGET: the inbound row behind a resolved link session, under that session's own claims. */
+  inboundRow(linkClaims: DbClaims, sessionId: string): Promise<RemoteInboundRow> {
+    return this.db.rpc<RemoteInboundRow>(linkClaims, 'remote_space_link_inbound_row', [sessionId]);
+  }
+
+  /** TARGET: end the inbound session (the home server's logout/remove). */
+  revokeInboundSession(linkClaims: DbClaims, sessionId: string): Promise<boolean> {
+    return this.db.rpc<boolean>(linkClaims, 'revoke_remote_space_link_session', [sessionId]);
   }
 
   private key(): Promise<Buffer> {

@@ -17,23 +17,41 @@
  *
  * No handler returns the stored session. `use` is not an operation: W7's
  * `spaceLinks.invoke` calls it server-side and never returns the bytes.
+ *
+ * ACROSS SERVERS (W9c, 299), only while `TM8_REMOTE_SPACE_LINKS` is on:
+ * `add` takes a `targetServerId`; `login`/`relogin` take the `pairingCode` the
+ * target's `spaceLinks.inbound.grant` returned and claim it server-to-server;
+ * `logout`/`remove` first tell the target to end its session (best effort,
+ * the target's own revoke works without us). The target side's three wire
+ * routes are `createRemoteSpaceLinkRoute`, handed out through `onRemoteRoute`.
  */
 import {
   CollabError,
   SpaceLinksAddInputSchema,
+  SpaceLinksInboundGrantInputSchema,
   SpaceLinksInboundMutationInputSchema,
+  SpaceLinksLoginInputSchema,
   SpaceLinksMutationInputSchema,
   SpaceLinksSetSpawnInputSchema,
   isHumanAuthKind,
 } from '@tm8/contract';
-import type { SpaceLinkInboundAuditEntry, SpaceLinkInboundView, SpaceLinkView } from '@tm8/contract';
+import type {
+  SpaceLinkInboundAuditEntry,
+  SpaceLinkInboundView,
+  SpaceLinkView,
+  SpaceLinksInboundGrantResult,
+} from '@tm8/contract';
 
 import type { OperationHandler, RequestContext } from '../../../http/types.js';
 import type { FacadeDeps } from '../../deps.js';
 import type { HandlerRegistry } from '../../registry.js';
 import { claimsFor } from '../../context.js';
+import type { DbClaims } from '../../../db/types.js';
 import { DbSpaceLinkStore } from '../../../credentials/space-link-store.js';
-import { createSpaceLinkInvokeHandlers, type SpaceLinkInvokeOptions } from './space-link-invoke.js';
+import type { RemoteLinkClientOptions } from '../../../remote/link-client.js';
+import { claimRemoteLink, loadOrCreateRemoteNodeId, revokeRemoteLink } from '../../../remote/link-pairing.js';
+import { SPACE_LINK_REMOTE_DISABLED, createSpaceLinkInvokeHandlers, type SpaceLinkInvokeOptions } from './space-link-invoke.js';
+import { createRemoteSpaceLinkRoute, type RemoteSpaceLinkRoute, type RemoteSpaceLinkRouteOptions } from './space-link-remote-route.js';
 import { createCrossSpaceRefHandlers } from './cross-space-refs.js';
 
 /** The typed refusal code. Stable, and asserted by test. */
@@ -64,6 +82,22 @@ export interface SpaceLinkHandlerDeps {
   store?: DbSpaceLinkStore;
   /** W7 invoke tuning (the per-token-row bucket); defaults are production's. */
   invoke?: SpaceLinkInvokeOptions;
+  /**
+   * W9c. Only read while `config.remoteSpaceLinks` is on. `client` overrides
+   * the outbound client (tests: the guard's resolver/transport); `onRoute`
+   * receives the target-side wire route for the composition root to mount.
+   */
+  remote?: {
+    client?: RemoteLinkClientOptions;
+    route?: RemoteSpaceLinkRouteOptions;
+    onRoute?: (route: RemoteSpaceLinkRoute) => void;
+  };
+}
+
+function remoteDisabled(): CollabError {
+  return new CollabError('forbidden', 'remote space links are disabled on this node (TM8_REMOTE_SPACE_LINKS)', {
+    details: { reason: SPACE_LINK_REMOTE_DISABLED },
+  });
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -89,26 +123,105 @@ export function registerSpaceLinkHandlers(
   const list: OperationHandler = async (ctx): Promise<SpaceLinkView[]> =>
     store.list(await claimsOf(ctx), pathParam(ctx, 'spaceId'));
 
+  const remoteOn = deps.config.remoteSpaceLinks === true;
+  const client: RemoteLinkClientOptions = {
+    ...(deps.config.remoteSpaceLinksAllowLoopback === true ? { allowLoopback: true } : {}),
+    ...links.remote?.client,
+  };
+
   const add: OperationHandler = async (ctx): Promise<SpaceLinkView> => {
-    const { targetSpaceId, alias, clientMutationId } = SpaceLinksAddInputSchema.parse(ctx.body);
+    const { targetSpaceId, targetServerId, alias, clientMutationId } = SpaceLinksAddInputSchema.parse(ctx.body);
+    if (targetServerId) {
+      if (!remoteOn) throw remoteDisabled();
+      return store.addRemote(await claimsOf(ctx), {
+        spaceId: pathParam(ctx, 'spaceId'), serverId: targetServerId, targetSpaceId, alias: alias ?? null, clientMutationId,
+      });
+    }
     return store.add(await claimsOf(ctx), {
       spaceId: pathParam(ctx, 'spaceId'), targetSpaceId, alias: alias ?? null, clientMutationId,
     });
   };
 
   const login = (relogin: boolean): OperationHandler => async (ctx): Promise<SpaceLinkView> => {
-    const { clientMutationId } = SpaceLinksMutationInputSchema.parse(ctx.body);
-    return store.login(await claimsOf(ctx), pathParam(ctx, 'linkId'), { relogin, clientMutationId });
+    const { pairingCode, clientMutationId } = SpaceLinksLoginInputSchema.parse(ctx.body);
+    const linkId = pathParam(ctx, 'linkId');
+    const claims = await claimsOf(ctx);
+    if (!pairingCode) {
+      if (remoteOn && (await store.remoteContext(claims, linkId)).targetServerId) {
+        throw new CollabError('invalid_input',
+          'this link targets a space on another server: pass the pairing code from `spaceLinks.inbound.grant` there',
+          { details: { reason: 'space_link_pairing_required' } });
+      }
+      return store.login(claims, linkId, { relogin, clientMutationId });
+    }
+    if (!remoteOn) throw remoteDisabled();
+    const context = await store.remoteContext(claims, linkId);
+    if (!context.targetServerId || !context.baseUrl) {
+      throw new CollabError('invalid_input', 'this link targets a space on this server: sign in without a pairing code');
+    }
+    const claimed = await claimRemoteLink({
+      baseUrl: context.baseUrl,
+      pairingCode,
+      homeSpaceId: context.homeSpaceId,
+      homeServerId: await loadOrCreateRemoteNodeId(links.dataDir),
+      homeBaseUrl: deps.config.publicOrigin ?? null,
+    }, client);
+    if (claimed.targetSpaceId.toLowerCase() !== context.targetSpaceId.toLowerCase()) {
+      // The code was granted for another space: end what was just minted, store nothing.
+      await revokeRemoteLink({ baseUrl: context.baseUrl, token: claimed.token }, client).catch(() => false);
+      throw new CollabError('invalid_input', 'the pairing code was granted for a different target space than this link', {
+        details: { reason: 'space_link_pairing_target_mismatch' },
+      });
+    }
+    return store.storeRemoteSession(claims, linkId,
+      { token: claimed.token, remoteSessionId: claimed.sessionId, expiresAt: claimed.expiresAt },
+      { relogin, clientMutationId });
+  };
+
+  /**
+   * Before a logout or remove: tell the target to end the session it minted,
+   * so it does not outlive the link here. Best effort and never blocking —
+   * the target's own revoke (its admins, or the member there) works without us.
+   */
+  const revokeAtTarget = async (claims: DbClaims, linkId: string): Promise<void> => {
+    if (!remoteOn) return;
+    try {
+      const context = await store.remoteContext(claims, linkId);
+      if (!context.targetServerId || !context.baseUrl || context.status !== 'signed_in') return;
+      const token = await store.openRemote(claims, linkId);
+      if (!(await revokeRemoteLink({ baseUrl: context.baseUrl, token }, client))) {
+        console.warn('[space-link] the target server did not confirm the remote session revoke', { linkId });
+      }
+    } catch (error) {
+      console.warn('[space-link] remote session revoke failed', {
+        linkId, reason: error instanceof Error ? error.name : 'unknown',
+      });
+    }
   };
 
   const logout: OperationHandler = async (ctx): Promise<SpaceLinkView> => {
     const { clientMutationId } = SpaceLinksMutationInputSchema.parse(ctx.body);
-    return store.logout(await claimsOf(ctx), pathParam(ctx, 'linkId'), clientMutationId);
+    const claims = await claimsOf(ctx);
+    await revokeAtTarget(claims, pathParam(ctx, 'linkId'));
+    return store.logout(claims, pathParam(ctx, 'linkId'), clientMutationId);
   };
 
   const remove: OperationHandler = async (ctx): Promise<SpaceLinkView> => {
     const { clientMutationId } = SpaceLinksMutationInputSchema.parse(ctx.body);
-    return store.remove(await claimsOf(ctx), pathParam(ctx, 'linkId'), clientMutationId);
+    const claims = await claimsOf(ctx);
+    await revokeAtTarget(claims, pathParam(ctx, 'linkId'));
+    return store.remove(claims, pathParam(ctx, 'linkId'), clientMutationId);
+  };
+
+  // W9c, on the TARGET: a member of :spaceId lets a space on another server act here as them.
+  const inboundGrant: OperationHandler = async (ctx): Promise<SpaceLinksInboundGrantResult> => {
+    const { homeSpaceId, homeLabel, allowSpawn } = SpaceLinksInboundGrantInputSchema.parse(ctx.body);
+    if (!remoteOn) throw remoteDisabled();
+    const spaceId = pathParam(ctx, 'spaceId');
+    const granted = await store.grantInbound(await claimsOf(ctx), {
+      spaceId, homeSpaceId, homeLabel: homeLabel ?? null, allowSpawn: allowSpawn ?? false,
+    });
+    return { ...granted, targetSpaceId: spaceId };
   };
 
   const setSpawn: OperationHandler = async (ctx): Promise<SpaceLinkView> => {
@@ -143,6 +256,8 @@ export function registerSpaceLinkHandlers(
   const { invoke, audit } = createSpaceLinkInvokeHandlers(registry, deps, store, claimsOf, links.invoke);
   // L3 (279): references into a linked space, made through the same invoke.
   const refs = createCrossSpaceRefHandlers(deps, store, claimsOf, invoke);
+  // W9c: the target-side wire. Built always (it answers nothing while the switch is off).
+  links.remote?.onRoute?.(createRemoteSpaceLinkRoute(registry, deps, store, claimsOf, links.remote.route));
 
   // Every write is wrapped; `list`, `audit`, `invoke` and the two inbound
   // reads are open (the inbound reads to the target's admins, in SQL).
@@ -153,6 +268,7 @@ export function registerSpaceLinkHandlers(
     'spaceLinks.inbound.audit': inboundAudit,
     'spaceLinks.inbound.revoke': requireHumanLinkSession(inboundWrite(true)),
     'spaceLinks.inbound.restore': requireHumanLinkSession(inboundWrite(false)),
+    'spaceLinks.inbound.grant': requireHumanLinkSession(inboundGrant),
     'spaceLinks.invoke': invoke,
     'entities.refs.list': refs.list,
     'entities.refs.add': refs.add,

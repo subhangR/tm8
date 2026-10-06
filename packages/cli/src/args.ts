@@ -120,6 +120,7 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   'draft',               // form create — start as a draft (humans' default)
   'first',               // form question add|move — put the question first
   'include-revoked',     // node path-grant list — add revoked grants (282)
+  'allow-spawn',         // link grant — the target's own spawn switch for a remote link (W9c)
   // Styles (styles spec v8 §5).
   'mine',                // style list — personal styles only
   'space-only',          // style list — space styles only

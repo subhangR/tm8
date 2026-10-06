@@ -23,6 +23,15 @@
  * link refuses every member's sign-in. Owning both spaces is no shortcut
  * (D7): the admin check holds the session pin, so it is made from the target.
  *
+ * ACROSS SERVERS (W9c, migration 299; ships dark behind TM8_REMOTE_SPACE_LINKS).
+ * The target may live on another server (`targetServerId`, a `server` entity
+ * of the home space). On the TARGET server a member of B grants the remote
+ * home (`spaceLinks.inbound.grant`) and gets a one-time pairing code; on the
+ * HOME server `spaceLinks.login` with that `pairingCode` has the home server
+ * claim it server-to-server (`REMOTE_SPACE_LINK_PATHS.claim`). The target
+ * mints a `link` session for the member, pinned to B, and the home server
+ * seals it. No human session ever crosses servers, and none is retained.
+ *
  * Every write is human-only (browser or cli) in SQL. No response ever carries
  * the stored session.
  */
@@ -90,7 +99,23 @@ export interface SpaceLinkInboundView {
   revokedAt: string | null;
   revokedByMemberId: EntityId | null;
   lastCallAt: string | null;
+  /**
+   * W9c (299): set when the link's home is a space on ANOTHER server. Then
+   * `homeSpaceId` is that remote space's id and `homeSpaceName` its label.
+   * Absent from a pre-299 server.
+   */
+  remoteHome?: SpaceLinkRemoteHome | null;
   holders: SpaceLinkInboundHolder[];
+}
+
+/** The remote home of an inbound link, as the home server identified itself when it claimed. */
+export interface SpaceLinkRemoteHome {
+  spaceId: string;
+  label: string | null;
+  /** The home server's stable node id, sent on claim. Null until claimed. */
+  serverId: string | null;
+  /** The home server's public origin, sent on claim. Null when it has none configured. */
+  baseUrl: string | null;
 }
 
 /** One call made into the target through a link (`spaceLinks.inbound.audit`). */
@@ -114,8 +139,46 @@ export interface SpaceLinkInboundAuditEntry {
 /** The body of spaceLinks.add: the home Space is the path's `:spaceId`. */
 export interface SpaceLinksAddInput {
   targetSpaceId: string;
+  /**
+   * W9c: a `server` entity of the home space when the target space lives on
+   * that server. Omitted or null: the target is on this server.
+   */
+  targetServerId?: string | null;
   alias?: string | null;
   clientMutationId: string;
+}
+
+/**
+ * The body of spaceLinks.login / relogin. `pairingCode` (W9c) signs in to a
+ * link whose target is on another server: the code the target's
+ * `spaceLinks.inbound.grant` returned. Required for a remote link, refused for
+ * a local one.
+ */
+export interface SpaceLinksLoginInput {
+  pairingCode?: string | null;
+  clientMutationId: string;
+}
+
+/**
+ * The body of spaceLinks.inbound.grant (W9c), on the TARGET server: the
+ * caller lets `homeSpaceId` on another server act in `:spaceId` as them.
+ */
+export interface SpaceLinksInboundGrantInput {
+  /** The home space's id on the other server. The claim must name the same id. */
+  homeSpaceId: string;
+  /** How B's admins see the home, e.g. "tm8 on laptop". */
+  homeLabel?: string | null;
+  /** This server's own spawn switch for the link (the home row has its own). Default off. */
+  allowSpawn?: boolean | null;
+  clientMutationId: string;
+}
+
+export interface SpaceLinksInboundGrantResult {
+  link: SpaceLinkInboundView;
+  targetSpaceId: string;
+  /** Single use; pass it to `spaceLinks.login` on the home server. Never stored here, only its hash. */
+  pairingCode: string;
+  pairingExpiresAt: string;
 }
 
 /** The body of spaceLinks.login / relogin / logout / remove. */
@@ -138,11 +201,24 @@ const clientMutationId = z.string().trim().min(1);
 
 export const SpaceLinksAddInputSchema: z.ZodType<SpaceLinksAddInput> = z.object({
   targetSpaceId: z.string().uuid(),
+  targetServerId: z.string().uuid().nullable().optional(),
   alias: z.string().max(200).nullable().optional(),
   clientMutationId,
 }).strict();
 
 export const SpaceLinksMutationInputSchema: z.ZodType<SpaceLinksMutationInput> = z.object({
+  clientMutationId,
+}).strict();
+
+export const SpaceLinksLoginInputSchema: z.ZodType<SpaceLinksLoginInput> = z.object({
+  pairingCode: z.string().trim().min(16).max(200).nullable().optional(),
+  clientMutationId,
+}).strict();
+
+export const SpaceLinksInboundGrantInputSchema: z.ZodType<SpaceLinksInboundGrantInput> = z.object({
+  homeSpaceId: z.string().uuid(),
+  homeLabel: z.string().trim().min(1).max(200).nullable().optional(),
+  allowSpawn: z.boolean().nullable().optional(),
   clientMutationId,
 }).strict();
 
@@ -454,4 +530,58 @@ export interface SpaceLinkAuditEntry {
   remoteId: string | null;
   requestId: string | null;
   createdAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// W9c: the server-to-server wire (not catalog operations). The TARGET server
+// answers these; the HOME server calls them through its guarded client.
+//   claim  — no bearer; the pairing code is the credential.
+//   invoke — `authorization: Bearer <link session>`; the only wire a link
+//            session is accepted on, and only an inbound remote one.
+//   revoke — the same bearer; ends the session (home logout/remove).
+// A target that answers 404 on these is older or has the switch off.
+// ---------------------------------------------------------------------------
+
+export const REMOTE_SPACE_LINK_PATHS = Object.freeze({
+  claim: '/link/v1/claim',
+  invoke: '/link/v1/invoke',
+  revoke: '/link/v1/revoke',
+});
+
+export const REMOTE_SPACE_LINKS_UNSUPPORTED_MESSAGE =
+  'target server does not support remote space links (upgrade it or enable TM8_REMOTE_SPACE_LINKS)';
+
+export interface RemoteSpaceLinkClaimRequest {
+  pairingCode: string;
+  homeSpaceId: string;
+  /** The home server's stable node id. */
+  homeServerId: string;
+  /** The home server's public origin, when it has one. */
+  homeBaseUrl: string | null;
+}
+
+export interface RemoteSpaceLinkClaimResponse {
+  /** The link session for the HOME server to seal. Returned once. */
+  token: string;
+  sessionId: string;
+  expiresAt: string;
+  targetSpaceId: string;
+  /** The inbound link's id on the target server. */
+  remoteLinkId: string;
+}
+
+export const RemoteSpaceLinkClaimRequestSchema: z.ZodType<RemoteSpaceLinkClaimRequest> = z.object({
+  pairingCode: z.string().trim().min(16).max(200),
+  homeSpaceId: z.string().uuid(),
+  homeServerId: z.string().regex(/^[A-Za-z0-9_.:-]{1,100}$/),
+  homeBaseUrl: z.string().url().max(500).nullable(),
+}).strict();
+
+/** The invoke body is spaceLinks.invoke's; the reply carries the target-side audit id. */
+export interface RemoteSpaceLinkInvokeResponse {
+  result: unknown;
+  /** The audit row the TARGET wrote for this call. */
+  auditId: string;
+  /** A spawn op's child work session on the target. */
+  spawnedSessionId?: string | null;
 }

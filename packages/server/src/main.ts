@@ -84,6 +84,10 @@ import { autoOwnerResolver } from './http/security.js';
 import { announceNodeClaim } from './identity/node-claim-boot.js';
 import { createStaticHandler } from './http/static.js';
 import { createRemoteServerProxy } from './http/remote-proxy.js';
+import { HttpsRemoteInvokeForwarder } from './remote/link-forwarder.js';
+import { DbServerStore } from './remote/server-store.js';
+import { DbSpaceLinkStore } from './credentials/space-link-store.js';
+import type { RemoteSpaceLinkRoute } from './facade/handlers/w2/space-link-remote-route.js';
 import { directoryTargetResolver } from './remote/directory-resolver.js';
 import { createW2FileUploadRoute } from './http/w2-file-upload.js';
 import { createClipboardUploadRoute } from './http/clipboard-upload.js';
@@ -434,7 +438,12 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     : undefined;
   if (formDelivery) execution?.spawnService.onSessionLive((sessionId) => formDelivery.onSessionLive(sessionId));
 
+  let remoteSpaceLinkRoute: RemoteSpaceLinkRoute | undefined;
   if (db) {
+    if (config.remoteSpaceLinks === true) {
+      console.warn(`remote space links: ON (TM8_REMOTE_SPACE_LINKS)${
+        config.remoteSpaceLinksAllowLoopback === true ? ' — DEV loopback targets allowed' : ''}`);
+    }
     const mcpBindings = new McpSessionBindings(db);
     const serviceKeys = new DbServiceKeyStore({ db, dataDir });
     const spaceServiceKeys = new DbSpaceCredentialStore({ db, dataDir });
@@ -460,6 +469,18 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         stateDir: pathResolve(dataDir, 'folder-uploads'),
       },
       ...(credentials ? { credentials } : {}),
+      // W9c, dark by default: only with TM8_REMOTE_SPACE_LINKS on does a link
+      // to another server forward, and does this node answer /link/v1/*.
+      ...(config.remoteSpaceLinks === true
+        ? {
+            remoteInvokeForwarder: new HttpsRemoteInvokeForwarder({
+              servers: new DbServerStore({ db, dataDir }),
+              links: new DbSpaceLinkStore({ db, dataDir }),
+              client: config.remoteSpaceLinksAllowLoopback === true ? { allowLoopback: true } : {},
+            }),
+            onRemoteSpaceLinkRoute: (route: RemoteSpaceLinkRoute) => { remoteSpaceLinkRoute = route; },
+          }
+        : {}),
       ...(chat ? { chat: { orchestrator: chat, dataDir } } : {}),
       membership: {
         sockets: subscriptions,
@@ -778,6 +799,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     ...(rawUpload ? { fileUploadRoute: rawUpload } : {}),
     ...(clipboardUpload ? { clipboardUploadRoute: clipboardUpload } : {}),
     ...(voiceWebhook ? { voiceWebhookRoute: voiceWebhook } : {}),
+    ...(remoteSpaceLinkRoute ? { remoteSpaceLinkRoute } : {}),
     ...(remoteServerProxy ? { remoteServerProxy } : {}),
     ...(db ? { sessionIssuedHere: (token: string) => sessionIssuedHere(db, token) } : {}),
     ...(config.uiDir ? { staticHandler: createStaticHandler(config.uiDir) } : {}),

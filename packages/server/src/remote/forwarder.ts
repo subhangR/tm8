@@ -11,13 +11,15 @@
  * S2 never exists, so it would mark every remote link `signed_out`. The
  * forwarder opens the sealed link session itself and never resolves it here.
  *
- * W8 SHIPS WITH THIS SEAM DISABLED (lead ruling): the only forwarder is
- * `DisabledRemoteInvokeForwarder`, hard-wired at facade/index.ts and taken by
- * W7 as its default (space-link-invoke.ts), so a remote link refuses at once
- * with `space_link_remote_disabled`. The earlier design (a forwarded call
- * presenting a remote link session) is superseded: main's W7p layer (i)
- * refuses a link token on every wire. Enabling remote invoke is W9c, which
- * must not retain a human gate session (`server_gate_tokens`; W9 finding S4).
+ * W9c (migration 299) enables it BEHIND A SWITCH (`TM8_REMOTE_SPACE_LINKS`,
+ * default off). Off, the composition root wires `DisabledRemoteInvokeForwarder`
+ * exactly as W8 did, so a remote link refuses at once with
+ * `space_link_remote_disabled`. On, it wires `HttpsRemoteInvokeForwarder`
+ * (link-forwarder.ts): the stored session is NOT a human gate session (that
+ * storage is retired, finding S4) but a `link` session the TARGET minted for
+ * the member, pinned to B, presented only on the target's dedicated
+ * `/link/v1/invoke` route. Every other wire still refuses a link token (W7p
+ * layer (i)), and the target re-applies its own refused set.
  */
 import type { DbClaims } from '../db/types.js';
 
@@ -60,25 +62,28 @@ export type RemoteInvokeResult =
   | { kind: 'unreachable'; reason: 'non_public_address' | 'invalid_url' | 'dns' | 'tls' }
   /** The target is down: refused, reset or silent. Fails within the timeout. */
   | { kind: 'offline'; reason: 'connect_refused' | 'timeout' | 'reset' }
+  /** Forwarding to another server is switched off on this node. Nothing was opened, resolved or sent. */
+  | { kind: 'disabled'; reason: 'remote_links_disabled' }
   /**
-   * Forwarding to another server is refused. Nothing was opened, resolved or
-   * sent. Lead ruling 09:12Z (e): until S2's `auth.space.enter` can mint a
-   * kind `link` session (with its cells) on main, a remote L_C would be a
-   * pinned cli session there and S2 would not refuse it credential ops in SQL.
+   * W9c: the target answered 404 on the remote-link wire itself (not an op's
+   * own not_found): an older build, or its switch is off. NOT signed_out —
+   * the stored session may be perfectly good.
    */
-  | { kind: 'disabled'; reason: 'remote_links_disabled' };
+  | { kind: 'unsupported' };
 
 export interface RemoteInvokeForwarder {
   forward(request: RemoteInvokeRequest): Promise<RemoteInvokeResult>;
 }
 
 export const REMOTE_INVOKE_TIMEOUT_MS = 10_000;
-
 /**
- * The forwarder. HARD-CODED REFUSAL (lead ruling 09:12Z (e)): no flag, env var,
- * config key or runtime switch reaches past it. Lifting it is a code change in
- * the PR that lands kind `link` minting on `auth.space.enter`, with its cells.
+ * W9c: a spawn, resume or dispatch on the target provisions a workdir and
+ * mints sessions before it answers (measured ~14s on a dev box), so it gets a
+ * longer budget. A timeout there is NOT safe to retry: the child may exist.
  */
+export const REMOTE_SPAWN_TIMEOUT_MS = 120_000;
+
+/** The forwarder while `TM8_REMOTE_SPACE_LINKS` is off (the default): refuses, opens nothing. */
 export class DisabledRemoteInvokeForwarder implements RemoteInvokeForwarder {
   async forward(_request: RemoteInvokeRequest): Promise<RemoteInvokeResult> {
     return { kind: 'disabled', reason: 'remote_links_disabled' };

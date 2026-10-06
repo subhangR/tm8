@@ -951,7 +951,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'spaceLinks.add': {
     cmd: ['link', 'add'],
-    syn: 'tm8 link add <target-space-id> [--alias <alias>] [--mutation-id <id>]',
+    syn: 'tm8 link add <target-space-id> [--alias <alias>] [--target-server <server-id|name>] [--mutation-id <id>]',
     sum: 'Link another Space you are a Member of to this one — human sessions only',
     authz: 'space',
     input: 'bound',
@@ -961,7 +961,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'spaceLinks.login': {
     cmd: ['link', 'login'],
-    syn: 'tm8 link login <alias|link-id> [--mutation-id <id>]',
+    syn: 'tm8 link login <alias|link-id> [--pairing-code <code>] [--mutation-id <id>]',
     sum: 'Sign in to a linked Space: store your own 90-day session for it, sealed — human sessions only',
     authz: 'server',
     input: 'bound',
@@ -970,6 +970,7 @@ const ROWS: Record<OperationName, Row> = {
     notes: [
       'agents you launch may use it; nobody else can, and no response carries it',
       'an agent is refused by the Server; it asks its human to run this',
+      'a link to another server (W9c) signs in with --pairing-code: the code `tm8 link grant` printed there',
     ],
   },
   'spaceLinks.relogin': {
@@ -1075,6 +1076,21 @@ const ROWS: Record<OperationName, Row> = {
     side: 'durable',
     tags: ['link', 'inbound', 'restore', 'cross-space', 'admin'],
     notes: ['an agent is refused by the Server; it asks its human to run this'],
+  },
+  // W9c (299): the target side of a link from ANOTHER server.
+  'spaceLinks.inbound.grant': {
+    cmd: ['link', 'grant'],
+    syn: 'tm8 link grant <home-space-id> [--label <name>] [--allow-spawn] [--mutation-id <id>]',
+    sum: 'Let a Space on another server act in this Space as you through a space link; prints a one-time pairing code for that server\'s `tm8 link login` — human sessions only',
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['link', 'inbound', 'grant', 'remote', 'cross-space', 'server'],
+    notes: [
+      'needs TM8_REMOTE_SPACE_LINKS on, on this server and the home server; off, it is refused',
+      'the code is single use and expires in 10 minutes; only its hash is stored here',
+      'spawning through the link needs --allow-spawn here AND the home row\'s own spawn switch',
+    ],
   },
   'entities.refs.add': {
     cmd: ['entity', 'ref', 'add'],
