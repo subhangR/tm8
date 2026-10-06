@@ -30,7 +30,7 @@
  */
 import pg from 'pg';
 import { CollabError } from '@tm8/contract';
-import type { Db, DbClaims, Querier } from './types.js';
+import { BACKGROUND_JOB_CLAIMS, type Db, type DbClaims, type Querier } from './types.js';
 import { translateDbError } from './errors.js';
 
 /**
@@ -70,6 +70,11 @@ function nodeAdminClaim(value: boolean | undefined): string {
  */
 function claimValue(value: string | undefined): string {
   return value === undefined || value === null ? '' : String(value);
+}
+
+/** `tm8.background_job`: one of the closed list, or `''`. */
+function backgroundJobClaim(value: string | undefined): string {
+  return value !== undefined && (BACKGROUND_JOB_CLAIMS as readonly string[]).includes(value) ? value : '';
 }
 
 /**
@@ -126,6 +131,11 @@ function claimValue(value: string | undefined): string {
  * `tm8.work_session_id` — the EIGHTH claim (299, Spec D1). The work session an
  * agent bearer was minted for; `internal.caller_work_session()` reads it so a
  * claim made from inside a session is the session's.
+ *
+ * `tm8.background_job` — the NINTH claim (306, P0e). The in-process scheduler
+ * job a transaction runs for, from a closed list; never bound under a space
+ * pin. `internal.is_tracking_worker()` reads it to let the tracking doors span
+ * spaces, and nothing else does.
  */
 const BIND_CLAIMS_SQL = `select
   set_config('tm8.identity_id', $1, true),
@@ -136,7 +146,8 @@ const BIND_CLAIMS_SQL = `select
   set_config('tm8.session_space_id', $6, true),
   set_config('tm8.via_link',    $7, true),
   set_config('tm8.work_session_id', $8, true),
-  set_config('role',            $9, true)`;
+  set_config('tm8.background_job', $9, true),
+  set_config('role',            $10, true)`;
 
 /**
  * An RPC name must be a bare (optionally schema-qualified) identifier. `fn` is
@@ -439,6 +450,10 @@ export class PgDb implements Db {
         claimValue(claims.viaLinkId),
         // 299 (Spec D1). Absent binds as `''`: the caller is not a session.
         claimValue(claims.workSessionId),
+        // 306 (P0e). Absent binds as `''`: not a background job. A pinned
+        // session never binds it, whatever built `claims`, and neither does a
+        // value outside the closed list.
+        backgroundJobClaim(claims.sessionSpaceId ? undefined : claims.backgroundJob),
         this.role,
       ]);
 

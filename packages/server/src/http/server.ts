@@ -155,6 +155,8 @@ export interface FacadeServerOptions {
       failures: number;
       overruns: number;
       nextRunAt: string | null;
+      /** 306: read only for the forge watcher's `detail.health`. */
+      lastOutcome?: { detail?: Record<string, unknown> } | null;
     }>;
   } | undefined;
 
@@ -308,6 +310,11 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
         // see whether the sweeps actually run — a scheduler whose only
         // observable surface is a boot-time console line is not observable.
         const jobs = opts.jobsStatus?.();
+        // 306 (P0e): is PR/commit tracking actually running? The forge
+        // watcher computes it every tick; published here so staleness and the
+        // no-token state are visible without a catalog operation.
+        const tracking = jobs?.jobs.find((job) => job.name === 'tracking.forge-watcher')
+          ?.lastOutcome?.detail?.['health'];
         sendRaw(res, dbOk === false ? 503 : 200, requestId, {
           ok: dbOk !== false,
           server: 'tm8-server',
@@ -318,6 +325,7 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
           // The read gate in front of the pool: `queued` > 0 is a read wave
           // being held off the connections commands need.
           ...(opts.readAdmission ? { readAdmission: opts.readAdmission.stats() } : {}),
+          ...(tracking === undefined ? {} : { tracking }),
           ...(jobs === undefined ? {} : {
             jobs: jobs.jobs.map((job) => ({
               name: job.name,

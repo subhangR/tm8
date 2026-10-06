@@ -140,6 +140,11 @@ describe('one identity path (R2 / claims contract)', () => {
     // identity — it names WHICH session a claim belongs to — and like the two
     // above only db/client.ts may bind it.
     'work_session_id',
+    // 306 (P0e): the in-process tracking job a transaction runs for. Bound
+    // ONLY by db/client.ts, from a closed list, never under a space pin; it
+    // widens only the tracking doors (internal.is_tracking_worker), and no
+    // request path sets it (tracking-clients.test.ts guards the setters).
+    'background_job',
   ] as const;
 
   const CLAIMS_BINDER = join(SRC, 'db', 'client.ts');
