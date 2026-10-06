@@ -123,6 +123,6 @@ describe('spaceLinks.invoke edges.create between home and the linked space', () 
       code: 'not_found', details: { reason: 'edge_endpoint_not_uuid', field: 'dstId' },
     });
     expect(h.db.rpcs).toEqual([]);
-    expect(h.audits.at(-1)).toMatchObject({ op: 'edges.create', result: 'error', reason: 'not_found' });
+    expect(h.audits.at(-1)).toMatchObject({ op: 'edges.create', result: 'error', reason: 'edge_endpoint_not_uuid' }); // #1054: the audit keeps details.reason
   });
 });
