@@ -1772,7 +1772,49 @@ export type WorkspaceControlFrame =
    * Ephemeral by construction (DEV-4): this never produces a durable row, never
    * advances the durable cursor, and is not replayable.
    */
-  | { type: 'presence.set'; spaceId: SpaceId; entityId: EntityId; viewing: boolean; typing: boolean };
+  | { type: 'presence.set'; spaceId: SpaceId; entityId: EntityId; viewing: boolean; typing: boolean }
+  /**
+   * Workspace remote bridge (Spec C §1): announce or refresh this window as a
+   * live Workspace instance. Authorized like `subscribe`; the member is derived
+   * from the socket's identity, never sent. Re-sent on change and as a heartbeat.
+   */
+  | {
+      type: 'workspace.register';
+      spaceId: SpaceId;
+      instanceId: string;
+      windowId: string;
+      focused: boolean;
+      visible: boolean;
+      view: string;
+      mounted: boolean;
+      revision: number;
+      lastFocusedAt?: string;
+    }
+  /** Give up an instance. Unauthorized, like `unsubscribe`. */
+  | { type: 'workspace.unregister'; instanceId: string }
+  /**
+   * The window's answer to a forwarded `workspace.command`. Honoured only on
+   * the connection that owns `instanceId`.
+   */
+  | { type: 'workspace.result'; instanceId: string; requestId: string; result: Record<string, unknown> };
+
+/**
+ * Server → ONE client: run a Workspace command in that window (Spec C §1).
+ * Sent to the connection that owns `instanceId`, never fanned out. The window
+ * dispatches it with `source: 'remote'` and answers with `workspace.result`.
+ */
+export interface WorkspaceBridgeCommandFrame {
+  type: 'workspace.command';
+  requestId: string;
+  instanceId: string;
+  command: string;
+  args?: unknown;
+  expectedRevision?: number;
+  /** Who is behind the call: an agent session, or the human's own CLI. */
+  actorClass: 'human' | 'agent';
+  /** The calling actor's display name, for the window's "<name> opened …" notice. */
+  actorName?: string;
+}
 
 /**
  * The ONLY server→client message on this socket that is not a `WorkspaceEvent`.

@@ -1,5 +1,7 @@
 import { McpSessionBindings } from './mcp/session-bindings.js';
 import { loadMcpServer } from './mcp/definitions.js';
+import { WorkspaceBridge } from './workspace/bridge.js';
+import { registerWorkspaceHandlers } from './workspace/handlers.js';
 import { McpTestResultSchema } from '@tm8/contract';
 /**
  * Bootstrap — assembles the frame and starts listening.
@@ -323,6 +325,9 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   // Declared before the registration block because `presence.get` is only
   // mounted when a presence source exists — see registerEventHandlers.
   const presence = new InMemoryPresenceStore();
+  // The Workspace remote bridge (Spec C): live windows and in-flight forwards,
+  // in memory like presence, shared by the socket and the HTTP handlers.
+  const workspaceBridge = new WorkspaceBridge();
   const subscriptions = new SubscriptionRegistry();
   // Factory callers get the composed context; block callers pass through
   // unchanged (every test harness injects the block form directly).
@@ -511,6 +516,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       },
     });
     registerEventHandlers(registry, { db, config, presence });
+    registerWorkspaceHandlers(registry, { db, bridge: workspaceBridge });
     // The delivery seam again, and narrow for the same reason it is narrow
     // above: `execution.dispatch` pushes a trusted envelope at a dispatcher's
     // terminal, which only the delivery role may do. Absent, a dispatch still
@@ -585,6 +591,21 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         log: eventLog,
         claimsFor: wsClaimsFor,
         presence,
+        workspace: {
+          bridge: workspaceBridge,
+          memberFor: async (identity, spaceId) => {
+            const claims = await wsClaimsFor(identity);
+            const rows = await db.tx(claims, async (q) => {
+              await q.query('set local role tm8_app');
+              return q.query<{ entity_id: string }>(
+                `select entity_id from public.members
+                  where space_id = $1 and identity_id = $2 and status = 'active'`,
+                [spaceId, claims.identityId],
+              );
+            });
+            return rows[0]?.entity_id ?? null;
+          },
+        },
         ...(pump ? { cursors: pump } : {}),
         ...(highWaterMark ? { highWaterMark } : {}),
         onError: (message) => console.warn(`ws control frame: ${message}`),
@@ -624,6 +645,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     ...(control ? { onClientMessage: (conn, text) => void control.handle(conn, text) } : {}),
     onDisconnect: (connId) => {
       presence.dropConnection(connId);
+      workspaceBridge.dropConnection(connId);
       pump?.forget(connId);
     },
   });

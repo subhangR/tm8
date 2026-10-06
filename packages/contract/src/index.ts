@@ -39,3 +39,4 @@ export * from './style-css.js';
 export * from './builtins/index.js';
 
 export * from './mcp.js';
+export * from './workspace-bridge.js';

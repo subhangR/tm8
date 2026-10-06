@@ -44,6 +44,7 @@ import type { RequestIdentity, SpaceSessionsMode } from '../http/types.js';
 import { MAX_POLL_LIMIT, type DurableEventLog } from './poll.js';
 import type { PresenceStore } from './presence.js';
 import type { SubscriptionRegistry } from './subscriptions.js';
+import type { WorkspaceBridge } from '../workspace/bridge.js';
 import type { EventSink } from './ws-connection.js';
 
 /**
@@ -152,6 +153,15 @@ export interface ControlChannelDeps {
   readonly highWaterMark?: (identity: RequestIdentity, spaceId: string) => Promise<number | null>;
   /** A control frame that failed for a reason the client cannot fix. */
   readonly onError?: (message: string) => void;
+  /** The Workspace remote bridge (Spec C). Absent = `workspace.*` frames refused. */
+  readonly workspace?: {
+    readonly bridge: WorkspaceBridge;
+    /**
+     * The caller's ACTIVE member in `spaceId`, read as the caller. The window
+     * never names its own member; this is the only source of it.
+     */
+    readonly memberFor: (identity: RequestIdentity, spaceId: string) => Promise<string | null>;
+  };
 }
 
 export interface ControlChannel {
@@ -290,6 +300,38 @@ export function createControlChannel(deps: ControlChannelDeps): ControlChannel {
         });
         return;
       }
+
+      case 'workspace.register': {
+        const workspace = deps.workspace;
+        if (workspace === undefined) {
+          refuse(sink, { type: 'control.refused', frame: frame.type, spaceId: frame.spaceId, reason: 'forbidden' });
+          return;
+        }
+        // AUTHORIZE FIRST — the same space read `subscribe` makes — then
+        // resolve who the window is from the socket, never from the frame.
+        if (!(await authorized(sink, 'workspace.register', frame.spaceId))) return;
+        const claims = await claimsFor(sink.identity);
+        const memberId = claims.identityId ? await workspace.memberFor(sink.identity, frame.spaceId) : null;
+        if (!claims.identityId || memberId === null
+          || !workspace.bridge.register(sink, claims.identityId, memberId, frame)) {
+          refuse(sink, { type: 'control.refused', frame: 'workspace.register', spaceId: frame.spaceId, reason: 'forbidden' });
+        }
+        return;
+      }
+
+      case 'workspace.unregister': {
+        // Deliberately unauthorized, like `unsubscribe`: the bridge only drops
+        // an instance from the connection that holds it.
+        deps.workspace?.bridge.unregister(sink, frame.instanceId);
+        return;
+      }
+
+      case 'workspace.result': {
+        // No authorization beyond the bridge's own check: a result counts only
+        // on the connection that owns the instance, for a forward in flight.
+        deps.workspace?.bridge.acceptResult(sink, frame);
+        return;
+      }
     }
   }
 
@@ -328,7 +370,10 @@ export function createControlChannel(deps: ControlChannelDeps): ControlChannel {
   };
 }
 
-const FRAME_TYPES = new Set<string>(['subscribe', 'unsubscribe', 'presence', 'resume', 'presence.set']);
+const FRAME_TYPES = new Set<string>([
+  'subscribe', 'unsubscribe', 'presence', 'resume', 'presence.set',
+  'workspace.register', 'workspace.unregister', 'workspace.result',
+]);
 
 function isFrameType(value: string): value is WorkspaceControlFrame['type'] {
   return FRAME_TYPES.has(value);
