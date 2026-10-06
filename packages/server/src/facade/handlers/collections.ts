@@ -41,6 +41,8 @@ import {
 } from '../entity-read.js';
 import { toCommandResult, type RpcCommandResult } from './entities.js';
 import { runsOnListedFrom } from '../services/w2/runs-on-visibility.js';
+import { storyRootWarnings } from '../placement-guidance.js';
+import { withHeaderWarnings } from '../../headers/write.js';
 
 // ---------------------------------------------------------------------------
 // Sorting
@@ -944,7 +946,8 @@ export function collectionsAddItem(deps: FacadeDeps): OperationHandler {
     const collectionId = requireUuidParam(ctx, 'id');
     const input = ctx.body as CollectionAddItemInput;
     const envelope = commandEnvelope(ctx);
-    return deps.db.tx(claimsFor(owner, ctx, envelope), async (q) => {
+    const claims = claimsFor(owner, ctx, envelope);
+    const result = await deps.db.tx(claims, async (q) => {
       const raw = await q.rpc<RpcCommandResult>('set_collection_item', [
         collectionId,
         input.entityId,
@@ -954,6 +957,8 @@ export function collectionsAddItem(deps: FacadeDeps): OperationHandler {
       ]);
       return toCommandResult(q, raw, owner.identityId);
     });
+    // P0f: only roots belong in a story; say so after the add commits.
+    return withHeaderWarnings(result, await storyRootWarnings(deps.db, claims, collectionId, input.entityId));
   };
 }
 

@@ -72,6 +72,7 @@ import {
 } from '../../entity-read.js';
 import type { RpcCommandResult } from '../../handlers/entities.js';
 import { buildReceipt, receiptSnapshot, wantsReceipt, type ServerReceipt } from '../../receipt.js';
+import { parentKindRefusal } from '../../placement-guidance.js';
 import { RUNS_ON, RUNS_ON_USAGE_OPERATION, runsOnListedFrom } from './runs-on-visibility.js';
 import { projectForgeFacts } from '../../../tracking/pr-projection.js';
 
@@ -1349,7 +1350,21 @@ export class W2EntitiesCommandsTrackingService {
     return warning ? { ...detail, warnings: [warning] } : detail;
   };
 
+  /**
+   * P0f: a parent of another kind is refused by the DB trigger (001:398);
+   * the refusal is rewritten to name the edge to make instead.
+   */
   readonly createEntity = async (ctx: RequestContext): Promise<CommandResult | ServerReceipt> => {
+    try {
+      return await this.createEntityInTx(ctx);
+    } catch (error) {
+      const input = ctx.body as CreateEntityInput;
+      const claims = claimsFor(await this.deps.owner(), ctx, commandEnvelope(ctx));
+      throw await parentKindRefusal(this.deps.db, claims, error, { kind: input.kind, parentId: input.parentId }) ?? error;
+    }
+  };
+
+  private readonly createEntityInTx = async (ctx: RequestContext): Promise<CommandResult | ServerReceipt> => {
     const owner = await this.deps.owner();
     const input = ctx.body as CreateEntityInput;
     const envelope = commandEnvelope(ctx);
@@ -1891,7 +1906,7 @@ export class W2EntitiesCommandsTrackingService {
           details: { ...(error.details ?? {}), current },
         });
       }
-      throw error;
+      throw await parentKindRefusal(this.deps.db, claimsFor(owner, ctx, envelope), error, { id, parentId: input.parentId }) ?? error;
     }
   };
 
