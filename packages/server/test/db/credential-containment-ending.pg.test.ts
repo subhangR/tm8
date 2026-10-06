@@ -151,7 +151,7 @@ async function liveAgentSession(
       [sessionId, randomUUID()],
     );
     await c.query(
-      `insert into public.edges(space_id, src_id, dst_id, type, created_by) values ($3, $1, $2, 'relates_to', $4)`,
+      `insert into public.edges(space_id, src_id, dst_id, type, created_by) values ($3, $2, $1, 'participates_in', $4)`,
       [sessionId, ids.TA, ids.S, ids[`member:${launcher}`]],
     );
   });

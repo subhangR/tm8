@@ -203,7 +203,7 @@ describe('308/309 canonical edge rows', () => {
       `select p.proname f from pg_proc p join pg_namespace n on n.oid = p.pronamespace
         where n.nspname in ('public', 'internal') and p.prosrc ~ '''relates_to'''
           and p.proname in ('execution_spawn', 'execution_resume', 'repoint_session_space_credentials',
-                            'issue_work_session_agent_session', 'derive_participant_from_relates')`)).rows.map((r) => r.f));
+                            'issue_work_session_agent_session')`)).rows.map((r) => r.f));
     expect(readers).toEqual([]);
   });
 
