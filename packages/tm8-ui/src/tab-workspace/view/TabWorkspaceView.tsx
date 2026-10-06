@@ -3,12 +3,14 @@
  * (Spec A §3, Spec B §7). Grid: left header | strip over rail | browser |
  * content. Owns the runtime wiring: hooks, persistence, URL sync, dev hook.
  */
-import { useCallback, useEffect, useMemo, useRef, type CSSProperties } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useStore } from 'zustand';
 import { canCreateKind } from '../adapters/registry';
 import { getWorkspaceRuntime } from '../runtime/dispatch';
 import { installDevHook } from '../runtime/devHook';
 import { initPersistence } from '../runtime/persistence';
 import { initUrlSync } from '../runtime/url';
+import { getRailStore } from '../runtime/railStore';
 import { NOTICE_TTL_MS } from '../../shell';
 import { PanelResizer } from '../../kit/PanelResizer';
 import { VectorIcon } from '../../kit/VectorIcon';
@@ -35,6 +37,20 @@ export interface TabWorkspaceViewProps {
 export function TabWorkspaceView({ viewerId, spaceId, routeTab, gate }: TabWorkspaceViewProps) {
   const runtime = useMemo(() => getWorkspaceRuntime(viewerId, spaceId), [viewerId, spaceId]);
   const layout = useWorkspaceStore(runtime.store, (s) => s.layout);
+  /* The icon rail's expanded flag pushes the browser: 48 → 200px. The width
+     transition runs only around a toggle, never during a browser drag. */
+  const railExpanded = useStore(getRailStore(spaceId), (s) => s.expanded);
+  const [railAnimating, setRailAnimating] = useState(false);
+  const railMounted = useRef(false);
+  useEffect(() => {
+    if (!railMounted.current) {
+      railMounted.current = true;
+      return;
+    }
+    setRailAnimating(true);
+    const timer = window.setTimeout(() => setRailAnimating(false), 400);
+    return () => window.clearTimeout(timer);
+  }, [railExpanded]);
 
   const { onNotice, navigateView } = gate;
   useEffect(
@@ -87,10 +103,20 @@ export function TabWorkspaceView({ viewerId, spaceId, routeTab, gate }: TabWorks
     [runtime],
   );
 
-  const style = { '--tws-browser-w': `${layout.browserWidth}px` } as CSSProperties;
+  const style = {
+    '--tws-browser-w': `${layout.browserWidth}px`,
+    '--tws-rail-w': railExpanded ? 'var(--tws-rail-w-expanded)' : 'var(--tws-rail-w-collapsed)',
+  } as CSSProperties;
   return (
     <WorkspaceProvider value={value}>
-      <div className="tws-root" data-expanded={layout.expanded || undefined} style={style} data-testid="tab-workspace">
+      <div
+        className="tws-root"
+        data-expanded={layout.expanded || undefined}
+        data-rail-expanded={railExpanded || undefined}
+        data-rail-animating={railAnimating || undefined}
+        style={style}
+        data-testid="tab-workspace"
+      >
         {layout.expanded ? null : <LeftHeader />}
         <TabStrip leading={layout.expanded ? <RestoreNavigation /> : undefined} />
         {layout.expanded ? null : <WorkspaceRail />}
