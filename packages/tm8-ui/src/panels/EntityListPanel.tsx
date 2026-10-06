@@ -384,6 +384,15 @@ export interface EntityListPanelProps {
    * Absent ⇒ the panel's own sentences (and no loading state).
    */
   renderEmpty?: (state: ListEmptyState) => ReactNode;
+  /**
+   * OPT-IN TOOLBAR CHROME (Workspace browser, design ruling R5): search, the
+   * lifecycle tier as one dropdown with its counts, and ONE funnel popover
+   * holding filter, people, row view and sort — a single row — with no counts
+   * footer and no `f` hint (it moves to the search tooltip). The lifecycle
+   * dropdown hides when every row is known to sit in the open tier. Absent ⇒
+   * `'rows'`: the tier tabs, filter bar and footer as before (Home, Work).
+   */
+  chrome?: 'rows' | 'toolbar';
   onSelect?: (id: string) => void;
   onAction?: (ref: ActionRef, entityId: string) => void;
   /**
@@ -837,6 +846,13 @@ export function EntityListPanel(props: EntityListPanelProps) {
     tab,
     ...tabCount(props, config, tab),
   }));
+  const toolbar = props.chrome === 'toolbar';
+  /* NO LIFECYCLE TO SLICE: every count is exact and every row sits in the
+     open tier (a teammate list reads 14 / 0 / 0 / 0). Hiding then strands
+     nothing, because the other tiers are known to be empty. */
+  const singleTier =
+    tabCounts.length > 0 &&
+    tabCounts.every((c) => c.exact && (c.tab.id === activeTab?.id || c.n === 0));
   /* The selector total's `+` — carried only when a tab's number is still the
      loaded length rather than the server's. Once every tab reports an exact
      total the sum IS exact, and the hedge disappears on its own. */
@@ -852,7 +868,7 @@ export function EntityListPanel(props: EntityListPanelProps) {
 
   return (
     <section
-      className={props.compact ? 'lp lp--compact' : 'lp'}
+      className={`${props.compact ? 'lp lp--compact' : 'lp'}${toolbar ? ' lp--toolbar' : ''}`}
       data-testid="entity-list-panel"
       data-kind={config.kind}
       aria-label={config.labelPlural}
@@ -880,6 +896,68 @@ export function EntityListPanel(props: EntityListPanelProps) {
         {...(props.wiredActions ? { wiredActions: props.wiredActions } : {})}
       />
 
+      {toolbar ? (
+        <div className="lp__toolrow">
+          <SearchRow
+            config={config}
+            query={query}
+            onQuery={setQuery}
+            inputRef={props.searchInputRef}
+            hint={false}
+          />
+          {mode !== 'board' && list.categories && list.categories.length > 0 && !singleTier ? (
+            <LifecycleMenu
+              tabs={list.categories}
+              activeTabId={categoryTabId}
+              onTab={setCategoryTabId}
+              tabLabel={(tab: StatusCategoryTab) =>
+                tabCounts.find((c) => c.tab.id === tab.id)?.label ?? '0'
+              }
+            />
+          ) : null}
+          <FilterRow
+            config={config}
+            picker={picker}
+            onPicker={setPicker}
+            selected={selected}
+            onToggleOption={(specId, optionId, multi) =>
+              setSelected((prev) => {
+                const current = prev[specId] ?? [];
+                const on = current.includes(optionId);
+                const next = on
+                  ? current.filter((id) => id !== optionId)
+                  : multi
+                    ? [...current, optionId]
+                    : [optionId];
+                return { ...prev, [specId]: next };
+              })
+            }
+            sortKey={sortKey}
+            onSort={setSortKey}
+            viewerActorId={props.ctx.viewerActorId}
+            /* THE FOUR TAB PROPS ARE GONE (sub-doc 6, "dead wiring"). `FilterRow`
+               was handed `tabs` / `activeTabId` / `onTab` / `tabLabel` and never
+               read one of them — the tab row is `CategoryTabs`, a separate
+               component one element up, and has been since tabs got their own
+               row. Four props that compute a count nobody renders. */
+            people={members.length > 1 ? members : []}
+            selectedPeople={selectedPeople}
+            onTogglePerson={(actorId) =>
+              setSelectedPeople((current) =>
+                current.includes(actorId)
+                  ? current.filter((id) => id !== actorId)
+                  : [...current, actorId],
+              )
+            }
+            membership={list.membership}
+            membershipSets={props.membershipSets}
+            lensSet={lensSet}
+            onLens={setLensId}
+            merged={toolbar}
+          />
+        </div>
+      ) : (
+        <>
       <SearchRow
         config={config}
         query={query}
@@ -939,6 +1017,8 @@ export function EntityListPanel(props: EntityListPanelProps) {
         lensSet={lensSet}
         onLens={setLensId}
       />
+        </>
+      )}
 
       {/* THE LENS SAYS WHAT IT HIDES. A kind-scoped list showing one set's
           members is NOT the set: a mixed collection holds items of every
@@ -1054,7 +1134,7 @@ export function EntityListPanel(props: EntityListPanelProps) {
           the tab above already shows them. */}
       {/* Not for overlapping tabs (`tabTotal`): "12 all · 3 equipped · 9 not
           equipped" reads as a breakdown that adds up, and it does not. */}
-      {tabCounts.length > 0 && !list.tabTotal ? (
+      {tabCounts.length > 0 && !list.tabTotal && !toolbar ? (
         <div className="lp__foot" data-testid="list-footer">
           {tabCounts.map((c) => `${c.label} ${c.tab.label.toLowerCase()}`).join(' · ')}
         </div>
@@ -1601,11 +1681,14 @@ function SearchRow({
   query,
   onQuery,
   inputRef,
+  hint = true,
 }: {
   config: KindConfig;
   query: string;
   onQuery: (q: string) => void;
   inputRef?: React.Ref<HTMLInputElement>;
+  /** False ⇒ no `f` key cap; the shortcut is named in the tooltip instead. */
+  hint?: boolean;
 }) {
   return (
     <div className="lp__searchrow">
@@ -1621,8 +1704,9 @@ function SearchRow({
         aria-label={`Search ${config.labelPlural.toLowerCase()}`}
         onChange={(e) => onQuery(e.target.value)}
         data-testid="list-search"
+        {...(hint ? {} : { title: `Search ${config.labelPlural.toLowerCase()} (F)` })}
       />
-      <kbd className="lp__searchrow-key">f</kbd>
+      {hint ? <kbd className="lp__searchrow-key">f</kbd> : null}
     </div>
   );
 }
@@ -1634,6 +1718,70 @@ function SearchRow({
  * it. T0-1 draws both, and the count on each tab comes from that tab's own
  * query — the same source as the footer line and the kind-selector total.
  */
+/**
+ * THE LIFECYCLE TIER AS ONE QUIET DROPDOWN (`chrome="toolbar"`, ruling R5):
+ * the open tier and its count on the button, every tier with its count in the
+ * menu. The same tabs, counts and choice `CategoryTabs` draws as a row.
+ */
+function LifecycleMenu({
+  tabs,
+  activeTabId,
+  onTab,
+  tabLabel,
+}: {
+  tabs: readonly StatusCategoryTab[];
+  activeTabId: string | null;
+  onTab: (id: string) => void;
+  tabLabel: (tab: StatusCategoryTab) => string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useDismissable(open, ref, useCallback(() => setOpen(false), []));
+  const current = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0]!;
+  return (
+    <div className="lp__tiermenu" ref={ref}>
+      <button
+        type="button"
+        className="lp__tiermenu-btn"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Lifecycle: ${current.label}, ${tabLabel(current)}`}
+        title="Lifecycle"
+        data-testid="lifecycle-trigger"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="lp__tiermenu-label">{current.label}</span>
+        <span className="lp__tiermenu-count">{tabLabel(current)}</span>
+        <span className="lp__tiermenu-chevron" aria-hidden>▾</span>
+      </button>
+      {open ? (
+        <div className="lp__filtermenu lp__tiermenu-list" role="menu" aria-label="Lifecycle">
+          {tabs.map((tab) => {
+            const on = tab.id === current.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                role="menuitemradio"
+                aria-checked={on}
+                className={on ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
+                onClick={() => {
+                  onTab(tab.id);
+                  setOpen(false);
+                }}
+              >
+                <span className="lp__optlabel">{tab.label}</span>
+                <span className="lp__tiermenu-count">{tabLabel(tab)}</span>
+                {on ? <span className="lp__filtercheck">✓</span> : null}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function CategoryTabs({
   tabs,
   activeTabId,
@@ -1746,6 +1894,7 @@ function FilterRow({
   membershipSets,
   lensSet,
   onLens,
+  merged = false,
 }: {
   config: KindConfig;
   /** Which of the four is open. Held by the panel — see `ListPicker`. */
@@ -1767,6 +1916,8 @@ function FilterRow({
   /** The active lens, resolved to its summary (title for the chip). */
   lensSet: EntitySummary | null;
   onLens: (setId: string | null) => void;
+  /** One funnel and one popover with every axis (`chrome="toolbar"`). */
+  merged?: boolean;
 }) {
   const setPicker = onPicker;
   const barRef = useRef<HTMLDivElement>(null);
@@ -1846,6 +1997,247 @@ function FilterRow({
       </MobileSheet>
     );
   };
+
+  /* The option lists, drawn once and hung in either the four per-axis menus
+     or (`merged`) the one funnel popover. */
+  const filterOptions = (
+    <>
+          {config.list.filters.map((spec) => (
+            <div key={spec.id}>
+              <div className="lp__filtergroup">{spec.label.toUpperCase()}</div>
+              {spec.options.map((option) => {
+                const on = (selected[spec.id] ?? []).includes(option.id);
+                // OFFERED AND REFUSED, never offered and inert. An option
+                // naming the viewer with no viewer resolved would query
+                // nobody and answer "you have nothing", which is a claim
+                // about the data made out of ignorance about the identity.
+                const blocked = needsViewer(option.filter) && !viewerActorId;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    role="menuitemcheckbox"
+                    aria-checked={on}
+                    disabled={blocked}
+                    title={
+                      blocked
+                        ? 'Not available: this workspace has not resolved who you are, so “me” has no id to match.'
+                        : undefined
+                    }
+                    className={on ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
+                    onClick={() => onToggleOption(spec.id, option.id, spec.multi ?? false)}
+                  >
+                    {/* A REAL BOX, NOT A TRAILING TICK. These options combine,
+                        and a `✓` that appears only after the click cannot say
+                        so beforehand — the affordance has to be visible while
+                        the option is still off. Drawn, not an <input>: the
+                        button already owns `role="menuitemcheckbox"` and its
+                        `aria-checked`, so a nested input would be a second,
+                        conflicting control in the same accessible node. */}
+                    <span className="lp__optbox" aria-hidden data-on={on ? 'yes' : 'no'} />
+                    <span className="lp__optlabel">{option.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+    </>
+  );
+  const setsOptions = membership ? (
+    <>
+          {(membershipSets ?? []).length === 0 ? (
+            /* An empty page is a real answer, said in its own words — never a
+               bare menu that reads as "the space has none" when the truth may
+               be "none exist YET". The sets source is a bounded recency page,
+               so this is also where that bound is stated. */
+            <p className="lp__filterempty" data-testid="collection-lens-empty">
+              {`No ${membership.label.toLowerCase()} yet — create one from its own list. This menu offers the most recent page once any exist.`}
+            </p>
+          ) : (
+            (membershipSets ?? []).map((set) => {
+              const on = lensSet?.id === set.id;
+              return (
+                <button
+                  key={set.id}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={on}
+                  className={on ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
+                  data-testid="collection-lens-option"
+                  onClick={() => {
+                    onLens(on ? null : set.id);
+                    if (!merged) setPicker(null);
+                  }}
+                >
+                  <KindIcon kind={set.kind} />
+                  {set.title}
+                  {on ? <span className="lp__filtercheck">✓</span> : null}
+                </button>
+              );
+            })
+          )}
+    </>
+  ) : null;
+  const viewOptions = (
+    <>
+            {viewFacets.map((spec) => {
+              const on = view.shows(spec.id);
+              return (
+                <button
+                  key={spec.id}
+                  type="button"
+                  role="menuitemcheckbox"
+                  aria-checked={on}
+                  className={on ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
+                  data-facet={spec.id}
+                  onClick={() => view.toggle(spec.id)}
+                >
+                  <span className="lp__optbox" aria-hidden data-on={on ? 'yes' : 'no'} />
+                  <span className="lp__optlabel">{spec.label}</span>
+                </button>
+              );
+            })}
+    </>
+  );
+  const peopleOptions = (
+    <>
+          {people.map((person) => {
+            const on = selectedPeople.includes(person.id);
+            return (
+              <button
+                key={person.id}
+                type="button"
+                role="menuitemcheckbox"
+                aria-checked={on}
+                className={on ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
+                onClick={() => onTogglePerson(person.id)}
+              >
+                <Avatar
+                  actorId={person.id}
+                  provenance={person.isAgent ? 'agent' : 'human'}
+                  label={person.displayName}
+                  size={20}
+                  src={person.avatar ?? null}
+                />
+                <span>{person.displayName}</span>
+                {on ? <span className="lp__filtercheck">✓</span> : null}
+              </button>
+            );
+          })}
+    </>
+  );
+  const sortOptions = (
+    <>
+          {sort.map((spec) => (
+            <button
+              key={spec.key}
+              type="button"
+              role="menuitemradio"
+              aria-checked={spec.key === current?.key}
+              className={
+                spec.key === current?.key ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'
+              }
+              onClick={() => {
+                onSort(spec.key);
+                if (!merged) setPicker(null);
+              }}
+            >
+              {spec.label}
+              {spec.key === current?.key ? <span className="lp__filtercheck">✓</span> : null}
+            </button>
+          ))}
+    </>
+  );
+
+  if (merged) {
+    const defaultSort = sort.find((s) => s.default)?.key ?? sort[0]?.key;
+    /* THE BADGE COUNTS WHAT IS NOT DEFAULT, across all four sections. */
+    const changed =
+      activeFilterCount +
+      selectedPeople.length +
+      (lensSet ? 1 : 0) +
+      hiddenFacetCount +
+      (current && current.key !== defaultSort ? 1 : 0);
+    const open = picker === 'filters';
+    return (
+      <div className="lp__filterbar lp__filterbar--merged" ref={barRef}>
+        <button
+          type="button"
+          className="lp__chip lp__chip--icon lp__funnel"
+          onClick={() => setPicker(open ? null : 'filters')}
+          aria-expanded={open}
+          aria-haspopup="menu"
+          aria-label={changed > 0 ? `Filters, ${changed} changed` : 'Filters'}
+          title="Filters"
+          data-testid="filter-trigger"
+        >
+          <VectorIcon paths={FILTER_MARK} size={16} />
+          {changed > 0 ? <span className="lp__chip-count">{changed}</span> : null}
+        </button>
+        {narrowing('filters', 'Filters', 'filter-menu', 'lp__filtermenu lp__filtermenu--merged lp__filtermenu--withfoot', (
+          <>
+            <div className="lp__filteropts">
+              {config.list.filters.length > 0 ? (
+                <section className="lp__funnelsection" aria-label="Filter">
+                  <div className="t-eyebrow">Filter</div>
+                  {filterOptions}
+                </section>
+              ) : null}
+              {people.length > 1 ? (
+                <section className="lp__funnelsection" aria-label="People">
+                  <div className="t-eyebrow">People</div>
+                  {peopleOptions}
+                </section>
+              ) : null}
+              {membership && membershipSets !== undefined ? (
+                <section className="lp__funnelsection" aria-label={membership.label}>
+                  <div className="t-eyebrow">{membership.label}</div>
+                  {setsOptions}
+                </section>
+              ) : null}
+              {viewFacets.length > 0 ? (
+                <section className="lp__funnelsection" aria-label="Row view">
+                  <div className="t-eyebrow">Row view</div>
+                  {viewOptions}
+                </section>
+              ) : null}
+              {current ? (
+                <section className="lp__funnelsection" aria-label="Sort">
+                  <div className="t-eyebrow">Sort</div>
+                  {sortOptions}
+                </section>
+              ) : null}
+            </div>
+            <div className="lp__filterfoot">
+              <button
+                type="button"
+                className="lp__filterclear"
+                data-testid="filter-clear-all"
+                disabled={changed === 0}
+                onClick={() => {
+                  for (const { spec, option } of active) onToggleOption(spec.id, option.id, spec.multi ?? false);
+                  for (const actorId of selectedPeople) onTogglePerson(actorId);
+                  if (lensSet) onLens(null);
+                  if (hiddenFacetCount > 0) view.reset();
+                  if (defaultSort && current && current.key !== defaultSort) onSort(defaultSort);
+                }}
+              >
+                Reset
+              </button>
+              <button
+                type="button"
+                className="lp__filterdone"
+                data-testid="filter-done"
+                onClick={() => setPicker(null)}
+              >
+                Done
+              </button>
+            </div>
+          </>
+        ))}
+      </div>
+    );
+  }
 
   return (
     <div className="lp__filterbar" ref={barRef}>
@@ -2007,24 +2399,7 @@ function FilterRow({
       {narrowing('sort', 'Sort', 'sort-menu', 'lp__filtermenu lp__filtermenu--sort', (
         <>
           <div className="lp__filtergroup">SORT BY</div>
-          {sort.map((spec) => (
-            <button
-              key={spec.key}
-              type="button"
-              role="menuitemradio"
-              aria-checked={spec.key === current?.key}
-              className={
-                spec.key === current?.key ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'
-              }
-              onClick={() => {
-                onSort(spec.key);
-                setPicker(null);
-              }}
-            >
-              {spec.label}
-              {spec.key === current?.key ? <span className="lp__filtercheck">✓</span> : null}
-            </button>
-          ))}
+          {sortOptions}
         </>
       ))}
       {/* Rendered OUTSIDE the clipping row, inside the positioned bar: the row
@@ -2035,45 +2410,7 @@ function FilterRow({
         <>
           {/* The options scroll; the footer below does not. */}
           <div className="lp__filteropts">
-          {config.list.filters.map((spec) => (
-            <div key={spec.id}>
-              <div className="lp__filtergroup">{spec.label.toUpperCase()}</div>
-              {spec.options.map((option) => {
-                const on = (selected[spec.id] ?? []).includes(option.id);
-                // OFFERED AND REFUSED, never offered and inert. An option
-                // naming the viewer with no viewer resolved would query
-                // nobody and answer "you have nothing", which is a claim
-                // about the data made out of ignorance about the identity.
-                const blocked = needsViewer(option.filter) && !viewerActorId;
-                return (
-                  <button
-                    key={option.id}
-                    type="button"
-                    role="menuitemcheckbox"
-                    aria-checked={on}
-                    disabled={blocked}
-                    title={
-                      blocked
-                        ? 'Not available: this workspace has not resolved who you are, so “me” has no id to match.'
-                        : undefined
-                    }
-                    className={on ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
-                    onClick={() => onToggleOption(spec.id, option.id, spec.multi ?? false)}
-                  >
-                    {/* A REAL BOX, NOT A TRAILING TICK. These options combine,
-                        and a `✓` that appears only after the click cannot say
-                        so beforehand — the affordance has to be visible while
-                        the option is still off. Drawn, not an <input>: the
-                        button already owns `role="menuitemcheckbox"` and its
-                        `aria-checked`, so a nested input would be a second,
-                        conflicting control in the same accessible node. */}
-                    <span className="lp__optbox" aria-hidden data-on={on ? 'yes' : 'no'} />
-                    <span className="lp__optlabel">{option.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          ))}
+          {filterOptions}
           </div>
           {/* CLEARING WAS ONLY EVER REACHABLE BY HUNTING CHIPS. Every active
               option spawned a dismissable chip in the bar, so undoing four
@@ -2110,60 +2447,14 @@ function FilterRow({
       {membership ? narrowing('sets', membership.label, 'collection-lens-menu', 'lp__filtermenu', (
         <>
           <div className="lp__filtergroup">{membership.label.toUpperCase()}</div>
-          {(membershipSets ?? []).length === 0 ? (
-            /* An empty page is a real answer, said in its own words — never a
-               bare menu that reads as "the space has none" when the truth may
-               be "none exist YET". The sets source is a bounded recency page,
-               so this is also where that bound is stated. */
-            <p className="lp__filterempty" data-testid="collection-lens-empty">
-              {`No ${membership.label.toLowerCase()} yet — create one from its own list. This menu offers the most recent page once any exist.`}
-            </p>
-          ) : (
-            (membershipSets ?? []).map((set) => {
-              const on = lensSet?.id === set.id;
-              return (
-                <button
-                  key={set.id}
-                  type="button"
-                  role="menuitemradio"
-                  aria-checked={on}
-                  className={on ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
-                  data-testid="collection-lens-option"
-                  onClick={() => {
-                    onLens(on ? null : set.id);
-                    setPicker(null);
-                  }}
-                >
-                  <KindIcon kind={set.kind} />
-                  {set.title}
-                  {on ? <span className="lp__filtercheck">✓</span> : null}
-                </button>
-              );
-            })
-          )}
+          {setsOptions}
         </>
       )) : null}
       {narrowing('view', 'View', 'row-view-menu', 'lp__filtermenu lp__filtermenu--withfoot', (
         <>
           <div className="lp__filteropts">
             <div className="lp__filtergroup">SHOW ON EACH ROW</div>
-            {viewFacets.map((spec) => {
-              const on = view.shows(spec.id);
-              return (
-                <button
-                  key={spec.id}
-                  type="button"
-                  role="menuitemcheckbox"
-                  aria-checked={on}
-                  className={on ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
-                  data-facet={spec.id}
-                  onClick={() => view.toggle(spec.id)}
-                >
-                  <span className="lp__optbox" aria-hidden data-on={on ? 'yes' : 'no'} />
-                  <span className="lp__optlabel">{spec.label}</span>
-                </button>
-              );
-            })}
+          {viewOptions}
           </div>
           <div className="lp__filterfoot">
             <button
@@ -2189,29 +2480,7 @@ function FilterRow({
       {narrowing('people', 'People', 'people-filter-menu', 'lp__filtermenu', (
         <>
           <div className="lp__filtergroup">PEOPLE</div>
-          {people.map((person) => {
-            const on = selectedPeople.includes(person.id);
-            return (
-              <button
-                key={person.id}
-                type="button"
-                role="menuitemcheckbox"
-                aria-checked={on}
-                className={on ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
-                onClick={() => onTogglePerson(person.id)}
-              >
-                <Avatar
-                  actorId={person.id}
-                  provenance={person.isAgent ? 'agent' : 'human'}
-                  label={person.displayName}
-                  size={20}
-                  src={person.avatar ?? null}
-                />
-                <span>{person.displayName}</span>
-                {on ? <span className="lp__filtercheck">✓</span> : null}
-              </button>
-            );
-          })}
+          {peopleOptions}
         </>
       ))}
     </div>

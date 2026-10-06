@@ -165,3 +165,166 @@
 .tws-browser-skeleton__bar:nth-child(1) { width: 60%; }
 .tws-browser-skeleton__bar:nth-child(2) { width: 80%; }
 .tws-browser-skeleton__bar:nth-child(3) { width: 40%; }
+
+/* ---- R5: the reused list panel as two rows of chrome -------------------- */
+
+/* No box of its own: the list sits flush on the browser's surface. */
+.cv2-root .tws-browser .lp {
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+/* Row 2: [Search (flex)] [Tier ▾] [Funnel], gap 8, padding 0 12px 12px. */
+.cv2-root .tws-browser .lp__toolrow {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding: 0 var(--pn-space-3) var(--pn-space-3);
+}
+
+/* Search: 36 high, one focus ring on the wrapper (R8). */
+.cv2-root .tws-browser .lp__toolrow .lp__searchrow {
+  flex: 1;
+  min-width: 0;
+  height: 36px;
+  margin: 0;
+  padding: 0 var(--pn-space-2) 0 10px;
+  gap: var(--pn-space-2);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+}
+.cv2-root .tws-browser .lp__toolrow .lp__searchrow:focus-within {
+  border-color: var(--pn-line-2);
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+.cv2-root .tws-browser .lp__toolrow .lp__searchinput,
+.cv2-root .tws-browser .lp__toolrow .lp__searchinput:focus,
+.cv2-root .tws-browser .lp__toolrow .lp__searchinput:focus-visible {
+  border: 0;
+  outline: none;
+  box-shadow: none;
+  background: transparent;
+  font-size: var(--pn-fs-sm);
+}
+.cv2-root .tws-browser .lp__toolrow .lp__searchinput::placeholder {
+  color: var(--pn-ink-3);
+}
+.cv2-root .tws-browser .lp__toolrow .lp__searchrow-glyph {
+  color: var(--pn-ink-3);
+}
+
+/* Lifecycle: one quiet dropdown, the tier then its count. */
+.cv2-root .tws-browser .lp__tiermenu {
+  position: relative;
+  flex: none;
+}
+.cv2-root .tws-browser .lp__tiermenu-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  height: 36px;
+  padding: 0 var(--pn-space-2);
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  color: var(--pn-ink-2);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.cv2-root .tws-browser .lp__tiermenu-btn:hover,
+.cv2-root .tws-browser .lp__tiermenu-btn[aria-expanded='true'] {
+  background: var(--pn-hover);
+}
+.cv2-root .tws-browser .lp__tiermenu-count {
+  color: var(--pn-ink-4);
+  font-variant-numeric: tabular-nums;
+}
+.cv2-root .tws-browser .lp__kindopt .lp__tiermenu-count {
+  margin-left: auto;
+}
+.cv2-root .tws-browser .lp__tiermenu-chevron {
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-label);
+}
+
+/* Filters: one 36×36 funnel; the badge counts non-default settings (§4). */
+.cv2-root .tws-browser .lp__filterbar--merged {
+  flex: none;
+  position: static;
+}
+.cv2-root .tws-browser .lp__funnel {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  color: var(--pn-ink-2);
+}
+.cv2-root .tws-browser .lp__funnel:hover,
+.cv2-root .tws-browser .lp__funnel[aria-expanded='true'] {
+  background: var(--pn-hover);
+}
+.cv2-root .tws-browser .lp__funnel .lp__chip-count {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 16px;
+  height: 16px;
+  background: var(--pn-brand-soft);
+  color: var(--pn-brand-2);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+}
+
+/* The two popovers hang from row 2, on the raised plane. */
+.cv2-root .tws-browser .lp__toolrow {
+  position: relative;
+}
+.cv2-root .tws-browser .lp__tiermenu-list,
+.cv2-root .tws-browser .lp__filtermenu--merged {
+  top: calc(100% + var(--pn-space-1));
+  border-color: var(--pn-line);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-pop);
+}
+.cv2-root .tws-browser .lp__tiermenu-list {
+  left: auto;
+  right: 0;
+  width: 200px;
+  max-height: none;
+}
+.cv2-root .tws-browser .lp__filtermenu--merged {
+  left: var(--pn-space-3);
+  right: var(--pn-space-3);
+  width: auto;
+  max-height: 400px;
+}
+.cv2-root .tws-browser .lp__funnelsection + .lp__funnelsection {
+  margin-top: var(--pn-space-2);
+}
+.cv2-root .tws-browser .lp__funnelsection > .t-eyebrow {
+  padding: var(--pn-space-1) var(--pn-space-2);
+}
+
+.cv2-root .tws-browser .lp__tiermenu-btn:focus-visible,
+.cv2-root .tws-browser .lp__funnel:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+
+/* Row verbs live in the tab's floating group; the hover bar overlapped the
+   row above, so the browser draws none. */
+.cv2-root .tws-browser .lp__hoverbar {
+  display: none !important;
+}
