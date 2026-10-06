@@ -32,6 +32,7 @@
  * variant.
  */
 import {
+  isHumanAuthKind,
   WorkspaceControlFrameSchema,
   type SpaceId,
   type WorkspaceControlAck,
@@ -343,7 +344,7 @@ export function createControlChannel(deps: ControlChannelDeps): ControlChannel {
         // Only a registered window on a HUMAN socket writes this way; agents
         // and the CLI use HTTP (source 'remote'), so they can never pose as
         // the human's own clicks — the gate for interactions.resolve.
-        const human = sink.identity.kind === 'auto-owner' || sink.identity.authKind === 'browser';
+        const human = sink.identity.kind === 'auto-owner' || isHumanAuthKind(sink.identity.authKind);
         const claims = await claimsFor(sink.identity);
         const owns = workspace && claims.identityId
           && workspace.bridge.list(claims.identityId, frame.spaceId).some((i) => i.instanceId === frame.instanceId);

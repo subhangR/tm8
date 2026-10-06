@@ -56,6 +56,9 @@ create policy workspace_drafts_select on public.workspace_drafts for select to t
 
 grant select on public.workspaces, public.workspace_drafts to tm8_app;
 
+-- A new table is analyzed at birth (never-analyzed-tables.pg.test.ts).
+analyze public.workspaces, public.workspace_drafts;
+
 -- Write the caller's workspace state, compare-and-swap on revision: the row
 -- must be at p_expected (0 = no row yet) and moves to p_next (> p_expected;
 -- one apply can commit twice, a resolution and its replay). Returns p_next.
