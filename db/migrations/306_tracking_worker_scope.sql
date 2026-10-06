@@ -154,6 +154,7 @@ grant execute on function public.record_tracking_poll(uuid, text) to tm8_app;
 --          the last day)            -> the caller's floor (p_min_age_seconds)
 --   warm  (linked in the last week) -> at least 10 minutes
 --   cold  (older, or its last poll errored) -> at least an hour
+--   gone  (its last poll was a 404)         -> at least a day
 -- Never-polled rows come first, then hot before warm before cold, then the
 -- longest-unpolled. An unauthenticated node spends its 60 requests an hour on
 -- the rows a merge is most likely to be waiting on.
@@ -175,6 +176,9 @@ begin
   with candidates as (
     select pr.*,
            case
+             -- Gone from GitHub (a 404): its answer will not change, so it is
+             -- looked at once a day rather than spending the shared budget.
+             when pr.last_poll_error like 'not_found%' then 3
              when exists (select 1 from public.edges ed join public.tasks t on t.entity_id = ed.src_id
                            where ed.dst_id = pr.entity_id and ed.type = 'tracks'
                              and t.work_status in ('in_review', 'working'))
@@ -195,7 +199,7 @@ begin
      where c.last_polled_at is null
         or c.last_polled_at < now() - make_interval(secs => greatest(
              greatest(coalesce(p_min_age_seconds, 0), 0),
-             case c.tier when 0 then 0 when 1 then 600 else 3600 end))
+             case c.tier when 0 then 0 when 1 then 600 when 2 then 3600 else 86400 end))
      order by (c.last_polled_at is not null), c.tier, c.last_polled_at nulls first, c.entity_id
      limit greatest(coalesce(p_limit, 25), 1)
   )
@@ -247,7 +251,9 @@ $$;
 -- §3b. The rest of the tracking doors: 220's/103's/081's bodies VERBATIM except
 -- that `require_space_member` is `require_tracking_space` and
 -- `member_space_ids()` is `tracking_space_ids()`. For every caller that is not
--- the tracking worker those two answer exactly as before.
+-- the tracking worker those two answer exactly as before. One deliberate
+-- addition, in claim_tracking_refresh: a space-wide refresh skips rows whose
+-- last poll was a 404 within the week (see the comment there).
 -- -----------------------------------------------------------------------------
 
 CREATE OR REPLACE FUNCTION public.claim_tracking_refresh(p_limit integer DEFAULT 10, p_stale_after_seconds integer DEFAULT 600, p_max_attempts integer DEFAULT 5)
@@ -313,6 +319,13 @@ begin
                 -- space", which is what 017's door accepts and records.
                 and (t.entity_ids is null or cardinality(t.entity_ids) = 0
                      or e.id = any(t.entity_ids))
+                -- 306: a space-wide refresh skips rows GitHub answered 404 for
+                -- in the last week (a squash-merged branch's commits, a deleted
+                -- PR). They stay as history; naming one explicitly still polls it.
+                and not (
+                  (t.entity_ids is null or cardinality(t.entity_ids) = 0)
+                  and coalesce(pr.last_poll_error, c.last_poll_error) like 'not_found%'
+                  and coalesce(pr.last_polled_at, c.last_polled_at) > now() - interval '7 days')
            ), '[]'::jsonb))), '[]'::jsonb)
     into claimed
     from taken t;

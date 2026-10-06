@@ -217,6 +217,46 @@ describe('owner ruling: tracking never moves a task', () => {
   });
 });
 
+describe('306: a row GitHub answered 404 for is kept as history and stops eating the budget', () => {
+  it('a space-wide refresh skips a recently not_found commit, but naming it still polls it', async () => {
+    const [ids] = await asOwner<{ commitId: string }>(`select internal.new_id()::text "commitId"`);
+    const { commitId } = ids!;
+    await asOwner(`insert into public.entities(id,space_id,kind,position,created_by) values($1,$2,'commit',30,$3)`,
+      [commitId, f.space, f.ownerMember]);
+    await asOwner(
+      `insert into public.commits(entity_id,space_id,url,repo,sha) values($1,$2,'https://github.com/acme/forge/commit/'||repeat('de',20),'acme/forge',repeat('de',20))`,
+      [commitId, f.space]);
+    await db.rpc(worker(), 'public.record_tracking_poll', [commitId, 'not_found: 404']);
+
+    const observer = { ...worker(), backgroundJob: 'tracking.observer' as const };
+    await db.rpc(spaceOwner(), 'public.queue_tracking_refresh', [[], null, null]);
+    const wide = await db.rpc<{ claimed: Array<{ requestId: string; spaceId: string; targets: Array<{ entityId: string }> }> }>(
+      observer, 'public.claim_tracking_refresh', [50, 600, 5]);
+    const mine = wide.claimed.filter((r) => r.spaceId === f.space);
+    expect(mine.flatMap((r) => r.targets.map((t) => t.entityId))).not.toContain(commitId);
+    for (const r of wide.claimed) await db.rpc(observer, 'public.complete_tracking_refresh', [r.requestId, null, 'completed']);
+
+    await db.rpc(spaceOwner(), 'public.queue_tracking_refresh', [[commitId], null, null]);
+    const named = await db.rpc<{ claimed: Array<{ requestId: string; targets: Array<{ entityId: string }> }> }>(
+      observer, 'public.claim_tracking_refresh', [50, 600, 5]);
+    expect(named.claimed.flatMap((r) => r.targets.map((t) => t.entityId))).toContain(commitId);
+    for (const r of named.claimed) await db.rpc(observer, 'public.complete_tracking_refresh', [r.requestId, null, 'completed']);
+    // History is kept: the row is still there.
+    expect(await asOwner(`select 1 from public.commits where entity_id=$1`, [commitId])).toHaveLength(1);
+  });
+
+  it('a not_found PR is watched daily, not hourly', async () => {
+    const { prId } = await trackedTask({ workStatus: 'working' });
+    await db.rpc(worker(), 'public.record_tracking_poll', [prId, 'not_found: 404']);
+    await asOwner(`update public.pull_requests set last_polled_at=now()-interval '2 hours' where entity_id=$1`, [prId]);
+    let listed = await db.rpc<{ targets: Array<{ prEntityId: string }> }>(worker(), 'public.observer_watch_targets', [500, 0]);
+    expect(listed.targets.map((t) => t.prEntityId)).not.toContain(prId);
+    await asOwner(`update public.pull_requests set last_polled_at=now()-interval '25 hours' where entity_id=$1`, [prId]);
+    listed = await db.rpc<{ targets: Array<{ prEntityId: string }> }>(worker(), 'public.observer_watch_targets', [500, 0]);
+    expect(listed.targets.map((t) => t.prEntityId)).toContain(prId);
+  });
+});
+
 describe('306 §2/§6: freshness is visible', () => {
   it('raises attention on a gated in_review task whose PR has gone stale, and a clean poll clears it', async () => {
     const { taskId, prId } = await trackedTask({ workStatus: 'in_review', gate: 'pr_merged' });
