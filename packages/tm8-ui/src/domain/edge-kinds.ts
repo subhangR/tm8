@@ -78,7 +78,7 @@ export const EDGE_KINDS: Readonly<Record<string, EdgeKinds>> = {
     acyclic: false,
   },
   authored_from: {
-    src: ['message', 'memory', 'artifact', 'form'],
+    src: ['*'],
     dst: ['work_session', 'chat'],
     description: 'Made during: this entity was recorded by the server as made in that work session or chat.',
     acyclic: false,
@@ -124,7 +124,7 @@ export const EDGE_KINDS: Readonly<Record<string, EdgeKinds>> = {
   created_in: {
     src: ['*'],
     dst: ['work_session'],
-    description: 'Made during (unverified): a client claimed this entity was made in that work session. authored_from is the verified, canonical form.',
+    description: 'Deprecated (unverified, legacy): replaced by authored_from, which the server records.',
     acyclic: false,
   },
   defaults_to_profile: {

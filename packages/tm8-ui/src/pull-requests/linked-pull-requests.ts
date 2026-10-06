@@ -30,9 +30,9 @@ export interface LinkedPullRequestFacts {
    * HOW THIS PR REACHED THIS ENTITY. Two different claims wear the same chip
    * today, and they are not the same claim:
    *
-   *   `authored`  — provenance. A `created_in` edge (the PR's birth session,
-   *                 which Postgres enforces as unique per entity,
-   *                 `066:82-83`), or the PR's branch matching the branch of a
+   *   `authored`  — provenance. An `authored_from` edge to a work_session
+   *                 (the PR's birth session; legacy `created_in` rows were
+   *                 migrated into it), or the PR's branch matching the branch of a
    *                 worktree this session is `in_worktree` of. This session
    *                 MADE this PR.
    *   `tracked`   — a `tracks` edge, or the server's own `badges.pullRequests`
@@ -220,10 +220,11 @@ export type LinkedPullRequestsByEntity = ReadonlyMap<string, readonly LinkedPull
  *
  * ### 2. ATTRIBUTION — how strong the CLAIM that this PR belongs to this entity
  *
- *   1. `created_in` (PR → work_session). PROVENANCE, and the only exact answer
- *      in the building: `edges_created_in_source_idx` (`066:82-83`) is a
- *      partial unique index on `src_id where type = 'created_in'`, so
- *      **Postgres enforces one birth session per entity**. -> `authored`
+ *   1. `authored_from` (PR → work_session). PROVENANCE, and the only exact
+ *      answer in the building: the PR's birth session. It replaced the
+ *      deprecated `created_in` (whose rows were migrated into it, same source
+ *      and target), which `066:82-83` held to one birth session per entity.
+ *      -> `authored`
  *   2. `in_worktree` (work_session → worktree), joined on the WORKTREE's own
  *      `branch` fact against the PR's `headRef`. A worktree is an allocated
  *      lane, not a shared directory, so its branch does identify work.
@@ -252,7 +253,8 @@ export type LinkedPullRequestsByEntity = ReadonlyMap<string, readonly LinkedPull
  * into that project shares. Measured 2026-08-17: eleven
  * sessions on one shared checkout each rendered the SAME four PRs
  * (#324/#335/#340/#345, all head `tm8/01a00bbd`) while the graph already held
- * correct 1:1 `created_in` edges naming four DIFFERENT sessions.
+ * correct 1:1 provenance edges (then `created_in`, now `authored_from`)
+ * naming four DIFFERENT sessions.
  *
  * Narrowing it to worktree lanes (PR #350) stopped the symptom but kept the
  * mistake: dedupe-by-PR-id means it "cannot outrank" the passes above only
@@ -279,7 +281,7 @@ export function indexLinkedPullRequests(
    * `weak` marks a stale endpoint snapshot: it fills a gap without overwriting
    * fresher facts. `attribution` climbs monotonically and NEVER falls, so a
    * weak write still upgrades the claim even when its facts are discarded —
-   * a stale `created_in` endpoint proves authorship just as well as a live one.
+   * a stale `authored_from` endpoint proves authorship just as well as a live one.
    */
   const add = (
     entityId: string,
@@ -329,26 +331,29 @@ export function indexLinkedPullRequests(
   }
 
   // ---------------------------------------------------------------------
-  // TIER 1 — `created_in`: the PR's BIRTH SESSION.
+  // TIER 1 — `authored_from`: the PR's BIRTH SESSION.
   //
-  // Registered src `*` -> dst `work_session` (`066:63`), so the PR is always
-  // the SOURCE. Reading it in only that direction is deliberate: the reverse
+  // Registered src `*` -> dst `work_session | chat`, so the PR is always the
+  // SOURCE. Reading it in only that direction is deliberate: the reverse
   // would mean a work_session was born in a PR, which the registry forbids,
   // and accepting it anyway would resurrect exactly the kind of shape-guessing
   // this repair removes.
   //
-  // The edge is `origin: 'client_claim'` (`066:151-152`) — asserted by the CLI
-  // from TM8_SESSION_ID, not verified. It is nonetheless the strongest thing
-  // we have AND the database refuses a contradicting second claim, so it
+  // `authored_from` replaced the deprecated `created_in` (migrated rows keep
+  // `origin: 'client_claim'`). It is the strongest thing we have, so it
   // outranks every branch-shaped inference.
+  //
+  // KIND FILTERS, BOTH ENDS. `authored_from` is mostly MESSAGE → session (a
+  // session's every turn) plus forms, memories, docs and commits; only a PR
+  // source draws a PR chip. And only a work_session target is a birth
+  // session — a chat target is not a session tile.
   // ---------------------------------------------------------------------
   for (const edge of edges) {
-    if (edge.type !== 'created_in') continue;
+    if (edge.type !== 'authored_from') continue;
+    if (edge.source.kind !== 'pull_request' || edge.target.kind !== 'work_session') continue;
     const source = nodeById.get(edge.source.id) ?? edge.source;
     const facts = pullRequestFactsOf(source);
     if (facts === null) continue;
-    // `created_in` also stamps docs, memories and commits; only a PR draws a
-    // PR chip, and `pullRequestFactsOf` is the structural test for that.
     add(edge.target.id, facts, {
       weak: !nodeById.has(edge.source.id),
       attribution: 'authored',
@@ -368,7 +373,7 @@ export function indexLinkedPullRequests(
   // failure mode, one layer up. Those worktrees are dropped whole. The
   // residual this cannot see: if only ONE of several sharers won a seat on
   // the bounded graph page, it looks unambiguous here. That is why this is
-  // tier 2 and `created_in` is tier 1.
+  // tier 2 and `authored_from` is tier 1.
   // ---------------------------------------------------------------------
   const worktreeBranch = new Map<string, string>();
   const worktreeSessions = new Map<string, Set<string>>();

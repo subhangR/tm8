@@ -715,14 +715,14 @@ describe('`task import-issue` — one-way import over entities.create', () => {
 });
 
 
-// ── the linker's session claim ──────────────────────────────────────────────
+// ── the linker's session: the server records it ────────────────────────────
 //
-// The forge watcher resolves a PR's owning session through `created_in` on the
-// pull_request entity FIRST — and `link_pull_request` records the member, not
-// the session. Without this claim, a PR linked by an agent has no owning
-// session and a CI-failure nudge has no addressee. Found by the live E2E rig.
+// The forge watcher resolves a PR's owning session through `authored_from` on
+// the pull_request entity FIRST. Since 308 the SERVER records it from the
+// caller's verified work session, so the CLI sends exactly one request and
+// never chains an unverified `created_in` claim from TM8_SESSION_ID.
 
-describe('`task link-pr` claims the linking session, best effort', () => {
+describe('`task link-pr` sends one request, inside a session or not (308)', () => {
   const SESSION = '88888888-8888-7888-8888-888888888888';
   const PR_ENTITY = '99999999-9999-7999-8999-999999999999';
 
@@ -730,50 +730,21 @@ describe('`task link-pr` claims the linking session, best effort', () => {
     delete process.env.TM8_SESSION_ID;
   });
 
-  it('creates a created_in edge from the linked PR entity to this session', async () => {
-    process.env.TM8_SESSION_ID = SESSION;
-    reply = {
-      status: 200,
-      body: {
-        data: { patches: [{ id: TASK, kind: 'task' }, { id: PR_ENTITY, kind: 'pull_request' }] },
-        requestId: 'req_t',
-      },
-    };
-    const r = await drive(['task', 'link-pr', TASK, 'https://github.com/o/r/pull/7']);
-    expect(r.code).toBe(0);
-    expect(seen).toHaveLength(2);
-    const second = seen[1] as Seen;
-    expect(second.pathname).toBe(bindPath('edges.create', {}));
-    expect(second.body).toMatchObject({ srcId: PR_ENTITY, dstId: SESSION, type: 'created_in' });
-    expect(r.stderr).toBe('');
-  });
-
-  it('does nothing without a session, and never fails the link on a claim error', async () => {
-    reply = {
-      status: 200,
-      body: { data: { patches: [{ id: PR_ENTITY, kind: 'pull_request' }] }, requestId: 'req_t' },
-    };
-    const r1 = await drive(['task', 'link-pr', TASK, 'https://github.com/o/r/pull/7']);
-    expect(r1.code).toBe(0);
-    expect(seen).toHaveLength(1);
-
-    // A 404 on the claim is the benign cross-database answer: silent, exit 0.
-    seen = [];
-    process.env.TM8_SESSION_ID = SESSION;
-    const linkReply = {
-      status: 200,
-      body: { data: { patches: [{ id: PR_ENTITY, kind: 'pull_request' }] }, requestId: 'req_t' },
-    };
-    replyFor = (n) => (n === 0
-      ? linkReply
-      : {
-          status: 404,
-          body: { error: { code: 'not_found', message: 'no session', requestId: 'req_t', retryable: false } },
-        });
-    const r2 = await drive(['task', 'link-pr', TASK, 'https://github.com/o/r/pull/7']);
-    replyFor = undefined;
-    expect(r2.code).toBe(0);
-    expect(r2.stderr).toBe('');
-    expect(seen).toHaveLength(2);
-  });
+  for (const session of [undefined, SESSION]) {
+    it(`${session ? 'with' : 'without'} TM8_SESSION_ID: one link request, no edges.create`, async () => {
+      if (session) process.env.TM8_SESSION_ID = session;
+      reply = {
+        status: 200,
+        body: {
+          data: { patches: [{ id: TASK, kind: 'task' }, { id: PR_ENTITY, kind: 'pull_request' }] },
+          requestId: 'req_t',
+        },
+      };
+      const r = await drive(['task', 'link-pr', TASK, 'https://github.com/o/r/pull/7']);
+      expect(r.code).toBe(0);
+      expect(seen).toHaveLength(1);
+      expect(seen.some((x) => (x as Seen).pathname === bindPath('edges.create', {}))).toBe(false);
+      expect(r.stderr).toBe('');
+    });
+  }
 });

@@ -6,7 +6,7 @@ import './task-git-section.css';
 
 /**
  * THE TASK'S GIT SECTION — what this task tracks (PRs, commits), who produced
- * it (provenance: commit → `created_in` → session), and whether the 082
+ * it (provenance: commit → `authored_from` → session), and whether the 082
  * completion gate would let `complete` through RIGHT NOW.
  *
  * CHIP VOCABULARY IS CONSUMED, NOT FORKED: the PR rows render through Lane
@@ -15,7 +15,7 @@ import './task-git-section.css';
  * their null=no-claim semantics all the way through.
  *
  * SELF-FETCHING over `seam.connections`, the same read the Connections tab
- * uses: `tracks` edges name the PRs and commits; each commit's `created_in`
+ * uses: `tracks` edges name the PRs and commits; each commit's `authored_from`
  * edge names the session that produced it. Read once per mount plus a manual
  * refresh — the header chips already flip live off graph events; this section
  * is the DETAIL reading, not a second live feed.
@@ -41,7 +41,7 @@ interface CommitRow {
   sha: string;
   repository: string;
   message: string;
-  /** The session the `created_in` edge names, when one does. */
+  /** The session the commit's `authored_from` edge names, when one does. */
   session: { id: string; title: string } | null;
 }
 
@@ -84,16 +84,24 @@ export function TaskGitSection({ seam, taskId, completionGate, onOpenEntity }: T
           commits.push({ id: peer.id, ...commit, session: null });
         }
       }
-      // Provenance: each commit's `created_in` edge names its session. Capped
+      // Provenance: each commit's OUTGOING `authored_from` edge names its
+      // session. Only a work_session target counts (the edge type also points
+      // at chats) — this is the commit's session, as `created_in` was. Capped
       // — this is a trail, not a ledger dump.
       const sessions = new Map<string, string>();
       await Promise.all(
         commits.slice(0, COMMIT_PROVENANCE_CAP).map(async (row) => {
           try {
-            const links = await seam.connections(row.id as EntityId, { types: ['created_in'], limit: 5 });
-            const edge = links.items[0];
+            const links = await seam.connections(row.id as EntityId, {
+              types: ['authored_from'],
+              direction: 'outgoing',
+              limit: 5,
+            });
+            const edge = links.items.find(
+              (e) => e.source.id === row.id && e.target.kind === 'work_session',
+            );
             if (edge) {
-              const session = peerOf(edge, row.id);
+              const session = edge.target;
               row.session = { id: session.id, title: session.title };
               sessions.set(session.id, session.title);
             }

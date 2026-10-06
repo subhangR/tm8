@@ -181,7 +181,7 @@ const QUESTIONS = [
 const newId = async (): Promise<string> => (await sql(`select internal.new_id()::text id`))[0]!.id as string;
 
 /**
- * A session as execution.spawn leaves one: its teammate (relates_to), its task
+ * A session as execution.spawn leaves one: its teammate (participates_in), its task
  * (working_on), its parent, and a recorded manifest carrying its posture.
  */
 async function newSession(opts: {
@@ -201,8 +201,6 @@ async function newSession(opts: {
     [id, opts.status ?? 'running']);
   await sql(`insert into public.edges(space_id, src_id, dst_id, type, created_by)
              values ($1, $2, $3, 'participates_in', $2)`, [w.space, teammate, id]);
-  await sql(`insert into public.edges(space_id, src_id, dst_id, type, created_by)
-             values ($1, $2, $3, 'relates_to', $3)`, [w.space, id, teammate]);
   if (opts.task) {
     await sql(`insert into public.edges(space_id, src_id, dst_id, type, created_by)
                values ($1, $2, $3, 'working_on', $3)`, [w.space, id, opts.task]);

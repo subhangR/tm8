@@ -54,8 +54,8 @@ async function historicSession(
      values($1,$2,$3,$4,$5, case when $6::text is null then null else now() - $6::interval end)`,
     [id, key, row.status, row.endedKind ?? null, row.endedReason ?? null, row.exitedAgo ?? null],
   );
-  await q(`insert into public.edges(space_id,src_id,dst_id,type,created_by) values($1,$2,$3,'relates_to',$4)`, [
-    spaceId, id, teammateId, memberId,
+  await q(`insert into public.edges(space_id,src_id,dst_id,type,created_by) values($1,$2,$3,'participates_in',$4)`, [
+    spaceId, teammateId, id, memberId,
   ]);
   ids[key] = id;
   return id;

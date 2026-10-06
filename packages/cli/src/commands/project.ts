@@ -271,7 +271,7 @@ async function projectBranches(cmd: CommandContext): Promise<ExitCode> {
 
 /**
  * `project file-history` — the revisions of one path, newest first, each with
- * its `created_in` session attribution when the graph recorded one. A READ,
+ * its `authored_from` session attribution when the graph recorded one. A READ,
  * argv-only git server-side; the path travels as a `?path=` pathspec and the
  * directory always comes from the project row.
  */
@@ -293,7 +293,7 @@ async function projectFileHistory(cmd: CommandContext): Promise<ExitCode> {
 /**
  * `project blame` — working-tree blame of one path, hunks with commit oid and
  * the SESSION that produced the commit. Absent facts are absent claims: a
- * commit with no `created_in` edge renders "no tm8 session recorded".
+ * commit with no `authored_from` edge renders "no tm8 session recorded".
  */
 async function projectBlame(cmd: CommandContext): Promise<ExitCode> {
   refuseMutationId('project blame', cmd.options.value('mutation-id'));

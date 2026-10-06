@@ -940,7 +940,7 @@ export interface WorkSessionResumeInfo {
   spaceId: string;
   /** Parent work session persisted on the entity hierarchy; the coordinator return path. */
   parentSessionId: string | null;
-  /** From the `relates_to` edge; null if the edge is somehow gone. */
+  /** From the `participates_in` edge; null if the edge is somehow gone. */
   teamMemberId: string | null;
   projectId: string | null;
   taskIds: string[];

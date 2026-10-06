@@ -246,9 +246,10 @@ describe('072 persona-pinned agent auth sessions', () => {
         [launched, fixture.personaId],
       )).rows[0]!;
     });
+    // 309: spawn writes the session's teammate as participates_in only.
     expect(receipt).toEqual({
       created_by: fixture.memberB,
-      relates_to: true,
+      relates_to: false,
       participates_in: true,
     });
 

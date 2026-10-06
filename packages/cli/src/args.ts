@@ -95,7 +95,7 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   'force-new-task',      // session spawn/dispatch --force-new-task
   'allow-tightening',    // kind update --allow-tightening
   'confirm-agent-generated', // teammate interaction-profile set-default
-  'no-session-link',     // entity create — suppress the automatic created_in edge
+  'no-session-link',     // entity create — accepted, no effect since 308 (the server records authored_from)
   'no-activate',         // workspace tabs open --no-activate
   'clear',               // task axis --clear
   'untick',              // task tick --untick

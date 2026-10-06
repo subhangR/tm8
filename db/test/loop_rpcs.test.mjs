@@ -147,18 +147,24 @@ test('step 4 — spawn a session against that task, with a manifest', () => {
   assert.equal(state.session.content.agent_tool, 'claude');
   assert.equal(state.session.content.node_id, 'node-local');
 
-  // The session is bound to the task it was spawned for, and to its persona.
+  // The session is bound to the task it was spawned for, and to its persona
+  // (participates_in, persona -> session; 309 dropped the relates_to duplicate).
   const edges = rows(
     `select type, dst_id from public.edges where src_id = ${uuid(state.session.id)} order by type`,
     { claims: w.claimsA },
   );
   assert.deepEqual(
     edges,
-    [
-      { type: 'relates_to', dst_id: w.personaA },
-      { type: 'working_on', dst_id: state.task.id },
-    ],
-    'spawn must attach the session to its task (working_on) and its persona (relates_to)',
+    [{ type: 'working_on', dst_id: state.task.id }],
+    'spawn must attach the session to its task (working_on)',
+  );
+  assert.deepEqual(
+    rows(
+      `select type, src_id from public.edges where dst_id = ${uuid(state.session.id)} and type = 'participates_in'`,
+      { claims: w.claimsA },
+    ),
+    [{ type: 'participates_in', src_id: w.personaA }],
+    'spawn must attach the session to its persona (participates_in)',
   );
 
   ok(

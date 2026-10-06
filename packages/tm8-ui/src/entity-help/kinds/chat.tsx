@@ -271,7 +271,7 @@ export const CHAT_HELP: KindHelpModule = {
     intro: (
       <p>
         A chat has few named edges, and each one does a job. <strong>About</strong> points at what the chat
-        concerns. <strong>Authored here</strong> stamps everything the chat&rsquo;s agent writes with the chat as its
+        concerns. <strong>Made here</strong> stamps everything the chat&rsquo;s agent writes with the chat as its
         source. Everything else is the general-purpose wiring every entity shares. Look for the about edge first,
         because it is what the teammate is told the conversation is for.
       </p>
@@ -282,7 +282,7 @@ export const CHAT_HELP: KindHelpModule = {
       'authored_from:incoming':
         'Every message this chat’s agent posts is stamped with the chat as its source. The stamp comes from the agent’s own credential, never from the request, so it cannot be claimed falsely.',
       'about:incoming': 'Another chat or a memory that is about this chat.',
-      'created_in:outgoing': 'Client-asserted provenance: the chat was started from inside that work session.',
+      'authored_from:outgoing': 'The work session the chat was made during, recorded by the server.',
     },
     spotlight: ['message', 'artifact', 'memory', 'form'],
   },

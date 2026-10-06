@@ -2313,7 +2313,7 @@ const ROWS: Record<OperationName, Row> = {
     tags: ['git', 'history', 'log', 'file', 'revision', 'attribution', 'provenance'],
     notes: [
       'a READ — argv-only git log --follow; the path is a pathspec inside the project checkout, never a directory',
-      'each revision carries the created_in session join when the graph recorded one; "no tm8 session recorded" is the honest absence',
+      'each revision carries the authored_from session join when the graph recorded one; "no tm8 session recorded" is the honest absence',
     ],
   },
   'projects.file.blame': {
@@ -2325,7 +2325,7 @@ const ROWS: Record<OperationName, Row> = {
     tags: ['git', 'blame', 'attribution', 'provenance', 'session', 'hunk'],
     notes: [
       'a READ — argv-only git blame --porcelain, bounded by --max-lines; the cut reports how many lines it holds back',
-      'attribution comes ONLY from the created_in edge; absent facts are absent claims',
+      'attribution comes ONLY from the authored_from edge; absent facts are absent claims',
     ],
   },
   'projects.update': {

@@ -8,7 +8,7 @@ import './project-git.css';
 /**
  * THE BLAME VIEW WITH SESSION ATTRIBUTION — which lane wrote this hunk
  * (Tier 1 #8). Line-ranges grouped into hunks by the server, each joined to
- * the `created_in` provenance graph; the overlay names the session and links
+ * the `authored_from` provenance graph; the overlay names the session and links
  * through to its panel.
  *
  * BOUNDED BY CONSTRUCTION with a STATED ceiling: the first read asks for

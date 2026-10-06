@@ -360,7 +360,7 @@ export type CoreEntityState =
        * NOTHING for it. Carried on the summary because it is the mechanical
        * association key — a PR whose `headRef` equals a session's
        * `checkoutBranch` is that session's PR without anyone remembering to
-       * link it (107), at LOWER confidence than created_in/in_worktree.
+       * link it (107), at LOWER confidence than authored_from/in_worktree.
        */
       headRef?: string | null }
   | { kind: 'commit'; repository: string; sha: string; message: string; committedAt?: string | null }
@@ -5542,7 +5542,7 @@ export interface ProjectBranchTopology {
 }
 
 /**
- * The tm8 work session a commit's `created_in` provenance edge names
+ * The tm8 work session a commit's `authored_from` provenance edge names
  * (082's `record_session_commit` mints the edge; this type is the read side).
  *
  * ABSENT FACTS ARE ABSENT CLAIMS: consumers receive `null` when no edge
@@ -5574,7 +5574,7 @@ export interface ProjectFileRevision {
   deletions: number | null;
   /** The path AT that revision — history follows renames. */
   path: string;
-  /** `created_in` join; null = no tm8 session recorded this commit. */
+  /** `authored_from` join; null = no tm8 session recorded this commit. */
   session: CommitSessionAttribution | null;
 }
 
@@ -5614,7 +5614,7 @@ export interface ProjectBlameHunk {
   committedAt: string;
   summary: string;
   uncommitted: boolean;
-  /** `created_in` join; null = no tm8 session recorded this commit. */
+  /** `authored_from` join; null = no tm8 session recorded this commit. */
   session: CommitSessionAttribution | null;
 }
 

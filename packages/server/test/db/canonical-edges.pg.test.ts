@@ -178,9 +178,8 @@ describe('303 canonical edges', () => {
     const session = await spawn('participant', [id['origin']!]);
     expect(await one(`select props->>'origin' v from public.edges
                        where type = 'participates_in' and src_id = $1 and dst_id = $2`, [id['persona'], session])).toBe('spawn');
-    await asOwner(async (c) => {
-      await c.query(`delete from public.edges where type = 'relates_to' and src_id = $1`, [session]);
-    });
+    // 309: spawn no longer writes the legacy relates_to duplicate.
+    expect(Number(await one(`select count(*) v from public.edges where type = 'relates_to' and src_id = $1`, [session]))).toBe(0);
     const issued = await asApp(async (c) => (await c.query(
       `select public.issue_work_session_agent_session($1, $2, $3, now() + interval '1 hour') v`,
       [session, id['persona'], 'a'.repeat(64)])).rows[0]?.v);
@@ -211,6 +210,8 @@ describe('303 canonical edges', () => {
     await edge(id['input']!, 'attached_to', id['root']!);
     await edge(id['root']!, 'relates_to', id['spec']!);
     const session = await spawn('worker', [id['root']!]);
+    // The legacy duplicate a pre-309 spawn wrote, as it sits in old data.
+    await edge(session, 'relates_to', id['persona']!);
     const touched = [id['story']!, id['root']!, id['output']!, id['input']!, id['spec']!, session, id['persona']!];
     const rowsBefore = await edgeRows(touched);
     const before = await subgraph(id['story']!);

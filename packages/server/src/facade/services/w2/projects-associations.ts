@@ -642,8 +642,9 @@ export class W2ProjectsAssociationsService {
   }
 
   /**
-   * The attribution join — commit sha → `commits` row → `created_in` edge →
-   * work_session (→ its teammate over the newest `relates_to` edge). Read
+   * The attribution join — commit sha → `commits` row → `authored_from` edge
+   * (308; it replaced `created_in`) → work_session (→ its teammate over the
+   * newest `participates_in` edge). Read
    * under the caller's claims so RLS decides what provenance is visible.
    *
    * ABSENT FACTS ARE ABSENT CLAIMS: a sha with no row here gets NO entry in
@@ -672,7 +673,7 @@ export class W2ProjectsAssociationsService {
               ws.entity_id as session_id, ws.title as session_title, ws.agent_tool,
               tm.entity_id as team_member_id, tm.name as team_member_name
          from public.commits c
-         join public.edges e on e.src_id = c.entity_id and e.type = 'created_in'
+         join public.edges e on e.src_id = c.entity_id and e.type = 'authored_from'
          join public.work_sessions ws on ws.entity_id = e.dst_id
          left join lateral (
            select t.entity_id, t.name
@@ -687,7 +688,7 @@ export class W2ProjectsAssociationsService {
       [unique],
     );
     for (const row of rows) {
-      // One `created_in` per commit ENTITY; if the same sha is mirrored in
+      // One `authored_from` per commit ENTITY; if the same sha is mirrored in
       // two visible spaces, first (oldest) recorded provenance wins here.
       if (attribution.has(row.sha)) continue;
       attribution.set(row.sha, {
