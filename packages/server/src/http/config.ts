@@ -146,6 +146,20 @@ export interface ServerConfig {
    */
   readonly publicOrigin?: string;
   /**
+   * W9c: space links across servers (`TM8_REMOTE_SPACE_LINKS=on`). Ships DARK:
+   * default off, and off is today's behaviour exactly — a link to another
+   * server refuses `space_link_remote_disabled`, `spaceLinks.inbound.grant`
+   * refuses, and the server-to-server routes (`/link/v1/*`) answer 404.
+   */
+  readonly remoteSpaceLinks?: boolean;
+  /**
+   * DEV ONLY (`TM8_REMOTE_SPACE_LINKS_ALLOW_LOOPBACK=1`): lets the remote-link
+   * client reach a server whose base URL is plain http on a loopback address,
+   * so two servers on one machine can link. The guarded HTTPS client and its
+   * SSRF policy are untouched; every other target still goes through it.
+   */
+  readonly remoteSpaceLinksAllowLoopback?: boolean;
+  /**
    * Upper bound on the Postgres pool (`TM8_DB_POOL_MAX`). Default 8.
    *
    * This number IS the node's read concurrency: the pool queues past it and
@@ -592,6 +606,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     nodeMode,
     spaceSessions,
     ...(publicOrigin ? { publicOrigin } : {}),
+    // Present only when on, so an unset switch leaves the config as it was.
+    ...(envBoolean(env.TM8_REMOTE_SPACE_LINKS, 'TM8_REMOTE_SPACE_LINKS', false) ? { remoteSpaceLinks: true } : {}),
+    ...(envBoolean(env.TM8_REMOTE_SPACE_LINKS_ALLOW_LOOPBACK, 'TM8_REMOTE_SPACE_LINKS_ALLOW_LOOPBACK', false)
+      ? { remoteSpaceLinksAllowLoopback: true } : {}),
     // `multi` implies the kill switch. The explicit env var still wins when it
     // asks for MORE restriction (a hardened single-player node), and can never
     // ask for less: `||` here means no combination of the two can produce a
