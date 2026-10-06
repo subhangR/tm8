@@ -18,7 +18,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PtyHostService } from '../src/pty/PtyHostService.js';
-import { SpawnService, replayedSelection } from '../src/spawn/SpawnService.js';
+import { RESUME_FAILED_PREFIX, SpawnService, replayedSelection } from '../src/spawn/SpawnService.js';
 import { resolveAgentBinary } from '../src/spawn/manifest.js';
 import { SpawnError, type WorkSessionResumeInfo } from '../src/spawn/types.js';
 import { FakeGraph } from './fake-graph.js';
@@ -257,6 +257,19 @@ describe('SpawnService.resume — guards and orchestration', () => {
     const result = await serviceWith().resume(AUTH, { sessionId: SESSION_ID });
     expect(graph.spawnContextInputs.at(-1)).not.toHaveProperty('selection');
     expect(result.manifest.context?.groups?.memories).toEqual({ mode: 'default', reason: 'replay-invalid' });
+  });
+
+  it('a resume that fails at spawn records "Failed to resume: <error>" (Spec D1 §9 scenario 29)', async () => {
+    // No agent binary on PATH: the preflight fails AFTER the RPC moved the row
+    // to spawning, which is exactly "a resume fails at spawn". The row still
+    // carries the previous run's ended kind, so the reason is what says so.
+    await expect(
+      serviceWith({ PATH: join(dataDir, 'no-bin'), HOME: dataDir }).resume(AUTH, { sessionId: SESSION_ID }),
+    ).rejects.toThrow();
+    const failed = graph.transitions.filter((t) => t.sessionId === SESSION_ID);
+    expect(failed.map((t) => t.status)).toEqual(['failed']);
+    expect(failed[0]!.endedReason).toMatch(new RegExp(`^${RESUME_FAILED_PREFIX}\\S`));
+    expect(failed[0]!.endedReason).toContain(failed[0]!.error!);
   });
 
   it('does not boot a second child on a ledger replay', async () => {

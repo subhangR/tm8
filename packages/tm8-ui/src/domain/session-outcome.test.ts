@@ -21,6 +21,7 @@ import {
   sessionLineTwo,
   sessionNeedsAttentionOf,
   sessionOutcomeOf,
+  RESUME_FAILED_PREFIX,
   sessionRowWord,
   sessionTabOf,
   sessionVerbsOf,
@@ -347,11 +348,16 @@ describe('§5.3.1 awkward cases', () => {
   });
 
   it('case 11 — a resume that fails at spawn: Interrupted, "Failed to resume", with the error', () => {
-    const s = session({ status: 'failed', endedReason: 'Resume failed: no native conversation id.' });
+    // The reason SpawnService.resume writes; the row still carries the
+    // PREVIOUS run's ended kind, which must not win.
+    const s = session({ status: 'failed', endedKind: 'out_of_memory', endedReason: `${RESUME_FAILED_PREFIX}agent CLI claude was not found` });
     const w = sessionRowWord(s, 'not-running', ctx)!;
     expect(w.word).toBe('Failed to resume');
+    expect(w.reason).toBe('Failed to resume: agent CLI claude was not found');
     expect(sessionTabOf(s)).toBe('interrupted');
     expect(interruptedGroupOf(s)).toBe('failed_resume');
+    // A reason that merely mentions resuming is not a failed resume.
+    expect(sessionRowWord(session({ status: 'failed', endedReason: 'It can be resumed to try again.' }), 'not-running', ctx)!.word).toBe('Failed to start');
     // The client-side flag works too, when the reason does not say so.
     expect(sessionRowWord(session({ status: 'failed' }), 'not-running', { resumeFailed: true })!.word).toBe('Failed to resume');
   });

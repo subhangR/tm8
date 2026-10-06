@@ -66,6 +66,13 @@ export interface SessionClaim {
   endReason?: string | null;
 }
 
+/**
+ * The ended reason a resume that failed at spawn writes — the server's
+ * `RESUME_FAILED_PREFIX` (packages/execution SpawnService.ts). Spec D1 §9
+ * scenario 29.
+ */
+export const RESUME_FAILED_PREFIX = 'Failed to resume: ';
+
 const str = (v: unknown): string | null => (typeof v === 'string' && v.length > 0 ? v : null);
 
 /** Is this state the work_session arm? The one kind check session code needs. */
@@ -362,11 +369,13 @@ export function sessionRowWord(
 
   // -- open, process ended: Interrupted -------------------------------------
   const reason = rec.endedReason;
+  // Before the ended kind: resume keeps the PREVIOUS run's kind on the row, so
+  // a failed resume would otherwise read as the old crash (scenario 29).
+  if (rec.status === 'failed' && (ctx.resumeFailed === true || reason?.startsWith(RESUME_FAILED_PREFIX))) {
+    return word('failed_resume', 'Failed to resume', 'block', 'ring-x', 'red', true, reason);
+  }
   if (rec.status === 'failed' && rec.endedKind === null) {
-    const resumed = ctx.resumeFailed === true || /resum/i.test(reason ?? '');
-    return resumed
-      ? word('failed_resume', 'Failed to resume', 'block', 'ring-x', 'red', true, reason)
-      : word('failed_start', 'Failed to start', 'block', 'ring-x', 'red', true, reason);
+    return word('failed_start', 'Failed to start', 'block', 'ring-x', 'red', true, reason);
   }
   if (rec.endedKind === 'credential_revoked') {
     return word('credential', 'Credential disconnected', 'block', 'ring-x', 'red', true, reason);
