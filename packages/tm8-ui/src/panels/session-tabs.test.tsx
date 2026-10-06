@@ -218,4 +218,36 @@ describe('§5.3.1 case 12 — about 10 s of grace before a row leaves Running', 
     rerender({ rows: [], on: false });
     expect(result.current).toEqual([]);
   });
+
+  it('switching INTO Running is not a row leaving it: the other tab’s rows never linger', () => {
+    const a = { id: 'a' };
+    const x = { id: 'x' };
+    const { result, rerender } = renderHook(({ rows, on }) => useRunningGrace(rows, on), {
+      initialProps: { rows: [x] as readonly { id: string }[], on: false },
+    });
+    rerender({ rows: [a], on: true });
+    expect(result.current.map((r) => r.id)).toEqual(['a']);
+  });
+
+  it('the LAST row leaving Running still gets its grace', () => {
+    const a = { id: 'a' };
+    const { result, rerender } = renderHook(({ rows }) => useRunningGrace(rows, true), {
+      initialProps: { rows: [a] as readonly { id: string }[] },
+    });
+    rerender({ rows: [] });
+    expect(result.current.map((r) => r.id)).toEqual(['a']);
+    act(() => { vi.advanceTimersByTime(10_100); });
+    expect(result.current).toEqual([]);
+  });
+
+  it('Interrupted → Running in the panel shows only Running rows (the reported bug)', () => {
+    const view = mount();
+    fireEvent.click(view.getByRole('tab', { name: /Interrupted/ }));
+    fireEvent.click(view.getByRole('tab', { name: /Running/ }));
+    const tiles = view.getAllByTestId('list-tile').map((t) => t.getAttribute('data-session-node'));
+    expect(tiles).not.toContain(restart1.id);
+    expect(tiles).not.toContain(restart2.id);
+    expect(tiles).not.toContain(oom.id);
+    expect(tiles).toContain(working.id);
+  });
 });
