@@ -103,6 +103,7 @@ import { ChildCountBadge } from './list/ChildCountBadge';
 import { RowLead, ToneKindIcon, leadTooltip } from './list/RowLead';
 import { TileProgressBar } from './list/TileProgressBar';
 import { PendingFormsChip, hasPendingFormsChip } from '../forms/PendingFormsChip';
+import { LiveSessionChip, liveSessionChipOf } from './LiveSessionChip';
 import { usePendingForms } from '../forms/pending';
 import { SessionLaneLine, WORKTREE_RELATION, sessionLaneOf } from '../git/SessionLane';
 import { TileCountBadges, hasTileCounts } from './list/TileCountBadges';
@@ -4117,10 +4118,13 @@ export function Tile({
       the count badges — doors where a count names a real collection kind.
       Clickability requires a wired `connectionsOf`; without the projection
       an opened group could never fill. */
+  const liveSession = row.badges.liveSession;
   const tileBadges =
-    sessionChip != null || linkedPullRequests.length > 0 || hasTileCounts(row.counters, countVisible) || hasPendingFormsChip(pendingForms) ? (
+    sessionChip != null || linkedPullRequests.length > 0 || hasTileCounts(row.counters, countVisible) || hasPendingFormsChip(pendingForms) || liveSessionChipOf(liveSession) != null ? (
       <>
         <PendingFormsChip pending={pendingForms} />
+        {/* P0g: "No live session" / "Session crashed" on working and blocked tasks. */}
+        <LiveSessionChip live={liveSession} />
         {sessionChip}
         {linkedPullRequests.length > 0 ? (
           <LinkedPullRequestChips pullRequests={linkedPullRequests} placement="tile" />
