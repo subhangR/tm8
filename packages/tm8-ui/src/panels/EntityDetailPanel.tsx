@@ -565,12 +565,20 @@ export interface EntityDetailPanelProps {
 }
 
 export interface EmbeddedChrome {
-  /** Where the bar's verbs render. Null ⇒ not mounted yet; nothing is drawn. */
+  /** The kind's own verbs (the bar minus `commonActions`, save, transfer,
+      sharing). Null ⇒ not mounted yet; nothing is drawn. */
   verbsSlot: HTMLElement | null;
+  /** The body's own controls: the session surface switch, a frame's
+      controls, a reader's toolbar, the forms-waiting chip. */
+  kindSlot: HTMLElement | null;
+  /** The verbs every kind shares (`commonActions`, e.g. Run). */
+  commonVerbsSlot: HTMLElement | null;
+  /** A session's live context reading, for the host to read as text. */
+  statsSlot: HTMLElement | null;
+  /** Primaries drawn in `commonVerbsSlot` rather than `verbsSlot`. */
+  commonActions?: readonly ActionRef[];
   /** The top of the host's open ⋯ menu (Rename). Null ⇒ closed. */
   menuSlot: HTMLElement | null;
-  /** After the host's own ⋯ items: secondary verbs (Transfer). */
-  secondarySlot: HTMLElement | null;
   /** The end of the host's open ⋯ menu, after its own items (destructive verbs). */
   dangerSlot: HTMLElement | null;
   /** Primaries the host draws itself (Workspace's own Chat toggle). */
@@ -993,22 +1001,87 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
    * it. Registry refusals (wrong state) still render disabled-with-reason.
    */
   const embedded = props.embeddedChrome ?? null;
-  const barConfig: KindConfig = embedded
-    ? {
-        ...config,
-        panel: {
-          ...config.panel,
-          primaries: (config.panel.primaries ?? []).filter((ref) => {
-            if (embedded.omitActions?.includes(ref)) return false;
-            const flow = resolveAction(ref).flow;
-            if (flow === 'launch' && props.launch) return true;
-            if (flow === 'merge-pr' && mergePr) return true;
-            if (!props.onAction) return false;
-            return props.wiredActions ? props.wiredActions.includes(ref) : true;
-          }),
-        },
-      }
+  const supportedPrimaries = embedded
+    ? (config.panel.primaries ?? []).filter((ref) => {
+        if (embedded.omitActions?.includes(ref)) return false;
+        const flow = resolveAction(ref).flow;
+        if (flow === 'launch' && props.launch) return true;
+        if (flow === 'merge-pr' && mergePr) return true;
+        if (!props.onAction) return false;
+        return props.wiredActions ? props.wiredActions.includes(ref) : true;
+      })
+    : null;
+  const withPrimaries = (primaries: readonly ActionRef[]): KindConfig => ({
+    ...config,
+    panel: { ...config.panel, primaries: [...primaries] },
+  });
+  /* Embedded: the kind's own verbs and the shared ones render as two bars
+     (the host's top and bottom sections); one flow popup, on whichever bar
+     holds the open verb. */
+  const commonRefs = embedded?.commonActions ?? [];
+  const barConfig: KindConfig = supportedPrimaries
+    ? withPrimaries(supportedPrimaries.filter((ref) => !commonRefs.includes(ref)))
     : config;
+  const commonBarConfig: KindConfig | null = supportedPrimaries
+    ? withPrimaries(supportedPrimaries.filter((ref) => commonRefs.includes(ref)))
+    : null;
+  const flowInCommonBar = flowRef !== null && commonRefs.includes(flowRef);
+
+  const flowSurface = (
+          flowRef && resolveAction(flowRef).flow === 'merge-pr' && mergePr && mergeSubject ? (
+            <MergePullRequestFlow
+              key={flowRef}
+              pr={mergeSubject}
+              headSha={mergePr.headShaFor?.(detail.id) ?? null}
+              githubLogin={mergePr.githubLogin ?? null}
+              onMerge={(input) => mergePr.onMerge(detail.id, input)}
+              onDismiss={() => setFlowRef(null)}
+              boundsRef={actionBarRef}
+            />
+          ) : flowRef && resolveAction(flowRef).flow === 'launch' && props.launch ? (
+            <LaunchComposerPopup
+              subject={detail}
+              /* The mode is the VERB's, read off the registry — so
+                 Coordinate commits a coordinator and not Run's worker,
+                 and no component here has to name either verb. */
+              /* THE CARD BELONGS TO ONE VERB, SO THE VERB IS ITS IDENTITY.
+                 `mode` and `verbLabel` are props, but parts of the config
+                 are STATE seeded once. Without this key, pressing
+                 Coordinate then Run could reuse the instance over stale
+                 refusal/pending state; the popup ALSO treats the verb's
+                 mode as prop-authoritative, so the payload follows the
+                 pressed button either way. Belt and key. */
+              key={flowRef}
+              verbLabel={resolveAction(flowRef).label}
+              {...(resolveAction(flowRef).launchMode
+                ? { mode: resolveAction(flowRef).launchMode }
+                : {})}
+              spaceId={props.launch.spaceId || ctx.spaceId}
+              teammates={props.launch.teammates}
+              projects={props.launch.projects}
+              capacity={props.launch.capacity}
+              jev={props.launch.jev}
+              loadInstalledPlugins={props.launch.loadInstalledPlugins}
+              selection={props.launch.selection}
+              profileFor={props.launch.profileFor}
+              upload={props.launch.upload}
+              onDispatch={props.launch.dispatch ? (note, key) => props.launch!.dispatch!(detail.id, note, key) : undefined}
+              jevKeyStatus={props.launch.jevKeyStatus}
+              sessionsSince={props.launch.sessionsSince}
+              onSpawn={props.launch.onSpawn}
+              loadDescription={
+                props.launch.descriptionOf
+                  ? () => props.launch!.descriptionOf!(detail.id)
+                  : undefined
+              }
+              canEditSubject={Boolean(props.launch.onUpdateEntity)}
+              onDismiss={() => setFlowRef(null)}
+              newClientMutationId={() =>
+                props.launch?.mutationId(detail.id) ?? newLaunchMutationId()
+              }
+            />
+          ) : null
+  );
 
   /** The panel bar's end cluster: the tab row's right edge, or — on a canvas — the floating bar. */
   const barEnd = (
@@ -1076,7 +1149,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         />
       ) : null}
       <ActionBar
-        barRef={actionBarRef}
+        barRef={flowInCommonBar ? undefined : actionBarRef}
         config={barConfig}
         /* The terminal archetype is the only bar that ALSO carries the
            five surface chips, so it is the only one whose primaries have
@@ -1136,61 +1209,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         {...(oneSurface && props.launch?.onFullOptions
           ? { onOpenLaunch: props.launch.onFullOptions, launchSubjectId: detail.id }
           : {})}
-        flowSurface={
-          flowRef && resolveAction(flowRef).flow === 'merge-pr' && mergePr && mergeSubject ? (
-            <MergePullRequestFlow
-              key={flowRef}
-              pr={mergeSubject}
-              headSha={mergePr.headShaFor?.(detail.id) ?? null}
-              githubLogin={mergePr.githubLogin ?? null}
-              onMerge={(input) => mergePr.onMerge(detail.id, input)}
-              onDismiss={() => setFlowRef(null)}
-              boundsRef={actionBarRef}
-            />
-          ) : flowRef && resolveAction(flowRef).flow === 'launch' && props.launch ? (
-            <LaunchComposerPopup
-              subject={detail}
-              /* The mode is the VERB's, read off the registry — so
-                 Coordinate commits a coordinator and not Run's worker,
-                 and no component here has to name either verb. */
-              /* THE CARD BELONGS TO ONE VERB, SO THE VERB IS ITS IDENTITY.
-                 `mode` and `verbLabel` are props, but parts of the config
-                 are STATE seeded once. Without this key, pressing
-                 Coordinate then Run could reuse the instance over stale
-                 refusal/pending state; the popup ALSO treats the verb's
-                 mode as prop-authoritative, so the payload follows the
-                 pressed button either way. Belt and key. */
-              key={flowRef}
-              verbLabel={resolveAction(flowRef).label}
-              {...(resolveAction(flowRef).launchMode
-                ? { mode: resolveAction(flowRef).launchMode }
-                : {})}
-              spaceId={props.launch.spaceId || ctx.spaceId}
-              teammates={props.launch.teammates}
-              projects={props.launch.projects}
-              capacity={props.launch.capacity}
-              jev={props.launch.jev}
-              loadInstalledPlugins={props.launch.loadInstalledPlugins}
-              selection={props.launch.selection}
-              profileFor={props.launch.profileFor}
-              upload={props.launch.upload}
-              onDispatch={props.launch.dispatch ? (note, key) => props.launch!.dispatch!(detail.id, note, key) : undefined}
-              jevKeyStatus={props.launch.jevKeyStatus}
-              sessionsSince={props.launch.sessionsSince}
-              onSpawn={props.launch.onSpawn}
-              loadDescription={
-                props.launch.descriptionOf
-                  ? () => props.launch!.descriptionOf!(detail.id)
-                  : undefined
-              }
-              canEditSubject={Boolean(props.launch.onUpdateEntity)}
-              onDismiss={() => setFlowRef(null)}
-              newClientMutationId={() =>
-                props.launch?.mutationId(detail.id) ?? newLaunchMutationId()
-              }
-            />
-          ) : null
-        }
+        flowSurface={flowInCommonBar ? null : flowSurface}
       />
       {editsPossible && (config.list.inlineEdit?.title || config.list.inlineEdit?.status) ? (
         <SaveControls save={save} />
@@ -1199,30 +1218,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
           Self-gating: renders nothing unless a remote server connection
           is registered, so the single-server case never sees it. Kind
           awareness lives in src/transfer, not here (§15.2). */}
-      <TransferControl
-        detail={detail}
-        {...(embedded
-          ? {
-              trigger: (open: () => void) =>
-                embedded.secondarySlot
-                  ? createPortal(
-                      <button
-                        type="button"
-                        className="pn-overflow__item"
-                        role="menuitem"
-                        onClick={() => {
-                          open();
-                          embedded.onMenuDone?.();
-                        }}
-                      >
-                        Transfer to another server…
-                      </button>,
-                      embedded.secondarySlot,
-                    )
-                  : null,
-            }
-          : {})}
-      />
+      <TransferControl detail={detail} />
       {/* THE TOMBSTONE VERB, ONE CLICK BACK. It used to ride the control
           strip as the last chip and, being the widest item there, was the
           one flex-wrap ejected — onto its own line, directly under `✕`. A
@@ -1259,6 +1255,27 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
     </>
     )
   );
+
+  /* EMBEDDED: the shared verbs (Run) in the host's bottom section — the same
+     ActionBar, executors, flows and refusals as the kind bar. */
+  const commonBar =
+    embedded?.commonVerbsSlot && commonBarConfig && (commonBarConfig.panel.primaries?.length ?? 0) > 0 && !oneSurface
+      ? createPortal(
+          <ActionBar
+            barRef={flowInCommonBar ? actionBarRef : undefined}
+            config={commonBarConfig}
+            iconVerbs="lead"
+            ctx={panelActionContext(detail, ctx, props.liveness)}
+            onAction={props.onAction}
+            wiredActions={props.wiredActions}
+            primaryCounts={props.primaryCounts}
+            openFlow={flowRef}
+            onFlow={props.launch || mergePr ? setFlowRef : undefined}
+            flowSurface={flowInCommonBar ? flowSurface : null}
+          />,
+          embedded.commonVerbsSlot,
+        )
+      : null;
 
   /* EMBEDDED ⋯ ITEMS: Rename rides the same save flow as the header's title
      editor; the destructive verb is the overflow's own `RowAction`. */
@@ -1343,6 +1360,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
       aria-label={`${config.label}: ${detail.title}`}
     >
       {embeddedMenu}
+      {commonBar}
       {embedded?.verbsSlot && !oneSurface ? createPortal(barEnd, embedded.verbsSlot) : null}
       {canvas || embedded ? null : <PanelHeader
         detail={detail}
@@ -1433,47 +1451,33 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
           declares none) would otherwise draw an empty padded row with a
           hairline under the tabs. No archetype gate — see `strip` above. */}
       {embedded ? (
-        /* THE EMBEDDED HEAD: the property pills (or, on a body that owns its
-           height, its tools row), inside the body's measure. No title — the
-           tab shows it (Subhang, feedback round 1). The spacer reserves the
-           host's floating group on this same first row. */
-        <div className="pn-embedded-head" data-testid="panel-embedded-head">
-          <div className="pn-embedded-head__measure">
-            <span className="pn-embedded-head__spacer" aria-hidden="true" />
-            {/* Row B (R14): the body's own surface switch and the live reading.
-                The chips switch the body, so they belong to the body. */}
-            {controlsRideBar && tab === 'content' ? (
-              <div className="pn-embedded-head__tools">
-                <div
-                  className="pn-panelbar__surface pn-embedded-head__surface"
-                  ref={setSurfaceSlot}
-                  data-testid="panel-surface-slot"
-                />
-                <div className="pn-embedded-head__status">
-                  {/* R16: the forms banner as ONE chip, just before the stats. */}
-                  {isTerminal && !isTombstone ? (
-                    <PendingFormsBanner
-                      variant="chip"
-                      sessionId={detail.id}
-                      onResume={props.liveness !== 'live' ? props.onResumeSession : undefined}
-                      resuming={props.resumingSession}
-                    />
-                  ) : null}
-                  {isTerminal && props.sessionContextSurface ? (
-                    <div className="pn-embedded-head__reading" data-testid="panel-session-context">
-                      {props.sessionContextSurface}
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            ) : null}
-            {strip ? (
+        <>
+          {/* THE EMBEDDED BODY HAS NO HEAD ROW (Subhang, round 4): the title is
+              the tab's, and every action lives in the host's action strip. The
+              property pills are the body's first content, in its measure. */}
+          {strip ? (
+            <div className="pn-embedded-head" data-testid="panel-embedded-head">
               <div className="pn-embedded-head__pills" data-testid="panel-controls">
                 {strip}
               </div>
-            ) : null}
-          </div>
-        </div>
+            </div>
+          ) : null}
+          {/* The session's forms-waiting chip and live reading ride the strip. */}
+          {embedded.kindSlot && isTerminal && !isTombstone && !oneSurface
+            ? createPortal(
+                <PendingFormsBanner
+                  variant="chip"
+                  sessionId={detail.id}
+                  onResume={props.liveness !== 'live' ? props.onResumeSession : undefined}
+                  resuming={props.resumingSession}
+                />,
+                embedded.kindSlot,
+              )
+            : null}
+          {embedded.statsSlot && isTerminal && props.sessionContextSurface
+            ? createPortal(props.sessionContextSurface, embedded.statsSlot)
+            : null}
+        </>
       ) : strip ? (
         <div className="pn-controls" data-testid="panel-controls">
           {/* The BAND is full-bleed; its contents ride the reading measure. */}
@@ -1622,8 +1626,8 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                     detail={detail}
                     tab={tab}
                     save={save}
-                    surfaceSlot={surfaceSlot}
-                    barSlot={barHasRoom ? surfaceSlot : null}
+                    surfaceSlot={embedded ? embedded.kindSlot : surfaceSlot}
+                    barSlot={embedded ? embedded.kindSlot : barHasRoom ? surfaceSlot : null}
                     attachmentSlot={bodyConsumesSlot ? attachmentSlot : null}
                     stripEdgeIds={attachmentSlot ? stripEdgeIds : undefined}
                     onSelectTab={selectTab}
@@ -1977,6 +1981,9 @@ function PanelBody(
            lift; this is the panel host finally supplying the data. Absent ⇒
            `/` types plain text in the source, which is what it did before. */
         skillOptions={props.skillOptions}
+        /* Embedded (Workspace): the reader's Edit / Download ride the host's
+           action strip instead of a toolbar row above the document. */
+        {...(props.embeddedChrome ? { toolbarSlot: props.embeddedChrome.kindSlot } : {})}
       />
     );
   }

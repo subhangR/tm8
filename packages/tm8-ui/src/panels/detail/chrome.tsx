@@ -496,10 +496,10 @@ export function ActionBar({
   /**
    * ICONS ONLY — the Workspace floating group (Subhang, feedback round 1).
    * Every primary draws its glyph alone, named by its word (tooltip and
-   * accessible name); the first keeps the lead (brand) tone. Off by default:
-   * every other bar unchanged.
+   * accessible name); with `'lead'` the first takes the lead (brand) tone.
+   * Off by default: every other bar unchanged.
    */
-  iconVerbs?: boolean;
+  iconVerbs?: boolean | 'lead';
 }) {
   /**
    * THE PROCESS CONTROL, IN THE PANEL — the same one-slot swap the row cluster
@@ -531,8 +531,8 @@ export function ActionBar({
             ? { onOpenLaunch, launchSubjectId }
             : {})}
           primary
-          mark={iconVerbs || markPrimaries}
-          lead={iconVerbs && index === 0}
+          mark={Boolean(iconVerbs) || markPrimaries}
+          lead={iconVerbs === 'lead' && index === 0}
           count={primaryCounts?.[ref]}
         />
       ))}

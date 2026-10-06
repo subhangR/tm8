@@ -1,7 +1,18 @@
-/* Workspace content area: tab body, floating group, in-tab states (Spec A §8,
-   §13; design log §7, §11). Workstream E. Tokens only, 4/8 grid. */
+/* Workspace content area: tab body, the entity action strip, in-tab states
+   (Spec A §8, §13; design log §11, R30; Subhang's feedback rounds 1-4).
+   Workstream E. Tokens only, 4/8 grid. */
 
-/* --- The entity content container: the body scrolls inside, the group does not --- */
+/* --- The entity band: [content row (body + chat)] [action strip] --- */
+.tws-entity-band {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+.tws-entity-band > .tws-entity-row {
+  flex: 1;
+  min-width: 0;
+}
 .tws-entity-main.tws-entity-host {
   display: flex;
   flex-direction: column;
@@ -26,38 +37,18 @@
   background: var(--pn-card);
 }
 
-/* --- The embedded head (design log R2, R13): title, then pills, in the measure --- */
+/* --- No head rows (Subhang, round 4): the property pills are the body's first
+   content, in its measure; nothing floats over the body. --- */
 .cv2-root .tws-panel .pn-embedded-head {
   flex: none;
   padding: var(--pn-space-3) var(--pn-space-3) 0;
 }
-.cv2-root .tws-panel .pn-embedded-head__measure {
-  display: flow-root;
-  max-width: var(--pn-read-measure);
-  margin: 0 auto var(--pn-space-3);
-}
-/* No title in the body: the tab shows it (Subhang, feedback round 1). The
-   property pills are the first row, and the floating group floats at the top
-   right ON that row. The spacer is the group's height and as wide as the part
-   of the group (plus a 16px gap) that overlaps the measure: the group sits
-   12px in from the content's top-right corner (100cqw = the panel). The pills
-   (a flex row, its own formatting context) narrow beside it and wrap there. */
-.cv2-root .tws-panel .pn-embedded-head__spacer {
-  float: right;
-  width: max(0px, calc(var(--tws-fg-w, 0px) + var(--pn-space-3) + var(--pn-space-4) - (100cqw - 100%) / 2));
-  height: var(--tws-fg-h, 32px);
-}
 .cv2-root .tws-panel .pn-embedded-head__pills {
-  min-height: var(--tws-fg-h, 32px);
-  display: flex;
-  align-items: center;
-}
-.cv2-root .tws-panel .pn-embedded-head__pills > * {
-  flex: 1 1 auto;
-  min-width: 0;
+  max-width: var(--pn-read-measure);
+  margin: 0 auto;
 }
 
-/* A document scrolls as ONE column: head, body and footer on one card plane. */
+/* A document scrolls as ONE column: pills, body and footer on one card plane. */
 .cv2-root .tws-panel > .pn-panel[data-embedded-flow='document'] {
   overflow-x: hidden;
   overflow-y: auto;
@@ -66,10 +57,9 @@
   flex: none;
   min-height: auto;
   overflow: visible;
-  padding-top: var(--pn-space-3);
 }
-/* R17: one left edge. The Connections and Messages sections start at the
-   title's left edge (the head measure) and may only grow to the RIGHT. */
+/* R17: one left edge. Connections and Messages start at the measure's left
+   edge and may only grow to the RIGHT. */
 .cv2-root .tws-panel > .pn-panel[data-embedded-flow='document']:not([data-embedded-section='content']) > :is(.pn-body, .chs-root) {
   box-sizing: border-box;
   padding-left: calc(var(--pn-space-3) + max(0px, (100cqw - 2 * var(--pn-space-3) - var(--pn-read-measure)) / 2));
@@ -80,12 +70,12 @@
   padding-left: var(--pn-space-6);
   padding-right: var(--pn-space-6);
 }
-/* The terminal fills the content column edge to edge (Subhang, round 3;
-   overrides R16's 24px). Everything around and behind the grid — the tools
-   row, any leftover beside a view-only grid drawn at the agent's PTY width —
-   is the terminal's own background, so there is no lighter strip or frame.
-   The grid stays left-aligned; its glyphs get a 4px inset on the `.xterm`
-   element, which FitAddon subtracts, so a drivable session still fits. */
+/* The terminal fills the content column edge to edge, up to the strip
+   (Subhang, rounds 3-4). Everything around and behind the grid — including
+   any leftover beside a view-only grid drawn at the agent's PTY width — is the
+   terminal's own background: no lighter strip or frame. The grid stays
+   left-aligned; its glyphs get a 4px inset on the `.xterm` element, which
+   FitAddon subtracts, so a drivable session still fits exactly. */
 .cv2-root .tws-panel > .pn-panel[data-archetype='terminal'] {
   background: var(--pn-x-term-bg);
 }
@@ -96,187 +86,83 @@
 .cv2-root .tws-panel > .pn-panel[data-archetype='terminal'] .term-host .xterm {
   padding: 0 var(--pn-space-1);
 }
-.cv2-root .tws-panel > .pn-panel[data-archetype='terminal'][data-embedded-flow='fill'] .pn-embedded-head {
-  padding-left: var(--pn-space-3);
-  padding-right: var(--pn-space-3);
-}
-.cv2-root .tws-panel > .pn-panel[data-archetype='terminal'][data-embedded-flow='fill'] .pn-embedded-head__tools {
-  /* Stats end 16px before the group (group 12px in; this head pads 12). */
-  padding-right: calc(var(--tws-fg-w, 0px) + var(--pn-space-4));
-}
 
-/* A body that owns its height (terminal, chat, frame) keeps its own scroll
-   under a fixed head: its tools row (surface chips, forms chip, stats) is the
-   first and only row, with the group on it; then 12px and the body. Full
-   width, 24px sides, no measure, no spacer. */
-.cv2-root .tws-panel > .pn-panel[data-embedded-flow='fill'] .pn-embedded-head {
-  /* ONE thin row (Subhang, round 2): the group's 32px plus 4px above and
-     below, 40px in all, and nothing else above the terminal. */
-  padding: var(--pn-space-1) var(--pn-space-6);
-}
-.tws-entity-host:has(.pn-panel[data-embedded-flow='fill']) > .tws-floating {
-  top: var(--pn-space-1);
-}
-.cv2-root .tws-panel > .pn-panel[data-embedded-flow='fill'] .pn-embedded-head__measure {
-  max-width: none;
-  margin: 0;
-}
-.cv2-root .tws-panel > .pn-panel[data-embedded-flow='fill'] .pn-embedded-head__spacer {
-  display: none;
-}
-.cv2-root .tws-panel .pn-embedded-head__tools {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--pn-space-3);
-  height: 36px;
-  margin-top: var(--pn-space-2);
-}
-.cv2-root .tws-panel > .pn-panel[data-embedded-flow='fill'] .pn-embedded-head__measure {
-  /* At least the group's row, so a body with no tools row (chat, frame)
-     still starts below the group, never under it. */
-  min-height: var(--tws-fg-h, 32px);
-}
-.cv2-root .tws-panel > .pn-panel[data-embedded-flow='fill'] .pn-embedded-head__tools {
-  /* Row B is the first row: the group sits top right on it, and the stats
-     end 16px before the group (it sits 12px in; the head pads 24). */
-  margin-top: 0;
-  height: var(--tws-fg-h, 32px);
-  /* The stats end 16px before the group (it sits 12px in; the head pads 24). */
-  padding-right: calc(var(--tws-fg-w, 0px) + var(--pn-space-1));
-}
-.cv2-root .tws-panel .pn-embedded-head__surface {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: var(--pn-space-1);
-}
-.cv2-root .tws-panel .pn-embedded-head__surface .pn-surface-switch {
-  display: flex;
-  gap: var(--pn-space-1);
-  padding: 0;
-  border: 0;
-  background: none;
-}
-.cv2-root .tws-panel .pn-embedded-head__surface .pn-surface-switch__tab {
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  border-radius: var(--pn-r-sm);
-  background: none;
-  color: var(--pn-ink-3);
-}
-.cv2-root .tws-panel .pn-embedded-head__surface .pn-surface-switch__tab svg {
-  width: 14px;
-  height: 14px;
-}
-.cv2-root .tws-panel .pn-embedded-head__surface .pn-surface-switch__tab:hover {
-  background: var(--pn-hover);
-}
-.cv2-root .tws-panel .pn-embedded-head__surface .pn-surface-switch__tab[aria-selected='true'] {
-  background: var(--pn-active);
-  color: var(--pn-ink);
-  box-shadow: none;
-}
-.cv2-root .tws-panel .pn-embedded-head__status {
-  display: flex;
-  align-items: center;
-  gap: var(--pn-space-2);
-  min-width: 0;
-}
-.cv2-root .tws-panel .pf-chip {
-  position: relative;
-  flex: none;
-}
-.cv2-root .tws-panel .pf-chip__trigger {
-  border: 0;
-  cursor: pointer;
-}
-.cv2-root .tws-panel .pf-chip__pop {
-  position: absolute;
-  top: calc(100% + var(--pn-space-1));
-  right: 0;
-  z-index: 40;
-  width: 400px;
-  max-width: calc(100cqw - 2 * var(--pn-space-6));
-  max-height: 60vh;
-  overflow: auto;
-  padding: var(--pn-space-4);
-  background: var(--pn-card);
-  border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-md);
-  box-shadow: var(--pn-sh-pop);
-  box-sizing: border-box;
-}
-.cv2-root .tws-panel .pf-chip__pop .pf-banner {
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background: none;
-}
-.cv2-root .tws-panel .pn-embedded-head__reading {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  font-family: var(--pn-mono);
-  font-size: var(--pn-fs-label);
-  font-variant-numeric: tabular-nums;
-  color: var(--pn-ink-3);
-}
-.cv2-root .tws-panel .pn-embedded-head__reading * {
-  font: inherit;
-  color: inherit;
-}
-
-/* The attention pill hangs under the group, never under it. */
+/* The attention pill keeps its own top-right corner of the body. */
 .cv2-root .tws-panel > .pn-panel > .att-block-dock > .att-block {
-  top: calc(var(--tws-fg-h, 32px) + 2 * var(--pn-space-3));
+  top: var(--pn-space-3);
 }
 
-/* --- Floating group (R27): one compact component for every kind. 32px tall,
-   2px padding, 28px buttons, 14px icons; 2px gaps within a cluster, 8px
-   between clusters. The hairline is a shadow ring so the box stays 32px. --- */
-.tws-floating.tws-fg {
-  align-items: center;
-  gap: var(--pn-space-2);
-  height: 32px;
-  padding: 2px;
-  border: 0;
-  border-radius: var(--pn-r-md);
-  /* Native on its surface (Subhang, round 2): no raised pill. On the light
-     content plane it takes the plane's own fill; on the always-dark terminal
-     body (data-surface=dark, its own dark token scope) it is transparent and
-     its buttons use the same tokens as the surface chips beside it. */
-  background: var(--pn-card);
-  box-shadow: none;
-  max-width: calc(100% - 2 * var(--pn-space-3));
-  box-sizing: border-box;
-}
-.tws-fg-cluster,
-.tws-fg-verbs,
-.tws-fg-seg,
-.cv2-root .tws-fg-verbs .pn-actions {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-.tws-fg-verbs:empty {
+/* Attachments (Subhang, round 2): the idle "Attach / or drop / paste" zone is
+   not drawn in Workspace; the strip's paperclip replaces it. Drop onto the
+   content keeps working: the strip's listeners ride the panel (its drop host),
+   not this box. Attached files still show as tiles. */
+.cv2-root .tws-panel .fn-tiles--idle {
   display: none;
 }
-.tws-fg-btn,
-.cv2-root .tws-fg-verbs .pn-btn.pn-btn--primary,
-.cv2-root .tws-fg-verbs .kit-iconbtn {
+
+/* --- The entity action strip (R30) --- */
+.tws-astrip {
+  position: relative;
+  z-index: 2;
+  flex: none;
+  width: 40px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--pn-space-3);
+  padding: var(--pn-space-2) 0;
+  background: var(--pn-surface);
+  border-left: 1px solid var(--pn-line);
+  color: var(--pn-ink-3);
+}
+.tws-astrip-section,
+.tws-astrip-cluster,
+.tws-astrip-verbs,
+.cv2-root .tws-astrip .pn-actions,
+.cv2-root .tws-astrip .pn-surface-switch,
+.cv2-root .tws-astrip .rs-bar--slotted {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--pn-space-1);
+}
+.tws-astrip-section {
+  gap: var(--pn-space-3);
+}
+.tws-astrip-cluster:empty,
+.tws-astrip-verbs:empty {
+  display: none;
+}
+/* The kind slot holds several of the body's own groups; space them as clusters. */
+.tws-astrip-kind {
+  gap: var(--pn-space-3);
+}
+.cv2-root .tws-astrip .pn-surface-switch {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.tws-astrip-stats-source {
+  display: none;
+}
+
+/* Every control in the strip: 28x28, centred, 14px icons. */
+.tws-astrip-btn,
+.cv2-root .tws-astrip .pn-btn,
+.cv2-root .tws-astrip .kit-iconbtn,
+.cv2-root .tws-astrip .pn-surface-switch__tab,
+.cv2-root .tws-astrip .hon-disabled,
+.cv2-root .tws-astrip .de-btn,
+.cv2-root .tws-astrip .lp__rowaction {
   position: relative;
   flex: none;
   width: 28px;
   min-width: 28px;
   height: 28px;
+  box-sizing: border-box;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -285,33 +171,100 @@
   border: 0;
   border-radius: var(--pn-r-sm);
   box-shadow: none;
-  color: var(--pn-ink-2);
+  color: var(--pn-ink-3);
   font: inherit;
   font-size: var(--pn-fs-sm);
   line-height: 1;
   cursor: pointer;
+  overflow: visible;
 }
-.tws-fg-btn svg {
+.tws-astrip-btn svg,
+.cv2-root .tws-astrip .pn-surface-switch__tab svg {
   width: 14px;
   height: 14px;
 }
-.tws-fg-btn:hover,
-.cv2-root .tws-fg-verbs .pn-btn.pn-btn--primary:hover,
-.cv2-root .tws-fg-verbs .kit-iconbtn:hover {
+.tws-astrip-btn:hover,
+.cv2-root .tws-astrip .pn-btn:hover,
+.cv2-root .tws-astrip .kit-iconbtn:hover,
+.cv2-root .tws-astrip .pn-surface-switch__tab:hover,
+.cv2-root .tws-astrip .de-btn:hover {
   background: var(--pn-hover);
+  color: var(--pn-ink-2);
 }
-/* Section switcher: three icon segments, radio semantics. */
-.tws-fg-seg-btn {
-  color: var(--pn-ink-3);
-}
-.tws-fg-seg-btn[aria-checked='true'],
-.tws-fg-chat[aria-pressed='true'],
-.tws-fg-connectors[aria-expanded='true'] {
-  color: var(--pn-ink);
+.tws-astrip-seg[aria-checked='true'],
+.tws-astrip-chat[aria-pressed='true'],
+.tws-astrip-connectors[aria-expanded='true'],
+.tws-astrip-btn[aria-expanded='true'],
+.cv2-root .tws-astrip .pn-surface-switch__tab[aria-selected='true'],
+.cv2-root .tws-astrip .pn-actions__verb--on {
   background: var(--pn-active);
+  color: var(--pn-ink);
 }
+.cv2-root .tws-astrip .hon-disabled {
+  color: var(--pn-ink-4);
+  cursor: default;
+}
+.cv2-root .tws-astrip .hon-caption {
+  display: none;
+}
+/* Run: the lead verb, a ▶ icon in the brand colour. */
+.cv2-root .tws-astrip .pn-btn.pn-btn--lead {
+  color: var(--pn-brand-2);
+}
+.cv2-root .tws-astrip .pn-btn.pn-btn--lead:hover {
+  background: var(--pn-brand-soft);
+}
+/* The reader's Edit / Download PDF, drawn as glyphs; the word stays the
+   accessible name and the tooltip. */
+.cv2-root .tws-astrip .de-btn {
+  font-size: 0;
+}
+.cv2-root .tws-astrip .de-btn::before {
+  font-size: var(--pn-fs-sm);
+  line-height: 1;
+}
+.cv2-root .tws-astrip [data-testid='doc-edit-entry']::before {
+  content: '✎';
+}
+.cv2-root .tws-astrip [data-testid='doc-download-pdf']::before {
+  content: '⤓';
+}
+/* The forms-waiting chip, as a dot with its count badge. */
+.cv2-root .tws-astrip .pf-chip {
+  position: relative;
+}
+.cv2-root .tws-astrip .pf-chip__trigger {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  cursor: pointer;
+}
+.cv2-root .tws-astrip .pf-chip__trigger > span:not(.att-chip__b) {
+  display: none;
+}
+.cv2-root .tws-astrip .pf-chip__trigger::after {
+  content: attr(data-count);
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  box-sizing: border-box;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-brand-soft);
+  color: var(--pn-brand-2);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  line-height: 14px;
+  text-align: center;
+}
+
 /* The §4 badge: Messages count, attached connectors. */
-.tws-fg-badge {
+.tws-astrip-badge {
   position: absolute;
   top: -2px;
   right: -2px;
@@ -330,30 +283,80 @@
   font-variant-numeric: tabular-nums;
   pointer-events: none;
 }
-.tws-floating.tws-fg[data-surface='dark'] {
-  background: transparent;
-  color: var(--pn-ink-2);
+
+/* Tooltips to the LEFT (the rail's `.tws-tip`, mirrored). */
+.tws-tip.tws-astrip-tip {
+  left: auto;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  white-space: nowrap;
 }
-/* Run: the lead verb, a ▶ icon in the brand colour. */
-.cv2-root .tws-fg-verbs .pn-btn.pn-btn--lead {
-  color: var(--pn-brand-2);
+.tws-astrip-tip-stats {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-label);
+  font-variant-numeric: tabular-nums;
+  color: var(--pn-ink-3);
 }
-.cv2-root .tws-fg-verbs .pn-btn.pn-btn--lead:hover {
-  background: var(--pn-brand-soft);
+
+/* Popovers open to the LEFT of the strip: the kind section's top-aligned with
+   their control, the common section's bottom-aligned. */
+.cv2-root .tws-astrip .pn-actions__flow,
+.cv2-root .tws-astrip-popover,
+.cv2-root .tws-astrip .pf-chip__pop,
+.cv2-root .tws-astrip-menu {
+  position: absolute;
+  right: calc(100% + var(--pn-space-2));
+  left: auto;
+  top: 0;
+  bottom: auto;
+  z-index: 40;
+}
+.cv2-root .tws-astrip-section--common .pn-actions__flow,
+.cv2-root .tws-astrip-section--common .tws-astrip-menu {
+  top: auto;
+  bottom: 0;
+}
+.cv2-root .tws-astrip .pf-chip__pop {
+  width: 400px;
+  max-height: 60vh;
+  overflow: auto;
+  padding: var(--pn-space-4);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-pop);
+  box-sizing: border-box;
+}
+.cv2-root .tws-astrip .pf-chip__pop .pf-banner {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
 }
 
 /* ⋯ menu */
-.cv2-root .tws-fg-menu {
+.cv2-root .tws-astrip-menu {
   min-width: 192px;
   box-shadow: var(--pn-sh-pop);
 }
-.tws-fg-slot {
+.tws-astrip-menu-stats {
+  padding: var(--pn-space-1) var(--pn-space-2) var(--pn-space-2);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-label);
+  font-variant-numeric: tabular-nums;
+  color: var(--pn-ink-3);
+  white-space: nowrap;
+}
+.tws-astrip-slot {
   display: contents;
 }
-.cv2-root .tws-fg-danger .lp__rowaction {
+.cv2-root .tws-astrip-danger .lp__rowaction {
+  width: 100%;
+  justify-content: flex-start;
   color: var(--pn-block);
 }
-.cv2-root .tws-fg-menu .pn-overflow__rename {
+.cv2-root .tws-astrip-menu .pn-overflow__rename {
   height: 32px;
   margin: 0 0 var(--pn-space-1);
   padding: 0 var(--pn-space-2);
@@ -363,6 +366,42 @@
   color: var(--pn-ink);
   font: inherit;
   font-size: var(--pn-fs-label);
+}
+
+/* Connectors: the plug opens the task's McpEquipment block in a popover. */
+.tws-astrip-pop-anchor {
+  position: relative;
+  display: flex;
+}
+.cv2-root .tws-astrip-popover {
+  width: 320px;
+  max-width: calc(100vw - 2 * var(--pn-space-6));
+  padding: var(--pn-space-4);
+  box-shadow: var(--pn-sh-pop);
+  border-radius: var(--pn-r-md);
+}
+.cv2-root .tws-astrip-popover .mcp-equipment {
+  padding: 0;
+}
+.cv2-root .tws-astrip-popover .mcp-equipment h3 {
+  margin: 0 0 var(--pn-space-1);
+  font-size: var(--pn-fs-title);
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+.cv2-root .tws-astrip-popover .mcp-equipment p {
+  margin: 0 0 var(--pn-space-3);
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-3);
+}
+.cv2-root .tws-astrip-popover .mcp-equipment a {
+  color: var(--pn-brand-2);
+  font-size: var(--pn-fs-sm);
+  text-decoration: none;
+}
+.cv2-root .tws-astrip-popover .mcp-equipment a:hover,
+.cv2-root .tws-astrip-popover .mcp-equipment a:focus-visible {
+  text-decoration: underline;
 }
 
 /* --- In-tab states (design log §11) --- */
@@ -421,7 +460,7 @@
   max-width: var(--pn-read-measure, 720px);
   width: 100%;
   margin: 0 auto;
-  padding: calc(var(--tws-fg-h, 32px) + 2 * var(--pn-space-3)) var(--pn-space-6) 0;
+  padding: var(--pn-space-6) var(--pn-space-6) 0;
   box-sizing: border-box;
 }
 .tws-skeleton-bar {
@@ -431,65 +470,32 @@
   background: var(--pn-hover);
 }
 
-/* Connectors (round 3): a plug button with the attached count, opening the
-   task's McpEquipment block in an anchored popover. */
-.tws-fg-pop-anchor {
-  position: relative;
+
+/* The body's own controls, as they arrive in the strip's kind section. */
+.cv2-root .tws-astrip .rs-bar--slotted,
+.cv2-root .tws-astrip .pn-preview__chrome {
   display: flex;
-}
-.cv2-root .tws-fg-popover {
-  width: 320px;
-  max-width: calc(100vw - 2 * var(--pn-space-6));
-  padding: var(--pn-space-4);
-  box-shadow: var(--pn-sh-pop);
-  border-radius: var(--pn-r-md);
-}
-.cv2-root .tws-fg-popover .mcp-equipment {
-  padding: 0;
-}
-.cv2-root .tws-fg-popover .mcp-equipment h3 {
-  margin: 0 0 var(--pn-space-1);
-  font-size: var(--pn-fs-title);
-  font-weight: 600;
-  color: var(--pn-ink);
-}
-.cv2-root .tws-fg-popover .mcp-equipment p {
-  margin: 0 0 var(--pn-space-3);
-  font-size: var(--pn-fs-sm);
-  color: var(--pn-ink-3);
-}
-.cv2-root .tws-fg-popover .mcp-equipment a {
-  color: var(--pn-brand-2);
-  font-size: var(--pn-fs-sm);
-  text-decoration: none;
-}
-.cv2-root .tws-fg-popover .mcp-equipment a:hover,
-.cv2-root .tws-fg-popover .mcp-equipment a:focus-visible {
-  text-decoration: underline;
-}
-
-
-/* A reading doc with no pills (Subhang, round 2): no head row at all. The
-   doc's own toolbar (Edit / Download PDF) IS the group's row: toolbar left,
-   group right, then the content. */
-.cv2-root .tws-panel > .pn-panel[data-embedded-flow='document']:has(.rs-root[data-stance='read']):not(:has(.pn-embedded-head__pills)) > .pn-embedded-head {
-  display: none;
-}
-.tws-entity-host:has(.pn-panel[data-embedded-flow='document'] .rs-root[data-stance='read']):not(:has(.pn-embedded-head__pills)) > .tws-floating {
-  top: var(--pn-space-1);
-}
-.cv2-root .tws-panel .rs-root[data-stance='read'] > .rs-bar {
-  /* The same thin row as a session's: the group's 32px plus 4px each side. */
-  min-height: calc(var(--tws-fg-h, 32px) + 2 * var(--pn-space-1));
-  padding-right: calc(var(--tws-fg-w, 0px) + var(--pn-space-4));
-  box-sizing: border-box;
+  flex-direction: column;
   align-items: center;
+  gap: var(--pn-space-1);
+  margin: 0;
+  padding: 0;
+  min-height: 0;
+  border: 0;
+  background: none;
 }
-
-/* Attachments (Subhang, round 2): the idle "Attach / or drop / paste" zone is
-   not drawn in Workspace; the group's paperclip replaces it. Drop onto the
-   content keeps working: the strip's listeners ride the panel (its drop host),
-   not this box. Attached files still show as tiles. */
-.cv2-root .tws-panel .fn-tiles--idle {
-  display: none;
+/* A frame's revision picker: a 28px box; its full facts stay in its tooltip. */
+.cv2-root .tws-astrip .pn-preview__revpick {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  appearance: none;
+  text-align: center;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: none;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  cursor: pointer;
 }
