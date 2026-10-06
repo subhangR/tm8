@@ -12,6 +12,8 @@ import { getKind, KindIcon } from '../../domain';
 import { McpEquipment } from '../../mcp/McpEquipment';
 import { useMcpCatalog } from '../../mcp/context';
 import { countMessages } from '../../panels';
+import { attachmentsFor } from '../../files/port';
+import { useAlwaysDarkTheme } from '../../theme/useAlwaysDarkTheme';
 import { build, emptyPanels, normalize } from '../../routes';
 import { useEntityChrome } from '../adapters/entity';
 import { getKindAdapter } from '../adapters/registry';
@@ -41,7 +43,16 @@ export function FloatingGroup({ tab }: FloatingGroupProps) {
   const chrome = useEntityChrome();
   const adapter = getKindAdapter(tab.kind);
   const detail = gate.data.detailOf(tab.entityId);
-  const canvas = getKind(tab.kind).panel.composition === 'canvas';
+  const kindConfig = getKind(tab.kind);
+  const canvas = kindConfig.panel.composition === 'canvas';
+  /* Native on the surface it sits on (Subhang, round 2): on the always-dark
+     terminal body the group opens the same dark token scope the panel does,
+     so it reads like the surface chips beside it. Registry data, no literal. */
+  const darkBody = kindConfig.panel.archetype === 'terminal';
+  const darkTheme = useAlwaysDarkTheme();
+  /* The panel draws its attach drop zone only where the body does not own its
+     bottom; in Workspace that zone is hidden and this paperclip replaces it. */
+  const attachable = kindConfig.panel.archetype !== 'terminal' && kindConfig.panel.composition == null;
   const groupRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState<'idle' | 'done' | 'failed'>('idle');
@@ -109,7 +120,14 @@ export function FloatingGroup({ tab }: FloatingGroupProps) {
   };
 
   return (
-    <div ref={groupRef} className="tws-floating tws-fg" data-testid="tws-floating" data-tab={tab.id}>
+    <div
+      ref={groupRef}
+      className={`${darkBody ? 'cv2-root ' : ''}tws-floating tws-fg`}
+      data-theme={darkBody ? darkTheme : undefined}
+      data-surface={darkBody ? 'dark' : 'light'}
+      data-testid="tws-floating"
+      data-tab={tab.id}
+    >
       {detail && !canvas ? (
         <div className="tws-fg-seg" role="radiogroup" aria-label="Section">
           {TAB_SUBVIEWS.map((subview) => {
@@ -168,6 +186,7 @@ export function FloatingGroup({ tab }: FloatingGroupProps) {
         {getKind(tab.kind).mcpEquipment && detail && detail.deletedAt == null ? (
           <ConnectorsButton entityId={tab.entityId} />
         ) : null}
+        {attachable && detail && detail.deletedAt == null ? <AttachButton entityId={tab.entityId} /> : null}
         {adapter.supportsChat ? (
           <button
             type="button"
@@ -314,5 +333,74 @@ function ConnectorsButton({ entityId }: { entityId: string }) {
         </div>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * Attach (Subhang, round 2): the body's "Attach / or drop / paste" zone is
+ * hidden in Workspace; this paperclip opens the file picker and uploads through
+ * the same attachments port the panel uses. Drop onto the content still works
+ * (the strip's listeners ride the panel, its drop host).
+ */
+function AttachButton({ entityId }: { entityId: string }) {
+  const { gate } = useWorkspace();
+  const data = gate.data;
+  const port = attachmentsFor(data.seam, data.spaceId);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(0);
+  if (!port) return null;
+  const upload = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    for (const file of Array.from(files)) {
+      setBusy((n) => n + 1);
+      port
+        .startUpload(file, entityId as EntityId)
+        .result.then(
+          () => data.refetchDetail(entityId),
+          (error: unknown) =>
+            gate.onNotice({
+              id: `tws-attach-${entityId}`,
+              tone: 'error',
+              title: `Couldn't attach ${file.name}`,
+              body: String((error as { message?: string })?.message ?? error),
+              ttlMs: 6_000,
+            }),
+        )
+        .finally(() => setBusy((n) => n - 1));
+    }
+  };
+  return (
+    <>
+      <button
+        type="button"
+        className="tws-fg-btn tws-fg-attach"
+        aria-label={busy > 0 ? 'Attach a file (uploading)' : 'Attach a file'}
+        title="Attach a file — or drop it on the content"
+        aria-busy={busy > 0 || undefined}
+        data-testid="tws-attach"
+        onClick={() => inputRef.current?.click()}
+      >
+        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+          <path
+            d="M10.5 4.5l-5 5a1.4 1.4 0 0 0 2 2l5.5-5.5a2.8 2.8 0 0 0-4-4L3.5 7.5a4.2 4.2 0 0 0 6 6l4-4"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.3"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
+      <input
+        ref={inputRef}
+        type="file"
+        multiple
+        hidden
+        onChange={(e) => {
+          upload(e.target.files);
+          e.target.value = '';
+        }}
+      />
+    </>
   );
 }
