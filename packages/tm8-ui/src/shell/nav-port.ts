@@ -32,7 +32,6 @@ import type { ContentSurface, PanelTab } from '../routes/types';
  * never second definitions.
  */
 export type { ContentSurface, PanelTab };
-export type PanelHost = 'stack' | 'pinned' | 'peek' | 'z4';
 
 export interface NavPanelState {
   /** Bottom → top, matching the `p=` encoding (§6). */

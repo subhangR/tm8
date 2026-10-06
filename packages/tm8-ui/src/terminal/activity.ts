@@ -87,35 +87,6 @@ export function markTerminalActivity(sessionId: string): void {
   }, 2_000));
 }
 
-/**
- * Subscribe one session's activity. Returns raw activity — NOT a licence to
- * render "streaming"; pass it through `presentSession`, which applies the
- * live-verdict gate.
- */
-export function useTerminalActivity(
-  source: ActivitySource | null | undefined,
-  sessionId: string | null | undefined,
-): boolean {
-  const [active, setActive] = useState(false);
-
-  useEffect(() => {
-    if (!source || !sessionId) {
-      setActive(false);
-      return;
-    }
-    // A source that can report current state closes the mount-mid-stream gap;
-    // one that cannot starts false and corrects on the next flush.
-    const scripted = source as Partial<ScriptedActivitySource>;
-    setActive(scripted.isActive?.(sessionId) ?? false);
-
-    return source.onActivity((id, isActive) => {
-      if (id === sessionId) setActive(isActive);
-    });
-  }, [source, sessionId]);
-
-  return active;
-}
-
 /** Subscribe every session's activity — the live-session bar's dot needs it. */
 export function useTerminalActivityMap(
   source: ActivitySource | null | undefined,

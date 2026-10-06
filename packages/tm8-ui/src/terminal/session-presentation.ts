@@ -135,8 +135,3 @@ const STYLES: Record<SessionPresentation, PresentationStyle> = {
 export function presentationStyle(p: SessionPresentation): PresentationStyle {
   return STYLES[p];
 }
-
-/** Convenience: verdict + signals straight to style. */
-export function sessionStyle(input: PresentationInput): PresentationStyle {
-  return presentationStyle(presentSession(input));
-}

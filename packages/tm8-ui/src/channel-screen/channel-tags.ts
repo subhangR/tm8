@@ -30,8 +30,6 @@ export interface ComposerMentionOption {
   attach?: 'anchor';
 }
 
-export type ChannelTagTarget = ComposerMentionOption & { route: NonNullable<ComposerMentionOption['route']> };
-
 interface ChannelTagReadPort {
   query(input: CollectionQuery): Promise<CollectionResult>;
   entity(id: EntityId): Promise<EntityDetail>;
