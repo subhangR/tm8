@@ -304,7 +304,7 @@ const SESSION_STATE_CONTROL: StateControl = {
      under 155, when a crash filed itself as finished).
 
      THIS TABLE IS A MIRROR. The WRITER is `internal.session_category`
-     (db/migrations/301_session_outcome_and_claims.sql), the server's own copy
+     (db/migrations/302_session_outcome_and_claims.sql), the server's own copy
      is `sessionCategory` (packages/server/src/facade/status.ts), and the
      outcome-aware version on this side is `sessionCategoryOf`
      (domain/session-outcome.ts). Nothing here computes a row's tab;

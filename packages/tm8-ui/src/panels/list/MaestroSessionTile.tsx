@@ -235,8 +235,11 @@ export function MaestroSessionTile({
         ) : null}
 
         {leadMode ? null : (
-          <span className={`pn-st__statusglyph lp__statusmark--${statusTone}`} title={statusTitle ?? status}>
-            <StatusGlyph kind={archived ? 'archived' : status} />
+          <span
+            className={`pn-st__statusglyph lp__statusmark--${word ? (word.tone === 'done' ? 'run' : word.tone) : statusTone}`}
+            title={statusTitle ?? status}
+          >
+            <StatusGlyph kind={archived ? 'archived' : word ? GLYPH_OF[word.icon] : status} />
           </span>
         )}
         <span className="pn-st__actions lp__cluster">

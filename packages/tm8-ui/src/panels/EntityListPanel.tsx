@@ -916,6 +916,10 @@ export function EntityListPanel(props: EntityListPanelProps) {
     tabCounts.length > 0 &&
     tabCounts.every((c) => c.exact && (c.tab.id === activeTab?.id || c.n === 0));
   const tierRow = toolbar && mode !== 'board' && (list.categories?.length ?? 0) > 0 && !singleTier;
+  /* Spec D1 §5.3.1 case 7: every session this panel has loaded, across its
+     tabs, so a child whose parent sits in ANOTHER tab can name it ("↳ under
+     Coordinator X (Completed)"). The same reads the tab counts just made. */
+  const crumbs = useSessionCrumbs(props, config, activeTab?.id ?? null);
   /* The selector total's `+` — carried only when a tab's number is still the
      loaded length rather than the server's. Once every tab reports an exact
      total the sum IS exact, and the hedge disappears on its own. */
