@@ -21,7 +21,7 @@ import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from 
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 240_000 });
 
-const D1 = '301_session_outcome_and_claims.sql';
+const D1 = '302_session_outcome_and_claims.sql';
 
 let database: W1ScratchDatabase;
 const ids: Record<string, string> = {};

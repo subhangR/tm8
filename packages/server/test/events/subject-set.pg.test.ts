@@ -179,7 +179,7 @@ describe.sequential('the canonical subject set — SQL side and 208 (real Postgr
     // chain), and the outcome column shapes the session reads select. No
     // assertion here reads the columns. DELETE this shim if this suite ever
     // applies the chain through 301.
-    const d1 = readFileSync(new URL('../../../../db/migrations/301_session_outcome_and_claims.sql', import.meta.url), 'utf8');
+    const d1 = readFileSync(new URL('../../../../db/migrations/302_session_outcome_and_claims.sql', import.meta.url), 'utf8');
     const start = d1.indexOf('create or replace function internal.event_subject_ids');
     await database.query(d1.slice(start, d1.indexOf('$$;', d1.indexOf('as $$', start) + 5) + 3));
     await database.query(`alter table public.work_sessions

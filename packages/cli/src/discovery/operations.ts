@@ -4081,7 +4081,8 @@ export const CATALOG_DIGEST =
   // Re-measured (styles, 284): +15 styles.*, identity.stylePrefs.get|set, spaces.styleDefault.get|set. RECOMPUTED from JSON.stringify(OPERATIONS).
   // Re-measured (main sync: cross-space + styles).
   // +1 spaceLinks.inbound.grant (W9c, 301): read from the regenerated conformance manifest.
-  'sha256:a7f5666db1b7986c492ab05e55f4242a1bcc1316e90898f2fa9a90b4080b5154';
+  // Re-measured for Spec D1 / 302 (+execution.complete, +entities.commands.release) — RECOMPUTED.
+  'sha256:a8c642239318ad6b4ee2ee353a219441fe2e9e97bd4d7b1af3d0662c2bb2e4fa';
 
 export const GRAMMAR_VERSION = '2';
 

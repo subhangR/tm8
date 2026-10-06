@@ -105,7 +105,7 @@ export function isProcessRecordedLive(status: string | null | undefined): boolea
 
 /**
  * §3.2 — the shared category, outcome first. MIRROR of
- * `internal.session_category` (db/migrations/301_session_outcome_and_claims.sql)
+ * `internal.session_category` (db/migrations/302_session_outcome_and_claims.sql)
  * and `sessionCategory` (packages/server/src/facade/status.ts).
  */
 export function sessionCategoryOf(state: EntityState | unknown): StatusCategory | undefined {

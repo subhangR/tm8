@@ -1,5 +1,5 @@
 -- =============================================================================
--- 301 — a session's OUTCOME is not its PROCESS, and a claim has a lifetime.
+-- 302 — a session's OUTCOME is not its PROCESS, and a claim has a lifetime.
 -- Spec D1 (doc 01a110ab), task P0a 01a10c66. Replaces Design Rules §2.1/§2.2.
 --
 -- THE DEFECT. One column, `work_sessions.status`, answered two questions: is
