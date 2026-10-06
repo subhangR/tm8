@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * THE STUDIO'S INTERACTIONS — chat ↔ canvas as one tool.
+ * A GRAPH PAGE'S INTERACTIONS — chat ↔ canvas as one tool.
  *
  *  · a node selected on the canvas opens the INSPECTOR (what it is, what
  *    flows in and out, its findings), and Escape closes it;
@@ -8,9 +8,11 @@
  *    spelling the craft prompt teaches (`blueprintNodeRef`);
  *  · Outline and Table are real views over the same selection — and the
  *    accessible fallback for the SVG;
- *  · Orchestrate opens a PRE-FLIGHT: errors block the approval, a coherent
- *    plan posts it into the thread;
+ *  · there is no Orchestrate: a design is Run like any launchable entity (D4);
  *  · the canvas is keyboard-navigable.
+ *
+ * The blueprint is a GRAPH PAGE of a design now (Craft → Designs), mounted
+ * through `DesignScreen` over a fixture design source.
  *
  * jsdom draws no pixels (the recurring law): structure, text and wiring only.
  */
@@ -21,7 +23,8 @@ import { resetNav } from '../stores/navStore';
 import { screenStackStore } from '../stores/screenStackStore';
 import { FIXTURE_SPACE_ID } from '../fixtures';
 import { createFixtureSeam } from '../data';
-import { CraftScreen } from './CraftScreen';
+import { DesignScreen } from './DesignScreen';
+import { fixtureDesignSource } from './design-source';
 import { BlueprintCanvas } from './BlueprintCanvas';
 import { blueprintView } from './blueprint-model';
 
@@ -78,7 +81,11 @@ async function mountWithPlan(content: unknown = PLAN, ready = 'crf-canvas') {
   });
   const graphId = created.entity!.id as EntityId;
   await seam.commands.patchEntity(graphId, { clientMutationId: 'crf-studio-2', expectedVersion: 1, content });
-  const view = render(<CraftScreen seam={seam} spaceId={SPACE} nodeKey="fixture" />);
+  const source = fixtureDesignSource(seam, SPACE, [{ id: 'design-1' as EntityId, title: 'Pricing design' }]);
+  await source.placePage('design-1' as EntityId, graphId, 1);
+  const view = render(
+    <DesignScreen seam={seam} spaceId={SPACE} nodeKey="fixture" source={source} designId={'design-1' as EntityId} onNavigate={() => undefined} />,
+  );
   await waitFor(() => view.getByTestId(ready));
   /* The chat surface is a lazy chunk; the composer is part of "mounted". */
   await waitFor(() => view.getByLabelText('Message the chat agent'));
@@ -125,9 +132,9 @@ describe('select → inspect → ask', () => {
     await waitFor(() => expect(area.value).toBe(blueprintNodeRef(graphId, 'd-brief', 'Pricing brief')));
   });
 
-  it('an example prompt from the empty state lands in the composer, unsent', async () => {
+  it('an example prompt from the chat intro lands in the composer, unsent', async () => {
     const { view } = await mountWithPlan({ graphType: 'entity' }, 'crf-empty');
-    const example = within(view.getByTestId('crf-empty')).getAllByTestId('crf-example')[0]!;
+    const example = (await waitFor(() => within(view.getByTestId('crf-chat-intro')).getAllByTestId('crf-example')))[0]!;
     fireEvent.click(example);
     const area = view.getByLabelText('Message the chat agent') as HTMLTextAreaElement;
     await waitFor(() => expect(area.value).toBe(example.textContent));
@@ -161,37 +168,23 @@ describe('views over one selection', () => {
   });
 });
 
-describe('Orchestrate pre-flight', () => {
-  async function withThread(content: unknown) {
-    const mounted = await mountWithPlan(content);
-    const { view } = mounted;
-    fireEvent.change(view.getByLabelText('Message the chat agent'), { target: { value: 'Draft it.' } });
-    fireEvent.click(view.getByRole('button', { name: /send/i }));
-    await waitFor(() => expect((view.getByTestId('crf-orchestrate') as HTMLButtonElement).disabled).toBe(false));
-    return mounted;
-  }
-
-  it('lists the findings and BLOCKS the approval while there is an error', async () => {
-    const { view } = await withThread({ ...PLAN, edges: [...PLAN.edges, { src: 't-copy', dst: 'ghost', type: 'depends_on' }] });
-    fireEvent.click(view.getByTestId('crf-orchestrate'));
-    const pre = await waitFor(() => view.getByTestId('crf-preflight'));
-    expect(pre.textContent).toContain('Errors');
-    expect((within(pre).getByTestId('crf-approve') as HTMLButtonElement).disabled).toBe(true);
+describe('no Orchestrate (D4)', () => {
+  it('draws no Orchestrate, pre-flight or blueprint picker; the view switcher sits in the strip', async () => {
+    const { view } = await mountWithPlan();
+    expect(view.queryByTestId('crf-orchestrate')).toBeNull();
+    expect(view.queryByTestId('crf-preflight')).toBeNull();
+    expect(view.queryByTestId('crf-picker')).toBeNull();
+    /* The page's own controls render in the strip column, not on a header. */
+    const strip = view.getByTestId('dsn-strip-lite');
+    expect(strip.contains(view.getByTestId('crf-views'))).toBe(true);
+    expect(view.getByTestId('dsn-head').contains(view.getByTestId('crf-views'))).toBe(false);
   });
 
-  it('a coherent plan posts the approval into the craft thread', async () => {
-    const { view, seam } = await withThread(PLAN);
-    const post = vi.spyOn(seam.commands, 'postMessage');
-    fireEvent.click(view.getByTestId('crf-orchestrate'));
-    const pre = await waitFor(() => view.getByTestId('crf-preflight'));
-    /* Tasks and docs are created; the teammate spec is the human's to confirm, by name. */
-    expect(pre.textContent).toContain('Will create 2 tasks, 1 doc.');
-    expect(within(pre).getByTestId('crf-preflight-confirm').textContent).toBe('1 teammate to confirm: Ada Writer');
-    const approve = within(pre).getByTestId('crf-approve') as HTMLButtonElement;
-    expect(approve.disabled).toBe(false);
-    fireEvent.click(approve);
-    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
-    expect(post.mock.calls[0]![0].body).toContain('orchestrate');
+  it('a finding in the plan is a chip in the strip column', async () => {
+    const { view } = await mountWithPlan({ ...PLAN, edges: [...PLAN.edges, { src: 't-copy', dst: 'ghost', type: 'depends_on' }] });
+    const chip = await waitFor(() => view.getByTestId('crf-issues'));
+    expect(view.getByTestId('dsn-strip-lite').contains(chip)).toBe(true);
+    expect(chip.getAttribute('aria-label')).toContain('1 error');
   });
 });
 

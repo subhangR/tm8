@@ -67,6 +67,49 @@ function EntityTab({
   tab: EntityTabRecord;
   handleRef: React.MutableRefObject<{ tabId: TabId; handle: EntityAdapterHandle } | null>;
 }) {
+  /* The content width drives the group's narrow arrangement (design log §7). */
+  const [mainEl, setMainEl] = useState<HTMLDivElement | null>(null);
+  const chrome = useEntityChromeValue(mainEl);
+
+  const tabId = tab.id;
+  const onHandle = useCallback(
+    (next: EntityAdapterHandle | null) => {
+      if (next) handleRef.current = { tabId, handle: next };
+      else if (handleRef.current?.tabId === tabId) handleRef.current = null;
+    },
+    [handleRef, tabId],
+  );
+
+  return (
+    <EntityChromeContext.Provider value={chrome}>
+      <div className="tws-entity">
+        <LinkedTrail tab={tab} />
+        <div className="tws-entity-band">
+          {/* The chat dock / overlay lives in this row, so it opens between the
+              content and the strip and an overlay never covers the strip. */}
+          <div className="tws-entity-row">
+            <div ref={setMainEl} className="tws-entity-main tws-entity-host">
+              <TitleBar tab={tab} host={mainEl} setSlot={chrome.setTitleSlot} />
+              <EntityTabBody tab={tab} adapter={getKindAdapter(tab.kind)} onHandle={onHandle} />
+            </div>
+            {/* Right-hand slot: the per-tab chat dock (workstream G). */}
+            <ChatDock tab={tab} />
+          </div>
+          {/* The entity action strip, pinned to the far right in every state. */}
+          <ActionStrip tab={tab} />
+        </div>
+      </div>
+    </EntityChromeContext.Provider>
+  );
+}
+
+/**
+ * The chrome seam's state: the slots the panel portals into and the strip
+ * renders, plus the measured content width. One instance per mounted entity
+ * body; exported so another host of the same body and strip (a design page,
+ * Craft → Designs) builds its seam the same way.
+ */
+export function useEntityChromeValue(mainEl: HTMLElement | null): EntityChromeContextValue {
   const [verbsSlot, setVerbsSlot] = useState<HTMLElement | null>(null);
   const [kindSlot, setKindSlot] = useState<HTMLElement | null>(null);
   const [commonVerbsSlot, setCommonVerbsSlot] = useState<HTMLElement | null>(null);
@@ -77,8 +120,6 @@ function EntityTab({
   const [dangerSlot, setDangerSlot] = useState<HTMLElement | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
 
-  /* The content width drives the group's narrow arrangement (design log §7). */
-  const [mainEl, setMainEl] = useState<HTMLDivElement | null>(null);
   const [contentWidth, setContentWidth] = useState(Infinity);
   useEffect(() => {
     if (!mainEl || typeof ResizeObserver === 'undefined') return;
@@ -115,37 +156,7 @@ function EntityTab({
     }),
     [verbsSlot, kindSlot, commonVerbsSlot, statsSlot, outlineSlot, titleSlot, menuSlot, dangerSlot, menuOpen, contentWidth],
   );
-
-  const tabId = tab.id;
-  const onHandle = useCallback(
-    (next: EntityAdapterHandle | null) => {
-      if (next) handleRef.current = { tabId, handle: next };
-      else if (handleRef.current?.tabId === tabId) handleRef.current = null;
-    },
-    [handleRef, tabId],
-  );
-
-  return (
-    <EntityChromeContext.Provider value={chrome}>
-      <div className="tws-entity">
-        <LinkedTrail tab={tab} />
-        <div className="tws-entity-band">
-          {/* The chat dock / overlay lives in this row, so it opens between the
-              content and the strip and an overlay never covers the strip. */}
-          <div className="tws-entity-row">
-            <div ref={setMainEl} className="tws-entity-main tws-entity-host">
-              <TitleBar tab={tab} host={mainEl} setSlot={setTitleSlot} />
-              <EntityTabBody tab={tab} adapter={getKindAdapter(tab.kind)} onHandle={onHandle} />
-            </div>
-            {/* Right-hand slot: the per-tab chat dock (workstream G). */}
-            <ChatDock tab={tab} />
-          </div>
-          {/* The entity action strip, pinned to the far right in every state. */}
-          <ActionStrip tab={tab} />
-        </div>
-      </div>
-    </EntityChromeContext.Provider>
-  );
+  return chrome;
 }
 
 /** Scrolling down past this hides the title bar; any scroll up shows it. */

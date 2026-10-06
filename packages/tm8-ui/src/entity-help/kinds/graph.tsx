@@ -14,7 +14,7 @@
  *     1:1 with edges.create, write back `content.link`, dispatch the frontier):
  *     server/src/chat/compose.ts MODE_GUIDE.craft / .orchestrate
  *   - the studio's chat is `about` the graph; orchestrate posts the approval:
- *     tm8-ui/src/craft/CraftScreen.tsx header
+ *     tm8-ui/src/craft/DesignChatPane.tsx (a design page since Craft → Designs)
  *   - the panel block is read-only: tm8-ui/src/panels/bodies/BlueprintBlock.tsx
  *   - no edge type names `graph`; it is reached only through `*` endpoints:
  *     tm8-ui/src/domain/edge-kinds.ts

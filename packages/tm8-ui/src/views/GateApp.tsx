@@ -53,7 +53,7 @@ import { ProjectGitScreen } from '../git/ProjectGitScreen';
 import { BoardScreen } from '../board';
 import { BoardV2Screen } from '../board-v2';
 import { openInWorkspace, TabWorkspaceView, useWorkspaceShareRoute, type WorkspaceGateHandles } from '../tab-workspace';
-import { CraftScreen, DesignsHome, designsSourceFromSeam } from '../craft';
+import { DesignScreen, DesignsHome, designSourceFromSeam, designsSourceFromSeam, type DesignTarget } from '../craft';
 import { HelpScreen } from '../help';
 import { NewSessionScreen } from '../new-session';
 import { createKeyboardController, type KeyboardController } from '../keyboard';
@@ -1887,6 +1887,27 @@ export function GateApp(props: GateAppProps = {}) {
     (designId: EntityId) => navStore.getState().navigate({ view: 'craft', designId }),
     [],
   );
+  const designSource = useMemo(
+    () => designSourceFromSeam(data.seam, data.spaceId as SpaceId),
+    [data.seam, data.spaceId],
+  );
+  /* No design ⇒ the Designs home; otherwise exactly the design, page and nested page asked for. */
+  const navigateDesign = useCallback(
+    ({ designId, pageId, nestedPageId }: DesignTarget) =>
+      navStore.getState().navigate({
+        view: 'craft',
+        ...(designId ? { designId } : {}),
+        ...(designId && pageId ? { pageId } : {}),
+        ...(designId && pageId && nestedPageId ? { nestedPageId } : {}),
+      }),
+    [],
+  );
+  const craftNotice = useCallback(
+    (text: string) =>
+      notices.push({ id: `crf:${Date.now()}`, tone: 'info', title: 'Craft', body: text, ttlMs: 6000 }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [notices.push],
+  );
   const goHomeTarget = useCallback(() => navigateTo(HOME_TARGET), [navigateTo]);
   const openInboxView = useCallback(() => navigateTo({ type: 'view', ref: 'inbox' }), [navigateTo]);
 
@@ -2482,48 +2503,42 @@ export function GateApp(props: GateAppProps = {}) {
                 })
               }
             />
-          ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'craft' ? (
-            /* ✎ Craft (Craft P1, 2026-08-16) — the blueprint studio, kept at
-               `/craft/{id}` as the PLACEHOLDER design screen until the design
-               screen replaces it: a craft-mode chat anchored to a `graph`
-               entity beside a canvas rendering that entity's ROW. */
-            <CraftScreen
+          ) : data.ready &&
+            activeTarget?.type === 'view' &&
+            activeTarget.ref === 'craft' &&
+            navView.view === 'craft' &&
+            navView.designId ? (
+            /* ✎ Craft → Designs: one design at `/craft/{design}[/{page}[/{nested}]]`
+               — its chats on the left, its pages as tabs, the Workspace action
+               strip split between the page and the design. The page bodies are
+               the Workspace's own, hosted in a private runtime (`workspaceGate`
+               is the same handle bundle the Workspace view gets). */
+            <DesignScreen
+              key={navView.designId}
               seam={data.seam}
               spaceId={data.spaceId as SpaceId}
               nodeKey={nodeKey}
+              source={designSource}
+              designs={designsSource}
+              designId={navView.designId}
+              pageId={navView.pageId}
+              nestedPageId={navView.nestedPageId}
+              onNavigate={navigateDesign}
+              gate={workspaceGate}
               bridge={chatBridge}
               skillOptions={data.skillOptions}
               viewerName={data.viewerActor?.displayName}
               viewerId={data.viewerActor?.id}
-              /* A chip press opens region C INSIDE Craft now, so no
-                 `onOpenEntity` is passed: the old handler navigated to the
-                 workspace, which unmounted the studio and took the selected
-                 graph, thread and glow baseline with it. Nothing is stubbed in
-                 its place — passing no handler is how a host says it has
-                 nothing to do, and a stub is banned outright. */
+              /* An entity opened from the chat lands in a column over the page,
+                 so the design survives the press. */
               panelHost={{
                 data,
                 reasons,
                 serverBaseUrl: activeServer.routeBaseUrl,
                 viewerMemberId,
-                onNotice: (text) =>
-                  notices.push({
-                    id: `crf:${Date.now()}`,
-                    tone: 'info',
-                    title: 'Craft',
-                    body: text,
-                    ttlMs: 6000,
-                  }),
+                onNotice: craftNotice,
               }}
-              onNotice={(text) =>
-                notices.push({
-                  id: `crf:${Date.now()}`,
-                  tone: 'info',
-                  title: 'Craft',
-                  body: text,
-                  ttlMs: 6000,
-                })
-              }
+              onNotice={craftNotice}
             />
           ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'help' ? (
             /* ? Help (2026-08-19; STATIC since 2026-08-20) — the field guide.
