@@ -42,6 +42,7 @@ import {
 import { PgEntityProjector } from '../../src/events/projector.js';
 import {
   SESSION_STATUS_CATEGORY,
+  sessionCategory,
   StatusCategoryDriftError,
   WorkStatusDriftError,
   WORK_STATUS_CATEGORY,
@@ -366,45 +367,43 @@ describe('the ruled work_status -> category mapping', () => {
 // `SESSION_STATE_CONTROL` — and the migration is the only one that writes.
 // ---------------------------------------------------------------------------
 
-describe('the ruled work_session status -> category mapping', () => {
-  /** `internal.session_status_category`'s CASE arms, read out of the migration. */
-  function sessionMappingFromMigration(): Record<string, string> {
+describe('the ruled work_session category (Spec D1 §3.2, migration 299)', () => {
+  /** `internal.session_category`'s CASE arms, read out of 299. */
+  function sessionArmsFromMigration(): { outcome: Record<string, string>; status: Record<string, string> } {
     const path = fileURLToPath(
-      new URL('../../../../db/migrations/155_session_status_category.sql', import.meta.url),
+      new URL('../../../../db/migrations/302_session_outcome_and_claims.sql', import.meta.url),
     );
     const sql = readFileSync(path, 'utf8');
-    const body = sql.slice(sql.indexOf('function internal.session_status_category'));
-    const arms: Record<string, string> = {};
-    for (const match of body.matchAll(/when '(\w+)'\s+then '(\w+)'/g)) {
-      const [, status, category] = match;
-      // An EMPTY table is the honest result if the regex stopped matching what
-      // it was written for — see the note on the task copy above.
-      if (status === undefined || category === undefined) return {};
-      arms[status] = category;
+    const start = sql.indexOf('function internal.session_category');
+    const body = sql.slice(start, sql.indexOf('$$;', start));
+    const outcome: Record<string, string> = {};
+    for (const m of body.matchAll(/when p_outcome = '(\w+)'\s+then '(\w+)'/g)) outcome[m[1]!] = m[2]!;
+    const status: Record<string, string> = {};
+    for (const m of body.matchAll(/when p_status = '(\w+)'\s+then '(\w+)'/g)) status[m[1]!] = m[2]!;
+    for (const m of body.matchAll(/when p_status in \(([^)]*)\) then '(\w+)'/g)) {
+      for (const s of m[1]!.matchAll(/'(\w+)'/g)) status[s[1]!] = m[2]!;
     }
-    return arms;
+    return { outcome, status };
   }
 
   it('is the same table in the migration and in the server', () => {
-    expect(sessionMappingFromMigration()).toEqual(SESSION_STATUS_CATEGORY);
+    const arms = sessionArmsFromMigration();
+    expect(arms.status).toEqual(SESSION_STATUS_CATEGORY);
+    expect(arms.outcome).toEqual({ completed: 'done', stopped: 'cancelled' });
   });
 
-  it('files a spawning session under to_do, not in_progress', () => {
-    // Two independent reasons, either of which settles it: 147's `pulled ->
-    // to_do` ("claimed is not started") is the same shape of fact, and
-    // `public.session_resume` moves an exited session back to `spawning` — a
-    // legal `done -> to_do` REOPEN under this mapping and a `done ->
-    // in_progress` that `category_transition_allowed` refuses under the other.
-    expect(SESSION_STATUS_CATEGORY.spawning).toBe('to_do');
-    expect(SESSION_STATUS_CATEGORY.idle).toBe('in_progress');
+  it('the outcome decides first: completed is done and stopped is cancelled, whatever the process', () => {
+    for (const status of ['spawning', 'running', 'idle', 'exited', 'failed'] as const) {
+      expect(sessionCategory('completed', status)).toBe('done');
+      expect(sessionCategory('stopped', status)).toBe('cancelled');
+    }
   });
 
-  it('files a failed run under done, and leaves cancelled empty', () => {
-    // The client's ruling, mirrored: failure is a runtime fact that gets a
-    // badge, and the run reached its end — nobody cancelled it. Nothing in the
-    // session lifecycle is a cancellation at all; `terminate` produces `exited`.
-    expect(SESSION_STATUS_CATEGORY.failed).toBe('done');
-    expect(SESSION_STATUS_CATEGORY.exited).toBe('done');
-    expect(Object.values(SESSION_STATUS_CATEGORY)).not.toContain('cancelled');
+  it('an open session whose process ended is in_progress — unfinished, not done', () => {
+    expect(sessionCategory('open', 'exited')).toBe('in_progress');
+    expect(sessionCategory('open', 'failed')).toBe('in_progress');
+    // spawning stays to_do so resume (-> spawning) is a legal reopen/un-start.
+    expect(sessionCategory('open', 'spawning')).toBe('to_do');
+    expect(sessionCategory(undefined, 'running')).toBe('in_progress');
   });
 });

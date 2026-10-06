@@ -750,7 +750,7 @@ describe('O2 — tm8 exits 130 when interrupted', () => {
     // and execution.gitStage, so the family moves twice from 20. MEASURED from this
     // assertion's own failing run on the merged tree.
     // 22 -> 23 (launch v3 C, #923): execution.dispatchers. MEASURED from CI run 36275330910 (`expected 23 to be 22`).
-    expect(OPERATIONS.filter((o) => o.name.startsWith('execution.')).length).toBe(23);
+    expect(OPERATIONS.filter((o) => o.name.startsWith('execution.')).length).toBe(24); // +1 execution.complete (Spec D1, 302). MEASURED.
 
     // A REAL Space, so the spawn refusal below cannot be dismissed as "your
     // space id was fake".

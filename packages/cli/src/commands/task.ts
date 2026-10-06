@@ -51,6 +51,7 @@ import {
 import type { CommandContext, CommandModule } from '../run.js';
 import { callerMutationId, receiptQuery, receiptRefId, successReceipt, type ReceiptWarning } from '../receipt.js';
 import { errorInput, withErrorReceipt } from '../receipt-error.js';
+import { noticeStatusNudges } from '../status-nudge.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -84,6 +85,29 @@ async function taskTransition(cmd: CommandContext): Promise<ExitCode> {
     }));
   cmd.out.mutation('task.transition', data, renderCommandResult, () =>
     successReceipt('task.transition', data, callerMutationId(cmd.options)));
+  return EXIT_OK;
+}
+
+/**
+ * `tm8 task release <task-id> --note "<hand-off>"` (Spec D1 R4). Ends the
+ * caller's claim on the task — inside a session, the session's — and keeps the
+ * task's status. The note is the hand-off the next worker reads.
+ */
+async function taskRelease(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['mutation-id', 'note']);
+  const id = requireArg(cmd, 0, '<task-id>');
+  const note = cmd.options.value('note');
+  if (note === undefined || note.trim().length === 0) {
+    throw new CliError('tm8 task release requires --note "<hand-off>"', EXIT_USAGE, {
+      hint: 'say where the work stands and what the next session needs',
+    });
+  }
+  const mutationId = resolveMutationId(cmd.options.value('mutation-id'));
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.commands.release', {
+    params: { id },
+    body: withActor(cmd, { clientMutationId: mutationId, note }),
+  });
+  cmd.out.data(data, renderCommandResult);
   return EXIT_OK;
 }
 
@@ -288,6 +312,7 @@ function linker(
         ...callerMutationId(cmd.options),
         ...(claim.warning ? { warnings: [claim.warning] } : {}),
       }));
+    noticeStatusNudges(cmd, data);
     return EXIT_OK;
   };
 }
@@ -583,6 +608,7 @@ async function taskAxis(cmd: CommandContext): Promise<ExitCode> {
 
 export const TASK_COMMANDS: CommandModule[] = [
   { path: ['task', 'transition'], run: taskTransition },
+  { path: ['task', 'release'], run: taskRelease },
   { path: ['task', 'complete'], run: taskComplete },
   { path: ['task', 'tick'], run: taskTick },
   { path: ['task', 'gate'], run: taskGate },

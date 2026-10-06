@@ -1,16 +1,16 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:212d8a68e5113aa53d686945c3a745cbab929f362d050e82af73b551b481331f",
+  "catalogDigest": "sha256:72c73363cec8409807e0f54d4755aebfebc0064e993dcd54227ec064b13035b1",
   "catalog": {
-    "total": 347,
-    "v1": 345,
+    "total": 349,
+    "v1": 347,
     "reserved": 2,
-    "http": 345,
+    "http": 347,
     "ws": 1,
-    "registerableV1Http": 343,
+    "registerableV1Http": 345,
     "methods": {
       "GET": 114,
-      "POST": 170,
+      "POST": 172,
       "PATCH": 19,
       "DELETE": 22,
       "PUT": 20,
@@ -18,11 +18,11 @@
     },
     "kinds": {
       "read": 120,
-      "command": 225,
+      "command": 227,
       "stream": 2
     },
-    "uniqueNames": 347,
-    "uniqueBindings": 346
+    "uniqueNames": 349,
+    "uniqueBindings": 348
   },
   "reservedOperations": [
     "search.query",
@@ -1062,6 +1062,13 @@
         "source": "server-router"
       },
       {
+        "operation": "entities.commands.release",
+        "method": "POST",
+        "path": "/v2/entities/:id/commands/release",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "entities.commands.pull",
         "method": "POST",
         "path": "/v2/entities/:id/commands/pull",
@@ -1576,6 +1583,13 @@
         "operation": "execution.resume",
         "method": "POST",
         "path": "/v2/entities/:id/commands/resume",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "execution.complete",
+        "method": "POST",
+        "path": "/v2/entities/:id/commands/complete-session",
         "status": "registered",
         "source": "server-router"
       },
@@ -2833,7 +2847,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 315
+    "unimplementedV1Http": 317
   },
   "schemas": {
     "additive": {
@@ -5071,6 +5085,23 @@
         "publicComposite": null
       },
       {
+        "operation": "entities.commands.release",
+        "noun": "entity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/entities.commands.release",
+        "intentTags": [
+          "entities",
+          "commands",
+          "release"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
         "operation": "entities.commands.pull",
         "noun": "entity",
         "exposure": "public",
@@ -6306,6 +6337,22 @@
         "intentTags": [
           "execution",
           "resume"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "execution.complete",
+        "noun": "session",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/execution.complete",
+        "intentTags": [
+          "execution",
+          "complete"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, within } from '@testing-library/react';
 import type { AcceptanceCriterion, EntityDetail, EntitySummary } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
-import { allKinds, getKind } from '../../domain';
+import { allKinds, getKind, sessionRowWord } from '../../domain';
 import {
   ada,
   commitFoundation,
@@ -540,9 +540,9 @@ describe('RUNS — the verdict is handed in, never derived (D6, brief §2.7)', (
     expect(sessionStale.state).toMatchObject({ status: 'running' });
     const { getByTestId } = renderBody({ livenessOf: staleVerdict });
     const row = within(getByTestId('runs-section')).getAllByTestId('run-row')[0];
-    const treatment = getKind(sessionStale.kind).list.liveTreatment;
-    if (!treatment) throw new Error('the session registry row must carry a liveTreatment');
-    expect(row?.textContent).toContain(treatment('stale').shortLabel ?? treatment('stale').label);
+    // Spec D1 §5.7: the chip speaks the shared ROW WORD for the verdict —
+    // "Stale" (§5.1 row 9a) — never the record's "running".
+    expect(row?.textContent).toContain(sessionRowWord(sessionStale.state, 'stale')!.word);
     expect(row?.textContent).not.toMatch(/\brunning\b/);
   });
 
@@ -973,9 +973,8 @@ describe('run chips — the inline cluster that replaced the run rows', () => {
     const label = chips[0]?.getAttribute('aria-label') ?? '';
     expect(label).toContain(b.title);
     expect(label).toContain('claude-sonnet-5');
-    const treatment = getKind(sessionStale.kind).list.liveTreatment;
-    if (!treatment) throw new Error('the session registry row must carry a liveTreatment');
-    expect(label).toContain(treatment('live').shortLabel ?? treatment('live').label);
+    // Spec D1 §5.7: the live run's row word ("Working").
+    expect(label).toContain(sessionRowWord(b.state, 'live')!.word);
   });
 
   it('opens the session from a chip, exactly as the old row did', () => {

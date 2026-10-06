@@ -306,6 +306,8 @@ describe('root and noun help json state repeated fields once', () => {
     expect(await run(['help', 'entity', '--format', 'json'])).toBe(0);
     expect(out().trim().split('\n')).toHaveLength(1);
     // Measured before this change: 6,987 bytes, pretty. Now ~3.4 KB.
-    expect(Buffer.byteLength(out())).toBeLessThan(4500);
+    // 299 (Spec D1): 4,451 -> 4,612 with `task release` (an entities.* op, so
+    // listed under `entity`); the old ceiling left 49 bytes, less than any row.
+    expect(Buffer.byteLength(out())).toBeLessThan(4750);
   });
 });

@@ -164,12 +164,22 @@ button.tch-lcard:focus-visible {
   color: var(--pn-wait);
 }
 
-.tch-lcard__tag[data-tone='done'] {
+.tch-lcard__tag[data-tone='completed'] {
+  background: var(--pn-run-soft);
+  color: var(--pn-run);
+}
+
+.tch-lcard__tag[data-tone='stopped'] {
   background: var(--pn-idle-soft);
   color: var(--pn-ink-2);
 }
 
-.tch-lcard__tag[data-tone='failed'] {
+.tch-lcard__tag[data-tone='ended'] {
+  background: var(--pn-wait-soft);
+  color: var(--pn-wait);
+}
+
+.tch-lcard__tag[data-tone='crashed'] {
   background: var(--pn-block-soft);
   color: var(--pn-block);
 }

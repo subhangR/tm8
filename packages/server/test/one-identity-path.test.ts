@@ -136,6 +136,10 @@ describe('one identity path (R2 / claims contract)', () => {
     // identity, not a side channel — it only narrows (credential reads refuse
     // it), and like session_space_id only db/client.ts may bind it.
     'via_link',
+    // 301 (Spec D1): the work session an agent bearer was minted for. Caller
+    // identity — it names WHICH session a claim belongs to — and like the two
+    // above only db/client.ts may bind it.
+    'work_session_id',
     // 306 (P0e): the in-process tracking job a transaction runs for. Bound
     // ONLY by db/client.ts, from a closed list, never under a space pin; it
     // widens only the tracking doors (internal.is_tracking_worker), and no

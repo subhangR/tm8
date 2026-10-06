@@ -3,6 +3,8 @@ import type { EntityDetail } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
 import { useShellKind } from '../../mobile';
 import { SessionWaitingBanner } from '../../attention/SessionWaitingBanner';
+import { isProcessRecordedLive, sessionLineTwo, sessionRecordOf, type ActionRef } from '../../domain';
+import '../session/session-outcome.css';
 import {
   ExitedFallback,
   LiveTerminal,
@@ -108,6 +110,14 @@ export interface TerminalBodyProps {
    * terminal is already showing you.
    */
   statsSurface?: ReactNode;
+  /**
+   * SPEC D1 §5.6 — the session outcome verbs the ended canvas offers beside
+   * Resume (Complete, Stop for good). Absent ⇒ those buttons render refused,
+   * as Resume does unwired.
+   */
+  onSessionVerb?: (ref: ActionRef) => void;
+  /** Resolve an actor id to a name, for "Stopped by <actor>". */
+  actorName?: (actorId: string) => string | undefined;
 }
 
 export function TerminalBody({
@@ -124,8 +134,16 @@ export function TerminalBody({
   resumeDisabledReason,
   onMarkExited,
   statsSurface,
+  onSessionVerb,
+  actorName,
 }: TerminalBodyProps) {
   const row = toSessionRow(detail);
+  /* Spec D1 §5.6 "Completed, process open": the work is done and the terminal
+     stays usable, so a banner says so above it. Completion is a status marker,
+     not a gate (owner, 6 Oct): the session may keep working, and claiming a
+     new task reopens it server-side. */
+  const record = sessionRecordOf(detail.state);
+  const completedLive = record?.outcome === 'completed' && isProcessRecordedLive(record.status);
   const presentation = presentSession({
     liveness,
     recordedStatus: row.recordedStatus,
@@ -238,6 +256,11 @@ export function TerminalBody({
           reason this session raised; PTY silence alone no longer draws one
           (G1). */}
       <SessionWaitingBanner sessionId={detail.id} tone="dark" />
+      {completedLive ? (
+        <div className="pn-terminal-outcome" data-testid="session-completed-banner">
+          {sessionLineTwo(detail.state, liveness)} · claims ended. Claiming a new task reopens it.
+        </div>
+      ) : null}
 
       <div className="pn-terminal-stage" data-testid="terminal-stage" ref={stageRef}>
         <SessionCanvas
@@ -257,6 +280,9 @@ export function TerminalBody({
           {...(resuming ? { resuming } : {})}
           {...(resumeDisabledReason ? { resumeDisabledReason } : {})}
           {...(onMarkExited ? { onMarkExited } : {})}
+          sessionState={detail.state}
+          {...(onSessionVerb ? { onSessionVerb } : {})}
+          {...(actorName ? { actorName } : {})}
           liveTerminalRef={liveTerminalRef}
           {...(onPhone
             ? {
@@ -331,6 +357,9 @@ function SessionCanvas({
   resuming,
   resumeDisabledReason,
   onMarkExited,
+  sessionState,
+  onSessionVerb,
+  actorName,
   liveTerminalRef,
   fontSize,
   onGeometry,
@@ -350,6 +379,9 @@ function SessionCanvas({
   resuming?: boolean;
   resumeDisabledReason?: string;
   onMarkExited?: () => void;
+  sessionState?: unknown;
+  onSessionVerb?: (ref: ActionRef) => void;
+  actorName?: (actorId: string) => string | undefined;
   liveTerminalRef?: React.Ref<LiveTerminalHandle>;
   /** Phone only — the modifier bar's font control. Absent everywhere else, so
       the desktop terminal keeps `TERMINAL_FONT_SIZE` untouched. */
@@ -416,6 +448,9 @@ function SessionCanvas({
           {...(onResume ? { onResume } : {})}
           {...(resuming ? { resuming } : {})}
           {...(resumeDisabledReason ? { resumeDisabledReason } : {})}
+          sessionState={sessionState}
+          {...(onSessionVerb ? { onSessionVerb } : {})}
+          {...(actorName ? { actorName } : {})}
         />
       );
   }

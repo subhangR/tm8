@@ -378,6 +378,37 @@ describe('message send', () => {
     expect(seen).toHaveLength(0);
   });
 
+  it('D2: a message to a CLOSED session prints a visible notice, and the send still succeeds (stored)', async () => {
+    const detail = `session ${ANCHOR} is closed (completed, process exited); not delivered live — the message is stored on its anchor`;
+    reply = () => envelope({
+      ...(batch([MESSAGE]) as object),
+      delivery: [{ targetMessageId: MESSAGE, targetWorkSessionId: ANCHOR, status: 'undelivered', reason: 'recipient_session_closed', detail }],
+    });
+    const r = await dispatch(['message', 'send', '--to', ANCHOR, 'child result', '--mutation-id', 'mut-1']);
+    expect(r.code).toBe(0);
+    expect(r.stderr).toContain(`notice: ${detail}`);
+  });
+
+  it('P0g: a task_still_working warning prints once, as a notice, and the send succeeds', async () => {
+    const message = `you hold task ${ANCHOR} and it is still \`working\`. If this is the result: \`tm8 task complete ${ANCHOR} --expect-version 3 --by <your team_member>\``;
+    reply = () => envelope({
+      ...(batch([MESSAGE]) as object),
+      warnings: [{ code: 'task_still_working', message }],
+    });
+    const r = await dispatch(['message', 'send', '--to', ANCHOR, 'result: done', '--mutation-id', 'mut-1']);
+    expect(r.code).toBe(0);
+    expect(r.stderr).toContain(`notice: ${message}`);
+    // Said once: the human receipt leaves it to the notice.
+    expect(r.stdout).not.toContain('task_still_working');
+  });
+
+  it('P0g: no notice when the server sends no warning', async () => {
+    reply = () => envelope(batch([MESSAGE]));
+    const r = await dispatch(['message', 'send', '--to', ANCHOR, 'milestone', '--mutation-id', 'mut-1']);
+    expect(r.code).toBe(0);
+    expect(r.stderr).not.toContain('notice:');
+  });
+
   it('sends anchorIds, body, mentions and attachments in the frozen shape', async () => {
     reply = () => envelope(batch([MESSAGE]));
     const r = await dispatch([

@@ -85,6 +85,10 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   'events',              // event changes --events — thin rows instead of the digest
   'overwrite',           // file download --overwrite
   'force',               // session terminate --force
+  'stop',                // session terminate --stop — end the work without completing (Spec D1)
+  'complete',            // session terminate --complete — complete the work, then close
+  'mark-lost',           // session terminate --mark-lost — record a process that is gone
+  'close-process',       // session complete --close-process
   'grant-only',          // session attach --grant-only
   'presence',            // event watch --presence
   'confirm-untrusted',   // session spawn --confirm-untrusted

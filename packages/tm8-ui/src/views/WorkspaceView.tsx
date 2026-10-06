@@ -29,6 +29,7 @@ import { EntityHelpOverlay } from '../entity-help/EntityHelpOverlay';
 import { useRowLifecycle } from './useRowLifecycle';
 import { EntityVerbs } from './EntityVerbs';
 import type { ActionContext, ActionRef, CollectionMode } from '../domain/types';
+import { claimsFromEdges, type SessionClaim } from '../domain/session-outcome';
 import {
   LEFT_PANEL_DEFAULT,
   PanelStack,
@@ -280,6 +281,9 @@ export function WorkspaceView(props: WorkspaceViewProps) {
     onError: notifySessionVerbFailed,
      /* The version the viewer is LOOKING AT — see `versionOf` on the hook. */
     versionOf: (id) => data.detailOf(id)?.version,
+    /* Spec D1 §5.4/§5.5: opts in to the outcome dialogs, rendered below. */
+    stateOf: (id) => data.detailOf(id)?.state,
+    onOpenEntity: (id) => nav.push?.(id as EntityId),
   });
   const handleSessionTerminate = primaries.terminate;
 
@@ -566,14 +570,14 @@ export function WorkspaceView(props: WorkspaceViewProps) {
                     skillOptions={data.skillOptions}
                     onResumeSession={() => handleSessionResume(id)}
                     resumingSession={resumingId === id}
-                    /* The stale card's "mark exited" chip, wired to the SAME executor as
-                       the session tile's ✕ — `usePanelPrimaries.terminate` exists so the
-                       two controls cannot drift into meaning different things. Until now
-                       the chip called nothing at all, which mattered most in exactly the
-                       case it is drawn for: after a node restart, when every killed
-                       session claims to be running and only an operator at a shell could
-                       clear them. */
-                    onMarkSessionExited={() => handleSessionTerminate(id)}
+                    /* The stale card's chip — Spec D1 §5.6 "Mark lost": the ghost
+                       reaper, now, for this session (`terminate` with `markLost`).
+                       It records a process fact only; the outcome stays open and
+                       the row moves to Interrupted as Lost. Same executor as the
+                       row's verbs (`usePanelPrimaries.sessionVerb`). */
+                    onMarkSessionExited={() => primaries.sessionVerb('mark-lost', id)}
+                    onSessionVerb={(ref) => primaries.sessionVerb(ref, id)}
+                    actorNameOf={(actorId) => data.members.find((m) => m.id === actorId)?.displayName}
                     /* GAP-2 (data-wiring handover): hand the seam commands down so the
                        save path is live in the workspace panels too. */
                     commands={data.seam.commands}
@@ -624,6 +628,21 @@ export function WorkspaceView(props: WorkspaceViewProps) {
   const linkedTasksOf = useCallback(
     (id: string) => linkedTasksBySession.get(id) ?? [],
     [linkedTasksBySession],
+  );
+
+  /** Spec D1 §6.8: the same `working_on` edges as CLAIMS — with their status
+      and end — for the row's word ("Ready to complete") and line 2. */
+  const claimsBySession = useMemo(() => {
+    const bySession = new Map<string, SessionClaim[]>();
+    for (const edge of data.graph.edges) {
+      if (edge.type !== 'working_on') continue;
+      bySession.set(edge.source.id, [...(bySession.get(edge.source.id) ?? []), ...claimsFromEdges(edge.source.id, [edge])]);
+    }
+    return bySession;
+  }, [data.graph.edges]);
+  const linkedClaimsOf = useCallback(
+    (id: string): readonly SessionClaim[] | undefined => claimsBySession.get(id),
+    [claimsBySession],
   );
 
   /** The INVERSE projection from the same edges: sessions per `working_on`
@@ -800,6 +819,9 @@ export function WorkspaceView(props: WorkspaceViewProps) {
   const chatInCentre = useChatSlot() !== null && props.chatSlot != null;
 
   return (
+    <>
+    {/* Spec D1 §5.4/§5.5 — the outcome dialogs; fixed-position, so placement is free. */}
+    {primaries.dialog}
     <WorkspaceGrid
       layout={layout}
       centerRef={centerRef}
@@ -856,6 +878,9 @@ export function WorkspaceView(props: WorkspaceViewProps) {
                expanded inline under a task (any panel kind) deserves the same
                close the sessions list gives it. */
             onTerminate={handleSessionTerminate}
+            onSessionVerb={primaries.sessionVerb}
+            onSessionBulk={primaries.sessionBulk}
+            linkedClaimsOf={linkedClaimsOf}
             onShareSession={primaries.shareSession}
             onResume={handleSessionResume}
             onSetState={rowLifecycle.setState}
@@ -1048,6 +1073,9 @@ export function WorkspaceView(props: WorkspaceViewProps) {
             onSelect={openEntity}
             /* Same rule as the left dock — see the comment there. */
             onTerminate={handleSessionTerminate}
+            onSessionVerb={primaries.sessionVerb}
+            onSessionBulk={primaries.sessionBulk}
+            linkedClaimsOf={linkedClaimsOf}
             onShareSession={primaries.shareSession}
             onResume={handleSessionResume}
             onSetState={rowLifecycle.setState}
@@ -1076,6 +1104,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
         </>
       }
     />
+    </>
   );
 }
 

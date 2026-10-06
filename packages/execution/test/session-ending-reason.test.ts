@@ -240,7 +240,7 @@ describe('a session records what it cost, after it records why it ended', () => 
 
     await svc.handlePtyExit('natural', 'completed', { exitCode: 0, signal: null });
 
-    expect(endingFor(graph, 'natural')).toMatchObject({ kind: 'completed', status: 'exited' });
+    expect(endingFor(graph, 'natural')).toMatchObject({ kind: 'exited_clean', status: 'exited' }); // Spec D1 (301): a clean exit, not completed work
     expect(graph.usageRecords).toHaveLength(1);
     expect(graph.usageRecords[0]?.afterTransitions).toBe(1);
     // The scratch cwd is re-derived from the data dir, exactly as execution.transcript does.

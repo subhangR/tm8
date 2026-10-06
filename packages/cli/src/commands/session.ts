@@ -643,15 +643,76 @@ async function sessionResume(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
+/**
+ * `tm8 session complete [<work-session-id>] [--receipt <message-id>]
+ * [--close-process]` (Spec D1 §4.1). Settles the session's OUTCOME as
+ * completed: every claim must be done, in review, blocked or released first
+ * (`claims_open` lists the rest), and a close-out message on the anchor is the
+ * receipt — the latest one unless `--receipt` names it. Run from inside a
+ * session, the id defaults to that session (`TM8_SESSION_ID`). The process
+ * keeps running unless `--close-process`.
+ */
+async function sessionComplete(cmd: CommandContext): Promise<ExitCode> {
+  const id = cmd.args[0] ?? cmd.ctx.sessionId;
+  if (id === undefined || id.length === 0) {
+    throw new CliError('tm8 session complete requires a <work-session-id>', EXIT_USAGE, {
+      hint: 'inside a tm8 session it defaults to that session (TM8_SESSION_ID)',
+    });
+  }
+  const body: Record<string, unknown> = {
+    clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
+  };
+  const receipt = cmd.options.value('receipt');
+  if (receipt !== undefined) body.receiptMessageId = receipt;
+  if (cmd.options.bool('close-process')) body.closeProcess = true;
+  if (cmd.ctx.actor) body.actorId = cmd.ctx.actor.value;
+
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'execution.complete', {
+    params: { id },
+    body,
+  });
+  cmd.out.data(data, renderCompleted);
+  return EXIT_OK;
+}
+
+/**
+ * `tm8 session terminate` (Spec D1 §4.2). Terminate closes a PROCESS. While
+ * the session's work is open it must also say what happens to the work:
+ * `--stop` (end it without completing — claims released, Stopped tab) or
+ * `--complete` (run `session complete` first, then close). On a completed
+ * session neither is needed: it only closes the process. `--mark-lost`
+ * records a process that is already gone (the reaper, now).
+ */
 async function sessionTerminate(cmd: CommandContext): Promise<ExitCode> {
   const id = requireSessionId('session terminate', cmd.args[0]);
   requireConfirmation('session terminate', cmd);
+  const stop = cmd.options.bool('stop');
+  const complete = cmd.options.bool('complete');
+  const markLost = cmd.options.bool('mark-lost');
+  if ([stop, complete, markLost].filter(Boolean).length > 1) {
+    throw new CliError('--stop, --complete and --mark-lost are exclusive', EXIT_USAGE, {
+      hint: '--stop ends the work without completing; --complete completes it first; --mark-lost records a dead process',
+    });
+  }
 
   const mutationId = resolveMutationId(cmd.options.value('mutation-id'));
   const body: Record<string, unknown> = { clientMutationId: mutationId };
   // Sent only when asked: `ExecutionTerminateInput` is strict and a `false`
   // here would be a caller asserting something they did not ask for.
   if (cmd.options.bool('force')) body.force = true;
+  if (stop) body.outcome = 'stop';
+  if (complete) body.outcome = 'complete';
+  if (markLost) body.markLost = true;
+  const receipt = cmd.options.value('receipt');
+  if (receipt !== undefined) {
+    if (!complete) throw new CliError('--receipt goes with --complete', EXIT_USAGE);
+    body.receiptMessageId = receipt;
+  }
+  const note = cmd.options.value('note');
+  if (note !== undefined) {
+    if (!stop) throw new CliError('--note goes with --stop', EXIT_USAGE);
+    body.note = note;
+  }
   if (cmd.ctx.actor) body.actorId = cmd.ctx.actor.value;
 
   const data = await withErrorReceipt(cmd, errorInput(cmd, 'session.terminate', { id, mutationId }), () =>
@@ -918,6 +979,15 @@ function renderDispatched(dto: unknown): string {
   return `task ${String(r.taskId ?? '')}  dispatcher ${r.dispatcherSessionId}  ${String(r.delivery ?? '')}${spawned}`.trim();
 }
 
+function renderCompleted(dto: unknown): string {
+  const r = dto as { entity?: { id?: unknown }; outcome?: { receiptMessageId?: unknown; endedClaims?: unknown; alreadyCompleted?: unknown } | null };
+  const id = String(r?.entity?.id ?? '');
+  const o = r?.outcome;
+  if (!o) return `${id} completed`;
+  if (o.alreadyCompleted === true) return `${id} already completed (receipt ${String(o.receiptMessageId ?? '-')})`;
+  return `${id} completed  receipt ${String(o.receiptMessageId ?? '-')}  claims ended ${String(o.endedClaims ?? 0)}`;
+}
+
 function renderTerminated(dto: unknown): string {
   const entity = (dto as CommandResultish)?.entity;
   if (entity?.id === undefined) return JSON.stringify(dto);
@@ -997,6 +1067,7 @@ export const SESSION_COMMANDS: CommandModule[] = [
   { path: ['session', 'spawn'], run: sessionSpawn },
   { path: ['session', 'dispatch'], run: sessionDispatch },
   { path: ['session', 'resume'], run: sessionResume },
+  { path: ['session', 'complete'], run: sessionComplete },
   { path: ['session', 'terminate'], run: sessionTerminate },
   { path: ['session', 'attach'], run: sessionAttach },
   { path: ['session', 'share'], run: sessionShare },

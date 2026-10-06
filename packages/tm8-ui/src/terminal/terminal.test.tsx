@@ -335,7 +335,8 @@ describe('fallbacks — each verdict states what is actually known', () => {
     expect(el.textContent).toContain(SENTINEL);
     expect(el.textContent).toContain('Liveness never lies');
     // "reconnect" cannot work — the process is gone. Correcting the record can.
-    expect(el.textContent).toContain('mark exited');
+    // Spec D1 §5.6: "mark exited" became Mark lost — the reaper, now.
+    expect(el.textContent).toContain('Mark lost');
     expect(el.textContent).not.toMatch(/reconnect/i);
   });
 

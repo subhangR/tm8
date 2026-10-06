@@ -691,7 +691,7 @@ describe('SC-2 spawn/resume ordering around a space credential', () => {
       expect(result).toEqual({ outcome: 'killed', recorded: true });
       await expect(stat(join(home, 'auth.json'))).rejects.toMatchObject({ code: 'ENOENT' });
       expect(await readFile(rollout, 'utf8')).toBe('{"turn":1}\n');
-      expect(graph.statusesFor(sessionId).at(-1)).toBe('exited');
+      expect(graph.statusesFor(sessionId).at(-1)).toBe('failed'); // Spec D1 (301): failed / credential_revoked
     });
 
     it('a containment whose transition FAILS still removes auth.json (killed, recorded: false)', async () => {

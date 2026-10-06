@@ -167,7 +167,7 @@ describe('registration', () => {
     // 187 adds `session share` — the WATCH and DRIVE dials on one session.
     // Sorted position matters here: the list is the assertion, so a row that
     // arrives has to be placed, not appended.
-    expect(paths).toEqual(['session attach', 'session dispatch', 'session journal', 'session launch', 'session liveness', 'session resume', 'session share', 'session spawn', 'session terminate', 'session transcript']);
+    expect(paths).toEqual(['session attach', 'session complete', 'session dispatch', 'session journal', 'session launch', 'session liveness', 'session resume', 'session share', 'session spawn', 'session terminate', 'session transcript']);
   });
 
   it('every registered path is in the frozen projection', async () => {
@@ -554,6 +554,36 @@ describe('session share', () => {
   });
 });
 
+// ── session complete (Spec D1 §4.1) ──────────────────────────────────────────
+
+describe('session complete', () => {
+  it('binds execution.complete on the session, sending only what was asked', async () => {
+    const r = await drive(['session', 'complete', SESSION]);
+    expect(r.code).toBe(0);
+    expect(seen[0]?.pathname).toBe(`/v2/entities/${SESSION}/commands/complete-session`);
+    expect(Object.keys(body()).sort()).toEqual(['clientMutationId']);
+  });
+
+  it('passes --receipt and --close-process', async () => {
+    const receipt = '44444444-4444-7444-8444-444444444444';
+    const r = await drive(['session', 'complete', SESSION, '--receipt', receipt, '--close-process']);
+    expect(r.code).toBe(0);
+    expect(body()).toMatchObject({ receiptMessageId: receipt, closeProcess: true });
+  });
+
+  it('inside a session the id defaults to TM8_SESSION_ID', async () => {
+    const r = await drive(['session', 'complete'], { TM8_SESSION_ID: SESSION });
+    expect(r.code).toBe(0);
+    expect(seen[0]?.pathname).toBe(`/v2/entities/${SESSION}/commands/complete-session`);
+  });
+
+  it('outside a session, with no id, it is a usage error', async () => {
+    const r = await drive(['session', 'complete']);
+    expect(r.code).toBe(2);
+    expect(seen).toEqual([]);
+  });
+});
+
 // ── session terminate ───────────────────────────────────────────────────────
 
 describe('session terminate', () => {
@@ -583,6 +613,33 @@ describe('session terminate', () => {
     const r = await drive(['session', 'terminate', SESSION, '--force', '--yes']);
     expect(r.code).toBe(0);
     expect(body().force).toBe(true);
+  });
+
+  // Spec D1 §4.2 (301): on an open session the caller says what happens to the work.
+  it('--stop sends outcome stop, with its note', async () => {
+    const r = await drive(['session', 'terminate', SESSION, '--stop', '--note', 'Not needed', '--yes']);
+    expect(r.code).toBe(0);
+    expect(body()).toMatchObject({ outcome: 'stop', note: 'Not needed' });
+  });
+
+  it('--complete sends outcome complete, with its receipt', async () => {
+    const receipt = '44444444-4444-7444-8444-444444444444';
+    const r = await drive(['session', 'terminate', SESSION, '--complete', '--receipt', receipt, '--yes']);
+    expect(r.code).toBe(0);
+    expect(body()).toMatchObject({ outcome: 'complete', receiptMessageId: receipt });
+  });
+
+  it('--mark-lost sends markLost', async () => {
+    const r = await drive(['session', 'terminate', SESSION, '--mark-lost', '--yes']);
+    expect(r.code).toBe(0);
+    expect(body().markLost).toBe(true);
+  });
+
+  it('refuses --stop with --complete, and a receipt or note on the wrong choice', async () => {
+    expect((await drive(['session', 'terminate', SESSION, '--stop', '--complete', '--yes'])).code).toBe(2);
+    expect((await drive(['session', 'terminate', SESSION, '--stop', '--receipt', SESSION, '--yes'])).code).toBe(2);
+    expect((await drive(['session', 'terminate', SESSION, '--complete', '--note', 'x', '--yes'])).code).toBe(2);
+    expect(seen).toEqual([]);
   });
 
   it('renders an honest 501 faithfully and exits 8', async () => {

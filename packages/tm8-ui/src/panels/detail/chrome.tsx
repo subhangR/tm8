@@ -2,7 +2,15 @@ import { useCallback, useRef, useState, type ReactNode } from 'react';
 import type { EntityDetail, EntityId, EntityState, SpaceId } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
 import type { ActionContext, ActionRef, KindConfig, StatusSource } from '../../domain';
-import { KindIcon, processControlFor, resolveAction, titleNormalizerFor } from '../../domain';
+import {
+  KindIcon,
+  processControlFor,
+  resolveAction,
+  sessionControlsFor,
+  sessionHeadline,
+  sessionRowWord,
+  titleNormalizerFor,
+} from '../../domain';
 import { InlineTitleEditor } from '../../authoring';
 import { Avatar, IconBtn, Pill, type PillTone } from '../../kit';
 import { useMobileSurface } from '../../mobile';
@@ -291,6 +299,19 @@ export function StatusPillFor({
    * breath ("running per record · unverified") — but it never wears the live
    * treatment on its own.
    */
+  /* SPEC D1 §5.6: a session's pill is its OUTCOME word first — Completed,
+     Stopped, Crashed: <reason>, Ready to complete — with the process folded
+     in ("Finished, still open"), from the same derivation as the list row. */
+  const sessionWord = sessionRowWord(detail.state, liveness);
+  if (sessionWord) {
+    const tone: PillTone = sessionWord.tone === 'done' ? 'run' : sessionWord.tone;
+    const label = sessionHeadline(detail.state, liveness) ?? sessionWord.word;
+    return (
+      <Pill tone={tone} title={sessionWord.reason ?? label}>
+        <span data-testid="session-panel-pill" data-session-case={sessionWord.case}>{label}</span>
+      </Pill>
+    );
+  }
   const treatment = liveness && config.list.liveTreatment ? config.list.liveTreatment(liveness) : null;
   if (treatment) {
     return (
@@ -375,6 +396,8 @@ export function panelActionContext(
     capabilities: ctx.capabilities ?? detail.capabilities,
     liveness: ctx.liveness ?? liveness,
     category: ctx.category ?? detail.category,
+    // Spec D1: the session's own state, so its verbs follow outcome × process.
+    sessionState: ctx.sessionState ?? detail.state,
   };
 }
 
@@ -516,7 +539,12 @@ export function ActionBar({
    * listing both would draw one live verb beside one permanently refused one.
    * A kind that never declares `terminate` is untouched by construction.
    */
-  const primaries = (config.panel.primaries ?? []).map((ref) => processControlFor(ref, ctx));
+  /* SPEC D1 §5.6: a session's slot expands to its outcome verbs — Complete ·
+     Terminate while working, Close process on a ✓ session, Resume · Complete
+     · Dismiss when interrupted. Every other kind keeps the one-slot swap. */
+  const declaredPrimaries = config.panel.primaries ?? [];
+  const primaries =
+    sessionControlsFor(declaredPrimaries, ctx) ?? declaredPrimaries.map((ref) => processControlFor(ref, ctx));
   return (
     <div className="pn-actions pn-actions--inline" data-testid="panel-action-bar" ref={barRef}>
       {primaries.map((ref, index) => (
@@ -997,8 +1025,10 @@ export function panelMenuItems(input: PanelMenuInput): PanelMenuItem[] {
     };
   });
 
-  const primaries: PanelMenuItem[] = (config.panel.primaries ?? [])
-    .map((declared) => processControlFor(declared, ctx))
+  const primaries: PanelMenuItem[] = (
+    sessionControlsFor(config.panel.primaries ?? [], ctx)
+    ?? (config.panel.primaries ?? []).map((declared) => processControlFor(declared, ctx))
+  )
     .map((ref) => {
       const def = resolveAction(ref);
       const wiring = actionWiring(

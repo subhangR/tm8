@@ -27,6 +27,7 @@ import { serializeLaunchIndex } from './context-index.js';
 import { renderStoryContext } from './story-context.js';
 import { renderDesignContext } from './design-context.js';
 import { acceptanceCriteriaOf, coordinatorKindOf } from './templates.js';
+import { workerRoutineV2Rule } from './worker-routine.js';
 import type { AgentMode, PromptEnvelope, PromptManifest, PromptRuntime } from './index.js';
 
 /** The frame attribute the agent reads on the v2 envelope. */
@@ -139,11 +140,7 @@ export const ROLE_LAYERS_V2: Record<RoleV2, readonly string[]> = {
     'You are a worker: you do the assigned task yourself.',
     "1. Do not spawn or delegate to other agents (tm8 sessions or your harness's " +
       'sub-agents) unless the task asks for it.',
-    '2. Finishing means: result verified; one closing message on the task (outcome, ' +
-      'entities touched, decisions, open questions); tick every met criterion with ' +
-      '`tm8 task tick <task-id> <criterion-id>... --expect-version <n>`; then ' +
-      '`tm8 task complete <task-id> --expect-version <version tick returned> --by <your team_member>`. ' +
-      'If you cannot complete, say why on the task. Exiting or going idle is not finishing.',
+    workerRoutineV2Rule(2),
   ],
   coordinator: [
     'You coordinate; workers execute. Your output is spawns, briefs, verification and ' +
@@ -167,6 +164,9 @@ export const ROLE_LAYERS_V2: Record<RoleV2, readonly string[]> = {
       '`tm8 task tick <task-id> <criterion-id>... --expect-version <n>`; then ' +
       '`tm8 task complete <task-id> --expect-version <version tick returned> --by <your team_member>`. ' +
       'Exiting or going idle is not finishing.',
+    '6. Then `tm8 session complete`. Terminate an unfinished worker with `--stop` or `--complete`. ' +
+      'Keep the status of each task you hold true, as in `tm8 help routine`: a task left ' +
+      '`working` with no live session is flagged.',
   ],
   dispatcher: [
     "You are this space's dispatcher, a resident router. Each request names a task; you " +

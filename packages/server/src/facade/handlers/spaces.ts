@@ -41,6 +41,8 @@ export interface SpaceRow {
   /** 187 sharing defaults. Optional so pre-187 row fixtures still type. */
   session_share_default?: string | null;
   session_drive_default?: string | null;
+  /** 301: the auto-close window (Spec D1 Q3); absent on a pre-301 database. */
+  session_autoclose_minutes?: number | null;
 }
 
 export function toSpaceSummary(row: SpaceRow): SpaceSummary {
@@ -66,6 +68,9 @@ export function toSpaceSummary(row: SpaceRow): SpaceSummary {
       : {}),
     ...(row.session_drive_default === 'owner' || row.session_drive_default === 'space'
       ? { sessionDriveDefault: row.session_drive_default }
+      : {}),
+    ...(typeof row.session_autoclose_minutes === 'number'
+      ? { sessionAutoCloseMinutes: row.session_autoclose_minutes }
       : {}),
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : new Date(row.created_at).toISOString(),
   };
@@ -116,7 +121,7 @@ export function toSpaceSummary(row: SpaceRow): SpaceSummary {
  */
 export const SPACE_COLUMNS = `
   s.id, s.name, s.description, s.github_repo, s.created_at,
-  s.session_share_default, s.session_drive_default,
+  s.session_share_default, s.session_drive_default, s.session_autoclose_minutes,
   (select count(*)::text from public.members member_count_row
     where member_count_row.space_id = s.id
       and member_count_row.status = 'active') as member_count`;

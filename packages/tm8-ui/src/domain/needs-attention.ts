@@ -2,6 +2,7 @@ import type { EntitySummary } from '@tm8/contract';
 import type { SessionLiveness } from '../data/seam';
 import type { ListRowFacts } from './types';
 import { getKind } from './registry';
+import { isSessionState } from './session-outcome';
 
 /**
  * THE ONE PLACE "does this entity need a human" is decided, for PRESENTATION.
@@ -39,6 +40,8 @@ export function toRowFacts(row: EntitySummary): ListRowFacts {
     activityAt: row.activityAt,
     status: typeof state.status === 'string' ? state.status : null,
     blockedCount: row.badges.blocked?.unresolvedHardDependencyCount ?? 0,
+    // Spec D1: the session predicate reads the outcome and the ending.
+    ...(isSessionState(row.state) ? { sessionState: row.state } : {}),
   };
 }
 

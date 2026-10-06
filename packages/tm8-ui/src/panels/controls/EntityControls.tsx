@@ -75,6 +75,9 @@ import {
   offWorkflowType,
   processControlFor,
   resolveAction,
+  sessionControlsFor,
+  sessionOutcomeOf,
+  isSessionState,
   sharingControlFor,
   sessionSharingOf,
   workflowRefusalText,
@@ -213,6 +216,15 @@ export interface ControlHost {
    * collapsed row where there is no state control to reach it through.
    */
   onComplete?: (entityId: string) => void;
+  /**
+   * SPEC D1 §5 — the session OUTCOME verbs: `complete-session` (the Complete
+   * dialog), `close-process` (Stop on a ✓ row), `dismiss-session`,
+   * `mark-lost`, and Terminate's dialog when the host routes it here. One
+   * prop for all of them, keyed on the verb, because they share one executor
+   * (`usePanelPrimaries.forEntity`). Absent ⇒ each renders its not-wired
+   * refusal, exactly as `onTerminate` absent does.
+   */
+  onSessionVerb?: (ref: ActionRef, entityId: string) => void;
   /**
    * THE TWO SHARING DIALS (187) — `execution.sessions.share`.
    *
@@ -397,7 +409,7 @@ export interface ControlHost {
  * this component exist. A verb named in neither list keeps its declared
  * position, between the ranked ones and the tail.
  */
-const RULED_ORDER: readonly ActionRef[] = ['complete', 'run'];
+const RULED_ORDER: readonly ActionRef[] = ['complete', 'complete-session', 'run'];
 
 /**
  * The verbs that sit AFTER the anatomy's own affordances, hard right.
@@ -417,6 +429,18 @@ const RULED_ORDER: readonly ActionRef[] = ['complete', 'run'];
  * from the verbs that move a row through its life.
  */
 const TAIL_ORDER: readonly ActionRef[] = ['terminate'];
+
+/**
+ * SPEC D1 §5 — the verbs `RowActionCluster` hands to `onSessionVerb`. Kept
+ * beside `TAIL_ORDER` because they occupy the slots it orders on a session row.
+ */
+const SESSION_OUTCOME_VERBS: readonly ActionRef[] = [
+  'complete-session',
+  'close-process',
+  'dismiss-session',
+  'mark-lost',
+  'reopen-session',
+];
 
 /** Rank within `RULED_ORDER`; unnamed verbs sort after all named ones, stably. */
 const rankOf = (ref: ActionRef): number => {
@@ -505,8 +529,17 @@ export function RowActionCluster({
    * The 2→1 jitter when a hovered row dies is ACCEPTED, not designed around:
    * the shift is a welcome signal that the session just ended.
    */
-  const rowProcess = { category: row.category, liveness: props.livenessOf?.(row.id) };
+  const rowProcess = {
+    category: row.category,
+    liveness: props.livenessOf?.(row.id),
+    ...(isSessionState(row.state) ? { sessionState: row.state } : {}),
+  };
   const endedRun = declared.includes(PROCESS_CONTROL.running) && hasEnded(rowProcess);
+  /* SPEC D1 §5.2: a session row's verbs come from its outcome × process, not
+     from the one-slot swap below. Null for every other kind. */
+  const sessionVerbs = declared.includes(PROCESS_CONTROL.running)
+    ? sessionControlsFor([PROCESS_CONTROL.running], rowProcess)
+    : null;
 
   /* `sort` is stable in every engine this ships to (ES2019 requires it), which
      is what lets an unranked verb keep its declared position. */
@@ -521,16 +554,25 @@ export function RowActionCluster({
    */
   const shareMode = (row.state as unknown as Record<string, unknown>).shareMode;
 
-  const middle = declared
+  /* A session's Complete keeps the tick's ruled middle position (before Run);
+     its other outcome verbs take the tail slot Terminate held. */
+  const middle = (sessionVerbs
+    ? [
+        ...declared.filter((ref) => ref !== 'complete'),
+        ...(declared.includes('complete') ? sessionVerbs.filter((ref) => ref === 'complete-session') : []),
+      ]
+    : declared)
     .filter((ref) => !TAIL_ORDER.includes(ref))
     .filter((ref) => !(endedRun && ref === 'complete'))
     .sort((a, b) => rankOf(a) - rankOf(b))
     /* The sharing swap, for the same structural reason the tail swaps below:
        the registry can declare one ref and the row decides which half. */
     .map((ref) => sharingControlFor(ref, typeof shareMode === 'string' ? shareMode : undefined));
-  const tail = declared
-    .filter((ref) => TAIL_ORDER.includes(ref))
-    .map((ref) => processControlFor(ref, rowProcess));
+  const tail = sessionVerbs
+    ? sessionVerbs.filter((ref) => !(ref === 'complete-session' && declared.includes('complete')))
+    : declared
+      .filter((ref) => TAIL_ORDER.includes(ref))
+      .map((ref) => processControlFor(ref, rowProcess));
 
   /**
    * The dedicated executor for a verb the general `onAction` cannot perform.
@@ -552,6 +594,8 @@ export function RowActionCluster({
     if (ref === 'terminate' && props.onTerminate) return (_ref, id) => props.onTerminate?.(id);
     if (ref === 'resume' && props.onResume) return (_ref, id) => props.onResume?.(id);
     if (ref === 'complete' && props.onComplete) return (_ref, id) => props.onComplete?.(id);
+    /* Spec D1: the session outcome verbs share one executor. */
+    if (SESSION_OUTCOME_VERBS.includes(ref) && props.onSessionVerb) return (r, id) => props.onSessionVerb?.(r, id);
     return undefined;
   };
 
@@ -596,6 +640,19 @@ export function RowActionCluster({
       ) : null}
       {middle.map(verb)}
       {anatomyActions}
+      {/* Spec D1 §5.2: a completed session shows a FIXED check — the work is
+          done and cannot be unticked; reopening is the logged Resume (Q2 = B). */}
+      {sessionVerbs && sessionOutcomeOf(row.state) === 'completed' ? (
+        <span
+          className="lp__rowaction lp__rowaction--fixed"
+          data-testid="session-fixed-check"
+          role="img"
+          aria-label="Completed"
+          title="Completed — reopen it with Reopen (resume), not by unticking"
+        >
+          ✓
+        </span>
+      ) : null}
       {tail.map(verb)}
     </>
   );
@@ -2323,6 +2380,9 @@ export function RowAction({
     /* The row's OWN tab, so a verb can refuse itself on a finished row without
        a second seam question. See `ControlSubject.category`. */
     ...(row.category ? { category: row.category } : {}),
+    /* Spec D1: a session's process control asks its own status, not the
+       category (which now follows the outcome). */
+    ...(isSessionState(row.state) ? { sessionState: row.state } : {}),
   };
 
   /**
