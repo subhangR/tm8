@@ -46,6 +46,7 @@ import {
 } from './templates.js';
 import { DEFAULT_PROMPT_VERSION, PROMPT_V2_MODES, PROMPT_VERSION_V2 } from './prompt-version.js';
 import { composePromptV2, HEADER_AUTHORING_RULE, type TaskContextSnapshot } from './prompt-v2.js';
+import { WORKER_ROUTINE_V1 } from './worker-routine.js';
 
 /**
  * The harness surfaces (§5.2 kernel, §8.1 budgets, §14 templates, §18 escaping)
@@ -60,6 +61,7 @@ export * from './kernel.js';
 export * from './prompt-version.js';
 export * from './templates.js';
 export * from './prompt-v2.js';
+export * from './worker-routine.js';
 
 export type AgentMode =
   | 'worker'
@@ -291,22 +293,6 @@ export const GIT_TRACKING_COORDINATOR_INSTRUCTION =
   'transcript. Gate a task with `tm8 task gate <task-id> pr_merged` when ' +
   'completion must wait for the merge.';
 
-/**
- * Spec D1 §7 (migration 301): how a session finishes. Posting the close-out is
- * the receipt; `tm8 session complete` is what settles the session's outcome —
- * the claim check, then the receipt — and ends its remaining claims. A process
- * exiting completes nothing, and terminate is the operator's verb.
- */
-const SESSION_CLOSE_OUT_RULE =
-  ' Close out in this order: (1) finish each task you claimed, move it to ' +
-  '`in_review` or `blocked`, or hand it off with `tm8 task release <task-id> --note ' +
-  '"<hand-off>"`; (2) post the close-out message; (3) run `tm8 session complete` — ' +
-  'it refuses with `claims_open` while a claim is still working, and takes your ' +
-  'latest message on the anchor as the receipt (or pass `--receipt <message-id>`). ' +
-  'Completing is a status marker, not an exit: you may still answer messages and ' +
-  'keep working, and claiming a new task reopens the session. Never run ' +
-  '`tm8 session terminate` on yourself to finish — terminate is for operators.';
-
 const WORKER_IDENTITY_INSTRUCTION =
   'You are an autonomous agent working inside a tm8 workspace. Work your assigned ' +
   'tasks to completion. Orient with one `tm8 entity context <anchor-id>` on your ' +
@@ -326,10 +312,8 @@ const WORKER_IDENTITY_INSTRUCTION =
   'answer with `tm8 message reply <context_message_id> "<body>"` — the reply verb ' +
   'derives the thread and anchor from that message id, so your answer lands where ' +
   'the question was asked. Completion needs a verified result and a durable receipt — ' +
-  'your process exiting is not completion: close out with one `tm8 message send` ' +
-  'on the anchor stating outcome, entity ids touched, decisions and why, open ' +
-  'questions, and next-session pointers.' +
-  SESSION_CLOSE_OUT_RULE +
+  'your process exiting is not completion.' +
+  WORKER_ROUTINE_V1 +
   GIT_TRACKING_WORKER_INSTRUCTION +
   ' ' +
   HEADER_AUTHORING_RULE;
@@ -372,7 +356,7 @@ const COORDINATOR_IDENTITY_INSTRUCTION =
   'with one `tm8 message send` on your assignment anchor integrating every ' +
   'worker result — or naming the ones you could not collect. Terminating a worker ' +
   'whose work is not completed needs `--stop` (abandon) or `--complete` (it is done).' +
-  SESSION_CLOSE_OUT_RULE +
+  WORKER_ROUTINE_V1 +
   GIT_TRACKING_COORDINATOR_INSTRUCTION +
   ' ' +
   HEADER_AUTHORING_RULE;
@@ -393,7 +377,7 @@ const COORDINATED_WORKER_IDENTITY_INSTRUCTION =
   'or task anchor. The message must carry outcome, verification, blockers, the entities or ' +
   'artifacts you touched, decisions and why, open questions, and next-session ' +
   'pointers. Do not go idle after finishing.' +
-  SESSION_CLOSE_OUT_RULE +
+  WORKER_ROUTINE_V1 +
   GIT_TRACKING_WORKER_INSTRUCTION +
   ' ' +
   HEADER_AUTHORING_RULE;

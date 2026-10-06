@@ -4850,6 +4850,7 @@ const NOUN_SUMMARY: Record<string, string> = {
   edge: 'Typed relationships between entities, and the edge-type registry',
   'edge-type': 'The registered edge types and their endpoint rules',
   story: 'Stories: create, curate roots, read bounded context, and set status',
+  routine: 'The worker routine: claim, keep status true, tick, finish, close out, session complete',
   collection: 'Curated-set membership (add/remove), plus the Space-wide entity query (invoked as `entity query`)',
   chat: 'Chats with a teammate: start one, list them, read one, post a turn, and see its turn state',
   message: 'Durable messages — the only public communication action for text',
@@ -4885,6 +4886,7 @@ const NOUN_SUMMARY: Record<string, string> = {
 export const NOUNS: readonly string[] = [
   ...new Set([
     'story', // Guide-only topic: stories use universal entity and collection commands.
+    'routine', // Guide-only topic: the worker routine (P0g), from @tm8/prompt.
     ...BASE.map((r) => r.noun),
     ...BASE.flatMap((r) => (r.command ? [r.command[0] as string] : [])),
     // An alias may introduce a noun (`space-link`, `whoami`); help must resolve it.

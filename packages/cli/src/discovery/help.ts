@@ -55,6 +55,7 @@ import {
 import type { AvailabilityLedger } from './availability.js';
 import { matchIntent, matchReason, rank } from './search.js';
 import { storyGuide } from './story-guide.js';
+import { routineGuide } from './routine-guide.js';
 import { formGuide, type GuideSection } from './form-guide.js';
 
 export const CLI_VERSION = '0.1.0';
@@ -158,6 +159,7 @@ export interface NounHelp {
 const NOUN_GUIDES: Readonly<Record<string, () => GuideSection[]>> = {
   form: formGuide,
   story: storyGuide,
+  routine: routineGuide,
 };
 
 export interface CommandHelp {

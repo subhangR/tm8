@@ -657,6 +657,13 @@ export interface EntityBadges {
   pulls?: PullState[];
   workingActors?: LiveWork[];
   /**
+   * Whether anyone is really on a `working` or `blocked` task (P0g, owner
+   * policy 6 Oct 2026: flag only, never an automatic status change). Derived
+   * from the task's active `working_on` claims on every read. ABSENT for any
+   * other status, and on a node predating the field.
+   */
+  liveSession?: TaskLiveSession;
+  /**
    * The pull requests this task `tracks`, projected onto the task's OWN
    * summary. Newest-first by link recency, capped — see
    * `LinkedPullRequestBadge`.
@@ -856,6 +863,27 @@ export interface PullState {
 }
 
 export interface LiveWork { actor: ActorSummary; task: EntitySummary; startedAt: string; note?: string | null }
+
+/**
+ * `badges.liveSession` (P0g). `state`:
+ * - `live`: a session with an open outcome and a live process holds an active claim;
+ * - `session_down`: the only session claims belong to sessions whose process is
+ *   gone (crashed, lost, exited) but whose outcome is still open: "Session crashed";
+ * - `person`: no session, but a person holds a claim and acted on the task in the
+ *   last 7 days;
+ * - `person_idle`: a person holds a claim with no activity from them for 7 days:
+ *   "No activity 7d";
+ * - `no_session`: no active claim at all: "No live session".
+ * `since` is when that state began, when known (the claim start, the session's
+ * process change, the holder's last activity, or the latest claim end).
+ */
+export type TaskLiveSessionState = 'live' | 'session_down' | 'person' | 'person_idle' | 'no_session';
+export interface TaskLiveSession {
+  state: TaskLiveSessionState;
+  since: string | null;
+  /** The session behind `live` / `session_down`, else null. */
+  sessionId: EntityId | null;
+}
 
 export interface EntityDetail extends EntitySummary {
   content: EntityContent;
