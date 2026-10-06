@@ -39,6 +39,14 @@
  * (`space_link_spawns`, 277) under the link session's claims, and the audit
  * row in A names the child session as its remote id.
  *
+ * A session's body (`execution.journal`, `execution.transcript`) is refused
+ * at home except for SPACE_LINK_OWN_SPAWN_OPS, whose decision waits for B:
+ * after the re-resolve the executor asks B (299 `space_link_spawn_owned`,
+ * under the link session) whether that session was started by this link as
+ * this member. Yes runs B's handler with every minted token in the result
+ * redacted; no is the same `session_body` refusal, audited `refused`. A
+ * remote target has no such check yet, so there it stays refused.
+ *
  * Every outcome writes one `cross_space_audit` row in A under the caller's
  * own claims. No token is put in a header, an error, a log line, the audit or
  * the inner request context (`identity.token` is dropped).
@@ -47,6 +55,7 @@ import {
   CollabError,
   ERROR_STATUS,
   SPACE_LINK_MAX_HOPS,
+  SPACE_LINK_OWN_SPAWN_OPS,
   SPACE_LINK_SPAWN_OPS,
   SPACE_LINK_VIA_HEADER,
   SpaceLinksInvokeInputSchema,
@@ -67,7 +76,10 @@ import type { DbClaims } from '../../../db/types.js';
 import { FixedWindowLimiter } from '../../../http/fixed-window.js';
 import { normalizeCommandInputForIdempotencyMode } from '../../../http/idempotency.js';
 import { identityFromSession } from '../../../http/identity-resolver.js';
+import { TOKEN_PREFIX } from '../../../identity/crypto.js';
+import { CLAIM_TOKEN_PREFIX } from '../../../identity/pg-auth.js';
 import { admitLinkInvoke } from '../../../identity/link-bearer.js';
+import { PTY_GRANT_PREFIX } from '../../../pty/grant-token.js';
 import { nextRequestId } from '../../../http/request-id.js';
 import type { OperationHandler, RequestContext, RequestIdentity } from '../../../http/types.js';
 import { isHandlerResult } from '../../../http/types.js';
@@ -151,7 +163,8 @@ export type SpaceLinkExecutor = (request: SpaceLinkExecuteRequest) => Promise<Sp
 
 /** An executor failure with the closed audit reason it should be recorded under. */
 export class SpaceLinkExecuteFailure extends Error {
-  constructor(readonly reason: string, readonly error: unknown) {
+  /** `refused`: a link refusal decided on B (audited `refused`), not a failed run. */
+  constructor(readonly reason: string, readonly error: unknown, readonly refused = false) {
     super(reason);
     this.name = 'SpaceLinkExecuteFailure';
   }
@@ -165,6 +178,30 @@ export function parseVia(header: string | string[] | undefined): string[] {
     throw refused('via_hops', 'x-tm8-via is malformed or longer than the hop limit');
   }
   return parts.map((part) => part.toLowerCase());
+}
+
+/** True for a session-body op that may pass for the caller's own link spawn (299). */
+export function isOwnSpawnOp(op: string): boolean {
+  return Object.hasOwn(SPACE_LINK_OWN_SPAWN_OPS, op);
+}
+
+/** A home-side refusal that is not final: an own-spawn op's `session_body` waits for B. */
+function deferredToTarget(op: string, reason: SpaceLinkRefusalReason): boolean {
+  return reason === 'session_body' && isOwnSpawnOp(op);
+}
+
+// Every bearer a tm8 node mints (identity/crypto.ts, identity/pg-auth.ts,
+// pty/grant-token.ts). The CLI journal redacts them at write time; a
+// transcript is the agent tool's own file, so a session body that crosses a
+// link has them dropped here, keeping only the prefix.
+const MINTED_TOKEN_RE = new RegExp(`(${[TOKEN_PREFIX, CLAIM_TOKEN_PREFIX, PTY_GRANT_PREFIX].join('|')})[^\\s"'\`\\\\]+`, 'g');
+
+/** `data` with every minted token in any string replaced by its prefix and `<redacted>`. */
+export function withoutMintedTokens(data: unknown): unknown {
+  if (data === undefined) return data;
+  const text = JSON.stringify(data);
+  const redacted = text.replace(MINTED_TOKEN_RE, '$1<redacted>');
+  return redacted === text ? data : JSON.parse(redacted) as unknown;
 }
 
 function refused(reason: SpaceLinkRefusalReason, message?: string): CollabError {
@@ -316,6 +353,19 @@ export function createSpaceLinkInvokeHandlers(
       path: binding.path,
     };
 
+    // 299: a session body passes only for a session this link started as this
+    // member. B answers from its own provenance, under the link session.
+    const ownSpawn = isOwnSpawnOp(op);
+    if (ownSpawn) {
+      const sessionId = request.params[SPACE_LINK_OWN_SPAWN_OPS[op]!] ?? '';
+      const owned = UUID_RE.test(sessionId) && await store.spawnOwned(await claimsOf(inner), sessionId);
+      const refusal = spaceLinkRefusal(op, binding.kind, request.input, true, owned);
+      if (refusal) {
+        throw new SpaceLinkExecuteFailure(refusal, refused(refusal,
+          `refused through a space link: ${refusal} (only a session this link started as you is readable)`), true);
+      }
+    }
+
     // Layer (ii)'s one admission of a link identity (lead ruling (a)): this
     // context object, this op, one dispatch. Every home-side refusal above has
     // already run; a nested dispatch from inside the handler finds no marker.
@@ -329,6 +379,7 @@ export function createSpaceLinkInvokeHandlers(
       }
       data = result.data;
     }
+    if (ownSpawn) return { data: withoutMintedTokens(data), requestId: inner.requestId };
     if (!SPACE_LINK_SPAWN_OPS.includes(op)) return { data, requestId: inner.requestId };
 
     // W7b: the child's provenance in B, under the link session's own claims.
@@ -361,6 +412,10 @@ export function createSpaceLinkInvokeHandlers(
    */
   const remote: SpaceLinkExecutor = async (request) => {
     const serverId = request.row.targetServerId;
+    // No B-side provenance check exists on a remote link yet: fail closed.
+    if (isOwnSpawnOp(request.op)) {
+      throw new SpaceLinkExecuteFailure('session_body', refused('session_body'), true);
+    }
     const forwarder = options.forwarder ?? deps.remoteInvokeForwarder;
     if (!forwarder || !serverId) {
       throw new SpaceLinkExecuteFailure('remote_not_wired',
@@ -444,8 +499,9 @@ export function createSpaceLinkInvokeHandlers(
     const binding = getOperation(requested);
 
     // 2. The refused set (the spawn switch waits for the row, step 5).
+    // An own-spawn session body is decided on B (the executor), not here.
     const early = spaceLinkRefusal(requested, binding.kind, input, undefined);
-    if (early) return refuse(refused(early), early);
+    if (early && !deferredToTarget(requested, early)) return refuse(refused(early), early);
 
     // 3. The via chain, before the target is known.
     try {
@@ -472,7 +528,7 @@ export function createSpaceLinkInvokeHandlers(
     if (chainLate) return refuse(refused(chainLate), chainLate);
     // Fail closed: only a row that says allow_spawn is true lets a spawn op on.
     const late = spaceLinkRefusal(requested, binding.kind, input, row.allowSpawn === true);
-    if (late) return refuse(refused(late), late);
+    if (late && !deferredToTarget(requested, late)) return refuse(refused(late), late);
 
     // 6. Rate bucket per token row.
     const verdict = limiter.hit(row.tokenRowId);
@@ -498,7 +554,7 @@ export function createSpaceLinkInvokeHandlers(
         input: withoutHomeEnvelope(input, { actorId: ctx.identity.actorId, workSessionId }), via, homeSpaceId, workSessionId });
     } catch (error) {
       if (error instanceof SpaceLinkExecuteFailure) {
-        await audit('error', error.reason).catch(() => undefined);
+        await audit(error.refused ? 'refused' : 'error', error.reason).catch(() => undefined);
         throw error.error;
       }
       await audit('error', isCollabError(error) ? error.code : 'internal').catch(() => undefined);

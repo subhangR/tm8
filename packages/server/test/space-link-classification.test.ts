@@ -15,7 +15,9 @@
  * fields stay refused whatever the switch. `chat.start`, `chat.setModel`,
  * `execution.prompt` and `execution.terminal.start` stay refused.
  */
-import { OPERATIONS, SPACE_LINK_REFUSED, SPACE_LINK_SPAWN_OPS, spaceLinkRefusal } from '@tm8/contract';
+import { OPERATIONS, SPACE_LINK_OWN_SPAWN_OPS, SPACE_LINK_REFUSED, SPACE_LINK_SPAWN_OPS, spaceLinkRefusal } from '@tm8/contract';
+
+import { withoutMintedTokens } from '../src/facade/handlers/w2/space-link-invoke.js';
 import { describe, expect, it } from 'vitest';
 
 const WATCHED_NAMESPACE = /^(execution|containers|chat|launch|voice|auth|serverConnections|credentials|node\.credentials|spaceLinks|files|artifacts|projects\.folderUploads|forms|agent|agents|sessions)\./;
@@ -137,6 +139,33 @@ describe('spaceLinks.invoke classification — every start, grant and session-bo
     expect(spaceLinkRefusal('entities.refs.add', 'command', {}, true)).toBe('link_management');
     expect(spaceLinkRefusal('entities.refs.list', 'read', {}, true)).toBeNull();
     expect(spaceLinkRefusal('entities.refs.remove', 'command', {}, true)).toBeNull();
+  });
+
+  it('299 — a session body is refused unless B confirmed the caller\'s own link spawn; nothing else is opened by that flag', () => {
+    expect(Object.keys(SPACE_LINK_OWN_SPAWN_OPS).sort()).toEqual(['execution.journal', 'execution.transcript']);
+    for (const op of Object.keys(SPACE_LINK_OWN_SPAWN_OPS)) {
+      const kind = OPERATIONS.find((o) => o.name === op)!.kind as 'read';
+      expect(spaceLinkRefusal(op, kind, {}, true)).toBe('session_body');
+      expect(spaceLinkRefusal(op, kind, {}, true, false)).toBe('session_body');
+      expect(spaceLinkRefusal(op, kind, {}, true, true)).toBeNull();
+      // The param names the session B checks: the catalog path carries it.
+      expect(OPERATIONS.find((o) => o.name === op)!.path).toContain(`:${SPACE_LINK_OWN_SPAWN_OPS[op]}`);
+    }
+    // ownSpawn opens no other refused op, a prefix one included.
+    for (const op of ['execution.prompt', 'execution.terminal.start', 'execution.streams.attach', 'credentials.status', 'execution.gitStatus']) {
+      expect(spaceLinkRefusal(op, 'command', {}, true, true)).toBe(spaceLinkRefusal(op, 'command', {}, true));
+    }
+  });
+
+  it('299 — a session body crossing a link carries no minted token; other text and shapes are kept', () => {
+    const token = ['tm8s', 'abc123_def-456'].join('_');
+    const page = { sessionId: 'x', turns: [{ text: `run ${token} now` }, { text: `"${['tm8g', 'q'].join('_')}"` }], n: 3 };
+    expect(withoutMintedTokens(page)).toEqual({
+      sessionId: 'x', turns: [{ text: 'run tm8s_<redacted> now' }, { text: '"tm8g_<redacted>"' }], n: 3,
+    });
+    const clean = { a: 'tm8 says hi', b: [1, null] };
+    expect(withoutMintedTokens(clean)).toBe(clean);
+    expect(withoutMintedTokens(undefined)).toBeUndefined();
   });
 
   it('PASSES holds no op that is refused anyway, and no op missing from the catalog', () => {

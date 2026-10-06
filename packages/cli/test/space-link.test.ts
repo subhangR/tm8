@@ -257,6 +257,61 @@ describe('tm8 --space <other> — only through spaceLinks.invoke on home', () =>
   });
 });
 
+describe('299 a session spawned through the link — followed and messaged by its spawner', () => {
+  const CHILD = '88888888-8888-4888-8888-888888888888';
+
+  /** Home as the Server answers it: a session body passes only for the link's own spawn. */
+  function ownSpawnRoutes(): void {
+    const base = defaultRoutes();
+    routes[INVOKE] = (body) => {
+      const op = String(body.op);
+      const params = (body.params ?? {}) as Record<string, string>;
+      if (op === 'execution.journal' || op === 'execution.transcript') {
+        if (params.workSessionId !== CHILD) {
+          return fail(403, 'forbidden', 'refused through a space link: session_body', {
+            reason: 'space_link_refused', refusal: 'session_body',
+          });
+        }
+        const result = op === 'execution.journal'
+          ? { sessionId: CHILD, available: false, unavailableReason: 'no_journal_file', totals: { invocations: 0, failed: 0, malformed: 0, agentToCliEst: 0, cliToAgentEst: 0 }, records: [], hasMore: false }
+          : { sessionId: CHILD, available: false, unavailableReason: 'no_native_session_id' };
+        return ok({ op, linkId: LINK, targetSpaceId: TARGET, auditId: 'audit-2', result });
+      }
+      return base[INVOKE]!(body);
+    };
+  }
+
+  it.each([
+    ['transcript', 'execution.transcript'],
+    ['journal', 'execution.journal'],
+  ])('session %s <child> rides ONE invoke as %s naming the child; nothing else is called', async (verb, op) => {
+    ownSpawnRoutes();
+    const r = await tm8(['--space', 'bee', 'session', verb, CHILD, '--format', 'json']);
+    expect(r.code, r.stderr).toBe(0);
+    expect(paths()).toEqual([LIST, INVOKE]);
+    expect(recorded[1]!.body).toMatchObject({ op, params: { workSessionId: CHILD } });
+    expect(JSON.parse(r.stdout)).toMatchObject({ sessionId: CHILD });
+  });
+
+  it('paired deny: the same command on a session the link did not spawn surfaces home\'s session_body refusal', async () => {
+    ownSpawnRoutes();
+    const r = await tm8(['--space', 'bee', 'session', 'transcript', STRANGER]);
+    expect(r.code).not.toBe(0);
+    expect(r.stderr).toMatch(/space_link_refused|session_body/);
+    expect(paths()).toEqual([LIST, INVOKE]);
+  });
+
+  it('message send --to <child> rides the invoke as messages.post anchored on the child', async () => {
+    ownSpawnRoutes();
+    const r = await tm8(['--space', 'bee', 'message', 'send', '--to', CHILD, 'hello child', '--format', 'json']);
+    expect(r.code, r.stderr).toBe(0);
+    expect(paths().every((p) => p === LIST || p === INVOKE)).toBe(true);
+    const posted = recorded.map((x) => x.body as { op?: string; input?: { anchorIds?: string[]; anchorId?: string } })
+      .find((b) => b.op === 'messages.post');
+    expect(posted?.input?.anchorIds ?? [posted?.input?.anchorId]).toEqual([CHILD]);
+  });
+});
+
 describe('W7 review follow-ups (#887)', () => {
   it('a multi-value query key through a link is refused before any request; paired one-value key rides the invoke', async () => {
     const link = { homeSpaceId: HOME, linkId: LINK, targetSpaceId: TARGET };
