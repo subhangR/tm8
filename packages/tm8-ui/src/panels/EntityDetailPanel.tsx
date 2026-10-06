@@ -1328,6 +1328,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
          head; a body that owns its height (terminal, chat, frame, canvas)
          keeps its own scroll under the head. */
       data-embedded-flow={embedded ? (bodyOwnsBottom || canvas ? 'fill' : 'document') : undefined}
+      data-embedded-section={embedded ? tab : undefined}
       /* THE PANEL IS THE FALLBACK DROP TARGET (2026-08-18). With the empty ＋
          tile gone, drop is the attach path — and the only body that had marked
          itself a drophost was `subtree`, so every other kind would have had no
@@ -1377,7 +1378,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
       {/* Forms this session asked the viewer to answer, with Fill inline
           (decision 11). Resume is offered for a queued answer only where this
           panel already offers it: a session that is not running. */}
-      {isTerminal && !isTombstone ? (
+      {isTerminal && !isTombstone && !embedded ? (
         <PendingFormsBanner
           sessionId={detail.id}
           onResume={props.liveness !== 'live' ? props.onResumeSession : undefined}
@@ -1453,11 +1454,22 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                   ref={setSurfaceSlot}
                   data-testid="panel-surface-slot"
                 />
-                {isTerminal && props.sessionContextSurface ? (
-                  <div className="pn-embedded-head__reading" data-testid="panel-session-context">
-                    {props.sessionContextSurface}
-                  </div>
-                ) : null}
+                <div className="pn-embedded-head__status">
+                  {/* R16: the forms banner as ONE chip, just before the stats. */}
+                  {isTerminal && !isTombstone ? (
+                    <PendingFormsBanner
+                      variant="chip"
+                      sessionId={detail.id}
+                      onResume={props.liveness !== 'live' ? props.onResumeSession : undefined}
+                      resuming={props.resumingSession}
+                    />
+                  ) : null}
+                  {isTerminal && props.sessionContextSurface ? (
+                    <div className="pn-embedded-head__reading" data-testid="panel-session-context">
+                      {props.sessionContextSurface}
+                    </div>
+                  ) : null}
+                </div>
               </div>
             ) : null}
             {strip ? (

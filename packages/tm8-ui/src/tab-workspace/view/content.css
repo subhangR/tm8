@@ -42,18 +42,19 @@
 .cv2-root .tws-panel .pn-embedded-head__spacer {
   float: right;
   --tws-overlap: calc(var(--tws-fg-w, 0px) + 2 * var(--pn-space-3) - (100cqw - 100%) / 2);
-  /* When less than 240px would remain beside the group (chat open, a narrow
-     window), the spacer takes the whole row and the head starts under the
-     group's bottom + 12px, full measure. Branch-free: the third term is 100%
-     exactly when 100% - overlap < 240px, and negative otherwise. */
-  width: max(0px, var(--tws-overlap), min(100%, calc((var(--tws-overlap) - 100% + 240px) * 1000)));
+  /* R20: when less than 480px would remain beside the group (chat open, the
+     browser open at 1440, a narrow window), the spacer takes the whole row and
+     the head starts under the group's bottom + 12px, full measure.
+     Branch-free: the third term is 100% exactly when 100% - overlap < 480px,
+     and negative otherwise. */
+  width: max(0px, var(--tws-overlap), min(100%, calc((var(--tws-overlap) - 100% + 480px) * 1000)));
   height: calc(var(--tws-fg-h, 44px) + var(--pn-space-3));
 }
 .cv2-root .tws-panel .pn-embedded-head__title,
 .cv2-root .tws-panel .pn-embedded-head__pills {
   /* Both establish their own formatting context, so beside the float they
      shrink rather than wrap; a floor makes them drop under it instead. */
-  min-width: min(240px, 100%);
+  min-width: min(480px, 100%);
 }
 .cv2-root .tws-panel .pn-embedded-head__title {
   display: -webkit-box;
@@ -89,6 +90,23 @@
   overflow: visible;
   padding-top: var(--pn-space-3);
 }
+/* R17: one left edge. The Connections and Messages sections start at the
+   title's left edge (the head measure) and may only grow to the RIGHT. */
+.cv2-root .tws-panel > .pn-panel[data-embedded-flow='document']:not([data-embedded-section='content']) > :is(.pn-body, .chs-root) {
+  box-sizing: border-box;
+  padding-left: calc(var(--pn-space-3) + max(0px, (100cqw - 2 * var(--pn-space-3) - var(--pn-read-measure)) / 2));
+  padding-right: var(--pn-space-3);
+}
+.cv2-root .tws-panel > .pn-panel[data-embedded-flow='fill']:not([data-embedded-section='content']) > :is(.pn-body, .chs-root) {
+  box-sizing: border-box;
+  padding-left: var(--pn-space-6);
+  padding-right: var(--pn-space-6);
+}
+/* R16: the terminal host spans the content width with the head's 24px inset. */
+.cv2-root .tws-panel > .pn-panel[data-embedded-flow='fill'] .pn-terminal-stage {
+  padding: 0 var(--pn-space-6);
+}
+
 /* A body that owns its height (terminal, chat, frame) keeps its own scroll
    under a fixed head (R14): row A is the title on one line, centred on the
    group (12 + group + 12 = 68px); row B is the body's own tools (36px); then
@@ -166,6 +184,42 @@
   background: var(--pn-active);
   color: var(--pn-ink);
   box-shadow: none;
+}
+.cv2-root .tws-panel .pn-embedded-head__status {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  min-width: 0;
+}
+.cv2-root .tws-panel .pf-chip {
+  position: relative;
+  flex: none;
+}
+.cv2-root .tws-panel .pf-chip__trigger {
+  border: 0;
+  cursor: pointer;
+}
+.cv2-root .tws-panel .pf-chip__pop {
+  position: absolute;
+  top: calc(100% + var(--pn-space-1));
+  right: 0;
+  z-index: 40;
+  width: 400px;
+  max-width: calc(100cqw - 2 * var(--pn-space-6));
+  max-height: 60vh;
+  overflow: auto;
+  padding: var(--pn-space-4);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-pop);
+  box-sizing: border-box;
+}
+.cv2-root .tws-panel .pf-chip__pop .pf-banner {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
 }
 .cv2-root .tws-panel .pn-embedded-head__reading {
   min-width: 0;
@@ -414,7 +468,7 @@
 .cv2-root .tws-fg-popover {
   width: 320px;
   max-width: calc(100vw - 2 * var(--pn-space-6));
-  padding: var(--pn-space-3);
+  padding: var(--pn-space-4);
   box-shadow: var(--pn-sh-pop);
   border-radius: var(--pn-r-md);
 }
@@ -428,11 +482,19 @@
   color: var(--pn-ink);
 }
 .cv2-root .tws-fg-popover .mcp-equipment p {
-  margin: 0 0 var(--pn-space-2);
+  margin: 0 0 var(--pn-space-3);
   font-size: var(--pn-fs-sm);
   color: var(--pn-ink-3);
 }
 .cv2-root .tws-fg-popover .mcp-equipment a {
   color: var(--pn-brand-2);
   font-size: var(--pn-fs-sm);
+  text-decoration: none;
+}
+.cv2-root .tws-fg-popover .mcp-equipment a:hover,
+.cv2-root .tws-fg-popover .mcp-equipment a:focus-visible {
+  text-decoration: underline;
+}
+.tws-icon-btn.tws-fg-connectors {
+  color: var(--pn-ink-2);
 }
