@@ -45,6 +45,7 @@ import { UnsettledDeliveryError } from '../errors.js';
 import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
 import { callerMutationId, successReceipt, type ReceiptOp } from '../receipt.js';
 import { errorInput, withErrorReceipt } from '../receipt-error.js';
+import { noticeStatusNudges } from '../status-nudge.js';
 import { refuseMutationId, resolveMutationId } from '../mutation.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
 import type { Tm8Client } from '../client.js';
@@ -409,6 +410,7 @@ export async function postMessage(
   if (op === undefined) cmd.out.data(batch, renderBatch);
   else cmd.out.mutation(op, batch, renderBatch, () => successReceipt(op, batch, callerMutationId(cmd.options)));
   noticeClosedRecipients(cmd, batch);
+  noticeStatusNudges(cmd, batch);
   if (wait === 'stored') return EXIT_OK;
 
   const messageIds = (Array.isArray(batch?.messages) ? batch.messages : [])

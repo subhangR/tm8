@@ -51,6 +51,7 @@ import {
 import type { CommandContext, CommandModule } from '../run.js';
 import { callerMutationId, receiptQuery, receiptRefId, successReceipt, type ReceiptWarning } from '../receipt.js';
 import { errorInput, withErrorReceipt } from '../receipt-error.js';
+import { noticeStatusNudges } from '../status-nudge.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -311,6 +312,7 @@ function linker(
         ...callerMutationId(cmd.options),
         ...(claim.warning ? { warnings: [claim.warning] } : {}),
       }));
+    noticeStatusNudges(cmd, data);
     return EXIT_OK;
   };
 }

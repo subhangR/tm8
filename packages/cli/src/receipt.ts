@@ -673,7 +673,10 @@ export function renderReceiptHuman(receipt: Receipt): string {
     const reason = str(warnings.find((w) => w.code === 'no_change')?.message);
     clauses.unshift(reason === undefined ? 'NO CHANGE' : `NO CHANGE (${reason})`);
   }
-  for (const w of warnings) if (w.code !== 'no_change') clauses.push(warningText(w));
+  // `task_still_working` is printed once, as a stderr notice (status-nudge.ts).
+  for (const w of warnings) {
+    if (w.code !== 'no_change' && w.code !== 'task_still_working') clauses.push(warningText(w));
+  }
   if (typeof receipt.next === 'string') clauses.push(`next: ${receipt.next}`);
   return [head.join(' '), ...clauses].join(' · ');
 }

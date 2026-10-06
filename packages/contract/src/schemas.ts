@@ -1574,6 +1574,7 @@ export const MessageBatchResultSchema: z.ZodType<MessageBatchResult> = z.lazy(()
   // Optional, not nullable: absent means the batch named no session. An empty
   // array would read as "every target failed" and is therefore never emitted.
   delivery: z.array(MessageDeliveryDispositionSchema).min(1).optional(),
+  warnings: z.array(ResultWarningSchema).min(1).optional(),
 }).strict());
 
 export const ActivityItemSchema: z.ZodType<ActivityItem> = z.lazy(() => z.object({
