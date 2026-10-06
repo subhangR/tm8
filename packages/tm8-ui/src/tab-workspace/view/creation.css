@@ -1,0 +1,279 @@
+/* Workspace creation (W1-F): the chooser / start surface (design log §10) and
+   the draft host. Tokens only; sizes on the 4/8 grid. */
+
+/* ------------------------------------------------ chooser and start surface */
+
+.tws-startsurface {
+  height: 100%;
+  overflow-y: auto;
+  background: var(--pn-card);
+}
+
+.tws-pick {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: var(--pn-space-16) var(--pn-space-6) var(--pn-space-8);
+}
+
+.tws-pick-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--pn-space-3);
+}
+
+.tws-pick-title {
+  margin: 0;
+  font-size: var(--pn-fs-h3);
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+
+.tws-pick-link {
+  min-height: 36px;
+  padding: 0;
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  color: var(--pn-brand-2);
+  cursor: pointer;
+}
+.tws-pick-link:hover {
+  text-decoration: underline;
+}
+
+.tws-pick-search {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  height: 40px;
+  margin-top: var(--pn-space-4);
+  padding: 0 var(--pn-space-3);
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  color: var(--pn-ink-3);
+}
+.tws-pick-search:focus-within {
+  border-color: var(--pn-line-2);
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+.tws-pick-search-icon {
+  flex: none;
+}
+.tws-pick-search input {
+  appearance: none;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  background: none;
+  border: 0;
+  outline: none;
+  font: inherit;
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink);
+}
+.cv2-root .tws-pick-search input,
+.cv2-root .tws-pick-search input:focus,
+.cv2-root .tws-pick-search input:focus-visible {
+  outline: none;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+}
+.tws-pick-search input::placeholder {
+  color: var(--pn-ink-3);
+}
+
+.tws-pick-section {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+  margin-top: var(--pn-space-8);
+}
+
+.tws-pick-empty {
+  margin: 0;
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-3);
+}
+
+.tws-pick-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tws-pick-row {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  width: 100%;
+  height: 36px;
+  padding: 0 var(--pn-space-2);
+  background: none;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  font: inherit;
+  font-size: var(--pn-fs-sm);
+  text-align: left;
+  color: var(--pn-ink);
+  cursor: pointer;
+}
+.tws-pick-row:hover {
+  background: var(--pn-hover);
+}
+.tws-pick-row:active {
+  background: var(--pn-active);
+}
+.tws-pick-row svg {
+  flex: none;
+  color: var(--pn-ink-3);
+}
+.tws-pick-row-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.tws-pick-row-kind {
+  flex: none;
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-4);
+}
+
+.tws-pick-create {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--pn-space-2);
+}
+@container (max-width: 479px) {
+  .tws-pick-create {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Bordered quiet: 32 visible inside a 36 hit box. */
+.tws-pick-new {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-width: 0;
+  text-align: left;
+  gap: var(--pn-space-2);
+  height: 32px;
+  padding: 0 var(--pn-space-3);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  font: inherit;
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+  color: var(--pn-ink-2);
+  cursor: pointer;
+}
+.tws-pick-new svg {
+  flex: none;
+}
+.tws-pick-new-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tws-pick-new::before {
+  content: '';
+  position: absolute;
+  inset: -2px 0;
+}
+.tws-pick-new:hover {
+  background: var(--pn-hover);
+}
+.tws-pick-new:active {
+  background: var(--pn-active);
+}
+
+.tws-pick-row:focus-visible,
+.tws-pick-new:focus-visible,
+.tws-pick-link:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+
+/* ------------------------------------------------------------- draft host */
+
+.tws-draft {
+  box-sizing: border-box;
+  height: 100%;
+  overflow-y: auto;
+  background: var(--pn-card);
+}
+
+.tws-draft-form {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-3);
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: var(--pn-space-16) var(--pn-space-6) var(--pn-space-8);
+}
+
+.tws-draft-title {
+  margin: 0 0 var(--pn-space-1);
+  font-size: var(--pn-fs-h3);
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+
+.tws-draft-note {
+  margin: 0;
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-3);
+}
+
+.tws-draft-error {
+  margin: 0;
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-block);
+}
+
+.cv2-root .tws-draft .au-dialog__actions button {
+  min-height: 36px;
+  padding: 0 var(--pn-space-3);
+}
+
+/* The launch sheet and the chat start fill the tab; Cancel sits in a strip under them. */
+.tws-draft-launch,
+.tws-draft-chat {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.tws-draft-launch > :first-child,
+.tws-draft-chat > :first-child {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.tws-draft-launch > .tws-draft-actions,
+.tws-draft-chat > .tws-draft-actions {
+  flex: none;
+  margin: 0;
+  padding: var(--pn-space-2) var(--pn-space-3);
+}

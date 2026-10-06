@@ -395,6 +395,7 @@ export function ActionBar({
   onOpenLaunch,
   launchSubjectId,
   markPrimaries = false,
+  iconVerbs = false,
   primaryCounts,
 }: {
   config: KindConfig;
@@ -492,6 +493,13 @@ export function ActionBar({
    * draws the glyph and no number. Ignored on a marked bar, which has no room.
    */
   primaryCounts?: Partial<Record<ActionRef, number>> | undefined;
+  /**
+   * ICONS ONLY — the Workspace floating group (Subhang, feedback round 1).
+   * Every primary draws its glyph alone, named by its word (tooltip and
+   * accessible name); with `'lead'` the first takes the lead (brand) tone.
+   * Off by default: every other bar unchanged.
+   */
+  iconVerbs?: boolean | 'lead';
 }) {
   /**
    * THE PROCESS CONTROL, IN THE PANEL — the same one-slot swap the row cluster
@@ -511,7 +519,7 @@ export function ActionBar({
   const primaries = (config.panel.primaries ?? []).map((ref) => processControlFor(ref, ctx));
   return (
     <div className="pn-actions pn-actions--inline" data-testid="panel-action-bar" ref={barRef}>
-      {primaries.map((ref) => (
+      {primaries.map((ref, index) => (
         <ActionButton
           key={ref}
           ref_={ref}
@@ -523,7 +531,8 @@ export function ActionBar({
             ? { onOpenLaunch, launchSubjectId }
             : {})}
           primary
-          mark={markPrimaries}
+          mark={Boolean(iconVerbs) || markPrimaries}
+          lead={iconVerbs === 'lead' && index === 0}
           count={primaryCounts?.[ref]}
         />
       ))}
@@ -621,6 +630,7 @@ function ActionButton({
   launchSubjectId,
   primary = false,
   mark = false,
+  lead = false,
   count,
 }: {
   ref_: ActionRef;
@@ -633,6 +643,8 @@ function ActionButton({
   primary?: boolean;
   /** Render the primary as its glyph rather than its word — see `markPrimaries`. */
   mark?: boolean;
+  /** The bar's lead verb (brand tone) — see `ActionBar.iconVerbs`. */
+  lead?: boolean;
   /** See `ActionBar.primaryCounts`. */
   count?: number | undefined;
 }) {
@@ -706,6 +718,7 @@ function ActionButton({
       className={[
         primary ? 'pn-btn pn-btn--primary' : 'pn-actions__verb',
         primary && mark ? 'pn-btn--mark' : '',
+        primary && lead ? 'pn-btn--lead' : '',
         expanded ? 'pn-actions__verb--on' : '',
       ]
         .filter(Boolean)

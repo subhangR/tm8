@@ -56,6 +56,12 @@ export interface MaestroTaskTileProps {
    * host owns, and a refused control must wear the same mark as a live one.
    */
   statusControl?: ReactNode;
+  /**
+   * The Workspace browser's leading icon (`rowLead="icon"`). Present ⇒ it
+   * replaces the chevron slot AND the status mark (the status control with
+   * it); the visually-hidden status word stays. Absent ⇒ as before.
+   */
+  lead?: ReactNode;
   assignees: readonly ActorSummary[];
   /**
    * Provenance, shown only when nobody is assigned. Almost every task in a
@@ -98,6 +104,7 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
     onSelect,
     status,
     statusControl,
+    lead,
     assignees,
     creator,
     badges,
@@ -139,6 +146,13 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
       data-anatomy="control-card"
     >
       <div className="pn-tt__main" onClick={onSelect}>
+        {lead ? (
+          <span className="pn-tt__status pn-tt__status--lead">
+            {lead}
+            <span className="pn-tt__status-text">{status.label}</span>
+          </span>
+        ) : (
+          <>
         {hasChildren ? (
           <button
             type="button"
@@ -181,6 +195,8 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
           <span className="pn-tt__status-text">{status.label}</span>
           <ChildCountBadge count={childCount} />
         </span>
+          </>
+        )}
 
         <button
           type="button"

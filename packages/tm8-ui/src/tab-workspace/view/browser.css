@@ -1,0 +1,580 @@
+/* Entity browser (Spec A §5, design log §4 and §11). Workstream B.
+   Scoped under `.tws-browser` so the reused list header and list panel keep
+   their Home look everywhere else. */
+
+/* + New: bordered, 28 high at the end of row 1. */
+.tws-browser-new {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  margin: 0;
+  padding: 0 var(--pn-space-2);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  color: var(--pn-ink-2);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tws-browser-new:hover {
+  background: var(--pn-hover);
+}
+.tws-browser-new[aria-disabled='true'] {
+  border-color: var(--pn-line);
+  color: var(--pn-ink-4);
+  cursor: not-allowed;
+}
+.tws-browser-new[aria-disabled='true']:hover {
+  background: transparent;
+}
+/* Narrow (< 300px): icon-only 28×28. */
+.tws-browser[data-narrow] .tws-browser-new {
+  width: 28px;
+  padding: 0;
+}
+
+.tws-browser-new:focus-visible,
+.tws-browser-state__action:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+
+/* The list host: the reused panel fills it and `.lp__body` is the scroll box. */
+.tws-browser .tws-browser-list {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.tws-browser .tws-browser-list > .lp {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+/* A hairline under the chrome only while the list is scrolled off the top. */
+.tws-browser[data-scrolled] .lp__body {
+  box-shadow: inset 0 1px 0 var(--pn-line);
+}
+
+/* List states (design log §11): 32px top, one line, a text action. */
+.tws-browser-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--pn-space-1);
+  padding: var(--pn-space-8) var(--pn-space-3) 0;
+}
+.tws-browser-state__text {
+  margin: 0;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-sm);
+}
+.tws-browser-state__action {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--pn-brand-2);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  cursor: pointer;
+}
+.tws-browser-state__action:hover {
+  text-decoration: underline;
+}
+
+/* Loading: three skeleton bars, 60/80/40%. */
+.tws-browser-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-8) var(--pn-space-3) 0;
+}
+.tws-browser-skeleton__bar {
+  height: 12px;
+  border-radius: var(--pn-r-xs);
+  background: var(--pn-hover);
+}
+.tws-browser-skeleton__bar:nth-child(1) { width: 60%; }
+.tws-browser-skeleton__bar:nth-child(2) { width: 80%; }
+.tws-browser-skeleton__bar:nth-child(3) { width: 40%; }
+
+/* ---- Three rows of chrome (list-panel change list round 2, item 8) ------ */
+
+/* No box of its own: the list sits flush on the browser's surface. */
+.cv2-root .tws-browser .lp {
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+/* Row 1 (32px): [kind icon ▾] [Search, flex] [+ New]. */
+.cv2-root .tws-browser .lp__toolrow {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--pn-space-2);
+  box-sizing: border-box;
+  height: 36px;
+  padding: var(--pn-space-1) var(--pn-space-2) 0;
+}
+.cv2-root .tws-browser .tch-rootbar {
+  flex: none;
+  margin: 0;
+}
+.cv2-root .tws-browser .tch-rootcell--menu .tch-rootcell__label {
+  box-sizing: border-box;
+  width: 32px;
+  height: 32px;
+  justify-content: center;
+  gap: 2px;
+  padding: 0;
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink-2);
+}
+.cv2-root .tws-browser .tch-rootcell--menu .tch-rootcell__label:hover,
+.cv2-root .tws-browser .tch-rootcell--menu .tch-rootcell__label:active,
+.cv2-root .tws-browser .tch-rootcell--menu .tch-rootcell__label[aria-expanded='true'] {
+  background: var(--pn-hover);
+}
+.cv2-root .tws-browser .tch-rootcell--menu .tch-rootcell__glyph svg {
+  width: 16px;
+  height: 16px;
+}
+.cv2-root .tws-browser .tch-rootcell__chevron {
+  /* An 8px caret, drawn: the ▾ glyph has no 8px size on the type scale. */
+  flex: none;
+  width: 8px;
+  height: 5px;
+  overflow: hidden;
+  color: transparent;
+  background: var(--pn-ink-3);
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+}
+/* The kind menu hangs from the control's left edge, on the raised plane. */
+.cv2-root .tws-browser .tch-rootcell--menu .tch-rootmenu {
+  left: 0;
+  right: auto;
+  border-color: var(--pn-line);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-card);
+  box-shadow: var(--pn-sh-pop);
+}
+.cv2-root .tws-browser .tch-rootcell__label:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+
+/* Search: 28 high, one focus ring on the wrapper (R8). */
+.cv2-root .tws-browser .lp__toolrow .lp__searchrow {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  margin: 0;
+  padding: 0 var(--pn-space-2);
+  gap: var(--pn-space-1);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+}
+.cv2-root .tws-browser .lp__toolrow .lp__searchrow:focus-within {
+  border-color: var(--pn-line-2);
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+.cv2-root .tws-browser .lp__toolrow .lp__searchinput,
+.cv2-root .tws-browser .lp__toolrow .lp__searchinput:focus,
+.cv2-root .tws-browser .lp__toolrow .lp__searchinput:focus-visible {
+  border: 0;
+  outline: none;
+  box-shadow: none;
+  background: transparent;
+  font-size: var(--pn-fs-label);
+}
+.cv2-root .tws-browser .lp__toolrow .lp__searchinput::placeholder {
+  color: var(--pn-ink-3);
+}
+.cv2-root .tws-browser .lp__toolrow .lp__searchrow-glyph {
+  color: var(--pn-ink-3);
+}
+
+/* Row 2 (28px): the lifecycle tiers inline, one line, scrolling sideways. */
+.cv2-root .tws-browser .lp__tierscroll {
+  flex: none;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  padding: 0 var(--pn-space-2);
+}
+.cv2-root .tws-browser .lp__tierscroll::-webkit-scrollbar {
+  display: none;
+}
+/* The clipped edge fades over 16px (set by Browser's useTierRowEdges). */
+.cv2-root .tws-browser .lp__tierscroll[data-fade='end'] {
+  mask-image: linear-gradient(to right, black calc(100% - 16px), transparent);
+}
+.cv2-root .tws-browser .lp__tierscroll[data-fade='start'] {
+  mask-image: linear-gradient(to right, transparent, black 16px);
+}
+.cv2-root .tws-browser .lp__tierscroll[data-fade='both'] {
+  mask-image: linear-gradient(to right, transparent, black 16px, black calc(100% - 16px), transparent);
+}
+.cv2-root .tws-browser .lp__tierrow {
+  height: 28px;
+  width: max-content;
+  min-width: 100%;
+  gap: var(--pn-space-3);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.cv2-root .tws-browser .lp__tab {
+  flex: none;
+  gap: var(--pn-space-1);
+  padding: 0 2px;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  white-space: nowrap;
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-3);
+}
+.cv2-root .tws-browser .lp__tab-word {
+  overflow: visible;
+}
+.cv2-root .tws-browser .lp__tab:hover {
+  background: transparent;
+  color: var(--pn-ink);
+}
+.cv2-root .tws-browser .lp__tab--active {
+  color: var(--pn-ink);
+  background: transparent;
+  box-shadow: inset 0 -2px 0 var(--pn-brand);
+}
+.cv2-root .tws-browser .lp__tab-count,
+.cv2-root .tws-browser .lp__tab--active .lp__tab-count {
+  color: var(--pn-ink-4);
+}
+.cv2-root .tws-browser .lp__tab:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+
+/* Row 2 holds the tiers (scrolling, faded) and the funnel, pinned outside
+   the scroller at the right end. A kind with no tiers puts the funnel at the
+   end of row 1 instead. */
+.cv2-root .tws-browser .lp__tierline {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--pn-space-1);
+  padding-right: var(--pn-space-2);
+}
+.cv2-root .tws-browser .lp__tierline > .lp__tierscroll {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The funnel: 28×28, borderless, a 16px icon in --pn-ink-3. */
+.cv2-root .tws-browser .lp__filterbar--merged {
+  flex: none;
+  position: static;
+}
+.cv2-root .tws-browser .lp__funnel {
+  position: relative;
+  box-sizing: border-box;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  padding: 0;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  color: var(--pn-ink-3);
+  box-shadow: none;
+}
+.cv2-root .tws-browser .lp__funnel svg {
+  width: 16px;
+  height: 16px;
+}
+.cv2-root .tws-browser .lp__funnel:hover,
+.cv2-root .tws-browser .lp__funnel[aria-expanded='true'] {
+  background: var(--pn-hover);
+}
+/* Anything not at its default: brand-soft fill, brand-2 icon, and the count. */
+.cv2-root .tws-browser .lp__funnel:has(.lp__chip-count) {
+  background: var(--pn-brand-soft);
+  color: var(--pn-brand-2);
+}
+.cv2-root .tws-browser .lp__funnel .lp__chip-count {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  background: var(--pn-brand-2);
+  color: var(--pn-card);
+}
+.cv2-root .tws-browser .lp__funnel:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+
+/* The popover hangs under its row, the browser's width minus 8px insets. */
+.cv2-root .tws-browser .lp__filtermenu--merged {
+  top: calc(100% + var(--pn-space-1));
+  left: var(--pn-space-2);
+  right: var(--pn-space-2);
+  width: auto;
+  max-height: 400px;
+  border-color: var(--pn-line);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-pop);
+}
+.cv2-root .tws-browser .lp__funnelsection + .lp__funnelsection {
+  margin-top: var(--pn-space-2);
+}
+.cv2-root .tws-browser .lp__funnelsection > .t-eyebrow {
+  padding: var(--pn-space-1) var(--pn-space-2);
+}
+/* R22: groups in sentence case, 36px rows, Reset as text, Done primary. */
+.cv2-root .tws-browser .lp__filtermenu--merged .lp__filtergroup {
+  padding: var(--pn-space-2) var(--pn-space-2) var(--pn-space-1);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  font-weight: 500;
+  letter-spacing: normal;
+  color: var(--pn-ink-3);
+}
+.cv2-root .tws-browser .lp__filtermenu--merged .lp__kindopt {
+  box-sizing: border-box;
+  height: 36px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.cv2-root .tws-browser .lp__filtermenu--merged .lp__filterclear {
+  height: 36px;
+  padding: 0 var(--pn-space-2);
+  color: var(--pn-ink-3);
+}
+.cv2-root .tws-browser .lp__filtermenu--merged .lp__filterdone {
+  height: 32px;
+  padding: 0 var(--pn-space-3);
+  border: 1px solid rgba(var(--pn-brand-rgb), 0.35);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-brand-soft);
+  color: var(--pn-brand-2);
+}
+
+/* THE HOVER BAR, INSIDE THE ROW (supersedes R5's "hide it"). Home floats it
+   on the tile's top edge, over the row above; here it sits in the hovered
+   row's own box — right-aligned left of the details chevron, vertically
+   centred on the title line, on the raised pill — so it can cover only that
+   row's trailing meta. It shows on hover and on focus-within, as at Home. */
+@media (hover: hover) and (pointer: fine) {
+  .cv2-root:not([data-shell='mobile']) .tws-browser .lp__tree
+    :is(.lp__tile, .pn-tt, .pn-st) > :is(.lp__tile-main, .pn-tt__main, .pn-st__main) .lp__hoverbar,
+  .cv2-root:not([data-shell='mobile']) .tws-browser .lp__tree
+    :is(.lp__tile, .pn-tt, .pn-st):is(:hover, :focus-within, [data-hoverbar])
+    > :is(.lp__tile-main, .pn-tt__main, .pn-st__main) .lp__hoverbar {
+    top: 15px;
+    bottom: auto;
+    right: 36px;
+    transform: translate(3px, -50%);
+  }
+  .cv2-root:not([data-shell='mobile']) .tws-browser .lp__tree
+    :is(.lp__tile, .pn-tt, .pn-st):is(:hover, :focus-within)
+    > :is(.lp__tile-main, .pn-tt__main, .pn-st__main) .lp__hoverbar {
+    transform: translate(0, -50%);
+  }
+}
+
+/* ---- R24: fill on :hover and :active only; focus shows only the ring ---- */
+.tws-browser-new:focus:not(:hover):not(:active) {
+  background: transparent;
+}
+.tws-browser-new:active {
+  background: var(--pn-active);
+}
+.tws-browser-new[aria-disabled='true']:active {
+  background: transparent;
+}
+
+/* ---- Row lead (rowLead="icon"): the kind icon IS the disclosure ---------- */
+
+/* Geometry: body 4 + row 4 ⇒ the 18px icon sits 8px from the panel edge;
+   icon + 6px gap ⇒ the title starts at 32px. Children step in 14px a level
+   (13px margin + the 1px guide; see TREE EDGES below). */
+.cv2-root .tws-browser .lp__body {
+  padding-inline: var(--pn-space-1);
+}
+.cv2-root .tws-browser .lp__tile-main,
+.cv2-root .tws-browser .pn-tt .pn-tt__main,
+.cv2-root .tws-browser .pn-st__main {
+  padding-inline-start: var(--pn-space-1);
+  gap: 6px;
+}
+.cv2-root .tws-browser .pn-tt[data-depth] {
+  --tt-indent: 0px;
+}
+
+.cv2-root .tws-browser .pn-tt__status--lead {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+}
+
+/* The lead (R37.4): a 24-wide hit box, the title line's height (min 28), the
+   18px icon centred. Negative margins keep its layout footprint at 18×18, so
+   it grows into the leading gutter and the 6px gap, never into the title. */
+.cv2-root .tws-browser .lp-lead {
+  position: relative;
+  isolation: isolate;
+  flex: none;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: 24px;
+  min-height: 28px;
+  margin: -5px -3px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--pn-r-xs);
+  background: transparent;
+  color: inherit;
+}
+.cv2-root .tws-browser .lp-lead--toggle {
+  cursor: pointer;
+}
+/* Hover and focus draw on one 24×24 box behind the icon, enclosing the subscript. */
+.cv2-root .tws-browser .lp-lead--toggle::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  top: 50%;
+  left: 0;
+  width: 24px;
+  height: 24px;
+  transform: translateY(-50%);
+  border-radius: var(--pn-r-xs);
+}
+.cv2-root .tws-browser .lp-lead--toggle:hover::before {
+  background: var(--pn-active);
+}
+.cv2-root .tws-browser .lp-lead--toggle:focus {
+  outline: none;
+}
+.cv2-root .tws-browser .lp-lead--toggle:focus-visible::before {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 0;
+}
+.cv2-root .tws-browser .lp__branch[role='treeitem']:focus {
+  outline: none;
+}
+.cv2-root .tws-browser .lp__branch[role='treeitem']:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 0;
+  border-radius: var(--pn-r-sm);
+}
+
+/* The kind icon, its stroke tinted by the status tone (base tokens, never -soft). */
+.cv2-root .tws-browser .lp-lead__kind {
+  display: grid;
+  place-items: center;
+  color: var(--pn-ink-3);
+}
+.cv2-root .tws-browser .lp-lead__kind svg {
+  width: 18px;
+  height: 18px;
+}
+.cv2-root .tws-browser .lp-lead__kind--run { color: var(--pn-run); }
+.cv2-root .tws-browser .lp-lead__kind--wait { color: var(--pn-wait); }
+.cv2-root .tws-browser .lp-lead__kind--block { color: var(--pn-block); }
+.cv2-root .tws-browser .lp-lead__kind--info { color: var(--pn-info); }
+.cv2-root .tws-browser .lp-lead__kind--idle { color: var(--pn-idle); }
+.cv2-root .tws-browser .lp-lead__kind--brand { color: var(--pn-brand); }
+.cv2-root .tws-browser .lp-lead__kind[data-hollow] { opacity: 0.6; }
+.cv2-root .tws-browser .lp-lead__kind[data-streaming] { animation: pnPulse 1.6s infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .tws-browser .lp-lead__kind[data-streaming] { animation: none; }
+}
+
+/* The child count subscript (Subhang, overriding R37.2's size, then "a
+   little smaller"): a 14×14 minimum that grows for two digits (99+ above
+   99), the 11px micro size at 600 with tabular numerals, anchored at the
+   18px icon's bottom-right so it reads as a subscript without hiding it. */
+.cv2-root .tws-browser .lp-lead :is(.lp__kids, .pn-agent__kids) {
+  right: -2px;
+  bottom: calc(50% - 13px);
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  box-sizing: border-box;
+  border-radius: var(--pn-r-pill);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  font-weight: 600;
+  line-height: 14px;
+  font-variant-numeric: tabular-nums;
+  box-shadow: none;
+  background: var(--pn-ink-2);
+  color: var(--pn-card);
+}
+/* Collapsed: a card disc with a hairline ring and full-ink figures. */
+.cv2-root .tws-browser .lp-lead .lp__kids[data-expanded='false'],
+.cv2-root .tws-browser .lp-lead[aria-expanded='false'] .pn-agent__kids {
+  background: var(--pn-card);
+  color: var(--pn-ink);
+  box-shadow: inset 0 0 0 1px var(--pn-ink-3);
+}
+
+/* TREE EDGES ON THE LEAD GEOMETRY. The guide drops from the centre of the
+   parent's icon (x = 8 + 9 + 14 × depth from the panel edge): the children
+   group's hairline sits on that x, a connector carries it up to just under
+   the icon, and an elbow at each child's title line meets the child's icon. */
+.cv2-root .tws-browser .lp__children {
+  margin-left: 13px;
+}
+.cv2-root .tws-browser .lp__branch[role='treeitem'][aria-expanded='true'] {
+  position: relative;
+}
+.cv2-root .tws-browser .lp__branch[role='treeitem'][aria-expanded='true']::before {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  top: 26px;
+  bottom: 0;
+  left: 13px;
+  width: 1px;
+  background: var(--pn-line);
+  pointer-events: none;
+}
+.cv2-root .tws-browser .lp__children > .lp__branch {
+  position: relative;
+}
+.cv2-root .tws-browser .lp__children > .lp__branch::after {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  top: 15px;
+  left: 0;
+  width: 4px;
+  height: 1px;
+  background: var(--pn-line);
+  pointer-events: none;
+}

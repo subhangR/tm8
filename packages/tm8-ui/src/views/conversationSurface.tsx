@@ -39,6 +39,7 @@ import type { ChannelFeedPort } from '../channel-screen/useChannelFeed';
 import type { TriggerOption } from '../rich-input';
 import type { ConnectionState, Seam, SessionLiveness } from '../data/seam';
 import type { NewChatSeed } from '../chat-home/types';
+import type { ComposerDraftStore } from '../chat-home/ChatHomeScreen';
 
 /**
  * The chat surface behind a route boundary, exactly as the other three arms
@@ -296,7 +297,10 @@ export function chatThreadSurfaceFor(
 export type EntityChatSurfaceHost = Pick<
   ConversationSurfaceHost,
   'seam' | 'spaceId' | 'nodeKey' | 'onOpenEntity' | 'skillOptions' | 'viewerName' | 'viewerMemberId'
->;
+> & {
+  /** Opt-in: composer drafts kept by the host (Workspace's per-tab chat). Absent ⇒ unchanged. */
+  composerDrafts?: ComposerDraftStore | undefined;
+};
 
 /**
  * THE ENTITY CHAT SLOT'S BODY (design 01a0da4e §3.3) — the SAME solo chat
@@ -337,6 +341,7 @@ export function entityChatSurfaceFor(
         {...(host.skillOptions ? { skillOptions: host.skillOptions } : {})}
         {...(host.viewerName ? { viewerName: host.viewerName } : {})}
         {...(host.viewerMemberId ? { viewerId: host.viewerMemberId } : {})}
+        {...(host.composerDrafts ? { composerDrafts: host.composerDrafts } : {})}
       />
     </Suspense>
   );

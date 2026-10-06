@@ -1,0 +1,725 @@
+/*
+ * Workspace view layout (Spec A §3, design log §1–§3). Tokens only; sizes on
+ * the 4/8 grid. Three planes: chrome (--pn-surface), content (--pn-card),
+ * raised (--pn-card + hairline + shadow).
+ */
+.tws-root {
+  /* The icon column is always 48px; the expanded rail (R36) widens to 200px
+     and pushes the browser. TabWorkspaceView picks one per state. */
+  --tws-rail-w-collapsed: 48px;
+  --tws-rail-w-expanded: 200px;
+  --tws-rail-w: var(--tws-rail-w-collapsed);
+  /* R27 (Subhang feedback 1): one 40px top band, hairline at y = 40. */
+  --tws-header-h: 40px;
+  display: grid;
+  grid-template-columns: var(--tws-rail-w) var(--tws-browser-w, 320px) minmax(0, 1fr);
+  grid-template-rows: var(--tws-header-h) minmax(0, 1fr);
+  grid-template-areas:
+    'header header strip'
+    'rail browser content';
+  height: 100%;
+  width: 100%;
+  min-height: 0;
+  background: var(--pn-surface);
+  color: var(--pn-ink);
+  font-size: var(--pn-fs-sm);
+  overflow: hidden;
+  position: relative;
+}
+.tws-root[data-rail-animating] {
+  transition: grid-template-columns var(--pn-dur-base) var(--pn-ease-standard);
+}
+.tws-root[data-rail-animating] .tws-space-slot {
+  transition: margin-left var(--pn-dur-base) var(--pn-ease-standard);
+}
+.tws-root[data-expanded] {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    'strip'
+    'content';
+}
+
+.tws-left-header {
+  grid-area: header;
+  display: flex;
+  /* R27: every control is a 36px box centred in the 40px band (2px above and
+     below, counting the hairline row), so labels share the tabs' centre y = 20. */
+  align-items: flex-start;
+  padding-top: 2px;
+  padding-right: var(--pn-space-3);
+  border-bottom: 1px solid var(--pn-line);
+  background: var(--pn-paper); /* matches the strip band (Subhang feedback 6) */
+  min-width: 0;
+}
+/* The mark centres over the 48px icon column (x = 24) in both rail states (R36 §5). */
+.tws-mark-cell {
+  flex: none;
+  display: flex;
+  justify-content: center;
+  width: var(--tws-rail-w-collapsed);
+  height: 36px;
+}
+.tws-mark {
+  color: var(--pn-ink);
+}
+/* Round 2 item 7: [mark][space switcher] … [view selector], the selector
+   right-aligned on the header's 12px right inset. */
+.tws-left-header .tws-view-select {
+  margin-left: auto;
+  padding-left: var(--pn-space-2);
+}
+/* Right-aligned trigger: its menu opens leftward from the right edge. */
+.tws-left-header .tws-view-select .tws-menu {
+  right: 0;
+  left: auto;
+}
+.tws-view-select {
+  position: relative;
+  display: flex;
+  flex: none;
+  height: 36px;
+}
+.tws-chevron {
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-label);
+}
+.tws-space-slot {
+  display: flex;
+  justify-content: flex-start;
+  /* Its left edge follows the browser's 12px inset: rail width + 12 (R36 §5). */
+  margin-left: calc(var(--tws-rail-w) - var(--tws-rail-w-collapsed) + var(--pn-space-3));
+  min-width: 0;
+  height: 36px;
+}
+/* R4: the space switcher as a single-line quiet button; the server line is
+   in its tooltip. Max 140px with an ellipsis. */
+.tws-root .tws-space-slot .shell-switcher {
+  display: flex;
+  min-width: 0;
+  padding: 0;
+}
+.tws-root .tws-space-slot .shell-switcher__trigger--quiet {
+  width: auto;
+  max-width: 140px;
+  min-width: 36px;
+  height: 36px;
+  justify-content: center;
+  gap: var(--pn-space-1);
+  padding: 0 var(--pn-space-2);
+  background: none;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+}
+.tws-root .tws-space-slot .shell-switcher__trigger--quiet:hover {
+  background: var(--pn-active);
+}
+.tws-root .tws-space-slot .shell-switcher__trigger--quiet .shell-switcher__space {
+  min-width: 0;
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+}
+.tws-root .tws-space-slot .shell-switcher__trigger--quiet .shell-switcher__caret {
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-label);
+}
+/* Below a 300px browser: the space initial in a 28px tile. */
+.tws-root .tws-space-slot .shell-switcher__trigger--quiet .shell-switcher__monogram {
+  width: 28px;
+  height: 28px;
+  font-size: var(--pn-fs-sm);
+}
+.tws-root .tws-space-slot .shell-switcher__pop {
+  top: calc(100% + var(--pn-space-1));
+  right: auto;
+  left: 0;
+}
+
+/* Expanded (Spec A §14): Restore · ⋯ at the strip's far left; the tabs
+   start 12px after it (the strip's 8px gap + 4px). */
+.tws-restore {
+  display: flex;
+  align-self: stretch;
+  align-items: flex-end;
+  gap: var(--pn-space-1);
+  flex: none;
+  margin-right: var(--pn-space-1);
+}
+
+.tws-strip {
+  grid-area: strip;
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding: 0 var(--pn-space-3);
+  border-bottom: 1px solid var(--pn-line);
+  border-left: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+  min-width: 0;
+}
+.tws-root[data-expanded] .tws-strip {
+  border-left: 0;
+}
+.tws-strip-scroll {
+  display: flex;
+  align-items: stretch;
+  gap: var(--pn-space-1);
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.tws-tab {
+  display: flex;
+  align-items: center;
+  min-width: 120px;
+  max-width: 220px;
+  color: var(--pn-ink-2);
+}
+.tws-tab[data-active] {
+  background: var(--pn-card);
+  color: var(--pn-ink);
+}
+.tws-tab-main {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0 var(--pn-space-2);
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.tws-tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tws-tab-close {
+  width: 36px;
+  height: 36px;
+  background: none;
+  border: 0;
+  color: var(--pn-ink-3);
+  cursor: pointer;
+}
+
+.tws-rail {
+  grid-area: rail;
+  position: relative;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-3);
+  padding: var(--pn-space-2) 0 var(--pn-space-3);
+  border-right: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+  min-height: 0;
+  min-width: 0;
+  overflow-x: hidden;
+}
+/* The rail never scrolls with the browser list; only a top group taller than
+   the window scrolls, inside itself, and the bottom group stays put. */
+.tws-rail-top {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-3);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+.tws-rail-top::-webkit-scrollbar {
+  display: none;
+}
+.tws-rail-group,
+.tws-rail-section-body,
+.tws-rail-bottom {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-1);
+}
+.tws-rail-bottom {
+  flex: none;
+}
+/* Hairlines: below Pinned and above the bottom group, 20px, centred on the
+   icon column. */
+.tws-rail-rule {
+  flex: none;
+  width: 20px;
+  height: 0;
+  margin: 0 0 0 calc((var(--tws-rail-w-collapsed) - 20px) / 2);
+  border: 0;
+  border-top: 1px solid var(--pn-line);
+}
+
+/* A rail row: 36×36 collapsed; expanded, the full row (6px side insets) with
+   the label after a 12px gap. The icon cell never moves: centre x = 24. */
+.tws-rail-btn {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-3);
+  width: 36px;
+  height: 36px;
+  margin: 0 6px;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink-3);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+.tws-rail[data-rail-expanded] .tws-rail-btn,
+.tws-rail[data-rail-expanded] .tws-rail-account .auth-accountmenu__trigger {
+  width: calc(100% - 12px);
+}
+.tws-rail-btn:hover {
+  background: var(--pn-hover);
+  color: var(--pn-ink-2);
+}
+.tws-rail-btn:active {
+  background: var(--pn-active);
+}
+/* R36 §4: current = a 3×20 brand bar flush to the rail's left edge plus a
+   --pn-ink glyph, and NO fill (fills mean hover and pressed only). */
+.tws-rail-btn[aria-current='true'] {
+  color: var(--pn-ink);
+}
+.tws-rail-btn[aria-current='true']::before {
+  content: '';
+  position: absolute;
+  left: -6px;
+  top: 50%;
+  width: 3px;
+  height: 20px;
+  transform: translateY(-50%);
+  background: var(--pn-brand);
+  border-radius: 0 1.5px 1.5px 0;
+}
+.tws-rail-icon {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+}
+.tws-rail-label {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* Labels fade in once the width has settled. */
+  animation: tws-label-in var(--pn-dur-fast) var(--pn-ease-out) var(--pn-dur-base) backwards;
+}
+.tws-rail-btn[aria-current='true'] .tws-rail-label {
+  color: var(--pn-ink);
+}
+.tws-rail-chevron {
+  display: inline-block;
+  width: 12px;
+  margin-right: var(--pn-space-1);
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-label);
+}
+@keyframes tws-label-in {
+  from {
+    opacity: 0;
+  }
+}
+.tws-rail-kbd {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-label);
+}
+
+/* R36 §3: the hold ring — 2px brand stroke on a rounded rect 2px outside the
+   36×36 box, filling clockwise from the top centre over 500ms; it holds and
+   fades after completing, and an early release removes it at once. */
+.tws-hold-ring {
+  position: absolute;
+  left: -3px;
+  top: -3px;
+  width: 42px;
+  height: 42px;
+  overflow: visible;
+  pointer-events: none;
+  fill: none;
+  stroke: var(--pn-brand);
+  stroke-width: 2;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  opacity: 0;
+}
+.tws-rail-kind[data-hold] .tws-hold-ring {
+  opacity: 1;
+}
+.tws-rail-kind[data-hold='holding'] .tws-hold-ring {
+  animation: tws-hold-fill 500ms linear forwards;
+}
+.tws-rail-kind[data-hold='done'] .tws-hold-ring {
+  stroke-dashoffset: 0;
+  animation: tws-hold-fade var(--pn-dur-fast) linear var(--pn-dur-fast) forwards;
+}
+@keyframes tws-hold-fill {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes tws-hold-fade {
+  to {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tws-root[data-rail-animating],
+  .tws-root[data-rail-animating] .tws-space-slot {
+    transition: none;
+  }
+  .tws-hold-ring {
+    display: none;
+  }
+}
+
+.tws-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The account avatar: the existing AccountMenu, its trigger reduced to a
+   28px avatar in a 36×36 box; the name stays as the accessible name. */
+.tws-rail-account {
+  display: flex;
+}
+.tws-rail-account .auth-accountmenu {
+  flex: 1;
+  min-width: 0;
+}
+.tws-rail-account .auth-accountmenu__trigger {
+  width: 36px;
+  height: 36px;
+  max-width: none;
+  margin: 0 6px;
+  justify-content: flex-start;
+  /* 2 + 32 + 14 = the 36px icon cell + 12px gap the other labels sit after. */
+  gap: 14px;
+  /* The 32px avatar box (drawn at 28) centres on x = 24: 6 + 2 + 16. */
+  padding: 0 2px;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+}
+.tws-rail-account .auth-accountmenu__trigger:hover {
+  border: 0;
+}
+/* R12: the compact trigger's 32px avatar drawn at 28px, initial or picture. */
+.tws-rail[data-rail-expanded] .tws-rail-account .auth-accountmenu__name {
+  min-width: 0;
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  animation: tws-label-in var(--pn-dur-fast) var(--pn-ease-out) var(--pn-dur-base) backwards;
+}
+.tws-rail-account .auth-avatar--compact {
+  flex: none;
+  transform: scale(0.875);
+}
+/* Opens up and to the right of the rail, bottom-aligned with the avatar. */
+.tws-rail-account .auth-menu--anchored {
+  top: auto;
+  right: auto;
+  bottom: 0;
+  left: calc(100% + var(--pn-space-2));
+}
+
+.tws-tip-anchor {
+  display: flex;
+}
+.tws-tip {
+  position: fixed;
+  z-index: 30;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-1) var(--pn-space-2);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  box-shadow: var(--pn-sh-pop);
+  color: var(--pn-ink);
+  font-size: var(--pn-fs-label);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.tws-tip-kbd {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+}
+
+/* The browser resizer (kit PanelResizer): an 8px hit zone centred on the
+   browser|content hairline, which turns --pn-line-2 on hover or drag. */
+.tws-resizer {
+  grid-area: browser;
+  justify-self: end;
+  position: relative;
+  z-index: 3;
+  display: flex;
+  margin-right: -4px;
+}
+.tws-root .tws-resizer .kit-resizer__line {
+  background: transparent;
+}
+.tws-root .tws-resizer .kit-resizer:hover .kit-resizer__line,
+.tws-root .tws-resizer .kit-resizer:focus-visible .kit-resizer__line,
+.tws-root .tws-resizer .kit-resizer[data-resizing] .kit-resizer__line {
+  width: 1px;
+  background: var(--pn-line-2);
+}
+
+.tws-browser {
+  grid-area: browser;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--pn-surface);
+  border-right: 1px solid var(--pn-line);
+}
+.tws-browser-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 40px;
+  padding: 0 var(--pn-space-3);
+}
+.tws-browser-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.tws-content {
+  grid-area: content;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--pn-card);
+  overflow: hidden;
+}
+.tws-entity {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.tws-entity-row {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.tws-entity-main {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+}
+.tws-floating {
+  position: absolute;
+  top: var(--pn-space-3);
+  right: var(--pn-space-3);
+  z-index: 2;
+  display: flex;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-1);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  box-shadow: var(--pn-sh-sm);
+}
+.tws-trail {
+  height: 24px;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--pn-space-6);
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-label);
+}
+.tws-chat {
+  width: 380px;
+  border-left: 1px solid var(--pn-line);
+}
+.tws-body-stub,
+.tws-start,
+.tws-chooser {
+  padding: var(--pn-space-6);
+}
+.tws-start {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-8);
+}
+.tws-start-title {
+  margin: 0;
+  font-size: var(--pn-fs-h3);
+  font-weight: 600;
+}
+.tws-quiet {
+  color: var(--pn-ink-3);
+}
+
+.tws-icon-btn,
+.tws-quiet-btn,
+.tws-new-btn {
+  min-width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--pn-space-1);
+  padding: 0 var(--pn-space-2);
+  background: none;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink-2);
+  font: inherit;
+  cursor: pointer;
+}
+.tws-icon-btn {
+  width: 36px;
+  padding: 0;
+  color: var(--pn-ink-3);
+}
+.tws-quiet-btn {
+  font-weight: 600;
+  color: var(--pn-ink);
+  white-space: nowrap;
+}
+.tws-new-btn {
+  height: 32px;
+  border: 1px solid var(--pn-line-2);
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+}
+.tws-new-btn:disabled {
+  color: var(--pn-ink-4);
+  border-color: var(--pn-line);
+  cursor: not-allowed;
+}
+.tws-icon-btn:hover,
+.tws-quiet-btn:hover,
+.tws-new-btn:hover:not(:disabled),
+.tws-tab-close:hover,
+.tws-menu-row:hover {
+  background: var(--pn-hover);
+}
+.tws-root :focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+
+.tws-menu,
+.tws-prompt {
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  box-shadow: var(--pn-sh-pop);
+}
+.tws-menu {
+  position: absolute;
+  top: 100%;
+  animation: tws-pop-in var(--pn-dur-fast) var(--pn-ease-out);
+  left: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+  padding: var(--pn-space-1);
+}
+.tws-menu-row {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  flex: none;
+  height: 36px;
+  padding: 0 var(--pn-space-2);
+  background: none;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.tws-menu-row[aria-checked='true'] {
+  background: var(--pn-active);
+}
+.tws-prompt {
+  position: absolute;
+  top: calc(var(--tws-header-h) + var(--pn-space-2));
+  right: var(--pn-space-3);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-2) var(--pn-space-3);
+}
+.tws-search {
+  width: 100%;
+  height: 36px;
+  padding: 0 var(--pn-space-3);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink);
+  font: inherit;
+}
+
+@keyframes tws-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tws-root * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* R34: controls on the darker --pn-paper band (left header, expanded-mode Restore cluster). */
+.tws-left-header button:hover,
+.tws-ts-leading button:hover {
+  background: var(--pn-active);
+}
+.tws-left-header button:active,
+.tws-ts-leading button:active {
+  background: var(--pn-line);
+}

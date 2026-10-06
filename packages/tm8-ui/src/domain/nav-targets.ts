@@ -249,6 +249,10 @@ export function landingOfRoute(view: NavView): Landing | null {
        */
       return { target: null, openEntity: null };
 
+    case 'tabs':
+      /* Workspace tabs — route-only and client-added like boardV2. */
+      return { target: null, openEntity: null };
+
     case 'boardV2':
       /* Board v2 — route-only for the same no-migration reason as newSession.
          `target: null`: no menu group owns it; the shell appends its tab

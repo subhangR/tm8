@@ -1,0 +1,420 @@
+/*
+ * Tab strip (Spec A §6, design log §5). Tokens only, 4/8 grid. The strip's
+ * grid area, hairline and chrome fill come from `.tws-strip` in workspace.css;
+ * everything here is scoped under `.tws-ts`.
+ */
+.tws-strip.tws-ts {
+  /* Subhang feedback 6: the band sits one surface step darker (--pn-paper) so
+     the --pn-card active tab stands out; the left header matches. */
+  background: var(--pn-paper);
+  /* R27 (overrides R3's 8px inset): a 40px band. Tabs run its full height,
+     edge to edge; every other control is a 36px box 2px from the top and the
+     bottom edge, so all labels share the left header's centre (y = 20). */
+  align-items: flex-start;
+  gap: 0;
+  padding: 0 var(--pn-space-3) 0 var(--pn-space-2);
+  overflow: visible;
+}
+.tws-strip.tws-ts[data-has-leading] {
+  padding-left: var(--pn-space-3);
+}
+
+.tws-ts-leading {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  flex: none;
+  height: 36px;
+  margin-top: 2px;
+  margin-right: var(--pn-space-2);
+}
+
+/* ---- scroller: one row, no scrollbar, fades on the clipped edge(s) ---- */
+.tws-ts-scroll {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-end;
+  gap: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  /* The full band: the last pixel row is the hairline, which the active tab
+     covers to join the content plane. */
+  height: 40px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.tws-ts-scroll::-webkit-scrollbar {
+  display: none;
+}
+.tws-ts-scroll[data-fade-start] {
+  mask-image: linear-gradient(to right, transparent, black 16px);
+}
+.tws-ts-scroll[data-fade-end] {
+  mask-image: linear-gradient(to right, black calc(100% - 16px), transparent);
+}
+.tws-ts-scroll[data-fade-start][data-fade-end] {
+  mask-image: linear-gradient(to right, transparent, black 16px, black calc(100% - 16px), transparent);
+}
+
+/* ---- tab ---- */
+.tws-ts-tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 0 1 220px;
+  min-width: 120px;
+  max-width: 220px;
+  height: 40px;
+  padding-left: var(--pn-space-3);
+  /* R27: a full-height tab has no free corner to round. */
+  border-radius: 0;
+  color: var(--pn-ink-2);
+  user-select: none;
+}
+.tws-ts-tab:hover {
+  /* One step darker than the --pn-paper band; stops 1px short so an inactive
+     tab's hover never paints over the hairline. */
+  background: linear-gradient(var(--pn-active), var(--pn-active)) top / 100% calc(100% - 1px) no-repeat;
+  color: var(--pn-ink);
+}
+.tws-ts-tab[data-active] {
+  background: var(--pn-card);
+  color: var(--pn-ink);
+}
+.tws-ts-tab[data-dragging] {
+  opacity: 0.5;
+}
+
+.tws-ts-tab-main {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 40px;
+  margin-right: var(--pn-space-1);
+  cursor: pointer;
+  border-radius: var(--pn-r-xs);
+  /* Subhang feedback 2: one step down from the chrome label size; 500 for
+     every tab (active included, so its width never jumps). */
+  font-size: var(--pn-fs-label);
+  font-weight: 500;
+}
+.tws-ts-tab-main:focus {
+  outline: none;
+}
+.tws-ts-tab-main:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+
+.tws-ts-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--pn-ink-2);
+}
+.tws-ts-tab[data-active] .tws-ts-icon {
+  color: var(--pn-ink);
+}
+
+.tws-ts-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- right slot: state glyph OR close, never both; always reserved ---- */
+.tws-ts-slot {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 36px;
+  height: 40px;
+}
+.tws-ts-state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.tws-ts-state[data-state='unsaved'] {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--pn-ink-2);
+}
+.tws-ts-state[data-state='running'] {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--pn-run-soft);
+}
+.tws-ts-state[data-state='running']::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--pn-run);
+}
+.tws-ts-state[data-state='error'],
+.tws-ts-state[data-state='deleted'],
+.tws-ts-state[data-state='unavailable'] {
+  color: var(--pn-block);
+}
+
+.tws-ts-close {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  display: inline-flex;
+  opacity: 0;
+  pointer-events: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: var(--pn-r-xs);
+  color: var(--pn-ink-2);
+  cursor: pointer;
+}
+/* Keep the 36×36 hit box while the visible fill stays 20×20. */
+.tws-ts-close::before {
+  content: '';
+  position: absolute;
+  inset: -8px;
+}
+.tws-ts-close:hover {
+  /* Darker than the hovered tab under it. */
+  background: var(--pn-line);
+  color: var(--pn-ink);
+}
+/* Shown on hover or focus inside the tab; always focusable (Spec A §16). */
+.tws-ts-tab:hover .tws-ts-close,
+.tws-ts-tab:focus-within .tws-ts-close {
+  opacity: 1;
+  pointer-events: auto;
+}
+.tws-ts-tab:hover .tws-ts-state,
+.tws-ts-tab:focus-within .tws-ts-state {
+  visibility: hidden;
+}
+
+/* ---- drag insertion marker: 2×24 brand bar, centred in the gap ---- */
+.tws-ts-marker {
+  position: absolute;
+  bottom: 8px;
+  width: 2px;
+  height: 24px;
+  border-radius: 1px;
+  background: var(--pn-brand);
+  pointer-events: none;
+}
+
+/* ---- pinned cluster: [⌄] [+] (8px) [scope] ---- */
+.tws-ts-pinned {
+  display: flex;
+  align-items: center;
+  height: 36px;
+  margin-top: 2px;
+  gap: var(--pn-space-2);
+  flex: none;
+  margin-left: var(--pn-space-2);
+}
+.tws-ts-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink-2);
+  cursor: pointer;
+}
+/* R24: a fill only while hovered or pressed, never left behind by a click or
+   by focus (focus shows the ring alone). Touch has no real hover. */
+@media (hover: hover) {
+  .tws-ts-btn:hover {
+    /* Same 1px stop as a tab: the box sits on the hairline row. */
+    background: linear-gradient(var(--pn-active), var(--pn-active)) top / 100% calc(100% - 1px) no-repeat;
+    color: var(--pn-ink);
+  }
+}
+.tws-ts-btn:active {
+  background: linear-gradient(var(--pn-line), var(--pn-line)) top / 100% calc(100% - 1px) no-repeat;
+  color: var(--pn-ink);
+}
+.tws-ts-btn:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+
+/* ---- menus (context menu, overflow list): raised plane ---- */
+.tws-ts-menu {
+  position: fixed;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+  max-width: 320px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: var(--pn-space-1);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  box-shadow: var(--pn-sh-pop);
+  animation: tws-ts-pop var(--pn-dur-fast) var(--pn-ease-out);
+}
+.tws-ts-menu-row {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  min-height: 36px;
+  padding: 0 var(--pn-space-2);
+  background: none;
+  border: 0;
+  border-radius: var(--pn-r-xs);
+  color: var(--pn-ink);
+  font: inherit;
+  font-size: var(--pn-fs-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.tws-ts-menu-row:hover,
+.tws-ts-menu-row:focus {
+  background: var(--pn-hover);
+  outline: none;
+}
+.tws-ts-menu-row:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+.tws-ts-menu-row[aria-disabled='true'] {
+  color: var(--pn-ink-4);
+  cursor: not-allowed;
+}
+.tws-ts-menu-row[aria-disabled='true']:hover {
+  background: none;
+}
+.tws-ts-menu-check {
+  display: inline-flex;
+  width: 14px;
+  flex: none;
+  color: var(--pn-ink-2);
+}
+.tws-ts-menu-tab {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  min-width: 0;
+  flex: 1;
+}
+.tws-ts-menu-tab .tws-ts-icon {
+  color: var(--pn-ink-3);
+}
+.tws-ts-menu-tab .tws-ts-state {
+  margin-left: auto;
+}
+
+/* ---- unsaved-changes confirmation (design log R1): centred modal ---- */
+.tws-ts-confirm {
+  width: min(400px, calc(100vw - 32px));
+  padding: var(--pn-space-6);
+  background: var(--pn-card);
+  color: var(--pn-ink);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-pop);
+  animation: tws-ts-pop var(--pn-dur-fast) var(--pn-ease-out);
+}
+.tws-ts-confirm::backdrop {
+  background: var(--pn-scrim);
+}
+.tws-ts-confirm-title {
+  margin: 0;
+  font-size: var(--pn-fs-title);
+  font-weight: 600;
+}
+.tws-ts-confirm-body {
+  margin: var(--pn-space-2) 0 0;
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-2);
+}
+.tws-ts-confirm-list {
+  max-height: 192px;
+  overflow-y: auto;
+  margin: var(--pn-space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.tws-ts-confirm-item {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  height: 32px;
+  min-width: 0;
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink);
+}
+.tws-ts-confirm-item .tws-ts-icon {
+  color: var(--pn-ink-3);
+}
+.tws-ts-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--pn-space-2);
+  margin-top: var(--pn-space-6);
+}
+.tws-ts-confirm-btn {
+  height: 36px;
+  padding: 0 var(--pn-space-3);
+  background: none;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink);
+  font: inherit;
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+  cursor: pointer;
+}
+.tws-ts-confirm-btn:hover {
+  background: var(--pn-hover);
+}
+.tws-ts-confirm-btn[data-tone='danger'] {
+  background: transparent;
+  border-color: var(--pn-block);
+  color: var(--pn-block);
+}
+.tws-ts-confirm-btn[data-tone='danger']:hover {
+  background: var(--pn-block-soft);
+}
+.tws-ts-confirm-btn:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+
+@keyframes tws-ts-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tws-ts-menu,
+  .tws-ts-confirm {
+    animation: none;
+  }
+}

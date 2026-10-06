@@ -36,6 +36,8 @@ export interface ChatHomeSurfaceProps {
   composerSeed?: ChatHomeScreenProps['composerSeed'];
   /** Pass-through: the entity chat's new-chat settings (§3.4). */
   newChatSeed?: ChatHomeScreenProps['newChatSeed'];
+  /** Pass-through: a host keeping the composer drafts (Workspace's per-tab chat). */
+  composerDrafts?: ChatHomeScreenProps['composerDrafts'];
   /** Pass-through: the host's own new-conversation intro. */
   newThreadIntro?: ChatHomeScreenProps['newThreadIntro'];
   /** Pass-through: a host's note under a tool call. */

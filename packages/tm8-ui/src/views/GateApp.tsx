@@ -52,6 +52,7 @@ import { PromptsOverlay } from '../prompts';
 import { ProjectGitScreen } from '../git/ProjectGitScreen';
 import { BoardScreen } from '../board';
 import { BoardV2Screen } from '../board-v2';
+import { openInWorkspace, TabWorkspaceView, useWorkspaceShareRoute, type WorkspaceGateHandles } from '../tab-workspace';
 import { CraftScreen } from '../craft';
 import { HelpScreen } from '../help';
 import { NewSessionScreen } from '../new-session';
@@ -179,15 +180,23 @@ const HOME_TARGET: MenuTarget = { type: 'view', ref: 'dashboard' };
 
 /** Board v2's client-appended tab seat — not a menu group id (see shellTabs). */
 const BOARD_V2_TAB_ID = 'board-v2';
+/** The Workspace (tabs) view's client-appended seat — same pattern as Board v2. */
+const WORKSPACE_TABS_TAB_ID = 'workspace-tabs';
+/** The Workspace seat's glyph: a tab over a page. */
+const WORKSPACE_TABS_ART: readonly string[] = [
+  'M2.8 6h10.4v6.6a1.2 1.2 0 0 1-1.2 1.2H4a1.2 1.2 0 0 1-1.2-1.2z',
+  'M2.8 6V3.4A1.2 1.2 0 0 1 4 2.2h3l1.2 3.8',
+];
 
 /**
  * The groups the top bar draws as its VIEW switcher, in pill order, and the
  * art each segment carries. Keyed by GROUP id, not view ref: Home's group has
  * been `chats` since revision 14 and kept that id through two renames.
  */
-const VIEW_GROUP_ORDER: readonly string[] = ['chats', 'work', BOARD_V2_TAB_ID, 'graph'];
+const VIEW_GROUP_ORDER: readonly string[] = ['chats', WORKSPACE_TABS_TAB_ID, 'work', BOARD_V2_TAB_ID, 'graph'];
 const VIEW_GROUP_ART: Record<string, readonly string[]> = {
   chats: VIEW_ART.dashboard,
+  [WORKSPACE_TABS_TAB_ID]: WORKSPACE_TABS_ART,
   work: VIEW_ART.workspace,
   [BOARD_V2_TAB_ID]: VIEW_ART.board,
   graph: VIEW_ART.graph,
@@ -1143,6 +1152,8 @@ export function GateApp(props: GateAppProps = {}) {
   // identity read that supplies the account face. Reuse its canonical member
   // id here: a second resolver/read would let the two surfaces disagree.
   const viewerMemberId = data.viewerActor?.id ?? null;
+  /* Workspace Copy link (Spec A §4/§12): `tabs?tab=<active entity id>`; null elsewhere. */
+  const workspaceShareRoute = useWorkspaceShareRoute(viewerMemberId, data.spaceId || null, navView.view === 'tabs');
   /* The graph screen's narrow port cannot build a channel feed port itself,
      so the shell builds the one adapter (same seam every other host wraps)
      and hands it down with the chat wiring. */
@@ -1799,6 +1810,11 @@ export function GateApp(props: GateAppProps = {}) {
       const workIndex = tabs.findIndex((tab) => tab.id === 'work');
       const v2: ShellTab = { id: BOARD_V2_TAB_ID, label: 'Board' };
       tabs.splice(workIndex >= 0 ? workIndex + 1 : Math.min(1, tabs.length), 0, v2);
+      /* WORKSPACE (tabs view, Spec A §2) — route-only seat right after Home,
+         same client-added pattern as Board v2. The existing "Work" keeps its
+         label; both names are kept. */
+      const homeIndex = tabs.findIndex((tab) => tab.id === 'chats');
+      tabs.splice(homeIndex + 1, 0, { id: WORKSPACE_TABS_TAB_ID, label: 'Workspace' });
       const views = VIEW_GROUP_ORDER.flatMap((id) => {
         const tab = tabs.find((t) => t.id === id);
         return tab ? [{ ...tab, glyph: <VectorIcon paths={VIEW_GROUP_ART[id]} size={13} /> }] : [];
@@ -1818,6 +1834,7 @@ export function GateApp(props: GateAppProps = {}) {
     /* Board v2 has no menu group — its tab is the client-appended seat, so it
        is claimed off the ROUTE, exactly as its screen mount is. */
     if (navView.view === 'boardV2') return BOARD_V2_TAB_ID;
+    if (navView.view === 'tabs') return WORKSPACE_TABS_TAB_ID;
     const direct = groupIdOfTarget(data.menu.config, activeTarget ?? null);
     if (direct) return direct;
     if (activeTarget?.type === 'entity' && voiceEntities.some((e) => e.id === activeTarget.ref)) {
@@ -1847,12 +1864,22 @@ export function GateApp(props: GateAppProps = {}) {
         navStore.getState().navigate({ view: 'boardV2' });
         return;
       }
+      if (id === WORKSPACE_TABS_TAB_ID) {
+        navStore.getState().navigate({ view: 'tabs' });
+        return;
+      }
       const group = data.menu.config.groups.find((g) => g.id === id);
       const target = group ? primaryTargetOfGroup(group) : null;
       if (target) navigateTo(target);
     },
     [data.menu.config, navigateTo],
   );
+  /* The Workspace (tabs) view's handles — stable, so its context does not
+     churn its runtime wiring on every GateApp render. */
+  const openPaletteOverlay = useCallback(() => setPaletteOpen(true), []);
+  const navigateRouteView = useCallback((view: NavView) => navStore.getState().navigate(view), []);
+  const goHomeTarget = useCallback(() => navigateTo(HOME_TARGET), [navigateTo]);
+  const openInboxView = useCallback(() => navigateTo({ type: 'view', ref: 'inbox' }), [navigateTo]);
 
   /*
    * THE SHELL FORK. Chosen by pointer type and width, never by user agent —
@@ -2037,6 +2064,104 @@ export function GateApp(props: GateAppProps = {}) {
       />
     ) : null;
 
+  /* The space switcher and account menu ELEMENTS, built once and mounted by
+     whichever chrome is up: the top bar, or the Workspace view's own left
+     header and rail (Spec A §2–§4), which renders without the top bar. */
+  const switcherEl = (
+    <SpaceSwitcher
+      servers={props.servers ?? [activeServer]}
+      activeServerId={activeServer.id}
+      spaces={data.spaces}
+      activeSpaceId={(data.spaceId as SpaceId) || null}
+      collapsed={false}
+      onSelectServer={(id) => {
+        leaveSpaceContext();
+        resetAddress();
+        props.onSelectServer?.(id);
+      }}
+      onSelectSpace={(id) => {
+        leaveSpaceContext();
+        data.selectSpace(id);
+      }}
+      onAddServer={props.onAddServer ? () => setAddServerOpen(true) : undefined}
+      onAddSpace={projectOnboardingPort ? () => setNewSpaceOpen(true) : undefined}
+    />
+  );
+  const accountEl =
+    authAccount && data.viewerActor ? (
+      <AccountMenu
+        actor={data.viewerActor}
+        theme={theme}
+        onThemeChange={setTheme}
+        stylePicker={
+          <StylePicker seam={data.seam} spaceId={data.spaceId || null} members={data.members} />
+        }
+        agentToolsNudge={setupNudge}
+        {...(credentialsPort ? { onOpenAgentTools: () => setSetupOpen(true) } : {})}
+        /* R21 — THE UTILITY GROUP, and it is wired ONLY for the current
+           bar. On the legacy bar these three verbs are still in the row
+           itself, and handing them to the menu as well would draw every
+           one of them twice. One control, one home, in both bars. */
+        {...(LEGACY_BAR
+          ? {}
+          : {
+              onOpenInbox: () => navigateTo({ type: 'view', ref: 'inbox' }),
+              onOpenPrompts: () => setPromptsOpen(true),
+              utilityRows: (
+                <>
+                  {data.spaceId ? (
+                    <CopyLinkControl
+                      className="auth-menu__row auth-menu__row--live"
+                      spaceId={data.spaceId}
+                      target={activeTarget ?? WORKSPACE_TARGET}
+                      openEntity={openOnScreen}
+                      {...(workspaceShareRoute ? { routeView: workspaceShareRoute } : {})}
+                    />
+                  ) : null}
+                  {/* THE ROLLBACK, and the only control that performs
+                      it. Deliberately the last row of the group and
+                      deliberately plain: it is an escape hatch for one
+                      release, not a feature. */}
+                  <button
+                    type="button"
+                    className="auth-menu__row auth-menu__row--live"
+                    data-testid="use-previous-topbar"
+                    title="Go back to the previous top bar on this device"
+                    onClick={() => {
+                      setTopBarVersion('legacy');
+                      window.location.reload();
+                    }}
+                  >
+                    <span className="auth-menu__glyph" aria-hidden>
+                      ↩
+                    </span>
+                    Use the previous top bar
+                  </button>
+                </>
+              ),
+            })}
+      />
+    ) : undefined;
+
+  const workspaceGate: WorkspaceGateHandles = {
+    data,
+    reasons,
+    serverBaseUrl: activeServer.routeBaseUrl,
+    viewerMemberId,
+    onNotice: notices.push,
+    openPalette: openPaletteOverlay,
+    navigateTo,
+    navigateView: navigateRouteView,
+    goHome: goHomeTarget,
+    openInbox: openInboxView,
+    viewTabs,
+    shellTabs,
+    activeViewTabId: activeGroupId,
+    onSelectViewTab: openTab,
+    switcherSlot: switcherEl,
+    accountSlot: accountEl,
+  };
+
   return withPendingForms(
     /* `shell-scope` is the height link, not a style hook: it hands `.shell-root`
        a containing block that is exactly the viewport, so the shell can size
@@ -2050,6 +2175,27 @@ export function GateApp(props: GateAppProps = {}) {
       data-theme={theme === 'dark' ? 'dark' : undefined}
     >
       <div className="shell-root">
+        {navView.view === 'tabs' ? (
+          /* WORKSPACE (tabs view, Spec A §2–§3): full-bleed, and the ONLY view
+             that renders WITHOUT the top bar — its own left header and rail
+             carry the view selector, space switcher, palette and account. */
+          /* The store is keyed by (viewer, space), so it mounts only once
+             the viewer is known — the identity read lands after `ready`, and
+             mounting earlier would swap stores under the first clicks. */
+          data.ready && data.spaceId && viewerMemberId ? (
+            <CatchBoundary label="view">
+              <TabWorkspaceView
+                viewerId={viewerMemberId}
+                spaceId={data.spaceId}
+                {...(navView.tab ? { routeTab: navView.tab } : {})}
+                gate={workspaceGate}
+              />
+            </CatchBoundary>
+          ) : (
+            <BootLoader label="loading workspace" />
+          )
+        ) : (
+        <>
         <TopBar
           /* ONE ROW (owner, 2026-09-26): on the current bar the status strip
              is the right zone's lead, and the tabs move left beside the
@@ -2061,26 +2207,7 @@ export function GateApp(props: GateAppProps = {}) {
              invariant on onSelectServer (privacy-lane agreement, 2026-08-15):
              leaveSpaceContext THEN resetAddress, together, in this order,
              wherever this control lives. */
-          switcherSlot={
-            <SpaceSwitcher
-              servers={props.servers ?? [activeServer]}
-              activeServerId={activeServer.id}
-              spaces={data.spaces}
-              activeSpaceId={(data.spaceId as SpaceId) || null}
-              collapsed={false}
-              onSelectServer={(id) => {
-                leaveSpaceContext();
-                resetAddress();
-                props.onSelectServer?.(id);
-              }}
-              onSelectSpace={(id) => {
-                leaveSpaceContext();
-                data.selectSpace(id);
-              }}
-              onAddServer={props.onAddServer ? () => setAddServerOpen(true) : undefined}
-              onAddSpace={projectOnboardingPort ? () => setNewSpaceOpen(true) : undefined}
-            />
-          }
+          switcherSlot={switcherEl}
           /* R2: the menu's groups, as tabs. */
           viewTabs={viewTabs}
           tabs={shellTabs}
@@ -2129,61 +2256,7 @@ export function GateApp(props: GateAppProps = {}) {
               />
             ) : undefined
           }
-          accountSlot={
-            authAccount && data.viewerActor ? (
-              <AccountMenu
-                actor={data.viewerActor}
-                theme={theme}
-                onThemeChange={setTheme}
-                stylePicker={
-                  <StylePicker seam={data.seam} spaceId={data.spaceId || null} members={data.members} />
-                }
-                agentToolsNudge={setupNudge}
-                {...(credentialsPort ? { onOpenAgentTools: () => setSetupOpen(true) } : {})}
-                /* R21 — THE UTILITY GROUP, and it is wired ONLY for the current
-                   bar. On the legacy bar these three verbs are still in the row
-                   itself, and handing them to the menu as well would draw every
-                   one of them twice. One control, one home, in both bars. */
-                {...(LEGACY_BAR
-                  ? {}
-                  : {
-                      onOpenInbox: () => navigateTo({ type: 'view', ref: 'inbox' }),
-                      onOpenPrompts: () => setPromptsOpen(true),
-                      utilityRows: (
-                        <>
-                          {data.spaceId ? (
-                            <CopyLinkControl
-                              className="auth-menu__row auth-menu__row--live"
-                              spaceId={data.spaceId}
-                              target={activeTarget ?? WORKSPACE_TARGET}
-                              openEntity={openOnScreen}
-                            />
-                          ) : null}
-                          {/* THE ROLLBACK, and the only control that performs
-                              it. Deliberately the last row of the group and
-                              deliberately plain: it is an escape hatch for one
-                              release, not a feature. */}
-                          <button
-                            type="button"
-                            className="auth-menu__row auth-menu__row--live"
-                            data-testid="use-previous-topbar"
-                            title="Go back to the previous top bar on this device"
-                            onClick={() => {
-                              setTopBarVersion('legacy');
-                              window.location.reload();
-                            }}
-                          >
-                            <span className="auth-menu__glyph" aria-hidden>
-                              ↩
-                            </span>
-                            Use the previous top bar
-                          </button>
-                        </>
-                      ),
-                    })}
-              />
-            ) : undefined
-          }
+          accountSlot={accountEl}
         />
 
         {/* The legacy bar has no seat for the strip, so it keeps its own row. */}
@@ -2964,6 +3037,8 @@ export function GateApp(props: GateAppProps = {}) {
           )}
           </CatchBoundary>
         </div>
+        </>
+        )}
 
         <CommandPalette
           open={paletteOpen}
@@ -2972,7 +3047,11 @@ export function GateApp(props: GateAppProps = {}) {
           ctx={{ spaceId: data.spaceId }}
           onQueryChange={setPaletteQuery}
           onOpenEntity={(id) => {
-            nav.push?.(id as EntityId);
+            /* On the tabs route a pick opens as a Workspace tab (W2-H). */
+            const kind = paletteResults.find((row) => row.id === id)?.kind ?? data.detailOf(id)?.kind;
+            const inWorkspace =
+              navView.view === 'tabs' && !!viewerMemberId && !!kind && openInWorkspace(viewerMemberId, data.spaceId, kind, id);
+            if (!inWorkspace) nav.push?.(id as EntityId);
             setPaletteOpen(false);
           }}
           onOpenView={openPaletteView}

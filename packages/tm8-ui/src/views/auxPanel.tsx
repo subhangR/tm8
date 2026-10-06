@@ -24,7 +24,7 @@
  */
 import { useMemo, useState } from 'react';
 import type { EntityId } from '@tm8/contract';
-import { EntityDetailPanel, type ControlHost, type DetailReasons } from '../panels';
+import { EntityDetailPanel, type ControlHost, type DetailReasons, type EntityDetailPanelProps as DetailPanelProps } from '../panels';
 import type { PanelHost } from '../panels/detail/chrome';
 import type { ContentSurface } from '../routes';
 import { channelFeedPortFromGateData } from './channel-feed-port';
@@ -101,9 +101,14 @@ export interface AuxEntityPanelProps {
    * the aux column's reading-surface header, as before.
    */
   extraActions?: { onAction: ((ref: ActionRef) => void) | undefined; wiredActions: readonly ActionRef[] };
+  /**
+   * The Workspace tab host's opt-ins (controlled section, embedded chrome).
+   * Absent ⇒ every existing mount, unchanged.
+   */
+  panelProps?: Pick<DetailPanelProps, 'activeTab' | 'onTabChange' | 'embeddedChrome'>;
 }
 
-export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose, panelHost = 'stack', onPromote, story, extraActions }: AuxEntityPanelProps) {
+export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose, panelHost = 'stack', onPromote, story, extraActions, panelProps }: AuxEntityPanelProps) {
   const { data, attachments } = host;
   const detail = data.detailOf(entityId) ?? null;
   /* The feed port is a STATELESS adapter over the same GateData the host
@@ -206,6 +211,7 @@ export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose, panelHos
       onSaved={data.reconcileCommand}
       onOpenEntity={(id) => onOpenEntity(id as EntityId)}
       onClose={onClose}
+      {...panelProps}
     />
   );
 }

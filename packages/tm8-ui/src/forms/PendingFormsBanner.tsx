@@ -12,7 +12,8 @@
  * host wires a resume for this panel, which it does only for a session that
  * has ended. The server still decides whether this viewer may resume it.
  */
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useDismissable } from '../panels/useDismissable';
 import { Timestamp } from '../kit';
 import { FillTab } from './FillTab';
 import {
@@ -31,8 +32,15 @@ export function PendingFormsBanner({
   sessionId,
   onResume,
   resuming = false,
+  variant = 'banner',
 }: {
   sessionId: string;
+  /**
+   * `chip` (Workspace session head, design log R16): one attention chip,
+   * "● N forms waiting", whose click opens this same banner in an anchored
+   * popover. Default `banner`: unchanged.
+   */
+  variant?: 'banner' | 'chip';
   /** Resume this session. Absent ⇒ the queued line says so, with no button. */
   onResume?: () => void;
   resuming?: boolean;
@@ -43,7 +51,7 @@ export function PendingFormsBanner({
   if (!store || !pending || (pending.total === 0 && pending.queued === 0)) return null;
 
   const hidden = pending.total - pending.forms.length;
-  return (
+  const banner = (
     <section className="pf-banner" data-testid="pending-forms-banner" aria-label="Forms waiting on you">
       {pending.total > 0 ? (
         <>
@@ -75,6 +83,55 @@ export function PendingFormsBanner({
         </div>
       ) : null}
     </section>
+  );
+  if (variant === 'chip') {
+    const label = pending.total > 0 ? formsWaitingText(pending.total) : answersQueuedText(pending.queued);
+    const tooltip = pending.forms.map((item) => item.title).join('\n') || label;
+    return (
+      <PendingFormsChip label={label} tooltip={tooltip} count={pending.total > 0 ? pending.total : pending.queued}>
+        {banner}
+      </PendingFormsChip>
+    );
+  }
+  return banner;
+}
+
+function PendingFormsChip({
+  label,
+  tooltip,
+  count,
+  children,
+}: {
+  label: string;
+  tooltip: string;
+  count: number;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useDismissable(open, ref, useCallback(() => setOpen(false), []));
+  return (
+    <div className="pf-chip" ref={ref}>
+      <button
+        type="button"
+        className="att-chip att-chip--wait pf-chip__trigger"
+        title={tooltip}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        data-testid="pending-forms-chip"
+        data-count={count}
+        aria-label={label}
+        onClick={() => setOpen((was) => !was)}
+      >
+        <span className="att-chip__b" aria-hidden>●</span>
+        <span>{label}</span>
+      </button>
+      {open ? (
+        <div className="pf-chip__pop" role="dialog" aria-label="Forms waiting on you">
+          {children}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

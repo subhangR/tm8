@@ -3,7 +3,7 @@ import type { EntityId, SpaceId } from '@tm8/contract';
 import type { MenuTarget } from '../shell';
 import { routeViewOf } from '../domain/nav-targets';
 import { build, normalize } from '../routes/codec';
-import { emptyPanels } from '../routes/types';
+import { emptyPanels, type NavView } from '../routes/types';
 import { DisabledAction } from '../panels/honesty/DisabledWithReason';
 import './copy-link.css';
 
@@ -31,6 +31,11 @@ export interface CopyLinkControlProps {
    * link exposes.
    */
   hint?: string;
+  /**
+   * A route the host already knows, used instead of resolving `target` — the
+   * Workspace view is route-only (`tabs?tab=`) and has no `MenuTarget`.
+   */
+  routeView?: NavView;
 }
 
 /**
@@ -76,8 +81,9 @@ export function copyLinkUrl({
   target,
   openEntity = null,
   appBaseUrl = currentAppBaseUrl(),
-}: Pick<CopyLinkControlProps, 'spaceId' | 'target' | 'openEntity' | 'appBaseUrl'>): string | null {
-  return urlForRouteTarget(spaceId, routeViewOf(target, openEntity), appBaseUrl);
+  routeView,
+}: Pick<CopyLinkControlProps, 'spaceId' | 'target' | 'openEntity' | 'appBaseUrl' | 'routeView'>): string | null {
+  return urlForRouteTarget(spaceId, routeView ?? routeViewOf(target, openEntity), appBaseUrl);
 }
 
 /**
@@ -143,10 +149,17 @@ export function CopyLinkControl({
   label = 'Copy link',
   className,
   hint = SPACE_LINK_HINT,
+  routeView,
 }: CopyLinkControlProps) {
   const [copied, setCopied] = useState(false);
   const [manualCopy, setManualCopy] = useState(false);
-  const url = copyLinkUrl({ spaceId, target, openEntity, ...(appBaseUrl ? { appBaseUrl } : {}) });
+  const url = copyLinkUrl({
+    spaceId,
+    target,
+    openEntity,
+    ...(appBaseUrl ? { appBaseUrl } : {}),
+    ...(routeView ? { routeView } : {}),
+  });
 
   if (!url) {
     const refused = (

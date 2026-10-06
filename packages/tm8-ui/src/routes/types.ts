@@ -270,6 +270,13 @@ export type NavView =
    */
   | { view: 'boardV2' }
   /*
+   * WORKSPACE TABS (2026-10-06, Spec A/B): the tabbed entity workspace.
+   * Route-only and client-added exactly like `boardV2`. `tab` is the entity
+   * id of the active tab (`?tab=`); absent while a draft, the chooser or no
+   * tab is active.
+   */
+  | { view: 'tabs'; tab?: EntityId }
+  /*
    * NEW SESSION (2026-08-16): the create screen that mints a task from a typed
    * prompt and spawns on it. Flat segment, no parameters.
    *

@@ -1,0 +1,638 @@
+/* Workspace content area: tab body, the entity action strip, in-tab states
+   (Spec A §8, §13; design log §11, R30; Subhang's feedback rounds 1-4).
+   Workstream E. Tokens only, 4/8 grid. */
+
+/* --- The entity band: [content row (body + chat)] [action strip] --- */
+.tws-entity-band {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+.tws-entity-band > .tws-entity-row {
+  flex: 1;
+  min-width: 0;
+}
+.tws-entity-main.tws-entity-host {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.tws-body {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* --- The reused detail panel, as a tab body: no card, no second border --- */
+.cv2-root .tws-panel > .pn-panel {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: var(--pn-card);
+}
+
+/* --- No head rows (Subhang, round 4): the property pills are the body's first
+   content, in its measure; nothing floats over the body. --- */
+.cv2-root .tws-panel .pn-embedded-head {
+  flex: none;
+  padding: var(--pn-space-3) var(--pn-space-3) 0;
+}
+.cv2-root .tws-panel .pn-embedded-head__pills {
+  max-width: var(--pn-read-measure);
+  margin: 0 auto;
+}
+
+/* A document scrolls as ONE column: pills, body and footer on one card plane. */
+.cv2-root .tws-panel > .pn-panel[data-embedded-flow='document'] {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.cv2-root .tws-panel > .pn-panel[data-embedded-flow='document'] > .pn-body {
+  flex: none;
+  min-height: auto;
+  overflow: visible;
+}
+/* R17: one left edge. Connections and Messages start at the measure's left
+   edge and may only grow to the RIGHT. */
+.cv2-root .tws-panel > .pn-panel[data-embedded-flow='document']:not([data-embedded-section='content']) > :is(.pn-body, .chs-root) {
+  box-sizing: border-box;
+  padding-left: calc(var(--pn-space-3) + max(0px, (100cqw - 2 * var(--pn-space-3) - var(--pn-read-measure)) / 2));
+  padding-right: var(--pn-space-3);
+}
+.cv2-root .tws-panel > .pn-panel[data-embedded-flow='fill']:not([data-embedded-section='content']) > :is(.pn-body, .chs-root) {
+  box-sizing: border-box;
+  padding-left: var(--pn-space-6);
+  padding-right: var(--pn-space-6);
+}
+/* The terminal fills the content column edge to edge, up to the strip
+   (Subhang, rounds 3-4). Everything around and behind the grid — including
+   any leftover beside a view-only grid drawn at the agent's PTY width — is the
+   terminal's own background: no lighter strip or frame. The grid stays
+   left-aligned; its glyphs get a 4px inset on the `.xterm` element, which
+   FitAddon subtracts, so a drivable session still fits exactly. */
+.cv2-root .tws-panel > .pn-panel[data-archetype='terminal'] {
+  background: var(--pn-x-term-bg);
+}
+.cv2-root .tws-panel > .pn-panel[data-archetype='terminal'] .pn-terminal-stage {
+  padding: 0;
+  background: var(--pn-x-term-bg);
+}
+.cv2-root .tws-panel > .pn-panel[data-archetype='terminal'] .term-host .xterm {
+  padding: 0 var(--pn-space-1);
+}
+
+/* The attention pill keeps its own top-right corner of the body (under the
+   title bar where the bar overlays a fill body). */
+.cv2-root .tws-panel > .pn-panel > .att-block-dock > .att-block {
+  top: var(--pn-space-3);
+}
+.cv2-root .tws-panel > .pn-panel[data-embedded-flow='fill'] > .att-block-dock > .att-block {
+  top: calc(36px + var(--pn-space-3));
+}
+
+/* Attachments (Subhang, round 2): the idle "Attach / or drop / paste" zone is
+   not drawn in Workspace; the strip's paperclip replaces it. Drop onto the
+   content keeps working: the strip's listeners ride the panel (its drop host),
+   not this box. Attached files still show as tiles. */
+.cv2-root .tws-panel .fn-tiles--idle {
+  display: none;
+}
+
+/* --- The entity action strip (R30) --- */
+.tws-astrip {
+  position: relative;
+  z-index: 2;
+  flex: none;
+  width: 40px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--pn-space-3);
+  padding: var(--pn-space-2) 0;
+  background: var(--pn-surface);
+  border-left: 1px solid var(--pn-line);
+  color: var(--pn-ink-3);
+}
+.tws-astrip-section,
+.tws-astrip-cluster,
+.tws-astrip-verbs,
+.cv2-root .tws-astrip .pn-actions,
+.cv2-root .tws-astrip .pn-surface-switch,
+.cv2-root .tws-astrip .rs-bar--slotted {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--pn-space-1);
+}
+.tws-astrip-section {
+  gap: var(--pn-space-3);
+}
+.tws-astrip-cluster:empty,
+.tws-astrip-verbs:empty {
+  display: none;
+}
+/* The kind slot holds several of the body's own groups; space them as clusters. */
+.tws-astrip-kind {
+  gap: var(--pn-space-3);
+}
+.cv2-root .tws-astrip .pn-surface-switch {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.tws-astrip-stats-source {
+  display: none;
+}
+
+/* Every control in the strip: 28x28, centred, 14px icons. */
+.tws-astrip-btn,
+.cv2-root .tws-astrip .pn-btn,
+.cv2-root .tws-astrip .kit-iconbtn,
+.cv2-root .tws-astrip .pn-surface-switch__tab,
+.cv2-root .tws-astrip .hon-disabled,
+.cv2-root .tws-astrip .de-btn,
+.cv2-root .tws-astrip .lp__rowaction {
+  position: relative;
+  flex: none;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  box-shadow: none;
+  color: var(--pn-ink-3);
+  font: inherit;
+  font-size: var(--pn-fs-sm);
+  line-height: 1;
+  cursor: pointer;
+  overflow: visible;
+}
+.tws-astrip-btn svg,
+.cv2-root .tws-astrip .pn-surface-switch__tab svg {
+  width: 14px;
+  height: 14px;
+}
+.tws-astrip-btn:hover,
+.cv2-root .tws-astrip .pn-btn:hover,
+.cv2-root .tws-astrip .kit-iconbtn:hover,
+.cv2-root .tws-astrip .pn-surface-switch__tab:hover,
+.cv2-root .tws-astrip .de-btn:hover {
+  background: var(--pn-hover);
+  color: var(--pn-ink-2);
+}
+.tws-astrip-seg[aria-checked='true'],
+.tws-astrip-chat[aria-pressed='true'],
+.tws-astrip-connectors[aria-expanded='true'],
+.tws-astrip-btn[aria-expanded='true'],
+.cv2-root .tws-astrip .pn-surface-switch__tab[aria-selected='true'],
+.cv2-root .tws-astrip .pn-actions__verb--on {
+  background: var(--pn-active);
+  color: var(--pn-ink);
+}
+.cv2-root .tws-astrip .hon-disabled {
+  color: var(--pn-ink-4);
+  cursor: default;
+}
+.cv2-root .tws-astrip .hon-caption {
+  display: none;
+}
+/* Run: the lead verb, a ▶ icon in the brand colour. */
+.cv2-root .tws-astrip .pn-btn.pn-btn--lead {
+  color: var(--pn-brand-2);
+}
+.cv2-root .tws-astrip .pn-btn.pn-btn--lead:hover {
+  background: var(--pn-brand-soft);
+}
+/* The reader's Edit / Download PDF, drawn as glyphs; the word stays the
+   accessible name and the tooltip. */
+.cv2-root .tws-astrip .de-btn {
+  font-size: 0;
+}
+.cv2-root .tws-astrip .de-btn::before {
+  font-size: var(--pn-fs-sm);
+  line-height: 1;
+}
+.cv2-root .tws-astrip [data-testid='doc-edit-entry']::before {
+  content: '✎';
+}
+.cv2-root .tws-astrip [data-testid='doc-download-pdf']::before {
+  content: '⤓';
+}
+/* The forms-waiting chip, as a dot with its count badge. */
+.cv2-root .tws-astrip .pf-chip {
+  position: relative;
+}
+.cv2-root .tws-astrip .pf-chip__trigger {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  cursor: pointer;
+}
+.cv2-root .tws-astrip .pf-chip__trigger > span:not(.att-chip__b) {
+  display: none;
+}
+.cv2-root .tws-astrip .pf-chip__trigger::after {
+  content: attr(data-count);
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  box-sizing: border-box;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-brand-soft);
+  color: var(--pn-brand-2);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  line-height: 14px;
+  text-align: center;
+}
+
+/* The §4 badge: Messages count, attached connectors. */
+.tws-astrip-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-brand-soft);
+  color: var(--pn-brand-2);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+/* Tooltips to the LEFT (the rail's `.tws-tip`, mirrored). */
+.tws-tip.tws-astrip-tip {
+  left: auto;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  white-space: nowrap;
+}
+.tws-astrip-tip-stats {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-label);
+  font-variant-numeric: tabular-nums;
+  color: var(--pn-ink-3);
+}
+
+/* Popovers open to the LEFT of the strip: the kind section's top-aligned with
+   their control, the common section's bottom-aligned. */
+.cv2-root .tws-astrip .pn-actions__flow,
+.cv2-root .tws-astrip-popover,
+.cv2-root .tws-astrip .pf-chip__pop,
+.cv2-root .tws-astrip-menu {
+  position: absolute;
+  /* 8px from the strip's edge: the control's cluster is centred in the 40px
+     strip, 6px in from its edge (R32.5). */
+  right: calc(100% + var(--pn-space-2) + 6px);
+  left: auto;
+  top: 0;
+  bottom: auto;
+  z-index: 40;
+}
+.cv2-root .tws-astrip-section--common .pn-actions__flow,
+.cv2-root .tws-astrip-section--common .tws-astrip-menu {
+  top: auto;
+  bottom: 0;
+}
+.cv2-root .tws-astrip .pf-chip__pop {
+  width: 400px;
+  max-height: 60vh;
+  overflow: auto;
+  padding: var(--pn-space-4);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-pop);
+  box-sizing: border-box;
+}
+.cv2-root .tws-astrip .pf-chip__pop .pf-banner {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+/* ⋯ menu */
+.cv2-root .tws-astrip-menu {
+  min-width: 192px;
+  box-shadow: var(--pn-sh-pop);
+}
+.tws-astrip-menu-stats {
+  padding: var(--pn-space-1) var(--pn-space-2) var(--pn-space-2);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-label);
+  font-variant-numeric: tabular-nums;
+  color: var(--pn-ink-3);
+  white-space: nowrap;
+}
+.tws-astrip-slot {
+  display: contents;
+}
+.cv2-root .tws-astrip-danger .lp__rowaction {
+  width: 100%;
+  justify-content: flex-start;
+  color: var(--pn-block);
+}
+.cv2-root .tws-astrip-menu .pn-overflow__rename {
+  height: 32px;
+  margin: 0 0 var(--pn-space-1);
+  padding: 0 var(--pn-space-2);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-xs);
+  background: var(--pn-card);
+  color: var(--pn-ink);
+  font: inherit;
+  font-size: var(--pn-fs-label);
+}
+
+/* Connectors: the plug opens the task's McpEquipment block in a popover. */
+.tws-astrip-pop-anchor {
+  position: relative;
+  display: flex;
+}
+.cv2-root .tws-astrip-popover {
+  width: 320px;
+  max-width: calc(100vw - 2 * var(--pn-space-6));
+  padding: var(--pn-space-4);
+  box-shadow: var(--pn-sh-pop);
+  border-radius: var(--pn-r-md);
+}
+.cv2-root .tws-astrip-popover .mcp-equipment {
+  padding: 0;
+}
+.cv2-root .tws-astrip-popover .mcp-equipment h3 {
+  margin: 0 0 var(--pn-space-1);
+  font-size: var(--pn-fs-title);
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+.cv2-root .tws-astrip-popover .mcp-equipment p {
+  margin: 0 0 var(--pn-space-3);
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-3);
+}
+.cv2-root .tws-astrip-popover .mcp-equipment a {
+  color: var(--pn-brand-2);
+  font-size: var(--pn-fs-sm);
+  text-decoration: none;
+}
+.cv2-root .tws-astrip-popover .mcp-equipment a:hover,
+.cv2-root .tws-astrip-popover .mcp-equipment a:focus-visible {
+  text-decoration: underline;
+}
+
+/* --- In-tab states (design log §11) --- */
+.tws-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  max-width: 400px;
+  margin: 0 auto;
+  padding: var(--pn-space-16) var(--pn-space-6) 0;
+}
+.tws-state-icon {
+  color: var(--pn-ink-4);
+  margin-bottom: var(--pn-space-3);
+}
+.tws-state-title {
+  margin: 0;
+  font-size: var(--pn-fs-title);
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+.tws-state-line {
+  margin: var(--pn-space-1) 0 0;
+  max-width: 100%;
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tws-state-actions {
+  display: flex;
+  gap: var(--pn-space-2);
+  margin-top: var(--pn-space-4);
+}
+.tws-state-btn {
+  height: 36px;
+  padding: 0 var(--pn-space-3);
+  background: none;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink-2);
+  font: inherit;
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  cursor: pointer;
+}
+.tws-state-btn:hover {
+  background: var(--pn-hover);
+}
+.tws-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-3);
+  max-width: var(--pn-read-measure, 720px);
+  width: 100%;
+  margin: 0 auto;
+  padding: var(--pn-space-6) var(--pn-space-6) 0;
+  box-sizing: border-box;
+}
+.tws-skeleton-bar {
+  display: block;
+  height: 12px;
+  border-radius: var(--pn-r-xs);
+  background: var(--pn-hover);
+}
+
+
+/* The body's own controls, as they arrive in the strip's kind section. */
+.cv2-root .tws-astrip .rs-bar--slotted,
+.cv2-root .tws-astrip .pn-preview__chrome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--pn-space-1);
+  margin: 0;
+  padding: 0;
+  min-height: 0;
+  border: 0;
+  background: none;
+}
+/* A frame's revision picker: a 28px box; its full facts stay in its tooltip. */
+.cv2-root .tws-astrip .pn-preview__revpick {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  appearance: none;
+  text-align: center;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: none;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  cursor: pointer;
+}
+
+/* --- The title bar (Subhang, round 5): under the tab strip / trail, on the
+   active tab's plane, the title only.
+   - Documents: the bar is IN the flow above the body and hides by collapsing
+     36 -> 0 (container, fill and hairline all go), so the content takes the
+     height back. There is no other reserve anywhere above the body.
+   - Bodies that own their height (terminal, chat, frame): the bar OVERLAYS
+     the body's top and hides by sliding out of view, so a terminal is never
+     resized (its PTY never refits) and nothing is left behind. --- */
+.tws-entity-main.tws-entity-host {
+  position: relative;
+  container-type: inline-size;
+}
+.tws-titlebar {
+  position: relative;
+  z-index: 5;
+  flex: none;
+  height: 36px;
+  box-sizing: border-box;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  /* The left edge is the body's measure edge. */
+  padding: 0 var(--pn-space-3) 0 max(var(--pn-space-3), (100cqw - var(--pn-read-measure)) / 2);
+  background: var(--pn-card);
+  border-bottom: 1px solid var(--pn-line);
+  transition:
+    height var(--pn-dur-fast) var(--pn-ease-out),
+    transform var(--pn-dur-fast) var(--pn-ease-out);
+}
+.tws-titlebar[data-hidden] {
+  height: 0;
+  border-bottom-width: 0;
+  pointer-events: none;
+}
+.tws-entity-host:has(.pn-panel[data-embedded-flow='fill']) > .tws-titlebar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding-left: var(--pn-space-3);
+}
+.tws-entity-host:has(.pn-panel[data-embedded-flow='fill']) > .tws-titlebar[data-hidden] {
+  height: 36px;
+  transform: translateY(-100%);
+}
+@media (prefers-reduced-motion: reduce) {
+  .tws-titlebar {
+    transition: none;
+  }
+}
+.tws-entity-host:has(.pn-panel[data-archetype='terminal']) > .tws-titlebar {
+  background: var(--pn-x-term-bg);
+}
+.tws-titlebar__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+.cv2-root .pn-embedded-title {
+  flex: 1;
+  min-width: 0;
+  display: block;
+  margin: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-title);
+  font-weight: 600;
+  color: var(--pn-ink);
+  cursor: default;
+}
+.cv2-root .pn-embedded-title--editing {
+  height: 28px;
+  padding: 0 var(--pn-space-2);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-xs);
+  background: var(--pn-card);
+}
+
+/* R32.1: a reader's body sits in the reading measure; its outline lives in the
+   strip's Outline popover. */
+.cv2-root .tws-panel [data-testid='reader-body'] {
+  width: 100%;
+  max-width: var(--pn-read-measure);
+  margin-inline: auto;
+  box-sizing: border-box;
+}
+.tws-astrip-outline:not(:has(.tws-astrip-outline-pop > *)) {
+  display: none;
+}
+.tws-astrip-outline-pop {
+  display: none;
+}
+.cv2-root .tws-astrip-outline[data-open] > .tws-astrip-outline-pop {
+  display: block;
+  position: absolute;
+  top: 0;
+  right: calc(100% + var(--pn-space-2) + 6px);
+  z-index: 40;
+  width: 320px;
+  max-height: 70vh;
+  overflow: auto;
+  padding: var(--pn-space-3);
+  box-sizing: border-box;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-pop);
+}
+
+/* R32.3: the "N empty sections" row and its hairline span the measure; the
+   footer's text starts at the measure's left edge. */
+.cv2-root .tws-panel .pn-emptytoggle {
+  align-self: center;
+  width: calc(100% - 2 * var(--pn-space-3));
+  max-width: var(--pn-read-measure);
+  margin-inline: auto;
+  box-sizing: border-box;
+}
+.cv2-root .tws-panel .pn-foot {
+  padding-left: max(var(--pn-space-3), (100cqw - var(--pn-read-measure)) / 2);
+}
+.cv2-root .tws-astrip-menu .pn-overflow__meta {
+  padding: var(--pn-space-1) var(--pn-space-2) var(--pn-space-2);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-3);
+  white-space: nowrap;
+}

@@ -1,0 +1,114 @@
+/* Persistence banners (RestoreOffer.tsx): raised plane, top-centre of the content
+   area; the restore offer sits inline in the start surface (--inline). */
+.tws-banner {
+  grid-area: content;
+  align-self: start;
+  justify-self: center;
+  z-index: 10;
+  margin-top: var(--pn-space-3);
+  max-width: min(560px, calc(100% - 2 * var(--pn-space-6)));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-2) var(--pn-space-3);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-sm);
+}
+/* R10: the restore offer is a borderless strip inline in the start surface,
+   16px under the heading and 16px over the search. */
+.tws-restore-offer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--pn-space-4);
+  margin-top: var(--pn-space-4);
+  padding: var(--pn-space-3) var(--pn-space-4);
+  background: var(--pn-surface);
+  border-radius: var(--pn-r-md);
+}
+.tws-restore-offer-text {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-2);
+}
+.tws-restore-offer-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+}
+.tws-restore-offer-primary,
+.tws-restore-offer-later {
+  position: relative;
+  height: 32px;
+  padding: 0 var(--pn-space-3);
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  font: inherit;
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+  cursor: pointer;
+}
+/* 32 visible inside a 36 hit box. */
+.tws-restore-offer-primary::before,
+.tws-restore-offer-later::before {
+  content: '';
+  position: absolute;
+  inset: -2px 0;
+}
+/* R19: the primary look — brand-soft fill, brand-2 text, brand .35 hairline. */
+.tws-restore-offer-primary {
+  background: var(--pn-brand-soft);
+  color: var(--pn-brand-2);
+  border: 1px solid rgba(var(--pn-brand-rgb), 0.35);
+}
+.tws-restore-offer-primary:hover {
+  border-color: rgba(var(--pn-brand-rgb), 0.55);
+}
+.tws-restore-offer-later {
+  padding: 0 var(--pn-space-2);
+  background: none;
+  color: var(--pn-ink-3);
+}
+.tws-restore-offer-later:hover {
+  color: var(--pn-ink-2);
+}
+.tws-restore-offer-primary:focus-visible,
+.tws-restore-offer-later:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+.tws-banner-text {
+  flex: 1 1 auto;
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-2);
+}
+.tws-banner-primary {
+  color: var(--pn-brand-2);
+}
+.tws-banner-kinds,
+.tws-banner-actions {
+  flex: 1 0 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pn-space-2);
+}
+.tws-banner-kind {
+  font-size: var(--pn-fs-label);
+  font-weight: 500;
+  color: var(--pn-ink-2);
+  border: 1px solid var(--pn-line-2);
+}
+.tws-banner-kind[aria-pressed='true'] {
+  background: var(--pn-active);
+  color: var(--pn-ink);
+}
+.tws-banner .tws-quiet-btn:disabled {
+  color: var(--pn-ink-4);
+  cursor: default;
+}

@@ -5,6 +5,7 @@ import { SkillBody } from '../skills/SkillBody';
 import { SkillEquipment } from '../skills/SkillEquipment';
 import type { SkillPort } from '../skills/port';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import type {
   CommandResult,
   Connections,
@@ -551,6 +552,47 @@ export interface EntityDetailPanelProps {
   mergePr?: MergePrSources | null;
   onOpenEntity?: (id: string) => void;
   onRetry?: () => void;
+  /**
+   * EMBEDDED CHROME — the Workspace tab host (Spec A §8). Present ⇒ the panel
+   * draws no `PanelHeader` title row and no tab row / canvas bar: the tab and
+   * the host's floating group own those jobs. The bar's verbs portal into
+   * `verbsSlot` and the overflow's Rename and destructive items into
+   * `menuSlot`, so every verb keeps its one implementation, permissions and
+   * confirmations. The section is the controlled `activeTab`.
+   * Absent ⇒ every existing host, unchanged.
+   */
+  embeddedChrome?: EmbeddedChrome | null;
+}
+
+export interface EmbeddedChrome {
+  /** The kind's own verbs (the bar minus `commonActions`, save, transfer,
+      sharing). Null ⇒ not mounted yet; nothing is drawn. */
+  verbsSlot: HTMLElement | null;
+  /** The body's own controls: the session surface switch, a frame's
+      controls, a reader's toolbar, the forms-waiting chip. */
+  kindSlot: HTMLElement | null;
+  /** The verbs every kind shares (`commonActions`, e.g. Run). */
+  commonVerbsSlot: HTMLElement | null;
+  /** A session's live context reading, for the host to read as text. */
+  statsSlot: HTMLElement | null;
+  /** Where a reader's outline renders (the host's Outline popover). */
+  outlineSlot?: HTMLElement | null;
+  /** The host's title bar: the entity title, double-click to rename. */
+  titleSlot?: HTMLElement | null;
+  /** No presence / author / version footer row (the host shows the byline). */
+  omitFooter?: boolean;
+  /** Primaries drawn in `commonVerbsSlot` rather than `verbsSlot`. */
+  commonActions?: readonly ActionRef[];
+  /** The top of the host's open ⋯ menu (Rename). Null ⇒ closed. */
+  menuSlot: HTMLElement | null;
+  /** The end of the host's open ⋯ menu, after its own items (destructive verbs). */
+  dangerSlot: HTMLElement | null;
+  /** Primaries the host draws itself (Workspace's own Chat toggle). */
+  omitActions?: readonly ActionRef[];
+  /** The host draws the Connectors control itself (Workspace's plug button). */
+  omitConnectors?: boolean;
+  /** Called after a Rename commits, so the host can close its menu. */
+  onMenuDone?: () => void;
 }
 
 export function EntityDetailPanel(props: EntityDetailPanelProps) {
@@ -958,131 +1000,40 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
       />
     ) : null;
 
-  /** The panel bar's end cluster: the tab row's right edge, or — on a canvas — the floating bar. */
-  const barEnd = (
-    /*
-     * THE PHONE'S END CLUSTER IS THE SAVE AFFORDANCE AND TRANSFER, and
-     * everything else in it has moved into the floating action menu —
-     * user ruling 2026-08-20. `TabStrip` renders no strip at all on this
-     * shell (see its `oneSurface` branch), so what is passed here is the
-     * whole of the region.
-     *
-     * SAVECONTROLS STAY INLINE, DELIBERATELY. A pending unsaved title
-     * edit hidden inside a closed menu is a data-loss shape, not a layout
-     * choice: the user cannot see that there is something to save, and
-     * the two verbs that answer it are two taps away behind a control
-     * that gives no sign it is holding them.
-     *
-     * TRANSFER STAYS INLINE TOO, and it is the ONE verb that could not
-     * follow the others. `TransferControl` renders NOTHING unless a
-     * remote server is registered and the kind is transferable — its
-     * docblock argues at length that this is the deliberate exception to
-     * disabled-with-reason, because on a single-server node "transfer to
-     * another server" is not a deferred feature but a concept that does
-     * not apply. A menu row obeys the opposite rule: present, dimmed,
-     * carrying its reason. Moving it would either overrule that decision
-     * or force this file to re-implement an async, kind-aware gate that
-     * `src/transfer` owns (§15.2). It self-gates to null, so where it
-     * does not apply the row collapses with it.
-     *
-     * BOTH ARMS OMIT THE SURFACE SLOT. `WorkSessionContent` declines the
-     * slot on a phone anyway (`ridesPanelBar`), so passing one here has
-     * had no effect on this shell since `099c3a03`; not passing it is the
-     * same fact said in the direction that cannot rot.
-     */
-    oneSurface ? (
-      <>
-        {editsPossible && (config.list.inlineEdit?.title || config.list.inlineEdit?.status) ? (
-          <SaveControls save={save} />
-        ) : null}
-        <TransferControl detail={detail} />
-      </>
-    ) : (
-    <>
-      {isTerminal && props.sessionContextSurface ? props.sessionContextSurface : null}
-      {controlsRideBar ? (
-        <div
-          className="pn-panelbar__surface"
-          ref={setSurfaceSlot}
-          data-testid="panel-surface-slot"
-        />
-      ) : null}
-      {/* THE SESSION'S SHARING SLOT — the row cluster's picker, mounted
-          again rather than copied, so a session opened from its row keeps
-          the control it had there. Declared by the kind's `rowActions`
-          (registry data, never a kind literal) and drawn only where the
-          host can perform it: a panel whose host wired no sharing gets no
-          refused icon in a bar that has no room for one. Desktop arm only;
-          the phone arm is `oneSurface`, where anchored popovers are ruled
-          out (CONTRACT.md §4). */}
-      {config.list.rowActions?.includes(SHARING_CONTROL.private) && controlHost.onShareSession ? (
-        <RowSharingControl
-          ref_={sharingControlFor(SHARING_CONTROL.private, sessionSharingOf(detail.state, detail.createdBy)?.watch)}
-          row={subjectOf(detail)}
-          props={controlHost}
-        />
-      ) : null}
-      <ActionBar
-        barRef={actionBarRef}
-        config={config}
-        /* The terminal archetype is the only bar that ALSO carries the
-           five surface chips, so it is the only one whose primaries have
-           to give up their words. Registry data, never a kind literal. */
-        markPrimaries={isTerminal}
-        /* Filled from the detail — see `panelActionContext`, which is
-           also what the phone's action menu asks, so the bar and the menu
-           cannot form different opinions about the same verb. */
-        ctx={panelActionContext(detail, ctx, props.liveness)}
-        onAction={props.onAction}
-        wiredActions={props.wiredActions}
-        primaryCounts={props.primaryCounts}
-        openFlow={flowRef}
-        /* Only when the host actually has launch sources. Without them
-           the expand would render an empty teammate select over an
-           un-committable Launch — a config that cannot configure is a
-           worse answer than the honest "not wired here" refusal. */
-        /* Wired when the host can serve AT LEAST ONE flow. Without any,
-           the expand would open an empty card — and a config that cannot
-           configure is a worse answer than the honest "not wired here"
-           refusal. Which surface opens is decided below, by the verb. */
-        onFlow={props.launch || mergePr ? setFlowRef : undefined}
-        /*
-         * DEF-004 — RUN OPENS THE FULL SHEET WHERE THE HOST MOUNTS ONE.
-         *
-         * The list row has had this precedence since D44 ("the sheet
-         * OUTRANKS the inline expand"); the detail panel did not, so the
-         * SAME VERB on the SAME ENTITY behaved differently depending on
-         * which surface you pressed it from.
-         *
-         * It matters most on a phone, and that is why it arrives now. The
-         * inline expand is `.pn-actions__flow` — absolute, 300px wide,
-         * anchored to a 30px bar — and CONTRACT.md §4 rules that anchored
-         * popovers "do not survive the trip to a 390px header". The full
-         * sheet now HAS a phone arrangement; the quick config does not.
-         * On a phone the detail panel is also the surface where Run is
-         * reliably reachable at all: the list row's cluster is
-         * hover-revealed.
-         *
-         * Spread, never defaulted: absent leaves the expand exactly as it
-         * was for every host without a sheet.
-         *
-         * GATED ON `oneSurface`, AND THAT IS A SCOPE DECISION RATHER THAN
-         * A TECHNICAL ONE — stated because the unconditional version is
-         * arguably the better product and I am deliberately not shipping
-         * it here. Applying this precedence everywhere would make the
-         * desktop detail panel agree with the desktop LIST ROW, which has
-         * had the rule since D44; today they disagree, and that
-         * inconsistency is real. But it is a DESKTOP behaviour change, in
-         * a shell that is in daily use, with no row behind it, no
-         * evidence, and nobody having asked — in a program scoped to
-         * coarse-pointer phones. Widening it is a separate decision for
-         * whoever owns the desktop; it is filed as an observation, not
-         * smuggled in under a phone fix.
-         */
-        {...(oneSurface && props.launch?.onFullOptions
-          ? { onOpenLaunch: props.launch.onFullOptions, launchSubjectId: detail.id }
-          : {})}
-        flowSurface={
+  /*
+   * EMBEDDED: SUPPORTED VERBS ONLY (Spec A §8). The floating group has no room
+   * for a refused verb that no host can ever perform here, so a primary is
+   * kept only where this host's dispatcher, or a flow it can expand, performs
+   * it. Registry refusals (wrong state) still render disabled-with-reason.
+   */
+  const embedded = props.embeddedChrome ?? null;
+  const supportedPrimaries = embedded
+    ? (config.panel.primaries ?? []).filter((ref) => {
+        if (embedded.omitActions?.includes(ref)) return false;
+        const flow = resolveAction(ref).flow;
+        if (flow === 'launch' && props.launch) return true;
+        if (flow === 'merge-pr' && mergePr) return true;
+        if (!props.onAction) return false;
+        return props.wiredActions ? props.wiredActions.includes(ref) : true;
+      })
+    : null;
+  const withPrimaries = (primaries: readonly ActionRef[]): KindConfig => ({
+    ...config,
+    panel: { ...config.panel, primaries: [...primaries] },
+  });
+  /* Embedded: the kind's own verbs and the shared ones render as two bars
+     (the host's top and bottom sections); one flow popup, on whichever bar
+     holds the open verb. */
+  const commonRefs = embedded?.commonActions ?? [];
+  const barConfig: KindConfig = supportedPrimaries
+    ? withPrimaries(supportedPrimaries.filter((ref) => !commonRefs.includes(ref)))
+    : config;
+  const commonBarConfig: KindConfig | null = supportedPrimaries
+    ? withPrimaries(supportedPrimaries.filter((ref) => commonRefs.includes(ref)))
+    : null;
+  const flowInCommonBar = flowRef !== null && commonRefs.includes(flowRef);
+
+  const flowSurface = (
           flowRef && resolveAction(flowRef).flow === 'merge-pr' && mergePr && mergeSubject ? (
             <MergePullRequestFlow
               key={flowRef}
@@ -1136,7 +1087,135 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
               }
             />
           ) : null
-        }
+  );
+
+  /** The panel bar's end cluster: the tab row's right edge, or — on a canvas — the floating bar. */
+  const barEnd = (
+    /*
+     * THE PHONE'S END CLUSTER IS THE SAVE AFFORDANCE AND TRANSFER, and
+     * everything else in it has moved into the floating action menu —
+     * user ruling 2026-08-20. `TabStrip` renders no strip at all on this
+     * shell (see its `oneSurface` branch), so what is passed here is the
+     * whole of the region.
+     *
+     * SAVECONTROLS STAY INLINE, DELIBERATELY. A pending unsaved title
+     * edit hidden inside a closed menu is a data-loss shape, not a layout
+     * choice: the user cannot see that there is something to save, and
+     * the two verbs that answer it are two taps away behind a control
+     * that gives no sign it is holding them.
+     *
+     * TRANSFER STAYS INLINE TOO, and it is the ONE verb that could not
+     * follow the others. `TransferControl` renders NOTHING unless a
+     * remote server is registered and the kind is transferable — its
+     * docblock argues at length that this is the deliberate exception to
+     * disabled-with-reason, because on a single-server node "transfer to
+     * another server" is not a deferred feature but a concept that does
+     * not apply. A menu row obeys the opposite rule: present, dimmed,
+     * carrying its reason. Moving it would either overrule that decision
+     * or force this file to re-implement an async, kind-aware gate that
+     * `src/transfer` owns (§15.2). It self-gates to null, so where it
+     * does not apply the row collapses with it.
+     *
+     * BOTH ARMS OMIT THE SURFACE SLOT. `WorkSessionContent` declines the
+     * slot on a phone anyway (`ridesPanelBar`), so passing one here has
+     * had no effect on this shell since `099c3a03`; not passing it is the
+     * same fact said in the direction that cannot rot.
+     */
+    oneSurface ? (
+      <>
+        {editsPossible && (config.list.inlineEdit?.title || config.list.inlineEdit?.status) ? (
+          <SaveControls save={save} />
+        ) : null}
+        <TransferControl detail={detail} />
+      </>
+    ) : (
+    <>
+      {/* Embedded: the reading and the surface chips ride the head (R14). */}
+      {isTerminal && props.sessionContextSurface && !embedded ? props.sessionContextSurface : null}
+      {controlsRideBar && !embedded ? (
+        <div
+          className="pn-panelbar__surface"
+          ref={setSurfaceSlot}
+          data-testid="panel-surface-slot"
+        />
+      ) : null}
+      {/* THE SESSION'S SHARING SLOT — the row cluster's picker, mounted
+          again rather than copied, so a session opened from its row keeps
+          the control it had there. Declared by the kind's `rowActions`
+          (registry data, never a kind literal) and drawn only where the
+          host can perform it: a panel whose host wired no sharing gets no
+          refused icon in a bar that has no room for one. Desktop arm only;
+          the phone arm is `oneSurface`, where anchored popovers are ruled
+          out (CONTRACT.md §4). */}
+      {config.list.rowActions?.includes(SHARING_CONTROL.private) && controlHost.onShareSession ? (
+        <RowSharingControl
+          ref_={sharingControlFor(SHARING_CONTROL.private, sessionSharingOf(detail.state, detail.createdBy)?.watch)}
+          row={subjectOf(detail)}
+          props={controlHost}
+        />
+      ) : null}
+      <ActionBar
+        barRef={flowInCommonBar ? undefined : actionBarRef}
+        config={barConfig}
+        /* The terminal archetype is the only bar that ALSO carries the
+           five surface chips, so it is the only one whose primaries have
+           to give up their words. Registry data, never a kind literal. */
+        markPrimaries={isTerminal}
+        iconVerbs={embedded !== null}
+        /* Filled from the detail — see `panelActionContext`, which is
+           also what the phone's action menu asks, so the bar and the menu
+           cannot form different opinions about the same verb. */
+        ctx={panelActionContext(detail, ctx, props.liveness)}
+        onAction={props.onAction}
+        wiredActions={props.wiredActions}
+        primaryCounts={props.primaryCounts}
+        openFlow={flowRef}
+        /* Only when the host actually has launch sources. Without them
+           the expand would render an empty teammate select over an
+           un-committable Launch — a config that cannot configure is a
+           worse answer than the honest "not wired here" refusal. */
+        /* Wired when the host can serve AT LEAST ONE flow. Without any,
+           the expand would open an empty card — and a config that cannot
+           configure is a worse answer than the honest "not wired here"
+           refusal. Which surface opens is decided below, by the verb. */
+        onFlow={props.launch || mergePr ? setFlowRef : undefined}
+        /*
+         * DEF-004 — RUN OPENS THE FULL SHEET WHERE THE HOST MOUNTS ONE.
+         *
+         * The list row has had this precedence since D44 ("the sheet
+         * OUTRANKS the inline expand"); the detail panel did not, so the
+         * SAME VERB on the SAME ENTITY behaved differently depending on
+         * which surface you pressed it from.
+         *
+         * It matters most on a phone, and that is why it arrives now. The
+         * inline expand is `.pn-actions__flow` — absolute, 300px wide,
+         * anchored to a 30px bar — and CONTRACT.md §4 rules that anchored
+         * popovers "do not survive the trip to a 390px header". The full
+         * sheet now HAS a phone arrangement; the quick config does not.
+         * On a phone the detail panel is also the surface where Run is
+         * reliably reachable at all: the list row's cluster is
+         * hover-revealed.
+         *
+         * Spread, never defaulted: absent leaves the expand exactly as it
+         * was for every host without a sheet.
+         *
+         * GATED ON `oneSurface`, AND THAT IS A SCOPE DECISION RATHER THAN
+         * A TECHNICAL ONE — stated because the unconditional version is
+         * arguably the better product and I am deliberately not shipping
+         * it here. Applying this precedence everywhere would make the
+         * desktop detail panel agree with the desktop LIST ROW, which has
+         * had the rule since D44; today they disagree, and that
+         * inconsistency is real. But it is a DESKTOP behaviour change, in
+         * a shell that is in daily use, with no row behind it, no
+         * evidence, and nobody having asked — in a program scoped to
+         * coarse-pointer phones. Widening it is a separate decision for
+         * whoever owns the desktop; it is filed as an observation, not
+         * smuggled in under a phone fix.
+         */
+        {...(oneSurface && props.launch?.onFullOptions
+          ? { onOpenLaunch: props.launch.onFullOptions, launchSubjectId: detail.id }
+          : {})}
+        flowSurface={flowInCommonBar ? null : flowSurface}
       />
       {editsPossible && (config.list.inlineEdit?.title || config.list.inlineEdit?.status) ? (
         <SaveControls save={save} />
@@ -1153,7 +1232,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
           control you press when you are done looking. The control itself
           is unchanged: same `RowAction`, same host, same `onArchive`,
           same refusal vocabulary. */}
-      {strip !== null ? (
+      {strip !== null && !embedded ? (
         <PanelOverflow>
           {/* The id and the link the metadata row used to spend a
               measured 41.8px stating on every task. */}
@@ -1169,16 +1248,85 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
           />
         </PanelOverflow>
       ) : null}
-      <PanelWindowControls
-        onPromote={props.onPromote}
-        onClose={onClose}
-        /* Same crowding, same gate: the surface-chip bar gives up ⤢ on a
-           desktop. The control itself refuses this on a phone, where ✕
-           is already gone — see `promoteHidden`. */
-        promoteHidden={isTerminal}
-      />
+      {embedded ? null : (
+        <PanelWindowControls
+          onPromote={props.onPromote}
+          onClose={onClose}
+          /* Same crowding, same gate: the surface-chip bar gives up ⤢ on a
+             desktop. The control itself refuses this on a phone, where ✕
+             is already gone — see `promoteHidden`. */
+          promoteHidden={isTerminal}
+        />
+      )}
     </>
     )
+  );
+
+  /* EMBEDDED: the shared verbs (Run) in the host's bottom section — the same
+     ActionBar, executors, flows and refusals as the kind bar. */
+  const commonBar =
+    embedded?.commonVerbsSlot && commonBarConfig && (commonBarConfig.panel.primaries?.length ?? 0) > 0 && !oneSurface
+      ? createPortal(
+          <ActionBar
+            barRef={flowInCommonBar ? actionBarRef : undefined}
+            config={commonBarConfig}
+            iconVerbs="lead"
+            ctx={panelActionContext(detail, ctx, props.liveness)}
+            onAction={props.onAction}
+            wiredActions={props.wiredActions}
+            primaryCounts={props.primaryCounts}
+            openFlow={flowRef}
+            onFlow={props.launch || mergePr ? setFlowRef : undefined}
+            flowSurface={flowInCommonBar ? flowSurface : null}
+          />,
+          embedded.commonVerbsSlot,
+        )
+      : null;
+
+  /* EMBEDDED ⋯ ITEMS: Rename rides the same save flow as the header's title
+     editor; the destructive verb is the overflow's own `RowAction`. */
+  const titleEditable = (config.list.inlineEdit?.title ?? false) && save.unavailable === null;
+  /* The footer's facts, kept when the host drops the footer row. */
+  const byline = `by ${detail.createdBy.displayName} · v${detail.version}`;
+  const embeddedMenu = (
+    <>
+      {embedded?.menuSlot && embedded.omitFooter
+        ? createPortal(
+            <div className="pn-overflow__meta" role="none" data-testid="panel-byline">
+              {byline}
+            </div>,
+            embedded.menuSlot,
+          )
+        : null}
+      {embedded?.menuSlot && titleEditable
+        ? createPortal(
+            <EmbeddedRenameItem
+              title={detail.title}
+              onCommit={async (title) => {
+                await save.commitNow({ title });
+                embedded.onMenuDone?.();
+              }}
+            />,
+            embedded.menuSlot,
+          )
+        : null}
+      {embedded?.dangerSlot && strip !== null
+        ? createPortal(
+            <>
+              <span className="pn-overflow__rule" />
+              <RowAction
+                ref_={detail.deletedAt != null ? 'restore' : 'archive'}
+                row={subjectOf(detail)}
+                props={controlHost}
+                onRun={controlHost.onArchive}
+                variant="wide"
+                glyph={detail.deletedAt != null ? <RestoreIcon /> : <BinIcon />}
+              />
+            </>,
+            embedded.dangerSlot,
+          )
+        : null}
+    </>
   );
 
   return (
@@ -1209,6 +1357,11 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
       data-testid="entity-detail-panel"
       data-host={host}
       data-archetype={config.panel.archetype}
+      /* Embedded (Workspace tab): a document scrolls as one column with its
+         head; a body that owns its height (terminal, chat, frame, canvas)
+         keeps its own scroll under the head. */
+      data-embedded-flow={embedded ? (bodyOwnsBottom || canvas ? 'fill' : 'document') : undefined}
+      data-embedded-section={embedded ? tab : undefined}
       /* THE PANEL IS THE FALLBACK DROP TARGET (2026-08-18). With the empty ＋
          tile gone, drop is the attach path — and the only body that had marked
          itself a drophost was `subtree`, so every other kind would have had no
@@ -1222,7 +1375,23 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
          moving between three pinned columns needs them named. */
       aria-label={`${config.label}: ${detail.title}`}
     >
-      {canvas ? null : <PanelHeader
+      {embeddedMenu}
+      {commonBar}
+      {embedded?.titleSlot && !oneSurface
+        ? createPortal(
+            <EmbeddedTitle
+              title={detail.title}
+              byline={byline}
+              editable={titleEditable}
+              onCommit={async (title) => {
+                await save.commitNow({ title });
+              }}
+            />,
+            embedded.titleSlot,
+          )
+        : null}
+      {embedded?.verbsSlot && !oneSurface ? createPortal(barEnd, embedded.verbsSlot) : null}
+      {canvas || embedded ? null : <PanelHeader
         detail={detail}
         config={config}
         breadcrumb={breadcrumb}
@@ -1235,7 +1404,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         /* THE TITLE is editable only where registry data and the seam both
            permit it. The visual treatment stays plain by user direction; the
            actual click/keyboard editor is still mounted only when writable. */
-        titleEditable={(config.list.inlineEdit?.title ?? false) && save.unavailable === null}
+        titleEditable={titleEditable}
         titleLockReason={editsPossible && config.list.inlineEdit?.title ? saveRefusal : undefined}
         autoFocusTitle={props.justCreated}
         supplemental={
@@ -1256,7 +1425,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
       {/* Forms this session asked the viewer to answer, with Fill inline
           (decision 11). Resume is offered for a queued answer only where this
           panel already offers it: a session that is not running. */}
-      {isTerminal && !isTombstone ? (
+      {isTerminal && !isTombstone && !embedded ? (
         <PendingFormsBanner
           sessionId={detail.id}
           onResume={props.liveness !== 'live' ? props.onResumeSession : undefined}
@@ -1269,7 +1438,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
           keep their one implementation. The phone keeps `TabStrip`, which on
           that shell is already only the save affordance — the verbs live in the
           floating action menu there. */}
-      {canvas && !oneSurface ? (
+      {embedded && !oneSurface ? null : canvas && !oneSurface ? (
         <div className="pn-canvas-bar" data-testid="panel-canvas-bar" ref={setCanvasBarEl}>
           {barEnd}
         </div>
@@ -1310,7 +1479,35 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
       {/* The band is gated on the strip alone: a kind with no controls (a doc
           declares none) would otherwise draw an empty padded row with a
           hairline under the tabs. No archetype gate — see `strip` above. */}
-      {strip ? (
+      {embedded ? (
+        <>
+          {/* THE EMBEDDED BODY HAS NO HEAD ROW (Subhang, round 4): the title is
+              the tab's, and every action lives in the host's action strip. The
+              property pills are the body's first content, in its measure. */}
+          {strip ? (
+            <div className="pn-embedded-head" data-testid="panel-embedded-head">
+              <div className="pn-embedded-head__pills" data-testid="panel-controls">
+                {strip}
+              </div>
+            </div>
+          ) : null}
+          {/* The session's forms-waiting chip and live reading ride the strip. */}
+          {embedded.kindSlot && isTerminal && !isTombstone && !oneSurface
+            ? createPortal(
+                <PendingFormsBanner
+                  variant="chip"
+                  sessionId={detail.id}
+                  onResume={props.liveness !== 'live' ? props.onResumeSession : undefined}
+                  resuming={props.resumingSession}
+                />,
+                embedded.kindSlot,
+              )
+            : null}
+          {embedded.statsSlot && isTerminal && props.sessionContextSurface
+            ? createPortal(props.sessionContextSurface, embedded.statsSlot)
+            : null}
+        </>
+      ) : strip ? (
         <div className="pn-controls" data-testid="panel-controls">
           {/* The BAND is full-bleed; its contents ride the reading measure. */}
           <div className="pn-controls__measure">{strip}</div>
@@ -1336,7 +1533,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
               at all while the save is clean, so this costs the body no height
               in the ordinary case. */}
           <AuthoringHost save={save}>
-            {tab === "content" && !isTombstone && config.mcpEquipment && <McpEquipment key={detail.id} targetId={detail.id} />}
+            {tab === "content" && !isTombstone && config.mcpEquipment && !props.embeddedChrome?.omitConnectors && <McpEquipment key={detail.id} targetId={detail.id} />}
             {/*
               ATTACHMENTS RIDE IN THE CONTENT BODY — not in a fifth tab. D3
               fixes the panel at four tabs for every kind (user ruling
@@ -1458,8 +1655,8 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                     detail={detail}
                     tab={tab}
                     save={save}
-                    surfaceSlot={surfaceSlot}
-                    barSlot={barHasRoom ? surfaceSlot : null}
+                    surfaceSlot={embedded ? embedded.kindSlot : surfaceSlot}
+                    barSlot={embedded ? embedded.kindSlot : barHasRoom ? surfaceSlot : null}
                     attachmentSlot={bodyConsumesSlot ? attachmentSlot : null}
                     stripEdgeIds={attachmentSlot ? stripEdgeIds : undefined}
                     onSelectTab={selectTab}
@@ -1481,7 +1678,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
           A declared `composition` joins the exclusion for the same structural
           reason: a conversation ends at its composer and an artifact frame ends
           at the panel edge, not at a chrome strip below either. */}
-      {bodyOwnsBottom ? null : (
+      {bodyOwnsBottom || embedded?.omitFooter ? null : (
         <PanelFooter
           detail={detail}
           presenceHollowReason={reasons.presenceHollow}
@@ -1491,6 +1688,129 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
     </section>
   );
 
+}
+
+/**
+ * The embedded host's title bar text (Subhang, round 5): one line, the full
+ * title in its tooltip; double-click renames inline through the panel's save
+ * flow — the same path as ⋯ Rename. Enter saves, Escape cancels.
+ */
+function EmbeddedTitle({
+  title,
+  byline,
+  editable,
+  onCommit,
+}: {
+  title: string;
+  byline: string;
+  editable: boolean;
+  onCommit: (title: string) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const committing = useRef(false);
+  if (draft === null) {
+    return (
+      <span
+        className="pn-embedded-title"
+        title={`${title}\n${byline}${editable ? '\nDouble-click to rename' : ''}`}
+        data-testid="panel-embedded-title"
+        onDoubleClick={editable ? () => setDraft(title) : undefined}
+      >
+        {title}
+      </span>
+    );
+  }
+  const commit = () => {
+    if (committing.current) return;
+    const next = draft.trim();
+    if (next === '' || next === title) {
+      setDraft(null);
+      return;
+    }
+    committing.current = true;
+    void onCommit(next).finally(() => {
+      committing.current = false;
+      setDraft(null);
+    });
+  };
+  return (
+    <input
+      className="pn-embedded-title pn-embedded-title--editing"
+      aria-label="Rename"
+      data-testid="panel-embedded-title-input"
+      autoFocus
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          commit();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          setDraft(null);
+        }
+      }}
+      onBlur={commit}
+    />
+  );
+}
+
+/**
+ * Rename in an embedded host's ⋯ menu: a row that turns into a title input.
+ * Enter commits through the panel's save flow; Escape cancels.
+ */
+function EmbeddedRenameItem({ title, onCommit }: { title: string; onCommit: (title: string) => Promise<void> }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  /* Enter commits and unmounts the input, which can also fire blur: one commit. */
+  const committing = useRef(false);
+  if (draft === null) {
+    return (
+      <button
+        type="button"
+        className="pn-overflow__item"
+        role="menuitem"
+        data-testid="panel-rename"
+        onClick={() => setDraft(title)}
+      >
+        Rename
+      </button>
+    );
+  }
+  const commit = () => {
+    if (committing.current) return;
+    const next = draft.trim();
+    if (next === '' || next === title) {
+      setDraft(null);
+      return;
+    }
+    committing.current = true;
+    void onCommit(next).finally(() => {
+      committing.current = false;
+      setDraft(null);
+    });
+  };
+  return (
+    <input
+      className="pn-overflow__rename"
+      aria-label="Rename"
+      data-testid="panel-rename-input"
+      autoFocus
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          commit();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          setDraft(null);
+        }
+      }}
+      onBlur={commit}
+    />
+  );
 }
 
 /**
@@ -1756,6 +2076,11 @@ function PanelBody(
            lift; this is the panel host finally supplying the data. Absent ⇒
            `/` types plain text in the source, which is what it did before. */
         skillOptions={props.skillOptions}
+        /* Embedded (Workspace): the reader's Edit / Download ride the host's
+           action strip instead of a toolbar row above the document. */
+        {...(props.embeddedChrome
+          ? { toolbarSlot: props.embeddedChrome.kindSlot, outlineSlot: props.embeddedChrome.outlineSlot ?? null }
+          : {})}
       />
     );
   }

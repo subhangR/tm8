@@ -35,6 +35,7 @@ export {
   countMessages,
   type DetailReasons,
   type EntityDetailPanelProps,
+  type EmbeddedChrome,
   type MergePrSources,
 } from './EntityDetailPanel';
 export {

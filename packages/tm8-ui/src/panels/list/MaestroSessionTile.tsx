@@ -1,6 +1,7 @@
 import type { ActorSummary, EntitySummary } from '@tm8/contract';
 import { useState, type ReactNode } from 'react';
 import { useMobileSurface } from '../../mobile/surface';
+import { RowLead, leadTooltip } from './RowLead';
 import { Avatar } from '../../kit/Avatar';
 import { copyToClipboard } from '../../terminal/domUtils';
 
@@ -36,7 +37,14 @@ export function MaestroSessionTile({
   onSelect,
   actions,
   detail,
+  leadMode = false,
 }: {
+  /**
+   * The Workspace browser's leading icon (`rowLead="icon"`): no chevron, the
+   * agent tile IS the expand button when there are sub-sessions, and no
+   * trailing status glyph (its title moves to the icon). Absent ⇒ as before.
+   */
+  leadMode?: boolean;
   id: string;
   title: string;
   agentTool: string | null;
@@ -129,6 +137,33 @@ export function MaestroSessionTile({
       onClick={onSelect}
     >
       <div className="pn-st__main">
+        {leadMode ? (
+          <>
+            <RowLead
+              icon={
+                <AgentTile
+                  tool={agentTool}
+                  shell={sessionKind === 'shell'}
+                  teammate={teammate ?? null}
+                  childCount={childCount}
+                  live={!archived && live}
+                  streaming={!archived && live && streaming}
+                  title={statusTitle ?? status}
+                />
+              }
+              rowTitle={title}
+              tooltip={leadTooltip(statusTitle ?? status, 'Session')}
+              childCount={childCount}
+              expanded={childrenExpanded}
+              onToggle={onToggleChildren}
+              badge={false}
+            />
+            <span className="pn-st__title lp__title" title={`${title} · ${id}`}>
+              <span className="pn-st__titleText">{title}</span>
+            </span>
+          </>
+        ) : (
+          <>
         <button
           type="button"
           className={`pn-st__arrow ${childCount > 0 ? (childrenExpanded ? 'pn-st__arrow--expanded' : '') : 'pn-st__arrow--empty'}`}
@@ -155,6 +190,8 @@ export function MaestroSessionTile({
           />
           <span className="pn-st__titleText">{title}</span>
         </span>
+          </>
+        )}
 
         {model ? <span className="pn-st__model" title={model}>{model}</span> : null}
 
@@ -164,9 +201,11 @@ export function MaestroSessionTile({
           : null}
         {!archived && completed ? <span className="pn-st__tag pn-st__tag--done">done</span> : null}
 
-        <span className={`pn-st__statusglyph lp__statusmark--${statusTone}`} title={statusTitle ?? status}>
-          <StatusGlyph kind={archived ? 'archived' : status} />
-        </span>
+        {leadMode ? null : (
+          <span className={`pn-st__statusglyph lp__statusmark--${statusTone}`} title={statusTitle ?? status}>
+            <StatusGlyph kind={archived ? 'archived' : status} />
+          </span>
+        )}
         <span className="pn-st__actions lp__cluster">
           {/* The shared cluster, which this anatomy had never rendered at all:
               its `rowActions` were declared in the registry and dropped on the
