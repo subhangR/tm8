@@ -3,18 +3,21 @@
  * (Spec A §3, Spec B §7). Grid: left header | strip over rail | browser |
  * content. Owns the runtime wiring: hooks, persistence, URL sync, dev hook.
  */
-import { useEffect, useMemo, type CSSProperties } from 'react';
+import { useCallback, useEffect, useMemo, type CSSProperties } from 'react';
 import { canCreateKind } from '../adapters/registry';
 import { getWorkspaceRuntime } from '../runtime/dispatch';
 import { installDevHook } from '../runtime/devHook';
 import { initPersistence } from '../runtime/persistence';
 import { initUrlSync } from '../runtime/url';
 import { NOTICE_TTL_MS } from '../../shell';
+import { PanelResizer } from '../../kit/PanelResizer';
+import { VectorIcon } from '../../kit/VectorIcon';
+import { LAYOUT_BOUNDS } from '../runtime/types';
 import { Browser } from './Browser';
 import { ContentHost } from './ContentHost';
 import { useWorkspaceStore } from '../runtime/store';
-import { WorkspaceProvider, type WorkspaceContextValue, type WorkspaceGateHandles } from './context';
-import { LeftHeader } from './LeftHeader';
+import { WorkspaceProvider, useWorkspace, type WorkspaceContextValue, type WorkspaceGateHandles } from './context';
+import { LeftHeader, ViewSelector } from './LeftHeader';
 import { RevealPrompt } from './RevealPrompt';
 import { TabStrip } from './TabStrip';
 import { WorkspaceRail } from './WorkspaceRail';
@@ -56,17 +59,59 @@ export function TabWorkspaceView({ viewerId, spaceId, routeTab, gate }: TabWorks
     [runtime, viewerId, spaceId, gate],
   );
 
+  const setBrowserWidth = useCallback(
+    (browserWidth: number) =>
+      runtime.dispatch({ command: 'workspace.layout.set', args: { browserWidth: Math.round(browserWidth) }, source: 'click' }),
+    [runtime],
+  );
+
   const style = { '--tws-browser-w': `${layout.browserWidth}px` } as CSSProperties;
   return (
     <WorkspaceProvider value={value}>
       <div className="tws-root" data-expanded={layout.expanded || undefined} style={style} data-testid="tab-workspace">
         {layout.expanded ? null : <LeftHeader />}
-        <TabStrip />
+        <TabStrip leading={layout.expanded ? <RestoreNavigation /> : undefined} />
         {layout.expanded ? null : <WorkspaceRail />}
         {layout.expanded ? null : <Browser />}
+        {layout.expanded ? null : (
+          <div className="tws-resizer">
+            <PanelResizer
+              side="left"
+              label="Workspace browser"
+              width={layout.browserWidth}
+              minWidth={LAYOUT_BOUNDS.browserWidth.min}
+              maxWidth={LAYOUT_BOUNDS.browserWidth.max}
+              onResize={setBrowserWidth}
+              onReset={() => setBrowserWidth(LAYOUT_BOUNDS.browserWidth.initial)}
+            />
+          </div>
+        )}
         <ContentHost />
         <RevealPrompt />
       </div>
     </WorkspaceProvider>
+  );
+}
+
+/* "sidebar-show": a panel outline with its left column drawn in. */
+const SIDEBAR_SHOW_ART = ['M2.5 3.5h11v9h-11z', 'M6 3.5v9', 'M3.8 6h1M3.8 8h1'];
+
+/** Spec A §14: the strip's far-left cluster while the navigation is expanded away. */
+function RestoreNavigation() {
+  const { dispatch } = useWorkspace();
+  return (
+    <div className="tws-restore" role="group" aria-label="Navigation">
+      <button
+        type="button"
+        className="tws-icon-btn"
+        aria-label="Restore navigation"
+        title="Restore navigation"
+        data-testid="tws-restore"
+        onClick={() => dispatch({ command: 'workspace.layout.set', args: { expanded: false }, source: 'click' })}
+      >
+        <VectorIcon paths={SIDEBAR_SHOW_ART} size={16} />
+      </button>
+      <ViewSelector variant="more" />
+    </div>
   );
 }

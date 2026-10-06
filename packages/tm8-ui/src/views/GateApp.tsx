@@ -52,7 +52,7 @@ import { PromptsOverlay } from '../prompts';
 import { ProjectGitScreen } from '../git/ProjectGitScreen';
 import { BoardScreen } from '../board';
 import { BoardV2Screen } from '../board-v2';
-import { TabWorkspaceView, type WorkspaceGateHandles } from '../tab-workspace';
+import { TabWorkspaceView, useWorkspaceShareRoute, type WorkspaceGateHandles } from '../tab-workspace';
 import { CraftScreen } from '../craft';
 import { HelpScreen } from '../help';
 import { NewSessionScreen } from '../new-session';
@@ -1152,6 +1152,8 @@ export function GateApp(props: GateAppProps = {}) {
   // identity read that supplies the account face. Reuse its canonical member
   // id here: a second resolver/read would let the two surfaces disagree.
   const viewerMemberId = data.viewerActor?.id ?? null;
+  /* Workspace Copy link (Spec A §4/§12): `tabs?tab=<active entity id>`; null elsewhere. */
+  const workspaceShareRoute = useWorkspaceShareRoute(viewerMemberId, data.spaceId || null, navView.view === 'tabs');
   /* The graph screen's narrow port cannot build a channel feed port itself,
      so the shell builds the one adapter (same seam every other host wraps)
      and hands it down with the chat wiring. */
@@ -2113,6 +2115,7 @@ export function GateApp(props: GateAppProps = {}) {
                       spaceId={data.spaceId}
                       target={activeTarget ?? WORKSPACE_TARGET}
                       openEntity={openOnScreen}
+                      {...(workspaceShareRoute ? { routeView: workspaceShareRoute } : {})}
                     />
                   ) : null}
                   {/* THE ROLLBACK, and the only control that performs

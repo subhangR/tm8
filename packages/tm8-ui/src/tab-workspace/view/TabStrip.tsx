@@ -1,4 +1,5 @@
 /** Tab strip (Spec A §6): tablist of visible tabs, `+` chooser, scope control. Workstream C. */
+import type { ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { KindIcon } from '../../domain';
 import { draftTitle } from '../adapters/registry';
@@ -13,22 +14,13 @@ export function tabTitle(tab: TabRecord): string {
   return tab.entityId;
 }
 
-export function TabStrip() {
+export function TabStrip({ leading }: { leading?: ReactNode } = {}) {
   const { dispatch } = useWorkspace();
   const tabs = useWorkspaceState(useShallow(visibleTabs));
   const active = useWorkspaceState(activeTabId);
-  const expanded = useWorkspaceState((s) => s.layout.expanded);
   return (
     <div className="tws-strip" data-testid="tws-strip">
-      {expanded ? (
-        <button
-          type="button"
-          className="tws-quiet-btn"
-          onClick={() => dispatch({ command: 'workspace.layout.set', args: { expanded: false }, source: 'click' })}
-        >
-          Restore navigation
-        </button>
-      ) : null}
+      {leading}
       <div className="tws-strip-scroll" role="tablist" aria-label="Open tabs">
         {tabs.map((tab) => (
           <div key={tab.id} className="tws-tab" data-active={tab.id === active || undefined}>
