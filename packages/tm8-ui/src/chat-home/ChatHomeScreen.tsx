@@ -104,6 +104,12 @@ import type {
 import '../panels/honesty/honesty.css';
 import './chat-home.css';
 
+/** Per-thread composer drafts kept by the host (`composerDrafts`). */
+export interface ComposerDraftStore {
+  read(threadKey: string): string | undefined;
+  write(threadKey: string, value: string): void;
+}
+
 export interface ChatHomeScreenProps {
   port: ChatHomePort;
   spaceId: SpaceId | string;
@@ -143,6 +149,13 @@ export interface ChatHomeScreenProps {
    * the composer's own defaults, unchanged.
    */
   newChatSeed?: NewChatSeed | undefined;
+  /**
+   * COMPOSER DRAFT STORE — a host that unmounts this screen while the viewer
+   * is mid-message (Workspace's per-tab chat, Spec A §10) keeps the per-thread
+   * drafts outside it. `threadKey` is the screen's own draft key: the thread's
+   * root id, or `'new-thread'`. Absent ⇒ session-local drafts, unchanged.
+   */
+  composerDrafts?: ComposerDraftStore | undefined;
   /**
    * What the NEW-CONVERSATION state says above the composer, when the host
    * knows better than the generic greeting (Craft explains what the craft
@@ -383,6 +396,7 @@ export function ChatHomeScreen({
   pinnedMode,
   composerSeed,
   newChatSeed,
+  composerDrafts,
   newThreadIntro,
   toolNote,
   models,
@@ -463,16 +477,18 @@ export function ChatHomeScreen({
      composer uses and is a later step. */
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const draftKey = selectedRootId ?? 'new-thread';
-  const draft = drafts[draftKey] ?? '';
+  const draft = drafts[draftKey] ?? composerDrafts?.read(draftKey) ?? '';
   const setDraft = useCallback(
     (next: string | ((current: string) => string)) => {
       setDrafts((current) => {
-        const existing = current[draftKey] ?? '';
+        const existing = current[draftKey] ?? composerDrafts?.read(draftKey) ?? '';
         const value = typeof next === 'function' ? next(existing) : next;
-        return value === existing ? current : { ...current, [draftKey]: value };
+        if (value === existing) return current;
+        composerDrafts?.write(draftKey, value);
+        return { ...current, [draftKey]: value };
       });
     },
-    [draftKey],
+    [draftKey, composerDrafts],
   );
   const [phase, setPhase] = useState<ComposerPhase>('idle');
   /** The turn pipeline's clock — when the turn in progress began, when its
