@@ -90,7 +90,12 @@
    first and only row, with the group on it; then 12px and the body. Full
    width, 24px sides, no measure, no spacer. */
 .cv2-root .tws-panel > .pn-panel[data-embedded-flow='fill'] .pn-embedded-head {
-  padding: var(--pn-space-3) var(--pn-space-6);
+  /* ONE thin row (Subhang, round 2): the group's 32px plus 4px above and
+     below, 40px in all, and nothing else above the terminal. */
+  padding: var(--pn-space-1) var(--pn-space-6);
+}
+.tws-entity-host:has(.pn-panel[data-embedded-flow='fill']) > .tws-floating {
+  top: var(--pn-space-1);
 }
 .cv2-root .tws-panel > .pn-panel[data-embedded-flow='fill'] .pn-embedded-head__measure {
   max-width: none;
@@ -116,9 +121,99 @@
   /* Row B is the first row: the group sits top right on it, and the stats
      end 16px before the group (it sits 12px in; the head pads 24). */
   margin-top: 0;
-  height: max(36px, var(--tws-fg-h, 32px));
+  height: var(--tws-fg-h, 32px);
+  /* The stats end 16px before the group (it sits 12px in; the head pads 24). */
   padding-right: calc(var(--tws-fg-w, 0px) + var(--pn-space-1));
 }
+.cv2-root .tws-panel .pn-embedded-head__surface {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--pn-space-1);
+}
+.cv2-root .tws-panel .pn-embedded-head__surface .pn-surface-switch {
+  display: flex;
+  gap: var(--pn-space-1);
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.cv2-root .tws-panel .pn-embedded-head__surface .pn-surface-switch__tab {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  background: none;
+  color: var(--pn-ink-3);
+}
+.cv2-root .tws-panel .pn-embedded-head__surface .pn-surface-switch__tab svg {
+  width: 14px;
+  height: 14px;
+}
+.cv2-root .tws-panel .pn-embedded-head__surface .pn-surface-switch__tab:hover {
+  background: var(--pn-hover);
+}
+.cv2-root .tws-panel .pn-embedded-head__surface .pn-surface-switch__tab[aria-selected='true'] {
+  background: var(--pn-active);
+  color: var(--pn-ink);
+  box-shadow: none;
+}
+.cv2-root .tws-panel .pn-embedded-head__status {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  min-width: 0;
+}
+.cv2-root .tws-panel .pf-chip {
+  position: relative;
+  flex: none;
+}
+.cv2-root .tws-panel .pf-chip__trigger {
+  border: 0;
+  cursor: pointer;
+}
+.cv2-root .tws-panel .pf-chip__pop {
+  position: absolute;
+  top: calc(100% + var(--pn-space-1));
+  right: 0;
+  z-index: 40;
+  width: 400px;
+  max-width: calc(100cqw - 2 * var(--pn-space-6));
+  max-height: 60vh;
+  overflow: auto;
+  padding: var(--pn-space-4);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-pop);
+  box-sizing: border-box;
+}
+.cv2-root .tws-panel .pf-chip__pop .pf-banner {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.cv2-root .tws-panel .pn-embedded-head__reading {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-label);
+  font-variant-numeric: tabular-nums;
+  color: var(--pn-ink-3);
+}
+.cv2-root .tws-panel .pn-embedded-head__reading * {
+  font: inherit;
+  color: inherit;
+}
+
+/* The attention pill hangs under the group, never under it. */
 .cv2-root .tws-panel > .pn-panel > .att-block-dock > .att-block {
   top: calc(var(--tws-fg-h, 32px) + 2 * var(--pn-space-3));
 }
@@ -133,7 +228,12 @@
   padding: 2px;
   border: 0;
   border-radius: var(--pn-r-md);
-  box-shadow: 0 0 0 1px var(--pn-line), var(--pn-sh-sm);
+  /* Native on its surface (Subhang, round 2): no raised pill. On the light
+     content plane it takes the plane's own fill; on the always-dark terminal
+     body (data-surface=dark, its own dark token scope) it is transparent and
+     its buttons use the same tokens as the surface chips beside it. */
+  background: var(--pn-card);
+  box-shadow: none;
   max-width: calc(100% - 2 * var(--pn-space-3));
   box-sizing: border-box;
 }
@@ -209,6 +309,10 @@
   font-size: var(--pn-fs-fine);
   font-variant-numeric: tabular-nums;
   pointer-events: none;
+}
+.tws-floating.tws-fg[data-surface='dark'] {
+  background: transparent;
+  color: var(--pn-ink-2);
 }
 /* Run: the lead verb, a ▶ icon in the brand colour. */
 .cv2-root .tws-fg-verbs .pn-btn.pn-btn--lead {
@@ -344,3 +448,28 @@
   text-decoration: underline;
 }
 
+
+/* A reading doc with no pills (Subhang, round 2): no head row at all. The
+   doc's own toolbar (Edit / Download PDF) IS the group's row: toolbar left,
+   group right, then the content. */
+.cv2-root .tws-panel > .pn-panel[data-embedded-flow='document']:has(.rs-root[data-stance='read']):not(:has(.pn-embedded-head__pills)) > .pn-embedded-head {
+  display: none;
+}
+.tws-entity-host:has(.pn-panel[data-embedded-flow='document'] .rs-root[data-stance='read']):not(:has(.pn-embedded-head__pills)) > .tws-floating {
+  top: var(--pn-space-1);
+}
+.cv2-root .tws-panel .rs-root[data-stance='read'] > .rs-bar {
+  /* The same thin row as a session's: the group's 32px plus 4px each side. */
+  min-height: calc(var(--tws-fg-h, 32px) + 2 * var(--pn-space-1));
+  padding-right: calc(var(--tws-fg-w, 0px) + var(--pn-space-4));
+  box-sizing: border-box;
+  align-items: center;
+}
+
+/* Attachments (Subhang, round 2): the idle "Attach / or drop / paste" zone is
+   not drawn in Workspace; the group's paperclip replaces it. Drop onto the
+   content keeps working: the strip's listeners ride the panel (its drop host),
+   not this box. Attached files still show as tiles. */
+.cv2-root .tws-panel .fn-tiles--idle {
+  display: none;
+}
