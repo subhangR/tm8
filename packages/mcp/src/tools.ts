@@ -329,8 +329,11 @@ const DELEGATE_GUIDES = [
       },
     },
   ),
-  guide('execution.terminate', 'End a worker session. Chats are not terminated this way.', {
-    params: { id: '<work-session-id>' }, body: { force: false },
+  guide('execution.terminate', 'Close a worker session. While its work is open say outcome stop (abandon) or complete. Chats are not terminated this way.', {
+    params: { id: '<work-session-id>' }, body: { force: false, outcome: 'stop' },
+  }),
+  guide('execution.complete', 'Mark a session\'s work completed: its claims must be done, in review, blocked or released, and its latest message on the anchor is the receipt.', {
+    params: { id: '<work-session-id>' }, body: {},
   }),
   guide('execution.resume', 'Resume an exited worker with its provider-native conversation.', {
     params: { id: '<work-session-id>' }, body: {},

@@ -96,6 +96,7 @@ describe('W2.G02 universal entities, commands, and tracking', () => {
       'entities.commands.linkCommit',
       'entities.commands.linkPr',
       'entities.commands.pull',
+      'entities.commands.release',
       'entities.commands.tick',
       'entities.commands.work',
       'entities.connections',

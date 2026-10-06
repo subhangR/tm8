@@ -160,6 +160,9 @@ describe('W5.C generator proof', () => {
       // entity and the ref id ride the path.
       'entities.refs.remove',
       'entityKinds.update',
+      // 301 (Spec D1): session complete — a bare {} takes the session's latest
+      // message on its anchor as the receipt and leaves the process open.
+      'execution.complete',
       // 2026-08-12 (Git UI landing): the two git verbs whose bodies are
       // all-optional — a bare {} checkpoint takes the default label; a bare {}
       // merge pulls the session base forward.
