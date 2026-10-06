@@ -17,7 +17,9 @@ import type { TaskSaveHandle } from './useTaskSave';
  *
  * WHERE IT MOUNTS — in the compact tab/action toolbar below the title. It is a
  * fragment so the toolbar owns spacing and the full title never competes with
- * save controls for horizontal room.
+ * save controls for horizontal room. In a Workspace tab that toolbar is the
+ * 40px action strip, which draws the three as glyphs (content.css); the
+ * `data-tip`s are what its tooltip names them by there.
  *
  * IT RENDERS WHEN DIRTY, **OR** WHEN SAVING IS UNAVAILABLE. The second half is
  * L6, not clutter: a panel that cannot save must say so where the Save would
@@ -29,9 +31,11 @@ export function SaveControls({ save }: { save: TaskSaveHandle }) {
 
   if (save.unavailable) {
     return (
-      <DisabledAction reason={save.unavailable} label="Save">
-        Save
-      </DisabledAction>
+      <span className="au-unavailable">
+        <DisabledAction reason={save.unavailable} label="Save">
+          Save
+        </DisabledAction>
+      </span>
     );
   }
 
@@ -39,12 +43,14 @@ export function SaveControls({ save }: { save: TaskSaveHandle }) {
 
   return (
     <>
-      <span className="au-editing" data-testid="authoring-editing-pill">
+      <span className="au-editing" data-testid="authoring-editing-pill" data-tip="Unsaved changes">
         editing
       </span>
       <button
         type="button"
         className="au-btn au-btn--quiet"
+        data-testid="authoring-cancel"
+        data-tip="Cancel — discard changes"
         onClick={save.cancel}
         disabled={saving}
       >
@@ -54,6 +60,7 @@ export function SaveControls({ save }: { save: TaskSaveHandle }) {
         type="button"
         className="au-btn au-btn--primary"
         data-testid="authoring-save"
+        data-tip={saving ? 'Saving…' : 'Save'}
         /* PENDING SHOWS ITS PROMISE. aria-busy rather than a spinner alone:
            the state has to reach a screen reader too, and "Saving…" is the
            word that says the request is out there rather than lost. */

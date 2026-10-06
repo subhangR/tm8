@@ -233,6 +233,57 @@
 .cv2-root .tws-astrip [data-testid='doc-download-pdf']::before {
   content: '⤓';
 }
+/* The save affordances (authoring/SaveControls) — the "editing" pill and the
+   Cancel / Save pair — portal into the verbs slot for EVERY kind whose title
+   or status edits inline. Their words cannot fit a 40px strip, so here they
+   are drawn as the strip's own 28px glyph controls: the pill a brand dot,
+   Cancel ✕, Save ✓ in the lead's brand colour. The word stays the accessible
+   name; the tooltip reads `data-tip`. */
+.cv2-root .tws-astrip .au-editing {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin: 2px 0;
+  padding: 0;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-brand-2);
+  font-size: 0;
+  overflow: hidden;
+}
+.cv2-root .tws-astrip .au-btn,
+.cv2-root .tws-astrip .au-unavailable .hon-disabled {
+  position: relative;
+  flex: none;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: var(--pn-r-sm);
+  font-size: 0;
+  line-height: 1;
+  overflow: hidden;
+}
+.cv2-root .tws-astrip .au-btn::before,
+.cv2-root .tws-astrip .au-unavailable .hon-disabled::before {
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  line-height: 1;
+}
+.cv2-root .tws-astrip .au-btn--quiet::before {
+  content: '✕';
+}
+.cv2-root .tws-astrip .au-btn--primary::before,
+.cv2-root .tws-astrip .au-unavailable .hon-disabled::before {
+  content: '✓';
+}
+.cv2-root .tws-astrip .au-btn--primary[aria-busy='true']::before {
+  content: '…';
+}
+
 /* The forms-waiting chip, as a dot with its count badge. */
 .cv2-root .tws-astrip .pf-chip {
   position: relative;
