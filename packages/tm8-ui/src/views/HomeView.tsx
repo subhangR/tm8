@@ -411,6 +411,8 @@ export function HomeView(props: HomeViewProps) {
     onError: notifyActionFailed,
      /* The version the viewer is LOOKING AT — see `versionOf` on the hook. */
     versionOf: (id) => data.detailOf(id)?.version,
+    /* Spec D1 §5.4/§5.5: opts in to the outcome dialogs (rendered at the root). */
+    stateOf: (id) => data.detailOf(id)?.state,
   });
   /* THE SESSIONS CELL'S BIRTH VERB (user ruling 2026-08-19). Home had no
      session-start dispatcher at all, so its Sessions root offered no way to
@@ -766,6 +768,8 @@ export function HomeView(props: HomeViewProps) {
           /* Same executor, same reason as `EntityView`: this list draws the
              session row's ⏻ too, and until now nothing was behind it. */
           onTerminate={primaries.terminate}
+          onSessionVerb={primaries.sessionVerb}
+          onSessionBulk={primaries.sessionBulk}
           onShareSession={primaries.shareSession}
           onResume={primaries.resume}
           onSetValue={rowLifecycle.setValue}
@@ -956,6 +960,8 @@ export function HomeView(props: HomeViewProps) {
       } as React.CSSProperties}
       data-chat-open={chatSlotOpen || undefined}
     >
+      {/* Spec D1 §5.4/§5.5 — the session outcome dialogs (fixed-position). */}
+      {primaries.dialog}
       <HomePage
         data={data}
         chat={props.chat(openEntity, regions)}

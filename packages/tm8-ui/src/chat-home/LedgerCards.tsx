@@ -40,6 +40,7 @@ import type { EntityDetail, EntityId, WorkSessionStatus } from '@tm8/contract';
 import type { SessionLiveness } from '../data/seam';
 import { KindIcon } from '../domain/KindIcon';
 import { getKind } from '../domain/registry';
+import { sessionOutcomeOf } from '../domain/session-outcome';
 import { useChatEntityRef, type ChatEntityResolver } from './EntityChip';
 import { useFleetEntities, type FleetEntityReader } from './fleet/use-fleet-entities';
 import {
@@ -258,13 +259,19 @@ function SessionSubline({ create }: { create: LedgerCreate }) {
   return <>{model ? `Spawned session · ${model}` : 'Spawned session'}</>;
 }
 
-type SessionVerdict = 'live' | 'waiting' | 'done' | 'failed';
+/* SPEC D1 §5.7: the tag names the OUTCOME once the work is settled —
+   Completed or Stopped — and the process only while the work is open: Live,
+   Waiting, Crashed, or Ended (the process exited without completing). The old
+   "exited → Done" read a clean exit as finished work, which it is not. */
+type SessionVerdict = 'live' | 'waiting' | 'completed' | 'stopped' | 'crashed' | 'ended';
 
 const SESSION_TAG: Record<SessionVerdict, string> = {
   live: 'Live',
   waiting: 'Waiting',
-  done: 'Done',
-  failed: 'Failed',
+  completed: 'Completed',
+  stopped: 'Stopped',
+  crashed: 'Crashed',
+  ended: 'Ended',
 };
 
 function SessionTag({ id }: { id: string }) {
@@ -304,7 +311,9 @@ function useSessionVerdict(id: string): SessionVerdict | null {
   const status = detail
     ? ((detail.state as { status?: WorkSessionStatus }).status ?? null)
     : null;
-  const terminal = status === 'exited' || status === 'failed';
+  const outcome = detail ? sessionOutcomeOf(detail.state) : 'open';
+  // Settled work never changes its tag again (§3 rule 1), so it stops asking too.
+  const terminal = status === 'exited' || status === 'failed' || outcome !== 'open';
 
   const [, setTick] = useState(0);
   const ticking = detail !== null && !terminal && host.livenessOf !== undefined;
@@ -341,8 +350,10 @@ function useSessionVerdict(id: string): SessionVerdict | null {
   }, [gone, terminal, readEntity, liveness, id]);
 
   if (!detail) return null;
-  if (status === 'failed') return 'failed';
-  if (status === 'exited') return 'done';
+  if (outcome === 'completed') return 'completed';
+  if (outcome === 'stopped') return 'stopped';
+  if (status === 'failed') return 'crashed';
+  if (status === 'exited') return 'ended';
   if (liveness === 'live') return status === 'idle' ? 'waiting' : 'live';
   return null;
 }

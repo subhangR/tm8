@@ -426,6 +426,8 @@ export function EntityView(props: EntityViewProps) {
     onError: notifyTerminateFailed,
      /* The version the viewer is LOOKING AT — see `versionOf` on the hook. */
     versionOf: (id) => data.detailOf(id)?.version,
+    /* Spec D1 §5.4/§5.5: opts in to the outcome dialogs (rendered at the root). */
+    stateOf: (id) => data.detailOf(id)?.state,
   });
 
   /* D67 — the expanded row's state dropdown and archive control. Same executor
@@ -959,6 +961,9 @@ export function EntityView(props: EntityViewProps) {
         '--ev-aux-min': `${EV_AUX_MIN}px`,
       } as React.CSSProperties}
     >
+      {/* Spec D1 §5.4/§5.5 — the session outcome dialogs, at the root for the
+          same reason as the edit dialog below. */}
+      {primaries.dialog}
       {/* AT THE VIEW ROOT, NOT INSIDE THE PANEL. The dialog is `position:
           fixed` over a scrim, so nesting it in the panel's own overflow
           context would clip it against a column it is supposed to cover. */}
@@ -1137,6 +1142,8 @@ export function EntityView(props: EntityViewProps) {
              WorkspaceView passed one. A verb with a dedicated prop is dead on
              every host that forgets it, so all three pass it now. */
           onTerminate={primaries.terminate}
+          onSessionVerb={primaries.sessionVerb}
+          onSessionBulk={primaries.sessionBulk}
           onShareSession={primaries.shareSession}
           onResume={primaries.resume}
           onSetValue={rowLifecycle.setValue}

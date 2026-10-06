@@ -363,15 +363,23 @@ describe('a spawned session shows its live status — and no tag rather than a g
     expect(view.getByTestId('chat-ledger-create').textContent).toContain('Spawned session · Opus 5.5');
   });
 
-  it('WAITING when live but idle; DONE when exited; FAILED when failed', async () => {
-    const cases: Array<[string, SessionLiveness, string]> = [
+  it('SPEC D1: WAITING when live but idle; ENDED / CRASHED while the work is open; COMPLETED / STOPPED once it is settled', async () => {
+    // Spec D1 §5.7 replaced "exited → Done": a clean exit is not finished work.
+    const cases: Array<[string, SessionLiveness, string, string?]> = [
       ['idle', 'live', 'Waiting'],
-      ['exited', 'not-running', 'Done'],
-      ['failed', 'not-running', 'Failed'],
+      ['exited', 'not-running', 'Ended'],
+      ['failed', 'not-running', 'Crashed'],
+      ['exited', 'not-running', 'Completed', 'completed'],
+      ['running', 'live', 'Completed', 'completed'],
+      ['exited', 'not-running', 'Stopped', 'stopped'],
     ];
-    for (const [status, liveness, word] of cases) {
+    for (const [status, liveness, word, outcome] of cases) {
       resetFleetEntityCache();
-      const view = render(<Transcript turns={spawnOnly()} host={hostWith(async () => sessionDetail(status), () => liveness)} />);
+      const detail = async () => {
+        const d = sessionDetail(status);
+        return outcome ? { ...d, state: { ...d.state, outcome } as typeof d.state } : d;
+      };
+      const view = render(<Transcript turns={spawnOnly()} host={hostWith(detail, () => liveness)} />);
       await vi.waitFor(() => expect(tagOf(view)).toBe(word));
       view.unmount();
     }
@@ -397,7 +405,7 @@ describe('a spawned session shows its live status — and no tag rather than a g
     expect(tagOf(stale)).toBeNull();
   });
 
-  it('a session that ENDS after the turn goes from Live to Done on a quiet screen', async () => {
+  it('a session that ENDS after the turn goes from Live to Ended on a quiet screen', async () => {
     vi.useFakeTimers();
     let live = true;
     let recorded = 'running';
@@ -418,7 +426,8 @@ describe('a spawned session shows its live status — and no tag rather than a g
     await act(async () => {
       await vi.advanceTimersByTimeAsync(SESSION_VERDICT_TICK_MS);
     });
-    expect(tagOf(view)).toBe('Done');
+    // Spec D1: exited with the work still open reads Ended, not Done.
+    expect(tagOf(view)).toBe('Ended');
     // One shared read, one re-read on the verdict change — not one per tick.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(SESSION_VERDICT_TICK_MS * 3);

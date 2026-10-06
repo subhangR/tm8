@@ -1,5 +1,5 @@
 import { AttentionChipView, useAttentionOptional, useEntityChip } from '../attention';
-import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Fragment, createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import type { JevPort } from '../jev/port';
 import type {
@@ -42,6 +42,13 @@ import {
   ALL_MODES,
   KindIcon,
   REASONS,
+  crossTabBreadcrumb,
+  groupSessionRows,
+  isSessionState,
+  sessionLineTwo,
+  sessionRowWord,
+  type GroupBulk,
+  type SessionClaim,
   toRowFacts,
   VIEWER_ACTOR,
   allKinds,
@@ -74,6 +81,8 @@ import {
 import { ReasonNote } from './honesty/ReasonNote';
 import { EmptyBody } from './detail/PanelStates';
 import { useDismissable } from './useDismissable';
+import { useRunningGrace } from './list/useRunningGrace';
+import './session/session-outcome.css';
 import {
   EntityControlStrip,
   RowAction,
@@ -431,6 +440,24 @@ export interface EntityListPanelProps {
   wiredActions?: readonly ActionRef[];
   /** Session-row close command; separate from generic header/list actions. */
   onTerminate?: (entityId: string) => void;
+  /**
+   * Spec D1 §5 — the session outcome verbs (Complete dialog, Stop, Dismiss,
+   * Mark lost). See `ControlHost.onSessionVerb`.
+   */
+  onSessionVerb?: (ref: ActionRef, entityId: string) => void;
+  /**
+   * Spec D1 §5.3 — a session tab group's bulk verb ("Resume all", "Complete
+   * all", "Stop all finished") over the group's row ids. Absent ⇒ the group
+   * headers draw no bulk button.
+   */
+  onSessionBulk?: (bulk: GroupBulk, entityIds: readonly string[]) => void;
+  /**
+   * Spec D1 §6.8 — a session's `working_on` claims (active and ended), for
+   * the row word ("Ready to complete", "Idle 3h") and line 2 ("Working · 2
+   * tasks · 1 done"). Absent or `undefined` ⇒ claims unknown, which is not
+   * "none".
+   */
+  linkedClaimsOf?: (sessionId: string) => readonly SessionClaim[] | undefined;
   /** The other half of that row's tail slot — see `ControlHost.onResume`. */
   onResume?: (entityId: string) => void;
   /** The row's sharing slot (187) — see `ControlHost.onShareSession`. */
@@ -953,7 +980,8 @@ export function EntityListPanel(props: EntityListPanelProps) {
         <KindSelector
           config={config}
           total={kindTotal}
-          liveCount={liveCountFor(props, config, activeTab)}
+          liveCount={liveCountFor(props, config, activeTab, tabCounts)}
+          alert={alertCountFor(config, tabCounts, setCategoryTabId)}
           onKindChange={props.onKindChange}
         />
       )}
@@ -1147,6 +1175,7 @@ export function EntityListPanel(props: EntityListPanelProps) {
             />
           ))
         ) : (
+          <SessionCrumbContext.Provider value={crumbs}>
           <Band
             label={null}
             filter={bandFilter(
@@ -1162,7 +1191,9 @@ export function EntityListPanel(props: EntityListPanelProps) {
             props={bandProps}
             config={config}
             query={query}
+            tabId={activeTab?.id ?? null}
           />
+          </SessionCrumbContext.Provider>
         )}
       </div>
 
@@ -1431,13 +1462,38 @@ function liveCountFor(
   props: EntityListPanelProps,
   config: KindConfig,
   tab: StatusCategoryTab | null,
+  tabCounts: readonly { tab: StatusCategoryTab; n: number }[] = [],
 ): string | null {
   const spec = config.list.liveCount;
-  if (!spec || !props.liveIds) return null;
+  if (!spec) return null;
+  /* Spec D1 §5.3: "● N running" IS the Running tab's count — the server's
+     total for that tab, whichever tab is open. Stale and unverified rows are
+     in it on purpose: the tab holds them until the reaper says lost. */
+  if (spec.tab) {
+    const counted = tabCounts.find((c) => c.tab.id === spec.tab);
+    if (counted) return spec.label(counted.n);
+  }
+  if (!props.liveIds) return null;
   const merged = narrow(spec.filter, tab?.filter);
   const rows = merged === null ? NO_ROWS : props.rowsFor(merged);
   const live = new Set(props.liveIds);
   return spec.label(rows.filter((r) => live.has(r.id)).length);
+}
+
+/**
+ * Spec D1 §5.3: "⚠ M interrupted" beside the running count, linking to its
+ * tab. Null at zero — an alert that says nothing is not drawn.
+ */
+function alertCountFor(
+  config: KindConfig,
+  tabCounts: readonly { tab: StatusCategoryTab; n: number }[],
+  onTab: (id: string) => void,
+): { label: string; onClick: () => void } | null {
+  const spec = config.list.liveCount?.alertTab;
+  if (!spec) return null;
+  const counted = tabCounts.find((c) => c.tab.id === spec.tab);
+  if (!counted || counted.n === 0) return null;
+  return { label: spec.label(counted.n), onClick: () => onTab(spec.tab) };
 }
 
 // ---------------------------------------------------------------------------
@@ -1448,8 +1504,11 @@ function KindSelector({
   config,
   total,
   liveCount,
+  alert,
   onKindChange,
 }: {
+  /** Spec D1 §5.3 — "⚠ M interrupted", which opens that tab. */
+  alert?: { label: string; onClick: () => void } | null;
   config: KindConfig;
   /**
    * Sum of the lifecycle tabs — T0-1 draws it beside the kind name.
@@ -1487,6 +1546,11 @@ function KindSelector({
         <span className="lp__livecount" data-testid="list-live-count">
           {liveCount}
         </span>
+      ) : null}
+      {alert ? (
+        <button type="button" className="lp__livecount lp__livecount--alert" data-testid="list-alert-count" onClick={alert.onClick}>
+          {alert.label}
+        </button>
       ) : null}
       {open ? (
         <ul className="lp__kindmenu" role="menu">
@@ -1820,7 +1884,13 @@ function CategoryTabs({
                   (see .lp__tab-word in panels.css) — a count that truncates is
                   a wrong number, which is worse than a shortened one. */}
               <span className="lp__tab-word">{tab.label}</span>
-              <span className="lp__tab-count">{tabLabel(tab)}</span>
+              {/* Spec D1 §5.3: an alerting tab's count is a red badge above zero. */}
+              <span
+                className={tab.alert && tabLabel(tab) !== '0' ? 'lp__tab-count lp__tab-count--alert' : 'lp__tab-count'}
+                data-alert={tab.alert && tabLabel(tab) !== '0' ? 'true' : undefined}
+              >
+                {tabLabel(tab)}
+              </span>
             </>
           )}
         </button>
@@ -3105,7 +3175,14 @@ function Band({
   props,
   config,
   query,
+  tabId = null,
 }: {
+  /**
+   * Spec D1 §5.3: the open tab, for the session tabs' grouping (Running's
+   * "Finished, still open" divider, Interrupted's reason groups) and the
+   * Running grace (§5.3.1 case 12). Any other tab id renders ungrouped.
+   */
+  tabId?: string | null;
   label: string | null;
   /**
    * The band's own already-narrowed query, or `null` when the section, the
@@ -3136,8 +3213,14 @@ function Band({
     const timer = setTimeout(() => wake((n) => n + 1), Math.max(0, due - Date.now()) + 50);
     return () => clearTimeout(timer);
   }, [needsMeLoadingNow, rows]);
-  const visible = matching(rows, query ?? '');
+  /* §5.3.1 case 12: a row that just left Running lingers ~10 s. */
+  const sessionRows = rows.length > 0 && rows.every((r) => isSessionState(r.state));
+  const graced = useRunningGrace(rows, sessionRows && tabId === 'running');
+  const visible = matching(graced, query ?? '');
   const attentionIds = attentionIdsOf(visible, props, config);
+  const groups = sessionRows
+    ? groupSessionRows(tabId, visible, (r) => r.state, (r) => ({ claims: props.linkedClaimsOf?.(r.id) }))
+    : null;
 
   if (label && collapsed) {
     // A collapsed section reduces to ONE clickable line pinned at the bottom —
@@ -3220,6 +3303,22 @@ function Band({
             }
           />
         )
+      ) : groups && groups.length > 1 || (groups?.[0]?.label ?? null) !== null ? (
+        groups!.map((group) => (
+          <Fragment key={group.id}>
+            {group.label ? (
+              <SessionGroupHeader
+                label={group.label}
+                bulk={group.bulk}
+                ids={group.rows.map((r) => r.id)}
+                onBulk={props.onSessionBulk}
+              />
+            ) : null}
+            {group.rows.length > 0 ? (
+              <TreeRows rows={group.rows} props={props} config={config} attentionIds={attentionIds} />
+            ) : null}
+          </Fragment>
+        ))
       ) : (
         <TreeRows rows={visible} props={props} config={config} attentionIds={attentionIds} />
       )}
@@ -3235,6 +3334,77 @@ function Band({
       ) : null}
     </>
   );
+}
+
+const BULK_LABEL: Readonly<Record<Exclude<GroupBulk, null>, string>> = {
+  'complete-all': 'Complete all',
+  'resume-all': 'Resume all',
+  'reconnect-resume-all': 'Resume all',
+  'stop-all-finished': 'Stop all finished',
+};
+
+/**
+ * A session tab group's header (Spec D1 §5.3): "Server restart (12)" with its
+ * bulk verb. Credentials say "Reconnect, then resume all" — resuming before
+ * the credential is back would only fail again.
+ */
+function SessionGroupHeader({
+  label,
+  bulk,
+  ids,
+  onBulk,
+}: {
+  label: string;
+  bulk: GroupBulk;
+  ids: readonly string[];
+  onBulk?: (bulk: GroupBulk, ids: readonly string[]) => void;
+}) {
+  return (
+    <div className="lp__sgroup" data-testid="session-group" data-bulk={bulk ?? undefined}>
+      <span>{label}</span>
+      {bulk === 'reconnect-resume-all' ? (
+        <span className="lp__sgroup-hint">Reconnect the credential in Settings, then</span>
+      ) : null}
+      {bulk && onBulk ? (
+        <button
+          type="button"
+          className="lp__sgroup-bulk"
+          data-testid="session-group-bulk"
+          onClick={() => onBulk(bulk, ids)}
+        >
+          {BULK_LABEL[bulk]}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/** Spec D1 §5.3.1 case 7 — what a session row needs to name a parent in another tab. */
+interface SessionCrumbs {
+  tabId: string | null;
+  rowOf: (id: string) => EntitySummary | undefined;
+}
+
+const SessionCrumbContext = createContext<SessionCrumbs | null>(null);
+
+/**
+ * Every session row loaded under any of this panel's tabs, by id. Reads the
+ * same filters the tab counts read (so it asks the store nothing new), and
+ * only for a tab row whose rows are sessions.
+ */
+function useSessionCrumbs(props: EntityListPanelProps, config: KindConfig, tabId: string | null): SessionCrumbs | null {
+  const tabs = config.list.categories ?? [];
+  const index = new Map<string, EntitySummary>();
+  for (const tab of tabs) {
+    const merged = bandFilter(tab.filter, tab, {}, config, props.ctx);
+    if (merged === null) continue;
+    for (const row of props.rowsFor(merged)) {
+      if (!isSessionState(row.state)) return null;
+      index.set(row.id, row);
+    }
+  }
+  if (index.size === 0) return null;
+  return { tabId, rowOf: (id) => index.get(id) };
 }
 
 /**
@@ -3714,6 +3884,7 @@ export function Tile({
   path?: ReadonlySet<string>;
 }) {
   const { oneSurface } = useMobileSurface();
+  const crumbs = useContext(SessionCrumbContext);
   /* Attention v2 (chapter 4): a CHIP replaces the words "Needs attention".
      `attention` also carries a kind's derived predicate (session liveness),
      which has no request behind it and keeps the old label. With the store
@@ -4038,6 +4209,21 @@ export function Tile({
     // The lane facts ride the summary state (107) — no edge read needed, so
     // the badge cannot flicker when the bounded graph page misses an edge.
     const lane = sessionLaneOf(row.state);
+    /* SPEC D1 §5.1/§5.2: the row word, its line 2 and the avatar's process
+       dot, from the outcome × process derivation every session surface shares.
+       Waiting = an idle process with forms pending for the viewer (§5.1 row 3). */
+    const wordCtx = {
+      claims: props.linkedClaimsOf?.(row.id),
+      streaming,
+      waiting: recordedStatus === 'idle' && pendingFormsRead !== null,
+      activityAt: row.activityAt,
+      actorName: (id: string) => props.members?.find((m) => m.id === id)?.displayName,
+    };
+    const sessionWord = sessionRowWord(row.state, verdict, wordCtx);
+    const lineTwo = sessionLineTwo(row.state, verdict, wordCtx);
+    const crumb = crumbs && row.parentId && depth === 0
+      ? crossTabBreadcrumb(crumbs.rowOf(row.parentId), crumbs.tabId)
+      : null;
     return (
       <>
       <MaestroSessionTile
@@ -4059,6 +4245,9 @@ export function Tile({
         streaming={streaming}
         statusTone={statusTone}
         statusTitle={statusTitle}
+        word={sessionWord}
+        lineTwo={lineTwo}
+        crumb={crumb}
         /* Path-suppressed: a session expanded UNDER a task must not offer
            that same task as a chip one level down — the loop the ruling
            names (parent → child → parent renders once). */

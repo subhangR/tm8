@@ -80,6 +80,8 @@ import {
   type ExecutionResumeInput,
   type ExecutionSessionsShareInput,
   type ExecutionTerminateInput,
+  type ExecutionCompleteInput,
+  type ReleaseInput,
   type FeedItem,
   type FileUploadGrant,
   type FileUploadInitInput,
@@ -203,7 +205,7 @@ import {
   sessionLive,
   sessionStale,
 } from '../../fixtures';
-import { SHIPPED_DEFAULT_MENU, getKind, headerAuthorable } from '../../domain';
+import { SHIPPED_DEFAULT_MENU, getKind, headerAuthorable, sessionCategoryOf } from '../../domain';
 
 export const FIXTURE_NODE_BOOT_ID = 'boot-fixture-1';
 
@@ -1170,8 +1172,9 @@ const SESSION_STATUS_CATEGORY: Readonly<Record<string, StatusCategory>> = {
   spawning: 'to_do',
   running: 'in_progress',
   idle: 'in_progress',
-  exited: 'done',
-  failed: 'done',
+  // Spec D1 §3.2: an OPEN session whose process ended is unfinished, not done.
+  exited: 'in_progress',
+  failed: 'in_progress',
 };
 
 function stampCategory(s: EntitySummary): void {
@@ -1181,7 +1184,8 @@ function stampCategory(s: EntitySummary): void {
     return;
   }
   if (s.state.kind === 'work_session') {
-    const category = SESSION_STATUS_CATEGORY[s.state.status];
+    // Spec D1 §3.2: outcome first, then process — the 301 writer's rule.
+    const category = sessionCategoryOf(s.state) ?? SESSION_STATUS_CATEGORY[s.state.status];
     if (category) s.category = category;
   }
 }
@@ -2853,6 +2857,9 @@ export function createFixtureSeam(): FixtureSeam {
         if (f?.priority?.length && !(s.state.kind === 'task' && f.priority.includes(s.state.priority))) return false;
         if (f?.sessionStatus?.length && !(s.state.kind === 'work_session'
           && f.sessionStatus.includes(s.state.status))) return false;
+        /* Spec D1: the session tabs' outcome axis. Absent outcome = open. */
+        if (f?.sessionOutcome?.length && !(s.state.kind === 'work_session'
+          && f.sessionOutcome.includes(s.state.outcome ?? 'open'))) return false;
         if (f?.assigneeIds?.length && !(s.state.kind === 'task'
           && s.state.assignees.some((a) => f.assigneeIds!.includes(a.id)))) return false;
         /* 129's provenance filter: a task matches when ANY of its CURRENT
@@ -5002,8 +5009,38 @@ export function createFixtureSeam(): FixtureSeam {
       async terminate(id, input: ExecutionTerminateInput) {
         const s = requireSummary(id);
         if (s.state.kind !== 'work_session') throw new CollabError('invariant_violation', `${id} is not a work_session`);
-        s.state.status = 'exited';
+        /* Spec D1 §4.2, mirrored: an OPEN session must say what happens to its
+           work. `markLost` is a process fact only. */
+        const outcome = s.state.outcome ?? 'open';
+        if (input.markLost === true) {
+          s.state.status = 'failed';
+          s.state.endedKind = 'lost';
+          s.state.endedReason = 'Marked lost: no live process.';
+        } else {
+          if (outcome === 'open' && input.outcome === undefined) {
+            throw new CollabError(
+              'invariant_violation',
+              'this session has not completed: say what happens to its work — stop (end it without completing) or complete',
+              { details: { reason: 'outcome_required', sessionId: id } },
+            );
+          }
+          if (outcome === 'open' && input.outcome === 'stop') {
+            s.state.outcome = 'stopped';
+            s.state.outcomeAt = tick();
+            s.state.outcomeSource = 'operator';
+            s.state.outcomeNote = input.note ?? null;
+          }
+          if (outcome === 'open' && input.outcome === 'complete') {
+            s.state.outcome = 'completed';
+            s.state.outcomeAt = tick();
+            s.state.outcomeSource = 'operator';
+            s.state.receiptMessageId = input.receiptMessageId ?? null;
+          }
+          s.state.status = 'exited';
+          s.state.endedKind = s.state.outcome === 'completed' ? 'exited_clean' : 'stopped_by_operator';
+        }
         s.state.exitedAt = tick();
+        stampCategory(s);
         touch(s);
         const snap = livenessBySpace.get(s.spaceId);
         if (snap?.liveEntityIds.includes(id)) {
@@ -5042,6 +5079,59 @@ export function createFixtureSeam(): FixtureSeam {
         return commandResult(s);
       },
       /**
+       * Spec D1 §4.1, mirrored at the depth the fixture holds: a stopped
+       * session refuses, a completed one is idempotent, the receipt is the
+       * one named or the latest message on the session's anchor, and with
+       * none at all the command refuses `receipt_required`. The fixture keeps
+       * no claim props, so the claim check is the server's alone.
+       */
+      async completeSession(id, input: ExecutionCompleteInput) {
+        const s = requireSummary(id);
+        if (s.state.kind !== 'work_session') throw new CollabError('invariant_violation', `${id} is not a work_session`);
+        if (s.state.outcome === 'stopped') {
+          throw new CollabError('invariant_violation', 'this session was stopped; resume it first', {
+            details: { reason: 'session_stopped' },
+          });
+        }
+        const already = s.state.outcome === 'completed';
+        if (!already) {
+          const latest = [...summaries.values()]
+            .filter((m) => m.state.kind === 'message' && m.state.anchorId === id)
+            .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+          const receipt = input.receiptMessageId ?? latest?.id ?? null;
+          if (receipt === null) {
+            throw new CollabError('invariant_violation', 'no close-out message on this session to use as a receipt', {
+              details: { reason: 'receipt_required' },
+            });
+          }
+          s.state.outcome = 'completed';
+          s.state.outcomeAt = tick();
+          s.state.outcomeSource = 'operator';
+          s.state.receiptMessageId = receipt;
+        }
+        if (input.closeProcess === true && ['spawning', 'running', 'idle'].includes(s.state.status)) {
+          s.state.status = 'exited';
+          s.state.endedKind = 'exited_clean';
+          s.state.exitedAt = tick();
+        }
+        stampCategory(s);
+        touch(s);
+        emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
+        return {
+          ...commandResult(s),
+          outcome: { outcome: 'completed' as const, receiptMessageId: s.state.receiptMessageId ?? null, alreadyCompleted: already },
+        };
+      },
+      /** Spec D1 §6.3 R4 — the fixture holds no claim rows, so a release only validates its subject. */
+      async releaseClaim(taskId, input: ReleaseInput) {
+        const t = requireSummary(taskId);
+        if (t.state.kind !== 'task') throw new CollabError('invariant_violation', `${taskId} is not a task`);
+        if (input.note.trim().length === 0) throw new CollabError('invalid_input', 'a hand-off note is required');
+        touch(t);
+        emit(t.spaceId, { type: 'entity.upsert', entity: clone(t) }, input);
+        return commandResult(t);
+      },
+      /**
        * The inverse of terminate, and it refuses on the same terms: only a
        * TERMINAL session can be resumed. The server refuses a live one with
        * `conflict`, so the fixture must too — a fixture that cheerfully
@@ -5051,11 +5141,19 @@ export function createFixtureSeam(): FixtureSeam {
       async resume(id, input: ExecutionResumeInput) {
         const s = requireSummary(id);
         if (s.state.kind !== 'work_session') throw new CollabError('invariant_violation', `${id} is not a work_session`);
+        // Q2 = B: a completed session reopens through resume (logged
+        // server-side) — but only once its process has ended, which the
+        // status guard below already demands.
         if (s.state.status !== 'exited' && s.state.status !== 'failed') {
           throw new CollabError('invariant_violation', `session ${id} is not resumable from ${s.state.status}`);
         }
         s.state.status = 'running';
         s.state.exitedAt = null;
+        s.state.endedKind = null;
+        s.state.endedReason = null;
+        // Resuming a stopped (§3 rule 6) or completed (Q2 = B) session reopens its work.
+        if (s.state.outcome === 'stopped' || s.state.outcome === 'completed') s.state.outcome = 'open';
+        stampCategory(s);
         touch(s);
         const snap = livenessBySpace.get(s.spaceId);
         const live = snap?.liveEntityIds ?? [];

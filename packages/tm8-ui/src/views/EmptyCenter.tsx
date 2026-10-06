@@ -17,6 +17,7 @@
 import { useAttentionOptional } from '../attention';
 import { AttentionQueueSection } from '../attention/AttentionQueueSection';
 import type { SessionLiveness } from '../data/seam';
+import { sessionNeedsAttentionOf, sessionRecordOf, sessionRowWord } from '../domain';
 import type { SessionRow } from '../terminal';
 import { Avatar } from '../kit';
 import { DisabledIconControl, type UnavailableReason } from '../panels';
@@ -80,7 +81,7 @@ const VERDICT_TONE: Record<SessionLiveness, RosterTone> = {
   unknown: 'idle',
 };
 
-type RosterGroupId = 'attention' | 'running' | 'starting' | 'completed';
+type RosterGroupId = 'attention' | 'running' | 'starting' | 'completed' | 'stopped';
 
 interface ImportantSession {
   row: SessionRow;
@@ -108,10 +109,26 @@ const ROSTER_GROUPS: readonly RosterGroupConfig[] = [
   { id: 'running', label: 'Running', limit: 3 },
   { id: 'starting', label: 'Starting', limit: 1 },
   { id: 'completed', label: 'Recently completed', limit: 2 },
+  // Spec D1 §5.7: stopping is an outcome of its own, not a completion.
+  { id: 'stopped', label: 'Recently stopped', limit: 2 },
 ];
 
 function groupOf(session: ImportantSession): RosterGroupId | null {
   const { row, verdict, attention } = session;
+  /* SPEC D1 §5.7 — outcome first. Recently completed is `outcome =
+     completed` (not "exited"), Recently stopped is new, and Needs attention
+     is an OPEN session that is crashed, lost, stale or ended without
+     completing. A pre-301 row with no outcome reads as open. */
+  const record = sessionRecordOf(row.sessionState);
+  if (record) {
+    if (record.outcome === 'completed') return 'completed';
+    if (record.outcome === 'stopped') return 'stopped';
+    if (attention || verdict === 'stale' || (verdict === 'unknown' && record.status === 'running')) return 'attention';
+    if (sessionNeedsAttentionOf(row.sessionState)) return 'attention';
+    if (record.status === 'spawning') return 'starting';
+    if (verdict === 'live') return 'running';
+    return null;
+  }
   if (attention || verdict === 'stale' || (verdict === 'unknown' && row.recordedStatus === 'running')) {
     return 'attention';
   }
@@ -128,6 +145,13 @@ function groupOf(session: ImportantSession): RosterGroupId | null {
 function presentationOf(session: ImportantSession): { word: string; tone: RosterTone } {
   const { row, verdict, attention } = session;
   if (attention) return { word: 'NEEDS YOU', tone: 'wait' };
+  /* Spec D1: the row word every session surface shares (Completed, Stopped,
+     Crashed, Lost, Ended not completed, Working…), lower-cased for the roster. */
+  const word = sessionRowWord(row.sessionState, verdict);
+  if (word) {
+    const tone: RosterTone = word.tone === 'done' ? 'idle' : word.tone;
+    return { word: word.word.toLowerCase(), tone };
+  }
   if (row.recordedStatus === 'failed') return { word: 'failed', tone: 'block' };
   if (verdict === 'live') return { word: 'running', tone: 'run' };
   if (verdict === 'stale') return { word: VERDICT_WORD.stale, tone: 'wait' };

@@ -49,6 +49,11 @@ export interface SessionRow {
   exitedAt?: string | null;
   /** Coordinator → worker nesting; the roster draws one guide level. */
   parentSessionId?: string | null;
+  /**
+   * Spec D1: the summary's whole state arm, so a roster can read the OUTCOME
+   * (completed / stopped / open) beside the process — `domain/session-outcome`.
+   */
+  sessionState?: unknown;
 }
 
 /**
@@ -79,5 +84,6 @@ export function toSessionRow(summary: EntitySummary, meta?: string): SessionRow 
     startedAt,
     exitedAt,
     parentSessionId: summary.parentId,
+    sessionState: summary.state,
   };
 }

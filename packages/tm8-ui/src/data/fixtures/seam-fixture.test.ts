@@ -184,13 +184,15 @@ describe('fixture seam — reads', () => {
     // above establishes, so it belongs in this band too.
     expect(liveIds).toContain(sessionLive.id);
     expect(liveIds).toContain(sessionStale.id);
-    expect(liveIds).not.toContain(sessionExited.id);
+    // Spec D1 §3.2: an EXITED session whose work is still open is unfinished,
+    // so it stays in_progress; only `outcome = completed` is done.
+    expect(liveIds).toContain(sessionExited.id);
 
     const finished = await seam.query({
       spaceId: FIXTURE_SPACE_ID, kinds: ['work_session'], filters: { category: ['done'] },
     });
     const finishedIds = finished.page.items.map((s) => s.id);
-    expect(finishedIds).toContain(sessionExited.id);
+    expect(finishedIds).not.toContain(sessionExited.id);
     expect(finishedIds).not.toContain(sessionLive.id);
 
     /* THE POINT OF THE WHOLE FIX, stated as a query: To Do cannot hold a live
@@ -394,7 +396,8 @@ describe('fixture seam — commands + echo events', () => {
     expect(seam.liveness.statusOf({ id: spawned.id, status: asWorkStatus('running') })).toBe('live');
     expect(snaps[snaps.length - 1]?.liveEntityIds).toContain(spawned.id);
 
-    await seam.commands.terminate(spawned.id, { clientMutationId: 'cmid-sp2' });
+    // Spec D1 §4.2: terminating an open session names the ending.
+    await seam.commands.terminate(spawned.id, { clientMutationId: 'cmid-sp2', outcome: 'stop' });
     expect(snaps[snaps.length - 1]?.liveEntityIds).not.toContain(spawned.id);
     await expect(seam.commands.prompt(spawned.id, { message: 'hi' }))
       .rejects.toSatisfy((e: unknown) => isCollabError(e) && e.code === 'invariant_violation');
