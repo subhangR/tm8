@@ -356,27 +356,20 @@ describe('the help route', () => {
     expect(build(bare!).hash).toBe(`#/s/${SPACE}/help`);
   });
 
-  it('is the final tab, owns current state, and has no duplicate ? control', async () => {
-    /* Observe (Graph) carries the top bar; Work draws its own chrome (D4). */
+  it('is the last rail tool, owns current state, and has no duplicate ? control', async () => {
+    /* Shell alignment (2026-10-06): no desktop screen carries the top bar any
+       more; Observe sits in Work's frame, and Help is the rail's last tool
+       after Design and Settings (D4 moved the top bar's tabs into the rail). */
     const view = render(<GateApp routerTarget={createMemoryTarget(`#/s/${SPACE}/graph`)} />);
-    await waitFor(() => view.getByTestId('space-tab-bar'));
-    const tablist = view.getByRole('tablist', { name: 'Screens' });
-    const tabs = [...tablist.querySelectorAll<HTMLElement>('[role="tab"]')];
-    expect(tabs.map((tab) => tab.textContent)).toEqual([
-      // 'Chats' joined the spine 2026-09-03 (migration 180) and left again
-      // 2026-09-05 (migration 184) — its door is Home's icon rail now.
-      // 'CodeBrain' joined 2026-09-01 (migration 173) and left 2026-09-15
-      // (migration 186) when #610 deleted the only build that had its screen.
-      // Help is still the FINAL tab, which is what this case is actually about.
-      // D31 (2026-10-06): three desktop modes lead — Work · Design · Observe —
-      // and Home, the old Work and Board left the desktop selector.
-      'Work', 'Design', 'Observe', 'Settings', 'Help',
-    ]);
+    await waitFor(() => view.getByTestId('app-frame'));
+    expect(view.queryByTestId('space-tab-bar')).toBeNull();
+    const tools = [...view.getByTestId('tws-rail').querySelectorAll<HTMLElement>('[data-rail-tool]')];
+    expect(tools.map((tool) => tool.getAttribute('data-rail-tool'))).toEqual(['craft', 'settings', 'help']);
     expect(view.queryByTestId('open-help')).toBeNull();
 
-    fireEvent.click(view.getByRole('tab', { name: 'Help' }));
+    fireEvent.click(view.getByRole('button', { name: 'Help' }));
     await waitFor(() => view.getByTestId('help-screen'));
-    expect(view.getByRole('tab', { name: 'Help' }).getAttribute('aria-selected')).toBe('true');
+    expect(view.getByTestId('tws-view-select').textContent).toContain('Help');
     view.unmount();
   });
 });

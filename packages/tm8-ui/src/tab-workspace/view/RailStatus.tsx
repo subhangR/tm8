@@ -22,7 +22,7 @@ import { useDismissable } from '../../panels/useDismissable';
 import { StatusStrip } from '../../status-strip/StatusStrip';
 import { formatCount, formatPercent } from '../../status-strip/format';
 import { useStatusStrip } from '../../status-strip/useStatusStrip';
-import { useWorkspace } from './context';
+import { useShellFrame } from './context';
 import { RAIL_BELL_ART } from './railArt';
 
 /** The popover's offset from the rail (R39). */
@@ -111,7 +111,7 @@ function RailPopoverButton({
 
 /** [Needs you]: the attention bell. Renders nothing without the attention provider. */
 export function RailAttention({ expanded }: { expanded: boolean }) {
-  const { gate } = useWorkspace();
+  const { gate } = useShellFrame();
   const api = useAttentionOptional();
   if (!api) return null;
   const counts = api.counts();
@@ -156,13 +156,13 @@ export function RailAttention({ expanded }: { expanded: boolean }) {
 
 /** [Status]: CPU, live sessions and chats, behind one rail button. Nothing without a data seam. */
 export function RailStatus({ expanded }: { expanded: boolean }) {
-  const { gate } = useWorkspace();
+  const { gate } = useShellFrame();
   const seam = gate.data?.seam;
   return seam ? <RailStatusButton seam={seam} expanded={expanded} /> : null;
 }
 
 function RailStatusButton({ seam, expanded }: { seam: Seam; expanded: boolean }) {
-  const { spaceId } = useWorkspace();
+  const { spaceId } = useShellFrame();
   const { host, hostAccess, liveness } = useStatusStrip(seam, spaceId as SpaceId);
   const cpu = hostAccess === 'granted' && host && host.cpu.percent !== null ? host.cpu.percent / 100 : null;
   const sessions = liveness?.liveSessionCount ?? null;

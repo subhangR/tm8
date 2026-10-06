@@ -92,8 +92,9 @@ describe('a server round trip keeps your place', () => {
     const first = mount();
     await waitFor(() => first.getByTestId('tab-workspace'));
     await goToObserve(first);
-    // Back into Work through the selector Observe's top bar draws.
-    fireEvent.click(first.getByRole('tab', { name: /Work/ }));
+    // Back into Work through the view selector in Observe's frame header (shell alignment).
+    fireEvent.click(first.getByTestId('tws-view-select'));
+    fireEvent.click(first.getByRole('menuitemradio', { name: /Work/ }));
     await waitFor(() => first.getByTestId('tab-workspace'));
     first.unmount();
     window.location.hash = '';

@@ -8,14 +8,13 @@
  */
 import { cloneElement, isValidElement, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { BrandMark } from '../../kit/BrandMark';
-import { useWorkspace, useWorkspaceState } from './context';
+import { useShellFrame } from './context';
 
 /** Below this browser width the space switcher draws its monogram only (design log §2, §4). */
 const NARROW_BROWSER_W = 300;
 
 export function LeftHeader() {
-  const { gate } = useWorkspace();
-  const browserWidth = useWorkspaceState((s) => s.layout.browserWidth);
+  const { gate, panelWidth: browserWidth } = useShellFrame();
   const narrow = browserWidth < NARROW_BROWSER_W;
   /* R4: the single-line quiet trigger; the space initial only when narrow. */
   const switcher = isValidElement<{ collapsed?: boolean; quiet?: boolean }>(gate.switcherSlot)
@@ -43,7 +42,7 @@ export interface ViewSelectorProps {
 
 /** The view selector: a menu of every view, the current one checked. */
 export function ViewSelector({ variant }: ViewSelectorProps) {
-  const { gate } = useWorkspace();
+  const { gate } = useShellFrame();
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -86,7 +85,8 @@ export function ViewSelector({ variant }: ViewSelectorProps) {
     else if (event.key === 'End') move(rows.length - 1 - at);
   };
 
-  const label = current?.label ?? 'Work';
+  /* Outside the three modes (Settings, Inbox…) the selector names the screen. */
+  const label = current?.label ?? gate.shellTabs.find((tab) => tab.id === gate.activeViewTabId)?.label ?? gate.screenLabel ?? 'Work';
   const trigger: ReactNode =
     variant === 'label' ? (
       <>
