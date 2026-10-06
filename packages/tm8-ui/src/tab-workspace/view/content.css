@@ -36,36 +36,25 @@
   max-width: var(--pn-read-measure);
   margin: 0 auto var(--pn-space-3);
 }
-/* The group sits ON the title's row (Subhang, feedback round 1; R27): a float
-   spacer the group's height, as wide as the part of the group (plus a 16px gap)
-   that overlaps the measure. The group sits 12px in from the content's
-   top-right corner (100cqw = the panel). The head never drops below it. */
+/* No title in the body: the tab shows it (Subhang, feedback round 1). The
+   property pills are the first row, and the floating group floats at the top
+   right ON that row. The spacer is the group's height and as wide as the part
+   of the group (plus a 16px gap) that overlaps the measure: the group sits
+   12px in from the content's top-right corner (100cqw = the panel). The pills
+   (a flex row, its own formatting context) narrow beside it and wrap there. */
 .cv2-root .tws-panel .pn-embedded-head__spacer {
   float: right;
   width: max(0px, calc(var(--tws-fg-w, 0px) + var(--pn-space-3) + var(--pn-space-4) - (100cqw - 100%) / 2));
   height: var(--tws-fg-h, 32px);
 }
-.cv2-root .tws-panel .pn-embedded-head__title {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  overflow: hidden;
-  margin: 0;
-  font-size: var(--pn-fs-h2);
-  font-weight: 600;
-  letter-spacing: var(--pn-track-tight);
-  line-height: var(--pn-lh-snug);
-  color: var(--pn-ink);
-  overflow-wrap: anywhere;
-}
-.cv2-root .tws-panel .pn-embedded-head__title {
-  /* Centre the first line on the 32px group. */
-  margin-top: 2px;
-}
-/* The pills go on the next line under the title, full measure. */
 .cv2-root .tws-panel .pn-embedded-head__pills {
-  clear: right;
-  margin-top: var(--pn-space-3);
+  min-height: var(--tws-fg-h, 32px);
+  display: flex;
+  align-items: center;
+}
+.cv2-root .tws-panel .pn-embedded-head__pills > * {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 /* A document scrolls as ONE column: head, body and footer on one card plane. */
@@ -97,9 +86,9 @@
 }
 
 /* A body that owns its height (terminal, chat, frame) keeps its own scroll
-   under a fixed head (R14): row A is the title on one line, centred on the
-   group (12 + group); row B is the body's own tools (36px, 8px below); then
-   12px and the body. Full width, 24px sides, no measure, no spacer. */
+   under a fixed head: its tools row (surface chips, forms chip, stats) is the
+   first and only row, with the group on it; then 12px and the body. Full
+   width, 24px sides, no measure, no spacer. */
 .cv2-root .tws-panel > .pn-panel[data-embedded-flow='fill'] .pn-embedded-head {
   padding: var(--pn-space-3) var(--pn-space-6);
 }
@@ -110,18 +99,6 @@
 .cv2-root .tws-panel > .pn-panel[data-embedded-flow='fill'] .pn-embedded-head__spacer {
   display: none;
 }
-.cv2-root .tws-panel > .pn-panel[data-embedded-flow='fill'] .pn-embedded-head__title {
-  display: block;
-  height: var(--tws-fg-h, 32px);
-  line-height: var(--tws-fg-h, 32px);
-  margin-top: 0;
-  /* Row A is [title … group]: the title stops 16px before the group (the group
-     sits 12px from the edge; the head pads 24). */
-  padding-right: calc(var(--tws-fg-w, 0px) + var(--pn-space-1));
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 .cv2-root .tws-panel .pn-embedded-head__tools {
   display: flex;
   align-items: center;
@@ -130,101 +107,18 @@
   height: 36px;
   margin-top: var(--pn-space-2);
 }
-.cv2-root .tws-panel > .pn-panel[data-embedded-flow='fill'] .pn-embedded-head__spacer + .pn-embedded-head__tools {
-  /* No title (canvas): the tools row takes row A's place beside the group. */
+.cv2-root .tws-panel > .pn-panel[data-embedded-flow='fill'] .pn-embedded-head__measure {
+  /* At least the group's row, so a body with no tools row (chat, frame)
+     still starts below the group, never under it. */
+  min-height: var(--tws-fg-h, 32px);
+}
+.cv2-root .tws-panel > .pn-panel[data-embedded-flow='fill'] .pn-embedded-head__tools {
+  /* Row B is the first row: the group sits top right on it, and the stats
+     end 16px before the group (it sits 12px in; the head pads 24). */
   margin-top: 0;
-  height: var(--tws-fg-h, 32px);
+  height: max(36px, var(--tws-fg-h, 32px));
   padding-right: calc(var(--tws-fg-w, 0px) + var(--pn-space-1));
 }
-.cv2-root .tws-panel .pn-embedded-head__surface {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: var(--pn-space-1);
-}
-.cv2-root .tws-panel .pn-embedded-head__surface .pn-surface-switch {
-  display: flex;
-  gap: var(--pn-space-1);
-  padding: 0;
-  border: 0;
-  background: none;
-}
-.cv2-root .tws-panel .pn-embedded-head__surface .pn-surface-switch__tab {
-  width: 36px;
-  height: 36px;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  border-radius: var(--pn-r-sm);
-  background: none;
-  color: var(--pn-ink-3);
-}
-.cv2-root .tws-panel .pn-embedded-head__surface .pn-surface-switch__tab svg {
-  width: 16px;
-  height: 16px;
-}
-.cv2-root .tws-panel .pn-embedded-head__surface .pn-surface-switch__tab:hover {
-  background: var(--pn-hover);
-}
-.cv2-root .tws-panel .pn-embedded-head__surface .pn-surface-switch__tab[aria-selected='true'] {
-  background: var(--pn-active);
-  color: var(--pn-ink);
-  box-shadow: none;
-}
-.cv2-root .tws-panel .pn-embedded-head__status {
-  display: flex;
-  align-items: center;
-  gap: var(--pn-space-2);
-  min-width: 0;
-}
-.cv2-root .tws-panel .pf-chip {
-  position: relative;
-  flex: none;
-}
-.cv2-root .tws-panel .pf-chip__trigger {
-  border: 0;
-  cursor: pointer;
-}
-.cv2-root .tws-panel .pf-chip__pop {
-  position: absolute;
-  top: calc(100% + var(--pn-space-1));
-  right: 0;
-  z-index: 40;
-  width: 400px;
-  max-width: calc(100cqw - 2 * var(--pn-space-6));
-  max-height: 60vh;
-  overflow: auto;
-  padding: var(--pn-space-4);
-  background: var(--pn-card);
-  border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-md);
-  box-shadow: var(--pn-sh-pop);
-  box-sizing: border-box;
-}
-.cv2-root .tws-panel .pf-chip__pop .pf-banner {
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background: none;
-}
-.cv2-root .tws-panel .pn-embedded-head__reading {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  font-family: var(--pn-mono);
-  font-size: var(--pn-fs-label);
-  font-variant-numeric: tabular-nums;
-  color: var(--pn-ink-3);
-}
-.cv2-root .tws-panel .pn-embedded-head__reading * {
-  font: inherit;
-  color: inherit;
-}
-
-/* The attention pill hangs under the group, never under it. */
 .cv2-root .tws-panel > .pn-panel > .att-block-dock > .att-block {
   top: calc(var(--tws-fg-h, 32px) + 2 * var(--pn-space-3));
 }
