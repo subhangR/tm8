@@ -311,8 +311,9 @@ $function$
 -- -----------------------------------------------------------------------------
 -- 3. Nothing derives participates_in from relates_to any more.
 -- -----------------------------------------------------------------------------
+-- The function stays (the chain-catalog pin expects every declared object);
+-- with no trigger it is never called.
 drop trigger if exists edges_derive_participant on public.edges;
-drop function if exists internal.derive_participant_from_relates();
 
 -- -----------------------------------------------------------------------------
 -- 4. The rows.
