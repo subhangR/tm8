@@ -4,12 +4,13 @@
 import { findEntityTab, kindInScope } from '../selectors';
 import { isWorkspaceKind } from '../types';
 import type { DraftTabRecord, EntityTabRecord, TabId, TabRecord, WorkspaceState } from '../types';
-import { activate, isNonEmptyString, isRecord, reject, toFront, type Planner } from './shared';
+import { activate, isNonEmptyString, isRecord, reject, replaceChooser, toFront, type Planner } from './shared';
 
 /** §5.2 Open a draft: reuse the untouched one of that kind, else create at index 0. */
 export const openDraft: Planner = ({ state, env, hooks }) => {
   const args = env.args;
   if (!isRecord(args) || !isNonEmptyString(args.kind)) return reject('invalid_arguments');
+  if (args.replaceTabId !== undefined && !isNonEmptyString(args.replaceTabId)) return reject('invalid_arguments');
   if (!isWorkspaceKind(args.kind) || !hooks.canCreate(args.kind)) return reject('unsupported_kind');
   const kind = args.kind;
   if (!kindInScope(state.scope, kind)) {
@@ -27,6 +28,7 @@ export const openDraft: Planner = ({ state, env, hooks }) => {
     let next: WorkspaceState = { ...state, orderedTabIds: toFront(state.orderedTabIds, untouched.id) };
     if (next.orderedTabIds.every((id, i) => id === state.orderedTabIds[i])) next = state;
     next = activate(next, untouched.id, hooks);
+    next = replaceChooser(next, args.replaceTabId, untouched.id, true, hooks);
     return { type: 'commit', next, result: { tabId: untouched.id, outcome: 'reused' } };
   }
   const record: DraftTabRecord = {
@@ -38,11 +40,12 @@ export const openDraft: Planner = ({ state, env, hooks }) => {
     submitting: false,
     ordinal: drafts.reduce((max, tab) => Math.max(max, tab.ordinal), 0) + 1,
   };
-  const next = activate(
+  let next = activate(
     { ...state, tabs: { ...state.tabs, [record.id]: record }, orderedTabIds: toFront(state.orderedTabIds, record.id) },
     record.id,
     hooks,
   );
+  next = replaceChooser(next, args.replaceTabId, record.id, true, hooks);
   return { type: 'commit', next, result: { tabId: record.id, outcome: 'created' } };
 };
 

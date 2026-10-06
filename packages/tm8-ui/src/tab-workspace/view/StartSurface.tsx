@@ -1,13 +1,18 @@
-/** Start surface (Spec A §13): "No open tabs", search, Recent, New <kind> — the chooser body without a tab. Workstream F. */
+/**
+ * Start surface (Spec A §13): "No open tabs" (By type: "No open tabs for the
+ * selected types" + Change tab scope), search, Recent, New <kind> — the
+ * chooser body rendered without a tab.
+ *
+ * `restoreSlot` is W2-I's seam for "Restore N tabs from your last session";
+ * it renders under the heading, above the search.
+ */
+import type { ReactNode } from 'react';
 import { Chooser } from './Chooser';
-import { useWorkspaceState } from './context';
 
-export function StartSurface() {
-  const byType = useWorkspaceState((s) => s.scope.mode === 'byType');
+export function StartSurface({ restoreSlot }: { restoreSlot?: ReactNode } = {}) {
   return (
-    <div className="tws-start" data-testid="tws-start">
-      <h2 className="tws-start-title">{byType ? 'No open tabs for the selected types' : 'No open tabs'}</h2>
-      <Chooser tabId={null} variant="start" />
+    <div className="tws-startsurface" data-testid="tws-start">
+      <Chooser tabId={null} variant="start" restoreSlot={restoreSlot} />
     </div>
   );
 }

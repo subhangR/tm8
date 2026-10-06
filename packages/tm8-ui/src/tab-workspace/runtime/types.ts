@@ -192,13 +192,20 @@ export type TabsOpenArgs = {
   activate?: boolean;
   trail?: TrailCrumb[];
   subview?: TabSubview;
+  /**
+   * ADDITIVE (W1-F). The chooser tab this open replaces: a new tab takes the
+   * chooser's position; an already-open tab is focused where it is. Either
+   * way the chooser is removed. Ignored unless it names a chooser.
+   */
+  replaceTabId?: TabId;
 };
 export type TabsActivateArgs = { tabId: TabId };
 export type TabsCloseArgs = { tabId: TabId; discard?: boolean };
 export type TabsCloseVisibleArgs = { except?: TabId };
 export type TabsMoveArgs = { tabId: TabId; beforeTabId?: TabId };
 export type TabsSetUiArgs = { tabId: TabId; patch: Partial<TabUi> };
-export type DraftsOpenArgs = { kind: KindId };
+/** ADDITIVE `replaceTabId` (W1-F): as on `TabsOpenArgs`; the draft takes the chooser's position. */
+export type DraftsOpenArgs = { kind: KindId; replaceTabId?: TabId };
 /**
  * ADDITIVE `submitting`: §5.5 has the draft host set `submitting`, and
  * dispatch is the only writer, so the flag rides on this command.

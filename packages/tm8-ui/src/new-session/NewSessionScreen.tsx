@@ -108,6 +108,21 @@ export interface NewSessionScreenProps {
   serverBaseUrl?: string;
   skillOptions?: readonly TriggerOption[];
   attach?: (file: File) => FileUploadTask;
+  /*
+   * OPT-IN TAB HOSTING (Workspace draft tab). All absent by default, which
+   * keeps the routed screen exactly as it was.
+   *  - `initialDraft` / `initialTitle` seed the prompt and title once, on mount.
+   *  - `onValuesChange` reports every prompt or title edit.
+   *  - `onBusyChange` reports when a launch starts and when it settles.
+   *  - `onSpawned` hands the new session id to the host the moment the spawn
+   *    resolves; the screen then skips its own terminal attach, because the
+   *    host replaces it with the session's own view.
+   */
+  initialDraft?: string;
+  initialTitle?: string;
+  onValuesChange?: (values: { draft: string; title: string }) => void;
+  onBusyChange?: (busy: boolean) => void;
+  onSpawned?: (sessionId: EntityId, title: string) => void;
 }
 
 export function NewSessionScreen({
@@ -119,8 +134,13 @@ export function NewSessionScreen({
   serverBaseUrl,
   skillOptions,
   attach,
+  initialDraft,
+  initialTitle,
+  onValuesChange,
+  onBusyChange,
+  onSpawned,
 }: NewSessionScreenProps) {
-  const [draft, setDraft] = useState('');
+  const [draft, setDraft] = useState(initialDraft ?? '');
   const [mcpSelections, setMcpSelections] = useState<McpSelection[] | undefined>();
   const [mcpReady, setMcpReady] = useState(true);
   const mcp = useMcpPort();
@@ -130,7 +150,7 @@ export function NewSessionScreen({
   const [slow, setSlow] = useState(false);
   const inFlight = useRef(false);
 
-  const [customTitle, setCustomTitle] = useState('');
+  const [customTitle, setCustomTitle] = useState(initialTitle ?? '');
 
   /*
    * THE COMPOSER'S CONFIG lives in `useLaunchComposerState`, shared verbatim
@@ -217,6 +237,11 @@ export function NewSessionScreen({
         title,
       }));
 
+      if (onSpawned) {
+        setPhase('idle');
+        onSpawned(id as EntityId, title);
+        return;
+      }
       setSessionId(id as EntityId);
       setPhase('attaching');
     } catch (cause) {
@@ -231,7 +256,7 @@ export function NewSessionScreen({
     } finally {
       inFlight.current = false;
     }
-  }, [ready, commands, spaceId, title, draft, config, spawn, mcp, mcpSelections]);
+  }, [ready, commands, spaceId, title, draft, config, spawn, mcp, mcpSelections, onSpawned]);
 
   /* The hand-off. Deliberately NOT inside the spawn promise: the screen owns
      its own transition to `live`, and the host decides when the URL follows. */
@@ -248,6 +273,10 @@ export function NewSessionScreen({
 
   const transitioning = phase === 'minting' || phase === 'spawning' || phase === 'attaching';
 
+  useEffect(() => {
+    onBusyChange?.(transitioning);
+  }, [transitioning, onBusyChange]);
+
   return (
     <div className="nsx-root" data-phase={phase} data-testid="new-session-root">
       <div className="nsx-stage">
@@ -261,13 +290,19 @@ export function NewSessionScreen({
         <NewSessionComposer
           {...bind}
           draft={draft}
-          onDraftChange={setDraft}
+          onDraftChange={(next) => {
+            setDraft(next);
+            onValuesChange?.({ draft: next, title: customTitle });
+          }}
           onSubmit={() => { void start(); }}
           busy={transitioning}
           refusal={error ?? refusal ?? (!mcpReady ? "Choose a connected account for each connector." : null)}
           derivedTitle={derived}
           title={customTitle}
-          onTitleChange={setCustomTitle}
+          onTitleChange={(next) => {
+            setCustomTitle(next);
+            onValuesChange?.({ draft, title: next });
+          }}
           skillOptions={skillOptions}
           attach={attach}
           autoFocus

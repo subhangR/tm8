@@ -169,6 +169,29 @@ export function removeTabs(
   return { next, after };
 }
 
+/**
+ * ADDITIVE (W1-F): an open that names a chooser in `replaceTabId` removes it.
+ * With `takePosition`, `tabId` first moves into the chooser's slot (a new or
+ * reused draft, a new entity tab); an already-open tab stays where it is.
+ * Call after activating `tabId`, so removing the chooser never re-picks.
+ */
+export function replaceChooser(
+  state: WorkspaceState,
+  chooserId: unknown,
+  tabId: TabId,
+  takePosition: boolean,
+  hooks: WorkspaceHooks,
+): WorkspaceState {
+  if (typeof chooserId !== 'string' || chooserId === tabId || state.tabs[chooserId]?.type !== 'chooser') return state;
+  let next = state;
+  if (takePosition) {
+    const rest = state.orderedTabIds.filter((id) => id !== tabId);
+    const at = rest.indexOf(chooserId);
+    next = { ...state, orderedTabIds: [...rest.slice(0, at), tabId, ...rest.slice(at)] };
+  }
+  return removeTabs(next, [chooserId], hooks).next;
+}
+
 /** Insert or move a tab id to index 0. */
 export function toFront(order: readonly TabId[], tabId: TabId): TabId[] {
   return [tabId, ...order.filter((id) => id !== tabId)];
