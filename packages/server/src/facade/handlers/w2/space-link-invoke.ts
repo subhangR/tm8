@@ -167,6 +167,40 @@ export function parseVia(header: string | string[] | undefined): string[] {
   return parts.map((part) => part.toLowerCase());
 }
 
+/** The audit column's own shape (260): a closed reason, never text. */
+const AUDIT_REASON_RE = /^[a-z0-9_.]{1,80}$/;
+
+/**
+ * The audit reason for an error B raised: B's closed `details.reason` when it
+ * names one (`actor_not_permitted`, `cross_space_edge`), for every error, so a
+ * refusal can be told apart from any other after the fact; else its code.
+ * Never B's text.
+ */
+export function auditReasonOf(error: unknown): string {
+  if (!isCollabError(error)) return 'internal';
+  const reason = error.details?.['reason'];
+  return typeof reason === 'string' && AUDIT_REASON_RE.test(reason) ? reason : error.code;
+}
+
+/**
+ * B refused the actor a write named (resolve_actor, 299: `actor_not_permitted`).
+ * Through a link that is an actor the caller set itself (`--as`, or an
+ * `actorId` other than its home actor, which is already dropped): re-typed
+ * with what to do, since the bare "not permitted to act as this actor" sent
+ * agents guessing. Anything else: null, B's error stands.
+ */
+export function actorRefusalThroughLink(error: unknown, row: SpaceLinkInvokeRow | null): CollabError | null {
+  if (!row || !isCollabError(error) || error.code !== 'forbidden' || error.details?.['reason'] !== 'actor_not_permitted') {
+    return null;
+  }
+  const actorId = typeof error.details['actorId'] === 'string' ? error.details['actorId'] : 'the requested actor';
+  return new CollabError('forbidden',
+    `through space link ${row.linkId} you act in space ${row.targetSpaceId} as the member who made the link, `
+      + `and ${actorId} is not an actor that member can act as there (an id from your own space never is): `
+      + 'drop --as (and any actorId) and the link acts as that member, or pass --as with an actor of the linked space',
+    { details: { ...error.details, linkId: row.linkId, targetSpaceId: row.targetSpaceId } });
+}
+
 function refused(reason: SpaceLinkRefusalReason, message?: string): CollabError {
   return new CollabError('forbidden', message ?? `refused through a space link: ${reason}`, {
     details: { reason: SPACE_LINK_REFUSED_CODE, refusal: reason },
@@ -225,38 +259,6 @@ export function withoutHomeActor(input: unknown, homeActorId: string | undefined
   }
   const { actorId: _home, ...rest } = record;
   return rest;
-}
-
-const AUDIT_SUB_REASON_RE = /^[a-z0-9_]{1,60}$/;
-
-/**
- * The audit reason for an error B raised: its code, plus B's closed
- * `details.reason` when it names one (`forbidden.actor_not_permitted`), so a
- * refusal can be told apart from any other after the fact. Never B's text.
- */
-export function auditReasonOf(error: unknown): string {
-  if (!isCollabError(error)) return 'internal';
-  const reason = error.details?.['reason'];
-  return typeof reason === 'string' && AUDIT_SUB_REASON_RE.test(reason) ? `${error.code}.${reason}` : error.code;
-}
-
-/**
- * B refused the actor a write named (resolve_actor, 299: `actor_not_permitted`).
- * Through a link that is an actor the caller set itself (`--as`, or an
- * `actorId` other than its home actor, which is already dropped): re-typed
- * with what to do, since the bare "not permitted to act as this actor" sent
- * agents guessing. Anything else: null, B's error stands.
- */
-export function actorRefusalThroughLink(error: unknown, row: SpaceLinkInvokeRow | null): CollabError | null {
-  if (!row || !isCollabError(error) || error.code !== 'forbidden' || error.details?.['reason'] !== 'actor_not_permitted') {
-    return null;
-  }
-  const actorId = typeof error.details['actorId'] === 'string' ? error.details['actorId'] : 'the requested actor';
-  return new CollabError('forbidden',
-    `through space link ${row.linkId} you act in space ${row.targetSpaceId} as the member who made the link, `
-      + `and ${actorId} is not an actor that member can act as there (an id from your own space never is): `
-      + 'drop --as (and any actorId) and the link acts as that member, or pass --as with an actor of the linked space',
-    { details: { ...error.details, linkId: row.linkId, targetSpaceId: row.targetSpaceId } });
 }
 
 /** The inner identity: B's, off the re-resolved session, WITHOUT the raw token. */

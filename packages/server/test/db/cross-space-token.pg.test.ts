@@ -4709,7 +4709,7 @@ describe.sequential('W7 spaceLinks.invoke — G runs one op in B as H, audited i
     expect(row).toEqual({ created_by: fixture.memberHB });
   });
 
-  it('actor — an explicit home actor (--as H\'s A member) is refused with a typed reason that says what to do, audited forbidden.actor_not_permitted', async () => {
+  it('actor — an explicit home actor (--as H\'s A member) is refused with a typed reason that says what to do, audited actor_not_permitted', async () => {
     const res = await invoke(gToken, {
       op: 'entities.create',
       input: { spaceId: fixture.spaceB, kind: 'doc', title: 'W7 actor home', clientMutationId: cmid('home'), actorId: fixture.memberHA },
@@ -4721,7 +4721,7 @@ describe.sequential('W7 spaceLinks.invoke — G runs one op in B as H, audited i
     });
     expect(res.body.error!.message).toContain('drop --as');
     expect(res.body.error!.message).toContain(fixture.spaceB);
-    expect(await lastAudit('entities.create')).toMatchObject({ result: 'error', reason: 'forbidden.actor_not_permitted' });
+    expect(await lastAudit('entities.create')).toMatchObject({ result: 'error', reason: 'actor_not_permitted' });
   });
 
   it('actor positive — an explicit B actor H may act as (--as H\'s B member) passes', async () => {
