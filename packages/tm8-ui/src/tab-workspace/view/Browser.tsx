@@ -170,6 +170,7 @@ export function Browser() {
           /* The toolbar above draws the kind control and + New. */
           selectorSlot="host"
           mode="list"
+          chrome="toolbar"
           {...source}
           members={data.members}
           ctx={ctx}
