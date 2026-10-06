@@ -2,44 +2,163 @@
    Scoped under `.tws-browser` so the reused list header and list panel keep
    their Home look everywhere else. */
 
-/* + New: bordered, 28 high at the end of row 1. */
+/* The new box (design log R44): a dotted [+ | kind ▾] at the end of row 1,
+   28 high like the search. 1px dashed ink-4 at rest; a segment takes the
+   brand on hover, brand-2 pressed, both on the brand-soft fill — flat, no
+   shadow. Each press dips the segment and springs it back; a create sends a
+   one-shot ripple out from the box. */
 .tws-browser-new {
   position: relative;
   display: inline-flex;
   flex: none;
+  align-items: stretch;
+  box-sizing: border-box;
+  height: 28px;
+  border: 1px dashed var(--pn-ink-4);
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink-3);
+  transition: border-color var(--pn-dur-fast) var(--pn-ease-standard);
+}
+.tws-browser-new:has(:is(button:hover, [aria-expanded='true'])):not([data-disabled]),
+.tws-browser-new:has(.tch-rootcell__label:hover, .tch-rootcell__label[aria-expanded='true']) {
+  border-color: var(--pn-brand);
+}
+.tws-browser-new:has(button:active):not([data-disabled]) {
+  border-color: var(--pn-brand-2);
+}
+
+/* Both segments: the same tactile press. */
+.tws-browser-new__plus,
+.cv2-root .tws-browser .tws-browser-new .tch-rootcell--menu .tch-rootcell__label {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 28px;
+  box-sizing: border-box;
+  height: 26px;
   margin: 0;
-  padding: 0 var(--pn-space-2);
-  border: 1px solid var(--pn-line-2);
-  border-radius: var(--pn-r-sm);
+  padding: 0;
+  border: 0;
   background: transparent;
-  color: var(--pn-ink-2);
-  font-family: var(--pn-ui);
-  font-size: var(--pn-fs-label);
-  font-weight: 600;
-  white-space: nowrap;
+  color: inherit;
   cursor: pointer;
+  transition:
+    background-color var(--pn-dur-fast) var(--pn-ease-standard),
+    color var(--pn-dur-fast) var(--pn-ease-standard),
+    transform var(--pn-dur-slow) var(--pn-ease-out);
 }
-.tws-browser-new:hover {
-  background: var(--pn-hover);
+.tws-browser-new__plus {
+  width: 26px;
+  border-radius: calc(var(--pn-r-sm) - 1px) 0 0 calc(var(--pn-r-sm) - 1px);
 }
-.tws-browser-new[aria-disabled='true'] {
-  border-color: var(--pn-line);
+.cv2-root .tws-browser .tws-browser-new .tch-rootcell--menu .tch-rootcell__label {
+  width: 34px;
+  gap: 3px;
+  border-radius: 0 calc(var(--pn-r-sm) - 1px) calc(var(--pn-r-sm) - 1px) 0;
+}
+.tws-browser-new__plus:hover,
+.cv2-root .tws-browser .tws-browser-new .tch-rootcell--menu .tch-rootcell__label:is(:hover, [aria-expanded='true']) {
+  background: var(--pn-brand-soft);
+  color: var(--pn-brand);
+}
+.tws-browser-new__plus:active,
+.cv2-root .tws-browser .tws-browser-new .tch-rootcell--menu .tch-rootcell__label:active {
+  background: var(--pn-brand-soft);
+  color: var(--pn-brand-2);
+  transform: scale(0.86);
+  transition-duration: var(--pn-dur-fast);
+}
+/* The caret is drawn with its colour transparent, so it is painted here. */
+.cv2-root .tws-browser .tws-browser-new .tch-rootcell__chevron {
+  background: var(--pn-ink-3);
+  transition:
+    background-color var(--pn-dur-fast) var(--pn-ease-standard),
+    transform var(--pn-dur-base) var(--pn-ease-out);
+}
+.cv2-root .tws-browser .tws-browser-new .tch-rootcell__label:is(:hover, [aria-expanded='true']) .tch-rootcell__chevron {
+  background: var(--pn-brand);
+}
+.cv2-root .tws-browser .tws-browser-new .tch-rootcell__label[aria-expanded='true'] .tch-rootcell__chevron {
+  transform: rotate(180deg);
+}
+.cv2-root .tws-browser .tws-browser-new .tch-rootcell--menu .tch-rootcell__glyph svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* The bold +: a 2px stroke that turns a quarter on hover. */
+.tws-browser-new__glyph {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  transition: transform var(--pn-dur-slow) var(--pn-ease-out);
+}
+.tws-browser-new__plus:hover .tws-browser-new__glyph {
+  transform: rotate(90deg);
+}
+
+/* A dotted hairline between the two segments. */
+.tws-browser-new__rule {
+  flex: none;
+  width: 0;
+  margin: 6px 0;
+  border-left: 1px dashed var(--pn-line-2);
+}
+
+/* The menu now hangs from the box's right edge. */
+.cv2-root .tws-browser .tws-browser-new .tch-rootcell--menu .tch-rootmenu {
+  left: auto;
+  right: -1px;
+}
+
+/* One ripple per create: the box's outline swells out in brand and fades. */
+.tws-browser-new__ripple {
+  position: absolute;
+  inset: -1px;
+  border: 1px solid var(--pn-brand);
+  border-radius: var(--pn-r-sm);
+  pointer-events: none;
+  animation: twsNewRipple 520ms var(--pn-ease-out) forwards;
+}
+@keyframes twsNewRipple {
+  from { opacity: 0.9; transform: scale(1); }
+  to { opacity: 0; transform: scale(1.35, 1.6); }
+}
+
+/* Disabled (kind not creatable): a muted + only — the kind menu still works. */
+.tws-browser-new__plus[aria-disabled='true'] {
   color: var(--pn-ink-4);
   cursor: not-allowed;
 }
-.tws-browser-new[aria-disabled='true']:hover {
+.tws-browser-new__plus[aria-disabled='true']:is(:hover, :active) {
   background: transparent;
+  color: var(--pn-ink-4);
+  transform: none;
 }
-/* Narrow (< 300px): icon-only 28×28. */
-.tws-browser[data-narrow] .tws-browser-new {
-  width: 28px;
-  padding: 0;
+.tws-browser-new__plus[aria-disabled='true']:hover .tws-browser-new__glyph {
+  transform: none;
+}
+.tws-browser-new[data-disabled] {
+  border-color: var(--pn-line);
 }
 
-.tws-browser-new:focus-visible,
+@media (prefers-reduced-motion: reduce) {
+  .tws-browser-new__plus,
+  .tws-browser-new__glyph,
+  .tws-browser-new .tch-rootcell__chevron,
+  .cv2-root .tws-browser .tws-browser-new .tch-rootcell--menu .tch-rootcell__label {
+    transition: none;
+    transform: none !important;
+  }
+  .tws-browser-new__ripple { display: none; }
+}
+
+.tws-browser-new__plus:focus-visible,
+.cv2-root .tws-browser .tws-browser-new .tch-rootcell__label:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
+}
+
 .tws-browser-state__action:focus-visible {
   outline: 2px solid var(--pn-brand);
   outline-offset: -2px;
@@ -418,17 +537,6 @@
     .pn-tt:is(:hover, :focus-within) > .pn-tt__main .pn-tt__progress {
     visibility: hidden;
   }
-}
-
-/* ---- R24: fill on :hover and :active only; focus shows only the ring ---- */
-.tws-browser-new:focus:not(:hover):not(:active) {
-  background: transparent;
-}
-.tws-browser-new:active {
-  background: var(--pn-active);
-}
-.tws-browser-new[aria-disabled='true']:active {
-  background: transparent;
 }
 
 /* ---- Row lead (rowLead="icon"): the kind icon IS the disclosure ---------- */
