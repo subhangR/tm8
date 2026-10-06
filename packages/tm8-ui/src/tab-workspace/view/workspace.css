@@ -38,7 +38,7 @@
   padding-top: 2px;
   padding-right: var(--pn-space-3);
   border-bottom: 1px solid var(--pn-line);
-  background: var(--pn-surface);
+  background: var(--pn-paper); /* matches the strip band (Subhang feedback 6) */
   min-width: 0;
 }
 /* The mark centres over the 48px rail (design log §2). */
