@@ -144,6 +144,7 @@ export const ROLE_LAYERS_V2: Record<RoleV2, readonly string[]> = {
       '`tm8 task tick <task-id> <criterion-id>... --expect-version <n>`; then ' +
       '`tm8 task complete <task-id> --expect-version <version tick returned> --by <your team_member>`. ' +
       'If you cannot complete, say why on the task. Exiting or going idle is not finishing.',
+    '3. Then `tm8 session complete` (hand unfinished claims off first: `tm8 task release <id> --note`).',
   ],
   coordinator: [
     'You coordinate; workers execute. Your output is spawns, briefs, verification and ' +
@@ -167,6 +168,7 @@ export const ROLE_LAYERS_V2: Record<RoleV2, readonly string[]> = {
       '`tm8 task tick <task-id> <criterion-id>... --expect-version <n>`; then ' +
       '`tm8 task complete <task-id> --expect-version <version tick returned> --by <your team_member>`. ' +
       'Exiting or going idle is not finishing.',
+    '6. Then `tm8 session complete`. Terminate an unfinished worker with `--stop` or `--complete`.',
   ],
   dispatcher: [
     "You are this space's dispatcher, a resident router. Each request names a task; you " +

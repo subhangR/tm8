@@ -300,6 +300,22 @@ export const GIT_TRACKING_COORDINATOR_INSTRUCTION =
   'transcript. Gate a task with `tm8 task gate <task-id> pr_merged` when ' +
   'completion must wait for the merge.';
 
+/**
+ * Spec D1 §7 (migration 301): how a session finishes. Posting the close-out is
+ * the receipt; `tm8 session complete` is what settles the session's outcome —
+ * the claim check, then the receipt — and ends its remaining claims. A process
+ * exiting completes nothing, and terminate is the operator's verb.
+ */
+const SESSION_CLOSE_OUT_RULE =
+  ' Close out in this order: (1) finish each task you claimed, move it to ' +
+  '`in_review` or `blocked`, or hand it off with `tm8 task release <task-id> --note ' +
+  '"<hand-off>"`; (2) post the close-out message; (3) run `tm8 session complete` — ' +
+  'it refuses with `claims_open` while a claim is still working, and takes your ' +
+  'latest message on the anchor as the receipt (or pass `--receipt <message-id>`). ' +
+  'After completing you may still answer messages, but you cannot claim new work: ' +
+  'if more is asked of you, say so and suggest a follow-up session. Never run ' +
+  '`tm8 session terminate` on yourself to finish — terminate is for operators.';
+
 const WORKER_IDENTITY_INSTRUCTION =
   'You are an autonomous agent working inside a tm8 workspace. Work your assigned ' +
   'tasks to completion. Orient with one `tm8 entity context <anchor-id>` on your ' +
@@ -322,6 +338,7 @@ const WORKER_IDENTITY_INSTRUCTION =
   'your process exiting is not completion: close out with one `tm8 message send` ' +
   'on the anchor stating outcome, entity ids touched, decisions and why, open ' +
   'questions, and next-session pointers.' +
+  SESSION_CLOSE_OUT_RULE +
   GIT_TRACKING_WORKER_INSTRUCTION +
   ' ' +
   PLACEMENT_RULE +
@@ -364,7 +381,9 @@ const COORDINATOR_IDENTITY_INSTRUCTION =
   'worker. Verify each unit against its success criteria, record state ' +
   'through the owning domain command rather than announcing it, and close out ' +
   'with one `tm8 message send` on your assignment anchor integrating every ' +
-  'worker result — or naming the ones you could not collect.' +
+  'worker result — or naming the ones you could not collect. Terminating a worker ' +
+  'whose work is not completed needs `--stop` (abandon) or `--complete` (it is done).' +
+  SESSION_CLOSE_OUT_RULE +
   GIT_TRACKING_COORDINATOR_INSTRUCTION +
   ' ' +
   PLACEMENT_RULE +
@@ -387,6 +406,7 @@ const COORDINATED_WORKER_IDENTITY_INSTRUCTION =
   'or task anchor. The message must carry outcome, verification, blockers, the entities or ' +
   'artifacts you touched, decisions and why, open questions, and next-session ' +
   'pointers. Do not go idle after finishing.' +
+  SESSION_CLOSE_OUT_RULE +
   GIT_TRACKING_WORKER_INSTRUCTION +
   ' ' +
   PLACEMENT_RULE +
