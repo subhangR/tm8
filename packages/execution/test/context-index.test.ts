@@ -167,11 +167,13 @@ describe('on: the trim records every drop (§2.3)', () => {
   it('never buys the index room by moving an inline task body out to references (review #832)', () => {
     // A task body near the ceiling: the baseline inlines it, and handing the
     // title room back must not grow the index until the composer gives up on
-    // inlining. Swept, because only some body sizes land on the edge.
+    // inlining. Swept, because only some body sizes land on the edge. The
+    // sweep starts at 5000 so it keeps more than 30 credited sizes as the
+    // system prompt grows (P0g's worker routine left 28 from 8000).
     const linked = Array.from({ length: 60 }, (_, i) => ({ entityId: `doc-${i}`, kind: 'doc', link: 'relates_to', title: `A long linked document title, number ${i} ${'t'.repeat(60)}` }));
     let inlineBaselines = 0;
     let credited = 0;
-    for (let size = 8000; size <= 20000; size += 250) {
+    for (let size = 5000; size <= 20000; size += 250) {
       const context = ctx({ tasks: [task({ description: 'd'.repeat(size), linked, linkedTotal: linked.length })], headers: linked.map((l) => docHeader(l.entityId)) });
       if (compose(context).prompt.task.includes('delivery="reference"')) continue;
       inlineBaselines += 1;
