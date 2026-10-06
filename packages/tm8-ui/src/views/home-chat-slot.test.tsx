@@ -15,7 +15,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, waitFor, within } from '@testing-library/react';
 import type { EntityId } from '@tm8/contract';
 import { GateApp } from './GateApp';
@@ -24,6 +24,10 @@ import { navStore, resetNav } from '../stores/navStore';
 import { screenStackStore } from '../stores/screenStackStore';
 import { createMemoryTarget } from '../routes';
 import { surfaceHostsChatSlot } from '../entity-chat';
+
+/* D31: this suite drives a retired desktop view (Home, the old Work or
+   Board), which only the legacy desktop still reaches (stage (c) deletes it). */
+vi.mock('../shell/desktop-modes', () => ({ desktopModes: () => 'legacy' }));
 
 const SPACE = 'sp-atelier';
 let storage: Map<string, string>;

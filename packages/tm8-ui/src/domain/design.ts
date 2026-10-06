@@ -3,41 +3,19 @@
  * set of pages, each page any entity, held as `contains` edges ordered by
  * `props.position`. No wrapper per page — the page IS the doc or graph.
  *
- * LOCAL MIRROR of the contract shape until the backend lane lands it. The
- * shapes below are exactly what that lane adds to `@tm8/contract`; when it
- * does, this file's types become one re-export:
- *
- *   export type { DesignState, DesignContent, DesignPage } from '@tm8/contract';
- *
- * and `DESIGN_KIND`'s one cast below becomes `'design' satisfies CreatableEntityKind`.
+ * The shapes are the contract's (`@tm8/contract` design.ts, migration 304);
+ * this file adds the UI's tolerant readers over them.
  */
-import type { CoreEntityKind, CreatableEntityKind, EntityKind, EntitySummary } from '@tm8/contract';
+import type { CreatableEntityKind, DesignContent, DesignPage, DesignState, EntityKind } from '@tm8/contract';
+
+export type { DesignContent, DesignPage, DesignState } from '@tm8/contract';
 
 export type DesignKind = 'design';
-/**
- * The kind, typed as the creatable core kind it is about to be. THE ONE
- * CAST: the registry row, `entities.create` and the query filter all take a
- * `CoreEntityKind` / `CreatableEntityKind`, and widening those types for a few days would touch a
- * dozen call sites that then have to be put back.
- */
-export const DESIGN_KIND = 'design' as DesignKind as unknown as Extract<CreatableEntityKind, CoreEntityKind>;
+/** The kind, for the registry row, `entities.create` and the query filter. */
+export const DESIGN_KIND = 'design' satisfies CreatableEntityKind;
 
-/** `state` on a design row: the page count and page kinds, computed by the server at read time. */
-export interface DesignState {
-  kind: DesignKind;
-  pageCount: number;
-  /** The pages' kinds, in page order. */
-  pageKinds?: string[];
-}
-
-/** One page: the entity's own summary plus its `contains` edge position. */
-export type DesignPage = EntitySummary & { pagePosition: number | null };
-
-/** `content` on a design row: its description and its pages, IN ORDER (null on non-detail reads). */
-export interface DesignContent {
-  description: string;
-  pages: DesignPage[];
-}
+/** A design's content as the UI reads it: pages always an array, in order. */
+export type DesignContentRead = Pick<DesignContent, 'description'> & { pages: DesignPage[] };
 
 /** The design state off a row, or null when the row is not a design. */
 export function designStateOf(row: { kind: EntityKind | string; state: unknown }): DesignState | null {
@@ -46,12 +24,15 @@ export function designStateOf(row: { kind: EntityKind | string; state: unknown }
   return {
     kind: 'design',
     pageCount: typeof state?.pageCount === 'number' ? state.pageCount : 0,
-    ...(Array.isArray(state?.pageKinds) ? { pageKinds: state.pageKinds } : {}),
+    pageKinds: Array.isArray(state?.pageKinds) ? state.pageKinds : [],
   };
 }
 
-/** The design content off a row (detail read), tolerant of a missing body. */
-export function designContentOf(content: unknown): DesignContent {
+/**
+ * The design content off a row, tolerant of a missing body. `pages` is null
+ * outside detail reads; that reads as no pages known, never as an error.
+ */
+export function designContentOf(content: unknown): DesignContentRead {
   const body = (content ?? {}) as Partial<DesignContent>;
   return {
     description: typeof body.description === 'string' ? body.description : '',

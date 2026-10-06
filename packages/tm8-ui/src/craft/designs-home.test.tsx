@@ -6,7 +6,7 @@
  *    past the cap), `N pages · N chats`, edited-ago, the running dot;
  *  · ONE empty state, and a no-match line that is not a second one;
  *  · + New design creates through the source and opens the new design;
- *  · the seam source reads designs, counts chats by subject and orders pages;
+ *  · the seam source reads designs (page kinds ride the summary) and counts chats by subject;
  *  · every door into Craft resolves to bare `/craft` — the home.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -158,12 +158,12 @@ describe('the seam-backed designs source', () => {
     } as unknown as EntitySummary;
   }
 
-  it('reads designs, counts chats by subject and orders each card by its pages', async () => {
+  it('reads designs, counts chats by subject and reads each card’s page kinds off its summary', async () => {
     const design = summary({
       id: id(10),
       kind: 'design' as EntitySummary['kind'],
       title: 'Launch',
-      state: { kind: 'design', pageCount: 2 } as unknown as EntitySummary['state'],
+      state: { kind: 'design', pageCount: 2, pageKinds: ['doc', 'graph'] } as unknown as EntitySummary['state'],
       badges: { workingActors: [{}] } as unknown as EntitySummary['badges'],
     });
     const chats = [
@@ -174,9 +174,8 @@ describe('the seam-backed designs source', () => {
     const query = vi.fn(async (input: { kinds?: string[] }) => ({
       page: { items: input.kinds?.[0] === 'design' ? [design] : chats },
     }));
-    const entity = vi.fn(async () => ({
-      content: { description: '', pages: [summary({ id: id(30), kind: 'doc' }), summary({ id: id(31), kind: 'graph' })] },
-    }));
+    /* The summary carries the page kinds (304): no design page, so no detail read. */
+    const entity = vi.fn();
     const createEntity = vi.fn(async () => ({ entity: { id: id(40) } }));
     const seam = { query, entity, commands: { createEntity }, onEvent: () => () => {} } as unknown as Seam;
 
@@ -192,6 +191,8 @@ describe('the seam-backed designs source', () => {
         running: true,
       },
     ]);
+
+    expect(entity).not.toHaveBeenCalled();
 
     expect(await source.create('Untitled design')).toBe(id(40));
     expect(createEntity).toHaveBeenCalledWith(expect.objectContaining({ kind: 'design', title: 'Untitled design', spaceId: SPACE }));

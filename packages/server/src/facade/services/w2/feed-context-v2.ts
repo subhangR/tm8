@@ -63,6 +63,7 @@ import {
   type EntityContextNotLoaded,
   type EntityContextOmitted,
   type EntityContextStory,
+  type EntityContextDesignPage,
   type EntityContextRef,
   type EntityContextV2View,
   type EntityHeaderView,
@@ -129,7 +130,7 @@ const HEADER_KINDS: ReadonlySet<string> = new Set(SELECTION_HEADER_KINDS);
  */
 export type V2Section =
   | 'assignment' | 'hierarchy' | 'blockers' | 'connections' | 'messages' | 'actions'
-  | 'acceptance' | 'header' | 'assignees' | 'gate' | 'story' | 'tasks' | 'anchor' | 'attachments';
+  | 'acceptance' | 'header' | 'assignees' | 'gate' | 'story' | 'tasks' | 'anchor' | 'attachments' | 'pages';
 
 /**
  * Names accepted for the section that carries them: `summary` is the body,
@@ -157,6 +158,8 @@ function sectionsFor(kind: string): readonly V2Section[] {
     case 'doc': return ['assignment', 'hierarchy', 'connections', 'messages', 'actions'];
     // 283: the description is the assignment; children are child stories.
     case 'story': return ['assignment', 'hierarchy', 'connections', 'messages', 'actions'];
+    // 304: the description is the assignment; the pages are a core field.
+    case 'design': return ['assignment', 'hierarchy', 'connections', 'messages', 'actions'];
     // c761 §3.2: a message is its body and its refs; no thread expansion.
     case 'message': return ['assignment', 'connections', 'actions'];
     default: return ['hierarchy', 'connections', 'messages', 'actions'];
@@ -172,6 +175,7 @@ function coreSectionsFor(kind: string): readonly V2Section[] {
   switch (kind) {
     case 'task': return [...header, 'acceptance', 'assignees', 'gate'];
     case 'story': return [...header, 'story'];
+    case 'design': return [...header, 'pages'];
     case 'work_session': return [...header, 'tasks'];
     case 'message': return [...header, 'anchor', 'attachments'];
     default: return header;
@@ -219,6 +223,8 @@ export interface ContextV2LoadPlan {
   readonly attachments: boolean;
   /** story (283): the page projected small — roots, by kind, blocked, who runs what. */
   readonly storyCard: boolean;
+  /** design (304): its pages in page order — kind, title, id, position. */
+  readonly designPages: boolean;
   readonly messages: MessagePlan | null;
   readonly connections: boolean;
   /** Sections not loaded, each advertised with its expand. */
@@ -260,6 +266,7 @@ export function v2LoadPlan(
       anchor: kind === 'message',
       attachments: kind === 'message',
       storyCard: isStory,
+      designPages: kind === 'design',
       messages: loaded.has('messages') ? messagePlan : null,
       connections: false,
       notLoaded: available.filter((section) => !loaded.has(section)),
@@ -286,6 +293,7 @@ export function v2LoadPlan(
     anchor: has('anchor'),
     attachments: has('attachments'),
     storyCard: has('story'),
+    designPages: has('pages'),
     messages: has('messages') ? messagePlan : null,
     connections: has('connections'),
     // `actions` is always notLoaded: v2 never renders the palette itself.
@@ -458,6 +466,7 @@ const REF_COLUMNS = `
   mem.display_name member_display_name, tm.name team_member_name,
   col.name collection_name, sk.name skill_name, sp.name spell_name, f.name file_name,
   lp.title loop_title, gr.title graph_title, drw.title drawing_title, sty.title story_title, ctr.title ctr_title,
+  dsg.title design_title,
   wt.branch wt_branch, art.name artifact_name,
   pr.title pr_title, pr.repo pr_repo, pr.number pr_number, pr.state pr_state,
   cm.sha commit_sha, left(cm.message, 200) commit_message,
@@ -483,6 +492,7 @@ const REF_FROM = `
   left join public.graphs gr on gr.entity_id = e.id
   left join public.drawings drw on drw.entity_id = e.id
   left join public.stories sty on sty.entity_id = e.id
+  left join public.designs dsg on e.kind = 'design' and dsg.entity_id = e.id
   left join public.containers ctr on ctr.entity_id = e.id
   left join public.worktrees wt on wt.entity_id = e.id
   left join public.artifacts art on art.entity_id = e.id
@@ -701,6 +711,7 @@ function bodyOf(row: EntityRow): string {
     case 'doc': return row.doc_body ?? '';
     case 'message': return row.message_redacted_at ? '' : (row.message_body ?? '');
     case 'story': return row.story_description ?? '';
+    case 'design': return row.design_description ?? '';
     default: return '';
   }
 }
@@ -749,6 +760,7 @@ interface Loaded {
   teammate?: string | null;
   story?: EntityContextStory;
   tasks?: EntityContextRef[];
+  pages?: EntityContextDesignPage[];
   anchor?: EntityContextRef;
   parentMessage?: EntityContextRef | null;
   attachments?: Array<{ id: string; name: string; bytes: number | null }>;
@@ -1099,6 +1111,33 @@ async function loadV2(q: Querier, id: string, request: V2Request): Promise<{ loa
     }
   }
 
+  if (plan.designPages) {
+    // 304: the design's pages, one indexed read of its `contains` edges in
+    // page order. A page the viewer cannot read is not listed (RLS on the
+    // join); a failure is reported under `connections`, whose
+    // `--edge-type contains` expand lists the same edges.
+    const rows = await listLoader(q, 'connections', 'connections', errors, (tq) => tq.query<RefRow & { page_position: number | null }>(
+      `select ${REF_COLUMNS},
+              case when jsonb_typeof(g.props -> 'position') = 'number'
+                   then (g.props ->> 'position')::double precision end as page_position
+         ${REF_FROM}
+         join public.edges g on g.dst_id = e.id and g.src_id = $1 and g.type = 'contains'
+        where e.deleted_at is null
+        order by page_position nulls last, g.created_at asc, g.id asc
+        limit ${ROW_LIMIT + 1}`,
+      [id],
+    ));
+    if (rows) {
+      // Page order is not the connections order, so no cursor continues one
+      // from the other: the expand is the filtered section itself.
+      const pagesPage = pageExpand(id, 'connections', 'contains', null);
+      loaded.pages = keep(rows, ROW_LIMIT, 'pages', loaded, () => pagesPage).map((row) => ({
+        ...(refOf(row) as Extract<EntityContextRef, { kind: string }>),
+        position: row.page_position === null ? null : Number(row.page_position),
+      }));
+    }
+  }
+
   if (plan.messageCard) {
     // c761 Q12: the anchor and parent refs, and attachment refs with sizes.
     const rq = taggedQuerier(q, 'root');
@@ -1357,6 +1396,7 @@ function assemble(
       ...(loaded.blockers ? { blockers: loaded.blockers } : {}),
       ...(loaded.children ? { children: loaded.children } : {}),
       ...(loaded.tasks ? { tasks: loaded.tasks } : {}),
+      ...(loaded.pages ? { pages: loaded.pages } : {}),
       ...(loaded.connections ? { connections: loaded.connections } : {}),
       ...(loaded.messages ? { messages: loaded.messages } : {}),
       ...tail,
@@ -1427,6 +1467,7 @@ function assemble(
     ...(plan.blockers && loaded.blockers ? { blockers: loaded.blockers } : {}),
     ...(loaded.children ? { children: loaded.children } : {}),
     ...(loaded.tasks ? { tasks: loaded.tasks } : {}),
+    ...(loaded.pages ? { pages: loaded.pages } : {}),
     ...(loaded.messages ? { messages: loaded.messages } : {}),
     asOfSeq: loaded.asOfSeq,
     ...tail,
@@ -1521,7 +1562,7 @@ function cutAtCeiling(view: View, id: string, messagesAreCore: boolean, pagers: 
 /** The never-drop sections a view carries, for the 422's `details.core`. */
 function coreSections(view: View, messagesAreCore: boolean): string[] {
   const core = ['root'];
-  for (const key of ['header', 'assignment', 'acceptance', 'acceptanceWrite', 'outline', 'blockers', 'gate', 'assignees', 'anchor', 'attachments', 'tasks']) {
+  for (const key of ['header', 'assignment', 'acceptance', 'acceptanceWrite', 'outline', 'blockers', 'gate', 'assignees', 'anchor', 'attachments', 'tasks', 'pages']) {
     if (view[key] !== undefined) core.push(key);
   }
   if (messagesAreCore && view.messages !== undefined) core.push('messages');

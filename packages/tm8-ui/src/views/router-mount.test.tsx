@@ -14,7 +14,7 @@
  * boolean "did it write" cannot tell a push from a replace, and the difference
  * between them IS the back button.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, waitFor, within } from '@testing-library/react';
 import { GateApp } from './GateApp';
 import { navStore, resetNav } from '../stores/navStore';
@@ -23,6 +23,12 @@ import { createMemoryTarget, MAX_HASH_LENGTH, type MemoryTarget } from '../route
 import type { EntityId } from '@tm8/contract';
 import { FIXTURE_SPACE_ID } from '../fixtures';
 import { LOCAL_SERVER, type UiServer } from '../servers';
+
+/* D31: this suite pins the pre-D31 desktop composition (Home, the old Work,
+   Board), which only the legacy desktop still reaches until stage (c) deletes
+   it. The three-mode selector, landing and redirects are pinned in
+   `three-modes.test.tsx`. */
+vi.mock('../shell/desktop-modes', () => ({ desktopModes: () => 'legacy' }));
 
 /** A second Server, so the switch is a real one. Shape from server-signin.test.tsx. */
 const STAGING: UiServer = {

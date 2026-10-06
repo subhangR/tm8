@@ -1963,7 +1963,7 @@ const ROWS: readonly KindConfig[] = [
    * the first page.
    */
   {
-    kind: DESIGN_KIND,
+    kind: 'design',
     label: 'Design',
     labelPlural: 'Designs',
     icon: '❐',

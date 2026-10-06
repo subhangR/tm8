@@ -46,6 +46,7 @@ import { BUILTIN_STYLES } from './builtins/index.js';
 import { FormQuestionRowSchema, FormSectionRowSchema, FormSettingsSchema, FormStatusSchema } from './forms.js';
 import { OpRequestEntityFactsSchema } from './op-requests.js';
 import { EntityContextStorySchema, StoryContentSchema, StoryStateSchema } from './story.js';
+import { DesignContentSchema, DesignStateSchema, EntityContextDesignPageSchema } from './design.js';
 import {
   SELECTION_HEADER_KINDS,
   SELECTION_HEADER_SOURCES,
@@ -241,6 +242,9 @@ export const CoreEntityKindSchema = z.enum([
   'story', 'mcp_server',
   // Space styles (284). Not in `CreatableEntityKind`: `styles.push` is its door.
   'style',
+  // Designs (304): ordered pages by `contains`. Creatable through the generic
+  // envelope.
+  'design',
 ]);
 
 export const CustomEntityKindSchema = z.custom<CustomEntityKind>(
@@ -685,6 +689,8 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
   }).strict(),
   // 283 — the story's computed summary.
   StoryStateSchema,
+  // 304 — the design's page count.
+  DesignStateSchema,
   McpServerEntitySchema,
   // 209 — a form's lifecycle status and its question count.
   z.object({
@@ -1105,6 +1111,8 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
   }).passthrough(),
   // 283 — the story's description and, on a detail read, its page.
   StoryContentSchema,
+  // 304 — the design's description and, on a detail read, its ordered pages.
+  DesignContentSchema,
   McpServerEntitySchema,
   // 209 — a form: settings (defaults applied), sections and questions in order.
   z.object({
@@ -4472,7 +4480,7 @@ const ENTITY_CONTEXT_V1_SECTIONS = ['summary', 'hierarchy', 'connections', 'mess
 // aliases the server reads as the section that carries them.
 const ENTITY_CONTEXT_V2_SECTIONS = [
   'assignment', 'summary', 'hierarchy', 'blockers', 'connections', 'messages', 'actions',
-  'acceptance', 'acceptanceWrite', 'header', 'assignees', 'gate', 'children', 'parent', 'story', 'tasks', 'anchor', 'parentMessage', 'attachments',
+  'acceptance', 'acceptanceWrite', 'header', 'assignees', 'gate', 'children', 'parent', 'story', 'tasks', 'anchor', 'parentMessage', 'attachments', 'pages',
 ] as const;
 const ENTITY_CONTEXT_V2_PAGED: readonly string[] = ['hierarchy', 'children', 'blockers', 'connections', 'messages', 'story'];
 
@@ -4508,7 +4516,7 @@ export const EntityContextQuerySchema: z.ZodType<EntityContextQuery> = z.object(
   schema: z.enum(['v1', 'v2']).optional(),
   sections: uniqueArray(z.enum([
     'summary', 'hierarchy', 'connections', 'messages', 'activity', 'actions', 'assignment', 'blockers',
-    'acceptance', 'acceptanceWrite', 'header', 'assignees', 'gate', 'children', 'parent', 'story', 'tasks', 'anchor', 'parentMessage', 'attachments',
+    'acceptance', 'acceptanceWrite', 'header', 'assignees', 'gate', 'children', 'parent', 'story', 'tasks', 'anchor', 'parentMessage', 'attachments', 'pages',
   ])).optional(),
   totalBytes: z.number().int().min(1024).max(32_768).optional(),
   sectionBytes: z.number().int().min(512).max(8192).optional(),
@@ -4703,6 +4711,7 @@ export const EntityContextV2ViewSchema: z.ZodType<EntityContextV2View> = z.objec
   mode: NullableString,
   projectId: NullableString,
   story: EntityContextStorySchema.optional(),
+  pages: z.array(EntityContextDesignPageSchema).optional(),
   anchor: ContextRefSchema.optional(),
   parentMessage: ContextRefSchema.nullable().optional(),
   attachments: z.array(z.object({

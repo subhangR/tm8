@@ -58,46 +58,56 @@ beforeEach(() => {
 const mount = () => render(<GateApp />);
 
 describe('a server round trip keeps your place', () => {
+  /* Leave Work through its own view selector — a user navigation, so the
+     place is written exactly as a click writes it. */
+  const goToObserve = async (view: ReturnType<typeof mount>) => {
+    fireEvent.click(view.getByTestId('tws-view-select'));
+    fireEvent.click(within(view.getByRole('menu', { name: 'Views' })).getByRole('menuitemradio', { name: /Observe/ }));
+    await waitFor(() => expect(view.queryByTestId('tab-workspace')).toBeNull());
+  };
+
   it('comes back to the view you left, not the landing screen', async () => {
     const first = mount();
-    // Revision 11: a viewer with no memory lands on the merged Home.
-    await waitFor(() => first.getByTestId('home-page'));
-
-    // Leave for a kind screen — the branch of GateApp's ternary that renders
-    // EntityView. Tasks rides the Workspace caret on the WORK TAB now
-    // (revision 12), so switch tab first. The caret itself is an EXPANDED-rail
-    // control and the rail boots collapsed, where every leaf is drawn anyway.
-    /* Revision 17: the Work tab retired — the guaranteed `g t` chord is the
-       door to the Tasks screen now. */
-    fireEvent.keyDown(window, { key: 'g' });
-    fireEvent.keyDown(window, { key: 't' });
-    await waitFor(() => first.getByTestId('entity-view'));
+    // D31: a viewer with no memory lands on Work.
+    await waitFor(() => first.getByTestId('tab-workspace'));
+    await goToObserve(first);
 
     // THE ROUND TRIP. Unmount is what `key={activeServer.id}` does on a switch.
     first.unmount();
 
-    // AND THE ADDRESS GOES WITH IT, OR THIS TEST STOPS MEASURING ITSELF.
-    //
-    // The router now writes `#/s/{space}/k/tasks` when that rail click lands,
-    // and an addressable hash at boot deliberately OUTRANKS last-place (R3). So
-    // the second mount would find the destination in the URL and never consult
-    // the memory at all — the assertion below would go green while the thing it
-    // exists to prove had stopped being exercised. A real server switch is a
-    // fresh document with no hash, which is what this restores.
+    // AND THE ADDRESS GOES WITH IT, OR THIS TEST STOPS MEASURING ITSELF: an
+    // addressable hash at boot deliberately OUTRANKS last-place (R3). A real
+    // server switch is a fresh document with no hash, which is what this
+    // restores.
     window.location.hash = '';
 
     const second = mount();
-    await waitFor(() => second.getByTestId('entity-view'));
+    await waitFor(() => second.getByTestId('graph-view'));
     // The regression this replaces: the landing screen, every time.
-    expect(second.queryByTestId('workspace-grid')).toBeNull();
-    expect(second.queryByTestId('home-page')).toBeNull();
+    expect(second.queryByTestId('tab-workspace')).toBeNull();
     second.unmount();
   });
 
-  it('boots to the merged Home for a viewer with no remembered place (r11)', async () => {
+  it('remembers Work itself, so a round trip from Work comes back to Work (D31 audit)', async () => {
+    const first = mount();
+    await waitFor(() => first.getByTestId('tab-workspace'));
+    await goToObserve(first);
+    // Back into Work through the selector Observe's top bar draws.
+    fireEvent.click(first.getByRole('tab', { name: /Work/ }));
+    await waitFor(() => first.getByTestId('tab-workspace'));
+    first.unmount();
+    window.location.hash = '';
+
+    const second = mount();
+    await waitFor(() => second.getByTestId('tab-workspace'));
+    expect(second.queryByTestId('graph-view')).toBeNull();
+    second.unmount();
+  });
+
+  it('boots to Work for a viewer with no remembered place (D31)', async () => {
     const view = mount();
-    await waitFor(() => view.getByTestId('home-page'));
-    expect(view.queryByTestId('entity-view')).toBeNull();
+    await waitFor(() => view.getByTestId('tab-workspace'));
+    expect(view.queryByTestId('home-page')).toBeNull();
     expect(view.queryByTestId('workspace-grid')).toBeNull();
     view.unmount();
   });

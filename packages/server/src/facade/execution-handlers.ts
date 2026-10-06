@@ -116,6 +116,7 @@ import { LIVE_CHAT_COUNTS_SQL, type LiveChatCountRow } from './live-counts.js';
 import { projectLaunchContext } from './launch-context.js';
 import { loadContextV2 } from './services/w2/feed-context-v2.js';
 import { loadStoryContextForTask, putDerivedTasksInStories } from './spawn-story.js';
+import { loadDesignContextForTask } from './spawn-design.js';
 import { toCommandResult, type RpcCommandResult } from './handlers/entities.js';
 import { createLoopbackOwnerResolver, type LoopbackOwner } from '../identity/loopback.js';
 import type { HandlerRegistry } from './registry.js';
@@ -1186,6 +1187,14 @@ export class DbGraphPort implements GraphPort {
    */
   async loadStoryContext(auth: GraphAuth, input: { taskId?: string; sessionId?: string }) {
     return loadStoryContextForTask(this.db, this.claims(auth), input.taskId, input.sessionId);
+  }
+
+  /**
+   * The design the primary task was derived from (Run on a design, 304), read
+   * as the spawner. See spawn-design.ts.
+   */
+  async loadDesignContext(auth: GraphAuth, input: { taskId: string }) {
+    return loadDesignContextForTask(this.db, this.claims(auth), input.taskId);
   }
 
   /**

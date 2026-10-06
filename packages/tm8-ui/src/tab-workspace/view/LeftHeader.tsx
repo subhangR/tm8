@@ -24,7 +24,7 @@ export function LeftHeader() {
   return (
     <header className="tws-left-header" data-testid="tws-left-header">
       <div className="tws-mark-cell">
-        <button type="button" className="tws-icon-btn tws-mark" aria-label="Home" title="Home" onClick={gate.goHome}>
+        <button type="button" className="tws-icon-btn tws-mark" aria-label="Work" title="Work" onClick={gate.goHome}>
           <BrandMark />
         </button>
       </div>
@@ -37,7 +37,7 @@ export function LeftHeader() {
 }
 
 export interface ViewSelectorProps {
-  /** `label` draws `Workspace ▾`; `more` draws the Restore cluster's ⋯. */
+  /** `label` draws `Work ▾`; `more` draws the Restore cluster's ⋯. */
   variant: 'label' | 'more';
 }
 
@@ -86,7 +86,7 @@ export function ViewSelector({ variant }: ViewSelectorProps) {
     else if (event.key === 'End') move(rows.length - 1 - at);
   };
 
-  const label = current?.label ?? 'Workspace';
+  const label = current?.label ?? 'Work';
   const trigger: ReactNode =
     variant === 'label' ? (
       <>

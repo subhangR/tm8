@@ -58,12 +58,13 @@ const TITLE_TABLES: ReadonlyArray<readonly [table: string, column: string]> = [
   ['tasks', 'title'], ['stories', 'title'], ['work_sessions', 'title'], ['documents', 'title'],
   ['artifacts', 'name'], ['collections', 'name'], ['team_members', 'name'], ['pull_requests', 'title'],
   ['files', 'name'], ['drawings', 'title'], ['chats', 'title'], ['channels', 'name'], ['loops', 'title'],
-  ['forms', 'title'], ['skills', 'name'],
+  ['forms', 'title'], ['skills', 'name'], ['graphs', 'title'], ['designs', 'title'],
 ];
-const TITLE_JOINS = TITLE_TABLES
+/** Shared with spawn-design.ts: a design's pages are read the same way. */
+export const TITLE_JOINS = TITLE_TABLES
   .map(([table], i) => `left join public.${table} tt${i} on tt${i}.entity_id = e.id`)
   .join('\n           ');
-const TITLE_SELECT = `coalesce(${TITLE_TABLES.map(([, column], i) => `tt${i}.${column}`).join(', ')})`;
+export const TITLE_SELECT = `coalesce(${TITLE_TABLES.map(([, column], i) => `tt${i}.${column}`).join(', ')})`;
 
 /** The runtime states `internal.story_summary` counts as live. */
 const LIVE_RUNTIME = new Set(['spawning', 'running', 'idle']);

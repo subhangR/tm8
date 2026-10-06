@@ -87,7 +87,7 @@ export function ScopePicker() {
         type="button"
         className="tws-scope-btn"
         data-mode={scope.mode}
-        aria-label="Workspace tab scope"
+        aria-label="Work tab scope"
         aria-describedby={descriptionId}
         aria-haspopup="dialog"
         aria-expanded={open}

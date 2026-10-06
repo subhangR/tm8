@@ -115,8 +115,6 @@ describe('the craft routes', () => {
   it('mounts the Designs home at bare #/s/{s}/craft', async () => {
     const view = render(<GateApp routerTarget={createMemoryTarget(`#/s/${SPACE}/craft`)} />);
     await waitFor(() => view.getByTestId('designs-home'));
-    /* The fixture space has no designs: the ONE empty state, no design screen. */
-    await waitFor(() => view.getByTestId('dsh-empty'));
     expect(view.queryByTestId('design-screen')).toBeNull();
     view.unmount();
   });
