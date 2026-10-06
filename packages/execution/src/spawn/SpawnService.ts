@@ -441,7 +441,9 @@ function endingFromPtyExit(
     };
   }
   if (status === 'completed') {
-    return { endedKind: 'completed', endedReason: 'Finished on its own.' };
+    // 299: `exited_clean`, not `completed`. The process ended cleanly; whether
+    // the WORK is finished is the outcome, which only `session complete` sets.
+    return { endedKind: 'exited_clean', endedReason: 'The process ended by itself (exit code 0).' };
   }
   // A signal death that was NOT a memory kill. This is the deploy/restart
   // shape — but from here it is genuinely indistinguishable from an operator
@@ -3201,11 +3203,14 @@ export class SpawnService {
     const ending = CREDENTIAL_CONTAINMENT_ENDINGS[cause];
     let result: { outcome: PtyKillOutcome; recorded: boolean };
     try {
+      // 299 (Spec D1 §3): `credential_revoked` on `failed`. No operator chose
+      // to stop this work — the credential was taken away — so the outcome
+      // stays open and the session can be resumed once it is reconnected.
       result = await this.killThenRecordEnding(auth, sessionId, {
         onNotFound: 'skip',
-        status: 'exited',
+        status: 'failed',
         error: () => ending.error,
-        endedKind: 'stopped_by_operator',
+        endedKind: 'credential_revoked',
         endedReason: ending.endedReason,
       });
     } catch (error) {
@@ -3532,6 +3537,125 @@ export class SpawnService {
     }
     return { retired, errors };
   }
+
+  /**
+   * THE GHOST REAPER (Spec D1 §4.4, 299). The periodic sibling of
+   * `reconcileNodeGhosts`: a session THIS node owns whose record says it is
+   * live (spawning/running/idle) while this node holds no PTY for it, observed
+   * so for `staleAfterMs`, becomes `failed / lost`.
+   *
+   * The first sighting is remembered in memory and the clock starts there, so
+   * a session that is merely between spawn and its first PTY byte, or that a
+   * resume is bringing back, is never reaped on one look. A restart clears the
+   * memory — and the boot reconciliation retires every ghost anyway.
+   *
+   * Writes a PROCESS fact only. The outcome stays open, the claims stay held:
+   * a lost session is unfinished work that needs someone to resume, complete
+   * or stop it. NEVER THROWS.
+   */
+  async reapLostSessions(
+    auth: GraphAuth,
+    opts: { staleAfterMs: number; now?: number },
+  ): Promise<{ reaped: number; errors: Array<{ message: string }> }> {
+    if (!this.nodeId) return { reaped: 0, errors: [] };
+    const now = opts.now ?? Date.now();
+    let candidates: Array<{ sessionId: string; status: WorkSessionStatus }>;
+    try {
+      candidates = await this.graph.listNodeActiveSessions(auth, this.nodeId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { reaped: 0, errors: [{ message: `could not list this node's sessions: ${message}` }] };
+    }
+    const ghosts = new Set<string>();
+    for (const { sessionId } of candidates) {
+      if (!this.pty.hasSession(sessionId)) ghosts.add(sessionId);
+    }
+    for (const id of [...this.ghostFirstSeen.keys()]) {
+      if (!ghosts.has(id)) this.ghostFirstSeen.delete(id);
+    }
+    let reaped = 0;
+    const errors: Array<{ message: string }> = [];
+    for (const sessionId of ghosts) {
+      const first = this.ghostFirstSeen.get(sessionId);
+      if (first === undefined) {
+        this.ghostFirstSeen.set(sessionId, now);
+        continue;
+      }
+      if (now - first < opts.staleAfterMs) continue;
+      try {
+        await this.markLost(auth, sessionId, now - first);
+        this.ghostFirstSeen.delete(sessionId);
+        reaped += 1;
+      } catch (error) {
+        errors.push({ message: `session ${sessionId}: ${error instanceof Error ? error.message : String(error)}` });
+      }
+    }
+    return { reaped, errors };
+  }
+
+  /**
+   * Record that a session's process is gone: `failed / lost`. The reaper's
+   * write, and the panel's "Mark lost" (Spec D1 §5.6) — which is refused while
+   * this node still holds a live PTY for the session, because then it is not
+   * lost.
+   */
+  async markLost(auth: GraphAuth, sessionId: string, missingForMs?: number): Promise<{ outcome: string; commandResult: unknown }> {
+    if (this.pty.hasSession(sessionId)) {
+      throw new SpawnError(`work session ${sessionId} has a live process on this node; it is not lost`, 'conflict', {
+        sessionId,
+        reason: 'process_live',
+      });
+    }
+    const minutes = missingForMs === undefined ? null : Math.max(1, Math.round(missingForMs / 60_000));
+    return this.terminate(auth, sessionId, {
+      terminalStatus: 'failed',
+      reason: `marked lost: the record said live, but this node holds no process for it${
+        minutes === null ? '' : ` (missing for ${String(minutes)} min)`}`,
+      endedKind: 'lost',
+      endedReason:
+        minutes === null
+          ? 'Marked lost: its process could not be found. It can be resumed to try again.'
+          : `Lost: its process was gone for ${String(minutes)} minutes. It can be resumed to try again.`,
+    });
+  }
+
+  /**
+   * AUTO-CLOSE (Spec D1, owner ruling Q3). A COMPLETED session's process left
+   * open idles away a slot nobody uses; after its space's window (default 30
+   * min, 0 = never) since completion with no activity, close it. The work is
+   * already done, so the ending is `exited_clean` and the outcome is
+   * untouched. NEVER THROWS.
+   */
+  async closeIdleCompletedSessions(
+    auth: GraphAuth,
+  ): Promise<{ closed: number; errors: Array<{ message: string }> }> {
+    if (!this.nodeId || !this.graph.listCompletedSessionsToClose) return { closed: 0, errors: [] };
+    let due: Array<{ sessionId: string; minutes: number }>;
+    try {
+      due = await this.graph.listCompletedSessionsToClose(auth, this.nodeId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { closed: 0, errors: [{ message: `could not list completed sessions to close: ${message}` }] };
+    }
+    let closed = 0;
+    const errors: Array<{ message: string }> = [];
+    for (const { sessionId, minutes } of due) {
+      try {
+        await this.terminate(auth, sessionId, {
+          reason: `auto-closed: completed and idle for ${String(minutes)} min (space setting)`,
+          endedKind: 'exited_clean',
+          endedReason: `Closed automatically: the work was completed and the session sat idle for ${String(minutes)} minutes.`,
+        });
+        closed += 1;
+      } catch (error) {
+        errors.push({ message: `session ${sessionId}: ${error instanceof Error ? error.message : String(error)}` });
+      }
+    }
+    return { closed, errors };
+  }
+
+  /** First time the reaper saw each live-recorded session with no PTY here. */
+  private readonly ghostFirstSeen = new Map<string, number>();
 
   /**
    * SHUTDOWN SWEEP — say why, while there is still someone to say it.

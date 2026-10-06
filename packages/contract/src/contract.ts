@@ -474,6 +474,33 @@ export type CoreEntityState =
       endedKind?: WorkSessionEndedKind | null;
       endedReason?: string | null;
       /**
+       * IS THE WORK FINISHED (Spec D1 §3, migration 299) — a second field,
+       * deliberately separate from `status`, which only says whether the
+       * PROCESS is alive. `open` until `session complete` (with a receipt) or an
+       * operator's Stop settles it; no process event — exit, crash, restart,
+       * reaper, terminate — ever writes it. `completed` is a STATUS MARKER,
+       * not a gate (owner ruling, 6 Oct): the session may keep messaging and
+       * working, and resume or claiming a new task reopens it (logged,
+       * `outcomeSource` names who reopened it). `stopped` reopens through resume.
+       *
+       * Additive: absent = a node that predates 299 (treat as `open`).
+       */
+      outcome?: WorkSessionOutcome;
+      outcomeAt?: string | null;
+      /** The actor (member or teammate) who completed or stopped it. */
+      outcomeBy?: string | null;
+      /** The close-out message `session complete` recorded. Only on `completed`. */
+      receiptMessageId?: string | null;
+      outcomeSource?: WorkSessionOutcomeSource | null;
+      /** The operator's note when stopping ("Not needed any more"). */
+      outcomeNote?: string | null;
+      /**
+       * Spec D1 R1 (301): tasks OFFERED to this session — handed to it and not
+       * withdrawn — that it has never claimed. Not claims: no robot, no
+       * `working_on`, until the session runs `task transition --claim`.
+       */
+      offeredTaskIds?: string[];
+      /**
        * WHO IS RUNNING THIS SESSION — the persona resolved through the
        * session's most recent `participates_in` edge, the SAME hop
        * `loadActors` attributes messages by. Carried on the summary so a
@@ -635,6 +662,13 @@ export interface EntityBadges {
   blocked?: { unresolvedHardDependencyCount: number; waitingOn: EntitySummary[] };
   pulls?: PullState[];
   workingActors?: LiveWork[];
+  /**
+   * Whether anyone is really on a `working` or `blocked` task (P0g, owner
+   * policy 6 Oct 2026: flag only, never an automatic status change). Derived
+   * from the task's active `working_on` claims on every read. ABSENT for any
+   * other status, and on a node predating the field.
+   */
+  liveSession?: TaskLiveSession;
   /**
    * The pull requests this task `tracks`, projected onto the task's OWN
    * summary. Newest-first by link recency, capped — see
@@ -835,6 +869,27 @@ export interface PullState {
 }
 
 export interface LiveWork { actor: ActorSummary; task: EntitySummary; startedAt: string; note?: string | null }
+
+/**
+ * `badges.liveSession` (P0g). `state`:
+ * - `live`: a session with an open outcome and a live process holds an active claim;
+ * - `session_down`: the only session claims belong to sessions whose process is
+ *   gone (crashed, lost, exited) but whose outcome is still open: "Session crashed";
+ * - `person`: no session, but a person holds a claim and acted on the task in the
+ *   last 7 days;
+ * - `person_idle`: a person holds a claim with no activity from them for 7 days:
+ *   "No activity 7d";
+ * - `no_session`: no active claim at all: "No live session".
+ * `since` is when that state began, when known (the claim start, the session's
+ * process change, the holder's last activity, or the latest claim end).
+ */
+export type TaskLiveSessionState = 'live' | 'session_down' | 'person' | 'person_idle' | 'no_session';
+export interface TaskLiveSession {
+  state: TaskLiveSessionState;
+  since: string | null;
+  /** The session behind `live` / `session_down`, else null. */
+  sessionId: EntityId | null;
+}
 
 export interface EntityDetail extends EntitySummary {
   content: EntityContent;
@@ -1218,6 +1273,15 @@ export interface CollectionQuery {
      * zero is worse than a refusal that names the mechanism.
      */
     sessionStatus?: WorkSessionStatus[];
+    /**
+     * 301 (Spec D1 §5.3): work_sessions whose OUTCOME is one of these. Same
+     * kind-narrowing as `sessionStatus` (NULL for every non-session row). The
+     * session tabs are this crossed with `sessionStatus`: Running = any
+     * outcome but stopped with a live-recorded process; Interrupted = open
+     * with an ended process; Completed = completed with an ended process;
+     * Stopped = stopped.
+     */
+    sessionOutcome?: WorkSessionOutcome[];
     /**
      * Additive: entities whose `activityAt` is at or after this instant — a
      * TIME WINDOW, expressed as an absolute ISO timestamp rather than a
@@ -1616,6 +1680,25 @@ export type WorkspaceEvent = WorkspaceEventEnvelope & (
  | { type: 'entity.activity_touched'; id: EntityId; kind: EntityKind; activityAt: string;
      clientMutationId?: string }
  | { type: 'edge.upsert'|'edge.deleted'; edge: EdgeView; clientMutationId?: string }
+ /**
+  * Spec D1 §4.6 (299). The two halves of a session's state move separately and
+  * say so separately: the OUTCOME of the work, and the PROCESS. Both come from
+  * triggers on `work_sessions`, so every writer emits them. They do not replace
+  * the session's `entity.upsert` (which still carries the full summary); they
+  * are the signal a consumer listens to for the from -> to.
+  */
+ | { type: 'session.outcome_changed'; sessionId: EntityId; from: WorkSessionOutcome; to: WorkSessionOutcome;
+     outcomeBy: EntityId | null; receiptMessageId: EntityId | null;
+     outcomeSource: WorkSessionOutcomeSource | null; clientMutationId?: string }
+ | { type: 'session.process_changed'; sessionId: EntityId; from: WorkSessionStatus; to: WorkSessionStatus;
+     endedKind: WorkSessionEndedKind | null; endedReason: string | null; clientMutationId?: string }
+ /**
+  * A `working_on` claim ended (Spec D1 §6.3 R4). The edge row is KEPT with
+  * `props.endedAt`/`props.endReason` (its own `edge.upsert` carries that); this
+  * names the ending so the map can play it without diffing props.
+  */
+ | { type: 'edge.ended'; edgeId: string; edgeType: 'working_on'; sourceId: EntityId; targetId: EntityId;
+     endReason: ClaimEndReason; endedAt: string; clientMutationId?: string }
  | { type: 'message.created'|'message.updated'|'message.deleted'; anchorId: EntityId;
      // ENVELOPE provenance, sitting next to `anchorId` (the target): the SENDER
      // work session the message was authored FROM, so a consumer can animate a
@@ -3648,6 +3731,12 @@ export interface MessageDeliveryDisposition {
   reason?: string;
   /** Present on `accepted`, to follow the row to its settlement. */
   deliveryId?: string;
+  /**
+   * D2 (301/302): one plain sentence for the sender when there is something to
+   * say beyond the slug — e.g. `recipient_session_closed`: "session <id> is
+   * closed (completed, process exited); not delivered live".
+   */
+  detail?: string;
 }
 
 export interface MessageBatchResult {
@@ -3661,6 +3750,11 @@ export interface MessageBatchResult {
    * the batch owed nobody a live copy — not that delivery failed.
    */
   delivery?: MessageDeliveryDisposition[];
+  /**
+   * Advisories on a stored batch, e.g. `task_still_working` (P0g): the sending
+   * session holds an anchored task that is still `working`. Absent when none.
+   */
+  warnings?: ResultWarning[];
 }
 
 export interface PatchMessageInput extends CommandContext {
@@ -3877,6 +3971,12 @@ export interface UpdateSpaceInput extends CommandContext {
    */
   sessionShareDefault?: 'none' | 'space';
   sessionDriveDefault?: WorkSessionDriveMode;
+  /**
+   * 301 (Spec D1, owner ruling Q3): minutes a COMPLETED session's process may
+   * stay idle before the node closes it (recorded `exited_clean`). 0 = never.
+   * Default 30. Writable through `spaces.update` by a space admin.
+   */
+  sessionAutoCloseMinutes?: number;
 }
 
 /**
@@ -4412,6 +4512,12 @@ export interface SpaceSummary {
    */
   sessionShareDefault?: 'none' | 'space';
   sessionDriveDefault?: WorkSessionDriveMode;
+  /**
+   * 301 (Spec D1, owner ruling Q3): minutes a COMPLETED session's process may
+   * stay idle before the node closes it (recorded `exited_clean`). 0 = never.
+   * Default 30. Writable through `spaces.update` by a space admin.
+   */
+  sessionAutoCloseMinutes?: number;
 }
 
 /** GET /v2/spaces/:spaceId/navigation */
@@ -4793,7 +4899,9 @@ export type WorkSessionWorkdirMode = 'project' | 'worktree' | 'scratch';
  *                          beats picking the nearest plausible value.
  */
 export type WorkSessionEndedKind =
-  | 'completed'
+  // 299: renamed from `completed`. A clean exit (code 0) says nothing about
+  // the work — whether it finished is `outcome`, not this.
+  | 'exited_clean'
   | 'stopped_by_operator'
   | 'server_restart'
   | 'out_of_memory'
@@ -4807,7 +4915,34 @@ export type WorkSessionEndedKind =
   // only one of the two that means something broke.
   | 'container_stopped'
   | 'runtime_lost'
+  // 299: the ghost reaper found the record live and no process for N minutes.
+  | 'lost'
+  // 299: credential containment. Was recorded as `stopped_by_operator`,
+  // though no operator chose it.
+  | 'credential_revoked'
   | 'unknown';
+
+/**
+ * IS THE WORK FINISHED — `work_sessions.outcome` (299, Spec D1 §3). Separate
+ * from `WorkSessionStatus`, which is the process. Crashes, restarts, lost and
+ * revoked credentials are process facts: the outcome stays `open`.
+ */
+export type WorkSessionOutcome = 'open' | 'completed' | 'stopped';
+/** Who settled the outcome: the session itself, an operator, or the 299 backfill. */
+export type WorkSessionOutcomeSource = 'self' | 'operator' | 'backfill';
+/**
+ * Why a `working_on` claim ended (Spec D1 §6.3 R4). Ended claims keep their
+ * edge row with `props.endedAt` and `props.endReason`; reads of current work
+ * skip them.
+ */
+export type ClaimEndReason =
+  | 'task_done'
+  | 'task_cancelled'
+  | 'released'
+  | 'session_completed'
+  | 'session_stopped'
+  | 'task_reset'
+  | 'backfill';
 
 
 // --- containers (TM8-CONTAINERS-DESIGN §4, migration 177) -------------------
@@ -6211,6 +6346,52 @@ export interface ExecutionPromptInput extends CommandContext {
  */
 export interface ExecutionTerminateInput extends CommandContext {
   force?: boolean;
+  /**
+   * Spec D1 §4.2. Terminating an OPEN session must say what happens to the
+   * work: `stop` (end it without completing: claims released, outcome
+   * `stopped`) or `complete` (run `execution.complete` first, then close). A
+   * completed or stopped session needs neither — terminate then only closes
+   * the process. Omitted on an open session → `invariant_violation` /
+   * `outcome_required`.
+   */
+  outcome?: 'stop' | 'complete';
+  /** With `outcome: 'complete'`: the close-out message (else the latest on the anchor). */
+  receiptMessageId?: string;
+  /** With `outcome: 'stop'`: why ("Not needed any more"). */
+  note?: string;
+  /**
+   * Spec D1 §5.6 "Mark lost": record that the process is gone (`failed /
+   * lost`) — the ghost reaper, now, for this one session. A process fact only:
+   * needs no `outcome`, and is refused (`conflict` / `process_live`) while the
+   * node still holds a live process for it.
+   */
+  markLost?: boolean;
+}
+
+/**
+ * execution.complete — POST /v2/entities/:id/commands/complete-session
+ * (Spec D1 §4.1). Settles the outcome as `completed`: the claim check first
+ * (`claims_open`, listing each task still working), then the receipt rule
+ * (`receipt_required` / `receipt_not_on_anchor`), then every remaining claim
+ * ends with `session_completed`. The process is untouched unless
+ * `closeProcess`, which then terminates it as `exited_clean`. Idempotent on an
+ * already-completed session; refused on a stopped one (`session_stopped`).
+ * Completion is a status marker: the session keeps working, and a later claim
+ * reopens it.
+ */
+export interface ExecutionCompleteInput extends CommandContext {
+  receiptMessageId?: string;
+  closeProcess?: boolean;
+}
+
+/**
+ * entities.commands.release — POST /v2/entities/:id/commands/release
+ * (Spec D1 §6.3 R4). Ends the caller's own claim on a task with a hand-off
+ * note; the task keeps its status. Inside an agent session the claim is the
+ * session's.
+ */
+export interface ReleaseInput extends CommandContext {
+  note: string;
 }
 
 /**
@@ -7811,6 +7992,9 @@ export interface EntityContextV2View {
   exitedAt?: string | null;
   endedKind?: string | null;
   endedReason?: string | null;
+  /** 299 (Spec D1): open | completed | stopped — the work, not the process. */
+  outcome?: string | null;
+  receiptMessageId?: string | null;
   tasks?: EntityContextRef[];
   // chat
   runtimeState?: string | null;

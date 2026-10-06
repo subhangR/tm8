@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { stillWorkingWarnings } from '../../../tracking/status-nudge.js';
 
 import {
   CollabError,
@@ -419,6 +420,29 @@ function senderAttributionFor(
     : 'recorded_only';
 }
 
+interface ClosedSessionRow {
+  entity_id: string;
+  status: string;
+  outcome: string | null;
+}
+
+/**
+ * D2 (owner ruling, 6 Oct): the answer a sender gets when the session it
+ * addressed has no live process. The message is stored on the anchor — durable,
+ * readable when the session is resumed — but no live copy exists, and the
+ * sender is told so instead of hearing nothing.
+ */
+export function closedRecipientDisposition(row: ClosedSessionRow, targetMessageId: string): DeliveryDisposition {
+  const work = row.outcome === 'completed' ? 'completed' : row.outcome === 'stopped' ? 'stopped' : 'not completed';
+  return {
+    targetMessageId,
+    targetWorkSessionId: row.entity_id,
+    status: 'undelivered',
+    reason: 'recipient_session_closed',
+    detail: `session ${row.entity_id} is closed (${work}, process ${row.status}); not delivered live — the message is stored on its anchor`,
+  };
+}
+
 export class W2MessagesHandoffsService {
   private readonly pendingHandoffs = new Map<string, PendingHandoff>();
 
@@ -515,7 +539,23 @@ export class W2MessagesHandoffsService {
       const parentViews =
         parentIds.length > 0 ? await loadMessageViewsByIds(q, parentIds, viewerIdentityId) : [];
       const parentsById = new Map(parentViews.map((view) => [view.id, view]));
-      return { result, messages, routes, parentsById };
+      // D2 (owner, 6 Oct): a session addressed directly — as the anchor or a
+      // poke — whose PROCESS is not live gets no route, so it used to be a
+      // silent non-delivery. Name those targets so the sender is told.
+      const sessionTargets = [...new Set([...anchorIds, ...pokeSessionIds])]
+        .filter((id) => id !== sourceWorkSessionId);
+      const closed = sessionTargets.length === 0 ? [] : await q.query<ClosedSessionRow>(
+        `select ws.entity_id, ws.status, ws.outcome
+           from public.work_sessions ws
+          where ws.entity_id = any($1::uuid[])
+            and ws.status not in ('spawning', 'running', 'idle')`,
+        [sessionTargets],
+      );
+      // P0g ac4: a session posting on a task it still holds in `working`.
+      const statusNudges = sourceWorkSessionId
+        ? await stillWorkingWarnings(q, anchorIds, sourceWorkSessionId)
+        : [];
+      return { result, messages, routes, parentsById, closed, statusNudges };
     }));
 
     // Per-target delivery outcomes, reported on the result below. Declared out
@@ -566,6 +606,14 @@ export class W2MessagesHandoffsService {
       }));
     }
 
+    // D2: every directly addressed session with no live process, said out loud.
+    const routed = new Set(stored.routes.map((route) => route.targetWorkSessionId));
+    for (const row of stored.closed) {
+      if (routed.has(row.entity_id)) continue;
+      const anchored = stored.messages.find((m) => (m.state as { anchorId?: string }).anchorId === row.entity_id) ?? stored.messages[0]!;
+      dispositions.push(closedRecipientDisposition(row, anchored.id));
+    }
+
     this.options.onMessagesCommitted?.(viewerIdentityId, stored.messages);
 
     return {
@@ -581,6 +629,8 @@ export class W2MessagesHandoffsService {
       // target, because one post can name several sessions and they can
       // disagree.
       ...(dispositions.length > 0 ? { delivery: dispositions } : {}),
+      // Absent unless the sender holds an anchored task still `working` (P0g).
+      ...(stored.statusNudges.length > 0 ? { warnings: stored.statusNudges } : {}),
     };
   };
 

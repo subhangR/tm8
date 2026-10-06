@@ -10,8 +10,9 @@
  * #15: a crashed session (status failed, ended_kind crashed) keeps
  * status_category in_progress — 174's board ruling, so Resume is offered —
  * and the story showed it as in progress beside liveSessionCount 0. On the
- * story a session whose runtime ended is terminal, and it never reaches a
- * tally.
+ * story a session whose runtime ended is not live work, and it never reaches
+ * a tally. Since 302 (Spec D1) it is not `done` either — its work is open — so
+ * the story files it under no category until it is completed or stopped.
  */
 import type { PoolClient } from 'pg';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -182,12 +183,15 @@ describe('story progress counts only work-bearing kinds', () => {
       expect(root(key).taskProgress.work).toBe(0);
     }
 
-    expect(root('ws2').statusCategory).toBe('done');
+    // Spec D1 §5.7 (302): a crashed session's WORK is still open, so it is not
+    // done; and its process ended, so it is not in progress either (#15). On
+    // the story page it counts toward nothing: no category.
+    expect(root('ws2').statusCategory).toBeNull();
     const node = (key: string) => page.nodes.find((n) => n.id === id[key]);
     for (const key of ['ws1', 'ws2']) {
       const n = node(key);
       expect(n?.live).toBe(false);
-      expect(n?.statusCategory).toBe('done');
+      expect(n?.statusCategory).toBeNull();
     }
     // Other kinds keep their own category.
     expect(node('t1')?.statusCategory).toBe('to_do');

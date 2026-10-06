@@ -122,6 +122,10 @@ function claimValue(value: string | undefined): string {
  * session, or an agent session minted under one, descends from
  * (`auth_sessions.via_link_id`). Written once by the issuing RPC, like the
  * two above; `internal.link_bound()` reads it.
+ *
+ * `tm8.work_session_id` — the EIGHTH claim (299, Spec D1). The work session an
+ * agent bearer was minted for; `internal.caller_work_session()` reads it so a
+ * claim made from inside a session is the session's.
  */
 const BIND_CLAIMS_SQL = `select
   set_config('tm8.identity_id', $1, true),
@@ -131,7 +135,8 @@ const BIND_CLAIMS_SQL = `select
   set_config('tm8.auth_kind',   $5, true),
   set_config('tm8.session_space_id', $6, true),
   set_config('tm8.via_link',    $7, true),
-  set_config('role',            $8, true)`;
+  set_config('tm8.work_session_id', $8, true),
+  set_config('role',            $9, true)`;
 
 /**
  * An RPC name must be a bare (optionally schema-qualified) identifier. `fn` is
@@ -432,6 +437,8 @@ export class PgDb implements Db {
         claimValue(claims.sessionSpaceId),
         // 256 (W7p). Absent binds as `''`: not link-bound.
         claimValue(claims.viaLinkId),
+        // 299 (Spec D1). Absent binds as `''`: the caller is not a session.
+        claimValue(claims.workSessionId),
         this.role,
       ]);
 

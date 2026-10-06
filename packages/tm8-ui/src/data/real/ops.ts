@@ -127,6 +127,8 @@ import {
   type ExecutionResumeInput,
   type ExecutionSessionsShareInput,
   type ExecutionTerminateInput,
+  type ExecutionCompleteInput,
+  type ReleaseInput,
   type FileUploadAbortInput,
   type FileUploadCompleteInput,
   type FileUploadGrant,
@@ -238,7 +240,7 @@ import { measureSpawnTerminalSize } from '../../terminal/pty/terminalSize.js';
 
 import type { HttpClient, QueryParams } from './http';
 import type { AttentionV2Ops, StyleVersionsPage } from '../seam';
-import type { ArtifactRevisionsList, BranchTopologyOpts, ConnectionOpts, FeedOpts, FileBlameOpts, FileHistoryOpts, GitDiffOpts, IdentityView, JournalOpts, LivenessSnapshot, MessageListOpts, PageOpts, TranscriptOpts } from '../seam';
+import type { ArtifactRevisionsList, BranchTopologyOpts, ConnectionOpts, FeedOpts, FileBlameOpts, FileHistoryOpts, GitDiffOpts, IdentityView, JournalOpts, LivenessSnapshot, MessageListOpts, PageOpts, SessionCompleteResult, TranscriptOpts } from '../seam';
 
 /**
  * Fill in terminal geometry the caller did not state, so a server-hosted PTY
@@ -1754,6 +1756,16 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     terminate(id: EntityId, input: ExecutionTerminateInput): Promise<CommandResult> {
       return http.call<CommandResult>('execution.terminate', { params: { id }, body: input });
+    },
+
+    /** Spec D1 §4.1. The contract DTO verbatim; refusals pass through as `CollabError`. */
+    completeSession(id: EntityId, input: ExecutionCompleteInput): Promise<SessionCompleteResult> {
+      return http.call<SessionCompleteResult>('execution.complete', { params: { id }, body: input });
+    },
+
+    /** Spec D1 §6.3 R4 — "Hand off": end the caller's claim on a task with a note. */
+    releaseClaim(taskId: EntityId, input: ReleaseInput): Promise<CommandResult> {
+      return http.call<CommandResult>('entities.commands.release', { params: { id: taskId }, body: input });
     },
 
     /**

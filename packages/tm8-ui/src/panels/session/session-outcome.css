@@ -1,0 +1,273 @@
+/* Spec D1 §5.4 / §5.5 — the session outcome dialogs. The MembershipConfirm
+   shape (settings-space/membership-confirm.css), wider, because these list a
+   session's claimed tasks and hold a receipt. */
+.so-dialog__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--pn-ink) 28%, transparent);
+}
+.so-dialog {
+  width: 380px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  box-sizing: border-box;
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-pop);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink);
+}
+.so-dialog__title {
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.so-dialog__subject {
+  font-weight: 400;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-micro);
+}
+.so-dialog__section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.so-dialog__label {
+  font-size: var(--pn-fs-fine);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--pn-ink-3);
+}
+.so-dialog__muted {
+  margin: 0;
+  color: var(--pn-ink-3);
+  line-height: 1.5;
+}
+.so-dialog__quote {
+  margin: 0 0 4px;
+  padding: 6px 8px;
+  border-left: 2px solid var(--pn-line-2);
+  background: var(--pn-card);
+  white-space: pre-wrap;
+  max-height: 120px;
+  overflow: auto;
+}
+.so-dialog__text {
+  width: 100%;
+  min-height: 64px;
+  box-sizing: border-box;
+  resize: vertical;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  color: var(--pn-ink);
+  padding: 6px;
+}
+.so-dialog__claims {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.so-dialog__claim {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+}
+.so-dialog__claimtitle {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.so-dialog__claimstatus {
+  color: var(--pn-ink-3);
+}
+.so-dialog__claimstatus--open {
+  color: var(--pn-wait);
+  font-weight: 600;
+}
+.so-dialog__claimacts {
+  display: inline-flex;
+  gap: 6px;
+}
+.so-dialog__handoff {
+  flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.so-dialog__row {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.so-dialog__link {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--pn-info, var(--pn-ink-2));
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+}
+.so-dialog__check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.so-dialog__error {
+  margin: 0;
+  line-height: 1.45;
+  color: var(--pn-block);
+}
+.so-dialog__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  padding-top: 2px;
+}
+.so-dialog__cancel,
+.so-dialog__go {
+  padding: 4px 11px;
+  border-radius: var(--pn-r-sm);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+  cursor: pointer;
+}
+.so-dialog__cancel {
+  border: 1px solid var(--pn-line-2);
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+}
+.so-dialog__go--done {
+  border: 1px solid var(--pn-run);
+  background: var(--pn-run);
+  color: var(--pn-paper);
+}
+.so-dialog__go--stop {
+  border: 1px solid var(--pn-line-2);
+  background: var(--pn-card);
+  color: var(--pn-block);
+}
+.so-dialog__go:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Spec D1 §5.2 — the session row's word, line 2 and process dot. */
+.pn-st__word {
+  flex: 0 0 auto;
+  font-size: var(--pn-fs-fine);
+  font-weight: 600;
+  padding: 0 5px;
+  border-radius: var(--pn-r-sm);
+  white-space: nowrap;
+  color: var(--pn-ink-3);
+}
+.pn-st__word--run { color: var(--pn-run); }
+.pn-st__word--done { color: var(--pn-run); background: var(--pn-run-soft); }
+.pn-st__word--wait { color: var(--pn-wait); }
+.pn-st__word--block { color: var(--pn-block); }
+.pn-st__line2 {
+  font-size: var(--pn-fs-fine);
+  color: var(--pn-ink-3);
+  padding-left: 40px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pn-st__line2--block { color: var(--pn-block); }
+.pn-st__crumb {
+  font-size: var(--pn-fs-fine);
+  color: var(--pn-ink-3);
+  padding-left: 40px;
+}
+.pn-agent__pdot {
+  position: absolute;
+  left: -2px;
+  bottom: -2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  box-sizing: border-box;
+  border: 1px solid var(--pn-card);
+}
+.pn-agent__pdot--green { background: var(--pn-run); }
+.pn-agent__pdot--amber { background: var(--pn-wait); }
+.pn-agent__pdot--amber-hollow { background: var(--pn-card); border: 1.5px solid var(--pn-wait); }
+.pn-agent__pdot--red { background: var(--pn-block); }
+.pn-agent__pdot--grey { background: var(--pn-ink-4); }
+.lp__rowaction--fixed {
+  color: var(--pn-run);
+  cursor: default;
+}
+
+/* Spec D1 §5.3 — the session tab groups and their bulk verbs. */
+.lp__sgroup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px 2px;
+  font-size: var(--pn-fs-fine);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--pn-ink-3);
+}
+.lp__sgroup-bulk {
+  margin-left: auto;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-fine);
+  padding: 1px 7px;
+  cursor: pointer;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.lp__sgroup-hint {
+  text-transform: none;
+  letter-spacing: 0;
+}
+.lp__tab-count--alert {
+  color: var(--pn-paper);
+  background: var(--pn-block);
+  border-radius: 8px;
+  padding: 0 5px;
+}
+.lp__livecount--alert {
+  color: var(--pn-block);
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+}
+
+/* Spec D1 §5.6 — "Completed, process open": the banner above a still-usable terminal. */
+.pn-terminal-outcome {
+  font-size: var(--pn-fs-micro);
+  padding: 5px 10px;
+  color: var(--pn-run);
+  background: var(--pn-run-soft);
+  border-bottom: 1px solid var(--pn-line-2);
+}

@@ -378,8 +378,15 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
       (rows: readonly EntitySummary[]) =>
       (filter: QueryFilter): readonly EntitySummary[] => {
         const bands = filter.category;
-        if (!bands || bands.length === 0) return rows;
-        return rows.filter((r) => r.category !== undefined && bands.includes(r.category));
+        // Spec D1: the session tabs narrow on process status × outcome.
+        const sessionNarrowed = rows.filter((r) => {
+          const state = r.state as { status?: string; outcome?: string };
+          if (filter.sessionStatus && !filter.sessionStatus.includes(state.status as never)) return false;
+          if (filter.sessionOutcome && !filter.sessionOutcome.includes((state.outcome ?? 'open') as never)) return false;
+          return true;
+        });
+        if (!bands || bands.length === 0) return sessionNarrowed;
+        return sessionNarrowed.filter((r) => r.category !== undefined && bands.includes(r.category));
       };
 
     const running = {
@@ -430,12 +437,13 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
          failure), and this is the assertion that keeps the fix declarative — a
          later edit that hardcodes `work_session` inside EntityListPanel passes
          the test above and fails this one. */
-      expect(getKind('work_session').list.defaultCategory).toBe('in_progress');
+      // Spec D1 §5.3: sessions have their own tabs and open on Running.
+      expect(getKind('work_session').list.defaultCategory).toBe('running');
 
       const { getByRole } = render(
         <EntityListPanel kind="work_session" rowsFor={bandedRowsFor([running])} ctx={ctx} />,
       );
-      expect(getByRole('tab', { selected: true }).textContent).toContain('In Progress');
+      expect(getByRole('tab', { selected: true }).textContent).toContain('Running');
     });
 
     it('leaves every AUTHORED kind on To Do — the shared tab array is untouched', () => {
@@ -641,7 +649,7 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     // The user ratified universal tabs; phase 7 made them the closed four and
     // made them IDENTICAL, which is the stronger claim: they are not four tabs
     // each kind spells its own way, they are one declaration.
-    for (const kind of ['task', 'work_session', 'doc']) {
+    for (const kind of ['task', 'doc']) {
       const panel = render(<EntityListPanel kind={kind} rowsFor={rowsFor([])} ctx={ctx} />);
       expect(
         panel.getAllByRole('tab').map((t) => (t.textContent ?? '').replace(/\s*\d+\+?$/, '')),
@@ -649,6 +657,13 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
       ).toEqual(['To Do', 'In Progress', 'Done', 'Cancelled']);
       panel.unmount();
     }
+    // Spec D1 §5.3 (owner decision, 6 Oct): sessions have their OWN row,
+    // split first on whether the process is alive — as skills have theirs.
+    const sessions = render(<EntityListPanel kind="work_session" rowsFor={rowsFor([])} ctx={ctx} />);
+    expect(
+      sessions.getAllByRole('tab').map((t) => (t.textContent ?? '').replace(/\s*\d+\+?$/, '')),
+    ).toEqual(['Running', 'Interrupted', 'Completed', 'Stopped']);
+    sessions.unmount();
     // The sections that used to fight the tabs on the same axis are GONE.
     expect(getKind('task').list.sections).toBeUndefined();
   });
@@ -843,15 +858,15 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
       id: 'session-codex-exited',
       state: { ...sessionLive.state, agentTool: 'codex', model: 'gpt-5.6-sol', status: 'exited' },
     } as EntitySummary;
-    const onTerminate = vi.fn();
-    const { getByTestId, getByRole, queryByText } = render(
+    const onResume = vi.fn();
+    const { getByTestId, getByRole, queryByText, queryByRole } = render(
       <EntityListPanel
         kind="work_session"
         rowsFor={rowsFor([exited])}
         ctx={ctx}
         livenessOf={() => 'not-running'}
         linkedTasksOf={() => [taskGuideLines]}
-        onTerminate={onTerminate}
+        onResume={onResume}
       />,
     );
     const tile = getByTestId('list-tile');
@@ -863,32 +878,18 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     fireEvent.click(getByRole('button', { name: 'Expand details' }));
     expect(tile.textContent).toContain(taskGuideLines.title);
     /**
-     * TERMINATE IS OFFERED HERE, AND *THAT* IS THE FIX — 2026-08-19.
-     *
-     * Read what this row actually is: `state.status = 'exited'` and
-     * `livenessOf → 'not-running'`, but its `category` is still `in_progress`,
-     * because it is `sessionLive` with the status field overwritten. That is
-     * not an artificial fixture — it is exactly the GHOST the user reported:
-     * a row whose process is gone while the envelope still files it under
-     * In Progress.
-     *
-     * This block used to assert `hon-disabled`, on the reasoning that there is
-     * no process left to kill so the control should say so. The reasoning was
-     * wrong about the node. `SpawnService.terminate` states the opposite in
-     * its own comment — "'not_found' is not an error: terminating an
-     * already-dead session is the user cancelling something that just
-     * finished" — and writes `exited` regardless, which since 155 files the
-     * row under Done. The client was refusing an operation the server performs,
-     * and the cost was rows nobody could retire.
-     *
-     * So the verb is live and the click reaches the executor. What refuses
-     * Terminate now is the CATEGORY, not the verdict — see 'a session under
-     * DONE refuses Terminate' below.
+     * SPEC D1 §5.2 REPLACES THE 2026-08-19 GHOST RULING FOR THIS ROW. Its
+     * process has EXITED and its outcome is still open, so it is not a ghost
+     * any more — it is an Interrupted session ("Ended, not completed"), and
+     * the row offers Resume · Complete · Dismiss. Terminate has nothing left
+     * to end. (The ghost the ruling was about — record running, process gone
+     * — still offers Terminate: see 'but a GHOST session offers it'.)
      */
-    const terminate = getByRole('button', { name: 'Terminate' });
-    expect(terminate.className).not.toContain('hon-disabled');
-    fireEvent.click(terminate);
-    expect(onTerminate).toHaveBeenCalledWith(exited.id);
+    expect(queryByRole('button', { name: 'Terminate' })).toBeNull();
+    const resume = getByRole('button', { name: 'Resume' });
+    fireEvent.click(resume);
+    expect(onResume).toHaveBeenCalledWith(exited.id);
+    expect(tile.querySelector('[data-testid="session-row-word"]')?.textContent).toBe('Ended, not completed');
     expect(getByRole('button', { name: 'Copy session ID' })).toBeTruthy();
   });
 
@@ -923,58 +924,60 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     expect(tile.querySelector('.pn-st__statusglyph')?.getAttribute('title')).toContain('unverified');
   });
 
-  it('the live COUNT is rows ∩ the seam live set — not rows whose record claims running', () => {
-    // Both fixtures carry state.status === 'running'. Only one is in the live
-    // set. A count off the record would say 2 and be an overstatement.
+  it('SPEC D1 §5.3: the header "● N running" IS the Running tab count, stale rows included', () => {
+    /*
+     * This used to be rows ∩ the seam live set of the OPEN tab (user report
+     * 2026-08-19). Spec D1 rules the header to equal the Running tab's own
+     * count: the tab holds a stale row until the reaper records it lost, and a
+     * header that disagreed with the tab under it would be the confusing
+     * number this replaced. "Stale" is said on the row itself.
+     */
     const { getByTestId } = render(
       <EntityListPanel
         kind="work_session"
         rowsFor={rowsFor([sessionLive, sessionStale])}
+        pageStateOf={(filter) => ({
+          hasMore: false,
+          loading: false,
+          total: (filter as { sessionOutcome?: string[] }).sessionOutcome?.includes('completed')
+            && (filter as { sessionStatus?: string[] }).sessionStatus?.includes('running') ? 2 : 0,
+        })}
         ctx={ctx}
         liveIds={[sessionLive.id]}
         livenessOf={(id) => (id === sessionLive.id ? 'live' : 'stale')}
       />,
     );
-    expect(getByTestId('list-live-count').textContent).toContain('1');
+    expect(getByTestId('list-live-count').textContent).toBe('● 2 running');
   });
 
-  it('and it counts the OPEN TAB, not the whole kind', () => {
-    /**
-     * USER REPORT 2026-08-19: "live session count is shown in both in progress
-     * and done. does it make sense".
-     *
-     * It did not. `liveCountFor` asked `rowsFor(spec.filter)` and never applied
-     * the tab, so one unchanging number sat beside a tab row whose every other
-     * number moved — reading, under Done, as a claim that Done holds live
-     * sessions.
-     *
-     * That was merely confusing while nothing live could BE under Done. The
-     * tick makes it wrong: a session marked done keeps running, so "live, under
-     * Done" is a real population and the badge has to be able to state its
-     * size. Both rows below are live; they sit under different tabs.
-     */
-    const inProgress = { ...sessionLive, id: 'sess-wip', category: 'in_progress' as const };
-    const filed = { ...sessionLive, id: 'sess-filed', category: 'done' as const };
+  it('SPEC D1 §5.3: "⚠ M interrupted" shows above zero and opens the Interrupted tab', () => {
+    const crashed = {
+      ...sessionLive,
+      id: 'sess-crashed',
+      state: { ...sessionLive.state, status: 'failed', endedKind: 'crashed' },
+    } as EntitySummary;
     const { getByTestId, getByRole } = render(
       <EntityListPanel
         kind="work_session"
         rowsFor={(filter) => {
-          const want = (filter as { category?: string[] }).category;
-          const rows = [inProgress, filed];
-          return want ? rows.filter((r) => want.includes(r.category)) : rows;
+          const f = filter as { sessionStatus?: string[]; sessionOutcome?: string[] };
+          return [sessionLive, crashed].filter((r) => {
+            const st = r.state as { status: string; outcome?: string };
+            return (!f.sessionStatus || f.sessionStatus.includes(st.status))
+              && (!f.sessionOutcome || f.sessionOutcome.includes(st.outcome ?? 'open'));
+          });
         }}
         ctx={ctx}
-        liveIds={[inProgress.id, filed.id]}
         livenessOf={() => 'live'}
       />,
     );
-
-    // Both rows are live, so the OLD unnarrowed count said 2 on every tab.
-    fireEvent.click(getByRole('tab', { name: /In Progress/ }));
-    expect(getByTestId('list-live-count').textContent).toContain('1');
-
-    fireEvent.click(getByRole('tab', { name: /Done/ }));
-    expect(getByTestId('list-live-count').textContent).toContain('1');
+    const alert = getByTestId('list-alert-count');
+    expect(alert.textContent).toBe('⚠ 1 interrupted');
+    // The Interrupted tab's count is the red badge.
+    const tab = getByRole('tab', { name: /Interrupted/ });
+    expect(tab.querySelector('[data-alert="true"]')?.textContent).toBe('1');
+    fireEvent.click(alert);
+    expect(getByRole('tab', { selected: true }).textContent).toContain('Interrupted');
   });
 
   it('row actions render disabled-with-reason when capabilities are UNKNOWN', () => {
@@ -1497,7 +1500,8 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
       <EntityDetailPanel detail={detail} reasons={REASONS} ctx={ctx} liveness="stale" />,
     );
     const header = getByTestId('panel-header');
-    expect(header.textContent).toContain('stale');
+    // Spec D1 §5.6: the pill is the session word, "Stale" (§5.1 row 9a).
+    expect(header.textContent).toContain('Stale');
     expect(header.querySelector('.kit-pill--run')).toBeNull();
   });
 
@@ -1571,8 +1575,9 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
         liveness="live"
         onAction={(ref) => fired.push(ref)}
         /* `chat-about` — Chat beside Run (entity chat §3.2) — is wired too,
-           so the bar's only refusal-free claim stays about this host. */
-        wiredActions={['terminate', 'chat-about']}
+           so the bar's only refusal-free claim stays about this host. Spec
+           D1 §5.6: a working session's bar is Complete · Terminate. */
+        wiredActions={['complete-session', 'terminate', 'chat-about']}
         /* ▶ (continue this session, migration 200) shares the bar; with launch
            sources it is a live flow verb rather than an unwired one. */
         launch={LAUNCH_SOURCES}
@@ -1610,8 +1615,15 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
      * `liveness="exited"` and the `done` category are the same fixture as
      * before; only the expected control changed.
      */
+    /* Spec D1: the slot reads the session's own process × outcome, not the
+       category — so the ended run is stated on the record: a STOPPED session
+       whose process exited, whose only verb is Resume (§5.2). */
     const source = fixtureDetails[sessionStale.id]!;
-    const detail = { ...source, category: 'done' as const };
+    const detail = {
+      ...source,
+      category: 'cancelled' as const,
+      state: { ...source.state, status: 'exited', outcome: 'stopped' } as typeof source.state,
+    };
     const dispatched: string[] = [];
     const { getByTestId } = render(
       <EntityDetailPanel
@@ -1654,7 +1666,7 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
         ctx={{ ...ctx, capabilities: detail.capabilities }}
         liveness="unknown"
         onAction={() => {}}
-        wiredActions={['terminate', 'resume', 'chat-about']}
+        wiredActions={['complete-session', 'terminate', 'resume', 'chat-about']}
         launch={LAUNCH_SOURCES}
       />,
     );

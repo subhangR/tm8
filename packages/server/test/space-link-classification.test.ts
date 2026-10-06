@@ -26,6 +26,7 @@ const WATCHED_WORD = /(spawn|start|resume|dispatch|terminal|attach|grant|token|u
 /** Watched ops the executor admits, each with why it starts, grants and reads nothing of that class. */
 const PASSES: Record<string, string> = {
   'execution.terminate': 'stops a session; starts nothing',
+  'execution.complete': 'settles a session outcome (Spec D1); starts nothing — closeProcess only terminates',
   'execution.sessions.share': 'changes sharing on B\'s own entity; mints no bearer',
   'execution.launch': 'reads the launch posture; no body, no token',
   'execution.liveness': 'reads liveness flags',

@@ -213,6 +213,8 @@ import type {
   ExecutionResumeInput,
   ExecutionSessionsShareInput,
   ExecutionTerminateInput,
+  ExecutionCompleteInput,
+  ReleaseInput,
   FileUploadAbortInput,
   FileUploadCompleteInput,
   FileUploadGrant,
@@ -491,6 +493,19 @@ export interface PageOpts {
 }
 
 /** `messages.list` paging plus the one filter that read has always accepted. */
+/**
+ * `execution.complete`'s answer (Spec D1 §4.1): the usual command result plus
+ * what the outcome write did. `alreadyCompleted` is the idempotent replay.
+ */
+export interface SessionCompleteResult extends CommandResult {
+  outcome?: {
+    outcome: 'open' | 'completed' | 'stopped';
+    receiptMessageId: string | null;
+    endedClaims?: number;
+    alreadyCompleted?: boolean;
+  } | null;
+}
+
 export interface MessageListOpts extends PageOpts {
   /** Read the branch under this root instead of the anchor's thread roots. */
   rootMessageId?: EntityId;
@@ -1340,6 +1355,21 @@ export interface Seam {
     dispatch(input: ExecutionDispatchInput): Promise<ExecutionDispatchResult>;
     prompt(id: EntityId, input: ExecutionPromptInput): Promise<CommandResult>;
     terminate(id: EntityId, input: ExecutionTerminateInput): Promise<CommandResult>;
+    /**
+     * `execution.complete` (Spec D1 §4.1) — settle the session's OUTCOME as
+     * `completed`. The claim check runs first (`claims_open`, listing each
+     * task still working), then the receipt rule (`receipt_required` /
+     * `receipt_not_on_anchor`); refusals arrive as `invariant_violation` with
+     * `details.reason`, verbatim. `closeProcess` also closes a live process as
+     * `exited_clean`. The result carries `outcome` beside the usual patches.
+     */
+    completeSession(id: EntityId, input: ExecutionCompleteInput): Promise<SessionCompleteResult>;
+    /**
+     * `entities.commands.release` (Spec D1 §6.3 R4) — end the caller's claim
+     * on a TASK with a hand-off note; the task keeps its status. The Complete
+     * dialog's "Hand off". `no_claim` when there is none to end.
+     */
+    releaseClaim(taskId: EntityId, input: ReleaseInput): Promise<CommandResult>;
     /**
      * `execution.sessions.share` (187) — TURN ONE OR BOTH OF THIS SESSION'S
      * SHARING DIALS.

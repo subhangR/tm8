@@ -62,6 +62,8 @@ function mount(
     /** The two seam answers the process control turns on — see its describe. */
     liveness?: SessionLiveness;
     category?: StatusCategory;
+    /** Spec D1: overwrite every session row's process/outcome fields. */
+    session?: Record<string, unknown>;
     /** Mount inside the phone shell's surface provider. */
     phone?: boolean;
   } = {},
@@ -79,6 +81,7 @@ function mount(
         ...row.state,
         ...(handlers.driveMode === undefined ? {} : { driveMode: handlers.driveMode }),
         ...(handlers.sharingSetAt === undefined ? {} : { sharingSetAt: handlers.sharingSetAt }),
+        ...(handlers.session && row.kind === 'work_session' ? handlers.session : {}),
       } as typeof row.state,
       ...(handlers.createdByKind === undefined
         ? {}
@@ -244,7 +247,10 @@ describe('the row action cluster is one shape across all three anatomies', () =>
     // closing it). See `registry.test.ts` case 5c.
     expect(marks).toEqual([
       'collections',
-      'Complete',
+      // Spec D1 §5.5: the session tick is `complete-session` — it opens the
+      // Complete dialog (receipt + claim check), gated on the operation and
+      // not on the task-completion capability, so it is drawn live.
+      'complete-session',
       // ▶ — continue this session in a new one (migration 200). It follows
       // the tick by `RULED_ORDER`, exactly as on a task row.
       'run',
@@ -491,37 +497,36 @@ describe('the tail slot resolves to terminate-or-resume, never both and never ne
   const drawn = (container: HTMLElement, label: string): boolean =>
     within(firstCluster(container)).queryByLabelText(label) !== null;
 
+  /*
+   * SPEC D1 §5.2 REPLACES THE CATEGORY TABLE. The category now follows the
+   * OUTCOME (a crashed open session is `in_progress`, a completed one still
+   * streaming is `done`), so the slot reads the session's own outcome ×
+   * process instead:
+   *
+   *   working (open, running, live)   Complete · Terminate
+   *   stale ghost                     Complete · Terminate (retirable)
+   *   crashed / ended, open           Resume · Complete (· Dismiss)
+   *   stopped                         Resume only
+   *   completed, process open         Stop (close-process), fixed ✓, no tick
+   */
   it.each([
-    // The reported defect: nothing is answering and the run is filed done.
-    ['done', 'not-running', 'resume'],
-    // THE HEADLINE STATE #425 never paired. A session ticked while running is
-    // under Done AND still streaming, so the run has NOT ended: the slot keeps
-    // Terminate and the tick stays, because there it is the UN-tick.
-    ['done', 'live', 'terminate'],
-    ['in_progress', 'live', 'terminate'],
-    // The stale ghost #425 fixed: not live, not finished, and the one row that
-    // most needs retiring. Unchanged by this ruling.
-    ['to_do', 'unknown', 'terminate'],
-  ] as [StatusCategory, SessionLiveness, 'terminate' | 'resume'][])(
-    'category %s + liveness %s puts %s in the tail, and the tick follows it',
-    (category, liveness, expected) => {
-      const { container } = mount('work_session', SESSION, { category, liveness });
-      const ended = expected === 'resume';
-
-      // THE VERB IS LIVE, not merely drawn: the tail slot is the row's one
-      // process control and a swap that produced a second refusal would have
-      // fixed nothing.
+    [{ status: 'running' }, 'live', 'terminate', true],
+    [{ status: 'running' }, 'unknown', 'terminate', true],
+    [{ status: 'failed', endedKind: 'crashed' }, 'not-running', 'resume', true],
+    [{ status: 'exited', endedKind: 'exited_clean' }, 'not-running', 'resume', true],
+    [{ status: 'exited', outcome: 'stopped' }, 'not-running', 'resume', false],
+    [{ status: 'running', outcome: 'completed' }, 'live', 'close-process', false],
+  ] as [Record<string, unknown>, SessionLiveness, string, boolean][])(
+    'session %o + liveness %s puts %s in the tail (Complete drawn: %s)',
+    (session, liveness, expected, completable) => {
+      const { container } = mount('work_session', SESSION, { session, liveness });
       expect(verbsIn(firstCluster(container))).toContain(expected);
-      // TOTAL: exactly one of the pair, never two-with-one-greyed and never a
-      // gap. Asked by NAME so a refusal counts as present — see `drawn`.
-      expect(drawn(container, ended ? 'Terminate' : 'Resume')).toBe(false);
-
-      // THE TICK VANISHES ON THE SAME PREDICATE — one control in that state,
-      // not two. It is absent rather than disabled because on a finished run
-      // it has no SUBJECT: "is this row's claim on my attention over?" is
-      // structurally, permanently yes, so there is nothing to toggle and no
-      // refusal to explain.
-      expect(drawn(container, 'Complete')).toBe(!ended);
+      // TOTAL: Terminate and Resume never both.
+      expect(drawn(container, 'Terminate') && drawn(container, 'Resume')).toBe(false);
+      expect(drawn(container, 'Complete')).toBe(completable);
+      // A completed row shows a FIXED check instead of the tick (Q2).
+      expect(container.querySelector('[data-testid="session-fixed-check"]') !== null)
+        .toBe(session.outcome === 'completed');
     },
   );
 
@@ -550,7 +555,7 @@ describe('the tail slot resolves to terminate-or-resume, never both and never ne
     const onResume = vi.fn();
     const onAction = vi.fn();
     const { container } = mount('work_session', SESSION, {
-      category: 'done',
+      session: { status: 'failed', endedKind: 'crashed' },
       liveness: 'not-running',
       onResume,
       onAction,
@@ -572,7 +577,10 @@ describe('the tail slot resolves to terminate-or-resume, never both and never ne
     const { container } = render(
       <EntityListPanel
         kind="work_session"
-        rowsFor={() => rowsOfKind('work_session').map((row) => ({ ...row, category: 'done' as const }))}
+        rowsFor={() => rowsOfKind('work_session').map((row) => ({
+          ...row,
+          state: { ...row.state, status: 'exited', outcome: 'stopped' } as typeof row.state,
+        }))}
         ctx={ctx}
         capabilitiesOf={() => SESSION}
         livenessOf={() => 'not-running'}
@@ -591,7 +599,7 @@ describe('the tail slot resolves to terminate-or-resume, never both and never ne
    */
   it('stamps its own verb, so the destructive hover cannot follow it into the slot', () => {
     const { container } = mount('work_session', SESSION, {
-      category: 'done',
+      session: { status: 'exited', outcome: 'stopped' },
       liveness: 'not-running',
     });
     const button = firstCluster(container).querySelector('button[data-action="resume"]');

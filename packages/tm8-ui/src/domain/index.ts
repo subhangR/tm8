@@ -97,6 +97,7 @@ export {
   hasEnded,
   processControlFor,
   resolveAction,
+  sessionControlsFor,
   sharingControlFor,
   sessionSharingOf,
   type SessionSharing,
@@ -112,6 +113,54 @@ export {
 export { actorName, actorPresentation, LEFT_SUFFIX, type ActorPresentation } from './actors';
 
 export { needsAttentionOf, toRowFacts } from './needs-attention';
+
+/* Spec D1: the session's outcome vs its process — row word, tab, line 2,
+   verbs and the Interrupted grouping, from one pure module. */
+export {
+  RUNNING_GRACE_MS,
+  SESSION_TABS,
+  SESSION_TAB_FILTERS,
+  SESSION_TAB_LABEL,
+  activeClaims,
+  blockingClaims,
+  capRefusalHint,
+  claimTally,
+  offeredCountOf,
+  claimsFromEdges,
+  crossTabBreadcrumb,
+  endedPhraseOf,
+  groupSessionRows,
+  interruptedGroupOf,
+  isProcessRecordedLive,
+  isReadyToComplete,
+  isSessionState,
+  sessionCategoryOf,
+  sessionHeadline,
+  sessionLineTwo,
+  sessionNeedsAttentionOf,
+  sessionOutcomeOf,
+  sessionRecordOf,
+  sessionRowWord,
+  sessionTabOf,
+  sessionVerbsOf,
+  withGrace,
+} from './session-outcome';
+export type {
+  GroupBulk,
+  InterruptedGroup,
+  SessionCase,
+  SessionClaim,
+  SessionDot,
+  SessionIcon,
+  SessionOutcome,
+  SessionRecord,
+  SessionRowGroup,
+  SessionTab,
+  SessionTone,
+  SessionVerb,
+  SessionWord,
+  SessionWordContext,
+} from './session-outcome';
 
 export {
   AGENT_TOOLS,

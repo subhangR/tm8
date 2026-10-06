@@ -603,6 +603,9 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // through it, one key per click; absent keys are left alone.
       'updateSpace',
       'upsertReadMark', 'work',
+      // Spec D1 §4.1 / §6.3 R4: `execution.complete` and the task release
+      // ("Hand off") behind the Complete dialog.
+      'completeSession', 'releaseClaim',
     ].sort());
     expect(Object.keys(seam.liveness).sort()).toEqual(['onChange', 'refresh', 'statusOf']);
     // Amendment 3 (2026-08-01, attachments): `downloadHref` — the one seam

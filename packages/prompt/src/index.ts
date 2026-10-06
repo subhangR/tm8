@@ -49,6 +49,7 @@ import { DEFAULT_PROMPT_VERSION, PROMPT_V2_MODES, PROMPT_VERSION_V2 } from './pr
 import {
   composePromptV2, COORDINATOR_SUBTASK_RULE, HEADER_AUTHORING_RULE, PLACEMENT_RULE, type TaskContextSnapshot,
 } from './prompt-v2.js';
+import { WORKER_ROUTINE_V1 } from './worker-routine.js';
 
 /**
  * The harness surfaces (§5.2 kernel, §8.1 budgets, §14 templates, §18 escaping)
@@ -64,6 +65,7 @@ export * from './kernel.js';
 export * from './prompt-version.js';
 export * from './templates.js';
 export * from './prompt-v2.js';
+export * from './worker-routine.js';
 
 export type AgentMode =
   | 'worker'
@@ -319,9 +321,8 @@ const WORKER_IDENTITY_INSTRUCTION =
   'answer with `tm8 message reply <context_message_id> "<body>"` — the reply verb ' +
   'derives the thread and anchor from that message id, so your answer lands where ' +
   'the question was asked. Completion needs a verified result and a durable receipt — ' +
-  'your process exiting is not completion: close out with one `tm8 message send` ' +
-  'on the anchor stating outcome, entity ids touched, decisions and why, open ' +
-  'questions, and next-session pointers.' +
+  'your process exiting is not completion.' +
+  WORKER_ROUTINE_V1 +
   GIT_TRACKING_WORKER_INSTRUCTION +
   ' ' +
   PLACEMENT_RULE +
@@ -364,7 +365,9 @@ const COORDINATOR_IDENTITY_INSTRUCTION =
   'worker. Verify each unit against its success criteria, record state ' +
   'through the owning domain command rather than announcing it, and close out ' +
   'with one `tm8 message send` on your assignment anchor integrating every ' +
-  'worker result — or naming the ones you could not collect.' +
+  'worker result — or naming the ones you could not collect. Terminating a worker ' +
+  'whose work is not completed needs `--stop` (abandon) or `--complete` (it is done).' +
+  WORKER_ROUTINE_V1 +
   GIT_TRACKING_COORDINATOR_INSTRUCTION +
   ' ' +
   PLACEMENT_RULE +
@@ -387,6 +390,7 @@ const COORDINATED_WORKER_IDENTITY_INSTRUCTION =
   'or task anchor. The message must carry outcome, verification, blockers, the entities or ' +
   'artifacts you touched, decisions and why, open questions, and next-session ' +
   'pointers. Do not go idle after finishing.' +
+  WORKER_ROUTINE_V1 +
   GIT_TRACKING_WORKER_INSTRUCTION +
   ' ' +
   PLACEMENT_RULE +

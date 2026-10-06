@@ -1898,6 +1898,21 @@ const ROWS: Record<OperationName, Row> = {
       'enum values use their exact contract spelling, including `in_review`',
       'transition time is Server-owned; a client cannot backdate lifecycle history',
       'changes only the status: the caller is recorded as working_on the task only with --claim (an edge the caller already holds follows the transition)',
+      'inside a tm8 session --claim is the SESSION\'s claim; claiming from a completed session reopens it (logged)',
+      'open and cancelled end every claim on the task (task_reset / task_cancelled); to hand off without changing the status, use `tm8 task release`',
+    ],
+  },
+  'entities.commands.release': {
+    cmd: ['task', 'release'],
+    syn: 'tm8 task release <task-id> --note <hand-off> [--mutation-id <id>]',
+    sum: 'Hand a task off: end your claim on it with a note, leaving its status as it is',
+    authz: 'entity',
+    input: 'bound',
+    tags: ['release', 'handoff', 'hand-off', 'unclaim', 'claim'],
+    notes: [
+      'ends the caller\'s working_on claim (inside a session, the session\'s) with endReason released; the task keeps its status',
+      'the note is required: it is the hand-off the next worker reads',
+      'no active claim → invariant_violation / no_claim',
     ],
   },
   'entities.commands.pull': {
@@ -2840,13 +2855,42 @@ const ROWS: Record<OperationName, Row> = {
   },
   'execution.terminate': {
     cmd: ['session', 'terminate'],
-    syn: 'tm8 session terminate <work-session-id> [--force] --yes [--mutation-id <id>]',
-    sum: 'End a work session; `--force` requests hard process termination after the same checks',
+    syn: 'tm8 session terminate <work-session-id> [--stop [--note <text>] | --complete [--receipt <message-id>] | --mark-lost] [--force] --yes [--mutation-id <id>]',
+    sum: 'Close a work session\'s process; while its work is open, say whether to --stop it or --complete it',
     authz: 'session',
     input: 'bound',
     side: 'execution',
-    tags: ['kill', 'stop', 'end'],
-    notes: ['`--force` never broadens WHO may terminate a session; it only changes how the process is stopped'],
+    tags: ['kill', 'stop', 'end', 'close'],
+    notes: [
+      'on an OPEN session one of --stop / --complete is required (invariant_violation / outcome_required otherwise)',
+      '--stop: outcome stopped, claims released (session_stopped), the session can be resumed later',
+      '--complete: runs `session complete` first (claim check + receipt), then closes the process as exited_clean',
+      'on a completed session terminate only closes the process; the outcome stays completed',
+      '--mark-lost records a process that is already gone (failed / lost); refused while the process is live',
+      'an agent never terminates itself to finish: it runs `tm8 session complete`',
+      '`--force` never broadens WHO may terminate a session; it only changes how the process is stopped',
+    ],
+  },
+  'execution.complete': {
+    cmd: ['session', 'complete'],
+    syn: 'tm8 session complete [<work-session-id>] [--receipt <message-id>] [--close-process] [--mutation-id <id>]',
+    sum: 'Mark a session\'s work completed: claim check, then the close-out message as its receipt',
+    authz: 'session',
+    input: 'bound',
+    side: 'execution',
+    tags: ['complete', 'close-out', 'finish', 'done', 'receipt'],
+    notes: [
+      'inside a tm8 session the id defaults to that session (TM8_SESSION_ID)',
+      'every claim must be done, in_review, blocked, or released with `tm8 task release --note`; otherwise invariant_violation / claims_open lists them',
+      'the receipt is --receipt, or the latest message the session wrote on its anchor; none → receipt_required',
+      'remaining in_review/blocked claims end with session_completed and the receipt as their hand-off',
+      'completion is a status marker: the session may keep messaging and working; claiming a new task (or `tm8 session resume`) reopens it, logged',
+      'the process keeps running unless --close-process',
+    ],
+    examples: [
+      'tm8 message send --to <task-id> "<close-out>" && tm8 session complete',
+      'tm8 session complete <work-session-id> --receipt <message-id> --close-process',
+    ],
   },
   'execution.streams.attach': {
     cmd: ['session', 'attach'],
@@ -4125,7 +4169,8 @@ export const CATALOG_DIGEST =
   // Re-measured (styles, 284): +15 styles.*, identity.stylePrefs.get|set, spaces.styleDefault.get|set. RECOMPUTED from JSON.stringify(OPERATIONS).
   // Re-measured (main sync: cross-space + styles).
   // +1 spaceLinks.inbound.grant (W9c, 301): read from the regenerated conformance manifest.
-  'sha256:212d8a68e5113aa53d686945c3a745cbab929f362d050e82af73b551b481331f';
+  // Re-measured for Spec D1 / 302 (+execution.complete, +entities.commands.release) on main 2bca8148c — RECOMPUTED.
+  'sha256:72c73363cec8409807e0f54d4755aebfebc0064e993dcd54227ec064b13035b1';
 
 export const GRAMMAR_VERSION = '2';
 
@@ -4970,6 +5015,7 @@ const NOUN_SUMMARY: Record<string, string> = {
   edge: 'Typed relationships between entities, and the edge-type registry',
   'edge-type': 'The registered edge types and their endpoint rules',
   story: 'Stories: create, curate roots, read bounded context, and set status',
+  routine: 'The worker routine: claim, keep status true, tick, finish, close out, session complete',
   collection: 'Curated-set membership (add/remove), plus the Space-wide entity query (invoked as `entity query`)',
   chat: 'Chats with a teammate: start one, list them, read one, post a turn, and see its turn state',
   message: 'Durable messages — the only public communication action for text',
@@ -5006,6 +5052,7 @@ const NOUN_SUMMARY: Record<string, string> = {
 export const NOUNS: readonly string[] = [
   ...new Set([
     'story', // Guide-only topic: stories use universal entity and collection commands.
+    'routine', // Guide-only topic: the worker routine (P0g), from @tm8/prompt.
     ...BASE.map((r) => r.noun),
     ...BASE.flatMap((r) => (r.command ? [r.command[0] as string] : [])),
     // An alias may introduce a noun (`space-link`, `whoami`); help must resolve it.

@@ -43,7 +43,7 @@ export type AgentMode =
 export type WorkSessionStatus = 'spawning' | 'running' | 'idle' | 'exited' | 'failed';
 
 /**
- * work_sessions.ended_kind — the six classes 171's CHECK allows. Mirrored here
+ * work_sessions.ended_kind — the classes 171's CHECK allows, as widened by 177 and 299. Mirrored here
  * rather than imported from the contract, exactly as WorkSessionStatus above
  * is: this package states the database's vocabulary, and the contract states
  * the wire's. They are kept identical deliberately, not by coupling.
@@ -54,11 +54,18 @@ export type WorkSessionStatus = 'spawning' | 'running' | 'idle' | 'exited' | 'fa
  * a legitimate death.
  */
 export type WorkSessionEndedKind =
-  | 'completed'
+  // 299: was `completed`. A clean exit says nothing about the work.
+  | 'exited_clean'
   | 'stopped_by_operator'
   | 'server_restart'
   | 'out_of_memory'
   | 'crashed'
+  // 177: container endings, missing from this mirror until 299.
+  | 'container_stopped'
+  | 'runtime_lost'
+  // 299: the ghost reaper, and credential containment.
+  | 'lost'
+  | 'credential_revoked'
   | 'unknown';
 
 /**
@@ -1228,6 +1235,16 @@ export interface GraphPort {
     auth: GraphAuth,
     nodeId: string,
   ): Promise<Array<{ sessionId: string; status: WorkSessionStatus }>>;
+  /**
+   * Spec D1 Q3 (301): this node's COMPLETED sessions whose process is still
+   * recorded live and has been idle past its space's auto-close window
+   * (`public.completed_sessions_to_close`). Optional: a port without it never
+   * auto-closes anything.
+   */
+  listCompletedSessionsToClose?(
+    auth: GraphAuth,
+    nodeId: string,
+  ): Promise<Array<{ sessionId: string; minutes: number }>>;
 
   // --- worktree provisioning (design §4) --------------------------------------
   //

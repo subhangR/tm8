@@ -170,212 +170,180 @@ afterAll(async () => {
   await database?.destroy();
 }, 30_000);
 
-describe('the tick files a session under Done', () => {
-  it('moves a RUNNING session to done and leaves the process alone', async () => {
-    const id = await createSession('still going');
-    await transition(id, 'running');
-    expect((await rowOf(id)).status_category).toBe('in_progress');
+/**
+ * 299 (Spec D1) REDEFINED THE TICK. `set_session_done` is now `session
+ * complete`: it settles the session's OUTCOME as completed, which needs a
+ * receipt (the session's latest message on its anchor) and passes the claim
+ * check. It is no longer a toggle — completed is final — and the "mark
+ * survives the process" property is now structural: the category comes from
+ * the outcome first, so no process write can move a completed row.
+ */
+async function closeOut(sessionId: string, body = 'Close-out: done.'): Promise<string> {
+  // The session's teammate writes it, as an agent's own close-out would: a
+  // message author is always a member or teammate, and the receipt rule reads
+  // the session's teammate through its `relates_to` edge.
+  return asOwner(async (q) => {
+    const tm = await q(
+      `insert into public.entities(space_id,kind,parent_id,position,created_by)
+       values($1,'team_member',null,0,$2) returning id`,
+      [fixture.spaceId, fixture.memberId],
+    );
+    const teammate = tm[0]!.id as string;
+    await q(
+      `insert into public.team_members(entity_id,owner_member_id,name,role,identity)
+       values($1,$2,'Worker','','persona')`,
+      [teammate, fixture.memberId],
+    );
+    await q(
+      `insert into public.edges(space_id,src_id,dst_id,type,created_by) values($1,$2,$3,'relates_to',$4)`,
+      [fixture.spaceId, sessionId, teammate, fixture.memberId],
+    );
+    const m = await q(
+      `insert into public.entities(space_id,kind,parent_id,position,created_by)
+       values($1,'message',null,0,$2) returning id`,
+      [fixture.spaceId, teammate],
+    );
+    const id = m[0]!.id as string;
+    await q(`insert into public.messages(entity_id,anchor_id,author_id,body) values($1,$2,$3,$4)`, [
+      id,
+      sessionId,
+      teammate,
+      body,
+    ]);
+    return id;
+  });
+}
 
-    await tick(id);
+async function outcomeOf(sessionId: string): Promise<string> {
+  const rows = await database.query<{ outcome: string }>(
+    `select outcome from public.work_sessions where entity_id = $1`,
+    [sessionId],
+  );
+  return rows[0]!.outcome;
+}
 
-    const after = await rowOf(id);
-    expect(after.status_category).toBe('done');
-    // THE RULING, in one assertion: the row is filed, the process is not
-    // touched. A `set_session_done` that also stopped the session would pass
-    // every other test in this file.
-    expect(after.session_status).toBe('running');
+async function refused(p: Promise<unknown>): Promise<{ code: string; reason?: string }> {
+  try {
+    await p;
+  } catch (err) {
+    const e = err as { code?: string; detail?: string };
+    let reason: string | undefined;
+    try {
+      reason = (JSON.parse(e.detail ?? '{}') as { reason?: string }).reason;
+    } catch {
+      reason = undefined;
+    }
+    return { code: e.code ?? '', ...(reason === undefined ? {} : { reason }) };
+  }
+  throw new Error('expected a refusal');
+}
+
+describe('the tick completes a session (299)', () => {
+  it('moves a RUNNING session to done, completed, and leaves the process alone', async () => {
+    const sessionId = await createSession('ticked');
+    await transition(sessionId, 'running');
+    await closeOut(sessionId);
+    await tick(sessionId);
+    expect(await rowOf(sessionId)).toMatchObject({ status_category: 'done', session_status: 'running' });
+    expect(await outcomeOf(sessionId)).toBe('completed');
+  });
+
+  it('needs a receipt: with no message on the anchor it refuses receipt_required and changes nothing', async () => {
+    const sessionId = await createSession('no-receipt');
+    await transition(sessionId, 'running');
+    expect((await refused(tick(sessionId))).reason).toBe('receipt_required');
+    expect(await rowOf(sessionId)).toMatchObject({ status_category: 'in_progress' });
+    expect(await outcomeOf(sessionId)).toBe('open');
   });
 
   it('bumps the version, so a client that pinned the old one conflicts', async () => {
-    const id = await createSession('versioned');
-    await transition(id, 'running');
-    const before = await rowOf(id);
-
-    await tick(id);
-
-    expect((await rowOf(id)).version).toBeGreaterThan(before.version);
+    const sessionId = await createSession('versioned');
+    await transition(sessionId, 'running');
+    await closeOut(sessionId);
+    const before = (await rowOf(sessionId)).version;
+    await tick(sessionId);
+    expect((await rowOf(sessionId)).version).toBeGreaterThan(before);
   });
 
   it('refuses a stale expectedVersion', async () => {
-    const id = await createSession('stale pin');
-    await transition(id, 'running');
-    const { version } = await rowOf(id);
-
-    await expect(
-      asApp((q) =>
-        q(`select public.set_session_done($1,$2,null,$3)`, [id, version - 1, cmid('stale')]),
-      ),
-    ).rejects.toThrow();
+    const sessionId = await createSession('stale');
+    await transition(sessionId, 'running');
+    await closeOut(sessionId);
+    const { version } = await rowOf(sessionId);
+    const r = await refused(
+      asApp((q) => q(`select public.set_session_done($1,$2,null,$3)`, [sessionId, version - 1, cmid('stale')])),
+    );
+    expect(r.code).not.toBe('');
+    expect(await outcomeOf(sessionId)).toBe('open');
   });
 
   it('refuses a task — completion for those goes through complete_task', async () => {
     const taskId = await asOwner(async (q) => {
-      const created = await q(
+      const t = await q(
         `insert into public.entities(space_id,kind,parent_id,position,created_by)
-         values($1,'task',null,0,$2) returning id`,
+         values($1,'task',null,0,$2) returning id, version`,
         [fixture.spaceId, fixture.memberId],
       );
-      return created[0]!.id as string;
+      return t[0]!.id as string;
     });
-    const { version } = await rowOf(taskId);
-
-    await expect(
-      asApp((q) =>
-        q(`select public.set_session_done($1,$2,null,$3)`, [taskId, version, cmid('task')]),
-      ),
-    ).rejects.toThrow();
+    const r = await refused(asApp((q) => q(`select public.set_session_done($1,1,null,$2)`, [taskId, cmid('task')])));
+    expect(r.code).not.toBe('');
   });
 });
 
-describe('the mark survives the process moving underneath it', () => {
-  /**
-   * THE CASE THIS FILE EXISTS FOR. See the header: without 156's guard this is
-   * a 23514 raised inside the node's own status writer, not a wrong category.
-   */
-  it('a ticked session stays done when its process goes idle', async () => {
-    const id = await createSession('goes quiet');
-    await transition(id, 'running');
-    await tick(id);
-    expect((await rowOf(id)).status_category).toBe('done');
-
-    await transition(id, 'idle');
-
-    const after = await rowOf(id);
-    expect(after.status_category).toBe('done');
-    expect(after.session_status).toBe('idle');
+describe('a completed session stays completed whatever its process does', () => {
+  it('idle, exit and failure after completion move the process only', async () => {
+    const sessionId = await createSession('sticky');
+    await transition(sessionId, 'running');
+    await closeOut(sessionId);
+    await tick(sessionId);
+    await transition(sessionId, 'idle');
+    expect(await rowOf(sessionId)).toMatchObject({ status_category: 'done', session_status: 'idle' });
+    await transition(sessionId, 'failed');
+    expect(await rowOf(sessionId)).toMatchObject({ status_category: 'done', session_status: 'failed' });
+    expect(await outcomeOf(sessionId)).toBe('completed');
   });
 
-  it('and the status write itself does not raise', async () => {
-    // The other side of the same guard. A fix that swallowed the exception
-    // somewhere above would satisfy this and fail the test before it; a fix
-    // that stopped the bridge writing at all would satisfy both and break 155,
-    // which is what `an unticked session still follows its process` catches.
-    const id = await createSession('no raise');
-    await transition(id, 'running');
-    await tick(id);
-
-    await expect(transition(id, 'idle')).resolves.toBeUndefined();
+  it('resuming a completed session reopens it (owner ruling Q2 = B) — the explicit, logged way back', async () => {
+    const sessionId = await createSession('no-resume');
+    await transition(sessionId, 'running');
+    await closeOut(sessionId);
+    await tick(sessionId);
+    await transition(sessionId, 'exited');
+    await asApp((q) => q(`select public.execution_resume($1,8,null,$2,null)`, [sessionId, cmid('resume')]));
+    expect(await outcomeOf(sessionId)).toBe('open');
+    expect((await rowOf(sessionId)).status_category).toBe('to_do');
   });
 
-  it('a ticked session stays done when its process exits — no reopen on the way', async () => {
-    const id = await createSession('exits later');
-    await transition(id, 'running');
-    await tick(id);
-
-    await transition(id, 'exited');
-
-    expect((await rowOf(id)).status_category).toBe('done');
-  });
-
-  it('but RESUMING one reopens it — the clearest statement that you are not done', async () => {
-    const id = await createSession('resumed');
-    await transition(id, 'running');
-    await tick(id);
-    await transition(id, 'exited');
-
-    /* Through `execution_resume`, not `work_session_transition` — R29's guard
-       refuses `exited -> spawning` outright, and resume is precisely the caller
-       that takes the escape hatch around it. Calling the transition function
-       here would test a path no resume uses.
-
-       The bridge then sees `spawning` -> to_do from a row sitting in `done`,
-       which is 149's ruled REOPEN, so the guard added by 156 permits it. This
-       is the one direction a marked-done session moves on its own, and it
-       should: resuming is the clearest possible statement that you are not
-       finished with it. */
-    await asApp((q) =>
-      q(`select public.execution_resume($1,8,null,$2,null)`, [id, cmid('resume')]),
-    );
-
-    expect(await rowOf(id)).toMatchObject({
-      session_status: 'spawning',
-      status_category: 'to_do',
-    });
-  });
-
-  it('an unticked session still follows its process exactly as 155 left it', async () => {
-    // 156 must be invisible to every row nobody has ticked. This is the
-    // regression that a too-eager guard would cause.
-    const id = await createSession('untouched');
-    await transition(id, 'running');
-    expect((await rowOf(id)).status_category).toBe('in_progress');
-    await transition(id, 'idle');
-    expect((await rowOf(id)).status_category).toBe('in_progress');
-    await transition(id, 'exited');
-    expect((await rowOf(id)).status_category).toBe('done');
+  it('an unticked session follows its process — and an ended open session is in_progress, not done', async () => {
+    const sessionId = await createSession('follows');
+    await transition(sessionId, 'running');
+    expect((await rowOf(sessionId)).status_category).toBe('in_progress');
+    await transition(sessionId, 'exited');
+    expect(await rowOf(sessionId)).toMatchObject({ status_category: 'in_progress', session_status: 'exited' });
   });
 });
 
-describe('the tick is a toggle', () => {
-  it('un-ticking a running session puts it back under In Progress', async () => {
-    const id = await createSession('back to work');
-    await transition(id, 'running');
-    await tick(id, 'on');
-    expect((await rowOf(id)).status_category).toBe('done');
-
-    await tick(id, 'off');
-
-    const after = await rowOf(id);
-    // Reopen is two ruled moves — done -> to_do, then to_do -> in_progress —
-    // because the algebra has no `done -> in_progress` arm. The row genuinely
-    // passes through reopen; what matters to a viewer is where it lands.
-    expect(after.status_category).toBe('in_progress');
-    expect(after.session_status).toBe('running');
+describe('the tick is no longer a toggle', () => {
+  it('un-ticking a completed session is refused with session_completed', async () => {
+    const sessionId = await createSession('untick');
+    await transition(sessionId, 'running');
+    await closeOut(sessionId);
+    await tick(sessionId);
+    expect((await refused(tick(sessionId, 'untick'))).reason).toBe('session_completed');
+    expect(await outcomeOf(sessionId)).toBe('completed');
   });
 
-  it('un-ticking an EXITED session is a no-op — the process really did finish', async () => {
-    const id = await createSession('really done');
-    await transition(id, 'running');
-    await transition(id, 'exited');
-    expect((await rowOf(id)).status_category).toBe('done');
-
-    await tick(id, 'off-exited');
-
-    expect((await rowOf(id)).status_category).toBe('done');
-  });
-
-  it('replaying one clientMutationId does not flip it back', async () => {
-    /* The standing objection to a stateful toggle: a caller that loses the
-       response cannot tell "it worked" from "it never ran". Answered by the
-       ledger rather than by a `done` argument — which is what lets this ship
-       without amending `CompleteTaskInputSchema`, a `.strict()` schema shared
-       with every task completion. */
-    const id = await createSession('replayed');
-    await transition(id, 'running');
-    const { version } = await rowOf(id);
-    const once = cmid('replay');
-
-    await asApp((q) => q(`select public.set_session_done($1,$2,null,$3)`, [id, version, once]));
-    expect((await rowOf(id)).status_category).toBe('done');
-
-    await asApp((q) => q(`select public.set_session_done($1,$2,null,$3)`, [id, version, once]));
-    expect((await rowOf(id)).status_category).toBe('done');
-  });
-});
-
-describe('the tick’s stickiness is borrowed from the algebra', () => {
-  /**
-   * THE TRIPWIRE. 156 stores no `marked_done` column: a tick sticks purely
-   * because `done -> in_progress` is not a ruled transition, so the bridge's
-   * guard declines to undo it. That is a deliberate choice — one fact instead
-   * of two that could disagree — and its whole cost is this dependency.
-   *
-   * Adding the arm to 149 would un-stick every tick in the product with no
-   * error and no other failing test. This is where that shows up.
-   */
-  it('149 still has no done -> in_progress arm', async () => {
-    const rows = await database.query<{ allowed: boolean }>(
-      `select internal.category_transition_allowed('done','in_progress') allowed`,
-    );
-    expect(rows[0]!.allowed).toBe(false);
-  });
-
-  it('and the reopen it forces instead is still ruled', async () => {
-    const rows = await database.query<{ reopen: boolean; start: boolean }>(
-      `select internal.category_transition_allowed('done','to_do') reopen,
-              internal.category_transition_allowed('to_do','in_progress') start`,
-    );
-    expect(rows[0]!.reopen).toBe(true);
-    expect(rows[0]!.start).toBe(true);
+  it('replaying one clientMutationId returns the stored result and changes nothing', async () => {
+    const sessionId = await createSession('replay');
+    await transition(sessionId, 'running');
+    await closeOut(sessionId);
+    const { version } = await rowOf(sessionId);
+    const id = cmid('replayed');
+    await asApp((q) => q(`select public.set_session_done($1,$2,null,$3)`, [sessionId, version, id]));
+    const after = await rowOf(sessionId);
+    await asApp((q) => q(`select public.set_session_done($1,$2,null,$3)`, [sessionId, version, id]));
+    expect(await rowOf(sessionId)).toEqual(after);
+    expect(await outcomeOf(sessionId)).toBe('completed');
   });
 });

@@ -347,6 +347,14 @@ export interface EntityDetailPanelProps {
    * session cannot be cleared rather than that this surface cannot clear it.
    */
   onMarkSessionExited?: () => void;
+  /**
+   * SPEC D1 §5.6 — the outcome verbs an ended session's canvas offers beside
+   * Resume (Complete, Stop for good), for THIS panel's session. Absent ⇒ they
+   * render refused, as Resume does.
+   */
+  onSessionVerb?: (ref: ActionRef) => void;
+  /** Resolve an actor id to a display name — "Stopped by Subhang" (§5.6). */
+  actorNameOf?: (actorId: string) => string | undefined;
   streaming?: boolean;
   needsAttention?: boolean;
   /** Viewer-local presentation state for the work-session Content panes. */
@@ -1975,6 +1983,8 @@ function PanelBody(
             {...(props.onMarkSessionExited
               ? { onMarkExited: props.onMarkSessionExited }
               : {})}
+            {...(props.onSessionVerb ? { onSessionVerb: props.onSessionVerb } : {})}
+            {...(props.actorNameOf ? { actorName: props.actorNameOf } : {})}
           />
         }
         transcript={props.conversationSurface ?? (

@@ -389,6 +389,10 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
   if (f.sessionStatus && f.sessionStatus.length > 0) {
     where.push(`ws.status = any(${p.add(f.sessionStatus)}::text[])`);
   }
+  // 301 (Spec D1 §5.3): the outcome axis, same kind-narrowing.
+  if (f.sessionOutcome && f.sessionOutcome.length > 0) {
+    where.push(`ws.outcome = any(${p.add(f.sessionOutcome)}::text[])`);
+  }
 
   // Memory text (the MCP `memory_search` tool): rows whose statement,
   // mechanism, subject scope or does-not-establish text contains ANY of the
@@ -559,7 +563,16 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
        join public.entities we on we.id = w.src_id
        left join public.team_members wtm on wtm.entity_id = we.id
        where w.dst_id = e.id and w.type in ('working_on','pulled')
-         and (w.src_id = ${actor} or wtm.owner_member_id = ${actor})
+         -- 299: an ended claim is history, not flight.
+         and (w.type <> 'working_on' or (w.props->>'endedAt') is null)
+         and (w.src_id = ${actor} or wtm.owner_member_id = ${actor}
+              -- 299: a claim made inside an agent session is the SESSION's;
+              -- it is in flight for whoever its persona belongs to.
+              or exists (
+                select 1 from public.edges r
+                  join public.team_members rtm on rtm.entity_id = r.dst_id
+                 where r.src_id = w.src_id and r.type = 'relates_to'
+                   and (r.dst_id = ${actor} or rtm.owner_member_id = ${actor})))
     )`);
   }
 

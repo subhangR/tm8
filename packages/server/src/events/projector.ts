@@ -1,5 +1,5 @@
 import { McpServerDefinitionSchema } from '@tm8/contract';
-import type { EffectiveSkills, OpRequestStatus } from '@tm8/contract';
+import type { EffectiveSkills, OpRequestStatus, TaskLiveSession } from '@tm8/contract';
 /**
  * Entity hydration for the event stream — the `EntityProjector` seam.
  *
@@ -53,7 +53,7 @@ import type { Querier } from '../db/types.js';
 // The ONE unread definition, shared with the facade assembler on purpose — see
 // the `channel` arm of stateOf. `entity-read.ts` imports nothing from `events/`,
 // so this direction adds no cycle.
-import { chatContextOf, isEndedKind, loadChatSubjects, loadUnreadCounts, storySummaryOf, designSummaryOf, type ChatSubject } from '../facade/entity-read.js';
+import { chatContextOf, isEndedKind, outcomeFacts, loadChatSubjects, loadUnreadCounts, storySummaryOf, designSummaryOf, type ChatSubject } from '../facade/entity-read.js';
 // The ONE narrowing of the status columns, shared with the read path. Both
 // files used to narrow `work_status` on their own and DISAGREED about an
 // unrecognised value; `facade/status.ts` is the fix and its docblock is the
@@ -70,6 +70,7 @@ import {
   projectForgeFacts,
   type LinkedPullRequestBadges,
 } from '../tracking/pr-projection.js';
+import { loadTaskLiveSessionBadges } from '../tracking/live-session-projection.js';
 
 /**
  * Thrown when the database holds an entity kind the FROZEN contract does not
@@ -269,6 +270,13 @@ interface SummaryRow {
   ws_ended_kind: string | null;
   ws_skills?: EffectiveSkills | null;
   ws_ended_reason: string | null;
+  ws_outcome?: string | null;
+  ws_outcome_at?: Date | string | null;
+  ws_outcome_by?: string | null;
+  ws_receipt_message_id?: string | null;
+  ws_outcome_source?: string | null;
+  ws_outcome_note?: string | null;
+  ws_offered_task_ids?: string[] | null;
   file_name: string | null;
   file_mime_type: string | null;
   file_size_bytes: string | number | null;
@@ -453,6 +461,19 @@ select
   ws.workdir_mode    as ws_workdir_mode,
   ws.ended_kind      as ws_ended_kind,
   ws.ended_reason    as ws_ended_reason,
+  ws.outcome         as ws_outcome,
+  ws.outcome_at      as ws_outcome_at,
+  ws.outcome_by      as ws_outcome_by,
+  ws.receipt_message_id as ws_receipt_message_id,
+  ws.outcome_source  as ws_outcome_source,
+  ws.outcome_note    as ws_outcome_note,
+  case when ws.entity_id is null then null else (select coalesce(array_agg(distinct sh.source_entity_id::text), '{}')
+     from public.session_handoffs sh
+     join public.entities ot on ot.id = sh.source_entity_id and ot.kind = 'task' and ot.deleted_at is null
+    where sh.target_work_session_id = ws.entity_id and sh.withdrawn_at is null
+      and not exists (select 1 from public.edges oc
+                       where oc.src_id = ws.entity_id and oc.dst_id = sh.source_entity_id
+                         and oc.type = 'working_on')) end as ws_offered_task_ids,
   ws.skills as ws_skills,
   f.name             as file_name,
   f.mime_type        as file_mime_type,
@@ -871,6 +892,9 @@ export class PgEntityProjector implements EntityProjector {
     // being unlinked. Same loader as the facade assembler, so the two answers
     // cannot drift. Skipped entirely when no task is in the batch.
     const pullRequests = await loadLinkedPullRequestBadges(q, rows);
+    // `badges.liveSession` (P0g): the same loader as the facade assembler, for
+    // the pull-request reason above. Skipped entirely when no task is in the batch.
+    const liveSessions = await loadTaskLiveSessionBadges(q, rows);
     // Each chat's `about` subject — the SAME loader as the facade assembler, for
     // the pull-request reason above: a subject chip that rendered on load and
     // vanished on the next `entity.upsert` would read as the link being removed.
@@ -883,7 +907,8 @@ export class PgEntityProjector implements EntityProjector {
         this.summaryOf(r, actors, assigneeIds.get(r.id) ?? [], assignments.get(r.id) ?? [],
           memberIds.get(r.id) ?? [],
           viewerReactions.get(r.id) ?? null, attention.get(r.id), unreadCounts, containsCounts,
-          pullRequests.get(r.id), humanMessageAuthors.get(r.id), chatSubjects),
+          pullRequests.get(r.id), humanMessageAuthors.get(r.id), chatSubjects,
+          liveSessions.get(r.id)),
       );
     }
     return out;
@@ -963,6 +988,7 @@ export class PgEntityProjector implements EntityProjector {
     pullRequests: LinkedPullRequestBadges | undefined,
     humanMessageAuthors: HumanMessageAuthorIds | undefined,
     chatSubjects: ReadonlyMap<string, ChatSubject>,
+    liveSession?: TaskLiveSession,
   ): EntitySummary {
     const counters: EntityCounters = {
       likes: r.likes ?? 0,
@@ -1026,6 +1052,8 @@ export class PgEntityProjector implements EntityProjector {
               ...(pullRequests.truncated ? { pullRequestsTruncated: true } : {}),
             }
           : {}),
+        // MIRRORS badgesOf: emitted whenever the loader answered.
+        ...(liveSession ? { liveSession } : {}),
       },
     };
 
@@ -1385,6 +1413,9 @@ export class PgEntityProjector implements EntityProjector {
           // to prevent. An unrecognised kind projects null, never through.
           endedKind: isEndedKind(r.ws_ended_kind) ? r.ws_ended_kind : null,
           endedReason: r.ws_ended_reason ?? null,
+          // 299 — the outcome facts, the same helper as entity-read.
+          ...outcomeFacts(r),
+          ...(Array.isArray(r.ws_offered_task_ids) ? { offeredTaskIds: r.ws_offered_task_ids } : {}),
         };
       case 'file':
         return {

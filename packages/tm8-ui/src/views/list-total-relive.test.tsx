@@ -48,7 +48,8 @@ describe('a list total follows the durable stream', () => {
 
     const victim = result.current.rows[0]!.id;
     await act(async () => {
-      await seam.commands.terminate(victim, {});
+      // Spec D1 §4.2: an open session's terminate says what happens to the work.
+      await seam.commands.terminate(victim, { outcome: 'stop' });
     });
 
     // The ROW leaves immediately — that half always worked, and asserting it

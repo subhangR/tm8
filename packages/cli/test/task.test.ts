@@ -177,7 +177,7 @@ async function drive(argv: readonly string[]): Promise<Ran> {
 describe('the eight rows this slot owns here', () => {
   it('task.ts registers exactly the eight task commands', async () => {
     const paths = (await taskCommands()).map((m) => m.path.join(' ')).sort();
-    expect(paths).toEqual(['task axis', 'task complete', 'task gate', 'task import-issue', 'task link-commit', 'task link-pr', 'task tick', 'task transition']);
+    expect(paths).toEqual(['task axis', 'task complete', 'task gate', 'task import-issue', 'task link-commit', 'task link-pr', 'task release', 'task tick', 'task transition']);
   });
 
   it('tracking.ts registers exactly `tracking refresh` and `pr merge`', async () => {
@@ -318,6 +318,22 @@ describe('task transition', () => {
 });
 
 // ── task axis ───────────────────────────────────────────────────────────────
+
+describe('task release (Spec D1 R4)', () => {
+  it('binds entities.commands.release with the hand-off note', async () => {
+    const r = await drive(['task', 'release', TASK, '--note', 'needs DB access']);
+    expect(r.code).toBe(0);
+    expect(seen[0]?.pathname).toBe(`/v2/entities/${TASK}/commands/release`);
+    expect(seen[0]?.body).toMatchObject({ note: 'needs DB access' });
+  });
+
+  it('refuses locally without a note — the note is the hand-off', async () => {
+    const r = await drive(['task', 'release', TASK]);
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain('--note');
+    expect(seen).toHaveLength(0);
+  });
+});
 
 describe('task axis', () => {
   /** The read the merge stands on: a task already carrying two axes. */
