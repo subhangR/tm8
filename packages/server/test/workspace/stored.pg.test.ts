@@ -1,5 +1,5 @@
 /**
- * Server-side Workspaces against a REAL database (Spec D, migration 302):
+ * Server-side Workspaces against a REAL database (Spec D, migration 305):
  * the shared reducer applied on the node, compare-and-swap rows, drafts with
  * per-field last-writer-wins, the pending interaction only a window may
  * answer, the one-time import, the bounds, and privacy — another member of

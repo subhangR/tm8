@@ -2,7 +2,7 @@
  * Server-side Workspaces (Spec D, doc 01a11171-3aba).
  *
  * One stored workspace per (space, IDENTITY) in `public.workspaces`, draft
- * values in `public.workspace_drafts` (migration 302). Every write runs the
+ * values in `public.workspace_drafts` (migration 305). Every write runs the
  * SAME `reduce` the window runs (`@tm8/contract/workspace`), then
  * compare-and-swaps the row and pushes the new state to that identity's live
  * windows — and only to them (`WorkspaceBridge.push`).

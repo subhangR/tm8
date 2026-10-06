@@ -37,7 +37,7 @@ import type { NavPort } from '../shell/nav-port';
 import { registerNoticeSink } from '../terminal/notifications';
 import { screenKeyOf, screenStackStore, topOf, useScreenStackStore } from '../stores/screenStackStore';
 import type { ScreenKey } from '../stores/screenStackStore';
-import { attachRouter, navStore, selectAutoOpenSession, useNavStore } from '../stores/navStore';
+import { attachRouter, navStore, routeOf, selectAutoOpenSession, useNavStore } from '../stores/navStore';
 import { chatAboutTarget } from './useChatAbout';
 import { EntityChatDock, EntityChatSlot, openEntityChat, type EntityChatSlotProps } from '../entity-chat';
 import { UNADDRESSED_HASH, createBrowserTarget, type RouterTarget } from '../routes';
@@ -52,14 +52,23 @@ import { PromptsOverlay } from '../prompts';
 import { ProjectGitScreen } from '../git/ProjectGitScreen';
 import { BoardScreen } from '../board';
 import { BoardV2Screen } from '../board-v2';
-import { openInWorkspace, TabWorkspaceView, useWorkspaceBridge, useWorkspaceShareRoute, type WorkspaceGateHandles } from '../tab-workspace';
-import { CraftScreen } from '../craft';
+import {
+  isWorkspaceKind,
+  openInWorkspace,
+  queueWorkArrival,
+  useWorkspaceBridge,
+  TabWorkspaceView,
+  useWorkspaceShareRoute,
+  type WorkspaceGateHandles,
+} from '../tab-workspace';
+import { DesignScreen, DesignsHome, designSourceFromSeam, designsSourceFromSeam, type DesignTarget } from '../craft';
 import { HelpScreen } from '../help';
 import { NewSessionScreen } from '../new-session';
 import { createKeyboardController, type KeyboardController } from '../keyboard';
 import { allKinds, KindIcon, VIEW_ART, landingOfRoute, navViewOfName, routeViewOf } from '../domain';
 import type { Landing } from '../domain/nav-targets';
 import type { NavView } from '../routes';
+import { emptyPanels, workRedirectOf, type WorkRedirect } from '../routes';
 import { getKind } from '../domain';
 import { buildSpawnInput, launchTitleFor, newLaunchMutationId } from '../domain/launch';
 import type { DispatchSelection, LaunchSelection } from './LaunchSheet';
@@ -89,7 +98,7 @@ import { EntityView } from './EntityView';
 import { ChatHomeSurface } from '../chat-home';
 import { HomeView } from './HomeView';
 import { rememberHomeRoot } from '../stores/homeRegionStore';
-import { slugOfKind } from '../domain';
+import { kindBySlug, slugOfKind } from '../domain';
 import { GraphScreen } from '../graph';
 import { AddServerDialog, LOCAL_SERVER, type AddServerInput, type UiServer } from '../servers';
 import { ChannelView } from './ChannelView';
@@ -119,7 +128,8 @@ import {
   writeSetupDismissed,
 } from '../settings-credentials';
 import { SpaceLinksSection, spaceLinksPortFromSeam } from '../settings-space-links';
-import { readLastSpace, readLastTarget, writeLastTarget } from './last-place';
+import { readLastSpace, readLastTarget, WORK_PLACE, writeLastTarget } from './last-place';
+import { desktopModes } from '../shell/desktop-modes';
 import { FullViewScreen, hasFullView } from './entity-full/FullViewScreen';
 import {
   NewSpaceProjectDialog,
@@ -180,27 +190,60 @@ const HOME_TARGET: MenuTarget = { type: 'view', ref: 'dashboard' };
 
 /** Board v2's client-appended tab seat — not a menu group id (see shellTabs). */
 const BOARD_V2_TAB_ID = 'board-v2';
-/** The Workspace (tabs) view's client-appended seat — same pattern as Board v2. */
+/** Work's (the tabs view's) client-appended seat — same pattern as Board v2. */
 const WORKSPACE_TABS_TAB_ID = 'workspace-tabs';
-/** The Workspace seat's glyph: a tab over a page. */
-const WORKSPACE_TABS_ART: readonly string[] = [
-  'M2.8 6h10.4v6.6a1.2 1.2 0 0 1-1.2 1.2H4a1.2 1.2 0 0 1-1.2-1.2z',
-  'M2.8 6V3.4A1.2 1.2 0 0 1 4 2.2h3l1.2 3.8',
-];
 
 /**
- * The groups the top bar draws as its VIEW switcher, in pill order, and the
- * art each segment carries. Keyed by GROUP id, not view ref: Home's group has
- * been `chats` since revision 14 and kept that id through two renames.
+ * THE THREE DESKTOP MODES (D31, 2026-10-06): Work · Design · Observe, in that
+ * order, and nothing else in the selector. Keyed by GROUP id, not view ref:
+ * Work is the client-added tabs seat, Design is the `craft` group, Observe is
+ * the `graph` group. The labels are the modes' own, whatever the menu calls
+ * the groups. Glyphs: Design Advisor R39 (existing art, 14px).
  */
-const VIEW_GROUP_ORDER: readonly string[] = ['chats', WORKSPACE_TABS_TAB_ID, 'work', BOARD_V2_TAB_ID, 'graph'];
+const VIEW_GROUP_ORDER: readonly string[] = [WORKSPACE_TABS_TAB_ID, 'craft', 'graph'];
+const VIEW_GROUP_LABEL: Record<string, string> = {
+  [WORKSPACE_TABS_TAB_ID]: 'Work',
+  craft: 'Design',
+  graph: 'Observe',
+};
 const VIEW_GROUP_ART: Record<string, readonly string[]> = {
+  [WORKSPACE_TABS_TAB_ID]: VIEW_ART.workspace,
+  craft: VIEW_ART.craft,
+  graph: VIEW_ART.graph,
+};
+/**
+ * Groups RETIRED from the desktop (D31): Home (`chats`), the old Work
+ * (`work`) and the legacy Board (`board`). Hidden client-side, so no menu
+ * migration: the contract's DEFAULT_MENU_GROUP_SPINE and migrations
+ * 029/180/184/186 still seed them, and their removal is a later cleanup.
+ */
+const RETIRED_GROUP_IDS: readonly string[] = ['chats', 'work', 'board'];
+/** The pre-D31 selector, for the legacy desktop (`shell/desktop-modes.ts`). */
+const LEGACY_VIEW_GROUP_ORDER: readonly string[] = ['chats', WORKSPACE_TABS_TAB_ID, 'work', BOARD_V2_TAB_ID, 'graph'];
+const LEGACY_VIEW_GROUP_ART: Record<string, readonly string[]> = {
   chats: VIEW_ART.dashboard,
-  [WORKSPACE_TABS_TAB_ID]: WORKSPACE_TABS_ART,
+  [WORKSPACE_TABS_TAB_ID]: VIEW_ART.workspace,
   work: VIEW_ART.workspace,
   [BOARD_V2_TAB_ID]: VIEW_ART.board,
   graph: VIEW_ART.graph,
 };
+function legacyViewTabs(groups: readonly { id: string; label: string }[]): { viewTabs: ShellTab[]; shellTabs: ShellTab[] } {
+  const tabs: ShellTab[] = groups.map((group) => ({ id: group.id, label: group.label }));
+  const workIndex = tabs.findIndex((tab) => tab.id === 'work');
+  tabs.splice(workIndex >= 0 ? workIndex + 1 : Math.min(1, tabs.length), 0, { id: BOARD_V2_TAB_ID, label: 'Board' });
+  const homeIndex = tabs.findIndex((tab) => tab.id === 'chats');
+  tabs.splice(homeIndex + 1, 0, { id: WORKSPACE_TABS_TAB_ID, label: 'Workspace' });
+  const viewTabs = LEGACY_VIEW_GROUP_ORDER.flatMap((id) => {
+    const tab = tabs.find((t) => t.id === id);
+    return tab ? [{ ...tab, glyph: <VectorIcon paths={LEGACY_VIEW_GROUP_ART[id]} size={13} /> }] : [];
+  });
+  return { viewTabs, shellTabs: tabs.filter((tab) => !LEGACY_VIEW_GROUP_ORDER.includes(tab.id)) };
+}
+
+/** Work, the desktop's default landing (D31). */
+const WORK_VIEW: NavView = { view: 'tabs' };
+/** Remembered view refs that are retired on the desktop and restore as Work. */
+const RETIRED_VIEW_REFS: ReadonlySet<string> = new Set(['dashboard', 'workspace', 'board']);
 
 /*
  * THE VIEW-REF CLASSIFICATION NOW LIVES IN `view-ref-screens.ts`.
@@ -474,6 +517,10 @@ export function GateApp(props: GateAppProps = {}) {
    * the authority itself. That distinction is what lets a shared link win.
    */
   const { shell } = useShellKind();
+  /* D31: the three desktop modes, unless this device rolled back to the
+     legacy desktop (`shell/desktop-modes.ts`). Never on the phone (D16). */
+  const [modes] = useState(desktopModes);
+  const threeModes = shell !== 'mobile' && modes === 'three';
   const navView = useNavStore((s) => s.view);
 
   /**
@@ -1003,8 +1050,20 @@ export function GateApp(props: GateAppProps = {}) {
        stays empty on every boot that did not come from a URL — and the router
        discards URLs built with no space. */
     navStore.getState().setSpace(data.spaceId);
-    const remembered = readLastTarget(nodeKey, data.spaceId) ?? HOME_TARGET;
-    const view = routeViewOf(remembered);
+    const stored = readLastTarget(nodeKey, data.spaceId);
+    /* D31: the desktop lands on Work — with nothing remembered, with Work
+       remembered, and with a retired view (Home, the old Work, Board)
+       remembered. The phone keeps Home as its landing (D16). */
+    if (
+      threeModes &&
+      (!stored || stored.type === 'work' || (stored.type === 'view' && RETIRED_VIEW_REFS.has(stored.ref)))
+    ) {
+      setUnroutableTarget(null);
+      navStore.setState((s) => ({ view: WORK_VIEW, history: 'replace', revision: s.revision + 1 }));
+      return;
+    }
+    const remembered = !stored || stored.type === 'work' ? HOME_TARGET : stored;
+    const view = stored?.type === 'work' ? WORK_VIEW : routeViewOf(remembered);
     if (!view) {
       /* Unroutable: SAY SO rather than substituting the workspace. Storage is
          the only place these come from, and a stale record must not quietly
@@ -1024,6 +1083,7 @@ export function GateApp(props: GateAppProps = {}) {
        `addressable` → `none` and NOTHING ELSE CHANGES — so without this the
        effect would never re-run and last-place would never restore, leaving the
        viewer on a screen the refused link chose. */
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the modes are read at restore time only
   }, [nodeKey, data.spaceId, bootRoute]);
 
   /**
@@ -1075,12 +1135,14 @@ export function GateApp(props: GateAppProps = {}) {
        entry that returns you to a space you have already left"). The reset half
        simply had not been brought under it, because until now it could not be
        observed. */
+    /* D31: the interim is the shell's own landing — Work on the desktop,
+       Home on the phone — never the retired old Work. */
     navStore.setState((s) => ({
-      view: { view: 'workspace' },
+      view: threeModes ? WORK_VIEW : shell === 'mobile' ? { view: 'home' } : { view: 'workspace' },
       history: 'replace',
       revision: s.revision + 1,
     }));
-  }, []);
+  }, [shell, threeModes]);
   const projectOnboardingPort = useMemo<ProjectOnboardingPort | null>(() => {
     const setup = data.seam.projectSetup;
     if (!setup) return null;
@@ -1764,11 +1826,21 @@ export function GateApp(props: GateAppProps = {}) {
 
   const paletteViews = useMemo<PaletteView[]>(
     () => [
-      /* Revision 11: Home leads — it is the landing screen, and the palette
-         should offer the way back to it from anywhere. */
-      { id: 'view:dashboard', label: 'Home', glyph: <VectorIcon paths={VIEW_ART.dashboard} /> },
-      { id: 'view:workspace', label: 'Workspace', glyph: <VectorIcon paths={VIEW_ART.workspace} /> },
-      { id: 'view:graph', label: 'Graph', glyph: <VectorIcon paths={VIEW_ART.graph} /> },
+      /* D31: the three modes lead, in selector order. Home and the old Work
+         are retired on the desktop and have no row; `route:work` is Work,
+         which is route-only (no MenuTarget names it). */
+      ...(threeModes
+        ? [
+            { id: 'route:work', label: 'Work', glyph: <VectorIcon paths={VIEW_ART.workspace} /> },
+            { id: 'view:craft', label: 'Design', glyph: <VectorIcon paths={VIEW_ART.craft} /> },
+            { id: 'view:graph', label: 'Observe', glyph: <VectorIcon paths={VIEW_ART.graph} /> },
+          ]
+        : [
+            { id: 'view:dashboard', label: 'Home', glyph: <VectorIcon paths={VIEW_ART.dashboard} /> },
+            { id: 'route:work', label: 'Workspace', glyph: <VectorIcon paths={VIEW_ART.workspace} /> },
+            { id: 'view:workspace', label: 'Work', glyph: <VectorIcon paths={VIEW_ART.workspace} /> },
+            { id: 'view:graph', label: 'Graph', glyph: <VectorIcon paths={VIEW_ART.graph} /> },
+          ]),
       { id: 'view:channels', label: 'Channels', glyph: <VectorIcon paths={VIEW_ART.channels} /> },
       // Both rows are now MOUNTED views, so the palette offers them as live
       // destinations. A palette row for a ref that falls through to the
@@ -1779,11 +1851,13 @@ export function GateApp(props: GateAppProps = {}) {
         .filter((row) => !row.kind.startsWith('c:'))
         .map((row) => ({ id: `kind:${row.kind}`, label: row.labelPlural, glyph: <KindIcon kind={row.kind} /> })),
     ],
-    [],
+    [threeModes],
   );
   const openPaletteView = useCallback((id: string) => {
     const [scope, ref] = id.split(':', 2) as [string, string];
-    if (scope === 'view' && ref === 'channels' && channelEntities[0]) {
+    if (scope === 'route' && ref === 'work') {
+      navStore.getState().navigate(WORK_VIEW);
+    } else if (scope === 'view' && ref === 'channels' && channelEntities[0]) {
       navigateTo({ type: 'entity', ref: channelEntities[0].id, kind: channelEntities[0].kind });
     } else if (scope === 'view') {
       navigateTo({ type: 'view', ref: ref as never });
@@ -1803,25 +1877,30 @@ export function GateApp(props: GateAppProps = {}) {
      `board`) simply stays a tab, and a view group a space removed is absent. */
   const { viewTabs, shellTabs } = useMemo<{ viewTabs: ShellTab[]; shellTabs: ShellTab[] }>(
     () => {
-      const tabs: ShellTab[] = data.menu.config.groups.map((group) => ({ id: group.id, label: group.label }));
-      /* BOARD V2 owns the single visible Board seat. It remains route-only so
-         the legacy `board` MenuViewRef can stay compatible without widening
-         the contract for a screen that already has a canonical route. */
-      const workIndex = tabs.findIndex((tab) => tab.id === 'work');
-      const v2: ShellTab = { id: BOARD_V2_TAB_ID, label: 'Board' };
-      tabs.splice(workIndex >= 0 ? workIndex + 1 : Math.min(1, tabs.length), 0, v2);
-      /* WORKSPACE (tabs view, Spec A §2) — route-only seat right after Home,
-         same client-added pattern as Board v2. The existing "Work" keeps its
-         label; both names are kept. */
-      const homeIndex = tabs.findIndex((tab) => tab.id === 'chats');
-      tabs.splice(homeIndex + 1, 0, { id: WORKSPACE_TABS_TAB_ID, label: 'Workspace' });
+      if (!threeModes) return legacyViewTabs(data.menu.config.groups);
+      /* D31: Home, the old Work and the legacy Board leave the desktop; Board
+         v2's seat is no longer appended. Their routes still decode (and
+         redirect into Work, `workRedirectOf`). */
+      const tabs: ShellTab[] = data.menu.config.groups
+        .filter((group) => !RETIRED_GROUP_IDS.includes(group.id))
+        .map((group) => ({ id: group.id, label: group.label }));
+      /* WORK (tabs view, Spec A §2) — the route-only seat, client-added. */
+      tabs.unshift({ id: WORKSPACE_TABS_TAB_ID, label: VIEW_GROUP_LABEL[WORKSPACE_TABS_TAB_ID]! });
       const views = VIEW_GROUP_ORDER.flatMap((id) => {
         const tab = tabs.find((t) => t.id === id);
-        return tab ? [{ ...tab, glyph: <VectorIcon paths={VIEW_GROUP_ART[id]} size={13} /> }] : [];
+        return tab
+          ? [{ ...tab, label: VIEW_GROUP_LABEL[id] ?? tab.label, glyph: <VectorIcon paths={VIEW_GROUP_ART[id]} size={14} /> }]
+          : [];
       });
-      return { viewTabs: views, shellTabs: tabs.filter((tab) => !VIEW_GROUP_ORDER.includes(tab.id)) };
+      /* Craft stays in `shellTabs` too, under its mode name: Work's rail draws
+         it in its tools group (brief item 1), and the top bar filters the
+         modes out of its own tab row. */
+      const tools = tabs
+        .filter((tab) => !VIEW_GROUP_ORDER.includes(tab.id) || tab.id === 'craft')
+        .map((tab) => (tab.id === 'craft' ? { ...tab, label: VIEW_GROUP_LABEL.craft! } : tab));
+      return { viewTabs: views, shellTabs: tools };
     },
-    [data.menu.config],
+    [data.menu.config, threeModes],
   );
   /* Voice rooms are DYNAMIC rows with no menu item to match, so the group
      that hosts them (channels; `chats` in pre-125 menus) claims their entity
@@ -1878,7 +1957,41 @@ export function GateApp(props: GateAppProps = {}) {
      churn its runtime wiring on every GateApp render. */
   const openPaletteOverlay = useCallback(() => setPaletteOpen(true), []);
   const navigateRouteView = useCallback((view: NavView) => navStore.getState().navigate(view), []);
-  const goHomeTarget = useCallback(() => navigateTo(HOME_TARGET), [navigateTo]);
+  /* Craft → Designs: the home's source, and its door into one design. */
+  const designsSource = useMemo(
+    () => designsSourceFromSeam(data.seam, data.spaceId as SpaceId),
+    [data.seam, data.spaceId],
+  );
+  const openDesign = useCallback(
+    (designId: EntityId) => navStore.getState().navigate({ view: 'craft', designId }),
+    [],
+  );
+  const designSource = useMemo(
+    () => designSourceFromSeam(data.seam, data.spaceId as SpaceId),
+    [data.seam, data.spaceId],
+  );
+  /* No design ⇒ the Designs home; otherwise exactly the design, page and nested page asked for. */
+  const navigateDesign = useCallback(
+    ({ designId, pageId, nestedPageId }: DesignTarget) =>
+      navStore.getState().navigate({
+        view: 'craft',
+        ...(designId ? { designId } : {}),
+        ...(designId && pageId ? { pageId } : {}),
+        ...(designId && pageId && nestedPageId ? { nestedPageId } : {}),
+      }),
+    [],
+  );
+  const craftNotice = useCallback(
+    (text: string) =>
+      notices.push({ id: `crf:${Date.now()}`, tone: 'info', title: 'Craft', body: text, ttlMs: 6000 }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [notices.push],
+  );
+  /* D31: the tm8 mark goes to the desktop's landing, Work. */
+  const goHomeTarget = useCallback(
+    () => (threeModes ? navStore.getState().navigate(WORK_VIEW) : navigateTo(HOME_TARGET)),
+    [threeModes, navigateTo],
+  );
   const openInboxView = useCallback(() => navigateTo({ type: 'view', ref: 'inbox' }), [navigateTo]);
 
   /* Spec C (doc 01a1111d-589e): this window is a live Workspace instance that
@@ -1901,6 +2014,56 @@ export function GateApp(props: GateAppProps = {}) {
     titleOf: (entityId) => data.detailOf(entityId)?.title ?? undefined,
     notify: notices.push,
   });
+
+  /*
+   * D31 — RETIRED DESKTOP ADDRESSES LAND IN WORK.
+   *
+   * Home, the old Work (`/workspace`), Board, and — for kinds Work hosts —
+   * `k/{slug}` and `e/{id}` are answered by ONE table, `workRedirectOf` in the
+   * codec, and applied HERE because only here is the shell known: the phone
+   * keeps Home as its chat screen (D16) and is never redirected. Every
+   * redirect is a replace, so an old link leaves no back entry to bounce on.
+   *
+   * This also catches the in-app navigations that still say "old Work, then
+   * push an entity" (`navigateTo(WORKSPACE_TARGET); nav.push(id)`): both
+   * writes land before this effect runs, so the entity opens as a Work tab.
+   */
+  const desktopRedirect = useMemo<WorkRedirect | null>(() => {
+    if (!threeModes) return null;
+    const state = navStore.getState();
+    const redirect = workRedirectOf({ ...routeOf(state), target: navView });
+    if (!redirect?.onlyForWorkKinds) return redirect;
+    /* `k/{slug}` and `e/{id}` move only when Work hosts the kind; the other
+       kinds keep their screens. An entity whose kind is not read yet waits
+       (the landing effect above is already reading it). */
+    if (navView.view === 'kind') return isWorkspaceKind(kindBySlug(navView.slug)?.kind) ? redirect : null;
+    if (navView.view === 'entity') return isWorkspaceKind(data.detailOf(navView.entityId)?.kind) ? redirect : null;
+    return null;
+  }, [threeModes, navView, data]);
+  useEffect(() => {
+    if (!desktopRedirect || !data.spaceId || !viewerMemberId) return;
+    const state = navStore.getState();
+    const browserKind = desktopRedirect.browserSlug ? (kindBySlug(desktopRedirect.browserSlug)?.kind ?? null) : null;
+    queueWorkArrival(viewerMemberId, data.spaceId, {
+      open: desktopRedirect.open,
+      activate: desktopRedirect.activate,
+      trail: desktopRedirect.trail,
+      browserKind: isWorkspaceKind(browserKind) ? browserKind : null,
+      chat: desktopRedirect.chat,
+    });
+    const to: NavView =
+      desktopRedirect.to.view === 'tabs' && desktopRedirect.activate
+        ? { view: 'tabs', tab: desktopRedirect.activate }
+        : desktopRedirect.to;
+    /* `hydrate` replaces the old panel params with none: they are tabs now. */
+    navStore.getState().hydrate({ spaceId: state.spaceId, target: to, panels: emptyPanels() });
+  }, [desktopRedirect, data.spaceId, viewerMemberId]);
+
+  /* D31 audit bug: Work was never remembered, so a reload or a space switch
+     never came back to it. Every way into Work passes through this route. */
+  useEffect(() => {
+    if (navView.view === 'tabs' && data.spaceId) writeLastTarget(nodeKey, data.spaceId, WORK_PLACE);
+  }, [navView.view, nodeKey, data.spaceId]);
 
   /*
    * THE SHELL FORK. Chosen by pointer type and width, never by user agent —
@@ -2196,8 +2359,12 @@ export function GateApp(props: GateAppProps = {}) {
       data-theme={theme === 'dark' ? 'dark' : undefined}
     >
       <div className="shell-root">
-        {navView.view === 'tabs' ? (
-          /* WORKSPACE (tabs view, Spec A §2–§3): full-bleed, and the ONLY view
+        {desktopRedirect ? (
+          /* D31: a retired address is redirecting into Work this frame; the
+             retired screen is never mounted on the way. */
+          <BootLoader label="opening Work" />
+        ) : navView.view === 'tabs' && (data.ready || !(data.authRequired || data.bootError)) ? (
+          /* WORK (tabs view, Spec A §2–§3): full-bleed, and the ONLY view
              that renders WITHOUT the top bar — its own left header and rail
              carry the view selector, space switcher, palette and account. */
           /* The store is keyed by (viewer, space), so it mounts only once
@@ -2213,10 +2380,13 @@ export function GateApp(props: GateAppProps = {}) {
               />
             </CatchBoundary>
           ) : (
-            <BootLoader label="loading workspace" />
+            <BootLoader label="loading Work" />
           )
         ) : (
         <>
+        {/* D31: Work is the landing, so a boot that fails (sign-in, a refused
+            Space, an unreachable node) on the Work route lands here, where
+            the honest boot cards are. */}
         <TopBar
           /* ONE ROW (owner, 2026-09-26): on the current bar the status strip
              is the right zone's lead, and the tabs move left beside the
@@ -2231,13 +2401,13 @@ export function GateApp(props: GateAppProps = {}) {
           switcherSlot={switcherEl}
           /* R2: the menu's groups, as tabs. */
           viewTabs={viewTabs}
-          tabs={shellTabs}
+          tabs={threeModes ? shellTabs.filter((tab) => !VIEW_GROUP_ORDER.includes(tab.id)) : shellTabs}
           activeTabId={activeGroupId}
           onSelectTab={openTab}
           /* Revision 13: no group owns `dashboard`, so no tab leads back to
              the conversation surface — the MARK does. Not an extra door: the
              tab it replaces was retired in the same change. */
-          onGoHome={() => navigateTo(HOME_TARGET)}
+          onGoHome={goHomeTarget}
           onOpenInbox={() => navigateTo({ type: 'view', ref: 'inbox' })}
           accountInitial="A"
           onOpenPalette={() => setPaletteOpen(true)}
@@ -2474,39 +2644,16 @@ export function GateApp(props: GateAppProps = {}) {
                 nav.push(id as EntityId);
               }}
             />
-          ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'craft' ? (
-            /* ✎ Craft (Craft P1, 2026-08-16) — the blueprint studio: a
-               craft-mode chat anchored to a `graph` entity beside a canvas
-               rendering that entity's ROW. Full-bleed like Board; the thread
-               and the canvas are the navigation. */
-            <CraftScreen
-              seam={data.seam}
-              spaceId={data.spaceId as SpaceId}
-              nodeKey={nodeKey}
-              bridge={chatBridge}
-              skillOptions={data.skillOptions}
-              viewerName={data.viewerActor?.displayName}
-              viewerId={data.viewerActor?.id}
-              /* A chip press opens region C INSIDE Craft now, so no
-                 `onOpenEntity` is passed: the old handler navigated to the
-                 workspace, which unmounted the studio and took the selected
-                 graph, thread and glow baseline with it. Nothing is stubbed in
-                 its place — passing no handler is how a host says it has
-                 nothing to do, and a stub is banned outright. */
-              panelHost={{
-                data,
-                reasons,
-                serverBaseUrl: activeServer.routeBaseUrl,
-                viewerMemberId,
-                onNotice: (text) =>
-                  notices.push({
-                    id: `crf:${Date.now()}`,
-                    tone: 'info',
-                    title: 'Craft',
-                    body: text,
-                    ttlMs: 6000,
-                  }),
-              }}
+          ) : data.ready &&
+            activeTarget?.type === 'view' &&
+            activeTarget.ref === 'craft' &&
+            !(navView.view === 'craft' && navView.designId) ? (
+            /* ✎ Craft → Designs: bare `/craft` is the Designs home. Every
+               door into Craft (the view selector, the Workspace rail's craft
+               tool) lands here, and a card opens `/craft/{id}`. */
+            <DesignsHome
+              source={designsSource}
+              onOpenDesign={openDesign}
               onNotice={(text) =>
                 notices.push({
                   id: `crf:${Date.now()}`,
@@ -2516,6 +2663,43 @@ export function GateApp(props: GateAppProps = {}) {
                   ttlMs: 6000,
                 })
               }
+            />
+          ) : data.ready &&
+            activeTarget?.type === 'view' &&
+            activeTarget.ref === 'craft' &&
+            navView.view === 'craft' &&
+            navView.designId ? (
+            /* ✎ Craft → Designs: one design at `/craft/{design}[/{page}[/{nested}]]`
+               — its chats on the left, its pages as tabs, the Workspace action
+               strip split between the page and the design. The page bodies are
+               the Workspace's own, hosted in a private runtime (`workspaceGate`
+               is the same handle bundle the Workspace view gets). */
+            <DesignScreen
+              key={navView.designId}
+              seam={data.seam}
+              spaceId={data.spaceId as SpaceId}
+              nodeKey={nodeKey}
+              source={designSource}
+              designs={designsSource}
+              designId={navView.designId}
+              pageId={navView.pageId}
+              nestedPageId={navView.nestedPageId}
+              onNavigate={navigateDesign}
+              gate={workspaceGate}
+              bridge={chatBridge}
+              skillOptions={data.skillOptions}
+              viewerName={data.viewerActor?.displayName}
+              viewerId={data.viewerActor?.id}
+              /* An entity opened from the chat lands in a column over the page,
+                 so the design survives the press. */
+              panelHost={{
+                data,
+                reasons,
+                serverBaseUrl: activeServer.routeBaseUrl,
+                viewerMemberId,
+                onNotice: craftNotice,
+              }}
+              onNotice={craftNotice}
             />
           ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'help' ? (
             /* ? Help (2026-08-19; STATIC since 2026-08-20) — the field guide.
@@ -3054,7 +3238,7 @@ export function GateApp(props: GateAppProps = {}) {
               </div>
             )
           ) : (
-            <BootLoader label="loading workspace" />
+            <BootLoader label="loading Work" />
           )}
           </CatchBoundary>
         </div>
@@ -3068,10 +3252,21 @@ export function GateApp(props: GateAppProps = {}) {
           ctx={{ spaceId: data.spaceId }}
           onQueryChange={setPaletteQuery}
           onOpenEntity={(id) => {
-            /* On the tabs route a pick opens as a Workspace tab (W2-H). */
+            /* On the desktop a pick opens as a Work tab (W2-H; D31: from any
+               mode, landing on Work). Kinds Work does not host keep the old
+               verb. */
             const kind = paletteResults.find((row) => row.id === id)?.kind ?? data.detailOf(id)?.kind;
-            const inWorkspace =
-              navView.view === 'tabs' && !!viewerMemberId && !!kind && openInWorkspace(viewerMemberId, data.spaceId, kind, id);
+            let inWorkspace = false;
+            if (isWorkspaceKind(kind) && (threeModes || navView.view === 'tabs')) {
+              /* Outside Work the route carries it: Work opens `?tab=` on mount,
+                 after restoring the viewer's own tabs. */
+              if (navView.view !== 'tabs') {
+                navStore.getState().navigate({ view: 'tabs', tab: id as EntityId });
+                inWorkspace = true;
+              } else if (viewerMemberId) {
+                inWorkspace = openInWorkspace(viewerMemberId, data.spaceId, kind, id);
+              }
+            }
             if (!inWorkspace) nav.push?.(id as EntityId);
             setPaletteOpen(false);
           }}

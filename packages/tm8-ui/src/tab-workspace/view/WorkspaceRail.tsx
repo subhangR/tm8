@@ -5,7 +5,8 @@
  *   [Pinned kinds]  ── hairline
  *   [Work ▸] [Library ▸] [Agents & People ▸] [Code ▸]   (collapsible sections)
  *   ── hairline
- *   ⌘K · Craft · Settings · Help · account · » (expand)
+ *   Needs you · Status  ⌘K · Design · Settings · Help  account · »
+ *   (three clusters, 12px apart, no dividers — Design Advisor R39)
  *
  * THE SECTIONS ARE THE HOME RAIL'S POPULATION, NOT ITS COMPONENT:
  * `homeRailGroups()` restricted to the Workspace kinds (D7). Pins, open
@@ -15,6 +16,11 @@
  * A kind button IS the browser's kind control (click ⇒ `browsers.main.kind`);
  * a 500ms hold — pointer or Enter/Space — toggles its pin instead, and the
  * release that ends a hold never clicks.
+ *
+ * LIVE COUNTS (task 01a111a2-f9ad, design log R42) on four kinds only — Tasks,
+ * Stories, Sessions, Chats (`useRailCounts`). Collapsed: a run-tinted corner
+ * badge. Expanded: the number right-aligned in the row. A closed section whose
+ * kinds hold a count shows a run dot, never a sum (the units differ).
  */
 import {
   cloneElement,
@@ -36,7 +42,9 @@ import { VectorIcon } from '../../kit/VectorIcon';
 import { getRailStore } from '../runtime/railStore';
 import { isWorkspaceKind } from '../runtime/types';
 import { useWorkspace, useWorkspaceState } from './context';
+import { railCountLabel, railKindLabel, railSectionLabel, isRailCountKind, useRailCounts, type RailCounts } from './useRailCounts';
 import { RAIL_COLLAPSE_ART, RAIL_EXPAND_ART, RAIL_SECTION_ART } from './railArt';
+import { RailAttention, RailStatus } from './RailStatus';
 
 const BOTTOM_GROUP_IDS = ['craft', 'settings', 'help'] as const;
 const BOTTOM_ART: Record<(typeof BOTTOM_GROUP_IDS)[number], readonly string[]> = {
@@ -64,6 +72,7 @@ export function WorkspaceRail() {
   const expanded = useStore(railStore, (s) => s.expanded);
   const browserKind = useWorkspaceState((s) => s.browsers.main.kind);
   const [announcement, setAnnouncement] = useState('');
+  const counts: RailCounts = useRailCounts();
 
   const sections = useMemo(
     () =>
@@ -115,6 +124,7 @@ export function WorkspaceRail() {
       isPinned={placement === 'pinned' || pins.includes(config.kind)}
       current={config.kind === browserKind}
       expanded={expanded}
+      count={isRailCountKind(config.kind) ? counts[config.kind] : undefined}
       onSelect={selectKind}
       onTogglePin={togglePin}
     />
@@ -124,7 +134,7 @@ export function WorkspaceRail() {
   return (
     <nav
       className="tws-rail"
-      aria-label="Workspace rail"
+      aria-label="Work rail"
       data-testid="tws-rail"
       data-rail-expanded={expanded || undefined}
     >
@@ -141,6 +151,10 @@ export function WorkspaceRail() {
           const holdsCurrent = section.kinds.some((config) => config.kind === browserKind);
           const open = openChoices[section.id] ?? holdsCurrent;
           const bodyId = `tws-rail-section-${section.id}`;
+          const sectionKinds = section.kinds.map((config) => config.kind);
+          const sectionLabel = railSectionLabel(section.label, sectionKinds, counts);
+          /* R42: a dot, not a sum — only while closed, when no kind badge shows. */
+          const sectionLive = !open && sectionLabel !== section.label;
           return (
             <div
               key={section.id}
@@ -149,11 +163,11 @@ export function WorkspaceRail() {
               aria-label={section.label}
               data-section={section.id}
             >
-              <RailTip label={expanded ? null : section.label}>
+              <RailTip label={expanded ? null : sectionLive ? sectionLabel : section.label}>
                 <button
                   type="button"
                   className="tws-rail-btn tws-rail-section"
-                  aria-label={section.label}
+                  aria-label={sectionLive ? sectionLabel : section.label}
                   aria-expanded={open}
                   aria-controls={open ? bodyId : undefined}
                   /* A closed section holding the browser's kind keeps the bar,
@@ -163,6 +177,7 @@ export function WorkspaceRail() {
                 >
                   <span className="tws-rail-icon">
                     <VectorIcon paths={RAIL_SECTION_ART[section.id] ?? VIEW_ART.workspace} size={18} />
+                    {sectionLive ? <span className="tws-rail-live-dot" data-testid="tws-rail-live-dot" aria-hidden /> : null}
                   </span>
                   {expanded ? (
                     <span className="tws-rail-label">
@@ -184,7 +199,12 @@ export function WorkspaceRail() {
         })}
       </div>
       <hr className="tws-rail-rule" />
-      <div className="tws-rail-bottom" role="group" aria-label="Workspace tools">
+      <div className="tws-rail-bottom" role="group" aria-label="Work tools">
+        <div className="tws-rail-cluster" data-cluster="status">
+          <RailAttention expanded={expanded} />
+          <RailStatus expanded={expanded} />
+        </div>
+        <div className="tws-rail-cluster" data-cluster="tools">
         <RailTip label={expanded ? null : 'Command palette'} shortcut="⌘K">
           <button
             type="button"
@@ -217,6 +237,8 @@ export function WorkspaceRail() {
             </button>
           </RailTip>
         ))}
+        </div>
+        <div className="tws-rail-cluster" data-cluster="account">
         {gate.accountSlot ? (
           <RailTip label={expanded ? null : 'Account'}>
             <div className="tws-rail-account">
@@ -243,6 +265,7 @@ export function WorkspaceRail() {
             {expanded ? <span className="tws-rail-label">{expandLabel}</span> : null}
           </button>
         </RailTip>
+        </div>
       </div>
       <span className="tws-sr-only" aria-live="polite" data-testid="tws-rail-live">
         {announcement}
@@ -258,11 +281,13 @@ interface KindButtonProps {
   isPinned: boolean;
   current: boolean;
   expanded: boolean;
+  /** The live count (R42); undefined on every kind but the four. */
+  count: number | undefined;
   onSelect(kind: string): void;
   onTogglePin(config: KindConfig): boolean;
 }
 
-function KindButton({ config, placement, isPinned, current, expanded, onSelect, onTogglePin }: KindButtonProps) {
+function KindButton({ config, placement, isPinned, current, expanded, count, onSelect, onTogglePin }: KindButtonProps) {
   const [flash, setFlash] = useState<string | null>(null);
   const flashTimer = useRef<number | null>(null);
   useEffect(() => () => {
@@ -282,13 +307,15 @@ function KindButton({ config, placement, isPinned, current, expanded, onSelect, 
   );
   const verb = isPinned ? 'hold to unpin' : 'hold to pin';
   /* Expanded rails suppress tooltips except the hold hint. */
-  const tip = expanded ? verb.charAt(0).toUpperCase() + verb.slice(1) : `${config.labelPlural} · ${verb}`;
+  const label = railKindLabel(config.kind, config.labelPlural, count);
+  const shown = railCountLabel(count);
+  const tip = expanded ? verb.charAt(0).toUpperCase() + verb.slice(1) : `${label} · ${verb}`;
   return (
     <RailTip label={tip} flash={flash}>
       <button
         type="button"
         className="tws-rail-btn tws-rail-kind"
-        aria-label={config.labelPlural}
+        aria-label={label}
         aria-description={verb}
         aria-current={current ? 'true' : undefined}
         data-kind={config.kind}
@@ -306,8 +333,18 @@ function KindButton({ config, placement, isPinned, current, expanded, onSelect, 
               pathLength={100}
             />
           </svg>
+          {shown && !expanded ? (
+            <span className="tws-rail-count-badge" data-testid="tws-rail-count" aria-hidden>
+              {shown}
+            </span>
+          ) : null}
         </span>
         {expanded ? <span className="tws-rail-label">{config.labelPlural}</span> : null}
+        {shown && expanded ? (
+          <span className="tws-rail-count" data-testid="tws-rail-count" aria-hidden>
+            {shown}
+          </span>
+        ) : null}
       </button>
     </RailTip>
   );

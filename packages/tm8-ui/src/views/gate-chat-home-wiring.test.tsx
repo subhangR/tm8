@@ -24,12 +24,16 @@
  * would pass just as happily with `onStageChange` bound to the wrong verb;
  * the address either changes or it does not.
  */
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { GateApp } from './GateApp';
 import { resetNav } from '../stores/navStore';
+
+/* D31: this suite drives a retired desktop view (Home, the old Work or
+   Board), which only the legacy desktop still reaches (stage (c) deletes it). */
+vi.mock('../shell/desktop-modes', () => ({ desktopModes: () => 'legacy' }));
 
 beforeEach(() => {
   const values = new Map<string, string>();

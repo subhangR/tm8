@@ -29,6 +29,7 @@ import type { Source, TabId, TabRecord } from '../runtime/types';
 import { ConfirmDiscard } from './ConfirmDiscard';
 import { useWorkspace, useWorkspaceState } from './context';
 import { ScopePicker } from './ScopePicker';
+import { useFreshGlow, type FreshGlowAttrs } from '../../domain/useFreshGlow';
 import './tabstrip.css';
 
 /** Soft cap (Spec A §6): the toast fires as the open-tab count crosses it. */
@@ -361,8 +362,17 @@ function Tab(props: TabProps) {
   const { tab, active } = props;
   const { title, noun, state } = useTabFacts(tab);
   const stateId = `tws-ts-state-${tab.id}`;
+  const glow = useFreshGlow(tab.type === 'entity' ? tab.entityId : null);
+  /* R40/R41: a tab never collapses or goes inert — a deleted entity keeps its
+     "deleted" tab. Leaving is only a brief tint here; the active tab's own CSS
+     suppresses both tints (it is already the focus). */
+  const glowAttrs: FreshGlowAttrs & { 'data-leaving-tint'?: '' } =
+    glow.phase === 'fresh' ? glow.attrs
+      : glow.phase === 'leaving' ? { 'data-leaving-tint': '' }
+        : {};
   return (
     <div
+      {...glowAttrs}
       className="tws-ts-tab"
       data-tab-id={tab.id}
       data-active={active || undefined}
@@ -392,7 +402,7 @@ function Tab(props: TabProps) {
         id={`tws-ts-tab-${tab.id}`}
         className="tws-ts-tab-main"
         aria-selected={active}
-        aria-label={accessibleTabName(title, noun)}
+        aria-label={accessibleTabName(title, noun) + (glow.srSuffix ?? '')}
         aria-describedby={state ? stateId : undefined}
         tabIndex={props.focusable ? 0 : -1}
         onClick={(event) => props.onActivate(tab.id, event.detail === 0 ? 'keyboard' : 'click')}
@@ -622,7 +632,9 @@ export function TabStrip({ leading }: TabStripProps = {}) {
   useLayoutEffect(() => {
     const el = scrollerRef.current;
     if (!el || !active) return;
-    const tab = el.querySelector<HTMLElement>(`[data-tab-id="${CSS.escape(active)}"]`);
+    /* Tab ids are generated tokens; `CSS.escape` is absent in jsdom. */
+    const id = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(active) : active;
+    const tab = el.querySelector<HTMLElement>(`[data-tab-id="${id}"]`);
     if (!tab) return;
     // The scroller is the tab's offsetParent (position: relative).
     const left = tab.offsetLeft;

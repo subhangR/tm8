@@ -357,7 +357,8 @@ describe('the help route', () => {
   });
 
   it('is the final tab, owns current state, and has no duplicate ? control', async () => {
-    const view = render(<GateApp routerTarget={createMemoryTarget(`#/s/${SPACE}/home`)} />);
+    /* Observe (Graph) carries the top bar; Work draws its own chrome (D4). */
+    const view = render(<GateApp routerTarget={createMemoryTarget(`#/s/${SPACE}/graph`)} />);
     await waitFor(() => view.getByTestId('space-tab-bar'));
     const tablist = view.getByRole('tablist', { name: 'Screens' });
     const tabs = [...tablist.querySelectorAll<HTMLElement>('[role="tab"]')];
@@ -367,7 +368,9 @@ describe('the help route', () => {
       // 'CodeBrain' joined 2026-09-01 (migration 173) and left 2026-09-15
       // (migration 186) when #610 deleted the only build that had its screen.
       // Help is still the FINAL tab, which is what this case is actually about.
-      'Home', 'Workspace', 'Work', 'Board', 'Graph', 'Craft', 'Settings', 'Help',
+      // D31 (2026-10-06): three desktop modes lead — Work · Design · Observe —
+      // and Home, the old Work and Board left the desktop selector.
+      'Work', 'Design', 'Observe', 'Settings', 'Help',
     ]);
     expect(view.queryByTestId('open-help')).toBeNull();
 

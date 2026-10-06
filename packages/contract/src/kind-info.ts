@@ -51,6 +51,11 @@ export const CORE_KIND_INFO: Readonly<Record<CoreEntityKind, KindInfo>> = {
     summary: 'one line of work: what you put in, everything that follows from it, and its progress',
     createWith: ['entity create story', 'collection add'],
   },
+  design: {
+    group: 'work',
+    summary: 'an ordered set of pages (graphs, docs, artifacts, drawings, designs) crafted together and launched as one',
+    createWith: ['entity create design', 'collection add'],
+  },
 
   message: {
     group: 'talk',

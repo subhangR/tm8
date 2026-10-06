@@ -22,7 +22,7 @@
  * aside, not prop presence — so they survive the FleetPane → LedgerPanel swap:
  * the new panel's rows call the same handler these cases drive.
  */
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, waitFor, within } from '@testing-library/react';
 import type { EntityId } from '@tm8/contract';
 import { GateApp } from './GateApp';
@@ -30,6 +30,10 @@ import { navStore, resetNav } from '../stores/navStore';
 import { screenStackStore } from '../stores/screenStackStore';
 import { createMemoryTarget } from '../routes';
 import { sessionLive, taskGuideLines } from '../fixtures';
+
+/* D31: this suite drives a retired desktop view (Home, the old Work or
+   Board), which only the legacy desktop still reaches (stage (c) deletes it). */
+vi.mock('../shell/desktop-modes', () => ({ desktopModes: () => 'legacy' }));
 
 const SPACE = 'sp-atelier';
 

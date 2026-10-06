@@ -10,6 +10,7 @@ import { getWorkspaceRuntime } from '../runtime/dispatch';
 import { installDevHook } from '../runtime/devHook';
 import { initPersistence } from '../runtime/persistence';
 import { initUrlSync } from '../runtime/url';
+import { drainWorkArrival, onWorkArrival } from '../runtime/arrival';
 import { getRailStore } from '../runtime/railStore';
 import { NOTICE_TTL_MS } from '../../shell';
 import { PanelResizer } from '../../kit/PanelResizer';
@@ -93,6 +94,18 @@ export function TabWorkspaceView({ viewerId, spaceId, routeTab, gate }: TabWorks
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [runtime, viewerId, spaceId, navigateView, resolveKind],
   );
+  /* D31: a redirected address's other tabs, browser kind, trail and chat —
+     after the restore above, so a redirect never displaces the saved tabs. */
+  useEffect(() => {
+    const ctx = {
+      viewerId,
+      spaceId,
+      resolveKind,
+      titleOf: (id: string) => dataRef.current.detailOf(id)?.title ?? '',
+    };
+    drainWorkArrival(runtime, ctx);
+    return onWorkArrival(() => drainWorkArrival(runtime, ctx));
+  }, [runtime, viewerId, spaceId, resolveKind]);
 
   const value = useMemo<WorkspaceContextValue>(
     () => ({ runtime, store: runtime.store, dispatch: runtime.dispatch, viewerId, spaceId, gate }),
@@ -127,7 +140,7 @@ export function TabWorkspaceView({ viewerId, spaceId, routeTab, gate }: TabWorks
           <div className="tws-resizer">
             <PanelResizer
               side="left"
-              label="Workspace browser"
+              label="Work browser"
               width={layout.browserWidth}
               minWidth={LAYOUT_BOUNDS.browserWidth.min}
               maxWidth={LAYOUT_BOUNDS.browserWidth.max}

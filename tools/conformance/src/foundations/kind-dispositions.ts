@@ -68,6 +68,7 @@ export type MigrationStrategy =
   | 'op-request-detail'
   | 'mcp-server-detail'
   | 'story-detail'
+  | 'design-detail'
   | 'style-detail'
   | 'custom-registry'
   | 'none';
@@ -667,6 +668,14 @@ export const CORE_KIND_DISPOSITIONS = {
   story: core('story', 'stories', {
     collection: typedCollection, projection: universal, capabilities: generic,
     menu: { strategy: 'registered-not-default' }, migration: { strategy: 'story-detail' },
+  }),
+  // Designs (migration 304, Craft → Designs). `story`'s disposition: created
+  // and patched through the generic envelope (create_design_entity /
+  // update_design_entity), zero new catalog rows; its pages are `contains`
+  // edges written through the existing collection doors.
+  design: core('design', 'designs', {
+    collection: typedCollection, projection: universal, capabilities: generic,
+    menu: { strategy: 'registered-not-default' }, migration: { strategy: 'design-detail' },
   }),
   // Space styles (migration 284, styles spec v8). A published, read-only theme:
   // born only from `styles.push`, so not generically creatable or editable.

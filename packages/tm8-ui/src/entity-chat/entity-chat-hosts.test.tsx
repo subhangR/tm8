@@ -23,6 +23,10 @@ import { getKind } from '../domain';
 import { panelMenuItems } from '../panels/detail/chrome';
 import type { DetailReasons } from '../panels';
 
+/* D31: this suite drives a retired desktop view (Home, the old Work or
+   Board), which only the legacy desktop still reaches (stage (c) deletes it). */
+vi.mock('../shell/desktop-modes', () => ({ desktopModes: () => 'legacy' }));
+
 vi.mock('../chat-home/ChatHomeSurface', () => ({
   ChatHomeSurface: (props: { routeThreadId: string | null; coldStart?: string; aboutId?: string }) => (
     <div

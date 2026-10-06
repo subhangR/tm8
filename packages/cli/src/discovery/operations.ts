@@ -1617,6 +1617,7 @@ const ROWS: Record<OperationName, Row> = {
       'task content shape: {description, acceptanceCriteria: [{id, done, text}], pointsEstimate, axes: {<axis-name>: <value>}} — axis names and values are the Space registry\u2019s (`tm8 space task-axis list`)',
       "doc content shape: {kind: 'doc', body, format: 'markdown'}",
       "story content shape: {description} (title rides the envelope; status is the ordinary workflow status, born to_do and set by hand with `tm8 entity update <story-id> --status <status>` — never derived from contents). --parent <story-id> makes a child story whose progress rolls up into the parent. Put things in with `tm8 collection add <story-id> <entity-id>` — those are the story's roots; everything connected to a root follows at read time. Read it with `tm8 entity context <story-id>` (agents) or `tm8 entity get <story-id>` (the page)",
+      "design content shape: {description} (title rides the envelope). A design is an ordered set of PAGES — any entity (graph, doc, artifact, drawing, another design): create the page, then `tm8 collection add <design-id> <entity-id> [--position <n>]`; re-adding with a new --position moves it, `tm8 collection remove` takes it out without deleting it. A design never contains itself or a design above it. Read the pages with `tm8 entity context <design-id>`",
       '--when-to-use (when a later session should open it, in one sentence: "Open when changing how balances are rounded", not "Rounding policy doc"; shown whole to every later agent) / --summary (what it holds) / --keyword write the selection header in the same call; all optional, guideline limits in `tm8 help entity header set`; change it later with `tm8 entity header set`',
       'a header applies to team_member, doc, artifact, drawing, file, task, collection and story; on any other kind the entity is still created and the header is skipped with a warning (skills use their description, memories their subject_scope)',
     ],
@@ -1625,6 +1626,7 @@ const ROWS: Record<OperationName, Row> = {
       'tm8 entity create doc "<title>" --content @body.json --when-to-use "<when an agent should load it>" --summary "<what it contains>"',
       'tm8 entity create doc "<title>" --space <space-id> --content \'{"kind":"doc","body":"…","format":"markdown"}\'',
       'tm8 entity create story "<title>" --content \'{"description":"…"}\' [--parent <story-id>]',
+      'tm8 entity create design "<title>" --content \'{"description":"…"}\'',
     ],
   },
   'entities.patch': {
@@ -2116,16 +2118,17 @@ const ROWS: Record<OperationName, Row> = {
   'collections.addItem': {
     cmd: ['collection', 'add'],
     syn: 'tm8 collection add <collection-id> <entity-id>... [--from-file <path|->] [--position <number>] [--mutation-id <id>]',
-    sum: 'Put an entity into a collection or a story — membership is a `contains` edge, appended after the current maximum position when --position is omitted',
+    sum: 'Put an entity into a collection, a story or a design — membership is a `contains` edge, appended after the current maximum position when --position is omitted',
     authz: 'entity',
     input: 'bound',
-    tags: ['membership', 'curate', 'pin', 'list', 'story'],
+    tags: ['membership', 'curate', 'pin', 'list', 'story', 'design', 'page'],
     notes: [
       'multiple ids or --from-file (whitespace-separated ids, - for stdin) run one membership write per id and return one receipt with per-id results; partial failures return a nonzero exit code, and the reported batch mutationId makes retries safe',
       '--position is only valid for a single entity; bulk adds append in input order and deduplicate repeated ids',
       're-adding an existing member re-positions it rather than duplicating it',
       'list a collection\'s members with `tm8 edge list --source <collection-id> --type contains`',
       'the container may also be a story: adding puts the entity in BY HAND as one of the story\'s roots (ordered by --position); everything connected to it then follows at read time — see `tm8 entity context <story-id>`',
+      'the container may also be a design: adding makes the entity a PAGE, in --position order; re-adding an existing page with a new --position moves it; a design cannot contain itself or a design it is inside — see `tm8 entity context <design-id>`',
     ],
     examples: [
       'tm8 collection add <collection-id> <entity-id>',
@@ -2135,13 +2138,14 @@ const ROWS: Record<OperationName, Row> = {
   'collections.removeItem': {
     cmd: ['collection', 'remove'],
     syn: 'tm8 collection remove <collection-id> <entity-id> --yes [--mutation-id <id>]',
-    sum: 'Take an entity out of a collection or a story — deletes the `contains` edge; the entity itself is untouched',
+    sum: 'Take an entity out of a collection, a story or a design — deletes the `contains` edge; the entity itself is untouched',
     authz: 'entity',
     input: 'bound',
-    tags: ['membership', 'curate', 'unpin', 'story'],
+    tags: ['membership', 'curate', 'unpin', 'story', 'design', 'page'],
     notes: [
       'add and remove use tm8.receipt.v1 for agent callers; --full preserves the full result',
       'the container may also be a story: removing takes a root out of the story; the entity and its own edges are untouched',
+      'the container may also be a design: removing takes a page out of the design; the page entity is never deleted',
     ],
   },
   'graph.query': {
@@ -3186,6 +3190,7 @@ const ROWS: Record<OperationName, Row> = {
       'returned cursors.messages/.activity continue in `entity feed --cursor` (--order newest); cursors.children continues in `entity children --cursor`',
       '--sections summary,actions is a precise pre-mutation capability + version check for a few hundred tokens',
       'a story prints its description as the body, then overall task progress, its roots with per-root progress, what follows them grouped by kind, who runs what (sessions by call sign, teammates by mode), what is blocked and its child stories with rolled-up progress',
+      'a design prints its description as the body, then its pages in page order (position, kind, title, id)',
       'header (text: a `header:` line plus an untrusted_data block) is present only when someone authored one: whenToUse says when to open the entity (always whole), summary what it holds; clipped names a field shown cut short; stale means the body changed after it was written (the purpose usually still holds); bytes is the full body size; header.version is what `tm8 entity header set --expect-version` takes',
     ],
     examples: ['tm8 entity context <entity-id> --sections summary,actions'],

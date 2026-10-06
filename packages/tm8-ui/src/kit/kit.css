@@ -466,3 +466,67 @@
 .cv2-root .kit-resizer:focus-visible {
   outline: none;
 }
+
+/* -- Fresh / leaving items (domain/freshEntities.ts, useFreshGlow) ---------
+   R40: a just-created entity's item carries a --pn-brand-soft tint, painted as
+   a background-image layer over its own fill (hover and selected still show
+   through), held 2s, then faded linearly to nothing by 30s. No ring, no outer
+   glow. `--pn-fresh-delay` is negative for an item that mounts mid-way.
+   R41: a just-deleted item is inert from the first frame, tinted
+   --pn-block-soft with its title struck in --pn-ink-3; it holds 800ms, then
+   fades and collapses over 1200ms, then the row is removed.
+   The doubled attribute out-ranks a tile's own `background` shorthand. */
+@property --pn-fresh-tint {
+  syntax: '<color>';
+  inherits: false;
+  initial-value: transparent;
+}
+
+@keyframes pnFreshFade {
+  0%,
+  6.667% {
+    --pn-fresh-tint: var(--pn-brand-soft);
+  }
+  100% {
+    --pn-fresh-tint: transparent;
+  }
+}
+
+/* Only a `to`: the 800ms hold is the animation's delay, so every collapsing
+   property starts from the item's own value rather than interpolating through
+   the hold. */
+@keyframes pnLeaving {
+  to {
+    opacity: 0;
+    height: 0;
+    min-height: 0;
+    padding-block: 0;
+    margin-block: 0;
+  }
+}
+
+.cv2-root [data-fresh][data-fresh] {
+  background-image: linear-gradient(var(--pn-fresh-tint), var(--pn-fresh-tint));
+  animation: pnFreshFade 30s linear var(--pn-fresh-delay, 0ms) both;
+}
+
+.cv2-root [data-leaving][data-leaving] {
+  pointer-events: none;
+  overflow: hidden;
+  interpolate-size: allow-keywords;
+  background-image: linear-gradient(var(--pn-block-soft), var(--pn-block-soft));
+  text-decoration: line-through;
+  text-decoration-color: var(--pn-ink-3);
+  animation: pnLeaving 1200ms var(--pn-ease-standard) calc(800ms + var(--pn-fresh-delay, 0ms)) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* A static tint, removed when the entry expires (30s / 1s). */
+  .cv2-root [data-fresh][data-fresh] {
+    animation: none;
+    background-image: linear-gradient(var(--pn-brand-soft), var(--pn-brand-soft));
+  }
+  .cv2-root [data-leaving][data-leaving] {
+    animation: none;
+  }
+}

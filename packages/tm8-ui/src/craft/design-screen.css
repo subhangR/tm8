@@ -1,0 +1,420 @@
+/* ONE DESIGN (Craft → Designs). Tokens only, no raw hex, no new type sizes.
+   The chat column, header and popovers reuse the studio's `crf-*` rules; the
+   page row reuses the Workspace tab strip's `tws-ts-*` look. */
+
+/* -- header: ‹ Designs · Title ▾ ------------------------------------------ */
+.dsn-crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  flex: none;
+  height: 30px;
+  padding: 0 var(--pn-space-2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--pn-r-sm);
+  font: inherit;
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-2);
+  cursor: pointer;
+}
+.dsn-crumb:hover,
+.dsn-crumb:focus-visible {
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+}
+
+.dsn-switch {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  max-width: 50%;
+}
+.dsn-switch .crf-pop,
+.dsn-threads .crf-pop {
+  top: calc(100% + 6px);
+  left: 0;
+  right: auto;
+  width: min(380px, 80vw);
+}
+.dsn-title {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  color: var(--pn-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dsn-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  flex: none;
+  height: 28px;
+  padding: 0 var(--pn-space-3);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  font: inherit;
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink);
+  cursor: pointer;
+}
+.dsn-btn:hover {
+  border-color: var(--pn-line-2);
+  background: var(--pn-hover);
+}
+
+/* -- the chat pane --------------------------------------------------------- */
+.dsn-chat {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.dsn-chat__head {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  flex: none;
+  height: 40px;
+  padding: 0 var(--pn-space-2);
+  border-bottom: 1px solid var(--pn-line);
+}
+.dsn-threads {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.dsn-threads .crf-pick__title {
+  font-weight: 500;
+  color: var(--pn-ink-2);
+}
+
+/* -- the pages column: row over band (content + strip) --------------------- */
+.dsn-main {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--pn-line);
+}
+.dsn-band {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.dsn-content {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--pn-card);
+}
+.dsn-page,
+.dsn-owner {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.dsn-page[hidden],
+.dsn-owner[hidden] {
+  display: none;
+}
+.dsn-entity {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.dsn-graph {
+  border-left: none;
+}
+
+/* Without a Workspace host the graph's controls still need a column. */
+.dsn-strip-lite {
+  flex: none;
+  width: 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--pn-space-2) 0;
+  border-left: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+}
+
+.dsn-graph-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--pn-space-2);
+}
+.crf-views--vertical {
+  flex-direction: column;
+}
+.crf-views--vertical .crf-views__opt {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+}
+
+/* -- the page row ------------------------------------------------------------ */
+.dsn-pages {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  flex: none;
+  height: 40px;
+  padding: 0 var(--pn-space-2);
+  background: var(--pn-paper);
+  border-bottom: 1px solid var(--pn-line);
+}
+.dsn-pages__scroll {
+  flex: 0 1 auto;
+}
+.dsn-tab {
+  cursor: grab;
+}
+.dsn-tab-more {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--pn-r-xs);
+  font: inherit;
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-3);
+  cursor: pointer;
+  opacity: 0;
+}
+.dsn-tab:hover .dsn-tab-more,
+.dsn-tab[data-active] .dsn-tab-more,
+.dsn-tab-more:focus-visible,
+.dsn-tab-more[aria-expanded='true'] {
+  opacity: 1;
+}
+.dsn-tab-more:hover {
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+}
+/* The updated dot replaces the ⋯ until the tab is hovered. */
+.dsn-updated {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--pn-brand);
+}
+.dsn-tab:hover .dsn-updated {
+  opacity: 0;
+}
+
+.dsn-add {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+  height: 40px;
+  margin-left: var(--pn-space-1);
+}
+.dsn-add__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  height: 28px;
+  padding: 0 var(--pn-space-2);
+  background: transparent;
+  border: none;
+  border-radius: var(--pn-r-sm);
+  font: inherit;
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-2);
+  cursor: pointer;
+}
+.dsn-add__btn:hover,
+.dsn-add__btn[aria-expanded='true'] {
+  background: var(--pn-active);
+  color: var(--pn-ink);
+}
+
+.dsn-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  z-index: 30;
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  padding: var(--pn-space-1);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  box-shadow: var(--pn-sh-pop);
+}
+.dsn-menu--add {
+  left: 0;
+  right: auto;
+  min-width: 240px;
+}
+.dsn-menu__kind {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+}
+.dsn-menu__sep {
+  height: 1px;
+  margin: var(--pn-space-1) 0;
+  background: var(--pn-line);
+}
+
+/* The nested row (D7): one existing type step down, a shorter band. */
+.dsn-pages--nested {
+  height: 32px;
+  background: var(--pn-surface);
+}
+.dsn-pages--nested .tws-ts-scroll,
+.dsn-pages--nested .tws-ts-tab,
+.dsn-pages--nested .tws-ts-tab-main,
+.dsn-pages--nested .tws-ts-slot,
+.dsn-pages--nested .dsn-add {
+  height: 32px;
+}
+.dsn-pages--nested .tws-ts-tab-main,
+.dsn-pages--nested .dsn-add__btn {
+  font-size: var(--pn-fs-micro);
+}
+.dsn-pages--nested .tws-ts-tab {
+  flex-basis: 180px;
+  max-width: 180px;
+  min-width: 96px;
+}
+.dsn-pages--nested .dsn-add__btn {
+  height: 24px;
+}
+
+/* -- nested design body and the depth cap ----------------------------------- */
+.dsn-nested {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.dsn-nested__body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.dsn-cards {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--pn-space-4) var(--pn-space-5);
+}
+.dsn-cards__head {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  margin-bottom: var(--pn-space-3);
+}
+.dsn-cards__title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--pn-fs-title);
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+.dsn-cards__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--pn-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.dsn-card {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  column-gap: var(--pn-space-2);
+  padding: var(--pn-space-3);
+  background: var(--pn-paper);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink-2);
+}
+.dsn-card__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink);
+}
+.dsn-card__kind {
+  grid-column: 2;
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+}
+
+/* -- a page outside a Workspace host ---------------------------------------- */
+.dsn-plain {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--pn-space-2);
+  flex: 1;
+  color: var(--pn-ink-2);
+}
+.dsn-plain__title {
+  margin: 0;
+  font-size: var(--pn-fs-title);
+  color: var(--pn-ink);
+}
+.dsn-plain__line {
+  margin: 0;
+  font-size: var(--pn-fs-label);
+}
+
+/* -- a graph page: the canvas and its docked inspector ----------------------- */
+.dsn-graph__row {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  --crf-detail: 360px;
+}
+.dsn-graph__row > .crf-canvas__body {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* The tab's main control is a real <button> here (the Workspace's is not):
+   strip the native chrome so it reads as the strip's tab. */
+.dsn-tab .tws-ts-tab-main {
+  padding: 0;
+  background: transparent;
+  border: none;
+  font-family: inherit;
+  color: inherit;
+  text-align: left;
+}

@@ -1,4 +1,4 @@
--- 302 — Server-side Workspaces (Spec D, doc 01a11171-3aba; task 01a11117-3526).
+-- 305 — Server-side Workspaces (Spec D, doc 01a11171-3aba; task 01a11117-3526).
 --
 -- One Workspace per (space, IDENTITY): a person and the agents whose token
 -- resolves to them share it (Spec C §3). Draft values live in their own table

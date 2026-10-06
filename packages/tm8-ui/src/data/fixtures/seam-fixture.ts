@@ -841,6 +841,9 @@ function synthesizeContent(s: EntitySummary): EntityContent {
     case 'story':
       // The page is hydrated on a detail read only; a seam row carries none.
       return { kind: 'story', description: '', page: null };
+    case 'design':
+      // 304: a fixture design is born empty; its pages are `contains` edges.
+      return { kind: 'design', description: '', pages: [] };
     case 'mcp_server':
       return { kind: 'mcp_server', definition: { name: 'fixture', transport: 'http', url: 'https://fixture.example/mcp', envKeys: [], headerKeys: [], auth: { type: 'none' }, approved: false } };
     case 'style':

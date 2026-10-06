@@ -1,5 +1,7 @@
 /**
- * GRAPH — the Craft blueprint (Craft P1, rulings R1-R3).
+ * GRAPH — the Craft blueprint (Craft P1, rulings R1-R3), a PAGE of a design
+ * since Craft → Designs (D1, D4: no in-thread approval; Run on the design
+ * creates what its graph pages describe).
  *
  * Fact sources, so a later edit can re-check them:
  *   - one row holds vertices AND edges, `graphType` discriminates:
@@ -10,11 +12,11 @@
  *     server/src/facade/services/w2/entities-commands-tracking.ts (`case 'graph'`)
  *   - findings derived on read, never stored: contract.ts content arm;
  *     codes in contract/src/orchestration.ts (checkGraphCoherence)
- *   - the craft protocol (edit the row only, approval in-thread, materialize
- *     1:1 with edges.create, write back `content.link`, dispatch the frontier):
- *     server/src/chat/compose.ts MODE_GUIDE.craft / .orchestrate
- *   - the studio's chat is `about` the graph; orchestrate posts the approval:
- *     tm8-ui/src/craft/CraftScreen.tsx header
+ *   - the craft protocol (edit the design's pages, create nothing; Run on the
+ *     design materializes 1:1 with edges.create and writes back `content.link`):
+ *     server/src/chat/compose.ts craft mode
+ *   - a graph is a page of a design (`contains`, design → graph), crafted in a
+ *     chat `about` the design: tm8-ui/src/craft/DesignScreen.tsx, DesignChatPane.tsx
  *   - the panel block is read-only: tm8-ui/src/panels/bodies/BlueprintBlock.tsx
  *   - no edge type names `graph`; it is reached only through `*` endpoints:
  *     tm8-ui/src/domain/edge-kinds.ts
@@ -28,14 +30,14 @@ export const GRAPH_HELP: KindHelpModule = {
   kind: 'graph',
 
   story: {
-    logline: 'A plan you can draw, argue with and approve before a single real task exists.',
+    logline: 'A plan you can draw and argue with before a single real task exists.',
 
     opening: (
       <>
         <p>
           A graph is a blueprint. Tasks, the teammates who own them, the docs they write and the memories they lean
-          on, drawn as cards with the edges between them, all inside one entity. You sketch it with a teammate in a
-          Craft chat, and the canvas redraws every time the row changes.
+          on, drawn as cards with the edges between them, all inside one entity. It lives as a page of a design, you
+          sketch it with a teammate in that design&rsquo;s chat, and the canvas redraws every time the row changes.
         </p>
         <p>
           Before it, planning happened straight onto the Board. Every idea became a real task the moment it was
@@ -55,7 +57,7 @@ export const GRAPH_HELP: KindHelpModule = {
               The nodes and the edges of a blueprint are data in its own row, not rows of the Space. Drawing{' '}
               <code>t-ui depends_on t-api</code> on the canvas writes nothing to the Space&rsquo;s edges and puts
               nothing on the Board. That is why crafting is safe: the whole plan moves under one version guard, and
-              an unapproved plan thrown away leaves nothing behind.
+              a plan thrown away before its design is Run leaves nothing behind.
             </p>
             <p>
               It is also why the Constellation for this kind is so quiet. No edge type names a graph. Everything it
@@ -80,12 +82,12 @@ export const GRAPH_HELP: KindHelpModule = {
                 <code>t-api</code> holds a spec, a task titled &ldquo;API design&rdquo;. It is drawn as a spec.
               </p>
               <p>
-                <span className="eh-eyebrow">Approved</span> Someone says yes in the Craft thread. The row itself
-                does not change.
+                <span className="eh-eyebrow">Run</span> Someone presses Run on the design that holds this page. The
+                row itself does not change.
               </p>
               <p>
-                <span className="eh-eyebrow">Materialized</span> A real task is created, the row is patched with a
-                link, and <code>t-api</code> now carries a <code>ref</code> and keeps its spec.
+                <span className="eh-eyebrow">Materialized</span> The run&rsquo;s agent creates a real task, patches
+                the row with a link, and <code>t-api</code> now carries a <code>ref</code> and keeps its spec.
               </p>
             </Stagger>
           </>
@@ -104,13 +106,14 @@ export const GRAPH_HELP: KindHelpModule = {
         ),
       },
       {
-        eyebrow: 'After approval',
+        eyebrow: 'After Run',
         title: 'The drawing becomes the progress map',
         body: (
           <p>
             Materializing turns each spec into a real entity and each blueprint edge into one real edge of the same
-            type, in the same direction. The blueprint stays. Its nodes now point at live work, which is why an
-            orchestrating teammate keeps reading the row as the map of what is done and what is ready next.
+            type, in the same direction. Run creates only what the graph pages describe and starts nothing. The
+            blueprint stays, its nodes pointing at live work, so the row reads as the map of what is done and what is
+            ready next.
           </p>
         ),
       },
@@ -130,7 +133,7 @@ export const GRAPH_HELP: KindHelpModule = {
     lifecycle: [
       { name: 'Sketched', note: 'Born with a title. The type defaults to entity, the nodes to none.' },
       { name: 'Crafted', note: 'Grown one guarded patch per turn, findings re-read after each.' },
-      { name: 'Approved', note: 'A message in the Craft thread. Nothing real exists before it.' },
+      { name: 'Run', note: 'Run on the design that holds it. Nothing real exists before it.' },
       { name: 'Materialized', note: 'Specs become entities, blueprint edges become real edges, nodes gain refs.' },
       { name: 'Progress map', note: 'The row stays as the plan, each node pointing at the live work.' },
     ],
@@ -140,9 +143,9 @@ export const GRAPH_HELP: KindHelpModule = {
     intro: (
       <p>
         From a terminal, a graph is an ordinary entity whose content is a small JSON document. You create it, read
-        it with its version and its findings, and patch it under that version. The Craft studio is the same doors
-        with a teammate holding the pen. The real world only changes at materialize, and then through the ordinary
-        entity and edge commands.
+        it with its version and its findings, and patch it under that version. A design&rsquo;s chat is the same
+        doors with a teammate holding the pen. The real world only changes when the design is Run, and then through
+        the ordinary entity and edge commands.
       </p>
     ),
 
@@ -170,23 +173,22 @@ export const GRAPH_HELP: KindHelpModule = {
         title: 'Craft it with a teammate',
         narrative: (
           <p>
-            A craft-mode chat started about the graph is the studio without the canvas. Craft mode keeps the teammate
-            on that one row, materializing nothing until approval lands in the same thread, so your approval is just a
-            message.
+            Put the graph on a design as a page, then start a craft-mode chat about the design. The teammate edits the
+            design&rsquo;s pages and creates nothing real; Run on the design does that, from the graph pages.
           </p>
         ),
-        commands: ['chat start', 'chat send'],
+        commands: ['collection add', 'chat start'],
         demo: [
-          'tm8 chat start --teammate <id> --model <model> --mode craft --workdir scratch --about <graph-id> "Plan CSV export"',
-          '# when the findings are clean',
-          'tm8 chat send <chat-id> "Approved. Materialize it."',
+          'tm8 collection add <design-id> <graph-id> --position 1',
+          'tm8 chat start --teammate <id> --model <model> --mode craft --workdir scratch --about <design-id> "Plan CSV export"',
+          '# when the findings are clean, press Run on the design',
         ],
       },
       {
         title: 'Materialize by hand',
         narrative: (
           <p>
-            Materialize is ordinary commands in a strict order: create entities prerequisites first, one real edge
+            What Run&rsquo;s agent does is ordinary commands in a strict order: create entities prerequisites first, one real edge
             per blueprint edge, then write the mapping back with a <code>link</code> patch so each node gains its{' '}
             <code>ref</code> without restating the rest.
           </p>
@@ -224,16 +226,16 @@ export const GRAPH_HELP: KindHelpModule = {
     intro: (
       <p>
         A graph keeps its most important relations to itself: the edges on its canvas are content, not rows, so they
-        never appear here. What does appear is how the Space holds the blueprint. Look first for the chat that is{' '}
-        <em>about</em> it, where it was crafted and approved.
+        never appear here. What does appear is how the Space holds the blueprint. Look first for the design that{' '}
+        <em>contains</em> it: the graph is one of its pages, and the design&rsquo;s chat is where it was crafted.
       </p>
     ),
 
     notes: {
-      'about:incoming': 'The Craft chat that grew this blueprint. Approval lands in that thread, and materializing waits for it.',
-      'contains:incoming': 'A collection gathering plans side by side. The blueprint is shared, not moved.',
+      'about:incoming': 'A chat about this graph itself. Craft chats are about the design that holds it.',
+      'contains:incoming': 'The design this graph is a page of, or a collection gathering plans side by side. The blueprint is shared, not moved.',
       'relates_to': 'The loose link, for a plan that belongs near something without depending on it.',
-      'depends_on': 'Rare on a blueprint itself. The depends_on edges you draw on the canvas stay inside the row until materialized.',
+      'depends_on': 'Rare on a blueprint itself. The depends_on edges you draw on the canvas stay inside the row until the design is Run.',
     },
 
     spotlight: ['chat', 'collection', 'task', 'memory'],
