@@ -194,7 +194,7 @@ describe('?return=receipt (server receipts, phase 2)', () => {
     const v = await version(F.T);
     // P0h: the tick that leaves nothing open names the step, at the version it left.
     expect(last.acceptance).toEqual({ done: 4, total: 4 });
-    expect(last.next).toBe(`tm8 task complete ${F.T} --expect-version ${v}`);
+    expect(last.next).toMatch(new RegExp(`^tm8 task complete ${F.T} --expect-version ${v} --by \\S+$`));
     fitsCap(last);
     const r = await call<Receipt>('entities.commands.complete', { id: F.T },
       { expectedVersion: v, completerIds: [F.member] });

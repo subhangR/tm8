@@ -1880,7 +1880,7 @@ const ROWS: Record<OperationName, Row> = {
       'an id the task does not carry is refused with the ids it does carry',
       'ids and the version are in `tm8 entity context <task-id>` (acceptance, acceptanceWrite)',
       'tick each criterion the moment it is met, not all at the end: the receipt shows acceptance done/total and the ids still open',
-      'when the tick leaves nothing open, the receipt\'s `next` is the step to run: `tm8 task complete <task-id> --expect-version <n>`, or `tm8 task transition <task-id> in_review` on a task that carries the opt-in pr_merged gate',
+      'when the tick leaves nothing open, the receipt\'s `next` is the step to run: `tm8 task complete <task-id> --expect-version <n> --by <your actor id>`, or `tm8 task transition <task-id> in_review` on a task that carries the opt-in pr_merged gate',
     ],
     examples: [
       'tm8 task tick <task-id> f1 f2 --expect-version <n>',

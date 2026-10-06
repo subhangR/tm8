@@ -364,15 +364,20 @@ describe('task.tick: done/total, open ids and next (P0h)', () => {
   });
 
   it('the last tick names task complete at the new version', () => {
-    const r = successReceipt('task.tick', commandResult(tickedTask([true, true])), { expectedVersion: 6 });
+    const r = successReceipt('task.tick', commandResult(tickedTask([true, true])), { expectedVersion: 6, actorId: ME });
     expect(r.acceptance).toEqual({ done: 2, total: 2 });
     expect(r.open).toEqual([]);
-    expect(r.next).toBe(`tm8 task complete ${TASK} --expect-version 7`);
+    expect(r.next).toBe(`tm8 task complete ${TASK} --expect-version 7 --by ${ME}`);
     const line = renderReceiptHuman(r);
     expect(line).not.toContain('\n');
     expect(line).toContain('acceptance:2/2');
-    expect(line).toContain(`next: tm8 task complete ${TASK} --expect-version 7`);
+    expect(line).toContain(`next: tm8 task complete ${TASK} --expect-version 7 --by ${ME}`);
     expect(bytes(r)).toBeLessThanOrEqual(500);
+  });
+
+  it('with no known actor, next leaves --by <actor-id> for the caller to fill', () => {
+    const r = successReceipt('task.tick', commandResult(tickedTask([true])));
+    expect(r.next).toBe(`tm8 task complete ${TASK} --expect-version 7 --by <actor-id>`);
   });
 
   it('a task with the opt-in pr_merged gate is moved to in_review instead', () => {
@@ -380,15 +385,18 @@ describe('task.tick: done/total, open ids and next (P0h)', () => {
     expect(r.next).toBe(`tm8 task transition ${TASK} in_review`);
   });
 
-  it('a Server-built receipt keeps the Server\'s next and renders it', () => {
-    const server = {
+  it('a Server-built receipt keeps the Server\'s next, fills a --by placeholder, and renders it', () => {
+    const server = (by: string) => ({
       schemaVersion: 'tm8.receipt.v1', ok: true, op: 'task.tick', id: TASK, kind: 'task',
       version: { from: 6, to: 7 }, acceptance: { done: 2, total: 2 }, open: [],
-      next: `tm8 task complete ${TASK} --expect-version 7`, refs: [], warnings: [],
-    };
-    const r = successReceipt('task.tick', server);
-    expect(r.next).toBe(`tm8 task complete ${TASK} --expect-version 7`);
-    expect(renderReceiptHuman(r)).toContain(`next: tm8 task complete ${TASK} --expect-version 7`);
+      next: `tm8 task complete ${TASK} --expect-version 7 --by ${by}`, refs: [], warnings: [],
+    });
+    const named = successReceipt('task.tick', server(SESSION), { actorId: ME });
+    expect(named.next).toBe(`tm8 task complete ${TASK} --expect-version 7 --by ${SESSION}`);
+    expect(renderReceiptHuman(named)).toContain(`next: tm8 task complete ${TASK} --expect-version 7 --by ${SESSION}`);
+    const filled = successReceipt('task.tick', server('<actor-id>'), { actorId: ME });
+    expect(filled.next).toBe(`tm8 task complete ${TASK} --expect-version 7 --by ${ME}`);
+    expect(successReceipt('task.tick', server('<actor-id>')).next).toContain('--by <actor-id>');
   });
 
   it('nextAfterTick: nothing while criteria are open, on an untick, or once the task is past the step', () => {
@@ -397,8 +405,8 @@ describe('task.tick: done/total, open ids and next (P0h)', () => {
     expect(nextAfterTick(TASK, 'done', 'none', 4, 0, 2)).toBeUndefined();
     expect(nextAfterTick(TASK, 'cancelled', 'none', 4, 0, 2)).toBeUndefined();
     expect(nextAfterTick(TASK, 'in_review', 'pr_merged', 4, 0, 2)).toBeUndefined();
-    expect(nextAfterTick(TASK, 'in_review', 'none', 4, 0, 2)).toBe(`tm8 task complete ${TASK} --expect-version 4`);
-    expect(nextAfterTick(TASK, 'open', undefined, 4, 0, 2)).toBe(`tm8 task complete ${TASK} --expect-version 4`);
+    expect(nextAfterTick(TASK, 'in_review', 'none', 4, 0, 2, ME)).toBe(`tm8 task complete ${TASK} --expect-version 4 --by ${ME}`);
+    expect(nextAfterTick(TASK, 'open', undefined, 4, 0, 2)).toBe(`tm8 task complete ${TASK} --expect-version 4 --by <actor-id>`);
   });
 });
 

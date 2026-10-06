@@ -141,6 +141,8 @@ export interface ReceiptInput {
   warnings?: ReceiptWarning[];
   /** `task complete --by …`: which completed_by edges this write made. */
   completerIds?: readonly string[];
+  /** `task tick`: the caller's own actor id, named as `--by` in the receipt's `next`. */
+  actorId?: string;
   /** `task link-pr|link-commit <url>`: fallback when the entity carries none. */
   url?: string;
   /** `session spawn`: the worktree checkout path, when the CLI read it. */
@@ -285,7 +287,8 @@ function entityReceipt(op: ReceiptOp, dto: unknown, input: ReceiptInput): Receip
       const id = str(entity.id);
       const next = id === undefined || typeof entity.version !== 'number'
         ? undefined
-        : nextAfterTick(id, str(state.status), str(state.completionGate), entity.version, open.length, criteria.length);
+        : nextAfterTick(id, str(state.status), str(state.completionGate), entity.version, open.length, criteria.length,
+          input.actorId);
       if (next !== undefined) receipt.next = next;
     }
   }
@@ -320,13 +323,14 @@ export function nextAfterTick(
   version: number,
   open: number,
   total: number,
+  by?: string,
 ): string | undefined {
   if (total === 0 || open > 0) return undefined;
   if (status === 'done' || status === 'cancelled') return undefined;
   if (gate === 'pr_merged') {
     return status === 'in_review' ? undefined : `tm8 task transition ${id} in_review`;
   }
-  return `tm8 task complete ${id} --expect-version ${version}`;
+  return `tm8 task complete ${id} --expect-version ${version} --by ${by || '<actor-id>'}`;
 }
 
 /** The first `patches[]` summary of a kind — where link-pr/commit put the artifact. */
@@ -503,6 +507,10 @@ export function successReceipt(op: ReceiptOp, dto: unknown, input: ReceiptInput 
 
 function fromServer(dto: Receipt, input: ReceiptInput): Receipt {
   const receipt: Receipt = { ...dto };
+  // A Server that did not know the actor leaves `--by <actor-id>` for the caller to fill.
+  if (typeof receipt.next === 'string' && input.actorId !== undefined) {
+    receipt.next = receipt.next.replace('--by <actor-id>', `--by ${input.actorId}`);
+  }
   const refs = Array.isArray(dto.refs) ? (dto.refs as ReceiptRef[]) : [];
   receipt.refs = [...refs, ...(input.refs ?? [])];
   receipt.warnings = warningsOf(dto, input);
