@@ -96,7 +96,7 @@ import {
 import { HANDLED_SOURCES, renderBadge, type TileSlot } from './list/tile-badges';
 import { CategoryGlyph, hasCategoryGlyph } from './list/CategoryGlyph';
 import { MobileSheet, useMobileSurface } from '../mobile';
-import { MaestroStatusGlyph, MaestroTaskTile } from './list/MaestroTaskTile';
+import { MaestroStatusGlyph, MaestroTaskTile, type TaskTileProgress } from './list/MaestroTaskTile';
 import { LinkedPullRequestChips, type LinkedPullRequestFacts } from '../pull-requests';
 import { MaestroSessionTile } from './list/MaestroSessionTile';
 import { ChildCountBadge } from './list/ChildCountBadge';
@@ -4322,6 +4322,9 @@ export function Tile({
       <>
       <MaestroTaskTile
         lead={lead ?? undefined}
+        /* Lead mode drops the status mark, so the row's criteria figure rides
+           the trailing meta instead (Work browser only; Home keeps its row). */
+        progress={leadMode ? acceptanceProgressOf(row) : null}
         rootRef={tileRef}
         id={row.id}
         title={row.title}
@@ -4722,6 +4725,18 @@ interface ControlCardFacts {
   meta: string[];
 }
 
+/** `state.acceptance` as done/total, or null when the row carries no criteria. */
+export function acceptanceProgressOf(row: EntitySummary): TaskTileProgress | null {
+  const acceptance = (row.state as unknown as Record<string, unknown>).acceptance as
+    | { completed?: unknown; total?: unknown }
+    | undefined;
+  if (typeof acceptance?.total !== 'number' || acceptance.total <= 0) return null;
+  return {
+    done: typeof acceptance.completed === 'number' ? acceptance.completed : 0,
+    total: acceptance.total,
+  };
+}
+
 /**
  * Maps the registry-selected control-card anatomy onto fields the summary
  * actually carries. This is intentionally structural: another registry row
@@ -4739,10 +4754,8 @@ function factsForControlCard(row: EntitySummary): ControlCardFacts {
       typeof (value as { displayName?: unknown }).displayName === 'string',
   );
   const meta: string[] = [];
-  const acceptance = state.acceptance as { completed?: unknown; total?: unknown } | undefined;
-  if (typeof acceptance?.total === 'number' && acceptance.total > 0) {
-    meta.push(`${typeof acceptance.completed === 'number' ? acceptance.completed : 0}/${acceptance.total} criteria`);
-  }
+  const acceptance = acceptanceProgressOf(row);
+  if (acceptance) meta.push(`${acceptance.done}/${acceptance.total} criteria`);
   if (typeof state.dueDate === 'string' && state.dueDate) meta.push(`due ${state.dueDate}`);
   const blockers = row.badges.blocked?.unresolvedHardDependencyCount ?? 0;
   if (blockers > 0) meta.push(`${blockers} ${blockers === 1 ? 'blocker' : 'blockers'}`);
