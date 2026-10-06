@@ -5,6 +5,7 @@ import { Avatar } from '../../kit';
 import { actorName } from '../../domain/actors';
 import { useMobileSurface } from '../../mobile/surface';
 import { ChildCountBadge } from './ChildCountBadge';
+import { useFreshGlow } from '../../domain/useFreshGlow';
 import './maestro-task-tile.css';
 
 export interface MaestroTaskTileProps {
@@ -116,9 +117,11 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
   } = props;
   const { oneSurface } = useMobileSurface();
   const hasChildren = childCount > 0 && onToggleChildren != null;
+  const glow = useFreshGlow(id);
 
   return (
     <div
+      {...glow.attrs}
       ref={rootRef}
       className={[
         'pn-tt',
@@ -209,6 +212,7 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
           }}
         >
           {title}
+          {glow.srSuffix ? <span className="sr-only">{glow.srSuffix}</span> : null}
         </button>
 
         {assignees.length > 0 ? (

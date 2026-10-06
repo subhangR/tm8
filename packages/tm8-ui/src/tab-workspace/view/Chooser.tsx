@@ -15,6 +15,7 @@ import { getKindAdapter } from '../adapters/registry';
 import { WORKSPACE_KINDS, type KindId, type TabId, type TabScope } from '../runtime/types';
 import { scopeKey } from '../runtime/selectors';
 import { useWorkspace, useWorkspaceState } from './context';
+import { useFreshGlow, useRetainLeaving } from '../../domain/useFreshGlow';
 import './creation.css';
 
 export interface ChooserProps {
@@ -67,7 +68,7 @@ export function Chooser({ tabId, variant, restoreSlot }: ChooserProps) {
   }, [variant]);
 
   const q = query.trim().toLowerCase();
-  const rows = useMemo(() => {
+  const liveRows = useMemo(() => {
     const seen = new Set<string>();
     const all: EntitySummary[] = [];
     for (const kind of kinds) {
@@ -80,6 +81,8 @@ export function Chooser({ tabId, variant, restoreSlot }: ChooserProps) {
     if (q) return all.filter((row) => row.title.toLowerCase().includes(q)).slice(0, RESULT_LIMIT);
     return all.sort((a, b) => (a.activityAt < b.activityAt ? 1 : a.activityAt > b.activityAt ? -1 : 0)).slice(0, RECENT_LIMIT);
   }, [kinds, rowsFor, q]);
+  /* A row deleted live stays for its exit (R41). */
+  const rows = useRetainLeaving(liveRows, rowIdOf);
 
   const creatable = useMemo(() => kinds.map(getKindAdapter).filter((adapter) => adapter.creatable === true), [kinds]);
   const replace = tabId ? { replaceTabId: tabId } : {};
@@ -145,19 +148,7 @@ export function Chooser({ tabId, variant, restoreSlot }: ChooserProps) {
         ) : (
           <ul className="tws-pick-list" onKeyDown={onListKey}>
             {rows.map((row) => (
-              <li key={row.id}>
-                <button
-                  type="button"
-                  className="tws-pick-row"
-                  onClick={() => openRow(row)}
-                  title={`${row.title} — ${getKindAdapter(row.kind).noun}`}
-                  data-testid="tws-chooser-row"
-                >
-                  <KindIcon kind={row.kind} size={14} />
-                  <span className="tws-pick-row-title">{row.title}</span>
-                  <span className="tws-pick-row-kind">{getKindAdapter(row.kind).noun}</span>
-                </button>
-              </li>
+              <ChooserRow key={row.id} row={row} onOpen={openRow} />
             ))}
           </ul>
         )}
@@ -182,5 +173,29 @@ export function Chooser({ tabId, variant, restoreSlot }: ChooserProps) {
         </section>
       ) : null}
     </div>
+  );
+}
+
+const rowIdOf = (row: EntitySummary): string => row.id;
+
+/** One Recent / Results row; glows while new and plays its exit when deleted (R40, R41). */
+function ChooserRow({ row, onOpen }: { row: EntitySummary; onOpen(row: EntitySummary): void }) {
+  const glow = useFreshGlow(row.id);
+  return (
+    <li>
+      <button
+        {...glow.attrs}
+        type="button"
+        className="tws-pick-row"
+        onClick={() => onOpen(row)}
+        title={`${row.title} — ${getKindAdapter(row.kind).noun}`}
+        data-testid="tws-chooser-row"
+      >
+        <KindIcon kind={row.kind} size={14} />
+        <span className="tws-pick-row-title">{row.title}</span>
+        {glow.srSuffix ? <span className="sr-only">{glow.srSuffix}</span> : null}
+        <span className="tws-pick-row-kind">{getKindAdapter(row.kind).noun}</span>
+      </button>
+    </li>
   );
 }

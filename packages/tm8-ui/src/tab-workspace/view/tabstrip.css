@@ -418,3 +418,16 @@
     animation: none;
   }
 }
+
+/* ---- fresh / deleted (R40, R41): kit.css paints the fresh tint ---- */
+.cv2-root .tws-ts-tab[data-active][data-fresh],
+.cv2-root .tws-ts-tab[data-active][data-leaving-tint] {
+  background-image: none;
+}
+.cv2-root .tws-ts-tab[data-leaving-tint] {
+  background-image: linear-gradient(var(--pn-block-soft), var(--pn-block-soft));
+}
+.tws-ts-tab[data-state='deleted'] .tws-ts-title {
+  text-decoration: line-through;
+  text-decoration-color: var(--pn-ink-3);
+}
