@@ -575,6 +575,8 @@ export interface EmbeddedChrome {
   dangerSlot: HTMLElement | null;
   /** Primaries the host draws itself (Workspace's own Chat toggle). */
   omitActions?: readonly ActionRef[];
+  /** The host draws the Connectors control itself (Workspace's plug button). */
+  omitConnectors?: boolean;
   /** Called after a Rename commits, so the host can close its menu. */
   onMenuDone?: () => void;
 }
@@ -1491,7 +1493,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
               at all while the save is clean, so this costs the body no height
               in the ordinary case. */}
           <AuthoringHost save={save}>
-            {tab === "content" && !isTombstone && config.mcpEquipment && <McpEquipment key={detail.id} targetId={detail.id} />}
+            {tab === "content" && !isTombstone && config.mcpEquipment && !props.embeddedChrome?.omitConnectors && <McpEquipment key={detail.id} targetId={detail.id} />}
             {/*
               ATTACHMENTS RIDE IN THE CONTENT BODY — not in a fifth tab. D3
               fixes the panel at four tabs for every kind (user ruling
