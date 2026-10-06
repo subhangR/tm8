@@ -328,6 +328,13 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       connection.onChatTurn((frame) =>
         cb(chatTurnFrameFromWire(frame as unknown as WireChatTurnFrame))),
     onChatContext: (cb) => connection.onChatContext(cb),
+    workspaceBridge: {
+      send: (frame) => connection.sendWorkspace(frame),
+      onCommand: (cb) => connection.onWorkspaceCommand(cb),
+      onOpen: (cb) => connection.onSocketOpen(cb),
+      onSync: (cb) => connection.onWorkspaceSync(cb),
+      isOpen: () => connection.getConnection().phase === 'live',
+    },
     onConnection: (cb) => connection.onConnection(cb),
     getConnection: () => connection.getConnection(),
     onResync: (cb) => connection.onResync(cb),

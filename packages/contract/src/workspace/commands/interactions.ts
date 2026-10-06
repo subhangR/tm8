@@ -2,10 +2,10 @@
  * `workspace.interactions.resolve` (§5.6). The dispatcher has already
  * refused any source other than click / keyboard.
  */
-import { selectedKinds } from '../selectors';
-import type { InteractionChoice, TabId, WorkspaceState } from '../types';
-import { applyScope } from './scope';
-import { isNonEmptyString, isRecord, reject, removeTabs, type Planner } from './shared';
+import { selectedKinds } from '../selectors.js';
+import type { InteractionChoice, TabId, WorkspaceState } from '../types.js';
+import { applyScope } from './scope.js';
+import { isNonEmptyString, isRecord, reject, removeTabs, type Planner } from './shared.js';
 
 const CHOICES: readonly InteractionChoice[] = ['addType', 'useMixed', 'cancel', 'discard', 'keep'];
 

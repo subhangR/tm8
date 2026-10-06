@@ -6,7 +6,7 @@
  * side effects as `after` thunks, which the dispatcher runs only once the
  * commit has landed.
  */
-import { isEligible, scopeKey } from '../selectors';
+import { isEligible, scopeKey } from '../selectors.js';
 import type {
   CommandEnvelope,
   PendingInteraction,
@@ -16,7 +16,7 @@ import type {
   TabRecord,
   WorkspaceHooks,
   WorkspaceState,
-} from '../types';
+} from '../types.js';
 
 export interface PlanContext {
   state: WorkspaceState;
@@ -40,7 +40,12 @@ export type Plan =
     }
   /** Commit `next`, then replay `command` through dispatch exactly once. */
   | { type: 'replay'; next: WorkspaceState; command: CommandEnvelope; after?: (() => void)[] }
-  | { type: 'inspect' };
+  | { type: 'inspect' }
+  /**
+   * ADDITIVE (Spec C). The command acted OUTSIDE the store (a dialog, the
+   * route) through a hook; nothing commits and `revision` does not move.
+   */
+  | { type: 'external'; result: Omit<Result, 'revision'> };
 
 export type Planner = (ctx: PlanContext) => Plan;
 

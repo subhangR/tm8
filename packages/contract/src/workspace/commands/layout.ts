@@ -1,6 +1,6 @@
 /** `workspace.layout.set` — bounded widths and the expanded flag. */
-import { LAYOUT_BOUNDS } from '../types';
-import { isFiniteNumber, isRecord, reject, type Planner } from './shared';
+import { LAYOUT_BOUNDS } from '../types.js';
+import { isFiniteNumber, isRecord, reject, type Planner } from './shared.js';
 
 const clamp = (value: number, { min, max }: { min: number; max: number }) =>
   Math.round(Math.min(max, Math.max(min, value)));

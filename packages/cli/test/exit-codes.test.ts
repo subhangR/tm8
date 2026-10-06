@@ -52,7 +52,9 @@ describe('frozen exit-code table §7.6', () => {
     // skipped: Node itself can exit 12, so this table cannot own it.
     // 15 joined for `form wait` (Forms W2): the form closed or was cancelled
     // first; that wait's timeout reuses 13.
-    expect([...EXIT_CODES]).toEqual([0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 130]);
+    // 16 joined for `workspace …` (Spec C bridge): the window is waiting for its
+    // human to choose, so the agent must not read the run as done.
+    expect([...EXIT_CODES]).toEqual([0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 16, 130]);
     expect(EXIT_MEANING[3]).toBe('unauthenticated');
     expect(EXIT_MEANING[4]).toBe('forbidden');
     expect(EXIT_MEANING[8]).toBe('not implemented');
@@ -77,6 +79,7 @@ describe('frozen exit-code table §7.6', () => {
   it('15 is reserved for `form wait` reaching a terminal form, and 13 also names its timeout', () => {
     expect(Object.values(EXIT_BY_COMMAND_ERROR).filter((c) => c === 15)).toHaveLength(0);
     expect(EXIT_MEANING[15]).toMatch(/closed or was cancelled.*form wait only/);
+    expect(EXIT_MEANING[16]).toMatch(/waiting for its human to choose/);
     expect(EXIT_MEANING[13]).toMatch(/form wait/);
   });
 });

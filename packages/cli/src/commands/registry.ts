@@ -48,6 +48,7 @@ import { SAVED_VIEW_COMMANDS } from './saved-view.js';
 import { ACTION_COMMANDS } from './action.js';
 import { EVENT_COMMANDS } from './event.js';
 import { PRESENCE_COMMANDS } from './presence.js';
+import { WORKSPACE_COMMANDS } from './workspace.js';
 import { PROJECT_COMMANDS } from './project.js';
 import { FILE_COMMANDS } from './file.js';
 import { MESSAGE_COMMANDS } from './message.js';
@@ -133,6 +134,7 @@ export const COMMANDS: CommandModule[] = [
   ...ACTION_COMMANDS,
   ...EVENT_COMMANDS,
   ...PRESENCE_COMMANDS,
+  ...WORKSPACE_COMMANDS,
   ...PROJECT_COMMANDS,
   ...FILE_COMMANDS,
   ...MESSAGE_COMMANDS,

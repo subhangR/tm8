@@ -1,7 +1,7 @@
 /** `workspace.browser.set` — patches the browser only; never touches tabs or scope. */
-import { isWorkspaceKind } from '../types';
-import type { BrowserKindState, BrowserState } from '../types';
-import { isFiniteNumber, isRecord, reject, type Planner } from './shared';
+import { isWorkspaceKind } from '../types.js';
+import type { BrowserKindState, BrowserState } from '../types.js';
+import { isFiniteNumber, isRecord, reject, type Planner } from './shared.js';
 
 export const EMPTY_BROWSER_KIND_STATE: BrowserKindState = { query: '', filters: null, scrollTop: 0 };
 

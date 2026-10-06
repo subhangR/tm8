@@ -1818,6 +1818,9 @@ export const WorkspaceEventSchema: z.ZodType<WorkspaceEvent> = z.lazy(() => z.un
  */
 const ControlSinceSchema = z.number().int().nonnegative().safe();
 
+/** A window-generated id (uuid in practice); bounded, never parsed for meaning. */
+const WorkspaceInstanceIdSchema = z.string().min(1).max(128);
+
 const ControlSpaceIdsSchema = z.array(SpaceIdSchema).min(1).max(MAX_CONTROL_FRAME_SPACES);
 
 export const WorkspaceControlFrameSchema: z.ZodType<WorkspaceControlFrame> =
@@ -1833,11 +1836,61 @@ export const WorkspaceControlFrameSchema: z.ZodType<WorkspaceControlFrame> =
       viewing: z.boolean(),
       typing: z.boolean(),
     }).strict(),
+    z.object({
+      type: z.literal('workspace.register'),
+      spaceId: SpaceIdSchema,
+      instanceId: WorkspaceInstanceIdSchema,
+      windowId: WorkspaceInstanceIdSchema,
+      focused: z.boolean(),
+      visible: z.boolean(),
+      view: z.string().min(1).max(64),
+      mounted: z.boolean(),
+      revision: z.number().int().nonnegative().safe(),
+      lastFocusedAt: z.string().max(64).optional(),
+    }).strict(),
+    z.object({ type: z.literal('workspace.unregister'), instanceId: WorkspaceInstanceIdSchema }).strict(),
+    z.object({
+      type: z.literal('workspace.apply'),
+      spaceId: SpaceIdSchema,
+      instanceId: WorkspaceInstanceIdSchema,
+      requestId: z.string().min(1).max(128),
+      env: z.record(z.unknown()),
+      ids: z.array(z.string().min(1).max(128)).max(16),
+    }).strict(),
+    z.object({
+      type: z.literal('workspace.import'),
+      spaceId: SpaceIdSchema,
+      instanceId: WorkspaceInstanceIdSchema,
+      state: z.record(z.unknown()),
+      drafts: z.array(z.object({
+        draftId: z.string().uuid(),
+        kind: z.string().min(1).max(64),
+        values: z.record(z.unknown()),
+      }).strict()).max(30),
+    }).strict(),
+    z.object({
+      type: z.literal('workspace.draft.patch'),
+      spaceId: SpaceIdSchema,
+      instanceId: WorkspaceInstanceIdSchema,
+      draftId: z.string().uuid(),
+      kind: z.string().min(1).max(64),
+      fields: z.record(z.object({ v: z.unknown(), base: z.number().int().nonnegative() }).strict()),
+    }).strict(),
+    z.object({
+      type: z.literal('workspace.result'),
+      instanceId: WorkspaceInstanceIdSchema,
+      requestId: z.string().min(1).max(128),
+      result: z.record(z.unknown()),
+    }).strict(),
   ]);
 
 export const WorkspaceControlAckSchema: z.ZodType<WorkspaceControlAck> = z.object({
   type: z.literal('control.refused'),
-  frame: z.enum(['subscribe', 'unsubscribe', 'presence', 'resume', 'presence.set']),
+  frame: z.enum([
+    'subscribe', 'unsubscribe', 'presence', 'resume', 'presence.set',
+    'workspace.register', 'workspace.unregister', 'workspace.result',
+    'workspace.apply', 'workspace.import', 'workspace.draft.patch',
+  ]),
   spaceId: SpaceIdSchema.optional(),
   reason: z.enum(['forbidden', 'malformed']),
 }).strict();

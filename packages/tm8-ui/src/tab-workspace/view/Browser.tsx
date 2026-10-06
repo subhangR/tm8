@@ -25,7 +25,9 @@ import { EntityListPanel, type ListEmptyState, type ListFilterState } from '../.
 import { ListRootHeader, type ListRootOption } from '../../panels/ListRootHeader';
 import { getKindAdapter } from '../adapters/registry';
 import { activeEntityId } from '../runtime/selectors';
-import { EMPTY_BROWSER_KIND_STATE } from '../runtime/commands/browser';
+import { workspaceCommands } from '@tm8/contract/workspace';
+
+const { EMPTY_BROWSER_KIND_STATE } = workspaceCommands.browser;
 import { WORKSPACE_KINDS, type KindId } from '../runtime/types';
 import { useWorkspace, useWorkspaceState } from './context';
 import './browser.css';

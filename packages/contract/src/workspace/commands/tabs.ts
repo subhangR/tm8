@@ -2,9 +2,9 @@
  * `workspace.tabs.*` — open (§5.1), activate, close (§5.4), closeVisible,
  * move and setUi.
  */
-import { findEntityTab, isEligible, kindInScope, visibleTabIds } from '../selectors';
-import { isWorkspaceKind, TAB_SUBVIEWS, UI_SOURCES } from '../types';
-import type { EntityTabRecord, Source, TabId, TabUi, TrailCrumb } from '../types';
+import { findEntityTab, isEligible, kindInScope, visibleTabIds } from '../selectors.js';
+import { isWorkspaceKind, TAB_SUBVIEWS, UI_SOURCES } from '../types.js';
+import type { EntityTabRecord, Source, TabId, TabUi, TrailCrumb } from '../types.js';
 import {
   activate,
   isFiniteNumber,
@@ -14,7 +14,7 @@ import {
   removeTabs,
   replaceChooser,
   type Planner,
-} from './shared';
+} from './shared.js';
 
 function isTrail(value: unknown): value is TrailCrumb[] {
   return (

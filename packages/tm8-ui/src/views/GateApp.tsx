@@ -56,6 +56,7 @@ import {
   isWorkspaceKind,
   openInWorkspace,
   queueWorkArrival,
+  useWorkspaceBridge,
   TabWorkspaceView,
   useWorkspaceShareRoute,
   type WorkspaceGateHandles,
@@ -1992,6 +1993,27 @@ export function GateApp(props: GateAppProps = {}) {
     [threeModes, navigateTo],
   );
   const openInboxView = useCallback(() => navigateTo({ type: 'view', ref: 'inbox' }), [navigateTo]);
+
+  /* Spec C (doc 01a1111d-589e): this window is a live Workspace instance that
+     the human's own agents and CLI can drive through the node. The bridge owns
+     the registered dialogs below; it never opens anything else. */
+  useWorkspaceBridge({
+    port: data.seam.workspaceBridge,
+    spaceId: data.ready && data.spaceId ? data.spaceId : null,
+    viewerId: viewerMemberId,
+    view: navView.view,
+    dialogs: {
+      palette: { open: paletteOpen, setOpen: setPaletteOpen, available: true },
+      prompts: { open: promptsOpen, setOpen: setPromptsOpen, available: true },
+      agentTools: { open: setupOpen === true, setOpen: setSetupOpen, available: !!credentialsPort },
+      newSpace: { open: newSpaceOpen, setOpen: setNewSpaceOpen, available: !!projectOnboardingPort },
+      addServer: { open: addServerOpen, setOpen: setAddServerOpen, available: !!props.onAddServer },
+    },
+    otherModalOpen: launch.isModalOpen?.() ?? false,
+    showWorkspace: () => navStore.getState().navigate({ view: 'tabs' }),
+    titleOf: (entityId) => data.detailOf(entityId)?.title ?? undefined,
+    notify: notices.push,
+  });
 
   /*
    * D31 — RETIRED DESKTOP ADDRESSES LAND IN WORK.

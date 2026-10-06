@@ -1,11 +1,10 @@
 /**
  * `workspace.drafts.*` — open (§5.2), markDirty, and the internal bind (§5.5).
  */
-import { findEntityTab, kindInScope } from '../selectors';
-import { isWorkspaceKind } from '../types';
-import type { DraftTabRecord, EntityTabRecord, TabId, TabRecord, WorkspaceState } from '../types';
-import { requestDraftFocus } from '../draftFocus';
-import { activate, isNonEmptyString, isRecord, reject, replaceChooser, toFront, type Planner } from './shared';
+import { findEntityTab, kindInScope } from '../selectors.js';
+import { isWorkspaceKind } from '../types.js';
+import type { DraftTabRecord, EntityTabRecord, TabId, TabRecord, WorkspaceState } from '../types.js';
+import { activate, isNonEmptyString, isRecord, reject, replaceChooser, toFront, type Planner } from './shared.js';
 
 /** §5.2 Open a draft: reuse the untouched one of that kind, else create at index 0. */
 export const openDraft: Planner = ({ state, env, hooks }) => {
@@ -34,7 +33,7 @@ export const openDraft: Planner = ({ state, env, hooks }) => {
       type: 'commit',
       next,
       result: { tabId: untouched.id, outcome: 'reused' },
-      after: [() => requestDraftFocus(untouched.id)],
+      after: [() => hooks.focusDraft(untouched.id)],
     };
   }
   const record: DraftTabRecord = {

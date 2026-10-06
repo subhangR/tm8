@@ -360,6 +360,17 @@ export const OPERATIONS = [
   { name: 'events.changes',          method: 'GET',    path: '/v2/spaces/:spaceId/events/changes',          kind: 'read',    status: 'v1' },
   { name: 'presence.get',            method: 'GET',    path: '/v2/entities/:id/presence',                   kind: 'read',    status: 'v1' },
 
+  // Workspace remote bridge (Spec C, doc 01a1111d-589e): agents and the CLI
+  // drive the caller's OWN live Workspace windows. The window side rides
+  // `events.subscribe` as `workspace.*` control frames; nothing is durable.
+  { name: 'workspace.instances.list', method: 'GET',   path: '/v2/spaces/:spaceId/workspace/instances',     kind: 'read',    status: 'v1' },
+  { name: 'workspace.inspect',       method: 'GET',    path: '/v2/spaces/:spaceId/workspace/inspect',       kind: 'read',    status: 'v1' },
+  { name: 'workspace.command',       method: 'POST',   path: '/v2/spaces/:spaceId/workspace/commands',      kind: 'command', status: 'v1' },
+  // Spec D (doc 01a11171-3aba): the caller's STORED workspace, readable and
+  // writable with no window open.
+  { name: 'workspace.get',           method: 'GET',    path: '/v2/spaces/:spaceId/workspace',               kind: 'read',    status: 'v1' },
+  { name: 'workspace.drafts.patch',  method: 'POST',   path: '/v2/spaces/:spaceId/workspace/drafts/:draftId', kind: 'command', status: 'v1' },
+
   // execution.* family (R16) — server-hosted PTY is the only spawn path (AM-1)
   { name: 'execution.spawn',          method: 'POST',  path: '/v2/execution/spawn',                         kind: 'command', status: 'v1' },
   // A VANILLA TERMINAL (101) — a shell session with no agent attached. Its own

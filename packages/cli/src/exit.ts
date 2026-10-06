@@ -65,6 +65,12 @@ export const EXIT_MATCHED_VIA_POLL = 14;
  * The output carries the status (and a cancel reason when one was given).
  */
 export const EXIT_FORM_TERMINAL = 15;
+/**
+ * 16 — `workspace …` only: the window is showing its human a choice (unsaved
+ * changes, add a kind to the scope) and only the human can answer it. Distinct
+ * from 0 so an agent notices that the person has to act before anything moves.
+ */
+export const EXIT_USER_CHOICE = 16;
 /** 130 — interrupted (SIGINT). */
 export const EXIT_INTERRUPTED = 130;
 
@@ -88,6 +94,7 @@ export const EXIT_MEANING = {
   13: 'no matching event arrived before --timeout expired (event watch --until-match); for form wait, no new response did',
   14: 'matched, but via the events.poll fallback after the event socket was lost (event watch --until-match only)',
   15: 'the form closed or was cancelled before a new response arrived (form wait only)',
+  16: 'the Workspace window is waiting for its human to choose (workspace … only)',
   130: 'interrupted',
 } as const;
 

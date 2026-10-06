@@ -14,6 +14,8 @@ export { draftKey, draftStoreFor, flushDraftValues, type DraftStore } from './dr
 export {
   acceptRestoreOffer,
   dismissRestoreOffer,
+  enterServerMode,
+  legacySnapshot,
   initPersistence,
   persistKey,
   restoreOfferOf,
