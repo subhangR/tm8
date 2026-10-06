@@ -46,7 +46,9 @@ import {
   type CoordinatorKind,
 } from './templates.js';
 import { DEFAULT_PROMPT_VERSION, PROMPT_V2_MODES, PROMPT_VERSION_V2 } from './prompt-version.js';
-import { composePromptV2, HEADER_AUTHORING_RULE, type TaskContextSnapshot } from './prompt-v2.js';
+import {
+  composePromptV2, COORDINATOR_SUBTASK_RULE, HEADER_AUTHORING_RULE, PLACEMENT_RULE, type TaskContextSnapshot,
+} from './prompt-v2.js';
 
 /**
  * The harness surfaces (§5.2 kernel, §8.1 budgets, §14 templates, §18 escaping)
@@ -322,6 +324,8 @@ const WORKER_IDENTITY_INSTRUCTION =
   'questions, and next-session pointers.' +
   GIT_TRACKING_WORKER_INSTRUCTION +
   ' ' +
+  PLACEMENT_RULE +
+  ' ' +
   HEADER_AUTHORING_RULE;
 
 // Rewritten 2026-08-12 against the six real `mode=coordinator` journals: three
@@ -338,7 +342,7 @@ const COORDINATOR_IDENTITY_INSTRUCTION =
   'polling events since your last seen seq tells you whether anything changed, and ' +
   'the context call\'s provenance.eventSeq is your baseline. Decompose your assigned work ' +
   'into scoped units with explicit inputs, outputs and deliverables, and plan the ' +
-  'order before you start. Delegate each unit with ' +
+  'order before you start. ' + COORDINATOR_SUBTASK_RULE + ' Delegate each unit with ' +
   '`tm8 session spawn --teammate <team-member-id> --task <task-id> ' +
   '--mode coordinated-worker --context <brief>`; discover its spawn ' +
   'actions and the project associations first, and choose project, worktree or ' +
@@ -363,6 +367,8 @@ const COORDINATOR_IDENTITY_INSTRUCTION =
   'worker result — or naming the ones you could not collect.' +
   GIT_TRACKING_COORDINATOR_INSTRUCTION +
   ' ' +
+  PLACEMENT_RULE +
+  ' ' +
   HEADER_AUTHORING_RULE;
 
 const COORDINATED_WORKER_IDENTITY_INSTRUCTION =
@@ -383,6 +389,8 @@ const COORDINATED_WORKER_IDENTITY_INSTRUCTION =
   'pointers. Do not go idle after finishing.' +
   GIT_TRACKING_WORKER_INSTRUCTION +
   ' ' +
+  PLACEMENT_RULE +
+  ' ' +
   HEADER_AUTHORING_RULE;
 
 const COORDINATED_COORDINATOR_IDENTITY_INSTRUCTION =
@@ -394,7 +402,8 @@ const COORDINATED_COORDINATOR_IDENTITY_INSTRUCTION =
   'polling events since your last seen seq tells you whether anything changed, and ' +
   'the context call\'s provenance.eventSeq is your baseline. ' +
   'Decompose that slice into scoped units ' +
-  'with explicit deliverables and verify each against its success criteria. Delegate ' +
+  'with explicit deliverables and verify each against its success criteria. ' +
+  COORDINATOR_SUBTASK_RULE + ' Delegate ' +
   'with `tm8 session spawn` and brief each child by messaging its work session; ' +
   'integrate every child result or report explicitly that you could not. IMPORTANT — ' +
   'your parent is waiting on a durable answer: when your slice completes or blocks, ' +
@@ -403,6 +412,8 @@ const COORDINATED_COORDINATOR_IDENTITY_INSTRUCTION =
   'Include outcome, verification and blockers, and do not go idle leaving the parent ' +
   'waiting.' +
   GIT_TRACKING_COORDINATOR_INSTRUCTION +
+  ' ' +
+  PLACEMENT_RULE +
   ' ' +
   HEADER_AUTHORING_RULE;
 
@@ -432,6 +443,8 @@ const DISPATCHER_IDENTITY_INSTRUCTION =
   'delete teammates, and you never change a teammate\'s persona or model — you ' +
   'select from the roster as it is. If no teammate fits, say so on the thread ' +
   'rather than inventing one or doing the task. ' +
+  PLACEMENT_RULE +
+  ' ' +
   HEADER_AUTHORING_RULE;
 
 // -- Frame instructions (v1 envelope) -----------------------------------------

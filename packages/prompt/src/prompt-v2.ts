@@ -68,6 +68,40 @@ export const HEADER_AUTHORING_RULE =
   "balance rounding', not 'Rounding doc') and --summary (what it holds) in the same create call.";
 
 /**
+ * Placement (Design Rules 01a10c5d §2.4; P0f task 01a111b2-a4c8, asked for by
+ * Subhang on 6 Oct 2026): rule 5 of the base, and the same sentence on every
+ * v1 mode instruction, beside the header rule. The P0f audit (doc 01a111b9)
+ * found agents creating flat roots: 20 root tasks made by a session while it
+ * was working on another task, 61 docs that belong under a head doc, 4
+ * `produces` edges in the whole space, and story roots that were children.
+ * The parent is chosen from what the entity is ABOUT (owner, 6 Oct): the
+ * current task only when the new entity is part of it, any other same-kind
+ * entity when it belongs there, a root when it belongs nowhere, and a new
+ * umbrella adopts the entities it gathers. No double quotes: the v1 frame
+ * entity-escapes them.
+ */
+export const PLACEMENT_RULE =
+  'Before you create an entity, decide where it belongs from what it is about, not from the ' +
+  'task you happen to be on. If it is part of an existing entity of the same kind, create it ' +
+  'under that one with --parent: a subtask under the task it breaks down, a sub-doc under the ' +
+  'doc it details, a child story, a sub-session (find the parent with `tm8 entity query --kind ' +
+  "<kind> --words '<terms>'` or the hierarchy in `tm8 entity context`). If it is part of " +
+  'nothing, make it a root. If it gathers existing entities, move them under it with ' +
+  '`tm8 entity move`. Never parent across kinds; link instead: a deliverable with ' +
+  '`tm8 edge create <task-id> produces <new-id>`, an input with --attach-to <task-id>. ' +
+  'Follow-up work is a root linked to its origin. Only roots go into a story ' +
+  '(`tm8 collection add <story-id> <root-id>`).';
+
+/**
+ * The coordinator's half of placement: a unit of the assignment is a subtask
+ * of it, created before its worker is spawned on it, so the work tree mirrors
+ * the delegation tree. v1 and v2 coordinator layers carry the same sentence.
+ */
+export const COORDINATOR_SUBTASK_RULE =
+  "Create each unit as a subtask of your task (`tm8 entity create task '<title>' " +
+  "--parent <your-task-id>`) and spawn its worker on that subtask.";
+
+/**
  * The base: what tm8 is, and the rules for every mode. Byte-identical in all
  * five modes, so it carries nothing a single mode needs.
  */
@@ -93,6 +127,7 @@ export const BASE_PROMPT_V2 = [
     'with `tm8 task link-pr|link-commit <task-id> <url>`. Publish web pages with ' +
     "`tm8 artifact publish`, never your harness's artifact tool.",
   `4. ${HEADER_AUTHORING_RULE}`,
+  `5. ${PLACEMENT_RULE}`,
   '</tm8>',
 ].join('\n');
 
@@ -114,7 +149,7 @@ export const ROLE_LAYERS_V2: Record<RoleV2, readonly string[]> = {
     'You coordinate; workers execute. Your output is spawns, briefs, verification and ' +
       'a closing message, not the work itself.',
     '1. Split the assignment into units, each with inputs, outputs and success criteria. ' +
-      'Do a unit yourself only when its brief would cost more than the work.',
+      `Do a unit yourself only when its brief would cost more than the work. ${COORDINATOR_SUBTASK_RULE}`,
     '2. Spawn each unit with `tm8 session spawn --teammate <team-member-id> --task <task-id> ' +
       '--mode coordinated-worker --launch-project <project-id> --workdir worktree ' +
       '--base-ref origin/main --context "<brief>"`. Without `--mode coordinated-worker` ' +

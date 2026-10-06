@@ -208,6 +208,8 @@ export interface ReceiptOptions {
   before?: ReceiptSnapshot;
   /** `task.complete`: the completer ids the caller named, so only their edges are refs. */
   completerIds?: readonly string[];
+  /** `task.tick`: the acting actor, named as `--by` in the `next` it hands back. */
+  actorId?: string | null;
 }
 
 /**
@@ -262,7 +264,7 @@ export async function buildReceipt(
     const open = criteria.filter((c) => c?.done !== true).map((c) => String(c?.id ?? ''));
     receipt.acceptance = { done: criteria.length - open.length, total: criteria.length };
     receipt.open = capped(open, 'open', receipt);
-    const next = nextAfterTick(id, after.status, after.gate, after.version, open.length, criteria.length);
+    const next = nextAfterTick(id, after.status, after.gate, after.version, open.length, criteria.length, opts.actorId);
     if (next !== undefined) receipt.next = next;
   }
 
@@ -313,7 +315,8 @@ export async function buildReceipt(
  * P0h): complete the task, or, under the `pr_merged` gate, move it to
  * `in_review` so the merge can carry it the rest of the way. `undefined` while
  * criteria are open, and once the task is already where the step would put it.
- * Kept in step with the CLI's projection of the same receipt
+ * `task complete` requires `--by`: the acting actor when known, else a
+ * placeholder the caller fills. Kept in step with the CLI's projection of the same receipt
  * (packages/cli/src/receipt.ts), which serves older servers.
  */
 export function nextAfterTick(
@@ -323,13 +326,14 @@ export function nextAfterTick(
   version: number,
   open: number,
   total: number,
+  by?: string | null,
 ): string | undefined {
   if (total === 0 || open > 0) return undefined;
   if (status === 'done' || status === 'cancelled') return undefined;
   if (gate === 'pr_merged') {
     return status === 'in_review' ? undefined : `tm8 task transition ${id} in_review`;
   }
-  return `tm8 task complete ${id} --expect-version ${version}`;
+  return `tm8 task complete ${id} --expect-version ${version} --by ${by || '<actor-id>'}`;
 }
 
 function capped<T>(rows: T[], field: string, receipt: Record<string, unknown>): T[] {

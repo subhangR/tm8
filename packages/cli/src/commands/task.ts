@@ -173,8 +173,11 @@ async function taskTick(cmd: CommandContext): Promise<ExitCode> {
         body: withActor(cmd, { clientMutationId: mutationId, expectedVersion, criterionIds, done }),
       }),
   );
+  // The caller's own actor id fills `--by` in the receipt's `next` (P0h): the
+  // same id `task complete`'s own hint names.
+  const actorId = cmd.ctx.actor?.value ?? (process.env.TM8_TEAM_MEMBER_ID?.trim() || undefined);
   cmd.out.mutation('task.tick', data, renderCommandResult, () =>
-    successReceipt('task.tick', data, { expectedVersion, ...callerMutationId(cmd.options) }));
+    successReceipt('task.tick', data, { expectedVersion, actorId, ...callerMutationId(cmd.options) }));
   return EXIT_OK;
 }
 
