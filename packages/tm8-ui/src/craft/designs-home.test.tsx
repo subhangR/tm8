@@ -198,6 +198,46 @@ describe('the seam-backed designs source', () => {
   });
 });
 
+describe('top-level designs only', () => {
+  it('a design that is a page of another is reached through its parent, not listed', async () => {
+    const source = fixtureDesignsSource([
+      { id: id(1), title: 'Pricing launch', pages: [{ kind: 'graph' }, { kind: 'design', id: id(2) }] },
+      { id: id(2), title: 'Backend', pages: [{ kind: 'graph' }] },
+    ]);
+    const view = render(<DesignsHome source={source} onOpenDesign={() => {}} now={NOW} />);
+    await waitFor(() => view.getByText('Pricing launch'));
+    expect(view.queryByText('Backend')).toBeNull();
+  });
+
+  it('the seam source reads a detail only for designs that hold a design page, and drops their nested designs', async () => {
+    const design = (n: number, title: string, pageKinds: string[]) =>
+      ({
+        id: id(n),
+        kind: 'design',
+        title,
+        activityAt: '2026-10-06T00:00:00Z',
+        state: { kind: 'design', pageCount: pageKinds.length, pageKinds },
+        badges: {},
+      }) as unknown as EntitySummary;
+    const parent = design(10, 'Pricing launch', ['graph', 'design']);
+    const nested = design(11, 'Backend', ['graph']);
+    const plain = design(12, 'Passkeys', ['doc']);
+    const query = vi.fn(async (input: { kinds?: string[] }) => ({
+      page: { items: input.kinds?.[0] === 'design' ? [parent, nested, plain] : [] },
+    }));
+    const entity = vi.fn(async () => ({
+      content: { description: '', pages: [{ id: id(30), kind: 'graph' }, { id: id(11), kind: 'design' }] },
+    }));
+    const seam = { query, entity, commands: {}, onEvent: () => () => {} } as unknown as Seam;
+
+    const cards = await designsSourceFromSeam(seam, 'space-1' as SpaceId).list();
+    expect(cards.map((card) => card.title)).toEqual(['Pricing launch', 'Passkeys']);
+    expect(cards[0]!.pageKinds).toEqual(['graph', 'design']);
+    expect(entity).toHaveBeenCalledTimes(1);
+    expect(entity).toHaveBeenCalledWith(id(10));
+  });
+});
+
 describe('the doors into Craft land on the home (item 14)', () => {
   it('the Craft view target — the view selector and the Workspace rail tool — is bare /craft', () => {
     const view = routeViewOf({ type: 'view', ref: 'craft' });

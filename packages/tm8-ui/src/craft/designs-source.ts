@@ -43,7 +43,7 @@ export function cardOfSummary(summary: EntitySummary, chatCount = 0): DesignCard
   return {
     id: summary.id,
     title: summary.title,
-    pageKinds: [],
+    pageKinds: designStateOf(summary)?.pageKinds ?? [],
     pageCount: designStateOf(summary)?.pageCount ?? 0,
     chatCount,
     activityAt: summary.activityAt,
@@ -62,9 +62,14 @@ export function chatCountsBySubject(chats: readonly EntitySummary[]): Map<string
 }
 
 /**
- * The node-backed source. Three reads: the designs, the chats (counted by
- * subject), then each design's detail for its ordered page kinds — a summary
- * carries the count, only the detail read carries the pages.
+ * The node-backed source. The designs and the chats (counted by subject) in
+ * two reads; a summary carries its page count and page kinds in order.
+ *
+ * TOP-LEVEL ONLY: a design that is a page of another design is reached
+ * through its parent, not listed on the home. Which designs are nested is
+ * only on a detail read (a summary carries page KINDS, not ids), so the detail
+ * is read only for the designs that hold a design page — or for every design
+ * while summaries do not carry page kinds yet. Bounded by the one list page.
  */
 export function designsSourceFromSeam(seam: Seam, spaceId: SpaceId): DesignsSource {
   return {
@@ -74,19 +79,23 @@ export function designsSourceFromSeam(seam: Seam, spaceId: SpaceId): DesignsSour
         seam.query({ spaceId, kinds: ['chat'], sort: 'activityAt_desc', limit: CHAT_SCAN_LIMIT }),
       ]);
       const counts = chatCountsBySubject(chats.page.items);
-      return Promise.all(
+      const nested = new Set<string>();
+      const cards = await Promise.all(
         designs.page.items.map(async (summary) => {
           const card = cardOfSummary(summary, counts.get(summary.id) ?? 0);
+          const kinds = designStateOf(summary)?.pageKinds;
+          if (kinds && !kinds.includes(DESIGN_KIND)) return card;
           try {
-            const detail = await seam.entity(summary.id);
-            const pages = designContentOf(detail.content).pages;
-            return { ...card, pageKinds: pages.map((page) => page.kind), pageCount: pages.length };
+            const pages = designContentOf((await seam.entity(summary.id)).content).pages;
+            for (const page of pages) if (page.kind === DESIGN_KIND) nested.add(page.id);
+            return kinds ? card : { ...card, pageKinds: pages.map((page) => page.kind), pageCount: pages.length };
           } catch {
-            /* A tile whose pages could not be read still opens; it just draws no page marks. */
+            /* A tile whose pages could not be read still opens; it just draws what its summary says. */
             return card;
           }
         }),
       );
+      return cards.filter((card) => !nested.has(card.id));
     },
     async create(title) {
       const result = await seam.commands.createEntity({
@@ -118,7 +127,8 @@ export function designsSourceFromSeam(seam: Seam, spaceId: SpaceId): DesignsSour
 export interface FixtureDesign {
   id: EntityId;
   title: string;
-  pages: readonly Pick<EntitySummary, 'kind'>[];
+  /** In order; a page that is itself a design names its `id`, which keeps it off the home. */
+  pages: readonly (Pick<EntitySummary, 'kind'> & { id?: EntityId })[];
   chatCount?: number;
   activityAt?: string;
   running?: boolean;
@@ -133,7 +143,8 @@ export function fixtureDesignsSource(seed: readonly FixtureDesign[] = []): Desig
   return {
     designs,
     async list() {
-      return designs.map((design) => ({
+      const nested = new Set(designs.flatMap((design) => design.pages.flatMap((page) => (page.id ? [page.id] : []))));
+      return designs.filter((design) => !nested.has(design.id)).map((design) => ({
         id: design.id,
         title: design.title,
         pageKinds: design.pages.map((page) => page.kind),

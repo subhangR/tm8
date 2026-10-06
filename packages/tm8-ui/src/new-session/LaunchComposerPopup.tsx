@@ -28,6 +28,7 @@ import {
 } from '../domain/launch';
 import { modelCatalog } from '../domain/model-catalog';
 import { currentNodeKey } from '../domain/launch';
+import { DESIGN_KIND } from '../domain/design';
 import {
   formatRunCost,
   JEV_ENTITY_GROUPS,
@@ -197,6 +198,20 @@ const NO_KEY_WORDS = 'Jev is off — no key. Add your TypeSafe key in Settings �
 const groupOf = (row: { kind: string }): SpawnSelectionGroup => (
   row.kind === 'memory' ? 'memories' : row.kind === 'skill' ? 'skills' : 'references'
 );
+
+
+/**
+ * The notes box's placeholder. Continuing reads the old transcript first; a
+ * DESIGN says what Run does with it (Craft → Designs, D4: the agent creates
+ * what its graph pages describe); anything else keeps its own text.
+ */
+export function notesPlaceholderFor(subjectKind: string | undefined, continuing: boolean): string {
+  if (continuing) return 'Notes for the new session (optional) — it reads this session’s transcript first…';
+  if (subjectKind === DESIGN_KIND) {
+    return 'Run this design: the agent creates what its graph pages describe. Notes or extra context (optional)…';
+  }
+  return 'Notes or extra context for this launch — the task stays as written.';
+}
 
 export function LaunchComposerPopup({
   subject,
@@ -916,9 +931,7 @@ export function LaunchComposerPopup({
         }}
         notes={notes}
         onNotesChange={setNotes}
-        notesPlaceholder={continuing
-          ? 'Notes for the new session (optional) — it reads this session’s transcript first…'
-          : 'Notes or extra context for this launch — the task stays as written.'}
+        notesPlaceholder={notesPlaceholderFor(subject.kind, continuing)}
         strip={strip}
         stripRefusal={stripLock ?? stripNotice}
         stripLoading={stripLoading}
