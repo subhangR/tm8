@@ -188,6 +188,8 @@ export interface ListRootHeaderProps {
    * unchanged (Home, Work).
    */
   kindMenuLabel?: string | undefined;
+  /** With `kindMenuLabel`: draw only the kind icon and ▾, no kind word. */
+  kindMenuIconOnly?: boolean | undefined;
 }
 
 /**
@@ -272,7 +274,7 @@ export function ListRootHeader(props: ListRootHeaderProps) {
               <span className="tch-rootcell__glyph" aria-hidden>
                 <KindIcon kind={cell.kind} />
               </span>
-              <span className="tch-rootcell__name">{cell.label}</span>
+              {props.kindMenuIconOnly ? null : <span className="tch-rootcell__name">{cell.label}</span>}
               <span className="tch-rootcell__chevron" aria-hidden>▾</span>
             </button>
             {menuOpen && options ? (

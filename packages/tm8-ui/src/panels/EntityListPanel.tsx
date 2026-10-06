@@ -90,6 +90,7 @@ import { MaestroStatusGlyph, MaestroTaskTile } from './list/MaestroTaskTile';
 import { LinkedPullRequestChips, type LinkedPullRequestFacts } from '../pull-requests';
 import { MaestroSessionTile } from './list/MaestroSessionTile';
 import { ChildCountBadge } from './list/ChildCountBadge';
+import { RowLead, ToneKindIcon } from './list/RowLead';
 import { TileProgressBar } from './list/TileProgressBar';
 import { PendingFormsChip, hasPendingFormsChip } from '../forms/PendingFormsChip';
 import { usePendingForms } from '../forms/pending';
@@ -389,14 +390,28 @@ export interface EntityListPanelProps {
    */
   renderEmpty?: (state: ListEmptyState) => ReactNode;
   /**
-   * OPT-IN TOOLBAR CHROME (Workspace browser, design ruling R5): search, the
-   * lifecycle tier as one dropdown with its counts, and ONE funnel popover
-   * holding filter, people, row view and sort — a single row — with no counts
-   * footer and no `f` hint (it moves to the search tooltip). The lifecycle
-   * dropdown hides when every row is known to sit in the open tier. Absent ⇒
-   * `'rows'`: the tier tabs, filter bar and footer as before (Home, Work).
+   * OPT-IN BROWSER CHROME (Workspace browser, list-panel change list round 2
+   * item 8): three one-line rows. Row 1 is `[toolbarStart][Search][toolbarEnd]`
+   * (the host's kind control and + New around this panel's own search), row 2
+   * the lifecycle tiers (`CategoryTabs`, hidden when every row is known to sit
+   * in the open tier), row 3 the filter bar with its chips. Rows 2 and 3 scroll
+   * sideways rather than wrap. No counts footer, and the `f` cap moves to the
+   * search tooltip. Absent ⇒ `'rows'`: as before (Home, Work).
    */
   chrome?: 'rows' | 'toolbar';
+  /** `chrome="toolbar"`: drawn before / after the search on row 1. */
+  toolbarStart?: ReactNode;
+  toolbarEnd?: ReactNode;
+  /**
+   * OPT-IN ROW LEAD (Workspace browser): no disclosure chevron slot on any
+   * anatomy. The leading icon is the kind icon tinted by status (sessions keep
+   * their agent tile), carries the child count as a subscript, and IS the
+   * expand button when the row has children — the only control that changes
+   * expansion. A revealed ancestor latches open (`useTreeDisclosure`
+   * `latchReveal`), and a focused tree item takes Right / Left / Enter.
+   * Absent ⇒ `'chevron'`: every anatomy as before (Home, Work, Board).
+   */
+  rowLead?: 'chevron' | 'icon';
   onSelect?: (id: string) => void;
   onAction?: (ref: ActionRef, entityId: string) => void;
   /**
@@ -913,23 +928,29 @@ export function EntityListPanel(props: EntityListPanelProps) {
       />
 
       {toolbar ? (
-        <div className="lp__toolrow">
-          <SearchRow
-            config={config}
-            query={query}
-            onQuery={setQuery}
-            inputRef={props.searchInputRef}
-            hint={false}
-          />
-          {mode !== 'board' && list.categories && list.categories.length > 0 && !singleTier ? (
-            <LifecycleMenu
-              tabs={list.categories}
-              activeTabId={categoryTabId}
-              onTab={setCategoryTabId}
-              tabLabel={(tab: StatusCategoryTab) =>
-                tabCounts.find((c) => c.tab.id === tab.id)?.label ?? '0'
-              }
+        <>
+          <div className="lp__toolrow">
+            {props.toolbarStart}
+            <SearchRow
+              config={config}
+              query={query}
+              onQuery={setQuery}
+              inputRef={props.searchInputRef}
+              hint={false}
             />
+            {props.toolbarEnd}
+          </div>
+          {mode !== 'board' && !singleTier ? (
+            <div className="lp__tierscroll">
+              <CategoryTabs
+                tabs={list.categories}
+                activeTabId={categoryTabId}
+                onTab={setCategoryTabId}
+                tabLabel={(tab: StatusCategoryTab) =>
+                  tabCounts.find((c) => c.tab.id === tab.id)?.label ?? '0'
+                }
+              />
+            </div>
           ) : null}
           <FilterRow
             config={config}
@@ -969,9 +990,8 @@ export function EntityListPanel(props: EntityListPanelProps) {
             membershipSets={props.membershipSets}
             lensSet={lensSet}
             onLens={setLensId}
-            merged={toolbar}
           />
-        </div>
+        </>
       ) : (
         <>
       <SearchRow
@@ -1716,8 +1736,7 @@ function SearchRow({
         className="lp__searchinput"
         type="search"
         value={query}
-        /* The toolbar's row above already names the kind, and the noun clips. */
-        placeholder={hint ? `Search ${config.labelPlural.toLowerCase()}` : 'Search'}
+        placeholder={`Search ${config.labelPlural.toLowerCase()}`}
         aria-label={`Search ${config.labelPlural.toLowerCase()}`}
         onChange={(e) => onQuery(e.target.value)}
         data-testid="list-search"
@@ -1735,70 +1754,6 @@ function SearchRow({
  * it. T0-1 draws both, and the count on each tab comes from that tab's own
  * query — the same source as the footer line and the kind-selector total.
  */
-/**
- * THE LIFECYCLE TIER AS ONE QUIET DROPDOWN (`chrome="toolbar"`, ruling R5):
- * the open tier and its count on the button, every tier with its count in the
- * menu. The same tabs, counts and choice `CategoryTabs` draws as a row.
- */
-function LifecycleMenu({
-  tabs,
-  activeTabId,
-  onTab,
-  tabLabel,
-}: {
-  tabs: readonly StatusCategoryTab[];
-  activeTabId: string | null;
-  onTab: (id: string) => void;
-  tabLabel: (tab: StatusCategoryTab) => string;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useDismissable(open, ref, useCallback(() => setOpen(false), []));
-  const current = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0]!;
-  return (
-    <div className="lp__tiermenu" ref={ref}>
-      <button
-        type="button"
-        className="lp__tiermenu-btn"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label={`Lifecycle: ${current.label}, ${tabLabel(current)}`}
-        title="Lifecycle"
-        data-testid="lifecycle-trigger"
-        onClick={() => setOpen((v) => !v)}
-      >
-        <span className="lp__tiermenu-label">{current.label}</span>
-        <span className="lp__tiermenu-count">{tabLabel(current)}</span>
-        <span className="lp__tiermenu-chevron" aria-hidden>▾</span>
-      </button>
-      {open ? (
-        <div className="lp__filtermenu lp__tiermenu-list" role="menu" aria-label="Lifecycle">
-          {tabs.map((tab) => {
-            const on = tab.id === current.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                role="menuitemradio"
-                aria-checked={on}
-                className={on ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
-                onClick={() => {
-                  onTab(tab.id);
-                  setOpen(false);
-                }}
-              >
-                <span className="lp__optlabel">{tab.label}</span>
-                <span className="lp__tiermenu-count">{tabLabel(tab)}</span>
-                {on ? <span className="lp__filtercheck">✓</span> : null}
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 function CategoryTabs({
   tabs,
   activeTabId,
@@ -1911,7 +1866,6 @@ function FilterRow({
   membershipSets,
   lensSet,
   onLens,
-  merged = false,
 }: {
   config: KindConfig;
   /** Which of the four is open. Held by the panel — see `ListPicker`. */
@@ -1933,8 +1887,6 @@ function FilterRow({
   /** The active lens, resolved to its summary (title for the chip). */
   lensSet: EntitySummary | null;
   onLens: (setId: string | null) => void;
-  /** One funnel and one popover with every axis (`chrome="toolbar"`). */
-  merged?: boolean;
 }) {
   const setPicker = onPicker;
   const barRef = useRef<HTMLDivElement>(null);
@@ -2015,13 +1967,12 @@ function FilterRow({
     );
   };
 
-  /* The option lists, drawn once and hung in either the four per-axis menus
-     or (`merged`) the one funnel popover. */
+  /* The option lists, one per narrowing menu below. */
   const filterOptions = (
     <>
           {config.list.filters.map((spec) => (
             <div key={spec.id}>
-              <div className="lp__filtergroup">{merged ? spec.label : spec.label.toUpperCase()}</div>
+              <div className="lp__filtergroup">{spec.label.toUpperCase()}</div>
               {spec.options.map((option) => {
                 const on = (selected[spec.id] ?? []).includes(option.id);
                 // OFFERED AND REFUSED, never offered and inert. An option
@@ -2083,7 +2034,7 @@ function FilterRow({
                   data-testid="collection-lens-option"
                   onClick={() => {
                     onLens(on ? null : set.id);
-                    if (!merged) setPicker(null);
+                    setPicker(null);
                   }}
                 >
                   <KindIcon kind={set.kind} />
@@ -2156,7 +2107,7 @@ function FilterRow({
               }
               onClick={() => {
                 onSort(spec.key);
-                if (!merged) setPicker(null);
+                setPicker(null);
               }}
             >
               {spec.label}
@@ -2165,96 +2116,6 @@ function FilterRow({
           ))}
     </>
   );
-
-  if (merged) {
-    const defaultSort = sort.find((s) => s.default)?.key ?? sort[0]?.key;
-    /* THE BADGE COUNTS WHAT IS NOT DEFAULT, across all four sections. */
-    const changed =
-      activeFilterCount +
-      selectedPeople.length +
-      (lensSet ? 1 : 0) +
-      hiddenFacetCount +
-      (current && current.key !== defaultSort ? 1 : 0);
-    const open = picker === 'filters';
-    return (
-      <div className="lp__filterbar lp__filterbar--merged" ref={barRef}>
-        <button
-          type="button"
-          className="lp__chip lp__chip--icon lp__funnel"
-          onClick={() => setPicker(open ? null : 'filters')}
-          aria-expanded={open}
-          aria-haspopup="menu"
-          aria-label={changed > 0 ? `Filters, ${changed} changed` : 'Filters'}
-          title="Filters"
-          data-testid="filter-trigger"
-        >
-          <VectorIcon paths={FILTER_MARK} size={16} />
-          {changed > 0 ? <span className="lp__chip-count">{changed}</span> : null}
-        </button>
-        {narrowing('filters', 'Filters', 'filter-menu', 'lp__filtermenu lp__filtermenu--merged lp__filtermenu--withfoot', (
-          <>
-            <div className="lp__filteropts">
-              {config.list.filters.length > 0 ? (
-                <section className="lp__funnelsection" aria-label="Filter">
-                  <div className="t-eyebrow">Filter</div>
-                  {filterOptions}
-                </section>
-              ) : null}
-              {people.length > 1 ? (
-                <section className="lp__funnelsection" aria-label="People">
-                  <div className="t-eyebrow">People</div>
-                  {peopleOptions}
-                </section>
-              ) : null}
-              {membership && membershipSets !== undefined ? (
-                <section className="lp__funnelsection" aria-label={membership.label}>
-                  <div className="t-eyebrow">{membership.label}</div>
-                  {setsOptions}
-                </section>
-              ) : null}
-              {viewFacets.length > 0 ? (
-                <section className="lp__funnelsection" aria-label="View">
-                  <div className="t-eyebrow">View</div>
-                  {viewOptions}
-                </section>
-              ) : null}
-              {current ? (
-                <section className="lp__funnelsection" aria-label="Sort">
-                  <div className="t-eyebrow">Sort</div>
-                  {sortOptions}
-                </section>
-              ) : null}
-            </div>
-            <div className="lp__filterfoot">
-              <button
-                type="button"
-                className="lp__filterclear"
-                data-testid="filter-clear-all"
-                disabled={changed === 0}
-                onClick={() => {
-                  for (const { spec, option } of active) onToggleOption(spec.id, option.id, spec.multi ?? false);
-                  for (const actorId of selectedPeople) onTogglePerson(actorId);
-                  if (lensSet) onLens(null);
-                  if (hiddenFacetCount > 0) view.reset();
-                  if (defaultSort && current && current.key !== defaultSort) onSort(defaultSort);
-                }}
-              >
-                Reset
-              </button>
-              <button
-                type="button"
-                className="lp__filterdone"
-                data-testid="filter-done"
-                onClick={() => setPicker(null)}
-              >
-                Done
-              </button>
-            </div>
-          </>
-        ))}
-      </div>
-    );
-  }
 
   return (
     <div className="lp__filterbar" ref={barRef}>
@@ -3379,7 +3240,12 @@ function TreeRows({
    * selection is kept visible without being written to storage.
    */
   const revealed = useMemo(() => ancestorPath(rows, props.selectedId), [rows, props.selectedId]);
-  const disclosure = useTreeDisclosure(`list:${config.kind}`, revealed);
+  const leadMode = props.rowLead === 'icon';
+  const disclosure = useTreeDisclosure(
+    `list:${config.kind}`,
+    revealed,
+    leadMode ? { latchReveal: true } : undefined,
+  );
 
   const roots = useMemo(() => buildTileTree(rows, Boolean(config.list.tree)), [rows, config.list.tree]);
 
@@ -3400,6 +3266,29 @@ function TreeRows({
   const renderNode = (node: TileTreeNode): React.ReactNode => {
     const isCollapsed = !disclosure.isExpanded(node.row.id);
     const hasChildren = node.children.length > 0;
+    /* rowLead="icon": the tree item itself takes the keys — Right opens,
+       Left shuts or moves to the parent, Enter opens the row. The innermost
+       item handles a key and stops it, so an ancestor never acts twice. */
+    const onTreeKey =
+      leadMode && config.list.tree
+        ? (event: React.KeyboardEvent<HTMLDivElement>) => {
+            const target = event.target as HTMLElement;
+            if (target.closest('input, textarea, select, [contenteditable="true"]')) return;
+            if (event.key === 'ArrowRight') {
+              if (hasChildren && isCollapsed) disclosure.toggle(node.row.id);
+            } else if (event.key === 'ArrowLeft') {
+              if (hasChildren && !isCollapsed) disclosure.toggle(node.row.id);
+              else event.currentTarget.parentElement?.closest<HTMLElement>('[role="treeitem"]')?.focus();
+            } else if (event.key === 'Enter') {
+              if (target !== event.currentTarget && !target.hasAttribute('data-lead-toggle')) return;
+              props.onSelect?.(node.row.id);
+            } else {
+              return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+          }
+        : undefined;
     const wire = pulse.segments.get(node.row.id);
     const endpoint = pulse.endpoints.get(node.row.id);
     return (
@@ -3409,6 +3298,8 @@ function TreeRows({
         role={config.list.tree ? 'treeitem' : 'listitem'}
         aria-expanded={config.list.tree && hasChildren ? !isCollapsed : undefined}
         aria-selected={config.list.tree ? props.selectedId === node.row.id : undefined}
+        tabIndex={onTreeKey ? -1 : undefined}
+        onKeyDown={onTreeKey}
         /* Presentation only. The underlying event is already represented by
            the rows it changes; narrating the same transition from a decorative
            wire would duplicate announcements. */
@@ -4011,6 +3902,26 @@ export function Tile({
     </RelatedGroup>
   ) : null;
 
+  /* rowLead="icon": one leading icon replaces the chevron and the status mark. */
+  const leadMode = props.rowLead === 'icon';
+  const lead = leadMode ? (
+    <RowLead
+      icon={
+        <ToneKindIcon
+          kind={row.kind}
+          tone={statusWord ? statusTone : null}
+          hollow={Boolean(statusWord) && statusHollow}
+          streaming={streaming}
+        />
+      }
+      rowTitle={row.title}
+      tooltip={statusTitle}
+      childCount={childCount}
+      expanded={expanded}
+      onToggle={onToggleChildren}
+    />
+  ) : null;
+
   if (sessionTree) {
     const state = row.state as unknown as Record<string, unknown>;
     const recordedStatus = typeof state.status === 'string' ? state.status : 'idle';
@@ -4030,6 +3941,7 @@ export function Tile({
     return (
       <>
       <MaestroSessionTile
+        leadMode={leadMode}
         id={row.id}
         title={row.title || 'Session'}
         agentTool={agentTool}
@@ -4101,6 +4013,7 @@ export function Tile({
     return (
       <>
       <MaestroTaskTile
+        lead={lead ?? undefined}
         rootRef={tileRef}
         id={row.id}
         title={row.title}
@@ -4267,6 +4180,8 @@ export function Tile({
       <div className="lp__tile-main" onClick={() => props.onSelect?.(row.id)}>
         {/* Line 1 — disclosure · status mark · avatar · title · status. */}
         <div className="lp__row1">
+          {lead ?? (
+          <>
           {config.list.tree ? (
             onToggleChildren ? (
               <button
@@ -4311,6 +4226,8 @@ export function Tile({
                 as the session tile's agent icon carries sub-sessions. */}
             <ChildCountBadge count={childCount} />
           </span>
+          </>
+          )}
 
           {/* 15, not 20 — 17px is the tallest thing a session row contains and
               therefore the height of every row in every list. */}

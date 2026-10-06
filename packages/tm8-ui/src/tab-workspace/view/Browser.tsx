@@ -139,39 +139,44 @@ export function Browser() {
       data-narrow={narrow || undefined}
       data-scrolled={scroll.scrolled || undefined}
     >
-      <div className="tws-browser-toolbar">
-        <ListRootHeader
-          rootsLabel="Workspace browser"
-          kindMenuLabel="Entity kind in Workspace browser"
-          cell={cell}
-          cellActive
-          onSelectCell={() => undefined}
-          options={options}
-          currentKind={kind}
-          onPickKind={(next) => {
-            if (next !== kind) set({ kind: next });
-          }}
-        />
-        <button
-          type="button"
-          className="tws-browser-new"
-          aria-label={`Create ${noun}`}
-          aria-disabled={disabledReason !== null || undefined}
-          title={disabledReason ?? `Create ${noun}`}
-          data-testid="tws-browser-new"
-          onClick={disabledReason === null ? createDraft : (event) => event.preventDefault()}
-        >
-          {narrow ? <span aria-hidden>+</span> : <span aria-hidden>+ New</span>}
-        </button>
-      </div>
       <div className="tws-browser-list">
         <EntityListPanel
           key={`${kind}:${generation}`}
           kind={kind}
-          /* The toolbar above draws the kind control and + New. */
+          /* Row 1 below draws the kind control and + New. */
           selectorSlot="host"
           mode="list"
           chrome="toolbar"
+          rowLead="icon"
+          /* Row 1: the kind icon and + New, around the panel's own search. */
+          toolbarStart={
+            <ListRootHeader
+              rootsLabel="Workspace browser"
+              kindMenuLabel={`${cell.label} — change kind`}
+              kindMenuIconOnly
+              cell={cell}
+              cellActive
+              onSelectCell={() => undefined}
+              options={options}
+              currentKind={kind}
+              onPickKind={(next) => {
+                if (next !== kind) set({ kind: next });
+              }}
+            />
+          }
+          toolbarEnd={
+            <button
+              type="button"
+              className="tws-browser-new"
+              aria-label={`Create ${noun}`}
+              aria-disabled={disabledReason !== null || undefined}
+              title={disabledReason ?? `Create ${noun}`}
+              data-testid="tws-browser-new"
+              onClick={disabledReason === null ? createDraft : (event) => event.preventDefault()}
+            >
+              {narrow ? <span aria-hidden>+</span> : <span aria-hidden>+ New</span>}
+            </button>
+          }
           {...source}
           members={data.members}
           ctx={ctx}
