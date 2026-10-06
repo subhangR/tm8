@@ -124,6 +124,10 @@ export function requireParam(ctx: RequestContext, name: string): string {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+export function isUuid(value: string): boolean {
+  return UUID_RE.test(value);
+}
+
 /**
  * Ids are uuids, and a non-uuid must be `not_found` rather than a 500.
  *

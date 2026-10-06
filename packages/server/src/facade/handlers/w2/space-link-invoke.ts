@@ -52,6 +52,7 @@
  * the inner request context (`identity.token` is dropped).
  */
 import {
+  CROSS_SPACE_EDGE,
   CollabError,
   ERROR_STATUS,
   SPACE_LINK_MAX_HOPS,
@@ -59,6 +60,7 @@ import {
   SPACE_LINK_SPAWN_OPS,
   SPACE_LINK_VIA_HEADER,
   SpaceLinksInvokeInputSchema,
+  crossSpaceRefCommand,
   getOperation,
   isCollabError,
   isOperationName,
@@ -480,6 +482,35 @@ export function createSpaceLinkInvokeHandlers(
     request.row.targetServerId === null || request.row.targetServerId === undefined
       ? inProcess(request) : remote(request);
 
+  /**
+   * An `edges.create` between this session's space and the linked one. B can
+   * see only its own endpoint, so B's refusal points the reference from B.
+   * A reference is made FROM home: restate it here, where the caller's claims
+   * show which endpoint is home's, with the link the caller just used.
+   */
+  const crossSpaceEdgeFromHome = async (
+    error: CollabError, claims: DbClaims, homeSpaceId: string, row: SpaceLinkInvokeRow,
+  ): Promise<CollabError> => {
+    const details = error.details ?? {};
+    const ids = [details['holderId'], details['targetId']].filter((id): id is string => typeof id === 'string');
+    let rows: Array<{ id: string; space_id: string }> = [];
+    try {
+      rows = await deps.db.query<{ id: string; space_id: string }>(claims,
+        'select id, space_id from public.entities where id = any($1::uuid[]) and deleted_at is null', [ids]);
+    } catch {
+      return error;
+    }
+    const home = rows.find((r) => r.space_id === homeSpaceId);
+    const other = ids.find((id) => id !== home?.id);
+    if (!home || !other) return error;
+    const next = crossSpaceRefCommand(home.id, other, row.linkId);
+    return new CollabError('invariant_violation',
+      `an edge cannot cross spaces: ${home.id} is in this session's own space and ${other} is not, ` +
+      'so no retry through the space link succeeds; make a cross-space reference from this session\'s ' +
+      `space instead (without --space): ${next}`,
+      { details: { ...details, holderId: home.id, targetId: other, targetSpaceId: row.targetSpaceId, linkId: row.linkId, next } });
+  };
+
   const invoke: OperationHandler = async (ctx): Promise<SpaceLinksInvokeResult> => {
     const homeSpaceId = ctx.params['spaceId'];
     const ref = ctx.params['link'];
@@ -571,6 +602,10 @@ export function createSpaceLinkInvokeHandlers(
       if (error instanceof SpaceLinkExecuteFailure) {
         await audit(error.refused ? 'refused' : 'error', error.reason).catch(() => undefined);
         throw error.error;
+      }
+      if (isCollabError(error) && error.details?.['reason'] === CROSS_SPACE_EDGE) {
+        await audit('error', CROSS_SPACE_EDGE).catch(() => undefined);
+        throw await crossSpaceEdgeFromHome(error, claims, homeSpaceId, row);
       }
       await audit('error', auditReasonOf(error)).catch(() => undefined);
       throw error;

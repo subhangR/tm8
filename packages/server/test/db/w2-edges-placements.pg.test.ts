@@ -1,5 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import type { CollabError } from '@tm8/contract';
+
+import { translateDbError } from '../../src/db/errors.js';
 import type { Querier } from '../../src/db/types.js';
 import { queryEdges } from '../../src/facade/services/w2/edges-placements.js';
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from './w1-pg.js';
@@ -391,6 +394,15 @@ describe.sequential('W2.G03 edges and placements PostgreSQL semantics', () => {
       `select public.write_edge($1, $2, 'relates_to', '{}'::jsonb, $3, 'g03-cross-space')`,
       [fixture.taskAId, fixture.otherTaskId, fixture.memberId],
     ))).rejects.toMatchObject({ code: '23514' });
+    // The service keys the cross-space refusal (task 01a1108a-398f) on exactly
+    // this shape: 23514, this frozen text and no DETAIL.
+    const crossSpace = await asApp(database, fixture.identityId, async (_q, client) => client.query(
+      `select public.write_edge($1, $2, 'relates_to', '{}'::jsonb, $3, 'g03-cross-space-shape')`,
+      [fixture.taskAId, fixture.otherTaskId, fixture.memberId],
+    )).catch((error: unknown) => error);
+    const translated = translateDbError(crossSpace) as CollabError;
+    expect(translated).toMatchObject({ code: 'invariant_violation', message: 'edge endpoints must be in the same space' });
+    expect(translated.details).toEqual({ sqlstate: '23514' });
 
     const first = await write({ hard: true }, 'g03-props-good');
     const replay = await write({ hard: true }, 'g03-props-good');
