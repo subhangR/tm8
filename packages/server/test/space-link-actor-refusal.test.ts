@@ -2,14 +2,14 @@
  * An actor B refuses through spaceLinks.invoke says why and what to do
  * (task 01a1108a).
  *
- * B's resolve_actor (299) types its refusal `actor_not_permitted` with the
+ * B's resolve_actor (300) types its refusal `actor_not_permitted` with the
  * actor id. Through a link that is an actor the caller named itself (`--as`;
  * the home actor is already dropped), so the invoke re-types it with the link,
  * the target Space and the way out, and the link audit records
  * `actor_not_permitted` instead of a bare `forbidden`.
  *
  * No database: the store is a stub whose `use` hands back a link session, and
- * B's handler throws what db/errors.ts makes of the 299 RAISE.
+ * B's handler throws what db/errors.ts makes of the 300 RAISE.
  */
 import { describe, expect, it } from 'vitest';
 import { CollabError } from '@tm8/contract';
@@ -18,7 +18,7 @@ import type { DbClaims } from '../src/db/types.js';
 import type { FacadeDeps } from '../src/facade/deps.js';
 import { HandlerRegistry } from '../src/facade/registry.js';
 import {
-  actorRefusalThroughLink, auditReasonOf, createSpaceLinkInvokeHandlers,
+  actorRefusalThroughLink, auditReasonOf, createSpaceLinkInvokeHandlers, homeCompletersInB,
 } from '../src/facade/handlers/w2/space-link-invoke.js';
 import type { DbSpaceLinkStore, SpaceLinkAuditInput, SpaceLinkInvokeRow } from '../src/credentials/space-link-store.js';
 import type { RequestContext } from '../src/http/types.js';
@@ -65,7 +65,7 @@ function harness(run: (ctx: RequestContext) => Promise<unknown>) {
   return { create, audits };
 }
 
-/** What B's resolve_actor (299) raises for an actor the link session may not act as, through db/errors.ts. */
+/** What B's resolve_actor (300) raises for an actor the link session may not act as, through db/errors.ts. */
 const actorNotPermitted = (actorId: string) => new CollabError('forbidden', 'not permitted to act as this actor', {
   details: { sqlstate: '42501', reason: 'actor_not_permitted', actorId, spaceId: TARGET },
 });
@@ -104,5 +104,30 @@ describe('spaceLinks.invoke — an actor B refuses says why and what to do (task
     expect(actorRefusalThroughLink(new CollabError('forbidden', 'x', { details: { reason: 'no_actor' } }), {
       linkId: LINK, targetSpaceId: TARGET,
     } as SpaceLinkInvokeRow)).toBeNull();
+  });
+});
+
+describe('homeCompletersInB — a completer named from home is credited as the link member in B (task 01a1108a)', () => {
+  const B_MEMBER = '77777777-7777-4777-8777-777777777777';
+  const HOME_MEMBER = '88888888-8888-4888-8888-888888888888';
+  const inB = async () => B_MEMBER;
+
+  it('the home actor and the launching member\'s A row become the B member, once; other ids stay for B to judge', async () => {
+    expect(await homeCompletersInB('entities.commands.complete',
+      { completerIds: [HOME_ACTOR.toUpperCase(), OTHER_ACTOR, HOME_MEMBER] }, [HOME_ACTOR, HOME_MEMBER], inB))
+      .toEqual([B_MEMBER, OTHER_ACTOR]);
+  });
+
+  it('null when nothing names home, for other ops, or without completerIds — B is not asked', async () => {
+    const never = async () => { throw new Error('asked B'); };
+    expect(await homeCompletersInB('entities.commands.complete', { completerIds: [OTHER_ACTOR] }, [HOME_ACTOR], never)).toBeNull();
+    expect(await homeCompletersInB('entities.create', { completerIds: [HOME_ACTOR] }, [HOME_ACTOR], never)).toBeNull();
+    expect(await homeCompletersInB('entities.commands.complete', { expectedVersion: 1 }, [HOME_ACTOR], never)).toBeNull();
+    expect(await homeCompletersInB('entities.commands.complete', { completerIds: [HOME_ACTOR] }, [undefined, null], never)).toBeNull();
+  });
+
+  it('no member in B to credit: refused with what to do', async () => {
+    await expect(homeCompletersInB('entities.commands.complete', { completerIds: [HOME_ACTOR] }, [HOME_ACTOR], async () => null))
+      .rejects.toMatchObject({ code: 'invalid_input', details: { reason: 'home_completer' } });
   });
 });

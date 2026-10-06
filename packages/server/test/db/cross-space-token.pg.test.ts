@@ -4733,6 +4733,30 @@ describe.sequential('W7 spaceLinks.invoke — G runs one op in B as H, audited i
     expect(res.status).toBe(200);
   });
 
+  it('completer — task complete --by <G\'s home persona> through the link credits H\'s B member; positive: --by H\'s B member', async () => {
+    for (const by of [fixture.personaA, fixture.memberHB]) {
+      const created = await invoke(gToken, {
+        op: 'entities.create',
+        input: { spaceId: fixture.spaceB, kind: 'task', title: `W7 complete by ${by}`, clientMutationId: cmid('task') },
+      });
+      expect(created.status).toBe(200);
+      const made = created.body.data!.result as { id?: string; entity?: { id: string; version?: number }; version?: number };
+      const taskId = (made.entity?.id ?? made.id)!;
+      const res = await invoke(gToken, {
+        op: 'entities.commands.complete', params: { id: taskId },
+        input: { expectedVersion: made.entity?.version ?? made.version ?? 1, completerIds: [by], clientMutationId: cmid('complete') },
+      });
+      expect(res.body.error).toBeUndefined();
+      expect(res.status).toBe(200);
+      const edges = await database.transaction(async (client) => {
+        await client.query('set local role tm8_graph_owner');
+        return (await client.query<{ dst_id: string }>(
+          "select dst_id::text from public.edges where src_id = $1 and type = 'completed_by'", [taskId])).rows;
+      });
+      expect(edges).toEqual([{ dst_id: fixture.memberHB }]);
+    }
+  });
+
   it('T21 — the forwarded session is kind link pinned to B: G cannot reach A\'s doc through it', async () => {
     const res = await invoke(gToken, { op: 'entities.get', params: { id: fixture.docA } });
     expect(res.status).toBe(404);

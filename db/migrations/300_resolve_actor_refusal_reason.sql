@@ -1,5 +1,5 @@
 -- =============================================================================
--- 299 — resolve_actor says WHICH actor refusal it is. Task 01a1108a.
+-- 300 — resolve_actor says WHICH actor refusal it is. Task 01a1108a.
 --
 -- THE DEFECT. `internal.resolve_actor` (002) raises two different refusals
 -- with the same SQLSTATE and no DETAIL: no actor at all, and an actor the
