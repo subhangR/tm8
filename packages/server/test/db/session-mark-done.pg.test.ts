@@ -304,16 +304,15 @@ describe('a completed session stays completed whatever its process does', () => 
     expect(await outcomeOf(sessionId)).toBe('completed');
   });
 
-  it('resuming a completed session is refused — a follow-up session does more work', async () => {
+  it('resuming a completed session reopens it (owner ruling Q2 = B) — the explicit, logged way back', async () => {
     const sessionId = await createSession('no-resume');
     await transition(sessionId, 'running');
     await closeOut(sessionId);
     await tick(sessionId);
     await transition(sessionId, 'exited');
-    const r = await refused(
-      asApp((q) => q(`select public.execution_resume($1,8,null,$2,null)`, [sessionId, cmid('resume')])),
-    );
-    expect(r.reason).toBe('session_completed');
+    await asApp((q) => q(`select public.execution_resume($1,8,null,$2,null)`, [sessionId, cmid('resume')]));
+    expect(await outcomeOf(sessionId)).toBe('open');
+    expect((await rowOf(sessionId)).status_category).toBe('to_do');
   });
 
   it('an unticked session follows its process — and an ended open session is in_progress, not done', async () => {

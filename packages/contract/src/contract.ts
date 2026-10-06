@@ -478,8 +478,8 @@ export type CoreEntityState =
        * deliberately separate from `status`, which only says whether the
        * PROCESS is alive. `open` until `session complete` (with a receipt) or an
        * operator's Stop settles it; no process event — exit, crash, restart,
-       * reaper, terminate — ever writes it. `completed` is final; `stopped`
-       * returns to `open` only through resume.
+       * reaper, terminate — ever writes it. `completed` and `stopped` return
+       * to `open` only through an explicit, logged resume (owner ruling Q2 = B).
        *
        * Additive: absent = a node that predates 299 (treat as `open`).
        */
