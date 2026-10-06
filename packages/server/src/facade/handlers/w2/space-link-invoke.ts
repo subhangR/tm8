@@ -335,7 +335,15 @@ export function createSpaceLinkInvokeHandlers(
     // context object, this op, one dispatch. Every home-side refusal above has
     // already run; a nested dispatch from inside the handler finds no marker.
     admitLinkInvoke(inner, op);
-    const result = await handler(inner);
+    let result: Awaited<ReturnType<OperationHandler>>;
+    try {
+      result = await handler(inner);
+    } catch (error) {
+      // An actor B refused (299) is one the caller named itself: say what to do.
+      const refusal = actorRefusalThroughLink(error, row);
+      if (refusal) throw new SpaceLinkExecuteFailure(auditReasonOf(refusal), refusal);
+      throw error;
+    }
     let data: unknown = result;
     if (isHandlerResult(result)) {
       if (result.kind !== 'json') {
@@ -516,9 +524,8 @@ export function createSpaceLinkInvokeHandlers(
         await audit('error', error.reason).catch(() => undefined);
         throw error.error;
       }
-      const refusal = actorRefusalThroughLink(error, row);
-      await audit('error', auditReasonOf(refusal ?? error)).catch(() => undefined);
-      throw refusal ?? error;
+      await audit('error', auditReasonOf(error)).catch(() => undefined);
+      throw error;
     }
     const { data, requestId, spawnedSessionId, provenanceUnrecorded } = outcome;
     // A spawn has already happened by now: a failed audit insert must not turn
