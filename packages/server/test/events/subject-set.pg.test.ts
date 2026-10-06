@@ -15,6 +15,7 @@
  * runs against rows 205's trigger actually wrote.
  */
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -173,6 +174,18 @@ describe.sequential('the canonical subject set — SQL side and 208 (real Postgr
         pushed_at timestamptz not null default now());
       grant select on public.styles to tm8_app;
       reset role;`);
+    // 301 (Spec D1): the classifier for the three new event types, taken
+    // verbatim from the migration (301 itself cannot apply on this partial
+    // chain), and the outcome column shapes the session reads select. No
+    // assertion here reads the columns. DELETE this shim if this suite ever
+    // applies the chain through 301.
+    const d1 = readFileSync(new URL('../../../../db/migrations/301_session_outcome_and_claims.sql', import.meta.url), 'utf8');
+    const start = d1.indexOf('create or replace function internal.event_subject_ids');
+    await database.query(d1.slice(start, d1.indexOf('$$;', d1.indexOf('as $$', start) + 5) + 3));
+    await database.query(`alter table public.work_sessions
+      add column outcome text not null default 'open', add column outcome_at timestamptz,
+      add column outcome_by uuid, add column receipt_message_id uuid,
+      add column outcome_source text, add column outcome_note text`);
   }, 300_000);
 
   afterAll(async () => {
