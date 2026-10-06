@@ -18,9 +18,7 @@
   position: relative;
   flex: none;
   display: flex;
-  /* R3: the tabs' 36px box, bottom-aligned under an 8px top inset (label centre y = 26). */
-  align-self: flex-start;
-  margin-top: var(--pn-space-2);
+  /* R3: the strip's pinned cluster (tabstrip.css) already places this in the tabs' 36px box. */
 }
 .tws-scope-btn {
   display: inline-flex;
