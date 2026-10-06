@@ -1,14 +1,18 @@
 /**
- * `tm8 workspace …` — drive YOUR OWN live Workspace window (Spec C, doc
- * 01a1111d-589e).
+ * `tm8 workspace …` — read and drive YOUR OWN Workspace (Spec C doc
+ * 01a1111d-589e, Spec D doc 01a11171-3aba).
  *
+ *   workspace.get             GET  /v2/spaces/:spaceId/workspace
  *   workspace.instances.list  GET  /v2/spaces/:spaceId/workspace/instances
  *   workspace.inspect         GET  /v2/spaces/:spaceId/workspace/inspect
  *   workspace.command         POST /v2/spaces/:spaceId/workspace/commands
+ *   workspace.drafts.patch    POST /v2/spaces/:spaceId/workspace/drafts/:draftId
  *
  * Every mutating verb is sugar over the ONE `workspace.command` row: it builds
- * the same `{command, args}` the window's own UI dispatches, the node forwards
- * it to the window, and the window's Result is printed as it came back.
+ * the same `{command, args}` the window's own UI dispatches. The node applies
+ * it to your STORED workspace (no window needed) and every open window of
+ * yours updates; only focus, dialogs and the route still need a live window,
+ * where the node forwards the command.
  *
  * WHOSE WINDOW. The node answers for the caller's identity only. An agent
  * token carries its owner's identity, so an agent reaches the windows of the
@@ -58,6 +62,7 @@ interface RemoteResult {
   inspection?: Record<string, unknown>;
   dialogId?: string;
   dialogState?: string;
+  activation?: string;
 }
 
 const SCOPE_MODES: Record<string, 'mixed' | 'byType'> = { mixed: 'mixed', 'by-type': 'byType', bytype: 'byType' };
@@ -103,6 +108,7 @@ function renderResult(data: unknown): string {
   const lines = [`${r.status ?? '?'}${r.reason ? ` (${r.reason})` : ''}  revision ${r.revision ?? '?'}`];
   if (r.tabId) lines.push(`tab: ${r.tabId}${r.outcome ? ` (${r.outcome})` : ''}`);
   if (r.dialogId) lines.push(`dialog: ${r.dialogId}${r.dialogState ? ` ${r.dialogState}` : ''}`);
+  if (r.activation) lines.push(`window: ${r.activation.replace('_', ' ')}`);
   if (r.pendingInteractionId) {
     lines.push(`waiting for the human: interaction ${r.pendingInteractionId} [${(r.choices ?? []).join(', ')}]`);
   }
@@ -186,9 +192,70 @@ async function inspect(cmd: CommandContext): Promise<ExitCode> {
 
 const OPEN_HINT = 'tm8 workspace tabs open <kind> <entity-id> [--no-activate]';
 
+async function get(cmd: CommandContext): Promise<ExitCode> {
+  const spaceId = requireSpace(cmd.ctx);
+  const stored = await observedInvoke<{ revision: number; state: Record<string, unknown>; drafts: unknown[]; windows: number }>(
+    clientFor(cmd.ctx), 'workspace.get', { params: { spaceId } },
+  );
+  cmd.out.data(stored, (data) => {
+    const s = data as typeof stored;
+    if (s.revision === 0) return 'no stored workspace in this Space yet';
+    const inspection = renderInspection({
+      orderedTabIds: (s.state['orderedTabIds'] as string[]).map((id) => ({ id, ...(s.state['tabs'] as Record<string, Record<string, unknown>>)[id] })),
+      visibleTabIds: s.state['orderedTabIds'],
+      presentation: s.state['presentation'],
+      scope: s.state['scope'],
+    });
+    return `${inspection}\nrevision ${s.revision} · ${s.drafts.length} draft(s) · ${s.windows} live window(s)`;
+  });
+  return EXIT_OK;
+}
+
+function parseField(raw: string, flag: string): [string, string] {
+  const at = raw.indexOf('=');
+  if (at <= 0) usage(`--${flag} expects <name>=<value>, got ${JSON.stringify(raw)}`, `--${flag} title=<text>`);
+  return [raw.slice(0, at), raw.slice(at + 1)];
+}
+
+async function draftsSet(cmd: CommandContext): Promise<ExitCode> {
+  refuseMutationId(cmd.path.join(' '), cmd.options.value('mutation-id'));
+  const spaceId = requireSpace(cmd.ctx);
+  const draftId = arg(cmd, 0, 'draft-id', 'tm8 workspace drafts set <draft-id> --field <name>=<value>');
+  const bases = new Map(cmd.options.values('base').map((raw) => {
+    const [name, rev] = parseField(raw, 'base');
+    if (!/^\d+$/.test(rev)) usage('--base expects <name>=<revision>', '--base title=3');
+    return [name, Number(rev)] as const;
+  }));
+  const fields: Record<string, { v: unknown; base?: number }> = {};
+  for (const raw of cmd.options.values('field')) {
+    const [name, text] = parseField(raw, 'field');
+    let v: unknown = text;
+    try {
+      v = JSON.parse(text);
+    } catch {
+      // Plain text.
+    }
+    fields[name] = { v, ...(bases.has(name) ? { base: bases.get(name) } : {}) };
+  }
+  if (Object.keys(fields).length === 0) usage('name at least one --field', 'tm8 workspace drafts set <draft-id> --field title=<text>');
+  const result = await observedInvoke<{ revision: number; fields: Record<string, { v: unknown; r: number }>; overwrote: string[] }>(
+    clientFor(cmd.ctx), 'workspace.drafts.patch', { params: { spaceId, draftId }, body: { fields } },
+  );
+  cmd.out.data(result, (data) => {
+    const r = data as typeof result;
+    const lines = [`draft ${draftId} revision ${r.revision}`];
+    for (const [name, { r: rev }] of Object.entries(r.fields)) lines.push(`  ${name}  r${rev}`);
+    if (r.overwrote.length > 0) lines.push(`overwrote newer edits to: ${r.overwrote.join(', ')}`);
+    return lines.join('\n');
+  });
+  return EXIT_OK;
+}
+
 export const WORKSPACE_COMMANDS: CommandModule[] = [
   { path: ['workspace', 'instances'], run: instances },
   { path: ['workspace', 'inspect'], run: inspect },
+  { path: ['workspace', 'get'], run: get },
+  { path: ['workspace', 'drafts', 'set'], run: draftsSet },
   {
     path: ['workspace', 'command'],
     run: (cmd) => {

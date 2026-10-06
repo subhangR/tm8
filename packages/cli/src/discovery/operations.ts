@@ -2687,6 +2687,35 @@ const ROWS: Record<OperationName, Row> = {
     examples: ['tm8 workspace command workspace.tabs.open --args \'{"kind":"task","entityId":"<task-id>"}\''],
   },
 
+  'workspace.get': {
+    cmd: ['workspace', 'get'],
+    syn: 'tm8 workspace get [--space <space-id>]',
+    sum: 'Read your stored workspace in this Space: tabs, scope, layout, drafts (no window needed)',
+    authz: 'space',
+    input: 'none',
+    tags: ['workspace', 'tabs', 'stored', 'drafts', 'state'],
+    notes: [
+      'your own workspace only (an agent reads the one of the human it works for); tabs whose entity you can no longer read are marked unavailable, never titled',
+      'revision 0 means you have no stored workspace in this Space yet',
+    ],
+    examples: ['tm8 workspace get --space <space-id>'],
+  },
+  'workspace.drafts.patch': {
+    cmd: ['workspace', 'drafts', 'set'],
+    syn: 'tm8 workspace drafts set <draft-id> --field <name>=<value>... [--base <name>=<revision>...]',
+    sum: 'Write fields of an open draft in your workspace (per-field, last writer wins)',
+    authz: 'space',
+    input: 'bound',
+    side: 'none',
+    tags: ['workspace', 'draft', 'form', 'field', 'value'],
+    notes: [
+      'the draft must be open as a draft tab (tm8 workspace drafts open <kind>); the human submits it, never this command',
+      'a value is parsed as JSON when it can be, else taken as text; the write marks the draft dirty, so a later close asks the human',
+      'each field reports the revision it now has; pass --base <name>=<revision> to learn (in `overwrote`) when you replaced someone else’s newer edit',
+    ],
+    examples: ['tm8 workspace drafts set <draft-id> --field title=<text>'],
+  },
+
   // ── execution ────────────────────────────────────────────────────────────
   'execution.spawn': {
     cmd: ['session', 'spawn'],
@@ -4021,7 +4050,7 @@ function exposureFor(operation: OperationName): Exposure {
 // 2026-08-13 (first-run claim): auth.claim + auth.claim.status take the catalog
 // to 161 rows. RECOMPUTED from `JSON.stringify(OPERATIONS)`, not adjusted.
 export const CATALOG_DIGEST =
-  // Re-measured for Spec C (+workspace.instances.list|inspect|command, the Workspace remote bridge) on main 0edaefe41 — RECOMPUTED, not adjusted.
+  // Re-measured for Spec C (+workspace.instances.list|inspect|command) and Spec D (+workspace.get|drafts.patch) on main 0edaefe41 — RECOMPUTED, not adjusted.
   // Re-measured for Spec C (+workspace.instances.list|inspect|command, the Workspace remote bridge) — RECOMPUTED, not adjusted.
   // Re-measured for 992 (+credentials.space.share|unshare|shares) — RECOMPUTED, not adjusted.
   // Re-measured for L3 (+entities.refs.list|add|remove, cross-space references, 279) — RECOMPUTED from
@@ -4084,7 +4113,7 @@ export const CATALOG_DIGEST =
   // Re-measured (styles, 284): +15 styles.*, identity.stylePrefs.get|set, spaces.styleDefault.get|set. RECOMPUTED from JSON.stringify(OPERATIONS).
   // Re-measured (main sync: cross-space + styles).
   // +1 spaceLinks.inbound.grant (W9c, 301): read from the regenerated conformance manifest.
-  'sha256:ae50e7d35f37ab3ea32612f05e16fb844089910bd64863a85d8dd96757a58ceb';
+  'sha256:212d8a68e5113aa53d686945c3a745cbab929f362d050e82af73b551b481331f';
 
 export const GRAMMAR_VERSION = '2';
 
@@ -4780,7 +4809,7 @@ const WORKSPACE_EXIT = 'exit 0 applied/no_op; 16 requires_user_choice (the human
 const WORKSPACE_VERBS: Array<[string, string, string, string[], string[]]> = [
   ['workspace tabs open', `tm8 workspace tabs open <kind> <entity-id> [--no-activate] [--subview entity|connections|messages] ${WORKSPACE_COMMON}`,
     'Open an entity as a tab in your live Workspace window (workspace.tabs.open)',
-    ['an open tab for the same entity is focused, not duplicated', 'a kind outside a By type scope raises the in-window prompt and exits 16; set the scope first to avoid it'],
+    ['applies to your stored workspace with no window open; a live window also brings it to the front (`activation` says whether)', 'an open tab for the same entity is focused, not duplicated', 'a kind outside a By type scope stores a prompt for the human and exits 16; set the scope first to avoid it'],
     ['tm8 workspace tabs open <kind> <entity-id>', 'tm8 workspace tabs open <kind> <entity-id> --no-activate']],
   ['workspace tabs close', `tm8 workspace tabs close <tab-id> ${WORKSPACE_COMMON}`,
     'Close one tab (workspace.tabs.close); never discards unsaved work',
@@ -4792,8 +4821,8 @@ const WORKSPACE_VERBS: Array<[string, string, string, string[], string[]]> = [
     ['tm8 workspace tabs close-visible --except <tab-id>']],
   ['workspace tabs activate', `tm8 workspace tabs activate <tab-id> ${WORKSPACE_COMMON}`,
     'Bring a visible tab to the front (workspace.tabs.activate)',
-    ['refused (user_typing) while the human is typing in that window'],
-    ['tm8 workspace tabs activate <tab-id>']],
+    ['needs a live window: focus is per window', 'refused (user_typing) while the human is typing in that window'],
+    ['tm8 workspace tabs activate <tab-id> --instance <instance-id>']],
   ['workspace tabs move', `tm8 workspace tabs move <tab-id> [--before <tab-id>] ${WORKSPACE_COMMON}`,
     'Reorder a tab; without --before it moves to the end (workspace.tabs.move)',
     [],
@@ -4816,7 +4845,7 @@ const WORKSPACE_VERBS: Array<[string, string, string, string[], string[]]> = [
     ['tm8 workspace layout set --expanded true --instance <instance-id>']],
   ['workspace dialogs open', `tm8 workspace dialogs open palette|prompts|agentTools|newSpace|addServer ${WORKSPACE_COMMON}`,
     'Open a registered dialog in your live window (workspace.dialogs.open)',
-    ['opening is not approving: a dialog opened remotely submits nothing', 'busy while another dialog or prompt is open; not_rendered when the window could not show it'],
+    ['needs a live window', 'opening is not approving: a dialog opened remotely submits nothing', 'busy while another dialog or prompt is open; not_rendered when the window could not show it'],
     ['tm8 workspace dialogs open palette --instance <instance-id>']],
   ['workspace dialogs close', `tm8 workspace dialogs close <dialog-id> ${WORKSPACE_COMMON}`,
     'Dismiss a registered dialog (workspace.dialogs.close); never submits it',
@@ -4824,7 +4853,7 @@ const WORKSPACE_VERBS: Array<[string, string, string, string[], string[]]> = [
     ['tm8 workspace dialogs close <dialog-id>']],
   ['workspace view set', `tm8 workspace view set tabs ${WORKSPACE_COMMON}`,
     'Switch your window to the Workspace route so tab commands apply (workspace.view.set)',
-    ['the Workspace is the only target; other views are refused', 'does not raise or focus the browser window'],
+    ['needs a live window', 'the Workspace is the only target; other views are refused', 'does not raise or focus the browser window'],
     ['tm8 workspace view set tabs --instance <instance-id>']],
 ];
 for (const [key, syntax, summary, notes, examples] of WORKSPACE_VERBS) {
