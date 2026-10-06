@@ -13,7 +13,9 @@
  * has ended. The server still decides whether this viewer may resume it.
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { useDismissable } from '../panels/useDismissable';
+import { useAnchoredPopover } from '../kit/anchoredPopover';
 import { Timestamp } from '../kit';
 import { FillTab } from './FillTab';
 import {
@@ -109,10 +111,32 @@ function PendingFormsChip({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  useDismissable(open, ref, useCallback(() => setOpen(false), []));
+  const trigger = useRef<HTMLButtonElement>(null);
+  const pop = useRef<HTMLDivElement>(null);
+  useDismissable(open, [ref, pop], useCallback(() => {
+    setOpen(false);
+    trigger.current?.focus();
+  }, []));
+  /* FIXED, BESIDE THE CHIP, CLAMPED TO THE VIEWPORT (task 01a112b9): the chip
+     sits in the right action strip, so the form opens to its left, top-aligned,
+     and is pushed up rather than run off the bottom of a short window.
+     It is PORTALLED to the outermost themed root, out of the strip: inside it
+     the form sat in the strip's stacking context (under the tab's title bar)
+     and took the strip's icon-button styling (28px buttons). */
+  const style = useAnchoredPopover(
+    open,
+    () => trigger.current?.getBoundingClientRect(),
+    pop,
+    { side: 'left', align: 'start', gap: 14 },
+  );
+  /* The dialog takes focus when it opens, so the keyboard lands in the form. */
+  useEffect(() => {
+    if (open) pop.current?.focus();
+  }, [open]);
   return (
     <div className="pf-chip" ref={ref}>
       <button
+        ref={trigger}
         type="button"
         className="att-chip att-chip--wait pf-chip__trigger"
         title={tooltip}
@@ -126,13 +150,31 @@ function PendingFormsChip({
         <span className="att-chip__b" aria-hidden>●</span>
         <span>{label}</span>
       </button>
-      {open ? (
-        <div className="pf-chip__pop" role="dialog" aria-label="Forms waiting on you">
+      {open ? createPortal(
+        <div
+          ref={pop}
+          className="pf-chip__pop"
+          role="dialog"
+          aria-label="Forms waiting on you"
+          tabIndex={-1}
+          style={style}
+          data-testid="pending-forms-popover"
+        >
           {children}
-        </div>
+        </div>,
+        portalHostOf(ref.current),
       ) : null}
     </div>
   );
+}
+
+/** The outermost `.cv2-root` holding `el` (its theme tokens and zoom), else the body. */
+export function portalHostOf(el: HTMLElement | null): HTMLElement {
+  let host: HTMLElement | null = null;
+  for (let node = el?.closest<HTMLElement>('.cv2-root') ?? null; node; node = node.parentElement?.closest<HTMLElement>('.cv2-root') ?? null) {
+    host = node;
+  }
+  return host ?? document.body;
 }
 
 function PendingFormRow({

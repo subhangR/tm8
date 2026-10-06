@@ -12,11 +12,12 @@
  *                 readout; a click opens the existing `StatusStrip`, stacked.
  *                 In the expanded rail the row's label IS the readout.
  */
-import { useCallback, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useRef, useState, type ReactNode } from 'react';
 import type { EntityId, SpaceId } from '@tm8/contract';
 import type { Seam } from '../../data/seam';
 import { AttentionList, useAttentionOptional } from '../../attention';
 import { VIEW_ART } from '../../domain';
+import { useAnchoredPopover } from '../../kit/anchoredPopover';
 import { VectorIcon } from '../../kit/VectorIcon';
 import { useDismissable } from '../../panels/useDismissable';
 import { StatusStrip } from '../../status-strip/StatusStrip';
@@ -55,7 +56,6 @@ function RailPopoverButton({
   children,
 }: RailPopoverButtonProps) {
   const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState<CSSProperties | null>(null);
   const button = useRef<HTMLButtonElement>(null);
   const pop = useRef<HTMLDivElement>(null);
   const close = useCallback(() => {
@@ -63,17 +63,19 @@ function RailPopoverButton({
     button.current?.focus();
   }, []);
   useDismissable(open, [button, pop], () => setOpen(false));
-  /* To the right of the rail, bottom-aligned with the button. */
-  useLayoutEffect(() => {
-    if (!open) return;
-    const rail = button.current?.closest('.tws-rail')?.getBoundingClientRect();
-    const rect = button.current?.getBoundingClientRect();
-    if (!rect) return;
-    setPos({
-      left: (rail?.right ?? rect.right) + POP_OFFSET_PX,
-      bottom: Math.max(0, window.innerHeight - rect.bottom),
-    });
-  }, [open]);
+  /* To the right of the rail, bottom-aligned with the button, clamped to the
+     viewport (a short window pushes it down, never past the top edge). */
+  const style = useAnchoredPopover(
+    open,
+    () => {
+      const rect = button.current?.getBoundingClientRect();
+      if (!rect) return null;
+      const rail = button.current?.closest('.tws-rail')?.getBoundingClientRect();
+      return { top: rect.top, bottom: rect.bottom, left: rect.left, right: rail?.right ?? rect.right };
+    },
+    pop,
+    { side: 'right', align: 'end', gap: POP_OFFSET_PX },
+  );
   return (
     <div className="tws-tip-anchor tws-rail-pop-anchor">
       <button
@@ -99,7 +101,7 @@ function RailPopoverButton({
           className="tws-rail-pop"
           role="dialog"
           aria-label={popoverLabel}
-          style={pos ?? { visibility: 'hidden' }}
+          style={style}
           data-testid={`${testId}-popover`}
         >
           {children(close)}

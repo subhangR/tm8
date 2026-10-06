@@ -261,3 +261,64 @@ describe('the session panel banner', () => {
     store.dispose();
   });
 });
+
+describe('the action strip chip (Work)', () => {
+  /* Task 01a112b9: the chip lives in the right action strip, a stacking context
+     under the tab's title bar whose icon-button styles squeezed the form. Its
+     popover is a fixed dialog portalled to the outermost themed root. */
+  function mountChip() {
+    const port = createFixtureFormsPort({ responses: FORM_FIXTURE_RESPONSES });
+    const formId = FORM_FIXTURE_IDS.migration;
+    const { source } = fakeSource((id) => (id === 'ws-1' ? pending('ws-1', [item(formId, 'Pick the migration strategy')]) : null));
+    const store = createPendingFormsStore(source, { debounceMs: 0 });
+    const view = render(
+      <FormsPortProvider port={port}>
+        <PendingFormsProvider store={store}>
+          <div className="cv2-root" data-testid="shell-root">
+            <div className="cv2-root tws-astrip" data-testid="strip">
+              <PendingFormsBanner variant="chip" sessionId="ws-1" />
+            </div>
+          </div>
+        </PendingFormsProvider>
+      </FormsPortProvider>,
+    );
+    return { view, store };
+  }
+
+  it('opens the form as a fixed dialog outside the strip, and it can be answered there', async () => {
+    const { store } = mountChip();
+    const chip = await screen.findByTestId('pending-forms-chip');
+    expect(chip.getAttribute('data-count')).toBe('1');
+    fireEvent.click(chip);
+
+    const pop = screen.getByTestId('pending-forms-popover');
+    expect(pop.getAttribute('role')).toBe('dialog');
+    expect(pop.style.position).toBe('fixed');
+    expect(screen.getByTestId('strip').contains(pop)).toBe(false);
+    expect(pop.parentElement).toBe(screen.getByTestId('shell-root'));
+    expect(document.activeElement).toBe(pop);
+
+    // Clicking inside the portalled dialog is not an outside click.
+    fireEvent.pointerDown(within(pop).getByRole('button', { name: 'Answer' }));
+    fireEvent.click(within(pop).getByRole('button', { name: 'Answer' }));
+    const fill = await within(pop).findByTestId('pending-form-fill');
+    await within(fill).findByTestId('fill-form');
+    expect(screen.getByTestId('pending-forms-popover')).toBe(pop);
+    store.dispose();
+  });
+
+  it('closes on Escape (focus back on the chip) and on an outside pointer-down', async () => {
+    const { store } = mountChip();
+    const chip = await screen.findByTestId('pending-forms-chip');
+    fireEvent.click(chip);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByTestId('pending-forms-popover')).toBeNull();
+    expect(document.activeElement).toBe(chip);
+
+    fireEvent.click(chip);
+    expect(screen.getByTestId('pending-forms-popover')).toBeTruthy();
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByTestId('pending-forms-popover')).toBeNull();
+    store.dispose();
+  });
+});
