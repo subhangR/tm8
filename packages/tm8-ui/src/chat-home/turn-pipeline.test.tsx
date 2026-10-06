@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, fireEvent, render, waitFor, within } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { EntityId } from '@tm8/contract';
 import { ChatHomeScreen } from './ChatHomeScreen';
 import { CHAT_HOME_FIXTURE_THREAD, createChatHomeFixturePort } from './fixtures';
@@ -12,10 +12,6 @@ import type {
   ChatThreadDetail,
   ChatTurnFrame,
 } from './types';
-
-/* D31: this suite drives a retired desktop view (Home, the old Work or
-   Board), which only the legacy desktop still reaches (stage (c) deletes it). */
-vi.mock('../shell/desktop-modes', () => ({ desktopModes: () => 'legacy' }));
 
 /**
  * LANE 1 — THE TURN PIPELINE. Send → echo → delta / done → render, and every
