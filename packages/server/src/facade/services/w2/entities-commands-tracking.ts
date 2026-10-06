@@ -72,7 +72,6 @@ import type { RpcCommandResult } from '../../handlers/entities.js';
 import { buildReceipt, receiptSnapshot, wantsReceipt, type ServerReceipt } from '../../receipt.js';
 import { RUNS_ON, RUNS_ON_USAGE_OPERATION, runsOnListedFrom } from './runs-on-visibility.js';
 import { projectForgeFacts, projectTrackingFreshness } from '../../../tracking/pr-projection.js';
-import { resolveGithubToken } from '../../../tracking/github.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const REACTION_TYPES = new Set(['likes', 'dislikes', 'stars']);
@@ -2119,44 +2118,6 @@ export class W2EntitiesCommandsTrackingService {
     return this.deps.db.tx(claimsFor(owner, ctx, envelope), (q) => q.rpc('queue_tracking_refresh', [
       input.entityIds ?? [], envelope.actorId ?? null, envelope.clientMutationId ?? null,
     ]));
-  };
-
-  /**
-   * 304 (P0e): tracking health per readable space. The "is it running"
-   * question the six stale spaces had no way to ask. `authenticated` is false
-   * when the space has no GitHub token credential AND this node has no env
-   * token — the poller then reads that space on the shared 60-requests-an-hour
-   * anonymous budget, and the answer says so in `warnings`.
-   */
-  readonly trackingHealth = async (ctx: RequestContext): Promise<Record<string, unknown>> => {
-    const owner = await this.deps.owner();
-    const raw = ctx.query.get('staleAfterSeconds');
-    const staleAfter = raw !== null && /^\d+$/.test(raw) ? Math.max(60, Math.min(Number(raw), 30 * 86_400)) : 3600;
-    const health = await this.deps.db.tx(claimsFor(owner, ctx), (q) =>
-      q.rpc<{ staleAfterSeconds?: number; spaces?: unknown }>('tracking_health', [staleAfter]));
-    const nodeToken = resolveGithubToken() !== undefined;
-    const warnings: string[] = [];
-    const spaces = (Array.isArray(health?.spaces) ? health.spaces : []).map((entry) => {
-      const row = (entry ?? {}) as Record<string, unknown>;
-      const count = (key: string): number => Number(row[key] ?? 0);
-      const authenticated = row.githubCredential === true || nodeToken;
-      const status = count('stale') > 0 || count('neverPolled') > 0 ? 'stale' : authenticated ? 'ok' : 'degraded';
-      if (!authenticated) {
-        warnings.push(`space ${String(row.spaceId)}: no GitHub token; polling unauthenticated (60 requests/hour shared by the node)`);
-      }
-      if (count('stale') > 0) {
-        warnings.push(`space ${String(row.spaceId)}: ${String(count('stale'))} open pull request(s) not polled within ${String(staleAfter)}s`);
-      }
-      return { ...row, authenticated, status };
-    });
-    return {
-      staleAfterSeconds: health?.staleAfterSeconds ?? staleAfter,
-      nodeGithubToken: nodeToken,
-      status: spaces.some((s) => s.status === 'stale') ? 'stale'
-        : spaces.some((s) => s.status === 'degraded') ? 'degraded' : 'ok',
-      spaces,
-      warnings,
-    };
   };
 }
 

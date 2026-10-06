@@ -465,7 +465,9 @@ select
   pr.head_ref        as pr_head_ref,
   pr.url             as pr_url,
   pr.fetched_at      as pr_fetched_at,
-  pr.last_polled_at  as pr_last_polled_at,
+  -- 304's column, read through the row so position-pinned suites that stop
+  -- the chain before 304 still run this shared SQL.
+  (to_jsonb(pr) ->> 'last_polled_at') as pr_last_polled_at,
   cm.repo            as commit_repo,
   cm.sha             as commit_sha,
   cm.message         as commit_message,

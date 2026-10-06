@@ -223,7 +223,10 @@ export const ENTITY_COLUMNS = `
   pr.title as pr_title, pr.repo as pr_repo, pr.number as pr_number,
   pr.state as pr_state, pr.ci_status as pr_ci_status,
   pr.mergeable_state as pr_mergeable_state, pr.head_ref as pr_head_ref,
-  pr.url as pr_url, pr.fetched_at as pr_fetched_at, pr.last_polled_at as pr_last_polled_at,
+  pr.url as pr_url, pr.fetched_at as pr_fetched_at,
+  -- 304's column, read through the row: position-pinned suites stop the
+  -- chain before 304 and still run this shared SQL.
+  (to_jsonb(pr) ->> 'last_polled_at') as pr_last_polled_at,
   cm.repo as commit_repo, cm.sha as commit_sha,
   cm.message as commit_message, cm.committed_at as commit_committed_at,
   cm.url as commit_url, cm.author as commit_author,

@@ -380,7 +380,7 @@ async function loadCorrectionEdge(
             case artifact_reaction.type when 'likes' then 'like'
                  when 'dislikes' then 'dislike' when 'stars' then 'star' end artifact_viewer_reaction,
             pr.title pr_title, pr.repo pr_repo, pr.number pr_number, pr.state pr_state,
-            pr.url pr_url, pr.fetched_at pr_fetched_at, pr.last_polled_at pr_last_polled_at,
+            pr.url pr_url, pr.fetched_at pr_fetched_at, (to_jsonb(pr) ->> 'last_polled_at') pr_last_polled_at,
             pr.ci_status pr_ci_status, pr.mergeable_state pr_mergeable_state,
             pr.head_ref pr_head_ref,
             commit_row.repo commit_repo, commit_row.sha commit_sha,

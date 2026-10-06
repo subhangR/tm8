@@ -240,10 +240,6 @@ export const OPERATIONS = [
   // `done`. The write `task complete`'s criteria gate asks for.
   { name: 'entities.commands.tick',       method: 'POST', path: '/v2/entities/:id/commands/tick',           kind: 'command', status: 'v1' },
   { name: 'tracking.refresh',        method: 'POST',   path: '/v2/tracking/refresh',                        kind: 'command', status: 'v1' },
-  // 304 (P0e): is tracking actually running? Per readable space: open rows,
-  // never-polled and stale counts, newest/oldest poll, and whether the poller
-  // has a GitHub credential there or reads unauthenticated.
-  { name: 'tracking.health',         method: 'GET',    path: '/v2/tracking/health',                         kind: 'read',    status: 'v1' },
   // The forge WRITE door — one verb, guarded server-side (open + mergeable per
   // observed facts, CI not red, head unchanged), acting-member credential only.
   { name: 'tracking.pr.merge',       method: 'POST',   path: '/v2/tracking/pr/:id/merge',                   kind: 'command', status: 'v1' },

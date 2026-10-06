@@ -105,7 +105,79 @@ export interface ForgeWatchTickDetail extends Record<string, unknown> {
   /** Budgets backed off at the end of the tick (`space:<id>`, `env`, `anonymous`). */
   limitedBudgets: string[];
   staleSignals: number;
+  /** 304 §6: per-space freshness, surfaced on `/health` as `tracking`. */
+  health?: TrackingHealthSummary;
   problems: string[];
+}
+
+/**
+ * 304 §6: the answer to "is tracking actually running?", computed every tick
+ * from `public.tracking_health` and carried on the job outcome, which `/health`
+ * already publishes. `authenticated` is false when a space has no GitHub token
+ * credential AND the node has no env token: that space is read on the shared
+ * 60-requests-an-hour anonymous budget, and `warnings` says so.
+ */
+export interface TrackingHealthSummary {
+  status: 'ok' | 'degraded' | 'stale';
+  checkedAt: string;
+  staleAfterSeconds: number;
+  spaces: Array<{
+    spaceId: string;
+    trackedOpen: number;
+    neverPolled: number;
+    stale: number;
+    erroring: number;
+    lastPolledAt: string | null;
+    authenticated: boolean;
+    status: 'ok' | 'degraded' | 'stale';
+  }>;
+  warnings: string[];
+}
+
+export function summarizeTrackingHealth(
+  raw: unknown,
+  fallbackAuthenticated: boolean,
+  staleAfterSeconds: number,
+  now: Date = new Date(),
+): TrackingHealthSummary {
+  const rows = Array.isArray((raw as { spaces?: unknown } | null)?.spaces)
+    ? ((raw as { spaces: unknown[] }).spaces)
+    : [];
+  const warnings: string[] = [];
+  const spaces = rows.map((entry) => {
+    const row = (entry ?? {}) as Record<string, unknown>;
+    const n = (key: string): number => Number(row[key] ?? 0) || 0;
+    const spaceId = String(row.spaceId ?? '');
+    const authenticated = row.githubCredential === true || fallbackAuthenticated;
+    const stale = n('stale');
+    const neverPolled = n('neverPolled');
+    const status: 'ok' | 'degraded' | 'stale' =
+      stale > 0 || neverPolled > 0 ? 'stale' : authenticated ? 'ok' : 'degraded';
+    if (!authenticated) {
+      warnings.push(`space ${spaceId}: no GitHub token; polling unauthenticated (60 requests/hour shared by the node)`);
+    }
+    if (stale > 0) {
+      warnings.push(`space ${spaceId}: ${String(stale)} open pull request(s) not polled within ${String(staleAfterSeconds)}s`);
+    }
+    return {
+      spaceId,
+      trackedOpen: n('trackedOpen'),
+      neverPolled,
+      stale,
+      erroring: n('erroring'),
+      lastPolledAt: typeof row.lastPolledAt === 'string' ? row.lastPolledAt : null,
+      authenticated,
+      status,
+    };
+  });
+  return {
+    status: spaces.some((s) => s.status === 'stale') ? 'stale'
+      : spaces.some((s) => s.status === 'degraded') ? 'degraded' : 'ok',
+    checkedAt: now.toISOString(),
+    staleAfterSeconds,
+    spaces,
+    warnings: warnings.slice(0, 20),
+  };
 }
 
 /**
@@ -200,12 +272,25 @@ export async function runForgeWatchTick(
     log?.(`tracking.forge-watcher: staleness sweep: ${describe(error)}`);
   }
   detail.limitedBudgets = clients.limitedBudgets();
+  try {
+    const stale = options.staleAfterSeconds ?? 3600;
+    const raw = await options.db.rpc<unknown>(claims, 'public.tracking_health', [stale]);
+    detail.health = summarizeTrackingHealth(raw, clients.fallbackAuthenticated, stale);
+  } catch (error) {
+    detail.problems.push(`tracking health: ${describe(error)}`);
+  }
 
   // Bounded: this rides in a job outcome that gets logged, and an unbounded
   // list of provider errors is how a log becomes unreadable.
   detail.problems = detail.problems.slice(0, 10);
   if (targets.length === 0 && detail.pendingDrained === 0) {
-    return { skipped: true, reason: 'no watched pull requests and no queued nudges' };
+    // The health summary rides on a skip too: "nothing to poll" is exactly
+    // when an operator most needs to see whether that is true.
+    return {
+      skipped: true,
+      reason: 'no watched pull requests and no queued nudges',
+      ...(detail.health ? { detail: { health: detail.health } } : {}),
+    };
   }
   return { affected: detail.nudgesDelivered, detail };
 }
