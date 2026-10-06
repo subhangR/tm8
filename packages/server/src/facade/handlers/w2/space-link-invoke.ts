@@ -381,9 +381,9 @@ export function createLinkDispatcher(
     // already run; a nested dispatch from inside the handler finds no marker.
     // A completer named from home (`task complete --by <home id>`) is nobody
     // in B: credit the member the link acts as there instead.
-    const completerIds = await homeCompletersInB(op, inner.body, [claims.actorId, row.memberId], async () =>
+    const completerIds = await homeCompletersInB(op, inner.body, [request.claims.actorId, request.row.memberId], async () =>
       (await deps.db.query<{ id: string | null }>(await claimsOf(inner),
-        'select internal.current_member_id($1)::text as id', [row.targetSpaceId]))[0]?.id ?? null);
+        'select internal.current_member_id($1)::text as id', [request.row.targetSpaceId]))[0]?.id ?? null);
     if (completerIds) inner = { ...inner, body: { ...(inner.body as Record<string, unknown>), completerIds } };
 
     admitLinkInvoke(inner, op);
@@ -392,7 +392,7 @@ export function createLinkDispatcher(
       result = await handler(inner);
     } catch (error) {
       // An actor B refused (300) is one the caller named itself: say what to do.
-      const refusal = actorRefusalThroughLink(error, row);
+      const refusal = actorRefusalThroughLink(error, request.row);
       if (refusal) throw new SpaceLinkExecuteFailure(auditReasonOf(refusal), refusal);
       throw error;
     }
