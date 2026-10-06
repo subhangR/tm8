@@ -1,5 +1,6 @@
 export * as browser from './browser';
 export * as drafts from './drafts';
+export * as external from './external';
 export * as interactions from './interactions';
 export * as layout from './layout';
 export * as panels from './panels';

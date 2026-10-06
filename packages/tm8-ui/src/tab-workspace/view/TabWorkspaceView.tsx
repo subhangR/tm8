@@ -41,6 +41,8 @@ export function TabWorkspaceView({ viewerId, spaceId, routeTab, gate }: TabWorks
     () =>
       runtime.setHooks({
         canCreate: canCreateKind,
+        /* Spec C: tab/scope/layout commands from the bridge need this view. */
+        viewMounted: () => true,
         toast: (toast) =>
           onNotice({ id: `tws-${Date.now()}`, tone: 'info', title: toast.text, body: '', ttlMs: NOTICE_TTL_MS }),
       }),

@@ -8,12 +8,12 @@
  * patches). Effects run after the commit; persistence and URL sync plug in
  * through `registerEffect` without editing this file.
  */
-import { browser, drafts, interactions, layout, panels, scope, tabs } from './commands';
+import { browser, drafts, external, interactions, layout, panels, scope, tabs } from './commands';
 import type { Plan, Planner } from './commands/shared';
 import { draftStoreFor, type DraftStore } from './draftStore';
 import { inspect } from './selectors';
 import { getWorkspaceStore, newUuid, storeKey, type WorkspaceStore } from './store';
-import { COMMAND_NAMES, LOCAL_SOURCES, UI_SOURCES } from './types';
+import { ACCEPTED_SOURCES, COMMAND_NAMES, UI_SOURCES } from './types';
 import type {
   CommandEnvelope,
   CommandName,
@@ -41,7 +41,51 @@ const PLANNERS: Record<CommandName, Planner> = {
   'workspace.chooser.open': panels.openChooser,
   'workspace.layout.set': layout.setLayout,
   'workspace.interactions.resolve': interactions.resolve,
+  'workspace.dialogs.open': external.openDialog,
+  'workspace.dialogs.close': external.closeDialog,
+  'workspace.view.set': external.setView,
 };
+
+// ---------------------------------------------------------------------------
+// The remote policy (Spec C §4): what a command from the node's bridge may do
+// ---------------------------------------------------------------------------
+
+/**
+ * Never from remote. `interactions.resolve` is the human's answer (UI sources
+ * only, below); `drafts.bind` is the draft host's own completion (system
+ * only); `drafts.markDirty` would let a caller mark a draft clean so a later
+ * close discards it without asking.
+ */
+const REMOTE_FORBIDDEN: ReadonlySet<CommandName> = new Set([
+  'workspace.interactions.resolve',
+  'workspace.drafts.bind',
+  'workspace.drafts.markDirty',
+]);
+
+/** Commands that act on the mounted Workspace view; elsewhere they are refused, never queued. */
+const REMOTE_NEEDS_VIEW: ReadonlySet<CommandName> = new Set(
+  COMMAND_NAMES.filter(
+    (name) => !['workspace.inspect', 'workspace.dialogs.open', 'workspace.dialogs.close', 'workspace.view.set'].includes(name),
+  ),
+);
+
+/** Commands that move the human's focus — refused while they are typing. */
+function takesFocus(env: CommandEnvelope): boolean {
+  switch (env.command) {
+    case 'workspace.tabs.open': {
+      const args = env.args as { activate?: unknown } | null | undefined;
+      return args?.activate !== false;
+    }
+    case 'workspace.tabs.activate':
+    case 'workspace.chooser.open':
+    case 'workspace.drafts.open':
+    case 'workspace.dialogs.open':
+    case 'workspace.view.set':
+      return true;
+    default:
+      return false;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Effects registry
@@ -93,6 +137,11 @@ export function createWorkspaceRuntime(viewerId: string, spaceId: string, store:
     newId: newUuid,
     openEntity: (kind, entityId) =>
       void runtime.dispatch({ command: 'workspace.tabs.open', args: { kind, entityId }, source: 'click' }),
+    openDialog: () => ({ status: 'rejected', reason: 'dialog_unavailable' }),
+    closeDialog: () => ({ status: 'rejected', reason: 'dialog_unavailable' }),
+    showWorkspace: () => ({ status: 'rejected', reason: 'view_unavailable' }),
+    viewMounted: () => false,
+    userTyping: () => false,
   };
 
   const runEffects = (event: Parameters<WorkspaceEffect>[0]) => {
@@ -135,14 +184,20 @@ export function createWorkspaceRuntime(viewerId: string, spaceId: string, store:
 
   const run = (env: CommandEnvelope, replay: boolean): Result => {
     const state = store.getState();
-    // 0. Shape and source. Phase 1 accepts local sources only (§9).
+    // 0. Shape and source: the local sources, plus `remote` from the bridge.
     if (
       typeof env !== 'object' ||
       env === null ||
       !(COMMAND_NAMES as readonly string[]).includes(env.command) ||
-      !LOCAL_SOURCES.includes(env.source)
+      !ACCEPTED_SOURCES.includes(env.source)
     ) {
-      return rejected(state, typeof env === 'object' && env && !LOCAL_SOURCES.includes(env.source) ? 'permission_denied' : 'invalid_arguments');
+      return rejected(state, typeof env === 'object' && env && !ACCEPTED_SOURCES.includes(env.source) ? 'permission_denied' : 'invalid_arguments');
+    }
+    // 1. The remote policy (Spec C §4), before anything can plan or prompt.
+    if (env.source === 'remote' && !replay) {
+      if (REMOTE_FORBIDDEN.has(env.command)) return rejected(state, 'permission_denied');
+      if (REMOTE_NEEDS_VIEW.has(env.command) && !hooks.viewMounted()) return rejected(state, 'view_unavailable');
+      if (takesFocus(env) && hooks.userTyping()) return rejected(state, 'user_typing');
     }
     if (env.command === 'workspace.drafts.bind' && env.source !== 'system') return rejected(state, 'permission_denied');
     if (env.command === 'workspace.interactions.resolve' && !UI_SOURCES.includes(env.source)) {
@@ -166,6 +221,8 @@ export function createWorkspaceRuntime(viewerId: string, spaceId: string, store:
         return rejected(state, plan.reason);
       case 'inspect':
         return { status: 'no_op', revision: state.revision, inspection: inspect(state) };
+      case 'external':
+        return { ...plan.result, revision: state.revision };
       case 'choice': {
         // 4. One blocking interaction at a time; a replay never re-prompts.
         if (state.pending) return rejected(state, 'busy');
@@ -203,10 +260,18 @@ export function createWorkspaceRuntime(viewerId: string, spaceId: string, store:
       return hooks;
     },
     setHooks(patch) {
-      const previous = hooks;
+      // Restore only the keys this call patched, and only while they still hold
+      // its value: two installers (the shell and the Workspace view) unmount in
+      // either order without one putting back the other's stale hooks.
+      const keys = Object.keys(patch) as (keyof WorkspaceHooks)[];
+      const previous = Object.fromEntries(keys.map((key) => [key, hooks[key]])) as Partial<WorkspaceHooks>;
       hooks = { ...hooks, ...patch };
       return () => {
-        hooks = previous;
+        const next = { ...hooks };
+        for (const key of keys) {
+          if (hooks[key] === patch[key]) (next as Record<string, unknown>)[key] = previous[key];
+        }
+        hooks = next;
       };
     },
     registerEffect(effect) {

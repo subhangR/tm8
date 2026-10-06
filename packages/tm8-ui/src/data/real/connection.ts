@@ -48,11 +48,16 @@
  * Everything time-shaped is injectable — timers, clock, jitter — so the tests
  * in this directory drive real transitions with zero waiting and zero network.
  */
-import { CollabError, type DurableWorkspaceEvent, type SpaceId } from '@tm8/contract';
+import {
+  CollabError,
+  type DurableWorkspaceEvent,
+  type SpaceId,
+  type WorkspaceBridgeCommandFrame,
+} from '@tm8/contract';
 import type { ConnectionState, Unsubscribe } from '../seam';
 import type { ChatContextFrame, ChatTurnFrame } from '../../chat-home/types';
 import type { DurableEventPage } from './ops';
-import { openSocket, type SocketHandle, type WebSocketFactory } from './socket';
+import { openSocket, type SocketHandle, type WebSocketFactory, type WorkspaceBridgeFrame } from './socket';
 
 /** Injectable timers. The handle is opaque so a fake may return anything. */
 export interface Timers {
@@ -235,6 +240,14 @@ export interface ConnectionManager {
   /** Fires each time the socket reaches `live` after having been down (liveness cadence, LLD §9). */
   onReconnect(cb: () => void): Unsubscribe;
   /**
+   * Spec C, the Workspace remote bridge. `sendWorkspace` puts one `workspace.*`
+   * control frame on the live socket (false when there is none); `onSocketOpen`
+   * fires on EVERY open, first included, so a window re-registers each time.
+   */
+  sendWorkspace(frame: WorkspaceBridgeFrame): boolean;
+  onWorkspaceCommand(cb: (frame: WorkspaceBridgeCommandFrame) => void): Unsubscribe;
+  onSocketOpen(cb: () => void): Unsubscribe;
+  /**
    * Replace the socket now, because the credential it upgraded with is no
    * longer the page's: `auth.space.enter` swapped the session cookie (W3 F1).
    * A browser WebSocket keeps its upgrade identity for life, so under enforce
@@ -295,6 +308,8 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
   const resyncSubs = new Set<(spaceId: SpaceId) => void>();
   const refusedSubs = new Set<(spaceId: SpaceId, error: CollabError) => void>();
   const reconnectSubs = new Set<() => void>();
+  const socketOpenSubs = new Set<() => void>();
+  const workspaceCommandSubs = new Set<(frame: WorkspaceBridgeCommandFrame) => void>();
 
   let socket: SocketHandle | null = null;
   let phase: ConnectionState = { phase: 'connecting' };
@@ -511,6 +526,7 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
     lastInboundAtMs = now();
     scheduleIdleCheck();
     if (reconnected) fanout(reconnectSubs);
+    fanout(socketOpenSubs);
   }
 
   function handleRefused(ack: { frame: string; spaceId?: SpaceId; reason: string }): void {
@@ -562,6 +578,11 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
         onEvent: dispatch,
         onChatTurn: dispatchChatTurn,
         onChatContext: dispatchChatContext,
+        onWorkspaceCommand: (frame) => {
+          if (disposed) return;
+          lastInboundAtMs = now();
+          fanout(workspaceCommandSubs, frame);
+        },
         onRefused: handleRefused,
         onClose: handleClose,
         onMalformed: (raw, cause) => onError(cause ?? raw, 'malformed frame'),
@@ -860,6 +881,9 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
     onResync(cb) { resyncSubs.add(cb); return () => { resyncSubs.delete(cb); }; },
     onSpaceRefused(cb) { refusedSubs.add(cb); return () => { refusedSubs.delete(cb); }; },
     onReconnect(cb) { reconnectSubs.add(cb); return () => { reconnectSubs.delete(cb); }; },
+    sendWorkspace(frame) { return socket?.sendWorkspace(frame) ?? false; },
+    onWorkspaceCommand(cb) { workspaceCommandSubs.add(cb); return () => { workspaceCommandSubs.delete(cb); }; },
+    onSocketOpen(cb) { socketOpenSubs.add(cb); return () => { socketOpenSubs.delete(cb); }; },
 
     reconnect() {
       if (disposed) return;

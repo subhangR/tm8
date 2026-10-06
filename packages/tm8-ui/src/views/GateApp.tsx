@@ -52,7 +52,7 @@ import { PromptsOverlay } from '../prompts';
 import { ProjectGitScreen } from '../git/ProjectGitScreen';
 import { BoardScreen } from '../board';
 import { BoardV2Screen } from '../board-v2';
-import { openInWorkspace, TabWorkspaceView, useWorkspaceShareRoute, type WorkspaceGateHandles } from '../tab-workspace';
+import { openInWorkspace, TabWorkspaceView, useWorkspaceBridge, useWorkspaceShareRoute, type WorkspaceGateHandles } from '../tab-workspace';
 import { CraftScreen } from '../craft';
 import { HelpScreen } from '../help';
 import { NewSessionScreen } from '../new-session';
@@ -1880,6 +1880,27 @@ export function GateApp(props: GateAppProps = {}) {
   const navigateRouteView = useCallback((view: NavView) => navStore.getState().navigate(view), []);
   const goHomeTarget = useCallback(() => navigateTo(HOME_TARGET), [navigateTo]);
   const openInboxView = useCallback(() => navigateTo({ type: 'view', ref: 'inbox' }), [navigateTo]);
+
+  /* Spec C (doc 01a1111d-589e): this window is a live Workspace instance that
+     the human's own agents and CLI can drive through the node. The bridge owns
+     the registered dialogs below; it never opens anything else. */
+  useWorkspaceBridge({
+    port: data.seam.workspaceBridge,
+    spaceId: data.ready && data.spaceId ? data.spaceId : null,
+    viewerId: viewerMemberId,
+    view: navView.view,
+    dialogs: {
+      palette: { open: paletteOpen, setOpen: setPaletteOpen, available: true },
+      prompts: { open: promptsOpen, setOpen: setPromptsOpen, available: true },
+      agentTools: { open: setupOpen === true, setOpen: setSetupOpen, available: !!credentialsPort },
+      newSpace: { open: newSpaceOpen, setOpen: setNewSpaceOpen, available: !!projectOnboardingPort },
+      addServer: { open: addServerOpen, setOpen: setAddServerOpen, available: !!props.onAddServer },
+    },
+    otherModalOpen: launch.isModalOpen?.() ?? false,
+    showWorkspace: () => navStore.getState().navigate({ view: 'tabs' }),
+    titleOf: (entityId) => data.detailOf(entityId)?.title ?? undefined,
+    notify: notices.push,
+  });
 
   /*
    * THE SHELL FORK. Chosen by pointer type and width, never by user agent —

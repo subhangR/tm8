@@ -151,7 +151,12 @@ export const LAYOUT_BOUNDS = {
 // Commands (§3, §4)
 // ---------------------------------------------------------------------------
 
-export type Source = 'click' | 'keyboard' | 'palette' | 'deeplink' | 'restore' | 'history' | 'system';
+/**
+ * `remote` (Spec C, doc 01a1111d-589e): a command an agent or the human's CLI
+ * sent through the node's Workspace bridge. It runs through the same planners
+ * under the remote policy in dispatch.ts; it is never a UI source.
+ */
+export type Source = 'click' | 'keyboard' | 'palette' | 'deeplink' | 'restore' | 'history' | 'system' | 'remote';
 export const LOCAL_SOURCES: readonly Source[] = [
   'click',
   'keyboard',
@@ -161,6 +166,8 @@ export const LOCAL_SOURCES: readonly Source[] = [
   'history',
   'system',
 ];
+/** Every source dispatch accepts: the local ones plus the bridge's `remote`. */
+export const ACCEPTED_SOURCES: readonly Source[] = [...LOCAL_SOURCES, 'remote'];
 /** Sources a person is directly behind — the only ones that may resolve or discard. */
 export const UI_SOURCES: readonly Source[] = ['click', 'keyboard'];
 
@@ -180,6 +187,11 @@ export const COMMAND_NAMES = [
   'workspace.chooser.open',
   'workspace.layout.set',
   'workspace.interactions.resolve',
+  // ADDITIVE (Spec C): the registered dialogs, and bringing the window to the
+  // Workspace route. Neither touches Workspace state; both act through hooks.
+  'workspace.dialogs.open',
+  'workspace.dialogs.close',
+  'workspace.view.set',
 ] as const;
 export type CommandName = (typeof COMMAND_NAMES)[number];
 
@@ -226,6 +238,13 @@ export type DraftsBindArgs = { tabId: TabId; entityId: string; kind?: KindId; ti
 export type ChooserOpenArgs = Record<string, never> | undefined;
 export type LayoutSetArgs = { expanded?: boolean; browserWidth?: number; chatWidth?: number };
 export type InteractionsResolveArgs = { interactionId: string; choice: InteractionChoice };
+/** The phase-1 dialog registry (Spec C §5); mirrors the contract's WORKSPACE_DIALOG_IDS. */
+export const DIALOG_IDS = ['palette', 'prompts', 'agentTools', 'newSpace', 'addServer'] as const;
+export type DialogId = (typeof DIALOG_IDS)[number];
+export type DialogsOpenArgs = { dialogId: DialogId };
+export type DialogsCloseArgs = { dialogId: DialogId };
+/** The Workspace route is the only target (coordinator ruling Q1). */
+export type ViewSetArgs = { view: 'tabs' };
 
 export interface CommandArgsMap {
   'workspace.inspect': InspectArgs;
@@ -243,6 +262,9 @@ export interface CommandArgsMap {
   'workspace.chooser.open': ChooserOpenArgs;
   'workspace.layout.set': LayoutSetArgs;
   'workspace.interactions.resolve': InteractionsResolveArgs;
+  'workspace.dialogs.open': DialogsOpenArgs;
+  'workspace.dialogs.close': DialogsCloseArgs;
+  'workspace.view.set': ViewSetArgs;
 }
 
 export type CommandEnvelope = {
@@ -266,7 +288,13 @@ export type ResultReason =
   | 'unsaved_changes'
   | 'revision_conflict'
   | 'entity_unavailable'
-  | 'busy';
+  | 'busy'
+  // ADDITIVE (Spec C): remote policy and dialogs.
+  | 'user_typing'
+  | 'view_unavailable'
+  | 'unsupported_dialog'
+  | 'dialog_unavailable'
+  | 'not_rendered';
 
 export type Result = {
   status: ResultStatus;
@@ -278,7 +306,13 @@ export type Result = {
   choices?: PendingInteraction['choices'];
   /** ADDITIVE: present only on `workspace.inspect`. */
   inspection?: WorkspaceInspection;
+  /** ADDITIVE (Spec C): `workspace.dialogs.*` only. */
+  dialogId?: DialogId;
+  dialogState?: 'open' | 'closed';
 };
+
+/** What a dialog or view hook answers; the dispatcher adds the revision. */
+export type ExternalOutcome = Omit<Result, 'revision'>;
 
 /** The `workspace.inspect` row (§4): no draft or chat content. */
 export interface WorkspaceInspection {
@@ -326,6 +360,18 @@ export interface WorkspaceHooks {
   newId(): string;
   /** Open an entity as a tab on a person's behalf (the toast's Open action). */
   openEntity(kind: KindId, entityId: string): void;
+  /**
+   * ADDITIVE (Spec C). Open / dismiss a registered dialog; the app shell owns
+   * dialog state. Default: `dialog_unavailable`.
+   */
+  openDialog(dialogId: DialogId): ExternalOutcome;
+  closeDialog(dialogId: DialogId): ExternalOutcome;
+  /** ADDITIVE (Spec C). Switch the window's route to the Workspace. */
+  showWorkspace(): ExternalOutcome;
+  /** ADDITIVE (Spec C). The Workspace view is mounted in this window. */
+  viewMounted(): boolean;
+  /** ADDITIVE (Spec C). The human typed in an editable field within the last 2 s. */
+  userTyping(): boolean;
 }
 
 export interface EffectEvent {
