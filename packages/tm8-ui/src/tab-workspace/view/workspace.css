@@ -249,7 +249,7 @@
   flex-direction: column;
   gap: 12px;
 }
-/* D31 / R39: three clusters — status, tools, account — 12px apart. */
+/* D31 / R39: the tools face's clusters, 12px apart. */
 .tws-rail-cluster {
   display: flex;
   flex-direction: column;
@@ -257,6 +257,71 @@
 }
 .tws-rail-bottom {
   flex: none;
+  /* The three (Needs you · user · expand) sit as one cluster. */
+  gap: var(--pn-space-1);
+}
+/* The tools face (Subhang, 2026-10-07): the same column on the darker
+   --pn-paper band, so the swap reads at a glance; R34's paper-band hovers. */
+.tws-rail[data-rail-mode='tools'] {
+  background: var(--pn-paper);
+}
+.tws-rail[data-rail-mode='tools'] .tws-rail-btn:hover {
+  background: var(--pn-active);
+}
+.tws-rail[data-rail-mode='tools'] .tws-rail-btn:active {
+  background: var(--pn-line);
+}
+.tws-rail-switch[aria-pressed='true'] {
+  color: var(--pn-ink);
+}
+/* THE THREE wear discs (Subhang, 2026-10-07), so the bottom never reads as
+   more kinds: Needs you on the attention yellow, the viewer's avatar in a
+   ring, expand on a quiet hairline circle. 28px, centred in the 36px cell. */
+.tws-rail-disc {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--pn-line);
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+}
+.tws-rail-disc[data-disc='attention'] {
+  border-color: color-mix(in srgb, var(--pn-wait) 55%, transparent);
+  background: var(--pn-wait-soft);
+  color: var(--pn-wait);
+}
+.tws-rail-disc[data-disc='user'] {
+  overflow: hidden;
+  border: 0;
+  box-shadow: 0 0 0 2px var(--pn-surface), 0 0 0 3px var(--pn-line-2);
+}
+.tws-rail-disc[data-disc='user'] > :not(svg) {
+  /* The 32px avatar drawn at 28, as R12 draws the account trigger's. */
+  flex: none;
+  transform: scale(0.875);
+}
+.tws-rail-switch[aria-pressed='true'] .tws-rail-disc[data-disc='user'] {
+  box-shadow: 0 0 0 2px var(--pn-surface), 0 0 0 3px var(--pn-brand);
+}
+.tws-rail-bottom .tws-rail-btn:hover .tws-rail-disc {
+  border-color: var(--pn-line-2);
+}
+.tws-rail-bottom .tws-rail-btn:hover .tws-rail-disc[data-disc='attention'] {
+  border-color: var(--pn-wait);
+}
+/* Overflow hints: a list taller than the column fades the edge that has more. */
+.tws-rail-top[data-more-below] {
+  mask-image: linear-gradient(to bottom, black calc(100% - 32px), transparent);
+}
+.tws-rail-top[data-more-above] {
+  mask-image: linear-gradient(to top, black calc(100% - 32px), transparent);
+}
+.tws-rail-top[data-more-above][data-more-below] {
+  mask-image: linear-gradient(to bottom, transparent, black 32px, black calc(100% - 32px), transparent);
 }
 /* Hairlines: below Pinned and above the bottom group, 20px, centred on the
    icon column. */
@@ -304,10 +369,12 @@
 }
 /* R36 §4: current = a 3×20 brand bar flush to the rail's left edge plus a
    --pn-ink glyph, and NO fill (fills mean hover and pressed only). */
-.tws-rail-btn[aria-current='true'] {
+.tws-rail-btn[aria-current='true'],
+.tws-rail-btn[aria-current='page'] {
   color: var(--pn-ink);
 }
-.tws-rail-btn[aria-current='true']::before {
+.tws-rail-btn[aria-current='true']::before,
+.tws-rail-btn[aria-current='page']::before {
   content: '';
   position: absolute;
   left: -6px;
@@ -338,7 +405,8 @@
   /* Labels fade in once the width has settled. */
   animation: tws-label-in var(--pn-dur-fast) var(--pn-ease-out) var(--pn-dur-base) backwards;
 }
-.tws-rail-btn[aria-current='true'] .tws-rail-label {
+.tws-rail-btn[aria-current='true'] .tws-rail-label,
+.tws-rail-btn[aria-current='page'] .tws-rail-label {
   color: var(--pn-ink);
 }
 /* R42 live counts (Tasks, Stories, Sessions, Chats only). Collapsed: the §4

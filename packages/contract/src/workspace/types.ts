@@ -152,6 +152,11 @@ export interface RailPrefs {
   pins: string[];
   open: Record<string, boolean>;
   expanded: boolean;
+  /**
+   * ADDITIVE (rail fixes, 2026-10-07): kinds lifted to the top of the kind
+   * list, most recently unpinned first. Absent = none (the Home order).
+   */
+  lifted?: string[];
 }
 
 export const LAYOUT_BOUNDS = {
@@ -258,7 +263,7 @@ export type DialogId = (typeof DIALOG_IDS)[number];
 export type DialogsOpenArgs = { dialogId: DialogId };
 export type DialogsCloseArgs = { dialogId: DialogId };
 /** ADDITIVE (Spec D): patch the rail prefs; `open` merges per section. */
-export type RailSetArgs = { pins?: string[]; open?: Record<string, boolean>; expanded?: boolean };
+export type RailSetArgs = { pins?: string[]; open?: Record<string, boolean>; expanded?: boolean; lifted?: string[] };
 /** The Workspace route is the only target (coordinator ruling Q1). */
 export type ViewSetArgs = { view: 'tabs' };
 

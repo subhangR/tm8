@@ -232,6 +232,9 @@ export function sanitizeWorkspaceState(raw: unknown, spaceId: string): Workspace
               ? Object.fromEntries(Object.entries(railRaw.open).filter(([, v]) => typeof v === 'boolean').slice(0, 64)) as Record<string, boolean>
               : {},
             expanded: railRaw.expanded === true,
+            ...(Array.isArray(railRaw.lifted)
+              ? { lifted: [...new Set(railRaw.lifted.filter((p): p is string => str(p, 64)))].slice(0, 32) }
+              : {}),
           },
         }
       : {}),

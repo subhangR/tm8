@@ -129,7 +129,12 @@ export function RailAttention({ expanded }: { expanded: boolean }) {
     <RailPopoverButton
       label="Needs you"
       tip={tip}
-      icon={<VectorIcon paths={RAIL_BELL_ART} size={18} />}
+      icon={
+        /* The attention yellow (--pn-wait) disc, as every attention surface draws it. */
+        <span className="tws-rail-disc" data-disc="attention">
+          <VectorIcon paths={RAIL_BELL_ART} size={16} />
+        </span>
+      }
       mark={
         !failed && !loading && counts.mine > 0 ? (
           <span className="tws-rail-badge" data-testid="tws-rail-attention-count">
