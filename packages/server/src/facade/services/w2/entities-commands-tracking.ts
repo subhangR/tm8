@@ -1859,7 +1859,9 @@ export class W2EntitiesCommandsTrackingService {
           JSON.stringify(acceptanceCriteria({ acceptanceCriteria: merged }, envelope.actorId ?? null)),
           null, null, false, null, false,
           envelope.clientMutationId ?? null]);
-        const receipt = before ? await buildReceipt(q, 'task.tick', raw, { before }) : undefined;
+        const receipt = before
+          ? await buildReceipt(q, 'task.tick', raw, { before, actorId: envelope.actorId ?? null })
+          : undefined;
         return receipt ?? commandResult(q, raw, owner.identityId);
       });
     } catch (error) {
