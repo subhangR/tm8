@@ -1,6 +1,7 @@
 import { McpPicker } from '../mcp/McpPicker';
 import type { McpSelection } from '../mcp/port';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type {
   ContextBudgets,
   CredentialsServiceKeysStatusView,
@@ -54,6 +55,7 @@ import { addToEdits, buildStrip, STRIP_KINDS, stripKindOf, type StripJev, type S
 import { clearDraft, readDraft, writeDraft } from './launch-draft';
 import { describePicks, readPicks, readRemember, writePicks, writeRemember, type RememberedPicks } from './launch-picks';
 import { useLaunchComposerState } from './useLaunchComposerState';
+import { useOverlayHost } from '../kit/useOverlayHost';
 /* The popup mounts WITHOUT the screen, so it carries the stylesheets itself —
    the same mounting-styles-it rule the screen's import states. */
 import './new-session.css';
@@ -236,6 +238,7 @@ export function LaunchComposerPopup({
   jevKeyStatus,
   sessionsSince,
 }: LaunchComposerPopupProps) {
+  const overlay = useOverlayHost();
   /* The panels' option shapes, adapted ONCE into the composer's vocabulary.
      Absent facts stay absent — no invented owner, no invented path. */
   const teammateRows = useMemo<readonly LaunchTeammate[]>(
@@ -891,7 +894,11 @@ export function LaunchComposerPopup({
 
   const heading = `${verbLabel ?? 'Run'} configuration`;
 
-  return (
+  /* Portalled out of the trigger's subtree so the scrim covers the whole
+     shell — see `useOverlayHost`. */
+  if (!overlay.host) return <span ref={overlay.marker} hidden />;
+
+  return createPortal(
     <div className="nsx-popup nsx-popup--card" role="dialog" aria-modal="true" aria-label={heading} data-testid="launch-quick-config">
       {/* The scrim IS the outside: any click on it is a click away. */}
       <div className="nsx-popup__scrim" onClick={onDismiss} aria-hidden="true" />
@@ -993,7 +1000,8 @@ export function LaunchComposerPopup({
         jevModel={jevModel}
         jevTeammate={jevTeammate}
       />
-    </div>
+    </div>,
+    overlay.host,
   );
 }
 
