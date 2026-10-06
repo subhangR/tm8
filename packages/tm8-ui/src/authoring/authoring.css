@@ -100,6 +100,12 @@
   padding: 2px 7px;
 }
 
+/* The unavailable Save's hook for the action strip (content.css); no box of
+   its own, so every other bar lays the refusal out as before. */
+.cv2-root .au-unavailable {
+  display: contents;
+}
+
 /* --------------------------------------------------------------------------
    Cancel / Save — T5-6 "Teammate authoring", action row.
    -------------------------------------------------------------------------- */
