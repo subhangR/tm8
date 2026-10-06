@@ -80,9 +80,29 @@
   padding-left: var(--pn-space-6);
   padding-right: var(--pn-space-6);
 }
-/* R16: the terminal host spans the content width with the head's 24px inset. */
-.cv2-root .tws-panel > .pn-panel[data-embedded-flow='fill'] .pn-terminal-stage {
-  padding: 0 var(--pn-space-6);
+/* The terminal fills the content column edge to edge (Subhang, round 3;
+   overrides R16's 24px). Everything around and behind the grid — the tools
+   row, any leftover beside a view-only grid drawn at the agent's PTY width —
+   is the terminal's own background, so there is no lighter strip or frame.
+   The grid stays left-aligned; its glyphs get a 4px inset on the `.xterm`
+   element, which FitAddon subtracts, so a drivable session still fits. */
+.cv2-root .tws-panel > .pn-panel[data-archetype='terminal'] {
+  background: var(--pn-x-term-bg);
+}
+.cv2-root .tws-panel > .pn-panel[data-archetype='terminal'] .pn-terminal-stage {
+  padding: 0;
+  background: var(--pn-x-term-bg);
+}
+.cv2-root .tws-panel > .pn-panel[data-archetype='terminal'] .term-host .xterm {
+  padding: 0 var(--pn-space-1);
+}
+.cv2-root .tws-panel > .pn-panel[data-archetype='terminal'][data-embedded-flow='fill'] .pn-embedded-head {
+  padding-left: var(--pn-space-3);
+  padding-right: var(--pn-space-3);
+}
+.cv2-root .tws-panel > .pn-panel[data-archetype='terminal'][data-embedded-flow='fill'] .pn-embedded-head__tools {
+  /* Stats end 16px before the group (group 12px in; this head pads 12). */
+  padding-right: calc(var(--tws-fg-w, 0px) + var(--pn-space-4));
 }
 
 /* A body that owns its height (terminal, chat, frame) keeps its own scroll
