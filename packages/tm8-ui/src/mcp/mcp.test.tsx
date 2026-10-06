@@ -43,14 +43,32 @@ describe('native MCP picker', () => {
     const data = catalog(); data.canAttach = false; const port = fixture(data); render(<Picker port={port} />);
     await waitFor(() => expect(port.catalog).toHaveBeenCalled()); expect(screen.queryByRole('checkbox')).toBeNull();
   });
-  it('blocks unresolved defaults and allows disabling them', async () => {
-    const data = catalog(); data.defaults = [{ serverId: 'server' }]; const onReady = vi.fn(); render(<Picker port={fixture(data)} onReady={onReady} />);
-    await screen.findByRole('combobox'); expect(onReady).toHaveBeenLastCalledWith(false);
-    fireEvent.click(screen.getByRole('button', { name: 'None' })); expect(onReady).toHaveBeenLastCalledWith(true);
+  it('leaves an unresolved default off instead of blocking the launch', async () => {
+    const data = catalog(); data.defaults = [{ serverId: 'server' }]; const onReady = vi.fn(), onChange = vi.fn();
+    render(<Picker port={fixture(data)} onReady={onReady} onChange={onChange} />);
+    expect((await screen.findByRole('checkbox', { name: /Calendar/ }) as HTMLInputElement).checked).toBe(false);
+    expect(onChange).toHaveBeenLastCalledWith([]); expect(onReady).toHaveBeenLastCalledWith(true);
+    expect(screen.getByRole('button', { name: 'Use defaults' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.queryByRole('alert')).toBeNull();
   });
-  it('does not expose an upstream secret-bearing error', async () => {
-    const port = fixture(); port.catalog = vi.fn().mockRejectedValue(new Error('token=secret-value')); render(<Picker port={port} />);
-    await screen.findByRole('alert'); expect(document.body.textContent).not.toContain('secret-value');
+  it('keeps usable defaults and drops only the unconnected one', async () => {
+    const data = catalog(); data.servers.push({ ...data.servers[0]!, id: 'open', title: 'Docs', auth: 'none', accounts: [] });
+    data.defaults = [{ serverId: 'server' }, { serverId: 'open' }]; const onChange = vi.fn(), onReady = vi.fn();
+    render(<Picker port={fixture(data)} onReady={onReady} onChange={onChange} />);
+    await waitFor(() => expect(onChange).toHaveBeenLastCalledWith([{ serverId: 'open' }])); expect(onReady).toHaveBeenLastCalledWith(true);
+  });
+  it('renders nothing and stays ready when no connectors are registered', async () => {
+    const data = catalog(); data.servers = []; const port = fixture(data), onReady = vi.fn(); render(<Picker port={port} onReady={onReady} />);
+    await waitFor(() => expect(onReady).toHaveBeenLastCalledWith(true));
+    expect(document.body.textContent).toBe(''); expect(screen.queryByRole('group')).toBeNull();
+  });
+  it('does not show a loading placeholder', async () => {
+    const port = fixture(); port.catalog = vi.fn(() => new Promise<McpCatalog>(() => {})); render(<Picker port={port} />);
+    await waitFor(() => expect(port.catalog).toHaveBeenCalled()); expect(document.body.textContent).toBe('');
+  });
+  it('does not expose an upstream secret-bearing error or block the launch on it', async () => {
+    const port = fixture(); port.catalog = vi.fn().mockRejectedValue(new Error('token=secret-value')); const onReady = vi.fn(); render(<Picker port={port} onReady={onReady} />);
+    await screen.findByRole('alert'); expect(document.body.textContent).not.toContain('secret-value'); expect(onReady).toHaveBeenLastCalledWith(true);
   });
 });
 describe('native MCP management', () => {
@@ -92,12 +110,17 @@ describe('native MCP management', () => {
 });
 
 describe('MCP readiness and recovery', () => {
-  it('blocks a revoked explicitly selected default account', async () => {
+  it('drops a revoked default account instead of blocking the launch', async () => {
     const data = catalog(); data.defaults = [{serverId:'server',credentialId:'account'}];
     data.servers[0]!.accounts[0]!.status='revoked'; data.servers[0]!.accounts[0]!.canUse=false;
-    const onReady=vi.fn(); render(<Picker port={fixture(data)} onReady={onReady}/>);
-    await screen.findByRole('alert'); expect(onReady).toHaveBeenLastCalledWith(false);
+    const onReady=vi.fn(), onChange=vi.fn(); render(<Picker port={fixture(data)} onReady={onReady} onChange={onChange}/>);
+    await screen.findByRole('link',{name:'Connect Calendar'}); expect(onChange).toHaveBeenLastCalledWith([]); expect(onReady).toHaveBeenLastCalledWith(true);
     expect(screen.queryByRole('option',{name:'Work account'})).toBeNull();
+  });
+  it('still blocks an explicitly ticked connector until an account is chosen', async () => {
+    const onReady = vi.fn(); render(<Picker port={fixture()} onReady={onReady} />);
+    fireEvent.click(await screen.findByRole('checkbox', { name: /Calendar/ }));
+    expect(onReady).toHaveBeenLastCalledWith(false); expect(screen.getByRole('alert').textContent).toBe('Choose a connected account.');
   });
   it('preserves sharing selection and offers the named member after loading', async () => {
     const port=fixture(); render(<McpProvider port={port}><McpSettings/></McpProvider>);
