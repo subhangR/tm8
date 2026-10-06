@@ -12,7 +12,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNod
 import type { EntitySummary } from '@tm8/contract';
 import { KindIcon } from '../../domain';
 import { getKindAdapter } from '../adapters/registry';
-import { isWorkspaceKind, WORKSPACE_KINDS, type KindId, type TabId, type TabScope } from '../runtime/types';
+import { WORKSPACE_KINDS, type KindId, type TabId, type TabScope } from '../runtime/types';
 import { scopeKey } from '../runtime/selectors';
 import { useWorkspace, useWorkspaceState } from './context';
 import './creation.css';
@@ -28,9 +28,10 @@ export interface ChooserProps {
 const RECENT_LIMIT = 8;
 const RESULT_LIMIT = 12;
 
+/** The in-scope kinds, always in D7 order. */
 function inScopeKinds(scope: TabScope): KindId[] {
   if (scope.mode === 'mixed') return [...WORKSPACE_KINDS];
-  return scope.selectedTypeIds.filter(isWorkspaceKind);
+  return WORKSPACE_KINDS.filter((kind) => scope.selectedTypeIds.includes(kind));
 }
 
 function placeholderFor(scope: TabScope, kinds: readonly KindId[]): string {
@@ -174,7 +175,7 @@ export function Chooser({ tabId, variant, restoreSlot }: ChooserProps) {
                 data-testid={`tws-chooser-new-${adapter.kind}`}
               >
                 <KindIcon kind={adapter.kind} size={14} />
-                {`New ${adapter.noun.toLowerCase()}`}
+                <span className="tws-pick-new-label">{`New ${adapter.noun.toLowerCase()}`}</span>
               </button>
             ))}
           </div>

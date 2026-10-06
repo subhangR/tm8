@@ -17,14 +17,67 @@
   border-radius: var(--pn-r-md);
   box-shadow: var(--pn-sh-sm);
 }
-.tws-banner--inline {
-  grid-area: auto;
-  align-self: stretch;
-  justify-self: stretch;
-  z-index: auto;
+/* R10: the restore offer is a borderless strip inline in the start surface,
+   16px under the heading and 16px over the search. */
+.tws-restore {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--pn-space-4);
   margin-top: var(--pn-space-4);
-  max-width: none;
-  box-shadow: none;
+  padding: var(--pn-space-3) var(--pn-space-4);
+  background: var(--pn-surface);
+  border-radius: var(--pn-r-md);
+}
+.tws-restore-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-2);
+}
+.tws-restore-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+}
+.tws-restore-primary,
+.tws-restore-later {
+  position: relative;
+  height: 32px;
+  padding: 0 var(--pn-space-3);
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  font: inherit;
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+  cursor: pointer;
+}
+/* 32 visible inside a 36 hit box. */
+.tws-restore-primary::before,
+.tws-restore-later::before {
+  content: '';
+  position: absolute;
+  inset: -2px 0;
+}
+.tws-restore-primary {
+  background: var(--pn-ink);
+  color: var(--pn-paper);
+}
+.tws-restore-primary:hover {
+  background: var(--pn-x-btn-ink-hover, var(--pn-ink));
+}
+.tws-restore-later {
+  padding: 0 var(--pn-space-2);
+  background: none;
+  color: var(--pn-ink-3);
+}
+.tws-restore-later:hover {
+  color: var(--pn-ink-2);
+}
+.tws-restore-primary:focus-visible,
+.tws-restore-later:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
 }
 .tws-banner-text {
   flex: 1 1 auto;

@@ -40,6 +40,7 @@ import { createFileUploadTask, safeUploadReason } from '../../files/upload';
 import { NewSessionScreen } from '../../new-session';
 import { HeaderFields } from '../../panels/detail/HeaderSection';
 import { SkillCreateControl } from '../../skills/SkillCreateControl';
+import { onDraftFocusRequest } from '../runtime/draftFocus';
 import type { DraftTabRecord, KindId } from '../runtime/types';
 import { useWorkspace } from '../view/context';
 import { getKindAdapter } from './registry';
@@ -143,9 +144,27 @@ export function DraftHost({ tab }: { tab: DraftTabRecord }) {
     [runtime, tabId, exists],
   );
 
+  // Spec A §16: opening a draft focuses its first field. A fresh mount does
+  // that in the body; a `drafts.open` that REUSES this mounted draft (+ New on
+  // an untouched one) gets no remount, so focus it here.
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  useEffect(
+    () =>
+      onDraftFocusRequest((requested) => {
+        if (requested !== tabId) return;
+        const host = hostRef.current;
+        if (!host) return;
+        const field =
+          host.querySelector<HTMLElement>('input:not([type="hidden"]):not(:disabled), textarea:not(:disabled), select:not(:disabled), [contenteditable="true"]') ??
+          host.querySelector<HTMLElement>('button:not(:disabled)');
+        field?.focus();
+      }),
+    [tabId],
+  );
+
   const Body = adapter.draftBody ?? GenericDraftBody;
   return (
-    <div className="tws-draft" data-testid="tws-draft-host" data-kind={kind}>
+    <div ref={hostRef} className="tws-draft" data-testid="tws-draft-host" data-kind={kind}>
       <Body
         tab={tab}
         values={values}
