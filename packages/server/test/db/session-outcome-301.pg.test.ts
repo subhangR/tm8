@@ -435,14 +435,40 @@ describe('299 — a completed session is final', () => {
     expect(active(await claims({ dst: other }))).toHaveLength(0);
   });
 
-  it('resume of a completed session is refused (follow-up instead)', async () => {
-    const t = await createTask('no-resume');
+  it('Q2 = B: resume reopens a completed session — open again, logged with the receipt it had', async () => {
+    const t = await createTask('reopen');
+    const s = await running([t]);
+    await setWork(t, 'in_review', { asSession: s });
+    const receipt = await post(t, 'close-out', s);
+    await complete(s, null, s);
+    await transition(s, 'exited', 'exited_clean');
+    await resume(s);
+    expect(await session(s)).toMatchObject({ outcome: 'open', status: 'spawning', category: 'to_do', receipt_message_id: null });
+    const logged = await database.query<{ summary: Record<string, unknown> }>(
+      `select summary from public.activity where entity_id=$1 and summary->>'action'='resumed'`,
+      [s],
+    );
+    expect(logged[0]!.summary).toMatchObject({ reopened: true, fromOutcome: 'completed', priorReceiptMessageId: receipt });
+    // Reopened, it may claim work again.
+    const next = await createTask('reopen-next');
+    await transition(s, 'running');
+    await setWork(next, 'working', { claim: true, asSession: s });
+    expect(active(await claims({ src: s })).map((c) => c.dst_id)).toEqual([next]);
+  });
+
+  it('only resume reopens: a direct outcome write on a completed row is refused', async () => {
+    const t = await createTask('final');
     const s = await running([t]);
     await setWork(t, 'in_review', { asSession: s });
     await post(t, 'close-out', s);
     await complete(s, null, s);
-    await transition(s, 'exited', 'exited_clean');
-    expect((await refusal(resume(s))).reason).toBe('session_completed');
+    const r = await refusal(
+      database.transaction(async (c) => {
+        await c.query(`select set_config('tm8.work_session_outcome','on',true)`);
+        await c.query(`update public.work_sessions set outcome='open', outcome_at=null, outcome_source=null, receipt_message_id=null where entity_id=$1`, [s]);
+      }),
+    );
+    expect(r.reason).toBe('session_completed');
   });
 });
 

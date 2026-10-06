@@ -2800,7 +2800,7 @@ const ROWS: Record<OperationName, Row> = {
       'every claim must be done, in_review, blocked, or released with `tm8 task release --note`; otherwise invariant_violation / claims_open lists them',
       'the receipt is --receipt, or the latest message the session wrote on its anchor; none → receipt_required',
       'remaining in_review/blocked claims end with session_completed and the receipt as their hand-off',
-      'completed is final: the session cannot claim new work (session_completed) or be resumed — start a follow-up session',
+      'a completed session cannot claim new work (session_completed); `tm8 session resume` reopens it (logged), or start a follow-up session',
       'the process keeps running unless --close-process',
     ],
     examples: [

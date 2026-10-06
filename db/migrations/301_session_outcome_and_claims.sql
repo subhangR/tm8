@@ -16,7 +16,8 @@
 --
 --   outcome  open -> completed | stopped, set by `session complete` (with a
 --            receipt and the claim check) or by an operator's Stop. Once
---            completed it is final; stopped -> open only through resume.
+--            completed it is final except through an explicit, logged
+--            resume (owner ruling Q2 = B); stopped -> open also only through resume.
 --            SINGLE WRITER: the functions in this file (tm8.work_session_outcome).
 --   process  `status` + `ended_kind`, unchanged in meaning, still written only by
 --            `work_session_transition` / `execution_resume`. NO process event
@@ -572,8 +573,11 @@ begin
     raise exception 'work_session.outcome has a single writer: session complete / stop / resume'
       using errcode = '23514', detail = 'Spec D1 §3: process events never write the outcome';
   end if;
-  if old.outcome = 'completed' and new.outcome <> 'completed' then
-    raise exception 'a completed session cannot be reopened'
+  -- Q2 (owner, 6 Oct): a completed session reopens only through resume, which
+  -- says so with tm8.work_session_reopen. Every other writer keeps it final.
+  if old.outcome = 'completed' and new.outcome <> 'completed'
+     and coalesce(internal.claim_text('tm8.work_session_reopen'), '') <> 'on' then
+    raise exception 'a completed session reopens only through session resume'
       using errcode = '23514', detail = '{"reason":"session_completed"}';
   end if;
   return new;
@@ -982,7 +986,8 @@ $$;
 
 -- The row tick (`entities.commands.complete` on a session) IS session complete
 -- now: it needs the receipt and passes the claim check, and it is no longer a
--- toggle — a completed session cannot be un-ticked (Q2 A).
+-- toggle — a completed session cannot be un-ticked; reopening is the explicit,
+-- logged `session resume` (Q2 = B).
 create or replace function public.set_session_done(
   p_entity_id uuid, p_expected_version integer,
   p_actor_id uuid default null, p_client_mutation_id text default null)
@@ -1004,7 +1009,7 @@ begin
   perform internal.assert_version(p_entity_id, p_expected_version);
   select * into ws from public.work_sessions where entity_id = p_entity_id;
   if ws.outcome = 'completed' then
-    raise exception 'a completed session cannot be reopened; start a follow-up session'
+    raise exception 'a completed session is not un-ticked; reopen it with session resume, or start a follow-up session'
       using errcode = '23514', detail = '{"reason":"session_completed"}';
   end if;
   res := internal.complete_work_session_core(p_entity_id, null, actor);
@@ -1125,6 +1130,7 @@ declare
   member_id uuid;
   current_status text;
   current_outcome text;
+  prior_receipt uuid;
 begin
   perform internal.require_replay_principal(p_client_mutation_id);
   replay := internal.ledger_replay(p_client_mutation_id, 'execution.resume');
@@ -1148,13 +1154,8 @@ begin
     raise exception 'not permitted to resume this persona' using errcode = '42501';
   end if;
 
-  select status, outcome into current_status, current_outcome
+  select status, outcome, receipt_message_id into current_status, current_outcome, prior_receipt
     from public.work_sessions where entity_id = p_session_id for update;
-  -- 299 (spec §3 rule 5, Q2 A): one session is one piece of work with one receipt.
-  if current_outcome = 'completed' then
-    raise exception 'a completed session cannot be resumed; start a follow-up session'
-      using errcode = '23514', detail = '{"reason":"session_completed"}';
-  end if;
   if current_status not in ('exited', 'failed') then
     raise exception 'work session is not resumable from status %', current_status
       using errcode = '23514';
@@ -1166,13 +1167,17 @@ begin
                                   'live', internal.live_work_session_count(null))::text;
   end if;
 
-  -- 299: resume reopens stopped work. The activity row below records it.
-  if current_outcome = 'stopped' then
+  -- 301: resume reopens stopped work, and (owner ruling Q2 = B) completed
+  -- work too — an explicit, logged reopen. The activity row below records the
+  -- outcome it reopened from and the receipt that completion had recorded.
+  if current_outcome in ('stopped', 'completed') then
     perform set_config('tm8.work_session_outcome', 'on', true);
+    perform set_config('tm8.work_session_reopen', 'on', true);
     update public.work_sessions
        set outcome = 'open', outcome_at = null, outcome_by = null,
-           outcome_source = null, outcome_note = null
+           receipt_message_id = null, outcome_source = null, outcome_note = null
      where entity_id = p_session_id;
+    perform set_config('tm8.work_session_reopen', 'off', true);
     perform set_config('tm8.work_session_outcome', 'off', true);
   end if;
 
@@ -1193,7 +1198,8 @@ begin
                jsonb_build_object('kind', 'work_session', 'action', 'resumed',
                                   'fromStatus', current_status,
                                   'fromOutcome', current_outcome,
-                                  'reopened', current_outcome = 'stopped')),
+                                  'reopened', current_outcome in ('stopped', 'completed'),
+                                  'priorReceiptMessageId', prior_receipt)),
              array[p_session_id])) || jsonb_build_object('__tm8_replayed', false);
 end
 $$;
