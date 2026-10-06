@@ -95,9 +95,10 @@ import {
   type CredentialHandlerDeps,
 } from './handlers/w2/credentials.js';
 import { registerSpaceLinkHandlers, type SpaceLinkHandlerDeps } from './handlers/w2/space-links.js';
+import type { RemoteSpaceLinkRoute } from './handlers/w2/space-link-remote-route.js';
 import { registerServerHandlers } from './handlers/w2/servers.js';
 import { registerOpRequestHandlers } from './handlers/w2/op-requests.js';
-import { DisabledRemoteInvokeForwarder } from '../remote/forwarder.js';
+import { DisabledRemoteInvokeForwarder, type RemoteInvokeForwarder } from '../remote/forwarder.js';
 import { registerVoiceHandlers } from './handlers/voice.js';
 import { registerChatHandlers, type ChatHandlerDeps } from '../chat/handlers.js';
 
@@ -167,6 +168,14 @@ export interface RegisterFacadeHandlersDeps {
    * is not mounted (no key to seal a stored session with).
    */
   readonly spaceLinks?: SpaceLinkHandlerDeps;
+  /**
+   * W9c: the forwarder for links whose target is on another server. The
+   * composition root passes `HttpsRemoteInvokeForwarder` only while
+   * `TM8_REMOTE_SPACE_LINKS` is on; absent, `DisabledRemoteInvokeForwarder`.
+   */
+  readonly remoteInvokeForwarder?: RemoteInvokeForwarder;
+  /** W9c: receives the target-side `/link/v1/*` route for the HTTP server to mount. */
+  readonly onRemoteSpaceLinkRoute?: (route: RemoteSpaceLinkRoute) => void;
   /** TM8 Chat runtime composition; absent mounts a narrowed 503 degraded mode. */
   readonly chat?: ChatHandlerDeps;
   /**
@@ -206,7 +215,7 @@ export function registerFacadeHandlers(
     db: deps.db,
     config: deps.config,
     owner: deps.owner ?? createLoopbackOwnerResolver(deps.db),
-    remoteInvokeForwarder: new DisabledRemoteInvokeForwarder(),
+    remoteInvokeForwarder: deps.remoteInvokeForwarder ?? new DisabledRemoteInvokeForwarder(),
   };
 
   /**
@@ -357,7 +366,10 @@ export function registerFacadeHandlers(
   if (deps.credentials) registerCredentialHandlers(registry, facade, deps.credentials);
 
   // W6 space links: the writes are human-only inside the registration (and in SQL).
-  const spaceLinks = deps.spaceLinks ?? (deps.credentials ? { dataDir: deps.credentials.dataDir } : undefined);
+  const spaceLinksBase = deps.spaceLinks ?? (deps.credentials ? { dataDir: deps.credentials.dataDir } : undefined);
+  const spaceLinks = spaceLinksBase && deps.onRemoteSpaceLinkRoute
+    ? { ...spaceLinksBase, remote: { ...spaceLinksBase.remote, onRoute: deps.onRemoteSpaceLinkRoute } }
+    : spaceLinksBase;
   if (spaceLinks) registerSpaceLinkHandlers(registry, facade, spaceLinks);
   // W8 servers: the same node-key root; add/adopt/remove are human-only inside.
   if (spaceLinks) registerServerHandlers(registry, facade, { dataDir: spaceLinks.dataDir });

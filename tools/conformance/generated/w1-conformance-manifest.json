@@ -1,16 +1,16 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:cfa2803c0e73daf34df20824350b68be45dba26d2e8dbadfdb61a35b08076bc5",
+  "catalogDigest": "sha256:a7f5666db1b7986c492ab05e55f4242a1bcc1316e90898f2fa9a90b4080b5154",
   "catalog": {
-    "total": 341,
-    "v1": 339,
+    "total": 342,
+    "v1": 340,
     "reserved": 2,
-    "http": 339,
+    "http": 340,
     "ws": 1,
-    "registerableV1Http": 337,
+    "registerableV1Http": 338,
     "methods": {
       "GET": 111,
-      "POST": 167,
+      "POST": 168,
       "PATCH": 19,
       "DELETE": 22,
       "PUT": 20,
@@ -18,11 +18,11 @@
     },
     "kinds": {
       "read": 117,
-      "command": 222,
+      "command": 223,
       "stream": 2
     },
-    "uniqueNames": 341,
-    "uniqueBindings": 340
+    "uniqueNames": 342,
+    "uniqueBindings": 341
   },
   "reservedOperations": [
     "search.query",
@@ -659,6 +659,13 @@
         "operation": "spaceLinks.inbound.restore",
         "method": "POST",
         "path": "/v2/spaces/:spaceId/space-links/inbound/:linkId/restore",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaceLinks.inbound.grant",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/space-links/inbound/grant",
         "status": "registered",
         "source": "server-router"
       },
@@ -2791,7 +2798,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 309
+    "unimplementedV1Http": 310
   },
   "schemas": {
     "additive": {
@@ -4061,6 +4068,24 @@
           "links",
           "inbound",
           "restore"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaceLinks.inbound.grant",
+        "noun": "space-link",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaceLinks.inbound.grant",
+        "intentTags": [
+          "space",
+          "links",
+          "inbound",
+          "grant"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

@@ -951,7 +951,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'spaceLinks.add': {
     cmd: ['link', 'add'],
-    syn: 'tm8 link add <target-space-id> [--alias <alias>] [--mutation-id <id>]',
+    syn: 'tm8 link add <target-space-id> [--alias <alias>] [--target-server <server-id|name>] [--mutation-id <id>]',
     sum: 'Link another Space you are a Member of to this one — human sessions only',
     authz: 'space',
     input: 'bound',
@@ -961,7 +961,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'spaceLinks.login': {
     cmd: ['link', 'login'],
-    syn: 'tm8 link login <alias|link-id> [--mutation-id <id>]',
+    syn: 'tm8 link login <alias|link-id> [--pairing-code <code>] [--mutation-id <id>]',
     sum: 'Sign in to a linked Space: store your own 90-day session for it, sealed — human sessions only',
     authz: 'server',
     input: 'bound',
@@ -970,6 +970,7 @@ const ROWS: Record<OperationName, Row> = {
     notes: [
       'agents you launch may use it; nobody else can, and no response carries it',
       'an agent is refused by the Server; it asks its human to run this',
+      'a link to another server (W9c) signs in with --pairing-code: the code `tm8 link grant` printed there',
     ],
   },
   'spaceLinks.relogin': {
@@ -1020,6 +1021,7 @@ const ROWS: Record<OperationName, Row> = {
       'the CLI sends it for you: from a session, `--space <alias|space-id>` naming another Space routes every call of that command through it, and nothing else reaches the target',
       'the refused set is SPACE_LINK_REFUSED in @tm8/contract, prefix-matched plus exact entries (voice.token.create) on the exact catalog name, on the home server before anything is forwarded',
       'every call writes one audit row in the home Space; read it with spaceLinks.audit',
+      'a session you spawned through the link stays yours to follow: `tm8 --space <alias> session transcript|journal <child-id>` reads it and `tm8 --space <alias> message send --to <child-id>` talks to it; every other session\'s body is refused (session_body)',
     ],
   },
   'spaceLinks.audit': {
@@ -1075,6 +1077,21 @@ const ROWS: Record<OperationName, Row> = {
     side: 'durable',
     tags: ['link', 'inbound', 'restore', 'cross-space', 'admin'],
     notes: ['an agent is refused by the Server; it asks its human to run this'],
+  },
+  // W9c (301): the target side of a link from ANOTHER server.
+  'spaceLinks.inbound.grant': {
+    cmd: ['link', 'grant'],
+    syn: 'tm8 link grant <home-space-id> [--label <name>] [--allow-spawn] [--mutation-id <id>]',
+    sum: 'Let a Space on another server act in this Space as you through a space link; prints a one-time pairing code for that server\'s `tm8 link login` — human sessions only',
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['link', 'inbound', 'grant', 'remote', 'cross-space', 'server'],
+    notes: [
+      'needs TM8_REMOTE_SPACE_LINKS on, on this server and the home server; off, it is refused',
+      'the code is single use and expires in 10 minutes; only its hash is stored here',
+      'spawning through the link needs --allow-spawn here AND the home row\'s own spawn switch',
+    ],
   },
   'entities.refs.add': {
     cmd: ['entity', 'ref', 'add'],
@@ -2786,6 +2803,7 @@ const ROWS: Record<OperationName, Row> = {
       'token counts are BYTE-DERIVED ESTIMATES of text crossing the CLI boundary, not the model provider’s reported usage, and never the session’s token spend',
       'character counts are exact; the estimate is derived from them by the named estimator',
       'a session spawned before this feature, or one launched without journaling, answers `available: false` rather than an empty journal',
+      'through a space link (`--space <alias>` from a session) only a session that link spawned as you is readable; any other answers `space_link_refused` (session_body)',
     ],
   },
   'execution.launch': {
@@ -2913,6 +2931,7 @@ const ROWS: Record<OperationName, Row> = {
       'tool ARGUMENTS and tool OUTPUT are never returned — only that a tool was called and its name — because tool bodies are where file contents and secrets travel',
       'a session whose agent has not written a transcript yet answers `available: false` with a reason, never an empty conversation',
       '`stuck` is a HEURISTIC over tool calls without prose, not a liveness signal; `session liveness` is the authority on whether anything is running',
+      'through a space link (`--space <alias>` from a session) only a session that link spawned as you is readable; any other answers `space_link_refused` (session_body)',
     ],
   },
   'execution.liveness': {
@@ -4017,7 +4036,8 @@ export const CATALOG_DIGEST =
   // Re-measured (L5, 280): +5 opRequests.* — read from the regenerated conformance manifest.
   // Re-measured (styles, 284): +15 styles.*, identity.stylePrefs.get|set, spaces.styleDefault.get|set. RECOMPUTED from JSON.stringify(OPERATIONS).
   // Re-measured (main sync: cross-space + styles).
-  'sha256:cfa2803c0e73daf34df20824350b68be45dba26d2e8dbadfdb61a35b08076bc5';
+  // +1 spaceLinks.inbound.grant (W9c, 301): read from the regenerated conformance manifest.
+  'sha256:a7f5666db1b7986c492ab05e55f4242a1bcc1316e90898f2fa9a90b4080b5154';
 
 export const GRAMMAR_VERSION = '2';
 

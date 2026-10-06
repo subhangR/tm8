@@ -208,3 +208,14 @@ it('chat about-task defaults honor omission and a new sender cannot inherit the 
  await bindings.bind(auth,{...input,resume:false,mcpSelections:[]});
  expect(await bindings.bind({...auth,identityId:otherIdentity},input)).toEqual([]);
 });
+
+it('a session started through a space link launches with no MCP servers; naming one is refused, and nothing is bound',async()=>{
+ // W9c found every link spawn (local and remote) refused here before the
+ // spawn itself: the link-bound launcher now gets [] instead.
+ const r=await runtime();
+ const linkAuth:DbClaims={...auth,authKind:'link',viaLinkId:randomUUID()};
+ await expect(bindings.bind(linkAuth,{sessionId:r.sessionId,spaceId:space,teamMemberId:teammate,agentToken:r.token})).resolves.toEqual([]);
+ await expect(bindings.bind(linkAuth,{sessionId:r.sessionId,spaceId:space,teamMemberId:teammate,agentToken:r.token,mcpSelections:[{serverId:server}]}))
+  .rejects.toThrow(/space link/);
+ await expect(bindings.authorize({...linkAuth,authSessionId:r.authSessionId},r.sessionId,server)).rejects.toThrow();
+});

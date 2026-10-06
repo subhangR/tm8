@@ -121,6 +121,11 @@ const STRICT_GATE_CALLERS: Readonly<Record<string, string>> = {
   'set_space_link_spawn(uuid,boolean,integer,text)': SPACE_LINKS,
   'space_link_seal_context(uuid)': SPACE_LINKS,
   'store_space_link_session(uuid,uuid,text,timestamp with time zone,bytea,bytea,text,text)': SPACE_LINKS,
+  // W9c (301): the remote link's writes (home: add, context, store; target: grant), human-only.
+  'add_remote_space_link(uuid,uuid,uuid,text,text)': SPACE_LINKS,
+  'grant_remote_space_link(uuid,uuid,text,boolean,text,timestamp with time zone)': SPACE_LINKS,
+  'remote_space_link_context(uuid)': SPACE_LINKS,
+  'store_remote_space_link_session(uuid,uuid,timestamp with time zone,bytea,bytea,text,text)': SPACE_LINKS,
 
   // W5 (268): the admin toggle/reset/lock all run this helper first; redeem
   // gates only its space-password branch; the enter lookup is a gate-session read.
@@ -130,11 +135,10 @@ const STRICT_GATE_CALLERS: Readonly<Record<string, string>> = {
 
   'add_server(uuid,text,text,text,text)': SERVERS,
   'adopt_server_connection(uuid,text,text)': SERVERS,
-  'open_server_gate_token(uuid)': SERVERS,
   'remove_server(uuid,text)': SERVERS,
   'server_gate_seal_context(uuid)': SERVERS,
   'sign_out_server(uuid,text)': SERVERS,
-  'store_server_gate_token(uuid,timestamp with time zone,bytea,bytea,text)': SERVERS,
+  // W9c (301): store/open_server_gate_token now refuse outright (0A000) and call no gate.
   // 282: the two path-grant writes run require_human_auth_kind then
   // require_gate_admin (node admin, unpinned) — a link session is neither.
   'create_path_grant(uuid,text,text)': PATH_GRANTS,
@@ -357,17 +361,17 @@ describe('W6 pin — the STRICT gate\'s full caller set (lead ruling 02:08Z; fol
     expect(found).toEqual(Object.keys(STRICT_GATE_CALLERS).sort());
   });
 
-  it('the list is 31 credential management + 6 non-credential + 2 session management + 8 spaceLinks writes + 3 space password + 7 servers (W8) + 2 path grants (282) + 1 op request decision (L5, 280)', () => {
+  it('the list is 31 credential management + 6 non-credential + 2 session management + 12 spaceLinks writes + 3 space password + 5 servers (W8, two retired by W9c) + 2 path grants (282) + 1 op request decision (L5, 280)', () => {
     const labels = Object.values(STRICT_GATE_CALLERS);
     expect(labels.filter((l) => l === CREDENTIAL_MANAGEMENT || l === CREDENTIAL_READ)).toHaveLength(31); // +3 share/unshare/list (992)
     expect(labels.filter((l) => l === IDENTITY_WIDE || l === AUTH_MINTING || l === PENDING)).toHaveLength(6);
     expect(labels.filter((l) => l === SESSION_MANAGEMENT)).toHaveLength(2);
-    expect(labels.filter((l) => l === SPACE_LINKS)).toHaveLength(8);
+    expect(labels.filter((l) => l === SPACE_LINKS)).toHaveLength(12); // +4 W9c (301): add_remote, grant_remote, remote context, store_remote
     expect(labels.filter((l) => l === SPACE_PASSWORD)).toHaveLength(3);
-    expect(labels.filter((l) => l === SERVERS)).toHaveLength(7);
+    expect(labels.filter((l) => l === SERVERS)).toHaveLength(5); // -2 W9c (301): store/open_server_gate_token refuse and call no gate
     expect(labels.filter((l) => l === PATH_GRANTS)).toHaveLength(2);
     expect(labels.filter((l) => l === OP_REQUESTS)).toHaveLength(1);
-    expect(labels).toHaveLength(60); // +3 (992)
+    expect(labels).toHaveLength(62); // +3 (992); +4 -2 W9c (301)
   });
 
   it('the matcher sees a quoted, mixed-case call and an execute format(...) that names the gate', async () => {

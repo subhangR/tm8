@@ -88,7 +88,9 @@ function sessionManifest(env: NodeJS.ProcessEnv): Tm8Manifest | undefined {
   }
 }
 
-const CROSS_SPACE_HINT = 'act in a linked Space with `tm8 --space <alias> <command>`; `tm8 link list` names the aliases';
+const CROSS_SPACE_HINT =
+  'act in a linked Space with `tm8 --space <alias> <command>`; `tm8 link list` names the aliases; ' +
+  'an edge never crosses spaces: point from this Space at a linked entity with `tm8 entity ref add <entity-id> <target-entity-id> --link <alias>`';
 
 function renderWhoami(dto: WhoamiDto): string {
   const id = (dto.identity ?? {}) as { username?: unknown; identityId?: unknown; actingAs?: unknown };
