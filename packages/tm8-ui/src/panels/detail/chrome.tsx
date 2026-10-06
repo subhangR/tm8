@@ -395,7 +395,7 @@ export function ActionBar({
   onOpenLaunch,
   launchSubjectId,
   markPrimaries = false,
-  leadLabelOnly = false,
+  iconVerbs = false,
   primaryCounts,
 }: {
   config: KindConfig;
@@ -494,11 +494,12 @@ export function ActionBar({
    */
   primaryCounts?: Partial<Record<ActionRef, number>> | undefined;
   /**
-   * AT MOST ONE LABELLED VERB — the Workspace floating group (design log R6).
-   * The first primary draws its glyph and word; every other primary draws its
-   * glyph alone, named by its word. Off by default: every other bar unchanged.
+   * ICONS ONLY — the Workspace floating group (Subhang, feedback round 1).
+   * Every primary draws its glyph alone, named by its word (tooltip and
+   * accessible name); the first keeps the lead (brand) tone. Off by default:
+   * every other bar unchanged.
    */
-  leadLabelOnly?: boolean;
+  iconVerbs?: boolean;
 }) {
   /**
    * THE PROCESS CONTROL, IN THE PANEL — the same one-slot swap the row cluster
@@ -530,8 +531,8 @@ export function ActionBar({
             ? { onOpenLaunch, launchSubjectId }
             : {})}
           primary
-          mark={leadLabelOnly ? index > 0 : markPrimaries}
-          lead={leadLabelOnly && index === 0}
+          mark={iconVerbs || markPrimaries}
+          lead={iconVerbs && index === 0}
           count={primaryCounts?.[ref]}
         />
       ))}
@@ -642,7 +643,7 @@ function ActionButton({
   primary?: boolean;
   /** Render the primary as its glyph rather than its word — see `markPrimaries`. */
   mark?: boolean;
-  /** The bar's one labelled verb: glyph and word — see `ActionBar.leadLabelOnly`. */
+  /** The bar's lead verb (brand tone) — see `ActionBar.iconVerbs`. */
   lead?: boolean;
   /** See `ActionBar.primaryCounts`. */
   count?: number | undefined;
@@ -741,11 +742,6 @@ function ActionButton({
     >
       {primary && mark ? (
         <span aria-hidden>{def.icon}</span>
-      ) : primary && lead ? (
-        <>
-          <span aria-hidden>{def.icon}</span>
-          {def.label}
-        </>
       ) : primary && count !== undefined ? (
         <>
           <span aria-hidden>{def.icon} </span>

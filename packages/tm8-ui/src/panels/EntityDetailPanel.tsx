@@ -1082,7 +1082,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
            five surface chips, so it is the only one whose primaries have
            to give up their words. Registry data, never a kind literal. */
         markPrimaries={isTerminal}
-        leadLabelOnly={embedded !== null}
+        iconVerbs={embedded !== null}
         /* Filled from the detail — see `panelActionContext`, which is
            also what the phone's action menu asks, so the bar and the menu
            cannot form different opinions about the same verb. */
