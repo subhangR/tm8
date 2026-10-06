@@ -2,67 +2,16 @@
    Scoped under `.tws-browser` so the reused list header and list panel keep
    their Home look everywhere else. */
 
-/* Row 1: [◫ Kind ▾] … [+ New], 40px, 0 12px (workspace.css sets the box). */
-.tws-browser .tws-browser-toolbar {
-  gap: var(--pn-space-2);
-}
-.tws-browser .tch-rootbar {
-  flex: 1;
-  margin: 0;
-}
-
-/* The kind control: a quiet 36px button, KindIcon 16, plural label, chevron. */
-.tws-browser .tch-rootcell--menu {
-  flex: 0 1 auto;
-  min-width: 0;
-}
-.tws-browser .tch-rootcell--menu .tch-rootcell__label {
-  height: 36px;
-  gap: var(--pn-space-2);
-  padding: 0 var(--pn-space-2);
-  border-radius: var(--pn-r-sm);
-  color: var(--pn-ink);
-  font-size: var(--pn-fs-sm);
-  font-weight: 600;
-}
-.tws-browser .tch-rootcell--menu .tch-rootcell__label:hover,
-.tws-browser .tch-rootcell--menu .tch-rootcell__label[aria-expanded='true'] {
-  background: var(--pn-hover);
-}
-.tws-browser .tch-rootcell--menu .tch-rootcell__glyph svg {
-  width: 16px;
-  height: 16px;
-}
-.tws-browser .tch-rootcell__name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.tws-browser .tch-rootcell__chevron {
-  flex: none;
-  margin-left: calc(var(--pn-space-1) - var(--pn-space-2));
-  color: var(--pn-ink-3);
-  font-size: var(--pn-fs-label);
-}
-/* The menu hangs from the control's left edge, on the raised plane. */
-.tws-browser .tch-rootcell--menu .tch-rootmenu {
-  left: 0;
-  right: auto;
-  border-color: var(--pn-line);
-  background: var(--pn-card);
-  box-shadow: var(--pn-sh-pop);
-}
-
-/* + New: bordered, 32px visible inside a 36px hit box. */
+/* + New: bordered, 28 high at the end of row 1. */
 .tws-browser-new {
   position: relative;
   display: inline-flex;
   flex: none;
   align-items: center;
   justify-content: center;
-  height: 32px;
-  margin: 2px 0;
-  padding: 0 10px;
+  height: 28px;
+  margin: 0;
+  padding: 0 var(--pn-space-2);
   border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-sm);
   background: transparent;
@@ -72,12 +21,6 @@
   font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
-}
-.tws-browser-new::before {
-  /* The 36px hit box around the 32px fill. */
-  content: '';
-  position: absolute;
-  inset: -2px;
 }
 .tws-browser-new:hover {
   background: var(--pn-hover);
@@ -90,18 +33,12 @@
 .tws-browser-new[aria-disabled='true']:hover {
   background: transparent;
 }
-/* Narrow (< 300px): icon-only 36×36; the kind label stays. */
+/* Narrow (< 300px): icon-only 28×28. */
 .tws-browser[data-narrow] .tws-browser-new {
-  width: 36px;
-  height: 36px;
-  margin: 0;
+  width: 28px;
   padding: 0;
 }
-.tws-browser[data-narrow] .tws-browser-new::before {
-  inset: 0;
-}
 
-.tws-browser .tch-rootcell__label:focus-visible,
 .tws-browser-new:focus-visible,
 .tws-browser-state__action:focus-visible {
   outline: 2px solid var(--pn-brand);
@@ -119,7 +56,7 @@
   min-width: 0;
   min-height: 0;
 }
-/* A hairline under the toolbar only while the list is scrolled off the top. */
+/* A hairline under the chrome only while the list is scrolled off the top. */
 .tws-browser[data-scrolled] .lp__body {
   box-shadow: inset 0 1px 0 var(--pn-line);
 }
@@ -166,7 +103,7 @@
 .tws-browser-skeleton__bar:nth-child(2) { width: 80%; }
 .tws-browser-skeleton__bar:nth-child(3) { width: 40%; }
 
-/* ---- R5: the reused list panel as two rows of chrome -------------------- */
+/* ---- Three rows of chrome (list-panel change list round 2, item 8) ------ */
 
 /* No box of its own: the list sits flush on the browser's surface. */
 .cv2-root .tws-browser .lp {
@@ -176,23 +113,65 @@
   background: transparent;
 }
 
-/* Row 2: [Search (flex)] [Tier ▾] [Funnel], gap 8, padding 0 12px 12px. */
+/* Row 1 (32px): [kind icon ▾] [Search, flex] [+ New]. */
 .cv2-root .tws-browser .lp__toolrow {
+  position: relative;
   display: flex;
   flex: none;
   align-items: center;
   gap: var(--pn-space-2);
-  padding: 0 var(--pn-space-3) var(--pn-space-3);
+  box-sizing: border-box;
+  height: 32px;
+  padding: var(--pn-space-1) var(--pn-space-2) 0;
+}
+.cv2-root .tws-browser .tch-rootbar {
+  flex: none;
+  margin: 0;
+}
+.cv2-root .tws-browser .tch-rootcell--menu .tch-rootcell__label {
+  height: 28px;
+  min-width: 28px;
+  gap: 2px;
+  padding: 0 var(--pn-space-1);
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink-2);
+}
+.cv2-root .tws-browser .tch-rootcell--menu .tch-rootcell__label:hover,
+.cv2-root .tws-browser .tch-rootcell--menu .tch-rootcell__label:active,
+.cv2-root .tws-browser .tch-rootcell--menu .tch-rootcell__label[aria-expanded='true'] {
+  background: var(--pn-hover);
+}
+.cv2-root .tws-browser .tch-rootcell--menu .tch-rootcell__glyph svg {
+  width: 16px;
+  height: 16px;
+}
+.cv2-root .tws-browser .tch-rootcell__chevron {
+  flex: none;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-fine);
+}
+/* The kind menu hangs from the control's left edge, on the raised plane. */
+.cv2-root .tws-browser .tch-rootcell--menu .tch-rootmenu {
+  left: 0;
+  right: auto;
+  border-color: var(--pn-line);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-card);
+  box-shadow: var(--pn-sh-pop);
+}
+.cv2-root .tws-browser .tch-rootcell__label:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
 }
 
-/* Search: 36 high, one focus ring on the wrapper (R8). */
+/* Search: 28 high, one focus ring on the wrapper (R8). */
 .cv2-root .tws-browser .lp__toolrow .lp__searchrow {
   flex: 1;
   min-width: 0;
-  height: 36px;
+  height: 28px;
   margin: 0;
-  padding: 0 var(--pn-space-2) 0 10px;
-  gap: var(--pn-space-2);
+  padding: 0 var(--pn-space-2);
+  gap: var(--pn-space-1);
   background: var(--pn-card);
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-sm);
@@ -209,7 +188,7 @@
   outline: none;
   box-shadow: none;
   background: transparent;
-  font-size: var(--pn-fs-sm);
+  font-size: var(--pn-fs-label);
 }
 .cv2-root .tws-browser .lp__toolrow .lp__searchinput::placeholder {
   color: var(--pn-ink-3);
@@ -218,144 +197,87 @@
   color: var(--pn-ink-3);
 }
 
-/* Lifecycle: one quiet dropdown, the tier then its count. */
-.cv2-root .tws-browser .lp__tiermenu {
-  position: relative;
+/* Row 2 (28px): the lifecycle tiers inline, one line, scrolling sideways. */
+.cv2-root .tws-browser .lp__tierscroll {
   flex: none;
-}
-.cv2-root .tws-browser .lp__tiermenu-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--pn-space-1);
-  height: 36px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
   padding: 0 var(--pn-space-2);
-  border: 0;
-  border-radius: var(--pn-r-sm);
-  background: transparent;
-  color: var(--pn-ink-2);
-  font-family: var(--pn-ui);
-  font-size: var(--pn-fs-sm);
-  font-weight: 500;
-  white-space: nowrap;
-  cursor: pointer;
 }
-.cv2-root .tws-browser .lp__tiermenu-btn:hover,
-.cv2-root .tws-browser .lp__tiermenu-btn[aria-expanded='true'] {
-  background: var(--pn-hover);
+.cv2-root .tws-browser .lp__tierscroll::-webkit-scrollbar {
+  display: none;
 }
-.cv2-root .tws-browser .lp__tiermenu-count {
-  color: var(--pn-ink-4);
-  font-variant-numeric: tabular-nums;
-}
-.cv2-root .tws-browser .lp__kindopt .lp__tiermenu-count {
-  margin-left: auto;
-}
-.cv2-root .tws-browser .lp__tiermenu-chevron {
-  color: var(--pn-ink-3);
-  font-size: var(--pn-fs-label);
-}
-
-/* Filters: one 36×36 funnel; the badge counts non-default settings (§4). */
-.cv2-root .tws-browser .lp__filterbar--merged {
-  flex: none;
-  position: static;
-}
-.cv2-root .tws-browser .lp__funnel {
-  position: relative;
-  width: 36px;
-  height: 36px;
+.cv2-root .tws-browser .lp__tierrow {
+  height: 28px;
+  width: max-content;
+  min-width: 100%;
+  gap: var(--pn-space-3);
   padding: 0;
-  justify-content: center;
   border: 0;
-  border-radius: var(--pn-r-sm);
   background: transparent;
-  color: var(--pn-ink-2);
+  box-shadow: none;
 }
-.cv2-root .tws-browser .lp__funnel:hover,
-.cv2-root .tws-browser .lp__funnel[aria-expanded='true'] {
-  background: var(--pn-hover);
+.cv2-root .tws-browser .lp__tab {
+  flex: none;
+  gap: var(--pn-space-1);
+  padding: 0 2px;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  white-space: nowrap;
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-3);
 }
-.cv2-root .tws-browser .lp__funnel .lp__chip-count {
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  min-width: 16px;
-  height: 16px;
-  background: var(--pn-brand-soft);
-  color: var(--pn-brand-2);
-  font-family: var(--pn-mono);
-  font-size: var(--pn-fs-fine);
+.cv2-root .tws-browser .lp__tab-word {
+  overflow: visible;
+}
+.cv2-root .tws-browser .lp__tab:hover {
+  background: transparent;
+  color: var(--pn-ink);
+}
+.cv2-root .tws-browser .lp__tab--active {
+  color: var(--pn-ink);
+  background: transparent;
+  box-shadow: inset 0 -2px 0 var(--pn-brand);
+}
+.cv2-root .tws-browser .lp__tab-count,
+.cv2-root .tws-browser .lp__tab--active .lp__tab-count {
+  color: var(--pn-ink-4);
+}
+.cv2-root .tws-browser .lp__tab:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
 }
 
-/* The two popovers hang from row 2, on the raised plane. */
-.cv2-root .tws-browser .lp__toolrow {
-  position: relative;
+/* Row 3 (28px): the filter bar and its chips, one line, scrolling sideways.
+   Its menus hang from the bar, outside the scrolling row, so they are not clipped. */
+.cv2-root .tws-browser .lp__filters {
+  height: 28px;
+  gap: var(--pn-space-1);
+  margin-top: var(--pn-space-1);
+  padding: 0 var(--pn-space-2);
+  border-bottom: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
 }
-.cv2-root .tws-browser .lp__tiermenu-list,
-.cv2-root .tws-browser .lp__filtermenu--merged {
-  top: calc(100% + var(--pn-space-1));
+.cv2-root .tws-browser .lp__filters::-webkit-scrollbar {
+  display: none;
+}
+.cv2-root .tws-browser .lp__filters > * {
+  flex: none;
+}
+.cv2-root .tws-browser .lp__filtermenu {
   border-color: var(--pn-line);
   border-radius: var(--pn-r-md);
   box-shadow: var(--pn-sh-pop);
-}
-.cv2-root .tws-browser .lp__tiermenu-list {
-  left: auto;
-  right: 0;
-  width: 200px;
-  max-height: none;
-}
-.cv2-root .tws-browser .lp__filtermenu--merged {
-  left: var(--pn-space-3);
-  right: var(--pn-space-3);
-  width: auto;
-  max-height: 400px;
-}
-.cv2-root .tws-browser .lp__funnelsection + .lp__funnelsection {
-  margin-top: var(--pn-space-2);
-}
-.cv2-root .tws-browser .lp__funnelsection > .t-eyebrow {
-  padding: var(--pn-space-1) var(--pn-space-2);
-}
-
-.cv2-root .tws-browser .lp__tiermenu-btn:focus-visible,
-.cv2-root .tws-browser .lp__funnel:focus-visible {
-  outline: 2px solid var(--pn-brand);
-  outline-offset: -2px;
 }
 
 /* Row verbs live in the tab's floating group; the hover bar overlapped the
    row above, so the browser draws none. */
 .cv2-root .tws-browser .lp__hoverbar {
   display: none !important;
-}
-
-/* ---- R22: the funnel popover's inner rhythm ------------------------------ */
-.cv2-root .tws-browser .lp__filtermenu--merged .lp__filtergroup {
-  padding: var(--pn-space-2) var(--pn-space-2) var(--pn-space-1);
-  font-family: var(--pn-ui);
-  font-size: var(--pn-fs-label);
-  font-weight: 500;
-  letter-spacing: normal;
-  color: var(--pn-ink-3);
-}
-.cv2-root .tws-browser .lp__filtermenu--merged .lp__kindopt {
-  box-sizing: border-box;
-  height: 36px;
-  padding-top: 0;
-  padding-bottom: 0;
-}
-.cv2-root .tws-browser .lp__filtermenu--merged .lp__filterclear {
-  height: 36px;
-  padding: 0 var(--pn-space-2);
-  color: var(--pn-ink-3);
-}
-.cv2-root .tws-browser .lp__filtermenu--merged .lp__filterdone {
-  height: 32px;
-  padding: 0 var(--pn-space-3);
-  border: 1px solid rgba(var(--pn-brand-rgb), 0.35);
-  border-radius: var(--pn-r-sm);
-  background: var(--pn-brand-soft);
-  color: var(--pn-brand-2);
 }
 
 /* ---- R24: fill on :hover and :active only; focus shows only the ring ---- */
@@ -367,4 +289,97 @@
 }
 .tws-browser-new[aria-disabled='true']:active {
   background: transparent;
+}
+
+/* ---- Row lead (rowLead="icon"): the kind icon IS the disclosure ---------- */
+
+/* Geometry: body 4 + row 4 ⇒ the 18px icon sits 8px from the panel edge;
+   icon + 6px gap ⇒ the title starts at 32px. Children step in 14px a level. */
+.cv2-root .tws-browser .lp__body {
+  padding-inline: var(--pn-space-1);
+}
+.cv2-root .tws-browser .lp__tile-main,
+.cv2-root .tws-browser .pn-tt .pn-tt__main,
+.cv2-root .tws-browser .pn-st__main {
+  padding-inline-start: var(--pn-space-1);
+  gap: 6px;
+}
+.cv2-root .tws-browser .pn-tt[data-depth] {
+  --tt-indent: 0px;
+}
+.cv2-root .tws-browser .lp__children {
+  margin-left: 14px;
+}
+
+.cv2-root .tws-browser .lp-lead,
+.cv2-root .tws-browser .pn-tt__status--lead {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+}
+.cv2-root .tws-browser .lp-lead {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--pn-r-xs);
+  background: transparent;
+  color: inherit;
+}
+.cv2-root .tws-browser .lp-lead--toggle {
+  cursor: pointer;
+}
+.cv2-root .tws-browser .lp-lead--toggle:hover {
+  background: var(--pn-hover);
+  box-shadow: 0 0 0 2px var(--pn-hover);
+}
+.cv2-root .tws-browser .lp-lead--toggle:focus-visible,
+.cv2-root .tws-browser .lp__branch[role='treeitem']:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+.cv2-root .tws-browser .lp__branch[role='treeitem']:focus {
+  outline: none;
+}
+.cv2-root .tws-browser .lp__branch[role='treeitem']:focus-visible {
+  outline-offset: 0;
+  border-radius: var(--pn-r-sm);
+}
+
+/* The kind icon, tinted by the status tone (the dot's tokens). */
+.cv2-root .tws-browser .lp-lead__kind {
+  display: grid;
+  place-items: center;
+  color: var(--pn-ink-3);
+}
+.cv2-root .tws-browser .lp-lead__kind svg {
+  width: 18px;
+  height: 18px;
+}
+.cv2-root .tws-browser .lp-lead__kind--run { color: var(--pn-run); }
+.cv2-root .tws-browser .lp-lead__kind--wait { color: var(--pn-wait); }
+.cv2-root .tws-browser .lp-lead__kind--block { color: var(--pn-block); }
+.cv2-root .tws-browser .lp-lead__kind--info { color: var(--pn-info); }
+.cv2-root .tws-browser .lp-lead__kind--idle { color: var(--pn-idle); }
+.cv2-root .tws-browser .lp-lead__kind--brand { color: var(--pn-brand); }
+.cv2-root .tws-browser .lp-lead__kind[data-hollow] { opacity: 0.6; }
+.cv2-root .tws-browser .lp-lead__kind[data-streaming] { animation: pnPulse 1.6s infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .tws-browser .lp-lead__kind[data-streaming] { animation: none; }
+}
+
+/* The child count as a subscript: filled when open, outline when shut. */
+.cv2-root .tws-browser .lp-lead :is(.lp__kids, .pn-agent__kids) {
+  right: -4px;
+  bottom: -3px;
+}
+.cv2-root .tws-browser .lp-lead .lp__kids[data-expanded='false'],
+.cv2-root .tws-browser .lp-lead[aria-expanded='false'] .pn-agent__kids {
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+  box-shadow:
+    inset 0 0 0 1px var(--pn-ink-3),
+    0 0 0 1.5px var(--pn-card);
 }
