@@ -18,7 +18,7 @@ import { Component, Suspense, lazy, useCallback, useEffect, useMemo, useRef, use
 import { KindIcon } from '../../domain';
 import { getKind } from '../../domain/registry';
 import { DuelPanel } from './DuelPanel';
-import { Minimap } from './Minimap';
+import { Minimap } from './Minimap.jsx';
 import { TONE_WORD, statusWord, type StoryView } from '../model';
 import type { StoryLive } from '../props';
 import { ModeSwitch } from './ModeSwitch';
