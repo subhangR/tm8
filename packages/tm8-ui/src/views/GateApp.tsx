@@ -52,7 +52,7 @@ import { PromptsOverlay } from '../prompts';
 import { ProjectGitScreen } from '../git/ProjectGitScreen';
 import { BoardScreen } from '../board';
 import { BoardV2Screen } from '../board-v2';
-import { TabWorkspaceView, useWorkspaceShareRoute, type WorkspaceGateHandles } from '../tab-workspace';
+import { openInWorkspace, TabWorkspaceView, useWorkspaceShareRoute, type WorkspaceGateHandles } from '../tab-workspace';
 import { CraftScreen } from '../craft';
 import { HelpScreen } from '../help';
 import { NewSessionScreen } from '../new-session';
@@ -3047,7 +3047,11 @@ export function GateApp(props: GateAppProps = {}) {
           ctx={{ spaceId: data.spaceId }}
           onQueryChange={setPaletteQuery}
           onOpenEntity={(id) => {
-            nav.push?.(id as EntityId);
+            /* On the tabs route a pick opens as a Workspace tab (W2-H). */
+            const kind = paletteResults.find((row) => row.id === id)?.kind ?? data.detailOf(id)?.kind;
+            const inWorkspace =
+              navView.view === 'tabs' && !!viewerMemberId && !!kind && openInWorkspace(viewerMemberId, data.spaceId, kind, id);
+            if (!inWorkspace) nav.push?.(id as EntityId);
             setPaletteOpen(false);
           }}
           onOpenView={openPaletteView}

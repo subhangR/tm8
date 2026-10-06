@@ -31,8 +31,9 @@ import { EntityChatPanel, NewChatSettings, useChatsAbout } from '../../entity-ch
 import { PanelResizer } from '../../kit/PanelResizer';
 import { entityChatSurfaceFor, type EntityChatSurfaceHost } from '../../views/conversationSurface';
 import { getKindAdapter } from '../adapters/registry';
-import { isWorkspaceKind, LAYOUT_BOUNDS, type EntityTabRecord, type TabId } from '../runtime/types';
+import { LAYOUT_BOUNDS, type EntityTabRecord, type TabId } from '../runtime/types';
 import { useWorkspace, useWorkspaceState } from './context';
+import { useLinkedOpen } from './LinkedTrail';
 import './chat.css';
 
 export interface ChatDockProps {
@@ -114,40 +115,21 @@ function OpenChatDock({ tab }: ChatDockProps) {
   }, [viewerMemberId, about]);
 
   /* Links inside the chat open as workspace tabs, with this tab on the trail. */
-  const detail = data.detailOf(tab.entityId);
-  const title = detail?.title ?? null;
-  const openTab = useCallback(
-    (kind: string, entityId: string) => {
-      if (!isWorkspaceKind(kind)) {
-        gate.navigateView({ view: 'entity', entityId: entityId as EntityId, origin: null });
-        return;
-      }
-      const trail = [...(tab.ui.trail ?? []), { entityId: tab.entityId, kind: tab.kind, title: title ?? '' }];
-      dispatch({ command: 'workspace.tabs.open', args: { kind, entityId, trail }, source: 'click' });
-    },
-    [dispatch, gate, tab, title],
-  );
-  const onOpenEntity = useCallback(
-    (id: EntityId) => {
-      const kind = data.detailOf(id)?.kind ?? data.domain.store.getState().entities[id]?.kind;
-      if (kind) openTab(kind, id);
-      else data.seam.entity(id).then((read) => openTab(read.kind, id), () => undefined);
-    },
-    [data, openTab],
-  );
+  const { openLinked } = useLinkedOpen(tab);
+  const title = data.detailOf(tab.entityId)?.title ?? null;
 
   const host = useMemo<EntityChatSurfaceHost>(
     () => ({
       seam: data.seam,
       spaceId: data.spaceId ?? '',
       nodeKey: nodeKeyOf(gate.serverBaseUrl),
-      onOpenEntity,
+      onOpenEntity: openLinked,
       skillOptions: data.skillOptions,
       viewerName: data.viewerActor?.displayName,
       viewerMemberId: gate.viewerMemberId ?? undefined,
       composerDrafts,
     }),
-    [data, gate.serverBaseUrl, gate.viewerMemberId, onOpenEntity, composerDrafts],
+    [data, gate.serverBaseUrl, gate.viewerMemberId, openLinked, composerDrafts],
   );
 
   useChatScroll(el, tabId, thread);

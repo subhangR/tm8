@@ -18,16 +18,22 @@
   position: relative;
   flex: none;
   display: flex;
-  align-items: center;
+  /* R3: the tabs' 36px box, bottom-aligned under an 8px top inset (label centre y = 26). */
+  align-self: flex-start;
+  margin-top: var(--pn-space-2);
 }
 .tws-scope-btn {
   display: inline-flex;
   align-items: center;
   gap: var(--pn-space-1);
+  box-sizing: border-box;
   height: 36px;
   padding: 0 var(--pn-space-2);
   background: none;
+  /* The box reaches the strip's hairline row; keep fills off the hairline. */
   border: 0;
+  border-bottom: 1px solid transparent;
+  background-clip: padding-box;
   border-radius: var(--pn-r-sm);
   color: var(--pn-ink-2);
   font: inherit;
@@ -87,6 +93,7 @@
 /* --- Scope popover (§8) -------------------------------------------------- */
 
 .tws-scope-pop {
+  box-sizing: border-box;
   width: 288px;
   padding: var(--pn-space-4);
 }
@@ -129,21 +136,35 @@
   cursor: default;
 }
 .tws-scope-filter {
-  width: 100%;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
   height: 32px;
   margin-bottom: var(--pn-space-1);
   padding: 0 var(--pn-space-2);
   background: var(--pn-card);
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-sm);
+}
+/* R8: one focus ring, on the wrapper. */
+.tws-scope-filter:focus-within {
+  border-color: var(--pn-line-2);
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+.tws-scope-pop .tws-scope-filter input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  outline: none;
   color: var(--pn-ink);
   font: inherit;
 }
-.tws-scope-filter::placeholder {
+.tws-scope-filter input::placeholder {
   color: var(--pn-ink-3);
-}
-.tws-scope-filter:focus {
-  border-color: var(--pn-line-2);
 }
 .tws-scope-list {
   max-height: 288px;
@@ -169,6 +190,9 @@
   margin: var(--pn-space-3) 0 0;
   font-size: var(--pn-fs-label);
   color: var(--pn-ink-3);
+}
+.tws-scope-status[hidden] {
+  display: none;
 }
 .tws-scope-status[data-invalid] {
   color: var(--pn-block);
