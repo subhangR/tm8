@@ -677,9 +677,9 @@ async function sessionComplete(cmd: CommandContext): Promise<ExitCode> {
 
 /**
  * `tm8 session terminate` (Spec D1 §4.2). Terminate closes a PROCESS. While
- * the session's work is open it must also say what happens to the work:
- * `--stop` (end it without completing — claims released, Stopped tab) or
- * `--complete` (run `session complete` first, then close). On a completed
+ * the session's work is open it also decides what happens to the work:
+ * `--stop` (end it without completing — claims released, Stopped tab; also
+ * the default) or `--complete` (run `session complete` first, then close). On a completed
  * session neither is needed: it only closes the process. `--mark-lost`
  * records a process that is already gone (the reaper, now).
  */

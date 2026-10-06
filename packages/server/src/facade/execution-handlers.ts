@@ -3889,10 +3889,10 @@ function registerHandlers(
   });
 
   /**
-   * execution.terminate (Spec D1 §4.2). Terminate closes a PROCESS; what
-   * happens to the WORK is the caller's explicit choice while the outcome is
-   * open — `stop` (outcome stopped, claims end) or `complete` (the §4.1 door
-   * first). On a completed session it only closes the process, recorded as
+   * execution.terminate (Spec D1 §4.2). Terminate closes a PROCESS; while the
+   * outcome is open the caller may say what happens to the WORK — `complete`
+   * (the §4.1 door first) or `stop` (outcome stopped, claims end), which is
+   * also what an omitted outcome means. On a completed session it only closes the process, recorded as
    * `exited_clean`; on a stopped one it retries the kill. System terminations
    * (containment, shutdown, ghost reconciliation) call SpawnService directly
    * and never reach this rule: they write process facts only.
@@ -3910,19 +3910,13 @@ function registerHandlers(
     const outcome = await sessionOutcome(claims, sessionId);
     let ending: { endedKind: WorkSessionEndedKind; endedReason: string } | undefined;
     if (outcome === 'open') {
-      if (input.outcome === 'stop') {
-        await db.rpc(claims, 'stop_work_session', [sessionId, input.note ?? null, envelope.actorId ?? null, null]);
-      } else if (input.outcome === 'complete') {
+      if (input.outcome === 'complete') {
         await db.rpc(claims, 'complete_work_session', [
           sessionId, input.receiptMessageId ?? null, envelope.actorId ?? null, null,
         ]);
         ending = CLOSED_AFTER_COMPLETION;
       } else {
-        throw new CollabError(
-          'invariant_violation',
-          'this session has not completed: say what happens to its work — stop (end it without completing) or complete',
-          { details: { reason: 'outcome_required', sessionId } },
-        );
+        await db.rpc(claims, 'stop_work_session', [sessionId, input.note ?? null, envelope.actorId ?? null, null]);
       }
     } else if (outcome === 'completed') {
       ending = CLOSED_AFTER_COMPLETION;

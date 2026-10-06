@@ -66,8 +66,6 @@ function refusalSentence(r: SessionRefusal): string {
       return 'That message is not on this session or one of its tasks, so it cannot be the receipt.';
     case 'session_stopped':
       return 'This session was stopped. Resume it before completing it.';
-    case 'outcome_required':
-      return 'Say what happens to the work: complete it, or stop without completing.';
     default:
       return r.message;
   }
