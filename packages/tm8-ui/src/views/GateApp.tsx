@@ -53,7 +53,7 @@ import { ProjectGitScreen } from '../git/ProjectGitScreen';
 import { BoardScreen } from '../board';
 import { BoardV2Screen } from '../board-v2';
 import { openInWorkspace, TabWorkspaceView, useWorkspaceShareRoute, type WorkspaceGateHandles } from '../tab-workspace';
-import { CraftScreen } from '../craft';
+import { CraftScreen, DesignsHome, designsSourceFromSeam } from '../craft';
 import { HelpScreen } from '../help';
 import { NewSessionScreen } from '../new-session';
 import { createKeyboardController, type KeyboardController } from '../keyboard';
@@ -1878,6 +1878,15 @@ export function GateApp(props: GateAppProps = {}) {
      churn its runtime wiring on every GateApp render. */
   const openPaletteOverlay = useCallback(() => setPaletteOpen(true), []);
   const navigateRouteView = useCallback((view: NavView) => navStore.getState().navigate(view), []);
+  /* Craft → Designs: the home's source, and its door into one design. */
+  const designsSource = useMemo(
+    () => designsSourceFromSeam(data.seam, data.spaceId as SpaceId),
+    [data.seam, data.spaceId],
+  );
+  const openDesign = useCallback(
+    (designId: EntityId) => navStore.getState().navigate({ view: 'craft', designId }),
+    [],
+  );
   const goHomeTarget = useCallback(() => navigateTo(HOME_TARGET), [navigateTo]);
   const openInboxView = useCallback(() => navigateTo({ type: 'view', ref: 'inbox' }), [navigateTo]);
 
@@ -2453,11 +2462,31 @@ export function GateApp(props: GateAppProps = {}) {
                 nav.push(id as EntityId);
               }}
             />
+          ) : data.ready &&
+            activeTarget?.type === 'view' &&
+            activeTarget.ref === 'craft' &&
+            !(navView.view === 'craft' && navView.designId) ? (
+            /* ✎ Craft → Designs: bare `/craft` is the Designs home. Every
+               door into Craft (the view selector, the Workspace rail's craft
+               tool) lands here, and a card opens `/craft/{id}`. */
+            <DesignsHome
+              source={designsSource}
+              onOpenDesign={openDesign}
+              onNotice={(text) =>
+                notices.push({
+                  id: `crf:${Date.now()}`,
+                  tone: 'info',
+                  title: 'Craft',
+                  body: text,
+                  ttlMs: 6000,
+                })
+              }
+            />
           ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'craft' ? (
-            /* ✎ Craft (Craft P1, 2026-08-16) — the blueprint studio: a
-               craft-mode chat anchored to a `graph` entity beside a canvas
-               rendering that entity's ROW. Full-bleed like Board; the thread
-               and the canvas are the navigation. */
+            /* ✎ Craft (Craft P1, 2026-08-16) — the blueprint studio, kept at
+               `/craft/{id}` as the PLACEHOLDER design screen until the design
+               screen replaces it: a craft-mode chat anchored to a `graph`
+               entity beside a canvas rendering that entity's ROW. */
             <CraftScreen
               seam={data.seam}
               spaceId={data.spaceId as SpaceId}

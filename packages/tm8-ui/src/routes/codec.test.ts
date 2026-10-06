@@ -5,6 +5,7 @@
  * `normalize` idempotence · the D12 preservation-clamp.
  */
 import { describe, expect, it } from 'vitest';
+import type { EntityId } from '@tm8/contract';
 import { build, defaultRoute, normalize, parse } from './codec';
 import { decodeQ, encodeQ } from './q';
 import { MAX_HASH_LENGTH, emptyPanels } from './types';
@@ -827,5 +828,40 @@ describe('the Cockpit stage param `?stage=`', () => {
   it('bare /home never grows the param — only the /chat segment reads it', () => {
     const { route } = parse(`#/s/${SPACE}/home?stage=fleet`);
     expect(route?.target).toEqual({ view: 'home' });
+  });
+});
+
+describe('craft routes (Craft → Designs)', () => {
+  const D = id(41) as EntityId;
+  const P = id(42) as EntityId;
+  const N = id(43) as EntityId;
+  const cases: [string, unknown][] = [
+    [`#/s/${SPACE}/craft`, { view: 'craft' }],
+    [`#/s/${SPACE}/craft/${D}`, { view: 'craft', designId: D }],
+    [`#/s/${SPACE}/craft/${D}/${P}`, { view: 'craft', designId: D, pageId: P }],
+    [`#/s/${SPACE}/craft/${D}/${P}/${N}`, { view: 'craft', designId: D, pageId: P, nestedPageId: N }],
+  ];
+
+  it.each(cases)('round-trips %s', (hash, target) => {
+    const { route, dropped } = parse(hash);
+    expect(dropped).toEqual([]);
+    expect(route?.target).toEqual(target);
+    expect(build(route!).hash).toBe(hash);
+  });
+
+  it('keeps bare /craft as the home: no design key at all', () => {
+    expect(parse(`#/s/${SPACE}/craft`).route?.target).toStrictEqual({ view: 'craft' });
+  });
+
+  it('cuts the path at the first segment that is not an id', () => {
+    expect(parse(`#/s/${SPACE}/craft/${D}/not!an!id/${N}`).route?.target).toEqual({ view: 'craft', designId: D });
+    expect(parse(`#/s/${SPACE}/craft/x`).route?.target).toEqual({ view: 'craft' });
+  });
+
+  it('builds no page without its design, and no nested page without its page', () => {
+    const orphanPage = { ...routeOf(), target: { view: 'craft' as const, pageId: P } };
+    expect(build(orphanPage).hash).toBe(`#/s/${SPACE}/craft`);
+    const orphanNested = { ...routeOf(), target: { view: 'craft' as const, designId: D, nestedPageId: N } };
+    expect(build(orphanNested).hash).toBe(`#/s/${SPACE}/craft/${D}`);
   });
 });

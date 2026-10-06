@@ -43,6 +43,7 @@ import type {
 } from './types';
 import { CUSTOM_KIND_FALLBACK, VIEWER_ACTOR } from './types';
 import { KIND_ART } from './kind-art';
+import { DESIGN_KIND } from './design';
 /* The container refusals live with the verbs that raise them, so the sentence
    a button refuses with and the sentence this row declares are one string. */
 import { CONTAINER_CAPABILITY_REASONS } from './actions';
@@ -1947,6 +1948,53 @@ const ROWS: readonly KindConfig[] = [
       },
     ],
     palette: { createLabel: 'New story' },
+  },
+
+  /*
+   * -- design (Craft → Designs: an ordered set of pages) --
+   *
+   * A page is ANY entity, held as an ordered `contains` edge; the page is the
+   * doc or graph itself and opens normally anywhere else. Its own screen is
+   * Craft (`/craft/{id}`); everywhere else a design gets the GENERIC panel:
+   * the description, then the collections it sits in. Launchable like every
+   * kind not opted out (Run anchors a session on the design).
+   *
+   * `quickCreate` is on: a title is a legitimate start — the craft agent adds
+   * the first page.
+   */
+  {
+    kind: DESIGN_KIND,
+    label: 'Design',
+    labelPlural: 'Designs',
+    icon: '❐',
+    iconArt: KIND_ART.design,
+    slug: 'designs',
+    strategy: 'collection',
+    defaultMode: 'list',
+    hiddenModes: ['board', 'tree'],
+    chip: { glyph: '❐', tintBy: 'none' },
+    card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
+    list: baseList({
+      quickCreate: true,
+      tile: { badges: [{ source: 'messages' }] },
+      inlineEdit: { title: true },
+    }),
+    panel: {
+      archetype: 'generic',
+      blocks: [{ block: 'fields', label: 'DESIGN' }, COLLECTIONS_BLOCK],
+      primaries: ['edit'],
+    },
+    editFields: [
+      { target: 'title', label: 'Title', required: true, placeholder: 'Pricing page launch' },
+      {
+        target: 'content',
+        source: 'description',
+        label: 'Description',
+        placeholder: 'What is this design for?',
+        multiline: true,
+      },
+    ],
+    palette: { createLabel: 'New design' },
   },
 
   /*

@@ -79,9 +79,21 @@ async function mountStudio() {
 }
 
 describe('the craft route', () => {
-  it('mounts the studio at #/s/{s}/craft', async () => {
+  it('mounts the Designs home at bare #/s/{s}/craft', async () => {
     const view = render(<GateApp routerTarget={createMemoryTarget(`#/s/${SPACE}/craft`)} />);
+    await waitFor(() => view.getByTestId('designs-home'));
+    /* The fixture space has no designs: the ONE empty state, no studio. */
+    await waitFor(() => view.getByTestId('dsh-empty'));
+    expect(view.queryByTestId('craft-screen')).toBeNull();
+    view.unmount();
+  });
+
+  it('keeps the studio at #/s/{s}/craft/{id} as the placeholder design screen', async () => {
+    const view = render(
+      <GateApp routerTarget={createMemoryTarget(`#/s/${SPACE}/craft/019f98a0-aaaa-bbbb-cccc-000000000041`)} />,
+    );
     await waitFor(() => view.getByTestId('craft-screen'));
+    expect(view.queryByTestId('designs-home')).toBeNull();
     view.unmount();
   });
 });

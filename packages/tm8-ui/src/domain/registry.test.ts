@@ -36,6 +36,7 @@ import {
   resolveProfileChain,
 } from './index';
 import type { ListConfig } from './types';
+import { DESIGN_KIND } from './design';
 
 const CORE_KINDS = CoreEntityKindSchema.options;
 
@@ -65,8 +66,12 @@ describe('totality over the frozen core-kind set (WLT §2.1)', () => {
     // MEASURED: CoreEntityKindSchema.options.length.
     // 28 -> 29 (280): `op_request`. 29 -> 31 (283, 284): `story`, `style`.
     // 31 -> 32 (296): metadata-only MCP catalog definitions.
+    // `design` (Craft → Designs) has its row ahead of its contract enum entry:
+    // the UI lane mirrors the shape locally (domain/design.ts). Counted once
+    // whether or not the contract carries it yet; when it does, the literal
+    // above moves to 33 and the Set below stops mattering.
     expect(CORE_KINDS.length).toBe(32);
-    expect(allKinds()).toHaveLength(CORE_KINDS.length + 1);
+    expect(allKinds()).toHaveLength(new Set<string>([...CORE_KINDS, DESIGN_KIND]).size + 1);
     expect(allKinds().filter((r) => r.kind === CUSTOM_KIND_FALLBACK)).toHaveLength(1);
   });
 

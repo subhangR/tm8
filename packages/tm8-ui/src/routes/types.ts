@@ -235,8 +235,15 @@ export type NavView =
   /* The task Board (2026-08-16): a whole-centre kanban screen, flat segment,
      no parameters of its own — same posture as the four above. */
   | { view: 'board' }
-  /* The Craft studio (2026-08-16): whole-centre split pane, flat segment. */
-  | { view: 'craft' }
+  /*
+   * Craft (2026-08-16; Craft → Designs 2026-10-06). Bare `/craft` is the
+   * Designs home. `/craft/{design}` opens one design, `/craft/{design}/{page}`
+   * a page of it, and `/craft/{design}/{page}/{nestedPage}` a page of a
+   * design that is itself a page (at most two page rows, so no deeper
+   * segment). Each key is present only when the one before it is: the codec
+   * drops a page without a design, and a nested page without a page.
+   */
+  | { view: 'craft'; designId?: EntityId; pageId?: EntityId; nestedPageId?: EntityId }
   /*
    * The Help shelf (2026-08-19): whole-centre contents + reader. Addressable
    * even though Help is not in the default tab spine — its door is a bar
