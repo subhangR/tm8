@@ -205,77 +205,6 @@ async function taskTick(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
-/**
- * Claim this session as the LINKER of the artifact a link command touched —
- * best effort, separate request, never fatal (the same law `entity create`'s
- * session claim follows: a derived edge must never take down the operation
- * that caused it).
- *
- * WHY THIS EXISTS: the forge watcher resolves a PR's OWNING SESSION through
- * `created_in` on the pull_request entity first. `link_pull_request` records
- * the acting MEMBER but not the acting SESSION, so without this claim a PR
- * linked by an agent has no owning session and a CI-failure nudge has no
- * addressee — found live by the Tier 3 E2E rig, not by any mock.
- *
- * ROUTING POLICY, chosen not accidental: this edge makes the LINKER outrank a
- * branch-coding session (`created_in` beats `in_worktree` in
- * `pr_owning_session`'s confidence order). The linker declared interest in
- * the PR as a tracked object; the coder may be one of several sessions on
- * the branch. Liveness still outranks both.
- */
-interface ClaimOutcome {
-  /** A claim that should have landed and did not — a receipt warning. */
-  warning?: ReceiptWarning;
-}
-
-async function claimLinkedArtifactSession(
-  cmd: CommandContext,
-  data: unknown,
-  artifactKind: 'pull_request' | 'commit',
-): Promise<ClaimOutcome> {
-  const sessionId = cmd.ctx.sessionId;
-  if (sessionId === undefined) return {};
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId)) return {};
-
-  // A server receipt names the artifact in `refs` (§9.9); the full result in `patches`.
-  const fromRefs = receiptRefId(data, artifactKind);
-  const patches = (data as { patches?: unknown } | null)?.patches;
-  const artifact = fromRefs !== undefined
-    ? { id: fromRefs }
-    : Array.isArray(patches)
-      ? patches.find(
-        (p): p is { id: string; kind: string } =>
-          typeof p === 'object' && p !== null &&
-          (p as { kind?: unknown }).kind === artifactKind &&
-          typeof (p as { id?: unknown }).id === 'string',
-      )
-      : undefined;
-  if (artifact === undefined) return {};
-
-  try {
-    await clientFor(cmd.ctx).invoke('edges.create', {
-      body: {
-        srcId: artifact.id,
-        dstId: sessionId,
-        type: 'created_in',
-        clientMutationId: resolveMutationId(undefined),
-      },
-    });
-    return {};
-  } catch (err) {
-    // `not_found` on the session is the benign cross-database answer (env
-    // leakage into a harness, or --server pointing elsewhere): no edge is the
-    // correct outcome. `conflict` means an earlier link already claimed a
-    // birth session — also correct, first claim wins. Anything else is a
-    // claim that should have landed, so it is warned, never raised.
-    if (err instanceof ApiError && (err.code === 'not_found' || err.code === 'conflict')) return {};
-    const message =
-      `could not record this session as the linker of ${artifact.id} ` +
-      `(${err instanceof Error ? err.message : String(err)}). The link itself landed.`;
-    cmd.out.warn(`note: ${message}`);
-    return { warning: { code: 'session_link_failed', message } };
-  }
-}
 
 /** `link-pr` and `link-commit` differ only in the operation they bind. */
 function linker(
@@ -298,20 +227,11 @@ function linker(
         query: receiptQuery(op, cmd.out.receipts),
         body: withActor(cmd, body),
       }));
-    // After the link has landed, never before it — see claimLinkedArtifactSession.
-    // The claim reads the artifact id from the Server's receipt refs, or from
-    // the full result's patches when the Server predates receipts, so it works
-    // the same whatever the caller asked to print (§9.9).
-    const claim = await claimLinkedArtifactSession(cmd, data, artifactKind);
-    // The claim's own edge is not a ref here, unlike `entity create`'s: the
-    // spec's link-pr receipt is the artifact and its `tracks` edge (§5), and
-    // nothing chains off the linker edge. A claim that failed IS reported.
+    // The linking session is recorded by the SERVER as the artifact's
+    // `authored_from` when that session's teammate made the mirror (308);
+    // `pr_owning_session` reads it first.
     cmd.out.mutation(op, data, renderCommandResult, () =>
-      successReceipt(op, data, {
-        url,
-        ...callerMutationId(cmd.options),
-        ...(claim.warning ? { warnings: [claim.warning] } : {}),
-      }));
+      successReceipt(op, data, { url, ...callerMutationId(cmd.options) }));
     noticeStatusNudges(cmd, data);
     return EXIT_OK;
   };

@@ -70,7 +70,7 @@
 /* -- attribution (D4): an INHERITED chip is a weaker claim, and looks it.
    A session inherits every PR of every task it worked on, and a task may have
    up to 10 sessions, so this chip means "a sibling of mine may have written
-   this" — never "I did". `authored` (created_in / in_worktree) and `tracked`
+   this" — never "I did". `authored` (authored_from / in_worktree) and `tracked`
    (a task's own link) both keep the full-strength rendering.
 
    The lifecycle HUE is untouched: it is the icon's whole vocabulary and

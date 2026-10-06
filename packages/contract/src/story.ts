@@ -36,13 +36,15 @@ import { WeightedProgressSchema, type TaskProgress, type WeightedProgress } from
  * (team_member, member, project, interaction_profile, skill) and stories are
  * LEAVES: reached, never walked out of (lead ruling 2026-10-02). NOT followed, on purpose:
  * `likes`, `stars`, `pulled`, `visible_to` — reactions and access are not
- * part of the work; `relates_to`, `depends_on`, `participates_in`,
- * `authored_from` and `follows_up` (Design Rules §2.3, P0b). `dispatched_by` is
- * deprecated (303). The SQL twin is `internal.story_followed_edge_types()`;
+ * part of the work; `relates_to`, `depends_on`, `participates_in` and
+ * `follows_up` (Design Rules §2.3, P0b). `authored_from` is followed except from
+ * a message or form source (`internal.story_walk_skips`, 308), so a session's
+ * messages never flood a story. `created_in` was merged into `authored_from`
+ * (308) and `dispatched_by` is deprecated (303). The SQL twin is `internal.story_followed_edge_types()`;
  * db/test/canonical_edges.test.mjs asserts the two agree.
  */
 export const STORY_FOLLOWED_EDGE_TYPES = [
-  'parent', 'attached_to', 'tracks', 'working_on', 'about', 'created_in',
+  'parent', 'attached_to', 'tracks', 'working_on', 'about', 'authored_from',
   'assigned_to', 'has_member', 'produces', 'remembers',
 ] as const;
 export type StoryFollowedEdgeType = (typeof STORY_FOLLOWED_EDGE_TYPES)[number];
@@ -63,7 +65,7 @@ export const STORY_EDGE_FAMILY: Readonly<Record<string, StoryEdgeFamily>> = {
   parent: 'parent',
   contains: 'story',
   about: 'story',
-  created_in: 'story',
+  authored_from: 'story',
   has_member: 'team',
   working_on: 'runs',
   assigned_to: 'runs',

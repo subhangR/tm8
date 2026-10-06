@@ -611,7 +611,7 @@ describe('LINKED — connection peers as chips', () => {
     const { getByTestId } = renderBody();
     const section = expandFold(getByTestId('linked-section'));
     // Git UI wave: the fixture task now also tracks a PR and carries a
-    // created_in commit — both are non-session peers, so the count is 4.
+    // authored_from commit — both are non-session peers, so the count is 4.
     expect(section.textContent).toContain('LINKED');
     expect(section.textContent).toContain('4');
     expect(section.textContent).toContain(taskBlocked.title);

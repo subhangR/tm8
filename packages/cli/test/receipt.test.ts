@@ -198,14 +198,14 @@ describe('successReceipt: per op', () => {
     expect(r.refs).toEqual([{ kind: 'commit', id: '01a0cf19-fd27-7bd6-80fe-bbf517dd7d50', url: 'https://github.com/o/r/commit/abc' }]);
   });
 
-  it('entity.create: parentId, version.to 1, status.to open, created_in ref', () => {
+  it('entity.create: parentId, version.to 1, status.to open, a chained edge ref', () => {
     const r = successReceipt(
       'entity.create',
       commandResult(taskDetail({ version: 1, status: 'open' }), [taskDetail()]),
-      { refs: [{ kind: 'edge', type: 'created_in', id: '01a0cf19-58c1-743c-9822-cbd391dca6f5' }] },
+      { refs: [{ kind: 'edge', type: 'attached_to', id: '01a0cf19-58c1-743c-9822-cbd391dca6f5' }] },
     );
     expect(r).toMatchObject({ parentId: PARENT, version: { to: 1 }, status: { to: 'open' } });
-    expect(r.refs).toEqual([{ kind: 'edge', type: 'created_in', id: '01a0cf19-58c1-743c-9822-cbd391dca6f5' }]);
+    expect(r.refs).toEqual([{ kind: 'edge', type: 'attached_to', id: '01a0cf19-58c1-743c-9822-cbd391dca6f5' }]);
     expectLean(r);
     expect(bytes(r)).toBeLessThanOrEqual(500);
   });
@@ -453,7 +453,7 @@ describe('successReceipt: a server receipt (phase 2)', () => {
   });
 
   it('adds only the CLI\'s own facts: chained refs, verified warnings, --mutation-id', () => {
-    const ref = { kind: 'edge', type: 'created_in', id: 'e1', to: SESSION };
+    const ref = { kind: 'edge', type: 'attached_to', id: 'e1', to: SESSION };
     const warning = { code: 'session_link_failed', message: 'x' };
     const r = successReceipt('entity.update', SERVER_NOOP, { refs: [ref], warnings: [warning], mutationId: 'm-1' });
     expect(r.refs).toEqual([ref]);
@@ -704,7 +704,7 @@ describe('commands, receipt mode', () => {
     expect(JSON.parse(r.stdout)).toMatchObject({ op: 'session.terminate', status: { to: 'exited' }, ended: 'terminated' });
   });
 
-  it('task link-pr asks for a server receipt, and chains created_in from its refs (§9.9, phase 2)', async () => {
+  it('task link-pr asks for a server receipt and chains no session edge: the server records authored_from (308)', async () => {
     const serverReceipt = {
       schemaVersion: 'tm8.receipt.v1', ok: true, op: 'task.link-pr', id: TASK, kind: 'task', title: TYPICAL_TITLE,
       version: { from: 2, to: 3 }, changed: ['edge:tracks'],
@@ -714,14 +714,11 @@ describe('commands, receipt mode', () => {
       ],
       warnings: [],
     };
-    replies = {
-      '/commands/link-pr': serverReceipt,
-      '/v2/edges': { edge: { id: '01a0cf19-fd30-7000-8000-00000000c1e0', type: 'created_in' }, patches: [] },
-    };
+    replies = { '/commands/link-pr': serverReceipt };
     const r = await drive(['task', 'link-pr', TASK, 'https://github.com/subhangR/tm8/pull/653', '--format', 'json'], 'receipt', { TM8_SESSION_ID: SESSION });
     expect(r.code, r.stderr).toBe(0);
     expect(seen[0]?.search).toBe('?return=receipt');
-    expect(seen.find((s) => s.pathname === '/v2/edges')?.body).toMatchObject({ srcId: PR, dstId: SESSION, type: 'created_in' });
+    expect(seen.find((s) => s.pathname === '/v2/edges')).toBeUndefined();
     expect(JSON.parse(r.stdout)).toEqual(serverReceipt);
   });
 
@@ -732,16 +729,14 @@ describe('commands, receipt mode', () => {
     expect(seen[0]?.search).toBe('');
   });
 
-  it('an older Server ignores ?return=receipt: the full result is projected, and link-pr still chains (§9.9)', async () => {
+  it('an older Server ignores ?return=receipt: the full result is projected, with no chained edge', async () => {
     replies = {
       '/commands/link-pr': commandResult(taskDetail({ outgoing: [{ type: 'tracks', edges: [tracks] }] }), [taskDetail(), prSummary]),
-      '/v2/edges': { edge: { id: '01a0cf19-fd30-7000-8000-00000000c1e0', type: 'created_in' }, patches: [] },
     };
     const r = await drive(['task', 'link-pr', TASK, 'https://github.com/subhangR/tm8/pull/653', '--format', 'json'], 'receipt', { TM8_SESSION_ID: SESSION });
     expect(r.code, r.stderr).toBe(0);
     expect(seen[0]?.search).toBe('?return=receipt'); // asked, and was ignored
-    const claim = seen.find((s) => s.pathname === '/v2/edges');
-    expect(claim?.body).toMatchObject({ srcId: PR, dstId: SESSION, type: 'created_in' });
+    expect(seen.find((s) => s.pathname === '/v2/edges')).toBeUndefined();
     expect((JSON.parse(r.stdout) as Receipt).refs).toContainEqual(expect.objectContaining({ kind: 'pull_request', id: PR }));
   });
 });

@@ -1,6 +1,6 @@
 /**
  * Which edge types the story graph draws (issue #35). The trail follows many
- * edge types (contains, working_on, created_in, ...) and drawing them all
+ * edge types (contains, working_on, authored_from, ...) and drawing them all
  * clutters a large story, so the graph opens with NO edges and the user turns
  * on the types they want.
  *

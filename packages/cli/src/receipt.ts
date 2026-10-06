@@ -135,7 +135,7 @@ export interface ReceiptInput {
   entityId?: string;
   /** `--expect-version`, when the caller passed one. The only source of `version.from`. */
   expectedVersion?: number;
-  /** Rows a chained CLI request created after the main write (e.g. `created_in`). */
+  /** Rows a chained CLI request created after the main write. */
   refs?: ReceiptRef[];
   /** Facts the CLI verified itself (a chained write that did not land). */
   warnings?: ReceiptWarning[];

@@ -1242,6 +1242,20 @@ function acceptanceCriteria(
   });
 }
 
+/**
+ * "Made during a session" (Design Rules §2.3): `authored_from`, entity ->
+ * work_session, recorded by the SERVER from the caller's verified work session
+ * (the bearer token), never asserted by a client (308; it replaces the CLI's
+ * unverified `created_in`). The RPC records only when that session is live and
+ * its participating teammate created the entity, so it is a no-op for a human
+ * caller, a foreign entity, or an entity that already has one.
+ */
+async function recordAuthoredFrom(q: Querier, ctx: RequestContext, entityId: string | undefined | null): Promise<void> {
+  const workSessionId = ctx.identity.kind === 'bearer' ? ctx.identity.workSessionId ?? null : null;
+  if (!workSessionId || !entityId) return;
+  await q.rpc('record_authored_from', [entityId, workSessionId]);
+}
+
 async function attachInitialConnections(
   q: Querier,
   raw: RpcCommandResult,
@@ -1530,6 +1544,7 @@ export class W2EntitiesCommandsTrackingService {
             input.position ?? null, envelope.clientMutationId ?? null]);
       }
       await attachInitialConnections(q, raw, input);
+      await recordAuthoredFrom(q, ctx, raw.entity?.id);
       // An authored header rides the create's transaction: the entity and its
       // header land together or not at all (headers design §3.1). On a kind
       // that stores none the create still succeeds, and says why (223).
@@ -2132,6 +2147,13 @@ export class W2EntitiesCommandsTrackingService {
         const raw = await q.rpc<RpcCommandResult>('link_pull_request', [id, input.url,
           parsed.provider, parsed.repo, Number(parsed.identifier), input.projectId ?? null,
           envelope.actorId ?? null, envelope.clientMutationId ?? null]);
+        const pr = await q.query<{ entity_id: string }>(
+          `select pr.entity_id from public.pull_requests pr
+             join public.entities e on e.id = pr.entity_id and e.deleted_at is null
+            where e.space_id = (select space_id from public.entities where id = $1)
+              and pr.repo = $2 and pr.number = $3 limit 1`,
+          [id, parsed.repo, Number(parsed.identifier)]);
+        await recordAuthoredFrom(q, ctx, pr[0]?.entity_id);
         const receipt = before ? await buildReceipt(q, 'task.link-pr', raw, { before }) : undefined;
         // P0g ac4: code linked on a task the calling session still holds in `working`.
         const nudges = await stillWorkingWarnings(q, [id]);
@@ -2154,6 +2176,13 @@ export class W2EntitiesCommandsTrackingService {
         const raw = await q.rpc<RpcCommandResult>('link_commit', [id, input.url,
           parsed.provider, parsed.repo, parsed.identifier, input.projectId ?? null,
           envelope.actorId ?? null, envelope.clientMutationId ?? null]);
+        const commit = await q.query<{ entity_id: string }>(
+          `select c.entity_id from public.commits c
+             join public.entities e on e.id = c.entity_id and e.deleted_at is null
+            where e.space_id = (select space_id from public.entities where id = $1)
+              and c.repo = $2 and c.sha = lower($3) limit 1`,
+          [id, parsed.repo, parsed.identifier]);
+        await recordAuthoredFrom(q, ctx, commit[0]?.entity_id);
         const receipt = before ? await buildReceipt(q, 'task.link-commit', raw, { before }) : undefined;
         // P0g ac4: code linked on a task the calling session still holds in `working`.
         const nudges = await stillWorkingWarnings(q, [id]);

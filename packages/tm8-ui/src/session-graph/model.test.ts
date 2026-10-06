@@ -215,7 +215,7 @@ describe('summarize', () => {
     });
     expect(summarize(graph).headline).toEqual([
       { key: 'working_on:out', label: 'Working on', count: 1 },
-      { key: 'authored_from:in', label: 'Wrote', count: 2 },
+      { key: 'authored_from:in', label: 'Made here', count: 2 },
     ]);
     // The focus itself is not one of "the entities around this session".
     expect(summarize(graph).entityCount).toBe(3);

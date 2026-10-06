@@ -1826,8 +1826,8 @@ export const fixtureDetails: Record<string, EntityDetail> = {
     content: { kind: 'commit', filesChanged: 21 },
     connections: {
       // 082 provenance: the commit was produced IN the live session.
-      outgoing: [{ type: 'created_in', direction: 'outgoing', label: 'created in', edges: [
-        edge('edge-created-in-1', 'created_in', snap(commitFoundation), snap(sessionLive), forge),
+      outgoing: [{ type: 'authored_from', direction: 'outgoing', label: 'made during', edges: [
+        edge('edge-authored-from-1', 'authored_from', snap(commitFoundation), snap(sessionLive), forge),
       ] }],
       incoming: [],
       unresolvedHardDependencyCount: 0,
