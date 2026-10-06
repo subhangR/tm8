@@ -90,6 +90,8 @@ import type {
   ExecutionTerminalStartInput,
   ExecutionStreamsAttachInput,
   ExecutionTerminateInput,
+  ExecutionCompleteInput,
+  WorkSessionEndedKind,
   SessionJournalPage,
   SessionJournalRecord,
   SelectionHeader,
@@ -1875,6 +1877,11 @@ export interface ExecutionRuntime {
    * shutdown must not hang or fail because bookkeeping did.
    */
   recordShutdown(signal: string): Promise<number>;
+  /**
+   * Spec D1 §4.4 — the ghost reaper. Records `failed / lost` for this node's
+   * sessions that have had no process for `staleAfterMs`. Never rejects.
+   */
+  reapLost(staleAfterMs: number): Promise<{ reaped: number; errors: Array<{ message: string }> }>;
 }
 
 /**
@@ -2002,6 +2009,19 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
         const message = error instanceof Error ? error.message : String(error);
         deps.logger?.warn?.('execution: ghost reconciliation skipped', { error: message });
         return { retired: 0, errors: [{ message }] };
+      }
+    },
+    reapLost: async (staleAfterMs: number) => {
+      // The loopback owner, as for ghost reconciliation: the transition needs
+      // a real member, and the owner is whose node holds these rows.
+      try {
+        const o = await owner();
+        return await spawnService.reapLostSessions(
+          { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'lost-session-reaper' },
+          { staleAfterMs },
+        );
+      } catch (error) {
+        return { reaped: 0, errors: [{ message: error instanceof Error ? error.message : String(error) }] };
       }
     },
     recordShutdown: async (signal: string) => {
@@ -2166,6 +2186,19 @@ export function registerExecutionHandlers(
         };
       }
     },
+    reapLost: async (staleAfterMs: number) => {
+      // The loopback owner, as for ghost reconciliation: the transition needs
+      // a real member, and the owner is whose node holds these rows.
+      try {
+        const o = await owner();
+        return await spawnService.reapLostSessions(
+          { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'lost-session-reaper' },
+          { staleAfterMs },
+        );
+      } catch (error) {
+        return { reaped: 0, errors: [{ message: error instanceof Error ? error.message : String(error) }] };
+      }
+    },
     recordShutdown: async (signal: string) => {
       // Same loopback-owner identity as ghost reconciliation, and for the same
       // reason: `work_session_transition` needs a real member. Wrapped for the
@@ -2256,6 +2289,12 @@ async function rethrowing<T>(fn: () => Promise<T>): Promise<T> {
  * problem, and re-reading afterwards means the client sees the session as it
  * finally IS (status `running`) rather than mid-flight (`spawning`).
  */
+/** How a process closed after its work completed is recorded (Spec D1 §4.1). */
+const CLOSED_AFTER_COMPLETION: { endedKind: WorkSessionEndedKind; endedReason: string } = {
+  endedKind: 'exited_clean',
+  endedReason: 'Closed after the session completed its work.',
+};
+
 async function assembleCommandResult(
   db: Db,
   claims: DbClaims,
@@ -3806,19 +3845,99 @@ function registerHandlers(
     return json(await assembleCommandResult(db, claims, result.commandResult, owner.identityId));
   });
 
+  /**
+   * execution.terminate (Spec D1 §4.2). Terminate closes a PROCESS; what
+   * happens to the WORK is the caller's explicit choice while the outcome is
+   * open — `stop` (outcome stopped, claims end) or `complete` (the §4.1 door
+   * first). On a completed session it only closes the process, recorded as
+   * `exited_clean`; on a stopped one it retries the kill. System terminations
+   * (containment, shutdown, ghost reconciliation) call SpawnService directly
+   * and never reach this rule: they write process facts only.
+   */
   registry.register('execution.terminate', async (ctx) => {
     const owner = await resolveOwner();
     const envelope = commandEnvelope(ctx);
     const claims = claimsFor(owner, ctx, envelope);
     const input = ctx.body as ExecutionTerminateInput;
+    const sessionId = requireUuidParam(ctx, 'id');
+    if (input.markLost === true) {
+      const lost = await rethrowing(() => spawnService.markLost(claims, sessionId));
+      return json(await assembleCommandResult(db, claims, lost.commandResult, owner.identityId));
+    }
+    const outcome = await sessionOutcome(claims, sessionId);
+    let ending: { endedKind: WorkSessionEndedKind; endedReason: string } | undefined;
+    if (outcome === 'open') {
+      if (input.outcome === 'stop') {
+        await db.rpc(claims, 'stop_work_session', [sessionId, input.note ?? null, envelope.actorId ?? null, null]);
+      } else if (input.outcome === 'complete') {
+        await db.rpc(claims, 'complete_work_session', [
+          sessionId, input.receiptMessageId ?? null, envelope.actorId ?? null, null,
+        ]);
+        ending = CLOSED_AFTER_COMPLETION;
+      } else {
+        throw new CollabError(
+          'invariant_violation',
+          'this session has not completed: say what happens to its work — stop (end it without completing) or complete',
+          { details: { reason: 'outcome_required', sessionId } },
+        );
+      }
+    } else if (outcome === 'completed') {
+      ending = CLOSED_AFTER_COMPLETION;
+    }
     const result = await rethrowing(() =>
-      spawnService.terminate(claims, requireUuidParam(ctx, 'id'), {
+      spawnService.terminate(claims, sessionId, {
         force: input.force ?? false,
         clientMutationId: envelope.clientMutationId ?? null,
+        ...(ending ?? {}),
       }),
     );
     return json(await assembleCommandResult(db, claims, result.commandResult, owner.identityId));
   });
+
+  /**
+   * execution.complete (Spec D1 §4.1). All the rules — claim check, receipt,
+   * claim ends, the outcome event — are `public.complete_work_session`'s, so
+   * the CLI, the row tick and any later caller cannot disagree. `closeProcess`
+   * then closes a still-live process as `exited_clean`: the work is done.
+   */
+  registry.register('execution.complete', async (ctx) => {
+    const owner = await resolveOwner();
+    const envelope = commandEnvelope(ctx);
+    const claims = claimsFor(owner, ctx, envelope);
+    const input = (ctx.body ?? {}) as ExecutionCompleteInput;
+    const sessionId = requireUuidParam(ctx, 'id');
+    const raw = await db.rpc<RpcCommandResult & { outcome?: unknown }>(claims, 'complete_work_session', [
+      sessionId, input.receiptMessageId ?? null, envelope.actorId ?? null, envelope.clientMutationId ?? null,
+    ]);
+    if (input.closeProcess === true && (await sessionProcessLive(claims, sessionId))) {
+      await rethrowing(() =>
+        spawnService.terminate(claims, sessionId, { clientMutationId: null, ...CLOSED_AFTER_COMPLETION }),
+      );
+    }
+    const assembled = (await assembleCommandResult(db, claims, raw, owner.identityId)) as Record<string, unknown>;
+    return json({ ...assembled, outcome: raw.outcome ?? null });
+  });
+
+  async function sessionOutcome(claims: DbClaims, sessionId: string): Promise<'open' | 'completed' | 'stopped'> {
+    const rows = await db.query<{ outcome: string }>(
+      claims,
+      `select ws.outcome from public.work_sessions ws where ws.entity_id = $1`,
+      [sessionId],
+    );
+    const value = rows[0]?.outcome;
+    if (value === undefined) throw new CollabError('not_found', 'work session not found', { details: { sessionId } });
+    return value === 'completed' || value === 'stopped' ? value : 'open';
+  }
+
+  async function sessionProcessLive(claims: DbClaims, sessionId: string): Promise<boolean> {
+    const rows = await db.query<{ status: string }>(
+      claims,
+      `select ws.status from public.work_sessions ws where ws.entity_id = $1`,
+      [sessionId],
+    );
+    const status = rows[0]?.status;
+    return status === 'spawning' || status === 'running' || status === 'idle';
+  }
 
   /**
    * execution.sessions.share — the write side of the attach gate (187).

@@ -79,6 +79,16 @@ export interface DbClaims {
    * (`test/via-link-claim-forwarding.test.ts`): dropping it fails OPEN.
    */
   readonly viaLinkId?: string | undefined;
+  /**
+   * → `SET LOCAL tm8.work_session_id`. The eighth claim (299, Spec D1): the
+   * work session an AGENT bearer was minted for, from
+   * `auth_sessions.work_session_id`. Read by `internal.caller_work_session`, so
+   * a claim made from inside a session (`task transition --claim`, `task
+   * release`, `session complete`) is the SESSION's, not the teammate's the token
+   * acts as. Written once by the issuing RPC and never updated; SQL re-checks it
+   * names a session in the target space. Omitted binds as `''`: not a session.
+   */
+  readonly workSessionId?: string | undefined;
 }
 
 /** A handle to one open transaction. Valid only inside `Db.tx`'s callback. */

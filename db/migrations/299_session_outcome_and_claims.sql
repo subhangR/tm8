@@ -440,6 +440,41 @@ AS $function$
 $function$;
 
 -- ---------------------------------------------------------------------------
+-- 3c. The new event types are about entities: the session, or the claim's ends.
+-- ---------------------------------------------------------------------------
+
+create or replace function internal.event_subject_ids(p_event_type text, p_payload jsonb)
+returns uuid[] language sql immutable parallel safe
+set search_path = pg_catalog, pg_temp as $$
+  select array(
+    select distinct candidate::uuid
+      from unnest(case
+        when p_event_type in ('entity.upsert', 'entity.deleted', 'entity.activity_touched',
+                              'session.outcome_changed', 'session.process_changed')
+          then array[p_payload ->> 'id']
+        when p_event_type in ('edge.upsert', 'edge.deleted', 'edge.ended')
+          then array[p_payload ->> 'src_id', p_payload ->> 'dst_id']
+        when p_event_type in ('message.created', 'message.updated', 'message.deleted')
+          then array[p_payload ->> 'entity_id', p_payload ->> 'anchor_id']
+        when p_event_type = 'counter.changed'
+          then array[p_payload ->> 'entity_id']
+        when p_event_type = 'activity.created'
+          then array[p_payload ->> 'entity_id']
+        when p_event_type in ('notification.created', 'notification.read')
+          then array[p_payload ->> 'target_entity_id']
+        when p_event_type = 'git.commit_recorded'
+          then array[p_payload ->> 'commitEntityId']
+        when p_event_type = 'git.pr_state_changed'
+          then array[p_payload ->> 'prEntityId']
+        when p_event_type = 'git.worktree_status_changed'
+          then array[p_payload ->> 'worktreeEntityId']
+        else array[]::text[]
+      end) as candidate
+     where candidate ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+     order by 1)
+$$;
+
+-- ---------------------------------------------------------------------------
 -- 4. Category: outcome first, then process (spec §3.2)
 -- ---------------------------------------------------------------------------
 

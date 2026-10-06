@@ -26,6 +26,10 @@ export const EVENT_SUBJECT_KEYS: Readonly<Record<string, readonly string[]>> = O
   'entity.activity_touched': ['id'],
   'edge.upsert': ['src_id', 'dst_id'],
   'edge.deleted': ['src_id', 'dst_id'],
+  // Spec D1 (299): the session, and a claim's two ends.
+  'session.outcome_changed': ['id'],
+  'session.process_changed': ['id'],
+  'edge.ended': ['src_id', 'dst_id'],
   'message.created': ['entity_id', 'anchor_id'],
   'message.updated': ['entity_id', 'anchor_id'],
   'message.deleted': ['entity_id', 'anchor_id'],

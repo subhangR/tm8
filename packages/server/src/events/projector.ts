@@ -53,7 +53,7 @@ import type { Querier } from '../db/types.js';
 // The ONE unread definition, shared with the facade assembler on purpose — see
 // the `channel` arm of stateOf. `entity-read.ts` imports nothing from `events/`,
 // so this direction adds no cycle.
-import { chatContextOf, isEndedKind, loadChatSubjects, loadUnreadCounts, storySummaryOf, type ChatSubject } from '../facade/entity-read.js';
+import { chatContextOf, isEndedKind, outcomeFacts, loadChatSubjects, loadUnreadCounts, storySummaryOf, type ChatSubject } from '../facade/entity-read.js';
 // The ONE narrowing of the status columns, shared with the read path. Both
 // files used to narrow `work_status` on their own and DISAGREED about an
 // unrecognised value; `facade/status.ts` is the fix and its docblock is the
@@ -269,6 +269,12 @@ interface SummaryRow {
   ws_ended_kind: string | null;
   ws_skills?: EffectiveSkills | null;
   ws_ended_reason: string | null;
+  ws_outcome?: string | null;
+  ws_outcome_at?: Date | string | null;
+  ws_outcome_by?: string | null;
+  ws_receipt_message_id?: string | null;
+  ws_outcome_source?: string | null;
+  ws_outcome_note?: string | null;
   file_name: string | null;
   file_mime_type: string | null;
   file_size_bytes: string | number | null;
@@ -450,6 +456,12 @@ select
   ws.workdir_mode    as ws_workdir_mode,
   ws.ended_kind      as ws_ended_kind,
   ws.ended_reason    as ws_ended_reason,
+  ws.outcome         as ws_outcome,
+  ws.outcome_at      as ws_outcome_at,
+  ws.outcome_by      as ws_outcome_by,
+  ws.receipt_message_id as ws_receipt_message_id,
+  ws.outcome_source  as ws_outcome_source,
+  ws.outcome_note    as ws_outcome_note,
   ws.skills as ws_skills,
   f.name             as file_name,
   f.mime_type        as file_mime_type,
@@ -1373,6 +1385,8 @@ export class PgEntityProjector implements EntityProjector {
           // to prevent. An unrecognised kind projects null, never through.
           endedKind: isEndedKind(r.ws_ended_kind) ? r.ws_ended_kind : null,
           endedReason: r.ws_ended_reason ?? null,
+          // 299 — the outcome facts, the same helper as entity-read.
+          ...outcomeFacts(r),
         };
       case 'file':
         return {

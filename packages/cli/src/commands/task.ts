@@ -88,6 +88,29 @@ async function taskTransition(cmd: CommandContext): Promise<ExitCode> {
 }
 
 /**
+ * `tm8 task release <task-id> --note "<hand-off>"` (Spec D1 R4). Ends the
+ * caller's claim on the task — inside a session, the session's — and keeps the
+ * task's status. The note is the hand-off the next worker reads.
+ */
+async function taskRelease(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['mutation-id', 'note']);
+  const id = requireArg(cmd, 0, '<task-id>');
+  const note = cmd.options.value('note');
+  if (note === undefined || note.trim().length === 0) {
+    throw new CliError('tm8 task release requires --note "<hand-off>"', EXIT_USAGE, {
+      hint: 'say where the work stands and what the next session needs',
+    });
+  }
+  const mutationId = resolveMutationId(cmd.options.value('mutation-id'));
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.commands.release', {
+    params: { id },
+    body: withActor(cmd, { clientMutationId: mutationId, note }),
+  });
+  cmd.out.data(data, renderCommandResult);
+  return EXIT_OK;
+}
+
+/**
  * `--by <actor-id>...` names the COMPLETERS and is repeatable; `--as` names
  * the actor making the call. They are different questions — an admin may
  * complete a task on behalf of the two people who did the work — so they are
@@ -580,6 +603,7 @@ async function taskAxis(cmd: CommandContext): Promise<ExitCode> {
 
 export const TASK_COMMANDS: CommandModule[] = [
   { path: ['task', 'transition'], run: taskTransition },
+  { path: ['task', 'release'], run: taskRelease },
   { path: ['task', 'complete'], run: taskComplete },
   { path: ['task', 'tick'], run: taskTick },
   { path: ['task', 'gate'], run: taskGate },

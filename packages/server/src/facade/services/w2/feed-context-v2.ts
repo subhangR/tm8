@@ -1380,6 +1380,11 @@ function assemble(
         model: root.ws_model ?? null,
         checkoutBranch: root.ws_checkout_branch ?? null,
         startedAt: isoOrNull(root.ws_started_at),
+        // 299 (Spec D1): whether the WORK is finished, and its receipt.
+        ...(root.ws_outcome === undefined ? {} : {
+          outcome: root.ws_outcome ?? 'open',
+          receiptMessageId: root.ws_receipt_message_id ?? null,
+        }),
         ...(ended
           ? {
               exitedAt: isoOrNull(root.ws_exited_at),

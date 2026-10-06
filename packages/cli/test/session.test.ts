@@ -167,7 +167,7 @@ describe('registration', () => {
     // 187 adds `session share` — the WATCH and DRIVE dials on one session.
     // Sorted position matters here: the list is the assertion, so a row that
     // arrives has to be placed, not appended.
-    expect(paths).toEqual(['session attach', 'session dispatch', 'session journal', 'session launch', 'session liveness', 'session resume', 'session share', 'session spawn', 'session terminate', 'session transcript']);
+    expect(paths).toEqual(['session attach', 'session complete', 'session dispatch', 'session journal', 'session launch', 'session liveness', 'session resume', 'session share', 'session spawn', 'session terminate', 'session transcript']);
   });
 
   it('every registered path is in the frozen projection', async () => {

@@ -15,7 +15,7 @@
  * So the handler's whole job is to bind the input and let the database be the
  * authority. Any validation added here would be a second, weaker copy.
  */
-import type { CompleteTaskInput, GateTaskInput, WorkInput } from '@tm8/contract';
+import type { CompleteTaskInput, GateTaskInput, ReleaseInput, WorkInput } from '@tm8/contract';
 import type { OperationHandler } from '../../http/types.js';
 import type { FacadeDeps } from '../deps.js';
 import { claimsFor, commandEnvelope, requireUuidParam } from '../context.js';
@@ -66,6 +66,29 @@ export function commandsWork(deps: FacadeDeps): OperationHandler {
       ]);
       const receipt = before ? await buildReceipt(q, 'task.transition', raw, { before }) : undefined;
       return receipt ?? toCommandResult(q, raw, owner.identityId);
+    });
+  };
+}
+
+/**
+ * entities.commands.release (Spec D1 R4). Ends the caller's own `working_on`
+ * claim — inside an agent session, the session's — with a hand-off note. The
+ * task keeps its status; `release_task_claim` holds every rule.
+ */
+export function commandsRelease(deps: FacadeDeps): OperationHandler {
+  return async (ctx) => {
+    const owner = await deps.owner();
+    const envelope = commandEnvelope(ctx);
+    const id = requireUuidParam(ctx, 'id');
+    const input = ctx.body as ReleaseInput;
+    return deps.db.tx(claimsFor(owner, ctx, envelope), async (q) => {
+      const raw = await q.rpc<RpcCommandResult>('release_task_claim', [
+        id,
+        input.note,
+        envelope.actorId ?? null,
+        envelope.clientMutationId ?? null,
+      ]);
+      return toCommandResult(q, raw, owner.identityId);
     });
   };
 }

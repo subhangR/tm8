@@ -70,6 +70,8 @@ interface FactRow {
   activity_at: Date | string | null;
   created_at: Date | string;
   ws_status: string | null;
+  /** 299: open | completed | stopped. */
+  ws_outcome?: string | null;
   ws_model: string | null;
   ws_mode: string | null;
   tm_mode: string | null;
@@ -86,8 +88,15 @@ function category(raw: string | null): StatusCategory | null {
  * as work happening while liveSessionCount says 0 (#15). Here a session whose
  * runtime has ended is terminal: in_progress means a live runtime.
  */
-function storyCategory(f: { kind: string; status_category: string | null; ws_status: string | null }): StatusCategory | null {
-  if (f.kind === 'work_session' && ENDED_SESSION_STATUSES.has(f.ws_status ?? '')) return 'done';
+function storyCategory(f: { kind: string; status_category: string | null; ws_status: string | null; ws_outcome?: string | null }): StatusCategory | null {
+  if (f.kind === 'work_session') {
+    // 299 (Spec D1 §5.7): a completed session is done; a stopped one is
+    // cancelled; an OPEN one whose process ended (crashed, lost, ended without
+    // completing) counts toward nothing — it is neither progress nor live work.
+    if (f.ws_outcome === 'completed') return 'done';
+    if (f.ws_outcome === 'stopped') return 'cancelled';
+    if (ENDED_SESSION_STATUSES.has(f.ws_status ?? '')) return null;
+  }
   return category(f.status_category);
 }
 
@@ -192,7 +201,7 @@ export async function loadStoryPage(
 
   const facts = await q.query<FactRow>(
     `select e.id, e.kind, e.parent_id, e.status_category, ${STATUS_KEY_SQL} as status_name,
-            e.activity_at, e.created_at, ws.status as ws_status, ws.model as ws_model, ws.mode as ws_mode, tm.mode as tm_mode,
+            e.activity_at, e.created_at, ws.status as ws_status, ws.outcome as ws_outcome, ws.model as ws_model, ws.mode as ws_mode, tm.mode as tm_mode,
             (coalesce(t.work_status = 'blocked', false) or exists (
               select 1 from public.edges dep
                where dep.src_id = e.id and dep.type = 'depends_on'
@@ -215,7 +224,9 @@ export async function loadStoryPage(
     `select g.src_id, g.dst_id, g.type
        from public.edges g
       where (g.type = 'participates_in' and g.dst_id = any($1::uuid[]))
-         or (g.type in ('dispatched_by', 'working_on') and g.src_id = any($1::uuid[]))`,
+         or (g.type = 'dispatched_by' and g.src_id = any($1::uuid[]))
+         -- 299: only ACTIVE claims put a session at a task (one robot per claim).
+         or (g.type = 'working_on' and g.src_id = any($1::uuid[]) and (g.props->>'endedAt') is null)`,
     [sessionIds],
   );
   const personaOf = new Map<string, string>();
@@ -241,6 +252,7 @@ export async function loadStoryPage(
     `select g.id, g.src_id, g.dst_id, g.type
        from public.edges g
       where g.src_id = any($1::uuid[]) and g.dst_id = any($1::uuid[]) and g.type = any($2::text[])
+        and (g.type <> 'working_on' or (g.props->>'endedAt') is null)
       order by g.created_at, g.id
       limit 2000`,
     [allIds, DRAWN_EDGE_TYPES],
@@ -340,7 +352,10 @@ export async function loadStoryPage(
     .filter((f) => f.kind === 'work_session' && f.id !== storyId)
     .sort((a, b) => (iso(a.created_at) < iso(b.created_at) ? -1 : iso(a.created_at) > iso(b.created_at) ? 1 : a.id < b.id ? -1 : 1));
   const signOf = new Map(orderedSessions.map((f, i) => [f.id, storyCallSign(i)]));
-  const isLive = (f: FactRow | undefined) => f?.kind === 'work_session' && LIVE_SESSION_STATUSES.has(f.ws_status ?? '');
+  // 299: live means a running process doing OPEN work. A completed session
+  // whose terminal is still open is finished, not live (Spec D1 §5.7).
+  const isLive = (f: FactRow | undefined) =>
+    f?.kind === 'work_session' && LIVE_SESSION_STATUSES.has(f.ws_status ?? '') && (f.ws_outcome ?? 'open') === 'open';
 
   const nodeOf = (f: FactRow, depth: number, rootIds: string[]): StoryNode => ({
     id: f.id,

@@ -1062,6 +1062,13 @@
         "source": "server-router"
       },
       {
+        "operation": "entities.commands.release",
+        "method": "POST",
+        "path": "/v2/entities/:id/commands/release",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "entities.commands.pull",
         "method": "POST",
         "path": "/v2/entities/:id/commands/pull",
@@ -1541,6 +1548,13 @@
         "operation": "execution.resume",
         "method": "POST",
         "path": "/v2/entities/:id/commands/resume",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "execution.complete",
+        "method": "POST",
+        "path": "/v2/entities/:id/commands/complete-session",
         "status": "registered",
         "source": "server-router"
       },
@@ -5036,6 +5050,23 @@
         "publicComposite": null
       },
       {
+        "operation": "entities.commands.release",
+        "noun": "entity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/entities.commands.release",
+        "intentTags": [
+          "entities",
+          "commands",
+          "release"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
         "operation": "entities.commands.pull",
         "noun": "entity",
         "exposure": "public",
@@ -6189,6 +6220,22 @@
         "intentTags": [
           "execution",
           "resume"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "execution.complete",
+        "noun": "session",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/execution.complete",
+        "intentTags": [
+          "execution",
+          "complete"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

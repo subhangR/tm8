@@ -470,6 +470,25 @@ export type CoreEntityState =
       endedKind?: WorkSessionEndedKind | null;
       endedReason?: string | null;
       /**
+       * IS THE WORK FINISHED (Spec D1 §3, migration 299) — a second field,
+       * deliberately separate from `status`, which only says whether the
+       * PROCESS is alive. `open` until `session complete` (with a receipt) or an
+       * operator's Stop settles it; no process event — exit, crash, restart,
+       * reaper, terminate — ever writes it. `completed` is final; `stopped`
+       * returns to `open` only through resume.
+       *
+       * Additive: absent = a node that predates 299 (treat as `open`).
+       */
+      outcome?: WorkSessionOutcome;
+      outcomeAt?: string | null;
+      /** The actor (member or teammate) who completed or stopped it. */
+      outcomeBy?: string | null;
+      /** The close-out message `session complete` recorded. Only on `completed`. */
+      receiptMessageId?: string | null;
+      outcomeSource?: WorkSessionOutcomeSource | null;
+      /** The operator's note when stopping ("Not needed any more"). */
+      outcomeNote?: string | null;
+      /**
        * WHO IS RUNNING THIS SESSION — the persona resolved through the
        * session's most recent `participates_in` edge, the SAME hop
        * `loadActors` attributes messages by. Carried on the summary so a
@@ -1608,6 +1627,25 @@ export type WorkspaceEvent = WorkspaceEventEnvelope & (
  | { type: 'entity.activity_touched'; id: EntityId; kind: EntityKind; activityAt: string;
      clientMutationId?: string }
  | { type: 'edge.upsert'|'edge.deleted'; edge: EdgeView; clientMutationId?: string }
+ /**
+  * Spec D1 §4.6 (299). The two halves of a session's state move separately and
+  * say so separately: the OUTCOME of the work, and the PROCESS. Both come from
+  * triggers on `work_sessions`, so every writer emits them. They do not replace
+  * the session's `entity.upsert` (which still carries the full summary); they
+  * are the signal a consumer listens to for the from -> to.
+  */
+ | { type: 'session.outcome_changed'; sessionId: EntityId; from: WorkSessionOutcome; to: WorkSessionOutcome;
+     outcomeBy: EntityId | null; receiptMessageId: EntityId | null;
+     outcomeSource: WorkSessionOutcomeSource | null; clientMutationId?: string }
+ | { type: 'session.process_changed'; sessionId: EntityId; from: WorkSessionStatus; to: WorkSessionStatus;
+     endedKind: WorkSessionEndedKind | null; endedReason: string | null; clientMutationId?: string }
+ /**
+  * A `working_on` claim ended (Spec D1 §6.3 R4). The edge row is KEPT with
+  * `props.endedAt`/`props.endReason` (its own `edge.upsert` carries that); this
+  * names the ending so the map can play it without diffing props.
+  */
+ | { type: 'edge.ended'; edgeId: string; edgeType: 'working_on'; sourceId: EntityId; targetId: EntityId;
+     endReason: ClaimEndReason; endedAt: string; clientMutationId?: string }
  | { type: 'message.created'|'message.updated'|'message.deleted'; anchorId: EntityId;
      // ENVELOPE provenance, sitting next to `anchorId` (the target): the SENDER
      // work session the message was authored FROM, so a consumer can animate a
@@ -4686,7 +4724,9 @@ export type WorkSessionWorkdirMode = 'project' | 'worktree' | 'scratch';
  *                          beats picking the nearest plausible value.
  */
 export type WorkSessionEndedKind =
-  | 'completed'
+  // 299: renamed from `completed`. A clean exit (code 0) says nothing about
+  // the work — whether it finished is `outcome`, not this.
+  | 'exited_clean'
   | 'stopped_by_operator'
   | 'server_restart'
   | 'out_of_memory'
@@ -4700,7 +4740,34 @@ export type WorkSessionEndedKind =
   // only one of the two that means something broke.
   | 'container_stopped'
   | 'runtime_lost'
+  // 299: the ghost reaper found the record live and no process for N minutes.
+  | 'lost'
+  // 299: credential containment. Was recorded as `stopped_by_operator`,
+  // though no operator chose it.
+  | 'credential_revoked'
   | 'unknown';
+
+/**
+ * IS THE WORK FINISHED — `work_sessions.outcome` (299, Spec D1 §3). Separate
+ * from `WorkSessionStatus`, which is the process. Crashes, restarts, lost and
+ * revoked credentials are process facts: the outcome stays `open`.
+ */
+export type WorkSessionOutcome = 'open' | 'completed' | 'stopped';
+/** Who settled the outcome: the session itself, an operator, or the 299 backfill. */
+export type WorkSessionOutcomeSource = 'self' | 'operator' | 'backfill';
+/**
+ * Why a `working_on` claim ended (Spec D1 §6.3 R4). Ended claims keep their
+ * edge row with `props.endedAt` and `props.endReason`; reads of current work
+ * skip them.
+ */
+export type ClaimEndReason =
+  | 'task_done'
+  | 'task_cancelled'
+  | 'released'
+  | 'session_completed'
+  | 'session_stopped'
+  | 'task_reset'
+  | 'backfill';
 
 
 // --- containers (TM8-CONTAINERS-DESIGN §4, migration 177) -------------------
@@ -6104,6 +6171,50 @@ export interface ExecutionPromptInput extends CommandContext {
  */
 export interface ExecutionTerminateInput extends CommandContext {
   force?: boolean;
+  /**
+   * Spec D1 §4.2. Terminating an OPEN session must say what happens to the
+   * work: `stop` (end it without completing: claims released, outcome
+   * `stopped`) or `complete` (run `execution.complete` first, then close). A
+   * completed or stopped session needs neither — terminate then only closes
+   * the process. Omitted on an open session → `invariant_violation` /
+   * `outcome_required`.
+   */
+  outcome?: 'stop' | 'complete';
+  /** With `outcome: 'complete'`: the close-out message (else the latest on the anchor). */
+  receiptMessageId?: string;
+  /** With `outcome: 'stop'`: why ("Not needed any more"). */
+  note?: string;
+  /**
+   * Spec D1 §5.6 "Mark lost": record that the process is gone (`failed /
+   * lost`) — the ghost reaper, now, for this one session. A process fact only:
+   * needs no `outcome`, and is refused (`conflict` / `process_live`) while the
+   * node still holds a live process for it.
+   */
+  markLost?: boolean;
+}
+
+/**
+ * execution.complete — POST /v2/entities/:id/commands/complete-session
+ * (Spec D1 §4.1). Settles the outcome as `completed`: the claim check first
+ * (`claims_open`, listing each task still working), then the receipt rule
+ * (`receipt_required` / `receipt_not_on_anchor`), then every remaining claim
+ * ends with `session_completed`. The process is untouched unless
+ * `closeProcess`, which then terminates it as `exited_clean`. Idempotent on an
+ * already-completed session; refused on a stopped one (`session_stopped`).
+ */
+export interface ExecutionCompleteInput extends CommandContext {
+  receiptMessageId?: string;
+  closeProcess?: boolean;
+}
+
+/**
+ * entities.commands.release — POST /v2/entities/:id/commands/release
+ * (Spec D1 §6.3 R4). Ends the caller's own claim on a task with a hand-off
+ * note; the task keeps its status. Inside an agent session the claim is the
+ * session's.
+ */
+export interface ReleaseInput extends CommandContext {
+  note: string;
 }
 
 /**
@@ -7704,6 +7815,9 @@ export interface EntityContextV2View {
   exitedAt?: string | null;
   endedKind?: string | null;
   endedReason?: string | null;
+  /** 299 (Spec D1): open | completed | stopped — the work, not the process. */
+  outcome?: string | null;
+  receiptMessageId?: string | null;
   tasks?: EntityContextRef[];
   // chat
   runtimeState?: string | null;
