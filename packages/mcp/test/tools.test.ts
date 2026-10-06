@@ -278,6 +278,7 @@ describe('chat addressing in the tool surface', () => {
     // is honest — the server enforces it (B10) — and a page that claimed it
     // without the server enforcing it would be worse than silence.
     expect((withChat.structuredContent.security as { boundChatId?: string }).boundChatId).toBe(CHAT);
+    expect(withChat.structuredContent.modeSource).toContain('[mode: <name>]');
 
     // An older per-chat config file has no TM8_CHAT_ID. The surface must then
     // say NOTHING rather than invent a value from the cwd or the filename —
@@ -285,6 +286,10 @@ describe('chat addressing in the tool surface', () => {
     const without = await new Tm8ToolRouter(new RecordingTransport(), { mode: 'build' }).call('tm8_overview', {});
     expect(without.structuredContent).not.toHaveProperty('chat');
     expect(without.structuredContent.security).not.toHaveProperty('boundChatId');
+    // Nor where to read the mode: the line it points at is written by the chat
+    // runtime, and a non-chat lane that opts this server in never gets one.
+    expect(without.structuredContent).not.toHaveProperty('modeSource');
+    expect(without.structuredContent).not.toHaveProperty('mode');
     // A blank or whitespace variable is the same as unset, not an empty id.
     const blank = await new Tm8ToolRouter(new RecordingTransport(), { mode: 'build', chatId: '  ' }).call('tm8_overview', {});
     expect(blank.structuredContent).not.toHaveProperty('chat');

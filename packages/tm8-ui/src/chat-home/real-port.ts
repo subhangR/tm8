@@ -334,6 +334,9 @@ export function createChatHomePortFromSeam(
           // field entirely, and an absent list is not a malformed message.
           attachments: message.content.attachments ?? [],
           ...(message.turnInFlight ? { turnInFlight: true } : {}),
+          // What this answer ran under, off its own turn row. A node that
+          // predates the field omits it, and absent draws no label.
+          ...(message.ranUnder ? { ranUnder: message.ranUnder } : {}),
         })),
       );
       return {
@@ -422,8 +425,8 @@ export function createChatHomePortFromSeam(
         body: input.body,
         ...(input.attachmentIds?.length ? { attachmentIds: input.attachmentIds } : {}),
         // Per-turn mode (153/154), and ONLY when the viewer picked one. The
-        // server stamps it on the message, the enqueue trigger copies it to
-        // chat_turns.mode, and the claim reads coalesce(turn.mode,
+        // server stamps it on the message, the same post queues the turn with
+        // it as chat_turns.mode, and the claim reads coalesce(turn.mode,
         // chat.chat_mode) — so omitting it is how "use the thread's default"
         // is said, and sending shownMode unconditionally would instead write a
         // requested_chat_mode onto every turn nobody redirected.

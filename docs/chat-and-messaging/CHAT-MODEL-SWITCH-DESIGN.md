@@ -330,8 +330,9 @@ forwarded. Everything else was already built — and built deliberately for this
 
 | Layer | Already present | Evidence |
 |---|---|---|
-| SQL 153 | `messages.requested_chat_mode`; the enqueue trigger copies it onto `chat_turns.mode` | `154_*.sql:4-7` |
+| SQL 153 | `messages.requested_chat_mode`, and the enqueue trigger that first copied it onto `chat_turns.mode` (dropped by 176, below) | `154_*.sql:4-7` |
 | SQL 154 | `w2_post_message_batch` takes `p_chat_turn_mode` (defaulted, so every existing 8-arg caller still compiles) and validates against the six modes, raising `22023` on an unknown one | `154_*.sql:31,56-60` |
+| SQL 176 | drops 153's trigger; `w2_post_message_batch` now queues every turn itself and stamps `coalesce(turn_mode, chat_anchor.chat_mode)` onto `chat_turns.mode` at queue time | `176_*.sql:456-457,1361` |
 | claim | the turn's effective mode resolves `coalesce(turn.mode, chat.chat_mode)` — the same first-wins shape Part I gives the model | 176 claim body |
 | contract | `PostMessageInput.mode` / `PostMessageWireInputSchema.mode` — the field was already in the wire type | `contract.ts:3311`, `schemas.ts:2791` |
 | server | already forwards it to the RPC | `messages-handoffs.ts:465-485` |
@@ -339,6 +340,18 @@ forwarded. Everything else was already built — and built deliberately for this
 Migration 154's own header states the intent: *"getting the mode a human chose at
 send time ONTO the message, so it flows message → chat_turns.mode → the turn
 envelope."* **The browser was the only thing in that chain that never sent it.**
+
+**Correction: whose trigger, and whether it still exists.** #978 shipped comments
+saying the mode is copied onto `chat_turns.mode` by "154's enqueue trigger"
+(ChatHomeScreen.tsx and mode-switch.test.tsx) or "the enqueue trigger"
+(real-port.ts, types.ts), and this table's first row read the same way. The
+trigger was 153's, and it has not existed since 176, which dropped it
+(`176_chat_entity.sql:456-457`) and moved the copy into `w2_post_message_batch`,
+which stamps the mode when it queues the turn (`:1361`). The comments were
+corrected in the follow-up, and the rows above now give the history. 276's header,
+which calls this "the 153/154 message-borne carrier", is left as applied:
+`db/migrate.mjs` checksums every applied file, so an edit fails loudly on any
+database that has already run it, and nobody can list every such database.
 
 ### 10b. Why a mode switch needs no restart and a model switch does
 
@@ -359,7 +372,7 @@ That is the whole asymmetry:
 
 ### 10c. A mode states INTENT, not PERMISSION — and that is what makes 10b safe
 
-`toolPermission(_mode, _tool, _operation)` in `packages/mcp/src/modes.ts:52`
+`toolPermission(_mode, _tool, _operation)` in `packages/mcp/src/modes.ts:81`
 returns `'allow'` unconditionally, so `exposedToolNames` is the **identity filter**:
 every tool is exposed in every mode. Its comment is explicit — *"Every mode carries
 the SAME full tool surface … What separates the modes is the system prompt, which
@@ -381,6 +394,32 @@ job while holding another's tools, with no error raised anywhere. This is now wr
 as a warning at `modes.ts`'s own policy comment, because that is where someone would
 break it; whoever re-introduces a narrowing owns either respawning on a mode change
 or refusing the mid-chat switch for that mode.
+
+**A third consumer was live, not latent (found after #978 merged).** `tm8_overview`
+echoed the router's mode back as `mode` (`packages/mcp/src/tools.ts`). So after a
+mid-chat switch the agent was told `[mode: build]` by its turn and `mode: ask` by its
+own overview tool, and a human reading the tool result in the thread saw the same
+contradiction. The fix is a read fix, not a restart. The overview now says where the
+current mode lives (`modeSource`: the turn's `[mode: …]` line) instead of echoing the
+launch value; the MCP server has no per-turn channel, and that line is the one copy
+that is always current. Respawning on a mode change was considered and rejected. A
+mode is per turn, so every switch would become a restart just to keep a stale copy
+consistent. The child's close is stdin → SIGTERM → SIGKILL, so whatever it still had
+running would die, on top of a cold start.
+
+**The invariant is a test now, not only a comment.** `packages/server/test/chat/
+orchestrator.test.ts` › "the spawn surface is mode-independent" runs the real launch
+resolver under the real orchestrator for all 36 ordered mode pairs. It requires the
+child answering the second turn to hold exactly what a launch in that turn's mode
+would hold: argv, the MCP env, and the MCP router rebuilt from the child's own config
+file. Negative controls, run when it was written:
+
+- restoring the overview echo fails it on `mode`;
+- narrowing Ask's `tm8_act` without a respawn fails it on `tm8_act`;
+- the same narrowing *with* a mode respawn passes it, and fails only the pin test
+  that says a mode switch keeps the child.
+
+It fails exactly when a mode narrows and nothing restarts.
 
 ### 10d. The two pickers resolve differently, on purpose
 
@@ -419,6 +458,43 @@ again. No census pin moves — no new operation, no new route.
   The tests drive the real component through a fixture port and assert the outgoing
   field; nobody has watched an agent receive a switched mode in a live page.
 - **It does not touch the effort dial**, which is still decorative (§7).
+
+### 10g. What each answer ran under
+
+Once both the model (276) and the mode (153/154) can change between turns, the
+chat's config describes the NEXT turn, not the ones already on screen. The byline
+printed the chat's default mode on every turn and titled it "This answer ran in …
+mode", which was false for any turn sent in another mode and for every message a
+worker posted into the chat.
+
+**The label is read off the answer's own turn row.** `MessageView.ranUnder`
+(`{ model, provider, mode }`) comes from the `chat_turns` row whose
+`agent_message_id` is the message: `model`/`provider` stamped at claim (276), `mode`
+stamped at queue time (176:1361). It is set on answers only, and absent means "no
+record", never "the chat's default". The UI draws `chat-turn-ran-under` from it, and
+draws nothing when it is absent. It is on `MessageView` only, not on
+`WorkSessionInteractionProfileProjection.browserProjection`, whose field list is
+closed on purpose.
+
+**A row from before 276 falls back to its queue-time pricing stamp.**
+`pricing_model`/`pricing_provider` are NOT NULL and stamped when the turn was queued.
+That value is exact for any turn that predates 276, because nothing could move a
+chat's model before 276. A row with no `mode` falls back to `chats.chat_mode`, which
+is written only at insert.
+
+**Correction to 276's column comment.** 276 says of `chat_turns.model`/`provider`:
+"NULL on a pre-276 row; readers coalesce to chats.model". That is right for the
+claim, which reads `chats.model` at the moment it is the value the turn is about to
+run on. It is the wrong fallback for `ranUnder` and for any other historical read:
+`set_chat_model` moves `chats.model`, and an answer from before the move never ran
+on the new value. `chat-storage.pg.test.ts` pins the difference. It moves
+`chats.model`, clears the turn's stamps, and asserts that the label reports the
+pricing stamp and not the moved value. 276 itself is left as applied, because
+`db/migrate.mjs` checksums applied files and a comment is not worth a migration.
+
+**No deploy ordering.** A UI bundle older than the field ignores it, because the UI
+does no runtime validation of responses. A server older than the field omits it,
+and absent draws no label.
 
 ## 11. Provenance
 

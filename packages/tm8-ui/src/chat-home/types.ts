@@ -285,12 +285,34 @@ export interface ChatTurn {
    *  not completed, so `body` is the claim placeholder, not content. */
   turnInFlight?: boolean;
   /**
+   * WHAT THIS ANSWER RAN UNDER, off its own `chat_turns` row: the one record
+   * of a turn's model and mode, since either can change between any two turns
+   * of one chat (a mode per turn since 154, a model since 276).
+   *
+   * NOT the chat's default. The byline used to print
+   * `summary.config.mode` on every turn and title it "This answer ran in … mode",
+   * which was false for any turn sent in another mode, and for every message a
+   * worker or another chat posted here.
+   *
+   * OPTIONAL, and absent means NO label rather than a guess. It is absent on
+   * human turns, on optimistic turns, on messages that are not a chat turn's
+   * answer, and on every read from a server that predates the field.
+   */
+  ranUnder?: ChatTurnRanUnder;
+  /**
    * CLIENT-ONLY: this turn was painted on Send, before the server acked it. Its
    * `messageId` is `optimistic:<clientMutationId>` until the ack names the real
    * message, and the next snapshot that carries that message replaces it. Never
    * on the wire.
    */
   optimistic?: true;
+}
+
+/** The model and mode one chat answer ran under (`ChatTurn.ranUnder`). */
+export interface ChatTurnRanUnder {
+  model: string;
+  provider: string;
+  mode: ChatMode;
 }
 
 export interface ChatThreadDetail {
@@ -353,7 +375,8 @@ export interface ChatPostInput {
    * than a second `setModel`-style write.
    *
    * The server has carried this since 153/154: `messages.requested_chat_mode`
-   * is copied onto `chat_turns.mode` by the enqueue trigger, and the claim
+   * becomes `chat_turns.mode` when the post queues the turn (153's enqueue
+   * trigger did that; `w2_post_message_batch` has since 176), and the claim
    * resolves `coalesce(turn.mode, chat.chat_mode)` — so a turn names its own
    * mode and the chat's default covers the rest. `PostMessageInput.mode`
    * already accepts it on the wire; nothing in this UI was sending it.

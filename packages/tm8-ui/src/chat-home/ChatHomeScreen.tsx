@@ -1404,8 +1404,9 @@ export function ChatHomeScreen({
    * The model above is sticky on the chat row and must be written through
    * `chat.setModel` before the next claim can read it. A mode is cheaper than
    * that in every way: it rides the next POST as `PostMessageInput.mode`, the
-   * server stamps it onto the message, 154's enqueue trigger copies it to
-   * `chat_turns.mode`, and the claim resolves `coalesce(turn.mode,
+   * server stamps it onto the message, the same post queues the turn with it
+   * as `chat_turns.mode` (`w2_post_message_batch` since 176; 153's enqueue
+   * trigger before that), and the claim resolves `coalesce(turn.mode,
    * chat.chat_mode)`. That path has been live since 153/154 and this composer
    * simply never used it.
    *
@@ -1414,7 +1415,9 @@ export function ChatHomeScreen({
    * carries the guide to all six modes, each turn's `[mode: x]` line picks one,
    * and no mode narrows the tool surface (`toolPermission` is 'allow' for every
    * mode, so `exposedToolNames` is the identity filter). A mode states intent,
-   * not permission.
+   * not permission. That last fact is enforced, not assumed: the server's
+   * "the spawn surface is mode-independent" test fails if a mode ever narrows
+   * while a switch keeps the running child.
    *
    * ONE thing can lock the chip, and it is not a running turn: a chat still
    * being born has no id to attribute the pick to. The pick lands on the next
@@ -2545,7 +2548,7 @@ export function ChatHomeScreen({
                 <Turn
                   key={turn.messageId}
                   turn={turn}
-                  mode={detail.summary.config.mode}
+                  models={models}
                   pending={turn.messageId === pendingTurnId}
                   live={turn.messageId === liveMessageId}
                   viewerId={viewerId}
@@ -2565,7 +2568,6 @@ export function ChatHomeScreen({
                 <Turn
                   key="agent-turn-shell"
                   turn={shellTurn}
-                  mode={detail.summary.config.mode}
                   pending
                   live
                   testId="chat-turn-shell"
@@ -3068,7 +3070,7 @@ const UNCAPPED_SESSION_TOTAL = 2_147_483_647;
  */
 function Turn({
   turn,
-  mode,
+  models,
   pending,
   live,
   testId,
@@ -3081,7 +3083,9 @@ function Turn({
   toolNote,
 }: {
   turn: ChatThreadDetail['turns'][number];
-  mode: ChatMode;
+  /** The picker's catalog, only to name `turn.ranUnder.model` the way the
+   *  model chip does. */
+  models?: readonly ChatModelOption[] | undefined;
   /** This turn is the one the pulse is already announcing. */
   pending?: boolean;
   /** This is the agent turn in progress — the shell, or the real message
@@ -3126,6 +3130,22 @@ function Turn({
    * right for it, so it renders in the middle lane and says who sent it.
    */
   const thirdParty = turn.sourceEntityId != null;
+  /**
+   * WHAT THIS ANSWER RAN UNDER, as a label on the answer itself, and not as a
+   * marker between turns where the model or mode changed. A marker only looked
+   * cheaper. A mode is picked per turn, so a one-off Build turn in a Plan chat
+   * would need two markers around one answer. A marker also describes a
+   * difference from a turn the reader may not have loaded (the transcript
+   * pages from the end), so the first answer on a page could never say what
+   * it ran under. And it would be an inference drawn between two rows, where
+   * the server records one fact per row. This is that fact, copied as is.
+   * Its absence draws nothing, never the chat's default.
+   */
+  const ranUnder = turn.ranUnder;
+  const ranUnderModel = ranUnder
+    ? (models?.find((option) => option.model === ranUnder.model && option.provider === ranUnder.provider)
+      ?? models?.find((option) => option.model === ranUnder.model))?.label ?? ranUnder.model
+    : null;
   const isSelf = thirdParty
     ? false
     : viewerId
@@ -3163,7 +3183,7 @@ function Turn({
     <article
       className="tch-turn"
       data-role={turn.role}
-      data-mode={mode}
+      data-mode={ranUnder?.mode}
       data-self={isSelf ? 'true' : 'false'}
       data-third-party={thirdParty ? 'true' : undefined}
       data-live={live ? 'true' : undefined}
@@ -3194,7 +3214,16 @@ function Turn({
             />
           </span>
         ) : null}
-        <span className="tch-mode-chip" title={`This answer ran in ${mode} mode`}>{mode}</span>
+        {ranUnder ? (
+          <span
+            className="tch-turn__ran-under"
+            data-testid="chat-turn-ran-under"
+            title={`This answer ran in ${ranUnder.mode} mode on ${ranUnderModel}`}
+          >
+            <span className="tch-mode-chip">{ranUnder.mode}</span>
+            <span className="tch-turn__model">{ranUnderModel}</span>
+          </span>
+        ) : null}
         <Timestamp at={turn.createdAt} />
       </header>
       {bodyIsContent && turn.body ? (

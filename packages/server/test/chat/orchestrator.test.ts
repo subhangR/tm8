@@ -1,9 +1,23 @@
-import { describe, expect, it } from 'vitest';
-import type { ChatContextFrame, ChatTurnFrame } from '@tm8/contract';
+import { mkdtemp, readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { describe, expect, it, vi } from 'vitest';
+import type { ChatContextFrame, ChatMode, ChatTurnFrame } from '@tm8/contract';
+import {
+  CHAT_MODES,
+  DIRECT_TOOL_NAMES,
+  MCP_TOOL_NAMES,
+  Tm8ToolRouter,
+  routerOptionsFromEnv,
+  type CatalogTransport,
+} from '@tm8/mcp';
+import { createChatLaunchConfigResolver } from '../../src/chat/compose.js';
 import { ChatOrchestrator } from '../../src/chat/orchestrator.js';
 import { ChatTurnPublisher } from '../../src/chat/publisher.js';
 import type {
   AgentRuntime,
+  ChatLaunchConfigInput,
+  ResolveChatLaunchConfig,
   StartAgentThreadInput,
   TurnItem,
 } from '../../src/chat/runtime.js';
@@ -582,6 +596,61 @@ describe('TM8 Chat durable orchestration', () => {
     expect(runtime.closes).toEqual([]);
   });
 
+  /*
+   * THE MODE IS NOT A SPAWN INPUT, pinned the way the test above pins the
+   * model's reuse. A mode is picked per turn (154); if a switch restarted the
+   * child, per-turn modes would be per-turn restarts. The switch reaches the
+   * agent through the turn's own mode line instead: the same child answers,
+   * told `[mode: build]` on the turn that asked for it. Why keeping that child
+   * is SAFE is the job of "the spawn surface is mode-independent", below.
+   */
+  it('a mid-chat mode switch keeps the live child and reaches the turn as its mode line', async () => {
+    const events: string[] = [];
+    const base = {
+      ...claim('cold'),
+      model: 'claude-sonnet-4-5',
+      provider: 'anthropic',
+      agentTool: 'claude-code',
+      agentMessageId: AGENT_MESSAGE,
+      requestedByIdentityId: IDENTITY,
+      requestedByAuthKind: 'browser',
+    };
+    const db = new FakeDb([
+      { ...base, chatMode: 'ask' },
+      {
+        ...base,
+        chatMode: 'build',
+        runtimeState: 'live',
+        turnId: '10000000-0000-4000-8000-00000000000a',
+        userMessageId: '10000000-0000-4000-8000-00000000000b',
+      },
+    ], events);
+    const runtime = new FakeRuntime([
+      { kind: 'text', text: 'ok' },
+      { kind: 'done', reason: 'success' },
+    ]);
+    const launchedIn: ChatMode[] = [];
+    const orchestrator = new ChatOrchestrator({
+      db,
+      runtime,
+      publisher: new ChatTurnPublisher(new SubscriptionRegistry()),
+      resolveLaunchConfig: async (input) => {
+        launchedIn.push(input.chatMode);
+        return {
+          systemPrompt: '', mcpConfigPath: '/tmp/mcp.json',
+          availableTools: [], allowedTools: ['mcp__tm8__tm8_read'],
+        };
+      },
+    });
+
+    await orchestrator.wake(CHAT, IDENTITY);
+
+    expect(runtime.turns.map((turn) => turn.split('\n')[0])).toEqual(['[mode: ask]', '[mode: build]']);
+    expect(runtime.starts).toHaveLength(1);
+    expect(launchedIn).toEqual(['ask']);
+    expect(runtime.closes).toEqual([]);
+  });
+
   // A wake that lands while a drain for the same root is exiting must not be
   // lost: the second wake here fires while the first drain's null claim is
   // still in flight, so it coalesces onto the dying promise — the fix records
@@ -941,5 +1010,198 @@ describe('TM8 Chat durable orchestration', () => {
       expect(runtime.turns).toEqual(['[mode: ask]\nhuman prompt verbatim']);
       expect(errors.map((e) => (e as Error).message)).toEqual(['about read failed']);
     });
+  });
+});
+
+/*
+ * THE SPAWN SURFACE IS MODE-INDEPENDENT — the invariant the mode-switch test
+ * above leans on, as a test rather than a comment in modes.ts.
+ *
+ * The child that keeps answering after a mode switch was LAUNCHED in the first
+ * turn's mode: the resolver stamped that mode into its MCP server's env
+ * (TM8_CHAT_MODE) and computed its `--allowedTools` from it. Keeping it is right
+ * only while a child launched in the new mode would hold exactly the same
+ * things. Today that holds because `toolPermission` (mcp/src/modes.ts) allows
+ * everything in every mode, which the system prompt also promises.
+ *
+ * So this asks that question of the REAL resolver under the REAL orchestrator,
+ * for every ordered pair of modes: switch between two turns, then compare what
+ * the child answering the second turn holds with what a child launched in the
+ * second turn's mode would hold. "Holds" is read the way the child reads it:
+ * argv (tool lists, system prompt), the rest of the MCP env, and the MCP server
+ * REBUILT from the config file the child was pointed at — its listed tools, its
+ * overview and every group's directory. The raw TM8_CHAT_MODE value is the one
+ * thing not compared. It differs by construction; what matters is whether it
+ * changes anything the child can see or do. (It did: `tm8_overview` echoed it,
+ * and this test fails on that echo.)
+ *
+ * It fails if a mode starts narrowing while the child is kept. It would pass if
+ * a mode switch restarted the child, because the second turn would then be
+ * answered by a child launched in its own mode. The day it fails, the fixes are
+ * the ones modes.ts names; editing the expectation is not one of them.
+ */
+describe('the spawn surface is mode-independent', () => {
+  const GROUP_TOOLS = MCP_TOOL_NAMES.filter((name) => (
+    name !== 'tm8_overview' && !(DIRECT_TOOL_NAMES as readonly string[]).includes(name)
+  ));
+  const noServer: CatalogTransport = {
+    invoke: async (operation) => {
+      throw new Error(`reading the surface must not call the server (${String(operation)})`);
+    },
+  };
+
+  /** One mint per launch; the token is a credential, not something a mode sets. */
+  function mintingDb(): Db {
+    return {
+      query: async () => [],
+      rpc: async () => ({
+        id: 'runtime-session',
+        expires_at: new Date(Date.now() + 60_000).toISOString(),
+        runtime_member_id: 'runtime-member',
+        runtime_chat_id: CHAT,
+      }),
+      tx: async () => { throw new Error('not used'); },
+      end: async () => undefined,
+    } as unknown as Db;
+  }
+
+  async function resolverIn(dataDirPrefix: string, create = createChatLaunchConfigResolver) {
+    const dataDir = await mkdtemp(join(tmpdir(), dataDirPrefix));
+    return create({ db: mintingDb(), dataDir, baseUrl: 'http://127.0.0.1:9', mcpCliPath: '/tmp/tm8-mcp.js' });
+  }
+
+  type Launched = Pick<StartAgentThreadInput, 'systemPrompt' | 'mcpConfigPath' | 'availableTools' | 'allowedTools'>;
+
+  /**
+   * What a child launched from `launch` holds. Read at START: the config file
+   * is one path per chat, rewritten whole by every launch, so a later read
+   * would see whatever launched last rather than what this child was given.
+   */
+  async function surfaceOf(launch: Launched) {
+    const config = JSON.parse(await readFile(launch.mcpConfigPath, 'utf8')) as {
+      mcpServers: { tm8: { env: Record<string, string> } };
+    };
+    const env = config.mcpServers.tm8.env;
+    const { TM8_CHAT_MODE: launchedIn, TM8_AGENT_RUNTIME_TOKEN: _token, ...rest } = env;
+    const router = new Tm8ToolRouter(noServer, routerOptionsFromEnv(env));
+    const directories: Record<string, unknown> = {};
+    for (const tool of GROUP_TOOLS) directories[tool] = (await router.call(tool, {})).structuredContent;
+    return {
+      launchedIn,
+      surface: {
+        systemPrompt: launch.systemPrompt,
+        availableTools: launch.availableTools,
+        allowedTools: launch.allowedTools,
+        env: rest,
+        listedTools: router.listedTools().map((tool) => tool.name),
+        overview: (await router.call('tm8_overview', {})).structuredContent,
+        directories,
+      },
+    };
+  }
+
+  class SurfaceRuntime extends FakeRuntime {
+    readonly launched: Awaited<ReturnType<typeof surfaceOf>>[] = [];
+    /** For each turn, the index in `launched` of the child that answered it. */
+    readonly answeredBy: number[] = [];
+    override async startThread(input: StartAgentThreadInput): Promise<{ threadId: string }> {
+      this.launched.push(await surfaceOf(input));
+      return super.startThread(input);
+    }
+    override async *sendTurn(threadId: string, input: { text: string }): AsyncIterable<TurnItem> {
+      this.answeredBy.push(this.launched.length - 1);
+      yield* super.sendTurn(threadId, input);
+    }
+  }
+
+  async function switchBetweenTurns(first: ChatMode, second: ChatMode, resolve: ResolveChatLaunchConfig) {
+    const base = {
+      ...claim('cold'),
+      model: 'claude-sonnet-4-5',
+      provider: 'anthropic',
+      agentTool: 'claude-code',
+      agentMessageId: AGENT_MESSAGE,
+      requestedByIdentityId: IDENTITY,
+      requestedByAuthKind: 'browser',
+    };
+    const db = new FakeDb([
+      { ...base, chatMode: first },
+      {
+        ...base,
+        chatMode: second,
+        runtimeState: 'live',
+        turnId: '10000000-0000-4000-8000-00000000000a',
+        userMessageId: '10000000-0000-4000-8000-00000000000b',
+      },
+    ], []);
+    const runtime = new SurfaceRuntime([
+      { kind: 'text', text: 'ok' },
+      { kind: 'done', reason: 'success' },
+    ]);
+    const inputs: ChatLaunchConfigInput[] = [];
+    const orchestrator = new ChatOrchestrator({
+      db,
+      runtime,
+      publisher: new ChatTurnPublisher(new SubscriptionRegistry()),
+      resolveLaunchConfig: async (input) => {
+        inputs.push(input);
+        return resolve(input);
+      },
+    });
+    await orchestrator.wake(CHAT, IDENTITY);
+    expect(runtime.answeredBy).toHaveLength(2);
+    return { runtime, launchInput: inputs[0]! };
+  }
+
+  it('a child kept across any mode switch holds what a launch in the new mode would', async () => {
+    const resolve = await resolverIn('tm8-spawn-surface-');
+    for (const first of CHAT_MODES) {
+      for (const second of CHAT_MODES) {
+        const { runtime, launchInput } = await switchBetweenTurns(first, second, resolve);
+        const answeredFirst = runtime.launched[runtime.answeredBy[0]!]!;
+        const answeredSecond = runtime.launched[runtime.answeredBy[1]!]!;
+        const inFirst = await surfaceOf(await resolve({ ...launchInput, chatMode: first, mode: 'new' }));
+        const inSecond = await surfaceOf(await resolve({ ...launchInput, chatMode: second, mode: 'new' }));
+
+        // Not vacuous: the child really was launched in the FIRST mode, and a
+        // child read off the orchestrator compares like-for-like with one read
+        // off the resolver directly.
+        expect([first, second, answeredFirst.launchedIn]).toEqual([first, second, first]);
+        expect([first, second, answeredFirst.surface]).toEqual([first, second, inFirst.surface]);
+        expect(inSecond.launchedIn).toBe(second);
+
+        // THE INVARIANT.
+        expect([first, second, answeredSecond.surface]).toEqual([first, second, inSecond.surface]);
+      }
+    }
+  });
+
+  it('reads enough of the surface to see a mode that narrows', async () => {
+    // A detector that cannot tell two surfaces apart would keep the test above
+    // green through exactly the change it exists for. So narrow one mode the
+    // way modes.ts would — Ask loses tm8_act from the provider's surface — and
+    // require the reading to show it.
+    vi.resetModules();
+    vi.doMock('@tm8/mcp', async (importOriginal) => {
+      const real = await importOriginal<typeof import('@tm8/mcp')>();
+      return {
+        ...real,
+        exposedToolNames: (mode: ChatMode, names: readonly string[]) => (
+          names.filter((name) => mode !== 'ask' || name !== 'tm8_act')),
+      };
+    });
+    try {
+      const narrowed = await import('../../src/chat/compose.js');
+      const resolve = await resolverIn('tm8-spawn-surface-narrowed-', narrowed.createChatLaunchConfigResolver);
+      const { launchInput } = await switchBetweenTurns('build', 'ask', resolve);
+      const inAsk = await surfaceOf(await resolve({ ...launchInput, chatMode: 'ask', mode: 'new' }));
+      const inBuild = await surfaceOf(await resolve({ ...launchInput, chatMode: 'build', mode: 'new' }));
+      expect(inBuild.surface.allowedTools).toContain('mcp__tm8__tm8_act');
+      expect(inAsk.surface.allowedTools).not.toContain('mcp__tm8__tm8_act');
+      expect(inAsk.surface).not.toEqual(inBuild.surface);
+    } finally {
+      vi.doUnmock('@tm8/mcp');
+      vi.resetModules();
+    }
   });
 });
