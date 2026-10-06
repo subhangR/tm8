@@ -86,6 +86,9 @@ comment on column public.work_sessions.outcome is
 -- ---------------------------------------------------------------------------
 
 alter table public.work_sessions drop constraint work_sessions_ended_kind_check;
+-- The rename runs between the two constraints: the new CHECK no longer admits
+-- `completed`. (Plain UPDATE: ended_kind has no single-writer guard.)
+update public.work_sessions set ended_kind = 'exited_clean' where ended_kind = 'completed';
 alter table public.work_sessions add constraint work_sessions_ended_kind_check
   check (ended_kind is null or ended_kind in (
     'exited_clean', 'stopped_by_operator', 'server_restart', 'out_of_memory',
@@ -1199,8 +1202,7 @@ $$;
 -- 11. Backfill (spec §8)
 -- ---------------------------------------------------------------------------
 
--- 11a. Renames and reclassifications of process facts.
-update public.work_sessions set ended_kind = 'exited_clean' where ended_kind = 'completed';
+-- 11a. Reclassification of process facts (the `completed` rename ran in §2).
 update public.work_sessions
    set ended_kind = 'credential_revoked'
  where ended_kind = 'stopped_by_operator'
@@ -1242,9 +1244,8 @@ begin
            and t.work_status not in ('done', 'in_review')
       ) into claims_settled;
       v_outcome := case when closed_out and claims_settled then 'completed' else 'stopped' end;
-    elsif r.status_category = 'done' then
-      -- Ticked done by an operator after another kind of ending.
-      v_outcome := 'completed';
+    -- An ENDED session's `done` says nothing: before 301 every exited row was
+    -- filed there by the process, so only a live row's `done` can be a tick.
     elsif coalesce(r.exited_at, r.created_at) < now() - interval '7 days' then
       -- Spec §5.3.1 case 5: old crashes must not flood Interrupted.
       v_outcome := 'stopped';
