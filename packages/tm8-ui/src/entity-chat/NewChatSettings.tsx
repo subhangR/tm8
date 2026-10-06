@@ -3,16 +3,18 @@
  * before the first message (design 01a0da4e §3.4). The DEFAULT `newChatGate`
  * of `EntityChatSlot`, so every place the slot renders gets it with no prop.
  *
- *   1. The subject's kind has a default teammate AND model, and both still
- *      resolve (the teammate exists; the model is in this node's launch
- *      catalog) → NO CARD: the composer opens with them, mode = last used,
- *      project = the entity's own → the space's → scratch. Every one of them
- *      stays editable as the composer's chips.
- *   2. Anything else → THE CARD, in the panel: teammate, model, mode, project,
- *      pre-filled by the same rules; "Use for every ‹Kind› chat" writes the
- *      kind's default; "Start chat" collapses it into the composer's chips and
- *      focuses the message box. A default that no longer resolves is NAMED
- *      here, never swapped silently.
+ *   1. NO CARD whenever a teammate and a model can be filled in: the
+ *      composer opens at once (task 01a11330), with the kind's default
+ *      teammate and model when both resolve (the teammate exists; the model
+ *      is in this node's launch catalog), else the last used → the first
+ *      listed; mode = last used; project = the entity's own → the space's →
+ *      scratch. Every one of them stays editable as the composer's chips, and
+ *      a kind's default is set in Settings → Chat defaults.
+ *   2. THE CARD, in the panel, only when a saved default no longer resolves
+ *      (it is NAMED here, never swapped silently) or nothing can be filled
+ *      in: teammate, model, mode, project, pre-filled by the same rules; "Use
+ *      for every ‹Kind› chat" writes the kind's default; "Start chat"
+ *      collapses it into the composer's chips and focuses the message box.
  *
  * NOTHING IS CREATED HERE. `chat.start` needs a body, so the chat exists only
  * once the composer sends; the card chooses settings and nothing else.
@@ -164,15 +166,17 @@ export function NewChatSettings({ seam, spaceId, nodeKey, subject, composerFor }
     modelOffered: (model) => models.some((option) => option.id === model),
   });
   const mode = lastChatMode();
-  decided.current ??= resolution.skip
-    ? { teammateId: resolution.teammateId as EntityId, model: resolution.model, mode, projectId: facts.projectId }
-    : 'card';
-  if (decided.current !== 'card') return <>{composerFor(decided.current)}</>;
   /* Pre-fill: the resolved default → last used, while it still resolves →
      the first listed. Project keeps its own rule (no last-used). */
   const last = lastChatPicks();
   const lastTeammate = last.teammateId && facts.teammates?.some((teammate) => teammate.id === last.teammateId) ? last.teammateId : null;
   const lastModel = last.model && models.some((option) => option.id === last.model) ? last.model : null;
+  const teammateId = resolution.teammateId ?? lastTeammate ?? facts.teammates?.[0]?.id ?? null;
+  const model = resolution.model ?? lastModel ?? models[0]?.id ?? null;
+  decided.current ??= resolution.problems.length === 0 && teammateId && model
+    ? { teammateId: teammateId as EntityId, model, mode, projectId: facts.projectId }
+    : 'card';
+  if (decided.current !== 'card') return <>{composerFor(decided.current)}</>;
   return (
     <SettingsCard
       kind={kind}
@@ -182,8 +186,8 @@ export function NewChatSettings({ seam, spaceId, nodeKey, subject, composerFor }
       models={models}
       projects={facts.projects}
       initial={{
-        teammateId: resolution.teammateId ?? lastTeammate ?? facts.teammates?.[0]?.id ?? '',
-        model: resolution.model ?? lastModel ?? models[0]?.id ?? '',
+        teammateId: teammateId ?? '',
+        model: model ?? '',
         mode,
         projectId: facts.projectId ?? SCRATCH,
       }}

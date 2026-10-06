@@ -1,7 +1,6 @@
-/* Workspace per-tab chat: docked column or overlay (Spec A §10; design log
-   §12). Workstream G. Tokens only, 4/8 grid. */
+/* Workspace per-tab chat: always a docked column, never an overlay (Spec A
+   §10; design log §12; task 01a11330). Workstream G. Tokens only, 4/8 grid. */
 
-/* The overlay's containing block. */
 .tws-entity-row {
   position: relative;
 }
@@ -44,26 +43,8 @@
   background: var(--pn-line-2);
 }
 
-/* --- Overlay: under the floating group, never over it; no scrim --- */
-.cv2-root .tws-chat.tws-chat--overlay {
-  position: absolute;
-  top: calc(var(--tws-chat-top, 56px) + var(--pn-space-3));
-  right: var(--pn-space-3);
-  bottom: var(--pn-space-3);
-  z-index: 1;
-  width: min(380px, calc(100% - 2 * var(--pn-space-3)));
-  background: var(--pn-card);
-  border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-md);
-  box-shadow: var(--pn-sh-pop);
-  overflow: hidden;
-}
-.cv2-root .tws-chat--overlay > .ecp {
-  background: var(--pn-card);
-}
-
 /* --- Header: the panel's own, with a 36×36 close, 12px inset. No hairline
-   under it in either mode; spacing separates it from the body (R25). --- */
+   under it; spacing separates it from the body (R25). --- */
 .cv2-root .tws-chat .ecp__head {
   padding-right: var(--pn-space-3);
   border-bottom: 0;

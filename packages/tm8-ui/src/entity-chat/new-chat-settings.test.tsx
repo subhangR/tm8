@@ -24,6 +24,8 @@ const TASK = '01a0-task' as EntityId;
 const ADA = '01a0-ada';
 const BOB = '01a0-bob';
 const [MODEL_A, MODEL_B] = modelCatalog('local').map((model) => model.model);
+/* A saved default that no longer resolves: the one case that still shows the card. */
+const STALE: ChatDefaultsMap = { task: { teammateId: BOB as EntityId, model: 'claude-retired-1' } };
 
 interface FakeOpts {
   defaults?: ChatDefaultsMap;
@@ -95,38 +97,68 @@ describe('the skip-when-default rule (§3.4 rule 1)', () => {
     expect(seedShown()).toMatchObject({ projectId: null });
   });
 
+  it('no default: the composer at once, pre-filled with the first listed — no card, nothing created (task 01a11330)', async () => {
+    const seam = fakeSeam({ entityProject: 'p-own' });
+    mount(seam);
+    await waitFor(() => screen.getByTestId('composer'));
+    expect(screen.queryByTestId('new-chat-card')).toBeNull();
+    expect(seedShown()).toEqual({ teammateId: ADA, model: MODEL_A, mode: 'ask', projectId: 'p-own' });
+    expect(seam.setChatDefaults).not.toHaveBeenCalled();
+  });
+
+  it('half a default: the composer, with the half that resolved and the first listed for the rest', async () => {
+    mount(fakeSeam({ defaults: { task: { model: MODEL_B } } }));
+    await waitFor(() => screen.getByTestId('composer'));
+    expect(seedShown()).toMatchObject({ teammateId: ADA, model: MODEL_B });
+  });
+
+  it('a new chat with no default starts with the teammate and model used last', async () => {
+    localStorage.setItem('tm8.chat.lastTeammate', BOB);
+    localStorage.setItem('tm8.chat.lastModel', MODEL_B);
+    mount(fakeSeam());
+    await waitFor(() => screen.getByTestId('composer'));
+    expect(seedShown()).toMatchObject({ teammateId: BOB, model: MODEL_B });
+  });
+
+  it('the kind default outranks last used; a stale last used falls through to the first listed', async () => {
+    localStorage.setItem('tm8.chat.lastTeammate', BOB);
+    localStorage.setItem('tm8.chat.lastModel', MODEL_B);
+    mount(fakeSeam({ defaults: { task: { teammateId: ADA as EntityId } } }));
+    await waitFor(() => screen.getByTestId('composer'));
+    expect(seedShown()).toMatchObject({ teammateId: ADA, model: MODEL_B });
+    cleanup();
+    localStorage.setItem('tm8.chat.lastTeammate', '01a0-left-the-space');
+    localStorage.setItem('tm8.chat.lastModel', 'claude-retired-1');
+    mount(fakeSeam());
+    await waitFor(() => screen.getByTestId('composer'));
+    expect(seedShown()).toMatchObject({ teammateId: ADA, model: MODEL_A });
+  });
+
   it('re-reads the defaults on every new chat instead of trusting the shared cache', async () => {
     const seam = fakeSeam();
     mount(seam);
-    await waitFor(() => screen.getByTestId('new-chat-card'));
+    await waitFor(() => screen.getByTestId('composer'));
     cleanup();
     mount(seam);
-    await waitFor(() => screen.getByTestId('new-chat-card'));
+    await waitFor(() => screen.getByTestId('composer'));
     /* One forced read per mount (the hook's own cached read shares the first). */
     expect(seam.chatDefaults.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 });
 
 describe('the settings card (§3.4 rule 2)', () => {
-  it('no default: the card, pre-filled, and nothing is created', async () => {
-    const seam = fakeSeam({ entityProject: 'p-own' });
+  it('a stale default: the card, pre-filled, and nothing is created', async () => {
+    const seam = fakeSeam({ defaults: STALE, entityProject: 'p-own' });
     const composerFor = mount(seam);
     await waitFor(() => screen.getByTestId('new-chat-card'));
-    expect(screen.getByTestId('new-chat-card').textContent).toContain('No default for Task chats yet.');
-    expect((screen.getByTestId('new-chat-teammate') as HTMLSelectElement).value).toBe(ADA);
+    expect(screen.getByTestId('new-chat-card').textContent).toContain('The default for Task chats no longer resolves.');
+    expect((screen.getByTestId('new-chat-teammate') as HTMLSelectElement).value).toBe(BOB);
     expect((screen.getByTestId('new-chat-model') as HTMLSelectElement).value).toBe(MODEL_A);
     expect((screen.getByTestId('new-chat-mode') as HTMLSelectElement).value).toBe('ask');
     expect((screen.getByTestId('new-chat-project') as HTMLSelectElement).value).toBe('p-own');
     expect(screen.getByTestId('new-chat-use-for-kind').parentElement?.textContent).toContain('Use for every Task chat');
     expect(composerFor).not.toHaveBeenCalled();
     expect(seam.setChatDefaults).not.toHaveBeenCalled();
-  });
-
-  it('half a default: the card, with the half that resolved pre-filled', async () => {
-    mount(fakeSeam({ defaults: { task: { model: MODEL_B } } }));
-    await waitFor(() => screen.getByTestId('new-chat-card'));
-    expect(screen.getByTestId('new-chat-card').textContent).toContain('Task chats have a default model but no teammate.');
-    expect((screen.getByTestId('new-chat-model') as HTMLSelectElement).value).toBe(MODEL_B);
   });
 
   it('a stale model is NAMED on the card, never swapped silently', async () => {
@@ -137,7 +169,7 @@ describe('the settings card (§3.4 rule 2)', () => {
   });
 
   it('Start chat collapses the card into the composer, seeded with the card’s choices and focus', async () => {
-    mount(fakeSeam());
+    mount(fakeSeam({ defaults: STALE }));
     await waitFor(() => screen.getByTestId('new-chat-card'));
     fireEvent.change(screen.getByTestId('new-chat-teammate'), { target: { value: BOB } });
     fireEvent.change(screen.getByTestId('new-chat-model'), { target: { value: MODEL_B } });
@@ -152,9 +184,10 @@ describe('the settings card (§3.4 rule 2)', () => {
   });
 
   it('"Use for every ‹Kind› chat" writes the kind’s default, then starts with the card’s choices', async () => {
-    const seam = fakeSeam();
+    const seam = fakeSeam({ defaults: STALE });
     mount(seam);
     await waitFor(() => screen.getByTestId('new-chat-card'));
+    fireEvent.change(screen.getByTestId('new-chat-teammate'), { target: { value: ADA } });
     fireEvent.change(screen.getByTestId('new-chat-mode'), { target: { value: 'plan' } });
     fireEvent.click(screen.getByTestId('new-chat-use-for-kind'));
     fireEvent.click(screen.getByTestId('new-chat-start'));
@@ -163,38 +196,8 @@ describe('the settings card (§3.4 rule 2)', () => {
     expect(seedShown()).toMatchObject({ mode: 'plan', focus: true });
   });
 
-  it('a second new chat with no default pre-fills the teammate and model used last', async () => {
-    mount(fakeSeam());
-    await waitFor(() => screen.getByTestId('new-chat-card'));
-    fireEvent.change(screen.getByTestId('new-chat-teammate'), { target: { value: BOB } });
-    fireEvent.change(screen.getByTestId('new-chat-model'), { target: { value: MODEL_B } });
-    fireEvent.click(screen.getByTestId('new-chat-start'));
-    await waitFor(() => screen.getByTestId('composer'));
-    cleanup();
-    mount(fakeSeam());
-    await waitFor(() => screen.getByTestId('new-chat-card'));
-    expect((screen.getByTestId('new-chat-teammate') as HTMLSelectElement).value).toBe(BOB);
-    expect((screen.getByTestId('new-chat-model') as HTMLSelectElement).value).toBe(MODEL_B);
-  });
-
-  it('the kind default outranks last used; a stale last used falls through to the first listed', async () => {
-    localStorage.setItem('tm8.chat.lastTeammate', BOB);
-    localStorage.setItem('tm8.chat.lastModel', MODEL_B);
-    mount(fakeSeam({ defaults: { task: { teammateId: ADA as EntityId } } }));
-    await waitFor(() => screen.getByTestId('new-chat-card'));
-    expect((screen.getByTestId('new-chat-teammate') as HTMLSelectElement).value).toBe(ADA);
-    expect((screen.getByTestId('new-chat-model') as HTMLSelectElement).value).toBe(MODEL_B);
-    cleanup();
-    localStorage.setItem('tm8.chat.lastTeammate', '01a0-left-the-space');
-    localStorage.setItem('tm8.chat.lastModel', 'claude-retired-1');
-    mount(fakeSeam());
-    await waitFor(() => screen.getByTestId('new-chat-card'));
-    expect((screen.getByTestId('new-chat-teammate') as HTMLSelectElement).value).toBe(ADA);
-    expect((screen.getByTestId('new-chat-model') as HTMLSelectElement).value).toBe(MODEL_A);
-  });
-
   it('a refused write is shown on the card, and the card stays', async () => {
-    mount(fakeSeam({ setRefuses: 'only a space admin can set chat defaults' }));
+    mount(fakeSeam({ defaults: STALE, setRefuses: 'only a space admin can set chat defaults' }));
     await waitFor(() => screen.getByTestId('new-chat-card'));
     fireEvent.click(screen.getByTestId('new-chat-use-for-kind'));
     fireEvent.click(screen.getByTestId('new-chat-start'));
@@ -205,14 +208,11 @@ describe('the settings card (§3.4 rule 2)', () => {
 });
 
 describe('a subject whose kind never arrives', () => {
-  it('reads it once itself; if that fails, the card still shows — no kind default, no checkbox', async () => {
+  it('reads it once itself; if that fails, the composer still opens — no kind default, the first listed', async () => {
     const seam = { ...fakeSeam(), entity: vi.fn(async () => { throw new Error('not found'); }) };
     mount(seam as never, null as never);
-    await waitFor(() => screen.getByTestId('new-chat-card'));
-    expect(screen.getByTestId('new-chat-card').textContent).toContain('Choose how this chat starts.');
-    expect(screen.queryByTestId('new-chat-use-for-kind')).toBeNull();
-    fireEvent.click(screen.getByTestId('new-chat-start'));
     await waitFor(() => screen.getByTestId('composer'));
+    expect(seedShown()).toMatchObject({ teammateId: ADA, model: MODEL_A });
   });
 
   it('a kind the gate reads itself drives the rule as usual', async () => {
@@ -225,8 +225,20 @@ describe('a subject whose kind never arrives', () => {
 describe('every slot host gets the gate (EntityChatSlot default)', () => {
   beforeEach(() => resetNav(SPACE));
 
-  it('a new chat with no default shows the card in the panel; Start chat hands the seed to the slot composer', async () => {
+  it('a new chat with no default opens the slot composer in the panel at once', async () => {
     const seam = { ...fakeSeam(), onEvent: () => () => {} };
+    act(() => navStore.getState().openChat({ about: TASK, thread: 'new' }));
+    render(
+      <EntityChatSlot seam={seam as never} spaceId={SPACE} nodeKey="local" onOpenEntity={() => {}} subjectOf={() => ({ title: 'Task A', kind: 'task' })} />,
+    );
+    await waitFor(() => screen.getByTestId('slot-composer'));
+    expect(screen.getByTestId('entity-chat-panel').contains(screen.getByTestId('slot-composer'))).toBe(true);
+    expect(screen.queryByTestId('new-chat-card')).toBeNull();
+    expect(JSON.parse(screen.getByTestId('slot-composer').textContent ?? 'null')).toMatchObject({ teammateId: ADA, model: MODEL_A });
+  });
+
+  it('a stale default shows the card in the panel; Start chat hands the seed to the slot composer', async () => {
+    const seam = { ...fakeSeam({ defaults: STALE }), onEvent: () => () => {} };
     act(() => navStore.getState().openChat({ about: TASK, thread: 'new' }));
     render(
       <EntityChatSlot seam={seam as never} spaceId={SPACE} nodeKey="local" onOpenEntity={() => {}} subjectOf={() => ({ title: 'Task A', kind: 'task' })} />,
@@ -236,7 +248,7 @@ describe('every slot host gets the gate (EntityChatSlot default)', () => {
     expect(screen.queryByTestId('slot-composer')).toBeNull();
     fireEvent.click(screen.getByTestId('new-chat-start'));
     await waitFor(() => screen.getByTestId('slot-composer'));
-    expect(JSON.parse(screen.getByTestId('slot-composer').textContent ?? 'null')).toMatchObject({ teammateId: ADA, model: MODEL_A, focus: true });
+    expect(JSON.parse(screen.getByTestId('slot-composer').textContent ?? 'null')).toMatchObject({ teammateId: BOB, model: MODEL_A, focus: true });
   });
 
   it('an existing chat never meets the gate', () => {

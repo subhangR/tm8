@@ -260,6 +260,30 @@ export function ActionStrip({ tab, owner }: ActionStripProps) {
     );
   };
 
+  /* The per-tab chat dock's toggle: the tab's own, so with an owner it is the
+     PAGE's (task 01a11330) — never the owner's, whose chat is the host's pane. */
+  const chatToggle =
+    adapter.supportsChat && tab.id !== owner?.tab.id ? (
+      <button
+        type="button"
+        className="tws-astrip-btn tws-astrip-chat"
+        aria-label="Chat"
+        aria-pressed={chatOpen}
+        data-testid="tws-chat-toggle"
+        onClick={() =>
+          dispatch({
+            command: 'workspace.tabs.setUi',
+            args: { tabId: tab.id, patch: { chat: { open: !chatOpen } } },
+            source: 'click',
+          })
+        }
+      >
+        <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+        </svg>
+      </button>
+    ) : null;
+
   return (
     <>
     <div
@@ -317,6 +341,7 @@ export function ActionStrip({ tab, owner }: ActionStripProps) {
         {owner ? (
           <div ref={chrome?.setCommonVerbsSlot} className="tws-astrip-cluster tws-astrip-verbs" data-testid="tws-astrip-page-common" />
         ) : null}
+        {owner && chatToggle ? <div className="tws-astrip-cluster">{chatToggle}</div> : null}
         {kindConfig.mcpEquipment && detail && detail.deletedAt == null ? (
           <div className="tws-astrip-cluster">
             <ConnectorsButton entityId={tab.entityId} />
@@ -387,27 +412,8 @@ export function ActionStrip({ tab, owner }: ActionStripProps) {
         <div className="tws-astrip-cluster">
           {/* Run, from the panel's own bar (flows and refusals unchanged). */}
           <div ref={commonChrome?.setCommonVerbsSlot} className="tws-astrip-verbs tws-astrip-common" data-testid="tws-astrip-common" />
-          {/* Split: the owner's chat is the host's own pane, not a per-tab dock. */}
-          {adapter.supportsChat && !owner ? (
-            <button
-              type="button"
-              className="tws-astrip-btn tws-astrip-chat"
-              aria-label="Chat"
-              aria-pressed={chatOpen}
-              data-testid="tws-chat-toggle"
-              onClick={() =>
-                dispatch({
-                  command: 'workspace.tabs.setUi',
-                  args: { tabId: tab.id, patch: { chat: { open: !chatOpen } } },
-                  source: 'click',
-                })
-              }
-            >
-              <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-                <path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
-              </svg>
-            </button>
-          ) : null}
+          {/* Split: the owner's chat is the host's own pane; the PAGE's chat is up top. */}
+          {owner ? null : chatToggle}
         </div>
 
         <div className="tws-astrip-cluster" ref={menuRef}>

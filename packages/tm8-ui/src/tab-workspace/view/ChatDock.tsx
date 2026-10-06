@@ -1,5 +1,5 @@
 /**
- * Per-tab chat dock / overlay (Spec A §10, D13; design log §12). Workstream G.
+ * Per-tab chat dock (Spec A §10, D13; design log §12). Workstream G.
  *
  * The tab's own `ui.chat` is the slot: `open`, and `threadId` (absent until
  * the chats about the entity are read, then the latest or `'new'`, exactly as
@@ -9,8 +9,9 @@
  * WIDTH is the workspace's one `layout.chatWidth` (`workspace.layout.set`),
  * not a per-tab width: the dock is a column of the workspace, like the
  * browser, and a column that changes width on every tab switch reads as a
- * layout jump. When less than ~480px of entity content would remain, the
- * chat opens as an overlay inside the row instead, under the floating group.
+ * layout jump. It is ALWAYS a column, never an overlay over the page (task
+ * 01a11330): in a narrow row the chat gives up width down to its minimum and
+ * the entity content shrinks beside it.
  *
  * PER-TAB STATE survives the unmount that every tab switch is (D15):
  *   · thread and open/closed live on the tab record;
@@ -38,48 +39,44 @@ import './chat.css';
 
 export interface ChatDockProps {
   tab: EntityTabRecord;
+  /** Where an entity named in the chat opens; absent ⇒ a linked Workspace tab. */
+  onOpenEntity?: (id: string) => void;
 }
 
-/** Below this much entity content beside the dock, the chat overlays instead (Spec A §10). */
-const MIN_CONTENT_W = 480;
+/** The chat narrows (to its own minimum) before the entity content goes below this. */
+const MIN_CONTENT_W = 320;
 
 /** A new chat's chosen settings, per tab, for the page's life. */
 const startedSeeds = new Map<TabId, NewChatSeed>();
 
-export function ChatDock({ tab }: ChatDockProps) {
+export function ChatDock({ tab, onOpenEntity }: ChatDockProps) {
   if (!tab.ui.chat?.open || !getKindAdapter(tab.kind).supportsChat) return null;
-  return <OpenChatDock tab={tab} />;
+  return <OpenChatDock tab={tab} onOpenEntity={onOpenEntity} />;
 }
 
-function OpenChatDock({ tab }: ChatDockProps) {
+function OpenChatDock({ tab, onOpenEntity }: ChatDockProps) {
   const { dispatch, gate, viewerId } = useWorkspace();
   const chatWidth = useWorkspaceState((s) => s.layout.chatWidth);
   const { data } = gate;
   const about = tab.entityId as EntityId;
   const tabId = tab.id;
 
-  /* The row's width decides docked vs overlay; the floating group's bottom
-     is where an overlay starts, so the group is never covered. */
+  /* The row's width caps the column: the viewer's width while the content
+     keeps MIN_CONTENT_W, else narrower, never below the chat's own minimum. */
   const [el, setEl] = useState<HTMLElement | null>(null);
   const [rowWidth, setRowWidth] = useState(Infinity);
-  const [groupBottom, setGroupBottom] = useState(0);
   useEffect(() => {
     const row = el?.parentElement;
     if (!row || typeof ResizeObserver === 'undefined') return;
-    const group = row.querySelector<HTMLElement>('.tws-floating');
-    /* Layout px, not client rects: the shell scales with CSS `zoom`. The
-       group's offset parent is the entity content, which starts at the row's top. */
-    const measure = () => {
-      setRowWidth(row.clientWidth);
-      setGroupBottom(group ? group.offsetTop + group.offsetHeight : 0);
-    };
+    /* Layout px, not client rects: the shell scales with CSS `zoom`. */
+    const measure = () => setRowWidth(row.clientWidth);
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(row);
-    if (group) ro.observe(group);
     return () => ro.disconnect();
   }, [el]);
-  const overlay = rowWidth - chatWidth < MIN_CONTENT_W;
+  const fitMax = Math.max(LAYOUT_BOUNDS.chatWidth.min, rowWidth - MIN_CONTENT_W);
+  const paintedWidth = Math.min(chatWidth, fitMax);
 
   const setChat = useCallback(
     (chat: { open: boolean; threadId?: EntityId | 'new' }, source: 'click' | 'system' = 'click') =>
@@ -123,21 +120,18 @@ function OpenChatDock({ tab }: ChatDockProps) {
       seam: data.seam,
       spaceId: data.spaceId ?? '',
       nodeKey: nodeKeyOf(gate.serverBaseUrl),
-      onOpenEntity: openLinked,
+      onOpenEntity: onOpenEntity ?? openLinked,
       skillOptions: data.skillOptions,
       viewerName: data.viewerActor?.displayName,
       viewerMemberId: gate.viewerMemberId ?? undefined,
       composerDrafts,
     }),
-    [data, gate.serverBaseUrl, gate.viewerMemberId, openLinked, composerDrafts],
+    [data, gate.serverBaseUrl, gate.viewerMemberId, onOpenEntity, openLinked, composerDrafts],
   );
 
   useChatScroll(el, tabId, thread);
 
-  const style = {
-    '--tws-chat-w': `${chatWidth}px`,
-    '--tws-chat-top': `${groupBottom}px`,
-  } as CSSProperties;
+  const style = { '--tws-chat-w': `${paintedWidth}px` } as CSSProperties;
 
   /* A new chat's settings, once chosen, hold for this tab until it is
      created: coming back to the tab returns to its composer and draft, not
@@ -173,36 +167,31 @@ function OpenChatDock({ tab }: ChatDockProps) {
   return (
     <aside
       ref={setEl}
-      className={`tws-chat${overlay ? ' tws-chat--overlay' : ''}`}
+      className="tws-chat"
       aria-label="Chat"
       data-testid="tws-chat"
-      data-mode={overlay ? 'overlay' : 'docked'}
+      data-mode="docked"
       style={style}
-      onKeyDown={(e) => {
-        if (overlay && e.key === 'Escape' && !e.defaultPrevented) close();
-      }}
     >
-      {overlay ? null : (
-        <div className="tws-chat-resizer">
-          <PanelResizer
-            side="right"
-            label="Chat"
-            width={chatWidth}
-            minWidth={LAYOUT_BOUNDS.chatWidth.min}
-            maxWidth={Math.min(LAYOUT_BOUNDS.chatWidth.max, rowWidth - MIN_CONTENT_W)}
-            onResize={(w) =>
-              dispatch({ command: 'workspace.layout.set', args: { chatWidth: Math.round(w) }, source: 'click' })
-            }
-            onReset={() =>
-              dispatch({
-                command: 'workspace.layout.set',
-                args: { chatWidth: LAYOUT_BOUNDS.chatWidth.initial },
-                source: 'click',
-              })
-            }
-          />
-        </div>
-      )}
+      <div className="tws-chat-resizer">
+        <PanelResizer
+          side="right"
+          label="Chat"
+          width={paintedWidth}
+          minWidth={LAYOUT_BOUNDS.chatWidth.min}
+          maxWidth={Math.min(LAYOUT_BOUNDS.chatWidth.max, fitMax)}
+          onResize={(w) =>
+            dispatch({ command: 'workspace.layout.set', args: { chatWidth: Math.round(w) }, source: 'click' })
+          }
+          onReset={() =>
+            dispatch({
+              command: 'workspace.layout.set',
+              args: { chatWidth: LAYOUT_BOUNDS.chatWidth.initial },
+              source: 'click',
+            })
+          }
+        />
+      </div>
       {thread !== undefined ? (
         <EntityChatPanel
           slot={{ about, thread }}

@@ -18,6 +18,7 @@ import type { EntityTabRecord } from './runtime/types';
 import { WorkspaceProvider, type WorkspaceContextValue, type WorkspaceGateHandles } from './view/context';
 
 export { ActionStrip, type ActionStripOwner } from './view/ActionStrip';
+export { ChatDock } from './view/ChatDock';
 export { useEntityChromeValue } from './view/ContentHost';
 export { EntityChromeContext, EntityTabBody, type EntityChromeContextValue } from './adapters/entity';
 export { getKindAdapter } from './adapters/registry';
