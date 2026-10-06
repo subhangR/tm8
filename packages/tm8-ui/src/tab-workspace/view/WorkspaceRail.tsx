@@ -9,7 +9,7 @@
  * `HomeRail` would mean opting out of everything it draws. A rail entry IS the
  * browser's kind control: clicking one sets `browsers.main.kind`.
  */
-import { useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react';
+import { cloneElement, isValidElement, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react';
 import { KindIcon, VIEW_ART, homeRailGroups } from '../../domain';
 import { VectorIcon } from '../../kit/VectorIcon';
 import { isWorkspaceKind } from '../runtime/types';
@@ -91,7 +91,12 @@ export function WorkspaceRail() {
         ))}
         {gate.accountSlot ? (
           <RailTip label="Account">
-            <div className="tws-rail-account">{gate.accountSlot}</div>
+            <div className="tws-rail-account">
+              {/* R12: the avatar-only trigger with its own accessible name. */}
+              {isValidElement<{ compact?: boolean }>(gate.accountSlot)
+                ? cloneElement(gate.accountSlot, { compact: true })
+                : gate.accountSlot}
+            </div>
           </RailTip>
         ) : null}
       </div>

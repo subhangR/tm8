@@ -49,6 +49,12 @@ import { ACCOUNT_MENU } from './specimen';
 export interface AccountMenuProps {
   /** Display actor in the active space; distinct from the local login account. */
   actor: ActorSummary;
+  /**
+   * Opt-in avatar-only trigger (the Workspace rail, design log R12): no name
+   * or caret, a 32px avatar the host may scale, and an explicit accessible
+   * name. Default false keeps the named trigger.
+   */
+  compact?: boolean;
   /** Open the full T3-3 screen. Omitted ⇒ the row is not offered. */
   onOpenAccountScreen?: () => void;
   /**
@@ -97,6 +103,7 @@ export interface AccountMenuProps {
 
 export function AccountMenu({
   actor,
+  compact = false,
   onOpenAccountScreen,
   onOpenAgentTools,
   agentToolsNudge,
@@ -150,6 +157,8 @@ export function AccountMenu({
         type="button"
         className="auth-accountmenu__trigger"
         data-testid="account-menu-trigger"
+        data-compact={compact || undefined}
+        {...(compact ? { 'aria-label': `Account: ${name}` } : {})}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
@@ -158,14 +167,18 @@ export function AccountMenu({
           actorId={actor.id}
           provenance={actor.isAgent ? 'agent' : 'human'}
           label={name}
-          size={20}
+          size={compact ? 32 : 20}
           src={actor.avatar ?? null}
-          className="auth-avatar auth-avatar--sm"
+          className={compact ? 'auth-avatar auth-avatar--compact' : 'auth-avatar auth-avatar--sm'}
         />
-        <span className="auth-accountmenu__name">{name}</span>
-        <span className="auth-accountmenu__caret" aria-hidden>
-          ▾
-        </span>
+        {compact ? null : (
+          <>
+            <span className="auth-accountmenu__name">{name}</span>
+            <span className="auth-accountmenu__caret" aria-hidden>
+              ▾
+            </span>
+          </>
+        )}
       </button>
 
       {open ? (

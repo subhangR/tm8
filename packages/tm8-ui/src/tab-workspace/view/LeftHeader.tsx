@@ -16,10 +16,10 @@ export function LeftHeader() {
   const { gate } = useWorkspace();
   const browserWidth = useWorkspaceState((s) => s.layout.browserWidth);
   const narrow = browserWidth < NARROW_BROWSER_W;
-  const switcher =
-    narrow && isValidElement<{ collapsed?: boolean }>(gate.switcherSlot)
-      ? cloneElement(gate.switcherSlot, { collapsed: true })
-      : gate.switcherSlot;
+  /* R4: the single-line quiet trigger; the space initial only when narrow. */
+  const switcher = isValidElement<{ collapsed?: boolean; quiet?: boolean }>(gate.switcherSlot)
+    ? cloneElement(gate.switcherSlot, { collapsed: narrow, quiet: true })
+    : gate.switcherSlot;
   return (
     <header className="tws-left-header" data-testid="tws-left-header">
       <div className="tws-mark-cell">
