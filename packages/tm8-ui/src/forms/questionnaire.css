@@ -77,7 +77,7 @@
 /* -- one question ---------------------------------------------------------- */
 .fq { display: flex; flex-direction: column; gap: var(--pn-space-1); min-width: 0; }
 .fq__head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--pn-space-2); }
-.fq__title { font-weight: 600; font-size: var(--pn-fs-body); color: var(--pn-ink); }
+.fq__title { min-width: 0; overflow-wrap: anywhere; font-weight: 600; font-size: var(--pn-fs-body); color: var(--pn-ink); }
 .fq__req { font-size: var(--pn-fs-micro); color: var(--pn-ink-3); white-space: nowrap; }
 .fq__help { color: var(--pn-ink-2); font-size: var(--pn-fs-sm); }
 .fq__issues { margin: 0; padding-left: var(--pn-space-4); color: var(--pn-block); font-size: var(--pn-fs-sm); }

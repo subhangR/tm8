@@ -31,7 +31,7 @@ import { useEffect, useState, type CSSProperties, type RefObject } from 'react';
  */
 
 /** The zoom actually applied to a subtree — `zoom` MULTIPLIES when nested. */
-function zoomOf(el: HTMLElement): number {
+export function zoomOf(el: HTMLElement): number {
   let factor = 1;
   for (let node: HTMLElement | null = el; node; node = node.parentElement) {
     const z = Number.parseFloat(getComputedStyle(node).zoom);

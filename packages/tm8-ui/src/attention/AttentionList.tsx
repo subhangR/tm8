@@ -137,7 +137,17 @@ function AttentionListRow(props: {
       <AttentionChipView chip={row.chip} now={now} />
       <div className="att-list__body">
         <div className="att-list__line">
-          <span className={title ? 'att-list__name' : 'att-list__name att-list__name--raw'}>{title ?? row.rootId}</span>
+          {/* The title opens too: a click on the row's name doing nothing read
+              as "the attention item does not open" (task 01a112b9). */}
+          <button
+            type="button"
+            className={title ? 'att-list__name' : 'att-list__name att-list__name--raw'}
+            title={title ?? row.rootId}
+            data-testid="attention-open-title"
+            onClick={props.onOpen}
+          >
+            {title ?? row.rootId}
+          </button>
           <span className="att-list__type">{latest.actionType ?? 'decide'}</span>
         </div>
         <div className="att-list__reason" title={latest.reason}>{latest.reason}</div>

@@ -156,6 +156,31 @@ describe('the top bar (chapter 4, mock tab 2)', () => {
     expect(onOpen).toHaveBeenLastCalledWith('form-1');
   });
 
+  it('clicking a row\'s title opens it like Open does: the raising session, or the form', async () => {
+    // Task 01a112b9: only the small Open button routed; a click on the item's
+    // name did nothing, which read as "attention does not open when clicked".
+    const fake = fakeSeam([
+      req({ id: 'a1', entityId: 'task-2', sourceWorkSessionId: 'sess-9' as EntityId, assigneeId: ME as never, reason: 'Pick one' }),
+      req({ id: 'f1', entityId: 'form-1', rootId: 'task-3' as EntityId, origin: 'system', sourceWorkSessionId: 'sess-8' as EntityId, reason: 'Answer the form' }),
+    ]);
+    const onOpen = vi.fn();
+    mount(fake, onOpen);
+    await waitFor(() => expect(topCounts()).toBe('1/2'));
+    const titleOf = (root: string) => {
+      fireEvent.click(screen.getByTestId('attention-top-all'));
+      const pop = screen.getByTestId('attention-top-popover');
+      const row = within(pop).getAllByTestId('attention-list-row').find((r) => r.dataset.root === root)!;
+      return within(row).getByTestId('attention-open-title');
+    };
+    const title = titleOf('task-2');
+    expect(title.tagName).toBe('BUTTON');
+    fireEvent.click(title);
+    expect(onOpen).toHaveBeenLastCalledWith('sess-9');
+    expect(screen.queryByTestId('attention-top-popover')).toBeNull();
+    fireEvent.click(titleOf('task-3'));
+    expect(onOpen).toHaveBeenLastCalledWith('form-1');
+  });
+
   it('shows Personal 0 and Team 0, not glowing, when the queue is empty', async () => {
     const fake = fakeSeam([]);
     mount(fake);

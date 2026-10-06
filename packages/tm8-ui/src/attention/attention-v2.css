@@ -129,6 +129,7 @@
 
 .att-list__row {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   gap: var(--pn-space-2);
   padding: var(--pn-space-2) var(--pn-space-3);
@@ -145,8 +146,10 @@
   opacity: 0.55;
 }
 
+/* In a narrow list (the rail's popover) the actions wrap under the body
+   instead of squeezing the title and reason to a few letters. */
 .att-list__body {
-  flex: 1;
+  flex: 1 1 180px;
   min-width: 0;
 }
 
@@ -159,11 +162,22 @@
 
 .att-list__name {
   min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
   overflow: hidden;
   font-size: var(--pn-fs-sm);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.att-list__name:hover {
+  text-decoration: underline;
 }
 
 .att-list__name--raw {
@@ -199,6 +213,7 @@
 .att-list__acts {
   display: flex;
   flex: none;
+  margin-left: auto;
   gap: 4px;
 }
 

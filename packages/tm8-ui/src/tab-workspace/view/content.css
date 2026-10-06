@@ -358,7 +358,6 @@
    their control, the common section's bottom-aligned. */
 .cv2-root .tws-astrip .pn-actions__flow,
 .cv2-root .tws-astrip-popover,
-.cv2-root .tws-astrip .pf-chip__pop,
 .cv2-root .tws-astrip-menu {
   position: absolute;
   /* 8px from the strip's edge: the control's cluster is centred in the 40px
@@ -374,10 +373,27 @@
   top: auto;
   bottom: 0;
 }
-.cv2-root .tws-astrip .pf-chip__pop {
-  width: 400px;
-  max-height: 60vh;
-  overflow: auto;
+/* While one of its popovers is open the strip rises above the tab's content:
+   at its default 2 a popover beside the strip's top controls drew under the
+   title bar (5) and the attention dock (30). */
+.tws-astrip:has(.tws-astrip-popover, .tws-astrip-menu, .tws-astrip-outline[data-open]) {
+  z-index: 40;
+}
+/* The forms popover places itself (fixed, clamped to the viewport, beside the
+   chip: `useAnchoredPopover`) and is portalled out of the strip, so it is never
+   clipped, covered or run off an edge. It is wide enough for a form's
+   questions, and only scrolls vertically. */
+.cv2-root .pf-chip__pop {
+  position: fixed;
+  z-index: 60;
+  width: 520px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  outline: none;
+  /* `.pf-chip` is nowrap (a one-line chip) and the popover is its child: every
+     question title inherited it and ran off the right edge. */
+  white-space: normal;
   padding: var(--pn-space-4);
   background: var(--pn-card);
   border: 1px solid var(--pn-line);
@@ -385,7 +401,7 @@
   box-shadow: var(--pn-sh-pop);
   box-sizing: border-box;
 }
-.cv2-root .tws-astrip .pf-chip__pop .pf-banner {
+.cv2-root .pf-chip__pop .pf-banner {
   margin: 0;
   padding: 0;
   border: 0;
@@ -601,6 +617,18 @@
 .tws-entity-host:has(.pn-panel[data-embedded-flow='fill']) > .tws-titlebar[data-hidden] {
   height: 36px;
   transform: translateY(-100%);
+}
+/* A session's "Waiting on you" banner is the body's first row, which is
+   exactly where the overlaying bar sits: it covered the chip, the label and
+   the reason, leaving "· 16s · on task …" (task 01a112b9). While a banner is
+   up the bar stays put and the banner starts below it, so neither moves when
+   focus enters the terminal (no refit on every click). */
+.tws-entity-host:has(.pn-panel[data-embedded-flow='fill'] .att-banner) > .tws-titlebar[data-hidden] {
+  transform: none;
+  pointer-events: auto;
+}
+.tws-entity-host:has(> .tws-titlebar) .pn-panel[data-embedded-flow='fill'] .att-banner {
+  margin-top: 36px;
 }
 @media (prefers-reduced-motion: reduce) {
   .tws-titlebar {
