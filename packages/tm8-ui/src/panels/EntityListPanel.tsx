@@ -4372,10 +4372,12 @@ export function Tile({
         }
         assignees={view.shows('avatar') ? controlFacts.assignees : EMPTY_MEMBERS}
         creator={view.shows('avatar') ? controlFacts.creator : null}
-        badges={attentionLine || tileBadges ? (
+        badges={attentionLine || tileBadges || (progress && view.shows('progress')) ? (
           <>
             <AttentionTileSubtitle line={attentionLine} />
             {tileBadges}
+            {/* 307: the task's weighted progress, as the standard tile draws it. */}
+            {progress && view.shows('progress') ? <TileProgressBar progress={progress} /> : null}
           </>
         ) : null}
         /* The same cluster the standard tile draws, in the same order — one

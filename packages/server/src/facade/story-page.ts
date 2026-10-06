@@ -23,6 +23,7 @@ import {
   type StoryNodeCounts,
   type StoryPage,
   type StoryProgress,
+  type TaskProgress,
   type StoryRoot,
   type StorySession,
   type StoryState,
@@ -59,6 +60,8 @@ interface RootWorkRow {
   progress: StoryProgress;
   task_progress: StoryProgress;
   descendant_count: number;
+  /** 307: a task root's points-weighted subtree progress; null for other kinds. */
+  weighted: TaskProgress | null;
 }
 
 interface FactRow {
@@ -190,7 +193,8 @@ export async function loadStoryPage(
     `select w.root_id,
             internal.story_tally(array_agg(distinct w.entity_id) filter (where w.kind in ('task', 'story'))) as progress,
             internal.story_tally(array_agg(distinct w.entity_id) filter (where w.kind = 'task')) as task_progress,
-            (count(distinct w.entity_id) filter (where w.depth > 0))::int as descendant_count
+            (count(distinct w.entity_id) filter (where w.depth > 0))::int as descendant_count,
+            case when bool_or(w.depth = 0 and w.kind = 'task') then internal.task_progress(w.root_id) end as weighted
        from internal.story_work($1) w
       where w.root_id is not null
       group by w.root_id`,
@@ -415,6 +419,7 @@ export async function loadStoryPage(
       progress: work?.progress ?? EMPTY_PROGRESS,
       taskProgress: work?.task_progress ?? EMPTY_PROGRESS,
       descendantCount: work?.descendant_count ?? 0,
+      ...(work?.weighted ? { weighted: work.weighted } : {}),
       childIds,
       trail: trailItems,
     };

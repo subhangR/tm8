@@ -27,6 +27,7 @@
 //                      a bounded text section.
 import type { ActorSummary, EntityContextV2View, StatusCategory, TeamMemberMode } from './contract.js';
 import { z } from 'zod';
+import { WeightedProgressSchema, type TaskProgress, type WeightedProgress } from './progress.js';
 
 /**
  * The edge types a story's trail follows, in both directions, from each root
@@ -149,6 +150,11 @@ export interface StoryState {
   progress: StoryProgress;
   taskProgress: StoryProgress;
   rollup: StoryProgress;
+  /**
+   * 307: points-weighted progress over the same task set `rollup` counts.
+   * Optional for older stored summaries.
+   */
+  weighted?: WeightedProgress;
   /** Followed work sessions whose runtime is live. */
   liveSessionCount: number;
   /** Unresolved attention requests on the story or any followed row. */
@@ -262,6 +268,8 @@ export interface StoryRoot {
    */
   progress: StoryProgress;
   taskProgress: StoryProgress;
+  /** 307: a task root's points-weighted subtree progress (internal.task_progress). */
+  weighted?: TaskProgress;
   /**
    * Every hierarchy descendant of the root, any kind, unbounded by the
    * trail's depth — the count `entity query --subtree <root>` returns.
@@ -417,6 +425,7 @@ export const StoryStateSchema = z.object({
   progress: StoryProgressSchema,
   taskProgress: StoryProgressSchema,
   rollup: StoryProgressSchema,
+  weighted: WeightedProgressSchema.optional(),
   liveSessionCount: z.number().int().nonnegative(),
   pendingAttentionCount: z.number().int().nonnegative(),
   lastActivityAt: z.string().nullable(),

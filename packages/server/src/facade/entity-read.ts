@@ -64,7 +64,7 @@ import type {
   WorkStatus,
 } from '@tm8/contract';
 import { checkGraphCoherence, DEFAULT_FORM_SETTINGS, plainExcerpt, type FormQuestionRow, type FormSectionRow, type FormSettings, type FormStatus } from '@tm8/contract';
-import { SessionTranscriptContextSchema, StoryStateSchema, type SessionTranscriptContext } from '@tm8/contract';
+import { SessionTranscriptContextSchema, StoryStateSchema, TaskProgressSchema, type SessionTranscriptContext, type TaskProgress } from '@tm8/contract';
 import { DesignStateSchema, type DesignPage } from '@tm8/contract';
 import type { Querier } from '../db/types.js';
 import { projectInteractionProfileForBrowser } from '../profiles/browser-projection.js';
@@ -192,6 +192,9 @@ export const ENTITY_COLUMNS = `
   -- in order) — one SQL function the projector twin selects too.
   dsg.title as design_title, dsg.description as design_description,
   case when e.kind = 'design' then internal.design_summary(e.id) end as design_summary,
+  -- 307: points-weighted subtree progress, the same function the projector
+  -- twin selects. Computed on read, never stored.
+  case when e.kind = 'task' then internal.task_progress(e.id) end as task_progress,
   -- Space styles (284): the whole document is row facts (spec §4.3) — it is
   -- what a push repaints from, and it is bounded by the doors.
   stl.title as sty_title, stl.description as sty_description,
@@ -626,6 +629,7 @@ export interface EntityRow {
   design_title?: string | null;
   design_description?: string | null;
   design_summary?: unknown;
+  task_progress?: unknown;
   sty_title?: string | null;
   sty_description?: string | null;
   sty_schema_version?: number | null;
@@ -1866,6 +1870,7 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
           assignedAt: assignment.assignedAt,
         })),
         acceptance: acceptanceOf(row),
+        ...taskProgressOf(row.task_progress),
         completionGate: row.completion_gate === 'pr_merged' ? 'pr_merged' : 'none',
       };
     case 'channel':
@@ -3162,6 +3167,16 @@ function credentialFactsOf(row: EntityRow): Extract<EntityState, { kind: 'creden
     status: row.cred_status ?? 'unknown',
     ownerAccountId: row.cred_owner_account_id ?? null,
   };
+}
+
+/**
+ * A task's progress as `internal.task_progress` returned it (307), as the
+ * spread for its state. Shared with the projector; a missing or malformed
+ * value leaves `progress` off rather than failing the read.
+ */
+export function taskProgressOf(raw: unknown): { progress?: TaskProgress } {
+  const parsed = TaskProgressSchema.safeParse(raw);
+  return parsed.success ? { progress: parsed.data } : {};
 }
 
 /**

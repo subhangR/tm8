@@ -84,9 +84,16 @@ async function replay(after: number): Promise<DurableWorkspaceEvent[]> {
   for (;;) {
     const page = await log.since(f.spaceId, cursor, 500, f.claims());
     out.push(...page.items);
-    if (!page.hasMore) return out;
+    if (!page.hasMore) break;
     cursor = page.examinedThrough!;
   }
+  // 307: a progress re-emit (`payload.derived`, a descendant moved) is not a
+  // change to the re-emitted entity, so the spec's table skips it. The contract
+  // event does not carry the marker; the raw rows do.
+  const derived = new Set((await f.db.asOwner((q) => q.query<{ seq: string }>(
+    `select seq::text seq from public.workspace_events
+      where space_id = $1 and seq > $2 and payload ? 'derived'`, [f.spaceId, after]))).map((r) => Number(r.seq)));
+  return out.filter((ev) => !derived.has(ev.seq));
 }
 
 interface World {

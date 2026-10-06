@@ -96,9 +96,12 @@ describe('acceptance 1 — fixture size (a subtree of 11 tasks, 500 events, 6 ch
     await f.edge(children[4]!, f.memberId, 'assigned_to');
     while ((await f.head()) - base < 500) await f.post(noise, 'noise outside the subtree');
     const head = await f.head();
-    // Trim to EXACTLY the 500-event window, as measured live.
-    const after = head - 500;
-    expect(after).toBeGreaterThanOrEqual(base);
+    // The window is the whole run from `base`: at least 500 events. A post
+    // writes several rows, so the loop overshoots by a few, and trimming to
+    // exactly 500 dropped the root's post whenever the overshoot moved (307's
+    // progress re-emits add events to the run).
+    const after = base;
+    expect(head - after).toBeGreaterThanOrEqual(500);
 
     const view = await read({ subtree: root, after: String(after) });
     const bytes = byteLength(view);

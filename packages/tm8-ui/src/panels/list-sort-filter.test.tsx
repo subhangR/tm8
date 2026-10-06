@@ -63,13 +63,14 @@ describe('the sort chip reaches the seam', () => {
        is indistinguishable from the dishonest one.
 
        Still a SET, so re-ordering the menu is not a failure. Task declares the
-       four every kind can answer plus the three it opts into by HAVING them —
-       both dates and priority (see `DEFAULT_SORT` in the registry for why a
+       four every kind can answer plus the four it opts into by HAVING them —
+       both dates, priority and progress (307) (see `DEFAULT_SORT` in the registry for why a
        kind without them must not be offered a sort that ties every row). */
     expect(new Set(labels)).toEqual(new Set(getKind('task').list.sort.map((s) => s.label)));
     // Not vacuous — an empty declaration would satisfy the equality above.
-    expect(labels).toHaveLength(7);
+    expect(labels).toHaveLength(8);
     expect(new Set(labels)).toContain('Start date');
+    expect(new Set(labels)).toContain('Progress');
   });
 
   it('CHOOSING a sort issues a query carrying it — the defect, stated directly', () => {

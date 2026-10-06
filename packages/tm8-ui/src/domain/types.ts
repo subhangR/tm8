@@ -155,6 +155,17 @@ export interface TileProgress {
   inProgress?: number;
   blocked?: number;
   noun?: string;
+  /**
+   * 307: a points-weighted percent (floored). When set the bar fills to it and
+   * the figure reads `N%`; the bands above are not drawn.
+   */
+  percent?: number;
+  /** Text after the figure: own criteria (`3/4`) or weighted points (`5/9 pts`). */
+  detail?: string;
+  /** A short flag after the figure — a done task whose subtree is not: `subtasks open`. */
+  marker?: string;
+  /** The tooltip, replacing the generated one. */
+  label?: string;
 }
 
 export interface TileBadgeSpec {

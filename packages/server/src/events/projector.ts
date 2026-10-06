@@ -53,7 +53,7 @@ import type { Querier } from '../db/types.js';
 // The ONE unread definition, shared with the facade assembler on purpose — see
 // the `channel` arm of stateOf. `entity-read.ts` imports nothing from `events/`,
 // so this direction adds no cycle.
-import { chatContextOf, isEndedKind, outcomeFacts, loadChatSubjects, loadUnreadCounts, storySummaryOf, designSummaryOf, type ChatSubject } from '../facade/entity-read.js';
+import { chatContextOf, isEndedKind, outcomeFacts, loadChatSubjects, loadUnreadCounts, storySummaryOf, designSummaryOf, taskProgressOf, type ChatSubject } from '../facade/entity-read.js';
 // The ONE narrowing of the status columns, shared with the read path. Both
 // files used to narrow `work_status` on their own and DISAGREED about an
 // unrecognised value; `facade/status.ts` is the fix and its docblock is the
@@ -346,6 +346,7 @@ interface SummaryRow {
   design_title?: string | null;
   design_description?: string | null;
   design_summary?: unknown;
+  task_progress?: unknown;
   sty_title?: string | null;
   sty_description?: string | null;
   sty_schema_version?: number | null;
@@ -559,6 +560,8 @@ select
   dsg.title          as design_title,
   dsg.description    as design_description,
   case when e.kind = 'design' then internal.design_summary(e.id) end as design_summary,
+  -- 307: likewise the SAME function entity-read.ts selects.
+  case when e.kind = 'task' then internal.task_progress(e.id) end as task_progress,
   -- Space styles (284): the WHOLE document rides the summary on purpose (spec
   -- §4.3, sign-off): entity.upsert after a push is how every viewer on the
   -- style repaints. Bounded by the doors: ≤ 200 vars of ≤ 512 chars, css ≤ 16 KiB.
@@ -1305,6 +1308,8 @@ export class PgEntityProjector implements EntityProjector {
             assignedAt: assignment.assignedAt,
           })),
           acceptance: { total: criteria.length, completed },
+          // MIRRORS entity-read.ts stateOf: the same `internal.task_progress`.
+          ...taskProgressOf(r.task_progress),
           completionGate: r.completion_gate === 'pr_merged' ? 'pr_merged' : 'none',
         };
       }
