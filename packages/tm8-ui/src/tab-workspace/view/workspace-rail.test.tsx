@@ -168,7 +168,6 @@ describe('the kind list', () => {
 describe('expand', () => {
   it('the expanded flag toggles from the button and ⌘\\, and persists', () => {
     mount();
-    fireEvent.click(screen.getByTestId('tws-rail-switch'));
     const toggle = screen.getByTestId('tws-rail-expand');
     expect(toggle.getAttribute('aria-label')).toBe('Expand sidebar');
     fireEvent.click(toggle);
@@ -202,8 +201,18 @@ describe('the two faces', () => {
     expect(gate.navigateTo).toHaveBeenCalledWith({ type: 'view', ref: 'inbox' });
     fireEvent.click(within(tools).getByRole('button', { name: 'Settings' }));
     expect(gate.onSelectViewTab).toHaveBeenCalledWith('settings');
-    fireEvent.click(screen.getByRole('button', { name: 'Back to kinds' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Close settings & tools' }));
     expect(screen.getByTestId('tws-rail-kinds')).toBeTruthy();
+  });
+
+  it('the bottom is always the three: Needs you, the user switch, expand', () => {
+    mount();
+    const names = () =>
+      Array.from(screen.getByRole('group', { name: 'Rail controls' }).querySelectorAll('button')).map((b) => b.getAttribute('aria-label'));
+    /* No attention provider in this mount, so the bell draws nothing. */
+    expect(names()).toEqual(['Settings & tools', 'Expand sidebar']);
+    fireEvent.click(screen.getByTestId('tws-rail-switch'));
+    expect(names()).toEqual(['Close settings & tools', 'Expand sidebar']);
   });
 
   it('marks the screen the shell shows as current, and the closed switch with it', () => {

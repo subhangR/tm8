@@ -3,17 +3,16 @@
  * Workstream A.
  *
  *   kinds face (default)            tools face (--pn-paper band)
- *   [Pinned kinds]  ── hairline      Needs you · Status
- *   [every kind, one flat list]      ⌘K · Inbox · Messages · Files · Git
- *                                    Design · Settings · Help
- *                                    account · »
+ *   [Pinned kinds]  ── hairline      Status · ⌘K
+ *   [every other kind, one list]     Inbox · Messages · Files · Git
+ *                                    Design · Settings · Help · account
  *   ── hairline                      ── hairline
- *   [⚙ Settings & tools]             [← Back to kinds]
+ *   Needs you · 👤 · »                Needs you · 👤 · »
  *
- * ONE SWITCH (Subhang, 2026-10-07): the bottom button swaps the column
- * between the two faces. The tools face keeps R39's three clusters, 12px
- * apart. Closed, the switch carries a dot while something needs you and the
- * current bar while the shell shows one of the tools.
+ * THE THREE (Subhang, 2026-10-07): the bottom is always Needs you, the user
+ * switch and expand. The user switch swaps the column between the two faces;
+ * closed, it carries the current bar while the shell shows one of the tools.
+ * A top group taller than the window fades the edge that has more.
  *
  * THE LIST IS THE HOME RAIL'S POPULATION, NOT ITS COMPONENT: `homeRootKinds()`
  * (the Home rail's groups, flattened in order) restricted to the Workspace
@@ -52,8 +51,7 @@ import { getRailStore } from '../runtime/railStore';
 import { isWorkspaceKind } from '../runtime/types';
 import { useShellFrame } from './context';
 import { railCountLabel, railKindLabel, isRailCountKind, useRailCounts, type RailCounts } from './useRailCounts';
-import { RAIL_COLLAPSE_ART, RAIL_EXPAND_ART, RAIL_KINDS_ART } from './railArt';
-import { useAttentionOptional } from '../../attention';
+import { RAIL_COLLAPSE_ART, RAIL_EXPAND_ART, RAIL_USER_ART } from './railArt';
 import { RailAttention, RailStatus } from './RailStatus';
 
 const BOTTOM_GROUP_IDS = ['craft', 'settings', 'help'] as const;
@@ -97,8 +95,8 @@ export function WorkspaceRail() {
      switch swaps in the settings and tools, on a darker band. */
   const [tools, setTools] = useState(false);
   const counts: RailCounts = useRailCounts();
-  const attention = useAttentionOptional();
-  const needsYou = attention && attention.status === 'ready' ? attention.counts().mine : 0;
+  const topRef = useRef<HTMLDivElement>(null);
+  const more = useScrollHints(topRef, tools);
 
   const pinned = useMemo(() => homeRailPinnedKinds(pins).filter((config) => isWorkspaceKind(config.kind)), [pins]);
   /* A pinned kind MOVES to Pinned and leaves the list; an unpinned one comes
@@ -165,7 +163,7 @@ export function WorkspaceRail() {
   const screenCurrent = (ref: string) => gate.activeScreenRef === ref;
   const toolCurrent = (id: string) => gate.activeViewTabId === id || gate.activeScreenRef === id;
   const onToolScreen = SCREEN_VIEWS.some((s) => screenCurrent(s.ref)) || bottom.some((t) => toolCurrent(t.id));
-  const switchLabel = tools ? 'Back to kinds' : 'Settings & tools';
+  const switchLabel = tools ? 'Close settings & tools' : 'Settings & tools';
   return (
     <nav
       ref={railRef}
@@ -176,12 +174,17 @@ export function WorkspaceRail() {
       data-rail-mode={tools ? 'tools' : 'kinds'}
     >
       {tools ? (
-        <div className="tws-rail-top tws-rail-tools" role="group" aria-label="Settings and tools" data-testid="tws-rail-tools">
+        <div
+          ref={topRef}
+          className="tws-rail-top tws-rail-tools"
+          role="group"
+          aria-label="Settings and tools"
+          data-testid="tws-rail-tools"
+          data-more-above={more.above || undefined}
+          data-more-below={more.below || undefined}
+        >
           <div className="tws-rail-cluster" data-cluster="status">
-            <RailAttention expanded={expanded} />
             <RailStatus expanded={expanded} />
-          </div>
-          <div className="tws-rail-cluster" data-cluster="tools">
             <RailTip label={expanded ? null : 'Command palette'} shortcut="⌘K">
               <button
                 type="button"
@@ -198,6 +201,8 @@ export function WorkspaceRail() {
                 {expanded ? <span className="tws-rail-label">Command palette</span> : null}
               </button>
             </RailTip>
+          </div>
+          <div className="tws-rail-cluster" data-cluster="screens">
             {SCREEN_VIEWS.map((screen) => (
               <ToolButton
                 key={screen.ref}
@@ -209,6 +214,8 @@ export function WorkspaceRail() {
                 onClick={() => gate.navigateTo({ type: 'view', ref: screen.ref })}
               />
             ))}
+          </div>
+          <div className="tws-rail-cluster" data-cluster="tools">
             {bottom.map((tab) => (
               <ToolButton
                 key={tab.id}
@@ -220,8 +227,6 @@ export function WorkspaceRail() {
                 onClick={() => gate.onSelectViewTab(tab.id)}
               />
             ))}
-          </div>
-          <div className="tws-rail-cluster" data-cluster="account">
             {gate.accountSlot ? (
               <RailTip label={expanded ? null : 'Account'}>
                 <div className="tws-rail-account">
@@ -233,25 +238,15 @@ export function WorkspaceRail() {
                 </div>
               </RailTip>
             ) : null}
-            <RailTip label={expanded ? null : expandLabel} shortcut="⌘\">
-              <button
-                type="button"
-                className="tws-rail-btn tws-rail-expand"
-                aria-label={expandLabel}
-                aria-keyshortcuts="Meta+\"
-                data-testid="tws-rail-expand"
-                onClick={toggleExpanded}
-              >
-                <span className="tws-rail-icon">
-                  <VectorIcon paths={expanded ? RAIL_COLLAPSE_ART : RAIL_EXPAND_ART} size={18} />
-                </span>
-                {expanded ? <span className="tws-rail-label">{expandLabel}</span> : null}
-              </button>
-            </RailTip>
           </div>
         </div>
       ) : (
-        <div className="tws-rail-top">
+        <div
+          ref={topRef}
+          className="tws-rail-top"
+          data-more-above={more.above || undefined}
+          data-more-below={more.below || undefined}
+        >
           {pinned.length > 0 ? (
             <>
               <div className="tws-rail-group" role="group" aria-label="Pinned" data-testid="tws-rail-pinned">
@@ -266,7 +261,10 @@ export function WorkspaceRail() {
         </div>
       )}
       <hr className="tws-rail-rule" />
-      <div className="tws-rail-bottom">
+      {/* THE THREE (Subhang, 2026-10-07): Needs you, the user switch, expand —
+          always here, whichever face is up. */}
+      <div className="tws-rail-bottom" role="group" aria-label="Rail controls">
+        <RailAttention expanded={expanded} />
         <RailTip label={expanded ? null : switchLabel}>
           <button
             type="button"
@@ -278,10 +276,24 @@ export function WorkspaceRail() {
             onClick={() => setTools((t) => !t)}
           >
             <span className="tws-rail-icon">
-              <VectorIcon paths={tools ? RAIL_KINDS_ART : VIEW_ART.settings} size={18} />
-              {!tools && needsYou > 0 ? <span className="tws-rail-switch-dot" data-testid="tws-rail-switch-dot" aria-hidden /> : null}
+              <VectorIcon paths={RAIL_USER_ART} size={18} />
             </span>
             {expanded ? <span className="tws-rail-label">{switchLabel}</span> : null}
+          </button>
+        </RailTip>
+        <RailTip label={expanded ? null : expandLabel} shortcut="⌘\">
+          <button
+            type="button"
+            className="tws-rail-btn tws-rail-expand"
+            aria-label={expandLabel}
+            aria-keyshortcuts="Meta+\"
+            data-testid="tws-rail-expand"
+            onClick={toggleExpanded}
+          >
+            <span className="tws-rail-icon">
+              <VectorIcon paths={expanded ? RAIL_COLLAPSE_ART : RAIL_EXPAND_ART} size={18} />
+            </span>
+            {expanded ? <span className="tws-rail-label">{expandLabel}</span> : null}
           </button>
         </RailTip>
       </div>
@@ -290,6 +302,34 @@ export function WorkspaceRail() {
       </span>
     </nav>
   );
+}
+
+/**
+ * OVERFLOW HINTS (Subhang, 2026-10-07): the top group scrolls inside itself
+ * with no scrollbar, so it says when there is more above or below — the CSS
+ * fades that edge. Re-measured on scroll, resize and face swap.
+ */
+function useScrollHints(ref: { current: HTMLElement | null }, face: unknown): { above: boolean; below: boolean } {
+  const [hints, setHints] = useState({ above: false, below: false });
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => {
+      const above = el.scrollTop > 1;
+      const below = el.scrollTop + el.clientHeight < el.scrollHeight - 1;
+      setHints((h) => (h.above === above && h.below === below ? h : { above, below }));
+    };
+    measure();
+    el.addEventListener('scroll', measure, { passive: true });
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(el);
+    for (const child of Array.from(el.children)) observer?.observe(child);
+    return () => {
+      el.removeEventListener('scroll', measure);
+      observer?.disconnect();
+    };
+  }, [ref, face]);
+  return hints;
 }
 
 /** A screen or shell tab in the tools rail: current while the shell shows it. */
