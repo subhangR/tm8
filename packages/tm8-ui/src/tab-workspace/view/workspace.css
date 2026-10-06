@@ -52,9 +52,16 @@
 .tws-mark {
   color: var(--pn-ink);
 }
-/* The selector's left edge sits on the browser's 12px inset (x = 60). */
+/* Round 2 item 7: [mark][space switcher] … [view selector], the selector
+   right-aligned on the header's 12px right inset. */
 .tws-left-header .tws-view-select {
-  margin-left: var(--pn-space-3);
+  margin-left: auto;
+  padding-left: var(--pn-space-2);
+}
+/* Right-aligned trigger: its menu opens leftward from the right edge. */
+.tws-left-header .tws-view-select .tws-menu {
+  right: 0;
+  left: auto;
 }
 .tws-view-select {
   position: relative;
@@ -68,9 +75,9 @@
 }
 .tws-space-slot {
   display: flex;
-  justify-content: flex-end;
-  margin-left: auto;
-  padding-left: var(--pn-space-2);
+  justify-content: flex-start;
+  /* Its left edge sits on the browser's 12px inset (x = 60). */
+  margin-left: var(--pn-space-3);
   min-width: 0;
   height: 36px;
 }
@@ -117,8 +124,8 @@
 }
 .tws-root .tws-space-slot .shell-switcher__pop {
   top: calc(100% + var(--pn-space-1));
-  right: 0;
-  left: auto;
+  right: auto;
+  left: 0;
 }
 
 /* Expanded (Spec A §14): Restore · ⋯ at the strip's far left; the tabs
