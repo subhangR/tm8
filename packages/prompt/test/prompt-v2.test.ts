@@ -6,6 +6,8 @@ import {
   BYTE_BUDGETS,
   composePrompt,
   HEADER_AUTHORING_RULE,
+  PLACEMENT_RULE,
+  COORDINATOR_SUBTASK_RULE,
   instructionFor,
   DEFAULT_PROMPT_VERSION,
   isPromptVersion,
@@ -255,12 +257,14 @@ describe('v2 sizes, measured on doc 01a0d456\'s own fixture', () => {
   const docRuntime: PromptRuntime = { sessionId: DOC_SESSION, baseUrl: 'http://127.0.0.1:7778' };
   const sizes: Record<AgentMode, { bytes: number; ceiling: number; graph: boolean }> = {
     // Doc 01a0d708 §3: each is doc 01a0d456's size plus base rule 4 (+243 B),
-    // then +24 B for rule 4's good/bad example (task 01a0da5a, doc 01a0da65 D6).
-    worker: { bytes: 2991, ceiling: 3000, graph: true },
-    'coordinated-worker': { bytes: 3333, ceiling: 3350, graph: true },
-    coordinator: { bytes: 3899, ceiling: 4000, graph: true },
-    'coordinated-coordinator': { bytes: 4241, ceiling: 4250, graph: true },
-    dispatcher: { bytes: 3195, ceiling: 3200, graph: false },
+    // then +24 B for rule 4's good/bad example (task 01a0da5a, doc 01a0da65 D6),
+    // then +505 B for base rule 5, placement (P0f 01a111b2-a4c8), and +142 B on
+    // the two coordinator layers for the subtask sentence.
+    worker: { bytes: 3496, ceiling: 3500, graph: true },
+    'coordinated-worker': { bytes: 3838, ceiling: 3850, graph: true },
+    coordinator: { bytes: 4546, ceiling: 4550, graph: true },
+    'coordinated-coordinator': { bytes: 4888, ceiling: 4900, graph: true },
+    dispatcher: { bytes: 3700, ceiling: 3750, graph: false },
   };
 
   it('renders each mode at the doc\'s size, within its ceiling', () => {
@@ -272,8 +276,8 @@ describe('v2 sizes, measured on doc 01a0d456\'s own fixture', () => {
     }
   });
 
-  it('keeps the base at 1,736 B (1,469 approved + rule 4 with its example)', () => {
-    expect(utf8Bytes(BASE_PROMPT_V2)).toBe(1736);
+  it('keeps the base at 2,241 B (1,469 approved + rule 4 with its example + rule 5)', () => {
+    expect(utf8Bytes(BASE_PROMPT_V2)).toBe(2241);
   });
 
   it('matches its snapshot, per mode', () => {
@@ -285,8 +289,8 @@ describe('v2 sizes, measured on doc 01a0d456\'s own fixture', () => {
 });
 
 describe('header authoring rule (doc 01a0d708)', () => {
-  it('is the last rule of the base, and the base names each flag exactly once', () => {
-    expect(BASE_PROMPT_V2.endsWith(`\n4. ${HEADER_AUTHORING_RULE}\n</tm8>`)).toBe(true);
+  it('is rule 4 of the base, and the base names each flag exactly once', () => {
+    expect(BASE_PROMPT_V2).toContain(`\n4. ${HEADER_AUTHORING_RULE}\n5. `);
     expect(count(BASE_PROMPT_V2, '--when-to-use')).toBe(1);
     expect(count(BASE_PROMPT_V2, '--summary')).toBe(1);
   });
@@ -311,6 +315,42 @@ describe('header authoring rule (doc 01a0d708)', () => {
     expect(utf8Bytes(HEADER_AUTHORING_RULE)).toBe(263);
     // One good and one bad example, single-quoted so the v1 frame does not escape them.
     expect(HEADER_AUTHORING_RULE).toContain("'Open when changing balance rounding', not 'Rounding doc'");
+  });
+});
+
+describe('placement rule (Design Rules 01a10c5d §2.4, P0f)', () => {
+  it('is the last rule of the v2 base, said once in every mode', () => {
+    expect(BASE_PROMPT_V2.endsWith(`\n5. ${PLACEMENT_RULE}\n</tm8>`)).toBe(true);
+    for (const mode of AGENT_MODES) {
+      const e = composePrompt({ ...base, mode, coordinator: { sessionId: COORD } }, runtime);
+      expect(count(e.system, 'Put each entity you create in its place'), mode).toBe(1);
+    }
+  });
+
+  it('is on every v1 mode instruction, just before the header rule', () => {
+    for (const mode of AGENT_MODES) {
+      expect(instructionFor(mode).endsWith(` ${PLACEMENT_RULE} ${HEADER_AUTHORING_RULE}`), mode).toBe(true);
+    }
+  });
+
+  it('names the same-kind parent, the cross-kind edge, follow-ups and story roots', () => {
+    expect(PLACEMENT_RULE).toContain('--parent');
+    expect(PLACEMENT_RULE).toContain('never parent across kinds');
+    expect(PLACEMENT_RULE).toContain('tm8 edge create <task-id> produces <new-id>');
+    expect(PLACEMENT_RULE).toContain('Follow-up work is a root task');
+    expect(PLACEMENT_RULE).toContain('tm8 collection add <story-id> <root-id>');
+    // The v1 frame entity-escapes a double quote; the rule carries none.
+    expect(PLACEMENT_RULE).not.toContain('"');
+    expect(COORDINATOR_SUBTASK_RULE).not.toContain('"');
+  });
+
+  it('tells coordinators, and only coordinators, to make each unit a subtask', () => {
+    for (const mode of AGENT_MODES) {
+      const coordinates = mode === 'coordinator' || mode === 'coordinated-coordinator';
+      expect(instructionFor(mode).includes(COORDINATOR_SUBTASK_RULE), mode).toBe(coordinates);
+      const e = composePrompt({ ...base, mode, coordinator: { sessionId: COORD } }, runtime);
+      expect(e.system.includes('as a subtask of your task'), mode).toBe(coordinates);
+    }
   });
 });
 
