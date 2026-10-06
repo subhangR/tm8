@@ -10,7 +10,8 @@ import { useWorkspace, useWorkspaceState } from './context';
 export function RevealPrompt() {
   const { dispatch } = useWorkspace();
   const pending = useWorkspaceState((s) => s.pending);
-  if (!pending) return null;
+  // unsaved_changes is ConfirmDiscard's (workstream C).
+  if (!pending || pending.reason === 'unsaved_changes') return null;
   const plural = pending.targetKind ? getKindAdapter(pending.targetKind).nounPlural : '';
   const label: Record<InteractionChoice, string> = {
     addType: `Add ${plural} and open`,
@@ -21,7 +22,6 @@ export function RevealPrompt() {
   };
   return (
     <div className="tws-prompt" role="dialog" aria-modal="false" data-testid="tws-prompt" data-reason={pending.reason}>
-      {pending.reason === 'unsaved_changes' ? <p>Discard draft?</p> : null}
       {pending.choices.map((choice) => (
         <button
           key={choice}
