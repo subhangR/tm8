@@ -135,6 +135,14 @@ export const ENTITY_COLUMNS = `
   ws.outcome as ws_outcome, ws.outcome_at as ws_outcome_at, ws.outcome_by as ws_outcome_by,
   ws.receipt_message_id as ws_receipt_message_id, ws.outcome_source as ws_outcome_source,
   ws.outcome_note as ws_outcome_note,
+  -- 301 (Spec D1 R1): tasks handed to this session that it has not claimed.
+  case when ws.entity_id is null then null else (select coalesce(array_agg(distinct sh.source_entity_id::text), '{}')
+     from public.session_handoffs sh
+     join public.entities ot on ot.id = sh.source_entity_id and ot.kind = 'task' and ot.deleted_at is null
+    where sh.target_work_session_id = ws.entity_id and sh.withdrawn_at is null
+      and not exists (select 1 from public.edges oc
+                       where oc.src_id = ws.entity_id and oc.dst_id = sh.source_entity_id
+                         and oc.type = 'working_on')) end as ws_offered_task_ids,
   wsp.pin_revision as ws_pin_revision, wsp.template_key as ws_pin_template_key,
   wsp.template_version as ws_pin_template_version,
   wsp.resolved_snapshot as ws_pin_resolved_snapshot,
@@ -537,6 +545,7 @@ export interface EntityRow {
   ws_receipt_message_id?: string | null;
   ws_outcome_source?: string | null;
   ws_outcome_note?: string | null;
+  ws_offered_task_ids?: string[] | null;
   ws_pin_revision: number | null;
   ws_pin_template_key: string | null;
   ws_pin_template_version: number | null;
@@ -1953,6 +1962,7 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         endedReason: row.ws_ended_reason ?? null,
         // 299 (Spec D1 §3): the outcome of the WORK, beside the process facts.
         ...outcomeFacts(row),
+        ...(Array.isArray(row.ws_offered_task_ids) ? { offeredTaskIds: row.ws_offered_task_ids } : {}),
         // The persona, via the SAME resolver that attributes this session's
         // messages — `loadActors` keyed by the session's own id already does
         // the `participates_in` hop. A session with no persona resolves to a

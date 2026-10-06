@@ -401,6 +401,15 @@ const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
  * The claim tally for a working row: "2 tasks · 1 done · 1 offered" (§6.8).
  * Null when there is nothing to say.
  */
+/**
+ * How many tasks are OFFERED to this session (§6.3 R1) — handed to it and not
+ * yet claimed — from the server's `offeredTaskIds` (301). Absent ⇒ 0.
+ */
+export function offeredCountOf(state: EntityState | unknown): number {
+  const ids = (state as { offeredTaskIds?: unknown } | null | undefined)?.offeredTaskIds;
+  return Array.isArray(ids) ? ids.length : 0;
+}
+
 export function claimTally(claims: readonly SessionClaim[] | undefined, offered = 0): string | null {
   const parts: string[] = [];
   const active = activeClaims(claims);

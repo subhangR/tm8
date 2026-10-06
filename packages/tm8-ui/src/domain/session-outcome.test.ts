@@ -7,6 +7,8 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  offeredCountOf,
+  claimTally,
   SESSION_TABS,
   SESSION_TAB_FILTERS,
   capRefusalHint,
@@ -374,3 +376,13 @@ describe('needs attention (§5.7 home roster, sessionNeedsAttention)', () => {
     expect(sessionNeedsAttentionOf(session({ outcome: 'stopped', status: 'exited' }))).toBe(false);
   });
 });
+
+describe('scenario 16 — an offered task is on the row, not a claim (§6.3 R1)', () => {
+  it('counts the server\'s offeredTaskIds and shows them in line 2', () => {
+    const state = { kind: 'work_session', status: 'running', outcome: 'open', offeredTaskIds: ['t-c'] };
+    expect(offeredCountOf(state)).toBe(1);
+    expect(offeredCountOf({ kind: 'work_session', status: 'running' })).toBe(0);
+    expect(claimTally([{ taskId: 't-a', title: 'A', status: 'working', endedAt: null }], offeredCountOf(state))).toContain('1 offered');
+  });
+});
+

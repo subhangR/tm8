@@ -46,6 +46,7 @@ import {
   groupSessionRows,
   isSessionState,
   sessionLineTwo,
+  offeredCountOf,
   sessionRowWord,
   type GroupBulk,
   type SessionClaim,
@@ -4214,6 +4215,8 @@ export function Tile({
        Waiting = an idle process with forms pending for the viewer (§5.1 row 3). */
     const wordCtx = {
       claims: props.linkedClaimsOf?.(row.id),
+      // §6.3 R1 / scenario 16: offered tasks are on the row, never claims.
+      offered: offeredCountOf(row.state),
       streaming,
       waiting: recordedStatus === 'idle' && pendingFormsRead !== null,
       activityAt: row.activityAt,

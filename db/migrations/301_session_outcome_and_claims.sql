@@ -122,6 +122,11 @@ create index if not exists edges_working_on_active_src_idx
 create index if not exists edges_working_on_active_dst_idx
   on public.edges (dst_id) where type = 'working_on' and (props->>'endedAt') is null;
 
+-- Spec D1 R1: the session read lists tasks OFFERED to a session (handed to it,
+-- not claimed); one lookup per session row needs the target indexed.
+create index if not exists session_handoffs_target_idx
+  on public.session_handoffs (target_work_session_id) where withdrawn_at is null;
+
 -- The claim status vocabulary (spec R2). `pulled`/`open` are not claim states.
 create or replace function internal.claim_status_for(p_work_status text)
 returns text language sql immutable
