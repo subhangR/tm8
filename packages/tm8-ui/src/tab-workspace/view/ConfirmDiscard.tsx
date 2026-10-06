@@ -7,10 +7,14 @@
  * A native modal `<dialog>`: the top layer traps focus, makes the rest
  * inert, and Esc cancels (= Keep editing).
  */
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import type { InteractionChoice, Source, TabRecord } from '../runtime/types';
 import { useWorkspace, useWorkspaceState } from './context';
 import { TabLeadIcon, useTabFacts } from './TabStrip';
+
+function SingleTitle({ tab, children }: { tab: TabRecord; children: (title: string) => ReactNode }) {
+  return <>{children(useTabFacts(tab).title)}</>;
+}
 
 function DirtyItem({ tab }: { tab: TabRecord }) {
   const { title } = useTabFacts(tab);
@@ -45,8 +49,9 @@ export function ConfirmDiscard({ onResolved }: { onResolved?: (choice: Interacti
   if (!pending) return <dialog ref={ref} className="tws-ts-confirm" hidden />;
 
   const dirty = (pending.tabIds ?? []).map((id) => tabs[id]).filter((t): t is TabRecord => t !== undefined);
-  const bulk = (pending.closeTabIds?.length ?? dirty.length) > 1 || dirty.length > 1;
-  const heading = dirty.length > 1 ? `Discard ${dirty.length} drafts?` : 'Discard draft?';
+  // Design ruling R1: single vs bulk copy is decided by the number of dirty drafts.
+  const bulk = dirty.length > 1;
+  const heading = bulk ? `Discard ${dirty.length} drafts?` : 'Discard draft?';
 
   const resolve = (choice: InteractionChoice, source: Source) => {
     onResolved?.(choice);
@@ -62,6 +67,14 @@ export function ConfirmDiscard({ onResolved }: { onResolved?: (choice: Interacti
       aria-labelledby="tws-ts-confirm-title"
       aria-describedby="tws-ts-confirm-body"
       data-testid="tws-confirm-discard"
+      onClick={(event) => {
+        // A click on the backdrop lands on the dialog element itself: Keep editing.
+        if (event.target !== event.currentTarget) return;
+        const r = event.currentTarget.getBoundingClientRect();
+        const inside =
+          event.clientX >= r.left && event.clientX <= r.right && event.clientY >= r.top && event.clientY <= r.bottom;
+        if (!inside) resolve('keep', 'click');
+      }}
       onCancel={(event) => {
         // Esc: Keep editing, through the dispatcher (the dialog closes when pending clears).
         event.preventDefault();
@@ -71,20 +84,22 @@ export function ConfirmDiscard({ onResolved }: { onResolved?: (choice: Interacti
       <h2 id="tws-ts-confirm-title" className="tws-ts-confirm-title">
         {heading}
       </h2>
-      <div id="tws-ts-confirm-body" className="tws-ts-confirm-body">
-        {bulk && dirty.length > 0 ? (
-          <>
-            <p>{dirty.length > 1 ? 'These drafts have unsaved changes:' : 'This draft has unsaved changes:'}</p>
-            <ul className="tws-ts-confirm-list">
-              {dirty.map((tab) => (
-                <DirtyItem key={tab.id} tab={tab} />
-              ))}
-            </ul>
-          </>
+      <p id="tws-ts-confirm-body" className="tws-ts-confirm-body">
+        {bulk ? (
+          'These tabs have unsaved changes:'
+        ) : dirty[0] ? (
+          <SingleTitle tab={dirty[0]}>{(title) => `“${title}” has unsaved changes.`}</SingleTitle>
         ) : (
-          <p>Your changes to this draft will be lost.</p>
+          'This draft has unsaved changes.'
         )}
-      </div>
+      </p>
+      {bulk ? (
+        <ul className="tws-ts-confirm-list">
+          {dirty.map((tab) => (
+            <DirtyItem key={tab.id} tab={tab} />
+          ))}
+        </ul>
+      ) : null}
       <div className="tws-ts-confirm-actions">
         <button
           type="button"
@@ -101,7 +116,7 @@ export function ConfirmDiscard({ onResolved }: { onResolved?: (choice: Interacti
           data-tone="danger"
           onClick={(event) => resolve('discard', sourceOf(event.detail))}
         >
-          {dirty.length > 1 ? 'Discard drafts' : 'Discard draft'}
+          {bulk ? `Discard ${dirty.length} drafts` : 'Discard draft'}
         </button>
       </div>
     </dialog>
