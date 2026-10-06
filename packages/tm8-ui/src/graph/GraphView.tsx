@@ -20,6 +20,7 @@
  *  - Scale honesty: the model's RENDER_CAP truncation renders as a banner,
  *    never a silent cut; filtered-to-nothing teaches, never blanks.
  */
+import { useFreshGlowLookup, withGlowStyle } from '../domain/useFreshGlow';
 import { EntityAttentionChip } from '../attention';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { EdgeView, EntityId, EntitySummary } from '@tm8/contract';
@@ -502,6 +503,10 @@ export function GraphView(props: GraphViewProps) {
   // Materialize grammar: a node whose id was not on canvas last render enters
   // with the brass ring. The very first render staggers everything in.
   const prevCanvasIds = useRef<ReadonlySet<string>>(new Set());
+  // Created (or deleted) live in front of this page: a brand stroke that fades
+  // back to the node's own (R40). Distinct from `newIds`, which is "entered
+  // the canvas" — a filter change or a pan brings nodes in that are not new.
+  const freshGlowOf = useFreshGlowLookup();
   const newIds = useMemo(() => {
     const prev = prevCanvasIds.current;
     return new Set(model.placed.filter((p) => !prev.has(p.entity.id)).map((p) => p.entity.id));
@@ -1352,11 +1357,13 @@ export function GraphView(props: GraphViewProps) {
                 .join(' ');
               const focused = focus?.id === p.entity.id;
               const relation = relationById.get(p.entity.id);
+              const glow = freshGlowOf(p.entity.id);
               return (
                 // A role=button div (not a <button>) so the focus affordance can
                 // be a REAL nested button — nested <button>s are invalid HTML.
                 // Keyboard: Enter/Space select, matching the old card button.
                 <div
+                  {...glow.attrs}
                   key={p.entity.id}
                   role="button"
                   tabIndex={0}
@@ -1372,9 +1379,10 @@ export function GraphView(props: GraphViewProps) {
                     `${getKind(p.entity.kind).label} · ${p.entity.title}` +
                     (pill ? ` · ${pill.word}` : '') +
                     (liveness === 'live' ? ' · live' : liveness === 'stale' ? ' · stale' : '') +
-                    (relation ? ` · ${relation.label} ${relation.title}` : '')
+                    (relation ? ` · ${relation.label} ${relation.title}` : '') +
+                    (glow.srSuffix ?? '')
                   }
-                  style={{ left: p.x, top: p.y, width: NODE_W, height: NODE_H }}
+                  style={withGlowStyle({ left: p.x, top: p.y, width: NODE_W, height: NODE_H }, glow)}
                   onClick={() => onSelect(p.entity.id)}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' || event.key === ' ') {

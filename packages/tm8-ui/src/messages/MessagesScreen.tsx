@@ -63,6 +63,7 @@ import {
   type MessagesMode,
 } from './messages-model';
 import type { MessagesData } from './useMessagesData';
+import { useFreshGlow } from '../domain/useFreshGlow';
 
 export interface MessagesScreenProps {
   data: MessagesData;
@@ -433,8 +434,9 @@ function ConversationItem({
   onSelect: (id: EntityId) => void;
 }) {
   const unread = row.unread !== null && row.unread > 0;
+  const glow = useFreshGlow(row.id);
   return (
-    <li className="msg-row" data-testid="messages-conversation-row" data-selected={selected}>
+    <li {...glow.attrs} className="msg-row" data-testid="messages-conversation-row" data-selected={selected}>
       <button
         type="button"
         className={selected ? 'msg-row__hit msg-row__hit--on' : 'msg-row__hit'}
@@ -450,6 +452,7 @@ function ConversationItem({
             <span className={unread ? 'msg-row__title msg-row__title--unread' : 'msg-row__title'}>
               {row.title}
             </span>
+            {glow.srSuffix ? <span className="msg-vh">{glow.srSuffix}</span> : null}
             <span className="msg-row__time">{relativeTime(row.activityAt, clock)}</span>
           </span>
           <span className="msg-row__foot">

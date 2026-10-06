@@ -89,6 +89,7 @@ import { resolveMenu, type ResolvedMenu } from '../shell/menu-resolve';
 import { toSessionRow } from '../terminal';
 import { terminalActivitySource, useTerminalActivityMap } from '../terminal/activity';
 import { useMessagePulses, type MessagePulse } from '../panels/list/useMessagePulses';
+import { freshEntities } from '../domain/freshEntities';
 import type { BoardSnapshot } from '../panels';
 import {
   CORE_CHAT_LAUNCH_PRESENTATION,
@@ -1052,6 +1053,10 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
   );
   const activity = useTerminalActivityMap(terminalActivitySource);
   const messagePulses = useMessagePulses(seam);
+  // Which items glow as new or play their exit (domain/freshEntities.ts). The
+  // domain store applies events on a 16ms batch, so a deleted row is already
+  // marked leaving by the time it drops out of a list.
+  useEffect(() => freshEntities.attach(seam), [seam]);
 
   /**
    * The event stream's own projection, subscribed. `useSyncExternalStore` and
